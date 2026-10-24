@@ -8632,6 +8632,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-gw-test"
+version = "0.1.1"
+dependencies = [
+ "futures",
+ "loams-kv",
+ "tokio",
+]
+
+[[package]]
 name = "loams-hnsw"
 version = "0.1.1"
 dependencies = [

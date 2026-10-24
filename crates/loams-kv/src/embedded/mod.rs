@@ -10,7 +10,8 @@
 //!   `gc_safe_point`.
 //!
 //! redb locks its file, so a process opens each file once: a registry keyed
-//! by the canonical path hands every [`Handle`] on a file the same database,
+//! by the canonical path (`mem:<name>` for an in-memory store,
+//! [`EmbeddedConfig::in_memory`]) hands every [`Handle`] on a file the same database,
 //! timestamp oracle, committer thread and GC thread, closed when the last
 //! handle is dropped. A [`Handle`] is a keyspace and a root on it.
 //!
@@ -36,6 +37,7 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use futures::future::BoxFuture;
+use redb::backends::InMemoryBackend;
 use redb::{Database, DatabaseError, ReadableDatabase, ReadableTable, TableDefinition};
 
 pub use gc::GcReport;
@@ -288,6 +290,10 @@ pub fn is_open(path: &Path) -> bool {
     })
 }
 
+/// The registry key prefix of in-memory stores: `mem:<name>` is a relative
+/// path, so it never equals a canonical file path.
+pub(crate) const MEMORY_PREFIX: &str = "mem:";
+
 /// Opens the redb file; with the `faults` feature through a backend whose
 /// syncs a test can fail.
 fn create_db(
@@ -354,14 +360,20 @@ impl Shared {
     /// The open file at `config.path`, opening it when this process has
     /// not.
     fn get_or_open(config: &EmbeddedConfig, owned: Option<TempDir>) -> Result<Arc<Self>, KvError> {
-        if let Some(dir) = config.path.parent()
-            && !dir.as_os_str().is_empty()
-        {
-            std::fs::create_dir_all(dir)
-                .map_err(|e| KvError::Embedded(format!("creating {}: {e}", dir.display())))?;
-        }
-        let key = canonical(&config.path)
-            .map_err(|e| KvError::Embedded(format!("{}: {e}", config.path.display())))?;
+        let key = match &config.memory {
+            Some(name) => PathBuf::from(format!("{MEMORY_PREFIX}{name}")),
+            None => {
+                if let Some(dir) = config.path.parent()
+                    && !dir.as_os_str().is_empty()
+                {
+                    std::fs::create_dir_all(dir).map_err(|e| {
+                        KvError::Embedded(format!("creating {}: {e}", dir.display()))
+                    })?;
+                }
+                canonical(&config.path)
+                    .map_err(|e| KvError::Embedded(format!("{}: {e}", config.path.display())))?
+            }
+        };
         let mut open = registry();
         let closing = match open.get(&key) {
             Some(o) => {
@@ -377,12 +389,22 @@ impl Shared {
         };
         #[cfg(feature = "faults")]
         let io_faults = Arc::new(faulty::Switch::default());
-        let db = create(
-            &key,
-            closing,
-            #[cfg(feature = "faults")]
-            &io_faults,
-        )?;
+        let db = if config.memory.is_some() {
+            // A fresh database: nothing outlives its last handle, so a
+            // previous one of the same name that is still closing is not
+            // waited for. I/O faults do not apply (no file, no sync).
+            drop(closing);
+            Database::builder()
+                .create_with_backend(InMemoryBackend::new())
+                .map_err(|e| KvError::Embedded(format!("creating the in-memory store: {e}")))?
+        } else {
+            create(
+                &key,
+                closing,
+                #[cfg(feature = "faults")]
+                &io_faults,
+            )?
+        };
         let (high_water, safe_point) = (|| -> Result<(u64, u64), redb::Error> {
             let write = db.begin_write()?;
             let marks = {
