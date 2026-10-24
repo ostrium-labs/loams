@@ -211,7 +211,11 @@ impl ChangeRequestCreator {
         }))
     }
 
-    pub(crate) async fn run_gh_text(&self, root: &Path, args: &[String]) -> Result<String, GitWriteError> {
+    pub(crate) async fn run_gh_text(
+        &self,
+        root: &Path,
+        args: &[String],
+    ) -> Result<String, GitWriteError> {
         let mut command = self.gh_command(root);
         command.args(args).stdin(Stdio::null());
         let child = match command.spawn() {

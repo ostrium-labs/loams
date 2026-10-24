@@ -11,10 +11,10 @@
 use std::path::{Path, PathBuf};
 
 use loams_agentd_proto::factory_loop::{
-    CreateRunWorktreeParams, GetApprovalParams, GetThreadDiffParams, MERGE_APPROVAL_KIND,
-    MergeChangeRequestParams, MergeChangeRequestReply, OpenChangeRequestParams,
-    OpenChangeRequestReply, PostReviewCommentParams, RequestApprovalParams, TypedApproval,
-    CheckLogReply, ChecksReply, GetCheckLogParams, GetChecksParams,
+    CheckLogReply, ChecksReply, CreateRunWorktreeParams, GetApprovalParams, GetCheckLogParams,
+    GetChecksParams, GetThreadDiffParams, MERGE_APPROVAL_KIND, MergeChangeRequestParams,
+    MergeChangeRequestReply, OpenChangeRequestParams, OpenChangeRequestReply,
+    PostReviewCommentParams, RequestApprovalParams, TypedApproval,
 };
 use loams_agentd_proto::git_write::{CreateChangeRequestParams, MergeStrategy, PushBranchParams};
 use loams_agentd_proto::review::{DiffSide, ReviewComment};
@@ -333,7 +333,10 @@ impl EngineRpc {
     }
 
     /// `GetCheckLog` (FT0 Task 5).
-    pub(super) async fn get_check_log(&self, p: GetCheckLogParams) -> Result<CheckLogReply, RpcError> {
+    pub(super) async fn get_check_log(
+        &self,
+        p: GetCheckLogParams,
+    ) -> Result<CheckLogReply, RpcError> {
         let checkout = self.chat_checkout(&p.chat_id).await?;
         let root = checkout.root().to_path_buf();
         let remote = self.chat_remote(&root).await?;

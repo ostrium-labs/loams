@@ -19,8 +19,16 @@ use serde_json::{Value, json};
 const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
 
 fn git(cwd: &Path, args: &[&str]) {
-    let output = Command::new("git").args(args).current_dir(cwd).output().unwrap();
-    assert!(output.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&output.stderr));
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(cwd)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 fn repo(dir: &Path, remote: &str) -> PathBuf {
@@ -61,7 +69,10 @@ async fn checks_forgejo_fixture() {
     let tmp = tempfile::tempdir().unwrap();
     let root = repo(&tmp.path().join("repo"), &format!("{base}/dev/project.git"));
     let creator = ChangeRequestCreator::new(Arc::new(StaticForgeCredentials::new(Some(
-        ForgejoCredential { base_url: base.clone(), token: "forgejo-test-token".into() },
+        ForgejoCredential {
+            base_url: base.clone(),
+            token: "forgejo-test-token".into(),
+        },
     ))));
     let remote = parse_git_remote(&format!("{base}/dev/project.git")).unwrap();
     let checks = creator
@@ -78,11 +89,25 @@ async fn checks_forgejo_fixture() {
     assert_eq!(checks.checks[2].url, None);
 
     let log = creator
-        .check_log_tail(&root, &remote, ChangeRequestProvider::Forgejo, "12/1", Some(2))
+        .check_log_tail(
+            &root,
+            &remote,
+            ChangeRequestProvider::Forgejo,
+            "12/1",
+            Some(2),
+        )
         .await
         .unwrap();
-    assert!(log.text.ends_with("FAIL test_signup_rate_limit"), "{}", log.text);
-    assert!(!log.text.contains("ghp_0123456789"), "scrubbed: {}", log.text);
+    assert!(
+        log.text.ends_with("FAIL test_signup_rate_limit"),
+        "{}",
+        log.text
+    );
+    assert!(
+        !log.text.contains("ghp_0123456789"),
+        "scrubbed: {}",
+        log.text
+    );
     assert_eq!(log.lines, 2);
     assert!(log.truncated);
     for recorded in seen.lock().unwrap().iter() {
@@ -91,7 +116,13 @@ async fn checks_forgejo_fixture() {
     // A log id that is not run/job digits never becomes a URL.
     assert!(
         creator
-            .check_log_tail(&root, &remote, ChangeRequestProvider::Forgejo, "../../admin", None)
+            .check_log_tail(
+                &root,
+                &remote,
+                ChangeRequestProvider::Forgejo,
+                "../../admin",
+                None
+            )
             .await
             .is_err()
     );
@@ -101,7 +132,10 @@ async fn checks_forgejo_fixture() {
         .checks(&root, &other, ChangeRequestProvider::Forgejo, SHA)
         .await
         .unwrap_err();
-    assert!(error.to_string().contains("provider_not_configured"), "{error}");
+    assert!(
+        error.to_string().contains("provider_not_configured"),
+        "{error}"
+    );
 }
 
 #[cfg(unix)]
@@ -110,7 +144,10 @@ async fn checks_github_fixture() {
     use std::os::unix::fs::PermissionsExt as _;
 
     let tmp = tempfile::tempdir().unwrap();
-    let root = repo(&tmp.path().join("repo"), "https://github.com/acme/widgets.git");
+    let root = repo(
+        &tmp.path().join("repo"),
+        "https://github.com/acme/widgets.git",
+    );
     let bin = tmp.path().join("bin");
     std::fs::create_dir_all(&bin).unwrap();
     let runs = json!({"check_runs": [
@@ -139,8 +176,8 @@ async fn checks_github_fixture() {
     )
     .unwrap();
     std::fs::set_permissions(&gh, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let creator =
-        ChangeRequestCreator::new(Arc::new(StaticForgeCredentials::new(None))).with_gh_path(vec![bin]);
+    let creator = ChangeRequestCreator::new(Arc::new(StaticForgeCredentials::new(None)))
+        .with_gh_path(vec![bin]);
     let remote = parse_git_remote("https://github.com/acme/widgets.git").unwrap();
     let checks = creator
         .checks(&root, &remote, ChangeRequestProvider::Github, SHA)
@@ -148,7 +185,11 @@ async fn checks_github_fixture() {
         .unwrap();
     assert_eq!(checks.repo, "acme/widgets");
     assert_eq!(checks.state, CiState::Failure);
-    let names: Vec<_> = checks.checks.iter().map(|c| (c.name.as_str(), c.state, c.log_id.as_deref())).collect();
+    let names: Vec<_> = checks
+        .checks
+        .iter()
+        .map(|c| (c.name.as_str(), c.state, c.log_id.as_deref()))
+        .collect();
     assert_eq!(
         names,
         [
@@ -167,7 +208,13 @@ async fn checks_github_fixture() {
     assert!(log.truncated);
     assert!(
         creator
-            .check_log_tail(&root, &remote, ChangeRequestProvider::Github, "901; rm -rf /", None)
+            .check_log_tail(
+                &root,
+                &remote,
+                ChangeRequestProvider::Github,
+                "901; rm -rf /",
+                None
+            )
             .await
             .is_err()
     );

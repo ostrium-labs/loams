@@ -1052,5 +1052,22 @@
       "number": 7,
       "headSha": "abcdef0"
     }
+  },
+  {
+    "method": "GetChecks",
+    "params": {
+      "chatId": "chat-1",
+      "provider": "github",
+      "sha": "abcdef0"
+    }
+  },
+  {
+    "method": "GetCheckLog",
+    "params": {
+      "chatId": "chat-1",
+      "provider": "github",
+      "logId": "901",
+      "lines": 200
+    }
   }
 ]

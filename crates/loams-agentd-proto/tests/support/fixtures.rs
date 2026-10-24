@@ -2295,6 +2295,56 @@ pub fn all() -> Vec<Fixture> {
         },
     ));
 
+    // CI checks for the factory loop (FT0 Task 5).
+    add(Fixture::new(
+        "GetChecksParams",
+        factory_loop::GetChecksParams {
+            chat_id: s("chat_01"),
+            provider: ChangeRequestProvider::Forgejo,
+            sha: some("0123456789abcdef0123456789abcdef01234567"),
+        },
+    ));
+    add(Fixture::new(
+        "ChecksReply",
+        factory_loop::ChecksReply {
+            provider: ChangeRequestProvider::Forgejo,
+            repo: s("dev/project"),
+            sha: s("0123456789abcdef0123456789abcdef01234567"),
+            state: factory_loop::CiState::Failure,
+            checks: vec![
+                factory_loop::CiCheck {
+                    name: s("build"),
+                    state: factory_loop::CiState::Success,
+                    url: some("https://forgejo.example.com/dev/project/actions/runs/3/jobs/0"),
+                    log_id: some("3/0"),
+                },
+                factory_loop::CiCheck {
+                    name: s("test"),
+                    state: factory_loop::CiState::Failure,
+                    url: some("https://forgejo.example.com/dev/project/actions/runs/3/jobs/1"),
+                    log_id: some("3/1"),
+                },
+            ],
+        },
+    ));
+    add(Fixture::new(
+        "GetCheckLogParams",
+        factory_loop::GetCheckLogParams {
+            chat_id: s("chat_01"),
+            provider: ChangeRequestProvider::Forgejo,
+            log_id: s("3/1"),
+            lines: Some(200),
+        },
+    ));
+    add(Fixture::new(
+        "CheckLogReply",
+        factory_loop::CheckLogReply {
+            text: s("test linker ... FAILED\n"),
+            lines: 1,
+            truncated: false,
+        },
+    ));
+
     // Every variant of the unions a client switches on.
     for (name, call) in tool_calls() {
         add(Fixture::new(&format!("ToolCall.{name}"), call));
