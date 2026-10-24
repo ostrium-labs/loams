@@ -6141,6 +6141,8 @@ version = "0.0.1"
 dependencies = [
  "datafusion",
  "loams-house-types",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
