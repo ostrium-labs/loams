@@ -28,7 +28,8 @@ use crate::daemon::DaemonMode;
 use crate::factory_loop::{
     CreateRunWorktreeParams, GetApprovalParams, GetThreadDiffParams, MergeChangeRequestParams,
     MergeChangeRequestReply, OpenChangeRequestParams, OpenChangeRequestReply,
-    PostReviewCommentParams, RequestApprovalParams, TypedApproval,
+    PostReviewCommentParams, RequestApprovalParams, TypedApproval, GetChecksParams, ChecksReply,
+    GetCheckLogParams, CheckLogReply,
 };
 use crate::git_write::{
     CommitWorktreeParams, CommitWorktreeReply, CreateChangeRequestParams, CreateChangeRequestReply,
@@ -521,6 +522,10 @@ method_table! {
     /// Destructive: merge a pull request, only with a settled, approved merge
     /// approval whose payload hash is this call's `{repo, pr, head_sha}`.
     MERGE_CHANGE_REQUEST = MergeChangeRequest: Unary(MergeChangeRequestParams -> MergeChangeRequestReply), Mcp, renderer: false;
+    /// FT0 Task 5 (D1433): a commit's CI checks on Forgejo or GitHub.
+    GET_CHECKS = GetChecks: Unary(GetChecksParams -> ChecksReply), Mcp, renderer: false;
+    /// The scrubbed, bounded tail of one check's log.
+    GET_CHECK_LOG = GetCheckLog: Unary(GetCheckLogParams -> CheckLogReply), Mcp, renderer: false;
 }
 
 #[cfg(test)]

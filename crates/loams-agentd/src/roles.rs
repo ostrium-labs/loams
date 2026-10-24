@@ -780,6 +780,8 @@ mod tests {
             methods::OPEN_CHANGE_REQUEST,
             methods::GET_APPROVAL,
             methods::MERGE_CHANGE_REQUEST,
+            methods::GET_CHECKS,
+            methods::GET_CHECK_LOG,
         ] {
             assert!(allowed(&run, method, json!({ "chatId": "side" })).await, "{method}");
             assert!(!allowed(&run, method, json!({ "chatId": "other" })).await, "{method}");

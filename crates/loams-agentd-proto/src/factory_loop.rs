@@ -223,3 +223,81 @@ pub struct MergeChangeRequestReply {
     pub repo: String,
     pub merged: bool,
 }
+
+/// The default and the ceiling of `GetCheckLog`'s tail, in lines.
+pub const CHECK_LOG_LINES: usize = 200;
+pub const MAX_CHECK_LOG_LINES: usize = 1_000;
+/// The ceiling of `GetCheckLog`'s tail, in bytes.
+pub const MAX_CHECK_LOG_BYTES: usize = 64 * 1024;
+
+/// One CI check's state, provider-neutral.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum CiState {
+    /// Queued or running.
+    Pending,
+    Success,
+    Failure,
+    /// Skipped, cancelled or neutral: neither passes nor fails the run.
+    Neutral,
+}
+
+/// `GetChecks` (FT0 Task 5, D1433): the checks of a commit on the chat's
+/// remote; the chat's `HEAD` when `sha` is omitted.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct GetChecksParams {
+    pub chat_id: String,
+    pub provider: ChangeRequestProvider,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha: Option<String>,
+}
+
+/// One check.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CiCheck {
+    pub name: String,
+    pub state: CiState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    /// What `GetCheckLog` takes as `logId`, when the check has a readable log.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub log_id: Option<String>,
+}
+
+/// `GetChecks`' answer. `state` is `failure` when any check failed, else
+/// `pending` while any runs, else `success` (no checks at all is `pending`:
+/// CI may not have started).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ChecksReply {
+    pub provider: ChangeRequestProvider,
+    pub repo: String,
+    pub sha: String,
+    pub state: CiState,
+    pub checks: Vec<CiCheck>,
+}
+
+/// `GetCheckLog`: the last `lines` of one check's log, scrubbed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct GetCheckLogParams {
+    pub chat_id: String,
+    pub provider: ChangeRequestProvider,
+    /// A check's `logId` from `GetChecks`.
+    pub log_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lines: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckLogReply {
+    /// The tail, secrets scrubbed.
+    pub text: String,
+    /// Lines in `text`.
+    pub lines: u32,
+    /// The log had more than the tail.
+    pub truncated: bool,
+}

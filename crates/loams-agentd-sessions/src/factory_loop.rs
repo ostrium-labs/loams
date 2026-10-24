@@ -196,7 +196,7 @@ impl ChangeRequestCreator {
         }))
     }
 
-    async fn run_gh(&self, root: &Path, args: &[String]) -> Result<String, GitWriteError> {
+    pub(crate) async fn run_gh_text(&self, root: &Path, args: &[String]) -> Result<String, GitWriteError> {
         let mut command = self.gh_command(root);
         command.args(args).stdin(Stdio::null());
         let child = match command.spawn() {
@@ -228,7 +228,7 @@ impl ChangeRequestCreator {
         head: &str,
     ) -> Result<Option<CreateChangeRequestReply>, GitWriteError> {
         let stdout = self
-            .run_gh(
+            .run_gh_text(
                 root,
                 &[
                     "pr".into(),
@@ -324,7 +324,7 @@ impl ChangeRequestCreator {
                     MergeStrategy::Squash => "--squash",
                     MergeStrategy::Rebase => "--rebase",
                 };
-                self.run_gh(
+                self.run_gh_text(
                     root,
                     &[
                         "pr".into(),
