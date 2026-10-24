@@ -1,7 +1,8 @@
 //! `loams-temporal-resonate`: how the Temporal gateway reaches Resonate
 //! (design 74 §5.3–§5.5 and §6, plan DX1 Task 6, D1503 and D1591).
 //!
-//! - [`ids`]: the deterministic promise IDs of §74 §5.4.
+//! - [`ids`]: the deterministic promise IDs of §74 §5.4, as amended by
+//!   X1.R13 (the run is Resonate's origin).
 //! - [`Durability`]: the port the gateway calls, named after FW3's
 //!   `resonate-client` methods, with [`FakeDurability`] (in process, manual
 //!   clock, fault injection) for every test above the port.
@@ -20,7 +21,7 @@
 //!   30 s, so `TaskReady` duplicates are normal and an acquire that loses
 //!   answers [`DurabilityError::Conflict`].
 //! - Timers: a promise tagged `resonate:timer` **resolves** at its deadline.
-//!   For §5.3's `rejectedTimedout` (the `to:` promises) create it with
+//!   For §5.3's `rejectedTimedout` (the `to` promises) create it with
 //!   `awaitable` instead (`resonate:scope = global`), which times out as
 //!   `rejected_timedout` and takes a listener just the same.
 //! - `resonate:delay` is an absolute time in Unix ms (below `timeoutAt`, and

@@ -203,6 +203,7 @@ af:{ns}:{dag_id}:{run_id}:{task_id}:{map_index}:{try_number}      (Airflow, §9.
 - **Length:** if the encoded ID exceeds the fork's promise-ID limit (**verify** in FW7), `{wf}` is replaced by `h` plus 32 hex characters of SHA-256 of the raw workflow ID. The full workflow ID goes in the promise tag `loams:wf`. The rule is a pure function, tested both ways.
 - **Tags:** every promise carries `loams:ns`, `loams:run` and `loams:kind`. FW5's retention and FW6's indexed search use them.
 - **Idempotency:** a relay retry repeats `promise.create` with the same ID and parameters. Resonate answers with the existing promise. A different payload for the same ID is a bug and alerts (`loams_temporal_outbox_conflict_total`).
+- **Amended by X1.R13** (plan DX1, 2026-10-25): the IDs above are replaced by FW7's run-as-origin form, `<ns>.<wf>.<run>:<kind>.<event>[.<attempt>]` (a `to` ID ends `.<kind>.<attempt>`) and `<ns>.<schedule_id>.<nominal_time_unix_ms>`, with exactly one `:`, so Resonate's origin is the run, not the kind.
 
 ### 5.5 Storage model (Loams Postgres; D1502)
 
