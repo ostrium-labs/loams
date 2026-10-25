@@ -272,6 +272,17 @@ fn provider(id: HarnessId) -> ProviderSpec {
             update_args: None,
             manual_command: "Update the configured Antigravity ACP server",
         },
+        // Goose: agentd installs a pinned release archive (D1809); a newer
+        // release ships with a newer pin. A user's own `goose` updates itself.
+        HarnessId::Goose => ProviderSpec {
+            version_args: &["--version"],
+            latest: LatestSource::Github {
+                repository: "aaif-goose/goose",
+                tag_prefix: "v",
+            },
+            update_args: None,
+            manual_command: "goose update",
+        },
         // loams: ships inside the app; `loams-desktop --version` is the app version and
         // the app updater (not a provider updater) is what changes it.
         HarnessId::LoamsBot => ProviderSpec {
