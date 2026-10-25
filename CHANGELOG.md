@@ -16,6 +16,14 @@ All notable changes to this project are documented here. The format follows [Kee
   The profile refuses to start while `KAFKA_IGGY_PASSWORD` is empty, `.env.example`'s
   placeholder (`change-me`) or shorter than 12 characters (`config/kafka-guard.sh`, with a
   self-test in `release-compose`); `byoc/install.sh` writes a random one into a new `.env`.
+- **`loams-agentd` as release tarballs for Linux** (#874, #1066). `release-package.yml` attaches
+  `loams-agentd-<version>-linux-x86_64.tar.gz` and `-linux-aarch64.tar.gz`, each holding
+  `loams-agentd`, `loams`, `SHA256SUMS` and `VERSION`: the layout `loams-agentd install-runtime --from`
+  reads, so a headless host no longer takes the binary out of the image. "Get the binary" in
+  `docs/guides/studio/remote-agentd.md` downloads them.
+- **The TypeScript SDK runs in Cloudflare Workers**: the default transport sends `redirect: "manual"` in workerd
+  (connect-web's `"error"` is rejected there), and `transportOptions.fetch` accepts a custom `fetch`. README
+  has a Cloudflare Workers section.
 
 ### Removed
 - **The `console.loams.dev` custom-domain route** is gone from `web/apps/console/wrangler.jsonc`
@@ -69,7 +77,10 @@ All notable changes to this project are documented here. The format follows [Kee
     `LOAMS_CORS_ORIGINS=https://console.loams.dev` from `.env`, and list the origin of any console
     you serve elsewhere (`--profile console`, a Cloudflare or Vercel deploy).
   - Docs and guides point at the console your engine serves, Loams Desktop, and
-    `loams.dev/cloud` for the try-out.
+    `loams.dev/cloud` for the try-out. The remote agentd guide
+    (`docs/guides/studio/remote-agentd.md`) now sets `--allow-origin` to the engine's origin and
+    lists the host in `LOAMS_AGENTD_ORIGINS`; the Headscale section no longer cites the hosted
+    console (still unsupported, not tested end to end).
 - **The Software Factory's observability app is SigNoz on Loams House** (D1666, owner, 2026-10-22).
   The factory lists **SigNoz** where it listed OpenObserve: full UI only, health checked at
   `/api/v2/healthz`, and labelled **"Preview: SigNoz on Loams House"** in Studio until SigNoz
@@ -80,18 +91,8 @@ All notable changes to this project are documented here. The format follows [Kee
   Loams stack that points SigNoz at the install's House (native and HTTP endpoints, user,
   password); no ClickHouse server is bundled. Idle, SigNoz and its collector use about 85 MiB.
 
-### Added
-- **`loams-agentd` as release tarballs for Linux** (#874). `release-package.yml` attaches
-  `loams-agentd-<version>-linux-x86_64.tar.gz` and `-linux-aarch64.tar.gz`, each holding
-  `loams-agentd`, `loams`, `SHA256SUMS` and `VERSION`: the layout `loams-agentd install-runtime --from`
-  reads, so a headless host no longer takes the binary out of the image. "Get the binary" in
-  `docs/guides/studio/remote-agentd.md` downloads them.
-- **The TypeScript SDK runs in Cloudflare Workers**: the default transport sends `redirect: "manual"` in workerd
-  (connect-web's `"error"` is rejected there), and `transportOptions.fetch` accepts a custom `fetch`. README
-  has a Cloudflare Workers section.
-
 ### Fixed
-- **`secrets/api-keys` readable by the engine** (#881). `loams auth new-key --append` creates the key
+- **`secrets/api-keys` readable by the engine** (#881, #1068). `loams auth new-key --append` creates the key
   file as its writer, mode 0600, which the engine (uid and gid 10001) cannot read through the release
   stack's bind mount. The release README's new "API keys" section gives the file to the engine's group
   with mode 0640 (`sudo chgrp 10001` under rootful Docker, `podman unshare chgrp 10001` under rootless
@@ -131,8 +132,8 @@ Highlights:
   `.env` first. `loams upgrade` follows the profiles and refuses a stack on the embedded stores for now;
   see docs/release/upgrades.md.
 - **Elasticsearch and Mastra compatibility.** The Elasticsearch API gains `GET /_cat/indices`,
-  `GET` and `PUT /{index}/_settings`, sort on `_seq_no` and the scroll API (as `helpers.scan` uses
-  it), and `_update_by_query` replaces a key when its param is an object. The Qdrant gateway serves
+  `GET` and `PUT /{index}/_settings`, sort on `_seq_no`, the scroll API (as `helpers.scan` uses
+  it) and aggregations on the engine (composite and `top_hits` included), and `_update_by_query` replaces a key when its param is an object. The Qdrant gateway serves
   `DELETE` of a payload index (REST and gRPC), and CI runs `@qdrant/js-client-rest` 1.18 and 1.19
   and a nightly Mastra gate against a dev build. With these, the NVIDIA RAG Blueprint harness
   passes 38 of 38.
@@ -144,18 +145,21 @@ Highlights:
 
 ### Upgrading
 
-**0.1.1 changes the default stack; reinstall.** Start from the 0.1.1 compose bundle with a fresh
-`.env`, rather than upgrading a 0.1.0 stack in place: the light default keeps its data on the
+**0.1.1 changes the default stack; reinstall.** There are no 0.1.0 installs to carry forward, so
+start from the 0.1.1 compose bundle with a fresh `.env`, rather than upgrading a 0.1.0 stack in place: the light default keeps its data on the
 embedded stores and local folders, not in 0.1.0's TiKV and RustFS. To keep a 0.1.0 stack's data,
 add `COMPOSE_PROFILES=tikv,rustfs` to its `.env` before `loams upgrade --to 0.1.1`; it then keeps
 0.1.0's shape, Durable on SQLite included (docs/release/upgrades.md).
+`loams upgrade rollback --keep-writes` back to 0.1.0 is refused (`KEEP_WRITES_UNSERVED`, D1343):
+0.1.0's startup gate cannot serve data a later release has written, so roll back from the snapshot.
 
 ### Added
 
-- **Elasticsearch API** (MA1, #937, #954, #958, #963, #938): `GET /_cat/indices` in the json and
+- **Elasticsearch API** (MA1, #937, #954, #958, #963, #938, #964): `GET /_cat/indices` in the json and
   text formats; `GET` and `PUT /{index}/_settings`; sort on `_seq_no`; the scroll API
   (`scroll`, `_search/scroll`, clearing a scroll), as the Python client's `helpers.scan` uses it;
-  and `_update_by_query` assigning an object param by replacing the key.
+  `_update_by_query` assigning an object param by replacing the key; and aggregations computed on
+  the engine, `composite` and `top_hits` included (#964).
 - **The Mastra gate** (MA1 Task 27, #956): a nightly run of Mastra's suites against a dev build,
   which files an issue on failure. `loams-postgres-dev` computes run with 128 MB `shared_buffers`
   and a 256 MB file cache (#946).
@@ -297,7 +301,7 @@ add `COMPOSE_PROFILES=tikv,rustfs` to its `.env` before `loams upgrade --to 0.1.
   remote server's main port (`POST /durable/`, B12) with the session the other engine routes use,
   instead of answering 404. The Durable page and the Overview's Durable card work on remote servers;
   an engine without the API reads as "Not on this server".
-- Loams is fully open source; there is no open core (D1119). README, CONTRIBUTING, GOVERNANCE, ECOSYSTEM, the design docs and the decision log now say so; the metering, billing and control-plane code is moving into the open repo now (design §63). Ostrium Labs offers services (infrastructure efficiency, SLAs, support).
+- Loams is fully open source; there is no open core (D1119). README, CONTRIBUTING, GOVERNANCE, ECOSYSTEM, the design docs and the decision log now say so; the metering, billing and control-plane code is in this repository (`platform/`, design §63). Ostrium Labs is a research lab building open-source Loams (D1323); the services wording is gone.
 - The app modules in every generated SDK facade (SDKP P0a): `namespaces`,
   `collections`, `documents`, `search`, `vector` and `graph`, from facade
   annotations on `loams.collection.v1` and `loams.graph.v1`. The facade index

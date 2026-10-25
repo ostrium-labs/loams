@@ -2,7 +2,11 @@
 # Sets up another laptop as a Loams local CI worker, from the primary, in one command:
 #
 #   deploy/ci-hosts/provision-remote.sh USER@HOST [--name loams-ci-b] [--tailscale-authkey-file FILE]
-#                                       [-- extra setup-host.sh options]
+#                                       [--gh-token-file FILE] [-- extra setup-host.sh options]
+#
+# --gh-token-file stores a GitHub token on HOST (/etc/loams-ci/github-token, root
+# only) so its runner re-registers itself when GitHub drops it; use a fine-grained
+# token limited to Administration read/write on ostrium-labs/loams.
 #
 # Run it as the owner on the primary (laptop A), from the repository root. It
 #   1. issues the worker's credentials bundle (sudo here: the CA and the sccache
@@ -28,11 +32,13 @@ TARGET=$1
 shift
 NAME=loams-ci-b
 TS_KEY=
+GH_FILE=
 EXTRA=()
 while (($#)); do
   case $1 in
     --name) NAME=$2; shift 2 ;;
     --tailscale-authkey-file) TS_KEY=$2; shift 2 ;;
+    --gh-token-file) GH_FILE=$2; shift 2 ;;
     --) shift; EXTRA=("$@"); break ;;
     *) die "unknown option: $1" ;;
   esac
@@ -49,6 +55,7 @@ echo "2/4 minting a runner registration token for ostrium-labs/loams"
 (umask 077 && gh api -X POST repos/ostrium-labs/loams/actions/runners/registration-token --jq .token >"$work/reg-token")
 [[ -s $work/reg-token ]] || die "no registration token (is gh authenticated, or GH_TOKEN set?)"
 [[ -z $TS_KEY ]] || (umask 077 && cp "$TS_KEY" "$work/ts-authkey")
+[[ -z $GH_FILE ]] || (umask 077 && tr -d '[:space:]' <"$GH_FILE" >"$work/gh-token")
 
 echo "3/4 copying the setup to $TARGET:~/loams-ci-setup"
 files=(deploy/ci-hosts rust-toolchain.toml package.json)
@@ -56,7 +63,7 @@ files=(deploy/ci-hosts rust-toolchain.toml package.json)
 tar -C "$ROOT" -czf "$work/setup.tgz" "${files[@]}"
 # shellcheck disable=SC2029 # the remote paths are meant to expand there
 ssh "$TARGET" 'umask 077 && rm -rf ~/loams-ci-setup && mkdir -p ~/loams-ci-setup/.secrets && tar -C ~/loams-ci-setup -xzf -' <"$work/setup.tgz"
-for f in bundle.tar reg-token ts-authkey; do
+for f in bundle.tar reg-token ts-authkey gh-token; do
   [[ -f $work/$f ]] || continue
   # shellcheck disable=SC2029 # $f is meant to expand here
   ssh "$TARGET" "umask 077 && cat > ~/loams-ci-setup/.secrets/$f" <"$work/$f"
@@ -65,6 +72,7 @@ done
 echo "4/4 running setup-host.sh --role worker on $TARGET (sudo will ask for its password)"
 remote_args="--role worker --bundle ~/loams-ci-setup/.secrets/bundle.tar --reg-token ostrium-labs/loams=\$HOME/loams-ci-setup/.secrets/reg-token --tailscale-hostname $NAME"
 [[ -z $TS_KEY ]] || remote_args+=" --tailscale-authkey-file \$HOME/loams-ci-setup/.secrets/ts-authkey"
+[[ -z $GH_FILE ]] || remote_args+=" --gh-token-file \$HOME/loams-ci-setup/.secrets/gh-token --store-gh-token"
 for a in "${EXTRA[@]}"; do remote_args+=" $(printf '%q' "$a")"; done
 rc=0
 # shellcheck disable=SC2029

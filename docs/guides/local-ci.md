@@ -13,9 +13,9 @@ idempotent command, [`deploy/ci-hosts/setup-host.sh`](../../deploy/ci-hosts/setu
 
 | Service | Unit | Listens on | Auth | Cap |
 |---|---|---|---|---|
-| NativeLink clients (CAS, AC, ByteStream, Capabilities, Execution; instance `main`) | `loams-nativelink.service` | `127.0.0.1:50051`, `<tailnet-ip>:50051` | tailnet: mutual TLS | A: 30 GiB (CAS 23 + worker 6 + AC 1); B: 80 GiB worker store |
+| NativeLink clients (CAS, AC, ByteStream, Capabilities, Execution; instance `main`) | `loams-nativelink.service` | `127.0.0.1:50051`, `<tailnet-ip>:50051` | tailnet: mutual TLS | A: 20 GiB (CAS 15 + worker 4 + AC 1); B: 80 GiB worker store |
 | NativeLink workers + health | same | `127.0.0.1:50061`, `<tailnet-ip>:50061` | tailnet: mutual TLS | |
-| sccache store (dufs, WebDAV) | `loams-sccache-store.service` + `loams-sccache-evict.timer` | `127.0.0.1:50081`, `<tailnet-ip>:50081` | password | 10 GiB, LRU every 10 min |
+| sccache store (dufs, WebDAV) | `loams-sccache-store.service` + `loams-sccache-evict.timer` | `127.0.0.1:50081`, `<tailnet-ip>:50081` | password | 8 GiB, LRU every 10 min |
 | GitHub runners | `~ci/.config/systemd/user/loams-runner-<repo>.service` | outbound only | GitHub registration | 10 GiB RAM each on A, 12 GiB on B |
 
 Nothing listens on `0.0.0.0` or the LAN; ufw opens the three ports on `tailscale0` only. The tailnet
@@ -86,16 +86,39 @@ timer logs the report and fails its unit on a problem, so `systemctl --failed` s
 
 | Cache | Where | Cap | Eviction |
 |---|---|---|---|
-| NativeLink CAS + AC + worker store | `/mnt/Projects/ci/nativelink` | 30 GiB (A), 80 GiB (B) | NativeLink's LRU, on insert |
-| sccache | `/mnt/Projects/ci/sccache` (A only) | 10 GiB | `loams-sccache-evict.timer`, every 10 min, down to 90% |
+| NativeLink CAS + AC + worker store | `/mnt/Projects/ci/nativelink` | 20 GiB (A), 80 GiB (B) | NativeLink's LRU, on insert |
+| sccache | `/mnt/Projects/ci/sccache` (A only) | 8 GiB | `loams-sccache-evict.timer`, every 10 min, down to 90% |
 | runner work dirs | `/mnt/Projects/ci/runners/*/work` | per job | `job-completed` hook removes the checkout and temp files |
 | cargo registry, rustup, tool cache | `/mnt/Projects/ci/cache` | none (a few GiB) | none |
 | runner image | `/mnt/Projects/ci/containers` | ~1.5 GiB | rebuilt only when `deploy/ci-hosts` changes |
 
 Disk floor: a job refuses to start (with an error naming the host) when its filesystem has less
-than 20 GiB free on A, 30 GiB on B. On A that disk is shared with the owner's builds; the floor
-keeps CI from filling it. When jobs fail with "Local CI host disk low", free disk or flip
+than 10 GiB free on A, 30 GiB on B (`--min-free-gb`). On A, `/mnt/Projects` is shared with the
+owner's builds, and the shared Rust target dominates it, so A's caches are kept small (20 + 8 GiB)
+and the floor low. The work directories stay on `/mnt/Projects` (ext4) rather than `/`: the root
+filesystem is btrfs with snapper snapshots, which would keep deleted job output alive. A low-disk
+warning does not fail the health check; only failed checks do. When jobs fail with "Local CI host disk low", free disk or flip
 `CI_RUNNER=github`.
+
+## Runner self-healing
+
+GitHub can drop a runner's registration (it was deleted in the repository settings or through the
+API, for example). The runner then deletes its local credentials and stops with "Not
+configured". Its container exits with status 78, which stops systemd's restart loop, and
+`loams-ci-runner-heal.timer` (root, every 5 minutes) registers it again with a fresh registration
+token and starts it; it also restarts a runner that stopped for any other reason. Tested
+2026-10-25 by deleting `loams-ci-a-iggy` through the API: online again 5.5 minutes later.
+
+The heal timer mints registration tokens with the GitHub token given to `setup-host.sh
+--gh-token-file` (A: the owner's `~/gh.txt`, read by root only). For a worker, pass
+`provision-remote.sh ... --gh-token-file FILE`: the token is stored root-only at
+`/etc/loams-ci/github-token` (use a fine-grained token with Administration read/write on
+`ostrium-labs/loams` only). Without a token the timer cannot re-register, and the health check
+reports the runner as failed. `journalctl -u loams-ci-runner-heal` shows what it did.
+
+`setup-host.sh` saves the settings of each full run (`/etc/loams-ci/setup.env`, root) and uses
+them as the defaults of the next run and of `--heal`, so options such as `--data-root` need not
+be repeated.
 
 ## Changing workflows
 

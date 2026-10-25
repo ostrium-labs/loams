@@ -752,6 +752,12 @@ pub async fn plan(
     {
         plan.sql = sql;
     }
+    // HE1 R9.70: nor would `PREWHERE`.
+    if !plan.pins.is_empty()
+        && let Some(sql) = crate::sample::prewhere_as_where(&plan.sql)
+    {
+        plan.sql = sql;
+    }
     // `system.query_log` reads the namespace's `_house.query_log` (HS1 Task
     // 23) through a view of its own; no client statement names it.
     if system_tables.contains("query_log")

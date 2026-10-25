@@ -26,13 +26,16 @@
 //!   on the same path) make the header block; the client's blocks become the
 //!   `INSERT … FORMAT Native` body as they arrive.
 //! * **Errors** are `Exception` packets with the statement's code and message.
-//! * `Ping`, `Cancel` (between and during results) and `SET`/`USE`, which the
-//!   connection remembers as clickhouse-server's session does.
+//! * `Ping`, `Cancel` (between statements, before the first result, R9.69, and
+//!   during one) and `SET`/`USE`, which the connection remembers as
+//!   clickhouse-server's session does.
+//! * A top-level `DateTime` column keeps its time zone (R9.66).
 //!
 //! A query that asks for compression gets its `Data` blocks both ways in
 //! ClickHouse's compressed frames (LZ4 written; LZ4, ZSTD or none read; R9.48).
-//! External tables, `Totals`/`Extremes` packets and `TableColumns` are not
-//! served (R9.42).
+//! An `INSERT`'s header follows `TableColumns` (R9.68). External tables,
+//! `ProfileEvents` and `Totals`/`Extremes` as packets of their own are not
+//! served (R9.42, R9.68).
 
 mod head;
 
@@ -473,16 +476,23 @@ where
         {
             self.session = Some(format!("native-{}", uuid::Uuid::new_v4()));
         }
-        let answer = self
-            .run(
-                sql,
-                &query_id,
-                params.clone(),
-                RequestBody::empty(),
-                "Native",
-                parent,
-            )
-            .await;
+        // A `Cancel` before the first result block (the statement still running
+        // in its worker) drops the statement, as one during the result does.
+        let started = self.start(
+            sql,
+            &query_id,
+            params.clone(),
+            RequestBody::empty(),
+            "Native",
+            parent,
+        );
+        let answer = tokio::select! {
+            answer = started => answer,
+            cancel = self.cancelled() => {
+                cancel?;
+                return self.end_of_stream(&packet::Progress::default()).await;
+            }
+        };
         if let Some(err) = answer.error() {
             return self.exception(&err).await;
         }
@@ -516,7 +526,12 @@ where
                     stream.push(&bytes);
                     loop {
                         match stream.next_block() {
-                            Ok(Some(block)) => self.result_block(block, &mut sent).await?,
+                            Ok(Some(block)) => {
+                                let block = self
+                                    .with_zones(block, sql, &query_id, &params, &mut sent)
+                                    .await;
+                                self.result_block(block, &mut sent).await?
+                            }
                             Ok(None) => break,
                             Err(err) => return self.result_broken(&err).await,
                         }
@@ -535,6 +550,9 @@ where
         match stream.finish() {
             Ok(blocks) => {
                 for block in blocks {
+                    let block = self
+                        .with_zones(block, sql, &query_id, &params, &mut sent)
+                        .await;
                     self.result_block(block, &mut sent).await?;
                 }
             }
@@ -592,11 +610,17 @@ where
         params: Vec<(String, String)>,
         parent: Option<crate::trace::SpanContext>,
     ) -> Result<(), Ended> {
-        let header = match self.insert_header(head, &query_id, params.clone()).await {
-            Ok(header) => header,
+        let (header, table) = match self.insert_header(head, &query_id, params.clone()).await {
+            Ok(described) => described,
             Err(err) => return self.exception(&err).await,
         };
         let mut out = Vec::new();
+        // The table's columns and their defaults first, from 54410, as
+        // clickhouse-server sends them (clickhouse-client fills omitted fields
+        // from them; HE1 R9.68).
+        if self.revision >= revision::COLUMN_DEFAULTS_METADATA {
+            packet::encode_table_columns(&mut out, &packet::columns_description(&table));
+        }
         packet::encode_data_with(
             &mut out,
             packet::server::DATA,
@@ -707,13 +731,14 @@ where
     }
 
     /// The header an `INSERT` answers with: the listed columns, or every column
-    /// an `INSERT` without a list takes, with their types, from `DESCRIBE`.
+    /// an `INSERT` without a list takes, with their types, from `DESCRIBE`; and
+    /// every column of the table, for `TableColumns`.
     async fn insert_header(
         &mut self,
         head: &str,
         query_id: &str,
         params: Vec<(String, String)>,
-    ) -> Result<Block, HouseError> {
+    ) -> Result<(Block, Vec<packet::TableColumn>), HouseError> {
         let target = head::parse(head).ok_or_else(|| {
             HouseError::from(ChError::not_implemented(format!(
                 "INSERT over the native protocol with data from the client needs \
@@ -736,6 +761,7 @@ where
         }
         let text = read_all(answer.response.into_body()).await?;
         let mut columns: Vec<(String, String, String)> = Vec::new();
+        let mut table: Vec<packet::TableColumn> = Vec::new();
         for line in text.split(|b| *b == b'\n').filter(|l| !l.is_empty()) {
             let row: Vec<serde_json::Value> = serde_json::from_slice(line).map_err(|err| {
                 HouseError::from(ChError::network_error(format!(
@@ -749,6 +775,15 @@ where
                     .to_string()
             };
             columns.push((field(0), field(1), field(2)));
+            table.push(packet::TableColumn {
+                name: field(0),
+                type_name: field(1),
+                default_kind: field(2),
+                default_expression: field(3),
+                comment: field(4),
+                codec: field(5),
+                ttl: field(6),
+            });
         }
         let chosen: Vec<(String, String)> = match target.columns {
             Some(list) => list
@@ -773,7 +808,7 @@ where
                 .map(|(n, t, _)| (n, t))
                 .collect(),
         };
-        Ok(Block::header(chosen))
+        Ok((Block::header(chosen), table))
     }
 
     /// The columns of a statement that answered no rows: the statement once more,
@@ -815,6 +850,78 @@ where
             columns.push((name, ty));
         }
         Ok(Block::header(columns))
+    }
+
+    /// `block` with each top-level `DateTime` column's time zone restored. chDB's
+    /// `Native` output names a `DateTime('Asia/Kolkata')` column `DateTime` (as
+    /// ClickHouse does for clients before revision 54337; nested ones and
+    /// `DateTime64` keep theirs), so, once per result and only when a column is
+    /// named `DateTime`, the statement is described (`DESCRIBE TABLE (…)`,
+    /// which does not run it) and the described types are used (HE1 R9.66).
+    /// A statement that does not describe keeps the names it has.
+    async fn with_zones(
+        &mut self,
+        mut block: Block,
+        sql: &str,
+        query_id: &str,
+        params: &[(String, String)],
+        sent: &mut Sent,
+    ) -> Block {
+        if !sent.zones_checked {
+            sent.zones_checked = true;
+            if block.columns.iter().any(|c| c.type_name == "DateTime")
+                && matches!(
+                    crate::request::first_keyword(sql).as_str(),
+                    "SELECT" | "WITH"
+                )
+            {
+                sent.zones = self.described_types(sql, query_id, params).await;
+            }
+        }
+        if let Some(types) = &sent.zones
+            && types.len() == block.columns.len()
+        {
+            for (column, described) in block.columns.iter_mut().zip(types) {
+                if column.type_name == "DateTime" && described.starts_with("DateTime(") {
+                    column.type_name = described.clone();
+                }
+            }
+        }
+        block
+    }
+
+    /// The result's column types, from `DESCRIBE TABLE (<statement>)`.
+    async fn described_types(
+        &mut self,
+        sql: &str,
+        query_id: &str,
+        params: &[(String, String)],
+    ) -> Option<Vec<String>> {
+        // clickhouse-client sends its output format (`FORMAT TSV`) and formats
+        // the blocks itself; the subquery takes the statement without it.
+        let (body, _) = crate::request::split_format(sql);
+        let body = body.trim().trim_end_matches(';');
+        let describe = format!("DESCRIBE TABLE ({body}) FORMAT JSONCompactEachRow");
+        let answer = self
+            .run(
+                &describe,
+                &format!("{query_id}-zones"),
+                params.to_vec(),
+                RequestBody::empty(),
+                "JSONCompactEachRow",
+                None,
+            )
+            .await;
+        if answer.error().is_some() {
+            return None;
+        }
+        let text = read_all(answer.response.into_body()).await.ok()?;
+        let mut types = Vec::new();
+        for line in text.split(|b| *b == b'\n').filter(|l| !l.is_empty()) {
+            let row: Vec<serde_json::Value> = serde_json::from_slice(line).ok()?;
+            types.push(row.get(1)?.as_str()?.to_string());
+        }
+        Some(types)
     }
 
     /// One block of a result: the header before the first, then the rows.
@@ -895,18 +1002,33 @@ where
         format: &str,
         parent: Option<crate::trace::SpanContext>,
     ) -> Answer {
+        self.start(sql, query_id, params, body, format, parent)
+            .await
+    }
+
+    /// One statement on the shared path, as a future that holds nothing of the
+    /// connection, so the connection can read a `Cancel` while it runs.
+    /// Dropping it stops the statement (its worker is killed).
+    fn start(
+        &self,
+        sql: &str,
+        query_id: &str,
+        params: Vec<(String, String)>,
+        body: RequestBody,
+        format: &str,
+        parent: Option<crate::trace::SpanContext>,
+    ) -> impl std::future::Future<Output = Answer> + Send + 'static {
         let params = self.statement_params(sql, query_id, params);
         let parts = self.parts(format);
-        let response = Box::pin(crate::http::run_native(
-            &self.shared,
-            parts,
-            body,
-            params,
-            query_id.to_string(),
-            parent,
-        ))
-        .await;
-        Answer { response }
+        let shared = Arc::clone(&self.shared);
+        let query_id = query_id.to_string();
+        async move {
+            let response = Box::pin(crate::http::run_native(
+                &shared, parts, body, params, query_id, parent,
+            ))
+            .await;
+            Answer { response }
+        }
     }
 
     /// The query string HTTP would carry for this statement.
@@ -1016,6 +1138,10 @@ where
 #[derive(Debug, Default)]
 struct Sent {
     header: bool,
+    /// Whether [`Connection::with_zones`] has looked at the first block.
+    zones_checked: bool,
+    /// The described column types, when the result had a bare `DateTime`.
+    zones: Option<Vec<String>>,
     rows: u64,
     blocks: u64,
     bytes: u64,
