@@ -141,6 +141,7 @@ pub(super) fn cli_name(harness: HarnessId) -> &'static str {
         HarnessId::LoamsBot => "Loams Bot", // loams
         HarnessId::Mock => "mock",
         HarnessId::Unsupported => "an unsupported agent",
+        HarnessId::Marketplace => "a marketplace harness",
     }
 }
 

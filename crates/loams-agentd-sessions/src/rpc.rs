@@ -82,6 +82,7 @@ use crate::workspace_host::WorkspaceHost;
 
 mod factory_loop_rpc;
 mod groups_rpc;
+mod marketplace_rpc;
 
 const FILE_SEARCH_RPC_TIMEOUT: Duration = Duration::from_secs(6);
 const FILE_SEARCH_FEATURED_PATHS: usize = 32;
@@ -171,6 +172,8 @@ pub struct EngineRpc {
     usage: Option<crate::usage::ThreadUsageLog>,
     /// Supervised approvals (SD1 Task 13, G17, G18, G22).
     approvals: Option<crate::approvals::Approvals>,
+    /// The daemon's marketplace (MK1 Task 4b; `rpc/marketplace_rpc.rs`).
+    marketplace: crate::marketplace::MarketplaceSlot,
     engine_info: EngineInfo,
     /// Opens pull requests (G4) with the daemon's forge credentials.
     change_request_creator: ChangeRequestCreator,
@@ -257,6 +260,7 @@ impl EngineRpc {
             notifications: None,
             usage: None,
             approvals: None,
+            marketplace: Default::default(),
             engine_info,
             change_request_creator: ChangeRequestCreator::from_keyring(),
             git_writes: std::sync::Arc::new(tokio::sync::Mutex::new(())),
@@ -271,6 +275,11 @@ impl EngineRpc {
 
     pub fn with_approvals(mut self, approvals: crate::approvals::Approvals) -> Self {
         self.approvals = Some(approvals);
+        self
+    }
+
+    pub fn with_marketplace(mut self, marketplace: crate::marketplace::MarketplaceSlot) -> Self {
+        self.marketplace = marketplace;
         self
     }
 
@@ -2306,6 +2315,18 @@ impl RpcService for EngineRpc {
                 })
                 .await
             }
+            // MK1 Task 4b: `MarketplaceService`, in `rpc/marketplace_rpc.rs`.
+            methods::LIST_MARKETPLACE_SOURCES
+            | methods::ADD_MARKETPLACE_SOURCE
+            | methods::REMOVE_MARKETPLACE_SOURCE
+            | methods::SEARCH_LISTINGS
+            | methods::GET_LISTING
+            | methods::PLAN_INSTALL
+            | methods::INSTALL_LISTING
+            | methods::UNINSTALL_LISTING
+            | methods::LIST_INSTALLED_LISTINGS
+            | methods::CHECK_LISTING_UPDATES
+            | methods::UPDATE_LISTING => Box::pin(self.handle_marketplace(method, params)).await,
             methods::GET_CHECKOUT_FILE_DIFF_TEXT => {
                 // This branch contains several large nested async futures. Keep it
                 // behind an allocation so every unrelated RPC does not carry that

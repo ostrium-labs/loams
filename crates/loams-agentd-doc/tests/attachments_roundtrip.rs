@@ -9,6 +9,7 @@ use loams_agentd_doc::{
 fn run_request_attachments_survive_command_round_trip() {
     let doc = SessionDoc::init("chat-1").unwrap();
     let request = loams_agentd_proto::RunRequest {
+        mcp_servers: Vec::new(),
         mcp: None,
         prompt: "p".into(),
         harness: None,

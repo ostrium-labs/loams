@@ -178,6 +178,9 @@ struct Inner {
     /// Where the injected `loams-agentd mcp` shim dials back in, and who
     /// issues its scoped run tokens; `None` until the daemon serves.
     mcp_endpoint: Mutex<Option<McpEndpoint>>,
+    /// The daemon's marketplace: its installed MCP servers ride every run
+    /// (MK1 Task 4b).
+    marketplace: Mutex<crate::marketplace::MarketplaceSlot>,
     journal: Arc<RunJournal>,
     registry: Arc<HarnessRegistry>,
     /// Set-once (first wins), cleared on runtime retirement: sessions and
@@ -273,6 +276,7 @@ impl SessionsEngine {
             inner: Arc::new(Inner {
                 device_id,
                 mcp_endpoint: Mutex::new(None),
+                marketplace: Mutex::new(Default::default()),
                 journal,
                 registry,
                 doc_host: Mutex::new(None),
@@ -298,6 +302,11 @@ impl SessionsEngine {
     /// port 0, agents get no Loams Desktop tools rather than a dead server.
     pub fn set_mcp_endpoint(&self, port: u16, tokens: Arc<ScopedTokens>) {
         *lock(&self.inner.mcp_endpoint) = (port != 0).then_some(McpEndpoint { port, tokens });
+    }
+
+    /// Where the installed marketplace MCP servers come from (MK1 Task 4b).
+    pub fn set_marketplace(&self, slot: crate::marketplace::MarketplaceSlot) {
+        *lock(&self.inner.marketplace) = slot;
     }
 
     /// Wire the doc host (called once at engine assembly; the two services are mutually
@@ -1054,6 +1063,7 @@ impl SessionsEngine {
                     .or_else(|| {
                         let (_, cwd) = sessions.inner.journal_harness_session(&chat_id)?;
                         Some(RunRequest {
+                            mcp_servers: Vec::new(),
                             mcp: None,
                             prompt: String::new(),
                             harness: None,
@@ -1964,6 +1974,14 @@ async fn drive_run(
     {
         request.mcp = Some(server);
         _run_token = Some(lease);
+    }
+    // ... and the MCP servers installed from the marketplace, with their
+    // secrets read from the vault now (MK1 Task 4b, D1463).
+    let installed_mcp = lock(&inner.marketplace).clone().mcp_servers();
+    for server in installed_mcp {
+        if !request.mcp_servers.iter().any(|s| s.name == server.name) {
+            request.mcp_servers.push(server);
+        }
     }
     // Kept whole for the startup-crash retry (same user entry; dispatch
     // re-injects the stored resume id). Option so the retry branch (inside
@@ -3194,6 +3212,7 @@ mod tests {
 
     fn request() -> RunRequest {
         RunRequest {
+            mcp_servers: Vec::new(),
             mcp: None,
             prompt: "first".into(),
             harness: None,

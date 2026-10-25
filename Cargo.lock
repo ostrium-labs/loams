@@ -8695,6 +8695,7 @@ dependencies = [
  "libc",
  "loams-agentd-doc",
  "loams-agentd-harness",
+ "loams-agentd-marketplace",
  "loams-agentd-preview",
  "loams-agentd-proto",
  "loams-agentd-rpc",

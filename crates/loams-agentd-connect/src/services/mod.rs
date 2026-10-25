@@ -27,6 +27,7 @@ mod files;
 mod git;
 mod groups;
 mod harness;
+mod marketplace;
 mod notifications;
 mod projects;
 mod queue;
@@ -78,7 +79,7 @@ impl Agentd {
     pub fn router(self) -> Router {
         use crate::proto::loams::agentd::v1::{
             ApprovalServiceExt, AttachmentServiceExt, DiffServiceExt, FileServiceExt,
-            GitServiceExt, HarnessServiceExt, NotificationServiceExt, PreviewServiceExt,
+            GitServiceExt, HarnessServiceExt, MarketplaceServiceExt, NotificationServiceExt, PreviewServiceExt,
             ProjectServiceExt, QueueServiceExt, ReviewServiceExt, RunGroupServiceExt,
             StudioServiceExt, TerminalServiceExt, ThreadServiceExt,
         };
@@ -98,6 +99,7 @@ impl Agentd {
         let router = RunGroupServiceExt::register(Arc::clone(&me), router);
         let router = ApprovalServiceExt::register(Arc::clone(&me), router);
         let router = NotificationServiceExt::register(Arc::clone(&me), router);
+        let router = MarketplaceServiceExt::register(Arc::clone(&me), router);
         AttachmentServiceExt::register(me, router)
     }
 

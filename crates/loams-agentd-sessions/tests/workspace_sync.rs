@@ -135,6 +135,7 @@ where
 
 fn run_request(prompt: &str) -> RunRequest {
     RunRequest {
+        mcp_servers: Vec::new(),
         mcp: None,
         prompt: prompt.into(),
         harness: None,

@@ -900,6 +900,7 @@ pub fn all() -> Vec<Fixture> {
             reasoning_levels: vec![ReasoningLevel::Low, ReasoningLevel::High],
             installed: true,
             can_install: false,
+            marketplace_listing: None,
             enabled: Some(true),
         }]),
     ));
