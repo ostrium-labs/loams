@@ -114,6 +114,24 @@ async fn not_found_after_write_retries() {
 }
 
 #[tokio::test]
+async fn read_after_write_window_is_configurable() {
+    let p = MockPublisher::start(StatusCode::OK, newly_created()).await;
+    let agg = MockAggregator::start(Behaviour::serve(DATA).not_found_first(100)).await;
+    let mut cfg = config(&p, &agg);
+    cfg.read_after_write_ms = 0;
+    let w = Walrus::new(&cfg).await.unwrap();
+    let err = w
+        .store(Bytes::from_static(DATA), StoreOpts::default())
+        .await
+        .unwrap_err();
+    match err {
+        WalrusError::NotFound(blob) => assert_eq!(blob, BLOB_ID),
+        other => panic!("expected NotFound, got {other:?}"),
+    }
+    assert_eq!(agg.hits(), 1, "no window, no retry");
+}
+
+#[tokio::test]
 async fn body_over_limit_refused_before_upload() {
     let p = MockPublisher::start(StatusCode::OK, newly_created()).await;
     let agg = MockAggregator::start(Behaviour::serve(DATA)).await;

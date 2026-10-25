@@ -22,7 +22,7 @@ use url::Url;
 use crate::error::{AttemptFailure, WalrusError};
 use crate::hedge::{collapse, hedged};
 use crate::types::{BlobId, ContentDigest, PatchEntry, QuiltId, QuiltPatchId, Unverified};
-use crate::{Inner, RETRY_MAX, RETRY_START, WRITE_WINDOW, Walrus};
+use crate::{Inner, RETRY_MAX, RETRY_START, Walrus};
 
 impl Walrus {
     /// The blob `id`, whose bytes must hash to `sha256`. Served from the
@@ -203,8 +203,9 @@ impl Inner {
     }
 
     /// Runs `op`; while it answers `NotFound` for an id this client wrote
-    /// less than a minute ago (a CDN can cache a 404 just after
-    /// certification), retries it with backoff.
+    /// less than `read_after_write_ms` ago (a CDN can cache a 404 just after
+    /// certification, and Testnet aggregators can lag), retries it with
+    /// exponential backoff capped at 10 s.
     pub(crate) async fn after_write<T, F, Fut>(&self, key: &str, op: F) -> Result<T, WalrusError>
     where
         F: Fn() -> Fut,
@@ -217,7 +218,7 @@ impl Inner {
                     let Some(at) = self.written_at(key) else {
                         return Err(WalrusError::NotFound(what));
                     };
-                    if at.elapsed() + delay >= WRITE_WINDOW {
+                    if at.elapsed() + delay >= self.write_window {
                         return Err(WalrusError::NotFound(what));
                     }
                     tracing::debug!(

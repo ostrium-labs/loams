@@ -43,8 +43,10 @@ One type, `Walrus`, built from the `[walrus]` config section.
     limit) is refused before upload with `WalrusError::TooLarge`.
   - Every write is read back through an aggregator, and its SHA-256
     checked, before `Ok`.
-  - A `404` within 60 s of this client's own write is retried with backoff,
-    because a CDN can cache a 404 just after certification.
+  - A `404` within `read_after_write_ms` (3 minutes by default) of this
+    client's own write is retried with exponential backoff capped at 10 s.
+    A CDN can cache a 404 just after certification, and public Testnet
+    aggregators were seen to lag past 60 s (ruling 1 of PR #1232).
   - With no publisher configured, a write answers
     `WalrusError::NoPublisher`. This is always the case on Mainnet unless
     you configure your own publisher (Q1330).
@@ -67,6 +69,7 @@ network = "testnet"             # "testnet" | "mainnet"; picks the defaults
 aggregators = ["https://aggregator.walrus-testnet.walrus.space"]
 publisher = "https://publisher.walrus-testnet.walrus.space"   # unset: the network's, if any
 publisher_auth = ""             # file holding a bearer token for your own publisher
+read_after_write_ms = 180000    # retry a 404 this long after a write
 epochs = 5
 hedge_after_ms = 300
 request_timeout_ms = 30000
@@ -99,6 +102,12 @@ cache_max_bytes = 4294967296
 | List a quilt's patches | `GET <aggregator>/v1/quilts/<quilt id>/patches` answers `[{"identifier","patch_id","tags"}]` |
 | Store a blob | `PUT <publisher>/v1/blobs?epochs=<n>[&permanent=true]` answers `{"newlyCreated":{"blobObject":{"id","blobId","size","storage":{"endEpoch"},…},…}}` or `{"alreadyCertified":{"blobId","event","endEpoch"}}` |
 | Store a quilt | `PUT <publisher>/v1/quilts?epochs=<n>[&permanent=true]`, `multipart/form-data` with one file field per identifier; it answers `{"blobStoreResult":…,"storedQuiltBlobs":[{"identifier","quiltPatchId"}]}` |
+
+`publisher_auth` sends the file's token as `Authorization: Bearer <token>`.
+This is **unverified against official docs; from community SDKs**:
+docs.wal.app doesn't document the header an authenticated publisher
+expects. The format comes from the iWalrusSDK blog and a Railway publisher
+template.
 
 Blobs are deletable by default since Walrus v1.33. The `deletable` flag is
 deprecated, and this client never sends it.

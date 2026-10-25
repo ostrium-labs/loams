@@ -37,6 +37,8 @@ fn plan_example_parses() {
     assert_eq!(w.max_blob_bytes, 10 << 20);
     assert_eq!(w.cache_max_bytes, 4 << 30);
     assert_eq!(w.hedge_after().as_millis(), 300);
+    // Not in the plan's example: ruling 1 of PR #1232 added it.
+    assert_eq!(w.read_after_write_ms, 180_000);
 }
 
 #[test]

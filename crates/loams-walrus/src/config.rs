@@ -18,6 +18,10 @@ pub const MAINNET_AGGREGATOR: &str = "https://aggregator.walrus-mainnet.walrus.s
 
 /// The public endpoints' request limit, 10 MiB.
 pub const DEFAULT_MAX_BLOB_BYTES: u64 = 10 << 20;
+/// How long after a write a `404` is retried by default: 3 minutes, since
+/// public Testnet aggregators were seen to lag past 60 s (ruling 1 of PR
+/// #1232).
+pub const DEFAULT_READ_AFTER_WRITE_MS: u64 = 180_000;
 /// The disk cache's default bound, 4 GiB.
 pub const DEFAULT_CACHE_MAX_BYTES: u64 = 4 << 30;
 /// The cache directory's name under the data directory.
@@ -66,6 +70,7 @@ impl Network {
 /// hedge_after_ms = 300
 /// request_timeout_ms = 30000
 /// max_blob_bytes = 10485760
+/// read_after_write_ms = 180000   # retry a 404 this long after a write
 /// cache_dir = ""               # default: <data dir>/walrus-cache
 /// cache_max_bytes = 4294967296
 /// ```
@@ -96,6 +101,9 @@ pub struct WalrusConfig {
     pub request_timeout_ms: u64,
     /// The largest blob read or written.
     pub max_blob_bytes: u64,
+    /// How long after this client's own write a `404` is retried, with
+    /// exponential backoff capped at 10 s (ruling 1 of PR #1232).
+    pub read_after_write_ms: u64,
     /// Where verified blobs are cached; see [`WalrusConfig::with_data_dir`].
     /// No cache when unset.
     #[serde(deserialize_with = "empty_is_none")]
@@ -116,6 +124,7 @@ impl Default for WalrusConfig {
             hedge_after_ms: 300,
             request_timeout_ms: 30_000,
             max_blob_bytes: DEFAULT_MAX_BLOB_BYTES,
+            read_after_write_ms: DEFAULT_READ_AFTER_WRITE_MS,
             cache_dir: None,
             cache_max_bytes: DEFAULT_CACHE_MAX_BYTES,
         }
@@ -158,6 +167,11 @@ impl WalrusConfig {
     /// `hedge_after_ms` as a duration.
     pub fn hedge_after(&self) -> Duration {
         Duration::from_millis(self.hedge_after_ms)
+    }
+
+    /// `read_after_write_ms` as a duration.
+    pub fn read_after_write(&self) -> Duration {
+        Duration::from_millis(self.read_after_write_ms)
     }
 
     /// `request_timeout_ms` as a duration.

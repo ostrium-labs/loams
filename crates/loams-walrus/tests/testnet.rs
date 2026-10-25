@@ -8,7 +8,21 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use bytes::Bytes;
-use loams_walrus::{ContentDigest, StoreOpts, Walrus, WalrusConfig};
+use loams_walrus::{ContentDigest, StoreOpts, Walrus, WalrusConfig, WalrusError};
+
+/// Unwraps a Testnet result; a blob still `404` after the read-after-write
+/// window (180 s by default) is named as Testnet aggregator lag.
+fn lagging<T>(r: Result<T, WalrusError>) -> T {
+    match r {
+        Ok(v) => v,
+        Err(WalrusError::NotFound(blob)) => panic!(
+            "Walrus Testnet aggregator lag: blob {blob} was stored but is still 404 \
+             after the {} ms read-after-write window",
+            WalrusConfig::default().read_after_write_ms
+        ),
+        Err(e) => panic!("{e}"),
+    }
+}
 
 #[tokio::test]
 #[ignore = "network: Walrus Testnet; set LOAMS_TEST_WALRUS_TESTNET=1"]
@@ -21,6 +35,7 @@ async fn testnet_round_trip() {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
+    // The default read-after-write window (180 s, ruling 1 of PR #1232).
     let cfg = WalrusConfig {
         request_timeout_ms: 120_000,
         ..WalrusConfig::testnet()
@@ -33,7 +48,7 @@ async fn testnet_round_trip() {
 
     // A blob: store (which reads back verified), read again, range read.
     let data = Bytes::from(format!("loams-walrus testnet probe {nanos}"));
-    let stored = w.store(data.clone(), opts).await.unwrap();
+    let stored = lagging(w.store(data.clone(), opts).await);
     eprintln!(
         "blob {} end_epoch {} new {}",
         stored.blob_id, stored.end_epoch, stored.newly_created
@@ -63,7 +78,7 @@ async fn testnet_round_trip() {
         .await
         .unwrap();
     assert_eq!(got, b);
-    let listed = w.list_patches(&quilt.blob.blob_id).await.unwrap();
+    let listed = lagging(w.list_patches(&quilt.blob.blob_id).await);
     let mut names: Vec<_> = listed.iter().map(|p| p.identifier.as_str()).collect();
     names.sort_unstable();
     assert_eq!(names, ["a.txt", "b.txt"]);

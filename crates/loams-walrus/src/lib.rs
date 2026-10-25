@@ -16,7 +16,9 @@
 //!   [`Unverified`].
 //! - [`Walrus::store`] and [`Walrus::store_quilt`] write through a
 //!   publisher, refuse bodies over `max_blob_bytes` before uploading, and
-//!   read the result back verified before answering `Ok`.
+//!   read the result back verified before answering `Ok`. A `404` within
+//!   `read_after_write_ms` of the write (a CDN's or a lagging aggregator's
+//!   stale answer) is retried with backoff.
 //! - [`VerifiedDiskCache`] keeps verified blobs on disk by sha256.
 //!
 //! Everything is off by default: a client built from a config with
@@ -40,8 +42,8 @@ use url::Url;
 
 pub use cache::VerifiedDiskCache;
 pub use config::{
-    CACHE_DIR_NAME, DEFAULT_CACHE_MAX_BYTES, DEFAULT_MAX_BLOB_BYTES, MAINNET_AGGREGATOR, Network,
-    Secret, TESTNET_AGGREGATOR, TESTNET_PUBLISHER, WalrusConfig,
+    CACHE_DIR_NAME, DEFAULT_CACHE_MAX_BYTES, DEFAULT_MAX_BLOB_BYTES, DEFAULT_READ_AFTER_WRITE_MS,
+    MAINNET_AGGREGATOR, Network, Secret, TESTNET_AGGREGATOR, TESTNET_PUBLISHER, WalrusConfig,
 };
 pub use error::{AttemptFailure, WalrusError};
 pub use types::{
@@ -49,12 +51,10 @@ pub use types::{
     Unverified,
 };
 
-/// How long after a write a `404` is taken for a CDN's stale answer and
-/// retried (docs.wal.app, "Reading blobs right after upload").
-const WRITE_WINDOW: Duration = Duration::from_secs(60);
-/// The first retry delay of such a read; it doubles up to `RETRY_MAX`.
+/// The first retry delay of a read just after a write; it doubles up to
+/// `RETRY_MAX` (ruling 1 of PR #1232).
 const RETRY_START: Duration = Duration::from_millis(250);
-const RETRY_MAX: Duration = Duration::from_secs(4);
+const RETRY_MAX: Duration = Duration::from_secs(10);
 
 /// The Walrus fast path: hedged, verified reads from aggregators, writes
 /// through a publisher, and an optional [`VerifiedDiskCache`].
@@ -73,6 +73,9 @@ struct Inner {
     timeout: Duration,
     max_blob_bytes: u64,
     epochs: u32,
+    /// How long after this client's write a `404` is retried
+    /// (`read_after_write_ms`).
+    write_window: Duration,
     cache: Option<VerifiedDiskCache>,
     /// Blob and patch ids this client wrote, and when.
     writes: Mutex<HashMap<String, Instant>>,
@@ -121,6 +124,7 @@ impl Walrus {
                 timeout: cfg.request_timeout(),
                 max_blob_bytes: cfg.max_blob_bytes,
                 epochs: cfg.epochs,
+                write_window: cfg.read_after_write(),
                 cache,
                 writes: Mutex::new(HashMap::new()),
             })),
@@ -151,7 +155,7 @@ impl Inner {
     fn note_write(&self, key: &str) {
         let now = Instant::now();
         let mut writes = self.writes.lock().unwrap_or_else(|p| p.into_inner());
-        writes.retain(|_, at| now.duration_since(*at) < WRITE_WINDOW);
+        writes.retain(|_, at| now.duration_since(*at) < self.write_window);
         writes.insert(key.to_string(), now);
     }
 
@@ -161,6 +165,6 @@ impl Inner {
         writes
             .get(key)
             .copied()
-            .filter(|at| at.elapsed() < WRITE_WINDOW)
+            .filter(|at| at.elapsed() < self.write_window)
     }
 }
