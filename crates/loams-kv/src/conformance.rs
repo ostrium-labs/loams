@@ -1165,18 +1165,17 @@ fn barrier_refusal(e: &KvError) -> Option<u64> {
 /// One GC round of the backend: the store's own GC on embedded, the
 /// cluster GC loop on TiKV.
 async fn gc_round(store: &Store) {
-    match store {
-        Store::Embedded(h) => {
-            h.gc_once().await.expect("a GC round");
-        }
-        #[cfg(feature = "tikv")]
-        Store::Tikv(t) => {
-            loams_tikv::GcLoop::new(t.clone(), loams_tikv::GcConfig::default())
-                .expect("a loop")
-                .run_once()
-                .await
-                .expect("a GC round");
-        }
+    if let Some(h) = store.as_embedded() {
+        h.gc_once().await.expect("a GC round");
+        return;
+    }
+    #[cfg(feature = "tikv")]
+    if let Some(t) = store.as_tikv() {
+        loams_tikv::GcLoop::new(t.clone(), loams_tikv::GcConfig::default())
+            .expect("a loop")
+            .run_once()
+            .await
+            .expect("a GC round");
     }
 }
 

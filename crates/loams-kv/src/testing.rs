@@ -81,7 +81,7 @@ pub async fn embedded() -> Store {
     let handle = crate::embedded::Handle::open_owning(config, dir)
         .await
         .expect("an embedded test store");
-    Store::Embedded(handle)
+    Store::from(handle)
 }
 
 /// A TiKV store on [`TEST_LIVE`] under a fresh random root, or `None` (and a
@@ -94,7 +94,7 @@ pub async fn embedded() -> Store {
 #[cfg(feature = "tikv")]
 pub async fn tikv() -> Option<Store> {
     let cluster = cluster().await?;
-    Some(Store::Tikv(cluster.connect(TEST_LIVE).await))
+    Some(Store::from(cluster.connect(TEST_LIVE).await))
 }
 
 /// What a conformance case asks a [`Factory`] for.

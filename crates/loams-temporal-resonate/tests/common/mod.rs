@@ -99,6 +99,7 @@ impl Names {
             run: "0f8fad5b-d9cb-469f-a165-70867728950e".into(),
             event_id: event,
             kind: TimeoutKind::StartToClose,
+            attempt: 1,
         }
         .encode()
     }

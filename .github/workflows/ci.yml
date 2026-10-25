@@ -75,6 +75,7 @@ jobs:
       sim: ${{ steps.filter.outputs.sim }}
       tikv: ${{ steps.filter.outputs.tikv }}
       live-embedded: ${{ steps.filter.outputs.live-embedded }}
+      iggy-sink: ${{ steps.filter.outputs.iggy-sink }}
       durable: ${{ steps.filter.outputs.durable }}
       temporal-store: ${{ steps.filter.outputs.temporal-store }}
       deny: ${{ steps.filter.outputs.deny }}
@@ -131,6 +132,8 @@ jobs:
               - "crates/**"
               - "proto/**"
               - "api/**"
+              # loams-agentd-marketplace compiles in the listing schema.
+              - "schemas/marketplace/**"
               - "clippy.toml"
               - "rustfmt.toml"
               # nextest's profile and per-test retries (Rust: tests).
@@ -203,6 +206,17 @@ jobs:
               - "deploy/tikv/**"
               - "scripts/tikv/**"
               - "proto/loams/**"
+            # loams_sink (FL1 Task 10): the crate, and the `kafka` profile whose
+            # image its integration tests run against.
+            iggy-sink:
+              - *toolchain
+              - "crates/loams-iggy-sink/**"
+              - "crates/loams-cloudevents/**"
+              - "deploy/release/compose.yaml"
+              - "deploy/release/.env.example"
+              - "deploy/release/config/kafka-guard.sh"
+              - "deploy/release/ci/iggy-sink-it.sh"
+              - "deploy/release/ci/compose.iggy-it.yaml"
             # LV1 plan Task 22: the store seam and the Live suites, which run
             # on the embedded store with no cluster.
             live-embedded:
@@ -1062,6 +1076,27 @@ jobs:
           LOAMS_CHECKER_SEEDS: "10"
           LOAMS_CHECKER_OPS: "2000"
         run: cargo test -p loams-kv -p loams-live -p loams-live-js -p loams-live-js-alloc --locked
+
+  # loams_sink (FL1 Task 10, design 32 5.10): its tests against the Iggy
+  # fork's image the `kafka` profile pins, with kcat records through the Kafka
+  # gateway and a restart of the Iggy container (deploy/release/ci/iggy-sink-it.sh).
+  iggy-sink:
+    name: "loams_sink: Iggy integration"
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.iggy-sink == 'true') && needs.changes.outputs.heavy != 'false' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
+      - name: unit and runner tests
+        run: cargo test -p loams-iggy-sink --locked --lib --test runner
+      - name: against the fork's Iggy image
+        run: deploy/release/ci/iggy-sink-it.sh --locked
 
   # The same suites every night, plus the nightly-only TiKV suites later R1
   # tasks add.
@@ -2817,6 +2852,7 @@ jobs:
       - tikv
       - tikv-nightly
       - live-embedded
+      - iggy-sink
       - durable
       - durable-tidb
       - temporal-store

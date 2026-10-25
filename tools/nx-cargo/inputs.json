@@ -18,6 +18,10 @@
         "loams-upgrade"
       ],
       "extra": {
+        "loams-agentd-marketplace": [
+          "proto/loams/marketplace/**",
+          "schemas/marketplace/**"
+        ],
         "loams-agentd-sessions": [
           "crates/README.md"
         ],
@@ -48,6 +52,16 @@
         "loams-sqlrouter": [
           "scripts/spec/check.sh",
           "spec/tla/router/**"
+        ],
+        "loams-temporal-history": [
+          "conformance/compute/temporal/corpus/**"
+        ],
+        "loams-temporal-proto": [
+          "NOTICE",
+          "conformance/compute/temporal/corpus/histories/**"
+        ],
+        "loams-temporal-testkit": [
+          "conformance/compute/temporal/corpus/**"
         ]
       },
       "tools": {
