@@ -30,13 +30,13 @@ extensions:
     endpoint: 0.0.0.0:13133
 exporters:
   clickhousetraces:
-    datasource: ${env:SIGNOZ_HOUSE_DSN}/signoz_traces
+    datasource: ${env:SIGNOZ_HOUSE_DSN}/signoz_traces?${env:SIGNOZ_HOUSE_DSN_OPTIONS}
     low_cardinal_exception_grouping: ${env:LOW_CARDINAL_EXCEPTION_GROUPING}
     use_new_schema: true
   signozclickhousemetrics:
-    dsn: ${env:SIGNOZ_HOUSE_DSN}/signoz_metrics
+    dsn: ${env:SIGNOZ_HOUSE_DSN}/signoz_metrics?${env:SIGNOZ_HOUSE_DSN_OPTIONS}
   clickhouselogsexporter:
-    dsn: ${env:SIGNOZ_HOUSE_DSN}/signoz_logs
+    dsn: ${env:SIGNOZ_HOUSE_DSN}/signoz_logs?${env:SIGNOZ_HOUSE_DSN_OPTIONS}
     timeout: 10s
     use_new_schema: true
 service:

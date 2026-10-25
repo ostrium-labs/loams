@@ -14,6 +14,10 @@ name: he0-signoz
 
 x-collector-env: &collector-env
   SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_DSN: tcp://clickhouse:9000
+  # The exporters' DSNs (otel-collector-config.yaml): the server, then the
+  # database, then options (compose.house.yaml sets TLS ones).
+  SIGNOZ_CH_BASE: tcp://clickhouse:9000
+  SIGNOZ_CH_OPTIONS: ""
   SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_CLUSTER: cluster
   SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_REPLICATION: "true"
   SIGNOZ_OTEL_COLLECTOR_TIMEOUT: 10m

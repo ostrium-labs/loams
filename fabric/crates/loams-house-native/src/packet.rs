@@ -44,6 +44,8 @@ pub mod server {
     pub const TOTALS: u64 = 7;
     /// `Extremes`.
     pub const EXTREMES: u64 = 8;
+    /// `TableColumns`.
+    pub const TABLE_COLUMNS: u64 = 11;
 }
 
 /// The client's `Hello`.
@@ -479,6 +481,99 @@ pub fn encode_profile_info(out: &mut Vec<u8>, info: &ProfileInfo) {
     out.push(1);
 }
 
+/// One column of a table as `TableColumns` describes it (`DESCRIBE TABLE`'s
+/// fields; empty ones are left out).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct TableColumn {
+    /// The name.
+    pub name: String,
+    /// The type.
+    pub type_name: String,
+    /// `DEFAULT`, `MATERIALIZED`, `ALIAS`, `EPHEMERAL` or empty.
+    pub default_kind: String,
+    /// The default's expression.
+    pub default_expression: String,
+    /// The comment.
+    pub comment: String,
+    /// The codec's expression, without `CODEC(…)`.
+    pub codec: String,
+    /// The TTL's expression.
+    pub ttl: String,
+}
+
+/// clickhouse-server's `ColumnsDescription::toString`: the text a `TableColumns`
+/// packet carries, which clickhouse-client parses for the defaults of omitted
+/// fields (`input_format_defaults_for_omitted_fields`).
+pub fn columns_description(columns: &[TableColumn]) -> String {
+    let mut out = format!("columns format version: 1\n{} columns:\n", columns.len());
+    for c in columns {
+        out.push('`');
+        for ch in c.name.chars() {
+            match ch {
+                '`' => out.push_str("\\`"),
+                '\\' => out.push_str("\\\\"),
+                _ => out.push(ch),
+            }
+        }
+        out.push_str("` ");
+        escape(&mut out, &c.type_name);
+        if !c.default_kind.is_empty() {
+            out.push('\t');
+            out.push_str(&c.default_kind);
+            if !c.default_expression.is_empty() {
+                out.push('\t');
+                escape(&mut out, &c.default_expression);
+            }
+        }
+        if !c.comment.is_empty() {
+            out.push_str("\tCOMMENT ");
+            let mut quoted = String::from("'");
+            for ch in c.comment.chars() {
+                match ch {
+                    '\'' => quoted.push_str("\\'"),
+                    '\\' => quoted.push_str("\\\\"),
+                    _ => quoted.push(ch),
+                }
+            }
+            quoted.push('\'');
+            escape(&mut out, &quoted);
+        }
+        if !c.codec.is_empty() {
+            out.push_str("\tCODEC(");
+            escape(&mut out, &c.codec);
+            out.push(')');
+        }
+        if !c.ttl.is_empty() {
+            out.push_str("\tTTL ");
+            escape(&mut out, &c.ttl);
+        }
+        out.push('\n');
+    }
+    out
+}
+
+/// ClickHouse's `writeEscapedString`: `\t`, `\n` and `\\` escaped, so a
+/// column stays one line.
+fn escape(out: &mut String, text: &str) {
+    for ch in text.chars() {
+        match ch {
+            '\t' => out.push_str("\\t"),
+            '\n' => out.push_str("\\n"),
+            '\\' => out.push_str("\\\\"),
+            _ => out.push(ch),
+        }
+    }
+}
+
+/// Appends a `TableColumns` (sent before an `INSERT`'s header from revision
+/// 54410, as clickhouse-server does): no external table name, then the
+/// description.
+pub fn encode_table_columns(out: &mut Vec<u8>, description: &str) {
+    put_varuint(out, server::TABLE_COLUMNS);
+    put_str(out, "");
+    put_str(out, description);
+}
+
 /// Appends a `Pong`.
 pub fn encode_pong(out: &mut Vec<u8>) {
     put_varuint(out, server::PONG);
@@ -662,6 +757,8 @@ pub enum ServerPacket {
     Pong,
     /// `EndOfStream`.
     EndOfStream,
+    /// `TableColumns`: the description.
+    TableColumns(String),
 }
 
 /// Decodes one server packet at `revision` (`Hello` by the client's
@@ -744,6 +841,10 @@ pub fn decode_server_packet_with(
         }
         server::PONG => ServerPacket::Pong,
         server::END_OF_STREAM => ServerPacket::EndOfStream,
+        server::TABLE_COLUMNS => {
+            r.bytes()?;
+            ServerPacket::TableColumns(r.string()?)
+        }
         other => return Err(Error::Malformed(format!("server packet type {other}"))),
     };
     Ok((packet, r.position()))
@@ -776,6 +877,35 @@ mod tests {
         let mut out = Vec::new();
         encode_hello(&mut out, &hello, 54460);
         assert!(out.ends_with(&hex("0c61653332656239623336303302")));
+    }
+
+    #[test]
+    fn table_columns_as_clickhouse_server_writes_them() {
+        let text = columns_description(&[
+            TableColumn {
+                name: "id".into(),
+                type_name: "UInt64".into(),
+                ..TableColumn::default()
+            },
+            TableColumn {
+                name: "s".into(),
+                type_name: "String".into(),
+                default_kind: "DEFAULT".into(),
+                default_expression: "'x'".into(),
+                comment: "it's".into(),
+                codec: "ZSTD(3)".into(),
+                ..TableColumn::default()
+            },
+        ]);
+        assert_eq!(
+            text,
+            "columns format version: 1\n2 columns:\n`id` UInt64\n`s` String\tDEFAULT\t'x'\tCOMMENT 'it\\\\'s'\tCODEC(ZSTD(3))\n"
+        );
+        let mut out = Vec::new();
+        encode_table_columns(&mut out, &text);
+        let (packet, used) = decode_server_packet(&out, 54460).expect("decodes");
+        assert_eq!(used, out.len());
+        assert_eq!(packet, ServerPacket::TableColumns(text));
     }
 
     #[test]

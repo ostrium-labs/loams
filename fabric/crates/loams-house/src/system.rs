@@ -636,6 +636,7 @@ pub async fn views(
             let at = table.metadata.last_updated_ms();
             crate::pipes::views_of(table)
                 .into_iter()
+                .chain(crate::refresh::refreshes_of(table))
                 .map(move |view| (view, at))
         })
         .collect();
@@ -1072,8 +1073,13 @@ async fn databases(ctx: ReadContext<'_>, shape: &[ShapeColumn]) -> Result<String
 
 /// `CREATE MATERIALIZED VIEW` as `system.tables.create_table_query` shows it.
 fn view_ddl(view: &crate::pipes::MaterializedView) -> String {
+    let refresh = view
+        .refresh
+        .as_ref()
+        .map(|r| format!(" {}", r.render()))
+        .unwrap_or_default();
     format!(
-        "CREATE MATERIALIZED VIEW {}.{} TO {}.{} AS {}",
+        "CREATE MATERIALIZED VIEW {}.{}{refresh} TO {}.{} AS {}",
         quote_name(&view.database),
         quote_name(&view.name),
         quote_name(&view.target_database),
