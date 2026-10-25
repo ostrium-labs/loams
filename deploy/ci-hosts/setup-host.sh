@@ -109,8 +109,10 @@ fi
 CLI_REPOS=()
 CLI_RUNNERS=
 if [[ ${SETUP_ENV_VERSION:-1} -lt 2 ]]; then
-  # Version 1 saved fixed per-runner sizes; version 2 sizes runners from RAM.
+  # Version 1 saved fixed per-runner sizes and one runner per repository;
+  # version 2 sizes runners from RAM and defaults to several loams runners.
   RUNNER_MEMORY='' RUNNER_JOBS='' RUNNER_MIN_FREE_GB=''
+  RUNNER_REPOS=()
 fi
 BUNDLE=
 ISSUE_NAME=
