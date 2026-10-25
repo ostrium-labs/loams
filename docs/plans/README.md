@@ -331,6 +331,7 @@ Design reference: [73 The Loams Agent Marketplace: Any Framework, Mastra First](
 | Plan | Scope | Depends on | Status |
 |---|---|---|---|
 | [MK1: the Loams Agent Marketplace](2026-10-21-mk1-agent-marketplace.md) (MK0 Tasks 0–11 fully specified; MK1–MK3 at milestone level) | **MK0** Mastra first, first-party only: listing schema v1 (framework-neutral); the `loams-listing` CLI; the signed static index in `ostrium-labs/loams-marketplace`; `MarketplaceService` in agentd with sources, verification and revocations; install plans and the agent environment contract; installers for `node` agents, harnesses and MCP servers; `@loams/agent-host`; the conformance runner (Core); console, Studio and CLI; first-party listings (about 9 engineer-weeks). **MK1** any framework and third-party, **MK2** more targets and kinds, **MK3** paid listings only if the owner decides | `@loams/mastra-resonate` 0.1.0; the owner creates `ostrium-labs/loams-marketplace`; FT0 Task 2 | Approved stub (owner, 2026-10-21) |
+| [MS1: the marketplace seed](2026-10-25-ms1-marketplace-seed.md) (Tasks 0, 1, 3 and 4 fully specified; 2 and 5–10 at task level; track MS, D1806–D1814, Q1330–Q1332) | **QuickJS** as the default self-hosted agent runtime (a spike on Live's isolated worker, then the `quickjs` runtime); Mastra on `node` with `engine: node \| bun`; **Goose** as a first-party ACP harness (`goose acp`); **Walrus** as a public read-only tier over HTTP (`loams-walrus`): artifact locations, a verifiable project knowledge cache, a build cache tier; publish tooling; end to end in Studio on a self-hosted node | MK0 Tasks 1–6 (merged) and 4b; agentd's model proxy (D1454) for Goose and QuickJS model calls; `loams-buildcache` (GT1 Tasks 68–71) for Task 8; Q1330 and Q1332 for Mainnet writes | Approved stub (owner, 2026-10-25) |
 
 ## Track SO: Loams SystemOne
 
@@ -455,6 +456,14 @@ Design reference: [79 Void and Vite+](../design/79-void-and-vite-plus.md) (D1770
 | Plan | Scope | Depends on | Status |
 |---|---|---|---|
 | [VV1: Void and Vite+](2026-10-23-vv1-void-and-vite-plus.md) (stub; VV0 Tasks 1–8 specified; VV1–VV3 at milestone level) | **VV0** spikes, no product code: one Void app compiled with Bun AOT against Node (startup, size); the console on Vite+, `@loams/app` ports through Void's Cloudflare bindings, shims around Void's `node` build on Lambda, the `node` image in compose, Hyperdrive to Loams Postgres over Tunnel and to TiDB Starter, one workspace `vite-plus` pin, the control plane on Void; **VV1** the toolchain (Vite+, Node 24, Oxlint and Oxfmt, the fallback lane, loams-site); **VV2** apps on Void inside AB0 and AB1; **VV3** options (`void-platform`, the control plane, the site, workerd) | §71 AB0 for VV2 | Approved (stub) |
+
+## Track CC: Confluent Cloud with BYOC
+
+Design reference: [80 Confluent Cloud with Loams BYOC](../design/80-confluent-byoc.md) (D1820–D1835, Q1333–Q1341; **Proposed** 2026-10-25). The owner asked on 2026-10-25 for Confluent Cloud with BYOC and a budget limit, using Ostrium's Confluent credits and the HashiCorp free tier. The track id is CC because CF is the console foundation's.
+
+| Plan | Scope | Depends on | Status |
+|---|---|---|---|
+| [CC1: Confluent Cloud with BYOC](2026-10-25-cc1-confluent-byoc.md) (CC0 and CC1 Tasks 0–11 fully specified; CC2 Tasks 12–16 at task level; CC3 at milestone level) | **CC0** rulings on the oracle cluster (exactly-once on Basic, latency, region listing, OAuth per type, EnvironmentAdmin's reach, Metrics API breakdowns, storage billing, cloud-side transfer prices). **CC1** `loams-fabric connect` and the `connectors` profile; the `confluent-cloud` profile and Kafka rate limits; Debezium decoding; `crates/loams-confluent`; region and price tables; Confluent keys through the cloud secret store; the `confluent` module and `aws-vm-confluent` example; `install.sh --kafka`; the guides; the nightly AWS + Basic round trip in `us-east-1` and its reaper. **CC2** the budget guard and ladder, spend surfaces, Ostrium's own guard and CI stop, the weekly Standard row, the site. **CC3** OAUTHBEARER and workload identity, Enterprise + PrivateLink, Google Cloud and Azure rows | BY1 (the VM modules, the fetcher, the AWS owner checklist); CN2's Kafka family (built) | **Approved** (owner, 2026-10-26, defaults); CC0 in progress |
 
 ## Later milestones
 
