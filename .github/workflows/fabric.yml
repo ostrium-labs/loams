@@ -266,7 +266,11 @@ jobs:
       # network namespace (HS1 R6.8), which Ubuntu 24.04's AppArmor refuses an
       # unprivileged process by default (`/proc/self/setgroups`: EACCES).
       - name: allow unprivileged user namespaces
-        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+        # Hosts without AppArmor's userns switch (the local runners' containers)
+        # have nothing to relax.
+        run: |
+          f=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+          if [ -e "$f" ]; then sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; else echo "no $f"; fi
       - name: tests
         working-directory: fabric
         run: cargo test --workspace --locked --no-fail-fast
@@ -284,7 +288,9 @@ jobs:
       # loams-connector-* family crate. Each runs its shared-fixture self-test first.
       # PyYAML reads the compose files (MIT; pinned here, unpinned in ci.yml).
       - name: PyYAML
-        run: python3 -m pip install --quiet --disable-pip-version-check PyYAML==6.0.2
+        # --user --break-system-packages: the local runners' Ubuntu Python is
+        # externally managed (PEP 668) and refuses a plain `pip install`.
+        run: python3 -m pip install --quiet --disable-pip-version-check --user --break-system-packages PyYAML==6.0.2
       - name: image licences (ci-service, user-supplied)
         run: |
           python3 scripts/connectors/image_licences.py --self-test
@@ -360,7 +366,11 @@ jobs:
       # The House's sealed workers enter their own user and network namespace
       # (HS1 R6.8), as in the fabric tests.
       - name: allow unprivileged user namespaces
-        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+        # Hosts without AppArmor's userns switch (the local runners' containers)
+        # have nothing to relax.
+        run: |
+          f=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+          if [ -e "$f" ]; then sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; else echo "no $f"; fi
       - name: openpanel_on_house_smoke
         env:
           HE0_HOUSE_BIN: fabric/target/debug
@@ -398,7 +408,16 @@ jobs:
         working-directory: fabric
         run: cargo build --locked -p loams-fabric -p loams-house-worker
       - name: allow unprivileged user namespaces
-        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+        # Hosts without AppArmor's userns switch (the local runners' containers)
+        # have nothing to relax.
+        run: |
+          f=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+          if [ -e "$f" ]; then sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; else echo "no $f"; fi
+      # pages.sh installs Playwright with npm: the GitHub-hosted image has Node,
+      # the local runners' image does not.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
       - name: langfuse_on_house_smoke
         env:
           HE0_HOUSE_BIN: fabric/target/debug
@@ -439,7 +458,11 @@ jobs:
         working-directory: fabric
         run: cargo build --locked -p loams-fabric -p loams-house-worker
       - name: allow unprivileged user namespaces
-        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+        # Hosts without AppArmor's userns switch (the local runners' containers)
+        # have nothing to relax.
+        run: |
+          f=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+          if [ -e "$f" ]; then sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; else echo "no $f"; fi
       - name: signoz_on_house_smoke
         env:
           HE0_HOUSE_BIN: fabric/target/debug

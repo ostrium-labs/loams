@@ -2773,7 +2773,12 @@ jobs:
         run: conformance/compute/selftest.sh
       - if: ${{ !cancelled() }} # report every check, not only the first failure
         name: PyYAML
-        run: python3 -m pip install --quiet --disable-pip-version-check PyYAML
+        # The local runners' Ubuntu Python is externally managed (PEP 668), so a
+        # plain `pip install` fails there; use the image's python3-yaml when it
+        # has one, else a user install.
+        run: |
+          python3 -c 'import yaml' 2>/dev/null && exit 0
+          python3 -m pip install --quiet --disable-pip-version-check --user --break-system-packages PyYAML
       - if: ${{ !cancelled() }} # report every check, not only the first failure
         name: nFPM
         run: |
