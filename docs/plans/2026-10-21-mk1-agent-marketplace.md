@@ -204,6 +204,37 @@ Read on 2026-10-23 at `origin/dev` `710f47078`.
    - the enum values (`"mcp-server"` is `KIND_MCP_SERVER`).
 8. **`github-attestation` provenance** is added beside §73 §6's types. Release archives attested with GitHub artifact attestations, such as `github/github-mcp-server` v2.0.3, are looked up by each file's SHA-256 at `https://api.github.com/repos/<owner>/<repo>/attestations/sha256:<digest>`, which needs no token. The lookup returns Sigstore bundles (v0.3) whose SLSA v1 predicate names `workflow.repository`, so they are checked exactly like npm provenance (Task 0 ruling 5). The GitHub MCP fixture carries v2.0.3's real checksums and commit.
 9. **Where the checks live.** The schema tests are in the new crate `crates/loams-agentd-marketplace`, which compiles the schema in (`listing::validate`), on the workspace's new `jsonschema` 0.58 dependency (MIT, the line `fabric/` already uses). CI's `rust` path filter gains `schemas/marketplace/**`. The invalid fixtures are one manifest, `testdata/invalid.json`: each case is a valid fixture plus a JSON-pointer patch that breaks one rule. The same manifest serves Task 2's lint tests.
+### Task 2 (2026-10-23)
+
+1. **Package.** The package is `@loams/listing` (private, Apache-2.0) at `agents/loams-listing`, with the bin `loams-listing` and one runtime dependency, `ajv` 8.20.0 (MIT, Draft 2020-12). It reads `schemas/marketplace/*.json` from the repository at run time, so the CLI and agentd always check the same schema. FT0 Task 1 had not merged, so this task adds `agents/*` to `pnpm-workspace.yaml` (ruling 10 of Task 0). It also adds `@loams/listing` to the npm licence gate's default projects, and `agents/**` and `schemas/marketplace/**` to the `web` path filter, whose Nx job runs the package's `typecheck` and `test`.
+2. **`lint` runs the schema first**, then the rules a schema cannot express. These are listed by `loams-listing rules`:
+   - `namespace-first-party`, only with `--first-party-only`, which is MK0's index policy;
+   - unique tool names, config names and environment variables, archive platforms and data scopes;
+   - `always_ask` names declared tools only;
+   - a tool's `mcp_server` is one of the listing's `mcp_servers`;
+   - a remote URL is one of its `server.json` remotes;
+   - the `server.json` and npm versions equal the listing's version;
+   - config never sets a variable of the environment contract (`LOAMS_*`, `HOME`, `TMPDIR`, the proxies, the model base URLs and keys, `PATH`, `NODE_OPTIONS`, `PYTHONPATH`);
+   - the Mastra profile is `node` with TypeScript or JavaScript;
+   - a first tool-poisoning check: instruction-like phrases, HTML comments, zero-width and bidirectional characters (§10.2).
+
+   Each issue has a rule, a severity and a JSON Pointer. Only `egress-declared` (egress tools but no hosts) is a warning.
+3. **`from-package` derives** these fields from `package.json`, and the `loams.agent` block may not set them:
+   - `version`, and `licence` (from `license`);
+   - `source` (`repository.url` normalised, `repository.directory`, the commit from `--commit` or `git rev-parse HEAD`);
+   - `artifact` (npm, with the integrity from `--tarball`, hashed, or `--integrity`; there is no default, because the listing pins exact bytes);
+   - `provenance` (the registry's attestations URL);
+   - `runtime` (`node` with `engines.node`, default `>=22.13`);
+   - `pricing`.
+
+   `title`, `summary`, `entrypoint` and the framework version fall back to `name`, `description`, `main` and the framework's dependency (for example `@mastra/core`). A remote MCP server has no package, so its listing is written by hand.
+4. **Index layout and format.** The input is `listings/<namespace>/<name>/versions/<version>/listing.json`, with an optional `yanked.json` (`{"reason"}`) beside it, and an optional `revocations.json` at the root. The output is two files, `index.json` and `revocations.json`, with schemas `schemas/marketplace/index.v1.json` and `revocations.v1.json`.
+   - **The index embeds every listing version in full.** One signature over `index.json` then covers every listing, and a client needs one fetch.
+   - Each version records `listing_sha256`, the SHA-256 of its canonical JSON.
+   - The index sets `tier`: `first-party` for `ostrium` and `loams`, `community` otherwise, until MK1 adds verification.
+   - It sets `latest`: the highest version that is neither yanked nor a prerelease, else the highest that is not yanked.
+   - The output is canonical (keys sorted at every level, ids and versions sorted, no timestamps), so the same tree always gives the same bytes. `--source-commit` records the index repository's commit.
+5. **Version ranges** in `mcp_servers[].version` and revocations use Cargo's `VersionReq` syntax (comma-separated comparators: `^2.0.0`, `>=0.1.0, <0.1.1`, `=2.0.3`, `*`), so agentd parses them with the `semver` crate unchanged.
 
 ### Owner approvals (2026-10-24)
 
