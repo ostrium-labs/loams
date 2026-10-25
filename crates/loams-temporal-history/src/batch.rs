@@ -2,6 +2,8 @@
 
 use prost::Message as _;
 
+use loams_temporal_proto::temporal::api::sdk::v1::UserMetadata;
+
 use crate::time::ts;
 use crate::{Attributes, HistoryEvent, MutableState, event_type};
 
@@ -69,6 +71,23 @@ impl<'a> Batch<'a> {
         self.state.history_size_bytes += event.encoded_len() as i64;
         self.events.push(event);
         event_id
+    }
+
+    /// Appends an event stamped with the batch's time that carries the
+    /// command's user metadata (a summary the SDK attached); returns its ID.
+    pub fn push_with_metadata(
+        &mut self,
+        user_metadata: Option<UserMetadata>,
+        attributes: Attributes,
+    ) -> i64 {
+        let id = self.push(attributes);
+        if user_metadata.is_some() {
+            let e = self.events.last_mut().expect("just pushed");
+            self.state.history_size_bytes -= e.encoded_len() as i64;
+            e.user_metadata = user_metadata;
+            self.state.history_size_bytes += e.encoded_len() as i64;
+        }
+        id
     }
 
     /// Appends an event that was buffered while a workflow task ran: it

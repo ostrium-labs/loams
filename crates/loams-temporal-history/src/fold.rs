@@ -133,7 +133,10 @@ fn close(s: &mut MutableState, e: &HistoryEvent, status: WorkflowExecutionStatus
     s.status = status as i32;
     s.completion_event_id = e.event_id;
     s.close_time = e.event_time;
+    // A closed run abandons what it still had outstanding.
     s.workflow_task = None;
+    s.activities.clear();
+    s.timers.clear();
 }
 
 fn apply(s: &mut MutableState, e: &HistoryEvent, a: &Attributes) -> Result<(), FoldError> {
