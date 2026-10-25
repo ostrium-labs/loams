@@ -9842,6 +9842,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-temporal-frontend"
+version = "0.1.1"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "hex",
+ "hmac 0.13.0",
+ "http",
+ "loams-temporal-history",
+ "loams-temporal-matching",
+ "loams-temporal-proto",
+ "loams-temporal-resonate",
+ "loams-temporal-statemachine",
+ "loams-temporal-store",
+ "loams-temporal-testkit",
+ "prost 0.14.4",
+ "prost-types",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tokio",
+ "tokio-stream",
+ "tonic 0.14.6",
+ "tonic-prost",
+ "tower 0.5.3",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "loams-temporal-history"
 version = "0.1.1"
 dependencies = [

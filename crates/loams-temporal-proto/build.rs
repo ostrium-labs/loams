@@ -38,6 +38,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .bytes(".")
         .build_server(true)
         .build_client(true)
+        // Methods outside the gateway's set answer UNIMPLEMENTED by default
+        // (the frontend also rewrites the message to link the matrix).
+        .generate_default_stubs(true)
         .file_descriptor_set_path(out_dir.join("temporal_descriptor.bin"))
         .include_file("_includes.rs")
         .compile_protos(&files, &[root])?;
