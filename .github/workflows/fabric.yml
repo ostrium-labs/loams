@@ -507,7 +507,7 @@ jobs:
           key: house-engine-oracle
       - name: build the dev server and the runner
         working-directory: fabric
-        run: cargo build --locked -p loams-house-engine --bin loams-house-engine-dev -p loams-house-mine
+        run: cargo build --locked -p loams-house-engine -p loams-house-mine --bin loams-house-engine-dev --bin loams-house-mine
       # The oracle as a container started here rather than a job service, so
       # the job runs on the self-hosted runners (Podman) as on GitHub's
       # (Docker). Its ports are the run's own, so concurrent runs and local

@@ -13,7 +13,7 @@
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$root/fabric"
-${BUILD_WRAPPER:-} cargo build --locked -j "${JOBS:-4}" -p loams-house-engine --bin loams-house-engine-dev -p loams-house-mine
+${BUILD_WRAPPER:-} cargo build --locked -j "${JOBS:-4}" -p loams-house-engine -p loams-house-mine --bin loams-house-engine-dev --bin loams-house-mine
 target="$(cargo metadata --format-version 1 --no-deps | python3 -I -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')/debug"
 cd "$root"
 export LOAMS_ORACLE_PASSWORD="${LOAMS_ORACLE_PASSWORD:-oracle}"
