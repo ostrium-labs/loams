@@ -8,15 +8,15 @@ idempotent command, [`deploy/ci-hosts/setup-host.sh`](../../deploy/ci-hosts/setu
 
 | Host | Role | Services |
 |---|---|---|
-| Laptop A (`loams-ci-a`, CachyOS, 14 cores, 15 GB) | primary | NativeLink scheduler + CAS + action cache + 1 worker; sccache store; runners for `ostrium-labs/loams` and `ostrium-labs/iggy` |
-| Laptop B (Linux Mint, 16 GB, 200 GB) | worker | NativeLink worker (joins A over the tailnet); a runner for `ostrium-labs/loams` |
+| Laptop A (`loams-ci-a`, CachyOS, 14 cores, 15 GB) | primary | NativeLink scheduler + CAS + action cache + 1 worker; sccache store; runners `loams-ci-a-loams-1..2` and `loams-ci-a-iggy` |
+| Laptop B (`keshav-dell-15-d15260`, Linux Mint, 14 cores, 15 GB) | worker | NativeLink worker (joins A over the tailnet); runners `<host>-loams-1..3` |
 
 | Service | Unit | Listens on | Auth | Cap |
 |---|---|---|---|---|
 | NativeLink clients (CAS, AC, ByteStream, Capabilities, Execution; instance `main`) | `loams-nativelink.service` | `127.0.0.1:50051`, `<tailnet-ip>:50051` | tailnet: mutual TLS | A: 20 GiB (CAS 15 + worker 4 + AC 1); B: 80 GiB worker store |
 | NativeLink workers + health | same | `127.0.0.1:50061`, `<tailnet-ip>:50061` | tailnet: mutual TLS | |
 | sccache store (dufs, WebDAV) | `loams-sccache-store.service` + `loams-sccache-evict.timer` | `127.0.0.1:50081`, `<tailnet-ip>:50081` | password | 8 GiB, LRU every 10 min |
-| GitHub runners | `~ci/.config/systemd/user/loams-runner-<repo>.service` | outbound only | GitHub registration | 10 GiB RAM each on A, 12 GiB on B |
+| GitHub runners | `~ci/.config/systemd/user/loams-runner-<repo>[-<i>].service` | outbound only | GitHub registration | A: 5 GiB and 5 cargo jobs each; B: 4.5 GiB and 4 jobs each |
 
 Nothing listens on `0.0.0.0` or the LAN; ufw opens the three ports on `tailscale0` only. The tailnet
 also has other people's devices, so the tailnet listeners need a credential too.
@@ -76,7 +76,7 @@ deploy/ci-hosts/status.sh --json
 journalctl -u loams-nativelink -f
 journalctl -u loams-ci-monitor        # the health report every 15 minutes
 sudo systemctl --user -M ci@ status 'loams-runner-*'
-sudo systemctl --user -M ci@ restart loams-runner-loams
+sudo systemctl --user -M ci@ restart loams-runner-loams-1
 ```
 
 `status.sh` needs no sudo: it checks the units, the health endpoints, the listening addresses,
@@ -93,12 +93,44 @@ timer logs the report and fails its unit on a problem, so `systemctl --failed` s
 | runner image | `/mnt/Projects/ci/containers` | ~1.5 GiB | rebuilt only when `deploy/ci-hosts` changes |
 
 Disk floor: a job refuses to start (with an error naming the host) when its filesystem has less
-than 10 GiB free on A, 30 GiB on B (`--min-free-gb`). On A, `/mnt/Projects` is shared with the
+than 5 GiB per loams runner on A (10 GiB), 10 GiB per runner on B (30 GiB); `--runner-disk-gb`
+sets the per-runner amount, `--min-free-gb` the total. On A, `/mnt/Projects` is shared with the
 owner's builds, and the shared Rust target dominates it, so A's caches are kept small (20 + 8 GiB)
 and the floor low. The work directories stay on `/mnt/Projects` (ext4) rather than `/`: the root
 filesystem is btrfs with snapper snapshots, which would keep deleted job output alive. A low-disk
 warning does not fail the health check; only failed checks do. When jobs fail with "Local CI host disk low", free disk or flip
 `CI_RUNNER=github`.
+
+## Several runners per laptop
+
+A pull request fans out to about 30 jobs, so each laptop runs several runners of
+`ostrium-labs/loams`: `--runners N` (or `--runner ostrium-labs/loams:N`) makes `<host>-loams-1..N`,
+units `loams-runner-loams-1..N.service`. Defaults: 2 on the primary (plus `<host>-iggy`), 3 on a
+worker. An unnumbered `<host>-loams` left from an older setup is retired: its unit stopped, its
+GitHub registration deleted (with `--gh-token-file`; otherwise GitHub drops it after 14 days
+offline) and its files removed.
+
+Sizing, so that N runners cannot exhaust the RAM: what is left after `--runner-reserve-gb` (5 GiB
+on A, whose owner works on it; 1.5 GiB on B) is split over the loams runners, rounded down to
+0.5 GiB, and each gets one cargo job per 1.25 GiB (`RUNNER_GB_PER_JOB`). On a 15 GiB laptop that is
+2 x 5 GiB with 4 jobs on A and 3 x 4.5 GiB with 3 jobs on B. Each container may also use swap up to
+half its cap, so a spike swaps instead of being OOM-killed. `--runner-memory` and `--runner-jobs`
+override; `sudo deploy/ci-hosts/setup-host.sh --dry-run ...` prints the plan without changing
+anything.
+
+Measured 2026-10-26 on A, in the runner image: `cargo test -p loams-query --no-run --locked`
+(DataFusion; sccache off) from an empty target. Peaks are cgroup memory, page cache included.
+
+| Cap | Swap | Jobs | Result |
+|---|---|---|---|
+| none | | 5 | ok, 399 s, peak 6.0 GiB |
+| 5 GiB | none | 5 | ok, 448 s (page cache reclaimed at the cap) |
+| 4.5 GiB | none | 4 | **rustc for `loams-proto` OOM-killed** |
+| 4.5 GiB | none | 3 | **rustc for `loams-proto` OOM-killed** |
+| 4.5 GiB | up to 6.75 GiB | 4 | ok, 751 s (1.9 GiB swapped; the host was busy) |
+
+The peak comes from one crate (`loams-proto`'s generated code needs about 4 GiB in one rustc), not
+from the number of jobs, so a cap below about 5 GiB needs the swap allowance; B has 32 GiB of swap.
 
 ## Runner self-healing
 
@@ -143,8 +175,8 @@ there is none, so remote caching must stay optional there.
 | Userland | Ubuntu 24.04 container (`deploy/ci-hosts/runner/Containerfile`): build-essential, clang/lld, protoc, Python, git, gh, docker CLI with buildx and compose |
 | User | root in the container (`sudo` works) = the `ci` user on the host |
 | `docker` | the `ci` user's rootless podman (service containers, `docker run`, compose) |
-| Rust | `CARGO_HOME`/`RUSTUP_HOME` shared and persistent; the toolchain follows `rust-toolchain.toml`; `RUSTC_WRAPPER=sccache`, `CARGO_INCREMENTAL=0`, `CARGO_BUILD_JOBS` 6 (A) / 10 (B) |
-| Limits | memory 10 GiB (A) / 12 GiB (B) per runner; `RLIMIT_MEMLOCK` unlimited and io_uring allowed (Iggy's real-server tests) |
+| Rust | `CARGO_HOME`/`RUSTUP_HOME` shared and persistent; the toolchain follows `rust-toolchain.toml`; `RUSTC_WRAPPER=sccache`, `CARGO_INCREMENTAL=0`, `CARGO_BUILD_JOBS` 5 (A) / 4 (B) |
+| Limits | memory 5 GiB (A) / 4.5 GiB (B) per runner, plus up to half that again in swap; `RLIMIT_MEMLOCK` unlimited and io_uring allowed (Iggy's real-server tests) |
 | Network | the host's (loopback services published by service containers are on `localhost`) |
 | `LOAMS_CI_HOST` | `loams-ci-a` or `loams-ci-b` |
 

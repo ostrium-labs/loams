@@ -151,6 +151,11 @@ for name in "${runners[@]}"; do
     add "runner $name" fail "not running (sudo systemctl --user -M $CI_USER@ status 'loams-runner-*')"
   fi
 done
+if ((${#runners[@]})); then
+  mem=$(sed -n 's/^RUNNER_MEMORY=//p' /etc/loams-ci/status.env 2>/dev/null)
+  jobs=$(sed -n 's/^RUNNER_JOBS=//p' /etc/loams-ci/status.env 2>/dev/null)
+  add "runner sizing" ok "${#runners[@]} runners, each ${mem:-?} memory and ${jobs:-?} cargo jobs; jobs need ${floor} GiB free"
+fi
 if [[ -f /etc/systemd/system/loams-ci-runner-heal.timer ]]; then
   st=$(systemctl is-active loams-ci-runner-heal.timer 2>/dev/null)
   last=$(systemctl show -p Result --value loams-ci-runner-heal.service 2>/dev/null)
