@@ -497,14 +497,6 @@ jobs:
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.house-engine == 'true') }}
     runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 45
-    services:
-      clickhouse:
-        image: docker.io/clickhouse/clickhouse-server:26.9.2.8@sha256:7b9a0b6e9ab7ef79db5c4f8a9808f880258704eb7b4af9309f9029c16e727a80
-        ports: ["28123:8123"]
-        env:
-          CLICKHOUSE_USER: oracle
-          CLICKHOUSE_PASSWORD: oracle
-          CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "0"
     steps:
       - uses: actions/checkout@v7
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -516,18 +508,43 @@ jobs:
       - name: build the dev server and the runner
         working-directory: fabric
         run: cargo build --locked -p loams-house-engine --bin loams-house-engine-dev -p loams-house-mine
+      # The oracle as a container started here rather than a job service, so
+      # the job runs on the self-hosted runners (Podman) as on GitHub's
+      # (Docker). Its ports are the run's own, so concurrent runs and local
+      # oracles on a shared machine never collide.
+      - name: the oracle (clickhouse-server 26.9.2.8)
+        run: |
+          oracle_port=$((30000 + RANDOM % 10000)); engine_port=$((oracle_port + 10000))
+          echo "ORACLE_PORT=$oracle_port" >> "$GITHUB_ENV"; echo "ENGINE_PORT=$engine_port" >> "$GITHUB_ENV"
+          runtime="$(command -v docker || command -v podman)"
+          "$runtime" rm -f "he1-oracle-${{ github.run_id }}" >/dev/null 2>&1 || true
+          "$runtime" run -d --name "he1-oracle-${{ github.run_id }}" -p "127.0.0.1:$oracle_port:8123" \
+            -e CLICKHOUSE_USER=oracle -e CLICKHOUSE_PASSWORD=oracle -e CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=0 \
+            --ulimit nofile=262144:262144 \
+            docker.io/clickhouse/clickhouse-server:26.9.2.8@sha256:7b9a0b6e9ab7ef79db5c4f8a9808f880258704eb7b4af9309f9029c16e727a80
+          for _ in $(seq 1 90); do curl -fsS "http://127.0.0.1:$oracle_port/ping" >/dev/null 2>&1 && exit 0; sleep 1; done
+          "$runtime" logs "he1-oracle-${{ github.run_id }}" | tail -n 50
+          exit 1
       - name: the oracle on the Rust engine
         env:
           LOAMS_ORACLE_PASSWORD: oracle
         run: |
           target="$(cd fabric && cargo metadata --format-version 1 --no-deps | jq -r .target_directory)/debug"
-          for _ in $(seq 1 60); do curl -fsS http://127.0.0.1:28123/ping >/dev/null && break; sleep 1; done
-          "$target/loams-house-engine-dev" --listen 127.0.0.1:28126 >engine-dev.log 2>&1 &
-          for _ in $(seq 1 30); do curl -fsS http://127.0.0.1:28126/ping >/dev/null && break; sleep 1; done
-          "$target/loams-house-mine" oracle --only house-rust --case he1- --check
+          "$target/loams-house-engine-dev" --listen "127.0.0.1:$ENGINE_PORT" >engine-dev.log 2>&1 &
+          echo $! > engine-dev.pid
+          for _ in $(seq 1 30); do curl -fsS "http://127.0.0.1:$ENGINE_PORT/ping" >/dev/null && break; sleep 1; done
+          "$target/loams-house-mine" oracle --only house-rust --case he1- --check \
+            --target-url "clickhouse-server@26.9=http://127.0.0.1:$ORACLE_PORT/" \
+            --target-url "house-rust=http://127.0.0.1:$ENGINE_PORT/"
       - name: the dev server's log on failure
         if: failure()
         run: tail -n 100 engine-dev.log || true
+      - name: stop the oracle and the dev server
+        if: always()
+        run: |
+          [ -f engine-dev.pid ] && kill "$(cat engine-dev.pid)" 2>/dev/null || true
+          runtime="$(command -v docker || command -v podman)"
+          "$runtime" rm -f "he1-oracle-${{ github.run_id }}" >/dev/null 2>&1 || true
 
   # CN2 owns this job (plan 2026-10-10-cn2-connectors, Task 4): the connector
   # SDK alone, the crate every native connector family builds on. It needs no
