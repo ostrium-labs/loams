@@ -727,7 +727,8 @@ mod tests {
 
     #[test]
     fn heartbeat_origin_is_the_prefix() {
-        assert_eq!(origin("act:n:w:r:1:1"), "act");
+        // X1.R13: the origin is the run, so one heartbeat covers a run.
+        assert_eq!(origin("n.w.r:act.5.1"), "n.w.r");
         assert_eq!(origin("plain"), "plain");
     }
 }

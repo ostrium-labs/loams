@@ -46,6 +46,15 @@ crate = "stringmetrics"
 expression = "Apache-2.0"
 license-files = [{ path = "LICENSE", hash = 0x0fb72a18 }]
 
+# borrow-or-share (via fluent-uri -> referencing -> jsonschema 0.58, which
+# loams-agentd-marketplace's listing validator pulls in, MK1 Task 1) is MIT-0:
+# OSI-approved MIT without the attribution clause. fabric/deny.toml allows
+# MIT-0 for the same crate (CN1 Task 1); here it is admitted for this one crate
+# only, not added to the allow list.
+[[licenses.exceptions]]
+crate = "borrow-or-share"
+allow = ["MIT-0"]
+
 [bans]
 multiple-versions = "allow"
 wildcards = "deny"

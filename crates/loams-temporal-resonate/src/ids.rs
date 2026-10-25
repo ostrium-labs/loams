@@ -1,21 +1,35 @@
-//! Deterministic promise IDs (§74 §5.4, D1503).
+//! Deterministic promise IDs (§74 §5.4, D1503, as amended by X1.R13).
 //!
 //! ```text
-//! wft:{ns}:{wf}:{run}:{scheduled_event_id}
-//! act:{ns}:{wf}:{run}:{scheduled_event_id}:{attempt}
-//! tmr:{ns}:{wf}:{run}:{started_event_id}
-//! to:{ns}:{wf}:{run}:{event_id}:{kind}        kind ∈ s2s | s2c | sc2c | hb | wft
-//! start:{ns}:{schedule_id}:{nominal_time_unix_ms}
+//! origin = <ns>.<wf>.<run>                               no ':'; one per workflow run
+//! wft    = <origin>:wft.<scheduled_event_id>
+//! act    = <origin>:act.<scheduled_event_id>.<attempt>
+//! tmr    = <origin>:tmr.<started_event_id>
+//! to     = <origin>:to.<event_id>.<kind>.<attempt>      kind ∈ s2s | s2c | sc2c | hb | wft
+//! start  = <ns>.<schedule_id>.<nominal_time_unix_ms>    no ':'
 //! ```
 //!
-//! - `{ns}` is `<loams-ns-id>.<temporal-ns-id>` (X1.R9). It, `{wf}`, `{run}`
-//!   and `{schedule_id}` are percent-encoded: every byte except ASCII letters,
-//!   digits, `-`, `.`, `_` and `~` is written `%XX` (upper-case hex), so `:`
-//!   and `%` never appear raw and every ID is ASCII. For the ULIDs and UUIDs
-//!   the gateway puts in `{ns}` and `{run}` the encoding is the identity.
-//! - Event IDs, attempts and the nominal time are canonical decimal.
+//! Resonate calls the text before an ID's first `:` its **origin**: on the
+//! blob and TiKV stores one origin is one document, rewritten by
+//! compare-and-set on every change, and `task.heartbeat` takes tasks of one
+//! origin only. So the origin is the workflow run: everything of a run
+//! shares one document and nothing else does, and one heartbeat covers a
+//! run. Every run-scoped ID has exactly one `:` (the Postgres store refuses
+//! more), and `start` has none: it is the ID Resonate's schedule template
+//! `<ns>.<schedule_id>.{{.timestamp}}` makes (FW7 profile §8.0).
+//!
+//! - `<ns>` is `<loams-ns-id>.<temporal-ns-id>` (X1.R9), first, so a token
+//!   prefix can scope a tenant. `<wf>`, `<run>` and `<schedule_id>` are
+//!   percent-encoded: every byte except ASCII letters, digits, `-`, `_` and
+//!   `~` is written `%XX` (upper-case hex), so `.`, `:` and `%` never appear
+//!   raw and every ID is ASCII. `<ns>` is encoded the same way but keeps its
+//!   `.`; the origin is split at its last two `.`, so parsing is exact. For
+//!   the ULIDs and UUIDs the gateway uses the encoding is the identity.
+//! - Event IDs, attempts and the nominal time are canonical decimal. A `to`
+//!   ID carries the attempt, so attempt 2's start-to-close timeout is a
+//!   different promise from attempt 1's.
 //! - **Length.** When the encoded ID is longer than [`MAX_PROMISE_ID_LEN`],
-//!   `{wf}` becomes `h` + 32 lower-case hex characters (the first 16 bytes of
+//!   `<wf>` becomes `h` + 32 lower-case hex characters (the first 16 bytes of
 //!   SHA-256 of the raw workflow ID) and the raw workflow ID goes in the tag
 //!   `loams:wf`. A raw workflow ID whose encoding would itself read as
 //!   `h` + 32 hex has its leading `h` written `%68`, so the two forms never
@@ -23,7 +37,7 @@
 //!   [`WorkflowRef::Hash`], which cannot give the raw ID back (read it from
 //!   the promise's `loams:wf` tag).
 //! - **Tags.** Every promise carries `loams:ns`, `loams:kind` and, except
-//!   `start:`, `loams:run`, each with the raw (decoded) value.
+//!   `start`, `loams:run`, each with the raw (decoded) value.
 //!
 //! [`PromiseId::parse`] accepts only the canonical form, so
 //! `parse(encode(x)) == x` and `encode(parse(s)) == s` (the `ids_roundtrip`
@@ -35,11 +49,9 @@ use std::fmt;
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, percent_decode_str, utf8_percent_encode};
 use sha2::{Digest, Sha256};
 
-/// The longest promise ID the gateway creates, in bytes. Resonate's MySQL and
-/// TiDB stores hold IDs in `VARCHAR(255)` (31ffb201,
-/// `resonate-server-mysql/migrations/0001_initial.sql`); SQLite and Postgres
-/// have no limit and the protocol validates none. Taken as 255 until FW7
-/// states the profile's value (D1591).
+/// The longest promise ID the gateway creates, in bytes: the FW7 profile's
+/// limit (MySQL and TiDB hold IDs in `VARCHAR(255)`; the other stores allow
+/// more).
 pub const MAX_PROMISE_ID_LEN: usize = 255;
 
 /// Tag: the Loams namespace joined with the Temporal namespace (raw).
@@ -51,17 +63,15 @@ pub const TAG_KIND: &str = "loams:kind";
 /// Tag: the raw workflow ID, only when the ID carries its hash.
 pub const TAG_WF: &str = "loams:wf";
 
-/// Everything but the URI unreserved characters is escaped.
-const ENCODE: &AsciiSet = &NON_ALPHANUMERIC
-    .remove(b'-')
-    .remove(b'.')
-    .remove(b'_')
-    .remove(b'~');
+/// A segment: everything but letters, digits, `-`, `_` and `~` is escaped.
+const ENC_SEG: &AsciiSet = &NON_ALPHANUMERIC.remove(b'-').remove(b'_').remove(b'~');
+/// The namespace: as a segment, but its `.` stays raw.
+const ENC_NS: &AsciiSet = &ENC_SEG.remove(b'.');
 
 /// The tags a promise carries.
 pub type Tags = BTreeMap<String, String>;
 
-/// Which Temporal timeout a `to:` promise stands for.
+/// Which Temporal timeout a `to` promise stands for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum TimeoutKind {
     /// Activity schedule-to-start.
@@ -182,13 +192,15 @@ pub enum PromiseId {
         run: String,
         started_event_id: i64,
     },
-    /// One timeout of the event `event_id`.
+    /// One timeout of one attempt of the event `event_id` (an activity's or
+    /// workflow task's scheduled event).
     To {
         ns: String,
         wf: WorkflowRef,
         run: String,
         event_id: i64,
         kind: TimeoutKind,
+        attempt: i32,
     },
     /// One firing of a Temporal schedule (DX4).
     Start {
@@ -201,11 +213,18 @@ pub enum PromiseId {
 /// Why a string is not a gateway promise ID.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum IdError {
-    #[error("unknown promise-ID prefix in {0:?}")]
-    UnknownPrefix(String),
-    #[error("{id:?}: expected {expected} ':'-separated segments, found {found}")]
-    Segments {
+    #[error("{0:?}: more than one ':'")]
+    Colons(String),
+    #[error("{0:?}: the origin is not <ns>.<wf>.<run> (or <ns>.<schedule>.<time>)")]
+    Origin(String),
+    #[error("{id:?}: unknown kind {kind:?}")]
+    UnknownKind { id: String, kind: String },
+    #[error(
+        "{id:?}: kind {kind} takes {expected} '.'-separated parts after the ':', found {found}"
+    )]
+    Parts {
         id: String,
+        kind: String,
         expected: usize,
         found: usize,
     },
@@ -222,7 +241,11 @@ pub enum IdError {
 }
 
 fn enc(raw: &str) -> String {
-    utf8_percent_encode(raw, ENCODE).to_string()
+    utf8_percent_encode(raw, ENC_SEG).to_string()
+}
+
+fn enc_ns(raw: &str) -> String {
+    utf8_percent_encode(raw, ENC_NS).to_string()
 }
 
 fn is_hash_form(s: &str) -> bool {
@@ -248,7 +271,8 @@ fn hash_segment(h: &[u8; 16]) -> String {
     format!("h{}", hex::encode(h))
 }
 
-fn dec(id: &str, seg: &str) -> Result<String, IdError> {
+/// Decode `seg`, accepting it only if `encode` gives it back.
+fn dec_with(id: &str, seg: &str, encode: fn(&str) -> String) -> Result<String, IdError> {
     let non_canonical = || IdError::NonCanonical {
         id: id.to_string(),
         segment: seg.to_string(),
@@ -257,7 +281,7 @@ fn dec(id: &str, seg: &str) -> Result<String, IdError> {
         .decode_utf8()
         .map_err(|_| non_canonical())?
         .into_owned();
-    if enc(&raw) != seg {
+    if encode(&raw) != seg {
         return Err(non_canonical());
     }
     Ok(raw)
@@ -272,18 +296,7 @@ fn dec_wf(id: &str, seg: &str) -> Result<WorkflowRef, IdError> {
         })?;
         return Ok(WorkflowRef::Hash(out));
     }
-    let non_canonical = || IdError::NonCanonical {
-        id: id.to_string(),
-        segment: seg.to_string(),
-    };
-    let raw = percent_decode_str(seg)
-        .decode_utf8()
-        .map_err(|_| non_canonical())?
-        .into_owned();
-    if enc_wf(&raw) != seg {
-        return Err(non_canonical());
-    }
-    Ok(WorkflowRef::Id(raw))
+    dec_with(id, seg, enc_wf).map(WorkflowRef::Id)
 }
 
 fn num<T: std::str::FromStr + ToString>(id: &str, seg: &str) -> Result<T, IdError> {
@@ -298,9 +311,18 @@ fn num<T: std::str::FromStr + ToString>(id: &str, seg: &str) -> Result<T, IdErro
     Ok(v)
 }
 
+/// `a.b.c` split at its last two `.`: `(a, b, c)`, where `a` may hold `.`.
+fn split3(id: &str, origin: &str) -> Result<(String, String, String), IdError> {
+    let mut parts = origin.rsplitn(3, '.');
+    match (parts.next(), parts.next(), parts.next()) {
+        (Some(c), Some(b), Some(a)) => Ok((a.to_string(), b.to_string(), c.to_string())),
+        _ => Err(IdError::Origin(id.to_string())),
+    }
+}
+
 impl PromiseId {
-    /// `wft`, `act`, `tmr`, `to` or `start`: the ID's prefix and its
-    /// `loams:kind` tag.
+    /// `wft`, `act`, `tmr`, `to` or `start`: the `loams:kind` tag (and,
+    /// except `start`, the first word after the `:`).
     pub fn kind(&self) -> &'static str {
         match self {
             PromiseId::Wft { .. } => "wft",
@@ -346,46 +368,40 @@ impl PromiseId {
 
     /// The ID with `wf` written as `wf_seg`.
     fn render(&self, wf_seg: &str) -> String {
+        let origin = |ns: &str, run: &str| format!("{}.{wf_seg}.{}", enc_ns(ns), enc(run));
         match self {
             PromiseId::Wft {
                 ns,
                 run,
                 scheduled_event_id,
                 ..
-            } => format!("wft:{}:{wf_seg}:{}:{scheduled_event_id}", enc(ns), enc(run)),
+            } => format!("{}:wft.{scheduled_event_id}", origin(ns, run)),
             PromiseId::Act {
                 ns,
                 run,
                 scheduled_event_id,
                 attempt,
                 ..
-            } => format!(
-                "act:{}:{wf_seg}:{}:{scheduled_event_id}:{attempt}",
-                enc(ns),
-                enc(run)
-            ),
+            } => format!("{}:act.{scheduled_event_id}.{attempt}", origin(ns, run)),
             PromiseId::Tmr {
                 ns,
                 run,
                 started_event_id,
                 ..
-            } => format!("tmr:{}:{wf_seg}:{}:{started_event_id}", enc(ns), enc(run)),
+            } => format!("{}:tmr.{started_event_id}", origin(ns, run)),
             PromiseId::To {
                 ns,
                 run,
                 event_id,
                 kind,
+                attempt,
                 ..
-            } => format!("to:{}:{wf_seg}:{}:{event_id}:{kind}", enc(ns), enc(run)),
+            } => format!("{}:to.{event_id}.{kind}.{attempt}", origin(ns, run)),
             PromiseId::Start {
                 ns,
                 schedule_id,
                 nominal_time_unix_ms,
-            } => format!(
-                "start:{}:{}:{nominal_time_unix_ms}",
-                enc(ns),
-                enc(schedule_id)
-            ),
+            } => format!("{}.{}.{nominal_time_unix_ms}", enc_ns(ns), enc(schedule_id)),
         }
     }
 
@@ -428,72 +444,94 @@ impl PromiseId {
         Ok((id, tags))
     }
 
+    /// The origin Resonate sees (the text before the `:`): the run's
+    /// `<ns>.<wf>.<run>`, or the whole ID for `start`.
+    pub fn origin(&self) -> String {
+        let (id, _) = self.encode();
+        match id.split_once(':') {
+            Some((o, _)) => o.to_string(),
+            None => id,
+        }
+    }
+
     /// Parse a gateway promise ID in canonical form (module docs).
     pub fn parse(id: &str) -> Result<PromiseId, IdError> {
-        let segs: Vec<&str> = id.split(':').collect();
+        let Some((origin, lineage)) = id.split_once(':') else {
+            let (ns, schedule, time) = split3(id, id)?;
+            return Ok(PromiseId::Start {
+                ns: dec_with(id, &ns, enc_ns)?,
+                schedule_id: dec_with(id, &schedule, enc)?,
+                nominal_time_unix_ms: num(id, &time)?,
+            });
+        };
+        if lineage.contains(':') {
+            return Err(IdError::Colons(id.to_string()));
+        }
+        let (ns, wf, run) = split3(id, origin)?;
+        let ns = dec_with(id, &ns, enc_ns)?;
+        let wf = dec_wf(id, &wf)?;
+        let run = dec_with(id, &run, enc)?;
+        let parts: Vec<&str> = lineage.split('.').collect();
         let want = |n: usize| {
-            if segs.len() == n {
+            if parts.len() == n {
                 Ok(())
             } else {
-                Err(IdError::Segments {
+                Err(IdError::Parts {
                     id: id.to_string(),
-                    expected: n,
-                    found: segs.len(),
+                    kind: parts[0].to_string(),
+                    expected: n - 1,
+                    found: parts.len() - 1,
                 })
             }
         };
-        match segs[0] {
+        match parts[0] {
             "wft" => {
-                want(5)?;
+                want(2)?;
                 Ok(PromiseId::Wft {
-                    ns: dec(id, segs[1])?,
-                    wf: dec_wf(id, segs[2])?,
-                    run: dec(id, segs[3])?,
-                    scheduled_event_id: num(id, segs[4])?,
+                    ns,
+                    wf,
+                    run,
+                    scheduled_event_id: num(id, parts[1])?,
                 })
             }
             "act" => {
-                want(6)?;
+                want(3)?;
                 Ok(PromiseId::Act {
-                    ns: dec(id, segs[1])?,
-                    wf: dec_wf(id, segs[2])?,
-                    run: dec(id, segs[3])?,
-                    scheduled_event_id: num(id, segs[4])?,
-                    attempt: num(id, segs[5])?,
+                    ns,
+                    wf,
+                    run,
+                    scheduled_event_id: num(id, parts[1])?,
+                    attempt: num(id, parts[2])?,
                 })
             }
             "tmr" => {
-                want(5)?;
+                want(2)?;
                 Ok(PromiseId::Tmr {
-                    ns: dec(id, segs[1])?,
-                    wf: dec_wf(id, segs[2])?,
-                    run: dec(id, segs[3])?,
-                    started_event_id: num(id, segs[4])?,
+                    ns,
+                    wf,
+                    run,
+                    started_event_id: num(id, parts[1])?,
                 })
             }
             "to" => {
-                want(6)?;
-                let kind = TimeoutKind::parse(segs[5]).ok_or_else(|| IdError::TimeoutKind {
+                want(4)?;
+                let kind = TimeoutKind::parse(parts[2]).ok_or_else(|| IdError::TimeoutKind {
                     id: id.to_string(),
-                    kind: segs[5].to_string(),
+                    kind: parts[2].to_string(),
                 })?;
                 Ok(PromiseId::To {
-                    ns: dec(id, segs[1])?,
-                    wf: dec_wf(id, segs[2])?,
-                    run: dec(id, segs[3])?,
-                    event_id: num(id, segs[4])?,
+                    ns,
+                    wf,
+                    run,
+                    event_id: num(id, parts[1])?,
                     kind,
+                    attempt: num(id, parts[3])?,
                 })
             }
-            "start" => {
-                want(4)?;
-                Ok(PromiseId::Start {
-                    ns: dec(id, segs[1])?,
-                    schedule_id: dec(id, segs[2])?,
-                    nominal_time_unix_ms: num(id, segs[3])?,
-                })
-            }
-            _ => Err(IdError::UnknownPrefix(id.to_string())),
+            other => Err(IdError::UnknownKind {
+                id: id.to_string(),
+                kind: other.to_string(),
+            }),
         }
     }
 }
@@ -523,7 +561,7 @@ mod tests {
             started_event_id: 1,
         };
         let (s, _) = id.encode();
-        assert_eq!(s, format!("tmr:n:%68{}:r:1", "0".repeat(32)));
+        assert_eq!(s, format!("n.%68{}.r:tmr.1", "0".repeat(32)));
         assert_eq!(PromiseId::parse(&s).unwrap(), id);
     }
 }

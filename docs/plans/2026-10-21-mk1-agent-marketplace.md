@@ -179,8 +179,106 @@ Read on 2026-10-23 at `origin/dev` `710f47078`.
 9. **Node for the `node` runtime** (Q1122). agentd already resolves `node` for npm harness adapters (`adapter_install.rs`, `executable::find_on_paths` with the node-version-manager scan). The `node` installer reuses that resolution and refuses a Node older than the listing's `runtime.version` (default `>=22.13`). Installing a pinned Node archive when none is found is left to Task 6's ruling.
 10. **The `agents/*` workspace** (FT0 Task 1) is not on `dev` yet. If it has not merged when Task 2 starts, Task 2 adds the one `agents/*` line to `pnpm-workspace.yaml` itself, so the FT1 work only has to rebase.
 
+### Task 1 (2026-10-23)
+
+1. **Kind-specific blocks.** A listing keeps the fields shared by every kind at the top level: identity, `artifact`, `provenance`, `runtime`, `entrypoint`, `tools`, `place` and `config`. Two nested blocks carry what only one kind has. `harness` holds `launch { protocol, command, args }`, `auth`, `models` and, for native harnesses, `native_adapter`, which is agentd's harness wire name. `mcp_server` holds the embedded `server.json`, `mode` (`local` or `remote`), `args`, `remote_url` and `transport`. The schema forbids the other kinds' blocks.
+2. **The MCP server's Loams block is the listing itself** (refines §73 §3.7). The embedded `server.json` is kept byte-for-byte; the tool risks, egress and Place template are the listing's own top-level `tools` and `place`. When the index is served as an MCP-Registry subregistry (MK2), the build writes them into `_meta."dev.loams/listing"`. This keeps one reader for every kind in agentd.
+3. **Rules the schema enforces:**
+   - an agent serves `acp` or `a2a`;
+   - each runtime takes one artifact type (`node`/`npm`, `python`/`pypi`, `oci`/`oci`, `binary`/`archive`);
+   - every artifact needs `provenance`;
+   - npm integrity is `sha512-…`, and pypi and oci integrity is `sha256:<hex>`;
+   - archives carry a SHA-256 per platform and no top-level integrity;
+   - a native harness is first-party only (`ostrium/` or `loams/`) and has no artifact, while an ACP harness has one;
+   - a remote MCP server has `remote_url`, speaks `streamable-http` and installs nothing;
+   - a secret config input has no `default`;
+   - only `enum` inputs list `values`;
+   - `pricing` is `free`.
+4. **Fields added beyond §73 §3.6:** `source.path` (a package inside a monorepo), `config[].env` (the variable the value is passed in), `conformance.report_sha256`, and a `bucket` data scope beside databases, collections and streams. Budgets are `cost.budget_usd_per_run` and `cost.budget_usd_per_day`.
+5. **Not in the listing:** `tier` and `yanked`. The index sets them (Task 2), because an author cannot claim them.
+6. **`pricing` is a one-value enum** (`"free"`), not a `const`, so the proto has an equal `Pricing` enum.
+7. **The proto–schema check is structural.** Each object schema names its message in `x-proto-message` and each enum names its proto enum in `x-proto-enum`. `proto_and_schema_agree` checks:
+   - field names in both directions;
+   - that arrays are `repeated`;
+   - the field types (message, enum, scalar, `Struct` for embedded documents, `Value` for `default`);
+   - the enum values (`"mcp-server"` is `KIND_MCP_SERVER`).
+8. **`github-attestation` provenance** is added beside §73 §6's types. Release archives attested with GitHub artifact attestations, such as `github/github-mcp-server` v2.0.3, are looked up by each file's SHA-256 at `https://api.github.com/repos/<owner>/<repo>/attestations/sha256:<digest>`, which needs no token. The lookup returns Sigstore bundles (v0.3) whose SLSA v1 predicate names `workflow.repository`, so they are checked exactly like npm provenance (Task 0 ruling 5). The GitHub MCP fixture carries v2.0.3's real checksums and commit.
+9. **Where the checks live.** The schema tests are in the new crate `crates/loams-agentd-marketplace`, which compiles the schema in (`listing::validate`), on the workspace's new `jsonschema` 0.58 dependency (MIT, the line `fabric/` already uses). CI's `rust` path filter gains `schemas/marketplace/**`. The invalid fixtures are one manifest, `testdata/invalid.json`: each case is a valid fixture plus a JSON-pointer patch that breaks one rule. The same manifest serves Task 2's lint tests.
+### Task 2 (2026-10-23)
+
+1. **Package.** The package is `@loams/listing` (private, Apache-2.0) at `agents/loams-listing`, with the bin `loams-listing` and one runtime dependency, `ajv` 8.20.0 (MIT, Draft 2020-12). It reads `schemas/marketplace/*.json` from the repository at run time, so the CLI and agentd always check the same schema. FT0 Task 1 had not merged, so this task adds `agents/*` to `pnpm-workspace.yaml` (ruling 10 of Task 0). It also adds `@loams/listing` to the npm licence gate's default projects, and `agents/**` and `schemas/marketplace/**` to the `web` path filter, whose Nx job runs the package's `typecheck` and `test`.
+2. **`lint` runs the schema first**, then the rules a schema cannot express. These are listed by `loams-listing rules`:
+   - `namespace-first-party`, only with `--first-party-only`, which is MK0's index policy;
+   - unique tool names, config names and environment variables, archive platforms and data scopes;
+   - `always_ask` names declared tools only;
+   - a tool's `mcp_server` is one of the listing's `mcp_servers`;
+   - a remote URL is one of its `server.json` remotes;
+   - the `server.json` and npm versions equal the listing's version;
+   - config never sets a variable of the environment contract (`LOAMS_*`, `HOME`, `TMPDIR`, the proxies, the model base URLs and keys, `PATH`, `NODE_OPTIONS`, `PYTHONPATH`);
+   - the Mastra profile is `node` with TypeScript or JavaScript;
+   - a first tool-poisoning check: instruction-like phrases, HTML comments, zero-width and bidirectional characters (§10.2).
+
+   Each issue has a rule, a severity and a JSON Pointer. Only `egress-declared` (egress tools but no hosts) is a warning.
+3. **`from-package` derives** these fields from `package.json`, and the `loams.agent` block may not set them:
+   - `version`, and `licence` (from `license`);
+   - `source` (`repository.url` normalised, `repository.directory`, the commit from `--commit` or `git rev-parse HEAD`);
+   - `artifact` (npm, with the integrity from `--tarball`, hashed, or `--integrity`; there is no default, because the listing pins exact bytes);
+   - `provenance` (the registry's attestations URL);
+   - `runtime` (`node` with `engines.node`, default `>=22.13`);
+   - `pricing`.
+
+   `title`, `summary`, `entrypoint` and the framework version fall back to `name`, `description`, `main` and the framework's dependency (for example `@mastra/core`). A remote MCP server has no package, so its listing is written by hand.
+4. **Index layout and format.** The input is `listings/<namespace>/<name>/versions/<version>/listing.json`, with an optional `yanked.json` (`{"reason"}`) beside it, and an optional `revocations.json` at the root. The output is two files, `index.json` and `revocations.json`, with schemas `schemas/marketplace/index.v1.json` and `revocations.v1.json`.
+   - **The index embeds every listing version in full.** One signature over `index.json` then covers every listing, and a client needs one fetch.
+   - Each version records `listing_sha256`, the SHA-256 of its canonical JSON.
+   - The index sets `tier`: `first-party` for `ostrium` and `loams`, `community` otherwise, until MK1 adds verification.
+   - It sets `latest`: the highest version that is neither yanked nor a prerelease, else the highest that is not yanked.
+   - The output is canonical (keys sorted at every level, ids and versions sorted, no timestamps), so the same tree always gives the same bytes. `--source-commit` records the index repository's commit.
+5. **Version ranges** in `mcp_servers[].version` and revocations use Cargo's `VersionReq` syntax (comma-separated comparators: `^2.0.0`, `>=0.1.0, <0.1.1`, `=2.0.3`, `*`), so agentd parses them with the `semver` crate unchanged.
+
+### Task 3 (2026-10-24)
+
+1. **Two repositories.** The checks that need code are `loams-listing verify`, here in `agents/loams-listing`. `ostrium-labs/loams-marketplace` holds:
+   - the layout, `revocations.json` and the README;
+   - `validate.yml`, `publish.yml` and `self-test.yml`;
+   - the scripts: `setup-cli.sh`, `changed-listings.sh`, `check-signed.sh` and `report.mjs`;
+   - `tests/self-test.sh` with its fixtures.
+
+   It builds `loams-listing` from this repository at the commit pinned in `.github/loams-ref`, a sparse, shallow fetch of `agents/loams-listing`, `schemas/marketplace` and the root lockfile, installed with `pnpm install --frozen-lockfile --filter @loams/listing --ignore-scripts`. A schema or tooling change reaches the index only when that pin moves. Nothing was cloned locally: the files went to `loams-marketplace` through the GitHub API.
+2. **`verify`** does the following:
+   - **npm:** it resolves `/<name>/<version>` on the registry, requires `dist.integrity` to equal the listing's, downloads the tarball and hashes it again, then reads the attestations.
+   - **Archives:** it downloads each platform file and checks its SHA-256. With `github-attestation` it looks the digest up in the repository's attestations API; with `sigstore-bundle` it reads the bundle URL.
+   - **Provenance:** a SLSA v1 bundle must cover the bytes (`sha512` for npm, `sha256` for archives) and name the listing's `source.repository` in `workflow.repository`. It must verify cryptographically through `sigstore` 5.0.0 (sigstore-js, Apache-2.0, the public-good trusted root through TUF). It must be signed by a GitHub Actions or GitLab issuer, with a certificate SAN that is a workflow of that same repository.
+   - **No artifact:** remote MCP servers and native harnesses pass.
+   - **Not yet verified:** `pypi` and `oci` fail until MK1 and MK2.
+
+   It was checked live on 2026-10-24: `sigstore@3.1.0` passes, and the same package listed under another source repository fails `provenance`. The network fetcher refuses non-https URLs and bodies over 512 MiB. The Node engine range follows `sigstore` 5: `^22.22.2 || ^24.15.0 || >=26`; the index workflows use Node 24.
+3. **Published versions are immutable.** `changed-listings.sh` passes only added `listing.json` files; a change or deletion fails, with a pointer to `yanked.json` or a new version.
+4. **Amends Task 0 ruling 5: no stored provenance copies in MK0.** The verified bundles are uploaded as the pull request's `listing-report` artifact, not committed, and agentd fetches provenance from the registry at install time (Task 6). Copies beside each listing, for installs without registry access, are deferred.
+5. **The report** is a Markdown table per added version, written to the job summary and posted as one updated pull-request comment. The comment is posted only for pull requests from this repository, which are all of them in MK0. **LAPC Core is not in `validate.yml` yet**; the report says so, and Task 8 adds the step.
+6. **Publishing.** `publish.yml` runs on `main` and does the following:
+   - builds with `--first-party-only --source-commit $GITHUB_SHA`;
+   - signs both files with `cosign sign-blob --bundle` (cosign v3.0.6, keyless);
+   - runs `check-signed.sh`, which verifies both bundles against the pinned identity and refuses a missing or wrong signature (`unsigned_publish_fails` and `wrongly_signed_publish_fails` in `self-test.sh`);
+   - uploads the `marketplace-index` artifact (90 days) for `loams-site`;
+   - deploys GitHub Pages. GitHub Pages must be enabled with the "GitHub Actions" source.
 ### Owner approvals (2026-10-24)
 
 The owner approved the pending decisions below on 2026-10-24 ("approve all with your recommendations").
 
 - **The official index stays on GitHub Pages for now.** D1461's move to `loams.dev/marketplace` comes later. **Approved (owner, 2026-10-24).**
+
+### Status (2026-10-24, paused by the owner)
+
+| Task | State | Where |
+|---|---|---|
+| 0 | Merged | #1126 |
+| 1 | This PR | `mk0-t1-listing-schema`. `loams.marketplace.v1` is a data-model package: added to design 44 §7.2 and to the facade generator's `NOT_SDK_PACKAGES`, so no SDK lists it |
+| 2 | Built and tested (23 vitest tests), unmerged | branch `mk0-t2-listing-cli`, stacked on Task 1 |
+| 3 | Built and tested, unmerged | branch `mk0-t3-index-ci` (`loams-listing verify`, 35 vitest tests, checked live against npm), and `ostrium-labs/loams-marketplace` PR #1 (workflows, scripts, self-tests; `self-test` green). Its `.github/loams-ref` must move to Task 3's merge commit before it merges. GitHub Pages is enabled (Actions source) |
+| 4 | Built and tested (`cargo test -p loams-agentd-marketplace`), unmerged | branch `mk0-t4-marketplace-service`: `marketplace.proto`; sources, signed index (real Sigstore verification, `sigstore-verify` 0.14.0), revocations, search. Daemon wiring is the follow-up Task 4b (ruling 7 of Task 4) |
+| 5 | Built and tested, unmerged | branch `mk0-t5-install-plan`: `plan.rs` (consent plan, digest, widening) and `contract.rs` (environment, token rotation, MCP config, Postgres role) |
+| 6 | Built and tested (53 crate tests in all, real npm provenance), unmerged | branch `mk0-t6-installers`: `provenance.rs` and `install.rs` (npm installs with scripts off, script and lockfile refusal, uninstall keeps data, harness and MCP registrations). Registering them in agentd's `HarnessRegistry` and MCP runs (`harness_descriptor_appears_in_list_harnesses`, `mcp_server_available_to_threads`) waits for Task 4b's daemon wiring |
+| 4b, 7–11 | Not started | Task 7 also waits for `@loams/mastra-resonate` on npm (Task 0 ruling 2) |
+
+Each branch is stacked on the one before. To resume, merge Task 1, rebase each branch onto `dev` in order, and open one PR per task. Label Tasks 3, 4 and 6 `review:greptile`.

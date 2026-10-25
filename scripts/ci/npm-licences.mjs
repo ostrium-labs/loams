@@ -3,8 +3,8 @@
 //
 //   npm-licences.mjs [--project <nx project>…] [--input <pnpm licenses json>…] [--exceptions <file>]
 //
-// Runs `pnpm --filter <project>... licenses list --prod --json` for the console, the desktop and
-// @loams/studio-ui (and the workspace packages they depend on), and checks every production
+// Runs `pnpm --filter <project>... licenses list --prod --json` for the console, the desktop,
+// @loams/studio-ui and @loams/listing (and the workspace packages they depend on), and checks every production
 // dependency against CONTRIBUTING rule 3: the allow list in deny.toml, and nothing else. It
 // parses SPDX expressions, accepts an `OR` expression when one branch is allowed (and records
 // the branch taken), and fails on anything
@@ -23,6 +23,7 @@ export const DEFAULT_PROJECTS = [
   '@loams/desktop',
   '@loams/studio-ui',
   '@loams/factory',
+  '@loams/listing',
 ];
 const DEFAULT_EXCEPTIONS = join(HERE, 'npm-licences.exceptions.json');
 
