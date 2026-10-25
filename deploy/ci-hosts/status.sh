@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Health check for a Loams local CI host (docs/guides/local-ci.md).
 #
-#   deploy/ci-hosts/status.sh             report; exit 1 when something is wrong
+#   deploy/ci-hosts/status.sh             report; exit 1 when a check fails (warnings,
+#                                         such as low disk, are reported but exit 0)
 #   deploy/ci-hosts/status.sh --json      the same as one JSON object
 #   deploy/ci-hosts/status.sh --github    also ask GitHub whether the runners are online (gh)
 #
@@ -10,6 +11,8 @@
 # every 15 minutes. Never prints a secret.
 set -uo pipefail
 
+# setup-host.sh records the host's data root and the jobs' disk floor here.
+DATA_ROOT=${DATA_ROOT:-$(sed -n 's/^DATA_ROOT=//p' /etc/loams-ci/status.env 2>/dev/null)}
 DATA_ROOT=${DATA_ROOT:-/mnt/Projects/ci}
 CI_USER=${CI_USER:-ci}
 SIZES=/run/loams-ci/sizes
@@ -26,9 +29,14 @@ done
 
 rows=()
 problems=0
+warnings=0
 add() {
   rows+=("$1|$2|$3")
-  [[ $2 == ok ]] || problems=$((problems + 1))
+  case $2 in
+    ok) ;;
+    warn) warnings=$((warnings + 1)) ;;
+    *) problems=$((problems + 1)) ;;
+  esac
 }
 
 # Size of a directory in GiB (one decimal), or empty when unknown.
@@ -62,14 +70,21 @@ cache() {
   fi
 }
 
-# Disk: the data root's filesystem and /.
+# Disk: the data root's filesystem and / (once each), against the jobs' floor.
+floor=$(sed -n 's/^MIN_FREE_GB=//p' /etc/loams-ci/status.env 2>/dev/null)
+floor=${floor:-10}
+seen=
 for fs in "$DATA_ROOT" /; do
   [[ -e $fs ]] || continue
+  mnt=$(df --output=target "$fs" | tail -n1)
+  [[ " $seen " == *" $mnt "* ]] && continue
+  seen+=" $mnt"
   free=$(df -BG --output=avail "$fs" | tail -n1 | tr -dc '0-9')
   pct=$(df --output=pcent "$fs" | tail -n1 | tr -dc '0-9')
-  mnt=$(df --output=target "$fs" | tail -n1)
-  if ((free < 20)); then
-    add "disk $mnt" warn "${free} GiB free (${pct}% used): local CI jobs refuse to start below the runner's floor"
+  if [[ $fs == "$DATA_ROOT" ]] && ((free < floor)); then
+    add "disk $mnt" warn "${free} GiB free (${pct}% used): local CI jobs refuse to start below ${floor} GiB"
+  elif ((free < 5)); then
+    add "disk $mnt" warn "${free} GiB free (${pct}% used)"
   else
     add "disk $mnt" ok "${free} GiB free (${pct}% used)"
   fi
@@ -136,6 +151,15 @@ for name in "${runners[@]}"; do
     add "runner $name" fail "not running (sudo systemctl --user -M $CI_USER@ status 'loams-runner-*')"
   fi
 done
+if [[ -f /etc/systemd/system/loams-ci-runner-heal.timer ]]; then
+  st=$(systemctl is-active loams-ci-runner-heal.timer 2>/dev/null)
+  last=$(systemctl show -p Result --value loams-ci-runner-heal.service 2>/dev/null)
+  if [[ $st == active && ${last:-success} == success ]]; then
+    add "runner self-healing" ok "timer active, last run ${last:-not yet}"
+  else
+    add "runner self-healing" fail "timer $st, last run $last (journalctl -u loams-ci-runner-heal)"
+  fi
+fi
 cache "runner work + caches" "$DATA_ROOT/runners" ""
 cache "tool/cargo/rustup cache" "$DATA_ROOT/cache" ""
 cache "runner images" "$DATA_ROOT/containers" ""
@@ -156,7 +180,7 @@ bad=$(ss -Hltn 2>/dev/null | awk '{print $4}' | grep -E ':(50051|50061|50071|500
 if [[ -z $bad ]]; then add "bind addresses" ok "loopback + tailnet only"; else add "bind addresses" fail "unexpected: $(echo "$bad" | tr '\n' ' ')"; fi
 
 if ((JSON)); then
-  printf '{"host":"%s","time":"%s","ok":%s,"checks":[' "$(hostname -s)" "$(date -u +%FT%TZ)" "$( ((problems == 0)) && echo true || echo false)"
+  printf '{"host":"%s","time":"%s","ok":%s,"warnings":%d,"checks":[' "$(hostname -s)" "$(date -u +%FT%TZ)" "$( ((problems == 0)) && echo true || echo false)" "$warnings"
   sep=
   for r in "${rows[@]}"; do
     IFS='|' read -r name state detail <<<"$r"
