@@ -446,9 +446,9 @@ The owner set the direction for the marketplace's first part, the **seed**, on 2
 | D1809 | **Goose** is a first-party ACP harness (`goose acp`), a process and not a library, under the environment contract | — (§3.7, D1464) | Approved (owner, 2026-10-25) |
 | D1810 | **Walrus** is a public, read-only tier, off by default, for public data only: artifacts, project knowledge, the build cache. The bucket stays the truth (D1); never a `Store` backend | — | Approved (owner, 2026-10-25) |
 | D1811 | The Walrus **fast path**: HTTP only, hedged reads, SHA-256 on every read, a local verified cache, no Sui; Testnet first | — | Approved (owner, 2026-10-25) |
-| D1812 | A `walrus` artifact location beside the npm or archive one; Sigstore provenance still verified; the index stays metadata-only | D1455 (§3.6), within D1460 (§5) | Proposed |
-| D1813 | A read-only verifiable project knowledge cache: a quilt per commit, a signed manifest in the bucket, `knowledge.get` and `knowledge.search` in agentd's MCP shim | — | Proposed |
-| D1814 | A Walrus build cache tier after the bucket, with D398's trust classes and a signed key manifest in the bucket | D398 (§36 §8), additive | Proposed |
+| D1812 | A `walrus` artifact location beside the npm or archive one; Sigstore provenance still verified; the index stays metadata-only | D1455 (§3.6), within D1460 (§5) | Approved (owner, 2026-10-25) |
+| D1813 | A read-only verifiable project knowledge cache: a quilt per commit, a signed manifest in the bucket, `knowledge.get` and `knowledge.search` in agentd's MCP shim | — | Approved (owner, 2026-10-25) |
+| D1814 | A Walrus build cache tier after the bucket, with D398's trust classes and a signed key manifest in the bucket | D398 (§36 §8), additive | Approved (owner, 2026-10-25) |
 
 Open questions: **Q1330** (Mainnet writes: an own publisher or the Upload Relay), **Q1331** (the knowledge cache's content set), **Q1332** (who pays for and renews storage epochs). The full rows are in the [decision log](13-decision-log.md).
 
