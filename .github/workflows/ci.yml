@@ -492,6 +492,10 @@ jobs:
       # dev once stopped building with `--features git` and no fast-tier job noticed (GT1 T18.4).
       - name: clippy (loams with the tikv, graph, product and optional listener features)
         run: cargo clippy -p loams --all-targets --features tikv,live-tikv,durable-tikv,stream-grpc,pgwire,mysql-wire,graph,git,buildcache,registry,sqldb,postgres --locked -- -D warnings
+      # loams-gateway's Temporal API module (design 74, plan DX1 Task 9) is
+      # behind its own feature.
+      - name: clippy (loams-gateway temporal module)
+        run: cargo clippy -p loams-gateway --features temporal --all-targets --locked -- -D warnings
       # The release images build `loams` with these feature sets (deploy/release/Containerfile.*);
       # `postgres,tikv` turns on loams-kv's TiKV store without loams-live's `tikv`, a combination
       # nothing else here builds (v0.1.0-preview.2's loams-pg-control image broke on it).
