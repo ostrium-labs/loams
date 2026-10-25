@@ -31,7 +31,7 @@ buffa-types = { package = "buffa-types", version = "=0.9.2", default-features = 
 bytes = { package = "bytes", version = "=1.12.1", default-features = true, features = ["serde", "std"] }
 bytesize = { package = "bytesize", version = "=2.7.0", default-features = true, features = ["std"] }
 chrono = { package = "chrono", version = "=0.4.45", default-features = true, features = ["alloc", "clock", "iana-time-zone", "js-sys", "now", "oldtime", "serde", "std", "wasm-bindgen", "wasmbind", "winapi", "windows-link"] }
-clap = { package = "clap", version = "=4.6.7", default-features = true, features = ["color", "derive", "env", "error-context", "help", "std", "suggestions", "usage"] }
+clap = { package = "clap", version = "=4.6.7", default-features = true, features = ["color", "derive", "env", "error-context", "help", "std", "suggestions", "usage", "wrap_help"] }
 connectrpc = { package = "connectrpc", version = "=0.9.1", default-features = true, features = ["axum", "client", "gzip", "json", "server", "zstd"] }
 connectrpc-build = { package = "connectrpc-build", version = "=0.9.0", default-features = false }
 connectrpc-health = { package = "connectrpc-health", version = "=0.9.0", default-features = false }
@@ -47,7 +47,7 @@ fnv = { package = "fnv", version = "=1.0.7", default-features = true, features =
 foyer = { package = "foyer", version = "=0.22.6", default-features = true, features = ["runtime-tokio"] }
 futures = { package = "futures", version = "=0.3.34", default-features = true, features = ["alloc", "async-await", "executor", "futures-executor", "std"] }
 gethostname = { package = "gethostname", version = "=1.1.0", default-features = false }
-getrandom = { package = "getrandom", version = "=0.3.4", default-features = false, features = ["std"] }
+getrandom = { package = "getrandom", version = "=0.3.4", default-features = false, features = ["std", "wasm_js"] }
 gix-attributes = { package = "gix-attributes", version = "=0.36.0", default-features = false }
 gix-blame = { package = "gix-blame", version = "=0.18.0", default-features = false, features = ["sha1"] }
 gix-commitgraph = { package = "gix-commitgraph", version = "=0.40.0", default-features = false }
@@ -77,8 +77,10 @@ httpmock = { package = "httpmock", version = "=0.8.3", default-features = false,
 humantime = { package = "humantime", version = "=2.4.0", default-features = false }
 hyper = { package = "hyper", version = "=1.12.0", default-features = true, features = ["client", "http1", "http2", "server"] }
 hyper-util = { package = "hyper-util", version = "=0.1.21", default-features = true, features = ["client", "client-legacy", "client-proxy", "client-proxy-system", "http1", "http2", "server", "server-auto", "server-graceful", "service", "tokio"] }
+iggy = { package = "iggy", version = "=0.11.1-edge.2", default-features = false }
 ignore = { package = "ignore", version = "=0.4.33", default-features = false }
 itertools = { package = "itertools", version = "=0.15.0", default-features = true, features = ["use_alloc", "use_std"] }
+jsonschema = { package = "jsonschema", version = "=0.58.6", default-features = false }
 jsonwebtoken = { package = "jsonwebtoken", version = "=10.4.0", default-features = true, features = ["aws-lc-rs", "aws_lc_rs", "pem", "simple_asn1", "use_pem"] }
 kafka-protocol = { package = "kafka-protocol", version = "=0.18.0", default-features = false }
 keyring = { package = "keyring", version = "=4.2.0", default-features = true, features = ["apple-native-keyring-store", "v1", "windows-native-keyring-store", "zbus-secret-service-keyring-store"] }
@@ -101,11 +103,12 @@ openfga-client = { package = "openfga-client", version = "=0.6.1", default-featu
 openraft = { package = "openraft", version = "=0.10.0-alpha.34", default-features = false, features = ["serde", "tokio-rt"] }
 parquet = { package = "parquet", version = "=58.4.0", default-features = false, features = ["arrow", "arrow-array", "arrow-buffer", "arrow-data", "arrow-ipc", "arrow-schema", "arrow-select", "async", "base64", "futures", "lz4", "lz4_flex", "object_store", "snap", "tokio", "zstd"] }
 percent-encoding = { package = "percent-encoding", version = "=2.3.2", default-features = true, features = ["alloc", "std"] }
-portable-pty = { package = "portable-pty", version = "=0.8.1", default-features = true }
+portable-pty = { package = "portable-pty", version = "=0.9.0", default-features = true }
 postcard = { package = "postcard", version = "=1.1.3", default-features = true, features = ["alloc", "heapless", "heapless-cas", "use-std"] }
 proptest = { package = "proptest", version = "=1.12.0", default-features = true, features = ["bit-set", "fork", "regex-syntax", "rusty-fork", "std", "tempfile", "timeout"] }
 prost = { package = "prost", version = "=0.14.4", default-features = true, features = ["derive", "std"] }
 prost-build = { package = "prost-build", version = "=0.14.4", default-features = true, features = ["cleanup-markdown", "format"] }
+prost-reflect = { package = "prost-reflect", version = "=0.16.5", default-features = false, features = ["miette", "serde", "text-format"] }
 prost-types = { package = "prost-types", version = "=0.14.4", default-features = true, features = ["std"] }
 pulldown-cmark = { package = "pulldown-cmark", version = "=0.12.2", default-features = true, features = ["getopts", "html", "pulldown-cmark-escape"] }
 qdrant-edge = { package = "qdrant-edge", version = "=0.8.0", default-features = false }
@@ -131,21 +134,23 @@ roaring = { package = "roaring", version = "=0.11.5", default-features = true, f
 rquickjs = { package = "rquickjs", version = "=0.14.0", default-features = false, features = ["array-buffer", "loader", "properties", "std"] }
 rusqlite = { package = "rusqlite", version = "=0.32.1", default-features = false, features = ["backup", "bundled", "modern_sqlite"] }
 rustc-hash = { package = "rustc-hash", version = "=2.1.3", default-features = true, features = ["std"] }
-rustix = { package = "rustix", version = "=1.1.5", default-features = true, features = ["alloc", "event", "fs", "net", "param", "pipe", "process", "std", "system", "thread", "time"] }
-rustls = { package = "rustls", version = "=0.23.46", default-features = false, features = ["aws-lc-rs", "aws_lc_rs", "log", "logging", "ring", "std", "tls12"] }
+rustix = { package = "rustix", version = "=1.1.5", default-features = true, features = ["alloc", "event", "fs", "net", "param", "pipe", "process", "std", "system", "termios", "thread", "time"] }
+rustls = { package = "rustls", version = "=0.23.46", default-features = true, features = ["aws-lc-rs", "aws_lc_rs", "log", "logging", "prefer-post-quantum", "ring", "std", "tls12"] }
 schemars = { package = "schemars", version = "=0.8.22", default-features = true, features = ["chrono", "derive", "indexmap", "indexmap2", "preserve_order", "schemars_derive", "url", "uuid1"] }
+secrecy = { package = "secrecy", version = "=0.10.3", default-features = false, features = ["serde"] }
 semver = { package = "semver", version = "=1.0.28", default-features = true, features = ["serde", "std"] }
 serde = { package = "serde", version = "=1.0.229", default-features = true, features = ["alloc", "derive", "rc", "serde_derive", "std"] }
 serde_json = { package = "serde_json", version = "=1.0.154", default-features = true, features = ["alloc", "float_roundtrip", "indexmap", "preserve_order", "raw_value", "std"] }
 serde_path_to_error = { package = "serde_path_to_error", version = "=0.1.20", default-features = false }
-serde_with = { package = "serde_with", version = "=3.24.0", default-features = true, features = ["alloc", "macros", "std"] }
+serde_with = { package = "serde_with", version = "=3.24.0", default-features = true, features = ["alloc", "base64", "json", "macros", "std"] }
 serde_yaml_ng = { package = "serde_yaml_ng", version = "=0.10.0", default-features = false }
 sha2-0_10 = { package = "sha2", version = "=0.10.9", default-features = true, features = ["std"] }
 sha2-0_11 = { package = "sha2", version = "=0.11.0", default-features = true, features = ["alloc", "oid"] }
+sigstore-verify = { package = "sigstore-verify", version = "=0.14.0", default-features = false }
 similar = { package = "similar", version = "=2.7.0", default-features = true, features = ["text"] }
 slatedb = { package = "slatedb", version = "=0.17.0", default-features = false }
 socket2 = { package = "socket2", version = "=0.6.5", default-features = false, features = ["all"] }
-sqlx = { package = "sqlx", version = "=0.9.0", default-features = false, features = ["_rt-tokio", "mysql", "runtime-tokio", "sqlx-mysql", "tls-rustls", "tls-rustls-ring", "tls-rustls-ring-webpki"] }
+sqlx = { package = "sqlx", version = "=0.9.0", default-features = false, features = ["_rt-tokio", "json", "mysql", "postgres", "runtime-tokio", "sqlx-mysql", "sqlx-postgres", "tls-rustls", "tls-rustls-ring", "tls-rustls-ring-webpki"] }
 subtle = { package = "subtle", version = "=2.6.1", default-features = true, features = ["i128", "std"] }
 sync_wrapper = { package = "sync_wrapper", version = "=1.0.2", default-features = false, features = ["futures", "futures-core"] }
 tantivy = { package = "tantivy", version = "=0.26.2", default-features = false, features = ["columnar-zstd-compression", "fs4", "futures-channel", "futures-util", "lz4-compression", "lz4_flex", "memmap2", "mmap", "quickwit", "rust-stemmers", "sstable", "stemmer", "stopwords", "tempfile", "zstd", "zstd-compression"] }
@@ -157,7 +162,7 @@ time = { package = "time", version = "=0.3.55", default-features = true, feature
 time-fmt = { package = "time-fmt", version = "=0.3.8", default-features = true }
 tokio = { package = "tokio", version = "=1.54.1", default-features = true, features = ["bytes", "fs", "full", "io-std", "io-util", "libc", "macros", "mio", "net", "parking_lot", "process", "rt", "rt-multi-thread", "signal", "signal-hook-registry", "socket2", "sync", "test-util", "time", "tokio-macros", "windows-sys"] }
 tokio-postgres = { package = "tokio-postgres", version = "=0.7.18", default-features = true, features = ["runtime"] }
-tokio-rustls = { package = "tokio-rustls", version = "=0.26.6", default-features = false, features = ["aws-lc-rs", "aws_lc_rs", "logging", "ring", "tls12"] }
+tokio-rustls = { package = "tokio-rustls", version = "=0.26.6", default-features = true, features = ["aws-lc-rs", "aws_lc_rs", "logging", "ring", "tls12"] }
 tokio-stream = { package = "tokio-stream", version = "=0.1.19", default-features = true, features = ["fs", "net", "sync", "time", "tokio-util"] }
 tokio-tungstenite-0_24 = { package = "tokio-tungstenite", version = "=0.24.0", default-features = true, features = ["__rustls-tls", "connect", "handshake", "rustls", "rustls-pki-types", "rustls-tls-webpki-roots", "stream", "tokio-rustls", "webpki-roots"] }
 tokio-tungstenite-0_30 = { package = "tokio-tungstenite", version = "=0.30.0", default-features = true, features = ["__rustls-tls", "connect", "handshake", "rustls", "rustls-pki-types", "rustls-tls-webpki-roots", "stream", "tokio-rustls", "webpki-roots"] }
@@ -174,7 +179,7 @@ ts-rs = { package = "ts-rs", version = "=12.0.1", default-features = true, featu
 ulid = { package = "ulid", version = "=3.0.0", default-features = true, features = ["std"] }
 unicode-segmentation = { package = "unicode-segmentation", version = "=1.13.3", default-features = false }
 url = { package = "url", version = "=2.5.8", default-features = true, features = ["serde", "std"] }
-uuid = { package = "uuid", version = "=1.28.0", default-features = true, features = ["js", "rng", "serde", "std", "v4"] }
+uuid = { package = "uuid", version = "=1.28.0", default-features = true, features = ["fast-rng", "js", "rng", "serde", "std", "v4", "v7", "zerocopy"] }
 webbrowser = { package = "webbrowser", version = "=1.2.4", default-features = false }
 x509-parser = { package = "x509-parser", version = "=0.18.1", default-features = true, features = ["ring", "verify"] }
 xxhash-rust = { package = "xxhash-rust", version = "=0.8.19", default-features = false, features = ["xxh3", "xxh32", "xxh64"] }
