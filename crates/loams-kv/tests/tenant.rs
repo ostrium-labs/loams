@@ -17,7 +17,11 @@ async fn bases(dir: &TempDir) -> Vec<(StoreConfig, &'static str, &'static str)> 
     if let Some(cluster) = testing::cluster().await {
         let mut config = cluster.config(testing::TEST_LIVE);
         config.root = testing::random_root();
-        out.push((StoreConfig::Tikv(config), testing::TEST_LIVE, testing::TEST_META));
+        out.push((
+            StoreConfig::Tikv(config),
+            testing::TEST_LIVE,
+            testing::TEST_META,
+        ));
     }
     out
 }
@@ -83,9 +87,17 @@ async fn tenants_are_isolated() {
         }
         for (i, store) in stores.iter().enumerate() {
             let seen = all(store).await;
-            assert_eq!(seen.len(), 4, "{:?} tenant {i} sees only its four keys", base.backend());
+            assert_eq!(
+                seen.len(),
+                4,
+                "{:?} tenant {i} sees only its four keys",
+                base.backend()
+            );
             let own = format!("tenant-{i}").into_bytes();
-            assert!(seen.iter().all(|(_, v)| *v == own), "tenant {i} saw {seen:?}");
+            assert!(
+                seen.iter().all(|(_, v)| *v == own),
+                "tenant {i} saw {seen:?}"
+            );
         }
         // The shared keyspace's base root holds the three shared tenants'
         // keys, and none of the dedicated one's.
