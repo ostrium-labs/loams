@@ -870,6 +870,15 @@ impl MarketplaceHost {
                                         .map(|value| (var, value))
                                 })
                                 .collect();
+                            // A `node` server runs as `node <entry> <args…>`.
+                            let (command, args) =
+                                if str_at(&listing, &["runtime", "kind"]) == Some("node") {
+                                    let mut all = vec![command];
+                                    all.extend(args);
+                                    (node.display().to_string(), all)
+                                } else {
+                                    (command, args)
+                                };
                             out.mcp_servers.push(McpServerRun {
                                 name: mcp_name(&listing_id),
                                 listing_id,

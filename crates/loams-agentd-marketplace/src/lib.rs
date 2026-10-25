@@ -15,6 +15,8 @@ pub mod provenance;
 pub mod revocations;
 pub mod service;
 pub mod sources;
+#[cfg(feature = "testkit")]
+pub mod testkit;
 pub mod verify;
 
 pub use market::{Fetcher, ListingView, MarketError, Marketplace, Query, SourceInfo, Summary};

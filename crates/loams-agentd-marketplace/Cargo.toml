@@ -7,6 +7,10 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+# A signed fake world for agentd's tests (`testkit`).
+testkit = []
+
 [dependencies]
 async-trait.workspace = true
 base64.workspace = true
@@ -26,6 +30,7 @@ tokio = { workspace = true, features = ["sync", "time", "rt"] }
 tracing.workspace = true
 
 [dev-dependencies]
+loams-agentd-marketplace = { path = ".", features = ["testkit"] }
 tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "test-util"] }
 # The fetcher's tests: a TLS server with a self-signed certificate, as

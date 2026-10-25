@@ -8585,6 +8585,10 @@ dependencies = [
  "base64 0.23.1",
  "hex",
  "jsonschema",
+ "loams-agentd-marketplace",
+ "rcgen",
+ "reqwest 0.12.28",
+ "rustls",
  "semver",
  "serde",
  "serde_json",
@@ -8593,6 +8597,8 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
+ "tokio-rustls",
+ "tracing",
 ]
 
 [[package]]
