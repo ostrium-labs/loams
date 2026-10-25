@@ -284,7 +284,9 @@ jobs:
       # loams-connector-* family crate. Each runs its shared-fixture self-test first.
       # PyYAML reads the compose files (MIT; pinned here, unpinned in ci.yml).
       - name: PyYAML
-        run: python3 -m pip install --quiet --disable-pip-version-check PyYAML==6.0.2
+        # --user --break-system-packages: the local runners' Ubuntu Python is
+        # externally managed (PEP 668) and refuses a plain `pip install`.
+        run: python3 -m pip install --quiet --disable-pip-version-check --user --break-system-packages PyYAML==6.0.2
       - name: image licences (ci-service, user-supplied)
         run: |
           python3 scripts/connectors/image_licences.py --self-test
