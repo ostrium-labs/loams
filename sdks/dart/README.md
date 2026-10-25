@@ -7,15 +7,18 @@
 
 ## Install
 
+These instructions target upcoming SDK **0.1.2**. The package and `v0.1.2`
+source tag must be published before the matching install commands resolve.
+
 ```sh
-dart pub add loams:0.1.1
+dart pub add loams:0.1.2
 ```
 
 or in `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  loams: 0.1.1
+  loams: 0.1.2
 ```
 
 It works with Dart 3 and Flutter.
@@ -32,6 +35,9 @@ The app-building modules are `namespaces`, `collections`, `documents`,
 `search`, `vector` and `graph` (experimental), with the `Schema`, `Filter` and
 `Search` builders. [`example/notes/main.dart`](example/notes/main.dart) is the
 whole flow:
+
+See the [notes example instructions](example/notes/README.md) to run it from
+the matching source checkout.
 
 ```dart
 import 'package:loams/loams.dart';

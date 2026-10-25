@@ -10,8 +10,11 @@
 CocoaPods, pinned exactly:
 
 ```ruby
-pod 'Loams', '0.1.1'
+pod 'Loams', '0.1.2'
 ```
+
+These instructions target the upcoming SDK 0.1.2 release. Installation requires
+the matching CocoaPods release to be published.
 
 The pod's module is `LoamsObjC` (`@import LoamsObjC;`, or `#import "LoamsObjC-Swift.h"`),
 so it can sit next to the Swift SDK's `Loams` module.
@@ -24,7 +27,8 @@ The app-building modules are `namespaces`, `collections`, `documents`,
 `LoamsSchema`, `LoamsFilter` and `LoamsSearch` builders and
 `[client collection:@"notes" namespace:nil]`, a handle that fills the collection
 in. Every Swift `throws` call is an Objective-C method with a trailing `error:`.
-[`Examples/Notes/main.m`](Examples/Notes/main.m) is the flow from Objective-C;
+[`Examples/Notes/main.m`](Examples/Notes/main.m) is the flow from Objective-C
+(see its [setup guide](Examples/Notes/README.md));
 from Swift:
 
 ```swift

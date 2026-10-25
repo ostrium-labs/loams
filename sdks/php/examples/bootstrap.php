@@ -23,5 +23,5 @@ spl_autoload_register(static function (string $class): void {
 
 function loams_endpoint(): string
 {
-    return getenv('LOAMS_URL') ?: 'http://127.0.0.1:18080';
+    return getenv('LOAMS_ENDPOINT') ?: getenv('LOAMS_URL') ?: 'http://127.0.0.1:8080';
 }

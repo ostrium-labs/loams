@@ -8,8 +8,11 @@
 ## Install
 
 ```sh
-composer require loams/loams:0.1.1
+composer require loams/loams:0.1.2
 ```
+
+These instructions target the upcoming **0.1.2** release. Installation requires
+its package and matching release tag to be published.
 
 The package is `loams/loams` on Packagist. Composer has no `preview` stability,
 so a prerelease such as `v0.1.0-preview.2` is tagged `v0.1.0-alpha.2` there, and
