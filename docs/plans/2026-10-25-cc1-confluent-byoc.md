@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Work task by task, test first. Where this plan gives exact names, paths, flags or tests, use them verbatim. Record any deviation in "Rulings made during execution" at the end of this file.
 >
-> **Status: Proposed** (2026-10-25). Track **CC**, design [§80](../design/80-confluent-byoc.md) (D1820–D1835, Q1333–Q1341). The owner asked on 2026-10-25 for Confluent Cloud with BYOC, a budget limit, use of Ostrium's Confluent credits, and use of the HashiCorp free tier. CC0 and CC1 are specified task by task; CC2 is specified at task level; CC3 is at milestone level. Nothing here is built, and no Confluent or HCP resource is created, until the owner approves the design.
+> **Status: Approved** (owner, 2026-10-26, with all defaults; Q1333: $2,400 of credits); proposed 2026-10-25. CC0 started 2026-10-26. Track **CC**, design [§80](../design/80-confluent-byoc.md) (D1820–D1835, Q1333–Q1341). The owner asked on 2026-10-25 for Confluent Cloud with BYOC, a budget limit, use of Ostrium's Confluent credits, and use of the HashiCorp free tier. CC0 and CC1 are specified task by task; CC2 is specified at task level; CC3 is at milestone level. Nothing in CC1–CC3 is built until CC0's rulings are recorded below.
 
 **Goal (CC1):** a user with a Loams BYOC VM on AWS connects it to their own Confluent Cloud cluster (or has the installer create a Basic cluster in the same region) by following one guide; Loams reads CDC and event topics into its streams and writes its streams to topics, exactly once where the cluster allows; no Confluent key sits in an image, user data, a log or plain state; and the round trip runs nightly on Ostrium's credits in `us-east-1` for about a dollar a month. **CC2** adds the budget guard and spend surfaces.
 
@@ -52,7 +52,7 @@ Owner actions; no step puts a credential in the repository or chat.
 
 ### Confluent (Ostrium's organisation, on the startup credits)
 
-1. **Confirm the credit balance and expiry** (Billing → Payment → Promotions) and answer Q1333.
+1. **Confirm the credit balance and expiry** (Billing → Payment → Promotions). Q1333 is answered: $2,400 (owner, 2026-10-26); the balance check stays useful for the expiry date.
 2. **Create the environments** `loams-ci` and `loams-demo` (the oracle stays in `default`).
 3. **Create the service account `loams-ci-provisioner`** with the role EnvironmentAdmin on `loams-ci` only, and a Cloud API key for it. Put the key in the GitHub environment `byoc-confluent` (restricted to `dev`) as the secrets `CONFLUENT_CLOUD_API_KEY` and `CONFLUENT_CLOUD_API_SECRET`. Whether EnvironmentAdmin can create the per-run service accounts and keys the module needs is CC0 ruling 6; if not, also create `loams-ci-data` and `loams-ci-metrics` once and let the run create only API keys.
 4. **Create the service account `loams-ci-billing`** with BillingAdmin, and its Cloud API key, into `/etc/loams-ci/confluent-billing.env` (mode 0600, user `ci`) on laptop A only (CC2 Task 15). Not in GitHub.
