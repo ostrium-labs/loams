@@ -563,12 +563,13 @@ jobs:
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.rust == 'true') }}
     runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 40
-    env:
+    steps:
       # buck2 and reindeer (scripts/buck/bootstrap.sh): the self-hosted
       # runners keep them on their cache disk; GitHub-hosted ones restore them
       # with actions/cache (reindeer is a 10-minute cargo install).
-      LOAMS_BUCK_CACHE: ${{ runner.environment == 'self-hosted' && '/mnt/Projects/ci/cache/loams-build' || '' }}
-    steps:
+      - name: tool cache
+        if: runner.environment == 'self-hosted'
+        run: echo "LOAMS_BUCK_CACHE=/mnt/Projects/ci/cache/loams-build" >> "$GITHUB_ENV"
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
