@@ -27,6 +27,7 @@ pub mod outbox;
 pub mod queries;
 pub mod server;
 pub mod service;
+pub mod standalone;
 pub mod token;
 
 pub use auth::{Authenticator, DevAllowAll, Principal, StaticKeys};

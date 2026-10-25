@@ -12,8 +12,15 @@ publish = false
 name = "loams-gateway"
 path = "src/main.rs"
 
+[features]
+default = []
+# The Temporal API module (design 74 §5.7, D1504; plan DX1 Task 9): its
+# own listener and Deployment, the same frontend as `loams-temporal`.
+temporal = ["dep:loams-temporal-frontend"]
+
 [dependencies]
 clap.workspace = true
+loams-temporal-frontend = { path = "../loams-temporal-frontend", optional = true }
 hex.workspace = true
 http-body-util = "0.1"
 hyper = { version = "1", features = ["server", "http1"] }

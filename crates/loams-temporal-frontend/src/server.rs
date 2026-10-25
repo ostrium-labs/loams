@@ -139,6 +139,9 @@ impl Gateway {
         let limit = loams_temporal_history::Limits::default().grpc_message;
         ImplementedOnly(
             WorkflowServiceServer::new(WorkflowServiceImpl(self.frontend.clone()))
+                // The Go SDK sends gzip; answer in kind when asked.
+                .accept_compressed(tonic::codec::CompressionEncoding::Gzip)
+                .send_compressed(tonic::codec::CompressionEncoding::Gzip)
                 .max_decoding_message_size(limit)
                 .max_encoding_message_size(64 * 1024 * 1024),
         )

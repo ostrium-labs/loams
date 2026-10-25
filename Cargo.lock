@@ -8998,6 +8998,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
+ "loams-temporal-frontend",
  "rcgen",
  "rustls",
  "serde",
@@ -9886,6 +9887,7 @@ version = "0.1.1"
 dependencies = [
  "async-trait",
  "bytes",
+ "clap",
  "hex",
  "hmac 0.13.0",
  "http",
@@ -9903,6 +9905,7 @@ dependencies = [
  "sha2 0.11.0",
  "tokio",
  "tokio-stream",
+ "toml 0.8.23",
  "tonic 0.14.6",
  "tonic-prost",
  "tower 0.5.3",
