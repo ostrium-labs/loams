@@ -3,7 +3,7 @@ load("//buck:rust.bzl", "cargo_package")
 
 cargo_package(
     name = "loams-temporal-frontend",
-    version = "0.1.1",
+    version = "0.1.2",
     edition = "2024",
     manifest_dir = "crates/loams-temporal-frontend",
     env = {
@@ -22,6 +22,13 @@ cargo_package(
         "proc_macro": False,
         "test": True,
     },
+    bins = [
+        {
+            "name": "loams-temporal",
+            "crate": "loams_temporal",
+            "root": "src/bin/loams-temporal.rs",
+        },
+    ],
     tests = [
         {
             "name": "capabilities",
@@ -38,6 +45,11 @@ cargo_package(
             "crate": "scenarios",
             "root": "tests/scenarios.rs",
         },
+        {
+            "name": "standalone",
+            "crate": "standalone",
+            "root": "tests/standalone.rs",
+        },
     ],
     deps = [
         "//crates/loams-temporal-history:loams-temporal-history",
@@ -48,6 +60,7 @@ cargo_package(
         "//crates/loams-temporal-store:loams-temporal-store",
         "//third-party/rust:async-trait",
         "//third-party/rust:bytes",
+        "//third-party/rust:clap",
         "//third-party/rust:hex",
         "//third-party/rust:hmac",
         "//third-party/rust:http",
@@ -57,16 +70,17 @@ cargo_package(
         "//third-party/rust:serde_json",
         "//third-party/rust:sha2-0_11",
         "//third-party/rust:tokio",
+        "//third-party/rust:tokio-stream",
+        "//third-party/rust:toml",
         "//third-party/rust:tonic",
         "//third-party/rust:tower",
         "//third-party/rust:tracing",
+        "//third-party/rust:tracing-subscriber",
         "//third-party/rust:uuid",
     ],
     dev_deps = [
         "//crates/loams-temporal-testkit:loams-temporal-testkit",
-        "//third-party/rust:tokio-stream",
         "//third-party/rust:tonic-prost",
-        "//third-party/rust:tracing-subscriber",
     ],
     rustc_flags = [
         "-Funsafe_code",

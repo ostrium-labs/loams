@@ -3,7 +3,7 @@ load("//buck:rust.bzl", "cargo_package")
 
 cargo_package(
     name = "loams-gateway",
-    version = "0.1.1",
+    version = "0.1.2",
     edition = "2024",
     manifest_dir = "crates/loams-gateway",
     env = {
@@ -16,6 +16,9 @@ cargo_package(
         "CARGO_PKG_REPOSITORY": "",
         "CARGO_PKG_RUST_VERSION": "1.97",
     },
+    features = [
+        "default",
+    ],
     lib = {
         "crate": "loams_gateway",
         "root": "src/lib.rs",
