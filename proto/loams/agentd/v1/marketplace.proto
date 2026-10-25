@@ -27,7 +27,7 @@ service MarketplaceService {
   // Removes a source; installed listings from it stay installed.
   rpc RemoveSource(RemoveSourceRequest) returns (RemoveSourceResponse);
   // Searches every source's verified index.
-  rpc Search(SearchRequest) returns (SearchResponse) {
+  rpc SearchListings(SearchListingsRequest) returns (SearchListingsResponse) {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
   // One listing, with its versions and any revocation.
@@ -117,7 +117,7 @@ message Revocation {
   string advisory = 4;
 }
 
-message SearchRequest {
+message SearchListingsRequest {
   // Words matched against id, title, summary and tool names; empty matches all.
   string query = 1;
   repeated loams.marketplace.v1.Kind kinds = 2;
@@ -146,7 +146,7 @@ message ListingSummary {
   Revocation revocation = 11;
 }
 
-message SearchResponse {
+message SearchListingsResponse {
   repeated ListingSummary results = 1;
 }
 
