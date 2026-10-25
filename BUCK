@@ -160,3 +160,12 @@ export_file(
         "PUBLIC",
     ],
 )
+
+export_file(
+    name = "file=schemas+marketplace+listing.v1.json",
+    src = "schemas/marketplace/listing.v1.json",
+    mode = "reference",
+    visibility = [
+        "PUBLIC",
+    ],
+)

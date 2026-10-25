@@ -79,6 +79,16 @@ cargo_package(
             "root": "tests/e2e.rs",
         },
         {
+            "name": "factory_checks",
+            "crate": "factory_checks",
+            "root": "tests/factory_checks.rs",
+        },
+        {
+            "name": "factory_loop",
+            "crate": "factory_loop",
+            "root": "tests/factory_loop.rs",
+        },
+        {
             "name": "git_write",
             "crate": "git_write",
             "root": "tests/git_write.rs",

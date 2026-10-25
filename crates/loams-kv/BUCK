@@ -47,6 +47,16 @@ cargo_package(
             "crate": "linearizable",
             "root": "tests/linearizable.rs",
         },
+        {
+            "name": "metrics",
+            "crate": "metrics",
+            "root": "tests/metrics.rs",
+        },
+        {
+            "name": "tenant",
+            "crate": "tenant",
+            "root": "tests/tenant.rs",
+        },
     ],
     deps = [
         "//crates/loams-tikv:loams-tikv",
