@@ -8,7 +8,7 @@ members = ["crates/*", "bench/git-wal"]
 exclude = ["crates/loams-wal-decoder"]
 
 [workspace.package]
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 rust-version = "1.97"
 license = "Apache-2.0"
@@ -312,64 +312,64 @@ uuid = { version = "1", features = ["v4"] }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 zeroize = "=1.9.1"
 zstd = "0.14"
-loams-authz = { path = "crates/loams-authz", version = "0.1.1" }
-loams-cache = { path = "crates/loams-cache", version = "0.1.1" }
-loams-collection = { path = "crates/loams-collection", version = "0.1.1" }
-loams-cloudevents = { path = "crates/loams-cloudevents", version = "0.1.1" }
-loams-common = { path = "crates/loams-common", version = "0.1.1" }
-loams-durable = { path = "crates/loams-durable", version = "0.1.1" }
-loams-es = { path = "crates/loams-es", version = "0.1.1" }
+loams-authz = { path = "crates/loams-authz", version = "0.1.2" }
+loams-cache = { path = "crates/loams-cache", version = "0.1.2" }
+loams-collection = { path = "crates/loams-collection", version = "0.1.2" }
+loams-cloudevents = { path = "crates/loams-cloudevents", version = "0.1.2" }
+loams-common = { path = "crates/loams-common", version = "0.1.2" }
+loams-durable = { path = "crates/loams-durable", version = "0.1.2" }
+loams-es = { path = "crates/loams-es", version = "0.1.2" }
 # The Fs trait for warm, rebuildable state and scratch (design §36 §17, GT1 Task 2).
-loams-fs = { path = "crates/loams-fs", version = "0.1.1" }
+loams-fs = { path = "crates/loams-fs", version = "0.1.2" }
 # Loams Git's portable core (design §36, §19; GT1 Tasks 4 onwards).
-loams-git = { path = "crates/loams-git", version = "0.1.1" }
-loams-graph = { path = "crates/loams-graph", version = "0.1.1" }
-loams-hnsw = { path = "crates/loams-hnsw", version = "0.1.1" }
-loams-hot = { path = "crates/loams-hot", version = "0.1.1" }
-loams-link = { path = "crates/loams-link", version = "0.1.1" }
-loams-kv = { path = "crates/loams-kv", version = "0.1.1" }
-loams-live = { path = "crates/loams-live", version = "0.1.1" }
-loams-live-js = { path = "crates/loams-live-js", version = "0.1.1" }
-loams-live-js-alloc = { path = "crates/loams-live-js-alloc", version = "0.1.1" }
-loams-live-proto = { path = "crates/loams-live-proto", version = "0.1.1" }
+loams-git = { path = "crates/loams-git", version = "0.1.2" }
+loams-graph = { path = "crates/loams-graph", version = "0.1.2" }
+loams-hnsw = { path = "crates/loams-hnsw", version = "0.1.2" }
+loams-hot = { path = "crates/loams-hot", version = "0.1.2" }
+loams-link = { path = "crates/loams-link", version = "0.1.2" }
+loams-kv = { path = "crates/loams-kv", version = "0.1.2" }
+loams-live = { path = "crates/loams-live", version = "0.1.2" }
+loams-live-js = { path = "crates/loams-live-js", version = "0.1.2" }
+loams-live-js-alloc = { path = "crates/loams-live-js-alloc", version = "0.1.2" }
+loams-live-proto = { path = "crates/loams-live-proto", version = "0.1.2" }
 # The public `loams.*.v1` packages of the unified Connect API and their
 # descriptor set for reflection (design §44, API1 Task 1).
-loams-postgres = { path = "crates/loams-postgres", version = "0.1.1" }
-loams-proto = { path = "crates/loams-proto", version = "0.1.1" }
-loams-log = { path = "crates/loams-log", version = "0.1.1" }
-loams-meta = { path = "crates/loams-meta", version = "0.1.1" }
-loams-meta-conformance = { path = "crates/loams-meta-conformance", version = "0.1.1" }
-loams-meta-tikv = { path = "crates/loams-meta-tikv", version = "0.1.1" }
-loams-migrate = { path = "crates/loams-migrate", version = "0.1.1" }
-loams-upgrade = { path = "crates/loams-upgrade", version = "0.1.1" }
-loams-cloud-admin = { path = "crates/loams-cloud-admin", version = "0.1.1" }
-loams-stream-grpc = { path = "crates/loams-stream-grpc", version = "0.1.1" }
-loams-pk = { path = "crates/loams-pk", version = "0.1.1" }
-loams-qdrant = { path = "crates/loams-qdrant", version = "0.1.1" }
-loams-query = { path = "crates/loams-query", version = "0.1.1" }
-loams-quickwit = { path = "crates/loams-quickwit", version = "0.1.1" }
-loams-store = { path = "crates/loams-store", version = "0.1.1" }
-loams-text = { path = "crates/loams-text", version = "0.1.1" }
-loams-tikv = { path = "crates/loams-tikv", version = "0.1.1" }
-loams-tuple = { path = "crates/loams-tuple", version = "0.1.1" }
-loams-web-bridge = { path = "crates/loams-web-bridge", version = "0.1.1" }
-loams-worker = { path = "crates/loams-worker", version = "0.1.1" }
+loams-postgres = { path = "crates/loams-postgres", version = "0.1.2" }
+loams-proto = { path = "crates/loams-proto", version = "0.1.2" }
+loams-log = { path = "crates/loams-log", version = "0.1.2" }
+loams-meta = { path = "crates/loams-meta", version = "0.1.2" }
+loams-meta-conformance = { path = "crates/loams-meta-conformance", version = "0.1.2" }
+loams-meta-tikv = { path = "crates/loams-meta-tikv", version = "0.1.2" }
+loams-migrate = { path = "crates/loams-migrate", version = "0.1.2" }
+loams-upgrade = { path = "crates/loams-upgrade", version = "0.1.2" }
+loams-cloud-admin = { path = "crates/loams-cloud-admin", version = "0.1.2" }
+loams-stream-grpc = { path = "crates/loams-stream-grpc", version = "0.1.2" }
+loams-pk = { path = "crates/loams-pk", version = "0.1.2" }
+loams-qdrant = { path = "crates/loams-qdrant", version = "0.1.2" }
+loams-query = { path = "crates/loams-query", version = "0.1.2" }
+loams-quickwit = { path = "crates/loams-quickwit", version = "0.1.2" }
+loams-store = { path = "crates/loams-store", version = "0.1.2" }
+loams-text = { path = "crates/loams-text", version = "0.1.2" }
+loams-tikv = { path = "crates/loams-tikv", version = "0.1.2" }
+loams-tuple = { path = "crates/loams-tuple", version = "0.1.2" }
+loams-web-bridge = { path = "crates/loams-web-bridge", version = "0.1.2" }
+loams-worker = { path = "crates/loams-worker", version = "0.1.2" }
 
 # loams-agentd: the per-user desktop daemon, moved from the zeron fork
 # (design §50, D783, plan DD1 Task 1). Versions follow the fork's lockfile
 # (DD1 T0-4). The fork pins reqwest 0.12 and sha2 0.10, which differ from the
 # workspace keys above, so its crates name those two directly.
-loams-agentd-connect = { path = "crates/loams-agentd-connect", version = "0.1.1" }
-loams-agentd-doc = { path = "crates/loams-agentd-doc", version = "0.1.1" }
-loams-agentd-harness = { path = "crates/loams-agentd-harness", version = "0.1.1" }
-loams-agentd-link = { path = "crates/loams-agentd-link", version = "0.1.1" }
-loams-agentd-mcp = { path = "crates/loams-agentd-mcp", version = "0.1.1" }
-loams-agentd-marketplace = { path = "crates/loams-agentd-marketplace", version = "0.1.1" }
-loams-agentd-preview = { path = "crates/loams-agentd-preview", version = "0.1.1" }
-loams-agentd-proto = { path = "crates/loams-agentd-proto", version = "0.1.1" }
-loams-agentd-rpc = { path = "crates/loams-agentd-rpc", version = "0.1.1" }
-loams-agentd-sessions = { path = "crates/loams-agentd-sessions", version = "0.1.1" }
-loams-agentd-store = { path = "crates/loams-agentd-store", version = "0.1.1" }
+loams-agentd-connect = { path = "crates/loams-agentd-connect", version = "0.1.2" }
+loams-agentd-doc = { path = "crates/loams-agentd-doc", version = "0.1.2" }
+loams-agentd-harness = { path = "crates/loams-agentd-harness", version = "0.1.2" }
+loams-agentd-link = { path = "crates/loams-agentd-link", version = "0.1.2" }
+loams-agentd-mcp = { path = "crates/loams-agentd-mcp", version = "0.1.2" }
+loams-agentd-marketplace = { path = "crates/loams-agentd-marketplace", version = "0.1.2" }
+loams-agentd-preview = { path = "crates/loams-agentd-preview", version = "0.1.2" }
+loams-agentd-proto = { path = "crates/loams-agentd-proto", version = "0.1.2" }
+loams-agentd-rpc = { path = "crates/loams-agentd-rpc", version = "0.1.2" }
+loams-agentd-sessions = { path = "crates/loams-agentd-sessions", version = "0.1.2" }
+loams-agentd-store = { path = "crates/loams-agentd-store", version = "0.1.2" }
 chrono = { version = "0.4", features = ["serde"] }
 deser-hjson = "2.2"
 gethostname = "1"

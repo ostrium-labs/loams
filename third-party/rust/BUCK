@@ -30,7 +30,7 @@ git_fetch(
 git_fetch(
     name = "resonate-f7df9828d887fb16.git",
     repo = "https://github.com/ostrium-labs/resonate",
-    rev = "31ffb2011b324c187f1d324b83feec2e16787e74",
+    rev = "37b177cd019798f288a1dd5549f8a69de1613b90",
     visibility = [],
 )
 
@@ -15550,6 +15550,18 @@ buildscript_run(
     version = "25.12.19",
 )
 
+cargo_alias(
+    name = "flate2",
+    actual = ":flate2-1",
+    platforms = [
+        "linux-arm64",
+        "linux-x86_64",
+        "macos-arm64",
+        "macos-x86_64",
+    ],
+    visibility = ["PUBLIC"],
+)
+
 http_archive(
     name = "flate2-1.1.10.crate",
     sha256 = "6e634e2e0ebac1ee034020da1ca582e17ffe4e0f5e985823721e168928136dcb",
@@ -17142,7 +17154,10 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "34",
         "CARGO_PKG_VERSION_PRE": "",
     },
-    features = ["std"],
+    features = [
+        "default",
+        "std",
+    ],
     visibility = [],
     deps = [
         ":futures-core-0.3",
@@ -33468,6 +33483,262 @@ cargo.rust_library(
 )
 
 http_archive(
+    name = "opentelemetry-0.31.0.crate",
+    sha256 = "b84bcd6ae87133e903af7ef497404dda70c60d0ea14895fc8a5e6722754fc2a0",
+    strip_prefix = "opentelemetry-0.31.0",
+    urls = ["https://static.crates.io/crates/opentelemetry/0.31.0/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "opentelemetry-0.31",
+    srcs = [":opentelemetry-0.31.0.crate"],
+    crate = "opentelemetry",
+    crate_root = "opentelemetry-0.31.0.crate/src/lib.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "opentelemetry",
+        "CARGO_CRATE_NAME": "opentelemetry",
+        "CARGO_MANIFEST_DIR": "opentelemetry-0.31.0.crate",
+        "CARGO_PKG_AUTHORS": "",
+        "CARGO_PKG_DESCRIPTION": "OpenTelemetry API for Rust",
+        "CARGO_PKG_HOMEPAGE": "https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry",
+        "CARGO_PKG_NAME": "opentelemetry",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry",
+        "CARGO_PKG_RUST_VERSION": "1.75.0",
+        "CARGO_PKG_VERSION": "0.31.0",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "31",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "futures",
+        "futures-core",
+        "futures-sink",
+        "metrics",
+        "pin-project-lite",
+        "thiserror",
+        "trace",
+    ],
+    visibility = [],
+    deps = [
+        ":futures-core-0.3",
+        ":futures-sink-0.3",
+        ":pin-project-lite-0.2",
+        ":thiserror-2",
+    ],
+)
+
+http_archive(
+    name = "opentelemetry-http-0.31.0.crate",
+    sha256 = "d7a6d09a73194e6b66df7c8f1b680f156d916a1a942abf2de06823dd02b7855d",
+    strip_prefix = "opentelemetry-http-0.31.0",
+    urls = ["https://static.crates.io/crates/opentelemetry-http/0.31.0/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "opentelemetry-http-0.31",
+    srcs = [":opentelemetry-http-0.31.0.crate"],
+    crate = "opentelemetry_http",
+    crate_root = "opentelemetry-http-0.31.0.crate/src/lib.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "opentelemetry_http",
+        "CARGO_CRATE_NAME": "opentelemetry_http",
+        "CARGO_MANIFEST_DIR": "opentelemetry-http-0.31.0.crate",
+        "CARGO_PKG_AUTHORS": "",
+        "CARGO_PKG_DESCRIPTION": "Helper implementations for sending HTTP requests. Uses include propagating and extracting context over http, exporting telemetry, requesting sampling strategies.",
+        "CARGO_PKG_HOMEPAGE": "https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-http",
+        "CARGO_PKG_NAME": "opentelemetry-http",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-http",
+        "CARGO_PKG_RUST_VERSION": "1.75.0",
+        "CARGO_PKG_VERSION": "0.31.0",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "31",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "reqwest",
+        "reqwest-blocking",
+        "reqwest-rustls",
+    ],
+    visibility = [],
+    deps = [
+        ":async-trait-0.1",
+        ":bytes-1",
+        ":http-1",
+        ":opentelemetry-0.31",
+        ":reqwest-0.12",
+    ],
+)
+
+http_archive(
+    name = "opentelemetry-otlp-0.31.1.crate",
+    sha256 = "1f69cd6acbb9af919df949cd1ec9e5e7fdc2ef15d234b6b795aaa525cc02f71f",
+    strip_prefix = "opentelemetry-otlp-0.31.1",
+    urls = ["https://static.crates.io/crates/opentelemetry-otlp/0.31.1/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "opentelemetry-otlp-0.31",
+    srcs = [":opentelemetry-otlp-0.31.1.crate"],
+    crate = "opentelemetry_otlp",
+    crate_root = "opentelemetry-otlp-0.31.1.crate/src/lib.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "opentelemetry_otlp",
+        "CARGO_CRATE_NAME": "opentelemetry_otlp",
+        "CARGO_MANIFEST_DIR": "opentelemetry-otlp-0.31.1.crate",
+        "CARGO_PKG_AUTHORS": "",
+        "CARGO_PKG_DESCRIPTION": "Exporter for the OpenTelemetry Collector",
+        "CARGO_PKG_HOMEPAGE": "https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-otlp",
+        "CARGO_PKG_NAME": "opentelemetry-otlp",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-otlp",
+        "CARGO_PKG_RUST_VERSION": "1.75.0",
+        "CARGO_PKG_VERSION": "0.31.1",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "31",
+        "CARGO_PKG_VERSION_PATCH": "1",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "grpc-tonic",
+        "http",
+        "http-proto",
+        "metrics",
+        "opentelemetry-http",
+        "prost",
+        "reqwest",
+        "reqwest-blocking-client",
+        "reqwest-rustls",
+        "tls",
+        "tls-roots",
+        "tokio",
+        "tonic",
+        "trace",
+    ],
+    visibility = [],
+    deps = [
+        ":http-1",
+        ":opentelemetry-0.31",
+        ":opentelemetry-http-0.31",
+        ":opentelemetry-proto-0.31",
+        ":opentelemetry_sdk-0.31",
+        ":prost-0.14",
+        ":reqwest-0.12",
+        ":thiserror-2",
+        ":tokio-1",
+        ":tonic-0.14",
+    ],
+)
+
+http_archive(
+    name = "opentelemetry-proto-0.31.0.crate",
+    sha256 = "a7175df06de5eaee9909d4805a3d07e28bb752c34cab57fa9cff549da596b30f",
+    strip_prefix = "opentelemetry-proto-0.31.0",
+    urls = ["https://static.crates.io/crates/opentelemetry-proto/0.31.0/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "opentelemetry-proto-0.31",
+    srcs = [":opentelemetry-proto-0.31.0.crate"],
+    crate = "opentelemetry_proto",
+    crate_root = "opentelemetry-proto-0.31.0.crate/src/lib.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "opentelemetry_proto",
+        "CARGO_CRATE_NAME": "opentelemetry_proto",
+        "CARGO_MANIFEST_DIR": "opentelemetry-proto-0.31.0.crate",
+        "CARGO_PKG_AUTHORS": "",
+        "CARGO_PKG_DESCRIPTION": "Protobuf generated files and transformations.",
+        "CARGO_PKG_HOMEPAGE": "https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-proto",
+        "CARGO_PKG_NAME": "opentelemetry-proto",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-proto",
+        "CARGO_PKG_RUST_VERSION": "1.75.0",
+        "CARGO_PKG_VERSION": "0.31.0",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "31",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "gen-tonic",
+        "gen-tonic-messages",
+        "metrics",
+        "prost",
+        "tonic",
+        "tonic-prost",
+        "trace",
+    ],
+    visibility = [],
+    deps = [
+        ":opentelemetry-0.31",
+        ":opentelemetry_sdk-0.31",
+        ":prost-0.14",
+        ":tonic-0.14",
+        ":tonic-prost-0.14",
+    ],
+)
+
+http_archive(
+    name = "opentelemetry_sdk-0.31.0.crate",
+    sha256 = "e14ae4f5991976fd48df6d843de219ca6d31b01daaab2dad5af2badeded372bd",
+    strip_prefix = "opentelemetry_sdk-0.31.0",
+    urls = ["https://static.crates.io/crates/opentelemetry_sdk/0.31.0/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "opentelemetry_sdk-0.31",
+    srcs = [":opentelemetry_sdk-0.31.0.crate"],
+    crate = "opentelemetry_sdk",
+    crate_root = "opentelemetry_sdk-0.31.0.crate/src/lib.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "opentelemetry_sdk",
+        "CARGO_CRATE_NAME": "opentelemetry_sdk",
+        "CARGO_MANIFEST_DIR": "opentelemetry_sdk-0.31.0.crate",
+        "CARGO_PKG_AUTHORS": "",
+        "CARGO_PKG_DESCRIPTION": "The SDK for the OpenTelemetry metrics collection and distributed tracing framework",
+        "CARGO_PKG_HOMEPAGE": "https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-sdk",
+        "CARGO_PKG_NAME": "opentelemetry_sdk",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-sdk",
+        "CARGO_PKG_RUST_VERSION": "1.75.0",
+        "CARGO_PKG_VERSION": "0.31.0",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "31",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "metrics",
+        "percent-encoding",
+        "rand",
+        "trace",
+    ],
+    visibility = [],
+    deps = [
+        ":futures-channel-0.3",
+        ":futures-executor-0.3",
+        ":futures-util-0.3",
+        ":opentelemetry-0.31",
+        ":percent-encoding-2",
+        ":rand-0.9",
+        ":thiserror-2",
+    ],
+)
+
+http_archive(
     name = "option-ext-0.2.0.crate",
     sha256 = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d",
     strip_prefix = "option-ext-0.2.0",
@@ -40759,6 +41030,7 @@ cargo.rust_library(
         "__rustls",
         "__rustls-ring",
         "__tls",
+        "blocking",
         "charset",
         "gzip",
         "h2",
@@ -40778,6 +41050,7 @@ cargo.rust_library(
         ":base64-0.22",
         ":bytes-1",
         ":encoding_rs-0.8",
+        ":futures-channel-0.3",
         ":futures-core-0.3",
         ":futures-util-0.3",
         ":h2-0.4",
@@ -41108,12 +41381,17 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PATCH": "1",
         "CARGO_PKG_VERSION_PRE": "",
     },
+    features = [
+        "default",
+        "otlp",
+    ],
     visibility = [],
     deps = [
         ":async-trait-0.1",
         ":lazy_static-1",
         ":resonate-core-0.10",
         ":resonate-plugin-0.10",
+        ":resonate-trace-0.10",
         ":serde-1",
         ":tokio-1",
         ":tracing-0.1",
@@ -41200,6 +41478,7 @@ cargo.rust_library(
         ":resonate-auth-0.10",
         ":resonate-core-0.10",
         ":resonate-plugin-0.10",
+        ":resonate-trace-0.10",
         ":serde-1",
         ":serde_json-1",
         ":tokio-1",
@@ -41422,6 +41701,7 @@ cargo.rust_library(
         ":resonate-core-0.10",
         ":resonate-plugin-0.10",
         ":resonate-timer-wheel-0.10",
+        ":resonate-trace-0.10",
         ":rusqlite-0.32",
         ":serde-1",
         ":serde_json-1",
@@ -41461,6 +41741,49 @@ cargo.rust_library(
         ":verus_builtin-0.0.0",
         ":verus_builtin_macros-0.0.0",
         ":vstd-0.0.0",
+    ],
+)
+
+cargo.rust_library(
+    name = "resonate-trace-0.10",
+    srcs = [":resonate-f7df9828d887fb16.git"],
+    crate = "resonate_trace",
+    crate_root = "resonate-f7df9828d887fb16/impl/server/core/crates/resonate-trace/src/lib.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "resonate_trace",
+        "CARGO_CRATE_NAME": "resonate_trace",
+        "CARGO_MANIFEST_DIR": "resonate-f7df9828d887fb16",
+        "CARGO_PKG_AUTHORS": "",
+        "CARGO_PKG_DESCRIPTION": "Tracing for a Resonate server: W3C trace context across requests and messages, and the OTLP exporter a binary may install.",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "resonate-trace",
+        "CARGO_PKG_README": "",
+        "CARGO_PKG_REPOSITORY": "",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "0.10.1",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "10",
+        "CARGO_PKG_VERSION_PATCH": "1",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "default",
+        "otlp",
+    ],
+    visibility = [],
+    deps = [
+        ":lazy_static-1",
+        ":opentelemetry-0.31",
+        ":opentelemetry-otlp-0.31",
+        ":opentelemetry_sdk-0.31",
+        ":resonate-core-0.10",
+        ":resonate-plugin-0.10",
+        ":serde_json-1",
+        ":tokio-1",
+        ":tracing-0.1",
+        ":tracing-opentelemetry-0.32",
+        ":tracing-subscriber-0.3",
     ],
 )
 
@@ -41506,6 +41829,7 @@ cargo.rust_library(
         ":fastrand-2",
         ":resonate-auth-0.10",
         ":resonate-plugin-0.10",
+        ":resonate-trace-0.10",
         ":serde-1",
         ":serde_json-1",
         ":tokio-1",
@@ -41554,6 +41878,7 @@ cargo.rust_library(
         ":async-trait-0.1",
         ":reqwest-0.12",
         ":resonate-plugin-0.10",
+        ":resonate-trace-0.10",
         ":serde-1",
         ":serde_json-1",
         ":tokio-1",
@@ -49733,6 +50058,18 @@ cargo.rust_library(
     visibility = [],
 )
 
+cargo_alias(
+    name = "tar",
+    actual = ":tar-0.4",
+    platforms = [
+        "linux-arm64",
+        "linux-x86_64",
+        "macos-arm64",
+        "macos-x86_64",
+    ],
+    visibility = ["PUBLIC"],
+)
+
 http_archive(
     name = "tar-0.4.46.crate",
     sha256 = "3f6221d9a6003c78398e3b239969f352578258df48c8eb051caadae0015bc840",
@@ -51719,6 +52056,7 @@ cargo.rust_library(
         "router",
         "server",
         "tls-connect-info",
+        "tls-native-roots",
         "tls-ring",
         "transport",
     ],
@@ -51738,6 +52076,7 @@ cargo.rust_library(
         ":hyper-util-0.1",
         ":percent-encoding-2",
         ":pin-project-1",
+        ":rustls-native-certs-0.8",
         ":socket2-0.6",
         ":sync_wrapper-1",
         ":tokio-1",
@@ -52441,6 +52780,46 @@ cargo.rust_library(
         ":log-0.4",
         ":once_cell-1",
         ":tracing-core-0.1",
+    ],
+)
+
+http_archive(
+    name = "tracing-opentelemetry-0.32.1.crate",
+    sha256 = "1ac28f2d093c6c477eaa76b23525478f38de514fa9aeb1285738d4b97a9552fc",
+    strip_prefix = "tracing-opentelemetry-0.32.1",
+    urls = ["https://static.crates.io/crates/tracing-opentelemetry/0.32.1/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "tracing-opentelemetry-0.32",
+    srcs = [":tracing-opentelemetry-0.32.1.crate"],
+    crate = "tracing_opentelemetry",
+    crate_root = "tracing-opentelemetry-0.32.1.crate/src/lib.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "tracing_opentelemetry",
+        "CARGO_CRATE_NAME": "tracing_opentelemetry",
+        "CARGO_MANIFEST_DIR": "tracing-opentelemetry-0.32.1.crate",
+        "CARGO_PKG_AUTHORS": "",
+        "CARGO_PKG_DESCRIPTION": "OpenTelemetry integration for tracing",
+        "CARGO_PKG_HOMEPAGE": "https://github.com/tokio-rs/tracing-opentelemetry",
+        "CARGO_PKG_NAME": "tracing-opentelemetry",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/tokio-rs/tracing-opentelemetry",
+        "CARGO_PKG_RUST_VERSION": "1.75.0",
+        "CARGO_PKG_VERSION": "0.32.1",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "32",
+        "CARGO_PKG_VERSION_PATCH": "1",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
+    deps = [
+        ":opentelemetry-0.31",
+        ":tracing-0.1",
+        ":tracing-core-0.1",
+        ":tracing-subscriber-0.3",
     ],
 )
 

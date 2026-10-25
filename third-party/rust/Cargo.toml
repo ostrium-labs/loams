@@ -43,6 +43,7 @@ datafusion = { package = "datafusion", version = "=54.1.0", default-features = f
 des = { package = "des", version = "=0.9.0", default-features = false }
 deser-hjson = { package = "deser-hjson", version = "=2.2.6", default-features = false }
 fail = { package = "fail", version = "=0.5.1", default-features = false, features = ["failpoints"] }
+flate2 = { package = "flate2", version = "=1.1.10", default-features = true, features = ["any_impl", "any_zlib", "miniz_oxide", "runtime_detection", "rust_backend", "zlib-rs"] }
 fnv = { package = "fnv", version = "=1.0.7", default-features = true, features = ["std"] }
 foyer = { package = "foyer", version = "=0.22.6", default-features = true, features = ["runtime-tokio"] }
 futures = { package = "futures", version = "=0.3.34", default-features = true, features = ["alloc", "async-await", "executor", "futures-executor", "std"] }
@@ -120,15 +121,15 @@ rcgen = { package = "rcgen", version = "=0.14.10", default-features = false, fea
 redb = { package = "redb", version = "=4.4.0", default-features = true, features = ["std"] }
 regex = { package = "regex", version = "=1.13.1", default-features = true, features = ["perf", "perf-backtrack", "perf-cache", "perf-dfa", "perf-inline", "perf-literal", "perf-onepass", "std", "unicode", "unicode-age", "unicode-bool", "unicode-case", "unicode-gencat", "unicode-perl", "unicode-script", "unicode-segment"] }
 relative-path = { package = "relative-path", version = "=2.0.2", default-features = true, features = ["alloc", "std"] }
-reqwest-0_12 = { package = "reqwest", version = "=0.12.28", default-features = false, features = ["__rustls", "__rustls-ring", "__tls", "charset", "gzip", "h2", "http2", "json", "multipart", "rustls-tls", "rustls-tls-native-roots", "rustls-tls-native-roots-no-provider", "rustls-tls-webpki-roots", "rustls-tls-webpki-roots-no-provider", "stream", "system-proxy"] }
+reqwest-0_12 = { package = "reqwest", version = "=0.12.28", default-features = false, features = ["__rustls", "__rustls-ring", "__tls", "blocking", "charset", "gzip", "h2", "http2", "json", "multipart", "rustls-tls", "rustls-tls-native-roots", "rustls-tls-native-roots-no-provider", "rustls-tls-webpki-roots", "rustls-tls-webpki-roots-no-provider", "stream", "system-proxy"] }
 reqwest-0_13 = { package = "reqwest", version = "=0.13.5", default-features = false, features = ["__rustls", "__rustls-aws-lc-rs", "__tls", "form", "http2", "json", "query", "rustls", "rustls-no-provider", "stream"] }
-resonate-base = { package = "resonate-base", version = "=0.10.1", git = "https://github.com/ostrium-labs/resonate", rev = "31ffb2011b324c187f1d324b83feec2e16787e74", default-features = false }
-resonate-gateway-http = { package = "resonate-gateway-http", version = "=0.10.1", git = "https://github.com/ostrium-labs/resonate", rev = "31ffb2011b324c187f1d324b83feec2e16787e74", default-features = false }
-resonate-plugin = { package = "resonate-plugin", version = "=0.10.1", git = "https://github.com/ostrium-labs/resonate", rev = "31ffb2011b324c187f1d324b83feec2e16787e74", default-features = false }
-resonate-sdk = { package = "resonate-sdk", version = "=0.6.0", git = "https://github.com/ostrium-labs/resonate", rev = "31ffb2011b324c187f1d324b83feec2e16787e74", default-features = false }
-resonate-server-sqlite = { package = "resonate-server-sqlite", version = "=0.10.1", git = "https://github.com/ostrium-labs/resonate", rev = "31ffb2011b324c187f1d324b83feec2e16787e74", default-features = false }
-resonate-transport-http-poll = { package = "resonate-transport-http-poll", version = "=0.10.1", git = "https://github.com/ostrium-labs/resonate", rev = "31ffb2011b324c187f1d324b83feec2e16787e74", default-features = false }
-resonate-transport-http-push = { package = "resonate-transport-http-push", version = "=0.10.1", git = "https://github.com/ostrium-labs/resonate", rev = "31ffb2011b324c187f1d324b83feec2e16787e74", default-features = false }
+resonate-base = { package = "resonate-base", version = "=0.10.1", git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90", default-features = true, features = ["otlp"] }
+resonate-gateway-http = { package = "resonate-gateway-http", version = "=0.10.1", git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90", default-features = false }
+resonate-plugin = { package = "resonate-plugin", version = "=0.10.1", git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90", default-features = false }
+resonate-sdk = { package = "resonate-sdk", version = "=0.6.0", git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90", default-features = false }
+resonate-server-sqlite = { package = "resonate-server-sqlite", version = "=0.10.1", git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90", default-features = false }
+resonate-transport-http-poll = { package = "resonate-transport-http-poll", version = "=0.10.1", git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90", default-features = false }
+resonate-transport-http-push = { package = "resonate-transport-http-push", version = "=0.10.1", git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90", default-features = false }
 ring = { package = "ring", version = "=0.17.14", default-features = true, features = ["alloc", "dev_urandom_fallback", "wasm32_unknown_unknown_js"] }
 roaring = { package = "roaring", version = "=0.11.5", default-features = true, features = ["std"] }
 rquickjs = { package = "rquickjs", version = "=0.14.0", default-features = false, features = ["array-buffer", "loader", "properties", "std"] }
@@ -155,6 +156,7 @@ subtle = { package = "subtle", version = "=2.6.1", default-features = true, feat
 sync_wrapper = { package = "sync_wrapper", version = "=1.0.2", default-features = false, features = ["futures", "futures-core"] }
 tantivy = { package = "tantivy", version = "=0.26.2", default-features = false, features = ["columnar-zstd-compression", "fs4", "futures-channel", "futures-util", "lz4-compression", "lz4_flex", "memmap2", "mmap", "quickwit", "rust-stemmers", "sstable", "stemmer", "stopwords", "tempfile", "zstd", "zstd-compression"] }
 tantivy-fst = { package = "tantivy-fst", version = "=0.5.0", default-features = true, features = ["regex", "regex-syntax"] }
+tar = { package = "tar", version = "=0.4.46", default-features = true, features = ["xattr"] }
 tempfile = { package = "tempfile", version = "=3.27.0", default-features = true, features = ["getrandom"] }
 thiserror = { package = "thiserror", version = "=2.0.21", default-features = true, features = ["std"] }
 tikv-client = { package = "tikv-client", version = "=0.4.0", git = "https://github.com/ostrium-labs/client-rust", rev = "41b3588f9b63d505dd61e15bf3d26abfd53689a2", default-features = false }
@@ -168,7 +170,7 @@ tokio-tungstenite-0_24 = { package = "tokio-tungstenite", version = "=0.24.0", d
 tokio-tungstenite-0_30 = { package = "tokio-tungstenite", version = "=0.30.0", default-features = true, features = ["__rustls-tls", "connect", "handshake", "rustls", "rustls-pki-types", "rustls-tls-webpki-roots", "stream", "tokio-rustls", "webpki-roots"] }
 tokio-util = { package = "tokio-util", version = "=0.7.20", default-features = true, features = ["codec", "futures-util", "hashbrown", "io", "io-util", "join-map", "libc", "rt"] }
 toml = { package = "toml", version = "=0.8.23", default-features = true, features = ["display", "parse"] }
-tonic = { package = "tonic", version = "=0.14.6", default-features = true, features = ["_tls-any", "channel", "codegen", "gzip", "router", "server", "tls-connect-info", "tls-ring", "transport"] }
+tonic = { package = "tonic", version = "=0.14.6", default-features = true, features = ["_tls-any", "channel", "codegen", "gzip", "router", "server", "tls-connect-info", "tls-native-roots", "tls-ring", "transport"] }
 tonic-prost = { package = "tonic-prost", version = "=0.14.6", default-features = false }
 tonic-prost-build = { package = "tonic-prost-build", version = "=0.14.6", default-features = true, features = ["cleanup-markdown", "transport"] }
 tower = { package = "tower", version = "=0.5.3", default-features = false, features = ["balance", "buffer", "discover", "futures-core", "futures-util", "indexmap", "limit", "load", "load-shed", "log", "make", "pin-project-lite", "ready-cache", "retry", "slab", "sync_wrapper", "timeout", "tokio", "tokio-util", "tracing", "util"] }
