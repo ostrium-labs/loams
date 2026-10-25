@@ -902,6 +902,75 @@ impl MarketplaceHost {
     }
 }
 
+/// agentd's [`Npm`]: the `npm` it found, with the arguments of
+/// [`install::npm_args`] (scripts off), a cleared environment, and a cache
+/// beside the install.
+#[derive(Debug, Clone)]
+pub struct ProcessNpm {
+    pub npm: PathBuf,
+    /// Runs `npm` when it is a script (`npm-cli.js` on Windows), and is put
+    /// first on the child's `PATH`.
+    pub node: Option<PathBuf>,
+}
+
+impl Npm for ProcessNpm {
+    fn install(&self, tarball: &Path, prefix: &Path) -> Result<(), String> {
+        let mut cmd = match (&self.node, self.npm.extension()) {
+            (Some(node), Some(ext)) if ext == "js" => {
+                let mut cmd = std::process::Command::new(node);
+                cmd.arg(&self.npm);
+                cmd
+            }
+            _ => std::process::Command::new(&self.npm),
+        };
+        let cache = prefix
+            .parent()
+            .unwrap_or(prefix)
+            .join(".npm-cache");
+        cmd.args(install::npm_args(tarball, prefix))
+            .env_clear()
+            .env("HOME", &cache)
+            .env("npm_config_cache", &cache)
+            .env("npm_config_update_notifier", "false")
+            .current_dir(prefix)
+            .stdin(std::process::Stdio::null());
+        let mut path: Vec<PathBuf> = Vec::new();
+        for program in [self.node.as_deref(), Some(self.npm.as_path())].into_iter().flatten() {
+            if let Some(dir) = program.parent() {
+                path.push(dir.to_owned());
+            }
+        }
+        if let Ok(joined) = std::env::join_paths(path) {
+            cmd.env("PATH", joined);
+        }
+        if let Some(root) = std::env::var_os("SystemRoot") {
+            cmd.env("SystemRoot", root);
+        }
+        let output = cmd.output().map_err(|e| format!("{}: {e}", self.npm.display()))?;
+        if output.status.success() {
+            Ok(())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let tail: Vec<&str> = stderr.lines().rev().take(20).collect();
+            Err(format!(
+                "{} ({})",
+                output.status,
+                tail.into_iter().rev().collect::<Vec<_>>().join("\n")
+            ))
+        }
+    }
+}
+
+/// An [`Npm`] for a machine without one: every npm install fails, with why.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct NoNpm;
+
+impl Npm for NoNpm {
+    fn install(&self, _tarball: &Path, _prefix: &Path) -> Result<(), String> {
+        Err("npm was not found; install Node.js 22.13 or newer".into())
+    }
+}
+
 /// The name an installed MCP server has in a session.
 pub fn mcp_name(listing_id: &str) -> String {
     format!("marketplace-{}", listing_id.replace('/', "-"))

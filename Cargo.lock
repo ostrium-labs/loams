@@ -8452,6 +8452,7 @@ dependencies = [
  "loams-agentd-doc",
  "loams-agentd-harness",
  "loams-agentd-link",
+ "loams-agentd-marketplace",
  "loams-agentd-mcp",
  "loams-agentd-proto",
  "loams-agentd-rpc",
