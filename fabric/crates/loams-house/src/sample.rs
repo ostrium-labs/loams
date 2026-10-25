@@ -97,9 +97,123 @@ pub fn rewrite(sql: &str) -> Option<String> {
     Some(out)
 }
 
+/// The clauses after which a `PREWHERE` or `WHERE` condition ends, at its
+/// own depth.
+const CLAUSES: &[&str] = &[
+    "WHERE",
+    "GROUP",
+    "HAVING",
+    "ORDER",
+    "LIMIT",
+    "SETTINGS",
+    "FORMAT",
+    "UNION",
+    "WINDOW",
+    "QUALIFY",
+    "INTERSECT",
+    "EXCEPT",
+    "OFFSET",
+    "FETCH",
+];
+
+/// Where the condition starting at token `from` (depth `depth`) ends: the
+/// index of the next clause keyword at its depth, of the `)` that closes its
+/// subquery, or of a `;`; `toks.len()` at the end.
+fn condition_end(sql: &str, toks: &[Token], from: usize, depth: i32, stop_at_where: bool) -> usize {
+    (from..toks.len())
+        .find(|&k| {
+            let t = toks[k];
+            t.depth == depth
+                && ((t.word
+                    && CLAUSES
+                        .iter()
+                        .any(|c| (stop_at_where || *c != "WHERE") && word(sql, &t) == *c))
+                    || is_symbol(sql, &t, ")")
+                    || is_symbol(sql, &t, ";"))
+        })
+        .unwrap_or(toks.len())
+}
+
+/// HE1 R9.70: a lake table is read through a view, and a view takes no
+/// `PREWHERE` ("Storage View does not support PREWHERE"; SigNoz's
+/// metric-reduction views read `samples_v4_buffer PREWHERE …`). `PREWHERE p
+/// WHERE w` becomes `WHERE (p) AND (w)`, and `PREWHERE p` alone `WHERE p`:
+/// the same rows, as `PREWHERE` only orders the reading. `None` when there is
+/// no `PREWHERE`.
+pub fn prewhere_as_where(sql: &str) -> Option<String> {
+    let toks = tokens(sql.as_bytes());
+    let mut edits: Vec<(usize, usize, String)> = Vec::new();
+    for (i, t) in toks.iter().enumerate() {
+        if !(t.word && word(sql, t) == "PREWHERE") {
+            continue;
+        }
+        let end = condition_end(sql, &toks, i + 1, t.depth, true);
+        let is_where = toks
+            .get(end)
+            .is_some_and(|w| w.word && word(sql, w) == "WHERE");
+        if !is_where {
+            edits.push((t.start, t.end, "WHERE".to_string()));
+            continue;
+        }
+        let where_end = condition_end(sql, &toks, end + 1, t.depth, false);
+        let close_at = toks.get(where_end).map_or(sql.len(), |c| c.start);
+        let last = toks[where_end - 1].end.min(close_at);
+        edits.push((t.start, t.end, "WHERE (".to_string()));
+        edits.push((toks[end].start, toks[end].end, ") AND (".to_string()));
+        edits.push((last, last, ")".to_string()));
+    }
+    if edits.is_empty() {
+        return None;
+    }
+    edits.sort_by_key(|(start, _, _)| *start);
+    let mut out = String::with_capacity(sql.len() + 16);
+    let mut at = 0;
+    for (start, end, with) in edits {
+        out.push_str(&sql[at..start]);
+        out.push_str(&with);
+        at = end;
+    }
+    out.push_str(&sql[at..]);
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn prewhere_reads_as_where() {
+        assert_eq!(
+            prewhere_as_where("SELECT a FROM t PREWHERE x != 0 WHERE (y = 1) AND z GROUP BY a")
+                .as_deref(),
+            Some("SELECT a FROM t WHERE ( x != 0 ) AND ( (y = 1) AND z) GROUP BY a")
+        );
+        assert_eq!(
+            prewhere_as_where("SELECT a FROM t PREWHERE x != 0 ORDER BY a").as_deref(),
+            Some("SELECT a FROM t WHERE x != 0 ORDER BY a")
+        );
+        // SigNoz's metric reduction: inside a subquery, with `now()` in the
+        // condition and the subquery's own GROUP BY after it.
+        assert_eq!(
+            prewhere_as_where(
+                "SELECT k FROM (SELECT k FROM b PREWHERE r != 0 WHERE (f(x) = 0) AND (u < \
+                 now()) GROUP BY k) WHERE k > 1"
+            )
+            .as_deref(),
+            Some(
+                "SELECT k FROM (SELECT k FROM b WHERE ( r != 0 ) AND ( (f(x) = 0) AND (u < \
+                 now())) GROUP BY k) WHERE k > 1"
+            )
+        );
+        assert_eq!(
+            prewhere_as_where("SELECT 1 FROM (SELECT * FROM b PREWHERE r WHERE s)").as_deref(),
+            Some("SELECT 1 FROM (SELECT * FROM b WHERE ( r ) AND ( s))")
+        );
+        assert_eq!(
+            prewhere_as_where("SELECT 'PREWHERE', prewhere_x FROM t"),
+            None
+        );
+    }
 
     #[test]
     fn langfuse_samples_read_every_row() {

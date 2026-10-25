@@ -115,6 +115,8 @@ Commit: `house: the generated function and engine matrix (HE0 Task 8)`.
 
 > **Remaining (owner, 2026-10-22: House work stops after the open PRs; [R9.64](he1-rulings/t9.md)).** For SigNoz: refreshable materialized views (`REFRESH EVERY … APPEND TO`, designed in R9.64, not built), L's DDL items from the first SigNoz replay, and the gate job with its House overlay. Done: D1572 and R9.61 (nanosecond times), R9.62 (cluster `system` tables) and R9.63 (`JSON` columns).
 
+> **Status 2026-10-24 ([R9.70](he1-rulings/t9.md)–[R9.73](he1-rulings/t9.md)).** Built: refreshable materialized views and `PREWHERE` on lake tables (R9.70), Distributed columns that follow their local table (R9.71), the Factory's DSN on the native TLS listener (R9.72), and the gate (`app-on-house.sh signoz`, the multi-database replay, `signoz/compare.py`, the nightly `signoz-on-house` job). The replay passes (373/373 DDL, 194 identical SELECTs plus 1 `insert-time`) and SigNoz's own migrations run on the House over native TLS. **Left:** one end-to-end run after R9.71 (collector ingest, then the API comparison); then make the job required or keep it nightly (about 17 min locally), and take off the preview label.
+
 Point each application at the chDB House (lake tables, Iceberg v2) instead of `clickhouse-server` and run its suite and driver. For each failure: a fix in the House if HS1 has the piece and it is small; else a ruling that names the gap and the HE phase that closes it (for example mutations, D1552, HE2). Exit for this task: both applications start, ingest and render their main pages on the House, and the remaining gaps are listed.
 
 Tests: `langfuse_on_house_smoke` and `openpanel_on_house_smoke` in a nightly job.
