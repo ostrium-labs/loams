@@ -9853,6 +9853,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-temporal-matching"
+version = "0.1.1"
+dependencies = [
+ "hex",
+ "loams-temporal-resonate",
+ "sha2 0.11.0",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "loams-temporal-proto"
 version = "0.1.1"
 dependencies = [
