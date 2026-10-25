@@ -91,7 +91,10 @@ mod tests {
         );
         assert_eq!(shared.keyspace(), "pool_1");
         assert_eq!(shared.root(), &[9, b't', 0x00, 0xFF, 0x00, 0x00]);
-        assert_eq!(product_root(&shared, PRODUCT_REDIS).root(), &[9, b't', 0, 0xFF, 0, 0, b'R']);
+        assert_eq!(
+            product_root(&shared, PRODUCT_REDIS).root(),
+            &[9, b't', 0, 0xFF, 0, 0, b'R']
+        );
     }
 
     #[test]
