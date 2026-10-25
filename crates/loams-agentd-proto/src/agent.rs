@@ -28,6 +28,11 @@ pub enum HarnessId {
     LoamsBot,
     /// Test harness; never shown in production pickers.
     Mock,
+    /// A harness installed from the marketplace (MK1 Task 0 ruling 7): an
+    /// ACP agent launched from its install. Which listing is carried beside
+    /// the id ([`HarnessDescriptor::marketplace_listing`]), so the id stays
+    /// `Copy`. Wire name `marketplace`.
+    Marketplace,
     /// Any harness name this daemon does not ship: one it removed (the
     /// Cursor shim, plan DD1 Task 3, stored as `"cursor"`) or one from a
     /// newer build. A session on it opens read-only: every send answers
@@ -65,6 +70,9 @@ pub struct HarnessDescriptor {
     /// "unknown": consumers fall back to detection (see [`descriptor_enabled`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
+    /// The listing id of a [`HarnessId::Marketplace`] harness (MK1 Task 4b).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub marketplace_listing: Option<String>,
 }
 
 impl HarnessDescriptor {
@@ -301,6 +309,12 @@ pub struct RunRequest {
     /// no Loams Desktop tools; title runs never carry it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mcp: Option<McpServer>,
+    /// MCP servers installed from the marketplace (MK1 Task 4b, D1463),
+    /// injected by the host beside [`Self::mcp`]. Additive and
+    /// serde-defaulted; a driver that cannot pass more than one server
+    /// ignores them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mcp_servers: Vec<McpServer>,
 }
 
 /// A stdio MCP server the harness should add to the agent's session, on top

@@ -51,7 +51,7 @@ fn methods(id: HarnessId, platform: Platform) -> Vec<Method> {
     use Method::*;
     let windows = platform == Platform::Windows;
     match id {
-        Mock | LoamsBot | Unsupported => vec![], // loams: ships inside the app
+        Mock | LoamsBot | Unsupported | Marketplace => vec![], // loams: ships inside the app
         Antigravity => vec![Archive],
         ClaudeCode if windows => vec![PowerShell("irm https://claude.ai/install.ps1 | iex")],
         ClaudeCode => vec![Shell(
@@ -152,7 +152,7 @@ pub fn manual_command(id: HarnessId) -> Option<&'static str> {
         Grok => "npm install -g @xai-official/grok",
         Hermes => "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
         Devin => "curl -fsSL https://cli.devin.ai/install.sh | bash",
-        Antigravity | Mock | LoamsBot | Unsupported => return None,
+        Antigravity | Mock | LoamsBot | Unsupported | Marketplace => return None,
     })
 }
 
@@ -169,6 +169,8 @@ fn cli_and_dir(id: HarnessId) -> (&'static str, &'static str) {
         Antigravity => ("agy_acp_server", "the daemon's adapters directory"),
         Mock => ("mock", "PATH"),
         Unsupported => ("an unsupported agent", "PATH"),
+        // Installed by the marketplace, never as a CLI (MK1 Task 4b).
+        Marketplace => ("a marketplace harness", "the marketplace"),
         LoamsBot => ("loams-desktop", "the Loams Desktop install"), // loams
     }
 }
@@ -185,7 +187,7 @@ pub fn installed(id: HarnessId) -> bool {
         Devin => crate::AcpHarness::devin().installed(),
         Antigravity => crate::AcpHarness::antigravity().installed(),
         LoamsBot => crate::AcpHarness::loams_bot().installed(), // loams
-        Mock | Unsupported => false,
+        Mock | Unsupported | Marketplace => false,
     }
 }
 

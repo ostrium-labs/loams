@@ -16,6 +16,7 @@ wire_enum!(rs::HarnessId => pb::HarnessId {
     Antigravity => HARNESS_ID_ANTIGRAVITY,
     LoamsBot => HARNESS_ID_LOAMS_BOT,
     Mock => HARNESS_ID_MOCK,
+    Marketplace => HARNESS_ID_MARKETPLACE,
     Unsupported => HARNESS_ID_UNSUPPORTED,
 });
 
