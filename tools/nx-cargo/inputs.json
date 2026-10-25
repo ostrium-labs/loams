@@ -15,6 +15,7 @@
         "loams-specview",
         "loams-sqldb",
         "loams-sqlgate",
+        "loams-temporal-statemachine",
         "loams-upgrade"
       ],
       "extra": {
