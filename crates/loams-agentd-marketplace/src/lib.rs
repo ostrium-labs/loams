@@ -5,6 +5,7 @@
 //! Tasks 6 and 8.
 
 pub mod contract;
+pub mod fetch;
 pub mod index;
 pub mod install;
 pub mod listing;
@@ -12,9 +13,12 @@ pub mod market;
 pub mod plan;
 pub mod provenance;
 pub mod revocations;
+pub mod service;
 pub mod sources;
 pub mod verify;
 
 pub use market::{Fetcher, ListingView, MarketError, Marketplace, Query, SourceInfo, Summary};
+pub use fetch::HttpsFetcher;
+pub use service::{Deps, MarketplaceHost, MemoryVault, Registrations, ServiceError, Vault};
 pub use sources::Source;
 pub use verify::{Identity, SignatureVerifier, SigstoreVerifier};

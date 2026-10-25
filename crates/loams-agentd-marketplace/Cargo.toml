@@ -18,10 +18,21 @@ sha2.workspace = true
 hex.workspace = true
 sigstore-verify.workspace = true
 thiserror.workspace = true
+# The daemon side (MK1 Task 4b): the HTTPS fetcher (reqwest 0.12 on rustls,
+# as the other agentd crates fetch), the refresh timer and the registration
+# watch, and logs.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "system-proxy"] }
+tokio = { workspace = true, features = ["sync", "time", "rt"] }
+tracing.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
-tokio = { workspace = true, features = ["macros", "rt"] }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "test-util"] }
+# The fetcher's tests: a TLS server with a self-signed certificate, as
+# loams-agentd-connect's remote tests make one.
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "pem", "ring"] }
+rustls = { workspace = true, features = ["ring", "std", "tls12"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
 
 [lints]
 workspace = true
