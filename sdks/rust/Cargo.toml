@@ -17,7 +17,7 @@ resolver = "3"
 members = []
 
 [workspace.package]
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 rust-version = "1.97"
 license = "Apache-2.0"
@@ -61,6 +61,8 @@ documentation = "https://docs.rs/loams"
 readme = "README.md"
 keywords = ["loams", "connect", "grpc", "sdk", "client"]
 categories = ["api-bindings", "database"]
+# The test-only RSA key the `machine-key` unit tests sign with stays out of the package.
+exclude = ["tests/data/test-only-rsa-key.pem"]
 # Published by .github/workflows/sdk-release.yml on a release tag, and only when
 # the repository variable SDK_PUBLISH_CRATES is `true` (the owner sets it once
 # the crates.io trusted publisher is configured). The version is the release's,
@@ -73,6 +75,9 @@ default = ["tls"]
 # endpoint (which is what `loams dev` serves, and what the conformance corpus
 # replays) needs none of it.
 tls = ["connectrpc/client-tls", "dep:rustls", "dep:webpki-roots"]
+# `MachineKey`: an agent's token from its identity provider's private-key JWT key (design 76
+# §10, plan IA1 IA4 Task 2). Off by default: it adds an RSA signer (pure Rust).
+machine-key = ["dep:jsonwebtoken"]
 
 [dependencies]
 async-trait.workspace = true
@@ -106,8 +111,11 @@ tokio = { workspace = true, features = ["sync", "time"] }
 # The generated `loams.*.v1` packages and their clients, from the same build
 # the server compiles them with. `client` is the connect-rust client transport;
 # `crates/loams-proto`'s own docs name this crate as the one the SDKs build on.
-loams-proto = { path = "../../crates/loams-proto", version = "0.1.1", features = ["client"] }
-loams-live-proto = { path = "../../crates/loams-live-proto", version = "0.1.1", features = ["client"] }
+loams-proto = { path = "../../crates/loams-proto", version = "0.1.2", features = ["client"] }
+loams-live-proto = { path = "../../crates/loams-live-proto", version = "0.1.2", features = ["client"] }
+
+# `machine-key` only: RS256 assertions (RFC 7523), on the pure-Rust RSA backend.
+jsonwebtoken = { version = "10", default-features = false, features = ["rust_crypto", "use_pem"], optional = true }
 
 # TLS only.
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"], optional = true }

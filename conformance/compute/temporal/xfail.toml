@@ -1,0 +1,4 @@
+# Compat mode on Loams Postgres 16, the primary leg (conformance/compute/temporal/run.sh).
+# No expected failures. temporal_txn_mode_xfail passed through PgDog
+# transaction pooling on 2026-10-24 (SPIKE.md), so it must keep passing.
+product = "temporal"

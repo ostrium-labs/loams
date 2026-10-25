@@ -186,6 +186,14 @@ pub struct MaterializedView {
     pub target: String,
     /// Its `SELECT`, as written.
     pub select: String,
+    /// Whether its target is its own inner table, named as the view (HE1
+    /// R9.14): dropping the view drops the table.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub inner: bool,
+    /// A refreshable view's schedule (HE1 R9.64): it is recorded on its
+    /// target, not on a source, and runs on its schedule, not on inserts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refresh: Option<crate::refresh::Schedule>,
 }
 
 impl MaterializedView {
@@ -315,6 +323,7 @@ async fn find_view(
             };
             if let Some(view) = views_of(&table)
                 .into_iter()
+                .chain(crate::refresh::refreshes_of(&table))
                 .find(|v| v.database == database && v.name == name)
             {
                 return Ok(Some((table, view)));
@@ -417,13 +426,19 @@ pub async fn create_pipe(
         || stmt.order_by.is_some()
         || stmt.primary_key.is_some()
         || stmt.inline_primary_key.is_some()
-        || stmt.sample_by
-        || stmt.ttl
+        || stmt.sample_by.is_some()
+        || stmt.ttl.is_some()
     {
         return refuse("A storage clause (PARTITION BY, ORDER BY, PRIMARY KEY, SAMPLE BY, TTL)");
     }
-    if let Some(entry) = &stmt.other_entry {
-        return refuse(&format!("{entry} in the column list"));
+    for (entry, present) in [
+        ("INDEX", !stmt.indexes.is_empty()),
+        ("PROJECTION", !stmt.projections.is_empty()),
+        ("CONSTRAINT", !stmt.constraints.is_empty()),
+    ] {
+        if present {
+            return refuse(&format!("{entry} in the column list"));
+        }
     }
     let feed = if engine == "S3Queue" {
         PipeFeed::Queue(s3queue::QueueSource::parse(
@@ -511,7 +526,7 @@ async fn view_count(lake: &Lake, namespace: u64) -> Result<usize, HouseError> {
     for database in lake.databases(namespace).await? {
         for name in lake.table_names(namespace, &database.name).await? {
             if let Some(table) = lake.load(namespace, &database.name, &name).await? {
-                count += views_of(&table).len();
+                count += views_of(&table).len() + crate::refresh::refreshes_of(&table).len();
             }
         }
     }
@@ -525,6 +540,18 @@ pub async fn create_materialized_view(
     current: &str,
     text: &str,
 ) -> Result<(), HouseError> {
+    create_view_into(lake, namespace, current, text, false).await
+}
+
+/// [`create_materialized_view`], and with `inner` the view of an inner-table
+/// materialized view, whose target is the table named as the view (HE1 R9.14).
+pub async fn create_view_into(
+    lake: &Lake,
+    namespace: u64,
+    current: &str,
+    text: &str,
+    inner: bool,
+) -> Result<(), HouseError> {
     let stmt = ddl::parse_create_mv(text)?;
     if stmt.or_replace {
         return Err(not_implemented(
@@ -532,9 +559,7 @@ pub async fn create_materialized_view(
         ));
     }
     if stmt.refresh {
-        return Err(not_implemented(
-            "Refreshable materialized views are not on the House's surface",
-        ));
+        return create_refreshable(lake, namespace, current, &stmt).await;
     }
     if stmt.populate {
         return Err(not_implemented(
@@ -548,9 +573,11 @@ pub async fn create_materialized_view(
              VIEW … TO <table> AS SELECT …",
         ));
     };
-    if stmt.inner_table {
+    // A column list beside `TO` only names the target's columns (SigNoz,
+    // HE1 R9.16); an `ENGINE` there is an inner table's, which `TO` excludes.
+    if stmt.inner_table && (!inner && !stmt.inner_clauses.is_empty()) {
         return Err(not_implemented(
-            "A materialized view with TO takes no column list or ENGINE",
+            "A materialized view with TO takes no ENGINE: its rows go to the TO table",
         ));
     }
     let db_of = |db: Option<String>| db.unwrap_or_else(|| current.to_string());
@@ -558,7 +585,7 @@ pub async fn create_materialized_view(
     let target_database = db_of(to_db);
     ddl::check_new_name("table", &stmt.name)?;
     lake.require_database(namespace, &database).await?;
-    let exists = lake.load(namespace, &database, &stmt.name).await?.is_some()
+    let exists = (!inner && lake.load(namespace, &database, &stmt.name).await?.is_some())
         || find_view(lake, namespace, &database, &stmt.name)
             .await?
             .is_some();
@@ -579,7 +606,19 @@ pub async fn create_materialized_view(
             "Too many materialized views: a namespace holds at most {cap}"
         )));
     }
-    let Some((source_db, source)) = stmt.source.clone() else {
+    // The first name after a FROM that is one of the catalog's tables (HE1
+    // R9.14: ClickHouse's trigger table, inside a subquery too).
+    let mut found = None;
+    for (db, name) in &stmt.candidates {
+        let db = db_of(db.clone());
+        if lake.database_exists(namespace, &db).await?
+            && lake.load(namespace, &db, name).await?.is_some()
+        {
+            found = Some((Some(db), name.clone()));
+            break;
+        }
+    }
+    let Some((source_db, source)) = found.or_else(|| stmt.source.clone()) else {
         return Err(not_implemented(
             "A materialized view's SELECT reads its source first: … FROM <pipe>",
         ));
@@ -625,6 +664,8 @@ pub async fn create_materialized_view(
         target_database,
         target: to,
         select: stmt.select.clone(),
+        inner,
+        refresh: None,
     };
     if source_class == TableClass::Lake {
         // A view over a lake table starts at the source's current snapshot
@@ -647,6 +688,224 @@ pub async fn create_materialized_view(
     Ok(())
 }
 
+/// `CREATE MATERIALIZED VIEW … REFRESH EVERY … APPEND TO t [(cols)] [EMPTY] AS
+/// SELECT …` (HE1 R9.64): recorded on `t` with its schedule (see
+/// [`crate::refresh`]).
+async fn create_refreshable(
+    lake: &Lake,
+    namespace: u64,
+    current: &str,
+    stmt: &ddl::CreateMaterializedView,
+) -> Result<(), HouseError> {
+    let mut schedule = match stmt.schedule.clone() {
+        Some(Ok(schedule)) => schedule,
+        Some(Err(message)) => return Err(not_implemented(message)),
+        None => return Err(not_implemented("Expected EVERY after REFRESH")),
+    };
+    schedule.empty = stmt.empty;
+    if stmt.populate {
+        return Err(not_implemented(
+            "POPULATE is not supported (a refreshable view without EMPTY runs once at CREATE)",
+        ));
+    }
+    let Some((to_db, to)) = stmt.to.clone() else {
+        return Err(not_implemented(
+            "A refreshable materialized view on the House appends into a lake table: … REFRESH \
+             EVERY … APPEND TO <table> AS SELECT …",
+        ));
+    };
+    if !stmt.inner_clauses.is_empty() {
+        return Err(not_implemented(
+            "A materialized view with TO takes no ENGINE: its rows go to the TO table",
+        ));
+    }
+    let db_of = |db: Option<String>| db.unwrap_or_else(|| current.to_string());
+    let database = db_of(stmt.database.clone());
+    let target_database = db_of(to_db);
+    ddl::check_new_name("table", &stmt.name)?;
+    lake.require_database(namespace, &database).await?;
+    let exists = lake.load(namespace, &database, &stmt.name).await?.is_some()
+        || find_view(lake, namespace, &database, &stmt.name)
+            .await?
+            .is_some();
+    if exists {
+        return if stmt.if_not_exists {
+            Ok(())
+        } else {
+            Err(HouseError::from(ChError::table_already_exists(format!(
+                "Table {database}.{} already exists",
+                stmt.name
+            ))))
+        };
+    }
+    let cap = lake.object_caps().views;
+    if view_count(lake, namespace).await? >= cap {
+        return Err(bad(format!(
+            "Too many materialized views: a namespace holds at most {cap}"
+        )));
+    }
+    let target = lake
+        .lake_table(
+            namespace,
+            &target_database,
+            &to,
+            "CREATE MATERIALIZED VIEW … REFRESH … TO",
+        )
+        .await?;
+    if ddl::class_of(&target.metadata) != TableClass::Lake {
+        return Err(not_implemented(
+            "A materialized view writes into a lake table",
+        ));
+    }
+    let first = if schedule.empty {
+        schedule
+            .nominal_at(crate::retention::now_ms().div_euclid(1000))
+            .to_string()
+    } else {
+        crate::refresh::RUN_NOW.to_string()
+    };
+    let view = MaterializedView {
+        id: uuid::Uuid::new_v4().simple().to_string(),
+        database,
+        name: stmt.name.clone(),
+        target_database,
+        target: to,
+        select: stmt.select.clone(),
+        inner: false,
+        refresh: Some(schedule),
+    };
+    lake.catalog()
+        .commit(
+            &target.ident,
+            Vec::new(),
+            vec![TableUpdate::SetProperties {
+                updates: HashMap::from([
+                    (
+                        crate::refresh::record_key(&view),
+                        serde_json::to_string(&view).map_err(|e| bad(e.to_string()))?,
+                    ),
+                    (crate::refresh::at_key(&view), first),
+                ]),
+            }],
+        )
+        .await?;
+    Ok(())
+}
+
+/// `ALTER TABLE mv MODIFY QUERY SELECT …` (HE1 R9.12): the view's `SELECT`, which
+/// must still read the view's source first (the view lives on its source, and
+/// its cursor counts that source's snapshots). The cursor is kept: the new query
+/// applies to the snapshots committed after it, as in ClickHouse.
+pub async fn modify_materialized_view_query(
+    lake: &Lake,
+    namespace: u64,
+    database: &str,
+    name: &str,
+    select: &str,
+) -> Result<(), HouseError> {
+    let Some((source, mut view)) = find_view(lake, namespace, database, name).await? else {
+        return Err(HouseError::from(ChError::unknown_table(format!(
+            "Table {database}.{name} is not a materialized view: MODIFY QUERY changes one"
+        ))));
+    };
+    let probe = format!("CREATE MATERIALIZED VIEW loams_probe TO loams_probe AS {select}");
+    let parsed = ddl::parse_create_mv(&probe)?;
+    // A refreshable view reads what it likes; it stays on its target.
+    if view.refresh.is_some() {
+        view.select = parsed.select;
+        let record = serde_json::to_string(&view).map_err(|e| bad(e.to_string()))?;
+        lake.catalog()
+            .commit(
+                &source.ident,
+                Vec::new(),
+                vec![TableUpdate::SetProperties {
+                    updates: HashMap::from([(crate::refresh::record_key(&view), record)]),
+                }],
+            )
+            .await?;
+        return Ok(());
+    }
+    // The new SELECT's source, as CREATE picks one: the first FROM name that
+    // is a catalog table.
+    let mut new_source = None;
+    for (db, table) in &parsed.candidates {
+        let db = db.clone().unwrap_or_else(|| view.database.clone());
+        if lake.database_exists(namespace, &db).await?
+            && let Some(loaded) = lake.load(namespace, &db, table).await?
+        {
+            new_source = Some(loaded);
+            break;
+        }
+    }
+    let Some(new_source) = new_source else {
+        return Err(not_implemented(
+            "A materialized view's SELECT reads its source first: … FROM <table>",
+        ));
+    };
+    view.select = parsed.select;
+    let record = serde_json::to_string(&view).map_err(|e| bad(e.to_string()))?;
+    let key = format!("{MV_PREFIX}{}", view.id);
+    if new_source.ident == source.ident {
+        lake.catalog()
+            .commit(
+                &source.ident,
+                Vec::new(),
+                vec![TableUpdate::SetProperties {
+                    updates: HashMap::from([(key, record)]),
+                }],
+            )
+            .await?;
+        return Ok(());
+    }
+    // A new source (SigNoz's `time_series_v4_1day_mv`, HE1 R9.16): the view
+    // moves to it and reads from its current snapshot on, as ClickHouse's
+    // `MODIFY QUERY` makes the new table the trigger.
+    if !matches!(
+        ddl::class_of(&new_source.metadata),
+        TableClass::Pipe | TableClass::Lake
+    ) {
+        return Err(not_implemented(
+            "A materialized view reads a pipe or a lake table the House writes",
+        ));
+    }
+    let target = lake
+        .lake_table(
+            namespace,
+            &view.target_database,
+            &view.target,
+            "MODIFY QUERY … TO",
+        )
+        .await?;
+    if target.ident == new_source.ident {
+        return Err(bad(format!(
+            "Materialized view {database}.{name} would read and write {}.{}",
+            view.target_database, view.target
+        )));
+    }
+    if ddl::class_of(&new_source.metadata) == TableClass::Lake {
+        crate::mv::start_cursor(lake, &target, &view, &new_source).await?;
+    }
+    lake.catalog()
+        .commit(
+            &new_source.ident,
+            Vec::new(),
+            vec![TableUpdate::SetProperties {
+                updates: HashMap::from([(key.clone(), record)]),
+            }],
+        )
+        .await?;
+    lake.catalog()
+        .commit(
+            &source.ident,
+            Vec::new(),
+            vec![TableUpdate::RemoveProperties {
+                removals: vec![key],
+            }],
+        )
+        .await?;
+    Ok(())
+}
+
 /// `DROP VIEW` (or `DROP TABLE`) of a materialized view: whether there was one.
 pub async fn drop_materialized_view(
     lake: &Lake,
@@ -657,6 +916,28 @@ pub async fn drop_materialized_view(
     let Some((source, view)) = find_view(lake, namespace, database, name).await? else {
         return Ok(false);
     };
+    // A refreshable view is recorded on its target, with its last run.
+    if view.refresh.is_some() {
+        lake.catalog()
+            .commit(
+                &source.ident,
+                Vec::new(),
+                vec![TableUpdate::RemoveProperties {
+                    removals: vec![
+                        crate::refresh::record_key(&view),
+                        crate::refresh::at_key(&view),
+                    ],
+                }],
+            )
+            .await?;
+        lake.pipe_states().forget(namespace, database, name);
+        return Ok(true);
+    }
+    // An inner-table view takes its table with it (HE1 R9.14).
+    if view.inner {
+        lake.drop_table(namespace, &view.target_database, &view.target, true)
+            .await?;
+    }
     lake.catalog()
         .commit(
             &source.ident,
@@ -1142,7 +1423,10 @@ impl PipeRunner {
             self.hook(Step::Uploaded, view).await?;
             let root = lake.root().clone();
             let make = |endpoint: &str| PipeBatch::new(pipe, &location, endpoint, &root);
-            let result = self.writer.write(namespace, view, &target, &make).await;
+            let result = self
+                .writer
+                .write(namespace, view, &target, Some(&make))
+                .await;
             match result {
                 Ok(files) => written = Some(files),
                 Err(err) => {
@@ -1184,6 +1468,9 @@ impl PipeRunner {
         }
     }
 }
+
+/// Makes a view's batch from the worker's bucket endpoint.
+pub type MakeBatch<'a> = dyn Fn(&str) -> Result<PipeBatch, HouseError> + Sync + 'a;
 
 /// Writes a materialized view's `SELECT` over a batch as files of its target
 /// (HS1 Tasks 16 and 17): the pipes' runner and the views over lake tables
@@ -1229,7 +1516,7 @@ impl ViewWriter {
         namespace: u64,
         view: &MaterializedView,
         target: &LakeTable,
-        batch: &(dyn Fn(&str) -> Result<PipeBatch, HouseError> + Sync),
+        batch: Option<&MakeBatch<'_>>,
     ) -> Result<loams_house_lake::write::Written, HouseError> {
         let mut lease = self.pool.acquire(&namespace.to_string()).await?;
         let endpoint = lease.ready().and_then(|r| r.s3_endpoint.clone());
@@ -1240,7 +1527,8 @@ impl ViewWriter {
                  --store)",
             ));
         };
-        let batch = match batch(&endpoint) {
+        // A refreshable view reads its tables as they are (no batch).
+        let batch = match batch.map(|make| make(&endpoint)).transpose() {
             Ok(batch) => batch,
             Err(err) => {
                 self.pool.release(lease, Outcome::Completed);
@@ -1252,7 +1540,7 @@ impl ViewWriter {
         let ch = ChTable::from_lake(&view.target_database, &view.target, target);
         // ClickHouse matches a view's columns to its target's by name.
         let names = match self
-            .output_names(&mut lease, namespace, view, &system, &batch)
+            .output_names(&mut lease, namespace, view, &system, batch.as_ref())
             .await
         {
             Ok(names) => names,
@@ -1311,7 +1599,7 @@ impl ViewWriter {
             limits: &self.limits,
             known: &known,
             max_insert_bytes: self.max_insert_bytes,
-            pipe_batch: Some(&batch),
+            pipe_batch: batch.as_ref(),
             admitted: None,
         };
         crate::insert::write_files(&ctx, lease, &insert).await
@@ -1324,7 +1612,7 @@ impl ViewWriter {
         namespace: u64,
         view: &MaterializedView,
         user: &UserMap,
-        batch: &PipeBatch,
+        batch: Option<&PipeBatch>,
     ) -> Result<Vec<String>, HouseError> {
         let sql = format!("DESCRIBE TABLE ({})", view.select);
         let analysis = lease
@@ -1345,7 +1633,7 @@ impl ViewWriter {
                 database: &view.database,
                 user: &user.user,
                 grants: None,
-                batch: Some(batch),
+                batch,
                 front: None,
                 admin: false,
             },

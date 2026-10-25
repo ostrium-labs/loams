@@ -6,7 +6,7 @@ Status: Merged #301; live deployment awaits owner setup (#314).
 
 Workers Free static assets only; no paid products, Worker request code or
 embedded secrets. Keep the engine's /ui/ build paths. Read server configuration
-at runtime. Authentik remains the identity provider. No new API endpoints.
+at runtime. The identity provider is unchanged (Zitadel since §76 D1600). No new API endpoints.
 Use a signed-off PR to dev. The separate Vite+ migration waits for #244.
 
 ## Task 0: Reconciliation

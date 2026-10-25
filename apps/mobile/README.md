@@ -6,11 +6,11 @@ Native phone apps for [Loams](https://github.com/ostrium-labs/loams): **Loams fo
 
 The design is §37 of the main repository ([`docs/design/37-desktop-and-mobile-apps.md`](https://github.com/ostrium-labs/loams/blob/dev/docs/design/37-desktop-and-mobile-apps.md)); the plans are AP2 (Android) and AP3 (iOS).
 
-> **Status: scaffold, mock-first.** Everything runs against the local mock server in [`mock/`](mock/). A real Loams server needs the unified auth plan (pairing grant, DPoP, the Authentik token exchange) and AP4 (the server side of the app protos). Nothing is published to a store yet.
+> **Status: scaffold, mock-first.** Everything runs against the local mock server in [`mock/`](mock/). A real Loams server needs the unified auth plan (pairing grant, DPoP, the exchange of an OIDC token for Loams tokens) and AP4 (the server side of the app protos). Nothing is published to a store yet.
 
 ## What the apps do
 
-- **Pair** with a Loams instance by scanning a QR code (pinned TLS key and instance key), or **sign in** through Authentik with OIDC and PKCE.
+- **Pair** with a Loams instance by scanning a QR code (pinned TLS key and instance key), or **sign in** at the instance's OIDC issuer with PKCE (Zitadel at `auth.loams.dev` is planned, IA1; any issuer the install trusts works).
 - **Approve or reject** pending operations. Every decision is signed by a hardware key (Android Keystore or the Secure Enclave) that needs biometrics or the device passcode for each signature.
 - **Watch** the instance and its operations live over a Connect server stream.
 - **Receive push notifications** that are sealed end to end (HPKE), so Apple, Google and the push gateway see only ciphertext.

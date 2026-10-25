@@ -1,4 +1,4 @@
-# Headscale for headscale.loams.dev: single-host target, beside Authentik.
+# Headscale for headscale.loams.dev: single-host target, beside the IdP (Zitadel).
 #
 #   headscale  control server + embedded DERP (SQLite, one writer)
 #   caddy      TLS for headscale.loams.dev; keeps /api and /metrics off the

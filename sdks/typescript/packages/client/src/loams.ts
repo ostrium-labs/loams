@@ -74,7 +74,7 @@ export interface LoamsOptions {
   auth?: TokenSource | string;
   /**
    * The transport. Defaults to Connect over `fetch` pointed at `endpoint`,
-   * which is the browser, Node, Deno and Bun path (see `runtime/transports.ts`).
+   * which is the browser, Node and Bun path (see `runtime/transports.ts`).
    * `@loams/client/node` exports `createNodeTransport` for HTTP/2 gRPC.
    *
    * A transport carries its own base URL, so a transport passed here must be
@@ -381,7 +381,7 @@ export class Loams {
   }
 }
 
-/** The process environment, where there is one (Node, Deno, Bun); empty in a
+/** The process environment, where there is one (Node, Bun); empty in a
  * browser. */
 function readEnvironment(): LoamsEnvironment {
   const scope = globalThis as { process?: { env?: Record<string, string | undefined> } };

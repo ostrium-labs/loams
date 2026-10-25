@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "loams"
-version = "0.1.1"
+version = "0.1.2"
 description = "The Loams SDK for Python: one Loams object with namespaced modules over the unified Connect API, generated from proto/."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -41,6 +41,9 @@ dependencies = [
 flight = ["adbc-driver-flightsql>=1.0.0"]
 arrow = ["pyarrow>=17.0.0"]
 polars = ["polars>=1.0.0"]
+# `loams.runtime.machine_key`: an agent's token from its private-key JWT key (design 76 §10,
+# plan IA1 IA4 Task 2). `cryptography` signs the RS256 assertion.
+agent = ["cryptography>=44"]
 
 [project.urls]
 Homepage = "https://loams.dev"
@@ -114,3 +117,8 @@ target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "ANN", "RUF"]
+
+[tool.uv]
+# The 14-day rule for new dependencies: pycparser 3.12 (via cryptography's cffi) is from
+# 2026-10-22.
+constraint-dependencies = ["pycparser<3.12"]

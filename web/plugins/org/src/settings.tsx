@@ -30,6 +30,7 @@ const OIDC_KIND: Record<number, string> = {
   [auth.OidcProviderKind.AUTHENTIK]: 'authentik',
   [auth.OidcProviderKind.DEX]: 'dex',
   [auth.OidcProviderKind.GENERIC]: 'generic',
+  [auth.OidcProviderKind.ZITADEL]: 'zitadel',
 };
 
 function OrgForm({ org, onSaved }: { org: admin.Org; onSaved: () => void }) {
@@ -159,8 +160,8 @@ export function SettingsPage({
             </ul>
           )}
           <p>
-            SAML and SCIM come through your identity provider: put Keycloak, Dex or Authentik in
-            front and connect it over OIDC.
+            SAML and SCIM come through your identity provider: put Zitadel, Keycloak or Dex in front
+            and connect it over OIDC.
           </p>
         </Card>
       </div>

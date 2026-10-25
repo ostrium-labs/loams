@@ -15,7 +15,7 @@ import kotlinx.serialization.json.longOrNull
 /**
  * A v1 pairing payload as a QR code carries it (design §37 §7.2.1).
  *
- * [issuer] is the Loams gateway, not Authentik. [spki] is null for instances with publicly trusted
+ * [issuer] is the Loams gateway, not the identity provider. [spki] is null for instances with publicly trusted
  * certificates; otherwise the phone pins it before sending a byte. [jkt] is the instance key
  * thumbprint that anchors the instance's identity either way.
  */

@@ -12,7 +12,7 @@ Loams Desktop is one window with five things in it, built from plan AP1e
 - **A local engine.** The app supervises `loams dev` on your machine, plus optional local stacks
   (Postgres on Neon, WeSQL, TiKV) with pages for Data, Postgres, WeSQL, Live, Durable, Streams & Links,
   Connectors and Graph.
-- **Software Factory.** Forgejo, Zulip, ItsAPlan (Plane), GlitchTip, OpenPanel, Matomo, Langfuse and OpenObserve,
+- **Software Factory.** Forgejo, Zulip, ItsAPlan (Plane), GlitchTip, OpenPanel, Matomo, Langfuse and SigNoz (Preview: SigNoz on Loams House, full UI only),
   as read-only native panels and as embedded full UIs, under Studio at `/studio/factory` (the old `/factory` paths
   redirect there).
 - **An agent panel**, docked on the right, that works over the same services with approval for every write.
@@ -120,8 +120,17 @@ The smoke test launches the app, checks that it opens in Studio on first run, sw
 engine, then checks the Data page, the factory home (through the old `/factory` path's redirect to `/studio/factory`),
 a deep link and quitting. Studio's own end-to-end suite on both editions is SD1 Task 29 (pending).
 `LOAMS_E2E_ENGINE` picks the engine: `real` (fails if the binary is missing; needs `LOAMS_BIN` or a release engine in the Cargo target directory), `fake` (a Node script serving `GetInstance`),
-or `auto` (default: the real engine if found, else the fake). CI sets `real`. Live tests against the container stacks are opt-in
+or `auto` (default: the real engine if found, else the fake). Live tests against the container stacks are opt-in
 (`LOAMS_IT_PG=1`, `LOAMS_IT_WESQL=1`).
+
+CI (`.github/workflows/desktop-electron.yml`) runs the smoke test in one of two tiers. A pull request into `dev` gets the
+fast tier on Linux x64: the unit tests and typecheck, the console and desktop builds, then the smoke test on `fake`, with
+no engine build and no package. The full tier builds the engine and the agent daemon, packages the app, checks that the
+daemon is bundled and runs the smoke test on `real` (on Linux). It runs on all five platforms for a push to `main`, a
+dispatch (the nightly on `dev`) and a pull request into `main`, and on Linux x64 for a pull request into `dev` that
+touches the packaging inputs (`package.json`, `project.json`, `scripts/`, `electron-builder.config.cjs`, `build/`,
+`resources/`, the repository's `deploy/` and `scripts/release/`, or a `desktop-*.yml` workflow) or carries the
+`ci:full` label (add it, then push).
 
 ## Security model
 

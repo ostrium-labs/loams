@@ -49,12 +49,20 @@ on:
 permissions:
   contents: read
 
+# Superseded runs of a pull request and of dev are cancelled; a push to main, a tag,
+# a dispatch (the nightly) and a schedule run to completion. The event is in
+# the group, so a push never cancels a dispatch on the same branch.
 concurrency:
-  group: fabric-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  # A newer dev head supersedes an older one; main runs to completion.
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: fabric-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/dev') }}
 
 env:
+  # CI builds are never debugged: no debug info in dev and test builds (smaller
+  # caches, faster links; a panic still names its file and line) and no
+  # incremental artifacts. rust-cache sets CARGO_INCREMENTAL=0 too; this covers
+  # the jobs without it.
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_DEV_DEBUG: 0
   CARGO_TERM_COLOR: always
 
 jobs:
@@ -67,14 +75,15 @@ jobs:
   changes:
     name: Changed paths
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/dev')
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     permissions:
       contents: read
       pull-requests: read
     outputs:
       heavy: ${{ github.event.pull_request.draft != true || contains(github.event.pull_request.labels.*.name, 'ci:full') }}
-      # 'true' on a pull request into main: the full tier.
-      full: ${{ github.base_ref == 'main' }}
+      # 'true' on a pull request into main or a release branch, or one
+      # labelled `ci:full` (then a push): the full tier.
+      full: ${{ github.base_ref == 'main' || startsWith(github.base_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'ci:full') }}
       fabric: ${{ steps.filter.outputs.fabric }}
       drift: ${{ steps.filter.outputs.drift }}
       connect-routes: ${{ steps.filter.outputs.connect-routes }}
@@ -84,6 +93,8 @@ jobs:
       families: ${{ steps.families.outputs.list }}
       alerts: ${{ steps.filter.outputs.alerts }}
       kube: ${{ steps.filter.outputs.kube }}
+      house-apps: ${{ steps.filter.outputs.house-apps }}
+      house-on-house: ${{ steps.filter.outputs.house-on-house }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: github.event_name == 'push'
@@ -115,6 +126,28 @@ jobs:
               - "proto/loams/options/**"
               - "proto/loams/errors/**"
               - "docs/api/reasons.md"
+              # `loams-house-mine`'s checks (HE0): the function and engine
+              # matrix (`the_committed_matrix_is_up_to_date`) reads chDB's
+              # dumps, the classes and the mined profile, and writes
+              # docs/house/compat-matrix.md.
+              - "conformance/clickhouse/**"
+              - "docs/house/**"
+            # The mined ClickHouse applications' harness (HE1 Task 1): the
+            # Langfuse smoke brings the stack up, drives it, dumps and stops.
+            house-apps:
+              - ".github/workflows/fabric.yml"
+              - "conformance/clickhouse/apps/**"
+              - "scripts/house/apps.sh"
+            # A mined application on the chDB House (HE1 Task 9): the harness,
+            # the replay and the House's own crates.
+            house-on-house:
+              - ".github/workflows/fabric.yml"
+              - "conformance/clickhouse/apps/**"
+              - "scripts/house/**"
+              - "fabric/Cargo.lock"
+              - "fabric/crates/loams-house*/**"
+              - "fabric/crates/loams-fabric/**"
+              - "fabric/crates/loams-chdb-sys/**"
             # The generated appendix and the two scripts that check the Camel
             # and Kestra columns against their catalogs (design §33 CN-R1).
             drift:
@@ -211,7 +244,7 @@ jobs:
     name: "Fabric: fmt, clippy, tests and deny"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.fabric == 'true') }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v7
       # The flow protos are compiled by build.rs, exactly as ci.yml's `check`
@@ -219,8 +252,9 @@ jobs:
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
-          save-if: ${{ github.event_name != 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
           workspaces: fabric -> target
       - name: rustfmt
         working-directory: fabric
@@ -232,7 +266,11 @@ jobs:
       # network namespace (HS1 R6.8), which Ubuntu 24.04's AppArmor refuses an
       # unprivileged process by default (`/proc/self/setgroups`: EACCES).
       - name: allow unprivileged user namespaces
-        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+        # Hosts without AppArmor's userns switch (the local runners' containers)
+        # have nothing to relax.
+        run: |
+          f=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+          if [ -e "$f" ]; then sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; else echo "no $f"; fi
       - name: tests
         working-directory: fabric
         run: cargo test --workspace --locked --no-fail-fast
@@ -250,7 +288,9 @@ jobs:
       # loams-connector-* family crate. Each runs its shared-fixture self-test first.
       # PyYAML reads the compose files (MIT; pinned here, unpinned in ci.yml).
       - name: PyYAML
-        run: python3 -m pip install --quiet --disable-pip-version-check PyYAML==6.0.2
+        # --user --break-system-packages: the local runners' Ubuntu Python is
+        # externally managed (PEP 668) and refuses a plain `pip install`.
+        run: python3 -m pip install --quiet --disable-pip-version-check --user --break-system-packages PyYAML==6.0.2
       - name: image licences (ci-service, user-supplied)
         run: |
           python3 scripts/connectors/image_licences.py --self-test
@@ -261,8 +301,175 @@ jobs:
           python3 scripts/connectors/crate_licences.py
       # CN2 Task 7: every profile under connectors/profiles/ and every manifest's
       # runtime.profile (the same rules as loams-flow's `profile` module).
+      # The self-test first: no refusal it prints carries a credential (#1105).
       - name: connector profiles
-        run: python3 scripts/connectors/profiles.py --check
+        run: |
+          python3 scripts/connectors/profiles.py --self-test
+          python3 scripts/connectors/profiles.py --check
+
+  # HE1 owns this job (plan 2026-10-21-he1-loams-house-engine, Task 1): the
+  # mined-applications harness brings Langfuse v4 up against the pinned
+  # clickhouse-server, drives it, dumps query_log and brings it down. Every
+  # image is pinned by digest (loams-house-mine's tests/manifest.rs). The
+  # dumps hold synthetic query text only and are not uploaded.
+  house-apps-smoke:
+    name: "House apps: Langfuse smoke"
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.house-apps == 'true') }}
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: up
+        run: scripts/house/apps.sh langfuse-v4 up
+      - name: drive
+        run: scripts/house/apps.sh langfuse-v4 drive
+      - name: dump
+        run: |
+          scripts/house/apps.sh langfuse-v4 dump
+          test "$(wc -l < conformance/clickhouse/apps/.out/langfuse-v4/query_log.tsv)" -gt 1
+      - name: logs on failure
+        if: failure()
+        run: docker compose -f conformance/clickhouse/apps/langfuse-v4/compose.yaml logs --tail 200
+      - name: down
+        if: always()
+        run: scripts/house/apps.sh langfuse-v4 down
+
+  # HE1 owns this job (plan 2026-10-21-he1-loams-house-engine, Task 9,
+  # ruling R9.6): `openpanel_on_house_smoke`. OpenPanel on the pinned
+  # clickhouse-server, then its traffic replayed against a House built from
+  # this tree (every DDL statement, the oracle's rows, every distinct SELECT
+  # compared), then OpenPanel itself on that House (migrations, ingest through
+  # its Redis buffers, every page's reads). It runs on the nightly dispatch and
+  # on pull requests that touch the House or the harness, and is part of
+  # `Connectors required` since OpenPanel passed on the House (HE1 R9.7).
+  # Synthetic traffic only; nothing uploaded.
+  openpanel-on-house:
+    name: "House apps: OpenPanel on the House"
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.house-on-house == 'true') }}
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
+        with:
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
+          workspaces: fabric -> target
+          key: openpanel-on-house
+      - name: build the House
+        working-directory: fabric
+        run: cargo build --locked -p loams-fabric -p loams-house-worker
+      # The House's sealed workers enter their own user and network namespace
+      # (HS1 R6.8), as in the fabric tests.
+      - name: allow unprivileged user namespaces
+        # Hosts without AppArmor's userns switch (the local runners' containers)
+        # have nothing to relax.
+        run: |
+          f=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+          if [ -e "$f" ]; then sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; else echo "no $f"; fi
+      - name: openpanel_on_house_smoke
+        env:
+          HE0_HOUSE_BIN: fabric/target/debug
+        run: scripts/house/app-on-house.sh openpanel
+      - name: the House's log on failure
+        if: failure()
+        run: tail -n 200 conformance/clickhouse/apps/.out/openpanel-on-house/house.log || true
+
+  # HE1 owns this job (plan 2026-10-21-he1-loams-house-engine, Task 9,
+  # ruling R9.65): `langfuse_on_house_smoke`, native gate 2 (D1575). Stock
+  # Langfuse v4 on a House built from this tree: langfuse-web runs its own
+  # ClickHouse migrations at start (golang-migrate on clickhouse-go v1, over
+  # the House's native TLS listener), then the driver ingests over OTLP and
+  # the public API and reads every endpoint and page back through the House's
+  # HTTPS listener. No oracle replay for Langfuse yet (R9.65). Part of
+  # `Connectors required`: it passed in 7m23s and 7m48s on its first two CI
+  # runs (R9.65). Synthetic traffic only; nothing uploaded.
+  langfuse-on-house:
+    name: "House apps: Langfuse on the House"
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.house-on-house == 'true') }}
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
+        with:
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
+          workspaces: fabric -> target
+          key: openpanel-on-house
+      - name: build the House
+        working-directory: fabric
+        run: cargo build --locked -p loams-fabric -p loams-house-worker
+      - name: allow unprivileged user namespaces
+        # Hosts without AppArmor's userns switch (the local runners' containers)
+        # have nothing to relax.
+        run: |
+          f=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+          if [ -e "$f" ]; then sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; else echo "no $f"; fi
+      # pages.sh installs Playwright with npm: the GitHub-hosted image has Node,
+      # the local runners' image does not.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - name: langfuse_on_house_smoke
+        env:
+          HE0_HOUSE_BIN: fabric/target/debug
+        run: scripts/house/app-on-house.sh langfuse-v4
+      - name: the House's log on failure
+        if: failure()
+        run: tail -n 200 conformance/clickhouse/apps/.out/langfuse-v4-on-house/house.log || true
+
+  # HE1 owns this job (plan 2026-10-21-he1-loams-house-engine, Task 9,
+  # rulings R9.64, R9.70-R9.73): `signoz_on_house_smoke`. SigNoz 0.145.0, the MIT
+  # community build, with its AGPL collector and schema migrator run
+  # unmodified, on the pinned clickhouse-server; then its traffic replayed
+  # against a House built from this tree in all six of its databases; then
+  # SigNoz itself on that House over the native protocol (TLS, port 29440):
+  # its migrations, OTLP ingest through the collector, and every API read the
+  # driver makes, compared with the oracle's answers. Synthetic traffic only;
+  # nothing uploaded. Nightly only (the dispatch) and not in `Connectors
+  # required` until it passes end to end (R9.73): SigNoz's own run on the
+  # House is not green yet.
+  signoz-on-house:
+    name: "House apps: SigNoz on the House"
+    needs: changes
+    if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - name: the Factory's SigNoz overlay matches the release House
+        run: python3 -I scripts/house/check_factory_signoz.py
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
+          workspaces: fabric -> target
+          key: openpanel-on-house
+      - name: build the House
+        working-directory: fabric
+        run: cargo build --locked -p loams-fabric -p loams-house-worker
+      - name: allow unprivileged user namespaces
+        # Hosts without AppArmor's userns switch (the local runners' containers)
+        # have nothing to relax.
+        run: |
+          f=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+          if [ -e "$f" ]; then sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; else echo "no $f"; fi
+      - name: signoz_on_house_smoke
+        env:
+          HE0_HOUSE_BIN: fabric/target/debug
+        run: scripts/house/app-on-house.sh signoz
+      - name: the House's log on failure
+        if: failure()
+        run: tail -n 200 conformance/clickhouse/apps/.out/signoz-on-house/house.log || true
 
   # CN2 owns this job (plan 2026-10-10-cn2-connectors, Task 4): the connector
   # SDK alone, the crate every native connector family builds on. It needs no
@@ -273,7 +480,7 @@ jobs:
     name: "Connector SDK: tests"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.sdk == 'true') }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v7
       # `loams-connector-http`'s SaaS suites (CN2 Task 20) load the real
@@ -282,8 +489,9 @@ jobs:
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
-          save-if: ${{ github.event_name != 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
           workspaces: fabric -> target
           key: sdk-unit
       - name: rustfmt
@@ -304,14 +512,15 @@ jobs:
     name: "Conformance kit: tests"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.conformance == 'true') }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v7
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
-          save-if: ${{ github.event_name != 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
           workspaces: fabric -> target
           key: conformance-kit
       - name: rustfmt
@@ -335,7 +544,7 @@ jobs:
     name: "Connectors: ${{ matrix.family }}"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && (needs.changes.outputs.families != '[]'))) && needs.changes.outputs.heavy != 'false' }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     strategy:
       fail-fast: false
       matrix:
@@ -366,9 +575,9 @@ jobs:
         if: steps.plan.outputs.run == 'true'
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        if: steps.plan.outputs.run == 'true'
+        if: runner.environment == 'github-hosted' && (steps.plan.outputs.run == 'true')
         with:
-          save-if: ${{ github.event_name != 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
           workspaces: fabric -> target
           key: connectors-${{ matrix.family }}
       - name: build the family crate's tests
@@ -422,7 +631,7 @@ jobs:
     name: "Connectors: ${{ matrix.family }} (CI-only images)"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && (needs.changes.outputs.families != '[]'))) && needs.changes.outputs.heavy != 'false' }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     # MongoDB's own start-up check refuses Linux 6.19 and newer (SERVER-121912),
     # and misreads Ubuntu's patched kernels, which some ubuntu-24.04 runners now
     # report (SERVER-136848, no fix version yet): mongod exits before a suite
@@ -457,9 +666,9 @@ jobs:
         if: steps.plan.outputs.run == 'true'
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        if: steps.plan.outputs.run == 'true'
+        if: runner.environment == 'github-hosted' && (steps.plan.outputs.run == 'true')
         with:
-          save-if: ${{ github.event_name != 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
           workspaces: fabric -> target
           key: connectors-${{ matrix.family }}
       - name: build the family crate's tests
@@ -503,7 +712,7 @@ jobs:
   connectors-nightly:
     name: "Connectors: ${{ matrix.family }} (nightly)"
     if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     strategy:
       fail-fast: false
       matrix:
@@ -614,9 +823,9 @@ jobs:
         if: steps.plan.outputs.run == 'true'
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        if: steps.plan.outputs.run == 'true'
+        if: runner.environment == 'github-hosted' && (steps.plan.outputs.run == 'true')
         with:
-          save-if: ${{ github.event_name != 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
           workspaces: fabric -> target
           key: connectors-${{ matrix.family }}
       - name: up
@@ -652,7 +861,7 @@ jobs:
     name: "Connectors: alerts and activity"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && (needs.changes.outputs.alerts == 'true'))) }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     env:
       PROMETHEUS_VERSION: "3.5.0"
       PROMETHEUS_SHA256: e811827af26d822afb09a4f28314f61b618b12cff5369835a67f674d8b46f39a
@@ -677,8 +886,9 @@ jobs:
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
-          save-if: ${{ github.event_name != 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
           workspaces: fabric -> target
           key: connectors-alerts
       - name: metrics and activity tests
@@ -698,7 +908,7 @@ jobs:
     name: "Connectors: Kubernetes fleet (helm chart, kube golden, kind)"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && (needs.changes.outputs.kube == 'true'))) }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     env:
       HELM_VERSION: "3.22.0"
       HELM_SHA256: 1e4ab49e429626cf6c6958d914248b78c9730803c2751b87627e171dc800e7bb
@@ -723,9 +933,11 @@ jobs:
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
           workspaces: fabric -> target
           key: connectors-kind
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
       - name: chart golden, KubeRuntime golden and lease tests
         working-directory: fabric
         run: cargo test -p loams-flow --test kube --locked
@@ -757,7 +969,7 @@ jobs:
   connectors-bench:
     name: "Connectors: performance budgets"
     if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 180
     env:
       LOAMS_BENCH_RUNNER: ubuntu-24.04
@@ -772,9 +984,11 @@ jobs:
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
           workspaces: fabric -> target
           key: connectors-bench
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
       - name: build the bench tool (release)
         working-directory: fabric
         run: cargo build --release --locked -p loams-flow-conformance --bin loams-connectors-bench
@@ -816,7 +1030,7 @@ jobs:
       # The reports are the calibration runs. actions/upload-artifact is Apache-2.0.
       - name: the bench reports
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: connector-bench-${{ github.run_id }}
           path: ${{ runner.temp }}/bench/*.json
@@ -830,7 +1044,7 @@ jobs:
   crate-upkeep:
     name: "Connectors: crate upkeep (advisories, outdated)"
     if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     permissions:
       contents: read
       issues: write
@@ -851,7 +1065,7 @@ jobs:
         run: python3 scripts/connectors/crate_upkeep.py --out "$RUNNER_TEMP/upkeep" --open-issues
       - name: the upkeep reports
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: connector-crate-upkeep
           path: ${{ runner.temp }}/upkeep/
@@ -866,7 +1080,7 @@ jobs:
   camel-bump:
     name: "Connectors: Camel bump (fallback runtime)"
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.camel_version != '' }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     env:
       CAMEL_VERSION: ${{ inputs.camel_version }}
     steps:
@@ -889,7 +1103,7 @@ jobs:
         run: python3 scripts/connectors/camel_bump.py --to "$CAMEL_VERSION" --json "$RUNNER_TEMP/camel-bump.json"
       - name: the bump plan and results
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: camel-bump-${{ github.run_id }}
           path: ${{ runner.temp }}/camel-bump*.json
@@ -904,7 +1118,7 @@ jobs:
   connectors-drift:
     name: "Connectors: catalog drift"
     if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     env:
       # A literal path under the runner's temp directory, not `runner.temp` and
       # not `env.RUNNER_TEMP`: neither context is available in a job-level `env:`
@@ -962,7 +1176,7 @@ jobs:
       # re-running the checks. actions/upload-artifact is Apache-2.0.
       - name: the drift summaries
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: connector-catalog-drift
           path: ${{ env.CATALOG_DIR }}/*.json
@@ -977,7 +1191,7 @@ jobs:
     name: "Connect: routes"
     needs: changes
     if: false
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     steps:
       # Replaced by CN1 Task 12: checkout, a Camel JBang `camel validate` over
       # connect/routes/**/*.yaml, and `rendered_routes_are_valid_yaml_dsl`.
@@ -1000,7 +1214,10 @@ jobs:
       - connectors-ci-only
       - connectors-alerts
       - connectors-kind
-    runs-on: ubuntu-24.04
+      - house-apps-smoke
+      - openpanel-on-house
+      - langfuse-on-house
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 5
     steps:
       - name: Require all selected fabric jobs to pass

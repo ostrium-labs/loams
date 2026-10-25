@@ -44,7 +44,7 @@
 - **Never public.** No example, template, test or doc points at a public Loams endpoint. Loopback (`127.0.0.1`) or a tailnet hostname only. Test `no_public_endpoints` (Task 3) greps examples, templates and docs for `http(s)://` hosts that are not loopback, `*.ts.net`, `localhost` or documentation hosts.
 - **Secrets.** No secrets in conformance CI except a throwaway `lk_` key minted per run. Publishing uses npm trusted publishing (OIDC) only. Test `no_secret_in_artifacts` greps uploaded logs and reports for `lk_[0-9A-HJKMNP-TV-Z]{26}_`.
 - **Pins.** Exact versions for every `@mastra/*` package in examples, templates and `test/conformance/pins.json`. Third-party packages must be at least 3 days old (`minimumReleaseAge`), except in the nightly `alpha` cell, which runs without secrets.
-- **Product name and email.** "Loams". Contacts are `@ostriumlabs.org` (security@ostriumlabs.org for vulnerabilities, support@ostriumlabs.org for support).
+- **Product name and email.** "Loams". Contacts are `@ostriumlabs.org` (security@ostriumlabs.org for vulnerabilities only). There is no Ostrium support address (D1323): users get help through GitHub issues and Discord (https://discord.gg/eK6NanHQq).
 - **Builds in the monorepo.** Shared target directory, one cargo build at a time, touched crates only (`cargo test -j 4 -p <crate>`); never build in `/tmp`.
 
 ## Review Focus

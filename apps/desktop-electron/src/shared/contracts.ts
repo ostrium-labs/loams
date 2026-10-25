@@ -34,7 +34,7 @@ export type FactoryAppId =
 	| "openpanel"
 	| "matomo"
 	| "langfuse"
-	| "openobserve";
+	| "signoz";
 export type FactoryHealth =
 	| "unconfigured"
 	| "ok"
@@ -48,6 +48,8 @@ export interface FactoryAppInfo {
 	url?: string;
 	health: FactoryHealth;
 	hasPanels: boolean;
+	/** An honest status label shown beside the app while it is a preview (D1666). */
+	preview?: string;
 	credentialFields: { key: string; label: string; secret: boolean }[];
 	/** Stored values of the non-secret credential fields only; never a secret. */
 	fields?: Record<string, string>;

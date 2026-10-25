@@ -104,6 +104,16 @@ Phase A is exactly what the gated LangChain and LlamaIndex Elasticsearch suites 
 | Index admin | create/delete/exists/get index (concrete names and comma lists) with mappings and settings at creation, `_mapping` get/put, aliases over one or more indices with at most one write index (`is_write_index`; `_aliases` actions are atomic; reads fan out over every member, writes go to the write index; D57), `GET /_all`, `_refresh` (no-op), `GET /`, `_cluster/health` (synthetic), `_license` (synthetic), `_ml/trained_models/{id}/_infer` (404: Loams runs no models) | `_cat/indices`, `_flush`, `_settings` endpoints, wildcard deletes, alias filters and routing, index templates, analyzers config | ILM, snapshots API (use Loams versions), ingest pipelines, CCR/CCS |
 | Tooling | LangChain and LlamaIndex ES vector stores (and LangChain's ES retrievers, chat history and caches), over elasticsearch-py 8.19; BEIR | elasticsearch-py/js/java client suites; OpenSearch clients (verify divergence) | Kibana |
 
+**Phasing amendment (ruling, 2026-10-21).** Two consumers pulled Phase B items forward, and these now ship ahead of the rest of Phase B:
+- the Loams × Mastra gate (design §66, plan MA1): `GET /_cat/indices` (#901, MA1 Task 24) and `_update_by_query` assigning an object param, which replaces the key (#903);
+- the NVIDIA RAG Blueprint test, which runs the Blueprint's own `ElasticVDB` unchanged:
+  - `GET`/`PUT /{index}/_settings`, storing the dynamic settings without applying them (#948);
+  - sort on `_seq_no` (#949);
+  - the scroll API, without server state (#950);
+  - aggregations on the engine's Tantivy aggregations, with `composite` and `top_hits` in the first batch, ahead of the order in the table above (#951).
+
+The Blueprint test passes 38 of 38 operations with these changes, up from 9 on 0.1.0. Each one's divergences are in the crate's list. The other Phase B items keep their place. Phase A's gates are unchanged, and the new surface is tested by the gateway's Rust suites and the elasticsearch-py client suite.
+
 `_delete_by_query` and `_update_by_query` call the native filter writes (D87). A write refused by backpressure answers 429 `es_rejected_execution_exception` with `Retry-After`, which elastic-transport retries (D86).
 
 The gateway reports Elasticsearch 8.19.0 and sends `X-Elastic-Product: Elasticsearch` on every response (M1.5 Ruling 11). Its `script_score` parser recognises only the fixed cosine, dot-product and L2 vector sources used by the pinned client helpers (Ruling 1, Task 7).

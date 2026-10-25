@@ -198,6 +198,14 @@ export {
   type TokenSource,
 } from './runtime/token-source.js';
 export {
+  JWT_BEARER_GRANT,
+  MACHINE_KEY_ASSERTION_TTL_S,
+  MACHINE_KEY_REFRESH_EARLY_S,
+  machineKey,
+  type MachineKeyFile,
+  type MachineKeyOptions,
+} from './runtime/machine-key.js';
+export {
   createLoamsTransport,
   headersInterceptor,
   type TransportOptions,

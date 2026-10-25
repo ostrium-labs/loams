@@ -88,9 +88,10 @@ const (
 	SignInMethod_SIGN_IN_METHOD_UNSPECIFIED SignInMethod = 0
 	// A QR or typed pairing code redeemed at the Loams gateway.
 	SignInMethod_SIGN_IN_METHOD_PAIRING SignInMethod = 1
-	// OIDC with PKCE in the system browser at the instance's Authentik.
+	// OIDC with PKCE in the system browser at the instance's issuer (Zitadel,
+	// design §76).
 	SignInMethod_SIGN_IN_METHOD_BROWSER SignInMethod = 2
-	// Authentik's device authorization flow (RFC 8628).
+	// The issuer's device authorization flow (RFC 8628).
 	SignInMethod_SIGN_IN_METHOD_DEVICE_CODE SignInMethod = 3
 )
 
@@ -245,7 +246,7 @@ type GetInstanceResponse struct {
 	// A compact JWS signed by the instance key listing the current and next
 	// TLS SPKI pins (§37 §7.2.3). Empty for publicly trusted certificates.
 	TlsPins string `protobuf:"bytes,11,opt,name=tls_pins,json=tlsPins,proto3" json:"tls_pins,omitempty"`
-	// PLACEHOLDER addition, not in the AP0 plan: the Authentik issuer and the
+	// PLACEHOLDER addition, not in the AP0 plan: the OIDC issuer and the
 	// public client ids the apps use for browser sign-in (§37 §7.2.2 path 2).
 	IdentityProvider *IdentityProvider `protobuf:"bytes,12,opt,name=identity_provider,json=identityProvider,proto3" json:"identity_provider,omitempty"`
 	unknownFields    protoimpl.UnknownFields
@@ -421,7 +422,7 @@ func (x *PushConfig) GetAppIds() map[string]string {
 
 type IdentityProvider struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The OIDC issuer, e.g. https://auth.acme.example/application/o/loams/.
+	// The OIDC issuer, e.g. https://auth.acme.example.
 	Issuer          string `protobuf:"bytes,1,opt,name=issuer,proto3" json:"issuer,omitempty"`
 	AndroidClientId string `protobuf:"bytes,2,opt,name=android_client_id,json=androidClientId,proto3" json:"android_client_id,omitempty"`
 	IosClientId     string `protobuf:"bytes,3,opt,name=ios_client_id,json=iosClientId,proto3" json:"ios_client_id,omitempty"`

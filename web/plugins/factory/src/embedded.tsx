@@ -6,7 +6,7 @@ import type { FactoryAppId, FactoryAppInfo, LoamsDesktopApi } from '@loams/deskt
 import { Button, Empty, Notice } from '@loams/ui';
 import { ExternalLink, RefreshCw, SquareArrowOutUpRight } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { APP_LABELS, HealthPill, isConfigured } from './model.js';
+import { APP_LABELS, HealthPill, isConfigured, PreviewTag } from './model.js';
 
 /** A popover or modal that would be drawn under the native view. */
 const OVERLAY = '[data-overlay-open], dialog[open]';
@@ -122,6 +122,7 @@ export function EmbeddedApp({
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="m-0 mr-auto flex items-center gap-3 text-lg font-medium">
           {label} {info && <HealthPill health={info.health} />}
+          <PreviewTag preview={info?.preview} />
         </h1>
         <Button size="sm" variant="quiet" onClick={() => navigate('/studio/factory')}>
           All apps

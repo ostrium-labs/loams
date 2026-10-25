@@ -15,10 +15,10 @@
  * silently answers "anonymous" on the first request of a session and "user" on the second.
  * A race that produces a wrong authorization decision is far worse than an `await`.
  *
- * REFRESH, and the two Authentik behaviours that dictate its shape
+ * REFRESH, and the two identity-provider behaviours that dictate its shape
  *
- *  1. `refresh_token_threshold` defaults to 0, which means "always renew". Every refresh
- *     returns a DIFFERENT refresh-token string and the previous one is immediately dead.
+ *  1. Refresh tokens rotate. Many providers renew on every use by default, so every
+ *     refresh returns a DIFFERENT refresh-token string and the previous one is immediately dead.
  *     A refresh must therefore read-and-replace the stored token set ATOMICALLY. Two
  *     concurrent requests refreshing one session would both present the same token, one
  *     would win and the other would get `invalid_grant` -- an intermittent login loop that
@@ -26,11 +26,11 @@
  *     refresh token, so exactly one request wins and the loser re-reads instead of
  *     clobbering the winner's newer token set.
  *
- *  2. Refresh-token reuse does NOT cascade-revoke. Authentik emits a SUSPICIOUS_REQUEST
- *     event and nothing more, and the successor token stays valid. So an `invalid_grant`
+ *  2. Refresh-token reuse does not necessarily cascade-revoke. Some providers only record
+ *     a suspicious-request event, and the successor token stays valid. So an `invalid_grant`
  *     here is read as "this session's token chain is broken": the session row is destroyed
- *     outright and the user is forced to log in again. Watching Authentik's event log for
- *     SUSPICIOUS_REQUEST is the intrusion signal for this.
+ *     outright and the user is forced to log in again. Watching the identity provider's
+ *     event or audit log for refresh-token reuse is the intrusion signal for this.
  *
  * ID tokens are validated by openid-client, never here. This service does not decode a
  * token to make an authorization decision and never hands one to the SPA.
@@ -41,7 +41,7 @@ import type { IncomingMessage } from "node:http";
 import { loadAuthConfig, validateAuthConfig, type AuthConfig, type Env } from "./config.js";
 import { AuthError, ForbiddenError, classifyOidcError, offlineAccessMessage } from "./errors.js";
 import {
-  AuthentikOidcClient,
+  HttpOidcClient,
   newAuthorizationRequest,
   pkceChallenge,
   type AuthorizationRequest,
@@ -145,7 +145,7 @@ export class AuthService extends Service {
     const { env, clientFactory, store, createJwks, ...overrides } = options;
     this.config = { ...loadAuthConfig(env ?? process.env), ...stripUndefined(overrides) };
     this._store = store ?? this._storeFromContext() ?? new MemoryAuthStore();
-    this._client = (clientFactory ?? ((cfg) => new AuthentikOidcClient(cfg)))(this.config);
+    this._client = (clientFactory ?? ((cfg) => new HttpOidcClient(cfg)))(this.config);
     this._verifier = new BackChannelLogoutVerifier({
       config: this.config,
       store: this._store,
@@ -370,7 +370,7 @@ export class AuthService extends Service {
     const won = await this._store.rotateAuthSessionTokens(record.idHash, record.refreshToken, {
       accessToken: set.accessToken ?? null,
       // A provider that returns no new refresh token must not break the session, so the
-      // store coalesces and keeps the current one. Authentik always rotates.
+      // store coalesces and keeps the current one.
       refreshToken: set.refreshToken ?? null,
       idToken: set.idToken ?? null,
       accessTokenExpiresAt: set.accessTokenExpiresAt ?? null,
@@ -397,7 +397,7 @@ export class AuthService extends Service {
    *
    * The row is deleted rather than having its tokens cleared, so no half-valid state is
    * left for a later request to pick up. Other sessions belonging to the same user are
-   * deliberately untouched: Authentik does not cascade-revoke on reuse, so they remain
+   * deliberately untouched: the provider may not cascade-revoke on reuse, so they may remain
    * valid, and signing a user out of every device would be a larger effect than the
    * evidence supports.
    */
@@ -407,12 +407,12 @@ export class AuthService extends Service {
   ): Promise<void> {
     this.ctx.logger.warn(
       "auth: refresh returned invalid_grant for session %s (subject %s)%s; destroying the " +
-        "session and forcing re-login. Authentik records this as SUSPICIOUS_REQUEST and " +
-        "does NOT revoke the successor token, so treat it as an intrusion signal and " +
-        "grep its event log for that request_id.",
+        "session and forcing re-login. The identity provider may not revoke the successor " +
+        "token on reuse, so treat it as an intrusion signal and search the provider's " +
+        "event log for that request_id.",
       record.idHash.slice(0, 12),
       record.sessionKey.slice(0, 12),
-      requestId ? ` [authentik request_id: ${requestId}]` : "",
+      requestId ? ` [request_id: ${requestId}]` : "",
     );
     await this._store.deleteAuthSession(record.idHash);
   }
@@ -529,8 +529,8 @@ export class AuthService extends Service {
       preferredUsername:
         typeof claims.preferred_username === "string" ? claims.preferred_username : undefined,
       groups: readGroupsClaim(claims.groups),
-      // The GRANTED scopes, never the requested ones. Authentik silently intersects an
-      // unassigned scope away, so trusting the request would grant capabilities the IdP
+      // The GRANTED scopes, never the requested ones. Some providers silently
+      // intersect a scope that is not allowed for the application away, so trusting the request would grant capabilities the IdP
       // never actually gave.
       scopes: set.grantedScopes,
       accessToken: set.accessToken,
@@ -736,8 +736,8 @@ export function userFromRecord(record: AuthSessionRecord): AuthUser {
  * Read the `groups` claim.
  *
  * The claim is PLAIN and unnamespaced: `claims.groups`, a `string[]` of group names. It is
- * NOT under a `goauthentik.io/...` namespace -- that namespace does not exist for claims,
- * and reading it returns undefined forever. It carries DIRECT memberships only, so a user
+ * NOT under a vendor namespace -- there is no vendor namespace for claims, and reading a
+ * namespaced key returns undefined forever. It carries DIRECT memberships only, so a user
  * who belongs to a nested subgroup does not appear in the parent's list. Use leaf groups,
  * or configure a custom scope mapping and read the claim from there.
  */

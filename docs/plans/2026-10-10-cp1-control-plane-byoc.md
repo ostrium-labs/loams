@@ -51,7 +51,7 @@ The exit is "Exit criteria for production" at the end of this plan, with the tas
 - [§41](../design/41-multitenant-byoc-control-plane.md) (all), D540–D559, Q540–Q559 in the [decision log](../design/13-decision-log.md).
 - [§43](../design/43-private-networking.md) §5 (tags and join keys), §6 (BYOC over a tailnet), §8.1–§8.3 (policy, keys, audit), §11 (tooling).
 - [§18](../design/18-metastore-backends-and-router.md) §5.2 (the directory), §6 (orgs, `ControlStore`, quotas), §8 (BYOC modes, D64), §9 (erasure, D68, D69).
-- [§38](../design/38-knative-authentik-gitops.md) §3.3 (per-namespace tenancy, D443), §4 (Authentik), §6 (waves).
+- [§38](../design/38-knative-authentik-gitops.md) §3.3 (per-namespace tenancy, D443), §4 (identity, superseded by [§76](../design/76-identity-and-authorization.md) D1600: Zitadel), §6 (waves).
 - The product designs, for their tenancy hooks:
   - [§46](../design/46-loams-postgres-production.md) §6, §14, §15 (D703, D707, D717);
   - [§47](../design/47-loams-sql-production.md) §16, §20 (D734, D736, D738);
@@ -80,7 +80,7 @@ The owner asked for the best default on every question that does not need money,
 | Q542 | Service credentials | **mTLS plus an attenuated Biscuit** | mTLS proves the workload; the Biscuit scopes what it may do and can be narrowed per call |
 | Q556 | Commit signing | **SSH signing, verified by Argo CD `signatureKeys`** | No GPG keyring to run; SSH keys are already how the bot pushes |
 | Q559 | Ring mechanism | **One `ApplicationSet` per ring.** `RollingSync` may replace it later only by a new ruling | Works on every Argo CD version; `RollingSync` is still progressive-sync alpha territory |
-| Q588 | Support grants | **Customer enables, default TTL 4 h (max 24 h), no session recording in v1** | The customer holds the switch; recording needs a paid tailnet feature and a retention policy |
+| Q588 | Support grants (amended by D1582: a maintainer debug session, opt-in, community and best effort, no contract or SLA) | **Customer enables, default TTL 4 h (max 24 h), no session recording in v1** | The customer holds the switch; recording needs a paid tailnet feature and a retention policy |
 | Q590 | Agent paths in tailnet mode | **Both, tailnet preferred, public name as fallback** | A tailnet outage must not cut the agent off |
 | Q591 | Headscale API keys | **Accept 90-day keys, reachable only on the tailnet or loopback, rotated at 60 days** | Headscale has no scoped keys; reachability and rotation bound the risk |
 | Q592 | `loams-net` location | **In this repository** | It is open code the hub and the CLI both call |
@@ -373,13 +373,13 @@ pub trait AuditSink: Send + Sync + 'static { fn emit(&self, e: AuditEvent); } //
 
 Steps:
 1. Answer each of the following and record the answer, with file paths, as a ruling:
-   - What is merged of MT1 (OpenFGA model, Authentik verifier), MT2 (`loams-operator`), MT3 (waves, Argo CD version, `deploy/helm/loams-stack`) and RN1 Task 3 (`InvocationObserver`)? Each absent item keeps this plan's fallback (Task 3's `RbacAuthorizer`, CP-R10, Task 28's standalone charts).
+   - What is merged of MT1 (OpenFGA model, IdP verifier; now IA1, Zitadel), MT2 (`loams-operator`), MT3 (waves, Argo CD version, `deploy/helm/loams-stack`) and RN1 Task 3 (`InvocationObserver`)? Each absent item keeps this plan's fallback (Task 3's `RbacAuthorizer`, CP-R10, Task 28's standalone charts).
    - `pg-control`'s store as of `dev`: is `crates/loams-pg-control/src/store` still generic over `Record`, and which PG2 branches touch it? Confirm PG2 Task 7 has merged and agree the Task 2 window with PG2's coordinator (CPQ2: extract, no copy).
    - The namespace identity of each product as built: `pg-control` keys (`x/<ns>/`, `Q/n/<ns>/`), `loams-sqldb` (`m/<ns u64 BE>`), `loams-graph` (the metastore namespace), `loams-house` (`Bind`'s namespace id), Live (`loams_live_system` `apps/<id>`). List every place a bare name is used as a key.
    - The free key prefixes in `loams-meta-tikv/src/keys.rs` and `loams-pg-control/src/model.rs`; confirm `cp/` and `e/cp/` are free.
    - Argo CD at the pinned version: `ApplicationSet` progressive sync (`RollingSync`) status (Q559, **(verify)**); commit signature verification (GPG, SSH, gitsign) and `signatureKeys` (Q556).
    - `gix` push against Forgejo versus a `git` subprocess: measure a commit and push of 1,000 files on the build machine. Pick one for `GitRemote`.
-   - Forgejo's API for opening pull requests, branch protection and OIDC with Authentik.
+   - Forgejo's API for opening pull requests, branch protection and OIDC with Zitadel (§76 D1600).
    - OpenFGA modular models (`fga.mod`), and the minimum OpenFGA version (**(verify)**).
    - A maintained YAML serializer (`serde_yaml` is archived), at least 14 days old, or the canonical emitter alone.
    - `ed25519-dalek`, `rcgen` and `biscuit-auth` (Q542) releases at least 14 days old, and `cargo deny`.
@@ -436,6 +436,8 @@ Tests:
 Steps: write `pg_control_suite_unchanged` as the CI diff check first → move → PASS on both backends → commit `refactor(ctlstore): extract the fenced control store from pg-control`.
 
 ### Task 3: `loams-tenancy`, the contract every product plugs into
+
+> **Amendment (approved 2026-10-21) by [§76](../design/76-identity-and-authorization.md)** (D1603, D1604, D1610). `core.fga`'s types follow §76 §6: `platform` (root: `operator`, `limits_writer`, `meter_admin`), `org`, `team`, `project`, `environment` (object id = the namespace id; replaces `namespace`), the application `deployment` and `database`; `cluster` and `rollout` stay. The `Authorizer` is the single trait in `loams-authz` (`check`, `batch_check`, `list_objects`) with `OpenFgaAuthorizer`, `CachedAuthorizer`, `BuiltinAuthorizer`, `AllowAllAuthorizer` and `RecordingAuthorizer`, not this task's `DevAuthorizer`/`RbacAuthorizer`. Lakekeeper keeps its own OpenFGA store. Principal kinds are §19's `user`, `service_account` and `agent`, mapped onto Zitadel ([IA1](2026-10-21-ia1-identity-authz.md) IA2 builds this).
 
 **Files:** create `crates/loams-tenancy/` (as in the file structure), and `deploy/openfga/{core.fga,postgres.fga,sqldb.fga,graph.fga,house.fga,live.fga,fga.mod}`. Tests are inline, plus `tests/{authz.rs,limits.rs,static_dir.rs}`.
 
@@ -850,7 +852,7 @@ Commit `feat(byoc): air-gapped bundles`.
 - `HeadscaleClient`: `/api/v1`, a bearer API key from `SecretFile`, reachable only on the tailnet or loopback, with a 90-day key rotated at 60 days and an alert at 75 (Q591 ruling). In `file` mode `apply_policy` commits through `GitRemote` to the policy repository; in `database` mode it calls the API's policy write (Q589).
 - `PolicyChecker`: `TailscaleApiChecker` (validate), and `HeadscaleCliChecker`, which runs NET1 Task 1's `check.sh` (seeded scratch database) as a subprocess with argument arrays.
 - `policy::render_tenant_section(base, tenants, support_grants, now) -> String`, between NET1's markers:
-  - per tenant, its tag, a grant to `tag:control` tcp 443, and unexpired support grants;
+  - per tenant, its tag, a grant to `tag:control` tcp 443, and unexpired maintainer debug sessions (D1582);
   - `deny` tests for every ordered tenant pair, and for each operator tag;
   - deterministic output.
 - The provider is chosen by `tailnet.provider` (`tailscale` by default) and `tailnet.login_server` (D582).
@@ -878,7 +880,7 @@ Commit `feat(net): NetProvider, both clients, checker and the tenant renderer`.
 - Capacity: past `tailnet.max_tagged_nodes` (default 45, under the Personal plan's 50; Q593) enrolment in tailnet mode is refused with `tailnet_capacity`.
 - The chart's values follow §43 §6.4: `net.mode`, `net.provider`, `net.loginServer` and `net.authKeySecret`. There is a userspace `tailscaled` sidecar, with no `NET_ADMIN`. `--login-server` is set only when `loginServer` is set, and `--advertise-tags` only when it is not (§43 §6.5).
 - The agent prefers the hub's tailnet name and falls back to the public name (Q590 ruling: both).
-- Support grant (Q588 ruling): the customer sets `net.supportGrant.enabled` and a TTL (default 4 hours, at most 24; longer is refused by the values schema) in their values. No session recording in v1. The agent reports the request. The hub renders the grant with its expiry, and a reconciler removes it at expiry.
+- Maintainer debug session (Q588 ruling, amended by D1582; formerly called a support grant). It is opt-in, time-boxed, revocable, community and best effort, with no contract or SLA. The customer sets `net.supportGrant.enabled` and a TTL (default 4 hours, at most 24; longer is refused by the values schema) in their values. No session recording in v1. The agent reports the request. The hub renders the grant with its expiry, and a reconciler removes it at expiry.
 - Offboarding the last cluster of an org revokes the tag's nodes and removes the section. Revoking a cluster deletes its node.
 
 Tests:
@@ -1081,7 +1083,7 @@ Commit `docs(control): CP1 exit gate, runbooks and status`.
 - [ ] **Onboarding** through Git only, with every product's footprint, `active` only when every product is ready: Tasks 13–15, 17.
 - [ ] **Offboarding** blocked until every product's erasure receipt: Task 16.
 - [ ] **BYOC:** enrolment, the agent, observe-only and air-gapped modes, revocation within one heartbeat: Tasks 18–20.
-- [ ] **Private networking:** both providers behind `NetProvider`; tenant isolation tested; join keys single-use; support grants expire; inventory audited: Tasks 21–23.
+- [ ] **Private networking:** both providers behind `NetProvider`; tenant isolation tested; join keys single-use; maintainer debug sessions expire; inventory audited: Tasks 21–23.
 - [ ] **Releases and rings:** product pins, `compatibleWith`, `noDowngrade`, product gates, pause and rollback: Tasks 24, 25.
 - [ ] **Limits and enforcement state:** every product section enforced; agents cannot write; nothing billing-grade: Tasks 6, 8–12, 27.
 - [ ] **Operations:** operator view, CLI, charts from empty through Argo CD and Flux, dashboards and alerts: Tasks 26, 28.
@@ -1112,7 +1114,7 @@ Commit `docs(control): CP1 exit gate, runbooks and status`.
 
 - **Types.** `ControlStore`, `Directory`, `LimitsSource`, `Authorizer`, `TenancyParticipant`, `ErasureReceipt`, `NetProvider` and the naming grammar are defined once, in the shared contracts.
 - **Review Focus.** Items 1–10 each name owning tests (Tasks 2, 5–12, 13, 15, 16, 18, 19, 21, 22, 24, 25, 27).
-- **Not in this plan:** NET1 Tasks 0, 1, 3, 4 and 7 (the policy as code, roster sync, templates, guide, Headscale e2e); MT1's OpenFGA server and Authentik wiring; MT2's Knative tenancy; `loams-meta-remote` (BYOC-managed-meta, Q551); anything in `loams-platform`.
+- **Not in this plan:** NET1 Tasks 0, 1, 3, 4 and 7 (the policy as code, roster sync, templates, guide, Headscale e2e); MT1's OpenFGA server and IdP wiring (now IA1: Zitadel and OpenFGA); MT2's Knative tenancy; `loams-meta-remote` (BYOC-managed-meta, Q551); anything in `loams-platform`.
 
 ## Open questions
 

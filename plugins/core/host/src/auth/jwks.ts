@@ -2,8 +2,8 @@
  * Probing the IdP's JWKS so the HS256 trap is caught BEFORE a login, legibly.
  *
  * THE TRAP
- * An Authentik OAuth2 provider with no Signing Key does not refuse to issue tokens. It
- * signs ID tokens with HS256, using the client secret as the HMAC key, and omits the
+ * Some identity providers, when an application has no signing key configured, do not
+ * refuse to issue tokens. They sign ID tokens with HS256, using the client secret as the HMAC key, and omits the
  * `kid` header entirely. openid-client v6 cannot verify that at any point: its engine is
  * oauth4webapi, which has no symmetric verification branch and explicitly rejects `HS*`
  * algorithms. The result is an opaque "no applicable keys found" at the moment of the

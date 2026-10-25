@@ -25,6 +25,8 @@ class SignInKind(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     SIGN_IN_KIND_AUTHENTIK: _ClassVar[SignInKind]
     SIGN_IN_KIND_AUTHENTIK_DEVICE_CODE: _ClassVar[SignInKind]
     SIGN_IN_KIND_PAIRING: _ClassVar[SignInKind]
+    SIGN_IN_KIND_OIDC: _ClassVar[SignInKind]
+    SIGN_IN_KIND_OIDC_DEVICE_CODE: _ClassVar[SignInKind]
 
 class PrincipalKind(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
@@ -41,6 +43,8 @@ SIGN_IN_KIND_NONE: SignInKind
 SIGN_IN_KIND_AUTHENTIK: SignInKind
 SIGN_IN_KIND_AUTHENTIK_DEVICE_CODE: SignInKind
 SIGN_IN_KIND_PAIRING: SignInKind
+SIGN_IN_KIND_OIDC: SignInKind
+SIGN_IN_KIND_OIDC_DEVICE_CODE: SignInKind
 PRINCIPAL_KIND_UNSPECIFIED: PrincipalKind
 PRINCIPAL_KIND_USER: PrincipalKind
 PRINCIPAL_KIND_SERVICE_ACCOUNT: PrincipalKind

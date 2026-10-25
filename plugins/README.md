@@ -264,7 +264,8 @@ Authentication is optional in development. With no `OIDC_ISSUER` and
 request is an anonymous principal, no session can be created, and the console's
 enable/disable endpoints refuse, so a dev-mode server cannot reconfigure itself.
 
-Authentik is the expected identity provider. The full walkthrough, including the
+Any OpenID Connect provider works; Loams' own, Zitadel at `auth.loams.dev`, is
+planned (IA1). The full walkthrough, including the
 several things that fail silently if you get them wrong, is in
 [docs/auth-setup.md](docs/auth-setup.md). The security model is in
 [docs/security.md](docs/security.md).
@@ -282,7 +283,7 @@ Guides live in [`docs/`](docs/README.md):
 
 - [Getting started](docs/getting-started.md)
 - [Writing a plugin](docs/plugin-authoring.md)
-- [Auth setup (Authentik OIDC)](docs/auth-setup.md)
+- [Auth setup (OIDC)](docs/auth-setup.md)
 - [Security model](docs/security.md)
 - [A2A endpoint](docs/a2a.md)
 - [Upstream adapters](docs/upstreams.md)

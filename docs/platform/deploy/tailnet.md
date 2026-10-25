@@ -5,16 +5,16 @@
 Owner ruling 2026-10-02: "for now make it **BYOK Tailscale**, make it configurable
 so I can add Headscale in the future." The private network of the hosted Loams
 service (SSH and admin access with no public ports, k3s, TiKV and WeSQL across
-sites, backups over private paths, the `loam-bench` runner, Authentik's admin
-interface) is therefore a **pluggable tailnet provider**:
+sites, backups over private paths, the `loam-bench` runner, and Zitadel's admin
+console once IA1 deploys it) is therefore a **pluggable tailnet provider**:
 
 | `TAILNET_PROVIDER` | Control server | `TAILNET_LOGIN_SERVER` | Who runs it |
 |---|---|---|---|
 | `tailscale` (default) | Tailscale's hosted service, on **your own** account (bring your own key) | empty | Tailscale Inc. |
 | `headscale` (later) | Headscale at `https://headscale.loams.dev` | that URL | you ([`headscale.md`](headscale.md)) |
 
-Switching is a **configuration change only**: the clients, the tags, the policy
-file and the Authentik wiring are the same. The design is OSS
+Switching is a **configuration change only**: the clients, the tags and the policy
+file are the same. The design is OSS
 `docs/design/43-private-networking.md` (now provider-neutral); the public
 `auth.loams.dev` stays on Cloudflare Tunnel in both cases.
 
@@ -23,12 +23,10 @@ Layout of [`deploy/tailnet/`](../../../deploy/tailnet):
 | Path | What |
 |---|---|
 | `policy/policy.hujson` | The default-deny policy, **one file for both providers**; `policy/lint.py` is its offline check |
-| `tailscale/` | k3s manifests for the Tailscale node next to Authentik (`kustomization.yaml`, `k8s/`) |
+| `tailscale/` | k3s manifests for a Tailscale node (`kustomization.yaml`, `k8s/secrets.example.yaml`). The auth host's node was removed with the old identity provider (D1600); Zitadel's comes with IA1 ([`zitadel.md`](zitadel.md)) |
 | `headscale/` | The alternative: compose, k3s, config, backup, checker ([`headscale.md`](headscale.md)) |
-| `authentik-tailnet/` | Provider-neutral: host-published admin port override, Cloudflare path rules |
 | `check-env.sh` | Checks `TAILNET_PROVIDER` and `TAILNET_LOGIN_SERVER` agree |
 | `../../.github/workflows/platform.yml` | Lint and Headscale check (jobs `tailnet-lint`, `tailnet-headscale`); Tailscale test and apply run from a separate private deployment repository (step 3) |
-| `../authentik/compose/docker-compose.yml` | Optional `tailscale` service, profile `tailnet` |
 
 ## 0. Facts (checked 2026-10-02)
 
@@ -36,8 +34,9 @@ Layout of [`deploy/tailnet/`](../../../deploy/tailnet):
   control server; unset means Tailscale's hosted service. The
   `tailscale/tailscale` container has **no `TS_LOGIN_SERVER` variable** (read
   from `cmd/containerboot` at v1.102.5): pass it through `TS_EXTRA_ARGS`
-  (`--login-server=...`). The compose `tailscale` service does exactly that, and
-  only when `TAILNET_LOGIN_SERVER` is non-empty.
+  (`--login-server=...`). A compose `tailscale` service must do exactly that, and
+  only when `TAILNET_LOGIN_SERVER` is non-empty (the removed auth-host service
+  did; the `auth.loams.dev` bundle's replacement comes with IA1).
 - **Versions and licences.** Tailscale client v1.102.5 (2026-09-29, BSD-3-Clause;
   the hosted control server is proprietary and not open source). Headscale v0.29.4
   (2026-09-23, BSD-3-Clause; minimum client v1.80). `tailscale/gitops-acl-action`
@@ -66,7 +65,7 @@ Layout of [`deploy/tailnet/`](../../../deploy/tailnet):
     the hosted service has users, or start on a paid plan.
   - Tagged resources are capped at 50 and ACL groups at 3 (this policy uses one
     group and about eleven tags).
-- **Custom OIDC (Authentik) on Free.** Tailscale's GA announcement
+- **Custom OIDC (your own IdP, later Zitadel) on Free.** Tailscale's GA announcement
   (tailscale.com/blog/custom-oidc-ga): "Any custom OIDC provider can be used for up
   to three users on our Free plan"; free or self-hosted providers are listed under
   Starter, advanced or enterprise providers under Premium and Enterprise. The
@@ -79,11 +78,11 @@ Layout of [`deploy/tailnet/`](../../../deploy/tailnet):
   signatures; all users of the domain use the same IdP; **no user or group
   provisioning**; and it is chosen **when the tailnet is created** (an existing
   account can migrate only if it uses a custom domain, never `@gmail.com`).
-  Authentik is not on the documented provider list I could read, but is a
-  standards-compliant OIDC provider: treat Authentik as **likely, not verified**
+  Zitadel was not checked against the documented provider list; it is a
+  standards-compliant OIDC provider: treat it as **likely, not verified**
   until a sign-up is tried. For now the simple path is a single owner identity
   (GitHub, Google or Microsoft sign-in) on a tailnet whose `group:ops` lists that
-  email; Authentik OIDC for the tailnet is a later switch, and also needs a
+  email; Zitadel OIDC for the tailnet is a later switch (after IA1 deploys it), and also needs a
   WebFinger route on `loams.dev` (a Cloudflare Worker rule).
 - **Policy as code.** Both providers read HuJSON. Differences that matter:
 
@@ -106,11 +105,11 @@ Layout of [`deploy/tailnet/`](../../../deploy/tailnet):
 ## 1. Choose the provider (the knob)
 
 ```sh
-# deploy/authentik/compose/.env  (and the Secret `tailnet-auth` on k3s)
+# the node's .env (and the Secret `tailnet-auth` on k3s)
 TAILNET_PROVIDER=tailscale          # default
 TAILNET_LOGIN_SERVER=               # empty = Tailscale's hosted service
 TS_AUTHKEY=tskey-auth-...           # tagged key from your tailnet (never committed)
-TS_TAGS=tag:authentik
+TS_TAGS=tag:zitadel                 # the auth host; one tag per role
 ```
 
 To move to Headscale, deploy it ([`headscale.md`](headscale.md)), mint a tagged
@@ -119,13 +118,13 @@ pre-auth key there, and change **only**:
 ```sh
 TAILNET_PROVIDER=headscale
 TAILNET_LOGIN_SERVER=https://headscale.loams.dev
-TS_AUTHKEY=<headscale preauth key, --tags tag:authentik>
+TS_AUTHKEY=<headscale preauth key, --tags tag:zitadel>
 ```
 
 then set the repository variable `TAILNET_PROVIDER=headscale` (the CI job that
 applies the policy to Tailscale stops; the policy is reloaded on the Headscale
-host) and recreate the node: `docker compose --profile tailnet up -d --force-recreate tailscale`
-(delete the `tailscale-state` volume first if it held a node of the other provider).
+host) and recreate the node (delete its state volume first if it held a node of
+the other provider).
 `deploy/tailnet/check-env.sh .env` fails if the two variables disagree. For
 Headscale the compose service drops `--advertise-tags`; the tags come from the key.
 On k3s the same switch is the Secret's `TS_EXTRA_ARGS` ([`tailscale/k8s/secrets.example.yaml`](../../../deploy/tailnet/tailscale/k8s/secrets.example.yaml)).
@@ -137,9 +136,9 @@ clicked through here**; names may differ slightly.
 
 1. **Create the tailnet.** Sign up at login.tailscale.com with the identity you
    will use as operator. Simple path now: GitHub, Google or Microsoft sign-in
-   (the Personal plan). Later, to use Authentik: sign up with an `@loams.dev`
-   address and choose "Sign in with OIDC" (needs the WebFinger route and an
-   Authentik OIDC provider for Tailscale; see section 0).
+   (the Personal plan). Later, to use Zitadel: sign up with an `@loams.dev`
+   address and choose "Sign in with OIDC" (needs the WebFinger route and a
+   Zitadel application for Tailscale; see section 0).
 2. **Put the policy in first.** Admin console, **Access controls**: paste
    `deploy/tailnet/policy/policy.hujson` after replacing `admin@loams.dev` (in
    `group:ops` and in the tests) with your sign-in email. Tags must exist in
@@ -155,26 +154,24 @@ clicked through here**; names may differ slightly.
    branch). Optional variable `TS_TAILNET` with your tailnet name (default
    `-`, the client's own). Without that repository, paste the policy in the
    admin console.
-4. **Auth key for the Authentik node** (Settings, **Keys**, Generate auth key):
-   tag `tag:authentik`, **reusable off** (single use) with a short expiry, or
+4. **Auth key for a server node** (Settings, **Keys**, Generate auth key): its
+   role tag (for the auth host, `tag:zitadel`), **reusable off** (single use) with a short expiry, or
    reusable if the container's state volume may be lost; pre-approved on if the
    tailnet requires device approval. Put it in `.env` as `TS_AUTHKEY`. (Alternative
    with no key to rotate: a second OAuth client with the writable `auth_keys`
-   scope and tag `tag:authentik`, used as `TS_CLIENT_ID` and `TS_CLIENT_SECRET`;
+   scope and the same tag, used as `TS_CLIENT_ID` and `TS_CLIENT_SECRET`;
    it needs `--advertise-tags` and mints an ephemeral key per start.)
 5. **Join your PC.** Install the Tailscale client, `tailscale up`, sign in. It is
    an untagged device owned by you, so it gets what `group:ops` is granted.
-6. **Join the Authentik host.** `cd deploy/authentik/compose`, set the variables
-   of section 1, `../../tailnet/check-env.sh .env`, then
-   `docker compose --profile tailnet up -d tailscale`. In Machines the node
-   `ak-1` appears tagged `tag:authentik`. For k3s, create the Secret and
-   `kubectl apply -k deploy/tailnet/tailscale`.
+6. **Join the auth host.** Planned: the `auth.loams.dev` bundle (IA1,
+   [`zitadel.md`](zitadel.md)) brings the node, tagged `tag:zitadel`. Check its
+   `.env` with `deploy/tailnet/check-env.sh <path>/.env` before starting it.
 7. **Join phones.** Install the Tailscale app (iOS, Android), sign in with the
    same identity. No custom server setting is needed for Tailscale (it is for
    Headscale: `headscale.md`, section 6).
-8. **Check.** From the PC: `curl -I http://ak-1:9000/if/admin/` (MagicDNS name, or
-   the node's `100.x` address) answers; from a device not on the tailnet it does
-   not. Then follow section 4 to take the admin routes off the public name.
+8. **Check.** From the PC, `tailscale status` lists the nodes, and a port the
+   policy grants `group:ops` on a tagged node (MagicDNS name, or the node's `100.x`
+   address) answers; from a device not on the tailnet it does not.
 
 Server nodes (`tag:k3s`, `tag:tikv`, ...): same pattern, one tagged key per role,
 `tailscale up --authkey ... --hostname ...` (add `--login-server` only for
@@ -193,49 +190,31 @@ Locally, `python3 deploy/tailnet/policy/lint.py` and
 `deploy/tailnet/headscale/policy/check.sh` (`DOCKER=podman` works) cover syntax,
 the shared subset and the access tests under Headscale's evaluator.
 
-## 4. Authentik admin on the tailnet
+## 4. Zitadel's admin console on the tailnet
 
-Same intent as `headscale.md` section 8, with the Tailscale node in the Authentik
-compose project:
-
-1. `docker compose --profile tailnet up -d` (sets up the `tailscale` service that
-   shares the Authentik server's network namespace in userspace mode: no
-   `NET_ADMIN`, no `/dev/net/tun`, and a connection to the node's tailnet address
-   on port 9000 reaches the server). Open `http://ak-1:9000/if/admin/` from a
-   tailnet device. The policy grants `tcp:9000` on `tag:authentik` to `group:ops`
-   only; verified 2026-10-02 against Headscale v0.29.4 with this policy file: an
-   operator reached the page, port 8080 was dropped, other sources got nothing.
-2. Take the admin routes off the public name with
-   [`authentik-tailnet/cloudflared-admin-deny.example.yml`](../../../deploy/tailnet/authentik-tailnet/cloudflared-admin-deny.example.yml)
-   and run the verification in `headscale.md` section 8, step 4.
-3. "Restricted to tailnet IPs": the restriction is network-level (Cloudflare 404
-   on the public name, the grant on the tailnet), not an Authentik policy. Source
-   addresses on the tailnet are `100.64.0.0/10`; if you later want a second layer,
-   an Authentik expression policy on the admin interface can check
-   `ak_client_ip in ip_network("100.64.0.0/10")`, but the connection arrives from
-   the node's own address (userspace forwarding), so it would see `127.0.0.1`, not
-   the operator. Use the grant, not an IP check, as the control.
-
-Break-glass if the tailnet is down: `headscale.md` section 8 (a recovery key via
-SSH from the provider console).
+Planned (IA1). Zitadel's admin console and management APIs are never public
+(D1617, carrying D596's rule over); the node that publishes them on the tailnet as
+`tag:zitadel` comes with the `auth.loams.dev` bundle. See `headscale.md`
+section 8 and [`zitadel.md`](zitadel.md). Use the policy grant, not an IP check,
+as the control.
 
 ## 5. What was verified, and what was not
 
 Verified 2026-10-02 (Podman 6.1.1, `docker-compose` 5.2.0): `docker compose config`
-for the Authentik stack **with** (`--profile tailnet`, services include `tailscale`)
-and **without** the profile (stack unchanged, no new required variable); the
+for the auth host's compose stack of the time (removed by D1600) **with** and
+**without** the `tailnet` profile; the
 `TS_EXTRA_ARGS` selection for all four combinations; `check-env.sh`;
 `policy/lint.py`; Headscale v0.29.4 `policy check` with the shared policy through
 the container (`headscale/policy/check.sh`) and `check-config.sh`;
 `kubectl kustomize` for `tailscale/` and for `headscale/` with
 `--load-restrictor=LoadRestrictionsNone`; and an end-to-end run with real
 containers: a Headscale v0.29.4 carrying this policy, the `tailscale` service's
-entrypoint script and image (v1.102.5) joined as `tag:authentik` from a tagged
-pre-auth key, and an operator device reached its port 9000 over the tailnet with
-other ports dropped.
+entrypoint script and image (v1.102.5) joined as the auth host's tag (now
+`tag:zitadel`) from a tagged pre-auth key, and an operator device reached its
+admin port over the tailnet with other ports dropped.
 
 **Not verified:** anything against Tailscale's hosted service (no account here):
-sign-up, custom OIDC with Authentik, the OAuth client scopes, `gitops-acl-action`
+sign-up, custom OIDC with your own IdP, the OAuth client scopes, `gitops-acl-action`
 `test`/`apply` (needs the secrets), `TS_AUTHKEY` registration, and the free-plan
 limits are from Tailscale's published pages, not from a live account. The k3s
 manifest was rendered, not applied to a cluster. The `-` default for `TS_TAILNET`

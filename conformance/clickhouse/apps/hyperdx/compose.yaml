@@ -1,0 +1,98 @@
+# HE0 (plan HE1 Task 5): HyperDX 2.40.0 (ClickStack; MIT) with its OTel
+# collector, unmodified containers only. ClickHouse is its only telemetry
+# store: queries over HTTP (@clickhouse/client), the collector's schema and
+# inserts over the native protocol. HyperDX keeps its metadata in MongoDB;
+# here FerretDB 2.7 (Apache-2.0) on Postgres with DocumentDB (MIT) stands in, because MongoDB
+# is SSPL (D11). DEFAULT_CONNECTIONS and DEFAULT_SOURCES are the values of
+# HyperDX's own docker-compose.yml, pointed at this stack's server. Driven by
+# scripts/house/apps.sh hyperdx up|drive|dump|down. Every image is pinned by
+# digest; host ports bind to 127.0.0.1.
+name: he0-hyperdx
+
+services:
+  app:
+    image: docker.io/hyperdx/hyperdx:2.40.0@sha256:2fcba6813f5c935f6a3e04123ffe62ab3baf0c1cd53f279b1ec9e300343ddf60
+    labels: { io.loams.licence: "MIT" }
+    environment:
+      FRONTEND_URL: http://127.0.0.1:${HE0_HYPERDX_APP_PORT:-3608}
+      HYPERDX_API_KEY: he0-not-a-secret
+      HYPERDX_API_PORT: "8000"
+      HYPERDX_APP_PORT: "8080"
+      HYPERDX_APP_URL: http://127.0.0.1
+      HYPERDX_LOG_LEVEL: info
+      MONGO_URI: mongodb://db:27017/hyperdx
+      SERVER_URL: http://127.0.0.1:8000
+      OPAMP_PORT: "4320"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_SERVICE_NAME: he0-hyperdx-app
+      USAGE_STATS_ENABLED: "false"
+      DEFAULT_CONNECTIONS: '[{"name":"Local ClickHouse","host":"http://clickhouse:8123","username":"default","password":""}]'
+      DEFAULT_SOURCES: '[{"from": {"databaseName": "default", "tableName": "otel_logs"}, "kind": "log", "timestampValueExpression": "Timestamp", "name": "Logs", "displayedTimestampValueExpression": "Timestamp", "implicitColumnExpression": "Body", "serviceNameExpression": "ServiceName", "bodyExpression": "Body", "eventAttributesExpression": "LogAttributes", "resourceAttributesExpression": "ResourceAttributes", "defaultTableSelectExpression": "Timestamp,ServiceName,SeverityText,Body", "severityTextExpression": "SeverityText", "traceIdExpression": "TraceId", "spanIdExpression": "SpanId", "metadataMaterializedViews": {"keyRollupTable": "otel_logs_key_rollup_15m", "kvRollupTable": "otel_logs_kv_rollup_15m", "granularity": "15 minute"}, "connection": "Local ClickHouse", "traceSourceId": "Traces", "sessionSourceId": "Sessions", "metricSourceId": "Metrics"}, {"from": {"databaseName": "default", "tableName": "otel_traces"}, "kind": "trace", "timestampValueExpression": "Timestamp", "name": "Traces", "displayedTimestampValueExpression": "Timestamp", "implicitColumnExpression": "SpanName", "serviceNameExpression": "ServiceName", "eventAttributesExpression": "SpanAttributes", "resourceAttributesExpression": "ResourceAttributes", "defaultTableSelectExpression": "Timestamp,ServiceName,StatusCode,round(Duration/1e6),SpanName", "traceIdExpression": "TraceId", "spanIdExpression": "SpanId", "durationExpression": "Duration", "durationPrecision": 9, "parentSpanIdExpression": "ParentSpanId", "spanNameExpression": "SpanName", "spanKindExpression": "SpanKind", "statusCodeExpression": "StatusCode", "statusMessageExpression": "StatusMessage", "metadataMaterializedViews": {"keyRollupTable": "otel_traces_key_rollup_15m", "kvRollupTable": "otel_traces_kv_rollup_15m", "granularity": "15 minute"}, "connection": "Local ClickHouse", "logSourceId": "Logs", "sessionSourceId": "Sessions", "metricSourceId": "Metrics"}, {"from": {"databaseName": "default", "tableName": ""}, "kind": "metric", "timestampValueExpression": "TimeUnix", "name": "Metrics", "resourceAttributesExpression": "ResourceAttributes", "metricTables": {"gauge": "otel_metrics_gauge", "histogram": "otel_metrics_histogram", "sum": "otel_metrics_sum", "_id": "682586a8b1f81924e628e808", "id": "682586a8b1f81924e628e808"}, "connection": "Local ClickHouse", "logSourceId": "Logs", "traceSourceId": "Traces", "sessionSourceId": "Sessions"}, {"from": {"databaseName": "default", "tableName": "hyperdx_sessions"}, "kind": "session", "timestampValueExpression": "TimestampTime", "name": "Sessions", "displayedTimestampValueExpression": "Timestamp", "implicitColumnExpression": "Body", "serviceNameExpression": "ServiceName", "bodyExpression": "Body", "eventAttributesExpression": "LogAttributes", "resourceAttributesExpression": "ResourceAttributes", "defaultTableSelectExpression": "Timestamp,ServiceName,SeverityText,Body", "severityTextExpression": "SeverityText", "traceIdExpression": "TraceId", "spanIdExpression": "SpanId", "connection": "Local ClickHouse", "logSourceId": "Logs", "traceSourceId": "Traces", "metricSourceId": "Metrics"}]'
+    ports:
+      - "127.0.0.1:${HE0_HYPERDX_PORT:-3600}:8000"
+      - "127.0.0.1:${HE0_HYPERDX_APP_PORT:-3608}:8080"
+    depends_on:
+      db: { condition: service_started }
+      clickhouse: { condition: service_healthy }
+
+  otel-collector:
+    image: docker.io/clickhouse/clickstack-otel-collector:2.40.0@sha256:0e7dc29f8f6074afd106b96d53e5b98f1150e8882d926a20c03c6f680bd929ec
+    labels: { io.loams.licence: "MIT" }
+    environment:
+      CLICKHOUSE_ENDPOINT: tcp://clickhouse:9000?dial_timeout=10s
+      HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE: default
+      HYPERDX_LOG_LEVEL: info
+      OPAMP_SERVER_URL: http://app:4320
+      HYPERDX_OTEL_EXPORTER_CREATE_LEGACY_SCHEMA: "true"
+    ports: ["127.0.0.1:${HE0_HYPERDX_OTLP_PORT:-3618}:4318"]
+    depends_on:
+      clickhouse: { condition: service_healthy }
+    restart: on-failure
+
+  db:
+    image: ghcr.io/ferretdb/ferretdb:2.7.0@sha256:5706414241eb84f0515512c37b46db0f1b1eac9e5ceb7e4c2523211c184b1985
+    labels: { io.loams.licence: "Apache-2.0" }
+    environment:
+      FERRETDB_POSTGRESQL_URL: postgres://ferret:ferret@documentdb:5432/postgres
+      FERRETDB_TELEMETRY: disable
+      # HyperDX's MONGO_URI carries no credentials (its own compose runs
+      # MongoDB without auth).
+      FERRETDB_AUTH: "false"
+    depends_on:
+      documentdb: { condition: service_healthy }
+    restart: on-failure
+
+  documentdb:
+    image: ghcr.io/ferretdb/postgres-documentdb:17-0.107.0-ferretdb-2.7.0@sha256:2386795ec2aa7ae559304361979f1dc5708d383ee9020ae63dadc2940dfe58f7
+    labels: { io.loams.licence: "PostgreSQL AND MIT" }
+    environment:
+      POSTGRES_USER: ferret
+      POSTGRES_PASSWORD: ferret
+      POSTGRES_DB: postgres
+    volumes: [hyperdx-db-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ferret"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  clickhouse:
+    image: ${HE0_CLICKHOUSE_IMAGE:-docker.io/clickhouse/clickhouse-server:26.9.2.8@sha256:7b9a0b6e9ab7ef79db5c4f8a9808f880258704eb7b4af9309f9029c16e727a80}
+    labels: { io.loams.licence: "Apache-2.0" }
+    environment:
+      CLICKHOUSE_SKIP_USER_SETUP: "1"
+    volumes:
+      - ../clickhouse/he0-logs.xml:/etc/clickhouse-server/config.d/he0-logs.xml:ro
+      - ../clickhouse/he0-users.xml:/etc/clickhouse-server/users.d/he0-users.xml:ro
+      - hyperdx-ch-data:/var/lib/clickhouse
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8123/ping || exit 1"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  hyperdx-db-data:
+  hyperdx-ch-data:

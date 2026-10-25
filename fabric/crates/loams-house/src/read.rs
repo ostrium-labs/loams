@@ -39,6 +39,10 @@ use crate::views::{self, Mode};
 /// Setting: the snapshot to read, `<id>` for every table the statement reads,
 /// or `[db.]t=<id>, …` per table.
 pub const SNAPSHOT_ID: &str = "loams_snapshot_id";
+/// The front's own setting (never a request's: it is on no list, so a request
+/// naming it is `115`) that reads every lake table a statement names in
+/// [`Mode::Sequenced`]: a mutation's rewrite (HE1 R9.5).
+pub const SEQUENCED: &str = "loams_internal_sequenced";
 /// Setting: read every table as it was at this time (UTC `YYYY-MM-DD
 /// hh:mm:ss[.fff]`, RFC 3339, or Unix milliseconds).
 pub const AS_OF: &str = "loams_as_of";
@@ -50,6 +54,9 @@ pub struct PinnedField {
     pub name: String,
     /// Whether it is required (not `NULL` in any row).
     pub required: bool,
+    /// Whether its Iceberg type is `long`: how a column of nanosecond times
+    /// is stored (D1572; HE1 R9.61).
+    pub long: bool,
 }
 
 /// One table of a statement, pinned (§49 §7): the snapshot and the metadata file
@@ -325,6 +332,9 @@ fn unescape(text: &str) -> String {
     out
 }
 
+/// How deep views may nest (HE1 R9.13), as materialized views chain (HS1 Task 17).
+pub const MAX_VIEW_DEPTH: usize = 8;
+
 /// The databases the House never serves from its catalog.
 fn engine_database(database: &str) -> bool {
     matches!(
@@ -428,6 +438,12 @@ pub fn pin(
             .map(|f| PinnedField {
                 name: f.name.clone(),
                 required: f.required,
+                long: matches!(
+                    *f.field_type,
+                    loams_house_lake::spec::Type::Primitive(
+                        loams_house_lake::spec::PrimitiveType::Long
+                    )
+                ),
             })
             .collect(),
         travel,
@@ -528,12 +544,17 @@ pub async fn plan(
         sql,
         ..ReadPlan::default()
     };
+    // HE1 R9.15: a lake table is read whole; `SAMPLE` would fail on its view.
+    let sampled = crate::sample::rewrite(&plan.sql);
     let mut databases: BTreeSet<String> = BTreeSet::new();
     if ctx.database != "default" && !engine_database(ctx.database) {
         databases.insert(ctx.database.to_string());
     }
     let mut tables = Vec::new();
     let mut batch_views: Vec<String> = Vec::new();
+    // Views over the lake views, outermost first (made last, innermost first).
+    let mut plan_views: Vec<String> = Vec::new();
+    let sequenced = setting_on(settings, SEQUENCED);
     if let Some(lake) = ctx.lake {
         let as_of = as_of(settings)?;
         let final_all = refs.final_setting || setting_on(settings, "final");
@@ -545,9 +566,19 @@ pub async fn plan(
             Some(found) => found.3 |= fin,
             None => wanted.push((database, name, table, fin)),
         };
-        for printed in &refs.tables {
+        // HE1 R9.13: a view reads what its SELECT names, which is resolved in
+        // the view's database, to a depth of [`MAX_VIEW_DEPTH`].
+        let mut queue: Vec<(String, String, usize)> = refs
+            .tables
+            .iter()
+            .map(|t| (ctx.database.to_string(), t.clone(), 0))
+            .collect();
+        let mut expanded: Vec<(String, String)> = Vec::new();
+        let mut finals = refs.finals.clone();
+        while let Some((current, printed, depth)) = queue.pop() {
+            let printed = &printed;
             if let Some((database, name, table)) =
-                resolve(lake, ctx.namespace, ctx.database, printed).await?
+                resolve(lake, ctx.namespace, &current, printed).await?
             {
                 // A table outside the user's grants is not read (HS1 Task 20),
                 // nor is the House's own `_house` by name (HS1 Task 23: the
@@ -577,7 +608,52 @@ pub async fn plan(
                 if crate::ddl::class_of(&table.metadata) == TableClass::Pipe {
                     return Err(crate::pipes::direct_read(&database, &name));
                 }
-                let fin = final_all || refs.finals.iter().any(|f| f == printed);
+                if crate::ddl::class_of(&table.metadata) == TableClass::View {
+                    if expanded.iter().any(|(d, n)| *d == database && *n == name) {
+                        continue;
+                    }
+                    if depth >= MAX_VIEW_DEPTH {
+                        return Err(bad(format!(
+                            "View {database}.{name} nests views more than {MAX_VIEW_DEPTH} deep"
+                        )));
+                    }
+                    let select = table
+                        .metadata
+                        .properties()
+                        .get(crate::ddl::PROP_VIEW_SELECT)
+                        .cloned()
+                        .unwrap_or_default();
+                    // The view's text is the catalog's: held to the deny list as a
+                    // user's read is, before any worker makes it.
+                    let analysis = lease
+                        .analyze(&select, &[])
+                        .await
+                        .map_err(crate::deny::as_setting_refusal)?;
+                    crate::gate::admit(
+                        &analysis,
+                        &select,
+                        crate::classify::Expect::Read,
+                        true,
+                        None,
+                    )?;
+                    let inner = references(&analysis);
+                    finals.extend(inner.finals.iter().cloned());
+                    // `FROM d FINAL` of a Distributed table reads its local
+                    // table with FINAL, as ClickHouse's shards do.
+                    if finals.iter().any(|f| f == printed)
+                        && crate::ddl::distributed_target(&table).is_some()
+                    {
+                        finals.extend(inner.tables.iter().cloned());
+                    }
+                    for t in inner.tables {
+                        queue.push((database.clone(), t, depth + 1));
+                    }
+                    databases.insert(database.clone());
+                    plan_views.push(views::user_view_ddl(&database, &name, &select));
+                    expanded.push((database, name));
+                    continue;
+                }
+                let fin = final_all || finals.iter().any(|f| f == printed);
                 add(database, name, table, fin);
             }
         }
@@ -613,15 +689,20 @@ pub async fn plan(
         for (database, name, table, fin) in wanted {
             let pin = pin(&database, &name, ctx.database, &table, &as_of)?;
             let files = match (fin, pin.snapshot_id, LakeEngine::parse(&pin.table.engine)) {
-                (true, Some(id), Ok(LakeEngine::Replacing { .. }))
-                    if pin.table.class != TableClass::External =>
-                {
+                (_, Some(id), _) if sequenced && pin.table.class != TableClass::External => {
+                    live_files(lake, &table.metadata, id).await?
+                }
+                (
+                    true,
+                    Some(id),
+                    Ok(LakeEngine::Replacing { .. } | LakeEngine::VersionedCollapsing { .. }),
+                ) if pin.table.class != TableClass::External => {
                     live_files(lake, &table.metadata, id).await?
                 }
                 _ => Vec::new(),
             };
             databases.insert(database);
-            tables.push((pin, fin, files));
+            tables.push((pin, fin && !sequenced, files));
         }
     }
     let endpoint = lease.ready().and_then(|ready| ready.s3_endpoint.clone());
@@ -643,6 +724,8 @@ pub async fn plan(
         let source = views::source(&pin, endpoint, root)?;
         let mode = if fin {
             Mode::Final(&files)
+        } else if sequenced {
+            Mode::Sequenced(&files)
         } else {
             Mode::Plain
         };
@@ -662,6 +745,18 @@ pub async fn plan(
         }
         plan.views.push(views::view_ddl(&pin, &source, mode)?);
         plan.pins.push(pin);
+    }
+    plan.views.extend(plan_views.into_iter().rev());
+    if let Some(sql) = sampled
+        && !plan.pins.is_empty()
+    {
+        plan.sql = sql;
+    }
+    // HE1 R9.70: nor would `PREWHERE`.
+    if !plan.pins.is_empty()
+        && let Some(sql) = crate::sample::prewhere_as_where(&plan.sql)
+    {
+        plan.sql = sql;
     }
     // `system.query_log` reads the namespace's `_house.query_log` (HS1 Task
     // 23) through a view of its own; no client statement names it.

@@ -1,0 +1,317 @@
+#!/usr/bin/env bash
+# The compute conformance harness's own tests (OC1 OC0 Tasks 1-2, DX1 DX0
+# Task 1). No product runs and no image is pulled: these check the harness's
+# files, its expected-failure and licence gates on fixtures, and the compose
+# override's shape through `compose config`. The pull-request job runs it.
+#
+#   conformance/compute/selftest.sh            # every test
+#   conformance/compute/selftest.sh <name>...  # only those
+#   OC_SELFTEST_NO_COMPOSE=1 ...               # skip the compose tests
+set -euo pipefail
+
+HERE=$(cd "$(dirname "$0")" && pwd)
+# shellcheck source=conformance/compute/lib.sh
+. "$HERE/lib.sh"
+ROOT=$OC_ROOT
+TD=$HERE/testdata
+XFAIL=(python3 "$ROOT/scripts/compute/xfail_check.py")
+SCRATCH=$(mktemp -d)
+trap 'rm -rf "$SCRATCH"' EXIT
+
+# The files DX0 and OC0 add, for the content checks.
+compute_files() {
+  git -C "$ROOT" ls-files --cached --others --exclude-standard -- \
+    conformance/compute deploy/release/compose.compute.yaml deploy/release/compute \
+    docs/guides/durable docs/guides/compute scripts/compute |
+    grep -v -e '^conformance/compute/selftest\.sh$' -e '^conformance/compute/testdata/'
+}
+
+# expect_fail <cmd...>: the command must exit non-zero.
+expect_fail() { if "$@" >"$SCRATCH/out" 2>&1; then cat "$SCRATCH/out"; return 1; fi; }
+
+# --- The expected-failure gate ----------------------------------------------
+
+xfail_listed_run_passes() {
+  "${XFAIL[@]}" "$TD/xfail/run.junit.xml" --xfail "$TD/xfail/listed.toml" >/dev/null
+}
+
+xfail_strict_unexpected_pass() {
+  expect_fail "${XFAIL[@]}" "$TD/xfail/run.junit.xml" --xfail "$TD/xfail/unexpected-pass.toml"
+  grep -q 'unexpected pass: tests.test_core::test_fixed_upstream' "$SCRATCH/out"
+}
+
+xfail_unlisted_failure_fails() {
+  expect_fail "${XFAIL[@]}" "$TD/xfail/run.junit.xml" --xfail "$TD/xfail/unlisted.toml"
+  grep -q 'unlisted failure: tests.test_kafka::test_consume' "$SCRATCH/out"
+}
+
+xfail_stale_entry_fails() {
+  expect_fail "${XFAIL[@]}" "$TD/xfail/run.junit.xml" --xfail "$TD/xfail/stale.toml"
+  grep -q 'stale entry: gone' "$SCRATCH/out"
+}
+
+xfail_entries_have_reason_and_issue() {
+  expect_fail "${XFAIL[@]}" --validate "$TD/xfail/no-issue.toml"
+  grep -qF 'issue` is required' "$SCRATCH/out"
+  grep -qF 'reason` is required' "$SCRATCH/out"
+  # And every committed xfail.toml passes the same validation.
+  local -a lists
+  mapfile -t lists < <(cd "$ROOT" && git ls-files --cached --others --exclude-standard -- 'conformance/compute/*/xfail.toml' 'conformance/compute/*/*/xfail.toml')
+  if [ "${#lists[@]}" -gt 0 ]; then
+    (cd "$ROOT" && "${XFAIL[@]}" --validate "${lists[@]}")
+  fi
+}
+
+xfail_empty_run_fails() {
+  printf '<testsuites/>\n' >"$SCRATCH/empty.xml"
+  expect_fail "${XFAIL[@]}" "$SCRATCH/empty.xml" --xfail "$TD/xfail/listed.toml"
+  grep -q 'ran nothing' "$SCRATCH/out"
+}
+
+junit_case_roundtrip() {
+  local OC_OUT=$SCRATCH/junit
+  oc_junit_case fixture tests.test_core::test_ok pass
+  oc_junit_case fixture a_failure fail "boom <&>"
+  oc_junit_case fixture a_skip skip
+  python3 - "$OC_OUT/fixture.junit.xml" <<'EOF'
+import sys, xml.etree.ElementTree as ET
+s = ET.parse(sys.argv[1]).getroot().find("testsuite")
+assert (s.get("tests"), s.get("failures"), s.get("skipped")) == ("3", "1", "1"), s.attrib
+assert s.find("testcase[@name='a_failure']/failure").get("message") == "boom <&>"
+EOF
+}
+
+# --- Licences -----------------------------------------------------------------
+
+licence_gate_compute_pins() {
+  "$ROOT/scripts/compute/licence_gate.sh" >/dev/null
+}
+
+licence_gate_refuses_bsl_fixture() {
+  expect_fail "$ROOT/scripts/compute/licence_gate.sh" --pins "$TD/licence/pins.env" --licences "$TD/licence/licences.toml"
+  grep -q 'BUSL_PIN: BUSL-1.1 is refused' "$SCRATCH/out"
+  # A bump without a re-check fails too.
+  sed 's/^GOOD_PIN=1.0.0$/GOOD_PIN=1.0.1/' "$TD/licence/pins.env" | grep -v BUSL >"$SCRATCH/pins.env"
+  expect_fail "$ROOT/scripts/compute/licence_gate.sh" --pins "$SCRATCH/pins.env" --licences "$TD/licence/licences.toml"
+  grep -q 'GOOD_PIN: the entry was checked for' "$SCRATCH/out"
+}
+
+no_licence_key_in_compute_files() {
+  local f hits=0
+  while IFS= read -r f; do
+    [ -f "$ROOT/$f" ] || continue
+    if grep -nE 'RW_LICENSE_KEY|BULLMQ_PRO|SPICE_[A-Z_]*(LICEN|KEY)|CONDUCTOR_KEY|conductor_key|dbos-conductor|DBOS_CONDUCTOR' "$ROOT/$f"; then
+      echo "no_licence_key_in_compute_files: $f"; hits=1
+    fi
+  done < <(compute_files)
+  return $hits
+}
+
+# --- Never on Loams SQL ---------------------------------------------------------
+
+no_loams_sql_in_dx0() {
+  local f hits=0
+  # The Loams SQL service and port of compose.yaml, and Temporal's MySQL plugin.
+  local rx='(^|[^A-Za-z0-9_])(tidb|TIDB)([^A-Za-z0-9_]|$)|:4000([^0-9]|$)|mysql8|MYSQL_SEEDS'
+  while IFS= read -r f; do
+    [ -f "$ROOT/$f" ] || continue
+    case $f in *.md) continue ;; esac # prose may say why not
+    if grep -nE "$rx" "$ROOT/$f"; then
+      echo "no_loams_sql_in_dx0: $f names Loams SQL or the mysql8 plugin"; hits=1
+    fi
+  done < <(compute_files)
+  return $hits
+}
+
+# --- lib.sh ---------------------------------------------------------------------
+
+pg_mode_urls() {
+  [ "$(oc_pg_mode direct)" = postgresql://cloud_admin:cloud_admin@compute1:55433/postgres ]
+  [ "$(oc_pg_mode direct temporal temporal:temporal)" = postgresql://temporal:temporal@compute1:55433/temporal ]
+  [ "$(LOAMS_PG_DIRECT_URL=postgresql://a:b@ep-01abc:55433/x oc_pg_mode direct airflow)" = postgresql://a:b@ep-01abc:55433/airflow ]
+  [ "$(oc_pg_mode txn airflow airflow:airflow)" = postgresql://airflow:airflow@pgdog-txn:6432/airflow ]
+  expect_fail oc_pg_mode txn airflow
+  # No session-pooled endpoint yet: the failure names the issue (#1129).
+  expect_fail oc_pg_mode session
+  grep -q 'issues/1129' "$SCRATCH/out"
+  expect_fail oc_pg_mode pooled
+}
+
+pins_are_literal() {
+  local line
+  while IFS= read -r line; do
+    case $line in '' | '#'*) continue ;; esac
+    [[ $line =~ ^[A-Z][A-Z0-9_]*=[^[:space:]\$\"\']+$ ]] || { echo "not literal: $line"; return 1; }
+  done <"$OC_PINS"
+}
+
+# --- The Temporal history corpus (DX0 Task 4; per PR, no server) ----------------
+
+corpus_manifest_complete() {
+  python3 "$HERE/temporal/corpus/manifest.py" check
+}
+
+normalize_selftest() {
+  python3 "$HERE/temporal/corpus/normalize.py" --self-test
+}
+
+# --- The compose override (OC0 Task 2's tests) -----------------------------------
+
+PROFILES=(temporal dbos airflow)
+
+# compose_json [--txn] [profile]: the resolved config as JSON.
+compose_json() {
+  local txn=()
+  [ "${1:-}" = --txn ] && { txn=(--txn); shift; }
+  if [ -n "${1:-}" ]; then
+    oc_compose "${txn[@]}" --profile "$1" config --format json
+  else
+    oc_compose "${txn[@]}" config --format json
+  fi
+}
+
+compose_compute_config_valid() {
+  local p
+  for p in "${PROFILES[@]}"; do
+    oc_compose --profile "$p" config -q
+    oc_compose --txn --profile "$p" config -q
+  done
+}
+
+# No service starts without a compute profile: the stack's services are the
+# same with and without the override, and every service the override adds
+# has a profile.
+compose_compute_requires_profile() {
+  local base with
+  base=$( (cd "$OC_RELEASE" && "${COMPOSE[@]}" --env-file "$(oc_env_file)" -f compose.yaml config --services) | sort)
+  with=$(oc_compose --txn config --services | sort)
+  [ "$base" = "$with" ] || { diff <(echo "$base") <(echo "$with"); return 1; }
+  python3 - "$OC_RELEASE/compose.compute.yaml" "$OC_DIR/pgdog-txn.yaml" <<'EOF'
+import json, subprocess, sys
+# Read the files themselves (PyYAML is not assumed): every top-level service
+# block must carry a `profiles:` line, directly or through a merge anchor.
+for path in sys.argv[1:]:
+    lines = open(path, encoding="utf-8").read().splitlines()
+    in_services, name, has = False, None, {}
+    for line in lines:
+        if line.startswith("services:"):
+            in_services = True; continue
+        if in_services and line and not line.startswith(" ") and not line.startswith("#"):
+            in_services = False
+        if not in_services:
+            continue
+        if line.startswith("  ") and not line.startswith("   ") and line.rstrip().endswith(":") and not line.lstrip().startswith("#"):
+            name = line.strip()[:-1]; has[name] = False; continue
+        if name and ("profiles:" in line or "<<: *" in line):
+            has[name] = True
+    missing = [n for n, ok in has.items() if not ok]
+    if missing:
+        print(f"{path}: services without a profile: {missing}"); sys.exit(1)
+EOF
+}
+
+# The override publishes no host port beyond the stack's own.
+compose_compute_no_new_host_ports() {
+  local p
+  compose_json >"$SCRATCH/base.json"
+  for p in "${PROFILES[@]}"; do
+    compose_json --txn "$p" >"$SCRATCH/$p.json"
+    python3 - "$SCRATCH/base.json" "$SCRATCH/$p.json" "$p" <<'EOF'
+import json, sys
+def ports(path):
+    cfg = json.load(open(path))
+    return {(s, json.dumps(p, sort_keys=True)) for s, svc in cfg.get("services", {}).items() for p in svc.get("ports", []) or []}
+base, prof = ports(sys.argv[1]), ports(sys.argv[2])
+new = sorted(prof - base)
+if new:
+    print(f"profile {sys.argv[3]} publishes new host ports: {new}"); sys.exit(1)
+EOF
+  done
+}
+
+# Every image the override and the overlay add is pinned by digest.
+compose_compute_images_pinned_by_digest() {
+  local p
+  compose_json >"$SCRATCH/base.json"
+  for p in "${PROFILES[@]}"; do
+    compose_json --txn "$p" >"$SCRATCH/$p.json"
+    python3 - "$SCRATCH/base.json" "$SCRATCH/$p.json" "$p" <<'EOF'
+import json, re, sys
+base = json.load(open(sys.argv[1])).get("services", {})
+prof = json.load(open(sys.argv[2])).get("services", {})
+bad = [f"{s}: {svc.get('image')}" for s, svc in prof.items()
+       if s not in base and not re.search(r"@sha256:[0-9a-f]{64}$", svc.get("image") or "")]
+if bad:
+    print(f"profile {sys.argv[3]}: images not pinned by digest: {bad}"); sys.exit(1)
+EOF
+  done
+}
+
+# The products reach Postgres only through the direct endpoint by default.
+compose_compute_uses_direct_endpoint() {
+  compose_json temporal >"$SCRATCH/t.json"
+  compose_json airflow >"$SCRATCH/a.json"
+  compose_json dbos >"$SCRATCH/d.json"
+  python3 - "$SCRATCH/t.json" "$SCRATCH/a.json" "$SCRATCH/d.json" <<'EOF'
+import json, sys
+t, a, d = (json.load(open(p))["services"] for p in sys.argv[1:])
+for s in ("temporal-frontend", "temporal-history", "temporal-matching", "temporal-worker"):
+    e = t[s]["environment"]
+    assert (e["DB"], e["POSTGRES_SEEDS"], e["DB_PORT"], e["NUM_HISTORY_SHARDS"]) == ("postgres12", "compute1", "55433", "16"), (s, e)
+for s in ("airflow-scheduler-1", "airflow-scheduler-2", "airflow-edge-worker-1", "airflow-edge-worker-2"):
+    e = a[s]["environment"]
+    assert "@compute1:55433/airflow" in e["AIRFLOW__DATABASE__SQL_ALCHEMY_CONN"], (s, e)
+    assert e["AIRFLOW__CORE__EXECUTOR"] == "airflow.providers.edge3.executors.EdgeExecutor"
+assert d["dbos-pg"]["command"][-1] == "TCP:compute1:55433", d["dbos-pg"]["command"]
+for s in ("dbos-py", "dbos-ts", "dbos-go", "dbos-java"):
+    assert d[s]["network_mode"] == "service:dbos-pg", (s, d[s].get("network_mode"))
+EOF
+}
+
+TESTS=(
+  xfail_listed_run_passes xfail_strict_unexpected_pass xfail_unlisted_failure_fails
+  xfail_stale_entry_fails xfail_entries_have_reason_and_issue xfail_empty_run_fails
+  junit_case_roundtrip
+  licence_gate_compute_pins licence_gate_refuses_bsl_fixture no_licence_key_in_compute_files
+  no_loams_sql_in_dx0 pg_mode_urls pins_are_literal
+  corpus_manifest_complete normalize_selftest
+)
+COMPOSE_TESTS=(
+  compose_compute_config_valid compose_compute_requires_profile
+  compose_compute_no_new_host_ports compose_compute_images_pinned_by_digest
+  compose_compute_uses_direct_endpoint
+)
+
+main() {
+  local -a want=("$@") run=() t
+  if [ "${#want[@]}" -eq 0 ]; then
+    run=("${TESTS[@]}")
+    if [ -z "${OC_SELFTEST_NO_COMPOSE:-}" ]; then run+=("${COMPOSE_TESTS[@]}"); fi
+  else
+    run=("${want[@]}")
+  fi
+  for t in "${run[@]}"; do
+    case " ${COMPOSE_TESTS[*]} " in
+      *" $t "*) mapfile -t COMPOSE < <(oc_compose_cmd) ;;
+    esac
+  done
+  local fail=0
+  for t in "${run[@]}"; do
+    if ! declare -F "$t" >/dev/null; then
+      echo "FAIL $t (no such test)"; fail=1; continue
+    fi
+    # Not in an `if`: errexit is ignored there, even in a subshell.
+    set +e
+    (set -e; "$t") >"$SCRATCH/$t.log" 2>&1
+    local rc=$?
+    set -e
+    if [ "$rc" -eq 0 ]; then
+      echo "ok   $t"
+    else
+      echo "FAIL $t"; sed 's/^/     /' "$SCRATCH/$t.log"; fail=1
+    fi
+  done
+  return $fail
+}
+
+main "$@"

@@ -12,7 +12,7 @@
 //! On top of zeron's three rules this adds the one zeron did not need:
 //!
 //! - **The host must be in the allowlist.** The embedded origin, plus the
-//!   identity provider's origins, which is what lets the Authentik redirect
+//!   identity provider's origins, which is what lets the IdP's redirect
 //!   work while the OIDC ceremony itself happens in Loams. Anything else is
 //!   refused rather than opened in the system browser, so a link in a chat
 //!   message cannot quietly turn the embed into a general-purpose browser.

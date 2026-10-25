@@ -1,5 +1,9 @@
 # 64 — Loams Infra: the HashiCorp Stack, Loams-Native and in Rust
 
+> **Amendment (approved 2026-10-23) by [§78](78-loams-cloud-on-tidb-x.md)** (Loams Cloud on TiDB X; D1700–D1735). HCP is reconciled (§78 §16, D1729): nothing in Loams depends on HCP; Ostrium's own Loams Cloud infrastructure uses OpenTofu with state in R2; HCP Terraform Free is at most an optional state-only backend; HCP Boundary and Vault are not used. §1's "HCP" row stays superseded by D1323.
+
+> **Amendment (approved 2026-10-21) by [§76](76-identity-and-authorization.md)** (identity and authorization: Zitadel and OpenFGA; owner, all defaults). §2.3's "Loams keeps Authentik" becomes Zitadel (D1600; still one IdP and no new one besides it), and §10.2's "two `Authorizer` traits, two principal vocabularies" is resolved by one trait in `loams-authz` over §19's three principal kinds (D1610, D1605).
+
 Status: **Approved** · 2026-10-19 (owner approved all decisions and questions, 2026-10-19). Source: the owner's request of 2026-10-19, **"I want all of the HashiCorp stack in Loams, in Rust."** Decisions **D1150–D1171** and questions **Q970–Q983** are in the [decision log](13-decision-log.md), all approved by the owner on 2026-10-19 with their recommended defaults. The numbers leave a gap: D1119 is the no-open-core ruling of the same day, and D1120–D1149 and Q960–Q969 are left for §63 (Loams Meter), which is being written in parallel. Plan stub: [IS1](../plans/2026-10-19-is1-infra-stack.md). **This document writes no code.**
 
 Builds on:
@@ -45,7 +49,7 @@ Build **Loams Infra** as a few small Rust services inside the `loams` binary, sh
 | **Boundary** (BSL; Community Edition archived 2026-10) | Just-in-time, audited access to databases and hosts for people and agents | **Loams Access**: grants with expiry, approvals and brokered credentials | The tailnet (D580s), `loams-gateway` `pg` (§57), D711, phone approvals (§37), Places (D1087), Jailer verdicts | `loams.access.v1`, an SSH certificate authority | IS3 |
 | **Waypoint** (archived 2024) | Build, deploy, promote and roll back an app | **Deploy stage of the Software Factory**: `loams deploy` as a durable workflow | SF4's factory loop, D842 promotion on merge, runners, §45's versioned deploys with rollback | A deploy record and the CLI | IS3 |
 | **Vagrant** (BSL) | Reproducible dev environments | **Studio workspaces with `devcontainer.json`** | Studio worktrees (D903), microVM workspaces (D1006), `loams dev` stacks (D285) | A devcontainer reader | IS4 |
-| **HCP** | Someone else runs it | **Ostrium services**: the same open code, operated under an SLA | BYOC agent (D543), the hosted console and auth | Nothing closed | Any phase |
+| **HCP** | Someone else runs it | ~~**Ostrium services**: the same open code, operated under an SLA~~ (superseded by D1323: Ostrium offers no services and no SLA; the open code is run by the user or a third party) | BYOC agent (D543), the hosted console and auth | Nothing closed | Any phase |
 | Sentinel (proprietary) | Policy on plans and changes | **No new language.** OpenFGA, the PDP's typed rules, OPA/conftest optional | §61 PDP, OpenFGA | Plan checks as PDP rules | IS3 |
 
 ## 2. The landscape in October 2026
@@ -280,7 +284,7 @@ These four have the weakest case for new code. Each section says what Loams alre
 
 ### 9.3 Waypoint → the deploy stage of the Software Factory (IS3; D1167)
 
-- **Already there:** SF4's factory loop with a deploy stage behind an approval, D842's promotion on merge into environment branches, the runners, and §45's versioned function deploys with rollback.
+- **Already there:** the factory loop's deploy stage behind an approval (SF4's when this was written; SF4 is retired and the stage is now [§72](72-software-factory-loop.md) stage 6, D1434), D842's promotion on merge into environment branches, the runners, and §45's versioned function deploys with rollback.
 - **Smallest useful addition:** a deploy record (`loams.deploy.v1`: app, environment, build artifact digest, runner, config and secret revisions, state) and `loams deploy` / `loams rollback`, run as a durable workflow that builds, releases, deploys, health-checks and promotes. A deploy pins the config and secret revisions it used, so a rollback restores code and configuration together.
 - **Never:** Waypoint's plugin system or a separate "platform" abstraction.
 
@@ -437,7 +441,7 @@ Said plainly, so later plans do not drift:
 | D1164 | **Plan runs** (IS3): `tofu plan` and `apply` as sandboxed jobs on Loams Git events, credentials from ephemeral resources and trust policies only, apply after a person's approval and the plan rules |
 | D1165 | **Loams Run** (IS4) is a small placement scheduler over the `Runner` trait and `loams-sandbox`, built only after its demand gate (Q980); never a Kubernetes-scale scheduler |
 | D1166 | **`loams image`** (IS4) converts OCI images into signed rootfs and microVM images in the bucket; no golden VM images, no template language |
-| D1167 | **Deploys** (IS3) are the Software Factory's deploy stage: `loams.deploy.v1` records pinning artifact, config and secret revisions; `loams deploy` and `loams rollback` as durable workflows |
+| D1167 | **Deploys** (IS3) are the Software Factory's deploy stage ([§72](72-software-factory-loop.md) stage 6 since SF4's retirement, D1420): `loams.deploy.v1` records pinning artifact, config and secret revisions; `loams deploy` and `loams rollback` as durable workflows |
 | D1168 | **Dev environments** (IS4): Studio and cloud workspaces read `devcontainer.json`; no Vagrantfile or box registry |
 | D1169 | **Licence rules** of §11: no BSL code; MPL only as unmodified vendored protocol files and interop; no ports; clean-room for contributors exposed to BSL source; product names avoid HashiCorp marks |
 | D1170 | **Hosted operation is a service, not an edition:** Ostrium may operate state, secrets and config for customers under SLAs, on the same Apache-2.0 code (D1119) |

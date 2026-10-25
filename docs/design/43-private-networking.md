@@ -1,5 +1,9 @@
 # 43 — Private Networking: a Pluggable Tailnet (Tailscale BYOK or Headscale)
 
+> **Amendment (approved 2026-10-23) by [§78](78-loams-cloud-on-tidb-x.md)** (Loams Cloud on TiDB X; D1700–D1735). A device may join the user's own tailnet through `tsnet` inside `loams-agentd`, a userspace node that needs no root and leaves a corporate tailnet untouched (D1722, D1723). A hosted Headscale stays out (Q1269); D583 is why.
+
+> **Amendment (approved 2026-10-21) by [§76](76-identity-and-authorization.md): superseded in part by D1600** (owner: full cutover from Authentik to Zitadel, with no migration path, no compatibility period and no dual running, because there are no users). Headscale signs in through Zitadel OIDC (D584), Zitadel's admin console is tailnet-only on the hosted service (D596's rule, carried over), and `tag:authentik` becomes `tag:zitadel` (IA1 Task 1).
+
 > **Updated 2026-10-19 ([D1119](13-decision-log.md)): Loams has no open core.** Where this document places metering, billing, the hosted control plane, commercial APIs or other components in the private `loams-platform` repository, or calls something private for open-core reasons, read that as superseded: everything is Apache-2.0, and the metering, billing and control-plane code is moving into the open repo now (design §63, Loams Meter). Ostrium Labs offers services (infrastructure efficiency, SLAs, support), not a paid edition. The rest of the design is unchanged.
 
 Status: **Proposed** · 2026-10-02 (revised the same day). Sources: the owner's note of 2026-10-02, "you can use **Headscale** if you want, for added security and unified handling", and the owner's ruling later that day, "for now make it **BYOK Tailscale**, make it configurable so I can add [Headscale] in the future." This document decides how: the private network is a **pluggable tailnet provider**, `tailscale` (the owner's own hosted Tailscale account, bring-your-own key; the default now) or `headscale` (self-hosted, later), and switching is a configuration change only.
@@ -143,7 +147,7 @@ The shared file therefore uses only the common subset, and the lint (`policy_lin
 | BYOC agent to the control plane | Default: outbound mTLS over HTTPS (§41 D543) | Optional mode (D587) |
 | Tailnet coordination and DERP | **Cannot** for Headscale (D583): its host is DNS-only. Not applicable to hosted Tailscale | Is the tailnet's control plane |
 
-The rule of thumb: if a person with a browser needs it, it is public; if a machine or an operator needs it, it is on the tailnet.
+The rule of thumb: if a person with a browser needs it, it is public; if a machine or an operator needs it, it is on the tailnet. *Amended 2026-10-21 by D1311 ([§69](69-edge-reach.md) §9.1):* the engine is never public; machines off the tailnet, such as serverless functions, reach Loams only through `loams-gateway`'s edge listener, over a private link or a brokered tunnel (Cloudflare Tunnel in the user's own account) that authenticates every request first.
 
 ## 5. Identity (D584, D585)
 
@@ -197,7 +201,7 @@ How the shared design is kept safe:
 | Cluster Git pulls | Direct from Git (§41 §6) | Unchanged: from Git over the internet (the tailnet is not a Git mirror) |
 | Operator support access | None by default | A **time-boxed grant** `group:ops` -> `tag:byoc-<tenant>:6443` that the **customer** enables (Q588); it expires and is removed by the control plane |
 | Air-gapped (Q550) | Customer-run Git mirror | Unchanged; the tailnet is not used |
-| Observe-only | Allowed | Allowed: no support grant is created |
+| Observe-only | Allowed | Allowed: no maintainer debug session is opened (D1582) |
 
 The agent's certificate (24-hour, per cluster) remains its identity; the tailnet adds a network path, not an authentication factor. A stolen tenant node key can reach `tag:control:443` and nothing else, where the agent still requires its client certificate.
 
@@ -392,3 +396,5 @@ All read 2026-10-02.
 - Images: registry manifest digests for `ghcr.io/juanfont/headscale:v0.29.4` and `docker.io/tailscale/tailscale:v1.102.5` (`sha256:c507f3a2a6ab1cabd8d809b98edeb41edbd5c3fb6ad9632ffd098b4c7d0b4065`).
 - Run locally 2026-10-02: Headscale v0.29.4 with the shared policy and a `tailscale/tailscale` v1.102.5 userspace node (§3.1).
 - Loams: [§38](38-knative-authentik-gitops.md), §41 §5, §7, §11, [§37](37-desktop-and-mobile-apps.md) §7.2, [§30](30-loams-cli.md) §15, [MT1](../plans/2026-10-02-mt1-authentik-identity.md).
+
+> **See also (2026-10-21):** [§69](69-edge-reach.md) (Edge Reach, approved by the owner 2026-10-21): serverless functions may join a tailnet as tagged, ephemeral nodes by workload identity federation (Lambda, Cloud Run, Fly.io), and reach only the gateway's edge listener; Funnel stays off and counts as public (D1314).

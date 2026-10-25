@@ -17,7 +17,7 @@ name: loams-tikv
 
 services:
   pd:
-    image: docker.io/pingcap/pd:${TIKV_TAG:-v8.5.0}
+    image: docker.io/pingcap/pd:${TIKV_TAG:-v8.5.8}
     network_mode: host
     restart: "no"
     command:
@@ -34,7 +34,7 @@ services:
       - ./pd.toml:/etc/pd.toml:ro
 
   tikv:
-    image: docker.io/pingcap/tikv:${TIKV_TAG:-v8.5.0}
+    image: docker.io/pingcap/tikv:${TIKV_TAG:-v8.5.8}
     network_mode: host
     restart: "no"
     command:

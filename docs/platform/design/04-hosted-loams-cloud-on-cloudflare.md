@@ -14,18 +14,18 @@ Numbering: decisions **PD29–PD44**, questions **Q-HC-1–Q-HC-12**. Bare D-num
 |---|---|---|
 | PD29 | **The verdict: "all on Cloudflare" means Cloudflare is the edge, the front end, the object store and the stateless compute, not the whole system.** Cloudflare offers no managed Kubernetes, Containers have no persistent disk and are reached only through Workers and Durable Objects, and custom inbound TCP needs Enterprise Spectrum. TiKV, PD, Iggy, Fluss, Postgres (Neon) and WeSQL need real nodes with disks. They run on a **small k3s cluster** of rented or owned machines, connected to Cloudflare by **Cloudflare Tunnel**. No public inbound port is open except the TLS wire-protocol ports of PD35 (Postgres, MySQL, Kafka, Iggy) on the ingress nodes; all HTTP enters through Cloudflare (§2) | Approved (owner defaults, 2026-10-02) |
 | PD30 | **R2 is the hosted bucket of truth** (operon D1, D381). Engine nodes on k3s read and write R2 with vended prefix credentials. R2's free egress pays for the distance; the NVMe hot tier (operon §04) hides the latency. RustFS is not run in the hosted cloud | Approved (owner defaults, 2026-10-02) |
-| PD31 | **The k3s cluster runs the open-source distribution unmodified**: operon's umbrella chart, `loam-operator`, Argo CD, Knative (operon §38), Authentik, TiKV, and the engine roles. The hosted cloud is a BYOC install of operon into Loam's own infrastructure plus this repository's components (`loam-meter`, `loam-usage`, the control plane). "Hosted" adds operation, never a fork | Approved (owner defaults, 2026-10-02) |
+| PD31 | **The k3s cluster runs the open-source distribution unmodified**: operon's umbrella chart, `loam-operator`, Argo CD, Knative (operon §38), Zitadel and OpenFGA (operon §76), TiKV, and the engine roles. The hosted cloud is a BYOC install of operon into Loam's own infrastructure plus this repository's components (`loam-meter`, `loam-usage`, the control plane). "Hosted" adds operation, never a fork | Approved (owner defaults, 2026-10-02) |
 | PD32 | **Workers front everything public**: `loams.dev` (the site, from `loam-cloud`), `console.loams.dev`, `api.loams.dev` and the protocol endpoints. A front Worker terminates TLS at the edge, authenticates, rate-limits per tenant, and forwards to the k3s gateway through a **Workers VPC binding** to the Tunnel (public beta since April 2026), or through a Tunnel public hostname until VPC bindings are generally available | Approved (owner defaults, 2026-10-02) |
 | PD33 | **Tenant functions on the hosted cloud:** `fetch` functions run on **Workers for Platforms**, in a dispatch namespace in untrusted mode (answers Q-CF-3 for the hosted cloud: yes, on Loam's account, only in WfP). `http-port` functions run on **Knative on k3s** (operon D441), with **Cloudflare Containers** as the burst and edge option behind a Durable Object (PD21's native fallback). The supervisor's T0/T1 run on k3s for functions that must sit next to the data (operon D170) | Approved (owner defaults, 2026-10-02) |
 | PD34 | **Stateful services stay on k3s nodes with local NVMe**: PD and TiKV (the metastore and Live), Resonate on TiKV, Iggy and Fluss (the Event Fabric, operon §32), Neon (operon §28), WeSQL (operon §29), and the engine's query and log roles. Durable Objects hold only caches and leases (operon D382, PD20) | Approved (owner defaults, 2026-10-02) |
 | PD35 | **Wire protocols that are not HTTP** (Postgres, MySQL, Kafka, Iggy's TCP and QUIC) are **not proxied by Cloudflare** in the beta. Spectrum for custom TCP needs an Enterprise plan. They are exposed from the k3s ingress nodes' own addresses with TLS and Loam's tokens. Workers reach Postgres through **Hyperdrive** (included in Workers Paid) over the Tunnel **(verify the private-database path)** | Approved (owner defaults, 2026-10-02) |
 | PD36 | **Customer BYOC on Cloudflare has two parts**, matching operon D64. **Edge BYOC:** Loam deploys the front Worker, the WfP namespace and R2 buckets into the customer's Cloudflare account with a scoped API token. **Data BYOC:** the stateful part runs in the customer's Kubernetes (BYOC-local-meta) or Loam's k3s (BYOC-managed-meta), joined by the customer's Tunnel. The management agent is pull-based and never needs inbound access (operon §18 §8) | Approved (owner defaults, 2026-10-02) |
-| PD37 | **Identity for the hosted cloud is Authentik on k3s, not Clerk**, following the 2026-10-01 "for auth Authentik so no paid plan" for the hosted service as well. Confirmed by the owner on 2026-10-02 (Q-HC-1); `loam-cloud`'s console moves off Clerk before the hosted beta. Authentik runs open-source edition only (operon D447, D458); hosted multi-org tenancy uses Loam's own orgs (operon §19), never Authentik's Enterprise `tenants` | Approved (owner defaults, 2026-10-02) · owner decision |
+| PD37 | **Identity for the hosted cloud is a self-hosted open-source identity provider, not Clerk**, following the owner's 2026-10-01 ruling for auth with no paid plan, for the hosted service as well. Confirmed by the owner on 2026-10-02 (Q-HC-1); `loam-cloud`'s console moves off Clerk before the hosted beta; hosted multi-org tenancy uses Loam's own orgs (operon §19). **Amended by operon D1600** (2026-10-21): the provider is **Zitadel** at `auth.loams.dev`, unmodified, with OpenFGA for authorization, and the earlier provider is removed with no migration (operon §76) | Approved (owner defaults, 2026-10-02) · owner decision; provider amended by D1600 |
 | PD38 | **Billing is Stripe directly from the beta** (PD37 confirmed; Q-HC-2). Clerk Billing (PD10's beta phase) goes away with Clerk; doc 01's Stripe path (PD7, PD10's GA phase) starts at beta instead. Stripe is a payment service with per-transaction fees, not a software licence | Approved (owner defaults, 2026-10-02) · owner decision |
 | PD39 | **Metering on Cloudflare** (doc 01, PD23): the Tail Worker turns WfP and front-Worker trace events into host reports for `loam-usage`. Cloudflare's own CPU-ms figures from its analytics API reconcile them daily (PD26). On k3s, `loam-meter` reads cgroups as doc 01 describes, Knative pods included (PD28) | Approved (owner defaults, 2026-10-02) |
 | PD40 | **Regions:** one k3s cluster in one region for the beta (three nodes, one failure domain each, TiKV replication 3), plus R2 location hints. Multi-region is a later fleet decision (Q-HC-6) | Approved (owner defaults, 2026-10-02) |
 | PD41 | **Secrets and keys** are in Cloudflare Secrets Store for Workers and in the k3s cluster through Dapr secret stores (operon D189) backed by OpenBao. Neither holds the other's. Tunnel tokens are per cluster | Approved (owner defaults, 2026-10-02) |
-| PD42 | **The enterprise tier sells operation, not withheld code.** With the engine open source (operon D220, no SSO tax), the enterprise tier is the SLA, support, the hosted service and BYOC management, compliance packs and certification. Appendix Z is a non-binding joke about where that could go | Approved (owner defaults, 2026-10-02) |
+| PD42 | **The enterprise tier sells operation, not withheld code.** With the engine open source (operon D220, no SSO tax), the enterprise tier is the SLA, support, the hosted service and BYOC management, compliance packs and certification. Appendix Z is a non-binding joke about where that could go | Approved (owner defaults, 2026-10-02); **superseded by D1323** (2026-10-21: no services offering, no SLA, no paid support; no enterprise tier) |
 | PD43 | **A second region is a second k3s cluster with its own TiKV**, after the beta (Q-HC-6, refines PD40): no Raft group spans regions; R2 location hints per cluster; the control plane routes an org to one region | Approved (owner defaults, 2026-10-02) |
 | PD44 | **One Loam CPU-ms rate for every runner** (Q-HC-10): WfP, Knative, the supervisor's tiers and external runners bill the same rate; reconciliation (PD26) still compares provider figures | Approved (owner defaults, 2026-10-02) |
 
@@ -88,7 +88,7 @@ Read on Cloudflare's own pages on 2026-10-02; details and sources in doc 03 §12
 | PD, TiKV, Resonate, Live | k3s | Raft on local disks |
 | Iggy, Fluss | k3s | Disks; Fluss needs ZooKeeper and the Flink tiering job (operon §32) |
 | Neon (pageserver, computes), WeSQL | k3s | Disks and long-lived processes |
-| Authentik, OpenFGA, CloudNativePG | k3s | Small stateful services |
+| Zitadel, OpenFGA, CloudNativePG | k3s | Small stateful services (operon §76 §12.2) |
 | Bucket | R2 (PD30) | Free egress; S3 API |
 | `loam-meter`, `loam-usage`, control plane | k3s (doc 01) | Reads cgroups; writes the `ControlStore` |
 | Secrets | Secrets Store (Workers), OpenBao via Dapr (k3s) (PD41) | Each side has its own |
@@ -103,7 +103,7 @@ Read on Cloudflare's own pages on 2026-10-02; details and sources in doc 03 §12
   Postgres / MySQL / Kafka wire ──TLS──►  k3s ingress nodes (3 machines, NVMe)
                                           Envoy → loam-gateway → engine roles, Knative, Live
                                           PD/TiKV · Resonate · Iggy/Fluss · Neon · WeSQL
-                                          Authentik · OpenFGA · CNPG · loam-meter · loam-usage
+                                          Zitadel · OpenFGA · CNPG · loam-meter · loam-usage
 ```
 
 ## 4. Tenancy in the hosted cloud
@@ -138,14 +138,14 @@ Fixed at beta scale: Workers Paid $5/month; WfP $25/month; R2 at 1 TB about $15/
 | R2 latency from k3s on the query path | The NVMe hot tier and prefetch (operon §04); place the k3s region near the R2 location hint; measure in CF1 (doc 03) |
 | One k3s region is one failure domain | TiKV replication 3 across machines; R2 is the durable truth, so the cluster can be rebuilt from the bucket (operon §10) |
 | Spectrum is needed for non-HTTP wire later | Direct TLS ingress now (PD35); Enterprise Spectrum when the hosted load needs it |
-| Authentik replaces Clerk in a console already built on Clerk | Decided 2026-10-02 (Q-HC-1); `loam-cloud`'s auth is behind OIDC, so the swap is a provider change plus the sign-in pages |
+| A self-hosted IdP (Zitadel since D1600) replaces Clerk in a console already built on Clerk | Decided 2026-10-02 (Q-HC-1); `loam-cloud`'s auth is behind OIDC, so the swap is a provider change plus the sign-in pages |
 | Dependence on one vendor's edge | Every Cloudflare piece has an operon fallback (doc 03 §3's last column); the k3s cluster runs without Cloudflare except for the public entry |
 
 ## 9. Open questions
 
 | # | Question | Owner | Needed by |
 |---|---|---|---|
-| Q-HC-1 | ~~Replace Clerk with Authentik for the hosted console now (PD37), or keep Clerk until GA~~ Answered 2026-10-02 by the owner: the recommended default — Authentik now, open-source edition, for the hosted console; Clerk retires before the hosted beta (PD37; operon D404's "no paid plan") | Founder | Resolved |
+| Q-HC-1 | ~~Replace Clerk with a self-hosted open-source IdP for the hosted console now (PD37), or keep Clerk until GA~~ Answered 2026-10-02 by the owner: the recommended default — a self-hosted IdP now, open-source edition, for the hosted console; Clerk retires before the hosted beta (PD37; operon D404's "no paid plan"). The provider is Zitadel since operon D1600 (2026-10-21) | Founder | Resolved |
 | Q-HC-2 | ~~Move billing to Stripe directly at beta (PD38), dropping PD10's Clerk Billing phase~~ Answered 2026-10-02 by the owner: the recommended default — Stripe directly from the beta; PD10's Clerk Billing phase is dropped (PD38) | Founder | Resolved |
 | Q-HC-3 | The k3s machines: rented bare metal (which provider, region) or owned hardware. Owner action pending (2026-10-02): choose, and rent or buy, the three k3s machines (provider and region) | Owner action | Before the beta cluster |
 | Q-HC-4 | ~~Workers VPC (beta) or Tunnel public hostnames for the front Worker's path to k3s at launch~~ Answered 2026-10-02 by the owner: the recommended default — Tunnel public hostnames with Access service tokens at launch, Workers VPC bindings once they are GA (PD32, §8) | Eng | Resolved |
@@ -160,14 +160,14 @@ Fixed at beta scale: Workers Paid $5/month; WfP $25/month; R2 at 1 TB about $15/
 
 ## 10. Cross-references
 
-operon §04 (hot tier), §10 (operations, DR), §18 §8 (BYOC, D64), §19 (orgs, tokens), §24 (runtime), §27 (hooks), §28 (Neon), §29 (WeSQL), §32 (Event Fabric), §36 (Loam Git), §38 (Knative, Authentik, GitOps; D440); docs 01 and 03 here.
+operon §04 (hot tier), §10 (operations, DR), §18 §8 (BYOC, D64), §19 (orgs, tokens), §24 (runtime), §27 (hooks), §28 (Neon), §29 (WeSQL), §32 (Event Fabric), §36 (Loam Git), §38 (Knative, GitOps; D440), §76 (identity and authorization: Zitadel and OpenFGA; D1600); docs 01 and 03 here.
 
 ## 11. Contradictions, and how they are resolved
 
 | Earlier | Here | Resolution |
 |---|---|---|
 | PD10: Clerk Billing in beta, Stripe at GA | Stripe from beta | PD38 (Q-HC-2, confirmed 2026-10-02) |
-| `loam-cloud`: Clerk for auth | Authentik | PD37 (Q-HC-1, confirmed 2026-10-02) |
+| `loam-cloud`: Clerk for auth | A self-hosted IdP, Zitadel since D1600 | PD37 (Q-HC-1, confirmed 2026-10-02; provider amended by operon D1600) |
 | Doc 03 PD20: the engine's data plane stays on Kubernetes runners | Same, on k3s | Consistent; this document names the cluster |
 | Doc 03 Q-CF-3: tenant code on Loam's account | WfP untrusted mode only | Answered by PD33 for the hosted cloud |
 | operon D178: RustFS is the default store | R2 in the hosted cloud | No conflict: RustFS stays operon's self-hosted default; D381 lists `r2` as a provider |
@@ -192,7 +192,7 @@ Read on 2026-10-02.
 
 **For fun; not on the roadmap** (Q-HC-12). The owner asked for "multi-planetary HA and rollover etc. for fun". The physics and the standards below are real; the product is not.
 
-**The enterprise tier, seriously.** Because the engine is open source, the enterprise tier sells the operation: an SLA, support, the hosted service and BYOC management, compliance packs and certification. It never sells withheld code (PD42).
+**The enterprise tier, seriously.** Because the engine is open source, the enterprise tier sells the operation: an SLA, support, the hosted service and BYOC management, compliance packs and certification. It never sells withheld code (PD42). *Superseded by D1323 (2026-10-21): the services offering is removed, so there is no SLA, paid support or enterprise tier.*
 
 **The constraint.** Earth–Mars one-way light time runs from about 3 minutes at closest approach (about 55 million km) to about 22 minutes near superior conjunction (about 400 million km). Around every solar conjunction, once per synodic period of about 26 months, the Sun sits between the planets and mission operators observe a communications moratorium of about two weeks (NASA's Mars solar conjunction practice). A Raft round trip of 6 to 44 minutes is not a quorum anyone wants, and two weeks of silence is not a partition a quorum can wait out.
 

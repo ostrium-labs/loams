@@ -1765,7 +1765,7 @@ checksum = "4ee93343901ab17bd981295f2cf0026d4ad018c7c31ba84549a4ddbb47a45104"
 
 [[package]]
 name = "loams-safekeeper"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "axum 0.8.1",
@@ -1793,7 +1793,7 @@ dependencies = [
 
 [[package]]
 name = "loams-tikv"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "futures",
  "loams-tuple",
@@ -1810,7 +1810,7 @@ dependencies = [
 
 [[package]]
 name = "loams-tuple"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "thiserror 2.0.11",
 ]
@@ -3505,7 +3505,7 @@ dependencies = [
 [[package]]
 name = "tikv-client"
 version = "0.4.0"
-source = "git+https://github.com/ostrium-labs/client-rust?rev=8126c49a15c0af7f1e7427f3b9020ae8d2c280cf#8126c49a15c0af7f1e7427f3b9020ae8d2c280cf"
+source = "git+https://github.com/ostrium-labs/client-rust?rev=41b3588f9b63d505dd61e15bf3d26abfd53689a2#41b3588f9b63d505dd61e15bf3d26abfd53689a2"
 dependencies = [
  "async-recursion",
  "async-trait",

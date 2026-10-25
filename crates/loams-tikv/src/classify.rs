@@ -40,7 +40,7 @@ pub(crate) fn classify(e: &Error) -> Class {
     match e {
         Error::UndeterminedError(_) => Class::Undetermined,
         Error::PessimisticLockError { inner, .. } => classify(inner),
-        Error::MultipleKeyErrors(errors) | Error::ExtractedErrors(errors) => {
+        Error::MultipleKeyErrors(errors) | Error::MultipleRegionErrors(errors) => {
             errors.iter().map(classify).max().unwrap_or(Class::Fatal)
         }
         Error::KeyError(ke) => {
@@ -111,7 +111,7 @@ pub(crate) fn describe(e: &Error, root: &[u8]) -> String {
         Error::PessimisticLockError { inner, .. } => {
             format!("pessimistic lock: {}", describe(inner, root))
         }
-        Error::MultipleKeyErrors(errors) | Error::ExtractedErrors(errors) => {
+        Error::MultipleKeyErrors(errors) | Error::MultipleRegionErrors(errors) => {
             let mut out = format!("{} errors: ", errors.len());
             for (i, err) in errors.iter().take(3).enumerate() {
                 if i > 0 {

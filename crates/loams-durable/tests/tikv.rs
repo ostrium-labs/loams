@@ -432,12 +432,23 @@ async fn schedules_persist_and_fire_after_a_restart() {
         assert!(Instant::now() < deadline, "{tick} never fired");
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
-    let moved = call(
-        &second,
-        "schedule.get",
-        json!({ "id": "tikv-every-minute" }),
-    )
-    .await;
+    // The occurrence's promise is written before the schedule moves on (a
+    // crash in between refires the same, idempotent, occurrence), so the
+    // move can trail the promise by a write or two.
+    let moved_by = Instant::now() + Duration::from_secs(10);
+    let moved = loop {
+        let moved = call(
+            &second,
+            "schedule.get",
+            json!({ "id": "tikv-every-minute" }),
+        )
+        .await;
+        if moved["data"]["schedule"]["nextRunAt"].as_i64() > Some(due) || Instant::now() > moved_by
+        {
+            break moved;
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    };
     assert!(
         moved["data"]["schedule"]["nextRunAt"].as_i64() > Some(due),
         "{moved}"

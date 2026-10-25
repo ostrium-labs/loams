@@ -12,7 +12,7 @@
 //! Three mechanisms, in order of how much they can catch:
 //!
 //! 1. **The engine is never asked to authenticate.** Loams runs the
-//!    OIDC/Authentik ceremony itself, with its own OIDC client, and only the
+//!    OIDC ceremony itself, with its own OIDC client, and only the
 //!    resulting app session cookies cross into [`ScopedSessionCookie`].
 //!    Obscura has no WebAuthn implementation at all, so a browser-driven
 //!    ceremony is not merely undesirable here, it is impossible; the design

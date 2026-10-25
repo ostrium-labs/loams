@@ -514,21 +514,19 @@ async fn jwks_fetch_failures_are_rate_limited_too() {
     assert_eq!(issuer.jwks_fetches.load(Ordering::SeqCst), 2);
 }
 
-/// Against a real Authentik (MT1's compose stack, `deploy/release/auth`):
-/// an Authentik-issued token calls a public function. Skipped unless
-/// `LOAMS_TEST_AUTHENTIK_ISSUER`, `LOAMS_TEST_AUTHENTIK_AUDIENCE` and
-/// `LOAMS_TEST_AUTHENTIK_TOKEN` name the issuer, the app's client id and a
+/// Against a real OIDC issuer (Zitadel, or any issuer the install trusts):
+/// a token it issued calls a public function. Skipped unless
+/// `LOAMS_TEST_OIDC_ISSUER`, `LOAMS_TEST_OIDC_AUDIENCE` and
+/// `LOAMS_TEST_OIDC_TOKEN` name the issuer, the app's client id and a
 /// fresh access token.
-async fn authentik_end_user_e2e(store: TestStore) {
+async fn oidc_end_user_e2e(store: TestStore) {
     let vars = (
-        std::env::var("LOAMS_TEST_AUTHENTIK_ISSUER"),
-        std::env::var("LOAMS_TEST_AUTHENTIK_AUDIENCE"),
-        std::env::var("LOAMS_TEST_AUTHENTIK_TOKEN"),
+        std::env::var("LOAMS_TEST_OIDC_ISSUER"),
+        std::env::var("LOAMS_TEST_OIDC_AUDIENCE"),
+        std::env::var("LOAMS_TEST_OIDC_TOKEN"),
     );
     let (Ok(issuer), Ok(audience), Ok(token)) = vars else {
-        eprintln!(
-            "skipped: authentik_end_user_e2e needs LOAMS_TEST_AUTHENTIK_ISSUER, _AUDIENCE and _TOKEN"
-        );
+        eprintln!("skipped: oidc_end_user_e2e needs LOAMS_TEST_OIDC_ISSUER, _AUDIENCE and _TOKEN");
         return;
     };
     let trusted = TrustedIssuer {
@@ -543,11 +541,11 @@ async fn authentik_end_user_e2e(store: TestStore) {
         who(Some("anonymous"), Some(&token)),
     )
     .await
-    .expect("an Authentik-issued token calls a public function");
+    .expect("an issuer's token calls a public function");
     assert!(matches!(field(&me, "subject"), LiveValue::Str(s) if !s.is_empty()));
     handle.stop().await;
 }
-live_test!(authentik_end_user_e2e);
+live_test!(oidc_end_user_e2e);
 
 // ---- session identity (LV1 plan Task 17) ----
 

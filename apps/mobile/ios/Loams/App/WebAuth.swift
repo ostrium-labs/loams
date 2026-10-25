@@ -3,8 +3,8 @@ import Foundation
 import LoamsCore
 import UIKit
 
-/// OIDC authorization code with PKCE S256 at Authentik through ASWebAuthenticationSession
-/// (which does no PKCE of its own). Returns Authentik's access token.
+/// OIDC authorization code with PKCE S256 at the identity provider through ASWebAuthenticationSession
+/// (which does no PKCE of its own). Returns the identity provider's access token.
 @MainActor
 final class WebAuth: NSObject, ASWebAuthenticationPresentationContextProviding {
     /// Held for the duration of a sign-in: the system cancels a session that is deallocated.
@@ -26,7 +26,7 @@ final class WebAuth: NSObject, ASWebAuthenticationPresentationContextProviding {
               let tokenEndpoint = config["token_endpoint"] as? String,
               var components = URLComponents(string: authorize),
               let tokenURL = URL(string: tokenEndpoint)
-        else { throw Failure(message: "Authentik's discovery document is incomplete.") }
+        else { throw Failure(message: "the identity provider's discovery document is incomplete.") }
 
         let pkce = Pkce.generate()
         let state = UUID().uuidString
@@ -44,7 +44,7 @@ final class WebAuth: NSObject, ASWebAuthenticationPresentationContextProviding {
             let session = ASWebAuthenticationSession(url: authorizeURL, callbackURLScheme: Loams.callbackScheme) { url, error in
                 if let url { continuation.resume(returning: url) } else { continuation.resume(throwing: error ?? Failure(message: "Sign-in was cancelled.")) }
             }
-            // Keep Authentik's session cookie between sign-ins (AP3 Task 4).
+            // Keep the identity provider's session cookie between sign-ins (AP3 Task 4).
             session.prefersEphemeralWebBrowserSession = false
             session.presentationContextProvider = self
             self.session = session
@@ -70,7 +70,7 @@ final class WebAuth: NSObject, ASWebAuthenticationPresentationContextProviding {
         request.httpBody = Data((form.percentEncodedQuery ?? "").utf8)
         let (data, _) = try await URLSession.shared.data(for: request)
         guard let token = (try JSONSerialization.jsonObject(with: data) as? [String: Any])?["access_token"] as? String else {
-            throw Failure(message: "Authentik returned no access token.")
+            throw Failure(message: "the identity provider returned no access token.")
         }
         return token
     }

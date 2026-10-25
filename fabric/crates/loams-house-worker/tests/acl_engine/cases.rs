@@ -41,6 +41,7 @@ pub fn run(open: bool) {
         forwarder_port: None,
         cgroup: None,
         open_acl: open,
+        max_execution_time_s: loams_house_worker::settings::MAX_EXECUTION_TIME_S,
     };
     config::write_files(&args).expect("config files");
     let mut engine_config = engine_config(&args);

@@ -119,6 +119,7 @@ const PREVIEW_FACTORY_APPS: {
   fields: [string, string, boolean][];
   label: string;
   hasPanels: boolean;
+  preview?: string;
 }[] = [
   { id: 'forgejo', fields: [['token', 'Access token', true]], label: 'Forgejo', hasPanels: true },
   {
@@ -168,7 +169,13 @@ const PREVIEW_FACTORY_APPS: {
     label: 'Langfuse',
     hasPanels: true,
   },
-  { id: 'openobserve', fields: [], label: 'OpenObserve', hasPanels: false },
+  {
+    id: 'signoz',
+    fields: [],
+    label: 'SigNoz',
+    hasPanels: false,
+    preview: 'Preview: SigNoz on Loams House',
+  },
 ];
 
 /** Sample apps shown as configured in the preview. Every value is obviously fake. */

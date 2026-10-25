@@ -1,7 +1,8 @@
 // Portions of this file are from T3 Code (https://github.com/pingdotgg/t3code),
 // apps/web/src/lib/composerContextReferences.ts at commit 6524a8d4, Copyright (c) 2026 T3 Tools Inc., MIT licence
 // (see web/packages/studio-ui/LICENSE.t3code). Modified by The Loams Authors:
-// this header; import paths rewritten. Loams' changes are Apache-2.0.
+// this header; import paths rewritten; the slug's dash trim made linear-time (CodeQL js/polynomial-redos). Loams' changes are Apache-2.0.
+import { trimWhere } from "../lib/trimWhere";
 import type { ComposerContextId, ComposerContextKind } from "./shared/contracts";
 import {
   collectComposerContextReferences,
@@ -48,10 +49,9 @@ function fnv1a64(value: string): string {
  */
 export function toComposerContextId(producerId: string): ComposerContextId {
   if (CONTEXT_ID_PATTERN.test(producerId)) return producerId as ComposerContextId;
-  const slug = producerId
-    .replace(/[^a-z0-9_-]+/gi, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 48);
+  // Edge dashes are trimmed in a loop: `/^-+|-+$/g` is quadratic on a long run of
+  // dashes that does not reach the end (CodeQL js/polynomial-redos).
+  const slug = trimWhere(producerId.replace(/[^a-z0-9_-]+/gi, "-"), (c) => c === "-").slice(0, 48);
   return `${slug || "ctx"}-${fnv1a64(producerId)}` as ComposerContextId;
 }
 

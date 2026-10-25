@@ -85,6 +85,8 @@ pub mod consistency;
 pub mod error;
 pub mod facade;
 pub mod handle;
+#[cfg(feature = "machine-key")]
+pub mod machine_key;
 pub mod pagination;
 pub mod reason;
 pub mod request;

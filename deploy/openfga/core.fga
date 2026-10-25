@@ -1,0 +1,88 @@
+module core
+
+# Loams' OpenFGA model v1, the core module (design 76 §6, D1603).
+#
+# The hierarchy is org -> project -> environment -> resource. Roles (owner, admin, editor, viewer,
+# deployer) are what gets assigned; application code checks only `can_*` relations, so role
+# semantics change here without touching code. Product modules (graph.fga today) hang off
+# `environment` and join through fga.mod (schema 1.2).
+#
+# Principals (D1605): a person is `user:<zitadel_user_id>`, an AI agent `agent:<id>` and any
+# other machine `service_account:<id>`, never an email. `environment:<id>` is a Loams namespace
+# id (Q1207). Every object path is rooted in one org (D1612).
+#
+# Agents (D1607): an agent's `owner` confers nothing. It reaches only what it is granted
+# directly, and the type restrictions below never let `agent` hold `operator`, `meter_admin`
+# or `billing_admin` (D553, D1133). A grant for one agent session uses
+# `agent with agent_session` and expires with the session (Q1204).
+
+type user
+
+# One object per install: `platform:default`.
+type platform
+  relations
+    define operator: [user]
+    define limits_writer: [user, service_account]
+    define meter_admin: [user]
+    # Loams Cloud's admins (design 78 §25.8, D1746), on `platform:loams-cloud`.
+    # People only: an agent or service account can never hold it, like meter_admin.
+    define cloud_admin: [user]
+
+type org
+  relations
+    define platform: [platform]
+    define owner: [user]
+    define admin: [user, team#member] or owner
+    define member: [user, team#member] or admin
+    define billing_admin: [user] or owner
+    define billing_viewer: [user, team#member] or billing_admin
+
+# Teams are owned by Loams, not Zitadel (§5). `org` roots every team for the cross-org scan.
+type team
+  relations
+    define org: [org]
+    define member: [user, team#member]
+
+type agent
+  relations
+    define owner: [user]
+    define project: [project]
+
+type service_account
+  relations
+    define project: [project]
+
+type project
+  relations
+    define org: [org]
+    define admin: [user, team#member] or admin from org
+    define editor: [user, team#member, agent, service_account] or admin
+    define viewer: [user, team#member, agent, service_account] or editor
+
+type environment
+  relations
+    define project: [project]
+    define deployer: [user, team#member, agent, agent with agent_session, service_account] or admin from project
+    define editor: [user, team#member, agent, agent with agent_session, service_account] or deployer or editor from project
+    define viewer: [user, team#member, agent, agent with agent_session, service_account] or editor or viewer from project
+
+# An application deployment (the draft's `deployment`, not CP1's install root).
+type deployment
+  relations
+    define environment: [environment]
+    define can_view: viewer from environment
+    define can_operate: editor from environment
+    define can_destroy: deployer from environment
+
+type database
+  relations
+    define environment: [environment]
+    define can_read: viewer from environment
+    define can_write: editor from environment
+    define can_admin: deployer from environment
+    define can_connect: viewer from environment
+
+# The tuple stores `allowed_session` and `expires`; the request supplies `session_id` and `now`.
+condition agent_session(session_id: string, allowed_session: string, now: timestamp, expires: timestamp) {
+  session_id == allowed_session && now < expires
+}

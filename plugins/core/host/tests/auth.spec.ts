@@ -1,5 +1,5 @@
 /**
- * Authentication against Authentik.
+ * Authentication against an OpenID Connect identity provider.
  *
  * These run against a REAL fake IdP over real HTTP, with the genuine `openid-client` and
  * `jose` doing the protocol work. That is a deliberate constraint: every trap being tested
@@ -8,7 +8,7 @@
  *
  * The suite is organised by the failure mode rather than by the unit under test, because
  * the failure modes are the deliverable: an operator's session either works or produces a
- * message that names the Authentik setting to change.
+ * message that names the identity-provider setting to change.
  */
 
 import { describe, it, expect, afterEach, beforeEach } from "vite-plus/test";
@@ -54,49 +54,88 @@ function plugin(overrides: Partial<PluginManifest> & { id: string }): PluginMani
 
 /* ========================================================================== */
 describe("configuration errors are legible, not generic 500s", () => {
-  it("reports the trailing-slash requirement when OIDC_ISSUER lacks one", async () => {
-    // Pure-config path: this is caught at boot, before anybody tries to log in.
-    const config = loadAuthConfig({
-      OIDC_ISSUER: "https://idp.example.com/application/o/bi",
-      OIDC_CLIENT_ID: CLIENT_ID,
-    });
-    expect(config.enabled).toBe(true);
-    let thrown: AuthError | undefined;
-    try {
-      validateAuthConfig(config);
-    } catch (err) {
-      thrown = err as AuthError;
+  it("accepts an issuer with or without a trailing slash: no slash convention is imposed", () => {
+    // Pure-config path. Providers differ: a path-based issuer often ends in a slash, a
+    // bare-origin issuer (e.g. "https://auth.loams.dev") does not. Neither is rewritten.
+    for (const issuer of ["https://auth.loams.dev", "https://idp.example.com/oidc/bi/"]) {
+      const config = loadAuthConfig({ OIDC_ISSUER: issuer, OIDC_CLIENT_ID: CLIENT_ID });
+      expect(config.enabled).toBe(true);
+      expect(() => validateAuthConfig(config)).not.toThrow();
+      expect(config.issuer).toBe(issuer);
     }
-    expect(thrown).toBeInstanceOf(AuthError);
-    expect(thrown?.code).toBe("oidc_issuer_not_slash_terminated");
-    expect(thrown?.message).toContain("trailing slash");
-    // It must name the concrete Authentik URL shape, not just complain.
-    expect(thrown?.message).toContain("/application/o/<slug>/");
   });
 
-  it("surfaces a discovery issuer mismatch as a configuration error, not a 500", async () => {
-    // The IdP's metadata advertises an issuer WITHOUT the trailing slash while we are
-    // configured with it -- the exact deployment mistake, since the two look identical to
-    // an operator. openid-client compares them byte for byte and throws. Set before boot,
-    // because discovery is memoised.
+  it("refuses an issuer that is not an absolute URL, or carries a query or fragment", () => {
+    for (const issuer of [
+      "idp.example.com",
+      "https://idp.example.com/oidc?tenant=a",
+      "https://idp.example.com/oidc#x",
+    ]) {
+      const config = loadAuthConfig({ OIDC_ISSUER: issuer, OIDC_CLIENT_ID: CLIENT_ID });
+      let thrown: AuthError | undefined;
+      try {
+        validateAuthConfig(config);
+      } catch (err) {
+        thrown = err as AuthError;
+      }
+      expect(thrown).toBeInstanceOf(AuthError);
+      expect(thrown?.code).toBe("oidc_bad_issuer");
+    }
+  });
+
+  it("refuses a discovered issuer that differs from OIDC_ISSUER only by a trailing slash", async () => {
+    // A path-based issuer: the IdP's metadata advertises it WITHOUT the trailing slash
+    // while we are configured with it -- the exact deployment mistake, since the two look
+    // identical to an operator. Set before boot, because discovery is memoised.
     idp = await startFakeIdP({ grantedScopes: ADMIN_GRANTS });
-    idp.setOptions({ issuerOverride: idp.issuer.replace(/\/$/, "") });
+    const discovered = idp.issuer.replace(/\/$/, "");
+    idp.setOptions({ issuerOverride: discovered });
     app = await createAuthApp({ idp });
 
     const response = await app.fetch("/api/auth/login");
     expect(response.status).toBe(500);
     const body = await response.json();
     expect(body.code).toBe("oidc_issuer_mismatch");
-    // The whole point: legible, and naming what to change.
+    // The whole point: legible, naming both values and the rule.
+    expect(body.error).toContain(`"${idp.issuer}"`);
+    expect(body.error).toContain(`"${discovered}"`);
     expect(body.error).toContain("byte for byte");
     expect(body.error).toContain("trailing slash");
     // An AuthError status, not a generic internal failure.
     expect(body.error).not.toMatch(/no applicable keys/i);
   });
 
+  it("refuses a bare-origin issuer configured WITH a slash the IdP does not send", async () => {
+    // URL parsing treats "http://host:port" and "http://host:port/" as the same URL, so
+    // only an exact string comparison catches this. Deny by default: no login proceeds.
+    idp = await startFakeIdP({ grantedScopes: ADMIN_GRANTS, issuerPath: "" });
+    app = await createAuthApp({ idp, env: { OIDC_ISSUER: `${idp.issuer}/` } });
+
+    const response = await app.fetch("/api/auth/login");
+    expect(response.status).toBe(500);
+    const body = await response.json();
+    expect(body.code).toBe("oidc_issuer_mismatch");
+    expect(body.error).toContain(`"${idp.issuer}/"`);
+    expect(body.error).toContain(`"${idp.issuer}"`);
+    expect(body.error).toContain("trailing slash");
+  });
+
+  it("logs in end to end against a slash-less, bare-origin issuer", async () => {
+    // The shape of an instance-wide issuer such as "https://auth.loams.dev".
+    idp = await startFakeIdP({ grantedScopes: ADMIN_GRANTS, issuerPath: "" });
+    expect(idp.issuer).not.toMatch(/\/$/);
+    app = await createAuthApp({ idp });
+
+    const outcome = await app.login();
+    expect(outcome.callbackResponse.status).toBe(302);
+    const me = await (await app.fetch("/api/auth/me")).json();
+    expect(me.authenticated).toBe(true);
+    expect(me.user.email).toBe("ada@example.com");
+  });
+
   it("rejects a redirect URI carrying a query string", () => {
     const config = loadAuthConfig({
-      OIDC_ISSUER: "https://idp.example.com/application/o/bi/",
+      OIDC_ISSUER: "https://idp.example.com/oidc/bi/",
       OIDC_CLIENT_ID: CLIENT_ID,
       OIDC_REDIRECT_URI: "https://app.example.com/api/auth/callback?tenant=acme",
     });
@@ -105,7 +144,7 @@ describe("configuration errors are legible, not generic 500s", () => {
 
   it("refuses a wildcard CORS origin, which would make the cookie unusable", () => {
     const config = loadAuthConfig({
-      OIDC_ISSUER: "https://idp.example.com/application/o/bi/",
+      OIDC_ISSUER: "https://idp.example.com/oidc/bi/",
       OIDC_CLIENT_ID: CLIENT_ID,
       CORS_ALLOWED_ORIGINS: "*",
     });
@@ -114,7 +153,7 @@ describe("configuration errors are legible, not generic 500s", () => {
 
   it("always allows the redirect URI's own origin", () => {
     const config = loadAuthConfig({
-      OIDC_ISSUER: "https://idp.example.com/application/o/bi/",
+      OIDC_ISSUER: "https://idp.example.com/oidc/bi/",
       OIDC_CLIENT_ID: CLIENT_ID,
       OIDC_REDIRECT_URI: "https://app.example.com/api/auth/callback",
     });
@@ -125,14 +164,14 @@ describe("configuration errors are legible, not generic 500s", () => {
 /* ========================================================================== */
 describe("the HS256 / missing-signing-key trap", () => {
   it("names the RS256 certificate-key pair when the JWKS publishes no asymmetric key", async () => {
-    // What Authentik serves when no Signing Key is configured.
+    // What some providers serve when no signing key is configured.
     const { app: server } = await boot({ jwks: "empty" });
 
     const response = await server.fetch("/api/auth/login");
     expect(response.status).toBe(500);
     const body = await response.json();
     expect(body.code).toBe("oidc_no_signing_key");
-    expect(body.error).toContain("Certificate-key pair (RS256)");
+    expect(body.error).toContain("asymmetric signing key (RS256)");
     // It explains WHY, because "your IdP is broken" is not an actionable message.
     expect(body.error).toContain("HS256");
     expect(body.error).toContain("no applicable keys");
@@ -143,14 +182,14 @@ describe("the HS256 / missing-signing-key trap", () => {
     const response = await server.fetch("/api/auth/login");
     const body = await response.json();
     expect(body.code).toBe("oidc_no_signing_key");
-    expect(body.error).toContain("Certificate-key pair (RS256)");
+    expect(body.error).toContain("asymmetric signing key (RS256)");
   });
 
   it("names the RS256 certificate-key pair when the provider only advertises HS256", async () => {
     const { app: server } = await boot({ idTokenAlg: "HS256" });
     const response = await server.fetch("/api/auth/login");
     const body = await response.json();
-    expect(body.error).toContain("Certificate-key pair (RS256)");
+    expect(body.error).toContain("asymmetric signing key (RS256)");
   });
 
   it("reports an unverifiable HS256-signed ID token as a configuration error", async () => {
@@ -166,7 +205,7 @@ describe("the HS256 / missing-signing-key trap", () => {
     const outcome = await server.login();
     expect(outcome.callbackResponse.status).toBe(500);
     expect(outcome.callbackBody.code).toBe("oidc_unverifiable_token");
-    expect(outcome.callbackBody.error).toContain("Certificate-key pair (RS256)");
+    expect(outcome.callbackBody.error).toContain("asymmetric signing key (RS256)");
     expect(outcome.callbackBody.error).toContain("cannot verify HS256 ID tokens");
   });
 });
@@ -185,8 +224,8 @@ describe("the offline_access trap", () => {
     expect(outcome.callbackResponse.status).toBe(302);
     const text = logText(logs);
     expect(text).toContain("offline_access");
-    expect(text).toContain("Scope Mapping");
-    expect(text).toContain("intersects");
+    expect(text).toContain("scope mapping");
+    expect(text).toContain("intersect");
   });
 
   it("does not send `scope` on refresh unless it contains offline_access", async () => {
@@ -635,7 +674,7 @@ describe("refresh rotates the token set atomically", () => {
     await server.auth!.ensureFreshSession(before);
 
     const [after] = await allSessions(server.store);
-    // Authentik's refresh_token_threshold defaults to 0: the token ALWAYS changes.
+    // The provider rotates the refresh token on every use: the token ALWAYS changes.
     expect(after.refreshToken).not.toBe(originalRefreshToken);
     expect(after.refreshToken).toBeTruthy();
 
@@ -667,7 +706,7 @@ describe("refresh rotates the token set atomically", () => {
     expect((await me.json()).authenticated).toBe(false);
   });
 
-  it("logs authentik's request_id, which is the only diagnostic handle", async () => {
+  it("logs the identity provider's request_id, which is the only diagnostic handle", async () => {
     const { app: server } = await boot();
     await server.login();
     await expireAccessToken(server.store);
@@ -679,9 +718,9 @@ describe("refresh rotates the token set atomically", () => {
     await expect(server.auth!.ensureFreshSession(session)).rejects.toThrow();
     await flushLogs();
     const text = logText(logs);
-    expect(text).toContain("SUSPICIOUS_REQUEST");
+    expect(text).toContain("intrusion signal");
     expect(text).toContain("invalid_grant");
-    // authentik's request_id is the only handle an operator has on a token failure.
+    // The provider's request_id is the only handle an operator has on a token failure.
     expect(text).toContain("req-xyz-123");
   });
 });
@@ -904,9 +943,9 @@ describe("the groups claim", () => {
     const me = await (await server.fetch("/api/auth/me")).json();
 
     expect(me.user.groups).toEqual(["bi-users", "bi-admins"]);
-    // There is no goauthentik.io/... namespace for claims; the key is plain.
-    expect(me.user).not.toHaveProperty("goauthentik.io/auth/claims/groups");
-    // Authentik hard-codes this false since 2025.10, and nothing here reads it.
+    // There is no vendor namespace for claims; the key is plain.
+    expect(Object.keys(me.user).some((key) => key.includes("/"))).toBe(false);
+    // The fake IdP sends email_verified: false, and nothing here reads it.
     expect(me.user.email).toBe("ada@example.com");
   });
 

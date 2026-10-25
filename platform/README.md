@@ -1,6 +1,6 @@
 # platform
 
-The `platform/` Cargo workspace: code from the former private `ostrium-labs/loams-platform` repository, imported into the monorepo as a snapshot on 2026-10-19 and open source under Apache-2.0 like the rest of Loams. Its designs, plans and runbooks are in [`docs/platform`](../docs/platform/README.md); its Authentik and tailnet deploy files are in [`deploy/authentik`](../deploy/authentik) and [`deploy/tailnet`](../deploy/tailnet).
+The `platform/` Cargo workspace: code from the former private `ostrium-labs/loams-platform` repository, imported into the monorepo as a snapshot on 2026-10-19 and open source under Apache-2.0 like the rest of Loams. Its designs, plans and runbooks are in [`docs/platform`](../docs/platform/README.md); its tailnet deploy files are in [`deploy/tailnet`](../deploy/tailnet).
 
 | Crate | What it does |
 |---|---|

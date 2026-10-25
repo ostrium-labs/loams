@@ -10,7 +10,9 @@ export interface FactoryAppDef {
 	label: string;
 	credentialFields: CredentialField[];
 	hasPanels: boolean;
-	/** Absent for OpenObserve: full UI only. */
+	/** The honest status label while the app is a preview (shown in the UI). */
+	preview?: string;
+	/** Absent for SigNoz: full UI only. */
 	adapter?: () => Promise<AdapterCtor>;
 	/**
 	 * Health for an app without an adapter: resolves when the app answers, throws
@@ -131,13 +133,16 @@ export const FACTORY_APPS: Record<FactoryAppId, FactoryAppDef> = {
 			secretKey: x["secretKey"],
 		}),
 	},
-	openobserve: {
-		label: "OpenObserve",
+	// SigNoz, the MIT community build, storing its telemetry in the install's
+	// Loams House (D1666). A preview until SigNoz passes the House gate (D1571).
+	signoz: {
+		label: "SigNoz",
+		preview: "Preview: SigNoz on Loams House",
 		credentialFields: [sso],
 		hasPanels: false,
 		// Its unauthenticated health route sits at the origin, whatever path the UI is on.
 		probe: async (url) => {
-			const r = await fetch(new URL("/healthz", url).href, {
+			const r = await fetch(new URL("/api/v2/healthz", url).href, {
 				signal: AbortSignal.timeout(10_000),
 			});
 			if (!r.ok)

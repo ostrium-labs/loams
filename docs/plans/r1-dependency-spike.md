@@ -187,3 +187,76 @@ Added 2026-09-27 (R1 plan rows F1–F5), on the owner's direction "for both tikv
 - `PessimisticRetry` stays the runner's job (row F5).
 
 **Moving the pin.** To pick up upstream, merge upstream master into `loams` (or rebase the topic branches and re-merge them), rerun the client-rust suites and the loams-tikv, loams-meta-tikv and loams-live suites on the playground, and move the `rev` in `Cargo.toml` by a PR. Once a fix merges upstream, its topic branch is dropped from `loams` at the next move.
+
+**Pin move of 2026-10-21 (`41b3588`).** The nightly TiKV crash gate failed with `no acknowledged op after the restart hit a key live before it` and `transaction conflicts outlasted the retries`. Both came from the pinned client's handling of the locks a killed `loams dev` leaves behind.
+
+*Locks that stayed until GC.* A writer killed mid-transaction holds pessimistic locks. TiKV v8.5 keeps them in memory (`pessimistic-txn.in-memory`, on by default). After their 20 s TTL, the next writer's `CheckTxnStatus` on the primary (with `resolving_pessimistic_lock`) unlocked only the primary (`PessimisticRollBack`, no rollback record). The region-wide `ResolveLock` the client sent next scans persisted locks only (`scan_locks_from_storage`), so the in-memory secondaries stayed. Every later encounter found no primary: `CheckTxnStatus` answered `TxnNotFound`. The client never recognised that answer, because it matched `ExtractedErrors` while `retry_multi_region` reports key errors as `MultipleKeyErrors`. So it never retried with `rollback_if_not_exist`, and the error went back to the caller as the runner's `not applied: 1 errors: transaction not found`. The restarted server's WAL commits and lease writes stalled on those locks for minutes, past every test deadline. Upstream fixed both on 2026-10-17..19:
+- #561 rolls a pessimistic lock back on its own with `PessimisticRollback`, as client-go's `resolvePessimisticLock` does. It also recovers expired async-commit locks, which supersedes `fix/resolve-async-commit-locks` (`f037ebb`).
+- #557 splits `ExtractedErrors` into `MultipleKeyErrors` and `MultipleRegionErrors`, so `TxnNotFound` is matched again.
+
+*Reads that waited out the TTL.* A writer killed between its prewrite and its commit leaves prewrite locks that live for the pessimistic TTL (20 s). Every read of those keys waited for the TTL, but a metastore read gives up after 4 attempts, each with the client's lock backoff, well before then. A new topic branch, `fix/read-past-pushed-locks` (`3a7a0eb`), does what client-go does:
+- Every 2PC prewrite carries `min_commit_ts`, and every pessimistic lock carries `for_update_ts + 1`.
+- A reader's `CheckTxnStatus`, with the read's timestamp as `caller_start_ts`, pushes the primary's `min_commit_ts` above the read.
+- The read then goes past that transaction's locks through `Context.resolved_locks` (`resolve_lock_for_read` for gets, batch gets and scans).
+- A pushed writer commits at a newer timestamp, through the existing `CommitTsExpired` retry.
+- Writes still wait.
+
+`loam` is now upstream `1b883bf` plus `fix/tso-stream-reconnect`, `feat/public-proto`, `fix/async-commit-max-commit-ts` and `fail 0.5` (cherry-picked), then `fix/read-past-pushed-locks` (merged). A merge with the `ours` strategy keeps the old line reachable, so `loam` moves forward without a force push. Loams adapts one match in `classify.rs` (`MultipleRegionErrors`).
+
+`crates/loams-tikv/tests/locks.rs` reproduces both: a writer dies holding pessimistic locks or prewrite locks. On `8126c49` the two pessimistic cases fail with `Err(Deadline)`. On `41b3588` all four cases pass, and the reads after a crash take milliseconds instead of the TTL.
+## (j) The iceberg-rust fork
+
+Added 2026-10-22 (HE1 rulings R11.7 and R11.8 in [`he1-rulings/t11.md`](he1-rulings/t11.md)), on the owner's direction of 2026-10-21: "fork and do all prs in our fork and open issue and link it, separate repo means separate actions".
+
+**Where it lives.** The fork is `https://github.com/ostrium-labs/iceberg-rust`, of apache/iceberg-rust, and the local clone is `~/Documents/Ostriumlabs/iceberg-rust` (remote `upstream`). The branch `loams/dv-writer` starts at upstream `main` `000e791` (2026-10-21).
+
+**Branch policy:**
+- **PRs into the fork's branch.** Every change is a PR from a feature branch into `loams/dv-writer` in the fork, and it merges only when the fork's own CI is green. Stacked PRs are merged in order.
+- **Keeping up with upstream.** Upstream is brought in by merging `upstream/main`, never by force-pushing. Upstream's CONTRIBUTING asks reviewers not to be shown force pushes.
+- **Commits.** Every commit is signed off (`git commit -s`). Apache projects don't require a DCO.
+- **Going upstream.** When a piece is green in the fork, its upstream PR is opened against apache/iceberg-rust from the fork's branch and linked to apache/iceberg-rust#2580.
+  - Upstream limits contributors without write access to **3 open non-draft PRs**.
+  - Upstream discourages PRs over **300–500 changed lines**, so large pieces are split.
+  - The PR template has an AI Disclosure section.
+  - Upstream's `AGENTS.md` sets the comment and test style.
+- **Leaving the fork.** Once a fix merges upstream, its commits drop out of the next merge of `upstream/main`. Loams moves back to an upstream release when one carries everything it needs.
+
+**Actions.** GitHub Actions is enabled on the fork. Upstream's workflows run on GitHub-hosted runners (`ubuntu-24.04`, `ubuntu-slim`, `macos-latest`, `windows-latest`) and need no secrets: the HuggingFace tests skip themselves when `HF_TOKEN` is unset.
+- **Disabled by hand:** `publish.yml` (crates.io), `release_python.yml` (PyPI) and `website.yml` (gh-pages).
+- **Disabled by GitHub because this is a fork:** the scheduled `release_python_nightly.yml`, `stale.yml` and `audit.yml`.
+- **No-ops here:** `labeler.yml` and `audit.yml` are gated on the `apache` owner.
+- **Queueing:** macOS jobs can wait for a runner for 30 minutes and are then cancelled. Rerun them.
+
+**Pieces (G2, the deletion-vector writer):**
+
+| Fork PR | Branch | What | State |
+|---|---|---|---|
+| #1 | `dv/serialize` | apache/iceberg-rust#3232 (`DeleteVector::serialize`, by its upstream author) carried unchanged, plus a conflict fix for #3107's `test_utils` move, a rustdoc fix and `public-api.txt` | Merged 2026-10-22. It is dropped once #3232 merges upstream |
+| #2 | `dv/writer` | `DeletionVectorWriter`: one Puffin file per partition, one `deletion-vector-v1` blob per data file, the `DataFile` entries with `referenced_data_file` / `content_offset` / `content_size_in_bytes`, and `merge_existing` for a file's current DV | Merged 2026-10-22 |
+| #3 | `dv/spark-tests` | A Spark-provisioned v3 DV table in `dev/spark/provision.py`, plus integration tests: Spark's DVs re-serialize unchanged, and a merged DV replaces Spark's on read | Merged 2026-10-22 |
+
+**Interop.** The branch `he0-dv-writer-interop` is never merged. Its `spikes/he0-iceberg-v3/dv-writer/` merges Spark-written DVs with new positions through the writer (fork commit `cace1a1`) and commits them with Iceberg Java's RowDelta. Spark 4.0.4 (Iceberg 1.12.0), Trino 483 and iceberg-rust then give Spark's precomputed answer in all six cases: `dv`, `dv_part` and `upgraded`, each with and without a filter.
+
+`loams/dv-writer` holds all three (`f8cf1a1`).
+
+**Pieces (G3, RowDelta).** These are on the branch `loams/row-delta`, which starts from `loams/dv-writer`. Owner, 2026-10-22: "review and test #2203 rather than rewriting it".
+
+| Fork PR | Branch | What | State |
+|---|---|---|---|
+| #4 | `rd/carry-2203` | apache/iceberg-rust#2203 (`RowDeltaAction`, copy-on-write, by its upstream author). Its six commits are merged unchanged. The merge commit adapts them to `main`'s `SnapshotProducer` (#3253) and stateful `TransactionAction` (#3265) | Merged 2026-10-22 |
+| #5 | `rd/merge-on-read` | Merge-on-read: `add_delete_files` (DVs on v3, position deletes on v2, equality deletes) and `remove_delete_files`, which matches a DV by Puffin path and `content_offset`. Also: format-version checks, at most one live DV per data file, the `BaseRowDelta` operation, and summary counts. It also fixes a bug in #2203: a second rewrite of the same manifest brought deleted files back | Merged 2026-10-22 |
+| #6 | `rd/integration` | Integration tests against Spark-provisioned tables: RowDelta replaces Spark's DVs on v3 and adds position deletes on v2 | Merged 2026-10-22; `loams/row-delta` holds all three (`d078855`) |
+
+**Interop (G3).** The branch `he0-row-delta-interop` is never merged. Its `spikes/he0-iceberg-v3/row-delta/` has iceberg-rust's RowDelta commit two kinds of deletes:
+- DVs to three v3 tables, replacing Spark's DVs;
+- Parquet position deletes to a v2 table.
+
+Spark 4.0.4 (Iceberg 1.12.0), Trino 483, DuckDB 2.0.0 and iceberg-rust then give Spark's precomputed answer in all eight cases.
+
+The same run decoded a Spark-written DV: it uses roaring run containers (cookie `12347`), where `DeleteVector::serialize` writes array containers. Both decode the same.
+
+**Upstream state (2026-10-22):**
+- **#3232.** We asked its author whether we may finish it. If the author agrees, or has not replied by **2026-10-28**, we open our own upstream PR. It carries their commits, credited with `Co-authored-by`, plus Spark-style run optimisation with a test. It links #3232 and #2580 and asks the maintainers to close #3232 in its favour. The writer (G2) and RowDelta (G3) follow as upstream PRs after that.
+- **#2203.** We commented there with these results and offered help. No new upstream PR for RowDelta goes out until its dependencies merge.
+
+**What comes later:** G5 (lineage through rewrites).

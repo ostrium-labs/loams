@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 64" role="img" aria-label="Loams">
-  <!-- Placeholder: replace with the final Loams wordmark. -->
-  <rect x="2" y="12" width="40" height="40" rx="10" fill="#1f6feb"/>
-  <path d="M14 40c4-12 8-16 16-16" stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round"/>
-  <text x="54" y="44" font-family="system-ui, sans-serif" font-size="30" font-weight="700" fill="currentColor">Loams</text>
-</svg>

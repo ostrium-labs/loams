@@ -11,7 +11,7 @@ Builds on:
 - [§49](49-loams-house-production.md) §11, [§45](45-loams-live-production.md) §9–§10, [§48](48-loams-graph-production.md) §14: House, Live and Graph HA.
 - [§54](54-upgrades.md): data-keeping upgrades, the `migrate` service, N/N−1 formats, the Kubernetes part (D943).
 - [§57](57-loams-gateway.md) §9: the gateway on Kubernetes (D1019).
-- [§43](43-private-networking.md) and the [networking map](networking-map.md): the tailnet, and the rule that the engine is never on the public internet.
+- [§43](43-private-networking.md) and the [networking map](networking-map.md): the tailnet, and the rule that the engine is never on the public internet (amended 2026-10-21 by D1311: off-tailnet callers reach Loams only through the gateway's edge listener, §69).
 - [§55](55-commit-path-determinism.md), [§56](56-loams-sandbox.md): `loams-detsim`, the sandbox.
 - [§64](64-loams-infra-stack.md): Loams Secrets, Config and Catalog (D1155–D1161).
 
@@ -476,7 +476,7 @@ The `loams` CLI gains `loams operator status | plan | upgrade | pause | resume |
 
 ### 11.4 Exposure: the engine is never public (D1195)
 
-The standing rule (networking map): the engine, admin and data endpoints are never on the public internet; access is over the tailnet or loopback.
+The standing rule (networking map, amended 2026-10-21 by D1311): the engine, admin and data endpoints are never on the public internet. They are reached on loopback, over the tailnet, or by `loams-gateway` on an internal network; callers off the tailnet reach Loams only through the gateway's edge listener, over a private link or a brokered tunnel that authenticates every request first ([§69](69-edge-reach.md) §9.1).
 
 - `spec.exposure.mode` is `tailnet` (default; the Tailscale Kubernetes operator or a sidecar, as `net.mode: tailnet` in D587) or `internal` (`ClusterIP`, or a `LoadBalancer` carrying the provider's internal annotation from a fixed list).
 - The operator **never renders** a public `LoadBalancer`, a `NodePort`, an `Ingress` or a Gateway API route for any Loams component, and a CEL rule refuses a spec that asks for one. This amends D1019's `type: LoadBalancer` for the gateway to an internal load balancer (approved by the owner on 2026-10-19 as Q992's default).
@@ -836,3 +836,5 @@ All read on 2026-10-19 unless stated.
 - Kubernetes: [API conventions (conditions)](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties); [leader election in client-go](https://pkg.go.dev/k8s.io/client-go/tools/leaderelection); [ValidatingAdmissionPolicy](https://kubernetes.io/docs/reference/access-authn-authz/validating-admission-policy/); [the Eviction API](https://kubernetes.io/docs/concepts/scheduling-eviction/api-eviction/); [Pod Security Standards](https://kubernetes.io/docs/concepts/security/pod-security-standards/).
 - Conformance prior art: [k8s-conformance](https://github.com/cncf/k8s-conformance); [Sonobuoy](https://github.com/vmware-tanzu/sonobuoy); [Operator Capability Levels](https://sdk.operatorframework.io/docs/overview/operator-capabilities/); [scorecard](https://sdk.operatorframework.io/docs/testing-operators/scorecard/); [KUTTL](https://github.com/kudobuilder/kuttl); [Chainsaw](https://github.com/kyverno/chainsaw); [Chaos Mesh](https://github.com/chaos-mesh/chaos-mesh); [LitmusChaos](https://github.com/litmuschaos/litmus); [Jepsen](https://jepsen.io/).
 - Loams: the designs and plans linked at the top; `Cargo.toml` (`kube` 3.1.0, `k8s-openapi` 0.27.1 on `dev` at `49e169e8`); `crates/loams-pg-control/Cargo.toml` (`kubernetes` feature); `deploy/release/compose.yaml`.
+
+> **See also (2026-10-21):** [§69](69-edge-reach.md) (Edge Reach, approved by the owner 2026-10-21) adds `exposure.mode: tunnel` (a `cloudflared` Deployment with no Service, so D1195 holds) and renders the gateway's edge listeners in `internal` mode (D1316). There is no `edge-public` mode: D1312 was deferred, so Q992's answer stands.

@@ -1,0 +1,35 @@
+<!-- HE0 (plan HE1 Task 1): the mined clickhouse-server keeps query_log,
+     asynchronous_insert_log and part_log, flushed every second, so `scripts/house/apps.sh <app> dump`
+     sees every statement an application sent. Mounted into
+     /etc/clickhouse-server/config.d/ by every compose file here. -->
+<clickhouse>
+    <logger>
+        <level>warning</level>
+        <console>true</console>
+    </logger>
+    <query_log>
+        <database>system</database>
+        <table>query_log</table>
+        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+    </query_log>
+    <asynchronous_insert_log>
+        <database>system</database>
+        <table>asynchronous_insert_log</table>
+        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+    </asynchronous_insert_log>
+    <part_log>
+        <database>system</database>
+        <table>part_log</table>
+        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+    </part_log>
+    <!-- Logs the harness does not read; off to keep the volume small. -->
+    <trace_log remove="remove"/>
+    <metric_log remove="remove"/>
+    <asynchronous_metric_log remove="remove"/>
+    <text_log remove="remove"/>
+    <query_thread_log remove="remove"/>
+    <query_views_log remove="remove"/>
+    <processors_profile_log remove="remove"/>
+    <latency_log remove="remove"/>
+    <error_log remove="remove"/>
+</clickhouse>

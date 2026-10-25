@@ -1,0 +1,9 @@
+<!-- HE0 (plan HE1 Task 5): ClickHouse 26.7 and later reject SigNoz's
+     metadata AggregatingMergeTree tables (dimension columns outside the
+     sorting key), as they reject Umami's. The oracle keeps its version and
+     allows the schema. Recorded as a finding in the profile report. -->
+<clickhouse>
+    <merge_tree>
+        <allow_dimensions_outside_sorting_key>1</allow_dimensions_outside_sorting_key>
+    </merge_tree>
+</clickhouse>

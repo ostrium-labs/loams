@@ -1,0 +1,3 @@
+# Self-test allow-list for check-no-authentik.sh.
+history/decisions.md   # a historical record
+history/gone.md        # stale in dirty/: the file does not exist there

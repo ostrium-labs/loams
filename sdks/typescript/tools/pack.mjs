@@ -12,7 +12,7 @@
 //
 //   * `src/` copied, then compiled by the package's own pinned `tsc` into
 //     `dist/` (ES2022 JavaScript plus `.d.ts`), with NodeNext resolution so the
-//     output runs in Node, Deno, Bun and any bundler as-is;
+//     output runs in Node, Bun and any bundler as-is;
 //   * `@loams/proto`, the console's private workspace package, **vendored** into
 //     `@loams/client`: the files the client imports (and the files those import)
 //     are copied under `src/vendor/proto/` and the imports rewritten to relative

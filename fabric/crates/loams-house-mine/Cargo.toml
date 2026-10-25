@@ -1,0 +1,34 @@
+[package]
+name = "loams-house-mine"
+description = "Mines real applications' ClickHouse SQL into a feature inventory and the House compatibility profile (HE0, design §75 §7)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[[bin]]
+name = "loams-house-mine"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+# The House's pin (HS1 R0.7); `visitor` walks the AST for functions.
+sqlparser = { workspace = true, features = ["visitor"] }
+toml.workspace = true
+# `EXPLAIN AST` against the pinned clickhouse-server, for statements
+# sqlparser refuses; chDB's system tables for the matrix (HE0 Task 8); and
+# the oracle's HTTP client (HE0 Task 6).
+ureq.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+tempfile.workspace = true
+serde_norway.workspace = true
+
+[lints]
+workspace = true

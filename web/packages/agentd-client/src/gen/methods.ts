@@ -16,11 +16,13 @@ import type { ChangedReply } from "./ChangedReply";
 import type { Chat } from "./Chat";
 import type { ChatIdParams } from "./ChatIdParams";
 import type { ChatList } from "./ChatList";
+import type { CheckLogReply } from "./CheckLogReply";
 import type { CheckoutChangeRequestStatus } from "./CheckoutChangeRequestStatus";
 import type { CheckoutDiff } from "./CheckoutDiff";
 import type { CheckoutDiffList } from "./CheckoutDiffList";
 import type { CheckoutFileDiffText } from "./CheckoutFileDiffText";
 import type { CheckpointList } from "./CheckpointList";
+import type { ChecksReply } from "./ChecksReply";
 import type { CloneRepoParams } from "./CloneRepoParams";
 import type { CommitWorktreeParams } from "./CommitWorktreeParams";
 import type { CommitWorktreeReply } from "./CommitWorktreeReply";
@@ -31,6 +33,7 @@ import type { CreateChangeRequestReply } from "./CreateChangeRequestReply";
 import type { CreateRepoParams } from "./CreateRepoParams";
 import type { CreateRunGroupParams } from "./CreateRunGroupParams";
 import type { CreateRunGroupReply } from "./CreateRunGroupReply";
+import type { CreateRunWorktreeParams } from "./CreateRunWorktreeParams";
 import type { CreateWorktreeOutcome } from "./CreateWorktreeOutcome";
 import type { CreateWorktreeParams } from "./CreateWorktreeParams";
 import type { DeleteProjectActionParams } from "./DeleteProjectActionParams";
@@ -51,9 +54,13 @@ import type { FinishQueueEditOutcome } from "./FinishQueueEditOutcome";
 import type { FinishQueuedMessageEditParams } from "./FinishQueuedMessageEditParams";
 import type { FolderListing } from "./FolderListing";
 import type { ForkSideChatParams } from "./ForkSideChatParams";
+import type { GetApprovalParams } from "./GetApprovalParams";
+import type { GetCheckLogParams } from "./GetCheckLogParams";
 import type { GetCheckoutDiffParams } from "./GetCheckoutDiffParams";
 import type { GetCheckoutFileDiffTextRequest } from "./GetCheckoutFileDiffTextRequest";
+import type { GetChecksParams } from "./GetChecksParams";
 import type { GetRunGroupComparisonParams } from "./GetRunGroupComparisonParams";
+import type { GetThreadDiffParams } from "./GetThreadDiffParams";
 import type { GetThreadUsageParams } from "./GetThreadUsageParams";
 import type { GitAvatars } from "./GitAvatars";
 import type { GitHistoryPage } from "./GitHistoryPage";
@@ -77,6 +84,8 @@ import type { LocalDeviceReply } from "./LocalDeviceReply";
 import type { LoginIdParams } from "./LoginIdParams";
 import type { MergeBranchParams } from "./MergeBranchParams";
 import type { MergeBranchReply } from "./MergeBranchReply";
+import type { MergeChangeRequestParams } from "./MergeChangeRequestParams";
+import type { MergeChangeRequestReply } from "./MergeChangeRequestReply";
 import type { ModelList } from "./ModelList";
 import type { MoveQueuedMessageParams } from "./MoveQueuedMessageParams";
 import type { MoveWorkspaceEntryRequest } from "./MoveWorkspaceEntryRequest";
@@ -84,7 +93,10 @@ import type { MutateParams } from "./MutateParams";
 import type { MutateReply } from "./MutateReply";
 import type { Notification } from "./Notification";
 import type { OkReply } from "./OkReply";
+import type { OpenChangeRequestParams } from "./OpenChangeRequestParams";
+import type { OpenChangeRequestReply } from "./OpenChangeRequestReply";
 import type { OpenTerminalParams } from "./OpenTerminalParams";
+import type { PostReviewCommentParams } from "./PostReviewCommentParams";
 import type { PostReviewToChangeRequestParams } from "./PostReviewToChangeRequestParams";
 import type { PostReviewToChangeRequestReply } from "./PostReviewToChangeRequestReply";
 import type { PreviewSnapshot } from "./PreviewSnapshot";
@@ -108,6 +120,7 @@ import type { Repo } from "./Repo";
 import type { RepoList } from "./RepoList";
 import type { RepoPathParams } from "./RepoPathParams";
 import type { RepoRefList } from "./RepoRefList";
+import type { RequestApprovalParams } from "./RequestApprovalParams";
 import type { ResizeTerminalParams } from "./ResizeTerminalParams";
 import type { ResolveApprovalParams } from "./ResolveApprovalParams";
 import type { ResolveGitAvatarsParams } from "./ResolveGitAvatarsParams";
@@ -149,6 +162,7 @@ import type { ThreadUsage } from "./ThreadUsage";
 import type { TitleSettings } from "./TitleSettings";
 import type { ToolOutputChunk } from "./ToolOutputChunk";
 import type { TranscriptUpdate } from "./TranscriptUpdate";
+import type { TypedApproval } from "./TypedApproval";
 import type { UpdateQueuedMessageParams } from "./UpdateQueuedMessageParams";
 import type { UploadChunkParams } from "./UploadChunkParams";
 import type { UploadCommitParams } from "./UploadCommitParams";
@@ -168,6 +182,7 @@ import type { WorkspaceFileText } from "./WorkspaceFileText";
 import type { WorkspaceGitStatusFrame } from "./WorkspaceGitStatusFrame";
 import type { WorkspaceImageChunk } from "./WorkspaceImageChunk";
 import type { WorkspaceMutationOutcome } from "./WorkspaceMutationOutcome";
+import type { Worktree } from "./Worktree";
 import type { WorktreeList } from "./WorktreeList";
 import type { WriteTerminalParams } from "./WriteTerminalParams";
 import type { WriteWorkspaceFileOutcome } from "./WriteWorkspaceFileOutcome";
@@ -201,6 +216,8 @@ export const ERROR_CODES = [
   "checkpoint_missing",
   "group_not_ready",
   "approval_not_pending",
+  "approval_required",
+  "approval_mismatch",
 ] as const;
 
 export type AgentdErrorCode = (typeof ERROR_CODES)[number];
@@ -331,6 +348,15 @@ export const METHODS = [
   { name: "ApplyHarnessUpdate", kind: "unary", params: "HarnessParams", result: "ApplyHarnessUpdateReply", role: "owner", renderer: true },
   { name: "CancelHarnessUpdate", kind: "unary", params: "HarnessParams", result: "CancelledReply", role: "owner", renderer: true },
   { name: "DismissHarnessUpdate", kind: "unary", params: "DismissHarnessUpdateParams", result: "HarnessUpdateStatus", role: "owner", renderer: true },
+  { name: "CreateRunWorktree", kind: "unary", params: "CreateRunWorktreeParams", result: "Worktree", role: "mcp", renderer: false },
+  { name: "GetThreadDiff", kind: "unary", params: "GetThreadDiffParams", result: "CheckoutDiff", role: "mcp", renderer: false },
+  { name: "PostReviewComment", kind: "unary", params: "PostReviewCommentParams", result: "IdReply", role: "mcp", renderer: false },
+  { name: "OpenChangeRequest", kind: "unary", params: "OpenChangeRequestParams", result: "OpenChangeRequestReply", role: "mcp", renderer: false },
+  { name: "RequestApproval", kind: "unary", params: "RequestApprovalParams", result: "TypedApproval", role: "mcp", renderer: false },
+  { name: "GetApproval", kind: "unary", params: "GetApprovalParams", result: "TypedApproval", role: "mcp", renderer: false },
+  { name: "MergeChangeRequest", kind: "unary", params: "MergeChangeRequestParams", result: "MergeChangeRequestReply", role: "mcp", renderer: false },
+  { name: "GetChecks", kind: "unary", params: "GetChecksParams", result: "ChecksReply", role: "mcp", renderer: false },
+  { name: "GetCheckLog", kind: "unary", params: "GetCheckLogParams", result: "CheckLogReply", role: "mcp", renderer: false },
 ] as const satisfies readonly MethodSpec[];
 
 /** Each method's params, result (or stream item), kind, role and renderer flag. */
@@ -450,6 +476,15 @@ export type Methods = {
   ApplyHarnessUpdate: { params: HarnessParams; result: ApplyHarnessUpdateReply; kind: "unary"; role: "owner"; renderer: true };
   CancelHarnessUpdate: { params: HarnessParams; result: CancelledReply; kind: "unary"; role: "owner"; renderer: true };
   DismissHarnessUpdate: { params: DismissHarnessUpdateParams; result: HarnessUpdateStatus; kind: "unary"; role: "owner"; renderer: true };
+  CreateRunWorktree: { params: CreateRunWorktreeParams; result: Worktree; kind: "unary"; role: "mcp"; renderer: false };
+  GetThreadDiff: { params: GetThreadDiffParams; result: CheckoutDiff; kind: "unary"; role: "mcp"; renderer: false };
+  PostReviewComment: { params: PostReviewCommentParams; result: IdReply; kind: "unary"; role: "mcp"; renderer: false };
+  OpenChangeRequest: { params: OpenChangeRequestParams; result: OpenChangeRequestReply; kind: "unary"; role: "mcp"; renderer: false };
+  RequestApproval: { params: RequestApprovalParams; result: TypedApproval; kind: "unary"; role: "mcp"; renderer: false };
+  GetApproval: { params: GetApprovalParams; result: TypedApproval; kind: "unary"; role: "mcp"; renderer: false };
+  MergeChangeRequest: { params: MergeChangeRequestParams; result: MergeChangeRequestReply; kind: "unary"; role: "mcp"; renderer: false };
+  GetChecks: { params: GetChecksParams; result: ChecksReply; kind: "unary"; role: "mcp"; renderer: false };
+  GetCheckLog: { params: GetCheckLogParams; result: CheckLogReply; kind: "unary"; role: "mcp"; renderer: false };
 };
 
 export type MethodName = keyof Methods;

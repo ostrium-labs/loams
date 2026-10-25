@@ -58,7 +58,7 @@ These are deliberate, recorded, and not vulnerabilities:
 ## Security-relevant documentation
 
 - [docs/security.md](docs/security.md) — what is enforced where, and the traps.
-- [docs/auth-setup.md](docs/auth-setup.md) — Authentik OIDC, and five
+- [docs/auth-setup.md](docs/auth-setup.md) — OIDC, and five
   configuration mistakes that fail silently.
 - [docs/upstreams.md](docs/upstreams.md) — one subsection per upstream: auth
   mechanism, API quirks, rate limits.

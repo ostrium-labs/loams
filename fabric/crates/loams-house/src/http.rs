@@ -121,6 +121,10 @@ pub struct HouseHandle {
     accept: JoinHandle<()>,
     admin: Option<JoinHandle<()>>,
     tls_accept: Option<JoinHandle<()>>,
+    /// The native protocol's listeners (HE0, R9.40): plaintext and TLS.
+    native_addr: Option<SocketAddr>,
+    native_tls_addr: Option<SocketAddr>,
+    native_accept: Vec<JoinHandle<()>>,
     compaction: Option<JoinHandle<()>>,
     retention: Option<JoinHandle<()>>,
     pipes: Option<JoinHandle<()>>,
@@ -186,6 +190,16 @@ impl HouseHandle {
         self.admin_addr
     }
 
+    /// The native protocol's plaintext listener, when it has one (R9.40).
+    pub fn native_addr(&self) -> Option<SocketAddr> {
+        self.native_addr
+    }
+
+    /// The native protocol's TLS listener, when it has one (R9.40).
+    pub fn native_tls_addr(&self) -> Option<SocketAddr> {
+        self.native_tls_addr
+    }
+
     /// Stops accepting connections.
     pub fn shutdown(self) {
         self.abort();
@@ -195,6 +209,9 @@ impl HouseHandle {
         self.accept.abort();
         if let Some(tls) = &self.tls_accept {
             tls.abort();
+        }
+        for native in &self.native_accept {
+            native.abort();
         }
         if let Some(retention) = &self.retention {
             retention.abort();
@@ -230,9 +247,9 @@ impl Drop for HouseHandle {
 }
 
 #[derive(Debug)]
-struct Shared {
-    config: HouseConfig,
-    pool: WorkerPool,
+pub(crate) struct Shared {
+    pub(crate) config: HouseConfig,
+    pub(crate) pool: WorkerPool,
     spool: Arc<SpoolBudget>,
     sessions: Arc<SessionTable>,
     api: ApiService,
@@ -240,11 +257,11 @@ struct Shared {
     lake: Option<Arc<Lake>>,
     /// Namespace queues and node memory (§49 §12, HS1 Task 21).
     admission: Arc<crate::admission::Admission>,
-    /// Running statements, both surfaces: `KILL QUERY` (HS1 Task 21).
-    processes: Arc<crate::watchdog::Processes>,
+    /// Running statements, every surface: `KILL QUERY` (HS1 Task 21).
+    pub(crate) processes: Arc<crate::watchdog::Processes>,
     /// Every statement's end: metrics, operator line, trace, query log (HS1
     /// Task 23).
-    observer: Arc<crate::querylog::Observer>,
+    pub(crate) observer: Arc<crate::querylog::Observer>,
 }
 
 /// connect-rust's service for `loams.house.v1`, which has no `Debug` of its own.
@@ -335,8 +352,55 @@ async fn serve_all(
         }
         None => None,
     };
+    // The native protocol (HE0, R9.40): plaintext on loopback only, TLS with
+    // the TLS listener's certificate. Bound here, so a taken port fails the
+    // start as the HTTP listener's does.
+    let native_listener = match config.native_listen {
+        Some(native) => {
+            config::check_listen(native)?;
+            match TcpListener::bind(native).await {
+                Ok(listener) => Some(listener),
+                Err(err) if config.native_listen_optional => {
+                    eprintln!(
+                        "loams-house: native protocol {native}: {err}; not served (name \
+                         another address with --native-listen)"
+                    );
+                    None
+                }
+                Err(err) => return Err(network("bind the native listener", err)),
+            }
+        }
+        None => None,
+    };
+    let native_tls_listener = match (config.native_tls_listen, &config.tls) {
+        (Some(native), Some(tls)) => {
+            config::check_tls_users(native, &config.users)?;
+            let listener = TcpListener::bind(native)
+                .await
+                .map_err(|err| network("bind the native TLS listener", err))?;
+            Some((listener, Arc::clone(&tls.config)))
+        }
+        (Some(native), None) => {
+            return Err(HouseError::from(ChError::bad_arguments(format!(
+                "native TLS listener {native}: needs the TLS listener's certificate"
+            ))));
+        }
+        (None, _) => None,
+    };
+    let local = |listener: &TcpListener, what: &str| {
+        listener.local_addr().map_err(|err| network(what, err))
+    };
+    let native_addr = native_listener
+        .as_ref()
+        .map(|l| local(l, "the native listener's address"))
+        .transpose()?;
+    let native_tls_addr = native_tls_listener
+        .as_ref()
+        .map(|(l, _)| local(l, "the native TLS listener's address"))
+        .transpose()?;
     let permits = Arc::new(Semaphore::new(config.max_connections.max(1)));
     let tls_permits = Arc::clone(&permits);
+    let native_permits = Arc::clone(&permits);
     let unpin_pool = pool.clone();
     let sessions = SessionTable::with_user_caps(
         config.max_live_sessions,
@@ -412,6 +476,23 @@ async fn serve_all(
         observer,
     });
     let tls_shared = Arc::clone(&shared);
+    let mut native_accept = Vec::new();
+    if let Some(listener) = native_listener {
+        native_accept.push(crate::native::spawn(
+            listener,
+            None,
+            Arc::clone(&shared),
+            Arc::clone(&native_permits),
+        ));
+    }
+    if let Some((listener, tls)) = native_tls_listener {
+        native_accept.push(crate::native::spawn(
+            listener,
+            Some(tokio_rustls::TlsAcceptor::from(native_tls_config(&tls))),
+            Arc::clone(&shared),
+            native_permits,
+        ));
+    }
     // Background compaction of the lake's tables (HS1 Task 13).
     let compaction = match (&shared.lake, shared.config.compaction_interval) {
         (Some(lake), every) if !every.is_zero() => Some(
@@ -571,6 +652,9 @@ async fn serve_all(
         accept,
         admin,
         tls_accept,
+        native_addr,
+        native_tls_addr,
+        native_accept,
         compaction,
         retention,
         pipes,
@@ -583,6 +667,14 @@ async fn serve_all(
         metrics,
         query_log,
     })
+}
+
+/// The TLS listener's configuration for the native protocol: the same
+/// certificate, without HTTP's ALPN (native clients offer none, or their own).
+fn native_tls_config(http: &Arc<rustls::ServerConfig>) -> Arc<rustls::ServerConfig> {
+    let mut config = rustls::ServerConfig::clone(http);
+    config.alpn_protocols.clear();
+    Arc::new(config)
 }
 
 async fn connection<S>(stream: S, shared: Arc<Shared>)
@@ -741,6 +833,8 @@ enum BodyKind {
         rx: mpsc::Receiver<Piece>,
         len: Option<u64>,
         abort: Option<Pin<Box<Sleep>>>,
+        /// A `Failed` piece's text went out: abort next.
+        failing: bool,
     },
     /// A `loams.house.v1` response, as connect-rust writes it.
     Connect(ConnectBody),
@@ -762,6 +856,13 @@ enum Piece {
     /// The statement failed after the head went out: end the body with an error,
     /// so hyper closes the connection without the terminating chunk (Ruling 9).
     Abort,
+    /// The statement failed after the head went out (Ruling 9): its exception
+    /// text, which HTTP sends before it aborts, and the error, which the native
+    /// protocol sends as an `Exception` packet.
+    Failed {
+        text: Bytes,
+        error: HouseError,
+    },
 }
 
 impl HouseBody {
@@ -783,10 +884,60 @@ impl HouseBody {
                 rx,
                 len,
                 abort: None,
+                failing: false,
             },
         }
     }
 }
+
+/// What a statement's response body holds, piece by piece, for the native
+/// protocol (which reads the body rather than sending it).
+#[derive(Debug)]
+pub(crate) enum BodyPiece {
+    /// Result bytes.
+    Data(Bytes),
+    /// The statement failed after its result started.
+    Failed(HouseError),
+    /// The body broke off without an error of the statement's (a spool's read).
+    Broken,
+}
+
+impl HouseBody {
+    /// The next piece, `None` at the end.
+    pub(crate) async fn next_piece(&mut self) -> Option<BodyPiece> {
+        match &mut self.kind {
+            BodyKind::Full(bytes) => bytes.take().map(BodyPiece::Data),
+            BodyKind::Stream { rx, failing, .. } => {
+                if *failing {
+                    return None;
+                }
+                match rx.recv().await? {
+                    Piece::Data(bytes) => Some(BodyPiece::Data(bytes)),
+                    Piece::Failed { error, .. } => {
+                        *failing = true;
+                        Some(BodyPiece::Failed(error))
+                    }
+                    Piece::Abort => {
+                        *failing = true;
+                        Some(BodyPiece::Broken)
+                    }
+                }
+            }
+            BodyKind::Connect(_) => Some(BodyPiece::Broken),
+        }
+    }
+}
+
+/// The statement's error, on a response that answers one: what the native
+/// protocol sends as its `Exception` packet (the HTTP body carries its text).
+#[derive(Debug, Clone)]
+pub(crate) struct StatementError(pub(crate) HouseError);
+
+/// What a statement from the native protocol asks of the shared path: its
+/// result as `Native` blocks whatever the statement's `FORMAT` says, since the
+/// protocol carries blocks and the client formats them.
+#[derive(Debug, Clone)]
+pub(crate) struct ForcedFormat(pub(crate) String);
 
 impl HttpBody for HouseBody {
     type Data = Bytes;
@@ -798,15 +949,26 @@ impl HttpBody for HouseBody {
     ) -> Poll<Option<Result<BodyFrame<Bytes>, io::Error>>> {
         match &mut self.get_mut().kind {
             BodyKind::Full(bytes) => Poll::Ready(bytes.take().map(|b| Ok(BodyFrame::data(b)))),
-            BodyKind::Stream { rx, abort, .. } => {
+            BodyKind::Stream {
+                rx, abort, failing, ..
+            } => {
                 if let Some(sleep) = abort {
                     ready!(sleep.as_mut().poll(cx));
                     return Poll::Ready(Some(Err(io::Error::other(
                         "the statement failed after the response started (Ruling 9)",
                     ))));
                 }
-                match ready!(rx.poll_recv(cx)) {
+                let next = if *failing {
+                    Some(Piece::Abort)
+                } else {
+                    ready!(rx.poll_recv(cx))
+                };
+                match next {
                     Some(Piece::Data(bytes)) => Poll::Ready(Some(Ok(BodyFrame::data(bytes)))),
+                    Some(Piece::Failed { text, .. }) => {
+                        *failing = true;
+                        Poll::Ready(Some(Ok(BodyFrame::data(text))))
+                    }
                     Some(Piece::Abort) => {
                         // A pending poll lets hyper flush the exception text first.
                         let mut sleep = Box::pin(tokio::time::sleep(FLUSH_BOUND));
@@ -904,23 +1066,81 @@ async fn connect(shared: &Arc<Shared>, request: Request<Incoming>) -> Response<H
 }
 
 /// The request body, read a data frame at a time.
-struct RequestBody {
-    body: Incoming,
+pub(crate) struct RequestBody {
+    body: BodySource,
     done: bool,
     idle: Duration,
+}
+
+/// Where a statement's body comes from.
+#[derive(Debug)]
+enum BodySource {
+    /// An HTTP request's.
+    Http(Incoming),
+    /// The native protocol's `Data` blocks, as a `Native` format body; an error
+    /// is a body that broke off.
+    Channel(mpsc::Receiver<Result<Bytes, HouseError>>),
 }
 
 impl RequestBody {
     fn new(body: Incoming, idle: Duration) -> Self {
         let done = body.is_end_stream();
-        Self { body, done, idle }
+        Self {
+            body: BodySource::Http(body),
+            done,
+            idle,
+        }
+    }
+
+    /// A statement with no body.
+    pub(crate) fn empty() -> Self {
+        let (_, rx) = mpsc::channel(1);
+        Self {
+            body: BodySource::Channel(rx),
+            done: true,
+            idle: Duration::from_secs(1),
+        }
+    }
+
+    /// A body fed through a channel (an `INSERT`'s data over the native
+    /// protocol), each piece within `idle` of the last.
+    pub(crate) fn channel(rx: mpsc::Receiver<Result<Bytes, HouseError>>, idle: Duration) -> Self {
+        Self {
+            body: BodySource::Channel(rx),
+            done: false,
+            idle,
+        }
     }
 
     /// The next data, or `None` at the end. A read that fails (broken framing) or a
     /// client silent for `receive_timeout` between frames is `210`.
     async fn next(&mut self) -> Result<Option<Bytes>, HouseError> {
         while !self.done {
-            let Ok(frame) = tokio::time::timeout(self.idle, self.body.frame()).await else {
+            let body = match &mut self.body {
+                BodySource::Http(body) => body,
+                BodySource::Channel(rx) => {
+                    let Ok(piece) = tokio::time::timeout(self.idle, rx.recv()).await else {
+                        self.done = true;
+                        return Err(HouseError::from(ChError::network_error(format!(
+                            "Cannot read the INSERT's data: the client sent nothing for {:?}",
+                            self.idle
+                        ))));
+                    };
+                    match piece {
+                        Some(Ok(data)) if !data.is_empty() => return Ok(Some(data)),
+                        Some(Ok(_)) => continue,
+                        Some(Err(err)) => {
+                            self.done = true;
+                            return Err(err);
+                        }
+                        None => {
+                            self.done = true;
+                            continue;
+                        }
+                    }
+                }
+            };
+            let Ok(frame) = tokio::time::timeout(self.idle, body.frame()).await else {
                 self.done = true;
                 return Err(HouseError::from(ChError::network_error(format!(
                     "Cannot read the request body: the client sent nothing for {:?}",
@@ -1110,15 +1330,20 @@ impl Meta {
         let body = self.encode_whole(error.render(&self.version).as_bytes());
         let status =
             StatusCode::from_u16(error.http_status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-        self.head(
-            status,
-            "text/plain; charset=UTF-8",
-            Some(error.code()),
-            last,
-            close,
-        )
-        .body(HouseBody::full(body))
-        .unwrap_or_else(|_| fallback())
+        let mut response = self
+            .head(
+                status,
+                "text/plain; charset=UTF-8",
+                Some(error.code()),
+                last,
+                close,
+            )
+            .body(HouseBody::full(body))
+            .unwrap_or_else(|_| fallback());
+        response
+            .extensions_mut()
+            .insert(StatementError(error.clone()));
+        response
     }
 }
 
@@ -1394,7 +1619,13 @@ async fn handle(shared: Arc<Shared>, request: Request<Incoming>) -> Response<Hou
                 .and_then(crate::trace::SpanContext::from_traceparent);
             let observed = shared.observer.begin("http", &query_id, parent);
             let current = observed.current();
-            crate::trace::scope(current, run(&shared, request, params, query_id, observed)).await
+            let (parts, body) = request.into_parts();
+            let body = RequestBody::new(body, shared.config.receive_timeout);
+            crate::trace::scope(
+                current,
+                run(&shared, parts, body, params, query_id, observed),
+            )
+            .await
         }
         "/" | "/ping" => plain(StatusCode::METHOD_NOT_ALLOWED, "Use GET or POST.\n", keep),
         _ => plain(
@@ -1407,10 +1638,32 @@ async fn handle(shared: Arc<Shared>, request: Request<Incoming>) -> Response<Hou
     }
 }
 
+/// One statement from the native protocol (`crate::native`), on the same path
+/// as an HTTP request's: `parts` carries the connection's credentials as
+/// `X-ClickHouse-User`/`X-ClickHouse-Key` and `params` the statement, its
+/// settings and parameters as HTTP's query string would.
+pub(crate) async fn run_native(
+    shared: &Arc<Shared>,
+    parts: http::request::Parts,
+    body: RequestBody,
+    params: Vec<(String, String)>,
+    query_id: String,
+    parent: Option<crate::trace::SpanContext>,
+) -> Response<HouseBody> {
+    let observed = shared.observer.begin("native", &query_id, parent);
+    let current = observed.current();
+    crate::trace::scope(
+        current,
+        run(shared, parts, body, params, query_id, observed),
+    )
+    .await
+}
+
 /// A statement.
 async fn run(
     shared: &Arc<Shared>,
-    request: Request<Incoming>,
+    parts: http::request::Parts,
+    mut body: RequestBody,
     params: Vec<(String, String)>,
     query_id: String,
     observed: Arc<crate::querylog::Statement>,
@@ -1422,7 +1675,6 @@ async fn run(
             .find(|(k, _)| k == name)
             .map(|(_, v)| v.as_str())
     };
-    let (parts, body) = request.into_parts();
     let header = |name: &str| parts.headers.get(name).and_then(|v| v.to_str().ok());
     let expects_continue = header("Expect").is_some_and(|v| v.eq_ignore_ascii_case("100-continue"));
 
@@ -1482,8 +1734,6 @@ async fn run(
         });
         meta.audit = Some(Arc::new(audit));
     }
-    let mut body = RequestBody::new(body, config.receive_timeout);
-
     // Everything before a worker: who, what, and how.
     let known = shared.pool.known_settings();
     let prepared = prepare(
@@ -1509,6 +1759,9 @@ async fn run(
         }
     };
     if let Some(format) = &prepared.format {
+        meta.format = format.clone();
+    }
+    if let Some(ForcedFormat(format)) = parts.extensions.get::<ForcedFormat>() {
         meta.format = format.clone();
     }
     let Prepared {
@@ -1676,7 +1929,8 @@ async fn run(
             Ok(
                 outcome @ (gate::CatalogOutcome::Insert(_)
                 | gate::CatalogOutcome::CreateAs(_)
-                | gate::CatalogOutcome::Optimize(_)),
+                | gate::CatalogOutcome::Optimize(_)
+                | gate::CatalogOutcome::Mutate(_)),
             ) => {
                 let mut all: Vec<(String, String)> = session
                     .as_ref()
@@ -1687,6 +1941,7 @@ async fn run(
                     gate::CatalogOutcome::Insert(target) => LakeJob::Insert(target),
                     gate::CatalogOutcome::CreateAs(plan) => LakeJob::CreateAs(plan),
                     gate::CatalogOutcome::Optimize(plan) => LakeJob::Optimize(plan),
+                    gate::CatalogOutcome::Mutate(plan) => LakeJob::Mutate(plan),
                     _ => unreachable!("matched above"),
                 };
                 let write = LakeWrite {
@@ -2148,6 +2403,7 @@ enum LakeJob {
     Insert(Box<crate::insert::Target>),
     CreateAs(Box<crate::insert::CreateAs>),
     Optimize(Box<crate::compact::OptimizePlan>),
+    Mutate(Box<crate::mutate::MutationPlan>),
 }
 
 /// A write to a lake table and what it runs with (HS1 Task 12).
@@ -2248,6 +2504,13 @@ async fn lake_insert(
                 .pool
                 .release(lease, crate::admission::Outcome::Completed);
             crate::compact::optimize(&ctx, &plan).await
+        }
+        LakeJob::Mutate(plan) => {
+            // A mutation takes its own workers.
+            shared
+                .pool
+                .release(lease, crate::admission::Outcome::Completed);
+            crate::mutate::run(&ctx, &plan).await
         }
     };
     // The source's materialized views run before the answer (HS1 Task 17).
@@ -2480,8 +2743,12 @@ fn stream_rest(
                     if let Some(encoder) = encoder.take() {
                         tail.extend(encoder.finish().unwrap_or_default());
                     }
-                    let _ = tx.send(Piece::Data(Bytes::from(tail))).await;
-                    let _ = tx.send(Piece::Abort).await;
+                    let _ = tx
+                        .send(Piece::Failed {
+                            text: Bytes::from(tail),
+                            error: err,
+                        })
+                        .await;
                     return;
                 }
             }

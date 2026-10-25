@@ -7,7 +7,7 @@
 //   over `fetch`, which is what `@connectrpc/connect-web` implements. Because
 //   the API serves gRPC-Web on the same port as everything else, the same
 //   client code runs in a browser with no proxy and no sidecar.
-// - **Node, Deno and Bun** can do HTTP/2 gRPC. `@connectrpc/connect-node`
+// - **Node and Bun** can do HTTP/2 gRPC. `@connectrpc/connect-node`
 //   implements it over `node:http2`, and the server's plaintext listener means
 //   no ALPN to negotiate — the client asks for HTTP/2 with prior knowledge.
 //
@@ -53,24 +53,60 @@ export interface TransportOptions {
    * it; this only tells the transport what the request will look like.
    */
   interceptors?: Parameters<typeof createConnectTransport>[0]['interceptors'];
+  /**
+   * The `fetch` the transport calls, for a runtime whose `fetch` needs
+   * wrapping (a proxy, a test double, instrumentation). When set it is used
+   * as given. When unset, the global `fetch` is used, wrapped to send
+   * `redirect: "manual"` in Cloudflare Workers (see `workersFetch`).
+   */
+  fetch?: typeof globalThis.fetch;
+}
+
+/** True in Cloudflare Workers (workerd), which identifies itself this way. */
+export function isWorkerd(): boolean {
+  return typeof navigator !== 'undefined' && navigator.userAgent === 'Cloudflare-Workers';
+}
+
+/**
+ * Wraps `fetch` to send `redirect: "manual"`.
+ *
+ * connect-web sets `redirect: "error"` on every request, which Workers rejects
+ * ("Invalid redirect value, must be one of 'follow' or 'manual'"). Loams calls
+ * never redirect, so `manual` loses nothing there; it is applied only in
+ * workerd because in a browser `manual` turns a redirect into an opaque
+ * response that hides the failure `error` reports.
+ */
+export function workersFetch(inner: typeof globalThis.fetch): typeof globalThis.fetch {
+  return (input, init) => inner(input, init === undefined ? init : { ...init, redirect: 'manual' });
+}
+
+/** The `fetch` a transport built from `options` uses, or undefined for connect-web's default. */
+export function transportFetch(options: TransportOptions): typeof globalThis.fetch | undefined {
+  if (options.fetch !== undefined) {
+    return options.fetch;
+  }
+  // Resolve the global lazily so a later polyfill or test stub is honoured.
+  return isWorkerd() ? workersFetch((input, init) => globalThis.fetch(input, init)) : undefined;
 }
 
 /**
  * The default transport: Connect over `fetch`.
  *
- * Works in a browser, in Node 18+ (which has `fetch`), in Deno and in Bun, and
+ * Works in a browser, in Node 18+ (which has `fetch`) and in Bun, and
  * speaks both the Connect unary protocol and gRPC-Web, which is what the server
  * serves on the same port (D600). This is the browser path as a first-class
  * case, not a fallback: it is the default in every runtime.
  */
 export function createLoamsTransport(options: TransportOptions = {}): Transport {
   const interceptors = transportInterceptors(options);
+  const fetchImpl = transportFetch(options);
   return createConnectTransport({
     baseUrl: options.baseUrl ?? '',
     useBinaryFormat: options.useBinaryFormat ?? true,
     ...(options.defaultTimeoutMs === undefined
       ? {}
       : { defaultTimeoutMs: options.defaultTimeoutMs }),
+    ...(fetchImpl === undefined ? {} : { fetch: fetchImpl }),
     ...(interceptors.length === 0 ? {} : { interceptors }),
   });
 }

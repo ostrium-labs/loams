@@ -320,10 +320,14 @@ async fn every_denied_entry_is_344() {
         let response = post(addr, &sql).await;
         expect(sql, &response, "344");
         if *engine != "S3Queue" {
-            // A pipe's S3Queue is the front's own (HS1 Task 18).
+            // A pipe's S3Queue is the front's own (HS1 Task 18); a table of a
+            // Tier 2 engine is `48`, naming the feature (HE1 R8.3).
+            let tier2 = loams_house::deny::TIER2_ENGINES
+                .iter()
+                .any(|(name, _)| name == engine);
             let sql = format!("CREATE TABLE e (a String) ENGINE = {engine}('x')");
             let response = post(addr, &sql).await;
-            expect(sql, &response, "344");
+            expect(sql, &response, if tier2 { "48" } else { "344" });
         }
     }
     for engine in ["MergeTree", "Log", "Set", "Join('ANY', 'LEFT', a)"] {

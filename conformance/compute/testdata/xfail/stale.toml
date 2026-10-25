@@ -1,0 +1,16 @@
+# Lists a test the run does not have: a stale entry fails too.
+product = "fixture"
+
+[[xfail]]
+id = "needs-kafka"
+tests = ["tests.test_kafka::*"]
+reason = "needs Kafka (not part of Loams)"
+issue = "#1"
+since = 2026-10-23
+
+[[xfail]]
+id = "gone"
+tests = ["tests.test_removed::test_gone"]
+reason = "the test was removed upstream"
+issue = "#3"
+since = 2026-10-23

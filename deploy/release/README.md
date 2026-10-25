@@ -1,16 +1,22 @@
 # Loams: run it yourself
 
-Everything in Loams 0.1.1 runs on your machine or on VMs you own. Ostrium hosts
-two things only: the console (a React app) and the auth service. You can serve
-the console yourself instead, from your own Vercel or Cloudflare project, or
-from this stack (`--profile console`).
+Everything in Loams runs on your machine or on VMs you own, the console
+included: from 0.1.2 the engine serves the console that ships in its image at
+`https://loams.<tailnet>.ts.net/ui/`, next to its API, so the console is
+same-origin with your engine and reachable only on your tailnet. Loams Desktop
+carries the same console and connects to the same URL (the 0.1.1 images do
+not serve `/ui/`). Ostrium hosts nothing you need:
+`auth.loams.dev` for `oidc` mode is planned and does not answer yet, so use an
+issuer of your own. The hosted console at console.loams.dev is
+retired (design 78); to try Loams without running anything, see
+[loams.dev/cloud](https://loams.dev/cloud).
 
 ```
- browser ── console (hosted, or yours) ── auth.loams.dev (OIDC, PKCE)
+ browser or Loams Desktop ── your OIDC issuer (oidc mode only; OIDC, PKCE)
     │
     └─ your device's Tailscale client ══ tailnet ══ tailscale sidecar ─┐
                                     (loams netns: engine + sidecar only)│
-                         loams engine, tailscale listener :7781 ◄───────┘
+          loams engine: API + console at /ui/, tailscale listener :7781 ◄┘
     ─────────────── compose network ───────────────
       house · agentd · Postgres stack (pageserver, safekeeper, compute1)
       with profiles: pd · tikv · tidb (`tikv`) · rustfs (`rustfs`)
@@ -41,7 +47,7 @@ healthcheck.
 ```sh
 deploy/release/build.sh loams                        # both platforms, local manifest list
 deploy/release/build.sh --platforms linux/amd64 loams
-deploy/release/build.sh --version 0.1.1 --push   # CI on a tag
+deploy/release/build.sh --version 0.1.2 --push   # CI on a tag
 ```
 
 ## On this machine
@@ -79,8 +85,8 @@ engine, `migrate` and `loams upgrade` all see the same set:
 | `rustfs` | RustFS, an S3 bucket (`neon`) for Loams Postgres's pageserver, safekeeper and endpoint storage instead of local folders |
 | `house-tailnet` | the House's own tailnet node (below) |
 | `postgres-control` | Loams Postgres's control plane (below) |
-| `console` | the console from `LOAMS_CONSOLE_DIR`, with `/config.json` built from `LOAMS_ENGINE_URL`, `LOAMS_AUTH_ISSUER` and `LOAMS_AUTH_CLIENT_ID` |
-| `headscale` | coming soon, unsupported in 0.1.1 |
+| `console` | optional: a console on an origin of its own (the engine already serves one at `/ui/`), from `LOAMS_CONSOLE_DIR`, with `/config.json` built from `LOAMS_ENGINE_URL`, `LOAMS_AUTH_ISSUER` and `LOAMS_AUTH_CLIENT_ID`; its origin must be in `LOAMS_CORS_ORIGINS` |
+| `headscale` | coming soon, unsupported |
 
 Choose `tikv` and `rustfs` before the first start: a stack's data stays on the
 stores it started on. The engine records its store in the `loams-data` volume
@@ -88,7 +94,9 @@ and refuses to start on the other one (it would see an empty catalog beside
 the data), and the Postgres timelines stay in the remote storage they were
 created in. Moving a stack between them is a dump and restore, not a setting.
 
-Set the console's `LOAMS_ENGINE_URL` to `https://loams.<tailnet>.ts.net`.
+Open the console at `https://loams.<tailnet>.ts.net/ui/` from a device on the
+tailnet, or add that URL as a server in Loams Desktop. With `--profile console`,
+set that console's `LOAMS_ENGINE_URL` to `https://loams.<tailnet>.ts.net`.
 Stop with `docker compose --profile '*' down`; add `--volumes` to delete the
 data.
 
@@ -183,26 +191,61 @@ which serves loopback only). The default is `tailscale`: the engine trusts the
 on `LOAMS_TAILSCALE_LISTEN` (`127.0.0.1:7781`) only. That listener is the serve
 target and nothing else, and no container but the sidecar shares the engine's
 network namespace. `oidc` checks JWTs from
-`LOAMS_OIDC_ISSUER` (default `https://auth.loams.dev`) against its JWKS with
+`LOAMS_OIDC_ISSUER` (the default `https://auth.loams.dev` does not answer yet; set your own) against its JWKS with
 audience `LOAMS_OIDC_AUDIENCE`; `apikey` checks hashed keys in
-`LOAMS_API_KEYS_FILE`, which compose points at `secrets/api-keys`. See
-`.env.example`.
+`LOAMS_API_KEYS_FILE`, which compose points at `secrets/api-keys` (see [API
+keys](#api-keys)). See `.env.example`.
 
 With any mode but `off`, first-run setup (the console's setup page, which
 creates the org and its owner) needs `LOAMS_SETUP_TOKEN` in `.env` or in
 `secrets/engine.env` (`openssl rand -hex 32`); without it setup is refused. Setup runs once. See
 "First-run setup" in [docs/release/preview.md](../../docs/release/preview.md#first-run-setup).
 
-`console/dist` holds a placeholder page, in a clone and in the compose bundle.
-For `--profile console`, build the console (`cd web && pnpm build`) and set
-`LOAMS_CONSOLE_DIR` to `web/apps/console/dist`.
+In the compose bundle, `console/dist` is the console built from the release's
+commit, which `--profile console` serves. In a clone (and in older bundles) it
+holds a placeholder page: build the console for the root path
+(`cd web && LOAMS_UI_BASE=/ pnpm build`) and set `LOAMS_CONSOLE_DIR` to
+`web/apps/console/dist`.
 
-### Headscale (coming soon, unsupported in 0.1.1)
+#### API keys
 
-0.1.1 supports one setup: your own Tailscale tailnet and the hosted
-console. Headscale issues no `ts.net` HTTPS certificates, so the hosted console
-(served over HTTPS) cannot reach an engine on a Headscale tailnet. The profile
-stays in the bundle for a later release; the steps below are unsupported.
+`secrets/api-keys` holds the API keys' hashes, one per line: `apikey` mode
+needs it, and `oidc` mode also takes keys from it when it exists. The engine
+reads it as uid and gid 10001, through the read-only `./secrets` mount, and
+picks up appended keys without a restart. `loams auth new-key --append`
+creates the file as you, mode 0600, which the engine cannot read: give it to
+the engine's group, read-only, and keep it yours, so that you can still append
+keys and nobody else on the machine can read them.
+
+```sh
+loams auth new-key --label cli --append secrets/api-keys   # prints the key, once
+sudo chgrp 10001 secrets/api-keys               # rootful Docker, or
+podman unshare chgrp 10001 secrets/api-keys     # rootless Podman
+chmod 0640 secrets/api-keys
+```
+
+The group is the engine's gid as this machine sees it. Under rootful Docker
+that is 10001. Under rootless Podman your user is the containers' root and
+their gid 10001 is one of your subordinate gids, which `podman unshare` names
+for you. With Docker's `userns-remap` it is the first gid of the `dockremap`
+range in `/etc/subgid` plus 10001. Appending keys later keeps the file's group
+and mode. Keep `secrets/` searchable by the engine (it is 0755 in the bundle),
+and do not make the file world-readable.
+
+An engine that cannot read the file says so in its log, with the uid and gid
+it runs as and the file's owner and mode as it sees them, and refuses to start;
+in `oidc` mode, when it cannot see the file at all (missing, or `secrets/` not
+searchable), it starts with API keys off instead.
+`byoc/install.sh` creates an empty `secrets/api-keys` with group 10001 and
+mode 0640.
+
+### Headscale (coming soon, unsupported)
+
+The supported setup is your own Tailscale tailnet, with the console your engine
+serves at `/ui/` or Loams Desktop. The hosted console that could not reach a
+Headscale tailnet is retired, but the `headscale` profile has not been tested
+end to end with the engine-served console yet, so it stays unsupported; the
+steps below are for trying it.
 
 ```sh
 # .env: HEADSCALE_SERVER_URL=https://hs.example.com, TS_LOGIN_SERVER=the same,
@@ -216,9 +259,10 @@ docker compose up -d loams tailscale
 ```
 
 Headscale issues no HTTPS certificates, so the engine is served over plain
-HTTP on the tailnet (`TS_SERVE_MODE=http`, inside WireGuard). A console served
-over HTTPS cannot call it (mixed content); serve the console over HTTP from the
-tailnet or this machine.
+HTTP on the tailnet (`TS_SERVE_MODE=http`, inside WireGuard). The console the
+engine serves at `http://loams.<tailnet>/ui/` is same-origin with it, so it
+works there; a console served over HTTPS from another origin cannot call it
+(mixed content).
 
 ## Upgrading
 
@@ -226,8 +270,8 @@ From 0.1.0-preview.2, `loams upgrade` upgrades this stack in place, one release 
 time, with a snapshot first:
 
 ```sh
-loams upgrade check --to 0.1.1  # what it will do and what would stop it
-loams upgrade --to 0.1.1        # snapshot, migrate, restart, verify
+loams upgrade check --to 0.1.2  # what it will do and what would stop it
+loams upgrade --to 0.1.2        # snapshot, migrate, restart, verify
 loams upgrade rollback          # back to the snapshot
 ```
 
@@ -279,16 +323,37 @@ so pick them on the first install. `--services` starts only the services
 named. The VM needs SSH and outbound internet only.
 
 ```sh
-deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.1 --check  # loams upgrade check
-deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.1          # loams upgrade, on the VM
-deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.1 --rollback
+deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.2 --check  # loams upgrade check
+deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.2          # loams upgrade, on the VM
+deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.2 --rollback
 ```
 
 `upgrade.sh` fetches the target release's `loams` CLI on the VM (its Linux
 package, checked against the release's `SHA256SUMS`) and runs `loams upgrade` in
 `~/loams/release`, streaming its output; its exit code is the CLI's.
 
-## Known gaps in 0.1.1
+### On a cloud VM
+
+On an AWS, Google Cloud or Azure VM that has an identity (an instance role, a
+service account or a managed identity), `install.sh --cloud` takes the tailnet
+key and the setup token from the cloud's secret store and points the engine at
+a bucket in the same account, with no static key on the host:
+
+```sh
+deploy/release/byoc/install.sh --cloud aws --bucket s3://my-bucket/loams --region us-east-1 ubuntu@203.0.113.10
+deploy/release/byoc/install.sh --cloud gcp --bucket gs://my-bucket/loams ubuntu@203.0.113.10
+deploy/release/byoc/install.sh --cloud azure --bucket az://loams/loams --storage-account myacct --vault my-vault ubuntu@203.0.113.10
+deploy/release/byoc/install.sh --cloud aws ... --render-env-only       # print what it would write; connects to nothing
+```
+
+It installs `loams-byoc-secrets` and `loams-byoc.service` (which fetches the
+secrets and runs `docker compose up -d` at boot) from `deploy/byoc/lib/`, and
+fetches the secrets once before the first start. To create the VM with its
+identity, bucket and secrets in one go, use `deploy/byoc/<cloud>/` (cloud-init)
+or `deploy/tofu/` (OpenTofu modules). Status: tested against local mocks of the
+secret stores; not yet run on a real cloud account.
+
+## Known gaps in 0.1.2
 
 - With `LOAMS_HOUSE_ENDPOINT` empty the engine does not reach the House, so
   `loams.house.v1` answers `house_not_configured`; use the House's own tailnet

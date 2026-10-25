@@ -429,7 +429,7 @@ mod collection_link {
     use serde_json::{Map, Value as Json, json};
     use tokio::sync::watch;
 
-    use super::common::{Cluster, SHORT, wait_out_the_lease};
+    use super::common::{Cluster, Deadline, SHORT, runtime, wait_out_the_lease};
     use super::field;
 
     /// The graph the tests link: entities, and relations between them typed by `rel_type`.
@@ -849,15 +849,33 @@ mod collection_link {
         }
     }
 
+    /// The write-path points the kill tests stop the owner at.
+    pub(super) const KILL_POINTS: [KillPoint; 7] = [
+        KillPoint::Begin,
+        KillPoint::Executed,
+        KillPoint::Committed,
+        KillPoint::Captured,
+        KillPoint::Enqueued,
+        KillPoint::Appended,
+        KillPoint::Published,
+    ];
+
+    /// How long a kill test (all seven cases) may run. It takes about 12 s, or a minute on a
+    /// loaded CI runner.
+    pub(super) const KILL_DEADLINE: Duration = Duration::from_secs(300);
+
     /// Kills the owner applying the links at `point`, during the second commit of a batch; the
     /// other node takes the graph and the links, and the graph equals the mapping applied to the
     /// collections, each commit in the log once (Review Focus 6).
-    async fn kill_case(point: KillPoint) {
+    async fn kill_case(point: KillPoint, deadline: &Deadline) {
         let case = format!("{point:?}");
+        let at = |phase: &str| deadline.phase(format!("{case}: {phase}"));
+        at("starting the cluster");
         let linked = Linked::start(2).await;
         let graph = linked.cluster.graph_id("kg").await;
         let victim = linked.cluster.preferred(graph);
         let survivor = 3 - victim;
+        at("the first workload");
         workload(&linked, 0).await;
         linked.catch_up(victim).await;
         assert_eq!(
@@ -874,6 +892,7 @@ mod collection_link {
             .node(victim)
             .log
             .set_kill_hook(Some(kill_at(point, 2, reached_tx, released)));
+        at("waiting for the kill point");
         let runner = linked.runner(victim);
         let stuck = tokio::spawn(async move { runner.apply_graph("acme", "kg").await });
         tokio::time::timeout(Duration::from_secs(30), reached.wait_for(|r| *r))
@@ -888,7 +907,9 @@ mod collection_link {
             .node(survivor)
             .membership
             .set(vec![linked.cluster.node(survivor).me.clone()]);
+        at("waiting out the dead owner's lease");
         wait_out_the_lease(&linked.cluster, graph).await;
+        at("the survivor catching up");
 
         linked.catch_up(survivor).await;
         assert_eq!(
@@ -899,6 +920,7 @@ mod collection_link {
         linked.assert_versions_consecutive(&case).await;
 
         // The dead node comes back with its commit in flight: it is fenced, and nothing changes.
+        at("the dead node coming back");
         let _ = release.send(true);
         let _ = tokio::time::timeout(Duration::from_secs(30), stuck).await;
         linked.catch_up(survivor).await;
@@ -930,19 +952,20 @@ mod collection_link {
         })
     }
 
-    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn link_apply_exactly_once_under_kill() {
-        for point in [
-            KillPoint::Begin,
-            KillPoint::Executed,
-            KillPoint::Committed,
-            KillPoint::Captured,
-            KillPoint::Enqueued,
-            KillPoint::Appended,
-            KillPoint::Published,
-        ] {
-            kill_case(point).await;
-        }
+    /// The owner killed at each write-path point mid-batch: the other node takes over, and every
+    /// record is applied once. Under a hard deadline, its runtime's shutdown included: a hang
+    /// fails in minutes and names its phase (#1085).
+    #[test]
+    fn link_apply_exactly_once_under_kill() {
+        let deadline = Deadline::start("link_apply_exactly_once_under_kill", KILL_DEADLINE);
+        let runtime = runtime(4);
+        runtime.block_on(async {
+            for point in KILL_POINTS {
+                kill_case(point, &deadline).await;
+            }
+        });
+        deadline.phase("the runtime shutting down");
+        drop(runtime);
     }
 
     /// An edge whose endpoint has no document yet makes a stub; the endpoint's upsert fills it,
@@ -1175,7 +1198,7 @@ mod stream_link {
     use serde_json::{Map, Value as Json, json};
     use tokio::sync::watch;
 
-    use super::common::{Cluster, SHORT, wait_out_the_lease};
+    use super::common::{Cluster, Deadline, SHORT, runtime, wait_out_the_lease};
 
     const PARTITIONS: u32 = 2;
 
@@ -1715,12 +1738,15 @@ mod stream_link {
         })
     }
 
-    async fn kill_case(point: KillPoint) {
+    async fn kill_case(point: KillPoint, deadline: &Deadline) {
         let case = format!("{point:?}");
+        let at = |phase: &str| deadline.phase(format!("{case}: {phase}"));
+        at("starting the cluster");
         let linked = Linked::start(2).await;
         let graph = linked.cluster.graph_id("sg").await;
         let victim = linked.cluster.preferred(graph);
         let survivor = 3 - victim;
+        at("the first workload");
         workload(&linked, 0).await;
         linked.catch_up(victim).await;
         assert_eq!(linked.graph(victim), linked.expected(), "{case}: before");
@@ -1732,6 +1758,7 @@ mod stream_link {
             .node(victim)
             .log
             .set_kill_hook(Some(kill_at(point, 2, reached_tx, released)));
+        at("waiting for the kill point");
         let runner = linked.runner(victim);
         let stuck = tokio::spawn(async move { runner.apply_graph("acme", "sg").await });
         tokio::time::timeout(Duration::from_secs(30), reached.wait_for(|r| *r))
@@ -1745,7 +1772,9 @@ mod stream_link {
             .node(survivor)
             .membership
             .set(vec![linked.cluster.node(survivor).me.clone()]);
+        at("waiting out the dead owner's lease");
         wait_out_the_lease(&linked.cluster, graph).await;
+        at("the survivor catching up");
         linked.catch_up(survivor).await;
         assert_eq!(
             linked.graph(survivor),
@@ -1753,6 +1782,7 @@ mod stream_link {
             "{case}: after the kill"
         );
         linked.assert_versions_consecutive(&case).await;
+        at("the dead node coming back");
         let _ = release.send(true);
         let _ = tokio::time::timeout(Duration::from_secs(30), stuck).await;
         linked.catch_up(survivor).await;
@@ -1765,19 +1795,19 @@ mod stream_link {
     }
 
     /// The stream link's owner killed at each write-path point mid-batch: the other node takes
-    /// over, and every event is applied once.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn stream_link_exactly_once_under_kill() {
-        for point in [
-            KillPoint::Begin,
-            KillPoint::Executed,
-            KillPoint::Committed,
-            KillPoint::Captured,
-            KillPoint::Enqueued,
-            KillPoint::Appended,
-            KillPoint::Published,
-        ] {
-            kill_case(point).await;
-        }
+    /// over, and every event is applied once. Under a hard deadline, its runtime's shutdown
+    /// included: a hang fails in minutes and names its phase (#1085).
+    #[test]
+    fn stream_link_exactly_once_under_kill() {
+        use super::collection_link::{KILL_DEADLINE, KILL_POINTS};
+        let deadline = Deadline::start("stream_link_exactly_once_under_kill", KILL_DEADLINE);
+        let runtime = runtime(4);
+        runtime.block_on(async {
+            for point in KILL_POINTS {
+                kill_case(point, &deadline).await;
+            }
+        });
+        deadline.phase("the runtime shutting down");
+        drop(runtime);
     }
 }

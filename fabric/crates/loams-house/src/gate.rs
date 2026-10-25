@@ -28,6 +28,7 @@ use crate::session::SessionGuard;
 /// fix round 1).
 pub fn statement_text(sql: &str, user: &str) -> String {
     let sql = deny::rewrite_host_functions(sql, &host_values(user));
+    let sql = crate::system::rewrite_cluster_reads(&sql);
     crate::classify::without_trailer(&sql).to_string()
 }
 
@@ -79,7 +80,7 @@ pub fn required(stmt: &Stmt) -> &'static [crate::identity::Scope] {
         | Stmt::KillQuery(_)
         | Stmt::Unsupported { .. } => &[Read],
         Stmt::Drop(drop) if drop.temporary => &[Read],
-        Stmt::Insert(_) | Stmt::Optimize { .. } => &[Write],
+        Stmt::Insert(_) | Stmt::Optimize { .. } | Stmt::Mutation { .. } => &[Write],
         // A materialized view writes into its target (HS1 Task 16).
         Stmt::CreateTableAs { .. } | Stmt::CreateMaterializedView { .. } => &[Ddl, Write],
         Stmt::CreateDatabase { .. }
@@ -87,7 +88,8 @@ pub fn required(stmt: &Stmt) -> &'static [crate::identity::Scope] {
         | Stmt::CreatePipe { .. }
         | Stmt::Drop(_)
         | Stmt::Truncate { .. }
-        | Stmt::AlterAddColumns { .. }
+        | Stmt::Alter { .. }
+        | Stmt::CreateView { .. }
         | Stmt::Rename { .. }
         | Stmt::Undrop { .. } => &[Ddl],
     }
@@ -130,6 +132,11 @@ fn later(stmt: &Stmt) -> Option<String> {
         Stmt::Optimize { .. } => {
             "OPTIMIZE TABLE compacts lake tables, and this House has no catalog (start it \
                  with --catalog or --single-node)"
+                .to_string()
+        }
+        Stmt::Mutation { .. } => {
+            "Mutations change lake tables, and this House has no catalog (start it with \
+                 --catalog or --single-node)"
                 .to_string()
         }
         // The HTTP front answers `KILL QUERY` before it gets here (HS1 Task 21);
@@ -227,7 +234,8 @@ pub fn catalog_kind(stmt: &Stmt) -> Option<Kind> {
         Stmt::Drop(drop) if !drop.temporary => Kind::Drop,
         Stmt::Undrop { .. } => Kind::Undrop,
         Stmt::Rename { .. } => Kind::Rename,
-        Stmt::AlterAddColumns { .. } => Kind::AlterAdd,
+        Stmt::Alter { .. } => Kind::Alter,
+        Stmt::CreateView { .. } => Kind::CreateView,
         Stmt::Describe { .. } => Kind::Describe,
         Stmt::Show { .. } => Kind::Show,
         Stmt::Exists { .. } => Kind::Exists,
@@ -262,6 +270,8 @@ pub enum CatalogOutcome {
     /// `OPTIMIZE TABLE` of a lake table, for [`crate::compact::optimize`]
     /// (HS1 Task 13).
     Optimize(Box<crate::compact::OptimizePlan>),
+    /// A mutation of a lake table, for [`crate::mutate::run`] (HE1 R9.5).
+    Mutate(Box<crate::mutate::MutationPlan>),
     /// Not the catalog's: on to [`front_answer`] and chDB.
     NotOurs,
 }
@@ -304,6 +314,39 @@ pub async fn catalog_answer(
         lake.lake_table(namespace, &plan.database, &plan.name, "OPTIMIZE TABLE")
             .await?;
         return Ok(CatalogOutcome::Optimize(Box::new(plan)));
+    }
+    // HE1 R9.14: an inner-table materialized view makes its table from its
+    // SELECT's columns, as CREATE TABLE … AS SELECT does, then the view.
+    if let Stmt::CreateMaterializedView { .. } = stmt
+        && let Ok(mv) = crate::ddl::parse_create_mv(text)
+        && mv.to.is_none()
+        && mv.inner_table
+    {
+        let plan = crate::insert::CreateAs::inner_view(text, current)?;
+        if !crate::identity::granted(user, &plan.database, &plan.name) {
+            return Err(crate::identity::not_granted(
+                user,
+                &plan.database,
+                &plan.name,
+            ));
+        }
+        return Ok(CatalogOutcome::CreateAs(Box::new(plan)));
+    }
+    if let Stmt::Mutation { .. } = stmt {
+        let Some(plan) = crate::mutate::MutationPlan::parse(text, current)? else {
+            return Err(HouseError::from(ChError::syntax_error("Not a mutation")));
+        };
+        if !crate::identity::granted(user, &plan.database, &plan.name) {
+            return Err(crate::identity::not_granted(
+                user,
+                &plan.database,
+                &plan.name,
+            ));
+        }
+        // A table the catalog lacks is `60`, an external one `497`, as for DDL.
+        lake.lake_table(namespace, &plan.database, &plan.name, "ALTER TABLE")
+            .await?;
+        return Ok(CatalogOutcome::Mutate(Box::new(plan)));
     }
     if let Stmt::CreateTableAs { .. } = stmt {
         let plan = crate::insert::CreateAs::parse(text, current)?;

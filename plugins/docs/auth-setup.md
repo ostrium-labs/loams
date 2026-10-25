@@ -1,4 +1,4 @@
-# Auth setup (Authentik OIDC)
+# Auth setup (OIDC)
 
 Authentication is **optional in development and mandatory in production**. With
 no `OIDC_ISSUER` and `OIDC_CLIENT_ID` set, the server logs why and runs
@@ -7,7 +7,9 @@ created, and the console's enable/disable endpoints refuse. That is deliberate:
 a development server must not be able to reconfigure itself.
 
 The model itself is in [security.md](security.md). This document is about getting
-an identity provider wired up correctly.
+an identity provider wired up correctly. Any OpenID Connect provider works. Loams'
+own is Zitadel at `auth.loams.dev`, which is planned (IA1, design 76) and not
+deployed yet; until then, use any OIDC provider you run or trust.
 
 Implementation: `core/host/src/auth/`. Tests:
 `core/host/tests/auth.spec.ts`, which run against a **real fake IdP over real
@@ -19,8 +21,8 @@ has to survive them.
 
 | Variable                        | Required | Default                                   | Notes                                                                  |
 | ------------------------------- | -------- | ----------------------------------------- | ---------------------------------------------------------------------- |
-| `OIDC_ISSUER`                   | yes      | —                                         | **Must end with `/`.** See trap 2.                                     |
-| `OIDC_CLIENT_ID`                | yes      | —                                         | Globally unique across all Authentik providers.                        |
+| `OIDC_ISSUER`                   | yes      | —                                         | Exactly the discovery document's `issuer`. See trap 2.                 |
+| `OIDC_CLIENT_ID`                | yes      | —                                         | Unique at the identity provider.                                       |
 | `OIDC_CLIENT_SECRET`            | no       | —                                         | Sent as `client_secret_basic`. Omit for a public PKCE client.          |
 | `OIDC_REDIRECT_URI`             | no       | `http://localhost:3001/api/auth/callback` | **Path only, no query string.**                                        |
 | `OIDC_SCOPE`                    | no       | `openid profile email`                    | Must contain `openid`.                                                 |
@@ -53,59 +55,57 @@ curl -s "$(curl -s "$OIDC_ISSUER/.well-known/openid-configuration" | jq -r .jwks
 
 ## The five silent-failure traps
 
-None of these raise an error on the Authentik side. That is what makes them
-dangerous, and why each is translated into a message that names the setting to
-change.
+Providers differ, and some of them accept each of these mistakes without an
+error. That is what makes them dangerous, and why each is translated into a
+message that names the setting to change.
 
-### 1. No Signing Key ⇒ HS256, which is not verifiable
+### 1. No asymmetric signing key ⇒ HS256, which is not verifiable
 
-An Authentik OAuth2 provider with **no Signing Key** does not refuse to issue
-tokens. It signs ID tokens with **HS256** using the client secret as the HMAC key
-and **omits `kid`** entirely.
+A provider client with no asymmetric signing key may still issue tokens, signed
+**HS256** with the client secret as the HMAC key and with **no `kid`**.
 
 This code probes the JWKS right after discovery (`src/auth/jwks.ts`) and refuses
-to continue if no asymmetric key is published, naming the fix:
-`configure a Certificate-key pair (RS256) on your Authentik OAuth2 provider`.
+to continue if no asymmetric key is published. The fix is to give the client an
+RS256 key at the provider.
 
-### 2. `OIDC_ISSUER` must end with `/`
+### 2. `OIDC_ISSUER` must match discovery byte for byte
 
-```
-https://idp.example.com/application/o/<slug>/
-```
+The `issuer` in the provider's discovery document must equal `OIDC_ISSUER`
+**byte for byte** (OIDC Discovery 4.3). A difference as small as a trailing
+slash counts: `https://idp.example.com/x/` and `https://idp.example.com/x` are
+different issuers, and so are `https://auth.loams.dev` and
+`https://auth.loams.dev/`. No slash convention is imposed and nothing normalises
+the value; some providers' issuers end in `/`, others (a bare origin) do not.
+Discovery is fetched from `<issuer>/.well-known/openid-configuration` with no
+double slash either way, and on a mismatch every login fails with
+`oidc_issuer_mismatch`, naming both values. Copy the `issuer` field from that
+document. At boot `validateAuthConfig` only checks that `OIDC_ISSUER` is an
+absolute http(s) URL with no query string and no fragment.
 
-openid-client compares the discovered `issuer` to the configured one **byte for
-byte**, so a missing trailing slash fails every login at discovery with
-`discovered metadata issuer does not match the expected issuer`. Nothing
-normalises it; `validateAuthConfig` rejects it at boot instead.
+Never construct endpoint URLs by hand: discovery is the only supported source.
 
-Note that `authorize/`, `token/` and `userinfo/` are **global** to the Authentik
-instance while `jwks/` and `end-session/` are **per-application**. Never construct
-endpoint URLs by hand — discovery is the only supported source.
+### 3. `offline_access` can be dropped without an error
 
-### 3. `offline_access` is silently intersected away
+A provider may intersect the requested scope set with what the client is allowed
+and return the remainder **with no error**. If `offline_access` is not allowed,
+it simply disappears and no refresh token comes back.
 
-Authentik intersects the requested scope set with the provider's assigned scopes
-and returns the remainder **with no error**. If `offline_access` is not mapped, it
-simply disappears and no refresh token comes back.
+Fix: allow refresh tokens (`offline_access`) for the client at the provider.
+When no refresh token arrives, this code logs a warning saying so.
 
-Fix: add a **Scope Mapping** on the provider mapping `offline_access` →
-`offline_access`. When no refresh token arrives, this code logs a warning naming
-exactly that change.
+### 4. `groups` is read plain and unnamespaced
 
-### 4. `groups` is plain and unnamespaced, and DIRECT only
+The claim read is **`claims.groups`**, a `string[]` of group names. A provider
+that puts groups or roles under a namespaced claim of its own is not read, and
+the principal has no groups.
 
-The claim is **`claims.groups`**, a `string[]` of group names. There is **no
-`goauthentik.io/...` namespace for claims**; reading one returns `undefined`
-forever.
+Whether nested group memberships appear in `groups` depends on the provider.
+Use **leaf groups**, or map the claim you need into `groups` at the provider.
 
-It contains **direct memberships only** — recursion is a separate `all_groups()` —
-so a user who belongs to a nested subgroup does **not** appear in the parent's
-list. Use **leaf groups**, or add a custom scope mapping on the provider and read
-the claim from there.
+### 5. `email_verified` is not trustworthy everywhere
 
-### 5. `email_verified` is hard-coded `false` (Authentik 2025.10+)
-
-Never gate login or authorization on it. Nothing in this implementation reads it.
+Some providers always send `false`. Never gate login or authorization on it.
+Nothing in this implementation reads it.
 
 ---
 
@@ -113,7 +113,7 @@ Never gate login or authorization on it. Nothing in this implementation reads it
 
 Authorization Code + PKCE **S256** + `state` + `nonce`. All three, always.
 
-Authentik never _requires_ PKCE, which is precisely why it is not optional: an
+A provider may not _require_ PKCE, which is precisely why it is not optional: an
 admin could turn the provider setting off, and PKCE would then be the only
 remaining binding between the returned code and the request that asked for it.
 
@@ -165,8 +165,8 @@ race that produces a wrong authorization decision.
 
 ## Troubleshooting
 
-**Every login fails at discovery with "issuer does not match".** Trap 2. The
-trailing slash.
+**Every login fails at discovery with "issuer mismatch".** Trap 2. Compare
+`OIDC_ISSUER` with the discovery document's `issuer`, trailing slash included.
 
 **Login appears to succeed and then the browser is signed out.** `SameSite`.
 The default is `Lax` for exactly this reason; see [security.md](security.md).

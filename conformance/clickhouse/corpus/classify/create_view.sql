@@ -1,2 +1,2 @@
--- kind: Unsupported
+-- kind: CreateView
 CREATE VIEW v AS SELECT 1

@@ -73,5 +73,17 @@
     "@tanstack/react-virtual": "catalog:",
     "lucide-react": "catalog:",
     "motion": "catalog:"
+  },
+  "nx": {
+    "targets": {
+      "test": {
+        "inputs": [
+          "default",
+          "^default",
+          "testRuntime",
+          "webTree"
+        ]
+      }
+    }
   }
 }

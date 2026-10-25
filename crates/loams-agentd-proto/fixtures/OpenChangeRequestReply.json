@@ -1,0 +1,10 @@
+{
+  "existed": false,
+  "head": "factory/fix-linker",
+  "headSha": "0123456789abcdef0123456789abcdef01234567",
+  "number": 7,
+  "provider": "forgejo",
+  "repo": "dev/project",
+  "state": "open",
+  "url": "https://forgejo.example.com/dev/project/pulls/7"
+}

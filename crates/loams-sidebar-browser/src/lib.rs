@@ -23,7 +23,7 @@
 //! | E1's blocker | Closed by |
 //! |---|---|
 //! | Ephemeral store on every platform | [`profile::ProfileKey`] gives each `(environment, app)` pair its own directory, and [`ledger::CookieLedger`] persists the app's scoped session cookies there. Loams re-injects them on the next launch. Tests: `tests/persistence.rs`, `tests/isolation.rs`. |
-//! | No WebAuthn in WebKitGTK | Loams runs the OIDC/Authentik ceremony itself and hands the engine only post-auth scoped session cookies ([`session`]). The engine never performs a WebAuthn ceremony — and could not: the pinned engine has no WebAuthn implementation at all. Test: `tests/token_boundary.rs`. |
+//! | No WebAuthn in WebKitGTK | Loams runs the OIDC ceremony itself and hands the engine only post-auth scoped session cookies ([`session`]). The engine never performs a WebAuthn ceremony — and could not: the pinned engine has no WebAuthn implementation at all. Test: `tests/token_boundary.rs`. |
 //! | No Windows browser | There is no per-platform webview to be missing. [`engine`] builds one command line that is the same on all three targets. Test: `tests/launch_spec.rs`. |
 //!
 //! # The security constraint

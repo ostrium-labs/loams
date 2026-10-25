@@ -10,8 +10,14 @@
 //! bytes < array; inside a type it is the natural one, strings and bytes
 //! compare bytewise, and arrays compare element by element with a shorter
 //! prefix first.
+//!
+//! [`key`] is the untagged sibling (design §77 §7, D1644): the same transforms
+//! with no type tags, for keys whose schema the caller knows (the Redis and
+//! CQL gateways' layouts), plus a descending form of each component.
 
-/// Errors of [`tuple::decode`].
+pub mod key;
+
+/// Errors of [`tuple::decode`] and the [`key`] decoders.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CodecError {
     /// The buffer ended inside an element.
@@ -106,7 +112,7 @@ pub mod tuple {
     /// The float's order-preserving 8 bytes (as a `u64`): NaN canonical and
     /// last, `-0.0` as `0.0`, positive values with the sign bit set, negative
     /// values with every bit inverted.
-    fn float_bits(v: f64) -> u64 {
+    pub(crate) fn float_bits(v: f64) -> u64 {
         let bits = if v.is_nan() {
             CANONICAL_NAN
         } else if v == 0.0 {
@@ -117,7 +123,7 @@ pub mod tuple {
         if bits & SIGN == 0 { bits | SIGN } else { !bits }
     }
 
-    fn float_from_bits(bits: u64) -> f64 {
+    pub(crate) fn float_from_bits(bits: u64) -> f64 {
         let raw = if bits & SIGN != 0 { bits ^ SIGN } else { !bits };
         f64::from_bits(raw)
     }

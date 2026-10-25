@@ -19,7 +19,7 @@ export const ROLES: Record<FactoryAppId, string> = {
   openpanel: 'Product analytics',
   matomo: 'Web analytics',
   langfuse: 'LLM traces and cost',
-  openobserve: 'Logs, metrics and traces',
+  signoz: 'Logs, metrics and traces',
 };
 
 export const APP_LABELS: Record<FactoryAppId, string> = {
@@ -30,8 +30,13 @@ export const APP_LABELS: Record<FactoryAppId, string> = {
   openpanel: 'OpenPanel',
   matomo: 'Matomo',
   langfuse: 'Langfuse',
-  openobserve: 'OpenObserve',
+  signoz: 'SigNoz',
 };
+
+/** An app's preview label (`FactoryAppInfo.preview`, set by the desktop), as a tag. */
+export function PreviewTag({ preview }: { preview?: string }) {
+  return preview ? <StatusTag status="progress">{preview}</StatusTag> : null;
+}
 
 export const HEALTH: Record<FactoryHealth, { status: Status; label: string }> = {
   ok: { status: 'done', label: 'Connected' },

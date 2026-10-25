@@ -1,0 +1,33 @@
+# The oracle's targets (HE0 Task 6, design §75 §15). Exactly one is the
+# baseline: the pinned clickhouse-server at the version chDB carries (Q1170 as
+# ruled: the latest 26.x stable, pinned as the oracle). Every other target is
+# compared with it. `scripts/house/oracle.sh up` starts the two servers from
+# compose.yaml; the House runs on its own (see the script).
+#
+# Images are pinned by digest (the multi-arch index) at releases at least 14
+# days old; the plan's Rulings record the dates.
+
+[[target]]
+name = "clickhouse-server@26.9"
+url = "http://127.0.0.1:28123/"
+image = "docker.io/clickhouse/clickhouse-server:26.9.2.8@sha256:7b9a0b6e9ab7ef79db5c4f8a9808f880258704eb7b4af9309f9029c16e727a80"
+baseline = true
+user = "oracle"
+password_env = "LOAMS_ORACLE_PASSWORD"
+
+# The version-range question (Q1170): Langfuse v3 supports 24.3 and later.
+[[target]]
+name = "clickhouse-server@24.3"
+url = "http://127.0.0.1:28124/"
+image = "docker.io/clickhouse/clickhouse-server:24.3.18.7@sha256:85b97f63dcfff47790d26bb5d5801637aaddb2b93e5e9aee27a686c2fb2b9916"
+user = "oracle"
+password_env = "LOAMS_ORACLE_PASSWORD"
+
+# Today's House: chDB in sealed workers behind the Rust front, lake tables on
+# Iceberg v2 (`loams-fabric house --single-node`). The local user is `default`
+# and its key is <data-dir>/house.key.
+[[target]]
+name = "house-chdb"
+url = "http://127.0.0.1:28125/"
+user = "default"
+password_env = "LOAMS_ORACLE_HOUSE_KEY"

@@ -2,9 +2,9 @@
 //! in its namespace's own lake table, `_house.query_log`, in the tenant's
 //! bucket.
 //!
-//! * **What is logged.** One row per statement a client sent, on either
-//!   surface (ClickHouse HTTP and `loams.house.v1`), whatever it was and however
-//!   it ended once its namespace was known: query id, House user and Loams
+//! * **What is logged.** One row per statement a client sent, on any surface
+//!   (ClickHouse HTTP, the native protocol and `loams.house.v1`), whatever it
+//!   was and however it ended once its namespace was known: query id, House user and Loams
 //!   principal, start and end, kind, current database, a normalized-query hash
 //!   (of the text with its literals redacted, [`crate::oplog::redact`]), the
 //!   full text, the ClickHouse code and message it ended with, rows and bytes
@@ -196,9 +196,10 @@ pub fn clickhouse_kind(kind: &str) -> &'static str {
         | "CreateTableAs"
         | "CreateTemporaryTable"
         | "CreatePipe"
-        | "CreateMaterializedView" => "Create",
+        | "CreateMaterializedView"
+        | "CreateView" => "Create",
         "Drop" | "Truncate" => "Drop",
-        "AlterAddColumns" => "Alter",
+        "Alter" => "Alter",
         "Rename" => "Rename",
         "Undrop" => "Undrop",
         "Show" => "Show",
@@ -983,10 +984,10 @@ impl Observer {
             oplog.record(&OperatorLine {
                 at_ms: u64::try_from(entry.ended_us / 1000).unwrap_or(0),
                 query_id: entry.query_id.clone(),
-                surface: if entry.surface == "api" {
-                    "api"
-                } else {
-                    "http"
+                surface: match entry.surface.as_str() {
+                    "api" => "api",
+                    "native" => "native",
+                    _ => "http",
                 },
                 namespace: entry.namespace,
                 user: entry.user.clone(),

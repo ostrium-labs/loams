@@ -4,8 +4,8 @@
  * PROTOCOL, locked
  *   Authorization Code + PKCE (S256) + state + nonce. All three, always.
  *
- * Authentik never *requires* PKCE, which is exactly why it is not optional here: an
- * admin could turn the provider setting off, and PKCE would then be the only thing still
+ * Not every identity provider *requires* PKCE, which is exactly why it is not optional
+ * here: an admin could turn the provider setting off, and PKCE would then be the only thing still
  * binding the returned code to the request that asked for it. `state` alone protects
  * against CSRF, not against code injection. Belt and braces on purpose.
  *
@@ -16,7 +16,7 @@
  *     `expectedNonce: undefined`. Both are therefore passed through from the stored
  *     authorization request, never defaulted.
  *  2. v6 defaults to `ClientSecretPost`. RFC 6749 2.3.1 prefers `client_secret_basic`,
- *     and Authentik is configured for it by default, so `ClientSecretBasic(secret)` is
+ *     and identity providers commonly default to it, so `ClientSecretBasic(secret)` is
  *     passed EXPLICITLY rather than relied upon.
  *  3. `redirect_uri` is derived for the token request by stripping searchParams and the
  *     hash, and a bare origin may gain a trailing slash. `validateAuthConfig` therefore
@@ -28,10 +28,16 @@
  *     NODE_ENV !== production. An http:// IdP is a legitimate local setup and a
  *     catastrophic production one.
  *
- * Endpoint URLs are NEVER constructed by hand. `authorize/`, `token/` and `userinfo/`
- * are global to the authentik instance while `jwks/` and `end-session/` are
- * per-application, so there is no way to derive them from the issuer by string
- * manipulation. Discovery is the only supported source.
+ * Endpoint URLs are NEVER constructed by hand. Providers lay them out differently (some
+ * serve the authorize, token and userinfo endpoints globally while the JWKS and
+ * end-session endpoints are per-application), so there is no way to derive them from
+ * the issuer by string manipulation. Discovery is the only supported source.
+ *
+ * THE ISSUER is compared byte for byte (OIDC Discovery 4.3). The discovery document is
+ * fetched from `<issuer>/.well-known/openid-configuration` (no double slash, whether or
+ * not the issuer ends in one), and its `issuer` must then be IDENTICAL to OIDC_ISSUER.
+ * openid-client's own check compares parsed URLs, which treats a bare origin with and
+ * without a trailing slash as equal, so the exact comparison is made here as well.
  */
 
 import {
@@ -50,7 +56,7 @@ import {
   type Configuration,
 } from "openid-client";
 import type { AuthConfig } from "./config.js";
-import { AuthError, classifyOidcError, requestIdFrom } from "./errors.js";
+import { AuthError, classifyOidcError, issuerMismatchMessage, requestIdFrom } from "./errors.js";
 import { algMetadataProblem, probeSigningKeys, signingKeyProblem } from "./jwks.js";
 
 /** What a token endpoint gave us, normalised. */
@@ -126,7 +132,8 @@ export function newAuthorizationRequest(returnTo?: string): AuthorizationRequest
   };
 }
 
-export class AuthentikOidcClient implements OidcClient {
+/** The default {@link OidcClient}: openid-client over HTTP against any OIDC provider. */
+export class HttpOidcClient implements OidcClient {
   private _configuration?: Configuration;
   private _discovering?: Promise<void>;
 
@@ -191,12 +198,24 @@ export class AuthentikOidcClient implements OidcClient {
         },
       );
     } catch (err) {
-      throw classifyOidcError(err, { requestId: requestIdFrom(err) });
+      throw classifyOidcError(err, {
+        requestId: requestIdFrom(err),
+        issuer: this.config.issuer,
+      });
+    }
+
+    const metadata = configuration.serverMetadata();
+    // Deny by default: an issuer that is not byte-for-byte identical is refused BEFORE
+    // the configuration is kept, so no login can proceed against it.
+    if (metadata.issuer !== this.config.issuer) {
+      throw new AuthError(issuerMismatchMessage(this.config.issuer, metadata.issuer), {
+        code: "oidc_issuer_mismatch",
+        httpStatus: 500,
+      });
     }
 
     this._configuration = configuration;
 
-    const metadata = configuration.serverMetadata();
     const algProblem = algMetadataProblem(
       (metadata as Record<string, unknown>).id_token_signing_alg_values_supported,
     );

@@ -312,7 +312,7 @@ def async_refreshing(fetch: Callable[[], Awaitable[str]]) -> AsyncTokenSource:
 
 
 class OidcExchangeOptions:
-    """What the token exchange a person signed in through Authentik needs
+    """What the token exchange a person signed in at the IdP needs
     (§44 §7.4, D608; §19 §5.2).
 
     The instance's `/oauth/token` protocol endpoint takes the identity token and
@@ -377,7 +377,7 @@ def _exchange(options: OidcExchangeOptions) -> str:
 
 
 def oidc_exchange(options: OidcExchangeOptions) -> TokenSource:
-    """The token exchange a person signed in through Authentik needs."""
+    """The token exchange a person signed in at the IdP needs."""
     source = _Refreshing(lambda: _exchange(options), _Cache())
     return source
 

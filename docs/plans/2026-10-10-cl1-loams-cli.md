@@ -788,7 +788,7 @@ Tests:
 - `logout_removes_profile_credentials`
 - `login_without_auth_server_is_exit_6`
 - `tailnet_hint_on_cgnat_host`
-- `cli_login_end_to_end` (MT1's named test; compose with Authentik, `#[ignore]`)
+- `cli_login_end_to_end` (MT1's named test, now IA1's; compose with Zitadel, `#[ignore]`)
 
 Commit `feat(cli): login, logout, whoami`.
 

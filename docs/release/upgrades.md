@@ -5,12 +5,6 @@ From v0.1.0 on, a Loams compose stack is upgraded in place and keeps its data (d
 `loams upgrade rollback` puts the stack back. preview.1 → preview.2 kept no data. preview.2 → 0.1.0 is the
 first step that keeps it.
 
-**0.1.1 changes the default stack (D1340): reinstall.** There are no 0.1.0 installs to carry
-forward, so start 0.1.1 from its bundle with a fresh `.env`. The steps below upgrade a 0.1.0 stack that
-keeps its stores (`COMPOSE_PROFILES=tikv,rustfs` in `.env` first); `rollback --keep-writes` back to 0.1.0
-is refused (D1343), so a rollback from 0.1.1 restores the snapshot. A stack on the light default's
-embedded stores is upgraded by hand until 0.1.2.
-
 ## Quick start
 
 From the stack's directory (the bundle's `release/`, the one with `compose.yaml` and `.env`):
@@ -112,6 +106,7 @@ Reversible claim before a release ships.
 | 0.1.0 | `0000-adopt-preview-2`: records preview.2's versions (preview.2 wrote no stack record) | meta | Reversible |
 | 0.1.0 | `0001-safekeeper-volume`: gives the safekeeper a volume, after a drain | host | Reversible |
 | 0.1.1 | None (from any earlier 0.1.x). A 0.1.0 stack keeps its stores with `COMPOSE_PROFILES=tikv,rustfs`, Durable on SQLite included | | |
+| 0.1.2 | None (from any earlier 0.1.x). Durable on TiKV's keyspace keeps its layout (FW1). Remove `LOAMS_CORS_ORIGINS=https://console.loams.dev` from `.env` by hand | | |
 
 `loams upgrade rollback --keep-writes` back to 0.1.0 is refused: 0.1.0's startup gate does not serve data a later
 release stamped (fixed after 0.1.0, design §54 §17 T14-2), so it would not start. Roll back from the snapshot

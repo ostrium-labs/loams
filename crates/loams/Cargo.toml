@@ -86,6 +86,7 @@ loams-migrate.workspace = true
 # `loams upgrade` (UP1 Task 12): the client that upgrades a compose stack;
 # it links no storage crate.
 loams-upgrade.workspace = true
+loams-cloud-admin.workspace = true
 # Loams Postgres's control plane: the `loams pg-control` role (feature
 # `postgres`, PG2 Task 9, design §46 §6.1), and the Neon clients it is
 # configured with. Never in the default build (`pg_control.rs`'s
@@ -121,6 +122,8 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["ring",
 # routes); already a dependency of loams-query and loams-qdrant.
 tonic.workspace = true
 tower.workspace = true
+# The console's files at /ui/ (crate::console).
+tower-http.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 ulid.workspace = true

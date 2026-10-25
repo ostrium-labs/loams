@@ -12,4 +12,4 @@ repo=https://github.com/dina-kar/operon.git
 ref=ea07202d200c7b8a68544e7eb024c93a25a060d7
 packages=loams/errors/v1 loams/instance/v1 loams/devices/v1 loams/approvals/v1 loams/operations/v1 loams/notifications/v1
 placeholder=loams/errors/v1 loams/instance/v1 loams/devices/v1 loams/approvals/v1 loams/operations/v1 loams/notifications/v1
-tree_sha256=e95a196d20db0cc57cdc938f5ea5033c675bba407055660dd08bb0773aed4b20
+tree_sha256=47002bc27e6780374e6f188ec4bc2e379f1ec59fb54fb57cf8c39d7715fb5dae

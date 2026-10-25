@@ -27,7 +27,7 @@ generator inputs stay outside the workspace, next to `proto/`.
 npm i @loams/client        # and @loams/live for Live's stubs
 ```
 
-`0.1.1` tracks Loams 0.1.1; in 0.x the API may change between minor versions.
+`0.1.2` tracks Loams 0.1.2; in 0.x the API may change between minor versions.
 
 ## Using it
 
@@ -53,8 +53,13 @@ try {
 ```
 
 One port serves the Connect protocol, gRPC and gRPC-Web (D600), so the same
-object works in a browser, in Node, in Deno and in Bun. The default transport is
-Connect over `fetch`. For HTTP/2 gRPC on a server:
+object works in a browser, in Node and in Bun. The default transport is
+Connect over `fetch`.
+
+Deno is not supported (design 79, D1790): Deno's team is ending the runtime's
+development. The default `fetch` transport uses only standard Web APIs, so the
+SDK may still run on Deno, but we don't test it there or promise it works.
+Moving off Deno? See [Moving from Deno to Bun](../../docs/guides/migrate-deno-to-bun.md). For HTTP/2 gRPC on a server:
 
 ```ts
 import { Loams, createNodeTransport } from '@loams/client/node';
@@ -140,6 +145,25 @@ whose `offset` is where to resume. `examples/notes/main.ts` is the whole app
 scenario as a program, type-checked in CI. The session's token is used only for
 collection and SQL reads: a graph's token names one graph (SDKP-17). Durable
 workflows use the Resonate SDK pointed at `LOAMS_ENDPOINT/durable/` (SDKP-1).
+
+## Cloudflare Workers
+
+`@loams/client` runs in Cloudflare Workers (workerd) with no `nodejs_compat` flag and no `fetch` override. The
+default transport detects workerd (`navigator.userAgent === "Cloudflare-Workers"`) and sends
+`redirect: "manual"`, because connect-web's default `redirect: "error"` is rejected by Workers. Loams calls never
+redirect, so nothing changes for them. Other runtimes are untouched: in a browser `manual` would hide a redirect
+as an opaque response.
+
+```ts
+const loams = new Loams({ endpoint: env.LOAMS_URL, token: env.LOAMS_TOKEN });
+```
+
+To control `fetch` yourself (a proxy, a service binding, a test double), pass it through the transport options;
+it is used exactly as given, so set `redirect: "manual"` in it if you also run in workerd:
+
+```ts
+new Loams({ endpoint, transportOptions: { fetch: env.GATEWAY.fetch.bind(env.GATEWAY) } });
+```
 
 ## What is generated and what is hand-written
 

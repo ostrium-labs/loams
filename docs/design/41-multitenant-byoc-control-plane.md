@@ -1,5 +1,9 @@
 # 41 — Loams Multitenant BYOC Control Plane with GitOps
 
+> **Amendment (approved 2026-10-23) by [§78](78-loams-cloud-on-tidb-x.md)** (Loams Cloud on TiDB X; D1700–D1735). The control plane gains a hosted, free try-out instance, Loams Cloud (D1701), and a **device** kind: a user's machines enrol with D543's outbound-only pattern, a closed command set and 15-minute tokens (D1714). The code stays open and self-hostable, so a company can run it for its employees (D1726). For BYOC the control plane stays opt-in (D1377).
+
+> **Amendment (approved 2026-10-21) by [§76](76-identity-and-authorization.md)** (identity and authorization: Zitadel and OpenFGA; owner, all defaults). Authentik is replaced by Zitadel (D1600). Loams orgs map 1:1 to Zitadel orgs instead of Authentik groups (§2.2, §5; D1605); a multi-org control plane uses one OpenFGA store with `org` at the root of every object path and a cross-org tuple test (D1612); §4's authorization goes through the single `Authorizer` trait (D1610).
+
 > **Updated 2026-10-19 ([D1119](13-decision-log.md)): Loams has no open core.** Where this document places metering, billing, the hosted control plane, commercial APIs or other components in the private `loams-platform` repository, or calls something private for open-core reasons, read that as superseded: everything is Apache-2.0, and the metering, billing and control-plane code is moving into the open repo now (design §63, Loams Meter). Ostrium Labs offers services (infrastructure efficiency, SLAs, support), not a paid edition. The rest of the design is unchanged.
 
 Status: **Proposed** · 2026-10-02. Source: the owner's open-core ruling of 2026-10-02: "in open-core, multi-tenant Knative and GitOps using Argo CD is fully open source, so name it as Multitenant BYOC Control Plane with GitOps, and move the commercial API and metering to private, because they may be used to abuse by agents — integrity is the security principle of Loams." This document is the architecture of the open half. Decisions **D540–D559** and questions **Q540–Q559** are recorded in the [decision log](13-decision-log.md). Plan: [MT4](../plans/2026-10-02-mt4-byoc-control-plane.md).
@@ -63,7 +67,7 @@ Argo CD runs in the cluster it deploys to (hub-and-spoke is optional, §8.3); a 
 ### 2.2 Non-goals
 
 - **Metering, billing, invoices, credits, plans and entitlements.** `loams-platform` (D548, D550).
-- **Commercial APIs**: the hosted Loams Cloud's paid APIs, the marketplace install and billing APIs, partner and commercial integrations (§12).
+- **Commercial APIs**: the hosted Loams Cloud's paid APIs, the marketplace install and billing APIs, partner and commercial integrations (§12). *(Updated 2026-10-21: the marketplace is open source and is designed in [§73](73-agent-marketplace.md) (D1446): a signed static index and installs through `loams-agentd`, with no install or billing APIs here.)*
 - **A replacement for Argo CD or Flux.** Clever Cloud publishes no GitOps engine (§38 §6.1); Argo CD stays (D186).
 - **Authentik multi-tenancy.** It is Enterprise and alpha (§38 §4.2). A deployment has one Authentik tenant; Loams orgs are Loams’ concept, mapped from Authentik groups (§38 D449).
 - **Hosted-fleet operations** (predictive pre-warming, capacity management, hosted Neon/WeSQL fleet automation, abuse handling for the paid cloud): private.
@@ -183,7 +187,7 @@ Unchanged from D64: the control plane may see namespace and collection names, sc
 
 ### 7.4 Connectivity modes: outbound agent or tailnet (D587)
 
-BYOC has two connectivity modes. The default is the outbound agent of §7.1. The optional mode joins the customer's cluster to a **tailnet** (the operator's, or the customer's own Tailscale or Headscale through the provider knob of §43 §6.4; §43, `43-private-networking.md`, provider-neutral): the agent runs `tailscaled` (userspace) as a sidecar, joins with a single-use key tagged `tag:byoc-<tenant>` that the control plane issues, and reaches the control plane's tailnet name. Neither mode opens an inbound port. In tailnet mode the policy lets a tenant reach `tag:control:443` only; the control plane never dials in; the customer may enable a time-boxed support grant that the control plane expires. Tenant isolation is a generated policy on one operator Headscale, with a dedicated Headscale per tenant on request (D586). The tenant's own users and east-west traffic are the tenant's own network. Cites §43 §6.
+BYOC has two connectivity modes. The default is the outbound agent of §7.1. The optional mode joins the customer's cluster to a **tailnet** (the operator's, or the customer's own Tailscale or Headscale through the provider knob of §43 §6.4; §43, `43-private-networking.md`, provider-neutral): the agent runs `tailscaled` (userspace) as a sidecar, joins with a single-use key tagged `tag:byoc-<tenant>` that the control plane issues, and reaches the control plane's tailnet name. Neither mode opens an inbound port. In tailnet mode the policy lets a tenant reach `tag:control:443` only; the control plane never dials in; the customer may open a time-boxed maintainer debug session (community and best effort, no contract or SLA; D1582) that the control plane expires. Tenant isolation is a generated policy on one operator Headscale, with a dedicated Headscale per tenant on request (D586). The tenant's own users and east-west traffic are the tenant's own network. Cites §43 §6.
 
 ## 8. Upgrade waves (new)
 
@@ -330,7 +334,7 @@ The platform may not need the observer at all: cgroups are authoritative for T0 
 
 | # | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|---|
-| 1 | Open code is forked and hosted by a third party as a competing cloud | Medium | Medium | Apache-2.0 is the owner's choice for adoption; the moat is the hosted service, the marketplace and the private billing stack (Q544) |
+| 1 | Open code is forked and hosted by a third party as a competing cloud | Medium | Medium | Apache-2.0 is the owner's choice for adoption; the moat is the hosted service, the marketplace and the private billing stack (Q544). *Updated 2026-10-21: there is no private billing stack (D1119) and the marketplace is open source ([§73](73-agent-marketplace.md), D1446)* |
 | 2 | Argo CD's progressive sync stays alpha | Medium | Low | Fallback: one ApplicationSet per ring (§8.2) |
 | 3 | The observer trait becomes a de facto meter in the open code | Low | High | A CI guard on names; review rule in CONTRIBUTING; the trait carries no wire format, buffer or persistence |
 | 4 | Git as the write path adds latency to onboarding | Medium | Low | Directory-only namespaces for the common case (D544); sync is seconds on a healthy cluster |

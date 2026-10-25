@@ -4,6 +4,8 @@ Status: **Proposed** · 2026-09-27. The direction is the owner's, from 2026-09-2
 
 > **Amended 2026-09-29 (D260, D261, D262).** TiKV is the durable store for clusters, Loams cloud and self-hosted deployments: the **native TiKV backend** (`--durable-store tikv://<pd-hosts>/<keyspace>`, cargo feature `durable-tikv`) replaces TiDB (D261). There is no TiDB anywhere in Loams (D260). **What `main` does today:** `--durable-store` accepts `sqlite:<path>`, `tikv://…` and `mysql://…`; the TiKV backend has merged, and the release compose stack runs on it. `mysql://` (Resonate's MySQL plugin, feature `durable-mysql`) is **legacy and deprecated**: kept for dev and tests until `tikv://` lands, then removed. The cargo feature `durable` is **opt-in**, not on by default (D262). TiDB text below is kept as history and marked where it no longer applies.
 
+> **Amended by [§74](74-durable-execution-compat.md) (approved 2026-10-21).** All Resonate-side work goes to the fork `ostrium-labs/resonate` as upstreamable branches (D1513, D1514): the TiKV store moves there from `crates/loams-durable/src/tikv.rs`, keeping the flag and the 0.1.0 on-disk format (D1515), and the upstream PRs of §11.2 become the fork tasks FW0, FW3 and FW5. Resonate also becomes the durability layer under a Temporal-protocol frontend and an Airflow executor.
+
 This document **amends §14** (approved 2026-09-24, D19). §14's protocol analysis, consistency model and non-goals still hold. The following parts change:
 
 | §14 said | §21 says | Why |

@@ -8,11 +8,13 @@
 //! status and `WWW-Authenticate: Bearer`. Every refusal carries the reason in
 //! `loams-auth-reason`.
 //!
-//! Browsers on the console's origins (`LOAMS_CORS_ORIGINS`; any origin when
-//! it is empty and authentication is on, since credentials are bearer
-//! headers and never cookies) get CORS: the preflight is answered here (it
-//! carries no credential), and every answer to an allowed origin, refusals
-//! included, carries `Access-Control-Allow-Origin`.
+//! The console ships with the deployment and is served by the engine itself
+//! (`crate::console`), so its calls are same-origin. CORS is deny by
+//! default: only the engine's own origin (the request's `Host`) and the
+//! extra origins in `LOAMS_CORS_ORIGINS` (none by default) get it. The
+//! preflight is answered here (it carries no credential), and every answer
+//! to an allowed origin, refusals included, carries
+//! `Access-Control-Allow-Origin`.
 //!
 //! Loams Live's app end users browse from the apps' own pages (LV1 plan
 //! Task 18, design §45 §6.4): on a router that serves Live, a `LiveService`
@@ -26,8 +28,8 @@
 //! Tailscale identity headers are stripped on every listener but the
 //! `tailscale serve` target ([`AuthLayerState::tailscale_target`]). There
 //! the identity is ambient (like a cookie), so CORS never allows any origin:
-//! only `LOAMS_CORS_ORIGINS` (empty: the hosted console) and the target's
-//! own host, and a request from any other origin is refused outright.
+//! only `LOAMS_CORS_ORIGINS` (none by default) and the target's own host,
+//! and a request from any other origin is refused outright.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -120,32 +122,28 @@ const EXPOSE_HEADERS: &str = "grpc-status, grpc-message, grpc-status-details-bin
      loams-consistency-token, loams-request-id, loams-auth-reason, www-authenticate, \
      retry-after";
 
-/// The allowed browser origins.
+/// The allowed browser origins beside the engine's own: deny by default.
 #[derive(Clone, Debug, Default)]
 pub struct Cors {
     origins: Arc<BTreeSet<String>>,
-    any: bool,
 }
 
 impl Cors {
+    /// Exactly `origins` (lowercased, without a trailing `/`), and no other.
     pub fn new(origins: BTreeSet<String>) -> Self {
         Self {
-            origins: Arc::new(origins),
-            any: false,
+            origins: Arc::new(
+                origins
+                    .into_iter()
+                    .map(|o| o.trim_end_matches('/').to_ascii_lowercase())
+                    .collect(),
+            ),
         }
     }
 
-    /// Every origin (an authenticated engine with no `LOAMS_CORS_ORIGINS`:
-    /// a self-hosted console may live on any domain).
-    pub fn any() -> Self {
-        Self {
-            origins: Arc::default(),
-            any: true,
-        }
-    }
-
-    fn allows(&self, origin: &str) -> bool {
-        self.any || self.origins.contains(origin.trim_end_matches('/'))
+    pub(crate) fn allows(&self, origin: &str) -> bool {
+        self.origins
+            .contains(&origin.trim_end_matches('/').to_ascii_lowercase())
     }
 }
 

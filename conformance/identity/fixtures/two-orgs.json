@@ -1,0 +1,18 @@
+[
+  {"user": "platform:default", "relation": "platform", "object": "org:acme"},
+  {"user": "platform:default", "relation": "platform", "object": "org:globex"},
+  {"user": "org:acme", "relation": "org", "object": "project:acme-p1"},
+  {"user": "org:globex", "relation": "org", "object": "project:globex-p1"},
+  {"user": "org:acme", "relation": "org", "object": "team:acme-eng"},
+  {"user": "project:acme-p1", "relation": "project", "object": "environment:acme-dev"},
+  {"user": "project:globex-p1", "relation": "project", "object": "environment:globex-prod"},
+  {"user": "environment:acme-dev", "relation": "environment", "object": "deployment:acme-web"},
+  {"user": "environment:globex-prod", "relation": "environment", "object": "database:globex-db"},
+  {"user": "project:acme-p1", "relation": "project", "object": "agent:acme-bot"},
+  {"user": "team:acme-eng#member", "relation": "editor", "object": "project:acme-p1"},
+  {"user": "agent:acme-bot", "relation": "editor", "object": "environment:acme-dev"},
+  {"user": "user:carol", "relation": "member", "object": "org:acme"},
+  {"user": "user:carol", "relation": "member", "object": "org:globex"},
+  {"user": "user:carol", "relation": "owner", "object": "agent:acme-bot"},
+  {"user": "user:opal", "relation": "operator", "object": "platform:default"}
+]

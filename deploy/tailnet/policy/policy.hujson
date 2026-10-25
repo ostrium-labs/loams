@@ -17,8 +17,8 @@
 //
 // Who is who
 //   Humans   Tailscale: users of the tailnet's identity provider, addressed by
-//            email. Headscale: users created at OIDC sign-in (Authentik),
-//            gated by Authentik's `loams-net-users`. Headscale cannot use OIDC
+//            email. Headscale: users created at OIDC sign-in (Zitadel),
+//            gated by the `loams-net-users` role. Headscale cannot use OIDC
 //            groups in policy (docs/ref/oidc.md, "Limitations"), and Tailscale
 //            with a custom OIDC provider has no group provisioning either, so
 //            `group:ops` below lists the operators by email in both cases.
@@ -35,7 +35,7 @@
 
   "tagOwners": {
     "tag:ops":       ["group:ops"],   // reserved: operator-owned shared devices
-    "tag:authentik": ["group:ops"],   // the Authentik VM or pod host
+    "tag:zitadel":   ["group:ops"],   // the Zitadel VM or pod host (auth.loams.dev)
     "tag:headscale": ["group:ops"],   // the Headscale host (provider=headscale only; unused with Tailscale)
     "tag:k3s":       ["group:ops"],   // k3s servers and agents, any site
     "tag:tikv":      ["group:ops"],   // TiKV and PD nodes
@@ -56,16 +56,16 @@
     // the host firewall has no public 22.
     {
       "src": ["group:ops"],
-      "dst": ["tag:authentik", "tag:headscale", "tag:k3s", "tag:tikv", "tag:wesql",
+      "dst": ["tag:zitadel", "tag:headscale", "tag:k3s", "tag:tikv", "tag:wesql",
               "tag:objstore", "tag:bench", "tag:control"],
       "ip":  ["tcp:22"]
     },
-    // Authentik's admin interface, reachable on the tailnet only (see
-    // docs/platform/deploy/tailnet.md, "Authentik admin on the tailnet").
+    // Zitadel's admin console and management APIs, reachable on the tailnet
+    // only (design 76 D1615, D596's rule; docs/platform/deploy/zitadel.md).
     {
       "src": ["group:ops"],
-      "dst": ["tag:authentik"],
-      "ip":  ["tcp:9000"]
+      "dst": ["tag:zitadel"],
+      "ip":  ["tcp:8080"]
     },
     // kubectl to the k3s API server.
     {
@@ -101,14 +101,14 @@
     },
     // Backups and other S3 traffic to the private object store.
     {
-      "src": ["tag:k3s", "tag:authentik", "tag:headscale", "tag:tikv", "tag:wesql", "tag:bench"],
+      "src": ["tag:k3s", "tag:zitadel", "tag:headscale", "tag:tikv", "tag:wesql", "tag:bench"],
       "dst": ["tag:objstore"],
       "ip":  ["tcp:9000", "tcp:443"]
     },
     // Metrics scrape from the cluster's collector to the infrastructure tags.
     {
       "src": ["tag:k3s"],
-      "dst": ["tag:authentik", "tag:headscale", "tag:bench"],
+      "dst": ["tag:zitadel", "tag:headscale", "tag:bench"],
       "ip":  ["tcp:9100"]
     },
     // Ephemeral CI jobs reach the bench runner's result endpoint only.
@@ -131,19 +131,19 @@
   // Both providers evaluate these in CI; a failing test fails the check.
   "tests": [
     // operators
-    {"src": "admin@loams.dev", "accept": ["tag:k3s:22", "tag:k3s:6443", "tag:authentik:9000"]},
+    {"src": "admin@loams.dev", "accept": ["tag:k3s:22", "tag:k3s:6443", "tag:zitadel:8080"]},
     {"src": "admin@loams.dev", "deny":   ["tag:k3s:10250", "tag:tikv:20160"]},
     // servers do not get a shell on each other
-    {"src": "tag:k3s", "deny": ["tag:k3s:22", "tag:authentik:22", "tag:headscale:22", "tag:bench:22"]},
+    {"src": "tag:k3s", "deny": ["tag:k3s:22", "tag:zitadel:22", "tag:headscale:22", "tag:bench:22"]},
     // CI is not a way into the cluster
     {"src": "tag:ci", "accept": ["tag:bench:8080"]},
-    {"src": "tag:ci", "deny":   ["tag:k3s:6443", "tag:k3s:22", "tag:authentik:9000", "tag:control:443"]},
+    {"src": "tag:ci", "deny":   ["tag:k3s:6443", "tag:k3s:22", "tag:zitadel:8080", "tag:control:443"]},
     // the Headscale host reaches only the object store
     {"src": "tag:headscale", "accept": ["tag:objstore:9000"]},
-    {"src": "tag:headscale", "deny":   ["tag:k3s:6443", "tag:authentik:9000"]},
+    {"src": "tag:headscale", "deny":   ["tag:k3s:6443", "tag:zitadel:8080"]},
     // tenants: the control plane only, never operators' servers or each other
     {"src": "tag:byoc-acme", "accept": ["tag:control:443"]},
-    {"src": "tag:byoc-acme", "deny":   ["tag:control:22", "tag:k3s:6443", "tag:authentik:9000", "tag:objstore:9000"]},
+    {"src": "tag:byoc-acme", "deny":   ["tag:control:22", "tag:k3s:6443", "tag:zitadel:8080", "tag:objstore:9000"]},
     // the control plane does not dial into tenants
     {"src": "tag:control", "deny": ["tag:byoc-acme:443", "tag:byoc-acme:6443"]}
   ]

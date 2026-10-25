@@ -36,7 +36,7 @@ sealed interface TokenResult {
 
 /**
  * The Loams gateway's OAuth token endpoint, `POST {issuer}/api/v1/oauth/token`: the pairing
- * extension grant, the RFC 8693 exchange of an Authentik token, and refresh.
+ * extension grant, the RFC 8693 exchange of an identity-provider token, and refresh.
  *
  * TODO(auth plan, Q438): every call carries a DPoP proof (RFC 9449) from dpop-<instance>.
  */
@@ -56,11 +56,11 @@ class TokenEndpoint(private val issuer: String, http: OkHttpClient) {
         )
     }
 
-    /** Exchanges an Authentik access token for device-bound Loams tokens (RFC 8693). */
-    suspend fun exchange(authentikAccessToken: String, device: DeviceRegistration): TokenResult = post(
+    /** Exchanges an identity-provider access token for device-bound Loams tokens (RFC 8693). */
+    suspend fun exchange(idpAccessToken: String, device: DeviceRegistration): TokenResult = post(
         device.fields() + listOf(
             "grant_type" to Loams.TOKEN_EXCHANGE_GRANT,
-            "subject_token" to authentikAccessToken,
+            "subject_token" to idpAccessToken,
             "subject_token_type" to "urn:ietf:params:oauth:token-type:access_token",
         ),
     )

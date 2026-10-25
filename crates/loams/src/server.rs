@@ -299,6 +299,15 @@ pub struct ServerConfig {
     /// non-loopback `--listen` needs it (or TLS ended at a trusted proxy)
     /// and authentication.
     pub tls: crate::tls::TlsConfig,
+    /// The built console the main port and the `tailscale serve` target
+    /// serve at `/ui/` ([`crate::console`]), on `dev` and `standalone`.
+    /// `None` (the default here) serves none; the CLI sets it to
+    /// `--console-dir`, else to [`crate::console::DEFAULT_DIR`] when that
+    /// holds a build, unless `--no-console`.
+    pub console_dir: Option<PathBuf>,
+    /// How the console is served: the agentd hosts its CSP header lets
+    /// Studio call (`LOAMS_AGENTD_ORIGINS`, [`crate::console`]).
+    pub console: crate::console::ConsoleOptions,
 }
 
 /// Loams Git's server settings (GT1 Task 13).
@@ -488,6 +497,8 @@ impl ServerConfig {
             house: crate::api::house_proxy::HouseProxyConfig::default(),
             auth: crate::auth::AuthConfig::off(),
             tls: crate::tls::TlsConfig::off(),
+            console_dir: None,
+            console: crate::console::ConsoleOptions::default(),
         }
     }
 
@@ -3133,12 +3144,37 @@ impl Server {
                 };
                 #[cfg(not(feature = "live"))]
                 let main_router = router.clone();
+                // The console ships with the deployment (crate::console):
+                // served next to the API on both listeners, outside the
+                // authentication layer (its files are public; its calls are
+                // not), so it is always same-origin with its engine.
+                let console = config.console_dir.as_deref().and_then(|dir| {
+                    let router = crate::console::router(dir, &config.console);
+                    match &router {
+                        Some(_) => {
+                            tracing::info!(path = %dir.display(), "the console is served at /ui/")
+                        }
+                        None => tracing::warn!(
+                            path = %dir.display(),
+                            "no console build here (no index.html): /ui/ is not served"
+                        ),
+                    }
+                    router
+                });
+                let with_console = |router: axum::Router| match &console {
+                    Some(console) => router.merge(console.clone()),
+                    None => router,
+                };
                 // The same API behind the layer that honours Tailscale
                 // identity headers; the main port strips them.
                 let tailscale = tailscale_listener.map(|(listener, addr)| {
-                    TailscaleTarget::start(listener, addr, tailscale_guard.wrap(router))
+                    TailscaleTarget::start(
+                        listener,
+                        addr,
+                        with_console(tailscale_guard.wrap(router)),
+                    )
                 });
-                (main_guard.wrap(main_router), tailscale)
+                (with_console(main_guard.wrap(main_router)), tailscale)
             }
             (true, true) => (api::router(state), None),
             (false, _) => (api::internal_router(state), None),

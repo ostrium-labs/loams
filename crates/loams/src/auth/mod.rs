@@ -339,6 +339,42 @@ impl AuthMode {
     }
 }
 
+/// One `LOAMS_CORS_ORIGINS` entry: an exact origin, `scheme://host[:port]`
+/// (a trailing `/` is dropped), lowercased as browsers send it. Wildcards,
+/// `null`, paths, queries and credentials are refused: an origin list that
+/// could match more than it names is not an allowlist.
+pub fn parse_origin(text: &str) -> Result<String, String> {
+    let origin = text.trim().trim_end_matches('/');
+    let refuse = |why: &str| {
+        Err(format!(
+            "{text:?} is not an origin ({why}; expected scheme://host[:port])"
+        ))
+    };
+    let Some((scheme, authority)) = origin.split_once("://") else {
+        return refuse("no scheme");
+    };
+    let scheme_ok = scheme
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic())
+        && scheme
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'));
+    if !scheme_ok {
+        return refuse("a bad scheme");
+    }
+    if authority.is_empty() {
+        return refuse("no host");
+    }
+    if let Some(c) = authority
+        .chars()
+        .find(|c| matches!(c, '/' | '?' | '#' | '@' | '*' | '\\') || c.is_whitespace())
+    {
+        return refuse(&format!("{c:?} is not allowed"));
+    }
+    Ok(origin.to_ascii_lowercase())
+}
+
 /// The authentication settings ([`AuthConfig::from_env`]).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AuthConfig {
@@ -351,13 +387,14 @@ pub struct AuthConfig {
     pub oidc: Option<oidc::OidcConfig>,
     /// `LOAMS_TAILSCALE_LISTEN` and `LOAMS_TAILSCALE_ALLOWED_USERS`.
     pub tailscale: Option<tailscale::TailscaleConfig>,
-    /// `LOAMS_CORS_ORIGINS`: the browser origins (the console's) allowed to
-    /// call the engine cross-origin. Empty: any origin when authentication
-    /// is on (credentials are bearer headers, never cookies, so CORS guards
-    /// nothing a page could not already do), none when it is off. The
-    /// `tailscale serve` target is the exception: its identity is ambient,
-    /// so it takes only these origins (empty: the hosted console's) and
-    /// refuses a request from any other.
+    /// `LOAMS_CORS_ORIGINS`: the extra browser origins allowed to call the
+    /// engine cross-origin, each an exact `scheme://host[:port]`. Empty (the
+    /// default) allows none: the console ships with the deployment and is
+    /// served by the engine itself ([`crate::console`]), so its calls are
+    /// same-origin (the request's own `Host`), and Loams Desktop's main
+    /// process sends the engine's own origin. Deny by default, on every
+    /// listener; the `tailscale serve` target, whose identity is ambient,
+    /// also refuses a request from any other origin outright.
     pub cors_origins: Vec<String>,
     /// `LOAMS_SETUP_TOKEN`: what `AuthService/CompleteSetup` must carry on
     /// an engine with authentication on. With authentication off (loopback
@@ -451,9 +488,10 @@ impl AuthConfig {
             oidc: None,
             tailscale: None,
             cors_origins: list("LOAMS_CORS_ORIGINS")
-                .into_iter()
-                .map(|o| o.trim_end_matches('/').to_owned())
-                .collect(),
+                .iter()
+                .map(|o| parse_origin(o))
+                .collect::<Result<_, _>>()
+                .map_err(|e| format!("LOAMS_CORS_ORIGINS: {e}"))?,
             setup_token: var(SETUP_TOKEN_ENV)
                 .map(|v| v.trim().to_owned())
                 .filter(|v| !v.is_empty()),
@@ -699,14 +737,25 @@ impl Auth {
                     .api_keys_file
                     .as_ref()
                     .ok_or("apikey mode needs LOAMS_API_KEYS_FILE")?;
-                if config.api_keys_optional && !file.exists() {
-                    tracing::warn!(
-                        path = %file.display(),
-                        "LOAMS_API_KEYS_FILE does not exist: API keys are off; create keys \
-                         with `loams auth new-key --append <file>` and restart"
-                    );
-                } else {
-                    authenticators.push(Arc::new(api_key::ApiKeyAuthenticator::from_file(file)?));
+                match (config.api_keys_optional, file.try_exists()) {
+                    (true, Ok(false)) => {
+                        tracing::warn!(
+                            path = %file.display(),
+                            "LOAMS_API_KEYS_FILE does not exist: API keys are off; create keys \
+                             with `loams auth new-key --append <file>` and restart"
+                        );
+                    }
+                    // Not known to be missing (say its directory is not searchable): say so.
+                    (true, Err(err)) => {
+                        tracing::warn!(
+                            "{}; API keys are off until the engine can read it and restarts",
+                            api_key::read_error(file, &err)
+                        );
+                    }
+                    _ => {
+                        let keys = api_key::ApiKeyAuthenticator::from_file(file)?;
+                        authenticators.push(Arc::new(keys));
+                    }
                 }
             }
             if *oidc {
@@ -715,15 +764,11 @@ impl Auth {
             }
         }
         authenticators.extend(config.extra_authenticators.0.iter().cloned());
+        // Deny by default: only the configured origins, beside the engine's
+        // own (the layer's same-host check), on every listener.
         let origins = config.cors_origins.iter().cloned().collect::<BTreeSet<_>>();
-        let cors = match (config.enforced(), origins.is_empty()) {
-            (true, true) => Cors::any(),
-            _ => Cors::new(origins.clone()),
-        };
-        let tailscale_cors = match origins.is_empty() {
-            true => Cors::new([tailscale::DEFAULT_CONSOLE_ORIGIN.to_owned()].into()),
-            false => Cors::new(origins),
-        };
+        let cors = Cors::new(origins.clone());
+        let tailscale_cors = Cors::new(origins);
         Ok(Arc::new(Self {
             authenticators,
             tailscale,
@@ -881,6 +926,82 @@ mod tests {
     }
 
     #[test]
+    fn cors_origins_are_exact_origins() {
+        let config = AuthConfig::from_vars(vars(&[(
+            "LOAMS_CORS_ORIGINS",
+            " https://Console.Example.com/ , http://127.0.0.1:3000,loams-app://console",
+        )]))
+        .unwrap();
+        assert_eq!(
+            config.cors_origins,
+            [
+                "https://console.example.com",
+                "http://127.0.0.1:3000",
+                "loams-app://console"
+            ]
+        );
+        for bad in [
+            "*",
+            "null",
+            "console.example.com",
+            "https://",
+            "https://*.example.com",
+            "https://example.com/ui",
+            "https://example.com?x",
+            "https://user@example.com",
+            "1https://example.com",
+        ] {
+            let err = AuthConfig::from_vars(vars(&[("LOAMS_CORS_ORIGINS", bad)])).unwrap_err();
+            assert!(err.starts_with("LOAMS_CORS_ORIGINS: "), "{bad}: {err}");
+        }
+    }
+
+    /// Owner, 2026-10-23: the console ships with the deployment, so no
+    /// origin is allowed by default, on either listener, whether or not
+    /// authentication is on; the hosted console's origin is not special.
+    #[test]
+    fn cors_denies_every_origin_by_default() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let (_, line) = api_key::new_key("test");
+        let keys = dir.path().join("api-keys");
+        std::fs::write(&keys, format!("{line}\n")).unwrap();
+        for config in [
+            AuthConfig::off(),
+            AuthConfig::api_keys(&keys),
+            AuthConfig {
+                mode: AuthMode::On {
+                    api_keys: false,
+                    oidc: false,
+                    tailscale: true,
+                },
+                tailscale: Some(tailscale::TailscaleConfig::default()),
+                ..AuthConfig::off()
+            },
+        ] {
+            let auth = Auth::from_config(&config).unwrap();
+            for origin in [
+                "https://console.loams.dev",
+                "https://evil.example",
+                "loams-app://console",
+            ] {
+                assert!(!auth.cors().allows(origin), "{origin} on {config:?}");
+                assert!(
+                    !auth.tailscale_cors().allows(origin),
+                    "{origin} on {config:?}"
+                );
+            }
+        }
+        let auth = Auth::from_config(&AuthConfig {
+            cors_origins: vec!["https://console.example.com".into()],
+            ..AuthConfig::api_keys(&keys)
+        })
+        .unwrap();
+        assert!(auth.cors().allows("https://console.example.com"));
+        assert!(auth.tailscale_cors().allows("https://console.example.com/"));
+        assert!(!auth.cors().allows("https://console.loams.dev"));
+    }
+
+    #[test]
     fn apikey_mode_needs_a_file() {
         let err = AuthConfig::from_vars(vars(&[(MODE_ENV, "apikey")])).unwrap_err();
         assert!(err.contains("LOAMS_API_KEYS_FILE"), "{err}");
@@ -999,5 +1120,52 @@ mod tests {
             on.check_listeners(&[("--listen", "0.0.0.0:8080".parse().unwrap())])
                 .is_ok()
         );
+    }
+
+    /// A credential's `Debug`, which a panic or a `?` log prints (CodeQL
+    /// rust/cleartext-logging, #1105), names its kind and never its value.
+    #[test]
+    fn a_credential_debug_never_shows_the_secret() {
+        let (key, _) = api_key::generate();
+        let session = directory::new_session_token();
+        let jwt = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJhIn0.c2lnbmF0dXJl".to_owned();
+        let csrf = "csrf-0123456789abcdef".to_owned();
+        let cases = [
+            (
+                Credential::ApiKey(key.clone()),
+                key.as_str(),
+                "ApiKey([redacted])",
+            ),
+            (
+                Credential::Jwt(jwt.clone()),
+                jwt.as_str(),
+                "Jwt([redacted])",
+            ),
+            (
+                Credential::Session(SessionCredential {
+                    token: session.clone(),
+                    csrf: Some(csrf.clone()),
+                }),
+                session.as_str(),
+                "Session([redacted])",
+            ),
+        ];
+        for (credential, secret, shown) in cases {
+            let debug = format!("{credential:?} {credential:#?}");
+            assert!(
+                !debug.contains(secret),
+                "{shown}: the secret is in the Debug output"
+            );
+            assert!(
+                !debug.contains(&csrf),
+                "{shown}: the CSRF token is in the Debug output"
+            );
+            assert_eq!(format!("{credential:?}"), shown);
+        }
+        let s = SessionCredential {
+            token: session.clone(),
+            csrf: Some(csrf.clone()),
+        };
+        assert_eq!(format!("{s:?}"), "SessionCredential([redacted])");
     }
 }

@@ -17,7 +17,7 @@ plugins/                      Plugin runtime, adapters, dashboard, BI contracts
 tools/monorepo/                Migration provenance and structural checks
 ```
 
-Use Node 22 or newer and the pinned pnpm version:
+Use Node 24 (`.nvmrc`; the toolchain needs 24.11 or newer, design 79 D1775) and the pinned pnpm version. Published packages such as `@loams/client` keep Node 22 as their runtime floor, which CI tests in one cell:
 
 ```sh
 pnpm install --frozen-lockfile
@@ -58,7 +58,7 @@ Linux's normal desktop build includes the native browser and needs WebKitGTK 4.1
 
 ## Dependency graph and caching
 
-Nx discovers 49 projects, including existing package script targets. Use `pnpm nx graph` locally to inspect them. `pnpm affected --base=<base-revision> --head=HEAD` runs affected checks; CI supplies explicit refs and platform scheduling.
+Nx discovers the JS, mobile and native projects, including existing package script targets, and one project per crate of the root and `fabric/` Cargo workspaces (tag `cargo-crate`, from `tools/nx-cargo`; see [the Nx Cloud guide](guides/nx-cloud.md#rust)). Use `pnpm nx graph` locally to inspect them. `pnpm affected --base=<base-revision> --head=HEAD` runs affected checks; CI supplies explicit refs and platform scheduling.
 
 - TypeScript project/package dependencies retain their existing boundaries.
 - Plugins' composite compiler runs once through a shared aggregate target, avoiding concurrent writes from recursive `tsc -b` tasks.
@@ -66,15 +66,17 @@ Nx discovers 49 projects, including existing package script targets. Use `pnpm n
 - JS lock/config files and runtime versions participate in cache keys.
 - SDK conformance tests remain noncacheable because they produce required coverage reports outside their package directory.
 - Signing, installation, services, generation/drift, releases, and most native tasks are noncacheable.
-- No Nx Cloud account, paid cache service, or remote data upload is configured.
+- `nx.json` names the Nx Cloud workspace (`nxCloudId`) for the remote cache; CI connects only where [the Nx Cloud guide](guides/nx-cloud.md) says, and never for a release. Set `NX_NO_CLOUD=true` locally to run without it.
 
 Vite+ 1.0.0/Vitest 5.0.1 stay scoped to plugins, while the console retains ordinary Vite 8.3.1/Vitest 5.0.3. pnpm reports Vite peer-version warnings because the plugins' compatibility fork identifies as version 1.0.0; actual builds and tests pass. MSW's nonessential postinstall is explicitly disabled. Do not apply a global Vite override.
+
+> **Direction (owner, 2026-10-23, D1770):** Vite+ becomes the JavaScript toolchain workspace-wide. [Design 79](design/79-void-and-vite-plus.md) sets the mapping, approved by the owner on 2026-10-23 (D1772: one `vite-plus` catalog pin with `vite` aliased to `vite-plus-core`, `vp` in each package's targets, Nx kept as the orchestrator). Until VV1 lands, the rule above stands.
 
 ## Desktop fork cleanup and policy
 
 The shipping executable and internal packages are Loams Desktop-branded. Product presentation, application identity, service/data names, installer paths, and bot executable discovery are coordinated. Unused inherited mobile/client/text components and upstream release/deployment automation were omitted. Original repository files were not changed.
 
-Self-updating and upstream feed installation are disabled. Optional remote WorkOS/edge protocols remain internal feature dependencies, with an invalid default endpoint; they are **not** automatically replaced by Loams Connect/Authentik. No upstream cloud deployment is activated. Browser, terminals, sessions, dictation, and provider adapters remain because they are wired into functioning desktop features, not merely branding.
+Self-updating and upstream feed installation are disabled. Optional remote WorkOS/edge protocols remain internal feature dependencies, with an invalid default endpoint; they are **not** automatically replaced by Loams Connect or Loams' identity provider (Zitadel, design 76). No upstream cloud deployment is activated. Browser, terminals, sessions, dictation, and provider adapters remain because they are wired into functioning desktop features, not merely branding.
 
 Pinned GPUI git dependency URLs, required copyright attribution, synthetic protocol fixtures, and documented persisted-format compatibility tokens may still mention the upstream project. Removing those indiscriminately would break functionality or attribution. See [desktop policy](../apps/desktop/native/LOAMS.md) and [validation](../apps/desktop/VALIDATION.md).
 

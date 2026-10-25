@@ -106,7 +106,7 @@ Navigation control, which is the part that turns out to be **already solved** in
 ### Conclusion and why it is decisive
 
 A docked app needs two things at once: a store that survives the window closing, and a WebAuthn
-ceremony for the Authentik passkey. The throwaway check encoded exactly that conjunction:
+ceremony for the IdP's passkey. The throwaway check encoded exactly that conjunction:
 
 ```console
 $ node desktop/spikes/sidebar/webauthn-check.mjs
@@ -117,7 +117,7 @@ windows  webauthn=n/a            store=false     tier 3 impossible
 platforms clearing both bars: none
 ```
 
-Zero platforms. An ephemeral store means every launch starts at the Authentik login page, and on
+Zero platforms. An ephemeral store means every launch starts at the IdP's login page, and on
 Linux the passkey path does not exist at all, so "sign in once" — the property that makes an
 in-app browser worth having — cannot be delivered. Tier 3 is therefore off in SF1 on every OS
 (E1), and `SidebarBrowser` keeps its `sidebar-browser` cargo feature but off by default, with the
@@ -288,41 +288,45 @@ Every route below is under `/api/v1/workspaces/<slug>/`:
 
 ---
 
-## Decision 4 — Authentik's proxy outpost in the open-source edition
+## Decision 4 — the former IdP's proxy outpost in the open-source edition
+
+> **Superseded by [§76](../design/76-identity-and-authorization.md) D1600 (2026-10-21):** the IdP is
+> now Zitadel, which ships no proxy outpost (verify), so SF1's forward auth needs a separate OIDC
+> proxy in front of it. The findings below describe the former IdP and are kept as the spike's record.
 
 **Conclusion: the OSS edition ships the embedded outpost, and the proxy provider injects trusted
 headers by default; HTTP-Basic sending is an opt-in toggle we will not turn on.** No plan ruling
-needed; it confirms D447/D448 and Task 2's `forward_auth: authentik`.
+needed; it confirmed D447/D448 and Task 2's `forward_auth` flag.
 
 ### Question
 
-Task 0 asks which Authentik release's proxy outpost is in the open-source edition, and whether it
+Task 0 asks which release of the IdP's proxy outpost is in the open-source edition, and whether it
 injects basic auth or a trusted header.
 
 ### How it was investigated
 
-`docs/design/38-knative-authentik-gitops.md` for the pin (D447: **2026.8.3**, released 2026-09-17,
-unmodified, no licence key, MIT outside `authentik/enterprise/`; the 2025.10 release notes that
+Design §38 for the pin (D447: **2026.8.3**, released 2026-09-17,
+unmodified, no licence key, MIT outside its enterprise tree; the 2025.10 release notes that
 moved the embedded outpost off Redis). Then the upstream proxy-provider and header-authentication
-documentation, and `X-authentik-` search in `goauthentik/authentik`.
+documentation, and a search for the header prefix in the upstream repository.
 
 ### Findings
 
 - The proxy provider has three modes: **Proxy**, **Forward auth (single application)** and
   **Forward auth (domain level)**. Domain-level forward auth protects *multiple applications under
-  one parent domain* — which is exactly the plan's Ruling 1 shape, so one Authentik provider can
+  one parent domain* — which is exactly the plan's Ruling 1 shape, so one IdP provider can
   front `chat.`, `plane.` and `git.` together. Its documented limit is that it cannot enforce
   per-application authorisation rules, which is fine for SF1 because the per-object filtering is
   OpenFGA's job inside `loams-collab` (Task 3), not the edge's.
-- **Headers, set by default:** `X-authentik-username`, `-groups` (pipe-separated), `-entitlements`,
-  `-email`, `-name`, `-uid` (a hash), plus `X-authentik-meta-outpost` / `-provider` / `-app` /
-  `-version`. The example value for the meta-outpost header is literally
-  **`authentik Embedded Outpost`** — the OSS embedded outpost, answering Task 0's question.
+- **Headers, set by default:** the IdP-prefixed `-username`, `-groups` (pipe-separated),
+  `-entitlements`, `-email`, `-name`, `-uid` (a hash), plus `-meta-outpost` / `-provider` / `-app` /
+  `-version`. The example value for the meta-outpost header names the embedded outpost — the OSS
+  embedded outpost, answering Task 0's question.
 - **Basic auth is not injected by default.** "Send HTTP-Basic Authentication" is a separate toggle
   requiring username and password *attribute keys* on a user or group. We will leave it off: a
   static shared credential per app is exactly the "app secret outside the broker" shape the plan's
   Global Constraints forbid. The default trusted-header mode is also what `forward_auth` gives us.
-- `Intercept header authentication` is on by default: authentik takes the `Authorization` header,
+- `Intercept header authentication` is on by default: the outpost takes the `Authorization` header,
   and **removes it** before the request reaches the app when the credentials check out. Relevant to
   the "no token in the frame" gates — the outpost, not the edge, is responsible for not leaking an
   `Authorization` header downstream.
@@ -375,7 +379,7 @@ than fixed, because they belong to Task 1:
    `SANDBOX_FLAGS = 'allow-scripts'` with the comment *"Only these tokens; never
    `allow-same-origin`, `allow-top-navigation` or `allow-popups`."* Task 5's embed frame needs
    `allow-same-origin` (otherwise the app's session cookie never applies) and
-   `allow-top-navigation-by-user-activation` (the Authentik redirect). Task 5 must declare its own
+   `allow-top-navigation-by-user-activation` (the IdP redirect). Task 5 must declare its own
    allowlist in `web/plugins/embed`, and must not weaken `SANDBOX_FLAGS`, which is load-bearing for
    third-party plugin code. Recorded as E7.
 

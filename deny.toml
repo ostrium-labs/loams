@@ -23,6 +23,11 @@ allow = [
     # BSD Zero Clause (tslib, via echarts in the console). Owner, 2026-10-13
     # (SD1 ruling T2-6): allowed everywhere, for crates and npm alike.
     "0BSD",
+    # BlueOak Model License 1.0.0, a permissive OSI-approved licence (lru-cache and
+    # @isaacs/ttlcache, which @mastra/core needs for @loams/factory). Owner, 2026-10-24
+    # (FT1 ruling FT0-1-1 superseded; SD1 ruling T2-2 overridden for this licence only):
+    # allowed everywhere, for crates and npm alike.
+    "BlueOak-1.0.0",
 ]
 confidence-threshold = 0.9
 unused-allowed-license = "allow"
@@ -40,6 +45,15 @@ unused-allowed-license = "allow"
 crate = "stringmetrics"
 expression = "Apache-2.0"
 license-files = [{ path = "LICENSE", hash = 0x0fb72a18 }]
+
+# borrow-or-share (via fluent-uri -> referencing -> jsonschema 0.58, which
+# loams-agentd-marketplace's listing validator pulls in, MK1 Task 1) is MIT-0:
+# OSI-approved MIT without the attribution clause. fabric/deny.toml allows
+# MIT-0 for the same crate (CN1 Task 1); here it is admitted for this one crate
+# only, not added to the allow list.
+[[licenses.exceptions]]
+crate = "borrow-or-share"
+allow = ["MIT-0"]
 
 [bans]
 multiple-versions = "allow"
@@ -84,6 +98,12 @@ ignore = [
     # webpki-roots 1.x, which is at 1.0.10 (emSign removed) in this lock. Reached
     # through sqlx-core 0.8 and tokio-tungstenite 0.24; remove when they move to 1.x.
     { id = "RUSTSEC-2026-0381", reason = "webpki-roots 0.26.11 re-exports webpki-roots 1.0.10, which drops the distrusted emSign roots; the 0.26 shim carries no certificates" },
+    # ctutils < 0.4.4: Choice's const-fn mask generation may compile to a branch,
+    # and u128 comparisons branch on 32-bit targets. Reached through digest 0.11
+    # and phc. The fix, 0.4.4, and 0.4.5 were both published 2026-10-23, under the
+    # 14-day rule. Loams ships only 64-bit targets. Remove with the bump to
+    # ctutils >= 0.4.4 on or after 2026-11-06.
+    { id = "RUSTSEC-2026-0385", reason = "ctutils constant-time mask and u128 comparison branches: the fixed 0.4.4 is from 2026-10-23, under the 14-day rule; Loams ships only 64-bit targets; bump on or after 2026-11-06" },
 ]
 
 [sources]

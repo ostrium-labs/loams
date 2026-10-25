@@ -56,6 +56,18 @@ fn run_house(args: &HouseArgs) -> Result<(), HouseError> {
         for note in notes {
             eprintln!("loams-fabric house: {note}");
         }
+        match running.native_addrs() {
+            (None, None) => {}
+            (plain, tls) => eprintln!(
+                "loams-fabric house: ClickHouse native protocol on {}",
+                plain
+                    .map(|a| format!("tcp://{a}"))
+                    .into_iter()
+                    .chain(tls.map(|a| format!("tls://{a}")))
+                    .collect::<Vec<_>>()
+                    .join(" and ")
+            ),
+        }
         if let Some(admin) = running.admin_addr() {
             eprintln!("loams-fabric house: metrics on http://{admin}/metrics");
         }

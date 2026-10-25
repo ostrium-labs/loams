@@ -1,6 +1,6 @@
 [package]
 name = "loams-house"
-description = "The Loams House front's library: ClickHouse errors rendered code for code (FL2 Task 3), the supervisor of the chDB worker processes (HS1 Task 2), the ClickHouse HTTP interface (HS1 Task 3) and loams.house.v1 (HS1 Task 8). Links no libchdb."
+description = "The Loams House front's library: ClickHouse errors rendered code for code (FL2 Task 3), the supervisor of the chDB worker processes (HS1 Task 2), the ClickHouse HTTP interface (HS1 Task 3), the native protocol (HE0, R9.40) and loams.house.v1 (HS1 Task 8). Links no libchdb."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -61,6 +61,9 @@ bytes.workspace = true
 # `buffa`'s message field and enum types, and `futures`' `Stream` for the
 # server-streaming RPCs.
 loams-house-proto = { path = "../loams-house-proto" }
+# The ClickHouse native protocol's codec (HE0, R9.40): packets and blocks; the
+# server in `src/native/` runs each statement on the HTTP interface's path.
+loams-house-native = { path = "../loams-house-native" }
 connectrpc.workspace = true
 tower.workspace = true
 buffa = "0.9.2"

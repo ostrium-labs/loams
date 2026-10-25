@@ -706,7 +706,7 @@
       "upstreamPath": "packages/shared/src/git.ts",
       "commit": "6524a8d43795dc543f7cfb572388cdea3662ad48",
       "upstreamSha256": "08e7d48d4465a4c967af6c2bd90706568dff7dffe2d15b4a6b81619adb18c0b7",
-      "localSha256": "6c4ed01904633ae5a528cfc82a08937ce5b6ba08fea4be97c956cb60fa5780d0",
+      "localSha256": "57a937fb54690164a5fb651432defc9e65c878eddcb008abad3e1ca38bda201b",
       "verdict": "adapt",
       "group": "g",
       "note": "only the ref-name helpers the toolbar and actions use; the inventory's target is sui/git/shared/"
@@ -735,9 +735,10 @@
       "upstreamPath": "apps/web/src/lib/composerContextReferences.ts",
       "commit": "6524a8d43795dc543f7cfb572388cdea3662ad48",
       "upstreamSha256": "5f2a6aa11b1b911d7cdab5ea3738357adad45dd5c48969595498a9e68c74b152",
-      "localSha256": "32362ea7af80a5ef6d36c25a8772c5cd51bc7e8a5ecbf14df63130481291eb8d",
-      "verdict": "as-is",
-      "group": "c"
+      "localSha256": "f81464afa51d64699c022c8dca104cb848e3029f872285546aac7d187f80d6db",
+      "verdict": "adapt",
+      "group": "c",
+      "note": "the slug's dash trim made linear-time (CodeQL js/polynomial-redos)"
     },
     {
       "path": "src/composer/doc.ts",
@@ -807,9 +808,10 @@
       "upstreamPath": "packages/shared/src/composerInlineTokens.ts",
       "commit": "6524a8d43795dc543f7cfb572388cdea3662ad48",
       "upstreamSha256": "876081c52b707f6ca365df6f6fcaf6e725893f752bba5a0b08504e9b98ac56a5",
-      "localSha256": "c508a8a13698441aba0382d4567286dea3d983dc68fe0827edb1d6026ee569d2",
-      "verdict": "as-is",
-      "group": "c"
+      "localSha256": "331942cacaaed442751908e6689245aa0eb86f2bb2eb83cb92e3f4f5a2e83483",
+      "verdict": "adapt",
+      "group": "c",
+      "note": "scoped-package test made linear-time (CodeQL js/redos)"
     },
     {
       "path": "src/composer/shared/composerTrigger.ts",

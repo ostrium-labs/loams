@@ -28,11 +28,7 @@ async fn open(path: &Path, keyspace: &str) -> Store {
 }
 
 fn handle(store: &Store) -> &Handle {
-    match store {
-        Store::Embedded(h) => h,
-        #[allow(unreachable_patterns)]
-        _ => panic!("not an embedded store"),
-    }
+    store.as_embedded().expect("an embedded store")
 }
 
 fn wall_ms() -> u64 {

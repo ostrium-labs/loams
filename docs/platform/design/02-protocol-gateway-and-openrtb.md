@@ -449,7 +449,7 @@ Track GW, like tracks R, D and J, interleaves on the one-build machine: one carg
 | `operon-protocol`, `operon-openrtb`, `operon-openrtb-proto`, `operon-rtb-gateway`, negotiation | rating, the ledger, reconciliation against provider invoices (D190, D202) |
 | `operon-conformance` and the public corpus | private partner-quirk corpora from real traffic (Q-GW-4) |
 | `operon-runner`, `operon-meter` (the report emitter and test consumer) | hosted conformance-as-a-service |
-| showback dashboards over the hooks (proposed, Q362) | SLA, support, air-gapped installs |
+| showback dashboards over the hooks (proposed, Q362) | SLA, support, air-gapped installs (superseded by D1323: no services offering) |
 
 Keep conformance open: a closed suite makes support claims unverifiable. Apache-2.0 lets anyone, a hyperscaler included, host the code; the defences are the trademark, certification and being the reference implementation. FSL or BSL would block that but contradicts D11 and the open-standards position, so it is not proposed.
 

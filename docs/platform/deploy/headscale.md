@@ -10,8 +10,8 @@
 Owner runbook. Headscale (the open-source, self-hosted Tailscale control
 server) is the **private network** of the hosted Loams service: SSH and admin
 access with no public ports, k3s, TiKV and WeSQL traffic across sites, backups
-over private paths, the `loam-bench` CI runner, and Authentik's admin
-interface. Owner ruling 2026-10-02: "you can use Headscale if you want, for
+over private paths, the `loam-bench` CI runner, and Zitadel's admin
+console once IA1 deploys it ([`zitadel.md`](zitadel.md)). Owner ruling 2026-10-02: "you can use Headscale if you want, for
 added security and unified handling." The design is OSS
 [`docs/design/43-private-networking.md`](https://github.com/ostrium-labs/loams/blob/dev/docs/design/43-private-networking.md);
 this page is the operating procedure.
@@ -22,11 +22,9 @@ Everything is in [`deploy/tailnet/headscale/`](../../../deploy/tailnet/headscale
 |---|---|
 | `compose/` | Target A: Headscale + Caddy + encrypted nightly backup, on one host |
 | `kustomization.yaml`, `k8s/` | Target B: the same three containers in one k3s pod |
-| `config/config.yaml` | Headscale configuration (OIDC to Authentik, embedded DERP, MagicDNS) |
+| `config/config.yaml` | Headscale configuration (OIDC to Zitadel at `auth.loams.dev`, embedded DERP, MagicDNS) |
 | `policy/` | The seeded checker (`check.sh`) for the shared policy `../policy/policy.hujson` |
-| `authentik-tailnet/` | Authentik admin on the tailnet only: compose override, Cloudflare path rules |
 | `check-config.sh` | `headscale configtest` against `config/config.yaml` |
-| `../authentik/blueprints/loams-05-headscale.yaml` | The `headscale` OIDC client and the groups `loams-net-users`, `loams-net-ops` |
 
 ## 0. Facts (checked 2026-10-02)
 
@@ -45,12 +43,12 @@ Everything is in [`deploy/tailnet/headscale/`](../../../deploy/tailnet/headscale
   `headscale.loams.dev` is a **DNS-only** record (grey cloud) pointing at the
   host, and the host opens 80/tcp, 443/tcp and 3478/udp. `auth.loams.dev` and
   the site stay behind Cloudflare.
-- **OIDC groups cannot be used in policy rules.** Authentik groups gate who may
+- **OIDC groups cannot be used in policy rules.** IdP groups can gate who may
   sign in (`oidc.allowed_groups`), but `group:ops` in the policy is a list of
   emails kept in Git. Tags are owned by `group:ops`.
 - **A tagged pre-auth key fixes the node's tags; do not also pass
   `--advertise-tags`.** Checked 2026-10-02: `tailscale up --authkey <tagged key>
-  --advertise-tags=tag:authentik` is refused ("requested tags ... are invalid or not
+  --advertise-tags=<tag>` is refused ("requested tags ... are invalid or not
   permitted"); without the flag the node registers tagged. (Tailscale accepts both.)
 - **Tagged nodes do not expire.** Personal devices expire after 90 days
   (`node.expiry`); servers and CI do not. Retire servers with
@@ -74,8 +72,8 @@ Everything is in [`deploy/tailnet/headscale/`](../../../deploy/tailnet/headscale
 
 | Traffic | Network |
 |---|---|
-| `loams.dev`, `auth.loams.dev`, `console.loams.dev` (people, browsers, OIDC) | Cloudflare (Workers, Tunnel). Public |
-| SSH, `kubectl`, Authentik admin, k3s, TiKV, WeSQL, S3 backups, bench runner, BYOC agents to the control plane | The Headscale tailnet. Private |
+| `loams.dev` (with `/cloud`), `auth.loams.dev` (people, browsers, OIDC; `console.loams.dev` is retired, D1705) | Cloudflare (Workers, Tunnel). Public |
+| SSH, `kubectl`, Zitadel's admin console, k3s, TiKV, WeSQL, S3 backups, bench runner, BYOC agents to the control plane | The Headscale tailnet. Private |
 | Tailnet sign-in and coordination, DERP relay | `headscale.loams.dev`, DNS-only, public by necessity |
 
 ## 2. Prerequisites (owner actions)
@@ -83,42 +81,30 @@ Everything is in [`deploy/tailnet/headscale/`](../../../deploy/tailnet/headscale
 1. **A host** with a public IPv4 (and IPv6 if available), Docker Engine 25+ with
    the Compose plugin, **1 vCPU / 1 GB RAM / 10 GB disk** is plenty (the
    Headscale process is small; this is a coordinator, not a data path, except
-   for DERP relaying). It may be the same VM as Authentik (the compose files do
-   not collide: Authentik publishes only `127.0.0.1:9000` and uses an outbound
-   tunnel), but a separate small VM is better: a different failure domain for
-   the thing everything else depends on. Open exactly 80/tcp, 443/tcp, 3478/udp.
+   for DERP relaying). It may share the `auth.loams.dev` host, but a separate
+   small VM is better: a different failure domain for the thing everything else
+   depends on. Open exactly 80/tcp, 443/tcp, 3478/udp.
 2. **DNS:** `headscale.loams.dev` A (and AAAA) to the host, **DNS only**.
-3. **An object-store bucket** for backups (the Authentik bucket works; use the
+3. **An object-store bucket** for backups (a shared bucket works; use the
    prefix `headscale`).
 4. **A backup keypair**: `age-keygen -o headscale-backup.key` on a trusted
    machine. Put the public line (`age1...`) in `.env`. Keep the private file
    offline (password manager, safe). It is the only way to read a backup.
 5. **The first admin account** (section 5).
 
-## 3. The Authentik client
+## 3. The OIDC client
 
-The client and groups are the blueprint
-[`deploy/authentik/blueprints/loams-05-headscale.yaml`](../../../deploy/authentik/blueprints/loams-05-headscale.yaml).
-It needs `HEADSCALE_OIDC_CLIENT_SECRET` in the Authentik **worker's**
-environment (the same `!Env` mechanism as `LOAMS_CLOUD_CLIENT_SECRET`):
+Headscale signs people in at Zitadel: issuer `https://auth.loams.dev`, client
+`headscale`, redirect URI `https://headscale.loams.dev/oidc/callback`. The
+secret is `HEADSCALE_OIDC_CLIENT_SECRET` in Headscale's environment (compose
+`.env`, or the k3s Secret). Headscale does not support JWE (encrypted ID tokens).
 
-1. `openssl rand -hex 32` -> the secret.
-2. Compose (Target A): it is already passed through in
-   `deploy/authentik/compose/docker-compose.yml`; put the value in the Authentik
-   `.env` and `docker compose up -d worker`. k3s (Target B): add the key to the
-   `authentik-env` Secret (`kubectl -n authentik create secret generic
-   authentik-env --from-literal=HEADSCALE_OIDC_CLIENT_SECRET=... --dry-run=client
-   -o yaml | kubectl apply -f -`, merged with the existing keys), then restart
-   the worker; do not put it in the Helm values.
-3. After the worker applies the blueprint (within a minute): in the Authentik
-   admin UI check **Applications -> Loams Tailnet** exists and the groups
-   `loams-net-users` and `loams-net-ops` exist.
-4. Add yourself to **both** groups (operators are in both: the `groups` claim
-   lists direct memberships only).
-
-The issuer is `https://auth.loams.dev/application/o/headscale/`; the redirect
-URI is `https://headscale.loams.dev/oidc/callback`. Do not set an "Encryption
-Key" on the provider (Headscale does not support JWE).
+**Status: planned (IA1).** Zitadel is not deployed yet, and the `headscale`
+application is created by IA1's setup for `auth.loams.dev`
+([`zitadel.md`](zitadel.md)). Which claim gates sign-in
+(`oidc.allowed_groups` in `config/config.yaml`) is settled with that task. Until
+then, register devices with pre-auth keys (section 5, step 2): Headscale starts
+without the IdP (`only_start_if_oidc_is_available: false`).
 
 ## 4. Start
 
@@ -136,7 +122,7 @@ curl -sS https://headscale.loams.dev/health # {"status":"pass"}
 
 `policy.hujson` lists operators by email in `group:ops` and in its `tests`;
 replace the placeholder **in all of its occurrences** and keep the list equal to
-the members of Authentik's `loams-net-ops`.
+the operators the IdP lets sign in (section 3).
 
 ### Target B: k3s
 
@@ -156,9 +142,9 @@ on their own volume so a reschedule does not burn Let's Encrypt's limits.
 
 1. Open `https://headscale.loams.dev/` and sign in from a laptop (section 6):
    `tailscale up --login-server https://headscale.loams.dev`. The browser goes
-   to Authentik; the first login creates the Headscale user (named from your
-   Authentik username or email).
-2. If Authentik is not ready yet (bootstrapping), use the CLI path instead:
+   to `auth.loams.dev`; the first login creates the Headscale user (named from
+   your username or email at the IdP).
+2. Until Zitadel is deployed (IA1), or while bootstrapping, use the CLI path instead:
 
    ```sh
    docker compose exec headscale headscale users create bootstrap
@@ -186,7 +172,8 @@ tailscale up --login-server https://headscale.loams.dev
 
 macOS GUI: Option-click the menu icon, **Debug -> Custom Login Server -> Add
 Account**. Windows: the same command from a terminal (the instance also serves
-setup instructions at `/windows` and `/apple`). Sign in with Authentik. The
+setup instructions at `/windows` and `/apple`). Sign in at `auth.loams.dev`
+(or use a pre-auth key until it runs Zitadel). The
 device is owned by you, is untagged, expires in 90 days, and can reach what the
 policy grants `group:ops`.
 
@@ -198,27 +185,27 @@ Install the official Tailscale app. iOS: account icon -> **Log in** -> menu ->
 apps do not embed a tailnet client: they use the phone's VPN like any app
 (design 43 section 7).
 
-### A server (Authentik VM, Headscale host, TiKV, WeSQL, object store)
+### A server (the auth host, Headscale host, TiKV, WeSQL, object store)
 
 On the Headscale host, create a **tagged, single-use** key valid for an hour:
 
 ```sh
-hs preauthkeys create --tags tag:authentik --expiration 1h
+hs preauthkeys create --tags tag:zitadel --expiration 1h
 ```
 
 On the server (Tailscale from the distribution or `tailscale.com/install.sh`,
 BSD-3-Clause):
 
 ```sh
-tailscale up --login-server https://headscale.loams.dev --authkey <key> --hostname ak-1
+tailscale up --login-server https://headscale.loams.dev --authkey <key> --hostname auth-1
 # once SSH over the tailnet works from another device, close public SSH:
 sudo ufw allow in on tailscale0 to any port 22 proto tcp
 sudo ufw delete allow 22/tcp
 ```
 
-The node is named `ak-1.net.loams.dev`. Tags are fixed by the key; the policy
+The node is named `auth-1.net.loams.dev`. Tags are fixed by the key; the policy
 decides what the tag can reach. Use one tag per role (`tag:k3s`, `tag:tikv`,
-`tag:wesql`, `tag:objstore`, `tag:headscale`, `tag:authentik`).
+`tag:wesql`, `tag:objstore`, `tag:headscale`, `tag:zitadel`).
 
 ### k3s nodes
 
@@ -268,30 +255,13 @@ The management API (`/api`, used by automation with an API key) is now on
 `404` for `/api`, `/metrics`, `/debug` and `/swagger` there. Create API keys
 with `hs apikeys create --expiration 90d` and store them in the secret manager.
 
-## 8. Authentik admin on the tailnet
+## 8. Zitadel's admin console on the tailnet
 
-Do this after the Authentik host has joined as `tag:authentik` and an operator
-has confirmed access over the tailnet.
-
-1. Publish Authentik on the tailnet address: set `TAILNET_IP=$(tailscale ip -4)`
-   in the Authentik `.env` and start with the override
-   `authentik-tailnet/docker-compose.tailnet.yml` (see its header).
-2. Open `http://ak-1.net.loams.dev:9000/if/admin/` from an operator device.
-3. Only then deny the admin routes on the public name: add the path rule of
-   `authentik-tailnet/cloudflared-admin-deny.example.yml` to the tunnel
-   (dashboard: published application route with the path, service **HTTP
-   Status 404**, above the catch-all).
-4. **Verify (do not skip):** from a device **not** on the tailnet,
-   `/if/admin/`, `/if/user/` and `/api/v3/core/users/` return 404; sign-in to
-   `loams.dev`, invitation enrollment, password recovery, the device-code flow
-   and `/application/o/headscale/.well-known/openid-configuration` still work.
-   Revert the rule if a flow breaks and report it: the regular expression is
-   the one assumption here that depends on Authentik's route layout.
-
-Break-glass if the tailnet is down and the admin UI is needed: open an SSH
-session through the provider's console, `docker compose exec server ak
-create_recovery_key 10 akadmin` (a one-time recovery link), and use it on
-`http://127.0.0.1:9000` through an SSH tunnel. Do not remove the path rule.
+**Planned (IA1).** Zitadel's admin console and management APIs are never public
+(D1617, carrying D596's rule over): only the OIDC endpoints and the login UI are
+on `auth.loams.dev`. The auth host joins as `tag:zitadel`, and how the admin
+console is published on the tailnet comes with IA1's `auth.loams.dev` task
+([`zitadel.md`](zitadel.md)).
 
 ## 9. Policy changes
 
@@ -305,9 +275,8 @@ docker compose -f deploy/tailnet/headscale/compose/docker-compose.yml kill -s HU
 docker compose logs --tail 20 headscale     # confirm the result of policy processing
 ```
 
-Adding an operator: add them to Authentik's `loams-net-users` and
-`loams-net-ops`, add their email to `group:ops` **and** add a test line, check,
-merge, reload. Removing one: remove from both groups, remove the email, reload,
+Adding an operator: let them sign in at the IdP (section 3), add their email to `group:ops` **and** add a test line, check,
+merge, reload. Removing one: remove their sign-in at the IdP, remove the email, reload,
 then `hs nodes list` and `hs nodes delete` / `expire` their nodes.
 
 ## 10. Backups, restore and recovery
@@ -336,11 +305,11 @@ without re-registering. Move the DNS record to the new host's address.
 | Failure | Effect | Action |
 |---|---|---|
 | Headscale process or host down | **Existing connections keep working** (WireGuard is peer to peer and does not need the control server). New logins, new nodes, key renewals, policy and route changes, and new peer discovery fail; MagicDNS keeps resolving known names; relayed (DERP) connections drop with the host | Restart; restore from backup if the volume is lost. Target: back within one hour |
-| Authentik down | New OIDC sign-ins fail; existing nodes unaffected; pre-auth key registrations still work. Headscale starts without the IdP (`only_start_if_oidc_is_available: false`) and falls back to CLI registration | Fix Authentik; use `hs auth register --user <u> --auth-id <id>` for an urgent device |
+| IdP down | New OIDC sign-ins fail; existing nodes unaffected; pre-auth key registrations still work. Headscale starts without the IdP (`only_start_if_oidc_is_available: false`) and falls back to CLI registration | Fix the IdP; use `hs auth register --user <u> --auth-id <id>` for an urgent device |
 | DERP down (same host) | Peers that cannot reach each other directly lose connectivity; direct paths remain | Same as host down. A second DERP region on another provider is a documented follow-up (design 43 Q586) |
 | Bad policy pushed | Headscale keeps running on a failing test ("starting anyway"); rules may lock operators out | Revert the commit, `kill -s HUP`. Break-glass: provider console, edit the file on the host, reload |
 | Node key stolen (server) | Tagged nodes do not expire | `hs nodes delete -i <id>` and rotate whatever it held; investigate |
-| Operator laptop lost | Device stays valid until it expires | `hs nodes expire -i <id>`, remove from Authentik groups, reload policy |
+| Operator laptop lost | Device stays valid until it expires | `hs nodes expire -i <id>`, remove their sign-in at the IdP, reload policy |
 | Headscale host compromised | It is the control point: an attacker can add nodes and rewrite policy | Rotate: new host, new Noise key (all nodes re-register), new OIDC secret, review all nodes. This is why it holds no data and no other secrets |
 
 ## 11. Audit and monitoring
@@ -348,7 +317,7 @@ without re-registering. Move the DNS record to the new host's address.
 - Headscale has no audit-event stream. Evidence is: the container's JSON logs
   (registrations, expiries, policy reloads) shipped to the log pipeline; Git
   history of `deploy/tailnet/policy/policy.hujson` (every access change is a reviewed commit);
-  Authentik's event log for each sign-in; and a nightly inventory
+  the IdP's event log for each sign-in (Zitadel's events once it runs); and a nightly inventory
   (`hs nodes list -o json` compared with the previous day's, alert on a new tag
   or an untagged server).
 - Metrics: `http://127.0.0.1:9090/metrics` inside the container (not published);
@@ -376,17 +345,14 @@ CLI registration when the issuer is unreachable (log: "failed to set up OIDC
 provider, falling back to CLI based authentication"); the backup image built;
 `backup.sh now` and `restore.sh` round trip with an age key (the restored
 database held the user created before the backup, plus both private keys and
-the policy); `kubectl kustomize` for Target B; and on a real Authentik 2026.8.3
-the blueprint `loams-05-headscale.yaml` applied "successful" next to the other
-four, the OIDC discovery document for the application reports the issuer
-`https://auth.loams.dev/application/o/headscale/` with PKCE `S256` and the
-`groups` scope, and the policy binding to `loams-net-users` exists.
+the policy); and `kubectl kustomize` for Target B. The 2026-10-02 sign-in checks were
+against the identity provider of the time, which D1600 removed; they are redone
+against Zitadel with IA1.
 
 **Not verified here (owner or first deploy):** the Let's Encrypt certificate and
-real DNS; a full Headscale to Authentik sign-in (needs the public names); a
+real DNS; a full Headscale to Zitadel sign-in (needs Zitadel at `auth.loams.dev`); a
 client login on a phone, macOS and Windows (the platform steps come from
-Headscale's documentation); the Cloudflare path rule against a live tunnel
-(section 8, step 4); embedded DERP through Caddy with real clients; k3s on the
+Headscale's documentation); embedded DERP through Caddy with real clients; k3s on the
 tailnet interface; Target B end to end. Expect the log line "listening without
 TLS but ServerURL does not start with http://": Headscale is behind Caddy, and
 it is harmless.

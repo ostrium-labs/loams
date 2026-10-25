@@ -1,0 +1,6 @@
+# The oracle's triage (HE0 Task 6, design §75 §15): every mismatch between the
+# baseline (the pinned clickhouse-server 26.9) and another target.
+# Written by `loams-house-mine oracle`; edit `status`, `reason` and `issue` by
+# hand. `untriaged` fails the run; an `incompatibility` needs a `reason`.
+
+mismatch = []

@@ -2,7 +2,7 @@
 #
 # Secrets are not in this file. Headscale reads environment overrides named
 # HEADSCALE_<SECTION>_<KEY>; compose sets these from .env:
-#   HEADSCALE_OIDC_CLIENT_SECRET   the `headscale` client secret from Authentik
+#   HEADSCALE_OIDC_CLIENT_SECRET   the `headscale` client secret from Zitadel
 #   HEADSCALE_DERP_SERVER_IPV4     the host's public IPv4 (embedded DERP)
 #   HEADSCALE_DERP_SERVER_IPV6     the host's public IPv6, if any
 #
@@ -50,7 +50,7 @@ derp:
 disable_check_updates: true
 
 node:
-  # Personal devices sign in again through Authentik every 90 days. Tagged
+  # Personal devices sign in again through Zitadel every 90 days. Tagged
   # nodes are exempt from expiry by Headscale; retire them with
   # `headscale nodes delete`. CI nodes are ephemeral (30 minutes idle).
   expiry: 90d
@@ -99,20 +99,23 @@ logtail:
 taildrop:
   enabled: false
 
-# Authentik (open-source edition) is the identity provider. The client is
-# created by deploy/authentik/blueprints/loams-05-headscale.yaml.
+# Zitadel at auth.loams.dev is the identity provider (design 76, D1600). The
+# `headscale` application is created by the auth.loams.dev bundle (IA1).
 oidc:
-  # The control plane must not depend on the IdP to start: with Authentik down,
+  # The control plane must not depend on the IdP to start: with Zitadel down,
   # new OIDC sign-ins fail, but pre-auth key registrations and every existing
   # session keep working (design 43 section 8).
   only_start_if_oidc_is_available: false
-  issuer: "https://auth.loams.dev/application/o/headscale/"
+  issuer: "https://auth.loams.dev"
   client_id: "headscale"
   # client_secret: HEADSCALE_OIDC_CLIENT_SECRET
   scope: ["openid", "profile", "email", "groups"]
   email_verified_required: true
-  # Only members of this Authentik group can sign in. Headscale cannot use
-  # groups in the policy itself (docs/ref/oidc.md, "Limitations").
+  # Only members of this group can sign in. Zitadel asserts project roles
+  # rather than a `groups` claim; the auth.loams.dev bundle maps the
+  # `loams-net-users` role into `groups` for this application. Without that
+  # claim nobody can sign in through OIDC (deny by default). Headscale cannot
+  # use groups in the policy itself (docs/ref/oidc.md, "Limitations").
   allowed_groups:
     - "loams-net-users"
   use_expiry_from_token: false
