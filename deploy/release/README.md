@@ -4,8 +4,8 @@ Everything in Loams runs on your machine or on VMs you own, the console
 included: from 0.1.2 the engine serves the console that ships in its image at
 `https://loams.<tailnet>.ts.net/ui/`, next to its API, so the console is
 same-origin with your engine and reachable only on your tailnet. Loams Desktop
-carries the same console and connects to the same URL (in 0.1.1 the console is
-Loams Desktop; `/ui/` arrives in 0.1.2). Ostrium hosts nothing you need:
+carries the same console and connects to the same URL (the 0.1.1 images do
+not serve `/ui/`). Ostrium hosts nothing you need:
 `auth.loams.dev` for `oidc` mode is planned and does not answer yet, so use an
 issuer of your own. The hosted console at console.loams.dev is
 retired (design 78); to try Loams without running anything, see
@@ -47,7 +47,7 @@ healthcheck.
 ```sh
 deploy/release/build.sh loams                        # both platforms, local manifest list
 deploy/release/build.sh --platforms linux/amd64 loams
-deploy/release/build.sh --version 0.1.1 --push   # CI on a tag
+deploy/release/build.sh --version 0.1.2 --push   # CI on a tag
 ```
 
 ## On this machine
@@ -270,8 +270,8 @@ From 0.1.0-preview.2, `loams upgrade` upgrades this stack in place, one release 
 time, with a snapshot first:
 
 ```sh
-loams upgrade check --to 0.1.1  # what it will do and what would stop it
-loams upgrade --to 0.1.1        # snapshot, migrate, restart, verify
+loams upgrade check --to 0.1.2  # what it will do and what would stop it
+loams upgrade --to 0.1.2        # snapshot, migrate, restart, verify
 loams upgrade rollback          # back to the snapshot
 ```
 
@@ -323,9 +323,9 @@ so pick them on the first install. `--services` starts only the services
 named. The VM needs SSH and outbound internet only.
 
 ```sh
-deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.1 --check  # loams upgrade check
-deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.1          # loams upgrade, on the VM
-deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.1 --rollback
+deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.2 --check  # loams upgrade check
+deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.2          # loams upgrade, on the VM
+deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.2 --rollback
 ```
 
 `upgrade.sh` fetches the target release's `loams` CLI on the VM (its Linux
@@ -353,7 +353,7 @@ identity, bucket and secrets in one go, use `deploy/byoc/<cloud>/` (cloud-init)
 or `deploy/tofu/` (OpenTofu modules). Status: tested against local mocks of the
 secret stores; not yet run on a real cloud account.
 
-## Known gaps in 0.1.1
+## Known gaps in 0.1.2
 
 - With `LOAMS_HOUSE_ENDPOINT` empty the engine does not reach the House, so
   `loams.house.v1` answers `house_not_configured`; use the House's own tailnet

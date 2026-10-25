@@ -27,7 +27,7 @@ generator inputs stay outside the workspace, next to `proto/`.
 npm i @loams/client        # and @loams/live for Live's stubs
 ```
 
-`0.1.1` tracks Loams 0.1.1; in 0.x the API may change between minor versions.
+`0.1.2` tracks Loams 0.1.2; in 0.x the API may change between minor versions.
 
 ## Using it
 
