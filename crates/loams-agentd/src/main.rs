@@ -463,6 +463,7 @@ fn harness_from_env() -> loams_agentd_sessions::HarnessId {
         Ok("hermes") => loams_agentd_sessions::HarnessId::Hermes,
         Ok("pi") => loams_agentd_sessions::HarnessId::Pi,
         Ok("antigravity") => loams_agentd_sessions::HarnessId::Antigravity,
+        Ok("goose") => loams_agentd_sessions::HarnessId::Goose,
         _ => loams_agentd_sessions::HarnessId::ClaudeCode,
     }
 }

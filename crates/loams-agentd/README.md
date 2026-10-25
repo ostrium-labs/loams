@@ -2,7 +2,7 @@
 
 `loams-agentd` is Loams Desktop's per-user agent daemon. It is headless (no GUI crate on any target, D782) and runs:
 - the sessions engine;
-- the agent harnesses: Claude Code, Codex, opencode, Pi, and the ACP agents Devin, Grok, Hermes, Antigravity and Loams Bot;
+- the agent harnesses: Claude Code, Codex, opencode, Pi, and the ACP agents Devin, Grok, Hermes, Antigravity, Goose (a pinned build in a private environment, D1809) and Loams Bot;
 - local preview routing;
 - the MCP shim that the engine injects into every harness run.
 
