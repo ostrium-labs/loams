@@ -207,27 +207,27 @@ relative-path = "=2.0.2"
 regex = "1"
 reqwest = { version = "0.13", default-features = false, features = ["json"] }
 # Resonate, embedded by loams-durable (D1, D140): the fork ostrium-labs/resonate,
-# branch loam/0.10.1 = upstream 28dfd01 + PR 0c (#1164), the gcp-idtoken
-# feature, PR 0a (#1162), PR 1 (#1163), the SDK's reqwest defaults as a
-# feature and resonate-auth on jsonwebtoken 10.3 (31ffb201; 0001_initial.sql
-# unchanged from e3606698). Pinned by rev only; a bump compares each
-# 0001_initial.sql with the pinned one and says in its PR when existing
-# durable stores must be dropped (D1 plan X11). Never add resonate-server-scylladb or the NATS packages
-# (BUSL-1.1 lineage).
-resonate-base = { git = "https://github.com/ostrium-labs/resonate", rev = "31ffb2011b324c187f1d324b83feec2e16787e74" }
-resonate-server-blob = { git = "https://github.com/ostrium-labs/resonate", rev = "31ffb2011b324c187f1d324b83feec2e16787e74" }
-resonate-core = { git = "https://github.com/ostrium-labs/resonate", rev = "31ffb2011b324c187f1d324b83feec2e16787e74" }
-resonate-gateway-http = { git = "https://github.com/ostrium-labs/resonate", rev = "31ffb2011b324c187f1d324b83feec2e16787e74" }
-resonate-plugin = { git = "https://github.com/ostrium-labs/resonate", rev = "31ffb2011b324c187f1d324b83feec2e16787e74" }
+# branch loams/main = upstream main plus the carries listed in its CARRIES.md
+# (#1164, #1167, #1163, #1168, resonate-auth on jsonwebtoken 10.3) and the
+# fork-work items merged so far (design 74 §7.4; FW1 is the TiKV store that
+# durable-tikv runs on, `resonate-server-tikv`). Pinned by rev only; a bump
+# compares each 0001_initial.sql with the pinned one and says in its PR when
+# existing durable stores must be dropped (D1 plan X11). Never add
+# resonate-server-scylladb or the NATS packages (BUSL-1.1 lineage).
+resonate-base = { git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90" }
+resonate-server-blob = { git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90" }
+resonate-core = { git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90" }
+resonate-gateway-http = { git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90" }
+resonate-plugin = { git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90" }
 # The package is resonate-sdk (lib resonate_sdk); `resonate` in that repository
 # is the server binary. Its reqwest defaults (TLS, charset, system proxy) are
 # off: Loams talks to the server in process.
-resonate-sdk = { git = "https://github.com/ostrium-labs/resonate", rev = "31ffb2011b324c187f1d324b83feec2e16787e74", default-features = false }
-resonate-server-mysql = { git = "https://github.com/ostrium-labs/resonate", rev = "31ffb2011b324c187f1d324b83feec2e16787e74" }
-resonate-server-sqlite = { git = "https://github.com/ostrium-labs/resonate", rev = "31ffb2011b324c187f1d324b83feec2e16787e74" }
-resonate-transport-http-poll = { git = "https://github.com/ostrium-labs/resonate", rev = "31ffb2011b324c187f1d324b83feec2e16787e74" }
+resonate-sdk = { git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90", default-features = false }
+resonate-server-mysql = { git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90" }
+resonate-server-sqlite = { git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90" }
+resonate-transport-http-poll = { git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90" }
 # Without gcp-idtoken: no google-cloud-auth, and auth.mode = "gcp" is refused.
-resonate-transport-http-push = { git = "https://github.com/ostrium-labs/resonate", rev = "31ffb2011b324c187f1d324b83feec2e16787e74", default-features = false }
+resonate-transport-http-push = { git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90", default-features = false }
 # pg-control's Ed25519 signing key (PG2 Task 8). 0.17.14 (2025-03-11) is
 # already in the lockfile (rustls, jsonwebtoken).
 ring = "=0.17.14"
