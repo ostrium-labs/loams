@@ -2243,6 +2243,22 @@ impl RpcService for EngineRpc {
                 let p = params_of::<calls::GetApproval>(params)?;
                 reply::<calls::GetApproval, _>(&self.get_typed_approval(p)?)
             }
+            methods::GET_CHECKS => {
+                Box::pin(async move {
+                    let p = params_of::<calls::GetChecks>(params)?;
+                    let checks = self.get_checks(p).await?;
+                    reply::<calls::GetChecks, _>(&checks)
+                })
+                .await
+            }
+            methods::GET_CHECK_LOG => {
+                Box::pin(async move {
+                    let p = params_of::<calls::GetCheckLog>(params)?;
+                    let log = self.get_check_log(p).await?;
+                    reply::<calls::GetCheckLog, _>(&log)
+                })
+                .await
+            }
             methods::MERGE_CHANGE_REQUEST => {
                 Box::pin(async move {
                     let p = params_of::<calls::MergeChangeRequest>(params)?;

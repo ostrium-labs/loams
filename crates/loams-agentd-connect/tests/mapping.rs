@@ -295,6 +295,68 @@ const NOT_MAPPED: &[(&str, &str)] = &[
     ),
     ("WatchPreviewsParams", "one string"),
     ("WriteTerminalParams", "two strings"),
+    // The factory loop's `mcp`-role methods are ndjson only (FT0-4-1), not on
+    // the Connect surface.
+    (
+        "CheckLogReply",
+        "an `mcp`-role method's type, ndjson only (FT0-4-1)",
+    ),
+    (
+        "ChecksReply",
+        "an `mcp`-role method's type, ndjson only (FT0-4-1)",
+    ),
+    (
+        "CreateRunWorktreeParams",
+        "an `mcp`-role method's type, ndjson only (FT0-4-1)",
+    ),
+    (
+        "GetApprovalParams",
+        "an `mcp`-role method's type, ndjson only (FT0-4-1)",
+    ),
+    (
+        "GetCheckLogParams",
+        "an `mcp`-role method's type, ndjson only (FT0-4-1)",
+    ),
+    (
+        "GetChecksParams",
+        "an `mcp`-role method's type, ndjson only (FT0-4-1)",
+    ),
+    (
+        "GetThreadDiffParams",
+        "an `mcp`-role method's type, ndjson only (FT0-4-1)",
+    ),
+    (
+        "MergeChangeRequestParams",
+        "an `mcp`-role method's type, ndjson only (FT0-4-1)",
+    ),
+    (
+        "MergeChangeRequestReply",
+        "an `mcp`-role method's type, ndjson only (FT0-4-1)",
+    ),
+    (
+        "OpenChangeRequestParams",
+        "an `mcp`-role method's type, ndjson only (FT0-4-1)",
+    ),
+    (
+        "OpenChangeRequestReply",
+        "an `mcp`-role method's type, ndjson only (FT0-4-1)",
+    ),
+    (
+        "PostReviewCommentParams",
+        "an `mcp`-role method's type, ndjson only (FT0-4-1)",
+    ),
+    (
+        "RequestApprovalParams",
+        "an `mcp`-role method's type, ndjson only (FT0-4-1)",
+    ),
+    (
+        "TypedApproval",
+        "an `mcp`-role method's type, ndjson only (FT0-4-1)",
+    ),
+    (
+        "Worktree",
+        "an `mcp`-role method's type, ndjson only (FT0-4-1)",
+    ),
 ];
 
 fn fixtures() -> Vec<(String, String, Value)> {

@@ -18,6 +18,7 @@ pub mod change_request_create;
 pub mod change_requests;
 mod chat_persistence;
 pub mod checkpoints;
+pub mod checks;
 pub mod content_search;
 pub mod diff_sync;
 pub mod doc_host;
