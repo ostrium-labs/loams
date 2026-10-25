@@ -24,9 +24,24 @@ cargo_package(
     },
     tests = [
         {
+            "name": "install",
+            "crate": "install",
+            "root": "tests/install.rs",
+        },
+        {
             "name": "market",
             "crate": "market",
             "root": "tests/market.rs",
+        },
+        {
+            "name": "plan",
+            "crate": "plan",
+            "root": "tests/plan.rs",
+        },
+        {
+            "name": "provenance",
+            "crate": "provenance",
+            "root": "tests/provenance.rs",
         },
         {
             "name": "schema",
@@ -41,6 +56,7 @@ cargo_package(
     ],
     deps = [
         "//third-party/rust:async-trait",
+        "//third-party/rust:base64-0_23",
         "//third-party/rust:hex",
         "//third-party/rust:jsonschema",
         "//third-party/rust:semver",
