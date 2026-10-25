@@ -9434,6 +9434,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-temporal-statemachine"
+version = "0.1.1"
+dependencies = [
+ "loams-temporal-history",
+ "loams-temporal-proto",
+ "loams-temporal-testkit",
+ "proptest",
+ "prost-types",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "loams-temporal-store"
 version = "0.1.1"
 dependencies = [

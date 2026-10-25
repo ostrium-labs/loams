@@ -128,6 +128,8 @@ message ActivityInfo {
   // scheduled event's time).
   google.protobuf.Timestamp attempt_scheduled_time = 21;
   .temporal.api.failure.v1.Failure last_failure = 22;
+  // The build ID stamp of the poll that started the current attempt.
+  .temporal.api.common.v1.WorkerVersionStamp started_worker_version = 23;
 }
 
 message TimerInfo {
