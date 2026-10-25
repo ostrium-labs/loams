@@ -83,9 +83,10 @@ CI's **Buck2: generated files** job (required) runs `scripts/buck/gen.py --check
 generated file is stale. Its log says so, and the job uploads the fix as the `buck-gen.patch`
 artifact: download it and `git apply buck-gen.patch` if you would rather not run `gen.py` locally.
 
-A new dependency with a build script needs a reindeer fixup in
-`third-party/rust/fixups/<crate>/fixups.toml`; `gen.py` prints reindeer's warning when one is
-missing. Most need only the default (run `build.rs` as Cargo does):
+A dependency with a build script needs a reindeer fixup in
+`third-party/rust/fixups/<crate>/fixups.toml`. When a new one appears, `gen.py` writes the default
+(run `build.rs` as Cargo does, keep what it links) and says so; that covers almost every crate,
+including those that compile C with the `cc` crate. Edit it only if the crate then fails to build:
 
 ```toml
 [buildscript.run]

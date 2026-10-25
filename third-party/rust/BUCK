@@ -2744,11 +2744,13 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_MINOR": "2",
         "CARGO_PKG_VERSION_PATCH": "6",
         "CARGO_PKG_VERSION_PRE": "",
+        "OUT_DIR": "$(location :async-dropper-simple-0.2-build-script-run[out_dir])",
     },
     features = [
         "default",
         "tokio",
     ],
+    rustc_flags = ["@$(location :async-dropper-simple-0.2-build-script-run[rustc_flags])"],
     visibility = [],
     deps = [
         ":async-scoped-0.9",
@@ -2756,6 +2758,62 @@ cargo.rust_library(
         ":futures-0.3",
         ":tokio-1",
     ],
+)
+
+cargo.rust_binary(
+    name = "async-dropper-simple-0.2-build-script-build",
+    srcs = [":async-dropper-simple-0.2.6.crate"],
+    crate = "build_script_build",
+    crate_root = "async-dropper-simple-0.2.6.crate/build.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "build-script-build",
+        "CARGO_CRATE_NAME": "build_script_build",
+        "CARGO_MANIFEST_DIR": "async-dropper-simple-0.2.6.crate",
+        "CARGO_PKG_AUTHORS": "vados <vados@vadosware.io>",
+        "CARGO_PKG_DESCRIPTION": "A simple struct-wrapper (i.e. AsyncDropper<T>) based implementation of AsyncDrop\n",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "async-dropper-simple",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/t3hmrman/async-dropper",
+        "CARGO_PKG_RUST_VERSION": "1.70",
+        "CARGO_PKG_VERSION": "0.2.6",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "2",
+        "CARGO_PKG_VERSION_PATCH": "6",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "default",
+        "tokio",
+    ],
+    visibility = [],
+    deps = [":rustc_version-0.4"],
+)
+
+buildscript_run(
+    name = "async-dropper-simple-0.2-build-script-run",
+    package_name = "async-dropper-simple",
+    buildscript_rule = ":async-dropper-simple-0.2-build-script-build",
+    env = {
+        "CARGO_PKG_AUTHORS": "vados <vados@vadosware.io>",
+        "CARGO_PKG_DESCRIPTION": "A simple struct-wrapper (i.e. AsyncDropper<T>) based implementation of AsyncDrop\n",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/t3hmrman/async-dropper",
+        "CARGO_PKG_RUST_VERSION": "1.70",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "2",
+        "CARGO_PKG_VERSION_PATCH": "6",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "default",
+        "tokio",
+    ],
+    rustc_link_lib = True,
+    rustc_link_search = True,
+    version = "0.2.6",
 )
 
 http_archive(
@@ -25388,11 +25446,13 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_MINOR": "58",
         "CARGO_PKG_VERSION_PATCH": "6",
         "CARGO_PKG_VERSION_PRE": "",
+        "OUT_DIR": "$(location :jsonschema-value-0.58-build-script-run[out_dir])",
     },
     features = [
         "default",
         "serde_json",
     ],
+    rustc_flags = ["@$(location :jsonschema-value-0.58-build-script-run[rustc_flags])"],
     visibility = [],
     deps = [
         ":ahash-0.8",
@@ -25403,6 +25463,61 @@ cargo.rust_library(
         ":serde_json-1",
         ":zmij-1",
     ],
+)
+
+cargo.rust_binary(
+    name = "jsonschema-value-0.58-build-script-build",
+    srcs = [":jsonschema-value-0.58.6.crate"],
+    crate = "build_script_build",
+    crate_root = "jsonschema-value-0.58.6.crate/build.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "build-script-build",
+        "CARGO_CRATE_NAME": "build_script_build",
+        "CARGO_MANIFEST_DIR": "jsonschema-value-0.58.6.crate",
+        "CARGO_PKG_AUTHORS": "Dmitry Dygalo <dmitry@dygalo.dev>",
+        "CARGO_PKG_DESCRIPTION": "JSON value representations and semantics shared by the jsonschema validator and its bindings",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "jsonschema-value",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/Stranger6667/jsonschema",
+        "CARGO_PKG_RUST_VERSION": "1.85.0",
+        "CARGO_PKG_VERSION": "0.58.6",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "58",
+        "CARGO_PKG_VERSION_PATCH": "6",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "default",
+        "serde_json",
+    ],
+    visibility = [],
+)
+
+buildscript_run(
+    name = "jsonschema-value-0.58-build-script-run",
+    package_name = "jsonschema-value",
+    buildscript_rule = ":jsonschema-value-0.58-build-script-build",
+    env = {
+        "CARGO_PKG_AUTHORS": "Dmitry Dygalo <dmitry@dygalo.dev>",
+        "CARGO_PKG_DESCRIPTION": "JSON value representations and semantics shared by the jsonschema validator and its bindings",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/Stranger6667/jsonschema",
+        "CARGO_PKG_RUST_VERSION": "1.85.0",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "58",
+        "CARGO_PKG_VERSION_PATCH": "6",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "default",
+        "serde_json",
+    ],
+    rustc_link_lib = True,
+    rustc_link_search = True,
+    version = "0.58.6",
 )
 
 cargo_alias(
@@ -38640,6 +38755,7 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_MINOR": "11",
         "CARGO_PKG_VERSION_PATCH": "12",
         "CARGO_PKG_VERSION_PRE": "",
+        "OUT_DIR": "$(location :quinn-0.11-build-script-run[out_dir])",
     },
     features = [
         "aws-lc-rs",
@@ -38656,6 +38772,7 @@ cargo.rust_library(
         "proto": ":quinn-proto-0.11",
         "udp": ":quinn-udp-0.5",
     },
+    rustc_flags = ["@$(location :quinn-0.11-build-script-run[rustc_flags])"],
     visibility = [],
     deps = [
         ":bytes-1",
@@ -38667,6 +38784,76 @@ cargo.rust_library(
         ":tokio-1",
         ":tracing-0.1",
     ],
+)
+
+cargo.rust_binary(
+    name = "quinn-0.11-build-script-build",
+    srcs = [":quinn-0.11.12.crate"],
+    crate = "build_script_build",
+    crate_root = "quinn-0.11.12.crate/build.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "build-script-build",
+        "CARGO_CRATE_NAME": "build_script_build",
+        "CARGO_MANIFEST_DIR": "quinn-0.11.12.crate",
+        "CARGO_PKG_AUTHORS": "",
+        "CARGO_PKG_DESCRIPTION": "Versatile QUIC transport protocol implementation",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "quinn",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/quinn-rs/quinn",
+        "CARGO_PKG_RUST_VERSION": "1.85",
+        "CARGO_PKG_VERSION": "0.11.12",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "11",
+        "CARGO_PKG_VERSION_PATCH": "12",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "aws-lc-rs",
+        "bloom",
+        "default",
+        "log",
+        "platform-verifier",
+        "ring",
+        "runtime-tokio",
+        "rustls-aws-lc-rs",
+        "rustls-ring",
+    ],
+    visibility = [],
+    deps = [":cfg_aliases-0.2"],
+)
+
+buildscript_run(
+    name = "quinn-0.11-build-script-run",
+    package_name = "quinn",
+    buildscript_rule = ":quinn-0.11-build-script-build",
+    env = {
+        "CARGO_PKG_AUTHORS": "",
+        "CARGO_PKG_DESCRIPTION": "Versatile QUIC transport protocol implementation",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/quinn-rs/quinn",
+        "CARGO_PKG_RUST_VERSION": "1.85",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "11",
+        "CARGO_PKG_VERSION_PATCH": "12",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "aws-lc-rs",
+        "bloom",
+        "default",
+        "log",
+        "platform-verifier",
+        "ring",
+        "runtime-tokio",
+        "rustls-aws-lc-rs",
+        "rustls-ring",
+    ],
+    rustc_link_lib = True,
+    rustc_link_search = True,
+    version = "0.11.12",
 )
 
 http_archive(
@@ -38758,17 +38945,75 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_MINOR": "5",
         "CARGO_PKG_VERSION_PATCH": "15",
         "CARGO_PKG_VERSION_PRE": "",
+        "OUT_DIR": "$(location :quinn-udp-0.5-build-script-run[out_dir])",
     },
     features = [
         "log",
         "tracing",
     ],
+    rustc_flags = ["@$(location :quinn-udp-0.5-build-script-run[rustc_flags])"],
     visibility = [],
     deps = [
         ":libc-0.2",
         ":socket2-0.6",
         ":tracing-0.1",
     ],
+)
+
+cargo.rust_binary(
+    name = "quinn-udp-0.5-build-script-build",
+    srcs = [":quinn-udp-0.5.15.crate"],
+    crate = "build_script_build",
+    crate_root = "quinn-udp-0.5.15.crate/build.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "build-script-build",
+        "CARGO_CRATE_NAME": "build_script_build",
+        "CARGO_MANIFEST_DIR": "quinn-udp-0.5.15.crate",
+        "CARGO_PKG_AUTHORS": "",
+        "CARGO_PKG_DESCRIPTION": "UDP sockets with ECN information for the QUIC transport protocol",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "quinn-udp",
+        "CARGO_PKG_README": "",
+        "CARGO_PKG_REPOSITORY": "https://github.com/quinn-rs/quinn",
+        "CARGO_PKG_RUST_VERSION": "1.85",
+        "CARGO_PKG_VERSION": "0.5.15",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "5",
+        "CARGO_PKG_VERSION_PATCH": "15",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "log",
+        "tracing",
+    ],
+    visibility = [],
+    deps = [":cfg_aliases-0.2"],
+)
+
+buildscript_run(
+    name = "quinn-udp-0.5-build-script-run",
+    package_name = "quinn-udp",
+    buildscript_rule = ":quinn-udp-0.5-build-script-build",
+    env = {
+        "CARGO_PKG_AUTHORS": "",
+        "CARGO_PKG_DESCRIPTION": "UDP sockets with ECN information for the QUIC transport protocol",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_README": "",
+        "CARGO_PKG_REPOSITORY": "https://github.com/quinn-rs/quinn",
+        "CARGO_PKG_RUST_VERSION": "1.85",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "5",
+        "CARGO_PKG_VERSION_PATCH": "15",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "log",
+        "tracing",
+    ],
+    rustc_link_lib = True,
+    rustc_link_search = True,
+    version = "0.5.15",
 )
 
 http_archive(
@@ -40091,9 +40336,58 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_MINOR": "0",
         "CARGO_PKG_VERSION_PATCH": "27",
         "CARGO_PKG_VERSION_PRE": "",
+        "OUT_DIR": "$(location :ref-cast-1-build-script-run[out_dir])",
     },
+    rustc_flags = ["@$(location :ref-cast-1-build-script-run[rustc_flags])"],
     visibility = [],
     deps = [":ref-cast-impl-1"],
+)
+
+cargo.rust_binary(
+    name = "ref-cast-1-build-script-build",
+    srcs = [":ref-cast-1.0.27.crate"],
+    crate = "build_script_build",
+    crate_root = "ref-cast-1.0.27.crate/build.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "build-script-build",
+        "CARGO_CRATE_NAME": "build_script_build",
+        "CARGO_MANIFEST_DIR": "ref-cast-1.0.27.crate",
+        "CARGO_PKG_AUTHORS": "David Tolnay <dtolnay@gmail.com>",
+        "CARGO_PKG_DESCRIPTION": "Safely cast &T to &U where the struct U contains a single field of type T.",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "ref-cast",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/dtolnay/ref-cast",
+        "CARGO_PKG_RUST_VERSION": "1.71",
+        "CARGO_PKG_VERSION": "1.0.27",
+        "CARGO_PKG_VERSION_MAJOR": "1",
+        "CARGO_PKG_VERSION_MINOR": "0",
+        "CARGO_PKG_VERSION_PATCH": "27",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
+)
+
+buildscript_run(
+    name = "ref-cast-1-build-script-run",
+    package_name = "ref-cast",
+    buildscript_rule = ":ref-cast-1-build-script-build",
+    env = {
+        "CARGO_PKG_AUTHORS": "David Tolnay <dtolnay@gmail.com>",
+        "CARGO_PKG_DESCRIPTION": "Safely cast &T to &U where the struct U contains a single field of type T.",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/dtolnay/ref-cast",
+        "CARGO_PKG_RUST_VERSION": "1.71",
+        "CARGO_PKG_VERSION_MAJOR": "1",
+        "CARGO_PKG_VERSION_MINOR": "0",
+        "CARGO_PKG_VERSION_PATCH": "27",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    rustc_link_lib = True,
+    rustc_link_search = True,
+    version = "1.0.27",
 )
 
 http_archive(
@@ -53365,8 +53659,57 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_MINOR": "1",
         "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
+        "OUT_DIR": "$(location :unicode-general-category-1-build-script-run[out_dir])",
+    },
+    rustc_flags = ["@$(location :unicode-general-category-1-build-script-run[rustc_flags])"],
+    visibility = [],
+)
+
+cargo.rust_binary(
+    name = "unicode-general-category-1-build-script-build",
+    srcs = [":unicode-general-category-1.1.0.crate"],
+    crate = "build_script_build",
+    crate_root = "unicode-general-category-1.1.0.crate/build.rs",
+    edition = "2018",
+    env = {
+        "CARGO_BIN_NAME": "build-script-build",
+        "CARGO_CRATE_NAME": "build_script_build",
+        "CARGO_MANIFEST_DIR": "unicode-general-category-1.1.0.crate",
+        "CARGO_PKG_AUTHORS": "YesLogic Pty. Ltd. <info@yeslogic.com>",
+        "CARGO_PKG_DESCRIPTION": "Fast lookup of the Unicode General Category property for char",
+        "CARGO_PKG_HOMEPAGE": "https://github.com/yeslogic/unicode-general-category",
+        "CARGO_PKG_NAME": "unicode-general-category",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/yeslogic/unicode-general-category",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "1.1.0",
+        "CARGO_PKG_VERSION_MAJOR": "1",
+        "CARGO_PKG_VERSION_MINOR": "1",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
     },
     visibility = [],
+)
+
+buildscript_run(
+    name = "unicode-general-category-1-build-script-run",
+    package_name = "unicode-general-category",
+    buildscript_rule = ":unicode-general-category-1-build-script-build",
+    env = {
+        "CARGO_PKG_AUTHORS": "YesLogic Pty. Ltd. <info@yeslogic.com>",
+        "CARGO_PKG_DESCRIPTION": "Fast lookup of the Unicode General Category property for char",
+        "CARGO_PKG_HOMEPAGE": "https://github.com/yeslogic/unicode-general-category",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/yeslogic/unicode-general-category",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION_MAJOR": "1",
+        "CARGO_PKG_VERSION_MINOR": "1",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    rustc_link_lib = True,
+    rustc_link_search = True,
+    version = "1.1.0",
 )
 
 http_archive(
