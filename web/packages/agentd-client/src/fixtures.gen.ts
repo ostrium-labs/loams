@@ -17,11 +17,13 @@ import type { ChangedReply } from "./gen/ChangedReply";
 import type { Chat } from "./gen/Chat";
 import type { ChatIdParams } from "./gen/ChatIdParams";
 import type { ChatList } from "./gen/ChatList";
+import type { CheckLogReply } from "./gen/CheckLogReply";
 import type { CheckoutChangeRequestStatus } from "./gen/CheckoutChangeRequestStatus";
 import type { CheckoutDiff } from "./gen/CheckoutDiff";
 import type { CheckoutDiffList } from "./gen/CheckoutDiffList";
 import type { CheckoutFileDiffText } from "./gen/CheckoutFileDiffText";
 import type { CheckpointList } from "./gen/CheckpointList";
+import type { ChecksReply } from "./gen/ChecksReply";
 import type { CloneRepoParams } from "./gen/CloneRepoParams";
 import type { CommitWorktreeParams } from "./gen/CommitWorktreeParams";
 import type { CommitWorktreeReply } from "./gen/CommitWorktreeReply";
@@ -54,8 +56,10 @@ import type { FinishQueuedMessageEditParams } from "./gen/FinishQueuedMessageEdi
 import type { FolderListing } from "./gen/FolderListing";
 import type { ForkSideChatParams } from "./gen/ForkSideChatParams";
 import type { GetApprovalParams } from "./gen/GetApprovalParams";
+import type { GetCheckLogParams } from "./gen/GetCheckLogParams";
 import type { GetCheckoutDiffParams } from "./gen/GetCheckoutDiffParams";
 import type { GetCheckoutFileDiffTextRequest } from "./gen/GetCheckoutFileDiffTextRequest";
+import type { GetChecksParams } from "./gen/GetChecksParams";
 import type { GetRunGroupComparisonParams } from "./gen/GetRunGroupComparisonParams";
 import type { GetThreadDiffParams } from "./gen/GetThreadDiffParams";
 import type { GetThreadUsageParams } from "./gen/GetThreadUsageParams";
@@ -2414,6 +2418,46 @@ export const fixture_MergeChangeRequestReply = {
   "repo": "dev/project"
 } satisfies MergeChangeRequestReply;
 
+export const fixture_GetChecksParams = {
+  "chatId": "chat_01",
+  "provider": "forgejo",
+  "sha": "0123456789abcdef0123456789abcdef01234567"
+} satisfies GetChecksParams;
+
+export const fixture_ChecksReply = {
+  "checks": [
+    {
+      "logId": "3/0",
+      "name": "build",
+      "state": "success",
+      "url": "https://forgejo.example.com/dev/project/actions/runs/3/jobs/0"
+    },
+    {
+      "logId": "3/1",
+      "name": "test",
+      "state": "failure",
+      "url": "https://forgejo.example.com/dev/project/actions/runs/3/jobs/1"
+    }
+  ],
+  "provider": "forgejo",
+  "repo": "dev/project",
+  "sha": "0123456789abcdef0123456789abcdef01234567",
+  "state": "failure"
+} satisfies ChecksReply;
+
+export const fixture_GetCheckLogParams = {
+  "chatId": "chat_01",
+  "lines": 200,
+  "logId": "3/1",
+  "provider": "forgejo"
+} satisfies GetCheckLogParams;
+
+export const fixture_CheckLogReply = {
+  "lines": 1,
+  "text": "test linker ... FAILED\n",
+  "truncated": false
+} satisfies CheckLogReply;
+
 export const fixture_ToolCall_exec = {
   "command": "cargo test",
   "kind": "exec"
@@ -2854,6 +2898,10 @@ export const FIXTURES = [
   { name: "TypedApproval", type: "TypedApproval", value: fixture_TypedApproval },
   { name: "MergeChangeRequestParams", type: "MergeChangeRequestParams", value: fixture_MergeChangeRequestParams },
   { name: "MergeChangeRequestReply", type: "MergeChangeRequestReply", value: fixture_MergeChangeRequestReply },
+  { name: "GetChecksParams", type: "GetChecksParams", value: fixture_GetChecksParams },
+  { name: "ChecksReply", type: "ChecksReply", value: fixture_ChecksReply },
+  { name: "GetCheckLogParams", type: "GetCheckLogParams", value: fixture_GetCheckLogParams },
+  { name: "CheckLogReply", type: "CheckLogReply", value: fixture_CheckLogReply },
   { name: "ToolCall.exec", type: "ToolCall", value: fixture_ToolCall_exec },
   { name: "ToolCall.readFile", type: "ToolCall", value: fixture_ToolCall_readFile },
   { name: "ToolCall.writeFile", type: "ToolCall", value: fixture_ToolCall_writeFile },

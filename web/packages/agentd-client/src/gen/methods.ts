@@ -16,11 +16,13 @@ import type { ChangedReply } from "./ChangedReply";
 import type { Chat } from "./Chat";
 import type { ChatIdParams } from "./ChatIdParams";
 import type { ChatList } from "./ChatList";
+import type { CheckLogReply } from "./CheckLogReply";
 import type { CheckoutChangeRequestStatus } from "./CheckoutChangeRequestStatus";
 import type { CheckoutDiff } from "./CheckoutDiff";
 import type { CheckoutDiffList } from "./CheckoutDiffList";
 import type { CheckoutFileDiffText } from "./CheckoutFileDiffText";
 import type { CheckpointList } from "./CheckpointList";
+import type { ChecksReply } from "./ChecksReply";
 import type { CloneRepoParams } from "./CloneRepoParams";
 import type { CommitWorktreeParams } from "./CommitWorktreeParams";
 import type { CommitWorktreeReply } from "./CommitWorktreeReply";
@@ -53,8 +55,10 @@ import type { FinishQueuedMessageEditParams } from "./FinishQueuedMessageEditPar
 import type { FolderListing } from "./FolderListing";
 import type { ForkSideChatParams } from "./ForkSideChatParams";
 import type { GetApprovalParams } from "./GetApprovalParams";
+import type { GetCheckLogParams } from "./GetCheckLogParams";
 import type { GetCheckoutDiffParams } from "./GetCheckoutDiffParams";
 import type { GetCheckoutFileDiffTextRequest } from "./GetCheckoutFileDiffTextRequest";
+import type { GetChecksParams } from "./GetChecksParams";
 import type { GetRunGroupComparisonParams } from "./GetRunGroupComparisonParams";
 import type { GetThreadDiffParams } from "./GetThreadDiffParams";
 import type { GetThreadUsageParams } from "./GetThreadUsageParams";
@@ -351,6 +355,8 @@ export const METHODS = [
   { name: "RequestApproval", kind: "unary", params: "RequestApprovalParams", result: "TypedApproval", role: "mcp", renderer: false },
   { name: "GetApproval", kind: "unary", params: "GetApprovalParams", result: "TypedApproval", role: "mcp", renderer: false },
   { name: "MergeChangeRequest", kind: "unary", params: "MergeChangeRequestParams", result: "MergeChangeRequestReply", role: "mcp", renderer: false },
+  { name: "GetChecks", kind: "unary", params: "GetChecksParams", result: "ChecksReply", role: "mcp", renderer: false },
+  { name: "GetCheckLog", kind: "unary", params: "GetCheckLogParams", result: "CheckLogReply", role: "mcp", renderer: false },
 ] as const satisfies readonly MethodSpec[];
 
 /** Each method's params, result (or stream item), kind, role and renderer flag. */
@@ -477,6 +483,8 @@ export type Methods = {
   RequestApproval: { params: RequestApprovalParams; result: TypedApproval; kind: "unary"; role: "mcp"; renderer: false };
   GetApproval: { params: GetApprovalParams; result: TypedApproval; kind: "unary"; role: "mcp"; renderer: false };
   MergeChangeRequest: { params: MergeChangeRequestParams; result: MergeChangeRequestReply; kind: "unary"; role: "mcp"; renderer: false };
+  GetChecks: { params: GetChecksParams; result: ChecksReply; kind: "unary"; role: "mcp"; renderer: false };
+  GetCheckLog: { params: GetCheckLogParams; result: CheckLogReply; kind: "unary"; role: "mcp"; renderer: false };
 };
 
 export type MethodName = keyof Methods;
