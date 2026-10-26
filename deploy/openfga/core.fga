@@ -43,6 +43,10 @@ type org
     # any member or the org's service accounts, changes by an admin.
     define can_view: namespace_editor
     define can_admin: admin
+    # The durable API (`/durable/`): promises, schedules and tasks belong to the instance, not to
+    # a namespace, so any member or the org's service accounts run them; never an agent, which
+    # reaches only the environments it is granted.
+    define can_run_durable: namespace_editor
 
 # Teams are owned by Loams, not Zitadel (§5). `org` roots every team for the cross-org scan.
 type team
