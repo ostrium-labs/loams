@@ -345,6 +345,13 @@ fn run_request() -> RunRequest {
             args: vec![s("mcp")],
             env: BTreeMap::from([(s("LOAMS_AGENTD_PORT"), s("50217"))]),
         }),
+        // MK1 Task 4b: an installed marketplace MCP server.
+        mcp_servers: vec![McpServer {
+            name: s("marketplace-ostrium-github-mcp-server"),
+            command: s("/home/dev/.loams-agentd/agents/ostrium/github-mcp-server/2.0.3/github-mcp-server"),
+            args: vec![s("stdio")],
+            env: BTreeMap::from([(s("GITHUB_PERSONAL_ACCESS_TOKEN"), s("ghp_example"))]),
+        }],
     }
 }
 

@@ -388,7 +388,56 @@ const REQUESTS: Request[] = [
     headSha: 'abcdef0',
   }),
   request('GetChecks', { chatId: 'chat-1', provider: 'github', sha: 'abcdef0' }),
-  request('GetCheckLog', { chatId: 'chat-1', provider: 'github', logId: '901', lines: 200 }),
+  request('GetCheckLog', { chatId: 'chat-1', provider: 'github', logId: '901', lines: 200 }),  // MK1 Task 4b: MarketplaceService.
+  request('ListMarketplaceSources', {}),
+  request('AddMarketplaceSource', {
+    name: 'example',
+    url: 'https://example.org/market/index.json',
+    identity: 'https://github.com/example/market/.github/workflows/publish.yml@refs/heads/main',
+    issuer: null,
+  }),
+  request('RemoveMarketplaceSource', {
+    name: 'example',
+  }),
+  request('SearchListings', {
+    query: 'github',
+    kinds: ['mcp-server'],
+    frameworks: [],
+    languages: [],
+    minLevel: 'core',
+    tiers: ['firstParty'],
+    source: null,
+  }),
+  request('GetListing', {
+    id: 'ostrium/github-mcp-server',
+    version: null,
+    source: null,
+  }),
+  request('PlanInstall', {
+    id: 'ostrium/github-mcp-server',
+    version: '2.0.3',
+    source: 'official',
+  }),
+  request('InstallListing', {
+    id: 'ostrium/github-mcp-server',
+    version: '2.0.3',
+    source: 'official',
+    planDigest: '5f2b1c8e',
+    config: {},
+    secrets: {
+      token: 'ghp_example',
+    },
+  }),
+  request('UninstallListing', {
+    id: 'ostrium/github-mcp-server',
+  }),
+  request('ListInstalledListings', {}),
+  request('CheckListingUpdates', {}),
+  request('UpdateListing', {
+    id: 'ostrium/github-mcp-server',
+    version: null,
+    planDigest: '5f2b1c8e',
+  }),
 ];
 
 const file = join(import.meta.dirname, 'requests.json');
