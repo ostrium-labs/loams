@@ -24,6 +24,11 @@ cargo_package(
     },
     tests = [
         {
+            "name": "engine",
+            "crate": "engine",
+            "root": "tests/engine.rs",
+        },
+        {
             "name": "install",
             "crate": "install",
             "root": "tests/install.rs",
