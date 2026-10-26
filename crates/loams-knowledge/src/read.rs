@@ -194,8 +194,16 @@ impl KnowledgeReader {
 
     async fn build_index(&self, m: &VerifiedManifest) -> TextIndex {
         use futures::StreamExt as _;
-        let reads = futures::stream::iter(m.entries.iter())
-            .map(|e| async move { (e.path.clone(), self.read_entry(e).await) })
+        // Owned entries and a cloned reader: a stream of futures borrowing
+        // `self` is not provably `Send` to rustc inside `tokio::spawn`.
+        let reads = futures::stream::iter(m.entries.clone())
+            .map(|e| {
+                let me = self.clone();
+                async move {
+                    let read = me.read_entry(&e).await;
+                    (e.path, read)
+                }
+            })
             .buffer_unordered(8)
             .collect::<Vec<_>>()
             .await;
