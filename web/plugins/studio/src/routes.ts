@@ -4,6 +4,12 @@
 
 import { httpUrl } from './factory.js';
 
+/**
+ * The Seed Exchange's harnesses (@loams/plugin-marketplace's route, MK1 Task 9): the
+ * harness picker's "Add a harness…".
+ */
+export const MARKETPLACE_HARNESSES = '/studio/marketplace?kind=harness';
+
 export type Panel = 'diff' | 'files' | 'terminal' | 'preview' | 'plan';
 export const PANELS: readonly Panel[] = ['diff', 'files', 'terminal', 'preview', 'plan'];
 

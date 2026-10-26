@@ -39,6 +39,7 @@
     "@loams/plugin-graph": "workspace:*",
     "@loams/plugin-house": "workspace:*",
     "@loams/plugin-identity": "workspace:*",
+    "@loams/plugin-marketplace": "workspace:*",
     "@loams/plugin-jobs": "workspace:*",
     "@loams/plugin-live": "workspace:*",
     "@loams/plugin-metrics": "workspace:*",

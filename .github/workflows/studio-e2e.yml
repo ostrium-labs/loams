@@ -29,6 +29,8 @@ on:
       - 'web/packages/ui/**'
       - 'web/plugins/studio/**'
       - 'web/plugins/factory/**'
+      - 'web/plugins/marketplace/**'
+      - 'web/packages/slots/**'
       - 'web/plugins/shell/**'
       - 'web/plugins/rpc/**'
       - 'web/plugins/approvals/**'
