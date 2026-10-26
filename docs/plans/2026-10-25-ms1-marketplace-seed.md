@@ -344,7 +344,7 @@ Design: D1812 (§73 §5, §18). A `walrus` location is an **additional, public m
 
 **Installer** (`crates/loams-agentd-marketplace`):
 - New `src/artifact.rs`:
-  - `ArtifactSources { walrus: Vec<WalrusLocation>, https: Option<String> }`, built by `ArtifactSources::npm(listing, npm_registry)` (HTTPS: `<registry>/<name>/-/<unscoped name>-<version>.tgz`, the registry's tarball URL; `None` for a node that has no registry) and `ArtifactSources::archive_file(listing, platform)` (HTTPS: the file's `url`).
+  - `ArtifactSources { walrus: Vec<WalrusLocation>, https: Option<String> }`, built by `ArtifactSources::package(listing, npm_registry)` (HTTPS: `<registry>/<name>/-/<unscoped name>-<version>.tgz`, the registry's tarball URL; `None` for a node that has no registry) and `ArtifactSources::archive_file(listing, platform)` (HTTPS: the file's `url`).
   - `ArtifactFetch { walrus: &Walrus, https: &dyn Fetcher, npm_registry: Option<&str> }` and `fetch(&ArtifactSources) -> Result<(Vec<u8>, Origin), FetchError>`, where `Origin` is `Walrus { blob_id }` or `Https { url }`.
   - Order: with Walrus enabled, each walrus location through `Walrus::read(blob_id, sha256)` (hedged, SHA-256-verified, cached by `loams-walrus`); on any Walrus failure, the HTTPS location. With Walrus disabled, the HTTPS location only, and no Walrus call.
   - Typed `FetchError`: `NoLocation`; `WalrusDisabled { blob_id }` (only a walrus location, Walrus off); `WalrusIntegrity { blob_id, error }` (every aggregator sent bytes with the wrong SHA-256, no HTTPS fallback); `Walrus { blob_id, error }` (any other Walrus failure, no fallback); `Https { url, error, walrus }` (the HTTPS fetch failed, with the Walrus failure that led to it, if any).
@@ -359,7 +359,7 @@ Tests (`crates/loams-agentd-marketplace/tests/walrus.rs`, a mock aggregator on l
 - `walrus_disabled_uses_https` (no aggregator request);
 - `walrus_disabled_without_https_refused` (`WalrusDisabled`);
 - `https_failure_reports_walrus_cause`;
-- `npm_tarball_url_handles_scopes`;
+- `npm_tarball_url_handles_scopes`, `archive_file_sources_are_its_locations_then_its_url`;
 - `proto_and_schema_agree`, `listing_schema_accepts_fixtures`, `listing_schema_rejects_each_invalid_fixture` (existing, over the new fixtures);
 - vitest: `lint_reports_each_rule` with `walrus-sha256-matches`.
 
@@ -442,3 +442,7 @@ Commit: `docs: MS1 exit report (MS1 Task 10)`.
 
 **Task 5.**
 1. The walrus location's field is `blob_id`, not D1812's `blobId`: every listing field is snake_case, and `proto_and_schema_agree` requires the proto to share the schema's names. The JSON shape is otherwise D1812's: `{ "kind": "walrus", "blob_id", "sha256" }`.
+2. The installer does not check the walrus SHA-256 against bytes fetched over HTTPS: the fallback's bytes are checked by the artifact's own integrity (npm `sha512`, an archive file's `sha256`) and its provenance, as before Task 5, so a stale or wrong mirror digest cannot block the HTTPS install.
+3. `loams-listing from-package` never writes a walrus location: the blob id exists only once the tarball is stored, which is Task 9's publish step. Its round-trip test drops the fixture's `locations`.
+4. The schema pins a blob id to 43 URL-safe base64 characters whose last one carries no bits past 32 bytes (`[AEIMQUYcgkosw048]`), the ids `loams-walrus`'s `BlobId::parse` accepts.
+5. `web/packages/proto/src/gen/loams/marketplace/v1/listing_pb.ts` is regenerated (`pnpm --filter @loams/proto generate`).

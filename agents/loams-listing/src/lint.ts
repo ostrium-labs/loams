@@ -38,6 +38,7 @@ export const RULES: Record<string, string> = {
   'egress-declared': 'A listing with egress tools declares the hosts it reaches.',
   'tool-poisoning': 'Tool descriptions hold no instructions to the model and no hidden text.',
   'archive-platforms-unique': 'An archive has one file per platform.',
+  'walrus-sha256-matches': "A Walrus mirror of an archive file carries that file's sha256 (D1812).",
   'data-scopes-unique': 'Each data scope is declared once.',
 };
 
@@ -155,6 +156,13 @@ export function lint(doc: unknown, options: LintOptions = {}): LintIssue[] {
     for (const platform of duplicates((listing.artifact.files ?? []).map((f) => f.platform))) {
       error('archive-platforms-unique', '/artifact/files', `${platform} has more than one file`);
     }
+    (listing.artifact.files ?? []).forEach((file, i) => {
+      (file.locations ?? []).forEach((location, j) => {
+        if (location.kind === 'walrus' && location.sha256 !== file.sha256) {
+          error('walrus-sha256-matches', `/artifact/files/${i}/locations/${j}/sha256`, `the Walrus mirror's sha256 is not the ${file.platform} file's`);
+        }
+      });
+    });
   }
 
   for (const scope of duplicates((listing.place?.data ?? []).map((d) => `${d.kind}:${d.name}`))) {

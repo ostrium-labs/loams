@@ -4,6 +4,7 @@
 //! environment contract. Installers and the conformance runner follow in MK0
 //! Tasks 6 and 8.
 
+pub mod artifact;
 pub mod contract;
 pub mod index;
 pub mod install;
@@ -15,6 +16,7 @@ pub mod revocations;
 pub mod sources;
 pub mod verify;
 
+pub use artifact::{ArtifactFetch, ArtifactSources, FetchError, Origin};
 pub use market::{Fetcher, ListingView, MarketError, Marketplace, Query, SourceInfo, Summary};
 pub use sources::Source;
 pub use verify::{Identity, SignatureVerifier, SigstoreVerifier};
