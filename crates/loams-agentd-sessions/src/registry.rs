@@ -798,6 +798,7 @@ pub fn default_registry() -> HarnessRegistry {
             reasoning_levels: Vec::new(),
             installed: true,
             can_install: false,
+            marketplace_listing: None,
             enabled: None,
         },
         Box::new(|| loams_agentd_harness::AcpHarness::goose().installed()),
