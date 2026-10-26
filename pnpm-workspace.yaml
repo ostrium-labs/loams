@@ -82,7 +82,7 @@ catalog:
   # The one animation library (UI upgrade phase 1, owner brief 2026-10-19): Motion for React,
   # MIT, published 2026-10-02 (motion, framer-motion and motion-dom 13.5.1, motion-utils 13.5.0;
   # tslib 0BSD), the last 13.x; 14.0.0 is the same day's new major.
-  motion: 13.5.1
+  motion: 14.1.0
 
 # Keep Vite+ isolated from the console's ordinary Vite/Vitest toolchain.
 overrides:

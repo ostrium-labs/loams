@@ -19,6 +19,6 @@
     "cordis": "4.0.0-rc.10"
   },
   "devDependencies": {
-    "typescript": "5.9.3"
+    "typescript": "7.0.2"
   }
 }
