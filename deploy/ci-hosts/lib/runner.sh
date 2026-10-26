@@ -331,9 +331,12 @@ save_setup() {
 }
 
 # What status.sh (no sudo) needs: the data root and the jobs' disk floor.
+# /opt/loams-ci, not /etc/loams-ci: that directory is root:ci 0750, so status.sh
+# run by the owner could not read it (and fell back to the defaults).
 write_status_env() {
   printf 'DATA_ROOT=%s\nMIN_FREE_GB=%s\nRUNNER_MEMORY=%s\nRUNNER_JOBS=%s\n' \
-    "$DATA_ROOT" "$RUNNER_MIN_FREE_GB" "$RUNNER_MEMORY" "$RUNNER_JOBS" | write_file /etc/loams-ci/status.env 644 root:root
+    "$DATA_ROOT" "$RUNNER_MIN_FREE_GB" "$RUNNER_MEMORY" "$RUNNER_JOBS" | write_file /opt/loams-ci/status.env 644 root:root
+  rm -f /etc/loams-ci/status.env
 }
 
 # Installs loams-ci-runner-heal.timer: every 5 minutes, --heal re-registers a

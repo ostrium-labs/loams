@@ -376,17 +376,47 @@ Tests: `engine_defaults_to_node`, `bun_engine_launches_bun`, `bun_install_runs_n
 
 Commit: `marketplace: the node runtime runs Mastra on node or bun (MS1 Task 6, D1808)`.
 
-### Task 7 — Read-only project knowledge cache (task level)
+### Task 7 — Read-only project knowledge cache
 
-Design: D1813.
-- **Publishing.** `loams knowledge publish <repo> --commit <sha>` reads a **public** repository's knowledge set at one commit (Q1331), stores it as one Walrus quilt (identifier = path), and writes a **signed manifest** (`{ repo, commit, quiltId, entries: [{ path, quiltPatchId, sha256, bytes }], created, endEpoch }`, Sigstore keyless) to the bucket and beside the repository's releases. It refuses a private repository.
-- **Reading.** agentd's MCP shim gains two read-only tools:
-  - `knowledge.get { repo, commit?, path }` returns a verified file;
-  - `knowledge.search { repo, commit?, query, limit }` searches the manifest's paths and a small index built locally from fetched entries.
+Design: D1813; content set Q1331 (default answer taken, ruling 3). The core is a new crate, `crates/loams-knowledge`, so Task 9's `loams knowledge publish` reuses it; agentd's MCP shim gains a thin, additive module over it.
 
-  Both verify the manifest's signature, then each entry's SHA-256, and are served from `loams-walrus`'s cache. Both are `risk: read` and need no approval.
+**The manifest** (`src/manifest.rs`), schema `loams.knowledge.manifest.v1`, JSON:
+```json
+{ "schema": "loams.knowledge.manifest.v1", "repo": "ostrium-labs/loams", "commit": "<40 hex>",
+  "quiltId": "<blob id>", "created": "<RFC 3339>", "endEpoch": 42,
+  "entries": [{ "path": "docs/README.md", "quiltPatchId": "<patch id>", "sha256": "<hex>", "bytes": 1234 }] }
+```
+- Entries are sorted by path and unique; a path is relative, `/`-separated, with no empty, `.` or `..` segment.
+- **Signed by Sigstore, keyless**, as the marketplace index is (MK1 Task 0 ruling 4): `cosign sign-blob --bundle` over the manifest's exact bytes, the bundle beside it. Verification reuses `loams-agentd-marketplace`'s `SignatureVerifier`, `SigstoreVerifier` and `Identity` (offline, the embedded public-good root). The signature covers the stored bytes, so nothing is re-canonicalised. A `VerifiedManifest` can be built only by a successful verification against the repository's pinned signer, and only when its `repo` and `commit` are the ones asked for.
+- **In the bucket** (`loams-store`'s `Store`; the bucket stays the truth, D1): `<prefix>/<repo>/<commit>/manifest.json`, `…/manifest.json.sigstore.json`, and `<prefix>/<repo>/latest` (the newest published commit, as text; unsigned, so it can only name a commit whose manifest must still verify). `prefix` defaults to `knowledge`.
 
-Tests: `publish_refuses_private_repo`, `manifest_signature_required`, `knowledge_get_verifies_entry`, `knowledge_tools_are_read_only`.
+**Publishing** (`src/publish.rs`, `src/source.rs`, `src/select.rs`):
+- `KnowledgeSource` lists a commit's tracked files and reads one; `GitCheckout` implements it with the `git` CLI (`ls-tree -r -z --long`, `cat-file blob`), and `MemorySource` for tests and callers that already hold the files.
+- **Public only.** `Publisher::publish` needs both `Visibility::Public` from the caller (what the forge says) and `public = true` in `.loams/knowledge.toml` at that commit. Anything else is `KnowledgeError::NotPublic { repo, reason }` before any Walrus or bucket request.
+- **The knowledge set** (Q1331): tracked text files under `docs/`, `schemas/` and `proto/`, any `*.proto`, and the root `README*`, `AGENTS.md`, `CLAUDE.md` and `.goosehints`; each at most 1 MiB; not binary (a NUL byte or invalid UTF-8); not vendored or generated (`vendor/`, `third-party/`, `third_party/`, `node_modules/`, an `@generated` marker in the first 1 KiB); no symlinks or submodules. `.loams/knowledge.toml` may narrow it with `include` and `exclude` path prefixes, never widen it.
+- Plus one synthetic entry, `.loams/knowledge/files.txt`: every tracked path at the commit, one per line, so agents can see the file layout without a clone.
+- The set is stored as **one quilt** through `loams-walrus`'s `store_quilt` (identifier = path; it is read back verified before `Ok`). A set over `max_blob_bytes` is `KnowledgeError::TooLarge`.
+- The manifest is written, signed through `ManifestSigner` (`CosignSigner` runs `cosign sign-blob --yes --bundle`; tests use a stand-in), and put in the bucket; `latest` is updated last.
+- No embeddings: D1813 does not ask for them.
+
+**Reading** (`src/read.rs`, `src/search.rs`): `KnowledgeReader` over a `Store`, a `Walrus` and a `TrustPolicy` (the pinned signer per repository; a repository with none is refused):
+- `manifest(repo, commit?)` reads `latest` when no commit is given, then the manifest and its bundle; nothing is parsed before the bundle verifies. Verified manifests are memoised.
+- `get(repo, commit?, path)` reads the entry's quilt patch by patch id with the manifest's SHA-256 (served from `loams-walrus`'s verified cache when present), and checks the digest again before returning it.
+- `search(repo, commit?, query, limit)` scores path matches, and matches in a small in-memory index of the entries' text, fetched (verified, 8 at a time) on the first search of a manifest. An entry that fails to fetch or verify is left out of the index and counted as `unindexed`.
+
+**The MCP shim** (`crates/loams-agentd-mcp/src/knowledge.rs`, additive): two tools, `knowledge_get { repo, commit?, path }` and `knowledge_search { repo, commit?, query, limit? }`, both `risk: read`, `readOnlyHint: true`, no approval (ruling 2 on the names). There is no write tool. They are listed only when the shim has a knowledge reader: `LOAMS_AGENTD_KNOWLEDGE_CONFIG` names a TOML file with `[walrus]` and `[knowledge]` (`bucket` URL, `prefix`, `[[knowledge.signers]]` with `repo`, `identity`, `issuer`). Unset, the catalog is exactly as before. A config that fails to load logs a warning on stderr and leaves the tools out. The daemon setting the variable for harness runs comes with Task 10, after MK0 Task 4b.
+
+Files:
+- `crates/loams-knowledge/{Cargo.toml,README.md,BUCK,src/{lib,error,manifest,sign,source,select,publish,read,search,config}.rs}`;
+- `crates/loams-knowledge/tests/{support/mod.rs,manifest.rs,publish.rs,read.rs}`, with a stateful axum mock publisher and aggregator (the `loams-walrus` test-support pattern) that stores quilts and serves their patches;
+- `crates/loams-agentd-mcp/{Cargo.toml,BUCK,src/{lib,tools,knowledge}.rs,tests/knowledge.rs}`;
+- the workspace `Cargo.toml` (`loams-knowledge` and `loams-walrus` as workspace dependencies), `Cargo.lock`.
+
+Tests:
+- `manifest_round_trips`, `manifest_rejects_bad_paths`, `manifest_sign_verify`, `manifest_signature_required`, `tampered_manifest_refused`, `manifest_wrong_signer_refused`, `manifest_for_other_commit_refused`;
+- `publish_refuses_private_repo`, `publish_refuses_unmarked_repo` (neither contacts the publisher), `publish_selects_knowledge_set`, `knowledge_toml_only_narrows`, `publish_stores_quilt_and_signed_manifest`, `publish_too_large_set_refused`, `publish_from_git_checkout`;
+- `knowledge_get_verifies_entry`, `knowledge_get_digest_mismatch_refused`, `tampered_manifest_in_bucket_refused`, `knowledge_get_latest_commit`, `knowledge_get_unknown_repo_refused`, `knowledge_search_paths_and_text`, `search_skips_entries_that_fail_verification`, `reader_config_parses_and_needs_walrus`;
+- in the shim: `knowledge_tools_are_read_only`, `knowledge_tools_absent_without_config`, `knowledge_get_through_shim`, `knowledge_get_through_shim_refuses_wrong_bytes`.
 
 Commit: `knowledge: a read-only verifiable project knowledge cache on Walrus (MS1 Task 7, D1813)`.
 
@@ -446,3 +476,12 @@ Commit: `docs: MS1 exit report (MS1 Task 10)`.
 3. `loams-listing from-package` never writes a walrus location: the blob id exists only once the tarball is stored, which is Task 9's publish step. Its round-trip test drops the fixture's `locations`.
 4. The schema pins a blob id to 43 URL-safe base64 characters whose last one carries no bits past 32 bytes (`[AEIMQUYcgkosw048]`), the ids `loams-walrus`'s `BlobId::parse` accepts.
 5. `web/packages/proto/src/gen/loams/marketplace/v1/listing_pb.ts` is regenerated (`pnpm --filter @loams/proto generate`).
+
+### Task 7 (2026-10-26)
+
+1. **Signing reuses the marketplace's Sigstore path, not a new key scheme.** D1813 says Sigstore-signed. The repository already signs with `cosign sign-blob --bundle` (keyless, cosign v3.0.6) and verifies with `sigstore-verify` `=0.14.0` behind `loams-agentd-marketplace`'s `SignatureVerifier` (MK1 Task 0 rulings 3–4). `loams-knowledge` depends on that crate for verification and shells out to `cosign` to sign. No ed25519 keys are added.
+2. **The tools are named `knowledge_get` and `knowledge_search`.** D1813's `knowledge.get` and `knowledge.search` would break harnesses: the Anthropic and OpenAI tool APIs accept only `[A-Za-z0-9_-]` in tool names, and the shim's catalog is snake_case. The behaviour is D1813's.
+3. **Q1331's default is the content set**, as the plan's open question proposes, plus one synthetic entry, `.loams/knowledge/files.txt`, listing every tracked path (the "file manifest"). `.loams/knowledge.toml` can only narrow it. No embeddings (D1813 does not ask for them).
+4. **"Public" needs two signals:** the caller's `Visibility::Public` (what the forge reports) and `public = true` in `.loams/knowledge.toml` at the published commit. Either missing is `KnowledgeError::NotPublic`, raised before any request. Walrus blobs cannot be made private later, so publishing needs the explicit marker in the repository as well as the forge's word.
+5. **The shim reads the bucket and Walrus itself**, in its own process, through `KnowledgeReader`, instead of through a new daemon RPC. This keeps the change out of `loams-agentd` and `loams-agentd-sessions` while MK0 Task 4b changes them. The daemon will pass `LOAMS_AGENTD_KNOWLEDGE_CONFIG` to harness runs in Task 10.
+6. **Buck files were generated without reindeer.** The pinned reindeer would not build locally (no OpenSSL development headers), so only the member `BUCK` files were regenerated: `gen.py` ran with its third-party step skipped. No new crates.io package is a direct dependency, so `third-party/rust` should not change. CI's `gen.py --check` confirms this.
