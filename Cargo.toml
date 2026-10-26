@@ -326,6 +326,7 @@ loams-git = { path = "crates/loams-git", version = "0.1.2" }
 loams-graph = { path = "crates/loams-graph", version = "0.1.2" }
 loams-hnsw = { path = "crates/loams-hnsw", version = "0.1.2" }
 loams-hot = { path = "crates/loams-hot", version = "0.1.2" }
+loams-identity-sync = { path = "crates/loams-identity-sync", version = "0.1.2" }
 loams-link = { path = "crates/loams-link", version = "0.1.2" }
 loams-kv = { path = "crates/loams-kv", version = "0.1.2" }
 loams-live = { path = "crates/loams-live", version = "0.1.2" }
@@ -354,6 +355,7 @@ loams-tikv = { path = "crates/loams-tikv", version = "0.1.2" }
 loams-tuple = { path = "crates/loams-tuple", version = "0.1.2" }
 loams-web-bridge = { path = "crates/loams-web-bridge", version = "0.1.2" }
 loams-worker = { path = "crates/loams-worker", version = "0.1.2" }
+loams-zitadel = { path = "crates/loams-zitadel", version = "0.1.2" }
 
 # loams-agentd: the per-user desktop daemon, moved from the zeron fork
 # (design §50, D783, plan DD1 Task 1). Versions follow the fork's lockfile
