@@ -102,11 +102,13 @@ async fn relay_crash_between_call_and_mark_is_idempotent() {
     fake.fail_next_calls(1, true);
     let pass = relay.run_once().await.unwrap();
     assert!(pass.unavailable);
-    assert_eq!(pass.marked, 0);
+    // Only the unanswered promise waits; the other one's row is marked.
+    assert_eq!(pass.marked, 1);
+    assert_eq!(outbox.undispatched(), 1);
 
-    // The restarted relay repeats every call: same promises, one dispatch.
+    // The restarted relay repeats the call: same promise, one dispatch.
     let pass = relay.run_once().await.unwrap();
-    assert_eq!((pass.claimed, pass.marked, pass.unavailable), (2, 2, false));
+    assert_eq!((pass.claimed, pass.marked, pass.unavailable), (1, 1, false));
     assert_eq!(outbox.undispatched(), 0);
     assert_eq!(fake.promise_count(), 2);
     assert!(matches!(
@@ -313,4 +315,34 @@ async fn relay_deferred_rows_do_not_starve_the_outbox() {
     let pass = relay.run_once().await.unwrap();
     assert_eq!((pass.deferred, pass.marked), (100, 1));
     assert!(fake.promise_get("wft:behind").await.is_ok());
+}
+
+#[tokio::test]
+async fn relay_unavailable_holds_back_only_its_own_promise() {
+    let fake = FakeDurability::new();
+    let outbox = Arc::new(MemOutbox::default());
+    outbox.push(create_task("wft:p", b"x"));
+    outbox.push(OutboxRequest::Settle {
+        id: "wft:p".into(),
+        state: SettleAs::Resolved,
+    });
+    for i in 0..10 {
+        outbox.push(create_task(&format!("wft:q{i}"), b"x"));
+    }
+    let relay = relay(&outbox, &fake);
+    fake.fail_next_calls(1, false);
+    let pass = relay.run_once().await.unwrap();
+    assert!(pass.unavailable);
+    // The first call failed: whichever promise it hit keeps its rows; every
+    // other promise went through.
+    assert!(outbox.undispatched() >= 1 && outbox.undispatched() <= 2);
+    assert_eq!(pass.marked, 12 - outbox.undispatched());
+    let pass = relay.run_once().await.unwrap();
+    assert!(!pass.unavailable);
+    assert_eq!(outbox.undispatched(), 0);
+    assert_eq!(
+        fake.promise_get("wft:p").await.unwrap().status,
+        PromiseStatus::Resolved,
+        "the settle still followed its create"
+    );
 }

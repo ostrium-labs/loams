@@ -8,14 +8,20 @@
 //! promise; it is sent once its time has come. Each pass claims the batch
 //! plus the rows the previous pass deferred, so deferred rows at the head of
 //! the outbox never starve the rest.
+//!
+//! Rows of different promises are independent, so a pass sends them
+//! concurrently (up to [`RelayConfig::concurrency`] at once); the rows of one
+//! promise (a create, then its settle) are sent in order, and a row that got
+//! no answer holds back the later rows of its promise only.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use futures::StreamExt as _;
 
 use crate::port::{DelaySupport, Durability, DurabilityError, OutboxRequest};
 
@@ -128,15 +134,26 @@ pub struct RelayConfig {
     pub batch: usize,
     /// How long `run` waits after a pass that hit an unavailable Resonate.
     pub unavailable_backoff: Duration,
+    /// How many promises a pass sends at once (each promise's rows stay in
+    /// order).
+    pub concurrency: usize,
 }
 
 impl Default for RelayConfig {
     fn default() -> Self {
         Self {
-            batch: 64,
+            batch: 256,
             unavailable_backoff: Duration::from_millis(500),
+            concurrency: 32,
         }
     }
+}
+
+/// What sending one promise's rows came to.
+#[derive(Default)]
+struct GroupOutcome {
+    done: Vec<i64>,
+    unavailable: bool,
 }
 
 /// The outbox relay (module docs).
@@ -186,9 +203,10 @@ impl Relay {
         Arc::clone(&self.metrics)
     }
 
-    /// One pass: claim a batch, call the port for each row in order, mark
-    /// what got a definite answer. A row whose call got no answer, and every
-    /// row after it, stays undispatched for the next pass (so a create and a
+    /// One pass: claim a batch, send each promise's rows (promises
+    /// concurrently, a promise's rows in order), mark what got a definite
+    /// answer. A row whose call got no answer, and every later row of the
+    /// same promise, stays undispatched for the next pass (so a create and a
     /// later settle of the same promise keep their order). `Err` only when
     /// the source fails; nothing is lost, the rows are claimed again.
     pub async fn run_once(&self) -> Result<RelayPass, String> {
@@ -203,8 +221,11 @@ impl Relay {
         };
         let defer = self.durability.delay_support() == DelaySupport::Defer;
         let now = self.durability.now_ms();
+        // Deferral first, in outbox order: a row not yet due holds back every
+        // later row of its promise.
         let mut held: HashSet<&str> = HashSet::new();
-        let mut done = Vec::with_capacity(rows.len());
+        let mut order: Vec<&str> = Vec::new();
+        let mut groups: HashMap<&str, Vec<(i64, OutboxRequest)>> = HashMap::new();
         for (row, req) in &rows {
             let due = match req {
                 OutboxRequest::CreatePromise(c) if defer => c.delay_until_ms.filter(|at| *at > now),
@@ -219,7 +240,50 @@ impl Relay {
                 };
                 continue;
             }
-            let result = match req {
+            let group = groups.entry(req.promise_id()).or_default();
+            if group.is_empty() {
+                order.push(req.promise_id());
+            }
+            group.push((*row, req.clone()));
+        }
+        let mut pending: Vec<Vec<(i64, OutboxRequest)>> = order
+            .into_iter()
+            .filter_map(|id| groups.remove(id))
+            .collect();
+        pending.reverse();
+        let mut running = futures::stream::FuturesUnordered::new();
+        let mut outcomes = Vec::new();
+        loop {
+            while running.len() < self.config.concurrency.max(1) {
+                match pending.pop() {
+                    Some(group) => running.push(self.send_group(group)),
+                    None => break,
+                }
+            }
+            match running.next().await {
+                Some(o) => outcomes.push(o),
+                None => break,
+            }
+        }
+        let mut done = Vec::with_capacity(rows.len());
+        for o in outcomes {
+            done.extend(o.done);
+            pass.unavailable |= o.unavailable;
+        }
+        if !done.is_empty() {
+            self.source.mark_dispatched(&done).await?;
+        }
+        pass.marked = done.len();
+        self.deferred_last.store(pass.deferred, Ordering::Relaxed);
+        Ok(pass)
+    }
+
+    /// Sends one promise's rows in order; stops at the first that got no
+    /// answer (it and the rest wait for the next pass).
+    async fn send_group(&self, group: Vec<(i64, OutboxRequest)>) -> GroupOutcome {
+        let mut out = GroupOutcome::default();
+        for (row, req) in group {
+            let result = match &req {
                 OutboxRequest::CreatePromise(c) => {
                     self.durability.promise_create(c).await.map(|_| ())
                 }
@@ -230,7 +294,7 @@ impl Relay {
             match result {
                 Ok(()) => {
                     self.metrics.dispatched.fetch_add(1, Ordering::Relaxed);
-                    done.push(*row);
+                    out.done.push(row);
                 }
                 Err(DurabilityError::IdConflict { id }) => {
                     self.metrics.conflict.fetch_add(1, Ordering::Relaxed);
@@ -239,12 +303,12 @@ impl Relay {
                         promise_id = %id,
                         "outbox row conflicts with an existing promise (a different parameter for the same ID); marked, not retried"
                     );
-                    done.push(*row);
+                    out.done.push(row);
                 }
                 Err(DurabilityError::Unavailable(e)) => {
                     self.metrics.unavailable.fetch_add(1, Ordering::Relaxed);
                     tracing::warn!(outbox_id = row, promise_id = %req.promise_id(), error = %e, "Resonate unavailable; outbox row left for retry");
-                    pass.unavailable = true;
+                    out.unavailable = true;
                     break;
                 }
                 Err(e) => {
@@ -252,16 +316,11 @@ impl Relay {
                     // repeating the call would get it again.
                     self.metrics.rejected.fetch_add(1, Ordering::Relaxed);
                     tracing::error!(outbox_id = row, promise_id = %req.promise_id(), error = %e, "Resonate refused an outbox row; marked, not retried");
-                    done.push(*row);
+                    out.done.push(row);
                 }
             }
         }
-        if !done.is_empty() {
-            self.source.mark_dispatched(&done).await?;
-        }
-        pass.marked = done.len();
-        self.deferred_last.store(pass.deferred, Ordering::Relaxed);
-        Ok(pass)
+        out
     }
 
     /// Run passes until `shutdown` completes: straight on while batches come

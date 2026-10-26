@@ -207,3 +207,90 @@ async fn query_reaches_a_polling_worker_and_describe_reports_the_run() {
     assert_eq!(info.status, WorkflowExecutionStatus::Running as i32);
     assert_eq!(info.history_length, 4);
 }
+
+/// The bench's "could not get last history event" (Go SDK `run.Get`): a
+/// long poll for the close event that times out before the run closes must
+/// answer an empty page *with* a continuation token, and the next poll gets
+/// the close event.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn close_wait_timeout_keeps_a_token_until_the_close_event() {
+    use loams_temporal_proto::temporal::api::command::v1::{
+        Command, CompleteWorkflowExecutionCommandAttributes, command,
+    };
+    use loams_temporal_proto::temporal::api::enums::v1::{EventType, HistoryEventFilterType};
+
+    let gw = common::start().await;
+    let mut c = gw.client.clone();
+    let run = c
+        .start_workflow_execution(start_req("wc", "r1"))
+        .await
+        .expect("start")
+        .into_inner();
+    let execution = Some(WorkflowExecution {
+        workflow_id: "wc".into(),
+        run_id: run.run_id.clone(),
+    });
+    let close_poll = |token: Vec<u8>| {
+        let mut req = tonic::Request::new(GetWorkflowExecutionHistoryRequest {
+            namespace: "default".into(),
+            execution: execution.clone(),
+            wait_new_event: true,
+            history_event_filter_type: HistoryEventFilterType::CloseEvent as i32,
+            next_page_token: token.into(),
+            ..Default::default()
+        });
+        // 6 s on the wire: the gateway answers 5 s before, at 1 s.
+        req.set_timeout(Duration::from_secs(6));
+        req
+    };
+    let first = c
+        .get_workflow_execution_history(close_poll(Vec::new()))
+        .await
+        .expect("long poll")
+        .into_inner();
+    assert!(first.history.unwrap_or_default().events.is_empty());
+    assert!(
+        !first.next_page_token.is_empty(),
+        "a timed-out close wait must keep the iterator going"
+    );
+
+    let task = c
+        .poll_workflow_task_queue(PollWorkflowTaskQueueRequest {
+            namespace: "default".into(),
+            task_queue: Some(TaskQueue {
+                name: "q".into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        })
+        .await
+        .expect("poll")
+        .into_inner();
+    c.respond_workflow_task_completed(RespondWorkflowTaskCompletedRequest {
+        task_token: task.task_token,
+        namespace: "default".into(),
+        commands: vec![Command {
+            attributes: Some(
+                command::Attributes::CompleteWorkflowExecutionCommandAttributes(
+                    CompleteWorkflowExecutionCommandAttributes { result: None },
+                ),
+            ),
+            ..Default::default()
+        }],
+        ..Default::default()
+    })
+    .await
+    .expect("complete");
+    let second = c
+        .get_workflow_execution_history(close_poll(first.next_page_token.to_vec()))
+        .await
+        .expect("long poll")
+        .into_inner();
+    let events = second.history.unwrap_or_default().events;
+    assert_eq!(events.len(), 1);
+    assert_eq!(
+        events[0].event_type,
+        EventType::WorkflowExecutionCompleted as i32
+    );
+    assert!(second.next_page_token.is_empty());
+}

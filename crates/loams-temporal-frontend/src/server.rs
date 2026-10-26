@@ -42,6 +42,8 @@ pub struct Parts {
     pub shards: u32,
     /// The lease the matcher takes on each task (kept alive while held).
     pub lease: Duration,
+    /// The relay's settings (how many promises it sends at once).
+    pub relay: loams_temporal_resonate::RelayConfig,
     /// The frontend's settings.
     pub config: FrontendConfig,
 }
@@ -98,7 +100,7 @@ impl Gateway {
             parts.pid.clone(),
             Duration::from_secs(30),
         ));
-        let relay = Arc::new(Relay::new(outbox, fast));
+        let relay = Arc::new(Relay::new(outbox, fast).with_config(parts.relay));
 
         let stop = |mut rx: tokio::sync::watch::Receiver<bool>| async move {
             let _ = rx.wait_for(|s| *s).await;

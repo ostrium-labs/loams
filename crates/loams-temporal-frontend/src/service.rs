@@ -1074,9 +1074,13 @@ impl WorkflowService for WorkflowServiceImpl {
                     // Deadline or watcher gone: answer what there is.
                     _ => {
                         if close_only {
+                            // Not closed yet: an empty page *with* a token, so
+                            // the SDK polls again. An empty token would end
+                            // its iterator without the close event ("could
+                            // not get last history event").
                             return Ok(Response::new(GetWorkflowExecutionHistoryResponse {
                                 history: Some(History::default()),
-                                next_page_token: r.next_page_token,
+                                next_page_token: from.to_be_bytes().to_vec().into(),
                                 ..Default::default()
                             }));
                         }

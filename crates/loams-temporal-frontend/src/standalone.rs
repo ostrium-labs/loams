@@ -41,6 +41,15 @@ pub struct Config {
     /// Temporal namespaces created at start when missing.
     #[serde(default)]
     pub bootstrap_namespaces: Vec<BootstrapNamespace>,
+    /// How long `GetWorkflowExecutionHistory` waits for a new event (or the
+    /// close) before answering an empty page with a token; default 60 s.
+    /// Conformance runs lower it to exercise the timeout path.
+    #[serde(default)]
+    pub history_wait_ms: Option<u64>,
+    /// How many Resonate promises the outbox relay sends at once (default
+    /// 32; 1 sends one call at a time).
+    #[serde(default)]
+    pub relay_concurrency: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -112,6 +121,8 @@ pub fn dev_config() -> Config {
         task_token_keys: Vec::new(),
         keys: Vec::new(),
         dev_loams_namespace: Some("local".into()),
+        history_wait_ms: None,
+        relay_concurrency: None,
         bootstrap_namespaces: vec![BootstrapNamespace {
             loams_namespace_id: "local".into(),
             name: "default".into(),
@@ -263,7 +274,17 @@ pub async fn run_on(
             pid: config.pid.clone(),
             shards: config.shards,
             lease: Duration::from_secs(60),
-            config: FrontendConfig::default(),
+            relay: loams_temporal_resonate::RelayConfig {
+                concurrency: config.relay_concurrency.unwrap_or(32),
+                ..Default::default()
+            },
+            config: FrontendConfig {
+                history_wait: config.history_wait_ms.map_or(
+                    FrontendConfig::default().history_wait,
+                    Duration::from_millis,
+                ),
+                ..FrontendConfig::default()
+            },
         },
         stop_rx,
     )

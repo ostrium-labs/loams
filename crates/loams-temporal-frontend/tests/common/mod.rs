@@ -41,6 +41,7 @@ pub async fn start() -> TestGateway {
             pid: "gw-test".into(),
             shards: 64,
             lease: Duration::from_secs(60),
+            relay: Default::default(),
             config: FrontendConfig {
                 poll_timeout: Duration::from_secs(3),
                 query_timeout: Duration::from_secs(5),
