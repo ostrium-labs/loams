@@ -273,6 +273,15 @@ pub fn key_grant(record: &KeyRec, org: Option<String>) -> Grant {
     }
 }
 
+/// The person a key acts as, when it acts as one (a `KeyService` key made for oneself).
+pub fn key_person(key: &KeyRec) -> Option<&str> {
+    key.key
+        .principal
+        .as_option()
+        .filter(|p| p.kind.as_known() == Some(pb::SubjectKind::SUBJECT_KIND_USER))
+        .map(|p| p.id.as_str())
+}
+
 /// The whole directory.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -299,6 +308,20 @@ impl Doc {
     /// The member with user id `id`.
     pub fn member(&self, id: &str) -> Option<&MemberRec> {
         self.members.iter().find(|m| m.user.id == id)
+    }
+
+    /// The keys that act as the person `user` (made by them for themselves, not a service
+    /// account's).
+    pub fn keys_of_person<'d>(&'d self, user: &'d str) -> impl Iterator<Item = &'d KeyRec> + 'd {
+        self.keys
+            .iter()
+            .filter(move |k| key_person(k) == Some(user))
+    }
+
+    /// Whether `key` acts as a person who is no longer a member: a key `RemoveMember` did not
+    /// revoke, made before it did (plan IA1, ruling T5.R1). Such a key is refused.
+    pub fn key_person_left(&self, key: &KeyRec) -> bool {
+        key_person(key).is_some_and(|user| self.member(user).is_none())
     }
 
     /// The member with `email` (compared without case).
@@ -805,7 +828,8 @@ impl Directory {
         };
         let record = doc.key(id)?;
         let org = doc.org.as_ref().map(|o| o.slug.clone());
-        Some(self.check_key(key, id, record, org).await)
+        let person_left = doc.key_person_left(record);
+        Some(self.check_key(key, id, record, org, person_left).await)
     }
 
     async fn check_key(
@@ -814,6 +838,7 @@ impl Directory {
         id: &str,
         record: &KeyRec,
         org: Option<String>,
+        person_left: bool,
     ) -> Result<Principal, AuthError> {
         if record.revoked {
             return Err(AuthError::unauthenticated(
@@ -847,6 +872,13 @@ impl Directory {
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .insert(id.to_owned(), digest);
+        }
+        // After the secret is verified, so this answer says nothing to a caller without it.
+        if person_left {
+            return Err(AuthError::unauthenticated(
+                reason::TOKEN_REVOKED,
+                "this API key acts as a person who is no longer a member of the org",
+            ));
         }
         Ok(Principal {
             subject: format!("apikey:{id}"),
@@ -1115,6 +1147,77 @@ mod tests {
             .unwrap()
             .unwrap_err();
         assert_eq!(err.reason, reason::TOKEN_REVOKED);
+    }
+
+    /// A key acting as a person who has left the org, made before `RemoveMember` revoked such
+    /// keys, is refused once its secret checks out (ruling T5.R1).
+    #[tokio::test]
+    async fn a_key_of_a_person_who_left_is_refused() {
+        let directory = Directory::in_memory();
+        let (key, id) = api_key::generate();
+        let hash = api_key::hash_key(&key);
+        let person = |id: &str| pb::SubjectRef {
+            kind: pb::SubjectKind::SUBJECT_KIND_USER.into(),
+            id: id.to_owned(),
+            ..Default::default()
+        };
+        directory
+            .update(|doc| {
+                doc.members.push(MemberRec {
+                    user: pb::User {
+                        id: "usr_1".to_owned(),
+                        ..Default::default()
+                    },
+                    role: Role::Admin,
+                    joined_at_ms: 0,
+                    password: String::new(),
+                });
+                doc.keys.push(KeyRec {
+                    key: pb::ApiKey {
+                        id: id.clone(),
+                        name: "mine".to_owned(),
+                        principal: person("usr_1").into(),
+                        ..Default::default()
+                    },
+                    project: "web".to_owned(),
+                    hash: hash.clone(),
+                    role: Role::Admin,
+                    idempotency_key: "k1".to_owned(),
+                    created_by: "usr_1".to_owned(),
+                    revoked: false,
+                });
+                Ok::<_, Unavailable>(())
+            })
+            .await
+            .unwrap();
+        let p = directory
+            .authenticate(&Credential::ApiKey(key.clone()))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(p.subject, format!("apikey:{id}"));
+        directory
+            .update(|doc| {
+                doc.members.clear();
+                Ok::<_, Unavailable>(())
+            })
+            .await
+            .unwrap();
+        let err = directory
+            .authenticate(&Credential::ApiKey(key))
+            .await
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(err.reason, reason::TOKEN_REVOKED);
+        // A wrong secret for that key id says only that it is not valid.
+        let (forged, _) = api_key::generate();
+        let forged = forged.replacen(api_key::key_id(&forged).unwrap(), &id, 1);
+        let err = directory
+            .authenticate(&Credential::ApiKey(forged))
+            .await
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(err.reason, reason::API_KEY_INVALID);
     }
 
     #[tokio::test]
