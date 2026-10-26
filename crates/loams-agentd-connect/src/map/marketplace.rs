@@ -70,7 +70,7 @@ fn opt_enum<E: Enumeration>(prefix: &str, value: Option<&String>) -> EnumValue<E
 }
 
 /// Resolves a local `$ref`.
-fn resolve<'a>(node: &'a Value) -> &'a Value {
+fn resolve(node: &Value) -> &Value {
     match node.get("$ref").and_then(Value::as_str) {
         Some(reference) => reference
             .strip_prefix("#/")
