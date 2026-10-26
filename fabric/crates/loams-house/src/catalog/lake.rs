@@ -30,6 +30,8 @@ use crate::errors::{ChError, HouseError};
 pub const DROPPED: &str = "__loams_dropped";
 /// Names starting with this are the House's own.
 pub const RESERVED_PREFIX: &str = "__loams";
+/// The House's own database of a namespace's SQL functions (HE1 R14.11).
+pub const FUNCTIONS_DATABASE: &str = "__loams_functions";
 /// Property: the database a dropped table was in.
 pub const DROPPED_DATABASE: &str = "loams.dropped.database";
 /// Property: its name there.
@@ -837,6 +839,146 @@ impl Lake {
             )
             .await?;
         Ok(())
+    }
+
+    /// The names of the namespace's SQL functions (HE1 R14.11).
+    pub async fn function_names(&self, namespace: u64) -> Result<Vec<String>, HouseError> {
+        match self
+            .catalog
+            .list_tables(&Self::namespace(namespace, FUNCTIONS_DATABASE))
+            .await
+        {
+            Ok(tables) => Ok(tables.into_iter().map(|t| t.name().to_string()).collect()),
+            Err(CatalogError::NoSuchNamespace(_)) => Ok(Vec::new()),
+            Err(err) => Err(err.into()),
+        }
+    }
+
+    /// A SQL function's lambda (`(a, b) -> …`), as `CREATE FUNCTION` wrote it.
+    pub async fn function(&self, namespace: u64, name: &str) -> Result<Option<String>, HouseError> {
+        match self
+            .catalog
+            .load_table(&Self::table_ident(namespace, FUNCTIONS_DATABASE, name))
+            .await
+        {
+            Ok(loaded) => Ok(loaded
+                .metadata
+                .properties()
+                .get(ddl::PROP_FUNCTION_LAMBDA)
+                .cloned()),
+            Err(CatalogError::NoSuchTable(_) | CatalogError::NoSuchNamespace(_)) => Ok(None),
+            Err(err) => Err(err.into()),
+        }
+    }
+
+    /// `CREATE [OR REPLACE] FUNCTION [IF NOT EXISTS] name AS lambda` (HE1
+    /// R14.11): a SQL function of the namespace, a catalog entry with no files
+    /// in the House's own database `__loams_functions`, which no statement
+    /// names. `609` when it exists and neither `OR REPLACE` nor `IF NOT
+    /// EXISTS` is given.
+    pub async fn create_function(
+        &self,
+        namespace: u64,
+        function: &ddl::CreateFunction,
+    ) -> Result<(), HouseError> {
+        self.ensure_root(namespace).await?;
+        match self
+            .catalog
+            .create_database(
+                &Self::namespace(namespace, FUNCTIONS_DATABASE),
+                HashMap::from([(
+                    "comment".to_string(),
+                    "The House's own: the namespace's SQL functions".to_string(),
+                )]),
+            )
+            .await
+        {
+            Ok(()) | Err(CatalogError::NamespaceExists(_)) => {}
+            Err(err) => return Err(err.into()),
+        }
+        let properties = HashMap::from([
+            (ddl::PROP_DDL.to_string(), function.render()),
+            (ddl::PROP_ENGINE.to_string(), "Function".to_string()),
+            (ddl::PROP_CLASS.to_string(), "view".to_string()),
+            (
+                ddl::PROP_FUNCTION_LAMBDA.to_string(),
+                function.lambda.clone(),
+            ),
+        ]);
+        let ident = Self::table_ident(namespace, FUNCTIONS_DATABASE, &function.name);
+        match self.catalog.load_table(&ident).await {
+            Ok(existing) => {
+                if function.if_not_exists {
+                    return Ok(());
+                }
+                if !function.or_replace {
+                    return Err(ddl::clickhouse_error(
+                        609,
+                        "FUNCTION_ALREADY_EXISTS",
+                        format!(
+                            "User-defined object '{}' already exists: while adding user \
+                             defined function `{}`",
+                            function.name, function.name
+                        ),
+                    ));
+                }
+                self.catalog
+                    .commit(
+                        &existing.ident,
+                        Vec::new(),
+                        vec![TableUpdate::SetProperties {
+                            updates: properties,
+                        }],
+                    )
+                    .await?;
+                Ok(())
+            }
+            Err(CatalogError::NoSuchTable(_) | CatalogError::NoSuchNamespace(_)) => {
+                let location =
+                    self.root()
+                        .table_location(namespace, FUNCTIONS_DATABASE, &function.name);
+                let creation = ddl::view_creation(&function.name, location, properties)?;
+                match self
+                    .catalog
+                    .create_table(&Self::namespace(namespace, FUNCTIONS_DATABASE), creation)
+                    .await
+                {
+                    Ok(_) => Ok(()),
+                    // Another front made it first: as ClickHouse answers a race.
+                    Err(CatalogError::TableExists(_)) if function.if_not_exists => Ok(()),
+                    Err(err) => Err(err.into()),
+                }
+            }
+            Err(err) => Err(err.into()),
+        }
+    }
+
+    /// `DROP FUNCTION [IF EXISTS] name` (HE1 R14.11): `46` for a function the
+    /// namespace does not have.
+    pub async fn drop_function(
+        &self,
+        namespace: u64,
+        name: &str,
+        if_exists: bool,
+    ) -> Result<(), HouseError> {
+        let ident = Self::table_ident(namespace, FUNCTIONS_DATABASE, name);
+        match self.catalog.drop_table(&ident).await {
+            Ok(()) => Ok(()),
+            Err(CatalogError::NoSuchTable(_) | CatalogError::NoSuchNamespace(_)) if if_exists => {
+                Ok(())
+            }
+            Err(CatalogError::NoSuchTable(_) | CatalogError::NoSuchNamespace(_)) => {
+                Err(ddl::clickhouse_error(
+                    46,
+                    "UNKNOWN_FUNCTION",
+                    format!(
+                        "User-defined object '{name}' doesn't exist: while removing user \
+                         defined function `{name}`"
+                    ),
+                ))
+            }
+            Err(err) => Err(err.into()),
+        }
     }
 
     /// `RENAME TABLE a TO b` within the namespace.

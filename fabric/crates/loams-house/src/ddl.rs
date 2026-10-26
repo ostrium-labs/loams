@@ -54,8 +54,11 @@ pub const CATALOG_CODES: &[(i32, &str)] = &[
     (15, "DUPLICATE_COLUMN"),
     (16, "NO_SUCH_COLUMN_IN_TABLE"),
     (47, "UNKNOWN_IDENTIFIER"),
+    (46, "UNKNOWN_FUNCTION"),
     (82, "DATABASE_ALREADY_EXISTS"),
     (420, "CANNOT_UPDATE_COLUMN"),
+    (609, "FUNCTION_ALREADY_EXISTS"),
+    (610, "CANNOT_DROP_FUNCTION"),
     (620, "QUERY_NOT_ALLOWED"),
 ];
 
@@ -71,6 +74,8 @@ pub fn clickhouse_error(code: i32, name: &str, message: impl Into<String>) -> Ho
 
 /// Property: the statement as written.
 pub const PROP_DDL: &str = "loams.ch.ddl";
+/// Property: a SQL function's lambda, as written (HE1 R14.11).
+pub const PROP_FUNCTION_LAMBDA: &str = "loams.function.lambda";
 /// Property: the engine, as `SHOW CREATE` prints it.
 pub const PROP_ENGINE: &str = "loams.ch.engine";
 /// Property: every column, as JSON.
@@ -202,6 +207,10 @@ pub trait Oracle: Send {
     async fn describe(&mut self, columns: &str) -> Result<Vec<Described>, HouseError>;
     /// The names among `names` that are MergeTree settings.
     async fn merge_tree_settings(&mut self, names: &[String]) -> Result<Vec<String>, HouseError>;
+    /// Whether ClickHouse has a function (or aggregate function) so named, case
+    /// as ClickHouse compares it (HE1 R14.11: a SQL function may not take one's
+    /// name).
+    async fn builtin_function(&mut self, name: &str) -> Result<bool, HouseError>;
 }
 
 // ---------------------------------------------------------------------------
@@ -1277,6 +1286,60 @@ pub fn parse_create_view(text: &str) -> Result<CreateView, HouseError> {
     out.select = c.rest().trim().to_string();
     if out.select.is_empty() {
         return Err(syntax("Expected a SELECT after AS"));
+    }
+    Ok(out)
+}
+
+/// `CREATE [OR REPLACE] FUNCTION [IF NOT EXISTS] name [ON CLUSTER c] AS
+/// lambda` (HE1 R14.11), as written.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CreateFunction {
+    /// `OR REPLACE`.
+    pub or_replace: bool,
+    /// `IF NOT EXISTS`.
+    pub if_not_exists: bool,
+    /// The function's name.
+    pub name: String,
+    /// The lambda after `AS`, as written (`(a, b) -> a + b`).
+    pub lambda: String,
+}
+
+impl CreateFunction {
+    /// The statement as `SHOW CREATE FUNCTION` would print it.
+    pub fn render(&self) -> String {
+        format!("CREATE FUNCTION {} AS {}", quote_name(&self.name), self.lambda)
+    }
+}
+
+/// Reads `CREATE [OR REPLACE] FUNCTION [IF NOT EXISTS] name [ON CLUSTER c] AS
+/// lambda`. The name is a plain identifier, as ClickHouse's are.
+pub fn parse_create_function(text: &str) -> Result<CreateFunction, HouseError> {
+    let text = text.trim().trim_end_matches(';').trim_end();
+    let mut c = Cursor::new(text);
+    let mut out = CreateFunction::default();
+    c.expect("CREATE")?;
+    out.or_replace = c.eat_all(&["OR", "REPLACE"]);
+    c.expect("FUNCTION")?;
+    out.if_not_exists = c.eat_all(&["IF", "NOT", "EXISTS"]);
+    out.name = c.ident()?;
+    let plain = out
+        .name
+        .chars()
+        .next()
+        .is_some_and(|ch| ch.is_ascii_alphabetic() || ch == '_')
+        && out.name.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_');
+    if !plain {
+        return Err(syntax(format!(
+            "A function's name is a plain identifier, not {:?}",
+            out.name
+        )));
+    }
+    check_new_name("function", &out.name)?;
+    c.skip_on_cluster()?;
+    c.expect("AS")?;
+    out.lambda = c.rest().trim().to_string();
+    if out.lambda.is_empty() {
+        return Err(syntax("Expected a lambda after AS"));
     }
     Ok(out)
 }
@@ -2586,7 +2649,10 @@ pub fn touched(kind: Kind, text: &str, current: &str) -> Vec<Object> {
         Kind::CreateTable => parse_create_table(text)
             .map(|c| vec![table((c.database, c.name))])
             .unwrap_or_default(),
+        // A SQL function is the namespace's, no table's or database's.
+        Kind::CreateFunction => Vec::new(),
         Kind::Drop => match parse_drop(text) {
+            Ok(drop) if drop.kind == "FUNCTION" => Vec::new(),
             Ok(drop) if drop.kind == "DATABASE" => drop
                 .names
                 .into_iter()
@@ -2654,6 +2720,8 @@ pub enum Kind {
     Insert,
     /// `CREATE MATERIALIZED VIEW` (HS1 Task 16).
     CreateMaterializedView,
+    /// `CREATE FUNCTION` (HE1 R14.11).
+    CreateFunction,
 }
 
 /// The constant query a set of rows answers as: `SELECT … FROM values(…)`.
@@ -2847,10 +2915,43 @@ pub async fn execute(
                     }
                     Ok(Answer::Done)
                 }
+                // HE1 R14.11: the namespace's SQL functions.
+                "FUNCTION" => {
+                    for (db, name) in &stmt.names {
+                        if db.is_some() {
+                            return Err(syntax("A function name is not qualified"));
+                        }
+                        if lake.function(namespace, name).await?.is_none()
+                            && oracle.builtin_function(name).await?
+                        {
+                            return Err(clickhouse_error(
+                                610,
+                                "CANNOT_DROP_FUNCTION",
+                                format!("Cannot drop system function '{name}'"),
+                            ));
+                        }
+                        lake.drop_function(namespace, name, stmt.if_exists).await?;
+                    }
+                    Ok(Answer::Done)
+                }
                 other => Err(HouseError::from(ChError::not_implemented(format!(
                     "DROP {other} is not on the House's surface"
                 )))),
             }
+        }
+        Kind::CreateFunction => {
+            let function = parse_create_function(text)?;
+            // The lambda is held to the deny list as a query's expressions are.
+            oracle.check(&format!("SELECT ({})", function.lambda)).await?;
+            if oracle.builtin_function(&function.name).await? {
+                return Err(clickhouse_error(
+                    609,
+                    "FUNCTION_ALREADY_EXISTS",
+                    format!("The function '{}' already exists", function.name),
+                ));
+            }
+            lake.create_function(namespace, &function).await?;
+            Ok(Answer::Done)
         }
         Kind::CreateMaterializedView => {
             oracle.check(text).await?;
@@ -2974,7 +3075,7 @@ pub async fn execute(
 /// A view's catalog entry (HE1 R9.13): an Iceberg table with no files whose
 /// properties hold the `SELECT` (or a `Distributed` table's local table), so a
 /// view is listed, renamed, dropped and kept for `UNDROP` as a table is.
-fn view_creation(
+pub(crate) fn view_creation(
     name: &str,
     location: String,
     properties: HashMap<String, String>,

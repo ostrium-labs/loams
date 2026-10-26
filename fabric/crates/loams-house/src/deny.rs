@@ -772,6 +772,10 @@ pub struct QueryTree {
     /// What a `SHOW` lists (`TABLES`, `CLUSTERS` …), read from the statement's
     /// text, when it is one: `ShowTables` does not say.
     show_list: Option<String>,
+    /// The table functions that are calls of the namespace's own (parameterised)
+    /// views, as the trees print them (HE1 R14.5): the front resolved each one
+    /// in the catalog, so they read only the namespace's tables.
+    catalog_views: Vec<String>,
 }
 
 impl QueryTree {
@@ -800,6 +804,37 @@ impl QueryTree {
     pub fn statement(mut self, sql: &str) -> Self {
         self.show_list = show_list(sql);
         self
+    }
+
+    /// The table functions the front found to be the namespace's own views
+    /// ([`QueryTree::view_calls`], HE1 R14.5): allowed, as a table name is.
+    pub fn catalog_views(mut self, names: &[String]) -> Self {
+        self.catalog_views = names.to_vec();
+        self
+    }
+
+    /// The table functions a statement calls that are not on the allow lists,
+    /// as the trees print them (`v`, `db.v`), each once: what a call of a
+    /// parameterised view looks like (HE1 R14.5). The front resolves them in
+    /// the catalog; whatever is not a view stays refused.
+    pub fn view_calls(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for entry in &self.entries {
+            let Node::TableFunction(names) = &entry.node else {
+                continue;
+            };
+            for name in names {
+                if listed(ALLOWED_TABLE_FUNCTIONS, name)
+                    || listed(INSERT_ONLY_TABLE_FUNCTIONS, name)
+                    || listed(DENIED_TABLE_FUNCTIONS, name)
+                    || out.contains(name)
+                {
+                    continue;
+                }
+                out.push(name.clone());
+            }
+        }
+        out
     }
 
     /// Marks the statement as a `CREATE` of something other than a temporary
@@ -1185,6 +1220,11 @@ fn show_list(sql: &str) -> Option<String> {
 }
 
 fn check_table_function(tree: &QueryTree, at: usize, name: &str) -> Result<(), ChError> {
+    // A call of the namespace's own view (HE1 R14.5): its body is checked on
+    // its own when the read expands it.
+    if tree.catalog_views.iter().any(|v| v == name) {
+        return Ok(());
+    }
     if listed(INSERT_ONLY_TABLE_FUNCTIONS, name) {
         if tree.insert {
             return Ok(());

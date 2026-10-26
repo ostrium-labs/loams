@@ -2038,14 +2038,27 @@ async fn run(
         None => sql.clone(),
     };
     let decided = match lease.analyze(&parsed_text, &query_params).await {
-        Ok(analysis) => gate::admit(
+        // HE1 R14.5: a call of the namespace's own (parameterised) view is
+        // allowed, as its name would be.
+        Ok(analysis) => match gate::view_calls(
+            shared.lake.as_deref(),
+            user.namespace,
+            &current_database,
             &analysis,
-            &parsed_text,
-            expect,
-            readonly,
-            unparsed.as_deref(),
         )
-        .map(|()| analysis),
+        .await
+        {
+            Ok(views) => gate::admit_views(
+                &analysis,
+                &parsed_text,
+                expect,
+                readonly,
+                unparsed.as_deref(),
+                &views,
+            )
+            .map(|()| analysis),
+            Err(err) => Err(err),
+        },
         Err(err) => Err(deny::as_setting_refusal(err)),
     };
     let analysis = match decided {
