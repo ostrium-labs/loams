@@ -79,9 +79,9 @@ impl Agentd {
     pub fn router(self) -> Router {
         use crate::proto::loams::agentd::v1::{
             ApprovalServiceExt, AttachmentServiceExt, DiffServiceExt, FileServiceExt,
-            GitServiceExt, HarnessServiceExt, MarketplaceServiceExt, NotificationServiceExt, PreviewServiceExt,
-            ProjectServiceExt, QueueServiceExt, ReviewServiceExt, RunGroupServiceExt,
-            StudioServiceExt, TerminalServiceExt, ThreadServiceExt,
+            GitServiceExt, HarnessServiceExt, MarketplaceServiceExt, NotificationServiceExt,
+            PreviewServiceExt, ProjectServiceExt, QueueServiceExt, ReviewServiceExt,
+            RunGroupServiceExt, StudioServiceExt, TerminalServiceExt, ThreadServiceExt,
         };
         let me = Arc::new(self);
         let router = Router::new();

@@ -47,7 +47,10 @@ impl HttpsFetcher {
         let client = builder
             .https_only(true)
             .timeout(TIMEOUT)
-            .user_agent(concat!("loams-agentd-marketplace/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!(
+                "loams-agentd-marketplace/",
+                env!("CARGO_PKG_VERSION")
+            ))
             .build()
             .map_err(|e| e.to_string())?;
         Ok(Self {

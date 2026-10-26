@@ -176,7 +176,12 @@ impl EngineRpc {
         let host = self.market()?;
         match method {
             methods::LIST_MARKETPLACE_SOURCES => {
-                let sources = host.list_sources().await.into_iter().map(source_of).collect();
+                let sources = host
+                    .list_sources()
+                    .await
+                    .into_iter()
+                    .map(source_of)
+                    .collect();
                 reply::<calls::ListMarketplaceSources, _>(&wire::MarketplaceSourceList { sources })
             }
             methods::ADD_MARKETPLACE_SOURCE => {
@@ -213,7 +218,12 @@ impl EngineRpc {
                     tiers: p.tiers.into_iter().map(tier_from).collect(),
                     source: p.source.and_then(some),
                 };
-                let results = host.search(&query).await.into_iter().map(summary_of).collect();
+                let results = host
+                    .search(&query)
+                    .await
+                    .into_iter()
+                    .map(summary_of)
+                    .collect();
                 reply::<calls::SearchListings, _>(&wire::ListingSearchResults { results })
             }
             methods::GET_LISTING => {

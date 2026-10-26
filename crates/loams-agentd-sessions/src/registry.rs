@@ -494,7 +494,9 @@ impl HarnessRegistry {
                 .position(|slot| slot.launch == launch)
                 .map(|at| previous.remove(at));
             slots.push(kept.unwrap_or_else(|| MarketplaceSlot {
-                harness: Arc::new(loams_agentd_harness::AcpHarness::marketplace(launch.clone())),
+                harness: Arc::new(loams_agentd_harness::AcpHarness::marketplace(
+                    launch.clone(),
+                )),
                 launch,
             }));
         }

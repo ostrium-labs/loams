@@ -2354,7 +2354,10 @@ impl Harness for AcpHarness {
         if let Some(launch) = &self.launch {
             // The node runtime spawns `node` from PATH or an absolute path.
             return launch.program.is_absolute() && launch.program.is_file()
-                || launch.args.first().is_some_and(|entry| Path::new(entry).is_file());
+                || launch
+                    .args
+                    .first()
+                    .is_some_and(|entry| Path::new(entry).is_file());
         }
         // Overrides go through the same validation as `resolve_launch`, so an
         // override that points at nothing reports not-installed instead of an

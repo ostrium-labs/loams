@@ -99,7 +99,10 @@ async fn engine() -> Engine {
 impl Engine {
     async fn plan(&self, id: &str, version: Option<&str>) -> PlanInstallReply {
         self.client
-            .call_as(methods::PLAN_INSTALL, json!({ "id": id, "version": version }))
+            .call_as(
+                methods::PLAN_INSTALL,
+                json!({ "id": id, "version": version }),
+            )
             .await
             .unwrap()
     }
@@ -146,7 +149,8 @@ async fn list_marketplace_sources_answers_the_official_source() {
 async fn add_and_remove_marketplace_source() {
     let engine = engine().await;
     let base = "https://example.org/market";
-    let identity = "https://github.com/example/market/.github/workflows/publish.yml@refs/heads/main";
+    let identity =
+        "https://github.com/example/market/.github/workflows/publish.yml@refs/heads/main";
     engine.world.fetcher.serve(
         base,
         &loams_agentd_marketplace::testkit::index_bytes(),
@@ -162,7 +166,10 @@ async fn add_and_remove_marketplace_source() {
         )
         .await
         .unwrap_err();
-    assert!(error.to_string().starts_with("untrusted_listing"), "{error}");
+    assert!(
+        error.to_string().starts_with("untrusted_listing"),
+        "{error}"
+    );
 
     let added: MarketplaceSource = engine
         .client
@@ -183,12 +190,18 @@ async fn add_and_remove_marketplace_source() {
 
     engine
         .client
-        .call(methods::REMOVE_MARKETPLACE_SOURCE, json!({ "name": "example" }))
+        .call(
+            methods::REMOVE_MARKETPLACE_SOURCE,
+            json!({ "name": "example" }),
+        )
         .await
         .unwrap();
     let error = engine
         .client
-        .call(methods::REMOVE_MARKETPLACE_SOURCE, json!({ "name": "official" }))
+        .call(
+            methods::REMOVE_MARKETPLACE_SOURCE,
+            json!({ "name": "official" }),
+        )
         .await
         .unwrap_err();
     assert!(error.to_string().starts_with("bad_params"), "{error}");
@@ -293,7 +306,11 @@ async fn harness_descriptor_appears_in_list_harnesses() {
     assert_eq!(entry.enabled, Some(true));
     assert!(!entry.can_install);
     // The registry resolves it to an ACP harness launched from the install.
-    let harness = engine.core.registry.resolve_marketplace(HARNESS_ID).unwrap();
+    let harness = engine
+        .core
+        .registry
+        .resolve_marketplace(HARNESS_ID)
+        .unwrap();
     assert_eq!(harness.id(), HarnessId::Marketplace);
 
     engine
@@ -303,7 +320,13 @@ async fn harness_descriptor_appears_in_list_harnesses() {
         .unwrap();
     let gone = engine.harnesses().await;
     assert!(gone.0.iter().all(|d| d.id != HarnessId::Marketplace));
-    assert!(engine.core.registry.resolve_marketplace(HARNESS_ID).is_err());
+    assert!(
+        engine
+            .core
+            .registry
+            .resolve_marketplace(HARNESS_ID)
+            .is_err()
+    );
 }
 
 #[tokio::test]
@@ -315,7 +338,13 @@ async fn mcp_server_available_to_threads() {
     engine
         .core
         .workspace
-        .create_chat("t", None, Some(&engine.core.device_id), None, Some("/tmp".into()))
+        .create_chat(
+            "t",
+            None,
+            Some(&engine.core.device_id),
+            None,
+            Some("/tmp".into()),
+        )
         .unwrap();
     engine
         .core

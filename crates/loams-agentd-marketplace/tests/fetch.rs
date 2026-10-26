@@ -13,9 +13,7 @@ use tokio::net::TcpListener;
 async fn serve(routes: Vec<(&'static str, u16, Vec<u8>)>) -> (String, Vec<u8>) {
     let certified = rcgen::generate_simple_self_signed(vec!["localhost".to_owned()]).unwrap();
     let cert_der = certified.cert.der().to_vec();
-    let key = rustls::pki_types::PrivateKeyDer::Pkcs8(
-        certified.signing_key.serialize_der().into(),
-    );
+    let key = rustls::pki_types::PrivateKeyDer::Pkcs8(certified.signing_key.serialize_der().into());
     let config = rustls::ServerConfig::builder_with_provider(Arc::new(
         rustls::crypto::ring::default_provider(),
     ))
@@ -80,7 +78,10 @@ async fn fetches_over_tls_from_a_trusted_server() {
 async fn an_untrusted_certificate_is_refused() {
     let (base, _ca) = serve(vec![("/index.json", 200, b"{}".to_vec())]).await;
     let fetcher = HttpsFetcher::new().unwrap();
-    let error = fetcher.get(&format!("{base}/index.json")).await.unwrap_err();
+    let error = fetcher
+        .get(&format!("{base}/index.json"))
+        .await
+        .unwrap_err();
     assert!(error.contains("index.json"), "{error}");
 }
 
@@ -90,7 +91,10 @@ async fn an_error_status_is_an_error() {
     let fetcher = HttpsFetcher::with_root_certificate(&ca).unwrap();
     let error = fetcher.get(&format!("{base}/gone.json")).await.unwrap_err();
     assert!(error.starts_with("HTTP 410"), "{error}");
-    let error = fetcher.get(&format!("{base}/missing.json")).await.unwrap_err();
+    let error = fetcher
+        .get(&format!("{base}/missing.json"))
+        .await
+        .unwrap_err();
     assert!(error.starts_with("HTTP 404"), "{error}");
 }
 

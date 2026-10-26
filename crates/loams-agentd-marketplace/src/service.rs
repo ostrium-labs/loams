@@ -126,7 +126,9 @@ pub enum ServiceError {
     Market(#[from] MarketError),
     #[error(transparent)]
     Install(#[from] InstallError),
-    #[error("plan_changed: the plan for {id} is now {current}, not the {confirmed} that was confirmed; plan again")]
+    #[error(
+        "plan_changed: the plan for {id} is now {current}, not the {confirmed} that was confirmed; plan again"
+    )]
     PlanChanged {
         id: String,
         confirmed: String,
@@ -324,7 +326,8 @@ impl MarketplaceHost {
     ///
     /// When `sources.json` cannot be read.
     pub fn open(deps: Deps) -> Result<Self, ServiceError> {
-        let market = Marketplace::open(&deps.data_dir, deps.fetcher.clone(), deps.verifier.clone())?;
+        let market =
+            Marketplace::open(&deps.data_dir, deps.fetcher.clone(), deps.verifier.clone())?;
         let layout = Layout::new(deps.data_dir.join("agents"));
         let (generation, _) = tokio::sync::watch::channel(0);
         let host = Self {
@@ -605,7 +608,9 @@ impl MarketplaceHost {
                 let version = str_at(&listing, &["artifact", "version"])
                     .or_else(|| str_at(&listing, &["version"]))
                     .unwrap_or_default();
-                let tarball = self.fetch(&tarball_url(&self.inner.deps.registry, name, version)).await?;
+                let tarball = self
+                    .fetch(&tarball_url(&self.inner.deps.registry, name, version))
+                    .await?;
                 let bundles = self
                     .attestations(&attestations_url(&self.inner.deps.registry, name, version))
                     .await?;
@@ -645,25 +650,21 @@ impl MarketplaceHost {
     }
 
     async fn fetch(&self, url: &str) -> Result<Vec<u8>, ServiceError> {
-        self.inner
-            .deps
-            .fetcher
-            .get(url)
-            .await
-            .map_err(|error| {
-                MarketError::Fetch {
-                    url: url.into(),
-                    error,
-                }
-                .into()
-            })
+        self.inner.deps.fetcher.get(url).await.map_err(|error| {
+            MarketError::Fetch {
+                url: url.into(),
+                error,
+            }
+            .into()
+        })
     }
 
     /// npm's attestations document: each attestation's Sigstore bundle.
     async fn attestations(&self, url: &str) -> Result<Vec<Vec<u8>>, ServiceError> {
         let bytes = self.fetch(url).await?;
-        let doc: Value = serde_json::from_slice(&bytes)
-            .map_err(|e| InstallError::Provenance(crate::provenance::ProvenanceError::Malformed(e.to_string())))?;
+        let doc: Value = serde_json::from_slice(&bytes).map_err(|e| {
+            InstallError::Provenance(crate::provenance::ProvenanceError::Malformed(e.to_string()))
+        })?;
         Ok(doc["attestations"]
             .as_array()
             .into_iter()
@@ -682,7 +683,10 @@ impl MarketplaceHost {
         let removed = self.inner.layout.uninstall(id)?;
         if let Some(listing) = listing {
             for name in secret_names(&listing) {
-                self.inner.deps.vault.delete(&secret_key(&removed.id, &name));
+                self.inner
+                    .deps
+                    .vault
+                    .delete(&secret_key(&removed.id, &name));
             }
         }
         self.bump();
@@ -690,8 +694,7 @@ impl MarketplaceHost {
     }
 
     fn installed_listing(&self, id: &str) -> Option<Value> {
-        let bytes =
-            std::fs::read(self.inner.layout.listing_dir(id).join(LISTING_FILE)).ok()?;
+        let bytes = std::fs::read(self.inner.layout.listing_dir(id).join(LISTING_FILE)).ok()?;
         serde_json::from_slice(&bytes).ok()
     }
 
@@ -736,7 +739,11 @@ impl MarketplaceHost {
         to: Option<&str>,
     ) -> Result<(Option<InstallPlan>, InstallPlan, String), ServiceError> {
         let old = market
-            .get_listing(&installed.id, Some(&installed.version), Some(&installed.source))
+            .get_listing(
+                &installed.id,
+                Some(&installed.version),
+                Some(&installed.source),
+            )
             .ok()
             .map(|view| plan::plan(&view, &[]));
         let (new, digest) = market.plan_install(&installed.id, to, Some(&installed.source), &[])?;
@@ -923,10 +930,7 @@ impl Npm for ProcessNpm {
             }
             _ => std::process::Command::new(&self.npm),
         };
-        let cache = prefix
-            .parent()
-            .unwrap_or(prefix)
-            .join(".npm-cache");
+        let cache = prefix.parent().unwrap_or(prefix).join(".npm-cache");
         cmd.args(install::npm_args(tarball, prefix))
             .env_clear()
             .env("HOME", &cache)
@@ -935,7 +939,10 @@ impl Npm for ProcessNpm {
             .current_dir(prefix)
             .stdin(std::process::Stdio::null());
         let mut path: Vec<PathBuf> = Vec::new();
-        for program in [self.node.as_deref(), Some(self.npm.as_path())].into_iter().flatten() {
+        for program in [self.node.as_deref(), Some(self.npm.as_path())]
+            .into_iter()
+            .flatten()
+        {
             if let Some(dir) = program.parent() {
                 path.push(dir.to_owned());
             }
@@ -946,7 +953,9 @@ impl Npm for ProcessNpm {
         if let Some(root) = std::env::var_os("SystemRoot") {
             cmd.env("SystemRoot", root);
         }
-        let output = cmd.output().map_err(|e| format!("{}: {e}", self.npm.display()))?;
+        let output = cmd
+            .output()
+            .map_err(|e| format!("{}: {e}", self.npm.display()))?;
         if output.status.success() {
             Ok(())
         } else {
@@ -986,7 +995,8 @@ fn write_json(path: &Path, value: &Value) -> Result<(), ServiceError> {
             error: e.to_string(),
         })
     };
-    let text = serde_json::to_vec_pretty(value).map_err(|e| ServiceError::BadRequest(e.to_string()))?;
+    let text =
+        serde_json::to_vec_pretty(value).map_err(|e| ServiceError::BadRequest(e.to_string()))?;
     let tmp = path.with_extension("json.tmp");
     std::fs::write(&tmp, text).map_err(io)?;
     std::fs::rename(&tmp, path).map_err(io)

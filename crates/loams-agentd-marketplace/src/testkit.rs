@@ -235,7 +235,8 @@ pub fn mcp_listing() -> Value {
         "mode": "local", "transport": "stdio", "args": ["--stdio"],
         "server": { "name": "dev.loams.testkit/notes-mcp", "description": "Notes.", "version": "1.0.0" }
     });
-    listing["tools"] = json!([{ "name": "read_note", "description": "Reads a note.", "risk": "read" }]);
+    listing["tools"] =
+        json!([{ "name": "read_note", "description": "Reads a note.", "risk": "read" }]);
     listing["config"] = json!([{
         "name": "token", "description": "The notes token.", "type": "string",
         "env": "NOTES_TOKEN", "required": true, "secret": true
@@ -250,7 +251,10 @@ fn sha256_hex(text: &str) -> String {
 /// The fixture index (`testdata/index`) with the testkit listings added.
 pub fn index_bytes() -> Vec<u8> {
     let mut index: Value = serde_json::from_slice(&fixture("index.json")).unwrap();
-    let harness: Vec<Value> = HARNESS_VERSIONS.iter().map(|v| harness_listing_at(v)).collect();
+    let harness: Vec<Value> = HARNESS_VERSIONS
+        .iter()
+        .map(|v| harness_listing_at(v))
+        .collect();
     for versions in [harness, vec![mcp_listing()]] {
         let latest = versions.last().unwrap();
         let entry = json!({
@@ -323,7 +327,8 @@ impl World {
     pub fn deps(&self) -> Deps {
         let mut npm = FakeNpm::default();
         npm.packages.insert("echo-acp".into(), "bin/echo.js".into());
-        npm.packages.insert("notes-mcp".into(), "bin/notes.js".into());
+        npm.packages
+            .insert("notes-mcp".into(), "bin/notes.js".into());
         Deps {
             data_dir: self.data_dir.clone(),
             fetcher: Arc::new(self.fetcher.clone()),

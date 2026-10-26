@@ -19,8 +19,8 @@ pub mod sources;
 pub mod testkit;
 pub mod verify;
 
-pub use market::{Fetcher, ListingView, MarketError, Marketplace, Query, SourceInfo, Summary};
 pub use fetch::HttpsFetcher;
+pub use market::{Fetcher, ListingView, MarketError, Marketplace, Query, SourceInfo, Summary};
 pub use service::{Deps, MarketplaceHost, MemoryVault, Registrations, ServiceError, Vault};
 pub use sources::Source;
 pub use verify::{Identity, SignatureVerifier, SigstoreVerifier};

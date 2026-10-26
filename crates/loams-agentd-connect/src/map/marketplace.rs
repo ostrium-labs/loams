@@ -100,9 +100,7 @@ fn to_proto_json(value: &Value, node: &Value) -> Value {
                 if key.starts_with('$') {
                     continue;
                 }
-                let child = properties
-                    .and_then(|p| p.get(key))
-                    .unwrap_or(&Value::Null);
+                let child = properties.and_then(|p| p.get(key)).unwrap_or(&Value::Null);
                 // A free-form object (`google.protobuf.Struct`) is kept whole.
                 let keep = node.get("x-proto-message").is_none() && properties.is_none();
                 out.insert(
@@ -118,7 +116,12 @@ fn to_proto_json(value: &Value, node: &Value) -> Value {
         }
         Value::Array(items) => {
             let child = node.get("items").unwrap_or(&Value::Null);
-            Value::Array(items.iter().map(|item| to_proto_json(item, child)).collect())
+            Value::Array(
+                items
+                    .iter()
+                    .map(|item| to_proto_json(item, child))
+                    .collect(),
+            )
         }
         other => other.clone(),
     }
@@ -147,9 +150,7 @@ fn from_proto_json(value: &Value, node: &Value) -> Value {
                     .map(|(key, item)| {
                         // proto3 JSON writes lowerCamelCase; the schema is snake_case.
                         let key = if keep { key.clone() } else { snake(key) };
-                        let child = properties
-                            .and_then(|p| p.get(&key))
-                            .unwrap_or(&Value::Null);
+                        let child = properties.and_then(|p| p.get(&key)).unwrap_or(&Value::Null);
                         let item = if keep {
                             item.clone()
                         } else {
@@ -199,7 +200,10 @@ fn node_of(property: Option<&str>) -> &'static Value {
 }
 
 /// A listing part (JSON) as its message; JSON null is the default message.
-fn part_to_pb<T: serde::de::DeserializeOwned + Default>(value: &Value, property: Option<&str>) -> T {
+fn part_to_pb<T: serde::de::DeserializeOwned + Default>(
+    value: &Value,
+    property: Option<&str>,
+) -> T {
     if value.is_null() {
         return T::default();
     }
@@ -368,7 +372,8 @@ impl Wire for rs_market::SearchListingsParams {
                 .into_iter()
                 .map(|v| {
                     let raw = v.to_i32();
-                    str_from_enum(FRAMEWORK, v).ok_or_else(|| MapError::enum_value("FrameworkName", raw))
+                    str_from_enum(FRAMEWORK, v)
+                        .ok_or_else(|| MapError::enum_value("FrameworkName", raw))
                 })
                 .collect::<Result<_, _>>()?,
             languages: pb
@@ -422,7 +427,8 @@ impl Wire for rs_market::ListingSummary {
         Ok(Self {
             id: pb.id,
             source: pb.source,
-            kind: str_from_enum(KIND, pb.kind).ok_or_else(|| MapError::enum_value("Kind", kind_raw))?,
+            kind: str_from_enum(KIND, pb.kind)
+                .ok_or_else(|| MapError::enum_value("Kind", kind_raw))?,
             title: pb.title,
             summary: pb.summary,
             tier: Wire::from_pb(pb.tier)?,
@@ -639,7 +645,10 @@ impl Wire for rs_market::InstallListingParams {
             source: source.clone().unwrap_or_default(),
             plan_digest: plan_digest.clone(),
             config: config.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
-            secrets: secrets.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+            secrets: secrets
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
             ..Default::default()
         }
     }

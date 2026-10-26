@@ -116,8 +116,7 @@ impl Vault for KeyringVault {
     }
 
     fn delete(&self, key: &str) {
-        if let Ok(entry) = keyring::Entry::new(crate::change_request_create::KEYRING_SERVICE, key)
-        {
+        if let Ok(entry) = keyring::Entry::new(crate::change_request_create::KEYRING_SERVICE, key) {
             let _ = entry.delete_credential();
         }
     }

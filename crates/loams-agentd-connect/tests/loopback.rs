@@ -869,7 +869,9 @@ async fn marketplace_over_connect() {
 
     let found = market
         .search_listings(pb::SearchListingsRequest {
-            kinds: vec![loams_agentd_connect::proto::loams::marketplace::v1::Kind::KIND_HARNESS.into()],
+            kinds: vec![
+                loams_agentd_connect::proto::loams::marketplace::v1::Kind::KIND_HARNESS.into(),
+            ],
             ..Default::default()
         })
         .await
@@ -877,7 +879,10 @@ async fn marketplace_over_connect() {
         .into_owned();
     let ndjson: rs::marketplace::ListingSearchResults = daemon
         .ndjson
-        .call_as(methods::SEARCH_LISTINGS, serde_json::json!({ "kinds": ["harness"] }))
+        .call_as(
+            methods::SEARCH_LISTINGS,
+            serde_json::json!({ "kinds": ["harness"] }),
+        )
         .await
         .unwrap();
     assert_eq!(found, ndjson.to_pb());
@@ -899,7 +904,10 @@ async fn marketplace_over_connect() {
     // The proto listing maps back to the index's JSON.
     let ndjson: rs::marketplace::ListingDetail = daemon
         .ndjson
-        .call_as(methods::GET_LISTING, serde_json::json!({ "id": "ostrium/claude-code" }))
+        .call_as(
+            methods::GET_LISTING,
+            serde_json::json!({ "id": "ostrium/claude-code" }),
+        )
         .await
         .unwrap();
     assert_eq!(

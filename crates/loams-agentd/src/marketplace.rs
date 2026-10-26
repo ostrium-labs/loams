@@ -7,9 +7,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use loams_agentd_marketplace::service::{
-    Deps, NPM_REGISTRY, NoNpm, ProcessNpm, REFRESH_INTERVAL,
-};
+use loams_agentd_marketplace::service::{Deps, NPM_REGISTRY, NoNpm, ProcessNpm, REFRESH_INTERVAL};
 use loams_agentd_marketplace::{HttpsFetcher, MarketplaceHost, SigstoreVerifier};
 
 /// Opens the marketplace under `dir` (`marketplace/`, `agents/`).

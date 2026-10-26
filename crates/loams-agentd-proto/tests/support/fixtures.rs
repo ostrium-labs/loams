@@ -348,7 +348,9 @@ fn run_request() -> RunRequest {
         // MK1 Task 4b: an installed marketplace MCP server.
         mcp_servers: vec![McpServer {
             name: s("marketplace-ostrium-github-mcp-server"),
-            command: s("/home/dev/.loams-agentd/agents/ostrium/github-mcp-server/2.0.3/github-mcp-server"),
+            command: s(
+                "/home/dev/.loams-agentd/agents/ostrium/github-mcp-server/2.0.3/github-mcp-server",
+            ),
             args: vec![s("stdio")],
             env: BTreeMap::from([(s("GITHUB_PERSONAL_ACCESS_TOKEN"), s("ghp_example"))]),
         }],
@@ -899,29 +901,31 @@ pub fn all() -> Vec<Fixture> {
     // Harnesses.
     add(Fixture::new(
         "HarnessCatalog",
-        HarnessCatalog(vec![HarnessDescriptor {
-            id: HarnessId::Codex,
-            name: s("Codex"),
-            supports_steering: true,
-            steering_mode: SteeringMode::StepBoundary,
-            reasoning_levels: vec![ReasoningLevel::Low, ReasoningLevel::High],
-            installed: true,
-            can_install: false,
-            marketplace_listing: None,
-            enabled: Some(true),
-        },
-        // MK1 Task 4b: an installed marketplace ACP harness.
-        HarnessDescriptor {
-            id: HarnessId::Marketplace,
-            name: s("fx"),
-            supports_steering: true,
-            steering_mode: SteeringMode::TurnBoundary,
-            reasoning_levels: vec![],
-            installed: true,
-            can_install: false,
-            marketplace_listing: some("vercel-labs/fx"),
-            enabled: Some(true),
-        }]),
+        HarnessCatalog(vec![
+            HarnessDescriptor {
+                id: HarnessId::Codex,
+                name: s("Codex"),
+                supports_steering: true,
+                steering_mode: SteeringMode::StepBoundary,
+                reasoning_levels: vec![ReasoningLevel::Low, ReasoningLevel::High],
+                installed: true,
+                can_install: false,
+                marketplace_listing: None,
+                enabled: Some(true),
+            },
+            // MK1 Task 4b: an installed marketplace ACP harness.
+            HarnessDescriptor {
+                id: HarnessId::Marketplace,
+                name: s("fx"),
+                supports_steering: true,
+                steering_mode: SteeringMode::TurnBoundary,
+                reasoning_levels: vec![],
+                installed: true,
+                can_install: false,
+                marketplace_listing: some("vercel-labs/fx"),
+                enabled: Some(true),
+            },
+        ]),
     ));
     add(Fixture::new(
         "HarnessParams",
@@ -2411,7 +2415,9 @@ fn marketplace_fixtures(add: &mut impl FnMut(Fixture)) {
         AddMarketplaceSourceParams {
             name: s("example"),
             url: s("https://example.org/market/index.json"),
-            identity: s("https://github.com/example/market/.github/workflows/publish.yml@refs/heads/main"),
+            identity: s(
+                "https://github.com/example/market/.github/workflows/publish.yml@refs/heads/main",
+            ),
             issuer: None,
         },
     ));
