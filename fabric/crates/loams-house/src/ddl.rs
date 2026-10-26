@@ -216,15 +216,23 @@ pub trait Oracle: Send {
 // ---------------------------------------------------------------------------
 // Names and the lexer.
 
+/// The words a column list reads as the start of another entry, never as a
+/// column's name, so a column so named must be backquoted (measured on
+/// 26.9.2.8: `CREATE TABLE t (id UInt64, index UInt64)` is `62`; Laminar's
+/// `evaluation_datapoints.index`, HE1 R14.7). Compared without case.
+const ENTRY_KEYWORDS: &[&str] = &["INDEX", "PROJECTION", "CONSTRAINT"];
+
 /// A name as ClickHouse prints it: bare when it is a plain identifier, else in
-/// backquotes.
+/// backquotes. A name a column list would read as a keyword
+/// ([`ENTRY_KEYWORDS`]) is backquoted too, wherever it is printed.
 pub fn quote_name(name: &str) -> String {
     let plain = !name.is_empty()
         && name
             .chars()
             .next()
             .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
-        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        && !ENTRY_KEYWORDS.iter().any(|k| k.eq_ignore_ascii_case(name));
     if plain {
         name.to_string()
     } else {
@@ -3611,6 +3619,11 @@ mod tests {
         );
         assert_eq!(quote_name("a b"), "`a b`");
         assert_eq!(quote_name("ab_1"), "ab_1");
+        // HE1 R14.7: a column list reads these as its own keywords.
+        assert_eq!(quote_name("index"), "`index`");
+        assert_eq!(quote_name("Projection"), "`Projection`");
+        assert_eq!(quote_name("constraint"), "`constraint`");
+        assert_eq!(quote_name("indexes"), "indexes");
         assert_eq!(unquote("`a``b`"), "a`b");
         assert_eq!(unquote("'a\\'b'"), "a'b");
     }

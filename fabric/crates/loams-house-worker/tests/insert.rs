@@ -1200,6 +1200,50 @@ async fn create_table_as_select_and_truncate() {
     assert_eq!(code_ro.as_deref(), Some("164"), "{text}");
 }
 
+/// HE1 R14.7: columns named like a column list's keywords (`index`,
+/// `projection`; Laminar's `evaluation_datapoints.index`) are backquoted in
+/// every column list the House writes, so `INSERT … SELECT` stages them
+/// (Laminar's migrations 19 and 32). Every answer is the 26.9.2.8 oracle's.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn keyword_named_columns_insert_select() {
+    let house = lakehouse("keyword-columns").await;
+    let addr = house.addr();
+    ok(
+        addr,
+        "CREATE TABLE ed (id UInt64, `index` UInt64, `projection` String, \
+         data String CODEC(ZSTD(3)), INDEX idx (id, `index`) TYPE bloom_filter) \
+         ENGINE = ReplacingMergeTree ORDER BY (id, `index`)",
+    )
+    .await;
+    ok(addr, "INSERT INTO ed VALUES (1, 0, 'p', 'a'), (1, 1, 'q', 'b')").await;
+    ok(
+        addr,
+        "CREATE TABLE ed2 (id UInt64, `index` UInt64, `projection` String, data String) \
+         ENGINE = MergeTree ORDER BY id",
+    )
+    .await;
+    ok(addr, "INSERT INTO ed2 SELECT * FROM ed").await;
+    ok(
+        addr,
+        "INSERT INTO ed2 (id, index, projection, data) WITH x AS (SELECT id + 10 AS id, index, \
+         projection, data FROM ed) SELECT id, index, projection, data FROM x",
+    )
+    .await;
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT id, index, projection, data FROM ed2 ORDER BY id, index FORMAT TSV"
+        )
+        .await,
+        "1\t0\tp\ta\n1\t1\tq\tb\n11\t0\tp\ta\n11\t1\tq\tb\n"
+    );
+    let shown = ok(addr, "SHOW CREATE TABLE ed2 FORMAT TSVRaw").await;
+    assert!(
+        shown.contains("`index` UInt64") && shown.contains("`projection` String"),
+        "{shown}"
+    );
+}
+
 /// `loams.house.v1.ExecuteQuery` writes lake tables as HTTP does (§49 §18.2):
 /// the summary carries `written_rows` and the snapshot.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
