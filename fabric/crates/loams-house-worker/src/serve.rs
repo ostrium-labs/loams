@@ -965,11 +965,15 @@ pub fn drop_views(control: &Session) -> Result<(), ChdbError> {
         .join(", ");
     // HE1 R14.12: dictionaries first, since a view they read cannot be
     // dropped under them (`630`, measured).
-    for dictionary in names(
-        "SELECT concat(backQuoteIfNeed(database), '.', backQuoteIfNeed(name)) \
-         FROM system.dictionaries",
-    )? {
-        control.execute_simple(&format!("DROP DICTIONARY IF EXISTS {dictionary}"))?;
+    for row in names("SELECT database, name FROM system.dictionaries")? {
+        let Some((database, name)) = row.split_once('\t') else {
+            continue;
+        };
+        control.execute_simple(&format!(
+            "DROP DICTIONARY IF EXISTS {}.{}",
+            quoted_name(database),
+            quoted_name(name)
+        ))?;
     }
     for database in names(&format!(
         "SELECT name FROM system.databases WHERE engine = 'Memory' AND name NOT IN ({kept})"
