@@ -1048,6 +1048,56 @@ async fn partition_split_files() {
     assert_eq!(ok(addr, "SELECT count() FROM t").await, "100000\n");
 }
 
+/// HE1 R14.8: `BFloat16` columns (Laminar's `Array(BFloat16)` cluster
+/// centroids, with their `vector_similarity` index) are stored as Iceberg
+/// `float` and read back as `BFloat16`, exactly. Every answer is the 26.9.2.8
+/// oracle's.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn bfloat16_columns_round_trip() {
+    let house = lakehouse("bfloat16").await;
+    let addr = house.addr();
+    ok(
+        addr,
+        "CREATE TABLE clusters (id UInt64, centroid Array(BFloat16), one BFloat16, \
+         maybe Nullable(BFloat16), INDEX centroid_idx centroid TYPE \
+         vector_similarity('hnsw', 'cosineDistance', 3)) ENGINE = ReplacingMergeTree ORDER BY id",
+    )
+    .await;
+    ok(
+        addr,
+        "INSERT INTO clusters VALUES (1, [0.1, 0.2, 0.3], 1.5, NULL), \
+         (2, [1, 0, 3.14159], -2.25, 0.333)",
+    )
+    .await;
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT id, centroid, one, maybe, toTypeName(centroid), toTypeName(maybe) \
+             FROM clusters ORDER BY id FORMAT TSV"
+        )
+        .await,
+        "1\t[0.099609375,0.19921875,0.29882812]\t1.5\t\\N\tArray(BFloat16)\tNullable(BFloat16)\n\
+         2\t[1,0,3.140625]\t-2.25\t0.33203125\tArray(BFloat16)\tNullable(BFloat16)\n"
+    );
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT id, round(cosineDistance(centroid, [0.1, 0.2, 0.3]::Array(BFloat16)), 4) AS d \
+             FROM clusters ORDER BY d LIMIT 1 FORMAT TSV"
+        )
+        .await,
+        "1\t0\n"
+    );
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT id, centroid FROM clusters FINAL WHERE has(centroid, toBFloat16(0.1)) FORMAT TSV"
+        )
+        .await,
+        "1\t[0.099609375,0.19921875,0.29882812]\n"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn create_table_as_select_and_truncate() {
     let house = lakehouse("ctas").await;
