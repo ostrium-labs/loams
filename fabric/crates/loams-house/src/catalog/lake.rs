@@ -997,21 +997,8 @@ impl Lake {
         a: (&str, &str),
         b: (&str, &str),
     ) -> Result<(LakeTable, LakeTable), HouseError> {
-        let load = |(database, table): (&str, &str)| async move {
-            self.require_database(namespace, database).await?;
-            let loaded = self
-                .load(namespace, database, table)
-                .await?
-                .ok_or_else(|| unknown_table(database, table))?;
-            if ddl::class_of(&loaded.metadata) == TableClass::External {
-                return Err(access_denied(&format!(
-                    "EXCHANGE TABLES {database}.{table}"
-                )));
-            }
-            Ok::<_, HouseError>(loaded)
-        };
-        let first = load(a).await?;
-        let second = load(b).await?;
+        let first = self.exchanged(namespace, a).await?;
+        let second = self.exchanged(namespace, b).await?;
         // A table exchanged with itself stays (the 26.9.2.8 oracle answers it).
         if first.ident == second.ident {
             return Ok((first, second));
@@ -1037,6 +1024,26 @@ impl Lake {
             self.catalog.load_table(&a_ident).await?,
             self.catalog.load_table(&b_ident).await?,
         ))
+    }
+
+    /// A table `EXCHANGE TABLES` names: `60` when missing, `497` when it is
+    /// another writer's.
+    async fn exchanged(
+        &self,
+        namespace: u64,
+        (database, table): (&str, &str),
+    ) -> Result<LakeTable, HouseError> {
+        self.require_database(namespace, database).await?;
+        let loaded = self
+            .load(namespace, database, table)
+            .await?
+            .ok_or_else(|| unknown_table(database, table))?;
+        if ddl::class_of(&loaded.metadata) == TableClass::External {
+            return Err(access_denied(&format!(
+                "EXCHANGE TABLES {database}.{table}"
+            )));
+        }
+        Ok(loaded)
     }
 
     /// `RENAME TABLE a TO b` within the namespace.
