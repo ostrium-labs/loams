@@ -388,7 +388,7 @@ const REQUESTS: Request[] = [
     headSha: 'abcdef0',
   }),
   request('GetChecks', { chatId: 'chat-1', provider: 'github', sha: 'abcdef0' }),
-  request('GetCheckLog', { chatId: 'chat-1', provider: 'github', logId: '901', lines: 200 }),  // MK1 Task 4b: MarketplaceService.
+  request('GetCheckLog', { chatId: 'chat-1', provider: 'github', logId: '901', lines: 200 }), // MK1 Task 4b: MarketplaceService.
   request('ListMarketplaceSources', {}),
   request('AddMarketplaceSource', {
     name: 'example',
