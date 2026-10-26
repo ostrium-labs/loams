@@ -206,9 +206,10 @@ tests:
 
   - name: environment_can_relations
     check:
+      # An org member with no grant on the project reaches none of its environments (T4.R2).
       - user: user:mona
         object: environment:dev
-        assertions: {can_read: true, can_write: false, can_admin: false}
+        assertions: {can_read: false, can_write: false, can_admin: false}
       - user: user:tess
         object: environment:dev
         assertions: {can_read: true, can_write: true, can_admin: false}
