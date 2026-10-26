@@ -95,14 +95,15 @@ fn to_proto_json(value: &Value, node: &Value) -> Value {
     match value {
         Value::Object(map) => {
             let properties = node.get("properties");
+            // A free-form object (`google.protobuf.Struct`) is kept whole.
+            let keep = node.get("x-proto-message").is_none();
             let mut out = serde_json::Map::new();
             for (key, item) in map {
-                if key.starts_with('$') {
+                // A message has no `$schema` field; a free-form object keeps it.
+                if key.starts_with('$') && !keep {
                     continue;
                 }
                 let child = properties.and_then(|p| p.get(key)).unwrap_or(&Value::Null);
-                // A free-form object (`google.protobuf.Struct`) is kept whole.
-                let keep = node.get("x-proto-message").is_none() && properties.is_none();
                 out.insert(
                     key.clone(),
                     if keep {
@@ -133,18 +134,24 @@ fn from_proto_json(value: &Value, node: &Value) -> Value {
     if let Some(name) = node.get("x-proto-enum").and_then(Value::as_str)
         && let Some(text) = value.as_str()
     {
-        let prefix = prefix_of(name);
-        return Value::String(
-            text.strip_prefix(&prefix)
-                .unwrap_or(text)
-                .to_ascii_lowercase()
-                .replace('_', "-"),
-        );
+        let rest = text.strip_prefix(&prefix_of(name)).unwrap_or(text);
+        // The schema's own spelling (`linux-x86_64` keeps its underscore).
+        let known = node
+            .get("enum")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .find(|value| upper(value) == rest);
+        return Value::String(match known {
+            Some(value) => value.to_owned(),
+            None => rest.to_ascii_lowercase().replace('_', "-"),
+        });
     }
     match value {
         Value::Object(map) => {
             let properties = node.get("properties");
-            let keep = node.get("x-proto-message").is_none() && properties.is_none();
+            let keep = node.get("x-proto-message").is_none();
             Value::Object(
                 map.iter()
                     .map(|(key, item)| {
