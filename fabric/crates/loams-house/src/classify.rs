@@ -68,6 +68,9 @@ pub enum Stmt {
     CreateMaterializedView { name: String },
     /// `CREATE [OR REPLACE] VIEW` (HE1 R9.13): a catalog view.
     CreateView { name: String },
+    /// `CREATE [OR REPLACE] FUNCTION` (HE1 R14.11): a SQL function of the
+    /// namespace.
+    CreateFunction { name: String },
     /// `DROP …`.
     Drop(DropStmt),
     /// `TRUNCATE TABLE`.
@@ -196,6 +199,7 @@ impl Stmt {
             Self::CreatePipe { .. } => "CreatePipe",
             Self::CreateMaterializedView { .. } => "CreateMaterializedView",
             Self::CreateView { .. } => "CreateView",
+            Self::CreateFunction { .. } => "CreateFunction",
             Self::Drop(_) => "Drop",
             Self::Truncate { .. } => "Truncate",
             Self::Mutation { .. } => "Mutation",
@@ -574,7 +578,8 @@ fn denied_create(text: &str) -> Option<&'static str> {
         next = words.next()?;
     }
     match next.as_str() {
-        "FUNCTION" => Some("CREATE FUNCTION"),
+        // HE1 R14.11: `CREATE FUNCTION` is the catalog's ([`classify`]); what
+        // reaches this is the executable form's keywords only.
         "DICTIONARY" => Some("CREATE DICTIONARY"),
         "NAMED" => Some("CREATE NAMED COLLECTION"),
         _ => None,
@@ -768,6 +773,36 @@ pub fn classify(sql: &str) -> Result<Classified, HouseError> {
         {
             let view = crate::ddl::parse_create_view(&text)?;
             return known(Stmt::CreateView { name: view.name }, None);
+        }
+        // HE1 R14.11: a SQL function is the catalog's, read by the House's
+        // reader (sqlparser's `CREATE FUNCTION` is another dialect's).
+        "CREATE"
+            if second == "FUNCTION"
+                || (second == "OR"
+                    && toks
+                        .iter()
+                        .filter(|(_, t)| t.word)
+                        .nth(3)
+                        .is_some_and(|(w, _)| w == "FUNCTION")) =>
+        {
+            let function = crate::ddl::parse_create_function(&text)?;
+            return known(
+                Stmt::CreateFunction {
+                    name: function.name,
+                },
+                None,
+            );
+        }
+        "DROP" if second == "FUNCTION" => {
+            let drop = crate::ddl::parse_drop(&text)?;
+            return known(
+                Stmt::Drop(DropStmt {
+                    kind: drop.kind,
+                    names: drop.names.into_iter().map(|(_, name)| name).collect(),
+                    temporary: false,
+                }),
+                None,
+            );
         }
         "CREATE" if second == "MATERIALIZED" => {
             let view = crate::ddl::parse_create_mv(&text)?;

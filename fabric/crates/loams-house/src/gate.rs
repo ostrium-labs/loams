@@ -131,6 +131,7 @@ pub fn required(stmt: &Stmt) -> &'static [crate::identity::Scope] {
         | Stmt::Truncate { .. }
         | Stmt::Alter { .. }
         | Stmt::CreateView { .. }
+        | Stmt::CreateFunction { .. }
         | Stmt::Rename { .. }
         | Stmt::Undrop { .. } => &[Ddl],
     }
@@ -277,6 +278,7 @@ pub fn catalog_kind(stmt: &Stmt) -> Option<Kind> {
         Stmt::Rename { .. } => Kind::Rename,
         Stmt::Alter { .. } => Kind::Alter,
         Stmt::CreateView { .. } => Kind::CreateView,
+        Stmt::CreateFunction { .. } => Kind::CreateFunction,
         Stmt::Describe { .. } => Kind::Describe,
         Stmt::Show { .. } => Kind::Show,
         Stmt::Exists { .. } => Kind::Exists,
@@ -679,6 +681,21 @@ impl Oracle for WorkerOracle<'_> {
                 })
             })
             .collect()
+    }
+
+    async fn builtin_function(&mut self, name: &str) -> Result<bool, HouseError> {
+        let rows = self
+            .rows(
+                "SELECT count() FROM system.functions WHERE origin != 'SQLUserDefined' \
+                 AND (name = {name:String} OR (case_insensitive AND lower(name) = lower({name:String})))",
+                vec![("name".to_string(), name.to_string())],
+                Vec::new(),
+            )
+            .await?;
+        Ok(rows
+            .first()
+            .and_then(|r| r.first())
+            .is_some_and(|count| count != "0"))
     }
 
     async fn merge_tree_settings(&mut self, names: &[String]) -> Result<Vec<String>, HouseError> {

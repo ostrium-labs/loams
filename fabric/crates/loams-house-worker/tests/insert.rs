@@ -1605,6 +1605,121 @@ async fn parameterised_views_are_called_as_table_functions() {
     .await;
 }
 
+/// HE1 R14.11: SQL functions (Laminar's `apply_pii_masks`, `trace_visible`
+/// and the two it calls, as migration 66 writes them) are the namespace's:
+/// called in queries and in views, replaced, dropped, and held to the deny
+/// list. Every answer is the 26.9.2.8 oracle's.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn sql_functions_are_the_namespaces() {
+    let house = lakehouse("sql-functions").await;
+    let addr = house.addr();
+    for function in [
+        r#"CREATE FUNCTION IF NOT EXISTS apply_pii_masks AS (text, masks) -> if(
+    empty(masks),
+    text,
+    arrayStringConcat(
+        arrayMap(
+            (pii_m, pii_prev_end) -> substring(text, pii_prev_end + 1, tupleElement(pii_m, 1) - pii_prev_end)
+                || '[REDACTED_' || upper(tupleElement(pii_m, 3)) || ']',
+            masks,
+            arrayPopBack(arrayPushFront(arrayMap(pii_x -> tupleElement(pii_x, 2), masks), toUInt32(0)))
+        ),
+        ''
+    ) || substring(text, tupleElement(masks[-1], 2) + 1)
+)"#,
+        r#"CREATE FUNCTION IF NOT EXISTS pii_json_scalar AS (doc, key) -> if(
+    JSONType(doc, key) = 'String',
+    JSONExtractString(doc, key),
+    JSONExtractRaw(doc, key)
+)"#,
+        r#"CREATE FUNCTION IF NOT EXISTS pii_str_op AS (actual, op, expected) -> multiIf(
+    op = 'eq', actual = expected,
+    op = 'ne', actual != expected,
+    false
+)"#,
+        r#"CREATE FUNCTION IF NOT EXISTS trace_visible AS (user_id, metadata, policy) -> if(
+    NOT JSONHas(policy, 'traceFilters'),
+    isValidJSON(policy),
+    if(
+        JSONType(policy, 'traceFilters') = 'Array',
+        arrayAll(
+            pii_f -> multiIf(
+                tupleElement(pii_f, 'column') = 'user_id',
+                    pii_str_op(user_id, tupleElement(pii_f, 'operator'), tupleElement(pii_f, 'value')),
+                tupleElement(pii_f, 'column') = 'metadata',
+                    pii_str_op(pii_json_scalar(metadata, tupleElement(pii_f, 'key')), tupleElement(pii_f, 'operator'), tupleElement(pii_f, 'value')),
+                false
+            ),
+            JSONExtract(policy, 'traceFilters', 'Array(Tuple(column String, key String, operator String, value String))')
+        ),
+        false
+    )
+)"#
+    ] {
+        ok(addr, function).await;
+    }
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT apply_pii_masks('my name is bob and mail b@x.io', \
+             [(11, 14, 'name'), (24, 30, 'email')]) FORMAT TSV"
+        )
+        .await,
+        "my name is [REDACTED_NAME] and mail [REDACTED_EMAIL]\n"
+    );
+    assert_eq!(
+        ok(
+            addr,
+            r#"SELECT trace_visible('u1', '{"team":"a"}', '{"traceFilters":[{"column":"metadata","key":"team","operator":"eq","value":"a"}]}'), trace_visible('u2', '{}', '{"traceFilters":[{"column":"user_id","key":"","operator":"eq","value":"u1"}]}'), trace_visible('u', '', '{}') FORMAT TSV"#
+        )
+        .await,
+        "1\t0\t1\n"
+    );
+    // In a view over a lake table, and over another function.
+    ok(
+        addr,
+        "CREATE TABLE notes (id UInt64, body String) ENGINE = MergeTree ORDER BY id",
+    )
+    .await;
+    ok(addr, "INSERT INTO notes VALUES (1, 'call bob'), (2, 'plain')").await;
+    ok(
+        addr,
+        "CREATE VIEW masked AS SELECT id, apply_pii_masks(body, \
+         if(id = 1, [(toUInt32(5), toUInt32(8), 'name')], [])) AS body FROM notes",
+    )
+    .await;
+    assert_eq!(
+        ok(addr, "SELECT id, body FROM masked ORDER BY id FORMAT TSV").await,
+        "1\tcall [REDACTED_NAME]\n2\tplain\n"
+    );
+    ok(addr, "CREATE FUNCTION twice AS (x) -> x * 2").await;
+    ok(addr, "CREATE FUNCTION plus_twice AS (x, y) -> twice(x) + y").await;
+    assert_eq!(
+        ok(addr, "SELECT plus_twice(id, 1) FROM notes ORDER BY id FORMAT TSV").await,
+        "3\n5\n"
+    );
+    refused(addr, "CREATE FUNCTION twice AS (x) -> x", "609").await;
+    ok(addr, "CREATE FUNCTION IF NOT EXISTS twice AS (x) -> x").await;
+    ok(addr, "CREATE OR REPLACE FUNCTION twice AS (x) -> x * 3").await;
+    assert_eq!(ok(addr, "SELECT plus_twice(2, 1) FORMAT TSV").await, "7\n");
+    refused(addr, "CREATE FUNCTION plus AS (a) -> a", "609").await;
+    refused(addr, "DROP FUNCTION plus", "610").await;
+    refused(addr, "DROP FUNCTION nope", "46").await;
+    ok(addr, "DROP FUNCTION IF EXISTS nope").await;
+    ok(addr, "DROP FUNCTION twice").await;
+    refused(addr, "SELECT plus_twice(2, 1)", "46").await;
+    // A lambda reading outside the namespace is refused when it is made.
+    refused(
+        addr,
+        "CREATE FUNCTION leak AS (x) -> (SELECT count() FROM url('http://127.0.0.1:1/x', CSV))",
+        "344",
+    )
+    .await;
+    // The read-only user may not make one.
+    let (code, text) = code(addr, READER, "CREATE FUNCTION ro AS (x) -> x").await;
+    assert!(matches!(code.as_deref(), Some("164" | "497")), "{text}");
+}
+
 /// HE1 R9.14: readable `AggregatingMergeTree` and `Null`, against the oracle.
 /// OpenPanel 2.3.0's inner-table materialized views (agent O's pack: states,
 /// `count()` dimensions, `ARRAY JOIN`, and the binding by identity that a

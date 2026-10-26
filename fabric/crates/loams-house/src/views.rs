@@ -114,6 +114,14 @@ pub fn is_parameterised(select: &str) -> bool {
     analysable(select) != select
 }
 
+/// One of the namespace's SQL functions (HE1 R14.11) in the worker:
+/// `CREATE OR REPLACE FUNCTION f AS <lambda>`, the control connection's one
+/// shape for a function. The worker drops it before its next statement, as it
+/// drops the views.
+pub fn function_ddl(name: &str, lambda: &str) -> String {
+    format!("CREATE OR REPLACE FUNCTION {} AS {lambda}", quote_name(name))
+}
+
 /// A catalog view (HE1 R9.13) in the worker, over the read views of what it
 /// names: `CREATE OR REPLACE VIEW d.v AS\n<select>`, the control connection's
 /// one shape for a view without a column list. It runs with the invoker's

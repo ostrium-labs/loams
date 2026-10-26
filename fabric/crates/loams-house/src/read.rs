@@ -219,6 +219,9 @@ pub struct References {
     /// Table functions that may call the namespace's own (parameterised) views
     /// (HE1 R14.5), as the trees print them.
     pub calls: Vec<String>,
+    /// The functions it calls, each once: the namespace's SQL functions among
+    /// them are made for it (HE1 R14.11).
+    pub functions: Vec<String>,
 }
 
 /// The functions whose right-hand side may be a bare table name.
@@ -281,6 +284,15 @@ pub fn references(analysis: &Analysis) -> References {
         }
     }
     out.calls = tree.view_calls();
+    for entry in entries {
+        if let Node::Function(names) = &entry.node {
+            for name in names {
+                if !out.functions.contains(name) {
+                    out.functions.push(name.clone());
+                }
+            }
+        }
+    }
     out.information_schema = out
         .tables
         .iter()
@@ -479,17 +491,49 @@ pub async fn live_files(
     Ok(out)
 }
 
-/// A catalog view a statement reads (HE1 R9.13), as the plan makes it.
+/// What a statement's plan resolves, met in its text or in the text of what
+/// it reads.
+#[derive(Debug, Clone)]
+enum Item {
+    /// A table or view name (`call`: a table function's, read only as a call
+    /// of a view, HE1 R14.5), resolved in `current`.
+    Name {
+        current: String,
+        printed: String,
+        call: bool,
+    },
+    /// A function name: one of the namespace's SQL functions, if it has one
+    /// so named (HE1 R14.11).
+    Function(String),
+}
+
+/// What a statement's analysis names, as plan items resolved in `current`.
+fn items(refs: &References, current: &str) -> Vec<Item> {
+    let name = |printed: &String, call: bool| Item::Name {
+        current: current.to_string(),
+        printed: printed.clone(),
+        call,
+    };
+    refs.tables
+        .iter()
+        .map(|t| name(t, false))
+        .chain(refs.calls.iter().map(|t| name(t, true)))
+        .chain(refs.functions.iter().cloned().map(Item::Function))
+        .collect()
+}
+
+/// A catalog view or SQL function a statement reads (HE1 R9.13, R14.11), as
+/// the plan makes it in the worker.
 #[derive(Debug)]
 struct PlannedView {
+    /// The view's database; empty for a function.
     database: String,
     name: String,
-    /// The deepest it was met at: views are made deepest first.
+    /// The deepest it was met at: made deepest first.
     depth: usize,
-    /// What its `SELECT` names (tables, and table functions that may call
-    /// views).
-    reads: Vec<(String, bool)>,
-    /// `CREATE OR REPLACE VIEW …`.
+    /// What its text names.
+    reads: Vec<Item>,
+    /// `CREATE OR REPLACE VIEW …` or `CREATE OR REPLACE FUNCTION …`.
     ddl: String,
 }
 
@@ -587,18 +631,86 @@ pub async fn plan(
         // HE1 R9.13: a view reads what its SELECT names, which is resolved in
         // the view's database, to a depth of [`MAX_VIEW_DEPTH`]. A table
         // function's name is read only as a call of a view (HE1 R14.5).
-        let mut queue: Vec<(String, String, usize, bool)> = refs
-            .tables
-            .iter()
-            .map(|t| (ctx.database.to_string(), t.clone(), 0, false))
-            .chain(
-                refs.calls
-                    .iter()
-                    .map(|t| (ctx.database.to_string(), t.clone(), 0, true)),
-            )
+        let mut queue: Vec<(Item, usize)> = items(&refs, ctx.database)
+            .into_iter()
+            .map(|item| (item, 0))
             .collect();
         let mut finals = refs.finals.clone();
-        while let Some((current, printed, depth, call)) = queue.pop() {
+        // The namespace's SQL functions, listed when a statement first calls a
+        // function (HE1 R14.11).
+        let mut defined: Option<Vec<String>> = None;
+        while let Some((item, depth)) = queue.pop() {
+            let (current, printed, call) = match item {
+                Item::Name {
+                    current,
+                    printed,
+                    call,
+                } => (current, printed, call),
+                Item::Function(name) => {
+                    if defined.is_none() {
+                        defined = Some(lake.function_names(ctx.namespace).await?);
+                    }
+                    if !defined.as_ref().is_some_and(|d| d.contains(&name)) {
+                        continue;
+                    }
+                    if depth >= MAX_VIEW_DEPTH {
+                        return Err(bad(format!(
+                            "Function {name} nests functions and views more than \
+                             {MAX_VIEW_DEPTH} deep"
+                        )));
+                    }
+                    if let Some(seen) = plan_views
+                        .iter_mut()
+                        .find(|v| v.database.is_empty() && v.name == name)
+                    {
+                        if depth > seen.depth {
+                            seen.depth = depth;
+                            for read in seen.reads.clone() {
+                                queue.push((read, depth + 1));
+                            }
+                        }
+                        continue;
+                    }
+                    let Some(lambda) = lake.function(ctx.namespace, &name).await? else {
+                        continue;
+                    };
+                    // The function's text is the catalog's: held to the deny
+                    // list as a user's read is, before any worker makes it.
+                    let explained = views::analysable(&format!("SELECT ({lambda})"));
+                    let analysis = lease
+                        .analyze(&explained, &[])
+                        .await
+                        .map_err(crate::deny::as_setting_refusal)?;
+                    let calls =
+                        crate::gate::view_calls(Some(lake), ctx.namespace, ctx.database, &analysis)
+                            .await?;
+                    crate::gate::admit_views(
+                        &analysis,
+                        &explained,
+                        crate::classify::Expect::Read,
+                        true,
+                        None,
+                        &calls,
+                    )?;
+                    let inner = references(&analysis);
+                    finals.extend(inner.finals.iter().cloned());
+                    let reads: Vec<Item> = items(&inner, ctx.database)
+                        .into_iter()
+                        .filter(|r| !matches!(r, Item::Function(f) if *f == name))
+                        .collect();
+                    for read in &reads {
+                        queue.push((read.clone(), depth + 1));
+                    }
+                    plan_views.push(PlannedView {
+                        ddl: views::function_ddl(&name, &lambda),
+                        database: String::new(),
+                        name,
+                        depth,
+                        reads,
+                    });
+                    continue;
+                }
+            };
             let printed = &printed;
             if let Some((database, name, table)) =
                 resolve(lake, ctx.namespace, &current, printed).await?
@@ -649,8 +761,8 @@ pub async fn plan(
                     {
                         if depth > seen.depth {
                             seen.depth = depth;
-                            for (t, call) in seen.reads.clone() {
-                                queue.push((database.clone(), t, depth + 1, call));
+                            for read in seen.reads.clone() {
+                                queue.push((read, depth + 1));
                             }
                         }
                         continue;
@@ -690,14 +802,9 @@ pub async fn plan(
                     {
                         finals.extend(inner.tables.iter().cloned());
                     }
-                    let reads: Vec<(String, bool)> = inner
-                        .tables
-                        .into_iter()
-                        .map(|t| (t, false))
-                        .chain(inner.calls.into_iter().map(|t| (t, true)))
-                        .collect();
-                    for (t, call) in &reads {
-                        queue.push((database.clone(), t.clone(), depth + 1, *call));
+                    let reads = items(&inner, &database);
+                    for read in &reads {
+                        queue.push((read.clone(), depth + 1));
                     }
                     databases.insert(database.clone());
                     plan_views.push(PlannedView {

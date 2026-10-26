@@ -445,8 +445,8 @@ impl Worker {
             code: 497,
             name: "ACCESS_DENIED".to_string(),
             message: "the worker's control connection runs only the House's view DDL \
-                      (one CREATE DATABASE … ENGINE = Memory, CREATE OR REPLACE VIEW or \
-                      DROP TABLE IF EXISTS)"
+                      (one CREATE DATABASE … ENGINE = Memory, CREATE OR REPLACE VIEW, \
+                      DROP TABLE IF EXISTS or CREATE OR REPLACE FUNCTION)"
                 .to_string(),
         })
     }
@@ -849,7 +849,8 @@ fn after_qualified(text: &str) -> Option<&str> {
 /// The shapes of the front's view DDL (`loams_house::views`, `system`): `CREATE
 /// DATABASE IF NOT EXISTS d ENGINE = Memory`, `CREATE OR REPLACE VIEW d.v AS\n…`,
 /// a read view of the bucket `CREATE OR REPLACE VIEW d.v (<name> <type>, …) SQL
-/// SECURITY NONE AS\n…` (HS1 R-ACL.1), and `DROP TABLE IF EXISTS d.t`, exactly.
+/// SECURITY NONE AS\n…` (HS1 R-ACL.1), `DROP TABLE IF EXISTS d.t`, and a SQL
+/// function `CREATE OR REPLACE FUNCTION f AS …` (HE1 R14.11), exactly.
 pub fn control_ddl_shape(sql: &str) -> bool {
     if let Some(rest) = sql.strip_prefix("CREATE DATABASE IF NOT EXISTS ") {
         return after_name(rest) == Some(" ENGINE = Memory");
@@ -868,6 +869,13 @@ pub fn control_ddl_shape(sql: &str) -> bool {
     }
     if let Some(rest) = sql.strip_prefix("DROP TABLE IF EXISTS ") {
         return after_qualified(rest) == Some("");
+    }
+    // HE1 R14.11: one of the namespace's SQL functions, whose lambda the
+    // front held to the deny list.
+    if let Some(rest) = sql.strip_prefix("CREATE OR REPLACE FUNCTION ") {
+        return after_name(rest)
+            .and_then(|after| after.strip_prefix(" AS "))
+            .is_some_and(|lambda| !lambda.trim().is_empty());
     }
     false
 }
@@ -903,6 +911,13 @@ pub fn drop_views(control: &Session) -> Result<(), ChdbError> {
         control.execute_simple(&format!(
             "DROP TABLE IF EXISTS default.{}",
             quoted_name(&table)
+        ))?;
+    }
+    // HE1 R14.11: the SQL functions an earlier statement's plan made.
+    for function in names("SELECT name FROM system.functions WHERE origin = 'SQLUserDefined'")? {
+        control.execute_simple(&format!(
+            "DROP FUNCTION IF EXISTS {}",
+            quoted_name(&function)
         ))?;
     }
     Ok(())
@@ -1162,6 +1177,7 @@ mod tests {
             "CREATE OR REPLACE VIEW d.v (a UInt8) SQL SECURITY NONE AS\nSELECT 1",
             "CREATE OR REPLACE VIEW d.`t` (k UInt64, `s t` Nullable(String), \
              e Enum8('a b' = 1, 'c' = -2), d DateTime64(3, 'UTC')) SQL SECURITY NONE AS\nSELECT 1",
+            "CREATE OR REPLACE FUNCTION f AS (a, b) -> a + b",
         ] {
             assert!(control_ddl_shape(ok), "{ok}");
         }
@@ -1184,6 +1200,9 @@ mod tests {
             "DROP TABLE IF EXISTS d.t; DROP DATABASE d",
             "DROP DATABASE d",
             "INSERT INTO d.v VALUES (1)",
+            "CREATE FUNCTION f AS (a) -> a",
+            "CREATE OR REPLACE FUNCTION d.f AS (a) -> a",
+            "CREATE OR REPLACE FUNCTION f AS ",
         ] {
             assert!(!control_ddl_shape(bad), "{bad}");
         }
