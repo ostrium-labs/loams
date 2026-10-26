@@ -1219,6 +1219,56 @@ async fn api_insert_answers_written_rows_and_snapshot() {
     assert_eq!(ok(addr, "SELECT count() FROM t").await, "5\n");
 }
 
+/// HE1 R14.9: `EXCHANGE TABLES a AND b` (Laminar's migrations 35 and 48)
+/// swaps what the two names hold, `SHOW CREATE` included. Every answer is the
+/// 26.9.2.8 oracle's.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn exchange_tables_swaps_the_names() {
+    let house = lakehouse("exchange").await;
+    let addr = house.addr();
+    ok(
+        addr,
+        "CREATE TABLE m1 (id UInt64, body String) ENGINE = MergeTree ORDER BY id",
+    )
+    .await;
+    ok(
+        addr,
+        "CREATE TABLE m2 (id UInt64, body String, ttl_at DateTime DEFAULT now()) \
+         ENGINE = MergeTree ORDER BY id TTL ttl_at + INTERVAL 1 DAY",
+    )
+    .await;
+    ok(addr, "INSERT INTO m1 VALUES (1, 'old')").await;
+    ok(addr, "INSERT INTO m2 (id, body) VALUES (2, 'new'), (3, 'newer')").await;
+    ok(addr, "EXCHANGE TABLES m1 AND m2").await;
+    assert_eq!(
+        ok(addr, "SELECT 'm1', count(), groupArray(body) FROM m1 FORMAT TSV").await,
+        "m1\t2\t['new','newer']\n"
+    );
+    assert_eq!(
+        ok(addr, "SELECT 'm2', count(), groupArray(body) FROM m2 FORMAT TSV").await,
+        "m2\t1\t['old']\n"
+    );
+    let shown = ok(addr, "SHOW CREATE TABLE m1 FORMAT TSVRaw").await;
+    assert!(
+        shown.starts_with("CREATE TABLE default.m1") && shown.contains("ttl_at"),
+        "{shown}"
+    );
+    // Writes land in the table the name now holds.
+    ok(addr, "INSERT INTO m2 VALUES (4, 'later')").await;
+    assert_eq!(
+        ok(addr, "SELECT groupArray(body) FROM (SELECT body FROM m2 ORDER BY id) FORMAT TSV").await,
+        "['old','later']\n"
+    );
+    ok(addr, "EXCHANGE TABLES m1 AND m1").await;
+    refused(addr, "EXCHANGE TABLES m1 AND nope", "60").await;
+    refused(addr, "EXCHANGE DICTIONARIES m1 AND m2", "48").await;
+    assert_eq!(
+        ok(addr, "SELECT name FROM system.tables WHERE database = 'default' ORDER BY name FORMAT TSV")
+            .await,
+        "m1\nm2\n"
+    );
+}
+
 /// HE1 R9.12: the DDL Langfuse v4's migrations send, on lake tables: skip
 /// indexes, projections and constraints in the column list, `SAMPLE BY`, a
 /// delete `TTL`, `ALIAS` and `MATERIALIZED` columns with lambdas, the query
