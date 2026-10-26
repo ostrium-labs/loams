@@ -1,6 +1,6 @@
 # deploy/tofu
 
-OpenTofu modules for Loams on one VM in your own cloud account (design 70 §9.1, D1362; plan BY1). OpenTofu is MPL-2.0; the modules use the official `hashicorp/aws`, `hashicorp/google`, `hashicorp/azurerm` and `hashicorp/random` providers as dependencies (never their source). Terraform may work; only OpenTofu is tested.
+OpenTofu modules for Loams on one VM in your own cloud account (design 70 §9.1, D1362; plan BY1), and for a Confluent Cloud cluster next to it (design 80, plan CC1). OpenTofu is MPL-2.0. The modules depend on the official `hashicorp/aws`, `hashicorp/google`, `hashicorp/azurerm` and `hashicorp/random` providers and on Confluent's `confluentinc/confluent` (Apache-2.0); they never include provider source. Terraform may work; only OpenTofu is tested.
 
 ```
 modules/
@@ -8,10 +8,13 @@ modules/
   aws-vm/      EC2 + bucket + KMS key + Secrets Manager + instance role, no inbound rule
   gcp-vm/      Compute Engine + bucket + Cloud KMS key + Secret Manager + service account, no ingress rule
   azure-vm/    VM + storage account + Key Vault key and secrets + managed identity, no inbound allow rule
-examples/<module>/   a minimal root module each
+  confluent/   Confluent Cloud: environment, Basic/Standard cluster in the VM's region, topics, a least-privilege
+               data account and its ACLs, the ceiling estimate (see modules/confluent/README.md)
+examples/<module>/   a minimal root module each; examples/aws-vm-confluent/ wires aws-vm and confluent
+               (state and plan encryption enforced on your KMS key)
 ```
 
-Status: **validated offline, not applied to a real account.** `tofu validate`, `tofu fmt`, `tflint` and `tofu test` (mock providers) run in CI (`.github/workflows/byoc-static.yml`). Nobody has run `tofu apply` on these yet; the first real apply will find edge cases (IAM propagation, quotas, naming).
+Status: **validated offline, not applied to a real account.** `tofu validate`, `tofu fmt`, `tflint` and `tofu test` (mock providers) run in CI (`.github/workflows/byoc-static.yml`). Nobody has run `tofu apply` on the VM modules yet; the first real apply will find edge cases (IAM propagation, quotas, naming). The `confluent` module (through `examples/confluent`) was applied and destroyed once in Ostrium's `loams-ci` Confluent environment on 2026-10-26 (Basic, `us-east-1`).
 
 ## What every module guarantees (and tests)
 

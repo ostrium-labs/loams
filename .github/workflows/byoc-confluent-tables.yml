@@ -87,7 +87,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c "$branch"
-          git add deploy/byoc/confluent/regions.toml
+          git add deploy/byoc/confluent/regions.toml deploy/tofu/modules/confluent/confluent-tables.json
           git commit -s -m "deploy/byoc/confluent: refresh the region table"
           git push "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "$branch"
           gh pr create --repo "$REPO" --base dev --head "$branch" \
