@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+- **Loams Desktop can update itself from product releases.** A `vX.Y.Z` release now keeps its
+  signed update manifests (`latest*.yml` + `.sig`), and the desktop release run promotes them onto
+  the `desktop-latest` feed, which Windows and Linux AppImage installs update from (deb, rpm,
+  pacman and macOS get "Download vX"). Pre-releases are never offered. The update public key is
+  pinned in `apps/desktop-electron/update-pubkey.txt` (the repository variable `LOAMS_UPDATE_PUBKEY`
+  is no longer read); the release checks the signing secret matches it, and `desktop-promote.yml`
+  verifies every signature and payload before it uploads (`dry_run` stages without uploading).
+  **Not active yet:** until the owner sets the key (docs/release/desktop.md, "The update key"),
+  releases attach no manifests, the feed step is skipped, and the in-app updater stays off.
+
 ## [0.1.2] - 2026-10-26
 
 Highlights:

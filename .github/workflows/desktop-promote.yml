@@ -1,64 +1,97 @@
 name: Desktop promote
 
-# Copies the update manifests of a PUBLISHED desktop-vX.Y.Z release onto the rolling `desktop-latest`
-# release, which is what LOAMS_UPDATE_FEED points at
+# Copies the signed update manifests of a PUBLISHED release onto the rolling `desktop-latest` release,
+# which is what LOAMS_UPDATE_FEED points at
 # (https://github.com/<owner>/<repo>/releases/download/desktop-latest). Clients are never pointed at a
-# draft: the release must be published (not draft, not prerelease) before anything is copied.
-# docs/release/desktop.md: publish the draft, and this runs (or dispatch it with the tag).
+# draft or a pre-release: the release must be published, and a pre-release is skipped.
+#
+# Two kinds of source release:
+#   desktop-vX.Y.Z  runs when the release is published (docs/release/desktop.md).
+#   vX.Y.Z          the product release. It is published before the desktop files are attached, so
+#                   desktop-electron-release.yml calls this workflow at the end of its run instead.
+# Either can be dispatched by hand with the tag; `dry_run` stages and verifies the feed without
+# uploading anything.
 #
 # The manifests name their payload files relatively (`url: loams-desktop-1.2.3-win-x64.exe`), so the
-# files they reference are copied too, and assets of earlier versions are removed afterwards.
+# files they reference are copied too, and assets of earlier versions are removed afterwards. Every
+# manifest must carry a `.sig` that verifies against the pinned key (apps/desktop-electron/
+# update-pubkey.txt), and every payload must match the sha512 and size its manifest lists
+# (apps/desktop-electron/scripts/update-feed.mjs). A release without manifests (built while the
+# update key was unset) is a clean no-op.
 on:
   release:
     types: [published]
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Published release tag to promote, desktop-vX.Y.Z.'
+        description: 'Published release tag to promote: desktop-vX.Y.Z or a product vX.Y.Z.'
         required: true
       allow_downgrade:
         description: 'Promote even if this version is not newer than the one in desktop-latest.'
         type: boolean
         required: false
         default: false
+      dry_run:
+        description: 'Download, verify and stage the feed; upload nothing.'
+        type: boolean
+        required: false
+        default: false
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
 
 permissions:
   contents: write
 
-concurrency:
-  group: desktop-promote
-  cancel-in-progress: false
-
 jobs:
   promote:
     name: Promote to desktop-latest
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'desktop-v')
+    # A product release's `published` event fires before its desktop files exist; the release
+    # workflow calls this one for it instead (workflow_call carries the caller's event name).
+    if: github.event_name != 'release' || startsWith(github.event.release.tag_name, 'desktop-v')
     # Same protected environment as the release: a reviewer approves what clients are offered.
     environment: desktop-release
+    concurrency:
+      group: desktop-promote
+      cancel-in-progress: false
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       GH_TOKEN: ${{ github.token }}
       TAG: ${{ inputs.tag || github.event.release.tag_name }}
       FEED_TAG: desktop-latest
       ALLOW_DOWNGRADE: ${{ inputs.allow_downgrade == true }}
+      DRY_RUN: ${{ inputs.dry_run == true }}
     steps:
-      - name: the release is published
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            apps/desktop-electron/scripts/update-feed.mjs
+            apps/desktop-electron/update-pubkey.txt
+          sparse-checkout-cone-mode: false
+      - name: the release is published and carries manifests
         id: check
         run: |
           set -euo pipefail
-          [[ "$TAG" =~ ^desktop-v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "::error::$TAG is not a desktop-vX.Y.Z tag"; exit 1; }
+          [[ "$TAG" =~ ^(desktop-)?v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "::error::$TAG is not a desktop-vX.Y.Z or vX.Y.Z tag"; exit 1; }
+          skip() { echo "::notice::$1"; echo "$1" >> "$GITHUB_STEP_SUMMARY"; echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0; }
+          if [ -z "$(node apps/desktop-electron/scripts/update-feed.mjs pinned)" ]; then
+            skip "apps/desktop-electron/update-pubkey.txt is empty: the in-app updater is off, nothing to promote"
+          fi
           read -r draft pre < <(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease -q '"\(.isDraft) \(.isPrerelease)"')
           [ "$draft" = false ] || { echo "::error::$TAG is still a draft; publish it first (clients are never pointed at a draft)"; exit 1; }
-          if [ "$pre" = true ]; then
-            echo "::notice::$TAG is a prerelease; the rolling feed follows stable releases only"
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          fi
+          [ "$pre" = false ] || skip "$TAG is a prerelease; the feed follows published, non-prerelease releases only"
+          names=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets -q '.assets[].name')
+          grep -qE '^latest.*\.yml$' <<<"$names" \
+            || skip "$TAG has no latest*.yml (built without LOAMS_UPDATE_SIGNING_KEY); nothing to promote"
       - name: not older than what clients are offered now
         if: steps.check.outputs.skip != 'true'
         run: |
           set -euo pipefail
-          new="${TAG#desktop-v}"
+          new="${TAG#desktop-}"; new="${new#v}"
           # Fail closed: only a feed release that does not exist yet (HTTP 404) or that has no
           # manifest counts as "nothing served". Any other error stops the promotion.
           if ! rel=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$FEED_TAG" 2>&1); then
@@ -84,26 +117,27 @@ jobs:
               exit 1
             fi
           fi
-      - name: copy the manifests and their payloads
+      - name: download, verify and stage the feed
         if: steps.check.outputs.skip != 'true'
         run: |
           set -euo pipefail
-          d="$RUNNER_TEMP/feed"; mkdir -p "$d"
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$d" --pattern 'latest*.yml' --pattern 'latest*.yml.sig'
-          shopt -s nullglob
-          ymls=("$d"/latest*.yml)
-          [ ${#ymls[@]} -gt 0 ] || { echo "::error::$TAG has no latest*.yml; nothing to promote"; exit 1; }
-          for y in "${ymls[@]}"; do
-            [ -e "$y.sig" ] || echo "::warning::$(basename "$y") has no .sig; clients refuse an unsigned manifest"
-            # payload files named by the manifest (files[].url and path)
-            for f in $(sed -nE 's/^[[:space:]]*(-[[:space:]]+)?(url|path):[[:space:]]*//p' "$y" | tr -d "'\""); do
-              [ -e "$d/$f" ] || gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$d" --pattern "$f"
-            done
+          src="$RUNNER_TEMP/src"; out="$RUNNER_TEMP/feed"; mkdir -p "$src"
+          feed() { node apps/desktop-electron/scripts/update-feed.mjs "$@"; }
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$src" --pattern 'latest*.yml' --pattern 'latest*.yml.sig'
+          for f in $(feed payloads "$src"); do
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$src" --pattern "$f"
           done
-          ls -l "$d"
+          # Signatures against the pinned key, payload sha512 and size, one version: or nothing.
+          feed stage "$src" "$out"
+          ls -l "$out"
+      - name: publish the feed
+        if: steps.check.outputs.skip != 'true' && env.DRY_RUN != 'true'
+        run: |
+          set -euo pipefail
+          d="$RUNNER_TEMP/feed"
           if ! gh release view "$FEED_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             # prerelease keeps the rolling feed out of GitHub's "latest release"
-            gh release create "$FEED_TAG" --repo "$GITHUB_REPOSITORY" --prerelease --title "Desktop update feed" \
+            gh release create "$FEED_TAG" --repo "$GITHUB_REPOSITORY" --prerelease --latest=false --title "Desktop update feed" \
               --notes "Rolling update feed for Loams Desktop. Managed by desktop-promote.yml; do not edit by hand." \
               --target "$GITHUB_SHA"
           fi
@@ -118,7 +152,7 @@ jobs:
             esac
           done
           [ ${#payloads[@]} -eq 0 ] || gh release upload "$FEED_TAG" "${payloads[@]}" --clobber --repo "$GITHUB_REPOSITORY"
-          [ ${#sigs[@]} -eq 0 ] || gh release upload "$FEED_TAG" "${sigs[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+          gh release upload "$FEED_TAG" "${sigs[@]}" --clobber --repo "$GITHUB_REPOSITORY"
           gh release upload "$FEED_TAG" "${manifests[@]}" --clobber --repo "$GITHUB_REPOSITORY"
           # drop assets left over from earlier versions
           keep=$(cd "$d" && ls)
@@ -126,3 +160,7 @@ jobs:
             grep -qxF "$a" <<<"$keep" || gh release delete-asset "$FEED_TAG" "$a" --yes --repo "$GITHUB_REPOSITORY"
           done
           echo "desktop-latest now serves $TAG" >> "$GITHUB_STEP_SUMMARY"
+      - name: dry run summary
+        if: steps.check.outputs.skip != 'true' && env.DRY_RUN == 'true'
+        run: |
+          { echo "Dry run: desktop-latest would serve $TAG with:"; echo; ls -1 "$RUNNER_TEMP/feed" | sed 's/^/- /'; } >> "$GITHUB_STEP_SUMMARY"
