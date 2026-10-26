@@ -277,7 +277,9 @@ async fn connect_socket_refuses_to_replace_a_regular_file() {
     let mut config = ServerConfig::new(dir.path());
     config.listen = LOOPBACK0;
     config.connect_socket = Some(socket.clone());
-    let err = Server::start(config).await.err().expect("refused");
+    let Err(err) = Server::start(config).await else {
+        panic!("a regular file at the socket's path was replaced");
+    };
     assert!(err.to_string().contains("other than a socket"), "{err}");
     assert_eq!(std::fs::read_to_string(&socket).unwrap(), "not a socket");
 }
