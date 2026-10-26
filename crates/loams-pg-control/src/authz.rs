@@ -242,6 +242,112 @@ pub async fn authorize(
     }
 }
 
+/// `--pg-authz openfga`: the relations through `loams-authz` (model v1, design 76 §6 and §9;
+/// plan IA1, IA2): OpenFGA in a deployment, any [`loams_authz::Authorizer`] in tests.
+///
+/// - A namespace is `environment:<ns>`; a project is `database:<project id>`, hung off its
+///   namespace with a contextual tuple (`pg-control` keys projects by namespace, so a project
+///   named in the wrong namespace is not found after the check).
+/// - `viewer`, `editor`, `admin` and `connect` ask `can_read`, `can_write`, `can_admin` and
+///   `can_connect`; `admin` and `connect` (which issues credentials) ask with
+///   `HigherConsistency` (D1611).
+/// - The subject and every actor of its `act` chain must hold the relation, so an agent acting
+///   for a person reaches no more than its own grants. [`authorize`] still refuses `admin` to
+///   an agent whatever the model says.
+/// - The dev principal holds nothing here.
+#[derive(Clone)]
+pub struct ModelAuthorizer {
+    authz: std::sync::Arc<dyn loams_authz::Authorizer>,
+}
+
+impl fmt::Debug for ModelAuthorizer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ModelAuthorizer").finish_non_exhaustive()
+    }
+}
+
+impl ModelAuthorizer {
+    pub fn new(authz: std::sync::Arc<dyn loams_authz::Authorizer>) -> Self {
+        Self { authz }
+    }
+
+    fn subject(kind: PrincipalKind, id: &str) -> Option<loams_authz::Subject> {
+        use loams_authz::SubjectKind as K;
+        let kind = match kind {
+            PrincipalKind::User => K::User,
+            PrincipalKind::Agent => K::Agent,
+            PrincipalKind::ServiceAccount => K::ServiceAccount,
+            PrincipalKind::DevLoopback => return None,
+        };
+        Some(loams_authz::Subject::new(kind, id))
+    }
+
+    /// The model's relation for `relation`.
+    pub fn model_relation(relation: Relation) -> &'static str {
+        match relation {
+            Relation::Viewer => "can_read",
+            Relation::Editor => "can_write",
+            Relation::Admin => "can_admin",
+            Relation::Connect => "can_connect",
+        }
+    }
+
+    fn request(
+        subject: loams_authz::Subject,
+        relation: Relation,
+        object: &Object,
+    ) -> loams_authz::CheckRequest {
+        let (target, roots) = match object {
+            Object::Namespace(ns) => (loams_authz::ObjectRef::new("environment", ns), Vec::new()),
+            Object::Project {
+                namespace,
+                project_id,
+            } => (
+                loams_authz::ObjectRef::new("database", project_id),
+                vec![loams_authz::Tuple::new(
+                    format!("environment:{namespace}"),
+                    "environment",
+                    format!("database:{project_id}"),
+                )],
+            ),
+        };
+        let mut req =
+            loams_authz::CheckRequest::new(subject, Self::model_relation(relation), target);
+        req.contextual_tuples = roots;
+        if matches!(relation, Relation::Admin | Relation::Connect) {
+            req = req.consistency(loams_authz::Consistency::HigherConsistency);
+        }
+        req
+    }
+}
+
+#[async_trait]
+impl Authorizer for ModelAuthorizer {
+    async fn check(
+        &self,
+        principal: &Principal,
+        relation: Relation,
+        object: &Object,
+    ) -> Result<bool, AuthzError> {
+        let mut who = vec![(principal.kind, principal.subject.as_str())];
+        who.extend(principal.act.iter().map(|a| (a.kind, a.subject.as_str())));
+        for (kind, id) in who {
+            let Some(subject) = Self::subject(kind, id) else {
+                return Ok(false);
+            };
+            let decision = self
+                .authz
+                .check(Self::request(subject, relation, object))
+                .await
+                .map_err(|e| AuthzError(e.to_string()))?;
+            if !decision.allowed {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+}
+
 /// `--pg-authz dev`: every relation, to the dev principal only.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct DevAuthorizer;
@@ -857,5 +963,74 @@ mod tests {
             Some((Relation::Connect, Scope::Project))
         );
         assert_eq!(required("Nope"), None);
+    }
+
+    /// `--pg-authz openfga` asks model v1 what the grants file would decide: a person with
+    /// `editor` on the namespace's project edits and connects, a viewer reads and never
+    /// connects, an agent never administers, and nothing reaches another namespace.
+    #[tokio::test]
+    async fn the_model_authorizer_decides_as_model_v1() {
+        use loams_authz::{BuiltinAuthorizer, Tuple};
+        let fga = BuiltinAuthorizer::new();
+        fga.write(&[
+            Tuple::new("org:o", "org", "project:p"),
+            Tuple::new("project:p", "project", "environment:ns1"),
+            Tuple::new("project:p", "project", "environment:ns2"),
+            Tuple::new("user:ed", "editor", "project:p"),
+            Tuple::new("user:vi", "viewer", "project:p"),
+            Tuple::new("user:dep", "deployer", "environment:ns1"),
+            Tuple::new("agent:a1", "deployer", "environment:ns1"),
+            Tuple::new("user:other", "editor", "environment:ns2"),
+        ])
+        .unwrap();
+        let m = ModelAuthorizer::new(std::sync::Arc::new(fga));
+        let pj = project("ns1", "01J0000000000000000000000P");
+        let ns = Object::Namespace("ns1".into());
+        let can = |p: Principal, r: Relation, o: Object| {
+            let m = m.clone();
+            async move { authorize(&m, &p, r, &o).await.is_ok() }
+        };
+        let agent = |id: &str| Principal {
+            kind: PrincipalKind::Agent,
+            ..user(id)
+        };
+        use Relation::*;
+        assert!(can(user("ed"), Editor, pj.clone()).await);
+        assert!(can(user("ed"), Connect, pj.clone()).await);
+        assert!(
+            can(user("ed"), Editor, ns.clone()).await,
+            "creates projects"
+        );
+        assert!(!can(user("ed"), Admin, pj.clone()).await);
+        assert!(can(user("vi"), Viewer, pj.clone()).await);
+        assert!(
+            !can(user("vi"), Connect, pj.clone()).await,
+            "a viewer never connects"
+        );
+        assert!(!can(user("vi"), Editor, pj.clone()).await);
+        assert!(can(user("dep"), Admin, pj.clone()).await);
+        assert!(
+            !can(agent("a1"), Admin, pj.clone()).await,
+            "an agent never administers"
+        );
+        assert!(can(agent("a1"), Editor, pj.clone()).await);
+        assert!(
+            !can(user("other"), Viewer, pj.clone()).await,
+            "another namespace's grant"
+        );
+        assert!(!can(user("nobody"), Viewer, ns.clone()).await);
+        assert!(
+            !can(Principal::dev(), Viewer, ns.clone()).await,
+            "dev holds nothing here"
+        );
+        // An agent acting for the editor reaches no more than the agent itself may.
+        let acting = Principal {
+            act: vec![Actor {
+                subject: "a2".into(),
+                kind: PrincipalKind::Agent,
+            }],
+            ..user("ed")
+        };
+        assert!(!can(acting, Viewer, pj.clone()).await);
     }
 }

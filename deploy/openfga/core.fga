@@ -96,7 +96,9 @@ type database
     define can_read: viewer from environment
     define can_write: editor from environment
     define can_admin: deployer from environment
-    define can_connect: viewer from environment
+    # Connection details and credentials need editor, not viewer (§46 R1.9, plan IA1 ruling
+    # IA2.R3): a viewer reads a database's settings but never gets a credential to it.
+    define can_connect: editor from environment
 
 # The tuple stores `allowed_session` and `expires`; the request supplies `session_id` and `now`.
 condition agent_session(session_id: string, allowed_session: string, now: timestamp, expires: timestamp) {
