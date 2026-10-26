@@ -18,6 +18,8 @@ describe('enum names', () => {
     );
     expect(enumString(listing.RiskSchema, 'RISK_DESTRUCTIVE')).toBe('destructive');
     expect(enumString(listing.KindSchema, 0)).toBeUndefined();
+    expect(enumString(listing.PlatformSchema, listing.Platform.LINUX_X86_64)).toBe('linux-x86_64');
+    expect(enumNumber(listing.PlatformSchema, 'linux-x86_64')).toBe(listing.Platform.LINUX_X86_64);
     expect(enumNumber(listing.KindSchema, 'nonsense')).toBe(0);
   });
 

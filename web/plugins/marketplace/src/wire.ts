@@ -46,12 +46,17 @@ export function enumString(desc: DescEnum, value: number | string): string | und
   const prefix = prefixOf(desc.name);
   if (!name?.startsWith(prefix)) return undefined;
   const rest = name.slice(prefix.length);
-  return rest === 'UNSPECIFIED' ? undefined : rest.toLowerCase().replace(/_/g, '-');
+  if (rest === 'UNSPECIFIED') return undefined;
+  // The schema's own spelling: a platform keeps its architecture's underscore
+  // (`linux-x86_64`), as map/marketplace.rs keeps it.
+  if (desc.name === 'Platform') return rest.toLowerCase().replace('_', '-');
+  return rest.toLowerCase().replace(/_/g, '-');
 }
 
 /** A schema string as a proto enum number; an unknown string is 0 (unspecified). */
 export function enumNumber(desc: DescEnum, value: string): number {
   const name = `${prefixOf(desc.name)}${value.toUpperCase().replace(/-/g, '_')}`;
+  // (`linux-x86_64` is PLATFORM_LINUX_X86_64 either way.)
   return desc.values.find((v) => v.name === name)?.number ?? 0;
 }
 
