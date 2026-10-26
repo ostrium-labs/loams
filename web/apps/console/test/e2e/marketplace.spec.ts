@@ -3,7 +3,8 @@
 // before anything is created, Install installs it, and the harness appears in the
 // picker.
 //
-// The daemon is a debug build with LOAMS_AGENTD_TEST_MARKETPLACE: its marketplace is
+// The daemon is a debug build with `--features e2e-marketplace` and
+// LOAMS_AGENTD_TEST_MARKETPLACE: its marketplace is
 // the testkit's world (a signed fake official index with `testkit/echo-acp`, stand-in
 // signatures and a fake npm), so nothing leaves this machine.
 //
@@ -53,6 +54,17 @@ test.describe('the Seed Exchange on the web edition', () => {
   });
 
   test('marketplace_install_harness_appears_in_picker', async ({ browser }) => {
+    // The testkit marketplace is in a debug daemon built with `--features
+    // e2e-marketplace` only (studio-e2e.yml builds it so); any other daemon would reach
+    // the network, so the spec is skipped there.
+    await expect
+      .poll(() => agentd.log().includes('LOAMS_AGENTD_TEST_MARKETPLACE is set'), { timeout: 5_000 })
+      .toBe(true)
+      .catch(() => undefined);
+    test.skip(
+      !agentd.log().includes('LOAMS_AGENTD_TEST_MARKETPLACE is set'),
+      'loams-agentd was built without --features e2e-marketplace',
+    );
     context = await browser.newContext();
     const page = await context.newPage();
     await page.goto('/?demo#/studio');

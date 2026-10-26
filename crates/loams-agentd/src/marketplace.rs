@@ -17,6 +17,7 @@ use loams_agentd_marketplace::{HttpsFetcher, MarketplaceHost, SigstoreVerifier};
 /// When the fetcher or the trusted root cannot be built, or `sources.json`
 /// cannot be read.
 pub fn open(dir: &Path) -> anyhow::Result<MarketplaceHost> {
+    #[cfg(feature = "e2e-marketplace")]
     if test_marketplace() {
         tracing::warn!(
             "{TEST_MARKETPLACE_ENV} is set: the marketplace serves the testkit's signed fake index (tests only)"
@@ -44,13 +45,15 @@ pub fn open(dir: &Path) -> anyhow::Result<MarketplaceHost> {
     MarketplaceHost::open(deps).map_err(anyhow::Error::new)
 }
 
-/// In a debug build, a non-empty value opens the testkit's world instead of
+/// In a debug build with the `e2e-marketplace` feature, a non-empty value opens
+/// the testkit's world instead of
 /// the network (MK0 Task 9: Studio's e2e installs `testkit/echo-acp`): the
 /// official source served by a fake fetcher, stand-in signatures, a fake npm
 /// and a memory vault. A release build ignores it, as it does
 /// `LOAMS_AGENTD_TEST_ISSUER`.
 pub const TEST_MARKETPLACE_ENV: &str = "LOAMS_AGENTD_TEST_MARKETPLACE";
 
+#[cfg(feature = "e2e-marketplace")]
 fn test_marketplace() -> bool {
     cfg!(debug_assertions) && std::env::var_os(TEST_MARKETPLACE_ENV).is_some_and(|v| !v.is_empty())
 }
