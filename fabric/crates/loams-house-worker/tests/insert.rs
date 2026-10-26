@@ -977,6 +977,66 @@ async fn wait_for_async_insert_0_acks_early() {
 
 /// One statement writes at most `lake_insert_max_bytes` (R12.2): past it the
 /// INSERT is refused and nothing lands.
+/// HE1 R14.14: ClickHouse's own compressed framing over HTTP, as the
+/// `clickhouse` Rust crate sends it by default (Laminar's app-server): an
+/// `INSERT … FORMAT RowBinary` whose body is LZ4 frames (`decompress=1`), and
+/// a read whose answer comes back in frames (`compress=1`).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn clickhouse_compressed_framing_both_ways() {
+    let house = lakehouse("framing").await;
+    let addr = house.addr();
+    ok(
+        addr,
+        "CREATE TABLE fr (id UInt64, name String) ENGINE = MergeTree ORDER BY id",
+    )
+    .await;
+    // RowBinary: UInt64 little-endian, String as a varint length and bytes.
+    let mut rows = Vec::new();
+    for (id, name) in [(1u64, "one"), (2, "two"), (3, "three")] {
+        rows.extend_from_slice(&id.to_le_bytes());
+        rows.push(name.len() as u8);
+        rows.extend_from_slice(name.as_bytes());
+    }
+    let mut body = Vec::new();
+    loams_house_native::compress::write_frames(&mut body, &rows);
+    inserted(
+        addr,
+        "INSERT INTO fr (id, name) FORMAT RowBinary",
+        &body,
+        &[("decompress", "1")],
+    )
+    .await;
+    let response = post(
+        addr,
+        ALICE,
+        Some("SELECT id, name FROM fr ORDER BY id FORMAT TSV"),
+        b"",
+        &[("compress", "1")],
+    )
+    .await;
+    assert_eq!(response.status, 200, "{}", response.text());
+    assert!(response.header("Content-Encoding").is_none());
+    let mut reader = loams_house_native::wire::Reader::new(&response.body);
+    let mut plain = Vec::new();
+    while reader.position() < response.body.len() {
+        loams_house_native::compress::read_frame(&mut reader, &mut plain).expect("a frame");
+    }
+    assert_eq!(
+        String::from_utf8(plain).expect("utf8"),
+        "1\tone\n2\ttwo\n3\tthree\n"
+    );
+    // A body that is not in frames is refused, and nothing is written.
+    let refused = insert(
+        addr,
+        "INSERT INTO fr (id, name) FORMAT RowBinary",
+        &rows,
+        &[("decompress", "1")],
+    )
+    .await;
+    assert_ne!(refused.status, 200, "{}", refused.text());
+    assert_eq!(ok(addr, "SELECT count() FROM fr FORMAT TSV").await, "3\n");
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn insert_over_the_cap_is_refused() {
     let house = lakehouse_with("cap", |config| config.lake_insert_max_bytes = 64 * 1024).await;
