@@ -1,0 +1,13 @@
+{
+  "name": "@loams/lapc-fixture",
+  "version": "0.1.0",
+  "description": "Fails LAPC-C8: the fixture agent with an install script. Its tests lay this file over a copy of ../agent.",
+  "license": "Apache-2.0",
+  "main": "good.js",
+  "scripts": {
+    "postinstall": "node -e \"require('fs').writeFileSync('installed.txt', 'code ran at install')\""
+  },
+  "engines": {
+    "node": ">=22.13"
+  }
+}
