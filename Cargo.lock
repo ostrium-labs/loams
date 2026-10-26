@@ -10267,9 +10267,9 @@ dependencies = [
 
 [[package]]
 name = "loro"
-version = "1.16.2"
+version = "1.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e86dea63b66576db244cbc3a40bdb17517263c93f318e2fbe08aca3be1192cb"
+checksum = "410c939fe3bee34b8ed61f7aea93201fb136629f685ffa557039c4d9952f9988"
 dependencies = [
  "enum-as-inner 0.6.1",
  "generic-btree",
@@ -10283,9 +10283,9 @@ dependencies = [
 
 [[package]]
 name = "loro-common"
-version = "1.16.0"
+version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2146b353a56b0a743f8643725cb9f42dfe209665939b59db901ecea732a3ab29"
+checksum = "bd3f7afbafc4db85aefe9620e7e99fa49c974477563904f226ae96fc9674eade"
 dependencies = [
  "arbitrary",
  "enum-as-inner 0.6.1",
@@ -10313,9 +10313,9 @@ dependencies = [
 
 [[package]]
 name = "loro-internal"
-version = "1.16.2"
+version = "1.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d5806b65ee68c3ae7891959dd968898860dab74fbf6498b312de9b548dce5ec"
+checksum = "7e533c1688430aa4fcdd933f00861e331c169a4158ee6d27d054e0558892d447"
 dependencies = [
  "append-only-bytes",
  "arref",
@@ -10360,9 +10360,9 @@ dependencies = [
 
 [[package]]
 name = "loro-kv-store"
-version = "1.16.0"
+version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "841e206d3749fd14f23e64985be230dad2b2199da1d381c44c3dd0d2b9583fcc"
+checksum = "c7331ebe6902effeb0c3d52aba9e30fb0118bc926faed6f3848487aab40c1a4e"
 dependencies = [
  "bytes",
  "ensure-cov",
@@ -10598,9 +10598,9 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
 name = "memmap2"
-version = "0.9.11"
+version = "0.9.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d1219ed1b7f229ee7104d281dd01d6802fe28bb6e95d292942c4daacdeb798c0"
+checksum = "6b0ca1155a9ecc25aa12e8313a119f32edf0255fea2f44839c4ac0a12b2ac157"
 dependencies = [
  "libc",
 ]
@@ -13405,11 +13405,11 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "relative-path"
-version = "2.0.2"
+version = "2.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2a073568cd8b9c4825429d3e9fc5f52851b4f97cc1348800689408921e6b8f8"
+checksum = "38540a682c6e9bca04a8bca9e5ec5a6ba168dfbb04c9998fe517a9befb92eb68"
 dependencies = [
- "serde",
+ "serde_core",
 ]
 
 [[package]]
@@ -17655,9 +17655,9 @@ dependencies = [
 
 [[package]]
 name = "webbrowser"
-version = "1.2.4"
+version = "1.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62c35be770821a214dbc362fc26908c853e776c0004294d0b10b8a6bad582f94"
+checksum = "d2c8ddfbbf66e501434657400268cefe51b95140a0266236415cda7627732df7"
 dependencies = [
  "jni",
  "log",
