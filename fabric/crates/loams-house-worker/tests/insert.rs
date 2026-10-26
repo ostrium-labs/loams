@@ -499,6 +499,54 @@ async fn defaults_and_column_lists_apply_as_in_clickhouse() {
     assert_eq!(ok(addr, "SELECT count() FROM d").await, "4\n");
 }
 
+/// HE1 R14.10: an equality on a `UUID` column finds its rows (Laminar filters
+/// every read by `project_id`): the House writes no Iceberg bounds for `uuid`
+/// columns, which ClickHouse 26.9's Iceberg reader misreads and prunes on.
+/// Every answer is the 26.9.2.8 oracle's.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn uuid_equalities_find_their_rows() {
+    let house = lakehouse("uuid-filters").await;
+    let addr = house.addr();
+    ok(
+        addr,
+        "CREATE TABLE u (project_id UUID, trace_id Nullable(UUID), n Int64) \
+         ENGINE = MergeTree ORDER BY (project_id, n)",
+    )
+    .await;
+    ok(
+        addr,
+        "INSERT INTO u VALUES ('00000000-0000-0000-0000-000000000001', \
+         '00000000-0000-0000-0000-00000000000a', 1), ('00000000-0000-0000-0000-000000000001', \
+         NULL, 2), ('ffffffff-0000-0000-0000-000000000002', '00000000-0000-0000-0000-00000000000b', 3)",
+    )
+    .await;
+    for (sql, want) in [
+        (
+            "SELECT count() FROM u WHERE project_id = toUUID('00000000-0000-0000-0000-000000000001')",
+            "2\n",
+        ),
+        (
+            "SELECT n FROM u WHERE project_id = 'ffffffff-0000-0000-0000-000000000002'",
+            "3\n",
+        ),
+        (
+            "SELECT n FROM u WHERE trace_id = '00000000-0000-0000-0000-00000000000a'",
+            "1\n",
+        ),
+        (
+            "SELECT count() FROM u WHERE project_id IN ('00000000-0000-0000-0000-000000000001', \
+             'ffffffff-0000-0000-0000-000000000002')",
+            "3\n",
+        ),
+        (
+            "SELECT count() FROM u WHERE project_id > '00000000-0000-0000-0000-000000000001'",
+            "1\n",
+        ),
+    ] {
+        assert_eq!(ok(addr, &format!("{sql} FORMAT TSV")).await, want, "{sql}");
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn insert_select_reads_lake_tables_and_table_functions() {
     let house = lakehouse("select").await;
