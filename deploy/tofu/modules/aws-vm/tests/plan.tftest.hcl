@@ -96,7 +96,7 @@ run "no_static_key_anywhere" {
     error_message = "the rendered config names the bucket, region and secret prefix"
   }
   assert {
-    condition     = can(regex("LOAMS_VERSION=0\\.1\\.1", module.cloud_init.user_data))
+    condition     = can(regex("LOAMS_VERSION=[0-9]+\\.[0-9]+\\.[0-9]+\\n", module.cloud_init.user_data))
     error_message = "the release is pinned"
   }
 }
