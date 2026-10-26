@@ -96,6 +96,8 @@ t "secrets_fetch_all_clouds" "$here/test_secrets.sh"
 t "bootstrap_verifies_signature_and_checksum" "$here/test_bootstrap.sh"
 t "exposure_scan_finds_open_ports" "$here/test_exposure.sh"
 t "aws_matrix_reaper_and_nightly" "$here/test_reaper.sh"
+# the Confluent region and price tables (CC1 Task 5)
+t "confluent_tables" "$here/test_confluent_tables.sh"
 
 # install.sh --cloud (BY0 Task 6): the env it would write, against golden files
 inst="$repo/deploy/release/byoc/install.sh"
@@ -117,7 +119,7 @@ t "guides_reference_existing_files" "$here/guides_reference_existing_files.sh"
 # the linter
 sc="${SHELLCHECK:-$(command -v shellcheck || true)}"
 if [[ -n "$sc" ]]; then
-  t "shellcheck" "$sc" -x "$byoc/render.sh" "$byoc/gen-cloud-init.sh" "$byoc/lib/loams-byoc-bootstrap" "$byoc/lib/loams-byoc-secrets" "$inst" "$here/run.sh" "$here/test_secrets.sh" "$here/test_bootstrap.sh" "$here/test_exposure.sh" "$here/test_reaper.sh" "$repo/scripts/byoc/aws-matrix.sh" "$repo/tests/byoc/exposure.sh" "$here/guides_reference_existing_files.sh"
+  t "shellcheck" "$sc" -x "$byoc/render.sh" "$byoc/gen-cloud-init.sh" "$byoc/lib/loams-byoc-bootstrap" "$byoc/lib/loams-byoc-secrets" "$inst" "$here/run.sh" "$here/test_secrets.sh" "$here/test_bootstrap.sh" "$here/test_exposure.sh" "$here/test_reaper.sh" "$repo/scripts/byoc/aws-matrix.sh" "$repo/scripts/byoc/confluent-tables.sh" "$here/test_confluent_tables.sh" "$repo/tests/byoc/exposure.sh" "$here/guides_reference_existing_files.sh"
 else
   echo "skip shellcheck (not installed)"
 fi
