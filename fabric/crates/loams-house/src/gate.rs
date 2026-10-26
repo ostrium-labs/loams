@@ -584,11 +584,18 @@ impl Oracle for WorkerOracle<'_> {
 
     async fn describe(&mut self, columns: &str) -> Result<Vec<Described>, HouseError> {
         // `flatten_nested = 0`: a `Nested` column stays one column, which the type
-        // table refuses, rather than arrays under dotted names.
+        // table refuses, rather than arrays under dotted names. The column list
+        // is a `String` parameter, read as `TabSeparated` text: escaped, so a
+        // type written over several lines (`Array(Tuple(\n …))`, Laminar's
+        // `spans`) or a default holding a backslash arrives as written (HE1
+        // R14.6).
         let rows = self
             .rows(
                 "DESCRIBE TABLE null({columns:String})",
-                vec![("columns".to_string(), columns.to_string())],
+                vec![(
+                    "columns".to_string(),
+                    crate::http::tsv_escape(columns),
+                )],
                 vec![("flatten_nested".to_string(), "0".to_string())],
             )
             .await?;

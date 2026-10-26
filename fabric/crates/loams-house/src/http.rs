@@ -1519,8 +1519,9 @@ impl KillLayout {
     }
 }
 
-/// A `String` as ClickHouse's `TabSeparated` writes it.
-fn tsv_escape(text: &str) -> String {
+/// A `String` as ClickHouse's `TabSeparated` writes it, which is also how a
+/// `String` query parameter's value is read (HE1 R14.6).
+pub(crate) fn tsv_escape(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for c in text.chars() {
         match c {
