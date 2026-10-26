@@ -972,7 +972,9 @@ async fn stage(
     })
     .expect()
     .unwrap_or(crate::classify::Expect::Read);
-    gate::admit(&analysis, &statement, expect, false, None)?;
+    // HE1 R14.5: what it selects may call the namespace's own views.
+    let views = gate::view_calls(Some(ctx.lake), ctx.namespace, ctx.database, &analysis).await?;
+    gate::admit_views(&analysis, &statement, expect, false, None, &views)?;
 
     // Its settings: the session's, the request's, then its own.
     for (name, value) in &target.settings {
@@ -1001,7 +1003,7 @@ async fn stage(
                 .analyze(&internal, ctx.params)
                 .await
                 .map_err(deny::as_setting_refusal)?;
-            gate::admit(&analysis, &internal, expect, false, None)?;
+            gate::admit_views(&analysis, &internal, expect, false, None, &views)?;
             // Which tables the query reads with `FINAL` is in its query tree,
             // which ClickHouse builds for a query but not for an `INSERT`: the
             // query alone gives it (HS1 Task 13), so a Replacing or Summing
@@ -1010,7 +1012,14 @@ async fn stage(
                 .analyze(&text, ctx.params)
                 .await
                 .map_err(deny::as_setting_refusal)?;
-            gate::admit(&query, &text, crate::classify::Expect::Read, true, None)?;
+            gate::admit_views(
+                &query,
+                &text,
+                crate::classify::Expect::Read,
+                true,
+                None,
+                &views,
+            )?;
             analysis.query_tree = query.query_tree;
             let plan = gate::read_plan(
                 Some(ctx.lake),
@@ -1276,7 +1285,9 @@ pub async fn create_as(
             .analyze(&statement, ctx.params)
             .await
             .map_err(deny::as_setting_refusal)?;
-        gate::admit_ddl(&analysis, &statement)?;
+        let views =
+            gate::view_calls(Some(ctx.lake), ctx.namespace, ctx.database, &analysis).await?;
+        gate::admit_ddl_views(&analysis, &statement, &views)?;
         if plan.has_columns {
             return Ok(format!("{} {}", plan.head, plan.clauses));
         }
@@ -1287,12 +1298,13 @@ pub async fn create_as(
             .analyze(&select, ctx.params)
             .await
             .map_err(deny::as_setting_refusal)?;
-        gate::admit(
+        gate::admit_views(
             &analysis,
             &select,
             crate::classify::Expect::Read,
             true,
             None,
+            &views,
         )?;
         let reads = gate::read_plan(
             Some(ctx.lake),

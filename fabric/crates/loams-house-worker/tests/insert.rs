@@ -1501,6 +1501,110 @@ async fn catalog_views_and_distributed_tables() {
     ok(addr, "DROP TABLE s_dist").await;
 }
 
+/// HE1 R14.5: a parameterised view is called as a table function (Laminar's
+/// `traces_v0(project_id = …, …)` over `raw_traces_v0(…)`), with literal
+/// arguments and with the request's query parameters, through a view of a
+/// view; views two others read are made first. Every answer is the 26.9.2.8
+/// oracle's.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn parameterised_views_are_called_as_table_functions() {
+    let house = lakehouse("param-views").await;
+    let addr = house.addr();
+    ok(
+        addr,
+        "CREATE TABLE spans (project_id UInt64, trace_id UUID, start_time DateTime64(9, 'UTC'), \
+         tokens Int64) ENGINE = MergeTree ORDER BY (project_id, trace_id)",
+    )
+    .await;
+    ok(
+        addr,
+        "INSERT INTO spans VALUES \
+         (1, '00000000-0000-0000-0000-00000000000a', '2026-01-01 00:00:01', 3), \
+         (1, '00000000-0000-0000-0000-00000000000a', '2026-01-01 00:00:02', 4), \
+         (1, '00000000-0000-0000-0000-00000000000b', '2026-01-02 00:00:00', 5), \
+         (2, '00000000-0000-0000-0000-00000000000c', '2026-01-01 00:00:00', 7)",
+    )
+    .await;
+    ok(
+        addr,
+        "CREATE VIEW raw_v SQL SECURITY INVOKER AS SELECT trace_id, sum(tokens) AS tokens, \
+         min(start_time) AS first_start FROM spans WHERE project_id = {project_id:UInt64} \
+         AND start_time >= {start:DateTime64(9)} GROUP BY trace_id",
+    )
+    .await;
+    ok(
+        addr,
+        "CREATE VIEW traces_v SQL SECURITY INVOKER AS SELECT t.trace_id AS id, t.tokens AS tokens \
+         FROM raw_v(project_id = {project_id:UInt64}, start = {start:DateTime64(9)}) AS t",
+    )
+    .await;
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT id, tokens FROM traces_v(project_id = 1, \
+             start = '2026-01-01 00:00:02') ORDER BY id FORMAT TSV"
+        )
+        .await,
+        "00000000-0000-0000-0000-00000000000a\t4\n00000000-0000-0000-0000-00000000000b\t5\n"
+    );
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT count(), sum(tokens) FROM default.raw_v(project_id = \
+             2, start = '2025-01-01 00:00:00') FORMAT TSV"
+        )
+        .await,
+        "1\t7\n"
+    );
+    // The application's form: the arguments are the request's parameters.
+    let response = post(
+        addr,
+        ALICE,
+        None,
+        b"SELECT id, tokens FROM traces_v(project_id = {p:UInt64}, start = {s:DateTime64(9)}) \
+          ORDER BY id FORMAT TSV",
+        &[
+            ("param_p", "1"),
+            ("param_s", "2026-01-01 00:00:00"),
+        ],
+    )
+    .await;
+    assert_eq!(response.status, 200, "{}", response.text());
+    assert_eq!(
+        response.text(),
+        "00000000-0000-0000-0000-00000000000a\t7\n00000000-0000-0000-0000-00000000000b\t5\n"
+    );
+    // A view two others read (directly and through a view) is made first.
+    ok(addr, "CREATE VIEW a_v AS SELECT trace_id, tokens FROM spans").await;
+    ok(
+        addr,
+        "CREATE VIEW b_v AS SELECT trace_id, sum(tokens) AS total FROM a_v GROUP BY trace_id",
+    )
+    .await;
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT b.trace_id, b.total, count() FROM b_v AS b INNER JOIN a_v AS a \
+             USING (trace_id) GROUP BY b.trace_id, b.total ORDER BY b.trace_id FORMAT TSV"
+        )
+        .await,
+        "00000000-0000-0000-0000-00000000000a\t7\t2\n\
+         00000000-0000-0000-0000-00000000000b\t5\t1\n\
+         00000000-0000-0000-0000-00000000000c\t7\t1\n"
+    );
+    // A call of a name that is no view of the namespace is still refused,
+    // and so is a view whose body reads outside it.
+    refused(addr, "SELECT * FROM nope(x = 1)", "344").await;
+    refused(addr, "SELECT * FROM spans(project_id = 1)", "344").await;
+    refused(
+        addr,
+        "CREATE VIEW bad_v AS SELECT * FROM traces_v(project_id = {project_id:UInt64}, \
+         start = {start:DateTime64(9)}) WHERE id IN (SELECT toUUID(c1) FROM url('http://127.0.0.1:1/x', CSV))",
+        "344",
+    )
+    .await;
+}
+
 /// HE1 R9.14: readable `AggregatingMergeTree` and `Null`, against the oracle.
 /// OpenPanel 2.3.0's inner-table materialized views (agent O's pack: states,
 /// `count()` dimensions, `ARRAY JOIN`, and the binding by identity that a

@@ -66,6 +66,54 @@ pub fn drop_ddl(database: &str, name: &str) -> String {
     )
 }
 
+/// A view's `SELECT` as the worker can explain it (HE1 R14.5). A
+/// parameterised view's body holds query parameters (`{project_id:UUID}`),
+/// and ClickHouse explains nothing with a parameter unset (`456`, measured on
+/// 26.9.2.8); each one becomes `defaultValueOfTypeName('<type>')`, an
+/// expression of its type, so the trees the deny list and the read plan walk
+/// keep every table, function and `FINAL` of the body. The text the worker
+/// makes the view from is the body as written.
+pub fn analysable(select: &str) -> String {
+    use crate::classify::{Lexeme, lex};
+    let lexemes = lex(select);
+    let mut out = String::with_capacity(select.len());
+    let mut copied = 0;
+    let mut i = 0;
+    while i < lexemes.len() {
+        let open = matches!(lexemes[i].0, Lexeme::Symbol(b'{'));
+        let named = matches!(lexemes.get(i + 1), Some((Lexeme::Word(..), _)));
+        let colon = matches!(lexemes.get(i + 2), Some((Lexeme::Symbol(b':'), _)));
+        if !(open && named && colon) {
+            i += 1;
+            continue;
+        }
+        let Some(close) = (i + 3..lexemes.len())
+            .find(|&j| matches!(lexemes[j].0, Lexeme::Symbol(b'}' | b'{')))
+            .filter(|&j| matches!(lexemes[j].0, Lexeme::Symbol(b'}')))
+        else {
+            i += 1;
+            continue;
+        };
+        let ty = select[lexemes[i + 2].1.end..lexemes[close].1.start].trim();
+        if ty.is_empty() {
+            i += 1;
+            continue;
+        }
+        out.push_str(&select[copied..lexemes[i].1.start]);
+        out.push_str(&format!("defaultValueOfTypeName({})", quote_string(ty)));
+        copied = lexemes[close].1.end;
+        i = close + 1;
+    }
+    out.push_str(&select[copied..]);
+    out
+}
+
+/// Whether a view's `SELECT` holds query parameters: a parameterised view,
+/// read only as a table function with their values (HE1 R14.5).
+pub fn is_parameterised(select: &str) -> bool {
+    analysable(select) != select
+}
+
 /// A catalog view (HE1 R9.13) in the worker, over the read views of what it
 /// names: `CREATE OR REPLACE VIEW d.v AS\n<select>`, the control connection's
 /// one shape for a view without a column list. It runs with the invoker's

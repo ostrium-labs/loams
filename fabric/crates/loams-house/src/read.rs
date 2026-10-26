@@ -216,6 +216,9 @@ pub struct References {
     pub merges: Vec<Option<String>>,
     /// Whether `information_schema` is read.
     pub information_schema: bool,
+    /// Table functions that may call the namespace's own (parameterised) views
+    /// (HE1 R14.5), as the trees print them.
+    pub calls: Vec<String>,
 }
 
 /// The functions whose right-hand side may be a bare table name.
@@ -277,6 +280,7 @@ pub fn references(analysis: &Analysis) -> References {
             _ => {}
         }
     }
+    out.calls = tree.view_calls();
     out.information_schema = out
         .tables
         .iter()
@@ -475,6 +479,20 @@ pub async fn live_files(
     Ok(out)
 }
 
+/// A catalog view a statement reads (HE1 R9.13), as the plan makes it.
+#[derive(Debug)]
+struct PlannedView {
+    database: String,
+    name: String,
+    /// The deepest it was met at: views are made deepest first.
+    depth: usize,
+    /// What its `SELECT` names (tables, and table functions that may call
+    /// views).
+    reads: Vec<(String, bool)>,
+    /// `CREATE OR REPLACE VIEW …`.
+    ddl: String,
+}
+
 /// What a statement reads, made ready for its worker.
 #[derive(Debug, Default)]
 pub struct ReadPlan {
@@ -552,8 +570,8 @@ pub async fn plan(
     }
     let mut tables = Vec::new();
     let mut batch_views: Vec<String> = Vec::new();
-    // Views over the lake views, outermost first (made last, innermost first).
-    let mut plan_views: Vec<String> = Vec::new();
+    // Views over the lake views, made deepest first (HE1 R14.5).
+    let mut plan_views: Vec<PlannedView> = Vec::new();
     let sequenced = setting_on(settings, SEQUENCED);
     if let Some(lake) = ctx.lake {
         let as_of = as_of(settings)?;
@@ -567,19 +585,27 @@ pub async fn plan(
             None => wanted.push((database, name, table, fin)),
         };
         // HE1 R9.13: a view reads what its SELECT names, which is resolved in
-        // the view's database, to a depth of [`MAX_VIEW_DEPTH`].
-        let mut queue: Vec<(String, String, usize)> = refs
+        // the view's database, to a depth of [`MAX_VIEW_DEPTH`]. A table
+        // function's name is read only as a call of a view (HE1 R14.5).
+        let mut queue: Vec<(String, String, usize, bool)> = refs
             .tables
             .iter()
-            .map(|t| (ctx.database.to_string(), t.clone(), 0))
+            .map(|t| (ctx.database.to_string(), t.clone(), 0, false))
+            .chain(
+                refs.calls
+                    .iter()
+                    .map(|t| (ctx.database.to_string(), t.clone(), 0, true)),
+            )
             .collect();
-        let mut expanded: Vec<(String, String)> = Vec::new();
         let mut finals = refs.finals.clone();
-        while let Some((current, printed, depth)) = queue.pop() {
+        while let Some((current, printed, depth, call)) = queue.pop() {
             let printed = &printed;
             if let Some((database, name, table)) =
                 resolve(lake, ctx.namespace, &current, printed).await?
             {
+                if call && crate::ddl::class_of(&table.metadata) != TableClass::View {
+                    continue;
+                }
                 // A table outside the user's grants is not read (HS1 Task 20),
                 // nor is the House's own `_house` by name (HS1 Task 23: the
                 // query log is read as `system.query_log`).
@@ -609,13 +635,25 @@ pub async fn plan(
                     return Err(crate::pipes::direct_read(&database, &name));
                 }
                 if crate::ddl::class_of(&table.metadata) == TableClass::View {
-                    if expanded.iter().any(|(d, n)| *d == database && *n == name) {
-                        continue;
-                    }
                     if depth >= MAX_VIEW_DEPTH {
                         return Err(bad(format!(
                             "View {database}.{name} nests views more than {MAX_VIEW_DEPTH} deep"
                         )));
+                    }
+                    // Met again deeper (a view two others read, HE1 R14.5): it
+                    // and what it reads are made earlier, so that a view
+                    // ClickHouse analyses at creation finds them.
+                    if let Some(seen) = plan_views
+                        .iter_mut()
+                        .find(|v| v.database == database && v.name == name)
+                    {
+                        if depth > seen.depth {
+                            seen.depth = depth;
+                            for (t, call) in seen.reads.clone() {
+                                queue.push((database.clone(), t, depth + 1, call));
+                            }
+                        }
+                        continue;
                     }
                     let select = table
                         .metadata
@@ -624,17 +662,24 @@ pub async fn plan(
                         .cloned()
                         .unwrap_or_default();
                     // The view's text is the catalog's: held to the deny list as a
-                    // user's read is, before any worker makes it.
+                    // user's read is, before any worker makes it. A
+                    // parameterised view's body is explained with each
+                    // parameter as a value of its type (HE1 R14.5).
+                    let explained = views::analysable(&select);
                     let analysis = lease
-                        .analyze(&select, &[])
+                        .analyze(&explained, &[])
                         .await
                         .map_err(crate::deny::as_setting_refusal)?;
-                    crate::gate::admit(
+                    let calls =
+                        crate::gate::view_calls(Some(lake), ctx.namespace, &database, &analysis)
+                            .await?;
+                    crate::gate::admit_views(
                         &analysis,
-                        &select,
+                        &explained,
                         crate::classify::Expect::Read,
                         true,
                         None,
+                        &calls,
                     )?;
                     let inner = references(&analysis);
                     finals.extend(inner.finals.iter().cloned());
@@ -645,12 +690,23 @@ pub async fn plan(
                     {
                         finals.extend(inner.tables.iter().cloned());
                     }
-                    for t in inner.tables {
-                        queue.push((database.clone(), t, depth + 1));
+                    let reads: Vec<(String, bool)> = inner
+                        .tables
+                        .into_iter()
+                        .map(|t| (t, false))
+                        .chain(inner.calls.into_iter().map(|t| (t, true)))
+                        .collect();
+                    for (t, call) in &reads {
+                        queue.push((database.clone(), t.clone(), depth + 1, *call));
                     }
                     databases.insert(database.clone());
-                    plan_views.push(views::user_view_ddl(&database, &name, &select));
-                    expanded.push((database, name));
+                    plan_views.push(PlannedView {
+                        ddl: views::user_view_ddl(&database, &name, &select),
+                        database,
+                        name,
+                        depth,
+                        reads,
+                    });
                     continue;
                 }
                 let fin = final_all || finals.iter().any(|f| f == printed);
@@ -746,7 +802,11 @@ pub async fn plan(
         plan.views.push(views::view_ddl(&pin, &source, mode)?);
         plan.pins.push(pin);
     }
-    plan.views.extend(plan_views.into_iter().rev());
+    // Deepest first, and among equals the one met last first (the order
+    // before HE1 R14.5).
+    plan_views.reverse();
+    plan_views.sort_by_key(|v| std::cmp::Reverse(v.depth));
+    plan.views.extend(plan_views.into_iter().map(|v| v.ddl));
     if let Some(sql) = sampled
         && !plan.pins.is_empty()
     {
