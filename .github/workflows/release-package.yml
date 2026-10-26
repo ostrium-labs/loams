@@ -208,6 +208,13 @@ jobs:
           [[ -n "${LOAMS_GPG_PRIVATE_KEY:-}" ]] || missing+=("secret LOAMS_GPG_PRIVATE_KEY")
           [[ -n "${LOAMS_GPG_KEY_ID:-}" ]] || missing+=("variable LOAMS_GPG_KEY_ID")
           if [ ${#missing[@]} -eq 0 ]; then
+            # The current release key (docs/release/signing.md); the previous key
+            # still verifies 0.1.0 to 0.1.2 but should no longer sign.
+            current="$(gpg --batch --show-keys --with-colons docs/release/loams-release-key-2026-10.asc | awk -F: '$1=="fpr"{print $10; exit}')"
+            key_id="${LOAMS_GPG_KEY_ID// /}"
+            if [[ "${current^^}" != *"${key_id^^}" ]]; then
+              echo "::warning title=Previous GPG key::LOAMS_GPG_KEY_ID ($key_id) is not the current release key $current; this release would be signed with another key. See docs/release/signing.md."
+            fi
             echo "mode=sign" >> "$GITHUB_OUTPUT"
             echo "A GPG key is configured; the .deb and the .pkg.tar.zst will be signed."
             echo "The .rpm will still be unsigned here and is signed by .github/workflows/release-sign.yml (SignPath <rpm-sign>)."

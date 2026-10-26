@@ -1,0 +1,1 @@
+SELECT a, b, d FROM t22 ORDER BY a

@@ -642,6 +642,27 @@ fn merged_on_insert(ch: &ChTable, key: &[(String, Option<String>)]) -> Result<St
         // HE1 R9.14: a Null table's rows are stored for its materialized views
         // (reads never see them).
         ddl::LakeEngine::Null => rows,
+        // HE1 R14.13: an inserted block of a CoalescingMergeTree is merged as
+        // ClickHouse merges it: per sorting key, each other column's last
+        // value that is not NULL (`argMax` skips NULLs).
+        ddl::LakeEngine::Coalescing => {
+            let key_columns: Vec<&str> = key.iter().filter_map(|(_, c)| c.as_deref()).collect();
+            let mut select = Vec::new();
+            for column in ch.columns.iter().filter(|c| c.stored()) {
+                let name = quote_name(&column.name);
+                if key_columns.contains(&column.name.as_str()) {
+                    select.push(name);
+                } else {
+                    select.push(format!("argMax({name}, __loams_position) AS {name}"));
+                }
+            }
+            select.push(format!("max(__loams_position) AS {ORDER}"));
+            format!(
+                "SELECT {} FROM (SELECT {staged}, rowNumberInAllBlocks() AS __loams_position \
+                 FROM {STAGING}) GROUP BY {by}",
+                select.join(", ")
+            )
+        }
         // HE1 R9.14: an inserted block of an AggregatingMergeTree is merged as
         // ClickHouse merges it (`optimize_on_insert`): per sorting key, states
         // with their function's `-MergeState`, simple columns with their

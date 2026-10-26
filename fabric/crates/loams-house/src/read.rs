@@ -971,7 +971,9 @@ pub async fn plan(
                 (
                     true,
                     Some(id),
-                    Ok(LakeEngine::Replacing { .. } | LakeEngine::VersionedCollapsing { .. }),
+                    Ok(LakeEngine::Replacing { .. }
+                    | LakeEngine::VersionedCollapsing { .. }
+                    | LakeEngine::Coalescing),
                 ) if pin.table.class != TableClass::External => {
                     live_files(lake, &table.metadata, id).await?
                 }

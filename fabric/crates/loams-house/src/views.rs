@@ -28,7 +28,8 @@
 //!   the row with the greatest `(ver, file sequence number, row number)` and
 //!   drops it when its `is_deleted` is 1; Summing groups by the key and sums;
 //!   VersionedCollapsing cancels rows of opposite sign per key and version
-//!   (D1570, [`collapsing`]).
+//!   (D1570, [`collapsing`]); Coalescing keeps each column's last non-`NULL`
+//!   value per key (HE1 R14.13, [`coalescing`]).
 //!   chDB ignores `FINAL` on a view (measured), so the user's text runs as it is.
 //! * An external table (another writer's) reads as chDB reads Iceberg: no casts.
 //! * A view that reads the bucket names its columns and is `SQL SECURITY NONE`
@@ -227,6 +228,9 @@ pub fn view_ddl(pin: &ReadPin, source: &str, mode: Mode<'_>) -> Result<String, H
                 collapsing(pin, source, &engine, files)?
             }
             (Mode::Final(_), Some(LakeEngine::Aggregating)) => aggregating(pin, source)?,
+            (Mode::Final(files), Some(LakeEngine::Coalescing)) => {
+                coalescing(pin, source, files)?
+            }
             _ => format!("SELECT {}\nFROM {source}", casts(pin)?.join(", ")),
         }
     };
@@ -823,6 +827,37 @@ fn aggregating(pin: &ReadPin, source: &str) -> Result<String, HouseError> {
         "SELECT {}\nFROM (\nSELECT {}\nFROM {source}\n)\nGROUP BY {group_by}",
         select.join(", "),
         casts(pin)?.join(", ")
+    ))
+}
+
+/// Coalescing `FINAL` (HE1 R14.13): rows grouped by the sorting key; each
+/// other column's last value in write order (`(file sequence number, row
+/// number)`) that is not `NULL`, as ClickHouse's merge keeps it (`argMax`
+/// skips `NULL`s; a column all `NULL` in the group stays `NULL`).
+fn coalescing(pin: &ReadPin, source: &str, files: &[LiveFile]) -> Result<String, HouseError> {
+    let key = key(pin)?;
+    let key_columns: Vec<&str> = key.iter().filter_map(|(_, c)| c.as_deref()).collect();
+    let mut select = Vec::new();
+    for column in columns(pin) {
+        let name = quote_name(&column.name);
+        if key_columns.contains(&column.name.as_str()) {
+            select.push(name);
+        } else {
+            select.push(format!("argMax({name}, ({SEQ}, {ROW})) AS {name}"));
+        }
+    }
+    let group_by = if key.is_empty() {
+        "tuple()".to_string()
+    } else {
+        key.iter()
+            .map(|(text, _)| text.clone())
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    Ok(format!(
+        "SELECT {}\nFROM (\nSELECT {}\nFROM {source}\n)\nGROUP BY {group_by}",
+        select.join(", "),
+        sequenced(pin, files)?.join(", ")
     ))
 }
 

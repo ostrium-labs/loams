@@ -1,0 +1,1 @@
+SELECT b, count() AS c FROM t22 GROUP BY b ORDER BY b
