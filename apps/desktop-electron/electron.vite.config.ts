@@ -1,15 +1,27 @@
 // Adapted from dataelement/dsh-desktop (MIT), electron.vite.config.ts.
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig, externalizeDepsPlugin } from "electron-vite";
 
 // Main and preload only: the renderer is the console build (web/apps/console).
-const def = (k: string) => ({
-	[`process.env.${k}`]: JSON.stringify(process.env[k] ?? ""),
+const def = (k: string, fallback = "") => ({
+	[`process.env.${k}`]: JSON.stringify(process.env[k] || fallback),
 });
+
+// The update public key is pinned in update-pubkey.txt (the first non-comment line); the
+// LOAMS_UPDATE_PUBKEY environment variable overrides it for local test builds only.
+const pinnedUpdateKey = (): string =>
+	readFileSync(resolve(__dirname, "update-pubkey.txt"), "utf8")
+		.split(/\r?\n/)
+		.map((l) => l.trim())
+		.find((l) => l && !l.startsWith("#")) ?? "";
 
 export default defineConfig({
 	main: {
-		define: { ...def("LOAMS_UPDATE_PUBKEY"), ...def("LOAMS_UPDATE_FEED") },
+		define: {
+			...def("LOAMS_UPDATE_PUBKEY", pinnedUpdateKey()),
+			...def("LOAMS_UPDATE_FEED"),
+		},
 		build: {
 			rollupOptions: {
 				// `pg`'s optional native binding. Bundled, Vite replaces the missing optional

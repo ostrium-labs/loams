@@ -217,16 +217,17 @@ resource "azurerm_network_interface" "this" {
 
 # --- the VM ----------------------------------------------------------------------------------
 module "cloud_init" {
-  source          = "../shared"
-  cloud           = "azure"
-  release         = var.release
-  container       = local.container
-  storage_account = local.account_name
-  vault           = local.vault_name
-  client_id       = azurerm_user_assigned_identity.vm.client_id
-  secret_prefix   = local.prefix
-  profiles        = var.profiles
-  hostname        = var.hostname
+  source                 = "../shared"
+  cloud                  = "azure"
+  release                = var.release
+  container              = local.container
+  storage_account        = local.account_name
+  vault                  = local.vault_name
+  client_id              = azurerm_user_assigned_identity.vm.client_id
+  secret_prefix          = local.prefix
+  profiles               = var.profiles
+  hostname               = var.hostname
+  confluent_integrations = var.confluent_integrations
 }
 
 resource "azurerm_linux_virtual_machine" "this" {

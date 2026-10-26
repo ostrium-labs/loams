@@ -19,6 +19,16 @@ uuid = { workspace = true, features = ["serde"] }
 chrono.workspace = true
 async-trait.workspace = true
 futures.workspace = true
+# The read-only project knowledge cache (MS1 Task 7, D1813).
+loams-knowledge.workspace = true
+
+[dev-dependencies]
+# A mock Walrus aggregator and an in-memory bucket for the knowledge tools.
+axum.workspace = true
+loams-store.workspace = true
+loams-walrus.workspace = true
+tokio = { workspace = true, features = ["full"] }
+url.workspace = true
 
 [lints]
 workspace = true
