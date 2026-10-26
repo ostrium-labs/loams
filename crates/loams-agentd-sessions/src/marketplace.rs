@@ -87,6 +87,7 @@ pub fn sync(host: &MarketplaceHost, registry: &HarnessRegistry) {
         .harnesses
         .into_iter()
         .map(|registration| AcpLaunch {
+            cwd: Some(host.layout().data_dir(&registration.listing_id)),
             listing_id: registration.listing_id,
             display_name: registration.display_name,
             program: PathBuf::from(registration.program),

@@ -1823,6 +1823,9 @@ impl AcpHarness {
         if let Some(cwd) = cwd.filter(|c| !c.is_empty()) {
             cmd.current_dir(cwd);
         }
+        if let Some(dir) = self.launch.as_ref().and_then(|launch| launch.cwd.as_ref()) {
+            cmd.current_dir(dir);
+        }
         if self.spec.id == HarnessId::Antigravity {
             cmd.env("GEMINI_HOME", antigravity_paths::home()?);
             match noop_browser() {
@@ -2275,6 +2278,11 @@ pub struct AcpLaunch {
     pub args: Vec<String>,
     /// Added to the child's environment.
     pub env: std::collections::BTreeMap<String, String>,
+    /// The child's working directory: the install's own data directory, so
+    /// a project's `bunfig.toml` or `.npmrc` is never read by the agent's
+    /// runtime (Bun reads `bunfig.toml` from its working directory). The
+    /// session's project directory still reaches the agent as ACP `cwd`.
+    pub cwd: Option<PathBuf>,
 }
 
 fn marketplace_spec() -> AcpAgentSpec {

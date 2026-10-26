@@ -317,6 +317,7 @@ Brought into MS1's scope by D1806 and confirmed by the owner on 2026-10-25. Read
 8. **Harness registration** (Task 0 ruling 7, as built).
    - `HarnessId::Marketplace` has wire name `marketplace` and proto value `HARNESS_ID_MARKETPLACE = 13` (after `HARNESS_ID_GOOSE = 12`, MS1 Task 3). `HarnessDescriptor.marketplace_listing` (proto field 9) names the listing.
    - The registry keeps marketplace harnesses beside its id-keyed slots, by listing id. Each is an `AcpHarness::marketplace(AcpLaunch)`, with the owned launch line beside the static specs. A sync keeps an unchanged harness's instance.
+   - A marketplace harness's process runs in its install's `data/` directory, not in the project: Bun reads `bunfig.toml` from its working directory (MK0 Task 6, PR #1254), and a project's file must never configure an installed agent's runtime. The project still reaches the agent as ACP `cwd`. Installed MCP servers are spawned by the harness that runs them, so their working directory is that harness's choice until `McpServer` carries one (follow-up).
    - Marketplace harnesses are listed `enabled` (the person installed each by consent). Harness updates skip them, because they update through the marketplace.
    - `harness_descriptor_appears_in_list_harnesses` passes.
    - **Not in this PR:** running a thread on one. That needs the listing id on the chat's config and session record, so dispatch can call `HarnessRegistry::resolve_marketplace`. MS1 Task 2 needs it, and it is the first follow-up.
