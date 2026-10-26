@@ -86,6 +86,8 @@ pub enum Stmt {
     },
     /// `RENAME TABLE a TO b, …`.
     Rename { pairs: Vec<(String, String)> },
+    /// `EXCHANGE TABLES a AND b` (HE1 R14.9).
+    Exchange { first: String, second: String },
     /// `UNDROP TABLE`.
     Undrop { name: String },
     /// `SHOW …`: chDB answers until HS1 Task 11's system tables.
@@ -205,6 +207,7 @@ impl Stmt {
             Self::Mutation { .. } => "Mutation",
             Self::Alter { .. } => "Alter",
             Self::Rename { .. } => "Rename",
+            Self::Exchange { .. } => "Exchange",
             Self::Undrop { .. } => "Undrop",
             Self::Show { .. } => "Show",
             Self::Describe { .. } => "Describe",
@@ -826,6 +829,22 @@ pub fn classify(sql: &str) -> Result<Classified, HouseError> {
                     format,
                 );
             }
+        }
+        // HE1 R14.9: `EXCHANGE TABLES a AND b`, the House's own reader's
+        // (sqlparser has no `EXCHANGE`).
+        "EXCHANGE" => {
+            let (first, second) = crate::ddl::parse_exchange(&text)?;
+            let printed = |(db, name): crate::ddl::QualifiedName| match db {
+                Some(db) => format!("{db}.{name}"),
+                None => name,
+            };
+            return known(
+                Stmt::Exchange {
+                    first: printed(first),
+                    second: printed(second),
+                },
+                None,
+            );
         }
         // HE1 R9.12: every `ALTER TABLE` is the House's own reader's; sqlparser
         // 0.63 refuses most of ClickHouse's forms.

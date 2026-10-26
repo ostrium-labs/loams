@@ -981,6 +981,64 @@ impl Lake {
         }
     }
 
+    /// `EXCHANGE TABLES a AND b` within the namespace (HE1 R14.9): each name
+    /// then holds the other's table. Answers the tables now under `a` and `b`.
+    ///
+    /// The catalogs rename one table at a time (Iceberg REST has no swap), so
+    /// the exchange is three renames through a name of the House's own (`a` →
+    /// `__loams_exchange_…`, `b` → `a`, that → `b`), undone in reverse when a
+    /// step fails. It is not atomic as ClickHouse's is: a statement that
+    /// resolves `a` or `b` between the steps can find no table (`60`), and a
+    /// front that dies between them leaves the moved table under the House's
+    /// name, which `SHOW TABLES` does not list.
+    pub async fn exchange_tables(
+        &self,
+        namespace: u64,
+        a: (&str, &str),
+        b: (&str, &str),
+    ) -> Result<(LakeTable, LakeTable), HouseError> {
+        let load = |(database, table): (&str, &str)| async move {
+            self.require_database(namespace, database).await?;
+            let loaded = self
+                .load(namespace, database, table)
+                .await?
+                .ok_or_else(|| unknown_table(database, table))?;
+            if ddl::class_of(&loaded.metadata) == TableClass::External {
+                return Err(access_denied(&format!(
+                    "EXCHANGE TABLES {database}.{table}"
+                )));
+            }
+            Ok::<_, HouseError>(loaded)
+        };
+        let first = load(a).await?;
+        let second = load(b).await?;
+        // A table exchanged with itself stays (the 26.9.2.8 oracle answers it).
+        if first.ident == second.ident {
+            return Ok((first, second));
+        }
+        let parked = Self::table_ident(
+            namespace,
+            a.0,
+            &format!("{RESERVED_PREFIX}_exchange_{}", uuid::Uuid::new_v4().simple()),
+        );
+        let a_ident = Self::table_ident(namespace, a.0, a.1);
+        let b_ident = Self::table_ident(namespace, b.0, b.1);
+        self.catalog.rename_table(&first.ident, &parked).await?;
+        if let Err(err) = self.catalog.rename_table(&second.ident, &a_ident).await {
+            let _ = self.catalog.rename_table(&parked, &first.ident).await;
+            return Err(err.into());
+        }
+        if let Err(err) = self.catalog.rename_table(&parked, &b_ident).await {
+            let _ = self.catalog.rename_table(&a_ident, &second.ident).await;
+            let _ = self.catalog.rename_table(&parked, &first.ident).await;
+            return Err(err.into());
+        }
+        Ok((
+            self.catalog.load_table(&a_ident).await?,
+            self.catalog.load_table(&b_ident).await?,
+        ))
+    }
+
     /// `RENAME TABLE a TO b` within the namespace.
     pub async fn rename_table(
         &self,

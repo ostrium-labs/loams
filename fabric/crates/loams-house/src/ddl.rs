@@ -1393,6 +1393,25 @@ pub fn parse_rename(text: &str) -> Result<Vec<(QualifiedName, QualifiedName)>, H
     Ok(pairs)
 }
 
+/// Reads `EXCHANGE TABLES [db.]a AND [db.]b [ON CLUSTER c]` (HE1 R14.9).
+/// `EXCHANGE DICTIONARIES` is not on the surface (`48`).
+pub fn parse_exchange(text: &str) -> Result<(QualifiedName, QualifiedName), HouseError> {
+    let text = text.trim().trim_end_matches(';').trim_end();
+    let mut c = Cursor::new(text);
+    c.expect("EXCHANGE")?;
+    if !c.eat("TABLES") {
+        return Err(HouseError::from(ChError::not_implemented(
+            "EXCHANGE DICTIONARIES is not on the House's surface; EXCHANGE TABLES is",
+        )));
+    }
+    let first = c.qualified()?;
+    c.expect("AND")?;
+    let second = c.qualified()?;
+    c.skip_on_cluster()?;
+    c.expect_end()?;
+    Ok((first, second))
+}
+
 /// Where an added column goes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Position {
@@ -2680,6 +2699,9 @@ pub fn touched(kind: Kind, text: &str, current: &str) -> Vec<Object> {
                     .collect()
             })
             .unwrap_or_default(),
+        Kind::Exchange => parse_exchange(text)
+            .map(|(first, second)| vec![table(first), table(second)])
+            .unwrap_or_default(),
         Kind::Alter => crate::alter::parse_alter(text)
             .map(|alter| vec![table(alter.table)])
             .unwrap_or_default(),
@@ -2714,6 +2736,8 @@ pub enum Kind {
     Undrop,
     /// `RENAME`.
     Rename,
+    /// `EXCHANGE TABLES` (HE1 R14.9).
+    Exchange,
     /// `ALTER TABLE` (HE1 R9.12).
     Alter,
     /// `CREATE VIEW` (HE1 R9.13).
@@ -2977,23 +3001,19 @@ pub async fn execute(
                 let renamed = lake
                     .rename_table(namespace, (&from_db, &from), (&to_db, &to))
                     .await?;
-                // SHOW CREATE names the table: write it out again under the new name.
-                // A view keeps its text (HE1 R9.13).
-                if class_of(&renamed.metadata) == TableClass::View {
-                    continue;
-                }
-                let mut table = ChTable::from_lake(&to_db, &to, &renamed);
-                table.ddl = table.render();
-                lake.catalog()
-                    .commit(
-                        &renamed.ident,
-                        Vec::new(),
-                        vec![loams_house_lake::TableUpdate::SetProperties {
-                            updates: HashMap::from([(PROP_DDL.to_string(), table.ddl)]),
-                        }],
-                    )
-                    .await?;
+                reshow(lake, &to_db, &to, &renamed).await?;
             }
+            Ok(Answer::Done)
+        }
+        Kind::Exchange => {
+            let (first, second) = parse_exchange(text)?;
+            let first = (db_of(&first.0), first.1);
+            let second = (db_of(&second.0), second.1);
+            let (a, b) = lake
+                .exchange_tables(namespace, (&first.0, &first.1), (&second.0, &second.1))
+                .await?;
+            reshow(lake, &first.0, &first.1, &a).await?;
+            reshow(lake, &second.0, &second.1, &b).await?;
             Ok(Answer::Done)
         }
         Kind::Alter => {
@@ -3078,6 +3098,32 @@ pub async fn execute(
         // `insert::target` (HS1 Task 12) before it gets here.
         Kind::Insert => Ok(Answer::PassThrough),
     }
+}
+
+/// `SHOW CREATE` names the table: a renamed (or exchanged, HE1 R14.9) table's
+/// DDL is written out again under its new name. A view keeps its text (HE1
+/// R9.13).
+async fn reshow(
+    lake: &Lake,
+    database: &str,
+    name: &str,
+    renamed: &LakeTable,
+) -> Result<(), HouseError> {
+    if class_of(&renamed.metadata) == TableClass::View {
+        return Ok(());
+    }
+    let mut table = ChTable::from_lake(database, name, renamed);
+    table.ddl = table.render();
+    lake.catalog()
+        .commit(
+            &renamed.ident,
+            Vec::new(),
+            vec![loams_house_lake::TableUpdate::SetProperties {
+                updates: HashMap::from([(PROP_DDL.to_string(), table.ddl)]),
+            }],
+        )
+        .await?;
+    Ok(())
 }
 
 /// A view's catalog entry (HE1 R9.13): an Iceberg table with no files whose
