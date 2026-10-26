@@ -42,7 +42,7 @@ datafusion = { workspace = true, optional = true }
 datafusion-postgres = { workspace = true, optional = true }
 # `WatchAuditEvents` streams (API2 Task 7), and the optional engines below.
 futures.workspace = true
-getrandom = "0.3"
+getrandom = "0.4"
 fail = { workspace = true, optional = true }
 http.workspace = true
 jsonwebtoken.workspace = true

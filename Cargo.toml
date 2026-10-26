@@ -18,7 +18,7 @@ authors = ["The Loams Authors"]
 # pg-control's single-node secret file (PG2 Task 6): x25519 recipients only.
 # 0.11.5 (2026-07-14), not 0.12: 0.12 adds the post-quantum hpke, ml-kem and
 # p256 trees, which the file store does not use.
-age = "=0.11.5"
+age = "=0.12.1"
 anyhow = "1"
 arrow = "58.4"
 arrow-array = "58.4"
@@ -110,20 +110,20 @@ rand_010 = { package = "rand", version = "=0.10.3", default-features = false }
 # Loams Git (GT1): the gitoxide 0.88 train of 2026-09-25, pinned exactly
 # (R0.8, T0-21), SHA-1 only (Ruling 8). A move to 0.89 is its own PR after
 # 2026-10-22. MIT OR Apache-2.0.
-gix-hash = { version = "=0.27.0", default-features = false, features = ["sha1"] }
-gix-validate = { version = "=0.12.0", default-features = false }
-gix-object = { version = "=0.65.0", default-features = false, features = ["sha1"] }
-gix-pack = { version = "=0.75.0", default-features = false, features = ["sha1"] }
-gix-zlib = { version = "=0.2.0", default-features = false }
+gix-hash = { version = "=0.28.1", default-features = false, features = ["sha1"] }
+gix-validate = { version = "=0.13.1", default-features = false }
+gix-object = { version = "=0.66.1", default-features = false, features = ["sha1"] }
+gix-pack = { version = "=0.77.0", default-features = false, features = ["sha1"] }
+gix-zlib = { version = "=0.4.0", default-features = false }
 # The commit-graph reader of `derived/graph/` layers (GT1 Task 20).
-gix-commitgraph = { version = "=0.40.0", default-features = false }
+gix-commitgraph = { version = "=0.42.0", default-features = false }
 # Blame (GT1 Task 21): `gix-blame` and the blob diff it runs on, same train.
-gix-blame = { version = "=0.18.0", default-features = false, features = ["sha1"] }
-gix-diff = { version = "=0.68.0", default-features = false, features = ["blob"] }
-gix-attributes = { version = "=0.36.0" }
-gix-error = { version = "=0.4.0" }
-gix-filter = { version = "=0.35.0", default-features = false }
-gix-worktree = { version = "=0.57.0", default-features = false, features = ["attributes"] }
+gix-blame = { version = "=0.20.0", default-features = false, features = ["sha1"] }
+gix-diff = { version = "=0.70.0", default-features = false, features = ["blob"] }
+gix-attributes = { version = "=0.37.1" }
+gix-error = { version = "=0.5.2" }
+gix-filter = { version = "=0.36.1", default-features = false }
+gix-worktree = { version = "=0.59.0", default-features = false, features = ["attributes"] }
 # Grep (GT1 Task 21): ripgrep's library crates. Unlicense OR MIT.
 grep-matcher = "=0.1.9"
 grep-regex = "=0.1.14"
@@ -134,7 +134,7 @@ hex = "0.4"
 hmac = "0.13"
 http = "1"
 http-body = "1"
-httpmock = { version = "0.8.3", default-features = false, features = ["remote"] }
+httpmock = { version = "0.9.0", default-features = false, features = ["remote"] }
 humantime = "2"
 indexmap = { version = "2", features = ["serde"] }
 itertools = "0.15"
@@ -148,20 +148,20 @@ itertools = "0.15"
 # loams-agentd-marketplace). The 0.58 line fabric already uses (MIT); no
 # default features, so no HTTP or file resolver: the listing schema has no
 # external $ref.
-jsonschema = { version = "0.58", default-features = false }
-jsonwebtoken = { version = "=10.4.0", default-features = false, features = ["aws_lc_rs"] }
+jsonschema = { version = "0.60", default-features = false }
+jsonwebtoken = { version = "=11.1.0", default-features = false, features = ["aws_lc_rs"] }
 # The Kubernetes client (PG2 Task 6's KubeSecretStore first). Task 0 ruling 5
 # asks for the newest release at least 14 days old, 4.2.0; it is held at
 # 3.1.0 (2026-03-17, k8s-openapi 0.27.1 of 2026-03-05) because kube-client 4.x
 # needs serde-saphyr 0.0.29, which caps smallvec below 1.16 and would
 # downgrade it workspace-wide. 3.1.0 reads kubeconfig with serde_yaml, already
 # in the lockfile. rustls with ring.
-k8s-openapi = { version = "=0.27.1", features = ["latest"] }
+k8s-openapi = { version = "=0.28.0", features = ["latest"] }
 kafka-protocol = { version = "0.18", default-features = false }
 # The OS keyring (macOS Keychain, Windows Credential Manager, the Secret
 # Service), as loams-agentd-link uses it.
 keyring = "=4.2.0"
-kube = { version = "=3.1.0", default-features = false, features = ["client", "rustls-tls", "ring"] }
+kube = { version = "=4.2.0", default-features = false, features = ["client", "rustls-tls", "ring"] }
 lance = { version = "=12.0.0", default-features = false }
 lance-file = { version = "=12.0.0", default-features = false }
 lance-index = { version = "=12.0.0", default-features = false }
@@ -252,13 +252,13 @@ serde_json_borrow = "0.9"
 serde_with = "3"
 # JSON schemas of `loams upgrade`'s outputs (UP1 Task 12); 0.8.22 is already
 # in the lockfile.
-schemars = "0.8"
+schemars = "1.2"
 sha2 = "0.11"
 # Sigstore bundle verification for the marketplace's signed index and
 # provenance (MK1 Task 0 ruling 3; loams-agentd-marketplace). Apache-2.0.
 # 0.14.0 is the newest release at least 14 days old (2026-09-29). No default
 # features: the production trusted root is embedded, so no TUF client.
-sigstore-verify = { version = "=0.14.0", default-features = false }
+sigstore-verify = { version = "=0.15.0", default-features = false }
 slatedb = { version = "0.17", default-features = false }
 # The MySQL driver resonate-server-mysql uses (0.8.6, rustls); loams-durable
 # checks a TiDB store's schema with it before serving (D1 Task 4).
@@ -284,7 +284,7 @@ thiserror = "2"
 tikv-client = { git = "https://github.com/ostrium-labs/client-rust", rev = "41b3588f9b63d505dd61e15bf3d26abfd53689a2", default-features = false }
 time = { version = "0.3", features = ["std", "formatting", "parsing", "macros"] }
 time-fmt = "0.3.8"
-toml = "0.8"
+toml = "1.1"
 # The engine's `loams.house.v1` proxy hands axum's `Send`-only request body to
 # reqwest, which wants `Sync` (HS1 Task 7). 1.0.2 (2024-11-20) is already in the
 # lock through axum. Apache-2.0.
@@ -381,13 +381,13 @@ notify = "8"
 nucleo-matcher = "0.3"
 portable-pty = "0.9"
 rusqlite = { version = "0.32", features = ["bundled"] }
-similar = "2"
+similar = "3"
 # Generates the TypeScript wire types of `@loams/agentd-client` (design §50 §8,
 # D789; plan DD1 T0-4 picked 12.0.1 and its features). `no-serde-warnings`
 # silences notes on deserialize-only attributes (`alias`, `other`); the
 # fixture `satisfies` checks in TypeScript catch any real mismatch.
 ts-rs = { version = "12.0.1", features = ["serde-compat", "serde-json-impl", "uuid-impl", "chrono-impl", "no-serde-warnings"] }
-zip = { version = "7.2", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+zip = { version = "9.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [profile.dev]
 debug = "line-tables-only"
