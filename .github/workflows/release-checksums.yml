@@ -24,11 +24,22 @@ on:
       tag:
         type: string
         required: true
+      regenerate:
+        type: boolean
+        required: false
+        default: false
   workflow_dispatch:
     inputs:
       tag:
         description: 'Published release tag, vX.Y.Z(-pre).'
         required: true
+      regenerate:
+        description: >-
+          The release's assets were rebuilt on purpose: list the entries of the
+          existing SHA256SUMS that no longer match, then rewrite it instead of failing.
+        type: boolean
+        required: false
+        default: false
 
 permissions: {}
 
@@ -76,6 +87,7 @@ jobs:
           LOAMS_GPG_PRIVATE_KEY: ${{ secrets.LOAMS_GPG_PRIVATE_KEY }}
           LOAMS_GPG_KEY_ID: ${{ vars.LOAMS_GPG_KEY_ID }}
           LOAMS_GPG_PASSPHRASE: ${{ secrets.LOAMS_GPG_PASSPHRASE }}
+          LOAMS_CHECKSUMS_REGENERATE: ${{ inputs.regenerate && '1' || '' }}
         run: bash scripts/release/sign-checksums.sh "$RUNNER_TEMP/assets" docs/release/loams-release-key.asc
       - name: attach
         env:
