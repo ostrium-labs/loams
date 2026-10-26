@@ -9,6 +9,7 @@
 //! | `Int64` | `long` | — |
 //! | `UInt64` | `decimal(20, 0)` | yes |
 //! | `Float32`, `Float64` | `float`, `double` | — |
+//! | `BFloat16` | `float` (exact: every `BFloat16` is a `Float32`; HE1 R14.8) | yes |
 //! | `Decimal(P, S)`, P ≤ 38 | `decimal(P, S)` | — |
 //! | `Bool` | `boolean` | — |
 //! | `String` | `string` | — |
@@ -28,7 +29,7 @@
 //! A column that is not `Nullable` is a **required** Iceberg field. Every other
 //! ClickHouse type (`JSON`, `Object`, `Variant`, `Dynamic`, `AggregateFunction`,
 //! `SimpleAggregateFunction`, `Nested`, the 128- and 256-bit integers, `Decimal`
-//! over 38 digits, `BFloat16`, `Time`, `Time64`, intervals, geometry) is `48
+//! over 38 digits, `Time`, `Time64`, intervals, geometry) is `48
 //! NOT_IMPLEMENTED`. ClickHouse's canonical type text (what `DESCRIBE` prints) is
 //! kept for every column in the table property `loams.ch.types`, so `DESCRIBE`
 //! and the read views (HS1 Task 11) restore it exactly; "kept" above marks the
@@ -504,6 +505,11 @@ pub fn to_iceberg(
                 scale: 0,
             }),
             "Float32" => primitive(PrimitiveType::Float),
+            // HE1 R14.8: a `BFloat16` is a `Float32` with the low 16 bits of
+            // its mantissa zero, so `float` holds it exactly; the write path
+            // casts it to `Float32` and the read views back (Laminar's
+            // `Array(BFloat16)` embeddings).
+            "BFloat16" => primitive(PrimitiveType::Float),
             "Float64" => primitive(PrimitiveType::Double),
             "Bool" => primitive(PrimitiveType::Boolean),
             "String" | "IPv4" | "IPv6" => primitive(PrimitiveType::String),
@@ -721,6 +727,7 @@ mod tests {
                 "Decimal(20, 0)",
             ),
             ("Float32", Type::Primitive(PrimitiveType::Float), "Float32"),
+            ("BFloat16", Type::Primitive(PrimitiveType::Float), "Float32"),
             ("Bool", Type::Primitive(PrimitiveType::Boolean), "Bool"),
             ("Date", Type::Primitive(PrimitiveType::Date), "Date32"),
             ("UUID", Type::Primitive(PrimitiveType::Uuid), "UUID"),
@@ -841,7 +848,6 @@ mod tests {
             "Time",
             "IntervalDay",
             "Point",
-            "BFloat16",
         ] {
             let mut needs = Needs::V2;
             let err = to_iceberg_field("c", text, &mut FieldIds::after(0), false, &mut needs)
