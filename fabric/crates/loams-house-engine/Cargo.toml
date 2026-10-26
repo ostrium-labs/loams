@@ -15,6 +15,18 @@ loams-house-exec = { path = "../loams-house-exec" }
 loams-house-iceberg = { path = "../loams-house-iceberg" }
 loams-house-formats = { path = "../loams-house-formats" }
 datafusion.workspace = true
+# The dev server's runtime for DataFusion's async execution. MIT.
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+# Seeding: the columns' types in `X-Loams-Columns`; Parquet bodies. MIT OR Apache-2.0, MIT.
+serde_json.workspace = true
+bytes.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[[bin]]
+name = "loams-house-engine-dev"
+path = "src/bin/loams-house-engine-dev.rs"
 
 [lints]
 workspace = true
