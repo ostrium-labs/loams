@@ -35,7 +35,7 @@ use rdkafka::{Message, Offset, TopicPartitionList};
 use serde_json::json;
 
 use crate::config::{CALL_TIMEOUT, Connection, OffsetReset};
-use crate::error::{class_of_code, join_error, kafka_error};
+use crate::error::{AuthWatch, class_of_code, join_error, kafka_error};
 use crate::record::event_from_message;
 
 /// A split's id: `<topic>/<partition>`.
@@ -70,7 +70,7 @@ fn offset_of(pos: &Position) -> Result<i64, ConnectorError> {
 /// Finds the topic-partitions of the configured topics.
 pub struct KafkaEnumerator {
     conn: Arc<Connection>,
-    client: Option<Arc<BaseConsumer>>,
+    client: Option<Arc<BaseConsumer<AuthWatch>>>,
 }
 
 impl std::fmt::Debug for KafkaEnumerator {
@@ -86,13 +86,13 @@ impl KafkaEnumerator {
         Self { conn, client: None }
     }
 
-    async fn client(&mut self) -> Result<Arc<BaseConsumer>, ConnectorError> {
+    async fn client(&mut self) -> Result<Arc<BaseConsumer<AuthWatch>>, ConnectorError> {
         if let Some(c) = &self.client {
             return Ok(c.clone());
         }
         let cfg = self.conn.base().await?;
-        let c: BaseConsumer = cfg
-            .create()
+        let c: BaseConsumer<AuthWatch> = cfg
+            .create_with_context(AuthWatch::default())
             .map_err(|e| kafka_error("creating the metadata client", &e))?;
         let c = Arc::new(c);
         self.client = Some(c.clone());
@@ -104,6 +104,7 @@ impl KafkaEnumerator {
 impl SplitEnumerator for KafkaEnumerator {
     async fn discover(&mut self, _known: &[SplitState]) -> Result<Vec<Split>, ConnectorError> {
         let client = self.client().await?;
+        let watch = client.clone();
         let topics = self.conn.cfg.topics.clone();
         let (found, brokers) = tokio::task::spawn_blocking(move || {
             let mut found = Vec::new();
@@ -138,7 +139,8 @@ impl SplitEnumerator for KafkaEnumerator {
             Ok((found, brokers))
         })
         .await
-        .map_err(|e| join_error("metadata", e))??;
+        .map_err(|e| join_error("metadata", e))?
+        .map_err(|e| watch.context().classify(e))?;
 
         // librdkafka dials the brokers the metadata names: each one passes the
         // egress check too.

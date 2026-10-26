@@ -1,8 +1,9 @@
 # Kafka
 
 The native Kafka connector (`loams-connector-kafka`, CN2 Task 9). The same
-code also serves [Redpanda](redpanda.md) and
-[Azure Event Hubs](azure-event-hubs.md) as target profiles.
+code also serves [Redpanda](redpanda.md),
+[Azure Event Hubs](azure-event-hubs.md) and
+[Confluent Cloud](confluent-cloud.md) as target profiles.
 
 ## Tested against
 
@@ -57,6 +58,23 @@ are names of secrets, never the secrets themselves. SASL mechanisms:
 `tls.key_pem`. OAUTHBEARER (and with it AWS MSK IAM) is not supported by the
 native connector yet. The consumer group is `group_id`, else
 `group_id_prefix`, else `loams-<ns>-<instance>`.
+
+CC1 Task 2 (D1822) added:
+
+* `sasl.username_secret`: the SASL username as a secret's name, in place of
+  `sasl.username` (exactly one of the two). Confluent Cloud's API key id
+  arrives this way.
+* `brokers` may carry a listener scheme per entry (`SASL_SSL://`, `SSL://`,
+  `PLAINTEXT://`, `SASL_PLAINTEXT://`, any case), as Confluent Cloud's
+  bootstrap endpoint sometimes does. It is removed.
+* `rate_limit: { bytes_per_sec, requests_per_sec }`: the instance's rates,
+  enforced by the SDK's rate limiter across its splits. Absent means
+  unlimited.
+* `schema_registry.basic_auth: { username | username_secret, password }`:
+  HTTP Basic credentials for the registry, `password` a secret's name.
+
+[Confluent Cloud](confluent-cloud.md) runs on this connector as a target
+profile.
 
 ## Narrowings and fallback
 
