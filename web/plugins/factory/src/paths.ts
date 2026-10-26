@@ -13,8 +13,12 @@ export function factoryPath(app?: FactoryAppId, page?: 'app' | 'configure'): str
   return `${FACTORY_HOME}/${app}${page ? `/${page}` : ''}`;
 }
 
+/** The Runs page (FT0 Task 9): before `/:app`, so `runs` is never read as an app. */
+export const RUNS_PATH = `${FACTORY_HOME}/runs`;
+
 /** The pages, as `[suffix, page id, title]`; the router takes the first match, so longer first. */
 export const PAGES = [
+  ['/runs', 'factory-runs', 'Runs'],
   ['/:app/app', 'factory-embedded', 'App'],
   ['/:app/configure', 'factory-configure', 'Configure'],
   ['/:app', 'factory-app', 'Panels'],
