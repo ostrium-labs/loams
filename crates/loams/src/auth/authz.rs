@@ -358,11 +358,10 @@ fn project_relation(role: pb::ProjectRole) -> Option<&'static str> {
 ///
 /// - Members are `owner`, `admin` or `member` of `org:<id>`; teams are rooted in the org, and
 ///   their people are `member`s.
-/// - Projects are **not** linked to the org (no `project#org`): model v1 would make every org
-///   member a `viewer` of every project (`member from org`), while Loams' roles give a member
-///   only the projects they are granted. The org's owners and admins are written as each
-///   project's `admin` instead, which is what `admin from org` gives them (plan IA1, ruling
-///   T4.R2).
+/// - Every project is rooted in the org (`project#org`), so the org's owners and admins are
+///   its `admin`s (`admin from org`). An org member is a viewer of only the projects they are
+///   granted: model v1's `project.viewer` has no `member from org` (plan IA1, ruling T4.R2,
+///   option 2).
 /// - A grant is its subject's relation on the project (`admin`, `editor`, `viewer`). An agent
 ///   or a service account is never a project `admin` (the model's type restriction); such a
 ///   grant is skipped.
@@ -376,16 +375,12 @@ pub fn tuples_of(doc: &Doc) -> Vec<Tuple> {
     };
     let org_obj = format!("org:{}", org.id);
     let mut out = Vec::new();
-    let mut admins = Vec::new();
     for m in &doc.members {
         let relation = match m.role {
             Role::Owner => "owner",
             Role::Admin => "admin",
             Role::Member => "member",
         };
-        if m.role >= Role::Admin {
-            admins.push(format!("user:{}", m.user.id));
-        }
         out.push(Tuple::new(
             format!("user:{}", m.user.id),
             relation,
@@ -405,9 +400,7 @@ pub fn tuples_of(doc: &Doc) -> Vec<Tuple> {
     };
     for p in &doc.projects {
         let project = format!("project:{}", project_id(p));
-        for admin in &admins {
-            out.push(Tuple::new(admin, "admin", &project));
-        }
+        out.push(Tuple::new(&org_obj, "org", &project));
         for g in &p.grants {
             let (Some(subject), Some(relation)) = (
                 g.subject.as_option(),
@@ -590,6 +583,20 @@ mod tests {
                     ..Default::default()
                 })
                 .collect(),
+        }
+    }
+
+    fn member(id: &str, role: Role) -> MemberRec {
+        MemberRec {
+            user: pb::User {
+                id: id.into(),
+                name: id.into(),
+                email: format!("{id}@example.com"),
+                ..Default::default()
+            },
+            role,
+            joined_at_ms: 0,
+            password: String::new(),
         }
     }
 
@@ -977,22 +984,44 @@ mod tests {
         assert!(auth.authenticate(&jwt("someone")).await.is_ok());
     }
 
-    #[test]
-    fn tuples_of_keeps_members_out_of_ungranted_projects() {
+    #[tokio::test]
+    async fn tuples_of_keeps_members_out_of_ungranted_projects() {
         let doc = Doc {
             org: Some(pb::Org {
                 id: "o".into(),
                 ..Default::default()
             }),
+            members: vec![
+                member("u-admin", Role::Admin),
+                member("u-member", Role::Member),
+            ],
             projects: vec![project("p", "p", &["p-dev"], vec![])],
             ..Doc::default()
         };
         let tuples = tuples_of(&doc);
         assert!(
-            !tuples
+            tuples
                 .iter()
-                .any(|t| t.relation == "org" && t.object.starts_with("project:")),
-            "no project#org: model v1's `member from org` would make every member a viewer"
+                .any(|t| t.relation == "org" && t.object == "project:p" && t.user == "org:o"),
+            "every project is rooted in the org"
+        );
+        let authz = load(&tuples);
+        let can = |user: &str, relation: &str| {
+            let req = CheckRequest::new(
+                Subject::user(user).with_org("o"),
+                relation,
+                ObjectRef::new("environment", "p-dev"),
+            );
+            let authz = &authz;
+            async move { authz.check(req).await.unwrap().allowed }
+        };
+        assert!(
+            can("u-admin", "can_admin").await,
+            "an org admin is every project's admin"
+        );
+        assert!(
+            !can("u-member", "can_read").await,
+            "an org member with no grant reads none of a project's environments (T4.R2)"
         );
         assert!(tuples_of(&Doc::default()).is_empty(), "no org, no tuples");
     }
