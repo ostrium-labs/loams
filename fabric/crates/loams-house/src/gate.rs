@@ -132,6 +132,7 @@ pub fn required(stmt: &Stmt) -> &'static [crate::identity::Scope] {
         | Stmt::Alter { .. }
         | Stmt::CreateView { .. }
         | Stmt::CreateFunction { .. }
+        | Stmt::CreateDictionary { .. }
         | Stmt::Rename { .. }
         | Stmt::Undrop { .. } => &[Ddl],
     }
@@ -279,6 +280,7 @@ pub fn catalog_kind(stmt: &Stmt) -> Option<Kind> {
         Stmt::Alter { .. } => Kind::Alter,
         Stmt::CreateView { .. } => Kind::CreateView,
         Stmt::CreateFunction { .. } => Kind::CreateFunction,
+        Stmt::CreateDictionary { .. } => Kind::CreateDictionary,
         Stmt::Describe { .. } => Kind::Describe,
         Stmt::Show { .. } => Kind::Show,
         Stmt::Exists { .. } => Kind::Exists,

@@ -74,6 +74,9 @@ pub fn clickhouse_error(code: i32, name: &str, message: impl Into<String>) -> Ho
 
 /// Property: the statement as written.
 pub const PROP_DDL: &str = "loams.ch.ddl";
+/// Property: a dictionary's attributes, key, layout and source, as JSON (HE1
+/// R14.12).
+pub const PROP_DICTIONARY: &str = "loams.dictionary";
 /// Property: a SQL function's lambda, as written (HE1 R14.11).
 pub const PROP_FUNCTION_LAMBDA: &str = "loams.function.lambda";
 /// Property: the engine, as `SHOW CREATE` prints it.
@@ -1288,6 +1291,423 @@ pub fn parse_create_view(text: &str) -> Result<CreateView, HouseError> {
         return Err(syntax("Expected a SELECT after AS"));
     }
     Ok(out)
+}
+
+/// A dictionary's attribute (HE1 R14.12): `name Type [HIERARCHICAL]
+/// [INJECTIVE] [IS_OBJECT_ID]`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DictionaryAttribute {
+    /// Its name.
+    pub name: String,
+    /// Its type, as ClickHouse's printable form.
+    #[serde(rename = "type")]
+    pub ch_type: String,
+    /// `HIERARCHICAL`, `INJECTIVE`, `IS_OBJECT_ID`, as written (upper-cased).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub flags: Vec<String>,
+}
+
+/// What a dictionary reads (HE1 R14.12): a table of the namespace or a query,
+/// with `SOURCE(CLICKHOUSE(…))`'s `DB`, `TABLE`, `QUERY` and `WHERE`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DictionarySource {
+    /// `DB`.
+    pub db: Option<String>,
+    /// `TABLE`.
+    pub table: Option<String>,
+    /// `QUERY`.
+    pub query: Option<String>,
+    /// `WHERE` (with `TABLE`).
+    #[serde(rename = "where")]
+    pub where_: Option<String>,
+}
+
+impl DictionarySource {
+    /// The `SELECT` the dictionary's rows come from, in `database` (the
+    /// dictionary's own when the source names none).
+    pub fn select(&self, database: &str) -> String {
+        if let Some(query) = &self.query {
+            return query.clone();
+        }
+        let mut out = format!(
+            "SELECT * FROM {}.{}",
+            quote_name(self.db.as_deref().unwrap_or(database)),
+            quote_name(self.table.as_deref().unwrap_or_default())
+        );
+        if let Some(condition) = &self.where_ {
+            out.push_str(&format!(" WHERE {condition}"));
+        }
+        out
+    }
+}
+
+/// `CREATE [OR REPLACE] DICTIONARY [IF NOT EXISTS] [db.]name [ON CLUSTER c]
+/// (…) PRIMARY KEY … SOURCE(CLICKHOUSE(…)) LAYOUT(…) [LIFETIME(…)]
+/// [SETTINGS(…)] [COMMENT '…']` (HE1 R14.12), as the House keeps it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CreateDictionary {
+    /// `OR REPLACE`.
+    pub or_replace: bool,
+    /// `IF NOT EXISTS`.
+    pub if_not_exists: bool,
+    /// Its database, when named.
+    pub database: Option<String>,
+    /// Its name.
+    pub name: String,
+    /// Its attributes, keys included.
+    pub attributes: Vec<DictionaryAttribute>,
+    /// `PRIMARY KEY`'s attributes.
+    pub key: Vec<String>,
+    /// What it reads.
+    pub source: DictionarySource,
+    /// `LAYOUT`, as written (`COMPLEX_KEY_CACHE(SIZE_IN_CELLS 1)`).
+    pub layout: String,
+    /// Whether the layout keys by a tuple (`COMPLEX_KEY_*`).
+    pub complex: bool,
+    /// `LIFETIME(…)`'s inside, as written.
+    pub lifetime: Option<String>,
+    /// `COMMENT`.
+    pub comment: Option<String>,
+}
+
+/// The layouts a dictionary may name, by their key: simple (a `UInt64`) or
+/// complex (a tuple). All are read the one way on the House (HE1 R14.12).
+const SIMPLE_LAYOUTS: &[&str] = &[
+    "FLAT",
+    "HASHED",
+    "SPARSE_HASHED",
+    "HASHED_ARRAY",
+    "CACHE",
+    "SSD_CACHE",
+    "DIRECT",
+];
+const COMPLEX_LAYOUTS: &[&str] = &[
+    "COMPLEX_KEY_HASHED",
+    "COMPLEX_KEY_SPARSE_HASHED",
+    "COMPLEX_KEY_HASHED_ARRAY",
+    "COMPLEX_KEY_CACHE",
+    "COMPLEX_KEY_SSD_CACHE",
+    "COMPLEX_KEY_DIRECT",
+];
+
+impl CreateDictionary {
+    /// The statement as `SHOW CREATE` prints it: credentials are not kept.
+    pub fn render(&self, database: &str) -> String {
+        let attributes: Vec<String> = self
+            .attributes
+            .iter()
+            .map(|a| {
+                let mut out = format!("    {} {}", quote_name(&a.name), a.ch_type);
+                for flag in &a.flags {
+                    out.push(' ');
+                    out.push_str(flag);
+                }
+                out
+            })
+            .collect();
+        let mut source = Vec::new();
+        if let Some(db) = &self.source.db {
+            source.push(format!("DB {}", quote_string(db)));
+        }
+        if let Some(table) = &self.source.table {
+            source.push(format!("TABLE {}", quote_string(table)));
+        }
+        if let Some(query) = &self.source.query {
+            source.push(format!("QUERY {}", quote_string(query)));
+        }
+        if let Some(condition) = &self.source.where_ {
+            source.push(format!("WHERE {}", quote_string(condition)));
+        }
+        let mut out = format!(
+            "CREATE DICTIONARY {}.{}\n(\n{}\n)\nPRIMARY KEY {}\nSOURCE(CLICKHOUSE({}))\nLAYOUT({})",
+            quote_name(database),
+            quote_name(&self.name),
+            attributes.join(",\n"),
+            self.key
+                .iter()
+                .map(|k| quote_name(k))
+                .collect::<Vec<_>>()
+                .join(", "),
+            source.join(" "),
+            self.layout
+        );
+        if let Some(lifetime) = &self.lifetime {
+            out.push_str(&format!("\nLIFETIME({lifetime})"));
+        }
+        if let Some(comment) = &self.comment {
+            out.push_str(&format!("\nCOMMENT {}", quote_string(comment)));
+        }
+        out
+    }
+
+    /// The dictionary as the worker makes it for one statement (HE1 R14.12):
+    /// over the read view `source` of its rows, read directly at each lookup,
+    /// so it answers from the statement's pinned snapshot.
+    /// `INJECTIVE` and `IS_OBJECT_ID` are hints a direct read does without.
+    pub fn worker_ddl(&self, database: &str, source: &str) -> String {
+        let attributes: Vec<String> = self
+            .attributes
+            .iter()
+            .map(|a| format!("{} {}", quote_name(&a.name), a.ch_type))
+            .collect();
+        format!(
+            "CREATE DICTIONARY {}.{} ({}) PRIMARY KEY {} SOURCE(CLICKHOUSE(DB {} TABLE {})) \
+             LAYOUT({}())",
+            quote_name(database),
+            quote_name(&self.name),
+            attributes.join(", "),
+            self.key
+                .iter()
+                .map(|k| quote_name(k))
+                .collect::<Vec<_>>()
+                .join(", "),
+            quote_string(database),
+            quote_string(source),
+            if self.complex {
+                "COMPLEX_KEY_DIRECT"
+            } else {
+                "DIRECT"
+            }
+        )
+    }
+}
+
+/// The name a dictionary's source rows are read under in the worker (HE1
+/// R14.12).
+pub fn dictionary_source_view(name: &str) -> String {
+    format!("{RESERVED_PREFIX}_dictionary_{name}")
+}
+
+/// A refusal of a dictionary source the House does not read (`344`).
+fn outside_source(what: &str) -> HouseError {
+    HouseError::from(ChError::support_is_disabled(format!(
+        "{what} is disabled on the House: a dictionary reads the namespace's own tables, \
+         SOURCE(CLICKHOUSE(TABLE '…' | QUERY '…' [DB '…'] [WHERE '…'])) (see the surface page)"
+    )))
+}
+
+/// Reads a `CREATE DICTIONARY` (HE1 R14.12). The source must be
+/// `CLICKHOUSE(…)` over the House itself: `HOST`, `PORT` and `SECURE` reach
+/// another server (`344`); `USER` and `PASSWORD` are read and not kept (the
+/// dictionary reads with the identity of the statement that reads it).
+/// Attributes with `DEFAULT` or `EXPRESSION`, and the range, IP-trie,
+/// polygon and regexp-tree layouts, are `48`.
+pub fn parse_create_dictionary(text: &str) -> Result<CreateDictionary, HouseError> {
+    let stripped = strip_comments(text);
+    let text = stripped.trim().trim_end_matches(';').trim_end();
+    let mut c = Cursor::new(text);
+    let mut out = CreateDictionary::default();
+    c.expect("CREATE")?;
+    out.or_replace = c.eat_all(&["OR", "REPLACE"]);
+    c.expect("DICTIONARY")?;
+    out.if_not_exists = c.eat_all(&["IF", "NOT", "EXISTS"]);
+    let (database, name) = c.qualified()?;
+    out.database = database;
+    out.name = name;
+    c.skip_on_cluster()?;
+    let open = c.at;
+    if !c.peek().is_some_and(|t| c.is_symbol(&t, b'(')) {
+        return Err(syntax("Expected the dictionary's attributes in (…)"));
+    }
+    let close = c
+        .closing(open)
+        .ok_or_else(|| syntax("Unbalanced parentheses in the attribute list"))?;
+    for entry in c.pieces(open, close) {
+        let mut e = Cursor::new(entry);
+        let name = e.ident()?;
+        let start = e.offset();
+        let mut flags = Vec::new();
+        let mut end = entry.len();
+        let mut i = e.at;
+        while i < e.toks.len() {
+            let t = e.toks[i];
+            let word = e.raw(&t).to_ascii_uppercase();
+            if t.word && t.depth == 0 {
+                match word.as_str() {
+                    "HIERARCHICAL" => {
+                        return Err(HouseError::from(ChError::not_implemented(format!(
+                            "A HIERARCHICAL dictionary attribute is not on the House's surface \
+                             yet ({name})"
+                        ))));
+                    }
+                    "INJECTIVE" | "IS_OBJECT_ID" => {
+                        end = end.min(t.start);
+                        flags.push(word);
+                    }
+                    "DEFAULT" | "EXPRESSION" => {
+                        return Err(HouseError::from(ChError::not_implemented(format!(
+                            "A dictionary attribute's {word} is not on the House's surface yet \
+                             ({name})"
+                        ))));
+                    }
+                    _ => {}
+                }
+            }
+            i += 1;
+        }
+        let ty = entry[start..end].trim();
+        let ch_type = crate::views::printable_type(ty).ok_or_else(|| {
+            syntax(format!("Dictionary attribute {name}: {ty:?} is not a type the House reads"))
+        })?;
+        out.attributes.push(DictionaryAttribute {
+            name,
+            ch_type,
+            flags,
+        });
+    }
+    if out.attributes.is_empty() {
+        return Err(syntax("A dictionary has at least one attribute"));
+    }
+    c.at = close + 1;
+    while !c.done() {
+        if c.eat_all(&["PRIMARY", "KEY"]) {
+            loop {
+                out.key.push(c.ident()?);
+                if !c.eat_symbol(b',') {
+                    break;
+                }
+            }
+        } else if c.eat("SOURCE") {
+            let (kind, pairs) = clause_call(&mut c)?;
+            if !kind.eq_ignore_ascii_case("CLICKHOUSE") {
+                return Err(outside_source(&format!("SOURCE({kind})")));
+            }
+            for (key, value) in pairs {
+                match key.as_str() {
+                    "HOST" | "PORT" | "SECURE" => {
+                        return Err(outside_source(&format!(
+                            "SOURCE(CLICKHOUSE({key} …)), another server,"
+                        )));
+                    }
+                    "USER" | "PASSWORD" | "INVALIDATE_QUERY" | "UPDATE_FIELD" | "UPDATE_LAG" => {}
+                    "DB" => out.source.db = Some(value),
+                    "TABLE" => out.source.table = Some(value),
+                    "QUERY" => out.source.query = Some(value),
+                    "WHERE" => out.source.where_ = Some(value),
+                    other => {
+                        return Err(syntax(format!(
+                            "SOURCE(CLICKHOUSE(…)) has no parameter {other}"
+                        )));
+                    }
+                }
+            }
+        } else if c.eat("LAYOUT") {
+            let at = c.at;
+            let (kind, _) = clause_call(&mut c)?;
+            let upper = kind.to_ascii_uppercase();
+            out.complex = if COMPLEX_LAYOUTS.contains(&upper.as_str()) {
+                true
+            } else if SIMPLE_LAYOUTS.contains(&upper.as_str()) {
+                false
+            } else {
+                return Err(HouseError::from(ChError::not_implemented(format!(
+                    "LAYOUT({kind}) is not on the House's surface: a dictionary is read by its \
+                     key, simple or complex"
+                ))));
+            };
+            let start = c.toks[at].end;
+            let end = c.toks[c.at - 1].start;
+            out.layout = text[start..end].trim().to_string();
+        } else if c.eat("LIFETIME") || c.eat("RANGE") || c.eat("SETTINGS") {
+            let word = c.raw(&c.toks[c.at - 1]).to_ascii_uppercase();
+            let open = c.at;
+            if !c.peek().is_some_and(|t| c.is_symbol(&t, b'(')) {
+                return Err(syntax(format!("Expected {word}(…)")));
+            }
+            let close = c
+                .closing(open)
+                .ok_or_else(|| syntax(format!("Unbalanced parentheses in {word}")))?;
+            let inside = text[c.toks[open].end..c.toks[close].start].trim().to_string();
+            c.at = close + 1;
+            match word.as_str() {
+                "LIFETIME" => out.lifetime = Some(inside),
+                "RANGE" => {
+                    return Err(HouseError::from(ChError::not_implemented(
+                        "A range dictionary (RANGE(…)) is not on the House's surface",
+                    )));
+                }
+                _ => {}
+            }
+        } else if c.eat("COMMENT") {
+            out.comment = Some(c.string()?);
+        } else {
+            return Err(syntax(format!(
+                "Unexpected {:?} in CREATE DICTIONARY",
+                c.rest().chars().take(40).collect::<String>()
+            )));
+        }
+    }
+    if out.key.is_empty() {
+        return Err(syntax("A dictionary needs a PRIMARY KEY"));
+    }
+    if out.layout.is_empty() {
+        return Err(syntax("A dictionary needs a LAYOUT"));
+    }
+    if out.source.query.is_some() == out.source.table.is_some() {
+        return Err(syntax(
+            "SOURCE(CLICKHOUSE(…)) names a TABLE or a QUERY, one of them",
+        ));
+    }
+    for key in &out.key {
+        if !out.attributes.iter().any(|a| &a.name == key) {
+            return Err(syntax(format!("The key {key} is not an attribute")));
+        }
+    }
+    // A simple layout keys by one UInt64, as ClickHouse requires.
+    if !out.complex
+        && (out.key.len() != 1
+            || out
+                .attributes
+                .iter()
+                .find(|a| a.name == out.key[0])
+                .is_none_or(|a| a.ch_type != "UInt64"))
+    {
+        return Err(syntax(format!(
+            "LAYOUT({}) keys by one UInt64: use a COMPLEX_KEY_ layout",
+            out.layout
+        )));
+    }
+    Ok(out)
+}
+
+/// `NAME(KEY value KEY value …)` after a clause keyword: the name and its
+/// pairs (keys upper-cased, string values unquoted, others as written).
+fn clause_call(c: &mut Cursor<'_>) -> Result<(String, Vec<(String, String)>), HouseError> {
+    let outer = c.at;
+    if !c.peek().is_some_and(|t| c.is_symbol(&t, b'(')) {
+        return Err(syntax("Expected (…)"));
+    }
+    let outer_close = c
+        .closing(outer)
+        .ok_or_else(|| syntax("Unbalanced parentheses"))?;
+    c.at = outer + 1;
+    let kind = c.ident()?;
+    let mut pairs = Vec::new();
+    if c.peek().is_some_and(|t| c.is_symbol(&t, b'(')) {
+        let open = c.at;
+        let close = c
+            .closing(open)
+            .ok_or_else(|| syntax(format!("Unbalanced parentheses in {kind}(…)")))?;
+        c.at = open + 1;
+        while c.at < close {
+            let key = c.ident()?.to_ascii_uppercase();
+            let t = c.toks[c.at];
+            let raw = c.raw(&t);
+            let value = if raw.starts_with('\'') {
+                unquote(raw)
+            } else {
+                raw.to_string()
+            };
+            c.at += 1;
+            pairs.push((key, value));
+        }
+        c.at = close + 1;
+    }
+    if c.at != outer_close {
+        return Err(syntax(format!("Unexpected text after {kind}(…)")));
+    }
+    c.at = outer_close + 1;
+    Ok((kind, pairs))
 }
 
 /// `CREATE [OR REPLACE] FUNCTION [IF NOT EXISTS] name [ON CLUSTER c] AS
@@ -2651,6 +3071,9 @@ pub fn touched(kind: Kind, text: &str, current: &str) -> Vec<Object> {
             .unwrap_or_default(),
         // A SQL function is the namespace's, no table's or database's.
         Kind::CreateFunction => Vec::new(),
+        Kind::CreateDictionary => parse_create_dictionary(text)
+            .map(|d| vec![table((d.database, d.name))])
+            .unwrap_or_default(),
         Kind::Drop => match parse_drop(text) {
             Ok(drop) if drop.kind == "FUNCTION" => Vec::new(),
             Ok(drop) if drop.kind == "DATABASE" => drop
@@ -2722,6 +3145,8 @@ pub enum Kind {
     CreateMaterializedView,
     /// `CREATE FUNCTION` (HE1 R14.11).
     CreateFunction,
+    /// `CREATE DICTIONARY` (HE1 R14.12).
+    CreateDictionary,
 }
 
 /// The constant query a set of rows answers as: `SELECT … FROM values(…)`.
@@ -2915,6 +3340,24 @@ pub async fn execute(
                     }
                     Ok(Answer::Done)
                 }
+                // HE1 R14.12: a dictionary is a catalog entry.
+                "DICTIONARY" => {
+                    for (db, name) in &stmt.names {
+                        let database = db_of(db);
+                        match lake.load(namespace, &database, name).await? {
+                            Some(table) if is_dictionary(&table) => {
+                                lake.drop_table(namespace, &database, name, false).await?;
+                            }
+                            _ if stmt.if_exists => {}
+                            _ => {
+                                return Err(HouseError::from(ChError::unknown_table(format!(
+                                    "Dictionary {database}.{name} does not exist"
+                                ))));
+                            }
+                        }
+                    }
+                    Ok(Answer::Done)
+                }
                 // HE1 R14.11: the namespace's SQL functions.
                 "FUNCTION" => {
                     for (db, name) in &stmt.names {
@@ -2938,6 +3381,18 @@ pub async fn execute(
                     "DROP {other} is not on the House's surface"
                 )))),
             }
+        }
+        Kind::CreateDictionary => {
+            let dictionary = parse_create_dictionary(text)?;
+            let database = db_of(&dictionary.database);
+            // A query source is held to the deny list as a view's body is.
+            if let Some(query) = &dictionary.source.query {
+                oracle
+                    .check(&crate::views::analysable(query))
+                    .await?;
+            }
+            create_dictionary(lake, namespace, &database, &dictionary).await?;
+            Ok(Answer::Done)
         }
         Kind::CreateFunction => {
             let function = parse_create_function(text)?;
@@ -3100,6 +3555,101 @@ pub(crate) fn view_creation(
         .schema(schema)
         .properties(properties)
         .build())
+}
+
+/// Whether a catalog entry is a dictionary (HE1 R14.12).
+pub fn is_dictionary(table: &LakeTable) -> bool {
+    table.metadata.properties().get(PROP_ENGINE).map(String::as_str) == Some("Dictionary")
+}
+
+/// What a dictionary's catalog entry keeps for the read path (HE1 R14.12).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DictionaryEntry {
+    /// Its attributes, keys included.
+    pub attributes: Vec<DictionaryAttribute>,
+    /// Its key.
+    pub key: Vec<String>,
+    /// Whether it keys by a tuple.
+    pub complex: bool,
+}
+
+impl DictionaryEntry {
+    /// The entry of a catalog table that is a dictionary.
+    pub fn of(table: &LakeTable) -> Option<Self> {
+        serde_json::from_str(table.metadata.properties().get(PROP_DICTIONARY)?).ok()
+    }
+
+    /// The dictionary as the worker makes it (see [`CreateDictionary::worker_ddl`]).
+    pub fn worker_ddl(&self, database: &str, name: &str, source: &str) -> String {
+        CreateDictionary {
+            name: name.to_string(),
+            attributes: self.attributes.clone(),
+            key: self.key.clone(),
+            complex: self.complex,
+            ..CreateDictionary::default()
+        }
+        .worker_ddl(database, source)
+    }
+}
+
+/// `CREATE [OR REPLACE] DICTIONARY` (HE1 R14.12): a catalog entry with no
+/// files, as a view is, whose properties hold its attributes and the `SELECT`
+/// its rows come from. Reading it as a table reads that `SELECT`.
+async fn create_dictionary(
+    lake: &Lake,
+    namespace: u64,
+    database: &str,
+    dictionary: &CreateDictionary,
+) -> Result<(), HouseError> {
+    check_new_name("table", &dictionary.name)?;
+    lake.require_database(namespace, database).await?;
+    let entry = DictionaryEntry {
+        attributes: dictionary.attributes.clone(),
+        key: dictionary.key.clone(),
+        complex: dictionary.complex,
+    };
+    let properties = HashMap::from([
+        (PROP_DDL.to_string(), dictionary.render(database)),
+        (PROP_ENGINE.to_string(), "Dictionary".to_string()),
+        (PROP_CLASS.to_string(), "view".to_string()),
+        (
+            PROP_VIEW_SELECT.to_string(),
+            dictionary.source.select(database),
+        ),
+        (PROP_DICTIONARY.to_string(), json(&entry)?),
+    ]);
+    if let Some(existing) = lake.load(namespace, database, &dictionary.name).await? {
+        if dictionary.if_not_exists {
+            return Ok(());
+        }
+        if dictionary.or_replace && is_dictionary(&existing) {
+            lake.catalog()
+                .commit(
+                    &existing.ident,
+                    Vec::new(),
+                    vec![loams_house_lake::TableUpdate::SetProperties {
+                        updates: properties,
+                    }],
+                )
+                .await?;
+            return Ok(());
+        }
+        return Err(HouseError::from(ChError::table_already_exists(format!(
+            "Dictionary {database}.{} already exists",
+            dictionary.name
+        ))));
+    }
+    let location = lake
+        .root()
+        .table_location(namespace, database, &dictionary.name);
+    lake.create_table(
+        namespace,
+        database,
+        view_creation(&dictionary.name, location, properties)?,
+        dictionary.if_not_exists,
+    )
+    .await?;
+    Ok(())
 }
 
 /// `CREATE [OR REPLACE] VIEW` (HE1 R9.13).

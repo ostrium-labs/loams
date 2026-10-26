@@ -222,6 +222,9 @@ pub struct References {
     /// The functions it calls, each once: the namespace's SQL functions among
     /// them are made for it (HE1 R14.11).
     pub functions: Vec<String>,
+    /// The dictionaries its `dictGet…`, `dictHas` … name, as written (HE1
+    /// R14.12).
+    pub dictionaries: Vec<String>,
 }
 
 /// The functions whose right-hand side may be a bare table name.
@@ -284,11 +287,23 @@ pub fn references(analysis: &Analysis) -> References {
         }
     }
     out.calls = tree.view_calls();
-    for entry in entries {
+    for (at, entry) in entries.iter().enumerate() {
         if let Node::Function(names) = &entry.node {
             for name in names {
                 if !out.functions.contains(name) {
                     out.functions.push(name.clone());
+                }
+            }
+            // HE1 R14.12: `dictGet('d', …)` and its kin name their dictionary
+            // with a constant first argument.
+            if names.iter().any(|n| n.starts_with("dict"))
+                && let Some(first) = tree.arguments(at).first()
+                && let Node::Constant(value) = &entries[*first].node
+                && value.starts_with('\'')
+            {
+                let name = value.trim_matches('\'').replace("\\'", "'");
+                if !out.dictionaries.contains(&name) {
+                    out.dictionaries.push(name);
                 }
             }
         }
@@ -505,6 +520,8 @@ enum Item {
     /// A function name: one of the namespace's SQL functions, if it has one
     /// so named (HE1 R14.11).
     Function(String),
+    /// A dictionary's name, resolved in `current` (HE1 R14.12).
+    Dictionary { current: String, printed: String },
 }
 
 /// What a statement's analysis names, as plan items resolved in `current`.
@@ -519,6 +536,10 @@ fn items(refs: &References, current: &str) -> Vec<Item> {
         .map(|t| name(t, false))
         .chain(refs.calls.iter().map(|t| name(t, true)))
         .chain(refs.functions.iter().cloned().map(Item::Function))
+        .chain(refs.dictionaries.iter().map(|d| Item::Dictionary {
+            current: current.to_string(),
+            printed: d.clone(),
+        }))
         .collect()
 }
 
@@ -646,6 +667,98 @@ pub async fn plan(
                     printed,
                     call,
                 } => (current, printed, call),
+                Item::Dictionary { current, printed } => {
+                    let Some((database, name, table)) =
+                        resolve(lake, ctx.namespace, &current, &printed).await?
+                    else {
+                        continue;
+                    };
+                    let Some(entry) = crate::ddl::DictionaryEntry::of(&table)
+                        .filter(|_| crate::ddl::is_dictionary(&table))
+                    else {
+                        continue;
+                    };
+                    if ctx.grants.is_some_and(|g| !g.allows(&database, &name)) {
+                        return Err(HouseError::from(ChError::access_denied(format!(
+                            "{}: Not enough privileges on {database}.{name}: it is not among \
+                             this identity's tables.",
+                            ctx.user
+                        ))));
+                    }
+                    if depth >= MAX_VIEW_DEPTH {
+                        return Err(bad(format!(
+                            "Dictionary {database}.{name} nests views more than \
+                             {MAX_VIEW_DEPTH} deep"
+                        )));
+                    }
+                    let source = crate::ddl::dictionary_source_view(&name);
+                    // Met again deeper: it, and the view of its rows below it,
+                    // are made earlier.
+                    if let Some(seen) = plan_views
+                        .iter()
+                        .position(|v| v.database == database && v.name == name)
+                    {
+                        if depth > plan_views[seen].depth {
+                            plan_views[seen].depth = depth;
+                            if let Some(rows) = plan_views
+                                .iter_mut()
+                                .find(|v| v.database == database && v.name == source)
+                            {
+                                rows.depth = depth + 1;
+                                for read in rows.reads.clone() {
+                                    queue.push((read, depth + 2));
+                                }
+                            }
+                        }
+                        continue;
+                    }
+                    let select = table
+                        .metadata
+                        .properties()
+                        .get(crate::ddl::PROP_VIEW_SELECT)
+                        .cloned()
+                        .unwrap_or_default();
+                    // The rows' `SELECT` is the catalog's: held to the deny list
+                    // as a view's is.
+                    let explained = views::analysable(&select);
+                    let analysis = lease
+                        .analyze(&explained, &[])
+                        .await
+                        .map_err(crate::deny::as_setting_refusal)?;
+                    let calls =
+                        crate::gate::view_calls(Some(lake), ctx.namespace, &database, &analysis)
+                            .await?;
+                    crate::gate::admit_views(
+                        &analysis,
+                        &explained,
+                        crate::classify::Expect::Read,
+                        true,
+                        None,
+                        &calls,
+                    )?;
+                    let inner = references(&analysis);
+                    finals.extend(inner.finals.iter().cloned());
+                    let reads = items(&inner, &database);
+                    for read in &reads {
+                        queue.push((read.clone(), depth + 2));
+                    }
+                    databases.insert(database.clone());
+                    plan_views.push(PlannedView {
+                        ddl: views::user_view_ddl(&database, &source, &select),
+                        database: database.clone(),
+                        name: source.clone(),
+                        depth: depth + 1,
+                        reads,
+                    });
+                    plan_views.push(PlannedView {
+                        ddl: entry.worker_ddl(&database, &name, &source),
+                        database,
+                        name,
+                        depth,
+                        reads: Vec::new(),
+                    });
+                    continue;
+                }
                 Item::Function(name) => {
                     if defined.is_none() {
                         defined = Some(lake.function_names(ctx.namespace).await?);
