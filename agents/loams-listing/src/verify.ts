@@ -7,7 +7,8 @@
 // same checks in Rust before an install (Task 6).
 import { createHash } from 'node:crypto';
 import { integrityOf, normaliseRepository } from './from-package.js';
-import type { ArchiveFile, Listing } from './types.js';
+import type { ArchiveFile, ArtifactLocation, Listing } from './types.js';
+import { epochStatus, estimateEpoch, readVerified, type WalrusRecord } from './walrus.js';
 
 export const SLSA_V1 = 'https://slsa.dev/provenance/v1';
 
@@ -33,6 +34,8 @@ export interface Check {
   check: string;
   ok: boolean;
   detail: string;
+  /** A passing check worth a look (an unread mirror, a blob near its end epoch). */
+  warning?: true;
 }
 
 export interface VerifyReport {
@@ -85,6 +88,21 @@ export function npmDocumentUrl(name: string, version: string): string {
 export interface VerifyOptions {
   fetcher: Fetcher;
   verifier: BundleVerifier;
+  /** The walrus checks (plan MS1 Task 9); absent, walrus locations are only warned about. */
+  walrus?: WalrusVerifyOptions;
+}
+
+export interface WalrusVerifyOptions {
+  /** Read every walrus location here and compare its SHA-256. */
+  aggregator?: URL;
+  /** The walrus record beside the listing: where end epochs come from (ruling 2). */
+  record?: WalrusRecord;
+  /** The network's epoch; estimated from the record when absent. */
+  currentEpoch?: number;
+  /** Q1332: warn when a blob ends within this many epochs. */
+  supportEpochs: number;
+  maxBytes: number;
+  now?: () => Date;
 }
 
 class Report {
@@ -96,6 +114,62 @@ class Report {
   fail(check: string, detail: string): false {
     this.checks.push({ check, ok: false, detail });
     return false;
+  }
+  warn(check: string, detail: string): void {
+    this.checks.push({ check, ok: true, detail, warning: true });
+  }
+}
+
+function walrusLocations(listing: Listing): { label: string; location: ArtifactLocation }[] {
+  const artifact = listing.artifact;
+  if (!artifact) return [];
+  const out = (artifact.locations ?? []).filter((l) => l.kind === 'walrus').map((location) => ({ label: 'package', location }));
+  for (const file of artifact.files ?? []) {
+    for (const location of file.locations ?? []) if (location.kind === 'walrus') out.push({ label: file.platform, location });
+  }
+  return out;
+}
+
+/**
+ * Each walrus location: read and SHA-256-checked through the aggregator, and its end
+ * epoch (from the walrus record) against the support window (Q1332).
+ */
+async function verifyWalrus(listing: Listing, report: Report, options: WalrusVerifyOptions | undefined): Promise<void> {
+  const locations = walrusLocations(listing);
+  if (locations.length === 0) return;
+  const now = options?.now?.() ?? new Date();
+  const record = options?.record;
+  const current = options?.currentEpoch ?? (record ? estimateEpoch(record, now) : undefined);
+  for (const { label, location } of locations) {
+    const id = `${label}: ${location.blob_id}`;
+    if (options?.aggregator) {
+      try {
+        await readVerified(location.blob_id, location.sha256, { aggregator: options.aggregator, retry404Ms: 0, maxBytes: options.maxBytes });
+        report.pass('walrus_read', `${id} matches sha256 ${location.sha256.slice(0, 12)}…`);
+      } catch (error) {
+        report.fail('walrus_read', `${id}: ${(error as Error).message}`);
+      }
+    } else {
+      report.warn('walrus_read', `${id} not read: no --aggregator`);
+    }
+    const recorded = record?.blobs.find((b) => b.blob_id === location.blob_id);
+    if (!recorded) {
+      report.warn('walrus_epoch', `${id}: no end epoch in the walrus record, so its expiry is not checked`);
+      continue;
+    }
+    if (current === undefined) {
+      report.warn('walrus_epoch', `${id}: stored until epoch ${recorded.end_epoch}; the current epoch is unknown (give --current-epoch)`);
+      continue;
+    }
+    const status = epochStatus(recorded.end_epoch, current, options!.supportEpochs);
+    const left = status.endEpoch - status.current;
+    if (status.state === 'expired') {
+      report.fail('walrus_epoch', `${id}: storage ended at epoch ${status.endEpoch}, and the current epoch is ${status.current}; store it again (installs fall back to HTTPS)`);
+    } else if (status.state === 'expiring') {
+      report.warn('walrus_epoch', `${id}: storage ends at epoch ${status.endEpoch}, ${left} epoch(s) from the current ${status.current}, inside the ${options!.supportEpochs}-epoch support window; store it again`);
+    } else {
+      report.pass('walrus_epoch', `${id}: stored until epoch ${status.endEpoch} (current ${status.current})`);
+    }
   }
 }
 
@@ -224,6 +298,7 @@ export async function verifyListing(listing: Listing, options: VerifyOptions): P
   } catch (error) {
     report.fail('artifact_resolves', (error as Error).message);
   }
+  await verifyWalrus(listing, report, options.walrus);
   return {
     id: listing.id,
     version: listing.version,

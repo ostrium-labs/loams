@@ -6,3 +6,5 @@ export { compare, isRange } from './semver.js';
 export { main } from './cli.js';
 export type * from './types.js';
 export { verifyListing, httpFetcher, sigstoreVerifier, integrityHex, type VerifyReport, type Fetcher, type BundleVerifier } from './verify.js';
+export { publishWalrus, PublishError, type PublishInput, type PublishResult } from './publish.js';
+export * as walrus from './walrus.js';
