@@ -445,6 +445,34 @@ impl OrgService for Admin {
             }
             doc.members.remove(at);
             doc.sessions.retain(|s| s.user != user);
+            // The keys that act as them go with them (ruling T5.R1); a service account's keys
+            // stay, whoever made them.
+            let keys: Vec<_> = doc
+                .keys_of_person(&user)
+                .filter(|k| !k.revoked)
+                .map(|k| {
+                    (
+                        k.key.id.clone(),
+                        k.key.name.clone(),
+                        k.project.clone(),
+                        k.key.environment.clone(),
+                    )
+                })
+                .collect();
+            for rec in doc.keys.iter_mut() {
+                if keys.iter().any(|(id, ..)| *id == rec.key.id) {
+                    rec.revoked = true;
+                }
+            }
+            for (id, name, project, environment) in &keys {
+                doc.record(event(
+                    &actor,
+                    "api_key.revoke",
+                    ("api_key", id, name),
+                    project,
+                    environment,
+                ));
+            }
             for team in &mut doc.teams {
                 team.members.retain(|m| *m != user);
             }
