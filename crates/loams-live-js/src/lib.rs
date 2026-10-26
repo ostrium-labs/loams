@@ -46,10 +46,13 @@
 //! **The agent profile** (SPIKE, MS1 Task 1, D1807; feature `agent`, off
 //! by default): one long-lived isolated worker per running agent, sealed
 //! by the same sandbox, with ACP and every capability of the agent
-//! environment contract (D1453) as frames to agentd. See [`agent`].
+//! environment contract (D1453) as frames to agentd. See the `agent` module.
 //!
 //! Features: `live` (default) is everything above; `agent` adds the agent
 //! profile and compiles without `live`.
+
+// The crate docs above link Live's items, which an agent-only build lacks.
+#![cfg_attr(not(feature = "live"), allow(rustdoc::broken_intra_doc_links))]
 
 #[cfg(feature = "agent")]
 pub mod agent;
