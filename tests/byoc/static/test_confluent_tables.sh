@@ -17,6 +17,16 @@ bad() { echo "FAIL $*"; fail=1; }
 # the committed tables pass
 "$s" check >"$tmp/out" 2>&1 && ok "committed tables pass check" || { bad "committed tables fail check"; cat "$tmp/out"; }
 
+# scratch runs below never touch the module's committed copy
+export CONFLUENT_TABLES_MODULE_JSON="$tmp/module.json"
+
+# the module's JSON copy: gen writes it, check fails when it is stale
+CONFLUENT_TABLES_MODULE_JSON="$tmp/gen.json" "$s" gen >/dev/null
+diff -q "$tmp/gen.json" "$repo/deploy/tofu/modules/confluent/confluent-tables.json" >/dev/null && ok "module copy matches the tables" || bad "deploy/tofu/modules/confluent/confluent-tables.json is stale"
+jq '.prices_read = "1999-01-01"' "$tmp/gen.json" >"$tmp/stale.json"
+! CONFLUENT_TABLES_MODULE_JSON="$tmp/stale.json" "$s" check >"$tmp/out" 2>&1 && grep -q 'FAIL module_copy_is_current' "$tmp/out" \
+  && ok "check fails when the module copy is stale" || { bad "a stale module copy passed check"; cat "$tmp/out"; }
+
 # refresh from the fixture into a scratch copy
 mkdir -p "$tmp/t"
 cp "$repo/deploy/byoc/confluent/prices.toml" "$tmp/t/"
