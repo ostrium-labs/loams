@@ -271,14 +271,15 @@ data "aws_ssm_parameter" "ubuntu" {
 }
 
 module "cloud_init" {
-  source        = "../shared"
-  cloud         = "aws"
-  release       = var.release
-  bucket        = local.bucket
-  region        = local.region
-  secret_prefix = local.prefix
-  profiles      = var.profiles
-  hostname      = var.hostname
+  source                 = "../shared"
+  cloud                  = "aws"
+  release                = var.release
+  bucket                 = local.bucket
+  region                 = local.region
+  secret_prefix          = local.prefix
+  profiles               = var.profiles
+  hostname               = var.hostname
+  confluent_integrations = var.confluent_integrations
 }
 
 resource "aws_instance" "this" {
