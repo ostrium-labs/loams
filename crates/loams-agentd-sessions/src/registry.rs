@@ -785,6 +785,24 @@ pub fn default_registry() -> HarnessRegistry {
             Ok(Arc::new(loams_agentd_harness::AcpHarness::antigravity()) as Arc<dyn Harness>)
         }),
     );
+    // Goose over ACP (`goose acp`, MS1 Task 3, D1809), same lazy pattern: the
+    // static descriptor mirrors AcpHarness::goose() exactly. No steering
+    // extension (turn boundaries) and no effort ladder. Listed but not
+    // installed (so not selectable) until agentd's model proxy is configured.
+    registry.register_lazy(
+        HarnessDescriptor {
+            id: HarnessId::Goose,
+            name: "Goose".into(),
+            supports_steering: true,
+            steering_mode: SteeringMode::TurnBoundary,
+            reasoning_levels: Vec::new(),
+            installed: true,
+            can_install: false,
+            enabled: None,
+        },
+        Box::new(|| loams_agentd_harness::AcpHarness::goose().installed()),
+        Box::new(|| Ok(Arc::new(loams_agentd_harness::AcpHarness::goose()) as Arc<dyn Harness>)),
+    );
     // loams: Loams Bot over ACP (`loams-agentd loams bot-acp`, the running binary),
     // same lazy pattern. Prompts are A2A messages, so steers land at turn
     // boundaries and there is no effort ladder. Installed means "this binary".
@@ -898,9 +916,15 @@ mod tests {
                 HarnessId::Pi,
                 HarnessId::Opencode,
                 HarnessId::Antigravity,
+                HarnessId::Goose,
                 HarnessId::LoamsBot // loams
             ]
         );
+        let goose = registry.resolve(HarnessId::Goose).unwrap();
+        assert_eq!(goose.id(), HarnessId::Goose);
+        assert_eq!(goose.display_name(), "Goose");
+        assert_eq!(goose.steering_mode(), SteeringMode::TurnBoundary);
+        assert!(goose.reasoning_levels().is_empty());
         assert!(registry.resolve(HarnessId::Mock).is_ok());
         assert!(registry.resolve(HarnessId::ClaudeCode).is_ok());
         // A codex-configured chat resolves the right harness (construction is

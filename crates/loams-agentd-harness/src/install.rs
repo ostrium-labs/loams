@@ -53,6 +53,8 @@ fn methods(id: HarnessId, platform: Platform) -> Vec<Method> {
     match id {
         Mock | LoamsBot | Unsupported | Marketplace => vec![], // loams: ships inside the app
         Antigravity => vec![Archive],
+        // D1809: agentd installs the pinned release archive, never a script.
+        Goose => vec![Archive],
         ClaudeCode if windows => vec![PowerShell("irm https://claude.ai/install.ps1 | iex")],
         ClaudeCode => vec![Shell(
             "curl -fsSL https://claude.ai/install.sh | bash",
@@ -152,7 +154,7 @@ pub fn manual_command(id: HarnessId) -> Option<&'static str> {
         Grok => "npm install -g @xai-official/grok",
         Hermes => "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
         Devin => "curl -fsSL https://cli.devin.ai/install.sh | bash",
-        Antigravity | Mock | LoamsBot | Unsupported | Marketplace => return None,
+        Antigravity | Goose | Mock | LoamsBot | Unsupported | Marketplace => return None,
     })
 }
 
@@ -167,6 +169,7 @@ fn cli_and_dir(id: HarnessId) -> (&'static str, &'static str) {
         Hermes => ("hermes", "~/.local/bin or ~/.hermes/bin"),
         Devin => ("devin", "~/.local/bin"),
         Antigravity => ("agy_acp_server", "the daemon's adapters directory"),
+        Goose => ("goose", "the daemon's adapters directory"),
         Mock => ("mock", "PATH"),
         Unsupported => ("an unsupported agent", "PATH"),
         // Installed by the marketplace, never as a CLI (MK1 Task 4b).
@@ -186,6 +189,7 @@ pub fn installed(id: HarnessId) -> bool {
         Hermes => crate::AcpHarness::hermes().installed(),
         Devin => crate::AcpHarness::devin().installed(),
         Antigravity => crate::AcpHarness::antigravity().installed(),
+        Goose => crate::AcpHarness::goose().installed(),
         LoamsBot => crate::AcpHarness::loams_bot().installed(), // loams
         Mock | Unsupported | Marketplace => false,
     }
@@ -384,7 +388,7 @@ async fn run(
 mod tests {
     use super::*;
 
-    const IDS: [HarnessId; 9] = [
+    const IDS: [HarnessId; 10] = [
         HarnessId::ClaudeCode,
         HarnessId::Codex,
         HarnessId::Opencode,
@@ -393,6 +397,7 @@ mod tests {
         HarnessId::Hermes,
         HarnessId::Devin,
         HarnessId::Antigravity,
+        HarnessId::Goose,
         HarnessId::Mock,
     ];
 
@@ -535,7 +540,10 @@ mod tests {
         for id in IDS {
             assert_eq!(
                 manual_command(id).is_some(),
-                !matches!(id, HarnessId::Mock | HarnessId::Antigravity)
+                !matches!(
+                    id,
+                    HarnessId::Mock | HarnessId::Antigravity | HarnessId::Goose
+                )
             );
             let (cli, dir) = cli_and_dir(id);
             assert!(!cli.is_empty() && !dir.is_empty());

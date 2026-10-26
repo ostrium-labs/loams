@@ -24,6 +24,14 @@ case ${1:-run} in
       --labels "$RUNNER_LABELS" \
       --work "$RUNNER_WORK"
     ;;
-  run) exec ./run.sh ;;
+  run)
+    if [[ ! -s .runner ]]; then
+      # GitHub dropped the registration (the runner then deletes its credentials).
+      # 78 stops systemd's restart loop; loams-ci-runner-heal.timer re-registers.
+      echo "runner $RUNNER_NAME is not registered; loams-ci-runner-heal.timer will register it again" >&2
+      exit 78
+    fi
+    exec ./run.sh
+    ;;
   *) exec "$@" ;;
 esac

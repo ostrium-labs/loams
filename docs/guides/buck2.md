@@ -72,14 +72,21 @@ from the crate or the workspace, as Cargo picks them.
 scripts/buck/gen.py
 ```
 
-It runs `cargo metadata` on each workspace, writes `third-party/rust/Cargo.toml` (every crates.io
+The first run installs the pinned buck2 and reindeer (`scripts/buck/bootstrap.sh`: a download and
+a one-off `cargo install` of a few minutes); later runs take about a minute. It runs `cargo metadata` on each workspace, writes `third-party/rust/Cargo.toml` (every crates.io
 and git package the crates use directly, at its locked version with the features Cargo resolves),
 runs reindeer to turn it into `third-party/rust/BUCK`, and rewrites every crate's `BUCK`. Commit
-the result. CI runs `scripts/buck/gen.py --check` and fails if any generated file is stale.
+the result. Adding a crate, a dependency or a feature, or bumping a version, changes generated
+files.
 
-A new dependency with a build script needs a reindeer fixup in
-`third-party/rust/fixups/<crate>/fixups.toml`; `gen.py` prints reindeer's warning when one is
-missing. Most need only the default (run `build.rs` as Cargo does):
+CI's **Buck2: generated files** job (required) runs `scripts/buck/gen.py --check` and fails if any
+generated file is stale. Its log says so, and the job uploads the fix as the `buck-gen.patch`
+artifact: download it and `git apply buck-gen.patch` if you would rather not run `gen.py` locally.
+
+A dependency with a build script needs a reindeer fixup in
+`third-party/rust/fixups/<crate>/fixups.toml`. When a new one appears, `gen.py` writes the default
+(run `build.rs` as Cargo does, keep what it links) and says so; that covers almost every crate,
+including those that compile C with the `cc` crate. Edit it only if the crate then fails to build:
 
 ```toml
 [buildscript.run]

@@ -315,7 +315,7 @@ Brought into MS1's scope by D1806 and confirmed by the owner on 2026-10-25. Read
    - A `binary` listing with an archive (the index's `vercel-labs/fx` and `ostrium/github-mcp-server`) answers `Unsupported`. The archive installer, which can reuse MS1 Task 3's tar.gz support in `archive_install`, is a follow-up.
    - agentd's npm is `ProcessNpm`: the `npm` agentd finds for its adapters, run with `npm_args` (scripts off), a cleared environment and a cache beside the install. With no npm, an npm install fails with a plain message.
 8. **Harness registration** (Task 0 ruling 7, as built).
-   - `HarnessId::Marketplace` has wire name `marketplace` and proto value `HARNESS_ID_MARKETPLACE = 12`. `HarnessDescriptor.marketplace_listing` (proto field 9) names the listing.
+   - `HarnessId::Marketplace` has wire name `marketplace` and proto value `HARNESS_ID_MARKETPLACE = 13` (after `HARNESS_ID_GOOSE = 12`, MS1 Task 3). `HarnessDescriptor.marketplace_listing` (proto field 9) names the listing.
    - The registry keeps marketplace harnesses beside its id-keyed slots, by listing id. Each is an `AcpHarness::marketplace(AcpLaunch)`, with the owned launch line beside the static specs. A sync keeps an unchanged harness's instance.
    - Marketplace harnesses are listed `enabled` (the person installed each by consent). Harness updates skip them, because they update through the marketplace.
    - `harness_descriptor_appears_in_list_harnesses` passes.

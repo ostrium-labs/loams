@@ -5,8 +5,8 @@
 //! ([`CodexHarness`]), and opencode over its own HTTP/SSE server protocol
 //! ([`OpencodeHarness`] — what the opencode desktop app speaks). The shared
 //! [`AcpHarness`] remains ONLY for agents built ground-up on ACP — Devin
-//! (`devin acp`), Grok (`grok agent stdio`) Hermes (`hermes acp`) and
-//! Antigravity. Pi uses native JSONL RPC ([`PiHarness`]).
+//! (`devin acp`), Grok (`grok agent stdio`), Hermes (`hermes acp`),
+//! Antigravity and Goose (`goose acp`). Pi uses native JSONL RPC ([`PiHarness`]).
 //! Adapter-mediated ACP for claude and codex was retired — and opencode's
 //! ACP layer with it: the adapters held prompt turns open for background
 //! work the CLIs themselves settle eagerly (and opencode's settles on the

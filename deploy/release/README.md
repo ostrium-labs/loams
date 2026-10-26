@@ -4,8 +4,8 @@ Everything in Loams runs on your machine or on VMs you own, the console
 included: from 0.1.2 the engine serves the console that ships in its image at
 `https://loams.<tailnet>.ts.net/ui/`, next to its API, so the console is
 same-origin with your engine and reachable only on your tailnet. Loams Desktop
-carries the same console and connects to the same URL (in 0.1.1 the console is
-Loams Desktop; `/ui/` arrives in 0.1.2). Ostrium hosts nothing you need:
+carries the same console and connects to the same URL (the 0.1.1 images do
+not serve `/ui/`). Ostrium hosts nothing you need:
 `auth.loams.dev` for `oidc` mode is planned and does not answer yet, so use an
 issuer of your own. The hosted console at console.loams.dev is
 retired (design 78); to try Loams without running anything, see
@@ -47,7 +47,7 @@ healthcheck.
 ```sh
 deploy/release/build.sh loams                        # both platforms, local manifest list
 deploy/release/build.sh --platforms linux/amd64 loams
-deploy/release/build.sh --version 0.1.1 --push   # CI on a tag
+deploy/release/build.sh --version 0.1.2 --push   # CI on a tag
 ```
 
 ## On this machine
@@ -86,7 +86,7 @@ engine, `migrate` and `loams upgrade` all see the same set:
 | `house-tailnet` | the House's own tailnet node (below) |
 | `postgres-control` | Loams Postgres's control plane (below) |
 | `console` | optional: a console on an origin of its own (the engine already serves one at `/ui/`), from `LOAMS_CONSOLE_DIR`, with `/config.json` built from `LOAMS_ENGINE_URL`, `LOAMS_AUTH_ISSUER` and `LOAMS_AUTH_CLIENT_ID`; its origin must be in `LOAMS_CORS_ORIGINS` |
-| `headscale` | coming soon, unsupported in 0.1.1 |
+| `headscale` | coming soon, unsupported |
 
 Choose `tikv` and `rustfs` before the first start: a stack's data stays on the
 stores it started on. The engine records its store in the `loams-data` volume
@@ -239,12 +239,13 @@ searchable), it starts with API keys off instead.
 `byoc/install.sh` creates an empty `secrets/api-keys` with group 10001 and
 mode 0640.
 
-### Headscale (coming soon, unsupported in 0.1.1)
+### Headscale (coming soon, unsupported)
 
-0.1.1 supports one setup: your own Tailscale tailnet and the hosted
-console. Headscale issues no `ts.net` HTTPS certificates, so the hosted console
-(served over HTTPS) cannot reach an engine on a Headscale tailnet. The profile
-stays in the bundle for a later release; the steps below are unsupported.
+The supported setup is your own Tailscale tailnet, with the console your engine
+serves at `/ui/` or Loams Desktop. The hosted console that could not reach a
+Headscale tailnet is retired, but the `headscale` profile has not been tested
+end to end with the engine-served console yet, so it stays unsupported; the
+steps below are for trying it.
 
 ```sh
 # .env: HEADSCALE_SERVER_URL=https://hs.example.com, TS_LOGIN_SERVER=the same,
@@ -269,8 +270,8 @@ From 0.1.0-preview.2, `loams upgrade` upgrades this stack in place, one release 
 time, with a snapshot first:
 
 ```sh
-loams upgrade check --to 0.1.1  # what it will do and what would stop it
-loams upgrade --to 0.1.1        # snapshot, migrate, restart, verify
+loams upgrade check --to 0.1.2  # what it will do and what would stop it
+loams upgrade --to 0.1.2        # snapshot, migrate, restart, verify
 loams upgrade rollback          # back to the snapshot
 ```
 
@@ -322,9 +323,9 @@ so pick them on the first install. `--services` starts only the services
 named. The VM needs SSH and outbound internet only.
 
 ```sh
-deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.1 --check  # loams upgrade check
-deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.1          # loams upgrade, on the VM
-deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.1 --rollback
+deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.2 --check  # loams upgrade check
+deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.2          # loams upgrade, on the VM
+deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.2 --rollback
 ```
 
 `upgrade.sh` fetches the target release's `loams` CLI on the VM (its Linux
@@ -352,7 +353,7 @@ identity, bucket and secrets in one go, use `deploy/byoc/<cloud>/` (cloud-init)
 or `deploy/tofu/` (OpenTofu modules). Status: tested against local mocks of the
 secret stores; not yet run on a real cloud account.
 
-## Known gaps in 0.1.1
+## Known gaps in 0.1.2
 
 - With `LOAMS_HOUSE_ENDPOINT` empty the engine does not reach the House, so
   `loams.house.v1` answers `house_not_configured`; use the House's own tailnet

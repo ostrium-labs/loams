@@ -80,6 +80,14 @@ ignore = [
     # Loams ships only 64-bit targets. Remove with the bump to ctutils >= 0.4.4
     # on or after 2026-11-06.
     { id = "RUSTSEC-2026-0385", reason = "ctutils constant-time mask and u128 comparison branches: the fixed 0.4.4 is from 2026-10-23, under the 14-day rule; Loams ships only 64-bit targets; bump on or after 2026-11-06" },
+    # crypto-bigint < 0.7.6: secret-dependent branches in operations meant to
+    # be constant-time. Only russh 0.63 (the objects connector's SFTP client,
+    # through p256/p384/p521) pulls it in. 0.7.6 to 0.7.8 are yanked and the
+    # one usable fix, 0.7.9, was published 2026-10-25, under the 14-day rule.
+    # Remove with the bump to crypto-bigint >= 0.7.9 on or after 2026-11-08.
+    { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.7.5 constant-time branches, via russh 0.63 (SFTP in loams-connector-objects): the fixed 0.7.9 is from 2026-10-25 (0.7.6-0.7.8 yanked), under the 14-day rule; bump on or after 2026-11-08" },
+    # The same crate is yanked (as 0.7.6-0.7.8 are); the same revisit date.
+    { crate = "crypto-bigint@0.7.5", reason = "yanked for RUSTSEC-2026-0387; the one usable fix, 0.7.9, is from 2026-10-25, under the 14-day rule (revisit 2026-11-08)" },
 ]
 
 [sources]

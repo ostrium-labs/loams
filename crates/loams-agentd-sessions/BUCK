@@ -3,7 +3,7 @@ load("//buck:rust.bzl", "cargo_package")
 
 cargo_package(
     name = "loams-agentd-sessions",
-    version = "0.1.1",
+    version = "0.1.2",
     edition = "2024",
     manifest_dir = "crates/loams-agentd-sessions",
     env = {
@@ -77,6 +77,16 @@ cargo_package(
             "name": "e2e",
             "crate": "e2e",
             "root": "tests/e2e.rs",
+        },
+        {
+            "name": "factory_checks",
+            "crate": "factory_checks",
+            "root": "tests/factory_checks.rs",
+        },
+        {
+            "name": "factory_loop",
+            "crate": "factory_loop",
+            "root": "tests/factory_loop.rs",
         },
         {
             "name": "git_write",

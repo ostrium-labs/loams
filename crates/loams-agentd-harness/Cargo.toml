@@ -42,6 +42,9 @@ tracing.workspace = true
 sha2 = "0.10"
 semver = "1"
 zip.workspace = true
+# Goose ships its unix builds as .tar.gz (archive_install).
+flate2 = "1"
+tar = { version = "0.4", default-features = false }
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true

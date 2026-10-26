@@ -27,6 +27,8 @@ pub mod pg;
 pub mod reload;
 pub mod routes;
 pub mod sniff;
+#[cfg(feature = "temporal")]
+pub mod temporal;
 pub mod tls;
 
 pub use config::{GatewayConfig, TlsMode};

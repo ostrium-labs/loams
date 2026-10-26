@@ -492,6 +492,10 @@ jobs:
       # dev once stopped building with `--features git` and no fast-tier job noticed (GT1 T18.4).
       - name: clippy (loams with the tikv, graph, product and optional listener features)
         run: cargo clippy -p loams --all-targets --features tikv,live-tikv,durable-tikv,stream-grpc,pgwire,mysql-wire,graph,git,buildcache,registry,sqldb,postgres --locked -- -D warnings
+      # loams-gateway's Temporal API module (design 74, plan DX1 Task 9) is
+      # behind its own feature.
+      - name: clippy (loams-gateway temporal module)
+        run: cargo clippy -p loams-gateway --features temporal --all-targets --locked -- -D warnings
       # The release images build `loams` with these feature sets (deploy/release/Containerfile.*);
       # `postgres,tikv` turns on loams-kv's TiKV store without loams-live's `tikv`, a combination
       # nothing else here builds (v0.1.0-preview.2's loams-pg-control image broke on it).
@@ -551,6 +555,46 @@ jobs:
       # nextest does not run doctests; keep the Cargo doc-test pass.
       - name: doc tests
         run: cargo test --workspace --doc --locked
+
+  # The Buck2 build files are generated from Cargo.toml and Cargo.lock
+  # (docs/guides/buck2.md): every crate's BUCK, third-party/rust/ and the
+  # toolchain channel. A pull request that adds a crate or changes a
+  # dependency must commit what `scripts/buck/gen.py` writes; this job fails
+  # otherwise and uploads the fix as a patch (`git apply buck-gen.patch`).
+  buck-gen:
+    name: "Buck2: generated files"
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.rust == 'true') }}
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
+    timeout-minutes: 40
+    steps:
+      # buck2 and reindeer (scripts/buck/bootstrap.sh): the self-hosted
+      # runners keep them on their cache disk; GitHub-hosted ones restore them
+      # with actions/cache (reindeer is a 10-minute cargo install).
+      - name: tool cache
+        if: runner.environment == 'self-hosted'
+        run: echo "LOAMS_BUCK_CACHE=/mnt/Projects/ci/cache/loams-build" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/cache@v6
+        if: runner.environment == 'github-hosted'
+        with:
+          path: ~/.cache/loams-build
+          key: loams-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/buck/versions.env') }}
+      - name: generated Buck2 files are current
+        run: |
+          if ! python3 scripts/buck/gen.py --check; then
+            git add -A -- . ':!.tools' && git diff --cached --binary > buck-gen.patch
+            echo "::error::Buck2 files are stale: run scripts/buck/gen.py and commit the result, or apply the buck-gen.patch artifact (git apply buck-gen.patch)"
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: buck-gen.patch
+          path: buck-gen.patch
+          if-no-files-found: ignore
 
   # The workspace tests, built and run in one job on the heavy runner. (A nextest
   # archive moved to other runners broke the tests that spawn the built binary or
@@ -2773,7 +2817,12 @@ jobs:
         run: conformance/compute/selftest.sh
       - if: ${{ !cancelled() }} # report every check, not only the first failure
         name: PyYAML
-        run: python3 -m pip install --quiet --disable-pip-version-check PyYAML
+        # The local runners' Ubuntu Python is externally managed (PEP 668), so a
+        # plain `pip install` fails there; use the image's python3-yaml when it
+        # has one, else a user install.
+        run: |
+          python3 -c 'import yaml' 2>/dev/null && exit 0
+          python3 -m pip install --quiet --disable-pip-version-check --user --break-system-packages PyYAML
       - if: ${{ !cancelled() }} # report every check, not only the first failure
         name: nFPM
         run: |
@@ -2837,6 +2886,7 @@ jobs:
       - changes
       - repo-checks
       - check
+      - buck-gen
       - windows-check
       - rust-tests
       - agentd

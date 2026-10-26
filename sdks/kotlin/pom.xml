@@ -10,7 +10,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>dev.loams</groupId>
   <artifactId>loams-kotlin</artifactId>
-  <version>0.1.1</version>
+  <version>0.1.2</version>
   <packaging>jar</packaging>
   <name>Loams Kotlin SDK</name>
   <description>The official Kotlin client for Loams. Pre-release (preview): the API may change between previews.</description>

@@ -6,7 +6,7 @@ Bring your own cloud: Loams runs in your AWS account, Google Cloud project or Az
 
 ## What you get
 
-One VM (Ubuntu 24.04, Linux 6.8) running Loams 0.1.1's **light default stack**: the engine on its embedded stores with your bucket, the House, Loams Postgres on local folders, agentd and the Tailscale sidecar. It is **single node and single disk**: no replication, so back up the disk (guides, "Backups") and keep the bucket's versioning on. The `tikv` and `rustfs` profiles add several GB of images and RAM; pick them before the first start.
+One VM (Ubuntu 24.04, Linux 6.8) running Loams 0.1.2's **light default stack**: the engine on its embedded stores with your bucket, the House, Loams Postgres on local folders, agentd and the Tailscale sidecar. It is **single node and single disk**: no replication, so back up the disk (guides, "Backups") and keep the bucket's versioning on. The `tikv` and `rustfs` profiles add several GB of images and RAM; pick them before the first start.
 
 ## The rules
 

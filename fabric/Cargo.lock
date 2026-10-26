@@ -5435,7 +5435,7 @@ checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
 
 [[package]]
 name = "loams-cache"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bytes",
  "crc32c",
@@ -5473,7 +5473,7 @@ dependencies = [
 
 [[package]]
 name = "loams-common"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "serde",
@@ -6141,6 +6141,8 @@ version = "0.0.1"
 dependencies = [
  "datafusion",
  "loams-house-types",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -6148,9 +6150,11 @@ name = "loams-house-types"
 version = "0.0.1"
 dependencies = [
  "arrow-array 59.3.0",
+ "arrow-buffer 59.3.0",
  "arrow-schema 59.3.0",
+ "chrono",
+ "chrono-tz",
  "serde_json",
- "thiserror",
 ]
 
 [[package]]
@@ -6189,7 +6193,7 @@ dependencies = [
 
 [[package]]
 name = "loams-store"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "bytes",

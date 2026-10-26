@@ -94,6 +94,16 @@ fn build_id_stamp(build_id: &str) -> Option<WorkerVersionStamp> {
     })
 }
 
+/// The build ID a poller reports: the deprecated version capabilities (the
+/// Go SDK) or its deployment options (sdk-core, so the TypeScript SDK).
+fn poll_build_id(capabilities: Option<&str>, deployment: Option<&str>) -> String {
+    capabilities
+        .filter(|b| !b.is_empty())
+        .or(deployment.filter(|b| !b.is_empty()))
+        .unwrap_or_default()
+        .to_string()
+}
+
 /// The poll deadline: the configured timeout, or 5 s before the request's
 /// own deadline if that is sooner (X1.R3).
 fn poll_deadline<T>(req: &Request<T>, max: Duration) -> Duration {
@@ -353,7 +363,10 @@ impl Frontend {
                 name: run.state.workflow_type.clone(),
             }),
             previous_started_event_id: run.state.last_completed_wft_started_event_id,
-            started_event_id: run.state.last_completed_wft_started_event_id,
+            // The worker replays the whole history to answer a query, so
+            // the task "starts" at the last event (the Go SDK warns when it
+            // processes events past this ID).
+            started_event_id: last,
             history: Some(self.full_history(&q.key, last).await?),
             query: Some(q.query.clone()),
             workflow_execution_task_queue: Some(TaskQueue {
@@ -464,6 +477,35 @@ impl Frontend {
         };
         let ns = self.namespace_by_id(&task.namespace_id).await?;
         let key = RunKey::new(&task.namespace_id, &task.workflow_id, &task.run_id);
+        let scheduled = self
+            .engine
+            .history(&key, task.scheduled_event_id, 1)
+            .await?;
+        let Some(Attributes::ActivityTaskScheduledEventAttributes(a)) =
+            scheduled.first().and_then(|e| e.attributes.clone())
+        else {
+            return Ok(None);
+        };
+        // A worker that names no build of its own runs the activity on the
+        // workflow's build (`use_workflow_build_id`): the stamp of the
+        // workflow task that scheduled it.
+        #[allow(deprecated)]
+        let worker_version = match build_id_stamp(build_id) {
+            Some(v) => Some(v),
+            None if a.use_workflow_build_id => {
+                let wtc = self
+                    .engine
+                    .history(&key, a.workflow_task_completed_event_id, 1)
+                    .await?;
+                match wtc.first().and_then(|e| e.attributes.as_ref()) {
+                    Some(Attributes::WorkflowTaskCompletedEventAttributes(c)) => {
+                        c.worker_version.clone()
+                    }
+                    _ => None,
+                }
+            }
+            None => None,
+        };
         let t = match self
             .engine
             .execute(
@@ -474,7 +516,7 @@ impl Frontend {
                     attempt: task.attempt,
                     identity: identity.to_string(),
                     request_id: claim.task_id.clone(),
-                    worker_version: build_id_stamp(build_id),
+                    worker_version,
                 },
             )
             .await
@@ -493,14 +535,7 @@ impl Frontend {
         else {
             return Ok(None);
         };
-        let scheduled = self.engine.history(&key, scheduled_event_id, 1).await?;
-        let Some(Attributes::ActivityTaskScheduledEventAttributes(a)) =
-            scheduled.first().and_then(|e| e.attributes.clone())
-        else {
-            return Err(Status::internal(
-                "the activity's scheduled event is missing",
-            ));
-        };
+        debug_assert_eq!(scheduled_event_id, task.scheduled_event_id);
         let scheduled_time = scheduled.first().and_then(|e| e.event_time);
         let token = self.tokens.encode(TaskToken {
             namespace_id: key.namespace_id.clone(),
@@ -698,11 +733,19 @@ impl WorkflowService for WorkflowServiceImpl {
             .filter(|n| !n.is_empty())
             .ok_or_else(|| Status::invalid_argument("TaskQueue is not set on request."))?;
         #[allow(deprecated)]
-        let build_id = r
-            .worker_version_capabilities
-            .as_ref()
-            .map(|c| c.build_id.clone())
-            .unwrap_or_default();
+        let build_id = poll_build_id(
+            r.worker_version_capabilities
+                .as_ref()
+                .map(|c| c.build_id.as_str()),
+            r.deployment_options.as_ref().map(|d| d.build_id.as_str()),
+        );
+        // sdk-core (the TypeScript SDK) names its build in the checksum.
+        #[allow(deprecated)]
+        let build_id = if build_id.is_empty() {
+            r.binary_checksum.clone()
+        } else {
+            build_id
+        };
         let key = QueueKey {
             namespace_id: ns.namespace_id.clone(),
             task_queue: tq,
@@ -723,8 +766,18 @@ impl WorkflowService for WorkflowServiceImpl {
     ) -> Result<Response<RespondWorkflowTaskCompletedResponse>, Status> {
         let p = self.0.principal(&req)?;
         let r = req.into_inner();
+        // The Go SDK stamps its build ID; sdk-core (TypeScript) sends it in
+        // its deployment options. Either is what Temporal records.
         #[allow(deprecated)]
-        let worker_version = r.worker_version_stamp.clone();
+        let worker_version = r
+            .worker_version_stamp
+            .clone()
+            .or_else(|| {
+                r.deployment_options
+                    .as_ref()
+                    .and_then(|d| build_id_stamp(&d.build_id))
+            })
+            .or_else(|| build_id_stamp(&r.binary_checksum));
         let token = r.task_token.clone();
         self.0
             .finish_task(&p, &token, TaskKind::Workflow, |t| {
@@ -781,11 +834,12 @@ impl WorkflowService for WorkflowServiceImpl {
             .filter(|n| !n.is_empty())
             .ok_or_else(|| Status::invalid_argument("TaskQueue is not set on request."))?;
         #[allow(deprecated)]
-        let build_id = r
-            .worker_version_capabilities
-            .as_ref()
-            .map(|c| c.build_id.clone())
-            .unwrap_or_default();
+        let build_id = poll_build_id(
+            r.worker_version_capabilities
+                .as_ref()
+                .map(|c| c.build_id.as_str()),
+            r.deployment_options.as_ref().map(|d| d.build_id.as_str()),
+        );
         let key = QueueKey {
             namespace_id: ns.namespace_id.clone(),
             task_queue: tq,

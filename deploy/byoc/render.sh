@@ -9,7 +9,7 @@
 #   render.sh azure --container C --storage-account A --vault V [--client-id ID] > user-data.yaml
 #
 # Common options:
-#   --version V         Loams release [default: 0.1.1]
+#   --version V         Loams release [default: 0.1.2]
 #   --install NAME      names the secrets [default: loams]; secrets are
 #                       loams/<NAME>/... on AWS and loams-<NAME>-... elsewhere
 #   --secret-prefix P   override the whole prefix
@@ -24,7 +24,7 @@ die() { echo "render.sh: $*" >&2; exit 1; }
 
 cloud="${1:-}"; [[ "$cloud" =~ ^(aws|gcp|azure)$ ]] || die "usage: render.sh aws|gcp|azure [options] (see the header)"
 shift
-declare -A v=([VERSION]=0.1.1 [INSTALL]=loams [PROFILES]="" [HOSTNAME]=loams [DATA_DEVICE]="" [CLIENT_ID]="")
+declare -A v=([VERSION]=0.1.2 [INSTALL]=loams [PROFILES]="" [HOSTNAME]=loams [DATA_DEVICE]="" [CLIENT_ID]="")
 gzip_out=0
 while (($#)); do
   case "$1" in
