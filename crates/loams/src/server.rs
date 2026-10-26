@@ -216,6 +216,11 @@ pub struct ServerConfig {
     /// Native stream gRPC listener for Dapr protocol adapters.
     #[cfg(feature = "stream-grpc")]
     pub stream_grpc: Option<SocketAddr>,
+    /// The connect socket (`--connect-socket`, CC1 ruling R1.1): the main
+    /// API on a Unix socket, mode 0660, for `loams-fabric connect`, which
+    /// shares the socket's volume and nothing else with the engine. It takes
+    /// API keys only, in every auth mode. `None` (the default) binds none.
+    pub connect_socket: Option<PathBuf>,
     /// The Loams SQL gate (plan SQ1 Task 4).
     #[cfg(feature = "sqldb")]
     pub sqlgate: Option<crate::sqlgate::SqlgateConfig>,
@@ -471,6 +476,7 @@ impl ServerConfig {
             flight_sql: None,
             #[cfg(feature = "stream-grpc")]
             stream_grpc: None,
+            connect_socket: None,
             #[cfg(feature = "sqldb")]
             sqlgate: None,
             flight: FlightConfig::default(),
@@ -642,6 +648,11 @@ impl ServerConfig {
                 "LOAMS_TLS_* are for dev and standalone; a cluster node's listeners stay on a \
                  private network until MT1"
                     .to_string(),
+            ));
+        }
+        if self.cluster.is_some() && self.connect_socket.is_some() {
+            return Err(ServerError::Config(
+                "--connect-socket is for dev and standalone, not a cluster node".to_string(),
             ));
         }
         if self.cluster.is_some() {
@@ -1087,6 +1098,8 @@ pub struct Server {
     stop_http: oneshot::Sender<()>,
     /// The `tailscale serve` target (`LOAMS_AUTH_MODE=tailscale`).
     tailscale: Option<TailscaleTarget>,
+    /// The connect socket (`--connect-socket`).
+    connect_socket: Option<ConnectSocket>,
     flight: Option<Flight>,
     #[cfg(feature = "mysql-wire")]
     mysql_wire: Option<crate::mysql_wire::MysqlHandle>,
@@ -1104,6 +1117,89 @@ pub struct Server {
     es: Option<Es>,
     /// Cluster mode only.
     cluster: Option<ClusterRuntime>,
+}
+
+/// The connect socket (CC1 ruling R1.1): the main API on a Unix socket for
+/// `loams-fabric connect`, behind [`crate::auth::AuthLayerState::connect_socket`].
+/// The socket file is mode 0660 and is removed again on shutdown.
+#[derive(Debug)]
+struct ConnectSocket {
+    path: PathBuf,
+    stop: CancellationToken,
+    task: JoinHandle<()>,
+}
+
+/// The connect socket's file mode: its owner and group (the connect role's
+/// container runs as the same uid), nobody else.
+pub const CONNECT_SOCKET_MODE: u32 = 0o660;
+
+impl ConnectSocket {
+    /// Bind `path` (a stale socket there from an earlier run is replaced;
+    /// anything else there is refused) and set its mode.
+    #[cfg(unix)]
+    fn bind(path: &Path) -> Result<tokio::net::UnixListener, ServerError> {
+        use std::os::unix::fs::{FileTypeExt as _, PermissionsExt as _};
+        let fail = |what: &str, err: std::io::Error| {
+            ServerError::Config(format!(
+                "--connect-socket {}: {what}: {err}",
+                path.display()
+            ))
+        };
+        match std::fs::symlink_metadata(path) {
+            Ok(meta) if meta.file_type().is_socket() => {
+                std::fs::remove_file(path).map_err(|e| fail("removing the stale socket", e))?;
+            }
+            Ok(_) => {
+                return Err(ServerError::Config(format!(
+                    "--connect-socket {}: something other than a socket is there",
+                    path.display()
+                )));
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => return Err(fail("reading it", err)),
+        }
+        if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+            std::fs::create_dir_all(dir).map_err(|e| fail("creating its directory", e))?;
+        }
+        let listener = tokio::net::UnixListener::bind(path).map_err(|e| fail("binding", e))?;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(CONNECT_SOCKET_MODE))
+            .map_err(|e| fail("setting its mode", e))?;
+        Ok(listener)
+    }
+
+    #[cfg(not(unix))]
+    fn bind(path: &Path) -> Result<tokio::net::UnixListener, ServerError> {
+        Err(ServerError::Config(format!(
+            "--connect-socket {}: Unix sockets need a Unix host",
+            path.display()
+        )))
+    }
+
+    fn start(listener: tokio::net::UnixListener, path: PathBuf, app: axum::Router) -> Self {
+        let stop = CancellationToken::new();
+        let stopped = stop.clone();
+        let task = tokio::spawn(async move {
+            let serve =
+                axum::serve(listener, app).with_graceful_shutdown(stopped.cancelled_owned());
+            if let Err(err) = serve.await {
+                tracing::error!(%err, "the connect socket failed");
+            }
+        });
+        Self { path, stop, task }
+    }
+
+    async fn stop(self) {
+        self.stop.cancel();
+        let mut task = self.task;
+        if tokio::time::timeout(HTTP_GRACE, &mut task).await.is_err() {
+            task.abort();
+        }
+        if let Err(err) = std::fs::remove_file(&self.path)
+            && err.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!(%err, path = %self.path.display(), "removing the connect socket");
+        }
+    }
 }
 
 /// The `tailscale serve` target: the main API on `LOAMS_TAILSCALE_LISTEN`,
@@ -1409,6 +1505,7 @@ struct Assembled {
     hot: Option<HotTierImpl>,
     app: axum::Router,
     tailscale: Option<TailscaleTarget>,
+    connect_socket: Option<ConnectSocket>,
     flight: Option<Flight>,
     #[cfg(feature = "mysql-wire")]
     mysql_wire: Option<crate::mysql_wire::MysqlHandle>,
@@ -2236,6 +2333,7 @@ impl Server {
             http,
             stop_http,
             tailscale: parts.tailscale,
+            connect_socket: parts.connect_socket,
             flight: parts.flight,
             #[cfg(feature = "mysql-wire")]
             mysql_wire: parts.mysql_wire,
@@ -2341,6 +2439,7 @@ impl Server {
                     http,
                     stop_http,
                     tailscale: parts.tailscale,
+                    connect_socket: parts.connect_socket,
                     flight: parts.flight,
                     #[cfg(feature = "mysql-wire")]
                     mysql_wire: parts.mysql_wire,
@@ -2599,6 +2698,7 @@ impl Server {
         let auth_enforced = auth.enforced();
         let main_guard =
             crate::auth::AuthLayerState::new(auth.clone(), crate::auth::layer::MAIN_PUBLIC_PATHS);
+        let connect_guard = crate::auth::AuthLayerState::connect_socket(auth.clone());
         let tailscale_guard = crate::auth::AuthLayerState::tailscale_target(
             auth,
             crate::auth::layer::MAIN_PUBLIC_PATHS,
@@ -2648,6 +2748,24 @@ impl Server {
         let tailscale_listener = match tailscale_addr {
             Some(addr) => match bind(addr).await {
                 Ok(bound) => Some(bound),
+                Err(err) => {
+                    if let Err(err) = cache.close().await {
+                        tracing::warn!(%err, "closing the cache after a failed start");
+                    }
+                    return Err(err);
+                }
+            },
+            None => None,
+        };
+        // The connect socket, on a standalone gateway only (validate refused
+        // it on a cluster node).
+        let connect_listener = match config
+            .connect_socket
+            .as_deref()
+            .filter(|_| roles.gateway && config.cluster.is_none())
+        {
+            Some(path) => match ConnectSocket::bind(path) {
+                Ok(listener) => Some((listener, path.to_path_buf())),
                 Err(err) => {
                     if let Err(err) = cache.close().await {
                         tracing::warn!(%err, "closing the cache after a failed start");
@@ -3132,7 +3250,7 @@ impl Server {
             live,
             durable: durable.filter(|_| main_port_serves_durable(config)),
         };
-        let (app, tailscale) = match (roles.gateway, config.cluster.is_some()) {
+        let (app, tailscale, connect_socket) = match (roles.gateway, config.cluster.is_some()) {
             (true, false) => {
                 #[cfg(feature = "live")]
                 let main_state = without_live_beyond_loopback(&state, config);
@@ -3174,10 +3292,20 @@ impl Server {
                         with_console(tailscale_guard.wrap(router)),
                     )
                 });
-                (with_console(main_guard.wrap(main_router)), tailscale)
+                // The same API on the connect socket, behind its API-key-only
+                // layer, without the console.
+                let connect_socket = connect_listener.map(|(listener, path)| {
+                    tracing::info!(path = %path.display(), "the connect socket is served");
+                    ConnectSocket::start(listener, path, connect_guard.wrap(main_router.clone()))
+                });
+                (
+                    with_console(main_guard.wrap(main_router)),
+                    tailscale,
+                    connect_socket,
+                )
             }
-            (true, true) => (api::router(state), None),
-            (false, _) => (api::internal_router(state), None),
+            (true, true) => (api::router(state), None, None),
+            (false, _) => (api::internal_router(state), None, None),
         };
         let flight = flight_listener.map(|(listener, addr)| {
             let streams: Arc<dyn StreamProducer> = Arc::new(NativeStreamProducer {
@@ -3224,6 +3352,7 @@ impl Server {
             hot,
             app,
             tailscale,
+            connect_socket,
             flight,
             #[cfg(feature = "mysql-wire")]
             mysql_wire,
@@ -3351,6 +3480,11 @@ impl Server {
     /// The `tailscale serve` target's address, in tailscale mode.
     pub fn tailscale_addr(&self) -> Option<SocketAddr> {
         self.tailscale.as_ref().map(|t| t.addr)
+    }
+
+    /// The connect socket's path, when one is served.
+    pub fn connect_socket_path(&self) -> Option<&Path> {
+        self.connect_socket.as_ref().map(|c| c.path.as_path())
     }
 
     /// The address Flight SQL listens on, when it does.
@@ -3483,6 +3617,9 @@ impl Server {
         shutdown_phase("flight");
         if let Some(tailscale) = self.tailscale {
             tailscale.stop().await;
+        }
+        if let Some(connect) = self.connect_socket {
+            connect.stop().await;
         }
         if let Some(flight) = self.flight {
             flight.stop().await;
