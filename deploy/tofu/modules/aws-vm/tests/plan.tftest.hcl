@@ -140,3 +140,18 @@ run "rejects_a_latest_release" {
 
   expect_failures = [var.release]
 }
+
+run "confluent_integrations_are_names_only" {
+  command = plan
+  variables {
+    confluent_integrations = ["confluent", "events"]
+  }
+  assert {
+    condition     = can(regex("CONFLUENT_INTEGRATIONS=confluent,events\n", module.cloud_init.user_data))
+    error_message = "config.env lists the integrations"
+  }
+  assert {
+    condition     = !can(regex("(?m)^\\s*(CONFLUENT|KAFKA)_[A-Z_]*(KEY|SECRET)[A-Z_]*=", module.cloud_init.user_data))
+    error_message = "no Confluent key or secret is in user data"
+  }
+}

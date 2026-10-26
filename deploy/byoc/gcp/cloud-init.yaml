@@ -29,6 +29,7 @@ write_files:
       LOAMS_PROFILES=@@PROFILES@@
       TS_HOSTNAME=@@HOSTNAME@@
       DATA_DEVICE=@@DATA_DEVICE@@
+      CONFLUENT_INTEGRATIONS=@@CONFLUENT_INTEGRATIONS@@
   - path: /etc/loams-byoc/loams-release-key.asc
     permissions: "0644"
     owner: root:root
@@ -268,6 +269,12 @@ write_files:
       #   <prefix>/tailnet-authkey   required   -> TS_AUTHKEY in .env
       #   <prefix>/setup-token       required   -> LOAMS_SETUP_TOKEN in .env
       #   <prefix>/api-keys          optional   -> secrets/api-keys
+      #   <prefix>/confluent-<i>-{api-key,api-secret,sr-key,sr-secret,metrics-key,metrics-secret}
+      #                              optional, for each integration <i> in CONFLUENT_INTEGRATIONS
+      #                              -> secrets/connect/<ns>/confluent-<i>/{username,password,
+      #                                 sr-username,sr-password,metrics-key,metrics-secret}
+      #                              (the connect role's file secret store, design 80 §7.2;
+      #                              <ns> is CONNECT_NAMESPACE, default 0). Never in .env.
       # On AWS the separator is "/"; Google Cloud and Azure names cannot hold "/",
       # so they use "-" (the prefix "loams-<install>" gives loams-<install>-setup-token).
       #
@@ -438,6 +445,38 @@ write_files:
         [[ "$(id -u)" -ne 0 ]] || chown 10001 "$stack/secrets/api-keys"
         echo "loams-byoc-secrets: wrote secrets/api-keys"
       fi
+
+      # Confluent integrations (D1827): one directory per integration, owner-only files.
+      # A missing api-key or api-secret is reported, not fatal: the stack starts and the
+      # integration's connector instances fail until the key is in the secret store.
+      ints="${CONFLUENT_INTEGRATIONS:-}"
+      ints="${ints//,/ }"
+      ns="${CONNECT_NAMESPACE:-0}"
+      [[ "$ns" =~ ^[0-9]{1,19}$ ]] || die "CONNECT_NAMESPACE must be a number"
+      for i in $ints; do
+        [[ "$i" =~ ^[a-z0-9][a-z0-9-]{0,30}$ ]] || die "CONFLUENT_INTEGRATIONS: '$i' is not an integration name (lowercase letters, digits, -)"
+        dir="$stack/secrets/connect/$ns/confluent-$i"
+        install -d -m 700 "$stack/secrets/connect" "$stack/secrets/connect/$ns" "$dir"
+        for pair in api-key:username api-secret:password sr-key:sr-username sr-secret:sr-password \
+                    metrics-key:metrics-key metrics-secret:metrics-secret; do
+          short="${pair%%:*}"; file="${pair#*:}"
+          if fetch "confluent-$i-$short"; then
+            tmpf="$(mktemp "$dir/.$file.XXXXXX")"
+            # No trailing newline; the value never passes through argv.
+            printf '%s' "$(cat "$work/value")" >"$tmpf"
+            chmod 600 "$tmpf"
+            mv "$tmpf" "$dir/$file"
+          else
+            rm -f "$dir/$file"
+            case "$short" in
+              api-key|api-secret) echo "loams-byoc-secrets: confluent-$i: $(secret_name "confluent-$i-$short") is not in the secret store yet (run loams byoc confluent key create)" >&2 ;;
+            esac
+          fi
+        done
+        # The connect role reads them as uid 10001, as the engine does.
+        [[ "$(id -u)" -ne 0 ]] || chown -R 10001 "$stack/secrets/connect"
+        echo "loams-byoc-secrets: wrote secrets/connect/$ns/confluent-$i"
+      done
       echo "loams-byoc-secrets: ok ($cloud, prefix $prefix)"
   - path: /etc/systemd/system/loams-byoc.service
     permissions: "0644"
