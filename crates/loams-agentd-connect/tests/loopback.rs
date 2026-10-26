@@ -957,7 +957,10 @@ async fn marketplace_over_connect() {
         .iter()
         .find(|h| h.marketplace_listing.as_deref() == Some(HARNESS_ID))
         .expect("the installed harness is listed");
-    assert_eq!(entry.id, pb::HarnessId::HARNESS_ID_MARKETPLACE.into());
+    assert_eq!(
+        entry.id,
+        buffa::EnumValue::Known(pb::HarnessId::HARNESS_ID_MARKETPLACE)
+    );
 
     let listed = market
         .list_installed(pb::ListInstalledRequest::default())

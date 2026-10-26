@@ -43,11 +43,15 @@ fn upper(value: &str) -> String {
     value.to_ascii_uppercase().replace('-', "_")
 }
 
+/// The unspecified value (0), as decoding would yield it.
+fn unspecified<E: Enumeration>() -> EnumValue<E> {
+    E::from_i32(0).map_or(EnumValue::Unknown(0), EnumValue::Known)
+}
+
 /// A schema string as a proto enum value; an unknown one is unspecified (0).
 pub fn enum_from_str<E: Enumeration>(prefix: &str, value: &str) -> EnumValue<E> {
     E::from_proto_name(&format!("{prefix}{}", upper(value)))
-        .map(EnumValue::Known)
-        .unwrap_or(EnumValue::Unknown(0))
+        .map_or_else(unspecified, EnumValue::Known)
 }
 
 /// A proto enum value as its schema string; unspecified is `None`.
@@ -62,7 +66,7 @@ pub fn str_from_enum<E: Enumeration>(prefix: &str, value: EnumValue<E>) -> Optio
 }
 
 fn opt_enum<E: Enumeration>(prefix: &str, value: Option<&String>) -> EnumValue<E> {
-    value.map_or(EnumValue::Unknown(0), |v| enum_from_str(prefix, v))
+    value.map_or_else(unspecified, |v| enum_from_str(prefix, v))
 }
 
 /// Resolves a local `$ref`.
