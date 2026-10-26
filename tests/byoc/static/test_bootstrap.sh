@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Tests the bundle half of deploy/byoc/lib/loams-byoc-bootstrap against a local,
 # test-signed release: a good bundle is unpacked and configured; a tampered
-# bundle, a bad signature and a foreign signer are refused; a re-run keeps .env;
+# bundle, a bad signature and a foreign signer are refused; the previous release
+# key (rotated 2026-10) is still accepted, after the current one; a re-run keeps .env;
 # and the secrets fetcher then fills .env from a mock secret store.
 # (LOAMS_BYOC_SKIP_SYSTEM=1 skips Docker, systemd and the root check.)
 # shellcheck disable=SC2015,SC2154 # A && B || C is used on purpose: C reports a failed check
@@ -22,9 +23,12 @@ command -v gpg >/dev/null || { echo "skip bootstrap tests (gpg is not installed)
 export GNUPGHOME="$tmp/gnupg"; mkdir -m 700 "$GNUPGHOME"
 gpg --batch --quiet --passphrase '' --quick-generate-key "Loams Test <test@example.invalid>" ed25519 sign never 2>/dev/null
 gpg --batch --quiet --passphrase '' --quick-generate-key "Other <other@example.invalid>" ed25519 sign never 2>/dev/null
+gpg --batch --quiet --passphrase '' --quick-generate-key "Loams Prev <prev@example.invalid>" ed25519 sign never 2>/dev/null
 fpr="$(gpg --batch --with-colons --list-keys test@example.invalid | awk -F: '$1=="fpr"{print $10; exit}')"
 other="$(gpg --batch --with-colons --list-keys other@example.invalid | awk -F: '$1=="fpr"{print $10; exit}')"
-gpg --batch --quiet --armor --export test@example.invalid >"$tmp/test-key.asc"
+prev="$(gpg --batch --with-colons --list-keys prev@example.invalid | awk -F: '$1=="fpr"{print $10; exit}')"
+# the published key file holds the current and the previous key, as docs/release/loams-release-key.asc does
+gpg --batch --quiet --armor --export test@example.invalid prev@example.invalid >"$tmp/test-key.asc"
 
 # a fake release: the repo's compose directory as the bundle, version 9.9.9
 mkrelease() {  # dir
@@ -60,7 +64,7 @@ CFG
 run() {  # root-dir [env...]
   local root="$1"; shift
   env LOAMS_BYOC_SKIP_SYSTEM=1 LOAMS_BYOC_CONFIG="$cfg" LOAMS_BYOC_ROOT="$root" LOAMS_BYOC_KEY="$tmp/test-key.asc" \
-    LOAMS_BYOC_TEST_KEY_FPR="$fpr" LOAMS_BYOC_RELEASE_URL="http://127.0.0.1:$port" "$@" "$boot"
+    LOAMS_BYOC_TEST_KEY_FPR="$fpr $prev" LOAMS_BYOC_RELEASE_URL="http://127.0.0.1:$port" "$@" "$boot"
 }
 
 # 1. a good, signed bundle
@@ -104,13 +108,20 @@ if run "$tmp/tamper" >"$tmp/out4" 2>&1; then bad "a tampered bundle was accepted
 # 5. a SHA256SUMS signed by a foreign key is refused
 mkrelease "$tmp/rel"; sign "$tmp/rel" "$other"
 if run "$tmp/foreign" >"$tmp/out5" 2>&1; then bad "a foreign signature was accepted"; else
-  grep -q 'is not signed by the Loams release key' "$tmp/out5" && ok "a foreign signer is refused" || bad "foreign: $(cat "$tmp/out5")"; fi
+  grep -q 'is not signed by a Loams release key' "$tmp/out5" && ok "a foreign signer is refused" || bad "foreign: $(cat "$tmp/out5")"; fi
+
+# 5b. a SHA256SUMS signed by the previous release key is still accepted, and says so
+mkrelease "$tmp/rel"; sign "$tmp/rel" "$prev"
+if run "$tmp/prev" >"$tmp/out5b" 2>&1; then
+  grep -q "signed by the previous Loams release key $prev" "$tmp/out5b" && ok "the previous release key is accepted and named" || bad "prev: $(cat "$tmp/out5b")"
+else bad "a bundle signed by the previous key was refused: $(cat "$tmp/out5b")"; fi
+! grep -q 'previous Loams release key' "$tmp/out1" && ok "the current key is not reported as the previous one" || bad "current key named as previous"
 
 # 6. a SHA256SUMS edited after signing is refused
 mkrelease "$tmp/rel"; sign "$tmp/rel" "$fpr"
 printf '# edited\n' >>"$tmp/rel/v9.9.9/SHA256SUMS"
 if run "$tmp/edited" >"$tmp/out6" 2>&1; then bad "an edited SHA256SUMS was accepted"; else
-  grep -q 'is not signed by the Loams release key' "$tmp/out6" && ok "an edited SHA256SUMS is refused" || bad "edited: $(cat "$tmp/out6")"; fi
+  grep -q 'is not signed by a Loams release key' "$tmp/out6" && ok "an edited SHA256SUMS is refused" || bad "edited: $(cat "$tmp/out6")"; fi
 
 # 7. latest and other non-versions are refused before any download
 sed -i 's/^LOAMS_VERSION=.*/LOAMS_VERSION=latest/' "$cfg"
