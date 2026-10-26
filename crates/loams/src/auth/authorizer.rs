@@ -227,13 +227,21 @@ impl Authorizer for OrgRoleAuthorizer {
                             .kind
                             .as_known()
                             .unwrap_or(pb::SubjectKind::SUBJECT_KIND_SERVICE_ACCOUNT);
-                        Some(Actor {
+                        // A key acting as a person has that person's live role at most: none
+                        // once they have left the org (ruling T5.R1), and never more than the
+                        // role it was made with.
+                        let role = if kind == pb::SubjectKind::SUBJECT_KIND_USER {
+                            doc.member(&subject.id).map(|m| m.role.min(key.role))
+                        } else {
+                            Some(key.role)
+                        };
+                        role.map(|role| Actor {
                             kind,
                             user: (kind == pb::SubjectKind::SUBJECT_KIND_USER)
                                 .then(|| subject.id.clone()),
                             id: subject.id,
                             name: subject.name,
-                            role: key.role,
+                            role,
                         })
                     }
                     None => Some(Self::operator(

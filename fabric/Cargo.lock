@@ -6033,12 +6033,15 @@ dependencies = [
 name = "loams-house-engine"
 version = "0.0.1"
 dependencies = [
+ "bytes",
  "datafusion",
  "loams-house-exec",
  "loams-house-formats",
  "loams-house-iceberg",
  "loams-house-sql",
  "loams-house-types",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
