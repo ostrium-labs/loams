@@ -207,7 +207,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: build tools
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev rpm libarchive-tools fakeroot
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         # Dry runs only: a run that publishes builds without a cache another
         # run could have written (cache poisoning).
         if: inputs.dry_run == true
@@ -292,7 +292,7 @@ jobs:
       # its engine: this step fails instead.
       - name: protoc and NASM
         uses: ./.github/actions/windows-build-tools
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         # Dry runs only: a run that publishes builds without a cache another
         # run could have written (cache poisoning).
         if: inputs.dry_run == true
@@ -530,7 +530,7 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: brew install protobuf
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         # Dry runs only: a run that publishes builds without a cache another
         # run could have written (cache poisoning).
         if: inputs.dry_run == true

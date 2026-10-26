@@ -243,7 +243,7 @@ jobs:
       # installs it the same way.
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         # Dry runs only: a run that publishes builds without a cache another
         # run could have written (cache poisoning).
         if: inputs.dry_run == true
@@ -488,7 +488,7 @@ jobs:
             Write-Output '::warning title=NASM::Chocolatey failed 4 times; building aws-lc-sys with its prebuilt NASM objects (AWS_LC_SYS_PREBUILT_NASM=1)'
             'AWS_LC_SYS_PREBUILT_NASM=1' | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
           }
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         # Dry runs only: a run that publishes builds without a cache another
         # run could have written (cache poisoning).
         if: inputs.dry_run == true
@@ -593,7 +593,7 @@ jobs:
           persist-credentials: false
       - name: protoc
         run: brew install protobuf
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         # Dry runs only: a run that publishes builds without a cache another
         # run could have written (cache poisoning).
         if: inputs.dry_run == true
@@ -726,7 +726,7 @@ jobs:
       # either runner image.
       - name: protoc and the build dependencies
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev pkg-config libssl-dev clang cmake
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         # Dry runs only: a run that publishes builds without a cache another
         # run could have written (cache poisoning).
         if: inputs.dry_run == true
