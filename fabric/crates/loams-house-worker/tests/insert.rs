@@ -1991,6 +1991,117 @@ async fn sql_functions_are_the_namespaces() {
     assert!(matches!(code.as_deref(), Some("164" | "497")), "{text}");
 }
 
+/// HE1 R14.12: dictionaries over the namespace's own tables (Laminar's
+/// `deduped_content_dict`, a `COMPLEX_KEY_CACHE` with `USER`/`PASSWORD`/`DB`
+/// and a `QUERY … FINAL`, read by `dictGetOrNull` in a view; a `HASHED`
+/// dictionary over a `TABLE` with `WHERE`). Every answer is the 26.9.2.8
+/// oracle's.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn dictionaries_read_the_namespaces_tables() {
+    let house = lakehouse("dictionaries").await;
+    let addr = house.addr();
+    ok(
+        addr,
+        "CREATE TABLE dc (project_id UInt64, content_hash FixedString(32), content String, \
+         last_seen_at DateTime64(9, 'UTC') DEFAULT now()) \
+         ENGINE = ReplacingMergeTree(last_seen_at) ORDER BY (project_id, content_hash)",
+    )
+    .await;
+    ok(
+        addr,
+        "INSERT INTO dc (project_id, content_hash, content, last_seen_at) VALUES \
+         (1, toFixedString('aa', 32), 'old', '2026-01-01 00:00:00'), \
+         (1, toFixedString('aa', 32), 'new', '2026-01-02 00:00:00'), \
+         (1, toFixedString('bb', 32), 'bee', '2026-01-01 00:00:00')",
+    )
+    .await;
+    ok(
+        addr,
+        "CREATE OR REPLACE DICTIONARY dc_dict (project_id UInt64, content_hash String, \
+         content String) PRIMARY KEY project_id, content_hash SOURCE(CLICKHOUSE(USER 'alice' \
+         PASSWORD 'a' DB 'default' QUERY 'SELECT project_id, toString(content_hash) AS \
+         content_hash, content FROM dc FINAL')) LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 1024)) \
+         LIFETIME(MIN 1800 MAX 3600)",
+    )
+    .await;
+    ok(
+        addr,
+        "CREATE TABLE sp (project_id UInt64, id UInt64, hashes Array(FixedString(32))) \
+         ENGINE = MergeTree ORDER BY id",
+    )
+    .await;
+    ok(
+        addr,
+        "INSERT INTO sp VALUES (1, 1, [toFixedString('aa', 32), toFixedString('bb', 32), \
+         toFixedString('cc', 32)])",
+    )
+    .await;
+    ok(
+        addr,
+        "CREATE VIEW sp_v AS SELECT id, arrayMap(h -> coalesce(dictGetOrNull('dc_dict', \
+         'content', tuple(project_id, toString(h))), 'null'), hashes) AS contents FROM sp",
+    )
+    .await;
+    assert_eq!(
+        ok(addr, "SELECT * FROM sp_v FORMAT TSV").await,
+        "1\t['new','bee','null']\n"
+    );
+    ok(
+        addr,
+        "CREATE TABLE kv (k UInt64, v String) ENGINE = MergeTree ORDER BY k",
+    )
+    .await;
+    ok(addr, "INSERT INTO kv VALUES (1, 'one'), (2, 'two')").await;
+    ok(
+        addr,
+        "CREATE DICTIONARY kv_dict (k UInt64, v String) PRIMARY KEY k SOURCE(CLICKHOUSE(\
+         TABLE 'kv' WHERE 'k > 1' USER 'alice' PASSWORD 'a')) LAYOUT(HASHED()) LIFETIME(0)",
+    )
+    .await;
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT dictGet('kv_dict', 'v', toUInt64(2)), dictHas('kv_dict', toUInt64(1)), \
+             dictGetOrDefault('default.kv_dict', 'v', toUInt64(3), 'none') FORMAT TSV"
+        )
+        .await,
+        "two\t0\tnone\n"
+    );
+    // A dictionary reads the statement's snapshot: a row written later is
+    // found by the next statement.
+    ok(addr, "INSERT INTO kv VALUES (3, 'three')").await;
+    assert_eq!(
+        ok(addr, "SELECT dictGet('kv_dict', 'v', toUInt64(3)) FORMAT TSV").await,
+        "three\n"
+    );
+    // Credentials are not kept.
+    let shown = ok(addr, "SHOW CREATE TABLE dc_dict FORMAT TSVRaw").await;
+    assert!(
+        shown.starts_with("CREATE DICTIONARY default.dc_dict") && !shown.contains("PASSWORD"),
+        "{shown}"
+    );
+    refused(addr, "CREATE DICTIONARY kv_dict (k UInt64, v String) PRIMARY KEY k \
+         SOURCE(CLICKHOUSE(TABLE 'kv')) LAYOUT(HASHED())", "57").await;
+    refused(addr, "CREATE DICTIONARY far (k UInt64, v String) PRIMARY KEY k \
+         SOURCE(CLICKHOUSE(HOST 'example.com' TABLE 'kv')) LAYOUT(HASHED())", "344").await;
+    refused(addr, "CREATE DICTIONARY far (k UInt64, v String) PRIMARY KEY k \
+         SOURCE(MYSQL(host 'example.com' table 'kv')) LAYOUT(HASHED())", "344").await;
+    refused(addr, "CREATE DICTIONARY far (k UInt64, v String) PRIMARY KEY k \
+         SOURCE(CLICKHOUSE(QUERY 'SELECT * FROM url(''http://127.0.0.1:1/x'', CSV)')) \
+         LAYOUT(HASHED())", "344").await;
+    refused(addr, "CREATE DICTIONARY far (k UInt64, v String) PRIMARY KEY k \
+         SOURCE(CLICKHOUSE(TABLE 'kv')) LAYOUT(RANGE_HASHED())", "48").await;
+    ok(addr, "DROP DICTIONARY kv_dict").await;
+    refused(addr, "DROP DICTIONARY kv_dict", "60").await;
+    ok(addr, "DROP DICTIONARY IF EXISTS kv_dict").await;
+    refused(
+        addr,
+        "SELECT dictGet('kv_dict', 'v', toUInt64(2))",
+        "36",
+    )
+    .await;
+}
+
 /// HE1 R9.14: readable `AggregatingMergeTree` and `Null`, against the oracle.
 /// OpenPanel 2.3.0's inner-table materialized views (agent O's pack: states,
 /// `count()` dimensions, `ARRAY JOIN`, and the binding by identity that a
