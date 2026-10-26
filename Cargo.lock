@@ -5250,7 +5250,7 @@ checksum = "e629b9b98ef3dd8afe6ca2bd0f89306cec16d43d907889945bc5d6687f2f13c7"
 
 [[package]]
 name = "git-wal-bench"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "bytes",
@@ -8347,7 +8347,7 @@ checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
 
 [[package]]
 name = "loams"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "argon2",
  "arrow-array",
@@ -8440,7 +8440,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8473,7 +8473,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-connect"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "axum 0.8.9",
@@ -8511,7 +8511,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-doc"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "loams-agentd-proto",
@@ -8525,7 +8525,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-harness"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8554,7 +8554,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-link"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8581,7 +8581,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-marketplace"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -8599,25 +8599,30 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-mcp"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "async-trait",
+ "axum 0.8.9",
  "chrono",
  "futures",
  "loams-agentd-doc",
  "loams-agentd-proto",
  "loams-agentd-rpc",
+ "loams-knowledge",
+ "loams-store",
+ "loams-walrus",
  "serde",
  "serde_json",
  "tokio",
  "tracing",
+ "url",
  "uuid",
 ]
 
 [[package]]
 name = "loams-agentd-preview"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8644,7 +8649,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-proto"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "pulldown-cmark 0.12.2",
@@ -8657,7 +8662,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-rpc"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -8677,7 +8682,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-sessions"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8719,7 +8724,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-store"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "loams-agentd-doc",
@@ -8734,7 +8739,7 @@ dependencies = [
 
 [[package]]
 name = "loams-apps-mock"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "axum 0.8.9",
@@ -8762,7 +8767,7 @@ dependencies = [
 
 [[package]]
 name = "loams-authz"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "axum 0.8.9",
@@ -8782,7 +8787,7 @@ dependencies = [
 
 [[package]]
 name = "loams-cache"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "bytes",
@@ -8799,7 +8804,7 @@ dependencies = [
 
 [[package]]
 name = "loams-cloud-admin"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "axum 0.8.9",
  "base64 0.23.1",
@@ -8816,7 +8821,7 @@ dependencies = [
 
 [[package]]
 name = "loams-cloudevents"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "base64 0.23.1",
  "bytes",
@@ -8835,7 +8840,7 @@ dependencies = [
 
 [[package]]
 name = "loams-collection"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "arrow-array",
  "arrow-schema",
@@ -8883,7 +8888,7 @@ dependencies = [
 
 [[package]]
 name = "loams-common"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "postcard",
@@ -8894,7 +8899,7 @@ dependencies = [
 
 [[package]]
 name = "loams-compat"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8913,7 +8918,7 @@ dependencies = [
 
 [[package]]
 name = "loams-console-mock"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "httpmock",
@@ -8925,7 +8930,7 @@ dependencies = [
 
 [[package]]
 name = "loams-durable"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "loams-tikv",
@@ -8951,7 +8956,7 @@ dependencies = [
 
 [[package]]
 name = "loams-es"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "axum 0.8.9",
  "base64 0.23.1",
@@ -8972,14 +8977,14 @@ dependencies = [
 
 [[package]]
 name = "loams-facade-gen"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "thiserror 2.0.21",
 ]
 
 [[package]]
 name = "loams-fs"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "bytes",
@@ -8993,7 +8998,7 @@ dependencies = [
 
 [[package]]
 name = "loams-gateway"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "clap",
  "hex",
@@ -9018,7 +9023,7 @@ dependencies = [
 
 [[package]]
 name = "loams-git"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "bytes",
@@ -9064,7 +9069,7 @@ dependencies = [
 
 [[package]]
 name = "loams-git-remote"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bytes",
  "futures",
@@ -9081,7 +9086,7 @@ dependencies = [
 
 [[package]]
 name = "loams-graph"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "arrow-array",
  "arrow-schema",
@@ -9134,7 +9139,7 @@ dependencies = [
 
 [[package]]
 name = "loams-gw-test"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "futures",
  "loams-kv",
@@ -9143,7 +9148,7 @@ dependencies = [
 
 [[package]]
 name = "loams-hnsw"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "crc32c",
  "loams-common",
@@ -9160,7 +9165,7 @@ dependencies = [
 
 [[package]]
 name = "loams-hot"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "arrow-array",
  "async-trait",
@@ -9205,7 +9210,7 @@ dependencies = [
 
 [[package]]
 name = "loams-iggy-sink"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -9221,8 +9226,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-knowledge"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "axum 0.8.9",
+ "bytes",
+ "futures",
+ "hex",
+ "loams-agentd-marketplace",
+ "loams-store",
+ "loams-walrus",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "thiserror 2.0.21",
+ "time",
+ "tokio",
+ "toml 0.8.23",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "loams-kv"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "futures",
  "loams-kv",
@@ -9239,7 +9268,7 @@ dependencies = [
 
 [[package]]
 name = "loams-link"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "bytes",
@@ -9265,7 +9294,7 @@ dependencies = [
 
 [[package]]
 name = "loams-live"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "axum 0.8.9",
  "buffa",
@@ -9304,7 +9333,7 @@ dependencies = [
 
 [[package]]
 name = "loams-live-js"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "buffa",
  "futures",
@@ -9329,14 +9358,14 @@ dependencies = [
 
 [[package]]
 name = "loams-live-js-alloc"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "rquickjs",
 ]
 
 [[package]]
 name = "loams-live-proto"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "buffa",
  "connectrpc",
@@ -9347,7 +9376,7 @@ dependencies = [
 
 [[package]]
 name = "loams-log"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "bytes",
@@ -9375,7 +9404,7 @@ dependencies = [
 
 [[package]]
 name = "loams-meta"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "axum 0.8.9",
@@ -9404,7 +9433,7 @@ dependencies = [
 
 [[package]]
 name = "loams-meta-conformance"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "loams-common",
@@ -9415,7 +9444,7 @@ dependencies = [
 
 [[package]]
 name = "loams-meta-tikv"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "fail",
@@ -9431,7 +9460,7 @@ dependencies = [
 
 [[package]]
 name = "loams-migrate"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "axum 0.8.9",
@@ -9463,7 +9492,7 @@ dependencies = [
 
 [[package]]
 name = "loams-pg-control"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "age",
  "async-trait",
@@ -9513,7 +9542,7 @@ dependencies = [
 
 [[package]]
 name = "loams-pgdog-sync"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bytes",
  "clap",
@@ -9534,7 +9563,7 @@ dependencies = [
 
 [[package]]
 name = "loams-pk"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "bytes",
@@ -9548,7 +9577,7 @@ dependencies = [
 
 [[package]]
 name = "loams-postgres"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "axum 0.8.9",
  "hex",
@@ -9565,7 +9594,7 @@ dependencies = [
 
 [[package]]
 name = "loams-proto"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "buffa",
  "buffa-types",
@@ -9578,7 +9607,7 @@ dependencies = [
 
 [[package]]
 name = "loams-qdrant"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "axum 0.8.9",
  "bytes",
@@ -9608,7 +9637,7 @@ dependencies = [
 
 [[package]]
 name = "loams-query"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "arrow-flight",
@@ -9661,7 +9690,7 @@ dependencies = [
 
 [[package]]
 name = "loams-quickwit"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -9699,7 +9728,7 @@ dependencies = [
 
 [[package]]
 name = "loams-safekeeper"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "axum 0.8.9",
@@ -9730,7 +9759,7 @@ dependencies = [
 
 [[package]]
 name = "loams-sidebar-browser"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "base64 0.23.1",
  "futures",
@@ -9746,7 +9775,7 @@ dependencies = [
 
 [[package]]
 name = "loams-sim"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bytes",
  "loams-cache",
@@ -9770,7 +9799,7 @@ dependencies = [
 
 [[package]]
 name = "loams-specview"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "axum 0.8.9",
@@ -9791,7 +9820,7 @@ dependencies = [
 
 [[package]]
 name = "loams-sqldb"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "loams-sqlrouter",
@@ -9808,7 +9837,7 @@ dependencies = [
 
 [[package]]
 name = "loams-sqlgate"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "argon2",
  "async-trait",
@@ -9831,7 +9860,7 @@ dependencies = [
 
 [[package]]
 name = "loams-sqlrouter"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "des",
  "hex",
@@ -9848,7 +9877,7 @@ dependencies = [
 
 [[package]]
 name = "loams-store"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "bytes",
@@ -9865,7 +9894,7 @@ dependencies = [
 
 [[package]]
 name = "loams-stream-grpc"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "bytes",
@@ -9885,7 +9914,7 @@ dependencies = [
 
 [[package]]
 name = "loams-temporal-frontend"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "bytes",
@@ -9918,7 +9947,7 @@ dependencies = [
 
 [[package]]
 name = "loams-temporal-history"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "loams-temporal-proto",
  "prost 0.14.4",
@@ -9929,7 +9958,7 @@ dependencies = [
 
 [[package]]
 name = "loams-temporal-matching"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "hex",
  "loams-temporal-resonate",
@@ -9941,7 +9970,7 @@ dependencies = [
 
 [[package]]
 name = "loams-temporal-proto"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bytes",
  "hex",
@@ -9955,7 +9984,7 @@ dependencies = [
 
 [[package]]
 name = "loams-temporal-resonate"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -9975,7 +10004,7 @@ dependencies = [
 
 [[package]]
 name = "loams-temporal-statemachine"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "loams-temporal-history",
  "loams-temporal-proto",
@@ -9988,7 +10017,7 @@ dependencies = [
 
 [[package]]
 name = "loams-temporal-store"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "loams-temporal-store",
@@ -10003,7 +10032,7 @@ dependencies = [
 
 [[package]]
 name = "loams-temporal-testkit"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "base64 0.23.1",
  "hex",
@@ -10018,7 +10047,7 @@ dependencies = [
 
 [[package]]
 name = "loams-text"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -10041,7 +10070,7 @@ dependencies = [
 
 [[package]]
 name = "loams-tikv"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "axum 0.8.9",
  "fail",
@@ -10062,7 +10091,7 @@ dependencies = [
 
 [[package]]
 name = "loams-tuple"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "proptest",
  "thiserror 2.0.21",
@@ -10070,7 +10099,7 @@ dependencies = [
 
 [[package]]
 name = "loams-upgrade"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "clap",
  "schemars 0.8.22",
@@ -10085,7 +10114,7 @@ dependencies = [
 
 [[package]]
 name = "loams-walrus"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "axum 0.8.9",
  "base64 0.23.1",
@@ -10107,7 +10136,7 @@ dependencies = [
 
 [[package]]
 name = "loams-web-bridge"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -10128,7 +10157,7 @@ dependencies = [
 
 [[package]]
 name = "loams-worker"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "loams-common",
@@ -10144,7 +10173,7 @@ dependencies = [
 
 [[package]]
 name = "loams-zitadel"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "axum 0.8.9",

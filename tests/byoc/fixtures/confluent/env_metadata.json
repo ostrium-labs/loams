@@ -1,0 +1,380 @@
+{
+  "status": null,
+  "error": null,
+  "clouds": [
+    {
+      "id": "aws",
+      "name": "Amazon Web Services",
+      "regions": [
+        {
+          "id": "us-east-1",
+          "cloud": "aws",
+          "name": "N. Virginia (us-east-1)",
+          "is_schedulable": true,
+          "type": [
+            {
+              "name": "ENTERPRISE",
+              "type_name": "ENTERPRISE",
+              "durability": [
+                "LOW",
+                "HIGH"
+              ],
+              "networking": [
+                "SERVERLESS_PRIVATE_LINK",
+                "SERVERLESS_PRIVATE_NETWORK_INTERFACE"
+              ]
+            },
+            {
+              "name": "FREIGHT",
+              "type_name": "FREIGHT",
+              "durability": [
+                "LOW",
+                "HIGH"
+              ],
+              "networking": [
+                "SERVERLESS_PRIVATE_NETWORK_INTERFACE"
+              ]
+            },
+            {
+              "name": "BASIC",
+              "type_name": "BASIC",
+              "durability": [
+                "LOW"
+              ],
+              "networking": [
+                "PUBLIC"
+              ]
+            },
+            {
+              "name": "STANDARD",
+              "type_name": "STANDARD",
+              "durability": [
+                "LOW",
+                "HIGH"
+              ],
+              "networking": [
+                "PUBLIC"
+              ]
+            },
+            {
+              "name": "DEDICATED",
+              "type_name": "DEDICATED",
+              "durability": [
+                "LOW",
+                "HIGH"
+              ],
+              "networking": [
+                "VPC_PEERING",
+                "TRANSIT_GATEWAY",
+                "PRIVATE_LINK",
+                "PUBLIC"
+              ]
+            },
+            {
+              "name": "UNKNOWN",
+              "type_name": "BYOC",
+              "durability": [
+                "LOW",
+                "HIGH"
+              ],
+              "networking": [
+                "PUBLIC"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "ap-south-1",
+          "cloud": "aws",
+          "name": "Mumbai (ap-south-1)",
+          "is_schedulable": true,
+          "type": [
+            {
+              "name": "ENTERPRISE",
+              "type_name": "ENTERPRISE",
+              "durability": [
+                "LOW",
+                "HIGH"
+              ],
+              "networking": [
+                "SERVERLESS_PRIVATE_LINK",
+                "SERVERLESS_PRIVATE_NETWORK_INTERFACE"
+              ]
+            },
+            {
+              "name": "FREIGHT",
+              "type_name": "FREIGHT",
+              "durability": [
+                "LOW",
+                "HIGH"
+              ],
+              "networking": [
+                "SERVERLESS_PRIVATE_NETWORK_INTERFACE"
+              ]
+            },
+            {
+              "name": "BASIC",
+              "type_name": "BASIC",
+              "durability": [
+                "LOW"
+              ],
+              "networking": [
+                "PUBLIC"
+              ]
+            },
+            {
+              "name": "STANDARD",
+              "type_name": "STANDARD",
+              "durability": [
+                "LOW",
+                "HIGH"
+              ],
+              "networking": [
+                "PUBLIC"
+              ]
+            },
+            {
+              "name": "DEDICATED",
+              "type_name": "DEDICATED",
+              "durability": [
+                "LOW",
+                "HIGH"
+              ],
+              "networking": [
+                "VPC_PEERING",
+                "TRANSIT_GATEWAY",
+                "PRIVATE_LINK",
+                "PUBLIC"
+              ]
+            },
+            {
+              "name": "UNKNOWN",
+              "type_name": "BYOC",
+              "durability": [
+                "LOW",
+                "HIGH"
+              ],
+              "networking": [
+                "PUBLIC"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "me-south-1",
+          "cloud": "aws",
+          "name": "Bahrain (me-south-1)",
+          "is_schedulable": false,
+          "type": []
+        }
+      ]
+    },
+    {
+      "id": "gcp",
+      "name": "Google Cloud Platform",
+      "regions": [
+        {
+          "id": "europe-north2",
+          "cloud": "gcp",
+          "name": "Stockholm (europe-north2)",
+          "is_schedulable": true,
+          "type": [
+            {
+              "name": "ENTERPRISE",
+              "type_name": "ENTERPRISE",
+              "durability": [
+                "LOW",
+                "HIGH"
+              ],
+              "networking": [
+                "SERVERLESS_PRIVATE_LINK"
+              ]
+            },
+            {
+              "name": "DEDICATED",
+              "type_name": "DEDICATED",
+              "durability": [
+                "LOW",
+                "HIGH"
+              ],
+              "networking": [
+                "PUBLIC",
+                "VPC_PEERING",
+                "TRANSIT_GATEWAY",
+                "PRIVATE_LINK"
+              ]
+            },
+            {
+              "name": "UNKNOWN",
+              "type_name": "BYOC",
+              "durability": [
+                "LOW",
+                "HIGH"
+              ],
+              "networking": [
+                "PUBLIC"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "us-central1",
+          "cloud": "gcp",
+          "name": "Iowa (us-central1)",
+          "is_schedulable": true,
+          "type": [
+            {
+              "name": "BASIC",
+              "type_name": "BASIC",
+              "durability": [
+                "LOW"
+              ],
+              "networking": [
+                "PUBLIC"
+              ]
+            },
+            {
+              "name": "STANDARD",
+              "type_name": "STANDARD",
+              "durability": [
+                "LOW",
+                "HIGH"
+              ],
+              "networking": [
+                "PUBLIC"
+              ]
+            },
+            {
+              "name": "DEDICATED",
+              "type_name": "DEDICATED",
+              "durability": [
+                "LOW",
+                "HIGH"
+              ],
+              "networking": [
+                "VPC_PEERING",
+                "TRANSIT_GATEWAY",
+                "PRIVATE_LINK",
+                "PUBLIC"
+              ]
+            },
+            {
+              "name": "ENTERPRISE",
+              "type_name": "ENTERPRISE",
+              "durability": [
+                "LOW",
+                "HIGH"
+              ],
+              "networking": [
+                "SERVERLESS_PRIVATE_LINK"
+              ]
+            },
+            {
+              "name": "UNKNOWN",
+              "type_name": "BYOC",
+              "durability": [
+                "LOW",
+                "HIGH"
+              ],
+              "networking": [
+                "PUBLIC"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "azure",
+      "name": "Azure",
+      "regions": [
+        {
+          "id": "eastus",
+          "cloud": "azure",
+          "name": "Virginia (eastus)",
+          "is_schedulable": true,
+          "type": [
+            {
+              "name": "ENTERPRISE",
+              "type_name": "ENTERPRISE",
+              "durability": [
+                "LOW",
+                "HIGH"
+              ],
+              "networking": [
+                "SERVERLESS_PRIVATE_LINK"
+              ]
+            },
+            {
+              "name": "BASIC",
+              "type_name": "BASIC",
+              "durability": [
+                "LOW"
+              ],
+              "networking": [
+                "PUBLIC"
+              ]
+            },
+            {
+              "name": "STANDARD",
+              "type_name": "STANDARD",
+              "durability": [
+                "LOW",
+                "HIGH"
+              ],
+              "networking": [
+                "PUBLIC"
+              ]
+            },
+            {
+              "name": "DEDICATED",
+              "type_name": "DEDICATED",
+              "durability": [
+                "LOW",
+                "HIGH"
+              ],
+              "networking": [
+                "VPC_PEERING",
+                "TRANSIT_GATEWAY",
+                "PRIVATE_LINK",
+                "PUBLIC"
+              ]
+            },
+            {
+              "name": "UNKNOWN",
+              "type_name": "BYOC",
+              "durability": [
+                "LOW",
+                "HIGH"
+              ],
+              "networking": [
+                "PUBLIC"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "jioindiacentral",
+          "cloud": "azure",
+          "name": "Jio India Central (jioindiacentral)",
+          "is_schedulable": false,
+          "type": [
+            {
+              "name": "DEDICATED",
+              "type_name": "DEDICATED",
+              "durability": [
+                "LOW"
+              ],
+              "networking": [
+                "VPC_PEERING",
+                "TRANSIT_GATEWAY",
+                "PRIVATE_LINK",
+                "PUBLIC"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

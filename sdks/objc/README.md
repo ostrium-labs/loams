@@ -10,7 +10,7 @@
 CocoaPods, pinned exactly:
 
 ```ruby
-pod 'Loams', '0.1.1'
+pod 'Loams', '0.1.2'
 ```
 
 The pod's module is `LoamsObjC` (`@import LoamsObjC;`, or `#import "LoamsObjC-Swift.h"`),

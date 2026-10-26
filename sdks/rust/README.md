@@ -1,6 +1,6 @@
 # The Loams SDK for Rust (`loams`)
 
-**0.1.1.** `loams` 0.1.1 tracks Loams 0.1.1. In 0.x the API may change between
+**0.1.2.** `loams` 0.1.2 tracks Loams 0.1.2. In 0.x the API may change between
 minor versions; `loams = "0.1"` stays on the 0.1 line.
 
 One `Loams` client with namespaced modules over the unified Connect API,
