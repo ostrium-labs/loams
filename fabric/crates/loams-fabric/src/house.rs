@@ -151,7 +151,20 @@ pub fn resolve(args: &HouseArgs, file: HouseFile) -> Result<HouseSettings, House
         .or(house.listen)
         .unwrap_or_else(|| addr(DEFAULT_LISTEN));
     config::check_listen(listen)?;
-    let native_tls_listen = args.native_tls_listen.or(house.native_tls_listen);
+    // Also LOAMS_HOUSE_NATIVE_TLS_LISTEN, so a compose overlay can turn it on for a
+    // private network (the Factory's SigNoz, HE1 R9.67); empty is off.
+    let native_tls_env = match std::env::var("LOAMS_HOUSE_NATIVE_TLS_LISTEN") {
+        Ok(text) if !text.trim().is_empty() => Some(text.trim().parse().map_err(|_| {
+            bad(format!(
+                "LOAMS_HOUSE_NATIVE_TLS_LISTEN {text:?}: not a socket address (host:port)"
+            ))
+        })?),
+        _ => None,
+    };
+    let native_tls_listen = args
+        .native_tls_listen
+        .or(house.native_tls_listen)
+        .or(native_tls_env);
     let named_native = args.native_listen.or(house.native_listen);
     let native_defaulted = named_native.is_none() && single_node;
     let native_listen = named_native.or_else(|| single_node.then(|| addr(DEFAULT_NATIVE_LISTEN)));

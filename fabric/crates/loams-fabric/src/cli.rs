@@ -85,7 +85,8 @@ pub struct HouseArgs {
     #[arg(long)]
     pub native_listen: Option<SocketAddr>,
     /// The native protocol's TLS listener (9440), with the TLS listener's
-    /// certificate.
+    /// certificate; a user with an empty password is refused off loopback.
+    /// Also LOAMS_HOUSE_NATIVE_TLS_LISTEN.
     #[arg(long)]
     pub native_tls_listen: Option<SocketAddr>,
     /// Admin and metrics, `GET /metrics` (HS1 Task 23) [default: 127.0.0.1:8125].

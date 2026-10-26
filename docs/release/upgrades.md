@@ -106,6 +106,7 @@ Reversible claim before a release ships.
 | 0.1.0 | `0000-adopt-preview-2`: records preview.2's versions (preview.2 wrote no stack record) | meta | Reversible |
 | 0.1.0 | `0001-safekeeper-volume`: gives the safekeeper a volume, after a drain | host | Reversible |
 | 0.1.1 | None (from any earlier 0.1.x). A 0.1.0 stack keeps its stores with `COMPOSE_PROFILES=tikv,rustfs`, Durable on SQLite included | | |
+| 0.1.2 | None (from any earlier 0.1.x). Durable on TiKV's keyspace keeps its layout (FW1). Remove `LOAMS_CORS_ORIGINS=https://console.loams.dev` from `.env` by hand | | |
 
 `loams upgrade rollback --keep-writes` back to 0.1.0 is refused: 0.1.0's startup gate does not serve data a later
 release stamped (fixed after 0.1.0, design §54 §17 T14-2), so it would not start. Roll back from the snapshot

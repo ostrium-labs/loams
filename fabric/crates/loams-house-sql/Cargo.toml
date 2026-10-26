@@ -14,5 +14,10 @@ loams-house-types = { path = "../loams-house-types" }
 # (D1576, R10.3). Apache-2.0.
 datafusion.workspace = true
 
+[dev-dependencies]
+# Planning tests run the plans over in-memory tables.
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+serde_json.workspace = true
+
 [lints]
 workspace = true

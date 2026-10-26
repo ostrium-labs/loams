@@ -75,7 +75,7 @@ t "render_rejects_injection" bash -c "
   ! '$byoc/render.sh' aws --bucket b >/dev/null 2>&1 &&
   ! '$byoc/render.sh' gcp --bucket b --project 'x' >/dev/null 2>&1 &&
   ! '$byoc/render.sh' azure --container c --storage-account 'Bad_Name' --vault v >/dev/null 2>&1"
-t "render_pins_a_version_and_never_latest" bash -c "! grep -q 'latest' <(grep -v '^#' '$tmp/aws.yaml' | grep -E 'LOAMS_VERSION') && grep -q 'LOAMS_VERSION=0.1.1' '$tmp/aws.yaml'"
+t "render_pins_a_version_and_never_latest" bash -c "! grep -q 'latest' <(grep -v '^#' '$tmp/aws.yaml' | grep -E 'LOAMS_VERSION') && grep -q 'LOAMS_VERSION=0.1.2' '$tmp/aws.yaml'"
 t "render_gzip_roundtrips" bash -c "diff <('$byoc/render.sh' aws --bucket my-bkt --region us-east-1 --install t --gzip | gunzip) '$tmp/aws.yaml'"
 t "aws_gzip_fits_the_16KB_user_data_limit" bash -c "[ \$('$byoc/render.sh' aws --bucket my-bkt --region us-east-1 --gzip | wc -c) -lt 16384 ]"
 t "azure_custom_data_fits_64KB" bash -c "[ \$(wc -c <'$tmp/azure.yaml') -lt 65536 ]"

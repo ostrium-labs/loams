@@ -6,7 +6,7 @@
   engine's tailscale listener on `127.0.0.1:7781` (`LOAMS_TAILSCALE_LISTEN`), with a certificate from Tailscale. Needs
   MagicDNS and HTTPS certificates turned on for the tailnet. Funnel stays off:
   the engine is never on the public internet.
-- `serve-http.json` (coming soon, unsupported in 0.1.1): HTTP on port 80 of the node to the engine, for Headscale,
+- `serve-http.json` (coming soon, unsupported): HTTP on port 80 of the node to the engine, for Headscale,
   which issues no certificates. A console served over HTTPS cannot
   call an `http://` engine (mixed content), so use it with a console served over
   HTTP from the tailnet or this machine (`--profile console`).
