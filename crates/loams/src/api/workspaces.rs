@@ -300,9 +300,15 @@ mod served {
     async fn is_admin(repos: &ReposServed, ctx: &RequestContext) -> Result<bool, ConnectError> {
         let principal = caller(ctx)?;
         Ok(
-            crate::api::git_auth::authorize_caller(&repos.principals, principal, GitAccess::Admin)
-                .await
-                .is_ok(),
+            // The org role alone: every workspace call has passed `require` on its namespace.
+            crate::api::git_auth::authorize_caller(
+                &repos.principals,
+                principal,
+                GitAccess::Admin,
+                None,
+            )
+            .await
+            .is_ok(),
         )
     }
 
@@ -823,7 +829,7 @@ mod served {
             ns_name: &str,
             name: &str,
         ) -> Result<RepoRecord, ConnectError> {
-            self.repos.require(ctx, need).await?;
+            self.repos.require(ctx, need, ns_name).await?;
             let name = repo_name("name", name)?;
             let ns = self.repos.namespace(ns_name, false).await?;
             self.repos.active(ns, &name).await

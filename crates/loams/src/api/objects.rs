@@ -507,7 +507,7 @@ mod served {
             ws: &str,
             consistency: &str,
         ) -> Result<(RepoRecord, Arc<RefSnapshot>, Arc<RangeOdb>), ConnectError> {
-            self.repos.require(ctx, GitAccess::Read).await?;
+            self.repos.require(ctx, GitAccess::Read, ns_name).await?;
             let name = repo_name("name", name)?;
             let ns = self.repos.namespace(ns_name, false).await?;
             let record = self.repos.active(ns, &name).await?;
@@ -891,12 +891,15 @@ mod served {
             ctx: RequestContext,
             mut requests: InboundStream<pb::PutWorkspacePackRequest>,
         ) -> ServiceResult<pb::PutWorkspacePackResponse> {
-            self.repos.require(&ctx, GitAccess::Write).await?;
             let first = requests
                 .next()
                 .await
                 .ok_or_else(|| invalid("workspace", "an upload needs at least one message"))??
                 .to_owned_message();
+            // The namespace comes with the first message: checked before anything is used.
+            self.repos
+                .require(&ctx, GitAccess::Write, &first.namespace)
+                .await?;
             if first.workspace.is_empty() {
                 return Err(invalid("workspace", "a workspace is required"));
             }
