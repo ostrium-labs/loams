@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Work task by task, test first. Where this plan gives exact names, paths, fields or tests, use them verbatim. Record any deviation in "Rulings made during execution" at the end of this file.
 >
-> **Status: Approved stub** (owner, 2026-10-25). Track MS, the first part ("seed") of the Loams Marketplace, under design [§73](../design/73-agent-marketplace.md) and its [§18 addendum](../design/73-agent-marketplace.md#18-ms1-addendum-2026-10-25) (D1806–D1814, Q1330–Q1332). The owner's word "start" (2026-10-25) lifts the 2026-10-24 pause of track MK **for MS1's scope only** (D1806); MK0's remaining tasks stay paused, except Task 4b (the daemon wiring), which Task 2 needs and which therefore falls inside MS1's scope. This plan specifies **Tasks 0, 1, 3 and 4** in full and Tasks 2 and 5–10 at task level; each of those is specified when the task before it merges. On 2026-10-25 the owner confirmed Task 4b and accepted the remaining proposals ("finish asap with your recommendations"), so D1812–D1814 are approved.
+> **Status: Approved stub** (owner, 2026-10-25). Track MS, the first part ("seed") of the Loams Marketplace, under design [§73](../design/73-agent-marketplace.md) and its [§18 addendum](../design/73-agent-marketplace.md#18-ms1-addendum-2026-10-25) (D1806–D1814, Q1330–Q1332). The owner's word "start" (2026-10-25) lifts the 2026-10-24 pause of track MK **for MS1's scope only** (D1806); MK0's remaining tasks stay paused, except Task 4b (the daemon wiring), which Task 2 needs and which therefore falls inside MS1's scope. This plan specifies **Tasks 0, 1, 3, 4 and 5** in full and Tasks 2 and 6–10 at task level; each of those is specified when the task before it merges. On 2026-10-25 the owner confirmed Task 4b and accepted the remaining proposals ("finish asap with your recommendations"), so D1812–D1814 are approved.
 
 **Goal:** a self-hosted Loams node runs marketplace agents on **QuickJS** by default, **Mastra** agents on Node or Bun, and **Goose** as a first-party ACP harness, all under agentd's environment contract; public agent artifacts, a read-only verifiable project knowledge cache and a build cache tier are served from **Walrus** over plain HTTP, every byte checked by SHA-256 against a signed record, with the bucket still the source of truth. A person sees all of it working in Studio, in the browser and on the desktop (Task 10).
 
@@ -324,19 +324,44 @@ A manual Testnet run (store, read back, quilt store, patch read) is recorded in 
 
 Commit: `walrus: loams-walrus, the HTTP fast path with hedged verified reads and a local cache (MS1 Task 4, D1811)`.
 
-### Task 5 — Public agent artifacts on Walrus (task level)
+### Task 5 — Public agent artifacts on Walrus
 
-- `artifact` gains the source kind `{ "kind": "walrus", "blobId": "<base64url>", "sha256": "<hex>" }` in `schemas/marketplace/listing.v1.json` and `proto/loams/marketplace/v1/listing.proto`. It is an **additional location** beside the artifact's existing npm or archive reference. It never replaces it, and `proto_and_schema_agree` covers it.
-- The index stays metadata-only (D1460, D1812): it carries the blob id and SHA-256, never bytes.
-- The installer (`crates/loams-agentd-marketplace/src/install/`) runs, for an artifact with a `walrus` location while Walrus is enabled:
-  1. fetch through `loams-walrus`;
-  2. check the SHA-256 against the signed index;
-  3. check the artifact's integrity and Sigstore provenance exactly as today (D1459);
-  4. install.
+Design: D1812 (§73 §5, §18). A `walrus` location is an **additional, public mirror** of an artifact's bytes. It sits beside the artifact's own npm or archive reference and never replaces it. The index stays metadata-only (D1460): a listing carries a blob id and a SHA-256, never bytes.
 
-  On any Walrus failure it falls back to the HTTPS location. With Walrus disabled it uses HTTPS only. Provenance is never skipped because bytes came from Walrus.
+**Schema and proto** (`schemas/marketplace/listing.v1.json`, `proto/loams/marketplace/v1/listing.proto`):
+- A new `$defs/artifact_location` (`x-proto-message: ArtifactLocation`), all fields required, no others:
+  ```json
+  { "kind": "walrus", "blob_id": "<43 chars, URL-safe base64 without padding>", "sha256": "<64 lowercase hex>" }
+  ```
+  `kind` is the enum `LocationKind` (`["walrus"]`; proto `LOCATION_KIND_UNSPECIFIED`, `LOCATION_KIND_WALRUS`). The field is `blob_id`, not `blobId`, because every listing field is snake_case and the proto shares the schema's names (ruling 1).
+- `artifact.locations` (array, `minItems: 1`, `maxItems: 4`) for npm, pypi and oci artifacts: mirrors of the one package file (the npm tarball). An archive artifact has none at the top; each of its `files[]` may carry its own `locations`, mirrors of that platform's file.
+- `proto_and_schema_agree` covers both new fields, the new message and the new enum unchanged.
 
-Tests: `walrus_source_validates`, `walrus_install_verifies_sha256_then_sigstore`, `walrus_failure_falls_back_to_https`, `walrus_disabled_uses_https`.
+**Listing CLI** (`agents/loams-listing`):
+- `types.ts` gains `ArtifactLocation` and the two `locations` fields.
+- `lint` gains the rule **`walrus-sha256-matches`**: a walrus location on an archive file carries that file's own `sha256` (the same bytes; a different digest is a publishing mistake).
+- Fixtures: `valid/agent-mastra-acp.json` gains an `artifact.locations` walrus entry and `valid/harness-acp-binary.json` one on its first file. `invalid.json` gains `walrus-blob-id-not-base64url`, `walrus-blob-id-wrong-length`, `walrus-sha256-not-hex`, `walrus-unknown-kind`, `walrus-missing-sha256`, `walrus-locations-empty` and `walrus-locations-on-archive-artifact`. Both the Rust schema test and the vitest lint tests apply them.
+
+**Installer** (`crates/loams-agentd-marketplace`):
+- New `src/artifact.rs`:
+  - `ArtifactSources { walrus: Vec<WalrusLocation>, https: Option<String> }`, built by `ArtifactSources::npm(listing, npm_registry)` (HTTPS: `<registry>/<name>/-/<unscoped name>-<version>.tgz`, the registry's tarball URL; `None` for a node that has no registry) and `ArtifactSources::archive_file(listing, platform)` (HTTPS: the file's `url`).
+  - `ArtifactFetch { walrus: &Walrus, https: &dyn Fetcher, npm_registry: Option<&str> }` and `fetch(&ArtifactSources) -> Result<(Vec<u8>, Origin), FetchError>`, where `Origin` is `Walrus { blob_id }` or `Https { url }`.
+  - Order: with Walrus enabled, each walrus location through `Walrus::read(blob_id, sha256)` (hedged, SHA-256-verified, cached by `loams-walrus`); on any Walrus failure, the HTTPS location. With Walrus disabled, the HTTPS location only, and no Walrus call.
+  - Typed `FetchError`: `NoLocation`; `WalrusDisabled { blob_id }` (only a walrus location, Walrus off); `WalrusIntegrity { blob_id, error }` (every aggregator sent bytes with the wrong SHA-256, no HTTPS fallback); `Walrus { blob_id, error }` (any other Walrus failure, no fallback); `Https { url, error, walrus }` (the HTTPS fetch failed, with the Walrus failure that led to it, if any).
+- `src/install.rs`: `install_node_fetched(layout, listing, &ArtifactFetch, provenance_bundles, verifier, npm, context) -> Result<(Installed, Origin), InstallError>` fetches, then calls `install_node` **unchanged**: npm integrity and Sigstore provenance (D1459) run on Walrus bytes exactly as on HTTPS bytes. `InstallError` gains `Fetch(FetchError)`.
+- `Cargo.toml`: `loams-walrus` (path); dev: `axum`, `url`, and tokio's `net` and `rt-multi-thread` for the mock aggregator. `BUCK` regenerated.
+
+Tests (`crates/loams-agentd-marketplace/tests/walrus.rs`, a mock aggregator on loopback in the pattern of `crates/loams-walrus/tests/support`, and the real `sigstore@3.1.0` tarball and bundle from `testdata/npm`):
+- `walrus_source_validates` (the schema accepts walrus locations and refuses each malformed one);
+- `walrus_install_verifies_sha256_then_sigstore` (bytes served by Walrus install, with no HTTPS request; a tarball whose Walrus SHA-256 matches but whose npm integrity does not is refused by the provenance step);
+- `walrus_digest_mismatch_refused` (an aggregator sends other bytes and there is no HTTPS location: `WalrusIntegrity`, nothing installed);
+- `walrus_failure_falls_back_to_https` (mismatch, 404 and 500 each fall back to the registry tarball, which installs);
+- `walrus_disabled_uses_https` (no aggregator request);
+- `walrus_disabled_without_https_refused` (`WalrusDisabled`);
+- `https_failure_reports_walrus_cause`;
+- `npm_tarball_url_handles_scopes`;
+- `proto_and_schema_agree`, `listing_schema_accepts_fixtures`, `listing_schema_rejects_each_invalid_fixture` (existing, over the new fixtures);
+- vitest: `lint_reports_each_rule` with `walrus-sha256-matches`.
 
 Commit: `marketplace: walrus artifact locations (MS1 Task 5, D1812)`.
 
@@ -415,4 +440,5 @@ Commit: `docs: MS1 exit report (MS1 Task 10)`.
 
 ## Rulings made during execution
 
-None yet.
+**Task 5.**
+1. The walrus location's field is `blob_id`, not D1812's `blobId`: every listing field is snake_case, and `proto_and_schema_agree` requires the proto to share the schema's names. The JSON shape is otherwise D1812's: `{ "kind": "walrus", "blob_id", "sha256" }`.
