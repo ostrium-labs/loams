@@ -44,6 +44,7 @@ pub mod api_key;
 pub mod authorizer;
 pub mod authz;
 pub mod directory;
+pub mod identity_sync;
 pub mod layer;
 pub mod oidc;
 pub mod tailscale;
