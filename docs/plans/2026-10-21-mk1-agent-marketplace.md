@@ -301,3 +301,10 @@ The owner approved the pending decisions below on 2026-10-24 ("approve all with 
 | 4b, 7–11 | Not started | Task 7 also waits for `@loams/mastra-resonate` on npm (Task 0 ruling 2) |
 
 Each branch is stacked on the one before. To resume, merge Task 1, rebase each branch onto `dev` in order, and open one PR per task. Label Tasks 3, 4 and 6 `review:greptile`.
+
+### Task 11 (2026-10-26)
+
+1. **Two pull requests.** The docs (`docs/marketplace/README.md`, the note at the top of `publishing.md`, and the plans README row) are in this repository. The listings are a pull request in `ostrium-labs/loams-marketplace`.
+2. **What is listed now:** agentd's built-in harnesses as native harness listings, GitHub's MCP server (the archive runtime), and Plane's remote MCP server. The GitHub listing is valid and published, but agentd cannot install it until the archive installer lands (Task 4b ruling 7).
+3. **Blocked:** `ostrium/loams-bot`, the factory's agents, `ostrium/loams-starter` and `ostrium/support-agent`. They are Mastra agents, so they need `@loams/agent-host` (Task 7), which needs `@loams/mastra-resonate` on npm (Task 0 ruling 2, an owner step). They are listed when Task 7 merges.
+4. **The docs name the soil name** ("the Seed Exchange") in headings and the technical name in body text, as the site does. They describe each listing kind with its MK0 status rather than as shipped.
