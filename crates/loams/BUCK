@@ -185,6 +185,7 @@ cargo_package(
         },
     ],
     deps = [
+        "//crates/loams-agentd-cli:loams-agentd-cli",
         "//crates/loams-cache:loams-cache",
         "//crates/loams-cloud-admin:loams-cloud-admin",
         "//crates/loams-cloudevents:loams-cloudevents",
