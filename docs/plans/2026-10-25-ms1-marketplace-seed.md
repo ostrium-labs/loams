@@ -365,14 +365,44 @@ Tests (`crates/loams-agentd-marketplace/tests/walrus.rs`, a mock aggregator on l
 
 Commit: `marketplace: walrus artifact locations (MS1 Task 5, D1812)`.
 
-### Task 6 — Bun engine for Mastra agents (task level)
+### Task 6 — Bun engine for Mastra agents
 
-- The `node` runtime accepts `runtime.engine: "node" | "bun"` (default `node`) in schema and proto.
-- agentd resolves the engine as it resolves Node (MK1 Task 0 ruling 9), at the Bun version D1791 pins, and launches `bun <entrypoint>`.
-- Installs stay script-free (`bun install --ignore-scripts --frozen-lockfile`, or the npm tarball path unchanged).
-- The Mastra profile (`@loams/agent-host`) runs on both engines. Its LAPC Core run is required on each engine a listing declares.
+Design: D1808 (§73 §3.2, §3.5, §18). The `node` runtime gains an **engine**: `node` (the default, as today) or `bun`, at the Bun version D1791 pins (Bun **1.4.4**, VV1's pin, measured in VV0 and the MS1 spike). Only the program that runs the entrypoint changes. The artifact, its provenance, the install path and the environment contract (D1453) are the same for both engines.
 
-Tests: `engine_defaults_to_node`, `bun_engine_launches_bun`, `bun_install_runs_no_scripts`, and LAPC Core on the Mastra starter under Bun.
+**Schema and proto** (`schemas/marketplace/listing.v1.json`, `proto/loams/marketplace/v1/listing.proto`):
+- `$defs/runtime` gains `engine` (`x-proto-enum: Engine`, `["node", "bun"]`). Absent means `node`, so every listing written before this task keeps its meaning. Proto: `Runtime.engine = 3` and `enum Engine { ENGINE_UNSPECIFIED, ENGINE_NODE, ENGINE_BUN }`.
+- A cross-field rule: `engine` is allowed only when `runtime.kind` is `node`.
+- `runtime.version` is a range of the declared engine: Node's (default `>=22.13`, MK1 Task 0 ruling 9) or Bun's (default `>=1.4.4`).
+- `proto_and_schema_agree` covers the new field and enum unchanged. `web/packages/proto/src/gen/loams/marketplace/v1/listing_pb.ts` is regenerated (`pnpm --filter @loams/proto generate`).
+- Fixtures: a new `valid/agent-mastra-bun.json` (the Mastra starter with `engine: "bun"`, `version: ">=1.4.4"`). `invalid.json` gains `engine-unknown` (`"deno"`), `engine-on-python` (`engine` on a `python` runtime) and `engine-not-string`.
+
+**Listing CLI** (`agents/loams-listing`):
+- `types.ts`: `runtime.engine?: 'node' | 'bun'`.
+- `lint` gains **`engine-version`**: a Bun listing's `runtime.version` admits Bun 1.4.4, the version agentd runs; a Node range on a Bun listing (`>=22.13`) is the mistake it catches. `semver.ts` gains `satisfies(range, version)` with Cargo's `VersionReq` semantics.
+- `from-package`: the `loams.agent` block may set **`engine`** (`"node"` or `"bun"`), the one runtime choice `package.json` cannot express; `runtime` itself stays derived. With `engine: "bun"`, `runtime.version` comes from `engines.bun` (default `>=1.4.4`); with `node`, from `engines.node` as before. `engines.bun` alone does not select Bun: many packages declare both engines (ruling 1). `toPackageJson` inverts it.
+
+**Engine resolution and launch** (`crates/loams-agentd-marketplace/src/engine.rs`, new):
+- `Engine { Node, Bun }`, `Engine::of(listing)` (absent → `Node`), `BUN_PINNED = "1.4.4"`, `NODE_MINIMUM = "22.13.0"`, and `required(listing) -> VersionReq` (the listing's range, else the engine's default).
+- `EngineProbe` (`find(program) -> Option<PathBuf>`, `version(path) -> Option<Version>`), with `PathProbe`, which searches a list of directories (agentd passes `PATH` and the node-version-manager directories it already scans for harness adapters) and parses `node --version` (`v24.21.0`) and `bun --version` (`1.4.4`).
+- `resolve(listing, &dyn EngineProbe) -> Result<ResolvedEngine { engine, program, version }, EngineError>`. `EngineError::NotInstalled { engine, required }` is the **"Bun not installed"** state ("this agent runs on Bun >=1.4.4, and Bun is not installed"); `EngineError::TooOld { engine, found, required }`. agentd resolves before install, so a Bun listing is refused with nothing written when Bun is missing; installing a pinned Bun archive into agentd's data directory follows Q1122's answer later, as it does for Node.
+- `launch(listing, &Installed, &ResolvedEngine) -> Launch { program, args }`: `node <entry>`, or `bun --no-install --no-env-file <entry>` (ruling 3). `ResolvedEngine::bin_dir()` is the contract's `runtime_bin`, the only `PATH` entry: the contract's variables do not change.
+- `harness_registration` takes the resolved engine's program for a `node` ACP harness, so an ACP harness may also declare `bun`.
+
+**Installer** (`src/install.rs`): unchanged path for both engines (ruling 2): npm with `--ignore-scripts` into the staging directory, the install-script, `binding.gyp`/`gypfile` and `hasInstallScript` refusals, and the `npm-shrinkwrap.json` rule. `install_node_with_engine(…, &dyn EngineProbe, …)` resolves the engine first and returns `InstallError::Engine(EngineError)` before any file is written; `Installed` records `engine` (absent in old records means `node`).
+
+**Install plan** (`src/plan.rs`): `InstallPlan.engine` (`"node"` or `"bun"`, only for the `node` runtime), shown on the consent screen and bound by the plan digest; a changed engine is reported by `widens` ("runs on bun instead of node"), so an update that switches engine asks again.
+
+Tests (`crates/loams-agentd-marketplace/tests/engine.rs` and the existing suites):
+- `engine_defaults_to_node` (no `engine`, and records without one);
+- `bun_engine_launches_bun` (program, `--no-install --no-env-file`, the entry; `node <entry>` for node; `bin_dir` is the contract's only PATH);
+- `bun_missing_is_refused` (`NotInstalled`, the message names Bun and the range, and an install writes nothing);
+- `bun_too_old_is_refused`, `node_range_applies_to_node_only`;
+- `bun_install_runs_no_scripts` (a Bun listing installs through the same scripts-off path: a dependency with `postinstall` is refused, and the npm command line carries `--ignore-scripts`);
+- `plan_shows_engine`, `engine_change_widens`;
+- `proto_and_schema_agree`, `listing_schema_accepts_fixtures`, `listing_schema_rejects_each_invalid_fixture` over the new fixtures;
+- vitest: `lint_reports_each_rule` with `engine-version`; `from-package` reads `engine` and `engines.bun`, and refuses an unknown engine.
+
+LAPC Core on the Mastra starter under Bun needs `@loams/agent-host` on npm and the conformance runner (MK0 Task 8); it runs in Task 10.
 
 Commit: `marketplace: the node runtime runs Mastra on node or bun (MS1 Task 6, D1808)`.
 
