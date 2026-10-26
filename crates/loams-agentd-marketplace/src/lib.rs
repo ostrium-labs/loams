@@ -6,6 +6,7 @@
 
 pub mod artifact;
 pub mod contract;
+pub mod engine;
 pub mod index;
 pub mod install;
 pub mod listing;
@@ -17,6 +18,7 @@ pub mod sources;
 pub mod verify;
 
 pub use artifact::{ArtifactFetch, ArtifactSources, FetchError, Origin};
+pub use engine::{Engine, EngineError, EngineProbe, ResolvedEngine};
 pub use market::{Fetcher, ListingView, MarketError, Marketplace, Query, SourceInfo, Summary};
 pub use sources::Source;
 pub use verify::{Identity, SignatureVerifier, SigstoreVerifier};
