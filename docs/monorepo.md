@@ -1,6 +1,6 @@
 # Loams Nx monorepo
 
-Loams engine, console, SDKs, desktop, native mobile applications, and plugin services now live in one repository. Nx **23.2.1** orchestrates existing build tools; pnpm **11.27.1** owns the JavaScript workspace and root lockfile.
+Loams engine, console, SDKs, desktop, native mobile applications, and plugin services now live in one repository. Nx **23.3.0** orchestrates existing build tools; pnpm **11.27.1** owns the JavaScript workspace and root lockfile.
 
 ## Layout and installation
 

@@ -1278,7 +1278,7 @@ impl Meta {
             .status(status)
             .header("Content-Type", content_type)
             .header("X-ClickHouse-Server-Display-Name", DISPLAY_NAME);
-        if let Some(encoding) = self.encoding {
+        if let Some(encoding) = self.encoding.filter(|e| e.is_http()) {
             builder = builder.header("Content-Encoding", encoding.as_str());
         }
         builder = builder
@@ -1312,7 +1312,13 @@ impl Meta {
     }
 
     fn encode_whole(&self, bytes: &[u8]) -> Vec<u8> {
-        match self.encoding.and_then(|e| Encoder::new(e).ok()) {
+        // An error under `compress=1` goes out as text, as clickhouse-server
+        // sends one (clients read it either way).
+        match self
+            .encoding
+            .filter(|e| e.is_http())
+            .and_then(|e| Encoder::new(e).ok())
+        {
             Some(mut encoder) => {
                 let mut out = encoder.feed(bytes).unwrap_or_default();
                 out.extend(encoder.finish().unwrap_or_default());
@@ -1698,9 +1704,15 @@ async fn run(
         query_id,
         format: get("default_format").unwrap_or("TabSeparated").to_string(),
         timezone: setting("session_timezone").unwrap_or_else(|| "UTC".to_string()),
-        encoding: (get("enable_http_compression") == Some("1"))
-            .then(|| compress::accepted(header("Accept-Encoding")))
-            .flatten(),
+        // HE1 R14.14: `compress=1` is ClickHouse's own framing, which wins over
+        // an HTTP coding.
+        encoding: if get("compress") == Some("1") {
+            Some(compress::Encoding::ClickHouse)
+        } else {
+            (get("enable_http_compression") == Some("1"))
+                .then(|| compress::accepted(header("Accept-Encoding")))
+                .flatten()
+        },
         keep_alive: config.keep_alive,
         version: config.version.clone(),
         send_progress: get("send_progress_in_http_headers") == Some("1"),
@@ -2213,14 +2225,7 @@ async fn prepare(
         .collect();
     let user = auth::identify(config, &header_pairs, params)?;
     observed.identify(&user);
-    for name in ["compress", "decompress"] {
-        if get(name) == Some("1") {
-            return Err(HouseError::from(ChError::not_implemented(format!(
-                "{name}=1 (ClickHouse's own compressed framing) is not supported yet; use \
-                 enable_http_compression=1 or Content-Encoding"
-            ))));
-        }
-    }
+
     // Without a catalog only `default` exists; with one, `run` asks it (HS1 Task
     // 10).
     if !has_lake && let Some(database) = get("database").filter(|d| *d != "default") {
@@ -2240,6 +2245,17 @@ async fn prepare(
             .get("Content-Encoding")
             .and_then(|v| v.to_str().ok()),
     )?;
+    // HE1 R14.14: `decompress=1`, a body in ClickHouse's own framing.
+    let encoding = match (get("decompress") == Some("1"), encoding) {
+        (false, encoding) => encoding,
+        (true, None) => Some(compress::Encoding::ClickHouse),
+        (true, Some(http)) => {
+            return Err(HouseError::from(ChError::not_implemented(format!(
+                "decompress=1 with Content-Encoding: {} is not supported: send one of them",
+                http.as_str()
+            ))));
+        }
+    };
     let mut decoder = Decoder::new(encoding, config.body_limits)
         .map_err(|err| HouseError::from(ChError::bad_arguments(err.to_string())))?;
 
