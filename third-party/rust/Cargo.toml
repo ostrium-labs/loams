@@ -92,8 +92,8 @@ lance-io = { package = "lance-io", version = "=12.0.0", default-features = false
 lance-linalg = { package = "lance-linalg", version = "=12.0.0", default-features = false }
 lance-table = { package = "lance-table", version = "=12.0.0", default-features = false }
 libc = { package = "libc", version = "=0.2.191", default-features = true, features = ["extra_traits", "std"] }
-loro = { package = "loro", version = "=1.16.2", default-features = true, features = ["counter"] }
-memmap2 = { package = "memmap2", version = "=0.9.11", default-features = false }
+loro = { package = "loro", version = "=1.17.1", default-features = true, features = ["counter"] }
+memmap2 = { package = "memmap2", version = "=0.9.12", default-features = false }
 moka = { package = "moka", version = "=0.12.16", default-features = true, features = ["future", "sync"] }
 mysql_async = { package = "mysql_async", version = "=0.37.1", default-features = false, features = ["minimal-rust", "ring", "rustls", "rustls-tls", "tls12", "tokio-rustls", "webpki-roots"] }
 network_partitions = { package = "network_partitions", version = "=0.3.0", git = "https://github.com/microsoft/graspologic-native", rev = "773181488b4e5b81925e302b972b294fd51f61a4", default-features = false }
@@ -120,7 +120,7 @@ rand_core = { package = "rand_core", version = "=0.10.1", default-features = fal
 rcgen = { package = "rcgen", version = "=0.14.10", default-features = false, features = ["crypto", "pem", "ring"] }
 redb = { package = "redb", version = "=4.4.0", default-features = true, features = ["std"] }
 regex = { package = "regex", version = "=1.13.1", default-features = true, features = ["perf", "perf-backtrack", "perf-cache", "perf-dfa", "perf-inline", "perf-literal", "perf-onepass", "std", "unicode", "unicode-age", "unicode-bool", "unicode-case", "unicode-gencat", "unicode-perl", "unicode-script", "unicode-segment"] }
-relative-path = { package = "relative-path", version = "=2.0.2", default-features = true, features = ["alloc", "std"] }
+relative-path = { package = "relative-path", version = "=2.0.3", default-features = true, features = ["alloc", "std"] }
 reqwest-0_12 = { package = "reqwest", version = "=0.12.28", default-features = false, features = ["__rustls", "__rustls-ring", "__tls", "blocking", "charset", "gzip", "h2", "http2", "json", "multipart", "rustls-tls", "rustls-tls-native-roots", "rustls-tls-native-roots-no-provider", "rustls-tls-webpki-roots", "rustls-tls-webpki-roots-no-provider", "stream", "system-proxy"] }
 reqwest-0_13 = { package = "reqwest", version = "=0.13.5", default-features = false, features = ["__rustls", "__rustls-aws-lc-rs", "__tls", "form", "http2", "json", "query", "rustls", "rustls-no-provider", "stream"] }
 resonate-base = { package = "resonate-base", version = "=0.10.1", git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90", default-features = true, features = ["otlp"] }
@@ -182,7 +182,7 @@ ulid = { package = "ulid", version = "=3.0.0", default-features = true, features
 unicode-segmentation = { package = "unicode-segmentation", version = "=1.13.3", default-features = false }
 url = { package = "url", version = "=2.5.8", default-features = true, features = ["serde", "std"] }
 uuid = { package = "uuid", version = "=1.28.0", default-features = true, features = ["fast-rng", "js", "rng", "serde", "std", "v4", "v7", "zerocopy"] }
-webbrowser = { package = "webbrowser", version = "=1.2.4", default-features = false }
+webbrowser = { package = "webbrowser", version = "=1.2.5", default-features = false }
 x509-parser = { package = "x509-parser", version = "=0.18.1", default-features = true, features = ["ring", "verify"] }
 xxhash-rust = { package = "xxhash-rust", version = "=0.8.19", default-features = false, features = ["xxh3", "xxh32", "xxh64"] }
 zeroize = { package = "zeroize", version = "=1.9.1", default-features = true, features = ["alloc", "derive", "zeroize_derive"] }

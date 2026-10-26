@@ -28765,23 +28765,23 @@ cargo_alias(
 )
 
 http_archive(
-    name = "loro-1.16.2.crate",
-    sha256 = "8e86dea63b66576db244cbc3a40bdb17517263c93f318e2fbe08aca3be1192cb",
-    strip_prefix = "loro-1.16.2",
-    urls = ["https://static.crates.io/crates/loro/1.16.2/download"],
+    name = "loro-1.17.1.crate",
+    sha256 = "410c939fe3bee34b8ed61f7aea93201fb136629f685ffa557039c4d9952f9988",
+    strip_prefix = "loro-1.17.1",
+    urls = ["https://static.crates.io/crates/loro/1.17.1/download"],
     visibility = [],
 )
 
 cargo.rust_library(
     name = "loro-1",
-    srcs = [":loro-1.16.2.crate"],
+    srcs = [":loro-1.17.1.crate"],
     crate = "loro",
-    crate_root = "loro-1.16.2.crate/src/lib.rs",
+    crate_root = "loro-1.17.1.crate/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "loro",
         "CARGO_CRATE_NAME": "loro",
-        "CARGO_MANIFEST_DIR": "loro-1.16.2.crate",
+        "CARGO_MANIFEST_DIR": "loro-1.17.1.crate",
         "CARGO_PKG_AUTHORS": "Zixuan Chen:Liang Zhao",
         "CARGO_PKG_DESCRIPTION": "Loro is a high-performance CRDTs framework. Make your app collaborative efforlessly.",
         "CARGO_PKG_HOMEPAGE": "https://loro.dev",
@@ -28789,10 +28789,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/loro-dev/loro/",
         "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "1.16.2",
+        "CARGO_PKG_VERSION": "1.17.1",
         "CARGO_PKG_VERSION_MAJOR": "1",
-        "CARGO_PKG_VERSION_MINOR": "16",
-        "CARGO_PKG_VERSION_PATCH": "2",
+        "CARGO_PKG_VERSION_MINOR": "17",
+        "CARGO_PKG_VERSION_PATCH": "1",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -28815,23 +28815,23 @@ cargo.rust_library(
 )
 
 http_archive(
-    name = "loro-common-1.16.0.crate",
-    sha256 = "2146b353a56b0a743f8643725cb9f42dfe209665939b59db901ecea732a3ab29",
-    strip_prefix = "loro-common-1.16.0",
-    urls = ["https://static.crates.io/crates/loro-common/1.16.0/download"],
+    name = "loro-common-1.17.0.crate",
+    sha256 = "bd3f7afbafc4db85aefe9620e7e99fa49c974477563904f226ae96fc9674eade",
+    strip_prefix = "loro-common-1.17.0",
+    urls = ["https://static.crates.io/crates/loro-common/1.17.0/download"],
     visibility = [],
 )
 
 cargo.rust_library(
     name = "loro-common-1",
-    srcs = [":loro-common-1.16.0.crate"],
+    srcs = [":loro-common-1.17.0.crate"],
     crate = "loro_common",
-    crate_root = "loro-common-1.16.0.crate/src/lib.rs",
+    crate_root = "loro-common-1.17.0.crate/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "loro_common",
         "CARGO_CRATE_NAME": "loro_common",
-        "CARGO_MANIFEST_DIR": "loro-common-1.16.0.crate",
+        "CARGO_MANIFEST_DIR": "loro-common-1.17.0.crate",
         "CARGO_PKG_AUTHORS": "Zixuan Chen:Liang Zhao",
         "CARGO_PKG_DESCRIPTION": "Common types and functions for Loro. This is an internal lib of Loro.",
         "CARGO_PKG_HOMEPAGE": "https://loro.dev",
@@ -28839,9 +28839,9 @@ cargo.rust_library(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/loro-dev/loro",
         "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "1.16.0",
+        "CARGO_PKG_VERSION": "1.17.0",
         "CARGO_PKG_VERSION_MAJOR": "1",
-        "CARGO_PKG_VERSION_MINOR": "16",
+        "CARGO_PKG_VERSION_MINOR": "17",
         "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
     },
@@ -28907,23 +28907,23 @@ cargo.rust_library(
 )
 
 http_archive(
-    name = "loro-internal-1.16.2.crate",
-    sha256 = "8d5806b65ee68c3ae7891959dd968898860dab74fbf6498b312de9b548dce5ec",
-    strip_prefix = "loro-internal-1.16.2",
-    urls = ["https://static.crates.io/crates/loro-internal/1.16.2/download"],
+    name = "loro-internal-1.17.1.crate",
+    sha256 = "7e533c1688430aa4fcdd933f00861e331c169a4158ee6d27d054e0558892d447",
+    strip_prefix = "loro-internal-1.17.1",
+    urls = ["https://static.crates.io/crates/loro-internal/1.17.1/download"],
     visibility = [],
 )
 
 cargo.rust_library(
     name = "loro-internal-1",
-    srcs = [":loro-internal-1.16.2.crate"],
+    srcs = [":loro-internal-1.17.1.crate"],
     crate = "loro_internal",
-    crate_root = "loro-internal-1.16.2.crate/src/lib.rs",
+    crate_root = "loro-internal-1.17.1.crate/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "loro_internal",
         "CARGO_CRATE_NAME": "loro_internal",
-        "CARGO_MANIFEST_DIR": "loro-internal-1.16.2.crate",
+        "CARGO_MANIFEST_DIR": "loro-internal-1.17.1.crate",
         "CARGO_PKG_AUTHORS": "Zixuan Chen:Liang Zhao",
         "CARGO_PKG_DESCRIPTION": "Loro internal library. Do not use it directly as it's not stable.",
         "CARGO_PKG_HOMEPAGE": "https://loro.dev",
@@ -28931,10 +28931,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/loro-dev/loro/",
         "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "1.16.2",
+        "CARGO_PKG_VERSION": "1.17.1",
         "CARGO_PKG_VERSION_MAJOR": "1",
-        "CARGO_PKG_VERSION_MINOR": "16",
-        "CARGO_PKG_VERSION_PATCH": "2",
+        "CARGO_PKG_VERSION_MINOR": "17",
+        "CARGO_PKG_VERSION_PATCH": "1",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = ["counter"],
@@ -28983,23 +28983,23 @@ cargo.rust_library(
 )
 
 http_archive(
-    name = "loro-kv-store-1.16.0.crate",
-    sha256 = "841e206d3749fd14f23e64985be230dad2b2199da1d381c44c3dd0d2b9583fcc",
-    strip_prefix = "loro-kv-store-1.16.0",
-    urls = ["https://static.crates.io/crates/loro-kv-store/1.16.0/download"],
+    name = "loro-kv-store-1.17.0.crate",
+    sha256 = "c7331ebe6902effeb0c3d52aba9e30fb0118bc926faed6f3848487aab40c1a4e",
+    strip_prefix = "loro-kv-store-1.17.0",
+    urls = ["https://static.crates.io/crates/loro-kv-store/1.17.0/download"],
     visibility = [],
 )
 
 cargo.rust_library(
     name = "loro-kv-store-1",
-    srcs = [":loro-kv-store-1.16.0.crate"],
+    srcs = [":loro-kv-store-1.17.0.crate"],
     crate = "loro_kv_store",
-    crate_root = "loro-kv-store-1.16.0.crate/src/lib.rs",
+    crate_root = "loro-kv-store-1.17.0.crate/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "loro_kv_store",
         "CARGO_CRATE_NAME": "loro_kv_store",
-        "CARGO_MANIFEST_DIR": "loro-kv-store-1.16.0.crate",
+        "CARGO_MANIFEST_DIR": "loro-kv-store-1.17.0.crate",
         "CARGO_PKG_AUTHORS": "Liang Zhao:Zixuan Chen",
         "CARGO_PKG_DESCRIPTION": "Key-value store component for Loro, a high-performance CRDTs framework",
         "CARGO_PKG_HOMEPAGE": "https://loro.dev",
@@ -29007,9 +29007,9 @@ cargo.rust_library(
         "CARGO_PKG_README": "",
         "CARGO_PKG_REPOSITORY": "https://github.com/loro-dev/loro/",
         "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "1.16.0",
+        "CARGO_PKG_VERSION": "1.17.0",
         "CARGO_PKG_VERSION_MAJOR": "1",
-        "CARGO_PKG_VERSION_MINOR": "16",
+        "CARGO_PKG_VERSION_MINOR": "17",
         "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
     },
@@ -29989,23 +29989,23 @@ cargo_alias(
 )
 
 http_archive(
-    name = "memmap2-0.9.11.crate",
-    sha256 = "d1219ed1b7f229ee7104d281dd01d6802fe28bb6e95d292942c4daacdeb798c0",
-    strip_prefix = "memmap2-0.9.11",
-    urls = ["https://static.crates.io/crates/memmap2/0.9.11/download"],
+    name = "memmap2-0.9.12.crate",
+    sha256 = "6b0ca1155a9ecc25aa12e8313a119f32edf0255fea2f44839c4ac0a12b2ac157",
+    strip_prefix = "memmap2-0.9.12",
+    urls = ["https://static.crates.io/crates/memmap2/0.9.12/download"],
     visibility = [],
 )
 
 cargo.rust_library(
     name = "memmap2-0.9",
-    srcs = [":memmap2-0.9.11.crate"],
+    srcs = [":memmap2-0.9.12.crate"],
     crate = "memmap2",
-    crate_root = "memmap2-0.9.11.crate/src/lib.rs",
+    crate_root = "memmap2-0.9.12.crate/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "memmap2",
         "CARGO_CRATE_NAME": "memmap2",
-        "CARGO_MANIFEST_DIR": "memmap2-0.9.11.crate",
+        "CARGO_MANIFEST_DIR": "memmap2-0.9.12.crate",
         "CARGO_PKG_AUTHORS": "Dan Burkert <dan@danburkert.com>:Yevhenii Reizner <razrfalcon@gmail.com>:The Contributors",
         "CARGO_PKG_DESCRIPTION": "Cross-platform Rust API for memory-mapped file IO",
         "CARGO_PKG_HOMEPAGE": "",
@@ -30013,10 +30013,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/RazrFalcon/memmap2-rs",
         "CARGO_PKG_RUST_VERSION": "1.65",
-        "CARGO_PKG_VERSION": "0.9.11",
+        "CARGO_PKG_VERSION": "0.9.12",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "9",
-        "CARGO_PKG_VERSION_PATCH": "11",
+        "CARGO_PKG_VERSION_PATCH": "12",
         "CARGO_PKG_VERSION_PRE": "",
     },
     visibility = [],
@@ -40945,34 +40945,34 @@ cargo_alias(
 )
 
 http_archive(
-    name = "relative-path-2.0.2.crate",
-    sha256 = "f2a073568cd8b9c4825429d3e9fc5f52851b4f97cc1348800689408921e6b8f8",
-    strip_prefix = "relative-path-2.0.2",
-    urls = ["https://static.crates.io/crates/relative-path/2.0.2/download"],
+    name = "relative-path-2.0.3.crate",
+    sha256 = "38540a682c6e9bca04a8bca9e5ec5a6ba168dfbb04c9998fe517a9befb92eb68",
+    strip_prefix = "relative-path-2.0.3",
+    urls = ["https://static.crates.io/crates/relative-path/2.0.3/download"],
     visibility = [],
 )
 
 cargo.rust_library(
     name = "relative-path-2",
-    srcs = [":relative-path-2.0.2.crate"],
+    srcs = [":relative-path-2.0.3.crate"],
     crate = "relative_path",
-    crate_root = "relative-path-2.0.2.crate/src/lib.rs",
+    crate_root = "relative-path-2.0.3.crate/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "relative_path",
         "CARGO_CRATE_NAME": "relative_path",
-        "CARGO_MANIFEST_DIR": "relative-path-2.0.2.crate",
+        "CARGO_MANIFEST_DIR": "relative-path-2.0.3.crate",
         "CARGO_PKG_AUTHORS": "John-John Tedro <udoprog@tedro.se>",
         "CARGO_PKG_DESCRIPTION": "Portable, relative paths for Rust.",
-        "CARGO_PKG_HOMEPAGE": "https://github.com/udoprog/relative-path",
+        "CARGO_PKG_HOMEPAGE": "",
         "CARGO_PKG_NAME": "relative-path",
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/udoprog/relative-path",
-        "CARGO_PKG_RUST_VERSION": "1.71",
-        "CARGO_PKG_VERSION": "2.0.2",
+        "CARGO_PKG_RUST_VERSION": "1.85",
+        "CARGO_PKG_VERSION": "2.0.3",
         "CARGO_PKG_VERSION_MAJOR": "2",
         "CARGO_PKG_VERSION_MINOR": "0",
-        "CARGO_PKG_VERSION_PATCH": "2",
+        "CARGO_PKG_VERSION_PATCH": "3",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -55738,23 +55738,23 @@ cargo_alias(
 )
 
 http_archive(
-    name = "webbrowser-1.2.4.crate",
-    sha256 = "62c35be770821a214dbc362fc26908c853e776c0004294d0b10b8a6bad582f94",
-    strip_prefix = "webbrowser-1.2.4",
-    urls = ["https://static.crates.io/crates/webbrowser/1.2.4/download"],
+    name = "webbrowser-1.2.5.crate",
+    sha256 = "d2c8ddfbbf66e501434657400268cefe51b95140a0266236415cda7627732df7",
+    strip_prefix = "webbrowser-1.2.5",
+    urls = ["https://static.crates.io/crates/webbrowser/1.2.5/download"],
     visibility = [],
 )
 
 cargo.rust_library(
     name = "webbrowser-1",
-    srcs = [":webbrowser-1.2.4.crate"],
+    srcs = [":webbrowser-1.2.5.crate"],
     crate = "webbrowser",
-    crate_root = "webbrowser-1.2.4.crate/src/lib.rs",
+    crate_root = "webbrowser-1.2.5.crate/src/lib.rs",
     edition = "2021",
     env = {
         "CARGO_BIN_NAME": "webbrowser",
         "CARGO_CRATE_NAME": "webbrowser",
-        "CARGO_MANIFEST_DIR": "webbrowser-1.2.4.crate",
+        "CARGO_MANIFEST_DIR": "webbrowser-1.2.5.crate",
         "CARGO_PKG_AUTHORS": "Amod Malviya @amodm",
         "CARGO_PKG_DESCRIPTION": "Open URLs in web browsers available on a platform",
         "CARGO_PKG_HOMEPAGE": "https://github.com/amodm/webbrowser-rs",
@@ -55762,10 +55762,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/amodm/webbrowser-rs",
         "CARGO_PKG_RUST_VERSION": "1.85",
-        "CARGO_PKG_VERSION": "1.2.4",
+        "CARGO_PKG_VERSION": "1.2.5",
         "CARGO_PKG_VERSION_MAJOR": "1",
         "CARGO_PKG_VERSION_MINOR": "2",
-        "CARGO_PKG_VERSION_PATCH": "4",
+        "CARGO_PKG_VERSION_PATCH": "5",
         "CARGO_PKG_VERSION_PRE": "",
     },
     platform = {
