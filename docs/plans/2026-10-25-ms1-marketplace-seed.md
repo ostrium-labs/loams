@@ -384,14 +384,14 @@ Design: D1813; content set Q1331 (default answer taken, ruling 3). The core is a
 Files:
 - `crates/loams-knowledge/{Cargo.toml,README.md,BUCK,src/{lib,error,manifest,sign,source,select,publish,read,search,config}.rs}`;
 - `crates/loams-knowledge/tests/{support/mod.rs,manifest.rs,publish.rs,read.rs}`, with a stateful axum mock publisher and aggregator (the `loams-walrus` test-support pattern) that stores quilts and serves their patches;
-- `crates/loams-agentd-mcp/{Cargo.toml,BUCK,src/{lib,tools,knowledge}.rs}`;
+- `crates/loams-agentd-mcp/{Cargo.toml,BUCK,src/{lib,tools,knowledge}.rs,tests/knowledge.rs}`;
 - the workspace `Cargo.toml` (`loams-knowledge` and `loams-walrus` as workspace dependencies), `Cargo.lock`.
 
 Tests:
 - `manifest_round_trips`, `manifest_rejects_bad_paths`, `manifest_sign_verify`, `manifest_signature_required`, `tampered_manifest_refused`, `manifest_wrong_signer_refused`, `manifest_for_other_commit_refused`;
-- `publish_refuses_private_repo`, `publish_refuses_unmarked_repo` (neither contacts the publisher), `publish_selects_knowledge_set`, `knowledge_toml_only_narrows`, `publish_stores_quilt_and_signed_manifest`, `publish_from_git_checkout`;
-- `knowledge_get_verifies_entry`, `knowledge_get_digest_mismatch_refused`, `knowledge_get_latest_commit`, `knowledge_get_unknown_repo_refused`, `knowledge_search_paths_and_text`;
-- in the shim: `knowledge_tools_are_read_only`, `knowledge_tools_absent_without_config`, `knowledge_get_through_shim`.
+- `publish_refuses_private_repo`, `publish_refuses_unmarked_repo` (neither contacts the publisher), `publish_selects_knowledge_set`, `knowledge_toml_only_narrows`, `publish_stores_quilt_and_signed_manifest`, `publish_too_large_set_refused`, `publish_from_git_checkout`;
+- `knowledge_get_verifies_entry`, `knowledge_get_digest_mismatch_refused`, `tampered_manifest_in_bucket_refused`, `knowledge_get_latest_commit`, `knowledge_get_unknown_repo_refused`, `knowledge_search_paths_and_text`, `search_skips_entries_that_fail_verification`, `reader_config_parses_and_needs_walrus`;
+- in the shim: `knowledge_tools_are_read_only`, `knowledge_tools_absent_without_config`, `knowledge_get_through_shim`, `knowledge_get_through_shim_refuses_wrong_bytes`.
 
 Commit: `knowledge: a read-only verifiable project knowledge cache on Walrus (MS1 Task 7, D1813)`.
 
@@ -452,3 +452,4 @@ Commit: `docs: MS1 exit report (MS1 Task 10)`.
 3. **Q1331's default is the content set**, as the plan's open question proposes, plus one synthetic entry, `.loams/knowledge/files.txt`, listing every tracked path (the "file manifest"). `.loams/knowledge.toml` can only narrow it. No embeddings (D1813 does not ask for them).
 4. **"Public" needs two signals:** the caller's `Visibility::Public` (what the forge reports) and `public = true` in `.loams/knowledge.toml` at the published commit. Either missing is `KnowledgeError::NotPublic`, raised before any request. Walrus blobs cannot be made private later, so publishing needs the explicit marker in the repository as well as the forge's word.
 5. **The shim reads the bucket and Walrus itself**, in its own process, through `KnowledgeReader`, instead of through a new daemon RPC. This keeps the change out of `loams-agentd` and `loams-agentd-sessions` while MK0 Task 4b changes them. The daemon will pass `LOAMS_AGENTD_KNOWLEDGE_CONFIG` to harness runs in Task 10.
+6. **Buck files were generated without reindeer.** The pinned reindeer would not build locally (no OpenSSL development headers), so only the member `BUCK` files were regenerated: `gen.py` ran with its third-party step skipped. No new crates.io package is a direct dependency, so `third-party/rust` should not change. CI's `gen.py --check` confirms this.
