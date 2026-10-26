@@ -1880,6 +1880,9 @@ pub enum LakeEngine {
     /// `AggregatingMergeTree` (HE1 R9.14): state columns merged by their
     /// functions at `FINAL` and in compaction.
     Aggregating,
+    /// `CoalescingMergeTree` (HE1 R14.13): per sorting key, each column's last
+    /// value that is not `NULL`, at `FINAL`, on insert and in compaction.
+    Coalescing,
     /// `Null` (HE1 R9.14): rows are discarded; reads are empty.
     Null,
 }
@@ -1890,6 +1893,7 @@ impl LakeEngine {
         match self {
             Self::MergeTree => "MergeTree".to_string(),
             Self::Aggregating => "AggregatingMergeTree".to_string(),
+            Self::Coalescing => "CoalescingMergeTree".to_string(),
             Self::Null => "Null".to_string(),
             Self::Replacing { ver, is_deleted } => {
                 let args: Vec<String> = ver
@@ -1956,6 +1960,11 @@ impl LakeEngine {
         match base {
             "MergeTree" if args.is_empty() => Ok(Self::MergeTree),
             "AggregatingMergeTree" if args.is_empty() => Ok(Self::Aggregating),
+            "CoalescingMergeTree" if args.is_empty() => Ok(Self::Coalescing),
+            "CoalescingMergeTree" => Err(HouseError::from(ChError::not_implemented(
+                "CoalescingMergeTree with a column list is not on the House's surface: every \
+                 column outside the sorting key is coalesced",
+            ))),
             "Null" if args.is_empty() && base == name => Ok(Self::Null),
             "MergeTree" => Err(HouseError::from(ChError::bad_arguments(
                 "MergeTree takes no arguments: the old syntax MergeTree(date, key, granularity) \
@@ -1995,7 +2004,8 @@ impl LakeEngine {
             _ => Err(HouseError::from(ChError::not_implemented(format!(
                 "Engine {name} is not a lake table engine: lake tables are MergeTree, \
                  ReplacingMergeTree, SummingMergeTree, VersionedCollapsingMergeTree, \
-                 AggregatingMergeTree or Null (§49 §6.2, D1570, HE1 R9.14)"
+                 AggregatingMergeTree, CoalescingMergeTree or Null (§49 §6.2, D1570, HE1 \
+                 R9.14, R14.13)"
             )))),
         }
     }
@@ -2424,7 +2434,10 @@ pub fn plan_table(
             || matches!(t, ChType::Decimal(..))
     };
     match &engine {
-        LakeEngine::MergeTree | LakeEngine::Aggregating | LakeEngine::Null => {}
+        LakeEngine::MergeTree
+        | LakeEngine::Aggregating
+        | LakeEngine::Coalescing
+        | LakeEngine::Null => {}
         LakeEngine::Replacing { ver, is_deleted } => {
             if let Some(ver) = ver {
                 check_column(ver, &integer, "ReplacingMergeTree's version column")?;

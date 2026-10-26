@@ -998,6 +998,42 @@ async fn insert_over_the_cap_is_refused() {
     assert_eq!(ok(addr, "SELECT count() FROM t").await, "100\n");
 }
 
+/// HE1 R14.13: `CoalescingMergeTree` (Laminar's `traces_static`): per
+/// sorting key, each column's last value that is not `NULL`, merged within an
+/// insert and read so with `FINAL`. Every answer is the 26.9.2.8 oracle's.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn coalescing_merge_tree_keeps_the_last_non_null() {
+    let house = lakehouse("coalescing").await;
+    let addr = house.addr();
+    ok(
+        addr,
+        "CREATE TABLE co (k UInt64, a Nullable(String), b Nullable(UInt8), c String) \
+         ENGINE = CoalescingMergeTree() ORDER BY k",
+    )
+    .await;
+    ok(
+        addr,
+        "INSERT INTO co VALUES (1, 'x', NULL, 'c1'), (1, NULL, 5, 'c2'), (2, 'y', NULL, 'd')",
+    )
+    .await;
+    assert_eq!(
+        ok(addr, "SELECT * FROM co ORDER BY k FORMAT TSV").await,
+        "1\tx\t5\tc2\n2\ty\t\\N\td\n"
+    );
+    ok(addr, "INSERT INTO co VALUES (1, 'z', NULL, 'c3'), (2, NULL, 7, 'd2')").await;
+    assert_eq!(
+        ok(addr, "SELECT * FROM co FINAL ORDER BY k FORMAT TSV").await,
+        "1\tz\t5\tc3\n2\ty\t7\td2\n"
+    );
+    assert_eq!(ok(addr, "SELECT count() FROM co FORMAT TSV").await, "4\n");
+    refused(
+        addr,
+        "CREATE TABLE co2 (k UInt64, a Nullable(String)) ENGINE = CoalescingMergeTree(a) ORDER BY k",
+        "48",
+    )
+    .await;
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn partition_split_files() {
     let house = lakehouse("partitions").await;
