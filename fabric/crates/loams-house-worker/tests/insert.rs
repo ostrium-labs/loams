@@ -1391,6 +1391,85 @@ async fn lake_tables_take_langfuse_ddl() {
     .await;
 }
 
+/// HE1 R14.6: a column list whose types run over several lines (Laminar's
+/// `traces_agg` and `spans_v2`: `SimpleAggregateFunction(f,\n Array(…))`,
+/// `Array(Tuple(\n …))`, with a `PROJECTION`) and a default holding a
+/// backslash reach ClickHouse's reading of the list as written. Every answer is
+/// the 26.9.2.8 oracle's.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn column_lists_over_several_lines() {
+    let house = lakehouse("multiline-columns").await;
+    let addr = house.addr();
+    ok(
+        addr,
+        "CREATE TABLE agg (id UInt64, project_id UInt64, \
+         start_time SimpleAggregateFunction(min, DateTime64(9, 'UTC')), \
+         tokens SimpleAggregateFunction(sum, Int64), \
+         tags SimpleAggregateFunction(groupUniqArrayArray,\n    Array(String)), \
+         statuses SimpleAggregateFunction(groupUniqArrayArray, Array(Enum8('success' = 1,\n    'error' = 2))), \
+         metadata SimpleAggregateFunction(maxMap, Map(String, String)), \
+         PROJECTION p_start (SELECT * ORDER BY project_id, start_time, id)) \
+         ENGINE = AggregatingMergeTree ORDER BY (project_id, id) \
+         SETTINGS index_granularity = 8192, deduplicate_merge_projection_mode = 'rebuild'",
+    )
+    .await;
+    ok(
+        addr,
+        "INSERT INTO agg VALUES (1, 1, '2026-01-01 00:00:02', 3, ['x'], ['success'], {'k':'a'}), \
+         (1, 1, '2026-01-01 00:00:01', 4, ['y','x'], ['error'], {'k':'b'}), \
+         (2, 1, '2026-01-03 00:00:00', 5, [], [], {})",
+    )
+    .await;
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT id, min(start_time), sum(tokens), arraySort(groupUniqArrayArray(tags)), \
+             arraySort(groupUniqArrayArray(statuses)) FROM agg GROUP BY id ORDER BY id FORMAT TSV"
+        )
+        .await,
+        "1\t2026-01-01 00:00:01.000000000\t7\t['x','y']\t['success','error']\n\
+         2\t2026-01-03 00:00:00.000000000\t5\t[]\t[]\n"
+    );
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT id, start_time, tokens, arraySort(tags), arraySort(statuses), metadata \
+             FROM agg FINAL ORDER BY id FORMAT TSV"
+        )
+        .await,
+        "1\t2026-01-01 00:00:01.000000000\t7\t['x','y']\t['success','error']\t{'k':'b'}\n\
+         2\t2026-01-03 00:00:00.000000000\t5\t[]\t[]\t{}\n"
+    );
+    assert_eq!(
+        ok(addr, "DESCRIBE agg FORMAT TSV")
+            .await
+            .lines()
+            .map(|l| l.split('\t').take(2).collect::<Vec<_>>().join("\t"))
+            .collect::<Vec<_>>(),
+        [
+            "id\tUInt64",
+            "project_id\tUInt64",
+            "start_time\tSimpleAggregateFunction(min, DateTime64(9, \\'UTC\\'))",
+            "tokens\tSimpleAggregateFunction(sum, Int64)",
+            "tags\tSimpleAggregateFunction(groupUniqArrayArray, Array(String))",
+            "statuses\tSimpleAggregateFunction(groupUniqArrayArray, Array(Enum8(\\'success\\' = 1, \\'error\\' = 2)))",
+            "metadata\tSimpleAggregateFunction(maxMap, Map(String, String))",
+        ]
+    );
+    ok(
+        addr,
+        "CREATE TABLE plain (id UInt64, note String DEFAULT 'a\\\\b', events Array(Tuple(\n        \
+         timestamp Int64,\n        name String)), PROJECTION p (SELECT id, events ORDER BY id)) \
+         ENGINE = MergeTree ORDER BY id",
+    )
+    .await;
+    ok(addr, "INSERT INTO plain (id, events) VALUES (1, [(5, 'e')])").await;
+    assert_eq!(
+        ok(addr, "SELECT id, note, events FROM plain FORMAT TSV").await,
+        "1\ta\\\\b\t[(5,'e')]\n"
+    );
+}
+
 /// HE1 R9.13: plain views (Langfuse's `analytics_*`) and `Distributed` tables.
 /// A view is a catalog entry the read path expands over the read views of what
 /// it names, nesting included; a `Distributed` table reads and writes its local
