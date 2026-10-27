@@ -120,3 +120,11 @@ note = "TMP-api (D2080): statemachine unit tests and the golden corpus scenario 
 [[method]]
 name = "PollWorkflowExecutionUpdate"
 note = "TMP-api (D2080): statemachine unit tests and the golden corpus scenario only; no SDK leg yet"
+
+[[method]]
+name = "SignalWithStartWorkflowExecution"
+note = "TMP-api (D2085, D2083): statemachine and policy unit tests and the golden corpus scenario only; no SDK leg yet"
+
+[[method]]
+name = "ResetWorkflowExecution"
+note = "TMP-api (D2085, D2083): statemachine and policy unit tests and the golden corpus scenario only; no SDK leg yet"
