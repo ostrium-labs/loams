@@ -473,8 +473,8 @@ Design reference: [81 Managed Stream and Batch Engines](../design/81-managed-str
 | Plan | Scope | Depends on | Status |
 |---|---|---|---|
 | [RW1: managed RisingWave](2026-10-27-rw1-managed-risingwave.md) | The shared foundation (`loams-engines`, facade, OpenFGA `engine`, metering, `compose.lake.yaml`, `engine-gateway`, console, engines conformance) and managed RisingWave (adapter, compose, Helm, gateway route, connectors, SQL API, CLI, sqllogictest conformance) | Loams Postgres direct endpoint, RustFS, the Iggy `kafka` profile | Code in progress (lanes ENG-UI, RW-a, RW-b); not yet run end to end |
-| [FK1: managed Flink SQL](2026-10-27-fk1-managed-flink-sql.md) | Session cluster and SQL Gateway per instance, S3 checkpoints and savepoints, HA, catalogs and connectors, image, API and pipelines, CLI, Flink SQL tests and Nexmark | RW1 Tasks 1–5 | Code in progress (lanes FL-a, FL-b); not yet run end to end |
-| [SP1: managed Spark](2026-10-27-sp1-managed-spark.md) | Spark Connect proxy as a gateway module, Sail and Apache Spark backends, jobs and schedules, Python helpers, CLI, PySpark Connect parity tests | RW1 Tasks 1–5 | Code in progress (lanes SP-a, SP-b); not yet run end to end |
+| [FK1: managed Flink SQL](2026-10-27-fk1-managed-flink-sql.md) | Session cluster and SQL Gateway per instance, S3 checkpoints and savepoints, HA, catalogs and connectors, image, API and pipelines, CLI, Flink SQL tests and Nexmark | RW1 Tasks 1, 3–5 | Code in progress (lanes FL-a, FL-b); not yet run end to end |
+| [SP1: managed Spark](2026-10-27-sp1-managed-spark.md) | Spark Connect proxy as a gateway module, Sail and Apache Spark backends, jobs and schedules, Python helpers, CLI, PySpark Connect parity tests | RW1 Tasks 1, 3–5 | Code in progress (lanes SP-a, SP-b); not yet run end to end |
 
 ## Later milestones
 
