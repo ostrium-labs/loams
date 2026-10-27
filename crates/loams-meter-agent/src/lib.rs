@@ -1,4 +1,4 @@
-//! `loams-meter`: Loams Cloud's node metering agent (design 01, MB0).
+//! `loams-meter-agent`: Loams Cloud's node metering agent (design 01, MB0).
 //!
 //! The agent runs once per node (a DaemonSet), outside every tenant sandbox.
 //! Each tick it reads cgroup v2 counters ([`cgroup`]), turns them into

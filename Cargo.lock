@@ -9554,6 +9554,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-meter-agent"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "base64 0.23.1",
+ "clap",
+ "httpmock",
+ "reqwest 0.13.5",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "time",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "xxhash-rust",
+]
+
+[[package]]
 name = "loams-migrate"
 version = "0.1.2"
 dependencies = [

@@ -1,12 +1,12 @@
-//! The `loams-meter` binary: the node metering agent's loop.
+//! The `loams-meter-agent` binary: the node metering agent's loop.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
-use loams_meter::cgroup::DEFAULT_TARGETS;
-use loams_meter::{
+use loams_meter_agent::cgroup::DEFAULT_TARGETS;
+use loams_meter_agent::{
     Agent, CgroupReader, MeterError, Sink, Spool, SpoolConfig, StaticResolver, StreamSink,
     StreamSinkConfig, forward,
 };
@@ -14,7 +14,7 @@ use tracing::{error, info, warn};
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "loams-meter",
+    name = "loams-meter-agent",
     version,
     about = "Loams Cloud's node metering agent"
 )]
@@ -105,7 +105,7 @@ async fn run(cli: Cli) -> Result<(), MeterError> {
     info!(
         node = agent.node(),
         next_seq = agent.next_seq(),
-        "loams-meter started"
+        "loams-meter-agent started"
     );
 
     let mut interval = tokio::time::interval(Duration::from_millis(cli.interval_ms.max(1)));
@@ -131,7 +131,7 @@ async fn run(cli: Cli) -> Result<(), MeterError> {
 /// saved, the process exits non-zero, and the DaemonSet's restarts
 /// (`CrashLoopBackOff`) are the alert. Transient failures leave the events
 /// spooled for the next tick.
-async fn drain<R: loams_meter::TenantResolver>(
+async fn drain<R: loams_meter_agent::TenantResolver>(
     agent: &mut Agent<R>,
     sink: &mut dyn Sink,
 ) -> Result<(), MeterError> {
@@ -170,7 +170,7 @@ async fn main() -> ExitCode {
     match run(Cli::parse()).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            error!(error = %e, "loams-meter stopped");
+            error!(error = %e, "loams-meter-agent stopped");
             ExitCode::FAILURE
         }
     }

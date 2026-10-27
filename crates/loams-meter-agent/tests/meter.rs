@@ -11,9 +11,9 @@ use std::path::{Path, PathBuf};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use httpmock::MockServer;
-use loams_meter::cgroup::DEFAULT_TARGETS;
-use loams_meter::event::PLATFORM_ORG;
-use loams_meter::{
+use loams_meter_agent::cgroup::DEFAULT_TARGETS;
+use loams_meter_agent::event::PLATFORM_ORG;
+use loams_meter_agent::{
     Agent, CgroupReader, MemorySink, Meter, MeterError, MeterEvent, Sink, Spool, SpoolConfig,
     StaticResolver, StreamSink, StreamSinkConfig, forward,
 };
