@@ -13,7 +13,10 @@ publish = false
 # `fabric/` workspace by path (ME1 global constraints), so it keeps to std and
 # serde_json: no async runtime, no Arrow, no loams-log.
 [dependencies]
-serde_json.workspace = true
+# Not `workspace = true`: the root's `preserve_order` feature would unify into
+# fabric's serde_json and change the House's JSON key order. Event encoding is
+# deterministic either way.
+serde_json = "1"
 
 [lints]
 workspace = true
