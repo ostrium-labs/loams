@@ -58,7 +58,7 @@
     "@bufbuild/protoc-gen-es": "2.16.0",
     "@connectrpc/connect": "2.2.0",
     "typescript": "5.9.3",
-    "vitest": "5.0.3"
+    "vitest": "5.0.4"
   },
   "nx": {
     "targets": {

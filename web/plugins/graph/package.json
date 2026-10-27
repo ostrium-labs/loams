@@ -66,7 +66,7 @@
     "react": "catalog:",
     "react-dom": "catalog:",
     "typescript": "5.9.3",
-    "vitest": "5.0.3",
+    "vitest": "5.0.4",
     "@loams/desktop": "workspace:*",
     "@loams/platform-electron": "workspace:*"
   },
