@@ -1,0 +1,31 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites>
+  <testsuite name="temporal-gateway" tests="26" failures="0" errors="0" skipped="0">
+    <testcase classname="temporal-gateway" name="gateway_dx1_scenarios_go" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_scenarios_ts" />
+    <testcase classname="temporal-gateway" name="gateway_hello_go" />
+    <testcase classname="temporal-gateway" name="gateway_hello_ts" />
+    <testcase classname="temporal-gateway" name="gateway_signal_go" />
+    <testcase classname="temporal-gateway" name="gateway_signal_ts" />
+    <testcase classname="temporal-gateway" name="gateway_histories_replay_go" />
+    <testcase classname="temporal-gateway" name="gateway_histories_replay_ts" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_go_hello" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_go_two_activities_sequential" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_go_activity_parallel_fanout_10" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_go_signal_then_complete" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_go_query_while_running" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_go_cancel_requested" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_go_terminated" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_go_workflow_failed_application_error" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_go_activity_heartbeat_details" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ts_hello" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ts_two_activities_sequential" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ts_activity_parallel_fanout_10" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ts_signal_then_complete" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ts_query_while_running" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ts_cancel_requested" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ts_terminated" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ts_workflow_failed_application_error" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ts_activity_heartbeat_details" />
+  </testsuite>
+</testsuites>
