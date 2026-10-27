@@ -1,0 +1,1 @@
+SELECT toStartOfInterval(toDateTime('2024-03-05 10:34:56', 'Asia/Kolkata'), INTERVAL 7 SECOND), toStartOfInterval(toDateTime('2024-03-05 10:34:56', 'Asia/Kolkata'), INTERVAL 45 MINUTE), toStartOfInterval(toDateTime('2024-03-05 10:34:56', 'Asia/Kolkata'), INTERVAL 5 HOUR)

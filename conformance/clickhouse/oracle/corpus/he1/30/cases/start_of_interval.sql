@@ -1,0 +1,1 @@
+SELECT id, toStartOfInterval(dt, INTERVAL 15 MINUTE), toStartOfInterval(dtz, INTERVAL 2 HOUR), toStartOfInterval(dny, toIntervalDay(1)), toStartOfInterval(dt, INTERVAL 7 SECOND), toStartOfInterval(dt64, INTERVAL 100 MILLISECOND), toStartOfInterval(dt64u, INTERVAL 1 MICROSECOND) FROM t30 ORDER BY id

@@ -1,0 +1,1 @@
+SELECT toDateTime('1969-12-31 23:59:59'), toDateTime('2106-02-07 06:28:16'), toDateTime(1700000000), toDateTime(-1), toDateTime(4294967296), toDateTime('2024-03-05T10:00:00'), toDateTime('2024-03-05 10:00:00+05:30'), toDateTime('2024-03-05 10:00'), toDateTime(1700000000.7)

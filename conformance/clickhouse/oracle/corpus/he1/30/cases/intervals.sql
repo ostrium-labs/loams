@@ -1,0 +1,1 @@
+SELECT INTERVAL 1 DAY, toIntervalHour(3), toIntervalMinute(2.5), INTERVAL '1 day', toIntervalYear(1), toIntervalMonth(-2), toIntervalWeek(1), toIntervalQuarter(1), toIntervalMillisecond(1), toIntervalSecond('30')

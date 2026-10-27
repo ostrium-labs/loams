@@ -9,7 +9,7 @@ use std::sync::Arc;
 use datafusion::arrow::datatypes::{DataType, FieldRef};
 use datafusion::common::config::ConfigOptions;
 use datafusion::common::{DataFusionError, Result, TableReference};
-use datafusion::logical_expr::planner::TypePlanner;
+use datafusion::logical_expr::planner::{ExprPlanner, TypePlanner};
 use datafusion::logical_expr::{AggregateUDF, HigherOrderUDF, ScalarUDF, TableSource, WindowUDF};
 use datafusion::sql::planner::ContextProvider;
 use datafusion::sql::sqlparser::ast;
@@ -33,6 +33,10 @@ pub struct Registry {
     pub windows: HashMap<String, Arc<WindowUDF>>,
     /// Higher-order functions (lambdas).
     pub higher_order: HashMap<String, Arc<HigherOrderUDF>>,
+    /// Planners `SqlToRel` asks first for operators and special syntax, with
+    /// the operands' types in hand: date arithmetic with intervals (plan HE1
+    /// Task 30, R30.3).
+    pub expr_planners: Vec<Arc<dyn ExprPlanner>>,
 }
 
 /// ClickHouse type text in casts (`CAST(x AS LowCardinality(String))`,
@@ -154,6 +158,10 @@ impl ContextProvider for HouseContext<'_> {
                 message: format!("Unknown table expression identifier '{db}.{table}'"),
             })
         })
+    }
+
+    fn get_expr_planners(&self) -> &[Arc<dyn ExprPlanner>] {
+        &self.registry.expr_planners
     }
 
     fn get_type_planner(&self) -> Option<Arc<dyn TypePlanner>> {

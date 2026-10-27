@@ -1,0 +1,1 @@
+SELECT id, toStartOfInterval(d, INTERVAL 1 DAY), toStartOfInterval(d, INTERVAL 3 DAY), toStartOfInterval(d, INTERVAL 1 WEEK), toStartOfInterval(d, INTERVAL 2 WEEK), toStartOfInterval(dt, INTERVAL 1 MONTH), toStartOfInterval(dtz, INTERVAL 1 QUARTER), toStartOfInterval(d, INTERVAL 5 YEAR) FROM t30 ORDER BY id

@@ -1,0 +1,1 @@
+SELECT id, subtractHours(dt, 3), subtractHours(d, 3), subtractHours(dt64, 1), addDays(d, 1), addMonths(d, 1), addYears(dt, 1), addWeeks(d32, 2), subtractMinutes(dtz, 90), addQuarters(dt64u, 1), subtractSeconds(dt, 1) FROM t30 ORDER BY id

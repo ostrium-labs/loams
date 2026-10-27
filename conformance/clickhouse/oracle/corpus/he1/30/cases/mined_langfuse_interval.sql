@@ -1,0 +1,1 @@
+SELECT toStartOfInterval(dt, toIntervalSecond(_CAST(3600, 'Int64'))) AS start_time, dateDiff(_CAST('millisecond', 'String'), dt, dt64) AS latency FROM t30 WHERE dt >= (_CAST('2024-03-06 00:00:00', 'DateTime') - toIntervalHour(_CAST(48, 'Int64'))) ORDER BY start_time

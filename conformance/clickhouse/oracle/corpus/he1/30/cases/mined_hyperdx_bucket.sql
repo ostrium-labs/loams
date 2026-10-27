@@ -1,0 +1,1 @@
+SELECT toStartOfInterval(toDateTime(dt64), toIntervalMinute(_CAST(5, 'Int64'))) AS __hdx_time_bucket FROM t30 WHERE (dt64 >= fromUnixTimestamp64Milli(_CAST(1704067200000, 'Int64'))) AND (dt64 <= fromUnixTimestamp64Milli(_CAST(1735689600000, 'Int64'))) ORDER BY __hdx_time_bucket

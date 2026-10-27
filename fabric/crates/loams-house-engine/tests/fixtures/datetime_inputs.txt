@@ -1,0 +1,52 @@
+# One expression per line, captured by scripts/house/capture-datetime-fixtures.sh
+# (plan HE1 Task 30): its toTypeName and its TSV value on the pinned oracle.
+toDate('2024-03-05')
+toDate(19000)
+toDate(65536)
+toDate(-1)
+toDate('2149-06-07')
+toDate('2024-13-45')
+toDate(toDateTime('2024-03-05 23:30:00', 'Asia/Kolkata'))
+toDate32('1899-01-01')
+toDateTime('2024-03-05 10:00:00')
+toDateTime('2024-03-05 10:00:00', 'Asia/Kolkata')
+toDateTime('2106-02-07 06:28:16')
+toDateTime('2024-03-05 10:00:00+05:30')
+toDateTime(toDate32('1960-01-01'))
+toDateTime64('2024-03-05 10:00:00.123456', 3)
+toDateTime64(1700000000.5, 3, 'UTC')
+toDateTime64(-1.5, 3)
+toStartOfHour(toDateTime('2024-03-05 10:34:56'))
+toStartOfMinute(toDateTime64('2024-03-05 10:34:56.789', 3))
+toStartOfDay(toDateTime('2024-03-10 12:00:00', 'America/New_York'))
+toStartOfInterval(toDateTime('2024-03-05 10:34:56', 'Asia/Kolkata'), INTERVAL 7 SECOND)
+toStartOfInterval(toDateTime('2024-03-05 10:34:56', 'Asia/Kolkata'), INTERVAL 1 WEEK)
+toStartOfInterval(toDate('2024-03-05'), INTERVAL 3 DAY)
+toStartOfInterval(toDateTime64('2024-03-05 10:34:56.789', 3), INTERVAL 1 MICROSECOND)
+toYYYYMM(toDate('2024-03-05'))
+toYYYYMMDD(toDateTime('2024-03-05 10:00:00'))
+toDayOfMonth(toDate('2024-03-05'))
+INTERVAL 1 DAY
+toIntervalMinute(2.5)
+toDate('2024-03-05') + INTERVAL 1 DAY
+toDateTime('2024-03-05 00:00:00') - INTERVAL 1 HOUR
+toDate('2024-01-31') + INTERVAL 1 MONTH
+toDate('1970-01-01') - INTERVAL 1 DAY
+toDateTime('2024-11-03 00:30:00', 'America/New_York') + INTERVAL 1 DAY
+toDateTime64('2024-01-01 00:00:00', 3) + INTERVAL 1 MICROSECOND
+toDate('2024-03-05') + 1
+toDateTime('2024-01-01 00:00:00') - 1.5
+toDate('2024-03-05') - toDate('2024-03-01')
+toDateTime64('2024-01-01 00:00:00', 3) - toDateTime64('2023-12-31 00:00:00', 3)
+subtractHours(toDate('2024-01-01'), 3)
+dateDiff('week', toDate('2024-03-02'), toDate('2024-03-04'))
+dateDiff('hour', toDateTime('2024-03-10 00:00:00', 'America/New_York'), toDateTime('2024-03-10 05:00:00', 'America/New_York'))
+dateDiff('second', toDateTime64('2024-01-01 00:00:00.9', 3), toDateTime64('2024-01-01 00:00:01.1', 3))
+toUnixTimestamp('2024-01-01 00:00:00')
+toUnixTimestamp64Nano(toDateTime64('2024-01-01 00:00:00.123', 3))
+fromUnixTimestamp64Milli(1704067200123, 'Asia/Kolkata')
+EXTRACT(HOUR FROM toDateTime('2024-03-05 10:00:00', 'Asia/Kolkata'))
+formatDateTime(toDateTime('2024-03-05 10:07:09'), '%F %T %a %b %j %p %e %M %f %z')
+parseDateTimeBestEffort('2024-03-05 10:07:09.123+05:30')
+toTimeZone(toDateTime('2024-03-05 10:00:00', 'UTC'), 'Asia/Kolkata')
+dateTrunc('month', toDateTime64('2024-03-05 10:30:45.5', 3))

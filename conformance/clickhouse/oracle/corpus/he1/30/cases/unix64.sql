@@ -1,0 +1,1 @@
+SELECT id, toUnixTimestamp64Milli(dt64), toUnixTimestamp64Nano(dt64u), toUnixTimestamp64Micro(dt64), toUnixTimestamp64Second(dt64u), fromUnixTimestamp64Milli(ms), fromUnixTimestamp64Nano(nanos), fromUnixTimestamp64Milli(ms, 'Asia/Kolkata'), fromUnixTimestamp64Micro(ms) FROM t30 ORDER BY id

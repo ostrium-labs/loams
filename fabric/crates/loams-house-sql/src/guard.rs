@@ -23,7 +23,9 @@
 //!   ClickHouse type text, for the House's type planner;
 //! * a select item without an alias gets ClickHouse's column name as its
 //!   alias ([`crate::names`]);
-//! * a table aliased `FINAL` (sqlparser's misreading, R2.3) is marked final.
+//! * a table aliased `FINAL` (sqlparser's misreading, R2.3) is marked final;
+//! * `INTERVAL n UNIT` and `EXTRACT(f FROM x)` become ClickHouse's calls
+//!   (`toIntervalUnit(n)`, `toYear(x)`, [`crate::temporal`]).
 
 use std::collections::BTreeSet;
 
@@ -725,6 +727,7 @@ impl<'a> Guard<'a> {
                 }
             }
         }
+        crate::temporal::fold_constant_args(&known.canonical, args);
         match over {
             None | Some(WindowType::NamedWindow(_)) => {}
             Some(WindowType::WindowSpec(spec)) => self.window_spec(spec)?,
@@ -853,8 +856,20 @@ impl<'a> Guard<'a> {
                 body,
                 syntax: _,
             }) => self.expr(body),
-            Expr::Interval(_) => Err(later("INTERVAL", 30)),
-            Expr::Extract { .. } => Err(later("EXTRACT", 30)),
+            // `INTERVAL n UNIT` and `EXTRACT(f FROM x)` are the calls ClickHouse
+            // makes of them (plan HE1 Task 30, [`crate::temporal`]).
+            Expr::Interval(iv) => {
+                *e = crate::temporal::interval_call(iv)?;
+                self.expr(e)
+            }
+            Expr::Extract {
+                field,
+                syntax: _,
+                expr,
+            } => {
+                *e = crate::temporal::extract_call(field, (**expr).clone())?;
+                self.expr(e)
+            }
             Expr::CompoundFieldAccess { .. } => Err(later("Subscripts (`a[i]`, `m['k']`)", 32)),
             Expr::IsFalse(_)
             | Expr::IsNotFalse(_)

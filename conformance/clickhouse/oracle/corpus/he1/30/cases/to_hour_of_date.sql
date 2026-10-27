@@ -1,0 +1,1 @@
+SELECT toHour(toDate('2024-02-05'))
