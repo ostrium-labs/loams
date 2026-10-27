@@ -154,9 +154,7 @@ impl PgStore {
     /// must equal `shards` ([`StoreError::ShardCountMismatch`], X1.R6). Call
     /// [`PgStore::migrate`] before serving.
     pub async fn connect(url: &str, shards: u32) -> Result<Self, StoreError> {
-        let opts = PgConnectOptions::from_str(url)
-            .map_err(|e| StoreError::InvalidArgument(format!("database URL: {e}")))?;
-        Self::connect_with(opts, shards).await
+        Self::connect_url(url, &PgStoreOptions::new(shards)).await
     }
 
     /// [`PgStore::connect`] with parsed options (TLS, …) and the default
