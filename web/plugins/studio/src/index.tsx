@@ -8,6 +8,7 @@
 // both cases with connect-query over the host's transport (agentd.ts).
 
 import { type PluginModule, service } from '@loams/console-host';
+import { AgentdScope } from '@loams/console-host/query';
 import type { Context } from '@loams/cordis';
 // Brings in the `desktop` service type (a module augmentation of `Services`).
 import type {} from '@loams/platform-electron';
@@ -174,6 +175,13 @@ const plugin: PluginModule = {
         ),
       );
     }
+    // Studio's agentd for other plugins' pages (MK1 Task 9: the Seed Exchange), so on
+    // the web they reach the host picked here rather than the console's (none yet).
+    ctx.effect(() =>
+      slots.register({ name: 'studio.agentd.scope', plugin: 'studio' }, ({ children }) => (
+        <AgentdScope agentd={agentd}>{children}</AgentdScope>
+      )),
+    );
     ctx.effect(() =>
       slots.register(
         {

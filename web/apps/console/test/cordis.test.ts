@@ -67,6 +67,9 @@ describe('the cordis console', () => {
         'Namespaces',
         'Deployments',
         'Approvals',
+        // MK1 Task 9: one entry per mode (Console's Integrate, Studio's group).
+        'The Seed Exchange',
+        'The Seed Exchange',
         'Studio settings',
         'Preferences',
       ]),
@@ -112,6 +115,8 @@ describe('the cordis console', () => {
           'Status',
           'Namespaces',
           'Deployments',
+          'The Seed Exchange',
+          'The Seed Exchange',
           'Studio settings',
           'Preferences',
         ]),
