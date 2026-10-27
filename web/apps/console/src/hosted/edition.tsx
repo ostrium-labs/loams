@@ -11,6 +11,7 @@ import {
   service,
 } from '@loams/console-host';
 import type { Context } from '@loams/cordis';
+import billingPkg from '@loams/plugin-billing/package.json';
 import dataStudioPkg from '@loams/plugin-data-studio/package.json';
 import durablePkg from '@loams/plugin-durable/package.json';
 import enginesPkg from '@loams/plugin-engines/package.json';
@@ -44,6 +45,7 @@ export const webModules: ModuleTable = {
   '@loams/plugin-durable': () => import('@loams/plugin-durable'),
   '@loams/plugin-engines': () => import('@loams/plugin-engines'),
   '@loams/plugin-factory': () => import('@loams/plugin-factory'),
+  '@loams/plugin-billing': () => import('@loams/plugin-billing'),
 };
 
 export const webManifests: unknown[] = [
@@ -59,6 +61,7 @@ export const webManifests: unknown[] = [
   durablePkg,
   enginesPkg,
   factoryPkg,
+  billingPkg,
 ];
 
 /** The patches over base.yml, in order. */

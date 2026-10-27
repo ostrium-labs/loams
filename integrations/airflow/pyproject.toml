@@ -49,6 +49,10 @@ all = [
   "pyiceberg[pyarrow]>=0.12.0",
 ]
 
+[project.scripts]
+# The Resonate executor's interim worker (D2094).
+loams-airflow-resonate-worker = "airflow.providers.loams.executors.resonate.worker:main"
+
 [project.entry-points.apache_airflow_provider]
 provider_info = "airflow.providers.loams.get_provider_info:get_provider_info"
 

@@ -342,7 +342,9 @@ function JobsCard({
                   <tr key={j.id}>
                     <td>
                       <div>{j.name}</div>
-                      <div className={/* mono-ok: id */ 'font-mono text-muted text-small'}>{j.id}</div>
+                      <div className={/* mono-ok: id */ 'font-mono text-muted text-small'}>
+                        {j.id}
+                      </div>
                     </td>
                     <td>{j.kind}</td>
                     <td>

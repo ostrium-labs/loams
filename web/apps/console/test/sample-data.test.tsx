@@ -3,6 +3,7 @@
 // exactly as the console does, and the page it registers is rendered over the fixture client it
 // ships with.
 
+import billing from '@loams/plugin-billing';
 import canvas from '@loams/plugin-canvas';
 import connectors from '@loams/plugin-connectors';
 import deployments from '@loams/plugin-deployments';
@@ -65,6 +66,7 @@ const PAGES: [string, Plugin, string][] = [
   ['deployments', deployments as Plugin, '/deployments'],
   // The stub platform's fetch answers `{}`, not a catalog, so the page falls back to its sample.
   ['engines', engines as Plugin, '/engines'],
+  ['billing', billing as Plugin, '/settings/billing'],
 ];
 
 describe('sample data notice', () => {

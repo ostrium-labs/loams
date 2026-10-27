@@ -8,8 +8,8 @@ Where it sits in the designs:
 
 - §68 §4.4 lists the provider's contents.
 - §74 §9.4 adds `LoamsPostgresHook` and the executor.
-- The executor, `LoamsResonateExecutor`, is built in its own lane and lands in this same package
-  under `executors/`.
+- The executor, `LoamsResonateExecutor`, is in this package under `executors/` (preview). See
+  [the executor guide](../../../docs/guides/durable/airflow-resonate-executor.md).
 - The package lives in the monorepo at `integrations/airflow/` (D2100).
 
 ## Install
@@ -207,10 +207,16 @@ waits for a table to get a snapshot, or a snapshot other than the one an earlier
 The handler normalises a URI. It refuses a URI without a namespace or an object, or with a port or
 credentials. `loams_uri()` and the factory `create_asset()` build URIs.
 
+## Executor (preview)
+
+`airflow.providers.loams.executors.resonate_executor.LoamsResonateExecutor` runs each task instance
+try as a Resonate durable promise, and `loams-airflow-resonate-worker` runs the tries. Configuration,
+routing, failure reporting and the compose profile `airflow-resonate` are in
+[the executor guide](../../../docs/guides/durable/airflow-resonate-executor.md).
+
 ## Not built yet
 
-- `LoamsResonateExecutor` and the worker. They are in progress in a separate lane and land under
-  `executors/`.
+- An end-to-end run of `LoamsResonateExecutor` and its worker (`executors/`; unit-tested only).
 - The Temporal and Resonate operators of §74 §9.4.
 - `LoamsSecretsBackend`, remote logging, the auth manager.
 - OpenLineage converters for `loams://`.

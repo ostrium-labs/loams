@@ -1,0 +1,11 @@
+{
+  "name": "loams-dbos-crash-ts",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "description": "DX0 Task 5: the Loams cases' app for DBOS Transact TypeScript.",
+  "dependencies": {
+    "@dbos-inc/dbos-sdk": "5.2.11",
+    "pg": "8.23.1"
+  }
+}

@@ -26,6 +26,7 @@
     "@loams/plugin-agents": "workspace:*",
     "@loams/plugin-approvals": "workspace:*",
     "@loams/plugin-audit": "workspace:*",
+    "@loams/plugin-billing": "workspace:*",
     "@loams/plugin-canvas": "workspace:*",
     "@loams/plugin-connectors": "workspace:*",
     "@loams/plugin-data-studio": "workspace:*",

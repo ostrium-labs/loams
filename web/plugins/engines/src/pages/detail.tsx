@@ -163,7 +163,11 @@ export function DetailPage({
         <Stat label="Health" value={<HealthBadge health={i.status.health} />} />
         <Stat
           label="Version"
-          value={<span className={/* mono-ok: id */ 'font-mono'}>{i.status.version ?? i.version ?? '—'}</span>}
+          value={
+            <span className={/* mono-ok: id */ 'font-mono'}>
+              {i.status.version ?? i.version ?? '—'}
+            </span>
+          }
           detail={
             i.version && i.status.version && i.version !== i.status.version
               ? `upgrading to ${i.version}`

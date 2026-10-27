@@ -137,7 +137,9 @@ export function ListPage({
                   <td>
                     <HealthBadge health={i.status.health} />
                   </td>
-                  <td className={/* mono-ok: id */ 'font-mono'}>{i.status.version ?? i.version ?? '—'}</td>
+                  <td className={/* mono-ok: id */ 'font-mono'}>
+                    {i.status.version ?? i.version ?? '—'}
+                  </td>
                   <td>{sizeText(i.size)}</td>
                   <td>{formatRelative(i.updated_at)}</td>
                 </tr>

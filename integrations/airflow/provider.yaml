@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # The provider's metadata. get_provider_info.py says the same thing (Airflow
 # reads that one at run time); tests/test_provider_info.py keeps them equal.
-# Executors (LoamsResonateExecutor, lane AF-exec) are added under `executors:`
-# when they land.
 ---
 package-name: airflow-provider-loams
 name: Loams
@@ -52,6 +50,8 @@ triggers:
   - airflow.providers.loams.triggers.stream
 filesystems:
 - airflow.providers.loams.fs.loams_s3
+executors:
+- airflow.providers.loams.executors.resonate_executor.LoamsResonateExecutor
 asset-uris:
 - schemes:
   - loams
