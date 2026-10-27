@@ -306,16 +306,16 @@ tests:
         assertions: {can_view: true, can_admin: true}
       - user: user:mona
         object: org:acme
-        assertions: {can_view: true, can_admin: false}
+        assertions: {can_view: true, can_admin: false, can_run_durable: true}
       - user: user:tess
         object: org:acme
-        assertions: {can_view: false, can_admin: false}
+        assertions: {can_view: false, can_admin: false, can_run_durable: false}
       - user: service_account:ci
         object: org:acme
-        assertions: {can_view: true, can_admin: false}
+        assertions: {can_view: true, can_admin: false, can_run_durable: true}
       - user: agent:agent-1
         object: org:acme
-        assertions: {can_view: false, can_admin: false}
+        assertions: {can_view: false, can_admin: false, can_run_durable: false}
       - user: user:bill
         object: org:acme
         assertions: {can_view: false, can_admin: false}
