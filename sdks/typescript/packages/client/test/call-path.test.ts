@@ -14,7 +14,7 @@ import { toBinary } from '@bufbuild/protobuf';
 import { ErrorInfoSchema } from '@loams/proto/errors';
 import { InstanceService } from '@loams/proto/instance';
 import { LiveService } from '@loams/live/live';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { MODULES, SERVICE_DESCRIPTORS } from '../src/gen/facade.js';
 import { paginate } from '../src/runtime/pagination.js';
 import { CallInvoker } from '../src/runtime/call.js';

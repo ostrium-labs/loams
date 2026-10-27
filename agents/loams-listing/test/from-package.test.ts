@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 import { fromPackageDir, fromPackageJson, integrityOf, normaliseRepository, PackageError, toPackageJson } from '../src/from-package.js';
 import { lint } from '../src/lint.js';
 import { fixture } from './helpers.js';

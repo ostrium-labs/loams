@@ -67,15 +67,15 @@
   height: 10px;
 }
 
-.la .env-dot[data-slug="development"] {
+.la .env-dot[data-slug='development'] {
   background: var(--op-grow);
 }
 
-.la .env-dot[data-slug="staging"] {
+.la .env-dot[data-slug='staging'] {
   background: var(--op-info);
 }
 
-.la .env-dot[data-slug="production"] {
+.la .env-dot[data-slug='production'] {
   background: var(--op-accent);
 }
 
@@ -530,7 +530,7 @@
 
 .la .or::before,
 .la .or::after {
-  content: "";
+  content: '';
   flex: 1;
   height: 1px;
   background: var(--op-rule-soft);

@@ -1,6 +1,6 @@
 import type { PgTimeline } from '@loams/desktop/contracts';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { Branches, flattenTimelines } from '../src/index.js';
 
 afterEach(cleanup);

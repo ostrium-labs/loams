@@ -53,7 +53,7 @@ cargo_package(
         "//third-party/rust:subtle",
         "//third-party/rust:thiserror",
         "//third-party/rust:tokio",
-        "//third-party/rust:tokio-tungstenite-0_24",
+        "//third-party/rust:tokio-tungstenite",
         "//third-party/rust:tracing",
     ],
     dev_deps = [

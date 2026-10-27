@@ -1,6 +1,6 @@
 // A thread's diffs and review comments in memory for the diff panel's tests (SD1 Task 20).
 
-import { vi } from 'vitest';
+import { vi } from 'vite-plus/test';
 import type {
   ChangeRequestInfo,
   CheckoutDiffView,
