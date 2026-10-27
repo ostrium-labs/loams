@@ -28,6 +28,11 @@
       "type": "string",
       "minLength": 1
     },
+    "transactional_id_prefix": {
+      "description": "Prefix of the exactly-once sink's transactional.id, which becomes <prefix><instance>-<split>; unset, loams-<ns>-. On Confluent Cloud set the confluent module's transactional_id_prefix output (default loams-<name>-), the prefix its PREFIXED ACL allows (CC1 Task 8, D1826).",
+      "type": "string",
+      "minLength": 1
+    },
     "enable_idempotence": {
       "description": "The idempotent producer (CN1 Task 6: enable.idempotence=true with acks=all). Sink only; it may not be turned off, which is why the manifest declares sink.idempotent: true.",
       "type": "boolean",

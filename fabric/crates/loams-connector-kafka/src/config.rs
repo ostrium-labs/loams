@@ -46,6 +46,12 @@ pub struct KafkaConfig {
     pub group_id_prefix: Option<String>,
     #[serde(default)]
     pub group_id: Option<String>,
+    /// The transactional sink's `transactional.id` prefix: the id is
+    /// `<prefix><instance>-<split>`. Unset, it is `loams-<ns>-`. A Confluent
+    /// install sets the module's `transactional_id_prefix` output (default
+    /// `loams-<name>-`), which its PREFIXED ACL allows (D1826).
+    #[serde(default)]
+    pub transactional_id_prefix: Option<String>,
     /// The idempotent producer; it may not be turned off (the manifest
     /// declares `sink.idempotent: true`).
     #[serde(default = "yes")]
@@ -323,6 +329,15 @@ impl KafkaConfig {
         if self.topics.is_empty() || self.topics.iter().any(|t| t.trim().is_empty()) {
             return Err(ConnectorError::fatal(
                 "kafka config: topics must name at least one topic",
+            ));
+        }
+        if self
+            .transactional_id_prefix
+            .as_deref()
+            .is_some_and(|p| p.trim().is_empty())
+        {
+            return Err(ConnectorError::fatal(
+                "kafka config: transactional_id_prefix is empty",
             ));
         }
         if self.security_protocol.sasl() && self.sasl.is_none() {

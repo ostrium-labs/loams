@@ -44,6 +44,8 @@ config:
   brokers: SASL_SSL://pkc-xxxxx.us-east-1.aws.confluent.cloud:9092   # the scheme is optional; it is removed
   topics: [orders]
   group_id_prefix: loams-main-
+  group_id: loams-main-orders-in               # unique per source instance
+  transactional_id_prefix: loams-main-         # exactly-once sinks: <prefix><instance>-<split>
   sasl:
     username_secret: confluent-main/username   # the API key id, from the secret store
     password: confluent-main/password          # the API secret, from the secret store
@@ -57,4 +59,7 @@ config:
 
 `sasl.username` (a literal key id) can replace `sasl.username_secret`; one
 of the two is required. Consumer groups and transactional ids must sit under
-the prefixes the `confluent` module grants (`loams-<name>-` by default).
+the prefixes the `confluent` module grants (`loams-<name>-` by default, its
+`consumer_group_prefix` and `transactional_id_prefix` outputs). Without
+`transactional_id_prefix`, an exactly-once sink's id is `loams-<namespace_id>-…`,
+which those ACLs refuse.
