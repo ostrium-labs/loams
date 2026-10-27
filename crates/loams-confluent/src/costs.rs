@@ -134,11 +134,11 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
     let d = doy - (153 * mp + 2) / 5 + 1;
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = yoe + era * 400 + i64::from(m <= 2);
-    // d is 1..=31 and m 1..=12 by construction.
+    // m is 1..=12 and d 1..=31 by construction; the order is (year, month, day).
     (
         y,
-        u32::try_from(d).unwrap_or(1),
         u32::try_from(m).unwrap_or(1),
+        u32::try_from(d).unwrap_or(1),
     )
 }
 
