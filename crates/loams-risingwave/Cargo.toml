@@ -20,17 +20,22 @@ object_store.workspace = true
 rand.workspace = true
 # The meta dashboard's JSON API (probes); plain HTTP inside the tenant network.
 reqwest.workspace = true
+# TLS to a remote engine-gateway (RW-b): the workspace's rustls with ring,
+# over tokio-rustls, with the Mozilla roots; all already in the lockfile.
+rustls = { workspace = true, features = ["ring", "std", "tls12", "logging"] }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 # The frontend's PG wire (probes and the bootstrap of the service users).
 tokio-postgres = "0.7"
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
 # Metering windows (loams-engines' usage()).
 time.workspace = true
 # risingwave.toml, the gateway's routes entries and RW-b's pipeline specs.
 toml.workspace = true
 tracing.workspace = true
+webpki-roots = "1"
 
 [lints]
 workspace = true

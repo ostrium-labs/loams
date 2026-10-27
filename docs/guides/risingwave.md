@@ -179,7 +179,10 @@ schema = { infer = true }
   (`conformance/risingwave/`) that runs RisingWave's own sqllogictest subset is
   written but has not run.
 - The Kafka gateway has no transactions: Kafka sinks are at-least-once.
-- `loams risingwave` connects without TLS, which suits the loopback
-  `engine-gateway`. TLS to a remote gateway is a follow-up.
+- `loams risingwave` uses TLS with a verified certificate for any host that is
+  not loopback (a URL with `sslmode=disable` to such a host is refused) and plain
+  TCP only to loopback, which is how the compose `engine-gateway` is reached. A
+  gateway with a private CA needs `--ca-file` (or `LOAMS_RISINGWAVE_CA_FILE`);
+  `--tls` uses TLS to loopback too.
 - RisingWave option names follow its documentation and are checked against the
   pinned image only when the conformance harness runs.

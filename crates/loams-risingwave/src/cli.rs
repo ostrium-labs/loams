@@ -41,6 +41,13 @@ pub struct RisingWaveArgs {
     /// Print results as JSON.
     #[arg(long, global = true)]
     pub json: bool,
+    /// Extra trust anchors (PEM) for the gateway's certificate. A remote
+    /// host always gets verified TLS; loopback is plain unless --tls.
+    #[arg(long, env = "LOAMS_RISINGWAVE_CA_FILE", global = true)]
+    pub ca_file: Option<PathBuf>,
+    /// Use TLS to a loopback host too.
+    #[arg(long, global = true)]
+    pub tls: bool,
     #[command(subcommand)]
     pub command: RisingWaveCommand,
 }
@@ -212,7 +219,8 @@ fn render(path: &Path, json: bool) -> Result<(), CliError> {
     Ok(())
 }
 
-async fn connect(url: &str) -> Result<SqlApi, CliError> {
+async fn connect(args: &RisingWaveArgs) -> Result<SqlApi, CliError> {
+    let url = args.url.as_str();
     let mut config: tokio_postgres::Config = url.parse().map_err(SqlApiError::Connect)?;
     let password = ["LOAMS_RISINGWAVE_PASSWORD", "LOAMS_API_KEY"]
         .iter()
@@ -222,11 +230,15 @@ async fn connect(url: &str) -> Result<SqlApi, CliError> {
     }
     config.application_name("loams-risingwave");
     config.connect_timeout(Duration::from_secs(10));
-    Ok(SqlApi::connect_config(&config).await?)
+    let options = crate::tls::TlsOptions {
+        ca_file: args.ca_file.clone(),
+        force_tls: args.tls,
+    };
+    Ok(SqlApi::connect_config(config, &options).await?)
 }
 
 async fn connected(args: &RisingWaveArgs) -> Result<(), CliError> {
-    let api = connect(&args.url).await?;
+    let api = connect(args).await?;
     match &args.command {
         RisingWaveCommand::Sql { sql, file } => {
             let text = match (sql, file) {
