@@ -29,6 +29,11 @@ cargo_package(
             "root": "tests/golden.rs",
         },
         {
+            "name": "lifecycle",
+            "crate": "lifecycle",
+            "root": "tests/lifecycle.rs",
+        },
+        {
             "name": "limits",
             "crate": "limits",
             "root": "tests/limits.rs",

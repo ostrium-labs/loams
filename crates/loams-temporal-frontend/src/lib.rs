@@ -23,6 +23,7 @@ pub mod effects;
 pub mod engine;
 pub mod errors;
 pub mod fastpath;
+pub mod lifecycle;
 pub mod outbox;
 pub mod queries;
 pub mod server;

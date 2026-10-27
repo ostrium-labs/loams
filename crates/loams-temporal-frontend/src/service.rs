@@ -6,8 +6,9 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use loams_temporal_history::Attributes;
 use loams_temporal_history::time::{dur, ts};
-use loams_temporal_history::{Attributes, Limits, WorkflowExecutionStatus, limit_messages};
+use loams_temporal_history::{Attributes, Limits, limit_messages};
 use loams_temporal_matching::{Handout, Matcher, QueueKey, TaskKind as QueueKind};
 use loams_temporal_proto::loams::temporal::internal::v1::{TaskKind, TaskToken};
 use loams_temporal_proto::temporal::api::common::v1::{
@@ -732,22 +733,32 @@ impl WorkflowService for WorkflowServiceImpl {
         req: Request<StartWorkflowExecutionRequest>,
     ) -> Result<Response<StartWorkflowExecutionResponse>, Status> {
         let p = self.0.principal(&req)?;
-        let mut r = req.into_inner();
-        let ns = self.0.namespace(&p, &r.namespace).await?;
+        let r = req.into_inner();
         if blob_too_large(r.input.as_ref()) {
             return Err(blob_size_exceeded());
         }
-        if r.request_id.is_empty() {
-            r.request_id = uuid::Uuid::new_v4().to_string();
+        self.0.start_workflow(&p, r).await.map(Response::new)
+    }
+
+    async fn signal_with_start_workflow_execution(
+        &self,
+        req: Request<SignalWithStartWorkflowExecutionRequest>,
+    ) -> Result<Response<SignalWithStartWorkflowExecutionResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        let r = req.into_inner();
+        if blob_too_large(r.input.as_ref()) || blob_too_large(r.signal_input.as_ref()) {
+            return Err(blob_size_exceeded());
         }
-        let run_id = uuid::Uuid::new_v4().to_string();
-        let (run_id, started) = self.0.engine.start(&Frontend::ctx(&ns), run_id, r).await?;
-        Ok(Response::new(StartWorkflowExecutionResponse {
-            run_id,
-            started,
-            status: WorkflowExecutionStatus::Running as i32,
-            ..Default::default()
-        }))
+        self.0.signal_with_start(&p, r).await.map(Response::new)
+    }
+
+    async fn reset_workflow_execution(
+        &self,
+        req: Request<ResetWorkflowExecutionRequest>,
+    ) -> Result<Response<ResetWorkflowExecutionResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        let r = req.into_inner();
+        self.0.reset_workflow(&p, r).await.map(Response::new)
     }
 
     async fn poll_workflow_task_queue(
@@ -1296,6 +1307,14 @@ impl WorkflowService for WorkflowServiceImpl {
                 task_queue: s.task_queue.clone(),
                 history_size_bytes: s.history_size_bytes,
                 first_run_id: s.first_execution_run_id.clone(),
+                auto_reset_points: Some(
+                    loams_temporal_proto::temporal::api::workflow::v1::ResetPoints {
+                        points: loams_temporal_statemachine::reset::reset_points(
+                            &key.run_id,
+                            &self.0.engine.history(&key, 1, usize::MAX).await?,
+                        ),
+                    },
+                ),
                 ..Default::default()
             }),
             pending_activities,
@@ -1317,6 +1336,18 @@ impl WorkflowService for WorkflowServiceImpl {
             .query
             .ok_or_else(|| Status::invalid_argument("Query is not set on request."))?;
         let state = self.0.engine.load(&key).await?.state;
+        if let Some(rejected) =
+            crate::lifecycle::query_rejected(r.query_reject_condition, state.status)
+        {
+            return Ok(Response::new(QueryWorkflowResponse {
+                query_rejected: Some(rejected),
+                ..Default::default()
+            }));
+        }
+        // Consistent query: let an outstanding workflow task finish first.
+        let started = tokio::time::Instant::now();
+        self.0.settle_for_query(&key, wait / 2).await?;
+        let wait = wait.saturating_sub(started.elapsed());
         let (id, rx) = self.0.queries.register(QueryTask {
             key: key.clone(),
             loams_namespace_id: ns.loams_namespace_id.clone(),
@@ -1336,7 +1367,9 @@ impl WorkflowService for WorkflowServiceImpl {
                 query_result: result,
                 ..Default::default()
             })),
-            Ok(Ok(QueryAnswer::Failed(message))) => Err(Status::invalid_argument(message)),
+            Ok(Ok(QueryAnswer::Failed(message, failure))) => {
+                Err(crate::errors::query_failed(message, failure))
+            }
             _ => Err(Status::deadline_exceeded(
                 "no worker answered the query in time (is a worker polling the task queue?)",
             )),
@@ -1353,7 +1386,7 @@ impl WorkflowService for WorkflowServiceImpl {
         let answer = if r.completed_type == QueryResultType::Answered as i32 {
             QueryAnswer::Answered(r.query_result)
         } else {
-            QueryAnswer::Failed(r.error_message)
+            QueryAnswer::Failed(r.error_message, r.failure)
         };
         if !self
             .0

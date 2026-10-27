@@ -26,6 +26,7 @@
 mod activity;
 mod commands;
 mod external;
+pub mod reset;
 mod start;
 pub mod update;
 mod workflow_task;
@@ -41,6 +42,7 @@ use loams_temporal_proto::temporal::api::protocol::v1::Message;
 use loams_temporal_proto::temporal::api::sdk::v1::WorkflowTaskCompletedMetadata;
 use loams_temporal_proto::temporal::api::workflowservice::v1::StartWorkflowExecutionRequest;
 
+pub use external::HISTORY_SERVICE;
 pub use loams_temporal_history as history;
 pub use update::{UpdateStatus, messages_for_task};
 pub use workflow_task::server_failure;
@@ -57,6 +59,20 @@ pub enum Input {
         run_id: String,
         /// The request as the SDK sent it.
         request: Box<StartWorkflowExecutionRequest>,
+    },
+    /// `SignalWithStartWorkflowExecution` with no running run: the run's
+    /// first events with the signal between `WorkflowExecutionStarted` and
+    /// the first `WorkflowTaskScheduled`, as Temporal writes them. The
+    /// state passed to [`apply`] is ignored.
+    SignalWithStart {
+        /// The gateway's namespace ID.
+        namespace_id: String,
+        /// The new run's ID.
+        run_id: String,
+        /// The start part of the request.
+        request: Box<StartWorkflowExecutionRequest>,
+        /// The signal part.
+        signal: StartSignal,
     },
     /// A poll took the outstanding workflow task.
     WorkflowTaskStarted {
@@ -218,6 +234,21 @@ pub enum Input {
         /// The update's request.
         request: Box<loams_temporal_proto::temporal::api::update::v1::Request>,
     },
+}
+
+/// The signal a run is started with (`SignalWithStartWorkflowExecution`).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct StartSignal {
+    /// The signal's name.
+    pub name: String,
+    /// Its input.
+    pub input: Option<Payloads>,
+    /// The sender's identity.
+    pub identity: String,
+    /// Its header.
+    pub header: Option<Header>,
+    /// The request ID.
+    pub request_id: String,
 }
 
 /// Which deadline a timeout is (design 74 §5.4's `kind`).
@@ -483,7 +514,9 @@ fn over_history_limit(state: &MutableState, reason: &str, now_ms: i64) -> Transi
 }
 
 fn dispatch(b: &mut Batch<'_>, fx: &mut Vec<Effect>, input: Input) -> Result<Reply, Rejection> {
-    if !matches!(input, Input::Start { .. }) && !loams_temporal_history::is_open(b.state_ref()) {
+    if !matches!(input, Input::Start { .. } | Input::SignalWithStart { .. })
+        && !loams_temporal_history::is_open(b.state_ref())
+    {
         return match input {
             // A late timeout for a closed run changes nothing.
             Input::WorkflowTaskTimedOut { .. }
@@ -497,7 +530,13 @@ fn dispatch(b: &mut Batch<'_>, fx: &mut Vec<Effect>, input: Input) -> Result<Rep
             namespace_id,
             run_id,
             request,
-        } => start::start(b, fx, &namespace_id, &run_id, *request),
+        } => start::start(b, fx, &namespace_id, &run_id, *request, None),
+        Input::SignalWithStart {
+            namespace_id,
+            run_id,
+            request,
+            signal,
+        } => start::start(b, fx, &namespace_id, &run_id, *request, Some(signal)),
         Input::WorkflowTaskStarted {
             scheduled_event_id,
             identity,

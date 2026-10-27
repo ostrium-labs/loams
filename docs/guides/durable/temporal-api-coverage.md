@@ -4,7 +4,7 @@
 
 Every RPC of `temporalio/api` v1.63.5 (vendored in `crates/loams-temporal-proto`) and whether the Loams Temporal gateway (`crates/loams-temporal-frontend`) answers it. Everything else answers `UNIMPLEMENTED` with a link to the compatibility matrix. Status is preview: "implemented" means the method is built and has unit tests (CI runs them); it does not mean every SDK has run it end to end.
 
-WorkflowService: 23 of 123 implemented. OperatorService: none yet (the gateway does not serve it).
+WorkflowService: 25 of 123 implemented. OperatorService: none yet (the gateway does not serve it).
 
 ## WorkflowService
 
@@ -15,7 +15,7 @@ WorkflowService: 23 of 123 implemented. OperatorService: none yet (the gateway d
 | `ListNamespaces` | implemented (DX1) | one page |
 | `UpdateNamespace` | planned: TMP-api E | description, retention, owner email, data |
 | `DeprecateNamespace` | planned: TMP-api E | deprecated upstream too |
-| `StartWorkflowExecution` | implemented (DX1) | no start delay, no cron, reuse policy 'allow duplicate' |
+| `StartWorkflowExecution` | implemented (DX1) | ID reuse and conflict policies (TMP-api B); no start delay, no cron |
 | `ExecuteMultiOperation` | not planned yet | update-with-start; needs start and update in one commit |
 | `GetWorkflowExecutionHistory` | implemented (DX1) | paged; long poll; close-event filter |
 | `GetWorkflowExecutionHistoryReverse` | planned: TMP-api C |  |
@@ -33,9 +33,9 @@ WorkflowService: 23 of 123 implemented. OperatorService: none yet (the gateway d
 | `RespondActivityTaskCanceledById` | planned: TMP-api C |  |
 | `RequestCancelWorkflowExecution` | implemented (DX1) |  |
 | `SignalWorkflowExecution` | implemented (DX1) |  |
-| `SignalWithStartWorkflowExecution` | planned: TMP-api B |  |
-| `ResetWorkflowExecution` | planned: TMP-api B | reset to a workflow task; reapply signals and updates |
-| `TerminateWorkflowExecution` | implemented (DX1) |  |
+| `SignalWithStartWorkflowExecution` | implemented (TMP-api) | ID reuse and conflict policies |
+| `ResetWorkflowExecution` | implemented (TMP-api) | to a workflow task boundary; signals reapplied, updates not yet |
+| `TerminateWorkflowExecution` | implemented (DX1) | fails a started workflow task first (TMP-api B, D2084) |
 | `DeleteWorkflowExecution` | not planned yet | needs the store's delete path (lane TMP-store) |
 | `ListOpenWorkflowExecutions` | lane TMP-sched (schedules and visibility) |  |
 | `ListClosedWorkflowExecutions` | lane TMP-sched (schedules and visibility) |  |
@@ -47,7 +47,7 @@ WorkflowService: 23 of 123 implemented. OperatorService: none yet (the gateway d
 | `RespondQueryTaskCompleted` | implemented (DX1) |  |
 | `ResetStickyTaskQueue` | implemented (DX1) | no-op: no sticky queues |
 | `ShutdownWorker` | planned: TMP-api C | no-op: no sticky queues |
-| `QueryWorkflow` | implemented (DX1) | to a live poller; reject conditions in TMP-api B |
+| `QueryWorkflow` | implemented (DX1) | to a live poller after any outstanding workflow task; reject conditions (TMP-api B) |
 | `DescribeWorkflowExecution` | implemented (DX1) | fuller answer in TMP-api C |
 | `DescribeTaskQueue` | planned: TMP-api C | pollers seen by the matcher |
 | `GetClusterInfo` | planned: TMP-api C |  |

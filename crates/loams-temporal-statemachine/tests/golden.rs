@@ -28,6 +28,7 @@ const DX1: &[&str] = &[
     "activity_heartbeat_details",
     // TMP-api (D2080).
     "update_accepted_completed",
+    "signal_with_start",
 ];
 
 fn nanos(e: &HistoryEvent) -> i128 {
@@ -337,6 +338,55 @@ pub fn script(events: &[HistoryEvent]) -> Vec<(i64, Input)> {
             _ => continue,
         };
         out.push((t, e.event_id, input));
+    }
+    // Signal-with-start: the signal written as event 2, between the
+    // started event and the first workflow task, came with the start.
+    if let Some(si) = out
+        .iter()
+        .position(|(_, id, i)| *id == 2 && matches!(i, Input::Signal { .. }))
+        && let Some(st) = out.iter().position(|(_, id, _)| *id == 1)
+    {
+        let (_, _, sig) = out.remove(si);
+        let Input::Signal {
+            name,
+            input,
+            identity,
+            header,
+            request_id,
+        } = sig
+        else {
+            unreachable!("matched above")
+        };
+        if let (
+            t,
+            id,
+            Input::Start {
+                namespace_id,
+                run_id,
+                request,
+            },
+        ) = out.remove(st)
+        {
+            out.insert(
+                st,
+                (
+                    t,
+                    id,
+                    Input::SignalWithStart {
+                        namespace_id,
+                        run_id,
+                        request,
+                        signal: loams_temporal_statemachine::StartSignal {
+                            name,
+                            input,
+                            identity,
+                            header,
+                            request_id,
+                        },
+                    },
+                ),
+            );
+        }
     }
     out.sort_by_key(|(t, id, _)| (*t, *id));
     out.into_iter()

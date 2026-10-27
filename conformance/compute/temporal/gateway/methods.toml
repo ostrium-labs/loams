@@ -112,3 +112,19 @@ cases = ["gateway_dx1_differential_{sdk}_query_while_running"]
 [[method]]
 name = "ResetStickyTaskQueue"
 note = "a no-op; no SDK call in these runs and no test yet"
+
+[[method]]
+name = "UpdateWorkflowExecution"
+note = "TMP-api (D2080): statemachine unit tests and the golden corpus scenario only; no SDK leg yet"
+
+[[method]]
+name = "PollWorkflowExecutionUpdate"
+note = "TMP-api (D2080): statemachine unit tests and the golden corpus scenario only; no SDK leg yet"
+
+[[method]]
+name = "SignalWithStartWorkflowExecution"
+note = "TMP-api (D2085, D2083): statemachine and policy unit tests and the golden corpus scenario only; no SDK leg yet"
+
+[[method]]
+name = "ResetWorkflowExecution"
+note = "TMP-api (D2085, D2083): statemachine and policy unit tests and the golden corpus scenario only; no SDK leg yet"
