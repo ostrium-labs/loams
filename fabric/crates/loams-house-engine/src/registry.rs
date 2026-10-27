@@ -1,11 +1,7 @@
 //! The functions the engine registers with DataFusion, by their ClickHouse
 //! names (plan HE1 Tasks 28–33 fill it).
 //!
-//! **Stand-ins until Task 28.** `count`, `sum`, `min`, `max` and `avg` are
-//! DataFusion's own aggregates under ClickHouse's names: the right rows, but
-//! not ClickHouse's result types (`count` is `Int64`, not `UInt64`). The
-//! oracle reports each difference, and the triage marks it a `bug` of Task 28
-//! (D1804); nothing is hidden.
+//! Aggregates are `loams_house_exec::agg` (Task 28).
 
 use std::sync::Arc;
 
@@ -20,13 +16,7 @@ pub const VERSION: &str = "26.9.2.1";
 /// The engine's functions.
 pub fn registry() -> Registry {
     let mut r = Registry::default();
-    use datafusion::functions_aggregate as agg;
-    r.aggregates
-        .insert("count".into(), agg::count::count_udaf());
-    r.aggregates.insert("sum".into(), agg::sum::sum_udaf());
-    r.aggregates.insert("min".into(), agg::min_max::min_udaf());
-    r.aggregates.insert("max".into(), agg::min_max::max_udaf());
-    r.aggregates.insert("avg".into(), agg::average::avg_udaf());
+    loams_house_exec::agg::register(&mut r);
     let version = create_udf(
         "version",
         vec![],

@@ -1,0 +1,1 @@
+SELECT sum(g) FROM t28
