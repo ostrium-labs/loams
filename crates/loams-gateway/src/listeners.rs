@@ -79,7 +79,10 @@ impl Gateway {
         if config.pg.tls_mode == TlsMode::Passthrough {
             tracing::info!("tls_mode = passthrough: direct-TLS clients are refused");
         }
-        let risingwave = if config.risingwave.certs.is_empty() && config.risingwave.auth.is_none() {
+        let risingwave = if config.risingwave.certs.is_empty()
+            && config.risingwave.self_signed_names.is_empty()
+            && config.risingwave.auth.is_none()
+        {
             None
         } else {
             Some(Arc::new(
