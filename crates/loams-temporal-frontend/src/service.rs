@@ -6,8 +6,12 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
+<<<<<<< HEAD
 use loams_temporal_history::Attributes;
 use loams_temporal_history::time::{dur, dur_ms, ms, ts};
+=======
+use loams_temporal_history::time::{dur, ts};
+>>>>>>> tmp-api-b
 use loams_temporal_history::{Attributes, Limits, limit_messages};
 use loams_temporal_matching::{Handout, Matcher, QueueKey, TaskKind as QueueKind};
 use loams_temporal_proto::loams::temporal::internal::v1::{TaskKind, TaskToken};
@@ -1282,6 +1286,7 @@ impl WorkflowService for WorkflowServiceImpl {
                     0 => None,
                     s2c => Some(ts(a.scheduled_time.as_ref().map_or(0, ms) + s2c)),
                 },
+                #[allow(deprecated)]
                 last_worker_version_stamp: a.started_worker_version.clone(),
                 ..Default::default()
             })
