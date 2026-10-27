@@ -65,6 +65,12 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "datafusion*"
         update-types: ["version-update:semver-major"]
+      # parquet 60 alone pulls arrow 60 beside arrow 58: loams-graph's
+      # snapshot writer hands arrow 58 batches to parquet's ArrowWriter, which
+      # then wants arrow 60 types (#1245, 2026-10-27). It moves with arrow,
+      # DataFusion and Lance.
+      - dependency-name: "parquet"
+        update-types: ["version-update:semver-major"]
       # rand and rand_chacha 0.10 change the Rng traits and move together.
       - dependency-name: "rand"
         update-types: ["version-update:semver-major"]
