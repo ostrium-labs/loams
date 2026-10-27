@@ -35,6 +35,33 @@ pub struct Engine {
     store: Arc<dyn Store>,
     clock: Arc<dyn Fn() -> i64 + Send + Sync>,
     watchers: Mutex<HashMap<RunKey, watch::Sender<RunProgress>>>,
+    followups: Mutex<Option<tokio::sync::mpsc::UnboundedSender<FollowUp>>>,
+}
+
+/// A committed transition whose effects the frontend carries out itself
+/// (children, continue-as-new, external signals and cancels, the parent
+/// close policy, telling a parent its child closed; D2087).
+#[derive(Debug, Clone)]
+pub struct FollowUp {
+    /// The run's namespace.
+    pub ctx: EffectContext,
+    /// The run.
+    pub key: RunKey,
+    /// What was committed.
+    pub transition: Transition,
+}
+
+/// Whether a committed transition needs the frontend after the commit.
+pub fn needs_follow_up(t: &Transition) -> bool {
+    t.effects.iter().any(|e| match e {
+        Effect::StartChild { .. }
+        | Effect::ContinuedAsNew { .. }
+        | Effect::SignalExternal { .. }
+        | Effect::CancelExternal { .. }
+        | Effect::ParentClosePolicy { .. } => true,
+        Effect::RunClosed { .. } => t.state.parent.is_some(),
+        _ => false,
+    })
 }
 
 impl std::fmt::Debug for Engine {
@@ -105,6 +132,33 @@ impl Engine {
             store,
             clock,
             watchers: Mutex::new(HashMap::new()),
+            followups: Mutex::new(None),
+        }
+    }
+
+    /// Sends every committed transition that needs a follow-up to `tx`.
+    pub fn set_followups(&self, tx: tokio::sync::mpsc::UnboundedSender<FollowUp>) {
+        *self
+            .followups
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(tx);
+    }
+
+    fn follow_up(&self, ctx: &EffectContext, key: &RunKey, t: &Transition) {
+        if !needs_follow_up(t) {
+            return;
+        }
+        if let Some(tx) = self
+            .followups
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+        {
+            let _ = tx.send(FollowUp {
+                ctx: ctx.clone(),
+                key: key.clone(),
+                transition: t.clone(),
+            });
         }
     }
 
@@ -165,6 +219,7 @@ impl Engine {
             match self.store.commit(key, run.version, commit).await {
                 Ok(_) => {
                     self.notify(key, &t.state);
+                    self.follow_up(ctx, key, &t);
                     return Ok(t);
                 }
                 Err(StoreError::Conflict { .. }) => continue,
@@ -184,31 +239,34 @@ impl Engine {
         run_id: String,
         request: StartWorkflowExecutionRequest,
     ) -> Result<(String, bool), Status> {
-        let key = RunKey::new(&ctx.namespace_id, &request.workflow_id, &run_id);
+        let workflow_id = request.workflow_id.clone();
         let request_id = request.request_id.clone();
         let input = Input::Start {
             namespace_id: ctx.namespace_id.clone(),
             run_id: run_id.clone(),
             request: Box::new(request),
         };
+        self.start_with(ctx, &workflow_id, run_id, request_id, input)
+            .await
+    }
+
+    /// Starts a run with a start-shaped `input` (`Start` or
+    /// `SignalWithStart`); answers as [`Engine::start`] does.
+    pub async fn start_with(
+        &self,
+        ctx: &EffectContext,
+        workflow_id: &str,
+        run_id: String,
+        request_id: String,
+        input: Input,
+    ) -> Result<(String, bool), Status> {
+        let key = RunKey::new(&ctx.namespace_id, workflow_id, &run_id);
         let t = apply(&MutableState::default(), input, self.now_ms()).map_err(rejection_status)?;
-        let start = StartExecution {
-            key: key.clone(),
-            request_id: request_id.clone(),
-            commit: Commit {
-                events: rows(&t.events),
-                state_blob: t.state.encode_to_vec(),
-                status: t.state.status,
-                next_event_id: t.state.next_event_id,
-                outbox: outbox_rows(ctx, &t.state, &t.effects, self.now_ms()),
-                visibility: Some(visibility(&t.state)),
-            },
-        };
-        match self.store.start(start).await.map_err(store_status)? {
-            StartOutcome::Started { .. } => {
-                self.notify(&key, &t.state);
-                Ok((run_id, true))
-            }
+        match self
+            .create_run(ctx, &key, &request_id, &t.state, &t.events, &t.effects)
+            .await?
+        {
+            StartOutcome::Started { .. } => Ok((run_id, true)),
             StartOutcome::AlreadyStarted {
                 run_id: existing,
                 request_id: existing_request,
@@ -225,6 +283,37 @@ impl Engine {
                 }
             }
         }
+    }
+
+    /// Creates a run from a first commit that is already built (a start, or
+    /// a reset's new run): the store's current-run check, the commit and the
+    /// current-run upsert in one transaction.
+    pub async fn create_run(
+        &self,
+        ctx: &EffectContext,
+        key: &RunKey,
+        request_id: &str,
+        state: &MutableState,
+        events: &[HistoryEvent],
+        effects: &[Effect],
+    ) -> Result<StartOutcome, Status> {
+        let start = StartExecution {
+            key: key.clone(),
+            request_id: request_id.to_string(),
+            commit: Commit {
+                events: rows(events),
+                state_blob: state.encode_to_vec(),
+                status: state.status,
+                next_event_id: state.next_event_id,
+                outbox: outbox_rows(ctx, state, effects, self.now_ms()),
+                visibility: Some(visibility(state)),
+            },
+        };
+        let outcome = self.store.start(start).await.map_err(store_status)?;
+        if matches!(outcome, StartOutcome::Started { .. }) {
+            self.notify(key, state);
+        }
+        Ok(outcome)
     }
 
     fn notify(&self, key: &RunKey, state: &MutableState) {

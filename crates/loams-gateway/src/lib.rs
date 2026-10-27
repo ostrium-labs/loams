@@ -15,6 +15,9 @@
 //!   without SNI (D1016).
 //! - **Routes** come from a file `pg-control` renders, hot-reloaded (D1018).
 //!
+//! The [`risingwave`] module routes managed RisingWave instances
+//! (`<name>.<ns>.<region>.rw.<base-domain>`) behind Loams auth (design 81).
+//!
 //! PgDog is an unmodified separate process (AGPL-3.0); nothing of it is in
 //! this crate (§46 §8.3).
 
@@ -26,6 +29,7 @@ pub mod meter;
 pub mod observe;
 pub mod pg;
 pub mod reload;
+pub mod risingwave;
 pub mod routes;
 pub mod sniff;
 #[cfg(feature = "spark")]
