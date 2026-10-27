@@ -1,0 +1,1 @@
+SELECT max(COLUMNS('^k$')) FROM u25

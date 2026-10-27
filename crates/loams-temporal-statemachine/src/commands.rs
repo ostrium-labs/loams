@@ -1,12 +1,16 @@
 //! A completed workflow task's commands, each turned into its events.
 
 use loams_temporal_history::time::{dur, dur_ms, ts};
-use loams_temporal_history::{ActivityInfo, Attributes, Batch, TimerInfo, WorkflowExecutionStatus};
+use loams_temporal_history::{
+    ActivityInfo, Attributes, Batch, Limits, MutableState, TimerInfo, WorkflowExecutionStatus,
+};
 use loams_temporal_proto::temporal::api::command::v1::{
     Command, ScheduleActivityTaskCommandAttributes, command,
 };
-use loams_temporal_proto::temporal::api::common::v1::RetryPolicy;
-use loams_temporal_proto::temporal::api::enums::v1::{RetryState, TaskQueueKind};
+use loams_temporal_proto::temporal::api::common::v1::{Payloads, RetryPolicy};
+use loams_temporal_proto::temporal::api::enums::v1::{
+    RetryState, TaskQueueKind, WorkflowTaskFailedCause,
+};
 use loams_temporal_proto::temporal::api::history::v1::{
     ActivityTaskCancelRequestedEventAttributes, ActivityTaskCanceledEventAttributes,
     ActivityTaskScheduledEventAttributes, MarkerRecordedEventAttributes,
@@ -15,6 +19,7 @@ use loams_temporal_proto::temporal::api::history::v1::{
     WorkflowExecutionFailedEventAttributes,
 };
 use loams_temporal_proto::temporal::api::taskqueue::v1::TaskQueue;
+use prost::Message as _;
 
 use crate::write::close;
 use crate::{Effect, Rejection, TimeoutKind};
@@ -50,6 +55,105 @@ pub(crate) fn validate(commands: &[Command]) -> Result<(), Rejection> {
         }
     }
     Ok(())
+}
+
+/// A completion whose commands break one of X1.R7's limits, as Temporal's
+/// `workflowSizeChecker` (v1.32.1 `service/history/api/
+/// respondworkflowtaskcompleted`) finds it.
+pub(crate) struct LimitBreach {
+    /// The workflow task's failed cause.
+    pub cause: WorkflowTaskFailedCause,
+    /// The checker's message (Temporal writes `"<CAUSE>: <message>"`).
+    pub message: String,
+    /// An oversized payload terminates the run; too many pending
+    /// activities only fails the workflow task.
+    pub terminate: bool,
+}
+
+impl LimitBreach {
+    fn payload(cause: WorkflowTaskFailedCause, message: &str) -> Self {
+        LimitBreach {
+            cause,
+            message: message.into(),
+            terminate: true,
+        }
+    }
+}
+
+/// Checks a completion's commands, in order, against the payload limit and
+/// the pending-activity limit before anything is written. Temporal checks
+/// each command as it handles it and then discards the whole completion, so
+/// checking first gives the same result. Child workflows, external signals
+/// and external cancel requests are not built yet (§5.8), so their counts
+/// cannot be reached.
+pub(crate) fn check_limits(commands: &[Command], state: &MutableState) -> Option<LimitBreach> {
+    use WorkflowTaskFailedCause as C;
+    let limits = Limits::default();
+    let size = |p: Option<&Payloads>| p.map_or(0, |p| p.encoded_len());
+    let mut pending = state.activities.len();
+    for c in commands {
+        match c.attributes.as_ref()? {
+            command::Attributes::ScheduleActivityTaskCommandAttributes(a) => {
+                if limits.blob_too_large(size(a.input.as_ref())) {
+                    return Some(LimitBreach::payload(
+                        C::BadScheduleActivityAttributes,
+                        "ScheduleActivityTaskCommandAttributes.Input exceeds size limit.",
+                    ));
+                }
+                if pending >= limits.pending_activities {
+                    return Some(LimitBreach {
+                        cause: C::PendingActivitiesLimitExceeded,
+                        message: format!(
+                            "the number of pending activities, {pending}, has reached the per-workflow limit of {}",
+                            limits.pending_activities
+                        ),
+                        terminate: false,
+                    });
+                }
+                pending += 1;
+            }
+            command::Attributes::RequestCancelActivityTaskCommandAttributes(a) => {
+                // An activity not yet started is cancelled at once.
+                if loams_temporal_history::activity(state, a.scheduled_event_id)
+                    .is_some_and(|x| !x.started)
+                {
+                    pending = pending.saturating_sub(1);
+                }
+            }
+            command::Attributes::RecordMarkerCommandAttributes(a) => {
+                let details: usize = a
+                    .details
+                    .iter()
+                    .map(|(k, v)| k.len() + v.encoded_len())
+                    .sum();
+                if limits.blob_too_large(details) {
+                    return Some(LimitBreach::payload(
+                        C::BadRecordMarkerAttributes,
+                        "RecordMarkerCommandAttributes.Details exceeds size limit.",
+                    ));
+                }
+            }
+            command::Attributes::CompleteWorkflowExecutionCommandAttributes(a) => {
+                if limits.blob_too_large(size(a.result.as_ref())) {
+                    // Temporal's cause here is the schedule-activity one.
+                    return Some(LimitBreach::payload(
+                        C::BadScheduleActivityAttributes,
+                        "CompleteWorkflowExecutionCommandAttributes.Result exceeds size limit.",
+                    ));
+                }
+            }
+            command::Attributes::FailWorkflowExecutionCommandAttributes(a) => {
+                if limits.blob_too_large(a.failure.as_ref().map_or(0, |f| f.encoded_len())) {
+                    return Some(LimitBreach::payload(
+                        C::BadFailWorkflowExecutionAttributes,
+                        "FailWorkflowExecutionCommandAttributes.Failure exceeds size limit.",
+                    ));
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn kind(a: &command::Attributes) -> &'static str {

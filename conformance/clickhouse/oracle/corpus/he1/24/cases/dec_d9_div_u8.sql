@@ -1,0 +1,1 @@
+SELECT d9 / u8 FROM t24d ORDER BY id

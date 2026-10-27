@@ -5892,16 +5892,34 @@ dependencies = [
 name = "loams-fabric"
 version = "0.0.1"
 dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "bytes",
  "clap",
+ "http",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "jsonschema",
  "loams-cache",
  "loams-chdb-sys",
  "loams-common",
+ "loams-connector-kafka",
+ "loams-connector-mysql",
+ "loams-connector-postgres",
+ "loams-connector-sdk",
+ "loams-flow",
  "loams-house",
  "loams-house-cache",
  "loams-store",
  "rustls",
+ "serde",
+ "serde_json",
+ "serde_norway",
  "tempfile",
+ "thiserror",
  "tokio",
+ "tracing",
  "uuid",
 ]
 
@@ -6144,6 +6162,7 @@ version = "0.0.1"
 dependencies = [
  "datafusion",
  "loams-house-types",
+ "regex",
  "serde_json",
  "tokio",
 ]
