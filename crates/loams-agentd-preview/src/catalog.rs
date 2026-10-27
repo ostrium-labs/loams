@@ -268,21 +268,18 @@ impl Catalog {
                 );
                 changed_names = true;
             }
-            let fingerprint = format!(
-                "{:x}",
-                Sha256::digest(format!(
-                    "{}\0{}",
-                    listener.cwd.display(),
-                    command_identity(
-                        &listener
-                            .args
-                            .iter()
-                            .filter(|arg| arg.parse::<u16>().ok() != Some(listener.address.port()))
-                            .cloned()
-                            .collect::<Vec<_>>()
-                    )
-                ))
-            );
+            let fingerprint = hex::encode(Sha256::digest(format!(
+                "{}\0{}",
+                listener.cwd.display(),
+                command_identity(
+                    &listener
+                        .args
+                        .iter()
+                        .filter(|arg| arg.parse::<u16>().ok() != Some(listener.address.port()))
+                        .cloned()
+                        .collect::<Vec<_>>()
+                )
+            )));
             let previous_id = state
                 .routes
                 .values()

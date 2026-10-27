@@ -38,7 +38,7 @@ export function SkeletonList({
       <span className="sr-only">{label}</span>
       {Array.from({ length: rows }, (_, i) => (
         <Skeleton
-          // biome-ignore lint/suspicious/noArrayIndexKey: placeholders have no identity
+          // oxlint-disable-next-line react/no-array-index-key -- placeholders have no identity
           key={i}
           className={layout === 'cards' ? 'h-24' : cx('h-7', WIDTHS[i % WIDTHS.length])}
         />

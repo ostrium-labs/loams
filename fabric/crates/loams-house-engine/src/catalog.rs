@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-use datafusion::datasource::{MemTable, provider_as_source};
+use datafusion::datasource::{MemTable, TableProvider, provider_as_source};
 use datafusion::logical_expr::TableSource;
 
 /// A table and what the House knows about it besides its rows.
@@ -23,6 +23,9 @@ pub struct Table {
 #[derive(Default)]
 pub struct MemCatalog {
     tables: RwLock<HashMap<(String, String), Table>>,
+    /// Lake tables read through their pins (plan HE1 Task 26). A lake table
+    /// shadows a seeded one of the same name.
+    lake: RwLock<HashMap<(String, String), Arc<dyn TableProvider>>>,
 }
 
 impl std::fmt::Debug for MemCatalog {
@@ -46,6 +49,22 @@ impl MemCatalog {
         }
     }
 
+    /// Adds or replaces the lake table `database.name`.
+    pub fn insert_lake(&self, database: &str, name: &str, table: Arc<dyn TableProvider>) {
+        if let Ok(mut t) = self.lake.write() {
+            t.insert((database.to_string(), name.to_string()), table);
+        }
+    }
+
+    /// The lake table `database.name`.
+    pub fn lake(&self, database: &str, name: &str) -> Option<Arc<dyn TableProvider>> {
+        self.lake
+            .read()
+            .ok()?
+            .get(&(database.to_string(), name.to_string()))
+            .cloned()
+    }
+
     /// The table `database.name`.
     pub fn get(&self, database: &str, name: &str) -> Option<Table> {
         self.tables
@@ -58,6 +77,9 @@ impl MemCatalog {
 
 impl loams_house_sql::Catalog for MemCatalog {
     fn table(&self, database: &str, name: &str) -> Option<Arc<dyn TableSource>> {
+        if let Some(lake) = self.lake(database, name) {
+            return Some(provider_as_source(lake));
+        }
         self.get(database, name).map(|t| provider_as_source(t.data))
     }
 }

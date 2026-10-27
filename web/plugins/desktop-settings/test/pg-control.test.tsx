@@ -5,7 +5,7 @@ import type {
   PgControlTestResult,
 } from '@loams/desktop/contracts';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 import { PgControlSection } from '../src/pg-control.js';
 
 afterEach(cleanup);

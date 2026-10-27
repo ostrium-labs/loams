@@ -1,6 +1,6 @@
 import { compileSpec, readChartTheme } from '@loams/charts';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { UsageChart } from '../src/live/charts.js';
 import { formatKpi, KpiCard, kpiDelta } from '../src/live/kpis.js';
 import { LiveDashboard } from '../src/live/live-dashboard.js';

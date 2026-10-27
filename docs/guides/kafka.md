@@ -36,8 +36,46 @@ placeholder (`change-me`) or shorter than 12 characters: `iggy` and `kafka-gatew
 (`deploy/release/config/kafka-guard.sh`). Set it before the first start: Iggy writes its root
 user to the `iggy-data` volume then, and changing `.env` afterwards does not change it.
 
-On a remote machine: `deploy/release/byoc/install.sh --profiles kafka` (it writes a random
-password into the new `.env`).
+On a remote machine: `deploy/release/byoc/install.sh --kafka iggy` (or `--profiles kafka`;
+it writes a random password into the new `.env`).
+
+## Kafka endpoint: Iggy or Confluent
+
+Your apps need a Kafka endpoint, and Loams can give them one of two (design §80 §4.3, D1820):
+
+| | Iggy (`kafka` profile) | Confluent Cloud (`connectors` profile) |
+|---|---|---|
+| Where the broker runs | On the Loams VM, next to the engine | Confluent's managed cluster, ideally in the VM's cloud and region |
+| Who your apps talk to | `127.0.0.1:9093` on the VM (or over your tailnet) | Confluent's bootstrap endpoint, with your own Confluent keys |
+| How data reaches Loams | Directly: it is Loams' own Kafka front | `loams-fabric connect` reads topics into Loams streams and writes streams to topics ([confluent-cloud.md](connectors/confluent-cloud.md)) |
+| Cost | The VM's disk and CPU | Confluent's bill; Loams bounds only its own share ([byoc/confluent.md](byoc/confluent.md) §6) |
+| Kafka features | All but transactions (preview) | Everything Confluent offers, transactions included |
+| Status | Preview | Preview (CC1) |
+
+Pick Iggy when nothing outside the VM needs the topics and you want no second bill. Pick
+Confluent when your apps already use Confluent, or need its connectors, Schema Registry or
+transactions. Both can run at once (`--kafka iggy,confluent`), each named: there is no shorthand
+that turns on both.
+
+With `deploy/release/byoc/install.sh`:
+
+```sh
+# Iggy on the VM
+install.sh --kafka iggy user@host
+# Loams' connectors to and from a Confluent Cloud cluster
+install.sh --kafka confluent \
+  --confluent-bootstrap pkc-xxxxx.us-east-1.aws.confluent.cloud:9092 \
+  --confluent-topics orders,cdc.app.users=users --confluent-sinks events=loams-prod-events \
+  --confluent-prefix loams-prod- user@host
+```
+
+With `confluent`, install.sh turns on the `connectors` profile, adds `apikey` to
+`LOAMS_AUTH_MODE` (the connect socket takes API keys only), writes one instance file per topic
+and per sink into `connect/instances/` from `deploy/release/connect/templates/`, and makes the
+connect role's API key and admin token on the host. It does not create the Confluent key:
+`loams byoc confluent key create` puts it in your cloud's secret store, and with `--cloud` the
+VM fetches it at boot ([byoc/confluent.md](byoc/confluent.md) §5). Without `--cloud`, write it to
+`secrets/connect/0/confluent-<integration>/{username,password}` yourself.
 
 Try it with kcat:
 

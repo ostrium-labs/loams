@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { main } from '../src/cli.js';
 import { TESTDATA } from './helpers.js';
 
