@@ -4,6 +4,7 @@ from __future__ import annotations
 from unittest import mock
 
 import pytest
+from airflow.sdk.exceptions import TaskDeferred
 
 from airflow.providers.loams.hooks.house import HouseResult, LoamsHouseHook
 from airflow.providers.loams.operators.house import LoamsHouseQueryOperator, task_query_id
@@ -37,7 +38,7 @@ def test_operator_defers_the_last_statement(loams_connection, context) -> None:
     )
     with (
         mock.patch.object(LoamsHouseHook, "run", return_value=HouseResult()) as run,
-        pytest.raises(Exception) as d,
+        pytest.raises(TaskDeferred) as d,
     ):
         op.execute(context)
     assert type(d.value).__name__ == "TaskDeferred"
@@ -79,7 +80,7 @@ def test_sensor_poke(loams_connection, context) -> None:
 
 def test_sensor_defers(loams_connection, context) -> None:
     sensor = LoamsHouseQuerySensor(task_id="s", query_id="q", deferrable=True, poke_interval=7)
-    with mock.patch.object(LoamsHouseHook, "get_query", return_value=None), pytest.raises(Exception) as d:
+    with mock.patch.object(LoamsHouseHook, "get_query", return_value=None), pytest.raises(TaskDeferred) as d:
         sensor.execute(context)
     assert type(d.value).__name__ == "TaskDeferred"
     assert d.value.trigger.sql is None
