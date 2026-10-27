@@ -38,3 +38,13 @@ role = "admin"
 loams_namespace_id = "conformance"
 name = "default"
 retention_hours = 72
+
+# The loopback-only listener the stock Temporal Web UI talks to
+# (conformance/compute/temporal-ui.yaml, #1333; docs/guides/durable/temporal-ui-cli.md):
+# every call on it is Loams namespace `conformance`'s, never admin, and only
+# reads pass. It is in the engine's network namespace, so nothing outside
+# that namespace reaches it.
+[ui]
+listen = "127.0.0.1:7234"
+loams_namespace_id = "conformance"
+read_only = true

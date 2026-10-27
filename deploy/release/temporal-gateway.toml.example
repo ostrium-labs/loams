@@ -66,3 +66,12 @@ role = "admin"
 loams_namespace_id = "<loams namespace id>"
 name = "default"
 retention_hours = 72
+
+# Optional: a loopback-only listener for the stock Temporal Web UI, whose
+# server cannot send an API key (docs/guides/durable/temporal-ui-cli.md).
+# Every call on it is that Loams namespace's, never admin; read_only (the
+# default) lets only reads pass.
+# [ui]
+# listen = "127.0.0.1:7234"
+# loams_namespace_id = "<loams namespace id>"
+# read_only = true
