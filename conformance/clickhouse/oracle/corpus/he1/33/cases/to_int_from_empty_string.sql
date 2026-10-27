@@ -1,0 +1,1 @@
+SELECT toInt32(s) FROM t33 WHERE id = 3

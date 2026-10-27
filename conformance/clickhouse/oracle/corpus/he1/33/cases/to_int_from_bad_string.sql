@@ -1,0 +1,1 @@
+SELECT toUInt8(s) FROM t33 WHERE id = 2

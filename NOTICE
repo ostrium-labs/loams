@@ -424,3 +424,12 @@ CC0-1.0. deploy/loams-cloud/policy/disposable_email_blocklist.conf is that
 project's list at the revision recorded in deploy/loams-cloud/policy/PINS.md,
 unmodified; the dedication is in
 deploy/loams-cloud/policy/LICENSE-disposable-email-domains.txt.
+
+
+ClickHouse (https://github.com/ClickHouse/ClickHouse), Apache License 2.0,
+Copyright 2016-2026 ClickHouse, Inc. The Loams House engine's conversion,
+conditional, maths and JSON functions (fabric/crates/loams-house-exec/src/func/
+convert, cond, math and json, plan HE1 Task 33) follow ClickHouse's
+src/Functions (FunctionsConversion.h, if.cpp, multiIf.cpp, FunctionsRound.h,
+FunctionsJSON.h, FunctionsVisitParam.h), src/DataTypes/getLeastSupertype.cpp
+and src/IO/ReadHelpers.h; each file names its source.

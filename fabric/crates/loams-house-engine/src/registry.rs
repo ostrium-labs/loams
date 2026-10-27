@@ -39,5 +39,6 @@ pub fn registry() -> Registry {
         }),
     );
     r.scalars.insert("version".into(), Arc::new(version));
+    loams_house_exec::func::register_t33(&mut r);
     r
 }

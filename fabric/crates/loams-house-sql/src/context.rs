@@ -161,6 +161,9 @@ impl ContextProvider for HouseContext<'_> {
     }
 
     fn get_function_meta(&self, name: &str) -> Option<Arc<ScalarUDF>> {
+        if name == "currentDatabase" {
+            return Some(crate::session::CurrentDatabase::udf(&self.database));
+        }
         self.registry.scalars.get(name).cloned()
     }
 

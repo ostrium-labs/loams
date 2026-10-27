@@ -12,6 +12,13 @@ publish = false
 loams-house-types = { path = "../loams-house-types" }
 # UDF, UDAF and UDWF traits and the physical-plan operators. Apache-2.0.
 datafusion.workspace = true
+# The function registry the engine plans with (`Registry`) and ClickHouse's
+# function names (plan HE1 Tasks 30–33). Apache-2.0.
+loams-house-sql = { path = "../loams-house-sql" }
+# Dates, times and zones for conversions (HE1 Task 33); already in the lock
+# through loams-house-types. MIT OR Apache-2.0.
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+chrono-tz = "0.10"
 
 [lints]
 workspace = true

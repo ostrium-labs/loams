@@ -1,0 +1,1 @@
+SELECT CAST(u, 'Int16'), _CAST(u, 'UInt32') FROM t33 ORDER BY id

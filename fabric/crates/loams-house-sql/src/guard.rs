@@ -19,8 +19,11 @@
 //! * every function name is resolved to its ClickHouse name (case rules,
 //!   aliases, combinators, [`crate::functions`]) and quoted, so DataFusion
 //!   looks it up as written; an unknown name is `46`;
-//! * `CAST(x, 'T')` and `_CAST(x, 'T')` become `CAST(x AS T)` with the
-//!   ClickHouse type text, for the House's type planner;
+//! * every cast (`CAST(x AS T)`, `x::T`, `CAST(x, 'T')`, `_CAST(x, 'T')`)
+//!   becomes `_CAST(x, 'T')`, the engine's function with ClickHouse's cast
+//!   semantics, never DataFusion's cast (plan HE1 Task 33, R33.2);
+//! * `CASE x WHEN a THEN b … END` becomes `caseWithExpression(x, a, b, …,
+//!   else)`, as ClickHouse rewrites it (an absent `ELSE` is `NULL`);
 //! * a select item without an alias gets ClickHouse's column name as its
 //!   alias ([`crate::names`]);
 //! * a table aliased `FINAL` (sqlparser's misreading, R2.3) is marked final.
@@ -28,9 +31,9 @@
 use std::collections::BTreeSet;
 
 use datafusion::sql::sqlparser::ast::{
-    Array, BinaryOperator, CaseWhen, CastKind, Cte, DataType, Distinct, Expr, Function,
-    FunctionArg, FunctionArgExpr, FunctionArgumentList, FunctionArguments, GroupByExpr, Ident,
-    Join, JoinConstraint, JoinOperator, LambdaFunction, LimitClause, NamedWindowDefinition,
+    Array, BinaryOperator, CaseWhen, CastKind, Cte, Distinct, Expr, Function, FunctionArg,
+    FunctionArgExpr, FunctionArgumentList, FunctionArguments, GroupByExpr, Ident, Join,
+    JoinConstraint, JoinOperator, LambdaFunction, LimitClause, NamedWindowDefinition,
     NamedWindowExpr, ObjectName, ObjectNamePart, Offset, OrderBy, OrderByExpr, OrderByKind,
     OrderByOptions, Query, Select, SelectFlavor, SelectItem, SetExpr, Setting, TableAlias,
     TableFactor, TableWithJoins, UnaryOperator, Value, ValueWithSpan, WindowFrame, WindowSpec,
@@ -654,13 +657,12 @@ impl<'a> Guard<'a> {
         {
             let mut x = x.clone();
             self.expr(&mut x)?;
-            return Ok(Some(Expr::Cast {
-                kind: CastKind::Cast,
-                expr: Box::new(x),
-                data_type: DataType::Custom(ObjectName::from(vec![Ident::new(t.clone())]), vec![]),
-                array: false,
-                format: None,
-            }));
+            self.resolution.functions.insert(if written == "_CAST" {
+                "_CAST".to_string()
+            } else {
+                "CAST".to_string()
+            });
+            return Ok(Some(call("_CAST", vec![x, string_literal(t)])));
         }
         let known = functions::resolve(&written).ok_or_else(|| {
             ChError::unknown_function(format!("Function with name `{written}` does not exist"))
@@ -804,7 +806,7 @@ impl<'a> Guard<'a> {
             Expr::Cast {
                 kind,
                 expr,
-                data_type: _,
+                data_type,
                 array,
                 format,
             } => {
@@ -814,7 +816,25 @@ impl<'a> Guard<'a> {
                 {
                     return Err(refuse("TRY_CAST / SAFE_CAST / CAST … FORMAT"));
                 }
-                self.expr(expr)
+                // `1::String` casts the literal's text (`CAST('1', 'String')`).
+                let x = match (&*kind, expr.as_ref()) {
+                    (
+                        CastKind::DoubleColon,
+                        Expr::Value(ValueWithSpan {
+                            value: Value::Number(n, _),
+                            ..
+                        }),
+                    ) => string_literal(n),
+                    _ => {
+                        let mut x = expr.as_ref().clone();
+                        self.expr(&mut x)?;
+                        x
+                    }
+                };
+                let target = crate::context::type_text(data_type);
+                self.resolution.functions.insert("CAST".to_string());
+                *e = call("_CAST", vec![x, string_literal(&target)]);
+                Ok(())
             }
             Expr::Case {
                 case_token: _,
@@ -823,8 +843,27 @@ impl<'a> Guard<'a> {
                 conditions,
                 else_result,
             } => {
-                if operand.is_some() {
-                    return Err(later("CASE x WHEN …", 33));
+                if let Some(x) = operand {
+                    self.expr(x)?;
+                    let mut args = vec![x.as_ref().clone()];
+                    for CaseWhen { condition, result } in conditions.iter_mut() {
+                        self.expr(condition)?;
+                        self.expr(result)?;
+                        args.push(condition.clone());
+                        args.push(result.clone());
+                    }
+                    match else_result {
+                        Some(x) => {
+                            self.expr(x)?;
+                            args.push(x.as_ref().clone());
+                        }
+                        None => args.push(Expr::Value(Value::Null.into())),
+                    }
+                    self.resolution
+                        .functions
+                        .insert("caseWithExpression".to_string());
+                    *e = call("caseWithExpression", args);
+                    return Ok(());
                 }
                 for CaseWhen { condition, result } in conditions {
                     self.expr(condition)?;
@@ -894,6 +933,32 @@ impl<'a> Guard<'a> {
             Expr::MemberOf(_) => Err(refuse("MEMBER OF")),
         }
     }
+}
+
+/// A call of the engine's function `name` (registered under that name).
+fn call(name: &str, args: Vec<Expr>) -> Expr {
+    Expr::Function(Function {
+        name: ObjectName::from(vec![Ident::with_quote('"', functions::internal_name(name))]),
+        uses_odbc_syntax: false,
+        parameters: FunctionArguments::None,
+        args: FunctionArguments::List(FunctionArgumentList {
+            duplicate_treatment: None,
+            args: args
+                .into_iter()
+                .map(|a| FunctionArg::Unnamed(FunctionArgExpr::Expr(a)))
+                .collect(),
+            clauses: vec![],
+        }),
+        filter: None,
+        null_treatment: None,
+        over: None,
+        within_group: vec![],
+    })
+}
+
+/// A string literal.
+fn string_literal(s: &str) -> Expr {
+    Expr::Value(Value::SingleQuotedString(s.to_string()).into())
 }
 
 fn setting_text(v: &Expr) -> String {

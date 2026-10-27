@@ -1,0 +1,1 @@
+SELECT CAST('2026-13-45' AS Date)

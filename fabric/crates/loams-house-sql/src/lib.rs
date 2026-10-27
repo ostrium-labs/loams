@@ -20,6 +20,7 @@ pub mod lex;
 pub mod names;
 pub mod params;
 pub mod plan;
+pub mod session;
 
 pub use context::{Catalog, HouseContext, Registry};
 pub use guard::{Resolution, TableRead};

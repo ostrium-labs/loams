@@ -1,0 +1,1 @@
+SELECT id, simpleJSONExtractString(j, 'a'), simpleJSONHas(j, 't'), simpleJSONExtractInt(j, 'k'), simpleJSONExtractUInt(j, 'k'), simpleJSONExtractFloat(j, 'f'), simpleJSONExtractBool(j, 't'), simpleJSONExtractRaw(j, 'arr') FROM t33 ORDER BY id
