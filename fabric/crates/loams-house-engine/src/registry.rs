@@ -42,5 +42,6 @@ pub fn registry() -> Registry {
     loams_house_exec::ops::scalars()
         .into_iter()
         .for_each(|f| _ = r.scalars.insert(f.name().into(), f));
+    crate::system::functions::register(&mut r);
     r
 }
