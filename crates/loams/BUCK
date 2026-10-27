@@ -84,6 +84,11 @@ cargo_package(
             "root": "tests/connect_query.rs",
         },
         {
+            "name": "connect_socket",
+            "crate": "connect_socket",
+            "root": "tests/connect_socket.rs",
+        },
+        {
             "name": "connect_sql",
             "crate": "connect_sql",
             "root": "tests/connect_sql.rs",

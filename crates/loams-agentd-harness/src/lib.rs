@@ -226,7 +226,7 @@ pub mod claude;
 pub mod codex;
 pub(crate) mod executable;
 pub mod install;
-pub(crate) mod jsonrpc;
+pub mod jsonrpc;
 pub mod mock;
 mod model_context;
 pub mod opencode;

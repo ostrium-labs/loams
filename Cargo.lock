@@ -8374,6 +8374,7 @@ dependencies = [
  "hyper-util",
  "jsonwebtoken",
  "loams-apps-mock",
+ "loams-authz",
  "loams-cache",
  "loams-cloud-admin",
  "loams-cloudevents",
@@ -8452,6 +8453,7 @@ dependencies = [
  "loams-agentd-doc",
  "loams-agentd-harness",
  "loams-agentd-link",
+ "loams-agentd-marketplace",
  "loams-agentd-mcp",
  "loams-agentd-proto",
  "loams-agentd-rpc",
@@ -8587,6 +8589,8 @@ dependencies = [
  "base64 0.23.1",
  "hex",
  "jsonschema",
+ "loams-agentd-harness",
+ "rustix 1.1.5",
  "semver",
  "serde",
  "serde_json",
@@ -9744,6 +9748,14 @@ dependencies = [
  "tracing",
  "ulid 3.0.0",
  "unicode-segmentation",
+]
+
+[[package]]
+name = "loams-resp"
+version = "0.1.2"
+dependencies = [
+ "bytes",
+ "proptest",
 ]
 
 [[package]]

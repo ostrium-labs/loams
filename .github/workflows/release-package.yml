@@ -82,6 +82,14 @@ on:
         type: boolean
         required: false
         default: false
+      regenerate_checksums:
+        description: >-
+          This dispatch rebuilds a release's assets on purpose (they replace the
+          attached ones): rewrite SHA256SUMS over them instead of failing on the
+          entries that no longer match.
+        type: boolean
+        required: false
+        default: false
       dry_run:
         description: >-
           Build everything from the dispatched ref and keep the files as workflow
@@ -845,6 +853,7 @@ jobs:
     uses: ./.github/workflows/release-checksums.yml
     with:
       tag: ${{ needs.guard.outputs.tag }}
+      regenerate: ${{ inputs.regenerate_checksums == true }}
     secrets: inherit
 
   # One job edits the release notes, so the Linux, Windows and macOS notes cannot

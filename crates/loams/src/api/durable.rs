@@ -197,6 +197,7 @@ mod tests {
         Principal {
             subject: id.into(),
             kind: PrincipalKind::Session,
+            issuer: None,
             display_name: id.into(),
             email: None,
             grant: Grant {
@@ -211,6 +212,7 @@ mod tests {
         let p = principals().await;
         let key = Principal {
             kind: PrincipalKind::ApiKey,
+            issuer: None,
             ..session("apikey:file", None)
         };
         let cases = [
