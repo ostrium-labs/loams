@@ -9574,6 +9574,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-meter"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "loams-cloudevents",
+ "loams-common",
+ "loams-meter-core",
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "loams-meter-core"
 version = "0.1.2"
 dependencies = [
