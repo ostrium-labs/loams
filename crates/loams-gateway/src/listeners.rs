@@ -17,6 +17,7 @@ use crate::config::{GatewayConfig, TlsMode};
 use crate::observe::{ConnectionObserver, NoopObserver};
 use crate::pg::{Entry, FrontDoorOptions, PgFrontDoor};
 use crate::reload::{self, RouteRx};
+use crate::risingwave::RwFrontDoor;
 use crate::tls::{self, ServerCerts, TlsError};
 
 #[derive(Debug, thiserror::Error)]
@@ -30,6 +31,9 @@ pub enum GatewayError {
     /// A certificate, key or CA file could not be loaded.
     #[error(transparent)]
     Tls(#[from] TlsError),
+    /// The RisingWave module's certificates or credential check.
+    #[error("risingwave: {0}")]
+    RisingWave(String),
 }
 
 /// What the admin listener reports about listeners.
@@ -75,6 +79,15 @@ impl Gateway {
         if config.pg.tls_mode == TlsMode::Passthrough {
             tracing::info!("tls_mode = passthrough: direct-TLS clients are refused");
         }
+        let risingwave = if config.risingwave.certs.is_empty() && config.risingwave.auth.is_none() {
+            None
+        } else {
+            Some(Arc::new(
+                RwFrontDoor::from_config(&config.risingwave)
+                    .await
+                    .map_err(GatewayError::RisingWave)?,
+            ))
+        };
         let (tx, routes) = reload::channel();
         let (shutdown, shutdown_rx) = watch::channel(false);
         let mut tasks = Vec::new();
@@ -96,6 +109,7 @@ impl Gateway {
                 server_certs,
                 upstream_tls,
                 observer,
+                risingwave,
             },
         ));
         let max_connections = u32::try_from(config.pg.max_connections).unwrap_or(u32::MAX);

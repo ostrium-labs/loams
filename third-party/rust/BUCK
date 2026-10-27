@@ -29815,6 +29815,18 @@ buildscript_run(
     version = "0.3.11",
 )
 
+cargo_alias(
+    name = "md-5",
+    actual = ":md-5-0.11",
+    platforms = [
+        "linux-arm64",
+        "linux-x86_64",
+        "macos-arm64",
+        "macos-x86_64",
+    ],
+    visibility = ["PUBLIC"],
+)
+
 http_archive(
     name = "md-5-0.11.0.crate",
     sha256 = "69b6441f590336821bb897fb28fc622898ccceb1d6cea3fde5ea86b090c4de98",
