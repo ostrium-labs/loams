@@ -1276,6 +1276,10 @@ enum Command {
     /// Loams Cloud, the hosted try-out (design §78 §25): `cloud admin …` for
     /// allow-listed Ostrium admins (waitlist, invites, audit, the TOTP step-up).
     Cloud(loams_cloud_admin::CloudArgs),
+    /// Managed Flink SQL (design 81, preview): `flink sql` is a REPL, `flink
+    /// jobs …` manages saved INSERT pipelines, `flink jars` lists the bundle.
+    #[cfg(feature = "flink")]
+    Flink(loams_flink::cli::FlinkArgs),
     /// Engine authentication (LOAMS_AUTH_MODE): API keys.
     Auth {
         #[command(subcommand)]
@@ -1436,6 +1440,8 @@ fn config(command: Command) -> ServerConfig {
         Command::Migrate { .. } => unreachable!("loams migrate starts no server"),
         Command::Upgrade(_) => unreachable!("loams upgrade starts no server"),
         Command::Cloud(_) => unreachable!("loams cloud starts no server"),
+        #[cfg(feature = "flink")]
+        Command::Flink(_) => unreachable!("loams flink starts no server"),
         #[cfg(feature = "live")]
         Command::LiveWorker => unreachable!("loams live-worker starts no server"),
         #[cfg(feature = "postgres")]
@@ -1647,6 +1653,11 @@ fn main() -> ExitCode {
     // A client too (LC2a Tasks 4 and 5): its own runtime, no stores.
     if let Command::Cloud(args) = &cli.command {
         return loams_cloud_admin::run(args);
+    }
+    // A client of the Loams API (design 81, D1989): its own runtime.
+    #[cfg(feature = "flink")]
+    if let Command::Flink(args) = &cli.command {
+        return loams_flink::cli::run(args);
     }
     serve(cli)
 }

@@ -36,8 +36,13 @@ pub mod runtime_kube;
 pub mod sql_gateway;
 pub mod storage;
 
-// FL-b's modules (engines-81.md, FL-b): `api`, `catalog`, `cli` and
-// `connectors` are declared here by FL-b's PR.
+// FL-b's modules (engines-81.md, FL-b): the session bootstrap
+// (`catalog`), connector tables and the jar bundle (`connectors`), the
+// namespace-scoped HTTP API (`api`) and `loams flink` (`cli`).
+pub mod api;
+pub mod catalog;
+pub mod cli;
+pub mod connectors;
 
 pub use error::FlinkError;
 pub use rest::FlinkRestClient;
