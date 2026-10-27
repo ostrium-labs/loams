@@ -8402,6 +8402,7 @@ dependencies = [
  "loams-proto",
  "loams-qdrant",
  "loams-query",
+ "loams-risingwave",
  "loams-sqlgate",
  "loams-store",
  "loams-stream-grpc",
@@ -9873,6 +9874,7 @@ name = "loams-risingwave"
 version = "0.1.2"
 dependencies = [
  "async-trait",
+ "clap",
  "futures",
  "loams-engines",
  "object_store 0.14.2",

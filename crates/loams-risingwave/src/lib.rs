@@ -40,6 +40,9 @@ pub mod render;
 pub mod runtime;
 
 // Lane RW-b's modules (connectors, the SQL API, the CLI) are declared below.
+pub mod cli;
+pub mod connectors;
+pub mod sql_api;
 
 pub use adapter::{AdapterConfig, AdapterError, Observation, ObservedPhase, RisingWaveAdapter};
 pub use engines::RisingWaveEngine;

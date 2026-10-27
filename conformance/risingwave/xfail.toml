@@ -1,0 +1,4 @@
+# Expected failures of the RisingWave conformance run (format:
+# conformance/compute/xfail.schema.json, checked by scripts/compute/xfail_check.py).
+# Empty until the first run: every entry needs a reason and a tracking issue.
+product = "risingwave"
