@@ -15,6 +15,20 @@ loams-house-exec = { path = "../loams-house-exec" }
 loams-house-iceberg = { path = "../loams-house-iceberg" }
 loams-house-formats = { path = "../loams-house-formats" }
 datafusion.workspace = true
+anyhow.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+parquet = { workspace = true, features = ["arrow"] }
+tokio = { workspace = true, features = ["net", "rt-multi-thread", "io-util", "signal"] }
+clap.workspace = true
+hyper = { workspace = true, features = ["server", "http1"] }
+hyper-util.workspace = true
+http-body-util.workspace = true
+bytes.workspace = true
+url = "2"
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

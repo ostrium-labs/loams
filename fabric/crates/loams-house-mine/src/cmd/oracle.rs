@@ -23,10 +23,10 @@ pub struct Args {
     #[arg(long = "target-url", value_name = "NAME=URL")]
     pub target_url: Vec<String>,
     /// Runs only this target besides the baseline (repeatable).
-    #[arg(long)]
+    #[arg(long, visible_alias = "target")]
     pub only: Vec<String>,
     /// Runs only the cases whose id starts with this (repeatable).
-    #[arg(long = "case", value_name = "PREFIX")]
+    #[arg(long = "case", visible_alias = "corpus", value_name = "PREFIX")]
     pub cases: Vec<String>,
     /// Leaves the triage file unchanged; still fails on untriaged mismatches.
     #[arg(long)]
@@ -34,6 +34,12 @@ pub struct Args {
     /// Skips the corpora's setup statements (the tables exist already).
     #[arg(long)]
     pub skip_setup: bool,
+    /// Shared Parquet snapshot directory for seeded targets.
+    #[arg(long)]
+    pub fixtures: Option<PathBuf>,
+    /// Fail while a bug is assigned to this task.
+    #[arg(long)]
+    pub task: Option<String>,
 }
 
 /// Runs `oracle`.
@@ -60,6 +66,8 @@ pub fn run(args: &Args) -> anyhow::Result<()> {
         cases: args.cases.clone(),
         check: args.check,
         skip_setup: args.skip_setup,
+        fixtures: args.fixtures.clone(),
+        task: args.task.clone(),
     })
     .map(|_| ())
 }

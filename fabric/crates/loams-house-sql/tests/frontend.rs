@@ -108,13 +108,15 @@ fn prewhere_folds_into_where() {
     assert!(
         g.statement
             .to_string()
-            .contains("WHERE (a = 1) AND (b = 2)"),
+            .contains("WHERE (a = CAST(1 AS UInt8)) AND (b = CAST(2 AS UInt8))"),
         "{}",
         g.statement
     );
     let g = guard("SELECT x FROM t PREWHERE a = 1", &[]).unwrap();
     assert!(
-        g.statement.to_string().contains("WHERE a = 1"),
+        g.statement
+            .to_string()
+            .contains("WHERE a = CAST(1 AS UInt8)"),
         "{}",
         g.statement
     );

@@ -1,0 +1,70 @@
+name: House engine oracle
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "fabric/crates/loams-house-types/**"
+      - "fabric/crates/loams-house-sql/**"
+      - "fabric/crates/loams-house-exec/**"
+      - "fabric/crates/loams-house-iceberg/**"
+      - "fabric/crates/loams-house-formats/**"
+      - "fabric/crates/loams-house-engine/**"
+      - "fabric/crates/loams-house-mine/**"
+      - "fabric/Cargo.toml"
+      - "fabric/Cargo.lock"
+      - "conformance/clickhouse/oracle/**"
+      - ".github/workflows/house-engine-oracle.yml"
+  push:
+    branches: [dev]
+    paths:
+      - "fabric/crates/loams-house-*/**"
+      - "fabric/Cargo.toml"
+      - "fabric/Cargo.lock"
+      - "conformance/clickhouse/oracle/**"
+      - ".github/workflows/house-engine-oracle.yml"
+permissions:
+  contents: read
+concurrency:
+  group: house-engine-oracle-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  house-engine-oracle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      LOAMS_ORACLE_PASSWORD: oracle
+      CARGO_PROFILE_DEV_DEBUG: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: fabric
+          shared-key: house-engine-oracle
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
+      - name: Build only the dev server and miner (no libchdb)
+        working-directory: fabric
+        run: cargo build --locked -p loams-house-engine --bin loams-house-engine-dev -p loams-house-mine --bin loams-house-mine
+      - name: Start the pinned reference server
+        working-directory: conformance/clickhouse/oracle
+        run: docker compose up -d --wait clickhouse-26-9
+      - name: Compare the Rust engine with ClickHouse
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/house-fixtures"
+          fabric/target/debug/loams-house-engine-dev --fixtures "$RUNNER_TEMP/house-fixtures" > "$RUNNER_TEMP/house-engine.log" 2>&1 &
+          engine_pid=$!
+          trap 'kill "$engine_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..60}; do
+            if curl -fsS -X POST --data 'SELECT 1' http://127.0.0.1:28126/ >/dev/null; then break; fi
+            sleep 1
+          done
+          fabric/target/debug/loams-house-mine oracle --only house-rust --corpora conformance/clickhouse/oracle/he1.toml --fixtures "$RUNNER_TEMP/house-fixtures" --task 23 --check
+      - name: Logs and cleanup
+        if: always()
+        run: |
+          cat "$RUNNER_TEMP/house-engine.log" 2>/dev/null || true
+          docker compose -f conformance/clickhouse/oracle/compose.yaml logs clickhouse-26-9
+          docker compose -f conformance/clickhouse/oracle/compose.yaml down

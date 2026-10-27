@@ -31,3 +31,9 @@ name = "house-chdb"
 url = "http://127.0.0.1:28125/"
 user = "default"
 password_env = "LOAMS_ORACLE_HOUSE_KEY"
+
+# Opt-in until the Rust worker becomes a production target (HE1 Task 39).
+[[target]]
+name = "house-rust"
+url = "http://127.0.0.1:28126/"
+seed_from = "clickhouse-server@26.9"

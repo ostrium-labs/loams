@@ -49,6 +49,9 @@ pub struct Entry {
     pub reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub issue: Option<String>,
+    /// Task whose exit is blocked by this bug.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task: Option<String>,
     #[serde(default)]
     pub detail: String,
 }
@@ -95,6 +98,22 @@ impl Triage {
 
     /// Why this triage fails a run: untriaged entries and undocumented
     /// incompatibilities. Empty when the run passes.
+    pub fn task_failures(&self, task: &str) -> Vec<String> {
+        self.entries
+            .iter()
+            .filter(|e| e.status == Status::Bug && e.task.as_deref() == Some(task))
+            .map(|e| {
+                format!(
+                    "task {task} bug: {} on {} ({})",
+                    e.case,
+                    e.target,
+                    e.kind.as_str()
+                )
+            })
+            .collect()
+    }
+
+    /// Untriaged mismatches and undocumented incompatibilities.
     pub fn failures(&self) -> Vec<String> {
         self.entries
             .iter()
@@ -167,6 +186,7 @@ pub fn reconcile(previous: &Triage, found: Vec<Found>, scope: &Scope) -> Reconci
                 status: Status::Untriaged,
                 reason: None,
                 issue: None,
+                task: None,
                 detail: f.detail,
             },
         };
@@ -212,6 +232,7 @@ mod tests {
                     status: Status::Bug,
                     reason: Some("known".into()),
                     issue: None,
+                    task: None,
                     detail: "old".into(),
                 },
                 Entry {
@@ -221,6 +242,7 @@ mod tests {
                     status: Status::Bug,
                     reason: None,
                     issue: None,
+                    task: None,
                     detail: String::new(),
                 },
                 Entry {
@@ -230,6 +252,7 @@ mod tests {
                     status: Status::Bug,
                     reason: None,
                     issue: None,
+                    task: None,
                     detail: String::new(),
                 },
             ],
@@ -277,6 +300,7 @@ mod tests {
                 status: Status::Incompatibility,
                 reason: Some("24.3 lacks it".into()),
                 issue: None,
+                task: None,
                 detail: "1 rows vs 2 rows".into(),
             }],
         };

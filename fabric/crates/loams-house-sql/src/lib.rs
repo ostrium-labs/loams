@@ -24,3 +24,5 @@ pub mod plan;
 pub use context::{Catalog, HouseContext, Registry};
 pub use guard::{Resolution, TableRead};
 pub use plan::{Guarded, Prepared, guard, prepare};
+
+pub mod coerce;

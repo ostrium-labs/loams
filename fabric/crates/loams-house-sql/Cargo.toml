@@ -9,6 +9,7 @@ authors.workspace = true
 publish = false
 
 [dependencies]
+loams-house-exec = { path = "../loams-house-exec" }
 loams-house-types = { path = "../loams-house-types" }
 # The planner (`SqlToRel`, analyzer and optimizer rules) and its sqlparser 0.62
 # (D1576, R10.3). Apache-2.0.

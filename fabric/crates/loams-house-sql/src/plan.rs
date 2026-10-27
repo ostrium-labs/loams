@@ -94,11 +94,22 @@ pub fn prepare(
     database: &str,
 ) -> Result<Prepared, ChError> {
     let Guarded {
-        statement,
+        mut statement,
         resolution,
         settings,
         format,
     } = guard(sql, params)?;
+    for function in &resolution.functions {
+        let name = crate::functions::internal_name(function);
+        if !registry.scalars.contains_key(&name)
+            && !registry.aggregates.contains_key(&name)
+            && !registry.windows.contains_key(&name)
+            && !registry.higher_order.contains_key(&name)
+        {
+            return Err(ChError::unsupported(format!("Function {function}")));
+        }
+    }
+    crate::coerce::lower(&mut statement)?;
     let ctx = HouseContext::new(catalog, registry, database);
     let options = ParserOptions {
         enable_ident_normalization: false,

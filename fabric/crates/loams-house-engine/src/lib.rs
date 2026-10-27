@@ -6,3 +6,8 @@
 //! `loams-house-engine-dev` (D1804). It never depends on the front
 //! (`loams-house`), and the front never depends on DataFusion
 //! (`engine_crates_stay_apart`).
+
+pub mod catalog;
+pub mod execute;
+pub mod fixtures;
+pub mod http;

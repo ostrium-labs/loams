@@ -424,3 +424,10 @@ CC0-1.0. deploy/loams-cloud/policy/disposable_email_blocklist.conf is that
 project's list at the revision recorded in deploy/loams-cloud/policy/PINS.md,
 unmodified; the dedication is in
 deploy/loams-cloud/policy/LICENSE-disposable-email-domains.txt.
+
+ClickHouse (https://github.com/ClickHouse/ClickHouse), Apache License 2.0,
+Copyright ClickHouse, Inc. Numeric type promotion, least-supertype rules and
+arithmetic/comparison behavior in fabric/crates/loams-house-exec/src/ops/
+are derived from v26.9.2.8-stable src/DataTypes/NumberTraits.h and
+src/DataTypes/getLeastSupertype.cpp, checked against that version's server.
+The Rust kernels are a separate implementation; no ClickHouse binary is linked.

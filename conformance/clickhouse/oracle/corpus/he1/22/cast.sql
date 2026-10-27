@@ -1,0 +1,1 @@
+SELECT CAST('7', 'UInt8') AS k

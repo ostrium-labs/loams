@@ -1,0 +1,1 @@
+SELECT CASE WHEN id=1 THEN CAST(255,'UInt8') ELSE CAST(-1,'Int8') END AS value FROM he24.typed ORDER BY id

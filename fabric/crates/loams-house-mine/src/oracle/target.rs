@@ -55,6 +55,9 @@ pub struct Target {
     /// Settings sent with every statement, as URL parameters.
     #[serde(default)]
     pub settings: BTreeMap<String, String>,
+    /// Seed from this baseline rather than running setup on this target.
+    #[serde(default)]
+    pub seed_from: Option<String>,
 }
 
 impl Targets {
@@ -77,6 +80,14 @@ impl Targets {
         names.sort_unstable();
         if let Some(w) = names.windows(2).find(|w| w[0] == w[1]) {
             bail!("target {} is named twice", w[0]);
+        }
+        for target in &self.targets {
+            if let Some(source) = &target.seed_from
+                && (target.baseline
+                    || !self.targets.iter().any(|t| t.baseline && &t.name == source))
+            {
+                bail!("seed_from for {} must name the baseline", target.name);
+            }
         }
         Ok(())
     }
@@ -139,6 +150,17 @@ impl Client {
         target: &Target,
         body: &str,
     ) -> Result<(u16, Option<String>, String), Unreachable> {
+        let (status, code, bytes) = self.raw(target, body)?;
+        let text = String::from_utf8(bytes).map_err(|e| Unreachable(e.to_string()))?;
+        Ok((status, code, text))
+    }
+
+    /// A binary response, for Parquet snapshots; never decodes data as UTF-8.
+    pub fn raw(
+        &self,
+        target: &Target,
+        body: &str,
+    ) -> Result<(u16, Option<String>, Vec<u8>), Unreachable> {
         let mut params: Vec<(String, String)> = Vec::new();
         if let Some(db) = &target.database {
             params.push(("database".into(), db.clone()));
@@ -161,13 +183,13 @@ impl Client {
             .get("X-ClickHouse-Exception-Code")
             .and_then(|v| v.to_str().ok())
             .map(str::to_string);
-        let text = response
+        let bytes = response
             .body_mut()
             .with_config()
             .limit(256 * 1024 * 1024)
-            .read_to_string()
-            .map_err(|e| Unreachable(format!("{}: reading the answer: {e}", target.name)))?;
-        Ok((status, code, text))
+            .read_to_vec()
+            .map_err(|e| Unreachable(format!("{}: reading snapshot: {e}", target.name)))?;
+        Ok((status, code, bytes))
     }
 }
 

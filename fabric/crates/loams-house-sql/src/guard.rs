@@ -736,6 +736,32 @@ impl<'a> Guard<'a> {
     pub fn expr(&mut self, e: &mut Expr) -> Result<(), ChError> {
         match e {
             Expr::Identifier(_) | Expr::CompoundIdentifier(_) => Ok(()),
+            Expr::Value(v) if matches!(&v.value, Value::Number(n, _) if n.bytes().all(|b| b.is_ascii_digit())) =>
+            {
+                let Value::Number(number, _) = &v.value else {
+                    unreachable!()
+                };
+                let value: u64 = number
+                    .parse()
+                    .map_err(|_| refuse("Integer literals beyond UInt64"))?;
+                let ty = if u8::try_from(value).is_ok() {
+                    "UInt8"
+                } else if u16::try_from(value).is_ok() {
+                    "UInt16"
+                } else if u32::try_from(value).is_ok() {
+                    "UInt32"
+                } else {
+                    "UInt64"
+                };
+                *e = Expr::Cast {
+                    kind: CastKind::Cast,
+                    expr: Box::new(e.clone()),
+                    data_type: DataType::Custom(ObjectName::from(vec![Ident::new(ty)]), vec![]),
+                    array: false,
+                    format: None,
+                };
+                Ok(())
+            }
             Expr::Value(v) => match &v.value {
                 Value::Number(..)
                 | Value::SingleQuotedString(_)
@@ -744,6 +770,40 @@ impl<'a> Guard<'a> {
                 other => Err(refuse(format!("The literal {other}"))),
             },
             Expr::Nested(x) | Expr::IsNull(x) | Expr::IsNotNull(x) => self.expr(x),
+            Expr::UnaryOp {
+                op: UnaryOperator::Minus,
+                expr,
+            } if matches!(expr.as_ref(), Expr::Value(v) if matches!(&v.value, Value::Number(n, _) if n.bytes().all(|b| b.is_ascii_digit()))) =>
+            {
+                let Expr::Value(v) = expr.as_ref() else {
+                    unreachable!()
+                };
+                let Value::Number(number, _) = &v.value else {
+                    unreachable!()
+                };
+                let magnitude: u64 = number
+                    .parse()
+                    .map_err(|_| refuse("Integer literals beyond Int64"))?;
+                let ty = if magnitude <= 128 {
+                    "Int8"
+                } else if magnitude <= 32768 {
+                    "Int16"
+                } else if magnitude <= 2147483648 {
+                    "Int32"
+                } else if magnitude <= 9223372036854775808 {
+                    "Int64"
+                } else {
+                    return Err(refuse("Integer literals beyond Int64"));
+                };
+                *e = Expr::Cast {
+                    kind: CastKind::Cast,
+                    expr: Box::new(e.clone()),
+                    data_type: DataType::Custom(ObjectName::from(vec![Ident::new(ty)]), vec![]),
+                    array: false,
+                    format: None,
+                };
+                Ok(())
+            }
             Expr::UnaryOp { op, expr } => match op {
                 UnaryOperator::Minus | UnaryOperator::Plus | UnaryOperator::Not => self.expr(expr),
                 other => Err(refuse(format!("The operator {other}"))),

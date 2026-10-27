@@ -287,6 +287,8 @@ fn run_in(dir: &Path) -> Run {
         cases: Vec::new(),
         check: false,
         skip_setup: false,
+        fixtures: None,
+        task: None,
     }
 }
 
@@ -394,4 +396,54 @@ fn a_setup_statement_the_target_refuses_is_a_mismatch() {
     assert_eq!(setup.kind, Kind::Error);
     assert!(setup.detail.contains("error 48"), "{}", setup.detail);
     assert!(!setup.detail.contains("version"), "{}", setup.detail);
+}
+
+#[test]
+fn task_bugs_block_their_task() {
+    let mut triage: Triage = toml::from_str(
+        r#"[[mismatch]]
+case = "he1/24/arithmetic"
+target = "house-rust"
+kind = "types"
+status = "bug"
+task = "24"
+"#,
+    )
+    .expect("triage");
+    assert!(triage.failures().is_empty());
+    assert_eq!(triage.task_failures("24").len(), 1);
+    assert!(triage.task_failures("23").is_empty());
+    triage.entries[0].status = Status::Incompatibility;
+    assert!(triage.task_failures("24").is_empty());
+}
+
+#[test]
+fn a_seeded_target_never_runs_setup() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let baseline = serve(|body| {
+        if body.contains("FROM system.tables") {
+            (200, None, "[\"database\",\"name\",\"engine\",\"sorting_key\",\"partition_key\"]\n[\"String\",\"String\",\"String\",\"String\",\"String\"]\n".into())
+        } else {
+            clickhouse(3)(body)
+        }
+    });
+    let engine = serve(|body| {
+        assert!(
+            !body.contains("CREATE TABLE"),
+            "seeded target received setup"
+        );
+        clickhouse(3)(body)
+    });
+    write_inputs(dir.path(), &baseline, &engine);
+    let targets = dir.path().join("targets.toml");
+    let mut text = std::fs::read_to_string(&targets).expect("targets");
+    text.push_str("seed_from = \"baseline\"\n");
+    std::fs::write(targets, text).expect("targets");
+    let mut run = run_in(dir.path());
+    run.fixtures = Some(dir.path().join("fixtures"));
+    run.only = vec!["engine".into()];
+    oracle::run(&run).expect("seeded comparison");
+    let snapshot =
+        std::fs::read_to_string(run.fixtures.unwrap().join("snapshot.json")).expect("snapshot");
+    assert_eq!(snapshot, "{\"tables\":[]}");
 }

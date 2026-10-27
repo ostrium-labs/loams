@@ -1,0 +1,1 @@
+SELECT id FROM he24.typed WHERE -3 AND id ORDER BY id

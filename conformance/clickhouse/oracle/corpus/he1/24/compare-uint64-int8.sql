@@ -1,0 +1,1 @@
+SELECT uint64 = int8 AS c0, toTypeName(uint64 = int8) AS t0, uint64 != int8 AS c1, toTypeName(uint64 != int8) AS t1, uint64 < int8 AS c2, toTypeName(uint64 < int8) AS t2, uint64 <= int8 AS c3, toTypeName(uint64 <= int8) AS t3, uint64 > int8 AS c4, toTypeName(uint64 > int8) AS t4, uint64 >= int8 AS c5, toTypeName(uint64 >= int8) AS t5 FROM he24.numeric ORDER BY row_id

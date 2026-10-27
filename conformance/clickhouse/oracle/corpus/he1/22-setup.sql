@@ -1,0 +1,58 @@
+CREATE DATABASE IF NOT EXISTS he1;
+DROP TABLE IF EXISTS he1.seed;
+CREATE TABLE he1.seed (id UInt8, text String, value Nullable(Int32)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO he1.seed VALUES (1, 'one', 7), (2, 'two', NULL);
+DROP TABLE IF EXISTS he1.types;
+CREATE TABLE he1.types ENGINE = MergeTree ORDER BY tuple() AS SELECT
+toUInt8(200) AS `u8`,
+toUInt64(18446744073709551615) AS `u64`,
+toInt64(-9223372036854775808) AS `i64`,
+toFloat64(1/3) AS `f64_third`,
+toFloat64(1e21) AS `f64_1e21`,
+toFloat64(1e20) AS `f64_1e20`,
+toFloat64(1e-7) AS `f64_small`,
+toFloat64(0.000001) AS `f64_micro`,
+toFloat64(-0.) AS `f64_negzero`,
+toFloat64(nan) AS `f64_nan`,
+toFloat64(-inf) AS `f64_inf`,
+toFloat64(123456789012345680000) AS `f64_big`,
+toFloat64(123456789.125) AS `f64_frac`,
+toFloat32(0.1) AS `f32_tenth`,
+toFloat32(16777217) AS `f32_big`,
+true AS `bool`,
+toDecimal64(1.50, 2) AS `dec`,
+toDecimal32(-0.05, 3) AS `dec_neg`,
+toDecimal128(42, 4) AS `dec_int`,
+'a\tb\nc\\d' AS `str`,
+'it''s "q" /x' AS `str_quotes`,
+toFixedString('ab', 3) AS `fixed`,
+toDate('2026-10-23') AS `date`,
+toDate32('1900-01-01') AS `date32_old`,
+toDateTime('2026-10-23 01:02:03', 'UTC') AS `datetime_utc`,
+toDateTime('2026-10-23 01:02:03', 'Asia/Kolkata') AS `datetime_kolkata`,
+toDateTime64('2026-10-23 01:02:03.5', 3, 'UTC') AS `dt64_3`,
+toDateTime64('2026-10-23 01:02:03.25', 2, 'UTC') AS `dt64_2`,
+toDateTime64('2026-10-23 01:02:03.123456789', 9, 'UTC') AS `dt64_9`,
+toDateTime64('1969-12-31 23:59:59.5', 3, 'UTC') AS `dt64_neg`,
+toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS `uuid`,
+toIPv4('1.2.3.4') AS `ipv4`,
+toIPv6('2001:db8::1') AS `ipv6`,
+toIPv6('::ffff:1.2.3.4') AS `ipv6_mapped`,
+CAST('b', 'Enum8(\'a\' = 1, \'b\' = 2)') AS `enum`,
+CAST(NULL, 'Nullable(String)') AS `null_str`,
+toLowCardinality('x') AS `lc`,
+['a\tb', 'c''d', 'e"f'] AS `arr_str`,
+[NULL, 1] AS `arr_null`,
+CAST([], 'Array(UInt8)') AS `arr_empty`,
+[toDate('2026-01-01')] AS `arr_date`,
+(1, 'x') AS `tuple`,
+CAST((1, 'y'), 'Tuple(a UInt8, b String)') AS `tuple_named`,
+map('k', 1.5, 'l/', 2) AS `map`,
+map(1, 'a') AS `map_int_key`,
+toUInt16(60000) AS u16, toUInt32(4000000000) AS u32,
+toInt8(-100) AS i8, toInt16(-32000) AS i16, toInt32(-2000000000) AS i32,
+CAST('x', 'Enum16(\'x\'=1000)') AS enum16,
+CAST(['x'], 'Array(Enum8(\'x\'=1))') AS arr_enum;
+DROP TABLE IF EXISTS he1.states;
+CREATE TABLE he1.states (k UInt8, state AggregateFunction(sum, UInt64), simple SimpleAggregateFunction(sum, UInt64)) ENGINE=AggregatingMergeTree ORDER BY k;
+INSERT INTO he1.states SELECT 1, sumState(toUInt64(number)), 3 FROM numbers(3);

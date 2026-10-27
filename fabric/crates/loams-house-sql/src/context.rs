@@ -23,7 +23,7 @@ pub trait Catalog: fmt::Debug + Send + Sync {
 
 /// The functions the engine has, by the names DataFusion looks them up with
 /// ([`crate::functions::internal_name`]).
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct Registry {
     /// Scalar functions.
     pub scalars: HashMap<String, Arc<ScalarUDF>>,
@@ -33,6 +33,20 @@ pub struct Registry {
     pub windows: HashMap<String, Arc<WindowUDF>>,
     /// Higher-order functions (lambdas).
     pub higher_order: HashMap<String, Arc<HigherOrderUDF>>,
+}
+
+impl Default for Registry {
+    fn default() -> Self {
+        Self {
+            scalars: loams_house_exec::ops::functions()
+                .into_iter()
+                .map(|f| (f.name().to_string(), f))
+                .collect(),
+            aggregates: HashMap::new(),
+            windows: HashMap::new(),
+            higher_order: HashMap::new(),
+        }
+    }
 }
 
 /// ClickHouse type text in casts (`CAST(x AS LowCardinality(String))`,

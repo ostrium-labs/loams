@@ -10,6 +10,7 @@
 
 pub mod corpus;
 pub mod normalise;
+pub mod seed;
 pub mod target;
 pub mod triage;
 pub mod types;
@@ -38,6 +39,10 @@ pub struct Run {
     /// Leave the triage file as it is (CI): still fail on what it would say.
     pub check: bool,
     pub skip_setup: bool,
+    /// Shared snapshot directory read by the dev server.
+    pub fixtures: Option<PathBuf>,
+    /// Fail on bugs assigned to this task.
+    pub task: Option<String>,
 }
 
 /// What a run found.
@@ -99,7 +104,10 @@ pub fn run(run: &Run) -> anyhow::Result<Summary> {
     if !run.check {
         summary.reconciled.triage.write(&run.triage)?;
     }
-    let failures = summary.reconciled.triage.failures();
+    let mut failures = summary.reconciled.triage.failures();
+    if let Some(task) = &run.task {
+        failures.extend(summary.reconciled.triage.task_failures(task));
+    }
     if !failures.is_empty() {
         for failure in &failures {
             eprintln!("  {failure}");
@@ -132,20 +140,32 @@ pub fn execute(run: &Run) -> anyhow::Result<Summary> {
             bail!("--only names no target {name}");
         }
     }
-    targets.retain(|t| t.baseline || run.only.is_empty() || run.only.contains(&t.name));
+    targets.retain(|t| {
+        t.baseline || (run.only.is_empty() && t.seed_from.is_none()) || run.only.contains(&t.name)
+    });
     let baseline_at = targets
         .iter()
         .position(|t| t.baseline)
         .context("a baseline")?;
     let baseline = targets.remove(baseline_at);
 
+    if targets.iter().any(|t| t.seed_from.is_some()) && run.fixtures.is_none() && !run.skip_setup {
+        bail!("seeded targets need --fixtures (shared with the dev server)");
+    }
     let mut corpora = corpus::load(&run.corpora)?;
     for corpus in &mut corpora {
-        corpus
-            .cases
-            .retain(|c| run.cases.is_empty() || run.cases.iter().any(|p| c.id.starts_with(p)));
+        corpus.cases.retain(|c| {
+            run.cases.is_empty()
+                || run
+                    .cases
+                    .iter()
+                    .any(|p| c.id.starts_with(p.trim_end_matches('*')))
+        });
     }
     corpora.retain(|c| !c.cases.is_empty());
+    if corpora.is_empty() {
+        bail!("no oracle cases selected");
+    }
 
     let client = Client::default();
     let mut versions = Vec::new();
@@ -169,7 +189,15 @@ pub fn execute(run: &Run) -> anyhow::Result<Summary> {
     let mut cases = 0;
     for corpus in &corpora {
         if !run.skip_setup {
-            setup(&client, &baseline, &targets, corpus, &mut found, &mut scope)?;
+            setup(
+                &client,
+                &baseline,
+                &targets,
+                corpus,
+                &mut found,
+                &mut scope,
+                run.fixtures.as_deref(),
+            )?;
         }
         for case in &corpus.cases {
             cases += 1;
@@ -210,6 +238,7 @@ fn setup(
     corpus: &Corpus,
     found: &mut Vec<Found>,
     scope: &mut Scope,
+    fixtures: Option<&std::path::Path>,
 ) -> anyhow::Result<()> {
     let case = format!("{}/@setup", corpus.name);
     scope.cases.insert(case.clone());
@@ -223,7 +252,15 @@ fn setup(
             );
         }
     }
+    if targets.iter().any(|t| t.seed_from.is_some()) {
+        let root =
+            fixtures.context("seeded targets need --fixtures (shared with the dev server)")?;
+        seed::capture(client, baseline, root)?;
+    }
     for target in targets {
+        if target.seed_from.is_some() {
+            continue;
+        }
         for (i, statement) in corpus.setup.iter().enumerate() {
             if let Some(err) = client.execute(target, statement)? {
                 let normalise::Outcome::Error { code, message } = err else {
