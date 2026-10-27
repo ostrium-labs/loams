@@ -690,6 +690,7 @@ wire_struct!(rs::RunRequest => pb::RunRequest {
     attachments => attachments,
     worktree => worktree as opt_msg,
     mcp => mcp as opt_msg,
+    mcp_servers => mcp_servers,
 });
 
 wire_struct!(rs::WorktreeSpec => pb::WorktreeSpec {

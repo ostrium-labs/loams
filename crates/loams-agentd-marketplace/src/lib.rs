@@ -7,6 +7,7 @@
 pub mod artifact;
 pub mod conformance;
 pub mod contract;
+pub mod fetch;
 pub mod index;
 pub mod install;
 pub mod listing;
@@ -14,10 +15,15 @@ pub mod market;
 pub mod plan;
 pub mod provenance;
 pub mod revocations;
+pub mod service;
 pub mod sources;
+#[cfg(feature = "testkit")]
+pub mod testkit;
 pub mod verify;
 
 pub use artifact::{ArtifactFetch, ArtifactSources, FetchError, Origin};
+pub use fetch::HttpsFetcher;
 pub use market::{Fetcher, ListingView, MarketError, Marketplace, Query, SourceInfo, Summary};
+pub use service::{Deps, MarketplaceHost, MemoryVault, Registrations, ServiceError, Vault};
 pub use sources::Source;
 pub use verify::{Identity, SignatureVerifier, SigstoreVerifier};
