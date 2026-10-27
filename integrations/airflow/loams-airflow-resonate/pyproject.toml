@@ -1,0 +1,52 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "loams-airflow-resonate"
+version = "0.1.0.dev0"
+description = "Apache Airflow 3 executor on Resonate durable promises, for Loams (preview)"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+authors = [{ name = "Ostrium Labs", email = "hello@ostriumlabs.org" }]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Framework :: Apache Airflow",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+]
+# The executor and the worker talk to Resonate over HTTP with httpx, which
+# Airflow 3's Task SDK already depends on. Airflow itself is not a hard
+# dependency: the worker's control loop and the Resonate client import without
+# it, and the executor module needs the Airflow the scheduler already runs.
+dependencies = ["httpx>=0.27"]
+
+[project.optional-dependencies]
+# Airflow 3.3.x only: the Execution API is not a declared public interface, so
+# the executor pins minors (design 74 D1525). 3.3.2 was released 2026-09-17.
+airflow = ["apache-airflow>=3.3.2,<3.4"]
+test = ["pytest>=8", "ruff>=0.12"]
+
+[project.scripts]
+loams-airflow-resonate-worker = "loams_airflow_resonate.worker:main"
+
+[project.urls]
+Source = "https://github.com/ostrium-labs/loams/tree/dev/integrations/airflow/loams-airflow-resonate"
+Design = "https://github.com/ostrium-labs/loams/blob/dev/docs/design/74-durable-execution-compat.md"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/loams_airflow_resonate"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["RUF012"]

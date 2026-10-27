@@ -1,0 +1,56 @@
+# The Airflow Resonate executor package (design 74 §9.3, D2090–D2096):
+# ruff and pytest for integrations/airflow/loams-airflow-resonate only.
+# Not part of CI required while the executor is a preview.
+name: Airflow Resonate executor
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "integrations/airflow/loams-airflow-resonate/**"
+      - ".github/workflows/airflow-resonate.yml"
+  push:
+    branches: [dev]
+    paths:
+      - "integrations/airflow/loams-airflow-resonate/**"
+      - ".github/workflows/airflow-resonate.yml"
+
+concurrency:
+  group: airflow-resonate-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  # Airflow 3.3.2 (2026-09-17) and its constraints; the same pins as DX0
+  # (conformance/compute/pins.env, DX1 R0.14).
+  AIRFLOW_VERSION: "3.3.2"
+  AIRFLOW_CONSTRAINTS: https://raw.githubusercontent.com/apache/airflow/constraints-3.3.2/constraints-3.12.txt
+  RUFF_VERSION: "0.12.11"
+
+jobs:
+  test:
+    name: "Airflow Resonate executor: ruff and pytest"
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: integrations/airflow/loams-airflow-resonate
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - name: ruff
+        run: |
+          uvx "ruff@${RUFF_VERSION}" check .
+          uvx "ruff@${RUFF_VERSION}" format --check .
+      - name: install (Python 3.12, Airflow with its constraints)
+        run: |
+          uv venv --python 3.12 .venv
+          uv pip install --python .venv/bin/python \
+            --constraint "$AIRFLOW_CONSTRAINTS" "apache-airflow==${AIRFLOW_VERSION}"
+          uv pip install --python .venv/bin/python -e . pytest
+      - name: pytest
+        run: .venv/bin/python -m pytest -q
