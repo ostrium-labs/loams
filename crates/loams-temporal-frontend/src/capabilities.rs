@@ -32,6 +32,20 @@ pub const IMPLEMENTED: &[&str] = &[
     "PollWorkflowExecutionUpdate",
     "SignalWithStartWorkflowExecution",
     "ResetWorkflowExecution",
+    "RespondActivityTaskCompletedById",
+    "RespondActivityTaskFailedById",
+    "RespondActivityTaskCanceledById",
+    "RecordActivityTaskHeartbeatById",
+    "GetWorkflowExecutionHistoryReverse",
+    "DescribeTaskQueue",
+    "GetClusterInfo",
+    "ListTaskQueuePartitions",
+    "ShutdownWorker",
+    "UpdateNamespace",
+    "DeprecateNamespace",
+    "GetWorkerBuildIdCompatibility",
+    "GetWorkerVersioningRules",
+    "GetWorkerTaskReachability",
 ];
 
 /// Where the per-method, per-SDK compatibility matrix lives (D1512).

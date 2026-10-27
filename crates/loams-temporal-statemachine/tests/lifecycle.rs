@@ -322,6 +322,7 @@ fn reset_points_are_the_first_completion_of_each_build() {
                 }),
                 force_create_new_workflow_task: true,
                 messages: Vec::new(),
+                new_run_id: String::new(),
             },
             now + 50,
         )

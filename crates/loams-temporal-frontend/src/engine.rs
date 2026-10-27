@@ -35,6 +35,33 @@ pub struct Engine {
     store: Arc<dyn Store>,
     clock: Arc<dyn Fn() -> i64 + Send + Sync>,
     watchers: Mutex<HashMap<RunKey, watch::Sender<RunProgress>>>,
+    followups: Mutex<Option<tokio::sync::mpsc::UnboundedSender<FollowUp>>>,
+}
+
+/// A committed transition whose effects the frontend carries out itself
+/// (children, continue-as-new, external signals and cancels, the parent
+/// close policy, telling a parent its child closed; D2087).
+#[derive(Debug, Clone)]
+pub struct FollowUp {
+    /// The run's namespace.
+    pub ctx: EffectContext,
+    /// The run.
+    pub key: RunKey,
+    /// What was committed.
+    pub transition: Transition,
+}
+
+/// Whether a committed transition needs the frontend after the commit.
+pub fn needs_follow_up(t: &Transition) -> bool {
+    t.effects.iter().any(|e| match e {
+        Effect::StartChild { .. }
+        | Effect::ContinuedAsNew { .. }
+        | Effect::SignalExternal { .. }
+        | Effect::CancelExternal { .. }
+        | Effect::ParentClosePolicy { .. } => true,
+        Effect::RunClosed { .. } => t.state.parent.is_some(),
+        _ => false,
+    })
 }
 
 impl std::fmt::Debug for Engine {
@@ -105,6 +132,33 @@ impl Engine {
             store,
             clock,
             watchers: Mutex::new(HashMap::new()),
+            followups: Mutex::new(None),
+        }
+    }
+
+    /// Sends every committed transition that needs a follow-up to `tx`.
+    pub fn set_followups(&self, tx: tokio::sync::mpsc::UnboundedSender<FollowUp>) {
+        *self
+            .followups
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(tx);
+    }
+
+    fn follow_up(&self, ctx: &EffectContext, key: &RunKey, t: &Transition) {
+        if !needs_follow_up(t) {
+            return;
+        }
+        if let Some(tx) = self
+            .followups
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+        {
+            let _ = tx.send(FollowUp {
+                ctx: ctx.clone(),
+                key: key.clone(),
+                transition: t.clone(),
+            });
         }
     }
 
@@ -165,6 +219,7 @@ impl Engine {
             match self.store.commit(key, run.version, commit).await {
                 Ok(_) => {
                     self.notify(key, &t.state);
+                    self.follow_up(ctx, key, &t);
                     return Ok(t);
                 }
                 Err(StoreError::Conflict { .. }) => continue,

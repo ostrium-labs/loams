@@ -214,6 +214,19 @@ impl Store for MemStore {
         Ok(())
     }
 
+    async fn update_namespace(&self, ns: NamespaceRecord) -> Result<(), StoreError> {
+        json("config", &ns.config)?;
+        let mut inner = self.lock();
+        let cur = inner
+            .namespaces
+            .get_mut(&ns.namespace_id)
+            .ok_or(StoreError::NotFound)?;
+        cur.retention_secs = ns.retention_secs;
+        cur.state = ns.state;
+        cur.config = ns.config;
+        Ok(())
+    }
+
     async fn namespace_by_name(
         &self,
         loams_namespace_id: &str,
