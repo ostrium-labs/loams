@@ -1,0 +1,91 @@
+syntax = "proto3";
+
+// Loams Meter's lease service (design §63 §11.2, D1126; ME1 Task 17):
+// internal, between the gates in product roles and the counter owner of a
+// subject's `_system/_meter` partition. Only Loams service identities (the
+// cluster's mTLS identities of product roles) may call it.
+//
+// Amounts are decimal strings in the feature's unit. Every lease carries the
+// owner epoch of its partition: a gate keeps the newest epoch it has seen
+// per partition and drops any grant from an older one (a fenced owner that
+// has not noticed it lost the partition).
+package loams.meter.v1;
+
+import "google/protobuf/timestamp.proto";
+import "loams/options/v1/options.proto";
+
+// Leases of entitlement capacity for one (subject, feature).
+service LeaseService {
+  option (loams.options.v1.module) = {
+    name: "meter.leases"
+    summary: "Internal: meter capacity leases between gates and counter owners."
+  };
+
+  // A lease (or a cached refusal) for the next operations of a subject's
+  // feature. A call on an instance that does not own the subject's partition
+  // is `failed_precondition` with reason `not_owner`.
+  rpc AcquireLease(AcquireLeaseRequest) returns (AcquireLeaseResponse) {
+    option (loams.options.v1.facade) = {name: "acquire"};
+  }
+  // Gives a lease back early with what was spent of it.
+  rpc ReturnLease(ReturnLeaseRequest) returns (ReturnLeaseResponse) {
+    option idempotency_level = IDEMPOTENT;
+    option (loams.options.v1.facade) = {name: "return"};
+  }
+}
+
+// What a node holds and has spent of one lease.
+message LeaseReport {
+  string lease_id = 1;
+  string granted = 2;
+  string spent = 3;
+}
+
+message AcquireLeaseRequest {
+  string subject = 1;
+  string feature = 2;
+  // The gate's node, stable for its process.
+  string node = 3;
+  // What the next operation needs.
+  string want = 4;
+  // Every lease the node holds for this (subject, feature).
+  repeated LeaseReport held = 5;
+  // The newest owner epoch the gate has seen for the partition; an owner
+  // older than it answers `not_owner`.
+  uint64 known_epoch = 6;
+}
+
+message Lease {
+  // Empty when nothing was granted.
+  string lease_id = 1;
+  string amount = 2;
+  // False: a refusal the gate caches until `refresh_after`.
+  bool has_access = 3;
+  google.protobuf.Timestamp expire_time = 4;
+  google.protobuf.Timestamp refresh_time = 5;
+  uint64 owner_epoch = 6;
+  uint32 partition = 7;
+  // What the owner believes is left after this grant.
+  string balance_hint = 8;
+  // The owner grants single operations near the end of the allowance.
+  bool exact = 9;
+  // Why not, when `has_access` is false: `entitlement_exhausted`,
+  // `spend_cap_reached`, `not_entitled`, `payment_method_required`.
+  string refusal_reason = 10;
+}
+
+message AcquireLeaseResponse {
+  Lease lease = 1;
+}
+
+message ReturnLeaseRequest {
+  string subject = 1;
+  string feature = 2;
+  string lease_id = 3;
+  string spent = 4;
+  // The epoch the lease was granted at; a return to another epoch is
+  // ignored.
+  uint64 owner_epoch = 5;
+}
+
+message ReturnLeaseResponse {}
