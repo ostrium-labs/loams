@@ -34,7 +34,7 @@ cargo_package(
     ],
     deps = [
         "//third-party/rust:async-trait",
-        "//third-party/rust:base64",
+        "//third-party/rust:base64-0_23",
         "//third-party/rust:futures",
         "//third-party/rust:regex",
         "//third-party/rust:serde",

@@ -27,6 +27,9 @@
 #   and outside systems (design §80, D1821). Instance files in
 #   ./connect/instances, secrets in ./secrets/connect. Never part of the
 #   default stack.
+# - `browser` (preview): Obscura, the agents' headless browser (D2114,
+#   deploy/browser), on an internal network that only agentd shares; no
+#   published port; set LOAMS_BROWSER_TOKEN and LOAMS_BROWSER_PROVIDER=service.
 # - `house-tailnet`: the House's own tailnet node (https://loams-house.<tailnet>/).
 # - `postgres-control`: Loams Postgres's control plane.
 # - `console`, `headscale` (coming soon): as below.
@@ -699,6 +702,44 @@ services:
       - agentd-data:/home/loams
       - ./agentd/config.toml:/home/loams/agentd/config.toml:ro
       - ./agentd:/etc/loams-agentd:ro
+    # The agents' headless browser (D2111, D2114): `local` launches Obscura
+    # inside this container if the image carries it; `service` drives the
+    # `browser` profile's engine over the internal `browser` network. The
+    # provider names the engine's token by reference (env:browser-token),
+    # which the bridge's env resolver reads from
+    # LOAMS_WEB_BRIDGE_SECRET_BROWSER_TOKEN.
+    environment:
+      LOAMS_BROWSER_PROVIDER: ${LOAMS_BROWSER_PROVIDER:-local}
+      LOAMS_BROWSER_SERVICE_URL: ws://browser:9222/devtools/browser
+      LOAMS_BROWSER_SERVICE_TOKEN_REF: env:browser-token
+      LOAMS_WEB_BRIDGE_SECRET_BROWSER_TOKEN: ${LOAMS_BROWSER_TOKEN:-}
+    networks:
+      - default
+      - browser
+
+  # The `browser` profile (D2110-D2114, preview): Obscura 0.2.3, the same
+  # engine agentd launches on a laptop, pinned by digest (deploy/browser).
+  # No published port. On `browser` (internal: agentd only) and on
+  # `browser-egress` (its own route out, shared with nobody). The engine
+  # refuses a non-loopback bind unless OBSCURA_CDP_TOKEN is at least 32 bytes,
+  # so an unset LOAMS_BROWSER_TOKEN stops it rather than exposing it. Each
+  # agent page is a throwaway browser context; nothing is stored.
+  browser:
+    <<: *restart
+    profiles: [browser]
+    image: ${BROWSER_IMAGE:-docker.io/h4ckf0r0day/obscura:0.2.3@sha256:475def3ddf1ec513b3d1bc36e8ad15f0d192538cb15f814c77215aa70c418ca2}
+    command: ["serve", "--port", "9222", "--host", "0.0.0.0", "--workers", "${BROWSER_WORKERS:-2}"]
+    environment:
+      OBSCURA_CDP_TOKEN: ${LOAMS_BROWSER_TOKEN:-}
+      OBSCURA_CDP_COMMAND_TIMEOUT_MS: "60000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks:
+      - browser
+      - browser-egress
 
   # The Kafka profile (D1796-D1798, preview): one image of Ostrium's fork of
   # Apache Iggy (ostrium-labs/iggy) holds both `iggy-server` and
@@ -894,6 +935,11 @@ networks:
   # The engine, OpenFGA and openfga-init only, with no route out (`authz` profile).
   authz:
     internal: true
+  # agentd and the `browser` profile's engine only, with no route out.
+  browser:
+    internal: true
+  # The browser engine's own way out to the web; no other service joins it.
+  browser-egress: {}
 
 volumes:
   pd-data:

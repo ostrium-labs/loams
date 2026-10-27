@@ -26,7 +26,7 @@ cargo_package(
         "//crates/loams-agentd-proto:loams-agentd-proto",
         "//third-party/rust:anyhow",
         "//third-party/rust:async-trait",
-        "//third-party/rust:base64",
+        "//third-party/rust:base64-0_23",
         "//third-party/rust:buffa",
         "//third-party/rust:buffa-types",
         "//third-party/rust:connectrpc",

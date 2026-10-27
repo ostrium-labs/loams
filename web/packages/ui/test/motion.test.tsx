@@ -7,7 +7,7 @@ import { Popover } from '@base-ui/react/popover';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MotionGlobalConfig } from 'motion/react';
 import { useState } from 'react';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vite-plus/test';
 import {
   LoadingSwap,
   MOTION_DURATION,
