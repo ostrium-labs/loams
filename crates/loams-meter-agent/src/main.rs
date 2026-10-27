@@ -1,12 +1,15 @@
-//! The `loams-meter` binary: the node metering agent's loop.
+//! The `loams-meter-agent` binary: the node metering agent's loop.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
-use loams_meter::cgroup::DEFAULT_TARGETS;
-use loams_meter::{
+use loams_meter_agent::cgroup::DEFAULT_TARGETS;
+use loams_meter_agent::host::Sessions;
+use loams_meter_agent::host::server::{self, HostEvent, HostServerConfig};
+use loams_meter_agent::{
     Agent, CgroupReader, MeterError, Sink, Spool, SpoolConfig, StaticResolver, StreamSink,
     StreamSinkConfig, forward,
 };
@@ -14,7 +17,7 @@ use tracing::{error, info, warn};
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "loams-meter",
+    name = "loams-meter-agent",
     version,
     about = "Loams Cloud's node metering agent"
 )]
@@ -58,9 +61,22 @@ struct Cli {
     /// The meter stream.
     #[arg(long, default_value = "_meter")]
     stream: String,
-    /// The meter stream's partition count.
-    #[arg(long, default_value_t = 16)]
+    /// The meter stream's partition count (§63 §7.1: 32).
+    #[arg(long, default_value_t = 32)]
     partitions: u32,
+    /// The cluster named in each event's `source`
+    /// (`loams://<cluster>/meter-agent/<node>`).
+    #[arg(long, env = "LOAMS_CLUSTER", default_value = "local")]
+    cluster: String,
+    /// The host-report socket for T1 wasmtime hosts (design §63 §21,
+    /// platform doc 06). Off unless set; `/run/loams/meter.sock` in the
+    /// DaemonSet chart.
+    #[arg(long, env = "LOAMS_METER_HOST_SOCKET")]
+    host_socket: Option<PathBuf>,
+    /// Cgroup patterns a reporting host must run in (repeatable). Default:
+    /// `wasm-host.scope`.
+    #[arg(long = "host-cgroup")]
+    host_cgroups: Vec<String>,
     /// Scan once, forward once, and exit.
     #[arg(long)]
     once: bool,
@@ -98,6 +114,7 @@ async fn run(cli: Cli) -> Result<(), MeterError> {
             let mut config = StreamSinkConfig::new(url, cli.partitions);
             config.namespace = cli.stream_namespace;
             config.stream = cli.stream;
+            config.cluster = cli.cluster;
             Some(StreamSink::new(config)?)
         }
         None => None,
@@ -105,20 +122,79 @@ async fn run(cli: Cli) -> Result<(), MeterError> {
     info!(
         node = agent.node(),
         next_seq = agent.next_seq(),
-        "loams-meter started"
+        "loams-meter-agent started"
     );
+
+    // The T1 source: hosts report on the socket; the server hands what is
+    // new to this loop, which owns the spool.
+    let (host_tx, mut host_rx) = tokio::sync::mpsc::channel::<HostEvent>(1024);
+    if let Some(path) = &cli.host_socket {
+        let listener = server::bind(path)
+            .map_err(|e| MeterError::Config(format!("host socket {}: {e}", path.display())))?;
+        let mut config = HostServerConfig::default();
+        if !cli.host_cgroups.is_empty() {
+            config.allowed_cgroups = cli.host_cgroups.clone();
+        }
+        agent.set_host_reports(true);
+        let sessions = Arc::new(Mutex::new(Sessions::new()));
+        tokio::spawn(server::serve(listener, Arc::new(config), sessions, host_tx));
+        info!(socket = %path.display(), "host-report socket open");
+    } else {
+        drop(host_tx);
+    }
 
     let mut interval = tokio::time::interval(Duration::from_millis(cli.interval_ms.max(1)));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut host_open = cli.host_socket.is_some();
     loop {
-        interval.tick().await;
-        let report = agent.tick(now_ms())?;
-        tracing::debug!(?report, "tick");
-        if let Some(sink) = sink.as_mut() {
-            drain(&mut agent, sink).await?;
+        tokio::select! {
+            _ = interval.tick() => {
+                let report = agent.tick(now_ms())?;
+                tracing::debug!(?report, "tick");
+                if let Some(sink) = sink.as_mut() {
+                    drain(&mut agent, sink).await?;
+                }
+                if cli.once {
+                    return Ok(());
+                }
+            }
+            event = host_rx.recv(), if host_open => match event {
+                Some(event) => on_host_event(&mut agent, event, now_ms()),
+                None => host_open = false,
+            },
         }
-        if cli.once {
-            return Ok(());
+    }
+}
+
+/// Applies one host-socket request to the agent and answers it.
+fn on_host_event<R: loams_meter_agent::TenantResolver>(
+    agent: &mut Agent<R>,
+    event: HostEvent,
+    now_ms: i64,
+) {
+    match event {
+        HostEvent::Reports {
+            host_id,
+            seq,
+            invocations,
+            done,
+        } => {
+            let result = agent
+                .record_host_report(&host_id, seq, &invocations)
+                .map(|_| ())
+                .map_err(|e| e.to_string());
+            let _ = done.send(result);
+        }
+        HostEvent::Gap { done, .. } => {
+            let _ = done.send(agent.record_gap().map_err(|e| e.to_string()));
+        }
+        HostEvent::FinalRead { cgroup, done } => {
+            // A full scan reads the finished cgroup with every other one,
+            // before the host removes it (doc 06 §3.0).
+            if let Err(e) = agent.tick(now_ms) {
+                warn!(cgroup = %cgroup, error = %e, "final read failed");
+            }
+            let _ = done.send(());
         }
     }
 }
@@ -131,7 +207,7 @@ async fn run(cli: Cli) -> Result<(), MeterError> {
 /// saved, the process exits non-zero, and the DaemonSet's restarts
 /// (`CrashLoopBackOff`) are the alert. Transient failures leave the events
 /// spooled for the next tick.
-async fn drain<R: loams_meter::TenantResolver>(
+async fn drain<R: loams_meter_agent::TenantResolver>(
     agent: &mut Agent<R>,
     sink: &mut dyn Sink,
 ) -> Result<(), MeterError> {
@@ -170,7 +246,7 @@ async fn main() -> ExitCode {
     match run(Cli::parse()).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            error!(error = %e, "loams-meter stopped");
+            error!(error = %e, "loams-meter-agent stopped");
             ExitCode::FAILURE
         }
     }

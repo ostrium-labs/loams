@@ -1,9 +1,9 @@
-# The `platform/` workspace and the hosted-deploy checks imported from the
-# former private ostrium-labs/loams-platform repository on 2026-10-19
-# (docs/platform/README.md). GitHub-hosted runners only.
+# The hosted-deploy checks imported from the former private
+# ostrium-labs/loams-platform repository on 2026-10-19 (docs/platform/README.md).
+# The `platform/` Cargo workspace and its `platform-rust` job are gone: the node
+# agent moved to crates/loams-meter-agent in the root workspace, which ci.yml
+# builds and tests (design 63 D1135, plan ME1 Task 0b).
 #
-#   platform-rust     fmt, clippy, tests and cargo-deny over `platform/`
-#                     (loams-meter), like fabric.yml's `connectors-unit`
 #   tailnet-lint      offline HuJSON/subset check of deploy/tailnet's policy
 #   tailnet-headscale Headscale's own `policy check` against a throwaway
 #                     database (pinned image), so the shared policy stays valid
@@ -21,17 +21,15 @@ on:
   push:
     branches: [dev]
     paths:
-      - "platform/**"
       - "deploy/tailnet/**"
       - ".github/workflows/platform.yml"
   pull_request:
     paths:
-      - "platform/**"
       - "deploy/tailnet/**"
       - ".github/workflows/platform.yml"
 
 # A newer push to a pull request supersedes the older run; dev runs to
-# completion, so its cache save lands.
+# completion.
 concurrency:
   group: platform-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -40,36 +38,6 @@ permissions:
   contents: read
 
 jobs:
-  platform-rust:
-    name: "Platform: fmt, clippy, tests and deny"
-    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        if: runner.environment == 'github-hosted'
-        with:
-          save-if: ${{ github.ref == 'refs/heads/dev' }}
-          workspaces: platform -> target
-      - name: rustfmt
-        working-directory: platform
-        run: cargo fmt --all --check
-      - name: clippy
-        working-directory: platform
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
-      - name: tests
-        working-directory: platform
-        run: cargo test --workspace --locked --no-fail-fast
-      # The pin ci.yml and fabric.yml already use.
-      - uses: taiki-e/install-action@badb8c3638e0b773c6c17a6025c2306a8f1c4303 # nextest, 2026-10-02
-        with:
-          tool: cargo-deny
-      - name: licenses, advisories, sources
-        working-directory: platform
-        run: cargo deny check
-
   tailnet-lint:
     name: "Platform: tailnet policy lint"
     runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}

@@ -1,5 +1,12 @@
-//! Meter events: CloudEvents 1.0 in JSON structured mode (design 01 §4,
-//! PD2).
+//! The agent's meter records, as spooled (design 01 §4, PD2), and the
+//! measurements they come from.
+//!
+//! A [`MeterEvent`] is the agent's own record: a CloudEvents-shaped envelope
+//! around [`MeterData`], which keeps the counter reading and sequence number
+//! that crash recovery needs. It is written to the spool as JSON lines;
+//! [`crate::usage`] turns it into the usage event of design §63 §6 when it is
+//! sent. The envelope's `type` and `subject` already carry §63's values
+//! ([`crate::usage::usage_type`], [`crate::usage::billing_subject`]).
 //!
 //! One event is one unsigned delta of one meter, for one tenant, over one
 //! window, measured on one resource. Its `id` is the idempotency key
@@ -12,7 +19,9 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-/// The CloudEvents `type` of every meter event.
+/// The CloudEvents `type` of the imported agent's events (`platform/`,
+/// before design §63 §6). Spooled records may still carry it; the sink
+/// converts them by their `data` (see [`crate::usage::to_cloudevent`]).
 pub const EVENT_TYPE: &str = "dev.loams.meter.v1";
 
 /// The CloudEvents spec version.
@@ -23,6 +32,11 @@ pub const SPEC_VERSION: &str = "1.0";
 pub const PLATFORM_ORG: &str = "_platform";
 
 /// What is measured. The unit is part of the name (design 01 §4).
+///
+/// Requests and durable promise and timer counts are not here: they come
+/// from the gateway and the durable server, not the node agent (§63 §21).
+/// The peak resident bytes travel with [`Meter::MemoryByteSeconds`] as
+/// [`MeterData::peak_bytes`], so one memory event covers one window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Meter {
@@ -31,20 +45,12 @@ pub enum Meter {
     /// Bytes × seconds of resident memory while the cgroup is populated
     /// (a gauge integral).
     MemoryByteSeconds,
-    /// The peak resident bytes (a gauge).
-    MemoryPeakBytes,
     /// wasmtime fuel units (a counter).
     WasmFuel,
-    /// Requests at the edge (a counter).
-    Requests,
-    /// Bytes received at the edge (a counter).
+    /// Bytes received (a counter).
     IngressBytes,
     /// Bytes sent (a counter).
     EgressBytes,
-    /// Durable promises created (a counter).
-    DurablePromises,
-    /// Durable timers scheduled (a counter).
-    DurableTimers,
 }
 
 impl Meter {
@@ -53,13 +59,9 @@ impl Meter {
         match self {
             Meter::CpuUsec => "cpu_usec",
             Meter::MemoryByteSeconds => "memory_byte_seconds",
-            Meter::MemoryPeakBytes => "memory_peak_bytes",
             Meter::WasmFuel => "wasm_fuel",
-            Meter::Requests => "requests",
             Meter::IngressBytes => "ingress_bytes",
             Meter::EgressBytes => "egress_bytes",
-            Meter::DurablePromises => "durable_promises",
-            Meter::DurableTimers => "durable_timers",
         }
     }
 }
@@ -144,8 +146,8 @@ impl Attribution {
         Self::new(PLATFORM_ORG, PLATFORM_ORG)
     }
 
-    /// The CloudEvents `subject`: `<org>/<namespace>`.
-    pub fn subject(&self) -> String {
+    /// The `tenantid` extension: `<org>/<namespace>` (D364).
+    pub fn tenant_id(&self) -> String {
         format!("{}/{}", self.org, self.namespace)
     }
 }
@@ -180,6 +182,17 @@ pub struct MeterData {
     /// it after a crash (design 01 §6.2); the aggregator ignores it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub counter: Option<u64>,
+    /// For [`Meter::MemoryByteSeconds`]: `memory.peak` at `window_end`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub peak_bytes: Option<u64>,
+    /// For [`Meter::WasmFuel`]: the invocation's CPU microseconds as the host
+    /// measured them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cpu_usec: Option<u64>,
+    /// For [`Meter::WasmFuel`]: whether the host estimated the values (a
+    /// split of a window's total rather than a measurement).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub estimated: bool,
     /// The node that measured it.
     pub node: String,
     /// The agent's sequence number, monotonic per node.
@@ -193,12 +206,15 @@ pub struct MeterEvent {
     pub specversion: String,
     /// The idempotency key, `<node>/<source>/<seq>`.
     pub id: String,
-    /// `loams-meter://<node>/<source>`.
+    /// `loams-meter://<node>/<source>`: the spool's own source. The sent
+    /// event's `source` is [`crate::usage::source`].
     pub source: String,
-    /// Always [`EVENT_TYPE`].
+    /// The usage type ([`crate::usage::usage_type`]); [`EVENT_TYPE`] in
+    /// records spooled before §63 §6.
     #[serde(rename = "type")]
     pub event_type: String,
-    /// `<org>/<namespace>`: the billed customer.
+    /// The billing subject ([`crate::usage::billing_subject`]);
+    /// `<org>/<namespace>` in records spooled before §63 §6.
     pub subject: String,
     /// The window's end.
     #[serde(with = "time::serde::rfc3339")]
@@ -228,6 +244,12 @@ pub struct Measurement {
     pub resource: String,
     /// The reading at `window_end` (see [`MeterData::counter`]).
     pub counter: Option<u64>,
+    /// See [`MeterData::peak_bytes`].
+    pub peak_bytes: Option<u64>,
+    /// See [`MeterData::cpu_usec`].
+    pub cpu_usec: Option<u64>,
+    /// See [`MeterData::estimated`].
+    pub estimated: bool,
 }
 
 impl Measurement {
@@ -238,8 +260,8 @@ impl Measurement {
             specversion: SPEC_VERSION.to_string(),
             id: idempotency_key(node, self.source, seq),
             source: format!("loams-meter://{node}/{source}"),
-            event_type: EVENT_TYPE.to_string(),
-            subject: self.attribution.subject(),
+            event_type: crate::usage::usage_type(self.meter).to_string(),
+            subject: crate::usage::billing_subject(&self.attribution.org),
             time: self.window_end,
             datacontenttype: "application/json".to_string(),
             data: MeterData {
@@ -253,6 +275,9 @@ impl Measurement {
                 function: self.attribution.function,
                 resource: self.resource,
                 counter: self.counter,
+                peak_bytes: self.peak_bytes,
+                cpu_usec: self.cpu_usec,
+                estimated: self.estimated,
                 node: node.to_string(),
                 seq,
             },
@@ -291,6 +316,9 @@ mod tests {
             window_end: time_from_unix_ms(1_790_000_001_000),
             resource: "loams-org_a.scope#ino=7".into(),
             counter: Some(99_183_422),
+            peak_bytes: None,
+            cpu_usec: None,
+            estimated: false,
         }
     }
 
@@ -299,12 +327,12 @@ mod tests {
         let event = measurement().into_event("node-7", 42);
         assert_eq!(event.id, "node-7/cgroup/42");
         assert_eq!(event.source, "loams-meter://node-7/cgroup");
-        assert_eq!(event.subject, "org_a/prod");
+        assert_eq!(event.subject, "org_a");
         assert_eq!(event.time, event.data.window_end);
 
         let json = serde_json::to_value(&event).unwrap();
         assert_eq!(json["specversion"], "1.0");
-        assert_eq!(json["type"], EVENT_TYPE);
+        assert_eq!(json["type"], "io.loams.dev.usage.node.cpu.v1");
         assert_eq!(json["data"]["meter"], "cpu_usec");
         assert_eq!(json["data"]["tier"], "t0");
         assert_eq!(json["data"]["window_end"], "2026-09-21T14:13:21Z");
@@ -330,13 +358,9 @@ mod tests {
         for meter in [
             Meter::CpuUsec,
             Meter::MemoryByteSeconds,
-            Meter::MemoryPeakBytes,
             Meter::WasmFuel,
-            Meter::Requests,
             Meter::IngressBytes,
             Meter::EgressBytes,
-            Meter::DurablePromises,
-            Meter::DurableTimers,
         ] {
             let json = serde_json::to_value(meter).unwrap();
             assert_eq!(json, meter.as_str());
