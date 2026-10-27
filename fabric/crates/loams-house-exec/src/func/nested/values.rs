@@ -375,7 +375,9 @@ mod tests {
         let parts = ListParts::of(&out).unwrap();
         assert_eq!(parts.offsets, vec![0, 2, 2, 3]);
         assert_eq!(
-            parts.values.as_primitive::<datafusion::arrow::datatypes::UInt8Type>(),
+            parts
+                .values
+                .as_primitive::<datafusion::arrow::datatypes::UInt8Type>(),
             &UInt8Array::from(vec![1, 2, 3])
         );
         assert_eq!(

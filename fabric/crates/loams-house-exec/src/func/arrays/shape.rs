@@ -247,14 +247,22 @@ pub fn slice(size: usize, offset: i128, length: Option<i128>) -> std::ops::Range
                 }
             } else if offset < 0 {
                 let back = -offset;
-                if back > size_i { 0..size } else { (size_i - back) as usize..size }
+                if back > size_i {
+                    0..size
+                } else {
+                    (size_i - back) as usize..size
+                }
             } else {
                 empty
             }
         }
         Some(mut length) => {
             if length < 0 {
-                length += if offset > 0 { size_i - (offset - 1) } else { -offset };
+                length += if offset > 0 {
+                    size_i - (offset - 1)
+                } else {
+                    -offset
+                };
             }
             if offset == 0 || length <= 0 {
                 return empty;

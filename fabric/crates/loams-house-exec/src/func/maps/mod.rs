@@ -20,12 +20,17 @@ use crate::func::nested::rows::{comparable, comparison_type, eq_keys};
 use crate::func::nested::supertype::supertype;
 use crate::func::nested::values::{ListParts, build_list, offsets_from, take_indexes, to_type};
 use crate::func::nested::{
-    Composite, arity, arrow_err, check_arity, coerce_to, element_of, illegal_type,
-    sizes_dont_match,
+    Composite, arity, arrow_err, check_arity, coerce_to, element_of, illegal_type, sizes_dont_match,
 };
 
 /// The canonical names of the functions this module registers.
-pub const NAMES: &[&str] = &["map", "mapKeys", "mapValues", "mapContainsKey", "mapFromArrays"];
+pub const NAMES: &[&str] = &[
+    "map",
+    "mapKeys",
+    "mapValues",
+    "mapContainsKey",
+    "mapFromArrays",
+];
 
 /// A map column of type `map_type` from row lengths and its keys and values
 /// end to end.
@@ -98,9 +103,7 @@ pub fn register(r: &mut Registry) {
                 .collect();
             let gather = |cols: &[ArrayRef], t: &ChType| -> Result<ArrayRef, ChError> {
                 if cols.is_empty() {
-                    return Ok(datafusion::arrow::array::new_empty_array(
-                        &data_type(t)?.0,
-                    ));
+                    return Ok(datafusion::arrow::array::new_empty_array(&data_type(t)?.0));
                 }
                 let refs: Vec<&dyn Array> = cols.iter().map(|a| a.as_ref()).collect();
                 interleave(&refs, &order).map_err(arrow_err)

@@ -88,9 +88,9 @@ mod tests {
         )
         .unwrap();
         let k = eq_keys(&[a, b]).unwrap();
-        assert_eq!(k[0].row(0), k[1].row(0));
-        assert_eq!(k[0].row(1), k[1].row(1));
-        assert_ne!(k[0].row(0), k[1].row(1));
+        assert!(k[0].row(0) == k[1].row(0));
+        assert!(k[0].row(1) == k[1].row(1));
+        assert!(k[0].row(0) != k[1].row(1));
     }
 
     #[test]

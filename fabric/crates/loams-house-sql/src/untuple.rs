@@ -71,7 +71,7 @@ fn elements(e: &Expr, p: &Projection, tuple_element: &Arc<ScalarUDF>) -> Result<
     let Some(arg) = f.args.first() else {
         return Ok(vec![e.clone()]);
     };
-    let DataType::Struct(fields) = arg.get_type(p.input.schema())? else {
+    let DataType::Struct(fields) = arg.get_type(p.input.schema().as_ref())? else {
         // Not a tuple: left for the function to refuse.
         return Ok(vec![e.clone()]);
     };

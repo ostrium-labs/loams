@@ -44,7 +44,7 @@ use crate::func::maps::build_map;
 use crate::func::nested::values::{
     ListParts, build_list, gather_list, take_indexes, truths, with_default,
 };
-use crate::func::nested::{arity, arrow_err, coerce_to, df, illegal_type, sizes_dont_match};
+use crate::func::nested::{arity, coerce_to, df, illegal_type, sizes_dont_match};
 
 /// The name the guard gives `mapFilter` called with a one-parameter lambda.
 pub const MAP_FILTER_TUPLE: &str = "__ch_mapFilter_tuple";
@@ -154,7 +154,7 @@ pub fn register(r: &mut Registry) {
         r.higher_order.insert(
             (*internal).to_string(),
             Arc::new(HigherOrderUDF::new_from_impl(ArrayHof::new(
-                internal, name, *kind,
+                *internal, *name, *kind,
             ))),
         );
     }
@@ -182,7 +182,11 @@ impl ArrayHof {
 
     /// Its result type, from its value arguments' types and its lambda's
     /// (`None` without one).
-    pub fn result_type(&self, values: &[ChType], lambda: Option<&ChType>) -> Result<ChType, ChError> {
+    pub fn result_type(
+        &self,
+        values: &[ChType],
+        lambda: Option<&ChType>,
+    ) -> Result<ChType, ChError> {
         let name = self.name;
         if values.is_empty() {
             return Err(arity(name, 0, "at least 1"));
@@ -226,9 +230,11 @@ impl ArrayHof {
         }
         Ok(match self.kind {
             Kind::Map => ChType::Array(Box::new(produced)),
-            Kind::Filter | Kind::Sort | Kind::ReverseSort | Kind::MapFilter | Kind::MapFilterTuple => {
-                values[0].clone()
-            }
+            Kind::Filter
+            | Kind::Sort
+            | Kind::ReverseSort
+            | Kind::MapFilter
+            | Kind::MapFilterTuple => values[0].clone(),
             Kind::Exists | Kind::All => ChType::UInt8,
             Kind::Count | Kind::FirstIndex | Kind::LastIndex => ChType::UInt32,
             Kind::First | Kind::Last => first_elem.unwrap_or(ChType::Nothing),
@@ -375,7 +381,13 @@ impl HigherOrderUDFImpl for ArrayHof {
             }
         }
         let out = self
-            .run(rows, &values, &types, lambda.map(|l| (l, lambda_type)), &args.return_field)
+            .run(
+                rows,
+                &values,
+                &types,
+                lambda.map(|l| (l, lambda_type)),
+                &args.return_field,
+            )
             .map_err(|e| match e {
                 Failure::Ch(e) => df(e),
                 Failure::Df(e) => e,
@@ -449,9 +461,7 @@ impl ArrayHof {
                 let refs: Vec<&dyn Fn() -> Result<ArrayRef>> =
                     fns.iter().map(|f| f.as_ref()).collect();
                 let owner = parts[0].row_of_each_element();
-                let out = l.evaluate(&refs, |captured| {
-                    Ok(take_arrays(captured, &owner, None)?)
-                })?;
+                let out = l.evaluate(&refs, |captured| Ok(take_arrays(captured, &owner, None)?))?;
                 Some(out.into_array(elements)?)
             }
             None => None,
@@ -595,7 +605,9 @@ mod tests {
             arr(ChType::UInt64)
         );
         assert_eq!(
-            f(Kind::Filter).result_type(&[s.clone()], Some(&ChType::UInt8)).unwrap(),
+            f(Kind::Filter)
+                .result_type(&[s.clone()], Some(&ChType::UInt8))
+                .unwrap(),
             s
         );
         assert_eq!(
@@ -605,11 +617,15 @@ mod tests {
             ChType::UInt32
         );
         assert_eq!(
-            f(Kind::First).result_type(&[s.clone()], Some(&ChType::Bool)).unwrap(),
+            f(Kind::First)
+                .result_type(&[s.clone()], Some(&ChType::Bool))
+                .unwrap(),
             ChType::String
         );
         assert_eq!(
-            f(Kind::Sum).result_type(&[arr(ChType::Int8)], None).unwrap(),
+            f(Kind::Sum)
+                .result_type(&[arr(ChType::Int8)], None)
+                .unwrap(),
             ChType::Int64
         );
         assert_eq!(
@@ -619,9 +635,17 @@ mod tests {
                 .code,
             43
         );
-        assert_eq!(f(Kind::Map).result_type(&[s.clone()], None).unwrap_err().code, 42);
         assert_eq!(
-            f(Kind::Count).result_type(&[arr(ChType::UInt8)], None).unwrap(),
+            f(Kind::Map)
+                .result_type(&[s.clone()], None)
+                .unwrap_err()
+                .code,
+            42
+        );
+        assert_eq!(
+            f(Kind::Count)
+                .result_type(&[arr(ChType::UInt8)], None)
+                .unwrap(),
             ChType::UInt32
         );
     }
@@ -630,7 +654,10 @@ mod tests {
     fn map_filter_takes_a_map() {
         let m = ChType::Map(Box::new(ChType::String), Box::new(ChType::UInt64));
         let f = ArrayHof::new("mapFilter", "mapFilter", Kind::MapFilter);
-        assert_eq!(f.result_type(&[m.clone()], Some(&ChType::UInt8)).unwrap(), m);
+        assert_eq!(
+            f.result_type(&[m.clone()], Some(&ChType::UInt8)).unwrap(),
+            m
+        );
         let field = Arc::new(to_arrow("m", &m).unwrap());
         assert_eq!(f.parameters(&[field.clone()]).unwrap().len(), 2);
         let t = ArrayHof::new(MAP_FILTER_TUPLE, "mapFilter", Kind::MapFilterTuple);

@@ -5,5 +5,5 @@
 //! extension nodes' physical operators (`FINAL`, totals, `LIMIT BY`, `ARRAY
 //! JOIN`, `WITH FILL`), registered with DataFusion.
 
-pub mod ops;
 pub mod func;
+pub mod ops;

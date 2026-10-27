@@ -189,7 +189,10 @@ impl Composite {
         if self.nulls == Nulls::Own {
             return (self.typer)(types, scalars);
         }
-        if types.iter().any(|t| matches!(t.strip_nullable(), ChType::Nothing)) {
+        if types
+            .iter()
+            .any(|t| matches!(t.strip_nullable(), ChType::Nothing))
+        {
             return Ok(ChType::Nullable(Box::new(ChType::Nothing)));
         }
         let any_nullable = types.iter().any(top_nullable);
@@ -339,7 +342,9 @@ impl ScalarUDFImpl for Composite {
             .map(|f| from_arrow(f))
             .collect::<Result<Vec<_>, _>>()
             .map_err(df)?;
-        let t = self.result_type(&types, args.scalar_arguments).map_err(df)?;
+        let t = self
+            .result_type(&types, args.scalar_arguments)
+            .map_err(df)?;
         Ok(Arc::new(to_arrow(&self.name, &t).map_err(df)?))
     }
 

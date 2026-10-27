@@ -343,7 +343,14 @@ fn composite_literals_and_subscripts_become_functions() {
         assert!(text.contains(want), "{want} not in {text}");
     }
     let f: Vec<&str> = g.resolution.functions.iter().map(String::as_str).collect();
-    for name in ["array", "arrayElement", "map", "tuple", "mapFilter", "tupleElement"] {
+    for name in [
+        "array",
+        "arrayElement",
+        "map",
+        "tuple",
+        "mapFilter",
+        "tupleElement",
+    ] {
         assert!(f.contains(&name), "{name} not in {f:?}");
     }
     assert!(guard("SELECT untuple(t) FROM x", &[]).is_ok());

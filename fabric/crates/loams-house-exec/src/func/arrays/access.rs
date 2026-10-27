@@ -12,9 +12,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use datafusion::arrow::array::{
-    Array, ArrayRef, AsArray, UInt8Array, UInt64Array,
-};
+use datafusion::arrow::array::{Array, ArrayRef, AsArray, UInt8Array, UInt64Array};
 use datafusion::arrow::compute::cast;
 use datafusion::arrow::datatypes::DataType;
 use loams_house_sql::Registry;
@@ -64,7 +62,10 @@ pub fn register(r: &mut Registry) {
         Arc::new(|c| {
             let found = first_match(c)?;
             Ok(Arc::new(UInt8Array::from(
-                found.iter().map(|f| u8::from(f.is_some())).collect::<Vec<_>>(),
+                found
+                    .iter()
+                    .map(|f| u8::from(f.is_some()))
+                    .collect::<Vec<_>>(),
             )))
         }),
     )
@@ -224,9 +225,7 @@ fn first_match(c: &Call<'_>) -> Result<Vec<Option<usize>>, ChError> {
     Ok((0..c.rows)
         .map(|r| {
             let needle = k[1].row(r);
-            parts
-                .range(r)
-                .position(|j| k[0].row(j) == needle)
+            parts.range(r).position(|j| k[0].row(j) == needle)
         })
         .collect())
 }

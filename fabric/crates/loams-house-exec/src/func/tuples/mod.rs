@@ -115,17 +115,15 @@ fn element_of_column(
     match t {
         ChType::Array(inner) => {
             let ChType::Array(ret_inner) = ret else {
-                return Err(ChError::logical_error("tupleElement of an array is not an array"));
+                return Err(ChError::logical_error(
+                    "tupleElement of an array is not an array",
+                ));
             };
             let parts = ListParts::of(a)?;
             let rows = parts.rows();
             let values = element_of_column(&parts.values, inner, which, None, ret_inner)?;
             let used = values.slice(parts.offsets[0], parts.offsets[rows] - parts.offsets[0]);
-            build_list(
-                &data_type(ret)?.0,
-                (0..rows).map(|r| parts.len(r)),
-                used,
-            )
+            build_list(&data_type(ret)?.0, (0..rows).map(|r| parts.len(r)), used)
         }
         ChType::Tuple(elements) => match element_position(elements, which)? {
             Some(i) => Ok(Arc::clone(a.as_struct().column(i))),
@@ -143,7 +141,11 @@ pub fn register(r: &mut Registry) {
     // `tuple(a, b, …)`: an unnamed tuple of the arguments' types.
     Composite::new(
         "tuple",
-        Arc::new(|types, _| Ok(ChType::Tuple(types.iter().map(|t| (None, t.clone())).collect()))),
+        Arc::new(|types, _| {
+            Ok(ChType::Tuple(
+                types.iter().map(|t| (None, t.clone())).collect(),
+            ))
+        }),
         Arc::new(|c| {
             let dt = data_type(c.ret)?.0;
             let DataType::Struct(fields) = &dt else {
@@ -158,9 +160,10 @@ pub fn register(r: &mut Registry) {
                 .zip(fields.iter())
                 .map(|(a, f)| coerce_to(a, f.data_type()))
                 .collect::<Result<Vec<_>, _>>()?;
-            Ok(Arc::new(
-                StructArray::try_new(fields.clone(), columns, None).map_err(arrow_err)?,
-            ) as ArrayRef)
+            Ok(
+                Arc::new(StructArray::try_new(fields.clone(), columns, None).map_err(arrow_err)?)
+                    as ArrayRef,
+            )
         }),
     )
     .own_nulls()
@@ -229,17 +232,16 @@ mod tests {
         );
         let t = ChType::Tuple(named);
         assert_eq!(
-            element_type(&[t.clone(), ChType::UInt8], Some(&ScalarValue::UInt8(Some(9))))
-                .unwrap_err()
-                .code,
+            element_type(
+                &[t.clone(), ChType::UInt8],
+                Some(&ScalarValue::UInt8(Some(9)))
+            )
+            .unwrap_err()
+            .code,
             127
         );
         assert_eq!(
-            element_type(
-                &[ChType::Array(Box::new(t)), ChType::String],
-                Some(&b)
-            )
-            .unwrap(),
+            element_type(&[ChType::Array(Box::new(t)), ChType::String], Some(&b)).unwrap(),
             ChType::Array(Box::new(ChType::String))
         );
     }

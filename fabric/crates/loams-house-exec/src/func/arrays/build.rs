@@ -198,7 +198,9 @@ pub fn register(r: &mut Registry) {
             let list_type = data_type(c.ret)?.0;
             let tuple_type = item_field(&list_type)?.data_type().clone();
             let DataType::Struct(fields) = &tuple_type else {
-                return Err(ChError::logical_error("arrayZip's elements are not a Struct"));
+                return Err(ChError::logical_error(
+                    "arrayZip's elements are not a Struct",
+                ));
             };
             let parts = c
                 .args
@@ -215,13 +217,15 @@ pub fn register(r: &mut Registry) {
             }
             let mut columns = Vec::with_capacity(parts.len());
             for (p, f) in parts.iter().zip(fields.iter()) {
-                let idx: Vec<u64> = (0..c.rows).flat_map(|r| p.range(r)).map(|j| j as u64).collect();
+                let idx: Vec<u64> = (0..c.rows)
+                    .flat_map(|r| p.range(r))
+                    .map(|j| j as u64)
+                    .collect();
                 let col = take_indexes(&p.values, &idx)?;
                 columns.push(crate::func::nested::coerce_to(&col, f.data_type())?);
             }
-            let values: ArrayRef = Arc::new(
-                StructArray::try_new(fields.clone(), columns, None).map_err(arrow_err)?,
-            );
+            let values: ArrayRef =
+                Arc::new(StructArray::try_new(fields.clone(), columns, None).map_err(arrow_err)?);
             build_list(&list_type, lengths, values)
         }),
     )

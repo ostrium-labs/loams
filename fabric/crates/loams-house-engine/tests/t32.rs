@@ -10,7 +10,9 @@
 
 use std::sync::Arc;
 
-use datafusion::arrow::array::{ArrayRef, RecordBatch, StringArray, StructArray, UInt8Array, UInt32Array, UInt64Array};
+use datafusion::arrow::array::{
+    ArrayRef, RecordBatch, StringArray, StructArray, UInt8Array, UInt32Array, UInt64Array,
+};
 use datafusion::arrow::datatypes::{DataType, Schema};
 use datafusion::datasource::MemTable;
 use loams_house_engine::Engine;
@@ -43,12 +45,7 @@ fn engine() -> Engine {
             .collect::<Vec<_>>(),
     ));
     let dt = |i: usize| data_type(&types[i].1).unwrap().0;
-    let arr = build_list(
-        &dt(1),
-        [2, 0],
-        Arc::new(StringArray::from(vec!["a", "b"])),
-    )
-    .unwrap();
+    let arr = build_list(&dt(1), [2, 0], Arc::new(StringArray::from(vec!["a", "b"]))).unwrap();
     let nums = build_list(&dt(2), [3, 0], Arc::new(UInt8Array::from(vec![10, 20, 30]))).unwrap();
     let m = build_map(
         &dt(3),
@@ -111,7 +108,11 @@ async fn rows(engine: &Engine, sql: &str) -> Vec<String> {
 async fn array_functions_match_the_oracle() {
     let e = engine();
     assert_eq!(
-        rows(&e, "SELECT nums[1], nums[-1], nums[10], arrayElement(nums, 0) FROM t32 ORDER BY id").await,
+        rows(
+            &e,
+            "SELECT nums[1], nums[-1], nums[10], arrayElement(nums, 0) FROM t32 ORDER BY id"
+        )
+        .await,
         vec!["[10,30,0,0]", "[0,0,0,0]"]
     );
     assert_eq!(
@@ -147,16 +148,29 @@ async fn array_functions_match_the_oracle() {
         vec![r#"[1,0,["k"],[1],1]"#, "[0,0,[],[],0]"]
     );
     assert_eq!(
-        rows(&e, "SELECT tupleElement(tup, 2), tup.1, tuple(id, 'z') FROM t32 WHERE id = 1").await,
+        rows(
+            &e,
+            "SELECT tupleElement(tup, 2), tup.1, tuple(id, 'z') FROM t32 WHERE id = 1"
+        )
+        .await,
         vec![r#"["x",7,[1,"z"]]"#]
     );
     assert_eq!(
-        rows(&e, "SELECT mapFromArrays(arr, arr)['b'], {'a': 1}['a'] FROM t32 WHERE id = 1").await,
+        rows(
+            &e,
+            "SELECT mapFromArrays(arr, arr)['b'], {'a': 1}['a'] FROM t32 WHERE id = 1"
+        )
+        .await,
         vec![r#"["b",1]"#]
     );
     // Arrays of different lengths are 190, as ClickHouse.
     let err = e
-        .query("SELECT arrayZip(arr, nums) FROM t32 WHERE id = 1", &[], &[], "default")
+        .query(
+            "SELECT arrayZip(arr, nums) FROM t32 WHERE id = 1",
+            &[],
+            &[],
+            "default",
+        )
         .await
         .unwrap_err();
     assert_eq!(err.code, 190, "{err}");

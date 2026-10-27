@@ -114,7 +114,9 @@ pub fn sort_order(
         DataType::Float32 | DataType::Float64 => {
             let f = cast(&plain, &DataType::Float64).map_err(arrow_err)?;
             let f = f.as_primitive::<Float64Type>();
-            (0..f.len()).map(|i| f.is_valid(i) && f.value(i).is_nan()).collect()
+            (0..f.len())
+                .map(|i| f.is_valid(i) && f.value(i).is_nan())
+                .collect()
         }
         _ => vec![false; plain.len()],
     };
@@ -177,7 +179,13 @@ mod tests {
             Some(f64::NAN),
             Some(1.0),
         ]));
-        assert_eq!(sort_order(&v, &[0, 4], false).unwrap(), vec![vec![3, 0, 2, 1]]);
-        assert_eq!(sort_order(&v, &[0, 4], true).unwrap(), vec![vec![0, 3, 2, 1]]);
+        assert_eq!(
+            sort_order(&v, &[0, 4], false).unwrap(),
+            vec![vec![3, 0, 2, 1]]
+        );
+        assert_eq!(
+            sort_order(&v, &[0, 4], true).unwrap(),
+            vec![vec![0, 3, 2, 1]]
+        );
     }
 }
