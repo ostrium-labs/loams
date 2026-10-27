@@ -1164,6 +1164,64 @@ MM1a's `Forget` stays logical (Task 9).
 
 **R1.8 The `CATALOGUE` row lands with Task 11, not here.** R0.8 had Task 1 add the row with `available: cfg!(feature = "memory")`, but that feature does not exist until Task 11. A row with `available: false` also promises that every RPC answers `feature_not_in_variant`, and that needs the stub registration Task 11 writes. Task 11 adds the row, the feature and the stub together. The package is authorized for `route_map.rs` by a §44 §7.2 module-catalogue row rather than §8's "New protos:" sentence, as PG2 Task 1 did.
 
+### Task 2 rulings (2026-10-19)
+
+**R2.1 The crate is new, and it does not stream yet.**
+- `crates/loams-llm` is created new, as R0.7 says. DD1 Task 18 adds streaming and its recorded SSE streams to this crate. `fixtures/sse/` waits for that task. The structured-output calls here are not streamed.
+- No test calls a provider. The JSON fixtures in `fixtures/json/` are written to the providers' documented response shapes, not captured from live calls. A loopback axum server in `tests/common` answers them and records each request, so the tests check the request bodies and headers too. `httpmock` is not used.
+
+**R2.2 `LlmError` gains `InvalidConfig(String)` and `is_retryable()`.**
+- The shared contract has no variant for a refused configuration: a base URL with userinfo, plain `http` off loopback, a schema that does not compile, or a public allow-list entry. `InvalidConfig` carries fixed text only and never echoes the URL.
+- **Retries** cover 408, 429, 5xx and transport failures: three retries, with backoff from 500 ms doubling to 8 s and jitter in [0.5, 1]. A `Retry-After` in seconds is honoured up to 30 s. A longer one ends the call at once with a retryable `Provider` error, so the caller's durable job retries later. An HTTP-date `Retry-After` falls back to the backoff.
+- Redirects are off, because a redirect could leave loopback and carry the key header with it. A provider's error body is discarded.
+
+**R2.3 Secret references.**
+- A `SecretRef` is `<scheme>/<name>`: `env/OPENAI` on a server, and `keyring/…` for the daemon's source, which DD1 implements.
+- `EnvSecretSource` resolves `env/<NAME>` from the process variable `LOAMS_LLM_KEY_<NAME>`. The prefix is configurable. A store's configuration cannot name any other server variable this way, such as `AWS_SECRET_ACCESS_KEY`.
+- `loams-env` and the vault (§36 §19.13) do not exist yet. When they land, they become a second `SecretSource`. Owner question.
+- `Secret<T>` is the crate's own type. It prints `[redacted]` in `Debug` and `Display`, is zeroed on drop (`zeroize`), and has no `Serialize`.
+
+**R2.4 `local_only` accepts addresses, not names.**
+- Under `local_only`, a base URL passes only if its host is `localhost`, a loopback IP, or an IP literal inside an allow-list CIDR. Any other host name is refused (`NotLocal`), because a name can resolve anywhere at connect time. `localhost` is pinned to `127.0.0.1` in the client and never goes through the resolver.
+- An allow-list entry must lie inside loopback or a private range: RFC 1918, `100.64.0.0/10`, `fc00::/7` or `fe80::/10`.
+
+**R2.5 How budgets work.**
+- The ledgers live in memory, one per process. A daily budget shared across a cluster, backed by the metastore, belongs to Task 52.
+- **Reserve:** a call reserves its estimate first. The estimate is bytes/4 of the system prompt, messages and schema, plus `max_output_tokens`. If the estimate would pass a cap, the call is refused before anything is sent. A per-call cap refuses; it does not shrink the call to fit.
+- **Settle:** a call settles at the token counts the provider reports. Anthropic's cache tokens count as input. If the provider reports no counts, the call settles at its estimate. A failed call releases its reservation.
+- **Midnight:** the daily ledger rolls over at 00:00 UTC. A call that straddles midnight is charged to the day it settles in.
+
+**R2.6 Base URLs and model names.**
+- An OpenAI-compatible base URL includes its version path (`…/v1`). An Anthropic base URL is the host root, and the crate adds `v1/messages`. These follow each provider's own convention.
+- The Anthropic provider sends `anthropic-version: 2023-06-01`.
+- The crate has no default model. The `ollama`, `openai` and `anthropic` presets take the model name as an argument.
+
+**R2.7 Anthropic structured output.**
+- The answer comes back as one tool whose `input_schema` is the schema. The request sets `tool_choice: auto` with `disable_parallel_tool_use: true`, and a fixed instruction tells the model to call the tool. No `temperature` is sent.
+- The reason is that the current model families answer 400 to a forced `tool_choice` and to sampling parameters (checked against Anthropic's documentation on 2026-10-19).
+- `AnthropicOptions` can turn on `ToolChoice::Forced` and `send_temperature` for models that accept them.
+- An answer without the tool call is `InvalidOutput`, and so are `stop_reason: refusal` and `stop_reason: max_tokens`.
+
+**R2.8 `jsonschema` is pinned at `=0.58.5` (2026-10-02, MIT).**
+- This is the version `fabric/` pins. 0.58.6 was 13 days old.
+- It is built with `default-features = false`, so it has no HTTP or file `$ref` resolver.
+- Its tree brings in `borrow-or-share` (MIT-0). The root `deny.toml` now allows MIT-0, as `fabric/deny.toml` already did.
+- A schema violation reports the failing instance path and keyword (`/tags/1: type`), never the value.
+
+**R2.9 OpenAI-compatible options.**
+- **Structured output:** configuration chooses how it is requested; the crate does not probe the server. `JsonSchema` is the default (`response_format: json_schema`). `JsonObject` (for DeepSeek) and `Instruction` (no `response_format`) put the schema into the system prompt. The answer is validated in all three modes.
+- **Request fields:** `max_tokens` or `max_completion_tokens` is a configuration choice. Sending `temperature` can be turned off. `strict` is set per schema and defaults to off.
+- **Embeddings:** each vector is checked against the configured dimension.
+- **Rerank:** `Reranker` uses `POST <base>/rerank`, the shape that vLLM and llama.cpp serve.
+- **Anthropic:** it has no embedder or reranker, so `connect_embedder` answers `NotConfigured` for it.
+
+**R2.10 No content in `Debug` either.**
+- `ChatMessage`, `ChatRequest` and `ChatOutput` print lengths and counts, never text.
+- Spans and events carry the provider, the model name, the status, the attempt and timings.
+- `tests/logs.rs` runs every path at TRACE with span events, covering successes, retries, error bodies, schema violations, prose, embeddings, rerank, Anthropic and the fake. It holds `provider_key_never_logged` and `no_content_in_logs`, and checks the captured logs and every `Debug`/`Display` string for both canaries.
+
+**R2.11 TLS.** `reqwest` is built with `rustls-no-provider`, and rustls with `ring`. The process's default provider is installed (ring) when none is set, as `loams` does for its clients. Linking the crate into `loams` therefore never adds aws-lc-rs as a second provider.
+
 ## Owner rulings (2026-10-13)
 
 The owner accepted the controller's recommendations:
