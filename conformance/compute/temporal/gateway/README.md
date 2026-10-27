@@ -23,7 +23,7 @@ corpus's pins (Go v1.49.0, TypeScript 1.24.0), against `loams-temporal`.
   `insecure_dev`. No host port: the SDK containers run on the stack's
   network against `loams:7233` with the test key in `TEMPORAL_API_KEY`,
   which the corpus workers send as a bearer token. Each SDK container is
-  killed after `LEG_TIMEOUT` seconds (default 900), and the gateway's and
+  killed after `LEG_TIMEOUT` seconds (default 900), each TypeScript scenario runs on its own and is killed after `TS_SCENARIO_TIMEOUT` (default 240), and the gateway's and
   the engine's logs are written to the output directory at the end. The
   stack stays up afterwards (`oc_compose --gateway down -v` removes it);
   `OC_PROJECT` runs it beside another stack.

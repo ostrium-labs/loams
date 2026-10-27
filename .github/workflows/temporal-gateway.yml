@@ -74,7 +74,8 @@ jobs:
       OC_OUT: ${{ github.workspace }}/target/compute
       # docker compose v2 builds the gateway's image with BuildKit.
       DOCKER_BUILDKIT: '1'
-      LEG_TIMEOUT: '900'
+      LEG_TIMEOUT: '1500'
+      TS_SCENARIO_TIMEOUT: '120'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

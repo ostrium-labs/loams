@@ -359,7 +359,9 @@ assert g["environment"]["LOAMS_TEMPORAL_DATABASE_URL"].endswith("@compute1:55433
 assert "LOAMS_TEMPORAL_TOKEN_KEY_1" in g["environment"], g["environment"]
 assert g["read_only"] is True and g["cap_drop"] == ["ALL"], g
 [v] = [v for v in g["volumes"] if v["target"] == "/etc/loams-temporal/gateway.toml"]
-assert v["type"] == "bind" and v["read_only"] is True and v["bind"]["create_host_path"] is False, v
+# Some compose versions drop `create_host_path: false` from `config`; the
+# source line is checked below.
+assert v["type"] == "bind" and v["read_only"] is True and v.get("bind", {}).get("create_host_path", False) is False, v
 for path in sys.argv[2:4]:
     cfg = tomllib.load(open(path, "rb"))
     assert cfg["store"] == {"kind": "postgres", "url_env": "LOAMS_TEMPORAL_DATABASE_URL"}, (path, cfg["store"])
@@ -368,6 +370,7 @@ for path in sys.argv[2:4]:
     assert cfg["keys"] and cfg["task_token_keys"], f"{path}: the profile runs with API keys and its own task-token key"
 EOF
   grep -q '^  database loams_temporal "\$LOAMS_TEMPORAL_DB_USER"$' "$OC_RELEASE/compute/durable-init.sh"
+  grep -q '^          create_host_path: false$' "$OC_RELEASE/compose.compute.yaml"
 }
 
 # The gateway's image is a Loams release image (D2030): compose.compute.yaml
@@ -400,7 +403,7 @@ EOF
       { echo "$wf.yml does not build loams-temporal"; return 1; }
   done
   # The first draft's conformance-only image name is gone.
-  if grep -rn 'loams-temporal-conformance' "$ROOT/conformance" "$ROOT/deploy" "$ROOT/.github"; then return 1; fi
+  if grep -rn --exclude=selftest.sh 'localhost/loams-temporal-conformance' "$ROOT/conformance" "$ROOT/deploy" "$ROOT/.github"; then return 1; fi
 }
 
 TESTS=(

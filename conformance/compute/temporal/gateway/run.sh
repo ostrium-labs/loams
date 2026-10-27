@@ -25,6 +25,7 @@
 #   GW_BUILD=1          profile: rebuild the gateway's image even when it exists
 #   OC_PROJECT          profile: a compose project other than `loams` (lib.sh)
 #   SCENARIOS           comma-separated (default: the corpus's DX1 scenarios)
+#   TS_SCENARIO_TIMEOUT seconds one TypeScript scenario may run (default 240)
 #   LEG_TIMEOUT         seconds one SDK container may run (default 900); a
 #                       hung leg is killed and fails its case instead of the job
 set -euo pipefail
@@ -162,12 +163,25 @@ if go_run go-generate "workers/go && go build -o /tmp/corpus . && /tmp/corpus ge
 else
   case_ gateway_dx1_scenarios_go fail "$(tail -3 "$out/go.log")"
 fi
-if leg ts-generate "${net[@]}" -v "$corpus:/c:ro" -v "$out:/out" -v dx1-npmcache:/root/.npm "$NODE_IMAGE" \
-  sh -ec "cp -r /c/workers/ts /tmp/ts && cd /tmp/ts && npm ci --no-audit --no-fund >/dev/null && npx tsc -p . && node dist/generate.js $addr default /out/generate-ts.json $SCENARIOS" >"$out/ts.log" 2>&1 &&
-  go_run ts-export "workers/go && go build -o /tmp/corpus . && /tmp/corpus export -address $addr -namespace default -no-search-attribute -prefix corpus-ts- -scenarios $SCENARIOS -out /out/histories/ts" >>"$out/ts.log" 2>&1; then
+# TypeScript: one generator run per scenario, each killed after
+# TS_SCENARIO_TIMEOUT seconds, so a scenario that hangs fails alone and the
+# ones after it still run; then the histories of every run are exported,
+# open runs included, so a hung run's history is kept for diagnosis.
+ts_ok=1
+if leg ts-generate "${net[@]}" -v "$corpus:/c:ro" -v "$out:/out" -v dx1-npmcache:/root/.npm \
+  -e "TS_SCENARIO_TIMEOUT=${TS_SCENARIO_TIMEOUT:-240}" -e "SCENARIOS=$SCENARIOS" -e "ADDR=$addr" "$NODE_IMAGE" \
+  sh -ec 'cp -r /c/workers/ts /tmp/ts && cd /tmp/ts && npm ci --no-audit --no-fund >/dev/null && npx tsc -p .
+    rc=0
+    for s in $(echo "$SCENARIOS" | tr , " "); do
+      timeout -k 10 "$TS_SCENARIO_TIMEOUT" node dist/generate.js "$ADDR" default "/out/generate-ts-$s.json" "$s" ||
+        { echo "corpus: $s: FAILED or killed after ${TS_SCENARIO_TIMEOUT}s"; rc=1; }
+    done
+    exit $rc' >"$out/ts.log" 2>&1; then :; else ts_ok=; fi
+go_run ts-export "workers/go && go build -o /tmp/corpus . && /tmp/corpus export -address $addr -namespace default -no-search-attribute -prefix corpus-ts- -scenarios $SCENARIOS -out /out/histories/ts" >>"$out/ts.log" 2>&1 || ts_ok=
+if [ -n "$ts_ok" ]; then
   case_ gateway_dx1_scenarios_ts pass
 else
-  case_ gateway_dx1_scenarios_ts fail "$(tail -3 "$out/ts.log")"
+  case_ gateway_dx1_scenarios_ts fail "$(grep -E 'FAILED|killed|Error' "$out/ts.log" | tail -3)"
 fi
 for s in hello signal_then_complete; do
   for lang in go ts; do
