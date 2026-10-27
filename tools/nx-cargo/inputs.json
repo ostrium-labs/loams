@@ -119,6 +119,9 @@
         "loams-connector-objects": [
           "conformance/connectors/fixtures/cloudflare-r2/**"
         ],
+        "loams-house-engine": [
+          "conformance/clickhouse/oracle/corpus/he1/26/**"
+        ],
         "loams-house-worker": [
           "conformance/clickhouse/corpus/**",
           "deploy/house/kind/worker-pods.yaml"
