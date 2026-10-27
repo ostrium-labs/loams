@@ -164,3 +164,23 @@ note = "TMP-api (D2086): unit tests only; no SDK leg yet"
 [[method]]
 name = "ShutdownWorker"
 note = "TMP-api (D2086): unit tests only; no SDK leg yet"
+
+[[method]]
+name = "UpdateNamespace"
+note = "TMP-api (D2088): unit tests only; versioning reads answer no sets, no rules, all reachable"
+
+[[method]]
+name = "DeprecateNamespace"
+note = "TMP-api (D2088): unit tests only; versioning reads answer no sets, no rules, all reachable"
+
+[[method]]
+name = "GetWorkerBuildIdCompatibility"
+note = "TMP-api (D2088): unit tests only; versioning reads answer no sets, no rules, all reachable"
+
+[[method]]
+name = "GetWorkerVersioningRules"
+note = "TMP-api (D2088): unit tests only; versioning reads answer no sets, no rules, all reachable"
+
+[[method]]
+name = "GetWorkerTaskReachability"
+note = "TMP-api (D2088): unit tests only; versioning reads answer no sets, no rules, all reachable"

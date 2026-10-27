@@ -4,7 +4,7 @@
 
 Every RPC of `temporalio/api` v1.63.5 (vendored in `crates/loams-temporal-proto`) and whether the Loams Temporal gateway (`crates/loams-temporal-frontend`) answers it. Everything else answers `UNIMPLEMENTED` with a link to the compatibility matrix. Status is preview: "implemented" means the method is built and has unit tests (CI runs them); it does not mean every SDK has run it end to end.
 
-WorkflowService: 34 of 123 implemented. OperatorService: none yet (the gateway does not serve it).
+WorkflowService: 39 of 123 implemented. OperatorService: none yet (the gateway does not serve it).
 
 ## WorkflowService
 
@@ -13,8 +13,8 @@ WorkflowService: 34 of 123 implemented. OperatorService: none yet (the gateway d
 | `RegisterNamespace` | implemented (DX1) | admin role only |
 | `DescribeNamespace` | implemented (DX1) |  |
 | `ListNamespaces` | implemented (DX1) | one page |
-| `UpdateNamespace` | planned: TMP-api E | description, retention, owner email, data |
-| `DeprecateNamespace` | planned: TMP-api E | deprecated upstream too |
+| `UpdateNamespace` | implemented (TMP-api) | admin role; description, owner email, data, state, retention (memory store; Postgres store pending TMP-store) |
+| `DeprecateNamespace` | implemented (TMP-api) | admin role |
 | `StartWorkflowExecution` | implemented (DX1) | ID reuse and conflict policies (TMP-api B); no start delay, no cron |
 | `ExecuteMultiOperation` | not planned yet | update-with-start; needs start and update in one commit |
 | `GetWorkflowExecutionHistory` | implemented (DX1) | paged; long poll; close-event filter |
@@ -61,11 +61,11 @@ WorkflowService: 34 of 123 implemented. OperatorService: none yet (the gateway d
 | `DeleteSchedule` | lane TMP-sched (schedules and visibility) |  |
 | `ListSchedules` | lane TMP-sched (schedules and visibility) |  |
 | `CountSchedules` | lane TMP-sched (schedules and visibility) |  |
-| `UpdateWorkerBuildIdCompatibility` | planned: TMP-api E | accepted and recorded; no routing by build ID |
-| `GetWorkerBuildIdCompatibility` | planned: TMP-api E |  |
-| `UpdateWorkerVersioningRules` | planned: TMP-api E | accepted and recorded; no routing by build ID |
-| `GetWorkerVersioningRules` | planned: TMP-api E |  |
-| `GetWorkerTaskReachability` | planned: TMP-api E | every build ID reachable |
+| `UpdateWorkerBuildIdCompatibility` | not planned yet | no routing by build ID yet |
+| `GetWorkerBuildIdCompatibility` | implemented (TMP-api) | no version sets: routing is by task queue only |
+| `UpdateWorkerVersioningRules` | not planned yet | no routing by build ID yet |
+| `GetWorkerVersioningRules` | implemented (TMP-api) | no rules |
+| `GetWorkerTaskReachability` | implemented (TMP-api) | every build ID reachable |
 | `DescribeDeployment` | not planned yet | worker deployments |
 | `DescribeWorkerDeploymentVersion` | not planned yet | worker deployments |
 | `ListDeployments` | not planned yet | worker deployments |
@@ -141,7 +141,7 @@ WorkflowService: 34 of 123 implemented. OperatorService: none yet (the gateway d
 | `AddSearchAttributes` | lane TMP-sched (schedules and visibility) |  |
 | `RemoveSearchAttributes` | lane TMP-sched (schedules and visibility) |  |
 | `ListSearchAttributes` | lane TMP-sched (schedules and visibility) |  |
-| `DeleteNamespace` | planned: TMP-api E | marks the namespace deleted; runs are kept until retention |
+| `DeleteNamespace` | not planned yet | OperatorService is not served yet |
 | `AddOrUpdateRemoteCluster` | not planned yet | no multi-cluster replication |
 | `RemoveRemoteCluster` | not planned yet | no multi-cluster replication |
 | `ListClusters` | not planned yet | no multi-cluster replication |
