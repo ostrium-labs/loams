@@ -606,6 +606,103 @@ async fn member_cannot_create_key() {
     engine.stop().await;
 }
 
+/// Ruling T5.R1: removing a member revokes the keys that act as them, so a removed admin's
+/// key can no longer authenticate; a service account's key they made keeps working.
+#[tokio::test]
+async fn removing_a_member_revokes_their_keys() {
+    let engine = Engine::guarded(vec![Arc::new(TestAuthenticator)]).await;
+    let mut owner = engine.client();
+    owner.setup(SETUP_TOKEN).await;
+    owner
+        .call(PROJECTS, "CreateProject", json!({"name": "Web"}))
+        .await
+        .ok();
+    owner
+        .call(
+            PROJECTS,
+            "CreateEnvironment",
+            json!({"project": "web", "name": "Prod"}),
+        )
+        .await
+        .ok();
+    owner
+        .call(
+            ORG,
+            "CreateInvitation",
+            json!({"email": "adm@example.test", "role": "ORG_ROLE_ADMIN"}),
+        )
+        .await
+        .ok();
+    let admin = engine
+        .client()
+        .with_bearer(&TestAuthenticator::token("adm"));
+    admin.call(ORG, "GetOrg", json!({})).await.ok();
+    let own = admin
+        .call(
+            KEYS,
+            "CreateKey",
+            json!({"project": "web", "environment": "prod", "name": "adm-key",
+                   "idempotencyKey": "adm-1"}),
+        )
+        .await;
+    let own = engine
+        .client()
+        .with_bearer(own.ok()["secret"].as_str().unwrap());
+    let account = admin
+        .call(
+            AGENTS,
+            "CreateServiceAccount",
+            json!({"project": "web", "name": "ci"}),
+        )
+        .await;
+    let account = account.ok()["serviceAccount"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let ci = admin
+        .call(
+            KEYS,
+            "CreateKey",
+            json!({"project": "web", "environment": "prod", "name": "ci-key",
+                   "serviceAccount": account, "idempotencyKey": "adm-2"}),
+        )
+        .await;
+    let ci = engine
+        .client()
+        .with_bearer(ci.ok()["secret"].as_str().unwrap());
+    own.call(ORG, "GetOrg", json!({})).await.ok();
+    let members = owner.call(ORG, "ListMembers", json!({})).await;
+    let user = members.ok()["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["user"]["email"] == "adm@example.test")
+        .map(|m| m["user"]["id"].as_str().unwrap().to_owned())
+        .unwrap();
+    owner
+        .call(ORG, "RemoveMember", json!({"user": user}))
+        .await
+        .ok();
+    let refused = own
+        .call(PROJECTS, "CreateProject", json!({"name": "After"}))
+        .await;
+    assert_eq!(
+        refused.failure(),
+        ("unauthenticated".into(), "token_revoked".into())
+    );
+    ci.call(ORG, "GetOrg", json!({})).await.ok();
+    let audit = owner.call(AUDIT, "ListAuditEvents", json!({})).await;
+    assert!(
+        audit.ok()["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["action"] == "api_key.revoke" && e["target"]["name"] == "adm-key"),
+        "the revocation is audited"
+    );
+    engine.stop().await;
+}
+
 /// Before setup every admin RPC is `setup_required`; the last owner cannot
 /// be removed; removing a member ends their sessions.
 #[tokio::test]

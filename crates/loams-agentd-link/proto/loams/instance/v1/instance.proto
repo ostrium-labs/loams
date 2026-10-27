@@ -50,7 +50,8 @@ message GetInstanceResponse {
   string issuer = 7;
   // The JWKS of the instance's token-signing keys.
   string jwks_uri = 8;
-  // How people sign in. Authentik is the identity provider (§37 §6.5).
+  // How people sign in: the instance's OIDC issuer (Zitadel, design §76), a
+  // pairing code, or none (§37 §6.5).
   repeated SignInMethod sign_in_methods = 9;
   // A compact JWS, signed by the instance key, listing the current and next
   // TLS SPKI hashes (§37 §7.2.3). Empty for instances with public CAs only.
@@ -75,7 +76,7 @@ enum Edition {
 
 message SignInMethod {
   SignInKind kind = 1;
-  // The OIDC issuer for KIND_AUTHENTIK (Authentik's application issuer URL).
+  // The OIDC issuer for SIGN_IN_KIND_OIDC and SIGN_IN_KIND_OIDC_DEVICE_CODE.
   string issuer = 2;
   // The public OAuth client id for this app, for example "loams-desktop".
   string client_id = 3;
@@ -87,12 +88,17 @@ enum SignInKind {
   SIGN_IN_KIND_UNSPECIFIED = 0;
   // No sign-in: a loopback stack before the auth plan (D111).
   SIGN_IN_KIND_NONE = 1;
-  // OIDC authorization code + PKCE at the instance's Authentik (§38).
-  SIGN_IN_KIND_AUTHENTIK = 2;
-  // Authentik's device authorization flow (RFC 8628).
-  SIGN_IN_KIND_AUTHENTIK_DEVICE_CODE = 3;
+  // Deprecated: use SIGN_IN_KIND_OIDC (D1619). Kept so the wire value still
+  // decodes; no server sends it.
+  SIGN_IN_KIND_AUTHENTIK = 2 [deprecated = true];
+  // Deprecated: use SIGN_IN_KIND_OIDC_DEVICE_CODE (D1619).
+  SIGN_IN_KIND_AUTHENTIK_DEVICE_CODE = 3 [deprecated = true];
   // A QR or typed pairing code from a signed-in session (§37 §7.2).
   SIGN_IN_KIND_PAIRING = 4;
+  // OIDC authorization code + PKCE at the instance's issuer (design §76).
+  SIGN_IN_KIND_OIDC = 5;
+  // The issuer's device authorization flow (RFC 8628).
+  SIGN_IN_KIND_OIDC_DEVICE_CODE = 6;
 }
 
 message PushConfig {

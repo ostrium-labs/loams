@@ -5,7 +5,8 @@ name: CI
 #   changed among DCO, repository checks, fmt and clippy, the Rust tests, the
 #   console, cargo-deny, the protos and the seven supported SDKs. A draft skips
 #   the heavy ones of those (label `ci:full`, then a push, runs them).
-# - full tier, a pull request into main (the dev -> main release gate): also
+# - full tier, a pull request into main (the dev -> main release gate) or a
+#   release branch, or one labelled `ci:full` (then a push): also
 #   the engine, TiKV, Live, durable, Graph, fuzzing, specs, browser, Dapr and
 #   the wave 2 and 3 SDKs, by path.
 # - push to main, a manual dispatch and the nightly on dev (nightly.yml):
@@ -33,12 +34,20 @@ permissions:
 # default, free for this public repository. Blacksmith removed (owner,
 # 2026-10-19): every job runs on GitHub-hosted runners. The RUNNER_HEAVY and
 # RUNNER_MAIN repository variables can still override the labels.
+# Superseded runs of a pull request and of dev are cancelled; a push to main, a tag,
+# a dispatch (the nightly) and a schedule run to completion. The event is in
+# the group, so a push never cancels a dispatch on the same branch.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  # A newer dev head supersedes an older one; main runs to completion.
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/dev') }}
 
 env:
+  # CI builds are never debugged: no debug info in dev and test builds (smaller
+  # caches, faster links; a panic still names its file and line) and no
+  # incremental artifacts. rust-cache sets CARGO_INCREMENTAL=0 too; this covers
+  # the jobs without it.
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_DEV_DEBUG: 0
   CARGO_TERM_COLOR: always
 
 jobs:
@@ -49,7 +58,7 @@ jobs:
   changes:
     name: Changed paths
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/dev')
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     permissions:
       contents: read
       pull-requests: read
@@ -57,15 +66,18 @@ jobs:
       # 'false' on a draft pull request without the `ci:full` label: the heavy
       # jobs (heavy Rust and macOS) wait until it is ready for review.
       heavy: ${{ github.event.pull_request.draft != true || contains(github.event.pull_request.labels.*.name, 'ci:full') }}
-      # 'true' on a pull request into main: the full tier.
-      full: ${{ github.base_ref == 'main' }}
+      # 'true' on a pull request into main or a release branch, or one
+      # labelled `ci:full` (then a push): the full tier.
+      full: ${{ github.base_ref == 'main' || startsWith(github.base_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'ci:full') }}
       rust: ${{ steps.filter.outputs.rust }}
       engine: ${{ steps.filter.outputs.engine }}
       es: ${{ steps.filter.outputs.es }}
       sim: ${{ steps.filter.outputs.sim }}
       tikv: ${{ steps.filter.outputs.tikv }}
       live-embedded: ${{ steps.filter.outputs.live-embedded }}
+      iggy-sink: ${{ steps.filter.outputs.iggy-sink }}
       durable: ${{ steps.filter.outputs.durable }}
+      temporal-store: ${{ steps.filter.outputs.temporal-store }}
       deny: ${{ steps.filter.outputs.deny }}
       agentd: ${{ steps.filter.outputs.agentd }}
       graph: ${{ steps.filter.outputs.graph }}
@@ -86,11 +98,13 @@ jobs:
       sdk-dart: ${{ steps.filter.outputs.sdk-dart }}
       sdk-objc: ${{ steps.filter.outputs.sdk-objc }}
       web: ${{ steps.filter.outputs.web }}
+      factory: ${{ steps.filter.outputs.factory }}
       dapr-edge: ${{ steps.filter.outputs.dapr-edge }}
       spec: ${{ steps.filter.outputs.spec }}
       router: ${{ steps.filter.outputs.router }}
       specview: ${{ steps.filter.outputs.specview }}
       lean: ${{ steps.filter.outputs.lean }}
+      loams-cloud: ${{ steps.filter.outputs.loams-cloud }}
     steps:
       # A push is compared with the previous dev head (github.event.before),
       # which needs the repository; a pull request uses the API.
@@ -118,14 +132,19 @@ jobs:
               - "crates/**"
               - "proto/**"
               - "api/**"
+              # loams-agentd-marketplace compiles in the listing schema.
+              - "schemas/marketplace/**"
               - "clippy.toml"
               - "rustfmt.toml"
+              # nextest's profile and per-test retries (Rust: tests).
+              - ".config/nextest.toml"
             # The crates in loams's default build (no tikv, no durable):
             # the crash gate, the cluster tests and the client suites.
             # A new crate the binary depends on must be added here.
             engine: &engine
               - *toolchain
               - "crates/loams/**"
+              - "crates/loams-cloud-admin/**"
               - "crates/loams-cache/**"
               - "crates/loams-collection/**"
               - "crates/loams-common/**"
@@ -187,6 +206,17 @@ jobs:
               - "deploy/tikv/**"
               - "scripts/tikv/**"
               - "proto/loams/**"
+            # loams_sink (FL1 Task 10): the crate, and the `kafka` profile whose
+            # image its integration tests run against.
+            iggy-sink:
+              - *toolchain
+              - "crates/loams-iggy-sink/**"
+              - "crates/loams-cloudevents/**"
+              - "deploy/release/compose.yaml"
+              - "deploy/release/.env.example"
+              - "deploy/release/config/kafka-guard.sh"
+              - "deploy/release/ci/iggy-sink-it.sh"
+              - "deploy/release/ci/compose.iggy-it.yaml"
             # LV1 plan Task 22: the store seam and the Live suites, which run
             # on the embedded store with no cluster.
             live-embedded:
@@ -199,6 +229,10 @@ jobs:
               # The bundle store of deployments (LV1 plan Task 6).
               - "crates/loams-store/**"
               - "proto/loams/live/**"
+            # The Temporal gateway's store on Postgres (DX1 Task 5).
+            temporal-store:
+              - *toolchain
+              - "crates/loams-temporal-store/**"
             durable:
               - *toolchain
               - "crates/loams-durable/**"
@@ -213,6 +247,14 @@ jobs:
               - *toolchain
               - "crates/*/Cargo.toml"
               - "deny.toml"
+              # The ported-code header check (docs/licences/ported-code.md,
+              # KV1 plan KV0 Task 9).
+              - "NOTICE"
+              - "docs/licences/**"
+              - "scripts/licences/**"
+              - "crates/loams-resp/**"
+              - "crates/loams-cql/**"
+              - "crates/loams-tikv/src/cdc/**"
             # The desktop agent daemon (design §50, DD1 Task 4): the headless
             # guard (D782) and the loams-agentd* clippy and test suites. The
             # TypeScript contract package is here too: loams-agentd-proto's
@@ -378,6 +420,15 @@ jobs:
               - ".github/workflows/ci.yml"
               - "web/**"
               - "api/**"
+            # The factory host, @loams/factory (plan FT1, FT0 Task 1).
+            factory:
+              - *pnpm-workspace
+              - ".github/workflows/ci.yml"
+              - "agents/**"
+            # The Loams Cloud control plane Worker (design 78 §25, plan LC1 LC2a).
+            loams-cloud:
+              - ".github/workflows/ci.yml"
+              - "deploy/loams-cloud/**"
             # deploy/dapr/edge is its own crate and lock, outside the
             # workspace; it compiles loams-stream-grpc's stream.proto.
             dapr-edge:
@@ -416,9 +467,10 @@ jobs:
     name: "Rust: fmt and clippy"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.rust == 'true') }}
-    runs-on: ${{ vars.RUNNER_HEAVY || 'ubuntu-latest' }}
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || (vars.RUNNER_HEAVY || 'ubuntu-latest') }}
     steps:
       - name: Free disk space (GitHub-hosted runners have about 14 GB free)
+        if: runner.environment == 'github-hosted'
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
           df -h /
@@ -426,8 +478,9 @@ jobs:
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
-          save-if: ${{ github.event_name != 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
       - name: rustfmt
         run: cargo fmt --all --check
       - name: clippy
@@ -439,6 +492,10 @@ jobs:
       # dev once stopped building with `--features git` and no fast-tier job noticed (GT1 T18.4).
       - name: clippy (loams with the tikv, graph, product and optional listener features)
         run: cargo clippy -p loams --all-targets --features tikv,live-tikv,durable-tikv,stream-grpc,pgwire,mysql-wire,graph,git,buildcache,registry,sqldb,postgres --locked -- -D warnings
+      # loams-gateway's Temporal API module (design 74, plan DX1 Task 9) is
+      # behind its own feature.
+      - name: clippy (loams-gateway temporal module)
+        run: cargo clippy -p loams-gateway --features temporal --all-targets --locked -- -D warnings
       # The release images build `loams` with these feature sets (deploy/release/Containerfile.*);
       # `postgres,tikv` turns on loams-kv's TiKV store without loams-live's `tikv`, a combination
       # nothing else here builds (v0.1.0-preview.2's loams-pg-control image broke on it).
@@ -499,6 +556,46 @@ jobs:
       - name: doc tests
         run: cargo test --workspace --doc --locked
 
+  # The Buck2 build files are generated from Cargo.toml and Cargo.lock
+  # (docs/guides/buck2.md): every crate's BUCK, third-party/rust/ and the
+  # toolchain channel. A pull request that adds a crate or changes a
+  # dependency must commit what `scripts/buck/gen.py` writes; this job fails
+  # otherwise and uploads the fix as a patch (`git apply buck-gen.patch`).
+  buck-gen:
+    name: "Buck2: generated files"
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.rust == 'true') }}
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
+    timeout-minutes: 40
+    steps:
+      # buck2 and reindeer (scripts/buck/bootstrap.sh): the self-hosted
+      # runners keep them on their cache disk; GitHub-hosted ones restore them
+      # with actions/cache (reindeer is a 10-minute cargo install).
+      - name: tool cache
+        if: runner.environment == 'self-hosted'
+        run: echo "LOAMS_BUCK_CACHE=/mnt/Projects/ci/cache/loams-build" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/cache@v6
+        if: runner.environment == 'github-hosted'
+        with:
+          path: ~/.cache/loams-build
+          key: loams-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/buck/versions.env') }}
+      - name: generated Buck2 files are current
+        run: |
+          if ! python3 scripts/buck/gen.py --check; then
+            git add -A -- . ':!.tools' && git diff --cached --binary > buck-gen.patch
+            echo "::error::Buck2 files are stale: run scripts/buck/gen.py and commit the result, or apply the buck-gen.patch artifact (git apply buck-gen.patch)"
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: buck-gen.patch
+          path: buck-gen.patch
+          if-no-files-found: ignore
+
   # The workspace tests, built and run in one job on the heavy runner. (A nextest
   # archive moved to other runners broke the tests that spawn the built binary or
   # read files through compile-time paths, so build and run stay together.)
@@ -506,12 +603,13 @@ jobs:
     name: "Rust: tests"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.rust == 'true') && needs.changes.outputs.heavy != 'false' }}
-    runs-on: ${{ vars.RUNNER_HEAVY || 'ubuntu-latest' }}
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || (vars.RUNNER_HEAVY || 'ubuntu-latest') }}
     # A hung test fails the job instead of holding the runner; nextest also
     # terminates a loams-agentd* test after 3 minutes (.config/nextest.toml).
     timeout-minutes: 120
     steps:
       - name: Free disk space (GitHub-hosted runners have about 14 GB free)
+        if: runner.environment == 'github-hosted'
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
           df -h /
@@ -519,14 +617,15 @@ jobs:
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
-          save-if: ${{ github.event_name != 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
       - uses: taiki-e/install-action@badb8c3638e0b773c6c17a6025c2306a8f1c4303 # nextest, 2026-10-02
       # The loams-agentd-harness tests run `#!/usr/bin/env node` and
       # `#!/usr/bin/env python3` fixtures (harness stand-ins).
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
       - name: workspace tests
         run: cargo nextest run --workspace --locked
 
@@ -543,11 +642,12 @@ jobs:
     # ~80 agentd-sessions tests unrun.
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.agentd == 'true') && needs.changes.outputs.heavy != 'false' }}
-    runs-on: ${{ vars.RUNNER_HEAVY || 'ubuntu-latest' }}
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || (vars.RUNNER_HEAVY || 'ubuntu-latest') }}
     # PTY, shell and harness-fixture tests; a hung one fails the job.
     timeout-minutes: 60
     steps:
       - name: Free disk space (GitHub-hosted runners have about 14 GB free)
+        if: runner.environment == 'github-hosted'
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
           df -h /
@@ -558,13 +658,14 @@ jobs:
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
-          save-if: ${{ github.event_name != 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
       # The loams-agentd-harness tests run `#!/usr/bin/env node` and
       # `#!/usr/bin/env python3` fixtures (harness stand-ins).
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
       - name: headless guard self-test
         run: bash scripts/ci/agentd-deps.test.sh
       - name: headless guard (D782)
@@ -591,9 +692,10 @@ jobs:
     name: "Rust: feature tests"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && (needs.changes.outputs.rust == 'true'))) && needs.changes.outputs.heavy != 'false' }}
-    runs-on: ${{ vars.RUNNER_HEAVY || 'ubuntu-latest' }}
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || (vars.RUNNER_HEAVY || 'ubuntu-latest') }}
     steps:
       - name: Free disk space (GitHub-hosted runners have about 14 GB free)
+        if: runner.environment == 'github-hosted'
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
           df -h /
@@ -601,8 +703,9 @@ jobs:
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
-          save-if: ${{ github.event_name != 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
       - name: loams's MySQL wire listener (mysql-wire feature)
         run: 'cargo test -p loams --features mysql-wire --lib --locked mysql_wire::'
       - name: loams's PostgreSQL wire listener (pgwire feature)
@@ -639,15 +742,16 @@ jobs:
   crash-gate:
     name: "Engine: crash gate"
     needs: changes
-    if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (github.base_ref == 'main' && needs.changes.outputs.engine == 'true')) }}
-    runs-on: ubuntu-24.04
+    if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && needs.changes.outputs.engine == 'true')) }}
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v7
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
-          save-if: ${{ github.event_name != 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
       - name: clippy with failpoints
         run: cargo clippy -p loams --all-targets --features failpoints --locked -- -D warnings
       - name: crash gate
@@ -656,15 +760,16 @@ jobs:
   cluster:
     name: "Engine: cluster tests"
     needs: changes
-    if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (github.base_ref == 'main' && needs.changes.outputs.engine == 'true')) }}
-    runs-on: ubuntu-24.04
+    if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && needs.changes.outputs.engine == 'true')) }}
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v7
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
-          save-if: ${{ github.event_name != 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
       - name: build
         run: cargo build -p loams --locked
       - name: clippy with cluster tests
@@ -677,14 +782,15 @@ jobs:
     name: "Engine: Qdrant client"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && (needs.changes.outputs.engine == 'true'))) }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v7
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
-          save-if: ${{ github.event_name != 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
       - name: build
         run: cargo build -p loams --locked
       - name: start loams dev
@@ -708,6 +814,21 @@ jobs:
         run: |
           crates/loams-qdrant/tests/python/run.sh 1.19.1 modern | tee "$RUNNER_TEMP/modern.log"
           grep -q '^qdrant-client 1.19.1 modern: [0-9]* checks passed$' "$RUNNER_TEMP/modern.log"
+      # @qdrant/js-client-rest, the client @mastra/qdrant uses (MA1 Task 25).
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.27.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: qdrant-js 1.18.0
+        run: |
+          crates/loams-qdrant/tests/js/run.sh 1.18.0 | tee "$RUNNER_TEMP/js-1.18.log"
+          grep -q '^qdrant-js 1.18.0: [0-9]* checks passed$' "$RUNNER_TEMP/js-1.18.log"
+      - name: qdrant-js 1.19.0
+        run: |
+          crates/loams-qdrant/tests/js/run.sh 1.19.0 | tee "$RUNNER_TEMP/js-1.19.log"
+          grep -q '^qdrant-js 1.19.0: [0-9]* checks passed$' "$RUNNER_TEMP/js-1.19.log"
       - name: loams log
         if: failure()
         run: tail -n 200 "$RUNNER_TEMP/loams.log" || true
@@ -716,7 +837,7 @@ jobs:
     name: "Engine: Elasticsearch client"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && (needs.changes.outputs.es == 'true'))) }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     # The Elasticsearch 8.19 oracle (plan M1.5 Task 11, owner ruling
     # O-M15-6): a CI-only test oracle, never vendored or shipped (R14).
     services:
@@ -737,8 +858,9 @@ jobs:
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
-          save-if: ${{ github.event_name != 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
       - name: build
         run: cargo build -p loams --locked
       - uses: astral-sh/setup-uv@v7
@@ -758,7 +880,7 @@ jobs:
     name: "Spec: TLA+"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && (needs.changes.outputs.spec == 'true' || needs.changes.outputs.router == 'true'))) }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v6
@@ -787,7 +909,7 @@ jobs:
     name: "Spec: Lean proofs"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && (needs.changes.outputs.lean == 'true'))) }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     defaults:
       run:
         working-directory: spec/lean
@@ -815,8 +937,9 @@ jobs:
       - name: no sorry
         run: '! grep -rn --include=*.lean -w sorry LoamsRouter Main.lean PropTest.lean'
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
-          save-if: ${{ github.event_name != 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
       - name: Rust against the Lean oracle (10 000 cases)
         working-directory: .
         run: cargo test -p loams-sqlrouter --locked --test it lean_oracle -- --nocapture
@@ -829,7 +952,7 @@ jobs:
     name: "Spec: specview"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && (needs.changes.outputs.specview == 'true'))) }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v6
@@ -841,8 +964,9 @@ jobs:
           path: ~/.cache/loam/spec-tools
           key: spec-tools-${{ hashFiles('scripts/spec/tools.lock') }}
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
-          save-if: ${{ github.event_name != 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
       - name: clippy (server)
         run: cargo clippy -p loams-specview --all-targets --locked -- -D warnings
       - name: tests (the live ones need Java and the pinned tools)
@@ -864,14 +988,15 @@ jobs:
     name: "Engine: simulation"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && (needs.changes.outputs.sim == 'true'))) && needs.changes.outputs.heavy != 'false' }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v7
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
-          save-if: ${{ github.event_name != 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
       - name: simulation (32 seeds x 300 steps)
         if: ${{ inputs.nightly != true }}
         run: cargo test -p loams-sim --release --locked
@@ -889,19 +1014,22 @@ jobs:
   # R1 plan Task 1: the TiKV-backed suites against a tiup playground (PD and
   # TiKV v8.5.8 on API v2, port offset 17000). Promotion PRs run it only when
   # they touch the TiKV crates, their cluster config or scripts, or the Live
-  # protos (the `tikv` filter in the changes job). Nightly has its own job.
+  # protos (the `tikv` filter in the changes job). A pull request into dev
+  # with the `ci:tikv` label runs it too, on the same filter (label, then a
+  # push). Nightly has its own job.
   tikv:
     name: "TiKV: suites"
     needs: changes
-    if: ${{ !cancelled() && inputs.nightly != true && (needs.changes.result == 'skipped' || (github.base_ref == 'main' && needs.changes.outputs.tikv == 'true')) }}
-    runs-on: ubuntu-24.04
+    if: ${{ !cancelled() && inputs.nightly != true && (needs.changes.result == 'skipped' || ((needs.changes.outputs.full == 'true' || contains(github.event.pull_request.labels.*.name, 'ci:tikv')) && needs.changes.outputs.tikv == 'true')) }}
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v7
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
-          save-if: ${{ github.event_name != 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
       - name: packages
         id: packages
         # The TiKV crates that exist so far (later R1 tasks add the rest).
@@ -951,7 +1079,7 @@ jobs:
           cargo test -p loams-migrate --test adopt preview2_tikv_dump_is_recognised --locked
       - name: playground logs
         if: failure()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: tikv-playground-logs-${{ github.job }}
           path: |
@@ -970,9 +1098,10 @@ jobs:
     name: "Live: embedded store"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && (needs.changes.outputs.live-embedded == 'true'))) && needs.changes.outputs.heavy != 'false' }}
-    runs-on: ${{ vars.RUNNER_HEAVY || 'ubuntu-latest' }}
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || (vars.RUNNER_HEAVY || 'ubuntu-latest') }}
     steps:
       - name: Free disk space (GitHub-hosted runners have about 14 GB free)
+        if: runner.environment == 'github-hosted'
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
           df -h /
@@ -980,8 +1109,9 @@ jobs:
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
-          save-if: ${{ github.event_name != 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
       - name: the suites, embedded only
         env:
           LOAMS_TEST_PD: ""
@@ -991,12 +1121,33 @@ jobs:
           LOAMS_CHECKER_OPS: "2000"
         run: cargo test -p loams-kv -p loams-live -p loams-live-js -p loams-live-js-alloc --locked
 
+  # loams_sink (FL1 Task 10, design 32 5.10): its tests against the Iggy
+  # fork's image the `kafka` profile pins, with kcat records through the Kafka
+  # gateway and a restart of the Iggy container (deploy/release/ci/iggy-sink-it.sh).
+  iggy-sink:
+    name: "loams_sink: Iggy integration"
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.iggy-sink == 'true') && needs.changes.outputs.heavy != 'false' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
+      - name: unit and runner tests
+        run: cargo test -p loams-iggy-sink --locked --lib --test runner
+      - name: against the fork's Iggy image
+        run: deploy/release/ci/iggy-sink-it.sh --locked
+
   # The same suites every night, plus the nightly-only TiKV suites later R1
   # tasks add.
   tikv-nightly:
     name: "TiKV: suites (nightly)"
     if: ${{ inputs.nightly == true }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v7
       - name: paths
@@ -1006,9 +1157,9 @@ jobs:
         if: steps.paths.outputs.run == 'true'
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        if: steps.paths.outputs.run == 'true'
+        if: runner.environment == 'github-hosted' && (steps.paths.outputs.run == 'true')
         with:
-          save-if: ${{ github.event_name != 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
       - name: packages
         id: packages
         if: steps.paths.outputs.run == 'true'
@@ -1080,7 +1231,7 @@ jobs:
           echo "LOAMS_CHECKER_SEED_OFFSET=<seed> LOAMS_CHECKER_SEEDS=1 LOAMS_CHECKER_OPS=2000 cargo test -p loams-live --test txn_checker snapshot_isolated"
       - name: playground logs
         if: failure() && steps.paths.outputs.run == 'true'
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: tikv-playground-logs-${{ github.job }}
           path: |
@@ -1100,12 +1251,13 @@ jobs:
     name: "Durable: SQLite linearizability"
     needs: changes
     if: ${{ !cancelled() && (inputs.nightly != true && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && (needs.changes.outputs.durable == 'true')))) && needs.changes.outputs.heavy != 'false' }}
-    runs-on: ${{ vars.RUNNER_HEAVY || 'ubuntu-latest' }}
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || (vars.RUNNER_HEAVY || 'ubuntu-latest') }}
     timeout-minutes: 120
     env:
       DURABLE_FORK_TARGET_DIR: ${{ github.workspace }}/target/durable-fork-build
     steps:
       - name: Free disk space (GitHub-hosted runners have about 14 GB free)
+        if: runner.environment == 'github-hosted'
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
           df -h /
@@ -1113,8 +1265,9 @@ jobs:
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
-          save-if: ${{ github.event_name != 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
           key: durable
       - uses: actions/setup-go@v7
         with:
@@ -1132,7 +1285,7 @@ jobs:
         run: scripts/durable/conformance.sh --store sqlite --clients 8 --ops 600
       - name: conformance output
         if: failure()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: durable-conformance-sqlite
           path: target/durable-conformance/
@@ -1146,7 +1299,7 @@ jobs:
   durable-tidb:
     name: "Durable: TiDB (nightly)"
     if: ${{ inputs.nightly == true }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 180
     env:
       DURABLE_FORK_TARGET_DIR: ${{ github.workspace }}/target/durable-fork-build
@@ -1155,8 +1308,9 @@ jobs:
       - name: protoc and the mysql client
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler mysql-client
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
-          save-if: ${{ github.event_name != 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
           key: durable
       - uses: actions/setup-go@v7
         with:
@@ -1192,7 +1346,7 @@ jobs:
           done
       - name: conformance output and TiDB logs
         if: failure()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: durable-tidb-logs
           path: |
@@ -1209,11 +1363,43 @@ jobs:
   # `buf generate` writes from them. buf and protoc-gen-es are pinned in
   # sdks/typescript/packages/live/package.json. The Rust code is generated at build
   # time (loams-live-proto's build.rs), so the check job covers it.
+  # DX1 Task 5: loams-temporal-store's contract tests on stock Postgres 17
+  # (the PgStore leg; the MemStore leg runs in Rust: tests). Each test makes
+  # and drops its own database. Same image as conformance/compute's psql pin.
+  temporal-store:
+    name: "Temporal store: Postgres 17"
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && (needs.changes.outputs.temporal-store == 'true'))) }}
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: docker.io/library/postgres:17.10@sha256:7958605b474b3d264a969cb3a123d6aa00ad1e1fe9da8a69984dabb704d93317
+        env:
+          POSTGRES_PASSWORD: pg
+        ports:
+          # A free host port, so a self-hosted runner never collides.
+          - 5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s --health-timeout 5s --health-retries 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
+        with:
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
+          key: temporal-store
+      - name: loams-temporal-store on Postgres 17
+        env:
+          LOAMS_TEMPORAL_TEST_PG_URL: postgres://postgres:pg@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/postgres
+        run: cargo test -p loams-temporal-store --locked
+
   live-protos:
     name: "Protos: Live"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.protos == 'true') }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -1221,7 +1407,7 @@ jobs:
           version: 11.27.1
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
           # The TypeScript SDK is a root workspace package (design §44
           # §10.2), so its pinned buf and protoc-gen-es install with the root
@@ -1252,7 +1438,7 @@ jobs:
     name: "Protos: apps"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.app-protos == 'true') }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -1262,7 +1448,7 @@ jobs:
           package_json_file: package.json
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - name: install
@@ -1320,20 +1506,21 @@ jobs:
     name: "SDK: TypeScript"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.sdk-typescript == 'true') }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v7
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
-          save-if: ${{ github.event_name != 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
       - uses: pnpm/action-setup@v6
         with:
           version: 11.27.1
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - name: install
@@ -1349,6 +1536,16 @@ jobs:
           git add -N sdks/typescript/packages/client/src/gen
           git diff --exit-code -- sdks/typescript/packages/client/src/gen || {
             echo "sdks/typescript/packages/client/src/gen is stale: run 'scripts/sdk/gen.sh typescript' and commit the result"; exit 1;
+          }
+      # SDKP P0a: the facade index the hand-written SDKs check themselves
+      # against, and the descriptor sets Ruby and Kotlin read at runtime, are
+      # generated from the same protos and must not drift either.
+      - name: the facade index and the descriptor sets are up to date
+        run: |
+          ./scripts/sdk/gen.sh index
+          ./scripts/sdk/gen.sh descriptors
+          git diff --exit-code -- sdks/fixtures/facade-index.json sdks/ruby/gen sdks/kotlin/gen || {
+            echo "facade-index.json or a descriptor set is stale: run 'scripts/sdk/gen.sh index' and 'scripts/sdk/gen.sh descriptors' and commit the result"; exit 1;
           }
       # The golden test compares the committed facade against the generator's
       # output over the real proto/ tree, so a proto edit that changed the SDK
@@ -1381,6 +1578,11 @@ jobs:
       # short of the bar, 2 no report — all non-zero fail this step.
       - name: the suite meets the 100% required-fixture bar
         run: node sdks/conformance/check-languages.mjs --check typescript
+      # SDKP: the app suite (the app scenario replayed through the public
+      # facade, and every app test named), until S1 folds it into the line
+      # above by making the app fixtures required.
+      - name: the app suite
+        run: node sdks/conformance/check-languages.mjs --check typescript --suite app
       # The same suite against a real server. This is the job that can afford
       # it, and it is what catches a recorded corpus that has drifted from the
       # API (design §44 §10.4). A live `loams dev` does not serve the app
@@ -1399,6 +1601,18 @@ jobs:
             }
           done
           sdks/typescript/packages/client/node_modules/.bin/buf --version
+      # D1775: the toolchain runs on Node 24 (.nvmrc), but @loams/client keeps
+      # Node 22 as its runtime floor (`engines` >=22). This cell runs the SDK's
+      # suite once more on Node 22, last, so the report checked above is the
+      # Node 24 one.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: the SDK suite on Node 22 (its runtime floor)
+        working-directory: web
+        run: |
+          node --version
+          pnpm --filter @loams/client test
 
   # SDK2 Task 3: the Rust SDK (design section 44 row 4). sdks/rust is its own
   # cargo workspace, so the server's Rust jobs never touch it -- PR #340 merged
@@ -1414,7 +1628,7 @@ jobs:
     name: "SDK: Rust"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.sdk-rust == 'true') }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v7
       # crates/loams-live-proto/build.rs shells out to the system protoc
@@ -1424,18 +1638,22 @@ jobs:
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
-          save-if: ${{ github.event_name != 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
       # -j 4: the SDK path-depends on loams-proto and loams-live-proto, and the
       # runners are 4 vCPU.
       - name: the Rust SDK's tests
         working-directory: sdks/rust
-        run: cargo test -j 4 --locked
+        run: |
+          cargo test -j 4 --locked
+          cargo test -j 4 --locked --features machine-key machine_key
       - name: lint the Rust SDK
         working-directory: sdks/rust
         run: |
           cargo fmt -- --check
           cargo clippy -j 4 --all-targets -- -D warnings
+          cargo clippy -j 4 --all-targets --features machine-key -- -D warnings
       # `scripts/sdk/gen.sh` resolves buf from web's node_modules, so the
       # drift check below cannot run without this. sdk-rust had no pnpm setup at
       # all, so the step died before checking anything:
@@ -1446,7 +1664,7 @@ jobs:
           version: 11.27.1
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - name: install
@@ -1465,6 +1683,12 @@ jobs:
       # (issue #374).
       - name: the Rust SDK's generated code is not stale
         run: ./scripts/sdk/drift.sh rust
+      # SDKP: the app suite. `cargo test` above replayed the app scenario
+      # through the facade (tests/app_scenario.rs) and wrote
+      # sdks/fixtures/results/rust.json; this checks it ran every app fixture
+      # and names every app test.
+      - name: the app suite
+        run: node sdks/conformance/check-languages.mjs --check rust --suite app
 
   # SDK2 Task 1: the Python SDK. CI's existing Python jobs are the qdrant
   # smoke and static analysis, neither of which imports this package.
@@ -1472,7 +1696,7 @@ jobs:
     name: "SDK: Python"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.sdk-python == 'true') }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
@@ -1482,9 +1706,19 @@ jobs:
       - name: the Python SDK's tests
         working-directory: sdks/python
         run: uv run pytest -q
+      # SDKP: the app suite (the app scenario replayed through the public
+      # facade, sync and async, and every app test named). It reads the report
+      # the tests above just wrote; S1 folds it into the plain check.
+      - name: the app suite
+        run: node sdks/conformance/check-languages.mjs --check python --suite app
       - name: the SDK typechecks under --strict
         working-directory: sdks/python
         run: uv run mypy --strict src
+      # SDKP Part D: the notes app, the scenario as a program, needs no server
+      # to be checked against the API.
+      - name: the examples typecheck under --strict
+        working-directory: sdks/python
+        run: uv run mypy --strict examples
       # A generation difference must be a dependency bump, not whatever the
       # runner resolved, so the runtime pins stay exact.
       - name: the SDK's runtime dependencies are exact pins
@@ -1526,6 +1760,13 @@ jobs:
         if: ${{ hashFiles('sdks/swift/Package.swift') != '' }}
         working-directory: sdks/swift
         run: swift test
+      # SDKP: the app suite. The tests above replayed the recorded app scenario
+      # against the fixture server and wrote sdks/fixtures/results/swift.json;
+      # this fails the job unless every app fixture was replayed and every SDKP
+      # test is named.
+      - name: the Swift SDK passes the app suite
+        if: ${{ hashFiles('sdks/swift/Package.swift') != '' }}
+        run: node sdks/conformance/check-languages.mjs --check swift --suite app
       # API2 Task 19: a nightly failure opens or updates one issue per language.
       - name: open or update the nightly-failure issue
         if: ${{ failure() && inputs.nightly == true }}
@@ -1538,7 +1779,7 @@ jobs:
     name: "SDK: Go"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.sdk-go == 'true') }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -1562,14 +1803,15 @@ jobs:
       # rust-toolchain.toml) and runs the buf CLI pinned in web's
       # node_modules, so it needs both.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
-          save-if: ${{ github.event_name != 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
       - uses: pnpm/action-setup@v6
         with:
           version: 11.27.1
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - name: install
@@ -1583,6 +1825,11 @@ jobs:
       # gen/facade (Q604) is neither regenerated nor cleaned.
       - name: the Go SDK's generated code is not stale
         run: ./scripts/sdk/drift.sh go
+      # SDKP: the app suite. `go test` above replayed the app scenario through
+      # the facade and wrote sdks/fixtures/results/go.json; this checks it ran
+      # every app fixture and names every app test.
+      - name: the app suite
+        run: node sdks/conformance/check-languages.mjs --check go --suite app
 
   # SDK2 Task 11 (#295): the C++ SDK. protobuf 36.1.0 and libcurl 8.x are
   # preinstalled on the runner, and the pinned `buf.build/protocolbuffers/cpp`
@@ -1594,7 +1841,7 @@ jobs:
     name: "SDK: C++"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.sdk-cpp == 'true') }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     # issues: write is for the nightly-failure issue step only (schedule only).
     permissions:
       contents: read
@@ -1661,6 +1908,11 @@ jobs:
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -G Ninja
           cmake --build build -j 4
           ctest --test-dir build --output-on-failure
+      # SDKP: the app suite. ctest replayed the recorded app scenario (cpp_app_*)
+      # and wrote sdks/fixtures/results/cpp.json; this fails the job unless every
+      # app fixture was replayed and every SDKP test is named.
+      - name: the C++ SDK passes the app suite
+        run: node sdks/conformance/check-languages.mjs --check cpp --suite app
       # A proto edit that moved the SDK surface must not pass with stale stubs.
       # `scripts/sdk/drift.sh` has no C++ case yet -- it would ask the Rust
       # `protoc-gen-loams-facade` for a facade it cannot render (D644) -- so the
@@ -1673,7 +1925,7 @@ jobs:
           version: 11.27.1
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - name: install
@@ -1706,14 +1958,14 @@ jobs:
     name: "SDK: C#"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.sdk-csharp == 'true') }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     # issues: write is for the nightly-failure issue step only (schedule only).
     permissions:
       contents: read
       issues: write
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@v6
         with:
           global-json-file: sdks/csharp/global.json
       - name: the C# SDK's build
@@ -1724,6 +1976,8 @@ jobs:
       - name: the C# SDK's conformance suite
         working-directory: sdks/csharp
         run: dotnet test Loams.sln -c Release
+      - name: the C# SDK passes the app suite
+        run: node sdks/conformance/check-languages.mjs --check csharp --suite app
       # A proto edit that moved the SDK surface must not pass with stale stubs.
       # `scripts/sdk/drift.sh` has no C# case -- there is no `protoc-gen-loams-facade`
       # template for C#, since the facade is hand-written (D650) -- so the check is
@@ -1735,7 +1989,7 @@ jobs:
           version: 11.27.1
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - name: install
@@ -1762,20 +2016,25 @@ jobs:
     name: "SDK: Java"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && (needs.changes.outputs.sdk-java == 'true'))) }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     # issues: write is for the nightly-failure issue step only (schedule only).
     permissions:
       contents: read
       issues: write
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
       - name: the Java SDK's tests
         working-directory: sdks/java
         run: ./build.sh test
+      # SDKP: the app suite. The tests above replayed the recorded app scenario
+      # and wrote sdks/fixtures/results/java.json; this fails the job unless every
+      # app fixture was replayed and every SDKP test is named.
+      - name: the Java SDK passes the app suite
+        run: node sdks/conformance/check-languages.mjs --check java --suite app
       # API2 Task 19: a nightly failure opens or updates one issue per language.
       - name: open or update the nightly-failure issue
         if: ${{ failure() && inputs.nightly == true }}
@@ -1787,7 +2046,7 @@ jobs:
     name: "SDK: Kotlin"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && (needs.changes.outputs.sdk-kotlin == 'true'))) }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     # issues: write is for the nightly-failure issue step only (schedule only).
     permissions:
       contents: read
@@ -1796,7 +2055,7 @@ jobs:
       KOTLIN_VERSION: '2.2.20'
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
@@ -1810,6 +2069,11 @@ jobs:
       - name: the Kotlin SDK's tests
         working-directory: sdks/kotlin
         run: ./build.sh test
+      # SDKP: the app suite. The tests above replayed the recorded app scenario
+      # and wrote sdks/fixtures/results/kotlin.json; this fails the job unless every
+      # app fixture was replayed and every SDKP test is named.
+      - name: the Kotlin SDK passes the app suite
+        run: node sdks/conformance/check-languages.mjs --check kotlin --suite app
       # API2 Task 19: a nightly failure opens or updates one issue per language.
       - name: open or update the nightly-failure issue
         if: ${{ failure() && inputs.nightly == true }}
@@ -1821,7 +2085,7 @@ jobs:
     name: "SDK: Ruby"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && (needs.changes.outputs.sdk-ruby == 'true'))) }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     # issues: write is for the nightly-failure issue step only (schedule only).
     permissions:
       contents: read
@@ -1836,6 +2100,11 @@ jobs:
       - name: the Ruby SDK's tests
         working-directory: sdks/ruby
         run: bundle exec rake test
+      # SDKP: the app suite. The tests above replayed the recorded app scenario
+      # and wrote sdks/fixtures/results/ruby.json; this fails the job unless every
+      # app fixture was replayed and every SDKP test is named.
+      - name: the Ruby SDK passes the app suite
+        run: node sdks/conformance/check-languages.mjs --check ruby --suite app
       # API2 Task 19: a nightly failure opens or updates one issue per language.
       - name: open or update the nightly-failure issue
         if: ${{ failure() && inputs.nightly == true }}
@@ -1847,7 +2116,7 @@ jobs:
     name: "SDK: PHP"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && (needs.changes.outputs.sdk-php == 'true'))) }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     # issues: write is for the nightly-failure issue step only (schedule only).
     permissions:
       contents: read
@@ -1865,6 +2134,11 @@ jobs:
       - name: the PHP SDK's tests
         working-directory: sdks/php
         run: vendor/bin/phpunit
+      # SDKP: the app suite. The tests above replayed the recorded app scenario
+      # and wrote sdks/fixtures/results/php.json; this fails the job unless every
+      # app fixture was replayed and every SDKP test is named.
+      - name: the PHP SDK passes the app suite
+        run: node sdks/conformance/check-languages.mjs --check php --suite app
       - name: the PHP examples parse
         working-directory: sdks/php
         run: for f in examples/*.php examples/*/main.php; do php -l "$f"; done
@@ -1879,7 +2153,7 @@ jobs:
     name: "SDK: Dart"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && (needs.changes.outputs.sdk-dart == 'true'))) }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     # issues: write is for the nightly-failure issue step only (schedule only).
     permissions:
       contents: read
@@ -1898,6 +2172,11 @@ jobs:
       - name: the Dart SDK's tests
         working-directory: sdks/dart
         run: dart test
+      # SDKP: the app suite. The tests above replayed the recorded app scenario
+      # and wrote sdks/fixtures/results/dart.json; this fails the job unless every
+      # app fixture was replayed and every SDKP test is named.
+      - name: the Dart SDK passes the app suite
+        run: node sdks/conformance/check-languages.mjs --check dart --suite app
       # API2 Task 19: a nightly failure opens or updates one issue per language.
       - name: open or update the nightly-failure issue
         if: ${{ failure() && inputs.nightly == true }}
@@ -1925,6 +2204,11 @@ jobs:
       - name: the Objective-C SDK's tests
         working-directory: sdks/objc
         run: swift test --disable-swift-testing
+      # SDKP: the app suite. The tests above replayed the recorded app scenario
+      # and wrote sdks/fixtures/results/objc.json; this fails the job unless every
+      # app fixture was replayed and every SDKP test is named.
+      - name: the Objective-C SDK passes the app suite
+        run: node sdks/conformance/check-languages.mjs --check objc --suite app
       # API2 Task 19: a nightly failure opens or updates one issue per language.
       - name: open or update the nightly-failure issue
         if: ${{ failure() && inputs.nightly == true }}
@@ -1941,9 +2225,10 @@ jobs:
     name: "Graph: tests"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && (needs.changes.outputs.graph == 'true'))) && needs.changes.outputs.heavy != 'false' }}
-    runs-on: ${{ vars.RUNNER_HEAVY || 'ubuntu-latest' }}
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || (vars.RUNNER_HEAVY || 'ubuntu-latest') }}
     steps:
       - name: Free disk space (GitHub-hosted runners have about 14 GB free)
+        if: runner.environment == 'github-hosted'
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
           df -h /
@@ -1951,8 +2236,9 @@ jobs:
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
-          save-if: ${{ github.event_name != 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
       # loams_default_build_has_no_grafeo: `cargo build -p loams` without
       # `graph` must not compile Grafeo.
       - name: loams's default build has no grafeo
@@ -2016,7 +2302,7 @@ jobs:
     name: "SQL gate: fuzzing"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && (needs.changes.outputs.sqlgate == 'true'))) }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     # Five targets x 60 s plus the build.
     timeout-minutes: 20
     steps:
@@ -2045,7 +2331,7 @@ jobs:
           done
       - name: upload crashing inputs
         if: failure()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: sqlgate-fuzz-artifacts
           path: crates/loams-sqlgate/fuzz/artifacts
@@ -2058,7 +2344,7 @@ jobs:
     name: "Agentd: RPC fuzzing"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && (needs.changes.outputs.agentd == 'true'))) }}
-    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'ubuntu-latest') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || ((github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'ubuntu-latest') || (vars.RUNNER_LIGHT || 'ubuntu-latest')) }}
     # Two targets x 60 s plus the build.
     timeout-minutes: 20
     steps:
@@ -2086,7 +2372,7 @@ jobs:
           done
       - name: upload crashing inputs
         if: failure()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: agentd-fuzz-artifacts
           path: crates/loams-agentd-rpc/fuzz/artifacts
@@ -2102,7 +2388,7 @@ jobs:
     name: "Agentd: Studio fuzzing"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && (needs.changes.outputs.agentd == 'true'))) }}
-    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'ubuntu-latest') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || ((github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'ubuntu-latest') || (vars.RUNNER_LIGHT || 'ubuntu-latest')) }}
     # Four targets x 60 s plus the build (the sessions crate is large).
     timeout-minutes: 40
     steps:
@@ -2132,7 +2418,7 @@ jobs:
           done
       - name: upload crashing inputs
         if: failure()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: agentd-connect-fuzz-artifacts
           path: crates/loams-agentd-connect/fuzz/artifacts
@@ -2142,7 +2428,7 @@ jobs:
     name: "Deps: cargo-deny"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.deny == 'true') }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v7
       # cargo-deny on the runner, not in the action's container: the container's
@@ -2154,12 +2440,45 @@ jobs:
           tool: cargo-deny
       - name: advisories, bans, licenses, sources
         run: cargo deny --locked check
+      # Ported files keep their origin's header (D1649).
+      - name: ported-code headers
+        run: |
+          scripts/licences/check-ported-headers.sh --self-test
+          scripts/licences/check-ported-headers.sh
+
+  # The Software Factory host (plan FT1, FT0 Task 1; design §72, D1428): typecheck and
+  # unit tests. No job needs a model key: tests use Mastra's createMockModel.
+  factory:
+    name: "Factory: host"
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.factory == 'true') }}
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
+    defaults:
+      run:
+        working-directory: agents/factory
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile --filter @loams/factory...
+        working-directory: .
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
 
   web:
     name: "Console: build and tests"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.web == 'true') }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     defaults:
       run:
         working-directory: web
@@ -2170,7 +2489,7 @@ jobs:
           package_json_file: package.json
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
@@ -2186,6 +2505,48 @@ jobs:
       - run: pnpm build
       - name: the build stages for Workers static assets
         run: node apps/console/deploy/stage.mjs
+
+  # The Loams Cloud control plane Worker (design 78 §25, plan LC1 LC2a): its
+  # suites on Node, and the control-DB suites on TiDB v8.5.8 (unistore). No npm
+  # dependencies; tsc comes from the root package.
+  loams-cloud:
+    name: "Loams Cloud: control plane"
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.loams-cloud == 'true') }}
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.0
+        with:
+          version: 11.27.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: typecheck
+        run: |
+          pnpm install --frozen-lockfile --filter loams-monorepo
+          pnpm exec tsc -p deploy/loams-cloud
+      - uses: actions/cache@v6
+        with:
+          path: ~/.tiup/components
+          key: tiup-components-tidb-v8.5.8-${{ runner.os }}
+      - name: install tiup and tidb v8.5.8
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://tiup-mirrors.pingcap.com/install.sh | sh
+          "$HOME/.tiup/bin/tiup" install tidb:v8.5.8
+      - name: tests, with the control DB on TiDB
+        working-directory: deploy/loams-cloud
+        run: scripts/test-tidb.sh
+      # src/worker.ts against @cloudflare/workers-types, and wrangler's bundle
+      # (--dry-run: nothing is deployed, and no Cloudflare credential exists here).
+      - name: the Worker typechecks and bundles
+        working-directory: deploy/loams-cloud
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check:worker
 
   # The console's WebMCP feature detection in a real browser (AP1d Task 4;
   # design §42 §5, D635, D638).
@@ -2226,7 +2587,7 @@ jobs:
     name: "Console: Chrome (WebMCP)"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && (needs.changes.outputs.web == 'true'))) && needs.changes.outputs.heavy != 'false' }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     defaults:
       run:
         working-directory: web
@@ -2241,7 +2602,7 @@ jobs:
           package_json_file: package.json
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       # A browser job that finds no browser must fail, not skip, so the browser
@@ -2282,7 +2643,7 @@ jobs:
     name: "Dapr: edge trigger"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && (needs.changes.outputs.dapr-edge == 'true'))) }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     defaults:
       run:
         working-directory: deploy/dapr/edge
@@ -2291,8 +2652,9 @@ jobs:
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
-          save-if: ${{ github.event_name != 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
           workspaces: deploy/dapr/edge -> target
       - name: rustfmt
         run: cargo fmt --check
@@ -2324,8 +2686,9 @@ jobs:
         with:
           nasm: "false"
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
-          save-if: ${{ github.event_name != 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
       - name: cargo check (the loams binary)
         run: cargo check -p loams --bin loams --locked
 
@@ -2340,7 +2703,7 @@ jobs:
   #   validated by these self-tests, so they run on every pull request.
   repo-checks:
     name: "Repo: checks"
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
@@ -2354,12 +2717,35 @@ jobs:
             echo "::error::.superpowers/ is local working state (in .gitignore); untrack it with git rm --cached"
             exit 1
           fi
+      # The Nx crate projects (tools/nx-cargo, docs/guides/nx-cloud.md#rust): the crate graph
+      # read from the manifests equals cargo metadata's, and every file a crate's code reads
+      # outside itself is a declared cache input. A false cache hit is worse than a miss.
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.0
+        with:
+          version: 11.27.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - if: ${{ !cancelled() }} # report every check, not only the first failure
+        name: Nx crate projects match the Cargo manifests and declare their inputs
+        run: |
+          pnpm install --frozen-lockfile --filter loams-monorepo
+          node tools/nx-cargo/check.cjs
       - if: ${{ !cancelled() }} # report every check, not only the first failure
         name: Decision ID checker self-test
         run: scripts/docs/check-decision-ids.sh --self-test
       - if: ${{ !cancelled() }} # report every check, not only the first failure
         name: Unique decision and question declarations
         run: scripts/docs/check-decision-ids.sh
+      # IA1 Task 1 (design §76 §13, D1600): the former IdP is removed; only
+      # the historical records in scripts/docs/no-authentik-allowlist.txt
+      # name it.
+      - if: ${{ !cancelled() }} # report every check, not only the first failure
+        name: Former-IdP checker self-test
+        run: scripts/docs/check-no-authentik.sh --self-test
+      - if: ${{ !cancelled() }} # report every check, not only the first failure
+        name: The former IdP is named only in historical records
+        run: scripts/docs/check-no-authentik.sh
       # Design §54 §11 (UP1 Task 11): the release train lists every compiled
       # migration once and chains to `fresh`, its pins match the pin files,
       # and a release pull request's CHANGELOG entry has its Upgrading section.
@@ -2421,9 +2807,22 @@ jobs:
         run: |
           scripts/ci/pgdog-licence.sh --self-test
           scripts/ci/pgdog-licence.sh
+      # OC1 OC0 Task 1 and DX1 DX0 Task 1: the compute conformance harness
+      # (expected-failure and licence gates on fixtures, the pins' licences
+      # offline, and the shape of deploy/release/compose.compute.yaml through
+      # `compose config`). No product runs and no image is pulled here; the
+      # suites run nightly.
+      - if: ${{ !cancelled() }} # report every check, not only the first failure
+        name: the compute conformance harness self-test (OC0, DX0)
+        run: conformance/compute/selftest.sh
       - if: ${{ !cancelled() }} # report every check, not only the first failure
         name: PyYAML
-        run: python3 -m pip install --quiet --disable-pip-version-check PyYAML
+        # The local runners' Ubuntu Python is externally managed (PEP 668), so a
+        # plain `pip install` fails there; use the image's python3-yaml when it
+        # has one, else a user install.
+        run: |
+          python3 -c 'import yaml' 2>/dev/null && exit 0
+          python3 -m pip install --quiet --disable-pip-version-check --user --break-system-packages PyYAML
       - if: ${{ !cancelled() }} # report every check, not only the first failure
         name: nFPM
         run: |
@@ -2447,10 +2846,11 @@ jobs:
     name: "Upgrade: previous release → candidate"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.full == 'true' || contains(github.event.pull_request.labels.*.name, 'ci:upgrade')) }}
-    runs-on: ${{ vars.RUNNER_HEAVY || 'ubuntu-latest' }}
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || (vars.RUNNER_HEAVY || 'ubuntu-latest') }}
     timeout-minutes: 150
     steps:
       - name: Free disk space (GitHub-hosted runners have about 14 GB free)
+        if: runner.environment == 'github-hosted'
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
           df -h /
@@ -2460,15 +2860,16 @@ jobs:
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
-          save-if: ${{ github.event_name != 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
       - name: the upgrade gate
         env:
           GH_TOKEN: ${{ github.token }}
         run: scripts/release/upgrade-gate.sh "$RUNNER_TEMP/upgrade-gate"
       - if: ${{ always() }}
         name: the ledger, the snapshot, check's JSON, timings and logs
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: upgrade-gate
           path: |
@@ -2485,6 +2886,7 @@ jobs:
       - changes
       - repo-checks
       - check
+      - buck-gen
       - windows-check
       - rust-tests
       - agentd
@@ -2500,8 +2902,10 @@ jobs:
       - tikv
       - tikv-nightly
       - live-embedded
+      - iggy-sink
       - durable
       - durable-tidb
+      - temporal-store
       - live-protos
       - app-protos
       - sdk-typescript
@@ -2517,9 +2921,11 @@ jobs:
       - agentd-connect-fuzz
       - deny
       - web
+      - factory
       - dapr-edge
+      - loams-cloud
       - upgrade-gate
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     steps:
       - name: Require all selected CI jobs to pass
         env:

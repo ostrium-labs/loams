@@ -32,7 +32,7 @@ Unified API   Storage       & Desktop   tenancy     Git & CLI   Factory     Bugs
 | **3. Core Storage & Distributed Engines** | **10** | #198, #199, #200, #201, #202, #207, #208, #209, #210, #274 | **Substantial progress**: R1 (tasks 0–10 merged, 11–17 on branches), D1 (tasks 0–5 merged, 6–9 on branches). |
 | **4. Developer Experience, Git & CLI** | **9** | #204, #205, #211, #212, #213, #214, #215, #271, #203 | Architecture plans written. Connector registry drafted (`cn1-t1-registry`). #271 (GT5) is deferred. |
 | **5. Applications, Web, Desktop & Mobile** | **9** | #217, #218, #219, #220, #246, #264, #269, #259, #260 | Early prototypes on branches. Ready to consume newly landed client SDKs (Kotlin, Swift, TS). |
-| **6. Multitenancy, BYOC & Infrastructure** | **5** | #221, #222, #223, #257, #275 | Full deployment specs for Authentik, Knative, Clever Cloud GitOps, and Headscale tailnet. |
+| **6. Multitenancy, BYOC & Infrastructure** | **5** | #221, #222, #223, #257, #275 | Full deployment specs for the identity provider (now Zitadel, IA1), Knative, Clever Cloud GitOps, and Headscale tailnet. |
 | **7. Software Factory & AI Agents** | **4** | #225, #226, #227, #228 | A2A Protocol, unified Loams Bot chat, and durable engineering loops. |
 
 ---
@@ -193,7 +193,7 @@ The unified API transition replaces legacy REST routes and OpenAPI schemas with 
 
 #### Issue #218: `[AP] AP1n — Native Loams Desktop on a Zeron Fork`
 - **Plan**: `docs/plans/2026-10-02-ap1n-native-desktop-zeron.md`
-- **Goal**: High-performance native Rust desktop application utilizing GPUI with Authentik OIDC integration.
+- **Goal**: High-performance native Rust desktop application utilizing GPUI with OIDC sign-in (Zitadel since D1600).
 - **Status**: Branches `origin/ap1n-native-desktop` and `origin/ap1n-fix` exist.
 
 #### Issue #219: `[AP] AP2 — Loams for Android (Jetpack Compose, connect-kotlin)`
@@ -275,17 +275,17 @@ The unified API transition replaces legacy REST routes and OpenAPI schemas with 
 
 ## 7. Track 6: Multitenancy, BYOC & Infrastructure (5 issues)
 
-#### Issue #221: `[MT] MT1 — Authentik as the Identity Provider`
-- **Plan**: `docs/plans/2026-10-02-mt1-authentik-identity.md`
-- **Goal**: Automated blueprint provisioning for self-hosted Authentik 2026.8 OIDC provider.
+#### Issue #221: `[MT] MT1 — the identity provider` (superseded)
+- **Plan**: superseded on 2026-10-21 by IA1, `docs/plans/2026-10-21-ia1-identity-authz.md` (design 76, D1600: Zitadel and OpenFGA).
+- **Goal**: A self-hosted OIDC identity provider; now Zitadel at `auth.loams.dev` (IA1).
 
 #### Issue #222: `[MT] MT2 — Knative Serving and Eventing for Self-Hosted Loams`
 - **Plan**: `docs/plans/2026-10-02-mt2-knative.md`
 - **Goal**: Knative operator and serving layer for auto-scaling Loams compute workloads.
 
-#### Issue #223: `[MT] MT3 — GitOps with Clever Cloud's Open-Source Stack, Knative and Authentik`
+#### Issue #223: `[MT] MT3 — GitOps with Clever Cloud's Open-Source Stack, Knative and the identity provider`
 - **Plan**: `docs/plans/2026-10-02-mt3-gitops-clever.md`
-- **Goal**: Argo CD GitOps repository coordinating CloudNativePG, Knative, and Authentik.
+- **Goal**: Argo CD GitOps repository coordinating CloudNativePG, Knative, and the identity provider (Zitadel since D1600, design 76 §12.2).
 
 #### Issue #257: `[MT] MT4 — The Open Multitenant BYOC Control Plane with GitOps`
 - **Plan**: `docs/plans/2026-10-02-mt4-byoc-control-plane.md`

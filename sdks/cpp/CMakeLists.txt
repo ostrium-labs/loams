@@ -17,13 +17,13 @@
 # `buf.gen.yaml` with pinned remote plugins and checked for drift in CI.
 
 cmake_minimum_required(VERSION 3.20)
-project(loams-cpp VERSION 0.1.0 LANGUAGES CXX)
+project(loams-cpp VERSION 0.1.2 LANGUAGES CXX)
 
 # The SDK's release version. CMake's `project(VERSION)` is numeric only, so the
 # SemVer prerelease lives here; `scripts/sdk/sdk-version.py` sets both lines and
 # the release workflow checks them against the tag. It is compiled into
 # `loams::SdkVersion()` and the user agent.
-set(LOAMS_SDK_VERSION "0.1.0")
+set(LOAMS_SDK_VERSION "0.1.2")
 
 # Tests and the quickstart are on for a checkout of this repository and off for a
 # consumer: the release's source archive carries no `sdks/fixtures` corpus, and a
@@ -173,6 +173,29 @@ add_executable(conformance_test_names tests/test_names.cpp)
 target_link_libraries(conformance_test_names PRIVATE loams loams_warnings)
 add_test(NAME cpp_conformance_test_names COMMAND conformance_test_names)
 
+# The app-building API (SDKP), one ctest test per clause under the names
+# `check-languages.mjs` looks for. `app_test` needs no server; `app_live_test`
+# runs the app scenario against LOAMS_TEST_ENDPOINT and is skipped (77) without it.
+add_executable(app_test tests/app_test.cpp)
+target_link_libraries(app_test PRIVATE loams_test_support loams_warnings)
+# The cpp_app_* clauses replay the recorded app scenario against the fixture server.
+foreach(clause IN ITEMS consistency_token_merge session_read_your_writes default_namespace timeout_deadline
+                        write_batch_chunks streams_subscribe_resumes builders_match_corpus
+                        collection_handle_delegates search_query_all_requires_tiebreak facade_matches_index
+                        sql_and_streams_send_the_recorded_bodies streams_module_subscribe
+                        app_collections app_search app_graph app_sql app_streams)
+  add_test(NAME cpp_${clause} COMMAND app_test cpp_${clause})
+  set_tests_properties(cpp_${clause} PROPERTIES
+    ENVIRONMENT
+      "LOAMS_FIXTURES_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../fixtures;LOAMS_CONFORMANCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../conformance")
+endforeach()
+add_executable(app_live_test tests/app_live_test.cpp)
+target_link_libraries(app_live_test PRIVATE loams_test_support loams_warnings)
+foreach(scenario IN ITEMS app_collections app_search app_graph)
+  add_test(NAME cpp_live_${scenario} COMMAND app_live_test ${scenario})
+  set_tests_properties(cpp_live_${scenario} PROPERTIES SKIP_RETURN_CODE 77)
+endforeach()
+
 # The Live app directory (LV1 Task 13). Not one of the six: see the file's header.
 add_executable(live_admin_test tests/live_admin_test.cpp)
 target_link_libraries(live_admin_test PRIVATE loams_test_support loams_warnings)
@@ -184,6 +207,9 @@ endif()
 if(LOAMS_BUILD_EXAMPLES)
   add_executable(quickstart examples/quickstart/main.cpp)
   target_link_libraries(quickstart PRIVATE loams)
+  # The README's "Build an app" example (SDKP Part D).
+  add_executable(notes examples/notes/main.cpp)
+  target_link_libraries(notes PRIVATE loams)
 endif()
 
 # --- Install: the library, its headers and a CMake config package ------------------------------------

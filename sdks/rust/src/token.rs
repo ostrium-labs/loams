@@ -306,7 +306,7 @@ pub trait FormPoster: Send + Sync + std::fmt::Debug {
     async fn post_form(&self, url: &str, form: &str) -> Result<String, String>;
 }
 
-/// The RFC 8693 token exchange a person signed in through Authentik needs
+/// The RFC 8693 token exchange a person signed in at the IdP needs
 /// (design §44 §7.4, D608; §19 §5.2).
 ///
 /// The instance's `/oauth/token` protocol endpoint takes the identity token
@@ -410,7 +410,7 @@ where
 
 /// `application/x-www-form-urlencoded`, which is what the OAuth token endpoint
 /// takes. Written out rather than pulled in as a dependency for four pairs.
-fn form_encode(pairs: &[(&str, &str)]) -> String {
+pub(crate) fn form_encode(pairs: &[(&str, &str)]) -> String {
     let mut out = String::new();
     for (key, value) in pairs {
         if !out.is_empty() {

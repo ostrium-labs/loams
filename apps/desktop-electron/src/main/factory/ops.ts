@@ -574,5 +574,5 @@ export const OPS: Record<FactoryAppId, Record<string, Op>> = {
 			}
 		}),
 	},
-	openobserve: {},
+	signoz: {},
 };

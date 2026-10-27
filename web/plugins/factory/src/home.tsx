@@ -2,7 +2,7 @@ import type { FactoryAppInfo, LoamsDesktopApi } from '@loams/desktop/contracts';
 import { Button, Card, Empty, Notice } from '@loams/ui';
 import { RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import { HealthPill, isConfigured, PageHead, ROLES } from './model.js';
+import { HealthPill, isConfigured, PageHead, PreviewTag, ROLES } from './model.js';
 
 function Tile({
   desktop,
@@ -29,6 +29,11 @@ function Tile({
       <Card title={app.label} actions={<HealthPill health={app.health} />} className="h-full">
         <div className="flex flex-col gap-3">
           <p className="text-sm text-muted">{ROLES[app.id]}</p>
+          {app.preview && (
+            <div>
+              <PreviewTag preview={app.preview} />
+            </div>
+          )}
           {app.url ? (
             <p
               className={/* mono-ok: path */ 'truncate font-mono text-xs text-faint'}

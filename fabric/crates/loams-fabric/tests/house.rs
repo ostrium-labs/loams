@@ -358,7 +358,7 @@ fn non_loopback_plaintext_refused() {
         .expect_err("from the file too");
     assert_eq!(refused, loopback_message("0.0.0.0:8123"));
     // TLS may face other hosts, with a certificate (HS1 Task 20); the native
-    // protocol's TLS waits for the native protocol.
+    // protocol's TLS listener uses the TLS listener's certificate (R9.40).
     let refused = resolve(
         &["--house-tls-listen", "0.0.0.0:8443", "--data-dir", data],
         "",
@@ -369,8 +369,8 @@ fn non_loopback_plaintext_refused() {
         &["--native-tls-listen", "0.0.0.0:9440", "--data-dir", data],
         "",
     )
-    .expect_err("no native protocol");
-    assert!(refused.contains("HS1 Task 31"), "{refused}");
+    .expect_err("no certificate for the native protocol");
+    assert!(refused.contains("--house-tls-cert"), "{refused}");
     let tls = resolve(
         &[
             "--single-node",

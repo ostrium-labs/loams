@@ -41,6 +41,11 @@ export interface ConnectPgControlOptions {
   fetch?: typeof globalThis.fetch;
   /** Makes an `idempotency_key`; random by default. */
   idempotencyKey?: () => string;
+  /**
+   * pg-control's address as the page shows it, when `baseUrl` is a proxy (the desktop's
+   * `loams-app://console/pg-control/`); the base URL's host by default.
+   */
+  endpoint?: string;
 }
 
 type Json = Record<string, unknown>;
@@ -295,7 +300,7 @@ export function createConnectPgControl(options: ConnectPgControlOptions): PgCont
   });
 
   return {
-    endpoint: hostOf(options.baseUrl),
+    endpoint: options.endpoint ?? hostOf(options.baseUrl),
     async listProjects(namespace) {
       return (await all(POSTGRES, 'ListProjects', { namespace }, 'projects')).map(projectFromJson);
     },

@@ -39,7 +39,9 @@ public final class RunTests {
                     "dev.loams.PaginationTest",
                     "dev.loams.LiveAdminTest",
                     "dev.loams.RuntimeContractTest",
-                    "dev.loams.AppTest");
+                    "dev.loams.AppTest",
+                    "dev.loams.AppSqlStreamsTest",
+                    "dev.loams.AppScenarioTest");
 
     public static void main(String[] args) throws Exception {
         String methodFilter = null;

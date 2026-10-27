@@ -7,8 +7,9 @@
 //! passed to a method call. It has no wire format (no serialiser is derived or
 //! linked here), and this module opens no socket or file, keeps no buffer of
 //! records and persists nothing; `activity_observer_has_no_wire_format` holds
-//! that. The private `loams-platform` links its own observer; this repository
-//! ships [`NoActivityObserver`] only.
+//! that. This repository ships [`NoActivityObserver`] only; a billing observer
+//! comes with the metering code moving into the open repo now (§63, D1119,
+//! which supersedes the open-core reason for D548–D552).
 //!
 //! The counters come from [`ConnectorMetrics`]: the SDK's
 //! `ConnectorObserver` hook feeds them for native connectors, and

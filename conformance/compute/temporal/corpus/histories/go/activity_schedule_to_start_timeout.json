@@ -1,0 +1,200 @@
+{
+  "events": [
+    {
+      "eventId": "1",
+      "eventTime": "2026-10-24T12:39:02.787797271Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+      "taskId": "1049152",
+      "workflowExecutionStartedEventAttributes": {
+        "workflowType": {
+          "name": "activity_schedule_to_start_timeout"
+        },
+        "taskQueue": {
+          "name": "corpus-go",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "workflowExecutionTimeout": "0s",
+        "workflowRunTimeout": "0s",
+        "workflowTaskTimeout": "10s",
+        "originalExecutionRunId": "01a16deb-f583-7c21-8dee-957108bdbbb6",
+        "identity": "2766@a008d768aa0b@",
+        "firstExecutionRunId": "01a16deb-f583-7c21-8dee-957108bdbbb6",
+        "attempt": 1,
+        "firstWorkflowTaskBackoff": "0s",
+        "header": {},
+        "workflowId": "corpus-go-activity_schedule_to_start_timeout"
+      }
+    },
+    {
+      "eventId": "2",
+      "eventTime": "2026-10-24T12:39:02.787938901Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId": "1049153",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "corpus-go",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "3",
+      "eventTime": "2026-10-24T12:39:02.792531305Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "taskId": "1049158",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "2",
+        "identity": "2766@a008d768aa0b@",
+        "requestId": "45687204-40e5-4df8-9665-7930731a3362",
+        "historySizeBytes": "289",
+        "workerVersion": {
+          "buildId": "d4db2319b754feae05457e5f98bacbae"
+        }
+      }
+    },
+    {
+      "eventId": "4",
+      "eventTime": "2026-10-24T12:39:02.795927895Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "taskId": "1049162",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "2",
+        "startedEventId": "3",
+        "identity": "2766@a008d768aa0b@",
+        "workerVersion": {
+          "buildId": "d4db2319b754feae05457e5f98bacbae"
+        },
+        "sdkMetadata": {
+          "langUsedFlags": [
+            3
+          ],
+          "sdkName": "temporal-go",
+          "sdkVersion": "1.49.0"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "5",
+      "eventTime": "2026-10-24T12:39:02.795984158Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "taskId": "1049163",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "5",
+        "activityType": {
+          "name": "greet"
+        },
+        "taskQueue": {
+          "name": "corpus-no-worker",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "Im5vYm9keSI="
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "0s",
+        "scheduleToStartTimeout": "1s",
+        "startToCloseTimeout": "1s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "4",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2,
+          "maximumInterval": "100s",
+          "maximumAttempts": 1
+        }
+      }
+    },
+    {
+      "eventId": "6",
+      "eventTime": "2026-10-24T12:39:03.797793512Z",
+      "eventType": "EVENT_TYPE_ACTIVITY_TASK_TIMED_OUT",
+      "taskId": "1049168",
+      "activityTaskTimedOutEventAttributes": {
+        "failure": {
+          "message": "activity ScheduleToStart timeout",
+          "source": "Server",
+          "timeoutFailureInfo": {
+            "timeoutType": "TIMEOUT_TYPE_SCHEDULE_TO_START"
+          }
+        },
+        "scheduledEventId": "5",
+        "retryState": "RETRY_STATE_TIMEOUT"
+      }
+    },
+    {
+      "eventId": "7",
+      "eventTime": "2026-10-24T12:39:03.797830938Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId": "1049169",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "a008d768aa0b:89cc47d1-be53-467c-91ae-1a8c2c7d2077",
+          "kind": "TASK_QUEUE_KIND_STICKY",
+          "normalName": "corpus-go"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "8",
+      "eventTime": "2026-10-24T12:39:03.800617600Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "taskId": "1049173",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "7",
+        "identity": "2766@a008d768aa0b@",
+        "requestId": "7cb4d140-86fa-4e45-9de2-9ac3025e5b1c",
+        "historySizeBytes": "841",
+        "workerVersion": {
+          "buildId": "d4db2319b754feae05457e5f98bacbae"
+        }
+      }
+    },
+    {
+      "eventId": "9",
+      "eventTime": "2026-10-24T12:39:03.805357372Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "taskId": "1049177",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "7",
+        "startedEventId": "8",
+        "identity": "2766@a008d768aa0b@",
+        "workerVersion": {
+          "buildId": "d4db2319b754feae05457e5f98bacbae"
+        },
+        "sdkMetadata": {},
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "10",
+      "eventTime": "2026-10-24T12:39:03.805513798Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED",
+      "taskId": "1049178",
+      "workflowExecutionCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "IlNjaGVkdWxlVG9TdGFydCI="
+            }
+          ]
+        },
+        "workflowTaskCompletedEventId": "9"
+      }
+    }
+  ]
+}

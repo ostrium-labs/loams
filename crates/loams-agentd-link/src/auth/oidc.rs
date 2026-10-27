@@ -1,5 +1,5 @@
-//! The OpenID Connect pieces of desktop sign-in against Authentik
-//! (design 37 section 6.5): discovery, the authorization URL, and the code and
+//! The OpenID Connect pieces of desktop sign-in against the instance's issuer
+//! (design 37 section 6.5, design 76): discovery, the authorization URL, and the code and
 //! refresh grants at the token endpoint. Public client, PKCE, no secret.
 
 use std::fmt;

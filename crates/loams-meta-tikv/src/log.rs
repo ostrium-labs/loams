@@ -736,7 +736,17 @@ async fn swap_body(
 ) -> Result<Result<(), ApplyError>, TxnError> {
     let (stream, partition) = (swap.stream, swap.partition);
     let head_key = keys::head(stream, partition);
-    let mut head = decode_head(txn.get_for_update(&head_key).await?.as_ref())?;
+    // The head and the segment's reference row, locked together before
+    // anything is decided: garbage collection claims an orphan under the
+    // same row lock (`orphan_segments`), so either it sees this swap's
+    // entry or this swap sees its claim (§20 §11.3).
+    let object_key = keys::object_ref(&swap.segment);
+    let locked: HashMap<Vec<u8>, Vec<u8>> = txn
+        .batch_get_for_update([head_key.clone(), object_key.clone()])
+        .await?
+        .into_iter()
+        .collect();
+    let mut head = decode_head(locked.get(&head_key))?;
     let mut snap = fresh_snapshot(tikv).await?;
     if let Err(e) = check_partition(&mut snap, stream, partition).await? {
         return Ok(Err(e));
@@ -775,7 +785,11 @@ async fn swap_body(
             swap.byte_range
         ))));
     }
-    let clock_ms = Tikv::physical_ms(&txn.start_ts());
+    // The clock after the locks, as openraft checks at apply time: the
+    // start timestamp can be far older when a lock wait (a crashed
+    // process's lock, until its TTL) held the swap up, and a segment that
+    // waited past its freshness must not become reachable.
+    let clock_ms = Tikv::physical_ms(snap.ts());
     let stale = || ApplyError::StaleObject {
         object: swap.segment.clone(),
         created_at_ms: swap.fresh.created_at_ms,
@@ -786,9 +800,9 @@ async fn swap_body(
         return Ok(Err(stale()));
     }
     // A segment garbage collection has claimed must not become reachable
-    // (§20 §11.3); the lock makes a concurrent claim conflict.
-    if let Some(v) = txn.get_for_update(&keys::object_ref(&swap.segment)).await?
-        && keys::decode::<ObjectRef>("object reference", &v)
+    // (§20 §11.3); its row is locked above, so a claim cannot slip in.
+    if let Some(v) = locked.get(&object_key)
+        && keys::decode::<ObjectRef>("object reference", v)
             .map_err(fatal)?
             .gc_claim
     {

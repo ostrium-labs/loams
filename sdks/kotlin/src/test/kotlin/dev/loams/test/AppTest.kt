@@ -241,8 +241,8 @@ object AppTest {
             text("refund", "body"); filter(Filter.eq("tags", "policy")); highlight("body"); select(include = listOf("title"))
             sort(Sort.score(), Sort.pk()); limit(2)
         }.json(), """{"collection":"notes","retrievers":[$TEXT_REFUND],"filter":{"term":{"field":"tags","value":"policy"}},
-            "sort":[{"score":{"order":"SORT_ORDER_DESC"}},{"pk":{"order":"SORT_ORDER_ASC"}}],"limit":2,
-            "select":{"source":{"include":["title"],"exclude":[]}},"highlight":{"fields":[{"field":"body"}]}}""",
+            "sort":[{"score":{}},{"pk":{}}],"limit":2,
+            "select":{"source":{"include":["title"]}},"highlight":{"fields":[{"field":"body"}]}}""",
             "search_text_filter_highlight_select")
         same(s, search("notes") { vector("embedding", embedding, k = 3, params = json("""{"ef":64}""")); limit(3) }.json(),
             """{"collection":"notes","retrievers":[{"vector":{"field":"embedding","query":[0.5,0.25,0.125,1],"k":3,"params":{"ef":64}}}],"limit":3}""",
@@ -254,7 +254,7 @@ object AppTest {
         same(s, hybrid(dbsf()), hybridJson("""{"dbsf":{}}"""), "search_hybrid_dbsf")
         same(s, hybrid(weighted(0.7, 0.3)), hybridJson("""{"weightedSum":{"weights":[0.7,0.3]}}"""), "search_hybrid_weighted")
         same(s, search("notes") { text("refund", "body"); sort(Sort.score(), Sort.pk()); after(listOf(json("1.5"), json("3"))); limit(2) }.json(),
-            """{"collection":"notes","retrievers":[$TEXT_REFUND],"sort":[{"score":{"order":"SORT_ORDER_DESC"}},{"pk":{"order":"SORT_ORDER_ASC"}}],
+            """{"collection":"notes","retrievers":[$TEXT_REFUND],"sort":[{"score":{}},{"pk":{}}],
             "searchAfter":[1.5,3],"limit":2}""", "search_after_page")
         same(s, search("notes") { text("refund", "body"); expand("notes_graph", "id") }.json(),
             """{"collection":"notes","retrievers":[$TEXT_REFUND],"expandSpec":{"graph":"notes_graph","fromField":"id","hops":1}}""",

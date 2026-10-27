@@ -2,6 +2,8 @@
 
 Status: **Proposed** · 2026-10-08. The owner's goal for this document is "Loams Live production ready". It defines what that means for Loams Live ([§20](20-reactive-database-on-tikv.md)), in concrete, testable terms, and records the design choices that close the gap. Decisions are **D680–D699** and open questions **Q625–Q639**. Both are in the [decision log](13-decision-log.md), and every one of them is **Proposed** until the owner confirms it. The implementation plan is [LV1](../plans/2026-10-08-lv1-live-production.md). **No code is written by this document.**
 
+> **Amendment (approved 2026-10-21; [§77](77-kv-gateways.md), D1642).** §8's store seam `loams-kv` gains one-shot operations, a paged scanner, an in-memory embedded store, pessimistic mode (D851), tenancy and op metrics for the Redis and Cassandra gateways. Existing behaviour does not change.
+
 This document amends §20 for production. Where the two disagree, this document wins for the topics it covers (§19 below lists each amendment). §20 stays the reference for the data model, the key layout, the journal, reactivity and the TiKV facts.
 
 Markers: **(estimate)** means computed or guessed, not measured. **(target)** means a performance number that LV1 measures and then gates on (§15). **(verify)** means not checked against a primary source; the task that depends on it checks it.
@@ -170,7 +172,7 @@ The unified auth plan (D111, Q30) was narrowed by D451: MT1 is the identity half
 | Piece | Owner | What Live does with it |
 |---|---|---|
 | Token endpoint, sessions, users, API key issuance and revocation, the `ControlStore` records | §19 M2 identity work, MT1 | Consumes: it verifies tokens and keys and subscribes to revocations |
-| Authentik as the identity provider, RFC 8693 exchange, groups mapped to teams and OpenFGA tuples | MT1 (D447–D452) | Nothing directly. People reach Live with exchanged Loams tokens. Authentik is also the documented default issuer for app end users (§5.3) |
+| The identity provider (Zitadel, §76 D1600), RFC 8693 exchange, groups mapped to teams and OpenFGA tuples | MT1 (D447–D452), now IA1 | Nothing directly. People reach Live with exchanged Loams tokens or, under D1606, verified Zitadel JWTs. Zitadel is also the documented default issuer for app end users (§5.3) |
 | `Authorizer` (D66: `AllowAll`, then RBAC, then OpenFGA in M2.x) | M2 | Calls `check(principal, action, resource)` for every admin call and every `_system:*` call |
 | The verifier core in `crates/loams-auth`: Loams JWT verification against the instance JWKS, API key hash lookup, the revocation set | MT1 Task 2 or M2. **If it has not merged by LV1b, LV1b builds only this core** (verification, no issuance), with the interfaces MT1's plan names, so MT1 and M2 extend it rather than duplicate it | Uses it for every request |
 
@@ -192,7 +194,7 @@ The unified auth plan (D111, Q30) was narrowed by D451: MT1 is the identity half
 
 An app's end users are not Loams principals. They sign in to the app's own identity provider.
 
-- **Configuration.** The app's settings (`UpdateApp`) list trusted issuers: `{ issuer, audiences[], jwks_uri? }`. Authentik is the documented and tested default (D447). Any OIDC provider works: discovery through `/.well-known/openid-configuration`, and the JWKS cached for 10 minutes and refreshed on an unknown `kid` at most once per 30 s, MT1 Task 2's rules reused per app.
+- **Configuration.** The app's settings (`UpdateApp`) list trusted issuers: `{ issuer, audiences[], jwks_uri? }`. Zitadel is the documented and tested default (D447, now §76 D1600). Any OIDC provider works: discovery through `/.well-known/openid-configuration`, and the JWKS cached for 10 minutes and refreshed on an unknown `kid` at most once per 30 s, MT1 Task 2's rules reused per app.
 - **The credential.** The same `Authorization: Bearer` header. Live tells the kinds apart by token shape and `iss`: the instance's own issuer means a platform principal, an issuer configured on the addressed app means an end user, a `loams_` prefix means an API key, and anything else is `UNAUTHENTICATED`.
 - **What an end user may do.** Call **public** functions of that app, through `Watch`, `Query` and `Mutate`. Never internal functions, `_system:*` or `LiveAdminService`. Authorization beyond that is the function's own code, using `ctx.auth`. Whether Live should also offer declarative per-table rules for end users is Q631 (default: no; function code is the policy, as in Convex).
 - **Anonymous calls** are allowed to public functions when the app's `allow_anonymous` is true (the default for new apps is `false` in production and `true` in `loams dev`).
@@ -303,7 +305,7 @@ With the `live` feature on, `loams dev` connects to a PD at `127.0.0.1:19379` an
 | Use | Backend |
 |---|---|
 | `loams dev`, Loams Desktop, SDK conformance, CI | **Embedded by default**: `--live-store embedded` (the default), or `--live-store tikv://<pd>/<keyspace>` |
-| `loams standalone` | Embedded allowed and labelled **not for production** in LV1. Whether single-node production on embedded is supported, with mandatory backup (§10), is Q626 |
+| `loams standalone` | Embedded allowed and labelled **not for production** in LV1. Whether single-node production on embedded is supported, with mandatory backup (§10), is Q626, answered 2026-10-22 (D1341): supported for single node, with the limits stated |
 | Production (`cluster`, Loams Cloud, BYOC) | **TiKV only**, per D130 |
 
 - **Features.** `live` = Live plus the embedded store, with no `tikv-client`. It **joins the `standard` and `full` variants and the default feature set**, which reverses owner ruling T8-2 for the embedded part. `live-tikv` = `live` plus the TiKV backend (the git-pinned fork). It joins `full`. Publishing a crate with a git dependency to crates.io is impossible, so how `live-tikv` reaches crates.io builds is Q629. Binaries built from the repository are unaffected.
@@ -467,7 +469,7 @@ LV1 ships:
   - quickstart (`npx loams-live init`, `loams dev`, a React app);
   - functions and the determinism rules;
   - schema, validators and indexes, with the online backfill behaviour;
-  - auth with Authentik and with any OIDC provider;
+  - auth with Zitadel and with any OIDC provider;
   - pagination;
   - optimistic updates;
   - migrations;
@@ -519,7 +521,7 @@ If any row fails, Live ships in that release **labelled "preview"** in `GetInsta
 | # | Question | Default if unanswered |
 |---|---|---|
 | Q625 | Include actions (`fetch`) and scheduled functions in LV1, or keep them in R2? | R2 |
-| Q626 | Is the embedded store a supported single-node production backend (with mandatory logical backup), or dev and Desktop only? | Dev and Desktop only |
+| Q626 | ~~Is the embedded store a supported single-node production backend (with mandatory logical backup), or dev and Desktop only?~~ **Answered 2026-10-22 by the owner (D1341):** supported for single-node installs, with the limits stated | ~~Dev and Desktop only~~ |
 | Q627 | On v8.5.8, do BR full backup and log backup (PITR) work for API v2 txn keyspaces, and per keyspace? (Narrows Q37 into a spike) | Logical backup only; BR full backup if it works |
 | Q628 | Is seccomp plus landlock enough for multi-tenant Loams Cloud, or does Live need gVisor or microVM isolation? | Subprocess sandbox for LV1, revisited by the security review |
 | Q629 | crates.io refuses git dependencies: publish the `tikv-client` fork under its own crate name, or keep `live-tikv` binary-only? | Binary-only |

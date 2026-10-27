@@ -76,21 +76,22 @@ namespace Loams.Instance.V1 {
             "CXByb3RlY3RlZBgFIAEoCFIJcHJvdGVjdGVkIi8KCURldmljZVJlZhIOCgJp",
             "ZBgBIAEoCVICaWQSEgoEbmFtZRgCIAEoCVIEbmFtZSpYCgdFZGl0aW9uEhcK",
             "E0VESVRJT05fVU5TUEVDSUZJRUQQABIPCgtFRElUSU9OX09TUxABEhEKDUVE",
-            "SVRJT05fQ0xPVUQQAhIQCgxFRElUSU9OX0JZT0MQAyqfAQoKU2lnbkluS2lu",
+            "SVRJT05fQ0xPVUQQAhIQCgxFRElUSU9OX0JZT0MQAyrhAQoKU2lnbkluS2lu",
             "ZBIcChhTSUdOX0lOX0tJTkRfVU5TUEVDSUZJRUQQABIVChFTSUdOX0lOX0tJ",
-            "TkRfTk9ORRABEhoKFlNJR05fSU5fS0lORF9BVVRIRU5USUsQAhImCiJTSUdO",
-            "X0lOX0tJTkRfQVVUSEVOVElLX0RFVklDRV9DT0RFEAMSGAoUU0lHTl9JTl9L",
-            "SU5EX1BBSVJJTkcQBCqGAQoNUHJpbmNpcGFsS2luZBIeChpQUklOQ0lQQUxf",
-            "S0lORF9VTlNQRUNJRklFRBAAEhcKE1BSSU5DSVBBTF9LSU5EX1VTRVIQARIi",
-            "Ch5QUklOQ0lQQUxfS0lORF9TRVJWSUNFX0FDQ09VTlQQAhIYChRQUklOQ0lQ",
-            "QUxfS0lORF9BR0VOVBADMqoCCg9JbnN0YW5jZVNlcnZpY2UScgoLR2V0SW5z",
-            "dGFuY2USJS5sb2Ftcy5pbnN0YW5jZS52MS5HZXRJbnN0YW5jZVJlcXVlc3Qa",
-            "Ji5sb2Ftcy5pbnN0YW5jZS52MS5HZXRJbnN0YW5jZVJlc3BvbnNlIhSQAgGS",
-            "tRgNEgtnZXRJbnN0YW5jZRJeCgZXaG9BbUkSIC5sb2Ftcy5pbnN0YW5jZS52",
-            "MS5XaG9BbUlSZXF1ZXN0GiEubG9hbXMuaW5zdGFuY2UudjEuV2hvQW1JUmVz",
-            "cG9uc2UiD5ACAZK1GAgSBndob0FtSRpDirUYPwoIaW5zdGFuY2USM1doYXQg",
-            "dGhpcyBpbnN0YW5jZSBpcywgYW5kIHdobyB0aGUgY2FsbGVyIGlzIG9uIGl0",
-            "LmIGcHJvdG8z"));
+            "TkRfTk9ORRABEh4KFlNJR05fSU5fS0lORF9BVVRIRU5USUsQAhoCCAESKgoi",
+            "U0lHTl9JTl9LSU5EX0FVVEhFTlRJS19ERVZJQ0VfQ09ERRADGgIIARIYChRT",
+            "SUdOX0lOX0tJTkRfUEFJUklORxAEEhUKEVNJR05fSU5fS0lORF9PSURDEAUS",
+            "IQodU0lHTl9JTl9LSU5EX09JRENfREVWSUNFX0NPREUQBiqGAQoNUHJpbmNp",
+            "cGFsS2luZBIeChpQUklOQ0lQQUxfS0lORF9VTlNQRUNJRklFRBAAEhcKE1BS",
+            "SU5DSVBBTF9LSU5EX1VTRVIQARIiCh5QUklOQ0lQQUxfS0lORF9TRVJWSUNF",
+            "X0FDQ09VTlQQAhIYChRQUklOQ0lQQUxfS0lORF9BR0VOVBADMqoCCg9JbnN0",
+            "YW5jZVNlcnZpY2UScgoLR2V0SW5zdGFuY2USJS5sb2Ftcy5pbnN0YW5jZS52",
+            "MS5HZXRJbnN0YW5jZVJlcXVlc3QaJi5sb2Ftcy5pbnN0YW5jZS52MS5HZXRJ",
+            "bnN0YW5jZVJlc3BvbnNlIhSQAgGStRgNEgtnZXRJbnN0YW5jZRJeCgZXaG9B",
+            "bUkSIC5sb2Ftcy5pbnN0YW5jZS52MS5XaG9BbUlSZXF1ZXN0GiEubG9hbXMu",
+            "aW5zdGFuY2UudjEuV2hvQW1JUmVzcG9uc2UiD5ACAZK1GAgSBndob0FtSRpD",
+            "irUYPwoIaW5zdGFuY2USM1doYXQgdGhpcyBpbnN0YW5jZSBpcywgYW5kIHdo",
+            "byB0aGUgY2FsbGVyIGlzIG9uIGl0LmIGcHJvdG8z"));
       descriptor = pbr::FileDescriptor.FromGeneratedCode(descriptorData,
           new pbr::FileDescriptor[] { global::Google.Protobuf.WellKnownTypes.TimestampReflection.Descriptor, global::Loams.Options.V1.OptionsReflection.Descriptor, },
           new pbr::GeneratedClrTypeInfo(new[] {typeof(global::Loams.Instance.V1.Edition), typeof(global::Loams.Instance.V1.SignInKind), typeof(global::Loams.Instance.V1.PrincipalKind), }, null, new pbr::GeneratedClrTypeInfo[] {
@@ -125,17 +126,28 @@ namespace Loams.Instance.V1 {
     /// </summary>
     [pbr::OriginalName("SIGN_IN_KIND_NONE")] None = 1,
     /// <summary>
-    /// OIDC authorization code + PKCE at the instance's Authentik (§38).
+    /// Deprecated: use SIGN_IN_KIND_OIDC (D1619). Kept so the wire value still
+    /// decodes; no server sends it.
     /// </summary>
+    [global::System.ObsoleteAttribute]
     [pbr::OriginalName("SIGN_IN_KIND_AUTHENTIK")] Authentik = 2,
     /// <summary>
-    /// Authentik's device authorization flow (RFC 8628).
+    /// Deprecated: use SIGN_IN_KIND_OIDC_DEVICE_CODE (D1619).
     /// </summary>
+    [global::System.ObsoleteAttribute]
     [pbr::OriginalName("SIGN_IN_KIND_AUTHENTIK_DEVICE_CODE")] AuthentikDeviceCode = 3,
     /// <summary>
     /// A QR or typed pairing code from a signed-in session (§37 §7.2).
     /// </summary>
     [pbr::OriginalName("SIGN_IN_KIND_PAIRING")] Pairing = 4,
+    /// <summary>
+    /// OIDC authorization code + PKCE at the instance's issuer (design §76).
+    /// </summary>
+    [pbr::OriginalName("SIGN_IN_KIND_OIDC")] Oidc = 5,
+    /// <summary>
+    /// The issuer's device authorization flow (RFC 8628).
+    /// </summary>
+    [pbr::OriginalName("SIGN_IN_KIND_OIDC_DEVICE_CODE")] OidcDeviceCode = 6,
   }
 
   public enum PrincipalKind {
@@ -493,7 +505,8 @@ namespace Loams.Instance.V1 {
         = pb::FieldCodec.ForMessage(74, global::Loams.Instance.V1.SignInMethod.Parser);
     private readonly pbc::RepeatedField<global::Loams.Instance.V1.SignInMethod> signInMethods_ = new pbc::RepeatedField<global::Loams.Instance.V1.SignInMethod>();
     /// <summary>
-    /// How people sign in. Authentik is the identity provider (§37 §6.5).
+    /// How people sign in: the instance's OIDC issuer (Zitadel, design §76), a
+    /// pairing code, or none (§37 §6.5).
     /// </summary>
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
@@ -1454,7 +1467,7 @@ namespace Loams.Instance.V1 {
     public const int IssuerFieldNumber = 2;
     private string issuer_ = "";
     /// <summary>
-    /// The OIDC issuer for KIND_AUTHENTIK (Authentik's application issuer URL).
+    /// The OIDC issuer for SIGN_IN_KIND_OIDC and SIGN_IN_KIND_OIDC_DEVICE_CODE.
     /// </summary>
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]

@@ -11,7 +11,7 @@
 // - turns whatever is thrown into the typed `LoamsError` hierarchy, so a
 //   caller branches on `reason` and never on a message.
 
-import type { DescService } from '@bufbuild/protobuf';
+import type { DescMessage, DescService } from '@bufbuild/protobuf';
 import {
   Code,
   type CallOptions as ConnectCallOptions,
@@ -19,7 +19,14 @@ import {
   type Transport,
 } from '@connectrpc/connect';
 import type { CallBinding } from '../gen/facade.js';
-import { LoamsError, TokenExpiredError, toLoamsError } from './errors.js';
+import {
+  DeadlineExceededError,
+  InvalidArgumentError,
+  LoamsError,
+  TokenExpiredError,
+  toLoamsError,
+} from './errors.js';
+import { TOKEN_PREFIX } from './consistency.js';
 import { DEFAULT_MAX_RETRIES, backoffMs, shouldRetry, sleep } from './retry.js';
 import type { TokenSource } from './token-source.js';
 import { uuidv7 } from './uuidv7.js';
@@ -48,6 +55,14 @@ export interface CallOptions extends ConnectCallOptions {
   /** The consistency token to read at, and the store to record writes in
    * (§44 §7.4, D609). */
   consistency?: ConsistencyOptions;
+  /**
+   * This call's deadline in milliseconds (runtime contract R12). Unary calls
+   * default to the client's `timeoutMs` (30 s); streams have none unless one is
+   * given here. `0` means no deadline. The whole call, retries included, has to
+   * fit: a call that runs out raises `DeadlineExceededError` with reason
+   * `client_deadline_exceeded` and is never retried.
+   */
+  timeoutMs?: number;
 }
 
 /** How consistency tokens are carried (D609). */
@@ -56,16 +71,19 @@ export interface ConsistencyOptions {
    * / `'eventual'` to read without waiting. */
   token?: string;
   /** Record the consistency token every response carries, so later reads are
-   * read-your-writes without the caller threading tokens by hand. */
+   * read-your-writes without the caller threading tokens by hand. Unset means
+   * the client's session, when `sessionConsistency` is on; `false` opts this
+   * call out. */
   session?: ConsistencyTokenStore | true | false;
 }
 
 /** A session's merged consistency token (D609). Off unless a call opts in. */
 export interface ConsistencyTokenStore {
-  /** The token to attach to the next read, or undefined for none. */
-  current(): string | undefined;
-  /** Folds a token the server returned into the session's. */
-  record(token: string | undefined): void;
+  /** The token to attach to the next read in `scope` (a proto package), or
+   * undefined for none. */
+  current(scope?: string): string | undefined;
+  /** Folds a token the server returned, in `scope`, into the session's. */
+  record(token: string | undefined, scope?: string): void;
 }
 
 /** One attempt of a call, as the transport sees it. */
@@ -87,6 +105,8 @@ export interface RetryPlan {
   readonly maxRetries: number;
   readonly signal?: AbortSignal;
   readonly onRefresh?: () => Promise<void>;
+  /** True once the call's own deadline has passed: no further attempt. */
+  readonly expired?: () => boolean;
 }
 
 /**
@@ -118,7 +138,10 @@ export async function callWithRetry(
         attempt -= 1;
         continue;
       }
-      if (!shouldRetry(error, plan.retrySafe, attempt, plan.maxRetries)) {
+      if (
+        plan.expired?.() === true ||
+        !shouldRetry(error, plan.retrySafe, attempt, plan.maxRetries)
+      ) {
         throw error;
       }
       await sleep(backoffMs(attempt), plan.signal);
@@ -186,10 +209,87 @@ function resolveSession(
   clientSession: ConsistencyTokenStore | undefined,
 ): ConsistencyTokenStore | undefined {
   const session = options?.session;
-  if (session === undefined || session === false) {
+  if (session === false) {
     return undefined;
   }
-  return session === true ? clientSession : session;
+  if (session === undefined || session === true) {
+    return clientSession;
+  }
+  return session;
+}
+
+/** Whether a response string is something other than a consistency token. */
+function isForeignToken(value: string): boolean {
+  return !value.startsWith(TOKEN_PREFIX);
+}
+
+/** The unary deadline when neither the client nor the call sets one (R12). */
+export const DEFAULT_TIMEOUT_MS = 30_000;
+
+/** The response fields a consistency token is read from (R4, SDKP §2.1). */
+const TOKEN_FIELDS = ['consistencyToken', 'token', 'readToken'] as const;
+
+/** The response header a consistency token is read from (R4). */
+export const CONSISTENCY_TOKEN_HEADER = 'loams-consistency-token';
+
+/**
+ * The packages whose `namespace` field is a Loams namespace (R11) and whose
+ * `consistency` field reads at a consistency token (R4). Other packages have
+ * fields of the same name that mean something else: `loams.live.v1`'s
+ * `CreateAppRequest.namespace` is free text naming an app's environment, and
+ * must never be filled from, or refused for lack of, the client's default.
+ */
+export const APP_PACKAGES: ReadonlySet<string> = new Set([
+  'loams.collection.v1',
+  'loams.graph.v1',
+  'loams.sql.v1',
+  'loams.stream.v1',
+]);
+
+/**
+ * The packages whose reads take the session's token as `at_least` (R4,
+ * SDKP-17): collections and SQL. A graph's token names one graph's stream and
+ * a Graph read refuses any other, so graph reads never take the session's.
+ */
+export const SESSION_PACKAGES: ReadonlySet<string> = new Set(['loams.collection.v1', 'loams.sql.v1']);
+
+/** What the invoker reads off a request schema once, per RPC. */
+interface RequestShape {
+  /** The request declares `idempotency_key` (D610). */
+  readonly keyed: boolean;
+  /** The request declares a string `namespace` (R11). */
+  readonly namespaced: boolean;
+  /** How to say `at_least = token` in this request's `consistency` field, if it
+   * has one (R4). */
+  readonly atLeast: ((token: string) => Record<string, unknown>) | undefined;
+}
+
+/** How a request's `consistency` message spells "at least this token". Both
+ * shapes in the protos are covered: a plain `at_least` field
+ * (`loams.collection.v1.Consistency`) and an `at_least` arm of a oneof
+ * (`loams.graph.v1.Consistency`). */
+function atLeastOf(input: DescMessage): RequestShape['atLeast'] {
+  const field = input.field.consistency;
+  if (field === undefined || field.fieldKind !== 'message') {
+    return undefined;
+  }
+  const atLeast = field.message.field.atLeast;
+  if (atLeast === undefined || atLeast.fieldKind !== 'scalar') {
+    return undefined;
+  }
+  const oneof = atLeast.oneof;
+  if (oneof === undefined) {
+    return (token) => ({ atLeast: token });
+  }
+  return (token) => ({ [oneof.localName]: { case: 'atLeast', value: token } });
+}
+
+/** Options the invoker applies to every call (R11, R12). */
+export interface InvokerDefaults {
+  /** The namespace a request with an empty `namespace` field is sent with. */
+  namespace?: string;
+  /** The unary deadline; `0` disables it. */
+  timeoutMs?: number;
 }
 
 /**
@@ -199,15 +299,24 @@ function resolveSession(
 export class CallInvoker {
   private readonly clients = new Map<string, Record<string, unknown>>();
   private readonly descriptors = new Map<string, DescService>();
-  /** Whether a call's request schema declares `idempotency_key`, per RPC. */
-  private readonly keyed = new Map<string, boolean>();
+  /** What each RPC's request schema declares, per RPC. */
+  private readonly shapes = new Map<string, RequestShape>();
+  private readonly defaults: InvokerDefaults;
 
   constructor(
     private readonly transport: Transport,
     private readonly tokenSource: TokenSource | undefined,
     private readonly maxRetries: number,
     private readonly consistency: ConsistencyTokenStore | undefined,
-  ) {}
+    defaults: InvokerDefaults = {},
+  ) {
+    this.defaults = defaults;
+  }
+
+  /** The client's default namespace, if it has one (R11). */
+  get namespace(): string | undefined {
+    return this.defaults.namespace;
+  }
 
   /**
    * A module's Connect client, built once from the service descriptor
@@ -225,10 +334,18 @@ export class CallInvoker {
       // from the object a caller happened to build. A caller who omits an
       // `optional` field still gets a key, and `MutateRequest` (which has one)
       // is never confused with `DeployRequest` (which does not).
-      this.keyed.set(
-        `${service}/${method.name}`,
-        method.input.field[IDEMPOTENCY_KEY] !== undefined,
-      );
+      const namespace = method.input.field.namespace;
+      const pkg = descriptor.file.proto.package ?? '';
+      const app = APP_PACKAGES.has(pkg);
+      this.shapes.set(`${service}/${method.name}`, {
+        keyed: method.input.field[IDEMPOTENCY_KEY] !== undefined,
+        namespaced:
+          app &&
+          namespace !== undefined &&
+          namespace.fieldKind === 'scalar' &&
+          namespace.oneof === undefined,
+        atLeast: SESSION_PACKAGES.has(pkg) ? atLeastOf(method.input) : undefined,
+      });
     }
     this.clients.set(service, createClient(descriptor, this.transport) as unknown as Record<
       string,
@@ -236,15 +353,75 @@ export class CallInvoker {
     >);
   }
 
+  /** What this call's request message declares. */
+  private shape(binding: CallBinding): RequestShape {
+    return (
+      this.shapes.get(`${binding.service}/${binding.method}`) ?? {
+        keyed: false,
+        namespaced: false,
+        atLeast: undefined,
+      }
+    );
+  }
+
   /** Whether this call's request message declares an `idempotency_key`. */
   private takesIdempotencyKey(binding: CallBinding): boolean {
-    return this.keyed.get(`${binding.service}/${binding.method}`) ?? false;
+    return this.shape(binding).keyed;
+  }
+
+  /**
+   * The request as it goes out: the default namespace filled in (R11) and the
+   * session's token set as `consistency.at_least` when the caller left
+   * `consistency` unset (R4). A request the caller set either on is left as
+   * written: an explicit argument always wins.
+   */
+  private prepare(binding: CallBinding, request: unknown, consistency: string | undefined): unknown {
+    if (typeof request !== 'object' || request === null) {
+      return request;
+    }
+    const shape = this.shape(binding);
+    let message = request as Record<string, unknown>;
+    if (shape.namespaced) {
+      const given = message.namespace;
+      if (typeof given !== 'string' || given === '') {
+        const fallback = this.defaults.namespace;
+        if (fallback === undefined || fallback === '') {
+          throw new InvalidArgumentError(
+            `${binding.rpc} needs a namespace: pass one, or give the client a default namespace`,
+            {
+              code: Code.InvalidArgument,
+              reason: 'namespace_required',
+              rpc: binding.rpc,
+              metadata: { field: 'namespace' },
+            },
+          );
+        }
+        message = { ...message, namespace: fallback };
+      }
+    }
+    if (consistency !== undefined && shape.atLeast !== undefined && message.consistency === undefined) {
+      message = { ...message, consistency: shape.atLeast(consistency) };
+    }
+    return message;
+  }
+
+  /** The deadline a unary call runs under, in milliseconds, or undefined. */
+  private unaryTimeout(options: CallOptions): number | undefined {
+    const ms = options.timeoutMs ?? this.defaults.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    return ms > 0 ? ms : undefined;
   }
 
   /** The connect-es method a binding names, or a clear internal error. */
   private method(binding: CallBinding): (request: unknown, options: CallOptions) => Promise<unknown> {
     const client = this.clients.get(binding.service);
-    const method = client?.[binding.name];
+    // The connect-es client is keyed by the RPC's own local name
+    // (`createNamespace`), not by the facade name (`create`): the two differ
+    // whenever `FacadeOptions.name` renames a call, which every app module does.
+    const descriptor = this.descriptors.get(binding.service);
+    const local =
+      descriptor?.methods.find((candidate) => candidate.name === binding.method)?.localName ??
+      binding.name;
+    const method = client?.[local];
     if (typeof method !== 'function') {
       throw new LoamsError(
         `the generated client for ${binding.service} has no method ${binding.name}`,
@@ -256,8 +433,15 @@ export class CallInvoker {
 
   /** One unary call: the whole runtime contract, applied to one binding. */
   async unary(binding: CallBinding, request: unknown, options: CallOptions = {}) {
+    const session = resolveSession(options.consistency, this.consistency);
+    // An explicit token wins; otherwise the session's, which is what makes a
+    // session read-your-writes rather than record it and never send it (R4).
+    // R4 (SDKP-17): one token per proto package, so a collection write's token
+    // never becomes a graph read's `at_least`.
+    const consistency = options.consistency?.token ?? session?.current(binding.package);
+    const prepared = this.prepare(binding, request, consistency);
     const { request: keyed, keyed: hasKey } = withIdempotencyKey(
-      request,
+      prepared,
       options.idempotencyKey,
       this.takesIdempotencyKey(binding),
     );
@@ -265,26 +449,82 @@ export class CallInvoker {
     // D610: a `safe` call always retries; a mutation retries once it carries an
     // idempotency key, which `withIdempotencyKey` has just decided.
     const retrySafe = options.retrySafe ?? (binding.retry === 'safe' || hasKey);
-    const session = resolveSession(options.consistency, this.consistency);
-    // An explicit token wins; otherwise the session's, which is what makes
-    // `consistency: { session: true }` read-your-writes rather than record it
-    // and never send it (R4).
-    const consistency = options.consistency?.token ?? session?.current();
     const method = this.method(binding);
 
-    const result = (await callWithRetry(
-      keyed,
-      async () => method(keyed, { ...options, headers: await this.headers(options, consistency) }),
-      {
-        retrySafe,
-        maxRetries,
-        signal: options.signal,
-        onRefresh: this.tokenSource?.refresh?.bind(this.tokenSource),
-      },
-      binding.rpc,
-    )) as Record<string, unknown> | undefined;
-    this.recordConsistency(session, result);
-    return result;
+    // R12: one budget for the whole call, retries included. The SDK runs its
+    // own timer rather than trusting the transport's, so the budget holds over
+    // every transport, and so "the client ran out" is told apart from a
+    // server's `deadline_exceeded`, which may be retried.
+    const timeoutMs = this.unaryTimeout(options);
+    const deadline = timeoutMs === undefined ? undefined : Date.now() + timeoutMs;
+    const controller = new AbortController();
+    let expired = false;
+    const onCallerAbort = () => controller.abort(options.signal?.reason);
+    if (options.signal?.aborted === true) {
+      controller.abort(options.signal.reason);
+    } else {
+      options.signal?.addEventListener('abort', onCallerAbort, { once: true });
+    }
+    const timer =
+      timeoutMs === undefined
+        ? undefined
+        : setTimeout(() => {
+            expired = true;
+            controller.abort(new Error('client deadline exceeded'));
+          }, timeoutMs);
+    let headerToken: string | undefined;
+    const onHeader = (headers: Headers | undefined) => {
+      // A stub transport may answer without headers at all.
+      headerToken = headers?.get?.(CONSISTENCY_TOKEN_HEADER) ?? undefined;
+      if (headers !== undefined) {
+        options.onHeader?.(headers);
+      }
+    };
+
+    try {
+      const result = (await callWithRetry(
+        keyed,
+        async () =>
+          method(keyed, {
+            ...options,
+            signal: controller.signal,
+            ...(deadline === undefined
+              ? {}
+              : { timeoutMs: Math.max(1, deadline - Date.now()) }),
+            onHeader,
+            headers: await this.headers(options, consistency, this.shape(binding).atLeast === undefined),
+          }),
+        {
+          retrySafe,
+          maxRetries,
+          signal: controller.signal,
+          onRefresh: this.tokenSource?.refresh?.bind(this.tokenSource),
+          expired: () => expired,
+        },
+        binding.rpc,
+      )) as Record<string, unknown> | undefined;
+      this.recordConsistency(session, result, headerToken, binding.package);
+      return result;
+    } catch (thrown) {
+      if (expired) {
+        throw new DeadlineExceededError(
+          `${binding.rpc} did not answer within the client's ${timeoutMs} ms deadline`,
+          {
+            code: Code.DeadlineExceeded,
+            reason: 'client_deadline_exceeded',
+            rpc: binding.rpc,
+            metadata: { timeout_ms: String(timeoutMs) },
+            cause: thrown,
+          },
+        );
+      }
+      throw toLoamsError(thrown, binding.rpc);
+    } finally {
+      if (timer !== undefined) {
+        clearTimeout(timer);
+      }
+      options.signal?.removeEventListener('abort', onCallerAbort);
+    }
   }
 
   /** The headers a call carries: the caller's, plus the bearer and the
@@ -292,13 +532,16 @@ export class CallInvoker {
   private async headers(
     options: CallOptions,
     consistency: string | undefined,
+    asHeader = true,
   ): Promise<Record<string, string>> {
     const headers: Record<string, string> = { ...options.headers };
     const bearer = await this.tokenSource?.token();
     if (bearer !== undefined) {
       headers.authorization = `Bearer ${bearer}`;
     }
-    if (consistency !== undefined) {
+    // A request with a `consistency` field carries the token there (R4); one
+    // without carries it as a header, which is all such an RPC can read.
+    if (consistency !== undefined && asHeader) {
       headers['loams-consistency'] = consistency;
     }
     return headers;
@@ -318,7 +561,9 @@ export class CallInvoker {
       options: CallOptions,
     ) => AsyncIterable<unknown>;
     const session = resolveSession(options.consistency, this.consistency);
-    const consistency = options.consistency?.token ?? session?.current();
+    const consistency = options.consistency?.token ?? session?.current(binding.package);
+    const prepared = this.prepare(binding, request, consistency);
+    const asHeader = this.shape(binding).atLeast === undefined;
     const self = this;
     const refresh = this.tokenSource?.refresh?.bind(this.tokenSource);
     // Synchronous, because `loams.live.watch(...)` has to hand back an
@@ -329,9 +574,9 @@ export class CallInvoker {
       let refreshed = false;
       let yielded = false;
       for (;;) {
-        const headers = await self.headers(options, consistency);
+        const headers = await self.headers(options, consistency, asHeader);
         const source = self.mapped(
-          streamOf(method(request, { ...options, headers })),
+          streamOf(method(prepared, { ...options, headers })),
           binding.rpc,
         );
         try {
@@ -376,24 +621,45 @@ export class CallInvoker {
     return invoke();
   }
 
-  /** Merges the consistency token a write answered with into the session. */
+  /** Merges every consistency token a response carried into the session:
+   * `consistency_token`, `token` and `read_token`, and the
+   * `loams-consistency-token` header (R4, SDKP §2.1). */
   private recordConsistency(
     session: ConsistencyTokenStore | undefined,
     result: Record<string, unknown> | undefined,
+    headerToken?: string,
+    scope?: string,
   ): void {
-    if (session === undefined || result === undefined) {
+    if (session === undefined) {
       return;
     }
-    const token = result.consistencyToken;
-    try {
-      session.record(typeof token === 'string' && token !== '' ? token : undefined);
-    } catch {
-      // The RPC already succeeded. A token the session cannot merge — the
-      // encoding is still opaque, see `ConsistencySession` — must not turn a
-      // committed write into a thrown error, because a caller that retries on
-      // that error performs the write twice. `ConsistencySession.conflicts`
-      // counts it instead.
+    const tokens: string[] = [];
+    for (const field of TOKEN_FIELDS) {
+      const value = result?.[field];
+      if (typeof value === 'string' && value !== '') {
+        tokens.push(value);
+      }
+    }
+    if (headerToken !== undefined && headerToken !== '') {
+      tokens.push(headerToken);
+    }
+    for (const token of tokens) {
+      // `token` is a common field name; only a `v1:` string is a consistency
+      // token, and anything else (a page token, a bearer) is not the
+      // session's business.
+      if (isForeignToken(token)) {
+        continue;
+      }
+      try {
+        session.record(token, scope);
+      } catch {
+        // The RPC already succeeded. A token the session cannot parse must not
+        // turn a committed write into a thrown error, because a caller that
+        // retries on that error performs the write twice. The session counts
+        // it (`ConsistencySession.rejected`) instead.
+      }
     }
   }
+
 
 }

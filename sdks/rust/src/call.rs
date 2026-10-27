@@ -184,11 +184,22 @@ impl RetryPlan {
 
     /// The connect-rust options one attempt carries.
     pub(crate) async fn call_options(&self) -> Result<CallOptions, LoamsError> {
+        self.call_options_within(self.timeout.filter(|t| !t.is_zero()))
+            .await
+    }
+
+    /// The options of one attempt with `timeout` as its deadline: what is left
+    /// of the call's budget, so the server is told the truth in
+    /// `connect-timeout-ms`.
+    async fn call_options_within(
+        &self,
+        timeout: Option<Duration>,
+    ) -> Result<CallOptions, LoamsError> {
         let mut options = CallOptions::default();
         for (name, value) in self.headers().await? {
             options = options.with_header(name, value);
         }
-        if let Some(timeout) = self.timeout {
+        if let Some(timeout) = timeout {
             options = options.with_timeout(timeout);
         }
         Ok(options)
@@ -206,15 +217,41 @@ pub struct Attempt {
     pub refreshed: bool,
 }
 
+/// The unary deadline when neither the client nor the call sets one (R12).
+pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// The error a call that ran out of its own deadline raises (R12): a
+/// `deadline_exceeded` with the client-side reason `client_deadline_exceeded`.
+/// It is never retried, because the budget is spent.
+#[must_use]
+pub fn client_deadline_exceeded(rpc: &str, budget: Duration) -> LoamsError {
+    LoamsError::new(
+        crate::error::ErrorKind::DeadlineExceeded,
+        connectrpc::ErrorCode::DeadlineExceeded,
+        format!(
+            "{rpc} did not answer within the client's {} ms deadline",
+            budget.as_millis()
+        ),
+    )
+    .with_rpc(rpc)
+    .with_client_reason(crate::error::CLIENT_DEADLINE_EXCEEDED)
+    .with_metadata("timeout_ms", budget.as_millis().to_string())
+}
+
 /// Runs `send` until it answers or the plan says stop, and returns the last
 /// failure as a [`LoamsError`].
 ///
 /// `request` is passed **by value** and handed to `send` on every attempt: the
 /// idempotency key lives inside it (R3), so every attempt carries the identical
 /// key whatever the sender does with the value.
+///
+/// `plan.timeout` is **one budget for the whole call**, retries and backoff
+/// included (R12). Each attempt is sent with what is left of it, and when it
+/// runs out the call fails with [`client_deadline_exceeded`] and is not
+/// retried. A zero timeout is no deadline.
 pub async fn call_with_retry<Req, Resp, F, Fut>(
     request: Req,
-    mut send: F,
+    send: F,
     plan: &RetryPlan,
     rpc: &str,
 ) -> Result<Resp, LoamsError>
@@ -223,10 +260,53 @@ where
     F: FnMut(Req, Attempt) -> Fut,
     Fut: Future<Output = Result<Resp, ConnectError>>,
 {
+    let Some(budget) = plan.timeout.filter(|t| !t.is_zero()) else {
+        return retry_loop(request, send, plan, rpc, None).await;
+    };
+    let deadline = tokio::time::Instant::now() + budget;
+    match tokio::time::timeout_at(
+        deadline,
+        retry_loop(request, send, plan, rpc, Some(deadline)),
+    )
+    .await
+    {
+        Ok(Err(error))
+            if error.code == connectrpc::ErrorCode::DeadlineExceeded
+                && tokio::time::Instant::now() >= deadline =>
+        {
+            Err(client_deadline_exceeded(rpc, budget))
+        }
+        Ok(result) => result,
+        Err(_elapsed) => Err(client_deadline_exceeded(rpc, budget)),
+    }
+}
+
+async fn retry_loop<Req, Resp, F, Fut>(
+    request: Req,
+    mut send: F,
+    plan: &RetryPlan,
+    rpc: &str,
+    deadline: Option<tokio::time::Instant>,
+) -> Result<Resp, LoamsError>
+where
+    Req: Clone,
+    F: FnMut(Req, Attempt) -> Fut,
+    Fut: Future<Output = Result<Resp, ConnectError>>,
+{
+    let remaining = || {
+        deadline.map(|deadline| {
+            deadline
+                .saturating_duration_since(tokio::time::Instant::now())
+                .max(Duration::from_millis(1))
+        })
+    };
     let mut refreshed = false;
     let mut attempt: u32 = 0;
     loop {
-        let options = plan.call_options().await?;
+        let options = match deadline {
+            Some(_) => plan.call_options_within(remaining()).await?,
+            None => plan.call_options().await?,
+        };
         match send(
             request.clone(),
             Attempt {

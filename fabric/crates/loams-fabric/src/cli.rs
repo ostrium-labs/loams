@@ -80,12 +80,13 @@ pub struct HouseArgs {
     /// (`http://otel-collector:4318`); none by default (HS1 Task 23).
     #[arg(long)]
     pub otlp_endpoint: Option<String>,
-    /// The native protocol listener (9000; served from HS1 Task 31)
-    /// [default with --single-node: 127.0.0.1:9000].
+    /// The ClickHouse native protocol's listener (9000, loopback only)
+    /// [default with --single-node: 127.0.0.1:9000, skipped when taken].
     #[arg(long)]
     pub native_listen: Option<SocketAddr>,
-    /// The TLS native listener (9440; served with the native protocol, HS1
-    /// Task 31).
+    /// The native protocol's TLS listener (9440), with the TLS listener's
+    /// certificate; a user with an empty password is refused off loopback.
+    /// Also LOAMS_HOUSE_NATIVE_TLS_LISTEN.
     #[arg(long)]
     pub native_tls_listen: Option<SocketAddr>,
     /// Admin and metrics, `GET /metrics` (HS1 Task 23) [default: 127.0.0.1:8125].

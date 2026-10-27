@@ -352,8 +352,11 @@ describe('SDK1 Task 4 — the conformance corpus', () => {
       }
     }
     for (const [clause, entry] of Object.entries(manifest.clauses)) {
-      if (clause === 'R2' || clause === 'R4' || clause === 'R6') {
-        // Stated rather than silent: these three have no recording and say why.
+      // R2 has no recording; R4 and R6 are recorded by the app scenario, which
+      // is `required: false` until SDKP S1; R11–R14 (SDKP P0e) are pinned
+      // against stubs in each language. Stated rather than silent: each says
+      // why.
+      if (['R2', 'R4', 'R6', 'R11', 'R12', 'R13', 'R14'].includes(clause)) {
         assert.equal(entry.covered, false, `${clause} is now covered; update the note`);
         assert.ok(entry.note && entry.note.length > 40, `${clause} has no explanation`);
         continue;

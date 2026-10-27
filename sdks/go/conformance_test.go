@@ -499,7 +499,19 @@ func TestGoConformanceAllRequiredFixtures(t *testing.T) {
 			t.Fatalf("Conformance failures (%d):\n  - %s", len(failures), strings.Join(failures, "\n  - "))
 		}
 
-		if err := writeConformanceReport(server.endpoint, ran); err != nil {
+		// The SDKP app scenario, through the public facade (SDKP P0d): not
+		// required until S1, but reported, because `check-languages --suite
+		// app` reads the same report. Only against the fixture server.
+		reported := append([]string{}, ran...)
+		if !server.live {
+			for _, name := range appFixtureNames(t) {
+				if err := replayApp(t, server.endpoint, name); err != nil {
+					t.Fatalf("app fixture: %v", err)
+				}
+				reported = append(reported, name)
+			}
+		}
+		if err := writeConformanceReport(server.endpoint, reported); err != nil {
 			t.Fatalf("writing conformance report: %v", err)
 		}
 

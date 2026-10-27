@@ -12,7 +12,7 @@ Plan: AP2 in the main repository (`docs/plans/2026-10-01-ap2-android-compose.md`
 | `:conformance` | Kotlin/JVM tests | The network layer against a live mock: QR pairing, signed decisions reaching the stream, step-up, drop and resume, sealed push round trip, an endpoint catalogue |
 | `:data` | Android library | Keystore keys (`decide-<instance>` behind biometrics for every use, `dpop-<instance>` without), BiometricPrompt signing with a CryptoObject, AES-GCM Keystore encryption, the session store |
 | `:push` | Android library | FCM registration stub, per-instance HPKE keys, unseal-and-display, notification channels |
-| `:app` | Android app | Compose UI: welcome (QR, pasted payload, typed code with fingerprint check, Authentik sign-in, demo), approvals, status, settings |
+| `:app` | Android app | Compose UI: welcome (QR, pasted payload, typed code with fingerprint check, OIDC sign-in (`OidcSignIn`), demo), approvals, status, settings |
 
 The JVM modules hold everything that can be tested without a device, so `./gradlew :core:test :transport:test` runs on any machine with a JDK, and the conformance suite needs only the Go mock.
 
@@ -32,7 +32,7 @@ The JVM modules hold everything that can be tested without a device, so `./gradl
 
 ## Stubbed or not yet built
 
-- **Sign-in against a real server.** The pairing grant, the Authentik token exchange and DPoP are the unified auth plan's (Q438); today they run against the mock. DPoP proofs are not sent yet (the `dpop-` key exists).
+- **Sign-in against a real server.** The pairing grant, the OIDC token exchange and DPoP are the unified auth plan's (Q438); today they run against the mock. DPoP proofs are not sent yet (the `dpop-` key exists).
 - **FCM.** `FcmStubRegistrar` returns a fake token; in debug builds, Settings can show the mock's sealed pushes while the app is open. Real FCM needs the Firebase project (Q420).
 - **The cache** (AP2 Task 5), **jobs and the inbox screen** (Task 7), **WorkManager sync**, **multiple instances**, **the 6-word fingerprint** (the typed-code path shows the thumbprint in groups of four).
 - **Release signing and R8 rules** (Task 10, Q420).

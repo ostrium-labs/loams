@@ -499,7 +499,7 @@ public interface SearchRequestOrBuilder extends
    *
    * <code>.google.protobuf.Struct rerank = 17 [json_name = "rerank", deprecated = true];</code>
    * @deprecated loams.collection.v1.SearchRequest.rerank is deprecated.
-   *     See loams/collection/v1/query.proto;l=230
+   *     See loams/collection/v1/query.proto;l=232
    * @return Whether the rerank field is set.
    */
   @java.lang.Deprecated boolean hasRerank();
@@ -512,7 +512,7 @@ public interface SearchRequestOrBuilder extends
    *
    * <code>.google.protobuf.Struct rerank = 17 [json_name = "rerank", deprecated = true];</code>
    * @deprecated loams.collection.v1.SearchRequest.rerank is deprecated.
-   *     See loams/collection/v1/query.proto;l=230
+   *     See loams/collection/v1/query.proto;l=232
    * @return The rerank.
    */
   @java.lang.Deprecated com.google.protobuf.Struct getRerank();
@@ -535,7 +535,7 @@ public interface SearchRequestOrBuilder extends
    *
    * <code>.google.protobuf.Struct expand = 18 [json_name = "expand", deprecated = true];</code>
    * @deprecated loams.collection.v1.SearchRequest.expand is deprecated.
-   *     See loams/collection/v1/query.proto;l=233
+   *     See loams/collection/v1/query.proto;l=235
    * @return Whether the expand field is set.
    */
   @java.lang.Deprecated boolean hasExpand();
@@ -547,7 +547,7 @@ public interface SearchRequestOrBuilder extends
    *
    * <code>.google.protobuf.Struct expand = 18 [json_name = "expand", deprecated = true];</code>
    * @deprecated loams.collection.v1.SearchRequest.expand is deprecated.
-   *     See loams/collection/v1/query.proto;l=233
+   *     See loams/collection/v1/query.proto;l=235
    * @return The expand.
    */
   @java.lang.Deprecated com.google.protobuf.Struct getExpand();

@@ -1,31 +1,31 @@
-# MT3 — GitOps with Clever Cloud's Open-Source Stack, Knative and Authentik Implementation Plan
+# MT3 — GitOps with Clever Cloud's Open-Source Stack, Knative and Zitadel Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Execute task by task, test first. Each task lists the interfaces it must produce and the tests that must exist and pass before it is done. Where this plan gives exact values (paths, wave numbers, health expressions, defaults), use them verbatim. The code is not pre-written in this plan (M0.3 Ruling 1).
 
-> **Status: Planned** (2026-10-02). **Track MT** (design [§38](../design/38-knative-authentik-gitops.md) §6, D453–D456; amends [§25](../design/25-clever-cloud-stack.md) §6). Builds on §25's layout (`deploy/gitops/`, the umbrella chart `deploy/helm/loams-stack`, D186) and on MT1 Task 1 (Authentik's values and blueprints) and MT2 Task 1 (the Knative chart). If §25's layout has not been built yet, Task 1 creates the minimum of it that the waves need and records that in "Rulings made during execution". Branches `mt3-t<N>`, stacked; PRs target `main`. MT3 is YAML, Lua and shell; it adds no Rust crate.
+> **Status: Planned** (2026-10-02; the identity waves amended 2026-10-21 by [§76](../design/76-identity-and-authorization.md) §12.2 and D1600: Zitadel and OpenFGA). **Track MT** (design [§38](../design/38-knative-authentik-gitops.md) §6, D453–D456; amends [§25](../design/25-clever-cloud-stack.md) §6). Builds on §25's layout (`deploy/gitops/`, the umbrella chart `deploy/helm/loams-stack`, D186) and on IA1 (Zitadel's values and configuration; it supersedes MT1 Task 1) and MT2 Task 1 (the Knative chart). If §25's layout has not been built yet, Task 1 creates the minimum of it that the waves need and records that in "Rulings made during execution". Branches `mt3-t<N>`, stacked; PRs target `main`. MT3 is YAML, Lua and shell; it adds no Rust crate.
 
 **Goal:**
-- §25's Argo CD app-of-apps gains D455's waves: CloudNativePG and the Knative Operator, Authentik's Postgres, Authentik with Loams’ blueprints, `KnativeServing` and `KnativeEventing`, and `loams-knative-source`.
+- §25's Argo CD app-of-apps gains D455's waves: CloudNativePG and the Knative Operator, Zitadel's Postgres, Zitadel with Loams’ configuration and OpenFGA (§76 §12.2), `KnativeServing` and `KnativeEventing`, and `loams-knative-source`.
 - Lua health checks for the new resources.
 - A Flux layout with the same order (D454).
 - The k3s small profile (D456) and the Clever Kubernetes Engine profile with Clever's Terraform and Karpenter providers (D453), both tested.
 
 **Architecture:**
 - **Argo CD is the engine** (D186, D453). Clever Cloud supplies `loams-operator`'s skeleton (D185) and, on CKE, the Terraform provider below GitOps and the Karpenter provider in wave −1.
-- **Upstream charts by reference.** Authentik's chart (GPL-3.0) and Knative's operator manifests are pulled by Argo CD from their upstream repositories with pinned versions; nothing upstream is copied into `deploy/` (D452).
-- **Every component is a toggle.** `envs/<profile>/values.yaml` turns Knative and Authentik on or off; with both off, the waves are §25's.
+- **Upstream charts by reference.** Zitadel's chart (`zitadel/zitadel-charts`, Apache-2.0; Zitadel itself AGPL-3.0, run unmodified, D1602), OpenFGA's chart and Knative's operator manifests are pulled by Argo CD from their upstream repositories with pinned versions; nothing upstream is copied into `deploy/` (D452).
+- **Every component is a toggle.** `envs/<profile>/values.yaml` turns Knative and identity (Zitadel and OpenFGA) on or off; with both off, the waves are §25's.
 
-**Tech Stack:** Argo CD v3.5.x (pinned), Flux v2.9.x (pinned), Helm 3, k3d and k3s v1.37.1+k3s1 with `--disable traefik`, CloudNativePG v1.30.x, Knative Operator knative-v1.23.1, Authentik chart `authentik-2026.8.3`, `terraform-provider-clevercloud` v2.3.0, `karpenter-provider-clever-cloud` v0.13.0. Test tools: `kubeconform`, `helm template`, `argocd app wait` in CI, `flux check`, `shellcheck`. Task 0 checks every version and licence.
+**Tech Stack:** Argo CD v3.5.x (pinned), Flux v2.9.x (pinned), Helm 3, k3d and k3s v1.37.1+k3s1 with `--disable traefik`, CloudNativePG v1.30.x, Knative Operator knative-v1.23.1, Zitadel chart `zitadel-10.4.0`, OpenFGA chart `openfga-0.3.16` (§76 §12.2), `terraform-provider-clevercloud` v2.3.0, `karpenter-provider-clever-cloud` v0.13.0. Test tools: `kubeconform`, `helm template`, `argocd app wait` in CI, `flux check`, `shellcheck`. Task 0 checks every version and licence.
 
 **Spec:**
 - [§38](../design/38-knative-authentik-gitops.md) §4.4, §6 (all), §9, §12 Q447, Q449, Q453.
 - [§25](../design/25-clever-cloud-stack.md) §5 (the operator fork), §6 (layout, waves, health), Q-RT-11.
-- [MT1](2026-10-02-mt1-authentik-identity.md) Task 1; [MT2](2026-10-02-mt2-knative.md) Task 1.
+- [IA1](2026-10-21-ia1-identity-authz.md) (it supersedes MT1 Task 1); [MT2](2026-10-02-mt2-knative.md) Task 1.
 
 ## Global Constraints
 
 Same as the M1 overview §8, plus:
-- **No vendored upstream charts** with copyleft licences (D452, D457). A CI check fails if `deploy/` contains a `Chart.yaml` whose `name` is `authentik`.
+- **No vendored upstream charts** with copyleft licences (D452, D457). A CI check fails if `deploy/` contains a `Chart.yaml` whose `name` is `zitadel` or `openfga`.
 - **No secrets in Git.** Secrets are `ExternalSecret`s or Dapr secret-store references (D189); a `gitleaks` pass runs on `deploy/`.
 - **CKE tests cost money.** The CKE profile is validated by `terraform validate` and `helm template` in CI; a real CKE apply is manual and needs the owner's account decision.
 - **The build machine.** No cargo build in this plan. k3d jobs run in CI.
@@ -35,20 +35,20 @@ Same as the M1 overview §8, plus:
 
 | # | Ruling | Why | Cost if wrong |
 |---|---|---|---|
-| 1 | **Waves** exactly as §38 §6.3: −2 CRDs (+ Knative Operator and CNPG CRDs); −1 operators (+ Knative Operator, CNPG operator); 1 `authentik-db`; 2 `authentik`; 3 `knative` (`KnativeServing`, `KnativeEventing`); 5 `knative-sources` | D455 | Reordering later is a values change |
-| 2 | **Health checks** (Argo CD `resource.customizations.health`, Lua): `operator.knative.dev/KnativeServing` and `KnativeEventing` → Healthy when `status.conditions` has `Ready=True`, Progressing otherwise, Degraded when `Ready=False` with a reason; `postgresql.cnpg.io/Cluster` → Healthy when `status.phase == "Cluster in healthy state"`; `sources.loams.dev/LoamsSource` → `Ready=True`. Authentik's `Application` is Healthy when its server `Deployment` is available and a `Job` hook `authentik-blueprints-check` (a curl of `/-/health/ready/` and of the blueprint instance status through the API) succeeded | Waves wait only for healthy resources (§25 §6.1) | A Lua error marks the resource Unknown; tested in Task 2 |
-| 3 | **Authentik's `Application`** sources the chart from `https://charts.goauthentik.io`, `targetRevision: 2026.8.3`, with `deploy/authentik/values.yaml` from this repository as a second source (`$values`); blueprints come from a `ConfigMap` generated from `deploy/authentik/blueprints/` by Kustomize in the same `Application` | Argo CD multi-source keeps the chart upstream and the values here | Multi-source is Argo CD ≥ 2.6; pinned v3.5 has it |
-| 4 | **Profiles**: `envs/dev-k3d` (one replica everywhere, RustFS single node, one PD and TiKV, Authentik one replica on one CNPG instance, Knative on); `envs/selfhosted` (three TiKV, CNPG with two replicas, Knative off by default); `envs/clever-cke` (Cellar or RustFS, Karpenter on, Knative off by default); `envs/k3s-single` (as `dev-k3d`, plus the Flux variant) | D454, D456 | New profiles are new values files |
+| 1 | **Waves** exactly as §38 §6.3: −2 CRDs (+ Knative Operator and CNPG CRDs); −1 operators (+ Knative Operator, CNPG operator); 1 `zitadel-db`; 2 `zitadel` and `openfga`; 3 `knative` (`KnativeServing`, `KnativeEventing`); 5 `knative-sources` | D455, §76 §12.2 | Reordering later is a values change |
+| 2 | **Health checks** (Argo CD `resource.customizations.health`, Lua): `operator.knative.dev/KnativeServing` and `KnativeEventing` → Healthy when `status.conditions` has `Ready=True`, Progressing otherwise, Degraded when `Ready=False` with a reason; `postgresql.cnpg.io/Cluster` → Healthy when `status.phase == "Cluster in healthy state"`; `sources.loams.dev/LoamsSource` → `Ready=True`. Zitadel's `Application` is Healthy when its `Deployment` is available and a `Job` hook `zitadel-config-check` (a curl of Zitadel's readiness endpoint and a check through its management API that the Git configuration is applied; verify both in Task 0) succeeded | Waves wait only for healthy resources (§25 §6.1) | A Lua error marks the resource Unknown; tested in Task 2 |
+| 3 | **Zitadel's `Application`** sources the chart from `zitadel/zitadel-charts`, `targetRevision: 10.4.0`, with `deploy/zitadel/values.yaml` from this repository as a second source (`$values`); the configuration (orgs, projects, applications) comes from Git as IA1 lays it out, since Zitadel starts empty and is configured from Git (§76 §13) | Argo CD multi-source keeps the chart upstream and the values here | Multi-source is Argo CD ≥ 2.6; pinned v3.5 has it |
+| 4 | **Profiles**: `envs/dev-k3d` (one replica everywhere, RustFS single node, one PD and TiKV, Zitadel and OpenFGA one replica each on one CNPG instance, Knative on); `envs/selfhosted` (three TiKV, CNPG with two replicas, Knative off by default); `envs/clever-cke` (Cellar or RustFS, Karpenter on, Knative off by default); `envs/k3s-single` (as `dev-k3d`, plus the Flux variant) | D454, D456 | New profiles are new values files |
 | 5 | **Flux layout** in `deploy/gitops/flux/`: one `Kustomization` per wave with `dependsOn` on the previous wave and `wait: true`; `HelmRelease`s for upstream charts with `spec.chart.spec.sourceRef` pointing at `HelmRepository` sources (Flux's `chartRef` accepts only `OCIRepository`, `HelmChart` or `ExternalArtifact`); the same values files | D454: same order, no second source of truth | Flux and Argo CD drift if someone edits one; a CI test renders both and diffs the resource sets |
 
 ## Carried in
 
-From §25: the umbrella chart, the root `Application`, the existing health customizations. From MT1: `deploy/authentik/{values.yaml,blueprints/}`. From MT2: `deploy/helm/loams-stack/charts/knative/`.
+From §25: the umbrella chart, the root `Application`, the existing health customizations. From IA1: `deploy/zitadel/values.yaml` and the Zitadel configuration. From MT2: `deploy/helm/loams-stack/charts/knative/`.
 
 ## Review Focus
 
-1. **Order is enforced by health, not by luck.** Tests: Task 2 (`authentik_waits_for_db`, `knative_waits_for_operator`).
-2. **Nothing copyleft or secret is in `deploy/`.** Tests: Task 1 (`no_vendored_authentik_chart`, `gitleaks_clean`).
+1. **Order is enforced by health, not by luck.** Tests: Task 2 (`zitadel_waits_for_db`, `knative_waits_for_operator`).
+2. **Nothing copyleft or secret is in `deploy/`.** Tests: Task 1 (`no_vendored_identity_chart`, `gitleaks_clean`).
 3. **Flux and Argo CD apply the same resources.** Tests: Task 5 (`flux_and_argo_render_same_set`).
 
 ## Tasks
@@ -61,33 +61,33 @@ From §25: the umbrella chart, the root `Application`, the existing health custo
 
 ### Task 1: Waves and Applications
 
-**Files:** `deploy/gitops/apps/{cnpg,knative-operator,authentik-db,authentik,knative,knative-sources}.yaml`, `deploy/gitops/envs/*/values.yaml`, `.github/workflows/gitops.yml`.
+**Files:** `deploy/gitops/apps/{cnpg,knative-operator,zitadel-db,zitadel,openfga,knative,knative-sources}.yaml`, `deploy/gitops/envs/*/values.yaml`, `.github/workflows/gitops.yml`.
 
-**Produces:** Ruling 1's `Application`s with `argocd.argoproj.io/sync-wave` annotations; Ruling 3's multi-source Authentik `Application`; Ruling 4's profiles; the CI checks of the Global Constraints.
+**Produces:** Ruling 1's `Application`s with `argocd.argoproj.io/sync-wave` annotations; Ruling 3's multi-source Zitadel `Application`; Ruling 4's profiles; the CI checks of the Global Constraints.
 
-**Tests:** `kubeconform_all_profiles`; `waves_match_design` (a script reads every `Application`'s wave and compares to Ruling 1); `no_vendored_authentik_chart`; `gitleaks_clean`; `disabled_components_render_nothing`.
+**Tests:** `kubeconform_all_profiles`; `waves_match_design` (a script reads every `Application`'s wave and compares to Ruling 1); `no_vendored_identity_chart`; `gitleaks_clean`; `disabled_components_render_nothing`.
 
-**Commit:** `gitops: waves for CloudNativePG, Authentik and Knative`.
+**Commit:** `gitops: waves for CloudNativePG, Zitadel, OpenFGA and Knative`.
 
 ### Task 2: Health checks
 
-**Files:** `deploy/gitops/bootstrap/argocd/argocd-cm.yaml` (`resource.customizations.health.*`), `deploy/gitops/hooks/authentik-blueprints-check.yaml`.
+**Files:** `deploy/gitops/bootstrap/argocd/argocd-cm.yaml` (`resource.customizations.health.*`), `deploy/gitops/hooks/zitadel-config-check.yaml`.
 
 **Produces:** Ruling 2's Lua checks and the hook `Job`.
 
-**Tests:** Lua unit tests with Argo CD's `argocd admin settings resource-overrides health` against fixture resources (Ready, not Ready, missing status) for each kind; `authentik_waits_for_db` and `knative_waits_for_operator` on k3d (stop the dependency, assert the dependent wave stays OutOfSync/Progressing).
+**Tests:** Lua unit tests with Argo CD's `argocd admin settings resource-overrides health` against fixture resources (Ready, not Ready, missing status) for each kind; `zitadel_waits_for_db` and `knative_waits_for_operator` on k3d (stop the dependency, assert the dependent wave stays OutOfSync/Progressing).
 
-**Commit:** `gitops: health checks for Knative, CloudNativePG, Authentik and LoamsSource`.
+**Commit:** `gitops: health checks for Knative, CloudNativePG, Zitadel and LoamsSource`.
 
-### Task 3: Authentik's database and secrets
+### Task 3: Zitadel's database and secrets
 
-**Files:** `deploy/gitops/apps/authentik-db.yaml` (a CNPG `Cluster` `authentik-db`, database `authentik`, owner `authentik`), the secret references in `deploy/authentik/values.yaml`.
+**Files:** `deploy/gitops/apps/zitadel-db.yaml` (a CNPG `Cluster` `zitadel-db`, database `zitadel`, owner `zitadel`; OpenFGA gets its own database, D1617), the secret references in `deploy/zitadel/values.yaml`.
 
-**Produces:** the CNPG cluster per profile (one instance in `dev-k3d`, two in `selfhosted`); Authentik's `AUTHENTIK_POSTGRESQL__*` from the CNPG-generated secret; `AUTHENTIK_SECRET_KEY` and the bootstrap token from the secret path (D189).
+**Produces:** the CNPG cluster per profile (one instance in `dev-k3d`, two in `selfhosted`); Zitadel's database settings from the CNPG-generated secret; its masterkey and the first admin's credentials from the secret path (D189; Task 0 checks the chart's value names).
 
-**Tests:** `authentik_connects_to_cnpg`; `authentik_survives_db_failover` (`selfhosted` profile on k3d: kill the primary, Authentik's `/-/health/ready/` recovers within 2 minutes).
+**Tests:** `zitadel_connects_to_cnpg`; `zitadel_survives_db_failover` (`selfhosted` profile on k3d: kill the primary, Zitadel's readiness endpoint recovers within 2 minutes).
 
-**Commit:** `gitops: Authentik on CloudNativePG with secrets from the secret store`.
+**Commit:** `gitops: Zitadel on CloudNativePG with secrets from the secret store`.
 
 ### Task 4: The Clever Kubernetes Engine profile
 
@@ -113,7 +113,7 @@ From §25: the umbrella chart, the root `Application`, the existing health custo
 
 **Files:** `scripts/k3s/single-node.sh`, `docs/guides/gitops-small.md`.
 
-**Produces:** a single-node k3s install script (`--disable traefik`) and a measured table (RSS per component: Argo CD or Flux, RustFS, PD, TiKV, Authentik with CNPG, Knative Serving with Kourier, the engine) for §38 §6.4 and Q-RT-11.
+**Produces:** a single-node k3s install script (`--disable traefik`) and a measured table (RSS per component: Argo CD or Flux, RustFS, PD, TiKV, Zitadel and OpenFGA with CNPG, Knative Serving with Kourier, the engine) for §38 §6.4 and Q-RT-11.
 
 **Tests:** `single_node_profile_reaches_ready` (CI on k3d with the same values); the measurements recorded, not gated.
 

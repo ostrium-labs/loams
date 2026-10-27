@@ -698,6 +698,11 @@ impl Lake {
         if ddl::class_of(&loaded.metadata) == TableClass::External {
             return Err(access_denied(&format!("{what} {database}.{table}")));
         }
+        if ddl::class_of(&loaded.metadata) == TableClass::View {
+            return Err(HouseError::from(crate::errors::ChError::not_implemented(
+                format!("{what} {database}.{table}: it is a view, which holds no rows"),
+            )));
+        }
         Ok(loaded)
     }
 

@@ -5,6 +5,8 @@
 
 Status: **Approved** · 2026-09-22 · revised 2026-09-25 (architecture review; positioning D50, surfaces D42–D45)
 
+> **Amendment (approved 2026-10-21; [§77](77-kv-gateways.md), D1640).** RESP (Redis) and CQL (Cassandra) join the protocols Loams speaks (D42), as `loams-gateway` modules on the `loams-kv` store, with tight scopes and published out-of-scope lists. They are designed, not built.
+
 ---
 
 ## 1. The problem
@@ -106,7 +108,7 @@ Primary buyer: platform teams at companies running AI apps at scale who are payi
 
 - **License:** Apache-2.0 for the entire engine, all gateways and the operator. Big-company adoption requires it; AGPL/BSL/SSPL dependencies are excluded (§11).
 - **Governance:** start company-led, plan for a foundation (LF AI & Data — as Vortex did — or CNCF) once there are ≥3 corporate contributors.
-- **Monetization (if a company forms):** managed cloud (the ClickHouse/Confluent model) — multi-region control plane, autoscaling, hosted audit UI, long retention, SIEM export, SCIM and enforced SSO, support. **Do not** withhold reliability (quorum WAL) or performance (hot tiers) features from OSS; that is exactly the AutoMQ/LanceDB gap Loams wins on.
+- **Business model (updated 2026-10-19, D1119):** no open core and no paid edition; everything, including metering, billing and the control plane, is Apache-2.0. Ostrium Labs is a research lab building open-source Loams (D1323, 2026-10-21; the earlier services offering is removed). **Do not** withhold any feature from OSS, reliability (quorum WAL) and performance (hot tiers) above all; that is exactly the AutoMQ/LanceDB gap Loams wins on.
 
 ## 9. Launch demo
 

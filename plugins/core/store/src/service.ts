@@ -320,9 +320,9 @@ export class StoreService extends Service {
   /*    cookie value itself. A dump of this table then yields nothing a      */
   /*    browser would accept, so a stolen backup is not a session.           */
   /*  - `rotateAuthSessionTokens` is a compare-and-swap on `refresh_token`.   */
-  /*    Authentik's `refresh_token_threshold` defaults to 0, i.e. the         */
-  /*    refresh token is ALWAYS renewed, so the returned string differs from  */
-  /*    the one sent and the old one is dead. Two concurrent requests that   */
+  /*    Many identity providers rotate the refresh token on every use, so     */
+  /*    the returned string differs from the one sent and the old one is     */
+  /*    dead. Two concurrent requests that                                    */
   /*    both read the same token would therefore see one succeed and one      */
   /*    `invalid_grant`. The CAS makes exactly one of them win.              */
   /* ---------------------------------------------------------------------- */

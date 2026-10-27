@@ -53,6 +53,7 @@
 //   node sdks/conformance/record-fixtures.mjs                       # both servers
 //   node sdks/conformance/record-fixtures.mjs --source loams-dev
 //   node sdks/conformance/record-fixtures.mjs --source apps-mock --only error
+//   node sdks/conformance/record-fixtures.mjs --source app --scenario app_sql
 //   LOAMS_TEST_ENDPOINT=http://127.0.0.1:8080 node …/record-fixtures.mjs
 //
 // A body is stored base64 when it is not UTF-8 JSON, so a gRPC-Web frame or a
@@ -62,6 +63,7 @@ import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startAppsMock, TOKENS } from './apps-mock.mjs';
+import { APP_SCENARIOS, APP_VOLATILE } from './app-scenarios.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 function arg(name, fallback) {
@@ -1425,6 +1427,49 @@ async function recordScenario(scenario, options) {
   };
 }
 
+/**
+ * Records one app scenario (SDKP P0d) against a running `loams dev`.
+ *
+ * Unlike an apps-mock scenario, a step's request may be a function of the steps
+ * recorded before it (a read at a write's token, the next page). It is
+ * evaluated once, here, and the fixture holds the literal request, so a replay
+ * sends exactly these bytes. Each step keeps the facade `call` that makes it
+ * and, where one does, the builder corpus case it is (`builder`).
+ */
+async function recordAppScenario(base, scenario) {
+  const steps = [];
+  for (const [at, step] of scenario.steps.entries()) {
+    const request = typeof step.request === 'function' ? step.request(steps) : step.request;
+    const recorded = await recordStep(base, { ...step, request });
+    checkStep(scenario.name, at, recorded, steps);
+    steps.push({
+      about: recorded.about,
+      call: step.call,
+      ...(step.builder ? { builder: step.builder } : {}),
+      request: recorded.request,
+      response: recorded.response,
+      expect: recorded.expect,
+    });
+  }
+  return {
+    name: scenario.name,
+    kind: scenario.kind,
+    about: scenario.about,
+    transport: scenario.transport,
+    required: scenario.required,
+    pinnedBy: scenario.pinnedBy ?? [],
+    ...(scenario.part ? { part: scenario.part } : {}),
+    reason: null,
+    source: {
+      server: 'loams dev',
+      commit: COMMIT,
+      recordedAt: new Date().toISOString(),
+    },
+    volatile: APP_VOLATILE,
+    steps,
+  };
+}
+
 // ===========================================================================
 // Projections.
 // ===========================================================================
@@ -1510,12 +1555,17 @@ function statusProjection(fixtures) {
 function errorProjection(fixtures) {
   const rows = [];
   for (const fixture of fixtures) {
-    if (fixture.kind !== 'error') {
+    if (fixture.kind !== 'error' && fixture.kind !== 'app') {
       continue;
     }
     for (const [at, step] of (fixture.steps ?? [fixture]).entries()) {
+      // An app scenario (SDKP P0d) is mostly successes; its refusals are the
+      // steps that expect a reason, and only those are rows here.
+      if (fixture.kind === 'app' && !step.expect?.reason) {
+        continue;
+      }
       rows.push({
-        reason: fixture.reason ?? null,
+        reason: fixture.kind === 'app' ? step.expect.reason : (fixture.reason ?? null),
         fixture: fixture.name,
         step: at,
         server: fixture.source?.server ?? 'loams dev',
@@ -2028,6 +2078,12 @@ const UNPRODUCIBLE_REASONS = [
     standIn: null,
   },
   {
+    reason: 'batch_partially_applied',
+    code: 'aborted',
+    why: 'Raised by the SDKs, never by a server (runtime contract R13).',
+    standIn: null,
+  },
+  {
     reason: 'workspace_read_only',
     code: 'failed_precondition',
     why:
@@ -2443,6 +2499,102 @@ const UNPRODUCIBLE_REASONS = [
       'both recorder servers run without authentication, so no recording carries it.',
     standIn: null,
   },
+  {
+    reason: "live_app_disabled",
+    code: "failed_precondition",
+    why: "Needs a Live app that was disabled or deleted through LiveAdminService; the recorder creates no apps (LV1 Task 13).",
+    standIn: null,
+  },
+  {
+    reason: "live_app_exists",
+    code: "failed_precondition",
+    why: "Needs a second CreateApp under a taken name; the recorder creates no apps (LV1 Task 13).",
+    standIn: null,
+  },
+  {
+    reason: "live_app_mismatch",
+    code: "permission_denied",
+    why: "Needs a credential bound to another environment's Live app; the recorder's credentials are bound to none (LV1 Task 15).",
+    standIn: null,
+  },
+  {
+    reason: "live_origin_not_allowed",
+    code: "permission_denied",
+    why: "Needs a browser Origin a Live app does not list; the recorder sends no Origin and creates no apps (LV1 Task 18).",
+    standIn: null,
+  },
+  {
+    reason: "session_rotate",
+    code: "unavailable",
+    why: "Needs a Watch stream held open for 24 hours; the recorder's sessions are short (LV1 Task 17).",
+    standIn: null,
+  },
+  {
+    reason: "session_gone",
+    code: "not_found",
+    why: "Needs a second Live node whose session a call names; the recorder runs one engine (LV1 Task 24).",
+    standIn: null,
+  },
+  {
+    reason: "node_draining",
+    code: "unavailable",
+    why: "Needs an engine shutting down while the recorder calls it (LV1 Task 24).",
+    standIn: null,
+  },
+  {
+    reason: "live_function_error",
+    code: "unknown",
+    why: "Needs a deployed function that throws; the recorder deploys nothing (LV1 Task 19).",
+    standIn: null,
+  },
+  {
+    reason: "live_function_timeout",
+    code: "deadline_exceeded",
+    why: "Needs a deployed function that runs past its CPU limit; the recorder deploys nothing (LV1 Task 19).",
+    standIn: null,
+  },
+  {
+    reason: "live_function_out_of_memory",
+    code: "resource_exhausted",
+    why: "Needs a deployed function that runs past its memory limit; the recorder deploys nothing (LV1 Task 19).",
+    standIn: null,
+  },
+  {
+    reason: "live_limit_exceeded",
+    code: "resource_exhausted",
+    why: "Needs a Live write past an app limit; the recorder writes nothing to Live (LV1 Task 19).",
+    standIn: null,
+  },
+  {
+    reason: "result_too_large",
+    code: "resource_exhausted",
+    why: 'Needs a `QueryArrow` answer past `--sql-arrow-max-bytes` (16 MiB); `app_sql` stays small.',
+    standIn: null,
+  },
+  {
+    reason: "namespace_required",
+    code: "invalid_argument",
+    why: "Raised by the SDKs before any network call (runtime contract R11); no server returns it.",
+    standIn: null,
+  },
+  {
+    reason: "invalid_consistency_token",
+    code: "invalid_argument",
+    why: "Raised by the SDKs when a token does not parse (runtime contract R4); the server answers a bad token with invalid_argument.",
+    standIn: null,
+  },
+  {
+    reason: "search_after_needs_tiebreak",
+    code: "invalid_argument",
+    why: "Raised by the SDKs before any network call (SDKP section 2.4); no server returns it.",
+    standIn: null,
+  },
+  {
+    reason: "client_deadline_exceeded",
+    code: "deadline_exceeded",
+    why: "Raised by the SDKs, never by a server (runtime contract R12).",
+    standIn: null,
+  },
 ];
 
 /**
@@ -2586,6 +2738,28 @@ async function main() {
     await recordLoamsDev(base.replace(/\/$/, ''), outDir, fixtures);
   }
 
+  // The app scenarios (SDKP P0d), on the same `loams dev`, after the legacy
+  // cases: those create nothing, and the scenarios expect a fresh `app`
+  // namespace, which is why `run.sh` records against a server of its own.
+  if (source === 'all' || source === 'app') {
+    const base = process.env.LOAMS_TEST_ENDPOINT;
+    if (!base) {
+      throw new Error('LOAMS_TEST_ENDPOINT is not set; the app scenarios record against `loams dev`');
+    }
+    const outDir = join(fixturesDir, 'recorded', 'app');
+    // `--scenario app_sql,app_streams` writes only those. The others still run,
+    // in order, because each scenario builds on the state the last one left; their
+    // committed recordings are left as they are.
+    const picked = arg('scenario', null)?.split(',');
+    for (const scenario of APP_SCENARIOS) {
+      if (picked && !picked.includes(scenario.name)) {
+        await recordAppScenario(base.replace(/\/$/, ''), scenario);
+        continue;
+      }
+      fixtures.push(await writeFixture(outDir, await recordAppScenario(base.replace(/\/$/, ''), scenario)));
+    }
+  }
+
   if (source === 'all' || source === 'apps-mock') {
     const outDir = join(fixturesDir, 'recorded', 'apps-mock');
     for (const scenario of APPS_MOCK_SCENARIOS) {
@@ -2673,6 +2847,7 @@ async function manifestProjection(fixtures) {
       transport: fixture.transport ?? 'connect',
       grpcOnly: (fixture.transport ?? 'connect') === 'grpc-only',
       pinnedBy: fixture.pinnedBy ?? [],
+      ...(fixture.part ? { part: fixture.part } : {}),
       reason: fixture.reason ?? null,
       steps: steps.length,
       volatile: fixture.volatile ?? VOLATILE_BY_FIXTURE[fixture.name] ?? [],
@@ -2746,6 +2921,7 @@ async function manifestProjection(fixtures) {
  * side of it, and it is generated so the two cannot be quoted out of context.
  */
 const CLAUSES = [
+  // R11–R14 (SDKP P0e) are listed after R10, below.
   {
     id: 'R1',
     title: 'Credentials: bearer from a token source, one refresh on `token_expired`.',
@@ -2771,11 +2947,10 @@ const CLAUSES = [
     id: 'R4',
     title: 'Consistency tokens on reads and writes.',
     note:
-      '**No fixture, and none is possible.** No RPC carries a ' +
-      '`consistency_token`: `ListCollections` and the write paths arrive with ' +
-      'API1 Tasks 2–4, and the token\'s encoding is not in the protos yet ' +
-      '(runtime-contract.md, R4). R4 is pinned against a stub, deliberately — a ' +
-      'silently-merged token reads stale data, which is worse than a failure.',
+      'Pinned end to end by `app_collections` (a write\'s `token` is the next ' +
+      'read\'s `consistency.at_least`), which is `required: false` until SDKP S1 ' +
+      'flips the app fixtures; the encoding and `merge` are pinned by ' +
+      '`sdks/fixtures/tokens.json` in every language (runtime-contract.md, R4).',
   },
   {
     id: 'R5',
@@ -2786,12 +2961,9 @@ const CLAUSES = [
     id: 'R6',
     title: 'Pagination: `page_size` in, `next_page_token` out, an iterator of items.',
     note:
-      '**No paged RPC exists on any server**, so there is nothing to record. ' +
-      '`mock_status_list_is_not_paged` is the recording that pins this fact: ' +
-      '`ListApprovals` declares both fields and honours neither, so there is ' +
-      'still no end-to-end page to page. R6 is pinned against a stub; the ' +
-      'end-to-end half arrives with API1 Task 2. Marked `required: false` ' +
-      'precisely so no language is blocked on it.',
+      '`app_collections` pages `ListCollections` and scrolls `ScrollDocuments` end to ' +
+      'end; it is `required: false` until SDKP S1. `mock_status_list_is_not_paged` ' +
+      'still pins that `ListApprovals` honours neither field.',
   },
   {
     id: 'R7',
@@ -2817,6 +2989,31 @@ const CLAUSES = [
       'point) is a property of the SDK, not of a server. What no fixture can ' +
       'pin is a CORS preflight: that needs an origin and a server that answers ' +
       'preflights, and this repository has neither (runtime-contract.md, R10).',
+  },
+  {
+    id: 'R11',
+    title: 'The default namespace, for the app packages only.',
+    note:
+      'Pinned against a stub in every language (`<lang>_default_namespace`); ' +
+      '`app_collections` sends every request with its namespace spelled out, so ' +
+      'a replay checks the filled-in request against the recording.',
+  },
+  {
+    id: 'R12',
+    title: 'Timeouts: one budget per call, `client_deadline_exceeded`, never retried.',
+    note: 'Client-side only: pinned against a stub (`<lang>_timeout_deadline`).',
+  },
+  {
+    id: 'R13',
+    title: '`documents.write_batch`: chunks, one key each, the first failure stops it.',
+    note: 'Client-side loop: pinned against a stub (`<lang>_write_batch_chunks`).',
+  },
+  {
+    id: 'R14',
+    title: '`streams.subscribe`: a resumable loop over `Fetch`.',
+    note:
+      'Pinned against a stub (`<lang>_streams_subscribe_resumes`); `app_streams` ' +
+      'records the server half when `loams.stream.v1` lands (SDKP P0c).',
   },
 ];
 
@@ -2856,6 +3053,7 @@ export async function collectAll() {
   for (const [dir, server] of [
     [flatDir, 'loams dev'],
     [join(flatDir, 'apps-mock'), 'loams-apps-mock'],
+    [join(flatDir, 'app'), 'loams dev'],
   ]) {
     let names;
     try {
@@ -2873,7 +3071,8 @@ export async function collectAll() {
       // the path **relative to the corpus root**, because "is the manifest's
       // recorded path the one the file is actually at" is a check worth making
       // and guessing the directory is how that check gets faked.
-      const relative = `recorded/${dir.endsWith('apps-mock') ? 'apps-mock/' : ''}${name}`;
+      const sub = dir.endsWith('apps-mock') ? 'apps-mock/' : dir.endsWith('app') ? 'app/' : '';
+      const relative = `recorded/${sub}${name}`;
       fixture.source = { server, file: relative };
       Object.assign(fixture, legacy[fixture.name] ?? {});
       out.push(fixture);

@@ -1,17 +1,32 @@
 version: 2
+# CI volume (docs/ci/optimisation-2026-10.md): every Dependabot pull request
+# runs the Rust and web tiers, and every automatic rebase runs them again.
+# - Version updates come once a month (security updates are not scheduled:
+#   they still open as soon as an advisory lands).
+# - Each ecosystem's bumps come grouped: minor and patch in one pull request,
+#   majors in another (after the lockstep groups, which match first).
+# - No automatic rebases: comment `@dependabot rebase` on the pull request
+#   when it is ready to merge.
 updates:
   - package-ecosystem: cargo
     directory: /
     # Every update goes to dev; main moves only at a release merge.
     target-branch: dev
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
+    rebase-strategy: disabled
     open-pull-requests-limit: 5
     labels: ["area/ci", "status/needs-triage"]
     commit-message:
       prefix: "deps"
     groups:
+      # The gix-* crates are pinned with `=` and move in lockstep (gix-hash,
+      # gix-object, gix-pack, gix-diff, gix-blame and the rest): one bumped alone
+      # does not compile (#934). Listed first, so every gix bump lands in one PR
+      # of its own instead of in the weekly group.
+      gix:
+        patterns:
+          - "gix-*"
       # Patch and minor bumps land together each week.
       cargo-minor-and-patch:
         update-types: ["minor", "patch"]
@@ -23,6 +38,9 @@ updates:
           - "datafusion*"
           - "lance*"
           - "parquet"
+        update-types: ["major"]
+      # Every other major bump in one pull request a month, not one each.
+      cargo-major:
         update-types: ["major"]
     ignore:
       # Git-pinned forks: bumped by hand with the fork (see Cargo.toml and NOTICE).
@@ -52,8 +70,8 @@ updates:
     directory: /
     target-branch: dev
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
+    rebase-strategy: disabled
     open-pull-requests-limit: 5
     labels: ["area/ci", "status/needs-triage"]
     commit-message:
@@ -68,8 +86,8 @@ updates:
     directory: /
     target-branch: dev
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
+    rebase-strategy: disabled
     # The 14-day rule (pnpm-workspace.yaml): only releases at least 14 days old.
     cooldown:
       default-days: 14
@@ -78,16 +96,36 @@ updates:
     commit-message:
       prefix: "deps"
     groups:
+      # vite, electron-vite, vitest and their plugins move together: vite 8 under
+      # electron-vite 5 built a desktop whose window never opened (#811, #935).
+      # A major bump of one is reviewed with the others', as the cargo data-stack
+      # group does; minors and patches stay in the weekly group below.
+      vite:
+        patterns:
+          - "vite"
+          - "electron-vite"
+          - "vitest"
+          - "@vitejs/*"
+          - "@vitest/*"
+        update-types: ["major"]
       npm-minor-and-patch:
         update-types: ["minor", "patch"]
+      # Every other major bump in one pull request a month, not one each.
+      npm-major:
+        update-types: ["major"]
+    ignore:
+      # @types/node tracks the Node version the repo targets (Node 22 in CI and
+      # `engines`). Skip majors above 22; revisit when the Node target moves.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   # Dev-only client drivers for the sqlgate codec fixtures (SQ1 Task 3).
   - package-ecosystem: npm
     directory: /scripts/sqlgate/capture/node
     target-branch: dev
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
+    rebase-strategy: disabled
     cooldown:
       default-days: 14
     open-pull-requests-limit: 2
@@ -102,8 +140,8 @@ updates:
     directory: /scripts/sqlgate/capture/go
     target-branch: dev
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
+    rebase-strategy: disabled
     cooldown:
       default-days: 14
     open-pull-requests-limit: 2

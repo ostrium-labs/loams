@@ -271,7 +271,13 @@ public static class Filter
     {
         if (id.KindCase == Value.KindOneofCase.StructValue && id.StructValue.Fields.TryGetValue("uint", out var n))
         {
-            return n;
+            // Exact as a JSON number up to 2^53; past that the IR keeps the string.
+            return n.KindCase == Value.KindOneofCase.StringValue
+                && ulong.TryParse(n.StringValue, System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture, out var u)
+                && u <= (1UL << 53)
+                ? Value.ForNumber(u)
+                : n;
         }
         if (id.KindCase == Value.KindOneofCase.StructValue && id.StructValue.Fields.TryGetValue("string", out var s))
         {

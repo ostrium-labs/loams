@@ -73,6 +73,7 @@ public final class ReasonCodes {
         map.put(Reason.IDEMPOTENCY_KEY_REUSED, "failed_precondition");
         map.put(Reason.WORKSPACE_NOT_FOUND, "not_found");
         map.put(Reason.WORKSPACE_FENCED, "aborted");
+        map.put(Reason.BATCH_PARTIALLY_APPLIED, "aborted");
         map.put(Reason.WORKSPACE_READ_ONLY, "failed_precondition");
         map.put(Reason.WORKSPACE_NAME_TAKEN, "already_exists");
         map.put(Reason.OBJECT_MISSING, "failed_precondition");
@@ -106,13 +107,20 @@ public final class ReasonCodes {
         map.put(Reason.LIVE_WORKER_CRASHED, "internal");
         map.put(Reason.LIVE_DEPLOY_CONFLICT, "failed_precondition");
         map.put(Reason.LIVE_SCHEMA_VIOLATION, "invalid_argument");
+        map.put(Reason.FILTER_CONFLICT, "invalid_argument");
+        map.put(Reason.SEARCH_AFTER_NEEDS_TIEBREAK, "invalid_argument");
+        map.put(Reason.INVALID_CONSISTENCY_TOKEN, "invalid_argument");
+        map.put(Reason.NAMESPACE_REQUIRED, "invalid_argument");
+        map.put(Reason.SQL_PARAM_COUNT, "invalid_argument");
         map.put(Reason.LIVE_INDEX_NOT_READY, "failed_precondition");
         map.put(Reason.LIVE_APP_DISABLED, "failed_precondition");
         map.put(Reason.LIVE_APP_EXISTS, "failed_precondition");
         map.put(Reason.LIVE_FUNCTION_ERROR, "unknown");
         map.put(Reason.LIVE_FUNCTION_TIMEOUT, "deadline_exceeded");
+        map.put(Reason.CLIENT_DEADLINE_EXCEEDED, "deadline_exceeded");
         map.put(Reason.LIVE_FUNCTION_OUT_OF_MEMORY, "resource_exhausted");
         map.put(Reason.LIVE_LIMIT_EXCEEDED, "resource_exhausted");
+        map.put(Reason.RESULT_TOO_LARGE, "resource_exhausted");
         map.put(Reason.LIVE_APP_MISMATCH, "permission_denied");
         map.put(Reason.LIVE_ORIGIN_NOT_ALLOWED, "permission_denied");
         map.put(Reason.SESSION_ROTATE, "unavailable");

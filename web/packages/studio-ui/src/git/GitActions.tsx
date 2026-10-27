@@ -9,9 +9,9 @@
 // person saw: a stale one comes back `stale_diff` and the dialog stays open.
 
 import {
-  AlertDialog,
   Button,
   Checkbox,
+  ConfirmDialog,
   cx,
   Dialog,
   Field,
@@ -145,7 +145,7 @@ export interface GitActionsProps {
 }
 
 const SPLIT =
-  "inline-flex h-7 items-center gap-1.5 border border-rule-soft px-2.5 text-[0.8rem] text-ink hover:bg-raised disabled:cursor-default disabled:text-faint disabled:hover:bg-transparent";
+  "inline-flex h-7 items-center gap-1.5 border border-rule-soft px-2.5 text-small text-ink transition-colors duration-(--op-duration-fast) ease-out hover:bg-raised motion-reduce:transition-none disabled:cursor-default disabled:text-faint disabled:hover:bg-transparent";
 
 const WRITE_REFUSED = "Studio needs the agentd:git-write permission to write to git.";
 
@@ -584,12 +584,16 @@ function WriteDialog({
           {error && <ErrorNotice error={error} />}
         </form>
       </Dialog>
-      <AlertDialog
+      <ConfirmDialog
         open={discarding !== null}
         onClose={() => setDiscarding(null)}
-        title="Discard these changes?"
+        object="these changes"
         confirm="Discard"
-        tone="danger"
+        impact={
+          <>
+            The working-tree changes to <code>{discarding}</code> are lost. This cannot be undone.
+          </>
+        }
         onConfirm={async () => {
           const path = discarding;
           setDiscarding(null);
@@ -603,9 +607,7 @@ function WriteDialog({
               return next;
             });
         }}
-      >
-        The working-tree changes to <code>{discarding}</code> are lost. This cannot be undone.
-      </AlertDialog>
+      />
     </>
   );
 }
@@ -886,14 +888,14 @@ export function GitActions({
       <span aria-live="polite" className="inline-flex min-w-0 items-center">
         {success && (
           <span
-            className="inline-flex min-w-0 items-center gap-1 text-[0.78rem] text-grow"
+            className="inline-flex min-w-0 items-center gap-1 text-small text-grow"
             title={success.description}
           >
             <Check size={13} aria-hidden="true" />
             <span className="truncate">{success.title}</span>
           </span>
         )}
-        {fetchError && <span className="truncate text-[0.78rem] text-danger">{fetchError}</span>}
+        {fetchError && <span className="truncate text-small text-danger">{fetchError}</span>}
       </span>
       {status && dialog?.kind === "write" && (
         <WriteDialog

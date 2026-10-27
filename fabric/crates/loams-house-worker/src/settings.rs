@@ -177,9 +177,10 @@ pub const PINNED_PATHS: &[&str] = &[
 /// the constraint sees: ClickHouse does not check a value equal to the current one.
 pub const MAX_QUERY_MEMORY: u64 = 4 * 1024 * 1024 * 1024;
 
-/// The largest `max_execution_time` a statement may set, in seconds (FL2 Ruling
-/// 10); also the profile's value, for the same reason.
-pub const MAX_EXECUTION_TIME_S: u64 = 300;
+/// The default largest `max_execution_time` a statement may set, in seconds
+/// (FL2 Ruling 10; 900 since D1571); the front passes its own cap as
+/// `--max-execution-time`. Also the profile's value, for the same reason.
+pub const MAX_EXECUTION_TIME_S: u64 = 900;
 
 /// §49 §12's read and result caps (HS1 Task 21): the profile's values and
 /// maxima, so `0` is a change the constraint sees.

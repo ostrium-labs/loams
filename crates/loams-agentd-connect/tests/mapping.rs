@@ -18,6 +18,7 @@ use loams_agentd_proto::approvals as rs_approvals;
 use loams_agentd_proto::checkpoints as rs_checkpoints;
 use loams_agentd_proto::groups as rs_groups;
 use loams_agentd_proto::invocation as rs_invocation;
+use loams_agentd_proto::marketplace as rs_market;
 use loams_agentd_proto::notify as rs_notify;
 use loams_agentd_proto::transcript as rs_transcript;
 use loams_agentd_proto::usage as rs_usage;
@@ -93,6 +94,21 @@ table! {
     "RunGroupComparison" => message::<rs_groups::RunGroupComparison>,
     "RunGroupList" => message::<rs_groups::RunGroupList>,
     "WatchRunGroupsParams" => message::<rs_groups::WatchRunGroupsParams>,
+    "MarketplaceSourceList" => message::<rs_market::MarketplaceSourceList>,
+    "MarketplaceSource" => message::<rs_market::MarketplaceSource>,
+    "AddMarketplaceSourceParams" => message::<rs_market::AddMarketplaceSourceParams>,
+    "RemoveMarketplaceSourceParams" => message::<rs_market::RemoveMarketplaceSourceParams>,
+    "SearchListingsParams" => message::<rs_market::SearchListingsParams>,
+    "ListingSearchResults" => message::<rs_market::ListingSearchResults>,
+    "ListingRef" => message::<rs_market::ListingRef>,
+    "ListingDetail" => message::<rs_market::ListingDetail>,
+    "PlanInstallReply" => message::<rs_market::PlanInstallReply>,
+    "InstallListingParams" => message::<rs_market::InstallListingParams>,
+    "InstalledListingReply" => message::<rs_market::InstalledListingReply>,
+    "UninstallListingParams" => message::<rs_market::UninstallListingParams>,
+    "InstalledListingList" => message::<rs_market::InstalledListingList>,
+    "AvailableUpdateList" => message::<rs_market::AvailableUpdateList>,
+    "UpdateListingParams" => message::<rs_market::UpdateListingParams>,
     "CreateWorktreeOutcome" => message::<rs::CreateWorktreeOutcome>,
     "CreateWorktreeParams" => message::<rs::CreateWorktreeParams>,
     "DeleteReviewCommentParams" => message::<rs::DeleteReviewCommentParams>,
@@ -295,6 +311,68 @@ const NOT_MAPPED: &[(&str, &str)] = &[
     ),
     ("WatchPreviewsParams", "one string"),
     ("WriteTerminalParams", "two strings"),
+    // The factory loop's `mcp`-role methods are ndjson only (FT0-4-1), not on
+    // the Connect surface.
+    (
+        "CheckLogReply",
+        "an `mcp`-role method's type, ndjson only (FT0-4-1)",
+    ),
+    (
+        "ChecksReply",
+        "an `mcp`-role method's type, ndjson only (FT0-4-1)",
+    ),
+    (
+        "CreateRunWorktreeParams",
+        "an `mcp`-role method's type, ndjson only (FT0-4-1)",
+    ),
+    (
+        "GetApprovalParams",
+        "an `mcp`-role method's type, ndjson only (FT0-4-1)",
+    ),
+    (
+        "GetCheckLogParams",
+        "an `mcp`-role method's type, ndjson only (FT0-4-1)",
+    ),
+    (
+        "GetChecksParams",
+        "an `mcp`-role method's type, ndjson only (FT0-4-1)",
+    ),
+    (
+        "GetThreadDiffParams",
+        "an `mcp`-role method's type, ndjson only (FT0-4-1)",
+    ),
+    (
+        "MergeChangeRequestParams",
+        "an `mcp`-role method's type, ndjson only (FT0-4-1)",
+    ),
+    (
+        "MergeChangeRequestReply",
+        "an `mcp`-role method's type, ndjson only (FT0-4-1)",
+    ),
+    (
+        "OpenChangeRequestParams",
+        "an `mcp`-role method's type, ndjson only (FT0-4-1)",
+    ),
+    (
+        "OpenChangeRequestReply",
+        "an `mcp`-role method's type, ndjson only (FT0-4-1)",
+    ),
+    (
+        "PostReviewCommentParams",
+        "an `mcp`-role method's type, ndjson only (FT0-4-1)",
+    ),
+    (
+        "RequestApprovalParams",
+        "an `mcp`-role method's type, ndjson only (FT0-4-1)",
+    ),
+    (
+        "TypedApproval",
+        "an `mcp`-role method's type, ndjson only (FT0-4-1)",
+    ),
+    (
+        "Worktree",
+        "an `mcp`-role method's type, ndjson only (FT0-4-1)",
+    ),
 ];
 
 fn fixtures() -> Vec<(String, String, Value)> {

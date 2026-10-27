@@ -23,7 +23,9 @@
 use std::io::{Read, Write};
 use std::path::Path;
 
-use loams_facade_gen::{Options, go, model_from_request, python, reasons, rust, typescript, wire};
+use loams_facade_gen::{
+    Options, go, index, model_from_request, python, reasons, rust, typescript, wire,
+};
 
 /// Where the generated file lands inside the template's `out` directory, per
 /// language. Each renderer writes one aggregate file over the whole proto
@@ -34,6 +36,9 @@ fn file_name(lang: &str) -> Result<&'static str, String> {
         "python" => Ok("facade.py"),
         "go" => Ok("facade.go"),
         "rust" => Ok("facade.rs"),
+        // `sdks/fixtures/facade-index.json` (SDKP P0a): every facade call, for
+        // the hand-written SDKs' `<lang>_facade_matches_index` tests.
+        "index" => Ok("facade-index.json"),
         other => Err(format!("no template for {other:?} (SDK1 Task 3)")),
     }
 }
@@ -52,6 +57,9 @@ fn main() {
         Err(message) => {
             // A protoc plugin reports failure in the response's `error` field,
             // which is what buf prints; the exit status only fails CI earlier.
+            // buf and protoc drop the response of a plugin that exits non-zero,
+            // so the message also goes to stderr, which they do pass through.
+            eprintln!("protoc-gen-loams-facade: {message}");
             let mut response = Vec::new();
             put_bytes(&mut response, 1, message.as_bytes());
             std::io::stdout()
@@ -79,6 +87,7 @@ fn run() -> Result<Vec<u8>, String> {
         "python" => python::render(&model, &options.packages, &options.proto_rev)?,
         "go" => go::render(&model, &options.packages, &options.proto_rev)?,
         "rust" => rust::render(&model, &options.packages, &options.proto_rev)?,
+        "index" => index::render(&model, &options.proto_rev),
         // `file_name` has already rejected anything else.
         other => return Err(format!("no template for {other:?} (SDK1 Task 3)")),
     };

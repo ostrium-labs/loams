@@ -265,17 +265,18 @@ public class AppTest {
     // ---------------------------------------------------------------- builders
 
     private static final float[] EMBEDDING = {0.1f, 0.2f, 0.3f, 0.4f};
+    private static final float[] UNIT = {1f, 0f, 0f, 0f};
 
     private static final String TEXT_REFUND = "{\"text\":{\"query\":{\"match\":{\"field\":\"body\",\"text\":\"refund\"}}}}";
 
     private static String hybrid(String fusion) {
         return "{\"collection\":\"notes\",\"retrievers\":[" + TEXT_REFUND + ","
-                + "{\"vector\":{\"field\":\"embedding\",\"query\":[0.1,0.2,0.3,0.4]}}],\"fusion\":" + fusion
+                + "{\"vector\":{\"field\":\"embedding\",\"query\":[1,0,0,0],\"k\":5}}],\"fusion\":" + fusion
                 + ",\"limit\":3}";
     }
 
     private static Search hybridSearch() {
-        return Search.on("notes").text("refund", "body").vector("embedding", EMBEDDING).limit(3);
+        return Search.on("notes").text("refund", "body").vector("embedding", UNIT, 5, null, null).limit(3);
     }
 
     /** The builder cases, by the corpus's names (P0d's {@code sdks/fixtures/builders}). */
@@ -296,29 +297,34 @@ public class AppTest {
                 "{\"bool\":{\"must\":[{\"term\":{\"field\":\"tags\",\"value\":\"policy\"}},"
                         + "{\"bool\":{\"should\":[{\"range\":{\"field\":\"n\",\"gte\":2}},{\"bool\":{\"mustNot\":[{\"exists\":{\"field\":\"archived\"}}]}}]}}]}}"));
         cases.put("filter_range_open", Map.entry(Filter.gt("n", 1), "{\"range\":{\"field\":\"n\",\"gt\":1}}"));
-        cases.put("filter_ids", Map.entry(Filter.ids(1, "k-str"), "{\"ids\":[1,\"k-str\"]}"));
+        cases.put("filter_ids", Map.entry(Filter.ids(1, "k-str", java.util.UUID.fromString("0190f5c4-6c1e-7b3a-9d2e-4f5a6b7c8d9e")),
+                "{\"ids\":[{\"uint\":\"1\"},\"k-str\",{\"uuid\":\"0190f5c4-6c1e-7b3a-9d2e-4f5a6b7c8d9e\"}]}"));
         cases.put("search_text_filter_highlight_select", Map.entry(
                 Search.on("notes").text("refund", "body").filter(Filter.eq("tags", "policy")).highlight("body")
                         .select(List.of("title"), null).sort(Sort.score(), Sort.pk()).limit(2).build(),
                 "{\"collection\":\"notes\",\"retrievers\":[" + TEXT_REFUND + "],"
                         + "\"filter\":{\"term\":{\"field\":\"tags\",\"value\":\"policy\"}},"
-                        + "\"sort\":[{\"score\":{\"order\":\"SORT_ORDER_DESC\"}},{\"pk\":{\"order\":\"SORT_ORDER_ASC\"}}],"
-                        + "\"limit\":2,\"select\":{\"source\":{\"include\":[\"title\"],\"exclude\":[]}},"
+                        + "\"sort\":[{\"score\":{}},{\"pk\":{}}],"
+                        + "\"limit\":2,\"select\":{\"source\":{\"include\":[\"title\"]}},"
                         + "\"highlight\":{\"fields\":[{\"field\":\"body\"}]}}"));
         cases.put("search_vector_ann_params", Map.entry(
-                Search.on("notes").vector("embedding", EMBEDDING, 3, AnnParams.newBuilder().setEf(64).build(), null).limit(3).build(),
-                "{\"collection\":\"notes\",\"retrievers\":[{\"vector\":{\"field\":\"embedding\",\"query\":[0.1,0.2,0.3,0.4],\"k\":3,\"params\":{\"ef\":64}}}],\"limit\":3}"));
+                Search.on("notes").vector("embedding", UNIT, 3, AnnParams.newBuilder().setNprobes(8).setRefineFactor(2).build(), null).limit(3).build(),
+                "{\"collection\":\"notes\",\"retrievers\":[{\"vector\":{\"field\":\"embedding\",\"query\":[1,0,0,0],\"k\":3,\"params\":{\"nprobes\":8,\"refineFactor\":2}}}],\"limit\":3}"));
         cases.put("search_hybrid_rrf", Map.entry(hybridSearch().fuse(Fusion.rrf(60)).build(), hybrid("{\"rrf\":{\"k\":60}}")));
         cases.put("search_hybrid_dbsf", Map.entry(hybridSearch().fuse(Fusion.dbsf()).build(), hybrid("{\"dbsf\":{}}")));
         cases.put("search_hybrid_weighted", Map.entry(hybridSearch().fuse(Fusion.weighted(0.7f, 0.3f)).build(),
                 hybrid("{\"weightedSum\":{\"weights\":[0.7,0.3]}}")));
         cases.put("search_after_page", Map.entry(
-                Search.on("notes").text("refund", "body").sort(Sort.score(), Sort.pk())
-                        .after(List.of(Value.newBuilder().setNumberValue(1.5).build(), Value.newBuilder().setNumberValue(3).build()))
-                        .limit(2).build(),
+                Search.on("notes").text("refund", "body").filter(Filter.eq("tags", "policy")).highlight("body")
+                        .select(List.of("title"), null).limit(2).sort(Sort.score(), Sort.pk())
+                        .after(List.of(Value.newBuilder().setNumberValue(0.3438858389854431).build(), Value.newBuilder().setNumberValue(3).build()))
+                        .build(),
                 "{\"collection\":\"notes\",\"retrievers\":[" + TEXT_REFUND + "],"
-                        + "\"sort\":[{\"score\":{\"order\":\"SORT_ORDER_DESC\"}},{\"pk\":{\"order\":\"SORT_ORDER_ASC\"}}],"
-                        + "\"searchAfter\":[1.5,3],\"limit\":2}"));
+                        + "\"filter\":{\"term\":{\"field\":\"tags\",\"value\":\"policy\"}},"
+                        + "\"highlight\":{\"fields\":[{\"field\":\"body\"}]},"
+                        + "\"select\":{\"source\":{\"include\":[\"title\"]}},\"limit\":2,"
+                        + "\"sort\":[{\"score\":{}},{\"pk\":{}}],"
+                        + "\"searchAfter\":[0.3438858389854431,3]}"));
         cases.put("search_expand", Map.entry(
                 Search.on("notes").text("refund", "body").expand("notes_graph", "id").build(),
                 "{\"collection\":\"notes\",\"retrievers\":[" + TEXT_REFUND + "],"

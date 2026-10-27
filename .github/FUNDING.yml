@@ -1,4 +1,6 @@
 # GitHub's Sponsor button. No account here has a GitHub Sponsors listing yet,
-# so the button points at Ostrium's services page. When the ostrium-labs org is
-# approved for GitHub Sponsors, add `github: ostrium-labs` above `custom`.
-custom: ["https://loams.dev/services"]
+# so the button points at Ostrium Labs, the research lab building open-source
+# Loams (ostriumlabs.org). The services offering was removed on 2026-10-21 (D1323).
+# When the ostrium-labs org is approved for GitHub Sponsors, add
+# `github: ostrium-labs` above `custom`.
+custom: ["https://ostriumlabs.org"]

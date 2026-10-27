@@ -30,9 +30,13 @@ package facade
 import (
 	connect "connectrpc.com/connect"
 
+	collectionv1connect "loams.dev/go/gen/loams/collection/v1/collectionv1connect"
 	errorsv1 "loams.dev/go/gen/loams/errors/v1"
+	graphv1connect "loams.dev/go/gen/loams/graph/v1/graphv1connect"
 	instancev1connect "loams.dev/go/gen/loams/instance/v1/instancev1connect"
 	livev1connect "loams.dev/go/gen/loams/live/v1/livev1connect"
+	sqlv1connect "loams.dev/go/gen/loams/sql/v1/sqlv1connect"
+	streamv1connect "loams.dev/go/gen/loams/stream/v1/streamv1connect"
 )
 
 // ProtoRev is the proto revision this SDK was generated from
@@ -152,6 +156,205 @@ type ModuleBinding struct {
 // module name.
 var Modules = []ModuleBinding{
 	{
+		Name:    "collections",
+		Summary: "Collections: schema, aliases, versions, scan plans and the hot tier.",
+		Service: collectionv1connect.CollectionServiceName,
+		Package: "loams.collection.v1",
+		Calls: []CallBinding{
+			{
+				Module: "collections", Name: "AddFields", ProtoName: "add_fields",
+				Method: "AddFields", RPC: collectionv1connect.CollectionServiceName + "/AddFields",
+				Service: collectionv1connect.CollectionServiceName, Package: "loams.collection.v1",
+				Idempotency: None, Retry: RetrySafe, Streaming: Unary,
+			},
+			{
+				Module: "collections", Name: "Create", ProtoName: "create",
+				Method: "CreateCollection", RPC: collectionv1connect.CollectionServiceName + "/CreateCollection",
+				Service: collectionv1connect.CollectionServiceName, Package: "loams.collection.v1",
+				Idempotency: None, Retry: RetrySafe, Streaming: Unary,
+			},
+			{
+				Module: "collections", Name: "Drop", ProtoName: "drop",
+				Method: "DropCollection", RPC: collectionv1connect.CollectionServiceName + "/DropCollection",
+				Service: collectionv1connect.CollectionServiceName, Package: "loams.collection.v1",
+				Idempotency: None, Retry: RetrySafe, Streaming: Unary,
+			},
+			{
+				Module: "collections", Name: "Get", ProtoName: "get",
+				Method: "GetCollection", RPC: collectionv1connect.CollectionServiceName + "/GetCollection",
+				Service: collectionv1connect.CollectionServiceName, Package: "loams.collection.v1",
+				Idempotency: None, Retry: RetrySafe, Streaming: Unary,
+			},
+			{
+				Module: "collections", Name: "List", ProtoName: "list",
+				Method: "ListCollections", RPC: collectionv1connect.CollectionServiceName + "/ListCollections",
+				Service: collectionv1connect.CollectionServiceName, Package: "loams.collection.v1",
+				Idempotency: None, Retry: RetrySafe, Streaming: Unary,
+				Pagination: &Pagination{
+					ItemsField: "Collections", NextPageTokenField: "NextPageToken",
+					PageSizeField: "PageSize", PageTokenField: "PageToken",
+				},
+			},
+			{
+				Module: "collections", Name: "ListVersions", ProtoName: "list_versions",
+				Method: "ListVersions", RPC: collectionv1connect.CollectionServiceName + "/ListVersions",
+				Service: collectionv1connect.CollectionServiceName, Package: "loams.collection.v1",
+				Idempotency: None, Retry: RetrySafe, Streaming: Unary,
+				Pagination: &Pagination{
+					ItemsField: "Versions", NextPageTokenField: "NextPageToken",
+					PageSizeField: "PageSize", PageTokenField: "PageToken",
+				},
+			},
+			{
+				Module: "collections", Name: "Scan", ProtoName: "scan",
+				Method: "Scan", RPC: collectionv1connect.CollectionServiceName + "/Scan",
+				Service: collectionv1connect.CollectionServiceName, Package: "loams.collection.v1",
+				Idempotency: None, Retry: RetryManual, Streaming: Unary,
+			},
+			{
+				Module: "collections", Name: "SetHot", ProtoName: "set_hot",
+				Method: "SetHot", RPC: collectionv1connect.CollectionServiceName + "/SetHot",
+				Service: collectionv1connect.CollectionServiceName, Package: "loams.collection.v1",
+				Idempotency: None, Retry: RetrySafe, Streaming: Unary,
+			},
+			{
+				Module: "collections", Name: "UpdateAliases", ProtoName: "update_aliases",
+				Method: "UpdateAliases", RPC: collectionv1connect.CollectionServiceName + "/UpdateAliases",
+				Service: collectionv1connect.CollectionServiceName, Package: "loams.collection.v1",
+				Idempotency: None, Retry: RetrySafe, Streaming: Unary,
+			},
+			{
+				Module: "collections", Name: "Warm", ProtoName: "warm",
+				Method: "WarmCollection", RPC: collectionv1connect.CollectionServiceName + "/WarmCollection",
+				Service: collectionv1connect.CollectionServiceName, Package: "loams.collection.v1",
+				Idempotency: None, Retry: RetrySafe, Streaming: Unary,
+			},
+		},
+	},
+	{
+		Name:    "documents",
+		Summary: "Documents: write, get, scroll, count, delete by filter and patch by filter.",
+		Service: collectionv1connect.DocumentServiceName,
+		Package: "loams.collection.v1",
+		Calls: []CallBinding{
+			{
+				Module: "documents", Name: "Count", ProtoName: "count",
+				Method: "CountDocuments", RPC: collectionv1connect.DocumentServiceName + "/CountDocuments",
+				Service: collectionv1connect.DocumentServiceName, Package: "loams.collection.v1",
+				Idempotency: None, Retry: RetrySafe, Streaming: Unary,
+			},
+			{
+				Module: "documents", Name: "DeleteByFilter", ProtoName: "delete_by_filter",
+				Method: "DeleteByFilter", RPC: collectionv1connect.DocumentServiceName + "/DeleteByFilter",
+				Service: collectionv1connect.DocumentServiceName, Package: "loams.collection.v1",
+				Idempotency: None, Retry: RetryManual, Streaming: Unary,
+			},
+			{
+				Module: "documents", Name: "Get", ProtoName: "get",
+				Method: "GetDocuments", RPC: collectionv1connect.DocumentServiceName + "/GetDocuments",
+				Service: collectionv1connect.DocumentServiceName, Package: "loams.collection.v1",
+				Idempotency: None, Retry: RetrySafe, Streaming: Unary,
+			},
+			{
+				Module: "documents", Name: "PatchByFilter", ProtoName: "patch_by_filter",
+				Method: "PatchByFilter", RPC: collectionv1connect.DocumentServiceName + "/PatchByFilter",
+				Service: collectionv1connect.DocumentServiceName, Package: "loams.collection.v1",
+				Idempotency: None, Retry: RetryManual, Streaming: Unary,
+			},
+			{
+				Module: "documents", Name: "Scroll", ProtoName: "scroll",
+				Method: "ScrollDocuments", RPC: collectionv1connect.DocumentServiceName + "/ScrollDocuments",
+				Service: collectionv1connect.DocumentServiceName, Package: "loams.collection.v1",
+				Idempotency: None, Retry: RetrySafe, Streaming: Unary,
+			},
+			{
+				Module: "documents", Name: "Write", ProtoName: "write",
+				Method: "WriteDocuments", RPC: collectionv1connect.DocumentServiceName + "/WriteDocuments",
+				Service: collectionv1connect.DocumentServiceName, Package: "loams.collection.v1",
+				Idempotency: None, Retry: RetryManual, Streaming: Unary,
+				TakesIdempotencyKey: true,
+			},
+		},
+	},
+	{
+		Name:     "graph",
+		Summary:  "Loams Graph: stored property graphs, queried with GQL.",
+		Service:  graphv1connect.GraphAdminServiceName,
+		Package:  "loams.graph.v1",
+		Unstable: true,
+		Calls: []CallBinding{
+			{
+				Module: "graph", Name: "Create", ProtoName: "create",
+				Method: "CreateGraph", RPC: graphv1connect.GraphAdminServiceName + "/CreateGraph",
+				Service: graphv1connect.GraphAdminServiceName, Package: "loams.graph.v1",
+				Idempotency: None, Retry: RetryManual, Streaming: Unary,
+				TakesIdempotencyKey: true,
+			},
+			{
+				Module: "graph", Name: "Delete", ProtoName: "delete",
+				Method: "DeleteGraph", RPC: graphv1connect.GraphAdminServiceName + "/DeleteGraph",
+				Service: graphv1connect.GraphAdminServiceName, Package: "loams.graph.v1",
+				Idempotency: None, Retry: RetryManual, Streaming: Unary,
+				TakesIdempotencyKey: true,
+			},
+			{
+				Module: "graph", Name: "Explain", ProtoName: "explain",
+				Method: "Explain", RPC: graphv1connect.GraphServiceName + "/Explain",
+				Service: graphv1connect.GraphServiceName, Package: "loams.graph.v1",
+				Idempotency: None, Retry: RetrySafe, Streaming: Unary,
+			},
+			{
+				Module: "graph", Name: "Get", ProtoName: "get",
+				Method: "GetGraph", RPC: graphv1connect.GraphAdminServiceName + "/GetGraph",
+				Service: graphv1connect.GraphAdminServiceName, Package: "loams.graph.v1",
+				Idempotency: None, Retry: RetrySafe, Streaming: Unary,
+			},
+			{
+				Module: "graph", Name: "List", ProtoName: "list",
+				Method: "ListGraphs", RPC: graphv1connect.GraphAdminServiceName + "/ListGraphs",
+				Service: graphv1connect.GraphAdminServiceName, Package: "loams.graph.v1",
+				Idempotency: None, Retry: RetrySafe, Streaming: Unary,
+				Pagination: &Pagination{
+					ItemsField: "Graphs", NextPageTokenField: "NextPageToken",
+					PageSizeField: "PageSize", PageTokenField: "PageToken",
+				},
+			},
+			{
+				Module: "graph", Name: "Query", ProtoName: "query",
+				Method: "Execute", RPC: graphv1connect.GraphServiceName + "/Execute",
+				Service: graphv1connect.GraphServiceName, Package: "loams.graph.v1",
+				Idempotency: None, Retry: RetryManual, Streaming: Unary,
+				TakesIdempotencyKey: true,
+			},
+			{
+				Module: "graph", Name: "QueryBatch", ProtoName: "query_batch",
+				Method: "ExecuteBatch", RPC: graphv1connect.GraphServiceName + "/ExecuteBatch",
+				Service: graphv1connect.GraphServiceName, Package: "loams.graph.v1",
+				Idempotency: None, Retry: RetryManual, Streaming: Unary,
+				TakesIdempotencyKey: true,
+			},
+			{
+				Module: "graph", Name: "QueryStream", ProtoName: "query_stream",
+				Method: "ExecuteStream", RPC: graphv1connect.GraphServiceName + "/ExecuteStream",
+				Service: graphv1connect.GraphServiceName, Package: "loams.graph.v1",
+				Idempotency: None, Retry: RetryManual, Streaming: Server,
+			},
+			{
+				Module: "graph", Name: "Schema", ProtoName: "schema",
+				Method: "GetSchema", RPC: graphv1connect.GraphAdminServiceName + "/GetSchema",
+				Service: graphv1connect.GraphAdminServiceName, Package: "loams.graph.v1",
+				Idempotency: None, Retry: RetrySafe, Streaming: Unary,
+			},
+			{
+				Module: "graph", Name: "Update", ProtoName: "update",
+				Method: "UpdateGraph", RPC: graphv1connect.GraphAdminServiceName + "/UpdateGraph",
+				Service: graphv1connect.GraphAdminServiceName, Package: "loams.graph.v1",
+				Idempotency: None, Retry: RetryManual, Streaming: Unary,
+				TakesIdempotencyKey: true,
+			},
+		},
+	},
+	{
 		Name:    "instance",
 		Summary: "What this instance is, and who the caller is on it.",
 		Service: instancev1connect.InstanceServiceName,
@@ -245,6 +448,118 @@ var Modules = []ModuleBinding{
 		},
 	},
 	{
+		Name:    "namespaces",
+		Summary: "Namespaces: the container every collection and stream lives in.",
+		Service: collectionv1connect.NamespaceServiceName,
+		Package: "loams.collection.v1",
+		Calls: []CallBinding{
+			{
+				Module: "namespaces", Name: "Create", ProtoName: "create",
+				Method: "CreateNamespace", RPC: collectionv1connect.NamespaceServiceName + "/CreateNamespace",
+				Service: collectionv1connect.NamespaceServiceName, Package: "loams.collection.v1",
+				Idempotency: None, Retry: RetrySafe, Streaming: Unary,
+			},
+			{
+				Module: "namespaces", Name: "List", ProtoName: "list",
+				Method: "ListNamespaces", RPC: collectionv1connect.NamespaceServiceName + "/ListNamespaces",
+				Service: collectionv1connect.NamespaceServiceName, Package: "loams.collection.v1",
+				Idempotency: None, Retry: RetrySafe, Streaming: Unary,
+				Pagination: &Pagination{
+					ItemsField: "Namespaces", NextPageTokenField: "NextPageToken",
+					PageSizeField: "PageSize", PageTokenField: "PageToken",
+				},
+			},
+		},
+	},
+	{
+		Name:    "search",
+		Summary: "Queries: one search over one collection, dense, sparse, text or hybrid.",
+		Service: collectionv1connect.QueryServiceName,
+		Package: "loams.collection.v1",
+		Calls: []CallBinding{
+			{
+				Module: "search", Name: "Query", ProtoName: "query",
+				Method: "Search", RPC: collectionv1connect.QueryServiceName + "/Search",
+				Service: collectionv1connect.QueryServiceName, Package: "loams.collection.v1",
+				Idempotency: None, Retry: RetrySafe, Streaming: Unary,
+			},
+		},
+	},
+	{
+		Name:    "sql",
+		Summary: "SQL: one read-only statement over a namespace's collections, with parameters.",
+		Service: sqlv1connect.SqlServiceName,
+		Package: "loams.sql.v1",
+		Calls: []CallBinding{
+			{
+				Module: "sql", Name: "Query", ProtoName: "query",
+				Method: "Query", RPC: sqlv1connect.SqlServiceName + "/Query",
+				Service: sqlv1connect.SqlServiceName, Package: "loams.sql.v1",
+				Idempotency: NoSideEffects, Retry: RetrySafe, Streaming: Unary,
+			},
+			{
+				Module: "sql", Name: "QueryArrow", ProtoName: "query_arrow",
+				Method: "QueryArrow", RPC: sqlv1connect.SqlServiceName + "/QueryArrow",
+				Service: sqlv1connect.SqlServiceName, Package: "loams.sql.v1",
+				Idempotency: NoSideEffects, Retry: RetrySafe, Streaming: Unary,
+			},
+		},
+	},
+	{
+		Name:    "streams",
+		Summary: "Streams: create, list and describe a namespace's logs; produce and fetch records and CloudEvents.",
+		Service: streamv1connect.StreamServiceName,
+		Package: "loams.stream.v1",
+		Calls: []CallBinding{
+			{
+				Module: "streams", Name: "Create", ProtoName: "create",
+				Method: "CreateStream", RPC: streamv1connect.StreamServiceName + "/CreateStream",
+				Service: streamv1connect.StreamServiceName, Package: "loams.stream.v1",
+				Idempotency: None, Retry: RetrySafe, Streaming: Unary,
+			},
+			{
+				Module: "streams", Name: "Fetch", ProtoName: "fetch",
+				Method: "Fetch", RPC: streamv1connect.StreamServiceName + "/Fetch",
+				Service: streamv1connect.StreamServiceName, Package: "loams.stream.v1",
+				Idempotency: NoSideEffects, Retry: RetrySafe, Streaming: Unary,
+			},
+			{
+				Module: "streams", Name: "FetchEvents", ProtoName: "fetch_events",
+				Method: "FetchCloudEvents", RPC: streamv1connect.StreamServiceName + "/FetchCloudEvents",
+				Service: streamv1connect.StreamServiceName, Package: "loams.stream.v1",
+				Idempotency: NoSideEffects, Retry: RetrySafe, Streaming: Unary,
+			},
+			{
+				Module: "streams", Name: "Get", ProtoName: "get",
+				Method: "DescribeStream", RPC: streamv1connect.StreamServiceName + "/DescribeStream",
+				Service: streamv1connect.StreamServiceName, Package: "loams.stream.v1",
+				Idempotency: NoSideEffects, Retry: RetrySafe, Streaming: Unary,
+			},
+			{
+				Module: "streams", Name: "List", ProtoName: "list",
+				Method: "ListStreams", RPC: streamv1connect.StreamServiceName + "/ListStreams",
+				Service: streamv1connect.StreamServiceName, Package: "loams.stream.v1",
+				Idempotency: NoSideEffects, Retry: RetrySafe, Streaming: Unary,
+				Pagination: &Pagination{
+					ItemsField: "Streams", NextPageTokenField: "NextPageToken",
+					PageSizeField: "PageSize", PageTokenField: "PageToken",
+				},
+			},
+			{
+				Module: "streams", Name: "Produce", ProtoName: "produce",
+				Method: "Produce", RPC: streamv1connect.StreamServiceName + "/Produce",
+				Service: streamv1connect.StreamServiceName, Package: "loams.stream.v1",
+				Idempotency: None, Retry: RetryManual, Streaming: Unary,
+			},
+			{
+				Module: "streams", Name: "ProduceEvents", ProtoName: "produce_events",
+				Method: "ProduceCloudEvents", RPC: streamv1connect.StreamServiceName + "/ProduceCloudEvents",
+				Service: streamv1connect.StreamServiceName, Package: "loams.stream.v1",
+				Idempotency: None, Retry: RetryManual, Streaming: Unary,
+			},
+		},
+	},
+	{
 		Name:     "tables",
 		Service:  livev1connect.LiveServiceName,
 		Package:  "loams.live.v1",
@@ -274,6 +589,20 @@ var Modules = []ModuleBinding{
 				Method: "Query", RPC: livev1connect.LiveServiceName + "/Query",
 				Service: livev1connect.LiveServiceName, Package: "loams.live.v1",
 				Idempotency: None, Retry: RetryManual, Streaming: Unary,
+			},
+		},
+	},
+	{
+		Name:    "vector",
+		Service: collectionv1connect.QueryServiceName,
+		Package: "loams.collection.v1",
+		Derived: true,
+		Calls: []CallBinding{
+			{
+				Module: "vector", Name: "Search", ProtoName: "search",
+				Method: "Search", RPC: collectionv1connect.QueryServiceName + "/Search",
+				Service: collectionv1connect.QueryServiceName, Package: "loams.collection.v1",
+				Idempotency: None, Retry: RetrySafe, Streaming: Unary,
 			},
 		},
 	},
@@ -310,5 +639,15 @@ func NewServiceClients(httpClient connect.HTTPClient, baseURL string, opts ...co
 		instancev1connect.InstanceServiceName: instancev1connect.NewInstanceServiceClient(httpClient, baseURL, opts...),
 		livev1connect.LiveServiceName:         livev1connect.NewLiveServiceClient(httpClient, baseURL, opts...),
 		livev1connect.LiveAdminServiceName:    livev1connect.NewLiveAdminServiceClient(httpClient, baseURL, opts...),
+
+		// SDKP: the app data planes.
+		collectionv1connect.NamespaceServiceName:  collectionv1connect.NewNamespaceServiceClient(httpClient, baseURL, opts...),
+		collectionv1connect.CollectionServiceName: collectionv1connect.NewCollectionServiceClient(httpClient, baseURL, opts...),
+		collectionv1connect.DocumentServiceName:   collectionv1connect.NewDocumentServiceClient(httpClient, baseURL, opts...),
+		collectionv1connect.QueryServiceName:      collectionv1connect.NewQueryServiceClient(httpClient, baseURL, opts...),
+		graphv1connect.GraphAdminServiceName:      graphv1connect.NewGraphAdminServiceClient(httpClient, baseURL, opts...),
+		graphv1connect.GraphServiceName:           graphv1connect.NewGraphServiceClient(httpClient, baseURL, opts...),
+		sqlv1connect.SqlServiceName:               sqlv1connect.NewSqlServiceClient(httpClient, baseURL, opts...),
+		streamv1connect.StreamServiceName:         streamv1connect.NewStreamServiceClient(httpClient, baseURL, opts...),
 	}
 }

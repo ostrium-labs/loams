@@ -20,7 +20,8 @@ namespace Loams;
 /// <param name="Offset">Its offset in the partition.</param>
 /// <param name="Value">Its bytes.</param>
 /// <param name="TimestampMs">Its append time, in Unix milliseconds, when the server sent one.</param>
-public sealed record StreamRecord(uint Partition, ulong Offset, byte[] Value, ulong TimestampMs = 0)
+/// <param name="Key">Its key, when it was produced with one.</param>
+public sealed record StreamRecord(uint Partition, ulong Offset, byte[] Value, ulong TimestampMs = 0, byte[]? Key = null)
 {
     /// <summary>The value as UTF-8 text.</summary>
     public string Text => System.Text.Encoding.UTF8.GetString(Value);

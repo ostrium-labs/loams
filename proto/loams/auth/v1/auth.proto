@@ -84,6 +84,7 @@ enum OidcProviderKind {
   OIDC_PROVIDER_KIND_AUTHENTIK = 5;
   OIDC_PROVIDER_KIND_DEX = 6;
   OIDC_PROVIDER_KIND_GENERIC = 7;
+  OIDC_PROVIDER_KIND_ZITADEL = 8;
 }
 
 // An OIDC provider people can sign in with.
@@ -116,7 +117,8 @@ message ListProvidersResponse {
 }
 
 message CompleteSetupRequest {
-  // The token `loams` printed at first start; not needed from loopback.
+  // This engine's LOAMS_SETUP_TOKEN. Required when authentication is on;
+  // ignored with LOAMS_AUTH_MODE=off.
   string setup_token = 1;
   string org_name = 2;
   // The owner's name.

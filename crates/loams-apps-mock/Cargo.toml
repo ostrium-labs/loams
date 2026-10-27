@@ -15,7 +15,7 @@ tower-http.workspace = true
 # The console REST surface. Same workspace, so the unified mock serves the
 # `/api/v1/*` contract and the app protos from one listener and one seed.
 loams-console-mock = { path = "../loams-console-mock" }
-# The OAuth module verifies the fake Authentik's PKCE S256 challenges.
+# The OAuth module verifies the fake OIDC issuer's PKCE S256 challenges.
 base64.workspace = true
 buffa.workspace = true
 buffa-types = { version = "0.9.2", features = ["json"] }

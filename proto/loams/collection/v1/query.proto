@@ -172,6 +172,8 @@ service QueryService {
   // after a lost answer. It is still a `POST`, because a search is not free and
   // the request is a body.
   rpc Search(SearchRequest) returns (SearchResponse) {
+    option (loams.options.v1.facade) = {name: "query"};
+    option (loams.options.v1.facade) = {module: "vector" name: "search"};
     option idempotency_level = NO_SIDE_EFFECTS;
   }
 }

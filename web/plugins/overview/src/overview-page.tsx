@@ -101,8 +101,8 @@ export function OverviewPage({
   const key = `${engine?.phase}:${active?.id}:${tick}`;
   const live = where.known && !where.down;
   const data = useLoad(() => loadData(transport), key, live, active?.id);
-  // Durable execution is served by the local engine only (the desktop proxy answers 404 elsewhere).
-  const durable = useLoad(() => loadDurable(net), key, live && isLocal, active?.id);
+  // Durable execution: the local engine's listener here, a remote server's main port elsewhere.
+  const durable = useLoad(() => loadDurable(net), key, live, active?.id);
   const streams = useLoad(() => loadStreams(net), key, live, active?.id);
   const connectors = useLoad(() => loadConnectors(desktop), tick);
   const factory = useLoad(() => desktop.factory.list(), tick);
@@ -141,7 +141,7 @@ export function OverviewPage({
           <LiveCard engine={engine} local={isLocal} />
         </StaggerItem>
         <StaggerItem as="div" index={4}>
-          <DurableCard where={where} load={durable} local={isLocal} />
+          <DurableCard where={where} load={durable} />
         </StaggerItem>
         <StaggerItem as="div" index={5}>
           <StreamsCard where={where} load={streams} />

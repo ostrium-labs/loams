@@ -1,0 +1,17 @@
+== unmount A
+unmounted /home/dinakaran/lc0-fs/a/mnt
+== unmount B
+B mounts left: 0
+== revoke remaining non-owner tokens
+== delete the file system
+deleting
+== stop machine B and remove local state
+== teardown_leaves_nothing
+list-file-systems: {'region_code': 'aws-us-east-1', 'file_systems': []}
+PASS no file system left in aws-us-east-1
+PASS no drive9 mount on A
+PASS machine B container removed
+PASS no mount locator under any ~/.ti/mounts/
+PASS no fs_credentials entry left
+PASS no token file left
+result: pass=6 fail=0

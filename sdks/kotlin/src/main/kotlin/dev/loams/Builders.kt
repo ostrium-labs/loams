@@ -323,11 +323,16 @@ fun weighted(vararg weights: Double): JsonValue =
 
 /** Sort keys. */
 object Sort {
-    fun score(ascending: Boolean = false): JsonValue =
-        Values.obj("score" to Values.obj("order" to Values.str(if (ascending) "SORT_ORDER_ASC" else "SORT_ORDER_DESC")))
+    /**
+     * By score; null leaves the order unset, which is the IR's default for a score (descending)
+     * and what the builder corpus's `sort` cases send (`{"score":{}}`).
+     */
+    fun score(ascending: Boolean? = null): JsonValue =
+        Values.obj("score" to Values.obj("order" to ascending?.let { Values.str(if (it) "SORT_ORDER_ASC" else "SORT_ORDER_DESC") }))
 
-    fun pk(descending: Boolean = false): JsonValue =
-        Values.obj("pk" to Values.obj("order" to Values.str(if (descending) "SORT_ORDER_DESC" else "SORT_ORDER_ASC")))
+    /** By primary key; null leaves the order unset, the IR's default for a key (ascending). */
+    fun pk(descending: Boolean? = null): JsonValue =
+        Values.obj("pk" to Values.obj("order" to descending?.let { Values.str(if (it) "SORT_ORDER_DESC" else "SORT_ORDER_ASC") }))
 
     fun field(name: String, descending: Boolean = false, missingFirst: Boolean? = null): JsonValue = Values.obj(
         "field" to Values.obj(
@@ -409,8 +414,10 @@ class Search(val collection: String) {
                typed: List<String>? = null) = apply {
         fields["select"] = Values.obj(
             "source" to if (include == null && exclude == null) null else Values.obj(
-                "include" to JsonArray((include ?: emptyList()).map { Values.str(it) }),
-                "exclude" to JsonArray((exclude ?: emptyList()).map { Values.str(it) }),
+                // `select` is a Struct, so an empty list is sent rather than omitted: leave out
+                // the side the caller did not give, as the builder corpus does.
+                "include" to include?.let { v -> JsonArray(v.map { Values.str(it) }) },
+                "exclude" to exclude?.let { v -> JsonArray(v.map { Values.str(it) }) },
             ),
             "vectors" to vectors?.let { v -> JsonArray(v.map { Values.str(it) }) },
             "fields" to typed?.let { v -> JsonArray(v.map { Values.str(it) }) },

@@ -1,0 +1,106 @@
+# HE0 (plan HE1 Task 5): SigNoz v0.145.0, the community build (MIT; the
+# enterprise build carries ee/ code under SigNoz's own licence), with its
+# collector and schema migrator v0.144.12 (AGPL-3.0, unmodified containers
+# only, §75 §18). SigNoz is the one mined application that talks to
+# ClickHouse over the native protocol, and it runs its schema as a cluster
+# (`ON CLUSTER cluster`, ReplicatedMergeTree, Distributed tables): here a
+# one-node cluster with ClickHouse Keeper embedded in the pinned server, in
+# place of SigNoz's ZooKeeper. The histogramQuantile executable function is
+# not installed (it is a downloaded binary), so the queries that need it
+# fail and are recorded as failed. Driven by scripts/house/apps.sh signoz
+# up|drive|dump|down. Every image is pinned by digest; host ports bind to
+# 127.0.0.1.
+name: he0-signoz
+
+x-collector-env: &collector-env
+  SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_DSN: tcp://clickhouse:9000
+  # The exporters' DSNs (otel-collector-config.yaml): the server, then the
+  # database, then options (compose.house.yaml sets TLS ones).
+  SIGNOZ_CH_BASE: tcp://clickhouse:9000
+  SIGNOZ_CH_OPTIONS: ""
+  SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_CLUSTER: cluster
+  SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_REPLICATION: "true"
+  SIGNOZ_OTEL_COLLECTOR_TIMEOUT: 10m
+  LOW_CARDINAL_EXCEPTION_GROUPING: "false"
+  OTEL_RESOURCE_ATTRIBUTES: host.name=he0-host,os.type=linux
+
+services:
+  signoz:
+    image: docker.io/signoz/signoz-community:v0.145.0@sha256:5f9b59276590a5e0e0eb2a7f99e88c9b27f44e4575d18c555aaa07648bca9d0c
+    labels: { io.loams.licence: "MIT" }
+    environment:
+      SIGNOZ_TELEMETRYSTORE_CLICKHOUSE_DSN: tcp://clickhouse:9000
+      SIGNOZ_TELEMETRYSTORE_CLICKHOUSE_CLUSTER: cluster
+      SIGNOZ_SQLSTORE_PROVIDER: sqlite
+      SIGNOZ_SQLSTORE_SQLITE_PATH: /var/lib/signoz/signoz.db
+      SIGNOZ_WEB_ENABLED: "false"
+      SIGNOZ_TOKENIZER_JWT_SECRET: he0-not-a-secret
+      SIGNOZ_ANALYTICS_ENABLED: "false"
+      SIGNOZ_STATSREPORTER_ENABLED: "false"
+      SIGNOZ_PROMETHEUS_ACTIVE__QUERY__TRACKER_ENABLED: "false"
+    ports: ["127.0.0.1:${HE0_SIGNOZ_PORT:-3500}:8080"]
+    volumes: [signoz-data:/var/lib/signoz]
+    depends_on:
+      migrator-async: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/api/v2/healthz || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+
+  otel-collector:
+    image: docker.io/signoz/signoz-otel-collector:v0.144.12@sha256:deb566a7a3c0ba544ee58ccc92ee1f0e6da827bc40383e52f3c824705e100a3d
+    labels: { io.loams.licence: "AGPL-3.0-only" }
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["/signoz-otel-collector migrate sync check && /signoz-otel-collector --config=/etc/otel-collector-config.yaml"]
+    environment: *collector-env
+    volumes: [./otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro]
+    ports: ["127.0.0.1:${HE0_SIGNOZ_OTLP_PORT:-3518}:4318"]
+    depends_on:
+      migrator-async: { condition: service_completed_successfully }
+    restart: on-failure
+
+  migrator-sync:
+    image: docker.io/signoz/signoz-otel-collector:v0.144.12@sha256:deb566a7a3c0ba544ee58ccc92ee1f0e6da827bc40383e52f3c824705e100a3d
+    labels: { io.loams.licence: "AGPL-3.0-only" }
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["/signoz-otel-collector migrate bootstrap && /signoz-otel-collector migrate sync up"]
+    environment: *collector-env
+    depends_on:
+      clickhouse: { condition: service_healthy }
+    restart: on-failure
+
+  migrator-async:
+    image: docker.io/signoz/signoz-otel-collector:v0.144.12@sha256:deb566a7a3c0ba544ee58ccc92ee1f0e6da827bc40383e52f3c824705e100a3d
+    labels: { io.loams.licence: "AGPL-3.0-only" }
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["/signoz-otel-collector migrate async up"]
+    environment: *collector-env
+    depends_on:
+      migrator-sync: { condition: service_completed_successfully }
+    restart: on-failure
+
+  clickhouse:
+    image: ${HE0_CLICKHOUSE_IMAGE:-docker.io/clickhouse/clickhouse-server:26.9.2.8@sha256:7b9a0b6e9ab7ef79db5c4f8a9808f880258704eb7b4af9309f9029c16e727a80}
+    labels: { io.loams.licence: "Apache-2.0" }
+    environment:
+      CLICKHOUSE_SKIP_USER_SETUP: "1"
+    # HTTP on loopback, for scripts/house/replay.py to read the oracle.
+    ports: ["127.0.0.1:${HE0_SIGNOZ_CH_PORT:-28146}:8123"]
+    volumes:
+      - ../clickhouse/he0-logs.xml:/etc/clickhouse-server/config.d/he0-logs.xml:ro
+      - ../clickhouse/he0-users.xml:/etc/clickhouse-server/users.d/he0-users.xml:ro
+      - ./signoz-cluster.xml:/etc/clickhouse-server/config.d/signoz-cluster.xml:ro
+      - ./signoz-merge-tree.xml:/etc/clickhouse-server/config.d/signoz-merge-tree.xml:ro
+      - signoz-ch-data:/var/lib/clickhouse
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8123/ping || exit 1"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  signoz-data:
+  signoz-ch-data:

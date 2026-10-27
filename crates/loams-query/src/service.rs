@@ -51,6 +51,9 @@ pub struct SqlConfig {
     pub timeout: Duration,
     /// 8 192 rows per record batch.
     pub batch_rows: usize,
+    /// 16 MiB per `loams.sql.v1` `QueryArrow` answer; a larger result is
+    /// `result_too_large` and belongs on Flight SQL (API2 Task 1).
+    pub arrow_max_bytes: usize,
 }
 
 impl Default for SqlConfig {
@@ -59,6 +62,7 @@ impl Default for SqlConfig {
             max_rows: 10_000,
             timeout: Duration::from_secs(30),
             batch_rows: 8_192,
+            arrow_max_bytes: 16 * 1024 * 1024,
         }
     }
 }

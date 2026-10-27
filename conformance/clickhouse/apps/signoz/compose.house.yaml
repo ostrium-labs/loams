@@ -1,0 +1,37 @@
+# HE1 R9.64 (D1571): SigNoz against the chDB House instead of
+# clickhouse-server. Used by `HE0_TARGET=house scripts/house/apps.sh signoz …`
+# on top of compose.yaml; scripts/house/app-on-house.sh starts the House on
+# the host. SigNoz, its collector and its schema migrators speak the native
+# protocol: they reach the House's native TLS listener (password required off
+# loopback, R9.45) at `house`, which resolves to the host. clickhouse-go takes
+# no CA file in a DSN, so the House's self-signed certificate is not verified
+# (`skip_verify`); the traffic stays on this machine. Every container is the
+# unmodified image: only its environment changes.
+x-house-dsn: &house-dsn tcp://${HE0_HOUSE_USER:-signoz}:${HE0_HOUSE_PASSWORD:?the House password}@house:${HE0_HOUSE_NATIVE_TLS_PORT:-29440}?secure=true&skip_verify=true
+
+x-collector-env: &collector-env
+  SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_DSN: *house-dsn
+  SIGNOZ_CH_BASE: tcp://${HE0_HOUSE_USER:-signoz}:${HE0_HOUSE_PASSWORD:?the House password}@house:${HE0_HOUSE_NATIVE_TLS_PORT:-29440}
+  SIGNOZ_CH_OPTIONS: "?secure=true&skip_verify=true"
+
+services:
+  signoz:
+    extra_hosts: ["house:host-gateway"]
+    environment:
+      SIGNOZ_TELEMETRYSTORE_CLICKHOUSE_DSN: *house-dsn
+  otel-collector:
+    extra_hosts: ["house:host-gateway"]
+    environment: *collector-env
+  # A failed migration fails the run at once instead of restarting.
+  migrator-sync:
+    extra_hosts: ["house:host-gateway"]
+    environment: *collector-env
+    restart: "no"
+    depends_on: !reset []
+  migrator-async:
+    extra_hosts: ["house:host-gateway"]
+    environment: *collector-env
+    restart: "no"
+  # The oracle does not start in a House run.
+  clickhouse:
+    profiles: ["oracle"]

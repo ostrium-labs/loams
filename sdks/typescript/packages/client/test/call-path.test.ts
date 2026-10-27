@@ -15,7 +15,8 @@ import { ErrorInfoSchema } from '@loams/proto/errors';
 import { InstanceService } from '@loams/proto/instance';
 import { LiveService } from '@loams/live/live';
 import { describe, expect, it } from 'vitest';
-import { MODULES } from '../src/gen/facade.js';
+import { MODULES, SERVICE_DESCRIPTORS } from '../src/gen/facade.js';
+import { paginate } from '../src/runtime/pagination.js';
 import { CallInvoker } from '../src/runtime/call.js';
 import { ConsistencySession } from '../src/runtime/consistency.js';
 import { LoamsError, TokenExpiredError } from '../src/runtime/errors.js';
@@ -246,37 +247,42 @@ describe('the call path', () => {
     // write answered with has to go out on the next read, or read-your-writes
     // is a promise the SDK does not keep.
     const session = new ConsistencySession();
-    session.record('v1:stream-1.7');
+    session.record('v1:s1/p0@7', GET_INSTANCE.package);
     const { seen, transport } = recordingTransport(() => ({ instanceId: '01' }));
     const invoker = invokerWith(transport, { consistency: session });
 
     await invoker.unary(GET_INSTANCE, {}, { consistency: { session: true } });
-    expect(seen[0]?.['loams-consistency']).toBe('v1:stream-1.7');
+    expect(seen[0]?.['loams-consistency']).toBe('v1:s1/p0@7');
   });
 
   it('folds the token a write answered with into the session', async () => {
     const session = new ConsistencySession();
-    const { transport } = recordingTransport(() => ({ consistencyToken: 'v1:stream-2.1' }));
+    const { transport } = recordingTransport(() => ({ consistencyToken: 'v1:s2/p1@1' }));
     const invoker = invokerWith(transport, { consistency: session });
 
     await invoker.unary(TABLES_QUERY, {}, { consistency: { session: true } });
-    expect(session.current()).toBe('v1:stream-2.1');
+    expect(session.current(TABLES_QUERY.package)).toBe('v1:s2/p1@1');
   });
 
-  it('does not fail a committed write because the session cannot merge a token', async () => {
-    // The token's encoding is still opaque, so two different tokens meet and the
-    // session refuses to merge them. That refusal must not become the caller's
+  it('does not fail a committed write because the session cannot parse a token', async () => {
+    // A `v1:` token the session cannot parse must not become the caller's
     // error: the write is done, and a caller that retried on the error would
-    // write twice.
+    // write twice. A string that is not a `v1:` token at all is not the
+    // session's business and is not counted.
     const session = new ConsistencySession();
-    session.record('v1:stream-1.1');
-    const { transport } = recordingTransport(() => ({ consistencyToken: 'not-a-token' }));
+    session.record('v1:s1/p0@1', TABLES_QUERY.package);
+    const { transport } = recordingTransport(() => ({ consistencyToken: 'v1:garbage' }));
     const invoker = invokerWith(transport, { consistency: session });
 
     await expect(
       invoker.unary(TABLES_QUERY, {}, { consistency: { session: true } }),
     ).resolves.toBeDefined();
-    expect(session.conflicts).toBe(1);
+    expect(session.rejected).toBe(1);
+    expect(session.current(TABLES_QUERY.package)).toBe('v1:s1/p0@1');
+
+    const other = recordingTransport(() => ({ token: 'page-2' }));
+    await invokerWith(other.transport, { consistency: session }).unary(TABLES_QUERY, {}, {});
+    expect(session.rejected).toBe(1);
   });
 
   it('gives a stream that made progress a fresh retry budget (R7)', async () => {
@@ -335,5 +341,46 @@ describe('the call path', () => {
         }
       })(),
     ).rejects.toBeInstanceOf(LoamsError);
+  });
+
+  it('calls the RPC a renamed facade call names, not a method of the facade name', async () => {
+    // `admin.keys.create` is `KeyService/CreateKey`. The connect-es client is
+    // keyed by the RPC's local name (`createKey`), so looking it up by the
+    // facade name (`create`) found nothing and every renamed call failed.
+    const create = MODULES.find((module) => module.name === 'admin.keys')!.calls.find(
+      (call) => call.name === 'create',
+    )!;
+    const methods: string[] = [];
+    const transport = {
+      unary(method: { name: string }) {
+        methods.push(method.name);
+        return Promise.resolve({ message: {} }) as never;
+      },
+      stream() {
+        throw new Error('no streams');
+      },
+    };
+    const invoker = new CallInvoker(transport as never, undefined, 0, undefined);
+    invoker.register(create.service, SERVICE_DESCRIPTORS[create.service]!);
+    await invoker.unary(create, {});
+    expect(methods).toEqual(['CreateKey']);
+  });
+
+  it('pages a call whose item field has an underscore', async () => {
+    const binding = MODULES.flatMap((module) => module.calls).find(
+      (call) => call.pagination?.items === 'service_accounts',
+    )!;
+    let calls = 0;
+    const fetch = async () => {
+      calls += 1;
+      return calls === 1
+        ? { serviceAccounts: [{ id: 'a' }], nextPageToken: 'p2' }
+        : { serviceAccounts: [{ id: 'b' }], nextPageToken: '' };
+    };
+    const seen: unknown[] = [];
+    for await (const item of paginate(binding, fetch, {})) {
+      seen.push(item);
+    }
+    expect(seen).toEqual([{ id: 'a' }, { id: 'b' }]);
   });
 });

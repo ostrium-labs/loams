@@ -26,10 +26,10 @@ const (
 	GrantRefresh  = "refresh_token"
 )
 
-// The fake Authentik lives under this prefix so browser sign-in can run
+// The fake OIDC issuer lives under this prefix so browser sign-in can run
 // end to end against the mock: authorize (redirects straight back with a
 // code), token (checks PKCE S256) and discovery.
-const authentikPrefix = "/mock/authentik/application/o/loams/"
+const oidcPrefix = "/mock/oidc/"
 
 // TokenResponse is the token endpoint's answer.
 type TokenResponse struct {
@@ -58,8 +58,8 @@ func (s *Server) mountHTTP(mux *http.ServeMux) {
 	})
 	mux.HandleFunc("POST /api/v1/oauth/token", s.token)
 
-	mux.HandleFunc("GET "+authentikPrefix+".well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
-		base := "http://" + r.Host + authentikPrefix
+	mux.HandleFunc("GET "+oidcPrefix+".well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
+		base := "http://" + r.Host + oidcPrefix
 		writeJSON(w, 200, map[string]any{
 			"issuer":                                base,
 			"authorization_endpoint":                base + "authorize/",
@@ -71,8 +71,8 @@ func (s *Server) mountHTTP(mux *http.ServeMux) {
 			"code_challenge_methods_supported":      []string{"S256"},
 		})
 	})
-	mux.HandleFunc("GET "+authentikPrefix+"authorize/", s.fakeAuthorize)
-	mux.HandleFunc("POST "+authentikPrefix+"token/", s.fakeAuthentikToken)
+	mux.HandleFunc("GET "+oidcPrefix+"authorize/", s.fakeAuthorize)
+	mux.HandleFunc("POST "+oidcPrefix+"token/", s.fakeOidcToken)
 
 	// Test controls. Not part of any Loams API.
 	mux.HandleFunc("GET /mock/pairing", func(w http.ResponseWriter, r *http.Request) {
@@ -171,8 +171,8 @@ func (s *Server) redeemPairing(w http.ResponseWriter, f url.Values) {
 }
 
 func (s *Server) exchange(w http.ResponseWriter, f url.Values) {
-	if !strings.HasPrefix(f.Get("subject_token"), "mock-authentik-") {
-		oauthError(w, "invalid_grant", "", "subject_token is not a token from the mock Authentik")
+	if !strings.HasPrefix(f.Get("subject_token"), "mock-oidc-") {
+		oauthError(w, "invalid_grant", "", "subject_token is not a token from the mock OIDC issuer")
 		return
 	}
 	s.issueForDevice(w, "usr_alice", f)
@@ -236,7 +236,7 @@ func (s *Server) refreshGrant(w http.ResponseWriter, f url.Values) {
 	writeJSON(w, 200, resp)
 }
 
-// fakeAuthorize stands in for Authentik's login page: it redirects straight
+// fakeAuthorize stands in for the identity provider's login page: it redirects straight
 // back to the app with a code bound to the PKCE challenge.
 func (s *Server) fakeAuthorize(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
@@ -260,7 +260,7 @@ func (s *Server) fakeAuthorize(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, redirect.String(), http.StatusFound)
 }
 
-func (s *Server) fakeAuthentikToken(w http.ResponseWriter, r *http.Request) {
+func (s *Server) fakeOidcToken(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		oauthError(w, "invalid_request", "", "not a form")
 		return
@@ -278,7 +278,7 @@ func (s *Server) fakeAuthentikToken(w http.ResponseWriter, r *http.Request) {
 	// No id_token: AppAuth would validate one (issuer, audience, nonce), and the app only needs
 	// the access token to exchange at the gateway.
 	writeJSON(w, 200, map[string]any{
-		"access_token": "mock-authentik-" + code[len("mock-authz-"):], "token_type": "Bearer", "expires_in": 300,
+		"access_token": "mock-oidc-" + code[len("mock-authz-"):], "token_type": "Bearer", "expires_in": 300,
 	})
 }
 

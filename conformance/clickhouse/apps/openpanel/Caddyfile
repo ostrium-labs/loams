@@ -1,0 +1,10 @@
+# HE0: one origin for OpenPanel, as its self-hosting guide sets up: /api goes
+# to the API (prefix stripped), everything else to the dashboard.
+:80 {
+	handle_path /api/* {
+		reverse_proxy op-api:3000
+	}
+	handle {
+		reverse_proxy op-dashboard:3000
+	}
+}

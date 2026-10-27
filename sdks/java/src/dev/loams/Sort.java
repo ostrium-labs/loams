@@ -12,14 +12,14 @@ public final class Sort {
 
     private Sort() {}
 
-    /** By score, best first. */
+    /** By score, best first: the order is sent unset, the IR's default for a score (as the builder corpus spells it). */
     public static SortKey score() {
-        return SortKey.newBuilder().setScore(ScoreSort.newBuilder().setOrder(SortOrder.SORT_ORDER_DESC)).build();
+        return SortKey.newBuilder().setScore(ScoreSort.newBuilder()).build();
     }
 
-    /** By primary key, ascending: the tiebreaker {@code queryAll} needs. */
+    /** By primary key, ascending (the order unset, the IR's default): the tiebreaker {@code queryAll} needs. */
     public static SortKey pk() {
-        return SortKey.newBuilder().setPk(PrimaryKeySort.newBuilder().setOrder(SortOrder.SORT_ORDER_ASC)).build();
+        return SortKey.newBuilder().setPk(PrimaryKeySort.newBuilder()).build();
     }
 
     /** By a fast field; {@code missingFirst} null leaves the engine's default. */

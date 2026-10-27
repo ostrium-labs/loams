@@ -1,0 +1,10 @@
+{
+  "chatId": "chat_01",
+  "createdAtMs": 1791797400000,
+  "decidedAtMs": 1791797401000,
+  "id": "appr_01",
+  "kind": "merge",
+  "payloadHash": "sha256:9a8b",
+  "state": "approved",
+  "summary": "Merge #7 into main"
+}

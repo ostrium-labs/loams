@@ -187,20 +187,25 @@ object CompactJson {
 
     private fun writeField(out: StringBuilder, field: FieldDescriptor, message: Message, entryField: FieldDescriptor) {
         if (field.isMapField) {
+            // To protobuf-java's reflection a map is a repeated field of synthesised
+            // `key`/`value` entry messages (see [entries]), so `getField` answers a list
+            // of entries, never a `Map`.
             @Suppress("UNCHECKED_CAST")
-            val map = message.getField(field) as Map<Any, Any>
+            val entries = message.getField(field) as List<Message>
+            val keyField = field.messageType.findFieldByName("key")
+            val valueField = mapValueField(field)
             out.append('{')
             var first = true
             // A map's key is a string in proto3 JSON, whatever its declared type,
             // and an `int32` key is written as its decimal text.
-            for ((key, value) in map) {
+            for (entry in entries) {
                 if (!first) {
                     out.append(',')
                 }
                 first = false
-                writeString(out, key.toString())
+                writeString(out, entry.getField(keyField).toString())
                 out.append(':')
-                writeScalar(out, mapValueField(field), value)
+                writeScalar(out, valueField, entry.getField(valueField))
             }
             out.append('}')
             return
@@ -258,7 +263,14 @@ object CompactJson {
 
             FieldDescriptor.Type.STRING -> writeString(out, value as? String ?: "")
 
-            FieldDescriptor.Type.BYTES -> writeString(out, Base64.encode((value as? String)?.toByteArray() ?: ByteArray(0)))
+            // protobuf-java holds a `bytes` field as a `ByteString`; a `String` is read as
+            // its UTF-8 for a caller-built value.
+            FieldDescriptor.Type.BYTES -> writeString(out, Base64.encode(when (value) {
+                is ByteString -> value.toByteArray()
+                is ByteArray -> value
+                is String -> value.toByteArray(Charsets.UTF_8)
+                else -> ByteArray(0)
+            }))
 
             // 64-bit integers are JSON **strings**: a JSON number is a double to most
             // readers and cannot hold an int64's range. The corpus's `revision`
@@ -281,7 +293,10 @@ object CompactJson {
             FieldDescriptor.Type.FIXED32,
             -> out.append(Integer.toUnsignedString(value as? Int ?: 0))
 
-            FieldDescriptor.Type.FLOAT -> out.append(number((value as? Float ?: 0f).toDouble()))
+            // A `float` is written as the shortest decimal that round-trips **as a float**
+            // (`0.7`), not as its widened double (`0.699999988079071`), which is a
+            // different request body to a byte comparison and to every other SDK.
+            FieldDescriptor.Type.FLOAT -> out.append(number(value as? Float ?: 0f))
             FieldDescriptor.Type.DOUBLE -> out.append(number(value as? Double ?: 0.0))
 
             else -> throw UnsupportedOperationException(
@@ -308,6 +323,18 @@ object CompactJson {
         // round-trips is what a corpus byte-compares against, and Java's `Double`/
         // `Float` `toString` is specified to be exactly that.
         return if (value == Math.floor(value) && !value.isInfinite() && Math.abs(value) < 1e15) {
+            value.toLong().toString()
+        } else {
+            value.toString()
+        }
+    }
+
+    /** A JSON number for a float: the shortest form that round-trips as a float. */
+    fun number(value: Float): String {
+        if (value.isNaN() || value.isInfinite()) {
+            return number(value.toDouble())
+        }
+        return if (value == Math.floor(value.toDouble()).toFloat() && Math.abs(value) < 1e15f) {
             value.toLong().toString()
         } else {
             value.toString()

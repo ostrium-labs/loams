@@ -35,6 +35,7 @@ import {
 	startThread,
 	timeline,
 } from "../../../../web/apps/console/test/e2e/studio";
+import { mainWindow } from "./windows";
 
 const appRoot = resolve(__dirname, "../..");
 const fakeEngine = join(appRoot, "test/fixtures/fake-engine.mjs");
@@ -114,7 +115,7 @@ test.describe("studio on the desktop edition", () => {
 		env.LOAMS_DESKTOP_USER_DATA = userData;
 		const extra = (process.env.LOAMS_E2E_ELECTRON_ARGS ?? "").split(/\s+/).filter(Boolean);
 		app = await electron.launch({ args: [...extra, appRoot], cwd: appRoot, env });
-		page = await app.firstWindow();
+		page = await mainWindow(app);
 		// The folder picker answers with the fixture repository.
 		await app.evaluate(({ dialog }, repo) => {
 			const answer = async () => ({ canceled: false, filePaths: [repo] });

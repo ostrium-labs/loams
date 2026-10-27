@@ -1,0 +1,409 @@
+syntax = "proto3";
+
+// The Loams Marketplace listing, v1 (design §73 §3.6, D1455; plan MK1 Task 1).
+// The protobuf form of schemas/marketplace/listing.v1.json: every field and
+// enum value there has its equal here, with the same snake_case names, and
+// `proto_and_schema_agree` (crates/loams-agentd-marketplace) keeps it so.
+// An enum value is the schema's string upper-cased, with `-` as `_`, after
+// the enum's prefix (`"mcp-server"` is `KIND_MCP_SERVER`). The
+// cross-field rules (an agent serves ACP or A2A, each runtime takes its own
+// artifact type, a secret has no default, and the rest) live in the JSON
+// Schema; a Listing is valid only when its JSON form passes it.
+package loams.marketplace.v1;
+
+import "google/protobuf/struct.proto";
+
+message Listing {
+  // `<namespace>/<name>`.
+  string id = 1;
+  Kind kind = 2;
+  // Semantic version.
+  string version = 3;
+  string title = 4;
+  string summary = 5;
+  string description = 6;
+  string icon = 7;
+  // SPDX expression.
+  string licence = 8;
+  Source source = 9;
+  Publisher publisher = 10;
+  string support = 11;
+  string security_contact = 12;
+  Framework framework = 13;
+  Language language = 14;
+  Artifact artifact = 15;
+  Provenance provenance = 16;
+  Runtime runtime = 17;
+  string entrypoint = 18;
+  repeated Target targets = 19;
+  Surfaces surfaces = 20;
+  LoamsCapabilities loams = 21;
+  repeated string connectors = 22;
+  repeated McpServerDependency mcp_servers = 23;
+  repeated Tool tools = 24;
+  PlaceTemplate place = 25;
+  Models models = 26;
+  CostProfile cost = 27;
+  repeated ConfigInput config = 28;
+  Conformance conformance = 29;
+  Harness harness = 30;
+  McpServer mcp_server = 31;
+  Pricing pricing = 32;
+}
+
+enum Kind {
+  KIND_UNSPECIFIED = 0;
+  KIND_AGENT = 1;
+  KIND_HARNESS = 2;
+  KIND_MCP_SERVER = 3;
+}
+
+message Source {
+  string repository = 1;
+  // The full 40-character commit id.
+  string commit = 2;
+  string path = 3;
+}
+
+message Publisher {
+  string name = 1;
+  string url = 2;
+}
+
+message Framework {
+  FrameworkName name = 1;
+  string version = 2;
+}
+
+enum FrameworkName {
+  FRAMEWORK_NAME_UNSPECIFIED = 0;
+  FRAMEWORK_NAME_MASTRA = 1;
+  FRAMEWORK_NAME_PYDANTIC_AI = 2;
+  FRAMEWORK_NAME_LANGGRAPH = 3;
+  FRAMEWORK_NAME_CREWAI = 4;
+  FRAMEWORK_NAME_OPENAI_AGENTS = 5;
+  FRAMEWORK_NAME_GOOGLE_ADK = 6;
+  FRAMEWORK_NAME_MICROSOFT_AGENT_FRAMEWORK = 7;
+  FRAMEWORK_NAME_EVE = 8;
+  FRAMEWORK_NAME_OTHER = 9;
+}
+
+enum Language {
+  LANGUAGE_UNSPECIFIED = 0;
+  LANGUAGE_TYPESCRIPT = 1;
+  LANGUAGE_JAVASCRIPT = 2;
+  LANGUAGE_PYTHON = 3;
+  LANGUAGE_GO = 4;
+  LANGUAGE_RUST = 5;
+  LANGUAGE_JAVA = 6;
+  LANGUAGE_KOTLIN = 7;
+  LANGUAGE_CSHARP = 8;
+  LANGUAGE_ZIG = 9;
+  LANGUAGE_OTHER = 10;
+}
+
+message Artifact {
+  ArtifactType type = 1;
+  string name = 2;
+  string version = 3;
+  // `sha512-…` for npm, `sha256:…` for pypi and oci; empty for archives.
+  string integrity = 4;
+  // An archive's files, one per platform.
+  repeated ArchiveFile files = 5;
+  // Public mirrors of the package file (npm, pypi, oci), beside its registry
+  // reference and never instead of it (D1812). An archive's are on its files.
+  repeated ArtifactLocation locations = 6;
+}
+
+enum ArtifactType {
+  ARTIFACT_TYPE_UNSPECIFIED = 0;
+  ARTIFACT_TYPE_NPM = 1;
+  ARTIFACT_TYPE_PYPI = 2;
+  ARTIFACT_TYPE_OCI = 3;
+  ARTIFACT_TYPE_ARCHIVE = 4;
+}
+
+message ArchiveFile {
+  Platform platform = 1;
+  string url = 2;
+  string sha256 = 3;
+  string path = 4;
+  // Public mirrors of this file, beside its url (D1812).
+  repeated ArtifactLocation locations = 5;
+}
+
+// A public mirror of an artifact's bytes (D1812): read first when its tier is
+// enabled, checked by SHA-256, then by integrity and provenance as any
+// artifact (D1459); the HTTPS location is the fallback. The index carries the
+// reference, never the bytes (D1460).
+message ArtifactLocation {
+  LocationKind kind = 1;
+  // The Walrus blob id: 32 bytes, URL-safe base64 without padding.
+  string blob_id = 2;
+  // The SHA-256 of the blob's bytes, lowercase hex.
+  string sha256 = 3;
+}
+
+enum LocationKind {
+  LOCATION_KIND_UNSPECIFIED = 0;
+  LOCATION_KIND_WALRUS = 1;
+}
+
+enum Platform {
+  PLATFORM_UNSPECIFIED = 0;
+  PLATFORM_LINUX_X86_64 = 1;
+  PLATFORM_LINUX_AARCH64 = 2;
+  PLATFORM_DARWIN_X86_64 = 3;
+  PLATFORM_DARWIN_AARCH64 = 4;
+  PLATFORM_WINDOWS_X86_64 = 5;
+  PLATFORM_WINDOWS_AARCH64 = 6;
+}
+
+message Provenance {
+  ProvenanceType type = 1;
+  string ref = 2;
+}
+
+enum ProvenanceType {
+  PROVENANCE_TYPE_UNSPECIFIED = 0;
+  PROVENANCE_TYPE_NPM_SLSA = 1;
+  PROVENANCE_TYPE_PYPI_PEP740 = 2;
+  PROVENANCE_TYPE_COSIGN = 3;
+  PROVENANCE_TYPE_SIGSTORE_BUNDLE = 4;
+  // GitHub artifact attestations, looked up by each file's SHA-256.
+  PROVENANCE_TYPE_GITHUB_ATTESTATION = 5;
+}
+
+message Runtime {
+  RuntimeKind kind = 1;
+  // A version range of the engine, such as `>=22.13` for node or `>=1.4.4`
+  // for bun.
+  string version = 2;
+  // The program that runs a node runtime's entrypoint (D1808); unset means
+  // node. Only the node runtime has an engine.
+  Engine engine = 3;
+}
+
+enum Engine {
+  ENGINE_UNSPECIFIED = 0;
+  ENGINE_NODE = 1;
+  ENGINE_BUN = 2;
+}
+
+enum RuntimeKind {
+  RUNTIME_KIND_UNSPECIFIED = 0;
+  RUNTIME_KIND_NODE = 1;
+  RUNTIME_KIND_PYTHON = 2;
+  RUNTIME_KIND_OCI = 3;
+  RUNTIME_KIND_BINARY = 4;
+}
+
+enum Target {
+  TARGET_UNSPECIFIED = 0;
+  TARGET_AGENTD = 1;
+  TARGET_BYOC_SERVER = 2;
+  TARGET_APP_BYOC = 3;
+}
+
+// Present fields are the surfaces served; an agent serves `acp` or `a2a`.
+message Surfaces {
+  AcpSurface acp = 1;
+  A2aSurface a2a = 2;
+  McpSurface mcp = 3;
+  ResponsesSurface responses = 4;
+}
+
+message AcpSurface {
+  int32 protocol_version = 1;
+}
+
+message A2aSurface {
+  // The A2A Agent Card, embedded unchanged.
+  google.protobuf.Struct agent_card = 1;
+}
+
+message McpSurface {
+  McpTransport transport = 1;
+}
+
+message ResponsesSurface {}
+
+enum McpTransport {
+  MCP_TRANSPORT_UNSPECIFIED = 0;
+  MCP_TRANSPORT_STDIO = 1;
+  MCP_TRANSPORT_STREAMABLE_HTTP = 2;
+}
+
+message LoamsCapabilities {
+  bool postgres = 1;
+  bool collections = 2;
+  bool qdrant = 3;
+  bool elasticsearch = 4;
+  bool streams = 5;
+  bool live = 6;
+  bool durable = 7;
+  bool memory = 8;
+  bool house = 9;
+}
+
+message McpServerDependency {
+  string id = 1;
+  // A version range.
+  string version = 2;
+}
+
+message Tool {
+  string name = 1;
+  string description = 2;
+  Risk risk = 3;
+  // The listing id of the MCP server the tool comes from.
+  string mcp_server = 4;
+}
+
+enum Risk {
+  RISK_UNSPECIFIED = 0;
+  RISK_READ = 1;
+  RISK_WRITE = 2;
+  RISK_EGRESS = 3;
+  RISK_DESTRUCTIVE = 4;
+}
+
+message PlaceTemplate {
+  repeated DataScope data = 1;
+  repeated string egress = 2;
+  repeated string always_ask = 3;
+  repeated string roles = 4;
+}
+
+message DataScope {
+  DataKind kind = 1;
+  string name = 2;
+  Access access = 3;
+}
+
+enum DataKind {
+  DATA_KIND_UNSPECIFIED = 0;
+  DATA_KIND_DATABASE = 1;
+  DATA_KIND_COLLECTION = 2;
+  DATA_KIND_STREAM = 3;
+  DATA_KIND_BUCKET = 4;
+}
+
+enum Access {
+  ACCESS_UNSPECIFIED = 0;
+  ACCESS_READ = 1;
+  ACCESS_WRITE = 2;
+}
+
+message Models {
+  ModelRequirements requires = 1;
+  SuggestedModel suggested = 2;
+  repeated ModelApi api = 3;
+}
+
+message ModelRequirements {
+  bool tools = 1;
+  bool vision = 2;
+  int64 context_min = 3;
+}
+
+message SuggestedModel {
+  string provider = 1;
+  string model = 2;
+}
+
+enum ModelApi {
+  MODEL_API_UNSPECIFIED = 0;
+  MODEL_API_CHAT_COMPLETIONS = 1;
+  MODEL_API_RESPONSES = 2;
+  MODEL_API_ANTHROPIC_MESSAGES = 3;
+}
+
+message CostProfile {
+  int64 typical_tokens_per_run = 1;
+  int64 max_tokens_per_run = 2;
+  int64 typical_runs_per_day = 3;
+  double budget_usd_per_run = 4;
+  double budget_usd_per_day = 5;
+}
+
+message ConfigInput {
+  string name = 1;
+  ConfigType type = 2;
+  string description = 3;
+  bool required = 4;
+  // Stored in agentd's vault, never in the manifest or the index.
+  bool secret = 5;
+  google.protobuf.Value default = 6;
+  repeated string values = 7;
+  string env = 8;
+}
+
+enum ConfigType {
+  CONFIG_TYPE_UNSPECIFIED = 0;
+  CONFIG_TYPE_STRING = 1;
+  CONFIG_TYPE_NUMBER = 2;
+  CONFIG_TYPE_BOOLEAN = 3;
+  CONFIG_TYPE_ENUM = 4;
+}
+
+message Conformance {
+  ConformanceLevel level = 1;
+  string report = 2;
+  string report_sha256 = 3;
+}
+
+enum ConformanceLevel {
+  CONFORMANCE_LEVEL_UNSPECIFIED = 0;
+  CONFORMANCE_LEVEL_CORE = 1;
+  CONFORMANCE_LEVEL_COMPATIBLE = 2;
+  CONFORMANCE_LEVEL_NATIVE = 3;
+}
+
+message Harness {
+  HarnessLaunch launch = 1;
+  repeated AuthKind auth = 2;
+  repeated string models = 3;
+  // agentd's built-in adapter, by its harness wire name (`claude-code`, …).
+  string native_adapter = 4;
+}
+
+enum AuthKind {
+  AUTH_KIND_UNSPECIFIED = 0;
+  AUTH_KIND_NONE = 1;
+  AUTH_KIND_API_KEY = 2;
+  AUTH_KIND_OAUTH = 3;
+  AUTH_KIND_CLI_LOGIN = 4;
+}
+
+message HarnessLaunch {
+  HarnessProtocol protocol = 1;
+  string command = 2;
+  repeated string args = 3;
+}
+
+enum HarnessProtocol {
+  HARNESS_PROTOCOL_UNSPECIFIED = 0;
+  HARNESS_PROTOCOL_ACP = 1;
+  HARNESS_PROTOCOL_NATIVE = 2;
+}
+
+message McpServer {
+  // The official MCP Registry server.json, embedded unchanged (D1463).
+  google.protobuf.Struct server = 1;
+  McpServerMode mode = 2;
+  repeated string args = 3;
+  string remote_url = 4;
+  McpTransport transport = 5;
+}
+
+enum McpServerMode {
+  MCP_SERVER_MODE_UNSPECIFIED = 0;
+  MCP_SERVER_MODE_LOCAL = 1;
+  MCP_SERVER_MODE_REMOTE = 2;
+}
+
+enum Pricing {
+  PRICING_UNSPECIFIED = 0;
+  PRICING_FREE = 1;
+}

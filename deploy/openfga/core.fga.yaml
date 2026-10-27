@@ -1,0 +1,278 @@
+# Model v1 tests (plan IA1, IA0 Task 2). Run: fga model test --tests deploy/openfga/core.fga.yaml
+# (beside fga.mod: the CLI refuses a model_file outside the test file's directory)
+name: loams-core-v1
+model_file: ./fga.mod
+
+# One org (acme) with a project (p1) and two environments (dev, prod). Each environment has a
+# deployment and a database; dev also has a graph.
+tuples:
+  - {user: platform:default, relation: platform, object: org:acme}
+  - {user: org:acme, relation: org, object: project:p1}
+  - {user: org:acme, relation: org, object: team:eng}
+  - {user: project:p1, relation: project, object: environment:dev}
+  - {user: project:p1, relation: project, object: environment:prod}
+  - {user: environment:dev, relation: environment, object: deployment:dev-web}
+  - {user: environment:prod, relation: environment, object: deployment:prod-web}
+  - {user: environment:dev, relation: environment, object: database:dev-db}
+  - {user: environment:prod, relation: environment, object: database:prod-db}
+  - {user: environment:dev, relation: environment, object: graph:dev/kg}
+  # `scratch` is a namespace that is no project's environment: it belongs to the org.
+  - {user: org:acme, relation: org, object: environment:scratch}
+  - {user: environment:scratch, relation: environment, object: graph:scratch/notes}
+
+  - {user: user:olga, relation: owner, object: org:acme}
+  - {user: user:adam, relation: admin, object: org:acme}
+  - {user: user:mona, relation: member, object: org:acme}
+  - {user: user:tess, relation: member, object: team:eng}
+  - {user: team:eng#member, relation: editor, object: project:p1}
+  - {user: user:pia, relation: admin, object: project:p1}
+  - {user: user:dave, relation: deployer, object: environment:dev}
+  - {user: user:vic, relation: viewer, object: environment:prod}
+  - {user: user:bill, relation: billing_viewer, object: org:acme}
+  - {user: user:opal, relation: operator, object: platform:default}
+  # Loams Cloud's one admin object (design 78 §25.8): cora is cloud_admin.
+  - {user: user:cora, relation: cloud_admin, object: platform:loams-cloud}
+
+  # agent-1 is owned by pia (a project admin) and has one explicit grant: editor on dev.
+  - {user: user:pia, relation: owner, object: agent:agent-1}
+  - {user: project:p1, relation: project, object: agent:agent-1}
+  - {user: agent:agent-1, relation: editor, object: environment:dev}
+  # agent-2 is owned by pia and has no grant at all.
+  - {user: user:pia, relation: owner, object: agent:agent-2}
+  # agent-3 has a grant on prod for session s-42 only, until 2026-10-21T13:00:00Z.
+  - user: agent:agent-3
+    relation: deployer
+    object: environment:prod
+    condition:
+      name: agent_session
+      context: {allowed_session: s-42, expires: "2026-10-21T13:00:00Z"}
+  - {user: service_account:ci, relation: viewer, object: environment:prod}
+  - {user: service_account:ci, relation: namespace_editor, object: org:acme}
+
+tests:
+  - name: org_roles_flow_down
+    check:
+      - user: user:olga
+        object: deployment:prod-web
+        assertions: {can_view: true, can_operate: true, can_destroy: true}
+      - user: user:olga
+        object: org:acme
+        assertions: {owner: true, admin: true, member: true, billing_admin: true, billing_viewer: true}
+      - user: user:adam
+        object: database:prod-db
+        assertions: {can_read: true, can_write: true, can_admin: true, can_connect: true}
+      - user: user:adam
+        object: org:acme
+        assertions: {billing_admin: false, billing_viewer: false}
+      # Option 2 (T4.R2, owner 2026-10-24): an org member sees only the projects they are granted.
+      - user: user:mona
+        object: deployment:dev-web
+        assertions: {can_view: false, can_operate: false, can_destroy: false}
+      - user: user:mona
+        object: database:dev-db
+        assertions: {can_read: false, can_connect: false, can_write: false, can_admin: false}
+      - user: user:mona
+        object: project:p1
+        assertions: {viewer: false, editor: false, admin: false}
+
+  - name: org_member_sees_only_granted_projects
+    check:
+      - user: user:tess
+        object: project:p1
+        assertions: {viewer: true, editor: true, admin: false}
+      - user: user:mona
+        object: project:p1
+        assertions: {viewer: false}
+      - user: user:adam
+        object: project:p1
+        assertions: {viewer: true, editor: true, admin: true}
+
+  - name: project_and_team_roles
+    check:
+      - user: user:pia
+        object: deployment:prod-web
+        assertions: {can_view: true, can_operate: true, can_destroy: true}
+      - user: user:tess
+        object: deployment:prod-web
+        assertions: {can_view: true, can_operate: true, can_destroy: false}
+      - user: user:tess
+        object: database:dev-db
+        assertions: {can_read: true, can_write: true, can_admin: false}
+
+  - name: environment_roles_stay_in_their_environment
+    check:
+      - user: user:dave
+        object: deployment:dev-web
+        assertions: {can_view: true, can_operate: true, can_destroy: true}
+      - user: user:dave
+        object: deployment:prod-web
+        assertions: {can_view: false, can_operate: false, can_destroy: false}
+      - user: user:vic
+        object: deployment:prod-web
+        assertions: {can_view: true, can_operate: false, can_destroy: false}
+      - user: user:vic
+        object: database:prod-db
+        assertions: {can_read: true, can_connect: true, can_write: false, can_admin: false}
+      - user: service_account:ci
+        object: database:prod-db
+        assertions: {can_read: true, can_connect: true, can_write: false}
+
+  - name: deny_by_default_without_tuple
+    check:
+      - user: user:stranger
+        object: deployment:dev-web
+        assertions: {can_view: false, can_operate: false, can_destroy: false}
+      - user: user:stranger
+        object: database:dev-db
+        assertions: {can_read: false, can_write: false, can_admin: false, can_connect: false}
+      - user: agent:stranger
+        object: deployment:dev-web
+        assertions: {can_view: false, can_operate: false, can_destroy: false}
+      - user: user:stranger
+        object: graph:dev/kg
+        assertions: {can_read: false, can_write: false, can_admin: false}
+      - user: user:bill
+        object: deployment:dev-web
+        assertions: {can_view: false}
+
+  - name: agent_reaches_only_its_grant
+    check:
+      - user: agent:agent-1
+        object: deployment:dev-web
+        assertions: {can_view: true, can_operate: true, can_destroy: false}
+      - user: agent:agent-1
+        object: database:dev-db
+        assertions: {can_read: true, can_write: true, can_admin: false}
+      - user: agent:agent-1
+        object: deployment:prod-web
+        assertions: {can_view: false, can_operate: false, can_destroy: false}
+      - user: agent:agent-1
+        object: graph:dev/kg
+        assertions: {can_read: true, can_write: true, can_admin: false}
+    list_objects:
+      - user: agent:agent-1
+        type: deployment
+        assertions:
+          can_view: [deployment:dev-web]
+          can_destroy: []
+
+  - name: agent_does_not_inherit_owner
+    check:
+      - user: agent:agent-2
+        object: deployment:dev-web
+        assertions: {can_view: false, can_operate: false, can_destroy: false}
+      - user: agent:agent-2
+        object: project:p1
+        assertions: {admin: false, editor: false, viewer: false}
+      - user: agent:agent-2
+        object: database:prod-db
+        assertions: {can_read: false, can_admin: false}
+
+  - name: agent_session_expires
+    check:
+      - user: agent:agent-3
+        object: deployment:prod-web
+        context: {session_id: s-42, now: "2026-10-21T12:00:00Z"}
+        assertions: {can_view: true, can_operate: true, can_destroy: true}
+      - user: agent:agent-3
+        object: deployment:prod-web
+        context: {session_id: s-42, now: "2026-10-21T13:00:01Z"}
+        assertions: {can_view: false, can_operate: false, can_destroy: false}
+      - user: agent:agent-3
+        object: deployment:prod-web
+        context: {session_id: s-other, now: "2026-10-21T12:00:00Z"}
+        assertions: {can_view: false, can_destroy: false}
+
+  - name: platform_and_billing_are_people_only
+    check:
+      - user: user:opal
+        object: platform:default
+        assertions: {operator: true, meter_admin: false}
+      - user: user:cora
+        object: platform:loams-cloud
+        assertions: {cloud_admin: true, operator: false}
+      - user: user:opal
+        object: platform:loams-cloud
+        assertions: {cloud_admin: false}
+      - user: agent:agent-1
+        object: platform:loams-cloud
+        assertions: {cloud_admin: false}
+      - user: service_account:ci
+        object: platform:loams-cloud
+        assertions: {cloud_admin: false}
+      - user: user:bill
+        object: org:acme
+        assertions: {billing_viewer: true, billing_admin: false, member: false}
+
+  - name: environment_can_relations
+    check:
+      # An org member with no grant on the project reaches none of its environments (T4.R2).
+      - user: user:mona
+        object: environment:dev
+        assertions: {can_read: false, can_write: false, can_admin: false}
+      - user: user:tess
+        object: environment:dev
+        assertions: {can_read: true, can_write: true, can_admin: false}
+      - user: user:pia
+        object: environment:prod
+        assertions: {can_read: true, can_write: true, can_admin: true}
+      - user: user:dave
+        object: environment:dev
+        assertions: {can_read: true, can_write: true, can_admin: true}
+      - user: user:dave
+        object: environment:prod
+        assertions: {can_read: false, can_write: false, can_admin: false}
+      - user: agent:agent-1
+        object: environment:dev
+        assertions: {can_read: true, can_write: true, can_admin: false}
+      - user: agent:agent-1
+        object: environment:prod
+        assertions: {can_read: false, can_write: false, can_admin: false}
+      - user: user:stranger
+        object: environment:dev
+        assertions: {can_read: false, can_write: false, can_admin: false}
+      - user: user:pia
+        object: project:p1
+        assertions: {can_admin: true}
+      - user: user:adam
+        object: project:p1
+        assertions: {can_admin: true}
+      - user: user:tess
+        object: project:p1
+        assertions: {can_admin: false}
+      - user: agent:agent-1
+        object: project:p1
+        assertions: {can_admin: false}
+
+  - name: org_namespace_is_every_members
+    check:
+      - user: user:mona
+        object: environment:scratch
+        assertions: {can_read: true, can_write: true, can_admin: false}
+      - user: user:tess
+        object: environment:scratch
+        assertions: {can_read: false, can_write: false, can_admin: false}
+      - user: user:adam
+        object: environment:scratch
+        assertions: {can_read: true, can_write: true, can_admin: true}
+      - user: user:olga
+        object: graph:scratch/notes
+        assertions: {can_read: true, can_write: true, can_admin: true}
+      - user: user:mona
+        object: graph:scratch/notes
+        assertions: {can_read: true, can_write: true, can_admin: false}
+      - user: agent:agent-1
+        object: environment:scratch
+        assertions: {can_read: false, can_write: false, can_admin: false}
+      - user: user:bill
+        object: environment:scratch
+        assertions: {can_read: false}
+      - user: service_account:ci
+        object: environment:scratch
+        assertions: {can_read: true, can_write: true, can_admin: false}
+      - user: service_account:ci
+        object: org:acme
+        assertions: {member: false, namespace_editor: true}
+      - user: service_account:ci
+        object: deployment:dev-web
+        assertions: {can_view: false}

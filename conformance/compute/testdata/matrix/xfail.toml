@@ -1,0 +1,9 @@
+# The fixture's expected failures (matrix_from_fixture).
+product = "fixture"
+
+[[xfail]]
+id = "signal-ts"
+tests = ["gateway_signal_ts"]
+reason = "the fixture's listed failure: a signal that arrives late on TypeScript"
+issue = "#2"
+since = 2026-10-27

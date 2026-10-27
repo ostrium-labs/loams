@@ -1,0 +1,151 @@
+{
+  "upstream": "https://github.com/dataelement/dsh-desktop",
+  "license": "MIT",
+  "copyright": "Copyright (c) 2026 DataElement",
+  "files": [
+    {
+      "path": "electron.vite.config.ts",
+      "upstreamPath": "electron.vite.config.ts",
+      "commit": "bc732f5dc4c5465915d5b3f28d9b0b32703fc664",
+      "upstreamSha256": "24d566e753c7d003c5005a68fae198f8446b830393a31cf4f164d4c24d9828e8",
+      "localSha256": "ebf30e9264ba35c29977ceca2ed6b97f2f5b0aa41fa03854c3d9e755f9197780",
+      "verdict": "adapt",
+      "note": "adapted before CF1 (W19)"
+    },
+    {
+      "path": "src/main/engine/ports.ts",
+      "upstreamPath": "src/main/runtime/harness-runtime.ts",
+      "commit": "bc732f5dc4c5465915d5b3f28d9b0b32703fc664",
+      "upstreamSha256": "0b95fdc22f6d8a58bdbb4913862712514bb2352d371e583e79a2eaa0ca9689b9",
+      "localSha256": "d606a2ebe55b88723c77aef81e4e6466eb95479765233d0c9d767adf033d6897",
+      "verdict": "adapt",
+      "note": "adapted before CF1 (W19)"
+    },
+    {
+      "path": "src/main/engine/supervisor.ts",
+      "upstreamPath": "src/main/runtime/harness-runtime.ts",
+      "commit": "bc732f5dc4c5465915d5b3f28d9b0b32703fc664",
+      "upstreamSha256": "0b95fdc22f6d8a58bdbb4913862712514bb2352d371e583e79a2eaa0ca9689b9",
+      "localSha256": "8a2c5a7f1c305539ed8f2c716972ba4128e6a0fe2b2478461615b99633f32f81",
+      "verdict": "adapt",
+      "note": "adapted before CF1 (W19)"
+    },
+    {
+      "path": "src/main/shell/tray.electron.ts",
+      "upstreamPath": "src/main/close-to-tray.ts",
+      "commit": "bc732f5dc4c5465915d5b3f28d9b0b32703fc664",
+      "upstreamSha256": "041107f9aaddd61453d308a41b4620d6a82ef0cca6b2187e0e2ea0b4b14f41f5",
+      "localSha256": "d69ed376fd1cb2d31caafa73d2d477df2d5798872069f2e71ca5f7acbec5b8ca",
+      "verdict": "adapt",
+      "note": "adapted before CF1 (W19)"
+    },
+    {
+      "path": "src/main/security/install.electron.ts",
+      "upstreamPath": "src/main/security.ts",
+      "commit": "bc732f5dc4c5465915d5b3f28d9b0b32703fc664",
+      "upstreamSha256": "1318405bc17a98c3966876a79db71cd3a517ff5c90230a02092301db269df504",
+      "localSha256": "1e41e6661dbef94be361f74fd6bba3106d26ad0b9b0a15efb29cc8244732e04a",
+      "verdict": "adapt",
+      "note": "adapted before CF1 (W19)"
+    },
+    {
+      "path": "src/main/security/policy.ts",
+      "upstreamPath": "src/main/security-policy.ts",
+      "commit": "bc732f5dc4c5465915d5b3f28d9b0b32703fc664",
+      "upstreamSha256": "db34aa24cd7cc691641017955cea260c941ca49df614edb61d1ad8001694e76a",
+      "localSha256": "ecb278b744ec19675c732a28ce7fd882681a45d8e0625187f104727158f17c56",
+      "verdict": "adapt",
+      "note": "adapted before CF1 (W19)"
+    },
+    {
+      "path": "src/main/shell/window-state.ts",
+      "upstreamPath": "src/main/state/window-state.ts",
+      "commit": "bc732f5dc4c5465915d5b3f28d9b0b32703fc664",
+      "upstreamSha256": "7c7bf579f2e07f531429643210d013cbe92c367c6c0eef46e37fefadbb6f067a",
+      "localSha256": "aa83147ab34132bf8bac25d35827bd91d890a9db2624bd13077688168f4b9ef9",
+      "verdict": "adapt",
+      "note": "adapted before CF1 (W19)"
+    },
+    {
+      "path": "src/main/update/updater.electron.ts",
+      "upstreamPath": "src/main/update/update-manager.ts",
+      "commit": "bc732f5dc4c5465915d5b3f28d9b0b32703fc664",
+      "upstreamSha256": "61c0583d9bcb1603c9695760d844b0b32cae79a5482011d253b32226dc84dd81",
+      "localSha256": "6e2d700ccfd38ac340f0b444791d1833d29c2e982b69df835b9d4e333107795d",
+      "verdict": "adapt",
+      "note": "adapted before CF1 (W19)"
+    },
+    {
+      "path": "build/splash.html",
+      "upstreamPath": "build/splash.html",
+      "commit": "bc732f5dc4c5465915d5b3f28d9b0b32703fc664",
+      "upstreamSha256": "f34df54252f6aa5250e597d7153c2cc632b62a921b56b46ed986104c7d4cb199",
+      "localSha256": "332ef705d40033894752cdd371920ab81a79d92527c3a3a8938e682ed4caecb4",
+      "verdict": "adapt",
+      "note": "CF1 Task 15 (D1084)"
+    },
+    {
+      "path": "scripts/generate-loader-gifs.mjs",
+      "upstreamPath": "scripts/generate-loader-gifs.mjs",
+      "commit": "bc732f5dc4c5465915d5b3f28d9b0b32703fc664",
+      "upstreamSha256": "eca336bce590ce845f2538a92ad128827732200da0b1066f0e4820c0bc7bf6c2",
+      "localSha256": "45245e9415ccc66cab007e69af1abde74ff5edeb85e22e11e1c562a77b3013f4",
+      "verdict": "adapt",
+      "note": "CF1 Task 15 (D1084, W14): the mark drawn from rectangles, gifenc in place of sharp"
+    },
+    {
+      "path": "src/main/shell/window-chrome.ts",
+      "upstreamPath": "src/main/index.ts",
+      "commit": "bc732f5dc4c5465915d5b3f28d9b0b32703fc664",
+      "upstreamSha256": "56a899dc2db21d89bd701f6e067c623a26371a291231521cbfccc81c65ca0c08",
+      "localSha256": "0f1234bacb9636533adea1f5c1be2b1228b5c228c473ac3f1b8e1b2490db0b88",
+      "verdict": "adapt",
+      "note": "CF1 Task 13"
+    },
+    {
+      "path": "src/main/shell/macos-window-backdrop.ts",
+      "upstreamPath": "src/main/macos-window-backdrop.ts",
+      "commit": "bc732f5dc4c5465915d5b3f28d9b0b32703fc664",
+      "upstreamSha256": "377d5ccbe7579519fdf6afdc5da3f4a94d984112d22553f72169362ed4798332",
+      "localSha256": "80ca0b862fda2b9c0ee2eddfe05a5911416c26dc7c60851f9bd9b8bb5e97c2c1",
+      "verdict": "adapt",
+      "note": "CF1 Task 13"
+    },
+    {
+      "path": "src/preload/window-chrome.ts",
+      "upstreamPath": "src/preload/macos-window-chrome.ts",
+      "commit": "bc732f5dc4c5465915d5b3f28d9b0b32703fc664",
+      "upstreamSha256": "46bfd5b35e1e273b8e5fd7bfaa1c5bd77aa97edba179a4f57774e0d0df776ac4",
+      "localSha256": "b7b05045d86299804b8396174cefd2a973c74d09ac81b34de89b9e230e5b7feb",
+      "verdict": "adapt",
+      "note": "CF1 Task 13"
+    },
+    {
+      "path": "src/main/shell/context-menu-template.ts",
+      "upstreamPath": "src/main/context-menu-template.ts",
+      "commit": "bc732f5dc4c5465915d5b3f28d9b0b32703fc664",
+      "upstreamSha256": "daa73b27569546c9378c6bb39b9056ba6f1524a5059d9e0db5719eede01deb6b",
+      "localSha256": "592641c2f2cb65cd79498f903251087fc5a86c5bd9cc79b294fcd0f30a3bef63",
+      "verdict": "adapt",
+      "note": "CF1 Task 14"
+    },
+    {
+      "path": "src/main/shell/context-menu.electron.ts",
+      "upstreamPath": "src/main/context-menu.ts",
+      "commit": "bc732f5dc4c5465915d5b3f28d9b0b32703fc664",
+      "upstreamSha256": "c6306ecc836898b35e124fb1acf8e5cac61c39b66a24dfae505cf05772e9b4a2",
+      "localSha256": "da257828ef345670d067fd60709c7608de76c2d8e5189d4871c942b946b45182",
+      "verdict": "adapt",
+      "note": "CF1 Task 14"
+    },
+    {
+      "path": "src/preload/notification-shim.ts",
+      "upstreamPath": "src/preload/desktop-notification.ts",
+      "commit": "bc732f5dc4c5465915d5b3f28d9b0b32703fc664",
+      "upstreamSha256": "8e362f44a4254a93e3497aef7a05fc9e7602ef4500ed68355eceda8d74ddc372",
+      "localSha256": "2e8d1a5831f56fe2760b5d86e0338304929cfbe8b0324be66b2b2acd1e4f35b2",
+      "verdict": "adapt",
+      "note": "CF1 Task 16: the main-world Notification class over the existing shell.notify bridge, via contextBridge.executeInMainWorld; upstream's injected script and custom-event relay are dropped"
+    }
+  ]
+}

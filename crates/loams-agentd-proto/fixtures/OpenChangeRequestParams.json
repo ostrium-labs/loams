@@ -1,0 +1,8 @@
+{
+  "base": "main",
+  "body": "Links again.",
+  "chatId": "chat_01",
+  "draft": false,
+  "provider": "forgejo",
+  "title": "Fix the linker"
+}

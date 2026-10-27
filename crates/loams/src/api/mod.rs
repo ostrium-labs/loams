@@ -25,6 +25,8 @@ pub(crate) mod connect_postgres;
 mod connect_query;
 mod connect_query_filters;
 mod connect_query_ir;
+mod connect_sql;
+mod connect_streams;
 pub mod durable;
 mod errors;
 pub mod events;

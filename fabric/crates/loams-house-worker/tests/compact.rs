@@ -1,5 +1,5 @@
-//! Replacing and Summing on lake tables, and compaction (HS1 Task 13, §49
-//! §6.2): `FINAL` merges at read time as ClickHouse's own `FINAL` does,
+//! Replacing, Summing and VersionedCollapsing on lake tables, and compaction
+//! (HS1 Task 13, §49 §6.2, D1570): `FINAL` merges at read time as ClickHouse's own `FINAL` does,
 //! `OPTIMIZE` and the background scheduler rewrite the merged rows, and a
 //! compaction that loses to another commit is abandoned without losing it.
 //!
@@ -341,6 +341,189 @@ async fn summing_final_equals_reference() {
         ok(addr, "SELECT k, n, x FROM s ORDER BY k").await,
         "a\t4\t0.75\n"
     );
+}
+
+/// VersionedCollapsing (D1570): within one sorting key and version, a row of
+/// the other sign cancels the most recent row left (a stack, not a queue).
+/// One row per `INSERT`, so each is its own file (and, in ClickHouse, its own
+/// part). The expected rows were measured on the 26.9.2.8 oracle (plan HE1
+/// R9.2) and are also compared with a local reference when there is one.
+const COLLAPSING: &str = "CREATE TABLE vc (k UInt8, v UInt8, x String, sign Int8) \
+    ENGINE = VersionedCollapsingMergeTree(sign, v) ORDER BY k";
+const COLLAPSING_ROWS: [&str; 17] = [
+    "(1,1,'a',1)",
+    "(1,1,'b',1)",
+    "(1,1,'c',-1)",
+    "(2,1,'a',1)",
+    "(2,1,'b',-1)",
+    "(2,1,'c',1)",
+    "(2,1,'d',1)",
+    "(2,1,'e',-1)",
+    "(3,1,'a',-1)",
+    "(3,1,'b',1)",
+    "(3,1,'c',-1)",
+    "(4,1,'a',1)",
+    "(4,2,'b',1)",
+    "(4,1,'c',-1)",
+    "(5,1,'a',-1)",
+    "(5,1,'b',-1)",
+    "(5,1,'c',1)",
+];
+const COLLAPSING_FINAL: &str = "1\t1\ta\t1\n2\t1\tc\t1\n3\t1\tc\t-1\n4\t2\tb\t1\n5\t1\ta\t-1\n";
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn collapsing_final_matches_the_oracle() {
+    let house = lakehouse("collapsing").await;
+    let addr = house.handle.local_addr();
+    ok(addr, COLLAPSING).await;
+    let inserts: Vec<String> = COLLAPSING_ROWS
+        .iter()
+        .map(|r| format!("INSERT INTO vc VALUES {r}"))
+        .collect();
+    for insert in &inserts {
+        ok(addr, insert).await;
+    }
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT engine_full FROM system.tables WHERE name = 'vc'"
+        )
+        .await,
+        "VersionedCollapsingMergeTree(sign, v) ORDER BY k\n"
+    );
+    // Without FINAL, every row as written.
+    assert_eq!(ok(addr, "SELECT count() FROM vc").await, "17\n");
+    let query = "SELECT k, v, x, sign FROM vc FINAL ORDER BY k, v, x";
+    let rows = ok(addr, query).await;
+    assert_eq!(rows, COLLAPSING_FINAL);
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT k, v, x, sign FROM vc ORDER BY k, v, x SETTINGS final = 1"
+        )
+        .await,
+        COLLAPSING_FINAL
+    );
+    match reference(&format!("{COLLAPSING}; {}; {query}", inserts.join("; "))) {
+        Some(want) => assert_eq!(rows, want),
+        None => skip("collapsing_final_matches_the_oracle"),
+    }
+    // OPTIMIZE writes the collapsed rows; FINAL answers as before.
+    ok(addr, "OPTIMIZE TABLE vc FINAL").await;
+    assert_eq!(
+        ok(addr, "SELECT k, v, x, sign FROM vc ORDER BY k, v, x").await,
+        COLLAPSING_FINAL
+    );
+    assert_eq!(ok(addr, query).await, COLLAPSING_FINAL);
+}
+
+/// OpenPanel's `sessions` (plan HE1 R4.3): each update writes the old state
+/// with sign -1 and the new with sign 1 and the next version; `FINAL` keeps the
+/// newest state, and `sum(sign)` counts live sessions with or without it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn collapsing_sessions_keep_their_latest_state() {
+    let house = lakehouse("sessions").await;
+    let addr = house.handle.local_addr();
+    let create = "CREATE TABLE sessions (id String, project_id String, \
+        created_at DateTime64(3), screen_view_count UInt32, sign Int8, version UInt64) \
+        ENGINE = VersionedCollapsingMergeTree(sign, version) \
+        PARTITION BY toYYYYMM(created_at) ORDER BY (project_id, toDate(created_at), created_at)";
+    let batches = [
+        "INSERT INTO sessions VALUES ('s1', 'p', '2026-10-21 10:00:00.000', 1, 1, 1), \
+         ('s2', 'p', '2026-10-21 11:00:00.000', 1, 1, 1)",
+        "INSERT INTO sessions VALUES ('s1', 'p', '2026-10-21 10:00:00.000', 1, -1, 1), \
+         ('s1', 'p', '2026-10-21 10:00:00.000', 2, 1, 2)",
+        "INSERT INTO sessions VALUES ('s1', 'p', '2026-10-21 10:00:00.000', 2, -1, 2), \
+         ('s1', 'p', '2026-10-21 10:00:00.000', 5, 1, 3), \
+         ('s2', 'p', '2026-10-21 11:00:00.000', 1, -1, 1), \
+         ('s2', 'p', '2026-10-21 11:00:00.000', 3, 1, 2)",
+    ];
+    ok(addr, create).await;
+    for batch in batches {
+        ok(addr, batch).await;
+    }
+    let latest = "SELECT id, screen_view_count, version FROM sessions FINAL ORDER BY id";
+    assert_eq!(ok(addr, latest).await, "s1\t5\t3\ns2\t3\t2\n");
+    let live = "SELECT sum(sign) AS sessions, sum(sign * screen_view_count) AS views \
+        FROM sessions WHERE project_id = 'p' HAVING sum(sign) > 0";
+    assert_eq!(ok(addr, live).await, "2\t8\n");
+    assert_eq!(
+        ok(addr, &live.replace("FROM sessions", "FROM sessions FINAL")).await,
+        "2\t8\n"
+    );
+    if let Some(want) = reference(&format!("{create}; {}; {latest}", batches.join("; "))) {
+        assert_eq!(ok(addr, latest).await, want);
+    } else {
+        skip("collapsing_sessions_keep_their_latest_state");
+    }
+}
+
+/// One `INSERT` holding several rows of one key (R9.4): ClickHouse sorts an
+/// inserted block stably and merges it (`optimize_on_insert`), so the House
+/// writes rows of one key in insert order and merges them the same way. The
+/// expected rows were measured on the 26.9.2.8 oracle; reads with and without
+/// `FINAL` agree with it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn one_insert_merges_as_clickhouse_does() {
+    let house = lakehouse("one-insert").await;
+    let addr = house.handle.local_addr();
+    let cases = [
+        (
+            "CREATE TABLE rs (k UInt8, v UInt8, x String) ENGINE = ReplacingMergeTree(v) ORDER BY k",
+            "INSERT INTO rs VALUES (1,1,'a'),(2,1,'a'),(1,1,'b'),(1,1,'c'),(2,0,'b'),(3,5,'z'),\
+             (2,1,'c'),(1,0,'d')",
+            "SELECT * FROM rs ORDER BY k",
+            "1\t1\tc\n2\t1\tc\n3\t5\tz\n",
+        ),
+        (
+            "CREATE TABLE rd (k UInt8, v UInt8, d UInt8) ENGINE = ReplacingMergeTree(v, d) ORDER BY k",
+            "INSERT INTO rd VALUES (1,1,0),(1,2,1),(2,1,0)",
+            "SELECT * FROM rd ORDER BY k",
+            "1\t2\t1\n2\t1\t0\n",
+        ),
+        (
+            "CREATE TABLE ss (k UInt8, n Int64, f Float64, t String) ENGINE = SummingMergeTree ORDER BY k",
+            "INSERT INTO ss VALUES (1,1,0.5,'a'),(2,2,1,'b'),(1,3,0.25,'c'),(2,-2,-1,'d'),(3,0,0,'e')",
+            "SELECT * FROM ss ORDER BY k",
+            "1\t4\t0.75\ta\n",
+        ),
+        (
+            "CREATE TABLE vs (k UInt8, v UInt8, x String, sign Int8) \
+             ENGINE = VersionedCollapsingMergeTree(sign, v) ORDER BY k",
+            "INSERT INTO vs VALUES (1,1,'a',1),(2,1,'a',1),(1,1,'b',1),(2,1,'b',-1),(1,1,'c',-1),\
+             (2,1,'c',1),(2,1,'d',1),(2,1,'e',-1),(3,1,'a',-1),(3,1,'b',-1),(3,1,'c',1),(4,2,'x',1)",
+            "SELECT * FROM vs ORDER BY k, v, x",
+            "1\t1\ta\t1\n2\t1\tc\t1\n3\t1\ta\t-1\n4\t2\tx\t1\n",
+        ),
+        (
+            "CREATE TABLE m (k UInt8, x String) ENGINE = MergeTree ORDER BY k",
+            "INSERT INTO m VALUES (2,'a'),(1,'b'),(2,'c'),(1,'d')",
+            "SELECT * FROM m",
+            "1\tb\n1\td\n2\ta\n2\tc\n",
+        ),
+    ];
+    for (create, insert, read, want) in cases {
+        ok(addr, create).await;
+        ok(addr, insert).await;
+        assert_eq!(ok(addr, read).await, want, "{insert}");
+        if read.contains("FROM m") {
+            continue;
+        }
+        let fin = read.replace(" ORDER BY", " FINAL ORDER BY");
+        assert_eq!(
+            ok(addr, &fin).await,
+            if read.contains("FROM rd") {
+                "2\t1\t0\n"
+            } else {
+                want
+            }
+        );
+        if let Some(reference) = reference(&format!("{create}; {insert}; {read}")) {
+            assert_eq!(ok(addr, read).await, reference, "{insert}");
+        } else {
+            skip("one_insert_merges_as_clickhouse_does");
+        }
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

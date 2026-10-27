@@ -193,11 +193,11 @@ class SessionManager(
         }
     }
 
-    /** Browser sign-in at Authentik finished: exchange its token at the gateway (path 2). */
-    suspend fun finishBrowserSignIn(issuer: String, instanceId: String, jkt: String, authentikAccessToken: String): PairResult = try {
+    /** Browser sign-in at the identity provider finished: exchange its token at the gateway (path 2). */
+    suspend fun finishBrowserSignIn(issuer: String, instanceId: String, jkt: String, idpAccessToken: String): PairResult = try {
         val jwk = Jwk.fromEcPublicKey(keys.ensure(KeyPolicy.decide(instanceId))).toJson()
         val endpoint = TokenEndpoint(issuer, Http.client(TrustPolicy.System))
-        when (val r = endpoint.exchange(authentikAccessToken, DeviceRegistration(deviceName, jwk, Build.MODEL, BuildConfig.VERSION_NAME))) {
+        when (val r = endpoint.exchange(idpAccessToken, DeviceRegistration(deviceName, jwk, Build.MODEL, BuildConfig.VERSION_NAME))) {
             is TokenResult.Ok -> finish(SessionRecord(issuer, instanceId, jkt, null, r.tokens.deviceId, "browser"), r.tokens)
             is TokenResult.Refused -> PairResult.Failed(messageFor(r.reason, r.description))
         }

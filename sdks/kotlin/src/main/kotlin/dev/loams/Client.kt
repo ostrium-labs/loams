@@ -103,6 +103,12 @@ class LoamsClient(
     /** `loams.graph` (SDKP §2.5). Experimental. */
     val graph: GraphModule by lazy { GraphModule(this) }
 
+    /** `loams.sql` (SDKP §2.5). */
+    val sql: SqlModule by lazy { SqlModule(this) }
+
+    /** `loams.streams` (SDKP §2.5). */
+    val streams: StreamsModule by lazy { StreamsModule(this) }
+
     /** A handle on one collection (SDKP §2.8); null [namespace] takes the client's default. */
     fun collection(name: String, namespace: String? = null): CollectionHandle = CollectionHandle(this, name, namespace)
 

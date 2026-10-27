@@ -1,5 +1,7 @@
 # 33 — Loams Flow Connectors: Registry, Capabilities and the Catalog
 
+> **Updated 2026-10-19 ([D1119](13-decision-log.md)): Loams has no open core.** Where this document places metering, billing, the hosted control plane, commercial APIs or other components in the private `loams-platform` repository, or calls something private for open-core reasons, read that as superseded: everything is Apache-2.0, and the metering, billing and control-plane code is moving into the open repo now (design §63, Loams Meter). Ostrium Labs offers services (infrastructure efficiency, SLAs, support), not a paid edition. The rest of the design is unchanged.
+
 Status: **Approved** (owner defaults, 2026-10-02: "do suggested for all") · 2026-10-01. Source: the owner's drafts "Précis (CDMP, Java stack)", "Top 200 connectors" and "Rollout" (`chatdump.md` lines 551–628), read as the design of Loams Flow's connector registry, and the owner's direction of 2026-10-01 that event ingestion runs on Apache Iggy and Apache Fluss ([§32](32-loams-flow-fabric-house.md) D331–D333). This document makes decisions **D352–D359** and asks **Q348–Q359**. It depends on §32 for the envelope (D334), the bridges (D336), Flow routes (D337–D339) and the `fabric/` workspace (D343). **No code is written by this document.**
 
 Names follow §32's owner rulings of 2026-10-01: packages under `loams` (`@loams/*` on npm), Go modules under `loams.dev/...`, CloudEvents types `io.loams.dev.<domain>.<name>.v1`. **Java is deferred**: the Camel connector layer stays, as an unmodified Camel runtime driven by generated YAML routes, but any Loams-written Java (a Java SDK, a Kestra plugin, custom Camel processors) waits until the owner lifts the deferral.
@@ -209,7 +211,7 @@ Rollout: **CN1** the 21 above; **CN2** every P2 row of Appendix A through stock 
 - End to end: Postgres CDC through Debezium into a Fluss PK table and a Loams collection, with inserts, updates, deletes and a Debezium restart, equals the source table; a 10 M-row Snowflake (fixture) or Postgres read through ADBC lands as Arrow batches in a Fluss Log table in under the budget measured in CN1 Task 0.
 - `loams-fabric connectors list|describe|validate` and the generated catalog page `docs/guides/connectors/index.md`.
 
-## 10. Where it lives (open core)
+## 10. Where it lives (open source)
 
 All of §33 is open source (D220): self-hosters need connectors. `loams-connect` (YAML route templates and configuration for the unmodified Camel runtime) lives in this repository under `connect/` with a path-filtered CI job, or in its own repository (Q353). `loams-platform` adds the managed fleet: per-tenant connector pods, autoscaling, plan limits on connector count and throughput, the hosted secrets UI, connector metering (through the usage hooks, §27).
 

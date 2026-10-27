@@ -115,6 +115,9 @@ pub struct WorkerArgs {
     /// `--test-open-acl`: [`OPEN_GRANTS`] and no settings profile. Accepted only
     /// by a test build (`loams_house_ipc::TEST_HOOKS`, R-ACL.1).
     pub open_acl: bool,
+    /// The largest `max_execution_time` a statement may set, in whole seconds
+    /// (`--max-execution-time`, D1571): the front's cap, held by the profile.
+    pub max_execution_time_s: u64,
 }
 
 impl WorkerArgs {
@@ -130,6 +133,7 @@ impl WorkerArgs {
         let mut forwarder_port = None;
         let mut cgroup = None;
         let mut open_acl = false;
+        let mut max_execution_time_s = MAX_EXECUTION_TIME_S;
         let mut args = args.into_iter();
         while let Some(flag) = args.next() {
             let mut value = || args.next().ok_or_else(|| format!("{flag} needs a value"));
@@ -152,6 +156,13 @@ impl WorkerArgs {
                     );
                 }
                 "--cgroup" => cgroup = Some(PathBuf::from(value()?)),
+                "--max-execution-time" => {
+                    let raw = value()?;
+                    max_execution_time_s =
+                        raw.parse().ok().filter(|s| *s > 0).ok_or_else(|| {
+                            format!("--max-execution-time {raw:?} is not a number of seconds")
+                        })?;
+                }
                 "--test-open-acl" if loams_house_ipc::TEST_HOOKS => open_acl = true,
                 other => return Err(format!("unknown argument {other:?}")),
             }
@@ -168,6 +179,7 @@ impl WorkerArgs {
             forwarder_port,
             cgroup,
             open_acl,
+            max_execution_time_s,
         })
     }
 
@@ -198,6 +210,8 @@ impl WorkerArgs {
         if self.open_acl {
             out.push("--test-open-acl".to_string());
         }
+        out.push("--max-execution-time".to_string());
+        out.push(self.max_execution_time_s.to_string());
         out
     }
 
@@ -294,7 +308,7 @@ fn users_xml(args: &WorkerArgs) -> String {
     let profile = if args.open_acl {
         String::new()
     } else {
-        worker_profile()
+        worker_profile(args)
     };
     format!(
         "<clickhouse>\n  \
@@ -317,7 +331,7 @@ fn users_xml(args: &WorkerArgs) -> String {
 }
 
 /// The `worker` profile's body: the pinned values and every constraint.
-fn worker_profile() -> String {
+fn worker_profile(args: &WorkerArgs) -> String {
     let mut pinned = String::new();
     let mut constraints = String::new();
     for name in PINNED_OFF {
@@ -344,7 +358,8 @@ fn worker_profile() -> String {
     );
     let _ = writeln!(
         pinned,
-        "      <max_execution_time>{MAX_EXECUTION_TIME_S}</max_execution_time>"
+        "      <max_execution_time>{}</max_execution_time>",
+        args.max_execution_time_s
     );
     let _ = writeln!(
         constraints,
@@ -352,13 +367,19 @@ fn worker_profile() -> String {
     );
     let _ = writeln!(
         constraints,
-        "        <max_execution_time><min>{MIN_EXECUTION_TIME_S}</min><max>{MAX_EXECUTION_TIME_S}</max></max_execution_time>"
+        "        <max_execution_time><min>{MIN_EXECUTION_TIME_S}</min><max>{}</max></max_execution_time>",
+        args.max_execution_time_s
     );
     let _ = writeln!(
         constraints,
         "        <max_threads><max>{}</max></max_threads>",
         max_threads_cap()
     );
+    // HE1 R9.11: settings a client may send but only switched off (a cached
+    // result could outlive the snapshot its read view pinned).
+    for name in loams_house_ipc::policy::OFF_ONLY_SETTINGS {
+        let _ = writeln!(constraints, "        <{name}><max>0</max></{name}>");
+    }
     // HS1 Task 21: §49 §12's read and result caps, held the same way.
     for (name, cap) in [
         ("max_bytes_to_read", MAX_BYTES_TO_READ),
@@ -423,6 +444,7 @@ mod tests {
             forwarder_port: Some(9180),
             cgroup: Some(PathBuf::from("/sys/fs/cgroup/house/w7")),
             open_acl: false,
+            max_execution_time_s: MAX_EXECUTION_TIME_S,
         }
     }
 
@@ -617,10 +639,40 @@ mod tests {
         );
         assert!(users.contains("<max_memory_usage>4294967296</max_memory_usage>"));
         assert!(users.contains(
-            "<max_execution_time><min>0.000001</min><max>300</max></max_execution_time>"
+            "<max_execution_time><min>0.000001</min><max>900</max></max_execution_time>"
         ));
-        assert!(users.contains("<max_execution_time>300</max_execution_time>"));
+        assert!(users.contains("<max_execution_time>900</max_execution_time>"));
+        // D1571: the front's cap, passed as --max-execution-time.
+        let tighter = users_xml(&WorkerArgs {
+            max_execution_time_s: 120,
+            ..args()
+        });
+        assert!(tighter.contains("<max>120</max></max_execution_time>"));
+        let parsed = WorkerArgs::parse(
+            WorkerArgs {
+                max_execution_time_s: 1200,
+                ..args()
+            }
+            .to_args(),
+        )
+        .expect("parses");
+        assert_eq!(parsed.max_execution_time_s, 1200);
+        assert!(
+            WorkerArgs::parse(
+                [
+                    "--tmp-dir",
+                    "/w",
+                    "--worker-id",
+                    "w",
+                    "--max-execution-time",
+                    "0"
+                ]
+                .map(String::from)
+            )
+            .is_err()
+        );
         assert!(users.contains("<max_threads><max>"));
+        assert!(users.contains("<use_query_cache><max>0</max></use_query_cache>"));
         assert!(users.contains("<max_bytes_to_read>1099511627776</max_bytes_to_read>"));
         assert!(users.contains(
             "<max_bytes_to_read><min>1</min><max>1099511627776</max></max_bytes_to_read>"

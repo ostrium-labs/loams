@@ -234,12 +234,11 @@ public final class Values {
         };
     }
 
-    // `Query.ids` carries the `DocumentId` shape as a Value: a bare number or string, or {"uuid": "…"}.
+    // `Query.ids` carries the `DocumentId` shape as a Value: {"uint": "1"} (exact past 2^53, and the
+    // builder corpus's spelling), a string, or {"uuid": "…"}.
     static Value documentIdValue(DocumentId id) {
         return switch (id.getIdCase()) {
-            case UINT -> Long.compareUnsigned(id.getUint(), 1L << 53) <= 0
-                    ? Value.newBuilder().setNumberValue(id.getUint()).build()
-                    : of(Map.of("uint", Long.toUnsignedString(id.getUint())));
+            case UINT -> of(Map.of("uint", Long.toUnsignedString(id.getUint())));
             case STRING -> Value.newBuilder().setStringValue(id.getString()).build();
             case UUID -> of(Map.of("uuid", id.getUuid()));
             default -> throw new IllegalArgumentException("loams: a DocumentId must be set");
@@ -248,5 +247,76 @@ public final class Values {
 
     static List<Object> asList(Collection<?> items) {
         return new ArrayList<>(items);
+    }
+
+    /** A {@link Value} as compact JSON text: what a JSON record a stream carries looks like. */
+    public static String json(Value value) {
+        StringBuilder out = new StringBuilder();
+        writeJson(out, value);
+        return out.toString();
+    }
+
+    private static void writeJson(StringBuilder out, Value value) {
+        switch (value.getKindCase()) {
+            case BOOL_VALUE -> out.append(value.getBoolValue());
+            case NUMBER_VALUE -> {
+                double d = value.getNumberValue();
+                if (d == Math.rint(d) && Math.abs(d) < 1e15) {
+                    out.append((long) d);
+                } else {
+                    out.append(d);
+                }
+            }
+            case STRING_VALUE -> quote(out, value.getStringValue());
+            case LIST_VALUE -> {
+                out.append('[');
+                List<Value> items = value.getListValue().getValuesList();
+                for (int i = 0; i < items.size(); i++) {
+                    if (i > 0) {
+                        out.append(',');
+                    }
+                    writeJson(out, items.get(i));
+                }
+                out.append(']');
+            }
+            case STRUCT_VALUE -> {
+                out.append('{');
+                boolean first = true;
+                // Keys sorted, so a value encodes to the same bytes however its map was built.
+                for (Map.Entry<String, Value> entry : new java.util.TreeMap<>(value.getStructValue().getFieldsMap()).entrySet()) {
+                    if (!first) {
+                        out.append(',');
+                    }
+                    first = false;
+                    quote(out, entry.getKey());
+                    out.append(':');
+                    writeJson(out, entry.getValue());
+                }
+                out.append('}');
+            }
+            default -> out.append("null");
+        }
+    }
+
+    private static void quote(StringBuilder out, String text) {
+        out.append('"');
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            switch (c) {
+                case '"' -> out.append("\\\"");
+                case '\\' -> out.append("\\\\");
+                case '\n' -> out.append("\\n");
+                case '\r' -> out.append("\\r");
+                case '\t' -> out.append("\\t");
+                default -> {
+                    if (c < 0x20) {
+                        out.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        out.append(c);
+                    }
+                }
+            }
+        }
+        out.append('"');
     }
 }

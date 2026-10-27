@@ -743,6 +743,22 @@ void WriteResults(const std::vector<std::string>& tests, const std::vector<std::
   json << "  ],\n";
   json << "  \"ran\": [\n";
   std::vector<std::string> sorted = ran;
+  // The app replay (`app_test cpp_app_*`) adds its fixtures to the same report;
+  // a later run of this suite keeps them.
+  {
+    std::ifstream previous(Join(results, "cpp.json"));
+    std::stringstream text;
+    text << previous.rdbuf();
+    google::protobuf::Struct report;
+    if (google::protobuf::util::JsonStringToMessage(text.str(), &report).ok() && report.fields().count("ran") > 0) {
+      for (const auto& name : report.fields().at("ran").list_value().values()) {
+        const std::string& fixture = name.string_value();
+        if (fixture.rfind("app_", 0) == 0 && std::find(sorted.begin(), sorted.end(), fixture) == sorted.end()) {
+          sorted.push_back(fixture);
+        }
+      }
+    }
+  }
   std::sort(sorted.begin(), sorted.end());
   for (std::size_t at = 0; at < sorted.size(); ++at) {
     json << "    \"" << sorted[at] << "\"" << (at + 1 == sorted.size() ? "\n" : ",\n");

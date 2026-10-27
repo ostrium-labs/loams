@@ -181,6 +181,8 @@ public static class Facade
         "loams.operations.v1",
         "loams.collection.v1",
         "loams.graph.v1",
+        "loams.sql.v1",
+        "loams.stream.v1",
         "loams.errors.v1",
         "loams.options.v1",
     ];
@@ -217,6 +219,10 @@ public static class Facade
             "loams.collection.v1", "loams.collection.v1.QueryService", Unstable: false),
         new ModuleBinding("graph", "Loams Graph: stored property graphs, queried with GQL.",
             "loams.graph.v1", null, Unstable: true),
+        new ModuleBinding("sql", "SQL: one read-only statement over a namespace's collections, with parameters.",
+            "loams.sql.v1", "loams.sql.v1.SqlService", Unstable: false),
+        new ModuleBinding("streams", "Streams: create, list and describe a namespace's logs; produce and fetch.",
+            "loams.stream.v1", "loams.stream.v1.StreamService", Unstable: false),
     ];
 
     /// <summary>
@@ -498,5 +504,24 @@ public static class Facade
             GR + "ExecuteStreamRequest", GR + "ResultChunk");
         add("graph", "Explain", "explain", G, "Explain", none, unary, GR + "ExplainRequest", GR + "Plan",
             retry: RetryClass.Safe);
+
+        // Part C: loams.sql.v1 and loams.stream.v1 (SDKP P0b and P0c).
+        const string Sql = "loams.sql.v1.SqlService";
+        const string S = "Loams.Sql.V1.";
+        const string St = "loams.stream.v1.StreamService";
+        const string T = "Loams.Stream.V1.";
+        add("sql", "Query", "query", Sql, "Query", read, unary, S + "QueryRequest", S + "QueryResponse");
+        add("sql", "QueryArrow", "queryArrow", Sql, "QueryArrow", read, unary, S + "QueryArrowRequest", S + "QueryArrowResponse");
+        add("streams", "Create", "create", St, "CreateStream", none, unary, T + "CreateStreamRequest",
+            T + "CreateStreamResponse", retry: RetryClass.Safe);
+        add("streams", "Get", "get", St, "DescribeStream", read, unary, T + "DescribeStreamRequest", T + "DescribeStreamResponse");
+        add("streams", "List", "list", St, "ListStreams", read, unary, T + "ListStreamsRequest", T + "ListStreamsResponse",
+            pagination: new Pagination("Streams", "NextPageToken"));
+        add("streams", "Produce", "produce", St, "Produce", none, unary, T + "ProduceRequest", T + "ProduceResponse");
+        add("streams", "Fetch", "fetch", St, "Fetch", read, unary, T + "FetchRequest", T + "FetchResponse");
+        add("streams", "ProduceEvents", "produceEvents", St, "ProduceCloudEvents", none, unary,
+            T + "ProduceCloudEventsRequest", T + "ProduceCloudEventsResponse");
+        add("streams", "FetchEvents", "fetchEvents", St, "FetchCloudEvents", read, unary,
+            T + "FetchCloudEventsRequest", T + "FetchCloudEventsResponse");
     }
 }

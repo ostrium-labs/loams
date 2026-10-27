@@ -104,6 +104,7 @@ impl DurableServer {
         }
         tracing::info!(
             addr = %config.listen,
+            store = %config.store,
             "the durable API on http://{} is unauthenticated; it accepts loopback connections only (D111)",
             config.listen
         );

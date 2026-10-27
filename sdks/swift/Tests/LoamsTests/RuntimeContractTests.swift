@@ -12,6 +12,20 @@ import XCTest
 
 // MARK: - R2 — retry classes and backoff
 
+final class WireCodeTests: XCTestCase {
+    /// Every code's raw value is Connect's wire name, so `Code(rawValue:)` reads a
+    /// Connect error body. `invalidArgument` once had none: a unary 400 still
+    /// mapped through the HTTP status, but a stream's end frame read `unknown`.
+    func testCodesAreConnectWireNames() {
+        XCTAssertEqual(Code(rawValue: "invalid_argument"), .invalidArgument)
+        for code in Code.allCases {
+            XCTAssertEqual(code.wireName, code.wireName.lowercased(), "\(code)")
+        }
+        let end = Data(#"{"error":{"code":"invalid_argument","message":"bad"}}"#.utf8)
+        XCTAssertEqual((ConnectTransport.endStreamFailure(end) as? LoamsError)?.code, .invalidArgument)
+    }
+}
+
 final class RetryContractTests: XCTestCase {
     /// The numbers are M1.6 Ruling 5's and are the same in every SDK. If these
     /// change, every SDK's changes, and that is a decision, not a fix.
@@ -211,51 +225,41 @@ final class ConsistencyContractTests: XCTestCase {
         XCTAssertFalse(loamsIsConsistencyToken("abc"))
     }
 
-    /// The session keeps the token it was given and reports two different tokens
-    /// meeting as an **error** rather than merging them into a wrong one.
-    ///
-    /// A silently-wrong consistency token reads stale data, which is worse than a
-    /// failure — that is the whole reason this is an error.
-    func testSessionRefusesToMergeTwoDifferentTokens() async throws {
+    /// The session merges the tokens it is given (R4 as amended by SDKP §2.1):
+    /// the max offset per stream and partition.
+    func testSessionMergesTokens() async throws {
         let session = ConsistencySession()
-        try await session.record("v1:aaa")
+        try await session.record("v1:s1/p0@5")
+        try await session.record("v1:s1/p0@3,s1/p1@2")
         let current = await session.current()
-        XCTAssertEqual(current, "v1:aaa")
+        XCTAssertEqual(current, "v1:s1/p0@5,s1/p1@2")
 
         do {
-            try await session.record("v1:bbb")
-            XCTFail("two different tokens must not merge silently")
-        } catch {
-            XCTAssertEqual(LoamsError.code(of: error), .failedPrecondition)
-            XCTAssertTrue(
-                "\(error)".contains("cannot merge"),
-                "the error must say why: \(error)"
-            )
-        }
-        // The first token survives: the session keeps what it had rather than
-        // adopting one of two candidates.
+            try await session.record("opaque")
+            XCTFail("a token that is not v1: must not merge")
+        } catch {}
         let kept = await session.current()
-        XCTAssertEqual(kept, "v1:aaa", "the session keeps the first token")
+        XCTAssertEqual(kept, "v1:s1/p0@5,s1/p1@2", "the session keeps what it had")
         let conflicts = await session.conflicts()
-        XCTAssertEqual(conflicts, 1, "the unmergeable pair is counted, not silent")
+        XCTAssertEqual(conflicts, 1, "the unmergeable token is counted, not silent")
     }
 
     /// The same token twice is not a conflict, and an empty token is not a token.
     func testSessionIdempotenceAndEmptiness() async throws {
         let session = ConsistencySession()
-        try await session.record("v1:aaa")
-        try await session.record("v1:aaa")
+        try await session.record("v1:s1/p0@1")
+        try await session.record("v1:s1/p0@1")
         let conflicts = await session.conflicts()
         XCTAssertEqual(conflicts, 0, "the same token twice is not a conflict")
 
         try await session.record("")
         let afterEmpty = await session.current()
-        XCTAssertEqual(afterEmpty, "v1:aaa", "an empty token is not a token")
+        XCTAssertEqual(afterEmpty, "v1:s1/p0@1", "an empty token is not a token")
     }
 
     func testSessionClears() async {
         let session = ConsistencySession()
-        try? await session.record("v1:aaa")
+        try? await session.record("v1:s1/p0@1")
         await session.clear()
         let current = await session.current()
         XCTAssertNil(current, "clear forgets the token")
@@ -443,11 +447,12 @@ final class ReasonRegistryTests: XCTestCase {
     /// compiling, which is why this asserts the **count** as well as the set.
     func testReasonRegistryHasAllThirtyEight() {
         XCTAssertEqual(
-            loamsAllReasons.count, 43,
+            loamsAllReasons.count, 51,
             "the 26 original reasons plus the 13 `live_*` ones (including `live_app_disabled`, "
                 + "`live_app_exists`, `live_app_mismatch` and `live_origin_not_allowed`), "
-                + "Live's `session_rotate`, `session_gone` and `node_draining`, and the "
-                + "`token_revoked` its sessions close with; the registry must match exactly"
+                + "Live's `session_rotate`, `session_gone` and `node_draining`, the "
+                + "`token_revoked` its sessions close with, and SDKP's `filter_conflict` and seven app reasons; "
+                + "the registry must match exactly"
         )
     }
 
@@ -792,7 +797,7 @@ final class FacadeContractTests: XCTestCase {
     func testProtoPackagesIncludeTheWellKnownTypes() {
         XCTAssertTrue(loamsProtoPackages.contains("google.protobuf"))
         let loamsOnes = loamsProtoPackages.filter { $0.hasPrefix("loams.") }
-        XCTAssertEqual(loamsOnes.count, 8, "eight loams.* packages, which is what R9 compares")
+        XCTAssertEqual(loamsOnes.count, 12, "twelve loams.* packages (with SDKP's collection, graph, sql and stream), which is what R9 compares")
     }
 }
 

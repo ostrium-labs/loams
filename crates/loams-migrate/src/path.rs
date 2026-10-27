@@ -229,13 +229,24 @@ impl UpgradePath {
         matches!((introduced, target), (Some(i), Some(t)) if i < t)
     }
 
+    ///
+    /// A `release` newer than every release the train lists (data written by
+    /// a successor, which this build's train does not know yet) includes every
+    /// listed migration: the older release over newer data that `rollback
+    /// --keep-writes` starts (design §54 §17, T14-2) has nothing pending.
     pub fn introduced_at_or_before(&self, id: &str, release: &str) -> bool {
         let introduced = self
             .releases
             .iter()
             .position(|r| r.migrations.iter().any(|m| m.id == id));
         let stored = self.releases.iter().position(|r| r.version == release);
-        matches!((introduced, stored), (Some(i), Some(s)) if i >= s)
+        match (introduced, stored) {
+            (Some(i), Some(s)) => i >= s,
+            (Some(_), None) => self.releases.first().is_some_and(|newest| {
+                compare_releases(release, &newest.version) == Some(std::cmp::Ordering::Greater)
+            }),
+            (None, _) => false,
+        }
     }
 
     /// The releases from the first one that keeps data up to `target`,
@@ -311,6 +322,13 @@ mod tests {
         // A migration the train does not list is neither.
         assert!(!path.introduced_after("9999-unlisted", "0.1.0-preview.3"));
         assert!(!path.introduced_at_or_before("9999-unlisted", "0.1.0-preview.3"));
+        // Data at a successor this train does not list yet includes every
+        // listed migration (the older release under `rollback --keep-writes`);
+        // an unknown older release includes none.
+        assert!(path.introduced_at_or_before("0001-now", "0.1.0"));
+        assert!(path.introduced_at_or_before("0002-later", "0.1.1"));
+        assert!(!path.introduced_at_or_before("0001-now", "0.0.9"));
+        assert!(!path.introduced_at_or_before("9999-unlisted", "0.1.1"));
     }
 
     #[test]

@@ -78,10 +78,11 @@ public nonisolated enum Loams_Instance_V1_SignInMethod: SwiftProtobuf.Enum, Swif
   /// A QR or typed pairing code redeemed at the Loams gateway.
   case pairing // = 1
 
-  /// OIDC with PKCE in the system browser at the instance's Authentik.
+  /// OIDC with PKCE in the system browser at the instance's issuer (Zitadel,
+  /// design §76).
   case browser // = 2
 
-  /// Authentik's device authorization flow (RFC 8628).
+  /// The issuer's device authorization flow (RFC 8628).
   case deviceCode // = 3
   case UNRECOGNIZED(Int)
 
@@ -212,7 +213,7 @@ public nonisolated struct Loams_Instance_V1_GetInstanceResponse: Sendable {
   /// TLS SPKI pins (§37 §7.2.3). Empty for publicly trusted certificates.
   public var tlsPins: String = String()
 
-  /// PLACEHOLDER addition, not in the AP0 plan: the Authentik issuer and the
+  /// PLACEHOLDER addition, not in the AP0 plan: the OIDC issuer and the
   /// public client ids the apps use for browser sign-in (§37 §7.2.2 path 2).
   public var identityProvider: Loams_Instance_V1_IdentityProvider {
     get {_identityProvider ?? Loams_Instance_V1_IdentityProvider()}
@@ -251,7 +252,7 @@ public nonisolated struct Loams_Instance_V1_IdentityProvider: Sendable {
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  /// The OIDC issuer, e.g. https://auth.acme.example/application/o/loams/.
+  /// The OIDC issuer, e.g. https://auth.acme.example.
   public var issuer: String = String()
 
   public var androidClientID: String = String()

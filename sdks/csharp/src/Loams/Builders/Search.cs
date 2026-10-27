@@ -43,13 +43,14 @@ public static class Fusion
 /// <summary>Sort keys.</summary>
 public static class Sort
 {
-    /// <summary>By score, best first unless <paramref name="ascending"/>.</summary>
+    /// <summary>By score, best first unless <paramref name="ascending"/>. The default order is
+    /// sent unset (the IR's default for a score, descending), as the builder corpus spells it.</summary>
     public static SortKey Score(bool ascending = false) =>
-        new() { Score = new ScoreSort { Order = ascending ? SortOrder.Asc : SortOrder.Desc } };
+        new() { Score = new ScoreSort { Order = ascending ? SortOrder.Asc : SortOrder.Unspecified } };
 
     /// <summary>By primary key, the tiebreaker <c>QueryAllAsync</c> needs.</summary>
     public static SortKey Pk(bool descending = false) =>
-        new() { Pk = new PrimaryKeySort { Order = descending ? SortOrder.Desc : SortOrder.Asc } };
+        new() { Pk = new PrimaryKeySort { Order = descending ? SortOrder.Desc : SortOrder.Unspecified } };
 
     /// <summary>By a fast field.</summary>
     public static SortKey Field(string name, bool descending = false, bool? missingFirst = null) =>
@@ -199,14 +200,17 @@ public sealed class Search
         var select = new Struct();
         if (include is not null || exclude is not null)
         {
-            select.Fields["source"] = Value.ForStruct(new Struct
+            // Only the lists the caller gave, as the builder corpus spells it.
+            var source = new Struct();
+            if (include is not null)
             {
-                Fields =
-                {
-                    ["include"] = Value.ForList([.. (include ?? []).Select(Value.ForString)]),
-                    ["exclude"] = Value.ForList([.. (exclude ?? []).Select(Value.ForString)]),
-                },
-            });
+                source.Fields["include"] = Value.ForList([.. include.Select(Value.ForString)]);
+            }
+            if (exclude is not null)
+            {
+                source.Fields["exclude"] = Value.ForList([.. exclude.Select(Value.ForString)]);
+            }
+            select.Fields["source"] = Value.ForStruct(source);
         }
         if (vectors is not null)
         {

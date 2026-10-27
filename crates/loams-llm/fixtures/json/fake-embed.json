@@ -1,0 +1,6 @@
+{
+  "model": "fake-embed",
+  "dim": 4,
+  "seed": 7,
+  "vectors": {"pinned text": [0.5, 0.5, 0.5, 0.5]}
+}

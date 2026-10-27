@@ -221,7 +221,63 @@ async fn update_by_query_refuses_other_scripts() {
 }
 
 #[tokio::test]
-async fn update_by_query_refuses_an_object_assignment() {
+async fn update_by_query_object_assignment_replaces_the_key() {
+    // `@mastra/elasticsearch`'s `updateVector({ filter, update: { metadata } })`
+    // (#903): the object replaces `metadata`, as in Painless.
+    let es = Es::start().await;
+    fixture(&es, "i", 4).await;
+    let a = Es::ok(
+        ubq(
+            &es,
+            "/i/_update_by_query?refresh=true",
+            json!({
+                "query": {"term": {"metadata.ref": "a"}},
+                "script": {
+                    "source": "ctx._source.metadata = params.metadata",
+                    "params": {"metadata": {"ref": "a", "status": "archived"}},
+                    "lang": "painless"
+                }
+            }),
+        )
+        .await,
+    );
+    assert_eq!(a.body["updated"], 2, "{}", a.text);
+    for id in [1, 3] {
+        let s = source(&es, "i", id).await;
+        assert_eq!(s["metadata"], json!({"ref": "a", "status": "archived"}));
+        assert_eq!(s["text"], format!("doc {id}"));
+    }
+    assert_eq!(
+        source(&es, "i", 2).await["metadata"],
+        json!({"ref": "b", "page": 2, "old": 1})
+    );
+    // The new key is searchable.
+    let a = Es::ok(
+        es.post(
+            "/i/_count",
+            json!({"query": {"term": {"metadata.status": "archived"}}}),
+        )
+        .await,
+    );
+    assert_eq!(a.body["count"], 2, "{}", a.text);
+    // A filter matching nothing updates nothing.
+    let a = Es::ok(
+        ubq(
+            &es,
+            "/i/_update_by_query?refresh=true",
+            json!({
+                "query": {"term": {"metadata.ref": "zz"}},
+                "script": {"source": "ctx._source.metadata = params.m", "params": {"m": {"ref": "c"}}}
+            }),
+        )
+        .await,
+    );
+    assert_eq!(a.body["updated"], 0, "{}", a.text);
+    es.server.shutdown().await.expect("shutdown");
+}
+
+#[tokio::test]
+async fn update_by_query_refuses_a_nested_object_assignment() {
     let es = Es::start().await;
     fixture(&es, "i", 2).await;
     let a = ubq(
@@ -229,7 +285,7 @@ async fn update_by_query_refuses_an_object_assignment() {
         "/i/_update_by_query",
         json!({
             "query": {"match_all": {}},
-            "script": {"source": "ctx._source.metadata = params.m", "params": {"m": {"ref": "c"}}}
+            "script": {"source": "ctx._source.metadata.inner = params.m", "params": {"m": {"ref": "c"}}}
         }),
     )
     .await;

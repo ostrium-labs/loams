@@ -17,7 +17,12 @@ import {
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { studioAgentd } from '../src/agentd.js';
-import { addNotification, toStudioNotification } from '../src/notifications/data.js';
+import {
+  addNotification,
+  type StudioNotification,
+  toStudioNotification,
+  webNotifier,
+} from '../src/notifications/data.js';
 import { NotificationsBell } from '../src/notifications/NotificationsBell.js';
 import { wrap } from './fakes.js';
 import { live } from './sidebar-fakes.js';
@@ -144,5 +149,55 @@ describe('the notification surface', () => {
     list = addNotification(list, at('c', 2));
     expect(list.map((n) => n.id)).toEqual(['b', 'c', 'a']);
     expect(list[0]?.href).toBeUndefined();
+  });
+
+  it('calls onArrive for notifications that arrive after the page opened (W15)', async () => {
+    const d = daemon();
+    d.post({
+      id: 'old',
+      kind: NotificationKind.TURN_DONE,
+      title: 'Earlier',
+      createdAtMs: BigInt(Date.now() - 60_000),
+    });
+    const arrived: string[] = [];
+    render(
+      wrap(
+        <AgentdScope agentd={d.agentd}>
+          <NotificationsBell navigate={vi.fn()} onArrive={(n) => arrived.push(n.id)} />
+        </AgentdScope>,
+      ),
+    );
+    d.post({
+      id: 'n-new',
+      kind: NotificationKind.APPROVAL,
+      title: 'Deploy needs approval',
+      createdAtMs: BigInt(Date.now() + 1000),
+    });
+    await waitFor(() => expect(arrived).toEqual(['n-new']));
+  });
+
+  it('the web edition posts OS notifications only while unfocused, and a click leads to the thread (W15)', () => {
+    const notify = vi.fn(async (_n: { title: string; body: string; route?: string }) => {});
+    let focused = false;
+    const post = webNotifier(notify, () => focused);
+    const n = (kind: NotificationKind, id = 'n1'): StudioNotification => ({
+      id,
+      kind,
+      title: 'Deploy needs approval',
+      createdAtMs: Date.now(),
+      chatId: 'c1',
+      href: '/studio/t/c1',
+    });
+    post(n(NotificationKind.APPROVAL));
+    expect(notify).toHaveBeenCalledWith({
+      title: 'Approval waiting',
+      body: 'Deploy needs approval',
+      route: '/studio/t/c1',
+    });
+    post(n(NotificationKind.CHECK_FAILED, 'n2'));
+    expect(notify).toHaveBeenCalledTimes(1);
+    focused = true;
+    post(n(NotificationKind.TURN_DONE, 'n3'));
+    expect(notify).toHaveBeenCalledTimes(1);
   });
 });

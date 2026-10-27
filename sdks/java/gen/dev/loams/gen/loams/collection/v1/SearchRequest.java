@@ -756,7 +756,7 @@ private static final long serialVersionUID = 0L;
    *
    * <code>.google.protobuf.Struct rerank = 17 [json_name = "rerank", deprecated = true];</code>
    * @deprecated loams.collection.v1.SearchRequest.rerank is deprecated.
-   *     See loams/collection/v1/query.proto;l=230
+   *     See loams/collection/v1/query.proto;l=232
    * @return Whether the rerank field is set.
    */
   @java.lang.Override
@@ -772,7 +772,7 @@ private static final long serialVersionUID = 0L;
    *
    * <code>.google.protobuf.Struct rerank = 17 [json_name = "rerank", deprecated = true];</code>
    * @deprecated loams.collection.v1.SearchRequest.rerank is deprecated.
-   *     See loams/collection/v1/query.proto;l=230
+   *     See loams/collection/v1/query.proto;l=232
    * @return The rerank.
    */
   @java.lang.Override
@@ -803,7 +803,7 @@ private static final long serialVersionUID = 0L;
    *
    * <code>.google.protobuf.Struct expand = 18 [json_name = "expand", deprecated = true];</code>
    * @deprecated loams.collection.v1.SearchRequest.expand is deprecated.
-   *     See loams/collection/v1/query.proto;l=233
+   *     See loams/collection/v1/query.proto;l=235
    * @return Whether the expand field is set.
    */
   @java.lang.Override
@@ -818,7 +818,7 @@ private static final long serialVersionUID = 0L;
    *
    * <code>.google.protobuf.Struct expand = 18 [json_name = "expand", deprecated = true];</code>
    * @deprecated loams.collection.v1.SearchRequest.expand is deprecated.
-   *     See loams/collection/v1/query.proto;l=233
+   *     See loams/collection/v1/query.proto;l=235
    * @return The expand.
    */
   @java.lang.Override
@@ -4968,7 +4968,7 @@ private static final long serialVersionUID = 0L;
      *
      * <code>.google.protobuf.Struct rerank = 17 [json_name = "rerank", deprecated = true];</code>
      * @deprecated loams.collection.v1.SearchRequest.rerank is deprecated.
-     *     See loams/collection/v1/query.proto;l=230
+     *     See loams/collection/v1/query.proto;l=232
      * @return Whether the rerank field is set.
      */
     @java.lang.Deprecated public boolean hasRerank() {
@@ -4983,7 +4983,7 @@ private static final long serialVersionUID = 0L;
      *
      * <code>.google.protobuf.Struct rerank = 17 [json_name = "rerank", deprecated = true];</code>
      * @deprecated loams.collection.v1.SearchRequest.rerank is deprecated.
-     *     See loams/collection/v1/query.proto;l=230
+     *     See loams/collection/v1/query.proto;l=232
      * @return The rerank.
      */
     @java.lang.Deprecated public com.google.protobuf.Struct getRerank() {
@@ -5146,7 +5146,7 @@ private static final long serialVersionUID = 0L;
      *
      * <code>.google.protobuf.Struct expand = 18 [json_name = "expand", deprecated = true];</code>
      * @deprecated loams.collection.v1.SearchRequest.expand is deprecated.
-     *     See loams/collection/v1/query.proto;l=233
+     *     See loams/collection/v1/query.proto;l=235
      * @return Whether the expand field is set.
      */
     @java.lang.Deprecated public boolean hasExpand() {
@@ -5160,7 +5160,7 @@ private static final long serialVersionUID = 0L;
      *
      * <code>.google.protobuf.Struct expand = 18 [json_name = "expand", deprecated = true];</code>
      * @deprecated loams.collection.v1.SearchRequest.expand is deprecated.
-     *     See loams/collection/v1/query.proto;l=233
+     *     See loams/collection/v1/query.proto;l=235
      * @return The expand.
      */
     @java.lang.Deprecated public com.google.protobuf.Struct getExpand() {

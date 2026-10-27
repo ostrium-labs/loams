@@ -16,7 +16,7 @@ pub(crate) fn with_workers(extra: &[&'static WorkerPlugin]) -> Registry {
     #[cfg(feature = "mysql")]
     let registry = registry.server(&resonate_server_mysql::PLUGIN);
     #[cfg(feature = "tikv")]
-    let registry = registry.server(&crate::tikv::PLUGIN);
+    let registry = registry.server(&resonate_server_blob::tikv::PLUGIN);
     let mut registry = registry
         .worker(&resonate_transport_http_poll::PLUGIN)
         .worker(&resonate_transport_http_push::PLUGIN)

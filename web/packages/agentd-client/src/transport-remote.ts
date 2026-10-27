@@ -18,7 +18,7 @@ export type TokenGetter = () => string | undefined | Promise<string | undefined>
 
 export interface RemoteAgentdTransportOptions {
   kind: 'remote';
-  /** The remote agentd's URL (`https://dev-box.example.ts.net:8443`), from the host registry. */
+  /** The remote agentd's URL (`https://dev-box.example.ts.net`), from the host registry. */
   baseUrl: string;
   /** The person's access token for the audience `loams-agentd`, read per request. */
   getToken: TokenGetter;

@@ -18,7 +18,9 @@ import { ConfigurePage } from './configure.js';
 import { EmbeddedApp } from './embedded.js';
 import { FactoryHome } from './home.js';
 import { PanelsPage } from './panels-page.js';
-import { FACTORY_HOME, LEGACY_PATHS, legacyTarget, PAGES } from './paths.js';
+import { FACTORY_HOME, LEGACY_PATHS, legacyTarget, PAGES, RUNS_PATH } from './paths.js';
+import { RunsPage } from './runs/runs-page.js';
+import { liveRunsSource, type RunsSource } from './runs/source.js';
 import { SummaryCard } from './summary-card.js';
 
 export { ConfigurePage } from './configure.js';
@@ -32,7 +34,9 @@ export {
 export { EmbeddedApp } from './embedded.js';
 export { FactoryHome } from './home.js';
 export { PanelsPage } from './panels-page.js';
-export { FACTORY_HOME, factoryPath, legacyTarget } from './paths.js';
+export { FACTORY_HOME, factoryPath, legacyTarget, RUNS_PATH } from './paths.js';
+export { POLL_MS, RunDetail, RunsPage } from './runs/runs-page.js';
+export { FACTORY_LIVE_APP, liveRunsSource, type RunRow, type RunsSource } from './runs/source.js';
 export { SummaryCard } from './summary-card.js';
 
 /** An old `/factory…` route: replaces itself with its `/studio/factory…` route. */
@@ -47,9 +51,15 @@ function Redirect({ router }: { router: RouterService }) {
 
 const plugin: PluginModule = {
   name: 'factory',
-  inject: ['desktop', 'router', 'slots'],
+  inject: ['desktop', 'router', 'slots', 'transport'],
   apply(ctx: Context) {
     const desktop = service(ctx, 'desktop');
+    // The run record is in the Live app `factory`, read through the engine transport.
+    let runs: RunsSource | undefined;
+    const runsSource = (): RunsSource => {
+      runs ??= liveRunsSource(service(ctx, 'transport'));
+      return runs;
+    };
     const router = service(ctx, 'router');
     const slots = service(ctx, 'slots');
     const navigate = (to: string) => router.navigate(to);
@@ -61,6 +71,7 @@ const plugin: PluginModule = {
       ),
       'factory-app': (p) => <PanelsPage desktop={desktop} app={app(p)} navigate={navigate} />,
       factory: () => <FactoryHome desktop={desktop} navigate={navigate} />,
+      'factory-runs': () => <RunsPage source={runsSource()} />,
     };
     // The router takes the first match: PAGES lists the longer paths first.
     for (const [suffix, id, title] of PAGES) {
@@ -90,6 +101,24 @@ const plugin: PluginModule = {
             label: 'Software Factory',
             href: FACTORY_HOME,
             icon: 'factory',
+            group: 'Factory',
+            mode: 'studio',
+          },
+        },
+        () => null,
+      ),
+    );
+    ctx.effect(() =>
+      slots.register(
+        {
+          name: 'shell.nav.section',
+          plugin: 'factory',
+          order: 101,
+          meta: {
+            id: 'factory-runs',
+            label: 'Runs',
+            href: RUNS_PATH,
+            icon: 'pipelines',
             group: 'Factory',
             mode: 'studio',
           },

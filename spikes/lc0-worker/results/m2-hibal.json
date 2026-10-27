@@ -1,0 +1,150 @@
+{
+  "variant": "hib",
+  "user": "m2-hibal",
+  "devices": 20,
+  "minutes": 60.01181666666667,
+  "align": true,
+  "claim": {
+    "t": "claim",
+    "id": "752ypmal28e",
+    "run": "run-1",
+    "ok": true,
+    "holder": "d00",
+    "epoch": 1,
+    "db_ms": 86,
+    "wake": "ccd0e9d3",
+    "wakes": 1,
+    "n": 1,
+    "now": 1792728341882
+  },
+  "counters": {
+    "http": 7,
+    "ws_upgrades": 48,
+    "ws_sent": 2396,
+    "ws_received": 2390,
+    "retries": 0
+  },
+  "reconnects": 25,
+  "connectErrors": 3,
+  "dead_sockets_detected": 5,
+  "distinct_wakes_seen_in_pongs": 120,
+  "pongs": 2389,
+  "do_wakes_total": 129,
+  "final_leases": [
+    {
+      "run": "run-1",
+      "holder": "d00",
+      "epoch": 1,
+      "valid": true
+    }
+  ],
+  "final_online": 20,
+  "per_device_per_day": {
+    "ws_messages_in": 2874.633856832085,
+    "worker_requests": 65.98700422611213
+  },
+  "states": [
+    {
+      "at_min": 10.081533333333333,
+      "wake": "3027b72f",
+      "wakes": 22,
+      "msgs_this_wake": 0,
+      "awake_for_ms": 0,
+      "sockets": 24,
+      "leases": [
+        {
+          "run": "run-1",
+          "holder": "d00",
+          "epoch": 1,
+          "valid": true
+        }
+      ],
+      "online": 20
+    },
+    {
+      "at_min": 20.087433333333333,
+      "wake": "03b0f016",
+      "wakes": 43,
+      "msgs_this_wake": 0,
+      "awake_for_ms": 0,
+      "sockets": 21,
+      "leases": [
+        {
+          "run": "run-1",
+          "holder": "d00",
+          "epoch": 1,
+          "valid": true
+        }
+      ],
+      "online": 20
+    },
+    {
+      "at_min": 30.0991,
+      "wake": "3bfc2ec1",
+      "wakes": 64,
+      "msgs_this_wake": 20,
+      "awake_for_ms": 14252,
+      "sockets": 20,
+      "leases": [
+        {
+          "run": "run-1",
+          "holder": "d00",
+          "epoch": 1,
+          "valid": true
+        }
+      ],
+      "online": 20
+    },
+    {
+      "at_min": 40.105216666666664,
+      "wake": "d1dcb93d",
+      "wakes": 87,
+      "msgs_this_wake": 0,
+      "awake_for_ms": 0,
+      "sockets": 20,
+      "leases": [
+        {
+          "run": "run-1",
+          "holder": "d00",
+          "epoch": 1,
+          "valid": true
+        }
+      ],
+      "online": 20
+    },
+    {
+      "at_min": 50.1133,
+      "wake": "b9ee97d1",
+      "wakes": 108,
+      "msgs_this_wake": 0,
+      "awake_for_ms": 0,
+      "sockets": 20,
+      "leases": [
+        {
+          "run": "run-1",
+          "holder": "d00",
+          "epoch": 1,
+          "valid": true
+        }
+      ],
+      "online": 20
+    },
+    {
+      "at_min": 60.006766666666664,
+      "wake": "669496a0",
+      "wakes": 129,
+      "msgs_this_wake": 20,
+      "awake_for_ms": 8688,
+      "sockets": 25,
+      "leases": [
+        {
+          "run": "run-1",
+          "holder": "d00",
+          "epoch": 1,
+          "valid": true
+        }
+      ],
+      "online": 20
+    }
+  ]
+}

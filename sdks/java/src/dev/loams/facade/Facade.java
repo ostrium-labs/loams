@@ -81,7 +81,9 @@ public final class Facade {
             "loams.live.v1",
             "loams.notifications.v1",
             "loams.operations.v1",
-            "loams.options.v1");
+            "loams.options.v1",
+            "loams.sql.v1",
+            "loams.stream.v1");
 
     private static List<ModuleBinding> modules() {
         return List.of(
@@ -208,7 +210,21 @@ public final class Facade {
                         new CallBinding("graph", "QueryStream", "queryStream", "ExecuteStream",
                                 GRAPH_SERVICE + "/ExecuteStream", GRAPH_SERVICE, "loams.graph.v1",
                                 IdempotencyLevel.NONE, RetryClass.MANUAL, Streaming.SERVER, null, false),
-                        app("graph", "Explain", "explain", GRAPH_SERVICE, "Explain", IdempotencyLevel.NONE, RetryClass.SAFE, null, false)));
+                        app("graph", "Explain", "explain", GRAPH_SERVICE, "Explain", IdempotencyLevel.NONE, RetryClass.SAFE, null, false)),
+                // Part C: loams.sql.v1 and loams.stream.v1 (SDKP P0b and P0c).
+                appModule("sql", "SQL: one read-only statement over a namespace's collections, with parameters.",
+                        SQL_SERVICE, false,
+                        app("sql", "Query", "query", SQL_SERVICE, "Query", IdempotencyLevel.NO_SIDE_EFFECTS, RetryClass.SAFE, null, false),
+                        app("sql", "QueryArrow", "queryArrow", SQL_SERVICE, "QueryArrow", IdempotencyLevel.NO_SIDE_EFFECTS, RetryClass.SAFE, null, false)),
+                appModule("streams", "Streams: create, list and describe a namespace's logs; produce and fetch.",
+                        STREAM_SERVICE, false,
+                        app("streams", "Create", "create", STREAM_SERVICE, "CreateStream", IdempotencyLevel.NONE, RetryClass.SAFE, null, false),
+                        app("streams", "Get", "get", STREAM_SERVICE, "DescribeStream", IdempotencyLevel.NO_SIDE_EFFECTS, RetryClass.SAFE, null, false),
+                        app("streams", "List", "list", STREAM_SERVICE, "ListStreams", IdempotencyLevel.NO_SIDE_EFFECTS, RetryClass.SAFE, page("streams"), false),
+                        app("streams", "Produce", "produce", STREAM_SERVICE, "Produce", IdempotencyLevel.NONE, RetryClass.MANUAL, null, false),
+                        app("streams", "Fetch", "fetch", STREAM_SERVICE, "Fetch", IdempotencyLevel.NO_SIDE_EFFECTS, RetryClass.SAFE, null, false),
+                        app("streams", "ProduceEvents", "produceEvents", STREAM_SERVICE, "ProduceCloudEvents", IdempotencyLevel.NONE, RetryClass.MANUAL, null, false),
+                        app("streams", "FetchEvents", "fetchEvents", STREAM_SERVICE, "FetchCloudEvents", IdempotencyLevel.NO_SIDE_EFFECTS, RetryClass.SAFE, null, false)));
     }
 
     // ---- SDKP: the app-building API ----
@@ -224,6 +240,8 @@ public final class Facade {
     public static final String QUERY_SERVICE = "loams.collection.v1.QueryService";
     public static final String GRAPH_ADMIN_SERVICE = "loams.graph.v1.GraphAdminService";
     public static final String GRAPH_SERVICE = "loams.graph.v1.GraphService";
+    public static final String SQL_SERVICE = "loams.sql.v1.SqlService";
+    public static final String STREAM_SERVICE = "loams.stream.v1.StreamService";
 
     private static ModuleBinding appModule(
             String name, String summary, String service, boolean unstable, CallBinding... calls) {

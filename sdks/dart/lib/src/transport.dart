@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
@@ -15,14 +16,28 @@ class HttpResponse {
 }
 
 class Transport {
+  /// The client default for a unary call (R12).
+  static const defaultTimeout = Duration(seconds: 30);
+
   final String endpoint;
   final TokenSource? tokenSource;
   final int maxRetries;
-  final http.Client _client = http.Client();
 
-  Transport(this.endpoint, {this.tokenSource, this.maxRetries = 3});
+  /// A unary call's budget, retries included; null is none (R12).
+  final Duration? timeout;
+  final http.Client _client;
+
+  /// [httpClient] replaces the default `http.Client` (a `MockClient` in tests).
+  Transport(this.endpoint,
+      {this.tokenSource, this.maxRetries = 3, this.timeout = defaultTimeout, http.Client? httpClient})
+      : _client = httpClient ?? http.Client();
+
+  /// The budget left for the attempt `callWithRetry` has in flight; a direct
+  /// call (a stream) has none.
+  Duration? _attemptTimeout;
 
   Future<HttpResponse> execute(String path, Map<String, String> headers, dynamic body) async {
+    final timeout = _attemptTimeout;
     final cleanEndpoint = endpoint.endsWith('/') ? endpoint.substring(0, endpoint.length - 1) : endpoint;
     final cleanPath = path.startsWith('/') ? path.substring(1) : path;
     final uri = Uri.parse('$cleanEndpoint/$cleanPath');
@@ -49,14 +64,19 @@ class Transport {
     }
 
     try {
-      final streamedResponse = await _client.send(request);
-      final respBytes = await streamedResponse.stream.toBytes();
+      Future<HttpResponse> send() async {
+        final streamedResponse = await _client.send(request);
+        final respBytes = await streamedResponse.stream.toBytes();
+        return HttpResponse(
+          status: streamedResponse.statusCode,
+          headers: streamedResponse.headers,
+          bodyBytes: respBytes,
+        );
+      }
 
-      return HttpResponse(
-        status: streamedResponse.statusCode,
-        headers: streamedResponse.headers,
-        bodyBytes: respBytes,
-      );
+      return timeout == null ? await send() : await send().timeout(timeout);
+    } on TimeoutException {
+      throw DeadlineExceededException.client();
     } catch (e) {
       if (e is LoamsException) rethrow;
       throw LoamsException('Transport error: $e', code: 'unavailable', httpStatus: 503);
@@ -69,13 +89,25 @@ class Transport {
     dynamic body, {
     bool isMutation = false,
     String? idempotencyKey,
+    Duration? timeout,
+    bool useDefaultTimeout = true,
   }) async {
     int attempt = 0;
     bool refreshed = false;
+    // R12: one budget for the call, retries included.
+    final budget = timeout ?? (useDefaultTimeout ? this.timeout : null);
+    final deadline = budget == null ? null : DateTime.now().add(budget);
 
     while (true) {
       attempt++;
+      final remaining = deadline?.difference(DateTime.now());
+      if (remaining != null && remaining <= Duration.zero) {
+        throw DeadlineExceededException.client();
+      }
       final currentHeaders = Map<String, String>.from(headers);
+      if (remaining != null) {
+        currentHeaders['connect-timeout-ms'] = '${remaining.inMilliseconds < 1 ? 1 : remaining.inMilliseconds}';
+      }
       if (tokenSource != null) {
         final token = await tokenSource!.getToken();
         if (token.isNotEmpty) {
@@ -86,7 +118,13 @@ class Transport {
         currentHeaders['idempotency-key'] = idempotencyKey;
       }
 
-      final res = await execute(path, currentHeaders, body);
+      _attemptTimeout = remaining;
+      final HttpResponse res;
+      try {
+        res = await execute(path, currentHeaders, body);
+      } finally {
+        _attemptTimeout = null;
+      }
 
       if (res.status >= 200 && res.status < 300) {
         return res;

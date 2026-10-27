@@ -566,7 +566,9 @@ final class ConformanceTests: XCTestCase {
         // The annotated paged RPCs this SDK speaks are `live.admin.listApps`
         // (LV1 Task 13) and `listDeployments` (Task 10); the TypeScript and Rust
         // facades page them the same way.
-        let pagedCalls = loamsModules.flatMap { $0.calls }.filter { $0.pagination != nil }.map(\.rpc)
+        // The app modules' list calls (SDKP) are driven against the stub in AppTests.
+        let pagedCalls = loamsModules.flatMap { $0.calls }
+            .filter { $0.pagination != nil && $0.package == "loams.live.v1" }.map(\.rpc)
         XCTAssertEqual(
             pagedCalls,
             ["loams.live.v1.LiveAdminService/ListApps", "loams.live.v1.LiveAdminService/ListDeployments"]

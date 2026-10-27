@@ -66,10 +66,12 @@ describe('wrangler.jsonc', () => {
   const text = readFileSync(join(console_, 'wrangler.jsonc'), 'utf8');
   const config = JSON.parse(text.replace(/^\s*\/\/.*$/gm, ''));
 
-  test('is the assets-only loams-console Worker on console.loams.dev', () => {
+  test('is the assets-only loams-console Worker with no console.loams.dev route', () => {
     assert.equal(config.name, 'loams-console');
     assert.equal(config.main, undefined, 'no Worker code: free tier, no CPU budget used');
-    assert.deepEqual(config.routes, [{ pattern: 'console.loams.dev', custom_domain: true }]);
+    assert.equal(config.routes, undefined, 'no custom-domain route (owner, 2026-10-24)');
+    assert.equal(config.workers_dev, true);
+    assert.ok(!text.includes('"console.loams.dev"'), 'no console.loams.dev pattern');
   });
 
   test('serves the staged directory with an SPA fallback', () => {
@@ -78,7 +80,7 @@ describe('wrangler.jsonc', () => {
     assert.equal(config.assets.html_handling, 'none', 'preserve exact sandbox paths and headers');
   });
 
-  test('a BYOC deploy (--env byoc) drops the console.loams.dev route for workers.dev', () => {
+  test('a BYOC deploy (--env byoc) stays on workers.dev with no routes', () => {
     assert.deepEqual(config.env.byoc.routes, []);
     assert.equal(config.env.byoc.workers_dev, true);
     assert.equal(config.env.byoc.main, undefined);
@@ -185,7 +187,7 @@ describe('hosted config', () => {
   });
 
   test('narrows the offered modes with LOAMS_AUTH_MODES', () => {
-    // Ostrium's console: only Tailscale, even though the deploy has a client.
+    // A deploy that has tested only Tailscale, even though it has a client.
     assert.deepEqual(hostedConfig({ ...AUTH, LOAMS_AUTH_MODES: 'tailscale' }), {
       hosted: true,
       authMode: 'tailscale',

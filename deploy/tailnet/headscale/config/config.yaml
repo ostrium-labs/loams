@@ -1,0 +1,124 @@
+# Headscale 0.29.4 for headscale.loams.dev (hosted service tailnet).
+#
+# Secrets are not in this file. Headscale reads environment overrides named
+# HEADSCALE_<SECTION>_<KEY>; compose sets these from .env:
+#   HEADSCALE_OIDC_CLIENT_SECRET   the `headscale` client secret from Zitadel
+#   HEADSCALE_DERP_SERVER_IPV4     the host's public IPv4 (embedded DERP)
+#   HEADSCALE_DERP_SERVER_IPV6     the host's public IPv6, if any
+#
+# Check with: headscale configtest -c config.yaml
+---
+server_url: https://headscale.loams.dev
+# Caddy terminates TLS and proxies to this port (compose network only).
+listen_addr: 0.0.0.0:8080
+metrics_listen_addr: 0.0.0.0:9090
+# The remote gRPC API stays on loopback inside the container; the CLI uses the
+# unix socket (`docker compose exec headscale headscale ...`).
+grpc_listen_addr: 127.0.0.1:50443
+grpc_allow_insecure: false
+# Caddy: its compose address (docker-compose.yml, `internal`), or localhost when
+# it runs as a sidecar in the same pod (k8s/).
+trusted_proxies:
+  - 172.30.80.0/24
+  - 127.0.0.1/32
+
+noise:
+  private_key_path: /var/lib/headscale/noise_private.key
+
+prefixes:
+  v4: 100.64.0.0/10
+  v6: fd7a:115c:a1e0::/48
+  allocation: sequential
+
+# Self-hosted DERP only (design 43 D590): no relay run by a third party. The
+# embedded server shares the HTTPS listener; STUN is UDP 3478.
+derp:
+  server:
+    enabled: true
+    region_id: 900
+    region_code: "loams-1"
+    region_name: "Loams DERP 1"
+    verify_clients: true
+    stun_listen_addr: "0.0.0.0:3478"
+    private_key_path: /var/lib/headscale/derp_server_private.key
+    automatically_add_embedded_derp_region: true
+    # ipv4 / ipv6 come from HEADSCALE_DERP_SERVER_IPV4 / _IPV6.
+  urls: []
+  paths: []
+  auto_update_enabled: false
+
+disable_check_updates: true
+
+node:
+  # Personal devices sign in again through Zitadel every 90 days. Tagged
+  # nodes are exempt from expiry by Headscale; retire them with
+  # `headscale nodes delete`. CI nodes are ephemeral (30 minutes idle).
+  expiry: 90d
+  ephemeral:
+    inactivity_timeout: 30m
+
+database:
+  type: sqlite
+  sqlite:
+    path: /var/lib/headscale/db.sqlite
+    write_ahead_log: true
+    wal_autocheckpoint: 1000
+
+# TLS is Caddy's job (it also keeps /api and /metrics off the public name).
+tls_cert_path: ""
+tls_key_path: ""
+tls_letsencrypt_hostname: ""
+
+log:
+  level: info
+  format: json
+
+policy:
+  mode: file
+  path: /etc/headscale/policy.hujson
+
+dns:
+  magic_dns: true
+  # Node names are <host>.net.loams.dev. Must differ from the server_url host.
+  base_domain: net.loams.dev
+  # Do not take over clients' normal DNS; only the tailnet names resolve here.
+  override_local_dns: false
+  nameservers:
+    global: []
+    split: {}
+  search_domains: []
+  extra_records: []
+
+unix_socket: /var/run/headscale/headscale.sock
+unix_socket_permission: "0770"
+
+# Do not send client logs to Tailscale Inc.
+logtail:
+  enabled: false
+# Servers and CI nodes do not need file transfer.
+taildrop:
+  enabled: false
+
+# Zitadel at auth.loams.dev is the identity provider (design 76, D1600). The
+# `headscale` application is created by the auth.loams.dev bundle (IA1).
+oidc:
+  # The control plane must not depend on the IdP to start: with Zitadel down,
+  # new OIDC sign-ins fail, but pre-auth key registrations and every existing
+  # session keep working (design 43 section 8).
+  only_start_if_oidc_is_available: false
+  issuer: "https://auth.loams.dev"
+  client_id: "headscale"
+  # client_secret: HEADSCALE_OIDC_CLIENT_SECRET
+  scope: ["openid", "profile", "email", "groups"]
+  email_verified_required: true
+  # Only members of this group can sign in. Zitadel asserts project roles
+  # rather than a `groups` claim; the auth.loams.dev bundle maps the
+  # `loams-net-users` role into `groups` for this application. Without that
+  # claim nobody can sign in through OIDC (deny by default). Headscale cannot
+  # use groups in the policy itself (docs/ref/oidc.md, "Limitations").
+  allowed_groups:
+    - "loams-net-users"
+  use_expiry_from_token: false
+  pkce:
+    enabled: true
+    method: S256

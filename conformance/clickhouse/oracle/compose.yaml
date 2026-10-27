@@ -1,0 +1,30 @@
+# The oracle's reference servers (HE0 Task 6): clickhouse-server at the version
+# chDB carries (the baseline) and at 24.3 LTS. Loopback ports only, data on
+# tmpfs, nothing kept. Pins: targets.toml (the same digests).
+name: loams-oracle
+
+x-server: &server
+  environment:
+    CLICKHOUSE_USER: oracle
+    CLICKHOUSE_PASSWORD: ${LOAMS_ORACLE_PASSWORD:-oracle}
+    CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "0"
+  ulimits:
+    nofile: { soft: 262144, hard: 262144 }
+  tmpfs:
+    - /var/lib/clickhouse
+    - /var/log/clickhouse-server
+  healthcheck:
+    test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8123/ping || exit 1"]
+    interval: 2s
+    timeout: 2s
+    retries: 60
+
+services:
+  clickhouse-26-9:
+    <<: *server
+    image: docker.io/clickhouse/clickhouse-server:26.9.2.8@sha256:7b9a0b6e9ab7ef79db5c4f8a9808f880258704eb7b4af9309f9029c16e727a80
+    ports: ["127.0.0.1:28123:8123"]
+  clickhouse-24-3:
+    <<: *server
+    image: docker.io/clickhouse/clickhouse-server:24.3.18.7@sha256:85b97f63dcfff47790d26bb5d5801637aaddb2b93e5e9aee27a686c2fb2b9916
+    ports: ["127.0.0.1:28124:8123"]

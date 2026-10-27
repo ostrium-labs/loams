@@ -40,6 +40,7 @@ import { FactoryHost } from "./factory/host";
 import { registerFactoryIpc } from "./factory/ipc.electron";
 import { Vault } from "./factory/vault";
 import { FactoryViews } from "./factory/views.electron";
+import { registerPgControlIpc } from "./pgcontrol/ipc.electron";
 import { readPgControlTarget } from "./pgcontrol/target";
 import { registerPreviewIpc } from "./preview/ipc.electron";
 import { StudioPreviewView } from "./preview/view.electron";
@@ -67,6 +68,8 @@ import { quitSequence } from "./shell/quit";
 import { reveal } from "./shell/reveal";
 import { registerShellIpc } from "./shell/shell-ipc.electron";
 import { initSingleInstance } from "./shell/single-instance.electron";
+import { SPLASH_TIMEOUT_MS, SplashGate } from "./shell/splash";
+import { showSplash } from "./shell/splash.electron";
 import {
 	EMPTY_STUDIO,
 	notificationContent,
@@ -139,7 +142,13 @@ function closeToTray(): boolean | undefined {
 	return typeof v === "boolean" ? v : undefined;
 }
 
+/** True once the splash gate has shown the first console window (D1084). */
+let gateShown = false;
+let splashGate: SplashGate | undefined;
+
 function showMainWindow(create: () => BrowserWindow): void {
+	// Asking for the console (tray, menu, a notification) ends the splash early.
+	splashGate?.ready();
 	const win = getMainWindow() ?? create();
 	reveal(win);
 }
@@ -217,7 +226,11 @@ function createWindow(): BrowserWindow {
 			win.hide();
 		}
 	});
-	win.once("ready-to-show", () => win.show());
+	// The first window stays hidden behind the splash until the gate shows it (D1084); a
+	// window opened later (the tray, after the gate) shows as soon as it can paint.
+	win.once("ready-to-show", () => {
+		if (gateShown) win.show();
+	});
 	void win.loadURL("loams-app://console/ui/");
 	return win;
 }
@@ -358,6 +371,8 @@ const singleInstance = initSingleInstance({
 			}, 5_000);
 			// SD1 Task 28: Studio's editor hand-off and notification choices.
 			registerStudioIpc({ settingsFile: settingsFile() });
+			// PG2 R9.1: App settings > Postgres control plane.
+			registerPgControlIpc({ settingsFile });
 			// With the TiKV stack chosen, a stack left running from last time starts the engine
 			// with Live on it directly, but a slow or absent runtime must not hold the engine
 			// back for long.
@@ -384,7 +399,19 @@ const singleInstance = initSingleInstance({
 				singleInstance.watchMainWindow(w);
 				return w;
 			};
+			const splash = showSplash({ dark: sync.dark });
+			const gate = new SplashGate({
+				timeoutMs: SPLASH_TIMEOUT_MS,
+				onShow: () => {
+					gateShown = true;
+					const w = getMainWindow();
+					if (w && !w.isDestroyed()) w.show();
+					splash.close();
+				},
+			});
+			splashGate = gate;
 			registerShellIpc({
+				onReady: () => gate.ready(),
 				onBadge: (n) => tray?.setBadge(n),
 				onNotifyClick: (route) => {
 					showMainWindow(open);
@@ -480,12 +507,17 @@ const singleInstance = initSingleInstance({
 				},
 			});
 			open();
-			app.on("activate", () => showMainWindow(open));
+			// macOS can send activate during launch: the splash keeps the window until ready.
+			app.on("activate", () => {
+				if (gateShown) showMainWindow(open);
+			});
 		});
 		let quitting = false;
 		let quitDone = false;
 		app.on("before-quit", (e) => {
 			isQuitting = true;
+			// A quit during the splash must not show the console on the timeout.
+			splashGate?.dispose();
 			if (quitDone) return;
 			e.preventDefault();
 			if (quitting) return;

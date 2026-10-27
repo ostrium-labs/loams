@@ -1,0 +1,21 @@
+# Target B: k3s. Secrets are created out of band (secrets.example.yaml).
+#   kubectl kustomize --load-restrictor=LoadRestrictionsNone deploy/tailnet/headscale | kubectl apply -f -
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: headscale
+resources:
+  - k8s/namespace.yaml
+  - k8s/headscale.yaml
+configMapGenerator:
+  - name: headscale-config
+    files:
+      - config.yaml=config/config.yaml
+      - policy.hujson=../policy/policy.hujson
+  - name: headscale-caddyfile
+    files:
+      - Caddyfile=compose/Caddyfile
+  - name: headscale-backup-scripts
+    files:
+      - backup.sh=compose/backup/backup.sh
+generatorOptions:
+  disableNameSuffixHash: true

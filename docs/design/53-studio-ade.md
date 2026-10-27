@@ -1,5 +1,7 @@
 # 53 — Loams Studio: an Agentic Development Environment in the cordis Console
 
+> **Amendment (approved 2026-10-23) by [§78](78-loams-cloud-on-tidb-x.md)** (Loams Cloud on TiDB X; D1700–D1735). Studio's remote-agentd host registry (D909) becomes Loams Cloud's device registry; a run's workspace may be a TiDB Cloud Filesystem layer; runs are pinned to a device under a lease and hand off between a user's devices explicitly (drain, checkpoint, fork) (D1713–D1716).
+
 Status: **Proposed; mostly built** · 2026-10-13, updated 2026-10-15. SD1 Tasks 0–28 and 30 are on `dev`; how each decision was built, and where it differs from this text, is in the [decision log](13-decision-log.md) (D900–D922's status column) and the plan's "Rulings made during execution". The user guides are in [docs/guides/studio](../guides/studio/index.md). Not built yet: the e2e suite (Task 29) and the browser default (Task 32). The security review is [docs/security/studio-threat-model.md](../security/studio-threat-model.md). This document is otherwise as written on 2026-10-13. Source: the owner's direction of 2026-10-13 (§1.1). Decisions **D900–D922** and open questions **Q800–Q819** are proposed numbers. They sit above the highest numbers the documents on `dev` use (D891 and Q795, §52), with a gap left for work in flight. They go into the [decision log](13-decision-log.md) when the owner confirms them. The plan is [SD1](../plans/2026-10-13-sd1-studio-ade.md). The vendoring inventory is [studio-vendor-inventory.md](studio-vendor-inventory.md). **This document writes no code.**
 
 This document builds on, and amends where §17 says:
@@ -25,7 +27,7 @@ Markers:
 1. **One shell, two modes.** The cordis console host runs in the browser and in Electron. Its parts are `web/apps/console` `cordis.html`, `web/packages/console-host`, `@loams/slots`, `@loams/ui` and `web/plugins/*`; `apps/desktop-electron` loads `cordis.html`. The host gets a mode switcher with two modes:
    - **Console** is the cloud console: orgs, projects, environments, data, compute, connectors, access and audit.
    - **Studio** is the ADE: agent threads, a worktree per agent, diff review, parallel agents compared side by side with the best result merged (Orca's idea), approvals and terminals.
-2. **The software factory apps belong to Studio.** Zulip, Plane, Forgejo, OpenPanel, GlitchTip, Langfuse and OpenObserve move there. Plugin manifests declare which modes a plugin appears in.
+2. **The software factory apps belong to Studio.** Zulip, Plane, Forgejo, OpenPanel, GlitchTip, Langfuse and SigNoz move there. Plugin manifests declare which modes a plugin appears in.
 3. **Vendor, don't embed.** Over the long term, we vendor UI components and other useful code from T3 Code (MIT) into this repository and rebuild them natively on our stack, backed by `loams-agentd`. We do not embed T3 Code's app or its server.
 4. **The UI stack rulings apply:**
    - Tailwind 4 with `@loams/ui` tokens only.
@@ -51,7 +53,7 @@ Markers:
 | D906 | **`loams-agentd` is Studio's only backend for code work.** Studio never talks to a T3 Code server and never runs one. The Loams server is used only for Loams resources and for the factory's `loams.collab.v1` | §6 |
 | D907 | **Studio reaches agentd through a Connect surface, `loams.agentd.v1`.** A new crate, `loams-agentd-connect`, serves it beside the ndjson RPC. Its handlers call the same engine functions as the ndjson dispatcher. The ndjson wire stays for Electron main, the MCP shim and the CLI (DD1 Ruling 2 stands). Studio reads it with connect-query | §6.1 |
 | D908 | **Desktop transport.** The renderer calls `loams-app://console/loams.agentd.v1.*`. Electron main's protocol proxy forwards the call to the local Connect listener, adds the owner token, and refuses any method not marked `renderer: true`. The renderer never sees the token (D788 and D789 hold) | §6.2 |
-| D909 | **Web transport: remote agentd.** `loams-agentd serve --remote` opens a TLS Connect listener, off by default. It accepts only Authentik-issued access tokens with the audience `loams-agentd` whose subject is the one principal the daemon was enrolled for. It sends CORS headers only to configured console origins. This amends D788's "no browsers" rule for that listener only; the loopback ndjson listener keeps it | §6.3, §8.2 |
+| D909 | **Web transport: remote agentd.** `loams-agentd serve --remote` opens a TLS Connect listener, off by default. It accepts only IdP-issued access tokens (Zitadel, §76 D1600) with the audience `loams-agentd` whose subject is the one principal the daemon was enrolled for. It sends CORS headers only to configured console origins. This amends D788's "no browsers" rule for that listener only; the loopback ndjson listener keeps it | §6.3, §8.2 |
 | D910 | **New agentd RPCs** fill the gaps of §6.5: git writes (commit, push, merge, change requests for Forgejo and GitHub), a worktree list, per-turn checkpoints and restore, review comments, run groups with compare and resolve, check runs, approvals as a list and a stream, notifications, and per-session usage | §6.5 |
 | D911 | **Approvals are real in Studio.** Each thread has an approval mode: `full-access` (today's behaviour) or `supervised`. In `supervised` mode, the harness drivers stop auto-approving. They surface each permission request as `ApprovalRequested`, which only an `owner` resolves through `ResolveApproval` (DD1 Task 24's contract, extended to the harness drivers). Studio's approval UI and Console's approvals inbox read the same stream | §8.1 |
 | D912 | **Vendored code lives in `web/packages/studio-ui` (`@loams/studio-ui`).** `provenance.json` records the upstream commit, the upstream path, the upstream SHA-256 and the local SHA-256 of every vendored file. An import tool copies files from a verified source archive without executing anything in it. Vendored files are ported to `@loams/ui` tokens, Base UI through `@loams/ui`, and connect-query; no Effect, Effect atoms or T3 contracts survive the port | §9 |
@@ -129,7 +131,7 @@ The header, the mode switcher, the approval badge and the dock toggle `[◧]` ar
 | agentd | 90 ndjson methods (77 unary, 13 streams; 88 `renderer: true`, all but `Hello` and `Shutdown`) in `crates/loams-agentd-proto/src/rpc.rs:267-401` (SD1 T0-3). Covered: chats, spaces, repos, worktrees, diffs, git status, terminals, files, previews, harness and model catalogues, queue and steering. Missing: git writes, real approvals, checkpoints, review comments, run groups, notifications, per-session cost. No protobuf; no Connect; no browser access (any `Origin` gets a 403) | §6 |
 | agentd client | `@loams/agentd-client`: ts-rs types, the method table, typed request builders and the transcript reducer. No transport yet (DD1 Task 10) | Studio adds the Connect transport (§6.2) |
 | DD1 progress | Rulings recorded through Task 9. Tasks 10–38 are not done, including the approval loop (24) and the DSH chat UI (28–32) | §17 reconciles SD1 with DD1e |
-| Factory | One plugin, `@loams/plugin-factory`, desktop edition only. It holds a hub, a configure form, embedded `WebContentsView` apps (D678) and native panels for Zulip, Plane, Forgejo, GlitchTip, OpenPanel, Langfuse and Matomo; OpenObserve has the full UI only. SF1's browser `embed` plugin and per-app plugins are not built | The owner's "already exist as cordis plugins" holds for the desktop; the web needs SF1 (D922) |
+| Factory | One plugin, `@loams/plugin-factory`, desktop edition only. It holds a hub, a configure form, embedded `WebContentsView` apps (D678) and native panels for Zulip, Plane, Forgejo, GlitchTip, OpenPanel, Langfuse and Matomo; SigNoz has the full UI only. SF1's browser `embed` plugin and per-app plugins are not built | The owner's "already exist as cordis plugins" holds for the desktop; the web needs SF1 (D922) |
 | Licence gates | `cargo deny` for Rust. **No npm licence check** in CI | D914 |
 | T3 Code (the source) | React 19 SPA, 608 tsx files (484 non-test, 173 457 lines). Server state is Effect atoms (`@effect/atom-react`) over Effect RPC on one WebSocket; client UI state is zustand 5; TanStack Router; Tailwind 4; Base UI primitives in `components/ui` (shadcn `base-mira`); Tiptap 3 composer; `@pierre/diffs` 1.5.2 **with a local patch** (find-in-diff) and `@pierre/trees` 1.0.0-beta.6; `@legendapp/list` (patched) for virtualisation; a libghostty-vt wasm terminal. Checkpoints are hidden commits under `refs/t3/checkpoints/<thread>/turn/<n>`, written through a temporary index. **No parallel-run compare UI exists** | Every container component needs a new data layer; leaf components, the Tiptap modules, pure logic and keybindings port well (inventory). The compare view is ours to build |
 | Naming | A desktop page called **Data Studio** exists (`@loams/plugin-data-studio`, D653) | Q812 |
@@ -324,7 +326,7 @@ The daemon keeps the group record, so a group keeps running and stays resolvable
 | GlitchTip | Issues | "Fix this error" starts a thread with the stack trace and the release |
 | OpenPanel | Dashboards | Read-only panel |
 | Langfuse | Traces | A thread links to its traces when the harness exports OTel (§39 §9) |
-| OpenObserve | Logs, metrics, traces | Full UI only, as today |
+| SigNoz | Logs, metrics, traces | Full UI only, as today |
 | Matomo | (present in the factory plugin today; not in the owner's list) | Kept where it is, in Studio (Q813) |
 
 - **Desktop.** The existing plugin keeps its pages (hub, configure, embedded app, panels) under `/studio/factory/…`. The old `/factory/…` paths redirect. Its overview card stays on Console's overview (the plugin is in both modes for that card only, through `meta.mode`).
@@ -384,14 +386,14 @@ loams-agentd-connect (loopback listener, same token, same Host check, no Origin)
 
 ### 6.3 Web transport: a remote agentd (D909, D921)
 
-- **Process.** `loams-agentd serve --remote --listen 0.0.0.0:8443 --tls-cert … --tls-key … --issuer https://auth.<domain>/application/o/loams/ --audience loams-agentd --subject <sub> --allow-origin https://console.<domain>`. Every flag is required; there are no defaults that open it up.
+- **Process.** `loams-agentd serve --remote --listen 0.0.0.0:8443 --tls-cert … --tls-key … --issuer https://auth.<domain> --audience loams-agentd --subject <sub> --allow-origin https://console.<domain>`. Every flag is required; there are no defaults that open it up.
 - **What it serves.**
   - It serves only `loams.agentd.v1` (Connect over HTTP/1.1 and HTTP/2), plus `/preview/…` (Q806).
   - It never serves the ndjson wire: the loopback ndjson listener stays loopback-only for the CLI and the MCP shim.
 - **Auth.**
-  - `Authorization: Bearer <access token>`, verified against the issuer's JWKS (Authentik, D404). It checks `aud`, `exp`, `nbf` and `iss`, and requires `sub` to equal the enrolled subject.
+  - `Authorization: Bearer <access token>`, verified against the issuer's JWKS (Zitadel, §76 D1600; D404 is superseded). It checks `aud`, `exp`, `nbf` and `iss`, and requires `sub` to equal the enrolled subject.
   - The token maps to a role `studio`, which may call the Studio method set and nothing else. In particular, not `Shutdown`, the key and secret methods, or the account logins.
-  - The console gets the token through its own Authentik sign-in (MT1), as an audience-specific access token (an RFC 8693 exchange or a second client).
+  - The console gets the token through its own Zitadel sign-in (IA1, formerly MT1), as an audience-specific access token (an RFC 8693 exchange or a second client).
 - **CORS.** Only the configured origins, with `Access-Control-Allow-Headers` limited to the Connect headers and `Authorization`. No cookies, so there is no CSRF surface.
 - **Finding the host.** Studio settings keep a list of agentd hosts per user, each with a name, a URL and a verified certificate fingerprint for self-signed setups. The list lives in the Loams server's user settings when one exists, and otherwise in local storage. A deep link names a host by id only (§4.4).
 - **Where it runs.** A dev box, a VM, a container, or a §15 workspace sandbox. One remote agentd serves one person (D921). It is a per-user service, as on the desktop (D784).

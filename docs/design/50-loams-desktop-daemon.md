@@ -76,7 +76,7 @@ A standalone Cargo workspace (its own `Cargo.lock`, `rust-toolchain.toml` 1.97.1
 | `sync` | 10 204 | `DocsStore` (SQLite snapshots, processed-command ledger) plus the edge room clients |
 | `doc` | 10 197 | Loro session and workspace doc schemas |
 | `mcp` | 2 898 | `loams-desktop mcp`, a stdio MCP server that dials the IPC port; the engine injects it into every harness run with `LOAMS_DESKTOP_IPC_PORT`, `LOAMS_DESKTOP_CHAT_ID` and `LOAMS_DESKTOP_DEVICE_ID` (`sessions.rs`) |
-| `loams-desktop-link` | 10 555 | Loams Connect-RPC clients, Authentik OIDC, `keyring` 4.2 |
+| `loams-desktop-link` | 10 555 | Loams Connect-RPC clients, OIDC sign-in, `keyring` 4.2 |
 | `preview` | 4 582 | Local dev-server discovery and routing, plus edge signaling and peer streams |
 | `update` | 2 581 | Self-update (disabled in shipping code) |
 | `ui` | 179 907 | GPUI viewport; `wry` for the WebKitGTK sidebar browser (feature `linux-browser`) |
@@ -133,7 +133,7 @@ Renderer (cordis console, sandboxed)                    ├─ secrets: OS keyri
 | `doc` | Kept (Loro session docs) | `crates/loams-agentd-doc` |
 | `sync` | Only `DocsStore` and the ledger survive | `crates/loams-agentd-store` |
 | `mcp` | Kept; reads a per-run scoped token | `crates/loams-agentd-mcp` |
-| `loams-desktop-link` | Kept (Connect clients, Authentik OIDC, keyring) for Q703 and Loams Bot | `crates/loams-agentd-link` |
+| `loams-desktop-link` | Kept (Connect clients, OIDC sign-in, keyring) for Q703 and Loams Bot | `crates/loams-agentd-link` |
 | `preview` | Local discovery and routing kept; `signaling.rs`, `peer.rs`, `mux.rs` and the remote login forwarding deleted | `crates/loams-agentd-preview` |
 | `loams-desktop-brand` | Folded into `loams-agentd-proto::brand` | — |
 | `ui` | **Deleted** (GPUI, `wry`, WebKitGTK) | — |
@@ -153,7 +153,7 @@ The fork's seventeen packages (sixteen crates and the binary) become ten; five n
 | Removed | Where | Replacement |
 |---|---|---|
 | Edge sync and relay | `DEFAULT_EDGE_URL`, `EngineConfig.edge_url`/`edge_token`, `rpc/src/device_room.rs`, the room clients of `sync` (`chat_client*`, `registry*`, `socket*`, `dial.rs`, `wake.rs`, `net_path.rs`, `sync_jobs.rs`, `budget.rs`), the edge parts of `doc_host.rs`, `workspace_host.rs`, `chat2_host.rs`, `diff_sync.rs` (sidecar upload), `preview/src/signaling.rs`, `native/edge` | None. Device sync is Q700 |
-| WorkOS | `engine/src/auth.rs`, `apps/loams-desktop/src/auth_cli.rs`, `DEFAULT_WORKOS_CLIENT_ID`, `EngineProfile::synced`, `local_import.rs`, the UI references (deleted with `ui`) | Authentik through `loams-agentd-link` when a server sign-in is needed (Q703) |
+| WorkOS | `engine/src/auth.rs`, `apps/loams-desktop/src/auth_cli.rs`, `DEFAULT_WORKOS_CLIENT_ID`, `EngineProfile::synced`, `local_import.rs`, the UI references (deleted with `ui`) | The IdP (Zitadel, §76 D1600) through `loams-agentd-link` when a server sign-in is needed (Q703) |
 | Cursor | `harness/src/cursor` (the `@cursor/sdk` Node shim), `HarnessId::Cursor` | None. The wire name `cursor` (like any unknown name) reads back from an old doc as `HarnessId::Unsupported`, and the session opens read-only: a send answers `harness_unsupported` ("This agent is no longer supported") |
 | Update checks | `crates/update`, `update_cli.rs`, the engine's `Updater`, `UpdateStatus` and `ApplyUpdate` RPCs, the Windows image cleanup in `main.rs` | Electron's updater (§6) |
 | Push and nudge | Edge device relay, status and nudge (`NudgeHandler`, `PeerLiveness`, `RELAY_COMMAND`, `FOCUS_CHAT` and the connectivity RPCs; `RETRY_DELIVERY` keeps only its local re-send, plan DD1 ruling T2-12) | Local OS notifications for pending approvals (§5.5) |
@@ -614,7 +614,7 @@ Fuzz targets: the ndjson frame parser, the upgrade handshake and the `Hello` dec
 | Earlier | Change | By |
 |---|---|---|
 | D652 (AP1n paused as a research track) | The zeron fork is **retired**: GPUI and headed mode are deleted; its headless crates move into the root workspace as `loams-agentd*` | D782, D783 |
-| D480–D499 (§37 §18) | Superseded where still open. D485's MCP and ACP tier lives on in the daemon's harnesses; D486's Authentik sign-in lives on in `loams-agentd-link`; D489's credential rule is carried by D794; D487 (no zeron sync) is now total (D781); D490's updater and D493's separate repository are withdrawn | D781–D783 |
+| D480–D499 (§37 §18) | Superseded where still open. D485's MCP and ACP tier lives on in the daemon's harnesses; D486's IdP sign-in lives on in `loams-agentd-link` (against Zitadel since D1600); D489's credential rule is carried by D794; D487 (no zeron sync) is now total (D781); D490's updater and D493's separate repository are withdrawn | D781–D783 |
 | D654 (only generic main-process code from dsh-desktop) | Also the chat and plugin UI from the DSH client UI packages, adapted with MIT attribution | D797 |
 | D656 (the engine is Electron's sidecar) | The daemon supervises the engine with the same policy; Electron supervises only as a fallback until DD1f | D790 |
 | D659 (`safeStorage` vault in Electron main) | The OS keyring in the daemon; the vault is imported once and deleted. Its rules (no credential crosses to the renderer, session-only without a backend, origin-locked views) stand | D794, D795 |
@@ -632,7 +632,7 @@ Fuzz targets: the ndjson frame parser, the upgrade handshake and the `Hello` dec
 | Q700 | Device sync rebuilt on Loams (sessions across devices): on which Loams service (Live, streams, or a bucket log), and in which plan? | Out of DD1; a design after DD1 exits |
 | Q701 | Move macOS from a `~/Library/LaunchAgents` plist to SMAppService once the app is signed (Q420)? | Yes, when signed |
 | Q702 | Windows: keep the HKCU Run entry with a self-supervising parent, or use a logon scheduled task with restart-on-failure? | Run entry |
-| Q703 | Remote-server agent tools: sign in to a remote Loams server through `loams-agentd-link` (Authentik OIDC, refresh token in the keyring) so tools act on the active server? | Local engine only in DD1; a follow-up plan |
+| Q703 | Remote-server agent tools: sign in to a remote Loams server through `loams-agentd-link` (OIDC against Zitadel, refresh token in the keyring) so tools act on the active server? | Local engine only in DD1; a follow-up plan |
 | Q704 | Headless Linux without a Secret Service: offer an opt-in passphrase-encrypted secrets file? | No; session-only secrets |
 | Q705 | Should the consent dialog pre-select "Keep running in the background"? | No pre-selection |
 | Q706 | Auto-resume harness turns (Claude Code, Codex, ACP) after a restart by default? | On where the harness supports resume; per-session opt-out |

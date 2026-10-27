@@ -104,6 +104,9 @@ pub(crate) fn context(
         HarnessId::Pi => &["PI_", "OPENAI_", "ANTHROPIC_"],
         HarnessId::Devin => &["DEVIN_"],
         HarnessId::Antigravity => &["GEMINI_", "GOOGLE_"],
+        // Goose's catalog follows the provider the environment picks
+        // (`goose::environment`), including the model proxy.
+        HarnessId::Goose => &["GOOSE_", "OPENAI_", "ANTHROPIC_", "LOAMS_MODEL_PROXY"],
         _ => &[],
     };
     let mut env: Vec<_> = std::env::vars_os()

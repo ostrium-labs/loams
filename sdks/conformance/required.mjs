@@ -177,6 +177,91 @@ export const REQUIRED_TESTS = [
   'pagination_iterator',
 ];
 
+/**
+ * The app suite's tests (SDKP §5 L1–L13), by part. A language's suite must
+ * name each of these as `<lang>_<short>`; the `app_*` ones are needed only once
+ * the corpus has that fixture, so a language is not blocked on a scenario
+ * another task still has to record (P0b's `app_sql`, P0c's `app_streams`).
+ */
+export const APP_TESTS = [
+  'consistency_token_merge',
+  'session_read_your_writes',
+  'default_namespace',
+  'timeout_deadline',
+  'write_batch_chunks',
+  'streams_subscribe_resumes',
+  'builders_match_corpus',
+  'collection_handle_delegates',
+  'search_query_all_requires_tiebreak',
+];
+
+/** The app scenarios and the test that replays each. */
+export const APP_FIXTURE_TESTS = {
+  app_collections: 'app_collections',
+  app_search: 'app_search',
+  app_graph: 'app_graph',
+  app_sql: 'app_sql',
+  app_streams: 'app_streams',
+};
+
+/** The languages whose facade is written by hand (or read from the descriptor
+ * set) and so must also check it against `facade-index.json`. */
+export const INDEX_CHECKED = new Set([
+  'csharp',
+  'cpp',
+  'swift',
+  'java',
+  'kotlin',
+  'ruby',
+  'php',
+  'dart',
+  'objc',
+]);
+
+/**
+ * Checks a language against the app suite (`check-languages --suite app`):
+ * every `app_*` fixture in the manifest is in the report's `ran`, and every app
+ * test name is in the suite's sources (`names`, found by a static scan, so a
+ * language need not change how its report is written).
+ *
+ * @param {string} language
+ * @param {{ran?: string[]}} report
+ * @param {Set<string>} names The `<lang>_…` names the suite's sources contain.
+ */
+export async function checkAppSuite(language, report, names) {
+  const { manifest } = await loadManifest();
+  const problems = [];
+  const ran = new Set(report.ran ?? []);
+  // A Part C fixture (`app_sql`, `app_streams`) holds a language once its suite
+  // names the test that replays it or its report ran it, so the languages that
+  // have not reached Part C keep passing until they do (SDKP ruling C-1); S1
+  // makes every app fixture required regardless.
+  const appFixtures = manifest.fixtures.filter(
+    (fixture) =>
+      fixture.name.startsWith('app_') &&
+      (fixture.part !== 'C' ||
+        ran.has(fixture.name) ||
+        names.has(testName(language, APP_FIXTURE_TESTS[fixture.name] ?? fixture.name))),
+  );
+  const wanted = [...APP_TESTS];
+  if (INDEX_CHECKED.has(language)) {
+    wanted.push('facade_matches_index');
+  }
+  for (const fixture of appFixtures) {
+    if (!ran.has(fixture.name)) {
+      problems.push(`${language} did not replay app fixture ${fixture.name}`);
+    }
+    wanted.push(APP_FIXTURE_TESTS[fixture.name] ?? fixture.name);
+  }
+  for (const short of wanted) {
+    const name = testName(language, short);
+    if (!names.has(name)) {
+      problems.push(`${language} has no test named ${name}`);
+    }
+  }
+  return { ok: problems.length === 0, problems, fixtures: appFixtures.map((f) => f.name) };
+}
+
 /** The full name of one of a language's six tests. */
 export function testName(language, short) {
   return `${language}_${short}`;

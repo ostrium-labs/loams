@@ -239,6 +239,8 @@ public sealed class LoamsClient : IDisposable, IAsyncDisposable
         Search = new SearchModule(Invoker);
         Vector = new VectorModule(Invoker);
         Graph = new GraphModule(Invoker);
+        Sql = new SqlModule(Invoker);
+        Streams = new StreamsModule(Invoker);
         System = new LoamsSystem(Invoker);
 
         Modules = new Dictionary<string, object>(StringComparer.Ordinal)
@@ -257,6 +259,8 @@ public sealed class LoamsClient : IDisposable, IAsyncDisposable
             ["search"] = Search,
             ["vector"] = Vector,
             ["graph"] = Graph,
+            ["sql"] = Sql,
+            ["streams"] = Streams,
         };
     }
 
@@ -307,6 +311,12 @@ public sealed class LoamsClient : IDisposable, IAsyncDisposable
 
     /// <summary><c>loams.graph</c> (SDKP §2.5). Experimental.</summary>
     public GraphModule Graph { get; }
+
+    /// <summary><c>loams.sql</c> (SDKP §2.5).</summary>
+    public SqlModule Sql { get; }
+
+    /// <summary><c>loams.streams</c> (SDKP §2.5).</summary>
+    public StreamsModule Streams { get; }
 
     /// <summary>A handle on one collection (SDKP §2.8); null <paramref name="namespace"/> takes the client's default.</summary>
     public CollectionHandle Collection(string name, string? @namespace = null) =>

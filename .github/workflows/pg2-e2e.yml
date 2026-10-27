@@ -44,9 +44,10 @@ on:
         description: "The ostrium-labs/loams-postgres commit the candidate was built from"
         type: string
         default: ""
-  # Full tier: pull requests into main (the release gate); the nightly dispatches it on dev.
+  # Full tier: pull requests into main (the release gate) and into a release branch; the
+  # nightly dispatches it on dev.
   pull_request:
-    branches: [main]
+    branches: [main, 'release/**']
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
       # loams-postgres and what it builds on
@@ -77,10 +78,18 @@ permissions:
 concurrency:
   # A candidate run (workflow_call) is its own group, so it never cancels or
   # waits on the branch's own runs.
-  group: pg2-e2e-${{ inputs.candidate-pins && format('candidate-{0}', github.run_id) || github.ref }}
-  cancel-in-progress: true
+  # A newer push to a pull request supersedes the older run; a dispatch (the
+  # nightly) runs to completion.
+  group: pg2-e2e-${{ inputs.candidate-pins && format('candidate-{0}', github.run_id) || format('{0}-{1}', github.event_name, github.ref) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
+  # CI builds are never debugged: no debug info in dev and test builds (smaller
+  # caches, faster links; a panic still names its file and line) and no
+  # incremental artifacts. rust-cache sets CARGO_INCREMENTAL=0 too; this covers
+  # the jobs without it.
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_DEV_DEBUG: 0
   # The server headers' source: images.storage in deploy/pins/loams-postgres-images.toml,
   # written by scripts/nf1/pins.py (as in pg2.yml; NF1 Task 2).
   PG_HEADERS_IMAGE: ghcr.io/ostrium-labs/loams-postgres-storage@sha256:4dcec4cbef637b92b1088ea2c0bc857f3b5ef4318f02e8d2d4a0f9263ed4140e
@@ -90,7 +99,7 @@ jobs:
   neon-deploy:
     if: github.event.pull_request.draft != true || contains(github.event.pull_request.labels.*.name, 'ci:full')
     name: Deploy
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
@@ -107,6 +116,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       # The cache pg2.yml's neon-client job saves (on dev); this job only reads it.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
           shared-key: pg2-loams-postgres
           save-if: false
@@ -141,7 +151,7 @@ jobs:
   pageserver-loams-wal:
     if: github.event.pull_request.draft != true || contains(github.event.pull_request.labels.*.name, 'ci:full')
     name: Pageserver ingest
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
@@ -175,6 +185,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev libclang-dev
       # The cache pg2.yml's wal-decoder job saves (on dev); this job only reads it.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
           workspaces: crates/loams-wal-decoder
           cache-directories: ~/.cargo/git/db
@@ -213,7 +224,7 @@ jobs:
   pg-control-deploy-neon:
     if: github.event.pull_request.draft != true || contains(github.event.pull_request.labels.*.name, 'ci:full')
     name: pg-control deploy
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
@@ -230,6 +241,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       # The cache pg2.yml's pg-control job saves (on dev); this job only reads it.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
           shared-key: pg2-loams-pg-control
           save-if: false
@@ -282,7 +294,7 @@ jobs:
   pg-control-kind:
     if: github.event.pull_request.draft != true || contains(github.event.pull_request.labels.*.name, 'ci:full')
     name: Kubernetes runtime
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
@@ -298,6 +310,7 @@ jobs:
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
           shared-key: pg2-loams-pg-control
           save-if: false
@@ -333,7 +346,7 @@ jobs:
   pg-control-compose-runtime:
     if: github.event.pull_request.draft != true || contains(github.event.pull_request.labels.*.name, 'ci:full')
     name: Compose runtime
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
@@ -350,6 +363,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       # The cache pg2.yml's pg-control job saves (on dev); this job only reads it.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
           shared-key: pg2-loams-pg-control
           save-if: false

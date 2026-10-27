@@ -1218,3 +1218,694 @@ async fn api_insert_answers_written_rows_and_snapshot() {
     assert!(failed, "read_only refuses the write");
     assert_eq!(ok(addr, "SELECT count() FROM t").await, "5\n");
 }
+
+/// HE1 R9.12: the DDL Langfuse v4's migrations send, on lake tables: skip
+/// indexes, projections and constraints in the column list, `SAMPLE BY`, a
+/// delete `TTL`, `ALIAS` and `MATERIALIZED` columns with lambdas, the query
+/// settings ClickHouse takes in `CREATE`'s SETTINGS, and the `ALTER`s that
+/// follow, each served as ClickHouse answers.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn lake_tables_take_langfuse_ddl() {
+    let house = lakehouse("langfuse-ddl").await;
+    let addr = house.addr();
+    ok(
+        addr,
+        "CREATE TABLE ev (\
+            project_id String, trace_id String, start_time DateTime64(6), \
+            cost_details Map(LowCardinality(String), Decimal(18, 12)), \
+            calculated_input_cost Decimal(18, 12) MATERIALIZED arraySum(mapValues(mapFilter(x -> positionCaseInsensitive(x.1, 'input') > 0, cost_details))), \
+            total_cost Decimal(18, 12) ALIAS cost_details['total'], \
+            input String CODEC(ZSTD(3)), \
+            input_length UInt64 MATERIALIZED lengthUTF8(input), \
+            metadata_names Array(String), metadata_values Array(String), \
+            event_ts DateTime64(6), is_deleted UInt8, \
+            INDEX idx_trace_id trace_id TYPE bloom_filter(0.01) GRANULARITY 1, \
+            INDEX idx_fts lower(input) TYPE text(tokenizer = splitByNonAlpha), \
+            PROJECTION by_trace (SELECT trace_id, start_time ORDER BY trace_id), \
+            CONSTRAINT has_project CHECK notEmpty(project_id)\
+         ) ENGINE = ReplacingMergeTree(event_ts, is_deleted) \
+         PARTITION BY toYYYYMM(start_time) \
+         PRIMARY KEY (project_id, toStartOfMinute(start_time), xxHash32(trace_id)) \
+         ORDER BY (project_id, toStartOfMinute(start_time), xxHash32(trace_id), start_time) \
+         SAMPLE BY xxHash32(trace_id) \
+         TTL toDateTime(start_time) + INTERVAL 30 DAY \
+         SETTINGS index_granularity_bytes = '64Mi', enable_full_text_index = 1",
+    )
+    .await;
+    let shown = ok(addr, "SHOW CREATE TABLE ev FORMAT TSVRaw").await;
+    for part in [
+        "INDEX idx_trace_id",
+        "PROJECTION by_trace",
+        "CONSTRAINT has_project",
+        "SAMPLE BY",
+        "TTL",
+    ] {
+        assert!(shown.contains(part), "{part}: {shown}");
+    }
+    // A query setting is the statement's, not the table's.
+    let created = metadata(&house, "default", "ev").await;
+    let settings = created
+        .properties()
+        .get("loams.ch.settings")
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        settings.contains("index_granularity_bytes")
+            && !settings.contains("enable_full_text_index"),
+        "{settings}"
+    );
+
+    // Rows: one fresh, one past the TTL.
+    ok(
+        addr,
+        "INSERT INTO ev (project_id, trace_id, start_time, cost_details, input, metadata_names, metadata_values, event_ts, is_deleted) \
+         SELECT 'p', 't1', now64(6), map('input', 1.5, 'output', 2, 'total', 3.5), 'hello', ['evaluator_id'], ['e1'], now64(6), 0 \
+         UNION ALL SELECT 'p', 't2', now64(6) - INTERVAL 40 DAY, map('total', 1), 'old', [], [], now64(6), 0",
+    )
+    .await;
+    assert_eq!(
+        ok(addr, "SELECT trace_id, total_cost, calculated_input_cost, input_length FROM ev ORDER BY trace_id FORMAT TSV").await,
+        "t1\t3.5\t1.5\t5\n",
+        "the expired row is not read"
+    );
+    assert_eq!(ok(addr, "SELECT count() FROM ev FINAL").await, "1\n");
+    refused(
+        addr,
+        "INSERT INTO ev (project_id, trace_id, start_time, event_ts, is_deleted) SELECT '', 't3', now64(6), now64(6), 0",
+        "469",
+    )
+    .await;
+
+    // The ALTERs Langfuse sends, with its trailing settings.
+    ok(addr, "ALTER TABLE ev ADD INDEX IF NOT EXISTS idx_trace_id trace_id TYPE bloom_filter GRANULARITY 1 SETTINGS mutations_sync = 2").await;
+    ok(
+        addr,
+        "ALTER TABLE ev MATERIALIZE INDEX IF EXISTS idx_trace_id SETTINGS mutations_sync = 2",
+    )
+    .await;
+    ok(addr, "ALTER TABLE ev DROP INDEX IF EXISTS idx_fts").await;
+    ok(addr, "ALTER TABLE ev DROP INDEX IF EXISTS idx_fts").await;
+    refused(addr, "ALTER TABLE ev MATERIALIZE INDEX idx_fts", "36").await;
+    ok(addr, "ALTER TABLE ev MODIFY SETTING enable_block_number_column = 1, enable_block_offset_column = 1").await;
+    ok(
+        addr,
+        "ALTER TABLE ev ADD COLUMN IF NOT EXISTS evaluator_id String DEFAULT arrayElement(metadata_values, indexOf(metadata_names, 'evaluator_id')) AFTER metadata_values SETTINGS enable_full_text_index = 1",
+    )
+    .await;
+    assert_eq!(
+        ok(addr, "SELECT evaluator_id FROM ev FORMAT TSV").await,
+        "e1\n",
+        "older rows read the default"
+    );
+    ok(
+        addr,
+        "ALTER TABLE ev ADD COLUMN session_id String DEFAULT '' SETTINGS alter_sync = 2",
+    )
+    .await;
+    ok(
+        addr,
+        "ALTER TABLE ev MODIFY COLUMN session_id Nullable(String) SETTINGS mutations_sync = 2",
+    )
+    .await;
+    let after = metadata(&house, "default", "ev").await;
+    let field = after
+        .current_schema()
+        .as_struct()
+        .fields()
+        .iter()
+        .find(|f| f.name == "session_id")
+        .cloned()
+        .expect("a field");
+    assert!(!field.required, "Nullable makes the field optional");
+    refused(addr, "ALTER TABLE ev MODIFY COLUMN input UInt64", "48").await;
+    refused(addr, "ALTER TABLE ev MODIFY COLUMN session_id String", "48").await;
+    refused(addr, "ALTER TABLE ev DROP COLUMN project_id", "524").await;
+    refused(addr, "ALTER TABLE ev RENAME COLUMN start_time TO st", "524").await;
+    ok(addr, "ALTER TABLE ev RENAME COLUMN session_id TO sid").await;
+    ok(addr, "ALTER TABLE ev DROP COLUMN sid").await;
+    refused(addr, "ALTER TABLE ev DROP COLUMN sid", "10").await;
+    ok(
+        addr,
+        "ALTER TABLE ev MODIFY TTL toDateTime(start_time) + INTERVAL 90 DAY",
+    )
+    .await;
+    assert_eq!(
+        ok(addr, "SELECT count() FROM ev").await,
+        "2\n",
+        "a longer TTL reads the row again"
+    );
+    ok(addr, "ALTER TABLE ev REMOVE TTL").await;
+    refused(addr, "ALTER TABLE ev REMOVE TTL", "36").await;
+    // Mutations are the mutation path's (HE1 R9.5, tests/mutate.rs).
+    ok(addr, "ALTER TABLE ev DELETE WHERE trace_id = 't1'").await;
+    refused(
+        addr,
+        "ALTER TABLE ev DELETE WHERE 1, ADD INDEX i trace_id TYPE minmax",
+        "48",
+    )
+    .await;
+
+    // A materialized view's query.
+    ok(addr, "CREATE TABLE core (project_id String, trace_id String, input String) ENGINE = MergeTree ORDER BY project_id").await;
+    ok(
+        addr,
+        "CREATE MATERIALIZED VIEW core_mv TO core AS SELECT project_id, trace_id, input FROM ev",
+    )
+    .await;
+    ok(
+        addr,
+        "ALTER TABLE core_mv MODIFY QUERY SELECT project_id, trace_id, leftUTF8(input, 2) AS input FROM ev SETTINGS enable_full_text_index = 1",
+    )
+    .await;
+    ok(addr, "INSERT INTO ev (project_id, trace_id, start_time, input, event_ts, is_deleted) SELECT 'p', 't4', now64(6), 'abcdef', now64(6), 0").await;
+    assert_eq!(
+        ok(addr, "SELECT trace_id, input FROM core FORMAT TSV").await,
+        "t4\tab\n"
+    );
+    refused(
+        addr,
+        "ALTER TABLE core_mv MODIFY QUERY SELECT project_id, trace_id, input FROM core",
+        // R9.16: a new source is taken, but not the view's own target.
+        "36",
+    )
+    .await;
+}
+
+/// HE1 R9.13: plain views (Langfuse's `analytics_*`) and `Distributed` tables.
+/// A view is a catalog entry the read path expands over the read views of what
+/// it names, nesting included; a `Distributed` table reads and writes its local
+/// table; a view takes no rows.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn catalog_views_and_distributed_tables() {
+    let house = lakehouse("catalog-views").await;
+    let addr = house.addr();
+    ok(addr, "CREATE TABLE s (p String, id String, v Float64, ver UInt64, is_deleted UInt8) ENGINE = ReplacingMergeTree(ver, is_deleted) ORDER BY (p, id)").await;
+    ok(
+        addr,
+        "INSERT INTO s VALUES ('a', '1', 1, 1, 0), ('a', '1', 5, 2, 0), ('b', '2', 2, 1, 0)",
+    )
+    .await;
+    ok(
+        addr,
+        "CREATE VIEW agg AS SELECT p, uniq(id) AS n, max(v) AS top FROM s GROUP BY p",
+    )
+    .await;
+    assert_eq!(
+        ok(addr, "SELECT * FROM agg ORDER BY p FORMAT TSV").await,
+        "a\t1\t5\nb\t1\t2\n"
+    );
+    // A view over a view, and FINAL inside a view.
+    ok(
+        addr,
+        "CREATE VIEW latest AS SELECT p, sum(v) AS total FROM s FINAL GROUP BY p",
+    )
+    .await;
+    ok(
+        addr,
+        "CREATE VIEW nested AS SELECT p, top FROM agg WHERE p = 'a'",
+    )
+    .await;
+    assert_eq!(ok(addr, "SELECT * FROM nested FORMAT TSV").await, "a\t5\n");
+    assert_eq!(
+        ok(addr, "SELECT total FROM latest WHERE p = 'a' FORMAT TSV").await,
+        "5\n"
+    );
+    assert_eq!(
+        ok(addr, "DESCRIBE agg FORMAT TSVRaw").await.lines().count(),
+        3
+    );
+    assert!(
+        ok(addr, "SHOW CREATE TABLE agg FORMAT TSVRaw")
+            .await
+            .starts_with("CREATE VIEW agg AS SELECT")
+    );
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT engine FROM system.tables WHERE name = 'agg' FORMAT TSV"
+        )
+        .await,
+        "View\n"
+    );
+    refused(addr, "CREATE VIEW agg AS SELECT 1", "57").await;
+    ok(addr, "CREATE VIEW IF NOT EXISTS agg AS SELECT 1").await;
+    ok(
+        addr,
+        "CREATE OR REPLACE VIEW agg AS SELECT p, count() AS n FROM s GROUP BY p",
+    )
+    .await;
+    // One INSERT's two versions of ('a', '1') are merged as ClickHouse merges an
+    // inserted block (`optimize_on_insert`, R9.4): the 26.9.2.8 oracle answers 1.
+    assert_eq!(
+        ok(addr, "SELECT n FROM agg WHERE p = 'a' FORMAT TSV").await,
+        "1\n"
+    );
+    refused(addr, "INSERT INTO agg VALUES ('x', 1)", "48").await;
+    refused(addr, "ALTER TABLE agg ADD COLUMN z UInt8", "48").await;
+    // A view's text is held to the deny list when it is read.
+    refused(
+        addr,
+        "CREATE VIEW bad AS SELECT * FROM file('/etc/passwd')",
+        "344",
+    )
+    .await;
+
+    // Distributed: topology syntax accepted, the local table read and written.
+    ok(addr, "CREATE TABLE s_dist ON CLUSTER default AS s ENGINE = Distributed(default, currentDatabase(), s, rand())").await;
+    ok(addr, "INSERT INTO s_dist VALUES ('c', '3', 7, 1, 0)").await;
+    // Three stored rows: the first INSERT's two versions merged (R9.4), and one.
+    assert_eq!(ok(addr, "SELECT count() FROM s FORMAT TSV").await, "3\n");
+    assert_eq!(
+        ok(addr, "SELECT count() FROM s_dist FINAL FORMAT TSV").await,
+        "3\n"
+    );
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT engine FROM system.tables WHERE name = 's_dist' FORMAT TSV"
+        )
+        .await,
+        "Distributed\n"
+    );
+    refused(
+        addr,
+        "CREATE TABLE d2 AS s ENGINE = Distributed(default, default, nope)",
+        "60",
+    )
+    .await;
+
+    ok(addr, "DROP VIEW nested").await;
+    ok(addr, "DROP TABLE latest").await;
+    refused(addr, "DROP VIEW nested", "60").await;
+    ok(addr, "DROP VIEW IF EXISTS nested").await;
+    ok(addr, "DROP TABLE s_dist").await;
+}
+
+/// HE1 R9.14: readable `AggregatingMergeTree` and `Null`, against the oracle.
+/// OpenPanel 2.3.0's inner-table materialized views (agent O's pack: states,
+/// `count()` dimensions, `ARRAY JOIN`, and the binding by identity that a
+/// `RENAME TABLE` of the source shows) and Langfuse's `Null` → `AggregatingMergeTree`
+/// views with `SimpleAggregateFunction` columns. Every answer below is what
+/// `clickhouse-server` 26.9.2.8 gave for the same statements (rows joined by `|`),
+/// read with `-Merge`, plain aggregates and `FINAL`, before and after `OPTIMIZE`.
+/// The oracle needs `allow_dimensions_outside_sorting_key = 1` for the property
+/// views (26.7+); the House does not check that rule. `event_property_values_mv`
+/// reads its source inside a FROM subquery, which still makes `events` its trigger;
+/// `direct_amt` checks that one INSERT's equal keys are merged as ClickHouse's
+/// `optimize_on_insert` merges them.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn aggregating_merge_tree_matches_the_oracle() {
+    let house = lakehouse("amt-oracle").await;
+    let addr = house.addr();
+    for statement in [
+        "CREATE TABLE events (project_id String, profile_id String, device_id String, name String, created_at DateTime, duration UInt64, properties Map(String, String)) ENGINE = MergeTree ORDER BY (project_id, created_at)",
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS dau_mv ENGINE = AggregatingMergeTree() PARTITION BY toYYYYMMDD(date) ORDER BY (project_id, date) AS SELECT toDate(created_at) as date, uniqState(profile_id) as profile_id, project_id FROM events GROUP BY date, project_id",
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS cohort_events_mv ENGINE = AggregatingMergeTree() ORDER BY (project_id, name, created_at, profile_id) AS SELECT project_id, name, toDate(created_at) AS created_at, profile_id, COUNT() AS event_count FROM events WHERE profile_id != device_id GROUP BY project_id, name, created_at, profile_id",
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS distinct_event_names_mv ENGINE = AggregatingMergeTree() ORDER BY (project_id, name, created_at) AS SELECT project_id, name, max(created_at) AS created_at, count() AS event_count FROM events GROUP BY project_id, name",
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS event_property_values_mv ENGINE = AggregatingMergeTree() ORDER BY (project_id, name, property_key, property_value) SETTINGS allow_dimensions_outside_sorting_key = 1 AS SELECT project_id, name, key_value.keys AS property_key, key_value.values AS property_value, created_at FROM (SELECT project_id, name, untuple(arrayJoin(properties)) AS key_value, max(created_at) AS created_at FROM events GROUP BY project_id, name, key_value) WHERE property_value != '' AND property_key != '' AND property_key NOT IN ('__duration_from', '__properties_from') GROUP BY project_id, name, property_key, property_value, created_at",
+        "INSERT INTO events VALUES ('p1', 'u1', 'd1', 'sign_up', '2026-10-15 10:00:00', 5, {'a':'1','b':'2'}), ('p1', 'u2', 'd2', 'screen_view', '2026-10-15 11:00:00', 7, {'a':'3'}), ('p1', 'u1', 'd1', 'screen_view', '2026-10-16 09:00:00', 1, {}), ('p1', 'd3', 'd3', 'screen_view', '2026-10-16 09:30:00', 2, {'c':''})",
+        "INSERT INTO events VALUES ('p1', 'u1', 'd1', 'screen_view', '2026-10-16 12:00:00', 4, {'a':'1'}), ('p2', 'u3', 'd4', 'sign_up', '2026-10-17 08:00:00', 9, {'z':'9'}), ('p1', 'u2', 'd2', 'screen_view', '2026-10-15 23:00:00', 3, {'a':'4'})",
+        "RENAME TABLE events TO events_20251123",
+        "CREATE TABLE events (project_id String, profile_id String, device_id String, name String, created_at DateTime, duration UInt64, properties Map(String, String)) ENGINE = MergeTree ORDER BY (project_id, created_at)",
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS profile_event_summary_mv ENGINE = AggregatingMergeTree() PARTITION BY toYYYYMM(event_date) ORDER BY (project_id, profile_id, name, event_date) AS SELECT project_id, profile_id, name, toStartOfDay(created_at) AS event_date, countState() AS event_count, minState(created_at) AS first_event_time, maxState(created_at) AS last_event_time, sumState(duration) AS total_duration FROM events WHERE profile_id != device_id GROUP BY project_id, profile_id, name, event_date",
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS profile_event_property_summary_mv ENGINE = AggregatingMergeTree() PARTITION BY toYYYYMM(event_date) ORDER BY (project_id, profile_id, name, property_key, event_date) SETTINGS allow_dimensions_outside_sorting_key = 1 AS SELECT project_id, profile_id, name, property_key, property_value, toStartOfDay(created_at) AS event_date, countState() AS event_count, minState(created_at) AS first_event_time, maxState(created_at) AS last_event_time FROM events ARRAY JOIN mapKeys(properties) AS property_key, mapValues(properties) AS property_value WHERE profile_id != device_id AND property_key != '' AND property_value != '' GROUP BY project_id, profile_id, name, property_key, property_value, event_date",
+        "INSERT INTO events VALUES ('p1', 'u1', 'd1', 'screen_view', '2026-10-18 10:00:00', 5, {'a':'1','b':'2'}), ('p1', 'u1', 'd1', 'screen_view', '2026-10-18 11:00:00', 6, {'a':'1'}), ('p1', 'd3', 'd3', 'screen_view', '2026-10-18 12:00:00', 2, {'a':'x'})",
+        "INSERT INTO events VALUES ('p1', 'u1', 'd1', 'screen_view', '2026-10-18 15:00:00', 8, {'b':'2'}), ('p1', 'u2', 'd2', 'sign_up', '2026-10-19 10:00:00', 1, {'a':'5','c':''})",
+        "CREATE TABLE traces_null (project_id String, id String, start_time DateTime64(3), name Nullable(String), tags Array(String), input String, event_ts DateTime64(3)) ENGINE = Null()",
+        "CREATE TABLE traces_all_amt (project_id String, id String, start_time SimpleAggregateFunction(min, DateTime64(3)), name SimpleAggregateFunction(anyLast, Nullable(String)), tags SimpleAggregateFunction(groupUniqArrayArray, Array(String)), input AggregateFunction(argMax, String, DateTime64(3))) ENGINE = AggregatingMergeTree() ORDER BY (project_id, id)",
+        "CREATE MATERIALIZED VIEW traces_all_amt_mv TO traces_all_amt AS SELECT tn.project_id AS project_id, tn.id AS id, min(tn.start_time) AS start_time, anyLast(tn.name) AS name, groupUniqArrayArray(tn.tags) AS tags, argMaxState(tn.input, if(tn.input <> '', tn.event_ts, toDateTime64(0, 3))) AS input FROM traces_null tn GROUP BY project_id, id",
+        "INSERT INTO traces_null VALUES ('p', 't1', '2026-10-18 10:00:00.000', 'first', ['a'], 'in-1', '2026-10-18 10:00:00.000'), ('p', 't2', '2026-10-18 10:01:00.000', NULL, ['b'], '', '2026-10-18 10:01:00.000')",
+        "INSERT INTO traces_null VALUES ('p', 't1', '2026-10-18 09:00:00.000', 'first', ['c', 'a'], 'in-2', '2026-10-18 10:05:00.000'), ('p', 't2', '2026-10-18 10:02:00.000', 'second', [], 'late', '2026-10-18 10:03:00.000')",
+        "CREATE TABLE direct_amt (k String, c AggregateFunction(count, UInt64), m SimpleAggregateFunction(max, UInt64)) ENGINE = AggregatingMergeTree ORDER BY k",
+        "INSERT INTO direct_amt SELECT if(number % 2 = 0, 'a', 'b'), initializeAggregation('countState', number), number FROM numbers(6)",
+    ] {
+        ok(addr, statement).await;
+    }
+    let expected: &[(&str, &str)] = &[
+        (
+            "SELECT project_id, profile_id, name, event_date, countMerge(event_count), minMerge(first_event_time), maxMerge(last_event_time), sumMerge(total_duration) FROM profile_event_summary_mv GROUP BY project_id, profile_id, name, event_date ORDER BY ALL",
+            "p1\tu1\tscreen_view\t2026-10-18 00:00:00\t3\t2026-10-18 10:00:00\t2026-10-18 15:00:00\t19|p1\tu2\tsign_up\t2026-10-19 00:00:00\t1\t2026-10-19 10:00:00\t2026-10-19 10:00:00\t1|",
+        ),
+        (
+            "SELECT project_id, profile_id, name, property_key, property_value, event_date, countMerge(event_count), maxMerge(last_event_time) FROM profile_event_property_summary_mv GROUP BY ALL ORDER BY ALL",
+            "p1\tu1\tscreen_view\ta\t1\t2026-10-18 00:00:00\t2\t2026-10-18 11:00:00|p1\tu1\tscreen_view\tb\t2\t2026-10-18 00:00:00\t2\t2026-10-18 15:00:00|p1\tu2\tsign_up\ta\t5\t2026-10-19 00:00:00\t1\t2026-10-19 10:00:00|",
+        ),
+        (
+            "SELECT project_id, profile_id, name, event_date, finalizeAggregation(event_count), finalizeAggregation(total_duration) FROM profile_event_summary_mv FINAL ORDER BY ALL",
+            "p1\tu1\tscreen_view\t2026-10-18 00:00:00\t3\t19|p1\tu2\tsign_up\t2026-10-19 00:00:00\t1\t1|",
+        ),
+        (
+            "SELECT project_id, date, uniqMerge(profile_id) FROM dau_mv GROUP BY project_id, date ORDER BY ALL",
+            "p1\t2026-10-15\t2|p1\t2026-10-16\t2|p2\t2026-10-17\t1|",
+        ),
+        (
+            "SELECT name, sum(event_count) FROM cohort_events_mv WHERE project_id = 'p1' GROUP BY name ORDER BY ALL",
+            "screen_view\t4|sign_up\t1|",
+        ),
+        (
+            "SELECT name, max(created_at), sum(event_count) FROM distinct_event_names_mv WHERE project_id = 'p1' GROUP BY name ORDER BY name",
+            "screen_view\t2026-10-16 12:00:00\t5|sign_up\t2026-10-15 10:00:00\t1|",
+        ),
+        ("SELECT count() FROM events_20251123", "7|"),
+        (
+            "SELECT id, min(start_time), anyLast(name), arraySort(groupUniqArrayArray(tags)), argMaxMerge(input) FROM traces_all_amt GROUP BY project_id, id ORDER BY id",
+            "t1\t2026-10-18 09:00:00.000\tfirst\t['a','c']\tin-2|t2\t2026-10-18 10:01:00.000\tsecond\t['b']\tlate|",
+        ),
+        (
+            "SELECT id, start_time, name, arraySort(tags), finalizeAggregation(input) FROM traces_all_amt FINAL ORDER BY id",
+            "t1\t2026-10-18 09:00:00.000\tfirst\t['a','c']\tin-2|t2\t2026-10-18 10:01:00.000\tsecond\t['b']\tlate|",
+        ),
+        ("SELECT count() FROM traces_null", "0|"),
+        (
+            "SELECT distinct property_key, max(created_at) as created_at FROM event_property_values_mv WHERE project_id = 'p1' GROUP BY property_key ORDER BY created_at DESC, property_key ASC LIMIT 50000",
+            "a\t2026-10-16 12:00:00|b\t2026-10-15 10:00:00|",
+        ),
+        (
+            "SELECT k, finalizeAggregation(c), m FROM direct_amt ORDER BY k",
+            "a\t3\t4|b\t3\t5|",
+        ),
+        ("SELECT count() FROM direct_amt", "2|"),
+    ];
+    let check = |when: &'static str| async move {
+        for (read, want) in expected {
+            let got = ok(addr, &format!("{read} FORMAT TSV"))
+                .await
+                .replace('\n', "|");
+            assert_eq!(&got, want, "{when}: {read}");
+        }
+    };
+    check("before OPTIMIZE").await;
+    ok(addr, "OPTIMIZE TABLE profile_event_summary_mv FINAL").await;
+    ok(addr, "OPTIMIZE TABLE traces_all_amt FINAL").await;
+    check("after OPTIMIZE").await;
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT count() FROM profile_event_summary_mv FORMAT TSV"
+        )
+        .await,
+        "2\n"
+    );
+    // Dropping an inner-table view drops its table.
+    ok(addr, "DROP VIEW dau_mv").await;
+    assert_eq!(ok(addr, "EXISTS TABLE dau_mv FORMAT TSV").await, "0\n");
+    ok(addr, "DROP TABLE profile_event_summary_mv").await;
+    assert_eq!(
+        ok(addr, "EXISTS TABLE profile_event_summary_mv FORMAT TSV").await,
+        "0\n"
+    );
+    refused(addr, "CREATE MATERIALIZED VIEW p ENGINE = AggregatingMergeTree ORDER BY a POPULATE AS SELECT 1 AS a", "48").await;
+}
+
+/// HE1 R9.15: `SAMPLE` on a lake table reads every row and `_sample_factor` is
+/// 1, so Langfuse's sampled filter options answer exactly.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn sample_reads_every_row_of_a_lake_table() {
+    let house = lakehouse("sample").await;
+    let addr = house.addr();
+    ok(addr, "CREATE TABLE ev (p String, t String, u String) ENGINE = MergeTree ORDER BY (p, xxHash32(t)) SAMPLE BY xxHash32(t)").await;
+    ok(
+        addr,
+        "INSERT INTO ev VALUES ('p', 'a', 'u1'), ('p', 'b', 'u1'), ('p', 'c', 'u2')",
+    )
+    .await;
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT e.u AS value, toUInt64(round(count() * any(e._sample_factor))) AS count \
+             FROM ev e SAMPLE 1000000 WHERE e.p = 'p' GROUP BY value ORDER BY value FORMAT TSV",
+        )
+        .await,
+        "u1\t2\nu2\t1\n"
+    );
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT count() FROM ev SAMPLE 1/10 OFFSET 1/2 FORMAT TSV"
+        )
+        .await,
+        "3\n"
+    );
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT _sample_factor FROM ev SAMPLE 0.5 LIMIT 1 FORMAT TSV"
+        )
+        .await,
+        "1\n"
+    );
+}
+
+/// D1572, HE1 R9.61: `DateTime64` with more than 6 digits is a
+/// `long` of nanoseconds in a format v2 table, and reads, filters, orders,
+/// converts and merges as ClickHouse does. The answers were measured on the
+/// 26.9.2.8 oracle (2026-10-22), before and after `OPTIMIZE … FINAL`; they
+/// include a time before the epoch, ClickHouse's `toDate` of it (1970-01-01),
+/// zones on the column, a column added by `ALTER` with a nanosecond default,
+/// `ReplacingMergeTree` versions one nanosecond apart, and
+/// `SimpleAggregateFunction(min|max, DateTime64(9))`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn nanosecond_times_match_the_oracle() {
+    let house = lakehouse("nanos-oracle").await;
+    let addr = house.addr();
+    for statement in [
+        "CREATE TABLE ns (k UInt32, ts DateTime64(9), utc DateTime64(9, 'UTC'), kol Nullable(DateTime64(9, 'Asia/Kolkata')), ver DateTime64(9)) ENGINE = ReplacingMergeTree(ver) PARTITION BY toDate(ts) ORDER BY (k, ts)",
+        "INSERT INTO ns VALUES (1, '2026-10-22 03:05:45.123456789', '2026-10-22 03:05:45.123456789', '2026-10-22 08:35:45.000000001', '2026-10-22 00:00:00.000000001'), (2, '1969-12-31 23:59:59.999999999', '1969-12-31 23:59:59.999999999', NULL, '2026-10-22 00:00:00.000000001'), (3, '2026-10-21 23:59:59.999999999', '2026-10-22 00:00:00.000000000', '2026-10-22 05:30:00.000000000', '2026-10-22 00:00:00.000000001')",
+        "INSERT INTO ns VALUES (1, '2026-10-22 03:05:45.123456789', '2026-10-22 03:05:45.123456790', '2026-10-22 08:35:45.000000002', '2026-10-22 00:00:00.000000002')",
+        "ALTER TABLE ns ADD COLUMN later DateTime64(9, 'UTC') DEFAULT toDateTime64('2026-01-01 00:00:00.000000005', 9, 'UTC')",
+        "INSERT INTO ns (k, ts, utc, kol, ver, later) VALUES (4, '2026-10-22 03:05:45.123456788', '2026-10-22 03:05:45.123456788', NULL, '2026-10-22 00:00:00.000000001', '2026-10-23 01:02:03.000000009')",
+        "CREATE TABLE sa (id String, start SimpleAggregateFunction(min, DateTime64(9)), end SimpleAggregateFunction(max, DateTime64(9))) ENGINE = AggregatingMergeTree ORDER BY id",
+        "INSERT INTO sa VALUES ('t', '2026-10-22 03:05:45.000000003', '2026-10-22 03:05:45.000000007')",
+        "INSERT INTO sa VALUES ('t', '2026-10-22 03:05:45.000000001', '2026-10-22 03:05:45.000000009')",
+    ] {
+        ok(addr, statement).await;
+    }
+    for name in ["ns", "sa"] {
+        let table = metadata(&house, "default", name).await;
+        assert_eq!(
+            table.format_version(),
+            loams_house_lake::spec::FormatVersion::V2,
+            "{name}"
+        );
+        for field in table.current_schema().as_struct().fields() {
+            if field.name != "k" && field.name != "id" {
+                assert_eq!(
+                    *field.field_type,
+                    loams_house_lake::spec::Type::Primitive(
+                        loams_house_lake::spec::PrimitiveType::Long
+                    ),
+                    "{name}.{}",
+                    field.name
+                );
+            }
+        }
+    }
+    let check = |when: &'static str, expected: &'static [(&'static str, &'static str)]| async move {
+        for (read, want) in expected {
+            let got = ok(addr, &format!("{read} FORMAT TSV"))
+                .await
+                .replace('\n', "|");
+            assert_eq!(&got, want, "{when}: {read}");
+        }
+    };
+    check(
+        "as written",
+        &[
+            ("SELECT k, ts, utc, kol, ver, later FROM ns FINAL ORDER BY k, ts", "1\t2026-10-22 03:05:45.123456789\t2026-10-22 03:05:45.123456790\t2026-10-22 08:35:45.000000002\t2026-10-22 00:00:00.000000002\t2026-01-01 00:00:00.000000005|2\t1969-12-31 23:59:59.999999999\t1969-12-31 23:59:59.999999999\t\\N\t2026-10-22 00:00:00.000000001\t2026-01-01 00:00:00.000000005|3\t2026-10-21 23:59:59.999999999\t2026-10-22 00:00:00.000000000\t2026-10-22 05:30:00.000000000\t2026-10-22 00:00:00.000000001\t2026-01-01 00:00:00.000000005|4\t2026-10-22 03:05:45.123456788\t2026-10-22 03:05:45.123456788\t\\N\t2026-10-22 00:00:00.000000001\t2026-10-23 01:02:03.000000009|"),
+            ("SELECT k, ts, ver FROM ns ORDER BY k, ver", "1\t2026-10-22 03:05:45.123456789\t2026-10-22 00:00:00.000000001|1\t2026-10-22 03:05:45.123456789\t2026-10-22 00:00:00.000000002|2\t1969-12-31 23:59:59.999999999\t2026-10-22 00:00:00.000000001|3\t2026-10-21 23:59:59.999999999\t2026-10-22 00:00:00.000000001|4\t2026-10-22 03:05:45.123456788\t2026-10-22 00:00:00.000000001|"),
+            ("SELECT count() FROM ns WHERE ts > '2026-10-22 03:05:45.123456788'", "2|"),
+            ("SELECT k FROM ns FINAL WHERE utc = toDateTime64('2026-10-22 03:05:45.123456790', 9, 'UTC') ORDER BY k", "1|"),
+            ("SELECT k, toUnixTimestamp64Nano(ts), toDate(ts), toStartOfHour(utc), toString(kol), toDate(kol) FROM ns FINAL ORDER BY k", "1\t1792638345123456789\t2026-10-22\t2026-10-22 03:00:00\t2026-10-22 08:35:45.000000002\t2026-10-22|2\t-1\t1970-01-01\t1970-01-01 00:00:00\t\\N\t\\N|3\t1792627199999999999\t2026-10-21\t2026-10-22 00:00:00\t2026-10-22 05:30:00.000000000\t2026-10-22|4\t1792638345123456788\t2026-10-22\t2026-10-22 03:00:00\t\\N\t\\N|"),
+            ("SELECT k FROM ns FINAL ORDER BY ts DESC, k", "1|4|3|2|"),
+            ("SELECT toTypeName(ts), toTypeName(utc), toTypeName(kol), toTypeName(later) FROM ns LIMIT 1", "DateTime64(9)\tDateTime64(9, \\'UTC\\')\tNullable(DateTime64(9, \\'Asia/Kolkata\\'))\tDateTime64(9, \\'UTC\\')|"),
+            ("SELECT k, ts + INTERVAL 1 NANOSECOND, dateDiff('nanosecond', ts, utc) FROM ns FINAL ORDER BY k", "1\t2026-10-22 03:05:45.123456790\t1|2\t1970-01-01 00:00:00.000000000\t0|3\t2026-10-22 00:00:00.000000000\t1|4\t2026-10-22 03:05:45.123456789\t0|"),
+            ("SELECT k FROM ns FINAL WHERE kol BETWEEN '2026-10-22 05:30:00' AND '2026-10-22 08:35:45.000000002' ORDER BY k", "1|3|"),
+            ("SELECT toDate(ts) AS d, count() FROM ns FINAL GROUP BY d ORDER BY d", "1970-01-01\t1|2026-10-21\t1|2026-10-22\t2|"),
+            ("SELECT id, start, end FROM sa FINAL", "t\t2026-10-22 03:05:45.000000001\t2026-10-22 03:05:45.000000009|"),
+            ("SELECT min(start), max(end) FROM sa", "2026-10-22 03:05:45.000000001\t2026-10-22 03:05:45.000000009|"),
+        ],
+    )
+    .await;
+    ok(addr, "OPTIMIZE TABLE ns FINAL").await;
+    ok(addr, "OPTIMIZE TABLE sa FINAL").await;
+    check(
+        "after OPTIMIZE",
+        &[
+            ("SELECT k, ts, ver FROM ns ORDER BY k, ver", "1\t2026-10-22 03:05:45.123456789\t2026-10-22 00:00:00.000000002|2\t1969-12-31 23:59:59.999999999\t2026-10-22 00:00:00.000000001|3\t2026-10-21 23:59:59.999999999\t2026-10-22 00:00:00.000000001|4\t2026-10-22 03:05:45.123456788\t2026-10-22 00:00:00.000000001|"),
+            ("SELECT count() FROM ns WHERE ts > '2026-10-22 03:05:45.123456788'", "1|"),
+        ],
+    )
+    .await;
+}
+
+/// HE1 R9.16: the DDL SigNoz's migrations send beside Langfuse's: `ON CLUSTER`
+/// everywhere, Distributed tables altered with their local ones, views `TO` a
+/// table with its column list, `MODIFY QUERY` onto another source, a key
+/// `Enum8` extended, `MATERIALIZE COLUMN`, partitions Iceberg cannot take, and
+/// `final` as a request setting.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn signoz_ddl_on_lake_tables() {
+    let house = lakehouse("signoz-ddl").await;
+    let addr = house.addr();
+    ok(addr, "CREATE TABLE keys ON CLUSTER cluster (name String, tagType Enum8('tag' = 1, 'resource' = 2), seen Int64, ver UInt64) ENGINE = ReplacingMergeTree(ver) PARTITION BY toDate(seen) ORDER BY (name, tagType)").await;
+    ok(addr, "CREATE TABLE dist_keys ON CLUSTER cluster AS keys ENGINE = Distributed(cluster, default, keys, rand())").await;
+    ok(addr, "ALTER TABLE keys ON CLUSTER cluster MODIFY COLUMN IF EXISTS tagType Enum8('tag' = 1, 'resource' = 2, 'scope' = 3)").await;
+    ok(addr, "ALTER TABLE dist_keys ON CLUSTER cluster MODIFY COLUMN IF EXISTS tagType Enum8('tag' = 1, 'resource' = 2, 'scope' = 3)").await;
+    refused(
+        addr,
+        "ALTER TABLE keys MODIFY COLUMN tagType Enum8('tag' = 1)",
+        "524",
+    )
+    .await;
+    ok(addr, "ALTER TABLE keys ON CLUSTER cluster ADD COLUMN IF NOT EXISTS flags UInt32 DEFAULT 0 CODEC(ZSTD(1))").await;
+    ok(addr, "ALTER TABLE dist_keys ON CLUSTER cluster ADD COLUMN IF NOT EXISTS flags UInt32 DEFAULT 0 CODEC(ZSTD(1))").await;
+    // HE1 R9.71: the Distributed table's columns are its local table's as
+    // altered, so a client that inserts through them (SigNoz's collector)
+    // finds `flags` and the extended Enum.
+    assert_eq!(
+        ok(addr, "SELECT name, type FROM system.columns WHERE table = 'dist_keys' AND name IN ('tagType', 'flags') ORDER BY name FORMAT TSV").await,
+        "flags\tUInt32\ntagType\tEnum8(\\'tag\\' = 1, \\'resource\\' = 2, \\'scope\\' = 3)\n"
+    );
+    ok(
+        addr,
+        "ALTER TABLE keys ON CLUSTER cluster MATERIALIZE COLUMN flags",
+    )
+    .await;
+    ok(addr, "ALTER TABLE keys ON CLUSTER cluster MODIFY TTL toDateTime(seen) + INTERVAL 15 DAY SETTINGS materialize_ttl_after_modify = 0").await;
+    ok(addr, "INSERT INTO keys (name, tagType, seen, ver) SELECT 'a', 'scope', toUnixTimestamp(now()), 1").await;
+    ok(addr, "INSERT INTO keys (name, tagType, seen, ver) SELECT 'a', 'scope', toUnixTimestamp(now()), 2").await;
+    // `final` on the request reads the merge view.
+    let response = insert(
+        addr,
+        "SELECT count(), max(ver) FROM dist_keys FORMAT TSV",
+        b"",
+        &[("final", "1")],
+    )
+    .await;
+    assert_eq!(response.status, 200, "{}", response.text());
+    assert_eq!(response.text(), "1\t2\n");
+    assert_eq!(ok(addr, "SELECT count() FROM keys FORMAT TSV").await, "2\n");
+    // A view TO a table, with its column list; MODIFY QUERY onto another source.
+    ok(
+        addr,
+        "CREATE TABLE names (name String) ENGINE = MergeTree ORDER BY name",
+    )
+    .await;
+    ok(
+        addr,
+        "CREATE TABLE keys_v2 (name String, tagType String) ENGINE = MergeTree ORDER BY name",
+    )
+    .await;
+    ok(addr, "CREATE MATERIALIZED VIEW names_mv ON CLUSTER cluster TO names (name String CODEC(ZSTD(1))) AS SELECT name FROM keys").await;
+    ok(addr, "ALTER TABLE names_mv ON CLUSTER cluster MODIFY QUERY SELECT upper(name) AS name FROM keys_v2").await;
+    ok(
+        addr,
+        "INSERT INTO keys (name, tagType, seen, ver) SELECT 'old', 'tag', toUnixTimestamp(now()), 1",
+    )
+    .await;
+    ok(addr, "INSERT INTO keys_v2 VALUES ('new', 'tag')").await;
+    assert_eq!(
+        ok(addr, "SELECT name FROM names ORDER BY name FORMAT TSV").await,
+        "NEW\n"
+    );
+    ok(
+        addr,
+        "DROP TABLE IF EXISTS names_mv ON CLUSTER cluster SYNC",
+    )
+    .await;
+    ok(addr, "DROP TABLE IF EXISTS dist_keys ON CLUSTER cluster").await;
+    assert_eq!(ok(addr, "EXISTS TABLE dist_keys FORMAT TSV").await, "0\n");
+}
+
+/// HE1 R9.63 (interim; Variant in HE4): a `JSON` column is an Iceberg `string`
+/// of the value's JSON text, cast back to its type on read, so subcolumns
+/// (`resource.\`service.name\``), typed paths (`message String`), dynamic
+/// paths' types, `JSONAllPaths`, a column added by `ALTER` and `FINAL` read
+/// as ClickHouse reads them. The answers were measured on the 26.9.2.8 oracle
+/// (2026-10-22) for SigNoz's column types, before and after `OPTIMIZE … FINAL`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn json_columns_match_the_oracle() {
+    let house = lakehouse("json-oracle").await;
+    let addr = house.addr();
+    ok(addr, "CREATE TABLE logs (ts UInt64, id String, body String, resource JSON(max_dynamic_paths=100)) ENGINE = ReplacingMergeTree ORDER BY (id, ts)").await;
+    ok(addr, "INSERT INTO logs VALUES (1, 'a', 'one', '{\"service.name\":\"checkout\",\"host\":{\"name\":\"h1\"},\"n\":3}'), (2, 'b', 'two', '{\"service.name\":\"cart\",\"flag\":true}')").await;
+    ok(
+        addr,
+        "ALTER TABLE logs ADD COLUMN body_v2 JSON(max_dynamic_paths=0, message String) AFTER body",
+    )
+    .await;
+    inserted(addr, "INSERT INTO logs FORMAT JSONEachRow", "{\"ts\":3,\"id\":\"c\",\"body\":\"three\",\"body_v2\":{\"message\":\"hello\",\"level\":\"warn\"},\"resource\":{\"service\":{\"name\":\"checkout\"},\"tags\":[\"x\",\"y\"]}}".as_bytes(), &[]).await;
+    ok(addr, "INSERT INTO logs VALUES (1, 'a', 'one again', '{\"message\":\"replaced\"}', '{\"service.name\":\"checkout\",\"n\":4}')").await;
+    let logs = metadata(&house, "default", "logs").await;
+    for field in logs.current_schema().as_struct().fields() {
+        if field.name == "resource" || field.name == "body_v2" {
+            assert_eq!(
+                *field.field_type,
+                loams_house_lake::spec::Type::Primitive(
+                    loams_house_lake::spec::PrimitiveType::String
+                ),
+                "{}",
+                field.name
+            );
+        }
+    }
+    let check = |when: &'static str, expected: &'static [(&'static str, &'static str)]| async move {
+        for (read, want) in expected {
+            let got = ok(addr, &format!("{read} FORMAT TSV"))
+                .await
+                .replace('\n', "|");
+            assert_eq!(&got, want, "{when}: {read}");
+        }
+    };
+    check(
+        "as written",
+        &[
+            ("SELECT id, resource.`service.name`, resource.`service.name`::String, resource.host.name, resource.n, body_v2.message, toTypeName(body_v2.message) FROM logs FINAL ORDER BY id", "a\tcheckout\tcheckout\t\\N\t4\treplaced\tString|b\tcart\tcart\t\\N\t\\N\t\tString|c\tcheckout\tcheckout\t\\N\t\\N\thello\tString|"),
+            ("SELECT id FROM logs FINAL WHERE resource.`service.name` IS NOT NULL AND resource.`service.name`::String = 'checkout' ORDER BY id", "a|c|"),
+            ("SELECT resource.`service.name`::String AS s, count() FROM logs GROUP BY s ORDER BY s", "cart\t1|checkout\t3|"),
+            ("SELECT id, arraySort(JSONAllPaths(resource)), toString(resource), toString(body_v2) FROM logs FINAL ORDER BY id", "a\t['n','service.name']\t{\"n\":4,\"service\":{\"name\":\"checkout\"}}\t{\"message\":\"replaced\"}|b\t['flag','service.name']\t{\"flag\":true,\"service\":{\"name\":\"cart\"}}\t{\"message\":\"\"}|c\t['service.name','tags']\t{\"service\":{\"name\":\"checkout\"},\"tags\":[\"x\",\"y\"]}\t{\"level\":\"warn\",\"message\":\"hello\"}|"),
+            ("SELECT id, dynamicType(resource.n), dynamicType(resource.flag), dynamicType(resource.tags), toTypeName(resource) FROM logs FINAL ORDER BY id", "a\tInt64\tNone\tNone\tJSON(max_dynamic_paths=100)|b\tNone\tBool\tNone\tJSON(max_dynamic_paths=100)|c\tNone\tNone\tArray(Nullable(String))\tJSON(max_dynamic_paths=100)|"),
+            ("SELECT toString(multiIf(resource.`service.name` IS NOT NULL, resource.`service.name`::String, NULL)) AS svc, count() FROM logs FINAL GROUP BY svc ORDER BY svc", "cart\t1|checkout\t2|"),
+        ],
+    )
+    .await;
+    ok(addr, "OPTIMIZE TABLE logs FINAL").await;
+    check(
+        "after OPTIMIZE",
+        &[
+            ("SELECT id, resource.`service.name`, resource.`service.name`::String, resource.host.name, resource.n, body_v2.message, toTypeName(body_v2.message) FROM logs FINAL ORDER BY id", "a\tcheckout\tcheckout\t\\N\t4\treplaced\tString|b\tcart\tcart\t\\N\t\\N\t\tString|c\tcheckout\tcheckout\t\\N\t\\N\thello\tString|"),
+            ("SELECT id FROM logs FINAL WHERE resource.`service.name` IS NOT NULL AND resource.`service.name`::String = 'checkout' ORDER BY id", "a|c|"),
+            ("SELECT resource.`service.name`::String AS s, count() FROM logs GROUP BY s ORDER BY s", "cart\t1|checkout\t2|"),
+            ("SELECT id, arraySort(JSONAllPaths(resource)), toString(resource), toString(body_v2) FROM logs FINAL ORDER BY id", "a\t['n','service.name']\t{\"n\":4,\"service\":{\"name\":\"checkout\"}}\t{\"message\":\"replaced\"}|b\t['flag','service.name']\t{\"flag\":true,\"service\":{\"name\":\"cart\"}}\t{\"message\":\"\"}|c\t['service.name','tags']\t{\"service\":{\"name\":\"checkout\"},\"tags\":[\"x\",\"y\"]}\t{\"level\":\"warn\",\"message\":\"hello\"}|"),
+            ("SELECT id, dynamicType(resource.n), dynamicType(resource.flag), dynamicType(resource.tags), toTypeName(resource) FROM logs FINAL ORDER BY id", "a\tInt64\tNone\tNone\tJSON(max_dynamic_paths=100)|b\tNone\tBool\tNone\tJSON(max_dynamic_paths=100)|c\tNone\tNone\tArray(Nullable(String))\tJSON(max_dynamic_paths=100)|"),
+            ("SELECT toString(multiIf(resource.`service.name` IS NOT NULL, resource.`service.name`::String, NULL)) AS svc, count() FROM logs FINAL GROUP BY svc ORDER BY svc", "cart\t1|checkout\t2|"),
+        ],
+    )
+    .await;
+}
+
+/// HE1 R9.18: a column list with `--` and `/* */` comments between and after its
+/// entries and a comma after its last `INDEX`, the shape of Langfuse v4's
+/// migration 0022 (written here, not copied: no application source is
+/// vendored). The House makes the table ClickHouse 26.9.2.8 makes: `DESCRIBE`'s
+/// names, types and default kinds as the oracle answered them.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn comments_and_trailing_commas_in_create_table() {
+    let house = lakehouse("ddl-comments").await;
+    let addr = house.addr();
+    ok(addr, "CREATE TABLE runs (\n    -- identifiers\n    `id` String,\n    `run_id` String,\n\n    -- an error\n    `error` Nullable(String),\n     /* times */\n    `created_at` DateTime64(3) DEFAULT now(),\n    `input` Nullable(String) CODEC(ZSTD(3)), -- json\n    `meta` Map(LowCardinality(String), String),\n    `event_ts` DateTime64(3),\n    `is_deleted` UInt8,\n\n    -- lookups\n    INDEX idx_run run_id TYPE bloom_filter(0.001) GRANULARITY 1,\n) ENGINE = ReplacingMergeTree(event_ts, is_deleted)\nORDER BY (run_id, id)").await;
+    let described = ok(addr, "DESCRIBE runs FORMAT TSV").await;
+    let got: Vec<String> = described
+        .lines()
+        .map(|l| l.split('\t').take(3).collect::<Vec<_>>().join("\t"))
+        .collect();
+    assert_eq!(
+        got.join("|"),
+        "id\tString\t|run_id\tString\t|error\tNullable(String)\t|created_at\tDateTime64(3)\tDEFAULT|input\tNullable(String)\t|meta\tMap(LowCardinality(String), String)\t|event_ts\tDateTime64(3)\t|is_deleted\tUInt8\t"
+    );
+    assert!(
+        ok(addr, "SHOW CREATE TABLE runs FORMAT TSVRaw")
+            .await
+            .contains("INDEX idx_run")
+    );
+}

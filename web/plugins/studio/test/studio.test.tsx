@@ -47,7 +47,7 @@ describe('the plugin', () => {
     expect(m.modes).toEqual(['studio']);
     expect(m.editions).toEqual(['oss', 'desktop', 'cloud']);
     expect(m.tier).toBe('first-party');
-    expect(m.permissions).toEqual(['agentd:use', 'agentd:git-write']);
+    expect(m.permissions).toEqual(['agentd:use', 'agentd:git-write', 'ui:notifications']);
     expect(m.inject).toEqual(
       expect.arrayContaining(['router', 'slots', 'mode', 'platform', 'flags', 'agentd', 'desktop']),
     );

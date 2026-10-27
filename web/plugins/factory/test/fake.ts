@@ -47,7 +47,7 @@ const DEFS: Record<FactoryAppId, { label: string; fields: [string, string, boole
       ['secretKey', 'Secret key', true],
     ],
   },
-  openobserve: { label: 'OpenObserve', fields: [] },
+  signoz: { label: 'SigNoz', fields: [] },
 };
 
 export const IDS = Object.keys(DEFS) as FactoryAppId[];
@@ -65,7 +65,8 @@ export function info(
     url:
       health === 'unconfigured' || health === 'locked' ? undefined : `https://${id}.example.test`,
     health,
-    hasPanels: id !== 'openobserve',
+    hasPanels: id !== 'signoz',
+    ...(id === 'signoz' ? { preview: 'Preview: SigNoz on Loams House' } : {}),
     credentialFields: [...d.fields.map(([key, label, secret]) => ({ key, label, secret })), SSO],
     ...(fields ? { fields } : {}),
     persistent,

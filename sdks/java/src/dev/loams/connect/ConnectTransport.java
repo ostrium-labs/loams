@@ -81,6 +81,7 @@ public final class ConnectTransport implements AutoCloseable {
     private final Protocol protocol;
     private final HttpClient client;
     private final boolean ownsClient;
+    private final boolean json;
 
     /**
      * Build a transport.
@@ -90,6 +91,17 @@ public final class ConnectTransport implements AutoCloseable {
      * @param client the HTTP client to use, or {@code null} to build one
      */
     public ConnectTransport(String endpoint, Protocol protocol, HttpClient client) {
+        this(endpoint, protocol, client, false);
+    }
+
+    /**
+     * Build a transport whose unary calls use the proto3 JSON mapping when {@code json} is set.
+     *
+     * <p>The transport only frames the bytes; {@link #json()} is what tells the caller to encode
+     * the message as JSON and to read the answer as JSON.
+     */
+    public ConnectTransport(String endpoint, Protocol protocol, HttpClient client, boolean json) {
+        this.json = json;
         this.endpoint = endpoint.endsWith("/") ? endpoint.substring(0, endpoint.length() - 1) : endpoint;
         this.protocol = protocol == null ? Protocol.CONNECT : protocol;
         this.ownsClient = client == null;
@@ -104,6 +116,11 @@ public final class ConnectTransport implements AutoCloseable {
                                 .followRedirects(HttpClient.Redirect.NEVER)
                                 .connectTimeout(Duration.ofSeconds(20))
                                 .build();
+    }
+
+    /** Whether unary calls carry the proto3 JSON mapping rather than binary protobuf. */
+    public boolean json() {
+        return json;
     }
 
     /** The wire protocol this transport speaks. */
@@ -158,7 +175,7 @@ public final class ConnectTransport implements AutoCloseable {
                 jsonCodec ? jsonVariant(UNARY_CONTENT_TYPE.get(protocol)) : UNARY_CONTENT_TYPE.get(protocol);
 
         byte[] payload;
-        if (protocol == Protocol.CONNECT && !jsonCodec) {
+        if (protocol == Protocol.CONNECT) {
             // Connect unary sends the bare message: no framing. That is what makes the same
             // call a plain HTTP POST a person can curl.
             payload = body;
@@ -170,7 +187,7 @@ public final class ConnectTransport implements AutoCloseable {
                 send(rpc, contentType, payload, headers, HttpResponse.BodyHandlers.ofByteArray(), timeout);
 
         byte[] responseBody = response.body();
-        if (protocol == Protocol.CONNECT && !jsonCodec) {
+        if (protocol == Protocol.CONNECT) {
             if (response.statusCode() / 100 == 2) {
                 return new UnaryResponse(responseBody, headersOf(response));
             }

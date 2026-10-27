@@ -1,0 +1,25 @@
+== handoff_after_drain_is_complete
+layer layer_01m5kf3jwsr0yp19qfexw1z12q
+mounted
+drained
+drain_secs=0.044
+checkpoint_secs=0.367 seq_at_cp1=14
+fork_secs=10.175 fork=layer_01m5kf4m7rgm83k3vyexd838b2
+b_mounted_and_listed_secs=12.822 handoff_total_secs=23.408
+PASS handoff_after_drain_is_complete (17 files match)
+PASS fork_is_independent
+== undrained_handoff_is_detected
+killing mount pids: 1161608
+1161620
+layer entries: at cp1=10 after kill=10 (server-side, before A wakes)
+A local after kill: pending_files=0 shadow_files=63
+layer seq: at cp1=14 after kill=14
+B (forked from cp1) lacks 4 of A's undrained file states
+mounted
+drained
+layer entries after wake: 13
+after wake: layer seq=14, A's undrained edits recovered into its layer: yes
+diff-layer entries on A layer: 13
+PASS undrained_handoff_is_detected
+layers: A=layer_01m5kf3jwsr0yp19qfexw1z12q B=layer_01m5kf4m7rgm83k3vyexd838b2 B2=layer_01m5kf5m57wkb8n3arz9e4ptce
+result: pass=3 fail=0

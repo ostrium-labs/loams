@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import pathlib
 from collections.abc import Iterator
 
@@ -366,6 +367,15 @@ def test_python_conformance_all_required_fixtures(endpoint: str) -> None:
     assert len(ran) == len(required_names), (
         f"Ran {len(ran)} of {len(required_names)} required fixtures. Missing: {set(required_names) - set(ran)}"
     )
+
+    # The SDKP app scenario, replayed through the public facade (SDKP P0d): not
+    # required until S1, but reported, because `check-languages --suite app`
+    # reads the same report. Only against the fixture server: a live server
+    # cannot replay a recording.
+    if not os.environ.get("LOAMS_TEST_ENDPOINT"):
+        from app_replay import drive_app_fixtures
+
+        ran.extend(drive_app_fixtures(endpoint))
 
     # Write results report (D640)
     results_dir = FIXTURES / "results"

@@ -7,9 +7,9 @@
 // until asked for. A refusal keeps the dialog open with the daemon's reason.
 
 import {
-  AlertDialog,
   Button,
   Checkbox,
+  ConfirmDialog,
   cx,
   Dialog,
   Field,
@@ -445,19 +445,17 @@ export function ResolveDialog({
           )}
         </div>
       </Dialog>
-      <AlertDialog
+      <ConfirmDialog
         open={confirmRemove}
         onClose={() => setConfirmRemove(false)}
-        title="Remove the other worktrees?"
+        object="the other worktrees"
         confirm="Remove and resolve"
-        tone="danger"
+        impact="Each one is deleted from disk with what is in it. Their threads stay."
         onConfirm={() => {
           setConfirmRemove(false);
           void submit();
         }}
-      >
-        Each one is deleted from disk with what is in it. Their threads stay.
-      </AlertDialog>
+      />
     </>
   );
 }

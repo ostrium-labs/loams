@@ -21,8 +21,11 @@
 //! - `read`: `GET`/`HEAD` `_doc` and `_source`, and `_mget`, with
 //!   `_source` filtering ([`doc::SourceFilter`]).
 //! - [`dsl`]: the Query DSL → the search IR.
+//! - `search::aggs`: `aggs` checked against the mapping and run on the
+//!   engine's aggregations (#951).
 //! - [`search`]: search bodies and URL parameters → a [`search::SearchPlan`],
 //!   and `_search`, `_count` and `_msearch` with ES scores.
+//! - [`cat`]: `GET /_cat/indices[/{index}]` as JSON or the text table.
 //! - [`ubq`] serves `_update_by_query` over the native `patch_by_filter`,
 //!   and [`dbq`] serves `_delete_by_query` over `delete_by_filter` with the
 //!   loop both share (D87).
@@ -64,13 +67,46 @@
 //!   (row T9-5).
 //! - A sort key other than `_doc` after `_score` is refused: score ties are
 //!   broken by `_id` only; a `_doc` sort value is the `_id` (row T9-9).
+//! - A scroll (#950) holds no server state: its `_scroll_id` encodes the
+//!   request and where the next page starts, so it is long (a few hundred
+//!   bytes), clearing it frees nothing, and later pages read at least the
+//!   first page's version rather than a fixed snapshot (a document written
+//!   meanwhile past the cursor may appear). A scroll covers one index, a
+//!   query or `knn` search but not a hybrid or `script_score` one, and
+//!   `slice` is refused.
+//! - A sort on `_seq_no` must be the only sort key and orders at most
+//!   `max_result_window` (10,000) matches, in the gateway; `_seq_no` orders
+//!   writes within a partition, as ES's does within a shard, and an index
+//!   created without `number_of_shards` has 4 partitions where ES has one
+//!   shard, so only a one-partition index has a total write order (#949).
+//! - `PUT /{index}/_settings` stores the dynamic settings
+//!   `refresh_interval`, `number_of_replicas`, `max_result_window` and
+//!   `default_pipeline` so `GET` returns them, and applies none of them:
+//!   every write is searchable at once and there are no replicas (#948).
+//!   Other dynamic settings are refused as unknown.
+//! - Aggregations (#951) run on the engine's (Tantivy's) aggregations, over
+//!   one index and a query or `knn` search: `terms`, `composite`,
+//!   `top_hits`, `filter`, `range`, `histogram`, `date_histogram` and the
+//!   metrics `min`, `max`, `avg`, `sum`, `stats`, `extended_stats`,
+//!   `value_count`, `cardinality` and `percentiles`; other types are
+//!   refused. A sub-aggregation on an unmapped field is refused (ES answers
+//!   empty buckets); `top_hits` without a `sort` returns a bucket's
+//!   documents in index order, where ES orders them by score, and sorts by
+//!   fast fields only.
 //! - `_update_by_query` recognises only `params` assignments and
 //!   `remove()` in its script; an assignment creates a missing or
-//!   non-object parent as an object where Painless fails, and a request
+//!   non-object parent as an object where Painless fails, an object param
+//!   may be assigned to a top-level key only (#903), and a request
 //!   without a script is refused (row T9a-6). Its `scroll_size` is checked
 //!   and not applied: the batches are the collection service's, and a
 //!   batch refused for backpressure past the deadline is 429 with what was
 //!   written kept (rows T9a-6, T9a-7).
+//! - `_cat/indices` reports `pri` 1 and `rep` 0 for every index, `health`
+//!   is always `green` and `status` `open`, `docs.deleted` is 0, and the
+//!   sizes (`store.size`, `pri.store.size`, `dataset.size`) are Loams's
+//!   `size_bytes`; `docs.count` counts the live documents at the request's
+//!   consistency (MA1 Task 24). Only the `json` and `text` formats are
+//!   served, and unknown `h` columns are left out.
 
 // `EsError` carries ES's extra fields and wrapped cause by value (Task 1
 // Produces); errors are the cold path, so its size is accepted.
@@ -94,6 +130,7 @@ use tokio_util::sync::CancellationToken;
 
 mod admin;
 pub mod bulk;
+pub mod cat;
 pub mod dbq;
 pub mod doc;
 pub mod dsl;
@@ -204,6 +241,9 @@ impl EsGateway {
             .route("/_license", get(info::license))
             .route("/_cluster/health", get(info::health))
             .route("/_cluster/health/{index}", get(info::health_index))
+            // MA1 Task 24: `_cat/indices`.
+            .route("/_cat/indices", get(cat::cat_indices_all))
+            .route("/_cat/indices/{index}", get(cat::cat_indices_named))
             .route("/_ml/trained_models/{id}/_infer", post(info::infer))
             .route(
                 "/_ml/trained_models/{id}/deployment/_infer",
@@ -218,6 +258,16 @@ impl EsGateway {
                     .delete(admin::delete_index),
             )
             .route("/_mapping", get(admin::get_mapping_all))
+            // #948: index settings.
+            .route(
+                "/_settings",
+                get(admin::get_settings_all).put(admin::put_settings_all),
+            )
+            .route(
+                "/{index}/_settings",
+                get(admin::get_settings).put(admin::put_settings),
+            )
+            .route("/{index}/_settings/{name}", get(admin::get_settings_named))
             .route(
                 "/{index}/_mapping",
                 get(admin::get_mapping)
@@ -277,6 +327,19 @@ impl EsGateway {
             .route(
                 "/_search",
                 get(search::exec::search_all).post(search::exec::search_all),
+            )
+            // #950: the scroll API.
+            .route(
+                "/_search/scroll",
+                get(search::scroll::scroll)
+                    .post(search::scroll::scroll)
+                    .delete(search::scroll::clear),
+            )
+            .route(
+                "/_search/scroll/{scroll_id}",
+                get(search::scroll::scroll_id)
+                    .post(search::scroll::scroll_id)
+                    .delete(search::scroll::clear_id),
             )
             .route(
                 "/{index}/_search",

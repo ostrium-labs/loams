@@ -83,6 +83,9 @@ message HarnessDescriptor {
   bool installed = 6;
   bool can_install = 7;
   optional bool enabled = 8;
+  // The listing id of a `HARNESS_ID_MARKETPLACE` harness (MK1 Task 4b);
+  // pickers key marketplace entries by it.
+  optional string marketplace_listing = 9;
 }
 
 message Model {

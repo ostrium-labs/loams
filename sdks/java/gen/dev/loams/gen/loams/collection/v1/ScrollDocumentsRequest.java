@@ -366,6 +366,59 @@ private static final long serialVersionUID = 0L;
     return pageToken_ == null ? dev.loams.gen.loams.collection.v1.DocumentId.getDefaultInstance() : pageToken_;
   }
 
+  public static final int WHERE_FIELD_NUMBER = 9;
+  private com.google.protobuf.Struct where_;
+  /**
+   * <pre>
+   * The filter as a typed `loams.collection.v1.Query`, in its proto3 JSON
+   * (`{"term": {"field": "tags", "value": "policy"}}`, `{"matchAll": {}}`):
+   * the shape the SDKs' `Filter` builder writes and `SearchRequest.filter`
+   * takes. A `Struct` and not a `Query` because `query.proto` imports this
+   * file, so this file cannot import it back (SDKP ruling P0a-1). Setting both
+   * this and `filter` is `invalid_argument` with reason `filter_conflict`.
+   * </pre>
+   *
+   * <code>.google.protobuf.Struct where = 9 [json_name = "where"];</code>
+   * @return Whether the where field is set.
+   */
+  @java.lang.Override
+  public boolean hasWhere() {
+    return ((bitField0_ & 0x00000040) != 0);
+  }
+  /**
+   * <pre>
+   * The filter as a typed `loams.collection.v1.Query`, in its proto3 JSON
+   * (`{"term": {"field": "tags", "value": "policy"}}`, `{"matchAll": {}}`):
+   * the shape the SDKs' `Filter` builder writes and `SearchRequest.filter`
+   * takes. A `Struct` and not a `Query` because `query.proto` imports this
+   * file, so this file cannot import it back (SDKP ruling P0a-1). Setting both
+   * this and `filter` is `invalid_argument` with reason `filter_conflict`.
+   * </pre>
+   *
+   * <code>.google.protobuf.Struct where = 9 [json_name = "where"];</code>
+   * @return The where.
+   */
+  @java.lang.Override
+  public com.google.protobuf.Struct getWhere() {
+    return where_ == null ? com.google.protobuf.Struct.getDefaultInstance() : where_;
+  }
+  /**
+   * <pre>
+   * The filter as a typed `loams.collection.v1.Query`, in its proto3 JSON
+   * (`{"term": {"field": "tags", "value": "policy"}}`, `{"matchAll": {}}`):
+   * the shape the SDKs' `Filter` builder writes and `SearchRequest.filter`
+   * takes. A `Struct` and not a `Query` because `query.proto` imports this
+   * file, so this file cannot import it back (SDKP ruling P0a-1). Setting both
+   * this and `filter` is `invalid_argument` with reason `filter_conflict`.
+   * </pre>
+   *
+   * <code>.google.protobuf.Struct where = 9 [json_name = "where"];</code>
+   */
+  @java.lang.Override
+  public com.google.protobuf.StructOrBuilder getWhereOrBuilder() {
+    return where_ == null ? com.google.protobuf.Struct.getDefaultInstance() : where_;
+  }
+
   private byte memoizedIsInitialized = -1;
   @java.lang.Override
   public final boolean isInitialized() {
@@ -403,6 +456,9 @@ private static final long serialVersionUID = 0L;
     }
     if (((bitField0_ & 0x00000020) != 0)) {
       output.writeMessage(8, getPageToken());
+    }
+    if (((bitField0_ & 0x00000040) != 0)) {
+      output.writeMessage(9, getWhere());
     }
     getUnknownFields().writeTo(output);
   }
@@ -442,6 +498,10 @@ private static final long serialVersionUID = 0L;
     if (((bitField0_ & 0x00000020) != 0)) {
       size += com.google.protobuf.CodedOutputStream
         .computeMessageSize(8, getPageToken());
+    }
+    if (((bitField0_ & 0x00000040) != 0)) {
+      size += com.google.protobuf.CodedOutputStream
+        .computeMessageSize(9, getWhere());
     }
     size += getUnknownFields().getSerializedSize();
     memoizedSize = size;
@@ -492,6 +552,11 @@ private static final long serialVersionUID = 0L;
       if (!getPageToken()
           .equals(other.getPageToken())) return false;
     }
+    if (hasWhere() != other.hasWhere()) return false;
+    if (hasWhere()) {
+      if (!getWhere()
+          .equals(other.getWhere())) return false;
+    }
     if (!getUnknownFields().equals(other.getUnknownFields())) return false;
     return true;
   }
@@ -530,6 +595,10 @@ private static final long serialVersionUID = 0L;
     if (hasPageToken()) {
       hash = (37 * hash) + PAGE_TOKEN_FIELD_NUMBER;
       hash = (53 * hash) + getPageToken().hashCode();
+    }
+    if (hasWhere()) {
+      hash = (37 * hash) + WHERE_FIELD_NUMBER;
+      hash = (53 * hash) + getWhere().hashCode();
     }
     hash = (29 * hash) + getUnknownFields().hashCode();
     memoizedHashCode = hash;
@@ -666,6 +735,7 @@ private static final long serialVersionUID = 0L;
         getSelectFieldBuilder();
         getConsistencyFieldBuilder();
         getPageTokenFieldBuilder();
+        getWhereFieldBuilder();
       }
     }
     @java.lang.Override
@@ -699,6 +769,11 @@ private static final long serialVersionUID = 0L;
       if (pageTokenBuilder_ != null) {
         pageTokenBuilder_.dispose();
         pageTokenBuilder_ = null;
+      }
+      where_ = null;
+      if (whereBuilder_ != null) {
+        whereBuilder_.dispose();
+        whereBuilder_ = null;
       }
       return this;
     }
@@ -774,6 +849,12 @@ private static final long serialVersionUID = 0L;
             : pageTokenBuilder_.build();
         to_bitField0_ |= 0x00000020;
       }
+      if (((from_bitField0_ & 0x00000100) != 0)) {
+        result.where_ = whereBuilder_ == null
+            ? where_
+            : whereBuilder_.build();
+        to_bitField0_ |= 0x00000040;
+      }
       result.bitField0_ |= to_bitField0_;
     }
 
@@ -816,6 +897,9 @@ private static final long serialVersionUID = 0L;
       }
       if (other.hasPageToken()) {
         mergePageToken(other.getPageToken());
+      }
+      if (other.hasWhere()) {
+        mergeWhere(other.getWhere());
       }
       this.mergeUnknownFields(other.getUnknownFields());
       onChanged();
@@ -893,6 +977,13 @@ private static final long serialVersionUID = 0L;
               bitField0_ |= 0x00000080;
               break;
             } // case 66
+            case 74: {
+              input.readMessage(
+                  getWhereFieldBuilder().getBuilder(),
+                  extensionRegistry);
+              bitField0_ |= 0x00000100;
+              break;
+            } // case 74
             default: {
               if (!super.parseUnknownField(input, extensionRegistry, tag)) {
                 done = true; // was an endgroup tag
@@ -1967,6 +2058,208 @@ private static final long serialVersionUID = 0L;
         pageToken_ = null;
       }
       return pageTokenBuilder_;
+    }
+
+    private com.google.protobuf.Struct where_;
+    private com.google.protobuf.SingleFieldBuilder<
+        com.google.protobuf.Struct, com.google.protobuf.Struct.Builder, com.google.protobuf.StructOrBuilder> whereBuilder_;
+    /**
+     * <pre>
+     * The filter as a typed `loams.collection.v1.Query`, in its proto3 JSON
+     * (`{"term": {"field": "tags", "value": "policy"}}`, `{"matchAll": {}}`):
+     * the shape the SDKs' `Filter` builder writes and `SearchRequest.filter`
+     * takes. A `Struct` and not a `Query` because `query.proto` imports this
+     * file, so this file cannot import it back (SDKP ruling P0a-1). Setting both
+     * this and `filter` is `invalid_argument` with reason `filter_conflict`.
+     * </pre>
+     *
+     * <code>.google.protobuf.Struct where = 9 [json_name = "where"];</code>
+     * @return Whether the where field is set.
+     */
+    public boolean hasWhere() {
+      return ((bitField0_ & 0x00000100) != 0);
+    }
+    /**
+     * <pre>
+     * The filter as a typed `loams.collection.v1.Query`, in its proto3 JSON
+     * (`{"term": {"field": "tags", "value": "policy"}}`, `{"matchAll": {}}`):
+     * the shape the SDKs' `Filter` builder writes and `SearchRequest.filter`
+     * takes. A `Struct` and not a `Query` because `query.proto` imports this
+     * file, so this file cannot import it back (SDKP ruling P0a-1). Setting both
+     * this and `filter` is `invalid_argument` with reason `filter_conflict`.
+     * </pre>
+     *
+     * <code>.google.protobuf.Struct where = 9 [json_name = "where"];</code>
+     * @return The where.
+     */
+    public com.google.protobuf.Struct getWhere() {
+      if (whereBuilder_ == null) {
+        return where_ == null ? com.google.protobuf.Struct.getDefaultInstance() : where_;
+      } else {
+        return whereBuilder_.getMessage();
+      }
+    }
+    /**
+     * <pre>
+     * The filter as a typed `loams.collection.v1.Query`, in its proto3 JSON
+     * (`{"term": {"field": "tags", "value": "policy"}}`, `{"matchAll": {}}`):
+     * the shape the SDKs' `Filter` builder writes and `SearchRequest.filter`
+     * takes. A `Struct` and not a `Query` because `query.proto` imports this
+     * file, so this file cannot import it back (SDKP ruling P0a-1). Setting both
+     * this and `filter` is `invalid_argument` with reason `filter_conflict`.
+     * </pre>
+     *
+     * <code>.google.protobuf.Struct where = 9 [json_name = "where"];</code>
+     */
+    public Builder setWhere(com.google.protobuf.Struct value) {
+      if (whereBuilder_ == null) {
+        if (value == null) {
+          throw new NullPointerException();
+        }
+        where_ = value;
+      } else {
+        whereBuilder_.setMessage(value);
+      }
+      bitField0_ |= 0x00000100;
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * The filter as a typed `loams.collection.v1.Query`, in its proto3 JSON
+     * (`{"term": {"field": "tags", "value": "policy"}}`, `{"matchAll": {}}`):
+     * the shape the SDKs' `Filter` builder writes and `SearchRequest.filter`
+     * takes. A `Struct` and not a `Query` because `query.proto` imports this
+     * file, so this file cannot import it back (SDKP ruling P0a-1). Setting both
+     * this and `filter` is `invalid_argument` with reason `filter_conflict`.
+     * </pre>
+     *
+     * <code>.google.protobuf.Struct where = 9 [json_name = "where"];</code>
+     */
+    public Builder setWhere(
+        com.google.protobuf.Struct.Builder builderForValue) {
+      if (whereBuilder_ == null) {
+        where_ = builderForValue.build();
+      } else {
+        whereBuilder_.setMessage(builderForValue.build());
+      }
+      bitField0_ |= 0x00000100;
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * The filter as a typed `loams.collection.v1.Query`, in its proto3 JSON
+     * (`{"term": {"field": "tags", "value": "policy"}}`, `{"matchAll": {}}`):
+     * the shape the SDKs' `Filter` builder writes and `SearchRequest.filter`
+     * takes. A `Struct` and not a `Query` because `query.proto` imports this
+     * file, so this file cannot import it back (SDKP ruling P0a-1). Setting both
+     * this and `filter` is `invalid_argument` with reason `filter_conflict`.
+     * </pre>
+     *
+     * <code>.google.protobuf.Struct where = 9 [json_name = "where"];</code>
+     */
+    public Builder mergeWhere(com.google.protobuf.Struct value) {
+      if (whereBuilder_ == null) {
+        if (((bitField0_ & 0x00000100) != 0) &&
+          where_ != null &&
+          where_ != com.google.protobuf.Struct.getDefaultInstance()) {
+          getWhereBuilder().mergeFrom(value);
+        } else {
+          where_ = value;
+        }
+      } else {
+        whereBuilder_.mergeFrom(value);
+      }
+      if (where_ != null) {
+        bitField0_ |= 0x00000100;
+        onChanged();
+      }
+      return this;
+    }
+    /**
+     * <pre>
+     * The filter as a typed `loams.collection.v1.Query`, in its proto3 JSON
+     * (`{"term": {"field": "tags", "value": "policy"}}`, `{"matchAll": {}}`):
+     * the shape the SDKs' `Filter` builder writes and `SearchRequest.filter`
+     * takes. A `Struct` and not a `Query` because `query.proto` imports this
+     * file, so this file cannot import it back (SDKP ruling P0a-1). Setting both
+     * this and `filter` is `invalid_argument` with reason `filter_conflict`.
+     * </pre>
+     *
+     * <code>.google.protobuf.Struct where = 9 [json_name = "where"];</code>
+     */
+    public Builder clearWhere() {
+      bitField0_ = (bitField0_ & ~0x00000100);
+      where_ = null;
+      if (whereBuilder_ != null) {
+        whereBuilder_.dispose();
+        whereBuilder_ = null;
+      }
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * The filter as a typed `loams.collection.v1.Query`, in its proto3 JSON
+     * (`{"term": {"field": "tags", "value": "policy"}}`, `{"matchAll": {}}`):
+     * the shape the SDKs' `Filter` builder writes and `SearchRequest.filter`
+     * takes. A `Struct` and not a `Query` because `query.proto` imports this
+     * file, so this file cannot import it back (SDKP ruling P0a-1). Setting both
+     * this and `filter` is `invalid_argument` with reason `filter_conflict`.
+     * </pre>
+     *
+     * <code>.google.protobuf.Struct where = 9 [json_name = "where"];</code>
+     */
+    public com.google.protobuf.Struct.Builder getWhereBuilder() {
+      bitField0_ |= 0x00000100;
+      onChanged();
+      return getWhereFieldBuilder().getBuilder();
+    }
+    /**
+     * <pre>
+     * The filter as a typed `loams.collection.v1.Query`, in its proto3 JSON
+     * (`{"term": {"field": "tags", "value": "policy"}}`, `{"matchAll": {}}`):
+     * the shape the SDKs' `Filter` builder writes and `SearchRequest.filter`
+     * takes. A `Struct` and not a `Query` because `query.proto` imports this
+     * file, so this file cannot import it back (SDKP ruling P0a-1). Setting both
+     * this and `filter` is `invalid_argument` with reason `filter_conflict`.
+     * </pre>
+     *
+     * <code>.google.protobuf.Struct where = 9 [json_name = "where"];</code>
+     */
+    public com.google.protobuf.StructOrBuilder getWhereOrBuilder() {
+      if (whereBuilder_ != null) {
+        return whereBuilder_.getMessageOrBuilder();
+      } else {
+        return where_ == null ?
+            com.google.protobuf.Struct.getDefaultInstance() : where_;
+      }
+    }
+    /**
+     * <pre>
+     * The filter as a typed `loams.collection.v1.Query`, in its proto3 JSON
+     * (`{"term": {"field": "tags", "value": "policy"}}`, `{"matchAll": {}}`):
+     * the shape the SDKs' `Filter` builder writes and `SearchRequest.filter`
+     * takes. A `Struct` and not a `Query` because `query.proto` imports this
+     * file, so this file cannot import it back (SDKP ruling P0a-1). Setting both
+     * this and `filter` is `invalid_argument` with reason `filter_conflict`.
+     * </pre>
+     *
+     * <code>.google.protobuf.Struct where = 9 [json_name = "where"];</code>
+     */
+    private com.google.protobuf.SingleFieldBuilder<
+        com.google.protobuf.Struct, com.google.protobuf.Struct.Builder, com.google.protobuf.StructOrBuilder> 
+        getWhereFieldBuilder() {
+      if (whereBuilder_ == null) {
+        whereBuilder_ = new com.google.protobuf.SingleFieldBuilder<
+            com.google.protobuf.Struct, com.google.protobuf.Struct.Builder, com.google.protobuf.StructOrBuilder>(
+                getWhere(),
+                getParentForChildren(),
+                isClean());
+        where_ = null;
+      }
+      return whereBuilder_;
     }
 
     // @@protoc_insertion_point(builder_scope:loams.collection.v1.ScrollDocumentsRequest)

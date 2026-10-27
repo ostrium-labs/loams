@@ -123,6 +123,8 @@ pub enum Reason {
     WorkspaceNotFound,
     /// Another writer appended the workspace snapshot first.
     WorkspaceFenced,
+    /// A batch write stopped at a failed chunk; earlier chunks stay applied.
+    BatchPartiallyApplied,
     /// The workspace or snapshot is read-only.
     WorkspaceReadOnly,
     /// The owner already has a workspace of that name.
@@ -189,6 +191,16 @@ pub enum Reason {
     LiveDeployConflict,
     /// A write did not match its Live table's validator; the message names the table and field paths.
     LiveSchemaViolation,
+    /// A document RPC set both `filter` and `where`; set one.
+    FilterConflict,
+    /// search.query_all needs a sort that ends in the primary key.
+    SearchAfterNeedsTiebreak,
+    /// A consistency token is not the v1: encoding.
+    InvalidConsistencyToken,
+    /// An app request has no namespace and the client has no default.
+    NamespaceRequired,
+    /// The number of SQL parameters does not match the statement.
+    SqlParamCount,
     /// A Live function read an index a deploy is still backfilling.
     LiveIndexNotReady,
     /// A call to a Live app that is disabled or deleted.
@@ -199,10 +211,14 @@ pub enum Reason {
     LiveFunctionError,
     /// A Live function ran past its CPU limit.
     LiveFunctionTimeout,
+    /// The client's own deadline for the call ran out; never retried.
+    ClientDeadlineExceeded,
     /// A Live function ran past its memory limit.
     LiveFunctionOutOfMemory,
     /// A Live call exceeded one of the app's limits.
     LiveLimitExceeded,
+    /// A SQL answer is over the Arrow size cap; use Flight.
+    ResultTooLarge,
     /// A credential reached a Live app outside its environment.
     LiveAppMismatch,
     /// A browser origin the addressed Live app does not allow.
@@ -327,6 +343,7 @@ impl Reason {
         Reason::IdempotencyKeyReused,
         Reason::WorkspaceNotFound,
         Reason::WorkspaceFenced,
+        Reason::BatchPartiallyApplied,
         Reason::WorkspaceReadOnly,
         Reason::WorkspaceNameTaken,
         Reason::ObjectMissing,
@@ -360,13 +377,20 @@ impl Reason {
         Reason::LiveWorkerCrashed,
         Reason::LiveDeployConflict,
         Reason::LiveSchemaViolation,
+        Reason::FilterConflict,
+        Reason::SearchAfterNeedsTiebreak,
+        Reason::InvalidConsistencyToken,
+        Reason::NamespaceRequired,
+        Reason::SqlParamCount,
         Reason::LiveIndexNotReady,
         Reason::LiveAppDisabled,
         Reason::LiveAppExists,
         Reason::LiveFunctionError,
         Reason::LiveFunctionTimeout,
+        Reason::ClientDeadlineExceeded,
         Reason::LiveFunctionOutOfMemory,
         Reason::LiveLimitExceeded,
+        Reason::ResultTooLarge,
         Reason::LiveAppMismatch,
         Reason::LiveOriginNotAllowed,
         Reason::SessionRotate,
@@ -457,6 +481,7 @@ impl Reason {
             Reason::IdempotencyKeyReused => "idempotency_key_reused",
             Reason::WorkspaceNotFound => "workspace_not_found",
             Reason::WorkspaceFenced => "workspace_fenced",
+            Reason::BatchPartiallyApplied => "batch_partially_applied",
             Reason::WorkspaceReadOnly => "workspace_read_only",
             Reason::WorkspaceNameTaken => "workspace_name_taken",
             Reason::ObjectMissing => "object_missing",
@@ -490,13 +515,20 @@ impl Reason {
             Reason::LiveWorkerCrashed => "live_worker_crashed",
             Reason::LiveDeployConflict => "live_deploy_conflict",
             Reason::LiveSchemaViolation => "live_schema_violation",
+            Reason::FilterConflict => "filter_conflict",
+            Reason::SearchAfterNeedsTiebreak => "search_after_needs_tiebreak",
+            Reason::InvalidConsistencyToken => "invalid_consistency_token",
+            Reason::NamespaceRequired => "namespace_required",
+            Reason::SqlParamCount => "sql_param_count",
             Reason::LiveIndexNotReady => "live_index_not_ready",
             Reason::LiveAppDisabled => "live_app_disabled",
             Reason::LiveAppExists => "live_app_exists",
             Reason::LiveFunctionError => "live_function_error",
             Reason::LiveFunctionTimeout => "live_function_timeout",
+            Reason::ClientDeadlineExceeded => "client_deadline_exceeded",
             Reason::LiveFunctionOutOfMemory => "live_function_out_of_memory",
             Reason::LiveLimitExceeded => "live_limit_exceeded",
+            Reason::ResultTooLarge => "result_too_large",
             Reason::LiveAppMismatch => "live_app_mismatch",
             Reason::LiveOriginNotAllowed => "live_origin_not_allowed",
             Reason::SessionRotate => "session_rotate",
@@ -617,6 +649,11 @@ impl Reason {
             | Reason::HouseSyntaxError
             | Reason::LiveBadCursor
             | Reason::LiveSchemaViolation
+            | Reason::FilterConflict
+            | Reason::SearchAfterNeedsTiebreak
+            | Reason::InvalidConsistencyToken
+            | Reason::NamespaceRequired
+            | Reason::SqlParamCount
             | Reason::EnvUnsealed
             | Reason::MemoryBlockTooLarge
             | Reason::MemoryContentTooLarge
@@ -651,6 +688,7 @@ impl Reason {
             | Reason::QuotaExceeded
             | Reason::LiveFunctionOutOfMemory
             | Reason::LiveLimitExceeded
+            | Reason::ResultTooLarge
             | Reason::MemorySpaceLimit
             | Reason::MemoryCoreBudgetExceeded
             | Reason::MemoryTokenBudgetExhausted
@@ -663,11 +701,13 @@ impl Reason {
             | Reason::NodeDraining
             | Reason::CodeIndexBuilding
             | Reason::Unavailable => Code::Unavailable,
-            Reason::HouseTimeout | Reason::LiveFunctionTimeout | Reason::DeadlineExceeded => {
-                Code::DeadlineExceeded
-            }
+            Reason::HouseTimeout
+            | Reason::LiveFunctionTimeout
+            | Reason::ClientDeadlineExceeded
+            | Reason::DeadlineExceeded => Code::DeadlineExceeded,
             Reason::RefStale
             | Reason::WorkspaceFenced
+            | Reason::BatchPartiallyApplied
             | Reason::MemoryBlockVersionMismatch
             | Reason::Aborted => Code::Aborted,
             Reason::LiveWorkerCrashed | Reason::Internal => Code::Internal,

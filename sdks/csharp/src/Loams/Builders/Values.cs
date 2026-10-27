@@ -106,13 +106,13 @@ public static class Values
         value?.Fields.ToDictionary((kv) => kv.Key, (kv) => ToPlain(kv.Value), StringComparer.Ordinal)
         ?? new Dictionary<string, object?>(StringComparer.Ordinal);
 
-    // `Query.ids` carries the `DocumentId` shape as a Value: a bare number or
-    // string, or `{"uuid": "…"}`.
+    // `Query.ids` carries the `DocumentId` shape as a Value: `{"uint": "1"}`
+    // (exact past 2^53, and the builder corpus's spelling), a string, or
+    // `{"uuid": "…"}`.
     internal static Value DocumentIdValue(DocumentId id) => id.IdCase switch
     {
-        DocumentId.IdOneofCase.Uint => id.Uint <= (1UL << 53)
-            ? Value.ForNumber(id.Uint)
-            : Value.ForStruct(new Struct { Fields = { ["uint"] = Value.ForString(id.Uint.ToString(CultureInfo.InvariantCulture)) } }),
+        DocumentId.IdOneofCase.Uint =>
+            Value.ForStruct(new Struct { Fields = { ["uint"] = Value.ForString(id.Uint.ToString(CultureInfo.InvariantCulture)) } }),
         DocumentId.IdOneofCase.String => Value.ForString(id.String),
         DocumentId.IdOneofCase.Uuid => Value.ForStruct(new Struct { Fields = { ["uuid"] = Value.ForString(id.Uuid) } }),
         _ => throw new ArgumentException("a DocumentId must be set", nameof(id)),

@@ -38,7 +38,7 @@ const FETCH_TIMEOUT: Duration = Duration::from_secs(5);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum JwksSource {
     /// The `jwks_uri` of `<issuer>/.well-known/openid-configuration`
-    /// (Authentik: `/application/o/<slug>/jwks/`).
+    /// (Zitadel: `/oauth/v2/keys`).
     Discovery,
     /// A local JWKS file, read on each fetch (tests:
     /// `LOAMS_AGENTD_TEST_ISSUER`).

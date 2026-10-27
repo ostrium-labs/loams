@@ -1,0 +1,113 @@
+{
+  "name": "search_text_filter_highlight_select",
+  "builder": "search",
+  "message": "loams.collection.v1.SearchRequest",
+  "spec": {
+    "on": "notes",
+    "calls": [
+      {
+        "op": "text",
+        "args": [
+          "refund",
+          {
+            "fields": [
+              "body"
+            ]
+          }
+        ]
+      },
+      {
+        "op": "filter",
+        "args": [
+          {
+            "op": "eq",
+            "args": [
+              "tags",
+              "policy"
+            ]
+          }
+        ]
+      },
+      {
+        "op": "highlight",
+        "args": [
+          "body"
+        ]
+      },
+      {
+        "op": "select",
+        "args": [
+          {
+            "include": [
+              "title"
+            ]
+          }
+        ]
+      },
+      {
+        "op": "limit",
+        "args": [
+          2
+        ]
+      },
+      {
+        "op": "sort",
+        "args": [
+          {
+            "op": "score",
+            "args": []
+          },
+          {
+            "op": "pk",
+            "args": []
+          }
+        ]
+      }
+    ]
+  },
+  "expect": {
+    "collection": "notes",
+    "retrievers": [
+      {
+        "text": {
+          "query": {
+            "match": {
+              "field": "body",
+              "text": "refund"
+            }
+          }
+        }
+      }
+    ],
+    "filter": {
+      "term": {
+        "field": "tags",
+        "value": "policy"
+      }
+    },
+    "highlight": {
+      "fields": [
+        {
+          "field": "body"
+        }
+      ]
+    },
+    "select": {
+      "source": {
+        "include": [
+          "title"
+        ]
+      }
+    },
+    "limit": 2,
+    "sort": [
+      {
+        "score": {}
+      },
+      {
+        "pk": {}
+      }
+    ]
+  },
+  "scenario_step": "app_search/1"
+}

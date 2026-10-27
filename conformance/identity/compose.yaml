@@ -1,0 +1,208 @@
+# IA0: Zitadel and OpenFGA on loopback (design 76, plan IA1 Task 1 of IA0).
+#
+# Opt-in profiles, so `docker compose up` alone starts nothing:
+#   identity  Zitadel (API), Zitadel Login and zitadel-db (Postgres 17)
+#   authz     OpenFGA on SQLite (a migrate job, then the server)
+#   spike     the IA0 spike service (spikes/ia0-authz), for the measurements only
+#
+#   ./up.sh                       # generates .env, starts both profiles, runs bootstrap.sh
+#   docker compose --profile identity --profile authz down -v
+#
+# Every port binds 127.0.0.1 only: Zitadel's admin and management APIs and OpenFGA are never
+# public (D1617). Images are pinned by digest at a release at least 14 days old (D1617):
+# Zitadel v4.19.4 (2026-10-01), OpenFGA v1.22.0 (2026-10-06), Postgres 17.10-alpine (the tag
+# Zitadel's own deploy/compose/.env.example pins). Zitadel is AGPL-3.0-only and runs as its
+# official, unmodified image (D1602).
+#
+# Secrets (masterkey, cookie secret, database password) come from the git-ignored `.env` that
+# up.sh writes; none is committed.
+
+name: loams-ia0
+
+x-zitadel-image: &zitadel-image ghcr.io/zitadel/zitadel:v4.19.4@sha256:90a3045b80a2b5b395e1e770302076906af3a5911225af7c464b4f3bd00d0a1b
+x-login-image: &login-image ghcr.io/zitadel/zitadel-login:v4.19.4@sha256:93ffd1395b827f685ba29c02fa70aee881fc21102519c4e2bbb0b89c0e00f42c
+x-postgres-image: &postgres-image docker.io/library/postgres:17.10-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
+x-openfga-image: &openfga-image docker.io/openfga/openfga:v1.22.0@sha256:9cf9a20af32a40434cd3a788c429879439ee9ea9abf65c9c200ee17cd43f769e
+
+services:
+  zitadel-db:
+    profiles: [identity]
+    image: *postgres-image
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: zitadel
+      POSTGRES_PASSWORD: ${ZITADEL_DB_PASSWORD:?run ./up.sh to generate .env}
+      POSTGRES_DB: zitadel
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d zitadel -U zitadel"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - zitadel-db:/var/lib/postgresql/data:rw
+
+  zitadel:
+    profiles: [identity]
+    image: *zitadel-image
+    restart: unless-stopped
+    user: "0"
+    # --masterkeyFromEnv reads ZITADEL_MASTERKEY, so the key never appears in `ps`.
+    command: start-from-init --masterkeyFromEnv --tlsMode disabled
+    environment:
+      ZITADEL_MASTERKEY: ${ZITADEL_MASTERKEY:?run ./up.sh to generate .env}
+      ZITADEL_PORT: 8080
+      # The issuer is http://localhost:18080. Zitadel answers "instance not found" unless the
+      # Host header matches the external domain and port.
+      ZITADEL_EXTERNALDOMAIN: localhost
+      ZITADEL_EXTERNALPORT: ${ZITADEL_PORT:-18080}
+      ZITADEL_EXTERNALSECURE: "false"
+      ZITADEL_TLS_ENABLED: "false"
+      ZITADEL_DATABASE_POSTGRES_DSN: postgresql://zitadel:${ZITADEL_DB_PASSWORD}@zitadel-db:5432/zitadel?sslmode=disable
+      # The first instance gets an IAM_OWNER machine user whose PAT the bootstrap uses, and the
+      # login client (IAM_LOGIN_CLIENT) whose PAT Zitadel Login uses. Both land in .secrets/.
+      ZITADEL_FIRSTINSTANCE_ORG_NAME: loams-ia0-admin
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED: "false"
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD: ${ZITADEL_ADMIN_PASSWORD:?run ./up.sh}
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_USERNAME: ia0-bootstrap
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_NAME: IA0 bootstrap
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_PAT_EXPIRATIONDATE: "2099-01-01T00:00:00Z"
+      ZITADEL_FIRSTINSTANCE_PATPATH: /zitadel/bootstrap/admin.pat
+      ZITADEL_FIRSTINSTANCE_LOGINCLIENTPATPATH: /zitadel/bootstrap/login-client.pat
+      ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_MACHINE_USERNAME: login-client
+      ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_MACHINE_NAME: Zitadel Login
+      ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_PAT_EXPIRATIONDATE: "2099-01-01T00:00:00Z"
+      ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_REQUIRED: "true"
+      ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_BASEURI: http://localhost:${LOGIN_PORT:-13000}/ui/v2/login/
+      ZITADEL_OIDC_DEFAULTLOGINURLV2: http://localhost:${LOGIN_PORT:-13000}/ui/v2/login/login?authRequest=
+      ZITADEL_OIDC_DEFAULTLOGOUTURLV2: http://localhost:${LOGIN_PORT:-13000}/ui/v2/login/logout?post_logout_redirect=
+      ZITADEL_SAML_DEFAULTLOGINURLV2: http://localhost:${LOGIN_PORT:-13000}/ui/v2/login/login?samlRequest=
+      # Actions v2 webhooks reach the IA0 spike service on the host. Zitadel's default
+      # HTTPClient deny list blocks loopback, link-local and every private range, so a sync
+      # endpoint inside the same network is refused unless the list is narrowed. This keeps the
+      # unspecified range and the cloud metadata address blocked and allows the rest.
+      ZITADEL_HTTPCLIENT_DENYLIST: "0.0.0.0/8,169.254.169.254/32"
+    healthcheck:
+      test: ["CMD", "/app/zitadel", "ready"]
+      interval: 5s
+      timeout: 10s
+      retries: 60
+      start_period: 20s
+    ports:
+      - "127.0.0.1:${ZITADEL_PORT:-18080}:8080"
+    volumes:
+      - ./.secrets:/zitadel/bootstrap:rw
+    extra_hosts:
+      - "host.containers.internal:host-gateway"
+    depends_on:
+      zitadel-db:
+        condition: service_healthy
+
+  zitadel-login:
+    profiles: [identity]
+    image: *login-image
+    restart: unless-stopped
+    user: "0"
+    environment:
+      ZITADEL_API_URL: http://zitadel:8080
+      NEXT_PUBLIC_BASE_PATH: /ui/v2/login
+      ZITADEL_SERVICE_USER_TOKEN_FILE: /zitadel/bootstrap/login-client.pat
+      ZITADEL_SESSION_COOKIE_SECRET: ${LOGIN_SESSION_COOKIE_SECRET:?run ./up.sh}
+      CUSTOM_REQUEST_HEADERS: Host:localhost:${ZITADEL_PORT:-18080},X-Forwarded-Proto:http
+    healthcheck:
+      test: ["CMD", "/bin/sh", "-c", "node /app/healthcheck.mjs http://localhost:3000/ui/v2/login/healthy"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 20s
+    ports:
+      - "127.0.0.1:${LOGIN_PORT:-13000}:3000"
+    volumes:
+      - ./.secrets:/zitadel/bootstrap:ro
+    depends_on:
+      zitadel:
+        condition: service_healthy
+
+  openfga-migrate:
+    profiles: [authz]
+    image: *openfga-image
+    user: "0"
+    command: migrate --datastore-engine sqlite --datastore-uri file:/data/openfga.db
+    volumes:
+      - openfga-data:/data:rw
+
+  openfga:
+    profiles: [authz]
+    image: *openfga-image
+    restart: unless-stopped
+    user: "0"
+    command:
+      - run
+      - --datastore-engine=sqlite
+      - --datastore-uri=file:/data/openfga.db
+      - --playground-enabled=false
+      - --http-addr=0.0.0.0:8080
+      - --grpc-addr=0.0.0.0:8081
+      - --log-format=json
+      - --log-level=warn
+      # Off by default upstream; the spike measures with it off and on (OPENFGA_CHECK_CACHE).
+      - --check-query-cache-enabled=${OPENFGA_CHECK_CACHE:-false}
+      - --check-iterator-cache-enabled=${OPENFGA_CHECK_CACHE:-false}
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/grpc_health_probe", "-addr=127.0.0.1:8081"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    ports:
+      - "127.0.0.1:${OPENFGA_HTTP_PORT:-18081}:8080"
+      - "127.0.0.1:${OPENFGA_GRPC_PORT:-18082}:8081"
+    volumes:
+      - openfga-data:/data:rw
+    depends_on:
+      openfga-migrate:
+        condition: service_completed_successfully
+
+  # The IA0 spike service (spikes/ia0-authz), profile `spike`. It runs inside the compose network
+  # so Zitadel's Actions v2 webhooks reach it (a container cannot reach the host's loopback under
+  # rootless Podman) and so the latency bench measures container-to-container loopback. The binary
+  # is built on the host (`cargo build --release --manifest-path spikes/ia0-authz/Cargo.toml`)
+  # and mounted into a Debian 13 runtime (the published loams 0.1.0 image, used only as a base).
+  ia0-authz:
+    profiles: [spike]
+    image: ghcr.io/ostrium-labs/loams:0.1.0@sha256:e911f8e3925e377ed4fd0c194f24bd19d8733852c82d6fe36b49edf0a24a5cd0
+    entrypoint: ["/usr/local/bin/ia0-authz"]
+    command: ["serve"]
+    user: "0"
+    working_dir: /ia0
+    env_file:
+      - path: .env.ia0
+        required: false
+    environment:
+      IA0_ENV_FILE: /ia0/.env.ia0
+      IA0_LISTEN: 0.0.0.0:18090
+      IA0_ZITADEL_INTERNAL: http://zitadel:8080
+      IA0_FGA_GRPC: http://openfga:8081
+      IA0_ADMIN_TOKEN: ${IA0_ADMIN_TOKEN:-}
+      IA0_EVENT_KEY_FILE: /ia0/.secrets/events.key
+      IA0_CACHE_TTL_MS: ${IA0_CACHE_TTL_MS:-5000}
+      RUST_LOG: warn
+    # The base image's own healthcheck probes the loams binary; probe the spike instead.
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:18090/healthz"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "127.0.0.1:18090:18090"
+    volumes:
+      - ${IA0_SPIKE_BIN:-./.secrets/ia0-authz-not-built}:/usr/local/bin/ia0-authz:ro
+      - ./.env.ia0:/ia0/.env.ia0:ro
+      - ./.secrets:/ia0/.secrets:ro
+    depends_on:
+      zitadel:
+        condition: service_healthy
+      openfga:
+        condition: service_healthy
+
+volumes:
+  zitadel-db:
+  openfga-data:

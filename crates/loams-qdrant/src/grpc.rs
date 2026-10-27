@@ -680,6 +680,36 @@ service! {
             }))
         }
 
+        /// `Points/DeleteFieldIndex` (MA1 Task 23, D1210).
+        async fn delete_field_index(
+            &self,
+            request: Request<pb::DeleteFieldIndexCollection>,
+        ) -> Result<Response<pb::PointsOperationResponse>, Status> {
+            let req = request.get_ref();
+            let (collection, field, wait) = (
+                req.collection_name.clone(),
+                req.field_name.clone(),
+                req.wait.unwrap_or(false),
+            );
+            let (result, ctx) = self
+                .run(request.metadata(), req.timeout, |gw, ctx| {
+                    schema::delete_field_index(gw, ctx, collection, field, wait)
+                })
+                .await?;
+            let status = match result.status {
+                crate::model::common::UpdateStatus::Completed => pb::UpdateStatus::Completed,
+                crate::model::common::UpdateStatus::Acknowledged => pb::UpdateStatus::Acknowledged,
+            };
+            Ok(Response::new(pb::PointsOperationResponse {
+                result: Some(pb::UpdateResult {
+                    operation_id: result.operation_id,
+                    status: status as i32,
+                }),
+                time: ctx.elapsed_secs(),
+                usage: None,
+            }))
+        }
+
         /// `Points/CreateVectorName`.
         async fn create_vector_name(
             &self,
@@ -952,7 +982,6 @@ service! {
         }
     }
     unsupported {
-        delete_field_index(DeleteFieldIndexCollection) -> PointsOperationResponse;
         delete_vector_name(DeleteVectorNameRequest) -> PointsOperationResponse;
         facet(FacetCounts) -> FacetResponse;
         search_matrix_pairs(SearchMatrixPoints) -> SearchMatrixPairsResponse;

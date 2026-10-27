@@ -195,6 +195,9 @@ class WorkspaceNotFoundException extends LoamsException {
 class WorkspaceFencedException extends LoamsException {
   WorkspaceFencedException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
 }
+class BatchPartiallyAppliedException extends LoamsException {
+  BatchPartiallyAppliedException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
 
 class WorkspaceReadOnlyException extends LoamsException {
   WorkspaceReadOnlyException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
@@ -327,6 +330,21 @@ class LiveDeployConflictException extends LoamsException {
 class LiveSchemaViolationException extends LoamsException {
   LiveSchemaViolationException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
 }
+class FilterConflictException extends LoamsException {
+  FilterConflictException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+class SearchAfterNeedsTiebreakException extends LoamsException {
+  SearchAfterNeedsTiebreakException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+class InvalidConsistencyTokenException extends LoamsException {
+  InvalidConsistencyTokenException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+class NamespaceRequiredException extends LoamsException {
+  NamespaceRequiredException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+class SqlParamCountException extends LoamsException {
+  SqlParamCountException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
 
 class LiveIndexNotReadyException extends LoamsException {
   LiveIndexNotReadyException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
@@ -347,6 +365,9 @@ class LiveFunctionErrorException extends LoamsException {
 class LiveFunctionTimeoutException extends LoamsException {
   LiveFunctionTimeoutException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
 }
+class ClientDeadlineExceededException extends LoamsException {
+  ClientDeadlineExceededException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
 
 class LiveFunctionOutOfMemoryException extends LoamsException {
   LiveFunctionOutOfMemoryException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
@@ -354,6 +375,9 @@ class LiveFunctionOutOfMemoryException extends LoamsException {
 
 class LiveLimitExceededException extends LoamsException {
   LiveLimitExceededException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+class ResultTooLargeException extends LoamsException {
+  ResultTooLargeException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
 }
 
 class LiveAppMismatchException extends LoamsException {
@@ -510,6 +534,14 @@ class UnavailableException extends LoamsException {
 
 class DeadlineExceededException extends LoamsException {
   DeadlineExceededException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+
+  /// R12: the call's budget ran out on the client; never retried.
+  factory DeadlineExceededException.client() => DeadlineExceededException(
+        'the call ran out of time on the client',
+        code: 'deadline_exceeded',
+        reason: 'client_deadline_exceeded',
+        httpStatus: 504,
+      );
 }
 
 class AbortedException extends LoamsException {
@@ -629,6 +661,8 @@ class ErrorParser {
         WorkspaceNotFoundException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
     'workspace_fenced': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
         WorkspaceFencedException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'batch_partially_applied': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        BatchPartiallyAppliedException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
     'workspace_read_only': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
         WorkspaceReadOnlyException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
     'workspace_name_taken': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
@@ -695,6 +729,16 @@ class ErrorParser {
         LiveDeployConflictException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
     'live_schema_violation': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
         LiveSchemaViolationException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'filter_conflict': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        FilterConflictException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'search_after_needs_tiebreak': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        SearchAfterNeedsTiebreakException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'invalid_consistency_token': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        InvalidConsistencyTokenException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'namespace_required': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        NamespaceRequiredException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'sql_param_count': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        SqlParamCountException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
     'live_index_not_ready': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
         LiveIndexNotReadyException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
     'live_app_disabled': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
@@ -705,10 +749,14 @@ class ErrorParser {
         LiveFunctionErrorException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
     'live_function_timeout': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
         LiveFunctionTimeoutException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'client_deadline_exceeded': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        ClientDeadlineExceededException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
     'live_function_out_of_memory': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
         LiveFunctionOutOfMemoryException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
     'live_limit_exceeded': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
         LiveLimitExceededException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'result_too_large': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        ResultTooLargeException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
     'live_app_mismatch': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
         LiveAppMismatchException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
     'live_origin_not_allowed': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
@@ -936,6 +984,12 @@ class ErrorParser {
 
     if (code == 'unauthenticated' || httpStatus == 401) {
       return UnauthenticatedException(message, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails);
+    }
+
+    // No class for the reason: the code's own class, so `on NotFoundException`
+    // catches every `not_found`.
+    if (reasons.containsKey(code)) {
+      return reasons[code]!(message, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails);
     }
 
     return LoamsException(message, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails);

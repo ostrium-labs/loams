@@ -22,6 +22,8 @@
 #include <algorithm>
 #include <cctype>
 #include <atomic>
+#include <cstdlib>
+#include <optional>
 #include <chrono>
 #include <thread>
 
@@ -152,6 +154,31 @@ ConsistencyToken Client::SessionToken() const {
   return impl_->session.Merged();
 }
 
+SessionTokenStore* Client::Session() {
+  return impl_->options.session_consistency ? &impl_->session : nullptr;
+}
+
+const std::string& Client::DefaultNamespace() const { return impl_->options.default_namespace; }
+
+Options OptionsFromEnv() {
+  const auto env = [](const char* name) {
+    const char* value = std::getenv(name);
+    return value == nullptr ? std::string() : std::string(value);
+  };
+  Options options;
+  options.endpoint = env("LOAMS_ENDPOINT");
+  if (options.endpoint.empty()) {
+    ThrowMapped(Code::kInvalidArgument, "", Reason::kUnknown, "", {}, "", "loams: LOAMS_ENDPOINT is not set", "");
+  }
+  if (!env("LOAMS_API_KEY").empty()) {
+    options.token_source = ApiKey(env("LOAMS_API_KEY"));
+  } else if (!env("LOAMS_TOKEN").empty()) {
+    options.token_source = StaticToken(env("LOAMS_TOKEN"));
+  }
+  options.default_namespace = env("LOAMS_NAMESPACE");
+  return options;
+}
+
 HttpTransport& Client::Transport() { return *impl_->transport; }
 
 const std::shared_ptr<TokenSource>& Client::Token() const { return impl_->token_source; }
@@ -177,6 +204,10 @@ void Client::Invoke(const CallPlan& plan, HttpTransport& transport,
   const std::chrono::milliseconds timeout = plan.timeout.value_or(impl_->options.timeout);
   const bool retry_safe = plan.keyed || plan.binding.retry_class == RetryClass::kSafe;
   const std::string& rpc = plan.binding.rpc;
+  // R12: one budget for the call, retries included. A zero budget is none.
+  using Clock = std::chrono::steady_clock;
+  const std::optional<Clock::time_point> deadline =
+      timeout.count() > 0 ? std::optional<Clock::time_point>(Clock::now() + timeout) : std::nullopt;
 
   // R1's one refresh, for this logical call. Declared here rather than inside the
   // loop so a retry spent on a refreshed token does not come out of the retry
@@ -184,11 +215,18 @@ void Client::Invoke(const CallPlan& plan, HttpTransport& transport,
   bool refreshed = false;
 
   for (int attempt_number = 0;; ++attempt_number) {
+    std::chrono::milliseconds remaining{0};
+    if (deadline) {
+      remaining = std::chrono::duration_cast<std::chrono::milliseconds>(*deadline - Clock::now());
+      if (remaining.count() <= 0) {
+        ThrowClientDeadline(rpc);
+      }
+    }
     HttpRequest request;
     request.method = "POST";
     request.url = impl_->endpoint + plan.binding.HttpPath();
     request.body = plan.body;
-    request.timeout = timeout;
+    request.timeout = remaining;
     request.headers.emplace_back("content-type", std::string(ContentTypeName(plan.content_type)));
     request.headers.emplace_back("accept", std::string(ContentTypeName(plan.content_type)));
     request.headers.emplace_back("user-agent", UserAgent());
@@ -205,13 +243,9 @@ void Client::Invoke(const CallPlan& plan, HttpTransport& transport,
         request.headers.emplace_back("authorization", "Bearer " + token);
       }
     }
-    // R4: the session token is attached to later reads, and only when the caller
-    // opted in.
-    if (impl_->options.session_consistency) {
-      const ConsistencyToken token = impl_->session.Merged();
-      if (token.Present()) {
-        request.headers.emplace_back("loams-consistency-token", token.Value());
-      }
+    // R12: the call's remaining budget goes out as `connect-timeout-ms`.
+    if (deadline) {
+      request.headers.emplace_back("connect-timeout-ms", std::to_string(remaining.count()));
     }
     AppendCallerHeaders(request.headers, impl_->options.headers, plan.headers);
 
@@ -275,6 +309,16 @@ void Client::Invoke(const CallPlan& plan, HttpTransport& transport,
       }
     }
 
+    // R12: a spent budget is never retried.
+    try {
+      std::rethrow_exception(failure);
+    } catch (const DeadlineExceededError& error) {
+      if (HasReason(error, kClientDeadlineExceeded)) {
+        throw;
+      }
+    } catch (...) {
+    }
+
     // R2: the retry policy. `ShouldRetry` reads the code off the typed error, so
     // the policy is a function of the taxonomy rather than of a guess at the
     // transport.
@@ -310,7 +354,8 @@ std::string Client::EncodeBody(const google::protobuf::Message& request, Content
 void Client::Unary(const MethodBinding& binding, const google::protobuf::Message& request,
                    google::protobuf::Message* response, ContentType content_type,
                    const std::string& idempotency_key,
-                   const std::vector<std::pair<std::string, std::string>>& headers) {
+                   const std::vector<std::pair<std::string, std::string>>& headers,
+                   std::optional<std::chrono::milliseconds> timeout) {
   if (binding.server_streaming) {
     ThrowInternal(binding.rpc, "loams: " + binding.rpc + " is a server stream; call OpenStream");
   }
@@ -333,6 +378,7 @@ void Client::Unary(const MethodBinding& binding, const google::protobuf::Message
     plan.idempotency_key = ReadIdempotencyKey(outgoing).value_or(std::string());
   }
   plan.headers = headers;
+  plan.timeout = timeout;
 
   // Marshal once, from the **keyed** message, through the one encoder every other
   // path uses — so every retry re-sends the same bytes, R3's "the same key goes

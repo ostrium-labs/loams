@@ -26,15 +26,24 @@ from collections.abc import (
     Mapping,
     MutableMapping,
 )
-from typing import Any, TypeVar
+import time
+from dataclasses import dataclass
+from typing import Any, Final, TypeVar
 
-from connectrpc.client import ConnectClient, ConnectClientSync
+from connectrpc.client import ConnectClient, ConnectClientSync, ResponseMetadata
 from connectrpc.code import Code
 from connectrpc.method import MethodInfo
 from google.protobuf.message import Message
 
 from loams._gen.facade import IDEMPOTENCY_LEVELS, METHODS, CallBinding, Pagination
-from loams.runtime.errors import LoamsError, TokenExpiredError, to_loams_error
+from loams.runtime.consistency import TOKEN_PREFIX
+from loams.runtime.errors import (
+    DeadlineExceededError,
+    InvalidArgumentError,
+    LoamsError,
+    TokenExpiredError,
+    to_loams_error,
+)
 from loams.runtime.options import CallOptions, ConsistencyOptions, ConsistencyTokenStore
 from loams.runtime.retry import backoff_seconds, should_retry, sleep
 from loams.runtime.token_source import (
@@ -46,8 +55,13 @@ from loams.runtime.token_source import (
 from loams.runtime.uuidv7 import uuidv7
 
 __all__ = [
+    "APP_PACKAGES",
+    "SESSION_PACKAGES",
+    "CONSISTENCY_TOKEN_HEADER",
+    "DEFAULT_TIMEOUT_MS",
     "AsyncCallInvoker",
     "CallInvoker",
+    "prepare_request",
     "apply_idempotency_key",
     "call_headers",
     "call_with_retry",
@@ -62,6 +76,33 @@ __all__ = [
 #: `MutateRequest` (which has one) is never confused with a request that has
 #: none.
 IDEMPOTENCY_KEY = "idempotency_key"
+
+#: The unary deadline when neither the client nor the call sets one (R12).
+DEFAULT_TIMEOUT_MS: Final[int] = 30_000
+
+#: The response header a consistency token arrives in (R4).
+CONSISTENCY_TOKEN_HEADER: Final[str] = "loams-consistency-token"
+
+#: Below this many seconds a budget counts as spent: the transport's own timer
+#: fires a little before the SDK's, and an attempt with a millisecond left can
+#: only time out again.
+_DEADLINE_SLACK: Final[float] = 0.01
+
+#: The packages R11 (default namespace) and R4's `consistency.at_least` apply to.
+#: Elsewhere a `namespace` field can mean something else entirely --
+#: `loams.live.v1.CreateAppRequest.namespace` is free text naming an app's
+#: environment -- and must never be filled or refused.
+APP_PACKAGES: Final[frozenset[str]] = frozenset(
+    {"loams.collection.v1", "loams.graph.v1", "loams.sql.v1", "loams.stream.v1"}
+)
+
+#: The packages whose reads take the session's token as `consistency.at_least`
+#: (R4, SDKP-17): collections and SQL. A graph's token names one graph's stream
+#: and a Graph read refuses any other, so graph reads never take the session's.
+SESSION_PACKAGES: Final[frozenset[str]] = frozenset({"loams.collection.v1", "loams.sql.v1"})
+
+#: The response fields a consistency token is read from (R4, SDKP §2.1).
+_TOKEN_FIELDS: Final[tuple[str, ...]] = ("consistency_token", "token", "read_token")
 
 REQ = TypeVar("REQ", bound=Message)
 RES = TypeVar("RES", bound=Message)
@@ -112,6 +153,7 @@ def call_headers(
     options: CallOptions,
     bearer: str | None,
     consistency: str | None,
+    as_header: bool = True,
 ) -> dict[str, str]:
     """The headers a call carries: the caller's, plus the SDK's own.
 
@@ -123,9 +165,105 @@ def call_headers(
         headers.update(options.headers)
     if bearer is not None:
         headers["authorization"] = f"Bearer {bearer}"
-    if consistency is not None:
+    # A request with a `consistency` field carries the token there (R4); one
+    # without carries it as a header, which is all such an RPC can read.
+    if consistency is not None and as_header:
         headers["loams-consistency"] = consistency
     return dict(headers)
+
+
+# ---------------------------------------------------------------------------
+# The request as it goes out (R4, R11).
+# ---------------------------------------------------------------------------
+
+
+def _string_field(request: Message, name: str) -> bool:
+    field = request.DESCRIPTOR.fields_by_name.get(name)
+    return (
+        field is not None
+        and field.type == field.TYPE_STRING
+        and field.containing_oneof is None
+        and not _is_repeated(field)
+    )
+
+
+def _is_repeated(field: Any) -> bool:
+    # `label` is deprecated in newer protobuf runtimes in favour of
+    # `is_repeated`; both are read so either runtime works.
+    repeated = getattr(field, "is_repeated", None)
+    if isinstance(repeated, bool):
+        return repeated
+    return bool(field.label == field.LABEL_REPEATED)
+
+
+def carries_consistency(request: Message) -> bool:
+    """Whether the request's `consistency` message has an `at_least` field.
+
+    Both shapes in the protos qualify: a plain field
+    (`loams.collection.v1.Consistency`) and an arm of a oneof
+    (`loams.graph.v1.Consistency`). Setting the field selects the arm either way.
+    """
+    field = request.DESCRIPTOR.fields_by_name.get("consistency")
+    if field is None or field.message_type is None:
+        return False
+    return "at_least" in field.message_type.fields_by_name
+
+
+def _in_field(binding: CallBinding, request: Message) -> bool:
+    """Whether this call carries the session token in `consistency.at_least`
+    rather than in the `loams-consistency` header."""
+    return binding.package in SESSION_PACKAGES and carries_consistency(request)
+
+
+def prepare_request(
+    binding: CallBinding,
+    request: Message,
+    namespace: str | None,
+    consistency: str | None,
+) -> Message:
+    """The request as it goes out.
+
+    - **R11**: a request with a string `namespace` field that the caller left
+      empty gets the client's default namespace; with neither, the call is
+      refused with `InvalidArgumentError` before any network call.
+    - **R4**: a collection or SQL read whose `consistency` the caller left
+      unset is sent `consistency.at_least = <session token>`; a graph read never
+      is (SDKP-17: a graph's token names one graph).
+
+    An explicit value always wins. The caller's request is copied, never
+    mutated, so reusing it for a second call sends the same thing twice. Both
+    rules apply only to the app packages (`APP_PACKAGES`).
+    """
+    if binding.package not in APP_PACKAGES:
+        return request
+    out = request
+    if _string_field(request, "namespace") and getattr(request, "namespace") == "":
+        if not namespace:
+            raise InvalidArgumentError(
+                f"{binding.rpc} needs a namespace: pass one, or give the client a default "
+                "namespace",
+                code=Code.INVALID_ARGUMENT,
+                reason="namespace_required",
+                rpc=binding.rpc,
+                metadata={"field": "namespace"},
+            )
+        out = _copy(out)
+        setattr(out, "namespace", namespace)
+    if (
+        consistency is not None
+        and binding.package in SESSION_PACKAGES
+        and carries_consistency(request)
+        and not request.HasField("consistency")
+    ):
+        out = _copy(out) if out is request else out
+        setattr(getattr(out, "consistency"), "at_least", consistency)
+    return out
+
+
+def _copy(request: Message) -> Message:
+    copy = type(request)()
+    copy.CopyFrom(request)
+    return copy
 
 
 def resolve_session(
@@ -169,8 +307,13 @@ def call_with_retry(
     retry_safe: bool,
     max_retries: int,
     on_refresh: Callable[[], None] | None,
+    remaining: Callable[[], float | None] | None = None,
 ) -> Message:
     """Runs `send` until it answers or the policy says stop.
+
+    `remaining` is the seconds left of the call's deadline (R12), or `None` for
+    no deadline: no attempt starts once it is spent, and a backoff never sleeps
+    past it.
 
     :raises LoamsError: the last failure, mapped. R1: a 401 whose reason is
         `token_expired` gets exactly one refresh and one retry. A source that
@@ -192,9 +335,13 @@ def call_with_retry(
                 refreshed = True
                 on_refresh()
                 continue
-            if not _retry_decision(error, retry_safe, attempt, max_retries):
+            left = remaining() if remaining is not None else None
+            if (left is not None and left <= 0) or not _retry_decision(
+                error, retry_safe, attempt, max_retries
+            ):
                 raise error from None
-            sleep(backoff_seconds(attempt))
+            delay = backoff_seconds(attempt)
+            sleep(delay if left is None else min(delay, left))
             attempt += 1
 
 
@@ -205,6 +352,7 @@ async def async_call_with_retry(
     retry_safe: bool,
     max_retries: int,
     on_refresh: Callable[[], Awaitable[None]] | None,
+    remaining: Callable[[], float | None] | None = None,
 ) -> Message:
     """`call_with_retry` for `AsyncCallInvoker`, with the same decisions."""
     refreshed = False
@@ -222,9 +370,13 @@ async def async_call_with_retry(
                 refreshed = True
                 await on_refresh()
                 continue
-            if not _retry_decision(error, retry_safe, attempt, max_retries):
+            left = remaining() if remaining is not None else None
+            if (left is not None and left <= 0) or not _retry_decision(
+                error, retry_safe, attempt, max_retries
+            ):
                 raise error from None
-            await _async_sleep(backoff_seconds(attempt))
+            delay = backoff_seconds(attempt)
+            await _async_sleep(delay if left is None else min(delay, left))
             attempt += 1
 
 
@@ -241,32 +393,87 @@ async def _async_sleep(seconds: float) -> None:
 # ---------------------------------------------------------------------------
 
 
-def record_consistency(session: ConsistencyTokenStore | None, response: object) -> None:
-    """Merges the consistency token a write answered with into the session.
+def record_consistency(
+    session: ConsistencyTokenStore | None,
+    response: object,
+    header_token: str | None = None,
+    scope: str = "",
+) -> None:
+    """Merges every consistency token a response carried into the session.
 
-    A token the session cannot merge must not turn a committed write into a
+    The response fields `consistency_token`, `token` and `read_token`, and the
+    `loams-consistency-token` response header (R4, SDKP §2.1). `token` is a
+    common field name, so only a `v1:` string is taken: anything else (a page
+    token, a bearer) is not the session's business.
+
+    A `v1:` token the session cannot parse must not turn a committed write into a
     thrown error, because a caller that retries on that error performs the write
-    twice. `ConsistencySession.conflicts` counts it instead.
-
-    This reads the response **message** field, which is one of the two places
-    D609 puts a token. The other is the response header `loams-consistency-token`
-    -- the only one that currently carries anything, since no generated message
-    has a `consistency_token` field -- and `connectrpc==0.12.1` has no call
-    that returns response headers, so this function never sees it. Which is why
-    a `ConsistencySession` stays empty in practice and `session_consistency=True`
-    is inert rather than merely conservative. The Rust SDK reads the header
-    (`token_from_headers` in `sdks/rust/src/request.rs`); closing this needs
-    connectrpc to expose headers, not a change here.
+    twice. `ConsistencySession.rejected` counts it instead.
     """
-    if session is None or response is None:
+    if session is None:
         return
-    token = getattr(response, "consistency_token", None)
-    if not isinstance(token, str) or token == "":
-        return
-    try:
-        session.record(token)
-    except LoamsError:
-        return
+    tokens: list[str] = []
+    if response is not None:
+        for name in _TOKEN_FIELDS:
+            value = getattr(response, name, None)
+            if isinstance(value, str) and value != "":
+                tokens.append(value)
+    if header_token:
+        tokens.append(header_token)
+    for token in tokens:
+        if not token.startswith(TOKEN_PREFIX):
+            continue
+        try:
+            session.record(token, scope)
+        except LoamsError:
+            continue
+
+
+def _header_token(metadata: ResponseMetadata) -> str | None:
+    value = metadata.headers.get(CONSISTENCY_TOKEN_HEADER)
+    return value if isinstance(value, str) and value != "" else None
+
+
+def _client_deadline(binding: CallBinding, timeout_ms: int) -> DeadlineExceededError:
+    return DeadlineExceededError(
+        f"{binding.rpc} did not answer within the client's {timeout_ms} ms deadline",
+        code=Code.DEADLINE_EXCEEDED,
+        reason="client_deadline_exceeded",
+        rpc=binding.rpc,
+        metadata={"timeout_ms": str(timeout_ms)},
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _Deadline:
+    """One call's budget, retries included (R12)."""
+
+    timeout_ms: int | None
+    expires_at: float | None
+
+    @classmethod
+    def start(cls, timeout_ms: int | None) -> _Deadline:
+        if timeout_ms is None or timeout_ms <= 0:
+            return cls(None, None)
+        return cls(timeout_ms, time.monotonic() + timeout_ms / 1000)
+
+    def remaining(self) -> float | None:
+        """Seconds left, or `None` for no deadline. A budget within the slack of
+        its end answers 0."""
+        if self.expires_at is None:
+            return None
+        left = self.expires_at - time.monotonic()
+        return left if left > _DEADLINE_SLACK else 0.0
+
+    def remaining_ms(self) -> int | None:
+        """Milliseconds left for the next attempt, at least 1."""
+        if self.expires_at is None:
+            return None
+        return max(1, int((self.expires_at - time.monotonic()) * 1000))
+
+    def expired(self) -> bool:
+        left = self.remaining()
+        return left is not None and left <= 0
 
 
 # ---------------------------------------------------------------------------
@@ -298,10 +505,24 @@ class _BaseInvoker:
         client: object,
         max_retries: int,
         consistency: ConsistencyTokenStore | None,
+        namespace: str | None = None,
+        timeout_ms: int | None = DEFAULT_TIMEOUT_MS,
     ) -> None:
         self._client = client
         self._max_retries = max_retries
         self._consistency = consistency
+        self._namespace = namespace
+        self._timeout_ms = timeout_ms
+
+    @property
+    def namespace(self) -> str | None:
+        """The client's default namespace (R11), if it has one."""
+        return self._namespace
+
+    def _deadline(self, options: CallOptions) -> _Deadline:
+        """A unary call's budget: the call's, else the client's (R12)."""
+        timeout = options.timeout_ms if options.timeout_ms is not None else self._timeout_ms
+        return _Deadline.start(timeout)
 
     @property
     def consistency(self) -> ConsistencyTokenStore | None:
@@ -312,6 +533,12 @@ class _BaseInvoker:
         self, binding: CallBinding, options: CallOptions, request: Message
     ) -> tuple[Message, bool, int, ConsistencyTokenStore | None, str | None]:
         """Everything both paths decide the same way before an attempt."""
+        session = resolve_session(options.consistency, self._consistency)
+        token = options.consistency.token if options.consistency is not None else None
+        if token is None and session is not None:
+            # R4 (SDKP-17): one token per proto package.
+            token = session.current(binding.package)
+        request = prepare_request(binding, request, self._namespace, token)
         keyed, has_key = apply_idempotency_key(request, options.idempotency_key)
         max_retries = options.max_retries if options.max_retries is not None else self._max_retries
         # D610: a `safe` call always retries; a mutation retries once it carries
@@ -319,13 +546,10 @@ class _BaseInvoker:
         retry_safe = options.retry_safe if options.retry_safe is not None else (
             binding.retry == "safe" or has_key
         )
-        session = resolve_session(options.consistency, self._consistency)
         # An explicit token wins; otherwise the session's, which is what makes
         # `consistency=ConsistencyOptions(session=True)` read-your-writes rather
         # than record it and never send it (R4).
-        consistency = options.consistency.token if options.consistency is not None else None
-        if consistency is None and session is not None:
-            consistency = session.current()
+        consistency = token
         return keyed, retry_safe, max_retries, session, consistency
 
     def binding_for(self, module: str, call: str) -> CallBinding:
@@ -363,8 +587,10 @@ class CallInvoker(_BaseInvoker):
         token_source: TokenSource | None,
         max_retries: int,
         consistency: ConsistencyTokenStore | None,
+        namespace: str | None = None,
+        timeout_ms: int | None = DEFAULT_TIMEOUT_MS,
     ) -> None:
-        super().__init__(client, max_retries, consistency)
+        super().__init__(client, max_retries, consistency, namespace, timeout_ms)
         self._token_source = token_source
         self._refresh = refresh_of(token_source) if token_source is not None else None
 
@@ -375,34 +601,47 @@ class CallInvoker(_BaseInvoker):
             binding, call_options, request
         )
         method = _method_of(binding)
+        as_header = not _in_field(binding, keyed)
+        deadline = self._deadline(call_options)
+        header_token: list[str | None] = [None]
 
         def send() -> Message:
             client = self._client
             assert isinstance(client, ConnectClientSync)
             bearer = self._token_source.token() if self._token_source is not None else None
-            return client.execute_unary(
-                request=keyed,
-                method=method,
-                headers=call_headers(call_options, bearer, consistency),
-                timeout_ms=call_options.timeout_ms,
-                # Unary calls go out as POST even for `no_side_effects`
-                # methods. D438 notes reads are marked NO_SIDE_EFFECTS
-                # "(HTTP GET)", but every recorded fixture in
-                # `sdks/fixtures/recorded` is a POST, the fixture server keys
-                # cases on the method, and the Go and Rust SDKs post. A GET
-                # gets a 404 and the whole conformance suite fails.
-                # POST, as in the sync path above.
-                use_get=False,
-            )
+            with ResponseMetadata() as metadata:
+                answer = client.execute_unary(
+                    request=keyed,
+                    method=method,
+                    headers=call_headers(call_options, bearer, consistency, as_header),
+                    # R12: what is left of the call's one budget, so the server
+                    # sees it as `connect-timeout-ms` and a retry cannot outlive it.
+                    timeout_ms=deadline.remaining_ms(),
+                    # Unary calls go out as POST even for `no_side_effects`
+                    # methods. D438 notes reads are marked NO_SIDE_EFFECTS
+                    # "(HTTP GET)", but every recorded fixture in
+                    # `sdks/fixtures/recorded` is a POST, the fixture server keys
+                    # cases on the method, and the Go and Rust SDKs post. A GET
+                    # gets a 404 and the whole conformance suite fails.
+                    use_get=False,
+                )
+            header_token[0] = _header_token(metadata)
+            return answer
 
-        response = call_with_retry(
-            send,
-            rpc=binding.rpc,
-            retry_safe=retry_safe,
-            max_retries=max_retries,
-            on_refresh=self._refresh,
-        )
-        record_consistency(session, response)
+        try:
+            response = call_with_retry(
+                send,
+                rpc=binding.rpc,
+                retry_safe=retry_safe,
+                max_retries=max_retries,
+                on_refresh=self._refresh,
+                remaining=deadline.remaining,
+            )
+        except LoamsError as error:
+            if deadline.expired() and deadline.timeout_ms is not None:
+                raise _client_deadline(binding, deadline.timeout_ms) from error
+            raise
+        record_consistency(session, response, header_token[0], binding.package)
         return response
 
     def stream(
@@ -417,7 +656,8 @@ class CallInvoker(_BaseInvoker):
         the resume on top.
         """
         call_options = options or CallOptions()
-        _, _, _, session, consistency = self._plan(binding, call_options, request)
+        prepared, _, _, session, consistency = self._plan(binding, call_options, request)
+        as_header = not _in_field(binding, prepared)
         method = _method_of(binding)
         client = self._client
         assert isinstance(client, ConnectClientSync)
@@ -433,13 +673,13 @@ class CallInvoker(_BaseInvoker):
             attempt: the whole point is to send the *new* token.
             """
             return client.execute_server_stream(
-                request=request,
+                request=prepared,
                 method=method,
-                headers=call_headers(call_options, self._bearer(), consistency),
+                headers=call_headers(call_options, self._bearer(), consistency, as_header),
                 timeout_ms=call_options.timeout_ms,
             )
 
-        return self._mapped(open_stream, binding.rpc, session, call_options)
+        return self._mapped(open_stream, binding.rpc, session, call_options, binding.package)
 
     def _bearer(self) -> str | None:
         return self._token_source.token() if self._token_source is not None else None
@@ -450,6 +690,7 @@ class CallInvoker(_BaseInvoker):
         rpc: str,
         session: ConsistencyTokenStore | None,
         options: CallOptions,
+        scope: str = "",
     ) -> Iterator[Message]:
         """Wraps a stream so every throw becomes a `LoamsError`."""
         refreshed = False
@@ -460,7 +701,7 @@ class CallInvoker(_BaseInvoker):
             try:
                 for message in source:
                     yielded = True
-                    record_consistency(session, message)
+                    record_consistency(session, message, None, scope)
                     yield message
                 return
             except BaseException as thrown:  # noqa: BLE001 - re-raised as a LoamsError
@@ -492,8 +733,10 @@ class AsyncCallInvoker(_BaseInvoker):
         token_source: AsyncTokenSource | None,
         max_retries: int,
         consistency: ConsistencyTokenStore | None,
+        namespace: str | None = None,
+        timeout_ms: int | None = DEFAULT_TIMEOUT_MS,
     ) -> None:
-        super().__init__(client, max_retries, consistency)
+        super().__init__(client, max_retries, consistency, namespace, timeout_ms)
         self._token_source = token_source
         self._refresh = async_refresh_of(token_source) if token_source is not None else None
 
@@ -501,11 +744,16 @@ class AsyncCallInvoker(_BaseInvoker):
         self, binding: CallBinding, request: Message, options: CallOptions | None = None
     ) -> Message:
         """One unary call: the whole runtime contract, applied to one binding."""
+        import asyncio
+
         call_options = options or CallOptions()
         keyed, retry_safe, max_retries, session, consistency = self._plan(
             binding, call_options, request
         )
         method = _method_of(binding)
+        as_header = not _in_field(binding, keyed)
+        deadline = self._deadline(call_options)
+        header_token: list[str | None] = [None]
 
         async def send() -> Message:
             client = self._client
@@ -513,22 +761,35 @@ class AsyncCallInvoker(_BaseInvoker):
             bearer = (
                 await self._token_source.token() if self._token_source is not None else None
             )
-            return await client.execute_unary(
-                request=keyed,
-                method=method,
-                headers=call_headers(call_options, bearer, consistency),
-                timeout_ms=call_options.timeout_ms,
-                use_get=False,
-            )
+            with ResponseMetadata() as metadata:
+                pending = client.execute_unary(
+                    request=keyed,
+                    method=method,
+                    headers=call_headers(call_options, bearer, consistency, as_header),
+                    timeout_ms=deadline.remaining_ms(),
+                    use_get=False,
+                )
+                # The SDK holds the budget itself as well as handing it to the
+                # transport, so the deadline is the same on every transport.
+                left = deadline.remaining()
+                answer = await (pending if left is None else asyncio.wait_for(pending, left))
+            header_token[0] = _header_token(metadata)
+            return answer
 
-        response = await async_call_with_retry(
-            send,
-            rpc=binding.rpc,
-            retry_safe=retry_safe,
-            max_retries=max_retries,
-            on_refresh=self._refresh,
-        )
-        record_consistency(session, response)
+        try:
+            response = await async_call_with_retry(
+                send,
+                rpc=binding.rpc,
+                retry_safe=retry_safe,
+                max_retries=max_retries,
+                on_refresh=self._refresh,
+                remaining=deadline.remaining,
+            )
+        except LoamsError as error:
+            if deadline.expired() and deadline.timeout_ms is not None:
+                raise _client_deadline(binding, deadline.timeout_ms) from error
+            raise
+        record_consistency(session, response, header_token[0], binding.package)
         return response
 
     async def _bearer(self) -> str | None:
@@ -555,7 +816,8 @@ class AsyncCallInvoker(_BaseInvoker):
         since that is the one thing that has to be awaited.
         """
         call_options = options or CallOptions()
-        _, _, _, session, consistency = self._plan(binding, call_options, request)
+        prepared, _, _, session, consistency = self._plan(binding, call_options, request)
+        as_header = not _in_field(binding, prepared)
         method = _method_of(binding)
         client = self._client
         assert isinstance(client, ConnectClient)
@@ -569,15 +831,15 @@ class AsyncCallInvoker(_BaseInvoker):
             """
             bearer = await self._bearer()
             return client.execute_server_stream(
-                request=request,
+                request=prepared,
                 method=method,
-                headers=call_headers(call_options, bearer, consistency),
+                headers=call_headers(call_options, bearer, consistency, as_header),
                 timeout_ms=call_options.timeout_ms,
             )
 
         async def open() -> AsyncIterator[Message]:
             async for message in _async_mapped(
-                open_stream, binding.rpc, session, self._refresh, call_options
+                open_stream, binding.rpc, session, self._refresh, call_options, binding.package
             ):
                 yield message
 
@@ -590,6 +852,7 @@ async def _async_mapped(
     session: ConsistencyTokenStore | None,
     refresh: Callable[[], Awaitable[None]] | None,
     options: CallOptions,
+    scope: str = "",
 ) -> AsyncIterator[Message]:
     """Wraps an async stream so every throw becomes a `LoamsError`."""
     del options
@@ -600,7 +863,7 @@ async def _async_mapped(
         try:
             async for message in source:
                 yielded = True
-                record_consistency(session, message)
+                record_consistency(session, message, None, scope)
                 yield message
             return
         except BaseException as thrown:  # noqa: BLE001 - re-raised as a LoamsError

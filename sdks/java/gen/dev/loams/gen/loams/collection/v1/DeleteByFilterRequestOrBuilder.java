@@ -147,4 +147,46 @@ public interface DeleteByFilterRequestOrBuilder extends
    * <code>.loams.collection.v1.Consistency consistency = 7 [json_name = "consistency"];</code>
    */
   dev.loams.gen.loams.collection.v1.ConsistencyOrBuilder getConsistencyOrBuilder();
+
+  /**
+   * <pre>
+   * The filter as a typed `loams.collection.v1.Query`, in its proto3 JSON
+   * (`{"term": {"field": "tags", "value": "policy"}}`, `{"matchAll": {}}`):
+   * the shape the SDKs' `Filter` builder writes and `SearchRequest.filter`
+   * takes. A `Struct` and not a `Query` because `query.proto` imports this
+   * file, so this file cannot import it back (SDKP ruling P0a-1). Setting both
+   * this and `filter` is `invalid_argument` with reason `filter_conflict`.
+   * </pre>
+   *
+   * <code>.google.protobuf.Struct where = 8 [json_name = "where"];</code>
+   * @return Whether the where field is set.
+   */
+  boolean hasWhere();
+  /**
+   * <pre>
+   * The filter as a typed `loams.collection.v1.Query`, in its proto3 JSON
+   * (`{"term": {"field": "tags", "value": "policy"}}`, `{"matchAll": {}}`):
+   * the shape the SDKs' `Filter` builder writes and `SearchRequest.filter`
+   * takes. A `Struct` and not a `Query` because `query.proto` imports this
+   * file, so this file cannot import it back (SDKP ruling P0a-1). Setting both
+   * this and `filter` is `invalid_argument` with reason `filter_conflict`.
+   * </pre>
+   *
+   * <code>.google.protobuf.Struct where = 8 [json_name = "where"];</code>
+   * @return The where.
+   */
+  com.google.protobuf.Struct getWhere();
+  /**
+   * <pre>
+   * The filter as a typed `loams.collection.v1.Query`, in its proto3 JSON
+   * (`{"term": {"field": "tags", "value": "policy"}}`, `{"matchAll": {}}`):
+   * the shape the SDKs' `Filter` builder writes and `SearchRequest.filter`
+   * takes. A `Struct` and not a `Query` because `query.proto` imports this
+   * file, so this file cannot import it back (SDKP ruling P0a-1). Setting both
+   * this and `filter` is `invalid_argument` with reason `filter_conflict`.
+   * </pre>
+   *
+   * <code>.google.protobuf.Struct where = 8 [json_name = "where"];</code>
+   */
+  com.google.protobuf.StructOrBuilder getWhereOrBuilder();
 }

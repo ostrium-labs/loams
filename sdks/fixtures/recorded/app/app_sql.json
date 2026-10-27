@@ -1,0 +1,210 @@
+{
+  "name": "app_sql",
+  "kind": "app",
+  "about": "The notes app, part four: SQL over the `notes` collection. A grouped count with a `$1` parameter, its rows as records; a capped read that answers `truncated`; the same statement as Arrow IPC; and the two refusals (`sql_param_count`, a statement that is not a query).",
+  "transport": "connect",
+  "required": false,
+  "pinnedBy": [
+    "R8"
+  ],
+  "part": "C",
+  "reason": null,
+  "source": {
+    "server": "loams dev",
+    "commit": "unknown",
+    "recordedAt": "2026-10-19T19:30:08.001Z"
+  },
+  "volatile": [
+    "token",
+    "readToken",
+    "consistencyToken",
+    "collectionId",
+    "namespaceId",
+    "createdAtMs",
+    "updatedAtMs",
+    "instanceId",
+    "performance",
+    "manifestVersion",
+    "version",
+    "seqNo",
+    "positions",
+    "pin"
+  ],
+  "steps": [
+    {
+      "about": "Count the notes per tag past `n > $1`, ordered: `rows` in `columns` order.",
+      "call": "sql.query",
+      "request": {
+        "method": "POST",
+        "path": "/loams.sql.v1.SqlService/Query",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"sql\":\"SELECT tags, count(*) AS c FROM notes WHERE n > $1 GROUP BY tags ORDER BY tags\",\"params\":[1]}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "columns": [
+            {
+              "name": "tags",
+              "type": "Utf8"
+            },
+            {
+              "name": "c",
+              "type": "Int64"
+            }
+          ],
+          "rows": [
+            [
+              "policy",
+              2
+            ],
+            [
+              "shipping",
+              1
+            ]
+          ]
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "about": "At most two rows of four: `truncated`.",
+      "call": "sql.query",
+      "request": {
+        "method": "POST",
+        "path": "/loams.sql.v1.SqlService/Query",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"sql\":\"SELECT title, n FROM notes ORDER BY n\",\"maxRows\":2}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "columns": [
+            {
+              "name": "title",
+              "type": "Utf8"
+            },
+            {
+              "name": "n",
+              "type": "Int64"
+            }
+          ],
+          "rows": [
+            [
+              "Refund policy",
+              1
+            ],
+            [
+              "Shipping times",
+              2
+            ]
+          ],
+          "truncated": true
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "about": "The first statement as one Arrow IPC stream (`arrowIpc`, base64 in JSON).",
+      "call": "sql.query_arrow",
+      "request": {
+        "method": "POST",
+        "path": "/loams.sql.v1.SqlService/QueryArrow",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"sql\":\"SELECT tags, count(*) AS c FROM notes WHERE n > $1 GROUP BY tags ORDER BY tags\",\"params\":[1]}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "arrowIpc": "/////7gAAAAQAAAAAAAKAAwACgAJAAQACgAAABAAAAAAAQQACAAIAAAABAAIAAAABAAAAAIAAABcAAAAFAAAABAAFAAQAAAADwAEAAAACAAQAAAAGAAAACAAAAAAAAACHAAAAAgADAAEAAsACAAAAEAAAAAAAAABAAAAAAEAAABjAAAAEAAUABAADgAPAAQAAAAIABAAAAAYAAAADAAAAAAAAQUQAAAAAAAAAAQABAAEAAAABAAAAHRhZ3MAAAAA//////gAAAAQAAAADAAaABgAFwAEAAgADAAAACAAAABAAQAAAAAAAAAAAAAAAAADBAAKABgADAAIAAQACgAAADwAAAAQAAAAAgAAAAAAAAAAAAAAAgAAAAIAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAUAAAAAAAAAAAAAAAEAAAAAAAAAQAAAAAAAAAAMAAAAAAAAAIAAAAAAAAAADgAAAAAAAADAAAAAAAAAAAEAAAAAAAAAAAEAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABgAAAA4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcG9saWN5c2hpcHBpbmcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/////wAAAAA="
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "about": "A `$1` with no value: `invalid_argument`, reason `sql_param_count`.",
+      "call": "sql.query",
+      "request": {
+        "method": "POST",
+        "path": "/loams.sql.v1.SqlService/Query",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"sql\":\"SELECT title FROM notes WHERE n > $1\"}"
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "code": "invalid_argument",
+          "message": "the statement has 1 parameter(s) ($1…$1) and 0 value(s) were given",
+          "details": [
+            {
+              "type": "loams.errors.v1.ErrorInfo",
+              "value": "Cg9zcWxfcGFyYW1fY291bnQSDQoIZXhwZWN0ZWQSATESCgoFZ2l2ZW4SATASDwoFZmllbGQSBnBhcmFtcw"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 400,
+        "reason": "sql_param_count"
+      }
+    },
+    {
+      "about": "A statement that is not a query: `invalid_argument`.",
+      "call": "sql.query",
+      "request": {
+        "method": "POST",
+        "path": "/loams.sql.v1.SqlService/Query",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"sql\":\"DELETE FROM notes\"}"
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "code": "invalid_argument",
+          "message": "invalid argument: only read-only queries are allowed: Error during planning: DML not supported: Delete",
+          "details": [
+            {
+              "type": "loams.errors.v1.ErrorInfo",
+              "value": "ChBpbnZhbGlkX2FyZ3VtZW50"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 400,
+        "reason": "invalid_argument"
+      }
+    }
+  ]
+}

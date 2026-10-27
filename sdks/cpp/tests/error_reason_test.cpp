@@ -110,6 +110,7 @@ const std::vector<RegistryRow>& Registry() {
       {Reason::kIdempotencyKeyReused, Code::kFailedPrecondition, ""},
       {Reason::kWorkspaceNotFound, Code::kNotFound, "workspace"},
       {Reason::kWorkspaceFenced, Code::kAborted, "workspace"},
+      {Reason::kBatchPartiallyApplied, Code::kAborted, "workspace"},
       {Reason::kWorkspaceReadOnly, Code::kFailedPrecondition, "workspace"},
       {Reason::kWorkspaceNameTaken, Code::kAlreadyExists, "workspace"},
       {Reason::kObjectMissing, Code::kFailedPrecondition, "oid"},
@@ -143,13 +144,20 @@ const std::vector<RegistryRow>& Registry() {
       {Reason::kLiveWorkerCrashed, Code::kInternal, ""},
       {Reason::kLiveDeployConflict, Code::kFailedPrecondition, ""},
       {Reason::kLiveSchemaViolation, Code::kInvalidArgument, ""},
+      {Reason::kFilterConflict, Code::kInvalidArgument, ""},
+      {Reason::kSearchAfterNeedsTiebreak, Code::kInvalidArgument, ""},
+      {Reason::kInvalidConsistencyToken, Code::kInvalidArgument, ""},
+      {Reason::kNamespaceRequired, Code::kInvalidArgument, ""},
+      {Reason::kSqlParamCount, Code::kInvalidArgument, ""},
       {Reason::kLiveIndexNotReady, Code::kFailedPrecondition, ""},
       {Reason::kLiveAppDisabled, Code::kFailedPrecondition, ""},
       {Reason::kLiveAppExists, Code::kFailedPrecondition, ""},
       {Reason::kLiveFunctionError, Code::kUnknown, ""},
       {Reason::kLiveFunctionTimeout, Code::kDeadlineExceeded, ""},
+      {Reason::kClientDeadlineExceeded, Code::kDeadlineExceeded, ""},
       {Reason::kLiveFunctionOutOfMemory, Code::kResourceExhausted, ""},
       {Reason::kLiveLimitExceeded, Code::kResourceExhausted, ""},
+      {Reason::kResultTooLarge, Code::kResourceExhausted, ""},
       {Reason::kLiveAppMismatch, Code::kPermissionDenied, ""},
       {Reason::kLiveOriginNotAllowed, Code::kPermissionDenied, ""},
       {Reason::kSessionRotate, Code::kUnavailable, ""},
@@ -353,7 +361,7 @@ int main() {
   // matched, which is how a caller stops branching on it.
   const std::vector<Reason>& all = AllReasons();
   LOAMS_REQUIRE(!all.empty(), "the reason registry is empty");
-  LOAMS_CHECK_EQ(all.size(), std::size_t{124}, "the registry should carry all one hundred and twenty-four reasons");
+  LOAMS_CHECK_EQ(all.size(), std::size_t{132}, "the registry should carry all one hundred and thirty-two reasons");
   LOAMS_CHECK_EQ(Registry().size(), all.size(), "this test's registry table and the enum disagree in size");
   for (const Reason reason : all) {
     LOAMS_CHECK(!ToString(reason).empty(), "a reason with no registry spelling");

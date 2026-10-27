@@ -347,7 +347,8 @@ public class PaginationTest {
                 }
                 // SDKP: the app modules' list calls, driven against a stub in AppTest until the
                 // app corpus (P0d) records them.
-                if (call.protoPackage().equals("loams.collection.v1") || call.protoPackage().equals("loams.graph.v1")) {
+                if (call.protoPackage().equals("loams.collection.v1") || call.protoPackage().equals("loams.graph.v1")
+                        || call.protoPackage().equals("loams.stream.v1")) {
                     continue;
                 }
                 assertNull(

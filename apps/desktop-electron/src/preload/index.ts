@@ -7,6 +7,7 @@ import {
 	type StackState,
 } from "../shared/contracts";
 import { themeFromArgv, versionFromArgv } from "../shared/version";
+import { installNotificationShim } from "./notification-shim";
 import { type ChromeDocument, mountWindowChrome } from "./window-chrome";
 
 const invoke = <T>(ch: string, ...args: unknown[]): Promise<T> =>
@@ -69,6 +70,7 @@ const api: LoamsDesktopApi = {
 		setBadge: (count) => invoke(CH.shellBadge, count),
 		onCommand: (cb) => subscribe(CH.shellCommand, cb),
 		onFullscreen: (cb) => subscribe(CH.shellFullscreen, cb),
+		ready: () => invoke(CH.shellReady),
 	},
 	// SD1 Task 28: Studio's editor hand-off and notification choices; main builds every
 	// editor URL or argv itself.
@@ -79,6 +81,13 @@ const api: LoamsDesktopApi = {
 		chooseEditorCommand: () => invoke(CH.studioEditorChooseCommand),
 		setNotifications: (prefs) => invoke(CH.studioNotifySet, prefs),
 	},
+	pgControl: {
+		settings: () => invoke(CH.pgControlSettings),
+		save: (input) => invoke(CH.pgControlSave, input),
+		test: (input) => invoke(CH.pgControlTest, input),
+		pickKeyFile: () => invoke(CH.pgControlPickKeyFile),
+		onChanged: (cb) => subscribe(CH.pgControlEvent, cb),
+	},
 	update: {
 		state: () => invoke(CH.updateState),
 		check: () => invoke(CH.updateCheck),
@@ -86,6 +95,8 @@ const api: LoamsDesktopApi = {
 		setAutoCheck: (enabled) => invoke(CH.updateAutoSet, enabled),
 		download: () => invoke(CH.updateDownload),
 		installAndRestart: () => invoke(CH.updateInstall),
+		onState: (cb) => subscribe(CH.updateState, cb),
+		skip: (version) => invoke(CH.updateSkip, version),
 	},
 	stacks: {
 		state: (id) => invoke(CH.stacksState, id),
@@ -169,3 +180,5 @@ const page = globalThis as unknown as {
 const unmountChrome = mountWindowChrome(page.document);
 page.addEventListener("unload", unmountChrome, { once: true });
 contextBridge.exposeInMainWorld("loamsDesktop", api);
+// Page code's `new Notification(...)` posts through the bridge above (CF1 Task 16, D1085).
+installNotificationShim();

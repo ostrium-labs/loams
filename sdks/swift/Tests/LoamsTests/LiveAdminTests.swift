@@ -135,9 +135,11 @@ extension LiveAdminTests {
             ["CreateApp", "ListApps", "GetApp", "UpdateApp", "DeleteApp"].map { "\(self.admin)/\($0)" }
         )
         XCTAssertEqual(loamsLiveAppHeader, "loams-live-app")
-        XCTAssertEqual(transport.calls[0].headers, [:], "no app option, no header: the server's own app")
-        XCTAssertEqual(transport.calls[2].headers, ["loams-live-app": "blog"])
-        XCTAssertEqual(transport.calls[4].headers, ["loams-live-app": "blog"])
+        // `connect-timeout-ms` (R12) rides on every unary call; the app header is what is pinned here.
+        let appHeaders = transport.calls.map { $0.headers.filter { $0.key != "connect-timeout-ms" } }
+        XCTAssertEqual(appHeaders[0], [:], "no app option, no header: the server's own app")
+        XCTAssertEqual(appHeaders[2], ["loams-live-app": "blog"])
+        XCTAssertEqual(appHeaders[4], ["loams-live-app": "blog"])
     }
 
     /// `live_app_exists` and `live_app_mismatch` are in the reason registry, and

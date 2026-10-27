@@ -20,12 +20,12 @@ Requires **Go 1.24 or newer** — the SDK uses range-over-func iterators
 ## Installing
 
 ```console
-go get loams.dev/go@v0.1.0
+go get loams.dev/go@v0.1.2
 ```
 
 Go 1.25 or newer: the module lives in `sdks/go` of the main repository, and the
 `go-import` tag that says so carries a subdirectory, which only Go 1.25 reads
-(see [Publishing](#publishing)). `v0.1.0` tracks Loams 0.1.0; in 0.x the API
+(see [Publishing](#publishing)). `v0.1.2` tracks Loams 0.1.2; in 0.x the API
 may change between minor versions.
 
 From a checkout of this repository, with a `replace`:
@@ -149,15 +149,100 @@ a stub. The **same** `Seq`/`Err` split as `*Stream`, for the same reason: a
 range-over-func cannot return an error, and a caller who skips `Err` sees a short
 list that looks like the end of the list.
 
+## Build an app
+
+The app-building layer (SDKP) adds builders, a collection handle and the
+runtime an app needs: a default namespace, deadlines, read-your-writes
+consistency tokens, chunked bulk writes and stream subscriptions.
+
+```go
+client, err := loams.FromEnv(loams.Options{SessionConsistency: true}) // LOAMS_ENDPOINT, LOAMS_API_KEY, LOAMS_NAMESPACE
+if err != nil {
+    return err
+}
+
+schema, _ := loams.NewSchema().
+    Text("title").Text("body").Keyword("tags").I64("n").
+    Vector("embedding", 4).
+    Struct() // CreateCollectionRequest.schema
+
+notes := client.Collection("notes")
+_, err = notes.Upsert(ctx, []loams.DocumentInput{{
+    ID:      loams.UintID(1),
+    Source:  loams.JSONObject{"title": "Refunds", "body": "refund policy", "tags": "policy", "n": 1},
+    Vectors: map[string][]float32{"embedding": {1, 0, 0, 0}},
+}})
+
+hits, err := notes.Search(ctx, notes.Query().
+    Text("refund", loams.TextOptions{Fields: []string{"body"}}).
+    Vector("embedding", []float32{1, 0, 0, 0}, loams.VectorOptions{K: 10}).
+    Fuse(loams.RRF(60)).
+    Filter(loams.Filter.And(loams.Filter.Eq("tags", "policy"), loams.Filter.Range("n", loams.Bounds{Gte: 1}))).
+    Highlight("body").
+    Select(loams.SelectOptions{Include: []string{"title"}}).
+    Limit(5))
+```
+
+- **Default namespace (R11).** `Options.Namespace` fills the `namespace` of
+  every app request (`loams.collection.v1`, `graph.v1`, `sql.v1`,
+  `stream.v1`) that leaves it empty; an explicit one wins, and neither is
+  `*InvalidArgumentError` before any network call.
+- **Deadlines (R12).** Unary calls default to 30 s (`Options.Timeout`,
+  `NoTimeout`, or `WithTimeout` per call), retries included. Running out is a
+  `*DeadlineExceededError` with reason `client_deadline_exceeded`, never
+  retried. Streams have no default deadline.
+- **Consistency tokens (R4).** `ParseConsistencyToken`, `Merge`, `String`,
+  `Equal`, exact over `uint64`. With `SessionConsistency` every token a
+  response carries merges into `client.Session()`, and every read with a
+  `consistency` field is sent `at_least` the session
+  (`WithoutSessionConsistency()` opts a call out).
+- **Bulk writes (R13).** `WriteBatch` sends one chunk at a time (10 000
+  operations or 4 MiB), each with its own idempotency key, returns the merged
+  token, and stops at the first failed chunk with a `*BatchError`
+  (`ChunksApplied`, `RowsApplied`, `Token`).
+- **Subscriptions (R14).** `loams.Subscribe(ctx, fetch, offsetOf, from)` is a
+  `*Subscription` with `Next`, `Record`, `Err`, `Offset` and `Close`.
+
+**The app modules** are `client.Namespaces()`, `Collections()`, `Documents()`,
+`Search()`, `Vector()` and `Graph()`, one method per facade call, with the
+conveniences on `client.DocumentCalls()`, `client.SearchCalls()` and
+`client.Collection(name)`. `Sql()` is `loams.sql`: `Query` answers `Columns`
+and `Rows`, `Records(ctx, statement, []any{…})` answers one map per row, and
+`loams.SqlRecords(answer)` reads an answer in hand; `QueryArrow` answers Arrow
+IPC bytes (`ArrowIpc`), which apache/arrow-go's `ipc.NewReader` reads.
+`Streams()` is `loams.streams`: `Create`, `Get`, `List` (and `ListAll`),
+`Produce` (set `ProducerId` and `ProducerSeq` so a retry cannot append twice),
+`Fetch`, `ProduceEvents` and `FetchEvents` (CloudEvents as a JSON batch), and
+`Subscribe(ctx, request)` (R14), whose `Offset` is where to resume.
+`examples/notes` is the
+whole app scenario as a program, built by `go vet ./...`. The session's token
+is used only for collection and SQL reads: a graph's token names one graph
+(SDKP-17). The binding table is checked against
+`sdks/fixtures/facade-index.json` by `go_facade_matches_index`. Durable
+workflows use the Resonate SDK pointed at `LOAMS_ENDPOINT/durable/` (SDKP-1).
+
+## Agents: a machine key
+
+An agent registered at the identity provider (a Zitadel machine user, design 76 §10) signs in
+with its private-key JWT key. `MachineKeyFromEnv` reads `LOAMS_AGENT_KEY_FILE`,
+`LOAMS_AGENT_ISSUER` and `LOAMS_AGENT_PROJECT`. It trades a 5-minute RFC 7523 assertion for an
+access token whose audience is the Loams project, caches the token, and trades again a minute
+before it expires. It uses only the standard library:
+
+```go
+source, err := loams.MachineKeyFromEnv(nil) // nil: http.DefaultClient
+```
+
+A sandboxed agent holds no key: agentd vends it a 15-minute token file instead.
+
 ## Not here, and why
 
-Three things design §44 §7.5 and §7.6 ask for are deliberately absent because
+Two things design §44 §7.5 and §7.6 ask for are deliberately absent because
 the protos to hang them on do not exist yet. Writing them now would be a
 hand-written API with no proto behind it, which is what §7.3 says not to do.
 
 | Missing | Waits on |
 |---|---|
-| the typed hybrid-query builder | `loams.collection.v1` / `loams.query.v1` — API1 Tasks 2 and 4. Q604 (one builder or thirteen) is unanswered. |
 | `client.Bulk()` over Arrow Flight (`arrow-go`) | the write RPCs — API1 Tasks 3 and 4. There is no `SqlService/QueryArrow` in this repository and no Flight SQL proto, so there is nothing to bind a Flight client to. |
 | a per-call `ListAll` alias | a generated signature, which arrives with `ListCollections`. `loams.PaginateCall` is the iterator underneath it. |
 

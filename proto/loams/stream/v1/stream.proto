@@ -1,0 +1,263 @@
+// Streams on the main port (design §44 §5.1; API2 Task 2; SDKP P0c,
+// docs/plans/2026-10-19-sdk-parity.md).
+//
+// A stream is a namespace's partitioned, ordered log. `StreamService` creates,
+// describes and lists streams, appends records (`Produce`), reads them back
+// from an offset (`Fetch`), and does the same for CloudEvents. It is served
+// by connect-rust on `--listen`, over Connect, gRPC and gRPC-Web, beside the
+// native REST routes it mirrors (`/v1/namespaces/{ns}/streams/...`).
+//
+// ## Wire compatibility with the tonic-era service
+//
+// `Produce` and `ProduceCloudEvents` keep every field number and wire type of
+// `crates/loams-stream-grpc/proto/loams/stream/v1/stream.proto`, which the
+// tonic listener (`--stream-grpc-listen`) and the Dapr edge still compile, so
+// a message either side encodes decodes on the other. Two things differ only
+// in name or type spelling:
+//
+// - `ProduceCloudEventsRequest.batch` is `bytes` here and an
+//   `io.cloudevents.v1.CloudEventBatch` there. Both are length-delimited
+//   field 4, so the bytes are the batch's protobuf encoding either way; this
+//   package does not import the CloudEvents proto, which keeps it out of every
+//   SDK's generation input.
+// - Fields 5 and later of `ProduceRequest` and `ProduceResponse` are new.
+//
+// ## Produce, retries and duplicates
+//
+// `Produce` with no `producer_id` is a plain append: a retry appends again,
+// so an SDK never retries it on its own. With `producer_id` and
+// `producer_seq`, the pair is an idempotency key in the stream's ledger (the
+// one CloudEvents ingest uses, with the same window): a repeat answers the
+// first append's offsets with `duplicate` set and appends nothing, so an SDK
+// may retry it.
+//
+// ## Fetch and the long poll
+//
+// `Fetch` reads from `offset` up to `max_bytes` (and at most `max_records`).
+// With `max_wait_ms` (at most 30 000) an empty partition holds the call until
+// a record past `offset` is durable or the wait ends, and then answers what
+// it has, possibly nothing. `next_offset` is where the next fetch starts.
+syntax = "proto3";
+
+package loams.stream.v1;
+
+import "loams/options/v1/options.proto";
+
+service StreamService {
+  option (loams.options.v1.module) = {
+    name: "streams"
+    summary: "Streams: create, list and describe a namespace's logs; produce and fetch records and CloudEvents."
+  };
+
+  // Creates a stream. Idempotent by name: the same name and partition count
+  // again answers the existing stream with `created` unset; another
+  // partition count under a taken name is `already_exists`.
+  rpc CreateStream(CreateStreamRequest) returns (CreateStreamResponse) {
+    // Idempotent by name, so the SDK may retry it.
+    option (loams.options.v1.facade) = {name: "create" retry_safe: true};
+  }
+  // One stream, with each partition's offsets.
+  rpc DescribeStream(DescribeStreamRequest) returns (DescribeStreamResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+    option (loams.options.v1.facade) = {name: "get"};
+  }
+  // The namespace's streams, sorted by name, paged (AIP-158).
+  rpc ListStreams(ListStreamsRequest) returns (ListStreamsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+    option (loams.options.v1.facade) = {name: "list" pagination: "streams:next_page_token"};
+  }
+  // Appends records to one partition, in order.
+  rpc Produce(ProduceRequest) returns (ProduceResponse) {
+    // Not retried by the SDK: without `producer_id` a retry could append the
+    // records twice (SDKP §2.5).
+    option (loams.options.v1.facade) = {name: "produce"};
+  }
+  // Reads one partition's records from an offset.
+  rpc Fetch(FetchRequest) returns (FetchResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+    option (loams.options.v1.facade) = {name: "fetch"};
+  }
+  // Appends CloudEvents, once per `source` + `id` within the dedup window.
+  rpc ProduceCloudEvents(ProduceCloudEventsRequest) returns (ProduceCloudEventsResponse) {
+    option (loams.options.v1.facade) = {name: "produce_events"};
+  }
+  // Reads one partition's records as CloudEvents.
+  rpc FetchCloudEvents(FetchCloudEventsRequest) returns (FetchCloudEventsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+    option (loams.options.v1.facade) = {name: "fetch_events"};
+  }
+}
+
+// How long a stream keeps its records; an unset limit is no limit.
+message Retention {
+  optional uint64 max_age_ms = 1;
+  optional uint64 max_bytes = 2;
+}
+
+// One partition's offsets.
+message PartitionOffsets {
+  uint32 partition = 1;
+  // The first offset still in the log.
+  uint64 log_start_offset = 2;
+  // The offset the next append gets.
+  uint64 high_watermark = 3;
+}
+
+message StreamInfo {
+  string namespace = 1;
+  string name = 2;
+  uint64 id = 3;
+  uint32 partitions = 4;
+  Retention retention = 5;
+  // Each partition's offsets; set by `DescribeStream` only.
+  repeated PartitionOffsets offsets = 6;
+}
+
+message CreateStreamRequest {
+  string namespace = 1;
+  string name = 2;
+  // At least 1.
+  uint32 partitions = 3;
+  Retention retention = 4;
+}
+
+message CreateStreamResponse {
+  StreamInfo stream = 1;
+  // False when the stream already existed with this partition count.
+  bool created = 2;
+}
+
+message DescribeStreamRequest {
+  string namespace = 1;
+  string stream = 2;
+}
+
+message DescribeStreamResponse {
+  StreamInfo stream = 1;
+}
+
+message ListStreamsRequest {
+  string namespace = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListStreamsResponse {
+  repeated StreamInfo streams = 1;
+  string next_page_token = 2;
+}
+
+message ProduceRequest {
+  string namespace = 1;
+  string stream = 2;
+  uint32 partition = 3;
+  repeated Record records = 4;
+  // With `producer_seq`, makes the append idempotent: the pair is the
+  // append's key in the stream's ledger.
+  optional string producer_id = 5;
+  optional uint64 producer_seq = 6;
+}
+
+message Record {
+  optional bytes key = 1;
+  optional bytes value = 2;
+  repeated Header headers = 3;
+  // Milliseconds since the epoch; 0 or negative takes the server's clock.
+  int64 timestamp_ms = 4;
+}
+
+message Header {
+  string key = 1;
+  optional bytes value = 2;
+}
+
+message ProduceResponse {
+  uint64 stream_id = 1;
+  uint64 base_offset = 2;
+  uint64 last_offset = 3;
+  // The append's consistency token: a read `at_least` it sees the records.
+  string consistency_token = 4;
+  // True when `producer_id` + `producer_seq` had already appended: the
+  // offsets are that append's, and nothing was appended now.
+  bool duplicate = 5;
+}
+
+message FetchRequest {
+  string namespace = 1;
+  string stream = 2;
+  uint32 partition = 3;
+  uint64 offset = 4;
+  // At most this many bytes (default 1 MiB, at most 16 MiB).
+  optional uint32 max_bytes = 5;
+  // At most this many records.
+  optional uint32 max_records = 6;
+  // Hold an empty fetch until a record arrives, at most this long (at most
+  // 30 000).
+  optional uint32 max_wait_ms = 7;
+}
+
+message FetchedRecord {
+  uint64 offset = 1;
+  optional bytes key = 2;
+  optional bytes value = 3;
+  repeated Header headers = 4;
+  int64 timestamp_ms = 5;
+}
+
+message FetchResponse {
+  repeated FetchedRecord records = 1;
+  // Where the next fetch starts.
+  uint64 next_offset = 2;
+  uint64 high_watermark = 3;
+  uint64 log_start_offset = 4;
+}
+
+message ProduceCloudEventsRequest {
+  string namespace = 1;
+  string stream = 2;
+  // Every event to this partition; unset, each goes to its key's partition.
+  optional uint32 partition = 3;
+  oneof events {
+    // An `io.cloudevents.v1.CloudEventBatch`, protobuf-encoded.
+    bytes batch = 4;
+    // A JSON batch (`application/cloudevents-batch+json`).
+    bytes json_batch = 5;
+  }
+}
+
+enum EventStatus {
+  EVENT_STATUS_UNSPECIFIED = 0;
+  EVENT_STATUS_APPENDED = 1;
+  EVENT_STATUS_DUPLICATE = 2;
+  EVENT_STATUS_IN_FLIGHT = 3;
+}
+
+message EventResult {
+  EventStatus status = 1;
+  uint32 partition = 2;
+  uint64 offset = 3;
+  uint64 retry_after_ms = 4;
+}
+
+message ProduceCloudEventsResponse {
+  repeated EventResult results = 1;
+  string consistency_token = 2;
+}
+
+message FetchCloudEventsRequest {
+  string namespace = 1;
+  string stream = 2;
+  uint32 partition = 3;
+  uint64 offset = 4;
+  optional uint32 max_bytes = 5;
+  optional uint32 max_wait_ms = 6;
+}
+
+message FetchCloudEventsResponse {
+  // The events as a JSON batch (`application/cloudevents-batch+json`).
+  bytes json_batch = 1;
+  // How many events the batch holds.
+  uint32 count = 2;
+  uint64 next_offset = 3;
+  uint64 high_watermark = 4;
+}

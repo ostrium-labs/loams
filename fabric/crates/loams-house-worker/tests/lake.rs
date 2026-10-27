@@ -213,13 +213,14 @@ async fn create_each_tier1_engine() {
             .map(String::as_str),
         Some("MergeTree")
     );
-    // Other engines are not lake engines; denied ones stay denied.
-    refused(
+    // AggregatingMergeTree and Null are lake engines (HE1 R9.14); other engines
+    // are not; denied ones stay denied.
+    ok(
         addr,
         "CREATE TABLE ag (a UInt8) ENGINE = AggregatingMergeTree ORDER BY a",
-        "48",
     )
     .await;
+    ok(addr, "CREATE TABLE nl (a UInt8) ENGINE = Null").await;
     refused(addr, "CREATE TABLE lg (a UInt8) ENGINE = Log", "48").await;
     refused(
         addr,
@@ -253,15 +254,22 @@ async fn create_each_tier1_engine() {
     )
     .await;
     // Out of §49 §6.3's surface.
-    refused(
+    // HE1 R9.12: a delete TTL, skip indexes, projections, constraints and SAMPLE
+    // BY are accepted (lake_tables_take_langfuse_ddl has the rest); a TTL that
+    // moves or rolls up rows is 48.
+    ok(
         addr,
-        "CREATE TABLE bad (a UInt8) ENGINE = MergeTree ORDER BY a TTL a + 1",
-        "48",
+        "CREATE TABLE ttl1 (a UInt8, d Date) ENGINE = MergeTree ORDER BY a TTL d + INTERVAL 1 DAY",
+    )
+    .await;
+    ok(
+        addr,
+        "CREATE TABLE idx1 (a UInt8, INDEX i a TYPE minmax) ENGINE = MergeTree ORDER BY a",
     )
     .await;
     refused(
         addr,
-        "CREATE TABLE bad (a UInt8, INDEX i a TYPE minmax) ENGINE = MergeTree ORDER BY a",
+        "CREATE TABLE bad (a UInt8, d Date) ENGINE = MergeTree ORDER BY a TTL d TO DISK 'x'",
         "48",
     )
     .await;
@@ -398,16 +406,29 @@ async fn type_mapping_roundtrip() {
             .any(|(n, t)| n == "ut" && t == "Tuple(UInt8, String)"),
         "{described}"
     );
-    // Nanoseconds need Iceberg v3.
+    // Nanoseconds are a long of nanoseconds in a v2 table until the House
+    // writes v3 (D1572; HE1 R9.61); inside a container, v3's type.
     ok(
         addr,
         "CREATE TABLE ns9 (t DateTime64(9, 'UTC')) ENGINE = MergeTree ORDER BY t",
     )
     .await;
     let ns9 = table(&house, "default", "ns9").await;
-    assert_eq!(field_type(&ns9, "t").0, p(PrimitiveType::TimestamptzNs));
+    assert_eq!(field_type(&ns9, "t").0, p(PrimitiveType::Long));
     assert_eq!(
         ns9.metadata.format_version(),
+        loams_house_lake::spec::FormatVersion::V2
+    );
+    ok(
+        addr,
+        "CREATE TABLE ns9a (t Array(DateTime64(9, 'UTC'))) ENGINE = MergeTree ORDER BY tuple()",
+    )
+    .await;
+    assert_eq!(
+        table(&house, "default", "ns9a")
+            .await
+            .metadata
+            .format_version(),
         loams_house_lake::spec::FormatVersion::V3
     );
 }
@@ -461,24 +482,51 @@ async fn partition_by_supported_transforms() {
 async fn partition_by_other_is_36() {
     let house = lakehouse("partitions36", DAY).await;
     let addr = house.addr();
-    for by in [
+    // HE1 R9.12: an element no Iceberg transform matches leaves the files
+    // unpartitioned by it; the table keeps the expression as written.
+    for (i, by) in [
         "n % 2",
         "toMonday(d)",
         "intDiv(n, 10)",
-        "toStartOfHour(d)",
-        "toYYYYMM(region)",
-        "arr",
-    ] {
-        let text = refused(
+        "(toYYYYMM(d), n % 4)",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        ok(
             addr,
             &format!(
-                "CREATE TABLE t (ts DateTime, d Date, region String, n UInt32, arr Array(UInt8)) \
-                 ENGINE = MergeTree PARTITION BY {by} ORDER BY n"
+                "CREATE TABLE p{i} (ts DateTime, d Date, n UInt32) ENGINE = MergeTree \
+                 PARTITION BY {by} ORDER BY n"
             ),
-            "36",
         )
         .await;
-        assert!(text.contains("toYYYYMM"), "names the transforms: {text}");
+        let t = table(&house, "default", &format!("p{i}")).await;
+        let fields = t.metadata.default_partition_spec().fields().len();
+        assert_eq!(fields, usize::from(by.starts_with('(')), "{by}");
+        let shown = ok(addr, &format!("SHOW CREATE TABLE p{i} FORMAT TSVRaw")).await;
+        assert!(shown.contains(&format!("PARTITION BY {by}")), "{shown}");
+    }
+    // R9.16: a transform of a type Iceberg cannot partition by leaves the files
+    // unpartitioned by it too (SigNoz's `toDate(<Int64>)`).
+    for (i, by) in ["toStartOfHour(d)", "toYYYYMM(region)", "arr", "toDate(n)"]
+        .into_iter()
+        .enumerate()
+    {
+        ok(
+            addr,
+            &format!(
+                "CREATE TABLE w{i} (ts DateTime, d Date, region String, n UInt32, arr Array(UInt8)) \
+                 ENGINE = MergeTree PARTITION BY {by} ORDER BY n"
+            ),
+        )
+        .await;
+        let t = table(&house, "default", &format!("w{i}")).await;
+        assert_eq!(
+            t.metadata.default_partition_spec().fields().len(),
+            0,
+            "{by}"
+        );
     }
     refused(
         addr,
@@ -496,10 +544,10 @@ async fn unsupported_type_is_48() {
         "Int128",
         "UInt256",
         "Decimal(50, 2)",
-        "AggregateFunction(sum, UInt64)",
-        "SimpleAggregateFunction(sum, UInt64)",
         "Nested(a UInt8, b String)",
-        "JSON",
+        // `JSON` is stored as its text (HE1 R9.63); inside a container it is not.
+        "Array(JSON)",
+        "Dynamic",
         "IntervalDay",
     ] {
         refused(
@@ -549,7 +597,7 @@ async fn alter_add_column() {
     ok(addr, "ALTER TABLE t ADD COLUMN IF NOT EXISTS c UInt8").await;
     refused(addr, "ALTER TABLE t ADD COLUMN c UInt8", "15").await;
     refused(addr, "ALTER TABLE t ADD COLUMN x UInt8 AFTER nope", "47").await;
-    refused(addr, "ALTER TABLE t DROP COLUMN b", "48").await;
+    refused(addr, "ALTER TABLE t FREEZE", "48").await;
     refused(addr, "ALTER TABLE nope ADD COLUMN x UInt8", "60").await;
     let described = ok(addr, "DESCRIBE t FORMAT TSVRaw").await;
     let names: Vec<&str> = described
@@ -856,9 +904,10 @@ async fn ddl_over_lakekeeper() {
         ))
         .await
         .expect("in Lakekeeper");
+    // A nanosecond time is a long in a v2 table (D1572).
     assert_eq!(
         loaded.metadata.format_version(),
-        loams_house_lake::spec::FormatVersion::V3
+        loams_house_lake::spec::FormatVersion::V2
     );
     assert!(
         loaded

@@ -54,8 +54,12 @@ pub(crate) struct Mutation {
     /// The key relative to the root (for error texts).
     pub(crate) key: Vec<u8>,
     pub(crate) op: Op,
-    /// A version newer than this conflicts: the start timestamp.
+    /// A version newer than this conflicts: the start timestamp, or a
+    /// pessimistic transaction's `for_update` timestamp of the key.
     pub(crate) check_ts: Ts,
+    /// The pessimistic transaction committing it, which may hold the key's
+    /// lock; any other holder makes the commit conflict.
+    pub(crate) owner: Option<super::locks::Owner>,
 }
 
 /// Why the committer refused a commit.
@@ -231,6 +235,14 @@ impl Core {
             if m.check_ts < safe_point {
                 return Ok(Err(Refused::Conflict));
             }
+            // Another transaction's pessimistic lock (D851).
+            if self
+                .locks
+                .holder(&m.prefix)
+                .is_some_and(|holder| Some(holder) != m.owner)
+            {
+                return Ok(Err(Refused::Conflict));
+            }
             let (newest_ts, latest) = head(table, &m.prefix, Ts(u64::MAX))?;
             if newest_ts.is_some_and(|ts| ts > m.check_ts) {
                 return Ok(Err(Refused::Conflict));
@@ -364,7 +376,10 @@ pub(crate) async fn run<T: Send, F>(
 where
     F: for<'t> FnMut(&'t mut Txn) -> BoxFuture<'t, Result<T, TxnError>>,
 {
-    let deadline = Instant::now() + opts.deadline;
+    let started = Instant::now();
+    let deadline = started + opts.deadline;
+    let lock_until = (opts.mode == crate::Mode::Pessimistic)
+        .then(|| super::locks::lock_wait_until(started, opts.deadline));
     let mut last = TxnError::Deadline;
     for attempt in 1..=opts.max_attempts.max(1) {
         if attempt > 1 {
@@ -378,7 +393,7 @@ where
         if Instant::now() >= deadline {
             return Err(TxnError::Deadline);
         }
-        match run_attempt(handle, &opts, attempt, deadline, &mut body).await {
+        match run_attempt(handle, &opts, attempt, deadline, lock_until, &mut body).await {
             Attempt::Committed {
                 value,
                 commit_ts,
@@ -406,6 +421,7 @@ async fn run_attempt<T: Send, F>(
     opts: &TxnOptions,
     attempt: u32,
     deadline: Instant,
+    lock_until: Option<Instant>,
     body: &mut F,
 ) -> Attempt<T>
 where
@@ -421,7 +437,7 @@ where
         None => {}
     }
 
-    let mut wrapped = match handle.begin_attempt(attempt).await {
+    let mut wrapped = match handle.begin_attempt(attempt, lock_until).await {
         Ok(txn) => Txn::Embedded(txn),
         Err(e) => return Attempt::from_error(e),
     };
@@ -539,7 +555,7 @@ enum Resolved {
 }
 
 async fn resolve_token(handle: &Handle, token: &Token) -> Option<Resolved> {
-    let mut txn = handle.begin_attempt(1).await.ok()?;
+    let mut txn = handle.begin_attempt(1, None).await.ok()?;
     let start = txn.start_ts();
     let key = token_key(token);
     match txn.get(&key).await.ok()? {
@@ -582,6 +598,7 @@ pub(crate) fn sweep_tokens_blocking(
             key: k.clone(),
             op: Op::Del,
             check_ts: start,
+            owner: None,
         })
         .collect();
     let n = mutations.len() as u64;

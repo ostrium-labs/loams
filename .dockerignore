@@ -9,3 +9,8 @@
 **/.loams
 apps/desktop-electron
 apps/mobile
+# The console stage (Containerfile.loams) installs from the pnpm workspace,
+# whose lockfile names every member, and the console imports the desktop's
+# shared contracts (@loams/desktop/contracts): keep those two.
+!apps/desktop-electron/package.json
+!apps/desktop-electron/src/shared

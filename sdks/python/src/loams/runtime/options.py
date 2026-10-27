@@ -32,11 +32,12 @@ class ConsistencyTokenStore(Protocol):
     attaches; `record` folds a token a write answered with in.
     """
 
-    def current(self) -> str | None:
-        """The token to attach to the next read, or `None` for none."""
+    def current(self, scope: str = "") -> str | None:
+        """The token to attach to the next read in `scope` (a proto package), or
+        `None` for none."""
         ...
 
-    def record(self, token: str | None) -> None:
+    def record(self, token: str | None, scope: str = "") -> None:
         """Folds a token the server returned into the session's.
 
         Raises `LoamsError` when the token cannot be merged, which the call path

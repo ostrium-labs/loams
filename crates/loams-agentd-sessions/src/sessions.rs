@@ -178,6 +178,9 @@ struct Inner {
     /// Where the injected `loams-agentd mcp` shim dials back in, and who
     /// issues its scoped run tokens; `None` until the daemon serves.
     mcp_endpoint: Mutex<Option<McpEndpoint>>,
+    /// The daemon's marketplace: its installed MCP servers ride every run
+    /// (MK1 Task 4b).
+    marketplace: Mutex<crate::marketplace::MarketplaceSlot>,
     journal: Arc<RunJournal>,
     registry: Arc<HarnessRegistry>,
     /// Set-once (first wins), cleared on runtime retirement: sessions and
@@ -273,6 +276,7 @@ impl SessionsEngine {
             inner: Arc::new(Inner {
                 device_id,
                 mcp_endpoint: Mutex::new(None),
+                marketplace: Mutex::new(Default::default()),
                 journal,
                 registry,
                 doc_host: Mutex::new(None),
@@ -298,6 +302,11 @@ impl SessionsEngine {
     /// port 0, agents get no Loams Desktop tools rather than a dead server.
     pub fn set_mcp_endpoint(&self, port: u16, tokens: Arc<ScopedTokens>) {
         *lock(&self.inner.mcp_endpoint) = (port != 0).then_some(McpEndpoint { port, tokens });
+    }
+
+    /// Where the installed marketplace MCP servers come from (MK1 Task 4b).
+    pub fn set_marketplace(&self, slot: crate::marketplace::MarketplaceSlot) {
+        *lock(&self.inner.marketplace) = slot;
     }
 
     /// Wire the doc host (called once at engine assembly; the two services are mutually
@@ -1054,6 +1063,7 @@ impl SessionsEngine {
                     .or_else(|| {
                         let (_, cwd) = sessions.inner.journal_harness_session(&chat_id)?;
                         Some(RunRequest {
+                            mcp_servers: Vec::new(),
                             mcp: None,
                             prompt: String::new(),
                             harness: None,
@@ -1521,6 +1531,15 @@ impl Inner {
         found
     }
 
+    /// Release the Working hold a dying run kept for its orphaned steers when
+    /// none of them could be re-dispatched: with no run left to drive the
+    /// chat, settle it Idle so the queue drains again.
+    fn settle_orphan_hold(&self, chat_id: &str) {
+        if !lock(&self.runs).contains_key(chat_id) {
+            self.set_status(chat_id, SessionStatus::Idle, false);
+        }
+    }
+
     fn remove_run(&self, chat_id: &str, run_id: &str) {
         let mut runs = lock(&self.runs);
         if runs.get(chat_id).is_some_and(|h| h.run_id == run_id) {
@@ -1955,6 +1974,14 @@ async fn drive_run(
     {
         request.mcp = Some(server);
         _run_token = Some(lease);
+    }
+    // ... and the MCP servers installed from the marketplace, with their
+    // secrets read from the vault now (MK1 Task 4b, D1463).
+    let installed_mcp = lock(&inner.marketplace).clone().mcp_servers();
+    for server in installed_mcp {
+        if !request.mcp_servers.iter().any(|s| s.name == server.name) {
+            request.mcp_servers.push(server);
+        }
     }
     // Kept whole for the startup-crash retry (same user entry; dispatch
     // re-injects the stored resume id). Option so the retry branch (inside
@@ -3051,8 +3078,23 @@ async fn drive_run(
         .map(|h| std::mem::take(&mut *lock(&h.routed_steers)).into())
         .unwrap_or_default();
     inner.remove_run(&chat_id, &run_id);
-    inner.set_status_with_completion(&chat_id, final_status, false, final_completed_turn);
-    if !interrupted && !orphans.is_empty() {
+    let redispatch = !interrupted && !orphans.is_empty();
+    // Accepted steers still own the chat's next turn. Publishing the settled
+    // status before their re-dispatch lets the ordinary queue drain (it reads
+    // "no turn in flight") overtake them: the next held row would start
+    // first, and the orphan would then steer into it, out of order. Stay
+    // Working until the re-dispatch below has started its own turn.
+    inner.set_status_with_completion(
+        &chat_id,
+        if redispatch {
+            SessionStatus::Working
+        } else {
+            final_status
+        },
+        false,
+        final_completed_turn,
+    );
+    if redispatch {
         // The dying run accepted these into its mailbox but never confirmed a
         // Steered boundary (idle-reaper race, a mid-turn error discarding
         // queued boundary steers, a parked child death). Their user entries
@@ -3067,6 +3109,7 @@ async fn drive_run(
             for steer in orphans {
                 let Some(mut request) = engine.last_request(&chat) else {
                     tracing::warn!(chat = %chat, "orphaned steer lost: no run config to re-dispatch");
+                    engine.inner.settle_orphan_hold(&chat);
                     break;
                 };
                 request.prompt = steer.prompt.clone();
@@ -3075,6 +3118,7 @@ async fn drive_run(
                 tracing::info!(chat = %chat, "re-dispatching steer orphaned by a dying run");
                 let Some(host) = engine.inner.doc_host() else {
                     tracing::warn!(chat = %chat, "orphaned steer lost: doc host unavailable");
+                    engine.inner.settle_orphan_hold(&chat);
                     break;
                 };
                 if let Err(err) = host
@@ -3168,6 +3212,7 @@ mod tests {
 
     fn request() -> RunRequest {
         RunRequest {
+            mcp_servers: Vec::new(),
             mcp: None,
             prompt: "first".into(),
             harness: None,

@@ -146,6 +146,23 @@ TransportError::TransportError(std::string rpc, std::string message)
     : LoamsError(Code::kUnknown, std::move(rpc), Reason::kUnknown, std::string(), {},
                  std::string(), std::move(message), std::string()) {}
 
+bool HasReason(const LoamsError& error, std::string_view name) {
+  return error.UnknownReason() == name ||
+         (error.ReasonValue() != Reason::kUnknown && ToString(error.ReasonValue()) == name);
+}
+
+void ThrowClientSide(Code code, const std::string& rpc, const std::string& reason, const std::string& message,
+                     std::map<std::string, std::string> metadata) {
+  const std::optional<Reason> known = ReasonFromString(reason);
+  ThrowMapped(code, rpc, known.value_or(Reason::kUnknown), known ? std::string() : reason, std::move(metadata), "",
+              message, "");
+}
+
+void ThrowClientDeadline(const std::string& rpc) {
+  ThrowClientSide(Code::kDeadlineExceeded, rpc, kClientDeadlineExceeded,
+                  "loams: " + (rpc.empty() ? std::string("the call") : rpc) + " ran out of time on the client");
+}
+
 void ThrowMapped(Code code, std::string rpc, Reason reason, std::string unknown_reason,
                  std::map<std::string, std::string> metadata, std::string hint, std::string message,
                  std::string request_id) {

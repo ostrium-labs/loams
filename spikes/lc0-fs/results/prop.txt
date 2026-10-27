@@ -1,0 +1,16 @@
+nodrain round 1: B mount sees after 2.729s, API after 2.656s
+nodrain round 2: B mount sees after 3.272s, API after 2.661s
+nodrain round 3: B mount sees after 2.272s, API after 2.670s
+drain_secs=6.360 drain round 1: B mount sees after 2.350s, API after 2.667s
+drain_secs=6.194 drain round 2: B mount sees after 2.295s, API after 2.719s
+drain_secs=6.180 drain round 3: B mount sees after 2.591s, API after 2.696s
+== loaded drain
+
+ti [ERROR]: component: drive9 mount
+version: 572cac6
+git_hash: 572cac64e78bfbd81d1b6359f013facb34ec8937
+git_branch: HEAD
+build_time: 2026-10-20T04:12:34Z
+go_version: go1.25.1
+mount: drive9 mount drain: pending work remains after drain: dirty_handles=0 commit_queue_pending=0 commit_queue_in_flight=0 commit_queue_delayed=0 commit_queue_conflicts=0 uploader_queued=0 uploader_in_flight=0 uploader_cached=1
+write_secs=0.656 drain_after_load_secs=26.525

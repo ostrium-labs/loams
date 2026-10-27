@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loams.dev/schemas/index/v1.json",
+  "title": "Loams Marketplace index, v1",
+  "description": "The static index a source serves (design 73 section 5, D1460): every listing version in full, so one signature (index.json.sigstore.json) covers them all. Built by `loams-listing index build`; metadata only, never package bytes.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["index_version", "listings"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "index_version": { "const": 1 },
+    "source_commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "listings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "title", "summary", "tier", "versions"],
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "type": "string", "enum": ["agent", "harness", "mcp-server"] },
+          "title": { "type": "string" },
+          "summary": { "type": "string" },
+          "tier": { "type": "string", "enum": ["first-party", "verified", "community"] },
+          "latest": {
+            "description": "The highest version that is neither yanked nor a prerelease, else the highest that is not yanked; absent when every version is yanked.",
+            "type": "string"
+          },
+          "versions": {
+            "description": "Ascending by semantic-version precedence.",
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["version", "listing_sha256", "listing"],
+              "properties": {
+                "version": { "type": "string" },
+                "yanked": { "type": "string", "description": "Why the version was yanked; yanked versions stay where installed but are not newly installed." },
+                "listing_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                "listing": { "$ref": "https://loams.dev/schemas/listing/v1.json" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

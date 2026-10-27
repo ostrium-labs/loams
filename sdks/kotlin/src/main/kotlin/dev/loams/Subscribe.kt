@@ -18,8 +18,9 @@ class Subscription(
     private val sleep: (Long) -> Unit = { Thread.sleep(it) },
     private val fetch: (Long) -> List<Record>,
 ) : Iterator<Subscription.Record>, AutoCloseable {
-    /** One record a subscription yields. */
-    data class Record(val partition: Int, val offset: Long, val value: ByteArray, val timestampMs: Long = 0) {
+    /** One record a subscription yields; [key] is null when it was produced without one. */
+    data class Record(val partition: Int, val offset: Long, val value: ByteArray, val timestampMs: Long = 0,
+                      val key: ByteArray? = null) {
         /** The value as UTF-8 text. */
         val text: String get() = value.toString(Charsets.UTF_8)
 

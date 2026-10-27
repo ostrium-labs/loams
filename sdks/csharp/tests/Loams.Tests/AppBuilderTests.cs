@@ -21,6 +21,7 @@ namespace Loams.Tests;
 public sealed class AppBuilderTests
 {
     private static readonly float[] Embedding = [0.1f, 0.2f, 0.3f, 0.4f];
+    private static readonly float[] Unit = [1f, 0f, 0f, 0f];
 
     /// <summary>The builder cases, by the corpus's names.</summary>
     internal static IReadOnlyDictionary<string, (IMessage Built, string Expect)> Cases() => new Dictionary<string, (IMessage, string)>
@@ -43,32 +44,35 @@ public sealed class AppBuilderTests
               {"bool":{"should":[{"range":{"field":"n","gte":2}},{"bool":{"mustNot":[{"exists":{"field":"archived"}}]}}]}}]}}
             """),
         ["filter_range_open"] = (Filter.Range("n", gt: 1), """{"range":{"field":"n","gt":1}}"""),
-        ["filter_ids"] = (Filter.Ids(1, "k-str"), """{"ids":[1,"k-str"]}"""),
+        ["filter_ids"] = (Filter.Ids(1, "k-str", DocumentId.OfUuid("0190f5c4-6c1e-7b3a-9d2e-4f5a6b7c8d9e")),
+            """{"ids":[{"uint":"1"},"k-str",{"uuid":"0190f5c4-6c1e-7b3a-9d2e-4f5a6b7c8d9e"}]}"""),
         ["search_text_filter_highlight_select"] = (Search.On("notes").Text("refund", "body")
                 .Filter(Filter.Eq("tags", "policy")).Highlight("body").Select(include: ["title"])
                 .Sort(Sort.Score(), Sort.Pk()).Limit(2).Build(),
             """
             {"collection":"notes","retrievers":[{"text":{"query":{"match":{"field":"body","text":"refund"}}}}],
              "filter":{"term":{"field":"tags","value":"policy"}},
-             "sort":[{"score":{"order":"SORT_ORDER_DESC"}},{"pk":{"order":"SORT_ORDER_ASC"}}],
-             "limit":2,"select":{"source":{"include":["title"],"exclude":[]}},
+             "sort":[{"score":{}},{"pk":{}}],
+             "limit":2,"select":{"source":{"include":["title"]}},
              "highlight":{"fields":[{"field":"body"}]}}
             """),
         ["search_vector_ann_params"] = (Search.On("notes")
-                .Vector("embedding", Embedding, k: 3, ann: new AnnParams { Ef = 64, Exact = false }).Limit(3).Build(),
+                .Vector("embedding", Unit, k: 3, ann: new AnnParams { Nprobes = 8, RefineFactor = 2 }).Limit(3).Build(),
             """
-            {"collection":"notes","retrievers":[{"vector":{"field":"embedding","query":[0.1,0.2,0.3,0.4],"k":3,"params":{"ef":64}}}],"limit":3}
+            {"collection":"notes","retrievers":[{"vector":{"field":"embedding","query":[1,0,0,0],"k":3,"params":{"nprobes":8,"refineFactor":2}}}],"limit":3}
             """),
         ["search_hybrid_rrf"] = (Hybrid().Fuse(Fusion.Rrf(60)).Build(), HybridJson("""{"rrf":{"k":60}}""")),
         ["search_hybrid_dbsf"] = (Hybrid().Fuse(Fusion.Dbsf()).Build(), HybridJson("""{"dbsf":{}}""")),
         ["search_hybrid_weighted"] = (Hybrid().Fuse(Fusion.Weighted(0.7f, 0.3f)).Build(),
             HybridJson("""{"weightedSum":{"weights":[0.7,0.3]}}""")),
-        ["search_after_page"] = (Search.On("notes").Text("refund", "body").Sort(Sort.Score(), Sort.Pk())
-                .After([Value.ForNumber(1.5), Value.ForNumber(3)]).Limit(2).Build(),
+        ["search_after_page"] = (Search.On("notes").Text("refund", "body")
+                .Filter(Filter.Eq("tags", "policy")).Highlight("body").Select(include: ["title"]).Limit(2)
+                .Sort(Sort.Score(), Sort.Pk()).After([Value.ForNumber(0.3438858389854431), Value.ForNumber(3)]).Build(),
             """
             {"collection":"notes","retrievers":[{"text":{"query":{"match":{"field":"body","text":"refund"}}}}],
-             "sort":[{"score":{"order":"SORT_ORDER_DESC"}},{"pk":{"order":"SORT_ORDER_ASC"}}],
-             "searchAfter":[1.5,3],"limit":2}
+             "filter":{"term":{"field":"tags","value":"policy"}},"highlight":{"fields":[{"field":"body"}]},
+             "select":{"source":{"include":["title"]}},"limit":2,"sort":[{"score":{}},{"pk":{}}],
+             "searchAfter":[0.3438858389854431,3]}
             """),
         ["search_expand"] = (Search.On("notes").Text("refund", "body").Expand("notes_graph", "id", hops: 1).Build(),
             """
@@ -77,11 +81,11 @@ public sealed class AppBuilderTests
             """),
     };
 
-    private static Search Hybrid() => Search.On("notes").Text("refund", "body").Vector("embedding", Embedding).Limit(3);
+    private static Search Hybrid() => Search.On("notes").Text("refund", "body").Vector("embedding", Unit, k: 5).Limit(3);
 
     private static string HybridJson(string fusion) =>
         """{"collection":"notes","retrievers":[{"text":{"query":{"match":{"field":"body","text":"refund"}}}},"""
-        + """{"vector":{"field":"embedding","query":[0.1,0.2,0.3,0.4]}}],"fusion":""" + fusion + ""","limit":3}""";
+        + """{"vector":{"field":"embedding","query":[1,0,0,0],"k":5}}],"fusion":""" + fusion + ""","limit":3}""";
 
     private static IMessage Parse(IMessage like, string json) =>
         JsonParser.Default.Parse(json, like.Descriptor);

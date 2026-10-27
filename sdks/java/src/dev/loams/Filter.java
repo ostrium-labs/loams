@@ -341,7 +341,19 @@ public final class Filter {
         if (id.getKindCase() == Value.KindCase.STRUCT_VALUE) {
             Struct s = id.getStructValue();
             if (s.containsFields("uint")) {
-                return s.getFieldsOrThrow("uint");
+                // Exact as a JSON number up to 2^53; past that the IR keeps the string.
+                Value n = s.getFieldsOrThrow("uint");
+                if (n.getKindCase() == Value.KindCase.STRING_VALUE) {
+                    try {
+                        long u = Long.parseUnsignedLong(n.getStringValue());
+                        if (Long.compareUnsigned(u, 1L << 53) <= 0) {
+                            return Value.newBuilder().setNumberValue(u).build();
+                        }
+                    } catch (NumberFormatException e) {
+                        return n;
+                    }
+                }
+                return n;
             }
             if (s.containsFields("string")) {
                 return s.getFieldsOrThrow("string");

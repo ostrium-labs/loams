@@ -1,0 +1,10 @@
+<!-- HE0 (plan HE1 Task 5): ClickHouse 26.7 and later reject Umami's
+     website_event_stats_hourly (dimension columns outside the sorting key of
+     an AggregatingMergeTree). Umami's own test stack pins 25.8 instead; here
+     the oracle keeps its version and allows the schema. Recorded as a finding
+     in the profile report. -->
+<clickhouse>
+    <merge_tree>
+        <allow_dimensions_outside_sorting_key>1</allow_dimensions_outside_sorting_key>
+    </merge_tree>
+</clickhouse>

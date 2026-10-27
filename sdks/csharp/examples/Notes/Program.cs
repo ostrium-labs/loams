@@ -116,7 +116,31 @@ catch (FeatureNotInVariantError)
     Console.WriteLine("graph: not in this build");
 }
 
-// 5. A missing collection is a typed error; then clean up.
+// 5. SQL with $n parameters over the same collection, and a stream of events.
+var sql = await loams.Sql.QueryAsync("SELECT n, title FROM notes WHERE n > $1 ORDER BY n", [1]);
+foreach (var row in sql.Records())
+{
+    Console.WriteLine($"  sql row {row["n"]}: {row["title"]}");
+}
+await loams.Streams.CreateAsync("events", partitions: 1);
+var produced = await loams.Streams.ProduceAsync("events", 0,
+[
+    new ProducerRecord("1", new Dictionary<string, object?> { ["kind"] = "created", ["note"] = 1 }),
+    new ProducerRecord("2", new Dictionary<string, object?> { ["kind"] = "patched", ["note"] = 2 }),
+    new ProducerRecord("4", new Dictionary<string, object?> { ["kind"] = "deleted", ["note"] = 4 }),
+], producerId: "notes-demo", producerSeq: 1);
+Console.WriteLine($"events at {produced.BaseOffset}..{produced.LastOffset}{(produced.Duplicate ? " (already produced)" : "")}");
+var subscription = loams.Streams.Subscribe("events", 0, fromOffset: produced.BaseOffset);
+await foreach (var record in subscription)
+{
+    Console.WriteLine($"  event {record.Offset}: {record.Text}");
+    if (record.Offset >= produced.LastOffset)
+    {
+        break;
+    }
+}
+
+// 6. A missing collection is a typed error; then clean up.
 try
 {
     await loams.Collections.GetAsync("missing");

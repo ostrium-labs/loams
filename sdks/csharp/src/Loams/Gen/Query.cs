@@ -278,11 +278,12 @@ namespace Loams.Collection.V1 {
             "RBAAEhgKFEVYUEFORF9PVVRQVVRfTkVTVEVEEAESFgoSRVhQQU5EX09VVFBV",
             "VF9GTEFUEAIqXgoNVG90YWxSZWxhdGlvbhIeChpUT1RBTF9SRUxBVElPTl9V",
             "TlNQRUNJRklFRBAAEhUKEVRPVEFMX1JFTEFUSU9OX0VREAESFgoSVE9UQUxf",
-            "UkVMQVRJT05fR1RFEAIyvQEKDFF1ZXJ5U2VydmljZRJWCgZTZWFyY2gSIi5s",
+            "UkVMQVRJT05fR1RFEAIy3AEKDFF1ZXJ5U2VydmljZRJ1CgZTZWFyY2gSIi5s",
             "b2Ftcy5jb2xsZWN0aW9uLnYxLlNlYXJjaFJlcXVlc3QaIy5sb2Ftcy5jb2xs",
-            "ZWN0aW9uLnYxLlNlYXJjaFJlc3BvbnNlIgOQAgEaVYq1GFEKBnNlYXJjaBJH",
-            "UXVlcmllczogb25lIHNlYXJjaCBvdmVyIG9uZSBjb2xsZWN0aW9uLCBkZW5z",
-            "ZSwgc3BhcnNlLCB0ZXh0IG9yIGh5YnJpZC5iBnByb3RvMw=="));
+            "ZWN0aW9uLnYxLlNlYXJjaFJlc3BvbnNlIiKQAgGStRgHEgVxdWVyeZK1GBAK",
+            "BnZlY3RvchIGc2VhcmNoGlWKtRhRCgZzZWFyY2gSR1F1ZXJpZXM6IG9uZSBz",
+            "ZWFyY2ggb3ZlciBvbmUgY29sbGVjdGlvbiwgZGVuc2UsIHNwYXJzZSwgdGV4",
+            "dCBvciBoeWJyaWQuYgZwcm90bzM="));
       descriptor = pbr::FileDescriptor.FromGeneratedCode(descriptorData,
           new pbr::FileDescriptor[] { global::Google.Protobuf.WellKnownTypes.EmptyReflection.Descriptor, global::Google.Protobuf.WellKnownTypes.StructReflection.Descriptor, global::Loams.Collection.V1.DocumentReflection.Descriptor, global::Loams.Options.V1.OptionsReflection.Descriptor, },
           new pbr::GeneratedClrTypeInfo(new[] {typeof(global::Loams.Collection.V1.BoolOperator), typeof(global::Loams.Collection.V1.MultiMatchKind), typeof(global::Loams.Collection.V1.SortOrder), typeof(global::Loams.Collection.V1.MissingOrder), typeof(global::Loams.Collection.V1.ExpandDirection), typeof(global::Loams.Collection.V1.ExpandOutput), typeof(global::Loams.Collection.V1.TotalRelation), }, null, new pbr::GeneratedClrTypeInfo[] {

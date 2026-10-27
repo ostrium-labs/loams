@@ -1420,3 +1420,105 @@ async fn merge_reads_the_namespaces_lake_tables() {
         assert_eq!(ok(addr, sql).await, "3\n", "{sql}");
     }
 }
+
+/// HE1 R9.62: the `system` tables a clustered application's migrations read
+/// (SigNoz's, D1571), answered for a one-node House: the clusters its
+/// `ON CLUSTER` clauses name, each this node; no macros; no mutation or
+/// distributed DDL left to wait for; and `clusterAllReplicas` of a `system`
+/// table read locally, while any other source of it stays refused.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn cluster_system_tables_answer_for_one_node() {
+    let house = lakehouse("cluster-system").await;
+    let addr = house.addr();
+    ok(addr, "CREATE DATABASE IF NOT EXISTS sig ON CLUSTER cluster").await;
+    ok(
+        addr,
+        "CREATE TABLE IF NOT EXISTS sig.t ON CLUSTER cluster (a UInt8) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}') ORDER BY a",
+    )
+    .await;
+    ok_as(
+        addr,
+        BOB,
+        "CREATE TABLE theirs ON CLUSTER 'bobs' (a UInt8) ENGINE = MergeTree ORDER BY a",
+        &[],
+    )
+    .await;
+    // SigNoz's own reads (its schema migrator's), as it sends them.
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT DISTINCT host_address, port FROM system.clusters WHERE host_address NOT IN ['localhost', '127.0.0.1', '::1'] AND cluster = 'cluster'"
+        )
+        .await,
+        ""
+    );
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT database, table, command, mutation_id, latest_fail_reason FROM system.mutations WHERE is_done = 0"
+        )
+        .await,
+        ""
+    );
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT entry, cluster, query, host, port, status, exception_code FROM system.distributed_ddl_queue WHERE status != 'Finished'"
+        )
+        .await,
+        ""
+    );
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT count(*) FROM clusterAllReplicas('cluster', system.tables) WHERE database = 'sig' AND name = 't'"
+        )
+        .await,
+        "1\n"
+    );
+    // The namespace's clusters, this node in each; another namespace's are
+    // not shown.
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT cluster, shard_num, replica_num, host_name, host_address, is_local, name FROM system.clusters"
+        )
+        .await,
+        "cluster\t1\t1\tlocalhost\t127.0.0.1\t1\tcluster\n"
+    );
+    assert_eq!(
+        ok_as(addr, BOB, "SELECT cluster FROM system.clusters", &[]).await,
+        "bobs\n"
+    );
+    assert_eq!(ok(addr, "SELECT count() FROM system.macros").await, "0\n");
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT toTypeName(status) FROM system.distributed_ddl_queue"
+        )
+        .await,
+        ""
+    );
+    // Any other use of the function stays refused.
+    refused(
+        addr,
+        "SELECT count() FROM clusterAllReplicas('cluster', sig.t)",
+        &[],
+        "344",
+    )
+    .await;
+    refused(
+        addr,
+        "SELECT count() FROM clusterAllReplicas('cluster', system.disks)",
+        &[],
+        "344",
+    )
+    .await;
+    refused(
+        addr,
+        "SELECT count() FROM cluster('cluster', system.tables)",
+        &[],
+        "344",
+    )
+    .await;
+}

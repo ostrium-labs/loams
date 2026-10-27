@@ -1,4 +1,4 @@
-//! The mock's OAuth surface: pairing, the token endpoint, a fake Authentik
+//! The mock's OAuth surface: pairing, the token endpoint, a fake OIDC issuer
 //! and the test controls the phone flows need (design §37 §7.2, AP0).
 //!
 //! The console seed answers `/api/v1/oauth/token` and `/.well-known/*` with
@@ -11,7 +11,7 @@
 //! What is real: pairing codes with the 5-minute TTL and single use, the user
 //! code and its failure limit, all three grants (pairing, RFC 8693 exchange,
 //! refresh), the device each issuance registers, PKCE S256 verification in the
-//! fake Authentik, and the issued tokens, which are the same
+//! fake OIDC issuer, and the issued tokens, which are the same
 //! `mock-access-<principal>` tokens [`crate::auth`] accepts.
 //!
 //! What is not: DPoP is recorded, not enforced; there is no revocation
@@ -42,10 +42,10 @@ pub(crate) const GRANT_PAIRING: &str = "urn:loams:params:oauth:grant-type:pairin
 /// RFC 8693 token exchange, for a phone that signed in through the IdP first.
 pub(crate) const GRANT_EXCHANGE: &str = "urn:ietf:params:oauth:grant-type:token-exchange";
 
-/// The fake Authentik lives under this prefix so browser sign-in can run end to
+/// The fake OIDC issuer lives under this prefix so browser sign-in can run end to
 /// end against the mock: authorize (redirects straight back with a code),
 /// token (checks PKCE S256) and discovery.
-pub(crate) const AUTHENTIK: &str = "/mock/authentik/application/o/loams/";
+pub(crate) const OIDC: &str = "/mock/oidc/";
 
 /// How many wrong user codes burn a pairing (§37 §7.2.1).
 const USER_CODE_FAILURES: u32 = 5;
@@ -124,18 +124,18 @@ pub(crate) fn router(oauth: Oauth) -> Router {
     router = router
         .route("/api/v1/oauth/token", post(token).with_state(oauth.clone()))
         .route(
-            &format!("{AUTHENTIK}.well-known/openid-configuration"),
-            get(authentik_discovery).with_state(oauth.clone()),
+            &format!("{OIDC}.well-known/openid-configuration"),
+            get(oidc_discovery).with_state(oauth.clone()),
         )
         .route(
-            &format!("{AUTHENTIK}authorize/"),
-            get(authentik_authorize).with_state(oauth.clone()),
+            &format!("{OIDC}authorize/"),
+            get(oidc_authorize).with_state(oauth.clone()),
         )
         .route(
-            &format!("{AUTHENTIK}token/"),
-            post(authentik_token).with_state(oauth.clone()),
+            &format!("{OIDC}token/"),
+            post(oidc_token).with_state(oauth.clone()),
         )
-        .route(&format!("{AUTHENTIK}jwks/"), get(authentik_jwks))
+        .route(&format!("{OIDC}jwks/"), get(oidc_jwks))
         .route("/healthz", get(|| async { "ok" }))
         // Test controls. Not part of any Loams API.
         .route("/mock/pairing", get(mock_pairing).with_state(oauth.clone()))
@@ -254,19 +254,19 @@ fn redeem_pairing(oauth: &Oauth, form: &HashMap<String, String>) -> (StatusCode,
 }
 
 fn exchange(oauth: &Oauth, form: &HashMap<String, String>) -> (StatusCode, Value) {
-    // The subject token is what the fake Authentik's token endpoint returned.
+    // The subject token is what the fake OIDC issuer's token endpoint returned.
     if !form
         .get("subject_token")
-        .is_some_and(|token| token.starts_with("mock-authentik-"))
+        .is_some_and(|token| token.starts_with("mock-oidc-"))
     {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_grant",
             "",
-            "subject_token is not a token from the mock Authentik",
+            "subject_token is not a token from the mock's fake OIDC issuer",
         );
     }
-    // The fake Authentik signs in whoever the IdP would have: the first seeded
+    // The fake OIDC issuer signs in whoever the IdP would have: the first seeded
     // person, which is Dana.
     let user_id = oauth
         .store
@@ -379,10 +379,10 @@ fn refresh(oauth: &Oauth, form: &HashMap<String, String>) -> (StatusCode, Value)
     )
 }
 
-/// The fake Authentik's discovery document, addressed from wherever the request
+/// The fake OIDC issuer's discovery document, addressed from wherever the request
 /// arrived so the phone reaches it through whichever name it dialled.
-async fn authentik_discovery(State(oauth): State<Oauth>, headers: HeaderMap) -> Response {
-    let base = format!("{}{AUTHENTIK}", dialled_origin(&oauth, &headers));
+async fn oidc_discovery(State(oauth): State<Oauth>, headers: HeaderMap) -> Response {
+    let base = format!("{}{OIDC}", dialled_origin(&oauth, &headers));
     json_response(
         StatusCode::OK,
         json!({
@@ -398,9 +398,9 @@ async fn authentik_discovery(State(oauth): State<Oauth>, headers: HeaderMap) -> 
     )
 }
 
-/// Stands in for Authentik's login page: it redirects straight back to the app
+/// Stands in for the identity provider's login page: it redirects straight back to the app
 /// with a code bound to the PKCE challenge.
-async fn authentik_authorize(
+async fn oidc_authorize(
     State(oauth): State<Oauth>,
     Query(query): Query<HashMap<String, String>>,
 ) -> Response {
@@ -437,7 +437,7 @@ async fn authentik_authorize(
         .unwrap_or_else(|_| StatusCode::BAD_REQUEST.into_response())
 }
 
-async fn authentik_token(
+async fn oidc_token(
     State(oauth): State<Oauth>,
     Form(form): Form<HashMap<String, String>>,
 ) -> Response {
@@ -462,7 +462,7 @@ async fn authentik_token(
     json_response(
         StatusCode::OK,
         json!({
-            "access_token": format!("mock-authentik-{subject}"),
+            "access_token": format!("mock-oidc-{subject}"),
             "token_type": "Bearer",
             "expires_in": 300,
         }),
@@ -587,9 +587,9 @@ fn dialled_origin(oauth: &Oauth, headers: &HeaderMap) -> String {
     }
 }
 
-/// The fake Authentik's JWKS. Empty, because the mock does not sign anything:
+/// The fake OIDC issuer's JWKS. Empty, because the mock does not sign anything:
 /// it exists so a client's JWKS fetch succeeds rather than 404ing.
-async fn authentik_jwks() -> Response {
+async fn oidc_jwks() -> Response {
     json_response(StatusCode::OK, json!({ "keys": [] }))
 }
 
@@ -730,11 +730,11 @@ mod tests {
     }
 
     #[test]
-    fn an_exchange_needs_an_authentik_token() {
+    fn an_exchange_needs_an_oidc_token() {
         let (store, oauth) = mock();
         let bad = HashMap::from([("subject_token".to_owned(), "nope".to_owned())]);
         assert_eq!(exchange(&oauth, &bad).0, StatusCode::BAD_REQUEST);
-        let good = HashMap::from([("subject_token".to_owned(), "mock-authentik-abc".to_owned())]);
+        let good = HashMap::from([("subject_token".to_owned(), "mock-oidc-abc".to_owned())]);
         let (status, body) = exchange(&oauth, &good);
         assert_eq!(status, StatusCode::OK);
         assert!(

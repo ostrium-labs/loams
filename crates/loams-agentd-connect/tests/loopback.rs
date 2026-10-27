@@ -100,6 +100,10 @@ const LIST_HARNESSES: &str = "/loams.agentd.v1.HarnessService/ListHarnesses";
 
 /// A raw Connect unary POST with JSON, so headers are fully under test.
 async fn post(url: &str, headers: &[(&str, &str)]) -> (u16, serde_json::Value) {
+    // Feature unification can build reqwest with `rustls-no-provider` (as
+    // loams-walrus asks for), and then a client panics without a process
+    // provider; install ring's, as the remote listener uses, if none is set.
+    let _ = rustls::crypto::ring::default_provider().install_default();
     let mut request = reqwest::Client::new()
         .post(url)
         .header("content-type", "application/json")
@@ -843,5 +847,151 @@ async fn run_groups_over_connect() {
         .await
         .unwrap_err();
     assert_eq!(error.code, ErrorCode::InvalidArgument);
+    daemon.stop().await;
+}
+
+/// MK1 Task 4b: `MarketplaceService` over Connect, against the marketplace
+/// testkit's signed fake index, answers what the ndjson wire answers; an
+/// install's harness then shows in `ListHarnesses` with its listing id.
+#[tokio::test]
+async fn marketplace_over_connect() {
+    use loams_agentd_marketplace::testkit::{HARNESS_ID, MCP_ID, World};
+    let daemon = Daemon::start().await;
+    let world = World::new(&daemon._dir.path().join("agentd"));
+    let host = loams_agentd_marketplace::MarketplaceHost::open(world.deps()).unwrap();
+    assert!(host.refresh().await.is_empty());
+    daemon.runtime.core().attach_marketplace(host);
+    let market = pb::MarketplaceServiceClient::new(HttpClient::plaintext(), daemon.config());
+
+    let sources = market
+        .list_sources(pb::ListSourcesRequest::default())
+        .await
+        .unwrap()
+        .into_owned();
+    assert_eq!(sources.sources.len(), 1);
+    assert!(sources.sources[0].official);
+
+    let found = market
+        .search_listings(pb::SearchListingsRequest {
+            kinds: vec![
+                loams_agentd_connect::proto::loams::marketplace::v1::Kind::KIND_HARNESS.into(),
+            ],
+            ..Default::default()
+        })
+        .await
+        .unwrap()
+        .into_owned();
+    let ndjson: rs::marketplace::ListingSearchResults = daemon
+        .ndjson
+        .call_as(
+            methods::SEARCH_LISTINGS,
+            serde_json::json!({ "kinds": ["harness"] }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(found, ndjson.to_pb());
+    assert!(found.results.iter().any(|r| r.id == HARNESS_ID));
+
+    let detail = market
+        .get_listing(pb::GetListingRequest {
+            id: "ostrium/claude-code".into(),
+            ..Default::default()
+        })
+        .await
+        .unwrap()
+        .into_owned();
+    let listing = detail.listing.as_option().unwrap();
+    assert_eq!(listing.id, "ostrium/claude-code");
+    assert_eq!(listing.title, "Claude Code");
+    let harness = listing.harness.as_option().unwrap();
+    assert_eq!(harness.launch.as_option().unwrap().command, "claude");
+    // The proto listing maps back to the index's JSON.
+    let ndjson: rs::marketplace::ListingDetail = daemon
+        .ndjson
+        .call_as(
+            methods::GET_LISTING,
+            serde_json::json!({ "id": "ostrium/claude-code" }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        rs::marketplace::ListingDetail::from_pb(detail).unwrap(),
+        ndjson
+    );
+
+    let plan = market
+        .plan_install(pb::PlanInstallRequest {
+            id: MCP_ID.into(),
+            ..Default::default()
+        })
+        .await
+        .unwrap()
+        .into_owned();
+    let plan = plan.plan.as_option().unwrap().clone();
+    assert_eq!(plan.secrets[0].name, "token");
+
+    let error = market
+        .install(pb::InstallRequest {
+            id: HARNESS_ID.into(),
+            plan_digest: "00".repeat(32),
+            ..Default::default()
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::FailedPrecondition, "plan_changed");
+
+    let harness_plan = market
+        .plan_install(pb::PlanInstallRequest {
+            id: HARNESS_ID.into(),
+            ..Default::default()
+        })
+        .await
+        .unwrap()
+        .into_owned();
+    let installed = market
+        .install(pb::InstallRequest {
+            id: HARNESS_ID.into(),
+            plan_digest: harness_plan.plan.as_option().unwrap().digest.clone(),
+            ..Default::default()
+        })
+        .await
+        .unwrap()
+        .into_owned();
+    assert_eq!(installed.installed.as_option().unwrap().version, "1.1.0");
+
+    let harnesses = pb::HarnessServiceClient::new(HttpClient::plaintext(), daemon.config())
+        .list_harnesses(pb::ListHarnessesRequest::default())
+        .await
+        .unwrap()
+        .into_owned();
+    let entry = harnesses
+        .harnesses
+        .iter()
+        .find(|h| h.marketplace_listing.as_deref() == Some(HARNESS_ID))
+        .expect("the installed harness is listed");
+    assert_eq!(
+        entry.id,
+        buffa::EnumValue::Known(pb::HarnessId::HARNESS_ID_MARKETPLACE)
+    );
+
+    let listed = market
+        .list_installed(pb::ListInstalledRequest::default())
+        .await
+        .unwrap()
+        .into_owned();
+    assert_eq!(listed.installed.len(), 1);
+    market
+        .uninstall(pb::UninstallRequest {
+            id: HARNESS_ID.into(),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    let updates = market
+        .check_updates(pb::CheckUpdatesRequest::default())
+        .await
+        .unwrap()
+        .into_owned();
+    assert!(updates.updates.is_empty());
     daemon.stop().await;
 }

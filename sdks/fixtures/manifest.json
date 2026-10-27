@@ -7,9 +7,9 @@
   },
   "volatile": "The response fields a re-recording is allowed to move: the server-generated `instance_id`, and the mock seed timestamps. `verify-corpus.mjs --drift` masks exactly these and fails on any other difference.",
   "counts": {
-    "total": 33,
+    "total": 38,
     "required": 28,
-    "optional": 5
+    "optional": 10
   },
   "clauses": {
     "R1": {
@@ -31,6 +31,8 @@
       "title": "One idempotency key per logical call, reused on every retry.",
       "covered": true,
       "fixtures": [
+        "app_collections",
+        "app_streams",
         "mock_state_idempotent_decide"
       ],
       "note": null
@@ -38,13 +40,16 @@
     "R4": {
       "title": "Consistency tokens on reads and writes.",
       "covered": false,
-      "fixtures": [],
-      "note": "**No fixture, and none is possible.** No RPC carries a `consistency_token`: `ListCollections` and the write paths arrive with API1 Tasks 2–4, and the token's encoding is not in the protos yet (runtime-contract.md, R4). R4 is pinned against a stub, deliberately — a silently-merged token reads stale data, which is worse than a failure."
+      "fixtures": [
+        "app_collections"
+      ],
+      "note": "Pinned end to end by `app_collections` (a write's `token` is the next read's `consistency.at_least`), which is `required: false` until SDKP S1 flips the app fixtures; the encoding and `merge` are pinned by `sdks/fixtures/tokens.json` in every language (runtime-contract.md, R4)."
     },
     "R5": {
       "title": "Unavailable services: the catalogue and the refusal.",
       "covered": true,
       "fixtures": [
+        "app_graph",
         "instance_get_instance_grpc_web",
         "instance_get_instance_grpc_web_json",
         "instance_get_instance_json",
@@ -62,11 +67,13 @@
       "title": "Pagination: `page_size` in, `next_page_token` out, an iterator of items.",
       "covered": false,
       "fixtures": [
+        "app_collections",
+        "app_search",
         "mock_status_list_is_not_paged",
         "mock_status_list_operations",
         "mock_status_notifications"
       ],
-      "note": "**No paged RPC exists on any server**, so there is nothing to record. `mock_status_list_is_not_paged` is the recording that pins this fact: `ListApprovals` declares both fields and honours neither, so there is still no end-to-end page to page. R6 is pinned against a stub; the end-to-end half arrives with API1 Task 2. Marked `required: false` precisely so no language is blocked on it."
+      "note": "`app_collections` pages `ListCollections` and scrolls `ScrollDocuments` end to end; it is `required: false` until SDKP S1. `mock_status_list_is_not_paged` still pins that `ListApprovals` honours neither field."
     },
     "R7": {
       "title": "Streams: an async iterable that resumes from a cursor without loss.",
@@ -84,6 +91,11 @@
       "title": "Errors: the code gives the class, the `reason` is the branch.",
       "covered": true,
       "fixtures": [
+        "app_collections",
+        "app_graph",
+        "app_search",
+        "app_sql",
+        "app_streams",
         "live_query_grpc_web",
         "live_query_grpc_web_json",
         "live_query_json",
@@ -125,6 +137,34 @@
         "mock_error_encodings"
       ],
       "note": null
+    },
+    "R11": {
+      "title": "The default namespace, for the app packages only.",
+      "covered": false,
+      "fixtures": [
+        "app_collections"
+      ],
+      "note": "Pinned against a stub in every language (`<lang>_default_namespace`); `app_collections` sends every request with its namespace spelled out, so a replay checks the filled-in request against the recording."
+    },
+    "R12": {
+      "title": "Timeouts: one budget per call, `client_deadline_exceeded`, never retried.",
+      "covered": false,
+      "fixtures": [],
+      "note": "Client-side only: pinned against a stub (`<lang>_timeout_deadline`)."
+    },
+    "R13": {
+      "title": "`documents.write_batch`: chunks, one key each, the first failure stops it.",
+      "covered": false,
+      "fixtures": [],
+      "note": "Client-side loop: pinned against a stub (`<lang>_write_batch_chunks`)."
+    },
+    "R14": {
+      "title": "`streams.subscribe`: a resumable loop over `Fetch`.",
+      "covered": false,
+      "fixtures": [
+        "app_streams"
+      ],
+      "note": "Pinned against a stub (`<lang>_streams_subscribe_resumes`); `app_streams` records the server half when `loams.stream.v1` lands (SDKP P0c)."
     }
   },
   "required": [
@@ -158,27 +198,18 @@
     "mock_status_unauthenticated"
   ],
   "byClause": {
-    "R5": [
-      "instance_get_instance_grpc_web",
-      "instance_get_instance_grpc_web_json",
-      "instance_get_instance_json",
-      "instance_get_instance_proto",
-      "live_query_grpc_web",
-      "live_query_grpc_web_json",
-      "live_query_json",
-      "live_query_proto",
-      "live_watch"
+    "R3": [
+      "mock_state_idempotent_decide"
     ],
-    "R9": [
-      "instance_get_instance_grpc_web",
-      "instance_get_instance_grpc_web_json",
-      "instance_get_instance_json",
-      "instance_get_instance_proto",
-      "instance_who_am_i_grpc_web",
-      "instance_who_am_i_grpc_web_json",
-      "instance_who_am_i_json",
-      "instance_who_am_i_proto",
-      "mock_status_get_instance"
+    "R4": [
+      "app_collections"
+    ],
+    "R6": [
+      "app_collections",
+      "app_search",
+      "mock_status_list_is_not_paged",
+      "mock_status_list_operations",
+      "mock_status_notifications"
     ],
     "R8": [
       "live_query_grpc_web",
@@ -196,6 +227,34 @@
       "mock_error_step_up_required",
       "mock_status_unauthenticated"
     ],
+    "R11": [
+      "app_collections"
+    ],
+    "R5": [
+      "instance_get_instance_grpc_web",
+      "instance_get_instance_grpc_web_json",
+      "instance_get_instance_json",
+      "instance_get_instance_proto",
+      "live_query_grpc_web",
+      "live_query_grpc_web_json",
+      "live_query_json",
+      "live_query_proto",
+      "live_watch"
+    ],
+    "R14": [
+      "app_streams"
+    ],
+    "R9": [
+      "instance_get_instance_grpc_web",
+      "instance_get_instance_grpc_web_json",
+      "instance_get_instance_json",
+      "instance_get_instance_proto",
+      "instance_who_am_i_grpc_web",
+      "instance_who_am_i_grpc_web_json",
+      "instance_who_am_i_json",
+      "instance_who_am_i_proto",
+      "mock_status_get_instance"
+    ],
     "R7": [
       "live_watch",
       "mock_state_stream_heartbeat",
@@ -209,17 +268,176 @@
     "R1": [
       "mock_error_step_up_required",
       "mock_status_unauthenticated"
-    ],
-    "R3": [
-      "mock_state_idempotent_decide"
-    ],
-    "R6": [
-      "mock_status_list_is_not_paged",
-      "mock_status_list_operations",
-      "mock_status_notifications"
     ]
   },
   "fixtures": [
+    {
+      "name": "app_collections",
+      "kind": "app",
+      "server": "loams dev",
+      "file": "recorded/app/app_collections.json",
+      "required": false,
+      "transport": "connect",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R3",
+        "R4",
+        "R6",
+        "R8",
+        "R11"
+      ],
+      "reason": null,
+      "steps": 19,
+      "volatile": [
+        "token",
+        "readToken",
+        "consistencyToken",
+        "collectionId",
+        "namespaceId",
+        "createdAtMs",
+        "updatedAtMs",
+        "instanceId",
+        "performance",
+        "manifestVersion",
+        "version",
+        "seqNo",
+        "positions",
+        "pin"
+      ],
+      "about": "The notes app, part one: create a namespace and a collection from the Schema builder, page the collections, upsert five notes with an idempotency key and replay it, read them back at the write's token, patch and delete, count with a typed `where`, scroll every page, and the two refusals an app meets first (`not_found`, `filter_conflict`)."
+    },
+    {
+      "name": "app_graph",
+      "kind": "app",
+      "server": "loams dev",
+      "file": "recorded/app/app_graph.json",
+      "required": false,
+      "transport": "connect",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R5",
+        "R8"
+      ],
+      "reason": null,
+      "steps": 5,
+      "volatile": [
+        "token",
+        "readToken",
+        "consistencyToken",
+        "collectionId",
+        "namespaceId",
+        "createdAtMs",
+        "updatedAtMs",
+        "instanceId",
+        "performance",
+        "manifestVersion",
+        "version",
+        "seqNo",
+        "positions",
+        "pin"
+      ],
+      "about": "The notes app, part three: a graph of notes and tags, queried with GQL and walked from a search. Recorded from `loams dev`'s default build, which carries no `graph` feature, so each step is the `feature_not_in_variant` refusal an SDK reports as `FeatureNotInVariant` — and the expand stage of a search is refused the same way."
+    },
+    {
+      "name": "app_search",
+      "kind": "app",
+      "server": "loams dev",
+      "file": "recorded/app/app_search.json",
+      "required": false,
+      "transport": "connect",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R6",
+        "R8"
+      ],
+      "reason": null,
+      "steps": 7,
+      "volatile": [
+        "token",
+        "readToken",
+        "consistencyToken",
+        "collectionId",
+        "namespaceId",
+        "createdAtMs",
+        "updatedAtMs",
+        "instanceId",
+        "performance",
+        "manifestVersion",
+        "version",
+        "seqNo",
+        "positions",
+        "pin"
+      ],
+      "about": "The notes app, part two: every search the builder corpus spells, against the notes `app_collections` wrote (four of them, after its delete). Text with a filter, highlights and a projection; its next page through `search_after`; a vector search; hybrid with RRF, DBSF and a weighted sum; and the weighted sum refused for the wrong number of weights."
+    },
+    {
+      "name": "app_sql",
+      "kind": "app",
+      "server": "loams dev",
+      "file": "recorded/app/app_sql.json",
+      "required": false,
+      "transport": "connect",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R8"
+      ],
+      "part": "C",
+      "reason": null,
+      "steps": 5,
+      "volatile": [
+        "token",
+        "readToken",
+        "consistencyToken",
+        "collectionId",
+        "namespaceId",
+        "createdAtMs",
+        "updatedAtMs",
+        "instanceId",
+        "performance",
+        "manifestVersion",
+        "version",
+        "seqNo",
+        "positions",
+        "pin"
+      ],
+      "about": "The notes app, part four: SQL over the `notes` collection. A grouped count with a `$1` parameter, its rows as records; a capped read that answers `truncated`; the same statement as Arrow IPC; and the two refusals (`sql_param_count`, a statement that is not a query)."
+    },
+    {
+      "name": "app_streams",
+      "kind": "app",
+      "server": "loams dev",
+      "file": "recorded/app/app_streams.json",
+      "required": false,
+      "transport": "connect",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R3",
+        "R8",
+        "R14"
+      ],
+      "part": "C",
+      "reason": null,
+      "steps": 12,
+      "volatile": [
+        "token",
+        "readToken",
+        "consistencyToken",
+        "collectionId",
+        "namespaceId",
+        "createdAtMs",
+        "updatedAtMs",
+        "instanceId",
+        "performance",
+        "manifestVersion",
+        "version",
+        "seqNo",
+        "positions",
+        "pin",
+        "timestampMs",
+        "streamId"
+      ],
+      "about": "The notes app, part five: streams. Create `note-events` (and again: the same stream), list and describe it, produce two records keyed by a producer id and the same batch again (a duplicate), fetch them from offset 0 and past the end, produce and fetch two CloudEvents on `note-audit`, and fetch a stream that does not exist (`not_found`)."
+    },
     {
       "name": "instance_get_instance_grpc_web",
       "kind": "unary",

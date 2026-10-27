@@ -8,6 +8,7 @@
 // both cases with connect-query over the host's transport (agentd.ts).
 
 import { type PluginModule, service } from '@loams/console-host';
+import { AgentdScope } from '@loams/console-host/query';
 import type { Context } from '@loams/cordis';
 // Brings in the `desktop` service type (a module augmentation of `Services`).
 import type {} from '@loams/platform-electron';
@@ -15,6 +16,7 @@ import { type StudioAgentd, studioAgentd } from './agentd.js';
 import { desktopFactory } from './factory.js';
 import { GitActionBus, withGitActions } from './git/bus.js';
 import { hostedAgentd } from './hosts/agentd.js';
+import { webNotifier } from './notifications/data.js';
 import { BranchesSource } from './palette/BranchesSource.js';
 import { createStudioKeys, listenShellCommands } from './palette/commands.js';
 import { StudioPalette } from './palette/StudioPalette.js';
@@ -173,6 +175,13 @@ const plugin: PluginModule = {
         ),
       );
     }
+    // Studio's agentd for other plugins' pages (MK1 Task 9: the Seed Exchange), so on
+    // the web they reach the host picked here rather than the console's (none yet).
+    ctx.effect(() =>
+      slots.register({ name: 'studio.agentd.scope', plugin: 'studio' }, ({ children }) => (
+        <AgentdScope agentd={agentd}>{children}</AgentdScope>
+      )),
+    );
     ctx.effect(() =>
       slots.register(
         {
@@ -245,6 +254,8 @@ const plugin: PluginModule = {
         gitBus,
         openExternal: (url) => platform.openExternal(url),
         mode: service(ctx, 'mode'),
+        // On the desktop Electron main posts these from the same stream (W15).
+        ...(platform.kind === 'web' ? { notify: webNotifier((n) => platform.notify(n)) } : {}),
       });
       return () => {
         for (const dispose of disposers) dispose();

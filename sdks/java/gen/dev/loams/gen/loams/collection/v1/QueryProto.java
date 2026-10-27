@@ -585,16 +585,16 @@ public final class QueryProto {
       "ED\020\001\022\026\n\022EXPAND_OUTPUT_FLAT\020\002*^\n\rTotalRel" +
       "ation\022\036\n\032TOTAL_RELATION_UNSPECIFIED\020\000\022\025\n" +
       "\021TOTAL_RELATION_EQ\020\001\022\026\n\022TOTAL_RELATION_G" +
-      "TE\020\0022\275\001\n\014QueryService\022V\n\006Search\022\".loams." +
+      "TE\020\0022\334\001\n\014QueryService\022u\n\006Search\022\".loams." +
       "collection.v1.SearchRequest\032#.loams.coll" +
-      "ection.v1.SearchResponse\"\003\220\002\001\032U\212\265\030Q\n\006sea" +
-      "rch\022GQueries: one search over one collec" +
-      "tion, dense, sparse, text or hybrid.B\235\001\n" +
-      "!dev.loams.gen.loams.collection.v1B\nQuer" +
-      "yProtoP\001\242\002\003LCX\252\002\023Loams.Collection.V1\312\002\023L" +
-      "oams\\Collection\\V1\342\002\037Loams\\Collection\\V1" +
-      "\\GPBMetadata\352\002\025Loams::Collection::V1b\006pr" +
-      "oto3"
+      "ection.v1.SearchResponse\"\"\220\002\001\222\265\030\007\022\005query" +
+      "\222\265\030\020\n\006vector\022\006search\032U\212\265\030Q\n\006search\022GQuer" +
+      "ies: one search over one collection, den" +
+      "se, sparse, text or hybrid.B\235\001\n!dev.loam" +
+      "s.gen.loams.collection.v1B\nQueryProtoP\001\242" +
+      "\002\003LCX\252\002\023Loams.Collection.V1\312\002\023Loams\\Coll" +
+      "ection\\V1\342\002\037Loams\\Collection\\V1\\GPBMetad" +
+      "ata\352\002\025Loams::Collection::V1b\006proto3"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
@@ -929,6 +929,7 @@ public final class QueryProto {
     dev.loams.gen.loams.options.v1.OptionsProto.getDescriptor();
     com.google.protobuf.ExtensionRegistry registry =
         com.google.protobuf.ExtensionRegistry.newInstance();
+    registry.add(dev.loams.gen.loams.options.v1.OptionsProto.facade);
     registry.add(dev.loams.gen.loams.options.v1.OptionsProto.module);
     com.google.protobuf.Descriptors.FileDescriptor
         .internalUpdateFileDescriptor(descriptor, registry);

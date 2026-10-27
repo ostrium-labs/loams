@@ -151,9 +151,12 @@ public final class CallInvoker {
                                 return transport.unary(
                                         binding.service(),
                                         binding.method(),
-                                        message.toByteArray(),
+                                        transport.json()
+                                                ? dev.loams.internal.ProtoJsonCodec.print(message)
+                                                        .getBytes(java.nio.charset.StandardCharsets.UTF_8)
+                                                : message.toByteArray(),
                                         headers,
-                                        false,
+                                        transport.json(),
                                         remaining);
                             } catch (IOException e) {
                                 if (deadline.active() && Deadline.isTimeout(e)) {
@@ -170,8 +173,8 @@ public final class CallInvoker {
         ConnectTransport.UnaryResponse response = (ConnectTransport.UnaryResponse) result;
         Res parsed;
         try {
-            parsed = parser.parseFrom(response.body());
-        } catch (IOException e) {
+            parsed = transport.json() ? parseJson(parser, response.body()) : parser.parseFrom(response.body());
+        } catch (IOException | IllegalArgumentException e) {
             throw Errors.internal(
                     binding.rpc(),
                     "the response from " + binding.rpc() + " is not a " + parser.getClass().getSimpleName(),
@@ -191,6 +194,15 @@ public final class CallInvoker {
             session.record(response.header(ConsistencySession.HEADER.toLowerCase(java.util.Locale.ROOT)));
         }
         return parsed;
+    }
+
+    /** A JSON answer read into the response type the parser names. */
+    @SuppressWarnings("unchecked")
+    private static <Res extends Message> Res parseJson(Parser<Res> parser, byte[] body) throws IOException {
+        Res empty = parser.parseFrom(new byte[0]);
+        return (Res) dev.loams.internal.ProtoJsonCodec.merge(
+                        new String(body, java.nio.charset.StandardCharsets.UTF_8), empty.newBuilderForType())
+                .build();
     }
 
     /** The response fields a consistency token can arrive in (R4). */

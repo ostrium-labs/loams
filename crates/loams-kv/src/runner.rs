@@ -15,10 +15,10 @@ pub enum Mode {
     /// Reads at the start timestamp; conflicts show at commit (the default).
     #[default]
     Optimistic,
-    /// Locks taken at once, so a second holder queues (R1 Ruling 2).
-    /// Refused by [`Store::run`](crate::Store::run) until the seam has
-    /// `get_for_update`: reads stay at the start timestamp, so a
-    /// read-modify-write could lose an update (row T21-15).
+    /// Locks taken at once, so a second holder queues (R1 Ruling 2; D851):
+    /// [`Txn::get_for_update`](crate::Txn::get_for_update) and every write
+    /// lock their key, and `get_for_update` reads the latest committed
+    /// value. Plain reads stay at the start timestamp.
     Pessimistic,
 }
 
@@ -63,8 +63,7 @@ impl TxnOptions {
         }
     }
 
-    /// Like [`new`](Self::new), pessimistic. [`Store::run`](crate::Store::run)
-    /// refuses it until the seam has `get_for_update` (row T21-15).
+    /// Like [`new`](Self::new), pessimistic ([`Mode::Pessimistic`]).
     pub fn pessimistic(op: &'static str) -> Self {
         TxnOptions {
             mode: Mode::Pessimistic,

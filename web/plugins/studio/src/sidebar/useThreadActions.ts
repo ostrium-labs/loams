@@ -25,6 +25,7 @@ import {
   type PinPosition,
   type SidebarThread,
 } from '@loams/studio-ui';
+import { toastManager } from '@loams/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo, useState } from 'react';
 import type { StudioAgentd } from '../agentd.js';
@@ -204,6 +205,27 @@ export function useThreadActions(o: {
     setArchived: (id, archived) =>
       run(archived ? 'archive the thread' : 'unarchive the thread', async (c) => {
         await c.threads.setThreadArchived({ chatId: id, archived });
+        const title = threads.find((t) => t.id === id)?.title || 'Untitled thread';
+        toastManager.add({
+          type: 'success',
+          title: archived ? 'Thread archived' : 'Thread unarchived',
+          description: title,
+          ...(archived
+            ? {
+                actionProps: {
+                  children: 'Undo',
+                  onClick: () =>
+                    void c.threads
+                      .setThreadArchived({ chatId: id, archived: false })
+                      .catch((e: unknown) =>
+                        setError(
+                          `Could not unarchive the thread: ${e instanceof Error ? e.message : String(e)}`,
+                        ),
+                      ),
+                },
+              }
+            : {}),
+        });
       }),
     remove: (thread, worktree) =>
       run('delete the thread', async (c) => {
@@ -220,6 +242,11 @@ export function useThreadActions(o: {
           await c.git.deleteWorktree(worktree);
           await queryClient.invalidateQueries({ queryKey: worktreesKey() });
         }
+        toastManager.add({
+          type: 'success',
+          title: worktree ? 'Thread and worktree deleted' : 'Thread deleted',
+          description: thread.title || 'Untitled thread',
+        });
         if (thread.id === activeThreadId) {
           navigate(
             fallback
@@ -238,6 +265,11 @@ export function useThreadActions(o: {
       run('remove the worktrees', async (c) => {
         try {
           for (const target of targets) await c.git.deleteWorktree(target);
+          toastManager.add({
+            type: 'success',
+            title:
+              targets.length === 1 ? 'Removed 1 worktree' : `Removed ${targets.length} worktrees`,
+          });
         } finally {
           await queryClient.invalidateQueries({ queryKey: worktreesKey() });
         }

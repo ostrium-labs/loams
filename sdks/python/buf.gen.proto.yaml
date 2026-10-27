@@ -40,6 +40,14 @@ inputs:
       # and `loams.admin.*` modules bind.
       - proto/loams/auth/v1
       - proto/loams/admin/v1
+      # The app data planes (SDKP): the builders decode into these messages
+      # today, and the `namespaces`, `collections`, `documents`, `search`,
+      # `vector` and `graph` modules bind them once P0a annotates them.
+      - proto/loams/collection/v1
+      - proto/loams/graph/v1
+      # SDKP Part C: the `sql` and `streams` modules.
+      - proto/loams/sql/v1
+      - proto/loams/stream/v1
 plugins:
   # `protoc --python_out`: the messages and service descriptors. It writes
   # `loams/<package path>/<file>_pb2.py`.

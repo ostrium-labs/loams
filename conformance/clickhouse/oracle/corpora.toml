@@ -1,0 +1,25 @@
+# The oracle's corpora (HE0 Task 6). Each corpus is a setup script run on every
+# target and a directory of `.sql` cases, one query each; case ids are
+# `<name>/<file stem>`. Paths are relative to this file.
+#
+# The seed is the House's own select corpus (FL2, HS1 Task 11) over generated
+# rows. The scrubbed mined queries of HE0 Tasks 3–5 join as one corpus per
+# application, each over generated data of that application's schemas.
+
+[[corpus]]
+name = "select"
+setup = "corpus/select/setup.sql"
+cases = "../corpus/select"
+
+# Plan HE1's per-task corpora (D1804): each task's cases, with its setup run
+# on the baseline and seeded into the Rust engine's dev server. The id of a
+# case is `he1-<task>/<file stem>`.
+[[corpus]]
+name = "he1-21"
+setup = "corpus/he1/21/setup.sql"
+cases = "corpus/he1/21/cases"
+
+[[corpus]]
+name = "he1-22"
+setup = "corpus/he1/22/setup.sql"
+cases = "corpus/he1/22/cases"

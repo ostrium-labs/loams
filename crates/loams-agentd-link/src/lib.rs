@@ -7,7 +7,7 @@
 //!
 //! - [`client`] and [`mock`]: Connect-RPC to a local `loams` server, and an
 //!   in-process mock of it (`LOAMS_MOCK=1`).
-//! - [`auth`]: Authentik OIDC sign-in (PKCE, system browser, OS keychain).
+//! - [`auth`]: OIDC sign-in (PKCE, system browser, OS keychain).
 //! - [`a2a`]: the stub A2A client Loams Bot delegates with.
 //! - [`acp`]: Loams Bot as an ACP agent, which is how loams-desktop's engine and chat
 //!   UI drive it.

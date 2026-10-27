@@ -78,7 +78,7 @@ namespace Loams.Collection.V1 {
             "KAsyIC5sb2Ftcy5jb2xsZWN0aW9uLnYxLkNvbnNpc3RlbmN5Ugtjb25zaXN0",
             "ZW5jeSJyChRHZXREb2N1bWVudHNSZXNwb25zZRI7Cglkb2N1bWVudHMYASAD",
             "KAsyHS5sb2Ftcy5jb2xsZWN0aW9uLnYxLkRvY3VtZW50Uglkb2N1bWVudHMS",
-            "HQoKcmVhZF90b2tlbhgCIAEoCVIJcmVhZFRva2VuIpcDChZTY3JvbGxEb2N1",
+            "HQoKcmVhZF90b2tlbhgCIAEoCVIJcmVhZFRva2VuIsYDChZTY3JvbGxEb2N1",
             "bWVudHNSZXF1ZXN0EhwKCW5hbWVzcGFjZRgBIAEoCVIJbmFtZXNwYWNlEh4K",
             "CmNvbGxlY3Rpb24YAiABKAlSCmNvbGxlY3Rpb24SLgoGZmlsdGVyGAMgASgL",
             "MhYuZ29vZ2xlLnByb3RvYnVmLlZhbHVlUgZmaWx0ZXISNQoFYWZ0ZXIYBCAB",
@@ -87,90 +87,96 @@ namespace Loams.Collection.V1 {
             "b2dsZS5wcm90b2J1Zi5TdHJ1Y3RSBnNlbGVjdBJCCgtjb25zaXN0ZW5jeRgH",
             "IAEoCzIgLmxvYW1zLmNvbGxlY3Rpb24udjEuQ29uc2lzdGVuY3lSC2NvbnNp",
             "c3RlbmN5Ej4KCnBhZ2VfdG9rZW4YCCABKAsyHy5sb2Ftcy5jb2xsZWN0aW9u",
-            "LnYxLkRvY3VtZW50SWRSCXBhZ2VUb2tlbkIICgZfbGltaXQiqgEKF1Njcm9s",
-            "bERvY3VtZW50c1Jlc3BvbnNlEjsKCWRvY3VtZW50cxgBIAMoCzIdLmxvYW1z",
-            "LmNvbGxlY3Rpb24udjEuRG9jdW1lbnRSCWRvY3VtZW50cxIzCgRuZXh0GAIg",
-            "ASgLMh8ubG9hbXMuY29sbGVjdGlvbi52MS5Eb2N1bWVudElkUgRuZXh0Eh0K",
-            "CnJlYWRfdG9rZW4YAyABKAlSCXJlYWRUb2tlbiLJAQoVQ291bnREb2N1bWVu",
-            "dHNSZXF1ZXN0EhwKCW5hbWVzcGFjZRgBIAEoCVIJbmFtZXNwYWNlEh4KCmNv",
-            "bGxlY3Rpb24YAiABKAlSCmNvbGxlY3Rpb24SLgoGZmlsdGVyGAMgASgLMhYu",
-            "Z29vZ2xlLnByb3RvYnVmLlZhbHVlUgZmaWx0ZXISQgoLY29uc2lzdGVuY3kY",
-            "BCABKAsyIC5sb2Ftcy5jb2xsZWN0aW9uLnYxLkNvbnNpc3RlbmN5Ugtjb25z",
-            "aXN0ZW5jeSJcChZDb3VudERvY3VtZW50c1Jlc3BvbnNlEhkKBWNvdW50GAEg",
-            "ASgESABSBWNvdW50iAEBEh0KCnJlYWRfdG9rZW4YAiABKAlSCXJlYWRUb2tl",
-            "bkIICgZfY291bnQi2wIKFURlbGV0ZUJ5RmlsdGVyUmVxdWVzdBIcCgluYW1l",
-            "c3BhY2UYASABKAlSCW5hbWVzcGFjZRIeCgpjb2xsZWN0aW9uGAIgASgJUgpj",
-            "b2xsZWN0aW9uEi4KBmZpbHRlchgDIAEoCzIWLmdvb2dsZS5wcm90b2J1Zi5W",
-            "YWx1ZVIGZmlsdGVyEh4KCG1heF9yb3dzGAQgASgESABSB21heFJvd3OIAQES",
-            "IwoNYWxsb3dfcGFydGlhbBgFIAEoCFIMYWxsb3dQYXJ0aWFsEj4KBmN1cnNv",
-            "chgGIAEoCzImLmxvYW1zLmNvbGxlY3Rpb24udjEuRmlsdGVyV3JpdGVDdXJz",
-            "b3JSBmN1cnNvchJCCgtjb25zaXN0ZW5jeRgHIAEoCzIgLmxvYW1zLmNvbGxl",
-            "Y3Rpb24udjEuQ29uc2lzdGVuY3lSC2NvbnNpc3RlbmN5QgsKCV9tYXhfcm93",
-            "cyKMAwoUUGF0Y2hCeUZpbHRlclJlcXVlc3QSHAoJbmFtZXNwYWNlGAEgASgJ",
-            "UgluYW1lc3BhY2USHgoKY29sbGVjdGlvbhgCIAEoCVIKY29sbGVjdGlvbhIu",
-            "CgZmaWx0ZXIYAyABKAsyFi5nb29nbGUucHJvdG9idWYuVmFsdWVSBmZpbHRl",
-            "chIwCgVwYXRjaBgEIAEoCzIaLmxvYW1zLmNvbGxlY3Rpb24udjEuUGF0Y2hS",
-            "BXBhdGNoEh4KCG1heF9yb3dzGAUgASgESABSB21heFJvd3OIAQESIwoNYWxs",
-            "b3dfcGFydGlhbBgGIAEoCFIMYWxsb3dQYXJ0aWFsEj4KBmN1cnNvchgHIAEo",
-            "CzImLmxvYW1zLmNvbGxlY3Rpb24udjEuRmlsdGVyV3JpdGVDdXJzb3JSBmN1",
-            "cnNvchJCCgtjb25zaXN0ZW5jeRgIIAEoCzIgLmxvYW1zLmNvbGxlY3Rpb24u",
-            "djEuQ29uc2lzdGVuY3lSC2NvbnNpc3RlbmN5QgsKCV9tYXhfcm93cyKrAwoT",
-            "RmlsdGVyV3JpdGVSZXNwb25zZRIdCgdtYXRjaGVkGAEgASgESABSB21hdGNo",
-            "ZWSIAQESHwoIYWZmZWN0ZWQYAiABKARIAVIIYWZmZWN0ZWSIAQESHQoHd3Jp",
-            "dHRlbhgDIAEoBEgCUgd3cml0dGVuiAEBEh0KB2JhdGNoZXMYBCABKARIA1IH",
-            "YmF0Y2hlc4gBARIlCg5yb3dzX3JlbWFpbmluZxgFIAEoCFINcm93c1JlbWFp",
-            "bmluZxI+CgZjdXJzb3IYBiABKAsyJi5sb2Ftcy5jb2xsZWN0aW9uLnYxLkZp",
-            "bHRlcldyaXRlQ3Vyc29yUgZjdXJzb3ISFAoFdG9rZW4YByABKAlSBXRva2Vu",
-            "EioKA3BpbhgIIAEoCzIYLmxvYW1zLmNvbGxlY3Rpb24udjEuUGluUgNwaW4S",
-            "KQoOcmV0cnlfYWZ0ZXJfbXMYCSABKARIBFIMcmV0cnlBZnRlck1ziAEBQgoK",
-            "CF9tYXRjaGVkQgsKCV9hZmZlY3RlZEIKCghfd3JpdHRlbkIKCghfYmF0Y2hl",
-            "c0IRCg9fcmV0cnlfYWZ0ZXJfbXMiiwEKEUZpbHRlcldyaXRlQ3Vyc29yEjUK",
-            "BWFmdGVyGAEgASgLMh8ubG9hbXMuY29sbGVjdGlvbi52MS5Eb2N1bWVudElk",
-            "UgVhZnRlchIpChBtYW5pZmVzdF92ZXJzaW9uGAIgASgEUg9tYW5pZmVzdFZl",
-            "cnNpb24SFAoFdG9rZW4YAyABKAlSBXRva2VuIpUFCghEb2N1bWVudBIvCgJp",
-            "ZBgBIAEoCzIfLmxvYW1zLmNvbGxlY3Rpb24udjEuRG9jdW1lbnRJZFICaWQS",
-            "LwoGc291cmNlGAIgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdFIGc291",
-            "cmNlEkQKB3ZlY3RvcnMYAyADKAsyKi5sb2Ftcy5jb2xsZWN0aW9uLnYxLkRv",
-            "Y3VtZW50LlZlY3RvcnNFbnRyeVIHdmVjdG9ycxJXCg5zcGFyc2VfdmVjdG9y",
-            "cxgEIAMoCzIwLmxvYW1zLmNvbGxlY3Rpb24udjEuRG9jdW1lbnQuU3BhcnNl",
-            "VmVjdG9yc0VudHJ5Ug1zcGFyc2VWZWN0b3JzEkEKBmZpZWxkcxgFIAMoCzIp",
-            "LmxvYW1zLmNvbGxlY3Rpb24udjEuRG9jdW1lbnQuRmllbGRzRW50cnlSBmZp",
-            "ZWxkcxIaCgZzZXFfbm8YBiABKARIAFIFc2VxTm+IAQESHAoJcGFydGl0aW9u",
-            "GAcgASgNUglwYXJ0aXRpb24aUgoMVmVjdG9yc0VudHJ5EhAKA2tleRgBIAEo",
-            "CVIDa2V5EiwKBXZhbHVlGAIgASgLMhYuZ29vZ2xlLnByb3RvYnVmLlZhbHVl",
-            "UgV2YWx1ZToCOAEaWQoSU3BhcnNlVmVjdG9yc0VudHJ5EhAKA2tleRgBIAEo",
-            "CVIDa2V5Ei0KBXZhbHVlGAIgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVj",
-            "dFIFdmFsdWU6AjgBGlEKC0ZpZWxkc0VudHJ5EhAKA2tleRgBIAEoCVIDa2V5",
-            "EiwKBXZhbHVlGAIgASgLMhYuZ29vZ2xlLnByb3RvYnVmLlZhbHVlUgV2YWx1",
-            "ZToCOAFCCQoHX3NlcV9ubyKSAQoLQ29uc2lzdGVuY3kSPAoJZnJlc2huZXNz",
-            "GAEgASgOMh4ubG9hbXMuY29sbGVjdGlvbi52MS5GcmVzaG5lc3NSCWZyZXNo",
-            "bmVzcxIZCghhdF9sZWFzdBgCIAEoCVIHYXRMZWFzdBIqCgNwaW4YAyABKAsy",
-            "GC5sb2Ftcy5jb2xsZWN0aW9uLnYxLlBpblIDcGluIkYKA1BpbhIpChBtYW5p",
-            "ZmVzdF92ZXJzaW9uGAEgASgEUg9tYW5pZmVzdFZlcnNpb24SFAoFdG9rZW4Y",
-            "AiABKAlSBXRva2VuKq8BCghPcFJlc3VsdBIZChVPUF9SRVNVTFRfVU5TUEVD",
-            "SUZJRUQQABIVChFPUF9SRVNVTFRfQ1JFQVRFRBABEhUKEU9QX1JFU1VMVF9V",
-            "UERBVEVEEAISFQoRT1BfUkVTVUxUX0RFTEVURUQQAxIXChNPUF9SRVNVTFRf",
-            "Tk9UX0ZPVU5EEAQSEgoOT1BfUkVTVUxUX05PT1AQBRIWChJPUF9SRVNVTFRf",
-            "QUNDRVBURUQQBipUCglGcmVzaG5lc3MSGQoVRlJFU0hORVNTX1VOU1BFQ0lG",
-            "SUVEEAASFAoQRlJFU0hORVNTX1NUUk9ORxABEhYKEkZSRVNITkVTU19FVkVO",
-            "VFVBTBACMvsFCg9Eb2N1bWVudFNlcnZpY2USawoOV3JpdGVEb2N1bWVudHMS",
-            "Ki5sb2Ftcy5jb2xsZWN0aW9uLnYxLldyaXRlRG9jdW1lbnRzUmVxdWVzdBor",
-            "LmxvYW1zLmNvbGxlY3Rpb24udjEuV3JpdGVEb2N1bWVudHNSZXNwb25zZSIA",
-            "EmgKDEdldERvY3VtZW50cxIoLmxvYW1zLmNvbGxlY3Rpb24udjEuR2V0RG9j",
-            "dW1lbnRzUmVxdWVzdBopLmxvYW1zLmNvbGxlY3Rpb24udjEuR2V0RG9jdW1l",
-            "bnRzUmVzcG9uc2UiA5ACARJxCg9TY3JvbGxEb2N1bWVudHMSKy5sb2Ftcy5j",
-            "b2xsZWN0aW9uLnYxLlNjcm9sbERvY3VtZW50c1JlcXVlc3QaLC5sb2Ftcy5j",
-            "b2xsZWN0aW9uLnYxLlNjcm9sbERvY3VtZW50c1Jlc3BvbnNlIgOQAgESbgoO",
-            "Q291bnREb2N1bWVudHMSKi5sb2Ftcy5jb2xsZWN0aW9uLnYxLkNvdW50RG9j",
-            "dW1lbnRzUmVxdWVzdBorLmxvYW1zLmNvbGxlY3Rpb24udjEuQ291bnREb2N1",
-            "bWVudHNSZXNwb25zZSIDkAIBEmgKDkRlbGV0ZUJ5RmlsdGVyEioubG9hbXMu",
-            "Y29sbGVjdGlvbi52MS5EZWxldGVCeUZpbHRlclJlcXVlc3QaKC5sb2Ftcy5j",
-            "b2xsZWN0aW9uLnYxLkZpbHRlcldyaXRlUmVzcG9uc2UiABJmCg1QYXRjaEJ5",
-            "RmlsdGVyEikubG9hbXMuY29sbGVjdGlvbi52MS5QYXRjaEJ5RmlsdGVyUmVx",
-            "dWVzdBooLmxvYW1zLmNvbGxlY3Rpb24udjEuRmlsdGVyV3JpdGVSZXNwb25z",
-            "ZSIAGlyKtRhYCglkb2N1bWVudHMSS0RvY3VtZW50czogd3JpdGUsIGdldCwg",
-            "c2Nyb2xsLCBjb3VudCwgZGVsZXRlIGJ5IGZpbHRlciBhbmQgcGF0Y2ggYnkg",
-            "ZmlsdGVyLmIGcHJvdG8z"));
+            "LnYxLkRvY3VtZW50SWRSCXBhZ2VUb2tlbhItCgV3aGVyZRgJIAEoCzIXLmdv",
+            "b2dsZS5wcm90b2J1Zi5TdHJ1Y3RSBXdoZXJlQggKBl9saW1pdCKqAQoXU2Ny",
+            "b2xsRG9jdW1lbnRzUmVzcG9uc2USOwoJZG9jdW1lbnRzGAEgAygLMh0ubG9h",
+            "bXMuY29sbGVjdGlvbi52MS5Eb2N1bWVudFIJZG9jdW1lbnRzEjMKBG5leHQY",
+            "AiABKAsyHy5sb2Ftcy5jb2xsZWN0aW9uLnYxLkRvY3VtZW50SWRSBG5leHQS",
+            "HQoKcmVhZF90b2tlbhgDIAEoCVIJcmVhZFRva2VuIvgBChVDb3VudERvY3Vt",
+            "ZW50c1JlcXVlc3QSHAoJbmFtZXNwYWNlGAEgASgJUgluYW1lc3BhY2USHgoK",
+            "Y29sbGVjdGlvbhgCIAEoCVIKY29sbGVjdGlvbhIuCgZmaWx0ZXIYAyABKAsy",
+            "Fi5nb29nbGUucHJvdG9idWYuVmFsdWVSBmZpbHRlchJCCgtjb25zaXN0ZW5j",
+            "eRgEIAEoCzIgLmxvYW1zLmNvbGxlY3Rpb24udjEuQ29uc2lzdGVuY3lSC2Nv",
+            "bnNpc3RlbmN5Ei0KBXdoZXJlGAUgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0",
+            "cnVjdFIFd2hlcmUiXAoWQ291bnREb2N1bWVudHNSZXNwb25zZRIZCgVjb3Vu",
+            "dBgBIAEoBEgAUgVjb3VudIgBARIdCgpyZWFkX3Rva2VuGAIgASgJUglyZWFk",
+            "VG9rZW5CCAoGX2NvdW50IooDChVEZWxldGVCeUZpbHRlclJlcXVlc3QSHAoJ",
+            "bmFtZXNwYWNlGAEgASgJUgluYW1lc3BhY2USHgoKY29sbGVjdGlvbhgCIAEo",
+            "CVIKY29sbGVjdGlvbhIuCgZmaWx0ZXIYAyABKAsyFi5nb29nbGUucHJvdG9i",
+            "dWYuVmFsdWVSBmZpbHRlchIeCghtYXhfcm93cxgEIAEoBEgAUgdtYXhSb3dz",
+            "iAEBEiMKDWFsbG93X3BhcnRpYWwYBSABKAhSDGFsbG93UGFydGlhbBI+CgZj",
+            "dXJzb3IYBiABKAsyJi5sb2Ftcy5jb2xsZWN0aW9uLnYxLkZpbHRlcldyaXRl",
+            "Q3Vyc29yUgZjdXJzb3ISQgoLY29uc2lzdGVuY3kYByABKAsyIC5sb2Ftcy5j",
+            "b2xsZWN0aW9uLnYxLkNvbnNpc3RlbmN5Ugtjb25zaXN0ZW5jeRItCgV3aGVy",
+            "ZRgIIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3RSBXdoZXJlQgsKCV9t",
+            "YXhfcm93cyK7AwoUUGF0Y2hCeUZpbHRlclJlcXVlc3QSHAoJbmFtZXNwYWNl",
+            "GAEgASgJUgluYW1lc3BhY2USHgoKY29sbGVjdGlvbhgCIAEoCVIKY29sbGVj",
+            "dGlvbhIuCgZmaWx0ZXIYAyABKAsyFi5nb29nbGUucHJvdG9idWYuVmFsdWVS",
+            "BmZpbHRlchIwCgVwYXRjaBgEIAEoCzIaLmxvYW1zLmNvbGxlY3Rpb24udjEu",
+            "UGF0Y2hSBXBhdGNoEh4KCG1heF9yb3dzGAUgASgESABSB21heFJvd3OIAQES",
+            "IwoNYWxsb3dfcGFydGlhbBgGIAEoCFIMYWxsb3dQYXJ0aWFsEj4KBmN1cnNv",
+            "chgHIAEoCzImLmxvYW1zLmNvbGxlY3Rpb24udjEuRmlsdGVyV3JpdGVDdXJz",
+            "b3JSBmN1cnNvchJCCgtjb25zaXN0ZW5jeRgIIAEoCzIgLmxvYW1zLmNvbGxl",
+            "Y3Rpb24udjEuQ29uc2lzdGVuY3lSC2NvbnNpc3RlbmN5Ei0KBXdoZXJlGAkg",
+            "ASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdFIFd2hlcmVCCwoJX21heF9y",
+            "b3dzIqsDChNGaWx0ZXJXcml0ZVJlc3BvbnNlEh0KB21hdGNoZWQYASABKARI",
+            "AFIHbWF0Y2hlZIgBARIfCghhZmZlY3RlZBgCIAEoBEgBUghhZmZlY3RlZIgB",
+            "ARIdCgd3cml0dGVuGAMgASgESAJSB3dyaXR0ZW6IAQESHQoHYmF0Y2hlcxgE",
+            "IAEoBEgDUgdiYXRjaGVziAEBEiUKDnJvd3NfcmVtYWluaW5nGAUgASgIUg1y",
+            "b3dzUmVtYWluaW5nEj4KBmN1cnNvchgGIAEoCzImLmxvYW1zLmNvbGxlY3Rp",
+            "b24udjEuRmlsdGVyV3JpdGVDdXJzb3JSBmN1cnNvchIUCgV0b2tlbhgHIAEo",
+            "CVIFdG9rZW4SKgoDcGluGAggASgLMhgubG9hbXMuY29sbGVjdGlvbi52MS5Q",
+            "aW5SA3BpbhIpCg5yZXRyeV9hZnRlcl9tcxgJIAEoBEgEUgxyZXRyeUFmdGVy",
+            "TXOIAQFCCgoIX21hdGNoZWRCCwoJX2FmZmVjdGVkQgoKCF93cml0dGVuQgoK",
+            "CF9iYXRjaGVzQhEKD19yZXRyeV9hZnRlcl9tcyKLAQoRRmlsdGVyV3JpdGVD",
+            "dXJzb3ISNQoFYWZ0ZXIYASABKAsyHy5sb2Ftcy5jb2xsZWN0aW9uLnYxLkRv",
+            "Y3VtZW50SWRSBWFmdGVyEikKEG1hbmlmZXN0X3ZlcnNpb24YAiABKARSD21h",
+            "bmlmZXN0VmVyc2lvbhIUCgV0b2tlbhgDIAEoCVIFdG9rZW4ilQUKCERvY3Vt",
+            "ZW50Ei8KAmlkGAEgASgLMh8ubG9hbXMuY29sbGVjdGlvbi52MS5Eb2N1bWVu",
+            "dElkUgJpZBIvCgZzb3VyY2UYAiABKAsyFy5nb29nbGUucHJvdG9idWYuU3Ry",
+            "dWN0UgZzb3VyY2USRAoHdmVjdG9ycxgDIAMoCzIqLmxvYW1zLmNvbGxlY3Rp",
+            "b24udjEuRG9jdW1lbnQuVmVjdG9yc0VudHJ5Ugd2ZWN0b3JzElcKDnNwYXJz",
+            "ZV92ZWN0b3JzGAQgAygLMjAubG9hbXMuY29sbGVjdGlvbi52MS5Eb2N1bWVu",
+            "dC5TcGFyc2VWZWN0b3JzRW50cnlSDXNwYXJzZVZlY3RvcnMSQQoGZmllbGRz",
+            "GAUgAygLMikubG9hbXMuY29sbGVjdGlvbi52MS5Eb2N1bWVudC5GaWVsZHNF",
+            "bnRyeVIGZmllbGRzEhoKBnNlcV9ubxgGIAEoBEgAUgVzZXFOb4gBARIcCglw",
+            "YXJ0aXRpb24YByABKA1SCXBhcnRpdGlvbhpSCgxWZWN0b3JzRW50cnkSEAoD",
+            "a2V5GAEgASgJUgNrZXkSLAoFdmFsdWUYAiABKAsyFi5nb29nbGUucHJvdG9i",
+            "dWYuVmFsdWVSBXZhbHVlOgI4ARpZChJTcGFyc2VWZWN0b3JzRW50cnkSEAoD",
+            "a2V5GAEgASgJUgNrZXkSLQoFdmFsdWUYAiABKAsyFy5nb29nbGUucHJvdG9i",
+            "dWYuU3RydWN0UgV2YWx1ZToCOAEaUQoLRmllbGRzRW50cnkSEAoDa2V5GAEg",
+            "ASgJUgNrZXkSLAoFdmFsdWUYAiABKAsyFi5nb29nbGUucHJvdG9idWYuVmFs",
+            "dWVSBXZhbHVlOgI4AUIJCgdfc2VxX25vIpIBCgtDb25zaXN0ZW5jeRI8Cglm",
+            "cmVzaG5lc3MYASABKA4yHi5sb2Ftcy5jb2xsZWN0aW9uLnYxLkZyZXNobmVz",
+            "c1IJZnJlc2huZXNzEhkKCGF0X2xlYXN0GAIgASgJUgdhdExlYXN0EioKA3Bp",
+            "bhgDIAEoCzIYLmxvYW1zLmNvbGxlY3Rpb24udjEuUGluUgNwaW4iRgoDUGlu",
+            "EikKEG1hbmlmZXN0X3ZlcnNpb24YASABKARSD21hbmlmZXN0VmVyc2lvbhIU",
+            "CgV0b2tlbhgCIAEoCVIFdG9rZW4qrwEKCE9wUmVzdWx0EhkKFU9QX1JFU1VM",
+            "VF9VTlNQRUNJRklFRBAAEhUKEU9QX1JFU1VMVF9DUkVBVEVEEAESFQoRT1Bf",
+            "UkVTVUxUX1VQREFURUQQAhIVChFPUF9SRVNVTFRfREVMRVRFRBADEhcKE09Q",
+            "X1JFU1VMVF9OT1RfRk9VTkQQBBISCg5PUF9SRVNVTFRfTk9PUBAFEhYKEk9Q",
+            "X1JFU1VMVF9BQ0NFUFRFRBAGKlQKCUZyZXNobmVzcxIZChVGUkVTSE5FU1Nf",
+            "VU5TUEVDSUZJRUQQABIUChBGUkVTSE5FU1NfU1RST05HEAESFgoSRlJFU0hO",
+            "RVNTX0VWRU5UVUFMEAIy0QYKD0RvY3VtZW50U2VydmljZRJ2Cg5Xcml0ZURv",
+            "Y3VtZW50cxIqLmxvYW1zLmNvbGxlY3Rpb24udjEuV3JpdGVEb2N1bWVudHNS",
+            "ZXF1ZXN0GisubG9hbXMuY29sbGVjdGlvbi52MS5Xcml0ZURvY3VtZW50c1Jl",
+            "c3BvbnNlIguStRgHEgV3cml0ZRJxCgxHZXREb2N1bWVudHMSKC5sb2Ftcy5j",
+            "b2xsZWN0aW9uLnYxLkdldERvY3VtZW50c1JlcXVlc3QaKS5sb2Ftcy5jb2xs",
+            "ZWN0aW9uLnYxLkdldERvY3VtZW50c1Jlc3BvbnNlIgyQAgGStRgFEgNnZXQS",
+            "fQoPU2Nyb2xsRG9jdW1lbnRzEisubG9hbXMuY29sbGVjdGlvbi52MS5TY3Jv",
+            "bGxEb2N1bWVudHNSZXF1ZXN0GiwubG9hbXMuY29sbGVjdGlvbi52MS5TY3Jv",
+            "bGxEb2N1bWVudHNSZXNwb25zZSIPkAIBkrUYCBIGc2Nyb2xsEnkKDkNvdW50",
+            "RG9jdW1lbnRzEioubG9hbXMuY29sbGVjdGlvbi52MS5Db3VudERvY3VtZW50",
+            "c1JlcXVlc3QaKy5sb2Ftcy5jb2xsZWN0aW9uLnYxLkNvdW50RG9jdW1lbnRz",
+            "UmVzcG9uc2UiDpACAZK1GAcSBWNvdW50En4KDkRlbGV0ZUJ5RmlsdGVyEiou",
+            "bG9hbXMuY29sbGVjdGlvbi52MS5EZWxldGVCeUZpbHRlclJlcXVlc3QaKC5s",
+            "b2Ftcy5jb2xsZWN0aW9uLnYxLkZpbHRlcldyaXRlUmVzcG9uc2UiFpK1GBIS",
+            "EGRlbGV0ZV9ieV9maWx0ZXISewoNUGF0Y2hCeUZpbHRlchIpLmxvYW1zLmNv",
+            "bGxlY3Rpb24udjEuUGF0Y2hCeUZpbHRlclJlcXVlc3QaKC5sb2Ftcy5jb2xs",
+            "ZWN0aW9uLnYxLkZpbHRlcldyaXRlUmVzcG9uc2UiFZK1GBESD3BhdGNoX2J5",
+            "X2ZpbHRlchpcirUYWAoJZG9jdW1lbnRzEktEb2N1bWVudHM6IHdyaXRlLCBn",
+            "ZXQsIHNjcm9sbCwgY291bnQsIGRlbGV0ZSBieSBmaWx0ZXIgYW5kIHBhdGNo",
+            "IGJ5IGZpbHRlci5iBnByb3RvMw=="));
       descriptor = pbr::FileDescriptor.FromGeneratedCode(descriptorData,
           new pbr::FileDescriptor[] { global::Google.Protobuf.WellKnownTypes.StructReflection.Descriptor, global::Loams.Options.V1.OptionsReflection.Descriptor, },
           new pbr::GeneratedClrTypeInfo(new[] {typeof(global::Loams.Collection.V1.OpResult), typeof(global::Loams.Collection.V1.Freshness), }, null, new pbr::GeneratedClrTypeInfo[] {
@@ -184,12 +190,12 @@ namespace Loams.Collection.V1 {
             new pbr::GeneratedClrTypeInfo(typeof(global::Loams.Collection.V1.OpPosition), global::Loams.Collection.V1.OpPosition.Parser, new[]{ "Partition", "SeqNo" }, new[]{ "SeqNo" }, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::Loams.Collection.V1.GetDocumentsRequest), global::Loams.Collection.V1.GetDocumentsRequest.Parser, new[]{ "Namespace", "Collection", "Ids", "Select", "Consistency" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::Loams.Collection.V1.GetDocumentsResponse), global::Loams.Collection.V1.GetDocumentsResponse.Parser, new[]{ "Documents", "ReadToken" }, null, null, null, null),
-            new pbr::GeneratedClrTypeInfo(typeof(global::Loams.Collection.V1.ScrollDocumentsRequest), global::Loams.Collection.V1.ScrollDocumentsRequest.Parser, new[]{ "Namespace", "Collection", "Filter", "After", "Limit", "Select", "Consistency", "PageToken" }, new[]{ "Limit" }, null, null, null),
+            new pbr::GeneratedClrTypeInfo(typeof(global::Loams.Collection.V1.ScrollDocumentsRequest), global::Loams.Collection.V1.ScrollDocumentsRequest.Parser, new[]{ "Namespace", "Collection", "Filter", "After", "Limit", "Select", "Consistency", "PageToken", "Where" }, new[]{ "Limit" }, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::Loams.Collection.V1.ScrollDocumentsResponse), global::Loams.Collection.V1.ScrollDocumentsResponse.Parser, new[]{ "Documents", "Next", "ReadToken" }, null, null, null, null),
-            new pbr::GeneratedClrTypeInfo(typeof(global::Loams.Collection.V1.CountDocumentsRequest), global::Loams.Collection.V1.CountDocumentsRequest.Parser, new[]{ "Namespace", "Collection", "Filter", "Consistency" }, null, null, null, null),
+            new pbr::GeneratedClrTypeInfo(typeof(global::Loams.Collection.V1.CountDocumentsRequest), global::Loams.Collection.V1.CountDocumentsRequest.Parser, new[]{ "Namespace", "Collection", "Filter", "Consistency", "Where" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::Loams.Collection.V1.CountDocumentsResponse), global::Loams.Collection.V1.CountDocumentsResponse.Parser, new[]{ "Count", "ReadToken" }, new[]{ "Count" }, null, null, null),
-            new pbr::GeneratedClrTypeInfo(typeof(global::Loams.Collection.V1.DeleteByFilterRequest), global::Loams.Collection.V1.DeleteByFilterRequest.Parser, new[]{ "Namespace", "Collection", "Filter", "MaxRows", "AllowPartial", "Cursor", "Consistency" }, new[]{ "MaxRows" }, null, null, null),
-            new pbr::GeneratedClrTypeInfo(typeof(global::Loams.Collection.V1.PatchByFilterRequest), global::Loams.Collection.V1.PatchByFilterRequest.Parser, new[]{ "Namespace", "Collection", "Filter", "Patch", "MaxRows", "AllowPartial", "Cursor", "Consistency" }, new[]{ "MaxRows" }, null, null, null),
+            new pbr::GeneratedClrTypeInfo(typeof(global::Loams.Collection.V1.DeleteByFilterRequest), global::Loams.Collection.V1.DeleteByFilterRequest.Parser, new[]{ "Namespace", "Collection", "Filter", "MaxRows", "AllowPartial", "Cursor", "Consistency", "Where" }, new[]{ "MaxRows" }, null, null, null),
+            new pbr::GeneratedClrTypeInfo(typeof(global::Loams.Collection.V1.PatchByFilterRequest), global::Loams.Collection.V1.PatchByFilterRequest.Parser, new[]{ "Namespace", "Collection", "Filter", "Patch", "MaxRows", "AllowPartial", "Cursor", "Consistency", "Where" }, new[]{ "MaxRows" }, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::Loams.Collection.V1.FilterWriteResponse), global::Loams.Collection.V1.FilterWriteResponse.Parser, new[]{ "Matched", "Affected", "Written", "Batches", "RowsRemaining", "Cursor", "Token", "Pin", "RetryAfterMs" }, new[]{ "Matched", "Affected", "Written", "Batches", "RetryAfterMs" }, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::Loams.Collection.V1.FilterWriteCursor), global::Loams.Collection.V1.FilterWriteCursor.Parser, new[]{ "After", "ManifestVersion", "Token" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::Loams.Collection.V1.Document), global::Loams.Collection.V1.Document.Parser, new[]{ "Id", "Source", "Vectors", "SparseVectors", "Fields", "SeqNo", "Partition" }, new[]{ "SeqNo" }, null, null, new pbr::GeneratedClrTypeInfo[] { null, null, null, }),
@@ -3560,6 +3566,7 @@ namespace Loams.Collection.V1 {
       select_ = other.select_ != null ? other.select_.Clone() : null;
       consistency_ = other.consistency_ != null ? other.consistency_.Clone() : null;
       pageToken_ = other.pageToken_ != null ? other.pageToken_.Clone() : null;
+      where_ = other.where_ != null ? other.where_.Clone() : null;
       _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
     }
 
@@ -3709,6 +3716,26 @@ namespace Loams.Collection.V1 {
       }
     }
 
+    /// <summary>Field number for the "where" field.</summary>
+    public const int WhereFieldNumber = 9;
+    private global::Google.Protobuf.WellKnownTypes.Struct where_;
+    /// <summary>
+    /// The filter as a typed `loams.collection.v1.Query`, in its proto3 JSON
+    /// (`{"term": {"field": "tags", "value": "policy"}}`, `{"matchAll": {}}`):
+    /// the shape the SDKs' `Filter` builder writes and `SearchRequest.filter`
+    /// takes. A `Struct` and not a `Query` because `query.proto` imports this
+    /// file, so this file cannot import it back (SDKP ruling P0a-1). Setting both
+    /// this and `filter` is `invalid_argument` with reason `filter_conflict`.
+    /// </summary>
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public global::Google.Protobuf.WellKnownTypes.Struct Where {
+      get { return where_; }
+      set {
+        where_ = value;
+      }
+    }
+
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override bool Equals(object other) {
@@ -3732,6 +3759,7 @@ namespace Loams.Collection.V1 {
       if (!object.Equals(Select, other.Select)) return false;
       if (!object.Equals(Consistency, other.Consistency)) return false;
       if (!object.Equals(PageToken, other.PageToken)) return false;
+      if (!object.Equals(Where, other.Where)) return false;
       return Equals(_unknownFields, other._unknownFields);
     }
 
@@ -3747,6 +3775,7 @@ namespace Loams.Collection.V1 {
       if (select_ != null) hash ^= Select.GetHashCode();
       if (consistency_ != null) hash ^= Consistency.GetHashCode();
       if (pageToken_ != null) hash ^= PageToken.GetHashCode();
+      if (where_ != null) hash ^= Where.GetHashCode();
       if (_unknownFields != null) {
         hash ^= _unknownFields.GetHashCode();
       }
@@ -3797,6 +3826,10 @@ namespace Loams.Collection.V1 {
         output.WriteRawTag(66);
         output.WriteMessage(PageToken);
       }
+      if (where_ != null) {
+        output.WriteRawTag(74);
+        output.WriteMessage(Where);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(output);
       }
@@ -3839,6 +3872,10 @@ namespace Loams.Collection.V1 {
         output.WriteRawTag(66);
         output.WriteMessage(PageToken);
       }
+      if (where_ != null) {
+        output.WriteRawTag(74);
+        output.WriteMessage(Where);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(ref output);
       }
@@ -3872,6 +3909,9 @@ namespace Loams.Collection.V1 {
       }
       if (pageToken_ != null) {
         size += 1 + pb::CodedOutputStream.ComputeMessageSize(PageToken);
+      }
+      if (where_ != null) {
+        size += 1 + pb::CodedOutputStream.ComputeMessageSize(Where);
       }
       if (_unknownFields != null) {
         size += _unknownFields.CalculateSize();
@@ -3923,6 +3963,12 @@ namespace Loams.Collection.V1 {
           PageToken = new global::Loams.Collection.V1.DocumentId();
         }
         PageToken.MergeFrom(other.PageToken);
+      }
+      if (other.where_ != null) {
+        if (where_ == null) {
+          Where = new global::Google.Protobuf.WellKnownTypes.Struct();
+        }
+        Where.MergeFrom(other.Where);
       }
       _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
     }
@@ -3990,6 +4036,13 @@ namespace Loams.Collection.V1 {
             input.ReadMessage(PageToken);
             break;
           }
+          case 74: {
+            if (where_ == null) {
+              Where = new global::Google.Protobuf.WellKnownTypes.Struct();
+            }
+            input.ReadMessage(Where);
+            break;
+          }
         }
       }
     #endif
@@ -4054,6 +4107,13 @@ namespace Loams.Collection.V1 {
               PageToken = new global::Loams.Collection.V1.DocumentId();
             }
             input.ReadMessage(PageToken);
+            break;
+          }
+          case 74: {
+            if (where_ == null) {
+              Where = new global::Google.Protobuf.WellKnownTypes.Struct();
+            }
+            input.ReadMessage(Where);
             break;
           }
         }
@@ -4378,6 +4438,7 @@ namespace Loams.Collection.V1 {
       collection_ = other.collection_;
       filter_ = other.filter_ != null ? other.filter_.Clone() : null;
       consistency_ = other.consistency_ != null ? other.consistency_.Clone() : null;
+      where_ = other.where_ != null ? other.where_.Clone() : null;
       _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
     }
 
@@ -4438,6 +4499,26 @@ namespace Loams.Collection.V1 {
       }
     }
 
+    /// <summary>Field number for the "where" field.</summary>
+    public const int WhereFieldNumber = 5;
+    private global::Google.Protobuf.WellKnownTypes.Struct where_;
+    /// <summary>
+    /// The filter as a typed `loams.collection.v1.Query`, in its proto3 JSON
+    /// (`{"term": {"field": "tags", "value": "policy"}}`, `{"matchAll": {}}`):
+    /// the shape the SDKs' `Filter` builder writes and `SearchRequest.filter`
+    /// takes. A `Struct` and not a `Query` because `query.proto` imports this
+    /// file, so this file cannot import it back (SDKP ruling P0a-1). Setting both
+    /// this and `filter` is `invalid_argument` with reason `filter_conflict`.
+    /// </summary>
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public global::Google.Protobuf.WellKnownTypes.Struct Where {
+      get { return where_; }
+      set {
+        where_ = value;
+      }
+    }
+
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override bool Equals(object other) {
@@ -4457,6 +4538,7 @@ namespace Loams.Collection.V1 {
       if (Collection != other.Collection) return false;
       if (!object.Equals(Filter, other.Filter)) return false;
       if (!object.Equals(Consistency, other.Consistency)) return false;
+      if (!object.Equals(Where, other.Where)) return false;
       return Equals(_unknownFields, other._unknownFields);
     }
 
@@ -4468,6 +4550,7 @@ namespace Loams.Collection.V1 {
       if (Collection.Length != 0) hash ^= Collection.GetHashCode();
       if (filter_ != null) hash ^= Filter.GetHashCode();
       if (consistency_ != null) hash ^= Consistency.GetHashCode();
+      if (where_ != null) hash ^= Where.GetHashCode();
       if (_unknownFields != null) {
         hash ^= _unknownFields.GetHashCode();
       }
@@ -4502,6 +4585,10 @@ namespace Loams.Collection.V1 {
         output.WriteRawTag(34);
         output.WriteMessage(Consistency);
       }
+      if (where_ != null) {
+        output.WriteRawTag(42);
+        output.WriteMessage(Where);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(output);
       }
@@ -4528,6 +4615,10 @@ namespace Loams.Collection.V1 {
         output.WriteRawTag(34);
         output.WriteMessage(Consistency);
       }
+      if (where_ != null) {
+        output.WriteRawTag(42);
+        output.WriteMessage(Where);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(ref output);
       }
@@ -4549,6 +4640,9 @@ namespace Loams.Collection.V1 {
       }
       if (consistency_ != null) {
         size += 1 + pb::CodedOutputStream.ComputeMessageSize(Consistency);
+      }
+      if (where_ != null) {
+        size += 1 + pb::CodedOutputStream.ComputeMessageSize(Where);
       }
       if (_unknownFields != null) {
         size += _unknownFields.CalculateSize();
@@ -4579,6 +4673,12 @@ namespace Loams.Collection.V1 {
           Consistency = new global::Loams.Collection.V1.Consistency();
         }
         Consistency.MergeFrom(other.Consistency);
+      }
+      if (other.where_ != null) {
+        if (where_ == null) {
+          Where = new global::Google.Protobuf.WellKnownTypes.Struct();
+        }
+        Where.MergeFrom(other.Where);
       }
       _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
     }
@@ -4621,6 +4721,13 @@ namespace Loams.Collection.V1 {
             input.ReadMessage(Consistency);
             break;
           }
+          case 42: {
+            if (where_ == null) {
+              Where = new global::Google.Protobuf.WellKnownTypes.Struct();
+            }
+            input.ReadMessage(Where);
+            break;
+          }
         }
       }
     #endif
@@ -4660,6 +4767,13 @@ namespace Loams.Collection.V1 {
               Consistency = new global::Loams.Collection.V1.Consistency();
             }
             input.ReadMessage(Consistency);
+            break;
+          }
+          case 42: {
+            if (where_ == null) {
+              Where = new global::Google.Protobuf.WellKnownTypes.Struct();
+            }
+            input.ReadMessage(Where);
             break;
           }
         }
@@ -4970,6 +5084,7 @@ namespace Loams.Collection.V1 {
       allowPartial_ = other.allowPartial_;
       cursor_ = other.cursor_ != null ? other.cursor_.Clone() : null;
       consistency_ = other.consistency_ != null ? other.consistency_.Clone() : null;
+      where_ = other.where_ != null ? other.where_.Clone() : null;
       _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
     }
 
@@ -5098,6 +5213,26 @@ namespace Loams.Collection.V1 {
       }
     }
 
+    /// <summary>Field number for the "where" field.</summary>
+    public const int WhereFieldNumber = 8;
+    private global::Google.Protobuf.WellKnownTypes.Struct where_;
+    /// <summary>
+    /// The filter as a typed `loams.collection.v1.Query`, in its proto3 JSON
+    /// (`{"term": {"field": "tags", "value": "policy"}}`, `{"matchAll": {}}`):
+    /// the shape the SDKs' `Filter` builder writes and `SearchRequest.filter`
+    /// takes. A `Struct` and not a `Query` because `query.proto` imports this
+    /// file, so this file cannot import it back (SDKP ruling P0a-1). Setting both
+    /// this and `filter` is `invalid_argument` with reason `filter_conflict`.
+    /// </summary>
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public global::Google.Protobuf.WellKnownTypes.Struct Where {
+      get { return where_; }
+      set {
+        where_ = value;
+      }
+    }
+
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override bool Equals(object other) {
@@ -5120,6 +5255,7 @@ namespace Loams.Collection.V1 {
       if (AllowPartial != other.AllowPartial) return false;
       if (!object.Equals(Cursor, other.Cursor)) return false;
       if (!object.Equals(Consistency, other.Consistency)) return false;
+      if (!object.Equals(Where, other.Where)) return false;
       return Equals(_unknownFields, other._unknownFields);
     }
 
@@ -5134,6 +5270,7 @@ namespace Loams.Collection.V1 {
       if (AllowPartial != false) hash ^= AllowPartial.GetHashCode();
       if (cursor_ != null) hash ^= Cursor.GetHashCode();
       if (consistency_ != null) hash ^= Consistency.GetHashCode();
+      if (where_ != null) hash ^= Where.GetHashCode();
       if (_unknownFields != null) {
         hash ^= _unknownFields.GetHashCode();
       }
@@ -5180,6 +5317,10 @@ namespace Loams.Collection.V1 {
         output.WriteRawTag(58);
         output.WriteMessage(Consistency);
       }
+      if (where_ != null) {
+        output.WriteRawTag(66);
+        output.WriteMessage(Where);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(output);
       }
@@ -5218,6 +5359,10 @@ namespace Loams.Collection.V1 {
         output.WriteRawTag(58);
         output.WriteMessage(Consistency);
       }
+      if (where_ != null) {
+        output.WriteRawTag(66);
+        output.WriteMessage(Where);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(ref output);
       }
@@ -5248,6 +5393,9 @@ namespace Loams.Collection.V1 {
       }
       if (consistency_ != null) {
         size += 1 + pb::CodedOutputStream.ComputeMessageSize(Consistency);
+      }
+      if (where_ != null) {
+        size += 1 + pb::CodedOutputStream.ComputeMessageSize(Where);
       }
       if (_unknownFields != null) {
         size += _unknownFields.CalculateSize();
@@ -5290,6 +5438,12 @@ namespace Loams.Collection.V1 {
           Consistency = new global::Loams.Collection.V1.Consistency();
         }
         Consistency.MergeFrom(other.Consistency);
+      }
+      if (other.where_ != null) {
+        if (where_ == null) {
+          Where = new global::Google.Protobuf.WellKnownTypes.Struct();
+        }
+        Where.MergeFrom(other.Where);
       }
       _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
     }
@@ -5345,6 +5499,13 @@ namespace Loams.Collection.V1 {
               Consistency = new global::Loams.Collection.V1.Consistency();
             }
             input.ReadMessage(Consistency);
+            break;
+          }
+          case 66: {
+            if (where_ == null) {
+              Where = new global::Google.Protobuf.WellKnownTypes.Struct();
+            }
+            input.ReadMessage(Where);
             break;
           }
         }
@@ -5403,6 +5564,13 @@ namespace Loams.Collection.V1 {
             input.ReadMessage(Consistency);
             break;
           }
+          case 66: {
+            if (where_ == null) {
+              Where = new global::Google.Protobuf.WellKnownTypes.Struct();
+            }
+            input.ReadMessage(Where);
+            break;
+          }
         }
       }
     }
@@ -5455,6 +5623,7 @@ namespace Loams.Collection.V1 {
       allowPartial_ = other.allowPartial_;
       cursor_ = other.cursor_ != null ? other.cursor_.Clone() : null;
       consistency_ = other.consistency_ != null ? other.consistency_.Clone() : null;
+      where_ = other.where_ != null ? other.where_.Clone() : null;
       _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
     }
 
@@ -5583,6 +5752,26 @@ namespace Loams.Collection.V1 {
       }
     }
 
+    /// <summary>Field number for the "where" field.</summary>
+    public const int WhereFieldNumber = 9;
+    private global::Google.Protobuf.WellKnownTypes.Struct where_;
+    /// <summary>
+    /// The filter as a typed `loams.collection.v1.Query`, in its proto3 JSON
+    /// (`{"term": {"field": "tags", "value": "policy"}}`, `{"matchAll": {}}`):
+    /// the shape the SDKs' `Filter` builder writes and `SearchRequest.filter`
+    /// takes. A `Struct` and not a `Query` because `query.proto` imports this
+    /// file, so this file cannot import it back (SDKP ruling P0a-1). Setting both
+    /// this and `filter` is `invalid_argument` with reason `filter_conflict`.
+    /// </summary>
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public global::Google.Protobuf.WellKnownTypes.Struct Where {
+      get { return where_; }
+      set {
+        where_ = value;
+      }
+    }
+
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override bool Equals(object other) {
@@ -5606,6 +5795,7 @@ namespace Loams.Collection.V1 {
       if (AllowPartial != other.AllowPartial) return false;
       if (!object.Equals(Cursor, other.Cursor)) return false;
       if (!object.Equals(Consistency, other.Consistency)) return false;
+      if (!object.Equals(Where, other.Where)) return false;
       return Equals(_unknownFields, other._unknownFields);
     }
 
@@ -5621,6 +5811,7 @@ namespace Loams.Collection.V1 {
       if (AllowPartial != false) hash ^= AllowPartial.GetHashCode();
       if (cursor_ != null) hash ^= Cursor.GetHashCode();
       if (consistency_ != null) hash ^= Consistency.GetHashCode();
+      if (where_ != null) hash ^= Where.GetHashCode();
       if (_unknownFields != null) {
         hash ^= _unknownFields.GetHashCode();
       }
@@ -5671,6 +5862,10 @@ namespace Loams.Collection.V1 {
         output.WriteRawTag(66);
         output.WriteMessage(Consistency);
       }
+      if (where_ != null) {
+        output.WriteRawTag(74);
+        output.WriteMessage(Where);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(output);
       }
@@ -5713,6 +5908,10 @@ namespace Loams.Collection.V1 {
         output.WriteRawTag(66);
         output.WriteMessage(Consistency);
       }
+      if (where_ != null) {
+        output.WriteRawTag(74);
+        output.WriteMessage(Where);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(ref output);
       }
@@ -5746,6 +5945,9 @@ namespace Loams.Collection.V1 {
       }
       if (consistency_ != null) {
         size += 1 + pb::CodedOutputStream.ComputeMessageSize(Consistency);
+      }
+      if (where_ != null) {
+        size += 1 + pb::CodedOutputStream.ComputeMessageSize(Where);
       }
       if (_unknownFields != null) {
         size += _unknownFields.CalculateSize();
@@ -5794,6 +5996,12 @@ namespace Loams.Collection.V1 {
           Consistency = new global::Loams.Collection.V1.Consistency();
         }
         Consistency.MergeFrom(other.Consistency);
+      }
+      if (other.where_ != null) {
+        if (where_ == null) {
+          Where = new global::Google.Protobuf.WellKnownTypes.Struct();
+        }
+        Where.MergeFrom(other.Where);
       }
       _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
     }
@@ -5858,6 +6066,13 @@ namespace Loams.Collection.V1 {
             input.ReadMessage(Consistency);
             break;
           }
+          case 74: {
+            if (where_ == null) {
+              Where = new global::Google.Protobuf.WellKnownTypes.Struct();
+            }
+            input.ReadMessage(Where);
+            break;
+          }
         }
       }
     #endif
@@ -5919,6 +6134,13 @@ namespace Loams.Collection.V1 {
               Consistency = new global::Loams.Collection.V1.Consistency();
             }
             input.ReadMessage(Consistency);
+            break;
+          }
+          case 74: {
+            if (where_ == null) {
+              Where = new global::Google.Protobuf.WellKnownTypes.Struct();
+            }
+            input.ReadMessage(Where);
             break;
           }
         }

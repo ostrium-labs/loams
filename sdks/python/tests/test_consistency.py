@@ -1,192 +1,181 @@
-"""Consistency tokens (D609, R4) -- the store, and the gap above it.
+"""Consistency tokens (D609, runtime contract R4 as amended by SDKP §2.1).
 
-The store's own semantics are pinned here, and so is the fact that nothing can
-currently feed it. That second half is the point of the file.
+`python_consistency_token_merge` runs the token corpus,
+`sdks/fixtures/tokens.json` -- the server's own
+`crates/loams-collection/src/token.rs` cases, written down once for every SDK.
+The rest pins the session store and the record path: every `v1:` token a
+response carries merges into the session, a string that is not a token is not
+the session's business, and a `v1:` token that does not parse is counted rather
+than thrown, because the write that answered with it has already happened.
 
-D609 puts a consistency token in the response **message** and in the response
-header `loams-consistency-token`. On this SDK neither path delivers:
-
-* no generated message has a `consistency_token` field, so `record_consistency`
-  finds nothing to read; and
-* `connectrpc==0.12.1` exposes only `execute_unary` / `execute_server_stream`,
-  which hand back the message and drop the response headers, so the header
-  cannot be read either -- there is no `call_unary` to ask.
-
-So `session_consistency=True` builds a store that stays empty, attaches no
-`loams-consistency` header to any later read, and gives the caller neither
-read-your-writes nor an error. The Rust SDK reads the header
-(`token_from_headers`); this SDK cannot yet, and that is a dependency limit
-rather than a missing feature.
-
-`test_a_connectrpc_upgrade_that_exposes_headers_should_prompt_the_fix` fails the
-moment connectrpc grows a call that returns response headers, which is the
-signal to read the token and make the flag do what it says.
+The header half of the record path (`loams-consistency-token`) and the request
+half (`consistency.at_least`) go over a real server in
+`tests/test_app_runtime.py`'s `python_session_read_your_writes`.
 """
 
 from __future__ import annotations
 
+import json
+import pathlib
+from typing import Any
+
 import pytest
 
-from connectrpc.client import ConnectClient
-
-from loams import LoamsError
+from loams import InvalidArgumentError
 from loams.runtime.call import record_consistency
 from loams.runtime.consistency import (
     TOKEN_PREFIX,
     ConsistencySession,
+    ConsistencyToken,
+    TokenPosition,
     is_consistency_token,
 )
 
+FIXTURES = pathlib.Path(__file__).resolve().parent.parent.parent / "fixtures"
+CORPUS: dict[str, Any] = json.loads((FIXTURES / "tokens.json").read_text(encoding="utf-8"))
+
 
 class _Answered:
-    """A response carrying a token, the way a write would once API1 ships it."""
+    """A response carrying tokens in the fields a write or a read answers with."""
 
-    def __init__(self, token: str | None) -> None:
-        if token is not None:
-            self.consistency_token = token
+    def __init__(self, **fields: str) -> None:
+        for name, value in fields.items():
+            setattr(self, name, value)
+
+
+# -- python_consistency_token_merge: the corpus ------------------------------
+
+
+@pytest.mark.parametrize("case", CORPUS["parse"], ids=lambda c: c["name"])
+def test_python_consistency_token_merge_parse(case: dict[str, Any]) -> None:
+    token = ConsistencyToken.parse(case["text"])
+    assert [(str(p.stream), p.partition, str(p.offset)) for p in token.positions] == [
+        tuple(item) for item in case["items"]
+    ]
+    assert str(token) == case["text"]
+
+
+@pytest.mark.parametrize("case", CORPUS["merge"], ids=lambda c: c["name"])
+def test_python_consistency_token_merge(case: dict[str, Any]) -> None:
+    a, b, merged = case["a"], case["b"], case["expect"]
+    assert str(ConsistencyToken.parse(a).merge(b)) == merged
+    # Commutative once normalised.
+    assert str(ConsistencyToken.parse(b).merge(a)) == merged
+    assert ConsistencyToken.parse(a).merge(b) == merged
+
+
+@pytest.mark.parametrize("text", CORPUS["malformed"])
+def test_python_consistency_token_merge_refuses_malformed(text: str) -> None:
+    with pytest.raises(InvalidArgumentError) as caught:
+        ConsistencyToken.parse(text)
+    assert caught.value.reason == "invalid_consistency_token"
+    assert not ConsistencyToken.is_valid(text)
+
+
+def test_a_u64_offset_survives_without_rounding() -> None:
+    big = ConsistencyToken.parse("v1:s18446744073709551615/p4294967295@18446744073709551615")
+    assert big.positions == (TokenPosition(2**64 - 1, 2**32 - 1, 2**64 - 1),)
+    assert big.offset(2**64 - 1, 2**32 - 1) == 2**64 - 1
 
 
 # -- the store ----------------------------------------------------------------
 
 
-def test_a_token_is_recognised_by_its_shape() -> None:
-    assert is_consistency_token(f"{TOKEN_PREFIX}3/7")
+def test_a_token_is_recognised_by_its_prefix() -> None:
+    assert is_consistency_token(f"{TOKEN_PREFIX}s3/p0@7")
     assert not is_consistency_token("")
-    assert not is_consistency_token(TOKEN_PREFIX)
     assert not is_consistency_token("3/7"), "an untagged string is not a token"
 
 
-def test_the_first_token_is_kept() -> None:
+def test_the_session_merges_every_corpus_pair() -> None:
     session = ConsistencySession()
-    session.record(f"{TOKEN_PREFIX}3/7")
-    assert session.current() == f"{TOKEN_PREFIX}3/7"
-    assert session.conflicts == 0
+    for case in CORPUS["merge"]:
+        session.clear()
+        session.record(case["a"])
+        session.record(case["b"])
+        assert session.current() == case["expect"]
 
 
-def test_the_same_token_twice_is_not_a_conflict() -> None:
+def test_two_tokens_merge_by_partition() -> None:
     session = ConsistencySession()
-    session.record(f"{TOKEN_PREFIX}3/7")
-    session.record(f"{TOKEN_PREFIX}3/7")
-    assert session.conflicts == 0, "re-recording the same token counted as a conflict"
+    session.record("v1:s3/p0@7")
+    session.record("v1:s3/p1@2")
+    session.record("v1:s3/p0@5")
+    assert session.current() == "v1:s3/p0@7,s3/p1@2"
+    assert session.rejected == 0
 
 
-def test_two_different_tokens_are_counted_not_merged() -> None:
-    """Merging needs the encoding, which is not in the protos yet.
-
-    §44 §7.4 says the merge is "max offset per stream and partition". Guessing
-    would hand back a token that reads stale data, which is worse than an error.
-    """
+def test_a_malformed_token_is_counted_and_refused() -> None:
     session = ConsistencySession()
-    session.record(f"{TOKEN_PREFIX}3/7")
-    with pytest.raises(LoamsError) as caught:
-        session.record(f"{TOKEN_PREFIX}9/2")
-    assert session.conflicts == 1
-    assert session.current() == f"{TOKEN_PREFIX}3/7", "the store overwrote the first token"
-    assert "merge" in str(caught.value).lower()
-
-
-def test_a_string_that_is_not_a_token_is_refused() -> None:
-    session = ConsistencySession()
-    with pytest.raises(LoamsError):
-        session.record("nonsense")
+    with pytest.raises(InvalidArgumentError):
+        session.record("v1:nonsense")
     assert session.current() is None
-    assert session.conflicts == 1
+    assert session.rejected == 1
+    assert session.conflicts == 1, "the old name still reads the same count"
 
 
-def test_an_absent_token_is_not_a_conflict() -> None:
-    """Most responses carry no token, so this cannot be the error path."""
+def test_an_absent_token_is_not_counted() -> None:
     session = ConsistencySession()
     session.record(None)
     session.record("")
     assert session.current() is None
-    assert session.conflicts == 0
+    assert session.rejected == 0
 
 
-def test_clear_forgets_the_token_and_the_conflicts() -> None:
+def test_clear_forgets_the_token_and_the_count() -> None:
     session = ConsistencySession()
-    session.record(f"{TOKEN_PREFIX}3/7")
-    with pytest.raises(LoamsError):
-        session.record(f"{TOKEN_PREFIX}9/2")
+    session.record("v1:s3/p0@7")
+    with pytest.raises(InvalidArgumentError):
+        session.record("v1:bad")
     session.clear()
     assert session.current() is None
-    assert session.conflicts == 0
+    assert session.rejected == 0
 
 
 # -- the record path ----------------------------------------------------------
 
 
-def test_a_token_in_the_message_reaches_the_store() -> None:
-    """The path works; nothing arrives on it yet, which is the next two tests."""
+def test_every_token_field_reaches_the_store() -> None:
     session = ConsistencySession()
-    record_consistency(session, _Answered(f"{TOKEN_PREFIX}3/7"))
-    assert session.current() == f"{TOKEN_PREFIX}3/7"
+    record_consistency(session, _Answered(consistency_token="v1:s1/p0@1"))
+    record_consistency(session, _Answered(token="v1:s1/p1@4"))
+    record_consistency(session, _Answered(read_token="v1:s2/p0@9"))
+    record_consistency(session, None, header_token="v1:s1/p0@3")
+    assert session.current() == "v1:s1/p0@3,s1/p1@4,s2/p0@9"
 
 
-def test_a_response_without_a_token_leaves_the_store_alone() -> None:
+def test_a_string_that_is_not_a_token_is_not_the_sessions_business() -> None:
+    """`token` is a common field name: a page token or a bearer is skipped, not
+    counted."""
     session = ConsistencySession()
-    record_consistency(session, _Answered(None))
-    record_consistency(session, None)
+    record_consistency(session, _Answered(token="page-2"))
     assert session.current() is None
-    assert session.conflicts == 0
+    assert session.rejected == 0
 
 
 def test_a_token_the_store_refuses_is_counted_not_thrown() -> None:
     """The RPC already succeeded; a thrown error here would invite a second write."""
     session = ConsistencySession()
-    session.record(f"{TOKEN_PREFIX}3/7")
-    record_consistency(session, _Answered("nonsense"))
-    assert session.conflicts == 1
-    assert session.current() == f"{TOKEN_PREFIX}3/7"
+    session.record("v1:s3/p0@7")
+    record_consistency(session, _Answered(consistency_token="v1:garbage"))
+    assert session.rejected == 1
+    assert session.current() == "v1:s3/p0@7"
 
 
-# -- the gap ------------------------------------------------------------------
+def test_the_app_messages_carry_tokens_where_the_record_path_reads_them() -> None:
+    """The fields `record_consistency` reads exist on the app messages, checked
+    against the descriptors rather than restated."""
+    import loams.collection.v1.document_pb2 as document_pb2
+    import loams.collection.v1.query_pb2 as query_pb2
+    import loams.graph.v1.graph_pb2 as graph_pb2
 
-
-def test_no_generated_message_carries_a_consistency_token() -> None:
-    """Why the body path is empty, checked against the descriptors themselves.
-
-    Not a comment restating a finding: if API1 adds the field, this fails and
-    the `record_consistency` path starts working on its own.
-    """
-    import loams.instance.v1.instance_pb2 as instance_pb2
-    import loams.live.v1.live_pb2 as live_pb2
-
-    carriers = [
-        message.full_name
-        for module in (live_pb2, instance_pb2)
+    fields = {
+        (message.full_name, field.name)
+        for module in (document_pb2, query_pb2, graph_pb2)
         for message in module.DESCRIPTOR.message_types_by_name.values()
-        if "consistency_token" in {field.name for field in message.fields}
-    ]
-    assert carriers == [], (
-        f"{carriers} now carry a consistency_token, so `record_consistency` can "
-        "read the body path; check whether the session store needs anything"
-    )
-
-
-def test_a_connectrpc_upgrade_that_exposes_headers_should_prompt_the_fix() -> None:
-    """The dependency limit, asserted so it cannot stop being true quietly.
-
-    connectrpc 0.12.1 gives no way to read response headers, which is why the
-    store can never fill: the header is the only place a token actually arrives.
-    If this ever fails, connectrpc can hand back headers, and the fix is to
-    read `loams-consistency-token` off them in `record_consistency` rather than
-    to keep documenting the gap.
-    """
-    header_capable = [name for name in dir(ConnectClient) if name in ("call_unary", "call_server_stream")]
-    assert header_capable == [], (
-        f"connectrpc now exposes {header_capable}, which return response "
-        "headers. `record_consistency` should read `loams-consistency-token` from "
-        "them so `session_consistency=True` stops being inert -- see the note on "
-        "`Loams(session_consistency=...)`."
-    )
-
-
-def test_a_session_built_by_the_client_stays_empty_today() -> None:
-    """The user-visible consequence, stated as a test so it cannot be forgotten.
-
-    Turned on, off by no error: no header is attached to the later read. Asserted
-    so that the day it starts working, this test is the thing that changes.
-    """
-    session = ConsistencySession()
-    assert session.current() is None
-    assert session.conflicts == 0
+        for field in message.fields
+        if field.name in ("consistency_token", "token", "read_token")
+    }
+    assert ("loams.collection.v1.WriteDocumentsResponse", "token") in fields
+    assert ("loams.collection.v1.SearchResponse", "read_token") in fields
+    assert ("loams.graph.v1.ExecuteResponse", "consistency_token") in fields

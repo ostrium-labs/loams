@@ -1,0 +1,187 @@
+# The licence of every pin in pins.env (scripts/compute/licence_gate.py; D1271, D359).
+# `value` is the pin the licence was checked for: a bump must update it, and so
+# re-check the licence. `resolve` is how `licence_gate.sh --online` re-reads it;
+# entries without one were read by hand from `source`. Checked 2026-10-23.
+
+[TEMPORAL_VERSION]
+value = "1.32.1"
+licence = "MIT"
+source = "https://github.com/temporalio/temporal/blob/v1.32.1/LICENSE"
+resolve = "github:temporalio/temporal"
+
+[TEMPORAL_SERVER_IMAGE]
+value = "docker.io/temporalio/server:1.32.1@sha256:acecbab5b0b8ae9cf4012b508866ca97feda3709577bf157b537239f40029049"
+licence = "MIT"
+source = "https://github.com/temporalio/temporal/blob/v1.32.1/LICENSE"
+resolve = "github:temporalio/temporal"
+
+[TEMPORAL_ADMIN_TOOLS_IMAGE]
+value = "docker.io/temporalio/admin-tools:1.32.1@sha256:9ef0dc5b063bf4ffd5c1512de72e0e73e225bd2c7006a18ce69bd592a8862a83"
+licence = "MIT"
+source = "https://github.com/temporalio/temporal/blob/v1.32.1/LICENSE"
+resolve = "github:temporalio/temporal"
+
+[TEMPORAL_SERVER_COMMIT]
+value = "af08a5e5f2dd40f545f2afac7780daaa6987001e"
+licence = "MIT"
+source = "https://github.com/temporalio/temporal/blob/v1.32.1/LICENSE"
+resolve = "github:temporalio/temporal"
+
+[TEMPORAL_CLI]
+value = "1.9.1"
+licence = "MIT"
+source = "https://github.com/temporalio/cli/blob/v1.9.1/LICENSE"
+resolve = "github:temporalio/cli"
+
+[TEMPORAL_SDK_GO]
+value = "1.49.0"
+licence = "MIT"
+source = "https://github.com/temporalio/sdk-go/blob/v1.49.0/LICENSE"
+resolve = "github:temporalio/sdk-go"
+
+[TEMPORAL_SDK_TS]
+value = "1.24.0"
+licence = "MIT"
+source = "https://www.npmjs.com/package/@temporalio/client/v/1.24.0"
+resolve = "npm:@temporalio/client"
+
+[TEMPORAL_SAMPLES_GO]
+value = "d3784428122e0cd4b28e91a0cd86b589749abf28"
+licence = "Apache-2.0"
+source = "https://github.com/temporalio/samples-go/blob/d3784428122e0cd4b28e91a0cd86b589749abf28/LICENSE"
+
+[TEMPORAL_SAMPLES_TS]
+value = "07a4b3a991ef0b17eed46ecf92a774169297e345"
+licence = "MIT"
+source = "https://github.com/temporalio/samples-typescript/blob/07a4b3a991ef0b17eed46ecf92a774169297e345/LICENSE"
+
+[TEMPORAL_OMES]
+value = "dae0843208ef65fd2f357145c00c770be7934331"
+licence = "MIT"
+source = "https://github.com/temporalio/omes/blob/dae0843208ef65fd2f357145c00c770be7934331/LICENSE"
+resolve = "github:temporalio/omes"
+
+[GO_IMAGE]
+value = "docker.io/library/golang:1.26.8@sha256:eb36c1664dd974cde625f736e02c204383deebe03977365caaec5bf49f794348"
+licence = "BSD-3-Clause"
+source = "https://github.com/golang/go/blob/master/LICENSE"
+resolve = "github:golang/go"
+
+[DBOS_PY]
+value = "3.2.0"
+licence = "MIT"
+source = "https://pypi.org/project/dbos/3.2.0/"
+resolve = "pypi:dbos"
+
+[DBOS_PY_COMMIT]
+value = "d324156616281d7d4923bc60851617bdbb70ea5e"
+licence = "MIT"
+source = "https://github.com/dbos-inc/dbos-transact-py/blob/3.2.0/LICENSE"
+resolve = "github:dbos-inc/dbos-transact-py"
+
+[DBOS_TS]
+value = "5.2.11"
+licence = "MIT"
+source = "https://www.npmjs.com/package/@dbos-inc/dbos-sdk/v/5.2.11"
+resolve = "npm:@dbos-inc/dbos-sdk"
+
+[DBOS_TS_TAG]
+value = "v5.2"
+licence = "MIT"
+source = "https://github.com/dbos-inc/dbos-transact-ts/blob/v5.2/LICENSE"
+resolve = "github:dbos-inc/dbos-transact-ts"
+
+[DBOS_TS_COMMIT]
+value = "3f36908f58fd8b3079cbf5372203c7a2d0ba06cc"
+licence = "MIT"
+source = "https://github.com/dbos-inc/dbos-transact-ts/blob/v5.2/LICENSE"
+resolve = "github:dbos-inc/dbos-transact-ts"
+
+[DBOS_GO]
+value = "1.6.0"
+licence = "MIT"
+source = "https://github.com/dbos-inc/dbos-transact-golang/blob/v1.6.0/LICENSE"
+resolve = "github:dbos-inc/dbos-transact-golang"
+
+[DBOS_GO_COMMIT]
+value = "04337c15667adcdf5cc057be448ed9545d6f06d9"
+licence = "MIT"
+source = "https://github.com/dbos-inc/dbos-transact-golang/blob/v1.6.0/LICENSE"
+resolve = "github:dbos-inc/dbos-transact-golang"
+
+[DBOS_JAVA]
+value = "1.2.0"
+licence = "MIT"
+source = "https://github.com/dbos-inc/dbos-transact-java/blob/1.2.0/LICENSE"
+resolve = "github:dbos-inc/dbos-transact-java"
+
+[DBOS_JAVA_COMMIT]
+value = "0f4fe187b20bd6f5f735d8f99d810aeb90b8314d"
+licence = "MIT"
+source = "https://github.com/dbos-inc/dbos-transact-java/blob/1.2.0/LICENSE"
+resolve = "github:dbos-inc/dbos-transact-java"
+
+[PYTHON_IMAGE]
+value = "docker.io/library/python:3.12.14-bookworm@sha256:dbbe4ceb97851e2e5fa83798b239811f871cb743b259ba3563737349f6bcfaa0"
+licence = "PSF-2.0"
+source = "https://docs.python.org/3.12/license.html"
+
+[NODE_IMAGE]
+value = "docker.io/library/node:22.23.2-bookworm@sha256:dd5847a04b0deee391fa145f1f4c6d214196668b6bcc7988ebed67249f226844"
+licence = "MIT"
+source = "https://github.com/nodejs/node/blob/v22.23.2/LICENSE"
+
+[JAVA_IMAGE]
+value = "docker.io/library/eclipse-temurin:21.0.12_8-jdk-noble@sha256:4d271cd5e0624598cf563342f47281b09cb364bc13acbbd7251f49f83470018d"
+licence = "GPL-2.0-only WITH Classpath-exception-2.0"
+source = "https://adoptium.net/docs/faq/"
+
+[AIRFLOW_VERSION]
+value = "3.3.2"
+licence = "Apache-2.0"
+source = "https://pypi.org/project/apache-airflow/3.3.2/"
+resolve = "pypi:apache-airflow"
+
+[AIRFLOW_IMAGE]
+value = "docker.io/apache/airflow:3.3.2-python3.12@sha256:9df9c8be4096b9cc626bd7cb1f2b8c712eef66c59c615f8c7e6200871ca10bd1"
+licence = "Apache-2.0"
+source = "https://github.com/apache/airflow/blob/3.3.2/LICENSE"
+resolve = "github:apache/airflow"
+
+[AIRFLOW_CONSTRAINTS]
+value = "https://raw.githubusercontent.com/apache/airflow/constraints-3.3.2/constraints-3.12.txt"
+licence = "Apache-2.0"
+source = "https://github.com/apache/airflow/blob/3.3.2/LICENSE"
+resolve = "github:apache/airflow"
+
+[AIRFLOW_TASK_SDK]
+value = "1.3.2"
+licence = "Apache-2.0"
+source = "https://pypi.org/project/apache-airflow-task-sdk/1.3.2/"
+resolve = "pypi:apache-airflow-task-sdk"
+
+[AIRFLOW_EDGE3]
+value = "4.3.2"
+licence = "Apache-2.0"
+source = "https://pypi.org/project/apache-airflow-providers-edge3/4.3.2/"
+resolve = "pypi:apache-airflow-providers-edge3"
+
+[PSQL_IMAGE]
+value = "docker.io/library/postgres:17.10@sha256:7958605b474b3d264a969cb3a123d6aa00ad1e1fe9da8a69984dabb704d93317"
+licence = "PostgreSQL"
+source = "https://www.postgresql.org/about/licence/"
+
+[SOCAT_IMAGE]
+value = "docker.io/alpine/socat:1.8.1.1@sha256:7f9a06753033f2b7de18edc2353f2c15153413d95a039163c6db270fc7a6c3b0"
+licence = "GPL-3.0"
+source = "https://github.com/alpine-docker/socat/blob/master/LICENSE"
+resolve = "github:alpine-docker/socat"
+
+[PGDOG_IMAGE]
+value = "ghcr.io/pgdogdev/pgdog@sha256:25d1908886f595a2e3b00ec59783326712e3c0f75f91d29f032ff712b30f2266"
+licence = "AGPL-3.0"
+source = "https://github.com/pgdogdev/pgdog/blob/v0.1.60/LICENSE"
+resolve = "github:pgdogdev/pgdog"
+# Run unmodified as a separate process, in the never-distributed
+# transaction-mode overlay only (D318; scripts/ci/pgdog-licence.sh).
+exception = "D318"

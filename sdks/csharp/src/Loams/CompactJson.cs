@@ -315,7 +315,7 @@ public static class CompactJson
                 return;
 
             case FieldType.Float:
-                builder.Append(FormatDouble(Convert.ToSingle(value, CultureInfo.InvariantCulture)));
+                builder.Append(FormatFloat(Convert.ToSingle(value, CultureInfo.InvariantCulture)));
                 return;
 
             case FieldType.Double:
@@ -340,6 +340,22 @@ public static class CompactJson
         {
             throw new NotSupportedException(
                 "a NaN or infinite double has no proto3 JSON form and cannot be serialized");
+        }
+        return value.ToString("R", CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// A JSON number for a <c>float</c> field: the shortest form that round-trips
+    /// as a float, as protojson writes it. Widening to a double first writes
+    /// <c>0.7f</c> as <c>0.699999988079071</c>, which is a different JSON number
+    /// from the <c>0.7</c> every other SDK sends (and the corpus records).
+    /// </summary>
+    private static string FormatFloat(float value)
+    {
+        if (float.IsNaN(value) || float.IsInfinity(value))
+        {
+            throw new NotSupportedException(
+                "a NaN or infinite float has no proto3 JSON form and cannot be serialized");
         }
         return value.ToString("R", CultureInfo.InvariantCulture);
     }

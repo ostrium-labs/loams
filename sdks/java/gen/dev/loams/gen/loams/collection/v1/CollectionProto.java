@@ -441,48 +441,54 @@ public final class CollectionProto {
       "TE_KIND_BUILDING\020\002\022\030\n\024HOT_STATE_KIND_REA" +
       "DY\020\003*`\n\014DeletionKind\022\035\n\031DELETION_KIND_UN" +
       "SPECIFIED\020\000\022\027\n\023DELETION_KIND_ARRAY\020\001\022\030\n\024" +
-      "DELETION_KIND_BITMAP\020\0022\306\002\n\020NamespaceServ" +
-      "ice\022n\n\017CreateNamespace\022+.loams.collectio" +
+      "DELETION_KIND_BITMAP\020\0022\372\002\n\020NamespaceServ" +
+      "ice\022|\n\017CreateNamespace\022+.loams.collectio" +
       "n.v1.CreateNamespaceRequest\032,.loams.coll" +
-      "ection.v1.CreateNamespaceResponse\"\000\022n\n\016L" +
-      "istNamespaces\022*.loams.collection.v1.List" +
-      "NamespacesRequest\032+.loams.collection.v1." +
-      "ListNamespacesResponse\"\003\220\002\001\032R\212\265\030N\n\013colle" +
-      "ctions\022?Namespaces: the container every " +
-      "collection and stream lives in.2\332\010\n\021Coll" +
-      "ectionService\022g\n\020CreateCollection\022,.loam" +
-      "s.collection.v1.CreateCollectionRequest\032" +
-      "#.loams.collection.v1.CollectionInfo\"\000\022q" +
-      "\n\017ListCollections\022+.loams.collection.v1." +
-      "ListCollectionsRequest\032,.loams.collectio" +
-      "n.v1.ListCollectionsResponse\"\003\220\002\001\022d\n\rGet" +
-      "Collection\022).loams.collection.v1.GetColl" +
-      "ectionRequest\032#.loams.collection.v1.Coll" +
-      "ectionInfo\"\003\220\002\001\022k\n\016DropCollection\022*.loam" +
-      "s.collection.v1.DropCollectionRequest\032+." +
-      "loams.collection.v1.DropCollectionRespon" +
-      "se\"\000\022\\\n\tAddFields\022%.loams.collection.v1." +
-      "AddFieldsRequest\032&.loams.collection.v1.A" +
-      "ddFieldsResponse\"\000\022h\n\014ListVersions\022(.loa" +
-      "ms.collection.v1.ListVersionsRequest\032).l" +
-      "oams.collection.v1.ListVersionsResponse\"" +
-      "\003\220\002\001\022I\n\004Scan\022 .loams.collection.v1.ScanR" +
-      "equest\032\035.loams.collection.v1.ScanPlan\"\000\022" +
-      "h\n\rUpdateAliases\022).loams.collection.v1.U" +
-      "pdateAliasesRequest\032*.loams.collection.v" +
-      "1.UpdateAliasesResponse\"\000\022S\n\006SetHot\022\".lo" +
-      "ams.collection.v1.SetHotRequest\032#.loams." +
-      "collection.v1.SetHotResponse\"\000\022k\n\016WarmCo" +
-      "llection\022*.loams.collection.v1.WarmColle" +
-      "ctionRequest\032+.loams.collection.v1.WarmC" +
-      "ollectionResponse\"\000\032W\212\265\030S\n\013collections\022D" +
-      "Collections: schema, aliases, versions, " +
-      "scan plans and the hot tier.B\242\001\n!dev.loa" +
-      "ms.gen.loams.collection.v1B\017CollectionPr" +
-      "otoP\001\242\002\003LCX\252\002\023Loams.Collection.V1\312\002\023Loam" +
-      "s\\Collection\\V1\342\002\037Loams\\Collection\\V1\\GP" +
-      "BMetadata\352\002\025Loams::Collection::V1b\006proto" +
-      "3"
+      "ection.v1.CreateNamespaceResponse\"\016\222\265\030\n\022" +
+      "\006create\030\001\022\224\001\n\016ListNamespaces\022*.loams.col" +
+      "lection.v1.ListNamespacesRequest\032+.loams" +
+      ".collection.v1.ListNamespacesResponse\")\220" +
+      "\002\001\222\265\030\"\022\004list\"\032namespaces:next_page_token" +
+      "\032Q\212\265\030M\n\nnamespaces\022?Namespaces: the cont" +
+      "ainer every collection and stream lives " +
+      "in.2\240\n\n\021CollectionService\022u\n\020CreateColle" +
+      "ction\022,.loams.collection.v1.CreateCollec" +
+      "tionRequest\032#.loams.collection.v1.Collec" +
+      "tionInfo\"\016\222\265\030\n\022\006create\030\001\022\230\001\n\017ListCollect" +
+      "ions\022+.loams.collection.v1.ListCollectio" +
+      "nsRequest\032,.loams.collection.v1.ListColl" +
+      "ectionsResponse\"*\220\002\001\222\265\030#\022\004list\"\033collecti" +
+      "ons:next_page_token\022m\n\rGetCollection\022).l" +
+      "oams.collection.v1.GetCollectionRequest\032" +
+      "#.loams.collection.v1.CollectionInfo\"\014\220\002" +
+      "\001\222\265\030\005\022\003get\022w\n\016DropCollection\022*.loams.col" +
+      "lection.v1.DropCollectionRequest\032+.loams" +
+      ".collection.v1.DropCollectionResponse\"\014\222" +
+      "\265\030\010\022\004drop\030\001\022n\n\tAddFields\022%.loams.collect" +
+      "ion.v1.AddFieldsRequest\032&.loams.collecti" +
+      "on.v1.AddFieldsResponse\"\022\222\265\030\016\022\nadd_field" +
+      "s\030\001\022\225\001\n\014ListVersions\022(.loams.collection." +
+      "v1.ListVersionsRequest\032).loams.collectio" +
+      "n.v1.ListVersionsResponse\"0\220\002\001\222\265\030)\022\rlist" +
+      "_versions\"\030versions:next_page_token\022S\n\004S" +
+      "can\022 .loams.collection.v1.ScanRequest\032\035." +
+      "loams.collection.v1.ScanPlan\"\n\222\265\030\006\022\004scan" +
+      "\022~\n\rUpdateAliases\022).loams.collection.v1." +
+      "UpdateAliasesRequest\032*.loams.collection." +
+      "v1.UpdateAliasesResponse\"\026\222\265\030\022\022\016update_a" +
+      "liases\030\001\022b\n\006SetHot\022\".loams.collection.v1" +
+      ".SetHotRequest\032#.loams.collection.v1.Set" +
+      "HotResponse\"\017\222\265\030\013\022\007set_hot\030\001\022w\n\016WarmColl" +
+      "ection\022*.loams.collection.v1.WarmCollect" +
+      "ionRequest\032+.loams.collection.v1.WarmCol" +
+      "lectionResponse\"\014\222\265\030\010\022\004warm\030\001\032W\212\265\030S\n\013col" +
+      "lections\022DCollections: schema, aliases, " +
+      "versions, scan plans and the hot tier.B\242" +
+      "\001\n!dev.loams.gen.loams.collection.v1B\017Co" +
+      "llectionProtoP\001\242\002\003LCX\252\002\023Loams.Collection" +
+      ".V1\312\002\023Loams\\Collection\\V1\342\002\037Loams\\Collec" +
+      "tion\\V1\\GPBMetadata\352\002\025Loams::Collection:" +
+      ":V1b\006proto3"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
@@ -759,6 +765,7 @@ public final class CollectionProto {
     dev.loams.gen.loams.options.v1.OptionsProto.getDescriptor();
     com.google.protobuf.ExtensionRegistry registry =
         com.google.protobuf.ExtensionRegistry.newInstance();
+    registry.add(dev.loams.gen.loams.options.v1.OptionsProto.facade);
     registry.add(dev.loams.gen.loams.options.v1.OptionsProto.module);
     com.google.protobuf.Descriptors.FileDescriptor
         .internalUpdateFileDescriptor(descriptor, registry);

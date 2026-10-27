@@ -906,6 +906,7 @@ async fn results_are_capped_and_marked_truncated() {
             max_rows: 4,
             timeout: Duration::from_secs(30),
             batch_rows: 2,
+            ..SqlConfig::default()
         },
         ..ServiceConfig::default()
     })

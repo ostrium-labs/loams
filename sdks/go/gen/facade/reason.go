@@ -65,6 +65,7 @@ const (
 	ReasonIdempotencyKeyReused       Reason = "idempotency_key_reused"
 	ReasonWorkspaceNotFound          Reason = "workspace_not_found"
 	ReasonWorkspaceFenced            Reason = "workspace_fenced"
+	ReasonBatchPartiallyApplied      Reason = "batch_partially_applied"
 	ReasonWorkspaceReadOnly          Reason = "workspace_read_only"
 	ReasonWorkspaceNameTaken         Reason = "workspace_name_taken"
 	ReasonObjectMissing              Reason = "object_missing"
@@ -98,13 +99,20 @@ const (
 	ReasonLiveWorkerCrashed          Reason = "live_worker_crashed"
 	ReasonLiveDeployConflict         Reason = "live_deploy_conflict"
 	ReasonLiveSchemaViolation        Reason = "live_schema_violation"
+	ReasonFilterConflict             Reason = "filter_conflict"
+	ReasonSearchAfterNeedsTiebreak   Reason = "search_after_needs_tiebreak"
+	ReasonInvalidConsistencyToken    Reason = "invalid_consistency_token"
+	ReasonNamespaceRequired          Reason = "namespace_required"
+	ReasonSqlParamCount              Reason = "sql_param_count"
 	ReasonLiveIndexNotReady          Reason = "live_index_not_ready"
 	ReasonLiveAppDisabled            Reason = "live_app_disabled"
 	ReasonLiveAppExists              Reason = "live_app_exists"
 	ReasonLiveFunctionError          Reason = "live_function_error"
 	ReasonLiveFunctionTimeout        Reason = "live_function_timeout"
+	ReasonClientDeadlineExceeded     Reason = "client_deadline_exceeded"
 	ReasonLiveFunctionOutOfMemory    Reason = "live_function_out_of_memory"
 	ReasonLiveLimitExceeded          Reason = "live_limit_exceeded"
+	ReasonResultTooLarge             Reason = "result_too_large"
 	ReasonLiveAppMismatch            Reason = "live_app_mismatch"
 	ReasonLiveOriginNotAllowed       Reason = "live_origin_not_allowed"
 	ReasonSessionRotate              Reason = "session_rotate"
@@ -200,6 +208,7 @@ var Reasons = []Reason{
 	ReasonIdempotencyKeyReused,
 	ReasonWorkspaceNotFound,
 	ReasonWorkspaceFenced,
+	ReasonBatchPartiallyApplied,
 	ReasonWorkspaceReadOnly,
 	ReasonWorkspaceNameTaken,
 	ReasonObjectMissing,
@@ -233,13 +242,20 @@ var Reasons = []Reason{
 	ReasonLiveWorkerCrashed,
 	ReasonLiveDeployConflict,
 	ReasonLiveSchemaViolation,
+	ReasonFilterConflict,
+	ReasonSearchAfterNeedsTiebreak,
+	ReasonInvalidConsistencyToken,
+	ReasonNamespaceRequired,
+	ReasonSqlParamCount,
 	ReasonLiveIndexNotReady,
 	ReasonLiveAppDisabled,
 	ReasonLiveAppExists,
 	ReasonLiveFunctionError,
 	ReasonLiveFunctionTimeout,
+	ReasonClientDeadlineExceeded,
 	ReasonLiveFunctionOutOfMemory,
 	ReasonLiveLimitExceeded,
+	ReasonResultTooLarge,
 	ReasonLiveAppMismatch,
 	ReasonLiveOriginNotAllowed,
 	ReasonSessionRotate,
@@ -330,6 +346,7 @@ var ReasonCodes = map[Reason]string{
 	ReasonIdempotencyKeyReused:       "failed_precondition",
 	ReasonWorkspaceNotFound:          "not_found",
 	ReasonWorkspaceFenced:            "aborted",
+	ReasonBatchPartiallyApplied:      "aborted",
 	ReasonWorkspaceReadOnly:          "failed_precondition",
 	ReasonWorkspaceNameTaken:         "already_exists",
 	ReasonObjectMissing:              "failed_precondition",
@@ -363,13 +380,20 @@ var ReasonCodes = map[Reason]string{
 	ReasonLiveWorkerCrashed:          "internal",
 	ReasonLiveDeployConflict:         "failed_precondition",
 	ReasonLiveSchemaViolation:        "invalid_argument",
+	ReasonFilterConflict:             "invalid_argument",
+	ReasonSearchAfterNeedsTiebreak:   "invalid_argument",
+	ReasonInvalidConsistencyToken:    "invalid_argument",
+	ReasonNamespaceRequired:          "invalid_argument",
+	ReasonSqlParamCount:              "invalid_argument",
 	ReasonLiveIndexNotReady:          "failed_precondition",
 	ReasonLiveAppDisabled:            "failed_precondition",
 	ReasonLiveAppExists:              "failed_precondition",
 	ReasonLiveFunctionError:          "unknown",
 	ReasonLiveFunctionTimeout:        "deadline_exceeded",
+	ReasonClientDeadlineExceeded:     "deadline_exceeded",
 	ReasonLiveFunctionOutOfMemory:    "resource_exhausted",
 	ReasonLiveLimitExceeded:          "resource_exhausted",
+	ReasonResultTooLarge:             "resource_exhausted",
 	ReasonLiveAppMismatch:            "permission_denied",
 	ReasonLiveOriginNotAllowed:       "permission_denied",
 	ReasonSessionRotate:              "unavailable",

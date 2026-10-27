@@ -208,7 +208,10 @@ def notes(root, version):
     if r["from"] == "fresh":
         lines.append(f"{version} keeps no data from an earlier release: start a fresh stack.")
         return "\n".join(lines) + "\n"
-    lines.append(f"From **{r['from']}** (one step at a time): `loams upgrade --to {version}`.")
+    if re.fullmatch(r"\d+\.\d+", r["from"]):
+        lines.append(f"From any earlier **{r['from']}.x** release, in one step: `loams upgrade --to {version}`.")
+    else:
+        lines.append(f"From **{r['from']}** (one step at a time): `loams upgrade --to {version}`.")
     lines.append("")
     lines.append("It takes a snapshot first, and `loams upgrade rollback` restores it.")
     lines.append("")

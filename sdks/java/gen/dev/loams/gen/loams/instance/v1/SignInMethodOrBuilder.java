@@ -22,7 +22,7 @@ public interface SignInMethodOrBuilder extends
 
   /**
    * <pre>
-   * The OIDC issuer for KIND_AUTHENTIK (Authentik's application issuer URL).
+   * The OIDC issuer for SIGN_IN_KIND_OIDC and SIGN_IN_KIND_OIDC_DEVICE_CODE.
    * </pre>
    *
    * <code>string issuer = 2 [json_name = "issuer"];</code>
@@ -31,7 +31,7 @@ public interface SignInMethodOrBuilder extends
   java.lang.String getIssuer();
   /**
    * <pre>
-   * The OIDC issuer for KIND_AUTHENTIK (Authentik's application issuer URL).
+   * The OIDC issuer for SIGN_IN_KIND_OIDC and SIGN_IN_KIND_OIDC_DEVICE_CODE.
    * </pre>
    *
    * <code>string issuer = 2 [json_name = "issuer"];</code>

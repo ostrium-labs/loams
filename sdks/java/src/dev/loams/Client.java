@@ -59,6 +59,8 @@ public final class Client implements AutoCloseable {
     private final AppModules.SearchModule search;
     private final AppModules.VectorModule vector;
     private final AppModules.GraphModule graph;
+    private final SqlModule sql;
+    private final StreamsModule streams;
     private final SystemModule system;
 
     /** Every module, by name: the catalogue a caller iterates when feature-detecting. */
@@ -72,7 +74,7 @@ public final class Client implements AutoCloseable {
         this.endpoint = endpoint;
         this.protocol = options.protocol();
         this.transport =
-                new ConnectTransport(endpoint, this.protocol, options.httpClient());
+                new ConnectTransport(endpoint, this.protocol, options.httpClient(), options.json());
         this.session = options.sessionConsistency() ? new ConsistencySession() : null;
         // An unset budget means the design's number, not none. Java's `Integer` null is what
         // makes that expressible; see Options.maxRetries().
@@ -96,6 +98,8 @@ public final class Client implements AutoCloseable {
         this.search = new AppModules.SearchModule(invoker);
         this.vector = new AppModules.VectorModule(invoker);
         this.graph = new AppModules.GraphModule(invoker);
+        this.sql = new SqlModule(invoker);
+        this.streams = new StreamsModule(invoker);
         this.system = new SystemModule(instance);
         modules.put("instance", instance);
         modules.put("live", live);
@@ -107,6 +111,8 @@ public final class Client implements AutoCloseable {
         modules.put("search", search);
         modules.put("vector", vector);
         modules.put("graph", graph);
+        modules.put("sql", sql);
+        modules.put("streams", streams);
     }
 
     /** A builder for {@link Options}. */
@@ -190,6 +196,16 @@ public final class Client implements AutoCloseable {
     /** {@code loams.graph} (SDKP §2.5). Experimental. */
     public AppModules.GraphModule graph() {
         return graph;
+    }
+
+    /** {@code loams.sql} (SDKP §2.5). */
+    public SqlModule sql() {
+        return sql;
+    }
+
+    /** {@code loams.streams} (SDKP §2.5). */
+    public StreamsModule streams() {
+        return streams;
     }
 
     /** A handle on one collection in the client's default namespace (SDKP §2.8). */

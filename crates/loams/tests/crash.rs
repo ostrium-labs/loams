@@ -73,6 +73,15 @@ const GC_GRACE_MS: &str = "1500";
 /// the failpoint instead of ending `Blocked` on every retry (CI fix C2).
 const BUILD_GC_GRACE: &[&str] = &["--gc-grace-ms", "10000"];
 
+/// Set to a directory, every `loams dev` the gate starts writes its stdout
+/// (its logs) to `dev-<test>-<n>.out` and, unless the gate reads it,
+/// its stderr to `dev-<test>-<n>.log` there; a failed produce is printed.
+/// For triage (the 2026-10-21 lock investigation).
+const DEV_LOG_ENV: &str = "LOAMS_CRASH_DEV_LOG";
+
+/// The `RUST_LOG` of every `loams dev` the gate starts (default `error`).
+const DEV_RUST_LOG_ENV: &str = "LOAMS_CRASH_RUST_LOG";
+
 /// Runs the gate on this metastore instead of the embedded one (module
 /// docs).
 const GATE_META_ENV: &str = "LOAMS_GATE_META";
@@ -219,10 +228,27 @@ impl Dev {
             command.args(["--gc-grace-ms", GC_GRACE_MS]);
         }
         command
-            .env("RUST_LOG", "error")
+            .env(
+                "RUST_LOG",
+                std::env::var(DEV_RUST_LOG_ENV).unwrap_or_else(|_| "error".into()),
+            )
             .env_remove("LOAMS_FAILPOINTS")
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
+        let mut out_log = None;
+        if let Ok(logs) = std::env::var(DEV_LOG_ENV) {
+            static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+            let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let path = Path::new(&logs).join(format!(
+                "dev-{}-{n}.log",
+                std::thread::current()
+                    .name()
+                    .unwrap_or("t")
+                    .replace("::", "_")
+            ));
+            command.stderr(std::fs::File::create(&path).expect("dev log"));
+            out_log = Some(path.with_extension("out"));
+        }
         if let Some((name, hit)) = failpoint {
             command
                 .env("LOAMS_FAILPOINTS", name)
@@ -241,7 +267,15 @@ impl Dev {
                 break url.trim().to_string();
             }
         };
-        std::thread::spawn(move || for _ in lines {});
+        std::thread::spawn(move || {
+            use std::io::Write;
+            let mut file = out_log.map(|p| std::fs::File::create(p).expect("dev stdout log"));
+            for line in lines.map_while(Result::ok) {
+                if let Some(f) = file.as_mut() {
+                    let _ = writeln!(f, "{line}");
+                }
+            }
+        });
         let stderr = Arc::new(Mutex::new(Vec::new()));
         if let Some(pipe) = child.stderr.take() {
             let stderr = stderr.clone();
@@ -391,7 +425,12 @@ impl Api {
         let path = format!("/v1/namespaces/acme/streams/{stream}/partitions/{partition}/records");
         match self.post(&path, body).await {
             Ok((StatusCode::OK, body)) => body["base_offset"].as_u64(),
-            _ => None,
+            other => {
+                if std::env::var(DEV_LOG_ENV).is_ok() {
+                    eprintln!("[crash-debug] produce {stream}/{partition} failed: {other:?}");
+                }
+                None
+            }
         }
     }
 

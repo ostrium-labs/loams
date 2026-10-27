@@ -669,44 +669,48 @@ public final class GraphProto {
       "\017DATA_FORMAT_CSV\020\002\022\025\n\021DATA_FORMAT_JSONL\020" +
       "\003*Z\n\tIsolation\022\031\n\025ISOLATION_UNSPECIFIED\020" +
       "\000\022\026\n\022ISOLATION_SNAPSHOT\020\001\022\032\n\026ISOLATION_S" +
-      "ERIALIZABLE\020\0022\224\007\n\021GraphAdminService\022V\n\rG" +
+      "ERIALIZABLE\020\0022\357\007\n\021GraphAdminService\022V\n\rG" +
       "etEngineInfo\022$.loams.graph.v1.GetEngineI" +
       "nfoRequest\032\032.loams.graph.v1.EngineInfo\"\003" +
-      "\220\002\001\022J\n\013CreateGraph\022\".loams.graph.v1.Crea" +
-      "teGraphRequest\032\025.loams.graph.v1.Graph\"\000\022" +
-      "G\n\010GetGraph\022\037.loams.graph.v1.GetGraphReq" +
-      "uest\032\025.loams.graph.v1.Graph\"\003\220\002\001\022X\n\nList" +
-      "Graphs\022!.loams.graph.v1.ListGraphsReques" +
-      "t\032\".loams.graph.v1.ListGraphsResponse\"\003\220" +
-      "\002\001\022J\n\013UpdateGraph\022\".loams.graph.v1.Updat" +
-      "eGraphRequest\032\025.loams.graph.v1.Graph\"\000\022S" +
-      "\n\013DeleteGraph\022\".loams.graph.v1.DeleteGra" +
-      "phRequest\032\036.loams.operations.v1.Operatio" +
-      "n\"\000\022O\n\tGetSchema\022 .loams.graph.v1.GetSch" +
-      "emaRequest\032\033.loams.graph.v1.GraphSchema\"" +
-      "\003\220\002\001\022U\n\014RestoreGraph\022#.loams.graph.v1.Re" +
-      "storeGraphRequest\032\036.loams.operations.v1." +
-      "Operation\"\000\022S\n\013ExportGraph\022\".loams.graph" +
-      ".v1.ExportGraphRequest\032\036.loams.operation" +
-      "s.v1.Operation\"\000\022S\n\013ImportGraph\022\".loams." +
-      "graph.v1.ImportGraphRequest\032\036.loams.oper" +
-      "ations.v1.Operation\"\000\032E\212\265\030A\n\005graph\0226Loam" +
-      "s Graph: stored property graphs, queried" +
-      " with GQL.\030\0012\233\003\n\014GraphService\022L\n\007Execute" +
-      "\022\036.loams.graph.v1.ExecuteRequest\032\037.loams" +
-      ".graph.v1.ExecuteResponse\"\000\022[\n\014ExecuteBa" +
-      "tch\022#.loams.graph.v1.ExecuteBatchRequest" +
-      "\032$.loams.graph.v1.ExecuteBatchResponse\"\000" +
-      "\022V\n\rExecuteStream\022$.loams.graph.v1.Execu" +
-      "teStreamRequest\032\033.loams.graph.v1.ResultC" +
-      "hunk\"\0000\001\022A\n\007Explain\022\036.loams.graph.v1.Exp" +
-      "lainRequest\032\024.loams.graph.v1.Plan\"\000\032E\212\265\030" +
-      "A\n\005graph\0226Loams Graph: stored property g" +
-      "raphs, queried with GQL.\030\001B\204\001\n\034dev.loams" +
-      ".gen.loams.graph.v1B\nGraphProtoP\001\242\002\003LGX\252" +
-      "\002\016Loams.Graph.V1\312\002\016Loams\\Graph\\V1\342\002\032Loam" +
-      "s\\Graph\\V1\\GPBMetadata\352\002\020Loams::Graph::V" +
-      "1b\006proto3"
+      "\220\002\001\022V\n\013CreateGraph\022\".loams.graph.v1.Crea" +
+      "teGraphRequest\032\025.loams.graph.v1.Graph\"\014\222" +
+      "\265\030\010\022\006create\022P\n\010GetGraph\022\037.loams.graph.v1" +
+      ".GetGraphRequest\032\025.loams.graph.v1.Graph\"" +
+      "\014\220\002\001\222\265\030\005\022\003get\022z\n\nListGraphs\022!.loams.grap" +
+      "h.v1.ListGraphsRequest\032\".loams.graph.v1." +
+      "ListGraphsResponse\"%\220\002\001\222\265\030\036\022\004list\"\026graph" +
+      "s:next_page_token\022V\n\013UpdateGraph\022\".loams" +
+      ".graph.v1.UpdateGraphRequest\032\025.loams.gra" +
+      "ph.v1.Graph\"\014\222\265\030\010\022\006update\022_\n\013DeleteGraph" +
+      "\022\".loams.graph.v1.DeleteGraphRequest\032\036.l" +
+      "oams.operations.v1.Operation\"\014\222\265\030\010\022\006dele" +
+      "te\022[\n\tGetSchema\022 .loams.graph.v1.GetSche" +
+      "maRequest\032\033.loams.graph.v1.GraphSchema\"\017" +
+      "\220\002\001\222\265\030\010\022\006schema\022U\n\014RestoreGraph\022#.loams." +
+      "graph.v1.RestoreGraphRequest\032\036.loams.ope" +
+      "rations.v1.Operation\"\000\022S\n\013ExportGraph\022\"." +
+      "loams.graph.v1.ExportGraphRequest\032\036.loam" +
+      "s.operations.v1.Operation\"\000\022S\n\013ImportGra" +
+      "ph\022\".loams.graph.v1.ImportGraphRequest\032\036" +
+      ".loams.operations.v1.Operation\"\000\032E\212\265\030A\n\005" +
+      "graph\0226Loams Graph: stored property grap" +
+      "hs, queried with GQL.\030\0012\330\003\n\014GraphService" +
+      "\022W\n\007Execute\022\036.loams.graph.v1.ExecuteRequ" +
+      "est\032\037.loams.graph.v1.ExecuteResponse\"\013\222\265" +
+      "\030\007\022\005query\022l\n\014ExecuteBatch\022#.loams.graph." +
+      "v1.ExecuteBatchRequest\032$.loams.graph.v1." +
+      "ExecuteBatchResponse\"\021\222\265\030\r\022\013query_batch\022" +
+      "h\n\rExecuteStream\022$.loams.graph.v1.Execut" +
+      "eStreamRequest\032\033.loams.graph.v1.ResultCh" +
+      "unk\"\022\222\265\030\016\022\014query_stream0\001\022P\n\007Explain\022\036.l" +
+      "oams.graph.v1.ExplainRequest\032\024.loams.gra" +
+      "ph.v1.Plan\"\017\222\265\030\013\022\007explain\030\001\032E\212\265\030A\n\005graph" +
+      "\0226Loams Graph: stored property graphs, q" +
+      "ueried with GQL.\030\001B\204\001\n\034dev.loams.gen.loa" +
+      "ms.graph.v1B\nGraphProtoP\001\242\002\003LGX\252\002\016Loams." +
+      "Graph.V1\312\002\016Loams\\Graph\\V1\342\002\032Loams\\Graph\\" +
+      "V1\\GPBMetadata\352\002\020Loams::Graph::V1b\006proto" +
+      "3"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
@@ -1123,6 +1127,7 @@ public final class GraphProto {
     dev.loams.gen.loams.options.v1.OptionsProto.getDescriptor();
     com.google.protobuf.ExtensionRegistry registry =
         com.google.protobuf.ExtensionRegistry.newInstance();
+    registry.add(dev.loams.gen.loams.options.v1.OptionsProto.facade);
     registry.add(dev.loams.gen.loams.options.v1.OptionsProto.module);
     com.google.protobuf.Descriptors.FileDescriptor
         .internalUpdateFileDescriptor(descriptor, registry);

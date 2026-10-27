@@ -52,7 +52,163 @@ pub const REPLACED: &[&str] = &[
     "errors",
     "loams_pipes",
     "query_log",
+    // HE1 R9.62: what a clustered application's migrations read (SigNoz's
+    // wait for each `ON CLUSTER` statement and each mutation), answered for a
+    // one-node House.
+    "clusters",
+    "macros",
+    "mutations",
+    "distributed_ddl_queue",
 ];
+
+/// `system.clusters`' columns, ClickHouse 26.9's (measured on the 26.9.2.8
+/// oracle, HE1 R9.62).
+pub const CLUSTERS_COLUMNS: &[(&str, &str)] = &[
+    ("cluster", "String"),
+    ("shard_num", "UInt32"),
+    ("shard_name", "String"),
+    ("shard_weight", "UInt32"),
+    ("internal_replication", "UInt8"),
+    ("replica_num", "UInt32"),
+    ("host_name", "String"),
+    ("host_address", "String"),
+    ("port", "UInt16"),
+    ("is_local", "UInt8"),
+    ("user", "String"),
+    ("default_database", "String"),
+    ("errors_count", "UInt32"),
+    ("slowdowns_count", "UInt32"),
+    ("estimated_recovery_time", "UInt32"),
+    ("database_shard_name", "String"),
+    ("database_replica_name", "String"),
+    ("is_shared_catalog_cluster", "UInt8"),
+    ("is_active", "Nullable(UInt8)"),
+    ("unsynced_after_recovery", "Nullable(UInt8)"),
+    ("replication_lag", "Nullable(UInt32)"),
+    ("recovery_time", "Nullable(UInt64)"),
+    ("name", "String"),
+];
+
+/// `system.macros`' columns (HE1 R9.62).
+pub const MACROS_COLUMNS: &[(&str, &str)] = &[("macro", "String"), ("substitution", "String")];
+
+/// `system.mutations`' columns, ClickHouse 26.9's (HE1 R9.62).
+pub const MUTATIONS_COLUMNS: &[(&str, &str)] = &[
+    ("database", "String"),
+    ("table", "String"),
+    ("mutation_id", "String"),
+    ("command", "String"),
+    ("create_time", "DateTime"),
+    ("finish_time", "DateTime"),
+    ("block_numbers.partition_id", "Array(String)"),
+    ("block_numbers.number", "Array(Int64)"),
+    ("parts_in_progress_names", "Array(String)"),
+    ("parts_to_do_names", "Array(String)"),
+    ("parts_to_do", "Int64"),
+    ("parts_postpone_reasons", "Map(String, String)"),
+    ("is_done", "UInt8"),
+    ("is_killed", "UInt8"),
+    ("latest_failed_part", "String"),
+    ("latest_fail_time", "DateTime"),
+    ("latest_fail_reason", "String"),
+    ("latest_fail_error_code_name", "String"),
+];
+
+/// `system.distributed_ddl_queue`'s columns, ClickHouse 26.9's (HE1 R9.62).
+pub const DDL_QUEUE_COLUMNS: &[(&str, &str)] = &[
+    ("entry", "String"),
+    ("entry_version", "Nullable(UInt8)"),
+    ("initiator_host", "Nullable(String)"),
+    ("initiator_port", "Nullable(UInt16)"),
+    ("cluster", "String"),
+    ("query", "String"),
+    ("settings", "Map(String, String)"),
+    ("query_create_time", "DateTime"),
+    ("host", "Nullable(String)"),
+    ("port", "Nullable(UInt16)"),
+    (
+        "status",
+        "Nullable(Enum8('Inactive' = 0, 'Active' = 1, 'Finished' = 2, 'Removing' = 3, 'Unknown' = 4))",
+    ),
+    ("exception_code", "Nullable(UInt16)"),
+    ("exception_text", "Nullable(String)"),
+    ("query_finish_time", "Nullable(DateTime)"),
+    ("query_duration_ms", "Nullable(UInt64)"),
+];
+
+/// The tables of a one-node House's cluster (HE1 R9.62) that answer no rows:
+/// it has no macros configured, its mutations are done when their statement
+/// returns (copy-on-write, HE1 R9.5), and an `ON CLUSTER` statement is done
+/// when it returns, so no distributed DDL is ever queued.
+const EMPTY_CLUSTER_TABLES: &[(&str, &[(&str, &str)])] = &[
+    ("macros", MACROS_COLUMNS),
+    ("mutations", MUTATIONS_COLUMNS),
+    ("distributed_ddl_queue", DDL_QUEUE_COLUMNS),
+];
+
+/// `clusterAllReplicas(<cluster>, system.<t>)` read as `system.<t>` (HE1
+/// R9.62): every cluster of a one-node House is that node, so the function's
+/// rows are the local table's. Only that form is rewritten — a cluster name
+/// (a quoted string, or a name) and a `system` table, nothing else — so
+/// `clusterAllReplicas` of a user's table or of any other source stays in the
+/// text and the deny list refuses it (`344`), as it refuses `cluster`,
+/// `remote` and the rest. The `system` table is then held to the deny list's
+/// allowed tables like any other read.
+pub fn rewrite_cluster_reads(sql: &str) -> String {
+    let lexemes = lex(sql);
+    let raw = |i: usize| lexemes.get(i).map(|(_, r)| &sql[r.clone()]);
+    let symbol =
+        |i: usize, b: u8| matches!(lexemes.get(i), Some((Lexeme::Symbol(s), _)) if *s == b);
+    let word_like = |i: usize| match lexemes.get(i) {
+        Some((Lexeme::Word(..), _)) => true,
+        Some((Lexeme::Other, r)) => {
+            let text = &sql[r.clone()];
+            text.len() >= 2 && (text.starts_with('`') || text.starts_with('"'))
+        }
+        _ => false,
+    };
+    let cluster_name = |i: usize| match lexemes.get(i) {
+        Some((Lexeme::Other, r)) => {
+            let text = &sql[r.clone()];
+            text.len() >= 2 && matches!(text.as_bytes()[0], b'\'' | b'`' | b'"')
+        }
+        Some((Lexeme::Word(..), _)) => true,
+        _ => false,
+    };
+    let is_system = |i: usize| {
+        raw(i).is_some_and(|t| {
+            let t = t.trim_matches(|c| c == '`' || c == '"');
+            t == "system"
+        })
+    };
+    let mut out = String::with_capacity(sql.len());
+    let mut copied = 0;
+    let mut i = 0;
+    while i < lexemes.len() {
+        let matches = matches!(lexemes[i].0, Lexeme::Word(..))
+            && raw(i).is_some_and(|w| w.eq_ignore_ascii_case("clusterAllReplicas"))
+            && !(i > 0 && symbol(i - 1, b'.'))
+            && symbol(i + 1, b'(')
+            && cluster_name(i + 2)
+            && symbol(i + 3, b',')
+            && word_like(i + 4)
+            && is_system(i + 4)
+            && symbol(i + 5, b'.')
+            && word_like(i + 6)
+            && symbol(i + 7, b')');
+        if matches {
+            out.push_str(&sql[copied..lexemes[i].1.start]);
+            out.push_str("system.");
+            out.push_str(&sql[lexemes[i + 6].1.clone()]);
+            copied = lexemes[i + 7].1.end;
+            i += 8;
+            continue;
+        }
+        i += 1;
+    }
+    out.push_str(&sql[copied..]);
+    out
+}
 
 /// `system.loams_pipes` (HS1 Task 16): the House's own, one row per
 /// materialized view — over a pipe or, from HS1 Task 23, a lake table — with
@@ -457,9 +613,17 @@ pub async fn views(
 ) -> Result<Vec<String>, HouseError> {
     let mut catalog = match ctx.lake {
         Some(lake)
-            if tables
-                .iter()
-                .any(|t| !matches!(t.as_str(), "processes" | "errors" | "query_log")) =>
+            if tables.iter().any(|t| {
+                !matches!(
+                    t.as_str(),
+                    "processes"
+                        | "errors"
+                        | "query_log"
+                        | "macros"
+                        | "mutations"
+                        | "distributed_ddl_queue"
+                )
+            }) =>
         {
             catalog_tables(lake, ctx.namespace).await?
         }
@@ -472,6 +636,7 @@ pub async fn views(
             let at = table.metadata.last_updated_ms();
             crate::pipes::views_of(table)
                 .into_iter()
+                .chain(crate::refresh::refreshes_of(table))
                 .map(move |view| (view, at))
         })
         .collect();
@@ -486,6 +651,24 @@ pub async fn views(
         quote_name(SYSTEM_VIEWS)
     )];
     for table in tables {
+        if let Some((_, columns)) = EMPTY_CLUSTER_TABLES.iter().find(|(t, _)| t == table) {
+            out.push(format!(
+                "CREATE OR REPLACE VIEW {}.{} AS\n{}",
+                quote_name(SYSTEM_VIEWS),
+                quote_name(table),
+                catalog_select(&fixed_shape(columns), &Rows::default())
+            ));
+            continue;
+        }
+        if table == "clusters" {
+            out.push(format!(
+                "CREATE OR REPLACE VIEW {}.{} AS\n{}",
+                quote_name(SYSTEM_VIEWS),
+                quote_name(table),
+                clusters_view(&catalog)
+            ));
+            continue;
+        }
         if table == "query_log" {
             out.push(format!(
                 "CREATE OR REPLACE VIEW {}.{} AS\n{}",
@@ -563,6 +746,63 @@ pub async fn views(
         ));
     }
     Ok(out)
+}
+
+/// A shape from a fixed column list.
+fn fixed_shape(columns: &[(&str, &str)]) -> Vec<ShapeColumn> {
+    columns
+        .iter()
+        .map(|(name, ty)| ShapeColumn {
+            name: (*name).to_string(),
+            ty: (*ty).to_string(),
+        })
+        .collect()
+}
+
+/// The clusters a one-node House answers (HE1 R9.62): one row, this node, for
+/// each cluster an `ON CLUSTER` clause of the namespace's stored `CREATE`
+/// statements names (the House accepts any name there, D344). The node is
+/// local and named `localhost` at `127.0.0.1`, so an application looking for
+/// other hosts of its cluster finds none.
+fn clusters_view(catalog: &[(String, String, LakeTable)]) -> String {
+    let names: BTreeSet<String> = catalog
+        .iter()
+        .filter_map(|(database, name, table)| {
+            ddl::on_cluster_of(&ChTable::from_lake(database, name, table).ddl)
+        })
+        .collect();
+    let rows = Rows {
+        columns: vec![
+            "cluster",
+            "shard_num",
+            "shard_weight",
+            "replica_num",
+            "host_name",
+            "host_address",
+            "port",
+            "is_local",
+            "user",
+            "name",
+        ],
+        rows: names
+            .into_iter()
+            .map(|cluster| {
+                vec![
+                    Some(cluster.clone()),
+                    Some("1".to_string()),
+                    Some("1".to_string()),
+                    Some("1".to_string()),
+                    Some("localhost".to_string()),
+                    Some("127.0.0.1".to_string()),
+                    Some("9000".to_string()),
+                    Some("1".to_string()),
+                    Some("default".to_string()),
+                    Some(cluster),
+                ]
+            })
+            .collect(),
+    };
+    catalog_select(&fixed_shape(CLUSTERS_COLUMNS), &rows)
 }
 
 /// `system.processes` from the front's process list (HS1 Task 23).
@@ -833,8 +1073,13 @@ async fn databases(ctx: ReadContext<'_>, shape: &[ShapeColumn]) -> Result<String
 
 /// `CREATE MATERIALIZED VIEW` as `system.tables.create_table_query` shows it.
 fn view_ddl(view: &crate::pipes::MaterializedView) -> String {
+    let refresh = view
+        .refresh
+        .as_ref()
+        .map(|r| format!(" {}", r.render()))
+        .unwrap_or_default();
     format!(
-        "CREATE MATERIALIZED VIEW {}.{} TO {}.{} AS {}",
+        "CREATE MATERIALIZED VIEW {}.{}{refresh} TO {}.{} AS {}",
         quote_name(&view.database),
         quote_name(&view.name),
         quote_name(&view.target_database),
@@ -1076,6 +1321,48 @@ async fn parts_view(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// HE1 R9.62: only `clusterAllReplicas(<cluster>, system.<t>)` is read
+    /// locally; every other use stays for the deny list to refuse.
+    #[test]
+    fn cluster_reads_of_system_tables_are_local() {
+        for (sql, want) in [
+            (
+                "SELECT count(*) FROM clusterAllReplicas('cluster', system.tables) WHERE database = 'd'",
+                "SELECT count(*) FROM system.tables WHERE database = 'd'",
+            ),
+            (
+                "SELECT 1 FROM ClusterAllReplicas( c , `system` . `parts` ) AS p",
+                "SELECT 1 FROM system.`parts` AS p",
+            ),
+            (
+                "SELECT * FROM clusterAllReplicas('c', default.t)",
+                "SELECT * FROM clusterAllReplicas('c', default.t)",
+            ),
+            (
+                "SELECT * FROM clusterAllReplicas('c', t)",
+                "SELECT * FROM clusterAllReplicas('c', t)",
+            ),
+            (
+                "SELECT * FROM clusterAllReplicas('c', system.tables, rand())",
+                "SELECT * FROM clusterAllReplicas('c', system.tables, rand())",
+            ),
+            (
+                "SELECT * FROM clusterAllReplicas('c', system, tables)",
+                "SELECT * FROM clusterAllReplicas('c', system, tables)",
+            ),
+            (
+                "SELECT 'clusterAllReplicas(''c'', system.tables)'",
+                "SELECT 'clusterAllReplicas(''c'', system.tables)'",
+            ),
+            (
+                "SELECT * FROM remote('h', system.tables)",
+                "SELECT * FROM remote('h', system.tables)",
+            ),
+        ] {
+            assert_eq!(rewrite_cluster_reads(sql), want, "{sql}");
+        }
+    }
 
     #[test]
     fn rewrite_takes_only_qualified_system_tables() {

@@ -22,8 +22,13 @@ import java.util.NoSuchElementException;
  */
 public final class Subscription implements Iterator<Subscription.Record>, AutoCloseable {
 
-    /** One record a subscription yields. */
-    public record Record(int partition, long offset, byte[] value, long timestampMs) {
+    /** One record a subscription yields; {@code key} is null when it was produced without one. */
+    public record Record(int partition, long offset, byte[] value, long timestampMs, byte[] key) {
+        /** A record without a key. */
+        public Record(int partition, long offset, byte[] value, long timestampMs) {
+            this(partition, offset, value, timestampMs, null);
+        }
+
         /** The value as UTF-8 text. */
         public String text() {
             return new String(value, StandardCharsets.UTF_8);

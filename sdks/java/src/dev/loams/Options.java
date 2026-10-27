@@ -26,6 +26,7 @@ public final class Options {
     private final boolean sessionConsistency;
     private final String namespace;
     private final java.time.Duration timeout;
+    private final boolean json;
 
     private Options(Builder builder) {
         this.endpoint = builder.endpoint;
@@ -37,6 +38,17 @@ public final class Options {
         this.sessionConsistency = builder.sessionConsistency;
         this.namespace = builder.namespace;
         this.timeout = builder.timeout;
+        this.json = builder.json;
+    }
+
+    /**
+     * Whether unary calls use the proto3 JSON mapping ({@code application/json}) rather than
+     * binary protobuf. Off by default: binary is smaller and faster. JSON is for a proxy or a log
+     * that has to read the bodies, and for replaying a JSON recording. Server streams stay
+     * binary either way.
+     */
+    public boolean json() {
+        return json;
     }
 
     public static Builder builder() {
@@ -177,6 +189,7 @@ public final class Options {
         private boolean sessionConsistency;
         private String namespace;
         private java.time.Duration timeout;
+        private boolean json;
 
         private Builder() {}
 
@@ -232,6 +245,12 @@ public final class Options {
 
         public Builder timeout(java.time.Duration value) {
             this.timeout = value;
+            return this;
+        }
+
+        /** See {@link Options#json()}. */
+        public Builder json(boolean value) {
+            this.json = value;
             return this;
         }
 

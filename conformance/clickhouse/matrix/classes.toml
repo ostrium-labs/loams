@@ -1,0 +1,127 @@
+# The matrix's hand-kept classes (HE0 Task 8, design §75 §7.3–§7.5, D1558).
+# `loams-house-mine matrix` marks every function, table engine and table
+# function of the pinned chDB with one class:
+#
+#   profile   in the mined profile (profile.toml), or declared Tier 0 or 1 here
+#   refused   Tier 2 (§75 §7.5): `48 NOT_IMPLEMENTED`, naming the feature
+#   disabled  never built, for security (D1558): `344 SUPPORT_IS_DISABLED`
+#
+# Precedence: disabled, then the mined profile, then profile rules, then
+# refused. Everything else is unclassified; CI fails on an unclassified feature
+# the mining found. Every `disabled` name must be on the House's deny list
+# (fabric/crates/loams-house/src/deny.rs; test `disabled_names_are_on_the_house_deny_list`).
+# Only what §75 names is here; the mined profile decides the rest.
+
+# --- Table engines -----------------------------------------------------------
+
+[[rule]]
+class = "profile"
+kind = "engine"
+names = ["MergeTree", "ReplacingMergeTree"]
+reason = "Tier 0 (§75 §7.3)"
+
+[[rule]]
+class = "profile"
+kind = "engine"
+names = ["Distributed", "ReplicatedMergeTree", "ReplicatedReplacingMergeTree"]
+reason = "Tier 0 topology syntax, accepted and ignored (§75 §7.3)"
+
+[[rule]]
+class = "profile"
+kind = "engine"
+names = ["AggregatingMergeTree", "SummingMergeTree", "MaterializedView", "ReplicatedAggregatingMergeTree", "ReplicatedSummingMergeTree"]
+reason = "Tier 1 (§75 §7.4); the Replicated forms as topology syntax"
+
+[[rule]]
+class = "profile"
+kind = "engine"
+names = ["VersionedCollapsingMergeTree", "ReplicatedVersionedCollapsingMergeTree"]
+reason = "gate applications on the chDB House (D1570, amending §75 §7.5); the Replicated form as topology syntax"
+
+[[rule]]
+class = "refused"
+kind = "engine"
+names = ["Kafka", "RabbitMQ", "MySQL", "PostgreSQL", "MaterializedMySQL", "NATS"]
+reason = "Tier 2: queue and database engines; Loams streams, Postgres and connectors cover them (§75 §7.5)"
+
+[[rule]]
+class = "refused"
+kind = "engine"
+names = ["Log", "TinyLog", "StripeLog", "Memory", "Buffer", "Set", "Join", "GraphiteMergeTree", "ReplicatedGraphiteMergeTree"]
+reason = "Tier 2: legacy engines (§75 §7.5)"
+
+[[rule]]
+class = "refused"
+kind = "engine"
+names = ["WindowView", "LiveView"]
+reason = "Tier 2: experimental (§75 §7.5)"
+
+[[rule]]
+class = "disabled"
+kind = "engine"
+names = ["URL", "File", "FileLog", "S3", "S3Queue", "AzureBlobStorage", "AzureQueue", "HDFS", "Hive", "MongoDB", "Redis", "SQLite", "ODBC", "JDBC", "Executable", "ExecutablePool", "EmbeddedRocksDB", "KeeperMap", "YTsaurus", "ArrowFlight", "COSN", "OSS", "GCS", "Remote", "RemoteSecure", "ArrowStream", "BigQuery", "Iceberg", "IcebergS3", "IcebergAzure", "IcebergHDFS", "IcebergLocal", "DeltaLake", "DeltaLakeS3", "DeltaLakeAzure", "DeltaLakeLocal", "Hudi", "Paimon", "PaimonS3", "PaimonAzure", "PaimonHDFS", "PaimonLocal", "MaterializedPostgreSQL", "Merge", "Alias", "TimeSeries", "QueryRunner", "Loop", "FuzzJSON", "FuzzQuery", "Dictionary"]
+reason = "reaches the host, the network, another system or another table's data (D1558; the House's deny list)"
+
+# --- Table functions ---------------------------------------------------------
+
+[[rule]]
+class = "disabled"
+kind = "table_function"
+names = ["file", "fileCluster", "filesystem", "url", "urlCluster", "remote", "remoteSecure", "cluster", "clusterAllReplicas", "mysql", "postgresql", "odbc", "jdbc", "sqlite", "mongodb", "redis", "hdfs", "hdfsCluster", "hive", "s3", "s3Cluster", "gcs", "oss", "cosn", "azureBlobStorage", "azureBlobStorageCluster", "executable", "dictionary", "ytsaurus", "arrowFlight", "arrowflight", "bigquery", "arrowstream", "loop", "eval", "fuzzJSON", "fuzzQuery", "viewIfPermitted", "viewExplain"]
+reason = "reaches outside the namespace (§75 §7.5, D1558; the House's deny list)"
+
+[[rule]]
+class = "disabled"
+kind = "table_function"
+prefixes = ["iceberg", "deltaLake", "hudi", "paimon", "prometheusQuery", "timeSeries", "mergeTree"]
+reason = "arbitrary object-store paths or engine internals (D1558; the House's deny list); Tier 1 adds Parquet and Iceberg functions on the namespace's own prefix only (§75 §7.4)"
+
+# --- Functions ---------------------------------------------------------------
+
+[[rule]]
+class = "profile"
+kind = "function"
+names = ["windowFunnel", "argMax", "argMin"]
+reason = "Tier 0 (§75 §7.3; windowFunnel for OpenPanel)"
+
+[[rule]]
+class = "profile"
+kind = "function"
+prefixes = ["uniq", "quantile"]
+reason = "Tier 0: `uniq*`, `quantile*` (§75 §7.3)"
+
+[[rule]]
+class = "profile"
+kind = "function"
+names = ["retention", "sequenceMatch", "sequenceCount"]
+reason = "Tier 1 (§75 §7.4)"
+
+[[rule]]
+class = "refused"
+kind = "function"
+prefixes = ["geo", "h3", "s2", "greatCircle", "pointIn", "polygon", "readWKT", "readWKB", "WKT", "WKB", "svg"]
+reason = "Tier 2: geo functions (§75 §7.5)"
+
+[[rule]]
+class = "refused"
+kind = "function"
+names = ["stochasticLinearRegression", "stochasticLogisticRegression"]
+reason = "Tier 2: ML functions (§75 §7.5)"
+
+[[rule]]
+class = "refused"
+kind = "function"
+prefixes = ["dictGet", "dictHas", "dictIsIn"]
+reason = "Tier 2: dictionaries, until an application needs them (§75 §7.5)"
+
+[[rule]]
+class = "disabled"
+kind = "function"
+names = ["file", "catboostEvaluate", "naiveBayesClassifier", "hasColumnInTable", "addressToLine", "addressToLineWithInlines", "addressToSymbol", "demangle", "getClientHTTPHeader"]
+reason = "reads a file, another server, the process's memory or the request's credentials (D1558; the House's deny list)"
+
+[[rule]]
+class = "disabled"
+kind = "function"
+names = ["uptime", "logTrace", "getMacro", "filesystemAvailable", "filesystemCapacity", "filesystemUnreserved", "getServerSetting", "getMergeTreeSetting", "getServerPort", "tcpPort", "serverUUID", "getOSKernelVersion", "showCertificate", "zookeeperSessionUptime", "currentProfiles", "enabledProfiles", "defaultProfiles", "currentRoles", "enabledRoles", "defaultRoles"]
+reason = "describes the host, with no Loams value (D1558; the House's host functions)"

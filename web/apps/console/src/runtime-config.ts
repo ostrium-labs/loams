@@ -42,7 +42,8 @@ export type RuntimeConfig = {
    */
   server?: string;
   /**
-   * Set on a console that is not served by the engine (Ostrium's at console.loams.dev):
+   * Set on a console that is not served by the engine (the Compose console, a Cloudflare or
+   * Vercel deploy; the hosted console.loams.dev is retired):
    * it asks which engine to talk to and how to sign in, and sends a bearer token (or,
    * on a tailnet, nothing) instead of the engine's session cookie.
    */

@@ -1,0 +1,87 @@
+{
+  "name": "search_hybrid_rrf",
+  "builder": "search",
+  "message": "loams.collection.v1.SearchRequest",
+  "spec": {
+    "on": "notes",
+    "calls": [
+      {
+        "op": "text",
+        "args": [
+          "refund",
+          {
+            "fields": [
+              "body"
+            ]
+          }
+        ]
+      },
+      {
+        "op": "vector",
+        "args": [
+          "embedding",
+          [
+            1,
+            0,
+            0,
+            0
+          ],
+          {
+            "k": 5
+          }
+        ]
+      },
+      {
+        "op": "fuse",
+        "args": [
+          {
+            "op": "rrf",
+            "args": [
+              60
+            ]
+          }
+        ]
+      },
+      {
+        "op": "limit",
+        "args": [
+          3
+        ]
+      }
+    ]
+  },
+  "expect": {
+    "collection": "notes",
+    "retrievers": [
+      {
+        "text": {
+          "query": {
+            "match": {
+              "field": "body",
+              "text": "refund"
+            }
+          }
+        }
+      },
+      {
+        "vector": {
+          "field": "embedding",
+          "query": [
+            1,
+            0,
+            0,
+            0
+          ],
+          "k": 5
+        }
+      }
+    ],
+    "fusion": {
+      "rrf": {
+        "k": 60
+      }
+    },
+    "limit": 3
+  },
+  "scenario_step": "app_search/4"
+}

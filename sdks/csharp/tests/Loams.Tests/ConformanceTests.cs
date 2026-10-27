@@ -84,7 +84,8 @@ public sealed class ConformanceTests
         using var report = System.Text.Json.JsonDocument.Parse(File.ReadAllText(reportPath));
         var reportedRan = report.RootElement.GetProperty("ran").EnumerateArray()
             .Select((name) => name.GetString()!).ToArray();
-        Assert.Equal(ran.Order(StringComparer.Ordinal), reportedRan.Order(StringComparer.Ordinal));
+        // The report also names the app fixtures this process replayed (AppScenarioTests).
+        Assert.Equal(ConformanceReport.Ran(run).Order(StringComparer.Ordinal), reportedRan.Order(StringComparer.Ordinal));
         Assert.Empty(report.RootElement.GetProperty("skipped").EnumerateArray());
     }
 
@@ -477,7 +478,7 @@ public sealed class ConformanceTests
                 binding.Pagination is null || (binding.Module == "live.admin" && binding.Name == "ListApps")
                 // SDKP: the app modules' list calls, driven against stubs in AppBuilderTests
                 // until the app corpus (P0d) records them.
-                || binding.Package is "loams.collection.v1" or "loams.graph.v1"),
+                || binding.Package is "loams.collection.v1" or "loams.graph.v1" or "loams.stream.v1"),
             "no annotated RPC is paged yet; ListCollections arrives with API1 Task 2, and this " +
             "assertion failing is the signal to add an end-to-end half to this test");
     }

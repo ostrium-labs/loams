@@ -61,6 +61,8 @@ import {
   cx,
   Empty,
   formatBytes,
+  IconButton,
+  Kbd,
   Menu,
   MenuItem,
   MenuLabel,
@@ -68,6 +70,7 @@ import {
   Segmented,
   SelectMenu,
   Spinner,
+  Tooltip,
 } from '@loams/ui';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -125,7 +128,12 @@ export interface ThreadComposerProps {
   onGroupStarted?: (groupId: string) => void;
   /** Opens a mentioned file (the thread's Files panel). */
   openFile?: (path: string) => void;
+  /** "Add a harness…" in the harness picker: the Seed Exchange's harnesses (MK1 Task 9). */
+  onAddHarness?: () => void;
 }
+
+/** The harness picker's "Add a harness…" entry. */
+const ADD_HARNESS = 'add-harness';
 
 const NO_RECORDS = new Map();
 
@@ -198,6 +206,7 @@ function ComposerWithDaemon({
   onStarted,
   onGroupStarted,
   openFile,
+  onAddHarness,
   transport,
 }: ThreadComposerProps & { transport: Transport }) {
   const isNew = givenThreadId === undefined;
@@ -228,9 +237,17 @@ function ComposerWithDaemon({
   const host = useAgentdQuery(StudioService.method.getHost, {});
   const canRunGroups = host.data?.host?.features.includes('run-groups') ?? false;
   const harnessList = useAgentdQuery(HarnessService.method.listHarnesses, {});
-  const harnesses: HarnessDescriptor[] = useMemo(
+  const usable: HarnessDescriptor[] = useMemo(
     () => (harnessList.data?.harnesses ?? []).filter((h) => h.installed && h.enabled !== false),
     [harnessList.data],
+  );
+  // Harnesses installed from the Seed Exchange (MK1 Tasks 4b, 9) share one HarnessId and
+  // are told apart by their listing. A thread cannot run on one yet (Task 4b ruling 8), so
+  // the picker lists them but does not offer them.
+  const harnesses = useMemo(() => usable.filter((h) => h.id !== HarnessId.MARKETPLACE), [usable]);
+  const fromMarketplace = useMemo(
+    () => usable.filter((h) => h.id === HarnessId.MARKETPLACE),
+    [usable],
   );
   const chatHarness = chat?.config?.harness || undefined;
   const harness: HarnessId | undefined =
@@ -589,7 +606,7 @@ function ComposerWithDaemon({
       {(uploads.refusals.length > 0 || error) && (
         <div
           role="alert"
-          className="flex items-start gap-2 border border-danger bg-danger-soft px-3 py-2 text-[0.84rem] text-ink"
+          className="flex items-start gap-2 rounded-lg border border-danger bg-danger-soft px-3 py-2 text-body text-ink"
         >
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             {error && <p className="m-0">{error}</p>}
@@ -612,7 +629,11 @@ function ComposerWithDaemon({
           </Button>
         </div>
       )}
-      <div className="relative border border-rule bg-surface focus-within:border-accent">
+      <div
+        data-composer-box=""
+        aria-busy={sending !== null || undefined}
+        className="relative rounded-lg border border-control-border bg-surface shadow-composer transition-colors duration-(--op-duration-fast) ease-out hover:border-input focus-within:border-focus focus-within:hover:border-focus motion-reduce:transition-none"
+      >
         {menuOpen && menuTrigger && (
           <SuggestionMenu
             id={listId}
@@ -689,14 +710,26 @@ function ComposerWithDaemon({
             <SelectMenu
               label="Harness"
               value={String(harness)}
-              onValueChange={(v) =>
+              onValueChange={(v) => {
+                if (v === ADD_HARNESS) {
+                  onAddHarness?.();
+                  return;
+                }
                 store.getState().update(draftKey, {
                   harness: HarnessId[Number(v) as HarnessId],
                   model: undefined,
                   reasoning: undefined,
-                })
-              }
-              options={harnesses.map((h) => ({ value: String(h.id), label: h.name }))}
+                });
+              }}
+              options={[
+                ...harnesses.map((h) => ({ value: String(h.id), label: h.name })),
+                ...fromMarketplace.map((h) => ({
+                  value: `marketplace:${h.marketplaceListing ?? h.name}`,
+                  label: `${h.name} (from the Seed Exchange; threads on it come later)`,
+                  disabled: true,
+                })),
+                ...(onAddHarness ? [{ value: ADD_HARNESS, label: 'Add a harness…' }] : []),
+              ]}
               className={PICKER}
             />
           )}
@@ -775,15 +808,13 @@ function ComposerWithDaemon({
               if (picked.length) void uploads.add(picked);
             }}
           />
-          <Button
-            size="icon"
-            variant="quiet"
-            aria-label="Attach images"
-            title="Attach PNG, JPEG, GIF or WebP images"
+          <IconButton
+            label="Attach images"
+            tooltip="Attach PNG, JPEG, GIF or WebP images"
             onClick={() => fileInput.current?.click()}
           >
-            <Paperclip size={15} aria-hidden="true" />
-          </Button>
+            <Paperclip aria-hidden="true" />
+          </IconButton>
           <StashMenu
             stash={draft.stash}
             canStash={prompt.trim() !== ''}
@@ -813,7 +844,7 @@ function ComposerWithDaemon({
                 size="sm"
                 variant="danger"
                 aria-label="Stop"
-                disabled={sending === 'stop'}
+                loading={sending === 'stop'}
                 onClick={() => void stop()}
               >
                 <Square size={13} aria-hidden="true" /> Stop
@@ -834,21 +865,27 @@ function ComposerWithDaemon({
               </Button>
             </>
           )}
-          <Button
-            size="sm"
-            variant="primary"
-            aria-label={busy ? 'Queue' : 'Send'}
-            title={busy ? 'Queue for when the turn ends (Enter)' : 'Send (Enter)'}
-            disabled={!sendable || sending !== null}
-            onClick={() => void submit('send')}
+          <Tooltip
+            content={
+              <span className="inline-flex items-center gap-1.5">
+                {busy ? 'Queue for when the turn ends' : 'Send'}
+                <Kbd>Enter</Kbd>
+              </span>
+            }
           >
-            {sending === 'send' ? (
-              <Spinner size="sm" label="Sending" />
-            ) : (
+            <Button
+              size="sm"
+              variant="primary"
+              aria-label={busy ? 'Queue' : 'Send'}
+              aria-keyshortcuts="Enter"
+              loading={sending === 'send'}
+              disabled={!sendable || (sending !== null && sending !== 'send')}
+              onClick={() => void submit('send')}
+            >
               <ArrowUp size={14} aria-hidden="true" />
-            )}
-            {busy ? 'Queue' : 'Send'}
-          </Button>
+              {busy ? 'Queue' : 'Send'}
+            </Button>
+          </Tooltip>
         </div>
       </div>
       {parallelOpen && harness !== undefined && (
@@ -867,7 +904,7 @@ function ComposerWithDaemon({
 }
 
 const PICKER =
-  'inline-flex h-7 max-w-[14rem] items-center gap-1.5 rounded-pill border border-rule-soft bg-bg px-2.5 text-[0.8rem] text-muted hover:text-ink';
+  'inline-flex h-7 max-w-[14rem] items-center gap-1.5 rounded-pill border border-rule-soft bg-bg px-2.5 text-small text-muted transition-colors duration-(--op-duration-fast) ease-out hover:border-rule hover:text-ink motion-reduce:transition-none';
 
 function Chip({
   icon,
@@ -949,7 +986,7 @@ function SuggestionMenu({
 }) {
   const heading = kind === 'path' ? 'Files' : kind === 'skill' ? 'Skills' : 'Commands and skills';
   return (
-    <div className="absolute right-0 bottom-full left-0 z-20 mb-1 max-h-72 overflow-auto border border-rule bg-bg shadow-pop">
+    <div className="absolute right-0 bottom-full left-0 z-20 mb-1 max-h-72 overflow-auto rounded-lg border border-rule bg-elevated shadow-pop">
       <div className="px-3 pt-2 pb-1 text-micro font-medium text-faint">{heading}</div>
       {items.length === 0 ? (
         <p className="m-0 px-3 pb-2 text-[0.84rem] text-muted">{emptyText}</p>
@@ -999,7 +1036,7 @@ function QueuedMessages({
   onSendNow: (id: string) => void;
 }) {
   return (
-    <section aria-label="Queued messages" className="border border-rule-soft bg-surface">
+    <section aria-label="Queued messages" className="rounded-lg border border-rule-soft bg-surface">
       <h3 className="m-0 px-3 pt-2 text-micro font-medium text-faint">
         Queued for when the turn ends
       </h3>

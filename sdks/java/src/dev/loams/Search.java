@@ -156,10 +156,15 @@ public final class Search {
     public Search select(List<String> include, List<String> exclude, List<String> vectors, List<String> fields) {
         Struct.Builder select = Struct.newBuilder();
         if (include != null || exclude != null) {
-            select.putFields("source", Value.newBuilder().setStructValue(Struct.newBuilder()
-                            .putFields("include", strings(include))
-                            .putFields("exclude", strings(exclude)))
-                    .build());
+            // Only the lists the caller gave, as the builder corpus spells it.
+            Struct.Builder source = Struct.newBuilder();
+            if (include != null) {
+                source.putFields("include", strings(include));
+            }
+            if (exclude != null) {
+                source.putFields("exclude", strings(exclude));
+            }
+            select.putFields("source", Value.newBuilder().setStructValue(source).build());
         }
         if (vectors != null) {
             select.putFields("vectors", strings(vectors));

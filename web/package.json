@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "packageManager": "pnpm@11.27.1",
   "engines": {
-    "node": ">=22"
+    "node": ">=24.11"
   },
   "scripts": {
     "dev": "pnpm --filter @loams/console dev",
@@ -16,7 +16,7 @@
     "test": "pnpm -r --if-present test"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.14",
+    "@biomejs/biome": "2.5.15",
     "typescript": "5.9.3"
   }
 }

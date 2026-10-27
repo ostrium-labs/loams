@@ -76,8 +76,15 @@ function Row({ n, onOpen }: { n: StudioNotification; onOpen: (href: string) => v
 }
 
 /** The bell and its list. `navigate` opens a notification's thread or run group. */
-export function NotificationsBell({ navigate }: { navigate: (to: string) => void }) {
-  const { items, unread, unsupported, markAllRead } = useNotifications();
+export function NotificationsBell({
+  navigate,
+  onArrive,
+}: {
+  navigate: (to: string) => void;
+  /** Called for each notification that arrives after the page opened (web OS notifications). */
+  onArrive?: (n: StudioNotification) => void;
+}) {
+  const { items, unread, unsupported, markAllRead } = useNotifications(onArrive);
   const [open, setOpen] = useState(false);
   if (unsupported) return null;
   const label = unread > 0 ? `Notifications, ${unread} unread` : 'Notifications';

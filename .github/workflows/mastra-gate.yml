@@ -1,0 +1,151 @@
+# The Mastra gate against a dev build (plan MA1 Task 27, design §66, Q1001).
+# ostrium-labs/loams-mastra runs Mastra's own Qdrant and Elasticsearch adapter
+# suites, vendored at their release tags, with exact expected-failure lists.
+# Here they run against `loams` built from this ref, with LOAMS_VERSION=dev, so
+# an entry marked `fixedAfter` (fixed on dev) must pass and any regression on
+# dev fails. nightly.yml dispatches it on dev every night; it is never a
+# required pull-request check. A failure opens or updates the issue "Mastra
+# gate fails on dev" (label mastra-compat).
+#
+# The pg cells are not run: Loams Postgres comes from the release compose
+# tarball, not from this build, and loams-mastra's own gate covers it.
+name: Mastra gate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mastra-gate-${{ github.ref }}
+  # The nightly runs to completion.
+  cancel-in-progress: false
+
+jobs:
+  mastra-gate:
+    name: Mastra gate (dev build)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      issues: write
+    env:
+      CARGO_TERM_COLOR: always
+      # The Loams under test is this build: entries fixed on dev must pass.
+      LOAMS_VERSION: dev
+      LOAMS_BIN: ${{ github.workspace }}/target/debug/loams
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: false
+      - name: build
+        run: cargo build -p loams --features durable --locked
+      # A CI checkout of our own public repository (the gate's suites).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ostrium-labs/loams-mastra
+          ref: main
+          path: .loams-mastra
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.0
+        with:
+          package_json_file: .loams-mastra/package.json
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - name: install
+        working-directory: .loams-mastra
+        run: pnpm install --frozen-lockfile
+      - name: start loams dev (Qdrant)
+        working-directory: .loams-mastra
+        run: test/conformance/loams/start-loams.sh
+      - name: Qdrant
+        id: qdrant
+        continue-on-error: true
+        working-directory: .loams-mastra/test/conformance
+        run: pnpm run pinned:qdrant
+      - name: stop (Qdrant)
+        if: always()
+        working-directory: .loams-mastra
+        run: |
+          pid=$(cat "$RUNNER_TEMP/loams.pid" 2>/dev/null || true)
+          test/conformance/loams/stop.sh ${{ steps.qdrant.outcome != 'success' && '--logs' || '' }}
+          # stop.sh signals loams dev without waiting; the next cell reuses its
+          # data directory and ports, so wait until the process has exited.
+          for _ in $(seq 1 60); do
+            [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null || exit 0
+            sleep 1
+          done
+          echo "loams dev did not exit within 60 s" >&2; exit 1
+      # Elasticsearch is an observed cell (Q1009): reported, never failing.
+      - name: start loams dev (Elasticsearch observed)
+        working-directory: .loams-mastra
+        run: test/conformance/loams/start-loams.sh
+      - name: Elasticsearch observed
+        id: es
+        continue-on-error: true
+        working-directory: .loams-mastra/test/conformance
+        run: ELASTICSEARCH_URL="$LOAMS_ES_URL" pnpm run pinned:es
+      - name: stop (Elasticsearch observed)
+        if: always()
+        working-directory: .loams-mastra
+        run: |
+          pid=$(cat "$RUNNER_TEMP/loams.pid" 2>/dev/null || true)
+          test/conformance/loams/stop.sh ${{ steps.es.outcome != 'success' && '--logs' || '' }}
+          # stop.sh signals loams dev without waiting; the next cell reuses its
+          # data directory and ports, so wait until the process has exited.
+          for _ in $(seq 1 60); do
+            [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null || exit 0
+            sleep 1
+          done
+          echo "loams dev did not exit within 60 s" >&2; exit 1
+      - name: start loams dev (Qdrant auth)
+        working-directory: .loams-mastra
+        run: test/conformance/loams/start-loams.sh --auth
+      - name: Qdrant auth
+        id: qdrant-auth
+        continue-on-error: true
+        working-directory: .loams-mastra/test/conformance
+        env:
+          LOAMS_NAMESPACE: default
+        run: pnpm run pinned:qdrant-auth
+      - name: stop (Qdrant auth)
+        if: always()
+        working-directory: .loams-mastra
+        run: |
+          pid=$(cat "$RUNNER_TEMP/loams.pid" 2>/dev/null || true)
+          test/conformance/loams/stop.sh ${{ steps.qdrant-auth.outcome != 'success' && '--logs' || '' }}
+          # stop.sh signals loams dev without waiting; the next cell reuses its
+          # data directory and ports, so wait until the process has exited.
+          for _ in $(seq 1 60); do
+            [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null || exit 0
+            sleep 1
+          done
+          echo "loams dev did not exit within 60 s" >&2; exit 1
+      - name: no_secret_in_artifacts
+        if: always()
+        working-directory: .loams-mastra
+        run: node scripts/repo-checks.mjs --artifacts test/conformance/results
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: mastra-gate-results
+          path: .loams-mastra/test/conformance/results/
+          if-no-files-found: ignore
+      - name: verdict
+        id: verdict
+        run: |
+          echo "qdrant: ${{ steps.qdrant.outcome }}, qdrant-auth: ${{ steps.qdrant-auth.outcome }}, elasticsearch (observed): ${{ steps.es.outcome }}"
+          if [ "${{ steps.qdrant.outcome }}" != success ] || [ "${{ steps.qdrant-auth.outcome }}" != success ]; then
+            echo "The Mastra gate fails on this dev build" >&2
+            exit 1
+          fi
+      - name: open or update the issue
+        if: failure() && github.ref == 'refs/heads/dev'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/ci/mastra-gate-issue.sh

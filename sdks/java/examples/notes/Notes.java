@@ -15,9 +15,11 @@ import dev.loams.Filter;
 import dev.loams.Fusion;
 import dev.loams.NotFoundException;
 import dev.loams.Options;
+import dev.loams.ProducerRecord;
 import dev.loams.Schema;
 import dev.loams.Search;
 import dev.loams.Sort;
+import dev.loams.SqlModule;
 import dev.loams.UnimplementedException;
 import dev.loams.Values;
 import dev.loams.gen.loams.collection.v1.Document;
@@ -105,7 +107,30 @@ public final class Notes {
             System.out.println("graph: not in this build");
         }
 
-        // 5. A missing collection is a typed error; then clean up.
+        // 5. SQL with $n parameters over the same collection, and a stream of events.
+        var sql = loams.sql().query("SELECT n, title FROM notes WHERE n > $1 ORDER BY n", List.of(1));
+        for (Map<String, Object> row : SqlModule.records(sql)) {
+            System.out.println("  sql row " + row.get("n") + ": " + row.get("title"));
+        }
+        loams.streams().create("events", 1);
+        var produced = loams.streams().produce("events", 0, List.of(
+                ProducerRecord.of("1", Map.of("kind", "created", "note", 1)),
+                ProducerRecord.of("2", Map.of("kind", "patched", "note", 2)),
+                ProducerRecord.of("4", Map.of("kind", "deleted", "note", 4))),
+                "notes-demo", 1L);
+        System.out.println("events at " + produced.getBaseOffset() + ".." + produced.getLastOffset()
+                + (produced.getDuplicate() ? " (already produced)" : ""));
+        try (var subscription = loams.streams().subscribe("events", 0, produced.getBaseOffset(), 1000)) {
+            while (subscription.hasNext()) {
+                var record = subscription.next();
+                System.out.println("  event " + record.offset() + ": " + record.text());
+                if (record.offset() >= produced.getLastOffset()) {
+                    break;
+                }
+            }
+        }
+
+        // 6. A missing collection is a typed error; then clean up.
         try {
             loams.collections().get("missing", CallOptions.none());
         } catch (NotFoundException missing) {

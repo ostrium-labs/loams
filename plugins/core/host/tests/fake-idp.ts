@@ -1,5 +1,5 @@
 /**
- * A fake Authentik, served over real HTTP.
+ * A fake OIDC identity provider, served over real HTTP.
  *
  * The point of this file is to NOT mock openid-client. Every trap this suite exists to
  * prove is caught somewhere between `discovery()` and `jwtVerify`, and a mock would sit
@@ -20,7 +20,8 @@ export const CLIENT_ID = "bi-test-client";
 export const CLIENT_SECRET = "bi-test-client-secret-value";
 
 const KID = "bi-test-key";
-const ISSUER_PATH = "/application/o/test/";
+/** The default issuer path: a path-based issuer that ends in a slash. */
+const DEFAULT_ISSUER_PATH = "/oidc/test/";
 
 export interface RecordedAuthorize {
   clientId?: string;
@@ -47,16 +48,23 @@ export interface RecordedToken {
 
 export interface FakeIdPOptions {
   /**
+   * The issuer's path, fixed at start. Defaults to `/oidc/test/` (a path-based issuer
+   * ending in a slash). `""` makes the issuer the bare origin with NO trailing slash,
+   * e.g. `http://127.0.0.1:1234`, the shape some providers use for an instance-wide
+   * issuer. Discovery is then served at `/.well-known/openid-configuration`.
+   */
+  issuerPath?: string;
+  /**
    * Serve `issuer` in the metadata instead of the configured one. Reproduces the
    * trailing-slash mistake: the operator points at the right host, the metadata does not
    * match byte for byte.
    */
   issuerOverride?: string;
-  /** What the JWKS publishes. `empty` is Authentik with no Signing Key configured. */
+  /** What the JWKS publishes. `empty` is a provider with no signing key configured. */
   jwks?: "rsa" | "empty" | "oct";
   /**
    * How the ID token is signed. `HS256` with the client secret as the HMAC key and no
-   * `kid` is EXACTLY what Authentik does when no Signing Key is configured.
+   * `kid` is EXACTLY what some providers do when no signing key is configured.
    */
   idTokenAlg?: "RS256" | "HS256";
   /**
@@ -90,7 +98,7 @@ export interface FakeIdPOptions {
 }
 
 export interface FakeIdP {
-  /** The issuer URL, WITH the trailing slash. */
+  /** The issuer URL, exactly as the discovery document reports it (absent an override). */
   issuer: string;
   url: string;
   requests: { authorize: RecordedAuthorize[]; token: RecordedToken[]; jwks: number };
@@ -110,6 +118,9 @@ export async function startFakeIdP(options: FakeIdPOptions = {}): Promise<FakeId
   const rsaJwk: JWK = { ...(await exportJWK(publicKey)), kid: KID, alg: "RS256", use: "sig" };
 
   let current: FakeIdPOptions = { ...options };
+  const issuerPath = options.issuerPath ?? DEFAULT_ISSUER_PATH;
+  /** Where discovery lives: `<issuer>/.well-known/openid-configuration`, one slash. */
+  const discoveryPath = `${issuerPath.replace(/\/+$/, "")}/.well-known/openid-configuration`;
   /** Overrides the RSA key when a test publishes its own. */
   let publishedKeys: JWK[] | undefined;
   const requests: { authorize: RecordedAuthorize[]; token: RecordedToken[]; jwks: number } = {
@@ -126,12 +137,13 @@ export async function startFakeIdP(options: FakeIdPOptions = {}): Promise<FakeId
 
   let base = "";
 
-  const issuerUrl = (): string => `${base}${ISSUER_PATH}`;
+  const issuerUrl = (): string => `${base}${issuerPath}`;
   const metadataIssuer = (): string => current.issuerOverride ?? issuerUrl();
 
   async function signIdToken(claims: Record<string, unknown>): Promise<string> {
     if ((current.idTokenAlg ?? "RS256") === "HS256") {
-      // Authentik's no-Signing-Key fallback: HMAC keyed on the client secret, no `kid`.
+      // The no-signing-key fallback some providers use: HMAC keyed on the client secret,
+      // no `kid`.
       return new SignJWT(claims)
         .setProtectedHeader({ alg: "HS256", typ: "JWT" })
         .sign(new TextEncoder().encode(current.hs256Secret ?? CLIENT_SECRET));
@@ -151,12 +163,12 @@ export async function startFakeIdP(options: FakeIdPOptions = {}): Promise<FakeId
       iat: Math.floor(Date.now() / 1000),
       exp: Math.floor(Date.now() / 1000) + 300,
       email: "ada@example.com",
-      // Hard-coded false by Authentik since 2025.10. Present here precisely so a test can
+      // Some providers always send this as false. Present here precisely so a test can
       // prove nothing in this codebase gates on it.
       email_verified: false,
       name: "Ada Lovelace",
       preferred_username: "ada",
-      // PLAIN and unnamespaced. There is no goauthentik.io/... namespace for claims.
+      // PLAIN and unnamespaced. There is no vendor namespace for claims.
       groups: ["bi-users", "bi-admins"],
     };
   }
@@ -171,12 +183,12 @@ export async function startFakeIdP(options: FakeIdPOptions = {}): Promise<FakeId
     const url = new URL(req.url ?? "/", base);
     const path = url.pathname;
 
-    if (path === `${ISSUER_PATH}.well-known/openid-configuration`) {
+    if (path === discoveryPath) {
       const body: Record<string, unknown> = {
         issuer: metadataIssuer(),
         authorization_endpoint: `${base}/authorize`,
         token_endpoint: `${base}/token`,
-        jwks_uri: `${base}/jwks${ISSUER_PATH}`,
+        jwks_uri: `${base}/jwks${issuerPath}`,
         response_types_supported: ["code"],
         grant_types_supported: ["authorization_code", "refresh_token"],
         subject_types_supported: ["public"],
@@ -316,7 +328,7 @@ export async function startFakeIdP(options: FakeIdPOptions = {}): Promise<FakeId
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 
   return {
-    issuer: `${base}${ISSUER_PATH}`,
+    issuer: `${base}${issuerPath}`,
     url: base,
     requests,
     setOptions(next) {

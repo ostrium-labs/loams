@@ -1,6 +1,10 @@
 # 57 — Loams Gateway: One Rust Gateway, Postgres First
 
+> **Updated 2026-10-19 ([D1119](13-decision-log.md)): Loams has no open core.** Where this document places metering, billing, the hosted control plane, commercial APIs or other components in the private `loams-platform` repository, or calls something private for open-core reasons, read that as superseded: everything is Apache-2.0, and the metering, billing and control-plane code is moving into the open repo now (design §63, Loams Meter). Ostrium Labs offers services (infrastructure efficiency, SLAs, support), not a paid edition. The rest of the design is unchanged.
+
 Status: **Approved direction** (owner, 2026-10-16) · details **Proposed** · 2026-10-16. Source: the owner's decision of 2026-10-16 (§1.1), which is binding. Decisions **D1010–D1024** and open questions **Q895–Q905** are declared in the [decision log](13-decision-log.md). Rows that restate the owner's decision are *Approved*. Rows that add detail to it are *Proposed* until the owner confirms them. Plan: [GW1](../plans/2026-10-16-gw1-loams-gateway.md).
+
+> **Amendment (approved 2026-10-21; [§77](77-kv-gateways.md), D1646).** Two more modules, `resp` (Redis) and `cql` (Cassandra), behind cargo features of the same names. They terminate their protocols and run on `loams-kv` in process, like §74's `temporal` module, in their own Deployment `loams-gateway-kv`; their listeners are never public (D1648).
 
 This document builds on these earlier designs, and §13 says where it amends each one:
 - [§46](46-loams-postgres-production.md) §8 (PgDog as the front door, D708–D711) and the [PG2](../plans/2026-10-08-pg2-postgres-production.md) rulings R18–R21. The SNI listener of PG2 Task 22 is the first thing this gateway does.
@@ -402,3 +406,5 @@ The protocol gateway's commercial adapters (OpenRTB, partner APIs, §34) stay in
 
 
 > **See also (2026-10-17):** [§60](60-places-and-harness-composition.md) D1091 proposes cascades for the LLM module: typed triage with a confidence, threshold escalation, a verifier, and deterministic routes.
+
+> **See also (2026-10-21):** [§69](69-edge-reach.md) (Edge Reach, approved by the owner 2026-10-21) makes the `http` module's first slice an **edge listener** for serverless runtimes: allow-listed routes, no admin, `access` or `network` admission, on hyper behind an `EdgeProxy` trait until this module moves to Pingora (D1303, D1306). Under the amended rule (D1311), callers off the tailnet reach Loams only through that listener, over a private link or a brokered tunnel; the engine stays loopback, tailnet or gateway-only. The listener is never public: the opt-in public profile (D1312) was deferred, and the `pg` listener stays private (Q992).

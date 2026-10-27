@@ -1,6 +1,6 @@
 //! OIDC access tokens (preview contract): a JWT signed by one of the
 //! issuers in `LOAMS_OIDC_ISSUER` (a comma list: by default the hosted
-//! `https://auth.loams.dev`, or the user's own Authentik, Keycloak, Auth0,
+//! `https://auth.loams.dev`, or the user's own Zitadel, Keycloak, Auth0,
 //! Google or Cloudflare Access) for one of the audiences in
 //! `LOAMS_OIDC_AUDIENCE` (the console's client id), verified against that
 //! issuer's JWKS. The token's (unverified) `iss` only picks which issuer's
@@ -86,7 +86,7 @@ impl Issuer {
 }
 
 /// Issuers compare without a trailing `/` (`https://auth.loams.dev` and
-/// Authentik's `https://auth.loams.dev/` are the same).
+/// `https://auth.loams.dev/` are the same; some IdPs publish the slash).
 fn same_issuer(a: &str, b: &str) -> bool {
     a.trim_end_matches('/') == b.trim_end_matches('/')
 }
@@ -434,11 +434,11 @@ impl OidcAuthenticator {
         validation.leeway = LEEWAY_SECS;
         let data =
             jsonwebtoken::decode::<Claims>(token, &key, &validation).map_err(|e| map_error(&e))?;
-        self.admit(data.claims)
+        self.admit(data.claims, iss)
     }
 
     /// The allowlist (403 when the token is valid but not admitted).
-    fn admit(&self, claims: Claims) -> Result<Principal, AuthError> {
+    fn admit(&self, claims: Claims, iss: String) -> Result<Principal, AuthError> {
         let c = &self.config;
         let verified_email = claims
             .email
@@ -467,6 +467,7 @@ impl OidcAuthenticator {
         Ok(Principal {
             subject: claims.sub,
             kind: PrincipalKind::User,
+            issuer: Some(iss),
             display_name,
             email: verified_email,
             grant,

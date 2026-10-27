@@ -339,36 +339,23 @@ int main() {
     LOAMS_CHECK(!reading_own_writes->Runtime()->SessionToken().Present(),
                 "an opted-in store with no writes yet holds no token");
 
-    // The store itself: one token folds in, and **two different** tokens meeting is
-    // an error rather than a merge — the token's encoding is not in the protos yet,
-    // and a merged token that is wrong reads stale data, which is worse than a
-    // failure.
+    // The store itself (R4 as amended by SDKP §2.1): tokens **merge**, the max
+    // offset per (stream, partition), one token per scope (a proto package).
     SessionTokenStore store;
     LOAMS_CHECK(!store.Has(), "an empty store holds nothing");
-    store.Observe(ConsistencyToken("v1:abc"));
+    store.Observe(ConsistencyToken::Parse("v1:s1/p0@5"));
     LOAMS_CHECK(store.Has(), "a token folds in");
-    LOAMS_CHECK_EQ(store.Merged().Value(), std::string("v1:abc"), "and reads back");
-    // The same token again is not a conflict: a server answering two writes with the
-    // same token is normal.
-    store.Observe(ConsistencyToken("v1:abc"));
-    LOAMS_CHECK_EQ(store.Merged().Value(), std::string("v1:abc"), "the same token again is fine");
-    // An absent token is ignored rather than clearing the good one.
+    LOAMS_CHECK_EQ(store.Merged().Value(), std::string("v1:s1/p0@5"), "and reads back");
     store.Observe(ConsistencyToken());
-    LOAMS_CHECK_EQ(store.Merged().Value(), std::string("v1:abc"),
+    LOAMS_CHECK_EQ(store.Merged().Value(), std::string("v1:s1/p0@5"),
                    "an absent token must not clear the one already held");
-    // Two **different** tokens is a conflict.
-    bool conflicted = false;
-    try {
-      store.Observe(ConsistencyToken("v1:def"));
-    } catch (const ConsistencyConflict& error) {
-      conflicted = true;
-      LOAMS_CHECK(std::string(error.what()).find("v1:abc") != std::string::npos,
-                  "the conflict should name the token it holds");
-      LOAMS_CHECK(std::string(error.what()).find("v1:def") != std::string::npos,
-                  "and the one that arrived");
-    }
-    LOAMS_CHECK(conflicted, "two different tokens must be reported rather than merged into a wrong one");
-    LOAMS_CHECK_EQ(store.Merged().Value(), std::string("v1:abc"), "and the held token is unchanged");
+    store.Observe(ConsistencyToken::Parse("v1:s1/p0@3,s1/p1@2"));
+    LOAMS_CHECK_EQ(store.Merged().Value(), std::string("v1:s1/p0@5,s1/p1@2"), "two tokens merge, max per partition");
+    store.ObserveText("not a token");
+    LOAMS_CHECK_EQ(store.Merged().Value(), std::string("v1:s1/p0@5,s1/p1@2"), "a token that does not parse is ignored");
+    store.Observe(ConsistencyToken::Parse("v1:s9/p0@1"), "loams.graph.v1");
+    LOAMS_CHECK_EQ(store.Merged("loams.graph.v1").Value(), std::string("v1:s9/p0@1"), "the graph scope is its own");
+    LOAMS_CHECK_EQ(store.Merged().Value(), std::string("v1:s1/p0@5,s1/p1@2"), "and leaves the collection scope alone");
     store.Clear();
     LOAMS_CHECK(!store.Has(), "Clear forgets it");
   }

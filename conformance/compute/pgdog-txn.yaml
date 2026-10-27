@@ -1,0 +1,19 @@
+# The transaction-mode legs (DX1 rulings R0.7, R0.8): PgDog in transaction
+# pooling in front of Loams Postgres's direct endpoint, so a suite can show
+# what fails there. A test overlay, never distributed: it is why
+# scripts/ci/pgdog-licence.sh allows conformance/compute/. PgDog (AGPL-3.0,
+# https://github.com/pgdogdev/pgdog/tree/v0.1.60) runs unmodified as a
+# separate process (D318; deploy/pgdog/LICENSE-NOTICE.md).
+#
+#   lib.sh: oc_up <profile> txn   (adds -f conformance/compute/pgdog-txn.yaml)
+services:
+  pgdog-txn:
+    profiles: [temporal, dbos, airflow]
+    image: ${PGDOG_IMAGE:?pass conformance/compute/pins.env with --env-file}
+    command: ["pgdog", "--config", "/etc/pgdog/pgdog.toml", "--users", "/etc/pgdog/users.toml"]
+    volumes:
+      # Relative to the project directory, deploy/release (lib.sh passes it).
+      - ../../conformance/compute/pgdog:/etc/pgdog:ro
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true

@@ -400,6 +400,107 @@ async fn settings_from_params() {
     );
 }
 
+/// HE1 R9.11: the settings Langfuse's and OpenPanel's clients send pass the
+/// front and the worker's profile, as URL parameters and in a `SETTINGS` clause;
+/// the query cache is refused on in both places.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn gate_application_settings_pass() {
+    let house = house("gate-settings", |_| {}).await;
+    let addr = house.local_addr();
+    let response = get(
+        addr,
+        &[
+            (
+                "query",
+                "SELECT getSetting('asterisk_include_alias_columns'), \
+                 getSetting('join_use_nulls') FORMAT TSV",
+            ),
+            ("max_execution_time", "35"),
+            ("timeout_before_checking_execution_speed", "0"),
+            ("log_comment", "{\"surface\":\"worker\"}"),
+            ("asterisk_include_materialized_columns", "1"),
+            ("asterisk_include_alias_columns", "1"),
+            ("input_format_json_throw_on_bad_escape_sequence", "0"),
+            ("use_query_cache", "0"),
+            ("date_time_output_format", "iso"),
+            ("enable_producing_buckets_out_of_order_in_aggregation", "0"),
+            ("max_bytes_before_external_group_by", "1000000000"),
+            ("use_text_index_dictionary_cache", "1"),
+            ("use_text_index_postings_cache", "1"),
+            ("query_plan_optimize_lazy_materialization", "0"),
+            ("query_plan_convert_any_join_to_semi_or_anti_join", "0"),
+            ("distributed_product_mode", "allow"),
+            ("join_use_nulls", "1"),
+            ("max_insert_block_size", "10000000"),
+            // The House's own: accepted, never passed to chDB.
+            ("mutations_sync", "2"),
+            ("alter_sync", "2"),
+            ("lightweight_deletes_sync", "2"),
+            ("parallel_view_processing", "1"),
+            ("flatten_nested", "0"),
+        ],
+    )
+    .await;
+    assert_eq!(response.status, 200, "{}", response.text());
+    assert_eq!(response.text(), "true\ttrue\n");
+
+    // Langfuse writes this one in the statement.
+    let inline = get(
+        addr,
+        &[(
+            "query",
+            "SELECT 1 SETTINGS use_query_cache = false, join_use_nulls = 1",
+        )],
+    )
+    .await;
+    assert_eq!(inline.status, 200, "{}", inline.text());
+
+    // R9.11: a setting at its default is accepted on any list (Langfuse's
+    // `use_skip_indexes_on_data_read`, OpenPanel's `max_http_get_redirects`), and
+    // reaches chDB unchanged; another value of it is refused.
+    let defaults = get(
+        addr,
+        &[
+            (
+                "query",
+                "SELECT getSetting('max_http_get_redirects') FORMAT TSV",
+            ),
+            ("use_skip_indexes_on_data_read", "1"),
+            ("use_text_index_header_cache", "true"),
+            ("max_http_get_redirects", "0"),
+        ],
+    )
+    .await;
+    assert_eq!(defaults.status, 200, "{}", defaults.text());
+    assert_eq!(defaults.text(), "0\n");
+    let changed = get(
+        addr,
+        &[("query", "SELECT 1"), ("max_http_get_redirects", "5")],
+    )
+    .await;
+    assert_eq!(
+        changed.header("X-ClickHouse-Exception-Code"),
+        Some("164"),
+        "{}",
+        changed.text()
+    );
+
+    let on = get(addr, &[("query", "SELECT 1"), ("use_query_cache", "1")]).await;
+    assert_eq!(
+        on.header("X-ClickHouse-Exception-Code"),
+        Some("164"),
+        "{}",
+        on.text()
+    );
+    let inline_on = get(addr, &[("query", "SELECT 1 SETTINGS use_query_cache = 1")]).await;
+    assert_eq!(
+        inline_on.header("X-ClickHouse-Exception-Code"),
+        Some("452"),
+        "{}",
+        inline_on.text()
+    );
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn query_id_echoed_or_generated() {
     let house = house("query-id", |_| {}).await;
