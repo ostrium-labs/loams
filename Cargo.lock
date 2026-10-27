@@ -8610,9 +8610,9 @@ dependencies = [
  "base64 0.23.1",
  "hex",
  "jsonschema",
- "loams-walrus",
  "loams-agentd-harness",
  "loams-agentd-marketplace",
+ "loams-walrus",
  "rcgen",
  "reqwest 0.12.28",
  "rustix 1.1.5",
@@ -9038,6 +9038,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
+ "loams-resp",
  "loams-temporal-frontend",
  "rcgen",
  "rustls",
@@ -9805,7 +9806,12 @@ name = "loams-resp"
 version = "0.1.2"
 dependencies = [
  "bytes",
+ "loams-kv",
  "proptest",
+ "serde",
+ "tokio",
+ "toml 0.8.23",
+ "tracing",
 ]
 
 [[package]]

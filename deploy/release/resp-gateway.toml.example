@@ -1,0 +1,20 @@
+# The Redis gateway: `loams-gateway --module resp --config resp.toml`
+# (design 77 §10; plan KV2 Task 2). Never expose it publicly (D1648): bind it
+# to the tailnet or cluster network, and set a password off loopback.
+listen = "127.0.0.1:6379"
+# requirepass_file = "/run/secrets/loams-resp-password"
+databases = 16
+# Only "durable" runs until loams-kv-hot (plan KV1) exists.
+durability = "durable"
+
+# The light default: a redb file of the gateway's own (one replica, D1647).
+[store]
+kind = "embedded"
+path = "/var/lib/loams/kv/resp.redb"
+keyspace = "kv"
+
+# The tikv profile instead (loams-gateway built with `resp-tikv`):
+# [store]
+# kind = "tikv"
+# pd = ["pd:2379"]
+# keyspace = "kv"

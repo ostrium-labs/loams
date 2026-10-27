@@ -28,9 +28,19 @@ cargo_package(
             "crate": "frame",
             "root": "tests/frame.rs",
         },
+        {
+            "name": "server",
+            "crate": "server",
+            "root": "tests/server.rs",
+        },
     ],
     deps = [
+        "//crates/loams-kv:loams-kv",
         "//third-party/rust:bytes",
+        "//third-party/rust:serde",
+        "//third-party/rust:tokio",
+        "//third-party/rust:toml",
+        "//third-party/rust:tracing",
     ],
     dev_deps = [
         "//third-party/rust:proptest",

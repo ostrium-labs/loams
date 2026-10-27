@@ -25,6 +25,8 @@ pub mod listeners;
 pub mod observe;
 pub mod pg;
 pub mod reload;
+#[cfg(feature = "resp")]
+pub mod resp;
 pub mod routes;
 pub mod sniff;
 #[cfg(feature = "temporal")]
