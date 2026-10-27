@@ -36,7 +36,7 @@ cargo_package(
     ],
     deps = [
         "//crates/loams-log:loams-log",
-        "//third-party/rust:base64",
+        "//third-party/rust:base64-0_23",
         "//third-party/rust:bytes",
         "//third-party/rust:http",
         "//third-party/rust:prost",

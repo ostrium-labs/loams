@@ -20,7 +20,6 @@ use std::sync::Arc;
 
 use datafusion::datasource::MemTable;
 use loams_house_types::ChError;
-use loams_house_types::text::TextSettings;
 
 use crate::catalog::Table;
 use crate::engine::Engine;
@@ -203,7 +202,7 @@ fn handle(engine: &Engine, runtime: &tokio::runtime::Runtime, req: Request) -> R
                         loams_house_formats::json_compact::write(
                             &cols,
                             &answer.batches,
-                            &TextSettings::default(),
+                            &answer.settings.text(),
                             &mut out,
                         )
                     });

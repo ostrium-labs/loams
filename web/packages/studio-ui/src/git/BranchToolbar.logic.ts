@@ -9,10 +9,7 @@
 
 import { sanitizeNewRefName } from "./shared";
 
-export {
-  deriveLocalBranchNameFromRemoteRef,
-  sanitizeNewRefName,
-} from "./shared";
+export { deriveLocalBranchNameFromRemoteRef, sanitizeNewRefName } from "./shared";
 
 /** Where work happens: the project's own checkout, or a new worktree of it. */
 export type EnvMode = "local" | "worktree";

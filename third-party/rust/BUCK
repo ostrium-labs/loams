@@ -4364,6 +4364,18 @@ cargo.rust_library(
     visibility = [],
 )
 
+cargo_alias(
+    name = "base64-0_22",
+    actual = ":base64-0.22",
+    platforms = [
+        "linux-arm64",
+        "linux-x86_64",
+        "macos-arm64",
+        "macos-x86_64",
+    ],
+    visibility = ["PUBLIC"],
+)
+
 http_archive(
     name = "base64-0.22.1.crate",
     sha256 = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6",
@@ -4404,7 +4416,7 @@ cargo.rust_library(
 )
 
 cargo_alias(
-    name = "base64",
+    name = "base64-0_23",
     actual = ":base64-0.23",
     platforms = [
         "linux-arm64",
