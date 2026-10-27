@@ -47,6 +47,8 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+# The Temporal gateway's operator config (holds API key hashes; deploy/release/README.md)
+/deploy/release/temporal-gateway.toml
 
 # Node / Nx
 node_modules/

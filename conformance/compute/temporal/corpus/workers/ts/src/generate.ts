@@ -180,13 +180,17 @@ async function main(): Promise<void> {
   const [address, namespace, out, only] = process.argv.slice(2);
   if (!address || !namespace || !out) throw new Error('usage: generate.js <address> <namespace> <out.json> [scenarios]');
   const want = only ? new Set(only.split(',')) : undefined;
-  const connection = await NativeConnection.connect({ address });
+  // TEMPORAL_API_KEY: a bearer token on every call, in plain text (the Loams
+  // gateway's API keys; its compose profile has no TLS). Unset, nothing changes.
+  const key = process.env.TEMPORAL_API_KEY;
+  const metadata = key ? { authorization: `Bearer ${key}` } : undefined;
+  const connection = await NativeConnection.connect({ address, metadata });
   const worker = await Worker.create({
     connection, namespace, taskQueue: queue, activities,
     workflowsPath: require.resolve('./workflows'),
   });
   const running = worker.run();
-  const client = new Client({ connection: await Connection.connect({ address }), namespace });
+  const client = new Client({ connection: await Connection.connect({ address, metadata }), namespace });
   const observations: Observation[] = [];
   try {
     for (const [name] of SCENARIOS) {

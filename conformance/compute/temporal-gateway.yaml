@@ -1,0 +1,35 @@
+# The conformance overlay for the compose profile `temporal-gateway` (plan
+# DX1 Task 10; D2030, D2031). The profile itself is in
+# deploy/release/compose.compute.yaml and runs the release image
+# ghcr.io/ostrium-labs/loams-temporal; this overlay, never distributed (like
+# pgdog-txn.yaml, R0.8), only:
+#
+# - builds that image locally from deploy/release/Containerfile.loams-temporal
+#   as localhost/loams-temporal:<tag>, so a pull request tests its own
+#   gateway, not the last release's;
+# - mounts the harness's config (conformance/compute/temporal/gateway/gateway.toml:
+#   a test-only API key, Postgres, the engine's Resonate; not insecure_dev)
+#   and sets a test-only task-token key.
+#
+#   lib.sh: oc_up temporal-gateway   (adds -f conformance/compute/temporal-gateway.yaml)
+#   conformance/compute/temporal/gateway/run.sh --profile
+services:
+  temporal-gateway:
+    profiles: [temporal-gateway]
+    image: localhost/loams-temporal:${LOAMS_TEMPORAL_IMAGE_TAG:-dev}
+    build:
+      # Relative to the project directory, deploy/release (lib.sh passes it).
+      context: ../..
+      dockerfile: deploy/release/Containerfile.loams-temporal
+      args:
+        CARGO_BUILD_JOBS: ${CARGO_BUILD_JOBS:-}
+    # Built here, never pulled.
+    pull_policy: never
+    environment:
+      RUST_LOG: ${GW_LOG:-info,loams_temporal_frontend=debug,loams_temporal_resonate=debug}
+      LOAMS_TEMPORAL_TOKEN_KEY_1: ${LOAMS_TEMPORAL_TOKEN_KEY_1:-conformance-only-task-token-key-not-a-secret}
+    volumes:
+      - type: bind
+        source: ../../conformance/compute/temporal/gateway/gateway.toml
+        target: /etc/loams-temporal/gateway.toml
+        read_only: true

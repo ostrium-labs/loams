@@ -1,0 +1,54 @@
+# syntax=docker/dockerfile:1.7
+# The Loams Temporal gateway image (ghcr.io/ostrium-labs/loams-temporal),
+# built by build.sh from the repository root (design 74, plan DX1 Tasks 9-10,
+# D2030). The standalone `loams-temporal` binary of crate
+# loams-temporal-frontend: the Temporal API over the gateway's own Loams
+# Postgres database and a Resonate server. compose.compute.yaml runs it as the
+# profile `temporal-gateway`, in the engine's network namespace, reading
+# /etc/loams-temporal/gateway.toml (deploy/release/temporal-gateway.toml.example).
+#
+# Preview: the gateway speaks the DX1 subset of the Temporal API (the matrix
+# in docs/guides/durable/temporal-gateway.md); it has not yet run end to end
+# outside the conformance harness.
+ARG RUST_IMAGE=docker.io/library/rust:1.97.1-slim-trixie
+ARG RUNTIME_IMAGE=docker.io/library/debian:trixie-slim
+
+FROM ${RUST_IMAGE} AS build
+# loams-temporal-proto's build script runs the system protoc.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      protobuf-compiler libprotobuf-dev pkg-config libssl-dev clang g++ make cmake perl git \
+ && rm -rf /var/lib/apt/lists/*
+ENV RUSTUP_TOOLCHAIN=1.97.1 \
+    CARGO_TERM_COLOR=never
+WORKDIR /src
+COPY . .
+ARG CARGO_BUILD_JOBS=
+RUN --mount=type=cache,id=loams-cargo-registry,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=loams-target-temporal,target=/src/target \
+    if [ -n "$CARGO_BUILD_JOBS" ]; then export CARGO_BUILD_JOBS; else unset CARGO_BUILD_JOBS; fi \
+ && cargo build --locked --release -p loams-temporal-frontend --bin loams-temporal \
+ && install -D -m 0755 target/release/loams-temporal /out/loams-temporal
+
+FROM ${RUNTIME_IMAGE}
+ARG VERSION=dev
+ARG REVISION=unknown
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates tini \
+ && rm -rf /var/lib/apt/lists/* \
+ && groupadd --system --gid 10001 loams \
+ && useradd --system --uid 10001 --gid loams --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin loams \
+ && install -d -m 0755 /etc/loams-temporal
+COPY --from=build /out/loams-temporal /usr/local/bin/loams-temporal
+LABEL org.opencontainers.image.title="loams-temporal" \
+      org.opencontainers.image.description="Loams Temporal gateway (preview): the Temporal API on Loams Postgres and Resonate" \
+      org.opencontainers.image.source="https://github.com/ostrium-labs/loams" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}" \
+      org.opencontainers.image.licenses="Apache-2.0"
+USER 10001:10001
+EXPOSE 7233
+# No HEALTHCHECK: the binary has no client mode yet; the gateway logs
+# "serving the Temporal API" once its store has migrated and it listens.
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/loams-temporal"]
+CMD ["--config", "/etc/loams-temporal/gateway.toml"]

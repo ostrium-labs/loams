@@ -27,6 +27,7 @@ url = "http://127.0.0.1:8001"
 # token_env = "LOAMS_TEMPORAL_RESONATE_TOKEN"
 
 # Task tokens are signed with the first key; every key verifies (X1.R4).
+# Each secret is at least 32 bytes; an empty or shorter one is refused (D2032).
 [[task_token_keys]]
 id = "k1"
 secret_env = "LOAMS_TEMPORAL_TOKEN_KEY_1"
