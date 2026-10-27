@@ -744,6 +744,107 @@ impl Settings {
     }
 }
 
+/// One row of `system.settings` as the engine sees a statement's settings
+/// (Task 38 maps it onto its own row type).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SystemSetting {
+    /// ClickHouse's name.
+    pub name: String,
+    /// The statement's value, else the default.
+    pub value: String,
+    /// Whether the statement set a value other than the default.
+    pub changed: bool,
+    /// The default (the oracle's where the table has one, else chDB's).
+    pub default: String,
+    /// ClickHouse's setting type where the engine reads the setting
+    /// (`Bool`, `UInt64`, `Seconds`, `MaxThreads`, …), else `String`.
+    pub ty: &'static str,
+    /// Whether the House lets a statement change it at all: a refused
+    /// setting, or one of chDB's without a row (only its default, R9.11).
+    pub readonly: bool,
+    /// The engine's class (`honoured`, `noop`, `default_only`, `refused`,
+    /// or `default` for chDB's rule) and why.
+    pub description: String,
+}
+
+/// The type ClickHouse gives a setting the engine reads.
+fn setting_type(name: &str) -> &'static str {
+    match name {
+        "max_execution_time" => "Seconds",
+        "max_threads" => "MaxThreads",
+        "max_result_rows" | "max_result_bytes" | "max_block_size" | "max_rows_to_read"
+        | "max_bytes_to_read" => "UInt64",
+        "max_memory_usage" | "max_bytes_before_external_group_by" => "UInt64",
+        "result_overflow_mode" => "OverflowMode",
+        "date_time_output_format" => "DateTimeOutputFormat",
+        "date_time_input_format" => "DateTimeInputFormat",
+        "session_timezone" => "Timezone",
+        "union_default_mode" => "SetOperationMode",
+        "join_use_nulls"
+        | "final"
+        | "aggregate_functions_null_for_empty"
+        | "group_by_use_nulls"
+        | "prefer_column_name_to_alias"
+        | "asterisk_include_materialized_columns"
+        | "asterisk_include_alias_columns"
+        | "extremes"
+        | "use_query_cache"
+        | "output_format_json_quote_64bit_integers"
+        | "output_format_json_quote_denormals"
+        | "output_format_json_escape_forward_slashes"
+        | "output_format_json_named_tuples_as_objects"
+        | "output_format_decimal_trailing_zeros" => "Bool",
+        _ => "String",
+    }
+}
+
+/// `system.settings` for a statement run with `settings` (plan HE1 Task 38):
+/// every ClickHouse setting chDB has, sorted by name, at the statement's
+/// value where it set one. Loams's own and the front's settings are not
+/// ClickHouse's and are not listed.
+pub fn system_rows(settings: &Settings) -> Vec<SystemSetting> {
+    let mut names: Vec<&String> = loams_house_ipc::policy::chdb_defaults().keys().collect();
+    names.sort();
+    names
+        .into_iter()
+        .map(|name| {
+            let chdb = chdb_default(name).unwrap_or_default();
+            let (default, readonly, description) = match lookup(name) {
+                Lookup::Spec(spec) => {
+                    let default = spec.default.clone().unwrap_or_else(|| chdb.clone());
+                    let class = match spec.class {
+                        Class::Honoured => "honoured",
+                        Class::NoOp => "noop",
+                        Class::DefaultOnly => "default_only",
+                        Class::Refused => "refused",
+                    };
+                    (
+                        default,
+                        spec.class == Class::Refused,
+                        format!("{class}: {}", spec.note),
+                    )
+                }
+                _ => (
+                    chdb.clone(),
+                    true,
+                    "default: accepted at its default only (R9.11)".to_string(),
+                ),
+            };
+            let set = settings.get(name);
+            let changed = set.is_some_and(|v| !same_setting_value(v, &default));
+            SystemSetting {
+                name: name.clone(),
+                value: set.map_or_else(|| default.clone(), str::to_string),
+                changed,
+                default,
+                ty: setting_type(name),
+                readonly,
+                description,
+            }
+        })
+        .collect()
+}
+
 fn not_yet(name: &str, value: &str, task: Option<u32>, why: &str) -> ChError {
     let when = match task {
         Some(t) => format!(" yet (plan HE1 Task {t})"),
@@ -1262,6 +1363,29 @@ mod tests {
         assert!(s.check_result(&[batch.clone()]).is_ok());
         let s = Settings::resolve(&pairs(&[("max_result_bytes", "1")])).unwrap();
         assert_eq!(s.check_result(&[batch]).unwrap_err().code, 396);
+    }
+
+    #[test]
+    fn system_rows_list_every_setting_at_the_statements_values() {
+        let s =
+            Settings::resolve(&pairs(&[("max_threads", "4"), ("join_use_nulls", "0")])).unwrap();
+        let rows = system_rows(&s);
+        assert_eq!(rows.len(), loams_house_ipc::policy::chdb_defaults().len());
+        let row = |n: &str| rows.iter().find(|r| r.name == n).unwrap();
+        assert_eq!(row("max_threads").value, "4");
+        assert!(row("max_threads").changed);
+        assert_eq!(row("max_threads").ty, "MaxThreads");
+        assert!(!row("join_use_nulls").changed, "set, but to its default");
+        assert_eq!(row("session_timezone").value, "");
+        assert!(row("use_query_cache").readonly);
+        assert!(row("use_skip_indexes").readonly);
+        assert!(!row("join_use_nulls").readonly);
+        assert!(
+            row("join_use_nulls")
+                .description
+                .starts_with("default_only")
+        );
+        assert!(rows.windows(2).all(|w| w[0].name < w[1].name));
     }
 
     #[test]
