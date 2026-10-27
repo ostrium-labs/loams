@@ -106,3 +106,6 @@
 |---|---|---|
 | T4-1 | `_system/_meter` is a reserved system stream (`SYSTEM_STREAMS`, 32 partitions, 14 days via `system_stream_retention`) made by every `migrate run` through `loams_migrate::system`, not a ledger migration; the `meter` role calls `ensure_meter_stream` when it runs without `migrate`. Class `Standard` until an operator setting for `express` exists (D2190) | A new stack runs no migrations, so a ledger migration would miss fresh stacks |
 | T4-2 | Outside appends to `_meter` are refused by the API's reserved-stream rule (`refuse_system_stream`), like `_git`. Producers append in-process (`MeterSink`) or through the meter's ingest; the node agent's HTTP forwarder needs a service-identity path (ME-agent, T2b) | §63 §19: tenants must not forge usage |
+| D2220 | Task 27: the billing plugin runs on a fixture `BillingClient` under Demo data until `loams.meter.v1` is served | The pages are built before ME-svc's services; swapping the client touches no page |
+| D2221 | Task 27: Settings › Billing lives at `/settings/billing/:section`; Payment links only to the provider's hosted page | D1080; no card data in Loams |
+| D2222 | Task 27: the banner is a `shell.topbar.center` entry, most severe notice first; stops cannot be dismissed | §18, §13 |

@@ -42,7 +42,7 @@ datafusion = { workspace = true, optional = true }
 datafusion-postgres = { workspace = true, optional = true }
 # `WatchAuditEvents` streams (API2 Task 7), and the optional engines below.
 futures.workspace = true
-getrandom = "0.3"
+getrandom = "0.4"
 fail = { workspace = true, optional = true }
 http.workspace = true
 jsonwebtoken.workspace = true
@@ -50,6 +50,9 @@ jsonwebtoken.workspace = true
 http-body.workspace = true
 # The `can_*` checks (design 76 §9, D1610): model v1 in process, or OpenFGA (IA2 Task 4).
 loams-authz.workspace = true
+# The identity sync (design 76 §8.1, plan IA1 IA3), off unless LOAMS_IDENTITY_SYNC=on.
+loams-identity-sync.workspace = true
+loams-zitadel.workspace = true
 loams-cache.workspace = true
 # `protobuf`: `loams.stream.v1`'s ProduceCloudEvents decodes a protobuf CloudEventBatch (SDKP P0c).
 loams-cloudevents = { workspace = true, features = ["protobuf"] }
@@ -92,6 +95,9 @@ loams-cloud-admin.workspace = true
 # `loams marketplace` (MK1 Task 10): the agentd wire types and RPC client
 # only, no daemon crate (plan MK1, Task 10 ruling 1).
 loams-agentd-cli.workspace = true
+loams-confluent.workspace = true
+# `loams risingwave …`: the managed RisingWave's SQL client (design 81, RW1).
+loams-risingwave.workspace = true
 # Loams Postgres's control plane: the `loams pg-control` role (feature
 # `postgres`, PG2 Task 9, design §46 §6.1), and the Neon clients it is
 # configured with. Never in the default build (`pg_control.rs`'s

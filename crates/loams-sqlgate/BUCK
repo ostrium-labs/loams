@@ -38,7 +38,7 @@ cargo_package(
         "//third-party/rust:async-trait",
         "//third-party/rust:getrandom",
         "//third-party/rust:rustls",
-        "//third-party/rust:sha2-0_11",
+        "//third-party/rust:sha2",
         "//third-party/rust:subtle",
         "//third-party/rust:thiserror",
         "//third-party/rust:tokio",

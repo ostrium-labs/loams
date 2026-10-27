@@ -27,9 +27,10 @@ manifest = load(ROOT / "package.json")
 check(not (ROOT / "package-lock.json").exists(), "Unexpected npm lockfile")
 check(not any(key in manifest for key in ("overrides", "devEngines", "workspaces")), "npm-only root fields remain")
 check(manifest["scripts"]["test"] == "vp test --config vitest.config.ts", "Tests need the explicit aggregate config")
-check(manifest["devDependencies"]["vite-plus"] == "1.0.0", "Vite+ version changed")
-check(manifest["devDependencies"]["vitest"] == "5.0.1", "Plugin Vitest version changed")
-check(manifest["devDependencies"]["vite"] == "npm:@voidzero-dev/vite-plus-core@1.0.0", "Plugin Vite alias changed")
+# One vite-plus pin for the workspace (design 79 D1772): the versions live in the
+# root pnpm-workspace.yaml catalog, and plugins/ names them through `catalog:`.
+for tool in ("vite-plus", "vitest", "vite"):
+    check(manifest["devDependencies"][tool] == "catalog:", f"Plugin {tool} must come from the workspace catalog")
 paths = sorted([*ROOT.glob("core/*/package.json"), *ROOT.glob("packages/*/package.json"), *ROOT.glob("apps/*/package.json")])
 packages = {load(path)["name"]: path for path in paths}
 projects = {name: load(path.parent / "project.json")["name"] for name, path in packages.items()}

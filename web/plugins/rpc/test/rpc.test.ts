@@ -1,7 +1,7 @@
 import { createMockControl } from '@loams/console-host/testing';
 import type { Context } from '@loams/cordis';
 import { Context as Root } from '@loams/cordis';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import rpc, { RPC_SERVICES } from '../src/index.js';
 
 describe('@loams/plugin-rpc', () => {

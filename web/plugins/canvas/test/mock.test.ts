@@ -1,7 +1,7 @@
 // The fixture-backed client: the seeded project, creating services, persisting positions,
 // and the status and metric streams on an interval.
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { validServiceName } from '../src/client.js';
 import { KINDS } from '../src/kinds.js';
 import { createMockCanvasClient, rng, SEED_PROJECT_ID, seedProject } from '../src/mock.js';

@@ -67,7 +67,7 @@ export function useWatch<T>(
     unsupported: false,
   });
   // `open` is a new closure each render; `key` names what it opens.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed by `key` and the transport.
+  // oxlint-disable-next-line react/exhaustive-deps -- keyed by `key` and the transport.
   useEffect(() => {
     if (!open || !transport) return;
     const abort = new AbortController();
@@ -195,23 +195,21 @@ export function foldThreads(input: {
   });
 
   const placed = new Map(threads.map((t) => [t.id, t.projectId]));
-  const groups = input.groups.map(
-    (g): SidebarRunGroup => ({
-      id: g.id,
-      title: g.prompt.split('\n')[0]?.trim().slice(0, 120) || 'Run group',
-      projectId: g.members.map((m) => placed.get(m.chatId)).find((p) => p != null) ?? null,
-      memberIds: g.members.filter((m) => !m.detached).map((m) => m.chatId),
-      createdAt: ms(g.createdAtMs) ?? 0,
-      state:
-        g.state === RunGroupState.RUNNING
-          ? 'running'
-          : g.state === RunGroupState.READY
-            ? 'ready'
-            : g.state === RunGroupState.RESOLVED
-              ? 'resolved'
-              : 'unknown',
-    }),
-  );
+  const groups = input.groups.map((g): SidebarRunGroup => ({
+    id: g.id,
+    title: g.prompt.split('\n')[0]?.trim().slice(0, 120) || 'Run group',
+    projectId: g.members.map((m) => placed.get(m.chatId)).find((p) => p != null) ?? null,
+    memberIds: g.members.filter((m) => !m.detached).map((m) => m.chatId),
+    createdAt: ms(g.createdAtMs) ?? 0,
+    state:
+      g.state === RunGroupState.RUNNING
+        ? 'running'
+        : g.state === RunGroupState.READY
+          ? 'ready'
+          : g.state === RunGroupState.RESOLVED
+            ? 'resolved'
+            : 'unknown',
+  }));
   return { threads, groups };
 }
 

@@ -163,7 +163,7 @@ export function gateGitWrites(name: string, value: unknown): unknown {
         if (typeof prop === 'string' && writes.has(prop)) {
           const method = entry.service.methods.find((m) => m.localName === prop) as DescMethod;
           if (method.methodKind === 'server_streaming') {
-            // biome-ignore lint/correctness/useYield: it refuses before the first item.
+            // oxlint-disable-next-line require-yield -- it refuses before the first item.
             return async function* refused() {
               throw refusal(method);
             };

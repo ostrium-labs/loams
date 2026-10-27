@@ -733,7 +733,7 @@
         "can_connect": {
           "tupleToUserset": {
             "computedUserset": {
-              "relation": "viewer"
+              "relation": "editor"
             },
             "tupleset": {
               "relation": "environment"
@@ -765,6 +765,73 @@
         }
       },
       "type": "database"
+    },
+    {
+      "metadata": {
+        "module": "core",
+        "relations": {
+          "can_admin": {},
+          "can_connect": {},
+          "can_operate": {},
+          "can_view": {},
+          "environment": {
+            "directly_related_user_types": [
+              {
+                "type": "environment"
+              }
+            ]
+          }
+        },
+        "source_info": {
+          "file": "core.fga"
+        }
+      },
+      "relations": {
+        "can_admin": {
+          "tupleToUserset": {
+            "computedUserset": {
+              "relation": "deployer"
+            },
+            "tupleset": {
+              "relation": "environment"
+            }
+          }
+        },
+        "can_connect": {
+          "tupleToUserset": {
+            "computedUserset": {
+              "relation": "editor"
+            },
+            "tupleset": {
+              "relation": "environment"
+            }
+          }
+        },
+        "can_operate": {
+          "tupleToUserset": {
+            "computedUserset": {
+              "relation": "editor"
+            },
+            "tupleset": {
+              "relation": "environment"
+            }
+          }
+        },
+        "can_view": {
+          "tupleToUserset": {
+            "computedUserset": {
+              "relation": "viewer"
+            },
+            "tupleset": {
+              "relation": "environment"
+            }
+          }
+        },
+        "environment": {
+          "this": {}
+        }
+      },
+      "type": "engine"
     },
     {
       "metadata": {
