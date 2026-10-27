@@ -31,6 +31,7 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use crate::event::UsageEvent;
+use crate::policy::{FailClosedLookup, FailOpenLookup};
 use crate::sink::{MeterSink, lock};
 
 /// An amount in the feature's base unit (D2180).
@@ -336,6 +337,11 @@ pub struct LeaseGrant {
     pub ttl: Duration,
     pub refresh_after: Duration,
     pub owner_epoch: u64,
+    /// What this node may spend for the subject if the owner later cannot
+    /// be reached and this lease has expired: the owner's
+    /// [`PolicyTable::when_unreachable`](crate::policy::PolicyTable::when_unreachable)
+    /// budget (0 fails closed, the free tier's row).
+    pub fail_open: Amount,
 }
 
 impl LeaseGrant {
@@ -351,6 +357,7 @@ impl LeaseGrant {
             ttl: Duration::from_secs(30),
             refresh_after: Duration::from_secs(10),
             owner_epoch,
+            fail_open: 0,
         }
     }
 
@@ -466,7 +473,16 @@ pub(crate) struct Slot {
     fetching: AtomicBool,
     /// A background refresh is queued or running.
     queued: AtomicBool,
+    /// Fail-open budget left (§63 §13); [`UNSET`] until a grant or the
+    /// [`FailOpenLookup`] sets it.
+    fail_open_left: AtomicI64,
+    /// The owner missed its deadline: until then, no lease request is sent
+    /// on the request path.
+    down_until_ms: AtomicU64,
 }
+
+/// `fail_open_left` before anything set it.
+const UNSET: i64 = i64::MIN;
 
 impl Slot {
     fn new(subject: &str, feature: &str) -> Self {
@@ -485,6 +501,8 @@ impl Slot {
             last_used_ms: AtomicU64::new(0),
             fetching: AtomicBool::new(false),
             queued: AtomicBool::new(false),
+            fail_open_left: AtomicI64::new(UNSET),
+            down_until_ms: AtomicU64::new(0),
         }
     }
 
@@ -605,6 +623,11 @@ impl Slot {
         state |= reason.code() << REASON_SHIFT;
         self.state.store(state, Ordering::Release);
         self.epoch.store(g.owner_epoch, Ordering::Release);
+        self.fail_open_left.store(
+            i64::try_from(g.fail_open).unwrap_or(i64::MAX),
+            Ordering::Release,
+        );
+        self.down_until_ms.store(0, Ordering::Release);
         let ms = |d: Duration| u64::try_from(d.as_millis()).unwrap_or(u64::MAX);
         self.refresh_ms
             .store(now.saturating_add(ms(g.refresh_after)), Ordering::Release);
@@ -641,6 +664,9 @@ pub struct GateConfig {
     /// Run the refresh thread. Off, refreshes happen only through
     /// [`LeaseGate::refresh_now`] (deterministic tests).
     pub background: bool,
+    /// Fail-open budgets for subjects this node holds no grant for
+    /// (default: every one fails closed).
+    pub fail_open: Arc<dyn FailOpenLookup>,
 }
 
 impl Default for GateConfig {
@@ -652,6 +678,7 @@ impl Default for GateConfig {
             sweep_interval: Duration::from_millis(250),
             idle_after: Duration::from_secs(60),
             background: true,
+            fail_open: Arc::new(FailClosedLookup),
         }
     }
 }
@@ -663,6 +690,8 @@ pub struct GateStats {
     /// `loams_meter_gate_refresh_failures_total`.
     pub refresh_failures: u64,
     pub stale_grants: u64,
+    /// Checks allowed fail-open while the owner was unreachable.
+    pub fail_open_allowed: u64,
 }
 
 const SHARDS: usize = 64;
@@ -683,6 +712,7 @@ struct Inner {
     cold_misses: AtomicU64,
     refresh_failures: AtomicU64,
     stale_grants: AtomicU64,
+    fail_open_allowed: AtomicU64,
 }
 
 #[derive(Debug, Default)]
@@ -721,6 +751,7 @@ impl LeaseGate {
             cold_misses: AtomicU64::new(0),
             refresh_failures: AtomicU64::new(0),
             stale_grants: AtomicU64::new(0),
+            fail_open_allowed: AtomicU64::new(0),
         });
         let refresher = if inner.config.background {
             let worker = Arc::clone(&inner);
@@ -743,6 +774,7 @@ impl LeaseGate {
             cold_misses: self.inner.cold_misses.load(Ordering::Relaxed),
             refresh_failures: self.inner.refresh_failures.load(Ordering::Relaxed),
             stale_grants: self.inner.stale_grants.load(Ordering::Relaxed),
+            fail_open_allowed: self.inner.fail_open_allowed.load(Ordering::Relaxed),
         }
     }
 
@@ -806,6 +838,21 @@ impl Gate for LeaseGate {
     }
 }
 
+/// Takes `cost` from `counter` if it covers it.
+fn take_from(counter: &AtomicI64, cost: Amount) -> bool {
+    let cost = i64::try_from(cost).unwrap_or(i64::MAX);
+    let mut cur = counter.load(Ordering::Acquire);
+    loop {
+        if cur == UNSET || cur < cost {
+            return false;
+        }
+        match counter.compare_exchange_weak(cur, cur - cost, Ordering::AcqRel, Ordering::Acquire) {
+            Ok(_) => return true,
+            Err(now) => cur = now,
+        }
+    }
+}
+
 /// FNV-1a over subject ‖ 0xff ‖ feature: a shard index without allocating.
 fn shard_of(subject: &str, feature: &str) -> usize {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
@@ -856,6 +903,12 @@ impl Inner {
         if now < slot.expires_ms.load(Ordering::Acquire)
             && let Some(d) = self.hit(&slot, cost, now)
         {
+            return (d, Some(slot));
+        }
+        if now < slot.down_until_ms.load(Ordering::Acquire) {
+            // The owner just missed its deadline: answer by the policy
+            // without asking again.
+            let d = self.owner_unreachable(&slot, cost, now);
             return (d, Some(slot));
         }
         let d = self.cold(&slot, cost);
@@ -968,10 +1021,34 @@ impl Inner {
         decision
     }
 
-    /// No lease and no answer from the owner within the deadline (§63 §13):
-    /// fail closed with `meter_unavailable`, cached for `unavailable_for`.
-    fn owner_unreachable(&self, slot: &Arc<Slot>, _cost: Amount, now: u64) -> Decision {
+    /// No usable lease and no answer from the owner within the deadline
+    /// (§63 §13). A subject with a fail-open budget (paid: the spend-cap
+    /// headroom, or one period's included amount) spends it locally; the
+    /// owner reconciles it later. Everyone else, and a spent budget, fails
+    /// closed with `meter_unavailable`. The owner is not asked again for
+    /// `unavailable_for`.
+    fn owner_unreachable(&self, slot: &Arc<Slot>, cost: Amount, now: u64) -> Decision {
         let for_ms = u64::try_from(self.config.unavailable_for.as_millis()).unwrap_or(1_000);
+        slot.down_until_ms
+            .fetch_max(now.saturating_add(for_ms), Ordering::AcqRel);
+        if slot.fail_open_left.load(Ordering::Acquire) == UNSET {
+            let budget = self
+                .config
+                .fail_open
+                .fail_open_budget(&slot.subject, &slot.feature);
+            let _ = slot.fail_open_left.compare_exchange(
+                UNSET,
+                i64::try_from(budget).unwrap_or(i64::MAX),
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            );
+        }
+        if take_from(&slot.fail_open_left, cost) {
+            self.fail_open_allowed.fetch_add(1, Ordering::Relaxed);
+            return Decision::Allow {
+                lease: LeaseId::NONE,
+            };
+        }
         if now >= slot.expires_ms.load(Ordering::Acquire) {
             slot.refuse_for(RefusalReason::MeterUnavailable, now, for_ms);
         }
@@ -1241,7 +1318,7 @@ mod tests {
     }
 
     #[test]
-    fn free_owner_unreachable_fails_closed_and_caches() {
+    fn owner_unreachable_fails_closed_and_caches() {
         let src = Arc::new(Scripted::default());
         let (g, clock) = gate(src.clone());
         let d = g.check("org_1", "house_cpu", 1);
@@ -1372,6 +1449,96 @@ mod tests {
             t.join().unwrap();
         }
         assert_eq!(allowed.load(Ordering::Relaxed), 10_000);
+    }
+
+    /// A fixed fail-open budget for every subject.
+    #[derive(Debug)]
+    struct Budget(Amount);
+
+    impl FailOpenLookup for Budget {
+        fn fail_open_budget(&self, _subject: &str, _feature: &str) -> Amount {
+            self.0
+        }
+    }
+
+    fn gate_with(
+        source: Arc<Scripted>,
+        lookup: Arc<dyn FailOpenLookup>,
+    ) -> (LeaseGate, Arc<ManualClock>) {
+        let clock = Arc::new(ManualClock::default());
+        clock.set(1_000);
+        let g = LeaseGate::with_clock(
+            source,
+            clock.clone(),
+            GateConfig {
+                node: "n1".into(),
+                background: false,
+                fail_open: lookup,
+                ..GateConfig::default()
+            },
+        )
+        .unwrap();
+        (g, clock)
+    }
+
+    #[test]
+    fn free_fails_closed_when_owner_unreachable() {
+        let src = Arc::new(Scripted::default());
+        // A free subject's last grant carried no fail-open budget.
+        src.push(Ok(LeaseGrant::limit(LeaseId(1), 10, 1)));
+        let (g, clock) = gate_with(src.clone(), Arc::new(FailClosedLookup));
+        assert!(g.check("org_free", "house_cpu", 1).is_allowed());
+        clock.advance(Duration::from_secs(31)); // the lease expired
+        let d = g.check("org_free", "house_cpu", 1);
+        assert!(matches!(
+            d,
+            Decision::Refuse(Refusal {
+                reason: RefusalReason::MeterUnavailable,
+                ..
+            })
+        ));
+        assert_eq!(g.stats().fail_open_allowed, 0);
+    }
+
+    #[test]
+    fn paid_fail_open_bounded_by_cap() {
+        let src = Arc::new(Scripted::default());
+        src.push(Ok(LeaseGrant {
+            fail_open: 100,
+            ..LeaseGrant::limit(LeaseId(1), 10, 1)
+        }));
+        let (g, clock) = gate_with(src.clone(), Arc::new(FailClosedLookup));
+        assert!(g.check("org_paid", "house_cpu", 1).is_allowed());
+        clock.advance(Duration::from_secs(31));
+        // Owner unreachable: 100 units of headroom, spent locally.
+        for _ in 0..3 {
+            assert_eq!(
+                g.check("org_paid", "house_cpu", 30),
+                Decision::Allow {
+                    lease: LeaseId::NONE
+                }
+            );
+        }
+        let d = g.check("org_paid", "house_cpu", 30);
+        assert!(matches!(
+            d,
+            Decision::Refuse(Refusal {
+                reason: RefusalReason::MeterUnavailable,
+                ..
+            })
+        ));
+        assert_eq!(g.stats().fail_open_allowed, 3);
+        // One owner call for the lease, one when it was found unreachable;
+        // the rest were answered locally.
+        assert_eq!(src.calls(), 2);
+    }
+
+    #[test]
+    fn unknown_subject_uses_the_lookup_budget() {
+        let src = Arc::new(Scripted::default());
+        let (g, _) = gate_with(src, Arc::new(Budget(50)));
+        assert!(g.check("org_new", "api_requests", 50).is_allowed());
+        assert!(!g.check("org_new", "api_requests", 1).is_allowed());
     }
 
     #[test]
