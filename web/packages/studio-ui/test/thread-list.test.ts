@@ -4,7 +4,7 @@
 // agentd's shapes (millisecond times, session statuses, pins placed by neighbour). The
 // rest covers Studio's own model: placing threads in projects and ordering their rows.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import {
   buildSidebarModel,
   buildThreadActionMenuItems,

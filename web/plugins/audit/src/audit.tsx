@@ -46,7 +46,7 @@ export function useAuditWatch(project: string): [WatchState, () => void] {
   const [attempt, setAttempt] = useState(0);
   // Where the last stream for this project stopped, so a retry resumes there.
   const resume = useRef({ project, cursor: '', events: [] as admin.AuditEvent[] });
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `attempt` re-opens the stream
+  // oxlint-disable-next-line react/exhaustive-deps -- `attempt` re-opens the stream
   useEffect(() => {
     const client = createClient(admin.AuditService, transport);
     const controller = new AbortController();

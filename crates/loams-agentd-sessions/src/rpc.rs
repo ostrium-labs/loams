@@ -3287,7 +3287,7 @@ mod tests {
             .unwrap();
         zip.write_all(b"#!/bin/sh\nexit 0\n").unwrap();
         let bytes = zip.finish().unwrap().into_inner();
-        let digest = Box::leak(format!("{:x}", Sha512::digest(&bytes)).into_boxed_str());
+        let digest = Box::leak(crate::repos::hex(&Sha512::digest(&bytes)).into_boxed_str());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = Box::leak(
             format!("http://{}/archive.zip", listener.local_addr().unwrap()).into_boxed_str(),

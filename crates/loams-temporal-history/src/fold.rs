@@ -4,8 +4,9 @@ use prost::Message as _;
 
 use crate::time::{dur_ms, ms, ts};
 use crate::{
-    ActivityInfo, Attributes, EventType, HistoryEvent, MutableState, STATE_VERSION, TimerInfo,
-    UpdateInfo, UpdateState, WorkflowExecutionStatus, WorkflowTaskInfo,
+    ActivityInfo, Attributes, ChildInfo, EventType, ExternalInfo, HistoryEvent, MutableState,
+    ParentInfo, STATE_VERSION, TimerInfo, UpdateInfo, UpdateState, WorkflowExecutionStatus,
+    WorkflowTaskInfo,
 };
 
 /// Why a history cannot be folded.
@@ -91,6 +92,19 @@ pub fn fold(
         start_time: first.event_time,
         status: WorkflowExecutionStatus::Running as i32,
         first_execution_run_id: started.first_execution_run_id.clone(),
+        parent: started
+            .parent_workflow_execution
+            .as_ref()
+            .map(|p| ParentInfo {
+                namespace: started.parent_workflow_namespace.clone(),
+                namespace_id: started.parent_workflow_namespace_id.clone(),
+                workflow_id: p.workflow_id.clone(),
+                run_id: p.run_id.clone(),
+                initiated_event_id: started.parent_initiated_event_id,
+            }),
+        first_task_backoff: dur_ms(started.first_workflow_task_backoff.as_ref()) > 0,
+        memo: started.memo.clone(),
+        search_attributes: started.search_attributes.clone(),
         ..Default::default()
     };
 
@@ -129,6 +143,21 @@ fn unknown(event_id: i64, what: &'static str, id: impl ToString) -> FoldError {
     }
 }
 
+fn external(
+    initiated_event_id: i64,
+    namespace: &str,
+    namespace_id: &str,
+    execution: Option<&loams_temporal_proto::temporal::api::common::v1::WorkflowExecution>,
+) -> ExternalInfo {
+    ExternalInfo {
+        initiated_event_id,
+        namespace: namespace.to_string(),
+        namespace_id: namespace_id.to_string(),
+        workflow_id: execution.map(|w| w.workflow_id.clone()).unwrap_or_default(),
+        run_id: execution.map(|w| w.run_id.clone()).unwrap_or_default(),
+    }
+}
+
 fn close(s: &mut MutableState, e: &HistoryEvent, status: WorkflowExecutionStatus) {
     s.status = status as i32;
     s.completion_event_id = e.event_id;
@@ -137,6 +166,9 @@ fn close(s: &mut MutableState, e: &HistoryEvent, status: WorkflowExecutionStatus
     s.workflow_task = None;
     s.activities.clear();
     s.timers.clear();
+    s.children.clear();
+    s.external_signals.clear();
+    s.external_cancels.clear();
     abort_updates(s);
 }
 
@@ -167,6 +199,7 @@ fn apply(s: &mut MutableState, e: &HistoryEvent, a: &Attributes) -> Result<(), F
             }
         }
         Attributes::WorkflowTaskScheduledEventAttributes(x) => {
+            s.first_task_backoff = false;
             s.workflow_task = Some(WorkflowTaskInfo {
                 scheduled_event_id: id,
                 attempt: x.attempt,
@@ -336,9 +369,97 @@ fn apply(s: &mut MutableState, e: &HistoryEvent, a: &Attributes) -> Result<(), F
         }
         // Old servers wrote rejections; they change no state.
         Attributes::WorkflowExecutionUpdateRejectedEventAttributes(_) => {}
-        Attributes::MarkerRecordedEventAttributes(_)
-        | Attributes::UpsertWorkflowSearchAttributesEventAttributes(_)
-        | Attributes::WorkflowPropertiesModifiedEventAttributes(_) => {}
+        Attributes::UpsertWorkflowSearchAttributesEventAttributes(x) => {
+            crate::upsert_search_attributes(s, x.search_attributes.as_ref());
+        }
+        Attributes::WorkflowPropertiesModifiedEventAttributes(x) => {
+            crate::upsert_memo(s, x.upserted_memo.as_ref());
+        }
+        Attributes::StartChildWorkflowExecutionInitiatedEventAttributes(x) => {
+            s.children.push(ChildInfo {
+                initiated_event_id: id,
+                namespace: x.namespace.clone(),
+                namespace_id: x.namespace_id.clone(),
+                workflow_id: x.workflow_id.clone(),
+                workflow_type: x
+                    .workflow_type
+                    .as_ref()
+                    .map(|t| t.name.clone())
+                    .unwrap_or_default(),
+                parent_close_policy: x.parent_close_policy,
+                ..Default::default()
+            });
+        }
+        Attributes::ChildWorkflowExecutionStartedEventAttributes(x) => {
+            let c = s
+                .children
+                .iter_mut()
+                .find(|c| c.initiated_event_id == x.initiated_event_id)
+                .ok_or_else(|| unknown(id, "child workflow", x.initiated_event_id))?;
+            c.started_event_id = id;
+            c.run_id = x
+                .workflow_execution
+                .as_ref()
+                .map(|w| w.run_id.clone())
+                .unwrap_or_default();
+        }
+        Attributes::StartChildWorkflowExecutionFailedEventAttributes(x) => {
+            crate::take_child(s, x.initiated_event_id)
+                .ok_or_else(|| unknown(id, "child workflow", x.initiated_event_id))?;
+        }
+        Attributes::ChildWorkflowExecutionCompletedEventAttributes(x) => {
+            crate::take_child(s, x.initiated_event_id)
+                .ok_or_else(|| unknown(id, "child workflow", x.initiated_event_id))?;
+        }
+        Attributes::ChildWorkflowExecutionFailedEventAttributes(x) => {
+            crate::take_child(s, x.initiated_event_id)
+                .ok_or_else(|| unknown(id, "child workflow", x.initiated_event_id))?;
+        }
+        Attributes::ChildWorkflowExecutionCanceledEventAttributes(x) => {
+            crate::take_child(s, x.initiated_event_id)
+                .ok_or_else(|| unknown(id, "child workflow", x.initiated_event_id))?;
+        }
+        Attributes::ChildWorkflowExecutionTimedOutEventAttributes(x) => {
+            crate::take_child(s, x.initiated_event_id)
+                .ok_or_else(|| unknown(id, "child workflow", x.initiated_event_id))?;
+        }
+        Attributes::ChildWorkflowExecutionTerminatedEventAttributes(x) => {
+            crate::take_child(s, x.initiated_event_id)
+                .ok_or_else(|| unknown(id, "child workflow", x.initiated_event_id))?;
+        }
+        Attributes::SignalExternalWorkflowExecutionInitiatedEventAttributes(x) => {
+            s.external_signals.push(external(
+                id,
+                &x.namespace,
+                &x.namespace_id,
+                x.workflow_execution.as_ref(),
+            ));
+        }
+        Attributes::ExternalWorkflowExecutionSignaledEventAttributes(x) => {
+            crate::take_external(&mut s.external_signals, x.initiated_event_id)
+                .ok_or_else(|| unknown(id, "external signal", x.initiated_event_id))?;
+        }
+        Attributes::SignalExternalWorkflowExecutionFailedEventAttributes(x) => {
+            crate::take_external(&mut s.external_signals, x.initiated_event_id)
+                .ok_or_else(|| unknown(id, "external signal", x.initiated_event_id))?;
+        }
+        Attributes::RequestCancelExternalWorkflowExecutionInitiatedEventAttributes(x) => {
+            s.external_cancels.push(external(
+                id,
+                &x.namespace,
+                &x.namespace_id,
+                x.workflow_execution.as_ref(),
+            ));
+        }
+        Attributes::ExternalWorkflowExecutionCancelRequestedEventAttributes(x) => {
+            crate::take_external(&mut s.external_cancels, x.initiated_event_id)
+                .ok_or_else(|| unknown(id, "external cancel", x.initiated_event_id))?;
+        }
+        Attributes::RequestCancelExternalWorkflowExecutionFailedEventAttributes(x) => {
+            crate::take_external(&mut s.external_cancels, x.initiated_event_id)
+                .ok_or_else(|| unknown(id, "external cancel", x.initiated_event_id))?;
+        }
+        Attributes::MarkerRecordedEventAttributes(_) => {}
         Attributes::WorkflowExecutionCompletedEventAttributes(_) => {
             close(s, e, WorkflowExecutionStatus::Completed);
         }
