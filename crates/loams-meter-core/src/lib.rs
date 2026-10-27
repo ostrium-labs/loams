@@ -10,6 +10,7 @@ pub mod amount;
 pub mod entitlement;
 pub mod event;
 pub mod ids;
+pub mod lease;
 pub mod meter;
 pub mod refusal;
 
@@ -23,5 +24,6 @@ pub use ids::{
     EntitlementId, FeatureKey, GrantId, IdError, LeaseId, PlanId, Slug, SubjectKey, TenantId,
     UtcNanos,
 };
+pub use lease::{Allocator, AllocatorConfig, LeaseGrant, LeasePolicy, LeaseReport, LeaseRequest};
 pub use meter::{Aggregation, JsonPath, Meter, MeterError, WindowSize};
 pub use refusal::RefusalReason;
