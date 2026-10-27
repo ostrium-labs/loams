@@ -107,10 +107,10 @@ The Postgres database must be reached through a session or direct endpoint, neve
 transaction pooling: the store uses `LISTEN`/`NOTIFY` for its outbox (design 74 §5.5 rule 5). The
 gateway creates and migrates its schema at start.
 
-The Resonate connection is an interim adapter (`HttpDurability`, module `wire_interim`) that
-speaks Resonate's protocol envelope and its poll transport. It is replaced by the fork's
-`resonate-client` crate in a later pin bump, with no configuration change (design 74 D1516, plan
-D1591).
+The gateway reaches Resonate through the fork's `resonate-client` crate (`HttpDurability`): its
+typed protocol requests, and its poll consumer for the task and settlement messages (design 74
+D1516; D2040, D2043). The interim adapter of plan D1591 is gone, and the configuration did not
+change.
 
 ### Compose
 
