@@ -7,18 +7,25 @@
 //!   credential.
 //! - [`keys`]: create, list and delete API keys. A created key's secret is a
 //!   [`Secret`], which zeroises on drop and never prints.
-//! - [`clusters`]: read a Kafka cluster (cloud, region, bootstrap).
+//! - [`clusters`]: read and list Kafka clusters (cloud, region, bootstrap) and
+//!   set an elastic cluster's `max_ecku` (the guard's throttle).
+//! - [`metrics`]: hourly Metrics API queries per cluster (and per principal
+//!   for request and response bytes, CC0 R0.7).
+//! - [`costs`]: the Costs API's daily lines over any UTC date range, split
+//!   into windows of at most 30 days.
 //! - [`store`]: write a value into the user's cloud secret store through the
 //!   cloud's own CLI (`aws`, `gcloud`, `az`) with the user's credentials; the
 //!   value goes on stdin, never in argv.
 //! - [`cli`]: `loams byoc confluent key create|rotate` and `check`.
 //!
-//! The metrics, costs and regions calls (Task 4's rest) and the budget guard
-//! (CC2) come later.
+//! Regions are read by `scripts/byoc/confluent-tables.sh` (CC0 R0.4: an
+//! undocumented endpoint), not here. The budget guard (CC2) comes later.
 
 pub mod cli;
 pub mod clusters;
+pub mod costs;
 pub mod keys;
+pub mod metrics;
 pub mod store;
 
 mod client;

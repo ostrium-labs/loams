@@ -1,6 +1,6 @@
 [package]
 name = "loams-confluent"
-description = "A small Confluent Cloud API client (keys, clusters) and `loams byoc confluent key|check` (design 80 §7.2, D1827; plan CC1 Tasks 4 and 6). No Confluent code."
+description = "A small Confluent Cloud API client (keys, clusters, metrics, costs) and `loams byoc confluent key|check` (design 80 §7.2, D1827; plan CC1 Tasks 4 and 6). No Confluent code."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
