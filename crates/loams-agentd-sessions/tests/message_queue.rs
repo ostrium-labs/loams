@@ -1210,7 +1210,14 @@ async fn an_edit_waits_for_a_failed_send_to_put_its_row_back() {
     let sent = send.await.unwrap();
     assert!(sent.is_err(), "the supervised send is refused: {sent:?}");
     assert!(edit.await.unwrap().expect("edit"), "the edit applies");
-    assert_eq!(queue_texts(&core), vec!["second edited"]);
+    // The held turn ends with `finish`, and the turn-end drain may take the
+    // restored row, have its send refused (still supervised), put it back and
+    // pause; the queue is empty for that moment, so wait for it to settle.
+    wait_for(
+        || queue_texts(&core) == ["second edited"],
+        "the edited row back in the queue",
+    )
+    .await;
     core.shutdown().await;
 }
 
