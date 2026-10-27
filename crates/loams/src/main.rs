@@ -277,6 +277,12 @@ struct Native {
     /// in place of the caller's credentials (or LOAMS_HOUSE_KEY_FILE).
     #[arg(long)]
     house_key_file: Option<PathBuf>,
+    /// The connect socket (CC1 ruling R1.1): the main API on a Unix socket,
+    /// mode 0660, for `loams-fabric connect`, taking API keys only. Also
+    /// LOAMS_CONNECT_SOCKET. Put it in a volume only the engine and the
+    /// connect role mount.
+    #[arg(long)]
+    connect_socket: Option<PathBuf>,
     /// MySQL wire listener for collection queries (loopback only).
     #[cfg(feature = "mysql-wire")]
     #[arg(long)]
@@ -654,6 +660,10 @@ impl Native {
             .house_key_file
             .clone()
             .or_else(|| env_value("LOAMS_HOUSE_KEY_FILE").map(PathBuf::from));
+        config.connect_socket = self
+            .connect_socket
+            .clone()
+            .or_else(|| env_value("LOAMS_CONNECT_SOCKET").map(PathBuf::from));
         config.console_dir = match (self.no_console, &self.console_dir) {
             (true, _) => None,
             // An explicit directory is kept even without a build, so the

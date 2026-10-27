@@ -86,6 +86,7 @@ engine, `migrate` and `loams upgrade` all see the same set:
 | `house-tailnet` | the House's own tailnet node (below) |
 | `postgres-control` | Loams Postgres's control plane (below) |
 | `console` | optional: a console on an origin of its own (the engine already serves one at `/ui/`), from `LOAMS_CONSOLE_DIR`, with `/config.json` built from `LOAMS_ENGINE_URL`, `LOAMS_AUTH_ISSUER` and `LOAMS_AUTH_CLIENT_ID`; its origin must be in `LOAMS_CORS_ORIGINS` |
+| `authz` | preview: OpenFGA (SQLite, one user's install) for `LOAMS_AUTHZ=openfga`, below |
 | `headscale` | coming soon, unsupported |
 
 Choose `tikv` and `rustfs` before the first start: a stack's data stays on the
@@ -238,6 +239,38 @@ in `oidc` mode, when it cannot see the file at all (missing, or `secrets/` not
 searchable), it starts with API keys off instead.
 `byoc/install.sh` creates an empty `secrets/api-keys` with group 10001 and
 mode 0640.
+
+#### Authorization (`LOAMS_AUTHZ`)
+
+Every check the engine makes is a `can_*` relation of model v1
+([deploy/openfga](../openfga), design 76). By default (`LOAMS_AUTHZ=builtin`)
+the engine answers it itself, from its own members, projects and grants:
+nothing else runs.
+
+The `authz` profile (preview) adds OpenFGA v1.22.0, its official image pinned
+by digest, on SQLite in the `openfga-data` volume. SQLite is for one user's
+install; a multi-user install runs OpenFGA on Postgres (the Helm values in
+[deploy/openfga/helm](../openfga/helm)). OpenFGA's own check caches are off:
+the engine keeps one decision cache of 5 s.
+
+```sh
+# .env
+COMPOSE_PROFILES=authz          # with any others, comma-separated
+LOAMS_AUTHZ_OPENFGA_KEY=...     # openssl rand -hex 32
+```
+
+OpenFGA, its migration and `openfga-init` sit on the `authz` network, which
+has no route out and which only they and the engine join; nothing is
+published, and every call needs the key (OpenFGA refuses to start without
+one). `openfga-init` creates the `loams` store, writes model v1
+(`config/openfga-model.json`) when it changed, and records the store and
+model ids in the `authz` volume. With `LOAMS_AUTHZ=openfga` the engine reads
+them from there, unless `.env` sets `LOAMS_AUTHZ_OPENFGA_STORE` and
+`LOAMS_AUTHZ_OPENFGA_MODEL`.
+
+Leave `LOAMS_AUTHZ` on `builtin` for now: OpenFGA's tuples come from the
+identity sync (plan IA1, IA3), and until it runs an engine on OpenFGA grants
+nothing to anyone but the operator's own credentials.
 
 ### Headscale (coming soon, unsupported)
 

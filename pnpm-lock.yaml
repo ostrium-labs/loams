@@ -1091,6 +1091,9 @@ importers:
         specifier: 8.4.0
         version: 8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
     devDependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.16.0
+        version: 2.16.0
       '@connectrpc/connect':
         specifier: 2.2.0
         version: 2.2.0(@bufbuild/protobuf@2.16.0)
@@ -2371,6 +2374,9 @@ importers:
 
   web/plugins/factory:
     dependencies:
+      '@connectrpc/connect':
+        specifier: 2.2.0
+        version: 2.2.0(@bufbuild/protobuf@2.16.0)
       '@loams/console-host':
         specifier: workspace:*
         version: link:../../packages/console-host
@@ -2380,6 +2386,9 @@ importers:
       '@loams/desktop-ui':
         specifier: workspace:*
         version: link:../../packages/desktop-ui
+      '@loams/proto':
+        specifier: workspace:*
+        version: link:../../packages/proto
       '@loams/slots':
         specifier: workspace:*
         version: link:../../packages/slots

@@ -23,6 +23,8 @@ One VM (Ubuntu 24.04, Linux 6.8) running Loams 0.1.2's **light default stack**: 
 | Google Cloud | [gcp.md](gcp.md) | `deploy/byoc/gcp/`, `deploy/tofu/modules/gcp-vm/` |
 | Azure | [azure.md](azure.md) | `deploy/byoc/azure/`, `deploy/tofu/modules/azure-vm/` |
 
+**With Confluent Cloud:** [confluent.md](confluent.md) puts a Confluent Cloud cluster next to the VM (or connects your existing one): the `confluent` OpenTofu module, the keys in your secret store, and what a budget can and cannot cap.
+
 Each guide gives two ways: **the CLI commands** (create the pieces, then one cloud-init file starts the VM) and **OpenTofu** (the same pieces as a module; see `deploy/tofu/README.md`). If you already have a VM with an identity, `deploy/release/byoc/install.sh --cloud ...` installs onto it over SSH (`deploy/release/README.md`, "On a cloud VM").
 
 ## Costs (estimates, small install, one month, 2026-10-21 list prices)

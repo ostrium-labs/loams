@@ -343,6 +343,47 @@ Built on Task 4b's branch (`mk0-t4b-daemon-wiring`), stacked until it merges.
 8. **Updates.** An update that does not widen is sent from the Installed page without a digest. One that widens opens the consent screen in update mode (`?update=1`), which sends `UpdateListing` with the new plan's digest. After an install, update or uninstall the page also invalidates Studio's `ListHarnesses`, so the picker shows the change.
 9. **Sources.** The official source cannot be removed from the page. Adding a source needs a name, the index URL and the signing identity; the issuer defaults to GitHub Actions'.
 10. **The e2e daemon.** A debug `loams-agentd` built with the new `e2e-marketplace` feature, with `LOAMS_AGENTD_TEST_MARKETPLACE` set, opens the testkit's world (the signed fake official index with `testkit/echo-acp`, stand-in signatures, a fake npm, a memory vault) instead of the network. This is the same pattern `LOAMS_AGENTD_TEST_ISSUER` uses for tokens. The feature enables `loams-agentd-marketplace/testkit`, and no release build enables it, so the testkit is never in a shipped daemon. The code is also behind `cfg!(debug_assertions)`. `studio-e2e.yml`'s web job builds `cargo build -p loams-agentd --features e2e-marketplace`; with any other daemon the spec skips itself. The workflow also runs on changes to `web/plugins/marketplace` and `web/packages/slots`.
+### Task 8 (2026-10-26)
+
+Read at `origin/dev` `817d13814`. Brought into scope beside Task 4b; it does not need `@loams/mastra-resonate` (its fixtures are local packages).
+
+1. **Where it lives.** The runner is `crates/loams-agentd-marketplace/src/conformance/` and the command is `loams-agentd agent conformance <package-dir|listing.json> [--package <dir|tgz>] [--out <report.json>] [--sign]`, in the daemon's own binary (§73 §9 says "in agentd"; the plan's `loams agent conformance` becomes `loams marketplace` in Task 10). It exits 0 when the package reaches Core, 1 when it does not, and 2 when the run could not happen (an invalid listing, no Node, a package that does not install). A summary goes to stderr and the report to `--out`, else stdout.
+2. **What it runs.** It runs agents that serve ACP and ACP harnesses, on the `node` runtime (MK0), on Linux and macOS. A2A agents, other runtimes and Windows answer "cannot run" (exit 2) until MK1. The listing must pass schema v1 first, and the Node it finds must satisfy `runtime.version`.
+3. **How it installs.**
+   - A directory holds `listing.json` and is the package.
+   - A listing file uses `--package` (a directory, or a tarball checked against `artifact.integrity`), else `npm pack <name>@<version>` from the registry, also checked.
+   - Tarballs install with Task 6's `npm_args` (scripts off) into `<work>/install`. A directory without dependencies is copied, leaving out `node_modules`, `.git` and symbolic links, so no npm is needed. One with dependencies is packed with `--ignore-scripts` first.
+   - Provenance is not checked here. `loams-listing verify` (Task 3) does that before the index CI runs LAPC.
+4. **Reuse.** The ACP client is agentd's own: `loams-agentd-harness::jsonrpc` (`RpcClient`, `Incoming`) is now public, and `loams-agentd-marketplace` depends on `loams-agentd-harness`. The harness does not depend on the marketplace, so there is no cycle. Task 0 ruling 6's matching (the declared name against the call's `title`, then its `kind`) is `conformance::declared_tool`, for Task 6's `undeclared_acp_tool_refused` to reuse. C8 reuses `install.rs`'s install-script and `hasInstallScript` refusal.
+5. **Isolation in MK0** is the process only, with no sandbox until SB1:
+   - the environment is exactly `contract::environment` (cleared, then only the contract's variables);
+   - `HOME`, `TMPDIR` and `LOAMS_DATA_DIR` are a fresh data directory, which is also the working directory;
+   - the agent leads its own process group.
+   - Loams services are not provided in a Core run, so their variables are absent. `--pg-url` and `--durable-url` pass a local Loams's when the CI has one.
+   - Secret configuration inputs get a dummy value, and other inputs their default.
+6. **The agent's world** is one loopback HTTP server:
+   - **The scripted model** speaks OpenAI Chat Completions only (`/openai/v1/chat/completions`, plain or `stream: true`). A call to another API shape (Responses, Anthropic Messages) is answered 501 and fails C3. The other shapes come with the model proxy (§3.4).
+   - **The script.** The model calls each declared tool the agent offers, always-ask tools first, at most four, with arguments built from each tool's JSON Schema. It then ends with a fixed reply.
+   - **Tokens** are estimated at four characters a token, the same figure the model reports in `usage`.
+   - **Fake MCP servers.** There is one per `mcp_servers` dependency, at `/mcp/<name>` in `LOAMS_MCP_CONFIG`, and each lists exactly the tools the listing declares from it.
+   - **The egress proxy** (`HTTPS_PROXY`, `HTTP_PROXY`) records every host asked for and forwards none, declared hosts included, so runs never touch the network. `LOAMS_ENDPOINT` answers 503.
+7. **The checks** (a skipped MUST is not a pass; Core means every Core MUST passed):
+   - **C1:** `initialize` answered within 30 s.
+   - **C2:** the agent's `protocolVersion` equals `surfaces.acp.protocol_version` (default 1), and `session/new` opens a session. A listing that also declares `a2a`, `mcp` or `responses` gets C2 `skip` in MK0.
+   - **C3:** the turn ends with `end_turn`; at least one request reached the scripted model; its final reply reached the client; nothing went to an unsupported model API or, through the proxy, to a model provider's host; and `models.api` declares `chat-completions` when the agent called it.
+   - **C4:** every permission request, `tool_call` update, fake-MCP call and tool offered to the model names a declared tool. Undeclared permission requests are rejected. Every always-ask tool the script ran was asked about before its result reached the model and before the MCP call that ran it.
+   - **C5:** every host through the proxy is declared (`*.` covers subdomains). On Linux the agent's TCP sockets are also sampled every 50 ms through `/proc`, and any non-loopback peer, which went around the proxy, fails. macOS has the proxy record only; the report's `runner.egress_recording` says which.
+   - **C6:** nothing changed under the run's directory outside `data/`, which includes the installed package. On Linux, open files are sampled: one held for writing outside the data directory fails, as does one read under the user's real home (outside the run and the Node installation). Descriptors the agent inherited from the runner (same number, same file) are not counted. Short-lived opens can be missed; the sandbox makes this complete (SB1).
+   - **C7, cancel:** a second turn's model call is held, and `session/cancel` is sent once the agent waits on it, or after 2 s. The turn must answer `cancelled` within 10 s. A probe turn that ends before it calls the model passes with a note.
+   - **C7, SIGTERM:** SIGTERM goes to the agent's process only. It must exit within 10 s, and within the same 10 s no process may remain in its group or, on Linux, among the descendants seen during the run.
+   - **C8:** the installed tree has no `preinstall`, `install` or `postinstall`, no native build and no `hasInstallScript`.
+   - **C9 (SHOULD):** `cost.typical_tokens_per_run` is within 2× of the scripted turn's tokens, and the turn does not exceed `max_tokens_per_run`. No cost profile is a C9 failure, which does not change the level.
+8. **The report** follows `schemas/marketplace/conformance-report.v1.json` (`$id` `https://loams.dev/schemas/conformance-report/v1.json`; `conformance::validate_report`). It holds the runner, its isolation and egress recording; the subject with the listing's canonical SHA-256 (as the index records it); each check with its details; and the measured tokens, tool calls, egress and the tail of stderr.
+9. **`--sign`** writes `<out>.sigstore.json` by running `cosign sign-blob --yes --bundle`, keyless, with the ambient OIDC identity of the CI. It needs `--out` and `cosign` on PATH. It was not run locally (there is no cosign or OIDC here); the index CI step exercises it. Adding the LAPC step to `loams-marketplace`'s `validate.yml` is a follow-up there, together with a move of its `.github/loams-ref` and a pinned `loams-agentd` build.
+10. **Fixtures and tests.** `testdata/conformance/agent/` is one Node package with no dependencies. `lib.js` is a small ACP agent; `good.js` conforms; and `c1-no-initialize.js`, `c2-protocol-mismatch.js`, `c3-no-model.js`, `c4-undeclared-tool.js`, `c4-skips-ask.js`, `c5-egress.js`, `c6-writes-package.js` and `c7-hang.js` each break one requirement. A failing case is the good `listing.json` with that entry file. C8's fixture is `c8-install-script/package.json`, laid over a copy of the package (an install script needs its own `package.json`). C9's fixture is the good listing with an inflated `cost`.
+    - The tests in `tests/conformance.rs` are one pass and one fail per requirement, among them `lapc_c4_undeclared_tool_fails`, `lapc_c5_egress_fails` and `lapc_c7_hang_fails`, plus `lapc_c4_unasked_tool_fails`.
+    - Each failing case also asserts that every other Core MUST passes.
+    - They skip when `node` is not on PATH.
 
 ### Owner approvals (2026-10-24)
 
@@ -363,6 +404,7 @@ The owner approved the pending decisions below on 2026-10-24 ("approve all with 
 | 6 | Built and tested (53 crate tests in all, real npm provenance), unmerged | branch `mk0-t6-installers`: `provenance.rs` and `install.rs` (npm installs with scripts off, script and lockfile refusal, uninstall keeps data, harness and MCP registrations). Registering them in agentd's `HarnessRegistry` and MCP runs (`harness_descriptor_appears_in_list_harnesses`, `mcp_server_available_to_threads`) waits for Task 4b's daemon wiring |
 | 4b | This PR (2026-10-26) | branch `mk0-t4b-daemon-wiring`: the daemon wiring, rulings above |
 | 9 | This PR (2026-10-26) | branch `mk0-t9-marketplace-ui`, stacked on 4b: `@loams/plugin-marketplace`, the consent screen, Studio's "Add a harness…", the e2e install check; rulings above |
-| 7, 8, 10, 11 | Not started | Task 7 also waits for `@loams/mastra-resonate` on npm (Task 0 ruling 2) |
+| 7, 10, 11 | Not started | Task 7 also waits for `@loams/mastra-resonate` on npm (Task 0 ruling 2) |
+| 8 | This PR (2026-10-26) | branch `mk0-t8-lapc-core`: the LAPC Core runner and `loams-agentd agent conformance`, rulings above. The `validate.yml` step in `loams-marketplace` is the follow-up (ruling 9) |
 
 Each branch is stacked on the one before. To resume, merge Task 1, rebase each branch onto `dev` in order, and open one PR per task. Label Tasks 3, 4 and 6 `review:greptile`.

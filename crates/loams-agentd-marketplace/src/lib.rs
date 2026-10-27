@@ -4,6 +4,7 @@
 //! environment contract. Installers and the conformance runner follow in MK0
 //! Tasks 6 and 8.
 
+pub mod conformance;
 pub mod contract;
 pub mod fetch;
 pub mod index;
