@@ -164,10 +164,13 @@ describe('create-connector wizard', () => {
     set(/^brokers/, 'b1:9092');
     set(/^topics/, 'orders\nrefunds');
     set(/^group_id_prefix/, 'loams-dev');
-    set(/^username/, 'svc');
-    set(/^password/, SECRET);
+    // The SASL group's fields (basic_auth has a username and password too, and
+    // username_secret starts with username).
+    const sasl = within(screen.getByRole('group', { name: /^sasl\b/ }));
+    fireEvent.change(sasl.getByLabelText(/^username\b/), { target: { value: 'svc' } });
+    fireEvent.change(sasl.getByLabelText(/^password\b/), { target: { value: SECRET } });
     set(/^key_pem/, KEY);
-    expect((screen.getByLabelText(/^password/) as HTMLInputElement).type).toBe('password');
+    expect((sasl.getByLabelText(/^password\b/) as HTMLInputElement).type).toBe('password');
     await waitFor(() => {
       fireEvent.click(screen.getByRole('button', { name: 'Next' }));
       expect(screen.getByRole('heading', { name: 'Fabric binding' })).toBeTruthy();
