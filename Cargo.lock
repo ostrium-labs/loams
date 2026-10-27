@@ -10159,9 +10159,11 @@ dependencies = [
  "loams-temporal-matching",
  "loams-temporal-proto",
  "loams-temporal-resonate",
+ "loams-temporal-schedule",
  "loams-temporal-statemachine",
  "loams-temporal-store",
  "loams-temporal-testkit",
+ "loams-temporal-visibility",
  "prost 0.14.4",
  "prost-types",
  "serde",
@@ -10237,6 +10239,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-temporal-schedule"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "chrono-tz 0.10.4",
+ "loams-temporal-proto",
+ "prost 0.14.4",
+ "prost-types",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "sqlx 0.9.0",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "loams-temporal-statemachine"
 version = "0.1.2"
 dependencies = [
@@ -10278,6 +10299,20 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "loams-temporal-visibility"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "serde",
+ "serde_json",
+ "sqlx 0.9.0",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
