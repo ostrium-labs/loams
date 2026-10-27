@@ -8644,6 +8644,7 @@ dependencies = [
  "loams-knowledge",
  "loams-store",
  "loams-walrus",
+ "loams-web-bridge",
  "serde",
  "serde_json",
  "tokio",

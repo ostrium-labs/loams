@@ -20,7 +20,21 @@ Decisions: D2110 (Cloudflare removed, Obscura everywhere), D2111 (the two provid
 
 - The provider code is checked in CI only against a scripted engine (`crates/loams-web-bridge/tests/it`).
 - The run against the real Obscura binary and the real image is lane BR-b's parity suite and CI job. Until that job is green, treat local and cloud browsing as **not yet run end to end**.
-- agentd does not yet expose these tools to agents.
+
+## How agents get it
+
+When `LOAMS_BROWSER_PROVIDER` is set, every agent run's MCP server (`loams-agentd mcp`) lists the browser tools (D2115):
+
+- `browser_open`, `browser_navigate`
+- `browser_snapshot`, `browser_find`
+- `browser_click`, `browser_fill`, `browser_wait_for`
+- `browser_screenshot`, `browser_extract`
+- `browser_close`
+
+The daemon passes on its own `LOAMS_BROWSER_*` settings, `LOAMS_OBSCURA_BIN` and the service token only when they are set.
+
+- With `local`, each run starts its own engine the first time it opens a page.
+- With `service`, every run shares the deployment's `browser` service, and each page gets its own browser context.
 
 ## What is the same on every provider
 
