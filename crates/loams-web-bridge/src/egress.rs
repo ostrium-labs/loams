@@ -176,6 +176,10 @@ impl EgressPolicy {
             Some(host) => host,
             None => return Err(EgressError::NoHost),
         };
+        // The cloud metadata endpoints and the rest of link-local are refused
+        // even when private hosts are allowed: `allow_private_hosts` is for a
+        // loopback fixture or a LAN app, never for instance credentials.
+        check_always_denied(&host)?;
         if !self.allow_private_hosts {
             check_private(&host)?;
         }
@@ -246,6 +250,33 @@ fn matches_host(pattern: &HostPattern, host: &Host<&str>) -> bool {
         Host::Ipv4(address) => pattern.matches(&address.to_string()),
         Host::Ipv6(address) => pattern.matches(&address.to_string()),
     }
+}
+
+/// Refuse the addresses no setting opens: link-local (which holds the cloud
+/// metadata endpoint), the other metadata addresses, and their IPv4-mapped
+/// IPv6 forms.
+fn check_always_denied(host: &Host<&str>) -> Result<(), EgressError> {
+    let v4_denied = |address: Ipv4Addr| {
+        address.is_link_local()
+            || address == Ipv4Addr::new(168, 254, 169, 254)
+            || address == Ipv4Addr::new(100, 100, 100, 200)
+            || address == Ipv4Addr::new(192, 0, 0, 192)
+    };
+    let denied = match host {
+        Host::Domain(_) => false,
+        Host::Ipv4(address) => v4_denied(*address),
+        Host::Ipv6(address) => {
+            (address.segments()[0] & 0xffc0) == 0xfe80
+                || *address == Ipv6Addr::new(0xfd00, 0xec2, 0, 0, 0, 0, 0, 0x254)
+                || address.to_ipv4_mapped().is_some_and(v4_denied)
+        }
+    };
+    if denied {
+        return Err(EgressError::PrivateHost {
+            host: host.to_string(),
+        });
+    }
+    Ok(())
 }
 
 /// Refuse an address that is not routable on the public internet, plus the
@@ -370,6 +401,23 @@ mod tests {
         EgressPolicy::public_web()
             .check(&url("https://example.com/pricing"))
             .unwrap_or_else(|error| panic!("a public url passes: {error}"));
+    }
+
+    #[test]
+    fn the_metadata_endpoint_stays_refused_when_private_hosts_are_allowed() {
+        let mut policy = EgressPolicy::public_web();
+        policy.set_allow_private_hosts(true);
+        policy
+            .check(&url("http://127.0.0.1:8080/fixture"))
+            .unwrap_or_else(|error| panic!("loopback is allowed now: {error}"));
+        for raw in [
+            "http://169.254.169.254/latest/meta-data/",
+            "http://100.100.100.200/",
+            "http://[fd00:ec2::254]/",
+            "http://[::ffff:169.254.169.254]/",
+        ] {
+            assert!(policy.check(&url(raw)).is_err(), "{raw} must stay refused");
+        }
     }
 
     #[test]
