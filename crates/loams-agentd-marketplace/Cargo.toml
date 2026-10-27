@@ -26,11 +26,12 @@ thiserror.workspace = true
 # as the other agentd crates fetch), the refresh timer and the registration
 # watch, and logs.
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "system-proxy"] }
-tokio = { workspace = true, features = ["sync", "time", "rt"] }
 tracing.workspace = true
 # The conformance runner (MK1 Task 8): agentd's ACP JSON-RPC client, and the
-# agent process, its loopback world and the signals that stop it.
+# agent process, its loopback world and the signals that stop it. The
+# workspace tokio has "full", which covers both.
 loams-agentd-harness.workspace = true
+tokio = { workspace = true, features = ["sync", "time", "rt"] }
 
 [target.'cfg(unix)'.dependencies]
 rustix = { workspace = true, features = ["process"] }

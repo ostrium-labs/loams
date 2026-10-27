@@ -441,8 +441,10 @@ The owner approved the pending decisions below on 2026-10-24 ("approve all with 
 | 5 | Built and tested, unmerged | branch `mk0-t5-install-plan`: `plan.rs` (consent plan, digest, widening) and `contract.rs` (environment, token rotation, MCP config, Postgres role) |
 | 6 | Built and tested (53 crate tests in all, real npm provenance), unmerged | branch `mk0-t6-installers`: `provenance.rs` and `install.rs` (npm installs with scripts off, script and lockfile refusal, uninstall keeps data, harness and MCP registrations). Registering them in agentd's `HarnessRegistry` and MCP runs (`harness_descriptor_appears_in_list_harnesses`, `mcp_server_available_to_threads`) waits for Task 4b's daemon wiring |
 | 4b | This PR (2026-10-26) | branch `mk0-t4b-daemon-wiring`: the daemon wiring, rulings above |
-| 10 | This PR (2026-10-26) | branch `mk0-t10-marketplace-cli`, stacked on 4b: `loams marketplace` in the new `loams-agentd-cli` crate, rulings above |
-| 7, 9, 11 | Not started | Task 7 also waits for `@loams/mastra-resonate` on npm (Task 0 ruling 2) |
-| 8 | This PR (2026-10-26) | branch `mk0-t8-lapc-core`: the LAPC Core runner and `loams-agentd agent conformance`, rulings above. The `validate.yml` step in `loams-marketplace` is the follow-up (ruling 9) |
+| 7 | Blocked | waits for `@loams/mastra-resonate` on npm (Task 0 ruling 2), an owner step |
+| 8 | Merged | #1284: the LAPC Core runner and `loams-agentd agent conformance`, rulings above. The `validate.yml` step in `loams-marketplace` is the follow-up (ruling 9) |
+| 9 | In review | #1268, stacked on 4b |
+| 10 | In review | #1277, stacked on 4b |
+| 11 | Listings merged; docs in review | `ostrium-labs/loams-marketplace` #2 (native harnesses, GitHub and Plane MCP servers); docs #1272. The Mastra-agent listings wait for Task 7 |
 
 Each branch is stacked on the one before. To resume, merge Task 1, rebase each branch onto `dev` in order, and open one PR per task. Label Tasks 3, 4 and 6 `review:greptile`.
