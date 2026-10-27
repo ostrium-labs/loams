@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { menuModel } from "../src/main/shell/menu-model";
 import { reveal } from "../src/main/shell/reveal";
 import {

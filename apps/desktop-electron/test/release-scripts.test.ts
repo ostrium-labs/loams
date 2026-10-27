@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 // @ts-expect-error plain .mjs helper without types
 import { artifactNames, sha256sums } from "../scripts/checksums.mjs";
 // @ts-expect-error plain .mjs helper without types

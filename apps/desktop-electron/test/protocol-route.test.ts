@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { isProxied, proxyRequest } from "../src/main/protocol/proxy";
 import { routeRequest } from "../src/main/protocol/route";
 import type { EngineState, ServerEntry } from "../src/shared/contracts";

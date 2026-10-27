@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import * as ed from "@noble/ed25519";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { verifyManifest } from "../src/main/update/manifest";
 import {
 	channelFile,

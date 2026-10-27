@@ -1,5 +1,5 @@
 import { inspect } from "node:util";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { AgentdToken, upgradeHeaders } from "../src/main/agentd/client";
 import {
 	modeFor,

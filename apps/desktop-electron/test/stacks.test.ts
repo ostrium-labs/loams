@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { resolvePaths } from "../src/main/paths";
 import {
 	LIVE_STORE_KEY,

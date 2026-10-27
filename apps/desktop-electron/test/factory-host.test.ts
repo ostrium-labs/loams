@@ -2,7 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Context } from "cordis";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { type AdapterCtor, FACTORY_APPS } from "../src/main/factory/apps";
 import { FactoryHost } from "../src/main/factory/host";
 import { Vault } from "../src/main/factory/vault";

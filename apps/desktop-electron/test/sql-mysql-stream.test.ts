@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 // Replays what mysql2's core Query emits, without a server.
 const emitters: EventEmitter[] = [];

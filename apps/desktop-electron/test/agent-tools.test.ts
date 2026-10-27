@@ -2,7 +2,7 @@ import { mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import * as fsp from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import {
 	type BuiltinServices,
 	builtinTools,

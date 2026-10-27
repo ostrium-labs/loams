@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import type { ConnectFn } from "../src/main/agentd/client";
 import { createMockAgentdClient, defaultFixture } from "../src/main/agentd/mock";
 import { AgentdService } from "../src/main/agentd/service";

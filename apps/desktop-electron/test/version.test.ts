@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { VERSION_ARG, versionFromArgv } from "../src/shared/version";
 
 describe("version argument", () => {

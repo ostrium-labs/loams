@@ -8,5 +8,5 @@
 			"@loams-plugins/*": ["./src/main/factory/adapter-shim.d.ts"]
 		}
 	},
-	"include": ["src", "test", "electron.vite.config.ts", "vitest.config.ts"]
+	"include": ["src", "test", "electron.vite.config.ts", "vite.config.ts"]
 }

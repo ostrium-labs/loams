@@ -6,7 +6,7 @@ import { EventEmitter } from "node:events";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { ChildProcess, spawn } from "node:child_process";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
 import { createAgentdLauncher } from "../src/main/agentd/launch";
 import { AGENTD_PROTOCOL } from "../src/main/agentd/types";
 import { resolvePaths } from "../src/main/paths";

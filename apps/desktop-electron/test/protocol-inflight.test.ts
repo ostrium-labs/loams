@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { InFlight } from "../src/main/protocol/inflight";
 
 /** A request that settles only when aborted (rejects) or when `finish` is called. */
