@@ -1,6 +1,7 @@
 # Open-protocol compute on Loams, opt in (design 68 §12, design 74 §14; OC1
 # OC0 Task 2 and DX1 DX0 Task 1): the stock Temporal server, the DBOS test
-# runners and Apache Airflow with the Edge executor, each on Loams Postgres.
+# runners and Apache Airflow with the Edge executor, each on Loams Postgres;
+# and the Loams Temporal gateway (profile `temporal-gateway`, DX1 Task 10).
 # An override of compose.yaml, with the pins of conformance/compute/pins.env:
 #
 #   docker compose --env-file .env --env-file ../../conformance/compute/pins.env \
@@ -8,7 +9,8 @@
 #
 # (conformance/compute/lib.sh's `oc_up <profile>` runs exactly this.)
 #
-# - Every service here has a profile (`temporal`, `dbos`, `airflow`), so
+# - Every service here has a profile (`temporal`, `dbos`, `airflow`,
+#   `temporal-gateway`), so
 #   nothing starts without one, and no service publishes a host port: the
 #   products reach Loams, and each other, on the compose network only.
 # - The database is Loams Postgres through the **direct** endpoint (DX1
@@ -24,7 +26,8 @@
 #   credentials below are defaults for a test stack on the compose network;
 #   set them in .env for anything else.
 # - Images are pinned by digest in pins.env; the ${VAR:?} forms fail fast
-#   when that file is not passed.
+#   when that file is not passed. The one exception is `temporal-gateway`'s,
+#   a Loams release image tagged with LOAMS_VERSION like compose.yaml's own.
 
 # The Temporal server (MIT), four services from the stock image, compat mode
 # (D1509). Its config is the image's own template, filled from these
@@ -64,13 +67,15 @@ x-init-env: &init-env
   AIRFLOW_DB_PASSWORD: ${AIRFLOW_DB_PASSWORD:-airflow}
   DBOS_DB_USER: ${DBOS_DB_USER:-postgres}
   DBOS_DB_PASSWORD: ${DBOS_DB_PASSWORD:-dbos}
+  LOAMS_TEMPORAL_DB_USER: ${LOAMS_TEMPORAL_DB_USER:-loams_temporal}
+  LOAMS_TEMPORAL_DB_PASSWORD: ${LOAMS_TEMPORAL_DB_PASSWORD:-loams_temporal}
 
 services:
   # One-shot (DX0 Task 2): the roles and databases of every compute profile
   # on Loams Postgres, idempotent (compute/durable-init.sh `roles`). As the
   # admin role of the direct endpoint: compute1's cloud_admin by default.
   compute-init:
-    profiles: [temporal, dbos, airflow]
+    profiles: [temporal, dbos, airflow, temporal-gateway]
     image: ${PSQL_IMAGE:?pass conformance/compute/pins.env with --env-file}
     restart: "no"
     entrypoint: ["/bin/sh", "/compute/durable-init.sh", "roles"]
@@ -295,6 +300,53 @@ services:
       <<: *airflow-deps
       airflow-api-server:
         condition: service_healthy
+
+  # The Loams Temporal gateway (design 74; plan DX1 Task 10; D2030, D2031),
+  # preview: the release image ghcr.io/ostrium-labs/loams-temporal, which
+  # speaks the DX1 subset of the Temporal API (the matrix in
+  # docs/guides/durable/temporal-gateway.md).
+  #
+  #   cp temporal-gateway.toml.example temporal-gateway.toml   # keys, namespace
+  #   docker compose --env-file .env --env-file ../../conformance/compute/pins.env \
+  #     -f compose.yaml -f compose.compute.yaml --profile temporal-gateway up -d
+  #
+  # - In the engine's network namespace (`network_mode: service:loams`): it
+  #   reaches the engine's Resonate on 127.0.0.1:8001 (the durable listener,
+  #   loopback only until D111 gives it auth) and listens on 0.0.0.0:7233 of
+  #   that namespace, so SDKs on the compose network dial `loams:7233`. No
+  #   host port.
+  # - Its own database, `loams_temporal`, owned by role `loams_temporal`, made
+  #   by `compute-init` on the direct endpoint (never PgDog transaction mode,
+  #   §74 §5.5 rule 5; never Loams SQL, D1502). The gateway migrates its own
+  #   schema at start.
+  # - API keys (`[[keys]]`) and the task-token key come from the config and
+  #   LOAMS_TEMPORAL_TOKEN_KEY_1 (32 bytes or more; the gateway refuses an
+  #   empty or short one). LOAMS_TEMPORAL_CONFIG names another config file.
+  temporal-gateway:
+    profiles: [temporal-gateway]
+    image: ${LOAMS_TEMPORAL_IMAGE:-${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-temporal:${LOAMS_VERSION:-0.1.2}}
+    restart: unless-stopped
+    network_mode: service:loams
+    environment:
+      RUST_LOG: ${LOAMS_TEMPORAL_LOG:-info}
+      LOAMS_TEMPORAL_DATABASE_URL: postgresql://${LOAMS_TEMPORAL_DB_USER:-loams_temporal}:${LOAMS_TEMPORAL_DB_PASSWORD:-loams_temporal}@${LOAMS_PG_HOST:-compute1}:${LOAMS_PG_PORT:-55433}/loams_temporal
+      LOAMS_TEMPORAL_TOKEN_KEY_1: ${LOAMS_TEMPORAL_TOKEN_KEY_1:-}
+    volumes:
+      - type: bind
+        source: ${LOAMS_TEMPORAL_CONFIG:-./temporal-gateway.toml}
+        target: /etc/loams-temporal/gateway.toml
+        read_only: true
+        bind:
+          create_host_path: false
+    depends_on:
+      loams:
+        condition: service_healthy
+      compute-init:
+        condition: service_completed_successfully
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
 
 volumes:
   # The DBOS runners' scratch space: the SDK sources at the pinned tags and
