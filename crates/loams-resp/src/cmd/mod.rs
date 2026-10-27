@@ -17,6 +17,7 @@ use crate::frame::{Value, parse_int};
 use crate::server::{Conn, Shared};
 
 mod conn;
+mod counter;
 mod keys;
 mod server;
 mod string;
@@ -41,6 +42,8 @@ pub enum Family {
     Keys,
     /// Strings (Task 3).
     String,
+    /// Counters (Task 4).
+    Counter,
 }
 
 /// Command flags, as `COMMAND INFO` names them.
@@ -224,6 +227,18 @@ pub static COMMANDS: &[Spec] = &[
     spec("getrange", 4, READONLY, KEY1, Family::String),
     spec("substr", 4, READONLY, KEY1, Family::String),
     spec("setrange", 4, WRITE | DENYOOM, KEY1, Family::String),
+    // Counters (Task 4).
+    spec("incr", 2, WRITE | DENYOOM | FAST, KEY1, Family::Counter),
+    spec("decr", 2, WRITE | DENYOOM | FAST, KEY1, Family::Counter),
+    spec("incrby", 3, WRITE | DENYOOM | FAST, KEY1, Family::Counter),
+    spec("decrby", 3, WRITE | DENYOOM | FAST, KEY1, Family::Counter),
+    spec(
+        "incrbyfloat",
+        3,
+        WRITE | DENYOOM | FAST,
+        KEY1,
+        Family::Counter,
+    ),
 ];
 
 /// Commands Loams does not serve in v1 (design §77 §8.5), answered with a
@@ -355,6 +370,10 @@ pub async fn dispatch(shared: &Arc<Shared>, conn: &mut Conn, args: Vec<Bytes>) -
         Family::Server => (server::run(shared, conn, spec, &args).await, Flow::Continue),
         Family::Keys => (keys::run(shared, conn, spec, &args).await, Flow::Continue),
         Family::String => (string::run(shared, conn, spec, &args).await, Flow::Continue),
+        Family::Counter => (
+            counter::run(shared, conn, spec, &args).await,
+            Flow::Continue,
+        ),
     }
 }
 
@@ -369,9 +388,19 @@ where
     T: Send,
     F: for<'t> FnMut(&'t mut Txn) -> Body<'t, T>,
 {
+    txn_with(shared, TxnOptions::new(op), body).await
+}
+
+/// [`txn`] with explicit options (more attempts for hot single-key
+/// updates such as counters).
+pub(crate) async fn txn_with<T, F>(shared: &Shared, opts: TxnOptions, body: F) -> Result<T, Value>
+where
+    T: Send,
+    F: for<'t> FnMut(&'t mut Txn) -> Body<'t, T>,
+{
     shared
         .store
-        .run(TxnOptions::new(op), body)
+        .run(opts, body)
         .await
         .map(|c| c.value)
         .map_err(|e| store_error(&e))

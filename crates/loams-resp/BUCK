@@ -24,6 +24,11 @@ cargo_package(
     },
     tests = [
         {
+            "name": "counters",
+            "crate": "counters",
+            "root": "tests/counters.rs",
+        },
+        {
             "name": "frame",
             "crate": "frame",
             "root": "tests/frame.rs",
