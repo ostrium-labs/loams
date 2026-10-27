@@ -3,6 +3,7 @@
 // exactly as the console does, and the page it registers is rendered over the fixture client it
 // ships with.
 
+import billing from '@loams/plugin-billing';
 import canvas from '@loams/plugin-canvas';
 import connectors from '@loams/plugin-connectors';
 import deployments from '@loams/plugin-deployments';
@@ -15,7 +16,7 @@ import sql from '@loams/plugin-sql';
 import { SAMPLE_DATA_TEXT } from '@loams/ui';
 import { cleanup, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 
 // jsdom lacks these; the pages' canvases and dialogs expect them.
 globalThis.ResizeObserver ??= class {
@@ -62,6 +63,7 @@ const PAGES: [string, Plugin, string][] = [
   ['pipelines', pipelines as Plugin, '/pipelines'],
   ['git', git as Plugin, '/git'],
   ['deployments', deployments as Plugin, '/deployments'],
+  ['billing', billing as Plugin, '/settings/billing'],
 ];
 
 describe('sample data notice', () => {

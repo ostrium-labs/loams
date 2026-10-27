@@ -55,7 +55,7 @@ function useActiveServer(desktop: LoamsDesktopApi): { active?: ServerEntry; know
 
 function useStack(desktop: LoamsDesktopApi, id: StackId, tick: number): StackState | undefined {
   const [s, setS] = useState<StackState>();
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `tick` re-reads on Refresh
+  // oxlint-disable-next-line react/exhaustive-deps -- `tick` re-reads on Refresh
   useEffect(() => {
     let live = true;
     const off = desktop.stacks.onState((sid, st) => live && sid === id && setS(st));

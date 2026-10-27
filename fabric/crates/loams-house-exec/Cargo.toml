@@ -12,8 +12,8 @@ publish = false
 loams-house-types = { path = "../loams-house-types" }
 # UDF, UDAF and UDWF traits and the physical-plan operators. Apache-2.0.
 datafusion.workspace = true
-# The function registry the engine plans with (`Registry`) and its errors
-# through DataFusion (plan HE1 Tasks 30–33).
+# The function registry the engine plans against (`Registry`) and the
+# functions' internal names. Apache-2.0.
 loams-house-sql = { path = "../loams-house-sql" }
 # Date and time functions (HE1 Task 30): calendars and time zones. Both are
 # already in the lock (chrono 0.4.45, chrono-tz 0.10.4, IANA tzdata 2025b;

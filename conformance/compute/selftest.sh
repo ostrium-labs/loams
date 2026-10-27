@@ -145,6 +145,33 @@ pins_are_literal() {
   done <"$OC_PINS"
 }
 
+# --- DBOS (DX0 Task 5; no stack) -------------------------------------------------
+
+# The scripts and the apps parse (no SDK is installed or built here).
+dbos_files_parse() {
+  local f
+  for f in "$HERE"/dbos-common/cases.sh "$HERE"/dbos-*/run.sh; do
+    bash -n "$f" || { echo "does not parse: $f"; return 1; }
+  done
+  python3 -I -c 'import ast, sys; ast.parse(open(sys.argv[1], encoding="utf-8").read())' "$HERE/dbos-common/crash/py/app.py"
+  python3 -I -c 'import json, sys; json.load(open(sys.argv[1]))' "$HERE/dbos-common/crash/ts/package.json"
+  grep -q '^package main' "$HERE/dbos-common/crash/go/main.go"
+  grep -q 'class App' "$HERE/dbos-common/crash/java/src/main/java/loams/App.java"
+}
+
+# Each SDK's expected failures are well formed, and its app pins the same
+# SDK release as pins.env.
+dbos_xfail_and_pins() {
+  local l
+  for l in py ts go java; do
+    "${XFAIL[@]}" --validate "$HERE/dbos-$l/xfail.toml"
+  done
+  grep -q "\"@dbos-inc/dbos-sdk\": \"$DBOS_TS\"" "$HERE/dbos-common/crash/ts/package.json" || { echo "ts app is not on $DBOS_TS"; return 1; }
+  grep -q "dbos-transact-golang v$DBOS_GO\$" "$HERE/dbos-common/crash/go/go.mod" || { echo "go app is not on v$DBOS_GO"; return 1; }
+  grep -q "dbos==\$DBOS_PY" "$HERE/dbos-py/run.sh" || { echo "py app does not install dbos==\$DBOS_PY"; return 1; }
+  grep -q '"dev.dbos:transact:"' "$HERE/dbos-common/crash/java/build.gradle.kts"
+}
+
 # --- The Temporal history corpus (DX0 Task 4; per PR, no server) ----------------
 
 corpus_manifest_complete() {
@@ -153,6 +180,69 @@ corpus_manifest_complete() {
 
 normalize_selftest() {
   python3 "$HERE/temporal/corpus/normalize.py" --self-test
+}
+
+# --- Airflow (DX0 Task 6; no stack) ----------------------------------------------
+
+# The DAGs and the REST client parse (ast only: nothing is imported or written).
+airflow_python_parses() {
+  local f
+  for f in "$HERE"/airflow/af.py "$HERE"/airflow/dags/*.py "$HERE"/airflow/edge/dags/*.py; do
+    python3 -I -c 'import ast, sys; ast.parse(open(sys.argv[1], encoding="utf-8").read(), sys.argv[1])' "$f" ||
+      { echo "does not parse: $f"; return 1; }
+  done
+}
+
+# The two bundles carry the same effects module (common.sh judges both).
+airflow_effects_copies_match() {
+  cmp "$HERE/airflow/dags/_oc_effects.py" "$HERE/airflow/edge/dags/_oc_effects.py"
+}
+
+# af.py turns Airflow 3's structured log events into text lines.
+airflow_af_log_lines() {
+  python3 -I - "$HERE/airflow/af.py" <<'EOF2'
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("af", sys.argv[1])
+af = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(af)
+assert af._log_line({"event": "OC-LOG-MARKER r1", "level": "info"}) == "OC-LOG-MARKER r1"
+assert af._log_line("plain line") == "plain line"
+assert "level" in af._log_line({"level": "info"})
+assert af.run_path("d", "manual__2026-10-27T00:00:00+00:00") == "/api/v2/dags/d/dagRuns/manual__2026-10-27T00%3A00%3A00%2B00%3A00"
+EOF2
+}
+
+# --- The compatibility matrix (DX1 Task 11; DX0 Task 7 adds durable rows) --------
+
+MATRIX=(python3 "$ROOT/scripts/compute/matrix.py")
+
+# A fixture run renders the committed Markdown: a pass, an expected failure
+# with its issue, an unlisted failure, a skipped and a missing case, a method
+# with no SDK case, and the methods outside the set.
+matrix_from_fixture() {
+  local m=$TD/matrix
+  "${MATRIX[@]}" temporal-gateway --junit "$m/run.junit.xml" --xfail "$m/xfail.toml" \
+    --methods "$m/methods.toml" --service "$m/service.proto" --run "fixture, 2026-10-27" >"$SCRATCH/matrix.md"
+  diff -u "$m/expected.md" "$SCRATCH/matrix.md"
+  # A methods file naming a method the service lacks is refused.
+  sed 's/^name = "RegisterNamespace"$/name = "NoSuchMethod"/' "$m/methods.toml" >"$SCRATCH/bad.toml"
+  expect_fail "${MATRIX[@]}" temporal-gateway --junit "$m/run.junit.xml" --methods "$SCRATCH/bad.toml" --service "$m/service.proto"
+  grep -q NoSuchMethod "$SCRATCH/out"
+}
+
+# The guide's matrix is what matrix.py renders from the committed last run,
+# and methods.toml lists exactly the frontend's DX1 set.
+matrix_guide_current() {
+  local g=$HERE/temporal/gateway
+  "${MATRIX[@]}" temporal-gateway --junit "$g/last-run.junit.xml" --run "$(cat "$g/last-run.txt")" \
+    --check "$ROOT/docs/guides/durable/temporal-gateway.md"
+  python3 - "$g/methods.toml" "$ROOT/crates/loams-temporal-frontend/src/capabilities.rs" <<'PY'
+import re, sys, tomllib
+listed = [m["name"] for m in tomllib.load(open(sys.argv[1], "rb"))["method"]]
+src = open(sys.argv[2], encoding="utf-8").read()
+impl = re.findall(r'"(\w+)"', src.split("pub const IMPLEMENTED")[1].split("];")[0])
+assert sorted(listed) == sorted(impl), sorted(set(listed) ^ set(impl))
+PY
 }
 
 # --- The compose override (OC0 Task 2's tests) -----------------------------------
@@ -268,6 +358,30 @@ for s in ("dbos-py", "dbos-ts", "dbos-go", "dbos-java"):
 EOF
 }
 
+# The conformance overlay (airflow/compose.test.yaml) on top of the profile:
+# it resolves, publishes no host port at all, and the edge workers skip the
+# database check while the schedulers keep the direct endpoint.
+compose_airflow_test_overlay_valid() {
+  OC_COMPOSE_EXTRA="$HERE/airflow/compose.test.yaml" oc_compose --profile airflow --profile rustfs config --format json >"$SCRATCH/af.json"
+  OC_COMPOSE_EXTRA="$HERE/airflow/compose.test.yaml" oc_compose --txn --profile airflow --profile rustfs config -q
+  python3 - "$SCRATCH/af.json" <<'EOF2'
+import json, sys
+s = json.load(open(sys.argv[1]))["services"]
+for name in ("git-server", "airflow-init", "airflow-api-server", "airflow-scheduler-1", "airflow-scheduler-2",
+             "airflow-dag-processor", "airflow-triggerer", "airflow-edge-worker-1", "airflow-edge-worker-2",
+             "compute1", "rustfs"):
+    assert name in s, f"{name} missing"
+    assert not s[name].get("ports"), f"{name} publishes {s[name]['ports']}"
+for name in ("airflow-edge-worker-1", "airflow-edge-worker-2"):
+    e = s[name]["environment"]
+    assert e["CONNECTION_CHECK_MAX_COUNT"] == "0", name
+    assert "GitDagBundle" in e["AIRFLOW__DAG_PROCESSOR__DAG_BUNDLE_CONFIG_LIST"], name
+for name in ("airflow-scheduler-1", "airflow-scheduler-2", "airflow-triggerer"):
+    assert "@compute1:55433/airflow" in s[name]["environment"]["AIRFLOW__DATABASE__SQL_ALCHEMY_CONN"], name
+    assert s[name]["environment"]["AIRFLOW__SCHEDULER__TASK_INSTANCE_HEARTBEAT_TIMEOUT"] == "60", name
+EOF2
+}
+
 TESTS=(
   xfail_listed_run_passes xfail_strict_unexpected_pass xfail_unlisted_failure_fails
   xfail_stale_entry_fails xfail_entries_have_reason_and_issue xfail_empty_run_fails
@@ -275,12 +389,16 @@ TESTS=(
   licence_gate_compute_pins licence_gate_refuses_bsl_fixture no_licence_key_in_compute_files
   no_loams_sql_in_dx0 pg_mode_urls pins_are_literal
   corpus_manifest_complete normalize_selftest
+  airflow_python_parses airflow_effects_copies_match airflow_af_log_lines
+  matrix_from_fixture matrix_guide_current
 )
 COMPOSE_TESTS=(
   compose_compute_config_valid compose_compute_requires_profile
   compose_compute_no_new_host_ports compose_compute_images_pinned_by_digest
-  compose_compute_uses_direct_endpoint
+  compose_compute_uses_direct_endpoint compose_airflow_test_overlay_valid
 )
+
+TESTS+=(dbos_files_parse dbos_xfail_and_pins)
 
 main() {
   local -a want=("$@") run=() t

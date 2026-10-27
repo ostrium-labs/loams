@@ -32,15 +32,37 @@ const DX1: &[&str] = &[
     "ResetStickyTaskQueue",
 ];
 
+/// The methods lane TMP-api added on top of DX1 (2026-10-27).
+const TMP_API: &[&str] = &[
+    "UpdateWorkflowExecution",
+    "PollWorkflowExecutionUpdate",
+    "SignalWithStartWorkflowExecution",
+    "ResetWorkflowExecution",
+    "RespondActivityTaskCompletedById",
+    "RespondActivityTaskFailedById",
+    "RespondActivityTaskCanceledById",
+    "RecordActivityTaskHeartbeatById",
+    "GetWorkflowExecutionHistoryReverse",
+    "DescribeTaskQueue",
+    "GetClusterInfo",
+    "ListTaskQueuePartitions",
+    "ShutdownWorker",
+    "UpdateNamespace",
+    "DeprecateNamespace",
+    "GetWorkerBuildIdCompatibility",
+    "GetWorkerVersioningRules",
+    "GetWorkerTaskReachability",
+];
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn capabilities_match_impl() {
     let mut sorted_impl: Vec<_> = IMPLEMENTED.to_vec();
     sorted_impl.sort_unstable();
-    let mut sorted_dx1: Vec<_> = DX1.to_vec();
+    let mut sorted_dx1: Vec<_> = DX1.iter().chain(TMP_API).copied().collect();
     sorted_dx1.sort_unstable();
     assert_eq!(
         sorted_impl, sorted_dx1,
-        "IMPLEMENTED is design 74's DX1 set"
+        "IMPLEMENTED is design 74's DX1 set plus TMP-api's"
     );
 
     let gw = common::start().await;

@@ -13,7 +13,7 @@ import { rankCommands } from '@loams/ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { type StudioAgentd, studioAgentd } from '../src/agentd.js';
 import { BranchesSource } from '../src/palette/BranchesSource.js';
 import { createStudioKeys, type StudioKeys } from '../src/palette/commands.js';

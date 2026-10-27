@@ -1,0 +1,186 @@
+# Which SDK-leg cases exercise each WorkflowService method of the DX1 set
+# (design 74 §5.8; plan DX1 Task 11). scripts/compute/matrix.py reads it to
+# render the "Temporal API (gateway)" matrix from run.sh's JUnit: a method's
+# cell for an SDK is the worst state of its cases, `{sdk}` standing for the
+# SDK's key below. A method with no `cases` is covered by the in-process
+# tests only (crates/loams-temporal-frontend/tests/methods.rs).
+#
+# The cases were checked against the methods the gateway actually served
+# during a run of run.sh (2026-10-27, a request log on the gateway; the
+# exit report, docs/plans/dx1-exit-report.md, has the counts).
+
+scope = """
+the SDK legs ran the gateway in development mode (memory store, in-process Resonate) on loopback with the corpus scenarios only, so they say nothing about the Postgres store, the Resonate server, the compose profile or load. The only run under load is the 2026-10-25 bench (Go SDK only; Postgres store, the fork's Resonate server): fan-out finished 500 of 500 at 1.3 workflows/s (p99 28.2 s), and burst and chain failed (known issue 1). The TypeScript SDK has not been run under load. Payload, pending-activity and history limits (X1.R7) are enforced from #1291 on and covered by unit tests only.
+"""
+
+[sdks]
+go = "Go SDK v1.49.0"
+ts = "TypeScript SDK 1.24.0"
+
+[[method]]
+name = "GetSystemInfo"
+cases = ["gateway_dx1_scenarios_{sdk}"]
+note = "client connect"
+
+[[method]]
+name = "DescribeNamespace"
+cases = ["gateway_dx1_scenarios_{sdk}"]
+note = "worker start"
+
+[[method]]
+name = "RegisterNamespace"
+cases = ["gateway_dx1_scenarios_{sdk}"]
+only = ["go"]
+note = "the Go corpus generator (admin role, X1.R9); `api_keys_authenticate_and_bind_the_loams_namespace`"
+
+[[method]]
+name = "ListNamespaces"
+note = "no SDK call in these runs and no test yet"
+
+[[method]]
+name = "StartWorkflowExecution"
+cases = ["gateway_dx1_scenarios_{sdk}", "gateway_hello_{sdk}"]
+
+[[method]]
+name = "DescribeWorkflowExecution"
+cases = ["gateway_dx1_differential_{sdk}_signal_then_complete", "gateway_dx1_differential_{sdk}_query_while_running", "gateway_dx1_differential_{sdk}_cancel_requested", "gateway_dx1_differential_{sdk}_terminated"]
+note = "the generators wait for a running run"
+
+[[method]]
+name = "GetWorkflowExecutionHistory"
+cases = ["gateway_dx1_scenarios_{sdk}", "gateway_histories_replay_{sdk}"]
+note = "waiting for a result (close-event long poll) and the export"
+
+[[method.known]]
+sdks = ["go"]
+text = """
+under load the Go SDK failed in `run.Get` with "could not get last history event for workflow" (bench 2026-10-25: 500 workflows started at once, and a chain of 5 activities and 5 one-second sleeps). A close-event long poll that reached its deadline before the run closed answered an empty page without a page token. Fixed in #1291 (DX1F.R1, DX1F.R3, with regression tests); the bench has not been re-run since.
+"""
+
+[[method]]
+name = "TerminateWorkflowExecution"
+cases = ["gateway_dx1_differential_{sdk}_terminated"]
+
+[[method]]
+name = "RequestCancelWorkflowExecution"
+cases = ["gateway_dx1_differential_{sdk}_cancel_requested"]
+
+[[method]]
+name = "PollWorkflowTaskQueue"
+cases = ["gateway_dx1_scenarios_{sdk}", "gateway_hello_{sdk}"]
+
+[[method]]
+name = "RespondWorkflowTaskCompleted"
+cases = ["gateway_dx1_scenarios_{sdk}", "gateway_hello_{sdk}"]
+
+[[method]]
+name = "RespondWorkflowTaskFailed"
+note = "no SDK call in these runs; the state machine's table tests"
+
+[[method]]
+name = "PollActivityTaskQueue"
+cases = ["gateway_hello_{sdk}", "gateway_dx1_differential_{sdk}_two_activities_sequential", "gateway_dx1_differential_{sdk}_activity_parallel_fanout_10"]
+
+[[method]]
+name = "RespondActivityTaskCompleted"
+cases = ["gateway_hello_{sdk}", "gateway_dx1_differential_{sdk}_two_activities_sequential", "gateway_dx1_differential_{sdk}_activity_parallel_fanout_10"]
+
+[[method]]
+name = "RespondActivityTaskFailed"
+note = "no SDK call in these runs (no DX1 scenario fails an activity); the scripted worker of `tests/scenarios.rs`"
+
+[[method]]
+name = "RespondActivityTaskCanceled"
+note = "no SDK call in these runs and no test yet"
+
+[[method]]
+name = "RecordActivityTaskHeartbeat"
+cases = ["gateway_dx1_differential_{sdk}_activity_heartbeat_details"]
+
+[[method]]
+name = "SignalWorkflowExecution"
+cases = ["gateway_signal_{sdk}", "gateway_dx1_differential_{sdk}_signal_then_complete"]
+
+[[method]]
+name = "QueryWorkflow"
+cases = ["gateway_dx1_differential_{sdk}_query_while_running"]
+
+[[method]]
+name = "RespondQueryTaskCompleted"
+cases = ["gateway_dx1_differential_{sdk}_query_while_running"]
+
+[[method]]
+name = "ResetStickyTaskQueue"
+note = "a no-op; no SDK call in these runs and no test yet"
+
+[[method]]
+name = "UpdateWorkflowExecution"
+note = "TMP-api (D2080): statemachine unit tests and the golden corpus scenario only; no SDK leg yet"
+
+[[method]]
+name = "PollWorkflowExecutionUpdate"
+note = "TMP-api (D2080): statemachine unit tests and the golden corpus scenario only; no SDK leg yet"
+
+[[method]]
+name = "SignalWithStartWorkflowExecution"
+note = "TMP-api (D2085, D2083): statemachine and policy unit tests and the golden corpus scenario only; no SDK leg yet"
+
+[[method]]
+name = "ResetWorkflowExecution"
+note = "TMP-api (D2085, D2083): statemachine and policy unit tests and the golden corpus scenario only; no SDK leg yet"
+
+[[method]]
+name = "RespondActivityTaskCompletedById"
+note = "TMP-api (D2086): unit tests only; no SDK leg yet"
+
+[[method]]
+name = "RespondActivityTaskFailedById"
+note = "TMP-api (D2086): unit tests only; no SDK leg yet"
+
+[[method]]
+name = "RespondActivityTaskCanceledById"
+note = "TMP-api (D2086): unit tests only; no SDK leg yet"
+
+[[method]]
+name = "RecordActivityTaskHeartbeatById"
+note = "TMP-api (D2086): unit tests only; no SDK leg yet"
+
+[[method]]
+name = "GetWorkflowExecutionHistoryReverse"
+note = "TMP-api (D2086): unit tests only; no SDK leg yet"
+
+[[method]]
+name = "DescribeTaskQueue"
+note = "TMP-api (D2086): unit tests only; no SDK leg yet"
+
+[[method]]
+name = "GetClusterInfo"
+note = "TMP-api (D2086): unit tests only; no SDK leg yet"
+
+[[method]]
+name = "ListTaskQueuePartitions"
+note = "TMP-api (D2086): unit tests only; no SDK leg yet"
+
+[[method]]
+name = "ShutdownWorker"
+note = "TMP-api (D2086): unit tests only; no SDK leg yet"
+
+[[method]]
+name = "UpdateNamespace"
+note = "TMP-api (D2088): unit tests only; versioning reads answer no sets, no rules, all reachable"
+
+[[method]]
+name = "DeprecateNamespace"
+note = "TMP-api (D2088): unit tests only; versioning reads answer no sets, no rules, all reachable"
+
+[[method]]
+name = "GetWorkerBuildIdCompatibility"
+note = "TMP-api (D2088): unit tests only; versioning reads answer no sets, no rules, all reachable"
+
+[[method]]
+name = "GetWorkerVersioningRules"
+note = "TMP-api (D2088): unit tests only; versioning reads answer no sets, no rules, all reachable"
+
+[[method]]
+name = "GetWorkerTaskReachability"
+note = "TMP-api (D2088): unit tests only; versioning reads answer no sets, no rules, all reachable"

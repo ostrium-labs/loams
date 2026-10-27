@@ -168,7 +168,7 @@ function Graph({ topo }: { topo: Topology }) {
   );
   return (
     <>
-      {/* biome-ignore lint/a11y/useSemanticElements: a React Flow viewport holding focusable nodes, not a set of form controls; the group names it and delegates arrow keys */}
+      {/* oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a React Flow viewport holding focusable nodes, not a set of form controls; the group names it and delegates arrow keys */}
       <div
         ref={ref}
         role="group"

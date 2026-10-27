@@ -27,6 +27,25 @@ pub const IMPLEMENTED: &[&str] = &[
     "QueryWorkflow",
     "RespondQueryTaskCompleted",
     "ResetStickyTaskQueue",
+    // TMP-api (design 74 §5.8's DX4 update methods, brought forward).
+    "UpdateWorkflowExecution",
+    "PollWorkflowExecutionUpdate",
+    "SignalWithStartWorkflowExecution",
+    "ResetWorkflowExecution",
+    "RespondActivityTaskCompletedById",
+    "RespondActivityTaskFailedById",
+    "RespondActivityTaskCanceledById",
+    "RecordActivityTaskHeartbeatById",
+    "GetWorkflowExecutionHistoryReverse",
+    "DescribeTaskQueue",
+    "GetClusterInfo",
+    "ListTaskQueuePartitions",
+    "ShutdownWorker",
+    "UpdateNamespace",
+    "DeprecateNamespace",
+    "GetWorkerBuildIdCompatibility",
+    "GetWorkerVersioningRules",
+    "GetWorkerTaskReachability",
 ];
 
 /// Where the per-method, per-SDK compatibility matrix lives (D1512).

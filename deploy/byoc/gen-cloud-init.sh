@@ -21,6 +21,8 @@ build() {  # $1 = cloud, $2 = display name
       @@BOOTSTRAP@@) indent "$here/lib/loams-byoc-bootstrap" ;;
       @@SECRETS@@)   indent "$here/lib/loams-byoc-secrets" ;;
       @@UNIT@@)      indent "$here/lib/loams-byoc.service" ;;
+      @@CONFLUENT_UNIT@@)  indent "$here/lib/loams-byoc-confluent.service" ;;
+      @@CONFLUENT_TIMER@@) indent "$here/lib/loams-byoc-confluent.timer" ;;
       *) line="${line//@@CLOUD_NAME@@/$name}"; printf '%s\n' "${line//@@CLOUD@@/$cloud}" ;;
     esac
   done <"$here/cloud-init.tmpl.yaml"

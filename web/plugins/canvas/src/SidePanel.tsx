@@ -56,7 +56,7 @@ export function SidePanel({
   const outgoing = edges.filter((e) => e.source === service.id);
 
   // Focus follows the panel open, so keyboard and screen reader users land in it.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: refocus whenever the service changes
+  // oxlint-disable-next-line react/exhaustive-deps -- refocus whenever the service changes
   useEffect(() => {
     heading.current?.focus();
   }, [service.id]);

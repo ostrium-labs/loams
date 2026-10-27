@@ -34,6 +34,42 @@
     }
   },
   {
+    "method": "FactoryList",
+    "params": {}
+  },
+  {
+    "method": "FactoryTest",
+    "params": {
+      "app": "forgejo"
+    }
+  },
+  {
+    "method": "FactoryQuery",
+    "params": {
+      "app": "forgejo",
+      "op": "repos",
+      "params": {
+        "limit": 20
+      }
+    }
+  },
+  {
+    "method": "FactoryConfigure",
+    "params": {
+      "app": "forgejo",
+      "url": "https://git.example.com",
+      "fields": {
+        "token": "pat-1"
+      }
+    }
+  },
+  {
+    "method": "FactoryRemove",
+    "params": {
+      "app": "forgejo"
+    }
+  },
+  {
     "method": "GetTitleSettings",
     "params": {}
   },

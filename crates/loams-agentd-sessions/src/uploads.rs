@@ -737,7 +737,7 @@ impl Uploads {
         std::fs::create_dir_all(self.dir())?;
         let uploads_root = self.dir().canonicalize()?;
         let name = format!("generated.{ext}");
-        let hash = format!("{:x}", Sha256::digest(stable_key.as_bytes()));
+        let hash = crate::repos::hex(&Sha256::digest(stable_key.as_bytes()));
         let destination = uploads_root.join(format!("{hash}-{name}"));
         let mut temporary = tempfile::NamedTempFile::new_in(&uploads_root)?;
         temporary.write_all(&header[..count])?;
