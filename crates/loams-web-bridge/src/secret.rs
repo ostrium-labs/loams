@@ -2,10 +2,10 @@
 //! [`SecretRef`] and asks a [`SecretResolver`] for the value at the moment it
 //! is needed (design §30 D288, §37 §18.14.4 D507, §42 D567).
 //!
-//! The Cloudflare API token is the live case: it lives in the operator's
-//! keychain or credential broker, is resolved per session, is registered with
-//! [`crate::redact`] before it goes on the wire, and is never written to a log,
-//! a tool result, an error, a span or a `Debug` rendering.
+//! A value typed into a page is the live case: it lives in the operator's
+//! keychain or credential broker, is resolved when it is needed, is registered
+//! with [`crate::redact`] before it goes on the wire, and is never written to a
+//! log, a tool result, an error, a span or a `Debug` rendering.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -164,7 +164,7 @@ impl SecretResolver for MapSecretResolver {
 ///
 /// Development only: an environment variable is a poor place for a credential
 /// in production. It exists so that a single-operator self-host can try the
-/// remote provider without writing a keyring integration first.
+/// bridge without writing a keyring integration first.
 #[derive(Debug, Clone)]
 pub struct EnvSecretResolver {
     prefix: String,

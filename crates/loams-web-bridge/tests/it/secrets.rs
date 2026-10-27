@@ -3,37 +3,48 @@
 
 use std::sync::Arc;
 
+use loams_web_bridge::cdp::CdpTransport;
 use loams_web_bridge::testing::{FakeCdp, FakeTransport, read_page};
 use loams_web_bridge::{
-    BrowserProvider, BrowserRunProvider, EgressPolicy, FillValue, OpenRequest, ProviderKind,
-    SecretRef, SecretResolver, SecretValue, WebBridgeConfig, local_provider, redact,
+    BrowserProvider, FillValue, ObscuraProvider, OpenRequest, ProviderKind, SecretRef,
+    SecretResolver, SecretValue, ServiceEndpoint, WebBridgeConfig, local_provider, redact,
 };
 use serde_json::{Value, json};
 
 /// A token that appears nowhere else, so finding it anywhere means a leak.
-const CANARY_TOKEN: &str = "canary-cf-token-2f7c1d9e4b6a8053";
+const CANARY_TOKEN: &str = "canary-engine-token-2f7c1d9e4b6a8053";
 /// A password typed into a field, likewise.
 const CANARY_PASSWORD: &str = "canary-password-9d3a71fe05b2";
 
 fn config() -> WebBridgeConfig {
     let mut config = WebBridgeConfig {
-        provider: ProviderKind::BrowserRun,
+        provider: ProviderKind::Service,
         ..WebBridgeConfig::default()
     };
-    config.browser_run.account_id = "0123456789abcdef0123456789abcdef".to_string();
-    config.browser_run.token_secret_ref = Some("env:cloudflare#api_token".to_string());
-    config.browser_run.plan = loams_web_bridge::Plan::Paid;
-    config.browser_run.min_session_interval_ms = Some(0);
+    config.service.token_secret_ref = Some("env:browser-token".to_string());
     config.credentials.allow_secret_fills = true;
     config.credentials.allowed_fill_hosts = vec!["example.com".to_string()];
     config
+}
+
+/// The service provider over `transport`, with the engine token resolved
+/// through the same resolver as every other secret.
+fn service(config: &WebBridgeConfig, transport: Arc<dyn CdpTransport>) -> ObscuraProvider {
+    let endpoint =
+        ServiceEndpoint::new(&config.service, resolver()).unwrap_or_else(|error| panic!("{error}"));
+    ObscuraProvider::new(
+        Arc::new(endpoint),
+        loams_web_bridge::policies(config).unwrap_or_else(|error| panic!("{error}")),
+        resolver(),
+        transport,
+    )
 }
 
 fn resolver() -> Arc<loams_web_bridge::MapSecretResolver> {
     Arc::new(
         loams_web_bridge::MapSecretResolver::new()
             .with(
-                SecretRef::parse("env:cloudflare#api_token").unwrap_or_else(|_| panic!("ref")),
+                SecretRef::parse("env:browser-token").unwrap_or_else(|_| panic!("ref")),
                 CANARY_TOKEN,
             )
             .with(
@@ -94,14 +105,7 @@ async fn observable_output() -> String {
         ));
         let transport = Arc::new(FakeTransport::new(Arc::new(rude_inner)));
         let config = config();
-        let failing = BrowserRunProvider::new(
-            config.browser_run.clone(),
-            EgressPolicy::public_web(),
-            config.credentials.clone(),
-            resolver(),
-            transport,
-        )
-        .unwrap_or_else(|error| panic!("{error}"));
+        let failing = service(&config, transport);
         match failing.open(OpenRequest::blank()).await {
             Ok(_) => collected.push_str("the rude browser opened a session\n"),
             Err(error) => {
@@ -114,14 +118,7 @@ async fn observable_output() -> String {
     // A refused fill, a refused navigation, and a real session's own output.
     let transport = Arc::new(FakeTransport::new(Arc::clone(&rude)));
     let config = config();
-    let provider = BrowserRunProvider::new(
-        config.browser_run.clone(),
-        config.egress().unwrap_or_else(|error| panic!("{error}")),
-        config.credentials.clone(),
-        resolver(),
-        transport,
-    )
-    .unwrap_or_else(|error| panic!("{error}"));
+    let provider = service(&config, transport);
 
     collected.push_str(&format!("provider: {provider:?}\n"));
     collected.push_str(&format!("transport: {provider:?}\n"));
@@ -135,14 +132,7 @@ async fn observable_output() -> String {
     }
 
     let ok_transport = Arc::new(FakeTransport::new(Arc::new(FakeCdp::new(answers()))));
-    let provider = BrowserRunProvider::new(
-        config.browser_run.clone(),
-        config.egress().unwrap_or_else(|error| panic!("{error}")),
-        config.credentials.clone(),
-        resolver(),
-        ok_transport.clone(),
-    )
-    .unwrap_or_else(|error| panic!("{error}"));
+    let provider = service(&config, ok_transport.clone());
     let page = provider
         .open(OpenRequest::at(
             url::Url::parse("https://example.com/login").unwrap_or_else(|_| panic!("url")),
@@ -202,17 +192,13 @@ async fn observable_output() -> String {
 }
 
 #[tokio::test]
-async fn the_api_token_never_appears_in_an_error_a_log_or_a_rendering() {
+async fn the_engine_token_never_appears_in_an_error_a_log_or_a_rendering() {
     {
         let config = config();
-        BrowserRunProvider::new(
-            config.browser_run.clone(),
-            config.egress().unwrap_or_else(|error| panic!("{error}")),
-            config.credentials.clone(),
-            resolver(),
+        service(
+            &config,
             Arc::new(FakeTransport::new(Arc::new(FakeCdp::new(answers())))),
         )
-        .unwrap_or_else(|error| panic!("{error}"))
     };
     let output = observable_output().await;
 
@@ -229,14 +215,10 @@ async fn the_api_token_never_appears_in_an_error_a_log_or_a_rendering() {
 #[tokio::test]
 async fn a_typed_password_never_appears_in_a_snapshot_or_an_action_result() {
     let config = config();
-    let provider = BrowserRunProvider::new(
-        config.browser_run.clone(),
-        config.egress().unwrap_or_else(|error| panic!("{error}")),
-        config.credentials.clone(),
-        resolver(),
+    let provider = service(
+        &config,
         Arc::new(FakeTransport::new(Arc::new(FakeCdp::new(answers())))),
-    )
-    .unwrap_or_else(|error| panic!("{error}"));
+    );
     let page = provider
         .open(OpenRequest::at(
             url::Url::parse("https://example.com/login").unwrap_or_else(|_| panic!("url")),

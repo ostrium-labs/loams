@@ -1,5 +1,7 @@
 # 42 — Cloudflare's Birthday Week 2026 Betas: Open Adapters for Loams
 
+> **2026-10-27 (D2110):** the Browser Run provider described in §4 was removed from `loams-web-bridge` before it ever ran against a live account. The agent-facing browser now uses Obscura locally and as a self-hosted service; see [docs/headless-browser.md](../headless-browser.md).
+
 > **Updated 2026-10-19 ([D1119](13-decision-log.md)): Loams has no open core.** Where this document places metering, billing, the hosted control plane, commercial APIs or other components in the private `loams-platform` repository, or calls something private for open-core reasons, read that as superseded: everything is Apache-2.0, and the metering, billing and control-plane code is moving into the open repo now (design §63, Loams Meter). Ostrium Labs offers services (infrastructure efficiency, SLAs, support), not a paid edition. The rest of the design is unchanged.
 
 Status: **Proposed** · 2026-10-02. The owner's direction of 2026-10-02: "search the latest beta features in the Cloudflare blog and use them." This note folds the betas into the **open** side of Loams only. Hosted-service choices (Containers, Dynamic Workers, the Monetization Gateway, the Data Platform as a hosted analytics backend) are in the private `loams-platform` repository, docs 03 to 07, and follow the open-core boundary (§41). Decisions **D560–D578** and questions **Q560–Q572** (the ranges D560–D579 and Q560–Q579 are reserved; IDs not listed are unused) are recorded in the [decision log](13-decision-log.md).

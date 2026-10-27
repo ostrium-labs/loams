@@ -12,8 +12,7 @@ use crate::redact;
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum BridgeError {
-    /// The configuration is not usable (a missing account, an engine and
-    /// option combination Cloudflare rejects).
+    /// The configuration is not usable.
     #[error("configuration: {0}")]
     Config(#[from] ConfigError),
 
@@ -22,7 +21,7 @@ pub enum BridgeError {
     EgressDenied(#[from] EgressError),
 
     /// The policy refuses the call for a reason that is not a URL (a credential
-    /// fill on the remote provider, a capability the engine has not got).
+    /// fill on a host that is not listed, a capability the engine has not got).
     #[error("refused by policy: {0}")]
     Policy(String),
 
@@ -51,8 +50,7 @@ pub enum BridgeError {
     #[error("timed out after {0} ms")]
     Timeout(u64),
 
-    /// The configured engine cannot do this (Kitesurf has no `keep_alive`, no
-    /// guardrails, no tabs).
+    /// The engine or driver cannot do this.
     #[error("unsupported by the {engine} engine: {what}")]
     Unsupported {
         /// The engine the call was made against.
@@ -70,7 +68,7 @@ pub enum BridgeError {
         reason: String,
     },
 
-    /// More browser sessions were asked for than the account's plan allows.
+    /// More browser sessions were asked for than the configuration allows.
     #[error(
         "at most {max} browser sessions may be open at once; close one or raise max_concurrent_sessions"
     )]
@@ -86,7 +84,7 @@ pub enum BridgeError {
         budget_ms: u64,
     },
 
-    /// The engine is not available to this account.
+    /// The engine, or the page, is not available.
     #[error("{0}")]
     Unavailable(String),
 
@@ -145,7 +143,7 @@ pub enum ConfigError {
         reason: String,
     },
 
-    /// A combination Cloudflare's own documentation rejects.
+    /// A combination the engine cannot honour.
     #[error("{field}: {reason}")]
     Unsupported {
         /// The field that causes it.

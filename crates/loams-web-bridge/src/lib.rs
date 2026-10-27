@@ -1,51 +1,38 @@
-//! The web toolbox's browser providers (design §37 §18.14, §42 §4; decisions
-//! D565–D567; plan AP1c).
+//! The web toolbox's browser providers (design §37 §18.14; decisions D565,
+//! D627, D2110).
 //!
 //! One tool contract — a snapshot with uids, `find`, `click`, `fill`,
-//! `wait_for`, a screenshot, a content extraction — and two providers behind
-//! it:
+//! `wait_for`, a screenshot, a content extraction — and one engine behind it,
+//! Obscura, wherever the browser runs:
 //!
-//! * [`local::LocalProvider`] drives the browser on the machine the agent
-//!   already runs on. It is the default, and the only path for credentialed
-//!   work, because the credentials never leave that machine.
-//! * [`browser_run::BrowserRunProvider`] drives Cloudflare Browser Run over its
-//!   CDP endpoint, for unattended public-web work when no local browser is
-//!   available.
+//! * `local` ([`ProviderKind::Local`]): agentd or Desktop starts
+//!   `obscura serve` on loopback on the user's machine
+//!   ([`obscura::launch::LocalEngine`]);
+//! * `service` ([`ProviderKind::Service`]): the same engine image runs as the
+//!   `browser` service of a self-hosted or cloud deployment (deploy/browser),
+//!   reached on the private network ([`obscura::ServiceEndpoint`]).
 //!
-//! Which one runs is configuration (`WebBridgeConfig::provider`), not a fork,
-//! so a deployment can change its mind without touching its callers.
+//! Both are the one [`ObscuraProvider`], so the network policy, the credential
+//! boundary, the budgets and recording are the same code with the same
+//! defaults (D2112). [`from_config`] builds whichever the configuration
+//! (`LOAMS_BROWSER_PROVIDER=local|service`) selects. [`local::LocalProvider`]
+//! stays as the seam for a host that drives its own page (and for the
+//! deterministic driver in [`testing`]).
 //!
-//! **Two rules shape the remote provider**, and both come from Cloudflare's own
-//! documentation rather than from taste:
-//!
-//! * **Chromium is the default engine.** Kitesurf is a stateless Workers
-//!   isolate: Cloudflare states it cannot start "a long-running, authenticated
-//!   session that requires persistent state" and cannot negotiate a bot
-//!   challenge's TLS fingerprint. It is offered for the throwaway work its
-//!   statelessness suits — a screenshot, a scrape, an extraction — and refused
-//!   for anything that needs state.
-//! * **The egress policy is enforced twice.** In the provider, before every
-//!   navigation, and in Browser Run itself through session guardrails. Guardrails
-//!   are a Chromium-pool feature, so a Kitesurf session under a hostname allow
-//!   list is refused by default instead of running ungoverned.
-//!
-//! A Cloudflare API token is a secret: it is named by a `secret_ref`, resolved
-//! through the host's [`secret::SecretResolver`] at the moment it is needed,
-//! registered for scrubbing before it goes on the wire, and never logged,
-//! returned, traced or formatted.
-//!
-//! Nothing here has been run against a live Cloudflare account.
-//! `docs/remote-browser-provider.md` records what is verified from the
-//! documentation and what is not verified at all.
+//! **Cloudflare Browser Run was removed on 2026-10-27 (D2110).** The owner's
+//! direction is one engine, Obscura, locally and in the cloud;
+//! `docs/remote-browser-provider.md` records what the removed provider was.
 
 pub mod artifact;
-pub mod browser_run;
+pub mod cdp;
 pub mod config;
 pub mod egress;
 pub mod error;
 pub mod local;
+pub mod obscura;
 pub mod page;
 pub mod provider;
+pub mod record;
 pub mod redact;
 pub mod registry;
 pub mod secret;
@@ -55,15 +42,19 @@ pub mod webmcp;
 #[cfg(any(test, feature = "test-util"))]
 pub mod testing;
 
-pub use browser_run::BrowserRunProvider;
-pub use config::{BrowserRunConfig, CredentialPolicy, Engine, Plan, ProviderKind, WebBridgeConfig};
-pub use egress::{EgressError, EgressPolicy, Guardrails, HostPattern};
+pub use config::{
+    BudgetConfig, CredentialPolicy, Engine, LocalConfig, PINNED_OBSCURA_VERSION, ProviderKind,
+    RecordingConfig, ServiceConfig, WebBridgeConfig,
+};
+pub use egress::{EgressError, EgressPolicy, HostPattern};
 pub use error::{BridgeError, ConfigError};
 pub use local::{DriverAction, DriverPage, LocalProvider, PageDriver};
+pub use obscura::launch::LocalEngine;
+pub use obscura::{EngineEndpoint, ObscuraProvider, Policies, ServiceEndpoint};
 pub use page::PageState;
 pub use provider::{BrowserProvider, Capabilities, OpenRequest, PageRef};
 pub use registry::ProviderRegistry;
-pub use secret::{MapSecretResolver, SecretRef, SecretResolver, SecretValue};
+pub use secret::{EnvSecretResolver, MapSecretResolver, SecretRef, SecretResolver, SecretValue};
 pub use tool::{
     ActionOutcome, AxNode, Extracted, FillValue, FindQuery, Navigation, Screenshot, Snapshot,
     SnapshotMode, SnapshotNode, SnapshotRequest, Uid, WaitCondition, WaitOutcome, WaitRequest,
@@ -75,29 +66,46 @@ pub use webmcp::{
 
 use std::sync::Arc;
 
-/// Build the provider the configuration selects.
-///
-/// The remote provider is the only one that needs credentials, so it resolves
-/// them through `secrets`; nothing else in the crate reads an environment
-/// variable or a file for a token.
-pub fn provider(
+/// Build the provider the configuration selects, over the real WebSocket
+/// transport.
+pub fn from_config(
     config: &WebBridgeConfig,
-    transport: Arc<dyn browser_run::cdp::CdpTransport>,
     secrets: Arc<dyn SecretResolver>,
-) -> Result<Box<dyn BrowserProvider>, BridgeError> {
-    let egress = config.egress()?;
-    match config.provider {
-        ProviderKind::Local => Err(BridgeError::policy(
-            "the local provider needs a PageDriver from the host; use local_provider()",
-        )),
-        ProviderKind::BrowserRun => Ok(Box::new(BrowserRunProvider::new(
-            config.browser_run.clone(),
-            egress,
-            config.credentials.clone(),
-            secrets,
-            transport,
-        )?)),
-    }
+) -> Result<Arc<dyn BrowserProvider>, BridgeError> {
+    from_config_with(config, secrets, Arc::new(cdp::ws::WebSocketTransport))
+}
+
+/// Build the provider the configuration selects, over `transport` (a test
+/// passes a scripted one).
+pub fn from_config_with(
+    config: &WebBridgeConfig,
+    secrets: Arc<dyn SecretResolver>,
+    transport: Arc<dyn cdp::CdpTransport>,
+) -> Result<Arc<dyn BrowserProvider>, BridgeError> {
+    config.validate()?;
+    let policies = policies(config)?;
+    let endpoint: Arc<dyn EngineEndpoint> = match config.provider {
+        ProviderKind::Local => {
+            Arc::new(LocalEngine::new(&config.local, config.allow_private_hosts))
+        }
+        ProviderKind::Service => {
+            Arc::new(ServiceEndpoint::new(&config.service, Arc::clone(&secrets))?)
+        }
+    };
+    Ok(Arc::new(ObscuraProvider::new(
+        endpoint, policies, secrets, transport,
+    )))
+}
+
+/// The policies a configuration describes, the same for every provider.
+pub fn policies(config: &WebBridgeConfig) -> Result<Policies, BridgeError> {
+    Ok(Policies {
+        egress: config.egress()?,
+        credentials: config.credentials.clone(),
+        budgets: config.budgets.clone(),
+        recording: config.recording.clone(),
+        artifacts: config.artifacts_dir(),
+    })
 }
 
 /// Build the local provider over a host's driver.
@@ -111,6 +119,6 @@ pub fn local_provider(
         config.egress()?,
         config.credentials.clone(),
         secrets,
-        config.local.artifacts_dir(),
+        config.artifacts_dir(),
     )))
 }

@@ -1,8 +1,10 @@
-//! The real transport: a WebSocket client for the CDP endpoint.
+//! The real transport: a WebSocket client for a CDP endpoint (`ws://` on
+//! loopback or a private network, `wss://` anywhere else).
 //!
-//! Requests are matched to responses by id in a reader task; unsolicited
-//! events, which CDP sends constantly once the domains are enabled, are
-//! dropped rather than mistaken for answers.
+//! Requests are matched to responses by id in a reader task. Unsolicited
+//! events go to an event channel that one consumer may take
+//! ([`CdpConnection::take_events`]); until it is taken they are dropped, and
+//! they are never mistaken for answers.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -13,11 +15,10 @@ use serde_json::Value;
 use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::browser_run::cdp::{CdpConnection, CdpRequest, CdpResponse, CdpTransport};
-use crate::browser_run::endpoint::RequestHeaders;
+use crate::cdp::{CdpConnection, CdpEvent, CdpRequest, CdpResponse, CdpTransport, RequestHeaders};
 use crate::error::BridgeError;
 
-/// Opens Browser Run CDP sockets.
+/// Opens CDP sockets.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct WebSocketTransport;
 
@@ -47,6 +48,7 @@ impl CdpTransport for WebSocketTransport {
         let pending: Arc<Mutex<HashMap<u64, oneshot::Sender<CdpResponse>>>> =
             Arc::new(Mutex::new(HashMap::new()));
 
+        let (event_sender, event_receiver) = mpsc::unbounded_channel::<CdpEvent>();
         let reader_pending = Arc::clone(&pending);
         let writer_task = tokio::spawn(async move {
             while let Some(message) = outbound.recv().await {
@@ -65,7 +67,15 @@ impl CdpTransport for WebSocketTransport {
                     Message::Close(_) => break,
                     _ => continue,
                 };
-                let Ok(response) = serde_json::from_str::<CdpResponse>(&text) else {
+                let Ok(message) = serde_json::from_str::<Value>(&text) else {
+                    continue;
+                };
+                if let Some(event) = CdpEvent::from_message(&message) {
+                    // Nobody listening is not an error: the event is dropped.
+                    let _ = event_sender.send(event);
+                    continue;
+                }
+                let Ok(response) = serde_json::from_value::<CdpResponse>(message) else {
                     continue;
                 };
                 let Some(id) = response.id else { continue };
@@ -86,6 +96,7 @@ impl CdpTransport for WebSocketTransport {
             next_id: AtomicU64::new(1),
             tasks: Mutex::new(vec![writer_task, reader_task]),
             closed: AtomicBool::new(false),
+            events: std::sync::Mutex::new(Some(event_receiver)),
         }))
     }
 }
@@ -97,6 +108,7 @@ struct WebSocketConnection {
     next_id: AtomicU64,
     tasks: Mutex<Vec<tokio::task::JoinHandle<()>>>,
     closed: AtomicBool,
+    events: std::sync::Mutex<Option<mpsc::UnboundedReceiver<CdpEvent>>>,
 }
 
 impl WebSocketConnection {
@@ -106,7 +118,7 @@ impl WebSocketConnection {
             let _ = waiter.send(CdpResponse {
                 id: None,
                 result: None,
-                error: Some(crate::browser_run::cdp::CdpErrorBody {
+                error: Some(crate::cdp::CdpErrorBody {
                     code: -1,
                     message: error.to_string(),
                 }),
@@ -144,6 +156,13 @@ impl CdpConnection for WebSocketConnection {
             (Some(result), None) => Ok(result),
             (None, None) => Err(BridgeError::cdp("the browser sent an empty response")),
         }
+    }
+
+    fn take_events(&self) -> Option<mpsc::UnboundedReceiver<CdpEvent>> {
+        self.events
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
     }
 
     async fn close(&self) -> Result<(), BridgeError> {

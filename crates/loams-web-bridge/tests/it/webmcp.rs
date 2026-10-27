@@ -1,7 +1,8 @@
 //! The WebMCP conformance suite (AP1d Task 3; design §42 §5, D568, D570, D635).
 //!
 //! The point of these tests is the **absent** case, so they are written to run
-//! the same contract against both providers *and* against a page with no
+//! the same contract against both providers (the host-driver seam and the
+//! Obscura CDP driver) *and* against a page with no
 //! `document.modelContext` — which is what Safari is, permanently, since
 //! WebKit's standards position on WebMCP is closed and `oppose`. A bridge that
 //! only works when the draft shipped would be a bridge nobody can rely on.
@@ -10,14 +11,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use loams_web_bridge::testing::{
-    FakeCdp, FakeDriver, FakeModelContext, FakePage, FakeTransport, FakeWebmcpTool,
-    ax_tree_with_button, evaluate_json, login_page, read_page,
+    FakeCdp, FakeDriver, FakeModelContext, FakePage, FakeWebmcpTool, ax_tree_with_button,
+    evaluate_json, login_page, obscura_over, read_page,
 };
 use loams_web_bridge::{
-    Availability, BridgeError, BrowserProvider, BrowserRunProvider, CallWebmcpToolRequest,
-    DriverAction, DriverPage, ListWebmcpToolsRequest, MapSecretResolver, OpenRequest, PageDriver,
-    PageRef, PageState, ProviderKind, SecretRef, WebBridgeConfig, WebmcpAbsent, WebmcpToolName,
-    local_provider,
+    Availability, BridgeError, BrowserProvider, CallWebmcpToolRequest, DriverAction, DriverPage,
+    ListWebmcpToolsRequest, MapSecretResolver, OpenRequest, PageDriver, PageRef, PageState,
+    ProviderKind, SecretRef, WebBridgeConfig, WebmcpAbsent, WebmcpToolName, local_provider,
 };
 use serde_json::{Value, json};
 
@@ -29,7 +29,7 @@ fn url(raw: &str) -> url::Url {
 
 fn resolver() -> Arc<MapSecretResolver> {
     Arc::new(MapSecretResolver::new().with(
-        SecretRef::parse("env:cloudflare#api_token").unwrap_or_else(|_| panic!("ref")),
+        SecretRef::parse("env:browser-token").unwrap_or_else(|_| panic!("ref")),
         "canary-token-4f8b2c19d7e3",
     ))
 }
@@ -73,7 +73,7 @@ fn local_over(page: FakePage) -> (Arc<FakeDriver>, Box<dyn BrowserProvider>) {
         provider: ProviderKind::Local,
         ..WebBridgeConfig::default()
     };
-    config.local.artifact_dir = None;
+    config.artifact_dir = None;
     let provider = local_provider(
         &config,
         Arc::clone(&driver) as Arc<dyn PageDriver>,
@@ -84,23 +84,11 @@ fn local_over(page: FakePage) -> (Arc<FakeDriver>, Box<dyn BrowserProvider>) {
 }
 
 fn remote_with(expressions: Vec<(&str, Value)>) -> (Arc<FakeCdp>, Box<dyn BrowserProvider>) {
-    let mut config = WebBridgeConfig {
-        provider: ProviderKind::BrowserRun,
+    let config = WebBridgeConfig {
+        provider: ProviderKind::Service,
         ..WebBridgeConfig::default()
     };
-    config.browser_run.account_id = "0123456789abcdef0123456789abcdef".to_string();
-    config.browser_run.token_secret_ref = Some("env:cloudflare#api_token".to_string());
-    config.browser_run.plan = loams_web_bridge::Plan::Paid;
-    config.browser_run.min_session_interval_ms = Some(0);
     let mut answers: HashMap<String, Value> = HashMap::new();
-    answers.insert(
-        "Target.createTarget".to_string(),
-        json!({ "targetId": "t1" }),
-    );
-    answers.insert(
-        "Target.attachToTarget".to_string(),
-        json!({ "sessionId": "s1" }),
-    );
     answers.insert(
         "Accessibility.getFullAXTree".to_string(),
         ax_tree_with_button("Sign in", 42),
@@ -114,14 +102,12 @@ fn remote_with(expressions: Vec<(&str, Value)>) -> (Arc<FakeCdp>, Box<dyn Browse
         scripted = scripted.with_expression(needle, answer);
     }
     let connection = Arc::new(scripted);
-    let provider = BrowserRunProvider::new(
-        config.browser_run.clone(),
-        config.egress().unwrap_or_else(|error| panic!("{error}")),
-        config.credentials.clone(),
+    let provider = obscura_over(
+        ProviderKind::Service,
+        &config,
+        connection.clone(),
         resolver(),
-        Arc::new(FakeTransport::new(connection.clone())),
-    )
-    .unwrap_or_else(|error| panic!("{error}"));
+    );
     (connection, Box::new(provider))
 }
 
@@ -312,7 +298,7 @@ async fn the_local_provider_satisfies_the_webmcp_contract() {
 }
 
 #[tokio::test]
-async fn the_remote_provider_satisfies_the_same_webmcp_contract() {
+async fn the_obscura_provider_satisfies_the_same_webmcp_contract() {
     let (_cdp, provider) = remote_present();
     webmcp_contract(provider.as_ref()).await;
 }
@@ -451,7 +437,7 @@ async fn a_driver_that_cannot_evaluate_degrades_to_an_answer() {
         provider: ProviderKind::Local,
         ..WebBridgeConfig::default()
     };
-    config.local.artifact_dir = None;
+    config.artifact_dir = None;
     let provider = local_provider(&config, Arc::new(PlainDriver), resolver())
         .unwrap_or_else(|error| panic!("{error}"));
 
@@ -511,7 +497,7 @@ async fn the_input_reaches_the_driver_intact_and_never_the_log() {
 }
 
 #[tokio::test]
-async fn the_remote_script_feature_detects_and_marshals_its_input() {
+async fn the_obscura_script_feature_detects_and_marshals_its_input() {
     let (cdp, provider) = remote_present();
     let page = open(provider.as_ref()).await;
     let request = CallWebmcpToolRequest::new("add_to_cart", json!({"sku": "a \"b\" <i>"}))

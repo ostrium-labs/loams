@@ -1,14 +1,9 @@
 //! The local browser-time budget.
 //!
-//! Cloudflare meters browser time against the account and, on the free plan,
-//! stops at 10 minutes a day with a `429` until midnight UTC (read on
-//! 2026-10-03). A budget guard here means the operator finds out from a log
-//! line instead of from a failed run, and it means a runaway loop cannot spend
-//! a paid account's money in an afternoon.
-//!
-//! It is a guard, not a meter: it counts what this process's sessions cost in
-//! wall-clock time and knows nothing about other processes. Cloudflare's
-//! dashboard remains the source of truth.
+//! A per-UTC-day ceiling on how long this process's browser sessions may stay
+//! open, so a runaway agent loop cannot keep a shared browser service busy all
+//! day. It is a guard, not a meter: it counts what this process's sessions
+//! cost in wall-clock time and knows nothing about other processes.
 
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
