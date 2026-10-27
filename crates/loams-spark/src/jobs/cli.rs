@@ -57,6 +57,9 @@ pub struct SparkArgs {
     /// The namespace.
     #[arg(long, global = true, env = "LOAMS_NAMESPACE")]
     pub namespace: Option<String>,
+    /// The Spark engine instance (its id `eng_…` or its name).
+    #[arg(long, global = true, env = "LOAMS_SPARK_INSTANCE")]
+    pub instance: Option<String>,
     /// Print JSON.
     #[arg(long, global = true)]
     pub json: bool,
@@ -71,9 +74,13 @@ pub enum SparkCommand {
     /// Print the namespace's Spark Connect URL (`sc://…`). The token is never
     /// in it: clients send it as gRPC metadata (`loams.spark.session()` does).
     SessionUrl {
-        /// Build it for this cloud domain instead of asking the server.
-        #[arg(long)]
+        /// Build it for this cloud base domain instead of asking the server
+        /// (with --region).
+        #[arg(long, requires = "region")]
         domain: Option<String>,
+        /// The region, with --domain.
+        #[arg(long)]
+        region: Option<String>,
     },
     /// Submit a batch job.
     Submit {
@@ -385,7 +392,12 @@ pub fn run(args: &SparkArgs) -> ExitCode {
 }
 
 fn client(args: &SparkArgs) -> Result<SparkClient, JobsError> {
-    SparkClient::new(&args.endpoint, args.token.clone(), args.namespace.clone())
+    SparkClient::new(
+        &args.endpoint,
+        args.token.clone(),
+        args.namespace.as_deref().unwrap_or_default(),
+        args.instance.as_deref().unwrap_or_default(),
+    )
 }
 
 fn print_status(args: &SparkArgs, s: &RunStatus) {
@@ -435,15 +447,17 @@ fn local_runner(args: &SparkArgs, local: &LocalArgs) -> LocalRunner {
 
 async fn dispatch(args: &SparkArgs) -> Result<ExitCode, JobsError> {
     match &args.command {
-        SparkCommand::SessionUrl { domain } => {
-            let url = match (domain, &args.namespace) {
-                (Some(d), Some(ns)) => session_url_for(ns, Some(d)),
-                (Some(_), None) => {
+        SparkCommand::SessionUrl { domain, region } => {
+            let url = match (domain, region, &args.namespace, &args.instance) {
+                (Some(d), Some(r), Some(ns), Some(inst)) => {
+                    session_url_for(inst, ns, Some((r.as_str(), d.as_str())))
+                }
+                (Some(_), _, _, _) => {
                     return Err(JobsError::InvalidSpec(
-                        "--domain needs --namespace (or LOAMS_NAMESPACE)".to_string(),
+                        "--domain needs --region, --namespace and --instance".to_string(),
                     ));
                 }
-                (None, _) => client(args)?.session_url().await?,
+                _ => client(args)?.session_url().await?,
             };
             if url.contains("token=") {
                 return Err(JobsError::Backend(

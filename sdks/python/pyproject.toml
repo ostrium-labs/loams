@@ -47,8 +47,8 @@ agent = ["cryptography>=44"]
 # `loams.spark` (preview, design 81 SP-b D2007): Spark Connect sessions against a namespace's
 # Spark endpoint. `pyspark-client` is the Connect-only PySpark (no JVM); 4.0.0 (2025) is the
 # first release with `SparkSession.builder.channelBuilder`, which carries the Loams token as
-# gRPC metadata. The job API in `loams.spark` needs no extra.
-spark = ["pyspark-client>=4.0.0"]
+# gRPC metadata. 4.1.x matches the Sail image's client (ENG81 R27). The job API needs no extra.
+spark = ["pyspark-client>=4.1.3,<4.2"]
 
 [project.urls]
 Homepage = "https://loams.dev"
@@ -131,7 +131,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "ANN", "RUF"]
 [tool.uv]
 # The 14-day rule for new dependencies: pycparser 3.12 (via cryptography's cffi) is from
 # 2026-10-22.
-# Via the `spark` extra (pyspark-client 4.2.0): googleapis-common-protos 1.76.0, pandas 3.1.0 and
+# Via the `spark` extra (pyspark-client 4.1.3): googleapis-common-protos 1.76.0, pandas 3.1.0 and
 # python-dateutil 3.0.0 are from 2026-10-21/22.
 constraint-dependencies = [
   "pycparser<3.12",

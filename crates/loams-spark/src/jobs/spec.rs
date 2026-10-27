@@ -345,6 +345,43 @@ impl SparkJobSpec {
         }
     }
 
+    /// A spec from ENG-UI's facade shape `SubmitJob { name, kind, entrypoint,
+    /// args, conf }` (D2015): `kind` is `sql`, `python` or `jar`; a JAR's main
+    /// class is `main_class` (the facade carries it in `conf` as
+    /// `spark.loams.mainClass` until it has a field). The result is validated.
+    pub fn from_submit(
+        name: &str,
+        kind: &str,
+        entrypoint: &str,
+        args: Vec<String>,
+        mut conf: BTreeMap<String, String>,
+    ) -> Result<Self, JobsError> {
+        let app = match kind {
+            "sql" => SparkApp::Sql {
+                file: entrypoint.to_string(),
+            },
+            "python" | "pyspark" => SparkApp::Pyspark {
+                file: entrypoint.to_string(),
+                py_files: Vec::new(),
+            },
+            "jar" => SparkApp::Jar {
+                file: entrypoint.to_string(),
+                main_class: conf.remove("spark.loams.mainClass").unwrap_or_default(),
+                jars: Vec::new(),
+            },
+            other => {
+                return Err(JobsError::InvalidSpec(format!(
+                    "kind {other:?}: one of sql, python, jar"
+                )));
+            }
+        };
+        let mut spec = Self::new(name, app);
+        spec.args = args;
+        spec.conf = conf;
+        spec.validate()?;
+        Ok(spec)
+    }
+
     /// Checks everything a renderer relies on; the error names the field.
     pub fn validate(&self) -> Result<(), JobsError> {
         let bad = |m: String| Err(JobsError::InvalidSpec(m));
@@ -526,6 +563,30 @@ mod tests {
         };
         s.backend = Backend::Kubernetes;
         assert!(s.validate().is_err());
+    }
+
+    #[test]
+    fn from_the_facade_shape() {
+        let mut conf = BTreeMap::new();
+        conf.insert(
+            "spark.loams.mainClass".to_string(),
+            "dev.x.Main".to_string(),
+        );
+        let s = SparkJobSpec::from_submit("r", "jar", "s3://b/a.jar", vec![], conf).expect("jar");
+        assert_eq!(
+            s.app,
+            SparkApp::Jar {
+                file: "s3://b/a.jar".into(),
+                main_class: "dev.x.Main".into(),
+                jars: vec![]
+            }
+        );
+        assert!(s.conf.is_empty());
+        let s = SparkJobSpec::from_submit("q", "python", "a.py", vec!["1".into()], BTreeMap::new())
+            .expect("python");
+        assert_eq!(s.app.kind(), "pyspark");
+        assert!(SparkJobSpec::from_submit("q", "r", "a.R", vec![], BTreeMap::new()).is_err());
+        assert!(SparkJobSpec::from_submit("q", "jar", "a.jar", vec![], BTreeMap::new()).is_err());
     }
 
     #[test]

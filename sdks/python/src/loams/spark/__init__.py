@@ -15,9 +15,25 @@ Two halves:
   'loams[spark]'`, which pulls `pyspark-client` (Spark Connect only, no JVM).
 
 - **Batch jobs.** `submit_job()` sends a job spec to the Loams Spark job facade
-  (`POST /v1/engines/spark/jobs`) and returns a `Run` to poll, read logs from,
-  wait on or cancel. `schedule()` registers a cron schedule for a spec. These
-  need no PySpark at all.
+  and returns a `Run` to poll, read logs from, wait on or cancel. `schedule()`
+  registers a cron schedule for a spec. These need no PySpark at all.
+
+Every facade route is per namespace and per Spark engine instance (design 81
+rulings R2, R15, D2015)::
+
+    {LOAMS_ENDPOINT}/v1/namespaces/{ns}/engines/{instance}/jobs
+                                                         /jobs/{run}[/logs|/cancel]
+                                                         /schedules[/{id}]
+                                                         /sessions
+
+The namespace is `namespace=` or `LOAMS_NAMESPACE`; the instance is `instance=`
+or `LOAMS_SPARK_INSTANCE` (its id `eng_<26>` or its name).
+
+The Spark Connect endpoint (D2008) is, in the cloud::
+
+    sc://<instance>.<ns>.<region>.spark.<base-domain>:443/;use_ssl=true
+
+and `sc://127.0.0.1:15002` on compose.
 
 The token never goes in the `sc://` URI (design 26 §9.2): a URI carries into
 logs, process listings and Spark's own UI, a header does not.
@@ -40,6 +56,7 @@ from connectrpc.code import Code
 from loams.runtime.errors import DeadlineExceededError, InternalError, InvalidArgumentError
 from loams.runtime.token_source import ENV_ENDPOINT
 from loams.spark._http import (
+    ENV_INSTANCE,
     ENV_NAMESPACE,
     NAMESPACE_HEADER,
     Http,
@@ -50,6 +67,8 @@ from loams.spark._http import (
 __all__ = [
     "ENV_ICEBERG_URI",
     "ENV_ICEBERG_WAREHOUSE",
+    "ENV_INSTANCE",
+    "ENV_NAMESPACE",
     "ENV_SPARK_REMOTE",
     "TERMINAL_STATES",
     "Backend",
@@ -59,8 +78,10 @@ __all__ = [
     "Run",
     "RunStatus",
     "catalog_conf",
+    "delete_schedule",
     "house_table",
     "job_spec",
+    "list_jobs",
     "logs",
     "run",
     "schedule",
@@ -77,9 +98,10 @@ ENV_ICEBERG_URI: Final[str] = "LOAMS_ICEBERG_URI"
 #: The Lakekeeper warehouse name.
 ENV_ICEBERG_WAREHOUSE: Final[str] = "LOAMS_ICEBERG_WAREHOUSE"
 
-_JOBS: Final[str] = "/v1/engines/spark/jobs"
-_SCHEDULES: Final[str] = "/v1/engines/spark/schedules"
-_SESSION: Final[str] = "/v1/engines/spark/session"
+# Relative to `JsonClient.base`, `{endpoint}/v1/namespaces/{ns}/engines/{instance}`.
+_JOBS: Final[str] = "/jobs"
+_SCHEDULES: Final[str] = "/schedules"
+_SESSIONS: Final[str] = "/sessions"
 
 Backend = Literal["auto", "connect", "kubernetes", "local"]
 _BACKENDS: Final[frozenset[str]] = frozenset({"auto", "connect", "kubernetes", "local"})
@@ -233,6 +255,7 @@ def _resolve_remote(
     endpoint: str | None,
     token: str | None,
     namespace: str | None,
+    instance: str | None,
     http: Http | None,
 ) -> str:
     if remote:
@@ -241,12 +264,19 @@ def _resolve_remote(
     if from_env:
         return _check_remote(from_env)
     if endpoint or os.environ.get(ENV_ENDPOINT, "").strip():
-        client = JsonClient(endpoint, token=token, namespace=namespace, http=http)
-        answer = client.json("GET", _SESSION)
-        found = answer.get("remote") if isinstance(answer, dict) else None
+        client = JsonClient(
+            endpoint, token=token, namespace=namespace, instance=instance, http=http
+        )
+        answer = client.json("POST", _SESSIONS, json_body={"kind": "python", "conf": {}})
+        found: object = None
+        if isinstance(answer, dict):
+            # The SparkSession record's `connect_url`; `remote` is the older key.
+            found = answer.get("connect_url") or answer.get("remote")
         if not isinstance(found, str) or not found:
             raise InternalError(
-                f"GET {_SESSION}: the answer has no remote", code=Code.INTERNAL, rpc=_SESSION
+                f"POST {_SESSIONS}: the answer has no connect_url",
+                code=Code.INTERNAL,
+                rpc=_SESSIONS,
             )
         return _check_remote(found)
     raise InvalidArgumentError(
@@ -282,6 +312,7 @@ def session(
     *,
     token: str | None = None,
     namespace: str | None = None,
+    instance: str | None = None,
     catalog: CatalogOptions | None = None,
     app_name: str | None = None,
     conf: Mapping[str, str] | None = None,
@@ -292,12 +323,17 @@ def session(
 
     Call `.getOrCreate()` on it, or add `.config(...)` first.
 
-    :param remote: the `sc://` URI. Else `LOAMS_SPARK_REMOTE`, else asked of
-        the Loams endpoint (`GET /v1/engines/spark/session`), else an error. A
-        URI with a `token=` parameter is refused with `ValueError`.
+    :param remote: the `sc://` URI. Else `LOAMS_SPARK_REMOTE`, else the
+        `connect_url` of a session opened on the Loams endpoint
+        (`POST .../engines/{instance}/sessions`), else an error. A URI with a
+        `token=` parameter is refused with `ValueError`. Cloud:
+        `sc://<instance>.<ns>.<region>.spark.<base-domain>:443/;use_ssl=true`;
+        compose: `sc://127.0.0.1:15002`.
     :param token: the bearer; else `LOAMS_API_KEY`, then `LOAMS_TOKEN`. Sent as
         gRPC metadata `authorization: Bearer ...`.
     :param namespace: sent as `x-loams-namespace`; else `LOAMS_NAMESPACE`.
+    :param instance: the Spark engine instance (id or name) for the session
+        lookup; else `LOAMS_SPARK_INSTANCE`.
     :param catalog: the Iceberg catalog; else `CatalogOptions.from_env()` when
         `LOAMS_ICEBERG_URI` is set, else no catalog conf (the server's own).
     :param app_name: the Spark application name.
@@ -308,7 +344,9 @@ def session(
     """
     bearer = resolve_token(token)
     ns = namespace or os.environ.get(ENV_NAMESPACE) or None
-    url = _resolve_remote(remote, endpoint=endpoint, token=bearer, namespace=ns, http=http)
+    url = _resolve_remote(
+        remote, endpoint=endpoint, token=bearer, namespace=ns, instance=instance, http=http
+    )
 
     metadata: list[tuple[str, str]] = []
     if bearer:
@@ -420,7 +458,7 @@ class Run:
         return f"Run({self.run_id!r}, state={state!r})"
 
     def status(self) -> RunStatus:
-        """`GET /v1/engines/spark/jobs/{run}`."""
+        """`GET .../jobs/{run}`."""
         self.last = RunStatus.from_json(self._client.json("GET", _run_path(self.run_id)))
         return self.last
 
@@ -433,8 +471,8 @@ class Run:
         return body.decode("utf-8", errors="replace")
 
     def cancel(self) -> None:
-        """`POST /v1/engines/spark/jobs/{run}:cancel`. Canceling a finished run is a no-op."""
-        self._client.call("POST", _run_path(self.run_id) + ":cancel")
+        """`POST .../jobs/{run}/cancel`. Canceling a finished run is a no-op."""
+        self._client.call("POST", _run_path(self.run_id) + "/cancel")
 
     def wait(
         self,
@@ -566,14 +604,16 @@ def submit_job(
     endpoint: str | None = None,
     token: str | None = None,
     namespace: str | None = None,
+    instance: str | None = None,
     http: Http | None = None,
 ) -> Run:
-    """Submits a Spark batch job (`POST /v1/engines/spark/jobs`) and returns its `Run`.
+    """Submits a Spark batch job (`POST .../engines/{instance}/jobs`) and returns its `Run`.
 
     `backend="auto"` lets the server pick: Spark Connect for `pyspark` and
     `sql`, Spark on Kubernetes for `jar` (D2001). The endpoint is `endpoint=`
-    or `LOAMS_ENDPOINT`; the token `token=`, else `LOAMS_API_KEY`, then
-    `LOAMS_TOKEN`.
+    or `LOAMS_ENDPOINT`; the namespace `namespace=` or `LOAMS_NAMESPACE`; the
+    instance `instance=` or `LOAMS_SPARK_INSTANCE`; the token `token=`, else
+    `LOAMS_API_KEY`, then `LOAMS_TOKEN`.
     """
     spec = job_spec(
         name,
@@ -591,7 +631,7 @@ def submit_job(
         backend=backend,
         image=image,
     )
-    client = JsonClient(endpoint, token=token, namespace=namespace, http=http)
+    client = JsonClient(endpoint, token=token, namespace=namespace, instance=instance, http=http)
     first = RunStatus.from_json(client.json("POST", _JOBS, json_body=spec))
     return Run(first.run_id, client, first)
 
@@ -602,10 +642,12 @@ def run(
     endpoint: str | None = None,
     token: str | None = None,
     namespace: str | None = None,
+    instance: str | None = None,
     http: Http | None = None,
 ) -> Run:
     """A handle on an existing run, without a request."""
-    return Run(run_id, JsonClient(endpoint, token=token, namespace=namespace, http=http))
+    client = JsonClient(endpoint, token=token, namespace=namespace, instance=instance, http=http)
+    return Run(run_id, client)
 
 
 def status(
@@ -614,10 +656,14 @@ def status(
     endpoint: str | None = None,
     token: str | None = None,
     namespace: str | None = None,
+    instance: str | None = None,
     http: Http | None = None,
 ) -> RunStatus:
-    """`GET /v1/engines/spark/jobs/{run}`."""
-    return run(run_id, endpoint=endpoint, token=token, namespace=namespace, http=http).status()
+    """`GET .../engines/{instance}/jobs/{run}`."""
+    handle = run(
+        run_id, endpoint=endpoint, token=token, namespace=namespace, instance=instance, http=http
+    )
+    return handle.status()
 
 
 def logs(
@@ -627,11 +673,40 @@ def logs(
     endpoint: str | None = None,
     token: str | None = None,
     namespace: str | None = None,
+    instance: str | None = None,
     http: Http | None = None,
 ) -> str:
     """The driver log of one attempt of a run (the latest when `attempt` is None)."""
-    handle = run(run_id, endpoint=endpoint, token=token, namespace=namespace, http=http)
+    handle = run(
+        run_id, endpoint=endpoint, token=token, namespace=namespace, instance=instance, http=http
+    )
     return handle.logs(attempt)
+
+
+def list_jobs(
+    *,
+    endpoint: str | None = None,
+    token: str | None = None,
+    namespace: str | None = None,
+    instance: str | None = None,
+    http: Http | None = None,
+) -> list[RunStatus]:
+    """`GET .../engines/{instance}/jobs`: the instance's runs.
+
+    The answer may be a bare list, `{"jobs": [...]}` or `{"runs": [...]}`.
+    """
+    client = JsonClient(endpoint, token=token, namespace=namespace, instance=instance, http=http)
+    answer = client.json("GET", _JOBS)
+    items: object = answer
+    if isinstance(answer, dict):
+        items = answer.get("jobs", answer.get("runs"))
+    if answer is None:
+        items = []
+    if not isinstance(items, list):
+        raise InternalError(
+            f"GET {_JOBS}: the answer is not a list of runs", code=Code.INTERNAL, rpc=_JOBS
+        )
+    return [RunStatus.from_json(item) for item in items]
 
 
 def schedule(
@@ -642,18 +717,35 @@ def schedule(
     endpoint: str | None = None,
     token: str | None = None,
     namespace: str | None = None,
+    instance: str | None = None,
     http: Http | None = None,
 ) -> object:
-    """Registers a cron schedule for a job spec (`POST /v1/engines/spark/schedules`).
+    """Registers a cron schedule for a job spec (`POST .../engines/{instance}/schedules`).
 
     `job` is a spec as `job_spec(...)` builds it. Each tick starts one run
     through the embedded durable server (D2004). Returns the facade's answer.
     """
     if not name or not cron.strip():
         raise ValueError("loams.spark: a schedule needs a name and a cron expression")
-    client = JsonClient(endpoint, token=token, namespace=namespace, http=http)
+    client = JsonClient(endpoint, token=token, namespace=namespace, instance=instance, http=http)
     body = {"id": name, "cron": cron, "job": dict(job)}
     # Round-trip through json here so a spec that cannot be sent fails before
     # the request, with the caller's traceback.
     json.dumps(body)
     return client.json("POST", _SCHEDULES, json_body=body)
+
+
+def delete_schedule(
+    name: str,
+    *,
+    endpoint: str | None = None,
+    token: str | None = None,
+    namespace: str | None = None,
+    instance: str | None = None,
+    http: Http | None = None,
+) -> None:
+    """`DELETE .../engines/{instance}/schedules/{id}`. Runs already started keep running."""
+    if not name:
+        raise ValueError("loams.spark: delete_schedule needs a schedule id")
+    client = JsonClient(endpoint, token=token, namespace=namespace, instance=instance, http=http)
+    client.call("DELETE", f"{_SCHEDULES}/{urllib.parse.quote(name, safe='')}")

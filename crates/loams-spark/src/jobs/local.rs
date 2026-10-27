@@ -152,6 +152,23 @@ impl LocalRunner {
         self.config.runs_dir.join("sql_runner.py")
     }
 
+    /// The secret properties file of a JVM attempt and its content: the
+    /// catalog token, which Spark takes only as conf and which must not be in
+    /// argv (ENG81 R5). `None` without a catalog or a token.
+    fn secret_properties(&self, attempt: &Attempt) -> Option<(PathBuf, String)> {
+        let catalog = self.config.catalog.as_ref()?;
+        let token = self.config.token.as_ref()?;
+        let path = self
+            .config
+            .runs_dir
+            .join(attempt.run_id.as_str())
+            .join(format!("secret-{}.conf", attempt.attempt));
+        Some((
+            path,
+            format!("spark.sql.catalog.{}.token {token}\n", catalog.name),
+        ))
+    }
+
     /// Whether `attempt` runs over Spark Connect here: a PySpark or SQL job,
     /// an endpoint configured, and the job not pinned to JVM Spark.
     pub fn uses_connect(&self, attempt: &Attempt) -> bool {
@@ -197,7 +214,8 @@ impl LocalRunner {
             // The catalog token is literal here: the conf is in this
             // process's argv only, never in a stored spec. `$(LOAMS_TOKEN)`
             // is Kubernetes syntax and a shell would not expand it.
-            let mut argv = spark_submit_argv(
+            let secret = self.secret_properties(attempt).map(|(path, _)| path);
+            spark_submit_argv(
                 spec,
                 &ctx,
                 &Master::Local {
@@ -205,15 +223,8 @@ impl LocalRunner {
                 },
                 &submit.to_string_lossy(),
                 &self.sql_runner_path().to_string_lossy(),
-            );
-            if let Some(t) = &self.config.token {
-                for a in &mut argv {
-                    if a.contains("$(LOAMS_TOKEN)") {
-                        *a = a.replace("$(LOAMS_TOKEN)", t);
-                    }
-                }
-            }
-            argv
+                secret.as_ref().map(|p| p.to_string_lossy()).as_deref(),
+            )
         };
         env.extend(spec.env.clone());
         Ok(LocalCommand { argv, env })
@@ -230,6 +241,11 @@ impl Runner for LocalRunner {
         }
         if matches!(attempt.spec.app, SparkApp::Sql { .. }) && !self.uses_connect(attempt) {
             tokio::fs::write(self.sql_runner_path(), SQL_RUNNER).await?;
+        }
+        if !self.uses_connect(attempt)
+            && let Some((path, content)) = self.secret_properties(attempt)
+        {
+            write_private(&path, content.as_bytes())?;
         }
         let log = std::fs::File::create(&log_path)?;
         let err = log.try_clone()?;
@@ -268,6 +284,7 @@ impl Runner for LocalRunner {
             None => Ok(AttemptPhase::Running),
             Some(status) => {
                 children.remove(&handle.id);
+                self.forget_secret(handle);
                 Ok(AttemptPhase::Done(if status.success() {
                     AttemptOutcome::Succeeded
                 } else {
@@ -285,6 +302,7 @@ impl Runner for LocalRunner {
             child.start_kill()?;
             let _ = child.wait().await;
         }
+        self.forget_secret(handle);
         Ok(())
     }
 
@@ -295,6 +313,34 @@ impl Runner for LocalRunner {
             })?;
         read_tail(std::path::Path::new(path), LOG_TAIL_BYTES).await
     }
+}
+
+impl LocalRunner {
+    /// Removes an ended attempt's secret properties file, if any.
+    fn forget_secret(&self, handle: &AttemptHandle) {
+        if let Some((run, attempt)) = handle.id.split_once('/') {
+            let path = self
+                .config
+                .runs_dir
+                .join(run)
+                .join(format!("secret-{attempt}.conf"));
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
+/// Writes a file only its owner can read (mode 0600 on Unix).
+fn write_private(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write as _;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        options.mode(0o600);
+    }
+    let mut file = options.open(path)?;
+    file.write_all(bytes)
 }
 
 /// The last `max` bytes of a file, as text.
@@ -378,6 +424,36 @@ mod tests {
         assert_eq!(cmd.argv[0], "/opt/spark/bin/spark-submit");
         assert_eq!(cmd.argv[2], "local[2]");
         assert!(cmd.argv.iter().all(|a| !a.contains("spark.kubernetes.")));
+    }
+
+    #[test]
+    fn the_catalog_token_is_never_in_argv() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut c = config(dir.path());
+        c.catalog = Some(CatalogConfig::new(
+            url::Url::parse("http://lakekeeper:8181/catalog").expect("url"),
+            "loams",
+        ));
+        let runner = LocalRunner::new(c);
+        let a = attempt(SparkApp::Jar {
+            file: "a.jar".into(),
+            main_class: "Main".into(),
+            jars: vec![],
+        });
+        let cmd = runner.command(&a).expect("command");
+        assert!(
+            cmd.argv.iter().all(|x| !x.contains("tok")),
+            "{:?}",
+            cmd.argv
+        );
+        let at = cmd
+            .argv
+            .iter()
+            .position(|x| x == "--properties-file")
+            .expect("--properties-file");
+        assert!(cmd.argv[at + 1].ends_with("secret-1.conf"));
+        let (_, content) = runner.secret_properties(&a).expect("secret");
+        assert_eq!(content, "spark.sql.catalog.loams.token tok\n");
     }
 
     #[test]

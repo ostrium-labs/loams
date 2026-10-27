@@ -537,7 +537,7 @@ requires-dist = [
     { name = "protobuf", specifier = "==7.36.2" },
     { name = "protobuf-py", specifier = ">=0.6.0,<0.7" },
     { name = "pyarrow", marker = "extra == 'arrow'", specifier = ">=17.0.0" },
-    { name = "pyspark-client", marker = "extra == 'spark'", specifier = ">=4.0.0" },
+    { name = "pyspark-client", marker = "extra == 'spark'", specifier = ">=4.1.3,<4.2" },
 ]
 provides-extras = ["flight", "arrow", "polars", "agent", "spark"]
 
@@ -1168,7 +1168,7 @@ wheels = [
 
 [[package]]
 name = "pyspark-client"
-version = "4.2.0"
+version = "4.1.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "googleapis-common-protos" },
@@ -1182,7 +1182,7 @@ dependencies = [
     { name = "pyyaml" },
     { name = "zstandard" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/31/1b/b7fc2cb3cb34a9d71790bd556ac5802c2d93e861c6af850f6e97e3e92b7c/pyspark_client-4.2.0.tar.gz", hash = "sha256:4008fe5e537bf0e57e7243d03abfaac089b7c87316bd07024784d8ea726f5d41", size = 1675557, upload-time = "2026-07-14T22:41:58.134Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/98/4b/01b9f697a65e7534200a879d384123c7cb397c97bfe65b28a1197ec716be/pyspark_client-4.1.3.tar.gz", hash = "sha256:ff687ddd8176f3f96e5f53eb4184d6b5052af38d6bebf313c860e5062962351b", size = 1607680, upload-time = "2026-07-15T10:39:20.992Z" }
 
 [[package]]
 name = "pytest"

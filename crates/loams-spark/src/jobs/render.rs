@@ -16,9 +16,16 @@
 //! against the namespace's Spark Connect endpoint; the Spark work happens on
 //! the Connect server (Sail), not in this pod.
 //!
-//! Secrets never appear in the rendered objects: the Loams token and the S3
-//! keys come from Kubernetes Secrets through `env`, and Spark conf that needs
-//! the token references it as `$(LOAMS_TOKEN)`, which the kubelet expands.
+//! Secrets never appear in the rendered objects or in any argv (ENG81 R5): the
+//! Loams token and the S3 keys come from Kubernetes Secrets through `env`. The
+//! catalog's token, which Spark only takes as conf, is written at start from
+//! the env into a mode-0600 properties file ([`SECRET_PROPERTIES`]) that
+//! `spark-submit --properties-file` reads; a small `sh -c` wrapper does that
+//! in the pod, the local runner writes the file itself.
+//!
+//! JVM runs log Spark events to the instance's state prefix
+//! (`…/spark-events/`, ENG81 R16 and R29) and use `…/scratch/` as the
+//! warehouse directory; every table goes through the `loams` catalog.
 
 use std::collections::BTreeMap;
 
@@ -28,8 +35,19 @@ use super::RunId;
 use super::spec::{Backend, SparkApp, SparkJobSpec, k8s_memory};
 use crate::catalog::{CatalogConfig, CatalogToken, Flavor};
 
-/// Apache Spark's official image (Spark 4.0.1, released 2025-09-06).
-pub const DEFAULT_SPARK_IMAGE: &str = "apache/spark:4.0.1-scala2.13-java17-python3-ubuntu";
+/// Where the driver's secret Spark conf (the catalog token) is written at
+/// start, in the pod's private `/tmp`.
+pub const SECRET_PROPERTIES: &str = "/tmp/loams-spark-secret.conf";
+
+/// The `sh -c` script of a Kubernetes driver with a catalog token: writes the
+/// token from the env into [`SECRET_PROPERTIES`] (mode 0600), then runs the
+/// argv that follows (`$0` is the first word after the script, `"$@"` the
+/// rest). The catalog conf key is the script's `$LOAMS_SPARK_TOKEN_KEY`.
+pub const SECRET_WRAPPER: &str = "umask 077 && printf '%s %s\\n' \"$LOAMS_SPARK_TOKEN_KEY\" \"$LOAMS_TOKEN\" > /tmp/loams-spark-secret.conf && exec \"$0\" \"$@\"";
+
+/// Apache Spark's official image: Spark 4.1.3 (2026-07-24), the pin SP-a
+/// checked and ENG81 R27 adopted.
+pub const DEFAULT_SPARK_IMAGE: &str = "docker.io/apache/spark:4.1.3-scala2.13-java21-python3-ubuntu@sha256:bf9d035a7c32a8ca46aa58d6348182ffd7d2dff6409206ecfbb3915ff1fef211";
 
 /// The Loams Connect-mode driver image (Python with `loams[spark]`), versioned
 /// with Loams.
@@ -127,6 +145,9 @@ pub struct RenderContext {
     /// A Secret with `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` for the
     /// job's files (`s3a://` reads of the app), and its endpoint.
     pub s3: Option<S3Access>,
+    /// The engine instance's state prefix, `s3a://loams-engines/engines/<ns>/<id>/`
+    /// (ENG81 R6): event logs and scratch go under it.
+    pub state_prefix: Option<String>,
 }
 
 /// Object-store access for the app's own files (not table data: tables get
@@ -157,6 +178,7 @@ impl RenderContext {
             catalog: None,
             token_secret: None,
             s3: None,
+            state_prefix: None,
         }
     }
 
@@ -171,12 +193,9 @@ impl RenderContext {
         )
     }
 
-    fn token(&self) -> CatalogToken {
-        if self.token_secret.is_some() {
-            CatalogToken::Env(TOKEN_ENV.to_string())
-        } else {
-            CatalogToken::None
-        }
+    /// The engine state prefix for an instance: `s3a://<bucket>/engines/<ns>/<id>/`.
+    pub fn instance_state_prefix(bucket: &str, namespace: &str, instance: &str) -> String {
+        format!("s3a://{bucket}/engines/{namespace}/{instance}/")
     }
 }
 
@@ -312,8 +331,24 @@ pub fn spark_conf(
             set("spark.hadoop.fs.s3a.path.style.access", "true".to_string());
         }
     }
+    if let Some(prefix) = &ctx.state_prefix {
+        let prefix = prefix.trim_end_matches('/');
+        conf.insert("spark.eventLog.enabled".to_string(), "true".to_string());
+        conf.insert(
+            "spark.eventLog.dir".to_string(),
+            format!("{prefix}/spark-events/"),
+        );
+        conf.insert(
+            "spark.sql.warehouse.dir".to_string(),
+            format!("{prefix}/scratch/"),
+        );
+    }
     if let Some(catalog) = &ctx.catalog {
-        merge_conf(&mut conf, &catalog.spark_conf(Flavor::Jvm, &ctx.token()));
+        // The token never goes in argv (R5): see `SECRET_PROPERTIES`.
+        merge_conf(
+            &mut conf,
+            &catalog.spark_conf(Flavor::Jvm, &CatalogToken::None),
+        );
     }
     merge_conf(&mut conf, &spec.conf);
     conf
@@ -321,13 +356,16 @@ pub fn spark_conf(
 
 /// The `spark-submit` argv of a JVM run. `spark_submit` is the binary
 /// (`/opt/spark/bin/spark-submit` in the image, `$SPARK_HOME/bin/spark-submit`
-/// locally) and `sql_runner` the path of [`SQL_RUNNER`] for SQL jobs.
+/// locally), `sql_runner` the path of [`SQL_RUNNER`] for SQL jobs, and
+/// `secret_properties` a properties file with the secret conf, written at
+/// start (never the secret itself).
 pub fn spark_submit_argv(
     spec: &SparkJobSpec,
     ctx: &RenderContext,
     master: &Master,
     spark_submit: &str,
     sql_runner: &str,
+    secret_properties: Option<&str>,
 ) -> Vec<String> {
     let mut argv = vec![
         spark_submit.to_string(),
@@ -340,6 +378,10 @@ pub fn spark_submit_argv(
         "--driver-memory".to_string(),
         spec.resources.driver_memory.clone(),
     ];
+    if let Some(path) = secret_properties {
+        argv.push("--properties-file".to_string());
+        argv.push(path.to_string());
+    }
     for (k, v) in spark_conf(spec, ctx, master) {
         argv.push("--conf".to_string());
         argv.push(format!("{k}={v}"));
@@ -514,6 +556,9 @@ pub fn render_pod(spec: &SparkJobSpec, ctx: &RenderContext) -> RenderedJob {
         env_from.push(json!({ "secretRef": { "name": s3.secret } }));
     }
 
+    // The container's command, when the argv needs a wrapper (the secret
+    // properties file); otherwise the image's entrypoint runs the args.
+    let mut command: Option<Vec<String>> = None;
     let (image, argv, ports, automount, mut volumes, mut mounts, config_map, memory_mib, cpu) =
         if backend == Backend::Connect {
             env.extend(env_list(&connect_driver_env(spec, ctx)));
@@ -535,12 +580,30 @@ pub fn render_pod(spec: &SparkJobSpec, ctx: &RenderContext) -> RenderedJob {
                 "name": POD_IP_ENV,
                 "valueFrom": { "fieldRef": { "fieldPath": "status.podIP" } }
             }));
+            let secret = match (&ctx.catalog, &ctx.token_secret) {
+                (Some(catalog), Some(_)) => {
+                    env.push(json!({
+                        "name": "LOAMS_SPARK_TOKEN_KEY",
+                        "value": format!("spark.sql.catalog.{}.token", catalog.name)
+                    }));
+                    Some(SECRET_PROPERTIES)
+                }
+                _ => None,
+            };
+            if secret.is_some() {
+                command = Some(vec![
+                    "/bin/sh".to_string(),
+                    "-c".to_string(),
+                    SECRET_WRAPPER.to_string(),
+                ]);
+            }
             let argv = spark_submit_argv(
                 spec,
                 ctx,
                 &Master::Kubernetes,
                 "/opt/spark/bin/spark-submit",
                 SQL_RUNNER_PATH,
+                secret,
             );
             let (volumes, mounts, cm) = if matches!(spec.app, SparkApp::Sql { .. }) {
                 (
@@ -610,6 +673,9 @@ pub fn render_pod(spec: &SparkJobSpec, ctx: &RenderContext) -> RenderedJob {
     if let Some(timeout) = spec.timeout_secs {
         pod_spec["activeDeadlineSeconds"] = json!(timeout);
     }
+    if let Some(command) = command {
+        pod_spec["containers"][0]["command"] = json!(command);
+    }
     let pod = json!({
         "apiVersion": "v1",
         "kind": "Pod",
@@ -660,6 +726,11 @@ mod tests {
             path_style: true,
         });
         c.connect_remote = Some("sc://ns-42.spark.loams.internal:443/;use_ssl=true".into());
+        c.state_prefix = Some(RenderContext::instance_state_prefix(
+            "loams-engines",
+            "acme",
+            "eng_01jbzq3w4y5x6v7t8s9r0pqmnk",
+        ));
         c
     }
 
@@ -762,13 +833,37 @@ mod tests {
         );
         assert_eq!(conf["spark.hadoop.fs.s3a.endpoint"], "http://rustfs:9000");
         assert_eq!(conf["spark.sql.catalog.loams.type"], "rest");
-        assert_eq!(conf["spark.sql.catalog.loams.token"], "$(LOAMS_TOKEN)");
+        assert!(
+            !conf.contains_key("spark.sql.catalog.loams.token"),
+            "no secret in argv (R5)"
+        );
+        assert_eq!(
+            conf["spark.eventLog.dir"],
+            "s3a://loams-engines/engines/acme/eng_01jbzq3w4y5x6v7t8s9r0pqmnk/spark-events/"
+        );
+        assert_eq!(
+            conf["spark.sql.warehouse.dir"],
+            "s3a://loams-engines/engines/acme/eng_01jbzq3w4y5x6v7t8s9r0pqmnk/scratch/"
+        );
+        let props = argv
+            .iter()
+            .position(|a| a == "--properties-file")
+            .expect("--properties-file");
+        assert_eq!(argv[props + 1], SECRET_PROPERTIES);
+        let c = &pod["spec"]["containers"][0];
+        assert_eq!(c["command"][0], "/bin/sh");
+        assert!(
+            c["command"][2]
+                .as_str()
+                .expect("script")
+                .contains("> /tmp/loams-spark-secret.conf")
+        );
         assert_eq!(
             conf["spark.sql.catalog.loams.header.X-Iceberg-Access-Delegation"],
             "vended-credentials"
         );
         let packages = &conf["spark.jars.packages"];
-        assert!(packages.starts_with("org.apache.iceberg:iceberg-spark-runtime-4.0_2.13:1.10.0,"));
+        assert!(packages.starts_with("org.apache.iceberg:iceberg-spark-runtime-4.1_2.13:1.12.0,"));
         assert!(packages.ends_with(",org.example:x:1.0"), "{packages}");
         assert!(out.config_map.is_none());
     }
@@ -905,6 +1000,7 @@ mod tests {
             &Master::Local { threads: Some(2) },
             "/opt/spark/bin/spark-submit",
             "/tmp/runner.py",
+            None,
         );
         assert_eq!(argv[2], "local[2]");
         let conf = conf_of(&argv);

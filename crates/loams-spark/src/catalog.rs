@@ -32,9 +32,16 @@ pub const ACCESS_DELEGATION_HEADER: &str = "X-Iceberg-Access-Delegation";
 /// Its value for vended credentials (Iceberg REST spec).
 pub const VENDED_CREDENTIALS: &str = "vended-credentials";
 
-/// Iceberg's version for the JVM Spark runtime jars (Spark 4.0, Scala 2.13).
-/// 1.10.0 is the first Iceberg release with a Spark 4.0 runtime.
-pub const ICEBERG_VERSION: &str = "1.10.0";
+/// Iceberg's version for the JVM Spark runtime jars (Spark 4.1, Scala 2.13):
+/// ENG81 ruling R27 (D1931), the same Iceberg as Flink's.
+pub const ICEBERG_VERSION: &str = "1.12.0";
+
+/// Hadoop's S3A for `s3a://` app files: Spark 4.1.3's Hadoop (R27).
+pub const HADOOP_AWS_VERSION: &str = "3.4.2";
+
+/// The Lakekeeper warehouse every engine uses (ENG81 R30), on the bucket
+/// `loams-lake`.
+pub const DEFAULT_WAREHOUSE: &str = "loams";
 
 /// Where a catalog configuration is used.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,9 +62,10 @@ pub enum CatalogToken {
     /// A literal token. Never rendered into a pod spec (it would be stored in
     /// the API server); used only for in-process Connect sessions.
     Literal(String),
-    /// An environment variable the process expands at start: Kubernetes
-    /// expands `$(NAME)` in container args from the pod's env, which comes from
-    /// a Secret, so the spec holds the reference and never the value.
+    /// An environment variable reference, `$(NAME)`. Kept for conf that is
+    /// written to a file at start from the env; ENG81 R5 forbids putting a
+    /// secret in argv, so the renderer never passes this on the command line
+    /// (see `jobs::render::SECRET_PROPERTIES`).
     Env(String),
 }
 
@@ -165,11 +173,13 @@ impl CatalogConfig {
     }
 }
 
-/// The Maven coordinates of the Iceberg runtime for JVM Spark 4.0.
+/// The Maven coordinates JVM Spark 4.1 needs: the Iceberg runtime, its AWS
+/// bundle (S3FileIO for vended credentials) and Hadoop's S3A.
 pub fn iceberg_packages() -> String {
     format!(
-        "org.apache.iceberg:iceberg-spark-runtime-4.0_2.13:{ICEBERG_VERSION},\
-         org.apache.iceberg:iceberg-aws-bundle:{ICEBERG_VERSION}"
+        "org.apache.iceberg:iceberg-spark-runtime-4.1_2.13:{ICEBERG_VERSION},\
+         org.apache.iceberg:iceberg-aws-bundle:{ICEBERG_VERSION},\
+         org.apache.hadoop:hadoop-aws:{HADOOP_AWS_VERSION}"
     )
 }
 
@@ -515,7 +525,7 @@ mod tests {
             Some("true")
         );
         assert!(
-            conf["spark.jars.packages"].contains("iceberg-spark-runtime-4.0_2.13:1.10.0"),
+            conf["spark.jars.packages"].contains("iceberg-spark-runtime-4.1_2.13:1.12.0"),
             "{conf:?}"
         );
         assert_eq!(

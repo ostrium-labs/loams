@@ -1,6 +1,6 @@
 """The HTTP layer under `loams.spark` (design 81, SP-b D2006 and D2007). **Preview.**
 
-The Spark job facade is plain JSON over HTTP (`/v1/engines/spark/...`), not a
+The Spark job facade is plain JSON over HTTP (`/v1/namespaces/{ns}/engines/{instance}/...`), not a
 Connect service, so it does not go through the generated stubs. This module is
 the whole transport: a one-method `Http` protocol a test can replace, a default
 built on `urllib` so the `loams[spark]` extra adds no HTTP dependency, and a
@@ -35,6 +35,7 @@ from loams.runtime.errors import (
 from loams.runtime.token_source import ENV_ENDPOINT, env_token
 
 __all__ = [
+    "ENV_INSTANCE",
     "ENV_NAMESPACE",
     "NAMESPACE_HEADER",
     "Http",
@@ -53,6 +54,10 @@ ENV_NAMESPACE: Final[str] = "LOAMS_NAMESPACE"
 #: namespace in the request body (R11); the JSON facade has no such field on
 #: every route, so it travels as a header.
 NAMESPACE_HEADER: Final[str] = "x-loams-namespace"
+
+#: The Spark engine instance, when the caller does not pass one: its id
+#: (`eng_<26>`) or its name (design 81 rulings R2, R15, D2015).
+ENV_INSTANCE: Final[str] = "LOAMS_SPARK_INSTANCE"
 
 #: A request that hangs longer than this is a dead endpoint, not a slow job: the
 #: facade answers at once and the job runs behind it.
@@ -191,8 +196,24 @@ def resolve_token(token: str | None) -> str | None:
     return env_token().token()
 
 
+def _required(value: str | None, env: str, what: str) -> str:
+    found = (value or os.environ.get(env, "")).strip()
+    if not found:
+        raise InvalidArgumentError(
+            f"loams.spark: no {what}: pass {what}= or set {env}",
+            code=Code.INVALID_ARGUMENT,
+            metadata={"field": env},
+        )
+    return found
+
+
 class JsonClient:
-    """The facade client: base URL, bearer, namespace and an `Http`."""
+    """The facade client for one Spark engine instance.
+
+    Every facade route is per namespace and per engine instance (design 81
+    rulings R2, R15, D2015): `{endpoint}/v1/namespaces/{ns}/engines/{instance}`.
+    Paths passed to `call` and `json` are relative to that base.
+    """
 
     def __init__(
         self,
@@ -200,12 +221,22 @@ class JsonClient:
         *,
         token: str | None = None,
         namespace: str | None = None,
+        instance: str | None = None,
         http: Http | None = None,
     ) -> None:
-        """Resolves the endpoint, token and namespace once, at construction."""
+        """Resolves the endpoint, token, namespace and instance once, at construction.
+
+        The namespace (`namespace=` or `LOAMS_NAMESPACE`) and the instance
+        (`instance=` or `LOAMS_SPARK_INSTANCE`) are both required.
+        """
         self.endpoint = resolve_endpoint(endpoint)
         self._token = resolve_token(token)
-        self.namespace = namespace or os.environ.get(ENV_NAMESPACE) or None
+        self.namespace = _required(namespace, ENV_NAMESPACE, "namespace")
+        self.instance = _required(instance, ENV_INSTANCE, "instance")
+        self.base = (
+            f"{self.endpoint}/v1/namespaces/{urllib.parse.quote(self.namespace, safe='')}"
+            f"/engines/{urllib.parse.quote(self.instance, safe='')}"
+        )
         self._http: Http = http if http is not None else UrllibHttp()
 
     def _headers(self, accept: str, has_body: bool) -> dict[str, str]:
@@ -216,8 +247,7 @@ class JsonClient:
             # Design 26 §9.2 and SDK runtime contract R1: the token travels in
             # Authorization and never in a URL.
             headers["authorization"] = f"Bearer {self._token}"
-        if self.namespace:
-            headers[NAMESPACE_HEADER] = self.namespace
+        headers[NAMESPACE_HEADER] = self.namespace
         return headers
 
     def call(
@@ -229,8 +259,8 @@ class JsonClient:
         query: Mapping[str, str] | None = None,
         accept: str = "application/json",
     ) -> bytes:
-        """One request; returns the body of a 2xx answer, raises otherwise."""
-        url = self.endpoint + path
+        """One request to `base + path`; returns a 2xx answer's body, raises otherwise."""
+        url = self.base + path
         if query:
             url += "?" + urllib.parse.urlencode(dict(query))
         body = None if json_body is None else json.dumps(json_body).encode("utf-8")

@@ -35,6 +35,7 @@ ENV_VARS = (
     "LOAMS_API_KEY",
     "LOAMS_NAMESPACE",
     "LOAMS_SPARK_REMOTE",
+    "LOAMS_SPARK_INSTANCE",
     "LOAMS_ICEBERG_URI",
     "LOAMS_ICEBERG_WAREHOUSE",
 )
@@ -44,6 +45,17 @@ ENV_VARS = (
 def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in ENV_VARS:
         monkeypatch.delenv(name, raising=False)
+
+
+#: The facade base for namespace `acme`, instance `spark1` (rulings R2, R15, D2015).
+BASE = "http://x/v1/namespaces/acme/engines/spark1"
+
+
+@pytest.fixture
+def scoped(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The namespace and instance every facade call needs, from the environment."""
+    monkeypatch.setenv("LOAMS_NAMESPACE", "acme")
+    monkeypatch.setenv("LOAMS_SPARK_INSTANCE", "spark1")
 
 
 # --------------------------------------------------------------------------
@@ -226,22 +238,50 @@ def test_remote_env_wins_over_endpoint(
     assert http.requests == []
 
 
-def test_remote_from_endpoint_lookup(
+CLOUD_REMOTE = "sc://spark1.acme.eu-west-1.spark.loams.example:443/;use_ssl=true"
+
+
+def test_remote_from_endpoint_session(
     fake_pyspark: FakeBuilder, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("LOAMS_ENDPOINT", "https://loams.example/")
-    http = FakeHttp(ok({"remote": "sc://acme.spark.loams.example:443/;use_ssl=true"}))
-    loams_spark.session(token="tok", http=http)
-    method, url, headers, body = http.requests[0]
-    assert (method, url, body) == ("GET", "https://loams.example/v1/engines/spark/session", None)
+    http = FakeHttp(ok({"id": "ses_1", "connect_url": CLOUD_REMOTE}))
+    loams_spark.session(token="tok", namespace="acme", instance="spark1", http=http)
+    method, url, headers, _ = http.requests[0]
+    assert (method, url) == (
+        "POST",
+        "https://loams.example/v1/namespaces/acme/engines/spark1/sessions",
+    )
+    assert http.body() == {"kind": "python", "conf": {}}
     assert headers["authorization"] == "Bearer tok"
-    assert fake_pyspark.channel().url == "sc://acme.spark.loams.example:443/;use_ssl=true"
+    assert headers["x-loams-namespace"] == "acme"
+    assert fake_pyspark.channel().url == CLOUD_REMOTE
+
+
+def test_remote_session_accepts_remote_key(
+    fake_pyspark: FakeBuilder, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LOAMS_NAMESPACE", "acme")
+    monkeypatch.setenv("LOAMS_SPARK_INSTANCE", "eng_0123456789abcdefghijklmnop")
+    http = FakeHttp(ok({"remote": "sc://127.0.0.1:15002"}))
+    loams_spark.session(endpoint="http://x", http=http)
+    assert http.requests[0][1] == (
+        "http://x/v1/namespaces/acme/engines/eng_0123456789abcdefghijklmnop/sessions"
+    )
+    assert fake_pyspark.channel().url == "sc://127.0.0.1:15002"
+
+
+def test_remote_session_needs_instance(fake_pyspark: FakeBuilder) -> None:
+    with pytest.raises(InvalidArgumentError, match="LOAMS_SPARK_INSTANCE"):
+        loams_spark.session(endpoint="http://x", namespace="acme", http=FakeHttp())
 
 
 def test_remote_lookup_answer_with_token_is_refused(fake_pyspark: FakeBuilder) -> None:
-    http = FakeHttp(ok({"remote": "sc://h:443/;token=leak"}))
+    http = FakeHttp(ok({"connect_url": "sc://h:443/;token=leak"}))
     with pytest.raises(ValueError, match="token"):
-        loams_spark.session(endpoint="https://loams.example", http=http)
+        loams_spark.session(
+            endpoint="https://loams.example", namespace="acme", instance="spark1", http=http
+        )
 
 
 def test_no_remote_is_an_error(fake_pyspark: FakeBuilder) -> None:
@@ -334,7 +374,7 @@ def test_house_table_plain_and_quoted() -> None:
 # --------------------------------------------------------------------------
 
 
-def test_submit_pyspark_body_shape() -> None:
+def test_submit_pyspark_body_shape(scoped: None) -> None:
     http = FakeHttp(ok(run_json()))
     run = loams_spark.submit_job(
         "etl",
@@ -350,7 +390,10 @@ def test_submit_pyspark_body_shape() -> None:
         http=http,
     )
     method, url, headers, _ = http.requests[0]
-    assert (method, url) == ("POST", "https://loams.example/v1/engines/spark/jobs")
+    assert (method, url) == (
+        "POST",
+        "https://loams.example/v1/namespaces/acme/engines/spark1/jobs",
+    )
     assert headers["authorization"] == "Bearer tok"
     assert headers["content-type"] == "application/json"
     assert http.body() == {
@@ -404,7 +447,7 @@ def test_submit_jar_and_sql_app_shapes() -> None:
         ({"sql": "a.sql", "backend": "yarn"}, "backend"),
     ],
 )
-def test_job_spec_validation(kwargs: dict[str, Any], match: str) -> None:
+def test_job_spec_validation(scoped: None, kwargs: dict[str, Any], match: str) -> None:
     http = FakeHttp()
     with pytest.raises(ValueError, match=match):
         loams_spark.submit_job("j", endpoint="http://x", http=http, **kwargs)
@@ -422,33 +465,80 @@ def test_run_status_parsing() -> None:
         RunStatus.from_json({"state": "running"})
 
 
-def test_status_logs_cancel_and_schedule_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_facade_paths(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LOAMS_ENDPOINT", "https://loams.example")
     monkeypatch.setenv("LOAMS_NAMESPACE", "acme")
+    monkeypatch.setenv("LOAMS_SPARK_INSTANCE", "spark1")
     http = FakeHttp(
         ok(run_json("running")),
         (200, {"content-type": "text/plain"}, b"line 1\nline 2\n"),
         (204, {}, b""),
+        ok({"jobs": [run_json("running"), run_json("succeeded", run_id="run_2")]}),
         ok({"id": "nightly"}),
+        (204, {}, b""),
     )
     assert loams_spark.status("run/1", http=http).state == "running"
     assert loams_spark.logs("run/1", attempt=2, http=http) == "line 1\nline 2\n"
     loams_spark.run("run/1", http=http).cancel()
+    listed = loams_spark.list_jobs(http=http)
+    assert [r.run_id for r in listed] == ["run_1", "run_2"]
     spec = job_spec("etl", pyspark="s3://b/etl.py")
     assert loams_spark.schedule("nightly", "0 2 * * *", spec, http=http) == {"id": "nightly"}
-    base = "https://loams.example/v1/engines/spark"
+    loams_spark.delete_schedule("night ly", http=http)
+    base = "https://loams.example/v1/namespaces/acme/engines/spark1"
     assert [(m, u) for m, u, _, _ in http.requests] == [
         ("GET", f"{base}/jobs/run%2F1"),
         ("GET", f"{base}/jobs/run%2F1/logs?attempt=2"),
-        ("POST", f"{base}/jobs/run%2F1:cancel"),
+        ("POST", f"{base}/jobs/run%2F1/cancel"),
+        ("GET", f"{base}/jobs"),
         ("POST", f"{base}/schedules"),
+        ("DELETE", f"{base}/schedules/night%20ly"),
     ]
     assert all(h["x-loams-namespace"] == "acme" for _, _, h, _ in http.requests)
     assert http.requests[1][2]["accept"] == "text/plain"
-    assert http.body(3) == {"id": "nightly", "cron": "0 2 * * *", "job": spec}
+    assert http.body(4) == {"id": "nightly", "cron": "0 2 * * *", "job": spec}
 
 
-def test_run_wait_polls_to_terminal_state() -> None:
+def test_path_segments_are_quoted() -> None:
+    http = FakeHttp(ok(run_json()))
+    loams_spark.status("r", endpoint="http://x", namespace="a/b", instance="my spark", http=http)
+    assert http.requests[0][1] == "http://x/v1/namespaces/a%2Fb/engines/my%20spark/jobs/r"
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        [run_json()],
+        {"jobs": [run_json()]},
+        {"runs": [run_json()]},
+    ],
+)
+def test_list_jobs_answer_shapes(scoped: None, answer: object) -> None:
+    http = FakeHttp(ok(answer))
+    assert [r.run_id for r in loams_spark.list_jobs(endpoint="http://x", http=http)] == ["run_1"]
+    assert http.requests[0][:2] == ("GET", f"{BASE}/jobs")
+
+
+@pytest.mark.parametrize(
+    ("env", "missing"),
+    [
+        ({"LOAMS_SPARK_INSTANCE": "spark1"}, "LOAMS_NAMESPACE"),
+        ({"LOAMS_NAMESPACE": "acme"}, "LOAMS_SPARK_INSTANCE"),
+    ],
+)
+def test_namespace_and_instance_are_required(
+    monkeypatch: pytest.MonkeyPatch, env: dict[str, str], missing: str
+) -> None:
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    http = FakeHttp()
+    with pytest.raises(InvalidArgumentError, match=missing) as caught:
+        loams_spark.submit_job("j", sql="a.sql", endpoint="http://x", http=http)
+    assert caught.value.metadata == {"field": missing}
+    assert http.requests == []
+
+
+def test_run_wait_polls_to_terminal_state(scoped: None) -> None:
     http = FakeHttp(
         ok(run_json("pending")),
         ok(run_json("submitted")),
@@ -462,7 +552,7 @@ def test_run_wait_polls_to_terminal_state() -> None:
     assert sleeps == [2, 2]
 
 
-def test_run_wait_times_out() -> None:
+def test_run_wait_times_out(scoped: None) -> None:
     now = [0.0]
 
     def sleep(secs: float) -> None:
@@ -479,7 +569,7 @@ def test_run_wait_times_out() -> None:
     ("status", "cls"),
     [(401, UnauthenticatedError), (404, NotFoundError), (503, UnavailableError)],
 )
-def test_error_mapping(status: int, cls: type[LoamsError]) -> None:
+def test_error_mapping(scoped: None, status: int, cls: type[LoamsError]) -> None:
     body = json.dumps({"message": "nope", "reason": "spark_run_missing"}).encode()
     http = FakeHttp((status, {}, body))
     with pytest.raises(cls) as caught:
@@ -488,7 +578,7 @@ def test_error_mapping(status: int, cls: type[LoamsError]) -> None:
     assert caught.value.metadata == {"http_status": str(status), "reason": "spark_run_missing"}
 
 
-def test_unmapped_status_is_base_error() -> None:
+def test_unmapped_status_is_base_error(scoped: None) -> None:
     http = FakeHttp((418, {}, b"teapot"))
     with pytest.raises(LoamsError) as caught:
         loams_spark.status("run_1", endpoint="http://x", http=http)
@@ -496,7 +586,7 @@ def test_unmapped_status_is_base_error() -> None:
     assert "teapot" in str(caught.value)
 
 
-def test_missing_endpoint_is_an_error() -> None:
+def test_missing_endpoint_is_an_error(scoped: None) -> None:
     with pytest.raises(InvalidArgumentError, match="LOAMS_ENDPOINT"):
         loams_spark.status("run_1", http=FakeHttp())
 

@@ -2,9 +2,9 @@
 
 > **Preview.** Managed Spark is design 81 (plan SP1) and is being built now.
 > The SDK helpers, the `loams spark` CLI and the job renderer described here
-> are in the tree, but nothing in this guide has been run end to end yet, and
-> the HTTP routes the CLI and SDK call are proposals until design 81 settles
-> them. Expect names to change.
+> are in the tree, but nothing in this guide has been run end to end yet.
+> The job status, logs and schedule routes are still proposals to the engines
+> facade. Expect names to change.
 
 This walkthrough writes a table from PySpark through Spark Connect into an
 Iceberg table in the namespace's Lakekeeper catalog, then queries it in the
@@ -13,7 +13,7 @@ House. It then runs the same work as a batch job, on a schedule.
 ## What runs where
 
 ```text
-your PySpark ──sc://… + Bearer token──▶ loams-gateway (spark route) ──▶ Sail (Spark Connect server, per namespace)
+your PySpark ──sc://… + Bearer token──▶ loams-gateway (spark route) ──▶ Sail (Spark Connect server, per engine instance)
                                                                           │ Iceberg REST + vended credentials
                                                                           ▼
                                                               Lakekeeper ── bucket (RustFS / S3)
@@ -21,8 +21,10 @@ your PySpark ──sc://… + Bearer token──▶ loams-gateway (spark route) 
                                          House (ClickHouse SQL) ──────────┘ reads ns_<id>.<db> as database <db>
 ```
 
-- Loams runs no Spark engine of its own. Sail (or Apache Spark's Connect
-  server) does the work in its own process (design 26 §9, D51).
+- Loams runs no Spark engine of its own. A Spark *engine instance* belongs to
+  one namespace and runs Sail (the default) or Apache Spark 4.1's Connect
+  server in its own processes (design 26 §9, design 81). Sail runs tenants'
+  Python, so instances are never shared.
 - The token never goes in the `sc://` URL. The SDK sends it as gRPC
   metadata (`authorization: Bearer …`).
 - Tables go in the Iceberg namespace `ns_<id>.<database>`. The House reads
@@ -35,11 +37,15 @@ your PySpark ──sc://… + Bearer token──▶ loams-gateway (spark route) 
 pip install 'loams[spark]'        # pyspark-client: the Connect-only PySpark, no JVM
 export LOAMS_ENDPOINT=https://…   # or http://127.0.0.1:8080 on compose
 export LOAMS_TOKEN=…              # an API key or an access token
+export LOAMS_NAMESPACE=acme       # the namespace
+export LOAMS_SPARK_INSTANCE=etl   # the Spark engine instance in it (name or eng_… id)
 export LOAMS_ICEBERG_URI=http://lakekeeper:8181/catalog
-export LOAMS_ICEBERG_WAREHOUSE=…  # the namespace's warehouse
+export LOAMS_ICEBERG_WAREHOUSE=loams
 ```
 
-`loams spark session-url` prints the namespace's endpoint. Set it as
+`loams spark session-url` opens a session on the instance and prints its
+endpoint: `sc://<instance>.<ns>.<region>.spark.<base-domain>:443/;use_ssl=true`
+in the cloud, `sc://127.0.0.1:15002` on compose. Set it as
 `LOAMS_SPARK_REMOTE` to skip asking the server each time.
 
 ## 2. Write an Iceberg table from PySpark
@@ -66,7 +72,7 @@ spark.table(events).groupBy("day").count().show()
 
 `session()` returns a `SparkSession.builder` with:
 
-- the remote: `LOAMS_SPARK_REMOTE`, or the server's answer;
+- the remote: `LOAMS_SPARK_REMOTE`, or a new session's `connect_url`;
 - the token as gRPC metadata. A `token=` in the URL is refused;
 - a catalog named `loams`: Iceberg REST at Lakekeeper with
   `X-Iceberg-Access-Delegation: vended-credentials`, so table data is read
@@ -116,13 +122,13 @@ run = loams_spark.submit_job("events", pyspark="s3://jobs/events.py",
 print(run.wait().state)
 ```
 
-A job is one of:
+Jobs go to `POST /v1/namespaces/{ns}/engines/{instance}/jobs`. A job is one of:
 
 | Kind | Flag | Default backend |
 |---|---|---|
 | PySpark script | `--py file [--py-file extra]…` | `connect`: a short-lived driver against the namespace's Spark Connect server |
 | SQL file (`;`-separated) | `--sql file` | `connect` |
-| JAR | `--jar file --class Main [--with-jar extra]…` | `kubernetes`: Apache Spark on Kubernetes |
+| JAR | `--jar file --class Main [--with-jar extra]…` | `kubernetes`: Apache Spark 4.1 on Kubernetes |
 
 with `--conf key=value`, driver and executor sizes, `--max-attempts` and
 `--backoff-secs` (exponential, capped at 10 minutes), and `--timeout-secs`.
@@ -139,7 +145,10 @@ loams spark render rollup --jar s3://jobs/rollup.jar --class dev.acme.Rollup \
 ```
 
 The token and the S3 keys come from Kubernetes Secrets, so the rendered pod
-holds only references to them.
+holds only references to them. They are never on a command line either: the
+catalog token, which Spark only takes as conf, is written at start into a
+private properties file that `spark-submit --properties-file` reads. Spark
+event logs go to the instance's `…/spark-events/` prefix.
 
 ### Locally (compose, a laptop)
 

@@ -55,6 +55,18 @@ impl RunState {
         matches!(self, Self::Succeeded | Self::Failed | Self::Canceled)
     }
 
+    /// ENG-UI's `SparkJob.state` (D2015): `Queued`, `Running`, `Succeeded`,
+    /// `Failed` or `Cancelled`. Retrying counts as running: the run is not over.
+    pub fn facade_state(self) -> &'static str {
+        match self {
+            Self::Pending | Self::Submitted => "Queued",
+            Self::Running | Self::Retrying => "Running",
+            Self::Succeeded => "Succeeded",
+            Self::Failed => "Failed",
+            Self::Canceled => "Cancelled",
+        }
+    }
+
     /// The wire name.
     pub fn as_str(self) -> &'static str {
         match self {
