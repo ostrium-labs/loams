@@ -32,7 +32,9 @@
         "drawer",
         "desktop"
       ],
-      "provides": [],
+      "provides": [
+        "studio.factory"
+      ],
       "slots": [
         "console.page",
         "shell.nav.section",

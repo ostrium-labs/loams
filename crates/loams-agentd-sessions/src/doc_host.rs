@@ -187,7 +187,7 @@ fn queued_message_prompt(text: &str, attachments: &[String]) -> String {
 }
 
 fn queue_text_hash(text: &str) -> String {
-    format!("{:x}", Sha256::digest(text.as_bytes()))
+    crate::repos::hex(&Sha256::digest(text.as_bytes()))
 }
 
 /// Content and its historical presentation cutoff travel atomically, even

@@ -11,12 +11,13 @@
     "dev": "pnpm --filter @loams/console dev",
     "build": "pnpm --filter @loams/ui build && pnpm --filter @loams/console build",
     "typecheck": "pnpm -r typecheck",
-    "lint": "biome check",
-    "format": "biome format --write",
+    "lint": "vp check",
+    "format": "vp fmt",
     "test": "pnpm -r --if-present test"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.15",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
   }
 }

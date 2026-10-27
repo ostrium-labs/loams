@@ -167,6 +167,8 @@ pub struct EngineCore {
     pub uploads: Uploads,
     pub agent_accounts: AgentAccounts,
     pub harness_updates: harness_updates::HarnessUpdateCoordinator,
+    /// The software factory's app connections (SF1 amendment F1; §50 §13, D795).
+    pub factory: Arc<loams_agentd_factory::FactoryHost>,
     pub device_id: String,
     workspace_scope: WorkspaceScope,
     /// Exclusive data-dir lock — held for the engine's lifetime (single-instance).
@@ -349,6 +351,10 @@ impl EngineCore {
             agent_accounts_config.codex_home.join("generated_images"),
         );
         let agent_accounts = AgentAccounts::new(agent_accounts_config);
+        let factory = Arc::new(
+            loams_agentd_factory::open(data_dir)
+                .map_err(|e| EngineError::Other(format!("factory: {e}")))?,
+        );
         let harness_updates =
             harness_updates::HarnessUpdateCoordinator::new(data_dir, registry.clone());
         sessions.set_titles(TitleGenerator::new(
@@ -415,6 +421,7 @@ impl EngineCore {
             uploads,
             agent_accounts,
             harness_updates,
+            factory,
             device_id,
             workspace_scope: profile.scope(),
             _instance_lock: lock,
@@ -455,7 +462,8 @@ impl EngineCore {
         .with_usage(self.usage.clone())
         .with_approvals(self.approvals.clone())
         .with_marketplace(self.marketplace.clone())
-        .with_harness_updates(self.harness_updates.clone());
+        .with_harness_updates(self.harness_updates.clone())
+        .with_factory(self.factory.clone());
         Arc::new(rpc)
     }
 

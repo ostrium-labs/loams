@@ -1,0 +1,10 @@
+[Unit]
+Description=Loams: refresh Confluent keys every 5 minutes (loams byoc confluent key rotate)
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+RandomizedDelaySec=30s
+
+[Install]
+WantedBy=timers.target

@@ -71,7 +71,7 @@ export function DataTable({
           ) : (
             shown.map((row, i) => (
               // Rows have no identity of their own; position in the window is the key.
-              // biome-ignore lint/suspicious/noArrayIndexKey: see above
+              // oxlint-disable-next-line react/no-array-index-key -- see above
               <tr key={i}>
                 {columns.map((c) => (
                   <td key={c}>{cell(row[c], c === timeField)}</td>
