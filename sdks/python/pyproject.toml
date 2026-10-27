@@ -44,6 +44,11 @@ polars = ["polars>=1.0.0"]
 # `loams.runtime.machine_key`: an agent's token from its private-key JWT key (design 76 §10,
 # plan IA1 IA4 Task 2). `cryptography` signs the RS256 assertion.
 agent = ["cryptography>=44"]
+# `loams.spark` (preview, design 81 SP-b D2007): Spark Connect sessions against a namespace's
+# Spark endpoint. `pyspark-client` is the Connect-only PySpark (no JVM); 4.0.0 (2025) is the
+# first release with `SparkSession.builder.channelBuilder`, which carries the Loams token as
+# gRPC metadata. The job API in `loams.spark` needs no extra.
+spark = ["pyspark-client>=4.0.0"]
 
 [project.urls]
 Homepage = "https://loams.dev"
@@ -111,6 +116,11 @@ module = [
 ]
 ignore_errors = true
 
+# PySpark is an optional extra and is imported lazily by `loams.spark`; the tests fake it.
+[[tool.mypy.overrides]]
+module = ["pyspark", "pyspark.*"]
+ignore_missing_imports = true
+
 [tool.ruff]
 line-length = 100
 target-version = "py310"
@@ -121,4 +131,11 @@ select = ["E", "F", "I", "UP", "B", "SIM", "ANN", "RUF"]
 [tool.uv]
 # The 14-day rule for new dependencies: pycparser 3.12 (via cryptography's cffi) is from
 # 2026-10-22.
-constraint-dependencies = ["pycparser<3.12"]
+# Via the `spark` extra (pyspark-client 4.2.0): googleapis-common-protos 1.76.0, pandas 3.1.0 and
+# python-dateutil 3.0.0 are from 2026-10-21/22.
+constraint-dependencies = [
+  "pycparser<3.12",
+  "googleapis-common-protos<1.76",
+  "pandas<3.1",
+  "python-dateutil<3",
+]
