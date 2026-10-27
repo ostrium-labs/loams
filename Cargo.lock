@@ -8381,12 +8381,14 @@ dependencies = [
  "loams-cloudevents",
  "loams-collection",
  "loams-common",
+ "loams-confluent",
  "loams-durable",
  "loams-es",
  "loams-git",
  "loams-graph",
  "loams-hnsw",
  "loams-hot",
+ "loams-identity-sync",
  "loams-kv",
  "loams-link",
  "loams-live",
@@ -8401,12 +8403,14 @@ dependencies = [
  "loams-proto",
  "loams-qdrant",
  "loams-query",
+ "loams-risingwave",
  "loams-sqlgate",
  "loams-store",
  "loams-stream-grpc",
  "loams-tikv",
  "loams-upgrade",
  "loams-worker",
+ "loams-zitadel",
  "mysql_async",
  "object_store 0.14.2",
  "opensrv-mysql",
@@ -8972,6 +8976,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-confluent"
+version = "0.1.2"
+dependencies = [
+ "axum 0.8.9",
+ "base64 0.23.1",
+ "clap",
+ "humantime",
+ "reqwest 0.13.5",
+ "rustls",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "zeroize",
+]
+
+[[package]]
 name = "loams-console-mock"
 version = "0.1.2"
 dependencies = [
@@ -9073,13 +9094,17 @@ dependencies = [
 name = "loams-gateway"
 version = "0.1.2"
 dependencies = [
+ "async-trait",
  "clap",
  "hex",
  "http-body-util",
  "hyper",
  "hyper-util",
+ "loams-spark",
  "loams-temporal-frontend",
+ "md-5 0.11.0",
  "rcgen",
+ "reqwest 0.13.5",
  "rustls",
  "serde",
  "serde_json",
@@ -9595,6 +9620,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-meter-agent"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "base64 0.23.1",
+ "bytes",
+ "clap",
+ "hmac 0.13.0",
+ "httpmock",
+ "loams-cloudevents",
+ "loams-log",
+ "prost 0.14.4",
+ "rand 0.9.5",
+ "reqwest 0.13.5",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "thiserror 2.0.21",
+ "time",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "loams-meter-core"
 version = "0.1.2"
 dependencies = [
@@ -9606,6 +9657,13 @@ dependencies = [
  "sha2 0.11.0",
  "thiserror 2.0.21",
  "time",
+]
+
+[[package]]
+name = "loams-meter-gate"
+version = "0.1.2"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]
@@ -9658,6 +9716,7 @@ dependencies = [
  "k8s-openapi",
  "keyring",
  "kube",
+ "loams-authz",
  "loams-common",
  "loams-kv",
  "loams-pg-control",
@@ -9885,6 +9944,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-risingwave"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "clap",
+ "futures",
+ "loams-engines",
+ "object_store 0.14.2",
+ "rand 0.9.5",
+ "reqwest 0.13.5",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "time",
+ "tokio",
+ "tokio-postgres",
+ "toml 0.8.23",
+ "tracing",
+]
+
+[[package]]
 name = "loams-safekeeper"
 version = "0.1.2"
 dependencies = [
@@ -9953,6 +10033,36 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "loams-spark"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "clap",
+ "futures",
+ "hex",
+ "http",
+ "loams-authz",
+ "prost 0.14.4",
+ "prost-types",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "subtle",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-stream",
+ "toml 0.8.23",
+ "tonic 0.14.6",
+ "tonic-prost",
+ "tonic-prost-build",
+ "tower 0.5.3",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
@@ -10084,9 +10194,11 @@ dependencies = [
  "loams-temporal-matching",
  "loams-temporal-proto",
  "loams-temporal-resonate",
+ "loams-temporal-schedule",
  "loams-temporal-statemachine",
  "loams-temporal-store",
  "loams-temporal-testkit",
+ "loams-temporal-visibility",
  "prost 0.14.4",
  "prost-types",
  "serde",
@@ -10151,10 +10263,30 @@ dependencies = [
  "percent-encoding",
  "proptest",
  "reqwest 0.13.5",
+ "resonate-client",
  "rustls",
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "loams-temporal-schedule"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "chrono-tz 0.10.4",
+ "loams-temporal-proto",
+ "prost 0.14.4",
+ "prost-types",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "sqlx 0.9.0",
  "thiserror 2.0.21",
  "tokio",
  "tracing",
@@ -10202,6 +10334,20 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "loams-temporal-visibility"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "serde",
+ "serde_json",
+ "sqlx 0.9.0",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -10301,6 +10447,7 @@ dependencies = [
  "base64 0.23.1",
  "futures",
  "loams-web-bridge",
+ "rand 0.9.5",
  "regex",
  "serde",
  "serde_json",
@@ -13757,6 +13904,19 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "resonate-client"
+version = "0.10.1"
+source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+dependencies = [
+ "async-trait",
+ "reqwest 0.12.28",
+ "resonate-core",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

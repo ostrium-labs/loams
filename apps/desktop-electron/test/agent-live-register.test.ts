@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { liveToolDefs } from "../src/main/agent/live-tools";
 import { ToolRegistry } from "../src/main/agent/tools";
 

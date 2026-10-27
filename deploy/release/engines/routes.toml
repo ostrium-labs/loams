@@ -1,0 +1,14 @@
+# engine-gateway's routes on the compose stack (compose.lake.yaml). In the
+# Kubernetes deploy, the engines controller renders these entries per
+# instance (loams_risingwave::gateway).
+
+# --- RisingWave (RW-a, D1957): the compose instance, on 127.0.0.1:4566
+# without SNI. Its gateway user is created by `risingwave-init`.
+[[risingwave.endpoints]]
+name = "risingwave"
+namespace = "default"
+hostnames = []
+upstreams = ["risingwave-frontend:4566"]
+upstream_user = "loams_gateway"
+upstream_password_file = "/run/engine-gateway/risingwave-password"
+port = 4566

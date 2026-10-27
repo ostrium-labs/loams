@@ -8,8 +8,10 @@ What it runs: the native families compiled into the `loams-fabric` image: Kafka 
 
 ## Turn it on
 
-1. In `.env`, add `connectors` to `COMPOSE_PROFILES`, for example `COMPOSE_PROFILES=connectors`.
-2. Create a Loams API key for connect and write it to `secrets/connect/engine-key` (mode 0600, owner uid 10001).
+On a remote machine, `deploy/release/byoc/install.sh --kafka confluent …` does steps 1, 2 and 4 for Confluent Cloud ([kafka.md](../kafka.md), "Kafka endpoint: Iggy or Confluent"). By hand:
+
+1. In `.env`, add `connectors` to `COMPOSE_PROFILES`, for example `COMPOSE_PROFILES=connectors`, and make sure `LOAMS_AUTH_MODE` takes API keys (`tailscale,apikey`, `apikey`, or `oidc` with `secrets/api-keys`): the connect socket accepts nothing else.
+2. Create a Loams API key for connect (`loams auth new-key --label connect --append secrets/api-keys`) and write the key it prints to `secrets/connect/engine-key` (mode 0600, owner uid 10001). Optionally write a random token to `secrets/connect/connect-admin-token` for the admin API.
 3. Put the connectors' secrets under `secrets/connect/0/<secret>/<key>` (mode 0600, owner uid 10001). On a BYOC VM the secrets fetcher writes the Confluent ones there (`secrets/connect/0/confluent-<integration>/{username,password,…}`).
 4. Write one instance file per connector in `connect/instances/` (below).
 5. `docker compose up -d`.

@@ -5,12 +5,13 @@ use std::sync::Arc;
 
 use datafusion::arrow::array::RecordBatch;
 use datafusion::arrow::datatypes::SchemaRef;
+use datafusion::common::DataFusionError;
 use datafusion::execution::SessionStateBuilder;
-use datafusion::prelude::SessionConfig;
 use loams_house_sql::{Registry, prepare};
 use loams_house_types::ChError;
 
 use crate::catalog::MemCatalog;
+use crate::settings::{Settings, Shape, memory_limit_exceeded, merging_engine, timeout_exceeded};
 
 /// A statement's answer.
 #[derive(Debug)]
@@ -21,6 +22,8 @@ pub struct Answer {
     pub batches: Vec<RecordBatch>,
     /// The statement's `FORMAT`, if it named one.
     pub format: Option<String>,
+    /// The settings it ran with: the formats read [`Settings::text`].
+    pub settings: Settings,
 }
 
 /// The Rust engine.
@@ -64,46 +67,77 @@ impl Engine {
         settings: &[(String, String)],
         database: &str,
     ) -> Result<Answer, ChError> {
+        // The request's settings first, as ClickHouse checks them before it
+        // parses the statement (D1805: refused, never ignored).
+        Settings::resolve(settings)?;
         let prepared = prepare(sql, params, self.catalog.as_ref(), &self.registry, database)?;
-        // No setting is honoured yet (plan HE1 Task 37, D1805): refused, never
-        // ignored.
-        if let Some((name, _)) = settings.iter().chain(&prepared.settings).next() {
-            return Err(ChError::not_implemented(format!(
-                "The setting {name} is not supported by the Loams House engine yet (plan HE1 Task 37)"
-            )));
-        }
+        let applied = Settings::resolve(settings.iter().chain(&prepared.settings))?;
+        let shape = Shape::of(
+            sql,
+            &prepared.plan,
+            &prepared.resolution,
+            !params.is_empty(),
+            |name| self.merging(name, database),
+        );
+        applied.check(&shape)?;
+        let memory = applied.max_memory_usage;
+        // A DataFusion error as ClickHouse's; past `max_memory_usage`, 241.
+        let err = move |e: DataFusionError| {
+            let exhausted = match e.find_root() {
+                DataFusionError::ResourcesExhausted(m) => Some(m.clone()),
+                _ => None,
+            };
+            match exhausted {
+                Some(m) => memory_limit_exceeded(&m, memory),
+                None => loams_house_sql::plan::ch_error(e),
+            }
+        };
         let names = prepared.names;
         // DataFusion's defaults with ClickHouse's type rules in the analyzer
-        // (plan HE1 Task 24). The plan is analyzed once; the answer's schema
-        // is the analyzed plan's, whose fields carry the ClickHouse types
-        // (R24.1), and the optimized plan's batches are relabelled with it.
+        // (plan HE1 Task 24), under the statement's settings (Task 37:
+        // `max_threads`, `max_block_size`, `max_memory_usage`). The plan is
+        // analyzed once; the answer's schema is the analyzed plan's, whose
+        // fields carry the ClickHouse types (R24.1), and the optimized plan's
+        // batches are relabelled with it.
         let state = SessionStateBuilder::new()
-            .with_config(SessionConfig::new().with_target_partitions(1))
+            .with_config(applied.config())
+            .with_runtime_env(applied.runtime()?)
             .with_default_features()
             .with_analyzer_rules(loams_house_sql::coerce::analyzer_rules())
             .build();
-        let err = loams_house_sql::plan::ch_error;
-        let analyzed = state
-            .analyzer()
-            .execute_and_check(prepared.plan, state.config_options(), |_, _| {})
-            .map_err(err)?;
-        let schema: SchemaRef = Arc::new(analyzed.schema().as_arrow().clone());
-        let optimized = state
-            .optimizer()
-            .optimize(analyzed, &state, |_, _| {})
-            .map_err(err)?;
-        let physical = state
-            .query_planner()
-            .create_physical_plan(&optimized, &state)
-            .await
-            .map_err(err)?;
-        let batches = datafusion::physical_plan::collect(physical, state.task_ctx())
-            .await
-            .map_err(err)?
-            .into_iter()
-            .map(|b| RecordBatch::try_new(schema.clone(), b.columns().to_vec()))
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| ChError::logical_error(e.to_string()))?;
+        let plan = prepared.plan;
+        let run = async {
+            let analyzed = state
+                .analyzer()
+                .execute_and_check(plan, state.config_options(), |_, _| {})
+                .map_err(err)?;
+            let schema: SchemaRef = Arc::new(analyzed.schema().as_arrow().clone());
+            let optimized = state
+                .optimizer()
+                .optimize(analyzed, &state, |_, _| {})
+                .map_err(err)?;
+            let physical = state
+                .query_planner()
+                .create_physical_plan(&optimized, &state)
+                .await
+                .map_err(err)?;
+            let batches = datafusion::physical_plan::collect(physical, state.task_ctx())
+                .await
+                .map_err(err)?
+                .into_iter()
+                .map(|b| RecordBatch::try_new(schema.clone(), b.columns().to_vec()))
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| ChError::logical_error(e.to_string()))?;
+            Ok::<_, ChError>((schema, batches))
+        };
+        let started = std::time::Instant::now();
+        let (schema, batches) = match applied.max_execution_time {
+            Some(limit) => tokio::time::timeout(limit, run)
+                .await
+                .map_err(|_| timeout_exceeded(started.elapsed(), limit))??,
+            None => run.await?,
+        };
+        applied.check_result(&batches)?;
         let (schema, batches) = match names {
             Some(names) => named(schema, batches, &names)?,
             None => (schema, batches),
@@ -112,7 +146,21 @@ impl Engine {
             schema,
             batches,
             format: prepared.format,
+            settings: applied,
         })
+    }
+
+    /// Whether the table `name` (`[db, t]` or `[t]` in `database`) is a
+    /// merging engine, which `SETTINGS final = 1` would change (Task 27).
+    fn merging(&self, name: &[String], database: &str) -> bool {
+        let (db, table) = match name {
+            [db, t] => (db.as_str(), t.as_str()),
+            [t] => (database, t.as_str()),
+            _ => return false,
+        };
+        self.catalog
+            .get(db, table)
+            .is_some_and(|t| merging_engine(&t.engine))
     }
 }
 

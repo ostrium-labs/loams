@@ -185,3 +185,27 @@ resolve = "github:pgdogdev/pgdog"
 # Run unmodified as a separate process, in the never-distributed
 # transaction-mode overlay only (D318; scripts/ci/pgdog-licence.sh).
 exception = "D318"
+
+[PDM]
+value = "2.29.2"
+licence = "MIT"
+source = "https://github.com/pdm-project/pdm/blob/2.29.2/LICENSE"
+resolve = "github:pdm-project/pdm"
+
+[JEST_JUNIT]
+value = "17.0.0"
+licence = "Apache-2.0"
+source = "https://www.npmjs.com/package/jest-junit/v/17.0.0"
+resolve = "npm:jest-junit"
+
+[MOCKERY]
+value = "3.8.0"
+licence = "BSD-3-Clause"
+source = "https://github.com/vektra/mockery/blob/v3.8.0/LICENSE"
+resolve = "github:vektra/mockery"
+
+[GOTESTSUM]
+value = "1.13.0"
+licence = "Apache-2.0"
+source = "https://github.com/gotestyourself/gotestsum/blob/v1.13.0/LICENSE"
+resolve = "github:gotestyourself/gotestsum"

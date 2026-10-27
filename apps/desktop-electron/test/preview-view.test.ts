@@ -1,7 +1,7 @@
 // Studio's preview view (SD1 Task 26): the WebContentsView main places for the Preview
 // tab, its isolation and its policy (design §53 §5.8, D678).
 import { EventEmitter } from "node:events";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 const { FakeView, created, openExternal } = vi.hoisted(() => {
 	const created: { options: unknown; view: unknown }[] = [];

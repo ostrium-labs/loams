@@ -60,11 +60,15 @@ cargo_package(
         },
     ],
     deps = [
+        "//third-party/rust:async-trait",
         "//third-party/rust:clap",
         "//third-party/rust:hex",
         "//third-party/rust:http-body-util",
         "//third-party/rust:hyper",
         "//third-party/rust:hyper-util",
+        "//third-party/rust:md-5",
+        "//third-party/rust:rcgen",
+        "//third-party/rust:reqwest-0_13",
         "//third-party/rust:rustls",
         "//third-party/rust:serde",
         "//third-party/rust:serde_json",
@@ -78,7 +82,6 @@ cargo_package(
         "//third-party/rust:tracing-subscriber",
     ],
     dev_deps = [
-        "//third-party/rust:rcgen",
         "//third-party/rust:tempfile",
     ],
     rustc_flags = [

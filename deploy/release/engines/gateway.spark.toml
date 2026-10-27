@@ -1,0 +1,29 @@
+# The Spark Connect block of engine-gateway's gateway.toml (design 81 R7/R8,
+# SP-a D1992). RW-a's deploy/release/engines/gateway.toml carries this under
+# the "SP-a: spark" comment block; the image is built with
+# GATEWAY_FEATURES containing `spark`. Same keys as loams-spark-proxy's file
+# (deploy/release/spark/proxy.toml.example). Spark routes are static here;
+# routes.toml is not read by the spark module yet.
+#
+# Compose publishes 15002 on 127.0.0.1 only (R7). Keys come from
+# spark/keys.json (`loams-spark-proxy mint-key --namespace local ...`);
+# a key of namespace `local` is its grant (compose is single tenant, R3/R9).
+[spark]
+listen = "0.0.0.0:15002"
+keys_file = "/etc/loams-gateway/spark/keys.json"
+
+[spark.authz]
+kind = "key_grants"
+
+[spark.limits]
+max_sessions = 8
+max_operations = 16
+idle_timeout = 1800
+instance_idle_timeout = 900
+
+# Sail (profile `spark`). For Apache Spark (profile `spark-jvm`) use
+# uri = "http://spark-connect:15002" and token_env = "SPARK_CONNECT_AUTHENTICATE_TOKEN".
+[[spark.routes]]
+namespace = "local"
+instance = "spark"
+uri = "http://sail:50051"

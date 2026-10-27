@@ -29,6 +29,7 @@ tuples:
   - {user: user:pia, relation: admin, object: project:p1}
   - {user: user:dave, relation: deployer, object: environment:dev}
   - {user: user:vic, relation: viewer, object: environment:prod}
+  - {user: user:val, relation: viewer, object: environment:dev}
   - {user: user:bill, relation: billing_viewer, object: org:acme}
   - {user: user:opal, relation: operator, object: platform:default}
   # Loams Meter (ME1 Task 10): mia is meter_admin, bea billing_admin of acme.
@@ -101,7 +102,7 @@ tests:
         assertions: {can_view: true, can_operate: true, can_destroy: false}
       - user: user:tess
         object: database:dev-db
-        assertions: {can_read: true, can_write: true, can_admin: false}
+        assertions: {can_read: true, can_write: true, can_admin: false, can_connect: true}
       # Design 81 (D1919): a managed engine follows its environment, like a database.
       - user: user:tess
         object: engine:eng_dev_rw
@@ -115,6 +116,10 @@ tests:
       - user: user:mona
         object: engine:eng_dev_rw
         assertions: {can_view: false, can_connect: false}
+      # §46 R1.9: a viewer sees the engine but gets no connection credential.
+      - user: user:val
+        object: engine:eng_dev_rw
+        assertions: {can_view: true, can_operate: false, can_admin: false, can_connect: false}
 
   - name: environment_roles_stay_in_their_environment
     check:
@@ -129,10 +134,10 @@ tests:
         assertions: {can_view: true, can_operate: false, can_destroy: false}
       - user: user:vic
         object: database:prod-db
-        assertions: {can_read: true, can_connect: true, can_write: false, can_admin: false}
+        assertions: {can_read: true, can_connect: false, can_write: false, can_admin: false}
       - user: service_account:ci
         object: database:prod-db
-        assertions: {can_read: true, can_connect: true, can_write: false}
+        assertions: {can_read: true, can_connect: false, can_write: false}
 
   - name: deny_by_default_without_tuple
     check:
