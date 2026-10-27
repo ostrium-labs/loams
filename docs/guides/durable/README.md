@@ -22,7 +22,7 @@ its state on **Loams Postgres** and never on Loams SQL. Its results are in the
 | Product | Page | Status |
 |---|---|---|
 | Temporal server on Loams Postgres (compat mode) | [temporal-compat-mode.md](temporal-compat-mode.md) | preview, **not yet go**: Temporal's persistence suite is green on Loams Postgres 16, but one of two soaks was red ([#1185](https://github.com/ostrium-labs/loams/issues/1185)) |
-| DBOS Transact | [dbos.md](dbos.md) | the conformance harness is written but **not merged or run** yet |
+| DBOS Transact | [dbos.md](dbos.md) | preview, the conformance harness is written but **not yet run** |
 | Airflow 3.3 with the Edge executor | [airflow.md](airflow.md) | preview, written but **not yet run end to end** |
 
 ## Common ground

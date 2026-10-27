@@ -25,10 +25,10 @@ Run: not yet run; Loams dev.
 | Temporal server (compat mode), Loams Postgres 16 | Temporal 1.32.1 | direct | **not run** | – | – | – | none |
 | Temporal server (compat mode), Loams Postgres 17 (expected-failure leg: Temporal lists Postgres 13-16) | Temporal 1.32.1 | direct | **not run** | – | – | – | none |
 | Temporal history corpus replays | Go SDK 1.49.0, TypeScript SDK 1.24.0 | none (files) | **not run** | – | – | – | none |
-| DBOS Transact (Python) | dbos-transact-py 3.2.0 | direct | **not merged** | – | – | – | – |
-| DBOS Transact (TypeScript) | dbos-transact-ts 5.2.11 | direct | **not merged** | – | – | – | – |
-| DBOS Transact (Go) | dbos-transact-golang 1.6.0 | direct | **not merged** | – | – | – | – |
-| DBOS Transact (Java) | dbos-transact-java 1.2.0 | direct | **not merged** | – | – | – | – |
+| DBOS Transact (Python) | dbos-transact-py 3.2.0 | direct | **not run** | – | – | – | `txn-mode` (https://github.com/ostrium-labs/loams/issues/1149) |
+| DBOS Transact (TypeScript) | dbos-transact-ts 5.2.11 | direct | **not run** | – | – | – | `txn-mode` (https://github.com/ostrium-labs/loams/issues/1149) |
+| DBOS Transact (Go) | dbos-transact-golang 1.6.0 | direct | **not run** | – | – | – | `txn-mode` (https://github.com/ostrium-labs/loams/issues/1149) |
+| DBOS Transact (Java) | dbos-transact-java 1.2.0 | direct | **not run** | – | – | – | `txn-mode` (https://github.com/ostrium-labs/loams/issues/1149) |
 | Airflow with the Edge executor | Airflow 3.3.2, edge3 4.3.2 | direct | **not run** | – | – | – | none |
 | Airflow with the LocalExecutor (comparison) | Airflow 3.3.2 | direct | **not run** | – | – | – | none |
 

@@ -145,6 +145,33 @@ pins_are_literal() {
   done <"$OC_PINS"
 }
 
+# --- DBOS (DX0 Task 5; no stack) -------------------------------------------------
+
+# The scripts and the apps parse (no SDK is installed or built here).
+dbos_files_parse() {
+  local f
+  for f in "$HERE"/dbos-common/cases.sh "$HERE"/dbos-*/run.sh; do
+    bash -n "$f" || { echo "does not parse: $f"; return 1; }
+  done
+  python3 -I -c 'import ast, sys; ast.parse(open(sys.argv[1], encoding="utf-8").read())' "$HERE/dbos-common/crash/py/app.py"
+  python3 -I -c 'import json, sys; json.load(open(sys.argv[1]))' "$HERE/dbos-common/crash/ts/package.json"
+  grep -q '^package main' "$HERE/dbos-common/crash/go/main.go"
+  grep -q 'class App' "$HERE/dbos-common/crash/java/src/main/java/loams/App.java"
+}
+
+# Each SDK's expected failures are well formed, and its app pins the same
+# SDK release as pins.env.
+dbos_xfail_and_pins() {
+  local l
+  for l in py ts go java; do
+    "${XFAIL[@]}" --validate "$HERE/dbos-$l/xfail.toml"
+  done
+  grep -q "\"@dbos-inc/dbos-sdk\": \"$DBOS_TS\"" "$HERE/dbos-common/crash/ts/package.json" || { echo "ts app is not on $DBOS_TS"; return 1; }
+  grep -q "dbos-transact-golang v$DBOS_GO\$" "$HERE/dbos-common/crash/go/go.mod" || { echo "go app is not on v$DBOS_GO"; return 1; }
+  grep -q "dbos==\$DBOS_PY" "$HERE/dbos-py/run.sh" || { echo "py app does not install dbos==\$DBOS_PY"; return 1; }
+  grep -q '"dev.dbos:transact:"' "$HERE/dbos-common/crash/java/build.gradle.kts"
+}
+
 # --- The Temporal history corpus (DX0 Task 4; per PR, no server) ----------------
 
 corpus_manifest_complete() {
@@ -482,6 +509,8 @@ COMPOSE_TESTS=(
   compose_compute_no_new_host_ports compose_compute_images_pinned_by_digest
   compose_compute_uses_direct_endpoint compose_airflow_test_overlay_valid
 )
+
+TESTS+=(dbos_files_parse dbos_xfail_and_pins)
 
 main() {
   local -a want=("$@") run=() t

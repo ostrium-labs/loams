@@ -15,8 +15,8 @@ Status: the harness (DX0 Task 1), the databases and endpoint modes (Task 2,
 (Task 4, `temporal/corpus/`) and Airflow with the Edge executor (Task 6,
 `airflow/`, written but not yet run end to end), and the nightly, matrix and
 docs (Task 7: `.github/workflows/compute-compat.yml`,
-`scripts/compute/matrix.py`, `docs/guides/durable/`). DBOS (Task 5) is not
-merged yet. Results: [the matrix](../../docs/guides/compute/compatibility.md).
+`scripts/compute/matrix.py`, `docs/guides/durable/`). DBOS (Task 5, `dbos-*/`) is
+written but not yet run. Results: [the matrix](../../docs/guides/compute/compatibility.md).
 
 ## Layout
 

@@ -11,7 +11,7 @@ before the owner reviews it. Plan: [DX1](2026-10-21-dx1-durable-execution-compat
 
 | Criterion (plan, "DX0 exit") | State |
 |---|---|
-| Every product has a nightly run with a committed `xfail.toml` | **not met.** The nightly workflow and every `xfail.toml` are committed, but no nightly has run. DBOS (Task 5) is not merged |
+| Every product has a nightly run with a committed `xfail.toml` | **not met.** The nightly workflow and every `xfail.toml` are committed, but no nightly has run |
 | The corpus has at least the DX1 and DX2 scenarios in both languages and replays clean | **met against start-dev.** 31 scenarios (DX1 9, DX2 15, DX3 3, DX4 4) and 68 histories (36 Go, 32 TypeScript) replayed clean locally (#1207). They were generated against `temporal server start-dev`, not compat mode (T4.R1) |
 | `SPIKE.md` and this report give the go or no-go | compat mode is **not yet go** (below) |
 | The owner reviews the report before DX1 starts | superseded: the owner started DX1 in parallel on 2026-10-24 (D1590) |
@@ -25,7 +25,7 @@ before the owner reviews it. Plan: [DX1](2026-10-21-dx1-durable-execution-compat
 | 2, databases and endpoint modes | #1168 | one database and role per product. Only **direct** endpoints exist. There is no session-pooled endpoint (#1129), and `pg-control` offers only Postgres 17 (#1130) |
 | 3, Temporal compat mode | #1187 | Loams Postgres 16, direct: Temporal's persistence suite passed 1,236 cases (run serially). The soak was green once and red once, because a stopped compute did not start again (#1185). The transaction-mode smoke passed through PgDog. The 17 leg has not run |
 | 4, the corpus | #1207 | above |
-| 5, DBOS | not merged (branch `dx0-dbos`) | the per-SDK harness and the crash apps are written but not run |
+| 5, DBOS | #1392 | the per-SDK harness and the crash apps are written but not run (T5.R4) |
 | 6, Airflow with the Edge executor | #1294 | OC0's seven cases plus five Edge cases are written but **not yet run end to end** (T6.R9) |
 | 7, matrix, docs, nightly, this report | this PR | `scripts/compute/matrix.py`, `docs/guides/durable/`, `docs/guides/compute/`, `compute-compat.yml` |
 
@@ -54,7 +54,7 @@ before the owner reviews it. Plan: [DX1](2026-10-21-dx1-durable-execution-compat
 
 1. Run the nightly once by hand (`gh workflow run compute-compat.yml`). Record its failures in each `xfail.toml` with reasons and issues, then refresh this report and the committed matrix.
 2. Fix or explain #1185 (the compute restart). Compat mode waits on it.
-3. Merge DBOS (Task 5) after one run of each SDK.
+3. Record DBOS's first results (Task 5): its `txn_mode` entries may turn into unexpected passes, as Temporal's did (T3.R6).
 4. Before DX1A, run the Airflow Edge baseline green twice. If the start-up `edge3` install is slow or flaky there, switch to a built image (T6.R2).
 
 ## Owner rulings (2026-10-27, defaults approved, relayed by the coordinator)
