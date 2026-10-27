@@ -1,0 +1,147 @@
+# The compute conformance nightly (OC1 OC0 Task 11, DX1 DX0 Task 7): each
+# product runs unmodified on Loams Postgres through conformance/compute/, and
+# is checked strictly against its xfail.toml; a final job renders the
+# compatibility matrix (scripts/compute/matrix.py) as an artifact. Updating
+# the committed docs/guides/compute/compatibility.md from it is a manual pull
+# request. Dispatched by nightly.yml (a `schedule:` only runs on main), or by
+# hand with a subset of the products. Per pull request, ci.yml's repo-checks
+# job runs only conformance/compute/selftest.sh (DX1 ruling T1.R4).
+#
+# GitHub-hosted runners (DX0's global constraint): the suites start the Loams
+# Postgres stack and a product's services, too heavy for the shared local
+# runners.
+name: Compute conformance
+
+on:
+  workflow_dispatch:
+    inputs:
+      products:
+        description: "Comma-separated legs to run (durable, temporal-pg16, temporal-pg17, corpus, dbos, airflow, airflow-local), or all."
+        default: all
+
+concurrency:
+  group: compute-compat-${{ github.ref }}
+  # The nightly runs to completion.
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  OC_OUT: ${{ github.workspace }}/target/compute
+
+jobs:
+  licences:
+    name: Pin licences (online)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: licence gate, re-read online (DX1 ruling T1.R3)
+        run: scripts/compute/licence_gate.sh --online
+
+  leg:
+    name: ${{ matrix.leg }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ matrix.timeout }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - leg: durable
+            timeout: 30
+            run: conformance/compute/durable/run.sh
+          - leg: temporal-pg16
+            timeout: 180
+            run: COMPUTE_PG_MAJOR=16 conformance/compute/temporal/run.sh
+          - leg: temporal-pg17
+            timeout: 180
+            run: COMPUTE_PG_MAJOR=17 conformance/compute/temporal/run.sh
+          - leg: corpus
+            timeout: 45
+            run: conformance/compute/temporal/corpus/replay.sh
+          - leg: dbos
+            timeout: 120
+            # DX0 Task 5's harness is not merged yet: the leg says so and passes.
+            run: |
+              ran=0 rc=0
+              for l in py ts go java; do
+                if [ -x "conformance/compute/dbos-$l/run.sh" ]; then
+                  ran=1
+                  "conformance/compute/dbos-$l/run.sh" || rc=1
+                fi
+              done
+              [ "$ran" = 1 ] || echo "::notice::the DBOS harness (DX0 Task 5) is not on this branch"
+              exit "$rc"
+          - leg: airflow
+            timeout: 150
+            run: conformance/compute/airflow/run.sh
+          - leg: airflow-local
+            timeout: 120
+            run: AIRFLOW_EXECUTOR=LocalExecutor OC_SKIP=edge conformance/compute/airflow/run.sh
+    steps:
+      # A job's `if` cannot read `matrix`, so the selection is a step.
+      - name: selected?
+        id: want
+        env:
+          PRODUCTS: ${{ inputs.products || 'all' }}
+          LEG: ${{ matrix.leg }}
+        run: |
+          case ",$PRODUCTS," in
+            *,all,* | *,"$LEG",*) echo "run=true" >>"$GITHUB_OUTPUT" ;;
+            *) echo "run=false" >>"$GITHUB_OUTPUT"; echo "::notice::$LEG not selected" ;;
+          esac
+      - uses: actions/checkout@v7
+        if: ${{ steps.want.outputs.run == 'true' }}
+      - name: free disk for the images
+        if: ${{ steps.want.outputs.run == 'true' }}
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+      - name: ${{ matrix.leg }}
+        if: ${{ steps.want.outputs.run == 'true' }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$OC_OUT"
+          ${{ matrix.run }}
+      - name: container logs
+        if: ${{ failure() && steps.want.outputs.run == 'true' }}
+        run: |
+          mkdir -p "$OC_OUT/logs"
+          for c in $(docker ps -a --format '{{.Names}}'); do
+            docker logs --tail 2000 "$c" >"$OC_OUT/logs/$c.log" 2>&1 || true
+          done
+      - uses: actions/upload-artifact@v7.0.2
+        if: ${{ !cancelled() && steps.want.outputs.run == 'true' }}
+        with:
+          name: compute-${{ matrix.leg }}
+          path: target/compute/
+          if-no-files-found: warn
+
+  matrix:
+    name: Compatibility matrix
+    needs: leg
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: compute-*
+          path: target/compute-results
+      - name: render
+        run: |
+          # The durable section, spliced into a copy of the committed page:
+          # the artifact is the page to commit by hand (owner, 2026-10-27).
+          cp docs/guides/compute/compatibility.md target/compatibility.md
+          python3 scripts/compute/matrix.py durable --junit-dir target/compute-results \
+            --date "$(date -u +%F)" --loams-version "${GITHUB_REF_NAME}" --commit "${GITHUB_SHA::9}" \
+            --splice target/compatibility.md
+          cat target/compatibility.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: compatibility-matrix
+          path: target/compatibility.md
