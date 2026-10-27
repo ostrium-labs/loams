@@ -92,6 +92,7 @@ loams-cloud-admin.workspace = true
 # `loams marketplace` (MK1 Task 10): the agentd wire types and RPC client
 # only, no daemon crate (plan MK1, Task 10 ruling 1).
 loams-agentd-cli.workspace = true
+loams-confluent.workspace = true
 # Loams Postgres's control plane: the `loams pg-control` role (feature
 # `postgres`, PG2 Task 9, design §46 §6.1), and the Neon clients it is
 # configured with. Never in the default build (`pg_control.rs`'s
