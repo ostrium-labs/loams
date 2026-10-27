@@ -1277,6 +1277,13 @@
           "project": {
             "type": "string"
           },
+          "org": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The org that owns the project; the billing subject is org_<org> (design 63)."
+          },
           "environment": {
             "type": [
               "string",
