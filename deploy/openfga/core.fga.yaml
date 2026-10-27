@@ -29,6 +29,7 @@ tuples:
   - {user: user:pia, relation: admin, object: project:p1}
   - {user: user:dave, relation: deployer, object: environment:dev}
   - {user: user:vic, relation: viewer, object: environment:prod}
+  - {user: user:val, relation: viewer, object: environment:dev}
   - {user: user:bill, relation: billing_viewer, object: org:acme}
   - {user: user:opal, relation: operator, object: platform:default}
   # Loams Cloud's one admin object (design 78 §25.8): cora is cloud_admin.
@@ -112,6 +113,10 @@ tests:
       - user: user:mona
         object: engine:eng_dev_rw
         assertions: {can_view: false, can_connect: false}
+      # §46 R1.9: a viewer sees the engine but gets no connection credential.
+      - user: user:val
+        object: engine:eng_dev_rw
+        assertions: {can_view: true, can_operate: false, can_admin: false, can_connect: false}
 
   - name: environment_roles_stay_in_their_environment
     check:
