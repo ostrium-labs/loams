@@ -318,6 +318,8 @@ loams-collection = { path = "crates/loams-collection", version = "0.1.2" }
 loams-cloudevents = { path = "crates/loams-cloudevents", version = "0.1.2" }
 loams-common = { path = "crates/loams-common", version = "0.1.2" }
 loams-durable = { path = "crates/loams-durable", version = "0.1.2" }
+# Managed engines: the ManagedEngine trait and facade (design 81, D2010).
+loams-engines = { path = "crates/loams-engines", version = "0.1.2" }
 loams-es = { path = "crates/loams-es", version = "0.1.2" }
 # The Fs trait for warm, rebuildable state and scratch (design §36 §17, GT1 Task 2).
 loams-fs = { path = "crates/loams-fs", version = "0.1.2" }
