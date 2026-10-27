@@ -2,7 +2,7 @@
 //! rows in one compare-and-set (design 74 §5.5 rule 1, D1502).
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
 use loams_temporal_history::{HistoryEvent, MutableState, WorkflowExecutionStatus};
 use loams_temporal_proto::temporal::api::workflowservice::v1::StartWorkflowExecutionRequest;
@@ -37,7 +37,13 @@ pub struct Engine {
     watchers: Mutex<HashMap<RunKey, watch::Sender<RunProgress>>>,
     /// Every run this engine closes (schedules wait on their runs, D2071).
     closed: broadcast::Sender<RunKey>,
+    /// Sees every visibility row committed (the memory visibility store;
+    /// Postgres reads the rows the commits write, D2075).
+    visibility_tap: RwLock<Option<VisibilityTap>>,
 }
+
+/// A callback for every committed visibility row.
+pub type VisibilityTap = Arc<dyn Fn(&RunKey, &VisibilityRow) + Send + Sync>;
 
 impl std::fmt::Debug for Engine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -108,7 +114,45 @@ impl Engine {
             clock,
             watchers: Mutex::new(HashMap::new()),
             closed: broadcast::channel(1024).0,
+            visibility_tap: RwLock::new(None),
         }
+    }
+
+    /// Calls `tap` with every visibility row committed from now on.
+    pub fn set_visibility_tap(&self, tap: VisibilityTap) {
+        *self
+            .visibility_tap
+            .write()
+            .unwrap_or_else(PoisonError::into_inner) = Some(tap);
+    }
+
+    fn tap(&self, key: &RunKey, row: Option<&VisibilityRow>) {
+        let Some(row) = row else { return };
+        if let Some(t) = self
+            .visibility_tap
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+        {
+            t(key, row);
+        }
+    }
+
+    /// The visibility row of a closing run: the state's columns, with the
+    /// search attributes and memo its start recorded.
+    async fn closing_visibility(&self, key: &RunKey, state: &MutableState) -> VisibilityRow {
+        let mut row = visibility(state);
+        match self.store.visibility(key).await {
+            Ok(Some(prior)) => {
+                row.search_attrs = prior.search_attrs;
+                row.memo = prior.memo;
+            }
+            Ok(None) => {}
+            Err(e) => {
+                tracing::warn!(error = %e, "reading the visibility row of a closing run; its search attributes are not carried over");
+            }
+        }
+        row
     }
 
     /// The runs this engine closes from now on. A lagging receiver loses
@@ -163,17 +207,23 @@ impl Engine {
                 .effects
                 .iter()
                 .any(|e| matches!(e, Effect::RunClosed { .. }));
+            let vis = if closed {
+                Some(self.closing_visibility(key, &t.state).await)
+            } else {
+                None
+            };
             let commit = Commit {
                 events: rows(&t.events),
                 state_blob: t.state.encode_to_vec(),
                 status: t.state.status,
                 next_event_id: t.state.next_event_id,
                 outbox: outbox_rows(ctx, &t.state, &t.effects, self.now_ms()),
-                visibility: closed.then(|| visibility(&t.state)),
+                visibility: vis.clone(),
             };
             match self.store.commit(key, run.version, commit).await {
                 Ok(_) => {
                     self.notify(key, &t.state);
+                    self.tap(key, vis.as_ref());
                     if closed {
                         let _ = self.closed.send(key.clone());
                     }
@@ -198,6 +248,8 @@ impl Engine {
     ) -> Result<(String, bool), Status> {
         let key = RunKey::new(&ctx.namespace_id, &request.workflow_id, &run_id);
         let request_id = request.request_id.clone();
+        let search_attrs = crate::visibility::search_attrs_json(request.search_attributes.as_ref());
+        let memo = request.memo.as_ref().map(|m| m.encode_to_vec());
         let input = Input::Start {
             namespace_id: ctx.namespace_id.clone(),
             run_id: run_id.clone(),
@@ -213,12 +265,18 @@ impl Engine {
                 status: t.state.status,
                 next_event_id: t.state.next_event_id,
                 outbox: outbox_rows(ctx, &t.state, &t.effects, self.now_ms()),
-                visibility: Some(visibility(&t.state)),
+                visibility: Some(VisibilityRow {
+                    search_attrs,
+                    memo,
+                    ..visibility(&t.state)
+                }),
             },
         };
+        let vis = start.commit.visibility.clone();
         match self.store.start(start).await.map_err(store_status)? {
             StartOutcome::Started { .. } => {
                 self.notify(&key, &t.state);
+                self.tap(&key, vis.as_ref());
                 Ok((run_id, true))
             }
             StartOutcome::AlreadyStarted {

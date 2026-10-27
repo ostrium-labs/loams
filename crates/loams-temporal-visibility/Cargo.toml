@@ -1,0 +1,23 @@
+[package]
+name = "loams-temporal-visibility"
+description = "Visibility for the Loams Temporal gateway: Temporal's list-filter query language parsed and translated to SQL on Loams Postgres, an in-memory evaluator, and the search-attribute registry (design 74 Q1162, D2074-D2076)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+async-trait.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+# Runtime queries only, as loams-temporal-store: a build needs no database.
+sqlx = { workspace = true, features = ["postgres", "runtime-tokio", "json"] }
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

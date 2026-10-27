@@ -1006,7 +1006,6 @@ impl ScheduleFilter {
     }
 
     /// The schedules `keep` accepts.
-    #[allow(dead_code)]
     pub(crate) fn new(keep: impl Fn(&ScheduleRecord) -> bool + Send + Sync + 'static) -> Self {
         ScheduleFilter {
             keep: Some(Box::new(keep)),
@@ -1019,19 +1018,14 @@ impl ScheduleFilter {
 }
 
 impl Frontend {
-    /// The ListSchedules filter. Queries need the visibility grammar, which
-    /// lands separately; until then only the empty query is accepted.
+    /// The ListSchedules filter: the visibility grammar over each
+    /// schedule's attributes (`crate::visibility::schedule_record`).
     async fn schedule_filter(
         &self,
-        _ns: &NamespaceRecord,
+        ns: &NamespaceRecord,
         query: &str,
     ) -> Result<ScheduleFilter, Status> {
-        if query.trim().is_empty() {
-            return Ok(ScheduleFilter::all());
-        }
-        Err(Status::invalid_argument(
-            "ListSchedules queries are not supported by the Loams gateway yet",
-        ))
+        self.schedule_query(ns, query).await
     }
 }
 

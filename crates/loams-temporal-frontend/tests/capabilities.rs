@@ -43,6 +43,14 @@ const SCHEDULES: &[&str] = &[
     "ListScheduleMatchingTimes",
 ];
 
+/// Visibility (D2074-D2076).
+const VISIBILITY: &[&str] = &[
+    "ListWorkflowExecutions",
+    "ScanWorkflowExecutions",
+    "CountWorkflowExecutions",
+    "GetSearchAttributes",
+];
+
 /// Added for the Temporal Web UI and the `temporal` CLI (D2051).
 const UI: &[&str] = &["GetClusterInfo", "GetWorkflowExecutionHistoryReverse"];
 
@@ -50,7 +58,13 @@ const UI: &[&str] = &["GetClusterInfo", "GetWorkflowExecutionHistoryReverse"];
 async fn capabilities_match_impl() {
     let mut sorted_impl: Vec<_> = IMPLEMENTED.to_vec();
     sorted_impl.sort_unstable();
-    let mut sorted_dx1: Vec<_> = DX1.iter().chain(UI).chain(SCHEDULES).copied().collect();
+    let mut sorted_dx1: Vec<_> = DX1
+        .iter()
+        .chain(UI)
+        .chain(SCHEDULES)
+        .chain(VISIBILITY)
+        .copied()
+        .collect();
     sorted_dx1.sort_unstable();
     assert_eq!(
         sorted_impl, sorted_dx1,

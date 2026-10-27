@@ -10,6 +10,7 @@ use std::time::Duration;
 use loams_temporal_resonate::{Durability, FakeDurability, HttpDurability};
 use loams_temporal_schedule::PgScheduleStore;
 use loams_temporal_store::{MemStore, NamespaceRecord, PgStore, Store, StoreError};
+use loams_temporal_visibility::PgVisibility;
 use serde::Deserialize;
 
 use crate::{
@@ -217,6 +218,14 @@ pub async fn run_on(
                 .await
                 .map_err(|e| format!("migrate schedules: {e}"))?;
             ext.schedules = Some(Arc::new(schedules));
+            // Visibility reads the store's `visibility` table; its migration
+            // adds the indexes and the search-attribute registry (D2075).
+            let visibility = PgVisibility::with_pool(pg.pool().clone());
+            visibility
+                .migrate()
+                .await
+                .map_err(|e| format!("migrate visibility: {e}"))?;
+            ext.visibility = Some(Arc::new(visibility));
             Arc::new(pg)
         }
     };

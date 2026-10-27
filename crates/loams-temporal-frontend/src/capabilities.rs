@@ -38,12 +38,22 @@ pub const IMPLEMENTED: &[&str] = &[
     "DeleteSchedule",
     "ListSchedules",
     "ListScheduleMatchingTimes",
+    // Visibility (D2074-D2076).
+    "ListWorkflowExecutions",
+    "ScanWorkflowExecutions",
+    "CountWorkflowExecutions",
+    "GetSearchAttributes",
 ];
 
 /// The `OperatorService` methods the frontend implements (D2052). Every
 /// other one answers `UNIMPLEMENTED`: the Nexus endpoint methods with
 /// [`NEXUS_UNSUPPORTED`], the rest with [`MATRIX_URL`].
-pub const OPERATOR_IMPLEMENTED: &[&str] = &["ListSearchAttributes"];
+pub const OPERATOR_IMPLEMENTED: &[&str] = &[
+    "ListSearchAttributes",
+    // The search-attribute registry (D2075).
+    "AddSearchAttributes",
+    "RemoveSearchAttributes",
+];
 
 /// Why every Nexus method answers `UNIMPLEMENTED` (D2053).
 pub const NEXUS_UNSUPPORTED: &str = "Nexus is not supported by the Loams Temporal gateway: it has no Nexus endpoints, and Nexus operations and Nexus task queues are not served";
@@ -61,6 +71,7 @@ pub fn capabilities() -> Capabilities {
         encoded_failure_attributes: true,
         sdk_metadata: true,
         supports_schedules: true,
+        count_group_by_execution_status: true,
         ..Default::default()
     }
 }
