@@ -104,6 +104,17 @@ ignore = [
     # 14-day rule. Loams ships only 64-bit targets. Remove with the bump to
     # ctutils >= 0.4.4 on or after 2026-11-06.
     { id = "RUSTSEC-2026-0385", reason = "ctutils constant-time mask and u128 comparison branches: the fixed 0.4.4 is from 2026-10-23, under the 14-day rule; Loams ships only 64-bit targets; bump on or after 2026-11-06" },
+    # zstd-rs advisories of 2026-10-26: zstd 0.13.3 (arrow-ipc 58, via
+    # datafusion and lance in loams-collection) and 0.14.0 (loams-hot), on
+    # zstd-safe 7.3.0/8.0.0 and zstd-sys 2.1.0. Every fix (zstd >= 0.14.3,
+    # zstd-safe >= 8.2.0, zstd-sys >= 2.1.2) was published 2026-10-16, under
+    # the 14-day rule until 2026-10-30, and arrow-ipc 58 pins zstd 0.13. No
+    # Loams code uses the seekable format. Remove with the bump on or after
+    # 2026-11-10.
+    { id = "RUSTSEC-2026-0391", reason = "zstd stream context reuse leaks an abandoned stream's data, via arrow-ipc 58 (datafusion, lance in loams-collection) and loams-hot: the fixed zstd 0.14.3 is under the 14-day rule and arrow-ipc 58 pins zstd 0.13; revisit 2026-11-10" },
+    { id = "RUSTSEC-2026-0398", reason = "zstd-safe Seekable::decompress length past capacity, via zstd 0.13/0.14 (arrow-ipc 58, loams-hot); no Loams code uses the seekable format; the fixed zstd-safe 8.2.0 is under the 14-day rule; revisit 2026-11-10" },
+    { id = "RUSTSEC-2026-0403", reason = "zstd-safe uninitialized memory when a legacy (v0.4-v0.7) frame fails to stream-decompress, via zstd 0.13/0.14 (arrow-ipc 58, loams-hot): the fixed zstd-safe 8.2.0 is under the 14-day rule; revisit 2026-11-10" },
+    { id = "RUSTSEC-2026-0410", reason = "zstd-sys wasm32 allocator shim, via zstd 0.13/0.14 (arrow-ipc 58, loams-hot): reachable only on wasm32, and Loams builds zstd for native targets only; the fixed zstd-sys 2.1.2 is under the 14-day rule; revisit 2026-11-10" },
 ]
 
 [sources]
