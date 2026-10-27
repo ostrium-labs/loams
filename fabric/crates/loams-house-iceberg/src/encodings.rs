@@ -61,6 +61,7 @@ const UTC: &str = "+00:00";
 ///
 /// A value the type cannot hold (an `Enum` name it does not have, text that is
 /// not an address), or a layout the House does not write.
+#[allow(clippy::only_used_in_recursion)]
 pub fn restore(t: &ChType, stored: &ArrayRef, top_level: bool) -> Result<ArrayRef, ChError> {
     let (target, _) = data_type(t)?;
     match t {
