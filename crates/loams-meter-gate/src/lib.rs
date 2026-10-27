@@ -21,6 +21,7 @@
 //!
 //! [§63]: ../../../docs/design/63-loams-meter.md
 
+pub mod adapters;
 pub mod event;
 pub mod gate;
 pub mod policy;
