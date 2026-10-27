@@ -18,6 +18,7 @@ use crate::server::{Conn, Shared};
 
 mod conn;
 mod counter;
+mod hash;
 mod keys;
 mod server;
 mod string;
@@ -44,6 +45,8 @@ pub enum Family {
     String,
     /// Counters (Task 4).
     Counter,
+    /// Hashes (Task 5).
+    Hash,
 }
 
 /// Command flags, as `COMMAND INFO` names them.
@@ -239,6 +242,29 @@ pub static COMMANDS: &[Spec] = &[
         KEY1,
         Family::Counter,
     ),
+    // Hashes (Task 5).
+    spec("hset", -4, WRITE | DENYOOM | FAST, KEY1, Family::Hash),
+    spec("hsetnx", 4, WRITE | DENYOOM | FAST, KEY1, Family::Hash),
+    spec("hmset", -4, WRITE | DENYOOM | FAST, KEY1, Family::Hash),
+    spec("hget", 3, READONLY | FAST, KEY1, Family::Hash),
+    spec("hmget", -3, READONLY | FAST, KEY1, Family::Hash),
+    spec("hgetall", 2, READONLY, KEY1, Family::Hash),
+    spec("hkeys", 2, READONLY, KEY1, Family::Hash),
+    spec("hvals", 2, READONLY, KEY1, Family::Hash),
+    spec("hlen", 2, READONLY | FAST, KEY1, Family::Hash),
+    spec("hexists", 3, READONLY | FAST, KEY1, Family::Hash),
+    spec("hdel", -3, WRITE | FAST, KEY1, Family::Hash),
+    spec("hstrlen", 3, READONLY | FAST, KEY1, Family::Hash),
+    spec("hincrby", 4, WRITE | DENYOOM | FAST, KEY1, Family::Hash),
+    spec(
+        "hincrbyfloat",
+        4,
+        WRITE | DENYOOM | FAST,
+        KEY1,
+        Family::Hash,
+    ),
+    spec("hrandfield", -2, READONLY, KEY1, Family::Hash),
+    spec("hscan", -3, READONLY, KEY1, Family::Hash),
 ];
 
 /// Commands Loams does not serve in v1 (design §77 §8.5), answered with a
@@ -374,6 +400,7 @@ pub async fn dispatch(shared: &Arc<Shared>, conn: &mut Conn, args: Vec<Bytes>) -
             counter::run(shared, conn, spec, &args).await,
             Flow::Continue,
         ),
+        Family::Hash => (hash::run(shared, conn, spec, &args).await, Flow::Continue),
     }
 }
 

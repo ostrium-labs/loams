@@ -34,6 +34,11 @@ cargo_package(
             "root": "tests/frame.rs",
         },
         {
+            "name": "hashes",
+            "crate": "hashes",
+            "root": "tests/hashes.rs",
+        },
+        {
             "name": "server",
             "crate": "server",
             "root": "tests/server.rs",

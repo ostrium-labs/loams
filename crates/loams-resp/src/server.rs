@@ -82,6 +82,8 @@ pub struct Conn {
     pub authenticated: bool,
     /// `CLIENT REPLY OFF` / `SKIP`.
     pub reply: ReplyMode,
+    /// Open `SCAN`-family cursors.
+    pub cursors: crate::cursor::Cursors,
 }
 
 /// `CLIENT REPLY`.
@@ -233,6 +235,7 @@ pub async fn serve_stream<S>(
         name: None,
         authenticated: shared.password.is_none(),
         reply: ReplyMode::On,
+        cursors: crate::cursor::Cursors::default(),
     };
     let mut decoder = Decoder::new(shared.config.limits(), conn.authenticated);
     let mut rbuf = BytesMut::with_capacity(16 * 1024);

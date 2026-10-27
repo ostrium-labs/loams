@@ -19,6 +19,7 @@
 
 pub mod cmd;
 pub mod config;
+pub mod cursor;
 pub mod frame;
 pub mod layout;
 pub mod server;

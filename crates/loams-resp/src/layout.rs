@@ -283,18 +283,73 @@ pub fn chunk_count(len: u64) -> u32 {
     u32::try_from(len.div_ceil(chunk)).unwrap_or(u32::MAX)
 }
 
+/// The tag of a hash field, after the version.
+pub const HASH_FIELD: u8 = b'h';
+/// The tag of a set member, after the version.
+pub const SET_MEMBER: u8 = b's';
+/// The tag of a collection's length shard, after the version (Q1226).
+pub const LEN_SHARD: u8 = b'#';
+/// How many shards a collection's length is kept in (Q1226).
+pub const LEN_SHARDS: u16 = 16;
+
+/// The key of `item` (a field or a member) under tag `tag` of version
+/// `ver` of `ukey`: `data_prefix ‖ tag ‖ enc(item)`.
+pub fn item_key(db: u8, ukey: &[u8], ver: u64, tag: u8, item: &[u8]) -> Vec<u8> {
+    let mut k = data_prefix(db, ukey, ver);
+    k.push(tag);
+    key::put_bytes(&mut k, item);
+    k
+}
+
+/// The range of every key under tag `tag` of version `ver` of `ukey`.
+pub fn tag_range(db: u8, ukey: &[u8], ver: u64, tag: u8) -> (Vec<u8>, Vec<u8>) {
+    let mut start = data_prefix(db, ukey, ver);
+    let mut end = start.clone();
+    start.push(tag);
+    end.push(tag + 1);
+    (start, end)
+}
+
+/// The item an [`item_key`] holds, given the length of its
+/// `data_prefix ‖ tag`; `None` when the rest does not decode.
+pub fn item_of(full: &[u8], prefix_len: usize) -> Option<Vec<u8>> {
+    let rest = full.get(prefix_len..)?;
+    let (item, n) = key::get_bytes(rest).ok()?;
+    (n == rest.len()).then_some(item)
+}
+
+/// The key of length shard `shard` of version `ver` of `ukey`.
+pub fn len_shard_key(db: u8, ukey: &[u8], ver: u64, shard: u16) -> Vec<u8> {
+    let mut k = data_prefix(db, ukey, ver);
+    k.push(LEN_SHARD);
+    key::put_u16(&mut k, shard);
+    k
+}
+
+/// The length shard an item counts in: a hash of the item, so concurrent
+/// writes of different items usually touch different shards, and an item
+/// is always counted in, and removed from, the same one.
+pub fn len_shard(item: &[u8]) -> u16 {
+    u16::try_from(fnv1a(item) % u32::from(LEN_SHARDS)).unwrap_or(0)
+}
+
+/// FNV-1a, 32 bits: stable across processes and versions.
+fn fnv1a(bytes: &[u8]) -> u32 {
+    let mut h: u32 = 0x811c_9dc5;
+    for &b in bytes {
+        h ^= u32::from(b);
+        h = h.wrapping_mul(0x0100_0193);
+    }
+    h
+}
+
 /// The bucket count of the expiry index (D1655).
 pub const EXPIRY_BUCKETS: u8 = 16;
 
 /// The expiry bucket of `ukey`: FNV-1a over its bytes, so it is stable
 /// across processes and versions.
 pub fn expiry_bucket(ukey: &[u8]) -> u8 {
-    let mut h: u32 = 0x811c_9dc5;
-    for &b in ukey {
-        h ^= u32::from(b);
-        h = h.wrapping_mul(0x0100_0193);
-    }
-    u8::try_from(h % u32::from(EXPIRY_BUCKETS)).unwrap_or(0)
+    u8::try_from(fnv1a(ukey) % u32::from(EXPIRY_BUCKETS)).unwrap_or(0)
 }
 
 /// The expiry index key of version `ver` of `ukey`, expiring at
@@ -400,6 +455,25 @@ mod tests {
         assert_eq!(next_version(10, Some(3)), 10);
         assert_eq!(next_version(10, Some(10)), 11);
         assert_eq!(next_version(10, Some(12)), 13);
+    }
+
+    #[test]
+    fn items_and_shards() {
+        let k = item_key(2, b"user", 9, HASH_FIELD, b"f\x00ield");
+        let (start, end) = tag_range(2, b"user", 9, HASH_FIELD);
+        assert!(k >= start && k < end);
+        assert_eq!(item_of(&k, start.len()), Some(b"f\x00ield".to_vec()));
+        let shard = len_shard_key(2, b"user", 9, 3);
+        assert!(
+            !(shard >= start && shard < end),
+            "shards sit outside the fields"
+        );
+        let (s_start, s_end) = tag_range(2, b"user", 9, LEN_SHARD);
+        assert!(shard >= s_start && shard < s_end);
+        for item in [&b""[..], b"a", b"field-17"] {
+            assert!(len_shard(item) < LEN_SHARDS);
+            assert_eq!(len_shard(item), len_shard(item));
+        }
     }
 
     #[test]
