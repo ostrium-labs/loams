@@ -43,15 +43,23 @@ const SCHEDULES: &[&str] = &[
     "ListScheduleMatchingTimes",
 ];
 
+/// The methods lane TMP-api added on top of DX1 (2026-10-27).
+const TMP_API: &[&str] = &["UpdateWorkflowExecution", "PollWorkflowExecutionUpdate"];
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn capabilities_match_impl() {
     let mut sorted_impl: Vec<_> = IMPLEMENTED.to_vec();
     sorted_impl.sort_unstable();
-    let mut sorted_dx1: Vec<_> = DX1.iter().chain(SCHEDULES).copied().collect();
+    let mut sorted_dx1: Vec<_> = DX1
+        .iter()
+        .chain(TMP_API)
+        .chain(SCHEDULES)
+        .copied()
+        .collect();
     sorted_dx1.sort_unstable();
     assert_eq!(
         sorted_impl, sorted_dx1,
-        "IMPLEMENTED is design 74's DX1 set and the schedule methods"
+        "IMPLEMENTED is design 74's DX1 set plus TMP-api's and the schedule methods"
     );
 
     let gw = common::start().await;

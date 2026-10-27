@@ -9,7 +9,7 @@ import type { FactoryPolicy } from '../policy.js';
 import { bareName, gateTools } from '../tools/gate.js';
 import { UNTRUSTED_RULE } from '../untrusted.js';
 
-// biome-ignore lint/suspicious/noExplicitAny: Mastra's tool type is generic over its schemas.
+// oxlint-disable-next-line typescript/no-explicit-any -- Mastra's tool type is generic over its schemas.
 type AnyTool = ToolAction<any, any, any, any, any, any>;
 
 export type CodeHost = 'forgejo' | 'github';

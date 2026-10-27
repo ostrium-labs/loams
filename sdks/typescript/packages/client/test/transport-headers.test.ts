@@ -17,7 +17,7 @@ import {
   type Http2Session,
 } from 'node:http2';
 import type { AddressInfo } from 'node:net';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 import { Loams } from '../src/loams.js';
 import { createNodeTransport } from '../src/node.js';
 import { createLoamsTransport } from '../src/runtime/transports.js';

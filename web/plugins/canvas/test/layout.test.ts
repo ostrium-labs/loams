@@ -1,6 +1,6 @@
 // The in-repo layered layout and the keyboard navigation geometry.
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { layeredLayout, NODE_HEIGHT, NODE_WIDTH, nextFreePosition } from '../src/layout.js';
 import { nearestInDirection, readingOrder } from '../src/navigate.js';
 

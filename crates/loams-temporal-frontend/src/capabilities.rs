@@ -27,6 +27,9 @@ pub const IMPLEMENTED: &[&str] = &[
     "QueryWorkflow",
     "RespondQueryTaskCompleted",
     "ResetStickyTaskQueue",
+    // TMP-api (design 74 §5.8's DX4 update methods, brought forward).
+    "UpdateWorkflowExecution",
+    "PollWorkflowExecutionUpdate",
     // Temporal Schedules (D2070-D2073).
     "CreateSchedule",
     "DescribeSchedule",

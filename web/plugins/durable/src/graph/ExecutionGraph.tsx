@@ -179,7 +179,7 @@ function Canvas({ run, selectedId, onSelect, height = 420 }: ExecutionGraphProps
 
   // Re-fit when the shape of the graph changes (not on every status tick).
   const shape = run.steps.map((s) => s.id).join('|');
-  // biome-ignore lint/correctness/useExhaustiveDependencies: refit on a new shape only
+  // oxlint-disable-next-line react/exhaustive-deps -- refit on a new shape only
   useEffect(() => {
     rf.fitView({ padding: 0.15, duration: reduced ? 0 : 200 });
   }, [shape, reduced]);

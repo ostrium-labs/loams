@@ -1,0 +1,1 @@
+SELECT b AS k FROM t25 GROUP BY k HAVING k != 'y' ORDER BY k

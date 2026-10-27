@@ -117,6 +117,7 @@ fn stale_token_is_not_found() {
             metering_metadata: None,
             worker_version: None,
             force_create_new_workflow_task: false,
+            messages: Vec::new(),
         },
         2_100,
     );

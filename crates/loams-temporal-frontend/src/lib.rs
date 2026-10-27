@@ -30,6 +30,7 @@ pub mod server;
 pub mod service;
 pub mod standalone;
 pub mod token;
+pub mod update;
 
 pub use auth::{Authenticator, DevAllowAll, Principal, StaticKeys};
 pub use engine::Engine;

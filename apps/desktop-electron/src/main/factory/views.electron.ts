@@ -8,7 +8,7 @@ import {
 	saveWindowState,
 	type WindowState,
 } from "../shell/window-state";
-import { FACTORY_APPS } from "./apps";
+import { FACTORY_LABELS } from "./apps";
 import { FactoryHardening } from "./hardening.electron";
 import { webOrigin } from "./view-policy";
 
@@ -44,7 +44,7 @@ export class FactoryViews {
 				code: "unconfigured",
 				message: "This app is not configured yet",
 			};
-		const label = FACTORY_APPS[app].label;
+		const label = FACTORY_LABELS[app];
 		const stateFile = join(
 			electronApp.getPath("userData"),
 			"factory",

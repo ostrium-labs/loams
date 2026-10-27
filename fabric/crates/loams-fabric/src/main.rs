@@ -4,8 +4,8 @@ use std::io::Write as _;
 use std::process::ExitCode;
 
 use clap::Parser as _;
-use loams_fabric::cli::{Cli, HouseArgs, Role};
-use loams_fabric::house;
+use loams_fabric::cli::{Cli, ConnectArgs, HouseArgs, Role};
+use loams_fabric::{connect, house};
 use loams_house::{HouseError, HouseFile, SandboxMode, WorkersMode};
 
 fn main() -> ExitCode {
@@ -18,7 +18,51 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         },
+        Role::Connect(args) => run_connect(&args),
     }
+}
+
+/// `connect`: exit 0 on SIGTERM, 75 when fenced by a newer process, 78 on a
+/// bad instance file or flag, 69 when the bucket cannot be reached.
+fn run_connect(args: &ConnectArgs) -> ExitCode {
+    let scrubber = loams_connector_sdk::Scrubber::new();
+    let subscriber = connect::log::ScrubbingSubscriber::stderr(scrubber.clone());
+    if tracing::subscriber::set_global_default(subscriber).is_err() {
+        eprintln!("loams-fabric connect: could not install the log subscriber");
+    }
+    let runtime = match tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(r) => r,
+        Err(err) => {
+            eprintln!("loams-fabric connect: the runtime: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    runtime.block_on(async move {
+        let running = match connect::Connect::start(args, scrubber.clone()).await {
+            Ok(r) => r,
+            Err(err) => {
+                let message = scrubber.scrub(&err.message);
+                eprintln!("loams-fabric connect: refusing to start:\n{message}");
+                return ExitCode::from(err.code as u8);
+            }
+        };
+        println!(
+            "loams-fabric connect: epoch {}, admin API on http://{}",
+            running.epoch(),
+            running.admin.local_addr()
+        );
+        let _ = std::io::stdout().flush();
+        match running.run(wait_for_stop()).await {
+            connect::Exit::Stopped => ExitCode::SUCCESS,
+            connect::Exit::Fenced(why) => {
+                eprintln!("loams-fabric connect: fenced: {why}");
+                ExitCode::from(75)
+            }
+        }
+    })
 }
 
 fn run_house(args: &HouseArgs) -> Result<(), HouseError> {

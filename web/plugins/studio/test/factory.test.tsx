@@ -6,7 +6,7 @@ import type { ModeService } from '@loams/console-host';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { desktopFactory, type StudioFactory } from '../src/factory.js';
 import { createStudioKeys } from '../src/palette/commands.js';
 import { StudioThreads } from '../src/regions.js';
@@ -132,7 +132,7 @@ describe('the Factory group', () => {
 
   it('shows a failure to list the apps', async () => {
     const factory: StudioFactory = {
-      kind: 'desktop',
+      kind: 'pages',
       list: async () => {
         throw new Error('ipc closed');
       },

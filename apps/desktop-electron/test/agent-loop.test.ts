@@ -541,7 +541,7 @@ describe("agent loop", () => {
 		const d = deps({
 			provider: {
 				id: "x",
-				// biome-ignore lint/correctness/useYield: throws before yielding
+				// oxlint-disable-next-line require-yield -- throws before yielding
 				async *streamTurn() {
 					throw new Error("HTTP 401: bad key sk-secret-123");
 				},

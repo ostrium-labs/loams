@@ -12,11 +12,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use loams_connector_sdk::{
-    ConnectorContext, ConnectorError, EgressCheck, EnvelopeBuilder, InstanceKey, SecretRef,
-    SecretResolver,
+    ConnectorContext, ConnectorError, EgressCheck, EnvelopeBuilder, InstanceKey, Rate, RateLimit,
+    SecretRef, SecretResolver,
 };
 use rdkafka::ClientConfig;
 use serde::Deserialize;
+
+use crate::registry::ConfluentRegistry;
 
 /// The checkpoint topic of the transactional sink (plan Task 9).
 pub const CHECKPOINT_TOPIC: &str = "__loams_checkpoints";
@@ -33,7 +35,10 @@ pub const CALL_TIMEOUT: Duration = Duration::from_secs(30);
 /// is the SDK's).
 #[derive(Debug, Clone, Deserialize)]
 pub struct KafkaConfig {
-    /// Bootstrap brokers, `host:port`, comma separated.
+    /// Bootstrap brokers, `host:port`, comma separated. A `SASL_SSL://`,
+    /// `SSL://`, `PLAINTEXT://` or `SASL_PLAINTEXT://` scheme on an entry (as
+    /// Confluent Cloud's `bootstrap_endpoint` sometimes has, CC0 R0.12) is
+    /// removed by [`KafkaConfig::parse`].
     pub brokers: String,
     /// The topics a source reads; a sink writes the one topic listed.
     pub topics: Vec<String>,
@@ -41,6 +46,12 @@ pub struct KafkaConfig {
     pub group_id_prefix: Option<String>,
     #[serde(default)]
     pub group_id: Option<String>,
+    /// The transactional sink's `transactional.id` prefix: the id is
+    /// `<prefix><instance>-<split>`. Unset, it is `loams-<ns>-`. A Confluent
+    /// install sets the module's `transactional_id_prefix` output (default
+    /// `loams-<name>-`), which its PREFIXED ACL allows (D1826).
+    #[serde(default)]
+    pub transactional_id_prefix: Option<String>,
     /// The idempotent producer; it may not be turned off (the manifest
     /// declares `sink.idempotent: true`).
     #[serde(default = "yes")]
@@ -81,6 +92,93 @@ pub struct KafkaConfig {
     /// How long `next` waits for a first record before it reports nothing.
     #[serde(default = "poll_wait_ms")]
     pub poll_wait_ms: u64,
+    /// The instance's byte and request rates (D1822, §80 §8.1: Loams' share
+    /// of a cluster's throughput); [`KafkaConfig::rate_limit`] maps it to the
+    /// SDK's [`RateLimit`], which the pipeline enforces.
+    #[serde(default)]
+    pub rate_limit: Option<RateLimitConfig>,
+    /// A Confluent-compatible Schema Registry (R5.4, D356).
+    #[serde(default)]
+    pub schema_registry: Option<SchemaRegistryConfig>,
+    /// How the source reads a record's value (CC1 Task 3, D1822): `plain`
+    /// (CloudEvents pass-through or a wrapped record, `record.rs`), or a
+    /// Debezium change event in JSON or Avro (`debezium.rs`). Source only.
+    #[serde(default)]
+    pub format: RecordFormat,
+    /// Debezium decoding options (with `format: debezium-*`).
+    #[serde(default)]
+    pub debezium: DebeziumConfig,
+}
+
+/// `format`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RecordFormat {
+    #[default]
+    Plain,
+    DebeziumJson,
+    DebeziumAvro,
+}
+
+/// `debezium`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DebeziumConfig {
+    /// What a tombstone (a record with a key and no value, which Debezium
+    /// writes after a delete for log compaction) becomes.
+    #[serde(default)]
+    pub tombstones: Tombstones,
+    /// The row fields that make the change's key. Empty: the record key
+    /// (Debezium's key struct, the table's primary key).
+    #[serde(default)]
+    pub key_fields: Vec<String>,
+}
+
+/// `debezium.tombstones`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Tombstones {
+    /// A delete (`loamsop = d`) for the record key.
+    #[default]
+    Delete,
+    /// Nothing: the source moves past it.
+    Drop,
+}
+
+/// `rate_limit`: per second, per instance (shared by its splits). An absent
+/// rate is unlimited.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RateLimitConfig {
+    #[serde(default)]
+    pub bytes_per_sec: Option<u64>,
+    #[serde(default)]
+    pub requests_per_sec: Option<u64>,
+}
+
+/// `schema_registry`: the registry's URL and optional HTTP Basic credentials
+/// (Confluent Cloud's Schema Registry API key and secret).
+#[derive(Debug, Clone, Deserialize)]
+pub struct SchemaRegistryConfig {
+    pub url: String,
+    #[serde(default)]
+    pub subject_prefix: Option<String>,
+    #[serde(default)]
+    pub basic_auth: Option<BasicAuthConfig>,
+}
+
+/// HTTP Basic credentials: the username as a value (`username`) or as a
+/// secret's name (`username_secret`), exactly one of them, and the password
+/// as a secret's name.
+#[derive(Debug, Clone, Deserialize)]
+pub struct BasicAuthConfig {
+    #[serde(default)]
+    pub username: Option<String>,
+    /// The secret's *name*.
+    #[serde(default)]
+    pub username_secret: Option<String>,
+    /// The secret's *name*.
+    pub password: String,
 }
 
 fn yes() -> bool {
@@ -160,9 +258,68 @@ impl SecurityProtocol {
 pub struct SaslConfig {
     #[serde(default = "scram_512")]
     pub mechanism: String,
-    pub username: String,
+    /// The SASL username as a value. Exactly one of `username` and
+    /// `username_secret` is set.
+    #[serde(default)]
+    pub username: Option<String>,
+    /// The SASL username as a secret's *name*: a Confluent Cloud API key id
+    /// written by `loams-byoc-secrets` beside its secret (D1827).
+    #[serde(default)]
+    pub username_secret: Option<String>,
     /// The secret's *name*.
     pub password: String,
+}
+
+/// Where a username comes from.
+enum Username<'a> {
+    Value(&'a str),
+    Secret(&'a str),
+}
+
+/// Exactly one of a plain username and a username secret.
+fn username<'a>(
+    what: &str,
+    value: Option<&'a str>,
+    secret: Option<&'a str>,
+) -> Result<Username<'a>, ConnectorError> {
+    match (value, secret) {
+        (Some(v), None) if !v.is_empty() => Ok(Username::Value(v)),
+        (None, Some(s)) if !s.is_empty() => Ok(Username::Secret(s)),
+        (Some(_), Some(_)) => Err(ConnectorError::fatal(format!(
+            "kafka config: {what} sets both username and username_secret; set one"
+        ))),
+        _ => Err(ConnectorError::fatal(format!(
+            "kafka config: {what} needs username or username_secret"
+        ))),
+    }
+}
+
+/// The URI schemes a bootstrap entry may carry, longest first.
+const BROKER_SCHEMES: [&str; 4] = ["sasl_plaintext://", "sasl_ssl://", "plaintext://", "ssl://"];
+
+/// `brokers` with a listener scheme removed from each comma-separated entry,
+/// case-insensitively (Confluent Cloud's `bootstrap_endpoint` sometimes reads
+/// `SASL_SSL://pkc-….confluent.cloud:9092`, CC0 R0.12). Any other scheme is
+/// refused: it is not a Kafka bootstrap address.
+pub fn normalise_brokers(brokers: &str) -> Result<String, ConnectorError> {
+    let mut out = Vec::new();
+    for entry in brokers.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+        let Some((scheme, _)) = entry.split_once("://") else {
+            out.push(entry);
+            continue;
+        };
+        let with_sep = &entry[..scheme.len() + 3];
+        if !BROKER_SCHEMES
+            .iter()
+            .any(|s| s.eq_ignore_ascii_case(with_sep))
+        {
+            return Err(ConnectorError::fatal(format!(
+                "kafka config: broker {entry} has the scheme {scheme}://, which is not a Kafka listener's"
+            )));
+        }
+        out.push(&entry[with_sep.len()..]);
+    }
+    Ok(out.join(","))
 }
 
 fn scram_512() -> String {
@@ -198,8 +355,9 @@ pub enum SinkDelivery {
 impl KafkaConfig {
     /// Parse and check an instance config (profile defaults already merged).
     pub fn parse(config: &serde_json::Value) -> Result<Self, ConnectorError> {
-        let cfg: KafkaConfig = serde_json::from_value(config.clone())
+        let mut cfg: KafkaConfig = serde_json::from_value(config.clone())
             .map_err(|e| ConnectorError::fatal(format!("kafka config: {e}")))?;
+        cfg.brokers = normalise_brokers(&cfg.brokers)?;
         cfg.check()?;
         Ok(cfg)
     }
@@ -216,6 +374,15 @@ impl KafkaConfig {
                 "kafka config: topics must name at least one topic",
             ));
         }
+        if self
+            .transactional_id_prefix
+            .as_deref()
+            .is_some_and(|p| p.trim().is_empty())
+        {
+            return Err(ConnectorError::fatal(
+                "kafka config: transactional_id_prefix is empty",
+            ));
+        }
         if self.security_protocol.sasl() && self.sasl.is_none() {
             return Err(ConnectorError::fatal(format!(
                 "kafka config: security_protocol {} needs a sasl block",
@@ -224,6 +391,52 @@ impl KafkaConfig {
         }
         if let Some(sasl) = &self.sasl {
             sasl_mechanism(&sasl.mechanism)?;
+            username(
+                "sasl",
+                sasl.username.as_deref(),
+                sasl.username_secret.as_deref(),
+            )?;
+            if sasl.password.is_empty() {
+                return Err(ConnectorError::fatal(
+                    "kafka config: sasl.password must name a secret",
+                ));
+            }
+        }
+        if let Some(r) = &self.rate_limit
+            && (r.bytes_per_sec == Some(0) || r.requests_per_sec == Some(0))
+        {
+            return Err(ConnectorError::fatal(
+                "kafka config: a rate_limit rate must be positive (leave it out for no limit)",
+            ));
+        }
+        if self.format == RecordFormat::DebeziumAvro && self.schema_registry.is_none() {
+            return Err(ConnectorError::fatal(
+                "kafka config: format debezium-avro needs a schema_registry block",
+            ));
+        }
+        if self.debezium.key_fields.iter().any(|f| f.is_empty()) {
+            return Err(ConnectorError::fatal(
+                "kafka config: debezium.key_fields names an empty field",
+            ));
+        }
+        if let Some(sr) = &self.schema_registry {
+            if !(sr.url.starts_with("https://") || sr.url.starts_with("http://")) {
+                return Err(ConnectorError::fatal(
+                    "kafka config: schema_registry.url must be an http(s) URL",
+                ));
+            }
+            if let Some(auth) = &sr.basic_auth {
+                username(
+                    "schema_registry.basic_auth",
+                    auth.username.as_deref(),
+                    auth.username_secret.as_deref(),
+                )?;
+                if auth.password.is_empty() {
+                    return Err(ConnectorError::fatal(
+                        "kafka config: schema_registry.basic_auth.password must name a secret",
+                    ));
+                }
+            }
         }
         if !matches!(self.acks.as_str(), "all" | "-1" | "0" | "1") {
             return Err(ConnectorError::fatal(format!(
@@ -255,6 +468,17 @@ impl KafkaConfig {
             .clone()
             .or_else(|| self.group_id_prefix.clone())
             .unwrap_or_else(|| format!("loams-{}-{}", instance.namespace, instance.name))
+    }
+
+    /// The SDK's [`RateLimit`] for this instance's `rate_limit` (unlimited
+    /// when there is none). The host passes it to the pipeline
+    /// (`Pipeline::…::rate_limit`).
+    pub fn rate_limit(&self) -> RateLimit {
+        let r = self.rate_limit.unwrap_or_default();
+        RateLimit {
+            bytes: r.bytes_per_sec.map(|n| Rate::per_second(n as f64)),
+            requests: r.requests_per_sec.map(|n| Rate::per_second(n as f64)),
+        }
     }
 
     /// The one topic a sink writes.
@@ -384,8 +608,16 @@ impl Connection {
                 .sasl
                 .as_ref()
                 .ok_or_else(|| ConnectorError::fatal("kafka config: no sasl block"))?;
+            let user = match username(
+                "sasl",
+                sasl.username.as_deref(),
+                sasl.username_secret.as_deref(),
+            )? {
+                Username::Value(v) => v.to_owned(),
+                Username::Secret(name) => self.secret(name).await?,
+            };
             c.set("sasl.mechanism", sasl_mechanism(&sasl.mechanism)?)
-                .set("sasl.username", &sasl.username)
+                .set("sasl.username", user)
                 .set("sasl.password", self.secret(&sasl.password).await?);
         }
         let tls = self.cfg.tls.clone().unwrap_or_default();
@@ -408,6 +640,31 @@ impl Connection {
             );
         }
         Ok(c)
+    }
+
+    /// The configured Schema Registry client, credentials resolved, or
+    /// `None` when there is no `schema_registry` block.
+    pub async fn registry(&self) -> Result<Option<ConfluentRegistry>, ConnectorError> {
+        let Some(sr) = &self.cfg.schema_registry else {
+            return Ok(None);
+        };
+        let mut reg = ConfluentRegistry::new(&sr.url, self.egress.clone());
+        if let Some(auth) = &sr.basic_auth {
+            let user = match username(
+                "schema_registry.basic_auth",
+                auth.username.as_deref(),
+                auth.username_secret.as_deref(),
+            )? {
+                Username::Value(v) => v.to_owned(),
+                Username::Secret(name) => self.secret(name).await?,
+            };
+            let password = self
+                .secrets
+                .resolve(&SecretRef::new(&auth.password))
+                .await?;
+            reg = reg.with_basic_auth(user, password);
+        }
+        Ok(Some(reg))
     }
 }
 
@@ -449,6 +706,129 @@ mod tests {
         let two =
             KafkaConfig::parse(&json!({"brokers": "a:1", "topics": ["t", "u"]})).expect("parse");
         assert!(two.sink_topic().is_err());
+    }
+
+    #[test]
+    fn bootstrap_scheme_is_stripped() {
+        // Confluent Cloud's bootstrap_endpoint, with and without its scheme (CC0
+        // R0.12), any case, per comma-separated entry.
+        for (given, want) in [
+            (
+                "SASL_SSL://pkc-abc12.us-east-1.aws.confluent.cloud:9092",
+                "pkc-abc12.us-east-1.aws.confluent.cloud:9092",
+            ),
+            (
+                "pkc-abc12.us-east-1.aws.confluent.cloud:9092",
+                "pkc-abc12.us-east-1.aws.confluent.cloud:9092",
+            ),
+            (
+                "sasl_ssl://a:1, SSL://b:2,PLAINTEXT://c:3 , Sasl_Plaintext://d:4",
+                "a:1,b:2,c:3,d:4",
+            ),
+            ("ssl://[::1]:9093", "[::1]:9093"),
+        ] {
+            assert_eq!(
+                normalise_brokers(given).expect("normalised"),
+                want,
+                "{given}"
+            );
+            let cfg =
+                KafkaConfig::parse(&json!({"brokers": given, "topics": ["t"]})).expect("parse");
+            assert_eq!(cfg.brokers, want);
+        }
+        assert!(normalise_brokers("https://a:1").is_err());
+        assert!(KafkaConfig::parse(&json!({"brokers": "http://a:1", "topics": ["t"]})).is_err());
+        assert!(KafkaConfig::parse(&json!({"brokers": "SASL_SSL://", "topics": ["t"]})).is_err());
+    }
+
+    #[test]
+    fn rate_limit_config_maps_to_sdk() {
+        let none = KafkaConfig::parse(&json!({"brokers": "a:1", "topics": ["t"]})).expect("parse");
+        assert_eq!(
+            none.rate_limit(),
+            RateLimit::default(),
+            "no block: unlimited"
+        );
+
+        let both = KafkaConfig::parse(&json!({
+            "brokers": "a:1", "topics": ["t"],
+            "rate_limit": {"bytes_per_sec": 1_048_576, "requests_per_sec": 50},
+        }))
+        .expect("parse");
+        assert_eq!(
+            both.rate_limit(),
+            RateLimit {
+                bytes: Some(Rate::per_second(1_048_576.0)),
+                requests: Some(Rate::per_second(50.0)),
+            }
+        );
+        let bytes_only = KafkaConfig::parse(&json!({
+            "brokers": "a:1", "topics": ["t"], "rate_limit": {"bytes_per_sec": 65_536},
+        }))
+        .expect("parse");
+        assert_eq!(
+            bytes_only.rate_limit(),
+            RateLimit {
+                bytes: Some(Rate::per_second(65_536.0)),
+                requests: None,
+            }
+        );
+        for bad in [
+            json!({"bytes_per_sec": 0}),
+            json!({"requests_per_sec": 0}),
+            json!({"bytes_per_sec": -1}),
+            json!({"bytes_per_second": 10}),
+        ] {
+            let cfg = json!({"brokers": "a:1", "topics": ["t"], "rate_limit": bad});
+            assert!(KafkaConfig::parse(&cfg).is_err(), "{cfg} should be refused");
+        }
+    }
+
+    #[test]
+    fn sasl_username_value_or_secret() {
+        let base = |sasl: serde_json::Value| json!({"brokers": "a:1", "topics": ["t"], "security_protocol": "sasl_ssl", "sasl": sasl});
+        assert!(KafkaConfig::parse(&base(json!({"username": "u", "password": "p"}))).is_ok());
+        assert!(
+            KafkaConfig::parse(&base(
+                json!({"username_secret": "c/username", "password": "c/password"})
+            ))
+            .is_ok()
+        );
+        for bad in [
+            json!({"password": "p"}),
+            json!({"username": "u", "username_secret": "s", "password": "p"}),
+            json!({"username": "", "password": "p"}),
+            json!({"username": "u", "password": ""}),
+            json!({"username_secret": "s"}),
+        ] {
+            assert!(
+                KafkaConfig::parse(&base(bad.clone())).is_err(),
+                "{bad} should be refused"
+            );
+        }
+    }
+
+    #[test]
+    fn schema_registry_basic_auth() {
+        let with = |sr: serde_json::Value| json!({"brokers": "a:1", "topics": ["t"], "schema_registry": sr});
+        for ok in [
+            json!({"url": "https://psrc-x.us-east-1.aws.confluent.cloud"}),
+            json!({"url": "https://sr", "basic_auth": {"username": "k", "password": "c/sr-password"}}),
+            json!({"url": "http://sr:8081", "basic_auth": {"username_secret": "c/sr-username", "password": "c/sr-password"}}),
+        ] {
+            assert!(KafkaConfig::parse(&with(ok.clone())).is_ok(), "{ok}");
+        }
+        for bad in [
+            json!({"url": "sr:8081"}),
+            json!({"url": "https://sr", "basic_auth": {"password": "p"}}),
+            json!({"url": "https://sr", "basic_auth": {"username": "k", "username_secret": "s", "password": "p"}}),
+            json!({"url": "https://sr", "basic_auth": {"username": "k"}}),
+        ] {
+            assert!(
+                KafkaConfig::parse(&with(bad.clone())).is_err(),
+                "{bad} should be refused"
+            );
+        }
     }
 
     #[test]
