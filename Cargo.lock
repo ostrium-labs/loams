@@ -9578,15 +9578,20 @@ name = "loams-meter"
 version = "0.1.2"
 dependencies = [
  "async-trait",
+ "buffa",
+ "connectrpc",
+ "loams-authz",
  "loams-cloudevents",
  "loams-common",
  "loams-meter-core",
+ "loams-proto",
  "proptest",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
  "tokio",
  "tracing",
+ "ulid 3.0.0",
 ]
 
 [[package]]

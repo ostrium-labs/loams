@@ -66,6 +66,7 @@ const MODEL: &[(&str, &str, &[Rule])] = &[
         &[Direct(&[Type("user"), Type("service_account")])],
     ),
     ("platform", "meter_admin", &[Direct(&[Type("user")])]),
+    ("platform", "can_manage_meters", &[Computed("meter_admin")]),
     ("platform", "cloud_admin", &[Direct(&[Type("user")])]),
     ("org", "platform", &[Direct(&[Type("platform")])]),
     ("org", "owner", &[Direct(&[Type("user")])]),
@@ -88,6 +89,12 @@ const MODEL: &[(&str, &str, &[Rule])] = &[
         "org",
         "billing_viewer",
         &[Direct(PEOPLE_AND_TEAMS), Computed("billing_admin")],
+    ),
+    ("org", "can_manage_billing", &[Computed("billing_admin")]),
+    (
+        "org",
+        "can_view_billing",
+        &[Computed("billing_viewer"), From("platform", "meter_admin")],
     ),
     (
         "org",

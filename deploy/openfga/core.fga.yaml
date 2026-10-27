@@ -31,6 +31,9 @@ tuples:
   - {user: user:vic, relation: viewer, object: environment:prod}
   - {user: user:bill, relation: billing_viewer, object: org:acme}
   - {user: user:opal, relation: operator, object: platform:default}
+  # Loams Meter (ME1 Task 10): mia is meter_admin, bea billing_admin of acme.
+  - {user: user:mia, relation: meter_admin, object: platform:default}
+  - {user: user:bea, relation: billing_admin, object: org:acme}
   # Loams Cloud's one admin object (design 78 §25.8): cora is cloud_admin.
   - {user: user:cora, relation: cloud_admin, object: platform:loams-cloud}
 
@@ -217,6 +220,36 @@ tests:
       - user: user:bill
         object: org:acme
         assertions: {billing_viewer: true, billing_admin: false, member: false}
+
+  - name: meter_can_relations
+    check:
+      - user: user:mia
+        object: platform:default
+        assertions: {meter_admin: true, can_manage_meters: true}
+      - user: user:mia
+        object: org:acme
+        assertions: {can_view_billing: true, can_manage_billing: false}
+      - user: user:bea
+        object: org:acme
+        assertions: {can_manage_billing: true, can_view_billing: true}
+      - user: user:bill
+        object: org:acme
+        assertions: {can_view_billing: true, can_manage_billing: false}
+      - user: user:olga
+        object: org:acme
+        assertions: {can_manage_billing: true, can_view_billing: true}
+      - user: user:mona
+        object: org:acme
+        assertions: {can_view_billing: false, can_manage_billing: false}
+      - user: agent:agent-1
+        object: platform:default
+        assertions: {can_manage_meters: false}
+      - user: agent:agent-1
+        object: org:acme
+        assertions: {can_view_billing: false, can_manage_billing: false}
+      - user: service_account:ci
+        object: org:acme
+        assertions: {can_view_billing: false, can_manage_billing: false}
 
   - name: environment_can_relations
     check:
