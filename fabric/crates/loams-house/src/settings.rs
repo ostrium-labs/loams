@@ -120,72 +120,10 @@ pub fn is_front_only(name: &str) -> bool {
     is_loams(name) || FRONT_SETTINGS.contains(&name) || SATISFIED_SETTINGS.contains(&name)
 }
 
-/// chDB's query-level settings with their defaults (`system.settings`), for
-/// [`is_default`] (HE1 R9.11).
-const CHDB_DEFAULTS: &str = include_str!("chdb_setting_defaults.tsv");
-
-/// TSV's escapes undone.
-fn unescape_tsv(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut chars = text.chars();
-    while let Some(c) = chars.next() {
-        if c != '\\' {
-            out.push(c);
-            continue;
-        }
-        match chars.next() {
-            Some('t') => out.push('\t'),
-            Some('n') => out.push('\n'),
-            Some('r') => out.push('\r'),
-            Some('0') => out.push('\0'),
-            Some(other) => out.push(other),
-            None => out.push('\\'),
-        }
-    }
-    out
-}
-
-/// chDB's default for `name`, if it is one of its settings.
-pub fn chdb_default(name: &str) -> Option<String> {
-    use std::collections::HashMap;
-    use std::sync::OnceLock;
-    static DEFAULTS: OnceLock<HashMap<String, String>> = OnceLock::new();
-    DEFAULTS
-        .get_or_init(|| {
-            CHDB_DEFAULTS
-                .lines()
-                .filter(|l| !l.starts_with('#') && !l.is_empty())
-                .filter_map(|l| l.split_once('\t'))
-                .map(|(n, d)| (unescape_tsv(n), unescape_tsv(d)))
-                .collect()
-        })
-        .get(name)
-        .cloned()
-}
-
-/// Whether `value` is `name`'s default, as ClickHouse would read it: the same
-/// text, or the same boolean (`0`/`false`, `1`/`true`), or the same number
-/// (HE1 R9.11). Clients send settings at their defaults (the query log, which
-/// records only changed settings, never shows them), and asking for the default
-/// changes nothing, so such a setting is accepted whatever list it is on.
-pub fn is_default(name: &str, value: &str) -> bool {
-    let Some(default) = chdb_default(name) else {
-        return false;
-    };
-    let value = value.trim().trim_matches('\'');
-    if value == default {
-        return true;
-    }
-    let boolean = |v: &str| match v.to_ascii_lowercase().as_str() {
-        "0" | "false" => Some(false),
-        "1" | "true" => Some(true),
-        _ => None,
-    };
-    if let (Some(a), Some(b)) = (boolean(value), boolean(&default)) {
-        return a == b;
-    }
-    matches!((value.parse::<f64>(), default.parse::<f64>()), (Ok(a), Ok(b)) if a == b)
-}
+/// chDB's default for a setting and whether a value is it (HE1 R9.11). The
+/// table lives in `loams-house-ipc` so the Rust engine (HE1 Task 37) reads the
+/// same one.
+pub use loams_house_ipc::policy::{chdb_default, is_default};
 
 /// Whether `name` may be set at all.
 pub fn is_allowed(name: &str) -> bool {

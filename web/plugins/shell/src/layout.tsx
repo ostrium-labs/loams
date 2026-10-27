@@ -229,7 +229,7 @@ export function Layout({
       if (panel instanceof PanelController) panel.route(location.path, { narrow });
     }
   }, [inspector, drawer, location.path, narrow]);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: close the sheet per route
+  // oxlint-disable-next-line react/exhaustive-deps -- close the sheet per route
   useEffect(() => setSheetOpen(false), [location.path]);
 
   // The one keymap (D1081): every shell chord, with the focused editor or terminal keeping

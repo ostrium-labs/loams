@@ -86,7 +86,7 @@ cargo_package(
         "//crates/loams-agentd-harness:loams-agentd-harness",
         "//crates/loams-walrus:loams-walrus",
         "//third-party/rust:async-trait",
-        "//third-party/rust:base64",
+        "//third-party/rust:base64-0_23",
         "//third-party/rust:hex",
         "//third-party/rust:jsonschema",
         "//third-party/rust:reqwest-0_12",

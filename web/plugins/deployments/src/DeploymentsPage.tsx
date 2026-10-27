@@ -404,7 +404,7 @@ function LogsDialog({
         <ol className="ld-logs" aria-label="Log lines">
           {lines.map((l, i) => (
             // Lines are append-only and may repeat; position is their identity.
-            // biome-ignore lint/suspicious/noArrayIndexKey: see above
+            // oxlint-disable-next-line react/no-array-index-key -- see above
             <li key={i} data-level={l.level}>
               <time dateTime={new Date(l.at).toISOString()}>
                 {new Date(l.at).toLocaleTimeString()}

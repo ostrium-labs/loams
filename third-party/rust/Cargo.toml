@@ -22,7 +22,8 @@ arrow-ipc = { package = "arrow-ipc", version = "=58.4.0", default-features = tru
 arrow-schema = { package = "arrow-schema", version = "=58.4.0", default-features = false, features = ["bitflags", "canonical_extension_types", "ffi"] }
 async-trait = { package = "async-trait", version = "=0.1.92", default-features = false }
 axum = { package = "axum", version = "=0.8.9", default-features = true, features = ["form", "http1", "http2", "json", "matched-path", "original-uri", "query", "tokio", "tower-log", "tracing"] }
-base64 = { package = "base64", version = "=0.23.1", default-features = true, features = ["alloc", "simd-unsafe", "std"] }
+base64-0_22 = { package = "base64", version = "=0.22.1", default-features = true, features = ["alloc", "std"] }
+base64-0_23 = { package = "base64", version = "=0.23.1", default-features = true, features = ["alloc", "simd-unsafe", "std"] }
 bitpacking = { package = "bitpacking", version = "=0.9.3", default-features = true, features = ["bitpacker1x", "bitpacker4x", "bitpacker8x"] }
 buffa = { package = "buffa", version = "=0.9.2", default-features = true, features = ["fast-utf8", "json", "std", "text"] }
 buffa-descriptor = { package = "buffa-descriptor", version = "=0.9.2", default-features = true, features = ["reflect", "std"] }

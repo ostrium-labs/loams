@@ -31,7 +31,7 @@ const safeId = (id: string | undefined): id is string =>
 	id !== undefined && SEG.test(id) && id !== "." && id !== "..";
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 
-// biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what is removed
+// oxlint-disable-next-line no-control-regex -- control characters are what is removed
 const CONTROL = /[\u0000-\u001f\u007f]+/g;
 
 /** A title as one short line of plain text: no control characters, capped. */
