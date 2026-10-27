@@ -1,0 +1,84 @@
+{{- range $component, $role := .Values.roles }}
+{{- $sel := dict "component" $component "instance" $.Values.instance }}
+---
+apiVersion: apps/v1
+kind: {{ if $role.stateful }}StatefulSet{{ else }}Deployment{{ end }}
+metadata:
+  name: {{ $role.name }}
+  labels:
+    {{- toYaml $role.labels | nindent 4 }}
+spec:
+  replicas: {{ $role.replicas }}
+  {{- if $role.stateful }}
+  serviceName: {{ $role.name }}-headless
+  podManagementPolicy: Parallel
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "loams-risingwave.selector" $sel | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- toYaml $role.labels | nindent 8 }}
+      annotations:
+        checksum/config: {{ $.Values.config | sha256sum }}
+        checksum/credentials: {{ toJson $.Values.credentials | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: {{ $.Values.terminationGracePeriodSeconds }}
+      securityContext:
+        {{- toYaml $.Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: risingwave
+          image: {{ $role.image }}
+          args:
+            {{- toYaml $role.args | nindent 12 }}
+          env:
+            # First, so that $(POD_IP) in RW_ADVERTISE_ADDR expands.
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            {{- range $role.env }}
+            - name: {{ .name }}
+              {{- if hasKey . "secretKey" }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.secretName }}
+                  key: {{ .secretKey }}
+              {{- else }}
+              value: {{ .value | quote }}
+              {{- end }}
+            {{- end }}
+          ports:
+            {{- range $role.ports }}
+            - name: {{ .name }}
+              containerPort: {{ .containerPort }}
+            {{- end }}
+          readinessProbe:
+            tcpSocket:
+              port: {{ (index $role.ports 0).containerPort }}
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: {{ (index $role.ports 0).containerPort }}
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 6
+          resources:
+            {{- toYaml $role.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: config
+              mountPath: /risingwave/config
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $.Values.configName }}
+{{- end }}

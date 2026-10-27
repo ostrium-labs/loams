@@ -1,0 +1,19 @@
+# Rendered by loams-risingwave. Do not edit: the controller rewrites it.
+
+[server]
+telemetry_enabled = false
+
+[frontend]
+unsafe_enable_local_fs_connector = false
+
+[[frontend.hba_config.entries]]
+connection_type = "Host"
+databases = ["all"]
+users = ["all"]
+addresses = ["0.0.0.0/0", "::/0"]
+auth_method = "password"
+
+[udf]
+enable_embedded_python_udf = false
+enable_embedded_javascript_udf = false
+enable_embedded_wasm_udf = false
