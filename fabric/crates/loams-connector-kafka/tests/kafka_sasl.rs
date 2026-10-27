@@ -99,7 +99,12 @@ async fn kafka_sasl_refuses_bad_password_and_unknown_ca() {
     };
     let (topic, _) = target.topic("kafka-sasl-refused", 1).await;
     assert_eq!(
-        discover_with(&target, target.config(&[&topic], json!({})), target.secrets.clone()).await,
+        discover_with(
+            &target,
+            target.config(&[&topic], json!({})),
+            target.secrets.clone()
+        )
+        .await,
         Ok(()),
         "the right credentials and CA connect"
     );
@@ -107,16 +112,17 @@ async fn kafka_sasl_refuses_bad_password_and_unknown_ca() {
     let wrong = StaticSecrets::new()
         .with("kafka-sasl/username", "loams-test")
         .with("kafka-sasl/password", "not-the-password");
-    let err = discover_with(&target, target.config(&[&topic], json!({})), Arc::new(wrong))
-        .await
-        .expect_err("a wrong password is refused");
+    let err = discover_with(
+        &target,
+        target.config(&[&topic], json!({})),
+        Arc::new(wrong),
+    )
+    .await
+    .expect_err("a wrong password is refused");
     assert_eq!(err, ErrorClass::Auth, "a refused login is Auth");
 
     let mut no_ca = target.config(&[&topic], json!({}));
-    no_ca["tls"]
-        .as_object_mut()
-        .expect("tls")
-        .remove("ca_pem");
+    no_ca["tls"].as_object_mut().expect("tls").remove("ca_pem");
     discover_with(&target, no_ca, target.secrets.clone())
         .await
         .expect_err("a certificate the system roots do not know is refused");

@@ -26,8 +26,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use loams_connector_sdk::{
-    Budget, CloudEvent, ConnectorError, EventBatch, Position, Source, SourceBatch, SourceFactory,
-    Split, SplitEnumerator, SplitState,
+    Budget, CloudEvent, ConnectorError, ErrorClass, EventBatch, Position, Source, SourceBatch,
+    SourceFactory, Split, SplitEnumerator, SplitState,
 };
 use rdkafka::consumer::{BaseConsumer, CommitMode, Consumer, StreamConsumer};
 use rdkafka::error::RDKafkaErrorCode;
@@ -35,7 +35,7 @@ use rdkafka::{Message, Offset, TopicPartitionList};
 use serde_json::json;
 
 use crate::config::{CALL_TIMEOUT, Connection, OffsetReset};
-use crate::error::{AuthWatch, class_of_code, join_error, kafka_error};
+use crate::error::{AuthWatch, class_of, class_of_code, join_error, kafka_error};
 use crate::record::event_from_message;
 
 /// A split's id: `<topic>/<partition>`.
@@ -110,9 +110,18 @@ impl SplitEnumerator for KafkaEnumerator {
             let mut found = Vec::new();
             let mut brokers = Vec::new();
             for topic in &topics {
-                let md = client
-                    .fetch_metadata(Some(topic), CALL_TIMEOUT)
-                    .map_err(|e| kafka_error(&format!("metadata for {topic}"), &e))?;
+                let md = match client.fetch_metadata(Some(topic), CALL_TIMEOUT) {
+                    Ok(md) => md,
+                    Err(e) => {
+                        let what = format!("metadata for {topic}");
+                        return Err(match refused_login(&client) {
+                            Some(reason) => {
+                                ConnectorError::new(ErrorClass::Auth, format!("{what}: {reason}"))
+                            }
+                            None => kafka_error(&what, &e),
+                        });
+                    }
+                };
                 for b in md.brokers() {
                     brokers.push((b.host().to_owned(), b.port()));
                 }
@@ -166,6 +175,27 @@ impl SplitEnumerator for KafkaEnumerator {
         splits.dedup_by(|a, b| a.id == b.id);
         Ok(splits)
     }
+}
+
+/// The reason librdkafka refused this client's login, if it did. librdkafka
+/// reports a refused SASL login as an event on the client's queue, not as
+/// the failed call's error (that is a timeout or a transport failure): serve
+/// the queued events so [`AuthWatch`] sees it, or take it from the event.
+fn refused_login(client: &BaseConsumer<AuthWatch>) -> Option<String> {
+    // `poll` also answers `None` for an event it served itself (a log
+    // line), so a `None` does not mean the queue is empty: poll a bounded
+    // number of times.
+    for _ in 0..256 {
+        if let Some(Err(e)) = client.poll(Duration::ZERO)
+            && class_of(&e) == ErrorClass::Auth
+        {
+            return Some(e.to_string());
+        }
+        if let Some(reason) = client.context().refused() {
+            return Some(reason);
+        }
+    }
+    client.context().refused()
 }
 
 /// Makes one [`KafkaSource`] per split.

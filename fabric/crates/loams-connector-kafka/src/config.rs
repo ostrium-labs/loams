@@ -590,7 +590,10 @@ impl Connection {
                 Username::Value(v) => v.to_owned(),
                 Username::Secret(name) => self.secret(name).await?,
             };
-            let password = self.secrets.resolve(&SecretRef::new(&auth.password)).await?;
+            let password = self
+                .secrets
+                .resolve(&SecretRef::new(&auth.password))
+                .await?;
             reg = reg.with_basic_auth(user, password);
         }
         Ok(Some(reg))
@@ -646,12 +649,23 @@ mod tests {
                 "SASL_SSL://pkc-abc12.us-east-1.aws.confluent.cloud:9092",
                 "pkc-abc12.us-east-1.aws.confluent.cloud:9092",
             ),
-            ("pkc-abc12.us-east-1.aws.confluent.cloud:9092", "pkc-abc12.us-east-1.aws.confluent.cloud:9092"),
-            ("sasl_ssl://a:1, SSL://b:2,PLAINTEXT://c:3 , Sasl_Plaintext://d:4", "a:1,b:2,c:3,d:4"),
+            (
+                "pkc-abc12.us-east-1.aws.confluent.cloud:9092",
+                "pkc-abc12.us-east-1.aws.confluent.cloud:9092",
+            ),
+            (
+                "sasl_ssl://a:1, SSL://b:2,PLAINTEXT://c:3 , Sasl_Plaintext://d:4",
+                "a:1,b:2,c:3,d:4",
+            ),
             ("ssl://[::1]:9093", "[::1]:9093"),
         ] {
-            assert_eq!(normalise_brokers(given).expect("normalised"), want, "{given}");
-            let cfg = KafkaConfig::parse(&json!({"brokers": given, "topics": ["t"]})).expect("parse");
+            assert_eq!(
+                normalise_brokers(given).expect("normalised"),
+                want,
+                "{given}"
+            );
+            let cfg =
+                KafkaConfig::parse(&json!({"brokers": given, "topics": ["t"]})).expect("parse");
             assert_eq!(cfg.brokers, want);
         }
         assert!(normalise_brokers("https://a:1").is_err());
@@ -662,7 +676,11 @@ mod tests {
     #[test]
     fn rate_limit_config_maps_to_sdk() {
         let none = KafkaConfig::parse(&json!({"brokers": "a:1", "topics": ["t"]})).expect("parse");
-        assert_eq!(none.rate_limit(), RateLimit::default(), "no block: unlimited");
+        assert_eq!(
+            none.rate_limit(),
+            RateLimit::default(),
+            "no block: unlimited"
+        );
 
         let both = KafkaConfig::parse(&json!({
             "brokers": "a:1", "topics": ["t"],
@@ -700,13 +718,13 @@ mod tests {
 
     #[test]
     fn sasl_username_value_or_secret() {
-        let base = |sasl: serde_json::Value| {
-            json!({"brokers": "a:1", "topics": ["t"], "security_protocol": "sasl_ssl", "sasl": sasl})
-        };
+        let base = |sasl: serde_json::Value| json!({"brokers": "a:1", "topics": ["t"], "security_protocol": "sasl_ssl", "sasl": sasl});
         assert!(KafkaConfig::parse(&base(json!({"username": "u", "password": "p"}))).is_ok());
         assert!(
-            KafkaConfig::parse(&base(json!({"username_secret": "c/username", "password": "c/password"})))
-                .is_ok()
+            KafkaConfig::parse(&base(
+                json!({"username_secret": "c/username", "password": "c/password"})
+            ))
+            .is_ok()
         );
         for bad in [
             json!({"password": "p"}),
@@ -715,7 +733,10 @@ mod tests {
             json!({"username": "u", "password": ""}),
             json!({"username_secret": "s"}),
         ] {
-            assert!(KafkaConfig::parse(&base(bad.clone())).is_err(), "{bad} should be refused");
+            assert!(
+                KafkaConfig::parse(&base(bad.clone())).is_err(),
+                "{bad} should be refused"
+            );
         }
     }
 
@@ -735,7 +756,10 @@ mod tests {
             json!({"url": "https://sr", "basic_auth": {"username": "k", "username_secret": "s", "password": "p"}}),
             json!({"url": "https://sr", "basic_auth": {"username": "k"}}),
         ] {
-            assert!(KafkaConfig::parse(&with(bad.clone())).is_err(), "{bad} should be refused");
+            assert!(
+                KafkaConfig::parse(&with(bad.clone())).is_err(),
+                "{bad} should be refused"
+            );
         }
     }
 

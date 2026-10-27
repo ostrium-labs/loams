@@ -200,7 +200,10 @@ mod tests {
         assert_eq!(sasl.mechanism, "plain");
         let tls = cfg.tls.as_ref().expect("tls");
         assert!(tls.enabled && tls.verify_full);
-        assert!(tls.ca_pem.is_none(), "no CA shipped: the system roots (R0.3)");
+        assert!(
+            tls.ca_pem.is_none(),
+            "no CA shipped: the system roots (R0.3)"
+        );
         assert_eq!(cfg.max_record_bytes, 8_000_000);
         assert!(!cfg.create_checkpoint_topic);
         assert_eq!(cfg.brokers, "127.0.0.1:9092", "the scheme is stripped");
