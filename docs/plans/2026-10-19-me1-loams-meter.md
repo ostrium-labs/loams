@@ -111,4 +111,4 @@
 | 5 | **The usage profile, exactly** (D2164) | §63 §6.1 left the rules for external events and for meter notifications open |
 | 6 | **Model refinements** (D2165): `Boolean { enabled }`, `Grant.created_at`, the burn order, `Balance.grants` and `prepaid_only`, and `RefusalReason` in the core | The design's types had nowhere to hold these |
 | 7 | **Balance engine semantics** (D2166) | Pins down the order of resets, rollover, recurrence and overage for the property tests |
-| 8 | **Lease allocator** (D2167): how the chunk clamp is ordered, exact and learning mode, and an in-crate seeded simulation in place of `loams-detsim` | `loams-detsim` does not exist on `dev` |
+| 8 | **Lease allocator** (D2167): how the chunk clamp is ordered (chunks floored to whole `min_chunk`s), exact and learning mode, and an in-crate seeded simulation in place of `loams-detsim` | `loams-detsim` does not exist on `dev` |
