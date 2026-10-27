@@ -178,6 +178,7 @@ async fn gateway(store: Arc<dyn Store>) -> (Gateway, tokio::sync::watch::Sender<
             shards: SHARDS,
             lease: Duration::from_secs(60),
             config: FrontendConfig::default(),
+            ext: Default::default(),
         },
         rx,
     )

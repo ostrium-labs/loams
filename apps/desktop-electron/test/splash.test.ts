@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { SPLASH_TIMEOUT_MS, SplashGate } from "../src/main/shell/splash";
 
 const build = resolve(__dirname, "../build");

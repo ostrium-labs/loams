@@ -13,7 +13,7 @@ import {
 	FactoryHealth,
 	FactoryService,
 } from "@loams/proto/agentd";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import {
 	DAEMON_DOWN,
 	FactoryHost,

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { parseDeepLink } from "../src/shared/deeplink";
 
 describe("deeplink_allowlist", () => {

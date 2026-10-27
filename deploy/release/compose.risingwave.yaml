@@ -1,0 +1,157 @@
+# Managed RisingWave on the compose stack (design 81, plan RW1; lane RW-a,
+# D1950-D1959): one RisingWave cluster, profile `risingwave`. An override
+# of compose.yaml, used with the shared compose.lake.yaml:
+#
+#   docker compose -f compose.yaml -f compose.lake.yaml -f compose.risingwave.yaml \
+#     --profile rustfs --profile risingwave up -d
+#
+# - Four services, one per role: meta, compactor, compute, frontend
+#   (RisingWave's distributed mode, the same layout as the managed
+#   instances, size xs).
+# - Meta store: `--backend postgres` on Loams Postgres (compute1:55433),
+#   database and role `rw_default`, created by `engines-init` (D1951).
+# - State store: `hummock+s3://loams-engines` on RustFS, prefix
+#   `engines/<ns>/risingwave/` (`hummock/`, `backup/`), with RisingWave
+#   leaving the shared bucket's lifecycle rules alone (D1952, ENG81 R6).
+# - The image is pinned by digest: RisingWave v3.1.0, released 2026-09-21
+#   (D1958). No licence key; telemetry is off (D1959, R4).
+# - No host port of its own. Clients use `engine-gateway` on
+#   127.0.0.1:4566 (compose.lake.yaml, R7, R8) with ENGINE_GATEWAY_KEY as
+#   the password, or the frontend on the compose network
+#   (`risingwave:4566`, database `dev`). `risingwave-init` sets root's
+#   password (RISINGWAVE_ROOT_PASSWORD) and creates the gateway's user.
+# - Every setting goes through RisingWave's RW_* environment variables, as
+#   crates/loams-risingwave renders them; credentials are never in argv.
+#
+# Status: preview, not yet run end to end.
+
+x-risingwave: &risingwave
+  profiles: [risingwave]
+  image: ${RISINGWAVE_IMAGE:-docker.io/risingwavelabs/risingwave:v3.1.0@sha256:ee2e8e7a10b728d01b0e149d2a4f35864f0f52a0c889fa6cf9bc32c8ff46c602}
+  restart: unless-stopped
+  volumes:
+    - ./risingwave/risingwave.toml:/risingwave/config/risingwave.toml:ro
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+
+x-risingwave-env: &risingwave-env
+  RW_CONFIG_PATH: /risingwave/config/risingwave.toml
+  ENABLE_TELEMETRY: "false"
+  RW_PROMETHEUS_LISTENER_ADDR: 0.0.0.0:1250
+  AWS_ACCESS_KEY_ID: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
+  AWS_SECRET_ACCESS_KEY: ${RUSTFS_SECRET_KEY:-rustfsadmin}
+  AWS_REGION: us-east-1
+  RW_S3_ENDPOINT: http://rustfs:9000
+  RW_IS_FORCE_PATH_STYLE: "true"
+  RW_META_ADDR: http://risingwave-meta:5690
+
+services:
+  risingwave-meta:
+    <<: *risingwave
+    command: ["meta-node"]
+    environment:
+      RW_CONFIG_PATH: /risingwave/config/risingwave.toml
+      ENABLE_TELEMETRY: "false"
+      AWS_ACCESS_KEY_ID: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      AWS_SECRET_ACCESS_KEY: ${RUSTFS_SECRET_KEY:-rustfsadmin}
+      AWS_REGION: us-east-1
+      RW_S3_ENDPOINT: http://rustfs:9000
+      RW_IS_FORCE_PATH_STYLE: "true"
+      RW_LISTEN_ADDR: 0.0.0.0:5690
+      RW_ADVERTISE_ADDR: risingwave-meta:5690
+      RW_DASHBOARD_HOST: 0.0.0.0:5691
+      RW_PROMETHEUS_HOST: 0.0.0.0:1250
+      RW_BACKEND: postgres
+      RW_SQL_ENDPOINT: ${LOAMS_PG_HOST:-compute1}:${LOAMS_PG_PORT:-55433}
+      RW_SQL_USERNAME: ${RISINGWAVE_META_DB:-rw_default}
+      RW_SQL_PASSWORD: ${RISINGWAVE_META_PASSWORD:-risingwave}
+      RW_SQL_DATABASE: ${RISINGWAVE_META_DB:-rw_default}
+      RW_STATE_STORE: hummock+s3://loams-engines
+      RW_DATA_DIRECTORY: engines/${LOAMS_ENGINES_NAMESPACE:-default}/risingwave/hummock
+      RW_BACKUP_STORAGE_URL: s3://loams-engines
+      RW_BACKUP_STORAGE_DIRECTORY: engines/${LOAMS_ENGINES_NAMESPACE:-default}/risingwave/backup
+      RW_DO_NOT_CONFIG_BUCKET_LIFECYCLE: "true"
+    mem_limit: ${RISINGWAVE_META_MEMORY:-1g}
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '> /dev/tcp/127.0.0.1/5690'"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+    depends_on:
+      engines-init:
+        condition: service_completed_successfully
+      engines-buckets:
+        condition: service_completed_successfully
+
+  risingwave-compactor:
+    <<: *risingwave
+    command: ["compactor-node"]
+    environment:
+      <<: *risingwave-env
+      RW_LISTEN_ADDR: 0.0.0.0:6660
+      RW_ADVERTISE_ADDR: risingwave-compactor:6660
+      RW_COMPACTOR_TOTAL_MEMORY_BYTES: ${RISINGWAVE_COMPACTOR_MEMORY_BYTES:-1073741824}
+    mem_limit: ${RISINGWAVE_COMPACTOR_MEMORY_BYTES:-1073741824}
+    depends_on:
+      risingwave-meta:
+        condition: service_healthy
+
+  risingwave-compute:
+    <<: *risingwave
+    command: ["compute-node"]
+    environment:
+      <<: *risingwave-env
+      RW_LISTEN_ADDR: 0.0.0.0:5688
+      RW_ADVERTISE_ADDR: risingwave-compute:5688
+      RW_TOTAL_MEMORY_BYTES: ${RISINGWAVE_COMPUTE_MEMORY_BYTES:-2147483648}
+      RW_PARALLELISM: ${RISINGWAVE_COMPUTE_PARALLELISM:-2}
+      RW_COMPUTE_NODE_ROLE: both
+    mem_limit: ${RISINGWAVE_COMPUTE_MEMORY_BYTES:-2147483648}
+    depends_on:
+      risingwave-meta:
+        condition: service_healthy
+
+  risingwave-frontend:
+    <<: *risingwave
+    command: ["frontend-node"]
+    environment:
+      <<: *risingwave-env
+      RW_LISTEN_ADDR: 0.0.0.0:4566
+      RW_ADVERTISE_ADDR: risingwave-frontend:4566
+      RW_FRONTEND_TOTAL_MEMORY_BYTES: ${RISINGWAVE_FRONTEND_MEMORY_BYTES:-1073741824}
+      RW_HEALTH_CHECK_LISTENER_ADDR: 0.0.0.0:6786
+    mem_limit: ${RISINGWAVE_FRONTEND_MEMORY_BYTES:-1073741824}
+    networks:
+      default:
+        # RW-b's CLI default, postgres://root@risingwave:4566/dev.
+        aliases: [risingwave]
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '> /dev/tcp/127.0.0.1/4566'"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+    depends_on:
+      risingwave-meta:
+        condition: service_healthy
+      risingwave-compute:
+        condition: service_started
+
+  # One-shot: sets root's password and creates `loams_gateway`, the user
+  # engine-gateway logs in as (engines/engines-init.sh risingwave-users).
+  risingwave-init:
+    profiles: [risingwave]
+    image: ${PSQL_IMAGE:-docker.io/library/postgres:17.10@sha256:7958605b474b3d264a969cb3a123d6aa00ad1e1fe9da8a69984dabb704d93317}
+    restart: "no"
+    entrypoint: ["/bin/sh", "/engines/engines-init.sh", "risingwave-users"]
+    environment:
+      RISINGWAVE_ROOT_PASSWORD: ${RISINGWAVE_ROOT_PASSWORD:-risingwave}
+      RISINGWAVE_GATEWAY_PASSWORD: ${RISINGWAVE_GATEWAY_PASSWORD:-gateway}
+    volumes:
+      - ./engines/engines-init.sh:/engines/engines-init.sh:ro
+    depends_on:
+      risingwave-frontend:
+        condition: service_healthy
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
