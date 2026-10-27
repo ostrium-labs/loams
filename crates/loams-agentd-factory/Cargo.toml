@@ -1,0 +1,31 @@
+[package]
+name = "loams-agentd-factory"
+description = "The software factory's app connections in loams-agentd: the credential store and the read-only op allowlist (design §50 §13, D795)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+loams-agentd-proto.workspace = true
+async-trait.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+url.workspace = true
+# The agentd crates are on base64 0.22 and reqwest 0.12 (not the workspace keys).
+base64 = "0.22"
+# Native roots as well as webpki's: self-hosted factory apps often sit behind a
+# company CA the machine already trusts.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "rustls-tls-native-roots", "system-proxy"] }
+keyring.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

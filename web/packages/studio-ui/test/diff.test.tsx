@@ -3,7 +3,7 @@
 
 import type { FileDiffMetadata } from '@pierre/diffs';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test';
 import { DiffPanel, defaultBaseRef, useDiffPanelStore } from '../src/diff';
 import { DIFF_TOKEN_VARIABLES, diffSurfaceCss } from '../src/diff/diffTheme';
 import { isCommentSubmitShortcut } from '../src/diff/review/commentSubmitShortcut';

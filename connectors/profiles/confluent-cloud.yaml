@@ -1,0 +1,44 @@
+# Confluent Cloud — a target profile on the native Kafka family (CC1 Task 2,
+# D1822, design §80 §4.2). A Confluent Cloud cluster speaks the Kafka
+# protocol, so `loams-connector-kafka` serves it with no Confluent SDK:
+# SASL_SSL with SASL PLAIN, the Kafka API key as the username and its secret
+# as the password. Both are secrets the instance names
+# (`sasl.username_secret`, `sasl.password`): `loams-byoc-secrets` writes them
+# under the Fabric's secret root as `confluent-<integration>/username` and
+# `confluent-<integration>/password` (D1827). TLS verifies the broker's
+# hostname against the system roots (`ssl.ca.location=probe`; the
+# `loams-fabric` image keeps `ca-certificates`, CC0 R0.3), so the profile
+# ships no CA. Basic and Standard clusters accept 8 MB records (Confluent's
+# cluster types page, 2026-10-20).
+#
+# The checkpoint topic of the exactly-once sink (`__loams_checkpoints`,
+# compacted, one partition) must exist before the sink starts: the
+# `confluent` OpenTofu module or the user creates it, because Loams' data
+# account has no CREATE on the cluster (D1826), hence
+# `create_checkpoint_topic: false`.
+#
+# narrows: none. Kafka transactions, the idempotent producer and compaction
+# passed on Basic and Standard (CC0 R0.1), so the sink keeps exactly_once.
+#
+# The suite: `tests/kafka_sasl.rs` runs the family's SASL_SSL leg against
+# `apache/kafka` with a test CA and PLAIN users in CI; a real cluster runs
+# nightly (CC1 Task 10) with the variables below.
+apiVersion: loams.flow/v1
+kind: Profile
+id: confluent-cloud
+profile_kind: target
+module: kafka
+system:
+  name: Confluent Cloud
+  service:
+    nightly: [LOAMS_CONFLUENT_BOOTSTRAP, LOAMS_CONFLUENT_API_KEY, LOAMS_CONFLUENT_API_SECRET]
+defaults:
+  security_protocol: sasl_ssl
+  sasl:
+    mechanism: plain
+  tls:
+    enabled: true
+    verify_full: true
+  max_record_bytes: 8000000
+  create_checkpoint_topic: false
+narrows: []

@@ -6,7 +6,7 @@ import { validateManifest } from '@loams/console-host';
 import type { SlotSpec } from '@loams/slots';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ComponentType } from 'react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 import pkg from '../package.json';
 import { branchFor, threadDraftHref } from '../src/drafts.js';
 import plugin from '../src/index.js';
@@ -44,6 +44,7 @@ function apply() {
   const ctx = {
     effect: (fn: () => unknown) => void fn(),
     desktop: fakeDesktop().api,
+    platform: { kind: 'desktop', openExternal: () => {} },
     router,
     slots: {
       register: (spec: SlotSpec<never>) => {
@@ -76,8 +77,9 @@ describe('the factory in Studio', () => {
     const m = validateManifest(pkg);
     // Studio is its home; Console keeps only the overview card (meta.mode below).
     expect(m.modes).toEqual(['console', 'studio']);
-    // Desktop-only until SF1 (D922).
-    expect(m.editions).toEqual(['desktop']);
+    // Every edition since SF1 (amendment F1-F6): the desktop embeds the apps, a
+    // browser reads through Studio's bridge to an agentd host.
+    expect(m.editions).toEqual(['oss', 'desktop', 'cloud']);
     const { pages, slots } = apply();
     const nav = slots.filter((s) => s.name === 'shell.nav.section');
     expect(nav).toHaveLength(2);

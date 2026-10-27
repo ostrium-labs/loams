@@ -318,6 +318,8 @@ loams-collection = { path = "crates/loams-collection", version = "0.1.2" }
 loams-cloudevents = { path = "crates/loams-cloudevents", version = "0.1.2" }
 loams-common = { path = "crates/loams-common", version = "0.1.2" }
 loams-durable = { path = "crates/loams-durable", version = "0.1.2" }
+# Managed engines: the ManagedEngine trait and facade (design 81, D2010).
+loams-engines = { path = "crates/loams-engines", version = "0.1.2" }
 loams-es = { path = "crates/loams-es", version = "0.1.2" }
 # Managed Flink SQL (design 81, plan FL1).
 loams-flink = { path = "crates/loams-flink", version = "0.1.2" }
@@ -348,6 +350,7 @@ loams-meta-tikv = { path = "crates/loams-meta-tikv", version = "0.1.2" }
 loams-migrate = { path = "crates/loams-migrate", version = "0.1.2" }
 loams-upgrade = { path = "crates/loams-upgrade", version = "0.1.2" }
 loams-cloud-admin = { path = "crates/loams-cloud-admin", version = "0.1.2" }
+loams-confluent = { path = "crates/loams-confluent", version = "0.1.2" }
 loams-stream-grpc = { path = "crates/loams-stream-grpc", version = "0.1.2" }
 loams-pk = { path = "crates/loams-pk", version = "0.1.2" }
 loams-qdrant = { path = "crates/loams-qdrant", version = "0.1.2" }
@@ -365,8 +368,10 @@ loams-zitadel = { path = "crates/loams-zitadel", version = "0.1.2" }
 # (design §50, D783, plan DD1 Task 1). Versions follow the fork's lockfile
 # (DD1 T0-4). The fork pins reqwest 0.12 and sha2 0.10, which differ from the
 # workspace keys above, so its crates name those two directly.
+loams-agentd-cli = { path = "crates/loams-agentd-cli", version = "0.1.2" }
 loams-agentd-connect = { path = "crates/loams-agentd-connect", version = "0.1.2" }
 loams-agentd-doc = { path = "crates/loams-agentd-doc", version = "0.1.2" }
+loams-agentd-factory = { path = "crates/loams-agentd-factory", version = "0.1.2" }
 loams-agentd-harness = { path = "crates/loams-agentd-harness", version = "0.1.2" }
 loams-agentd-link = { path = "crates/loams-agentd-link", version = "0.1.2" }
 loams-agentd-mcp = { path = "crates/loams-agentd-mcp", version = "0.1.2" }

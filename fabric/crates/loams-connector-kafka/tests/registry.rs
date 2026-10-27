@@ -1,89 +1,36 @@
 //! The Confluent Schema Registry client (R5.4) against a fake registry that
 //! answers as Confluent's REST API documents. No Kafka involved.
 
-use std::convert::Infallible;
+mod common;
+
 use std::sync::{Arc, Mutex};
 
 use bytes::Bytes;
-use http_body_util::{BodyExt, Full};
-use hyper::{Request, Response, StatusCode};
-use hyper_util::rt::TokioIo;
+use common::{Seen, fake_registry_with};
 use loams_connector_kafka::ConfluentRegistry;
 use loams_connector_sdk::schema::registry::{SchemaFormat, SchemaRegistry, frame, unframe};
 use loams_connector_sdk::{AllowAll, DenyLocal, ErrorClass, Secret};
-use serde_json::{Value, json};
+use serde_json::json;
 
-#[derive(Debug, Clone)]
-struct Seen {
-    method: String,
-    path: String,
-    auth: Option<String>,
-    body: Value,
-}
-
+/// The routes this suite's fake registry answers.
 async fn fake_registry() -> (String, Arc<Mutex<Vec<Seen>>>) {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind");
-    let base = format!("http://{}", listener.local_addr().expect("addr"));
-    let seen: Arc<Mutex<Vec<Seen>>> = Arc::default();
-    let log = seen.clone();
-    tokio::spawn(async move {
-        while let Ok((stream, _)) = listener.accept().await {
-            let log = log.clone();
-            tokio::spawn(async move {
-                let svc = hyper::service::service_fn(move |req: Request<hyper::body::Incoming>| {
-                    let log = log.clone();
-                    async move {
-                        let (parts, body) = req.into_parts();
-                        let body = body.collect().await.expect("body").to_bytes();
-                        let s = Seen {
-                            method: parts.method.to_string(),
-                            path: parts.uri.path().to_owned(),
-                            auth: parts
-                                .headers
-                                .get("authorization")
-                                .and_then(|v| v.to_str().ok())
-                                .map(str::to_owned),
-                            body: serde_json::from_slice(&body).unwrap_or(Value::Null),
-                        };
-                        log.lock().expect("log").push(s.clone());
-                        let (status, body) = match (s.method.as_str(), s.path.as_str()) {
-                            ("GET", "/schemas/ids/7") => (
-                                200,
-                                json!({ "schema": "syntax = \"proto3\"; message M { int64 a = 1; }", "schemaType": "PROTOBUF" }),
-                            ),
-                            ("GET", "/schemas/ids/8") => {
-                                (200, json!({ "schema": "{\"type\":\"string\"}" }))
-                            }
-                            ("POST", "/subjects/orders-value/versions") => {
-                                (200, json!({ "id": 7 }))
-                            }
-                            ("POST", "/subjects/strict-value/versions") => (
-                                409,
-                                json!({ "error_code": 409, "message": "Schema being registered is incompatible" }),
-                            ),
-                            _ => (
-                                404,
-                                json!({ "error_code": 40403, "message": "Schema not found" }),
-                            ),
-                        };
-                        Ok::<_, Infallible>(
-                            Response::builder()
-                                .status(StatusCode::from_u16(status).expect("status"))
-                                .header("content-type", "application/vnd.schemaregistry.v1+json")
-                                .body(Full::new(Bytes::from(body.to_string())))
-                                .expect("response"),
-                        )
-                    }
-                });
-                let _ = hyper::server::conn::http1::Builder::new()
-                    .serve_connection(TokioIo::new(stream), svc)
-                    .await;
-            });
-        }
-    });
-    (base, seen)
+    fake_registry_with(vec![
+        (
+            "GET",
+            "/schemas/ids/7",
+            200,
+            json!({ "schema": "syntax = \"proto3\"; message M { int64 a = 1; }", "schemaType": "PROTOBUF" }),
+        ),
+        ("GET", "/schemas/ids/8", 200, json!({ "schema": "{\"type\":\"string\"}" })),
+        ("POST", "/subjects/orders-value/versions", 200, json!({ "id": 7 })),
+        (
+            "POST",
+            "/subjects/strict-value/versions",
+            409,
+            json!({ "error_code": 409, "message": "Schema being registered is incompatible" }),
+        ),
+    ])
+    .await
 }
 
 #[tokio::test]

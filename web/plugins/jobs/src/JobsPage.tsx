@@ -460,7 +460,7 @@ function ScrollRegion({
   children: ReactNode;
 }) {
   return (
-    // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrollable region must be keyboard reachable
+    // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a scrollable region must be keyboard reachable
     <section aria-label={label} tabIndex={0} className={`${className} overflow-auto`}>
       {children}
     </section>
@@ -611,7 +611,7 @@ function JobBody({ job }: { job: JobDetail }) {
           <ScrollRegion label="Job logs" className="max-h-64">
             <ol className={/* mono-ok: code */ 'loams-pre font-mono text-body'}>
               {job.logs.map((l, i) => (
-                // biome-ignore lint/suspicious/noArrayIndexKey: log lines are append-only and may repeat
+                // oxlint-disable-next-line react/no-array-index-key -- log lines are append-only and may repeat
                 <li key={i}>
                   <time dateTime={l.at} className="text-muted">
                     {timeText(l.at)}

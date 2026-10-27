@@ -37,7 +37,7 @@ import {
   UPLOAD_CHUNK_BYTES,
 } from '@loams/studio-ui';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { ThreadComposer, type ThreadComposerProps } from '../src/thread/Composer.js';
 import { mentionsFor } from '../src/thread/mentions.js';
 import { buildCreateRunGroupRequest } from '../src/thread/RunInParallel.js';

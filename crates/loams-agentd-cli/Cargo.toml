@@ -1,0 +1,32 @@
+[package]
+name = "loams-agentd-cli"
+description = "The loams binary's client of the local agentd: discovery, Hello and `loams marketplace` (design 73 §7.1–§7.2, plan MK1 Task 10)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+loams-agentd-proto.workspace = true
+loams-agentd-rpc.workspace = true
+# Secrets are read from the terminal without echo (MK1 Task 10 ruling 4).
+rpassword = "7.5"
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["rt", "time"] }
+
+[dev-dependencies]
+async-trait.workspace = true
+# A daemon with the marketplace's signed fake world (MK1 Task 4b).
+loams-agentd-marketplace = { workspace = true, features = ["testkit"] }
+loams-agentd-proto.workspace = true
+loams-agentd-sessions.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "net", "time"] }
+
+[lints]
+workspace = true

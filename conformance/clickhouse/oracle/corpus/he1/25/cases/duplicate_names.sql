@@ -1,0 +1,1 @@
+SELECT a, a FROM u25 ORDER BY a

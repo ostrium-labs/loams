@@ -154,5 +154,6 @@ pub(crate) fn close(
     s.workflow_task = None;
     s.timers.clear();
     s.activities.clear();
+    loams_temporal_history::abort_updates(s);
     fx.push(Effect::RunClosed { status });
 }

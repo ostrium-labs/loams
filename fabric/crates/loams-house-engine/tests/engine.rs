@@ -117,14 +117,14 @@ async fn queries_run_over_seeded_tables() {
 }
 
 #[tokio::test]
-async fn settings_are_refused_never_ignored() {
+async fn settings_are_classed_never_ignored() {
     let engine = Engine::new();
-    let e = engine
+    // No outer join: join_use_nulls asks for nothing here (Task 37).
+    engine
         .query("SELECT 1 SETTINGS join_use_nulls = 1", &[], &[], "default")
         .await
-        .unwrap_err();
-    assert_eq!(e.code, 48);
-    let e = engine
+        .unwrap();
+    engine
         .query(
             "SELECT 1",
             &[],
@@ -132,8 +132,22 @@ async fn settings_are_refused_never_ignored() {
             "default",
         )
         .await
+        .unwrap();
+    let e = engine
+        .query(
+            "SELECT 1 SETTINGS prefer_column_name_to_alias = 1",
+            &[],
+            &[],
+            "default",
+        )
+        .await
         .unwrap_err();
     assert_eq!(e.code, 48);
+    let e = engine
+        .query("SELECT 1 SETTINGS no_such_setting = 1", &[], &[], "default")
+        .await
+        .unwrap_err();
+    assert_eq!(e.code, 115);
     let e = engine
         .query("SELECT a FROM nope", &[], &[], "default")
         .await

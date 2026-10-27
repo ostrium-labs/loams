@@ -24,6 +24,8 @@
       ],
       "inject": [
         "desktop",
+        "studio.factory",
+        "platform",
         "router",
         "slots",
         "transport"
@@ -39,13 +41,15 @@
         "console": "^0.1.0"
       },
       "editions": [
-        "desktop"
+        "oss",
+        "desktop",
+        "cloud"
       ]
     }
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vp test run"
   },
   "dependencies": {
     "@connectrpc/connect": "2.2.0",
@@ -68,8 +72,10 @@
     "react": "catalog:",
     "react-dom": "catalog:",
     "typescript": "5.9.3",
-    "vitest": "5.0.3",
+    "vite": "catalog:",
+    "vitest": "catalog:",
     "@loams/desktop": "workspace:*",
-    "@loams/platform-electron": "workspace:*"
+    "@loams/platform-electron": "workspace:*",
+    "vite-plus": "catalog:"
   }
 }

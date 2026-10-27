@@ -3,6 +3,9 @@
 
   junit.py add <file.xml> <suite> <name> <pass|fail|error|skip> [message]
 
+`read(path)` returns the cases of a JUnit file as `Case` rows (the matrix,
+scripts/compute/matrix.py, reads runs through it).
+
 The file is rewritten whole on every call, so it is valid JUnit after each
 case: a run that stops half-way still leaves the cases it reached. `suite`
 becomes the case's classname and the <testsuite> name. Stdlib only.
@@ -12,9 +15,35 @@ from __future__ import annotations
 
 import sys
 import xml.etree.ElementTree as ET
+from dataclasses import dataclass
 from pathlib import Path
 
 STATUSES = {"pass": None, "fail": "failure", "error": "error", "skip": "skipped"}
+
+
+@dataclass(frozen=True)
+class Case:
+    suite: str  # the case's classname, else its <testsuite>'s name
+    name: str
+    status: str  # pass | fail | error | skip
+    message: str
+
+
+def read(path: Path) -> list[Case]:
+    """Every <testcase> of a JUnit file, in file order."""
+    root = ET.parse(path).getroot()
+    suites = [root] if root.tag == "testsuite" else root.iter("testsuite")
+    cases: list[Case] = []
+    for s in suites:
+        for tc in s.iter("testcase"):
+            status, message = "pass", ""
+            for tag, st in (("failure", "fail"), ("error", "error"), ("skipped", "skip")):
+                el = tc.find(tag)
+                if el is not None:
+                    status, message = st, el.get("message") or (el.text or "")
+                    break
+            cases.append(Case(tc.get("classname") or s.get("name") or "", tc.get("name") or "", status, message))
+    return cases
 
 
 def add(path: Path, suite: str, name: str, status: str, message: str) -> None:
