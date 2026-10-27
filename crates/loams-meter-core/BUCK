@@ -22,6 +22,13 @@ cargo_package(
         "proc_macro": False,
         "test": True,
     },
+    tests = [
+        {
+            "name": "balance_replay",
+            "crate": "balance_replay",
+            "root": "tests/balance_replay.rs",
+        },
+    ],
     deps = [
         "//crates/loams-cloudevents:loams-cloudevents",
         "//third-party/rust:bytes",
