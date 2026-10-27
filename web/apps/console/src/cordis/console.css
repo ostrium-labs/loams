@@ -70,11 +70,11 @@ code {
   overflow: hidden;
 }
 /* The splitter between the sidebar and the work card: invisible until hovered or focused. */
-#lc-side > [data-slot="resize-handle"] {
+#lc-side > [data-slot='resize-handle'] {
   background: transparent;
 }
-#lc-side > [data-slot="resize-handle"]:hover,
-#lc-side > [data-slot="resize-handle"]:focus-visible {
+#lc-side > [data-slot='resize-handle']:hover,
+#lc-side > [data-slot='resize-handle']:focus-visible {
   background: var(--op-accent);
 }
 /* Narrow windows: the same sidebar in a sheet. */
@@ -98,7 +98,7 @@ code {
   padding: 0 8px;
 }
 /* Open beside the macOS traffic lights, the brand starts after them. */
-.lc-shell[data-sidebar="open"] .lc-brand {
+.lc-shell[data-sidebar='open'] .lc-brand {
   padding-inline-start: calc(8px + var(--lc-traffic));
 }
 .lc-brand-link {
@@ -203,10 +203,10 @@ code {
 /* The chevron shows on hover and focus, and always while the group is shut. */
 .lc-nav-disclosure:hover .lc-nav-chevron,
 .lc-nav-disclosure:focus-visible .lc-nav-chevron,
-.lc-nav-disclosure[aria-expanded="false"] .lc-nav-chevron {
+.lc-nav-disclosure[aria-expanded='false'] .lc-nav-chevron {
   opacity: 1;
 }
-.lc-nav-disclosure[aria-expanded="true"] .lc-nav-chevron {
+.lc-nav-disclosure[aria-expanded='true'] .lc-nav-chevron {
   transform: rotate(90deg);
 }
 .lc-nav-body {
@@ -226,7 +226,7 @@ code {
   cursor: pointer;
 }
 .lc-pages-edit:hover,
-.lc-pages-edit[aria-expanded="true"] {
+.lc-pages-edit[aria-expanded='true'] {
   background: var(--op-row-hover);
   color: var(--op-ink);
 }
@@ -302,7 +302,7 @@ code {
 }
 /* The current page: a white chip in light, a soft fill in dark. The chip is its own element
    (SelectionIndicator), so it slides to the next current page (UI2). */
-.lc-page-link[aria-current="page"] {
+.lc-page-link[aria-current='page'] {
   color: var(--op-ink);
 }
 .lc-nav-indicator {
@@ -359,24 +359,24 @@ code {
   -webkit-app-region: drag;
   user-select: none;
 }
-.lc-shell[data-sidebar="closed"] .lc-topbar {
+.lc-shell[data-sidebar='closed'] .lc-topbar {
   padding-inline-start: calc(8px + var(--lc-traffic));
 }
 .lc-topbar
-  :is(button, a, input, select, textarea, [role="button"], [role="combobox"], [data-no-drag]) {
+  :is(button, a, input, select, textarea, [role='button'], [role='combobox'], [data-no-drag]) {
   -webkit-app-region: no-drag;
 }
 /* The rest of what can take a click or focus: tabs, switches, menu rows, labels and
    anything focusable. desktop-drag-regions.test.ts scans the real top bar against both. */
-.lc-topbar [role="tab"],
-.lc-topbar [role="switch"],
-.lc-topbar [role="checkbox"],
-.lc-topbar [role="radio"],
-.lc-topbar [role="menuitem"],
-.lc-topbar [role="option"],
-.lc-topbar [role="link"],
-.lc-topbar [tabindex]:not([tabindex="-1"]),
-.lc-topbar [contenteditable="true"],
+.lc-topbar [role='tab'],
+.lc-topbar [role='switch'],
+.lc-topbar [role='checkbox'],
+.lc-topbar [role='radio'],
+.lc-topbar [role='menuitem'],
+.lc-topbar [role='option'],
+.lc-topbar [role='link'],
+.lc-topbar [tabindex]:not([tabindex='-1']),
+.lc-topbar [contenteditable='true'],
 .lc-topbar label,
 .lc-topbar summary {
   -webkit-app-region: no-drag;
@@ -432,13 +432,13 @@ code {
   width: var(--op-icon);
   height: var(--op-icon);
 }
-.lc-bar-btn[aria-pressed="true"],
-.lc-bar-btn[aria-expanded="true"]:not(.lc-sidebar-toggle) {
+.lc-bar-btn[aria-pressed='true'],
+.lc-bar-btn[aria-expanded='true']:not(.lc-sidebar-toggle) {
   background: var(--op-row-hover);
   color: var(--op-ink);
 }
-.lc-bar-btn[aria-pressed="true"] svg,
-.lc-bar-btn[aria-expanded="true"]:not(.lc-sidebar-toggle) svg {
+.lc-bar-btn[aria-pressed='true'] svg,
+.lc-bar-btn[aria-expanded='true']:not(.lc-sidebar-toggle) svg {
   color: var(--op-accent-fg);
 }
 /* A tooltip's label and its shortcut keys. */
@@ -503,7 +503,7 @@ code {
   text-overflow: ellipsis;
 }
 .lc-trail li + li::before {
-  content: "/";
+  content: '/';
   margin-right: 6px;
   color: var(--op-faint);
 }
@@ -620,7 +620,7 @@ code {
     color var(--op-duration) ease;
 }
 .lc-icon-btn:hover,
-.lc-icon-btn[aria-expanded="true"] {
+.lc-icon-btn[aria-expanded='true'] {
   background: var(--op-raised);
   color: var(--op-ink);
 }
@@ -713,7 +713,7 @@ code {
   border-radius: var(--op-radius-lg);
   background: var(--op-bg);
 }
-.lc-shell[data-sidebar="closed"] .lc-work {
+.lc-shell[data-sidebar='closed'] .lc-work {
   margin-left: 8px;
 }
 .lc-work-row {
@@ -982,7 +982,7 @@ code {
 .lc-server-menu button:focus-visible {
   background: var(--op-surface);
 }
-.lc-server-menu button[aria-current="true"] span {
+.lc-server-menu button[aria-current='true'] span {
   font-weight: 600;
 }
 .lc-server-menu code {
@@ -1146,7 +1146,7 @@ code {
   transition: color var(--op-duration-fast) var(--op-ease-out);
 }
 .ds-tab:hover,
-.ds-tab[aria-selected="true"] {
+.ds-tab[aria-selected='true'] {
   color: var(--op-ink);
 }
 .ds-tab:focus-visible {
@@ -1511,20 +1511,20 @@ button.lc-hosted-engine {
     white-space: nowrap;
   }
 }
-.lc-shell[data-mode="studio"] .lc-main {
+.lc-shell[data-mode='studio'] .lc-main {
   max-width: none;
   padding: 0;
 }
-.lc-shell[data-mode="studio"] .lc-main > * {
+.lc-shell[data-mode='studio'] .lc-main > * {
   max-width: none;
 }
 /* A Console-style page shown in Studio (the factory's, SD1 Task 27) keeps the page gutter. */
-.lc-shell[data-mode="studio"] .lc-main .lc-page {
+.lc-shell[data-mode='studio'] .lc-main .lc-page {
   max-width: 1220px;
   padding: 24px 20px 56px;
 }
 @media (max-width: 959px) {
-  .lc-shell[data-mode="studio"] .lc-main .lc-page {
+  .lc-shell[data-mode='studio'] .lc-main .lc-page {
     padding: 20px 12px 48px;
   }
 }
@@ -1612,13 +1612,13 @@ button.lc-hosted-engine {
   color: var(--op-faint);
   cursor: pointer;
 }
-.lc-all-pages-pin[aria-pressed="true"] {
+.lc-all-pages-pin[aria-pressed='true'] {
   color: var(--op-accent-fg);
 }
 .lc-all-pages-pin:hover {
   color: var(--op-ink);
 }
-.lc-all-pages li:not(:hover) .lc-all-pages-pin[aria-pressed="false"]:not(:focus-visible) {
+.lc-all-pages li:not(:hover) .lc-all-pages-pin[aria-pressed='false']:not(:focus-visible) {
   opacity: 0.45;
 }
 
@@ -1657,29 +1657,29 @@ button.lc-hosted-engine {
    sets neither, so none of this applies in a browser. macOS: the traffic lights sit at x 16
    in the 44px bar, so the brand (sidebar open) or the top bar (sidebar closed) starts after
    them, except in fullscreen, where they are gone. */
-html[data-platform="darwin"]:not([data-fullscreen="true"]) .lc-shell {
+html[data-platform='darwin']:not([data-fullscreen='true']) .lc-shell {
   --lc-traffic: 76px;
 }
-html[data-platform="darwin"] .lc-brand {
+html[data-platform='darwin'] .lc-brand {
   -webkit-app-region: drag;
 }
-html[data-platform="darwin"] .lc-brand :is(button, a, input, [role="button"], [role="combobox"]) {
+html[data-platform='darwin'] .lc-brand :is(button, a, input, [role='button'], [role='combobox']) {
   -webkit-app-region: no-drag;
 }
 /* Vibrancy behind the sidebar only (Q933: in light too); the top bar and work area stay solid.
    A page without the shell (sign-in, the boot screen) keeps its solid background. */
-html[data-platform="darwin"]:has(.lc-shell),
-html[data-platform="darwin"]:has(.lc-shell) body,
-html[data-platform="darwin"] .lc-shell,
-html[data-platform="darwin"] .lc-side {
+html[data-platform='darwin']:has(.lc-shell),
+html[data-platform='darwin']:has(.lc-shell) body,
+html[data-platform='darwin'] .lc-shell,
+html[data-platform='darwin'] .lc-side {
   background: transparent;
 }
-html[data-platform="darwin"] .lc-body {
+html[data-platform='darwin'] .lc-body {
   background: var(--op-window);
 }
 /* Windows and Linux: keep the top bar's end clear of the title bar overlay's buttons
    (the Window Controls Overlay area; 0 when the overlay is absent). */
-html[data-platform="win32"] .lc-shell,
-html[data-platform="linux"] .lc-shell {
+html[data-platform='win32'] .lc-shell,
+html[data-platform='linux'] .lc-shell {
   --lc-wco-end: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
 }

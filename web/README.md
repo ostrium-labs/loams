@@ -33,7 +33,7 @@ pnpm dev                                     # then open http://localhost:5173/u
                                              # http://localhost:5173/ui/?demo is the in-browser demo, no server
 VITE_LOAMS_APPS_URL=http://127.0.0.1:8084 VITE_LOAMS_DEV_BEARER=mock-access-usr_omar pnpm dev
                                              # straight at the mock with a bearer token
-pnpm test                                    # Vitest, every package
+pnpm test                                    # vp test (Vitest), every package
 ```
 
 Third-party plugins are off unless the instance sets the `console.third_party_plugins` feature (the demo mock does): until the unified auth plan can vend attenuated tokens there is no server-side boundary for them. `window.loamsConsole` in the browser console shows the plugin table and `pending()`.
@@ -68,9 +68,9 @@ Two dev-only entry points need no server at all (they exist only under `import.m
 ## Check and build
 
 ```bash
-pnpm lint          # Biome
+pnpm lint          # vp check: Oxlint and Oxfmt (vite.config.ts)
 pnpm typecheck     # tsc, every package
-pnpm test          # Vitest, every package
+pnpm test          # vp test (Vitest), every package
 pnpm build         # @loams/ui to packages/ui/dist, the console to apps/console/dist
 ```
 

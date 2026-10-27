@@ -13,7 +13,7 @@ import { parsePatch, THIRD_PARTY_FLAG } from '@loams/console-host';
 import { createMockTransport } from '@loams/console-host/testing';
 import { createWebPlatform } from '@loams/platform-web';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 import samplesYml from '../catalog/samples.yml?raw';
 import { startConsole } from '../src/cordis/start.js';
 import { DEMO_PARAM, demoHref, demoRequested } from '../src/hosted/demo.js';

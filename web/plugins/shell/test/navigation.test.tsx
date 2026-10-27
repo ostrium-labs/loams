@@ -5,7 +5,7 @@
 import { type SessionService, ThemeController } from '@loams/console-host';
 import { SlotProvider, SlotRegistry } from '@loams/slots';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 import { Layout } from '../src/layout.js';
 import { writePinned } from '../src/pages.js';
 import { panelSeconds } from '../src/panel-motion.js';

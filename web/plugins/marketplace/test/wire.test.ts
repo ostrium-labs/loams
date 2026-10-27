@@ -4,7 +4,7 @@
 import { create } from '@bufbuild/protobuf';
 import * as pb from '@loams/proto/agentd';
 import * as listing from '@loams/proto/marketplace';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { enumNumber, enumString, planOf, prefixOf, searchRequest, summaryOf } from '../src/wire.js';
 import { PLAN, SEARCH } from './fake.js';
 

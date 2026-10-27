@@ -22,7 +22,7 @@
 import { Code, ConnectError } from '@connectrpc/connect';
 import { create, toBinary } from '@bufbuild/protobuf';
 import { ErrorInfoSchema } from '@loams/proto/errors';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { REASONS, REASON_CODES } from '../src/gen/facade.js';
 import {
   AlreadyExistsError,

@@ -22,7 +22,7 @@ export function useFieldValues(client: DataClient, ns: string, coll: string, fie
   const [version, bump] = useReducer((x: number) => x + 1, 0);
 
   // A new collection starts a new cache.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reset on ns/coll
+  // oxlint-disable-next-line react/exhaustive-deps -- reset on ns/coll
   useEffect(() => {
     cache.current = new Map();
     pending.current = new Set();
@@ -30,7 +30,7 @@ export function useFieldValues(client: DataClient, ns: string, coll: string, fie
   }, [ns, coll]);
   useEffect(() => () => clearTimeout(timer.current), []);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `version` makes a new getter after a fetch
+  // oxlint-disable-next-line react/exhaustive-deps -- `version` makes a new getter after a fetch
   const get = useMemo(
     () =>
       (field: string, prefix: string): ValueList | undefined => {
