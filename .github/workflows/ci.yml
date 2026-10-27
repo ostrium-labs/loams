@@ -722,6 +722,10 @@ jobs:
         run: cargo test -p loams-link --features failpoints --locked
       - name: collection with failpoints
         run: cargo test -p loams-collection --features failpoints --locked
+      - name: Loams Meter exporters against fake providers (loams-meter-export, every exporter feature)
+        run: |
+          cargo clippy -p loams-meter-export --all-targets --all-features --locked -- -D warnings
+          cargo test -p loams-meter-export --all-features --locked
       - name: migration runner crash matrix (UP1 Task 3)
         run: cargo test -p loams-migrate --features failpoints --test runner_failpoints --locked
       - name: WAL service over TCP and the NVMe store (loams-safekeeper, features server, nvme)
