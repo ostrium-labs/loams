@@ -41317,6 +41317,52 @@ cargo.rust_library(
     ],
 )
 
+cargo_alias(
+    name = "resonate-client",
+    actual = ":resonate-client-0.10",
+    platforms = [
+        "linux-arm64",
+        "linux-x86_64",
+        "macos-arm64",
+        "macos-x86_64",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+cargo.rust_library(
+    name = "resonate-client-0.10",
+    srcs = [":resonate-f7df9828d887fb16.git"],
+    crate = "resonate_client",
+    crate_root = "resonate-f7df9828d887fb16/impl/server/core/crates/resonate-client/src/lib.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "resonate_client",
+        "CARGO_CRATE_NAME": "resonate_client",
+        "CARGO_MANIFEST_DIR": "resonate-f7df9828d887fb16",
+        "CARGO_PKG_AUTHORS": "",
+        "CARGO_PKG_DESCRIPTION": "A typed Rust client for the Resonate protocol: every promise, task and schedule request, over HTTP to a gateway or in process over a ResonateServer.",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "resonate-client",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "0.10.1",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "10",
+        "CARGO_PKG_VERSION_PATCH": "1",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
+    deps = [
+        ":async-trait-0.1",
+        ":reqwest-0.12",
+        ":resonate-core-0.10",
+        ":serde-1",
+        ":serde_json-1",
+        ":tokio-1",
+    ],
+)
+
 cargo.rust_library(
     name = "resonate-core-0.10",
     srcs = [":resonate-f7df9828d887fb16.git"],

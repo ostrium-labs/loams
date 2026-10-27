@@ -336,8 +336,7 @@ pub async fn run_on(
             let token = match token_env {
                 Some(name) => {
                     let t = env(name)?;
-                    Some(Arc::new(move || Some(t.clone()))
-                        as loams_temporal_resonate::wire_interim::TokenFn)
+                    Some(Arc::new(move || Some(t.clone())) as loams_temporal_resonate::TokenFn)
                 }
                 None => None,
             };
