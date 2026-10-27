@@ -24,11 +24,14 @@
 //! - [`probe`]: liveness and readiness over PG wire (:4566) and the meta
 //!   dashboard (:5691) (D1956).
 //! - [`gateway`]: the loams-gateway route of an instance (D1957, R8).
+//! - [`engines`]: `loams_engines::ManagedEngine` over the adapter
+//!   ([`engines::RisingWaveEngine`]), registered by the facade's host.
 
 pub mod adapter;
 pub mod backend;
 pub mod bootstrap;
 pub mod credentials;
+pub mod engines;
 pub mod gateway;
 pub mod model;
 pub mod probe;
@@ -39,4 +42,5 @@ pub mod runtime;
 // Lane RW-b's modules (connectors, the SQL API, the CLI) are declared below.
 
 pub use adapter::{AdapterConfig, AdapterError, Observation, ObservedPhase, RisingWaveAdapter};
+pub use engines::RisingWaveEngine;
 pub use model::{ClusterSpec, EngineVersion, InstanceKey, InstanceRef, Role, Size};

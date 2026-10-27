@@ -11,6 +11,8 @@ publish = false
 [dependencies]
 async-trait.workspace = true
 futures.workspace = true
+# The shared managed-engines trait and model (ENG-UI, design 81 D2010).
+loams-engines.workspace = true
 # Purging an instance's state prefix on delete.
 object_store.workspace = true
 rand.workspace = true
@@ -22,6 +24,8 @@ thiserror.workspace = true
 tokio.workspace = true
 # The frontend's PG wire (probes and the bootstrap of the service users).
 tokio-postgres = "0.7"
+# Metering windows (loams-engines' usage()).
+time.workspace = true
 # risingwave.toml and the gateway's routes entries.
 toml.workspace = true
 tracing.workspace = true
