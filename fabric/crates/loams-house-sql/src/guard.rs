@@ -23,7 +23,11 @@
 //!   ClickHouse type text, for the House's type planner;
 //! * a select item without an alias gets ClickHouse's column name as its
 //!   alias ([`crate::names`]);
-//! * a table aliased `FINAL` (sqlparser's misreading, R2.3) is marked final.
+//! * a table aliased `FINAL` (sqlparser's misreading, R2.3) is marked final;
+//! * matchers (`* EXCEPT/REPLACE/APPLY`, `COLUMNS(…)`), `untuple(…)` and
+//!   aliases inside expressions are let through for [`crate::scope`], which
+//!   expands and resolves them after the guard (plan HE1 Task 25); an
+//!   `APPLY`'s function is resolved here.
 
 use std::collections::BTreeSet;
 
@@ -70,6 +74,8 @@ pub struct Guard<'a> {
     marks: &'a Marks,
     /// What the statement reads and calls.
     pub resolution: Resolution,
+    /// The statement's subqueries' `_subquery_N` numbers.
+    numbers: names::Numbers,
 }
 
 fn refuse(what: impl std::fmt::Display) -> ChError {
@@ -89,6 +95,7 @@ impl<'a> Guard<'a> {
         Self {
             marks,
             resolution: Resolution::default(),
+            numbers: names::Numbers::new(),
         }
     }
 
@@ -111,6 +118,7 @@ impl<'a> Guard<'a> {
                 datafusion::sql::sqlparser::ast::FormatClause::Null => "Null".to_string(),
             })
             .or_else(|| self.marks.format.clone());
+        self.numbers = names::subquery_numbers(q);
         self.query(q)?;
         Ok((settings, format))
     }
@@ -296,7 +304,7 @@ impl<'a> Guard<'a> {
             return Err(refuse("TOP"));
         }
         if exclude.is_some() {
-            return Err(later("* EXCEPT", 25));
+            return Err(refuse("SELECT … EXCLUDE"));
         }
         if into.is_some() {
             return Err(refuse("SELECT … INTO"));
@@ -324,12 +332,14 @@ impl<'a> Guard<'a> {
                 }
             }
         }
-        // Names first, from the text as written, before any rewrite.
+        // Names first, from the text as written, before any rewrite. An item
+        // with a `COLUMNS` matcher is named once [`crate::scope`] expands it.
         for item in projection.iter_mut() {
             if let SelectItem::UnnamedExpr(e) = item
                 && !matches!(e, Expr::Identifier(_))
+                && !has_columns_matcher(e)
             {
-                let name = names::column_name(e);
+                let name = names::column_name_numbered(e, &self.numbers);
                 let expr = std::mem::replace(e, Expr::Value(Value::Null.into()));
                 *item = SelectItem::ExprWithAlias {
                     expr,
@@ -357,12 +367,18 @@ impl<'a> Guard<'a> {
                     } = opts;
                     if opt_ilike.is_some()
                         || opt_exclude.is_some()
-                        || opt_except.is_some()
-                        || opt_replace.is_some()
                         || opt_rename.is_some()
                         || opt_alias.is_some()
                     {
-                        return Err(later("* EXCEPT / REPLACE / APPLY", 25));
+                        return Err(refuse("* ILIKE / EXCLUDE / RENAME / AS"));
+                    }
+                    // `EXCEPT` is names (or a quoted regular expression),
+                    // expanded by [`crate::scope`].
+                    let _ = opt_except;
+                    if let Some(r) = opt_replace {
+                        for el in &mut r.items {
+                            self.replace_element(el)?;
+                        }
                     }
                 }
             }
@@ -414,6 +430,66 @@ impl<'a> Guard<'a> {
             self.expr(q)?;
         }
         Ok(())
+    }
+
+    /// One element of a matcher's `REPLACE (…)` list: a replacement, or a
+    /// marker of [`crate::rewrite::matchers`]. An `APPLY`'s function is
+    /// resolved here: the marker becomes `__ch_apply('written') AS "internal"`.
+    fn replace_element(
+        &mut self,
+        el: &mut datafusion::sql::sqlparser::ast::ReplaceSelectElement,
+    ) -> Result<(), ChError> {
+        let marker = |e: &Expr| match e {
+            Expr::Identifier(i) => Some(i.value.clone()),
+            Expr::Function(f) => Some(f.name.to_string()),
+            _ => None,
+        };
+        match marker(&el.expr).as_deref() {
+            Some("__ch_except" | "__ch_except_strict" | "__ch_columns") => Ok(()),
+            Some("__ch_apply") => {
+                if el.column_name.value == "__ch_lambda" {
+                    let Expr::Function(f) = &mut el.expr else {
+                        return Err(refuse("APPLY"));
+                    };
+                    let FunctionArguments::List(list) = &mut f.args else {
+                        return Err(refuse("APPLY"));
+                    };
+                    for a in &mut list.args {
+                        if let FunctionArg::Unnamed(FunctionArgExpr::Expr(x)) = a {
+                            self.expr(x)?;
+                        }
+                    }
+                    return Ok(());
+                }
+                let written = el.column_name.value.clone();
+                if matches!(&el.expr, Expr::Function(_)) {
+                    return Err(later(&format!("The parametric function {written}(…)(…)"), 28));
+                }
+                let known = functions::resolve(&written).ok_or_else(|| {
+                    ChError::unknown_function(format!("Function with name `{written}` does not exist"))
+                })?;
+                self.resolution.functions.insert(known.canonical.clone());
+                el.expr = Expr::Function(Function {
+                    name: ObjectName::from(vec![Ident::new("__ch_apply")]),
+                    uses_odbc_syntax: false,
+                    parameters: FunctionArguments::None,
+                    args: FunctionArguments::List(FunctionArgumentList {
+                        duplicate_treatment: None,
+                        args: vec![FunctionArg::Unnamed(FunctionArgExpr::Expr(Expr::Value(
+                            Value::SingleQuotedString(written).into(),
+                        )))],
+                        clauses: vec![],
+                    }),
+                    filter: None,
+                    null_treatment: None,
+                    over: None,
+                    within_group: vec![],
+                });
+                el.column_name = Ident::with_quote('"', functions::internal_name(&known.canonical));
+                Ok(())
+            }
+            _ => self.expr(&mut el.expr),
+        }
     }
 
     fn alias(&mut self, a: &mut TableAlias) -> Result<(), ChError> {
@@ -633,6 +709,29 @@ impl<'a> Guard<'a> {
             [ObjectNamePart::Identifier(i)] => i.value.clone(),
             _ => return Err(refuse(format!("The qualified function name {name}"))),
         };
+        // Resolved by [`crate::scope`] after the guard: a matcher, `untuple`,
+        // and an alias inside an expression (`__ch_alias(x, n)`).
+        if matches!(parameters, FunctionArguments::None)
+            && (written.eq_ignore_ascii_case("columns")
+                || written == "untuple"
+                || written == "__ch_alias")
+        {
+            if written != "untuple" && written != "__ch_alias" {
+                return Ok(None);
+            }
+            if let FunctionArguments::List(list) = args {
+                let n = if written == "__ch_alias" { 1 } else { list.args.len() };
+                for a in list.args.iter_mut().take(n) {
+                    if let FunctionArg::Unnamed(FunctionArgExpr::Expr(x)) = a {
+                        self.expr(x)?;
+                    }
+                }
+            }
+            if written == "untuple" {
+                self.resolution.functions.insert("tupleElement".into());
+            }
+            return Ok(None);
+        }
         if !matches!(parameters, FunctionArguments::None) {
             return Err(later(
                 &format!("The parametric function {written}(…)(…)"),
@@ -894,6 +993,28 @@ impl<'a> Guard<'a> {
             Expr::MemberOf(_) => Err(refuse("MEMBER OF")),
         }
     }
+}
+
+/// Whether `e` holds a `COLUMNS(…)` matcher (outside subqueries).
+fn has_columns_matcher(e: &Expr) -> bool {
+    struct Find(bool);
+    impl crate::scope::Walk for Find {
+        fn expr(&mut self, e: &mut Expr) -> Result<(), ChError> {
+            if let Expr::Function(f) = e
+                && f.name.to_string().eq_ignore_ascii_case("columns")
+            {
+                self.0 = true;
+                return Ok(());
+            }
+            crate::scope::children(e, self)
+        }
+        fn query(&mut self, _q: &mut Query) -> Result<(), ChError> {
+            Ok(())
+        }
+    }
+    let mut f = Find(false);
+    let _ = crate::scope::Walk::expr(&mut f, &mut e.clone());
+    f.0
 }
 
 fn setting_text(v: &Expr) -> String {

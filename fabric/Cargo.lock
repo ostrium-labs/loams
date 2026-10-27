@@ -6144,6 +6144,7 @@ version = "0.0.1"
 dependencies = [
  "datafusion",
  "loams-house-types",
+ "regex",
  "serde_json",
  "tokio",
 ]
