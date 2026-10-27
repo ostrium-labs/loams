@@ -258,7 +258,9 @@ pub fn ternary(sql: &str) -> Result<String, ChError> {
             if t.depth[j] == d {
                 match t.tok(j) {
                     Token::Comma | Token::SemiColon | Token::Arrow => break,
-                    Token::Colon => return Err(syntax("a ternary inside a ternary needs brackets")),
+                    Token::Colon => {
+                        return Err(syntax("a ternary inside a ternary needs brackets"));
+                    }
                     _ if t.is_question(j) => {
                         return Err(syntax("a ternary inside a ternary needs brackets"));
                     }
@@ -427,7 +429,10 @@ pub fn scalar_with(sql: &str) -> Result<String, ChError> {
                 continue;
             }
             // `name AS (SELECT …)`: a CTE.
-            if t.is_ident(a) && t.kw(a + 1) == Some(Keyword::AS) && matches!(t.tok(a + 2), Token::LParen) {
+            if t.is_ident(a)
+                && t.kw(a + 1) == Some(Keyword::AS)
+                && matches!(t.tok(a + 2), Token::LParen)
+            {
                 continue;
             }
             if t.kw(b - 2) == Some(Keyword::AS) && t.is_ident(b - 1) {
@@ -493,9 +498,17 @@ pub fn inline_aliases(sql: &str) -> Result<String, ChError> {
             }
             if open > 0 {
                 let before = open - 1;
-                let excluded = ["CAST", "TRY_CAST", "SAFE_CAST", "REPLACE", "APPLY", "EXCEPT", "OVER"]
-                    .iter()
-                    .any(|w| t.is_word(before, w))
+                let excluded = [
+                    "CAST",
+                    "TRY_CAST",
+                    "SAFE_CAST",
+                    "REPLACE",
+                    "APPLY",
+                    "EXCEPT",
+                    "OVER",
+                ]
+                .iter()
+                .any(|w| t.is_word(before, w))
                     || matches!(
                         t.kw(before),
                         Some(
@@ -558,7 +571,9 @@ fn transformers(t: &Toks<'_>, from: usize) -> Result<(Vec<Transformer>, usize), 
                 break;
             }
             let (items, end) = if matches!(t.tok(j), Token::LParen) {
-                let close = t.closing(j).ok_or_else(|| syntax("unclosed EXCEPT ( … )"))?;
+                let close = t
+                    .closing(j)
+                    .ok_or_else(|| syntax("unclosed EXCEPT ( … )"))?;
                 if j + 1 < close && t.kw(j + 1) == Some(Keyword::SELECT) {
                     break;
                 }
@@ -583,7 +598,9 @@ fn transformers(t: &Toks<'_>, from: usize) -> Result<(Vec<Transformer>, usize), 
             if j >= t.len() || !matches!(t.tok(j), Token::LParen) {
                 break;
             }
-            let close = t.closing(j).ok_or_else(|| syntax("unclosed REPLACE ( … )"))?;
+            let close = t
+                .closing(j)
+                .ok_or_else(|| syntax("unclosed REPLACE ( … )"))?;
             let d = t.depth[j] + 1;
             let mut elements = Vec::new();
             let mut a = j + 1;
@@ -610,7 +627,9 @@ fn transformers(t: &Toks<'_>, from: usize) -> Result<(Vec<Transformer>, usize), 
                 if close == j + 1 {
                     return Err(syntax("expected a function after APPLY"));
                 }
-                out.push(Transformer::Apply(t.span_text(j + 1, close - 1).to_string()));
+                out.push(Transformer::Apply(
+                    t.span_text(j + 1, close - 1).to_string(),
+                ));
                 last = close;
                 i = close + 1;
             } else if t.is_ident(j) {
@@ -790,7 +809,8 @@ mod tests {
     #[test]
     fn scalar_with_becomes_a_marker_cte() {
         assert_eq!(
-            scalar_with("WITH 5 AS n, c AS (SELECT 1), (SELECT max(a) FROM t) AS m SELECT n").unwrap(),
+            scalar_with("WITH 5 AS n, c AS (SELECT 1), (SELECT max(a) FROM t) AS m SELECT n")
+                .unwrap(),
             "WITH n AS (SELECT 5 AS __ch_with), c AS (SELECT 1), m AS (SELECT (SELECT max(a) FROM t) AS __ch_with) SELECT n"
         );
         assert_eq!(

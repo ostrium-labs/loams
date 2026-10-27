@@ -463,10 +463,15 @@ impl<'a> Guard<'a> {
                 }
                 let written = el.column_name.value.clone();
                 if matches!(&el.expr, Expr::Function(_)) {
-                    return Err(later(&format!("The parametric function {written}(…)(…)"), 28));
+                    return Err(later(
+                        &format!("The parametric function {written}(…)(…)"),
+                        28,
+                    ));
                 }
                 let known = functions::resolve(&written).ok_or_else(|| {
-                    ChError::unknown_function(format!("Function with name `{written}` does not exist"))
+                    ChError::unknown_function(format!(
+                        "Function with name `{written}` does not exist"
+                    ))
                 })?;
                 self.resolution.functions.insert(known.canonical.clone());
                 el.expr = Expr::Function(Function {
@@ -720,7 +725,11 @@ impl<'a> Guard<'a> {
                 return Ok(None);
             }
             if let FunctionArguments::List(list) = args {
-                let n = if written == "__ch_alias" { 1 } else { list.args.len() };
+                let n = if written == "__ch_alias" {
+                    1
+                } else {
+                    list.args.len()
+                };
                 for a in list.args.iter_mut().take(n) {
                     if let FunctionArg::Unnamed(FunctionArgExpr::Expr(x)) = a {
                         self.expr(x)?;

@@ -25,12 +25,12 @@ use std::collections::{HashMap, HashSet};
 
 use datafusion::arrow::datatypes::DataType;
 use datafusion::sql::sqlparser::ast::{
-    AccessExpr, CaseWhen, Distinct, ExceptSelectItem, Expr, Function, FunctionArg,
-    FunctionArgExpr, FunctionArgumentList, FunctionArguments, GroupByExpr, Ident, Join,
-    JoinConstraint, JoinOperator, NamedWindowDefinition, NamedWindowExpr, ObjectName,
-    ObjectNamePart, OneOrManyWithParens, OrderBy, OrderByKind, Query, ReplaceSelectElement,
-    Select, SelectItem, SelectItemQualifiedWildcardKind, SetExpr, Statement, Subscript,
-    TableFactor, TableWithJoins, Value, WildcardAdditionalOptions, WindowType,
+    AccessExpr, CaseWhen, Distinct, ExceptSelectItem, Expr, Function, FunctionArg, FunctionArgExpr,
+    FunctionArgumentList, FunctionArguments, GroupByExpr, Ident, Join, JoinConstraint,
+    JoinOperator, NamedWindowDefinition, NamedWindowExpr, ObjectName, ObjectNamePart,
+    OneOrManyWithParens, OrderBy, OrderByKind, Query, ReplaceSelectElement, Select, SelectItem,
+    SelectItemQualifiedWildcardKind, SetExpr, Statement, Subscript, TableFactor, TableWithJoins,
+    Value, WildcardAdditionalOptions, WindowType,
 };
 use datafusion::sql::sqlparser::tokenizer::Span;
 use loams_house_types::ChError;
@@ -388,7 +388,11 @@ impl Scope<'_> {
         Ok(cols)
     }
 
-    fn set_expr(&mut self, s: &mut SetExpr, inherited: &Aliases) -> Result<Option<Vec<Col>>, ChError> {
+    fn set_expr(
+        &mut self,
+        s: &mut SetExpr,
+        inherited: &Aliases,
+    ) -> Result<Option<Vec<Col>>, ChError> {
         match s {
             SetExpr::Select(sel) => self.select(sel, &Aliases::new(), inherited, None),
             SetExpr::Query(q) => self.query(q, inherited),
@@ -443,7 +447,12 @@ impl Scope<'_> {
         )
     }
 
-    fn source(&mut self, t: &mut TableFactor, inherited: &Aliases, out: &mut Vec<Source>) -> Result<(), ChError> {
+    fn source(
+        &mut self,
+        t: &mut TableFactor,
+        inherited: &Aliases,
+        out: &mut Vec<Source>,
+    ) -> Result<(), ChError> {
         match t {
             TableFactor::Table { name, alias, .. } => {
                 let cols = self.table_columns(name);
@@ -513,7 +522,12 @@ impl Scope<'_> {
         Ok(())
     }
 
-    fn from(&mut self, t: &mut TableWithJoins, inherited: &Aliases, out: &mut Vec<Source>) -> Result<(), ChError> {
+    fn from(
+        &mut self,
+        t: &mut TableWithJoins,
+        inherited: &Aliases,
+        out: &mut Vec<Source>,
+    ) -> Result<(), ChError> {
         self.source(&mut t.relation, inherited, out)?;
         for j in &mut t.joins {
             let before = out.len();
@@ -569,7 +583,11 @@ impl Scope<'_> {
             self.expand_item(item, &sources, &mut items)?;
         }
         if items.is_empty() {
-            return Err(ch(51, "EMPTY_LIST_OF_COLUMNS_QUERIED", "Empty list of columns in SELECT query"));
+            return Err(ch(
+                51,
+                "EMPTY_LIST_OF_COLUMNS_QUERIED",
+                "Empty list of columns in SELECT query",
+            ));
         }
         s.projection = items;
 
@@ -578,7 +596,8 @@ impl Scope<'_> {
         {
             let mut c = Inline(&mut inline);
             for item in &mut s.projection {
-                if let SelectItem::UnnamedExpr(e) | SelectItem::ExprWithAlias { expr: e, .. } = item {
+                if let SelectItem::UnnamedExpr(e) | SelectItem::ExprWithAlias { expr: e, .. } = item
+                {
                     c.expr(e)?;
                 }
             }
@@ -633,7 +652,9 @@ impl Scope<'_> {
                         };
                     }
                 }
-                SelectItem::Wildcard(_) | SelectItem::QualifiedWildcard(..) | SelectItem::ExprWithAliases { .. } => {}
+                SelectItem::Wildcard(_)
+                | SelectItem::QualifiedWildcard(..)
+                | SelectItem::ExprWithAliases { .. } => {}
             }
         }
         for e in locations(s, order_by) {
@@ -658,7 +679,10 @@ impl Scope<'_> {
                 name.clone()
             } else {
                 let internal = format!("__ch_dup{n}_{name}");
-                let expr = match std::mem::replace(item, SelectItem::Wildcard(WildcardAdditionalOptions::default())) {
+                let expr = match std::mem::replace(
+                    item,
+                    SelectItem::Wildcard(WildcardAdditionalOptions::default()),
+                ) {
                     SelectItem::ExprWithAlias { expr, .. } | SelectItem::UnnamedExpr(expr) => expr,
                     other => {
                         *item = other;
@@ -681,7 +705,12 @@ impl Scope<'_> {
     }
 
     /// Expands a select item's matchers and `untuple` into `out`.
-    fn expand_item(&mut self, item: SelectItem, sources: &[Source], out: &mut Vec<SelectItem>) -> Result<(), ChError> {
+    fn expand_item(
+        &mut self,
+        item: SelectItem,
+        sources: &[Source],
+        out: &mut Vec<SelectItem>,
+    ) -> Result<(), ChError> {
         match item {
             SelectItem::Wildcard(opts) => match self.expand(sources, None, &opts)? {
                 Some(items) => out.extend(items),
@@ -701,20 +730,26 @@ impl Scope<'_> {
                 }
             }
             SelectItem::UnnamedExpr(e) if is_columns(&e) => {
-                let Expr::Function(f) = &e else { unreachable!() };
+                let Expr::Function(f) = &e else {
+                    unreachable!()
+                };
                 match matched(sources, &plain_args(f))? {
-                    Some(found) => out.extend(found.into_iter().map(|x| item_of(x.expr, &x.name, None))),
+                    Some(found) => {
+                        out.extend(found.into_iter().map(|x| item_of(x.expr, &x.name, None)))
+                    }
                     None => out.push(SelectItem::UnnamedExpr(e)),
                 }
             }
-            SelectItem::ExprWithAlias { expr, alias }
-                if matches!(&expr, Expr::Function(f) if function_name(f) == Some("untuple")) =>
+            SelectItem::ExprWithAlias { expr, alias } if matches!(&expr, Expr::Function(f) if function_name(f) == Some("untuple")) =>
             {
                 out.extend(untuple(&expr, Some(&alias), sources)?);
             }
             SelectItem::UnnamedExpr(mut e) => {
                 if contains_columns(&e) {
-                    let mut x = ColumnsIn { sources, failed: false };
+                    let mut x = ColumnsIn {
+                        sources,
+                        failed: false,
+                    };
                     x.expr(&mut e)?;
                     if x.failed {
                         out.push(SelectItem::UnnamedExpr(e));
@@ -760,7 +795,10 @@ impl Scope<'_> {
                 }
             }
             if !names.is_empty() {
-                chain.push(Transformer::Except { names, strict: false });
+                chain.push(Transformer::Except {
+                    names,
+                    strict: false,
+                });
             }
         }
         if let Some(r) = &opts.opt_replace {
@@ -785,9 +823,17 @@ impl Scope<'_> {
                     Some(("__ch_except", Some(f))) => match plain_args(f).as_slice() {
                         [Expr::Value(v)] => match &v.value {
                             Value::SingleQuotedString(re) => Transformer::ExceptRegex(re.clone()),
-                            _ => return Err(ChError::syntax_error("EXCEPT expects names or a regular expression")),
+                            _ => {
+                                return Err(ChError::syntax_error(
+                                    "EXCEPT expects names or a regular expression",
+                                ));
+                            }
                         },
-                        _ => return Err(ChError::syntax_error("EXCEPT expects names or a regular expression")),
+                        _ => {
+                            return Err(ChError::syntax_error(
+                                "EXCEPT expects names or a regular expression",
+                            ));
+                        }
                     },
                     Some(("__ch_columns", Some(f))) => {
                         columns = Some(plain_args(f).into_iter().cloned().collect());
@@ -796,7 +842,11 @@ impl Scope<'_> {
                     Some(("__ch_apply", Some(f))) if column_name.value == "__ch_lambda" => {
                         match plain_args(f).as_slice() {
                             [l @ Expr::Lambda(_)] => Transformer::ApplyLambda((*l).clone()),
-                            _ => return Err(ChError::syntax_error("APPLY expects a function or a lambda")),
+                            _ => {
+                                return Err(ChError::syntax_error(
+                                    "APPLY expects a function or a lambda",
+                                ));
+                            }
                         }
                     }
                     Some(("__ch_apply", Some(f))) => match plain_args(f).as_slice() {
@@ -827,15 +877,14 @@ impl Scope<'_> {
                 let which = match qualified {
                     None => None,
                     Some(n) => {
-                        let text = n
-                            .0
-                            .iter()
-                            .map(|p| match p {
-                                ObjectNamePart::Identifier(i) => i.value.clone(),
-                                ObjectNamePart::Function(f) => f.to_string(),
-                            })
-                            .collect::<Vec<_>>()
-                            .join(".");
+                        let text =
+                            n.0.iter()
+                                .map(|p| match p {
+                                    ObjectNamePart::Identifier(i) => i.value.clone(),
+                                    ObjectNamePart::Function(f) => f.to_string(),
+                                })
+                                .collect::<Vec<_>>()
+                                .join(".");
                         match sources.iter().position(|s| s.names.contains(&text)) {
                             Some(k) => Some(k),
                             None => return Ok(None),
@@ -857,11 +906,17 @@ impl Scope<'_> {
                             .filter(|n| !items.iter().any(|x| &x.column == *n))
                             .collect();
                         if !missing.is_empty() {
-                            let list = missing.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ");
+                            let list = missing
+                                .iter()
+                                .map(|s| s.as_str())
+                                .collect::<Vec<_>>()
+                                .join(", ");
                             return Err(ch(
                                 36,
                                 "BAD_ARGUMENTS",
-                                format!("Strict EXCEPT column transformer EXCEPT {list} expects following column(s) : {list}"),
+                                format!(
+                                    "Strict EXCEPT column transformer EXCEPT {list} expects following column(s) : {list}"
+                                ),
                             ));
                         }
                     }
@@ -998,7 +1053,9 @@ fn matched(sources: &[Source], args: &[&Expr]) -> Result<Option<Vec<Expanded>>, 
     match args {
         [Expr::Value(v)] => {
             let Value::SingleQuotedString(re) = &v.value else {
-                return Err(ChError::syntax_error("COLUMNS expects a regular expression or columns"));
+                return Err(ChError::syntax_error(
+                    "COLUMNS expects a regular expression or columns",
+                ));
             };
             let re = regex(re)?;
             let Some(mut all) = source_columns(sources, None, true) else {
@@ -1078,13 +1135,15 @@ impl Walk for ColumnsIn<'_> {
                 for a in std::mem::take(&mut list.args) {
                     match a {
                         FunctionArg::Unnamed(FunctionArgExpr::Expr(x)) if is_columns(&x) => {
-                            let Expr::Function(cf) = &x else { unreachable!() };
+                            let Expr::Function(cf) = &x else {
+                                unreachable!()
+                            };
                             match matched(self.sources, &plain_args(cf))? {
-                                Some(found) => args.extend(
-                                    found
-                                        .into_iter()
-                                        .map(|m| FunctionArg::Unnamed(FunctionArgExpr::Expr(m.expr))),
-                                ),
+                                Some(found) => {
+                                    args.extend(found.into_iter().map(|m| {
+                                        FunctionArg::Unnamed(FunctionArgExpr::Expr(m.expr))
+                                    }))
+                                }
                                 None => {
                                     self.failed = true;
                                     args.push(FunctionArg::Unnamed(FunctionArgExpr::Expr(x)));
@@ -1107,7 +1166,11 @@ impl Walk for ColumnsIn<'_> {
 
 /// `untuple(t)`: one `tupleElement(t, 'field')` per field, named
 /// `tupleElement(t, 'field')`, or `alias.field` under an alias.
-fn untuple(e: &Expr, alias: Option<&Ident>, sources: &[Source]) -> Result<Vec<SelectItem>, ChError> {
+fn untuple(
+    e: &Expr,
+    alias: Option<&Ident>,
+    sources: &[Source],
+) -> Result<Vec<SelectItem>, ChError> {
     let Expr::Function(f) = e else { unreachable!() };
     let args = plain_args(f);
     let [arg] = args.as_slice() else {
@@ -1136,7 +1199,10 @@ fn untuple(e: &Expr, alias: Option<&Ident>, sources: &[Source]) -> Result<Vec<Se
                     return Err(ch(
                         43,
                         "ILLEGAL_TYPE_OF_ARGUMENT",
-                        format!("Argument of function untuple must be a tuple, got the column {}", i.value),
+                        format!(
+                            "Argument of function untuple must be a tuple, got the column {}",
+                            i.value
+                        ),
                     ));
                 }
                 None => {
@@ -1158,12 +1224,18 @@ fn untuple(e: &Expr, alias: Option<&Ident>, sources: &[Source]) -> Result<Vec<Se
         .map(|field| {
             let name = match alias.filter(|a| !is_generated(a)) {
                 Some(a) => format!("{}.{field}", a.value),
-                None => format!("tupleElement({base}, {})", loams_house_types::ty::quote(&field)),
+                None => format!(
+                    "tupleElement({base}, {})",
+                    loams_house_types::ty::quote(&field)
+                ),
             };
             SelectItem::ExprWithAlias {
                 expr: call(
                     Ident::with_quote('"', "tupleElement"),
-                    vec![FunctionArg::Unnamed(FunctionArgExpr::Expr(arg.clone())), string_arg(&field)],
+                    vec![
+                        FunctionArg::Unnamed(FunctionArgExpr::Expr(arg.clone())),
+                        string_arg(&field),
+                    ],
                 ),
                 alias: generated(&name),
             }
@@ -1374,7 +1446,11 @@ impl Walk for Subst<'_, '_> {
                     && let Some(raw) = self.own.get(&name)
                 {
                     if self.in_progress.len() > 256 {
-                        return Err(ch(174, "CYCLIC_ALIASES", format!("Cyclic aliases for {name}")));
+                        return Err(ch(
+                            174,
+                            "CYCLIC_ALIASES",
+                            format!("Cyclic aliases for {name}"),
+                        ));
                     }
                     let mut x = raw.clone();
                     self.in_progress.push(name);
