@@ -47,6 +47,7 @@ fn cursor_chat_fixture() -> Vec<u8> {
 fn run(harness: Option<HarnessId>, message_id: &str) -> SessionCommandPayload {
     SessionCommandPayload::Run {
         request: RunRequest {
+            mcp_servers: Vec::new(),
             mcp: None,
             prompt: "one more change".into(),
             harness,

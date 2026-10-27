@@ -1,0 +1,18 @@
+[package]
+name = "loams-resp"
+description = "Loams' Redis gateway (design §77 §8; plan KV1, milestone KV2): RESP2/RESP3 on loams-kv, ported from Tidis (Apache-2.0) and mini-redis (MIT)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+bytes.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

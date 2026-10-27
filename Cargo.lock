@@ -8373,7 +8373,9 @@ dependencies = [
  "http-body",
  "hyper-util",
  "jsonwebtoken",
+ "loams-agentd-cli",
  "loams-apps-mock",
+ "loams-authz",
  "loams-cache",
  "loams-cloud-admin",
  "loams-cloudevents",
@@ -8452,6 +8454,7 @@ dependencies = [
  "loams-agentd-doc",
  "loams-agentd-harness",
  "loams-agentd-link",
+ "loams-agentd-marketplace",
  "loams-agentd-mcp",
  "loams-agentd-proto",
  "loams-agentd-rpc",
@@ -8469,6 +8472,24 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "loams-agentd-cli"
+version = "0.1.2"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "clap",
+ "loams-agentd-marketplace",
+ "loams-agentd-proto",
+ "loams-agentd-rpc",
+ "loams-agentd-sessions",
+ "rpassword",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]
@@ -8490,6 +8511,7 @@ dependencies = [
  "hyper-util",
  "jsonwebtoken",
  "loams-agentd-doc",
+ "loams-agentd-marketplace",
  "loams-agentd-proto",
  "loams-agentd-rpc",
  "loams-agentd-sessions",
@@ -8587,6 +8609,12 @@ dependencies = [
  "base64 0.23.1",
  "hex",
  "jsonschema",
+ "loams-agentd-harness",
+ "loams-agentd-marketplace",
+ "rcgen",
+ "reqwest 0.12.28",
+ "rustix 1.1.5",
+ "rustls",
  "semver",
  "serde",
  "serde_json",
@@ -8595,6 +8623,8 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
+ "tokio-rustls",
+ "tracing",
 ]
 
 [[package]]
@@ -8696,6 +8726,7 @@ dependencies = [
  "libc",
  "loams-agentd-doc",
  "loams-agentd-harness",
+ "loams-agentd-marketplace",
  "loams-agentd-preview",
  "loams-agentd-proto",
  "loams-agentd-rpc",
@@ -9724,6 +9755,14 @@ dependencies = [
  "tracing",
  "ulid 3.0.0",
  "unicode-segmentation",
+]
+
+[[package]]
+name = "loams-resp"
+version = "0.1.2"
+dependencies = [
+ "bytes",
+ "proptest",
 ]
 
 [[package]]
@@ -13896,6 +13935,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e27ee8bb91ca0adcf0ecb116293afa12d393f9c2b9b9cd54d33e8078fe19839"
 
 [[package]]
+name = "rpassword"
+version = "7.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2da316a15f47e3d053de9cb2c439650bd8fa4aaeb9365f2e5f27f492ff73c196"
+dependencies = [
+ "libc",
+ "rtoolbox",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "rquickjs"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13967,6 +14017,16 @@ dependencies = [
  "quote",
  "syn 3.0.6",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "rtoolbox"
+version = "0.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a1efe12a1469752d0e6ff5ebec0b6ef4924cc5c4c71046b0ec730040535819d"
+dependencies = [
+ "libc",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

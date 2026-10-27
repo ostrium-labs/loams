@@ -1,0 +1,105 @@
+{
+  "$schema": "https://loams.dev/schemas/listing/v1.json",
+  "id": "ostrium/lapc-fixture",
+  "kind": "agent",
+  "version": "0.1.0",
+  "title": "LAPC fixture agent",
+  "summary": "A small ACP agent that the LAPC conformance runner's tests run.",
+  "licence": "Apache-2.0",
+  "source": {
+    "repository": "https://github.com/ostrium-labs/loams",
+    "commit": "0000000000000000000000000000000000000000",
+    "path": "crates/loams-agentd-marketplace/testdata/conformance/agent"
+  },
+  "publisher": {
+    "name": "Ostrium Labs",
+    "url": "https://ostriumlabs.org"
+  },
+  "framework": {
+    "name": "other",
+    "version": "0.1.0"
+  },
+  "language": "javascript",
+  "artifact": {
+    "type": "npm",
+    "name": "@loams/lapc-fixture",
+    "version": "0.1.0",
+    "integrity": "sha512-xQW6UkjOPHFlnPLhcjyZNFB7URGfsPUyVQ5YQURmfFY3722XfnH6kOtGYLWIIFOt8oMdsUi381FBdN2im7QgEw=="
+  },
+  "provenance": {
+    "type": "npm-slsa",
+    "ref": "https://registry.npmjs.org/-/npm/v1/attestations/@loams/lapc-fixture@0.1.0"
+  },
+  "runtime": {
+    "kind": "node",
+    "version": ">=22.13"
+  },
+  "entrypoint": "good.js",
+  "targets": [
+    "agentd"
+  ],
+  "surfaces": {
+    "acp": {
+      "protocol_version": 1
+    }
+  },
+  "mcp_servers": [
+    {
+      "id": "ostrium/lapc-tracker",
+      "version": "^1.0.0"
+    }
+  ],
+  "tools": [
+    {
+      "name": "lookup_note",
+      "description": "Reads the saved notes.",
+      "risk": "read"
+    },
+    {
+      "name": "save_note",
+      "description": "Saves a note in the data directory.",
+      "risk": "write"
+    },
+    {
+      "name": "create_issue",
+      "description": "Opens an issue in the tracker.",
+      "risk": "egress",
+      "mcp_server": "ostrium/lapc-tracker"
+    }
+  ],
+  "place": {
+    "egress": [
+      "api.example.com"
+    ],
+    "always_ask": [
+      "save_note",
+      "create_issue"
+    ]
+  },
+  "models": {
+    "requires": {
+      "tools": true
+    },
+    "api": [
+      "chat-completions"
+    ]
+  },
+  "cost": {
+    "typical_tokens_per_run": 1500,
+    "max_tokens_per_run": 20000
+  },
+  "config": [
+    {
+      "name": "tone",
+      "type": "enum",
+      "values": [
+        "plain",
+        "friendly"
+      ],
+      "default": "plain",
+      "env": "FIXTURE_TONE",
+      "description": "How the agent writes."
+    }
+  ],
+  "pricing": "free"
+}

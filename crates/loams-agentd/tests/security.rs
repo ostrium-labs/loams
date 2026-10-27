@@ -633,6 +633,7 @@ impl Engine {
                 chat,
                 HarnessId::Mock,
                 RunRequest {
+                    mcp_servers: Vec::new(),
                     mcp: None,
                     prompt: "hello".into(),
                     harness: Some(HarnessId::Mock),

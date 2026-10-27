@@ -32,3 +32,13 @@ output "tailnet_authkey_secret_arn" {
   description = "The secret the VM reads the Tailscale auth key from (it must exist before apply; its value is never in this configuration)."
   value       = data.aws_secretsmanager_secret.tailnet_authkey.arn
 }
+
+output "cloud" {
+  description = "aws (for modules that must sit next to the VM, such as confluent)."
+  value       = "aws"
+}
+
+output "region" {
+  description = "The VM's region (for modules that must sit next to it, such as confluent)."
+  value       = local.region
+}

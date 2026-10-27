@@ -36,6 +36,9 @@ type org
     define member: [user, team#member] or admin
     define billing_admin: [user] or owner
     define billing_viewer: [user, team#member] or billing_admin
+    # Who edits the org's own namespaces (`environment#org`): every member, and the service
+    # accounts it lists (a project's service accounts, on a single-org install).
+    define namespace_editor: [service_account] or member
 
 # Teams are owned by Loams, not Zitadel (§5). `org` roots every team for the cross-org scan.
 type team
@@ -58,13 +61,26 @@ type project
     define admin: [user, team#member] or admin from org
     define editor: [user, team#member, agent, service_account] or admin
     define viewer: [user, team#member, agent, service_account] or editor
+    # The project `admin` role, for destructive actions in a protected environment (§19 §4).
+    define can_admin: admin
 
+# A Loams namespace. It is a project's environment (`project`), or, on a single-org install, a
+# namespace that is no project's, which belongs to the org itself (`org`, never written beside
+# `project`): there every member and listed service account edits, and an org admin deploys
+# (IA2 Task 4).
+#
+# `can_read`, `can_write` and `can_admin` are what data-plane calls scoped to one namespace check
+# (collections, KV, Live, Durable namespaces).
 type environment
   relations
     define project: [project]
-    define deployer: [user, team#member, agent, agent with agent_session, service_account] or admin from project
-    define editor: [user, team#member, agent, agent with agent_session, service_account] or deployer or editor from project
+    define org: [org]
+    define deployer: [user, team#member, agent, agent with agent_session, service_account] or admin from project or admin from org
+    define editor: [user, team#member, agent, agent with agent_session, service_account] or deployer or editor from project or namespace_editor from org
     define viewer: [user, team#member, agent, agent with agent_session, service_account] or editor or viewer from project
+    define can_read: viewer
+    define can_write: editor
+    define can_admin: deployer
 
 # An application deployment (the draft's `deployment`, not CP1's install root).
 type deployment

@@ -29,6 +29,8 @@ on:
       - 'web/packages/ui/**'
       - 'web/plugins/studio/**'
       - 'web/plugins/factory/**'
+      - 'web/plugins/marketplace/**'
+      - 'web/packages/slots/**'
       - 'web/plugins/shell/**'
       - 'web/plugins/rpc/**'
       - 'web/plugins/approvals/**'
@@ -86,8 +88,9 @@ jobs:
           key: studio-e2e
           save-if: ${{ github.ref == 'refs/heads/dev' }}
       # A debug build: only a debug daemon honours LOAMS_AGENTD_TEST_ISSUER (ruling T7-7).
+      # `e2e-marketplace`: the Seed Exchange spec's testkit marketplace (MK0 Task 9).
       - name: loams-agentd (debug)
-        run: cargo build -p loams-agentd --locked
+        run: cargo build -p loams-agentd --locked --features e2e-marketplace
       - uses: pnpm/action-setup@v6
         with:
           package_json_file: package.json

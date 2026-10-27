@@ -46,3 +46,9 @@
 - id: studio
   name: '@loams/plugin-studio'
   inject: [router, slots, mode, platform, flags, agentd, inspector, drawer]
+
+# The Seed Exchange, the Loams marketplace (design §73 §7.1, MK1 Task 9):
+# `modes: [console, studio]`. Experimental. It reaches agentd through `agentd`, or
+# through Studio's host once Studio has loaded (the `studio.agentd.scope` slot).
+- id: marketplace
+  name: '@loams/plugin-marketplace'
