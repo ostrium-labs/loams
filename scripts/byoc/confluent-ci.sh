@@ -141,8 +141,8 @@ write_root() {
       ($name + "-events"): {partitions: 2, retention_bytes: 104857600, retention_ms: 10800000},
       ($name + "-cdc"):    {partitions: 1, retention_bytes: 104857600, retention_ms: 10800000}
     },
-    connector_bytes_per_sec: {in: 1048576, out: 1048576},
-    confluent_budget_monthly_usd: 10
+    connector_bytes_per_sec: {in: 65536, out: 65536},
+    confluent_budget_monthly_usd: 20
   }' >"$work/root/terraform.tfvars.json"
 }
 

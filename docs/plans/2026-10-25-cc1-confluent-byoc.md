@@ -339,3 +339,22 @@ Gate: CC2; for the cloud rows, BY1's Google Cloud and Azure owner actions. **2�
   - The Kafka gateway oracle (`lkc-120zwvj`) is at 30 of 30 with ten leftover `loams-oracle-<run>-…` topics; its owner should delete them before its next run (not done here).
 
 **Plan changes from CC0.** Task 2: no narrows. Task 4: per-principal metrics through `request_bytes`/`response_bytes`. Task 5: regions from `env_metadata`, plus the replication factor in `prices.toml`. Task 7: environment-scoped MetricsViewer, the partition check, mock defaults, provider 2.90.0. Task 10: one persistent `loams-ci-data` account (keys and ACLs per run), the storage and Costs-lag measurements. CC3: keyless only on Standard and above.
+
+**CC1 infrastructure rulings (lane B, 2026-10-26/27).** Tasks 5, 6, 7 and 10 are built (#1261, #1266, #1267, #1281, and the CLI PR); Task 9's BYOC guide is `docs/guides/byoc/confluent.md`.
+
+- **R1.B1 The Kafka admin key for topics and ACLs never enters state** (Task 7, D1827). §80 §5.2 has the module create topics and ACLs, but they need a cluster-scoped Kafka key, and `confluent_kafka_topic`/`_acl` store their `credentials` block in state. So `kafka_admin` decides:
+  - **`provider` (default):** the resources carry no credentials; the provider's `KAFKA_ID`, `KAFKA_REST_ENDPOINT`, `KAFKA_API_KEY` and `KAFKA_API_SECRET` supply them. A new cluster takes two applies, the first with `kafka_admin = "none"`. The CI script and the guide do this.
+  - **`module_key`:** the module creates `loams-<name>-admin` (CloudClusterAdmin on the cluster) and its key in one apply. That needs `create_api_keys = true` and a root with enforced state and plan encryption. `example_with_keys_enforces_encryption` checks the examples.
+  - The live run decrypted the state and found neither the admin key's id nor its secret.
+- **R1.B2 Tables in OpenTofu.** OpenTofu has no TOML decoder, so `scripts/byoc/confluent-tables.sh gen` writes `deploy/tofu/modules/confluent/confluent-tables.json` from the two TOML tables, and `check` fails when that copy is stale. Prices use the upper end of each range on the pricing page; Dedicated has no list price, so it is reported as unbounded.
+- **R1.B3 The existing-cluster type.** The module reads an existing cluster's type from its description, and falls back to `cluster_type` when the description carries no type block (as with mock providers).
+- **R1.B4 Secret files** (Task 6). The VM's fetcher writes `secrets/connect/<CONNECT_NAMESPACE, default 0>/confluent-<i>/{username,password,sr-username,sr-password,metrics-key,metrics-secret}`. Files are 0600, directories 0700, uid 10001 when run as root, and values have no trailing newline. Lane A's connect role mounts this directory (`.he0-shared/cc1-lanes.md`).
+- **R1.B5 The CLI writes through the cloud's own CLI** (`aws`, `gcloud`, `az`), with the value on stdin (`file:///dev/stdin`, `--data-file=-`, `--file /dev/stdin`). No cloud SDK is added to the binary and the user's own login is used. `key create` deletes the new key if the store refuses it. `key rotate` keeps the old keys when an instance restart fails, and calls lane A's `POST /v1/connect/instances/{id}:restart`. The client lives in the new `crates/loams-confluent` (the keys and clusters part of Task 4); metrics, costs and regions come with CC2.
+- **R1.B6 The nightly** (Task 10):
+  - **Identities:** the nightly reuses the persistent `loams-ci-data` account (R0.6) and mints only Kafka keys. The admin key is owned by the provisioner.
+  - **State:** local, encrypted with a passphrase made for the run, and deleted by `down`.
+  - **Teardown check:** the cluster's id must answer 404 and no key named `loams-ci-<run>-*` may be listed. An empty cluster list comes back as `"data": null`, and a key already deleted with its cluster answers 403; both are handled.
+  - **Workflow:** a GitHub job has one environment, so the nightly runs in `byoc-confluent` and reads `AWS_ROLE_ARN` from there. The AWS role's OIDC trust must also allow that environment.
+  - **Engine leg:** the round trip prints a skip until the connect role ships (Task 1).
+  - **Live runs:** two cycles in `loams-ci`, Confluent only, about 4 minutes each, about $0.
+- **R1.B7 The example's default connector rates** are 64 KiB/s each way, which gives a ceiling of $16.78 under its $25 budget. At 1 MiB/s, the ceiling would be about $257.
