@@ -145,6 +145,7 @@ def get_provider_info() -> dict[str, Any]:
             }
         ],
         "filesystems": ["airflow.providers.loams.fs.loams_s3"],
+        "executors": ["airflow.providers.loams.executors.resonate_executor.LoamsResonateExecutor"],
         "asset-uris": [
             {
                 "schemes": ["loams"],
