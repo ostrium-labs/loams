@@ -35,6 +35,39 @@ pub struct Engine {
     store: Arc<dyn Store>,
     clock: Arc<dyn Fn() -> i64 + Send + Sync>,
     watchers: Mutex<HashMap<RunKey, watch::Sender<RunProgress>>>,
+    /// One async lock per run with inputs in flight: inputs for the same run
+    /// queue here instead of racing to the store's compare-and-set. Racing
+    /// made every loser wait on the row lock while holding a pooled
+    /// connection, then retry (the bench's 5-7x slowdown on Postgres). The
+    /// compare-and-set still guards against other replicas (X1.R8, DX3).
+    runs: Mutex<HashMap<RunKey, Arc<tokio::sync::Mutex<()>>>>,
+}
+
+/// Releases a run's lock and drops its map entry when nobody else waits.
+struct RunGuard<'a> {
+    engine: &'a Engine,
+    key: RunKey,
+    lock: Option<tokio::sync::OwnedMutexGuard<()>>,
+}
+
+impl Drop for RunGuard<'_> {
+    fn drop(&mut self) {
+        let mutex = self
+            .lock
+            .take()
+            .map(|g| tokio::sync::OwnedMutexGuard::mutex(&g).clone());
+        let mut runs = self
+            .engine
+            .runs
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        // The map's Arc plus ours: nobody else holds or waits for it.
+        if let Some(m) = mutex
+            && Arc::strong_count(&m) <= 2
+        {
+            runs.remove(&self.key);
+        }
+    }
 }
 
 impl std::fmt::Debug for Engine {
@@ -105,6 +138,24 @@ impl Engine {
             store,
             clock,
             watchers: Mutex::new(HashMap::new()),
+            runs: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Takes the run's in-process lock (see `runs`).
+    async fn lock_run(&self, key: &RunKey) -> RunGuard<'_> {
+        let mutex = self
+            .runs
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .entry(key.clone())
+            .or_default()
+            .clone();
+        let lock = mutex.lock_owned().await;
+        RunGuard {
+            engine: self,
+            key: key.clone(),
+            lock: Some(lock),
         }
     }
 
@@ -144,6 +195,7 @@ impl Engine {
         ctx: &EffectContext,
         input: Input,
     ) -> Result<Transition, Status> {
+        let _run = self.lock_run(key).await;
         for _ in 0..MAX_CAS_RETRIES {
             let run = self.load(key).await?;
             let t = apply(&run.state, input.clone(), self.now_ms()).map_err(rejection_status)?;
