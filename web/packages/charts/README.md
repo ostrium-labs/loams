@@ -4,21 +4,15 @@ The console's one chart wrapper. Plugins import these and do not wrap ECharts
 themselves.
 
 ```ts
-import {
-  LiveChart,
-  Sparkline,
-  useMetricStream,
-  type ChartSpec,
-  type SeriesPoint,
-} from '@loams/charts';
+import { LiveChart, Sparkline, useMetricStream, type ChartSpec, type SeriesPoint } from '@loams/charts';
 ```
 
-| Export                                                              | What it does                                                                                                                                                                                   |
-| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Export | What it does |
+|---|---|
 | `LiveChart({ spec, data, stream?, windowMs?, height?, ariaLabel })` | Compiles a `ChartSpec` through `@loams-core/charts` and draws it with ECharts. `stream` batches are appended, trimmed to `windowMs` of the spec's x field, and repainted at most every 250 ms. |
-| `Sparkline({ points, ariaLabel, height? })`                         | Inline SVG trend, one path per `series`.                                                                                                                                                       |
-| `useMetricStream(source, windowMs)`                                 | Subscribes to `source()` and returns the windowed points.                                                                                                                                      |
-| `mockMetricStream`, `mockRowStream`, `seedMetricPoints`             | Deterministic fixture streams that emit on an interval, for pages with no backend yet.                                                                                                         |
+| `Sparkline({ points, ariaLabel, height? })` | Inline SVG trend, one path per `series`. |
+| `useMetricStream(source, windowMs)` | Subscribes to `source()` and returns the windowed points. |
+| `mockMetricStream`, `mockRowStream`, `seedMetricPoints` | Deterministic fixture streams that emit on an interval, for pages with no backend yet. |
 
 `ChartSpec` is the type from `@loams-core/types` (the schema `@loams-core/chart-specs`
 validates), re-exported here.

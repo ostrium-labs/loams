@@ -6,12 +6,12 @@ User guides: [`docs/guides/studio/`](../../../docs/guides/studio/index.md). This
 
 ## Layout
 
-| Entry                                 | What                                                                                                    |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `.` (`src/index.ts`)                  | The thread list, composer, terminal, git, keybindings, palette and generic hooks                        |
-| `./chat`, `./markdown`, `./approvals` | The timeline, the sanitised markdown renderer, the approval and question cards                          |
-| `./diff`, `./files`                   | The diff panel and review comments, the file tree and viewer (Shiki and `@pierre/diffs`, loaded lazily) |
-| `./groups`, `./preview`               | The run-group compare view (Loams' own code) and the preview chrome                                     |
+| Entry | What |
+|---|---|
+| `.` (`src/index.ts`) | The thread list, composer, terminal, git, keybindings, palette and generic hooks |
+| `./chat`, `./markdown`, `./approvals` | The timeline, the sanitised markdown renderer, the approval and question cards |
+| `./diff`, `./files` | The diff panel and review comments, the file tree and viewer (Shiki and `@pierre/diffs`, loaded lazily) |
+| `./groups`, `./preview` | The run-group compare view (Loams' own code) and the preview chrome |
 
 Heavy entries are separate subpath exports so Studio's first screen doesn't load Shiki or `@pierre/diffs` (SD1 T21-7).
 

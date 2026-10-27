@@ -24,11 +24,11 @@ module as written, not a bundled copy.
 **The API's availability moves with the Chrome channel.** Measured 2026-10-05
 under the same `--enable-features=WebMCPTesting,DevToolsWebMCPSupport`:
 
-| surface                         | Chrome 149.0.7827.155 | Chrome 154.0.8037.57                |
-| ------------------------------- | --------------------- | ----------------------------------- |
-| `document.modelContext`         | **absent**            | **present** (a real `ModelContext`) |
-| `navigator.modelContext`        | **present**           | absent                              |
-| `navigator.modelContextTesting` | **present**           | absent                              |
+| surface | Chrome 149.0.7827.155 | Chrome 154.0.8037.57 |
+|---|---|---|
+| `document.modelContext` | **absent** | **present** (a real `ModelContext`) |
+| `navigator.modelContext` | **present** | absent |
+| `navigator.modelContextTesting` | **present** | absent |
 
 On 154 the real attribute is present with **no feature flags at all**. So the
 job asserts that the console **agrees with whatever the browser reports**, in
@@ -67,7 +67,7 @@ version of this suite assert nothing at all on exactly the build CI runs.
 
 Every assertion holds whether or not the flags still work, which is checked
 both ways — flags on, and flags explicitly disabled, on both channels. A Chrome
-that renames or drops the features changes the _diagnostics_, not the result:
+that renames or drops the features changes the *diagnostics*, not the result:
 each run logs `typeof document.modelContext`, whether the `navigator` surfaces
 exist and what they carry, the `tools` permissions policy, and the resolved
 browser version, so a channel change is visible in the CI log rather than only
@@ -106,21 +106,21 @@ CI. A browser job that skips itself reports green having tested nothing.
 
 ## Environment
 
-| Variable                  | Effect                                                                                             |
-| ------------------------- | -------------------------------------------------------------------------------------------------- |
-| `LOAMS_CHROME`            | The binary to test in. An explicit value that is not executable is an error, not a fallback.       |
-| `LOAMS_WEB_MCP_FLAGS`     | Comma-separated Chrome flags. Defaults to `--enable-features=WebMCPTesting,DevToolsWebMCPSupport`. |
-| `LOAMS_CHROME_HEADLESS`   | `0` runs headful, for debugging with DevTools attached.                                            |
-| `LOAMS_CHROME_EXTRA_ARGS` | Space-separated extra Chrome arguments.                                                            |
+| Variable | Effect |
+|---|---|
+| `LOAMS_CHROME` | The binary to test in. An explicit value that is not executable is an error, not a fallback. |
+| `LOAMS_WEB_MCP_FLAGS` | Comma-separated Chrome flags. Defaults to `--enable-features=WebMCPTesting,DevToolsWebMCPSupport`. |
+| `LOAMS_CHROME_HEADLESS` | `0` runs headful, for debugging with DevTools attached. |
+| `LOAMS_CHROME_EXTRA_ARGS` | Space-separated extra Chrome arguments. |
 
 ## Files
 
-| File                     | What it holds                                                                                                                           |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `harness.mjs`            | Chrome discovery and launch, the CDP client, the loopback fixture server, and the TypeScript transpile.                                 |
-| `fixture/index.html`     | The page. Loaded over loopback, never `file:`, so it is a secure context.                                                               |
-| `fixture/page.mjs`       | The three scenarios: the untouched document, the native API if present, and a spec-shaped `document.modelContext` on the real document. |
-| `webmcp-detect.test.mjs` | The assertions.                                                                                                                         |
+| File | What it holds |
+|---|---|
+| `harness.mjs` | Chrome discovery and launch, the CDP client, the loopback fixture server, and the TypeScript transpile. |
+| `fixture/index.html` | The page. Loaded over loopback, never `file:`, so it is a secure context. |
+| `fixture/page.mjs` | The three scenarios: the untouched document, the native API if present, and a spec-shaped `document.modelContext` on the real document. |
+| `webmcp-detect.test.mjs` | The assertions. |
 
 `fixture/page.mjs` labels its own context as a fixture wherever it reports one.
 A spec-shaped fake is not Chrome's implementation and is never claimed to be.
@@ -139,6 +139,6 @@ primary page states them — that doc's `getTools()` on the testing surface is
 wrong, it is `listTools()`. `DevToolsWebMCPSupport` appears on no primary page
 and is measurably inert on Chrome 149 (byte-identical surface set with and
 without it); it is kept and labelled rather than quietly dropped. The
-two-channel measurement settles that availability _moves_; it does not establish
+two-channel measurement settles that availability *moves*; it does not establish
 why, and no primary page was found stating the 154 gate. D638 says all of this
 rather than implying a source that was never read.

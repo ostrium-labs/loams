@@ -235,7 +235,8 @@ export default defineConfig({
     singleQuote: true,
     // Keep package.json key order as written; sorting would rewrite every manifest.
     sortPackageJson: false,
-    ignorePatterns: ['**/dist/**', ...generated],
+    // Markdown stays as written: Biome never formatted it, and Oxfmt pads tables.
+    ignorePatterns: ['**/dist/**', '**/*.md', ...generated],
     // Biome's two double-quote overrides: Studio's code vendored from T3 Code keeps its style.
     overrides: [
       {

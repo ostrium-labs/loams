@@ -150,6 +150,7 @@ export default defineConfig({
     singleQuote: true,
     // Keep package.json key order as written; sorting would rewrite every manifest.
     sortPackageJson: false,
-    ignorePatterns: ['**/dist/**'],
+    // Markdown stays as written: Biome never formatted it, and Oxfmt pads tables.
+    ignorePatterns: ['**/dist/**', '**/*.md'],
   },
 });
