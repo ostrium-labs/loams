@@ -575,6 +575,25 @@ impl Store for PgStore {
         Ok(())
     }
 
+    async fn update_namespace(&self, ns: NamespaceRecord) -> Result<(), StoreError> {
+        let updated = sqlx::query(
+            "UPDATE namespaces SET retention_secs = $2, state = $3, config = $4, \
+             db_record_version = db_record_version + 1 WHERE namespace_id = $1",
+        )
+        .bind(&ns.namespace_id)
+        .bind(ns.retention_secs)
+        .bind(ns.state)
+        .bind(&ns.config)
+        .execute(&self.pool)
+        .await
+        .map_err(map_err)?
+        .rows_affected();
+        if updated == 0 {
+            return Err(StoreError::NotFound);
+        }
+        Ok(())
+    }
+
     async fn namespace_by_name(
         &self,
         loams_namespace_id: &str,
