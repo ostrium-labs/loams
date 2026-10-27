@@ -46,6 +46,28 @@ pub enum ConfluentCommand {
     },
     /// Is the cluster next to the VM, and can this host reach it?
     Check(CheckOpts),
+    /// What Confluent billed, per cluster and line type (the Costs API; an
+    /// organisation-level key: BillingAdmin or OrganizationAdmin).
+    Costs(CostsOpts),
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct CostsOpts {
+    /// The first UTC day (YYYY-MM-DD).
+    #[arg(long)]
+    pub from: String,
+    /// The day after the last (end-exclusive) [default: tomorrow, UTC].
+    #[arg(long)]
+    pub to: Option<String>,
+    /// Only lines for these resources (lkc-…; repeat).
+    #[arg(long = "resource")]
+    pub resources: Vec<String>,
+    /// Only lines in this environment (env-…).
+    #[arg(long)]
+    pub environment: Option<String>,
+    /// The Confluent Cloud API.
+    #[arg(long, env = "CONFLUENT_API_URL", default_value = DEFAULT_BASE, hide = true)]
+    pub api_url: String,
 }
 
 #[derive(Debug, Subcommand)]
@@ -577,6 +599,73 @@ async fn acl_check(c: &Client, cl: &clusters::Cluster, o: &CheckOpts, out: &mut 
     ok
 }
 
+/// `loams byoc confluent costs`: totals per resource and line type, then the
+/// credits and the grand total. Amounts are USD as Confluent reports them.
+pub async fn costs_report(
+    c: &Client,
+    o: &CostsOpts,
+    now_unix: i64,
+    out: &mut dyn Write,
+) -> Result<(), Error> {
+    use crate::costs::{self, Day};
+    let from: Day = o.from.parse()?;
+    let to: Day = match &o.to {
+        Some(t) => t.parse()?,
+        None => Day::from_unix(now_unix).plus_days(1),
+    };
+    for r in &o.resources {
+        check_id(r, "lkc-", "--resource")?;
+    }
+    if let Some(e) = &o.environment {
+        check_id(e, "env-", "--environment")?;
+    }
+    let lines: Vec<costs::CostLine> = costs::list(c, from, to)
+        .await?
+        .into_iter()
+        .filter(|l| o.resources.is_empty() || o.resources.contains(&l.resource_id))
+        .filter(|l| {
+            o.environment
+                .as_ref()
+                .is_none_or(|e| l.environment == *e || l.resource_id.is_empty())
+        })
+        .collect();
+    let mut by: std::collections::BTreeMap<(String, String), (f64, f64, f64)> =
+        std::collections::BTreeMap::new();
+    let (mut original, mut amount, mut credits) = (0.0_f64, 0.0_f64, 0.0_f64);
+    for l in &lines {
+        if l.resource_id.is_empty() {
+            credits += l.amount;
+            continue;
+        }
+        let e = by
+            .entry((l.resource_id.clone(), l.line_type.clone()))
+            .or_insert((0.0, 0.0, 0.0));
+        e.0 += l.quantity.unwrap_or(0.0);
+        e.1 += l.original_amount;
+        e.2 += l.amount;
+        original += l.original_amount;
+        amount += l.amount;
+    }
+    let _ = writeln!(
+        out,
+        "Confluent costs {from} to {to} (end exclusive, UTC; lines lag up to 72 hours)"
+    );
+    let _ = writeln!(
+        out,
+        "{:<16} {:<28} {:>14} {:>12} {:>12}",
+        "resource", "line type", "quantity", "list $", "billed $"
+    );
+    for ((res, ty), (q, orig, amt)) in &by {
+        let _ = writeln!(out, "{res:<16} {ty:<28} {q:>14.4} {orig:>12.4} {amt:>12.4}");
+    }
+    let _ = writeln!(
+        out,
+        "list ${original:.4}, billed ${amount:.4}, credits and other lines ${credits:.4}, net ${:.4}",
+        amount + credits
+    );
+    Ok(())
+}
+
 /// Installs ring as the process's TLS provider (as the loams binary does).
 pub fn install_crypto() {
     let _ =
@@ -616,6 +705,15 @@ async fn dispatch(args: &ByocArgs, out: &mut dyn Write) -> Result<bool, Error> {
                     .await
                     .map(|_| true),
             }
+        }
+        ConfluentCommand::Costs(o) => {
+            let c = Client::new(
+                &o.api_url,
+                CloudKey::from_env()?,
+                http(o.api_url.starts_with("https://"))?,
+            );
+            let now = i64::try_from(unix_now()).unwrap_or(i64::MAX);
+            costs_report(&c, o, now, out).await.map(|()| true)
         }
         ConfluentCommand::Check(o) => {
             let mut o = o.clone();

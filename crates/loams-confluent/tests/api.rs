@@ -312,3 +312,44 @@ async fn acls_list_with_the_kafka_key_and_audit() {
         "GET acls lkc-one01 User:sa-test01"
     );
 }
+
+#[tokio::test]
+async fn costs_report_totals_per_resource_and_credits() {
+    let f = Shared::default();
+    let base = serve(f.clone()).await;
+    let c = client(&base);
+    let o = loams_confluent::cli::CostsOpts {
+        from: "2026-10-01".into(),
+        to: Some("2026-10-03".into()),
+        resources: Vec::new(),
+        environment: Some("env-test01".into()),
+        api_url: base.clone(),
+    };
+    let mut out = Vec::new();
+    loams_confluent::cli::costs_report(&c, &o, 0, &mut out)
+        .await
+        .unwrap();
+    let s = String::from_utf8(out).unwrap();
+    // one window, two pages: lines of 1.0 and 2.0, a credit of -3.0
+    assert!(
+        s.contains("lkc-one01") && s.contains("KAFKA_NETWORK_READ"),
+        "{s}"
+    );
+    assert!(
+        s.contains("billed $3.0000") && s.contains("credits and other lines $-3.0000"),
+        "{s}"
+    );
+    assert!(!s.contains("PLANTED"), "{s}");
+    let bad = loams_confluent::cli::CostsOpts {
+        from: "2026-10-01".into(),
+        to: None,
+        resources: vec!["lkc-x;y".into()],
+        environment: None,
+        api_url: base,
+    };
+    assert!(
+        loams_confluent::cli::costs_report(&c, &bad, 0, &mut Vec::new())
+            .await
+            .is_err()
+    );
+}
