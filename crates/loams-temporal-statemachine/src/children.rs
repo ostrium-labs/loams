@@ -47,6 +47,7 @@ use crate::write::{arrive, close};
 use crate::{Effect, Rejection, Reply};
 
 /// How a child run ended, as its parent records it.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum ChildOutcome {
     /// `ChildWorkflowExecutionCompleted`.
