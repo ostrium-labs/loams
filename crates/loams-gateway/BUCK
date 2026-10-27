@@ -67,6 +67,7 @@ cargo_package(
         "//third-party/rust:hyper",
         "//third-party/rust:hyper-util",
         "//third-party/rust:md-5",
+        "//third-party/rust:rcgen",
         "//third-party/rust:reqwest-0_13",
         "//third-party/rust:rustls",
         "//third-party/rust:serde",
@@ -81,7 +82,6 @@ cargo_package(
         "//third-party/rust:tracing-subscriber",
     ],
     dev_deps = [
-        "//third-party/rust:rcgen",
         "//third-party/rust:tempfile",
     ],
     rustc_flags = [
