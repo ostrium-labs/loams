@@ -3,7 +3,7 @@ import { Code, ConnectError, createRouterTransport } from '@connectrpc/connect';
 import { validateManifest } from '@loams/console-host';
 import { live, liveValue } from '@loams/proto';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import pkg from '../package.json';
 import { createLiveApi } from '../src/client.js';
 import { ENGINE_NOT_READY, LIVE_NOT_RUNNING, LivePage } from '../src/pages.js';

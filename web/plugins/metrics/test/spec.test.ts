@@ -3,7 +3,7 @@
 
 import { validateManifest } from '@loams/console-host';
 import type { DashboardSpec } from '@loams-core/types';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import pkg from '../package.json';
 import { formatValue, METRICS, metricDef } from '../src/catalog.js';
 import { DEFAULT_DASHBOARDS } from '../src/defaults.js';

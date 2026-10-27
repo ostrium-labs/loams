@@ -8,7 +8,7 @@ import { createMockTransport } from '@loams/console-host/testing';
 import { createWebPlatform } from '@loams/platform-web';
 import { pageEntries } from '@loams/plugin-shell';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import baseCatalog from '../catalog/base.yml?raw';
 import { startConsole } from '../src/cordis/start.js';
 import {

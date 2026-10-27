@@ -16,7 +16,7 @@ import sql from '@loams/plugin-sql';
 import { SAMPLE_DATA_TEXT } from '@loams/ui';
 import { cleanup, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 
 // jsdom lacks these; the pages' canvases and dialogs expect them.
 globalThis.ResizeObserver ??= class {

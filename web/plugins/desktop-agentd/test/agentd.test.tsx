@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 import { AgentdSection } from '../src/agentd-section.js';
 import { createMockAgentdApi, sampleSessions } from '../src/mock.js';
 

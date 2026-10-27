@@ -29,7 +29,7 @@ export function AboutSection({
         </div>
       </Card>
       <Card title="Licences" flush>
-        {/* biome-ignore lint/a11y/noNoninteractiveTabindex: a scrollable region must be keyboard reachable */}
+        {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a scrollable region must be keyboard reachable */}
         <section aria-label="Licences" tabIndex={0} className="max-h-96 overflow-auto">
           <pre className="font-mono text-xs p-4 m-0 whitespace-pre-wrap">{licences}</pre>
         </section>

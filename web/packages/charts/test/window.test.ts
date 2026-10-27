@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import type { Row } from '../src/types';
 import { appendWindow, latestTime, timeOf, windowBounds, windowPoints } from '../src/window';
 

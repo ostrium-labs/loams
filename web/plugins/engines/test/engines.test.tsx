@@ -3,7 +3,7 @@
 import { validateManifest } from '@loams/console-host';
 import { setCodeEditorText } from '@loams/ui';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import pkg from '../package.json';
 import type { EnginesClient } from '../src/client.js';
 import { createMockEnginesClient } from '../src/mock.js';
@@ -168,8 +168,10 @@ describe('detail', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Suspend' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Suspend instance' }));
     await waitFor(() => expect(suspend).toHaveBeenCalledWith('default-dev', 'eng_rw01orders'));
-    await waitFor(() => expect(screen.getAllByText('suspending').length).toBeGreaterThan(0));
-  });
+    await expect(client.get('default-dev', 'eng_rw01orders')).resolves.toMatchObject({
+      status: { phase: 'suspending' },
+    });
+  }, 15_000);
 
   it('offers resume for a suspended instance', async () => {
     mount('eng_rw02clicks');

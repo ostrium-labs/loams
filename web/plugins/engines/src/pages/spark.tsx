@@ -186,12 +186,12 @@ function SessionsCard({
               <tbody>
                 {sessions.value.map((s) => (
                   <tr key={s.id}>
-                    <td className="font-mono">{s.id}</td>
+                    <td className={/* mono-ok: id */ 'font-mono'}>{s.id}</td>
                     <td>{s.kind}</td>
                     <td>
                       <Badge variant={SESSION_VARIANT[s.state]}>{s.state}</Badge>
                     </td>
-                    <td className="font-mono">{s.connect_url ?? '—'}</td>
+                    <td className={/* mono-ok: path */ 'font-mono'}>{s.connect_url ?? '—'}</td>
                     <td>{formatRelative(s.created_at)}</td>
                     <td>
                       {s.state !== 'closed' && s.state !== 'failed' && (
@@ -342,14 +342,14 @@ function JobsCard({
                   <tr key={j.id}>
                     <td>
                       <div>{j.name}</div>
-                      <div className="font-mono text-muted text-small">{j.id}</div>
+                      <div className={/* mono-ok: id */ 'font-mono text-muted text-small'}>{j.id}</div>
                     </td>
                     <td>{j.kind}</td>
                     <td>
                       <Badge variant={JOB_VARIANT[j.state]}>{j.state}</Badge>
                       {j.message && <div className="text-muted text-small">{j.message}</div>}
                     </td>
-                    <td className="font-mono">
+                    <td className={/* mono-ok: path */ 'font-mono'}>
                       {j.entrypoint}
                       {j.args.length > 0 && ` ${j.args.join(' ')}`}
                     </td>

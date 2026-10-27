@@ -111,3 +111,10 @@
 The owner approved the pending decisions below on 2026-10-24 ("approve all with your recommendations").
 
 - **Pin `vite-plus` 1.3.0 directly once it is 14 days old (2026-10-30)**, not 1.1.0 now. The desktop and electron-vite 6 step stays on 2026-10-28. **Approved (owner, 2026-10-24).**
+
+### Execution, 2026-10-27 (lane VV1, owner: "merge dependabot PRs to migrate to vite+ unified toolchain")
+
+- **VV-R3: the catalog pin lands at 1.0.0 now, 1.3.0 on 2026-10-30.** On 2026-10-27 the newest `vite-plus` at least 14 days old is 1.1.0 (1.2.0 is from 2026-10-14, 1.3.0 from 2026-10-16, 1.4.0 from 2026-10-23). The owner's 2026-10-24 approval skips 1.1.0, so the workspace moves onto one catalog pin at the version `plugins/` already runs (1.0.0, which bundles Vite 8.3.1, the console's previous Vite), and a separate PR moves the pin to 1.3.0, to merge on or after 2026-10-30.
+- **VV-R4: `vite: catalog:` in every package that runs tests, not a global override, until the desktop moves.** Vitest's `vite` peer is auto-installed as real Vite when a package names `vitest` without `vite`, and a scoped override doesn't reach peers. A global `vite` override would also hit the desktop's Vite 7.3.7 before electron-vite 6.0.0 is eligible (2026-10-28). The desktop PR adds the global override.
+- **VV-R5: `vitest.config.ts` files become `vite.config.ts`.** `vp test` and plain Vitest both read `vite.config.ts`, so the fallback lane (D1774) and `vp` see the same config.
+- **The PRs**, one per item: the pin (all packages except the desktop), Oxlint and Oxfmt, `vp pack` for `@loams/ui`, the desktop on electron-vite 6.0.0 (from 2026-10-28), `vite-plus` 1.3.0 (from 2026-10-30), and the fallback lane. Dependabot's #1069 and #1049 are superseded by the pin and desktop PRs; #1248's `vite-plus` 1.1.0 bump by the 1.3.0 PR.

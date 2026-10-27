@@ -1,6 +1,6 @@
 // The REST client builds the contract's paths (api/engines/openapi.json) and maps errors.
 
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import {
   ApiError,
   createEnginesClient,
