@@ -8381,6 +8381,7 @@ dependencies = [
  "loams-cloudevents",
  "loams-collection",
  "loams-common",
+ "loams-confluent",
  "loams-durable",
  "loams-es",
  "loams-git",
@@ -8969,6 +8970,23 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tokio-postgres",
+]
+
+[[package]]
+name = "loams-confluent"
+version = "0.1.2"
+dependencies = [
+ "axum 0.8.9",
+ "base64 0.23.1",
+ "clap",
+ "humantime",
+ "reqwest 0.13.5",
+ "rustls",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "zeroize",
 ]
 
 [[package]]
