@@ -498,6 +498,8 @@ async fn check_reports_region_and_reachability() {
         schema_registry_url: None,
         timeout: Duration::from_secs(2),
         api_url: base.clone(),
+        service_account: None,
+        acl_key: None,
     };
     let mut out = Vec::new();
     assert!(check(&c, &o, &mut out).await.unwrap());

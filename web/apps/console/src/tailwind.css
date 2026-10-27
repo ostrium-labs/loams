@@ -14,8 +14,8 @@
  * and the box draws the one ring (UI1).
  */
 @layer theme, base, utilities;
-@import 'tailwindcss/theme.css' layer(theme);
-@import 'tailwindcss/utilities.css' layer(utilities);
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
 
 @source "../../../plugins/*/src/**/*.{ts,tsx}";
 @source "../../../packages/*/src/**/*.{ts,tsx}";

@@ -266,6 +266,8 @@ compose_compute_config_valid() {
     oc_compose --profile "$p" config -q
     oc_compose --txn --profile "$p" config -q
   done
+  gw_release config -q
+  oc_compose --gateway --profile temporal-gateway config -q
 }
 
 # No service starts without a compute profile: the stack's services are the
@@ -274,9 +276,9 @@ compose_compute_config_valid() {
 compose_compute_requires_profile() {
   local base with
   base=$( (cd "$OC_RELEASE" && "${COMPOSE[@]}" --env-file "$(oc_env_file)" -f compose.yaml config --services) | sort)
-  with=$(oc_compose --txn config --services | sort)
+  with=$(oc_compose --txn --gateway config --services | sort)
   [ "$base" = "$with" ] || { diff <(echo "$base") <(echo "$with"); return 1; }
-  python3 - "$OC_RELEASE/compose.compute.yaml" "$OC_DIR/pgdog-txn.yaml" <<'EOF'
+  python3 - "$OC_RELEASE/compose.compute.yaml" "$OC_DIR/pgdog-txn.yaml" "$OC_DIR/temporal-gateway.yaml" <<'EOF'
 import json, subprocess, sys
 # Read the files themselves (PyYAML is not assumed): every top-level service
 # block must carry a `profiles:` line, directly or through a merge anchor.
@@ -358,6 +360,111 @@ for s in ("dbos-py", "dbos-ts", "dbos-go", "dbos-java"):
 EOF
 }
 
+# --- The Temporal gateway's profile (DX1 Task 10; D2030, D2031) ---------------
+
+GW_DIR=$HERE/temporal/gateway
+
+# gw_release <compose args...>: the release profile alone (no conformance
+# overlay), with the shipped example config as its bind source.
+gw_release() {
+  LOAMS_TEMPORAL_CONFIG=$OC_RELEASE/temporal-gateway.toml.example \
+    oc_compose --profile temporal-gateway "$@"
+}
+
+# The profile publishes no host port, with and without the overlay: the
+# gateway has no `ports`, shares the engine's namespace, and the engine
+# publishes nothing new with it.
+gateway_profile_no_host_ports() {
+  compose_json >"$SCRATCH/base.json"
+  gw_release config --format json >"$SCRATCH/rel.json"
+  oc_compose --gateway --profile temporal-gateway config --format json >"$SCRATCH/gw.json"
+  python3 - "$SCRATCH/base.json" "$SCRATCH/rel.json" "$SCRATCH/gw.json" "$GW_DIR/gateway.toml" "$OC_RELEASE/temporal-gateway.toml.example" <<'EOF'
+import json, sys, tomllib
+base = json.load(open(sys.argv[1]))["services"]
+def ports(cfg):
+    return {(s, json.dumps(p, sort_keys=True)) for s, svc in cfg.items() for p in svc.get("ports", []) or []}
+for path in sys.argv[2:4]:
+    gw = json.load(open(path))["services"]
+    new = sorted(ports(gw) - ports(base))
+    assert not new, f"the temporal-gateway profile publishes host ports: {new}"
+    g = gw["temporal-gateway"]
+    assert not g.get("ports") and not g.get("expose"), g
+    assert g["network_mode"] == "service:loams", g.get("network_mode")
+    assert g["profiles"] == ["temporal-gateway"], g["profiles"]
+# 0.0.0.0 of the engine's namespace is the compose network, not the host.
+for path in sys.argv[4:6]:
+    cfg = tomllib.load(open(path, "rb"))
+    assert cfg["listen"] == "0.0.0.0:7233" and cfg["insecure_dev"] is False, (path, cfg)
+EOF
+}
+
+# The profile's shape (Task 10), in compose.compute.yaml itself: the
+# `loams_temporal` database that durable-init.sh creates, on the direct
+# endpoint, the engine's Resonate on its loopback, a read-only bind of the
+# config, and API keys with a task-token key (not insecure_dev).
+gateway_profile_shape() {
+  gw_release config --format json >"$SCRATCH/rel.json"
+  python3 - "$SCRATCH/rel.json" "$GW_DIR/gateway.toml" "$OC_RELEASE/temporal-gateway.toml.example" <<'EOF'
+import json, sys, tomllib
+svc = json.load(open(sys.argv[1]))["services"]
+g, init = svc["temporal-gateway"], svc["compute-init"]
+assert "temporal-gateway" in init["profiles"], init["profiles"]
+assert init["environment"]["LOAMS_TEMPORAL_DB_USER"] == "loams_temporal", init["environment"]
+assert g["depends_on"]["compute-init"]["condition"] == "service_completed_successfully", g["depends_on"]
+assert g["depends_on"]["loams"]["condition"] == "service_healthy", g["depends_on"]
+assert g["environment"]["LOAMS_TEMPORAL_DATABASE_URL"].endswith("@compute1:55433/loams_temporal"), g["environment"]
+assert "LOAMS_TEMPORAL_TOKEN_KEY_1" in g["environment"], g["environment"]
+assert g["read_only"] is True and g["cap_drop"] == ["ALL"], g
+[v] = [v for v in g["volumes"] if v["target"] == "/etc/loams-temporal/gateway.toml"]
+# Some compose versions drop `create_host_path: false` from `config`; the
+# source line is checked below.
+assert v["type"] == "bind" and v["read_only"] is True and v.get("bind", {}).get("create_host_path", False) is False, v
+for path in sys.argv[2:4]:
+    cfg = tomllib.load(open(path, "rb"))
+    assert cfg["store"] == {"kind": "postgres", "url_env": "LOAMS_TEMPORAL_DATABASE_URL"}, (path, cfg["store"])
+    d = cfg["durability"]
+    assert d["kind"] == "resonate" and d["url"] == "http://127.0.0.1:8001", (path, d)
+    assert cfg["keys"] and cfg["task_token_keys"], f"{path}: the profile runs with API keys and its own task-token key"
+EOF
+  grep -q '^  database loams_temporal "\$LOAMS_TEMPORAL_DB_USER"$' "$OC_RELEASE/compute/durable-init.sh"
+  grep -q '^          create_host_path: false$' "$OC_RELEASE/compose.compute.yaml"
+}
+
+# The gateway's image is a Loams release image (D2030): compose.compute.yaml
+# names <registry>/loams-temporal at the engine's tag, build.sh and both
+# release workflows build and attest it from
+# deploy/release/Containerfile.loams-temporal, and the conformance overlay
+# builds that same Containerfile locally (never pulled, named localhost/).
+gateway_image_is_release_image() {
+  gw_release config --format json >"$SCRATCH/rel.json"
+  oc_compose --gateway --profile temporal-gateway config --format json >"$SCRATCH/gw.json"
+  python3 - "$SCRATCH/rel.json" "$SCRATCH/gw.json" <<'EOF'
+import json, re, sys
+rel = json.load(open(sys.argv[1]))["services"]
+gw = json.load(open(sys.argv[2]))["services"]["temporal-gateway"]
+engine = rel["loams"]["image"]
+m = re.fullmatch(r"(.+)/loams:(\S+)", engine)
+assert m, engine
+want = f"{m.group(1)}/loams-temporal:{m.group(2)}"
+assert rel["temporal-gateway"]["image"] == want, (rel["temporal-gateway"]["image"], want)
+assert gw["image"].startswith("localhost/loams-temporal:"), gw["image"]
+assert gw["pull_policy"] == "never", gw.get("pull_policy")
+assert gw["build"]["dockerfile"] == "deploy/release/Containerfile.loams-temporal", gw["build"]
+EOF
+  test -f "$OC_RELEASE/Containerfile.loams-temporal"
+  # build.sh accepts loams-temporal and builds it by default; both release
+  # workflows build and attest it (other images may sit beside it).
+  grep -qE '^    loams\|[a-z|-]*\|loams-temporal\|' "$OC_RELEASE/build.sh"
+  grep -qE '^\(\(\$\{#images\[@\]\}\)\) \|\| images=\(.* loams-temporal( |\))' "$OC_RELEASE/build.sh"
+  local wf
+  for wf in release-images release-github; do
+    grep -qE 'image: \[loams, .*loams-temporal(, |\])' "$ROOT/.github/workflows/$wf.yml" ||
+      { echo "$wf.yml does not build loams-temporal"; return 1; }
+  done
+  # The first draft's conformance-only image name is gone.
+  if grep -rn --exclude=selftest.sh 'localhost/loams-temporal-conformance' "$ROOT/conformance" "$ROOT/deploy" "$ROOT/.github"; then return 1; fi
+}
+
 # The conformance overlay (airflow/compose.test.yaml) on top of the profile:
 # it resolves, publishes no host port at all, and the edge workers skip the
 # database check while the schedulers keep the direct endpoint.
@@ -396,6 +503,7 @@ COMPOSE_TESTS=(
   compose_compute_config_valid compose_compute_requires_profile
   compose_compute_no_new_host_ports compose_compute_images_pinned_by_digest
   compose_compute_uses_direct_endpoint compose_airflow_test_overlay_valid
+  gateway_profile_no_host_ports gateway_profile_shape gateway_image_is_release_image
 )
 
 TESTS+=(dbos_files_parse dbos_xfail_and_pins)

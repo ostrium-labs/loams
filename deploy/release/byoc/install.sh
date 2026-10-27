@@ -185,7 +185,9 @@ if ((use_confluent)); then
   cf_prefix="${cf_prefix:-loams-$cf_dir_name-}"
   [[ "$cf_prefix" =~ ^[A-Za-z0-9._-]{1,200}$ ]] || die "--confluent-prefix may hold only letters, digits and ._-"
   cf_rate="${cf_rate:-65536}"
-  [[ "$cf_rate" =~ ^[1-9][0-9]{3,11}$ ]] && ((cf_rate >= 1024)) || die "--confluent-rate is bytes a second, at least 1024"
+  if ! [[ "$cf_rate" =~ ^[1-9][0-9]{3,11}$ ]] || ((cf_rate < 1024)); then
+    die "--confluent-rate is bytes a second, at least 1024"
+  fi
   [[ -n "$cf_topics$cf_sinks" ]] || die "--kafka confluent needs --confluent-topics or --confluent-sinks"
   cf_instdir="$(mktemp -d)"
   trap 'rm -rf "$cf_instdir"' EXIT   # cleanup (below) takes it over

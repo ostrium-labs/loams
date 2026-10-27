@@ -14,7 +14,7 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 import * as ed from "@noble/ed25519";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 import { createController, type UpdaterLike } from "../src/main/update/controller";
 import { fetchFeedFiles } from "../src/main/update/feed";
 import { verifyManifest } from "../src/main/update/manifest";
