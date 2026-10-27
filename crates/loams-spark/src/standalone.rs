@@ -24,7 +24,7 @@ use crate::route::{HostPattern, RouteConfig, StaticRouter};
 use crate::sessions::Limits;
 
 /// The proxy's configuration file.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     /// Where to listen (h2c; TLS is the gateway's or the ingress's).
@@ -66,7 +66,7 @@ pub struct Config {
 }
 
 /// Who decides access after authentication.
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum AuthzConfig {
     /// A key's namespace is its grant: holding a key of namespace `n` allows
@@ -276,6 +276,24 @@ pub fn build(c: &Config) -> Result<SparkConnectProxy, String> {
 /// A message when the proxy cannot be built or the listener fails.
 pub async fn run(config: Config, shutdown: impl Future<Output = ()> + Send) -> Result<(), String> {
     let proxy = build(&config)?;
+    let listener = tokio::net::TcpListener::bind(config.listen)
+        .await
+        .map_err(|e| format!("binding {}: {e}", config.listen))?;
+    serve(proxy, listener, shutdown).await
+}
+
+/// Serves a built proxy on a bound listener until `shutdown`, with its idle
+/// sweeper. `loams-gateway` binds the listener itself (so a bind error fails
+/// its start) and calls this for its `[spark]` section.
+///
+/// # Errors
+///
+/// A message when the server fails.
+pub async fn serve(
+    proxy: SparkConnectProxy,
+    listener: tokio::net::TcpListener,
+    shutdown: impl Future<Output = ()> + Send,
+) -> Result<(), String> {
     let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
     let sweeper = tokio::spawn(proxy.clone().run_sweeper({
         let mut rx = stop_rx.clone();
@@ -283,11 +301,15 @@ pub async fn run(config: Config, shutdown: impl Future<Output = ()> + Send) -> R
             let _ = rx.wait_for(|stop| *stop).await;
         }
     }));
-    tracing::info!(listen = %config.listen, routes = config.routes.len(), "Spark Connect proxy");
+    let addr = listener.local_addr().map_err(|e| e.to_string())?;
+    tracing::info!(listen = %addr, "Spark Connect proxy");
     let served = tonic::transport::Server::builder()
         .http2_keepalive_interval(Some(Duration::from_secs(30)))
         .add_service(proxy)
-        .serve_with_shutdown(config.listen, shutdown)
+        .serve_with_incoming_shutdown(
+            tokio_stream::wrappers::TcpListenerStream::new(listener),
+            shutdown,
+        )
         .await
         .map_err(|e| e.to_string());
     let _ = stop_tx.send(true);

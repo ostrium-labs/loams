@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { create, fromBinary, toBinary, toJson } from "@bufbuild/protobuf";
 import { auth, instance } from "@loams/proto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { createLocalShim } from "../src/main/protocol/local-shim";
 
 const fixture = (n: string) =>

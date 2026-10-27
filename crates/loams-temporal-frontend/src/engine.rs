@@ -2,9 +2,9 @@
 //! rows in one compare-and-set (design 74 §5.5 rule 1, D1502).
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
-use loams_temporal_history::{HistoryEvent, MutableState, WorkflowExecutionStatus};
+use loams_temporal_history::{Attributes, HistoryEvent, MutableState, WorkflowExecutionStatus};
 use loams_temporal_proto::temporal::api::workflowservice::v1::StartWorkflowExecutionRequest;
 use loams_temporal_statemachine::{Effect, Input, Rejection, Reply, Transition, apply};
 use loams_temporal_store::{
@@ -12,7 +12,7 @@ use loams_temporal_store::{
     VisibilityRow,
 };
 use prost::Message as _;
-use tokio::sync::watch;
+use tokio::sync::{broadcast, watch};
 use tonic::Status;
 
 use crate::effects::{EffectContext, outbox_rows};
@@ -35,6 +35,11 @@ pub struct Engine {
     store: Arc<dyn Store>,
     clock: Arc<dyn Fn() -> i64 + Send + Sync>,
     watchers: Mutex<HashMap<RunKey, watch::Sender<RunProgress>>>,
+    /// Every run this engine closes (schedules wait on their runs, D2071).
+    closed: broadcast::Sender<RunKey>,
+    /// Sees every visibility row committed (the memory visibility store;
+    /// Postgres reads the rows the commits write, D2075).
+    visibility_tap: RwLock<Option<VisibilityTap>>,
     followups: Mutex<Option<tokio::sync::mpsc::UnboundedSender<FollowUp>>>,
 }
 
@@ -63,6 +68,9 @@ pub fn needs_follow_up(t: &Transition) -> bool {
         _ => false,
     })
 }
+
+/// A callback for every committed visibility row.
+pub type VisibilityTap = Arc<dyn Fn(&RunKey, &VisibilityRow) + Send + Sync>;
 
 impl std::fmt::Debug for Engine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -125,6 +133,21 @@ fn visibility(state: &MutableState) -> VisibilityRow {
     }
 }
 
+/// A new run's visibility row: the state's columns with the search
+/// attributes and memo of its `WorkflowExecutionStarted` event (D2076).
+fn start_visibility(state: &MutableState, events: &[HistoryEvent]) -> VisibilityRow {
+    let mut row = visibility(state);
+    let started = events.iter().find_map(|e| match &e.attributes {
+        Some(Attributes::WorkflowExecutionStartedEventAttributes(a)) => Some(a),
+        _ => None,
+    });
+    if let Some(a) = started {
+        row.search_attrs = crate::visibility::search_attrs_json(a.search_attributes.as_ref());
+        row.memo = a.memo.as_ref().map(|m| m.encode_to_vec());
+    }
+    row
+}
+
 impl Engine {
     /// An engine on `store`, reading time from `clock` (Unix ms).
     pub fn new(store: Arc<dyn Store>, clock: Arc<dyn Fn() -> i64 + Send + Sync>) -> Self {
@@ -132,6 +155,8 @@ impl Engine {
             store,
             clock,
             watchers: Mutex::new(HashMap::new()),
+            closed: broadcast::channel(1024).0,
+            visibility_tap: RwLock::new(None),
             followups: Mutex::new(None),
         }
     }
@@ -160,6 +185,49 @@ impl Engine {
                 transition: t.clone(),
             });
         }
+    }
+
+    /// Calls `tap` with every visibility row committed from now on.
+    pub fn set_visibility_tap(&self, tap: VisibilityTap) {
+        *self
+            .visibility_tap
+            .write()
+            .unwrap_or_else(PoisonError::into_inner) = Some(tap);
+    }
+
+    fn tap(&self, key: &RunKey, row: Option<&VisibilityRow>) {
+        let Some(row) = row else { return };
+        if let Some(t) = self
+            .visibility_tap
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+        {
+            t(key, row);
+        }
+    }
+
+    /// The visibility row of a closing run: the state's columns, with the
+    /// search attributes and memo its start recorded.
+    async fn closing_visibility(&self, key: &RunKey, state: &MutableState) -> VisibilityRow {
+        let mut row = visibility(state);
+        match self.store.visibility(key).await {
+            Ok(Some(prior)) => {
+                row.search_attrs = prior.search_attrs;
+                row.memo = prior.memo;
+            }
+            Ok(None) => {}
+            Err(e) => {
+                tracing::warn!(error = %e, "reading the visibility row of a closing run; its search attributes are not carried over");
+            }
+        }
+        row
+    }
+
+    /// The runs this engine closes from now on. A lagging receiver loses
+    /// the oldest; schedules also re-check on a timer.
+    pub fn closed_runs(&self) -> broadcast::Receiver<RunKey> {
+        self.closed.subscribe()
     }
 
     /// The store.
@@ -208,17 +276,26 @@ impl Engine {
                 .effects
                 .iter()
                 .any(|e| matches!(e, Effect::RunClosed { .. }));
+            let vis = if closed {
+                Some(self.closing_visibility(key, &t.state).await)
+            } else {
+                None
+            };
             let commit = Commit {
                 events: rows(&t.events),
                 state_blob: t.state.encode_to_vec(),
                 status: t.state.status,
                 next_event_id: t.state.next_event_id,
                 outbox: outbox_rows(ctx, &t.state, &t.effects, self.now_ms()),
-                visibility: closed.then(|| visibility(&t.state)),
+                visibility: vis.clone(),
             };
             match self.store.commit(key, run.version, commit).await {
                 Ok(_) => {
                     self.notify(key, &t.state);
+                    self.tap(key, vis.as_ref());
+                    if closed {
+                        let _ = self.closed.send(key.clone());
+                    }
                     self.follow_up(ctx, key, &t);
                     return Ok(t);
                 }
@@ -306,12 +383,14 @@ impl Engine {
                 status: state.status,
                 next_event_id: state.next_event_id,
                 outbox: outbox_rows(ctx, state, effects, self.now_ms()),
-                visibility: Some(visibility(state)),
+                visibility: Some(start_visibility(state, events)),
             },
         };
+        let vis = start.commit.visibility.clone();
         let outcome = self.store.start(start).await.map_err(store_status)?;
         if matches!(outcome, StartOutcome::Started { .. }) {
             self.notify(key, state);
+            self.tap(key, vis.as_ref());
         }
         Ok(outcome)
     }

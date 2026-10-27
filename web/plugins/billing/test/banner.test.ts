@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { BILLING_ROUTES, bannerNotices } from '../src/banner.js';
 import { formatDay, money } from '../src/format.js';
 import type { FeatureUsage, UsageReport } from '../src/types.js';
