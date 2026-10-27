@@ -57,7 +57,11 @@ before the owner reviews it. Plan: [DX1](2026-10-21-dx1-durable-execution-compat
 3. Merge DBOS (Task 5) after one run of each SDK.
 4. Before DX1A, run the Airflow Edge baseline green twice. If the start-up `edge3` install is slow or flaky there, switch to a built image (T6.R2).
 
-## Questions for the owner
+## Owner rulings (2026-10-27, defaults approved, relayed by the coordinator)
 
-- Should the committed matrix page be refreshed by a bot pull request after each nightly, or only by hand as OC0 specifies?
-- Is compat mode worth shipping as a documented option once it is go, or should it stay an oracle while the gateway matures (D1509)?
+- **The matrix page is refreshed by hand**, as OC0 specifies: a pull request
+  from the nightly's `compatibility-matrix` artifact. No bot pull requests.
+- **Compat mode becomes a documented option once it is go.** Design 74 makes the
+  upstream Temporal server on Loams Postgres both the oracle and the compat
+  mode (D1509). `docs/guides/durable/temporal-compat-mode.md` drops its
+  "not yet go" label then.
