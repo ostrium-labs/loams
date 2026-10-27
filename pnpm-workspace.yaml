@@ -110,10 +110,6 @@ overrides:
   'nx@23.2.1>axios': 1.20.0
   'nx@23.2.1>smol-toml': 1.9.0
   'nx@23.2.1>brace-expansion': 5.0.12
-  # Security (GHSA-g7r4-m6w7-qqqr, esbuild >=0.27.3 <0.28.1): tsup 8.5.1 asks for
-  # esbuild ^0.27; 0.28.2 (2026-08-08) is the release the rest of the tree uses.
-  # tsup 9 moves to ^0.28.2 but is under 14 days old; drop this with that bump.
-  'tsup@8.5.1>esbuild': 0.28.2
   # Security (GHSA-hp3w-g68c-fv3c): sprintf-js has no fixed release. It comes only
   # through global-agent > roarr, the optional proxy module of @electron/get, which
   # loads it in a try/catch only when ELECTRON_GET_USE_PROXY is set. Without it,

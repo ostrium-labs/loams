@@ -1,0 +1,12 @@
+# RisingWave's own e2e sqllogictest files run against a managed instance
+# (design 81, plan RW1, lane RW-b). One glob per line, relative to the tag's
+# e2e_test/ directory. Only suites that need nothing but the frontend: no
+# Kafka, no external connectors, no Premium features (R4). The exact paths are
+# (verify) against the pinned tag on the first run; a pattern that matches no
+# file fails the run, so a stale line cannot hide.
+batch/basic/*.slt.part
+batch/aggregate/*.slt.part
+batch/functions/*.slt.part
+batch/join/*.slt.part
+streaming/*.slt
+ddl/*.slt

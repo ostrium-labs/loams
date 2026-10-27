@@ -44,6 +44,7 @@ cargo_package(
     ],
     extra_srcs = {
         "crates/loams-temporal-store/migrations/0001_init.sql": "migrations/0001_init.sql",
+        "crates/loams-temporal-store/migrations/0002_retention_listing.sql": "migrations/0002_retention_listing.sql",
     },
     rustc_flags = [
         "-Funsafe_code",
