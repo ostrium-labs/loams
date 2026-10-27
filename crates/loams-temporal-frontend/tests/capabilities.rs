@@ -52,6 +52,10 @@ const TMP_API: &[&str] = &[
     "GetWorkerBuildIdCompatibility",
     "GetWorkerVersioningRules",
     "GetWorkerTaskReachability",
+    "StartBatchOperation",
+    "StopBatchOperation",
+    "DescribeBatchOperation",
+    "ListBatchOperations",
 ];
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

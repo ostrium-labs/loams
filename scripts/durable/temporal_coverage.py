@@ -122,10 +122,10 @@ STATUS: dict[str, tuple[str, str]] = {
     "UpdateWorkerDeploymentVersionMetadata": (LATER, "worker deployments"),
     "SetWorkerDeploymentManager": (LATER, "worker deployments"),
     # Batch
-    "StartBatchOperation": (planned("F"), "terminate, cancel, signal over a list of executions"),
-    "StopBatchOperation": (planned("F"), ""),
-    "DescribeBatchOperation": (planned("F"), ""),
-    "ListBatchOperations": (planned("F"), ""),
+    "StartBatchOperation": (TMP, "listed executions; terminate, cancel, signal; no visibility query yet"),
+    "StopBatchOperation": (TMP, ""),
+    "DescribeBatchOperation": (TMP, "jobs since this gateway started"),
+    "ListBatchOperations": (TMP, "jobs since this gateway started; one page"),
     # Nexus (design 74 §2.2: out)
     "PollNexusTaskQueue": (LATER, "Nexus is out of scope (design 74 §2.2)"),
     "RespondNexusTaskCompleted": (LATER, "Nexus"),

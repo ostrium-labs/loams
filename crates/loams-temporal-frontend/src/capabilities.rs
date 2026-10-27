@@ -46,6 +46,10 @@ pub const IMPLEMENTED: &[&str] = &[
     "GetWorkerBuildIdCompatibility",
     "GetWorkerVersioningRules",
     "GetWorkerTaskReachability",
+    "StartBatchOperation",
+    "StopBatchOperation",
+    "DescribeBatchOperation",
+    "ListBatchOperations",
 ];
 
 /// Where the per-method, per-SDK compatibility matrix lives (D1512).

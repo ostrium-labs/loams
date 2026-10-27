@@ -75,6 +75,7 @@ pub struct Frontend {
     pub(crate) tokens: TokenKeys,
     pub(crate) queries: Queries,
     pub(crate) config: FrontendConfig,
+    pub(crate) batches: crate::batch::Batches,
     namespaces: Mutex<HashMap<String, NamespaceRecord>>,
 }
 
@@ -172,6 +173,7 @@ impl Frontend {
             tokens,
             queries: Queries::default(),
             config,
+            batches: crate::batch::Batches::default(),
             namespaces: Mutex::new(HashMap::new()),
         }
     }
@@ -1712,6 +1714,42 @@ impl WorkflowService for WorkflowServiceImpl {
         let r = req.into_inner();
         self.0.namespace(&p, &r.namespace).await?;
         Ok(Response::new(crate::namespaces::reachability(&r)))
+    }
+
+    async fn start_batch_operation(
+        &self,
+        req: Request<StartBatchOperationRequest>,
+    ) -> Result<Response<StartBatchOperationResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        let r = req.into_inner();
+        self.0.start_batch(&p, r).await.map(Response::new)
+    }
+
+    async fn stop_batch_operation(
+        &self,
+        req: Request<StopBatchOperationRequest>,
+    ) -> Result<Response<StopBatchOperationResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        let r = req.into_inner();
+        self.0.stop_batch(&p, r).await.map(Response::new)
+    }
+
+    async fn describe_batch_operation(
+        &self,
+        req: Request<DescribeBatchOperationRequest>,
+    ) -> Result<Response<DescribeBatchOperationResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        let r = req.into_inner();
+        self.0.describe_batch(&p, r).await.map(Response::new)
+    }
+
+    async fn list_batch_operations(
+        &self,
+        req: Request<ListBatchOperationsRequest>,
+    ) -> Result<Response<ListBatchOperationsResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        let r = req.into_inner();
+        self.0.list_batches(&p, r).await.map(Response::new)
     }
 
     async fn reset_sticky_task_queue(

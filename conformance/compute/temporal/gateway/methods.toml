@@ -184,3 +184,19 @@ note = "TMP-api (D2088): unit tests only; versioning reads answer no sets, no ru
 [[method]]
 name = "GetWorkerTaskReachability"
 note = "TMP-api (D2088): unit tests only; versioning reads answer no sets, no rules, all reachable"
+
+[[method]]
+name = "StartBatchOperation"
+note = "TMP-api (D2230): unit tests only; listed executions, terminate/cancel/signal, jobs in gateway memory"
+
+[[method]]
+name = "StopBatchOperation"
+note = "TMP-api (D2230): unit tests only; listed executions, terminate/cancel/signal, jobs in gateway memory"
+
+[[method]]
+name = "DescribeBatchOperation"
+note = "TMP-api (D2230): unit tests only; listed executions, terminate/cancel/signal, jobs in gateway memory"
+
+[[method]]
+name = "ListBatchOperations"
+note = "TMP-api (D2230): unit tests only; listed executions, terminate/cancel/signal, jobs in gateway memory"
