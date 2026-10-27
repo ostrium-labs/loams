@@ -35,7 +35,7 @@ export function DelimitedTablePreview(props: {
               <tr>
                 {header.map((cell, columnIndex) => (
                   <th
-                    // biome-ignore lint/suspicious/noArrayIndexKey: columns have stable positions and may repeat a value
+                    // oxlint-disable-next-line react/no-array-index-key -- columns have stable positions and may repeat a value
                     key={columnIndex}
                     scope="col"
                     className="max-w-80 border-b border-rule bg-raised px-3 py-1.5 text-left align-bottom font-medium break-words whitespace-pre-wrap"
@@ -48,11 +48,11 @@ export function DelimitedTablePreview(props: {
           ) : null}
           <tbody>
             {body.map((row, rowIndex) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: rows have stable positions and may repeat
+              // oxlint-disable-next-line react/no-array-index-key -- rows have stable positions and may repeat
               <tr key={rowIndex} className="even:bg-surface">
                 {row.map((cell, columnIndex) => (
                   <td
-                    // biome-ignore lint/suspicious/noArrayIndexKey: columns have stable positions and may repeat a value
+                    // oxlint-disable-next-line react/no-array-index-key -- columns have stable positions and may repeat a value
                     key={columnIndex}
                     className="max-w-80 border-b border-rule-soft px-3 py-1.5 align-top break-words whitespace-pre-wrap tabular-nums"
                   >

@@ -1,0 +1,18 @@
+# The Loams Spark Connect proxy on Kubernetes (design 81 R8, SP-a D1998).
+# PREVIEW: not yet run end to end.
+#
+# Per-instance objects (the Sail or Apache Spark server, its RBAC, Services
+# and NetworkPolicy) are not here: the engines facade renders them per
+# instance with loams_spark::k8s::render and applies them in the instance's
+# namespace (`loams-<namespace>`); crates/loams-spark/src/k8s.rs lists them.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: loams-system
+resources:
+  - proxy.yaml
+configMapGenerator:
+  - name: loams-spark-proxy
+    files:
+      - proxy.toml
+generatorOptions:
+  disableNameSuffixHash: false

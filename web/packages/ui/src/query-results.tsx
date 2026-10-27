@@ -148,7 +148,7 @@ export function QueryResults({
           className="loams-results-scroll"
           style={{ maxHeight: RESULT_ROW_HEIGHT * (RESULT_VIEW_ROWS + 1) + 2 }}
           onScroll={(e) => setTop(e.currentTarget.scrollTop)}
-          // biome-ignore lint/a11y/noNoninteractiveTabindex: a scroll region must take focus
+          // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a scroll region must take focus
           tabIndex={0}
           aria-labelledby={caption}
         >
@@ -168,7 +168,7 @@ export function QueryResults({
                 </th>
                 {columns.map((c, i) => (
                   <th
-                    // biome-ignore lint/suspicious/noArrayIndexKey: columns can repeat names
+                    // oxlint-disable-next-line react/no-array-index-key -- columns can repeat names
                     key={i}
                     scope="col"
                     className={isNumericType(c.type) ? 'loams-num' : undefined}
@@ -196,7 +196,7 @@ export function QueryResults({
                         text.length > MAX_CELL_TEXT ? `${text.slice(0, MAX_CELL_TEXT)}…` : text;
                       return (
                         <td
-                          // biome-ignore lint/suspicious/noArrayIndexKey: positional cells
+                          // oxlint-disable-next-line react/no-array-index-key -- positional cells
                           key={k}
                           className={
                             v === null || v === undefined

@@ -4,7 +4,7 @@
 
 import type { DashboardSpec } from '@loams-core/types';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { MetricsPage } from '../src/MetricsPage.js';
 import { createMockMetricsClient } from '../src/mock.js';
 

@@ -1,7 +1,7 @@
 import type { Transport } from '@connectrpc/connect';
 import type { Context } from '@loams/cordis';
 import type { SlotRegistry } from '@loams/slots';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import train from '../../../../release/upgrade-path.toml?raw';
 import {
   boot,

@@ -2,7 +2,7 @@ import { create } from '@bufbuild/protobuf';
 import { timestampFromDate } from '@bufbuild/protobuf/wkt';
 import { Code, ConnectError } from '@connectrpc/connect';
 import { admin, auth, instance } from '@loams/proto';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { type AccountState, createSession, loadAccount } from '../src/index.js';
 
 const account = create(auth.SessionSchema, {

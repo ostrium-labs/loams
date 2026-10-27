@@ -43,8 +43,29 @@
 #   --client-id ID          azure: the user-assigned identity's client ID
 #   --secret-prefix P       the secrets' prefix [default: loams/<dir> on aws,
 #                           loams-<dir> elsewhere]
+#   --kafka K               the Kafka endpoint for your apps and Loams' connectors:
+#                           none, iggy (the `kafka` profile: Kafka clients on the VM),
+#                           confluent (the `connectors` profile: `loams-fabric connect`
+#                           to and from your Confluent Cloud cluster), or iggy,confluent
+#                           [default: none]; docs/guides/kafka.md compares them
+#   --confluent-bootstrap B with confluent: the cluster's bootstrap endpoint, host:port
+#                           (the confluent module's bootstrap_endpoint; required)
+#   --confluent-integration I
+#                           with confluent: the integration whose key the VM fetches,
+#                           secrets/connect/0/confluent-<I>/ [default: confluent]
+#   --confluent-topics "T[=S],..."
+#                           with confluent: a source instance per topic T, into the
+#                           Loams stream S [default S: T]
+#   --confluent-sinks "S=T,..."
+#                           with confluent: a sink instance per Loams stream S, to topic T
+#                           (at least one of --confluent-topics and --confluent-sinks)
+#   --confluent-prefix P    with confluent: consumer group and transactional id prefix,
+#                           the module's consumer_group_prefix [default: loams-<dir>-]
+#   --confluent-rate N      with confluent: each instance's limit in bytes a second
+#                           [default: 65536, the example's bound, D1828]
 #   --render-env-only       print the .env and secrets/engine.env that --cloud would
-#                           write (secret values as <from secret store>); connect to nothing
+#                           write (secret values as <from secret store>), and with
+#                           --kafka confluent the instance files; connect to nothing
 #   --reconfigure           rewrite an existing .env on the host
 #   -y, --yes               do not ask; take keys from flags or the environment
 #
@@ -77,6 +98,13 @@ vault=""
 client_id=""
 secret_prefix=""
 render_only=0
+kafka="none"
+cf_bootstrap=""
+cf_integration=""
+cf_topics=""
+cf_sinks=""
+cf_prefix=""
+cf_rate=""
 
 die() { echo "install.sh: $*" >&2; exit 1; }
 say() { echo "==> $*"; }
@@ -105,9 +133,16 @@ while (($#)); do
     --client-id) client_id="${2-}"; shift 2 ;;
     --secret-prefix) secret_prefix="${2:?}"; shift 2 ;;
     --render-env-only) render_only=1; shift ;;
+    --kafka) kafka="${2:?}"; shift 2 ;;
+    --confluent-bootstrap) cf_bootstrap="${2:?}"; shift 2 ;;
+    --confluent-integration) cf_integration="${2:?}"; shift 2 ;;
+    --confluent-topics) cf_topics="${2:?}"; shift 2 ;;
+    --confluent-sinks) cf_sinks="${2:?}"; shift 2 ;;
+    --confluent-prefix) cf_prefix="${2:?}"; shift 2 ;;
+    --confluent-rate) cf_rate="${2:?}"; shift 2 ;;
     --reconfigure) reconfigure=1; shift ;;
     -y|--yes) assume_yes=1; shift ;;
-    -h|--help) sed -n '2,55p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,72p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) die "unknown option: $1" ;;
     *) [[ -z "$target" ]] || die "one target only"; target="$1"; shift ;;
   esac
@@ -122,6 +157,72 @@ profiles="${profiles#,}"
 [[ "$version" =~ ^[A-Za-z0-9._-]+$ ]] || die "--version is not an image tag"
 [[ -f "$release/compose.yaml" && -f "$deploy/loams-postgres-dev/compose.yaml" ]] \
   || die "run from a Loams checkout: $release/compose.yaml or the Postgres stack is missing"
+
+# --- --kafka: the Kafka endpoint (CC1 Task 8, D1820) ------------------------------
+# Iggy and Confluent are each named: there is no "both" or "all", so a second
+# endpoint (and its bill) is never turned on by a shorthand.
+use_iggy=0; use_confluent=0
+case "$kafka" in
+  none) ;;
+  iggy) use_iggy=1 ;;
+  confluent) use_confluent=1 ;;
+  iggy,confluent|confluent,iggy) use_iggy=1; use_confluent=1 ;;
+  *) die "--kafka is none, iggy, confluent or iggy,confluent (each named)" ;;
+esac
+((use_iggy)) && profiles="${profiles:+$profiles,}kafka"
+cf_dir_name="${dir##*/}"; cf_dir_name="${cf_dir_name:-loams}"
+cf_instdir=""
+if ((use_confluent)); then
+  profiles="${profiles:+$profiles,}connectors"
+  [[ -n "$cf_bootstrap" ]] || die "--kafka confluent needs --confluent-bootstrap (the module's bootstrap_endpoint)"
+  # Confluent's bootstrap_endpoint sometimes carries SASL_SSL:// (CC0 R0.12).
+  cf_bootstrap="$(sed -E 's#(^|,)[[:space:]]*[A-Za-z_]+://#\1#g; s/[[:space:]]//g' <<<"$cf_bootstrap")"
+  [[ "$cf_bootstrap" =~ ^[A-Za-z0-9.-]+:[0-9]{1,5}(,[A-Za-z0-9.-]+:[0-9]{1,5})*$ ]] \
+    || die "--confluent-bootstrap is host:port (comma separated)"
+  cf_integration="${cf_integration:-confluent}"
+  [[ "$cf_integration" =~ ^[a-z0-9][a-z0-9-]{0,30}$ ]] \
+    || die "--confluent-integration is lowercase letters, digits and -, at most 31"
+  cf_prefix="${cf_prefix:-loams-$cf_dir_name-}"
+  [[ "$cf_prefix" =~ ^[A-Za-z0-9._-]{1,200}$ ]] || die "--confluent-prefix may hold only letters, digits and ._-"
+  cf_rate="${cf_rate:-65536}"
+  [[ "$cf_rate" =~ ^[1-9][0-9]{3,11}$ ]] && ((cf_rate >= 1024)) || die "--confluent-rate is bytes a second, at least 1024"
+  [[ -n "$cf_topics$cf_sinks" ]] || die "--kafka confluent needs --confluent-topics or --confluent-sinks"
+  cf_instdir="$(mktemp -d)"
+  trap 'rm -rf "$cf_instdir"' EXIT   # cleanup (below) takes it over
+  # An instance name: [a-z0-9-], at most 63, from the integration and the topic.
+  cf_name() {
+    local t pre="cf-$cf_integration-" sfx="-$2"
+    t="$(tr 'A-Z._' 'a-z--' <<<"$1" | tr -cs '\na-z0-9-' '-' | sed -E 's/^-+//; s/-+$//')"
+    t="${t:0:$((63 - ${#pre} - ${#sfx}))}"; t="${t%-}"
+    echo "$pre${t:-x}$sfx"
+  }
+  cf_render() { # <template> <name> <topic> <stream>
+    local out="$cf_instdir/$2.yaml"
+    [[ ! -e "$out" ]] || die "two connector instances would be named $2: rename a topic or stream"
+    sed -e "s|@NAME@|$2|g" -e "s|@TOPIC@|$3|g" -e "s|@STREAM@|$4|g" \
+      -e "s|@BOOTSTRAP@|$cf_bootstrap|g" -e "s|@INTEGRATION@|$cf_integration|g" \
+      -e "s|@PREFIX@|$cf_prefix|g" -e "s|@RATE@|$cf_rate|g" "$release/connect/templates/$1" >"$out"
+    chmod 0644 "$out"   # connect reads it as uid 10001
+  }
+  name_ok='^[A-Za-z0-9._-]{1,249}$'
+  IFS=',' read -r -a cf_list <<<"$cf_topics"
+  for e in "${cf_list[@]}"; do
+    [[ -n "$e" ]] || continue
+    topic="${e%%=*}"; stream="${e#*=}"
+    [[ "$topic" =~ $name_ok && "$stream" =~ $name_ok ]] || die "--confluent-topics: '$e' is not T or T=S (letters, digits and ._-)"
+    cf_render confluent-source.yaml "$(cf_name "$topic" in)" "$topic" "$stream"
+  done
+  IFS=',' read -r -a cf_list <<<"$cf_sinks"
+  for e in "${cf_list[@]}"; do
+    [[ -n "$e" ]] || continue
+    [[ "$e" == *=* ]] || die "--confluent-sinks: '$e' is not S=T"
+    stream="${e%%=*}"; topic="${e#*=}"
+    [[ "$topic" =~ $name_ok && "$stream" =~ $name_ok ]] || die "--confluent-sinks: '$e' is not S=T (letters, digits and ._-)"
+    cf_render confluent-sink.yaml "$(cf_name "$topic" out)" "$topic" "$stream"
+  done
+elif [[ -n "$cf_bootstrap$cf_integration$cf_topics$cf_sinks$cf_prefix$cf_rate" ]]; then
+  die "the --confluent-* options go with --kafka confluent (or iggy,confluent)"
+fi
 
 # --- --cloud: the bucket and identity settings, checked ---------------------------
 engine_env_lines=""
@@ -155,17 +256,42 @@ elif [[ -n "$bucket$region$project$storage_account$vault$client_id$secret_prefix
   die "--bucket, --region, --project, --storage-account, --vault, --client-id and --secret-prefix go with --cloud"
 fi
 
+# The connect socket takes API keys only (CC1 ruling R1.1), so the connectors
+# profile needs apikey in the engine's auth mode beside the tailnet's.
+auth_mode=""
+((use_confluent)) && auth_mode="tailscale,apikey"
+
 if ((render_only)); then
-  [[ -n "$cloud" ]] || die "--render-env-only needs --cloud"
-  echo "# .env (keys that --cloud sets)"
+  [[ -n "$cloud" || "$kafka" != none ]] || die "--render-env-only needs --cloud or --kafka"
+  if [[ -n "$cloud" ]]; then
+    echo "# .env (keys that --cloud sets)"
+  else
+    echo "# .env (keys that --kafka sets)"
+  fi
   echo "LOAMS_VERSION=$version"
-  echo "LOAMS_BUCKET=$bucket"
+  [[ -z "$cloud" ]] || echo "LOAMS_BUCKET=$bucket"
   echo "COMPOSE_PROFILES=$profiles"
-  echo "TS_AUTHKEY=<from secret store>"
-  echo "LOAMS_SETUP_TOKEN=<from secret store>"
-  echo "# secrets/engine.env"
-  [[ -z "$engine_env_lines" ]] || echo "$engine_env_lines"
-  echo "# secrets: $secret_prefix (tailnet-authkey, setup-token, api-keys optional) in the $cloud secret store"
+  [[ -z "$auth_mode" ]] || echo "LOAMS_AUTH_MODE=$auth_mode"
+  if [[ -n "$cloud" ]]; then
+    echo "TS_AUTHKEY=<from secret store>"
+    echo "LOAMS_SETUP_TOKEN=<from secret store>"
+    echo "# secrets/engine.env"
+    [[ -z "$engine_env_lines" ]] || echo "$engine_env_lines"
+    echo "# secrets: $secret_prefix (tailnet-authkey, setup-token, api-keys optional) in the $cloud secret store"
+    if ((use_confluent)); then
+      echo "# /etc/loams-byoc/config.env (Confluent)"
+      echo "CONNECT_NAMESPACE=0"
+      echo "CONFLUENT_INTEGRATIONS=$cf_integration"
+      echo "# secrets: $secret_prefix/confluent-$cf_integration-{api-key,api-secret} (loams byoc confluent key create)"
+    fi
+  fi
+  if ((use_confluent)); then
+    echo "# secrets/connect/engine-key and connect-admin-token: made on the host at start"
+    for f in "$cf_instdir"/*.yaml; do
+      echo "# connect/instances/${f##*/}"
+      cat "$f"
+    done
+  fi
   exit 0
 fi
 
@@ -181,7 +307,10 @@ remote() {
   local script="$1"; shift
   ssh -t "${ssh_opts[@]}" "$target" "bash -c $(printf '%q' "$script") loams-install $(printf '%q ' "$@")"
 }
-cleanup() { ssh "${ssh_opts[@]}" -O exit "$target" >/dev/null 2>&1 || true; }
+cleanup() {
+  [[ -z "$cf_instdir" ]] || rm -rf "$cf_instdir"
+  ssh "${ssh_opts[@]}" -O exit "$target" >/dev/null 2>&1 || true
+}
 trap cleanup EXIT
 
 say "connecting to $target"
@@ -209,13 +338,14 @@ say "copying the compose bundle to $target:$dir"
 tar -C "$deploy" -czf - \
   --exclude='release/.env' --exclude='release/secrets/api-keys' --exclude='release/secrets/engine.env' \
   --exclude='release/build.sh' --exclude='release/Containerfile.*' \
+  --exclude='release/secrets/connect' --exclude='release/connect/instances/*.yaml' \
   release loams-postgres-dev \
   | ssh_cmd "mkdir -p $(printf '%q' "$dir") && tar -xzf - -C $(printf '%q' "$dir")"
 
 if ssh_cmd "test -f $(printf '%q' "$dir")/release/.env" && ((!reconfigure)); then
   say "keeping the existing .env (pass --reconfigure to rewrite it)"
   if [[ -n "$profiles" ]] || ((!postgres)); then
-    say "warning: --tikv, --rustfs, --all, --profiles and --no-postgres only go into a new .env; the existing one's COMPOSE_PROFILES stays"
+    say "warning: --tikv, --rustfs, --all, --profiles, --kafka and --no-postgres only go into a new .env; the existing one's COMPOSE_PROFILES stays"
   fi
 else
   [[ -n "$headscale" ]] && login_server="$headscale"
@@ -256,6 +386,7 @@ else
     setkv HEADSCALE_BIND "0.0.0.0"
   fi
   setkv COMPOSE_PROFILES "$profiles"
+  [[ -z "$auth_mode" ]] || setkv LOAMS_AUTH_MODE "$auth_mode"
   if ((!postgres)); then
     setkv LOAMS_POSTGRES_COMPOSE "./postgres-off.yaml"
   fi
@@ -265,6 +396,19 @@ fi
 # An empty key file, owner-only until the start step gives it to the engine's
 # group.
 ssh_cmd "umask 077 && touch $(printf '%q' "$dir")/release/secrets/api-keys"
+
+if ((use_confluent)); then
+  # Instance files the host already has are kept (the user may have edited
+  # them) unless --reconfigure.
+  keep="--skip-old-files"; ((reconfigure)) && keep="--overwrite"
+  say "writing $dir/release/connect/instances ($(find "$cf_instdir" -name '*.yaml' | wc -l | tr -d ' ') Confluent instances)"
+  # The files only, not the directory: its mode stays the bundle's.
+  (cd "$cf_instdir" && tar -czf - -- *.yaml) \
+    | ssh_cmd "mkdir -p $(printf '%q' "$dir")/release/connect/instances && tar -xzf - $keep --no-same-owner -C $(printf '%q' "$dir")/release/connect/instances"
+  if [[ -z "$cloud" ]]; then
+    say "put the Confluent API key's id and secret in $dir/release/secrets/connect/0/confluent-$cf_integration/username and password (mode 0600, owner uid 10001): without --cloud nothing fetches them"
+  fi
+fi
 
 if [[ -n "$cloud" ]]; then
   say "setting up the $cloud identity and secrets on $target"
@@ -279,10 +423,17 @@ if [[ -n "$cloud" ]]; then
     echo "GCP_PROJECT=$project"
     echo "AZURE_VAULT=$vault"
     echo "AZURE_CLIENT_ID=$client_id"
+    # The Confluent key's secrets -> secrets/connect/0/confluent-<i>/ (D1827).
+    if ((use_confluent)); then
+      echo "CONNECT_NAMESPACE=0"
+      echo "CONFLUENT_INTEGRATIONS=$cf_integration"
+    fi
   } >"$cfg"
   ssh_cmd "cat > loams-byoc-config.tmp" <"$cfg"
   ssh_cmd "cat > loams-byoc-secrets.tmp" <"$deploy/byoc/lib/loams-byoc-secrets"
   ssh_cmd "cat > loams-byoc.service.tmp" <"$deploy/byoc/lib/loams-byoc.service"
+  ssh_cmd "cat > loams-byoc-confluent.service.tmp" <"$deploy/byoc/lib/loams-byoc-confluent.service"
+  ssh_cmd "cat > loams-byoc-confluent.timer.tmp" <"$deploy/byoc/lib/loams-byoc-confluent.timer"
   rm -f "$cfg"
   # shellcheck disable=SC2016 # expanded on the host
   remote '
@@ -294,9 +445,14 @@ $sudo install -d -m 755 /etc/loams-byoc
 { cat loams-byoc-config.tmp; echo "LOAMS_BYOC_STACK=$abs/release"; echo "LOAMS_BYOC_OWNER=$(id -un)"; } | $sudo tee /etc/loams-byoc/config.env >/dev/null
 $sudo install -m 755 loams-byoc-secrets.tmp /usr/local/bin/loams-byoc-secrets
 sed "s#^WorkingDirectory=.*#WorkingDirectory=$abs/release#" loams-byoc.service.tmp | $sudo tee /etc/systemd/system/loams-byoc.service >/dev/null
-rm -f loams-byoc-config.tmp loams-byoc-secrets.tmp loams-byoc.service.tmp
+$sudo install -m 644 loams-byoc-confluent.service.tmp /etc/systemd/system/loams-byoc-confluent.service
+$sudo install -m 644 loams-byoc-confluent.timer.tmp /etc/systemd/system/loams-byoc-confluent.timer
+rm -f loams-byoc-config.tmp loams-byoc-secrets.tmp loams-byoc.service.tmp \
+  loams-byoc-confluent.service.tmp loams-byoc-confluent.timer.tmp
 $sudo systemctl daemon-reload
 $sudo systemctl enable loams-byoc.service   # at boot: fetch the secrets, then compose up
+# every 5 minutes: rotated Confluent keys into the connect role files (no-op without integrations)
+$sudo systemctl enable --now loams-byoc-confluent.timer
 # The first fetch happens here, so the first start already has the tailnet key.
 $sudo /usr/local/bin/loams-byoc-secrets
 ' "$dir"
@@ -338,6 +494,37 @@ if [ -z "$image" ] \
          -v "$PWD/secrets/api-keys:/run/api-keys" "$image" 10001 /run/api-keys \
   || ! chmod 0640 secrets/api-keys; then
   echo "warning: the engine (gid 10001) cannot read secrets/api-keys yet; see API keys in README.md before turning API keys on" >&2
+fi
+# The connectors profile (CC1 Task 8): connect reaches the engine with its own
+# API key, secrets/connect/engine-key, and guards its admin API with
+# secrets/connect/connect-admin-token. Both are made once, owner uid 10001 and
+# mode 0600 like the secret fetcher files (as root in the engine image, so
+# that uid 10001 is the containers one under rootless Docker too); the key
+# hash goes to secrets/api-keys. Neither value is printed.
+if grep -Eq "^COMPOSE_PROFILES=([^#]*,)?connectors(,|[[:space:]]*$)" .env; then
+  mkdir -p secrets/connect
+  if [ -z "$image" ]; then
+    echo "warning: no engine image: make secrets/connect/engine-key by hand (docs/guides/connectors/connect-role.md)" >&2
+  else
+    c=(--rm -i --user 0:0 --network none --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE
+       --cap-add FOWNER --security-opt no-new-privileges:true --entrypoint sh
+       -v "$PWD/secrets/connect:/c" "$image")
+    if [ "$($docker run "${c[@]}" -c "test -s /c/engine-key && echo have" </dev/null)" != have ]; then
+      errf="$(mktemp)"
+      if key="$($docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges:true \
+                 "$image" auth new-key --label connect 2>"$errf")" && [ -n "$key" ] \
+         && line="$(grep -E "^[^ ]+ [\$]argon2id" "$errf" | tail -n 1)" && [ -n "$line" ]; then
+        printf "%s\n" "$line" >>secrets/api-keys
+        printf "%s" "$key" | $docker run "${c[@]}" -c "umask 077 && cat >/c/engine-key && chown 10001:10001 /c/engine-key"
+        echo "made the connect role API key: secrets/connect/engine-key, its hash in secrets/api-keys"
+      else
+        echo "warning: could not make the connect role API key:" >&2; cat "$errf" >&2
+      fi
+      key=""; rm -f "$errf"
+    fi
+    $docker run "${c[@]}" -c "umask 077; test -s /c/connect-admin-token || od -An -N32 -tx1 /dev/urandom | tr -d \" \\n\" >/c/connect-admin-token; chown 10001:10001 /c /c/connect-admin-token && chmod 0700 /c" </dev/null \
+      || echo "warning: could not make secrets/connect/connect-admin-token" >&2
+  fi
 fi
 $dc up -d $services
 echo "waiting for the engine"

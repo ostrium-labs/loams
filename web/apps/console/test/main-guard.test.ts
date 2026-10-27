@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import desktopTs from '../src/cordis/desktop.ts?raw';
 import mainTsx from '../src/cordis/main.tsx?raw';
 import modulesTs from '../src/cordis/modules.ts?raw';

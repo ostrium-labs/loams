@@ -1,5 +1,5 @@
 import { ModeController, SHELL_COMMAND_EVENT } from '@loams/console-host';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import type { ShellCommand } from './index.js';
 import { wireShellCommands } from './index.js';
 

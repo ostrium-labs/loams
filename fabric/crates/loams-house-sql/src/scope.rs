@@ -1129,32 +1129,32 @@ impl Walk for ColumnsIn<'_> {
             }
             return Ok(());
         }
-        if let Expr::Function(f) = e {
-            if let FunctionArguments::List(list) = &mut f.args {
-                let mut args = Vec::new();
-                for a in std::mem::take(&mut list.args) {
-                    match a {
-                        FunctionArg::Unnamed(FunctionArgExpr::Expr(x)) if is_columns(&x) => {
-                            let Expr::Function(cf) = &x else {
-                                unreachable!()
-                            };
-                            match matched(self.sources, &plain_args(cf))? {
-                                Some(found) => {
-                                    args.extend(found.into_iter().map(|m| {
-                                        FunctionArg::Unnamed(FunctionArgExpr::Expr(m.expr))
-                                    }))
-                                }
-                                None => {
-                                    self.failed = true;
-                                    args.push(FunctionArg::Unnamed(FunctionArgExpr::Expr(x)));
-                                }
+        if let Expr::Function(f) = e
+            && let FunctionArguments::List(list) = &mut f.args
+        {
+            let mut args = Vec::new();
+            for a in std::mem::take(&mut list.args) {
+                match a {
+                    FunctionArg::Unnamed(FunctionArgExpr::Expr(x)) if is_columns(&x) => {
+                        let Expr::Function(cf) = &x else {
+                            unreachable!()
+                        };
+                        match matched(self.sources, &plain_args(cf))? {
+                            Some(found) => args.extend(
+                                found
+                                    .into_iter()
+                                    .map(|m| FunctionArg::Unnamed(FunctionArgExpr::Expr(m.expr))),
+                            ),
+                            None => {
+                                self.failed = true;
+                                args.push(FunctionArg::Unnamed(FunctionArgExpr::Expr(x)));
                             }
                         }
-                        other => args.push(other),
                     }
+                    other => args.push(other),
                 }
-                list.args = args;
             }
+            list.args = args;
         }
         children(e, self)
     }
