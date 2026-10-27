@@ -452,11 +452,13 @@ assert gw["pull_policy"] == "never", gw.get("pull_policy")
 assert gw["build"]["dockerfile"] == "deploy/release/Containerfile.loams-temporal", gw["build"]
 EOF
   test -f "$OC_RELEASE/Containerfile.loams-temporal"
-  grep -q 'loams|loams-fabric|loams-agentd|loams-pg-control|loams-temporal|' "$OC_RELEASE/build.sh"
-  grep -q 'images=(loams loams-fabric loams-agentd loams-pg-control loams-temporal)' "$OC_RELEASE/build.sh"
+  # build.sh accepts loams-temporal and builds it by default; both release
+  # workflows build and attest it (other images may sit beside it).
+  grep -qE '^    loams\|[a-z|-]*\|loams-temporal\|' "$OC_RELEASE/build.sh"
+  grep -qE '^\(\(\$\{#images\[@\]\}\)\) \|\| images=\(.* loams-temporal( |\))' "$OC_RELEASE/build.sh"
   local wf
   for wf in release-images release-github; do
-    grep -q 'image: \[loams, loams-fabric, loams-agentd, loams-pg-control, loams-temporal\]' "$ROOT/.github/workflows/$wf.yml" ||
+    grep -qE 'image: \[loams, .*loams-temporal(, |\])' "$ROOT/.github/workflows/$wf.yml" ||
       { echo "$wf.yml does not build loams-temporal"; return 1; }
   done
   # The first draft's conformance-only image name is gone.

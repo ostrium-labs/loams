@@ -497,6 +497,9 @@ jobs:
       # behind its own feature.
       - name: clippy (loams-gateway temporal module)
         run: cargo clippy -p loams-gateway --features temporal --all-targets --locked -- -D warnings
+      # The loams-gateway image's feature set (deploy/release/Containerfile.loams-gateway).
+      - name: clippy (loams-gateway with the image's features)
+        run: cargo clippy -p loams-gateway --features spark,temporal --all-targets --locked -- -D warnings
       # The release images build `loams` with these feature sets (deploy/release/Containerfile.*);
       # `postgres,tikv` turns on loams-kv's TiKV store without loams-live's `tikv`, a combination
       # nothing else here builds (v0.1.0-preview.2's loams-pg-control image broke on it).

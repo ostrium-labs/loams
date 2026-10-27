@@ -35,7 +35,7 @@ Built by [`build.sh`](build.sh) from `Containerfile.<name>` and published to
 `ghcr.io/ostrium-labs` as `:<version>`, `:<major>.<minor>` and `:latest` (a
 prerelease gets `:preview` instead), for linux/amd64 and
 linux/arm64. Each runs as uid 10001 on debian-slim, with tini as PID 1 and a
-healthcheck (except `loams-temporal`, which has no client mode yet).
+healthcheck, except `loams-gateway` and `loams-temporal`, which have no client mode yet.
 
 | Image | Contains |
 |---|---|
@@ -43,6 +43,7 @@ healthcheck (except `loams-temporal`, which has no client mode yet).
 | `loams-fabric` | `loams-fabric house` and `loams-house-worker`, with the digest-pinned libchdb; workers sealed with `--sandbox pods` by default |
 | `loams-agentd` | the agent daemon |
 | `loams-pg-control` | `loams` with features `postgres,tikv` and the standalone `docker-compose` CLI: `pg-control` and `pg-runner` (`--profile postgres-control`; from 0.1.0) |
+| `loams-gateway` | `loams-gateway` with features `spark,temporal` (preview): the Postgres front door, managed RisingWave behind Loams auth, Spark Connect and Temporal modules; compose's `engine-gateway`. It has no healthcheck; use the admin port's `/healthz` |
 | `loams-temporal` | the Temporal gateway (preview, design 74): the standalone `loams-temporal` binary, run by `compose.compute.yaml`'s profile `temporal-gateway` (below; from the release after 0.1.2) |
 
 ```sh
@@ -286,15 +287,17 @@ engine profiles need `rustfs`, because engine state lives in the bucket
 ```sh
 docker compose -f compose.yaml -f compose.lake.yaml -f compose.risingwave.yaml \
   --profile rustfs --profile risingwave up -d
-docker compose -f compose.yaml -f compose.lake.yaml -f compose.risingwave.yaml \
-  run --rm --no-deps --entrypoint psql engines-init -h risingwave -p 4566 -U root -d dev
+psql "host=127.0.0.1 port=4566 dbname=dev user=me sslmode=require"   # password: ENGINE_GATEWAY_KEY
 ```
 
 The meta store is the database `rw_default` on Loams Postgres (`compute1`).
-Hummock writes to `loams-engines/engines/default/risingwave/`. No port is
-published: the frontend is `risingwave:4566` on the compose network. A
-loopback port through `engine-gateway`, with Loams API keys, comes with the
-gateway's `risingwave` module. Set `RISINGWAVE_META_PASSWORD` (letters and
+Hummock writes to `loams-engines/engines/default/risingwave/`. The only
+published port is `engine-gateway`'s 127.0.0.1:4566 (image `loams-gateway`).
+It terminates TLS with a self-signed certificate and checks the password
+against `ENGINE_GATEWAY_KEY`, then logs in to RisingWave as `loams_gateway`.
+On a stack with no published image yet, `docker compose build engine-gateway`
+builds it from source. Set `ENGINE_GATEWAY_KEY`, `RISINGWAVE_ROOT_PASSWORD`,
+`RISINGWAVE_GATEWAY_PASSWORD` and `RISINGWAVE_META_PASSWORD` (letters and
 digits only) and the RustFS keys in `.env` for anything but a test stack.
 Kubernetes uses the chart `deploy/helm/loams-risingwave`, one release per
 engine instance.
