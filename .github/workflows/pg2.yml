@@ -157,12 +157,21 @@ jobs:
         run: web/packages/proto/node_modules/.bin/buf lint
       # Against the pull request's base: a release pull request into main is
       # cut from dev and lacks what dev gained since, which is not a break.
+      # A push is checked against the commit it replaced (`before`), not the
+      # branch's current head: dev moves while a run waits, and a newer head's
+      # additions read as deletions from an older commit.
       - name: buf breaking (FILE, against the base branch)
         env:
           BASE: ${{ github.base_ref || 'dev' }}
+          BEFORE: ${{ github.event_name == 'push' && github.event.before || '' }}
         run: |
-          git fetch --no-tags origin "$BASE"
-          web/packages/proto/node_modules/.bin/buf breaking --against ".git#branch=origin/$BASE"
+          if [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ]; then
+            git fetch --no-tags origin "$BEFORE"
+            web/packages/proto/node_modules/.bin/buf breaking --against ".git#ref=$BEFORE"
+          else
+            git fetch --no-tags origin "$BASE"
+            web/packages/proto/node_modules/.bin/buf breaking --against ".git#branch=origin/$BASE"
+          fi
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2

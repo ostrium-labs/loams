@@ -68,11 +68,14 @@ describe('connector detail and configure form', () => {
 
   it('secret_fields_password_type', async () => {
     await openDetail('kafka');
-    const pw = screen.getByLabelText(/^password/) as HTMLInputElement;
+    // The SASL group's own fields: the schema registry's basic_auth has a
+    // username and password too, and username_secret starts with username.
+    const sasl = within(screen.getByRole('group', { name: /^sasl\b/ }));
+    const pw = sasl.getByLabelText(/^password\b/) as HTMLInputElement;
     expect(pw.type).toBe('password');
     const key = screen.getByLabelText(/^key_pem/) as HTMLInputElement;
     expect(key.type).toBe('password');
-    expect((screen.getByLabelText(/^username/) as HTMLInputElement).type).toBe('text');
+    expect((sasl.getByLabelText(/^username\b/) as HTMLInputElement).type).toBe('text');
   });
 
   it('secret values reach neither the YAML, the clipboard nor browser storage', async () => {
@@ -82,8 +85,10 @@ describe('connector detail and configure form', () => {
     set(/^brokers/, 'b1:9092');
     set(/^topics/, 'orders\nrefunds');
     set(/^group_id_prefix/, 'loams-dev');
-    set(/^username/, 'svc');
-    set(/^password/, 'hunter2-SECRET');
+    // The SASL group's fields (basic_auth has a username and password too).
+    const sasl = within(screen.getByRole('group', { name: /^sasl\b/ }));
+    fireEvent.change(sasl.getByLabelText(/^username\b/), { target: { value: 'svc' } });
+    fireEvent.change(sasl.getByLabelText(/^password\b/), { target: { value: 'hunter2-SECRET' } });
     set(/^key_pem/, '-----BEGIN PRIVATE KEY-----abc');
     await waitFor(() => expect(screen.getByText('Valid')).toBeTruthy());
     const text = yamlText();

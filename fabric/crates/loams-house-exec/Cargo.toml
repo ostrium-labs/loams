@@ -12,6 +12,9 @@ publish = false
 loams-house-types = { path = "../loams-house-types" }
 # UDF, UDAF and UDWF traits and the physical-plan operators. Apache-2.0.
 datafusion.workspace = true
+# The function registry the engine plans against (`Registry`) and the
+# functions' internal names. Apache-2.0.
+loams-house-sql = { path = "../loams-house-sql" }
 
 [lints]
 workspace = true

@@ -195,8 +195,18 @@ services:
   # §9.2). The stock image does not carry `edge3`, so each container installs
   # the pinned version with the release's constraints at start
   # (_PIP_ADDITIONAL_REQUIREMENTS, which Airflow documents for test stacks
-  # like this one; DX1 ruling T1.R2). DAGs come from AIRFLOW_DAGS_DIR.
-  airflow-api-server:
+  # like this one; DX1 ruling T1.R2). DAGs come from AIRFLOW_DAGS_DIR (the
+  # default LocalDagBundle); a GitDagBundle is set with
+  # AIRFLOW__DAG_PROCESSOR__DAG_BUNDLE_CONFIG_LIST (conformance/compute/airflow/
+  # compose.test.yaml shows one).
+  #
+  # The profile needs a bucket: RustFS of the `rustfs` profile by default, or
+  # any S3 endpoint in AIRFLOW_S3_ENDPOINT. Task logs go there once a task
+  # ends (remote logging), and so do XComs above AIRFLOW_XCOM_THRESHOLD bytes
+  # (XComObjectStorageBackend), so neither is lost with a worker. The
+  # one-shot `airflow-init` creates the buckets and runs `airflow db migrate`
+  # (compute/airflow/airflow-init.sh) before anything else starts.
+  airflow-init:
     <<: &airflow
       profiles: [airflow]
       image: ${AIRFLOW_IMAGE:?pass conformance/compute/pins.env with --env-file}
@@ -205,7 +215,7 @@ services:
         _PIP_ADDITIONAL_REQUIREMENTS: apache-airflow-providers-edge3==${AIRFLOW_EDGE3:?pass conformance/compute/pins.env with --env-file}
         PIP_CONSTRAINT: ${AIRFLOW_CONSTRAINTS:?pass conformance/compute/pins.env with --env-file}
         AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER:-airflow}:${AIRFLOW_DB_PASSWORD:-airflow}@${LOAMS_PG_HOST:-compute1}:${LOAMS_PG_PORT:-55433}/airflow
-        AIRFLOW__CORE__EXECUTOR: airflow.providers.edge3.executors.EdgeExecutor
+        AIRFLOW__CORE__EXECUTOR: ${AIRFLOW_EXECUTOR:-airflow.providers.edge3.executors.EdgeExecutor}
         AIRFLOW__CORE__LOAD_EXAMPLES: "false"
         AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
         AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-api-server:8080/execution/
@@ -214,14 +224,35 @@ services:
         AIRFLOW__EDGE__API_ENABLED: "true"
         AIRFLOW__EDGE__API_URL: http://airflow-api-server:8080/edge_worker/v1/rpcapi
         AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
+        # HA schedulers lock rows (SELECT ... FOR UPDATE SKIP LOCKED); the default, stated.
+        AIRFLOW__SCHEDULER__USE_ROW_LEVEL_LOCKING: "true"
+        # The bucket: remote task logs and object-storage XComs.
+        AIRFLOW_CONN_LOAMS_S3: '{"conn_type": "aws", "login": "${RUSTFS_ACCESS_KEY:-rustfsadmin}", "password": "${RUSTFS_SECRET_KEY:-rustfsadmin}", "extra": {"endpoint_url": "${AIRFLOW_S3_ENDPOINT:-http://rustfs:9000}", "region_name": "us-east-1"}}'
+        AIRFLOW__LOGGING__REMOTE_LOGGING: "true"
+        AIRFLOW__LOGGING__REMOTE_LOG_CONN_ID: loams_s3
+        AIRFLOW__LOGGING__REMOTE_BASE_LOG_FOLDER: s3://airflow-logs/logs
+        AIRFLOW__CORE__XCOM_BACKEND: airflow.providers.common.io.xcom.backend.XComObjectStorageBackend
+        AIRFLOW__COMMON_IO__XCOM_OBJECTSTORAGE_PATH: s3://loams_s3@airflow-xcom/xcom
+        AIRFLOW__COMMON_IO__XCOM_OBJECTSTORAGE_THRESHOLD: ${AIRFLOW_XCOM_THRESHOLD:-1024}
       volumes:
         - ${AIRFLOW_DAGS_DIR:-./compute/airflow/dags}:/opt/airflow/dags:ro
-      depends_on:
-        compute-init:
+        - ./compute/airflow/airflow-init.sh:/compute/airflow/airflow-init.sh:ro
+      depends_on: &airflow-deps
+        airflow-init:
           condition: service_completed_successfully
       cap_drop: [ALL]
       security_opt:
         - no-new-privileges:true
+    restart: "no"
+    command: ["bash", "/compute/airflow/airflow-init.sh"]
+    depends_on:
+      compute-init:
+        condition: service_completed_successfully
+      rustfs:
+        condition: service_started
+        required: false
+  airflow-api-server:
+    <<: *airflow
     command: ["api-server"]
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/api/v2/version || exit 1"]
@@ -240,12 +271,30 @@ services:
   airflow-triggerer:
     <<: *airflow
     command: ["triggerer"]
+  # The edge workers reach only the API server (Airflow 3: a task talks to
+  # the Execution API, never the database). They keep the shared settings
+  # but skip the image entrypoint's database check, so a worker starts
+  # without a route to Loams Postgres (as it would on a remote host).
   airflow-edge-worker-1:
     <<: *airflow
     command: ["edge", "worker", "--edge-hostname", "edge-worker-1", "--queues", "default"]
+    environment:
+      <<: *airflow-env
+      CONNECTION_CHECK_MAX_COUNT: "0"
+    depends_on:
+      <<: *airflow-deps
+      airflow-api-server:
+        condition: service_healthy
   airflow-edge-worker-2:
     <<: *airflow
     command: ["edge", "worker", "--edge-hostname", "edge-worker-2", "--queues", "default"]
+    environment:
+      <<: *airflow-env
+      CONNECTION_CHECK_MAX_COUNT: "0"
+    depends_on:
+      <<: *airflow-deps
+      airflow-api-server:
+        condition: service_healthy
 
 volumes:
   # The DBOS runners' scratch space: the SDK sources at the pinned tags and

@@ -40,7 +40,7 @@
     "provenance.json"
   ],
   "scripts": {
-    "build": "tsup",
+    "build": "vp pack",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vp test run"
   },
@@ -56,7 +56,6 @@
     "jsdom": "30.1.2",
     "react": "catalog:",
     "react-dom": "catalog:",
-    "tsup": "8.5.1",
     "typescript": "5.9.3",
     "vite": "catalog:",
     "vitest": "catalog:",
