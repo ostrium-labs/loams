@@ -1266,6 +1266,11 @@ enum Command {
     /// Loams Cloud, the hosted try-out (design §78 §25): `cloud admin …` for
     /// allow-listed Ostrium admins (waitlist, invites, audit, the TOTP step-up).
     Cloud(loams_cloud_admin::CloudArgs),
+    /// The read-only project knowledge cache on Walrus (MS1, D1813):
+    /// `knowledge publish` stores a public repository's knowledge set and
+    /// its signed manifest; `knowledge verify` checks them.
+    #[cfg(feature = "knowledge")]
+    Knowledge(loams_knowledge::cli::KnowledgeArgs),
     /// Engine authentication (LOAMS_AUTH_MODE): API keys.
     Auth {
         #[command(subcommand)]
@@ -1426,6 +1431,8 @@ fn config(command: Command) -> ServerConfig {
         Command::Migrate { .. } => unreachable!("loams migrate starts no server"),
         Command::Upgrade(_) => unreachable!("loams upgrade starts no server"),
         Command::Cloud(_) => unreachable!("loams cloud starts no server"),
+        #[cfg(feature = "knowledge")]
+        Command::Knowledge(_) => unreachable!("loams knowledge starts no server"),
         #[cfg(feature = "live")]
         Command::LiveWorker => unreachable!("loams live-worker starts no server"),
         #[cfg(feature = "postgres")]
@@ -1637,6 +1644,11 @@ fn main() -> ExitCode {
     // A client too (LC2a Tasks 4 and 5): its own runtime, no stores.
     if let Command::Cloud(args) = &cli.command {
         return loams_cloud_admin::run(args);
+    }
+    // A client too (MS1 Task 9): its own runtime; the bucket and Walrus only.
+    #[cfg(feature = "knowledge")]
+    if let Command::Knowledge(args) = &cli.command {
+        return loams_knowledge::cli::run(args);
     }
     serve(cli)
 }
@@ -2973,6 +2985,53 @@ mod tests {
             let cli = Cli::try_parse_from(args).unwrap_or_else(|e| panic!("{args:?}: {e}"));
             assert!(matches!(cli.command, Command::Upgrade(_)), "{args:?}");
         }
+    }
+
+    /// `loams knowledge publish|verify` (MS1 Task 9) parse into the
+    /// knowledge client.
+    #[cfg(feature = "knowledge")]
+    #[test]
+    fn knowledge_subcommand_parses() {
+        for args in [
+            &[
+                "loams",
+                "knowledge",
+                "publish",
+                "--repo",
+                "ostrium-labs/loams",
+                "--visibility",
+                "public",
+                "--config",
+                "k.toml",
+            ][..],
+            &[
+                "loams",
+                "knowledge",
+                "verify",
+                "--repo",
+                "ostrium-labs/loams",
+                "--config",
+                "k.toml",
+                "--output",
+                "json",
+            ],
+        ] {
+            let cli = Cli::try_parse_from(args).unwrap_or_else(|e| panic!("{args:?}: {e}"));
+            assert!(matches!(cli.command, Command::Knowledge(_)), "{args:?}");
+        }
+        // No default visibility.
+        assert!(
+            Cli::try_parse_from([
+                "loams",
+                "knowledge",
+                "publish",
+                "--repo",
+                "o/r",
+                "--config",
+                "k"
+            ])
+            .is_err()
+        );
     }
 
     /// `loams durable migrate --durable-store …` (D1 Task 4): a store is

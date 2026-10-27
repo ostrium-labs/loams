@@ -12,7 +12,9 @@
 //! - [`KnowledgeReader`] is what agents read through (agentd's MCP shim):
 //!   it verifies the manifest's signature against the repository's pinned
 //!   signer, then every entry's SHA-256. It has no write path.
+//! - [`cli`] is `loams knowledge publish` and `verify` (MS1 Task 9).
 
+pub mod cli;
 mod config;
 mod error;
 mod manifest;
