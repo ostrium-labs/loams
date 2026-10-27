@@ -24,7 +24,9 @@ pub(crate) fn start(
     run_id: &str,
     r: StartWorkflowExecutionRequest,
     signal: Option<StartSignal>,
+    chain: Option<StartChain>,
 ) -> Result<Reply, Rejection> {
+    let chain = chain.unwrap_or_default();
     if let Some(sig) = &signal
         && sig.name.is_empty()
     {
@@ -81,9 +83,19 @@ pub(crate) fn start(
         status: WorkflowExecutionStatus::Running as i32,
         next_event_id: 1,
         start_request_id: r.request_id.clone(),
-        first_execution_run_id: run_id.to_string(),
+        first_execution_run_id: if chain.first_execution_run_id.is_empty() {
+            run_id.to_string()
+        } else {
+            chain.first_execution_run_id.clone()
+        },
+        namespace_name: r.namespace.clone(),
+        parent: chain.parent.clone(),
+        memo: r.memo.clone(),
+        search_attributes: r.search_attributes.clone(),
+        first_task_backoff: chain.backoff_ms > 0,
         ..Default::default()
     };
+    let first_execution_run_id = b.state_ref().first_execution_run_id.clone();
     b.push(Attributes::WorkflowExecutionStartedEventAttributes(
         WorkflowExecutionStartedEventAttributes {
             workflow_type: Some(workflow_type),
@@ -98,10 +110,32 @@ pub(crate) fn start(
             workflow_task_timeout: Some(dur(wft_ms)),
             original_execution_run_id: run_id.to_string(),
             identity: r.identity,
-            first_execution_run_id: run_id.to_string(),
+            first_execution_run_id,
             retry_policy: r.retry_policy,
             attempt: 1,
-            first_workflow_task_backoff: Some(dur(0)),
+            first_workflow_task_backoff: Some(dur(chain.backoff_ms.max(0))),
+            parent_workflow_namespace: chain
+                .parent
+                .as_ref()
+                .map(|p| p.namespace.clone())
+                .unwrap_or_default(),
+            parent_workflow_namespace_id: chain
+                .parent
+                .as_ref()
+                .map(|p| p.namespace_id.clone())
+                .unwrap_or_default(),
+            parent_workflow_execution: chain.parent.as_ref().map(|p| {
+                loams_temporal_proto::temporal::api::common::v1::WorkflowExecution {
+                    workflow_id: p.workflow_id.clone(),
+                    run_id: p.run_id.clone(),
+                }
+            }),
+            parent_initiated_event_id: chain.parent.as_ref().map_or(0, |p| p.initiated_event_id),
+            continued_execution_run_id: chain.continued_execution_run_id.clone(),
+            initiator: chain.initiator,
+            continued_failure: chain.continued_failure.clone(),
+            last_completion_result: chain.last_completion_result.clone(),
+            prev_auto_reset_points: chain.prev_auto_reset_points.clone(),
             memo: r.memo,
             search_attributes: r.search_attributes,
             header: Some(r.header.unwrap_or_default()),
@@ -123,6 +157,39 @@ pub(crate) fn start(
             },
         ));
     }
-    schedule_workflow_task(b, fx, 1);
+    if chain.backoff_ms > 0 {
+        // The first workflow task waits for the backoff: a timer on the
+        // started event (ID 1, which no user timer can have).
+        let now = b.now_ms();
+        fx.push(Effect::StartTimer {
+            started_event_id: 1,
+            fire_at_ms: now + chain.backoff_ms,
+        });
+    } else {
+        schedule_workflow_task(b, fx, 1);
+    }
     Ok(Reply::Done)
+}
+
+/// A run's lineage: its parent, the run it continues, its first task's
+/// backoff (TMP-api D2087).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct StartChain {
+    /// The parent, for a child workflow.
+    pub parent: Option<loams_temporal_history::ParentInfo>,
+    /// The run this one continues (continue-as-new).
+    pub continued_execution_run_id: String,
+    /// `temporal.api.enums.v1.ContinueAsNewInitiator`.
+    pub initiator: i32,
+    /// The first run of the chain (empty: this one).
+    pub first_execution_run_id: String,
+    /// The first workflow task's backoff.
+    pub backoff_ms: i64,
+    /// The previous run's result (cron) or failure (retry).
+    pub last_completion_result: Option<loams_temporal_proto::temporal::api::common::v1::Payloads>,
+    /// The previous run's failure.
+    pub continued_failure: Option<loams_temporal_proto::temporal::api::failure::v1::Failure>,
+    /// The previous runs' reset points.
+    pub prev_auto_reset_points:
+        Option<loams_temporal_proto::temporal::api::workflow::v1::ResetPoints>,
 }

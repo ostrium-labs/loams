@@ -24,6 +24,11 @@ cargo_package(
     },
     tests = [
         {
+            "name": "children",
+            "crate": "children",
+            "root": "tests/children.rs",
+        },
+        {
             "name": "golden",
             "crate": "golden",
             "root": "tests/golden.rs",

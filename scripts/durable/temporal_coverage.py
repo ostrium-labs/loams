@@ -51,7 +51,7 @@ STATUS: dict[str, tuple[str, str]] = {
     "GetWorkflowExecutionHistory": (DX1, "paged; long poll; close-event filter"),
     "GetWorkflowExecutionHistoryReverse": (TMP, ""),
     "PollWorkflowTaskQueue": (DX1, "no sticky queues (Q1156)"),
-    "RespondWorkflowTaskCompleted": (DX1, "carries update protocol messages since TMP-api A"),
+    "RespondWorkflowTaskCompleted": (DX1, "update messages (TMP-api A); child workflow, continue-as-new, external signal/cancel, upsert commands (TMP-api D)"),
     "RespondWorkflowTaskFailed": (DX1, ""),
     "PollActivityTaskQueue": (DX1, ""),
     "RecordActivityTaskHeartbeat": (DX1, ""),

@@ -127,6 +127,15 @@ pub(crate) fn timer_fired(
     fx: &mut Vec<Effect>,
     started_event_id: i64,
 ) -> Result<Reply, Rejection> {
+    // The first workflow task's backoff (a timer on the started event).
+    if started_event_id == 1 {
+        if !b.state_ref().first_task_backoff {
+            return Ok(Reply::Stale);
+        }
+        b.state().first_task_backoff = false;
+        crate::write::ensure_workflow_task(b, fx);
+        return Ok(Reply::Done);
+    }
     let Some(t) = b
         .state_ref()
         .timers

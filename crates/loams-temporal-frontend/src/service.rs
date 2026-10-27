@@ -838,6 +838,7 @@ impl WorkflowService for WorkflowServiceImpl {
                     worker_version,
                     force_create_new_workflow_task: r.force_create_new_workflow_task,
                     messages: r.messages,
+                    new_run_id: uuid::Uuid::new_v4().to_string(),
                 }
             })
             .await?;

@@ -20,7 +20,7 @@ WorkflowService: 34 of 123 implemented. OperatorService: none yet (the gateway d
 | `GetWorkflowExecutionHistory` | implemented (DX1) | paged; long poll; close-event filter |
 | `GetWorkflowExecutionHistoryReverse` | implemented (TMP-api) |  |
 | `PollWorkflowTaskQueue` | implemented (DX1) | no sticky queues (Q1156) |
-| `RespondWorkflowTaskCompleted` | implemented (DX1) | carries update protocol messages since TMP-api A |
+| `RespondWorkflowTaskCompleted` | implemented (DX1) | update messages (TMP-api A); child workflow, continue-as-new, external signal/cancel, upsert commands (TMP-api D) |
 | `RespondWorkflowTaskFailed` | implemented (DX1) |  |
 | `PollActivityTaskQueue` | implemented (DX1) |  |
 | `RecordActivityTaskHeartbeat` | implemented (DX1) |  |
