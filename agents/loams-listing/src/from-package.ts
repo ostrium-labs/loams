@@ -10,6 +10,11 @@ import { LISTING_SCHEMA_ID, type Listing } from './types.js';
 /** Fields package.json supplies; the block may not set them. */
 const DERIVED = ['version', 'licence', 'source', 'artifact', 'provenance', 'runtime', 'pricing'] as const;
 
+/** The engines of the node runtime (D1808). `engine` is the one runtime field the block sets. */
+const ENGINES = ['node', 'bun'] as const;
+type EngineName = (typeof ENGINES)[number];
+const DEFAULT_RANGE: Record<EngineName, string> = { node: '>=22.13', bun: '>=1.4.4' };
+
 /** The listing's field order, so generated files diff cleanly. */
 const ORDER: (keyof Listing)[] = [
   '$schema', 'id', 'kind', 'version', 'title', 'summary', 'description', 'icon', 'licence', 'source',
@@ -35,7 +40,7 @@ interface PackageJson {
   license?: string;
   main?: string;
   repository?: string | { type?: string; url?: string; directory?: string };
-  engines?: { node?: string };
+  engines?: { node?: string; bun?: string };
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
   loams?: { agent?: Record<string, unknown> };
@@ -86,7 +91,13 @@ export function fromPackageJson(pkg: PackageJson, options: { commit: string; int
   if (!pkg.license) throw new PackageError('package.json needs a license (SPDX)');
   const repository = typeof pkg.repository === 'string' ? { url: pkg.repository } : (pkg.repository ?? {});
   if (!repository.url) throw new PackageError('package.json needs repository.url, the provenance source');
-  const kind = (block.kind as string | undefined) ?? 'agent';
+  const { engine: engineField, ...rest } = block;
+  if (engineField !== undefined && !ENGINES.includes(engineField as EngineName)) {
+    throw new PackageError(`loams.agent.engine is node or bun, not ${JSON.stringify(engineField)}`);
+  }
+  // `engines.bun` alone does not choose Bun: many packages declare both engines.
+  const engine = (engineField as EngineName | undefined) ?? 'node';
+  const kind = (rest.kind as string | undefined) ?? 'agent';
   if (kind === 'mcp-server' && (block.mcp_server as { mode?: string } | undefined)?.mode === 'remote') {
     throw new PackageError('a remote MCP server installs no package; write its listing.json by hand');
   }
@@ -101,7 +112,7 @@ export function fromPackageJson(pkg: PackageJson, options: { commit: string; int
 
   const listing: Record<string, unknown> = {
     $schema: LISTING_SCHEMA_ID,
-    ...block,
+    ...rest,
     kind,
     version: pkg.version,
     title: block.title ?? pkg.name,
@@ -115,7 +126,11 @@ export function fromPackageJson(pkg: PackageJson, options: { commit: string; int
     framework: frameworkOut,
     artifact: { type: 'npm', name: pkg.name, version: pkg.version, integrity: options.integrity },
     provenance: { type: 'npm-slsa', ref: attestationsUrl(pkg.name, pkg.version) },
-    runtime: { kind: 'node', version: pkg.engines?.node ?? '>=22.13' },
+    runtime: {
+      kind: 'node',
+      ...(engineField !== undefined ? { engine } : {}),
+      version: pkg.engines?.[engine] ?? DEFAULT_RANGE[engine],
+    },
     entrypoint: block.entrypoint ?? pkg.main,
     pricing: 'free',
   };
@@ -127,6 +142,8 @@ export function fromPackageJson(pkg: PackageJson, options: { commit: string; int
 export function toPackageJson(listing: Listing): PackageJson {
   const block: Record<string, unknown> = { ...listing };
   for (const key of [...DERIVED, '$schema'] as const) delete block[key];
+  const engine = listing.runtime?.engine;
+  if (engine) block.engine = engine;
   if (listing.artifact?.type !== 'npm') throw new PackageError('only npm listings come from a package');
   return {
     name: listing.artifact.name,
@@ -137,7 +154,7 @@ export function toPackageJson(listing: Listing): PackageJson {
       url: `git+${listing.source.repository}.git`,
       ...(listing.source.path ? { directory: listing.source.path } : {}),
     },
-    ...(listing.runtime?.version ? { engines: { node: listing.runtime.version } } : {}),
+    ...(listing.runtime?.version ? { engines: { [engine ?? 'node']: listing.runtime.version } } : {}),
     loams: { agent: block },
   };
 }

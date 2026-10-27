@@ -28,7 +28,8 @@ pub struct Provisioned {
     /// `<agentd data>/agents/<id>/data`: HOME, TMPDIR and LOAMS_DATA_DIR live here.
     pub data_dir: PathBuf,
     pub token_file: PathBuf,
-    /// The directory holding the runtime's own binaries (`node`), the only PATH entry.
+    /// The directory holding the runtime's own binaries (`node`, or `bun` for
+    /// the bun engine: `ResolvedEngine::bin_dir`), the only PATH entry.
     pub runtime_bin: Option<PathBuf>,
     pub pg_url: Option<String>,
     pub qdrant: Option<(String, String)>,

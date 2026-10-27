@@ -58,7 +58,9 @@ auth: [none, sasl-plain, sasl-scram-256, sasl-scram-512, mtls, aws-msk-iam]
     # does not define.  Reviewer decision noted.
 config:
   $ref: schemas/kafka.config.json
-secrets: [sasl.password, tls.key_pem]   # D189 secret store; never stored in the instance (§33 §4)
+secrets: [sasl.password, sasl.username_secret, tls.key_pem, schema_registry.basic_auth.password, schema_registry.basic_auth.username_secret]
+    # D189 secret store; never stored in the instance (§33 §4). The username
+    # secrets carry API key ids (Confluent Cloud, D1827; CC1 Task 2).
 envelope:
   emits: io.loams.dev.flow.kafka.record.v1
   consumes: "*"
@@ -66,3 +68,6 @@ envelope:
 limits: { max_record_bytes: 16777216 }
 conformance: [contract, roundtrip, kill-restart, dup-check, exactly-once]
 docs: docs/guides/connectors/kafka.md
+notes:
+  - "Target profile confluent-cloud (connectors/profiles/confluent-cloud.yaml, CC1 Task 2, D1822): Confluent Cloud Basic and Standard clusters through this connector, with an instance's `profile: confluent-cloud`. SASL_SSL, PLAIN with the API key id and secret as secrets, system roots, 8 MB records, a pre-created checkpoint topic; narrows nothing (CC0 R0.1). Docs: docs/guides/connectors/confluent-cloud.md"
+  - "Debezium topics (CC1 Task 3, D1822): with format debezium-json or debezium-avro the source reads a user's Debezium change events (JSON with or without the schema wrapper, or Avro through the Schema Registry) as Loams change events (loamsop c/u/d/r/t, loamslsn from Debezium's source block), shaped as the Postgres and MySQL CDC sources emit them; schema-change topic records pass through as schema-change; anything else goes to the DLQ. capabilities.source.cdc stays false: the connector carries change events, it does not capture them."

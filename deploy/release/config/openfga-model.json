@@ -99,6 +99,8 @@
               }
             ]
           },
+          "can_admin": {},
+          "can_view": {},
           "member": {
             "directly_related_user_types": [
               {
@@ -177,6 +179,16 @@
                 }
               }
             ]
+          }
+        },
+        "can_admin": {
+          "computedUserset": {
+            "relation": "admin"
+          }
+        },
+        "can_view": {
+          "computedUserset": {
+            "relation": "namespace_editor"
           }
         },
         "member": {

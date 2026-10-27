@@ -1,0 +1,1 @@
+SELECT * REPLACE (a * 10 AS a, 'z' AS d) EXCEPT (k) FROM u25 ORDER BY a

@@ -1,0 +1,3 @@
+# CC1 Task 2: the kafka-sasl service writes its throwaway test CA here (ca.pem).
+*
+!.gitignore
