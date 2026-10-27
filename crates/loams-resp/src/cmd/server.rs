@@ -244,7 +244,7 @@ fn config(shared: &Shared, args: &[Bytes]) -> Value {
                     .collect(),
             )
         }
-        "SET" if args.len() >= 4 && args.len() % 2 == 0 => {
+        "SET" if args.len() >= 4 && args.len().is_multiple_of(2) => {
             let mut params = shared.params.lock().unwrap_or_else(|e| e.into_inner());
             for pair in args[2..].chunks(2) {
                 params.insert(

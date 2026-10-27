@@ -273,7 +273,7 @@ fn kill(shared: &Shared, conn: &Conn, args: &[Bytes]) -> Value {
             None => Value::err("ERR No such client"),
         };
     }
-    if args.is_empty() || args.len() % 2 != 0 {
+    if args.is_empty() || !args.len().is_multiple_of(2) {
         return syntax_error();
     }
     let mut id = None;
