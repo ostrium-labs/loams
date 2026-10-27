@@ -74,7 +74,7 @@ export function useQuery<T>(
   const key = JSON.stringify(params);
   const paramsRef = useRef(params);
   paramsRef.current = params;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: key and tick drive re-runs
+  // oxlint-disable-next-line react/exhaustive-deps -- key and tick drive re-runs
   useEffect(() => {
     if (!enabled) return;
     let live = true;

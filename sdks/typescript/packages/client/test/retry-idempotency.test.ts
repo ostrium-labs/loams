@@ -15,7 +15,7 @@
 import { Code, ConnectError } from '@connectrpc/connect';
 import { createConnectTransport } from '@connectrpc/connect-web';
 import { createServer, type Server } from 'node:http';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { MODULES } from '../src/gen/facade.js';
 import { InstanceService } from '@loams/proto/instance';
 import { LiveService } from '@loams/live/live';

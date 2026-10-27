@@ -181,7 +181,7 @@ function RowsView({
       {result.notifications.length > 0 && (
         <ul className="m-0 flex list-none flex-col gap-1 p-0 text-body" aria-label="Notifications">
           {result.notifications.map((n, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: notifications have no id
+            // oxlint-disable-next-line react/no-array-index-key -- notifications have no id
             <li key={i}>
               <span className={/* mono-ok: id */ 'font-mono'}>{n.gqlstatus}</span> {n.message}
             </li>
@@ -235,7 +235,7 @@ function Operator({ op, profile }: { op: graph.PlanOperator; profile: boolean })
       {op.children.length > 0 && (
         <ul className="m-0 list-none border-0 border-l border-solid border-rule pl-4">
           {op.children.map((c, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: operators have no id
+            // oxlint-disable-next-line react/no-array-index-key -- operators have no id
             <Operator key={i} op={c} profile={profile} />
           ))}
         </ul>

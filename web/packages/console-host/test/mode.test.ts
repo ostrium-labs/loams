@@ -2,7 +2,7 @@
 
 import type { Transport } from '@connectrpc/connect';
 import type { Context } from '@loams/cordis';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import {
   boot,
   chooseBootMode,

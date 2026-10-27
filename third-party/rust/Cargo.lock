@@ -5975,7 +5975,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tokio-rustls",
- "tokio-tungstenite 0.30.0",
+ "tokio-tungstenite",
  "tracing",
  "trait-variant",
  "webpki-roots 1.0.10",
@@ -6028,7 +6028,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
- "tungstenite 0.30.0",
+ "tungstenite",
  "twox-hash",
  "ulid 3.0.0",
  "url",
@@ -7320,6 +7320,7 @@ dependencies = [
  "bytes",
  "bytesize",
  "chrono",
+ "chrono-tz 0.10.4",
  "clap",
  "connectrpc",
  "connectrpc-build",
@@ -7337,7 +7338,7 @@ dependencies = [
  "foyer",
  "futures",
  "gethostname",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "gix-attributes",
  "gix-blame",
  "gix-commitgraph",
@@ -7383,6 +7384,7 @@ dependencies = [
  "landlock",
  "libc",
  "loro",
+ "md-5 0.11.0",
  "memmap2",
  "mimalloc",
  "moka",
@@ -7402,7 +7404,7 @@ dependencies = [
  "prost-build",
  "prost-reflect",
  "prost-types",
- "pulldown-cmark 0.12.2",
+ "pulldown-cmark",
  "qdrant-edge",
  "rand 0.10.3",
  "rand 0.9.5",
@@ -7415,6 +7417,7 @@ dependencies = [
  "reqwest 0.12.28",
  "reqwest 0.13.5",
  "resonate-base",
+ "resonate-client",
  "resonate-gateway-http",
  "resonate-plugin",
  "resonate-sdk",
@@ -7438,7 +7441,6 @@ dependencies = [
  "serde_path_to_error",
  "serde_with",
  "serde_yaml_ng",
- "sha2 0.10.9",
  "sha2 0.11.0",
  "sigstore-verify",
  "similar",
@@ -7459,8 +7461,7 @@ dependencies = [
  "tokio-postgres",
  "tokio-rustls",
  "tokio-stream",
- "tokio-tungstenite 0.24.0",
- "tokio-tungstenite 0.30.0",
+ "tokio-tungstenite",
  "tokio-util",
  "toml 0.8.23",
  "tonic 0.14.6",
@@ -9644,7 +9645,7 @@ dependencies = [
  "prettyplease 0.2.37",
  "prost 0.14.4",
  "prost-types",
- "pulldown-cmark 0.13.4",
+ "pulldown-cmark",
  "pulldown-cmark-to-cmark",
  "regex",
  "syn 2.0.119",
@@ -9797,25 +9798,14 @@ dependencies = [
 
 [[package]]
 name = "pulldown-cmark"
-version = "0.12.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f86ba2052aebccc42cbbb3ed234b8b13ce76f75c3551a303cb2bcffcff12bb14"
-dependencies = [
- "bitflags 2.13.2",
- "getopts",
- "memchr",
- "pulldown-cmark-escape",
- "unicase",
-]
-
-[[package]]
-name = "pulldown-cmark"
 version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e9f068eba8e7071c5f9511831b44f32c740d5adf574e990f946ddb53db2f314e"
 dependencies = [
  "bitflags 2.13.2",
+ "getopts",
  "memchr",
+ "pulldown-cmark-escape",
  "unicase",
 ]
 
@@ -9831,7 +9821,7 @@ version = "22.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab1ad36992cead65f02aa399a373a42730922f1525d988172634fdefdecb8a60"
 dependencies = [
- "pulldown-cmark 0.13.4",
+ "pulldown-cmark",
 ]
 
 [[package]]
@@ -10566,6 +10556,19 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "resonate-client"
+version = "0.10.1"
+source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+dependencies = [
+ "async-trait",
+ "reqwest 0.12.28",
+ "resonate-core",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -13213,22 +13216,6 @@ dependencies = [
 
 [[package]]
 name = "tokio-tungstenite"
-version = "0.24.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "edc5f74e248dc973e0dbb7b74c7e0d6fcc301c694ff50049504004ef4d0cdcd9"
-dependencies = [
- "futures-util",
- "log",
- "rustls",
- "rustls-pki-types",
- "tokio",
- "tokio-rustls",
- "tungstenite 0.24.0",
- "webpki-roots 0.26.11",
-]
-
-[[package]]
-name = "tokio-tungstenite"
 version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "17a073bfed563fa236697a068031408a93cd9522e08abf9933ead3e73411bd71"
@@ -13239,7 +13226,7 @@ dependencies = [
  "rustls-pki-types",
  "tokio",
  "tokio-rustls",
- "tungstenite 0.30.0",
+ "tungstenite",
  "webpki-roots 0.26.11",
 ]
 
@@ -13663,26 +13650,6 @@ dependencies = [
 
 [[package]]
 name = "tungstenite"
-version = "0.24.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18e5b8366ee7a95b16d32197d0b2604b43a0be89dc5fac9f8e96ccafbaedda8a"
-dependencies = [
- "byteorder",
- "bytes",
- "data-encoding",
- "http",
- "httparse",
- "log",
- "rand 0.8.8",
- "rustls",
- "rustls-pki-types",
- "sha1 0.10.7",
- "thiserror 1.0.69",
- "utf-8",
-]
-
-[[package]]
-name = "tungstenite"
 version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e48ac77174b19c110a50ab2128b24215ac9cb40e0e12e093fb602d175c569d22"
@@ -13956,12 +13923,6 @@ dependencies = [
  "serde",
  "serde_derive",
 ]
-
-[[package]]
-name = "utf-8"
-version = "0.7.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09cc8ee72d2a9becf2f2febe0205bbed8fc6615b7cb429ad062dc7b7ddd036a9"
 
 [[package]]
 name = "utf8-ranges"

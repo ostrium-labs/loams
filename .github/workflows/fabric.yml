@@ -525,12 +525,27 @@ jobs:
           for _ in $(seq 1 90); do curl -fsS "http://127.0.0.1:$oracle_port/ping" >/dev/null 2>&1 && exit 0; sleep 1; done
           "$runtime" logs "he1-oracle-${{ github.run_id }}" | tail -n 50
           exit 1
+      # Task 26's lake fixtures (R26.8): House-written tables of corpus he1-26's
+      # rows, written from this oracle unless they are committed, then read
+      # back through the engine. The dev server reads them with `--lake`.
+      - name: the lake fixtures (HE1 Task 26)
+        working-directory: fabric
+        run: |
+          export LOAMS_ORACLE_URL="http://127.0.0.1:$ORACLE_PORT/"
+          if [ ! -d ../conformance/clickhouse/oracle/corpus/he1/26/lake ]; then
+            cargo test --locked -p loams-house-engine --test lake -- --ignored --exact regenerate_corpus_26_lake
+          fi
+          cargo test --locked -p loams-house-engine --test lake -- --ignored --exact the_corpus_lake_loads_and_reads
       - name: the oracle on the Rust engine
         env:
           LOAMS_ORACLE_PASSWORD: oracle
         run: |
           target="$(cd fabric && cargo metadata --format-version 1 --no-deps | jq -r .target_directory)/debug"
-          "$target/loams-house-engine-dev" --listen "127.0.0.1:$ENGINE_PORT" >engine-dev.log 2>&1 &
+          lakes=()
+          for dir in conformance/clickhouse/oracle/corpus/he1/*/lake; do
+            [ -d "$dir" ] && lakes+=(--lake "$dir")
+          done
+          "$target/loams-house-engine-dev" --listen "127.0.0.1:$ENGINE_PORT" "${lakes[@]}" >engine-dev.log 2>&1 &
           echo $! > engine-dev.pid
           for _ in $(seq 1 30); do curl -fsS "http://127.0.0.1:$ENGINE_PORT/ping" >/dev/null && break; sleep 1; done
           "$target/loams-house-mine" oracle --only house-rust --case he1- --check \
