@@ -9,6 +9,8 @@ Future<void> main() async {
   // With sessionConsistency, every read sees this client's writes.
   final client = LoamsClient.fromEnv(sessionConsistency: true);
   try {
+    final instance = await client.instances.getInstance();
+    print('engine API versions: ${instance['apiVersions']}');
     try {
       await client.namespaces.create(client.defaultNamespace!);
     } on AlreadyExistsException {
@@ -65,6 +67,9 @@ Future<void> main() async {
     }
     print('${(await notes.count())['count']} notes');
 
+    final nearest = await client.vector.search('notes', [1, 0, 0, 0], field: 'embedding', limit: 3);
+    print('vector hits: ${(nearest['hits'] as List? ?? const []).length}');
+
     // Graph is experimental and not in every build.
     try {
       await client.graph.create('notes_graph');
@@ -77,6 +82,23 @@ Future<void> main() async {
     } on LoamsException catch (e) {
       if (e.reason != 'feature_not_in_variant') rethrow;
       print('this server has no graph');
+    }
+
+    final sqlResponse = await client.sql.query(
+        'SELECT n, title FROM notes WHERE n >= \$1 ORDER BY n', params: [2]);
+    print('SQL rows: ${SqlModule.records(sqlResponse)}');
+
+    await client.streams.create('notes_events', partitions: 1);
+    final produced = await client.streams.produce('notes_events', [
+      {'kind': 'created', 'note': 1},
+      {'kind': 'patched', 'note': 2},
+    ], producerId: 'dart-notes', producerSeq: 1);
+    final start = int.parse((produced['baseOffset'] ?? '0').toString());
+    final subscription = client.streams.subscribe('notes_events', fromOffset: start, maxWaitMs: 100);
+    await for (final event in subscription.records) {
+      print('stream event at offset ${event.offset}: ${event.json}');
+      subscription.cancel();
+      break;
     }
   } finally {
     client.close();

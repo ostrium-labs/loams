@@ -7,18 +7,16 @@
 
 ## Install
 
-These instructions target upcoming SDK **0.1.2**. The package and `v0.1.2`
-source tag must be published before the matching install commands resolve.
-
-```sh
-dart pub add loams:0.1.2
-```
-
-or in `pubspec.yaml`:
+The `v0.1.2` source tag is published. The 0.1.2 package is not currently
+available from pub.dev, so install the SDK from the tagged monorepo source:
 
 ```yaml
 dependencies:
-  loams: 0.1.2
+  loams:
+    git:
+      url: https://github.com/ostrium-labs/loams.git
+      ref: v0.1.2
+      path: sdks/dart
 ```
 
 It works with Dart 3 and Flutter.

@@ -7,18 +7,10 @@
 
 ## Install
 
-CocoaPods, pinned exactly:
-
-```ruby
-pod 'Loams', '0.1.2'
-```
-
-These instructions target the upcoming SDK 0.1.2 release. Installation requires
-the matching CocoaPods release to be published.
-
-The pod's module is `LoamsObjC` (`@import LoamsObjC;`, or `#import "LoamsObjC-Swift.h"`),
-so it can sit next to the Swift SDK's `Loams` module.
-iOS 15 and macOS 12 or newer. The podspec is `Loams.podspec` at the repository root.
+The CocoaPods package is not published yet. Use the released monorepo source:
+check out the `v0.1.2` tag, then add the local Swift package at `sdks/objc` to
+your Xcode project and select the `LoamsObjC` product. Its module can sit next
+to the Swift SDK's `Loams` module. It supports iOS 15 and macOS 12 or newer.
 
 ## Build an app
 

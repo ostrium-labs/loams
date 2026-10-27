@@ -1,32 +1,26 @@
 # Objective-C notes example
 
-This example creates a namespace and a `notes` collection, upserts two documents,
-then runs hybrid text and vector search with a filter. It targets the upcoming
-Loams SDK 0.1.2; installation requires that CocoaPods release to be published.
+This example uses instance discovery, creates a namespace and a `notes` collection,
+upserts documents, then runs hybrid and direct vector search, parameterized SQL,
+and stream produce/subscribe. It targets Loams SDK 0.1.2; graph remains optional
+because the example server may not carry the experimental module.
 
 ## Set up
 
-You need macOS 12 or newer, Xcode and CocoaPods. In Xcode, create a macOS
-Command Line Tool project named `Notes` with Objective-C as its language and set
-the deployment target to macOS 12 or newer. Replace its generated `main.m` with
-the [main.m](main.m) in this directory.
+You need macOS 12 or newer and Xcode. The CocoaPods package is not published;
+use the released source instead. Clone the monorepo tag and add its Objective-C
+SDK package to your Xcode project:
 
-In the directory containing your `Notes.xcodeproj`, create a `Podfile`:
-
-```ruby
-platform :osx, '12.0'
-use_frameworks!
-
-target 'Notes' do
-  pod 'Loams', '0.1.2'
-end
+```sh
+git clone --branch v0.1.2 --depth 1 https://github.com/ostrium-labs/loams.git
 ```
 
-If you chose a different Xcode target name, use that name in the `target` block.
-Run `pod install`, then open `Notes.xcworkspace` in Xcode. The pod is named
-`Loams`; its Objective-C module is `LoamsObjC`, imported by `@import LoamsObjC;`
-in the example. This directory supplies source for your Xcode target, rather
-than an Xcode project of its own.
+In Xcode, create a macOS Command Line Tool project named `Notes` with Objective-C
+as its language and set the deployment target to macOS 12 or newer. Choose
+**File → Add Package Dependencies → Add Local…** and select
+`loams/sdks/objc`; add its `LoamsObjC` product to the `Notes` target. Add this
+directory's [main.m](main.m) to the target. The example imports the module with
+`@import LoamsObjC;`.
 
 ## Run
 
@@ -47,3 +41,12 @@ You can also run the executable produced by Xcode:
 ```sh
 LOAMS_ENDPOINT=http://127.0.0.1:8080 LOAMS_NAMESPACE=examples-objc /path/to/Notes
 ```
+
+| Module family | Example coverage in SDK 0.1.2 |
+|---|---|
+| `instance` | Covered by startup discovery. |
+| `namespaces`, `collections`, `documents`, `search`, `vector`, `sql`, `streams` | Covered by this app. |
+| `graph` | SDK module available; not invoked here because server support is experimental and optional. |
+| Live, approvals, devices, Live admin, tables | No typed service/module accessors on the Objective-C client; its generic descriptor-backed `call` is available but not used by this app. |
+| Authentication | Optional environment API key/token; no sign-in or provisioning is implied. |
+| System catalogue, House | No typed module in the Objective-C SDK 0.1.2. |

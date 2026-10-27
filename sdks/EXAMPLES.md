@@ -1,14 +1,15 @@
 # Examples for all 13 Loams SDKs
 
-These examples target the upcoming **0.1.2** release. Package installation and
-release-tag checkouts require the matching packages and tags to be published.
-SDK source versions are set separately by the release workflow.
+Loams SDK **0.1.2** was released on October 26, 2026, and the `v0.1.2` source tag
+is available. Registry availability varies by language: PHP is on Packagist;
+Dart and Objective-C examples use the tagged source because their pub.dev and
+CocoaPods packages are not published yet.
 
 Ten languages have separate example repositories. PHP examples ship inside the
 SDK and its generated split repository. Dart and Objective-C examples live in
 this monorepo; neither has a separate example repository in `ostrium-labs`.
 
-| SDK | App example in this repository | Separate example repository | Exact 0.1.2 dependency |
+| SDK | App example in this repository | Separate example repository | Install at 0.1.2 |
 | --- | --- | --- | --- |
 | TypeScript | [notes](typescript/examples/notes/main.ts) | [loams-typescript](https://github.com/ostrium-labs/loams-typescript) | `@loams/client@0.1.2`, `@loams/live@0.1.2` |
 | Python | [notes](python/examples/notes/main.py) | [loams-python](https://github.com/ostrium-labs/loams-python) | `loams==0.1.2` |
@@ -20,9 +21,9 @@ this monorepo; neither has a separate example repository in `ostrium-labs`.
 | Swift | [notes](swift/Examples/Notes) | [loams-swift](https://github.com/ostrium-labs/loams-swift) | SwiftPM `exact: "0.1.2"` on `ostrium-labs/loams` |
 | Ruby | [notes](ruby/examples/notes/notes.rb) | [loams-ruby](https://github.com/ostrium-labs/loams-ruby) | `gem "loams", "0.1.2"` |
 | C++ | [notes](cpp/examples/notes/main.cpp) | [loams-cpp](https://github.com/ostrium-labs/loams-cpp) | `find_package(loams 0.1.2 EXACT CONFIG REQUIRED)` |
-| PHP | [examples and run instructions](php/examples/README.md) | Included in the [generated SDK split](https://github.com/ostrium-labs/loams-php); not an examples-only repo | `loams/loams:0.1.2` |
-| Dart | [notes and run instructions](dart/example/notes/README.md) | In this monorepo | Dart `loams: 0.1.2` |
-| Objective-C | [notes and integration instructions](objc/Examples/Notes/README.md) | In this monorepo | CocoaPods `pod 'Loams', '0.1.2'` (module `LoamsObjC`) |
+| PHP | [examples and run instructions](php/examples/README.md) | Included in the [generated SDK split](https://github.com/ostrium-labs/loams-php); not an examples-only repo | Packagist `loams/loams:0.1.2` |
+| Dart | [notes and run instructions](dart/example/notes/README.md) | In this monorepo | Git dependency pinned to `v0.1.2`, path `sdks/dart` (pub.dev package pending) |
+| Objective-C | [notes and integration instructions](objc/Examples/Notes/README.md) | In this monorepo | Local Swift package at `sdks/objc`, from the `v0.1.2` checkout (CocoaPods package pending) |
 
 ## Run source examples from the matching release
 
