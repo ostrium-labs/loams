@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { integrityOf } from '../src/from-package.js';
 import type { Listing } from '../src/types.js';
 import { type BundleVerifier, type Fetcher, integrityHex, npmDocumentUrl, SLSA_V1, verifyListing } from '../src/verify.js';

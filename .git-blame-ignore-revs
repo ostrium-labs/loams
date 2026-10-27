@@ -1,0 +1,5 @@
+# Mechanical formatting commits that `git blame` should skip
+# (`git config blame.ignoreRevsFile .git-blame-ignore-revs`; GitHub reads it automatically).
+
+# VV1 (design 79 D1773): Oxfmt formatting pass over web/ and agents/factory.
+458616c6c7fd6a6a28f83d51da9371412dc81db8

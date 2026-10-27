@@ -4,7 +4,7 @@
 // is `ts_descriptors_generated`; the assertions check what tsc cannot.
 
 import { createClient, createRouterTransport } from '@connectrpc/connect';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import * as agentd from '../src/agentd.js';
 import {
   ApprovalService,

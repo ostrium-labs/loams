@@ -104,6 +104,9 @@
 
 | # | Ruling | Reason |
 |---|---|---|
+| D2220 | Task 27: the billing plugin runs on a fixture `BillingClient` under Demo data until `loams.meter.v1` is served | The pages are built before ME-svc's services; swapping the client touches no page |
+| D2221 | Task 27: Settings › Billing lives at `/settings/billing/:section`; Payment links only to the provider's hosted page | D1080; no card data in Loams |
+| D2222 | Task 27: the banner is a `shell.topbar.center` entry, most severe notice first; stops cannot be dismissed | §18, §13 |
 | R24.1 (D2210) | Task 24: the exporters are the crate `crates/loams-meter-export` with a feature per provider; the `meter` role's `export-*` features enable them. Inputs are the crate's own `Quantity` and `ExportLedger` until `loams-meter-core` merges | Provider clients stay out of the role unless an exporter is on; the exporters do not wait for the role's crate |
 | R24.2 (D2211) | Task 24: Stripe identifier `loams:<meter>:<subject>:<hour>:<rev>`, `<rev>` = highest `close_run` through the hour, `-<n>` for a new value at the same revision, hashed past 100 characters; ledger write before the request | A re-closed earlier hour changes later hours' overage; retries keep the identifier |
 | R24.3 (D2212) | Task 24: payment state from the customer's default payment method only, after a verified webhook or the daily poll; only ids read from webhook bodies; `invoice` never sent | No card data in Loams; webhooks are hints |

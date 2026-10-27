@@ -23,7 +23,8 @@ pub use event_type::event_type;
 pub use fold::{FoldError, abort_updates, fold};
 pub use limits::{Limits, messages as limit_messages};
 pub use loams_temporal_proto::loams::temporal::internal::v1::{
-    ActivityInfo, MutableState, TimerInfo, UpdateInfo, UpdateState, WorkflowTaskInfo,
+    ActivityInfo, ChildInfo, ExternalInfo, MutableState, ParentInfo, TimerInfo, UpdateInfo,
+    UpdateState, WorkflowTaskInfo,
 };
 pub use loams_temporal_proto::temporal::api::enums::v1::{EventType, WorkflowExecutionStatus};
 pub use loams_temporal_proto::temporal::api::history::v1::{
@@ -120,5 +121,58 @@ pub fn update_closed_outcome() -> loams_temporal_proto::temporal::api::update::v
             )),
             ..Default::default()
         })),
+    }
+}
+
+/// The pending child initiated by `initiated_event_id`, if any.
+pub fn child(state: &MutableState, initiated_event_id: i64) -> Option<&ChildInfo> {
+    state
+        .children
+        .iter()
+        .find(|c| c.initiated_event_id == initiated_event_id)
+}
+
+/// Removes and returns the pending child initiated by `initiated_event_id`.
+pub fn take_child(state: &mut MutableState, initiated_event_id: i64) -> Option<ChildInfo> {
+    let i = state
+        .children
+        .iter()
+        .position(|c| c.initiated_event_id == initiated_event_id)?;
+    Some(state.children.remove(i))
+}
+
+/// Removes and returns the pending external request initiated by
+/// `initiated_event_id` from `list` (signals or cancels).
+pub fn take_external(
+    list: &mut Vec<ExternalInfo>,
+    initiated_event_id: i64,
+) -> Option<ExternalInfo> {
+    let i = list
+        .iter()
+        .position(|x| x.initiated_event_id == initiated_event_id)?;
+    Some(list.remove(i))
+}
+
+/// Merges upserted search attributes into the run's.
+pub fn upsert_search_attributes(
+    state: &mut MutableState,
+    upsert: Option<&loams_temporal_proto::temporal::api::common::v1::SearchAttributes>,
+) {
+    let Some(u) = upsert else { return };
+    let sa = state.search_attributes.get_or_insert_with(Default::default);
+    for (k, v) in &u.indexed_fields {
+        sa.indexed_fields.insert(k.clone(), v.clone());
+    }
+}
+
+/// Merges an upserted memo into the run's.
+pub fn upsert_memo(
+    state: &mut MutableState,
+    upsert: Option<&loams_temporal_proto::temporal::api::common::v1::Memo>,
+) {
+    let Some(u) = upsert else { return };
+    let memo = state.memo.get_or_insert_with(Default::default);
+    for (k, v) in &u.fields {
+        memo.fields.insert(k.clone(), v.clone());
     }
 }

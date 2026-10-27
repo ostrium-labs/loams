@@ -43,6 +43,10 @@ tofu="${TOFU:-tofu}"
 # Never touched, whatever their names say: the Kafka gateway oracle (design 80 §9.1).
 protected_envs=" env-3kqddw "
 protected_clusters=" lkc-120zwvj "
+# The only environment this script ever changes: Ostrium's loams-ci (owner rule,
+# 2026-10-27). Any other CONFLUENT_CI_ENVIRONMENT is refused, except with
+# CONFLUENT_CI_FIXTURES, where no API call is made at all.
+ci_env="env-3kqygo"
 
 cmd="${1:-}"; shift || true
 dry=0
@@ -54,12 +58,15 @@ die() { echo "confluent-ci.sh: $*" >&2; exit 1; }
 need_env() {
   [[ "$env_id" =~ ^env-[a-z0-9]+$ ]] || die "CONFLUENT_CI_ENVIRONMENT is not an env-... id"
   [[ "$protected_envs" != *" $env_id "* ]] || die "$env_id is protected (the oracle's environment)"
+  [[ "$env_id" == "$ci_env" || -n "${CONFLUENT_CI_FIXTURES:-}" ]] \
+    || die "$env_id is not loams-ci: this script only ever touches $ci_env"
 }
 
 # api METHOD PATH [json-body] -> body on stdout; HTTP status in $work/status.
 # The Cloud key goes to curl on stdin, never in argv.
 api() {
   local m="$1" p="$2" url
+  [[ -z "${CONFLUENT_CI_FIXTURES:-}" ]] || die "no API call with CONFLUENT_CI_FIXTURES set ($m $p)"
   [[ "$p" == http* ]] && url="$p" || url="$api$p"
   mkdir -p "$work"
   local args=(-sS -X "$m" -H 'Content-Type: application/json' --max-time 60 --retry 3 --retry-connrefused -o "$work/body" -w '%{http_code}')
@@ -84,7 +91,10 @@ list_all() {  # fixture-name path
 }
 
 act() {  # description, then the DELETE path
-  local what="$1" path="$2"
+  local what="$1" path="$2" c
+  # A last check before any delete: never a protected cluster, never another environment.
+  for c in $protected_clusters; do [[ "$path" != *"$c"* ]] || die "refusing to delete $what: $c is protected"; done
+  if [[ "$path" == /cmk/* && "$path" != *"environment=$env_id" ]]; then die "refusing to delete $what outside $env_id"; fi
   if ((dry)) || [[ -n "${CONFLUENT_CI_FIXTURES:-}" ]]; then echo "WOULD DELETE $what ($path)"; return; fi
   api DELETE "$path" >/dev/null
   case "$(status)" in 2*|404) echo "deleted $what" ;; *) echo "FAILED to delete $what: HTTP $(status)"; return 1 ;; esac
@@ -95,11 +105,12 @@ iso_to_epoch() { date -u -d "$1" +%s 2>/dev/null || echo "$now"; }
 # --- reap ------------------------------------------------------------------------------
 reap() {
   need_env
-  local n=0 failed=0 item id dname created age
+  local n=0 failed=0 item id dname created age env_clusters=" "
   while IFS= read -r item; do
     [[ -n "$item" ]] || continue
     id="$(jq -r .id <<<"$item")"; dname="$(jq -r '.spec.display_name // ""' <<<"$item")"
     created="$(jq -r '.metadata.created_at // ""' <<<"$item")"; age=$((now - $(iso_to_epoch "$created")))
+    [[ "$id" =~ ^lkc-[a-z0-9]+$ ]] && env_clusters+="$id "
     if [[ "$protected_clusters" == *" $id "* ]]; then echo "keep $id ($dname): protected"; continue; fi
     if [[ "$dname" == loams-ci-* ]]; then
       if ((age > ttl_seconds)); then
@@ -116,6 +127,11 @@ reap() {
     created="$(jq -r '.metadata.created_at // ""' <<<"$item")"; age=$((now - $(iso_to_epoch "$created")))
     local res; res="$(jq -r '.spec.resource.id // ""' <<<"$item")"
     if [[ "$protected_clusters" == *" $res "* ]]; then echo "keep key $id: on a protected cluster"; continue; fi
+    # API keys are listed for the whole organisation: only a key on a cluster of
+    # this environment is ours to delete.
+    if [[ "$dname" == loams-ci-* && "$env_clusters" != *" $res "* ]]; then
+      echo "keep key $id ($dname): its resource ${res:-?} is not a cluster in $env_id"; continue
+    fi
     if [[ "$dname" == loams-ci-* ]] && ((age > ttl_seconds)); then
       say "expired API key $id $dname"
       act "API key $id $dname" "/iam/v2/api-keys/$id" || failed=1; n=$((n + 1))

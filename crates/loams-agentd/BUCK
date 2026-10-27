@@ -101,7 +101,7 @@ cargo_package(
             "//third-party/rust:serde",
             "//third-party/rust:serde_json",
             "//third-party/rust:serde_path_to_error",
-            "//third-party/rust:sha2-0_11",
+            "//third-party/rust:sha2",
             "//third-party/rust:thiserror",
             "//third-party/rust:tokio",
             "//third-party/rust:toml",
@@ -128,7 +128,7 @@ cargo_package(
             "//third-party/rust:serde",
             "//third-party/rust:serde_json",
             "//third-party/rust:serde_path_to_error",
-            "//third-party/rust:sha2-0_11",
+            "//third-party/rust:sha2",
             "//third-party/rust:thiserror",
             "//third-party/rust:tokio",
             "//third-party/rust:toml",
@@ -140,7 +140,7 @@ cargo_package(
     dev_deps = [
         "//third-party/rust:futures",
         "//third-party/rust:hex",
-        "//third-party/rust:sha2-0_11",
+        "//third-party/rust:sha2",
         "//third-party/rust:tempfile",
     ],
     rustc_flags = [
