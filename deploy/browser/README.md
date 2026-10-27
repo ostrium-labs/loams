@@ -39,7 +39,7 @@ The browser fetches whatever an agent asks for, so whoever can reach it has a br
   - The Service is ClusterIP only.
   - The NetworkPolicy admits only `loams-agentd` and `loams-gateway` pods.
   - It lets the browser out only to DNS and to public addresses on ports 80 and 443. Private, link-local (cloud metadata) and CGNAT ranges are excluded.
-- **loams-gateway:** there is no CDP WebSocket route yet (design 57). Until there is one, agentd connects to the service directly on the private network, and the gateway is only admitted by the policy ahead of time.
+- **loams-gateway** (D2118): `loams-gateway --module browser` ([`gateway-browser.toml.example`](gateway-browser.toml.example)) accepts agents' CDP handshakes with a client token of its own and opens the engine with the engine's token, so agents never hold that token. With the gateway in front, take `loams-agentd` out of the NetworkPolicy's ingress list. Without it, agentd connects to the service directly on the private network.
 
 The provider adds the same egress policy, in code, on every request the page makes (D2112). The network rules are the second layer.
 

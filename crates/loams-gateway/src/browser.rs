@@ -253,10 +253,7 @@ async fn read_head(client: &mut TcpStream) -> Result<(String, Vec<u8>), String> 
         if buffer.len() > MAX_HEAD {
             return Err(format!("the head is over {MAX_HEAD} bytes"));
         }
-        let read = client
-            .read(&mut chunk)
-            .await
-            .map_err(|e| e.to_string())?;
+        let read = client.read(&mut chunk).await.map_err(|e| e.to_string())?;
         if read == 0 {
             return Err("closed before the head ended".to_string());
         }
@@ -277,7 +274,11 @@ pub fn parse(head: &str) -> Result<Handshake, Refusal> {
     if method != Some("GET") || version.is_none_or(|v| !v.starts_with("HTTP/1.")) {
         return Err(Refusal::BadRequest("not an HTTP/1.1 GET"));
     }
-    let path = target.unwrap_or_default().split('?').next().unwrap_or_default();
+    let path = target
+        .unwrap_or_default()
+        .split('?')
+        .next()
+        .unwrap_or_default();
     if path != DEVTOOLS_PATH {
         return Err(Refusal::NotFound);
     }
@@ -516,13 +517,19 @@ client_tokens_file = "/b"
         let mut reply = vec![0u8; 64];
         let mut got = Vec::new();
         while !String::from_utf8_lossy(&got).contains("hello") {
-            let n = agent.read(&mut reply).await.unwrap_or_else(|e| panic!("{e}"));
+            let n = agent
+                .read(&mut reply)
+                .await
+                .unwrap_or_else(|e| panic!("{e}"));
             assert!(n > 0, "closed early: {}", String::from_utf8_lossy(&got));
             got.extend_from_slice(&reply[..n]);
         }
         assert!(String::from_utf8_lossy(&got).starts_with("HTTP/1.1 101"));
         let seen = engine_task.await.unwrap_or_else(|e| panic!("{e}"));
-        assert!(seen.contains("Authorization: Bearer engine-token"), "{seen}");
+        assert!(
+            seen.contains("Authorization: Bearer engine-token"),
+            "{seen}"
+        );
         assert!(!seen.contains("client-token-1"), "{seen}");
 
         let _ = stop.send(());
