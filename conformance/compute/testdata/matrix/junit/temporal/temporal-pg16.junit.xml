@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+<testsuite name="temporal-pg16">
+<testcase classname="temporal-pg16" name="temporal_frontend_serving"/>
+<testcase classname="temporal-pg16" name="temporal_schema_setup"/>
+<testcase classname="temporal-pg16" name="temporal_soak_no_failed_workflows"><failure message="lost workflows"/></testcase>
+<testcase classname="temporal-pg16" name="temporal_compute_resume_recovers"><skipped/></testcase>
+</testsuite>
+</testsuites>

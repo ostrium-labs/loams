@@ -14,6 +14,7 @@
 # machine); OC_SKIP=edge leaves out edge/run.sh. The stack stays up for a
 # look afterwards: `oc_compose --profile airflow --profile rustfs down -v`
 # with the same OC_PROJECT removes it. Writes $OC_OUT/airflow*.junit.xml.
+# Endpoint mode: direct (endpoint-modes.md; checked by selftest.sh recipe_endpoint_mode_matches_suite)
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=conformance/compute/lib.sh

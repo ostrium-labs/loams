@@ -12,6 +12,7 @@
 # OC_SKIP=persistence,soak,txn shorten a local run; a skipped part writes no
 # cases, so its expected failures read as stale (the run fails, as it should
 # for a partial run). Writes $OC_OUT/temporal-pg<major>*.
+# Endpoint mode: direct (endpoint-modes.md; checked by selftest.sh recipe_endpoint_mode_matches_suite)
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=conformance/compute/lib.sh

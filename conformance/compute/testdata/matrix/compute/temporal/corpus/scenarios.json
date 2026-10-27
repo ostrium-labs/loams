@@ -1,0 +1,1 @@
+{"scenarios": [{"name": "hello", "phase": "DX1", "go_only": false}, {"name": "timer_short", "phase": "DX2", "go_only": false}, {"name": "schedule_triggered", "phase": "DX4", "go_only": true}]}

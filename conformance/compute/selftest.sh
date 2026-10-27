@@ -185,6 +185,107 @@ assert af.run_path("d", "manual__2026-10-27T00:00:00+00:00") == "/api/v2/dags/d/
 EOF2
 }
 
+# --- Matrix, docs and the nightly (DX0 Task 7) ------------------------------------
+
+DOCS=("$ROOT/docs/guides/durable" "$ROOT/docs/guides/compute")
+
+matrix_from_fixture() {
+  python3 -I "$ROOT/scripts/compute/matrix.py" --self-test
+}
+
+# Every `<!-- snippet: path -->` is followed by a code block equal to that
+# file, and every snippet file is used by a page.
+docs_compute_snippets_match_files() {
+  python3 -I - "${DOCS[@]}" <<'EOF2'
+import pathlib, re, sys
+bad, used = [], set()
+for d in map(pathlib.Path, sys.argv[1:]):
+    for md in sorted(d.glob("*.md")):
+        text = md.read_text(encoding="utf-8")
+        for m in re.finditer(r"<!-- snippet: (\S+) -->\n```[a-z]*\n(.*?)```\n", text, re.S):
+            f = (md.parent / m.group(1)).resolve()
+            used.add(f)
+            if not f.is_file():
+                bad.append(f"{md}: snippet {m.group(1)} does not exist")
+            elif f.read_text(encoding="utf-8") != m.group(2):
+                bad.append(f"{md}: the block after {m.group(1)} differs from the file")
+        if text.count("<!-- snippet:") != len(re.findall(r"<!-- snippet: (\S+) -->\n```", text)):
+            bad.append(f"{md}: a snippet marker not followed by a code block")
+    for f in sorted((d / "snippets").glob("*")) if (d / "snippets").is_dir() else []:
+        if f.resolve() not in used:
+            bad.append(f"{f}: no page uses it")
+print("\n".join(bad))
+sys.exit(1 if bad else 0)
+EOF2
+}
+
+# Design 74 D1512 and §68 D1275: the pages never call anything of Loams
+# "Temporal-compatible" (the gateway does not exist yet), never promise a
+# drop-in, and each states its status.
+docs_compute_wording() {
+  local d f hits=0 n=0
+  for d in "${DOCS[@]}"; do
+  for f in "$d"/*.md; do
+    [ -f "$f" ] || continue
+    n=$((n + 1))
+    if grep -niE 'temporal[- ]compatible|drop-in|production[- ]ready' "$f"; then
+      echo "docs_compute_wording: $f"; hits=1
+    fi
+    if [ "$(basename "$f")" != compatibility.md ] && ! grep -q '^Status: ' "$f"; then
+      echo "docs_compute_wording: $f has no 'Status:' line"; hits=1
+    fi
+  done
+  done
+  [ "$n" -gt 0 ] || { echo "docs_compute_wording: no pages found"; return 1; }
+  return $hits
+}
+
+# Each recipe's "Endpoint mode: **x**" equals the product's row in
+# endpoint-modes.md and the "# Endpoint mode: x" line of its suite's run.sh
+# (a suite not on this branch is skipped).
+recipe_endpoint_mode_matches_suite() {
+  python3 -I - "$ROOT" <<'EOF2'
+import pathlib, re, sys
+root = pathlib.Path(sys.argv[1])
+modes_md = (root / "conformance/compute/endpoint-modes.md").read_text(encoding="utf-8")
+table = {m.group(1): m.group(2) for m in re.finditer(r"^\| \*\*([^*]+)\*\*[^|]*\| (\w+) \|", modes_md, re.M)}
+recipes = {
+    "docs/guides/durable/temporal-compat-mode.md": ("Temporal", ["conformance/compute/temporal/run.sh"]),
+    "docs/guides/durable/dbos.md": ("DBOS Transact", [f"conformance/compute/dbos-{l}/run.sh" for l in ("py", "ts", "go", "java")]),
+    "docs/guides/durable/airflow.md": ("Airflow", ["conformance/compute/airflow/run.sh"]),
+    "docs/guides/compute/airflow.md": ("Airflow", ["conformance/compute/airflow/run.sh"]),
+}
+bad = []
+for page, (product, suites) in recipes.items():
+    m = re.search(r"^Endpoint mode: \*\*(\w+)\*\*", (root / page).read_text(encoding="utf-8"), re.M)
+    if not m:
+        bad.append(f"{page}: no 'Endpoint mode: **x**' line"); continue
+    mode = m.group(1)
+    if table.get(product) != mode:
+        bad.append(f"{page}: {mode}, but endpoint-modes.md says {table.get(product)!r} for {product}")
+    for s in suites:
+        p = root / s
+        if not p.is_file():
+            continue
+        sm = re.search(r"^# Endpoint mode: (\w+)", p.read_text(encoding="utf-8"), re.M)
+        if not sm or sm.group(1) != mode:
+            bad.append(f"{page}: {mode}, but {s} says {sm.group(1) if sm else 'nothing'}")
+print("\n".join(bad))
+sys.exit(1 if bad else 0)
+EOF2
+}
+
+# The nightly runs every product suite on this branch.
+compute_compat_workflow_runs_every_suite() {
+  local wf="$ROOT/.github/workflows/compute-compat.yml" f hits=0
+  grep -q 'compute-compat.yml' "$ROOT/.github/workflows/nightly.yml" || { echo "nightly.yml does not dispatch compute-compat.yml"; hits=1; }
+  for f in "$HERE"/durable/run.sh "$HERE"/temporal/run.sh "$HERE"/temporal/corpus/replay.sh "$HERE"/airflow/run.sh; do
+    grep -qF "conformance/compute/${f#"$HERE"/}" "$wf" || { echo "compute-compat.yml does not run ${f#"$ROOT"/}"; hits=1; }
+  done
+  grep -qF 'conformance/compute/dbos-$l/run.sh' "$wf" || { echo "compute-compat.yml does not run the DBOS suites"; hits=1; }
+  return $hits
+}
+
 # --- The compose override (OC0 Task 2's tests) -----------------------------------
 
 PROFILES=(temporal dbos airflow)
@@ -330,6 +431,8 @@ TESTS=(
   no_loams_sql_in_dx0 pg_mode_urls pins_are_literal
   corpus_manifest_complete normalize_selftest
   airflow_python_parses airflow_effects_copies_match airflow_af_log_lines
+  matrix_from_fixture docs_compute_snippets_match_files docs_compute_wording
+  recipe_endpoint_mode_matches_suite compute_compat_workflow_runs_every_suite
 )
 COMPOSE_TESTS=(
   compose_compute_config_valid compose_compute_requires_profile
