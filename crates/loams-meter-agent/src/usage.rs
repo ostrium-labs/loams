@@ -112,6 +112,11 @@ pub fn usage_data(event: &MeterEvent) -> Map<String, Value> {
     match d.meter {
         Meter::CpuUsec => {
             data.insert("cpu_usec".into(), json!(d.value));
+            // A T1 host's CPU split by apportionment rather than by its
+            // reports (crate::host::reconcile).
+            if d.estimated {
+                data.insert("estimated".into(), json!(true));
+            }
         }
         Meter::MemoryByteSeconds => {
             data.insert("byte_seconds".into(), json!(d.value));

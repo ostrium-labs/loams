@@ -10,14 +10,19 @@
 //! trait) as usage events in the Loams usage profile ([`usage`], §63 §6). Every event carries the idempotency key `<node>/<source>/<seq>`,
 //! so retries and replays never double-count.
 //!
-//! Not here yet: the kube resolver and inotify final reads (MB2), Envoy ALS
-//! (MB3), the wasmtime host socket (MB4) and the aggregator (MB1).
+//! The T1 source ([`host`]): wasmtime hosts report each invocation on a
+//! node-local socket, and the agent splits the shared host cgroup's CPU by
+//! those reports, never past the cgroup total.
+//!
+//! Not here yet: the kube resolver and inotify final reads (MB2) and Envoy
+//! ALS (MB3, replaced by the gateway, §63 §21).
 
 pub mod agent;
 pub mod cgroup;
 pub mod delta;
 pub mod error;
 pub mod event;
+pub mod host;
 pub mod resolver;
 pub mod sink;
 pub mod spool;

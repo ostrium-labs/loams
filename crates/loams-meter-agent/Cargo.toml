@@ -18,12 +18,18 @@ base64.workspace = true
 bytes.workspace = true
 clap = { workspace = true, features = ["env"] }
 reqwest.workspace = true
+# The host report's MAC (platform doc 06 PD64), epochs and keys.
+hmac.workspace = true
 # The usage profile's CloudEvents, D270's record layout and the stream's
 # default partitioner (design §63 §6, §21).
 loams-cloudevents.workspace = true
 loams-log.workspace = true
+# loams.meter.v1.host, derived by hand (no protoc at build time).
+prost.workspace = true
+rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 thiserror.workspace = true
 # RFC 3339 windows in the CloudEvents envelope (PD2).
 time = { workspace = true, features = ["serde"] }
