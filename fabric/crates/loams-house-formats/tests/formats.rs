@@ -421,20 +421,15 @@ fn pretty_compact_and_pretty() {
 
 #[test]
 fn settings_change_the_text() {
+    use loams_house_types::text::DateTimeOutput;
     let batch = fixture().project(&[5]).unwrap();
-    let (settings, rest) = FormatSettings::split(&[(
-        "date_time_output_format".to_string(),
-        "unix_timestamp".to_string(),
-    )])
-    .unwrap();
-    assert!(rest.is_empty());
+    let mut settings = FormatSettings::default();
+    settings.text.date_time_output = DateTimeOutput::UnixTimestamp;
     assert_eq!(
         String::from_utf8(render("TSV", &batch, &settings)).unwrap(),
         "1792717323\n0\n"
     );
-    let (settings, _) =
-        FormatSettings::split(&[("date_time_output_format".to_string(), "iso".to_string())])
-            .unwrap();
+    settings.text.date_time_output = DateTimeOutput::Iso;
     assert_eq!(
         String::from_utf8(render("JSONEachRow", &batch, &settings)).unwrap(),
         "{\"dt\":\"2026-10-23T01:02:03Z\"}\n{\"dt\":\"1970-01-01T00:00:00Z\"}\n"

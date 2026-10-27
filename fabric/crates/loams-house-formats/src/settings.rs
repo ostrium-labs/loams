@@ -2,12 +2,18 @@
 //! from a request's settings (HTTP parameters, `SETTINGS` clause, native
 //! `Query` settings).
 //!
-//! The writers own these settings, so [`FormatSettings::split`] takes them out
-//! of a request's list and leaves the rest for the engine (Task 37, D1805):
-//! a setting is either honoured here or refused there, never ignored.
+//! The value-text settings (`output_format_json_*`,
+//! `output_format_decimal_trailing_zeros`, `date_time_output_format`,
+//! `session_timezone`) are the engine's (Task 37, D1805): it resolves them
+//! with the rest and hands the writer `Settings::text()`, put in
+//! [`FormatSettings::text`]. The settings only a writer reads
+//! (`output_format_native_write_json_as_string`, the Pretty, CSV and TSV
+//! ones) are taken out of a request's list by [`FormatSettings::split`]
+//! before the engine sees it: a setting is honoured in one place and refused
+//! nowhere else, never ignored.
 
 use loams_house_types::ChError;
-use loams_house_types::text::{DateTimeOutputFormat, TextSettings};
+use loams_house_types::text::TextSettings;
 
 /// How a result is written.
 #[derive(Debug, Clone)]
@@ -86,32 +92,14 @@ fn unsigned(name: &str, value: &str) -> Result<u64, ChError> {
 }
 
 impl FormatSettings {
-    /// Applies one setting. `Ok(false)`: not a format setting, so the engine
-    /// decides.
+    /// Applies one writer-only setting. `Ok(false)`: not one, so the engine
+    /// decides (the value-text settings included).
     ///
     /// # Errors
     ///
     /// A value the setting does not take, with ClickHouse's code.
     pub fn apply(&mut self, name: &str, value: &str) -> Result<bool, ChError> {
         match name {
-            "output_format_json_quote_64bit_integers" => {
-                self.text.json_quote_64bit_integers = boolean(name, value)?;
-            }
-            "output_format_json_quote_denormals" => {
-                self.text.json_quote_denormals = boolean(name, value)?;
-            }
-            "output_format_json_escape_forward_slashes" => {
-                self.text.json_escape_forward_slashes = boolean(name, value)?;
-            }
-            "output_format_json_named_tuples_as_objects" => {
-                self.text.json_named_tuples_as_objects = boolean(name, value)?;
-            }
-            "output_format_decimal_trailing_zeros" => {
-                self.text.decimal_trailing_zeros = boolean(name, value)?;
-            }
-            "date_time_output_format" => {
-                self.text.date_time_output_format = DateTimeOutputFormat::parse(value)?;
-            }
             "output_format_native_write_json_as_string" => {
                 self.native_write_json_as_string = boolean(name, value)?;
             }
@@ -148,19 +136,13 @@ impl FormatSettings {
             "output_format_tsv_crlf_end_of_line" => {
                 self.tsv_crlf_end_of_line = boolean(name, value)?;
             }
-            "session_timezone" if !value.is_empty() => {
-                // The zone of `DateTime` columns without one; the engine reads
-                // it too, so it is applied here and kept in the list.
-                self.text.timezone = value.to_string();
-                return Ok(false);
-            }
             _ => return Ok(false),
         }
         Ok(true)
     }
 
-    /// The format settings among `settings`, applied in order (a later value
-    /// wins), and the settings left for the engine.
+    /// The writer-only settings among `settings`, applied in order (a later
+    /// value wins), and the settings left for the engine.
     ///
     /// # Errors
     ///
@@ -186,25 +168,32 @@ mod tests {
     use super::*;
 
     #[test]
-    fn format_settings_are_taken_and_the_rest_left() {
+    fn writer_settings_are_taken_and_the_rest_left() {
         let settings = vec![
+            (
+                "output_format_native_write_json_as_string".to_string(),
+                "1".to_string(),
+            ),
+            ("max_threads".to_string(), "4".to_string()),
             (
                 "output_format_json_quote_64bit_integers".to_string(),
                 "1".to_string(),
             ),
-            ("max_threads".to_string(), "4".to_string()),
-            ("date_time_output_format".to_string(), "iso".to_string()),
-            ("session_timezone".to_string(), "Asia/Kolkata".to_string()),
+            (
+                "output_format_pretty_row_numbers".to_string(),
+                "0".to_string(),
+            ),
         ];
         let (format, rest) = FormatSettings::split(&settings).unwrap();
-        assert!(format.text.json_quote_64bit_integers);
-        assert_eq!(
-            format.text.date_time_output_format,
-            DateTimeOutputFormat::Iso
-        );
-        assert_eq!(format.text.timezone, "Asia/Kolkata");
+        assert!(format.native_write_json_as_string);
+        assert!(!format.pretty_row_numbers);
+        // The value-text settings are the engine's.
+        assert!(!format.text.json_quote_64bit_integers);
         let names: Vec<&str> = rest.iter().map(|(n, _)| n.as_str()).collect();
-        assert_eq!(names, ["max_threads", "session_timezone"]);
+        assert_eq!(
+            names,
+            ["max_threads", "output_format_json_quote_64bit_integers"]
+        );
     }
 
     #[test]
@@ -212,17 +201,10 @@ mod tests {
         let mut format = FormatSettings::default();
         assert_eq!(
             format
-                .apply("output_format_json_quote_denormals", "maybe")
+                .apply("output_format_write_statistics", "maybe")
                 .unwrap_err()
                 .code,
             6
-        );
-        assert_eq!(
-            format
-                .apply("date_time_output_format", "rfc")
-                .unwrap_err()
-                .code,
-            36
         );
         assert_eq!(
             format.apply("format_csv_delimiter", ";;").unwrap_err().code,

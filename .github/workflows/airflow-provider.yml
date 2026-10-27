@@ -1,0 +1,47 @@
+# The Airflow provider, airflow-provider-loams (integrations/airflow):
+# ruff and its unit tests (mocks only; no Loams stack). Runs when the provider,
+# the Python SDK it depends on, or this file changes.
+name: Airflow provider
+
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - "integrations/airflow/**"
+      - "sdks/python/**"
+      - ".github/workflows/airflow-provider.yml"
+  pull_request:
+    paths:
+      - "integrations/airflow/**"
+      - "sdks/python/**"
+      - ".github/workflows/airflow-provider.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: airflow-provider-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  airflow-provider:
+    name: "Airflow provider: ruff + pytest"
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: integrations/airflow
+    env:
+      UV_PYTHON: "3.12"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      - name: install (Airflow 3.3.2, all extras)
+        run: uv sync --all-extras --dev
+      - name: ruff check
+        run: uv run ruff check .
+      - name: ruff format
+        run: uv run ruff format --check .
+      - name: pytest
+        run: uv run pytest -q

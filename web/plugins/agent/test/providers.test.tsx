@@ -1,6 +1,6 @@
 import type { ChatProviderInfo, IpcResult, LoamsDesktopApi } from '@loams/desktop/contracts';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { ProvidersSection } from '../src/providers.js';
 import { AgentStore } from '../src/store.js';
 
@@ -27,8 +27,8 @@ function setup(providers: ChatProviderInfo[]) {
     configureProvider: vi.fn(
       async (_id: string, _cfg: unknown): Promise<IpcResult<ChatProviderInfo>> => ok(mk({})),
     ),
-    testProvider: vi.fn(
-      async (): Promise<IpcResult<{ model: string; ms: number }>> => ok({ model: 'm', ms: 12 }),
+    testProvider: vi.fn(async (): Promise<IpcResult<{ model: string; ms: number }>> =>
+      ok({ model: 'm', ms: 12 }),
     ),
     list: vi.fn(async () => []),
     onEvent: () => () => {},

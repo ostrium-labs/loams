@@ -23,6 +23,21 @@ are retained under apps/mobile/ and plugins/ respectively.
 
 Third-party attributions
 ------------------------
+ClickHouse (https://github.com/ClickHouse/ClickHouse), Apache License 2.0,
+Copyright 2016-2026 ClickHouse, Inc. The Loams House engine's type rules
+(fabric/crates/loams-house-sql/src/coerce/rules.rs and
+fabric/crates/loams-house-exec/src/ops/int_div.rs) port the logic of
+src/DataTypes/getLeastSupertype.cpp, src/DataTypes/NumberTraits.h,
+src/Functions/FunctionsArithmetic.h, src/Functions/intDiv.cpp,
+src/Functions/FunctionsComparison.h and src/Functions/FunctionsLogical.cpp,
+as measured on clickhouse-server 26.9.2.8. The output format writers in
+fabric/crates/loams-house-formats/ (plan HE1 Task 36) follow the layouts of
+ClickHouse's src/Processors/Formats/Impl/ (JSON, JSONCompact, JSONEachRow,
+JSONCompactEachRow, TabSeparated, CSV, Values, RowBinary, Native, Pretty and
+PrettyCompact output formats), src/Formats/JSONUtils.cpp and the binary
+serializations of src/DataTypes/Serializations/; each file names the sources
+it follows. No ClickHouse code is copied.
+
 Quickwit (https://github.com/quickwit-oss/quickwit), Apache License 2.0.
 Files under crates/loams-quickwit/ are derived from Quickwit revision
 af0591a36e16831af9a2ad9484e12465f511ef84. Quickwit's NOTICE:
@@ -424,12 +439,3 @@ CC0-1.0. deploy/loams-cloud/policy/disposable_email_blocklist.conf is that
 project's list at the revision recorded in deploy/loams-cloud/policy/PINS.md,
 unmodified; the dedication is in
 deploy/loams-cloud/policy/LICENSE-disposable-email-domains.txt.
-
-ClickHouse (https://github.com/ClickHouse/ClickHouse), Apache License 2.0,
-Copyright 2016-2026 ClickHouse, Inc. The output format writers in
-fabric/crates/loams-house-formats/ (plan HE1 Task 36) follow the layouts of
-ClickHouse's src/Processors/Formats/Impl/ (JSON, JSONCompact, JSONEachRow,
-JSONCompactEachRow, TabSeparated, CSV, Values, RowBinary, Native, Pretty and
-PrettyCompact output formats), src/Formats/JSONUtils.cpp and the binary
-serializations of src/DataTypes/Serializations/, as of the 26.9.2.8 release;
-each file names the sources it follows. No ClickHouse code is copied.

@@ -188,9 +188,10 @@ fn handle(engine: &Engine, runtime: &tokio::runtime::Runtime, req: Request) -> R
                 .filter(|(k, _)| !k.starts_with("param_") && !NOT_SETTINGS.contains(&k.as_str()))
                 .cloned()
                 .collect();
-            // The format settings are the writer's (Task 36); the rest go to
-            // the engine, which refuses what it does not honour (Task 37).
-            let (format_settings, settings) = match FormatSettings::split(&settings) {
+            // The writer-only settings are taken here (Task 36); the rest go
+            // to the engine (Task 37), which resolves the value-text ones and
+            // refuses what it does not honour.
+            let (mut format_settings, settings) = match FormatSettings::split(&settings) {
                 Ok(split) => split,
                 Err(e) => return error(&e),
             };
@@ -200,6 +201,7 @@ fn handle(engine: &Engine, runtime: &tokio::runtime::Runtime, req: Request) -> R
             let result = runtime.block_on(engine.query(&sql, &params, &settings, &database));
             match result {
                 Ok(answer) => {
+                    format_settings.text = answer.settings.text();
                     let name = answer.format.clone().unwrap_or(default_format);
                     let format = match Format::parse(&name) {
                         Ok(format) => format,

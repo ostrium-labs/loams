@@ -59,7 +59,7 @@ function useWatch<T>(
     unsupported: false,
     error: null,
   });
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the caller names the stream's inputs
+  // oxlint-disable-next-line react/exhaustive-deps -- the caller names the stream's inputs
   useEffect(() => {
     if (!transport) return;
     const abort = new AbortController();

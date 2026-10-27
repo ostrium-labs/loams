@@ -1,6 +1,6 @@
 // FT0 Task 9 (plan FT1): the run record (the Live app `factory`, `live/factory.js`, on a
 // fake `loams:server`) and the `factory_events` CloudEvents, with no server.
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 
 import {
   createRunRecorder,

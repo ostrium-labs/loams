@@ -1,0 +1,1 @@
+SELECT NOT u8, NOT (u8 - 1), NOT f64 FROM t24 ORDER BY id

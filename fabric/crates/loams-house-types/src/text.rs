@@ -19,9 +19,6 @@
 //! * **Text** (`Pretty*`, `JSONStrings*`, ClickHouse's `serializeText`): as
 //!   Raw, but `NULL` is `ᴺᵁᴸᴸ` (HE1 Task 36).
 //!
-//! `date_time_output_format` (`simple`, `iso`, `unix_timestamp`) changes how
-//! `DateTime` and `DateTime64` are written in every style.
-//!
 //! Floats are written in their shortest round-trip form, laid out as
 //! ClickHouse does: plain digits while the decimal exponent is in
 //! `-7 < e < 21`, else `d.ddde±x` (`1e21`, `1e-7`), with `nan`, `inf`, `-inf`
@@ -64,38 +61,34 @@ pub enum Style {
     Text,
 }
 
-/// `date_time_output_format`.
+/// `date_time_output_format`: how `DateTime` and `DateTime64` values are
+/// written (ClickHouse's `FormatSettings::DateTimeOutputFormat`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum DateTimeOutputFormat {
-    /// `YYYY-MM-DD hh:mm:ss[.f…]` in the column's zone (the default).
+pub enum DateTimeOutput {
+    /// `simple` (the default): `YYYY-MM-DD hh:mm:ss[.fff]` in the value's zone.
     #[default]
     Simple,
-    /// `YYYY-MM-DDThh:mm:ss[.f…]Z`, always in UTC.
+    /// `iso`: `YYYY-MM-DDThh:mm:ss[.fff]Z`, always in UTC.
     Iso,
-    /// Seconds since the epoch (`DateTime64`: with its fraction digits).
+    /// `unix_timestamp`: seconds since the epoch, with the fraction of a
+    /// `DateTime64`.
     UnixTimestamp,
 }
 
-impl DateTimeOutputFormat {
+impl DateTimeOutput {
     /// The setting's value as ClickHouse spells it.
-    ///
-    /// # Errors
-    ///
-    /// `36 BAD_ARGUMENTS` for any other value, as ClickHouse answers.
-    pub fn parse(value: &str) -> Result<Self, ChError> {
-        match value.to_ascii_lowercase().as_str() {
-            "simple" => Ok(Self::Simple),
-            "iso" => Ok(Self::Iso),
-            "unix_timestamp" => Ok(Self::UnixTimestamp),
-            other => Err(ChError::bad_arguments(format!(
-                "Unexpected value of DateTimeOutputFormat: '{other}'"
-            ))),
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "simple" => Some(Self::Simple),
+            "iso" => Some(Self::Iso),
+            "unix_timestamp" => Some(Self::UnixTimestamp),
+            _ => None,
         }
     }
 }
 
 /// The settings that change how values are written.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TextSettings {
     /// The zone for `DateTime` columns without one of their own: the
     /// session's `session_timezone`, else the server's.
@@ -111,7 +104,7 @@ pub struct TextSettings {
     /// `output_format_decimal_trailing_zeros` (default: off).
     pub decimal_trailing_zeros: bool,
     /// `date_time_output_format` (default: `simple`).
-    pub date_time_output_format: DateTimeOutputFormat,
+    pub date_time_output: DateTimeOutput,
 }
 
 impl Default for TextSettings {
@@ -123,7 +116,7 @@ impl Default for TextSettings {
             json_escape_forward_slashes: true,
             json_named_tuples_as_objects: true,
             decimal_trailing_zeros: false,
-            date_time_output_format: DateTimeOutputFormat::Simple,
+            date_time_output: DateTimeOutput::Simple,
         }
     }
 }
@@ -218,9 +211,9 @@ impl Writer<'_> {
     fn null(&self, style: Style, out: &mut Vec<u8>) {
         out.extend_from_slice(match style {
             Style::Tsv | Style::Csv | Style::Raw => b"\\N",
+            Style::Text => "ᴺᵁᴸᴸ".as_bytes(),
             Style::Json => b"null",
             Style::Quoted => b"NULL",
-            Style::Text => "ᴺᵁᴸᴸ".as_bytes(),
         });
     }
 
@@ -443,7 +436,12 @@ impl Writer<'_> {
             }
             ChType::DateTime(tz) => {
                 let secs = timestamp_value(array, row).ok_or_else(|| bad_array(t, array))?;
-                let text = self.datetime(secs.0, 0, 0, tz.as_deref())?;
+                let text = self.datetime(
+                    secs.0,
+                    0,
+                    0,
+                    tz.as_deref().unwrap_or(&self.settings.timezone),
+                )?;
                 self.text_like(&text, style, out);
             }
             ChType::DateTime64(p, tz) => {
@@ -456,7 +454,7 @@ impl Writer<'_> {
                     ticks.div_euclid(scale),
                     ticks.rem_euclid(scale),
                     *p,
-                    tz.as_deref(),
+                    tz.as_deref().unwrap_or(&self.settings.timezone),
                 )?;
                 self.text_like(&text, style, out);
             }
@@ -543,36 +541,6 @@ impl Writer<'_> {
             other => return Err(ChError::unsupported(format!("Writing values of {other}"))),
         }
         Ok(())
-    }
-
-    /// A `DateTime` (`precision` 0) or `DateTime64` in
-    /// `date_time_output_format`.
-    fn datetime(
-        &self,
-        secs: i64,
-        frac: i64,
-        precision: u8,
-        tz: Option<&str>,
-    ) -> Result<String, ChError> {
-        match self.settings.date_time_output_format {
-            DateTimeOutputFormat::Simple => {
-                datetime_text(secs, frac, precision, tz.unwrap_or(&self.settings.timezone))
-            }
-            DateTimeOutputFormat::Iso => {
-                let mut text = datetime_text(secs, frac, precision, "UTC")?;
-                // `YYYY-MM-DD hh:mm:ss` → `YYYY-MM-DDThh:mm:ssZ`.
-                text.replace_range(10..11, "T");
-                text.push('Z');
-                Ok(text)
-            }
-            DateTimeOutputFormat::UnixTimestamp => {
-                if precision == 0 {
-                    return Ok(secs.to_string());
-                }
-                let ticks = secs as i128 * 10i128.pow(u32::from(precision)) + frac as i128;
-                Ok(decimal_text(&ticks.to_string(), precision, true))
-            }
-        }
     }
 
     /// The bytes of a `String` or `FixedString` key, unescaped.
@@ -666,6 +634,18 @@ impl Writer<'_> {
     }
 
     /// A value ClickHouse writes as text: dates, times, UUIDs, IPs.
+    /// A `DateTime` or `DateTime64` value's text under
+    /// `date_time_output_format` (ClickHouse's `SerializationDateTime` and
+    /// `SerializationDateTime64`): `secs` and `frac` are the floor of the
+    /// seconds and the non-negative remainder, as [`datetime_text`] takes them.
+    fn datetime(&self, secs: i64, frac: i64, precision: u8, tz: &str) -> Result<String, ChError> {
+        match self.settings.date_time_output {
+            DateTimeOutput::Simple => datetime_text(secs, frac, precision, tz),
+            DateTimeOutput::Iso => datetime_iso_text(secs, frac, precision),
+            DateTimeOutput::UnixTimestamp => Ok(unix_timestamp_text(secs, frac, precision)),
+        }
+    }
+
     fn text_like(&self, text: &str, style: Style, out: &mut Vec<u8>) {
         match style {
             Style::Tsv | Style::Raw | Style::Text => out.extend_from_slice(text.as_bytes()),
@@ -700,7 +680,7 @@ impl Writer<'_> {
 
 /// A JSON string as ClickHouse's `writeJSONString` writes one: `/` escaped
 /// while `output_format_json_escape_forward_slashes` is on, control bytes as
-/// `\uXXXX`, other bytes (UTF-8 included) as they are.
+/// `\\uXXXX`, other bytes (UTF-8 included) as they are.
 pub fn json_string(bytes: &[u8], settings: &TextSettings, out: &mut Vec<u8>) {
     out.push(b'"');
     for &b in bytes {
@@ -832,6 +812,35 @@ fn timestamp_value(array: &dyn Array, row: usize) -> Option<(i64, TimeUnit)> {
         ),
         _ => return None,
     })
+}
+
+/// `YYYY-MM-DDThh:mm:ss[.fff…]Z` of `secs` since the epoch, in UTC whatever
+/// the value's zone (ClickHouse's `writeDateTimeTextISO`, used by
+/// `date_time_output_format = 'iso'`).
+pub fn datetime_iso_text(secs: i64, frac: i64, precision: u8) -> Result<String, ChError> {
+    let mut text = datetime_text(secs, frac, precision, "UTC")?;
+    text.replace_range(10..11, "T");
+    text.push('Z');
+    Ok(text)
+}
+
+/// Seconds since the epoch, then `.` and `precision` digits of the fraction
+/// (ClickHouse's `writeDateTimeUnixTimestamp`, used by
+/// `date_time_output_format = 'unix_timestamp'`). `secs` is the floor and
+/// `frac` the non-negative remainder; ClickHouse splits a negative value
+/// towards zero (`-1.5` is `-1` and `.5`), so the parts are turned that way.
+pub fn unix_timestamp_text(secs: i64, frac: i64, precision: u8) -> String {
+    if precision == 0 {
+        return secs.to_string();
+    }
+    let scale = 10i64.pow(u32::from(precision));
+    let (whole, part) = if secs < 0 && frac > 0 {
+        (secs + 1, scale - frac)
+    } else {
+        (secs, frac)
+    };
+    let sign = if whole == 0 && secs < 0 { "-" } else { "" };
+    format!("{sign}{whole}.{part:0width$}", width = precision as usize)
 }
 
 /// `YYYY-MM-DD hh:mm:ss[.fff…]` of `secs` since the epoch in zone `tz`, with

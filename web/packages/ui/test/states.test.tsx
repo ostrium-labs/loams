@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { Button, IconButton, InputControl, ListRow, SearchInput, TooltipProvider } from '../src';
 
 const STYLES = readFileSync(join(import.meta.dirname, '../src/styles.css'), 'utf8');
@@ -120,7 +120,7 @@ describe('SearchInput', () => {
   it('clears with the button and with Escape, and Escape stops only when it cleared', () => {
     let escapes = 0;
     render(
-      // biome-ignore lint/a11y/noStaticElementInteractions: a test listener for bubbling keys
+      // oxlint-disable-next-line jsx-a11y/no-static-element-interactions -- a test listener for bubbling keys
       <div onKeyDown={(e) => e.key === 'Escape' && escapes++}>
         <Search />
       </div>,
@@ -165,7 +165,7 @@ describe('ListRow', () => {
     const onClick = vi.fn();
     const outer = vi.fn();
     render(
-      // biome-ignore lint/a11y/useKeyWithClickEvents lint/a11y/noStaticElementInteractions: a bubble-phase listener the row must not reach
+      // oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- a bubble-phase listener the row must not reach
       <div onClick={outer}>
         <ListRow render={<button type="button" />} disabled onClick={onClick}>
           Jobs

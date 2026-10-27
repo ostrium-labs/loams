@@ -32,6 +32,11 @@ cargo_package(
             "root": "tests/conformance.rs",
         },
         {
+            "name": "engine",
+            "crate": "engine",
+            "root": "tests/engine.rs",
+        },
+        {
             "name": "fetch",
             "crate": "fetch",
             "root": "tests/fetch.rs",
@@ -71,9 +76,15 @@ cargo_package(
             "crate": "sigstore",
             "root": "tests/sigstore.rs",
         },
+        {
+            "name": "walrus",
+            "crate": "walrus",
+            "root": "tests/walrus.rs",
+        },
     ],
     deps = [
         "//crates/loams-agentd-harness:loams-agentd-harness",
+        "//crates/loams-walrus:loams-walrus",
         "//third-party/rust:async-trait",
         "//third-party/rust:base64-0_23",
         "//third-party/rust:hex",
@@ -83,13 +94,14 @@ cargo_package(
         "//third-party/rust:semver",
         "//third-party/rust:serde",
         "//third-party/rust:serde_json",
-        "//third-party/rust:sha2-0_11",
+        "//third-party/rust:sha2",
         "//third-party/rust:sigstore-verify",
         "//third-party/rust:thiserror",
         "//third-party/rust:tokio",
         "//third-party/rust:tracing",
     ],
     dev_deps = [
+        "//third-party/rust:axum",
         "//third-party/rust:rcgen",
         "//third-party/rust:rustls",
         "//third-party/rust:tempfile",
