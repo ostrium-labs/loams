@@ -2,7 +2,7 @@
 
 import { validateManifest } from '@loams/console-host';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 import pkg from '../package.json';
 import { type JobSummary, type JobsClient, JobsClientError, type Page } from '../src/client.js';
 import {

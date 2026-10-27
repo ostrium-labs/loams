@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { Button, IconButton, InputControl, ListRow, SearchInput, TooltipProvider } from '../src';
 
 const STYLES = readFileSync(join(import.meta.dirname, '../src/styles.css'), 'utf8');

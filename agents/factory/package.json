@@ -17,7 +17,7 @@
   "scripts": {
     "lint": "biome check .",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vp test run"
   },
   "dependencies": {
     "@mastra/core": "1.78.0",
@@ -30,6 +30,8 @@
     "@biomejs/biome": "2.5.15",
     "@types/node": "24.13.6",
     "typescript": "5.9.3",
-    "vitest": "5.0.3"
+    "vite-plus": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
   }
 }

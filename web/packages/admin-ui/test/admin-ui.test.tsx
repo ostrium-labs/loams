@@ -2,7 +2,7 @@ import { timestampFromDate } from '@bufbuild/protobuf/wkt';
 import { Code, ConnectError } from '@connectrpc/connect';
 import { admin } from '@loams/proto';
 import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 import { AuditTable, avatarKind, errorText, iso, num, slugify, useTrail } from '../src/index.js';
 import { SEED, stubRouter, withConsole } from '../src/testing.js';
 
