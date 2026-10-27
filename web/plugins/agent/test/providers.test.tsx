@@ -27,8 +27,8 @@ function setup(providers: ChatProviderInfo[]) {
     configureProvider: vi.fn(
       async (_id: string, _cfg: unknown): Promise<IpcResult<ChatProviderInfo>> => ok(mk({})),
     ),
-    testProvider: vi.fn(
-      async (): Promise<IpcResult<{ model: string; ms: number }>> => ok({ model: 'm', ms: 12 }),
+    testProvider: vi.fn(async (): Promise<IpcResult<{ model: string; ms: number }>> =>
+      ok({ model: 'm', ms: 12 }),
     ),
     list: vi.fn(async () => []),
     onEvent: () => () => {},

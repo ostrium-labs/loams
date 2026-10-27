@@ -26,6 +26,14 @@ message HostMessage {
     Invoke invoke = 2;
     HostReply host_reply = 3;
     Probe probe = 4;
+    // The agent profile (MS1 Task 1 spike, D1807): see "Agent profile"
+    // below. A function worker never receives these.
+    AgentLoad agent_load = 5;
+    AcpMessage acp = 6;
+    AgentReply agent_reply = 7;
+    BodyChunk body_chunk = 8;
+    TimerFired timer_fired = 9;
+    Entropy entropy = 10;
   }
 }
 
@@ -36,6 +44,17 @@ message WorkerMessage {
     HostCall host_call = 2;
     Done done = 3;
     ProbeDone probe_done = 4;
+    // The agent profile (MS1 Task 1 spike, D1807).
+    AgentLoaded agent_loaded = 5;
+    AcpMessage acp = 6;
+    AgentCall agent_call = 7;
+    BodyChunk body_chunk = 8;
+    TimerSet timer_set = 9;
+    TimerClear timer_clear = 10;
+    EntropyRequest entropy_request = 11;
+    AgentIdle idle = 12;
+    AgentLog log = 13;
+    AgentStopped stopped = 14;
   }
 }
 
@@ -221,10 +240,168 @@ enum ProbeKind {
   PROBE_KIND_OPEN_SOCKET = 3;
   // Starting a process (`/bin/true`).
   PROBE_KIND_EXEC = 4;
+  // Starting a thread (the agent profile's tests).
+  PROBE_KIND_SPAWN_THREAD = 5;
 }
 
 // The worker survived a `Probe`; `error` is the system call's own error, if
 // it returned one.
 message ProbeDone {
   string error = 1;
+}
+
+// ---- Agent profile (MS1 Task 1 spike, D1807) ----
+//
+// One long-lived worker per running agent. The host sends `AgentLoad`; the
+// worker seals itself (the same sandbox as a function worker), evaluates
+// the bundle and answers `AgentLoaded`. Then the worker is an event loop:
+// it runs its job queue dry, sends `AgentIdle`, and blocks reading the next
+// frame. ACP travels as `AcpMessage` frames in both directions; everything
+// else the agent needs (fetch, models, MCP, timers, its token, entropy) is
+// an `AgentCall` or a timer frame that agentd answers. The host kills a
+// worker that does not send `AgentIdle` within its CPU slice plus a grace
+// (QuickJS C built-ins that never poll the interrupt handler).
+
+// The first frame of an agent worker.
+message AgentLoad {
+  // The bundle's source, UTF-8: one ES module.
+  bytes bundle = 1;
+  // The runtime's memory limit in bytes.
+  uint64 memory_limit = 2;
+  // The most JavaScript CPU one dispatch (a frame and the jobs it
+  // unblocks) may take, in nanoseconds.
+  uint64 cpu_slice_ns = 3;
+  // 32 bytes from the host's CSPRNG: seeds `Math.random` and the
+  // `crypto` pool.
+  bytes entropy = 4;
+  // Configuration values the agent reads with `loams.config()`.
+  map<string, string> config = 5;
+}
+
+// The answer to `AgentLoad`: the bundle's name and version, or why it
+// failed to load (the worker then exits).
+message AgentLoaded {
+  string name = 1;
+  string version = 2;
+  string error = 3;
+}
+
+// One ACP JSON-RPC message (one line of the ACP stdio transport).
+message AcpMessage {
+  string json = 1;
+}
+
+// A host call of the agent: agentd answers it with `AgentReply` (and
+// `BodyChunk`s for bodies and streams).
+message AgentCall {
+  // Unique within the worker's life.
+  uint64 id = 1;
+  oneof kind {
+    FetchCall fetch = 2;
+    ModelCall model = 3;
+    McpCall mcp = 4;
+    TokenCall token = 5;
+  }
+}
+
+message Header {
+  string name = 1;
+  string value = 2;
+}
+
+// `fetch`: agentd performs it through the install's egress proxy. A body
+// follows as `BodyChunk`s with this call's id when `body_follows`.
+message FetchCall {
+  string url = 1;
+  string method = 2;
+  repeated Header headers = 3;
+  bool body_follows = 4;
+}
+
+// A call to agentd's model proxy (D1454) in one of its shapes.
+message ModelCall {
+  // `chat` (Chat Completions), `responses` or `messages` (Anthropic).
+  string api = 1;
+  // The request body, JSON.
+  string json = 2;
+  // Stream the response: its events arrive as `BodyChunk`s (one JSON
+  // event each) before the `AgentReply`.
+  bool stream = 3;
+}
+
+// A call through agentd's MCP shim (D1468: undeclared tools are hidden).
+message McpCall {
+  // `call` or `list`.
+  string method = 1;
+  string server = 2;
+  string tool = 3;
+  // The tool's arguments, JSON.
+  string json = 4;
+}
+
+// `loams.token()`: the install's current Place token (D1453).
+message TokenCall {}
+
+// The host's answer to an `AgentCall`.
+message AgentReply {
+  uint64 id = 1;
+  oneof answer {
+    // A catchable error, such as an egress refusal.
+    string error = 2;
+    // A JSON result (model, MCP, token).
+    string json = 3;
+    // A fetch response's head; its body follows as `BodyChunk`s.
+    FetchHead fetch = 4;
+  }
+}
+
+message FetchHead {
+  uint32 status = 1;
+  string status_text = 2;
+  repeated Header headers = 3;
+  string url = 4;
+}
+
+// A piece of a body or a stream, at most 1 MiB.
+message BodyChunk {
+  uint64 id = 1;
+  bytes data = 2;
+  bool last = 3;
+}
+
+// `setTimeout`/`setInterval`: the worker has no timer of its own.
+message TimerSet {
+  uint64 id = 1;
+  uint64 ms = 2;
+}
+
+message TimerClear {
+  uint64 id = 1;
+}
+
+message TimerFired {
+  uint64 id = 1;
+}
+
+// Fresh entropy from the host, mixed into the worker's `crypto` pool.
+message Entropy {
+  bytes data = 1;
+}
+
+// The worker's `crypto` pool wants fresh entropy (sent after every 1 MiB
+// drawn); it keeps serving meanwhile.
+message EntropyRequest {}
+
+// The worker drained its job queue and blocks reading the next frame.
+message AgentIdle {}
+
+// One `console.*` line.
+message AgentLog {
+  LogLevel level = 1;
+  string line = 2;
+}
+
+// The worker stopped itself (a limit) and exits after this frame.
+message AgentStopped {
+  string reason = 1;
 }

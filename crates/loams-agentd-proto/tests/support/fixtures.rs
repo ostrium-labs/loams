@@ -933,6 +933,74 @@ pub fn all() -> Vec<Fixture> {
             harness: HarnessId::Unsupported,
         },
     ));
+    let forgejo = || loams_agentd_proto::factory::FactoryAppInfo {
+        id: s("forgejo"),
+        label: s("Forgejo"),
+        url: some("https://git.example.com"),
+        health: loams_agentd_proto::factory::FactoryHealth::Ok,
+        has_panels: true,
+        credential_fields: vec![
+            loams_agentd_proto::factory::FactoryCredentialField {
+                key: s("token"),
+                label: s("Access token"),
+                secret: true,
+            },
+            loams_agentd_proto::factory::FactoryCredentialField {
+                key: s("ssoOrigin"),
+                label: s("SSO origin (optional)"),
+                secret: false,
+            },
+        ],
+        fields: Some(BTreeMap::from([(
+            s("ssoOrigin"),
+            s("https://sso.example.com"),
+        )])),
+        persistent: true,
+        preview: None,
+    };
+    add(Fixture::new(
+        "FactoryAppList",
+        loams_agentd_proto::factory::FactoryAppList {
+            apps: vec![forgejo()],
+        },
+    ));
+    add(Fixture::new(
+        "FactoryAppParams",
+        loams_agentd_proto::factory::FactoryAppParams { app: s("forgejo") },
+    ));
+    add(Fixture::new(
+        "FactoryAppReply",
+        loams_agentd_proto::factory::FactoryAppReply {
+            app: Some(forgejo()),
+            error: None,
+        },
+    ));
+    add(Fixture::new(
+        "FactoryConfigureParams",
+        loams_agentd_proto::factory::FactoryConfigureParams {
+            app: s("forgejo"),
+            url: s("https://git.example.com"),
+            fields: BTreeMap::from([(s("token"), s("pat-1"))]),
+        },
+    ));
+    add(Fixture::new(
+        "FactoryQueryParams",
+        loams_agentd_proto::factory::FactoryQueryParams {
+            app: s("forgejo"),
+            op: s("repos"),
+            params: serde_json::json!({ "limit": 20 }),
+        },
+    ));
+    add(Fixture::new(
+        "FactoryQueryReply",
+        loams_agentd_proto::factory::FactoryQueryReply {
+            value: None,
+            error: Some(loams_agentd_proto::factory::FactoryError {
+                code: s("auth_failed"),
+                message: s("GET /api/v1/repos/search failed with 401"),
+            }),
+        },
+    ));
     add(Fixture::new(
         "TitleSettings",
         TitleSettings {
