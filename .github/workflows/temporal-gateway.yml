@@ -95,3 +95,43 @@ jobs:
           path: target/compute/temporal-gateway-profile
           if-no-files-found: ignore
           retention-days: 14
+
+  # The other official SDKs (D2138), one matrix entry each, in parallel with
+  # the Go and TypeScript job: each brings up its own profile stack and runs
+  # only its own leg (SDK_LEGS=<sdk>; conformance/compute/temporal/gateway/legs/<sdk>.sh).
+  # SDK lanes append their SDK to `sdk`. Python: temporalio under uv in the
+  # pinned PYTHON_IMAGE (pins.env TEMPORAL_SDK_PY, UV_VERSION).
+  sdk-leg:
+    name: "Temporal gateway: ${{ matrix.sdk }} SDK leg (temporal-gateway profile)"
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.gateway == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        sdk: [python]
+    env:
+      OC_OUT: ${{ github.workspace }}/target/compute
+      DOCKER_BUILDKIT: '1'
+      LEG_TIMEOUT: '900'
+      SDK_LEGS: ${{ matrix.sdk }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: the ${{ matrix.sdk }} leg through the temporal-gateway profile
+        run: conformance/compute/temporal/gateway/run.sh --profile
+      - name: the stack's logs
+        if: failure() || cancelled()
+        run: |
+          . conformance/compute/lib.sh
+          oc_compose --gateway --profile temporal-gateway ps -a || true
+          oc_compose --gateway --profile temporal-gateway logs --no-color --tail 500 temporal-gateway loams compute-init compute1 >"$OC_OUT/temporal-gateway-profile/stack.log" 2>&1 || true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: temporal-gateway-sdk-leg-${{ matrix.sdk }}
+          path: target/compute/temporal-gateway-profile
+          if-no-files-found: ignore
+          retention-days: 14
