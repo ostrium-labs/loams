@@ -45,6 +45,18 @@ licence = "MIT"
 source = "https://www.npmjs.com/package/@temporalio/client/v/1.24.0"
 resolve = "npm:@temporalio/client"
 
+[TEMPORAL_SDK_PY]
+value = "1.34.0"
+licence = "MIT"
+source = "https://github.com/temporalio/sdk-python/blob/1.34.0/LICENSE"
+resolve = "pypi:temporalio"
+
+[UV_VERSION]
+value = "0.12.24"
+licence = "MIT OR Apache-2.0"
+source = "https://github.com/astral-sh/uv/blob/0.12.24/LICENSE-MIT"
+resolve = "pypi:uv"
+
 [TEMPORAL_SAMPLES_GO]
 value = "d3784428122e0cd4b28e91a0cd86b589749abf28"
 licence = "Apache-2.0"

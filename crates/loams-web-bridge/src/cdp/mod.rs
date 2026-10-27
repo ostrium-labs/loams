@@ -1,9 +1,13 @@
 //! The Chrome DevTools Protocol client: a transport seam and a thin client on
-//! top of it.
+//! top of it, engine-neutral.
 //!
-//! The seam exists so the provider can be tested without a Cloudflare account.
-//! `crate::browser_run::ws::WebSocketTransport` is the real one; the
-//! conformance suite and the unit tests use a scripted transport.
+//! The seam exists so a provider can be tested without a browser.
+//! [`ws::WebSocketTransport`] is the real one; the conformance suite and the
+//! unit tests use a scripted transport (`crate::testing`).
+
+pub mod ax;
+pub mod budget;
+pub mod ws;
 
 use std::sync::Arc;
 
@@ -11,8 +15,55 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::browser_run::endpoint::RequestHeaders;
 use crate::error::BridgeError;
+
+/// The headers of the WebSocket handshake.
+///
+/// `Debug` is written by hand: a header may carry a bearer token, and a `Debug`
+/// of a header list must never be able to print it.
+#[derive(Clone, Default, PartialEq, Eq)]
+pub struct RequestHeaders(Vec<(String, String)>);
+
+impl RequestHeaders {
+    /// No headers.
+    pub fn none() -> Self {
+        Self::default()
+    }
+
+    /// Add a header.
+    pub fn with(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        self.0.push((name.into(), value.into()));
+        self
+    }
+
+    /// The headers as pairs, for a transport that wants them.
+    pub fn as_pairs(&self) -> &[(String, String)] {
+        &self.0
+    }
+
+    /// Whether a header is present.
+    pub fn contains(&self, name: &str) -> bool {
+        self.0.iter().any(|(key, _)| key.eq_ignore_ascii_case(name))
+    }
+
+    /// A header's value, for a test that has to check what was sent.
+    pub fn get(&self, name: &str) -> Option<&str> {
+        self.0
+            .iter()
+            .find(|(key, _)| key.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value.as_str())
+    }
+}
+
+impl std::fmt::Debug for RequestHeaders {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut map = f.debug_map();
+        for (name, _) in &self.0 {
+            map.entry(&name, &crate::redact::REDACTED);
+        }
+        map.finish()
+    }
+}
 
 /// One CDP request.
 #[derive(Debug, Serialize)]
@@ -71,7 +122,7 @@ pub struct CdpErrorBody {
     /// The protocol error code.
     #[serde(default)]
     pub code: i64,
-    /// The message Cloudflare's browser sent.
+    /// The message the browser sent.
     #[serde(default)]
     pub message: String,
 }
@@ -82,11 +133,50 @@ impl std::fmt::Display for CdpErrorBody {
     }
 }
 
+/// One unsolicited CDP message: an event such as `Fetch.requestPaused`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CdpEvent {
+    /// The event's method, for example `Fetch.requestPaused`.
+    pub method: String,
+    /// Its parameters.
+    pub params: Value,
+    /// The attached target's session, when the event is page-scoped.
+    pub session_id: Option<String>,
+}
+
+impl CdpEvent {
+    /// Read an event from a decoded message, if it is one (it has a `method`
+    /// and no `id`).
+    pub fn from_message(message: &Value) -> Option<Self> {
+        if message.get("id").is_some_and(|id| !id.is_null()) {
+            return None;
+        }
+        let method = message.get("method")?.as_str()?.to_string();
+        Some(Self {
+            method,
+            params: message.get("params").cloned().unwrap_or(Value::Null),
+            session_id: message
+                .get("sessionId")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+        })
+    }
+}
+
 /// An open CDP connection.
 #[async_trait::async_trait]
 pub trait CdpConnection: Send + Sync + std::fmt::Debug {
     /// Send a command and wait for its result.
     async fn send(&self, request: CdpRequest) -> Result<Value, BridgeError>;
+
+    /// The connection's event stream, handed out once.
+    ///
+    /// A connection that cannot deliver events answers `None`, and a provider
+    /// then does without the features that need them (request interception),
+    /// relying on its checks before and after each navigation instead.
+    fn take_events(&self) -> Option<tokio::sync::mpsc::UnboundedReceiver<CdpEvent>> {
+        None
+    }
 
     /// Close the socket. Closing twice is not an error.
     async fn close(&self) -> Result<(), BridgeError>;
@@ -143,6 +233,11 @@ impl CdpClient {
     /// Close the connection.
     pub async fn close(&self) -> Result<(), BridgeError> {
         self.connection.close().await
+    }
+
+    /// The connection's event stream, if it has one and nobody took it.
+    pub fn take_events(&self) -> Option<tokio::sync::mpsc::UnboundedReceiver<CdpEvent>> {
+        self.connection.take_events()
     }
 
     async fn dispatch(&self, request: CdpRequest) -> Result<Value, BridgeError> {

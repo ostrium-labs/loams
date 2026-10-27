@@ -16,6 +16,8 @@ the SDK legs ran the gateway in development mode (memory store, in-process Reson
 [sdks]
 go = "Go SDK v1.49.0"
 ts = "TypeScript SDK 1.24.0"
+# Lane TSDK-python (D2139): "not run" until the sdk-leg (python) job runs and last-run.* is re-spliced.
+python = "Python SDK 1.34.0"
 
 [[method]]
 name = "GetSystemInfo"
@@ -147,7 +149,7 @@ note = "TMP-api (D2086): unit tests only; no SDK leg yet"
 
 [[method]]
 name = "GetWorkflowExecutionHistoryReverse"
-note = "TMP-api (D2086): unit tests only; no SDK leg yet"
+note = "TMP-api (D2086); the Temporal Web UI's workflow page; `reverse_history_pages_are_the_history_newest_first`; no SDK leg yet"
 
 [[method]]
 name = "DescribeTaskQueue"
@@ -155,7 +157,7 @@ note = "TMP-api (D2086): unit tests only; no SDK leg yet"
 
 [[method]]
 name = "GetClusterInfo"
-note = "TMP-api (D2086): unit tests only; no SDK leg yet"
+note = "TMP-api (D2086); the Temporal Web UI's first call and `temporal operator cluster describe` (D2051); `cluster_info_names_the_gateway_not_a_temporal_server`; no SDK leg yet"
 
 [[method]]
 name = "ListTaskQueuePartitions"
