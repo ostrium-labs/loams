@@ -112,3 +112,11 @@ cases = ["gateway_dx1_differential_{sdk}_query_while_running"]
 [[method]]
 name = "ResetStickyTaskQueue"
 note = "a no-op; no SDK call in these runs and no test yet"
+
+[[method]]
+name = "GetClusterInfo"
+note = "added for the Temporal Web UI and the `temporal` CLI (D2051); no SDK call in these runs; `cluster_info_names_the_gateway_not_a_temporal_server`"
+
+[[method]]
+name = "GetWorkflowExecutionHistoryReverse"
+note = "the Temporal Web UI's workflow page (D2051); no SDK call in these runs; `reverse_history_pages_are_the_history_newest_first`"
