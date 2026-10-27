@@ -2,11 +2,11 @@
 // tsconfig.node.json `paths`). They are written for a looser tsconfig; the
 // bundler resolves the real packages. Config shapes live in apps.ts.
 type Ctor = new (
-	// biome-ignore lint/suspicious/noExplicitAny: shim
+	// oxlint-disable-next-line typescript/no-explicit-any -- shim
 	ctx: any,
-	// biome-ignore lint/suspicious/noExplicitAny: shim
+	// oxlint-disable-next-line typescript/no-explicit-any -- shim
 	config: any,
-	// biome-ignore lint/suspicious/noExplicitAny: shim
+	// oxlint-disable-next-line typescript/no-explicit-any -- shim
 ) => Record<string, (...args: any[]) => Promise<any>>;
 export declare const ForgejoAdapterService: Ctor;
 export declare const ZulipAdapterService: Ctor;

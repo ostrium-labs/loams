@@ -38,7 +38,7 @@ const numbers = (x: unknown): Record<string, number> => {
 };
 
 /** The only way ops invoke an adapter method; a missing method is `unsupported`. */
-// biome-ignore lint/suspicious/noExplicitAny: adapter replies are projected immediately.
+// oxlint-disable-next-line typescript/no-explicit-any -- adapter replies are projected immediately.
 function call(a: Adapter, name: string, ...args: unknown[]): Promise<any> {
 	const fn = a[name];
 	if (typeof fn !== "function")

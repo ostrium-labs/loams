@@ -58,7 +58,7 @@ export function useRunStream(
   const [run, setRun] = useState<RunGraph>();
   const [state, setState] = useState<StreamState>('idle');
   const [error, setError] = useState<string>();
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `replay` restarts the stream
+  // oxlint-disable-next-line react/exhaustive-deps -- `replay` restarts the stream
   useEffect(() => {
     setRun(undefined);
     setError(undefined);

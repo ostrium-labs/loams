@@ -58,7 +58,7 @@ function Items({ label, items, empty }: { label: string; items: ReactNode[]; emp
   return (
     <ul aria-label={label} className="m-0 flex list-none flex-col gap-1.5 p-0">
       {items.map((item, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: a fixed list per plan
+        // oxlint-disable-next-line react/no-array-index-key -- a fixed list per plan
         <li key={i} className="text-small text-ink">
           {item}
         </li>

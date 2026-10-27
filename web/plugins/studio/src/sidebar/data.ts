@@ -67,7 +67,7 @@ export function useWatch<T>(
     unsupported: false,
   });
   // `open` is a new closure each render; `key` names what it opens.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed by `key` and the transport.
+  // oxlint-disable-next-line react/exhaustive-deps -- keyed by `key` and the transport.
   useEffect(() => {
     if (!open || !transport) return;
     const abort = new AbortController();

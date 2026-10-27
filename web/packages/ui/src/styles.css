@@ -1395,7 +1395,7 @@ button.loams-row,
   font-size: var(--op-text-small);
 }
 
-/* biome-ignore lint/style/noDescendingSpecificity: a different table from .loams-table */
+/* Lower specificity after .loams-table on purpose: a different table from .loams-table. */
 .loams-results-table th {
   position: sticky;
   top: 0;

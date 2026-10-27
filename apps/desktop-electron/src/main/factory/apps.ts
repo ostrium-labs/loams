@@ -1,8 +1,8 @@
 import type { FactoryAppId, FactoryAppInfo } from "../../shared/contracts";
 
-// biome-ignore lint/suspicious/noExplicitAny: adapters are a heterogeneous set of cordis services; ops.ts narrows per app.
+// oxlint-disable-next-line typescript/no-explicit-any -- adapters are a heterogeneous set of cordis services; ops.ts narrows per app.
 export type Adapter = Record<string, (...args: any[]) => Promise<any>>;
-// biome-ignore lint/suspicious/noExplicitAny: per-adapter config shapes differ.
+// oxlint-disable-next-line typescript/no-explicit-any -- per-adapter config shapes differ.
 export type AdapterCtor = new (ctx: any, config: any) => Adapter;
 export type CredentialField = FactoryAppInfo["credentialFields"][number];
 

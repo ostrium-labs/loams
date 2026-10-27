@@ -15,7 +15,7 @@
     }
   },
   "scripts": {
-    "lint": "biome check .",
+    "lint": "vp check",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vp test run"
   },
@@ -27,7 +27,6 @@
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.15",
     "@types/node": "24.13.6",
     "typescript": "5.9.3",
     "vite-plus": "catalog:",
