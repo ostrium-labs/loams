@@ -395,7 +395,7 @@ assert gw["pull_policy"] == "never", gw.get("pull_policy")
 assert gw["build"]["dockerfile"] == "deploy/release/Containerfile.loams-temporal", gw["build"]
 EOF
   test -f "$OC_RELEASE/Containerfile.loams-temporal"
-  grep -q 'loams|loams-fabric|loams-agentd|loams-pg-control|loams-temporal)' "$OC_RELEASE/build.sh"
+  grep -q 'loams|loams-fabric|loams-agentd|loams-pg-control|loams-temporal|' "$OC_RELEASE/build.sh"
   grep -q 'images=(loams loams-fabric loams-agentd loams-pg-control loams-temporal)' "$OC_RELEASE/build.sh"
   local wf
   for wf in release-images release-github; do
