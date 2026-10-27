@@ -128,3 +128,39 @@ note = "TMP-api (D2085, D2083): statemachine and policy unit tests and the golde
 [[method]]
 name = "ResetWorkflowExecution"
 note = "TMP-api (D2085, D2083): statemachine and policy unit tests and the golden corpus scenario only; no SDK leg yet"
+
+[[method]]
+name = "RespondActivityTaskCompletedById"
+note = "TMP-api (D2086): unit tests only; no SDK leg yet"
+
+[[method]]
+name = "RespondActivityTaskFailedById"
+note = "TMP-api (D2086): unit tests only; no SDK leg yet"
+
+[[method]]
+name = "RespondActivityTaskCanceledById"
+note = "TMP-api (D2086): unit tests only; no SDK leg yet"
+
+[[method]]
+name = "RecordActivityTaskHeartbeatById"
+note = "TMP-api (D2086): unit tests only; no SDK leg yet"
+
+[[method]]
+name = "GetWorkflowExecutionHistoryReverse"
+note = "TMP-api (D2086): unit tests only; no SDK leg yet"
+
+[[method]]
+name = "DescribeTaskQueue"
+note = "TMP-api (D2086): unit tests only; no SDK leg yet"
+
+[[method]]
+name = "GetClusterInfo"
+note = "TMP-api (D2086): unit tests only; no SDK leg yet"
+
+[[method]]
+name = "ListTaskQueuePartitions"
+note = "TMP-api (D2086): unit tests only; no SDK leg yet"
+
+[[method]]
+name = "ShutdownWorker"
+note = "TMP-api (D2086): unit tests only; no SDK leg yet"
