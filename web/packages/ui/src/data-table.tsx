@@ -48,17 +48,15 @@ export function DataTable<T extends RowData>({
 }) {
   const defs = useMemo(
     () =>
-      columns.map(
-        (c): ColumnDef<typeof features, T> => ({
-          id: c.key,
-          accessorFn: c.sortValue ?? (() => ''),
-          enableSorting: c.sortValue !== undefined,
-          sortFn: 'alphanumeric',
-          sortDescFirst: false,
-          header: () => c.header,
-          cell: ({ row }) => c.cell(row.original),
-        }),
-      ),
+      columns.map((c): ColumnDef<typeof features, T> => ({
+        id: c.key,
+        accessorFn: c.sortValue ?? (() => ''),
+        enableSorting: c.sortValue !== undefined,
+        sortFn: 'alphanumeric',
+        sortDescFirst: false,
+        header: () => c.header,
+        cell: ({ row }) => c.cell(row.original),
+      })),
     [columns],
   );
   const table = useTable({
@@ -180,7 +178,7 @@ export function VirtualList<T>({
       className="overflow-auto border border-rule-soft"
       style={{ height }}
       aria-label={label}
-      // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrolling region must be reachable by keyboard
+      // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a scrolling region must be reachable by keyboard
       tabIndex={0}
     >
       <ul className="relative m-0 list-none p-0" style={{ height: v.getTotalSize() }}>

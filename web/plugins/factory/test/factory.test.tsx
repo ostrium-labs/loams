@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { ConfigurePage } from '../src/configure.js';
 import { EmbeddedApp } from '../src/embedded.js';
 import { FactoryHome } from '../src/home.js';

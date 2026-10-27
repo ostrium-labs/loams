@@ -6,7 +6,7 @@ import { Code, ConnectError } from '@connectrpc/connect';
 import type { InstallPlan } from '@loams/agentd-client';
 import { ErrorInfoSchema } from '@loams/proto/errors';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 import { ConsentScreen, dataScopes } from '../src/consent.js';
 import { marketplaceError } from '../src/errors.js';
 import { tierLabel } from '../src/labels.js';

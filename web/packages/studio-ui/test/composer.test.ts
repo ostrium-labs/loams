@@ -1,7 +1,7 @@
 // The composer's logic (SD1 Task 19): the `/`, `$` and `@` menus, attachment checks and
 // the chunked upload, per-thread drafts in storage, and the send projection.
 
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import {
   type AttachmentUploader,
   checkAttachment,

@@ -1,7 +1,7 @@
 // The tab and split store (uiStore.ts), with upstream's terminalUiStateStore cases
 // ported to daemon-chosen ids, and the stored state checked before it is trusted.
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vite-plus/test';
 import {
   closeThreadTerminal,
   DEFAULT_THREAD_TERMINAL_UI_STATE,
