@@ -92,12 +92,36 @@ impl Gateway {
             parts.tokens,
             parts.config,
         ));
-        let outbox = Arc::new(StoreOutbox::new(
-            parts.store,
-            parts.shards,
-            parts.pid.clone(),
-            Duration::from_secs(30),
-        ));
+        // Follow-ups (children, continue-as-new, external requests, the
+        // parent close policy) come out of the same outbox (D2089).
+        let (ftx, mut frx) = tokio::sync::mpsc::unbounded_channel();
+        let outbox = Arc::new(
+            StoreOutbox::new(
+                parts.store,
+                parts.shards,
+                parts.pid.clone(),
+                Duration::from_secs(30),
+            )
+            .with_follow_ups(ftx),
+        );
+        {
+            let f = frontend.clone();
+            let mut sd = shutdown.clone();
+            tokio::spawn(async move {
+                loop {
+                    tokio::select! {
+                        _ = sd.wait_for(|s| *s) => return,
+                        m = frx.recv() => match m {
+                            Some(c) => {
+                                let f = f.clone();
+                                tokio::spawn(async move { f.run_claimed_follow_up(c).await });
+                            }
+                            None => return,
+                        }
+                    }
+                }
+            });
+        }
         let relay = Arc::new(Relay::new(outbox, fast));
 
         let stop = |mut rx: tokio::sync::watch::Receiver<bool>| async move {
@@ -109,26 +133,6 @@ impl Gateway {
         let m = matcher.clone();
         let sd = shutdown.clone();
         tokio::spawn(async move { m.run_leases(stop(sd)).await });
-
-        // Children, continue-as-new and external requests (D2087).
-        let (ftx, mut frx) = tokio::sync::mpsc::unbounded_channel();
-        frontend.engine.set_followups(ftx);
-        let f = frontend.clone();
-        let mut sd = shutdown.clone();
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    _ = sd.wait_for(|s| *s) => return,
-                    m = frx.recv() => match m {
-                        Some(fu) => {
-                            let f = f.clone();
-                            tokio::spawn(async move { f.on_follow_up(fu).await });
-                        }
-                        None => return,
-                    }
-                }
-            }
-        });
 
         let mut callbacks = raw
             .subscribe(CALLBACK_GROUP)

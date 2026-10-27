@@ -36,6 +36,11 @@ cargo_package(
             "root": "tests/capabilities.rs",
         },
         {
+            "name": "followups",
+            "crate": "followups",
+            "root": "tests/followups.rs",
+        },
+        {
             "name": "methods",
             "crate": "methods",
             "root": "tests/methods.rs",

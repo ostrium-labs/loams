@@ -316,7 +316,15 @@ fn apply(s: &mut MutableState, e: &HistoryEvent, a: &Attributes) -> Result<(), F
         Attributes::TimerCanceledEventAttributes(x) => {
             crate::take_timer(s, &x.timer_id).ok_or_else(|| unknown(id, "timer", &x.timer_id))?;
         }
-        Attributes::WorkflowExecutionSignaledEventAttributes(_) => s.signal_count += 1,
+        Attributes::WorkflowExecutionSignaledEventAttributes(x) => {
+            s.signal_count += 1;
+            if !x.request_id.is_empty() {
+                s.signal_request_ids.push(x.request_id.clone());
+                if s.signal_request_ids.len() > 100 {
+                    s.signal_request_ids.remove(0);
+                }
+            }
+        }
         Attributes::WorkflowExecutionCancelRequestedEventAttributes(_) => s.cancel_requested = true,
         Attributes::WorkflowExecutionUpdateAdmittedEventAttributes(x) => {
             let update_id = x

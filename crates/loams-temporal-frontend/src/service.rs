@@ -184,6 +184,11 @@ impl Frontend {
             .remove(id);
     }
 
+    /// The engine (tests and tools drive runs through it).
+    pub fn engine(&self) -> &Engine {
+        &self.engine
+    }
+
     pub(crate) fn principal<T>(&self, req: &Request<T>) -> Result<Principal, Status> {
         self.auth.authenticate(req.metadata())
     }
