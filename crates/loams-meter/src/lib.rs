@@ -6,8 +6,10 @@
 //! | Module | Task | Does |
 //! |---|---|---|
 //! | [`owner`] | ME1 Task 12 | Counter owners: who owns which `_system/_meter` partition (fenced leases), per-partition counters with offset buckets and recent-keys dedup, the rebuild from the House and the stream tail |
+//! | [`reconcile`] | ME1 Task 13 | Every 5 minutes and at period close: counters reset to the House's totals at the pipe's committed offset plus the tail; drift over 1% of an allowance alerts |
 //!
 //! The House tables and the close job (ME1 Tasks 5–8) and the exporters
 //! (Tasks 24–26) live beside these in their own modules.
 
 pub mod owner;
+pub mod reconcile;
