@@ -1,0 +1,33 @@
+# The fixture's methods (matrix_from_fixture): a pass, a listed failure, an
+# unlisted failure, a case missing for one SDK, a method one SDK only
+# exercises, and a method with no case.
+[sdks]
+go = "Go SDK"
+ts = "TypeScript SDK"
+
+[[method]]
+name = "GetSystemInfo"
+cases = ["gateway_dx1_scenarios_{sdk}"]
+
+[[method]]
+name = "StartWorkflowExecution"
+cases = ["gateway_dx1_scenarios_{sdk}", "gateway_hello_{sdk}"]
+
+[[method]]
+name = "SignalWorkflowExecution"
+cases = ["gateway_signal_{sdk}"]
+
+[[method]]
+name = "QueryWorkflow"
+cases = ["gateway_query_{sdk}"]
+note = "the legacy query on a workflow-task poll"
+
+[[method]]
+name = "SignalWithStartWorkflowExecution"
+cases = ["gateway_dx1_scenarios_{sdk}"]
+only = ["go"]
+note = "the Go client"
+
+[[method]]
+name = "RegisterNamespace"
+note = "admin only"
