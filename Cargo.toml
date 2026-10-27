@@ -392,6 +392,8 @@ loams-agentd-store = { path = "crates/loams-agentd-store", version = "0.1.2" }
 loams-knowledge = { path = "crates/loams-knowledge", version = "0.1.2" }
 loams-walrus = { path = "crates/loams-walrus", version = "0.1.2" }
 chrono = { version = "0.4", features = ["serde"] }
+# Temporal Schedules: IANA time zones for calendar specs (D2073).
+chrono-tz = "0.10"
 deser-hjson = "2.2"
 gethostname = "1"
 ignore = "0.4"
