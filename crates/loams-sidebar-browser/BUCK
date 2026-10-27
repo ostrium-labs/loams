@@ -69,7 +69,7 @@ cargo_package(
         },
     ],
     deps = [
-        "//third-party/rust:base64",
+        "//third-party/rust:base64-0_23",
         "//third-party/rust:futures",
         "//third-party/rust:serde",
         "//third-party/rust:serde_json",

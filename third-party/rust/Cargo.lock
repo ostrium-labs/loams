@@ -7311,6 +7311,7 @@ dependencies = [
  "arrow-schema",
  "async-trait",
  "axum 0.8.9",
+ "base64 0.22.1",
  "base64 0.23.1",
  "bitpacking",
  "buffa",

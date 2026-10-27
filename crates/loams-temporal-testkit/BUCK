@@ -31,7 +31,7 @@ cargo_package(
     ],
     deps = [
         "//crates/loams-temporal-proto:loams-temporal-proto",
-        "//third-party/rust:base64",
+        "//third-party/rust:base64-0_23",
         "//third-party/rust:hex",
         "//third-party/rust:prost",
         "//third-party/rust:prost-reflect",
