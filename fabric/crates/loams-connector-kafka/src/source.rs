@@ -26,8 +26,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use loams_connector_sdk::{
-    Budget, CloudEvent, ConnectorError, EventBatch, Position, Source, SourceBatch, SourceFactory,
-    Split, SplitEnumerator, SplitState,
+    Budget, CloudEvent, ConnectorError, ErrorClass, EventBatch, Position, Source, SourceBatch,
+    SourceFactory, Split, SplitEnumerator, SplitState,
 };
 use rdkafka::consumer::{BaseConsumer, CommitMode, Consumer, StreamConsumer};
 use rdkafka::error::RDKafkaErrorCode;
@@ -35,7 +35,7 @@ use rdkafka::{Message, Offset, TopicPartitionList};
 use serde_json::json;
 
 use crate::config::{CALL_TIMEOUT, Connection, OffsetReset};
-use crate::error::{class_of_code, join_error, kafka_error};
+use crate::error::{AuthWatch, class_of, class_of_code, join_error, kafka_error};
 use crate::record::event_from_message;
 
 /// A split's id: `<topic>/<partition>`.
@@ -70,7 +70,7 @@ fn offset_of(pos: &Position) -> Result<i64, ConnectorError> {
 /// Finds the topic-partitions of the configured topics.
 pub struct KafkaEnumerator {
     conn: Arc<Connection>,
-    client: Option<Arc<BaseConsumer>>,
+    client: Option<Arc<BaseConsumer<AuthWatch>>>,
 }
 
 impl std::fmt::Debug for KafkaEnumerator {
@@ -86,13 +86,13 @@ impl KafkaEnumerator {
         Self { conn, client: None }
     }
 
-    async fn client(&mut self) -> Result<Arc<BaseConsumer>, ConnectorError> {
+    async fn client(&mut self) -> Result<Arc<BaseConsumer<AuthWatch>>, ConnectorError> {
         if let Some(c) = &self.client {
             return Ok(c.clone());
         }
         let cfg = self.conn.base().await?;
-        let c: BaseConsumer = cfg
-            .create()
+        let c: BaseConsumer<AuthWatch> = cfg
+            .create_with_context(AuthWatch::default())
             .map_err(|e| kafka_error("creating the metadata client", &e))?;
         let c = Arc::new(c);
         self.client = Some(c.clone());
@@ -104,14 +104,24 @@ impl KafkaEnumerator {
 impl SplitEnumerator for KafkaEnumerator {
     async fn discover(&mut self, _known: &[SplitState]) -> Result<Vec<Split>, ConnectorError> {
         let client = self.client().await?;
+        let watch = client.clone();
         let topics = self.conn.cfg.topics.clone();
         let (found, brokers) = tokio::task::spawn_blocking(move || {
             let mut found = Vec::new();
             let mut brokers = Vec::new();
             for topic in &topics {
-                let md = client
-                    .fetch_metadata(Some(topic), CALL_TIMEOUT)
-                    .map_err(|e| kafka_error(&format!("metadata for {topic}"), &e))?;
+                let md = match client.fetch_metadata(Some(topic), CALL_TIMEOUT) {
+                    Ok(md) => md,
+                    Err(e) => {
+                        let what = format!("metadata for {topic}");
+                        return Err(match refused_login(&client) {
+                            Some(reason) => {
+                                ConnectorError::new(ErrorClass::Auth, format!("{what}: {reason}"))
+                            }
+                            None => kafka_error(&what, &e),
+                        });
+                    }
+                };
                 for b in md.brokers() {
                     brokers.push((b.host().to_owned(), b.port()));
                 }
@@ -138,7 +148,8 @@ impl SplitEnumerator for KafkaEnumerator {
             Ok((found, brokers))
         })
         .await
-        .map_err(|e| join_error("metadata", e))??;
+        .map_err(|e| join_error("metadata", e))?
+        .map_err(|e| watch.context().classify(e))?;
 
         // librdkafka dials the brokers the metadata names: each one passes the
         // egress check too.
@@ -164,6 +175,27 @@ impl SplitEnumerator for KafkaEnumerator {
         splits.dedup_by(|a, b| a.id == b.id);
         Ok(splits)
     }
+}
+
+/// The reason librdkafka refused this client's login, if it did. librdkafka
+/// reports a refused SASL login as an event on the client's queue, not as
+/// the failed call's error (that is a timeout or a transport failure): serve
+/// the queued events so [`AuthWatch`] sees it, or take it from the event.
+fn refused_login(client: &BaseConsumer<AuthWatch>) -> Option<String> {
+    // `poll` also answers `None` for an event it served itself (a log
+    // line), so a `None` does not mean the queue is empty: poll a bounded
+    // number of times.
+    for _ in 0..256 {
+        if let Some(Err(e)) = client.poll(Duration::ZERO)
+            && class_of(&e) == ErrorClass::Auth
+        {
+            return Some(e.to_string());
+        }
+        if let Some(reason) = client.context().refused() {
+            return Some(reason);
+        }
+    }
+    client.context().refused()
 }
 
 /// Makes one [`KafkaSource`] per split.

@@ -7,6 +7,7 @@
 //! | System | Gate | Address (default) |
 //! |---|---|---|
 //! | Apache Kafka 4.x (`deploy/fabric/compose.yaml` service `kafka`, profile `connectors-p2`) | `LOAMS_CONNECTORS_STACK` | `LOAMS_KAFKA_BOOTSTRAP` (`127.0.0.1:9092`) |
+//! | Apache Kafka 4.x with SASL_SSL, PLAIN and a test CA (service `kafka-sasl`, profile `connectors-p2`), through the `confluent-cloud` profile | `LOAMS_CONNECTORS_STACK` | `LOAMS_KAFKA_SASL_BOOTSTRAP` (`SASL_SSL://localhost:9094`), CA `LOAMS_KAFKA_SASL_CA` (`deploy/fabric/kafka-sasl/ca.pem`) |
 //! | Redpanda (service `redpanda`, profile `connectors-ci-only`) | `LOAMS_CONNECTORS_CI_ONLY_STACK` | `LOAMS_REDPANDA_BOOTSTRAP` (`127.0.0.1:19092`) |
 //! | Event Hubs emulator (service `eventhubs`, profile `connectors-ci-only`) | `LOAMS_CONNECTORS_CI_ONLY_STACK` | `LOAMS_EVENTHUBS_BOOTSTRAP` (`127.0.0.1:9092`) |
 //! | a real Event Hubs namespace (nightly) | `LOAMS_EVENTHUBS_NAMESPACE` | `<namespace>.servicebus.windows.net:9093` |
@@ -249,6 +250,52 @@ impl Target {
             fixed_topic: None,
             group: None,
             replication: -1,
+            mock: None,
+        })
+    }
+
+    /// Apache Kafka behind SASL_SSL (service `kafka-sasl`), when the
+    /// `connectors` stack is up, through the `confluent-cloud` target profile
+    /// (CC1 Task 2, D1822): the profile's `sasl_ssl`, PLAIN and `verify_full`
+    /// defaults, the username and password as secret names (as
+    /// `loams-byoc-secrets` writes them for Confluent, D1827), a bootstrap
+    /// string with Confluent's `SASL_SSL://` scheme, and the service's test
+    /// CA in place of the system roots. The user and password are the
+    /// service's fixed test values.
+    pub fn kafka_sasl() -> Option<Self> {
+        if !gate("LOAMS_CONNECTORS_STACK", "the Apache Kafka SASL_SSL suite") {
+            return None;
+        }
+        let ca_path = std::env::var("LOAMS_KAFKA_SASL_CA")
+            .ok()
+            .filter(|v| !v.is_empty())
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| repo_root().join("deploy/fabric/kafka-sasl/ca.pem"));
+        let ca = std::fs::read_to_string(&ca_path).unwrap_or_else(|e| {
+            panic!(
+                "{}: {e}; the kafka-sasl service writes its test CA there when it starts",
+                ca_path.display()
+            )
+        });
+        Some(Self {
+            name: "kafka-sasl",
+            bootstrap: env_or("LOAMS_KAFKA_SASL_BOOTSTRAP", "SASL_SSL://localhost:9094"),
+            base: json!({
+                "sasl": {
+                    "username_secret": "kafka-sasl/username",
+                    "password": "kafka-sasl/password",
+                },
+                "tls": { "ca_pem": ca },
+            }),
+            secrets: Arc::new(
+                StaticSecrets::new()
+                    .with("kafka-sasl/username", "loams-test")
+                    .with("kafka-sasl/password", "loams-test-password"),
+            ),
+            profile: Some(load_profile("confluent-cloud")),
+            can_admin: true,
+            fixed_topic: None,
+            group: None,
             mock: None,
         })
     }
