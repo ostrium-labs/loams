@@ -7,7 +7,9 @@ use std::time::Duration;
 use loams_temporal_proto::temporal::api::common::v1::{
     Payload, Payloads, WorkflowExecution, WorkflowType,
 };
-use loams_temporal_proto::temporal::api::enums::v1::{QueryResultType, WorkflowExecutionStatus};
+use loams_temporal_proto::temporal::api::enums::v1::{
+    EventType, HistoryEventFilterType, QueryResultType, WorkflowExecutionStatus,
+};
 use loams_temporal_proto::temporal::api::query::v1::WorkflowQuery;
 use loams_temporal_proto::temporal::api::taskqueue::v1::TaskQueue;
 use loams_temporal_proto::temporal::api::workflowservice::v1::*;
@@ -206,4 +208,113 @@ async fn query_reaches_a_polling_worker_and_describe_reports_the_run() {
     let info = d.workflow_execution_info.expect("info");
     assert_eq!(info.status, WorkflowExecutionStatus::Running as i32);
     assert_eq!(info.history_length, 4);
+}
+
+/// DX1F.R1: a close-event long poll that reaches its deadline before the run
+/// closes answers an empty page *with* a token, so the SDK polls again
+/// instead of failing with "could not get last history event".
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn close_event_long_poll_keeps_a_page_token_past_its_deadline() {
+    let gw = common::start_with(|mut c| {
+        c.history_wait = Duration::from_millis(300);
+        c
+    })
+    .await;
+    let mut c = gw.client.clone();
+    let run = c
+        .start_workflow_execution(start_req("wlp", "r1"))
+        .await
+        .expect("start")
+        .into_inner();
+    let execution = Some(WorkflowExecution {
+        workflow_id: "wlp".into(),
+        run_id: run.run_id.clone(),
+    });
+    let wait = |token: Vec<u8>| GetWorkflowExecutionHistoryRequest {
+        namespace: "default".into(),
+        execution: execution.clone(),
+        wait_new_event: true,
+        history_event_filter_type: HistoryEventFilterType::CloseEvent as i32,
+        next_page_token: token.into(),
+        ..Default::default()
+    };
+    // The SDK's first call carries no token; the run stays open past the
+    // deadline, twice.
+    let mut token = Vec::new();
+    for _ in 0..2 {
+        let r = c
+            .get_workflow_execution_history(wait(token.clone()))
+            .await
+            .expect("long poll")
+            .into_inner();
+        assert!(r.history.is_some_and(|h| h.events.is_empty()));
+        assert!(
+            !r.next_page_token.is_empty(),
+            "a timed-out long poll must keep a page token"
+        );
+        token = r.next_page_token.to_vec();
+    }
+    c.terminate_workflow_execution(TerminateWorkflowExecutionRequest {
+        namespace: "default".into(),
+        workflow_execution: execution.clone(),
+        reason: "done".into(),
+        ..Default::default()
+    })
+    .await
+    .expect("terminate");
+    let r = c
+        .get_workflow_execution_history(wait(token))
+        .await
+        .expect("close event")
+        .into_inner();
+    let events = r.history.expect("history").events;
+    assert_eq!(events.len(), 1);
+    assert_eq!(
+        events[0].event_type,
+        EventType::WorkflowExecutionTerminated as i32
+    );
+    assert!(r.next_page_token.is_empty(), "the history is complete");
+}
+
+/// X1.R7 / DX1F.R2: a payload over 2 MiB is refused with Temporal's
+/// `InvalidArgument` "Blob data size exceeds limit." on start and signal.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_payload_over_2_mib_is_invalid_argument() {
+    let gw = common::start().await;
+    let mut c = gw.client.clone();
+    let big = Some(Payloads {
+        payloads: vec![Payload {
+            data: vec![7; 2 * 1024 * 1024].into(),
+            ..Default::default()
+        }],
+    });
+    let mut req = start_req("wbig", "r1");
+    req.input = big.clone();
+    let e = c
+        .start_workflow_execution(req)
+        .await
+        .expect_err("oversized input");
+    assert_eq!(e.code(), tonic::Code::InvalidArgument);
+    assert_eq!(e.message(), "Blob data size exceeds limit.");
+
+    let run = c
+        .start_workflow_execution(start_req("wbig", "r2"))
+        .await
+        .expect("start")
+        .into_inner();
+    let e = c
+        .signal_workflow_execution(SignalWorkflowExecutionRequest {
+            namespace: "default".into(),
+            workflow_execution: Some(WorkflowExecution {
+                workflow_id: "wbig".into(),
+                run_id: run.run_id,
+            }),
+            signal_name: "s".into(),
+            input: big,
+            ..Default::default()
+        })
+        .await
+        .expect_err("oversized signal");
+    assert_eq!(e.code(), tonic::Code::InvalidArgument);
+    assert_eq!(e.message(), "Blob data size exceeds limit.");
 }

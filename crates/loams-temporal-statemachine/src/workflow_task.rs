@@ -1,18 +1,19 @@
 //! The workflow task: started by a poll, then completed, failed or timed out.
 
 use loams_temporal_history::time::{dur_ms, ms, ts};
-use loams_temporal_history::{Attributes, Batch};
+use loams_temporal_history::{Attributes, Batch, WorkflowExecutionStatus, limit_messages};
 use loams_temporal_proto::temporal::api::command::v1::{Command, command};
 use loams_temporal_proto::temporal::api::common::v1::{MeteringMetadata, WorkerVersionStamp};
 use loams_temporal_proto::temporal::api::enums::v1::{TimeoutType, WorkflowTaskFailedCause};
-use loams_temporal_proto::temporal::api::failure::v1::Failure;
+use loams_temporal_proto::temporal::api::failure::v1::{Failure, ServerFailureInfo, failure};
 use loams_temporal_proto::temporal::api::history::v1::{
-    WorkflowTaskCompletedEventAttributes, WorkflowTaskFailedEventAttributes,
+    WorkflowExecutionTerminatedEventAttributes, WorkflowTaskCompletedEventAttributes,
+    WorkflowTaskFailedEventAttributes,
     WorkflowTaskStartedEventAttributes, WorkflowTaskTimedOutEventAttributes,
 };
 use loams_temporal_proto::temporal::api::sdk::v1::WorkflowTaskCompletedMetadata;
 
-use crate::write::{ensure_workflow_task, flush, schedule_workflow_task};
+use crate::write::{close, ensure_workflow_task, flush, schedule_workflow_task};
 use crate::{Effect, Rejection, Reply, TimeoutKind, commands};
 
 fn stale(scheduled_event_id: i64) -> Rejection {
@@ -134,6 +135,9 @@ pub(crate) fn completed(
 ) -> Result<Reply, Rejection> {
     let wt = take_started(b, c.scheduled_event_id, c.attempt)?;
     commands::validate(&c.commands)?;
+    if let Some(breach) = commands::check_limits(&c.commands, b.state_ref()) {
+        return over_limit(b, fx, &wt, breach, c.identity);
+    }
     fx.push(Effect::WorkflowTaskDone {
         scheduled_event_id: wt.scheduled_event_id,
         attempt: wt.attempt,
@@ -181,6 +185,66 @@ pub(crate) fn completed(
         ensure_workflow_task(b, fx);
     }
     Ok(Reply::Done)
+}
+
+/// A completion over one of X1.R7's limits, answered as Temporal's
+/// `RespondWorkflowTaskCompleted` does: the workflow task fails with the
+/// limit's cause and a server failure `"<CAUSE>: <message>"`; an oversized
+/// payload also terminates the run (reason the same message, identity
+/// `history-service`). A later attempt that breaks a limit again is refused
+/// with `InvalidArgument` and nothing is written, so the task times out and
+/// is retried instead of failing in a loop.
+fn over_limit(
+    b: &mut Batch<'_>,
+    fx: &mut Vec<Effect>,
+    wt: &loams_temporal_history::WorkflowTaskInfo,
+    breach: commands::LimitBreach,
+    identity: String,
+) -> Result<Reply, Rejection> {
+    let message = format!("{}: {}", breach.cause.as_str_name(), breach.message);
+    if wt.attempt > 1 {
+        return Err(Rejection::InvalidArgument(message));
+    }
+    fx.push(Effect::WorkflowTaskDone {
+        scheduled_event_id: wt.scheduled_event_id,
+        attempt: wt.attempt,
+    });
+    b.push(Attributes::WorkflowTaskFailedEventAttributes(
+        WorkflowTaskFailedEventAttributes {
+            scheduled_event_id: wt.scheduled_event_id,
+            started_event_id: wt.started_event_id,
+            cause: breach.cause as i32,
+            failure: Some(server_failure(message.clone(), false)),
+            identity,
+            ..Default::default()
+        },
+    ));
+    b.state().workflow_task = None;
+    flush(b);
+    if breach.terminate {
+        let id = b.push(Attributes::WorkflowExecutionTerminatedEventAttributes(
+            WorkflowExecutionTerminatedEventAttributes {
+                reason: message,
+                details: None,
+                identity: limit_messages::HISTORY_SERVICE.into(),
+            },
+        ));
+        close(b, fx, id, WorkflowExecutionStatus::Terminated);
+    } else {
+        schedule_workflow_task(b, fx, wt.attempt + 1);
+    }
+    Ok(Reply::Done)
+}
+
+/// Temporal's `failure.NewServerFailure`.
+pub fn server_failure(message: String, non_retryable: bool) -> Failure {
+    Failure {
+        message,
+        failure_info: Some(failure::FailureInfo::ServerFailureInfo(
+            ServerFailureInfo { non_retryable },
+        )),
+        ..Default::default()
+    }
 }
 
 pub(crate) fn failed(
