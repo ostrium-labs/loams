@@ -184,7 +184,7 @@ openraft = { version = "=0.10.0-alpha.34", default-features = false, features = 
 # No `tls`: the listener is loopback-only, and that feature pulls rustls 0.22.
 opensrv-mysql = { version = "0.7", default-features = false }
 # Bulk import (D1 Task 8): Parquet over object_store, on the workspace's arrow 58.
-parquet = { version = "58", default-features = false, features = ["arrow", "async", "object_store", "snap", "zstd", "lz4"] }
+parquet = { version = "60", default-features = false, features = ["arrow", "async", "object_store", "snap", "zstd", "lz4"] }
 percent-encoding = "2"
 postcard = { version = "1", default-features = false, features = ["use-std"] }
 proptest = "1"
