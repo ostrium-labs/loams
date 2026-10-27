@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import cordisMain from '../src/cordis/main.tsx?raw';
 
 // The console tsconfig carries no Node types, and vitest returns '' for CSS

@@ -6,7 +6,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 
 const WEB = fileURLToPath(new URL('../../..', import.meta.url));
 const ROOTS = ['plugins', 'packages/studio-ui', 'packages/admin-ui', 'packages/desktop-ui'].map(

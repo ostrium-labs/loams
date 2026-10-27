@@ -25,7 +25,7 @@
 // this repository has. It is stated in the PR rather than claimed.
 
 import { createGrpcWebTransport } from '@connectrpc/connect-web';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 import { Loams } from '../src/loams.js';
 import { FeatureNotInVariantError } from '../src/runtime/errors.js';
 import { createLoamsTransport } from '../src/runtime/transports.js';

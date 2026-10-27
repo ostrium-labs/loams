@@ -1,4 +1,4 @@
-/// <reference types="vite/client" />
+/// <reference types="vite-plus/client" />
 
 // Side-effect CSS imports (`import "./styles.css"`) need an ambient module
 // declaration. Without it, a type-aware checker reports TS2882 on every one of

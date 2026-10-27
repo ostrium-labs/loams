@@ -1,7 +1,7 @@
 import { InMemoryStore } from '@mastra/core/storage';
 import { createMockModel } from '@mastra/core/test-utils/llm-mock';
 import { PostgresStore } from '@mastra/pg';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 
 import {
   createFactoryMastra,

@@ -30,13 +30,12 @@ uuid = { workspace = true, features = ["serde"] }
 chrono.workspace = true
 notify.workspace = true
 portable-pty.workspace = true
-# The fork is on base64 0.22; the workspace key is 0.23.
-base64 = "0.22"
+base64.workspace = true
 toml.workspace = true
 libc.workspace = true
 gethostname.workspace = true
 tokio-util = { workspace = true, features = ["rt"] }
-sha2 = "0.10"
+sha2 = "0.11"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream", "system-proxy"] }
 ignore.workspace = true
 nucleo-matcher.workspace = true
@@ -57,7 +56,7 @@ loams-agentd-marketplace = { workspace = true, features = ["testkit"] }
 loams-agentd-harness = { workspace = true, features = ["installer-fixture"] }
 zip.workspace = true
 # 0.24 as in the fork; loams-web-bridge is on 0.30 (not a workspace key).
-tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
 # The fake Forgejo of the change-request tests (SD1 Task 9).
 axum.workspace = true
 
