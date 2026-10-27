@@ -17,6 +17,7 @@
 //! is never logged: [`Zitadel`]'s `Debug` leaves it out.
 
 pub mod agents;
+pub mod events;
 pub mod token;
 
 use std::fmt;
@@ -172,11 +173,26 @@ impl Zitadel {
         path: &str,
         body: Option<serde_json::Value>,
     ) -> Result<serde_json::Value> {
+        self.send_in(None, method, path, body).await
+    }
+
+    /// [`Self::send`] in the context of organization `org` (the management API's
+    /// `x-zitadel-orgid` header) when given.
+    async fn send_in(
+        &self,
+        org: Option<&str>,
+        method: reqwest::Method,
+        path: &str,
+        body: Option<serde_json::Value>,
+    ) -> Result<serde_json::Value> {
         let mut req = self
             .http
             .request(method, self.url(path)?)
             .bearer_auth(&self.token)
             .header(reqwest::header::ACCEPT, "application/json");
+        if let Some(org) = org {
+            req = req.header("x-zitadel-orgid", org);
+        }
         if let Some(body) = body {
             req = req.json(&body);
         }

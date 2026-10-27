@@ -71,3 +71,9 @@ missing_debug_implementations = "warn"
 dbg_macro = "warn"
 todo = "warn"
 unwrap_used = "warn"
+
+[features]
+# Studio's e2e (MK0 Task 9): a debug build with this feature serves the
+# marketplace's signed fake world under `LOAMS_AGENTD_TEST_MARKETPLACE`. Release
+# builds never enable it, so the testkit is not in a shipped daemon.
+e2e-marketplace = ["loams-agentd-marketplace/testkit"]
