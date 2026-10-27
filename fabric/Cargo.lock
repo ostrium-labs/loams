@@ -6051,6 +6051,8 @@ dependencies = [
  "datafusion",
  "loams-house-sql",
  "loams-house-types",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

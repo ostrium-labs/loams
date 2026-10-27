@@ -93,8 +93,8 @@ enum SumKind {
     U64,
     I64,
     F64,
-    D128(u8),
-    D256(u8),
+    Dec128(u8),
+    Dec256(u8),
 }
 
 impl SumKind {
@@ -110,14 +110,14 @@ impl SumKind {
             }
             ChType::Float32 | ChType::Float64 => (Self::F64, ChType::Float64),
             ChType::Decimal { precision, scale } if *precision <= 38 => (
-                Self::D128(*scale),
+                Self::Dec128(*scale),
                 ChType::Decimal {
                     precision: 38,
                     scale: *scale,
                 },
             ),
             ChType::Decimal { scale, .. } => (
-                Self::D256(*scale),
+                Self::Dec256(*scale),
                 ChType::Decimal {
                     precision: 76,
                     scale: *scale,
@@ -135,8 +135,8 @@ impl SumKind {
             Self::U64 => DataType::UInt64,
             Self::I64 => DataType::Int64,
             Self::F64 => DataType::Float64,
-            Self::D128(s) => DataType::Decimal128(38, s as i8),
-            Self::D256(s) => DataType::Decimal256(76, s as i8),
+            Self::Dec128(s) => DataType::Decimal128(38, s as i8),
+            Self::Dec256(s) => DataType::Decimal256(76, s as i8),
         }
     }
 }
@@ -147,8 +147,8 @@ enum Total {
     U64(u64),
     I64(i64),
     F64(f64),
-    D128(i128),
-    D256(i256),
+    Dec128(i128),
+    Dec256(i256),
 }
 
 impl Total {
@@ -157,8 +157,8 @@ impl Total {
             SumKind::U64 => Self::U64(0),
             SumKind::I64 => Self::I64(0),
             SumKind::F64 => Self::F64(0.0),
-            SumKind::D128(_) => Self::D128(0),
-            SumKind::D256(_) => Self::D256(i256::ZERO),
+            SumKind::Dec128(_) => Self::Dec128(0),
+            SumKind::Dec256(_) => Self::Dec256(i256::ZERO),
         }
     }
 
@@ -184,11 +184,11 @@ impl Total {
                     float_sum(s, &v);
                 }
             }
-            Self::D128(s) => {
+            Self::Dec128(s) => {
                 let a = array.as_primitive::<Decimal128Type>();
                 *s = a.iter().flatten().fold(*s, i128::wrapping_add);
             }
-            Self::D256(s) => {
+            Self::Dec256(s) => {
                 let a = array.as_primitive::<Decimal256Type>();
                 *s = a.iter().flatten().fold(*s, i256::wrapping_add);
             }
@@ -200,10 +200,10 @@ impl Total {
             (Self::U64(v), _) => ScalarValue::UInt64(Some(v)),
             (Self::I64(v), _) => ScalarValue::Int64(Some(v)),
             (Self::F64(v), _) => ScalarValue::Float64(Some(v)),
-            (Self::D128(v), SumKind::D128(s)) => ScalarValue::Decimal128(Some(v), 38, s as i8),
-            (Self::D256(v), SumKind::D256(s)) => ScalarValue::Decimal256(Some(v), 76, s as i8),
-            (Self::D128(v), _) => ScalarValue::Decimal128(Some(v), 38, 0),
-            (Self::D256(v), _) => ScalarValue::Decimal256(Some(v), 76, 0),
+            (Self::Dec128(v), SumKind::Dec128(s)) => ScalarValue::Decimal128(Some(v), 38, s as i8),
+            (Self::Dec256(v), SumKind::Dec256(s)) => ScalarValue::Decimal256(Some(v), 76, s as i8),
+            (Self::Dec128(v), _) => ScalarValue::Decimal128(Some(v), 38, 0),
+            (Self::Dec256(v), _) => ScalarValue::Decimal256(Some(v), 76, 0),
         }
     }
 }
