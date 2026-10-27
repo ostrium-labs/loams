@@ -27,6 +27,9 @@ pub const IMPLEMENTED: &[&str] = &[
     "QueryWorkflow",
     "RespondQueryTaskCompleted",
     "ResetStickyTaskQueue",
+    // For the Temporal Web UI and the `temporal` CLI (D2051).
+    "GetClusterInfo",
+    "GetWorkflowExecutionHistoryReverse",
     // Temporal Schedules (D2070-D2073).
     "CreateSchedule",
     "DescribeSchedule",
@@ -36,6 +39,14 @@ pub const IMPLEMENTED: &[&str] = &[
     "ListSchedules",
     "ListScheduleMatchingTimes",
 ];
+
+/// The `OperatorService` methods the frontend implements (D2052). Every
+/// other one answers `UNIMPLEMENTED`: the Nexus endpoint methods with
+/// [`NEXUS_UNSUPPORTED`], the rest with [`MATRIX_URL`].
+pub const OPERATOR_IMPLEMENTED: &[&str] = &["ListSearchAttributes"];
+
+/// Why every Nexus method answers `UNIMPLEMENTED` (D2053).
+pub const NEXUS_UNSUPPORTED: &str = "Nexus is not supported by the Loams Temporal gateway: it has no Nexus endpoints, and Nexus operations and Nexus task queues are not served";
 
 /// Where the per-method, per-SDK compatibility matrix lives (D1512).
 pub const MATRIX_URL: &str =
@@ -54,9 +65,36 @@ pub fn capabilities() -> Capabilities {
     }
 }
 
-/// The message of an `UNIMPLEMENTED` answer for `method`.
+/// The message of an `UNIMPLEMENTED` answer for `method` (of either
+/// service). A Nexus method says that Nexus is not supported (D2053).
 pub fn unimplemented_message(method: &str) -> String {
+    if method.contains("Nexus") {
+        return format!(
+            "{method}: {NEXUS_UNSUPPORTED}; see the compatibility matrix: {MATRIX_URL}"
+        );
+    }
     format!(
         "{method} is not implemented by the Loams Temporal gateway yet; see the compatibility matrix: {MATRIX_URL}"
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn nexus_methods_say_nexus_is_unsupported() {
+        for m in [
+            "ListNexusEndpoints",
+            "CreateNexusEndpoint",
+            "PollNexusTaskQueue",
+            "StartNexusOperationExecution",
+        ] {
+            let msg = unimplemented_message(m);
+            assert!(msg.contains(NEXUS_UNSUPPORTED), "{msg}");
+            assert!(msg.contains(MATRIX_URL), "{msg}");
+        }
+        let msg = unimplemented_message("CreateSchedule");
+        assert!(!msg.contains("Nexus") && msg.contains(MATRIX_URL), "{msg}");
+    }
 }

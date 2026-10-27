@@ -42261,6 +42261,56 @@ cargo.rust_library(
 )
 
 cargo_alias(
+    name = "rpassword",
+    actual = ":rpassword-7",
+    platforms = [
+        "linux-arm64",
+        "linux-x86_64",
+        "macos-arm64",
+        "macos-x86_64",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+http_archive(
+    name = "rpassword-7.5.4.crate",
+    sha256 = "2da316a15f47e3d053de9cb2c439650bd8fa4aaeb9365f2e5f27f492ff73c196",
+    strip_prefix = "rpassword-7.5.4",
+    urls = ["https://static.crates.io/crates/rpassword/7.5.4/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "rpassword-7",
+    srcs = [":rpassword-7.5.4.crate"],
+    crate = "rpassword",
+    crate_root = "rpassword-7.5.4.crate/src/lib.rs",
+    edition = "2024",
+    env = {
+        "CARGO_BIN_NAME": "rpassword",
+        "CARGO_CRATE_NAME": "rpassword",
+        "CARGO_MANIFEST_DIR": "rpassword-7.5.4.crate",
+        "CARGO_PKG_AUTHORS": "Conrad Kleinespel <conradk@conradk.com>",
+        "CARGO_PKG_DESCRIPTION": "Read passwords in console applications (unix, windows, macos, wasm).",
+        "CARGO_PKG_HOMEPAGE": "https://github.com/conradkleinespel/rpassword",
+        "CARGO_PKG_NAME": "rpassword",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/conradkleinespel/rpassword",
+        "CARGO_PKG_RUST_VERSION": "1.85",
+        "CARGO_PKG_VERSION": "7.5.4",
+        "CARGO_PKG_VERSION_MAJOR": "7",
+        "CARGO_PKG_VERSION_MINOR": "5",
+        "CARGO_PKG_VERSION_PATCH": "4",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
+    deps = [
+        ":libc-0.2",
+        ":rtoolbox-0.0.6",
+    ],
+)
+
+cargo_alias(
     name = "rquickjs",
     actual = ":rquickjs-0.14",
     platforms = [
@@ -42481,6 +42531,41 @@ cargo.rust_library(
         ":num-traits-0.2",
         ":smallvec-1",
     ],
+)
+
+http_archive(
+    name = "rtoolbox-0.0.6.crate",
+    sha256 = "9a1efe12a1469752d0e6ff5ebec0b6ef4924cc5c4c71046b0ec730040535819d",
+    strip_prefix = "rtoolbox-0.0.6",
+    urls = ["https://static.crates.io/crates/rtoolbox/0.0.6/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "rtoolbox-0.0.6",
+    srcs = [":rtoolbox-0.0.6.crate"],
+    crate = "rtoolbox",
+    crate_root = "rtoolbox-0.0.6.crate/src/lib.rs",
+    edition = "2018",
+    env = {
+        "CARGO_BIN_NAME": "rtoolbox",
+        "CARGO_CRATE_NAME": "rtoolbox",
+        "CARGO_MANIFEST_DIR": "rtoolbox-0.0.6.crate",
+        "CARGO_PKG_AUTHORS": "Conrad Kleinespel <conradk@conradk.com>",
+        "CARGO_PKG_DESCRIPTION": "Utility functions for other crates, no backwards compatibility guarantees.",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "rtoolbox",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/conradkleinespel/rtoolbox",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "0.0.6",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "0",
+        "CARGO_PKG_VERSION_PATCH": "6",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
+    deps = [":libc-0.2"],
 )
 
 cargo_alias(

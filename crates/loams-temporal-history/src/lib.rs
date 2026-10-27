@@ -21,7 +21,7 @@ pub mod time;
 pub use batch::Batch;
 pub use event_type::event_type;
 pub use fold::{FoldError, fold};
-pub use limits::Limits;
+pub use limits::{Limits, messages as limit_messages};
 pub use loams_temporal_proto::loams::temporal::internal::v1::{
     ActivityInfo, MutableState, TimerInfo, WorkflowTaskInfo,
 };

@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use loams_temporal_history::time::{dur, ts};
-use loams_temporal_history::{Attributes, WorkflowExecutionStatus};
+use loams_temporal_history::{Attributes, Limits, WorkflowExecutionStatus, limit_messages};
 use loams_temporal_matching::{Handout, Matcher, QueueKey, TaskKind as QueueKind};
 use loams_temporal_proto::loams::temporal::internal::v1::{TaskKind, TaskToken};
 use loams_temporal_proto::temporal::api::common::v1::{
@@ -28,7 +28,7 @@ use loams_temporal_proto::temporal::api::workflowservice::v1::*;
 use loams_temporal_resonate::ids::{PromiseId, WorkflowRef};
 use loams_temporal_resonate::{Durability, SettleAs};
 use loams_temporal_schedule::{MemScheduleStore, ScheduleStore};
-use loams_temporal_statemachine::{Input, Reply};
+use loams_temporal_statemachine::{Input, Reply, server_failure};
 use loams_temporal_store::{NamespaceRecord, RunKey, Store, StoreError};
 use tonic::{Request, Response, Status};
 
@@ -52,6 +52,13 @@ pub struct FrontendConfig {
     pub server_version: String,
     /// The default page of `GetWorkflowExecutionHistory`.
     pub history_page_size: usize,
+    /// What `GetClusterInfo` reports as the cluster's name and ID (D2051).
+    pub cluster_name: String,
+    /// What `GetClusterInfo` reports as the shard count.
+    pub history_shard_count: i32,
+    /// What `GetClusterInfo` reports as the persistence store
+    /// (`postgres`, `memory`).
+    pub persistence_store: String,
 }
 
 impl Default for FrontendConfig {
@@ -62,6 +69,9 @@ impl Default for FrontendConfig {
             history_wait: Duration::from_secs(60),
             server_version: format!("loams-temporal {}", env!("CARGO_PKG_VERSION")),
             history_page_size: 1000,
+            cluster_name: "loams-temporal".into(),
+            history_shard_count: 0,
+            persistence_store: String::new(),
         }
     }
 }
@@ -109,6 +119,17 @@ fn poll_build_id(capabilities: Option<&str>, deployment: Option<&str>) -> String
         .to_string()
 }
 
+/// Whether a payload or failure is over X1.R7's 2 MiB blob limit
+/// (DX1F.R2; Temporal sizes the encoded message).
+fn blob_too_large<M: prost::Message>(m: Option<&M>) -> bool {
+    m.is_some_and(|m| Limits::default().blob_too_large(m.encoded_len()))
+}
+
+/// Temporal's `ErrBlobSizeExceedsLimit`.
+fn blob_size_exceeded() -> Status {
+    Status::invalid_argument(limit_messages::BLOB_SIZE)
+}
+
 /// The poll deadline: the configured timeout, or 5 s before the request's
 /// own deadline if that is sooner (X1.R3).
 fn poll_deadline<T>(req: &Request<T>, max: Duration) -> Duration {
@@ -117,9 +138,18 @@ fn poll_deadline<T>(req: &Request<T>, max: Duration) -> Duration {
         .get("grpc-timeout")
         .and_then(|v| v.to_str().ok())
         .and_then(parse_grpc_timeout);
-    match header {
+    wait_within(header, max)
+}
+
+/// How long to hold a long poll given the client's deadline `client` (if it
+/// sent one) and the configured `max`. A deadline of 5 s or less gets half
+/// of it (DX1F.R3): holding the whole of it would let the client's deadline
+/// fire first, and the client would see `DEADLINE_EXCEEDED` instead of the
+/// empty page and token it can poll again with.
+fn wait_within(client: Option<Duration>, max: Duration) -> Duration {
+    match client {
         Some(d) if d > Duration::from_secs(5) => (d - Duration::from_secs(5)).min(max),
-        Some(d) => d.min(max),
+        Some(d) => (d / 2).min(max),
         None => max,
     }
 }
@@ -168,7 +198,12 @@ impl Frontend {
         self
     }
 
+    /// The caller: the UI listener's principal when the call came in there
+    /// (D2050), otherwise what the `authorization` header proves.
     pub(crate) fn principal<T>(&self, req: &Request<T>) -> Result<Principal, Status> {
+        if let Some(t) = req.extensions().get::<crate::ui::TrustedPrincipal>() {
+            return Ok(t.0.clone());
+        }
         self.auth.authenticate(req.metadata())
     }
 
@@ -223,7 +258,7 @@ impl Frontend {
     }
 
     /// The run a request names (its current run when `run_id` is empty).
-    async fn run_key(
+    pub(crate) async fn run_key(
         &self,
         ns: &NamespaceRecord,
         execution: Option<&WorkflowExecution>,
@@ -644,6 +679,22 @@ impl WorkflowService for WorkflowServiceImpl {
         }))
     }
 
+    async fn get_cluster_info(
+        &self,
+        _req: Request<GetClusterInfoRequest>,
+    ) -> Result<Response<GetClusterInfoResponse>, Status> {
+        Ok(Response::new(crate::ui::cluster_info(&self.0)))
+    }
+
+    async fn get_workflow_execution_history_reverse(
+        &self,
+        req: Request<GetWorkflowExecutionHistoryReverseRequest>,
+    ) -> Result<Response<GetWorkflowExecutionHistoryReverseResponse>, Status> {
+        crate::ui::history_reverse(&self.0, req)
+            .await
+            .map(Response::new)
+    }
+
     async fn register_namespace(
         &self,
         req: Request<RegisterNamespaceRequest>,
@@ -722,6 +773,9 @@ impl WorkflowService for WorkflowServiceImpl {
         let p = self.0.principal(&req)?;
         let mut r = req.into_inner();
         let ns = self.0.namespace(&p, &r.namespace).await?;
+        if blob_too_large(r.input.as_ref()) {
+            return Err(blob_size_exceeded());
+        }
         if r.request_id.is_empty() {
             r.request_id = uuid::Uuid::new_v4().to_string();
         }
@@ -820,7 +874,12 @@ impl WorkflowService for WorkflowServiceImpl {
         req: Request<RespondWorkflowTaskFailedRequest>,
     ) -> Result<Response<RespondWorkflowTaskFailedResponse>, Status> {
         let p = self.0.principal(&req)?;
-        let r = req.into_inner();
+        let mut r = req.into_inner();
+        if blob_too_large(r.failure.as_ref()) {
+            // Temporal records a server failure in its place (it also keeps
+            // a truncated copy as the cause; DX1F.R2 leaves that out).
+            r.failure = Some(server_failure(limit_messages::FAILURE.into(), true));
+        }
         let token = r.task_token.clone();
         self.0
             .finish_task(&p, &token, TaskKind::Workflow, |t| {
@@ -898,13 +957,25 @@ impl WorkflowService for WorkflowServiceImpl {
         let p = self.0.principal(&req)?;
         let r = req.into_inner();
         let token = r.task_token.clone();
+        let oversized = blob_too_large(r.result.as_ref());
         self.0
             .finish_task(&p, &token, TaskKind::Activity, |t| {
-                Input::ActivityCompleted {
-                    scheduled_event_id: t.scheduled_event_id,
-                    attempt: t.attempt,
-                    result: r.result,
-                    identity: r.identity,
+                if oversized {
+                    // Temporal fails the activity instead (non-retryable).
+                    Input::ActivityFailed {
+                        scheduled_event_id: t.scheduled_event_id,
+                        attempt: t.attempt,
+                        failure: Some(server_failure(limit_messages::COMPLETE_RESULT.into(), true)),
+                        identity: r.identity,
+                        last_heartbeat_details: None,
+                    }
+                } else {
+                    Input::ActivityCompleted {
+                        scheduled_event_id: t.scheduled_event_id,
+                        attempt: t.attempt,
+                        result: r.result,
+                        identity: r.identity,
+                    }
                 }
             })
             .await?;
@@ -916,7 +987,19 @@ impl WorkflowService for WorkflowServiceImpl {
         req: Request<RespondActivityTaskFailedRequest>,
     ) -> Result<Response<RespondActivityTaskFailedResponse>, Status> {
         let p = self.0.principal(&req)?;
-        let r = req.into_inner();
+        let mut r = req.into_inner();
+        // Temporal's frontend: oversized heartbeat details are dropped and
+        // an oversized failure is replaced; the response lists both.
+        let mut failures = Vec::new();
+        if blob_too_large(r.last_heartbeat_details.as_ref()) {
+            failures.push(server_failure(limit_messages::HEARTBEAT.into(), true));
+            r.last_heartbeat_details = None;
+        }
+        if blob_too_large(r.failure.as_ref()) {
+            let f = server_failure(limit_messages::FAILURE.into(), true);
+            r.failure = Some(f.clone());
+            failures.push(f);
+        }
         let token = r.task_token.clone();
         self.0
             .finish_task(&p, &token, TaskKind::Activity, |t| Input::ActivityFailed {
@@ -927,7 +1010,9 @@ impl WorkflowService for WorkflowServiceImpl {
                 last_heartbeat_details: r.last_heartbeat_details,
             })
             .await?;
-        Ok(Response::new(RespondActivityTaskFailedResponse::default()))
+        Ok(Response::new(RespondActivityTaskFailedResponse {
+            failures,
+        }))
     }
 
     async fn respond_activity_task_canceled(
@@ -937,13 +1022,24 @@ impl WorkflowService for WorkflowServiceImpl {
         let p = self.0.principal(&req)?;
         let r = req.into_inner();
         let token = r.task_token.clone();
+        let oversized = blob_too_large(r.details.as_ref());
         self.0
             .finish_task(&p, &token, TaskKind::Activity, |t| {
-                Input::ActivityCanceled {
-                    scheduled_event_id: t.scheduled_event_id,
-                    attempt: t.attempt,
-                    details: r.details,
-                    identity: r.identity,
+                if oversized {
+                    Input::ActivityFailed {
+                        scheduled_event_id: t.scheduled_event_id,
+                        attempt: t.attempt,
+                        failure: Some(server_failure(limit_messages::CANCEL_DETAILS.into(), true)),
+                        identity: r.identity,
+                        last_heartbeat_details: None,
+                    }
+                } else {
+                    Input::ActivityCanceled {
+                        scheduled_event_id: t.scheduled_event_id,
+                        attempt: t.attempt,
+                        details: r.details,
+                        identity: r.identity,
+                    }
                 }
             })
             .await?;
@@ -957,6 +1053,23 @@ impl WorkflowService for WorkflowServiceImpl {
         let p = self.0.principal(&req)?;
         let r = req.into_inner();
         let token = r.task_token.clone();
+        if blob_too_large(r.details.as_ref()) {
+            // Temporal fails the activity at once and tells the worker to
+            // stop (`cancel_requested`).
+            self.0
+                .finish_task(&p, &token, TaskKind::Activity, |t| Input::ActivityFailed {
+                    scheduled_event_id: t.scheduled_event_id,
+                    attempt: t.attempt,
+                    failure: Some(server_failure(limit_messages::HEARTBEAT.into(), true)),
+                    identity: r.identity,
+                    last_heartbeat_details: None,
+                })
+                .await?;
+            return Ok(Response::new(RecordActivityTaskHeartbeatResponse {
+                cancel_requested: true,
+                ..Default::default()
+            }));
+        }
         let reply = self
             .0
             .finish_task(&p, &token, TaskKind::Activity, |t| {
@@ -991,6 +1104,9 @@ impl WorkflowService for WorkflowServiceImpl {
             return Err(Status::invalid_argument(
                 "SignalName is not set on request.",
             ));
+        }
+        if blob_too_large(r.input.as_ref()) {
+            return Err(blob_size_exceeded());
         }
         self.0
             .engine
@@ -1091,9 +1207,15 @@ impl WorkflowService for WorkflowServiceImpl {
                     // Deadline or watcher gone: answer what there is.
                     _ => {
                         if close_only {
+                            // An empty page with a token, as Temporal's
+                            // server answers a long poll that times out: the
+                            // SDKs take an empty page *without* a token as
+                            // the end of a history that has no close event
+                            // ("could not get last history event"), so the
+                            // token is never empty here (DX1F.R1).
                             return Ok(Response::new(GetWorkflowExecutionHistoryResponse {
                                 history: Some(History::default()),
-                                next_page_token: r.next_page_token,
+                                next_page_token: from.to_be_bytes().to_vec().into(),
                                 ..Default::default()
                             }));
                         }
@@ -1367,8 +1489,37 @@ impl WorkflowService for WorkflowServiceImpl {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_grpc_timeout;
+    use super::{parse_grpc_timeout, wait_within};
     use std::time::Duration;
+
+    #[test]
+    fn a_long_poll_answers_before_the_clients_deadline() {
+        let max = Duration::from_secs(60);
+        assert_eq!(wait_within(None, max), max);
+        // 5 s of room before a long deadline, capped at the configured wait.
+        assert_eq!(
+            wait_within(Some(Duration::from_secs(70)), max),
+            Duration::from_secs(60)
+        );
+        assert_eq!(
+            wait_within(Some(Duration::from_secs(20)), max),
+            Duration::from_secs(15)
+        );
+        // A short deadline gets half, never all of it (DX1F.R3).
+        assert_eq!(
+            wait_within(Some(Duration::from_secs(4)), max),
+            Duration::from_secs(2)
+        );
+        assert_eq!(
+            wait_within(Some(Duration::from_secs(5)), max),
+            Duration::from_millis(2500)
+        );
+        assert_eq!(wait_within(Some(Duration::ZERO), max), Duration::ZERO);
+        assert_eq!(
+            wait_within(Some(Duration::from_secs(4)), Duration::from_secs(1)),
+            Duration::from_secs(1)
+        );
+    }
 
     #[test]
     fn grpc_timeouts_parse() {
