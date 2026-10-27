@@ -6084,8 +6084,12 @@ name = "loams-house-formats"
 version = "0.0.1"
 dependencies = [
  "arrow-array 59.3.0",
+ "arrow-ipc 59.3.0",
  "arrow-schema 59.3.0",
+ "bytes",
+ "loams-house-native",
  "loams-house-types",
+ "parquet 59.3.0",
 ]
 
 [[package]]

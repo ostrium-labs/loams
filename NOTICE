@@ -39,6 +39,13 @@ arrayEnumerateExtended.h, arraySort, arrayAggregation, FunctionArrayMapped.h),
 src/Functions/map.cpp, src/Functions/tuple.cpp, src/Functions/tupleElement.cpp,
 src/Functions/IFunction.cpp's default implementations and
 src/Analyzer/Resolve/QueryAnalyzer.cpp's untuple expansion.
+The output format writers in
+fabric/crates/loams-house-formats/ (plan HE1 Task 36) follow the layouts of
+ClickHouse's src/Processors/Formats/Impl/ (JSON, JSONCompact, JSONEachRow,
+JSONCompactEachRow, TabSeparated, CSV, Values, RowBinary, Native, Pretty and
+PrettyCompact output formats), src/Formats/JSONUtils.cpp and the binary
+serializations of src/DataTypes/Serializations/; each file names the sources
+it follows. No ClickHouse code is copied.
 
 Quickwit (https://github.com/quickwit-oss/quickwit), Apache License 2.0.
 Files under crates/loams-quickwit/ are derived from Quickwit revision
