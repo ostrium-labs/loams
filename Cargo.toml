@@ -327,6 +327,8 @@ loams-graph = { path = "crates/loams-graph", version = "0.1.2" }
 loams-hnsw = { path = "crates/loams-hnsw", version = "0.1.2" }
 loams-hot = { path = "crates/loams-hot", version = "0.1.2" }
 loams-link = { path = "crates/loams-link", version = "0.1.2" }
+# Model providers for Loams Memory and the desktop daemon (MM1 Task 2).
+loams-llm = { path = "crates/loams-llm", version = "0.1.2" }
 loams-kv = { path = "crates/loams-kv", version = "0.1.2" }
 loams-live = { path = "crates/loams-live", version = "0.1.2" }
 loams-live-js = { path = "crates/loams-live-js", version = "0.1.2" }
