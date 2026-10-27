@@ -9,12 +9,15 @@
 //! | [`OpenFgaAuthorizer`] | OpenFGA over gRPC (`openfga-client`), profile `authz` |
 //! | [`CachedAuthorizer`] | wraps any authorizer: allow decisions only, TTL ≤ 5 s (D66, D1611) |
 //! | [`AllowAllAuthorizer`] | developer mode, refused unless every listener is on loopback |
+//! | [`BuiltinAuthorizer`] | single-org mode: model v1 in process, no OpenFGA (D1613) |
 //! | [`RecordingAuthorizer`] | records every request and decision (tests, decision log) |
 //!
-//! `BuiltinAuthorizer` (single-org mode, D1613) follows in IA2 Task 3.
+//! [`http`] enforces it on HTTP routes, deny by default (D1611).
 
 mod allow_all;
+mod builtin;
 mod cached;
+pub mod http;
 mod openfga;
 mod recording;
 
@@ -25,6 +28,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 pub use allow_all::{AllowAllAuthorizer, NotLoopback};
+pub use builtin::BuiltinAuthorizer;
 pub use cached::{CachedAuthorizer, MAX_CACHE_TTL};
 pub use openfga::{MAX_CHECKS_PER_BATCH, OpenFgaAuthorizer, Tuple};
 pub use recording::{Record, RecordingAuthorizer};
@@ -190,11 +194,33 @@ impl CheckRequest {
         self
     }
 
-    /// Whether a cached answer may serve this request: only a plain, low-latency check.
+    /// Whether a cached answer may serve this request: only a plain, low-latency check by a
+    /// subject without an agent session. The cache key does not carry the session or the
+    /// time, so a session's answer must never serve another session or outlive `expires`.
     pub fn cacheable(&self) -> bool {
         self.consistency == Consistency::MinimizeLatency
             && self.context.is_empty()
             && self.contextual_tuples.is_empty()
+            && self.subject.session.is_none()
+    }
+
+    /// The condition context every backend evaluates (the same for OpenFGA and the built-in
+    /// authorizer): the request's context, with `session_id` set to the authenticated
+    /// subject's session when it has one (overriding the caller's), and `now` set to the
+    /// server's clock when the caller gave none. `agent_session` grants (Q1204) then need no
+    /// help from the caller.
+    pub fn effective_context(&self) -> serde_json::Map<String, serde_json::Value> {
+        let mut ctx = self.context.clone();
+        if let Some(session) = &self.subject.session {
+            ctx.insert("session_id".into(), session.clone().into());
+        }
+        if !ctx.contains_key("now")
+            && let Ok(now) = time::OffsetDateTime::now_utc()
+                .format(&time::format_description::well_known::Rfc3339)
+        {
+            ctx.insert("now".into(), now.into());
+        }
+        ctx
     }
 }
 
@@ -320,6 +346,29 @@ mod tests {
                 .consistency(Consistency::HigherConsistency)
                 .cacheable()
         );
-        assert!(!base.context("session_id", "s").cacheable());
+        assert!(!base.clone().context("session_id", "s").cacheable());
+        let mut with_session = base;
+        with_session.subject = Subject::agent("a").with_session("s1");
+        assert!(
+            !with_session.cacheable(),
+            "a session's allow must not serve another session"
+        );
+    }
+
+    #[test]
+    fn effective_context_takes_the_session_from_the_subject() {
+        let req = CheckRequest::new(
+            Subject::agent("a").with_session("s-real"),
+            "can_view",
+            ObjectRef::new("deployment", "d"),
+        )
+        .context("session_id", "s-claimed");
+        let ctx = req.effective_context();
+        assert_eq!(ctx["session_id"], "s-real");
+        assert!(ctx["now"].as_str().unwrap().ends_with('Z'));
+        let fixed = CheckRequest::new(Subject::user("u"), "can_view", ObjectRef::new("d", "x"))
+            .context("now", "2026-10-21T12:00:00Z");
+        assert_eq!(fixed.effective_context()["now"], "2026-10-21T12:00:00Z");
+        assert!(!fixed.effective_context().contains_key("session_id"));
     }
 }

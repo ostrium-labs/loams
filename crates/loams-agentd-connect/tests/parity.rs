@@ -80,6 +80,8 @@ struct Clients {
     review: pb::ReviewServiceClient<HttpClient>,
     groups: pb::RunGroupServiceClient<HttpClient>,
     approvals: pb::ApprovalServiceClient<HttpClient>,
+    market: pb::MarketplaceServiceClient<HttpClient>,
+    factory: pb::FactoryServiceClient<HttpClient>,
 }
 
 struct Daemon {
@@ -152,6 +154,11 @@ impl Daemon {
         let runtime = Engine::assemble_runtime(&config, EngineProfile::local(&data).unwrap())
             .await
             .unwrap();
+        // The marketplace over the testkit's signed fake index (MK1 Task 4b).
+        let world = loams_agentd_marketplace::testkit::World::new(&root.join("agentd"));
+        let market = loams_agentd_marketplace::MarketplaceHost::open(world.deps()).unwrap();
+        assert!(market.refresh().await.is_empty());
+        runtime.core().attach_marketplace(market);
         let engine: Arc<dyn RpcService> = runtime.core().rpc_service();
         let agentd = Agentd::new(
             engine.clone(),
@@ -196,7 +203,9 @@ impl Daemon {
             notifications: pb::NotificationServiceClient::new(http(), config.clone()),
             review: pb::ReviewServiceClient::new(http(), config.clone()),
             groups: pb::RunGroupServiceClient::new(http(), config.clone()),
-            approvals: pb::ApprovalServiceClient::new(http(), config),
+            approvals: pb::ApprovalServiceClient::new(http(), config.clone()),
+            market: pb::MarketplaceServiceClient::new(http(), config.clone()),
+            factory: pb::FactoryServiceClient::new(http(), config),
         };
         let ndjson = memory_client(engine);
         let info: rs::EngineInfo = ndjson
@@ -644,6 +653,9 @@ fn section(n: usize, s: &mut Suite) -> Option<BoxFuture<'_, ()>> {
         7 => Box::pin(review_and_search(s)),
         8 => Box::pin(run_groups(s)),
         9 => Box::pin(approvals_and_teardown(s)),
+        10 => Box::pin(marketplace(s)),
+        // The software factory (SF1 amendment F2).
+        11 => Box::pin(factory_steps(s)),
         _ => return None,
     })
 }
@@ -1935,4 +1947,265 @@ async fn approvals_and_teardown(s: &mut Suite) {
         projects.delete_project(json!({ "spaceId": "space-1" })),
         |r| mutated(r.ok)
     );
+}
+
+/// The scenario's MarketplaceService (MK1 Task 4b), over each daemon's own
+/// testkit world.
+async fn marketplace(s: &mut Suite) {
+    use loams_agentd_marketplace::testkit::HARNESS_ID;
+    use loams_agentd_proto::marketplace as rs_market;
+    unary!(
+        s,
+        "/loams.agentd.v1.MarketplaceService/ListSources",
+        ListMarketplaceSources,
+        |d| json!({}),
+        market.list_sources(json!({})),
+        |r| Wire::from_pb(r)?
+    );
+    // A plain-http index is refused alike.
+    unary!(
+        s,
+        "/loams.agentd.v1.MarketplaceService/AddSource",
+        AddMarketplaceSource,
+        |d| json!({ "name": "plain", "url": "http://example.org/index.json", "identity": "x" }),
+        market.add_source(
+            json!({ "name": "plain", "url": "http://example.org/index.json", "identity": "x" })
+        ),
+        |r| from_msg(r.source, "source")?
+    );
+    unary!(
+        s,
+        "/loams.agentd.v1.MarketplaceService/RemoveSource",
+        RemoveMarketplaceSource,
+        |d| json!({ "name": "nowhere" }),
+        market.remove_source(json!({ "name": "nowhere" })),
+        |r| ok(true)
+    );
+    unary!(
+        s,
+        "/loams.agentd.v1.MarketplaceService/SearchListings",
+        SearchListings,
+        |d| json!({ "kinds": ["harness"], "tiers": ["community"] }),
+        market.search_listings(
+            json!({ "kinds": ["KIND_HARNESS"], "tiers": ["LISTING_TIER_COMMUNITY"] })
+        ),
+        |r| Wire::from_pb(r)?
+    );
+    unary!(
+        s,
+        "/loams.agentd.v1.MarketplaceService/GetListing",
+        GetListing,
+        |d| json!({ "id": "ostrium/github-mcp-server" }),
+        market.get_listing(json!({ "id": "ostrium/github-mcp-server" })),
+        |r| Wire::from_pb(r)?
+    );
+    let (a, b) = unary!(
+        s,
+        "/loams.agentd.v1.MarketplaceService/PlanInstall",
+        PlanInstall,
+        |d| json!({ "id": HARNESS_ID, "version": "1.0.0" }),
+        market.plan_install(json!({ "id": HARNESS_ID, "version": "1.0.0" })),
+        |r| Wire::from_pb(r)?
+    );
+    s.learn("digest", &a["plan"]["digest"], &b["plan"]["digest"]);
+    unary!(
+        s,
+        "/loams.agentd.v1.MarketplaceService/Install",
+        InstallListing,
+        |d| json!({ "id": HARNESS_ID, "version": "1.0.0", "planDigest": d.get("digest") }),
+        market.install(
+            json!({ "id": HARNESS_ID, "version": "1.0.0", "planDigest": d.get("digest") })
+        ),
+        |r| Wire::from_pb(r)?
+    );
+    unary!(
+        s,
+        "/loams.agentd.v1.MarketplaceService/ListInstalled",
+        ListInstalledListings,
+        |d| json!({}),
+        market.list_installed(json!({})),
+        |r| Wire::from_pb(r)?
+    );
+    unary!(
+        s,
+        "/loams.agentd.v1.MarketplaceService/CheckUpdates",
+        CheckListingUpdates,
+        |d| json!({}),
+        market.check_updates(json!({})),
+        |r| Wire::from_pb(r)?
+    );
+    // 1.1.0 reaches a new host: without its plan's digest, refused alike.
+    unary!(
+        s,
+        "/loams.agentd.v1.MarketplaceService/Update",
+        UpdateListing,
+        |d| json!({ "id": HARNESS_ID }),
+        market.update(json!({ "id": HARNESS_ID })),
+        |r| rs_market::InstalledListingReply {
+            installed: from_msg(r.installed, "installed")?
+        }
+    );
+    unary!(
+        s,
+        "/loams.agentd.v1.MarketplaceService/Uninstall",
+        UninstallListing,
+        |d| json!({ "id": HARNESS_ID }),
+        market.uninstall(json!({ "id": HARNESS_ID })),
+        |r| ok(true)
+    );
+}
+
+fn factory_health(
+    h: buffa::EnumValue<pb::FactoryHealth>,
+) -> Result<rs::factory::FactoryHealth, MapError> {
+    use rs::factory::FactoryHealth as H;
+    match h {
+        buffa::EnumValue::Known(pb::FactoryHealth::FACTORY_HEALTH_OK) => Ok(H::Ok),
+        buffa::EnumValue::Known(pb::FactoryHealth::FACTORY_HEALTH_AUTH_FAILED) => Ok(H::AuthFailed),
+        buffa::EnumValue::Known(pb::FactoryHealth::FACTORY_HEALTH_UNREACHABLE) => {
+            Ok(H::Unreachable)
+        }
+        buffa::EnumValue::Known(pb::FactoryHealth::FACTORY_HEALTH_UNCONFIGURED) => {
+            Ok(H::Unconfigured)
+        }
+        buffa::EnumValue::Known(pb::FactoryHealth::FACTORY_HEALTH_LOCKED) => Ok(H::Locked),
+        other => Err(MapError::enum_value("FactoryHealth", other.to_i32())),
+    }
+}
+
+/// A `FactoryApp` back to the ndjson type: an unconfigured app has no `fields`.
+fn factory_app(a: pb::FactoryApp) -> Result<rs::factory::FactoryAppInfo, MapError> {
+    let configured = a.url.is_some();
+    Ok(rs::factory::FactoryAppInfo {
+        id: a.id,
+        label: a.label,
+        url: a.url,
+        health: factory_health(a.health)?,
+        has_panels: a.has_panels,
+        credential_fields: a
+            .credential_fields
+            .into_iter()
+            .map(|f| rs::factory::FactoryCredentialField {
+                key: f.key,
+                label: f.label,
+                secret: f.secret,
+            })
+            .collect(),
+        fields: configured.then(|| a.fields.into_iter().collect()),
+        persistent: a.persistent,
+        preview: a.preview,
+    })
+}
+
+fn factory_error(e: pb::FactoryError) -> rs::factory::FactoryError {
+    rs::factory::FactoryError {
+        code: e.code,
+        message: e.message,
+    }
+}
+
+fn factory_app_reply(
+    r: Option<pb::__buffa::oneof::test_factory_app_response::Result>,
+) -> Result<rs::factory::FactoryAppReply, MapError> {
+    use pb::__buffa::oneof::test_factory_app_response::Result as R;
+    match r {
+        Some(R::App(a)) => Ok(rs::factory::FactoryAppReply {
+            app: Some(factory_app(*a)?),
+            error: None,
+        }),
+        Some(R::Error(e)) => Ok(rs::factory::FactoryAppReply {
+            app: None,
+            error: Some(factory_error(*e)),
+        }),
+        None => Err(MapError::empty_oneof("TestFactoryAppResponse.result")),
+    }
+}
+
+fn factory_query_reply(
+    r: Option<pb::__buffa::oneof::query_factory_response::Result>,
+) -> Result<rs::factory::FactoryQueryReply, MapError> {
+    use pb::__buffa::oneof::query_factory_response::Result as R;
+    match r {
+        Some(R::ValueJson(v)) => Ok(rs::factory::FactoryQueryReply {
+            value: Some(serde_json::from_str(&v).map_err(|e| MapError(e.to_string()))?),
+            error: None,
+        }),
+        Some(R::Error(e)) => Ok(rs::factory::FactoryQueryReply {
+            value: None,
+            error: Some(factory_error(*e)),
+        }),
+        None => Err(MapError::empty_oneof("QueryFactoryResponse.result")),
+    }
+}
+
+/// The factory (SF1 amendment F2): both daemons start with nothing configured.
+async fn factory_steps(s: &mut Suite) {
+    unary!(
+        s,
+        "/loams.agentd.v1.FactoryService/ListFactoryApps",
+        FactoryList,
+        |d| json!({}),
+        factory.list_factory_apps(json!({})),
+        |r| rs::factory::FactoryAppList {
+            apps: r
+                .apps
+                .into_iter()
+                .map(factory_app)
+                .collect::<Result<_, _>>()?,
+        }
+    );
+    unary!(
+        s,
+        "/loams.agentd.v1.FactoryService/TestFactoryApp",
+        FactoryTest,
+        |d| json!({ "app": "forgejo" }),
+        factory.test_factory_app(json!({ "app": "forgejo" })),
+        |r| factory_app_reply(r.result)?
+    );
+    unary!(
+        s,
+        "/loams.agentd.v1.FactoryService/QueryFactory",
+        FactoryQuery,
+        |d| json!({ "app": "forgejo", "op": "repos", "params": { "limit": 20 } }),
+        factory.query_factory(
+            json!({ "app": "forgejo", "op": "repos", "paramsJson": "{\"limit\":20}" })
+        ),
+        |r| factory_query_reply(r.result)?
+    );
+    // An unreachable SigNoz: configured, then checked, then forgotten.
+    unary!(
+        s,
+        "/loams.agentd.v1.FactoryService/ConfigureFactoryApp",
+        FactoryConfigure,
+        |d| json!({ "app": "signoz", "url": "http://127.0.0.1:9/web/", "fields": {} }),
+        factory.configure_factory_app(
+            json!({ "app": "signoz", "url": "http://127.0.0.1:9/web/", "fields": {} })
+        ),
+        |r| factory_configure_reply(r.result)?
+    );
+    unary!(
+        s,
+        "/loams.agentd.v1.FactoryService/RemoveFactoryApp",
+        FactoryRemove,
+        |d| json!({ "app": "signoz" }),
+        factory.remove_factory_app(json!({ "app": "signoz" })),
+        |r| rs::Empty {}
+    );
+}
+
+fn factory_configure_reply(
+    r: Option<pb::__buffa::oneof::configure_factory_app_response::Result>,
+) -> Result<rs::factory::FactoryAppReply, MapError> {
+    use pb::__buffa::oneof::configure_factory_app_response::Result as R;
+    match r {
+        Some(R::App(a)) => Ok(rs::factory::FactoryAppReply {
+            app: Some(factory_app(*a)?),
+            error: None,
+        }),
+        Some(R::Error(e)) => Ok(rs::factory::FactoryAppReply {
+            app: None,
+            error: Some(factory_error(*e)),
+        }),
+        None => Err(MapError::empty_oneof("ConfigureFactoryAppResponse.result")),
+    }
 }

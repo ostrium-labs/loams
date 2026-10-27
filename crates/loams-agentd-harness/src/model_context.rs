@@ -104,6 +104,9 @@ pub(crate) fn context(
         HarnessId::Pi => &["PI_", "OPENAI_", "ANTHROPIC_"],
         HarnessId::Devin => &["DEVIN_"],
         HarnessId::Antigravity => &["GEMINI_", "GOOGLE_"],
+        // Goose's catalog follows the provider the environment picks
+        // (`goose::environment`), including the model proxy.
+        HarnessId::Goose => &["GOOSE_", "OPENAI_", "ANTHROPIC_", "LOAMS_MODEL_PROXY"],
         _ => &[],
     };
     let mut env: Vec<_> = std::env::vars_os()
@@ -119,7 +122,7 @@ pub(crate) fn context(
         field(&mut hash, value.as_encoded_bytes());
     }
     Ok(ModelContext {
-        hash: format!("{:x}", hash.finalize()),
+        hash: hex::encode(hash.finalize()),
         binary_path: binary,
         binary_version: version,
     })
@@ -174,7 +177,7 @@ mod tests {
         let key = || {
             let mut hash = Sha256::new();
             hash_files(&mut hash, std::iter::once(&file)).unwrap();
-            format!("{:x}", hash.finalize())
+            hex::encode(hash.finalize())
         };
         let missing = key();
         std::fs::write(&file, "account-one").unwrap();

@@ -1,0 +1,28 @@
+[package]
+name = "loams-zitadel"
+description = "A client for Zitadel's public HTTP APIs, and Loams agents as Zitadel machine users (design 76 §10, D1607; plan IA1, IA4 Task 1). No Zitadel code."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+base64.workspace = true
+jsonwebtoken = { workspace = true, features = ["use_pem"] }
+loams-authz.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+time.workspace = true
+tracing.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

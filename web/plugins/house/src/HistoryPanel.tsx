@@ -61,7 +61,7 @@ export function HistoryPanel({
     [client, status, text],
   );
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: refresh reloads on purpose
+  // oxlint-disable-next-line react/exhaustive-deps -- refresh reloads on purpose
   useEffect(() => {
     void load();
   }, [load, refresh]);

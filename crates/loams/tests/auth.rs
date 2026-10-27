@@ -660,12 +660,13 @@ async fn the_engine_serves_its_console_beside_the_guarded_api() {
     };
     let index = get("/ui/").await;
     assert_eq!(index.status(), 200);
-    // The CSP is a header, with the agentd host in connect-src; the page
-    // carries no meta CSP that would keep it out.
+    // The CSP is a header, with the agentd host in connect-src and frame-src
+    // (#1201: Studio previews frame it); the page carries no meta CSP that
+    // would keep it out.
     assert_eq!(
         index.headers()["content-security-policy"],
         "default-src 'self'; connect-src 'self' https://agentd.example.ts.net; \
-         frame-ancestors 'self'"
+         frame-src 'self' https://agentd.example.ts.net; frame-ancestors 'self'"
     );
     let html = index.text().await.unwrap();
     assert!(html.contains("Loams console"), "{html}");

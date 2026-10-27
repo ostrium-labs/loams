@@ -24,6 +24,7 @@ fn request(cwd: &std::path::Path, prompt: &str) -> RunRequest {
         resume: None,
         attachments: vec![],
         worktree: None,
+        mcp_servers: Vec::new(),
         mcp: None,
     }
 }

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2
+
+- Released with Loams 0.1.2; no API changes.
+
 ## 0.1.1
 
 - `sql` (`query` with `$n` parameters, `queryArrow`, `SqlModule.records`) and

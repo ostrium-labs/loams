@@ -276,6 +276,14 @@ async fn native_session_runs_on_the_shared_path() {
     client
         .send_query("INSERT INTO t (id, s) FORMAT Native", &[], false)
         .await;
+    // The table's columns first (R9.68), as clickhouse-server 26.9 sends them.
+    assert_eq!(
+        client.packet().await,
+        ServerPacket::TableColumns(
+            "columns format version: 1\n3 columns:\n`id` UInt64\n`s` String\n`at` DateTime('UTC')\n"
+                .into()
+        )
+    );
     let ServerPacket::Data { block: header, .. } = client.packet().await else {
         panic!("the INSERT's header");
     };
@@ -379,6 +387,9 @@ async fn native_session_runs_on_the_shared_path() {
     client
         .send_query("INSERT INTO t (id, s) FORMAT Native", &[], true)
         .await;
+    let ServerPacket::TableColumns(_) = client.packet().await else {
+        panic!("the compressed INSERT's table columns");
+    };
     let ServerPacket::Data { .. } = client.packet().await else {
         panic!("the compressed INSERT's header");
     };
@@ -478,4 +489,76 @@ async fn golang_migrate_at_revision_54213() {
     let data = blocks(&answer);
     assert_eq!(data[1].rows, 1, "{answer:?}");
     assert_eq!(data[1].columns[0].data, 1i64.to_le_bytes());
+}
+
+/// HE1 R9.69: a `Cancel` while the statement still runs, before its first
+/// block, stops it and answers `EndOfStream` with no `Data`; the connection
+/// serves on.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cancel_before_the_first_result() {
+    let house = house("native-cancel-early").await;
+    let mut client = Client::connect(house.native(), 54460).await;
+    let started = std::time::Instant::now();
+    client
+        .send_query(
+            "SELECT number FROM numbers(3) WHERE sleepEachRow(1) = 0",
+            &[],
+            false,
+        )
+        .await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let mut cancel = Vec::new();
+    wire::put_varuint(&mut cancel, packet::client::CANCEL);
+    client.send(&cancel).await;
+    let answer = client.answer().await;
+    assert_eq!(
+        answer.last(),
+        Some(&ServerPacket::EndOfStream),
+        "{answer:?}"
+    );
+    assert!(blocks(&answer).is_empty(), "{answer:?}");
+    assert!(
+        started.elapsed() < Duration::from_millis(2500),
+        "cancelled after {:?}",
+        started.elapsed()
+    );
+    let answer = client.query("SELECT 1").await;
+    assert_eq!(blocks(&answer)[1].rows, 1, "{answer:?}");
+}
+
+/// HE1 R9.66: a top-level `DateTime` column keeps its time zone in a result's
+/// blocks, as clickhouse-server names it to a client at 54337 or later.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn datetime_columns_keep_their_time_zone() {
+    let house = house("native-zones").await;
+    let mut client = Client::connect(house.native(), 54460).await;
+    let answer = client
+        .query("SELECT toDateTime(0, 'Asia/Kolkata') AS d, toDateTime(0) AS u, [toDateTime(0, 'Asia/Kolkata')] AS a")
+        .await;
+    let data = blocks(&answer);
+    for block in [data[0], data[1]] {
+        assert_eq!(
+            block
+                .columns
+                .iter()
+                .map(|c| c.type_name.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "DateTime('Asia/Kolkata')",
+                "DateTime",
+                "Array(DateTime('Asia/Kolkata'))"
+            ],
+            "{answer:?}"
+        );
+    }
+    assert_eq!(data[1].columns[0].data, 0u32.to_le_bytes());
+    // With the client's own output format, as clickhouse-client sends it.
+    let answer = client
+        .query("SELECT toDateTime(0, 'Asia/Kolkata') AS d FORMAT TSVWithNamesAndTypes")
+        .await;
+    assert_eq!(
+        blocks(&answer)[0].columns[0].type_name,
+        "DateTime('Asia/Kolkata')",
+        "{answer:?}"
+    );
 }

@@ -658,3 +658,46 @@ Items marked **owner** need the owner before LC2a code starts.
 - **R-LC2a-11, the TiDB items read for §25 and §17.**
   - The `tidbcloud/tidbcloud` Terraform provider 0.4.11 is listed on the OpenTofu registry (Q1273).
   - The billing API works with the LC0 org key. It gives monthly totals by project and service (`GET /v1beta1/bills/{month}`, $0 so far), daily rows per cluster (`/billsDetails`) and a cost explorer. It is per cluster at best, so it can't meter tenants inside a cell.
+
+### LC2a status (2026-10-24)
+
+Built against local doubles only (an in-memory or throwaway TiDB v8.5.8, fake WorkOS, Turnstile, mail and DNS). Nothing deployed; no credential file read.
+
+- **Merged:** Task 1, the control-DB schema (#1128); Task 3, the waitlist API (#1171).
+- **Built and tested, pushed as branches, not yet in pull requests** (the owner paused new work on 2026-10-24). Each is one commit on top of the previous, in plan order, and carries its rulings (R-LC2a-12 to R-LC2a-19) in this file:
+  - `lc2a-admin`: Task 4, admin authorisation (`cloud_admin`, the allow-list, the TOTP step-up; `platform:loams-cloud#cloud_admin` in `deploy/openfga/core.fga`).
+  - `lc2a-invites`: Task 5, WorkOS invitations, resend and revoke, and the shared daily email budget.
+  - `lc2a-admin-cli` (on `lc2a-invites`): `loams cloud admin` (crate `loams-cloud-admin`).
+  - `lc2a-lifecycle` (on `lc2a-invites`): Task 9, `DELETE /me`, deletion and retention, the hourly invite sweep.
+  - `lc2a-worker`: the Worker entry, Durable Objects, crons and `wrangler.toml` (not deployed; CI runs a `--dry-run`).
+  - `lc2a-threat-model`: Task 12's draft threat model and go-live checklist.
+- **Blocked on the owner:** Task 2 (the sending-only Resend key, R-LC2a-2, and tracking off, R-LC2a-3); Task 6 (the WorkOS actions secret and staging settings); Task 7 (staging redirect URIs, and a GitHub App token for the age check); Task 8 (the webhook secret); Task 10 (loams-site pages, after Task 7); Task 11 (all of the above, plus the Turnstile test key); counsel on the free-mail list (R-LC2a-10, Q1276).
+
+### LC2a Tasks 1–5: execution rulings (2026-10-23)
+
+Tasks 1, 3, 4 and 5 were built before the owner's pending steps (the sending-only Resend key, WorkOS staging settings, the webhook and actions secrets, the Turnstile key), against local doubles only. Nothing was deployed, and no credential file was read.
+
+- **R-LC2a-12, test doubles.** `deploy/loams-cloud` has no npm dependencies. The suites run on Node with type stripping. The control-DB suites run on a throwaway TiDB v8.5.8 on unistore (`scripts/test-tidb.sh`), reached through the mysql client, which binds `?` parameters the way `@tidbcloud/serverless` does. WorkOS, Turnstile, mail, DNS and rate limits are fakes in `test/harness/`. `@workos/emulate` (R-LC2a-7) isn't used, to stay dependency-free; the staging run is Task 11's.
+- **R-LC2a-13, the write rule (LC0 Task 3).** Every control-DB write is one statement that is safe to repeat: an insert with a Worker-minted id or a natural key (`INSERT IGNORE`), or an update guarded by the state it leaves. API-level `Idempotency-Key`s live in `idempotency_keys`. In the Worker, control-DB writes go through a Durable Object created with a location hint near the Starter region; account-scoped writes go through the user's own DO (lc0-report §4).
+- **R-LC2a-14, Task 3.** The address-dependent work of `POST /waitlist` and `DELETE /waitlist` runs after the response, so status, body, headers and timing don't depend on the address's state. A resolver failure during the MX check lets the address through (fail-open); the email-code check (Task 6) fails closed. The free-mail list isn't vendored (R-LC2a-10, counsel); only the disposable list is, at its pin, with its CC0 dedication and a `NOTICE` entry.
+- **R-LC2a-15, Task 4.** `platform:loams-cloud#cloud_admin` is in `deploy/openfga/core.fga` (users only) with model tests. `BuiltinAuthorizer` doesn't exist yet (IA2 Task 3), so its parity lands with it. Tokens without a person's session (no `sid`, a non-`user_` subject, an `act` or `may_act` claim) are refused before the role is read. The access-token issuer is configuration; its exact value on staging is a (verify) for Task 11.
+- **R-LC2a-16, the CLI.** `loams cloud admin` covers Task 4's and Task 5's endpoints, so it lands in one PR after Task 5 instead of half in each.
+- **R-LC2a-17, Task 5.**
+  - **Exactly one WorkOS invitation per entry.** WorkOS's create takes no idempotency key we could rely on, and a create whose response is lost may still have happened. So the queue claims an entry with a guarded update on `attempts`, and every retry first looks for the address's pending invitation (`GET /user_management/invitations?email=`, a (verify) on staging for Task 11) and adopts it. `invites.open_key` allows at most one open invite per entry across batches.
+  - **The daily cap.** `POST /admin/invites` refuses a batch larger than today's remaining invitation budget less what is already queued (`409 DAILY_SEND_CAP`). A resend takes budget too. Sends are counted in the control DB's `email_budget` (Task 1), which is also the pacer Task 2's Worker mail will use. A failed create attempt still takes budget, because a lost response can't be told from a refusal; that only ever sends less. WorkOS's magic codes go through Resend uncounted, so the cap of 100 is a ceiling on what we cause.
+  - **Revoke** mirrors WorkOS: an invitation already accepted or expired there is refused with `409 INVITE_NOT_REVOCABLE`, and our row takes WorkOS's state. Removing a waitlist entry revokes its open invitation at WorkOS.
+  - **Resend** reads WorkOS first (there is no `invitation.expired` event, R-LC2a-5.6), counts the resend before sending, and keeps the expiry. `extend` revokes and creates a new invitation for the invite's full term from now, on the same invite row.
+- **R-LC2a-18, Task 9.** `DELETE /me`, the deletion job, the retention jobs and the hourly invite sweep are built and tested on seeded accounts, because accounts come from Task 7's callback, which waits on the owner's WorkOS staging steps. There is no tenant data in LC2a, so the export step and the per-user Durable Object join the deletion job in LC2. Deletion keeps the contact and sign-in addresses' HMACs as suppressions, so a deleted account's address can't rejoin the waitlist for 24 months. Retention purges (unconfirmed after 7 days, no answer 30 days after the 12-month reminder, 30 days after an expired invite) delete without suppressing, so the person may join again. Each statement handles at most 200 rows per run.
+- **R-LC2a-19, the Worker.** `deploy/loams-cloud/src/worker.ts` and `wrangler.toml` wire Tasks 3–5 and 9 for the live run: a ControlDb Durable Object runs every control-DB statement with `@tidbcloud/serverless` 0.3.0 (a 10 s bound on each request, connection strings scrubbed from errors) and is reached with `locationHint: "enam"`; RateLimiter objects hold §25.7's global windows; two Cron Triggers (hourly: drain, expiry sweep, deletions; daily: retention) of the account's five. `workers_dev = false` and no route, so nothing is reachable until the owner deploys. Until Task 2, the Worker's mailer refuses to send and the waitlist logs `waitlist.send_failed`. CI typechecks `worker.ts` against `@cloudflare/workers-types` and runs `wrangler deploy --dry-run`.
+
+### Owner approvals (2026-10-24)
+
+The owner approved the pending decisions below on 2026-10-24 ("approve all with your recommendations").
+
+- **R-LC0-8, T3-1: device pings use Durable Object WebSocket auto-response.** Presence and lease renewal come from the auto-response timestamp (`getWebSocketAutoResponseTimestamp`), never from "socket open". A ping writes no rows. **Approved (owner, 2026-10-24).** (Design 78 §9.2, §17; LC0 report §4.)
+- **R-LC0-9, T3-2: the per-user Durable Object does the TiDB writes.** It is created with a `locationHint` near the control DB's region (19–25 ms from the DO against 270–290 ms from a distant edge colo). The edge Worker doesn't write TiDB on hot paths. **Approved (owner, 2026-10-24).**
+- **R-LC0-10, D1756 stays on Workers Free.** "On Workers Paid" is dropped from D1727. Workers Paid remains Q1292's trigger-based owner decision. **Approved (owner, 2026-10-24).**
+- **R-LC0-11, D1713 amended.** Drain at handoff and at approval, plus every 5 minutes only when the mount is dirty, and never on a timer for Git-workspace mounts (LC0 Task 2: a timed drain on a Git workspace costs 14 writes for nothing). **Approved (owner, 2026-10-24).**
+- **R-LC0-12, D1718 amended.** Per-filesystem limits need a card, and there is no per-filesystem write counter, so the write budget can't be enforced by the provider. The hosted cohort stays off (§25.13, Q1291). **Approved (owner, 2026-10-24).**
+
+The decision log rows D1713, D1718 and D1727 and design 78 §9.2, §9.4, §14.5, §15.2 and §17 carry the same text.

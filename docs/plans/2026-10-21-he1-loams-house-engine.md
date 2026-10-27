@@ -115,6 +115,8 @@ Commit: `house: the generated function and engine matrix (HE0 Task 8)`.
 
 > **Remaining (owner, 2026-10-22: House work stops after the open PRs; [R9.64](he1-rulings/t9.md)).** For SigNoz: refreshable materialized views (`REFRESH EVERY … APPEND TO`, designed in R9.64, not built), L's DDL items from the first SigNoz replay, and the gate job with its House overlay. Done: D1572 and R9.61 (nanosecond times), R9.62 (cluster `system` tables) and R9.63 (`JSON` columns).
 
+> **Status 2026-10-24 ([R9.70](he1-rulings/t9.md)–[R9.73](he1-rulings/t9.md)).** Built: refreshable materialized views and `PREWHERE` on lake tables (R9.70), Distributed columns that follow their local table (R9.71), the Factory's DSN on the native TLS listener (R9.72), and the gate (`app-on-house.sh signoz`, the multi-database replay, `signoz/compare.py`, the nightly `signoz-on-house` job). The replay passes (373/373 DDL, 194 identical SELECTs plus 1 `insert-time`) and SigNoz's own migrations run on the House over native TLS. **Left:** one end-to-end run after R9.71 (collector ingest, then the API comparison); then make the job required or keep it nightly (about 17 min locally), and take off the preview label.
+
 Point each application at the chDB House (lake tables, Iceberg v2) instead of `clickhouse-server` and run its suite and driver. For each failure: a fix in the House if HS1 has the piece and it is small; else a ruling that names the gap and the HE phase that closes it (for example mutations, D1552, HE2). Exit for this task: both applications start, ingest and render their main pages on the House, and the remaining gaps are listed.
 
 Tests: `langfuse_on_house_smoke` and `openpanel_on_house_smoke` in a nightly job.
@@ -188,6 +190,20 @@ Tests: `openmeter_on_house_smoke` (nightly). Commit: `conformance: OpenMeter on 
 **Harness needs.** Postgres, Quickwit (full-text search; Apache-2.0 at v0.9.1, verify), and for the full file RabbitMQ and Valkey. Oracle 26.9.2.8 (Laminar pins 26.5).
 
 **Expected House gaps** (from its migrations, to be measured): the `RowBinary` input and output formats over HTTP (chDB has them; the House's HTTP front must pass them through); `ReplacingMergeTree` read with `FINAL` (supported); `tokenbf_v1` skip indexes (stripped in R9.3's discovery runs); a second, read-only user with its own grants (the House classifies `GRANT`/`REVOKE` as unsupported today).
+
+**Measured on the chDB House (2026-10-25, [R14.3](he1-rulings/t14.md)).** Laminar v0.3.0 (`app-server` and `frontend` by digest, unmodified) against a single-node House (`loams-fabric house --single-node`, a dev build), the House reached over its TLS listener through a TLS-originating proxy. The House accepts the connection and the first three migrations (`1_squashed`, `2_labels-to-tags`, `3_eval-scores-span-tags`); the frontend's runner (`clickhouse-migrations`) stops at `4_views.sql` and the frontend exits, so the UI never serves. Applying all 72 migration files statement by statement leaves 58 failures. So neither ingest (no `spans` table) nor the trace pages (no `traces_v0`) can work. The Postgres side is fine: Laminar's Postgres migrations apply on Postgres 17.6.
+
+**Laminar on the House: the work list after 0.1.2** (owner, 2026-10-25, [R14.4](he1-rulings/t14.md), D1815). The 0.1.2 Software Factory keeps Langfuse; Laminar replaces it once these pass, with `laminar_on_house_smoke` (migrations, an SDK trace ingested, the traces, spans and sessions pages loading) as the gate:
+
+1. **Parameterised views read as table functions.** `CREATE VIEW … AS … FROM raw_traces_v0(project_id = {…}, …)` and `map_aggregate_evaluation_scores_v0(…)`: a view with `{name:Type}` parameters, called like a table function, is refused as an outside table function (344). Blocks `traces_v0`, `evaluation_datapoints_v0` and their successors (migrations 4, 8, 10, 13, 15, 26, 36, 49): the House should resolve a call to a view in the namespace as that view.
+2. **`PROJECTION` in `CREATE TABLE`** (and `ALTER TABLE … ADD|MATERIALIZE PROJECTION`) is refused (457). Blocks `spans_v2` and so `spans`, the ingest table, and every later `ALTER TABLE spans`. Accepting and ignoring projections on lake tables is the likely ruling.
+3. **`SimpleAggregateFunction(f, T)` columns** are refused (457). Blocks `traces_agg` and `traces_static` (migration 54) and the trace list built on them.
+4. **`Array(BFloat16)`** has no lake-table type (48). Blocks `signal_event_clusters` and its 768-dimension successor (migrations 25, 28, 48, 57), with their `vector_similarity('hnsw', …)` index.
+5. **Dictionaries.** `CREATE DICTIONARY`, `CREATE OR REPLACE DICTIONARY` and `DROP DICTIONARY` are disabled (344, 48), with `dictGet` in the views. Laminar creates them in its migrations (43) and again at every frontend start, with `SOURCE(CLICKHOUSE(USER … PASSWORD … DB … TABLE|QUERY …))` over the same server, `COMPLEX_KEY_CACHE`, `COMPLEX_KEY_DIRECT` and `COMPLEX_KEY_HASHED` layouts.
+6. **`INSERT … SELECT`** cannot be parsed ("outside the House's ClickHouse surface", 62). Blocks the data-copy migrations (19 and 32 fail on it; later copies fail first on their missing tables).
+7. **`EXCHANGE TABLES`** (344, the statement's tree is not read) and **SQL UDFs** (`CREATE FUNCTION … AS (…) -> …`, 344). Block the table swaps (35, 48) and `apply_pii_masks` (66).
+
+Not reached yet, to measure once 1–7 pass: `RowBinary` inserts and reads over HTTP from the Rust app-server, `async_insert` with `wait_for_async_insert`, `ReplacingMergeTree … FINAL`, `CoalescingMergeTree` and `AggregatingMergeTree`, `tokenbf_v1`, `bloom_filter` and `minmax` skip indexes, `JSON` and `Map` columns, `TTL`, `ADD CONSTRAINT … CHECK`, and the read-only user (Laminar's own compose uses the same user for both, so no `GRANT` is needed). Connecting: the app-server's `clickhouse` crate (0.15, `rustls-tls`) trusts only the Web PKI roots, so it cannot verify the House's self-signed certificate; a TLS-originating proxy (Caddy, Apache-2.0) that trusts `house.crt` worked, and is the Factory overlay's likely shape.
 
 **Next candidate: Opik** (`comet-ml/opik`, Apache-2.0, releases daily): HTTP only, but a clustered schema (`ON CLUSTER`, `ReplicatedReplacingMergeTree`) that needs D1571's cluster-DDL forms, `Map`, `JSON` and `Time` types, Liquibase migrations over JDBC, and up to 14 services with ZooKeeper. Taken up only if the owner adds it after Laminar.
 
@@ -268,6 +284,14 @@ Tests: `bi_grafana_on_house_smoke` (both protocols) and `bi_metabase_on_house_sm
 5. **A chDB-written table read differently by the Rust engine.** Expected: identical answers. Test: `chdb_written_tables_read_identically` (Task 26, extended in Task 70).
 
 ## HE1 — The read-only Rust engine (Tasks 20–47)
+
+> **Progress (2026-10-25; resumed for an opt-in, read-only Rust-engine preview in 0.1.3).**
+> - **Task 20** is merged (#1124).
+> - **Task 21** is merged (#1156): `loams-house-types`.
+> - **Task 22** (#1183) is the front end's core.
+> - **Task 23** is the engine oracle: the dev server, seeded targets, the per-PR job "House engine: the oracle", and `scripts/house/engine-oracle.sh` (R23.1–R23.5).
+> - **Next, in parallel, one implementer each:** Tasks 24, 25, 26, 28, 30, 31, 32, 33, 36, 37 and 38. Their briefs are in `~/Documents/Ostriumlabs/loams-wt/.he0-shared/he1-briefs/tNN.md`.
+> - HE0's loose ends (R20.3) are still open.
 
 **Exit (§75 §16.1, D1579):** the Tier 0 query set passes against the oracle; at least 50 % of the filtered stateless tests pass on `house-rust`; OpenPanel's, Langfuse v4's and v3's and SigNoz's replays (R9.3) give identical answers on `engine = rust` with no fallback; OpenPanel runs end to end on a House with `engine = rust`; the performance budget of D1803 holds.
 
@@ -1065,3 +1089,15 @@ Rulings live in one file per task under [`he1-rulings/`](he1-rulings/), so tasks
 | 75. The fresh tier | [t75.md](he1-rulings/t75.md) |
 | 76. The NDJSON ingest API | [t76.md](he1-rulings/t76.md) |
 | 77. Endpoint pipes | [t77.md](he1-rulings/t77.md) |
+
+### Owner approvals (2026-10-24)
+
+The owner approved the pending decisions below on 2026-10-24 ("approve all with your recommendations").
+
+- **D1576 / Q1188:** DataFusion **55.2** (Arrow 59, the iceberg-rust fork) replaces DataFusion 54.1. **Approved (owner, 2026-10-24).** R12.2 stands as written.
+- **D1577, D1579, D1800, D1801:** **Approved (owner, 2026-10-24).**
+- **Q1189:** `prefer-rust` (a fall back to chDB on a planner refusal) is **not** offered to users, only to tests, gates and the owner's dogfooding. **Approved (owner, 2026-10-24).**
+- **Q1320:** HE2's filtered stateless pass rate is **70 %**. **Approved (owner, 2026-10-24).**
+- **Q1321:** sqlparser and DataFusion gaps are **worked around** in `loams-house-sql` for now, with no fork. A later fork still needs the owner's consent. **Approved (owner, 2026-10-24).**
+- **Q1322:** after the switch, a namespace may go back to `engine = chdb` until HE3's exit, for tables without deletion vectors. **Approved (owner, 2026-10-24).**
+- **R9.67, and the SigNoz equivalent in #1176:** SigNoz and the Factory skip certificate verification on the internal network for the House's self-signed certificate (`skip_verify=true` on the `house-signoz` network), and the native TLS listener on 9440 is reachable on the tailnet with a password. **Accepted (owner, 2026-10-24).** R9.67 is in #1176's copy of `he1-rulings/t9.md`; mark it "Approved (owner, 2026-10-24)" there.

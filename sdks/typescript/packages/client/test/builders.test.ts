@@ -8,7 +8,7 @@
 
 import { fromJson, toJson } from '@bufbuild/protobuf';
 import { QuerySchema, SearchRequestSchema } from '@loams/proto/query';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { Search, weighted } from '../src/builders/search.js';
 import { InvalidArgumentError } from '../src/runtime/errors.js';
 import { args, cases, filter, schema, search, type Call } from './helpers/builders.js';

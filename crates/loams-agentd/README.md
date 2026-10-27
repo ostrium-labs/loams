@@ -2,7 +2,7 @@
 
 `loams-agentd` is Loams Desktop's per-user agent daemon. It is headless (no GUI crate on any target, D782) and runs:
 - the sessions engine;
-- the agent harnesses: Claude Code, Codex, opencode, Pi, and the ACP agents Devin, Grok, Hermes, Antigravity and Loams Bot;
+- the agent harnesses: Claude Code, Codex, opencode, Pi, and the ACP agents Devin, Grok, Hermes, Antigravity, Goose (a pinned build in a private environment, D1809) and Loams Bot;
 - local preview routing;
 - the MCP shim that the engine injects into every harness run.
 
@@ -113,8 +113,10 @@ Only the `new` rows may name a crate that does not exist yet. A crate added to t
 | `loams-agentd-llm` | Apache-2.0 | new | Model providers (DD1 Task 18) |
 | `loams-agentd-loop` | Apache-2.0 | new | The native loop, tool registry, approvals and scrubbing (DD1 Tasks 19, 24, 25) |
 | `loams-agentd-tools` | Apache-2.0 | new | Loams and SQL tools (DD1 Tasks 20, 21) |
-| `loams-agentd-factory` | Apache-2.0 | new | Factory ops (DD1 Task 23) |
+| `loams-agentd-marketplace` | Apache-2.0 | new | The Seed Exchange in agentd: listing schema, signed index, install plans and installers (MK1 Tasks 1, 4–6) |
+| `loams-agentd-factory` | Apache-2.0 | new | Factory ops (DD1 Task 23): the apps' credential store and read-only op allowlist (SF1 amendment F1-F6) |
 | `loams-agentd-supervisor` | Apache-2.0 | new | The engine and stack supervisor (DD1 Tasks 14, 15) |
 | `loams-agentd-connect` | Apache-2.0 | new | `loams.agentd.v1`, the Connect surface for Loams Studio: the loopback listener beside the ndjson one, and the remote TLS listener (SD1 Tasks 4, 5, 7) |
+| `loams-agentd-cli` | Apache-2.0 | new | The `loams` CLI commands of agentd, including `loams marketplace` (MK0 Task 10) |
 
 Changes that the Loams Authors make to the MIT crates are released under those crates' MIT licence.

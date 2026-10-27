@@ -42,7 +42,15 @@ pub const REASON_CODES: &[(&str, ErrorCode)] = &[
     ("checkpoint_missing", ErrorCode::NotFound),
     ("group_not_ready", ErrorCode::FailedPrecondition),
     ("approval_not_pending", ErrorCode::FailedPrecondition),
+    // The factory loop's merge gate (plan FT1, FT0 Task 4).
+    ("approval_required", ErrorCode::PermissionDenied),
+    ("approval_mismatch", ErrorCode::PermissionDenied),
     ("origin_not_allowed", ErrorCode::PermissionDenied),
+    // The marketplace (MK1 Task 4b).
+    ("plan_changed", ErrorCode::FailedPrecondition),
+    ("consent_required", ErrorCode::FailedPrecondition),
+    ("listing_revoked", ErrorCode::FailedPrecondition),
+    ("untrusted_listing", ErrorCode::FailedPrecondition),
 ];
 
 /// The Connect code of a reason, if the daemon knows it.

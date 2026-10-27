@@ -4,8 +4,8 @@ Everything in Loams runs on your machine or on VMs you own, the console
 included: from 0.1.2 the engine serves the console that ships in its image at
 `https://loams.<tailnet>.ts.net/ui/`, next to its API, so the console is
 same-origin with your engine and reachable only on your tailnet. Loams Desktop
-carries the same console and connects to the same URL (in 0.1.1 the console is
-Loams Desktop; `/ui/` arrives in 0.1.2). Ostrium hosts nothing you need:
+carries the same console and connects to the same URL (the 0.1.1 images do
+not serve `/ui/`). Ostrium hosts nothing you need:
 `auth.loams.dev` for `oidc` mode is planned and does not answer yet, so use an
 issuer of your own. The hosted console at console.loams.dev is
 retired (design 78); to try Loams without running anything, see
@@ -47,7 +47,7 @@ healthcheck.
 ```sh
 deploy/release/build.sh loams                        # both platforms, local manifest list
 deploy/release/build.sh --platforms linux/amd64 loams
-deploy/release/build.sh --version 0.1.1 --push   # CI on a tag
+deploy/release/build.sh --version 0.1.2 --push   # CI on a tag
 ```
 
 ## On this machine
@@ -86,7 +86,8 @@ engine, `migrate` and `loams upgrade` all see the same set:
 | `house-tailnet` | the House's own tailnet node (below) |
 | `postgres-control` | Loams Postgres's control plane (below) |
 | `console` | optional: a console on an origin of its own (the engine already serves one at `/ui/`), from `LOAMS_CONSOLE_DIR`, with `/config.json` built from `LOAMS_ENGINE_URL`, `LOAMS_AUTH_ISSUER` and `LOAMS_AUTH_CLIENT_ID`; its origin must be in `LOAMS_CORS_ORIGINS` |
-| `headscale` | coming soon, unsupported in 0.1.1 |
+| `authz` | preview: OpenFGA (SQLite, one user's install) for `LOAMS_AUTHZ=openfga`, below |
+| `headscale` | coming soon, unsupported |
 
 Choose `tikv` and `rustfs` before the first start: a stack's data stays on the
 stores it started on. The engine records its store in the `loams-data` volume
@@ -193,24 +194,91 @@ target and nothing else, and no container but the sidecar shares the engine's
 network namespace. `oidc` checks JWTs from
 `LOAMS_OIDC_ISSUER` (the default `https://auth.loams.dev` does not answer yet; set your own) against its JWKS with
 audience `LOAMS_OIDC_AUDIENCE`; `apikey` checks hashed keys in
-`LOAMS_API_KEYS_FILE`, which compose points at `secrets/api-keys`. See
-`.env.example`.
+`LOAMS_API_KEYS_FILE`, which compose points at `secrets/api-keys` (see [API
+keys](#api-keys)). See `.env.example`.
 
 With any mode but `off`, first-run setup (the console's setup page, which
 creates the org and its owner) needs `LOAMS_SETUP_TOKEN` in `.env` or in
 `secrets/engine.env` (`openssl rand -hex 32`); without it setup is refused. Setup runs once. See
 "First-run setup" in [docs/release/preview.md](../../docs/release/preview.md#first-run-setup).
 
-`console/dist` holds a placeholder page, in a clone and in the compose bundle.
-For `--profile console`, build the console (`cd web && pnpm build`) and set
-`LOAMS_CONSOLE_DIR` to `web/apps/console/dist`.
+In the compose bundle, `console/dist` is the console built from the release's
+commit, which `--profile console` serves. In a clone (and in older bundles) it
+holds a placeholder page: build the console for the root path
+(`cd web && LOAMS_UI_BASE=/ pnpm build`) and set `LOAMS_CONSOLE_DIR` to
+`web/apps/console/dist`.
 
-### Headscale (coming soon, unsupported in 0.1.1)
+#### API keys
 
-0.1.1 supports one setup: your own Tailscale tailnet and the hosted
-console. Headscale issues no `ts.net` HTTPS certificates, so the hosted console
-(served over HTTPS) cannot reach an engine on a Headscale tailnet. The profile
-stays in the bundle for a later release; the steps below are unsupported.
+`secrets/api-keys` holds the API keys' hashes, one per line: `apikey` mode
+needs it, and `oidc` mode also takes keys from it when it exists. The engine
+reads it as uid and gid 10001, through the read-only `./secrets` mount, and
+picks up appended keys without a restart. `loams auth new-key --append`
+creates the file as you, mode 0600, which the engine cannot read: give it to
+the engine's group, read-only, and keep it yours, so that you can still append
+keys and nobody else on the machine can read them.
+
+```sh
+loams auth new-key --label cli --append secrets/api-keys   # prints the key, once
+sudo chgrp 10001 secrets/api-keys               # rootful Docker, or
+podman unshare chgrp 10001 secrets/api-keys     # rootless Podman
+chmod 0640 secrets/api-keys
+```
+
+The group is the engine's gid as this machine sees it. Under rootful Docker
+that is 10001. Under rootless Podman your user is the containers' root and
+their gid 10001 is one of your subordinate gids, which `podman unshare` names
+for you. With Docker's `userns-remap` it is the first gid of the `dockremap`
+range in `/etc/subgid` plus 10001. Appending keys later keeps the file's group
+and mode. Keep `secrets/` searchable by the engine (it is 0755 in the bundle),
+and do not make the file world-readable.
+
+An engine that cannot read the file says so in its log, with the uid and gid
+it runs as and the file's owner and mode as it sees them, and refuses to start;
+in `oidc` mode, when it cannot see the file at all (missing, or `secrets/` not
+searchable), it starts with API keys off instead.
+`byoc/install.sh` creates an empty `secrets/api-keys` with group 10001 and
+mode 0640.
+
+#### Authorization (`LOAMS_AUTHZ`)
+
+Every check the engine makes is a `can_*` relation of model v1
+([deploy/openfga](../openfga), design 76). By default (`LOAMS_AUTHZ=builtin`)
+the engine answers it itself, from its own members, projects and grants:
+nothing else runs.
+
+The `authz` profile (preview) adds OpenFGA v1.22.0, its official image pinned
+by digest, on SQLite in the `openfga-data` volume. SQLite is for one user's
+install; a multi-user install runs OpenFGA on Postgres (the Helm values in
+[deploy/openfga/helm](../openfga/helm)). OpenFGA's own check caches are off:
+the engine keeps one decision cache of 5 s.
+
+```sh
+# .env
+COMPOSE_PROFILES=authz          # with any others, comma-separated
+LOAMS_AUTHZ_OPENFGA_KEY=...     # openssl rand -hex 32
+```
+
+OpenFGA, its migration and `openfga-init` sit on the `authz` network, which
+has no route out and which only they and the engine join; nothing is
+published, and every call needs the key (OpenFGA refuses to start without
+one). `openfga-init` creates the `loams` store, writes model v1
+(`config/openfga-model.json`) when it changed, and records the store and
+model ids in the `authz` volume. With `LOAMS_AUTHZ=openfga` the engine reads
+them from there, unless `.env` sets `LOAMS_AUTHZ_OPENFGA_STORE` and
+`LOAMS_AUTHZ_OPENFGA_MODEL`.
+
+Leave `LOAMS_AUTHZ` on `builtin` for now: OpenFGA's tuples come from the
+identity sync (plan IA1, IA3), and until it runs an engine on OpenFGA grants
+nothing to anyone but the operator's own credentials.
+
+### Headscale (coming soon, unsupported)
+
+The supported setup is your own Tailscale tailnet, with the console your engine
+serves at `/ui/` or Loams Desktop. The hosted console that could not reach a
+Headscale tailnet is retired, but the `headscale` profile has not been tested
+end to end with the engine-served console yet, so it stays unsupported; the
+steps below are for trying it.
 
 ```sh
 # .env: HEADSCALE_SERVER_URL=https://hs.example.com, TS_LOGIN_SERVER=the same,
@@ -235,8 +303,8 @@ From 0.1.0-preview.2, `loams upgrade` upgrades this stack in place, one release 
 time, with a snapshot first:
 
 ```sh
-loams upgrade check --to 0.1.1  # what it will do and what would stop it
-loams upgrade --to 0.1.1        # snapshot, migrate, restart, verify
+loams upgrade check --to 0.1.2  # what it will do and what would stop it
+loams upgrade --to 0.1.2        # snapshot, migrate, restart, verify
 loams upgrade rollback          # back to the snapshot
 ```
 
@@ -288,9 +356,9 @@ so pick them on the first install. `--services` starts only the services
 named. The VM needs SSH and outbound internet only.
 
 ```sh
-deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.1 --check  # loams upgrade check
-deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.1          # loams upgrade, on the VM
-deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.1 --rollback
+deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.2 --check  # loams upgrade check
+deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.2          # loams upgrade, on the VM
+deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.2 --rollback
 ```
 
 `upgrade.sh` fetches the target release's `loams` CLI on the VM (its Linux
@@ -318,7 +386,7 @@ identity, bucket and secrets in one go, use `deploy/byoc/<cloud>/` (cloud-init)
 or `deploy/tofu/` (OpenTofu modules). Status: tested against local mocks of the
 secret stores; not yet run on a real cloud account.
 
-## Known gaps in 0.1.1
+## Known gaps in 0.1.2
 
 - With `LOAMS_HOUSE_ENDPOINT` empty the engine does not reach the House, so
   `loams.house.v1` answers `house_not_configured`; use the House's own tailnet

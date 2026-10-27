@@ -26,6 +26,20 @@ published to crates.io (`publish = false`; owner, 2026-10-15). It is built by
 its own `cargo build -p loams-git-remote` call, so its dependencies cannot
 change the server binary's feature set.
 
+**`loams-agentd`**, the agent daemon behind Studio (`crates/loams-agentd`), is
+not in these packages. For a headless Linux host it ships as its own tarball per
+architecture ([#874](https://github.com/ostrium-labs/loams/issues/874)),
+`loams-agentd-<v>-linux-x86_64.tar.gz` and `loams-agentd-<v>-linux-aarch64.tar.gz`,
+each built on that architecture's runner by `build-artifacts.py agentd-tar`. Its
+top-level directory holds `loams-agentd`, `loams` (built with the packages'
+features), `SHA256SUMS` over the two and `VERSION`: the layout
+`loams-agentd install-runtime --from` reads
+(`crates/loams-agentd/src/runtime_install.rs`), which copies and checks both
+binaries. The root `LICENSE` and `NOTICE` and the daemon's own licence files
+(under `crates/loams-agentd/`) are beside them. The tarballs are unsigned; the
+release's `SHA256SUMS` lists them. The user's guide is
+[`remote-agentd.md`](../guides/studio/remote-agentd.md#get-the-binary).
+
 The workspace has five other `[[bin]]` targets. **None of them is packaged**,
 deliberately:
 

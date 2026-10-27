@@ -44,8 +44,10 @@ impl Store {
         .any(|settings| json_file(settings).get("steeringMode").is_some())
     }
     fn key(&self, id: &str) -> PathBuf {
-        self.root
-            .join(format!("{:x}.json", Sha256::digest(id.as_bytes())))
+        self.root.join(format!(
+            "{}.json",
+            hex::encode(Sha256::digest(id.as_bytes()))
+        ))
     }
     pub fn remember(&self, id: &str, file: &Path) -> Result<(), HarnessError> {
         if !file.is_absolute() {

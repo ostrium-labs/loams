@@ -16,7 +16,7 @@ mod status;
 use std::process::ExitCode;
 
 use clap::Parser;
-use cli::{Cli, Command, LoamsCommand, RunArgs, ServeArgs, ServiceCommand};
+use cli::{AgentCommand, Cli, Command, LoamsCommand, RunArgs, ServeArgs, ServiceCommand};
 use loams_agentd::config::Config;
 use loams_agentd::paths::Paths;
 use loams_agentd::server::{ServeOptions, serve};
@@ -128,6 +128,12 @@ fn main() -> ExitCode {
                 }
             }
         }
+        Command::Agent {
+            command: AgentCommand::Conformance(args),
+        } => {
+            init_stderr_tracing("warn");
+            conformance(args)
+        }
         Command::Version => {
             println!("loams-agentd {}", hello::VERSION);
             ExitCode::SUCCESS
@@ -147,6 +153,77 @@ fn main() -> ExitCode {
                 Err(error) => report(Err(error)),
             }
         }
+    }
+}
+
+/// `agent conformance`: 0 when the package reaches LAPC Core, 1 when it
+/// does not, 2 when the run could not happen.
+fn conformance(args: cli::ConformanceArgs) -> ExitCode {
+    use loams_agentd_marketplace::conformance::{self, CheckStatus, Options, Services, Target};
+    let failed = |error: &dyn std::fmt::Display| {
+        eprintln!("loams-agentd: {error}");
+        ExitCode::from(2)
+    };
+    let target = match Target::resolve(&args.target, args.package.as_deref()) {
+        Ok(target) => target,
+        Err(error) => return failed(&error),
+    };
+    let options = Options {
+        node: args.node,
+        npm: args.npm,
+        work_dir: args.work_dir,
+        services: Services {
+            pg_url: args.pg_url,
+            durable_url: args.durable_url,
+            ..Services::default()
+        },
+        ..Options::default()
+    };
+    let report = match tokio::runtime::Runtime::new()
+        .map_err(|e| e.to_string())
+        .and_then(|rt| {
+            rt.block_on(conformance::run(&target, &options))
+                .map_err(|e| e.to_string())
+        }) {
+        Ok(report) => report,
+        Err(error) => return failed(&error),
+    };
+    for check in &report.checks {
+        let status = match check.status {
+            CheckStatus::Pass => "pass",
+            CheckStatus::Fail => "FAIL",
+            CheckStatus::Skip => "skip",
+        };
+        eprintln!("{status:4}  {}  {}", check.id, check.title);
+        if check.status != CheckStatus::Pass {
+            for detail in &check.details {
+                eprintln!("        {detail}");
+            }
+        }
+    }
+    eprintln!(
+        "{} {}: LAPC level {}",
+        report.subject.id, report.subject.version, report.level
+    );
+    let json = report.to_json();
+    match &args.out {
+        Some(path) => {
+            if let Err(error) = std::fs::write(path, &json) {
+                return failed(&format!("{}: {error}", path.display()));
+            }
+            if args.sign {
+                match conformance::sign_report(path, None) {
+                    Ok(bundle) => eprintln!("signed: {}", bundle.display()),
+                    Err(error) => return failed(&error),
+                }
+            }
+        }
+        None => print!("{json}"),
+    }
+    if report.passed() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(1)
     }
 }
 
@@ -463,6 +540,7 @@ fn harness_from_env() -> loams_agentd_sessions::HarnessId {
         Ok("hermes") => loams_agentd_sessions::HarnessId::Hermes,
         Ok("pi") => loams_agentd_sessions::HarnessId::Pi,
         Ok("antigravity") => loams_agentd_sessions::HarnessId::Antigravity,
+        Ok("goose") => loams_agentd_sessions::HarnessId::Goose,
         _ => loams_agentd_sessions::HarnessId::ClaudeCode,
     }
 }

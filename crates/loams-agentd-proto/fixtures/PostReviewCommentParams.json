@@ -1,0 +1,9 @@
+{
+  "body": "This drops the error.",
+  "chatId": "chat_01",
+  "diffChecksum": "sha256:0f1e",
+  "endLine": 14,
+  "line": 12,
+  "path": "src/linker.rs",
+  "side": "new"
+}

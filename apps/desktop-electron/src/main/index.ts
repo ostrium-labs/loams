@@ -18,6 +18,7 @@ import { THEME_ARG, VERSION_ARG } from "../shared/version";
 import { registerChatIpc } from "./agent/ipc.electron";
 import type { ChatService } from "./agent/service";
 import { registerTools } from "./agent/tools";
+import { transportFor } from "./agentd/connect-client";
 import { agentdDir, readAgentdTarget } from "./agentd/discover";
 import { registerAgentdIpc } from "./agentd/ipc.electron";
 import { type AgentdLauncher, createAgentdLauncher } from "./agentd/launch";
@@ -278,7 +279,12 @@ const singleInstance = initSingleInstance({
 					decrypt: (b) => safeStorage.decryptString(b),
 				},
 			);
-			factory = new FactoryHost(vault);
+			// The factory's app connections live in the daemon (SF1 amendment F1, §50 §13):
+			// main calls its loopback FactoryService with the token only main holds.
+			factory = new FactoryHost(() => {
+				const t = readAgentdTarget(agentdDir(app.getPath("userData")));
+				return t ? transportFor(t) : null;
+			});
 			// Postgres and WeSQL services: the pages (IPC) and the agent tools share them.
 			const sql = createSqlServices(app.getPath("userData"));
 			registerTools(sqlAgentTools(sql));
@@ -355,6 +361,24 @@ const singleInstance = initSingleInstance({
 			});
 			agentdService = agentd;
 			registerAgentdIpc(agentd);
+			// Credentials the factory kept in main's vault before 0.2 move into the daemon
+			// once it runs (§50 §12, "Migration from Electron").
+			let factoryImported = false;
+			const importFactory = (): void => {
+				if (factoryImported || agentd.status().state !== "running" || !factory)
+					return;
+				factoryImported = true;
+				void factory
+					.importLegacy(vault)
+					.then((n) => {
+						if (n > 0)
+							console.log(`[factory] moved ${n} app(s) into the daemon`);
+					})
+					.catch(() => {
+						factoryImported = false;
+					});
+			};
+			agentd.onStatus(importFactory);
 			void agentd.attach().then(async () => {
 				if (
 					agentd.status().state === "stopped" &&

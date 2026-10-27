@@ -5,7 +5,7 @@
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import {
   FIXTURES,
   fixture_AgentEvent_done,
@@ -123,6 +123,15 @@ describe('the method table', () => {
       'Mutate',
       'LocalDevice',
       'EngineInfo',
+      'CreateRunWorktree',
+      'GetThreadDiff',
+      'PostReviewComment',
+      'OpenChangeRequest',
+      'RequestApproval',
+      'GetApproval',
+      'MergeChangeRequest',
+      'GetChecks',
+      'GetCheckLog',
     ]);
   });
 });

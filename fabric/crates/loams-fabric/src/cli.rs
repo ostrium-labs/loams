@@ -12,7 +12,7 @@ use loams_house::{CatalogSpec, SandboxMode, WorkersMode};
 #[command(
     name = "loams-fabric",
     version,
-    about = "The Loams Fabric: Loams House (ClickHouse SQL over Iceberg tables in your bucket)"
+    about = "The Loams Fabric: Loams House (ClickHouse SQL over Iceberg tables in your bucket) and connect (native connectors on a BYOC VM)"
 )]
 pub struct Cli {
     /// The role this process runs.
@@ -21,11 +21,54 @@ pub struct Cli {
 }
 
 /// The roles. FL1 adds `ingest` and `flow`.
+// Parsed once per process: the variants' sizes do not matter.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Subcommand)]
 pub enum Role {
     /// Loams House: the ClickHouse HTTP interface and its sealed chDB workers
     /// (design §49).
     House(HouseArgs),
+    /// Native connector instances (Kafka, Postgres, MySQL) reading into and
+    /// writing from Loams streams, on a BYOC VM (design §80 §4.4, D1821).
+    Connect(ConnectArgs),
+}
+
+/// `loams-fabric connect`.
+#[derive(Debug, Clone, clap::Args)]
+pub struct ConnectArgs {
+    /// The directory of instance files (`*.yaml`), one instance each.
+    #[arg(long, default_value = "/etc/loams/connect")]
+    pub instances: PathBuf,
+    /// The engine: its connect socket (`unix:///run/loams-connect/engine.sock`,
+    /// the engine's --connect-socket) or, for development, its main port
+    /// (`http://127.0.0.1:8080`).
+    #[arg(long, default_value = "unix:///run/loams-connect/engine.sock")]
+    pub engine: String,
+    /// The Loams API key for the engine [default: <secrets-root>/engine-key].
+    #[arg(long)]
+    pub engine_key_file: Option<PathBuf>,
+    /// The file secret store: `<root>/<namespace_id>/<secret>/<key>`,
+    /// owner-only files.
+    #[arg(long, default_value = "/var/lib/loams-connect/secrets")]
+    pub secrets_root: PathBuf,
+    /// The bucket the role keeps its lock, checkpoints and controls in, as a
+    /// URL (`s3://bucket/prefix`, `file:///dir`).
+    #[arg(long, default_value = "file:///var/lib/loams-connect/state")]
+    pub store: String,
+    /// The role's prefix in the bucket.
+    #[arg(long, default_value = "_meta/connect/")]
+    pub state_bucket_prefix: String,
+    /// The admin API (status, pause, resume, rate). Loopback unless an
+    /// address such as the tailnet's is named, which needs a token.
+    #[arg(long, default_value = "127.0.0.1:7790")]
+    pub admin_listen: SocketAddr,
+    /// The admin API's bearer token [default: <secrets-root>/connect-admin-token].
+    #[arg(long)]
+    pub admin_token_file: Option<PathBuf>,
+    /// The `connectors/` directory: the registry, the profiles and their
+    /// schemas (the image ships the repository's).
+    #[arg(long, default_value = "/usr/share/loams/connectors")]
+    pub connectors_dir: PathBuf,
 }
 
 /// `loams-fabric house`. Each flag beats the same key in `--config`, which beats
@@ -85,7 +128,8 @@ pub struct HouseArgs {
     #[arg(long)]
     pub native_listen: Option<SocketAddr>,
     /// The native protocol's TLS listener (9440), with the TLS listener's
-    /// certificate.
+    /// certificate; a user with an empty password is refused off loopback.
+    /// Also LOAMS_HOUSE_NATIVE_TLS_LISTEN.
     #[arg(long)]
     pub native_tls_listen: Option<SocketAddr>,
     /// Admin and metrics, `GET /metrics` (HS1 Task 23) [default: 127.0.0.1:8125].

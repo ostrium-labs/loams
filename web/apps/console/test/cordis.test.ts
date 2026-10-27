@@ -7,7 +7,7 @@ import { createMockTransport } from '@loams/console-host/testing';
 import { createWebPlatform } from '@loams/platform-web';
 import { pageEntries } from '@loams/plugin-shell';
 import { waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 import samplesYml from '../catalog/samples.yml?raw';
 import { startConsole } from '../src/cordis/start.js';
 
@@ -67,6 +67,9 @@ describe('the cordis console', () => {
         'Namespaces',
         'Deployments',
         'Approvals',
+        // MK1 Task 9: one entry per mode (Console's Integrate, Studio's group).
+        'The Seed Exchange',
+        'The Seed Exchange',
         'Studio settings',
         'Preferences',
       ]),
@@ -112,6 +115,8 @@ describe('the cordis console', () => {
           'Status',
           'Namespaces',
           'Deployments',
+          'The Seed Exchange',
+          'The Seed Exchange',
           'Studio settings',
           'Preferences',
         ]),

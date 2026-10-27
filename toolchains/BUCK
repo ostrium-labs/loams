@@ -1,0 +1,68 @@
+# Toolchains for the Rust build (docs/guides/buck2.md).
+load("@prelude//tests:test_toolchain.bzl", "noop_test_toolchain")
+load("@prelude//toolchains:cxx.bzl", "system_cxx_toolchain")
+load("@prelude//toolchains:genrule.bzl", "system_genrule_toolchain")
+load("@prelude//toolchains:python.bzl", "system_python_bootstrap_toolchain")
+load("@prelude//toolchains:remote_test_execution.bzl", "remote_test_execution_toolchain")
+load(":rust.bzl", "loams_rust_toolchain")
+
+system_cxx_toolchain(
+    name = "cxx",
+    compiler = "clang",
+    compiler_type = "clang",
+    cxx_compiler = "clang++",
+    linker = "clang++",
+    link_flags = ["-fuse-ld=lld"],
+    visibility = ["PUBLIC"],
+)
+
+system_genrule_toolchain(
+    name = "genrule",
+    visibility = ["PUBLIC"],
+)
+
+system_python_bootstrap_toolchain(
+    name = "python_bootstrap",
+    visibility = ["PUBLIC"],
+)
+
+loams_rust_toolchain(
+    name = "rust",
+    channel = "rust/channel",
+    clippy_toml = "root//:clippy.toml",
+    default_edition = "2024",
+    rustc_target_triple = select({
+        "prelude//os:linux": select({
+            "prelude//cpu:arm64": "aarch64-unknown-linux-gnu",
+            "prelude//cpu:x86_64": "x86_64-unknown-linux-gnu",
+        }),
+        "prelude//os:macos": select({
+            "prelude//cpu:arm64": "aarch64-apple-darwin",
+            "prelude//cpu:x86_64": "x86_64-apple-darwin",
+        }),
+    }),
+    tools = {
+        "clippy-driver": "rust/clippy-driver",
+        "rustc": "rust/rustc",
+        "rustdoc": "rust/rustdoc",
+    },
+    wrapper = "rust/wrap.sh",
+    # CI's dev profile: Cargo.toml [profile.dev] with CARGO_PROFILE_DEV_DEBUG=0
+    # (ci.yml), which also keeps buck-out small.
+    # (opt-level 0 also gives build scripts OPT_LEVEL, as Cargo does.)
+    rustc_flags = [
+        "-Copt-level=0",
+        "-Cdebuginfo=0",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+remote_test_execution_toolchain(
+    name = "remote_test_execution",
+    visibility = ["PUBLIC"],
+)
+
+noop_test_toolchain(
+    name = "test",
+    visibility = ["PUBLIC"],
+)

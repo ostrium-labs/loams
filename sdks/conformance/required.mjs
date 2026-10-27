@@ -77,7 +77,7 @@ export const LANGUAGES = {
      */
     sources: 'sdks/typescript',
     verified: true,
-    runOne: ['pnpm', ['--filter', '@loams/client', 'exec', 'vitest', 'run', '-t']],
+    runOne: ['pnpm', ['--filter', '@loams/client', 'exec', 'vp', 'test', 'run', '-t']],
     runAll: ['pnpm', ['--filter', '@loams/client', 'test']],
   },
   python: {

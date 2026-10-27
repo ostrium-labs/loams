@@ -19,9 +19,9 @@
 #
 # Storage, by configuration (.env):
 #
-#   SIGNOZ_HOUSE_NATIVE    host:port of the House's native listener (house:9000)
-#   SIGNOZ_HOUSE_HTTP      the House's HTTP endpoint, for the readiness check
-#                          (http://house:8123)
+#   SIGNOZ_HOUSE_NATIVE    host:port of the House's native TLS listener
+#                          (house:9440), which this overlay turns on
+#   SIGNOZ_HOUSE_DSN_OPTIONS  the DSN's options (secure=true&skip_verify=true)
 #   SIGNOZ_HOUSE_USER      the House user SigNoz signs in as (default)
 #   SIGNOZ_HOUSE_PASSWORD  its password; for `default`, the one in the House's
 #                          /var/lib/loams-house/house.key. URL-encode it.
@@ -30,46 +30,59 @@
 #
 # The House reaches SigNoz, and SigNoz the House, on `house-signoz`, an
 # internal network only those join; the House's other networks are unchanged.
+# SigNoz signs in to the House's native TLS listener (9440,
+# LOAMS_HOUSE_NATIVE_TLS_LISTEN), which refuses a user with an empty password
+# off loopback; the plain native listener (9000) stays loopback-only (D111,
+# HE1 R9.67). The House's certificate is self-signed, so the DSN skips its
+# verification: only the House and SigNoz are on `house-signoz`.
 # Apps send OpenTelemetry to the collector (OTLP gRPC 4317, HTTP 4318). Host
 # ports bind to 127.0.0.1. SigNoz's own analytics and usage reporting are off.
 
-x-house-dsn: &house-dsn tcp://${SIGNOZ_HOUSE_USER:-default}:${SIGNOZ_HOUSE_PASSWORD:-}@${SIGNOZ_HOUSE_NATIVE:-house:9000}
+x-house-dsn: &house-dsn tcp://${SIGNOZ_HOUSE_USER:-default}:${SIGNOZ_HOUSE_PASSWORD:-}@${SIGNOZ_HOUSE_NATIVE:-house:9440}/?${SIGNOZ_HOUSE_DSN_OPTIONS:-secure=true&skip_verify=true}
+# The collector's exporters add their database and the options themselves
+# (otel-collector-config.yaml).
+x-house-base: &house-base tcp://${SIGNOZ_HOUSE_USER:-default}:${SIGNOZ_HOUSE_PASSWORD:-}@${SIGNOZ_HOUSE_NATIVE:-house:9440}
 
 x-collector-env: &collector-env
   SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_DSN: *house-dsn
   SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_CLUSTER: ${SIGNOZ_HOUSE_CLUSTER:-cluster}
   SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_REPLICATION: "true"
   SIGNOZ_OTEL_COLLECTOR_TIMEOUT: 10m
-  SIGNOZ_HOUSE_DSN: *house-dsn
+  SIGNOZ_HOUSE_DSN: *house-base
+  SIGNOZ_HOUSE_DSN_OPTIONS: ${SIGNOZ_HOUSE_DSN_OPTIONS:-secure=true&skip_verify=true}
   LOW_CARDINAL_EXCEPTION_GROUPING: "false"
 
 x-collector-image: &collector-image docker.io/signoz/signoz-otel-collector:v0.144.12@sha256:deb566a7a3c0ba544ee58ccc92ee1f0e6da827bc40383e52f3c824705e100a3d
 
 services:
+  # The release House (../release/compose.yaml) with its native TLS listener
+  # on (LOAMS_HOUSE_NATIVE_TLS_LISTEN, HE1 R9.67); the command stays the
+  # release's. scripts/house/check_factory_signoz.py checks both (CI).
   house:
     networks: [house-signoz]
+    environment:
+      LOAMS_HOUSE_NATIVE_TLS_LISTEN: 0.0.0.0:9440
 
-  # Waits for the House over HTTP, then creates SigNoz's schema in it.
+  # Waits for the House's native TLS listener, then creates SigNoz's schema in it.
   signoz-migrator-sync:
     image: *collector-image
     labels: { io.loams.licence: "AGPL-3.0-only" }
     restart: on-failure
-    # The image has bash but no HTTP client: GET /ping over /dev/tcp.
+    # The image has bash but no client: a TCP connect over /dev/tcp.
     entrypoint: ["/bin/bash", "-c"]
     command:
       - >
-        hp=$${SIGNOZ_HOUSE_HTTP#*://}; hp=$${hp%%/*};
-        until (exec 3<>"/dev/tcp/$${hp%:*}/$${hp##*:}" &&
-        printf 'GET /ping HTTP/1.0\r\nHost: %s\r\n\r\n' "$$hp" >&3 &&
-        grep -q '^Ok\.' <&3) 2>/dev/null; do echo "waiting for the House at $$hp"; sleep 2; done;
+        hp=$${SIGNOZ_HOUSE_NATIVE:-house:9440};
+        until (exec 3<>"/dev/tcp/$${hp%:*}/$${hp##*:}") 2>/dev/null;
+        do echo "waiting for the House at $$hp"; sleep 2; done;
         /signoz-otel-collector migrate bootstrap &&
         /signoz-otel-collector migrate sync up
     environment:
       <<: *collector-env
-      SIGNOZ_HOUSE_HTTP: ${SIGNOZ_HOUSE_HTTP:-http://house:8123}
+      SIGNOZ_HOUSE_NATIVE: ${SIGNOZ_HOUSE_NATIVE:-house:9440}
     networks: [house-signoz]
     depends_on:
-      house: { condition: service_started }
+      house: { condition: service_healthy }
 
   signoz-migrator-async:
     image: *collector-image

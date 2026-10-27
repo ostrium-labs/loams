@@ -347,7 +347,7 @@ loams cloud status           # presence, leases, quotas
 
 ### 9.2 Presence and leases: devices that come and go (D1715)
 
-- **Presence:** a device is `online` while its WebSocket is open. It becomes `asleep` after 2 missed 30-second pings, and `offline` after 24 hours. Laptop sleep is the normal case, not an error.
+- **Presence:** a device is `online` while its last auto-response ping (`getWebSocketAutoResponseTimestamp`) is recent, never merely because a socket is open (half-dead sockets are common, LC0 Task 3). A ping writes no rows (approved, owner, 2026-10-24). It becomes `asleep` after 2 missed 30-second pings, and `offline` after 24 hours. Laptop sleep is the normal case, not an error.
   - The per-user Durable Object holds presence with hibernating WebSockets, so an idle device costs almost nothing. This needs verifying on Workers pricing in LC0 Task 3.
 - **Runs are pinned:** an agent run, or a Factory app instance, runs on one device under a **lease** (60 s, renewed by ping).
   - Sleep freezes the process. On wake, the device renews the lease if nobody else holds it and the run continues.
@@ -693,7 +693,7 @@ App-port allowances are in §71 §7, read 2026-10-21, and are not repeated. Thes
 - **Mounts:**
   - FUSE on Linux and on macOS when macFUSE is installed, WebDAV otherwise on macOS, none on Windows (V).
   - agentd mounts under `$HOME`, which also avoids Ubuntu 26.04's AppArmor rule for `fusermount3` (V).
-- **Durability:** a run's state is durable once drained (V). agentd drains before every handoff, every approval gate, and every 5 minutes while the run is active (an estimate, tuned in LC0 Task 2).
+- **Durability:** a run's state is durable once drained (V). agentd drains at every handoff and every approval gate, and every 5 minutes only while the mount is dirty. It never drains on a timer for a Git-workspace mount, where a timed drain costs writes for nothing (LC0 Task 2). *Amended by the owner, 2026-10-24 (D1713).*
 
 ### 14.6 Metering (D1721)
 
@@ -735,6 +735,7 @@ App-port allowances are in §71 §7, read 2026-10-21, and are not repeated. Thes
 **The money problem:** with a card on file, Filesystem has **no spending cap** (V). Writes cost $0.50 per 1,000 (V). The org's free allowance is $5 a month (V), shared by every file system. A free service can't give that to everyone.
 
 **The proposal:**
+- **Per-filesystem limits need a card, and there is no per-filesystem write counter. The hosted cohort stays off (§25.13).** The bullets below describe the cohort as it would be if the owner ever sets a budget. *D1718 amended by the owner, 2026-10-24.*
 - **BYOG is the default for workspaces:** each user's own TiDB Cloud org has its own $5 monthly allowance, and with no card it can never be billed (V). That is about 10,000 free writes a month for each user (estimate, at $0.50 per 1,000).
 - **The hosted cohort:**
   - An **invited cohort** of at most 25 users (Q1263) gets hosted workspaces.
@@ -804,8 +805,10 @@ The owner's plan said "for loams cloud i have hashicorp free tier". The findings
 - **The API:** a Cloudflare Worker (`loams-cloud`, in this repository under `deploy/loams-cloud/`, LC2).
   - It reaches TiDB with `@tidbcloud/serverless` over HTTP (beta, V), since Workers can't open TCP.
   - Interactive transactions are experimental (V), so the API uses single-statement writes and idempotency keys.
-- **Presence and leases:** one Durable Object per user, holding presence, leases and the live run index with **hibernating WebSockets**. It writes durable records to the control DB.
-- **The plan:** Workers Paid ($5 a month). *D1756 (proposed) runs the try-out on Workers Free instead, with Durable Objects on the free plan, and makes Workers Paid a trigger-based owner decision (§25.13).* Free's 100,000 requests a day and 10 ms of CPU don't fit device links beyond a few dozen devices (estimate).
+- **Presence and leases:** one Durable Object per user, holding presence, leases and the live run index with **hibernating WebSockets**.
+  - Device pings use the Durable Object's WebSocket **auto-response** (`setWebSocketAutoResponse`), so a ping wakes nothing and writes no rows. Presence and lease renewal read the auto-response timestamp (`getWebSocketAutoResponseTimestamp`). *Approved (owner, 2026-10-24).*
+  - The Durable Object is created with a `locationHint` near the control DB's region and does the TiDB writes; the edge Worker doesn't write TiDB on hot paths (LC0 Task 3: 19–25 ms from the DO, 270–290 ms from a distant edge colo). *Approved (owner, 2026-10-24).*
+- **The plan:** Workers Free, with Durable Objects on the free plan (D1756, approved by the owner 2026-10-23 and kept 2026-10-24). Workers Paid ($5 a month) is a trigger-based owner decision (§25.13). Free's 100,000 requests a day and 10 ms of CPU don't fit device links beyond a few dozen devices (estimate).
 - **Zitadel:** unchanged. It runs on its own host with its own Postgres (§76 §12.3) and is backed up nightly.
   - Zitadel needs Postgres 14–18, so it can't use Starter.
   - The PG preview has no SLA, so it isn't used for identity.
@@ -900,12 +903,12 @@ The owner's plan said "for loams cloud i have hashicorp free tier". The findings
 | D1710 | **The PG preview is a trial adapter and a non-blocking conformance target only;** Loams Postgres stays the product | 14.2 |
 | D1711 | **House stays Loams' own;** Lake is not adopted | 14.4 |
 | D1712 | **Live, the metastore, Durable and Git truth stay on the ground;** no TiDB metastore backend | 14.3 |
-| D1713 | **Workspaces on Filesystem:** a layer per run, commit on approval, drain before handoff and approval, the `coding-agent` profile, Git for durable code | 9.4, 14.5 |
+| D1713 | **Workspaces on Filesystem:** a layer per run, commit on approval, drain at handoff and approval (plus every 5 minutes only when dirty, never on a timer for Git-workspace mounts; amended 2026-10-24), the `coding-agent` profile, Git for durable code | 9.4, 14.5 |
 | D1714 | **Device enrolment:** OIDC device flow, a device machine user with a keychain key, 15-minute tokens, one outbound WebSocket with a closed command set; no inbound | 9.1 |
 | D1715 | **Presence and leases:** online, asleep, offline; runs pinned under 60-second leases; pull assignment; one always-on device for always-on duties | 9.2 |
 | D1716 | **What lives where** (§9.3); secrets and model keys never leave a device | 9.3 |
 | D1717 | **SQL cells:** a control DB instance; tenant cells of up to 200 databases with per-tenant users and grants; a spending limit per cell; noisy tenants moved | 15.1 |
-| D1718 | **Filesystem tenancy:** BYOG by default; a hosted cohort with a file system per user, write budgets and a token kill switch; owner tokens never leave the control plane; scoped tokens of at most 1 hour | 15.2 |
+| D1718 | **Filesystem tenancy:** BYOG by default; a hosted cohort (off at $0; per-filesystem limits need a card and there is no per-filesystem write counter; amended 2026-10-24) with a file system per user, write budgets and a token kill switch; owner tokens never leave the control plane; scoped tokens of at most 1 hour | 15.2 |
 | D1719 | **Quota defaults** (§15.3) | 15.3 |
 | D1720 | **Abuse controls** (§15.4) | 15.4 |
 | D1721 | **Metering:** the Meter with the try-out plan as code; counters from the control plane, TiDB, and untrusted device reports used only for warnings | 14.6 |
@@ -914,7 +917,7 @@ The owner's plan said "for loams cloud i have hashicorp free tier". The findings
 | D1724 | **Dev to prod:** the same artefacts; `loams promote` opens a pull request in the company's infrastructure repository; data doesn't move; secrets re-issued | 11 |
 | D1725 | **Identity mapping:** personal org per user, devices as machine users, optional company org; prod uses the company's issuer; `auth.loams.dev` for prod only by choice | 12 |
 | D1726 | **The control plane is open source and self-hostable;** a company can run Loams Cloud for its employees (`--control-plane <url>`) | 12 |
-| D1727 | **Control-plane compute:** a Cloudflare Worker with per-user Durable Objects on Workers Paid; TiDB through the HTTP driver; Zitadel unchanged | 17 |
+| D1727 | **Control-plane compute:** a Cloudflare Worker with per-user Durable Objects on Workers Free (D1756; amended 2026-10-24); TiDB through the HTTP driver; Zitadel unchanged | 17 |
 | D1728 | **TiDB Cloud as a BYOG target:** the user's or company's own org, keys on their device or in their CI; Ostrium holds none of that state; ships first (LC1) | 2.2, 13 |
 | D1729 | **HashiCorp:** no product dependency; OpenTofu with R2 state for Ostrium's infrastructure; HCP Terraform Free optional as a state-only backend; no Boundary or Vault | 16 |
 | D1730 | **A hard monthly ceiling** on Ostrium's Loams Cloud spend (default $50), enforced by spending limits and plan caps | 7.2, 17 |

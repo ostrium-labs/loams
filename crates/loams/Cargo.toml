@@ -42,12 +42,14 @@ datafusion = { workspace = true, optional = true }
 datafusion-postgres = { workspace = true, optional = true }
 # `WatchAuditEvents` streams (API2 Task 7), and the optional engines below.
 futures.workspace = true
-getrandom = "0.3"
+getrandom = "0.4"
 fail = { workspace = true, optional = true }
 http.workspace = true
 jsonwebtoken.workspace = true
 # The `loams.house.v1` proxy's streamed request body (HS1 Task 7).
 http-body.workspace = true
+# The `can_*` checks (design 76 §9, D1610): model v1 in process, or OpenFGA (IA2 Task 4).
+loams-authz.workspace = true
 loams-cache.workspace = true
 # `protobuf`: `loams.stream.v1`'s ProduceCloudEvents decodes a protobuf CloudEventBatch (SDKP P0c).
 loams-cloudevents = { workspace = true, features = ["protobuf"] }
@@ -86,6 +88,11 @@ loams-migrate.workspace = true
 # `loams upgrade` (UP1 Task 12): the client that upgrades a compose stack;
 # it links no storage crate.
 loams-upgrade.workspace = true
+loams-cloud-admin.workspace = true
+# `loams marketplace` (MK1 Task 10): the agentd wire types and RPC client
+# only, no daemon crate (plan MK1, Task 10 ruling 1).
+loams-agentd-cli.workspace = true
+loams-confluent.workspace = true
 # Loams Postgres's control plane: the `loams pg-control` role (feature
 # `postgres`, PG2 Task 9, design §46 §6.1), and the Neon clients it is
 # configured with. Never in the default build (`pg_control.rs`'s

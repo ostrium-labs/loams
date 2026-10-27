@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the release artifacts: three Linux packages, the Windows zip, or a macOS tarball.
+"""Build the release artifacts: three Linux packages, the Windows zip, a macOS tarball, or a loams-agentd tarball.
 
 The Linux formats are .deb, .rpm and .pkg.tar.zst, all from one nFPM config
 (`release/nfpm.yaml`). The Windows artifact is a zip holding `loams.exe`,
@@ -37,6 +37,8 @@ Usage:
                               --git-remote git-remote-loams.exe --console DIR --out DIR
     build-artifacts.py macos-tar --version 0.1.0 --binary loams
                               --git-remote git-remote-loams --arch arm64|x86_64 --console DIR --out DIR
+    build-artifacts.py agentd-tar --version 0.1.0 --agentd loams-agentd --binary loams
+                              --arch x86_64|aarch64 --out DIR [--mtime RFC3339]
     build-artifacts.py --self-test
 
 `--nfpm PATH` overrides the nFPM binary; without it the script looks for `nfpm`
@@ -51,6 +53,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import shutil
 import stat
 import struct
@@ -725,6 +728,99 @@ def command_macos_tar(args) -> int:
     return 0
 
 
+# The loams-agentd tarball's architectures, as `uname -m` names them on Linux.
+AGENTD_ARCHES = ("x86_64", "aarch64")
+# What `loams-agentd install-runtime --from <dir>` copies, each checked against
+# the directory's SHA256SUMS (`BINARIES` in crates/loams-agentd/src/runtime_install.rs).
+# It refuses a directory that lacks either, so `loams` ships with the daemon.
+AGENTD_BINARIES = ("loams-agentd", "loams")
+# The daemon's own licence files. Part of it is MIT (from zeron), and the root
+# NOTICE says these files accompany a distribution of it and names them at this
+# path, so the tarball keeps them there.
+AGENTD_LICENCE_DIR = "crates/loams-agentd"
+AGENTD_LICENCE_FILES = ("LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md", "SCOPED_NOTICE.md")
+# install-runtime refuses a VERSION that is not a semantic version.
+SEMVER = re.compile(
+    r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$"
+)
+
+
+def agentd_sums(binaries: dict[str, bytes]) -> bytes:
+    """`SHA256SUMS` over the binaries: `sha256sum` output sorted by name, as
+    apps/desktop-electron/scripts/bin-sums.cjs writes Loams Desktop's."""
+    return "".join(
+        f"{hashlib.sha256(data).hexdigest()}  {name}\n" for name, data in sorted(binaries.items())
+    ).encode()
+
+
+def write_tarball(target: Path, top: str, members: list[tuple[str, bytes, int]], mtime: int) -> None:
+    """A deterministic .tar.gz of `members` (path, bytes, mode) under the directory `top`:
+    sorted, owned by uid 0, every entry at `mtime`, and no timestamp in the gzip header."""
+    dirs = sorted({str(parent) for member, _, _ in members for parent in Path(member).parents} - {"."})
+
+    def entry(member: str, kind: bytes, mode: int, size: int = 0) -> tarfile.TarInfo:
+        info = tarfile.TarInfo(f"{top}/{member}" if member else top)
+        info.type, info.mode, info.size = kind, mode, size
+        info.uid = info.gid = 0
+        info.uname = info.gname = ""
+        info.mtime = mtime
+        return info
+
+    with gzip.GzipFile(target, "wb", compresslevel=9, mtime=0) as gz, \
+            tarfile.open(fileobj=gz, mode="w", format=tarfile.PAX_FORMAT) as archive:
+        archive.addfile(entry("", tarfile.DIRTYPE, 0o755))
+        for directory in dirs:
+            archive.addfile(entry(directory, tarfile.DIRTYPE, 0o755))
+        for member, data, mode in sorted(members, key=lambda m: m[0]):
+            archive.addfile(entry(member, tarfile.REGTYPE, mode, len(data)), io.BytesIO(data))
+
+
+def command_agentd_tar(args) -> int:
+    """The agent daemon for a headless Linux host (#874): `loams-agentd-<v>-linux-<arch>.tar.gz`.
+
+    Its top-level directory is what `loams-agentd install-runtime --from <dir>`
+    reads, the layout of Loams Desktop's resources/bin: `loams-agentd`, `loams`,
+    `SHA256SUMS` over the two, and `VERSION` (the version and a newline). Beside
+    them are the root LICENSE and NOTICE and the daemon's own licence files.
+    The binaries are taken as built for that architecture (the workflow builds
+    each on a native runner); the archive is deterministic, like the macOS
+    tarball.
+    """
+    if args.arch not in AGENTD_ARCHES:
+        raise SystemExit(f"build-artifacts: --arch must be one of {', '.join(AGENTD_ARCHES)}")
+    if not SEMVER.match(args.version):
+        raise SystemExit(
+            f"build-artifacts: {args.version!r} is not a semantic version, "
+            "so install-runtime would refuse the VERSION file"
+        )
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    binaries: dict[str, bytes] = {}
+    for binary, path in zip(AGENTD_BINARIES, (Path(args.agentd), Path(args.binary))):
+        check_executable(path, binary)
+        binaries[binary] = path.read_bytes()
+    raw = getattr(args, "mtime", None)
+    mtime = int(datetime.fromisoformat(raw.replace("Z", "+00:00")).timestamp()) if raw else 0
+    top = f"loams-agentd-{args.version}-linux-{args.arch}"
+    name = f"{top}.tar.gz"
+    target = out / name
+    members: list[tuple[str, bytes, int]] = [(binary, data, 0o755) for binary, data in binaries.items()]
+    members.append(("SHA256SUMS", agentd_sums(binaries), 0o644))
+    members.append(("VERSION", f"{args.version}\n".encode(), 0o644))
+    for doc in ("LICENSE", "NOTICE"):
+        members.append((doc, (REPO_ROOT / doc).read_bytes(), 0o644))
+    for doc in AGENTD_LICENCE_FILES:
+        path = f"{AGENTD_LICENCE_DIR}/{doc}"
+        members.append((path, (REPO_ROOT / path).read_bytes(), 0o644))
+    write_tarball(target, top, members, mtime)
+    note(f"build-artifacts: {name}  {target.stat().st_size} bytes  sha256:{sha256(target)[:16]}…")
+    print(json.dumps({
+        "artifacts": [{"file": name, "sha256": sha256(target), "size": target.stat().st_size}],
+        "signed": False,
+    }, indent=2))
+    return 0
+
+
 # --------------------------------------------------------------------------
 # self-test
 # --------------------------------------------------------------------------
@@ -848,6 +944,61 @@ def self_test(gpg_key: str | None = None) -> int:
             failures.append("macos-tar: no x86_64 tarball")
         if any(not m.name.startswith("loams-9.9.9-macos-arm64") for m in tar_members.values()):
             failures.append("macos-tar: a member escapes the top-level directory")
+
+        # loams-agentd tarball: the layout `loams-agentd install-runtime --from` reads
+        daemon = root / "loams-agentd"
+        daemon.write_text("#!/bin/sh\necho loams-agentd\n")
+        os.chmod(daemon, 0o755)
+
+        def agentd_tar(arch: str, version: str = "9.9.9", agentd: Path = daemon) -> None:
+            command_agentd_tar(argparse.Namespace(
+                version=version, agentd=str(agentd), binary=str(binary), arch=arch,
+                out=str(root / "agentd"), mtime="2026-01-01T00:00:00Z",
+            ))
+
+        for arch in AGENTD_ARCHES:
+            agentd_tar(arch)
+        top = "loams-agentd-9.9.9-linux-x86_64"
+        first = root / "agentd" / f"{top}.tar.gz"
+        before = first.read_bytes()
+        agentd_tar("x86_64")
+        if first.read_bytes() != before:
+            failures.append("agentd-tar: two builds of the same input differ")
+        with tarfile.open(first) as archive:
+            tar_members = {m.name: m for m in archive.getmembers()}
+            contents = {
+                name[len(top) + 1:]: archive.extractfile(m).read()
+                for name, m in tar_members.items() if m.isfile()
+            }
+        for member in (*AGENTD_BINARIES, "SHA256SUMS", "VERSION", "LICENSE", "NOTICE",
+                       *(f"{AGENTD_LICENCE_DIR}/{doc}" for doc in AGENTD_LICENCE_FILES)):
+            if member not in contents:
+                failures.append(f"agentd-tar: {member} is missing")
+        for member in AGENTD_BINARIES:
+            info = tar_members.get(f"{top}/{member}")
+            if info is not None and stat.S_IMODE(info.mode) != 0o755:
+                failures.append(f"agentd-tar: {member} is not 0755")
+        if contents.get("VERSION") != b"9.9.9\n":
+            failures.append(f"agentd-tar: VERSION is {contents.get('VERSION')!r}")
+        expected_sums = "".join(
+            f"{sha256(path)}  {path.name}\n" for path in sorted((binary, daemon), key=lambda p: p.name)
+        ).encode()
+        if contents.get("SHA256SUMS") != expected_sums:
+            failures.append(f"agentd-tar: SHA256SUMS is {contents.get('SHA256SUMS')!r}")
+        if not (root / "agentd" / "loams-agentd-9.9.9-linux-aarch64.tar.gz").is_file():
+            failures.append("agentd-tar: no aarch64 tarball")
+        if any(m.name != top and not m.name.startswith(f"{top}/") for m in tar_members.values()):
+            failures.append("agentd-tar: a member escapes the top-level directory")
+        for label, call in (
+            ("a version install-runtime refuses", lambda: agentd_tar("x86_64", version="v9.9.9")),
+            ("a missing loams-agentd", lambda: agentd_tar("x86_64", agentd=root / "absent")),
+            ("an architecture it does not build", lambda: agentd_tar("arm64")),
+        ):
+            try:
+                call()
+            except SystemExit:
+                continue
+            failures.append(f"agentd-tar: {label} was accepted")
 
         # package names
         expected_names = {
@@ -986,6 +1137,14 @@ def main(argv: list[str]) -> int:
     macos.add_argument("--out", required=True)
     macos.add_argument("--mtime", help="RFC 3339 timestamp for every member, for reproducibility")
 
+    agentd = sub.add_parser("agentd-tar", help="build the loams-agentd tarball for Linux")
+    agentd.add_argument("--version", required=True)
+    agentd.add_argument("--agentd", required=True, help="the loams-agentd binary for this architecture")
+    agentd.add_argument("--binary", required=True, help="the loams binary for this architecture")
+    agentd.add_argument("--arch", required=True, choices=AGENTD_ARCHES)
+    agentd.add_argument("--out", required=True)
+    agentd.add_argument("--mtime", help="RFC 3339 timestamp for every member, for reproducibility")
+
     args = parser.parse_args(argv)
     if args.self_test:
         return self_test(args.gpg_key)
@@ -997,6 +1156,8 @@ def main(argv: list[str]) -> int:
         return command_windows_zip(args)
     if args.command == "macos-tar":
         return command_macos_tar(args)
+    if args.command == "agentd-tar":
+        return command_agentd_tar(args)
     parser.print_help()
     return 2
 

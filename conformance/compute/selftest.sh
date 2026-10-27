@@ -145,6 +145,49 @@ pins_are_literal() {
   done <"$OC_PINS"
 }
 
+# --- The Temporal history corpus (DX0 Task 4; per PR, no server) ----------------
+
+corpus_manifest_complete() {
+  python3 "$HERE/temporal/corpus/manifest.py" check
+}
+
+normalize_selftest() {
+  python3 "$HERE/temporal/corpus/normalize.py" --self-test
+}
+
+# --- The compatibility matrix (DX1 Task 11; DX0 Task 7 adds durable rows) --------
+
+MATRIX=(python3 "$ROOT/scripts/compute/matrix.py")
+
+# A fixture run renders the committed Markdown: a pass, an expected failure
+# with its issue, an unlisted failure, a skipped and a missing case, a method
+# with no SDK case, and the methods outside the set.
+matrix_from_fixture() {
+  local m=$TD/matrix
+  "${MATRIX[@]}" temporal-gateway --junit "$m/run.junit.xml" --xfail "$m/xfail.toml" \
+    --methods "$m/methods.toml" --service "$m/service.proto" --run "fixture, 2026-10-27" >"$SCRATCH/matrix.md"
+  diff -u "$m/expected.md" "$SCRATCH/matrix.md"
+  # A methods file naming a method the service lacks is refused.
+  sed 's/^name = "RegisterNamespace"$/name = "NoSuchMethod"/' "$m/methods.toml" >"$SCRATCH/bad.toml"
+  expect_fail "${MATRIX[@]}" temporal-gateway --junit "$m/run.junit.xml" --methods "$SCRATCH/bad.toml" --service "$m/service.proto"
+  grep -q NoSuchMethod "$SCRATCH/out"
+}
+
+# The guide's matrix is what matrix.py renders from the committed last run,
+# and methods.toml lists exactly the frontend's DX1 set.
+matrix_guide_current() {
+  local g=$HERE/temporal/gateway
+  "${MATRIX[@]}" temporal-gateway --junit "$g/last-run.junit.xml" --run "$(cat "$g/last-run.txt")" \
+    --check "$ROOT/docs/guides/durable/temporal-gateway.md"
+  python3 - "$g/methods.toml" "$ROOT/crates/loams-temporal-frontend/src/capabilities.rs" <<'PY'
+import re, sys, tomllib
+listed = [m["name"] for m in tomllib.load(open(sys.argv[1], "rb"))["method"]]
+src = open(sys.argv[2], encoding="utf-8").read()
+impl = re.findall(r'"(\w+)"', src.split("pub const IMPLEMENTED")[1].split("];")[0])
+assert sorted(listed) == sorted(impl), sorted(set(listed) ^ set(impl))
+PY
+}
+
 # --- The compose override (OC0 Task 2's tests) -----------------------------------
 
 PROFILES=(temporal dbos airflow)
@@ -264,6 +307,8 @@ TESTS=(
   junit_case_roundtrip
   licence_gate_compute_pins licence_gate_refuses_bsl_fixture no_licence_key_in_compute_files
   no_loams_sql_in_dx0 pg_mode_urls pins_are_literal
+  corpus_manifest_complete normalize_selftest
+  matrix_from_fixture matrix_guide_current
 )
 COMPOSE_TESTS=(
   compose_compute_config_valid compose_compute_requires_profile

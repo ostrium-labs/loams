@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loams.dev/schemas/conformance-report/v1.json",
+  "title": "Loams Agent Package Conformance report, v1",
+  "description": "One run of the LAPC suite against one listing version (design 73 section 9, D1469; plan MK1 Task 8). Written by `loams-agentd agent conformance`, signed with Sigstore by the index CI's identity, and linked from the listing's `conformance.report`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "suite", "tested_level", "level", "runner", "subject", "started_unix_ms", "duration_ms", "checks", "measured"],
+  "properties": {
+    "$schema": { "const": "https://loams.dev/schemas/conformance-report/v1.json" },
+    "suite": { "const": "LAPC" },
+    "tested_level": { "$ref": "#/$defs/level" },
+    "level": {
+      "description": "The highest level whose MUST requirements all passed, or none.",
+      "anyOf": [{ "$ref": "#/$defs/level" }, { "const": "none" }]
+    },
+    "runner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "os", "arch", "isolation", "egress_recording", "node", "limits"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "os": { "type": "string" },
+        "arch": { "type": "string" },
+        "isolation": {
+          "description": "process in MK0 (cleared environment, private process group and data directory); a sandbox adapter from SB1.",
+          "type": "string",
+          "enum": ["process", "sandbox"]
+        },
+        "egress_recording": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "enum": ["proxy", "procfs", "sandbox"] }
+        },
+        "node": { "description": "The Node version the agent ran on.", "type": "string" },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ready_ms", "turn_ms", "stop_ms"],
+          "properties": {
+            "ready_ms": { "type": "integer", "minimum": 0 },
+            "turn_ms": { "type": "integer", "minimum": 0 },
+            "stop_ms": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "kind", "listing_sha256", "package"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,38}/[a-z0-9][a-z0-9._-]{0,63}$" },
+        "version": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "enum": ["agent", "harness", "mcp-server"] },
+        "listing_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "package": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["origin", "name", "version", "integrity_checked"],
+          "properties": {
+            "origin": { "type": "string", "enum": ["dir", "tarball", "npm"] },
+            "name": { "type": "string" },
+            "version": { "type": "string" },
+            "integrity_checked": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "started_unix_ms": { "type": "integer", "minimum": 0 },
+    "duration_ms": { "type": "integer", "minimum": 0 },
+    "checks": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/check" }
+    },
+    "measured": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model_requests", "prompt_tokens", "completion_tokens", "total_tokens", "tool_calls", "egress", "stderr_tail"],
+      "properties": {
+        "model_requests": { "type": "integer", "minimum": 0 },
+        "prompt_tokens": { "type": "integer", "minimum": 0 },
+        "completion_tokens": { "type": "integer", "minimum": 0 },
+        "total_tokens": { "type": "integer", "minimum": 0 },
+        "tool_calls": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "via", "declared", "asked"],
+            "properties": {
+              "name": { "type": "string" },
+              "via": { "type": "string", "enum": ["acp", "mcp"] },
+              "declared": { "type": "boolean" },
+              "asked": { "type": "boolean" }
+            }
+          }
+        },
+        "egress": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["host", "port", "via", "allowed"],
+            "properties": {
+              "host": { "type": "string" },
+              "port": { "type": "integer", "minimum": 0, "maximum": 65535 },
+              "via": { "type": "string", "enum": ["proxy", "direct"] },
+              "allowed": { "type": "boolean" }
+            }
+          }
+        },
+        "stderr_tail": { "type": "string" }
+      }
+    }
+  },
+  "$defs": {
+    "level": { "type": "string", "enum": ["core", "compatible", "native"] },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "level", "requirement", "title", "status", "details"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^LAPC-[CKN][0-9]+$" },
+        "level": { "$ref": "#/$defs/level" },
+        "requirement": { "type": "string", "enum": ["must", "should"] },
+        "title": { "type": "string", "minLength": 1 },
+        "status": {
+          "description": "skip: not run (an earlier requirement failed, or the runner cannot check what the listing declares). A skipped MUST is not a pass.",
+          "type": "string",
+          "enum": ["pass", "fail", "skip"]
+        },
+        "details": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

@@ -264,7 +264,7 @@ Mining and the oracle harness start in Phase 0 and never stop: each new applicat
 
 > **Amended by D1570 (owner, 2026-10-21).** Readable `AggregatingMergeTree`, including materialized views with inner tables (`CREATE MATERIALIZED VIEW … ENGINE = AggregatingMergeTree … AS SELECT`), is in the launch tier for the gate applications on the chDB House now, because OpenPanel reads six such views; the Rust engine gets it in HE4 as this row says.
 
-> **Amended by D1579 (Proposed 2026-10-23, plan HE1).** For the Rust engine, readable `AggregatingMergeTree` (ClickHouse's own state bytes, D1800) comes in HE1 (Task 29), and its merges on insert and inner-table views firing in HE2 (Task 64), because HE2's gate needs all three gate applications fully on the Rust engine. HE4 keeps the rest of the Tier 1 aggregating surface.
+> **Amended by D1579 (Approved by the owner 2026-10-24, plan HE1).** For the Rust engine, readable `AggregatingMergeTree` (ClickHouse's own state bytes, D1800) comes in HE1 (Task 29), and its merges on insert and inner-table views firing in HE2 (Task 64), because HE2's gate needs all three gate applications fully on the Rust engine. HE4 keeps the rest of the Tier 1 aggregating surface.
 
 - Retention and sequence functions (`retention`, `sequenceMatch`); `windowFunnel` is already Tier 0 (§7.3).
 - `JSON` and Variant types, Parquet and Iceberg table functions (on the namespace's own prefix only, D1558), lightweight updates.
@@ -279,7 +279,7 @@ These answer `48 NOT_IMPLEMENTED` with a message that names the feature and the 
 
 > **Amended by D1570 (owner, 2026-10-21).** `VersionedCollapsingMergeTree` leaves Tier 2: OpenPanel, a gate application, keeps its `sessions` table in it, so the chDB House supports it now (read-time collapsing by sign and version, `FINAL` included) and the Rust engine in HE4.
 
-> **Amended by D1579 (Proposed 2026-10-23, plan HE1).** The Rust engine reads `VersionedCollapsingMergeTree` with `FINAL` in HE1 (Task 27) and merges it on insert and at compaction in HE2 (Tasks 62 and 67), not in HE4.
+> **Amended by D1579 (Approved by the owner 2026-10-24, plan HE1).** The Rust engine reads `VersionedCollapsingMergeTree` with `FINAL` in HE1 (Task 27) and merges it on insert and at compaction in HE2 (Tasks 62 and 67), not in HE4.
 
 - Deprecated and experimental features: the old `Object('json')`, `WINDOW VIEW`, `LIVE VIEW`, the `Ordinary` database engine, the old `MergeTree` syntax.
 - Geo, ML and exotic functions; dictionaries (until an application needs them); the native protocol (D1548).
@@ -468,7 +468,7 @@ Suites 1–3 and 6 run per PR; 4 and 7 nightly. All of it runs on GitHub-hosted 
 
 > **Amended by D1571 (owner, 2026-10-22).** SigNoz joins Langfuse and OpenPanel in the HE0 and HE2 exit criteria: it runs on the Phase 0 House in HE0 and passes fully in HE2. Because SigNoz speaks only the native protocol, the native listener HE5 lists is built for the chDB House in HE0 for this gate application, with the cluster DDL forms (`ON CLUSTER`, `Replicated*`, `Distributed`) a one-node House accepts.
 
-> **Amended by D1579 and D1801 (Proposed 2026-10-23, plan HE1).** The Rust engine gets the gate applications' Tier 1 pieces early: `VersionedCollapsingMergeTree` and readable `AggregatingMergeTree` in HE1, their writes and the views in HE2 (D1579). At HE2's gate the Rust engine becomes the default. chDB is then the oracle, and an opt-in engine per namespace until HE3's exit, when libchdb leaves the production images (D1801, reconciling D1542 with §6.4 and D1567). The fresh tier, the NDJSON ingest API and endpoint pipes finish in HE2 after the gate, not as part of it.
+> **Amended by D1579 and D1801 (Approved by the owner 2026-10-24, plan HE1).** The Rust engine gets the gate applications' Tier 1 pieces early: `VersionedCollapsingMergeTree` and readable `AggregatingMergeTree` in HE1, their writes and the views in HE2 (D1579). At HE2's gate the Rust engine becomes the default. chDB is then the oracle, and an opt-in engine per namespace until HE3's exit, when libchdb leaves the production images (D1801, reconciling D1542 with §6.4 and D1567). The fresh tier, the NDJSON ingest API and endpoint pipes finish in HE2 after the gate, not as part of it.
 
 Mining and the oracle harness start in HE0 and never stop.
 

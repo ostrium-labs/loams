@@ -1,0 +1,25 @@
+{
+  "before": {
+    "id": 1
+  },
+  "after": null,
+  "source": {
+    "version": "3.3.0.Final",
+    "connector": "postgresql",
+    "name": "PostgreSQL_server",
+    "ts_ms": 1559033904863,
+    "ts_us": 1559033904863852,
+    "ts_ns": 1559033904863852000,
+    "snapshot": false,
+    "db": "postgres",
+    "schema": "public",
+    "table": "customers",
+    "txId": 556,
+    "lsn": 46523128,
+    "xmin": null
+  },
+  "op": "d",
+  "ts_ms": 1465581902461,
+  "ts_us": 1465581902461496,
+  "ts_ns": 1465581902461496187
+}

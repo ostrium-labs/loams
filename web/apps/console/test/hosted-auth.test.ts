@@ -3,7 +3,7 @@
 // Authorization Code + PKCE, tokens in memory only, silent renew, refresh, logout.
 
 import { createWebPlatform, webFetch } from '@loams/platform-web';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import { OidcAuth } from '../src/hosted/auth.js';
 
 const ISSUER = 'https://auth.loams.dev';

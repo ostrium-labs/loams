@@ -113,6 +113,10 @@ Reaching the engine from workloads in the same VPC (an internal load balancer) o
 
 About $73 a month for `t3.large` (see [the overview](index.md#costs-estimates-small-install-one-month-2026-10-21-list-prices)). Stop the instance to stop the compute charge; the disk, bucket and key keep costing.
 
+## 11a. With Confluent Cloud
+
+To add a Confluent Cloud cluster in the same region, or to connect a cluster you already run, see [confluent.md](confluent.md) (`deploy/tofu/examples/aws-vm-confluent/`).
+
 ## 12. Remove it
 
 ```bash

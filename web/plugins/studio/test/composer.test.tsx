@@ -37,7 +37,7 @@ import {
   UPLOAD_CHUNK_BYTES,
 } from '@loams/studio-ui';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { ThreadComposer, type ThreadComposerProps } from '../src/thread/Composer.js';
 import { mentionsFor } from '../src/thread/mentions.js';
 import { buildCreateRunGroupRequest } from '../src/thread/RunInParallel.js';
@@ -57,6 +57,8 @@ interface DaemonOptions {
   features?: string[];
   files?: string[];
   queued?: string[];
+  /** List a harness installed from the Seed Exchange (MK1 Task 9). */
+  marketplace?: boolean;
   /** Serve ApprovalService (SD1 Task 13); without it the daemon answers unimplemented. */
   approvals?: boolean;
 }
@@ -100,6 +102,17 @@ function composerDaemon(o: DaemonOptions = {}) {
             installed: true,
             enabled: true,
           }),
+          ...(o.marketplace
+            ? [
+                create(HarnessDescriptorSchema, {
+                  id: HarnessId.MARKETPLACE,
+                  name: 'Echo ACP',
+                  installed: true,
+                  enabled: true,
+                  marketplaceListing: 'testkit/echo-acp',
+                }),
+              ]
+            : []),
         ],
       }),
       listModels: () => ({ models: [] }),
@@ -299,6 +312,25 @@ describe('slash_command_menu_filters', () => {
     show(daemon, { threadId: 't1' });
     fireEvent.click(await screen.findByRole('option', { name: /release-notes/ }));
     await waitFor(() => expect(draftOf('t1')?.prompt).toBe('$release-notes '));
+  });
+});
+
+describe('the harness picker', () => {
+  it('lists Seed Exchange harnesses without offering them, and links to add one', async () => {
+    const daemon = composerDaemon({ marketplace: true });
+    const added = vi.fn();
+    show(daemon, { threadId: 't1', onAddHarness: added });
+    fireEvent.click(await screen.findByRole('combobox', { name: 'Harness' }));
+    const echo = await screen.findByRole('option', { name: /Echo ACP/ });
+    expect(echo.textContent).toContain('threads on it come later');
+    expect(echo.getAttribute('aria-disabled')).toBe('true');
+    const add = screen.getByRole('option', { name: 'Add a harness…' });
+    fireEvent.pointerDown(add, { pointerType: 'mouse' });
+    fireEvent.pointerUp(add, { pointerType: 'mouse' });
+    fireEvent.click(add);
+    await waitFor(() => expect(added).toHaveBeenCalledTimes(1));
+    // The draft keeps a built-in harness.
+    expect(draftOf('t1')?.harness).not.toBe('MARKETPLACE');
   });
 });
 

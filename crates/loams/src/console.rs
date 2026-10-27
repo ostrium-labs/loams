@@ -17,8 +17,10 @@
 //! build bakes a `<meta>` CSP into its pages for static hosting with no
 //! server. A header cannot loosen a meta CSP (a browser enforces both), so
 //! the engine takes the policy out of the page it serves, sends it as the
-//! `Content-Security-Policy` header instead, and adds to `connect-src` the
-//! agentd hosts Studio may call ([`AGENTD_ORIGINS_ENV`]); every other
+//! `Content-Security-Policy` header instead, and adds to `connect-src` and
+//! `frame-src` the agentd hosts Studio may call and frame, so previews render
+//! in the engine-served console ([`AGENTD_ORIGINS_ENV`], one validation, `*`
+//! refused); every other
 //! directive stays the build's. One policy, from one source: the build's.
 //! `frame-ancestors`, which a meta CSP cannot set, is `'self'` on every
 //! response (the console frames its own plugin sandbox).
@@ -65,7 +67,7 @@ const META_OPEN: &str = "<meta http-equiv=\"Content-Security-Policy\" content=\"
 /// What the console is served with.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ConsoleOptions {
-    /// [`AGENTD_ORIGINS_ENV`]: exact origins added to `connect-src`.
+    /// [`AGENTD_ORIGINS_ENV`]: exact origins added to `connect-src` and `frame-src`.
     pub agentd_origins: Vec<String>,
 }
 
@@ -137,7 +139,7 @@ pub fn router(dir: &Path, options: &ConsoleOptions) -> Option<Router> {
 }
 
 /// `html` without its meta CSP, and the header policy: the meta's (else
-/// [`DEFAULT_CSP`]) with `agentd` added to `connect-src`.
+/// [`DEFAULT_CSP`]) with `agentd` added to `connect-src` and `frame-src`.
 fn page(html: Vec<u8>, agentd: &[String]) -> Result<Page, String> {
     let text = String::from_utf8(html).map_err(|_| "the page is not UTF-8".to_owned())?;
     let (html, policy) = match text.find(META_OPEN) {
@@ -172,8 +174,8 @@ fn page(html: Vec<u8>, agentd: &[String]) -> Result<Page, String> {
     })
 }
 
-/// `policy` with `agentd` appended to `connect-src` (which it gains if it
-/// has none, as `'self'` and `agentd`), and `frame-ancestors 'self'` unless
+/// `policy` with `agentd` appended to `connect-src` and `frame-src` (which it
+/// gains if it has none, as `'self'` and `agentd`), and `frame-ancestors 'self'` unless
 /// it sets its own.
 fn header_policy(policy: &str, agentd: &[String]) -> String {
     let mut directives: Vec<String> = policy
@@ -188,20 +190,27 @@ fn header_policy(policy: &str, agentd: &[String]) -> String {
             .unwrap_or_default()
             .to_ascii_lowercase()
     };
-    match directives.iter_mut().find(|d| name(d) == "connect-src") {
-        Some(connect) => {
-            for origin in agentd {
-                connect.push(' ');
-                connect.push_str(origin);
+    // The same origins, validated once, go to `connect-src` (Studio calls agentd) and to
+    // `frame-src` (Studio previews render in a frame), owner 2026-10-24.
+    for directive in ["connect-src", "frame-src"] {
+        match directives.iter_mut().find(|d| name(d) == directive) {
+            Some(found) => {
+                for origin in agentd {
+                    found.push(' ');
+                    found.push_str(origin);
+                }
             }
-        }
-        None => {
-            let mut connect = "connect-src 'self'".to_owned();
-            for origin in agentd {
-                connect.push(' ');
-                connect.push_str(origin);
+            // `connect-src` is always present; `frame-src` is added only when there are
+            // origins to allow, so a policy without agentd origins is left as it was.
+            None if directive == "connect-src" || !agentd.is_empty() => {
+                let mut added = format!("{directive} 'self'");
+                for origin in agentd {
+                    added.push(' ');
+                    added.push_str(origin);
+                }
+                directives.push(added);
             }
-            directives.push(connect);
+            None => {}
         }
     }
     if !directives.iter().any(|d| name(d) == "frame-ancestors") {
@@ -400,7 +409,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn agentd_origins_join_connect_src_only() {
+    async fn agentd_origins_join_connect_src_and_frame_src() {
         let dir = build();
         let options = ConsoleOptions {
             agentd_origins: vec![
@@ -413,7 +422,8 @@ mod tests {
         assert_eq!(
             csp(&page),
             "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' \
-             https://agentd.example.ts.net https://b.example.ts.net:8443; frame-src 'self'; \
+             https://agentd.example.ts.net https://b.example.ts.net:8443; frame-src 'self' \
+             https://agentd.example.ts.net https://b.example.ts.net:8443; \
              object-src 'none'; frame-ancestors 'self'"
         );
     }

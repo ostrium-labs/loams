@@ -117,7 +117,8 @@ message ListProvidersResponse {
 }
 
 message CompleteSetupRequest {
-  // The token `loams` printed at first start; not needed from loopback.
+  // This engine's LOAMS_SETUP_TOKEN. Required when authentication is on;
+  // ignored with LOAMS_AUTH_MODE=off.
   string setup_token = 1;
   string org_name = 2;
   // The owner's name.

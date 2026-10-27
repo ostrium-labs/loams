@@ -16,7 +16,7 @@ import { FolderGit2, GitBranch, MessageSquare } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { Project, StudioAgentd } from '../agentd.js';
 import { useProjects } from '../projects/queries.js';
-import { studioHref } from '../routes.js';
+import { MARKETPLACE_HARNESSES, studioHref } from '../routes.js';
 import { usePublishedSidebar } from '../sidebar/data.js';
 import { ThreadComposer } from '../thread/Composer.js';
 
@@ -203,6 +203,7 @@ export function ProjectPage({
                 onStarted: (threadId: string) => navigate(studioHref({ kind: 'thread', threadId })),
                 onGroupStarted: (groupId: string) =>
                   navigate(studioHref({ kind: 'group', groupId })),
+                onAddHarness: () => navigate(MARKETPLACE_HARNESSES),
               }
             : {})}
         />

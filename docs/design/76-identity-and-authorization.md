@@ -235,7 +235,7 @@ type project
     define org: [org]
     define admin: [user, team#member] or admin from org
     define editor: [user, team#member, agent] or admin
-    define viewer: [user, team#member, agent] or editor or member from org
+    define viewer: [user, team#member, agent] or editor
 
 type environment
   relations

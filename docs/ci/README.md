@@ -2,8 +2,16 @@
 
 GitHub Actions on this repository. The repository is public, so GitHub-hosted runners (Linux,
 Windows, macOS) cost nothing; what is scarce is the organisation's concurrent-job limit (about 20
-jobs, about 5 of them macOS). CI uses GitHub-hosted runners only (owner, 2026-10-19; Blacksmith
-removed). The `RUNNER_HEAVY` and `RUNNER_MAIN` repository variables select the label for the heavy
+jobs, about 5 of them macOS). Blacksmith was removed (owner, 2026-10-19).
+
+**Local CI (owner, 2026-10-24).** Two laptops on the owner's tailnet run the pull-request and
+`dev`-push jobs when the repository variable `CI_RUNNER` is `local`: every Linux job of the PR/dev
+workflows picks `[self-hosted, loams-local]` for a push to `dev` or a pull request into `dev` from a
+branch in this repository (or by an organisation member). A pull request from anyone else's fork,
+pull requests into `main`, pushes to `main`, dispatches, the nightly and every release workflow keep
+GitHub-hosted runners, with the same check names. `CI_RUNNER=github` (or unset) falls back in one
+step. `deploy/ci-hosts/route-workflows.py` writes the `runs-on:` expressions (run it after adding a
+job; `--check` verifies). See [the local CI guide](../guides/local-ci.md). The `RUNNER_HEAVY` and `RUNNER_MAIN` repository variables select the label for the heavy
 Rust jobs and the main-branch jobs, and default to `ubuntu-latest`.
 
 Nx Cloud (D1667) caches the Nx tasks' results: only a push to `dev` in `monorepo.yml` connects

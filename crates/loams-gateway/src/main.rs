@@ -10,9 +10,14 @@ use loams_gateway::{Gateway, GatewayConfig};
 #[derive(Parser)]
 #[command(name = "loams-gateway", version)]
 struct Args {
-    /// The static config (gateway.toml).
+    /// The static config (gateway.toml, or the `temporal` module's file).
     #[arg(long, default_value = "/etc/loams-gateway/gateway.toml")]
     config: PathBuf,
+    /// Which module this process runs: `pg` (the Postgres front door) or,
+    /// with the `temporal` feature, `temporal` (its own Deployment, §74 §12),
+    /// or with the `spark` feature, `spark` (the Spark Connect proxy).
+    #[arg(long, default_value = "pg")]
+    module: String,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -25,10 +30,47 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let text = std::fs::read_to_string(&args.config)
         .map_err(|e| format!("reading {}: {e}", args.config.display()))?;
-    let config = GatewayConfig::from_toml(&text)?;
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
+    match args.module.as_str() {
+        "pg" => {}
+        #[cfg(feature = "temporal")]
+        "temporal" => {
+            let config = loams_gateway::temporal::load(&text)?;
+            return runtime.block_on(async move {
+                loams_gateway::temporal::serve(config, terminate())
+                    .await
+                    .map_err(Into::into)
+            });
+        }
+        #[cfg(feature = "spark")]
+        "spark" => {
+            let config = loams_gateway::spark::load(&text)?;
+            return runtime.block_on(async move {
+                loams_gateway::spark::serve(config, terminate())
+                    .await
+                    .map_err(Into::into)
+            });
+        }
+        other => {
+            return Err(format!(
+                "unknown module {other:?} (built: pg{}{})",
+                if cfg!(feature = "temporal") {
+                    ", temporal"
+                } else {
+                    ""
+                },
+                if cfg!(feature = "spark") {
+                    ", spark"
+                } else {
+                    ""
+                }
+            )
+            .into());
+        }
+    }
+    let config = GatewayConfig::from_toml(&text)?;
     runtime.block_on(async move {
         let gateway = Gateway::start(config).await?;
         terminate().await;

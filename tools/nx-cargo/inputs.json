@@ -15,14 +15,25 @@
         "loams-specview",
         "loams-sqldb",
         "loams-sqlgate",
+        "loams-temporal-frontend",
+        "loams-temporal-statemachine",
         "loams-upgrade"
       ],
       "extra": {
+        "loams-agentd-marketplace": [
+          "proto/loams/marketplace/**",
+          "schemas/marketplace/**"
+        ],
         "loams-agentd-sessions": [
           "crates/README.md"
         ],
         "loams-apps-mock": [
           "conformance/graph/desktop/**"
+        ],
+        "loams-authz": [
+          "deploy/openfga/core.fga.yaml",
+          "deploy/openfga/core.fga",
+          "deploy/openfga/graph.fga"
         ],
         "loams-collection": [
           "sdks/fixtures/tokens.json"
@@ -43,6 +54,16 @@
         "loams-sqlrouter": [
           "scripts/spec/check.sh",
           "spec/tla/router/**"
+        ],
+        "loams-temporal-history": [
+          "conformance/compute/temporal/corpus/**"
+        ],
+        "loams-temporal-proto": [
+          "NOTICE",
+          "conformance/compute/temporal/corpus/histories/**"
+        ],
+        "loams-temporal-testkit": [
+          "conformance/compute/temporal/corpus/**"
         ]
       },
       "tools": {

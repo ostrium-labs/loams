@@ -60,9 +60,14 @@ RUN apt-get update \
  && useradd --system --uid 10001 --gid loams --home-dir /var/lib/loams --shell /usr/sbin/nologin loams \
  && install -d -o loams -g loams -m 0750 /var/lib/loams /var/lib/loams/bucket /var/lib/loams/graph \
  && install -d -o loams -g loams -m 0750 /var/lib/loams-house \
- && install -d -o loams -g loams -m 0700 /var/lib/loams-pg-control /var/lib/loams-upgrade-snapshots
+ && install -d -o loams -g loams -m 0700 /var/lib/loams-pg-control /var/lib/loams-upgrade-snapshots \
+ && install -d -o loams -g loams -m 0770 /run/loams-connect
 COPY --from=build /out/loams /usr/local/bin/loams
-COPY --from=console --chmod=a=rX /out /usr/share/loams/console
+# Read-only for everyone (directories searchable). Not `COPY --chmod=a=rX`: buildah
+# (podman, which build.sh prefers and the release runners have) takes only an
+# octal --chmod and refused the symbolic one, failing the v0.1.2 image build.
+COPY --from=console /out /usr/share/loams/console
+RUN chmod -R a=rX /usr/share/loams/console
 LABEL org.opencontainers.image.title="loams" \
       org.opencontainers.image.description="Loams engine" \
       org.opencontainers.image.source="https://github.com/ostrium-labs/loams" \

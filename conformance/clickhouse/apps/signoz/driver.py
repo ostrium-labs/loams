@@ -6,12 +6,17 @@ through the collector, registers the first admin, then runs the query
 service's builder queries over each signal and request type (raw, time
 series, scalar, table), with filters, group-by, having, order and limits,
 plus the services, top-operations and field-suggestion reads the UI makes.
-Standard library only.
+With HE0_SIGNOZ_RESULTS set, each request's status and a summary of its
+answer (how many values it holds, and the names in it: services, span names,
+attribute keys, severities) are written there as JSON, so a run on the House
+can be compared with the oracle's (`compare.py`, HE1 R9.64). Standard library
+only.
 """
 
 import json
 import os
 import random
+import re
 import sys
 import time
 import urllib.error
@@ -22,9 +27,41 @@ API = os.environ.get("HE0_SIGNOZ_URL", f"http://127.0.0.1:{os.environ.get('HE0_S
 OTLP = os.environ.get("HE0_SIGNOZ_OTLP", f"http://127.0.0.1:{os.environ.get('HE0_SIGNOZ_OTLP_PORT', '3518')}")
 random.seed(75)
 failures = []
+results = []
+# Strings that differ between runs: ids, times, numbers, UUIDs.
+VOLATILE = re.compile(r"^([0-9a-f]{16}|[0-9a-f]{32}|[0-9a-f-]{36}|-?[0-9.e+-]+|\d{4}-\d\d-\d\dT.*|.*\d{10,}.*)$")
 
 
-def call(method, url, body=None, token=None, params=None, expect_ok=True):
+def summarize(body):
+    """How many scalar values an answer holds, and its stable strings."""
+    values, names = 0, set()
+
+    def walk(v):
+        nonlocal values
+        if isinstance(v, dict):
+            for k, x in v.items():
+                walk(x)
+        elif isinstance(v, list):
+            for x in v:
+                walk(x)
+        elif v is not None:
+            values += 1
+            if isinstance(v, str) and v and not VOLATILE.match(v) and len(v) < 80:
+                names.add(v)
+    walk(body)
+    return {"values": values, "names": sorted(names)}
+
+
+def call(method, url, body=None, token=None, params=None, expect_ok=True, label=None):
+    label = label or f"{method} {urllib.parse.urlparse(url).path}"
+    status, answer = _call(method, url, body, token, params, expect_ok)
+    if "/api/" in url:
+        data = answer.get("data") if isinstance(answer, dict) else answer
+        results.append({"label": label, "status": status, **summarize(data)})
+    return status, answer
+
+
+def _call(method, url, body=None, token=None, params=None, expect_ok=True):
     if params:
         url += "?" + urllib.parse.urlencode(params)
     data = json.dumps(body).encode() if body is not None else None
@@ -168,7 +205,8 @@ def main():
             spec["selectFields"] = select
         body = {"schemaVersion": "v1", "start": start, "end": end, "requestType": request_type,
                 "compositeQuery": {"queries": [{"type": "builder_query", "spec": spec}]}, "formatOptions": {"formatTableResultForUI": request_type == "table"}, "noCache": True}
-        call("POST", API + "/api/v5/query_range", body, token, expect_ok=False)
+        call("POST", API + "/api/v5/query_range", body, token, expect_ok=False,
+             label=f"query_range {signal} {request_type} {json.dumps(spec, sort_keys=True)}")
 
     svc = [key("service.name", "resource", "string")]
     for sig in ("traces", "logs"):
@@ -204,6 +242,9 @@ def main():
     call("POST", API + "/api/v2/traces/waterfall/" + "0" * 32, {}, token, expect_ok=False)
     call("GET", API + "/api/v1/metrics", token=token, params={"start": start, "end": end, "limit": 10}, expect_ok=False)
     call("POST", API + "/api/v1/metrics", {"start": start, "end": end, "limit": 10, "offset": 0, "orderBy": {"columnName": "samples", "order": "desc"}}, token, expect_ok=False)
+    if os.environ.get("HE0_SIGNOZ_RESULTS"):
+        with open(os.environ["HE0_SIGNOZ_RESULTS"], "w") as f:
+            json.dump(results, f, indent=1)
     if failures:
         print("driver: signoz: requests that failed:\n  " + "\n  ".join(failures), file=sys.stderr)
     print("driver: signoz done", file=sys.stderr)

@@ -6,7 +6,9 @@
 mod review_comments;
 mod run_groups;
 mod store;
+mod typed_approvals;
 
 pub use review_comments::ReviewCommentRow;
 pub use run_groups::StoredRunGroup;
 pub use store::{DocsStore, PendingApprovalRow, StoreError, TurnUsageRow};
+pub use typed_approvals::TypedApprovalRow;

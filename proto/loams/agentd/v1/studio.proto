@@ -76,6 +76,10 @@ enum HarnessId {
   HARNESS_ID_MOCK = 10;
   // A harness this daemon does not know (a newer client's).
   HARNESS_ID_UNSUPPORTED = 11;
+  HARNESS_ID_GOOSE = 12;
+  // A marketplace ACP harness (MK1 Task 0 ruling 7); which one is the
+  // descriptor's `marketplace_listing`.
+  HARNESS_ID_MARKETPLACE = 13;
 }
 
 enum ReasoningLevel {

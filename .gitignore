@@ -77,3 +77,7 @@ vendor/
 
 # HE0 raw dumps (query text; only scrubbed inventories are committed)
 /conformance/clickhouse/apps/.out/
+
+# Buck2 (scripts/buck/bootstrap.sh)
+/.tools/
+/buck-out

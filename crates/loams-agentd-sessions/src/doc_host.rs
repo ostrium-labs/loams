@@ -187,7 +187,7 @@ fn queued_message_prompt(text: &str, attachments: &[String]) -> String {
 }
 
 fn queue_text_hash(text: &str) -> String {
-    format!("{:x}", Sha256::digest(text.as_bytes()))
+    crate::repos::hex(&Sha256::digest(text.as_bytes()))
 }
 
 /// Content and its historical presentation cutoff travel atomically, even
@@ -2903,6 +2903,7 @@ impl DocHost {
         };
         let config = chat.config;
         Some(loams_agentd_proto::RunRequest {
+            mcp_servers: Vec::new(),
             mcp: None,
             prompt: prompt.to_string(),
             harness: config.as_ref().map(|c| c.harness),

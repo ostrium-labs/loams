@@ -29,6 +29,8 @@ on:
       - 'web/packages/ui/**'
       - 'web/plugins/studio/**'
       - 'web/plugins/factory/**'
+      - 'web/plugins/marketplace/**'
+      - 'web/packages/slots/**'
       - 'web/plugins/shell/**'
       - 'web/plugins/rpc/**'
       - 'web/plugins/approvals/**'
@@ -71,7 +73,7 @@ jobs:
   web:
     name: "Studio e2e: web"
     if: github.event_name != 'pull_request' || github.event.pull_request.draft != true || contains(github.event.pull_request.labels.*.name, 'ci:full')
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
@@ -81,18 +83,20 @@ jobs:
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
           key: studio-e2e
           save-if: ${{ github.ref == 'refs/heads/dev' }}
       # A debug build: only a debug daemon honours LOAMS_AGENTD_TEST_ISSUER (ruling T7-7).
+      # `e2e-marketplace`: the Seed Exchange spec's testkit marketplace (MK0 Task 9).
       - name: loams-agentd (debug)
-        run: cargo build -p loams-agentd --locked
+        run: cargo build -p loams-agentd --locked --features e2e-marketplace
       - uses: pnpm/action-setup@v6
         with:
           package_json_file: package.json
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
@@ -110,7 +114,7 @@ jobs:
   electron:
     name: "Studio e2e: Electron"
     if: github.event_name != 'pull_request' || github.base_ref == 'main' || startsWith(github.base_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'ci:full')
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 75
     steps:
       - uses: actions/checkout@v7
@@ -119,6 +123,7 @@ jobs:
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
           key: studio-e2e
           save-if: ${{ github.ref == 'refs/heads/dev' }}
@@ -129,7 +134,7 @@ jobs:
           package_json_file: package.json
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile

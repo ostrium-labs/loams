@@ -244,6 +244,26 @@ methods! {
     NotificationService {
         WatchNotifications => Method("WatchNotifications"),
     }
+    FactoryService {
+        ListFactoryApps => Method("FactoryList"),
+        TestFactoryApp => Method("FactoryTest"),
+        QueryFactory => Method("FactoryQuery"),
+        ConfigureFactoryApp => Method("FactoryConfigure"),
+        RemoveFactoryApp => Method("FactoryRemove"),
+    }
+    MarketplaceService {
+        ListSources => Method("ListMarketplaceSources"),
+        AddSource => Method("AddMarketplaceSource"),
+        RemoveSource => Method("RemoveMarketplaceSource"),
+        SearchListings => Method("SearchListings"),
+        GetListing => Method("GetListing"),
+        PlanInstall => Method("PlanInstall"),
+        Install => Method("InstallListing"),
+        Uninstall => Method("UninstallListing"),
+        ListInstalled => Method("ListInstalledListings"),
+        CheckUpdates => Method("CheckListingUpdates"),
+        Update => Method("UpdateListing"),
+    }
 }
 
 /// The methods that write to git: a plugin calls them only with the
