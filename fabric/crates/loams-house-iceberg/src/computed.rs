@@ -20,8 +20,8 @@ use datafusion::arrow::datatypes::{DataType, TimeUnit};
 use datafusion::catalog::view::ViewTable;
 use datafusion::common::tree_node::TreeNode;
 use datafusion::common::{ScalarValue, TableReference};
-use datafusion::datasource::provider_as_source;
 use datafusion::datasource::TableProvider;
+use datafusion::datasource::provider_as_source;
 use datafusion::logical_expr::expr::FieldMetadata;
 use datafusion::logical_expr::{
     Cast, Expr, LogicalPlan, LogicalPlanBuilder, TableSource, cast, col, lit,
@@ -84,7 +84,9 @@ pub fn expression(
     let mut parser = Parser::new(&dialect)
         .try_with_sql(text)
         .map_err(|e| refusal(pin, &e.to_string()))?;
-    let parsed = parser.parse_expr().map_err(|e| refusal(pin, &e.to_string()))?;
+    let parsed = parser
+        .parse_expr()
+        .map_err(|e| refusal(pin, &e.to_string()))?;
     if parser.peek_token().token != Token::EOF {
         return Err(refusal(pin, &format!("{text:?} is not one expression")));
     }
@@ -92,11 +94,17 @@ pub fn expression(
     let catalog = Raw(raw.clone());
     let prepared = loams_house_sql::prepare(&sql, &[], &catalog, registry, DATABASE)?;
     let LogicalPlan::Projection(projection) = &prepared.plan else {
-        return Err(refusal(pin, &format!("{text:?} does not plan as an expression")));
+        return Err(refusal(
+            pin,
+            &format!("{text:?} does not plan as an expression"),
+        ));
     };
     if !matches!(projection.input.as_ref(), LogicalPlan::TableScan(_)) || projection.expr.len() != 1
     {
-        return Err(refusal(pin, &format!("{text:?} does not plan as an expression")));
+        return Err(refusal(
+            pin,
+            &format!("{text:?} does not plan as an expression"),
+        ));
     }
     let expr = projection.expr[0].clone().unalias();
     let subquery = expr
@@ -220,9 +228,7 @@ pub fn view(
             ));
             let expired = when.lt_eq(now);
             let expired = match &rule.condition {
-                Some(condition) => {
-                    expired.and(expression(pin, condition, &source, registry)?)
-                }
+                Some(condition) => expired.and(expression(pin, condition, &source, registry)?),
                 None => expired,
             };
             filters.push(Expr::Not(Box::new(expired)));

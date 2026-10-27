@@ -7,6 +7,11 @@
 //! writes them with `loams-house-lake` in the House's encodings, step by step
 //! as the setup made them (an `ALTER … ADD COLUMN` between two inserts, a
 //! rename), so every encoding the chDB House writes is in the fixture.
+//!
+//! Until the fixtures are committed, the oracle job (`house-engine-oracle`)
+//! writes them before it starts the dev server, then runs
+//! `the_corpus_lake_loads_and_reads` (R26.8); `LOAMS_ORACLE_URL` names its
+//! oracle (default `http://127.0.0.1:28123/`).
 
 #![allow(clippy::unwrap_used)]
 
@@ -24,11 +29,13 @@ use loams_house_iceberg::ChColumn;
 use loams_house_types::ChType;
 
 fn corpus() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../conformance/clickhouse/oracle/corpus/he1/26")
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../conformance/clickhouse/oracle/corpus/he1/26")
 }
 
-/// `SELECT … FORMAT JSONCompactEachRow` of every table through the engine.
+/// Every fixture table loads and reads through the engine.
 #[tokio::test]
+#[ignore = "needs corpus/he1/26/lake (regenerate_corpus_26_lake); the oracle job runs it"]
 async fn the_corpus_lake_loads_and_reads() {
     let engine = Engine::new();
     let names = loams_house_engine::lake::attach(&engine, &corpus().join("lake"))
@@ -38,7 +45,12 @@ async fn the_corpus_lake_loads_and_reads() {
         assert!(names.contains(&format!("default.{t}")), "{names:?}");
     }
     let answer = engine
-        .query("SELECT id, label, plus, n, z FROM alter26 ORDER BY id", &[], &[], "default")
+        .query(
+            "SELECT id, label, plus, n, z FROM alter26 ORDER BY id",
+            &[],
+            &[],
+            "default",
+        )
         .await
         .unwrap();
     let rows: usize = answer.batches.iter().map(|b| b.num_rows()).sum();
@@ -56,13 +68,18 @@ async fn the_corpus_lake_loads_and_reads() {
     assert_eq!(answer.schema.fields().len(), 34);
 }
 
-const ORACLE: &str = "http://127.0.0.1:28123/";
+/// The oracle's URL: `LOAMS_ORACLE_URL`, or the local one of
+/// `scripts/house/oracle.sh up`.
+fn oracle_url() -> String {
+    std::env::var("LOAMS_ORACLE_URL").unwrap_or_else(|_| "http://127.0.0.1:28123/".to_string())
+}
+
 const DB: &str = "he1_26_fixtures";
 
 fn oracle(sql: &str, database: &str) -> Vec<u8> {
     let out = Command::new("curl")
         .args(["-fsS", "--data-binary", "@-", "-u", "oracle:oracle"])
-        .arg(format!("{ORACLE}?database={database}"))
+        .arg(format!("{}?database={database}", oracle_url()))
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -90,7 +107,10 @@ fn export(lake: &Lake, select: &str) -> Vec<(String, ArrayRef)> {
         .iter()
         .map(|f| {
             let c = lake.columns.iter().find(|c| c.name == f.name).unwrap();
-            (c.name.clone(), loams_house_types::parse(&c.ch_type).unwrap())
+            (
+                c.name.clone(),
+                loams_house_types::parse(&c.ch_type).unwrap(),
+            )
         })
         .collect();
     let bytes = oracle(&format!("{select} FORMAT Parquet"), DB);
@@ -152,7 +172,16 @@ async fn regenerate_corpus_26_lake() {
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).unwrap();
 
-    let mut types = Lake::create(&root, "default", "types26", columns("types26"), "MergeTree", "id", None, "");
+    let mut types = Lake::create(
+        &root,
+        "default",
+        "types26",
+        columns("types26"),
+        "MergeTree",
+        "id",
+        None,
+        "",
+    );
     insert(&mut types, "SELECT * FROM types26 ORDER BY id").await;
 
     let mut plus = column("plus", "UInt64");
@@ -168,14 +197,22 @@ async fn regenerate_corpus_26_lake() {
         None,
         "",
     );
-    insert(&mut alter, "SELECT id, label AS s FROM alter26 WHERE id <= 2 ORDER BY id").await;
+    insert(
+        &mut alter,
+        "SELECT id, label AS s FROM alter26 WHERE id <= 2 ORDER BY id",
+    )
+    .await;
     let mut n = column("n", "UInt32");
     n.default_kind = "DEFAULT".into();
     n.default_expression = "id * 10".into();
     alter.add_column(n);
     alter.add_column(column("z", "String"));
     alter.rename_column("s", "label");
-    insert(&mut alter, "SELECT id, label, n, z FROM alter26 WHERE id = 3").await;
+    insert(
+        &mut alter,
+        "SELECT id, label, n, z FROM alter26 WHERE id = 3",
+    )
+    .await;
 
     let mut ttl = Lake::create(
         &root,
@@ -189,9 +226,22 @@ async fn regenerate_corpus_26_lake() {
     );
     insert(&mut ttl, "SELECT id, ts FROM ttl26_src ORDER BY id").await;
 
-    let mut part = Lake::create(&root, "default", "part26", columns("part26"), "MergeTree", "id", Some("p"), "");
+    let mut part = Lake::create(
+        &root,
+        "default",
+        "part26",
+        columns("part26"),
+        "MergeTree",
+        "id",
+        Some("p"),
+        "",
+    );
     for p in 0..4 {
-        insert(&mut part, &format!("SELECT * FROM part26 WHERE p = {p} ORDER BY id")).await;
+        insert(
+            &mut part,
+            &format!("SELECT * FROM part26 WHERE p = {p} ORDER BY id"),
+        )
+        .await;
     }
     oracle(&format!("DROP DATABASE IF EXISTS {DB}"), "default");
 }

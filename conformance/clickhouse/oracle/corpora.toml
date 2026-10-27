@@ -33,6 +33,7 @@ cases = "corpus/he1/24/cases"
 name = "he1-25"
 setup = "corpus/he1/25/setup.sql"
 cases = "corpus/he1/25/cases"
+
 # HE1 Task 26: lake-table reads. The engine reads `corpus/he1/26/lake`
 # (`loams-house-engine-dev --lake`), House-written fixtures of this setup's
 # rows (`scripts/house/lake-fixtures-26.sh`).

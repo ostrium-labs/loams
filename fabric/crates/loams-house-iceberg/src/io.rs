@@ -242,9 +242,15 @@ mod tests {
             paths.rebase("s3://warehouse/db/t/data/a.parquet"),
             "file:///fixtures/t/data/a.parquet"
         );
-        assert_eq!(paths.key("s3://warehouse/db/t/data/a.parquet").as_ref(), "fixtures/t/data/a.parquet");
+        assert_eq!(
+            paths.key("s3://warehouse/db/t/data/a.parquet").as_ref(),
+            "fixtures/t/data/a.parquet"
+        );
         // Not under the location: as written.
-        assert_eq!(paths.rebase("s3://warehouse/db/tt/x"), "s3://warehouse/db/tt/x");
+        assert_eq!(
+            paths.rebase("s3://warehouse/db/tt/x"),
+            "s3://warehouse/db/tt/x"
+        );
         assert_eq!(key("s3://bucket/a/b").as_ref(), "a/b");
         assert_eq!(key("/a/b").as_ref(), "a/b");
         assert_eq!(key("file:/a/b").as_ref(), "a/b");

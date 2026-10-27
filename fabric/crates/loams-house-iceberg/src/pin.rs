@@ -379,10 +379,7 @@ mod tests {
             lineage: false,
         };
         let text = serde_json::to_string(&pin).expect("json");
-        assert_eq!(
-            serde_json::from_str::<TablePin>(&text).expect("back"),
-            pin
-        );
+        assert_eq!(serde_json::from_str::<TablePin>(&text).expect("back"), pin);
         // The House's `loams.ch.types` entries read as columns.
         let columns: Vec<ChColumn> = serde_json::from_str(
             r#"[{"name":"a","type":"UInt8","default_kind":"ALIAS","default_expression":"k + 1","comment":"c"}]"#,

@@ -41,7 +41,10 @@ fn main() -> std::process::ExitCode {
     };
     let engine = Arc::new(loams_house_engine::Engine::new());
     if !lakes.is_empty() {
-        let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
+        let runtime = match tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+        {
             Ok(r) => r,
             Err(e) => {
                 eprintln!("loams-house-engine-dev: {e}");

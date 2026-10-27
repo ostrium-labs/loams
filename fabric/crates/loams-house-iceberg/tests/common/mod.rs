@@ -181,7 +181,9 @@ impl Lake {
         let mut spec = UnboundPartitionSpec::builder();
         if let Some(p) = partition {
             let id = fields.iter().find(|f| f.name == p).unwrap().id;
-            spec = spec.add_partition_field(id, p, Transform::Identity).unwrap();
+            spec = spec
+                .add_partition_field(id, p, Transform::Identity)
+                .unwrap();
         }
         let mut properties = HashMap::new();
         properties.insert("loams.ch.engine".to_string(), engine.to_string());
@@ -231,11 +233,19 @@ impl Lake {
     }
 
     fn write_metadata(&self) {
-        self.put(&self.file.to_string(), &metadata::to_json(&self.metadata).unwrap());
+        self.put(
+            &self.file.to_string(),
+            &metadata::to_json(&self.metadata).unwrap(),
+        );
     }
 
-    fn commit(&mut self, requirements: &[loams_house_lake::TableRequirement], updates: Vec<TableUpdate>) {
-        self.metadata = metadata::commit(&self.metadata, &self.file, requirements, updates).unwrap();
+    fn commit(
+        &mut self,
+        requirements: &[loams_house_lake::TableRequirement],
+        updates: Vec<TableUpdate>,
+    ) {
+        self.metadata =
+            metadata::commit(&self.metadata, &self.file, requirements, updates).unwrap();
         self.file = self.file.next();
         self.write_metadata();
     }
@@ -368,8 +378,7 @@ impl Lake {
     /// The pin of the current snapshot, as the dev server makes it.
     pub fn pin(&self) -> TablePin {
         let file = format!("file://{}", self.path(&self.file.to_string()).display());
-        let mut pin =
-            TablePin::from_metadata(&self.db, &self.name, &file, &self.metadata).unwrap();
+        let mut pin = TablePin::from_metadata(&self.db, &self.name, &file, &self.metadata).unwrap();
         pin.location = format!("file://{}", self.dir.display());
         pin
     }

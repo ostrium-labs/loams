@@ -54,9 +54,7 @@ use datafusion::physical_plan::projection::ProjectionExec;
 use datafusion::physical_plan::{ExecutionPlan, PhysicalExpr};
 use futures::TryStreamExt;
 use iceberg_engine::arrow::schema_to_arrow_schema;
-use iceberg_engine::spec::{
-    DataFileFormat, SchemaRef as IcebergSchemaRef, TableMetadata,
-};
+use iceberg_engine::spec::{DataFileFormat, SchemaRef as IcebergSchemaRef, TableMetadata};
 use iceberg_engine::table::Table;
 use iceberg_engine::{Runtime, TableIdent};
 use loams_house_types::arrow::{CH_TYPE, data_type};
@@ -67,7 +65,9 @@ use crate::encodings;
 use crate::io::{Paths, StoreStorage};
 use crate::pin::TablePin;
 use crate::prune::{self, Translatable};
-use crate::virtual_columns::{self, FIRST_ROW_ID, LAST_UPDATED, LAST_UPDATED_FIELD, ROW, ROW_ID, ROW_ID_FIELD, SEQ};
+use crate::virtual_columns::{
+    self, FIRST_ROW_ID, LAST_UPDATED, LAST_UPDATED_FIELD, ROW, ROW_ID, ROW_ID_FIELD, SEQ,
+};
 
 fn ch_error(e: impl fmt::Display) -> ChError {
     ChError::cannot_parse_text(format!("Reading a lake table: {e}"))

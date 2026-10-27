@@ -47,9 +47,7 @@ pub fn cast(array: &ArrayRef, to: &DataType) -> Result<ArrayRef, ChError> {
             ..CastOptions::default()
         },
     )
-    .map_err(|e| {
-        ChError::cannot_parse_text(format!("Casting {} to {to}: {e}", array.data_type()))
-    })
+    .map_err(|e| ChError::cannot_parse_text(format!("Casting {} to {to}: {e}", array.data_type())))
 }
 
 /// The UTC zone as Iceberg's Arrow schema spells it.
@@ -140,9 +138,7 @@ pub fn restore(t: &ChType, stored: &ArrayRef, top_level: bool) -> Result<ArrayRe
                 .map_err(|e| err(t, e))?;
             Ok(Arc::new(array))
         }
-        ChType::DateTime64(precision, _)
-            if *precision > 6 && stored.data_type().is_integer() =>
-        {
+        ChType::DateTime64(precision, _) if *precision > 6 && stored.data_type().is_integer() => {
             // R9.61: nanoseconds since the epoch in a `long`.
             let nanos = cast(stored, &DataType::Int64)?;
             let as_time = cast(&nanos, &DataType::Timestamp(TimeUnit::Nanosecond, None))?;
@@ -179,8 +175,8 @@ pub fn restore(t: &ChType, stored: &ArrayRef, top_level: bool) -> Result<ArrayRe
             };
             let keys = restore(k, map.keys(), false)?;
             let vals = restore(v, map.values(), false)?;
-            let entries =
-                StructArray::try_new(fields.clone(), vec![keys, vals], None).map_err(|e| err(t, e))?;
+            let entries = StructArray::try_new(fields.clone(), vec![keys, vals], None)
+                .map_err(|e| err(t, e))?;
             Ok(Arc::new(
                 MapArray::try_new(
                     field.clone(),
@@ -202,7 +198,11 @@ pub fn restore(t: &ChType, stored: &ArrayRef, top_level: bool) -> Result<ArrayRe
             if st.num_columns() != elements.len() {
                 return Err(err(
                     t,
-                    format!("{} stored elements for {}", st.num_columns(), elements.len()),
+                    format!(
+                        "{} stored elements for {}",
+                        st.num_columns(),
+                        elements.len()
+                    ),
                 ));
             }
             let children = elements
@@ -309,7 +309,9 @@ pub fn store(t: &ChType, array: &ArrayRef, top_level: bool) -> Result<ArrayRef, 
             Ok(Arc::new(StringArray::from(out)))
         }
         ChType::Array(inner) => {
-            let list = array.as_list_opt::<i32>().ok_or_else(|| err(t, "not a List"))?;
+            let list = array
+                .as_list_opt::<i32>()
+                .ok_or_else(|| err(t, "not a List"))?;
             let values = store(inner, list.values(), false)?;
             let field = Arc::new(Field::new("element", values.data_type().clone(), true));
             Ok(Arc::new(
@@ -325,16 +327,24 @@ pub fn store(t: &ChType, array: &ArrayRef, top_level: bool) -> Result<ArrayRef, 
                 Field::new("key", keys.data_type().clone(), false),
                 Field::new("value", vals.data_type().clone(), true),
             ]);
-            let entries =
-                StructArray::try_new(fields.clone(), vec![keys, vals], None).map_err(|e| err(t, e))?;
+            let entries = StructArray::try_new(fields.clone(), vec![keys, vals], None)
+                .map_err(|e| err(t, e))?;
             let field = Arc::new(Field::new("key_value", DataType::Struct(fields), false));
             Ok(Arc::new(
-                MapArray::try_new(field, map.offsets().clone(), entries, map.nulls().cloned(), false)
-                    .map_err(|e| err(t, e))?,
+                MapArray::try_new(
+                    field,
+                    map.offsets().clone(),
+                    entries,
+                    map.nulls().cloned(),
+                    false,
+                )
+                .map_err(|e| err(t, e))?,
             ))
         }
         ChType::Tuple(elements) => {
-            let st = array.as_struct_opt().ok_or_else(|| err(t, "not a Struct"))?;
+            let st = array
+                .as_struct_opt()
+                .ok_or_else(|| err(t, "not a Struct"))?;
             let mut fields = Vec::with_capacity(elements.len());
             let mut children = Vec::with_capacity(elements.len());
             for (i, (name, et)) in elements.iter().enumerate() {
@@ -390,10 +400,9 @@ pub fn store(t: &ChType, array: &ArrayRef, top_level: bool) -> Result<ArrayRef, 
                     _ => TimeUnit::Microsecond,
                 };
                 let labelled = match array.data_type() {
-                    DataType::Timestamp(_, None) => cast(
-                        array,
-                        &DataType::Timestamp(unit, Some(Arc::from(UTC))),
-                    )?,
+                    DataType::Timestamp(_, None) => {
+                        cast(array, &DataType::Timestamp(unit, Some(Arc::from(UTC))))?
+                    }
                     _ => array.clone(),
                 };
                 return cast(&labelled, &to);
@@ -461,7 +470,12 @@ pub fn from_iceberg(ty: &Type, required: bool) -> ChType {
                 fields
                     .fields()
                     .iter()
-                    .map(|f| (Some(f.name.clone()), from_iceberg(&f.field_type, f.required)))
+                    .map(|f| {
+                        (
+                            Some(f.name.clone()),
+                            from_iceberg(&f.field_type, f.required),
+                        )
+                    })
                     .collect(),
             );
         }
@@ -477,8 +491,7 @@ pub fn from_iceberg(ty: &Type, required: bool) -> ChType {
 #[cfg(test)]
 mod tests {
     use datafusion::arrow::array::{
-        Decimal128Array, Int32Array, Int64Array, TimestampMicrosecondArray, UInt8Array,
-        UInt64Array,
+        Decimal128Array, Int32Array, Int64Array, TimestampMicrosecondArray, UInt8Array, UInt64Array,
     };
 
     use super::*;
@@ -519,9 +532,8 @@ mod tests {
             ts.data_type(),
             &DataType::Timestamp(TimeUnit::Nanosecond, Some(Arc::from("UTC")))
         );
-        let micros: ArrayRef = Arc::new(
-            TimestampMicrosecondArray::from(vec![1_000_000]).with_timezone(UTC),
-        );
+        let micros: ArrayRef =
+            Arc::new(TimestampMicrosecondArray::from(vec![1_000_000]).with_timezone(UTC));
         let dt = restore(&t("DateTime"), &micros, true).expect("datetime");
         assert_eq!(
             dt.as_primitive::<datafusion::arrow::datatypes::TimestampSecondType>()
@@ -538,7 +550,10 @@ mod tests {
         let cases: Vec<(&str, ArrayRef)> = vec![
             ("UInt8", Arc::new(UInt8Array::from(vec![0, 255]))),
             ("UInt64", Arc::new(UInt64Array::from(vec![0, u64::MAX]))),
-            ("Enum16('x' = 300, 'y' = -1)", Arc::new(Int16Array::from(vec![300, -1]))),
+            (
+                "Enum16('x' = 300, 'y' = -1)",
+                Arc::new(Int16Array::from(vec![300, -1])),
+            ),
             ("IPv4", Arc::new(UInt32Array::from(vec![0, u32::MAX]))),
             (
                 "IPv6",
@@ -559,12 +574,9 @@ mod tests {
             ),
             (
                 "DateTime64(9)",
-                Arc::new(
-                    datafusion::arrow::array::TimestampNanosecondArray::from(vec![
-                        -1,
-                        1_700_000_000_123_456_789,
-                    ]),
-                ),
+                Arc::new(datafusion::arrow::array::TimestampNanosecondArray::from(
+                    vec![-1, 1_700_000_000_123_456_789],
+                )),
             ),
             (
                 "DateTime('Asia/Kolkata')",

@@ -15,12 +15,14 @@ use std::sync::Arc;
 
 use datafusion::arrow::array::{Array, AsArray};
 use datafusion::arrow::datatypes::Int64Type;
+use datafusion::datasource::listing::PartitionedFile;
+use datafusion::datasource::physical_plan::parquet::{
+    DefaultParquetFileReaderFactory, ParquetFileReaderFactory,
+};
 use datafusion::datasource::physical_plan::parquet::{ParquetAccessPlan, RowGroupAccess};
 use datafusion::object_store::ObjectStore;
 use datafusion::parquet::arrow::ParquetRecordBatchStreamBuilder;
 use datafusion::parquet::arrow::arrow_reader::{RowSelection, RowSelector};
-use datafusion::datasource::listing::PartitionedFile;
-use datafusion::datasource::physical_plan::parquet::{DefaultParquetFileReaderFactory, ParquetFileReaderFactory};
 use datafusion::parquet::arrow::async_reader::AsyncFileReader;
 use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use futures::TryStreamExt;
@@ -104,7 +106,10 @@ impl Deletes {
         let path = delete.file_path();
         let (Some(offset), Some(size)) = (delete.content_offset(), delete.content_size_in_bytes())
         else {
-            return Err(read_error(path, "a deletion vector without its offset and size"));
+            return Err(read_error(
+                path,
+                "a deletion vector without its offset and size",
+            ));
         };
         let blob = self
             .storage
@@ -119,7 +124,12 @@ impl Deletes {
         delete: &FileScanTaskDeleteFile,
     ) -> Result<Arc<HashMap<String, Vec<u64>>>, ChError> {
         let path = delete.file_path().to_string();
-        if let Some(found) = self.position_files.lock().ok().and_then(|m| m.get(&path).cloned()) {
+        if let Some(found) = self
+            .position_files
+            .lock()
+            .ok()
+            .and_then(|m| m.get(&path).cloned())
+        {
             return Ok(found);
         }
         let reader = self.reader(&path, delete.file_size_in_bytes())?;
@@ -134,13 +144,17 @@ impl Deletes {
             .map_err(|e| read_error(&path, e))?;
         let mut by_file: HashMap<String, Vec<u64>> = HashMap::new();
         for batch in batches {
-            let (Some(files), Some(positions)) =
-                (batch.column_by_name("file_path"), batch.column_by_name("pos"))
-            else {
+            let (Some(files), Some(positions)) = (
+                batch.column_by_name("file_path"),
+                batch.column_by_name("pos"),
+            ) else {
                 return Err(read_error(&path, "no file_path and pos columns"));
             };
-            let files = datafusion::arrow::compute::cast(files, &datafusion::arrow::datatypes::DataType::Utf8)
-                .map_err(|e| read_error(&path, e))?;
+            let files = datafusion::arrow::compute::cast(
+                files,
+                &datafusion::arrow::datatypes::DataType::Utf8,
+            )
+            .map_err(|e| read_error(&path, e))?;
             let files = files.as_string::<i32>();
             let positions = positions
                 .as_primitive_opt::<Int64Type>()
@@ -151,7 +165,10 @@ impl Deletes {
                 }
                 let pos = u64::try_from(positions.value(i))
                     .map_err(|_| read_error(&path, "a negative position"))?;
-                by_file.entry(files.value(i).to_string()).or_default().push(pos);
+                by_file
+                    .entry(files.value(i).to_string())
+                    .or_default()
+                    .push(pos);
             }
         }
         let by_file = Arc::new(by_file);
@@ -212,7 +229,9 @@ pub fn access_plan(counts: &[u64], deleted: &BTreeSet<u64>) -> ParquetAccessPlan
                 at = p + 1;
             }
             if at < count {
-                selectors.push(RowSelector::select(usize::try_from(count - at).unwrap_or(0)));
+                selectors.push(RowSelector::select(
+                    usize::try_from(count - at).unwrap_or(0),
+                ));
             }
             RowGroupAccess::Selection(RowSelection::from(selectors))
         });
@@ -241,6 +260,9 @@ mod tests {
             other => panic!("{other:?}"),
         }
         let all: BTreeSet<u64> = (0..3).collect();
-        assert!(matches!(access_plan(&[3], &all).inner()[0], RowGroupAccess::Skip));
+        assert!(matches!(
+            access_plan(&[3], &all).inner()[0],
+            RowGroupAccess::Skip
+        ));
     }
 }

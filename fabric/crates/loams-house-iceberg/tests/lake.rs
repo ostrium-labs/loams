@@ -11,10 +11,9 @@ use std::sync::Arc;
 use common::{Lake, column, context, dir, local};
 use datafusion::arrow::array::{
     Array, ArrayRef, AsArray, BooleanArray, Date32Array, Decimal128Array, FixedSizeBinaryArray,
-    Float32Array, Float64Array, Int8Array, Int16Array, Int32Array, Int64Array, ListArray,
-    MapArray, RecordBatch, StringArray, StructArray, TimestampMillisecondArray,
-    TimestampNanosecondArray, TimestampSecondArray, UInt8Array, UInt16Array, UInt32Array,
-    UInt64Array,
+    Float32Array, Float64Array, Int8Array, Int16Array, Int32Array, Int64Array, ListArray, MapArray,
+    RecordBatch, StringArray, StructArray, TimestampMillisecondArray, TimestampNanosecondArray,
+    TimestampSecondArray, UInt8Array, UInt16Array, UInt32Array, UInt64Array,
 };
 use datafusion::arrow::compute::concat_batches;
 use datafusion::arrow::datatypes::{DataType, Field, Int64Type, UInt32Type};
@@ -95,23 +94,54 @@ fn tier0() -> Vec<(&'static str, &'static str, ArrayRef)> {
     let ip6 = FixedSizeBinaryArray::try_from_iter(
         vec![
             "2001:db8::1".parse::<Ipv6Addr>().unwrap().octets().to_vec(),
-            "::ffff:1.2.3.4".parse::<Ipv6Addr>().unwrap().octets().to_vec(),
+            "::ffff:1.2.3.4"
+                .parse::<Ipv6Addr>()
+                .unwrap()
+                .octets()
+                .to_vec(),
         ]
         .into_iter(),
     )
     .unwrap();
-    let uuid = FixedSizeBinaryArray::try_from_iter(vec![[0x61u8; 16].to_vec(), [0u8; 16].to_vec()].into_iter()).unwrap();
+    let uuid = FixedSizeBinaryArray::try_from_iter(
+        vec![[0x61u8; 16].to_vec(), [0u8; 16].to_vec()].into_iter(),
+    )
+    .unwrap();
     vec![
         ("id", "UInt32", Arc::new(UInt32Array::from(vec![1, 2]))),
         ("u8", "UInt8", Arc::new(UInt8Array::from(vec![0, 255]))),
         ("u16", "UInt16", Arc::new(UInt16Array::from(vec![0, 65535]))),
-        ("u64", "UInt64", Arc::new(UInt64Array::from(vec![0, u64::MAX]))),
+        (
+            "u64",
+            "UInt64",
+            Arc::new(UInt64Array::from(vec![0, u64::MAX])),
+        ),
         ("i8", "Int8", Arc::new(Int8Array::from(vec![-128, 127]))),
-        ("i16", "Int16", Arc::new(Int16Array::from(vec![-32768, 32767]))),
-        ("i32", "Int32", Arc::new(Int32Array::from(vec![i32::MIN, i32::MAX]))),
-        ("i64", "Int64", Arc::new(Int64Array::from(vec![i64::MIN, i64::MAX]))),
-        ("f32", "Float32", Arc::new(Float32Array::from(vec![0.1, -0.0]))),
-        ("f64", "Float64", Arc::new(Float64Array::from(vec![1e21, -1e-7]))),
+        (
+            "i16",
+            "Int16",
+            Arc::new(Int16Array::from(vec![-32768, 32767])),
+        ),
+        (
+            "i32",
+            "Int32",
+            Arc::new(Int32Array::from(vec![i32::MIN, i32::MAX])),
+        ),
+        (
+            "i64",
+            "Int64",
+            Arc::new(Int64Array::from(vec![i64::MIN, i64::MAX])),
+        ),
+        (
+            "f32",
+            "Float32",
+            Arc::new(Float32Array::from(vec![0.1, -0.0])),
+        ),
+        (
+            "f64",
+            "Float64",
+            Arc::new(Float64Array::from(vec![1e21, -1e-7])),
+        ),
         ("b", "Bool", Arc::new(BooleanArray::from(vec![true, false]))),
         (
             "dec",
@@ -122,14 +152,27 @@ fn tier0() -> Vec<(&'static str, &'static str, ArrayRef)> {
                     .unwrap(),
             ),
         ),
-        ("s", "String", Arc::new(StringArray::from(vec!["a\tb", "it's"]))),
+        (
+            "s",
+            "String",
+            Arc::new(StringArray::from(vec!["a\tb", "it's"])),
+        ),
         (
             "fs",
             "FixedString(3)",
-            Arc::new(FixedSizeBinaryArray::try_from_iter(vec![b"ab\0".to_vec(), b"xyz".to_vec()].into_iter()).unwrap()),
+            Arc::new(
+                FixedSizeBinaryArray::try_from_iter(
+                    vec![b"ab\0".to_vec(), b"xyz".to_vec()].into_iter(),
+                )
+                .unwrap(),
+            ),
         ),
         ("d", "Date", Arc::new(Date32Array::from(vec![20384, 0]))),
-        ("d32", "Date32", Arc::new(Date32Array::from(vec![-25567, 65535]))),
+        (
+            "d32",
+            "Date32",
+            Arc::new(Date32Array::from(vec![-25567, 65535])),
+        ),
         (
             "dt",
             "DateTime('UTC')",
@@ -143,24 +186,49 @@ fn tier0() -> Vec<(&'static str, &'static str, ArrayRef)> {
         (
             "dt64",
             "DateTime64(3, 'UTC')",
-            Arc::new(TimestampMillisecondArray::from(vec![1_792_717_323_500, -500]).with_timezone("UTC")),
+            Arc::new(
+                TimestampMillisecondArray::from(vec![1_792_717_323_500, -500]).with_timezone("UTC"),
+            ),
         ),
         (
             "dt64n",
             "DateTime64(9, 'UTC')",
-            Arc::new(TimestampNanosecondArray::from(vec![1_792_717_323_123_456_789, 0]).with_timezone("UTC")),
+            Arc::new(
+                TimestampNanosecondArray::from(vec![1_792_717_323_123_456_789, 0])
+                    .with_timezone("UTC"),
+            ),
         ),
         ("uuid", "UUID", Arc::new(uuid)),
-        ("ip4", "IPv4", Arc::new(UInt32Array::from(vec![0x0102_0304, 0]))),
+        (
+            "ip4",
+            "IPv4",
+            Arc::new(UInt32Array::from(vec![0x0102_0304, 0])),
+        ),
         ("ip6", "IPv6", Arc::new(ip6)),
-        ("e", "Enum8('a' = 1, 'b' = 2)", Arc::new(Int8Array::from(vec![1, 2]))),
-        ("ns", "Nullable(String)", Arc::new(StringArray::from(vec![None, Some("")]))),
-        ("ni", "Nullable(Int32)", Arc::new(Int32Array::from(vec![None, Some(0)]))),
+        (
+            "e",
+            "Enum8('a' = 1, 'b' = 2)",
+            Arc::new(Int8Array::from(vec![1, 2])),
+        ),
+        (
+            "ns",
+            "Nullable(String)",
+            Arc::new(StringArray::from(vec![None, Some("")])),
+        ),
+        (
+            "ni",
+            "Nullable(Int32)",
+            Arc::new(Int32Array::from(vec![None, Some(0)])),
+        ),
         ("lc", "LowCardinality(String)", lc),
         ("arr", "Array(String)", Arc::new(arr)),
         ("m", "Map(String, UInt64)", Arc::new(map)),
         ("ntup", "Tuple(a UInt8, b String)", Arc::new(tup)),
-        ("j", "JSON", Arc::new(StringArray::from(vec![r#"{"a":1}"#, "{}"]))),
+        (
+            "j",
+            "JSON",
+            Arc::new(StringArray::from(vec![r#"{"a":1}"#, "{}"])),
+        ),
         (
             "st",
             "AggregateFunction(uniq, UInt64)",
@@ -200,11 +268,7 @@ async fn every_encoding_reads_back_as_written() {
         );
         let got = batch.column(i);
         let want = datafusion::arrow::compute::cast(array, got.data_type()).unwrap();
-        assert_eq!(
-            format!("{got:?}"),
-            format!("{want:?}"),
-            "{name} {ty}"
-        );
+        assert_eq!(format!("{got:?}"), format!("{want:?}"), "{name} {ty}");
     }
 }
 
@@ -245,20 +309,32 @@ async fn added_alias_and_renamed_columns() {
         ("z", Arc::new(StringArray::from(vec!["zz"]))),
     ])
     .await;
-    let batch = rows(&lake.pin(), "SELECT id, label, plus, n, z FROM t ORDER BY id").await;
+    let batch = rows(
+        &lake.pin(),
+        "SELECT id, label, plus, n, z FROM t ORDER BY id",
+    )
+    .await;
     let label = batch.column(1).as_string::<i32>();
     assert_eq!(
-        (0..3).map(|i| label.value(i).to_string()).collect::<Vec<_>>(),
+        (0..3)
+            .map(|i| label.value(i).to_string())
+            .collect::<Vec<_>>(),
         vec!["a", "b", "c"],
         "renamed"
     );
     let plus = datafusion::arrow::compute::cast(batch.column(2), &DataType::UInt64).unwrap();
     assert_eq!(
-        plus.as_primitive::<datafusion::arrow::datatypes::UInt64Type>().values().to_vec(),
+        plus.as_primitive::<datafusion::arrow::datatypes::UInt64Type>()
+            .values()
+            .to_vec(),
         vec![2, 3, 4]
     );
     assert_eq!(
-        batch.column(3).as_primitive::<UInt32Type>().values().to_vec(),
+        batch
+            .column(3)
+            .as_primitive::<UInt32Type>()
+            .values()
+            .to_vec(),
         vec![10, 20, 7],
         "the DEFAULT for older rows"
     );
@@ -266,7 +342,12 @@ async fn added_alias_and_renamed_columns() {
     let z = batch.column(4).as_string::<i32>();
     assert_eq!((z.value(0), z.value(2)), ("", "zz"), "the type's default");
     assert_eq!(
-        batch.schema().field(2).metadata().get(CH_TYPE).map(String::as_str),
+        batch
+            .schema()
+            .field(2)
+            .metadata()
+            .get(CH_TYPE)
+            .map(String::as_str),
         Some("UInt64")
     );
 }
@@ -289,13 +370,20 @@ async fn ttl_hides_expired_rows() {
         ("id", Arc::new(UInt32Array::from(vec![1, 2])) as ArrayRef),
         (
             "ts",
-            Arc::new(TimestampSecondArray::from(vec![1_000_000_000, 4_000_000_000])),
+            Arc::new(TimestampSecondArray::from(vec![
+                1_000_000_000,
+                4_000_000_000,
+            ])),
         ),
     ])
     .await;
     let batch = rows(&lake.pin(), "SELECT id FROM t").await;
     assert_eq!(
-        batch.column(0).as_primitive::<UInt32Type>().values().to_vec(),
+        batch
+            .column(0)
+            .as_primitive::<UInt32Type>()
+            .values()
+            .to_vec(),
         vec![2]
     );
 }
@@ -308,7 +396,11 @@ async fn pruning_skips_files() {
         &root,
         "default",
         "t",
-        vec![column("p", "UInt8"), column("id", "UInt64"), column("e", "Enum8('a' = 1, 'b' = 2)")],
+        vec![
+            column("p", "UInt8"),
+            column("id", "UInt64"),
+            column("e", "Enum8('a' = 1, 'b' = 2)"),
+        ],
         "MergeTree",
         "id",
         Some("p"),
@@ -336,7 +428,11 @@ async fn pruning_skips_files() {
         }
     };
     assert_eq!(count("SELECT count(*) FROM t").await, (400, 4));
-    assert_eq!(count("SELECT count(*) FROM t WHERE p = 2").await, (100, 1), "partition");
+    assert_eq!(
+        count("SELECT count(*) FROM t WHERE p = 2").await,
+        (100, 1),
+        "partition"
+    );
     assert_eq!(
         count("SELECT count(*) FROM t WHERE id >= 3050").await,
         (50, 1),
@@ -380,8 +476,16 @@ async fn sequenced_reads_and_empty_tables() {
         "SELECT id, __loams_seq, __loams_row FROM t ORDER BY __loams_seq, __loams_row",
     )
     .await;
-    let seq = batch.column(1).as_primitive::<Int64Type>().values().to_vec();
-    let row = batch.column(2).as_primitive::<Int64Type>().values().to_vec();
+    let seq = batch
+        .column(1)
+        .as_primitive::<Int64Type>()
+        .values()
+        .to_vec();
+    let row = batch
+        .column(2)
+        .as_primitive::<Int64Type>()
+        .values()
+        .to_vec();
     assert_eq!(seq, vec![1, 1, 2]);
     assert_eq!(row, vec![0, 1, 0]);
     // Time travel to the first snapshot sees its rows.
