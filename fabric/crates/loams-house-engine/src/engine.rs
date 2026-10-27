@@ -67,6 +67,7 @@ impl Engine {
                 "The setting {name} is not supported by the Loams House engine yet (plan HE1 Task 37)"
             )));
         }
+        let names = prepared.names;
         // DataFusion's defaults with ClickHouse's type rules in the analyzer
         // (plan HE1 Task 24). The plan is analyzed once; the answer's schema
         // is the analyzed plan's, whose fields carry the ClickHouse types
@@ -98,10 +99,41 @@ impl Engine {
             .map(|b| RecordBatch::try_new(schema.clone(), b.columns().to_vec()))
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| ChError::logical_error(e.to_string()))?;
+        let (schema, batches) = match names {
+            Some(names) => named(schema, batches, &names)?,
+            None => (schema, batches),
+        };
         Ok(Answer {
             schema,
             batches,
             format: prepared.format,
         })
     }
+}
+
+/// The answer's columns under ClickHouse's names, which may repeat (plan HE1
+/// Task 25: the plan names duplicates apart).
+fn named(
+    schema: SchemaRef,
+    batches: Vec<RecordBatch>,
+    names: &[String],
+) -> Result<(SchemaRef, Vec<RecordBatch>), ChError> {
+    if names.len() != schema.fields().len() {
+        return Ok((schema, batches));
+    }
+    let fields: Vec<_> = schema
+        .fields()
+        .iter()
+        .zip(names)
+        .map(|(f, n)| f.as_ref().clone().with_name(n))
+        .collect();
+    let renamed = Arc::new(
+        datafusion::arrow::datatypes::Schema::new(fields).with_metadata(schema.metadata().clone()),
+    );
+    let batches = batches
+        .into_iter()
+        .map(|b| RecordBatch::try_new(renamed.clone(), b.columns().to_vec()))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| ChError::logical_error(e.to_string()))?;
+    Ok((renamed, batches))
 }
