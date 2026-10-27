@@ -55,3 +55,27 @@ fn no_subcommand_does_not_start_anything() {
     let output = agentd().output().expect("run loams-agentd");
     assert!(!output.status.success(), "{output:?}");
 }
+
+#[test]
+fn agent_conformance_without_a_listing_exits_2() {
+    // MK1 Task 8: a run that cannot happen is exit 2, not a failed level.
+    let dir = std::env::temp_dir().join(format!("lapc-cli-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let output = agentd()
+        .args(["agent", "conformance"])
+        .arg(&dir)
+        .output()
+        .expect("run loams-agentd");
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("listing.json"));
+}
+
+#[test]
+fn agent_conformance_sign_needs_out() {
+    let output = agentd()
+        .args(["agent", "conformance", "x", "--sign"])
+        .output()
+        .expect("run loams-agentd");
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+}

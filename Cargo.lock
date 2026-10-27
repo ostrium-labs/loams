@@ -8589,9 +8589,11 @@ dependencies = [
  "base64 0.23.1",
  "hex",
  "jsonschema",
+ "loams-agentd-harness",
  "loams-agentd-marketplace",
  "rcgen",
  "reqwest 0.12.28",
+ "rustix 1.1.5",
  "rustls",
  "semver",
  "serde",
@@ -9733,6 +9735,14 @@ dependencies = [
  "tracing",
  "ulid 3.0.0",
  "unicode-segmentation",
+]
+
+[[package]]
+name = "loams-resp"
+version = "0.1.2"
+dependencies = [
+ "bytes",
+ "proptest",
 ]
 
 [[package]]
