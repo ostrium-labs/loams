@@ -9,6 +9,7 @@
 //! | [`authz`], [`audit`], [`store`] | ME1 Task 10 | The OpenFGA checks (`meter_admin`, `billing_admin`, `billing_viewer`; agents never hold the admin relations), audit events, the record store |
 //! | [`customers`], [`entitlements`], [`connect`] | ME1 Task 10 | `CustomerService` and `EntitlementService`, and their Connect face (`loams.meter.v1`) |
 //! | [`plan_yaml`], [`plans`] | ME1 Task 11 | Plans (with their meters and features) as YAML from the GitOps repository: versions and used meters immutable; `PlanService` applies and assigns them |
+//! | [`lease_service`] | ME1 Task 17 | `LeaseService` (internal Connect, service identities only) over ME-core's allocator, fenced by owner epochs; the gate's `EpochFence` |
 //! | [`reconcile`] | ME1 Task 13 | Every 5 minutes and at period close: counters reset to the House's totals at the pipe's committed offset plus the tail; drift over 1% of an allowance alerts |
 //!
 //! The House tables and the close job (ME1 Tasks 5–8) and the exporters
@@ -20,6 +21,7 @@ pub mod connect;
 pub mod customers;
 pub mod entitlements;
 pub mod error;
+pub mod lease_service;
 pub mod owner;
 pub mod plan_yaml;
 pub mod plans;

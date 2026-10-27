@@ -24,6 +24,11 @@ cargo_package(
     },
     tests = [
         {
+            "name": "leases",
+            "crate": "leases",
+            "root": "tests/leases.rs",
+        },
+        {
             "name": "owner",
             "crate": "owner",
             "root": "tests/owner.rs",

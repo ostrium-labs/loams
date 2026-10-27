@@ -12,6 +12,7 @@
 
 pub mod customers;
 pub mod entitlements;
+pub mod leases;
 pub mod plans;
 
 use connectrpc::{ConnectError, ErrorCode, ErrorDetail, RequestContext};
@@ -135,4 +136,13 @@ pub fn register(
     let router = customers::register(router, customers);
     let router = entitlements::register(router, entitlements);
     plans::register(router, plans)
+}
+
+/// Registers the internal `LeaseService` (service identities only), on the
+/// listener product roles reach.
+pub fn register_internal(
+    router: connectrpc::Router,
+    leases: std::sync::Arc<crate::lease_service::LeaseServer>,
+) -> connectrpc::Router {
+    leases::register(router, leases)
 }
