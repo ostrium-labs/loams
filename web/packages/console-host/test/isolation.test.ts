@@ -1,5 +1,5 @@
 import { Context } from '@loams/cordis';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import frameHtml from '../../../plugins/sandbox/static/frame.html?raw';
 import {
   createBridge,

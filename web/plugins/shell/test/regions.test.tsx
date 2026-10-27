@@ -2,7 +2,7 @@ import { type SessionService, ThemeController } from '@loams/console-host';
 import { type PanelTabProps, SlotProvider, SlotRegistry } from '@loams/slots';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 import { Layout } from '../src/layout.js';
 import { DRAWER, INSPECTOR, PanelController } from '../src/panel.js';
 import { tabShows } from '../src/regions.js';

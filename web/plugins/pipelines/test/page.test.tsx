@@ -5,7 +5,7 @@
 
 import { validateManifest } from '@loams/console-host';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import pkg from '../package.json';
 import { createMockPipelinesClient, type MockOptions } from '../src/mock.js';
 import { metricSpec } from '../src/NodeMetrics.js';

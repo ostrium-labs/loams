@@ -11,7 +11,7 @@ import { cx } from './cx';
 
 export function InputGroup({ className, ...props }: ComponentProps<'div'>) {
   return (
-    // biome-ignore lint/a11y/useSemanticElements: a fieldset is a form section with a legend; this is one composite control
+    // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a fieldset is a form section with a legend; this is one composite control
     <div
       role="group"
       className={cx(
@@ -41,7 +41,7 @@ export function InputGroupAddon({
   ...props
 }: ComponentProps<'div'> & { align?: 'start' | 'end' }) {
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: the press only forwards focus to the input, which is the keyboard path
+    // oxlint-disable-next-line jsx-a11y/no-static-element-interactions -- the press only forwards focus to the input, which is the keyboard path
     <div
       className={cx(
         'flex h-full shrink-0 cursor-text select-none items-center gap-1.5 text-faint',

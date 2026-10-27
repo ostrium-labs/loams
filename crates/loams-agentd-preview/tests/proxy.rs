@@ -295,7 +295,7 @@ async fn streaming_headers_websocket_cancellation_and_restart() {
         let (mut ws, _) = tokio_tungstenite::client_async(request, tcp).await.unwrap();
         for msg in [
             Message::Text("hot-update".into()),
-            Message::Binary(vec![7; 256 * 1024]),
+            Message::Binary(vec![7; 256 * 1024].into()),
         ] {
             ws.send(msg.clone()).await.unwrap();
             assert!(ws.next().await.unwrap().unwrap() == msg);

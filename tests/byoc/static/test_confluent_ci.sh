@@ -24,6 +24,13 @@ set +e; o2="$(run env CONFLUENT_CI_ENVIRONMENT=env-3kqddw "$s" reap --dry-run 2>
 [[ $rc != 0 ]] && grep -q protected <<<"$o2" && ok "the oracle's environment is refused" || bad "env-3kqddw accepted: $o2"
 set +e; run env CONFLUENT_CI_ENVIRONMENT='env-x;rm' "$s" reap --dry-run >/dev/null 2>&1; rc=$?; set -e
 [[ $rc != 0 ]] && ok "a malformed environment id is refused" || bad "env-x;rm accepted"
+grep -q 'keep key KEYOTHERENV5' <<<"$out" && ! grep -q 'WOULD DELETE API key KEYOTHERENV5' <<<"$out" \
+  && ok "reaper_keeps_keys_outside_the_environment (API keys are listed org-wide)" || bad "a key outside the environment would be deleted: $out"
+# Without fixtures, only loams-ci (env-3kqygo) is accepted; refused before any API call.
+set +e; o3="$(env -u CONFLUENT_CI_FIXTURES CONFLUENT_CLOUD_API_KEY=x CONFLUENT_CLOUD_API_SECRET=x CONFLUENT_API_URL=http://127.0.0.1:9 \
+  CONFLUENT_CI_ENVIRONMENT=env-test01 CONFLUENT_CI_WORK="$(mktemp -d)" "$s" reap --dry-run 2>&1)"; rc=$?; set -e
+[[ $rc != 0 ]] && grep -q 'only ever touches env-3kqygo' <<<"$o3" && ok "reaper_only_touches_loams_ci (env-3kqygo)" || bad "another environment accepted: $o3"
+grep -q 'ci_env="env-3kqygo"' "$s" && ok "the loams-ci environment is pinned in the script" || bad "ci_env not pinned"
 
 # The nightly: no-op until enabled, teardown under always(), one at a time, no key in the file.
 wf="$repo/.github/workflows/byoc-confluent-nightly.yml"
