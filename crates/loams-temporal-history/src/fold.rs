@@ -5,7 +5,7 @@ use prost::Message as _;
 use crate::time::{dur_ms, ms, ts};
 use crate::{
     ActivityInfo, Attributes, EventType, HistoryEvent, MutableState, STATE_VERSION, TimerInfo,
-    WorkflowExecutionStatus, WorkflowTaskInfo,
+    UpdateInfo, UpdateState, WorkflowExecutionStatus, WorkflowTaskInfo,
 };
 
 /// Why a history cannot be folded.
@@ -137,6 +137,25 @@ fn close(s: &mut MutableState, e: &HistoryEvent, status: WorkflowExecutionStatus
     s.workflow_task = None;
     s.activities.clear();
     s.timers.clear();
+    abort_updates(s);
+}
+
+/// What a run's close does to its in-flight updates (the gateway's
+/// statemachine does the same): accepted ones fail with Temporal's message,
+/// the others are aborted without an outcome.
+pub fn abort_updates(s: &mut MutableState) {
+    for u in &mut s.updates {
+        match u.state() {
+            UpdateState::Accepted => {
+                u.state = UpdateState::Aborted as i32;
+                u.outcome = Some(crate::update_closed_outcome());
+            }
+            UpdateState::Admitted | UpdateState::Sent => {
+                u.state = UpdateState::Aborted as i32;
+            }
+            _ => {}
+        }
+    }
 }
 
 fn apply(s: &mut MutableState, e: &HistoryEvent, a: &Attributes) -> Result<(), FoldError> {
@@ -266,6 +285,57 @@ fn apply(s: &mut MutableState, e: &HistoryEvent, a: &Attributes) -> Result<(), F
         }
         Attributes::WorkflowExecutionSignaledEventAttributes(_) => s.signal_count += 1,
         Attributes::WorkflowExecutionCancelRequestedEventAttributes(_) => s.cancel_requested = true,
+        Attributes::WorkflowExecutionUpdateAdmittedEventAttributes(x) => {
+            let update_id = x
+                .request
+                .as_ref()
+                .and_then(|r| r.meta.as_ref())
+                .map(|m| m.update_id.clone())
+                .unwrap_or_default();
+            if crate::update(s, &update_id).is_none() {
+                s.updates.push(UpdateInfo {
+                    update_id,
+                    state: UpdateState::Admitted as i32,
+                    request: x.request.clone(),
+                    admitted_time: e.event_time,
+                    ..Default::default()
+                });
+            }
+        }
+        Attributes::WorkflowExecutionUpdateAcceptedEventAttributes(x) => {
+            let request = x.accepted_request.clone();
+            match crate::update_mut(s, &x.protocol_instance_id) {
+                Some(u) => {
+                    u.state = UpdateState::Accepted as i32;
+                    u.accepted_event_id = id;
+                    if request.is_some() {
+                        u.request = request;
+                    }
+                }
+                None => s.updates.push(UpdateInfo {
+                    update_id: x.protocol_instance_id.clone(),
+                    state: UpdateState::Accepted as i32,
+                    request,
+                    accepted_event_id: id,
+                    admitted_time: e.event_time,
+                    ..Default::default()
+                }),
+            }
+        }
+        Attributes::WorkflowExecutionUpdateCompletedEventAttributes(x) => {
+            let update_id = x
+                .meta
+                .as_ref()
+                .map(|m| m.update_id.clone())
+                .unwrap_or_default();
+            let u = crate::update_mut(s, &update_id)
+                .filter(|u| u.accepted_event_id == x.accepted_event_id)
+                .ok_or_else(|| unknown(id, "update", &update_id))?;
+            u.state = UpdateState::Completed as i32;
+            u.completed_event_id = id;
+        }
+        // Old servers wrote rejections; they change no state.
+        Attributes::WorkflowExecutionUpdateRejectedEventAttributes(_) => {}
         Attributes::MarkerRecordedEventAttributes(_)
         | Attributes::UpsertWorkflowSearchAttributesEventAttributes(_)
         | Attributes::WorkflowPropertiesModifiedEventAttributes(_) => {}
