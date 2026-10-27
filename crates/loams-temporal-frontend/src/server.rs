@@ -166,6 +166,25 @@ impl Gateway {
                 }
             }
         });
+        // Children, continue-as-new and external requests (D2087).
+        let (ftx, mut frx) = tokio::sync::mpsc::unbounded_channel();
+        frontend.engine.set_followups(ftx);
+        let f = frontend.clone();
+        let mut sd = shutdown.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = sd.wait_for(|s| *s) => return,
+                    m = frx.recv() => match m {
+                        Some(fu) => {
+                            let f = f.clone();
+                            tokio::spawn(async move { f.on_follow_up(fu).await });
+                        }
+                        None => return,
+                    }
+                }
+            }
+        });
 
         let mut callbacks = raw
             .subscribe(CALLBACK_GROUP)

@@ -8,9 +8,10 @@ use loams_temporal_history::time::ms;
 use loams_temporal_history::{Attributes, History, HistoryEvent, MutableState};
 use loams_temporal_proto::temporal::api::command::v1::{
     CancelTimerCommandAttributes, CancelWorkflowExecutionCommandAttributes, Command,
-    CompleteWorkflowExecutionCommandAttributes, FailWorkflowExecutionCommandAttributes,
-    RecordMarkerCommandAttributes, RequestCancelActivityTaskCommandAttributes,
-    ScheduleActivityTaskCommandAttributes, StartTimerCommandAttributes, command,
+    CompleteWorkflowExecutionCommandAttributes, ContinueAsNewWorkflowExecutionCommandAttributes,
+    FailWorkflowExecutionCommandAttributes, RecordMarkerCommandAttributes,
+    RequestCancelActivityTaskCommandAttributes, ScheduleActivityTaskCommandAttributes,
+    StartTimerCommandAttributes, command,
 };
 use loams_temporal_proto::temporal::api::workflowservice::v1::StartWorkflowExecutionRequest;
 use loams_temporal_statemachine::{Input, Reply, apply};
@@ -28,6 +29,8 @@ const DX1: &[&str] = &[
     "activity_heartbeat_details",
     // TMP-api (D2080).
     "update_accepted_completed",
+    "signal_with_start",
+    "continue_as_new_3",
 ];
 
 fn nanos(e: &HistoryEvent) -> i128 {
@@ -101,6 +104,27 @@ fn command_of(a: &Attributes) -> Option<command::Attributes> {
                 details: x.details.clone(),
             })
         }
+        Attributes::WorkflowExecutionContinuedAsNewEventAttributes(x) => {
+            C::ContinueAsNewWorkflowExecutionCommandAttributes(
+                ContinueAsNewWorkflowExecutionCommandAttributes {
+                    workflow_type: x.workflow_type.clone(),
+                    task_queue: x.task_queue.clone(),
+                    input: x.input.clone(),
+                    workflow_run_timeout: x.workflow_run_timeout,
+                    workflow_task_timeout: x.workflow_task_timeout,
+                    backoff_start_interval: x.backoff_start_interval,
+                    initiator: x.initiator,
+                    failure: x.failure.clone(),
+                    last_completion_result: x.last_completion_result.clone(),
+                    header: x.header.clone(),
+                    memo: x.memo.clone(),
+                    search_attributes: x.search_attributes.clone(),
+                    #[allow(deprecated)]
+                    inherit_build_id: x.inherit_build_id,
+                    ..Default::default()
+                },
+            )
+        }
         _ => return None,
     })
 }
@@ -118,6 +142,9 @@ fn completed_by(a: &Attributes) -> i64 {
             x.workflow_task_completed_event_id
         }
         Attributes::WorkflowExecutionFailedEventAttributes(x) => x.workflow_task_completed_event_id,
+        Attributes::WorkflowExecutionContinuedAsNewEventAttributes(x) => {
+            x.workflow_task_completed_event_id
+        }
         Attributes::WorkflowExecutionCanceledEventAttributes(x) => {
             x.workflow_task_completed_event_id
         }
@@ -270,6 +297,17 @@ pub fn script(events: &[HistoryEvent]) -> Vec<(i64, Input)> {
                 worker_version: x.worker_version.clone(),
                 force_create_new_workflow_task: false,
                 messages: messages.remove(&e.event_id).unwrap_or_default(),
+                new_run_id: events
+                    .iter()
+                    .find_map(|c| match c.attributes.as_ref() {
+                        Some(Attributes::WorkflowExecutionContinuedAsNewEventAttributes(x))
+                            if x.workflow_task_completed_event_id == e.event_id =>
+                        {
+                            Some(x.new_execution_run_id.clone())
+                        }
+                        _ => None,
+                    })
+                    .unwrap_or_default(),
             },
             Attributes::WorkflowTaskFailedEventAttributes(x) => Input::WorkflowTaskFailed {
                 scheduled_event_id: x.scheduled_event_id,
@@ -337,6 +375,55 @@ pub fn script(events: &[HistoryEvent]) -> Vec<(i64, Input)> {
             _ => continue,
         };
         out.push((t, e.event_id, input));
+    }
+    // Signal-with-start: the signal written as event 2, between the
+    // started event and the first workflow task, came with the start.
+    if let Some(si) = out
+        .iter()
+        .position(|(_, id, i)| *id == 2 && matches!(i, Input::Signal { .. }))
+        && let Some(st) = out.iter().position(|(_, id, _)| *id == 1)
+    {
+        let (_, _, sig) = out.remove(si);
+        let Input::Signal {
+            name,
+            input,
+            identity,
+            header,
+            request_id,
+        } = sig
+        else {
+            unreachable!("matched above")
+        };
+        if let (
+            t,
+            id,
+            Input::Start {
+                namespace_id,
+                run_id,
+                request,
+            },
+        ) = out.remove(st)
+        {
+            out.insert(
+                st,
+                (
+                    t,
+                    id,
+                    Input::SignalWithStart {
+                        namespace_id,
+                        run_id,
+                        request,
+                        signal: loams_temporal_statemachine::StartSignal {
+                            name,
+                            input,
+                            identity,
+                            header,
+                            request_id,
+                        },
+                    },
+                ),
+            );
+        }
     }
     out.sort_by_key(|(t, id, _)| (*t, *id));
     out.into_iter()

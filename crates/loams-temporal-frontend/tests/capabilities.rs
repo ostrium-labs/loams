@@ -44,7 +44,26 @@ const SCHEDULES: &[&str] = &[
 ];
 
 /// The methods lane TMP-api added on top of DX1 (2026-10-27).
-const TMP_API: &[&str] = &["UpdateWorkflowExecution", "PollWorkflowExecutionUpdate"];
+const TMP_API: &[&str] = &[
+    "UpdateWorkflowExecution",
+    "PollWorkflowExecutionUpdate",
+    "SignalWithStartWorkflowExecution",
+    "ResetWorkflowExecution",
+    "RespondActivityTaskCompletedById",
+    "RespondActivityTaskFailedById",
+    "RespondActivityTaskCanceledById",
+    "RecordActivityTaskHeartbeatById",
+    "GetWorkflowExecutionHistoryReverse",
+    "DescribeTaskQueue",
+    "GetClusterInfo",
+    "ListTaskQueuePartitions",
+    "ShutdownWorker",
+    "UpdateNamespace",
+    "DeprecateNamespace",
+    "GetWorkerBuildIdCompatibility",
+    "GetWorkerVersioningRules",
+    "GetWorkerTaskReachability",
+];
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn capabilities_match_impl() {

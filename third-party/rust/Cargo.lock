@@ -7384,6 +7384,7 @@ dependencies = [
  "landlock",
  "libc",
  "loro",
+ "md-5 0.11.0",
  "memmap2",
  "mimalloc",
  "moka",
@@ -7416,6 +7417,7 @@ dependencies = [
  "reqwest 0.12.28",
  "reqwest 0.13.5",
  "resonate-base",
+ "resonate-client",
  "resonate-gateway-http",
  "resonate-plugin",
  "resonate-sdk",
@@ -10554,6 +10556,19 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "resonate-client"
+version = "0.10.1"
+source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+dependencies = [
+ "async-trait",
+ "reqwest 0.12.28",
+ "resonate-core",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

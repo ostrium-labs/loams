@@ -100,7 +100,9 @@ type database
     define can_read: viewer from environment
     define can_write: editor from environment
     define can_admin: deployer from environment
-    define can_connect: viewer from environment
+    # Connection details and credentials need editor, not viewer (§46 R1.9, plan IA1 ruling
+    # IA2.R3): a viewer reads a database's settings but never gets a credential to it.
+    define can_connect: editor from environment
 
 # A managed engine instance (design 81, D1919): RisingWave, Flink SQL or Spark, in one namespace.
 # `can_connect` is the gateway's check for the engine's own protocol (Postgres wire, Flink SQL
@@ -111,7 +113,8 @@ type engine
     define can_view: viewer from environment
     define can_operate: editor from environment
     define can_admin: deployer from environment
-    define can_connect: viewer from environment
+    # Like `database` (§46 R1.9): a viewer sees an engine but never gets a credential to it.
+    define can_connect: editor from environment
 
 # The tuple stores `allowed_session` and `expires`; the request supplies `session_id` and `now`.
 condition agent_session(session_id: string, allowed_session: string, now: timestamp, expires: timestamp) {
