@@ -139,6 +139,8 @@ export default defineConfig({
     tabWidth: 2,
     printWidth: 100,
     singleQuote: true,
+    // Keep package.json key order as written; sorting would rewrite every manifest.
+    sortPackageJson: false,
     ignorePatterns: ['**/dist/**'],
   },
 });
