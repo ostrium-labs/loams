@@ -95,6 +95,7 @@ async fn real_pi_mock_lifecycle() {
             resume: session.clone(),
             attachments: vec![],
             worktree: None,
+            mcp_servers: Vec::new(),
             mcp: None,
         };
         let previous_session = session.clone();
@@ -193,6 +194,7 @@ async fn real_pi_mock_lifecycle() {
         resume: session.clone(),
         attachments: vec![],
         worktree: None,
+        mcp_servers: Vec::new(),
         mcp: None,
     };
     let events: Vec<_> = tokio::time::timeout(
@@ -265,6 +267,7 @@ async fn real_pi_steering_bursts_share_the_next_model_call() {
         resume: None,
         attachments: vec![],
         worktree: None,
+        mcp_servers: Vec::new(),
         mcp: None,
     };
     let mut stream = harness.run(request, controls).await.unwrap();

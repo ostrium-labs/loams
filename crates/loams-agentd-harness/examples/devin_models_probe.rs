@@ -38,6 +38,7 @@ async fn main() -> anyhow::Result<()> {
         interrupt: CancellationToken::new(),
     };
     let request = RunRequest {
+        mcp_servers: Vec::new(),
         mcp: None,
         prompt: "Reply with exactly: Devin model discovery verified. Do not use tools.".into(),
         harness: None,

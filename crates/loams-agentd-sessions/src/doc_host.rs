@@ -2903,6 +2903,7 @@ impl DocHost {
         };
         let config = chat.config;
         Some(loams_agentd_proto::RunRequest {
+            mcp_servers: Vec::new(),
             mcp: None,
             prompt: prompt.to_string(),
             harness: config.as_ref().map(|c| c.harness),

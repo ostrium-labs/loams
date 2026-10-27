@@ -8492,6 +8492,7 @@ dependencies = [
  "hyper-util",
  "jsonwebtoken",
  "loams-agentd-doc",
+ "loams-agentd-marketplace",
  "loams-agentd-proto",
  "loams-agentd-rpc",
  "loams-agentd-sessions",
@@ -8590,7 +8591,11 @@ dependencies = [
  "hex",
  "jsonschema",
  "loams-agentd-harness",
+ "loams-agentd-marketplace",
+ "rcgen",
+ "reqwest 0.12.28",
  "rustix 1.1.5",
+ "rustls",
  "semver",
  "serde",
  "serde_json",
@@ -8599,6 +8604,8 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
+ "tokio-rustls",
+ "tracing",
 ]
 
 [[package]]
@@ -8700,6 +8707,7 @@ dependencies = [
  "libc",
  "loams-agentd-doc",
  "loams-agentd-harness",
+ "loams-agentd-marketplace",
  "loams-agentd-preview",
  "loams-agentd-proto",
  "loams-agentd-rpc",

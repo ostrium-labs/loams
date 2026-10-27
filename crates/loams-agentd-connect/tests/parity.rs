@@ -80,6 +80,7 @@ struct Clients {
     review: pb::ReviewServiceClient<HttpClient>,
     groups: pb::RunGroupServiceClient<HttpClient>,
     approvals: pb::ApprovalServiceClient<HttpClient>,
+    market: pb::MarketplaceServiceClient<HttpClient>,
 }
 
 struct Daemon {
@@ -152,6 +153,11 @@ impl Daemon {
         let runtime = Engine::assemble_runtime(&config, EngineProfile::local(&data).unwrap())
             .await
             .unwrap();
+        // The marketplace over the testkit's signed fake index (MK1 Task 4b).
+        let world = loams_agentd_marketplace::testkit::World::new(&root.join("agentd"));
+        let market = loams_agentd_marketplace::MarketplaceHost::open(world.deps()).unwrap();
+        assert!(market.refresh().await.is_empty());
+        runtime.core().attach_marketplace(market);
         let engine: Arc<dyn RpcService> = runtime.core().rpc_service();
         let agentd = Agentd::new(
             engine.clone(),
@@ -196,7 +202,8 @@ impl Daemon {
             notifications: pb::NotificationServiceClient::new(http(), config.clone()),
             review: pb::ReviewServiceClient::new(http(), config.clone()),
             groups: pb::RunGroupServiceClient::new(http(), config.clone()),
-            approvals: pb::ApprovalServiceClient::new(http(), config),
+            approvals: pb::ApprovalServiceClient::new(http(), config.clone()),
+            market: pb::MarketplaceServiceClient::new(http(), config),
         };
         let ndjson = memory_client(engine);
         let info: rs::EngineInfo = ndjson
@@ -644,6 +651,7 @@ fn section(n: usize, s: &mut Suite) -> Option<BoxFuture<'_, ()>> {
         7 => Box::pin(review_and_search(s)),
         8 => Box::pin(run_groups(s)),
         9 => Box::pin(approvals_and_teardown(s)),
+        10 => Box::pin(marketplace(s)),
         _ => return None,
     })
 }
@@ -1934,5 +1942,111 @@ async fn approvals_and_teardown(s: &mut Suite) {
         |d| json!({ "op": "deleteSpace", "spaceId": "space-1" }),
         projects.delete_project(json!({ "spaceId": "space-1" })),
         |r| mutated(r.ok)
+    );
+}
+
+/// The scenario's MarketplaceService (MK1 Task 4b), over each daemon's own
+/// testkit world.
+async fn marketplace(s: &mut Suite) {
+    use loams_agentd_marketplace::testkit::HARNESS_ID;
+    use loams_agentd_proto::marketplace as rs_market;
+    unary!(
+        s,
+        "/loams.agentd.v1.MarketplaceService/ListSources",
+        ListMarketplaceSources,
+        |d| json!({}),
+        market.list_sources(json!({})),
+        |r| Wire::from_pb(r)?
+    );
+    // A plain-http index is refused alike.
+    unary!(
+        s,
+        "/loams.agentd.v1.MarketplaceService/AddSource",
+        AddMarketplaceSource,
+        |d| json!({ "name": "plain", "url": "http://example.org/index.json", "identity": "x" }),
+        market.add_source(
+            json!({ "name": "plain", "url": "http://example.org/index.json", "identity": "x" })
+        ),
+        |r| from_msg(r.source, "source")?
+    );
+    unary!(
+        s,
+        "/loams.agentd.v1.MarketplaceService/RemoveSource",
+        RemoveMarketplaceSource,
+        |d| json!({ "name": "nowhere" }),
+        market.remove_source(json!({ "name": "nowhere" })),
+        |r| ok(true)
+    );
+    unary!(
+        s,
+        "/loams.agentd.v1.MarketplaceService/SearchListings",
+        SearchListings,
+        |d| json!({ "kinds": ["harness"], "tiers": ["community"] }),
+        market.search_listings(
+            json!({ "kinds": ["KIND_HARNESS"], "tiers": ["LISTING_TIER_COMMUNITY"] })
+        ),
+        |r| Wire::from_pb(r)?
+    );
+    unary!(
+        s,
+        "/loams.agentd.v1.MarketplaceService/GetListing",
+        GetListing,
+        |d| json!({ "id": "ostrium/github-mcp-server" }),
+        market.get_listing(json!({ "id": "ostrium/github-mcp-server" })),
+        |r| Wire::from_pb(r)?
+    );
+    let (a, b) = unary!(
+        s,
+        "/loams.agentd.v1.MarketplaceService/PlanInstall",
+        PlanInstall,
+        |d| json!({ "id": HARNESS_ID, "version": "1.0.0" }),
+        market.plan_install(json!({ "id": HARNESS_ID, "version": "1.0.0" })),
+        |r| Wire::from_pb(r)?
+    );
+    s.learn("digest", &a["plan"]["digest"], &b["plan"]["digest"]);
+    unary!(
+        s,
+        "/loams.agentd.v1.MarketplaceService/Install",
+        InstallListing,
+        |d| json!({ "id": HARNESS_ID, "version": "1.0.0", "planDigest": d.get("digest") }),
+        market.install(
+            json!({ "id": HARNESS_ID, "version": "1.0.0", "planDigest": d.get("digest") })
+        ),
+        |r| Wire::from_pb(r)?
+    );
+    unary!(
+        s,
+        "/loams.agentd.v1.MarketplaceService/ListInstalled",
+        ListInstalledListings,
+        |d| json!({}),
+        market.list_installed(json!({})),
+        |r| Wire::from_pb(r)?
+    );
+    unary!(
+        s,
+        "/loams.agentd.v1.MarketplaceService/CheckUpdates",
+        CheckListingUpdates,
+        |d| json!({}),
+        market.check_updates(json!({})),
+        |r| Wire::from_pb(r)?
+    );
+    // 1.1.0 reaches a new host: without its plan's digest, refused alike.
+    unary!(
+        s,
+        "/loams.agentd.v1.MarketplaceService/Update",
+        UpdateListing,
+        |d| json!({ "id": HARNESS_ID }),
+        market.update(json!({ "id": HARNESS_ID })),
+        |r| rs_market::InstalledListingReply {
+            installed: from_msg(r.installed, "installed")?
+        }
+    );
+    unary!(
+        s,
+        "/loams.agentd.v1.MarketplaceService/Uninstall",
+        UninstallListing,
+        |d| json!({ "id": HARNESS_ID }),
+        market.uninstall(json!({ "id": HARNESS_ID })),
+        |r| ok(true)
     );
 }

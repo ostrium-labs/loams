@@ -84,6 +84,7 @@ cargo_package(
     },
     dev_deps = [
         "//crates/loams-agentd-doc:loams-agentd-doc",
+        "//crates/loams-agentd-marketplace:loams-agentd-marketplace",
         "//crates/loams-agentd-sessions:loams-agentd-sessions",
         "//third-party/rust:base64-0_23",
         "//third-party/rust:buffa-descriptor",
@@ -95,6 +96,9 @@ cargo_package(
         "//third-party/rust:connectrpc-build",
     ],
     build_script = "build.rs",
+    extra_srcs = {
+        "schemas/marketplace/listing.v1.json": "//:file=schemas+marketplace+listing.v1.json",
+    },
     rustc_flags = [
         "-Funsafe_code",
         "-Wmissing_debug_implementations",

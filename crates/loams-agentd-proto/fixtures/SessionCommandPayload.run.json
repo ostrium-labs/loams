@@ -18,6 +18,18 @@
       },
       "name": "loams-desktop"
     },
+    "mcpServers": [
+      {
+        "args": [
+          "stdio"
+        ],
+        "command": "/home/dev/.loams-agentd/agents/ostrium/github-mcp-server/2.0.3/github-mcp-server",
+        "env": {
+          "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_example"
+        },
+        "name": "marketplace-ostrium-github-mcp-server"
+      }
+    ],
     "model": "claude-sonnet",
     "modelOptions": {},
     "prompt": "Fix the build",
