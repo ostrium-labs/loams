@@ -6,11 +6,17 @@
 // `/studio/factory`, its nav entry is in Studio's Factory group, and the old
 // `/factory` paths redirect there. The plugin is in both modes only for its Console
 // overview card (`meta.mode: "console"`) and for the redirects, which must answer
-// in Console too. Desktop-only until SF1's web half (D922).
+// in Console too.
+//
+// On the desktop it reads through `desktop.factory` (Electron main, a client of
+// loams-agentd) and embeds the apps (D678). In a browser it reads through
+// `studio.factory`, Studio's bridge to the selected agentd host: the panels work,
+// an app opens in a new tab, and credentials are configured on the desktop (SF1
+// amendment F1-F5, amending D922).
 
 import { type PluginModule, type RouterService, service } from '@loams/console-host';
 import type { Context } from '@loams/cordis';
-import type { FactoryAppId } from '@loams/desktop/contracts';
+import type { FactoryAppId, IpcResult, LoamsDesktopApi } from '@loams/desktop/contracts';
 // Brings in the `desktop` service type (a module augmentation of `Services`).
 import type {} from '@loams/platform-electron';
 import { type ReactNode, useEffect } from 'react';
@@ -49,11 +55,55 @@ function Redirect({ router }: { router: RouterService }) {
   return null;
 }
 
+/** `studio.factory`: Studio's bridge to the agentd host's FactoryService (web). */
+type WebBridge = Pick<
+  LoamsDesktopApi['factory'],
+  'list' | 'configure' | 'test' | 'remove' | 'query' | 'openApp'
+>;
+
+const unsupported: IpcResult<void> = {
+  ok: false,
+  code: 'unsupported',
+  message: 'A browser opens an app in a new tab',
+};
+
+/** The browser's bridge in the desktop bridge's shape: no embedding, new tabs. */
+function webDesktop(
+  bridge: WebBridge,
+  openExternal: (url: string) => Promise<void>,
+): LoamsDesktopApi {
+  return {
+    factory: {
+      ...bridge,
+      closeApp: async () => {},
+      showEmbedded: async () => unsupported,
+      hideEmbedded: async () => {},
+      reloadEmbedded: async () => {},
+      popOut: (app: FactoryAppId) => bridge.openApp(app),
+    },
+    shell: {
+      openExternal: async (url: string) => {
+        await openExternal(url);
+        return { ok: true, value: undefined };
+      },
+    },
+  } as unknown as LoamsDesktopApi;
+}
+
 const plugin: PluginModule = {
   name: 'factory',
-  inject: ['desktop', 'router', 'slots', 'transport'],
+  // The catalog narrows this per edition: `desktop` on the desktop, `studio.factory`
+  // in a browser.
+  inject: ['desktop', 'studio.factory', 'platform', 'router', 'slots', 'transport'],
   apply(ctx: Context) {
-    const desktop = service(ctx, 'desktop');
+    const platform = service(ctx, 'platform');
+    const embeds = platform.kind === 'desktop';
+    const desktop = embeds
+      ? service(ctx, 'desktop')
+      : webDesktop(
+          (ctx as unknown as Record<string, WebBridge>)['studio.factory'] as WebBridge,
+          (url) => platform.openExternal(url),
+        );
     // The run record is in the Live app `factory`, read through the engine transport.
     let runs: RunsSource | undefined;
     const runsSource = (): RunsSource => {
@@ -65,12 +115,16 @@ const plugin: PluginModule = {
     const navigate = (to: string) => router.navigate(to);
     const app = (params: Record<string, string>) => params.app as FactoryAppId;
     const view: Record<(typeof PAGES)[number][1], (p: Record<string, string>) => ReactNode> = {
-      'factory-embedded': (p) => <EmbeddedApp desktop={desktop} app={app(p)} navigate={navigate} />,
-      'factory-configure': (p) => (
-        <ConfigurePage desktop={desktop} app={app(p)} navigate={navigate} />
+      'factory-embedded': (p) => (
+        <EmbeddedApp desktop={desktop} app={app(p)} navigate={navigate} embeds={embeds} />
       ),
-      'factory-app': (p) => <PanelsPage desktop={desktop} app={app(p)} navigate={navigate} />,
-      factory: () => <FactoryHome desktop={desktop} navigate={navigate} />,
+      'factory-configure': (p) => (
+        <ConfigurePage desktop={desktop} app={app(p)} navigate={navigate} embeds={embeds} />
+      ),
+      'factory-app': (p) => (
+        <PanelsPage desktop={desktop} app={app(p)} navigate={navigate} embeds={embeds} />
+      ),
+      factory: () => <FactoryHome desktop={desktop} navigate={navigate} embeds={embeds} />,
       'factory-runs': () => <RunsPage source={runsSource()} />,
     };
     // The router takes the first match: PAGES lists the longer paths first.

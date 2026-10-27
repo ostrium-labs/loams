@@ -29,7 +29,9 @@ fn loopback_message(addr: &str) -> String {
 fn args(flags: &[&str]) -> HouseArgs {
     let cli = Cli::try_parse_from(["loams-fabric", "house"].iter().chain(flags))
         .unwrap_or_else(|err| panic!("{flags:?}: {err}"));
-    let Role::House(args) = cli.role;
+    let Role::House(args) = cli.role else {
+        panic!("{flags:?}: not the house role");
+    };
     args
 }
 

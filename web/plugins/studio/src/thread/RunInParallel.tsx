@@ -132,7 +132,7 @@ export function RunInParallelDialog({
         <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
           <legend className="mb-1 text-micro font-medium text-faint">Variants</legend>
           {variants.map((variant, index) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: rows are positional.
+            // oxlint-disable-next-line react/no-array-index-key -- rows are positional.
             <div key={index} className="flex items-center gap-2">
               <Select
                 aria-label={`Variant ${index + 1} harness`}

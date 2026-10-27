@@ -4,7 +4,7 @@
 import { SHELL_COMMAND_EVENT } from '@loams/console-host';
 import type { StudioEditor } from '@loams/desktop/contracts';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { type StudioDesktop, studioAgentd } from '../src/agentd.js';
 import { listenShellCommands, StudioCommands } from '../src/palette/commands.js';
 import { SETTINGS_KEY, SettingsPage } from '../src/settings/Settings.js';

@@ -54,7 +54,7 @@ cargo_package(
         "//third-party/rust:proptest",
         "//third-party/rust:rand-0_9",
         "//third-party/rust:rand_chacha",
-        "//third-party/rust:sha2-0_11",
+        "//third-party/rust:sha2",
         "//third-party/rust:tempfile",
     ],
     rustc_flags = [

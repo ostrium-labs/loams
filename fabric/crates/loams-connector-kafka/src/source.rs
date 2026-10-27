@@ -20,22 +20,29 @@
 //! * **Backpressure**: `next` returns at most the budget and holds at most
 //!   one record back (the one that did not fit), so the consumer is never
 //!   drained ahead of the pipeline.
+//! * **Debezium** (`format: debezium-json | debezium-avro`, CC1 Task 3):
+//!   each record is decoded by [`DebeziumDecoder`]. A record that is not a
+//!   change event is `Poison` (the pipeline dead-letters it and the source
+//!   moves past it); a record whose decoding failed for another reason (the
+//!   registry was unreachable) is kept and decoded again on the next call;
+//!   a dropped tombstone only moves the position.
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use loams_connector_sdk::{
-    Budget, CloudEvent, ConnectorError, EventBatch, Position, Source, SourceBatch, SourceFactory,
-    Split, SplitEnumerator, SplitState,
+    Budget, CloudEvent, ConnectorError, ErrorClass, EventBatch, Position, Source, SourceBatch,
+    SourceFactory, Split, SplitEnumerator, SplitState,
 };
 use rdkafka::consumer::{BaseConsumer, CommitMode, Consumer, StreamConsumer};
 use rdkafka::error::RDKafkaErrorCode;
 use rdkafka::{Message, Offset, TopicPartitionList};
 use serde_json::json;
 
-use crate::config::{CALL_TIMEOUT, Connection, OffsetReset};
-use crate::error::{class_of_code, join_error, kafka_error};
+use crate::config::{CALL_TIMEOUT, Connection, OffsetReset, RecordFormat};
+use crate::debezium::{DebeziumDecoder, RawRecord};
+use crate::error::{AuthWatch, class_of, class_of_code, join_error, kafka_error};
 use crate::record::event_from_message;
 
 /// A split's id: `<topic>/<partition>`.
@@ -70,7 +77,7 @@ fn offset_of(pos: &Position) -> Result<i64, ConnectorError> {
 /// Finds the topic-partitions of the configured topics.
 pub struct KafkaEnumerator {
     conn: Arc<Connection>,
-    client: Option<Arc<BaseConsumer>>,
+    client: Option<Arc<BaseConsumer<AuthWatch>>>,
 }
 
 impl std::fmt::Debug for KafkaEnumerator {
@@ -86,13 +93,13 @@ impl KafkaEnumerator {
         Self { conn, client: None }
     }
 
-    async fn client(&mut self) -> Result<Arc<BaseConsumer>, ConnectorError> {
+    async fn client(&mut self) -> Result<Arc<BaseConsumer<AuthWatch>>, ConnectorError> {
         if let Some(c) = &self.client {
             return Ok(c.clone());
         }
         let cfg = self.conn.base().await?;
-        let c: BaseConsumer = cfg
-            .create()
+        let c: BaseConsumer<AuthWatch> = cfg
+            .create_with_context(AuthWatch::default())
             .map_err(|e| kafka_error("creating the metadata client", &e))?;
         let c = Arc::new(c);
         self.client = Some(c.clone());
@@ -104,14 +111,24 @@ impl KafkaEnumerator {
 impl SplitEnumerator for KafkaEnumerator {
     async fn discover(&mut self, _known: &[SplitState]) -> Result<Vec<Split>, ConnectorError> {
         let client = self.client().await?;
+        let watch = client.clone();
         let topics = self.conn.cfg.topics.clone();
         let (found, brokers) = tokio::task::spawn_blocking(move || {
             let mut found = Vec::new();
             let mut brokers = Vec::new();
             for topic in &topics {
-                let md = client
-                    .fetch_metadata(Some(topic), CALL_TIMEOUT)
-                    .map_err(|e| kafka_error(&format!("metadata for {topic}"), &e))?;
+                let md = match client.fetch_metadata(Some(topic), CALL_TIMEOUT) {
+                    Ok(md) => md,
+                    Err(e) => {
+                        let what = format!("metadata for {topic}");
+                        return Err(match refused_login(&client) {
+                            Some(reason) => {
+                                ConnectorError::new(ErrorClass::Auth, format!("{what}: {reason}"))
+                            }
+                            None => kafka_error(&what, &e),
+                        });
+                    }
+                };
                 for b in md.brokers() {
                     brokers.push((b.host().to_owned(), b.port()));
                 }
@@ -138,7 +155,8 @@ impl SplitEnumerator for KafkaEnumerator {
             Ok((found, brokers))
         })
         .await
-        .map_err(|e| join_error("metadata", e))??;
+        .map_err(|e| join_error("metadata", e))?
+        .map_err(|e| watch.context().classify(e))?;
 
         // librdkafka dials the brokers the metadata names: each one passes the
         // egress check too.
@@ -164,6 +182,27 @@ impl SplitEnumerator for KafkaEnumerator {
         splits.dedup_by(|a, b| a.id == b.id);
         Ok(splits)
     }
+}
+
+/// The reason librdkafka refused this client's login, if it did. librdkafka
+/// reports a refused SASL login as an event on the client's queue, not as
+/// the failed call's error (that is a timeout or a transport failure): serve
+/// the queued events so [`AuthWatch`] sees it, or take it from the event.
+fn refused_login(client: &BaseConsumer<AuthWatch>) -> Option<String> {
+    // `poll` also answers `None` for an event it served itself (a log
+    // line), so a `None` does not mean the queue is empty: poll a bounded
+    // number of times.
+    for _ in 0..256 {
+        if let Some(Err(e)) = client.poll(Duration::ZERO)
+            && class_of(&e) == ErrorClass::Auth
+        {
+            return Some(e.to_string());
+        }
+        if let Some(reason) = client.context().refused() {
+            return Some(reason);
+        }
+    }
+    client.context().refused()
 }
 
 /// Makes one [`KafkaSource`] per split.
@@ -197,6 +236,17 @@ pub struct KafkaSource {
     pending: Option<(CloudEvent, i64)>,
     /// A consumer error that arrived after some records; reported next.
     deferred: Option<ConnectorError>,
+    /// The Debezium decoder, with `format: debezium-*`.
+    decoder: Option<Arc<DebeziumDecoder>>,
+    /// A record to decode (again) before reading on: its decoding failed
+    /// after some records were taken, or with a transient error.
+    pending_raw: Option<RawRecord>,
+}
+
+/// What one consumed record became.
+enum Read {
+    Event(CloudEvent, i64),
+    Raw(RawRecord),
 }
 
 impl std::fmt::Debug for KafkaSource {
@@ -219,6 +269,8 @@ impl KafkaSource {
             next_offset: None,
             pending: None,
             deferred: None,
+            decoder: None,
+            pending_raw: None,
         }
     }
 
@@ -340,6 +392,21 @@ impl Source for KafkaSource {
         self.next_offset = resume;
         self.pending = None;
         self.deferred = None;
+        self.pending_raw = None;
+        self.decoder = match self.conn.cfg.format {
+            RecordFormat::Plain => None,
+            format => {
+                let registry = self.conn.registry().await?.map(|r| {
+                    Arc::new(r) as Arc<dyn loams_connector_sdk::schema::registry::SchemaRegistry>
+                });
+                Some(Arc::new(DebeziumDecoder::new(
+                    self.conn.envelope.clone(),
+                    format,
+                    self.conn.cfg.debezium.clone(),
+                    registry,
+                )?))
+            }
+        };
         self.consumer = Some(consumer);
         Ok(())
     }
@@ -371,43 +438,83 @@ impl Source for KafkaSource {
 
         let wait = Duration::from_millis(self.conn.cfg.poll_wait_ms);
         while events.len() < max_rows {
-            // Wait for the first record; after that take only what is ready.
-            let limit = if events.is_empty() {
-                wait
-            } else {
-                Duration::ZERO
-            };
-            let msg = match tokio::time::timeout(limit, consumer.recv()).await {
-                Err(_) => break,
-                Ok(m) => m,
-            };
-            match msg {
-                Ok(m) => {
-                    let offset = m.offset();
-                    let ev = event_from_message(&self.conn.envelope, &m);
-                    let size = ev.size_bytes();
-                    if !budget.admits(events.len() + 1, bytes + size) {
-                        if events.is_empty() {
-                            self.next_offset = Some(offset + 1);
-                            return Err(self.too_large(offset, size, budget));
+            let read = match self.pending_raw.take() {
+                Some(raw) => Read::Raw(raw),
+                None => {
+                    // Wait for the first record; after that take only what
+                    // is ready.
+                    let limit = if events.is_empty() {
+                        wait
+                    } else {
+                        Duration::ZERO
+                    };
+                    let msg = match tokio::time::timeout(limit, consumer.recv()).await {
+                        Err(_) => break,
+                        Ok(m) => m,
+                    };
+                    match msg {
+                        Ok(m) => match &self.decoder {
+                            None => {
+                                Read::Event(event_from_message(&self.conn.envelope, &m), m.offset())
+                            }
+                            Some(_) => Read::Raw(RawRecord::from_message(&m)),
+                        },
+                        Err(e) => {
+                            let err = kafka_error(
+                                &format!("reading {}/{}", self.topic, self.partition),
+                                &e,
+                            );
+                            if events.is_empty() && self.pending.is_none() {
+                                return Err(err);
+                            }
+                            self.deferred = Some(err);
+                            break;
                         }
-                        self.pending = Some((ev, offset));
-                        break;
                     }
-                    bytes += size;
-                    events.push(ev);
+                }
+            };
+            let (ev, offset) = match read {
+                Read::Event(ev, offset) => (ev, offset),
+                Read::Raw(raw) => {
+                    let Some(decoder) = self.decoder.clone() else {
+                        return Err(ConnectorError::fatal("a raw record without a decoder"));
+                    };
+                    match decoder.decode(&raw).await {
+                        Ok(Some(ev)) => (ev, raw.offset),
+                        // A dropped tombstone: only the position moves.
+                        Ok(None) => {
+                            self.next_offset = Some(raw.offset + 1);
+                            continue;
+                        }
+                        Err(e) => {
+                            if events.is_empty() {
+                                if e.class == loams_connector_sdk::ErrorClass::Poison {
+                                    // Dead-lettered by the pipeline: move past it.
+                                    self.next_offset = Some(raw.offset + 1);
+                                } else {
+                                    self.pending_raw = Some(raw);
+                                }
+                                return Err(e);
+                            }
+                            // Report it on the next call, after this batch.
+                            self.pending_raw = Some(raw);
+                            break;
+                        }
+                    }
+                }
+            };
+            let size = ev.size_bytes();
+            if !budget.admits(events.len() + 1, bytes + size) {
+                if events.is_empty() {
                     self.next_offset = Some(offset + 1);
+                    return Err(self.too_large(offset, size, budget));
                 }
-                Err(e) => {
-                    let err =
-                        kafka_error(&format!("reading {}/{}", self.topic, self.partition), &e);
-                    if events.is_empty() && self.pending.is_none() {
-                        return Err(err);
-                    }
-                    self.deferred = Some(err);
-                    break;
-                }
+                self.pending = Some((ev, offset));
+                break;
             }
+            bytes += size;
+            events.push(ev);
+            self.next_offset = Some(offset + 1);
         }
         if events.is_empty() {
             return Ok(None);
@@ -439,6 +546,7 @@ impl Source for KafkaSource {
             .await;
         }
         self.pending = None;
+        self.pending_raw = None;
         Ok(())
     }
 }

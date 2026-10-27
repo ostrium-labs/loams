@@ -189,8 +189,14 @@ EOF2
 
 DOCS=("$ROOT/docs/guides/durable" "$ROOT/docs/guides/compute")
 
-matrix_from_fixture() {
-  python3 -I "$ROOT/scripts/compute/matrix.py" --self-test
+# The durable section of the matrix renders the fixture's run as committed:
+# green with an expected failure, red (an unlisted failure, an unexpected
+# pass), not run and not merged.
+matrix_durable_from_fixture() {
+  local m=$TD/matrix-durable
+  python3 -I "$ROOT/scripts/compute/matrix.py" durable --compute-dir "$m/compute" --junit-dir "$m/junit" \
+    --date 2026-10-27 --loams-version 0.0.0-fixture --commit 0000000 >"$SCRATCH/durable.md"
+  diff -u "$m/expected.md" "$SCRATCH/durable.md"
 }
 
 # Every `<!-- snippet: path -->` is followed by a code block equal to that
@@ -231,7 +237,10 @@ docs_compute_wording() {
     if grep -niE 'temporal[- ]compatible|drop-in|production[- ]ready' "$f"; then
       echo "docs_compute_wording: $f"; hits=1
     fi
-    if [ "$(basename "$f")" != compatibility.md ] && ! grep -q '^Status: ' "$f"; then
+    # DX0's own pages state their status (the gateway's pages, DX1 Task 11's,
+    # carry theirs in prose).
+    case $(basename "$f") in README.md | airflow.md | dbos.md | temporal-compat-mode.md | compatibility.md) ;; *) continue ;; esac
+    if ! grep -q '^Status: ' "$f"; then
       echo "docs_compute_wording: $f has no 'Status:' line"; hits=1
     fi
   done
@@ -284,6 +293,39 @@ compute_compat_workflow_runs_every_suite() {
   done
   grep -qF 'conformance/compute/dbos-$l/run.sh' "$wf" || { echo "compute-compat.yml does not run the DBOS suites"; hits=1; }
   return $hits
+}
+
+# --- The compatibility matrix (DX1 Task 11; DX0 Task 7 adds durable rows) --------
+
+MATRIX=(python3 "$ROOT/scripts/compute/matrix.py")
+
+# A fixture run renders the committed Markdown: a pass, an expected failure
+# with its issue, an unlisted failure, a skipped and a missing case, a method
+# with no SDK case, and the methods outside the set.
+matrix_from_fixture() {
+  local m=$TD/matrix
+  "${MATRIX[@]}" temporal-gateway --junit "$m/run.junit.xml" --xfail "$m/xfail.toml" \
+    --methods "$m/methods.toml" --service "$m/service.proto" --run "fixture, 2026-10-27" >"$SCRATCH/matrix.md"
+  diff -u "$m/expected.md" "$SCRATCH/matrix.md"
+  # A methods file naming a method the service lacks is refused.
+  sed 's/^name = "RegisterNamespace"$/name = "NoSuchMethod"/' "$m/methods.toml" >"$SCRATCH/bad.toml"
+  expect_fail "${MATRIX[@]}" temporal-gateway --junit "$m/run.junit.xml" --methods "$SCRATCH/bad.toml" --service "$m/service.proto"
+  grep -q NoSuchMethod "$SCRATCH/out"
+}
+
+# The guide's matrix is what matrix.py renders from the committed last run,
+# and methods.toml lists exactly the frontend's DX1 set.
+matrix_guide_current() {
+  local g=$HERE/temporal/gateway
+  "${MATRIX[@]}" temporal-gateway --junit "$g/last-run.junit.xml" --run "$(cat "$g/last-run.txt")" \
+    --check "$ROOT/docs/guides/durable/temporal-gateway.md"
+  python3 - "$g/methods.toml" "$ROOT/crates/loams-temporal-frontend/src/capabilities.rs" <<'PY'
+import re, sys, tomllib
+listed = [m["name"] for m in tomllib.load(open(sys.argv[1], "rb"))["method"]]
+src = open(sys.argv[2], encoding="utf-8").read()
+impl = re.findall(r'"(\w+)"', src.split("pub const IMPLEMENTED")[1].split("];")[0])
+assert sorted(listed) == sorted(impl), sorted(set(listed) ^ set(impl))
+PY
 }
 
 # --- The compose override (OC0 Task 2's tests) -----------------------------------
@@ -431,7 +473,8 @@ TESTS=(
   no_loams_sql_in_dx0 pg_mode_urls pins_are_literal
   corpus_manifest_complete normalize_selftest
   airflow_python_parses airflow_effects_copies_match airflow_af_log_lines
-  matrix_from_fixture docs_compute_snippets_match_files docs_compute_wording
+  matrix_from_fixture matrix_guide_current matrix_durable_from_fixture
+  docs_compute_snippets_match_files docs_compute_wording
   recipe_endpoint_mode_matches_suite compute_compat_workflow_runs_every_suite
 )
 COMPOSE_TESTS=(

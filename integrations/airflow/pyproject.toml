@@ -1,0 +1,108 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "airflow-provider-loams"
+version = "0.1.0"
+description = "Apache Airflow provider for Loams: Loams Postgres, House, streams over the Kafka gateway, object storage, Iceberg tables and Graph."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+authors = [{ name = "Ostrium Labs" }]
+keywords = ["airflow", "airflow-provider", "loams", "postgres", "clickhouse", "iceberg", "kafka"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Plugins",
+  "Framework :: Apache Airflow",
+  "Framework :: Apache Airflow :: Provider",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3 :: Only",
+]
+# Airflow is pinned to the 3.3 line, at 3.3.2 (2026-09-17) or later. The
+# provider uses only Airflow's public interface (hooks, operators, triggers,
+# sensors, asset URI handlers, filesystems), but it is tested on 3.3 only.
+dependencies = [
+  "apache-airflow>=3.3.2,<3.4",
+  "apache-airflow-providers-common-sql>=2.2.0",
+  "apache-airflow-providers-postgres>=7.1.0",
+  "httpx>=0.27.0",
+  "loams>=0.1.2",
+]
+
+[project.optional-dependencies]
+# Streams through the Iggy Kafka gateway.
+kafka = ["confluent-kafka>=2.16.0"]
+# Loams object storage (S3-compatible) and the `loams-s3://` ObjectStoragePath scheme.
+s3 = ["boto3>=1.35.0", "s3fs>=2026.9.0"]
+# Iceberg tables through the Lakekeeper REST catalog.
+iceberg = ["pyiceberg[pyarrow]>=0.12.0"]
+all = [
+  "confluent-kafka>=2.16.0",
+  "boto3>=1.35.0",
+  "s3fs>=2026.9.0",
+  "pyiceberg[pyarrow]>=0.12.0",
+]
+
+[project.scripts]
+# The Resonate executor's interim worker (D2094).
+loams-airflow-resonate-worker = "airflow.providers.loams.executors.resonate.worker:main"
+
+[project.entry-points.apache_airflow_provider]
+provider_info = "airflow.providers.loams.get_provider_info:get_provider_info"
+
+[project.urls]
+Homepage = "https://loams.dev"
+Repository = "https://github.com/ostrium-labs/loams"
+Documentation = "https://github.com/ostrium-labs/loams/blob/dev/integrations/airflow/docs/index.md"
+Issues = "https://github.com/ostrium-labs/loams/issues"
+
+[dependency-groups]
+dev = [
+  "pytest==9.1.1",
+  "pytest-asyncio==1.4.0",
+  "ruff==0.17.0",
+]
+
+[tool.uv]
+# The 14-day rule (AGENT-RULES): nothing published after 2026-10-13 is
+# resolved. Airflow itself is held to 3.3.2 in CI by the `ci` constraint below.
+exclude-newer = "2026-10-13T00:00:00Z"
+constraint-dependencies = ["apache-airflow==3.3.2", "apache-airflow-core==3.3.2", "apache-airflow-task-sdk==1.3.2"]
+
+[tool.uv.sources]
+# The SDK comes from this checkout, so the provider is tested against the SDK
+# of the same commit (and exclude-newer does not apply to it).
+loams = { path = "../../sdks/python" }
+
+[tool.hatch.build.targets.wheel]
+# PEP 420: `airflow/` and `airflow/providers/` belong to apache-airflow, so the
+# wheel ships only `airflow/providers/loams`.
+only-include = ["src/airflow/providers/loams"]
+sources = ["src"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/airflow/providers/loams", "tests", "example_dags", "docs", "provider.yaml", "README.md", "pyproject.toml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"
+pythonpath = ["src", "."]
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+src = ["src", "tests", "example_dags"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["RUF012"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["airflow.providers.loams"]

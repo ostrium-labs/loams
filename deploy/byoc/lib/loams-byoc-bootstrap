@@ -191,4 +191,7 @@ fi
 systemctl daemon-reload
 systemctl enable loams-byoc.service
 systemctl restart loams-byoc.service
+# Rotated Confluent keys reach the connect role within 5 minutes (a no-op
+# without CONFLUENT_INTEGRATIONS; design 80 §7.2).
+systemctl enable --now loams-byoc-confluent.timer
 say "done: the engine joins your tailnet as ${TS_HOSTNAME:-loams}; check with: journalctl -u loams-byoc"

@@ -134,9 +134,12 @@ jobs:
           path: target/compute-results
       - name: render
         run: |
-          python3 scripts/compute/matrix.py render --junit-dir target/compute-results \
+          # The durable section, spliced into a copy of the committed page:
+          # the artifact is the page to commit by hand (owner, 2026-10-27).
+          cp docs/guides/compute/compatibility.md target/compatibility.md
+          python3 scripts/compute/matrix.py durable --junit-dir target/compute-results \
             --date "$(date -u +%F)" --loams-version "${GITHUB_REF_NAME}" --commit "${GITHUB_SHA::9}" \
-            --out target/compatibility.md
+            --splice target/compatibility.md
           cat target/compatibility.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7.0.2
         with:
