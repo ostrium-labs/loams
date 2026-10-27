@@ -30,7 +30,7 @@ use std::time::Duration;
 use datafusion::arrow::array::RecordBatch;
 use datafusion::arrow::datatypes::DataType;
 use datafusion::common::tree_node::{TreeNode, TreeNodeRecursion};
-use datafusion::execution::runtime_env::RuntimeEnvBuilder;
+use datafusion::execution::runtime_env::{RuntimeEnv, RuntimeEnvBuilder};
 use datafusion::logical_expr::expr::{AggregateFunction, Cast, TryCast};
 use datafusion::logical_expr::{Expr, JoinType, LogicalPlan};
 use datafusion::prelude::{SessionConfig, SessionContext};
@@ -679,17 +679,21 @@ impl Settings {
         }
     }
 
-    /// A DataFusion session for the statement: `max_threads` as
-    /// `target_partitions`, `max_block_size` as `batch_size`, and
-    /// `max_memory_usage` as the memory pool's limit.
+    /// DataFusion's configuration for the statement: `max_threads` as
+    /// `target_partitions` and `max_block_size` as `batch_size`.
+    pub fn config(&self) -> SessionConfig {
+        SessionConfig::new()
+            .with_target_partitions(self.target_partitions())
+            .with_batch_size(self.max_block_size.max(1))
+    }
+
+    /// DataFusion's runtime for the statement: `max_memory_usage` as the
+    /// memory pool's limit.
     ///
     /// # Errors
     ///
-    /// DataFusion's, should its runtime not build.
-    pub fn session(&self) -> Result<SessionContext, ChError> {
-        let config = SessionConfig::new()
-            .with_target_partitions(self.target_partitions())
-            .with_batch_size(self.max_block_size.max(1));
+    /// DataFusion's, should the runtime not build.
+    pub fn runtime(&self) -> Result<Arc<RuntimeEnv>, ChError> {
         let mut runtime = RuntimeEnvBuilder::new();
         if self.max_memory_usage > 0 {
             runtime = runtime.with_memory_limit(
@@ -697,10 +701,20 @@ impl Settings {
                 1.0,
             );
         }
-        let runtime: Arc<_> = runtime
-            .build_arc()
-            .map_err(loams_house_sql::plan::ch_error)?;
-        Ok(SessionContext::new_with_config_rt(config, runtime))
+        runtime.build_arc().map_err(loams_house_sql::plan::ch_error)
+    }
+
+    /// A DataFusion session for the statement, with [`Settings::config`] and
+    /// [`Settings::runtime`].
+    ///
+    /// # Errors
+    ///
+    /// DataFusion's, should the runtime not build.
+    pub fn session(&self) -> Result<SessionContext, ChError> {
+        Ok(SessionContext::new_with_config_rt(
+            self.config(),
+            self.runtime()?,
+        ))
     }
 
     /// Holds the answer to `max_result_rows` and `max_result_bytes` under

@@ -366,6 +366,7 @@ loams-zitadel = { path = "crates/loams-zitadel", version = "0.1.2" }
 loams-agentd-cli = { path = "crates/loams-agentd-cli", version = "0.1.2" }
 loams-agentd-connect = { path = "crates/loams-agentd-connect", version = "0.1.2" }
 loams-agentd-doc = { path = "crates/loams-agentd-doc", version = "0.1.2" }
+loams-agentd-factory = { path = "crates/loams-agentd-factory", version = "0.1.2" }
 loams-agentd-harness = { path = "crates/loams-agentd-harness", version = "0.1.2" }
 loams-agentd-link = { path = "crates/loams-agentd-link", version = "0.1.2" }
 loams-agentd-mcp = { path = "crates/loams-agentd-mcp", version = "0.1.2" }

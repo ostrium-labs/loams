@@ -27,6 +27,11 @@ bytes.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+# `tests/lake.rs` (plan HE1 Task 26) writes the corpus's lake fixtures with the
+# House's own writer: dev-dependencies only (`engine_crates_stay_apart` reads
+# normal dependencies).
+loams-house-lake = { path = "../loams-house-lake" }
+arrow-ipc.workspace = true
 
 [[bin]]
 name = "loams-house-engine-dev"
