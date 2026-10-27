@@ -21,11 +21,11 @@ bad() { echo "FAIL $*"; fail=1; }
 run() { local name="$1"; shift; if out="$("$@" 2>&1)"; then ok "$name"; else bad "$name"; echo "$out" | sed 's/^/     /' | head -40; fi; }
 
 run "tofu fmt -check" "$tofu" fmt -check -recursive "$tofu_dir"
-for ex in aws-vm gcp-vm azure-vm confluent aws-vm-confluent; do
+for ex in aws-vm gcp-vm azure-vm confluent aws-vm-confluent aws-free gcp-free azure-free; do
   run "init $ex" "$tofu" -chdir="$tofu_dir/examples/$ex" init "${init_args[@]}"
   run "validate $ex" "$tofu" -chdir="$tofu_dir/examples/$ex" validate
 done
-for mod in aws-vm gcp-vm azure-vm confluent; do
+for mod in aws-vm gcp-vm azure-vm confluent aws-free gcp-free azure-free; do
   run "init $mod" "$tofu" -chdir="$tofu_dir/modules/$mod" init "${init_args[@]}"
   run "test $mod" "$tofu" -chdir="$tofu_dir/modules/$mod" test
 done

@@ -22,4 +22,8 @@ canInstall: boolean,
  * `None` — the catalog came from an engine predating the setting — means
  * "unknown": consumers fall back to detection (see [`descriptor_enabled`]).
  */
-enabled?: boolean | null, };
+enabled?: boolean | null, 
+/**
+ * The listing id of a [`HarnessId::Marketplace`] harness (MK1 Task 4b).
+ */
+marketplaceListing?: string | null, };

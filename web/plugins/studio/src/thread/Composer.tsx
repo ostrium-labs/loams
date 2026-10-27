@@ -128,7 +128,12 @@ export interface ThreadComposerProps {
   onGroupStarted?: (groupId: string) => void;
   /** Opens a mentioned file (the thread's Files panel). */
   openFile?: (path: string) => void;
+  /** "Add a harness…" in the harness picker: the Seed Exchange's harnesses (MK1 Task 9). */
+  onAddHarness?: () => void;
 }
+
+/** The harness picker's "Add a harness…" entry. */
+const ADD_HARNESS = 'add-harness';
 
 const NO_RECORDS = new Map();
 
@@ -201,6 +206,7 @@ function ComposerWithDaemon({
   onStarted,
   onGroupStarted,
   openFile,
+  onAddHarness,
   transport,
 }: ThreadComposerProps & { transport: Transport }) {
   const isNew = givenThreadId === undefined;
@@ -231,9 +237,17 @@ function ComposerWithDaemon({
   const host = useAgentdQuery(StudioService.method.getHost, {});
   const canRunGroups = host.data?.host?.features.includes('run-groups') ?? false;
   const harnessList = useAgentdQuery(HarnessService.method.listHarnesses, {});
-  const harnesses: HarnessDescriptor[] = useMemo(
+  const usable: HarnessDescriptor[] = useMemo(
     () => (harnessList.data?.harnesses ?? []).filter((h) => h.installed && h.enabled !== false),
     [harnessList.data],
+  );
+  // Harnesses installed from the Seed Exchange (MK1 Tasks 4b, 9) share one HarnessId and
+  // are told apart by their listing. A thread cannot run on one yet (Task 4b ruling 8), so
+  // the picker lists them but does not offer them.
+  const harnesses = useMemo(() => usable.filter((h) => h.id !== HarnessId.MARKETPLACE), [usable]);
+  const fromMarketplace = useMemo(
+    () => usable.filter((h) => h.id === HarnessId.MARKETPLACE),
+    [usable],
   );
   const chatHarness = chat?.config?.harness || undefined;
   const harness: HarnessId | undefined =
@@ -696,14 +710,26 @@ function ComposerWithDaemon({
             <SelectMenu
               label="Harness"
               value={String(harness)}
-              onValueChange={(v) =>
+              onValueChange={(v) => {
+                if (v === ADD_HARNESS) {
+                  onAddHarness?.();
+                  return;
+                }
                 store.getState().update(draftKey, {
                   harness: HarnessId[Number(v) as HarnessId],
                   model: undefined,
                   reasoning: undefined,
-                })
-              }
-              options={harnesses.map((h) => ({ value: String(h.id), label: h.name }))}
+                });
+              }}
+              options={[
+                ...harnesses.map((h) => ({ value: String(h.id), label: h.name })),
+                ...fromMarketplace.map((h) => ({
+                  value: `marketplace:${h.marketplaceListing ?? h.name}`,
+                  label: `${h.name} (from the Seed Exchange; threads on it come later)`,
+                  disabled: true,
+                })),
+                ...(onAddHarness ? [{ value: ADD_HARNESS, label: 'Add a harness…' }] : []),
+              ]}
               className={PICKER}
             />
           )}

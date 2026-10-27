@@ -1,0 +1,17 @@
+{
+  "id": "chatcmpl-fixture-2",
+  "object": "chat.completion",
+  "created": 1760000000,
+  "model": "deepseek-fixture",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "```json\n{\"name\": \"Ada Lovelace\", \"age\": 36}\n```"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {"prompt_tokens": 140, "completion_tokens": 22, "total_tokens": 162}
+}

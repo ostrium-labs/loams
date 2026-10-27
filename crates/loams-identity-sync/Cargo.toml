@@ -1,0 +1,29 @@
+[package]
+name = "loams-identity-sync"
+description = "The identity sync: Zitadel's event list into OpenFGA's tuples and Loams' principal links, with a signed wake-up webhook and a reconciliation (design 76 §8.1; D1608, D1622, D1623, D1624, D1628; plan IA1, IA3)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+hex.workspace = true
+hmac.workspace = true
+loams-authz.workspace = true
+loams-zitadel.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+time = { workspace = true, features = ["serde"] }
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+reqwest.workspace = true
+
+[lints]
+workspace = true

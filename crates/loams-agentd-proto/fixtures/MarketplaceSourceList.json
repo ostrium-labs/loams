@@ -1,0 +1,14 @@
+{
+  "sources": [
+    {
+      "error": null,
+      "identity": "https://github.com/ostrium-labs/loams-marketplace/.github/workflows/publish.yml@refs/heads/main",
+      "issuer": "https://token.actions.githubusercontent.com",
+      "listings": 6,
+      "name": "official",
+      "official": true,
+      "refreshedMs": 1791797400000,
+      "url": "https://ostrium-labs.github.io/loams-marketplace/index.json"
+    }
+  ]
+}

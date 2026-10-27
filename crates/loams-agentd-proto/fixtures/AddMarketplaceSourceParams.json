@@ -1,0 +1,6 @@
+{
+  "identity": "https://github.com/example/market/.github/workflows/publish.yml@refs/heads/main",
+  "issuer": null,
+  "name": "example",
+  "url": "https://example.org/market/index.json"
+}

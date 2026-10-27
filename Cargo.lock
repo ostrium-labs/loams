@@ -8374,6 +8374,7 @@ dependencies = [
  "hyper-util",
  "jsonwebtoken",
  "loams-apps-mock",
+ "loams-authz",
  "loams-cache",
  "loams-cloud-admin",
  "loams-cloudevents",
@@ -8452,6 +8453,7 @@ dependencies = [
  "loams-agentd-doc",
  "loams-agentd-harness",
  "loams-agentd-link",
+ "loams-agentd-marketplace",
  "loams-agentd-mcp",
  "loams-agentd-proto",
  "loams-agentd-rpc",
@@ -8490,6 +8492,7 @@ dependencies = [
  "hyper-util",
  "jsonwebtoken",
  "loams-agentd-doc",
+ "loams-agentd-marketplace",
  "loams-agentd-proto",
  "loams-agentd-rpc",
  "loams-agentd-sessions",
@@ -8587,6 +8590,12 @@ dependencies = [
  "base64 0.23.1",
  "hex",
  "jsonschema",
+ "loams-agentd-harness",
+ "loams-agentd-marketplace",
+ "rcgen",
+ "reqwest 0.12.28",
+ "rustix 1.1.5",
+ "rustls",
  "semver",
  "serde",
  "serde_json",
@@ -8595,6 +8604,8 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
+ "tokio-rustls",
+ "tracing",
 ]
 
 [[package]]
@@ -8696,6 +8707,7 @@ dependencies = [
  "libc",
  "loams-agentd-doc",
  "loams-agentd-harness",
+ "loams-agentd-marketplace",
  "loams-agentd-preview",
  "loams-agentd-proto",
  "loams-agentd-rpc",
@@ -9209,6 +9221,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-identity-sync"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "axum 0.8.9",
+ "hex",
+ "hmac 0.13.0",
+ "loams-authz",
+ "loams-zitadel",
+ "reqwest 0.13.5",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.21",
+ "time",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "loams-iggy-sink"
 version = "0.1.2"
 dependencies = [
@@ -9372,6 +9404,27 @@ dependencies = [
  "connectrpc-build",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "loams-llm"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "axum 0.8.9",
+ "jsonschema",
+ "rand 0.9.5",
+ "reqwest 0.13.5",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "zeroize",
 ]
 
 [[package]]
@@ -9724,6 +9777,14 @@ dependencies = [
  "tracing",
  "ulid 3.0.0",
  "unicode-segmentation",
+]
+
+[[package]]
+name = "loams-resp"
+version = "0.1.2"
+dependencies = [
+ "bytes",
+ "proptest",
 ]
 
 [[package]]

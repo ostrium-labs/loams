@@ -10,8 +10,8 @@ use async_trait::async_trait;
 use openfga_client::client::{
     BatchCheckItem, BatchCheckRequest, CheckRequest as PbCheck, CheckRequestTupleKey,
     ConsistencyPreference, ContextualTupleKeys, ListObjectsRequest, OpenFgaServiceClient,
-    RelationshipCondition, TupleKey, TupleKeyWithoutCondition, WriteRequest, WriteRequestDeletes,
-    WriteRequestWrites, batch_check_single_result::CheckResult,
+    ReadRequest, ReadRequestTupleKey, RelationshipCondition, TupleKey, TupleKeyWithoutCondition,
+    WriteRequest, WriteRequestDeletes, WriteRequestWrites, batch_check_single_result::CheckResult,
 };
 use openfga_client::prost_wkt_types::Struct;
 use openfga_client::tonic::metadata::{Ascii, MetadataValue};
@@ -96,6 +96,16 @@ impl Interceptor for Bearer {
 }
 
 type Client = OpenFgaServiceClient<InterceptedService<Channel, Bearer>>;
+
+fn bearer(preshared_key: Option<&str>) -> Result<Option<MetadataValue<Ascii>>> {
+    preshared_key
+        .map(|k| {
+            format!("Bearer {k}")
+                .parse()
+                .map_err(|_| AuthzError::Invalid("pre-shared key".into()))
+        })
+        .transpose()
+}
 
 #[derive(Clone)]
 pub struct OpenFgaAuthorizer {
@@ -183,16 +193,35 @@ impl OpenFgaAuthorizer {
             .connect()
             .await
             .map_err(|e| unavailable(format!("connect {endpoint}: {e}")))?;
-        let bearer = match preshared_key {
-            Some(k) => Some(
-                format!("Bearer {k}")
-                    .parse()
-                    .map_err(|_| AuthzError::Invalid("pre-shared key".into()))?,
-            ),
-            None => None,
-        };
         Ok(Self {
-            client: OpenFgaServiceClient::new(InterceptedService::new(channel, Bearer(bearer))),
+            client: OpenFgaServiceClient::new(InterceptedService::new(
+                channel,
+                Bearer(bearer(preshared_key)?),
+            )),
+            store_id: store_id.to_owned(),
+            model_id: model_id.to_owned(),
+        })
+    }
+
+    /// Like [`OpenFgaAuthorizer::connect`], but connects on first use, so a process can start
+    /// before OpenFGA answers. Until it does, every check fails with
+    /// [`AuthzError::Unavailable`], which callers answer as a refusal (503), never an allow.
+    pub fn connect_lazy(
+        endpoint: &str,
+        store_id: &str,
+        model_id: &str,
+        preshared_key: Option<&str>,
+    ) -> Result<Self> {
+        let channel = Endpoint::from_shared(endpoint.to_owned())
+            .map_err(|e| AuthzError::Invalid(format!("OpenFGA endpoint {endpoint:?}: {e}")))?
+            .connect_timeout(Duration::from_secs(5))
+            .timeout(Duration::from_secs(10))
+            .connect_lazy();
+        Ok(Self {
+            client: OpenFgaServiceClient::new(InterceptedService::new(
+                channel,
+                Bearer(bearer(preshared_key)?),
+            )),
             store_id: store_id.to_owned(),
             model_id: model_id.to_owned(),
         })
@@ -256,6 +285,50 @@ impl OpenFgaAuthorizer {
             self.send_write(req).await?;
         }
         Ok(())
+    }
+
+    /// The stored tuples that match: `object` is a full object (`org:o1`) or, with `user`, a
+    /// type alone (`org:`); `user` and `relation` narrow it when given. Every page is read
+    /// (OpenFGA's `Read`, 100 per page), with `HigherConsistency`, so a sync or a
+    /// reconciliation never acts on a stale read. Conditions are not returned.
+    pub async fn read(
+        &self,
+        user: Option<&str>,
+        relation: Option<&str>,
+        object: &str,
+    ) -> Result<Vec<Tuple>> {
+        let mut out = Vec::new();
+        let mut token = String::new();
+        loop {
+            let req = ReadRequest {
+                store_id: self.store_id.clone(),
+                tuple_key: Some(ReadRequestTupleKey {
+                    user: user.unwrap_or_default().to_owned(),
+                    relation: relation.unwrap_or_default().to_owned(),
+                    object: object.to_owned(),
+                }),
+                page_size: Some(MAX_TUPLES_PER_WRITE as i32),
+                continuation_token: token,
+                consistency: ConsistencyPreference::HigherConsistency as i32,
+            };
+            let res = self
+                .client
+                .clone()
+                .read(req)
+                .await
+                .map_err(status)?
+                .into_inner();
+            out.extend(res.tuples.into_iter().filter_map(|t| t.key).map(|k| Tuple {
+                user: k.user,
+                relation: k.relation,
+                object: k.object,
+                condition: None,
+            }));
+            if res.continuation_token.is_empty() {
+                return Ok(out);
+            }
+            token = res.continuation_token;
+        }
     }
 
     /// A strict write: an existing tuple or a type restriction is an error. Grants go through
