@@ -218,7 +218,7 @@ cargo_package(
         "//third-party/rust:argon2",
         "//third-party/rust:async-trait",
         "//third-party/rust:axum",
-        "//third-party/rust:base64",
+        "//third-party/rust:base64-0_23",
         "//third-party/rust:buffa",
         "//third-party/rust:bytes",
         "//third-party/rust:clap",

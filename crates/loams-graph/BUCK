@@ -139,7 +139,7 @@ cargo_package(
         "//third-party/rust:arrow-array",
         "//third-party/rust:arrow-schema",
         "//third-party/rust:async-trait",
-        "//third-party/rust:base64",
+        "//third-party/rust:base64-0_23",
         "//third-party/rust:buffa",
         "//third-party/rust:buffa-types",
         "//third-party/rust:bytes",

@@ -33,7 +33,7 @@ cargo_package(
         "//crates/loams-common:loams-common",
         "//third-party/rust:anyhow",
         "//third-party/rust:async-trait",
-        "//third-party/rust:base64",
+        "//third-party/rust:base64-0_23",
         "//third-party/rust:bitpacking",
         "//third-party/rust:bytes",
         "//third-party/rust:bytesize",

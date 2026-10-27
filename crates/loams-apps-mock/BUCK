@@ -45,7 +45,7 @@ cargo_package(
         "//crates/loams-console-mock:loams-console-mock",
         "//third-party/rust:anyhow",
         "//third-party/rust:axum",
-        "//third-party/rust:base64",
+        "//third-party/rust:base64-0_23",
         "//third-party/rust:buffa",
         "//third-party/rust:buffa-types",
         "//third-party/rust:clap",
