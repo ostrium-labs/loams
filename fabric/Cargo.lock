@@ -6033,11 +6033,13 @@ dependencies = [
 name = "loams-house-engine"
 version = "0.0.1"
 dependencies = [
+ "arrow-ipc 59.3.0",
  "bytes",
  "datafusion",
  "loams-house-exec",
  "loams-house-formats",
  "loams-house-iceberg",
+ "loams-house-lake",
  "loams-house-sql",
  "loams-house-types",
  "serde_json",
@@ -6065,9 +6067,19 @@ dependencies = [
 name = "loams-house-iceberg"
 version = "0.0.1"
 dependencies = [
+ "arrow-ipc 59.3.0",
+ "async-trait",
+ "bytes",
  "datafusion",
+ "futures",
  "iceberg 0.10.1 (git+https://github.com/ostrium-labs/iceberg-rust?rev=d0788551f83b2ef2018d28d60a859d6283345a3b)",
+ "loams-house-lake",
+ "loams-house-sql",
  "loams-house-types",
+ "serde",
+ "serde_json",
+ "tokio",
+ "typetag",
 ]
 
 [[package]]

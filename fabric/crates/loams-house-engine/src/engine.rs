@@ -46,6 +46,11 @@ impl Engine {
         }
     }
 
+    /// The engine's functions (planning a lake table's catalog expressions).
+    pub fn registry(&self) -> &Registry {
+        &self.registry
+    }
+
     /// Runs one `SELECT` with `params` (`param_<name>` values) and request
     /// `settings`, `database` being the current database.
     ///
