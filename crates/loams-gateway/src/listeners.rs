@@ -17,6 +17,7 @@ use crate::config::{GatewayConfig, TlsMode};
 use crate::observe::{ConnectionObserver, NoopObserver};
 use crate::pg::{Entry, FrontDoorOptions, PgFrontDoor};
 use crate::reload::{self, RouteRx};
+use crate::risingwave::RwFrontDoor;
 use crate::tls::{self, ServerCerts, TlsError};
 
 #[derive(Debug, thiserror::Error)]
@@ -30,6 +31,12 @@ pub enum GatewayError {
     /// A certificate, key or CA file could not be loaded.
     #[error(transparent)]
     Tls(#[from] TlsError),
+    /// The RisingWave module's certificates or credential check.
+    #[error("risingwave: {0}")]
+    RisingWave(String),
+    /// The Spark Connect module's keys, routes or authorizer.
+    #[error("spark: {0}")]
+    Spark(String),
 }
 
 /// What the admin listener reports about listeners.
@@ -46,6 +53,7 @@ pub type SharedStatus = Arc<Mutex<ListenerStatus>>;
 pub struct Gateway {
     pg_addr: SocketAddr,
     admin_addr: SocketAddr,
+    spark_addr: Option<SocketAddr>,
     routes: RouteRx,
     shutdown: watch::Sender<bool>,
     tasks: Vec<JoinHandle<()>>,
@@ -75,6 +83,18 @@ impl Gateway {
         if config.pg.tls_mode == TlsMode::Passthrough {
             tracing::info!("tls_mode = passthrough: direct-TLS clients are refused");
         }
+        let risingwave = if config.risingwave.certs.is_empty()
+            && config.risingwave.self_signed_names.is_empty()
+            && config.risingwave.auth.is_none()
+        {
+            None
+        } else {
+            Some(Arc::new(
+                RwFrontDoor::from_config(&config.risingwave)
+                    .await
+                    .map_err(GatewayError::RisingWave)?,
+            ))
+        };
         let (tx, routes) = reload::channel();
         let (shutdown, shutdown_rx) = watch::channel(false);
         let mut tasks = Vec::new();
@@ -96,6 +116,7 @@ impl Gateway {
                 server_certs,
                 upstream_tls,
                 observer,
+                risingwave,
             },
         ));
         let max_connections = u32::try_from(config.pg.max_connections).unwrap_or(u32::MAX);
@@ -115,6 +136,30 @@ impl Gateway {
                 source,
             })?;
         tracing::info!(%pg_addr, %admin_addr, "loams-gateway listening");
+
+        // The Spark Connect module: bound now, so a taken port fails start.
+        #[cfg(feature = "spark")]
+        let spark_addr = match &config.spark {
+            Some(spark) => {
+                let proxy = loams_spark::standalone::build(spark).map_err(GatewayError::Spark)?;
+                let listener = bind(spark.listen).await?;
+                let addr = listener.local_addr().map_err(|source| GatewayError::Bind {
+                    addr: spark.listen,
+                    source,
+                })?;
+                let stop = stopped(shutdown_rx.clone());
+                tasks.push(tokio::spawn(async move {
+                    if let Err(e) = loams_spark::standalone::serve(proxy, listener, stop).await {
+                        tracing::error!(error = %e, "spark module stopped");
+                    }
+                }));
+                tracing::info!(spark_addr = %addr, "spark module listening");
+                Some(addr)
+            }
+            None => None,
+        };
+        #[cfg(not(feature = "spark"))]
+        let spark_addr = None;
 
         tasks.push(tokio::spawn(accept_loop(
             pg,
@@ -142,6 +187,7 @@ impl Gateway {
         Ok(Gateway {
             pg_addr,
             admin_addr,
+            spark_addr,
             routes,
             shutdown,
             tasks,
@@ -159,6 +205,11 @@ impl Gateway {
     /// The admin listener's address.
     pub fn admin_addr(&self) -> SocketAddr {
         self.admin_addr
+    }
+
+    /// The Spark Connect module's address, when `[spark]` is configured.
+    pub fn spark_addr(&self) -> Option<SocketAddr> {
+        self.spark_addr
     }
 
     /// The current route table.

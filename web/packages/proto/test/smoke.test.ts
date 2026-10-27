@@ -10,7 +10,7 @@ import {
   toJson,
 } from '@bufbuild/protobuf';
 import { Code, ConnectError, createClient, createRouterTransport } from '@connectrpc/connect';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import {
   ApprovalSchema,
   ApprovalService,

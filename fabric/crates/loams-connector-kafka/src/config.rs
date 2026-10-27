@@ -100,6 +100,49 @@ pub struct KafkaConfig {
     /// A Confluent-compatible Schema Registry (R5.4, D356).
     #[serde(default)]
     pub schema_registry: Option<SchemaRegistryConfig>,
+    /// How the source reads a record's value (CC1 Task 3, D1822): `plain`
+    /// (CloudEvents pass-through or a wrapped record, `record.rs`), or a
+    /// Debezium change event in JSON or Avro (`debezium.rs`). Source only.
+    #[serde(default)]
+    pub format: RecordFormat,
+    /// Debezium decoding options (with `format: debezium-*`).
+    #[serde(default)]
+    pub debezium: DebeziumConfig,
+}
+
+/// `format`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RecordFormat {
+    #[default]
+    Plain,
+    DebeziumJson,
+    DebeziumAvro,
+}
+
+/// `debezium`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DebeziumConfig {
+    /// What a tombstone (a record with a key and no value, which Debezium
+    /// writes after a delete for log compaction) becomes.
+    #[serde(default)]
+    pub tombstones: Tombstones,
+    /// The row fields that make the change's key. Empty: the record key
+    /// (Debezium's key struct, the table's primary key).
+    #[serde(default)]
+    pub key_fields: Vec<String>,
+}
+
+/// `debezium.tombstones`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Tombstones {
+    /// A delete (`loamsop = d`) for the record key.
+    #[default]
+    Delete,
+    /// Nothing: the source moves past it.
+    Drop,
 }
 
 /// `rate_limit`: per second, per instance (shared by its splits). An absent
@@ -364,6 +407,16 @@ impl KafkaConfig {
         {
             return Err(ConnectorError::fatal(
                 "kafka config: a rate_limit rate must be positive (leave it out for no limit)",
+            ));
+        }
+        if self.format == RecordFormat::DebeziumAvro && self.schema_registry.is_none() {
+            return Err(ConnectorError::fatal(
+                "kafka config: format debezium-avro needs a schema_registry block",
+            ));
+        }
+        if self.debezium.key_fields.iter().any(|f| f.is_empty()) {
+            return Err(ConnectorError::fatal(
+                "kafka config: debezium.key_fields names an empty field",
             ));
         }
         if let Some(sr) = &self.schema_registry {

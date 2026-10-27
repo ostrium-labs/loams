@@ -123,18 +123,21 @@ loams byoc confluent key create --integration confluent \
 
 **On the VM**, `CONFLUENT_INTEGRATIONS` in `/etc/loams-byoc/config.env` names the integrations. The example sets it with `confluent_integrations = ["confluent"]`; `deploy/byoc/render.sh --confluent-integrations confluent` does the same for the CLI path.
 - At every start, `loams-byoc-secrets` reads the keys with the VM's own role and writes them to `/opt/loams/release/secrets/connect/0/confluent-confluent/{username,password}` (mode 600). Nothing goes into `.env`.
+- After that, `loams-byoc-confluent.timer` copies them again every 5 minutes, so a rotated key reaches the files without a restart. `sudo systemctl reload loams-byoc` copies them at once.
 - A key that is not in the store yet is reported, not fatal.
 - User data and state hold secret names only.
+
+**Connector instances.** The connect role runs one instance file per topic or stream in `/opt/loams/release/connect/instances/` ([connect-role.md](../connectors/connect-role.md)). For an install over SSH, `deploy/release/byoc/install.sh --kafka confluent --confluent-bootstrap <endpoint> --confluent-topics <topics> --confluent-prefix "$(tofu output -json confluent_connect_integration | jq -r .consumer_group_prefix)"` writes them from `deploy/release/connect/templates/`, with the group and transactional ids under the module's prefix and the example's 64 KiB/s rate ([kafka.md](../kafka.md)). On a VM the example created, write them there yourself from the same templates (the `confluent_connect_integration` output has every value they need).
 
 **Rotate** without downtime:
 
 ```bash
-loams byoc confluent key rotate <same flags as create> \
-  --connect-admin http://loams-connect.<tailnet>.ts.net:7790 --admin-token-file ./connect-admin-token \
-  --restart-instance orders-in --restart-instance orders-out --grace 1h
+loams byoc confluent key rotate <same flags as create> --grace 1h
 ```
 
-It creates a new key, writes a new secret version, restarts the named instances, waits `--grace`, then deletes the old keys. If a restart fails, it keeps the old keys and says so. Without `--connect-admin`, it tells you to restart `loams-byoc` on the VM.
+It creates a new key, writes a new secret version, waits `--grace`, then deletes the old keys. On the VM, `loams-byoc-confluent.timer` copies the new key within 5 minutes. When a key file changed, it restarts the `connect` service: each instance drains and checkpoints, then starts with the new key. `sudo systemctl reload loams-byoc` does the same at once. Keep `--grace` well above 5 minutes.
+
+The connect role's admin API (`POST /v1/connect/instances/{id}:restart`) is on the container's own loopback (`127.0.0.1:7790`), not on the tailnet. To restart single instances instead, run `rotate` on the VM: forward the port, then pass `--connect-admin http://127.0.0.1:7790 --restart-instance <name>` (and `--admin-token-file` if the role runs with `--admin-token-file`). With `--connect-admin`, it waits `--refresh-wait` (default 6m) for the copy, then restarts the named instances. If a restart fails, or no instance is named, it keeps the old keys.
 
 **Check** the placement and reachability from the VM (or anywhere):
 

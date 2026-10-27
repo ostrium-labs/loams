@@ -2,7 +2,7 @@
 // and the server's version check on save.
 
 import type { DashboardSpec } from '@loams-core/types';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { VersionConflict } from '../src/client.js';
 import { DEFAULT_DASHBOARDS } from '../src/defaults.js';
 import { createMockMetricsClient, mockPointsAt, mockValue, seriesOf } from '../src/mock.js';

@@ -1135,3 +1135,80 @@ async fn repo_reader_can_read_ws() {
         team.running.shutdown().await;
     }
 }
+
+/// Design 76 §9 (plan IA1, ruling IA2.R4): `RepoService` asks model v1 on the repository's
+/// namespace as well as the org role, so an org member reaches a project's namespaces only
+/// when granted the project, and the org's own namespaces as before.
+#[tokio::test]
+async fn a_member_reaches_repos_only_in_granted_projects() {
+    let team = Team::start(false).await;
+    const ORG: &str = "admin.v1.OrgService";
+    const PROJECTS: &str = "admin.v1.ProjectService";
+    const REPOS: &str = "/loams.repos.v1.RepoService";
+    // Both accept their invitations.
+    team.mel
+        .ok(&format!("/loams.{ORG}/GetOrg"), &json!({}))
+        .await;
+    team.bob
+        .ok(&format!("/loams.{ORG}/GetOrg"), &json!({}))
+        .await;
+    team.owner
+        .call(PROJECTS, "CreateProject", json!({"name": "Shop"}))
+        .await
+        .ok();
+    team.owner
+        .call(
+            PROJECTS,
+            "CreateEnvironment",
+            json!({"project": "shop", "name": "Dev"}),
+        )
+        .await
+        .ok();
+    team.owner
+        .call(
+            "repos.v1.RepoService",
+            "CreateRepo",
+            json!({"namespace": "shop-dev", "name": "api", "idempotencyKey": "r2"}),
+        )
+        .await
+        .ok();
+    let members = team.owner.call(ORG, "ListMembers", json!({})).await;
+    let mel = members.ok()["members"]
+        .as_array()
+        .expect("members")
+        .iter()
+        .find(|m| m["user"]["email"] == "mel@example.test")
+        .map(|m| m["user"]["id"].as_str().expect("id").to_owned())
+        .expect("mel");
+    team.owner
+        .call(
+            PROJECTS,
+            "GrantAccess",
+            json!({"project": "shop",
+                   "subject": {"kind": "SUBJECT_KIND_USER", "id": mel},
+                   "role": "PROJECT_ROLE_DEVELOPER"}),
+        )
+        .await
+        .ok();
+    let api = json!({"namespace": "shop-dev", "name": "api"});
+    team.mel.ok(&format!("{REPOS}/GetRepo"), &api).await;
+    assert_eq!(
+        team.bob.refused(&format!("{REPOS}/GetRepo"), &api).await,
+        "role_required",
+        "bob has no grant on shop"
+    );
+    // The org's own namespace: every member, as before.
+    let web = json!({"namespace": "acme", "name": "web"});
+    team.bob.ok(&format!("{REPOS}/GetRepo"), &web).await;
+    // A developer writes but does not administer the project's repositories.
+    assert_eq!(
+        team.mel
+            .refused(
+                &format!("{REPOS}/DeleteRepo"),
+                &json!({"namespace": "shop-dev", "name": "api", "idempotencyKey": "d1"})
+            )
+            .await,
+        "role_required"
+    );
+    team.running.shutdown().await;
+}

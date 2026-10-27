@@ -1,0 +1,1 @@
+SELECT a * 2 AS b, b FROM t25 ORDER BY b DESC

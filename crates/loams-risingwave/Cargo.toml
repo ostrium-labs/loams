@@ -1,0 +1,36 @@
+[package]
+name = "loams-risingwave"
+description = "Managed RisingWave on Loams: the cluster model, the config renderer (meta on Loams Postgres, Hummock on Loams object storage), the stateless lifecycle adapter, health probes and the gateway route (design 81, plan RW1)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+async-trait.workspace = true
+# `loams risingwave …` (RW-b): the subcommand's args; `env` for LOAMS_RISINGWAVE_URL.
+clap = { workspace = true, features = ["env"] }
+futures.workspace = true
+# The shared managed-engines trait and model (ENG-UI, design 81 D2010).
+loams-engines.workspace = true
+# Purging an instance's state prefix on delete.
+object_store.workspace = true
+rand.workspace = true
+# The meta dashboard's JSON API (probes); plain HTTP inside the tenant network.
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+# The frontend's PG wire (probes and the bootstrap of the service users).
+tokio-postgres = "0.7"
+# Metering windows (loams-engines' usage()).
+time.workspace = true
+# risingwave.toml, the gateway's routes entries and RW-b's pipeline specs.
+toml.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

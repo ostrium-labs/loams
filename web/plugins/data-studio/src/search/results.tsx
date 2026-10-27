@@ -37,12 +37,12 @@ function Runs({ runs }: { runs: { text: string; hit: boolean }[] }) {
     <>
       {runs.map((r, i) =>
         r.hit ? (
-          // biome-ignore lint/suspicious/noArrayIndexKey: positional runs of one string
+          // oxlint-disable-next-line react/no-array-index-key -- positional runs of one string
           <mark key={i} className="rounded-xs bg-warn-soft px-0.5 text-ink">
             {r.text}
           </mark>
         ) : (
-          // biome-ignore lint/suspicious/noArrayIndexKey: positional runs of one string
+          // oxlint-disable-next-line react/no-array-index-key -- positional runs of one string
           <Fragment key={i}>{r.text}</Fragment>
         ),
       )}
@@ -70,7 +70,7 @@ function Highlighted({
     return (
       <>
         {frags.map((f, i) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: fragments in engine order
+          // oxlint-disable-next-line react/no-array-index-key -- fragments in engine order
           <Fragment key={i}>
             {i > 0 && <span className="text-faint"> … </span>}
             <Runs runs={highlightRuns(f)} />

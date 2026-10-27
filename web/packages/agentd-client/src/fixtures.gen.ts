@@ -51,6 +51,12 @@ import type { DriveListing } from "./gen/DriveListing";
 import type { Empty } from "./gen/Empty";
 import type { EngineInfo } from "./gen/EngineInfo";
 import type { EngineReadyReply } from "./gen/EngineReadyReply";
+import type { FactoryAppList } from "./gen/FactoryAppList";
+import type { FactoryAppParams } from "./gen/FactoryAppParams";
+import type { FactoryAppReply } from "./gen/FactoryAppReply";
+import type { FactoryConfigureParams } from "./gen/FactoryConfigureParams";
+import type { FactoryQueryParams } from "./gen/FactoryQueryParams";
+import type { FactoryQueryReply } from "./gen/FactoryQueryReply";
 import type { FetchToolBlobParams } from "./gen/FetchToolBlobParams";
 import type { FileSearchMatchList } from "./gen/FileSearchMatchList";
 import type { FinishQueueEditOutcome } from "./gen/FinishQueueEditOutcome";
@@ -259,6 +265,89 @@ export const fixture_HarnessCatalog = [
 export const fixture_HarnessParams = {
   "harness": "unsupported"
 } satisfies HarnessParams;
+
+export const fixture_FactoryAppList = {
+  "apps": [
+    {
+      "credentialFields": [
+        {
+          "key": "token",
+          "label": "Access token",
+          "secret": true
+        },
+        {
+          "key": "ssoOrigin",
+          "label": "SSO origin (optional)",
+          "secret": false
+        }
+      ],
+      "fields": {
+        "ssoOrigin": "https://sso.example.com"
+      },
+      "hasPanels": true,
+      "health": "ok",
+      "id": "forgejo",
+      "label": "Forgejo",
+      "persistent": true,
+      "url": "https://git.example.com"
+    }
+  ]
+} satisfies FactoryAppList;
+
+export const fixture_FactoryAppParams = {
+  "app": "forgejo"
+} satisfies FactoryAppParams;
+
+export const fixture_FactoryAppReply = {
+  "app": {
+    "credentialFields": [
+      {
+        "key": "token",
+        "label": "Access token",
+        "secret": true
+      },
+      {
+        "key": "ssoOrigin",
+        "label": "SSO origin (optional)",
+        "secret": false
+      }
+    ],
+    "fields": {
+      "ssoOrigin": "https://sso.example.com"
+    },
+    "hasPanels": true,
+    "health": "ok",
+    "id": "forgejo",
+    "label": "Forgejo",
+    "persistent": true,
+    "url": "https://git.example.com"
+  },
+  "error": null
+} satisfies FactoryAppReply;
+
+export const fixture_FactoryConfigureParams = {
+  "app": "forgejo",
+  "fields": {
+    "token": "pat-1"
+  },
+  "url": "https://git.example.com"
+} satisfies FactoryConfigureParams;
+
+export const fixture_FactoryQueryParams = {
+  "app": "forgejo",
+  "op": "repos",
+  "params": {
+    "limit": 20
+  }
+} satisfies FactoryQueryParams;
+
+export const fixture_FactoryQueryReply = {
+  "error": {
+    "code": "auth_failed",
+    "message": "GET /api/v1/repos/search failed with 401"
+  },
+  "value": null
+} satisfies FactoryQueryReply;
 
 export const fixture_TitleSettings = {
   "harness": "claude-code",
@@ -3041,6 +3130,12 @@ export const FIXTURES = [
   { name: "OkReply", type: "OkReply", value: fixture_OkReply },
   { name: "HarnessCatalog", type: "HarnessCatalog", value: fixture_HarnessCatalog },
   { name: "HarnessParams", type: "HarnessParams", value: fixture_HarnessParams },
+  { name: "FactoryAppList", type: "FactoryAppList", value: fixture_FactoryAppList },
+  { name: "FactoryAppParams", type: "FactoryAppParams", value: fixture_FactoryAppParams },
+  { name: "FactoryAppReply", type: "FactoryAppReply", value: fixture_FactoryAppReply },
+  { name: "FactoryConfigureParams", type: "FactoryConfigureParams", value: fixture_FactoryConfigureParams },
+  { name: "FactoryQueryParams", type: "FactoryQueryParams", value: fixture_FactoryQueryParams },
+  { name: "FactoryQueryReply", type: "FactoryQueryReply", value: fixture_FactoryQueryReply },
   { name: "TitleSettings", type: "TitleSettings", value: fixture_TitleSettings },
   { name: "SetHarnessEnabledParams", type: "SetHarnessEnabledParams", value: fixture_SetHarnessEnabledParams },
   { name: "ListModelsParams", type: "ListModelsParams", value: fixture_ListModelsParams },

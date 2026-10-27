@@ -1,7 +1,7 @@
 // CF1 Task 5: T3 Code's overlays under the Loams wrappers (D1073, D1077, D1081).
 
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 import {
   Combobox,
   DIALOG_POPUP_CLASS,

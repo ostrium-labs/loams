@@ -138,6 +138,7 @@ cargo_package(
         },
     ],
     deps = [
+        "//crates/loams-authz:loams-authz",
         "//crates/loams-common:loams-common",
         "//crates/loams-kv:loams-kv",
         "//crates/loams-pgdog-sync:loams-pgdog-sync",
@@ -161,7 +162,7 @@ cargo_package(
         "//third-party/rust:rustls",
         "//third-party/rust:serde",
         "//third-party/rust:serde_json",
-        "//third-party/rust:sha2-0_11",
+        "//third-party/rust:sha2",
         "//third-party/rust:subtle",
         "//third-party/rust:thiserror",
         "//third-party/rust:time",

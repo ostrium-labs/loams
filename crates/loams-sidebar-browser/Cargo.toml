@@ -37,7 +37,7 @@ tokio.workspace = true
 # only: the endpoint is loopback plaintext by design (`--host` defaults to
 # 127.0.0.1), so no TLS stack is pulled in. Declared per-crate, not via the
 # workspace, so this stays true alongside loams-web-bridge's TLS client.
-tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "handshake"] }
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "handshake"] }
 tracing.workspace = true
 url.workspace = true
 

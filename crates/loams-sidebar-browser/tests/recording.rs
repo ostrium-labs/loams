@@ -92,7 +92,7 @@ impl FakeEngine {
                     reply.insert("sessionId".to_string(), session.clone());
                 }
                 if socket
-                    .send(Message::Text(Value::Object(reply).to_string()))
+                    .send(Message::Text(Value::Object(reply).to_string().into()))
                     .await
                     .is_err()
                 {

@@ -3,7 +3,7 @@
 // amended): no page is held to the old 1180px measure, and the wide cap is centred.
 // jsdom does not lay out, so the contract is checked in the stylesheet.
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 
 // vitest returns '' for CSS `?raw` imports and the tsconfig has no Node types: read the
 // stylesheet through node:fs by a variable specifier (as tailwind.test.ts does).

@@ -39,6 +39,10 @@ type org
     # Who edits the org's own namespaces (`environment#org`): every member, and the service
     # accounts it lists (a project's service accounts, on a single-org install).
     define namespace_editor: [service_account] or member
+    # What the admin API (`loams.admin.v1`) checks, one relation per RPC (IA2 Task 5): reads by
+    # any member or the org's service accounts, changes by an admin.
+    define can_view: namespace_editor
+    define can_admin: admin
 
 # Teams are owned by Loams, not Zitadel (§5). `org` roots every team for the cross-org scan.
 type team
@@ -96,7 +100,21 @@ type database
     define can_read: viewer from environment
     define can_write: editor from environment
     define can_admin: deployer from environment
-    define can_connect: viewer from environment
+    # Connection details and credentials need editor, not viewer (§46 R1.9, plan IA1 ruling
+    # IA2.R3): a viewer reads a database's settings but never gets a credential to it.
+    define can_connect: editor from environment
+
+# A managed engine instance (design 81, D1919): RisingWave, Flink SQL or Spark, in one namespace.
+# `can_connect` is the gateway's check for the engine's own protocol (Postgres wire, Flink SQL
+# Gateway, Spark Connect).
+type engine
+  relations
+    define environment: [environment]
+    define can_view: viewer from environment
+    define can_operate: editor from environment
+    define can_admin: deployer from environment
+    # Like `database` (§46 R1.9): a viewer sees an engine but never gets a credential to it.
+    define can_connect: editor from environment
 
 # The tuple stores `allowed_session` and `expires`; the request supplies `session_id` and `now`.
 condition agent_session(session_id: string, allowed_session: string, now: timestamp, expires: timestamp) {

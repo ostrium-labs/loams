@@ -39,6 +39,7 @@
 mod literal;
 pub mod plan_time;
 pub mod rules;
+pub mod wrap;
 
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
@@ -428,10 +429,12 @@ impl HouseTypes<'_> {
     /// ClickHouse type is decided by the caller.
     fn compute_as(&self, e: Expr, t: &ChType) -> Result<Expr> {
         let (dt, _) = data_type(&base(t)).map_err(ch)?;
-        if self.field(&e)?.data_type() == &dt {
+        let from = self.field(&e)?.data_type().clone();
+        if from == dt {
             return Ok(e);
         }
-        Ok(Expr::Cast(Cast::new(Box::new(e), dt)))
+        // ClickHouse's integer conversions wrap (`wrap`).
+        Ok(wrap::convert(e, &from, &dt))
     }
 
     /// A predicate used as a value: cast to `UInt8`.
@@ -709,7 +712,8 @@ impl HouseTypes<'_> {
             return Ok(e);
         }
         let (dt, _) = data_type(&base(to)).map_err(ch)?;
-        Ok(Expr::Cast(Cast::new(Box::new(e), dt)))
+        let (from_dt, _) = data_type(&base(from)).map_err(ch)?;
+        Ok(wrap::convert(e, &from_dt, &dt))
     }
 
     fn date_arithmetic(

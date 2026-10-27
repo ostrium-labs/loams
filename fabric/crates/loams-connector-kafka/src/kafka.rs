@@ -13,7 +13,7 @@ use loams_connector_sdk::{
     SinkFactory, SourceFactory, SplitEnumerator,
 };
 
-use crate::config::{Connection, KafkaConfig, SinkDelivery};
+use crate::config::{Connection, KafkaConfig, RecordFormat, SinkDelivery};
 use crate::sink::KafkaSinkFactory;
 use crate::source::{KafkaEnumerator, KafkaSourceFactory};
 
@@ -123,11 +123,20 @@ impl ConnectorFactory for Kafka {
     }
 
     fn sink(&self, ctx: &ConnectorContext) -> Result<Option<Box<dyn SinkFactory>>, ConnectorError> {
+        let merged = match &ctx.profile {
+            Some(p) => p.config_with_defaults(&ctx.config),
+            None => ctx.config.clone(),
+        };
+        if KafkaConfig::parse(&merged)?.format != RecordFormat::Plain {
+            return Err(ConnectorError::fatal(
+                "kafka config: format applies to the source; a sink writes CloudEvents (D270)",
+            ));
+        }
         if let Some(p) = &ctx.profile {
             if narrows(p, "sink") {
                 return Ok(None);
             }
-            let cfg = KafkaConfig::parse(&p.config_with_defaults(&ctx.config))?;
+            let cfg = KafkaConfig::parse(&merged)?;
             if cfg.delivery == SinkDelivery::ExactlyOnce && narrows(p, "sink.transactional") {
                 return Err(ConnectorError::fatal(format!(
                     "{} narrows sink.transactional: its sink is effectively_once (the idempotent producer), so delivery: exactly_once is refused",
