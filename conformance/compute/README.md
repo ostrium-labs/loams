@@ -10,9 +10,11 @@ needs one, the bucket), and is judged by **its own** test suite plus the few
 cases Loams' primitives must survive. Every result is checked against a strict
 list of expected failures, so a surprise in either direction fails the run.
 
-Status: **the harness only** (DX0 Task 1). The products' `run.sh` scripts land
-with their tasks: Temporal (DX0 Task 3), the corpus (Task 4), DBOS (Task 5),
-Airflow with the Edge executor (Task 6).
+Status: the harness (DX0 Task 1), the databases and endpoint modes (Task 2,
+`durable/`), Temporal compat mode (Task 3, `temporal/`), the history corpus
+(Task 4, `temporal/corpus/`) and Airflow with the Edge executor (Task 6,
+`airflow/`, written but not yet run end to end). DBOS (Task 5) is not merged
+yet.
 
 ## Layout
 
