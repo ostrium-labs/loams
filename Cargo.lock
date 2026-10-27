@@ -9008,6 +9008,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-engines"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "axum 0.8.9",
+ "loams-authz",
+ "percent-encoding",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "time",
+ "tokio",
+ "tower 0.5.3",
+ "tracing",
+ "ulid 3.0.0",
+]
+
+[[package]]
 name = "loams-es"
 version = "0.1.2"
 dependencies = [
