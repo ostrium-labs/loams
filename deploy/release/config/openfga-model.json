@@ -325,6 +325,8 @@
             ]
           },
           "can_admin": {},
+          "can_operate": {},
+          "can_view": {},
           "editor": {
             "directly_related_user_types": [
               {
@@ -394,6 +396,16 @@
         "can_admin": {
           "computedUserset": {
             "relation": "admin"
+          }
+        },
+        "can_operate": {
+          "computedUserset": {
+            "relation": "editor"
+          }
+        },
+        "can_view": {
+          "computedUserset": {
+            "relation": "viewer"
           }
         },
         "editor": {

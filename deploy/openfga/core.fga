@@ -63,6 +63,10 @@ type project
     define viewer: [user, team#member, agent, service_account] or editor
     # The project `admin` role, for destructive actions in a protected environment (§19 §4).
     define can_admin: admin
+    # Project-scoped resources with no type of their own yet: managed engines (design 81,
+    # D2016) read with `can_view` and run lifecycle, SQL and jobs with `can_operate`.
+    define can_view: viewer
+    define can_operate: editor
 
 # A Loams namespace. It is a project's environment (`project`), or, on a single-org install, a
 # namespace that is no project's, which belongs to the org itself (`org`, never written beside

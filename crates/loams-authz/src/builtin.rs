@@ -116,6 +116,8 @@ const MODEL: &[(&str, &str, &[Rule])] = &[
         &[Direct(PROJECT_GRANTEES), Computed("editor")],
     ),
     ("project", "can_admin", &[Computed("admin")]),
+    ("project", "can_view", &[Computed("viewer")]),
+    ("project", "can_operate", &[Computed("editor")]),
     ("environment", "project", &[Direct(&[Type("project")])]),
     ("environment", "org", &[Direct(&[Type("org")])]),
     (

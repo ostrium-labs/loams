@@ -79,13 +79,18 @@ tests:
     check:
       - user: user:tess
         object: project:p1
-        assertions: {viewer: true, editor: true, admin: false}
+        assertions: {viewer: true, editor: true, admin: false, can_view: true, can_operate: true, can_admin: false}
       - user: user:mona
         object: project:p1
-        assertions: {viewer: false}
+        assertions: {viewer: false, can_view: false, can_operate: false}
       - user: user:adam
         object: project:p1
-        assertions: {viewer: true, editor: true, admin: true}
+        assertions: {viewer: true, editor: true, admin: true, can_view: true, can_operate: true, can_admin: true}
+      # Design 81 (D2016): an agent granted editor on an environment does not operate the
+      # project's engines.
+      - user: agent:agent-1
+        object: project:p1
+        assertions: {can_view: false, can_operate: false}
 
   - name: project_and_team_roles
     check:
