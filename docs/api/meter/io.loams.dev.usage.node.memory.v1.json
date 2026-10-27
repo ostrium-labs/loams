@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:loams:json:io.loams.dev.usage.node.memory.v1",
+  "title": "io.loams.dev.usage.node.memory.v1",
+  "description": "The `data` of a `io.loams.dev.usage.node.memory.v1` usage event: Memory of one tenant resource over one window (the node agent). Producer: loams-meter-agent. Design §63 §6.3. Measured values are integers in the unit named; dimensions are strings. New optional fields may be added within v1.",
+  "type": "object",
+  "properties": {
+    "byte_seconds": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Memory integrated over the window, byte-seconds"
+    },
+    "peak_bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Peak memory, bytes"
+    },
+    "resource": {
+      "type": "string",
+      "description": "The measured resource: a sandbox, runtime or pod (the agent's resolver)"
+    },
+    "function": {
+      "type": "string",
+      "description": "The function the resource runs, when there is one"
+    },
+    "tier": {
+      "type": "string",
+      "description": "The isolation tier: T0, T1 or T2"
+    },
+    "window_start": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Start of the measured interval (RFC 3339)"
+    },
+    "window_end": {
+      "type": "string",
+      "format": "date-time",
+      "description": "End of the measured interval (RFC 3339)"
+    }
+  },
+  "required": [
+    "byte_seconds",
+    "peak_bytes",
+    "resource",
+    "window_start",
+    "window_end"
+  ],
+  "additionalProperties": true
+}

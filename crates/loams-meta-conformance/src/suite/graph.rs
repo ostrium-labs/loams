@@ -342,6 +342,38 @@ pub async fn system_streams_are_reserved_and_idempotent(backend: &dyn Backend) {
         rejected(meta.ensure_system_stream(ns, "_other").await),
         ApplyError::InvalidArgument(_)
     ));
+    // ME1 Task 4: Loams Meter's usage stream, with its 32 partitions and 14-day retention.
+    let meter = meta
+        .ensure_system_stream(ns, loams_common::meta::METER_STREAM)
+        .await
+        .expect("ensure _meter");
+    assert_ne!(meter, created);
+    assert_eq!(
+        db.last()
+            .ensure_system_stream(ns, loams_common::meta::METER_STREAM)
+            .await
+            .expect("again"),
+        meter
+    );
+    let found = db
+        .last()
+        .stream_by_name(L, ns, loams_common::meta::METER_STREAM)
+        .await
+        .expect("read")
+        .expect("the _meter stream");
+    assert_eq!(found.id, meter);
+    assert_eq!(
+        found.partitions,
+        loams_common::meta::METER_STREAM_PARTITIONS
+    );
+    assert_eq!(
+        found.retention,
+        loams_common::meta::Retention {
+            max_age_ms: Some(loams_common::meta::METER_STREAM_RETENTION_MS),
+            max_bytes: None,
+        }
+    );
+    assert_eq!(found.class, loams_common::meta::WalClass::Standard);
     assert!(matches!(
         rejected(
             meta.ensure_system_stream(NamespaceId(u64::MAX - 7), GIT_STREAM)

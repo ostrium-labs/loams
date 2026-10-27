@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:loams:json:io.loams.dev.usage.function.fuel.v1",
+  "title": "io.loams.dev.usage.function.fuel.v1",
+  "description": "The `data` of a `io.loams.dev.usage.function.fuel.v1` usage event: Wasm fuel of one invocation (the host report, platform doc 06). Producer: wasmtime hosts. Design §63 §6.3. Measured values are integers in the unit named; dimensions are strings. New optional fields may be added within v1.",
+  "type": "object",
+  "properties": {
+    "fuel": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Fuel consumed"
+    },
+    "cpu_usec": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "CPU time, µs"
+    },
+    "estimated": {
+      "type": "boolean",
+      "description": "Whether cpu_usec is an estimate"
+    }
+  },
+  "required": [
+    "fuel",
+    "cpu_usec"
+  ],
+  "additionalProperties": true
+}

@@ -85,6 +85,9 @@ pub struct Report {
     pub applied: Vec<String>,
     /// Whether this run wrote the stack record.
     pub stack_written: bool,
+    /// The system streams the run made sure of (`_system/_meter`), as
+    /// `<namespace>/<stream>` ([`crate::system`]).
+    pub system_streams: Vec<String>,
 }
 
 /// Why a run did not complete.
@@ -231,7 +234,18 @@ impl<'a> Runner<'a> {
         let ledger = Ledger::open(cx.meta.clone()).await?;
         let lease =
             MigrationLease::acquire(cx.meta.clone(), opts.holder.clone(), LEASE_TTL).await?;
-        let result = self.run_leased(cx, &ledger, &lease, target, opts).await;
+        let result = match self.run_leased(cx, &ledger, &lease, target, opts).await {
+            // The stack is at `target`: its system objects exist on a new
+            // stack and an upgraded one alike (ME1 Task 4).
+            Ok(mut report) => match crate::system::ensure_system_streams(&*cx.meta).await {
+                Ok(streams) => {
+                    report.system_streams = streams;
+                    Ok(report)
+                }
+                Err(e) => Err(RunError::from(e)),
+            },
+            Err(e) => Err(e),
+        };
         // A simulated crash leaves the lease as a dead process would.
         if !matches!(result, Err(RunError::Crashed(_))) {
             let _ = lease.release().await;

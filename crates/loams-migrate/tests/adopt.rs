@@ -313,12 +313,15 @@ async fn adoption_writes_only_system_upgrade_keys() {
             .all(|(ns, key, _, _)| ns == "_system" && key.starts_with("upgrade/")),
         "{added:?}"
     );
-    assert_eq!(
-        meta.streams(Consistency::Linearizable, None)
-            .await
-            .expect("streams"),
-        streams
-    );
+    // The run's only new stream is Loams Meter's `_system/_meter` (ME1 Task 4).
+    let (meter, others): (Vec<_>, Vec<_>) = meta
+        .streams(Consistency::Linearizable, None)
+        .await
+        .expect("streams")
+        .into_iter()
+        .partition(|s| s.name == loams_common::meta::METER_STREAM);
+    assert_eq!(others, streams);
+    assert_eq!(meter.len(), 1, "{meter:?}");
     assert_eq!(
         meta.collections(Consistency::Linearizable, None)
             .await

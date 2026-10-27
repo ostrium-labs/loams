@@ -69,6 +69,11 @@ cargo_package(
             "root": "tests/startup.rs",
         },
         {
+            "name": "system",
+            "crate": "system",
+            "root": "tests/system.rs",
+        },
+        {
             "name": "verify",
             "crate": "verify",
             "root": "tests/verify.rs",

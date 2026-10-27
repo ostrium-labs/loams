@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:loams:json:io.loams.dev.usage.function.invocation.v1",
+  "title": "io.loams.dev.usage.function.invocation.v1",
+  "description": "The `data` of a `io.loams.dev.usage.function.invocation.v1` usage event: A function invocation (D180: CPU time plus requests). Producer: InvocationObserver (runners). Design §63 §6.3. Measured values are integers in the unit named; dimensions are strings. New optional fields may be added within v1.",
+  "type": "object",
+  "properties": {
+    "cpu_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "CPU time, ms"
+    },
+    "wall_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Wall time, ms"
+    },
+    "tier": {
+      "type": "string",
+      "description": "The isolation tier"
+    },
+    "runner": {
+      "type": "string",
+      "description": "The runner"
+    },
+    "estimated": {
+      "type": "boolean",
+      "description": "Whether cpu_ms is an estimate"
+    }
+  },
+  "required": [
+    "cpu_ms",
+    "wall_ms"
+  ],
+  "additionalProperties": true
+}

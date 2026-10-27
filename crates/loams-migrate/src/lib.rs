@@ -24,6 +24,9 @@
 //!
 //! - [`snapshot`]: snapshots and restores of the Loams-owned stores, and
 //!   their GC roots (§54 §7, §8).
+//!
+//! - [`system`]: the system objects every stack has (Loams Meter's
+//!   `_system/_meter` stream, §63 §7.1), made by every `migrate run`.
 
 /// Evaluates a named failpoint of the crash matrix. With the `failpoints`
 /// feature a configured failpoint stops the caller as a crash would (it
@@ -52,6 +55,7 @@ pub mod runner;
 pub mod snapshot;
 pub mod stack;
 pub mod startup;
+pub mod system;
 pub mod verify;
 
 pub use ledger::{Class, Ledger, LedgerEntry, LedgerError, LedgerState, MigrationLease};

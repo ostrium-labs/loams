@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:loams:json:io.loams.dev.usage.llm.tokens.v1",
+  "title": "io.loams.dev.usage.llm.tokens.v1",
+  "description": "The `data` of a `io.loams.dev.usage.llm.tokens.v1` usage event: An LLM call through the gateway (§57 §12.2). Producer: gateway llm module. Design §63 §6.3. Measured values are integers in the unit named; dimensions are strings. New optional fields may be added within v1.",
+  "type": "object",
+  "properties": {
+    "model": {
+      "type": "string",
+      "description": "The model"
+    },
+    "provider": {
+      "type": "string",
+      "description": "The provider"
+    },
+    "input_tokens": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Input tokens"
+    },
+    "output_tokens": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Output tokens"
+    },
+    "cached_tokens": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Cached input tokens"
+    }
+  },
+  "required": [
+    "model",
+    "provider",
+    "input_tokens",
+    "output_tokens"
+  ],
+  "additionalProperties": true
+}

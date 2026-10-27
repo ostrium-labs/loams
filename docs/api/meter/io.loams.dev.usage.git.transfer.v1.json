@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:loams:json:io.loams.dev.usage.git.transfer.v1",
+  "title": "io.loams.dev.usage.git.transfer.v1",
+  "description": "The `data` of a `io.loams.dev.usage.git.transfer.v1` usage event: Bytes transferred by Git operations (D393). Producer: Loams Git. Design §63 §6.3. Measured values are integers in the unit named; dimensions are strings. New optional fields may be added within v1.",
+  "type": "object",
+  "properties": {
+    "bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Transferred bytes"
+    },
+    "repository": {
+      "type": "string",
+      "description": "The repository"
+    },
+    "direction": {
+      "type": "string",
+      "enum": [
+        "fetch",
+        "push"
+      ],
+      "description": "Which way"
+    }
+  },
+  "required": [
+    "bytes"
+  ],
+  "additionalProperties": true
+}

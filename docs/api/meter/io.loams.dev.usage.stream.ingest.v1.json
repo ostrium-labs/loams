@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:loams:json:io.loams.dev.usage.stream.ingest.v1",
+  "title": "io.loams.dev.usage.stream.ingest.v1",
+  "description": "The `data` of a `io.loams.dev.usage.stream.ingest.v1` usage event: Stream ingest, per namespace per flush (D103). Producer: Log role. Design §63 §6.3. Measured values are integers in the unit named; dimensions are strings. New optional fields may be added within v1.",
+  "type": "object",
+  "properties": {
+    "logical_bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Logical bytes appended"
+    },
+    "records": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Records appended"
+    }
+  },
+  "required": [
+    "logical_bytes",
+    "records"
+  ],
+  "additionalProperties": true
+}

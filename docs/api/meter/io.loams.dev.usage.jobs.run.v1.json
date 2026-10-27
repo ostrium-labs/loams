@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:loams:json:io.loams.dev.usage.jobs.run.v1",
+  "title": "io.loams.dev.usage.jobs.run.v1",
+  "description": "The `data` of a `io.loams.dev.usage.jobs.run.v1` usage event: A job run. Producer: Jobs engine (JB1 hooks). Design §63 §6.3. Measured values are integers in the unit named; dimensions are strings. New optional fields may be added within v1.",
+  "type": "object",
+  "properties": {
+    "cpu_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "CPU time, ms"
+    },
+    "queue": {
+      "type": "string",
+      "description": "The queue"
+    }
+  },
+  "required": [
+    "cpu_ms"
+  ],
+  "additionalProperties": true
+}

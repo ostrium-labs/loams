@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:loams:json:io.loams.dev.usage.gateway.connection.v1",
+  "title": "io.loams.dev.usage.gateway.connection.v1",
+  "description": "The `data` of a `io.loams.dev.usage.gateway.connection.v1` usage event: A gateway connection, on close. Producer: ConnectionObserver (gateway pg module). Design §63 §6.3. Measured values are integers in the unit named; dimensions are strings. New optional fields may be added within v1.",
+  "type": "object",
+  "properties": {
+    "bytes_in": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Bytes from the client"
+    },
+    "bytes_out": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Bytes to the client"
+    },
+    "duration_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Connection duration, ms"
+    }
+  },
+  "required": [
+    "bytes_in",
+    "bytes_out",
+    "duration_ms"
+  ],
+  "additionalProperties": true
+}

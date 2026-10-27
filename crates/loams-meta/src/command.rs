@@ -334,8 +334,9 @@ pub enum Command {
         fence: Option<Fence>,
         now_ms: u64,
     },
-    /// Creates reserved system stream `name` (`SYSTEM_STREAMS`: `_git`, GT1 Task 15) with its
-    /// partition count, class `Standard` and no retention, or finds it. Replies
+    /// Creates reserved system stream `name` (`SYSTEM_STREAMS`: `_git`, GT1 Task 15; `_meter`,
+    /// ME1 Task 4) with its partition count, class `Standard` and its
+    /// `system_stream_retention`, or finds it. Replies
     /// [`Reply::StreamCreated`] in every case, so a retry is safe. Appended last, so every
     /// earlier variant keeps its index.
     EnsureSystemStream {

@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:loams:json:io.loams.dev.usage.event",
+  "title": "Loams usage event",
+  "description": "A usage event: a CloudEvent 1.0 in JSON structured mode, in the Loams usage profile (design §63 §6.1), which OpenMeter's POST /api/v1/events accepts unchanged. `data` follows the schema its `dataschema` names.",
+  "type": "object",
+  "properties": {
+    "specversion": {
+      "const": "1.0"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Derived from the work, stable across retries; source + id is the dedup key"
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1,
+      "description": "loams://<cluster>/<role>/<node> for Loams' producers, loams-ns://<ns>/<client> for tenant producers"
+    },
+    "type": {
+      "type": "string",
+      "minLength": 1,
+      "description": "io.loams.dev.usage.<product>.<name>.v<major> for Loams' meters; tenants may not use io.loams.dev.*"
+    },
+    "subject": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "description": "The billing subject (org_<id> for Loams' billing); the stream's partition key"
+    },
+    "time": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339, nanoseconds allowed: the end of the measured interval"
+    },
+    "datacontenttype": {
+      "const": "application/json"
+    },
+    "dataschema": {
+      "type": "string",
+      "pattern": "^urn:loams:json:",
+      "description": "urn:loams:json:<type>, required for Loams types"
+    },
+    "tenantid": {
+      "type": "string",
+      "pattern": "^[^/]+/[^/]+$",
+      "description": "<org>/<namespace>, from the credential"
+    },
+    "traceparent": {
+      "type": "string",
+      "description": "W3C Trace Context"
+    },
+    "loamslease": {
+      "type": "string",
+      "pattern": "^[a-z0-9]{1,10}$",
+      "description": "The lease that admitted the work (§63 §11.3); exporters strip it"
+    },
+    "data": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "specversion",
+    "id",
+    "source",
+    "type",
+    "subject",
+    "time",
+    "datacontenttype",
+    "tenantid",
+    "data"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "pattern": "^io\\.loams\\.dev\\."
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "dataschema"
+        ]
+      }
+    }
+  ],
+  "additionalProperties": {
+    "type": "string"
+  }
+}

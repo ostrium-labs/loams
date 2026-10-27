@@ -2,7 +2,7 @@
 
 use loams_common::meta::{
     ApplyError, Fence, MAX_PARTITIONS, Namespace, Retention, Stream, WalClass, graph_stream_name,
-    is_graph_id, legacy_graph_stream_name, system_stream_partitions,
+    is_graph_id, legacy_graph_stream_name, system_stream_partitions, system_stream_retention,
 };
 use loams_common::{NamespaceId, StreamId};
 
@@ -97,7 +97,7 @@ impl MetaState {
             name.to_string(),
             partitions,
             WalClass::Standard,
-            Retention::default(),
+            system_stream_retention(name),
         );
         Ok(Reply::StreamCreated(id))
     }

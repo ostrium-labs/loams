@@ -258,12 +258,13 @@ impl MetaState {
                     s.id, s.name
                 ));
             }
-            // A reserved system stream (GT1 Task 15: `_git`) belongs to its subsystem.
+            // A reserved system stream (GT1 Task 15: `_git`; ME1 Task 4: `_meter`) belongs to
+            // its subsystem.
             let system_partitions = loams_common::meta::system_stream_partitions(&s.name);
             if let Some(partitions) = system_partitions
                 && (s.partitions != partitions
                     || s.class != WalClass::Standard
-                    || s.retention != Retention::default())
+                    || s.retention != loams_common::meta::system_stream_retention(&s.name))
             {
                 violations.push(format!(
                     "system stream {} ({}) does not match: {s:?}",

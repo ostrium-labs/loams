@@ -22,11 +22,12 @@ pub use types::{
     Collection, EntryKind, Fence, Freshness, GIT_STREAM, GRAPH_STREAM_PREFIX, HotConfig,
     IdempotencyEntry, IdempotencyKey, IdempotencyState, IndexEntry, Lease, LeaseGrant, Link,
     LinkId, MAX_ALIAS_TARGETS, MAX_COLLECTION_NAME_LEN, MAX_IDEMPOTENCY_KEYS,
-    MAX_IDEMPOTENCY_TTL_MS, MAX_KEY_LEN, MAX_LEASE_TTL_MS, MAX_NAME_LEN, MAX_PARTITIONS, Namespace,
-    Pointer, Retention, SYSTEM_NAMESPACE, SYSTEM_STREAMS, Stream, TargetRef, WAL_COMMIT_WINDOW_MS,
-    WalChunk, WalClass, collection_pk_prefix, collection_pointer_key, collection_prefix,
-    graph_stream_name, implicit_name, is_graph_id, is_reserved_namespace, legacy_graph_stream_name,
-    link_pointer_key, system_stream_partitions,
+    MAX_IDEMPOTENCY_TTL_MS, MAX_KEY_LEN, MAX_LEASE_TTL_MS, MAX_NAME_LEN, MAX_PARTITIONS,
+    METER_STREAM, METER_STREAM_PARTITIONS, METER_STREAM_RETENTION_MS, Namespace, Pointer,
+    Retention, SYSTEM_NAMESPACE, SYSTEM_STREAMS, Stream, TargetRef, WAL_COMMIT_WINDOW_MS, WalChunk,
+    WalClass, collection_pk_prefix, collection_pointer_key, collection_prefix, graph_stream_name,
+    implicit_name, is_graph_id, is_reserved_namespace, legacy_graph_stream_name, link_pointer_key,
+    system_stream_partitions, system_stream_retention,
 };
 pub use upgrade::{PRUNED, SNAPSHOT_ROOT_PREFIX, pinned_by, snapshot_gc_floor, snapshot_root_time};
 pub use views::{

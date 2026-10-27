@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:loams:json:io.loams.dev.usage.git.storage.v1",
+  "title": "io.loams.dev.usage.git.storage.v1",
+  "description": "The `data` of a `io.loams.dev.usage.git.storage.v1` usage event: A repository's stored bytes (a gauge, D393). Producer: Loams Git. Design §63 §6.3. Measured values are integers in the unit named; dimensions are strings. New optional fields may be added within v1.",
+  "type": "object",
+  "properties": {
+    "bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Stored bytes"
+    },
+    "repository": {
+      "type": "string",
+      "description": "The repository"
+    }
+  },
+  "required": [
+    "bytes"
+  ],
+  "additionalProperties": true
+}

@@ -264,8 +264,9 @@ pub trait MetaStore: Send + Sync + fmt::Debug + 'static {
     ) -> MetaResult<StreamId>;
 
     /// Creates reserved system stream `name` ([`SYSTEM_STREAMS`](crate::meta::SYSTEM_STREAMS):
-    /// `_git`, Loams Git's mirror, GT1 Task 15) in `namespace` with its partition count, class
-    /// `Standard` and no retention, and returns it. Idempotent: an existing stream is returned,
+    /// `_git`, Loams Git's mirror, GT1 Task 15; `_meter`, Loams Meter's usage stream, ME1 Task 4)
+    /// in `namespace` with its partition count, class `Standard` and its
+    /// [`system_stream_retention`](crate::meta::system_stream_retention), and returns it. Idempotent: an existing stream is returned,
     /// so a retry after a lost acknowledgement answers the first attempt's stream. Rejected
     /// with [`ApplyError::NamespaceNotFound`], or [`ApplyError::InvalidArgument`] for a name
     /// that is not a system stream.
