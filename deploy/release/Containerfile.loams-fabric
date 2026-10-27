@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1.7
 # The Loams Fabric image (ghcr.io/ostrium-labs/loams-fabric): `loams-fabric`
-# (the House front) with `loams-house-worker` beside it, the only binary that
+# (the House front, and `connect`, the native connectors of the `connectors`
+# profile, D1821) with `loams-house-worker` beside it, the only binary that
 # links libchdb (D761). Built by build.sh from the repository root.
 #
 # libchdb is fetched here, by the same digests fabric/crates/loams-chdb-sys/
@@ -42,11 +43,14 @@ RUN --mount=type=cache,id=loams-cargo-registry,target=/usr/local/cargo/registry 
     --mount=type=cache,id=loams-target-fabric,target=/src/fabric/target \
     if [ -n "$CARGO_BUILD_JOBS" ]; then export CARGO_BUILD_JOBS; else unset CARGO_BUILD_JOBS; fi \
  && cd fabric \
- && cargo build --locked --release -p loams-fabric --bin loams-fabric \
+ && cargo build --locked --release -p loams-fabric --bin loams-fabric --features connectors \
  && cargo build --locked --release -p loams-house-worker --bin loams-house-worker \
  && install -D -m 0755 target/release/loams-fabric /out/bin/loams-fabric \
  && install -D -m 0755 target/release/loams-house-worker /out/bin/loams-house-worker \
- && install -D -m 0644 "$LIBCHDB_DIR/libchdb.so" /out/lib/libchdb.so
+ && install -D -m 0644 "$LIBCHDB_DIR/libchdb.so" /out/lib/libchdb.so \
+ && mkdir -p /out/share/loams/connectors \
+ && cp -r /src/connectors/registry /src/connectors/schema /src/connectors/schemas \
+      /src/connectors/profiles /out/share/loams/connectors/
 
 FROM ${RUNTIME_IMAGE}
 ARG VERSION=dev
@@ -56,10 +60,20 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/* \
  && groupadd --system --gid 10001 loams \
  && useradd --system --uid 10001 --gid loams --home-dir /var/lib/loams-house --shell /usr/sbin/nologin loams \
- && install -d -o loams -g loams -m 0750 /var/lib/loams-house /var/lib/loams-house-link
+ && install -d -o loams -g loams -m 0750 /var/lib/loams-house /var/lib/loams-house-link \
+ && install -d -o loams -g loams -m 0770 /run/loams-connect \
+ && install -d -o loams -g loams -m 0700 /var/lib/loams-connect /var/lib/loams-connect/state
 COPY --from=build /out/bin/ /usr/local/bin/
 COPY --from=build /out/lib/ /usr/local/lib/
-RUN ldconfig
+# The registry, profiles and schemas `connect` checks instance files against.
+COPY --from=build /out/share/loams/ /usr/share/loams/
+# CC0 R0.3: connect's Kafka clients verify Confluent Cloud's certificates
+# with the system roots (`ssl.ca.location=probe`), so the image must keep
+# ca-certificates; and the registry connect checks instances against is here.
+RUN ldconfig \
+ && test -s /etc/ssl/certs/ca-certificates.crt \
+ && test -s /usr/share/loams/connectors/registry/kafka.yaml \
+ && /usr/local/bin/loams-fabric connect --help >/dev/null
 LABEL org.opencontainers.image.title="loams-fabric" \
       org.opencontainers.image.description="Loams Fabric: the House front and its chDB workers" \
       org.opencontainers.image.source="https://github.com/ostrium-labs/loams" \

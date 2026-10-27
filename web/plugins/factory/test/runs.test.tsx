@@ -4,7 +4,7 @@
 import { createRouterTransport } from '@connectrpc/connect';
 import { live } from '@loams/proto';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 import { liveRunsSource, type RunRow, RunsPage, type RunsSource } from '../src/index.js';
 
 afterEach(cleanup);

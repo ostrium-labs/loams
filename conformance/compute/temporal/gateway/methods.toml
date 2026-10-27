@@ -120,3 +120,11 @@ note = "added for the Temporal Web UI and the `temporal` CLI (D2051); no SDK cal
 [[method]]
 name = "GetWorkflowExecutionHistoryReverse"
 note = "the Temporal Web UI's workflow page (D2051); no SDK call in these runs; `reverse_history_pages_are_the_history_newest_first`"
+
+[[method]]
+name = "UpdateWorkflowExecution"
+note = "added by lane TMP-api (DX4's update methods, brought forward); no SDK call in these runs and no gRPC test yet"
+
+[[method]]
+name = "PollWorkflowExecutionUpdate"
+note = "added by lane TMP-api; no SDK call in these runs and no gRPC test yet"

@@ -5,7 +5,7 @@
 import type { PaletteCommand } from '@loams/slots';
 import { codeEditorText } from '@loams/ui';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { DataClient } from '../src/client.js';
 import { TablesSource, tableStatement } from '../src/index.js';
 import { SqlPage } from '../src/pages/sql.js';

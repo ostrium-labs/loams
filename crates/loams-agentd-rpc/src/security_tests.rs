@@ -162,14 +162,14 @@ async fn a_call_batched_ahead_of_hello_is_refused() {
         "{{\"id\":1,\"method\":\"Echo\",\"params\":1}}\n{{\"id\":2,\"method\":\"{}\",\"params\":{}}}",
         methods::HELLO,
         hello_params()
-    )))
+    ).into()))
     .await
     .unwrap();
     let mut texts = Vec::new();
     while let Ok(Some(Ok(message))) = tokio::time::timeout(Duration::from_secs(5), ws.next()).await
     {
         match message {
-            Message::Text(text) => texts.push(text),
+            Message::Text(text) => texts.push(text.to_string()),
             Message::Close(_) => break,
             _ => {}
         }

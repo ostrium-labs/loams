@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["instance", "secretName", "credentials", "configName", "config", "roles"],
+  "properties": {
+    "instance": { "type": "string", "pattern": "^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$" },
+    "secretName": { "type": "string", "minLength": 1 },
+    "credentials": {
+      "type": "object",
+      "required": ["meta-db-password", "s3-access-key-id", "s3-secret-access-key"],
+      "additionalProperties": { "type": "string" }
+    },
+    "configName": { "type": "string", "minLength": 1 },
+    "config": { "type": "string", "minLength": 1 },
+    "roles": {
+      "type": "object",
+      "required": ["meta", "compactor", "compute", "frontend"],
+      "additionalProperties": false,
+      "properties": {
+        "meta": { "$ref": "#/$defs/role" },
+        "compactor": { "$ref": "#/$defs/role" },
+        "compute": { "$ref": "#/$defs/role" },
+        "frontend": { "$ref": "#/$defs/role" }
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "controlNamespace": { "type": "string" },
+        "gatewayPodLabels": { "type": "object", "additionalProperties": { "type": "string" } },
+        "controllerPodLabels": { "type": "object", "additionalProperties": { "type": "string" } }
+      }
+    },
+    "podSecurityContext": { "type": "object" },
+    "terminationGracePeriodSeconds": { "type": "integer", "minimum": 0 }
+  },
+  "$defs": {
+    "role": {
+      "type": "object",
+      "required": ["name", "image", "replicas", "stateful", "args", "env", "ports", "labels", "resources"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$" },
+        "image": { "type": "string", "pattern": "@sha256:[0-9a-f]{64}$" },
+        "replicas": { "type": "integer", "minimum": 0, "maximum": 64 },
+        "stateful": { "type": "boolean" },
+        "args": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "env": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string" },
+              "value": { "type": "string" },
+              "secretKey": { "type": "string" }
+            },
+            "oneOf": [{ "required": ["value"] }, { "required": ["secretKey"] }]
+          }
+        },
+        "ports": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["name", "containerPort"],
+            "properties": {
+              "name": { "type": "string", "maxLength": 15 },
+              "containerPort": { "type": "integer", "minimum": 1, "maximum": 65535 }
+            }
+          }
+        },
+        "labels": { "type": "object", "additionalProperties": { "type": "string" } },
+        "resources": { "type": "object" }
+      }
+    }
+  }
+}
