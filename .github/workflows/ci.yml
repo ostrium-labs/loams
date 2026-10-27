@@ -145,6 +145,7 @@ jobs:
               - *toolchain
               - "crates/loams/**"
               - "crates/loams-cloud-admin/**"
+              - "crates/loams-confluent/**"
               - "crates/loams-cache/**"
               - "crates/loams-collection/**"
               - "crates/loams-common/**"

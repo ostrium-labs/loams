@@ -17,7 +17,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vp test run"
   },
   "dependencies": {
     "ajv": "8.20.0",
@@ -26,6 +26,8 @@
   "devDependencies": {
     "@types/node": "24.13.6",
     "typescript": "5.9.3",
-    "vitest": "5.0.3"
+    "vite-plus": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
   }
 }

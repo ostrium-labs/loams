@@ -3,7 +3,7 @@
 // compiler, so "compatible with flows" is checked by flows, not by a copy of its rules.
 
 import { compileGraph } from '@loams-core/flows/src/compiler.ts';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { FIXTURE_CATALOG } from '../src/fixtures.js';
 import { emptyGraph, type PipelineGraph } from '../src/model.js';
 import { addNode, connect, disconnect, moveNode, removeNodes, updateNode } from '../src/ops.js';

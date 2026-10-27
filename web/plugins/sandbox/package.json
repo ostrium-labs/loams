@@ -14,10 +14,12 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "test": "vitest run"
+    "test": "vp test run"
   },
   "devDependencies": {
     "jsdom": "30.1.2",
-    "vitest": "5.0.3"
+    "vite": "catalog:",
+    "vitest": "catalog:",
+    "vite-plus": "catalog:"
   }
 }

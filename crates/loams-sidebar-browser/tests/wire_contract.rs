@@ -219,7 +219,7 @@ impl FakeEngine {
                     reply.insert("sessionId".to_string(), session.clone());
                 }
                 let text = Value::Object(reply).to_string();
-                if socket.send(Message::Text(text)).await.is_err() {
+                if socket.send(Message::Text(text.into())).await.is_err() {
                     break;
                 }
             }
@@ -402,7 +402,7 @@ async fn events_seen_while_a_call_is_in_flight_are_buffered() {
             "sessionId": "session-1",
         });
         socket
-            .send(Message::Text(unsolicited.to_string()))
+            .send(Message::Text(unsolicited.to_string().into()))
             .await
             .expect("an event frame");
         while let Some(Ok(Message::Text(text))) = socket.next().await {
@@ -411,7 +411,7 @@ async fn events_seen_while_a_call_is_in_flight_are_buffered() {
             reply.insert("id".to_string(), request["id"].clone());
             reply.insert("result".to_string(), json!({ "ok": true }));
             if socket
-                .send(Message::Text(Value::Object(reply).to_string()))
+                .send(Message::Text(Value::Object(reply).to_string().into()))
                 .await
                 .is_err()
             {
