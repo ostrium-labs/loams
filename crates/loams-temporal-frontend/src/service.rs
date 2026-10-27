@@ -6,7 +6,6 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use loams_temporal_history::Attributes;
 use loams_temporal_history::time::{dur, dur_ms, ms, ts};
 use loams_temporal_history::{Attributes, Limits, limit_messages};
 use loams_temporal_matching::{Handout, Matcher, QueueKey, TaskKind as QueueKind};
@@ -220,6 +219,11 @@ impl Frontend {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .remove(id);
+    }
+
+    /// The engine (tests and tools drive runs through it).
+    pub fn engine(&self) -> &Engine {
+        &self.engine
     }
 
     /// The caller: the UI listener's principal when the call came in there
@@ -1345,6 +1349,7 @@ impl WorkflowService for WorkflowServiceImpl {
                     0 => None,
                     s2c => Some(ts(a.scheduled_time.as_ref().map_or(0, ms) + s2c)),
                 },
+                #[allow(deprecated)]
                 last_worker_version_stamp: a.started_worker_version.clone(),
                 ..Default::default()
             })

@@ -122,12 +122,36 @@ impl Gateway {
         }
         frontend.attach_visibility();
         let frontend = Arc::new(frontend);
-        let outbox = Arc::new(StoreOutbox::new(
-            parts.store,
-            parts.shards,
-            parts.pid.clone(),
-            Duration::from_secs(30),
-        ));
+        // Follow-ups (children, continue-as-new, external requests, the
+        // parent close policy) come out of the same outbox (D2089).
+        let (ftx, mut frx) = tokio::sync::mpsc::unbounded_channel();
+        let outbox = Arc::new(
+            StoreOutbox::new(
+                parts.store,
+                parts.shards,
+                parts.pid.clone(),
+                Duration::from_secs(30),
+            )
+            .with_follow_ups(ftx),
+        );
+        {
+            let f = frontend.clone();
+            let mut sd = shutdown.clone();
+            tokio::spawn(async move {
+                loop {
+                    tokio::select! {
+                        _ = sd.wait_for(|s| *s) => return,
+                        m = frx.recv() => match m {
+                            Some(c) => {
+                                let f = f.clone();
+                                tokio::spawn(async move { f.run_claimed_follow_up(c).await });
+                            }
+                            None => return,
+                        }
+                    }
+                }
+            });
+        }
         let relay = Arc::new(Relay::new(outbox, fast));
 
         let stop = |mut rx: tokio::sync::watch::Receiver<bool>| async move {
@@ -139,60 +163,6 @@ impl Gateway {
         let m = matcher.clone();
         let sd = shutdown.clone();
         tokio::spawn(async move { m.run_leases(stop(sd)).await });
-
-        // Schedules: the overdue sweep, and passes when a scheduled run
-        // closes (D2071).
-        let f = frontend.clone();
-        let mut sd = shutdown.clone();
-        tokio::spawn(async move {
-            let mut tick = tokio::time::interval(crate::schedules::SWEEP_EVERY);
-            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-            loop {
-                tokio::select! {
-                    _ = sd.wait_for(|s| *s) => return,
-                    _ = tick.tick() => f.sweep_schedules().await,
-                }
-            }
-        });
-        let f = frontend.clone();
-        let mut closed = frontend.engine.closed_runs();
-        let mut sd = shutdown.clone();
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    _ = sd.wait_for(|s| *s) => return,
-                    r = closed.recv() => match r {
-                        Ok(key) => {
-                            let f = f.clone();
-                            tokio::spawn(async move { f.on_run_closed(key).await });
-                        }
-                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                            tracing::warn!(missed = n, "schedule close notifications lagged; the re-check timers cover them");
-                        }
-                        Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
-                    }
-                }
-            }
-        });
-        // Children, continue-as-new and external requests (D2087).
-        let (ftx, mut frx) = tokio::sync::mpsc::unbounded_channel();
-        frontend.engine.set_followups(ftx);
-        let f = frontend.clone();
-        let mut sd = shutdown.clone();
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    _ = sd.wait_for(|s| *s) => return,
-                    m = frx.recv() => match m {
-                        Some(fu) => {
-                            let f = f.clone();
-                            tokio::spawn(async move { f.on_follow_up(fu).await });
-                        }
-                        None => return,
-                    }
-                }
-            }
-        });
 
         let mut callbacks = raw
             .subscribe(CALLBACK_GROUP)
