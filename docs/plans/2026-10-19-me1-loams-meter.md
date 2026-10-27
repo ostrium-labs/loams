@@ -104,3 +104,5 @@
 
 | # | Ruling | Reason |
 |---|---|---|
+| T5-1 | `_meter.events` has `ingested_at DateTime('UTC')` (set by the view) instead of `stream_partition`/`stream_offset`; `tenantid`/`lease` read `_ce_ext[…]` (D2191) | HS1 Task 16's `CloudEvents` pipe has `_ce_*` and `_ce_ext` columns only; the cursor is in the target's properties |
+| T5-2 | The House schema is `loams_meter_house::sql::schema()` (all `IF NOT EXISTS`), applied by the `meter` role at start through `ensure_schema`; the SQL module is std-only and run on a real House by `fabric/crates/loams-house-worker/tests/meter.rs` via `#[path]` (D2191) | `migrate` never calls a service API (§54 §6.3); one source of SQL, no cross-workspace dependency |
