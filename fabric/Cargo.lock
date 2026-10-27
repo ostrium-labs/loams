@@ -6007,6 +6007,7 @@ dependencies = [
  "loams-house-native",
  "loams-house-proto",
  "loams-house-worker",
+ "loams-meter-gate",
  "loams-store",
  "nix",
  "proptest",
@@ -6230,6 +6231,13 @@ dependencies = [
  "serde_json",
  "tokio",
  "zstd 0.13.3",
+]
+
+[[package]]
+name = "loams-meter-gate"
+version = "0.1.2"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]

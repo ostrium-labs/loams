@@ -141,6 +141,7 @@ cargo_package(
         "//crates/loams-authz:loams-authz",
         "//crates/loams-common:loams-common",
         "//crates/loams-kv:loams-kv",
+        "//crates/loams-meter-gate:loams-meter-gate",
         "//crates/loams-pgdog-sync:loams-pgdog-sync",
         "//crates/loams-postgres:loams-postgres",
         "//third-party/rust:age",

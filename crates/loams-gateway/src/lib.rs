@@ -29,6 +29,7 @@ pub mod browser;
 pub mod config;
 pub mod io;
 pub mod listeners;
+pub mod meter;
 pub mod observe;
 pub mod pg;
 pub mod reload;
