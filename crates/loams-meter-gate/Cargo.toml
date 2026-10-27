@@ -1,0 +1,19 @@
+[package]
+name = "loams-meter-gate"
+description = "What products link to meter and enforce usage (design §63 §5.2): the usage event, MeterSink (best-effort and spooled), observer adapters, the Gate and NoGate."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+# The dependency runs one way (D202, D551): products depend on this crate,
+# never the reverse, and it depends on no product. It must also build from the
+# `fabric/` workspace by path (ME1 global constraints), so it keeps to std and
+# serde_json: no async runtime, no Arrow, no loams-log.
+[dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

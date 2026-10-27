@@ -9554,6 +9554,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-meter-gate"
+version = "0.1.2"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "loams-migrate"
 version = "0.1.2"
 dependencies = [
