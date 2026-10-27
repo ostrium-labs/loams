@@ -101,6 +101,9 @@ jobs:
   # only its own leg (SDK_LEGS=<sdk>; conformance/compute/temporal/gateway/legs/<sdk>.sh).
   # SDK lanes append their SDK to `sdk`. Python: temporalio under uv in the
   # pinned PYTHON_IMAGE (pins.env TEMPORAL_SDK_PY, UV_VERSION).
+  # Rust: temporalio-sdk on sdk-core (prerelease), built with cargo in the
+  # pinned RUST_IMAGE (pins.env TEMPORAL_SDK_RUST, RUST_IMAGE); its replay
+  # case is sdk-core's replayer (D2158).
   sdk-leg:
     name: "Temporal gateway: ${{ matrix.sdk }} SDK leg (temporal-gateway profile)"
     needs: changes
@@ -110,7 +113,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        sdk: [python]
+        sdk: [python, rust]
     env:
       OC_OUT: ${{ github.workspace }}/target/compute
       DOCKER_BUILDKIT: '1'

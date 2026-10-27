@@ -76,8 +76,10 @@ scenarios; the Go exporter writes `histories/<sdk>/`) and `leg_<sdk>_replay`
 | SDK | Leg | Pin | Status |
 |---|---|---|---|
 | Python | `legs/python.sh` (`corpus/workers/python`) | temporalio 1.34.0, uv 0.12.24 (pins.env) | not yet run: CI job `sdk-leg (python)` |
+| Rust (prerelease) | `legs/rust.sh` (`corpus/workers/rust`) | temporalio-sdk 1.1.0 on sdk-core 0.10.0, RUST_IMAGE rust 1.97.1 (pins.env) | not yet run: CI job `sdk-leg (rust)`; replay is sdk-core's replayer; the upstream half is `temporal-sdk-rust.yml` |
 
 ```sh
 SDK_LEGS=python conformance/compute/temporal/gateway/run.sh --profile
+SDK_LEGS=rust conformance/compute/temporal/gateway/run.sh --profile
 ```
 

@@ -1,0 +1,50 @@
+# The corpus's Rust worker (lane TSDK-rust, D2155-D2159): the Temporal Rust
+# SDK (crates temporalio-sdk / temporalio-client 1.1.0 on crates.io, which pin
+# temporalio-sdk-core =0.10.0, the Core that the Python, .NET, Ruby and
+# TypeScript SDKs embed) running the corpus's scenarios, and Core's replayer
+# (WorkflowReplayer -> temporalio_sdk_core::init_replay_worker) over the
+# histories it wrote.
+#
+# Its own workspace on purpose: it is NOT a member of the repository's
+# workspace (members are crates/* and bench/git-wal), so these crates never
+# enter the main Cargo.lock, Buck's third-party set or the release build.
+# Built only inside RUST_IMAGE by gateway/legs/rust.sh and generate-rust.sh.
+#
+# Honest status: this lane treats the Rust SDK as prerelease. temporalio-sdk
+# reached 1.0.0 on crates.io on 2026-09-04 (two months after 0.5.0), but
+# temporalio-sdk-core and temporalio-protos are still 0.x (temporalio-protos'
+# README: minor releases may break), and several SDK and client APIs sit
+# behind the `experimental` feature. Pins are >= 14 days old (1.1.0 and
+# 0.10.0: 2026-10-06).
+[package]
+name = "corpus-rust"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.92"
+license = "Apache-2.0"
+publish = false
+
+[workspace]
+
+[[bin]]
+name = "corpus-rust"
+path = "src/main.rs"
+
+[dependencies]
+# default-features off: no Prometheus exporter or envconfig loader (the leg
+# connects with explicit options), which keeps the build small.
+temporalio-sdk = { version = "=1.1.0", default-features = false }
+temporalio-macros = "=1.1.0"
+# vendored-protox: the protos compile with the pure-Rust protox, so the
+# build image needs no protoc. tls-ring stays on (the client's default).
+temporalio-client = { version = "=1.1.0", features = ["vendored-protox"] }
+temporalio-common = { version = "=1.1.0", features = ["vendored-protox"] }
+anyhow = "1"
+prost = "0.14"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1.47", features = ["rt-multi-thread", "macros", "time"] }
+
+[profile.dev]
+# Debug info is not needed in CI and doubles the link time.
+debug = false

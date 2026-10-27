@@ -3,13 +3,15 @@
 every pull request.
 
   manifest.py build  --server-version V --server-image I --pg-major M [--date D]
+  manifest.py build-lang <lang> --server-version V --server-image I --pg-major M [--date D]
   manifest.py check                      # corpus_manifest_complete
   manifest.py stable <dir-a> <dir-b>     # corpus_regenerates_stably
 
 `build` lists every history under histories/<lang>/ with its scenario, run,
 language, SDK version, server version and image, Loams Postgres major (or
 `start-dev` for the CLI's dev server), generation date, phase and the
-SHA-256 of its .json and .binpb. `check` fails when a file is not listed, a
+SHA-256 of its .json and .binpb. `build-lang` rebuilds one language's
+entries and keeps every other entry as it is (generate-rust.sh). `check` fails when a file is not listed, a
 listed file is missing or its hash differs, a .json has no .binpb, a
 scenario of scenarios.json is missing in a language (Go-only ones in Go
 only), or the workers' scenario lists differ from scenarios.json. `stable`
@@ -28,7 +30,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 HIST = HERE / "histories"
 MANIFEST = HERE / "manifest.json"
-SDK = {"go": "go.temporal.io/sdk", "ts": "@temporalio/worker", "python": "temporalio"}
+SDK = {"go": "go.temporal.io/sdk", "ts": "@temporalio/worker", "python": "temporalio",
+       "rust": "temporalio-sdk"}
 # Languages whose histories every corpus must have. Another language (an SDK
 # leg added later, D2137) is required once histories/<lang>/ has a file:
 # until its first generation against the oracle, only its worker's scenario
@@ -46,10 +49,12 @@ def sdk_versions() -> dict[str, str]:
     go = re.search(r"go\.temporal\.io/sdk v([0-9.]+)", gomod)
     pkg = json.loads((HERE / "workers/ts/package.json").read_text())
     py = re.search(r'"temporalio==([0-9.]+)"', (HERE / "workers/python/pyproject.toml").read_text())
+    rs = re.search(r'^temporalio-sdk = \{ version = "=([0-9.]+)"', (HERE / "workers/rust/Cargo.toml").read_text(), re.M)
     return {
         "go": go.group(1) if go else "?",
         "ts": pkg["dependencies"]["@temporalio/worker"],
         "python": py.group(1) if py else "?",
+        "rust": rs.group(1) if rs else "?",
     }
 
 
@@ -82,11 +87,18 @@ def histories() -> list[tuple[str, Path]]:
     return out
 
 
-def build(server_version: str, server_image: str, pg_major: str, date: str) -> None:
+def build(server_version: str, server_image: str, pg_major: str, date: str, only: str | None = None) -> None:
     phase = {s["name"]: s["phase"] for s in scenarios()}
     sdks = sdk_versions()
     entries = []
+    if only is not None:
+        if only not in SDK:
+            raise SystemExit(f"manifest: unknown language {only!r}")
+        old = json.loads(MANIFEST.read_text())["histories"] if MANIFEST.exists() else []
+        entries = [e for e in old if e["language"] != only]
     for lang, p in histories():
+        if only is not None and lang != only:
+            continue
         m = RUN.match(p.name)
         if not m or m["scenario"] not in phase:
             raise SystemExit(f"manifest: {p} is not a known scenario")
@@ -120,7 +132,9 @@ def worker_lists() -> dict[str, list[str]]:
     ts = re.findall(r"\['([a-z0-9_]+)', 'DX[1-4]'\]", (HERE / "workers/ts/src/generate.ts").read_text())
     py = re.findall(r'^    \("([a-z0-9_]+)", "DX[1-4]"\),$',
                     (HERE / "workers/python/corpus_py/scenarios.py").read_text(), re.M)
-    return {"go": go, "ts": ts, "python": py}
+    rs = re.findall(r'^    \("([a-z0-9_]+)", "DX[1-4]"\),$',
+                    (HERE / "workers/rust/src/scenarios.rs").read_text(), re.M)
+    return {"go": go, "ts": ts, "python": py, "rust": rs}
 
 
 def check() -> list[str]:
@@ -133,7 +147,11 @@ def check() -> list[str]:
         problems.append("workers/ts/src/generate.ts does not list scenarios.json's non-Go-only scenarios in order")
     if lists["python"] != [s["name"] for s in want if not s["go_only"]]:
         problems.append("workers/python/corpus_py/scenarios.py does not list scenarios.json's non-Go-only scenarios in order")
+    if lists["rust"] != [s["name"] for s in want if not s["go_only"]]:
+        problems.append("workers/rust/src/scenarios.rs does not list scenarios.json's non-Go-only scenarios in order")
     sdks = sdk_versions()
+    if sdks["rust"] != pin("TEMPORAL_SDK_RUST"):
+        problems.append(f"workers/rust pins temporalio-sdk {sdks['rust']}, pins.env TEMPORAL_SDK_RUST {pin('TEMPORAL_SDK_RUST')}")
     if sdks["python"] != pin("TEMPORAL_SDK_PY"):
         problems.append(f"workers/python pins temporalio {sdks['python']}, pins.env TEMPORAL_SDK_PY {pin('TEMPORAL_SDK_PY')}")
     if not MANIFEST.exists():
@@ -194,6 +212,11 @@ def main(argv: list[str]) -> int:
         args = dict(zip(argv[1::2], argv[2::2]))
         build(args["--server-version"], args["--server-image"], args["--pg-major"],
               args.get("--date", dt.date.today().isoformat()))
+        return 0
+    if argv[:1] == ["build-lang"] and len(argv) >= 2:
+        args = dict(zip(argv[2::2], argv[3::2]))
+        build(args["--server-version"], args["--server-image"], args["--pg-major"],
+              args.get("--date", dt.date.today().isoformat()), only=argv[1])
         return 0
     if argv == ["check"]:
         problems = check()

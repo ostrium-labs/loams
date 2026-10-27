@@ -18,6 +18,8 @@ go = "Go SDK v1.49.0"
 ts = "TypeScript SDK 1.24.0"
 # Lane TSDK-python (D2139): "not run" until the sdk-leg (python) job runs and last-run.* is re-spliced.
 python = "Python SDK 1.34.0"
+# Lane TSDK-rust (D2159): prerelease Rust SDK on sdk-core 0.10.0; "not run" until the sdk-leg (rust) job runs and last-run.* is re-spliced.
+rust = "Rust SDK 1.1.0 (prerelease)"
 
 [[method]]
 name = "GetSystemInfo"
