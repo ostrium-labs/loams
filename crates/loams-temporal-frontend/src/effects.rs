@@ -258,6 +258,13 @@ pub fn outbox_rows(
             // task handed out for it, or a timer firing, finds the run
             // closed and settles or drops it (§13.2 invariant 4).
             Effect::RunClosed { .. } => {}
+            // Carried out by the frontend after the commit
+            // (`crate::followups`), not through Resonate.
+            Effect::StartChild { .. }
+            | Effect::ContinuedAsNew { .. }
+            | Effect::SignalExternal { .. }
+            | Effect::CancelExternal { .. }
+            | Effect::ParentClosePolicy { .. } => {}
         }
     }
     out
