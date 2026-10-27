@@ -30,7 +30,7 @@ git_fetch(
 git_fetch(
     name = "resonate-f7df9828d887fb16.git",
     repo = "https://github.com/ostrium-labs/resonate",
-    rev = "37b177cd019798f288a1dd5549f8a69de1613b90",
+    rev = "53d38ab33631258d52a74497414e37c3270c4fe7",
     visibility = [],
 )
 

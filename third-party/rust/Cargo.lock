@@ -10531,7 +10531,7 @@ dependencies = [
 [[package]]
 name = "resonate-auth"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "jsonwebtoken",
  "reqwest 0.12.28",
@@ -10544,7 +10544,7 @@ dependencies = [
 [[package]]
 name = "resonate-base"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "lazy_static",
@@ -10560,7 +10560,7 @@ dependencies = [
 [[package]]
 name = "resonate-client"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "reqwest 0.12.28",
@@ -10573,7 +10573,7 @@ dependencies = [
 [[package]]
 name = "resonate-core"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -10589,7 +10589,7 @@ dependencies = [
 [[package]]
 name = "resonate-gateway-http"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "lazy_static",
@@ -10607,7 +10607,7 @@ dependencies = [
 [[package]]
 name = "resonate-plugin"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "axum 0.7.9",
  "figment",
@@ -10620,7 +10620,7 @@ dependencies = [
 [[package]]
 name = "resonate-sdk"
 version = "0.6.0"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -10640,7 +10640,7 @@ dependencies = [
 [[package]]
 name = "resonate-sdk-macros"
 version = "0.1.0"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -10651,7 +10651,7 @@ dependencies = [
 [[package]]
 name = "resonate-server-sqlite"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "resonate-core",
@@ -10669,7 +10669,7 @@ dependencies = [
 [[package]]
 name = "resonate-sql"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "lazy_static",
@@ -10689,7 +10689,7 @@ dependencies = [
 [[package]]
 name = "resonate-timer-wheel"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "tokio",
  "verus_builtin",
@@ -10700,7 +10700,7 @@ dependencies = [
 [[package]]
 name = "resonate-trace"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "lazy_static",
  "opentelemetry",
@@ -10718,7 +10718,7 @@ dependencies = [
 [[package]]
 name = "resonate-transport-http-poll"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -10736,7 +10736,7 @@ dependencies = [
 [[package]]
 name = "resonate-transport-http-push"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "reqwest 0.12.28",
