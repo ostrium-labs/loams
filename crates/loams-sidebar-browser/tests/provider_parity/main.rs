@@ -723,11 +723,52 @@ async fn profile_restart_scenario(kind: Kind) -> Outcome {
     let page = provider.open(false).await?;
     let echoed = echoed_cookie(&mut provider, &page, &fixture).await?;
     ensure(echoed.contains(&format!("parity_session={value}")), || {
-        format!("after a restart on the same --storage-dir the server saw {echoed:?}")
+        format!(
+            "after a graceful restart on the same --storage-dir the server saw {echoed:?}; \
+             the profile directory holds {}",
+            profile_listing(&provider.profile_dir, &value)
+        )
     })?;
     provider.close(&page).await;
     provider.shutdown().await;
     Ok("cookie survived an engine restart via --storage-dir".to_string())
+}
+
+/// The files in a profile directory, marking any that contain `needle`, for a
+/// failure message that says where the engine did (or did not) write.
+fn profile_listing(dir: &std::path::Path, needle: &str) -> String {
+    let mut out = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(next) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&next) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            let holds = std::fs::read(&path)
+                .map(|bytes| String::from_utf8_lossy(&bytes).contains(needle))
+                .unwrap_or(false);
+            let name = path
+                .strip_prefix(dir)
+                .map(|relative| relative.display().to_string())
+                .unwrap_or_default();
+            out.push(if holds {
+                format!("{name} (has the cookie)")
+            } else {
+                name
+            });
+        }
+    }
+    out.sort();
+    if out.is_empty() {
+        "no files".to_string()
+    } else {
+        out.join(", ")
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

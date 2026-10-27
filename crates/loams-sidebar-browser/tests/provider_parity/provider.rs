@@ -194,6 +194,27 @@ impl Provider {
         let Some(engine) = self.engine.take() else {
             return Err("this provider's engine is not the suite's to restart".to_string());
         };
+        // Shut down the way the Desktop does on quit, gracefully first:
+        // `Browser.close` on a second connection, then SIGTERM, then (in
+        // `stop`) a kill. An engine that only flushes its cookie store on a
+        // clean exit gets the chance to do so; a first CI run that killed
+        // straight away saw no cookies after the restart.
+        if let Ok(closer) =
+            CdpClient::connect_with_timeout(&engine.devtools_url(), Duration::from_secs(5)).await
+        {
+            closer.close().await;
+        }
+        if let Some(pid) = engine.id() {
+            let _ = tokio::process::Command::new("kill")
+                .args(["-TERM", &pid.to_string()])
+                .status()
+                .await;
+            let proc_dir = std::path::PathBuf::from(format!("/proc/{pid}"));
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            while proc_dir.exists() && std::time::Instant::now() < deadline {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        }
         engine.stop().await.map_err(|error| error.to_string())?;
         let engine = launch(&self.profile_dir, &self.origin).await?;
         self.client = CdpClient::connect_with_timeout(&engine.devtools_url(), CALL_TIMEOUT)

@@ -1,6 +1,6 @@
 # Browser provider parity
 
-Status: **preview. The suite is written, but it has not yet been run end to end.** The matrix below stays empty until CI has run it, and every cell will name the CI run it came from.
+Status: **preview.** CI has run the suite once against each provider. The matrix below reports that run, and nothing else.
 
 Loams' built-in headless browser must behave the same whether it runs locally or in the cloud (owner, 2026-10-27). There is one engine, [Obscura](https://github.com/h4ckf0r0day/obscura) **0.2.3** (Apache-2.0), and two ways to reach it:
 
@@ -74,21 +74,26 @@ What the suite does not cover yet:
 
 ## Parity matrix
 
-Empty until CI has run the suite. Rows are filled only from a `Browser parity: matrix` job summary, with the run linked.
+Filled only from CI. Source: [run 40539985305](https://github.com/ostrium-labs/loams/actions/runs/40539985305), commit `bd6ade42`, Obscura 0.2.3, ubuntu-24.04 runners, 2026-10-27.
 
 | Scenario | `local` | `service` |
 |---|---|---|
-| `navigate` | | |
-| `accessibility_snapshot` | | |
-| `click_type_forms` | | |
-| `screenshot` | | |
-| `content_extraction` | | |
-| `downloads_policy` | | |
-| `network_policy_allowlist` | | |
-| `cookie_ledger_persistence` | | |
-| `profile_restart_persistence` | | |
-| `credential_boundary` | | |
-| `timeouts_budgets` | | |
-| `recording` | | |
+| `navigate` | pass | pass |
+| `accessibility_snapshot` | pass (via `Accessibility.getFullAXTree`) | pass (same) |
+| `click_type_forms` | pass | pass |
+| `screenshot` | pass (1280×720) | pass (1280×720) |
+| `content_extraction` | pass | pass |
+| `downloads_policy` | **FAIL** | **FAIL** |
+| `network_policy_allowlist` | pass | pass |
+| `cookie_ledger_persistence` | pass | pass |
+| `profile_restart_persistence` | **FAIL** | n/a |
+| `credential_boundary` | pass (process env included) | pass (container env checked by CI step) |
+| `timeouts_budgets` | pass | pass |
+| `recording` | pass | pass |
 
-CI run: none yet.
+In that run, 10 of 12 scenarios passed on both providers. The providers agree on every scenario except `profile_restart_persistence`, which applies only to `local`.
+
+The two failures:
+
+- **`downloads_policy` fails on both providers, in the same way.** Obscura 0.2.3 accepts `Fetch.enable` with `requestStage: "Response"`, but it pauses requests only at the request stage, with no `responseHeaders`. So a policy that keys on `Content-Disposition` cannot be enforced through `Fetch` on this engine. The scenario stays red until the engine provides response-stage interception, or Loams enforces downloads some other way (D2125).
+- **`profile_restart_persistence` fails on `local`.** After a restart on the same `--storage-dir`, the server saw no cookie. That run killed the engine without a graceful shutdown. The suite now closes it with `Browser.close` and SIGTERM first, and lists the profile directory's files in the failure message. The next run will show whether the engine persists cookies at all. Until then, the ledger is the persistence path that works on both providers.
