@@ -149,13 +149,13 @@ pub(crate) fn check_limits(commands: &[Command], state: &MutableState) -> Option
                     ));
                 }
             }
-            command::Attributes::FailWorkflowExecutionCommandAttributes(a) => {
-                if limits.blob_too_large(a.failure.as_ref().map_or(0, |f| f.encoded_len())) {
-                    return Some(LimitBreach::payload(
-                        C::BadFailWorkflowExecutionAttributes,
-                        "FailWorkflowExecutionCommandAttributes.Failure exceeds size limit.",
-                    ));
-                }
+            command::Attributes::FailWorkflowExecutionCommandAttributes(a)
+                if limits.blob_too_large(a.failure.as_ref().map_or(0, |f| f.encoded_len())) =>
+            {
+                return Some(LimitBreach::payload(
+                    C::BadFailWorkflowExecutionAttributes,
+                    "FailWorkflowExecutionCommandAttributes.Failure exceeds size limit.",
+                ));
             }
             _ => {}
         }
