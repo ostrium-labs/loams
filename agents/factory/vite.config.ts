@@ -23,7 +23,7 @@ export default defineConfig({
       'array-callback-return': 'error', // suspicious/useIterableCallbackReturn
       'constructor-super': 'error', // correctness/noInvalidConstructorSuper
       'default-case-last': 'error', // suspicious/useDefaultSwitchClauseLast
-      'eqeqeq': 'error', // suspicious/noDoubleEquals
+      eqeqeq: 'error', // suspicious/noDoubleEquals
       'for-direction': 'error', // correctness/useValidForDirection
       'getter-return': 'error', // suspicious/useGetterReturn
       'no-array-constructor': 'error', // style/useArrayLiterals
@@ -82,7 +82,16 @@ export default defineConfig({
       'no-unused-labels': 'error', // correctness/noUnusedLabels
       'no-unused-private-class-members': 'error', // correctness/noUnusedPrivateClassMembers
       'no-unused-vars': 'error', // correctness/noUnusedFunctionParameters, correctness/noUnusedImports, correctness/noUnusedVariables
-      'no-use-before-define': ['error', {"functions": false, "classes": false, "variables": false, "typedefs": false, "ignoreTypeReferences": true}], // correctness/noInvalidUseBeforeDeclaration
+      'no-use-before-define': [
+        'error',
+        {
+          functions: false,
+          classes: false,
+          variables: false,
+          typedefs: false,
+          ignoreTypeReferences: true,
+        },
+      ], // correctness/noInvalidUseBeforeDeclaration
       'no-useless-backreference': 'error', // suspicious/noUselessRegexBackrefs
       'no-useless-catch': 'error', // complexity/noUselessCatch
       'no-useless-constructor': 'error', // complexity/noUselessConstructor
@@ -98,7 +107,7 @@ export default defineConfig({
       'prefer-regex-literals': 'error', // complexity/useRegexLiterals
       'prefer-rest-params': 'error', // complexity/noArguments
       'prefer-template': 'error', // style/useTemplate
-      'radix': 'error', // correctness/useParseIntRadix
+      radix: 'error', // correctness/useParseIntRadix
       'require-yield': 'error', // correctness/useYield
       'typescript/adjacent-overload-signatures': 'error', // suspicious/useAdjacentOverloadSignatures
       'typescript/ban-ts-comment': 'error', // suspicious/noTsIgnore

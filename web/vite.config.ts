@@ -28,7 +28,7 @@ export default defineConfig({
       'array-callback-return': 'error', // suspicious/useIterableCallbackReturn
       'constructor-super': 'error', // correctness/noInvalidConstructorSuper
       'default-case-last': 'error', // suspicious/useDefaultSwitchClauseLast
-      'eqeqeq': 'warn', // suspicious/noDoubleEquals
+      eqeqeq: 'warn', // suspicious/noDoubleEquals
       'for-direction': 'error', // correctness/useValidForDirection
       'getter-return': 'error', // suspicious/useGetterReturn
       'jsx-a11y/alt-text': 'error', // a11y/useAltText
@@ -121,7 +121,16 @@ export default defineConfig({
       'no-unused-labels': 'error', // correctness/noUnusedLabels
       'no-unused-private-class-members': 'error', // correctness/noUnusedPrivateClassMembers
       'no-unused-vars': 'warn', // correctness/noUnusedFunctionParameters, correctness/noUnusedImports, correctness/noUnusedVariables
-      'no-use-before-define': ['error', {"functions": false, "classes": false, "variables": false, "typedefs": false, "ignoreTypeReferences": true}], // correctness/noInvalidUseBeforeDeclaration
+      'no-use-before-define': [
+        'error',
+        {
+          functions: false,
+          classes: false,
+          variables: false,
+          typedefs: false,
+          ignoreTypeReferences: true,
+        },
+      ], // correctness/noInvalidUseBeforeDeclaration
       'no-useless-backreference': 'error', // suspicious/noUselessRegexBackrefs
       'no-useless-catch': 'error', // complexity/noUselessCatch
       'no-useless-constructor': 'error', // complexity/noUselessConstructor
@@ -137,7 +146,7 @@ export default defineConfig({
       'prefer-regex-literals': 'error', // complexity/useRegexLiterals
       'prefer-rest-params': 'error', // complexity/noArguments
       'prefer-template': 'error', // style/useTemplate
-      'radix': 'error', // correctness/useParseIntRadix
+      radix: 'error', // correctness/useParseIntRadix
       'react/button-has-type': 'error', // a11y/useButtonType
       'react/exhaustive-deps': 'warn', // correctness/useExhaustiveDependencies
       'react/jsx-key': 'error', // correctness/useJsxKeyInIterable
@@ -185,7 +194,6 @@ export default defineConfig({
       'unicorn/prefer-number-properties': 'warn', // suspicious/noGlobalIsFinite, suspicious/noGlobalIsNan
       'use-isnan': 'error', // correctness/useIsNan
       'valid-typeof': 'error', // correctness/useValidTypeof
-
     },
     // Biome's per-file overrides, carried over.
     overrides: [

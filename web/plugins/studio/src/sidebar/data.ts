@@ -195,23 +195,21 @@ export function foldThreads(input: {
   });
 
   const placed = new Map(threads.map((t) => [t.id, t.projectId]));
-  const groups = input.groups.map(
-    (g): SidebarRunGroup => ({
-      id: g.id,
-      title: g.prompt.split('\n')[0]?.trim().slice(0, 120) || 'Run group',
-      projectId: g.members.map((m) => placed.get(m.chatId)).find((p) => p != null) ?? null,
-      memberIds: g.members.filter((m) => !m.detached).map((m) => m.chatId),
-      createdAt: ms(g.createdAtMs) ?? 0,
-      state:
-        g.state === RunGroupState.RUNNING
-          ? 'running'
-          : g.state === RunGroupState.READY
-            ? 'ready'
-            : g.state === RunGroupState.RESOLVED
-              ? 'resolved'
-              : 'unknown',
-    }),
-  );
+  const groups = input.groups.map((g): SidebarRunGroup => ({
+    id: g.id,
+    title: g.prompt.split('\n')[0]?.trim().slice(0, 120) || 'Run group',
+    projectId: g.members.map((m) => placed.get(m.chatId)).find((p) => p != null) ?? null,
+    memberIds: g.members.filter((m) => !m.detached).map((m) => m.chatId),
+    createdAt: ms(g.createdAtMs) ?? 0,
+    state:
+      g.state === RunGroupState.RUNNING
+        ? 'running'
+        : g.state === RunGroupState.READY
+          ? 'ready'
+          : g.state === RunGroupState.RESOLVED
+            ? 'resolved'
+            : 'unknown',
+  }));
   return { threads, groups };
 }
 

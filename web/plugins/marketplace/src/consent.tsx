@@ -241,7 +241,9 @@ export function ConsentScreen({
       <Section title="Network">
         <Items
           label="Network"
-          items={plan.egress.map((h) => <code key={h}>{h}</code>)}
+          items={plan.egress.map((h) => (
+            <code key={h}>{h}</code>
+          ))}
           empty="No hosts: it reaches only agentd's model proxy."
         />
       </Section>

@@ -48,17 +48,15 @@ export function DataTable<T extends RowData>({
 }) {
   const defs = useMemo(
     () =>
-      columns.map(
-        (c): ColumnDef<typeof features, T> => ({
-          id: c.key,
-          accessorFn: c.sortValue ?? (() => ''),
-          enableSorting: c.sortValue !== undefined,
-          sortFn: 'alphanumeric',
-          sortDescFirst: false,
-          header: () => c.header,
-          cell: ({ row }) => c.cell(row.original),
-        }),
-      ),
+      columns.map((c): ColumnDef<typeof features, T> => ({
+        id: c.key,
+        accessorFn: c.sortValue ?? (() => ''),
+        enableSorting: c.sortValue !== undefined,
+        sortFn: 'alphanumeric',
+        sortDescFirst: false,
+        header: () => c.header,
+        cell: ({ row }) => c.cell(row.original),
+      })),
     [columns],
   );
   const table = useTable({

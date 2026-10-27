@@ -24,7 +24,7 @@ it, the published package serves the built `dist` (`publishConfig`).
 Put the class `dark` on `<html>`:
 
 ```html
-<html class="dark">
+<html class="dark"></html>
 ```
 
 Light mode is a warm window with the work area as a white card; dark mode is
@@ -46,21 +46,21 @@ Every colour, radius, shadow, size and duration is a `--op-*` variable in
 utility (`bg-elevated`, `border-control-border`, `outline-focus`, `rounded-lg`,
 `text-body`, `shadow-toast`, `ease-out`, …). Use the role, not the value:
 
-| Role | Tokens (utilities) |
-|---|---|
-| Canvas, window | `--op-bg` (`bg-bg`), `--op-window` (`bg-window`) |
-| Surfaces | `--op-surface` (cards, panels), `--op-elevated` (menus, popovers, dialogs, toasts), `--op-raised` (muted fill, hover) |
-| Text | `--op-ink`, `--op-muted`, `--op-faint`; `--op-accent-fg` for the accent as text |
-| Primary action | `--op-accent`, `--op-accent-hover`, `--op-accent-active`, `--op-accent-ink` (its label), `--op-accent-soft` |
-| State | `--op-grow` (success), `--op-warn`, `--op-danger` (+ `-hover` for the solid button), `--op-info`, each with `-soft` |
-| Borders | `--op-rule` (border), `--op-rule-soft` (separator), `--op-input` (field outline, 3:1), `--op-control-border` (button outline) |
-| Focus | `--op-focus`, `--op-focus-width` (2px), `--op-focus-offset` (2px; rows inset it) |
-| Rows | `--op-row-hover`, `--op-row-selected`, `--op-shadow-chip`; heights `--op-row` (28) and `--op-row-comfortable` (32) |
-| Controls | `--op-control-xs` 24, `--op-control-compact` 28, `--op-control` 32, `--op-control-input` 36; icons `--op-icon-xs` 12, `--op-icon-sm` 14, `--op-icon` 16 |
-| Type | `--op-text-micro` 11 … `--op-text-hero` 24; `--op-weight-regular`/`-medium`/`-semibold` |
-| Radii | `--op-radius-xs` 4, `-sm` 6 (rows, chips), `-md` 8 (controls), `-lg` 14 (cards), `-xl` 22 (dialogs), `-pill` |
-| Shadows | only for what floats: `--op-shadow-pop`, `-modal`, `-toast`, `-composer`, `-chip` |
-| Motion | `--op-duration-fast` 120 (hover), `--op-duration-enter` 160, `--op-duration-exit` 110, `--op-duration-page` 220; `--op-ease-out`, `--op-ease-in`, `--op-ease-in-out`, `--op-ease-panel` |
+| Role           | Tokens (utilities)                                                                                                                                                                      |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Canvas, window | `--op-bg` (`bg-bg`), `--op-window` (`bg-window`)                                                                                                                                        |
+| Surfaces       | `--op-surface` (cards, panels), `--op-elevated` (menus, popovers, dialogs, toasts), `--op-raised` (muted fill, hover)                                                                   |
+| Text           | `--op-ink`, `--op-muted`, `--op-faint`; `--op-accent-fg` for the accent as text                                                                                                         |
+| Primary action | `--op-accent`, `--op-accent-hover`, `--op-accent-active`, `--op-accent-ink` (its label), `--op-accent-soft`                                                                             |
+| State          | `--op-grow` (success), `--op-warn`, `--op-danger` (+ `-hover` for the solid button), `--op-info`, each with `-soft`                                                                     |
+| Borders        | `--op-rule` (border), `--op-rule-soft` (separator), `--op-input` (field outline, 3:1), `--op-control-border` (button outline)                                                           |
+| Focus          | `--op-focus`, `--op-focus-width` (2px), `--op-focus-offset` (2px; rows inset it)                                                                                                        |
+| Rows           | `--op-row-hover`, `--op-row-selected`, `--op-shadow-chip`; heights `--op-row` (28) and `--op-row-comfortable` (32)                                                                      |
+| Controls       | `--op-control-xs` 24, `--op-control-compact` 28, `--op-control` 32, `--op-control-input` 36; icons `--op-icon-xs` 12, `--op-icon-sm` 14, `--op-icon` 16                                 |
+| Type           | `--op-text-micro` 11 … `--op-text-hero` 24; `--op-weight-regular`/`-medium`/`-semibold`                                                                                                 |
+| Radii          | `--op-radius-xs` 4, `-sm` 6 (rows, chips), `-md` 8 (controls), `-lg` 14 (cards), `-xl` 22 (dialogs), `-pill`                                                                            |
+| Shadows        | only for what floats: `--op-shadow-pop`, `-modal`, `-toast`, `-composer`, `-chip`                                                                                                       |
+| Motion         | `--op-duration-fast` 120 (hover), `--op-duration-enter` 160, `--op-duration-exit` 110, `--op-duration-page` 220; `--op-ease-out`, `--op-ease-in`, `--op-ease-in-out`, `--op-ease-panel` |
 
 `prefers-reduced-motion: reduce` sets every duration to 0ms. Panels still
 snap unless Settings › Appearance › Motion is on (`--op-panel-duration`).
@@ -98,11 +98,14 @@ reduced motion is an instant change.
     <PopoverTrigger>Filters</PopoverTrigger>
     <OverlayPresence open={open}>
       <Popover.Portal keepMounted>
-        <Popover.Positioner><Popover.Popup render={popup}>…</Popover.Popup></Popover.Positioner>
+        <Popover.Positioner>
+          <Popover.Popup render={popup}>…</Popover.Popup>
+        </Popover.Positioner>
       </Popover.Portal>
     </OverlayPresence>
-  </PopoverRoot>
+  </PopoverRoot>;
   ```
+
 - **Skeleton to content:** `<LoadingSwap loading={q.isPending} skeleton={<SkeletonList … />}>…</LoadingSwap>`
   crossfades once loading ends; the first render does not animate.
 - **Lists:** `<StaggerList>` with `<StaggerItem index={i}>` rises the first
