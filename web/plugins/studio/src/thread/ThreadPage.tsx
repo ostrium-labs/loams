@@ -34,7 +34,7 @@ import {
 } from '@loams/studio-ui/chat';
 import { Button, Empty, Notice, Spinner } from '@loams/ui';
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import { studioHref } from '../routes.js';
+import { MARKETPLACE_HARNESSES, studioHref } from '../routes.js';
 import { readSettings } from '../settings/Settings.js';
 import { ThreadComposer } from './Composer.js';
 import { useThreadApprovals, useThreadRecord, useTranscriptStore } from './streams.js';
@@ -361,6 +361,7 @@ function ThreadView({
           threadId={threadId}
           openFile={(path) => navigate(threadHref(threadId, { panel: 'files', path }))}
           onGroupStarted={(groupId) => navigate(studioHref({ kind: 'group', groupId }))}
+          onAddHarness={() => navigate(MARKETPLACE_HARNESSES)}
         />
       </div>
     </div>

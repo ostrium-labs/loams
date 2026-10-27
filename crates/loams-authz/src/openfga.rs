@@ -10,8 +10,8 @@ use async_trait::async_trait;
 use openfga_client::client::{
     BatchCheckItem, BatchCheckRequest, CheckRequest as PbCheck, CheckRequestTupleKey,
     ConsistencyPreference, ContextualTupleKeys, ListObjectsRequest, OpenFgaServiceClient,
-    RelationshipCondition, TupleKey, TupleKeyWithoutCondition, WriteRequest, WriteRequestDeletes,
-    WriteRequestWrites, batch_check_single_result::CheckResult,
+    ReadRequest, ReadRequestTupleKey, RelationshipCondition, TupleKey, TupleKeyWithoutCondition,
+    WriteRequest, WriteRequestDeletes, WriteRequestWrites, batch_check_single_result::CheckResult,
 };
 use openfga_client::prost_wkt_types::Struct;
 use openfga_client::tonic::metadata::{Ascii, MetadataValue};
@@ -285,6 +285,50 @@ impl OpenFgaAuthorizer {
             self.send_write(req).await?;
         }
         Ok(())
+    }
+
+    /// The stored tuples that match: `object` is a full object (`org:o1`) or, with `user`, a
+    /// type alone (`org:`); `user` and `relation` narrow it when given. Every page is read
+    /// (OpenFGA's `Read`, 100 per page), with `HigherConsistency`, so a sync or a
+    /// reconciliation never acts on a stale read. Conditions are not returned.
+    pub async fn read(
+        &self,
+        user: Option<&str>,
+        relation: Option<&str>,
+        object: &str,
+    ) -> Result<Vec<Tuple>> {
+        let mut out = Vec::new();
+        let mut token = String::new();
+        loop {
+            let req = ReadRequest {
+                store_id: self.store_id.clone(),
+                tuple_key: Some(ReadRequestTupleKey {
+                    user: user.unwrap_or_default().to_owned(),
+                    relation: relation.unwrap_or_default().to_owned(),
+                    object: object.to_owned(),
+                }),
+                page_size: Some(MAX_TUPLES_PER_WRITE as i32),
+                continuation_token: token,
+                consistency: ConsistencyPreference::HigherConsistency as i32,
+            };
+            let res = self
+                .client
+                .clone()
+                .read(req)
+                .await
+                .map_err(status)?
+                .into_inner();
+            out.extend(res.tuples.into_iter().filter_map(|t| t.key).map(|k| Tuple {
+                user: k.user,
+                relation: k.relation,
+                object: k.object,
+                condition: None,
+            }));
+            if res.continuation_token.is_empty() {
+                return Ok(out);
+            }
+            token = res.continuation_token;
+        }
     }
 
     /// A strict write: an existing tuple or a type restriction is an error. Grants go through

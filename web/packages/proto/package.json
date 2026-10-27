@@ -38,6 +38,7 @@
     "./live": "./src/gen/loams/live/v1/live_pb.ts",
     "./live-admin": "./src/gen/loams/live/v1/admin_pb.ts",
     "./live-value": "./src/gen/loams/live/v1/value_pb.ts",
+    "./marketplace": "./src/gen/loams/marketplace/v1/listing_pb.ts",
     "./notifications": "./src/gen/loams/notifications/v1/notifications_pb.ts",
     "./options": "./src/gen/loams/options/v1/options_pb.ts",
     "./sql": "./src/gen/loams/sql/v1/sql_pb.ts",

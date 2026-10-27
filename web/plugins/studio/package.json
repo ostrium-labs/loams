@@ -40,6 +40,7 @@
         "shell.palette.source",
         "shell.sidebar.threads",
         "shell.home",
+        "studio.agentd.scope",
         "shell.inspector.tab",
         "shell.drawer.tab",
         "shell.topbar.left",
