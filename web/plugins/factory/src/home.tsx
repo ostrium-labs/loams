@@ -8,10 +8,12 @@ function Tile({
   desktop,
   app,
   navigate,
+  embeds,
 }: {
   desktop: LoamsDesktopApi;
   app: FactoryAppInfo;
   navigate: (to: string) => void;
+  embeds: boolean;
 }) {
   const [error, setError] = useState<string>();
   const configured = isConfigured(app.health);
@@ -52,16 +54,19 @@ function Tile({
             >
               Configure
             </Button>
+            {/* In a browser the app opens in a new tab (SF1 amendment F5). */}
             <Button
               size="sm"
               disabled={!configured}
-              onClick={() => navigate(`/studio/factory/${app.id}/app`)}
+              onClick={() => (embeds ? navigate(`/studio/factory/${app.id}/app`) : void open())}
             >
               Open app
             </Button>
-            <Button size="sm" variant="quiet" disabled={!configured} onClick={() => void open()}>
-              Open in new window
-            </Button>
+            {embeds && (
+              <Button size="sm" variant="quiet" disabled={!configured} onClick={() => void open()}>
+                Open in new window
+              </Button>
+            )}
             {app.hasPanels && (
               <Button
                 size="sm"
@@ -100,9 +105,12 @@ export function useApps(desktop: LoamsDesktopApi) {
 export function FactoryHome({
   desktop,
   navigate,
+  embeds = true,
 }: {
   desktop: LoamsDesktopApi;
   navigate: (to: string) => void;
+  /** False in a browser: apps open in a tab and are configured on the desktop. */
+  embeds?: boolean;
 }) {
   const { apps, error, reload } = useApps(desktop);
   return (
@@ -131,7 +139,7 @@ export function FactoryHome({
         {apps && (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(18rem,1fr))] gap-4">
             {apps.map((a) => (
-              <Tile key={a.id} desktop={desktop} app={a} navigate={navigate} />
+              <Tile key={a.id} desktop={desktop} app={a} navigate={navigate} embeds={embeds} />
             ))}
           </div>
         )}

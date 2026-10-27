@@ -4,19 +4,22 @@ The software factory's apps belong to Studio (design [§53](../../design/53-stud
 
 ## Where they are
 
-**On the desktop only, for now.** The factory plugin's edition is `desktop`. In the browser, the apps' native panels and framed UIs wait for SF1 (D922).
+**On the desktop and in the browser.** The apps' connections live in the agent daemon, `loams-agentd`, on the machine it runs on (SF1 amendment F1, §50 §13). Loams Desktop and the browser console both read the panels from it:
+
+- **On the desktop**, the factory reads through the local daemon and shows each app's full UI inside Studio.
+- **In the browser**, the factory reads through the agentd host selected in **Studio settings › Agentd hosts**. **Open app** opens the app in a new tab (Plane's App URL where set), and an app's settings are read-only: its credentials are entered in Loams Desktop on the daemon's machine. A browser never sends a credential to a daemon.
 
 - **The factory hub** is at `/studio/factory`, with each app's panels at `/studio/factory/<app>`, its full UI at `/studio/factory/<app>/app` and its settings at `/studio/factory/<app>/configure`. The command palette (**Ctrl K**) reaches it as **Software Factory**; you can also pin it to the sidebar's Pages.
-- **Studio's sidebar** has a **Factory** group, below the projects when the daemon runs and on its own when it doesn't: one line with how many apps are connected, which opens to list the apps with their state, linking to their panels, to the full UI (SigNoz has the full UI only; it is labelled "Preview: SigNoz on Loams House") or to configure. Its icon opens the hub. The count updates as you configure apps.
+- **Studio's sidebar** has a **Factory** group, below the projects when the daemon runs and, on the desktop, on its own when it doesn't: one line with how many apps are connected, which opens to list the apps with their state, linking to their panels, to the full UI (SigNoz has the full UI only; it is labelled "Preview: SigNoz on Loams House") or to configure. Its icon opens the hub. The count updates as you configure apps.
 - **In Console mode**, the overview keeps the factory's card.
 
 **Old addresses still work.** `/factory`, `/factory/<app>`, `/factory/<app>/app` and `/factory/<app>/configure` redirect to their `/studio/factory…` addresses, keeping the query, and replace the history entry so Back doesn't bounce. `loams://open/factory[/<app>]` opens `/studio/factory[/<app>]` directly.
 
-The factory's credentials stay in Electron main's vault and never reach the page; the panels are read-only (§37 §19).
+The factory's credentials are kept by the daemon in the OS keyring (service `dev.loams.agentd`) and never reach a page or a reply; the rest of an app's settings is in the daemon's `factory.json`. Without a keyring (a headless session) they last until the daemon stops, and the factory says so. Credentials that an earlier Loams Desktop kept move into the daemon the first time it runs. The panels are read-only (§37 §19), and every error the daemon returns is scrubbed of the credentials.
 
 ## Connecting the apps
 
-**Save and test** checks the connection. For SigNoz, which has no panels and no credentials, it checks that `/api/v2/healthz` answers at the URL's origin.
+**Save and test** (on the desktop) checks the connection. For SigNoz, which has no panels and no credentials, it checks that `/api/v2/healthz` answers at the URL's origin.
 
 **Sign-in inside the app.** In the full UI, pages on the app's origin stay in Studio and every other site opens in your browser. If the app signs in through a single sign-on provider, put the provider's origin (for example `https://sso.example.com`) in **SSO origin**, so the sign-in pages stay in Studio too.
 
