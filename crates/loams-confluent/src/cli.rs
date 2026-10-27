@@ -407,7 +407,7 @@ pub async fn key_rotate<S: SecretSink>(
     } else {
         let _ = writeln!(
             out,
-            "the VM copies the new key into the connect role's files within 5 minutes (or at once with `sudo systemctl reload loams-byoc`); then restart the integration's connector instances (or pass --connect-admin and --restart-instance)"
+            "the VM copies the new key within 5 minutes (or at once with `sudo systemctl reload loams-byoc`) and then restarts its connect service, so every instance uses the new key"
         );
     }
 
