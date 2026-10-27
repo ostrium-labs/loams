@@ -77,14 +77,16 @@ httparse = { package = "httparse", version = "=1.10.1", default-features = true,
 httpmock = { package = "httpmock", version = "=0.8.3", default-features = false, features = ["remote"] }
 humantime = { package = "humantime", version = "=2.4.0", default-features = false }
 hyper = { package = "hyper", version = "=1.12.0", default-features = true, features = ["client", "http1", "http2", "server"] }
-hyper-util = { package = "hyper-util", version = "=0.1.21", default-features = true, features = ["client", "client-legacy", "client-proxy", "client-proxy-system", "http1", "http2", "server", "server-auto", "server-graceful", "service", "tokio"] }
+hyper-util = { package = "hyper-util", version = "=0.1.21", default-features = true, features = ["client", "client-legacy", "client-proxy", "client-proxy-system", "http1", "http2", "server", "server-auto", "server-graceful", "service", "tokio", "tracing"] }
 iggy = { package = "iggy", version = "=0.11.1-edge.2", default-features = false }
 ignore = { package = "ignore", version = "=0.4.33", default-features = false }
 itertools = { package = "itertools", version = "=0.15.0", default-features = true, features = ["use_alloc", "use_std"] }
 jsonschema = { package = "jsonschema", version = "=0.58.6", default-features = false }
 jsonwebtoken = { package = "jsonwebtoken", version = "=10.4.0", default-features = true, features = ["aws-lc-rs", "aws_lc_rs", "pem", "simple_asn1", "use_pem"] }
+k8s-openapi = { package = "k8s-openapi", version = "=0.27.1", default-features = true, features = ["latest", "std", "v1_35"] }
 kafka-protocol = { package = "kafka-protocol", version = "=0.18.0", default-features = false }
 keyring = { package = "keyring", version = "=4.2.0", default-features = true, features = ["apple-native-keyring-store", "v1", "windows-native-keyring-store", "zbus-secret-service-keyring-store"] }
+kube = { package = "kube", version = "=3.1.0", default-features = false, features = ["client", "config", "kube-client", "ring", "rustls-tls"] }
 lance = { package = "lance", version = "=12.0.0", default-features = false }
 lance-file = { package = "lance-file", version = "=12.0.0", default-features = false }
 lance-index = { package = "lance-index", version = "=12.0.0", default-features = false }
@@ -174,7 +176,7 @@ toml = { package = "toml", version = "=0.8.23", default-features = true, feature
 tonic = { package = "tonic", version = "=0.14.6", default-features = true, features = ["_tls-any", "channel", "codegen", "gzip", "router", "server", "tls-connect-info", "tls-native-roots", "tls-ring", "transport"] }
 tonic-prost = { package = "tonic-prost", version = "=0.14.6", default-features = false }
 tonic-prost-build = { package = "tonic-prost-build", version = "=0.14.6", default-features = true, features = ["cleanup-markdown", "transport"] }
-tower = { package = "tower", version = "=0.5.3", default-features = false, features = ["balance", "buffer", "discover", "futures-core", "futures-util", "indexmap", "limit", "load", "load-shed", "log", "make", "pin-project-lite", "ready-cache", "retry", "slab", "sync_wrapper", "timeout", "tokio", "tokio-util", "tracing", "util"] }
+tower = { package = "tower", version = "=0.5.3", default-features = false, features = ["balance", "buffer", "discover", "filter", "futures-core", "futures-util", "indexmap", "limit", "load", "load-shed", "log", "make", "pin-project-lite", "ready-cache", "retry", "slab", "sync_wrapper", "timeout", "tokio", "tokio-util", "tracing", "util"] }
 tower-http = { package = "tower-http", version = "=0.7.1", default-features = false, features = ["fs", "futures-core", "futures-util", "httpdate", "mime", "mime_guess", "set-status", "tokio-util"] }
 tracing = { package = "tracing", version = "=0.1.44", default-features = true, features = ["attributes", "log", "std", "tracing-attributes"] }
 tracing-subscriber = { package = "tracing-subscriber", version = "=0.3.23", default-features = true, features = ["alloc", "ansi", "env-filter", "fmt", "matchers", "nu-ansi-term", "once_cell", "registry", "sharded-slab", "smallvec", "std", "thread_local", "tracing", "tracing-log"] }
