@@ -18,6 +18,7 @@ use crate::layout::{self, Kind, Meta, StringBody};
 pub mod collection;
 pub mod counter;
 pub mod hash;
+pub mod list;
 pub mod set;
 pub mod string;
 pub mod zset;

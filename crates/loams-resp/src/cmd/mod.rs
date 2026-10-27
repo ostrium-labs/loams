@@ -20,6 +20,7 @@ mod conn;
 mod counter;
 mod hash;
 mod keys;
+mod list;
 mod server;
 mod set;
 mod string;
@@ -53,6 +54,8 @@ pub enum Family {
     Set,
     /// Sorted sets (Task 7).
     Zset,
+    /// Lists (Task 8).
+    List,
 }
 
 /// Command flags, as `COMMAND INFO` names them.
@@ -321,6 +324,23 @@ pub static COMMANDS: &[Spec] = &[
     spec("zdiffstore", -4, WRITE | DENYOOM, KEY1, Family::Zset),
     spec("zintercard", -3, READONLY, NOKEYS, Family::Zset),
     spec("zscan", -3, READONLY, KEY1, Family::Zset),
+    // Lists (Task 8).
+    spec("lpush", -3, WRITE | DENYOOM | FAST, KEY1, Family::List),
+    spec("rpush", -3, WRITE | DENYOOM | FAST, KEY1, Family::List),
+    spec("lpushx", -3, WRITE | DENYOOM | FAST, KEY1, Family::List),
+    spec("rpushx", -3, WRITE | DENYOOM | FAST, KEY1, Family::List),
+    spec("lpop", -2, WRITE | FAST, KEY1, Family::List),
+    spec("rpop", -2, WRITE | FAST, KEY1, Family::List),
+    spec("llen", 2, READONLY | FAST, KEY1, Family::List),
+    spec("lindex", 3, READONLY, KEY1, Family::List),
+    spec("lrange", 4, READONLY, KEY1, Family::List),
+    spec("lset", 4, WRITE | DENYOOM, KEY1, Family::List),
+    spec("ltrim", 4, WRITE, KEY1, Family::List),
+    spec("linsert", 5, WRITE | DENYOOM, KEY1, Family::List),
+    spec("lrem", 4, WRITE, KEY1, Family::List),
+    spec("lpos", -3, READONLY, KEY1, Family::List),
+    spec("lmove", 5, WRITE | DENYOOM, (1, 2, 1), Family::List),
+    spec("rpoplpush", 3, WRITE | DENYOOM, (1, 2, 1), Family::List),
 ];
 
 /// Commands Loams does not serve in v1 (design §77 §8.5), answered with a
@@ -459,6 +479,7 @@ pub async fn dispatch(shared: &Arc<Shared>, conn: &mut Conn, args: Vec<Bytes>) -
         Family::Hash => (hash::run(shared, conn, spec, &args).await, Flow::Continue),
         Family::Set => (set::run(shared, conn, spec, &args).await, Flow::Continue),
         Family::Zset => (zset::run(shared, conn, spec, &args).await, Flow::Continue),
+        Family::List => (list::run(shared, conn, spec, &args).await, Flow::Continue),
     }
 }
 
