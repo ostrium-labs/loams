@@ -1,5 +1,5 @@
 import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it } from 'vite-plus/test';
 import { LiveDashboard } from '../src/live/live-dashboard.js';
 import { mockOverviewMetrics } from '../src/live/mock.js';
 

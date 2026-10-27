@@ -27,7 +27,7 @@ export function useLoad<T>(
   const textRef = useRef(opts.errorText ?? errorMessage);
   textRef.current = opts.errorText ?? errorMessage;
   const keep = opts.keepOnReload === true;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: deps are the caller's
+  // oxlint-disable-next-line react/exhaustive-deps -- deps are the caller's
   useEffect(() => {
     let live = true;
     if (!keep || lastTick.current === tick) setValue({ state: 'loading' });

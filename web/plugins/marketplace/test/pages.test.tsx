@@ -1,7 +1,7 @@
 // Browse, a listing, installed listings and sources (plan MK1 Task 9).
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 import { BrowsePage, InstalledPage, ListingPage, SourcesPage } from '../src/pages.js';
 import { fakeApi, wrap } from './fake.js';
 

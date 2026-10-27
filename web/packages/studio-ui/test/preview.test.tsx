@@ -1,6 +1,6 @@
 // The preview pieces adapted from T3 Code (SD1 Task 26, inventory (n)).
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import {
   describePreviewError,
   forwardCommand,
