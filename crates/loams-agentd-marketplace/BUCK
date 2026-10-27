@@ -32,6 +32,11 @@ cargo_package(
             "root": "tests/conformance.rs",
         },
         {
+            "name": "engine",
+            "crate": "engine",
+            "root": "tests/engine.rs",
+        },
+        {
             "name": "fetch",
             "crate": "fetch",
             "root": "tests/fetch.rs",

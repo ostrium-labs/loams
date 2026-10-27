@@ -8546,6 +8546,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-agentd-factory"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "futures",
+ "keyring",
+ "loams-agentd-proto",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "loams-agentd-harness"
 version = "0.1.2"
 dependencies = [
@@ -8727,6 +8746,7 @@ dependencies = [
  "keyring",
  "libc",
  "loams-agentd-doc",
+ "loams-agentd-factory",
  "loams-agentd-harness",
  "loams-agentd-marketplace",
  "loams-agentd-preview",
@@ -8985,6 +9005,24 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+]
+
+[[package]]
+name = "loams-engines"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "axum 0.8.9",
+ "loams-authz",
+ "percent-encoding",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "time",
+ "tokio",
+ "tower 0.5.3",
+ "tracing",
+ "ulid 3.0.0",
 ]
 
 [[package]]
@@ -9404,6 +9442,7 @@ dependencies = [
  "rquickjs",
  "rustix 1.1.5",
  "seccompiler",
+ "serde_json",
  "sha2 0.11.0",
  "tokio",
  "tracing",
@@ -10093,6 +10132,7 @@ dependencies = [
  "loams-temporal-proto",
  "loams-temporal-testkit",
  "proptest",
+ "prost 0.14.4",
  "prost-types",
  "serde_json",
  "thiserror 2.0.21",

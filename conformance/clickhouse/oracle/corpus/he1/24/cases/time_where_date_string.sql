@@ -1,0 +1,1 @@
+SELECT id FROM t24t WHERE d = '2026-10-02' ORDER BY id
