@@ -22,11 +22,13 @@
 //! [§63]: ../../../docs/design/63-loams-meter.md
 
 pub mod adapters;
+pub mod entitle;
 pub mod event;
 pub mod gate;
 pub mod policy;
 pub mod sink;
 
+pub use entitle::{Entitlements, features};
 pub use event::{EncodedEvent, UsageEvent};
 pub use gate::{Decision, Gate, NoGate, Refusal, RefusalReason};
 pub use sink::{MeterSink, NoSink};
