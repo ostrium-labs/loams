@@ -38,3 +38,14 @@ fn compose_keys_file_is_well_formed() {
         serde_json::from_str(&repo("deploy/release/spark/keys.json")).unwrap();
     assert!(v["keys"].is_array());
 }
+
+#[test]
+fn engine_gateway_spark_block_is_valid() {
+    #[derive(serde::Deserialize)]
+    struct Wrapper {
+        spark: loams_spark::standalone::Config,
+    }
+    let w: Wrapper = toml::from_str(&repo("deploy/release/engines/gateway.spark.toml")).unwrap();
+    loams_spark::standalone::check(&w.spark).unwrap();
+    assert_eq!(w.spark.listen.port(), 15002);
+}

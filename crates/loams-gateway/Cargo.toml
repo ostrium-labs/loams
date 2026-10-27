@@ -32,6 +32,8 @@ hyper = { version = "1", features = ["server", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 # The RisingWave module's MD5 login to RisingWave (same digest 0.11 as sha2).
 md-5 = "0.11"
+# The RisingWave module's self-signed certificate on local stacks.
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "pem", "ring"] }
 # The RisingWave module's credential check against the Loams API.
 reqwest.workspace = true
 rustls = { workspace = true, features = ["ring", "std", "tls12", "logging"] }
