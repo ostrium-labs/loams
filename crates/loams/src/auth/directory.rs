@@ -497,6 +497,9 @@ pub struct MetaDirectoryStore {
     meta: Arc<dyn MetaStore>,
     store: Store,
     namespace: tokio::sync::OnceCell<NamespaceId>,
+    /// The pointer key in the system namespace, and the bucket prefix of the documents.
+    pointer_key: &'static str,
+    object_prefix: &'static str,
 }
 
 impl fmt::Debug for MetaDirectoryStore {
@@ -511,10 +514,23 @@ fn unavailable(err: impl fmt::Display) -> Unavailable {
 
 impl MetaDirectoryStore {
     pub fn new(meta: Arc<dyn MetaStore>, store: Store) -> Self {
+        Self::with_key(meta, store, POINTER_KEY, OBJECT_PREFIX)
+    }
+
+    /// Another document kept the same way, under its own pointer key and bucket prefix (the
+    /// identity sync's state, plan IA1 IA3).
+    pub fn with_key(
+        meta: Arc<dyn MetaStore>,
+        store: Store,
+        pointer_key: &'static str,
+        object_prefix: &'static str,
+    ) -> Self {
         Self {
             meta,
             store,
             namespace: tokio::sync::OnceCell::new(),
+            pointer_key,
+            object_prefix,
         }
     }
 
@@ -523,7 +539,7 @@ impl MetaDirectoryStore {
     /// stays, so a rollback finds the directory it restores.
     async fn pinned_by_snapshot(&self, path: &str) -> bool {
         let written_ms = path
-            .strip_prefix(OBJECT_PREFIX)
+            .strip_prefix(self.object_prefix)
             .and_then(|name| name.strip_suffix(".json"))
             .and_then(|id| id.parse::<ulid::Ulid>().ok())
             .map(|id| id.timestamp_ms());
@@ -571,7 +587,7 @@ impl DirectoryStore for MetaDirectoryStore {
         };
         let pointer = self
             .meta
-            .pointer(Consistency::Local, ns, POINTER_KEY)
+            .pointer(Consistency::Local, ns, self.pointer_key)
             .await
             .map_err(unavailable)?;
         Ok(pointer.map(|p| p.version))
@@ -587,7 +603,7 @@ impl DirectoryStore for MetaDirectoryStore {
         for _ in 0..4 {
             let Some(pointer) = self
                 .meta
-                .pointer(Consistency::Linearizable, ns, POINTER_KEY)
+                .pointer(Consistency::Linearizable, ns, self.pointer_key)
                 .await
                 .map_err(unavailable)?
             else {
@@ -609,20 +625,20 @@ impl DirectoryStore for MetaDirectoryStore {
         let previous = match expected {
             Some(_) => self
                 .meta
-                .pointer(Consistency::Linearizable, ns, POINTER_KEY)
+                .pointer(Consistency::Linearizable, ns, self.pointer_key)
                 .await
                 .map_err(unavailable)?
                 .map(|p| p.value),
             None => None,
         };
-        let object = format!("{OBJECT_PREFIX}{}.json", ulid::Ulid::generate());
+        let object = format!("{}{}.json", self.object_prefix, ulid::Ulid::generate());
         self.store.put(&object, doc).await.map_err(unavailable)?;
         for _ in 0..4 {
             let cas = self
                 .meta
                 .cas_pointer(PointerCas {
                     namespace: ns,
-                    key: POINTER_KEY.to_owned(),
+                    key: self.pointer_key.to_owned(),
                     expected,
                     value: object.clone(),
                     fence: None,

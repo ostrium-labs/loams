@@ -44,7 +44,7 @@ cargo_package(
     deps = [
         "//crates/loams-agentd-proto:loams-agentd-proto",
         "//third-party/rust:async-trait",
-        "//third-party/rust:base64",
+        "//third-party/rust:base64-0_23",
         "//third-party/rust:futures",
         "//third-party/rust:getrandom",
         "//third-party/rust:httparse",

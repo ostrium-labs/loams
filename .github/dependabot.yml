@@ -135,6 +135,8 @@ updates:
       # group does; minors and patches stay in the weekly group below.
       vite:
         patterns:
+          - "vite-plus"
+          - "@voidzero-dev/*"
           - "vite"
           - "electron-vite"
           - "vitest"

@@ -6,7 +6,7 @@ import { validateManifest } from '@loams/console-host';
 import type { SlotSpec } from '@loams/slots';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ComponentType } from 'react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 import pkg from '../package.json';
 import { branchFor, threadDraftHref } from '../src/drafts.js';
 import plugin from '../src/index.js';

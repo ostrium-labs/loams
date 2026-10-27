@@ -51,7 +51,8 @@ pub(crate) enum AuthzArg {
     Dev,
     /// API keys and their grants, from --pg-api-keys.
     ApiKey,
-    /// OpenFGA (MT1; not built yet).
+    /// API keys from --pg-api-keys for who calls, OpenFGA's model v1 for what they may do
+    /// (LOAMS_AUTHZ_OPENFGA_GRPC, _STORE, _MODEL and optional _KEY).
     Openfga,
 }
 
@@ -166,7 +167,7 @@ pub(crate) struct PgControlArgs {
     /// Who may call.
     #[arg(long, value_enum, default_value = "dev")]
     pg_authz: AuthzArg,
-    /// With --pg-authz api-key: the keys file (`loams pg-api-key` makes entries).
+    /// With --pg-authz api-key or openfga: the keys file (`loams pg-api-key` makes entries).
     #[arg(long)]
     pg_api_keys: Option<PathBuf>,
     /// Serve grpc.reflection.v1 on --listen.
@@ -300,8 +301,16 @@ fn config(args: PgControlArgs) -> Result<PgControlConfig, String> {
         (AuthzArg::Dev, None) => PgAuth::Dev,
         (AuthzArg::ApiKey, Some(path)) => PgAuth::ApiKeys(path),
         (AuthzArg::ApiKey, None) => return Err("--pg-authz api-key needs --pg-api-keys".into()),
-        (AuthzArg::Openfga, None) => PgAuth::OpenFga,
-        (_, Some(_)) => return Err("--pg-api-keys goes with --pg-authz api-key".into()),
+        (AuthzArg::Openfga, Some(keys)) => PgAuth::OpenFga {
+            keys,
+            fga: crate::pg_control::FgaSettings::from_vars(|k| std::env::var(k).ok())?,
+        },
+        (AuthzArg::Openfga, None) => {
+            return Err("--pg-authz openfga needs --pg-api-keys (who calls)".into());
+        }
+        (AuthzArg::Dev, Some(_)) => {
+            return Err("--pg-api-keys goes with --pg-authz api-key or openfga".into());
+        }
     };
     config.reflection = args.reflection;
     config.pageserver = args.pageserver;

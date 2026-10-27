@@ -86,7 +86,7 @@ cargo_package(
         "//crates/loams-agentd-doc:loams-agentd-doc",
         "//crates/loams-agentd-marketplace:loams-agentd-marketplace",
         "//crates/loams-agentd-sessions:loams-agentd-sessions",
-        "//third-party/rust:base64",
+        "//third-party/rust:base64-0_23",
         "//third-party/rust:buffa-descriptor",
         "//third-party/rust:rcgen",
         "//third-party/rust:reqwest-0_13",

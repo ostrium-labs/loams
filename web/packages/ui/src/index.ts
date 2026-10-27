@@ -1,10 +1,4 @@
-export {
-  Alert,
-  AlertAction,
-  AlertDescription,
-  AlertTitle,
-  type AlertVariant,
-} from './alert';
+export { Alert, AlertAction, AlertDescription, AlertTitle, type AlertVariant } from './alert';
 export {
   AlertDialog,
   AlertDialogBackdrop,
