@@ -305,6 +305,8 @@ pub(crate) fn has_admitted(b: &Batch<'_>) -> bool {
 
 /// Where an update stands, as `UpdateWorkflowExecution` and
 /// `PollWorkflowExecutionUpdate` report it.
+// The outcome is moved out once per call; boxing it buys nothing here.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum UpdateStatus {
     /// Admitted or sent: the worker has not answered.
