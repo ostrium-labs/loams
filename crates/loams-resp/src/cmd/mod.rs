@@ -21,6 +21,7 @@ mod counter;
 mod hash;
 mod keys;
 mod server;
+mod set;
 mod string;
 
 pub use conn::REDIS_VERSION;
@@ -47,6 +48,8 @@ pub enum Family {
     Counter,
     /// Hashes (Task 5).
     Hash,
+    /// Sets (Task 6).
+    Set,
 }
 
 /// Command flags, as `COMMAND INFO` names them.
@@ -265,6 +268,24 @@ pub static COMMANDS: &[Spec] = &[
     ),
     spec("hrandfield", -2, READONLY, KEY1, Family::Hash),
     spec("hscan", -3, READONLY, KEY1, Family::Hash),
+    // Sets (Task 6).
+    spec("sadd", -3, WRITE | DENYOOM | FAST, KEY1, Family::Set),
+    spec("srem", -3, WRITE | FAST, KEY1, Family::Set),
+    spec("smembers", 2, READONLY, KEY1, Family::Set),
+    spec("sismember", 3, READONLY | FAST, KEY1, Family::Set),
+    spec("smismember", -3, READONLY | FAST, KEY1, Family::Set),
+    spec("scard", 2, READONLY | FAST, KEY1, Family::Set),
+    spec("spop", -2, WRITE | FAST, KEY1, Family::Set),
+    spec("srandmember", -2, READONLY, KEY1, Family::Set),
+    spec("smove", 4, WRITE | FAST, (1, 2, 1), Family::Set),
+    spec("sinter", -2, READONLY, ALLKEYS, Family::Set),
+    spec("sintercard", -3, READONLY, NOKEYS, Family::Set),
+    spec("sinterstore", -3, WRITE | DENYOOM, ALLKEYS, Family::Set),
+    spec("sunion", -2, READONLY, ALLKEYS, Family::Set),
+    spec("sunionstore", -3, WRITE | DENYOOM, ALLKEYS, Family::Set),
+    spec("sdiff", -2, READONLY, ALLKEYS, Family::Set),
+    spec("sdiffstore", -3, WRITE | DENYOOM, ALLKEYS, Family::Set),
+    spec("sscan", -3, READONLY, KEY1, Family::Set),
 ];
 
 /// Commands Loams does not serve in v1 (design §77 §8.5), answered with a
@@ -401,6 +422,7 @@ pub async fn dispatch(shared: &Arc<Shared>, conn: &mut Conn, args: Vec<Bytes>) -
             Flow::Continue,
         ),
         Family::Hash => (hash::run(shared, conn, spec, &args).await, Flow::Continue),
+        Family::Set => (set::run(shared, conn, spec, &args).await, Flow::Continue),
     }
 }
 
