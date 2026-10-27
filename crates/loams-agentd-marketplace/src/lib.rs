@@ -5,6 +5,7 @@
 //! Tasks 6 and 8.
 
 pub mod artifact;
+pub mod conformance;
 pub mod contract;
 pub mod engine;
 pub mod index;

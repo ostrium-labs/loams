@@ -24,6 +24,8 @@ loams-agentd-mcp.workspace = true
 loams-agentd-link.workspace = true
 # loams.agentd.v1, the Connect listener beside the ndjson one (SD1 Task 5).
 loams-agentd-connect.workspace = true
+# `agent conformance`, the LAPC Core runner (MK1 Task 8).
+loams-agentd-marketplace.workspace = true
 tokio.workspace = true
 clap.workspace = true
 anyhow.workspace = true

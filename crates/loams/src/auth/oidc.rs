@@ -434,11 +434,11 @@ impl OidcAuthenticator {
         validation.leeway = LEEWAY_SECS;
         let data =
             jsonwebtoken::decode::<Claims>(token, &key, &validation).map_err(|e| map_error(&e))?;
-        self.admit(data.claims)
+        self.admit(data.claims, iss)
     }
 
     /// The allowlist (403 when the token is valid but not admitted).
-    fn admit(&self, claims: Claims) -> Result<Principal, AuthError> {
+    fn admit(&self, claims: Claims, iss: String) -> Result<Principal, AuthError> {
         let c = &self.config;
         let verified_email = claims
             .email
@@ -467,6 +467,7 @@ impl OidcAuthenticator {
         Ok(Principal {
             subject: claims.sub,
             kind: PrincipalKind::User,
+            issuer: Some(iss),
             display_name,
             email: verified_email,
             grant,

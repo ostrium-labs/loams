@@ -206,7 +206,7 @@ pub struct Context {
 const INSTALL_SCRIPTS: &[&str] = &["preinstall", "install", "postinstall"];
 
 /// Every `package.json` under `node_modules`, checked for install-time code.
-fn refuse_install_scripts(node_modules: &Path) -> Result<(), InstallError> {
+pub(crate) fn refuse_install_scripts(node_modules: &Path) -> Result<(), InstallError> {
     let mut stack = vec![node_modules.to_owned()];
     while let Some(dir) = stack.pop() {
         let Ok(entries) = std::fs::read_dir(&dir) else {
@@ -265,7 +265,7 @@ fn refuse_install_scripts(node_modules: &Path) -> Result<(), InstallError> {
 }
 
 /// `hasInstallScript` anywhere in the shipped lockfile.
-fn shrinkwrap_declares_scripts(shrinkwrap: &Value) -> Option<String> {
+pub(crate) fn shrinkwrap_declares_scripts(shrinkwrap: &Value) -> Option<String> {
     shrinkwrap["packages"].as_object().and_then(|packages| {
         packages
             .iter()

@@ -343,6 +343,7 @@ fn principal(id: &str, entry: &Entry) -> Principal {
     Principal {
         subject: format!("apikey:{id}"),
         kind: PrincipalKind::ApiKey,
+        issuer: None,
         display_name: entry.label.clone(),
         email: None,
         // A key file names no org, environment or scope (the self-hosted
