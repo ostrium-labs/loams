@@ -30,23 +30,23 @@ const STARTERS: Record<'risingwave' | 'flink', string> = {
 export function SqlPage({
   client,
   navigate,
-  project,
+  namespace,
   id,
 }: {
   client: EnginesClient;
   navigate: (to: string) => void;
-  project: string;
+  namespace: string;
   id: string;
 }) {
-  const [inst] = useLoad(() => client.get(project, id), [client, project, id]);
+  const [inst] = useLoad(() => client.get(namespace, id), [client, namespace, id]);
   const [notice, setNotice] = useState<string | undefined>();
   const run = useCallback(
     async (text: string, signal: AbortSignal) => {
-      const r = await client.sql(project, id, { sql: text, max_rows: SQL_MAX_ROWS }, signal);
+      const r = await client.sql(namespace, id, { sql: text, max_rows: SQL_MAX_ROWS }, signal);
       setNotice(r.notice ?? undefined);
       return toOutcome(r);
     },
-    [client, project, id],
+    [client, namespace, id],
   );
 
   const crumbs = (i?: Instance) => (
@@ -121,7 +121,7 @@ export function SqlPage({
       <SqlWorkbench
         dialect={i.kind === 'risingwave' ? 'postgres' : 'generic'}
         run={run}
-        historyScope={`engines:${i.project}/${i.id}`}
+        historyScope={`engines:${i.namespace}/${i.id}`}
         label="SQL"
         placeholder={STARTERS[i.kind]}
         disabled={!running}

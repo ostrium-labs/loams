@@ -1,4 +1,4 @@
-// Engines: every RisingWave, Flink SQL and Spark instance in a project, filtered by kind.
+// Engines: every RisingWave, Flink SQL and Spark instance in a namespace, filtered by kind.
 
 import { Button, Empty, formatRelative, Select, SkeletonList } from '@loams/ui';
 import { useId, useState } from 'react';
@@ -22,21 +22,21 @@ import {
 export function ListPage({
   client,
   navigate,
-  initialProject,
+  initialNamespace,
 }: {
   client: EnginesClient;
   navigate: (to: string) => void;
-  initialProject?: string;
+  initialNamespace?: string;
 }) {
   const ids = useId();
-  const [projects] = useLoad(() => client.listProjects(), [client]);
-  const [chosen, setChosen] = useState<string | undefined>(initialProject);
-  const project =
-    chosen ?? (projects.state === 'ok' ? (projects.value[0] ?? 'default') : undefined);
+  const [namespaces] = useLoad(() => client.listNamespaces(), [client]);
+  const [chosen, setChosen] = useState<string | undefined>(initialNamespace);
+  const namespace =
+    chosen ?? (namespaces.state === 'ok' ? (namespaces.value[0] ?? 'default') : undefined);
   const [kind, setKind] = useState<EngineKind | ''>('');
   const [list] = useLoad(
-    () => (project ? client.list(project, kind || undefined) : new Promise<never>(() => {})),
-    [client, project, kind],
+    () => (namespace ? client.list(namespace, kind || undefined) : new Promise<never>(() => {})),
+    [client, namespace, kind],
   );
 
   return (
@@ -47,19 +47,21 @@ export function ListPage({
         subtitle="Managed RisingWave, Flink SQL and Spark, with state in Loams object storage."
         actions={
           <>
-            <label className="flex items-center gap-2 text-body" htmlFor={`${ids}-project`}>
-              <span className="text-muted">Project</span>
+            <label className="flex items-center gap-2 text-body" htmlFor={`${ids}-namespace`}>
+              <span className="text-muted">Namespace</span>
               <Select
-                id={`${ids}-project`}
-                aria-label="Project"
-                value={project ?? ''}
+                id={`${ids}-namespace`}
+                aria-label="Namespace"
+                value={namespace ?? ''}
                 onChange={(e) => setChosen(e.currentTarget.value)}
               >
-                {(projects.state === 'ok' ? projects.value : [project ?? 'default']).map((p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
+                {(namespaces.state === 'ok' ? namespaces.value : [namespace ?? 'default']).map(
+                  (p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ),
+                )}
               </Select>
             </label>
             <label className="flex items-center gap-2 text-body" htmlFor={`${ids}-kind`}>

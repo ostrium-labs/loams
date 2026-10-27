@@ -1,5 +1,5 @@
 // @loams/plugin-engines: managed RisingWave, Flink SQL and Spark (design 81, preview).
-// The pages talk to the project-scoped engines API (`/v1/projects/{p}/engines`, served by
+// The pages talk to the namespace-scoped engines API (`/v1/namespaces/{ns}/engines`, served by
 // crates/loams-engines) over the active server's `platform.fetch`. When the server does not
 // serve it (`GET /v1/engines` fails), the pages run on the sample client and say so.
 
@@ -80,7 +80,7 @@ export function EnginesRoute({
       </div>
     );
   }
-  const project = params.project ?? 'default';
+  const namespace = params.ns ?? 'default';
   const id = params.id ?? '';
   switch (view) {
     case 'new':
@@ -88,10 +88,10 @@ export function EnginesRoute({
     case 'detail':
       return (
         <DetailPage
-          key={`${project}/${id}`}
+          key={`${namespace}/${id}`}
           client={client}
           navigate={navigate}
-          project={project}
+          namespace={namespace}
           id={id}
           copy={(t) => platform.clipboardWrite(t)}
         />
@@ -99,20 +99,20 @@ export function EnginesRoute({
     case 'sql':
       return (
         <SqlPage
-          key={`${project}/${id}`}
+          key={`${namespace}/${id}`}
           client={client}
           navigate={navigate}
-          project={project}
+          namespace={namespace}
           id={id}
         />
       );
     case 'spark':
       return (
         <SparkPage
-          key={`${project}/${id}`}
+          key={`${namespace}/${id}`}
           client={client}
           navigate={navigate}
-          project={project}
+          namespace={namespace}
           id={id}
         />
       );
@@ -132,11 +132,11 @@ const plugin: PluginModule = {
     const routes: { id: string; path: string; title: string; view: View }[] = [
       { id: 'engines', path: '/engines', title: 'Engines', view: 'list' },
       { id: 'engines-new', path: '/engines/new', title: 'New engine instance', view: 'new' },
-      { id: 'engines-detail', path: '/engines/:project/:id', title: 'Engine', view: 'detail' },
-      { id: 'engines-sql', path: '/engines/:project/:id/sql', title: 'Engine SQL', view: 'sql' },
+      { id: 'engines-detail', path: '/engines/:ns/:id', title: 'Engine', view: 'detail' },
+      { id: 'engines-sql', path: '/engines/:ns/:id/sql', title: 'Engine SQL', view: 'sql' },
       {
         id: 'engines-spark',
-        path: '/engines/:project/:id/spark',
+        path: '/engines/:ns/:id/spark',
         title: 'Spark sessions and jobs',
         view: 'spark',
       },

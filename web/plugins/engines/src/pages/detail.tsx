@@ -18,15 +18,24 @@ import {
 import { useEffect, useState } from 'react';
 import {
   type EnginesClient,
-  errorText,
+  gibHours,
   type Instance,
   isTransitional,
   KIND_LABELS,
   type SizeTier,
   sizeText,
   type Usage,
+  vcpuHours,
 } from '../client.js';
-import { EnginesHead, HealthBadge, instanceHref, LoadError, PhaseTag, useLoad } from '../shared.js';
+import {
+  ActionError,
+  EnginesHead,
+  HealthBadge,
+  instanceHref,
+  LoadError,
+  PhaseTag,
+  useLoad,
+} from '../shared.js';
 
 /** How often a changing instance is read again. */
 export const POLL_MS = 3000;
@@ -36,23 +45,23 @@ type Pending = 'suspend' | 'resume' | 'delete' | 'scale' | 'upgrade' | undefined
 export function DetailPage({
   client,
   navigate,
-  project,
+  namespace,
   id,
   copy,
   pollMs = POLL_MS,
 }: {
   client: EnginesClient;
   navigate: (to: string) => void;
-  project: string;
+  namespace: string;
   id: string;
   copy?: (text: string) => void | Promise<void>;
   pollMs?: number;
 }) {
-  const [inst, reload] = useLoad(() => client.get(project, id), [client, project, id]);
-  const [usage] = useLoad(() => client.usage(project, id), [client, project, id]);
+  const [inst, reload] = useLoad(() => client.get(namespace, id), [client, namespace, id]);
+  const [usage] = useLoad(() => client.usage(namespace, id), [client, namespace, id]);
   const [dialog, setDialog] = useState<Pending>();
   const [busy, setBusy] = useState(false);
-  const [failure, setFailure] = useState<string | undefined>();
+  const [failure, setFailure] = useState<unknown>();
 
   const phase = inst.state === 'ok' ? inst.value.status.phase : undefined;
   useEffect(() => {
@@ -95,7 +104,7 @@ export function DetailPage({
       if (what === 'delete') navigate('/engines');
       else reload();
     } catch (e) {
-      setFailure(errorText(e));
+      setFailure(e);
       setDialog(undefined);
     } finally {
       setBusy(false);
@@ -110,7 +119,7 @@ export function DetailPage({
         client={client}
         title={i.name}
         crumbs={crumbs}
-        subtitle={`${KIND_LABELS[i.kind]} in project ${i.project}`}
+        subtitle={`${KIND_LABELS[i.kind]} in namespace ${i.namespace}`}
         actions={
           <>
             {canSql && (
@@ -143,11 +152,7 @@ export function DetailPage({
           </>
         }
       />
-      {failure && (
-        <Notice tone="danger" title="The action failed">
-          {failure}
-        </Notice>
-      )}
+      {failure !== undefined && <ActionError error={failure} title="The action failed" />}
       {i.status.message && (
         <Notice tone={i.status.phase === 'failed' ? 'danger' : 'info'} title="Status">
           {i.status.message}
@@ -226,7 +231,7 @@ export function DetailPage({
       <ConfirmDialog
         open={dialog === 'suspend'}
         onClose={() => setDialog(undefined)}
-        onConfirm={() => act('suspend', () => client.suspend(project, id))}
+        onConfirm={() => act('suspend', () => client.suspend(namespace, id))}
         object={i.name}
         impact="Compute stops and is no longer billed; state is kept and resume starts from it."
         confirm="Suspend instance"
@@ -235,7 +240,7 @@ export function DetailPage({
       <ConfirmDialog
         open={dialog === 'resume'}
         onClose={() => setDialog(undefined)}
-        onConfirm={() => act('resume', () => client.resume(project, id))}
+        onConfirm={() => act('resume', () => client.resume(namespace, id))}
         object={i.name}
         impact="Compute starts again from the kept state."
         confirm="Resume instance"
@@ -244,7 +249,7 @@ export function DetailPage({
       <ConfirmDialog
         open={dialog === 'delete'}
         onClose={() => setDialog(undefined)}
-        onConfirm={() => act('delete', () => client.remove(project, id))}
+        onConfirm={() => act('delete', () => client.remove(namespace, id))}
         object={i.name}
         impact="The instance, its endpoints and its state in object storage are deleted. This cannot be undone."
         confirm="Delete instance"
@@ -256,7 +261,7 @@ export function DetailPage({
         busy={busy}
         onClose={() => setDialog(undefined)}
         onScale={(tier, replicas) =>
-          act('scale', () => client.update(project, id, { size: { tier, replicas } }))
+          act('scale', () => client.update(namespace, id, { size: { tier, replicas } }))
         }
       />
       <UpgradeDialog
@@ -265,30 +270,43 @@ export function DetailPage({
         instance={i}
         busy={busy}
         onClose={() => setDialog(undefined)}
-        onUpgrade={(version) => act('upgrade', () => client.update(project, id, { version }))}
+        onUpgrade={(version) => act('upgrade', () => client.update(namespace, id, { version }))}
       />
     </div>
   );
 }
 
 export function UsageView({ usage }: { usage: Usage }) {
-  const fmt = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 1 });
+  const fmt = (n: number, digits = 1) =>
+    n.toLocaleString('en-US', { maximumFractionDigits: digits });
+  const estimated = usage.samples.filter((s) => s.estimated).length;
   return (
     <>
       <Stats>
-        <Stat label="vCPU-seconds" value={fmt(usage.totals.vcpu_seconds)} />
-        <Stat label="Memory GB-seconds" value={fmt(usage.totals.memory_gb_seconds)} />
+        <Stat
+          label="vCPU-hours"
+          value={fmt(vcpuHours(usage.totals.cpu_ms), 3)}
+          detail={`${fmt(usage.totals.cpu_ms / 1000, 0)} CPU-seconds`}
+        />
+        <Stat label="Memory GiB-hours" value={fmt(gibHours(usage.totals.memory_mib_ms), 3)} />
         <Stat label="State" value={formatBytes(usage.totals.state_bytes)} />
       </Stats>
+      {estimated > 0 && (
+        <p className="text-muted text-small">
+          {estimated === 1 ? '1 window is' : `${estimated} windows are`} estimated from the reserved
+          size, not measured.
+        </p>
+      )}
       {usage.samples.length > 0 && (
         <div className="loams-table-wrap">
           <table className="loams-table" aria-label="Usage samples">
             <thead>
               <tr>
                 <th>Window end</th>
-                <th>vCPU-s</th>
-                <th>Memory GB-s</th>
+                <th>CPU-seconds</th>
+                <th>Memory GiB-s</th>
                 <th>State</th>
+                <th>Source</th>
               </tr>
             </thead>
             <tbody>
@@ -298,9 +316,10 @@ export function UsageView({ usage }: { usage: Usage }) {
                 .map((s) => (
                   <tr key={s.window_end}>
                     <td>{formatRelative(s.window_end)}</td>
-                    <td>{fmt(s.vcpu_seconds)}</td>
-                    <td>{fmt(s.memory_gb_seconds)}</td>
+                    <td>{fmt(s.cpu_ms / 1000)}</td>
+                    <td>{fmt(s.memory_mib_ms / 1024 / 1000)}</td>
                     <td>{formatBytes(s.state_bytes)}</td>
+                    <td>{s.estimated ? 'estimated' : 'measured'}</td>
                   </tr>
                 ))}
             </tbody>

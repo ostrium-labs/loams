@@ -906,14 +906,14 @@ fn in_phase(instance: &Value, phase: &str) -> Value {
 }
 
 /// Every mocked response of the managed-engines API ([`ENGINES_CONTRACT`]),
-/// from the seed's `engines` key: the catalog, each project's instances, each
+/// from the seed's `engines` key: the catalog, each namespace's instances, each
 /// instance's lifecycle answers and usage, SQL on RisingWave and Flink, and
 /// sessions and jobs on Spark. Static like [`routes`]: a lifecycle call
 /// answers the instance in its transitional phase and the next `GET` is
 /// unchanged.
 pub fn engine_routes(seed: &Value) -> Result<Vec<Route>> {
-    const B: &str = "/v1/projects/{project}/engines";
-    const I: &str = "/v1/projects/{project}/engines/{instance}";
+    const B: &str = "/v1/namespaces/{namespace}/engines";
+    const I: &str = "/v1/namespaces/{namespace}/engines/{instance}";
     let engines = get(seed, "engines")?;
     let instances = items(engines, "instances")?;
     let usage = entries(engines, "usage")?;
@@ -928,10 +928,12 @@ pub fn engine_routes(seed: &Value) -> Result<Vec<Route>> {
         get(engines, "catalog")?.clone(),
     )];
 
-    for project in items(seed, "projects")? {
-        let slug = str_field(project, "slug")?;
-        let base = format!("/v1/projects/{slug}/engines");
-        let mine: Vec<&Value> = instances.iter().filter(|i| i["project"] == slug).collect();
+    // Every seeded environment's Loams namespace (design 81 ruling R2: engines are
+    // namespace-scoped).
+    for env in items(seed, "environments")? {
+        let ns = str_field(env, "namespace")?;
+        let base = format!("/v1/namespaces/{ns}/engines");
+        let mine: Vec<&Value> = instances.iter().filter(|i| i["namespace"] == ns).collect();
         for kind in ["risingwave", "flink", "spark"] {
             let of_kind: Vec<&Value> = mine.iter().copied().filter(|i| i["kind"] == kind).collect();
             let mut route =
@@ -946,7 +948,7 @@ pub fn engine_routes(seed: &Value) -> Result<Vec<Route>> {
             200,
             json!({ "instances": mine }),
         ));
-        // A create answers a new instance shaped like the project's first, or the
+        // A create answers a new instance shaped like the namespace's first, or the
         // first seeded one, still provisioning.
         let template = mine
             .first()
@@ -955,8 +957,8 @@ pub fn engine_routes(seed: &Value) -> Result<Vec<Route>> {
             .ok_or_else(|| anyhow!("seed engines.instances is empty"))?;
         let mut created = in_phase(template, "provisioning");
         created["id"] = json!("eng_created01");
-        created["project"] = json!(slug);
-        created["state_prefix"] = json!(format!("engines/{slug}/eng_created01/"));
+        created["namespace"] = json!(ns);
+        created["state_prefix"] = json!(format!("engines/{ns}/eng_created01/"));
         created["endpoints"] = json!([]);
         created["status"]["checks"] = json!([]);
         created["status"]["health"] = json!("unknown");
@@ -965,9 +967,9 @@ pub fn engine_routes(seed: &Value) -> Result<Vec<Route>> {
 
     for inst in instances {
         let id = str_field(inst, "id")?;
-        let project = str_field(inst, "project")?;
+        let ns = str_field(inst, "namespace")?;
         let kind = str_field(inst, "kind")?;
-        let base = format!("/v1/projects/{project}/engines/{id}");
+        let base = format!("/v1/namespaces/{ns}/engines/{id}");
         r.push(Route::json("GET", I, base.clone(), 200, inst.clone()));
         r.push(Route::json(
             "PATCH",
@@ -985,14 +987,14 @@ pub fn engine_routes(seed: &Value) -> Result<Vec<Route>> {
         ));
         r.push(Route::json(
             "POST",
-            "/v1/projects/{project}/engines/{instance}/suspend",
+            "/v1/namespaces/{namespace}/engines/{instance}/suspend",
             format!("{base}/suspend"),
             202,
             in_phase(inst, "suspending"),
         ));
         r.push(Route::json(
             "POST",
-            "/v1/projects/{project}/engines/{instance}/resume",
+            "/v1/namespaces/{namespace}/engines/{instance}/resume",
             format!("{base}/resume"),
             202,
             in_phase(inst, "resuming"),
@@ -1003,7 +1005,7 @@ pub fn engine_routes(seed: &Value) -> Result<Vec<Route>> {
             .ok_or_else(|| anyhow!("no engines.usage for {id}"))?;
         r.push(Route::json(
             "GET",
-            "/v1/projects/{project}/engines/{instance}/usage",
+            "/v1/namespaces/{namespace}/engines/{instance}/usage",
             format!("{base}/usage"),
             200,
             samples,
@@ -1014,20 +1016,20 @@ pub fn engine_routes(seed: &Value) -> Result<Vec<Route>> {
                 let sid = str_field(s, "id")?;
                 r.push(Route::empty(
                     "DELETE",
-                    "/v1/projects/{project}/engines/{instance}/sessions/{session}",
+                    "/v1/namespaces/{namespace}/engines/{instance}/sessions/{session}",
                     format!("{base}/sessions/{sid}"),
                 ));
             }
             r.push(Route::json(
                 "GET",
-                "/v1/projects/{project}/engines/{instance}/sessions",
+                "/v1/namespaces/{namespace}/engines/{instance}/sessions",
                 format!("{base}/sessions"),
                 200,
                 json!({ "sessions": ss }),
             ));
             r.push(Route::json(
                 "POST",
-                "/v1/projects/{project}/engines/{instance}/sessions",
+                "/v1/namespaces/{namespace}/engines/{instance}/sessions",
                 format!("{base}/sessions"),
                 201,
                 json!({
@@ -1045,7 +1047,7 @@ pub fn engine_routes(seed: &Value) -> Result<Vec<Route>> {
                 cancelled["state"] = json!("cancelled");
                 r.push(Route::json(
                     "POST",
-                    "/v1/projects/{project}/engines/{instance}/jobs/{job}/cancel",
+                    "/v1/namespaces/{namespace}/engines/{instance}/jobs/{job}/cancel",
                     format!("{base}/jobs/{jid}/cancel"),
                     200,
                     cancelled,
@@ -1053,14 +1055,14 @@ pub fn engine_routes(seed: &Value) -> Result<Vec<Route>> {
             }
             r.push(Route::json(
                 "GET",
-                "/v1/projects/{project}/engines/{instance}/jobs",
+                "/v1/namespaces/{namespace}/engines/{instance}/jobs",
                 format!("{base}/jobs"),
                 200,
                 json!({ "jobs": js }),
             ));
             r.push(Route::json(
                 "POST",
-                "/v1/projects/{project}/engines/{instance}/jobs",
+                "/v1/namespaces/{namespace}/engines/{instance}/jobs",
                 format!("{base}/jobs"),
                 201,
                 json!({
@@ -1083,7 +1085,7 @@ pub fn engine_routes(seed: &Value) -> Result<Vec<Route>> {
             }
             r.push(Route::json(
                 "POST",
-                "/v1/projects/{project}/engines/{instance}/sql",
+                "/v1/namespaces/{namespace}/engines/{instance}/sql",
                 format!("{base}/sql"),
                 200,
                 result,

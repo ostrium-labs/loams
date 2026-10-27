@@ -89,13 +89,13 @@ fn every_mocked_body_matches_its_response_schema() {
 }
 
 #[test]
-fn every_seeded_instance_is_preview_and_in_a_seeded_project() {
+fn every_seeded_instance_is_preview_and_in_a_seeded_namespace() {
     let seed = load_seed(SystemTime::now()).unwrap();
-    let projects: BTreeSet<&str> = seed["projects"]
+    let namespaces: BTreeSet<&str> = seed["environments"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|p| p["slug"].as_str().unwrap())
+        .map(|e| e["namespace"].as_str().unwrap())
         .collect();
     let instances = seed["engines"]["instances"].as_array().unwrap();
     let kinds: BTreeSet<&str> = instances
@@ -106,10 +106,29 @@ fn every_seeded_instance_is_preview_and_in_a_seeded_project() {
     for i in instances {
         assert_eq!(i["stability"], "preview", "{}", i["id"]);
         assert!(
-            projects.contains(i["project"].as_str().unwrap()),
-            "{} is in an unseeded project",
+            namespaces.contains(i["namespace"].as_str().unwrap()),
+            "{} is in an unseeded namespace",
             i["id"]
         );
+        assert!(
+            i.get("project").is_none(),
+            "{} still names a project",
+            i["id"]
+        );
+    }
+    // Usage is integers (design 63), and a running instance's first window is estimated.
+    for (id, usage) in seed["engines"]["usage"].as_object().unwrap() {
+        for s in usage["samples"].as_array().unwrap() {
+            assert!(s["cpu_ms"].is_u64(), "{id}: cpu_ms is not an integer");
+            assert!(
+                s["memory_mib_ms"].is_u64(),
+                "{id}: memory_mib_ms is not an integer"
+            );
+            assert!(
+                s["estimated"].is_boolean(),
+                "{id}: estimated is not a boolean"
+            );
+        }
     }
 }
 
@@ -123,7 +142,7 @@ async fn the_server_answers_engines_from_the_seed() {
     let client = reqwest::Client::new();
 
     let all: Value = client
-        .get(server.url("/v1/projects/code-index/engines"))
+        .get(server.url("/v1/namespaces/code-index-development/engines"))
         .send()
         .await
         .unwrap()
@@ -134,7 +153,7 @@ async fn the_server_answers_engines_from_the_seed() {
 
     // The kind filter matches before the unfiltered mock.
     let spark: Value = client
-        .get(server.url("/v1/projects/code-index/engines?kind=spark"))
+        .get(server.url("/v1/namespaces/code-index-development/engines?kind=spark"))
         .send()
         .await
         .unwrap()
@@ -146,7 +165,7 @@ async fn the_server_answers_engines_from_the_seed() {
     assert!(spark.iter().all(|i| i["kind"] == "spark"));
 
     let suspended: Value = client
-        .post(server.url("/v1/projects/docs-search/engines/eng_01docsrw/suspend"))
+        .post(server.url("/v1/namespaces/docs-search-production/engines/eng_01docsrw/suspend"))
         .send()
         .await
         .unwrap()
@@ -156,7 +175,10 @@ async fn the_server_answers_engines_from_the_seed() {
     assert_eq!(suspended["status"]["phase"], "suspending");
 
     let status = client
-        .delete(server.url("/v1/projects/code-index/engines/eng_04codesp/sessions/ses_01"))
+        .delete(
+            server
+                .url("/v1/namespaces/code-index-development/engines/eng_04codesp/sessions/ses_01"),
+        )
         .send()
         .await
         .unwrap()

@@ -5,6 +5,7 @@
 
 import {
   ApiError,
+  ENTITLEMENT_EXHAUSTED,
   type EngineCatalog,
   type EngineKind,
   type EngineSize,
@@ -82,15 +83,14 @@ function instance(
   p: Partial<Instance> & Pick<Instance, 'id' | 'name' | 'kind' | 'status'>,
 ): Instance {
   return {
-    project: 'default',
+    namespace: 'default-dev',
     org: 'acme',
-    environment: null,
     version: null,
     size: sizeOf({ tier: 's', replicas: 1 }),
     config: {},
     labels: {},
     endpoints: [],
-    state_prefix: `engines/${p.project ?? 'default'}/${p.id}/`,
+    state_prefix: `engines/${p.namespace ?? 'default-dev'}/${p.id}/`,
     stability: 'preview',
     created_at: ago(3 * 24 * HOUR),
     updated_at: ago(20 * MIN),
@@ -250,17 +250,20 @@ export function sampleUsage(kind: EngineKind, phase: string): Usage {
     return {
       window_start: new Date(end - 5 * MIN).toISOString(),
       window_end: new Date(end).toISOString(),
-      vcpu_seconds: running ? base + ((i * 37) % 60) : 0,
-      memory_gb_seconds: running ? base * 4 + ((i * 53) % 200) : 0,
+      // A running instance is measured; a suspended or failed one bills its reserved
+      // state only, and the first window of each hour is an estimate (the reserved size).
+      cpu_ms: running ? (base + ((i * 37) % 60)) * 1000 : 0,
+      memory_mib_ms: running ? (base * 4 + ((i * 53) % 200)) * 1024 * 1000 : 0,
       state_bytes: 1_200_000_000 + i * 15_000_000,
+      estimated: running && i % 12 === 0,
     };
   });
   const last = samples[samples.length - 1];
   return {
     samples,
     totals: {
-      vcpu_seconds: samples.reduce((a, s) => a + s.vcpu_seconds, 0),
-      memory_gb_seconds: samples.reduce((a, s) => a + s.memory_gb_seconds, 0),
+      cpu_ms: samples.reduce((a, s) => a + s.cpu_ms, 0),
+      memory_mib_ms: samples.reduce((a, s) => a + s.memory_mib_ms, 0),
       state_bytes: last ? last.state_bytes : 0,
     },
   };
@@ -300,12 +303,23 @@ function sqlResult(kind: EngineKind, sql: string): SqlResult {
 
 export interface MockOptions {
   instances?: Instance[];
-  projects?: string[];
+  namespaces?: string[];
+  /**
+   * The plan's allowance is used up: create, resume and a scale up answer 402
+   * `entitlement_exhausted`, as Loams Meter's gate does (design 63 §17.4).
+   */
+  exhausted?: boolean;
 }
+
+const EXHAUSTED_MESSAGE =
+  "engine compute is at 100% of this month's allowance; add credit or wait for the reset";
 
 export function createMockEnginesClient(opts: MockOptions = {}): EnginesClient {
   let instances = opts.instances ?? sampleInstances();
-  const projects = opts.projects ?? ['default'];
+  const namespaces = opts.namespaces ?? ['default-dev', 'default-prod'];
+  const gate = () => {
+    if (opts.exhausted) throw new ApiError(ENTITLEMENT_EXHAUSTED, EXHAUSTED_MESSAGE, 402);
+  };
   const sessions = new Map<string, SparkSession[]>([
     [
       'eng_sp01batch',
@@ -355,15 +369,16 @@ export function createMockEnginesClient(opts: MockOptions = {}): EnginesClient {
   ]);
   let seq = 0;
 
-  const find = (project: string, id: string) => {
-    const i = instances.find((x) => x.project === project && x.id === id);
-    if (!i) throw new ApiError('not_found', `no engine instance ${id} in project ${project}`, 404);
+  const find = (namespace: string, id: string) => {
+    const i = instances.find((x) => x.namespace === namespace && x.id === id);
+    if (!i)
+      throw new ApiError('not_found', `no engine instance ${id} in namespace ${namespace}`, 404);
     return i;
   };
-  const patch = async (project: string, id: string, f: (i: Instance) => Instance) => {
-    const next = f(find(project, id));
+  const patch = async (namespace: string, id: string, f: (i: Instance) => Instance) => {
+    const next = f(find(namespace, id));
     const stamped = { ...next, updated_at: new Date().toISOString() };
-    instances = instances.map((x) => (x.id === id && x.project === project ? stamped : x));
+    instances = instances.map((x) => (x.id === id && x.namespace === namespace ? stamped : x));
     return stamped;
   };
   const phase = (i: Instance, p: Instance['status']['phase'], message?: string): Instance => ({
@@ -375,8 +390,8 @@ export function createMockEnginesClient(opts: MockOptions = {}): EnginesClient {
       observed_at: new Date().toISOString(),
     },
   });
-  const spark = (project: string, id: string) => {
-    const i = find(project, id);
+  const spark = (namespace: string, id: string) => {
+    const i = find(namespace, id);
     if (i.kind !== 'spark') {
       throw new ApiError('failed_precondition', `${i.name} is not a Spark instance`, 400);
     }
@@ -386,20 +401,21 @@ export function createMockEnginesClient(opts: MockOptions = {}): EnginesClient {
   return {
     sample: true,
     catalog: () => Promise.resolve(sampleCatalog),
-    listProjects: () => Promise.resolve(projects),
-    list: (project, kind) =>
+    listNamespaces: () => Promise.resolve(namespaces),
+    list: (namespace, kind) =>
       Promise.resolve(
         instances.filter(
           (i) =>
-            i.project === project && (!kind || i.kind === kind) && i.status.phase !== 'deleted',
+            i.namespace === namespace && (!kind || i.kind === kind) && i.status.phase !== 'deleted',
         ),
       ),
-    get: async (project, id) => find(project, id),
-    async create(project, req: InstanceCreate) {
+    get: async (namespace, id) => find(namespace, id),
+    async create(namespace, req: InstanceCreate) {
+      gate();
       if (!/^[a-z]([a-z0-9-]{0,38}[a-z0-9])?$/.test(req.name)) {
         throw new ApiError('invalid_argument', 'a name is a DNS label of 1 to 40 characters', 400);
       }
-      if (instances.some((i) => i.project === project && i.name === req.name)) {
+      if (instances.some((i) => i.namespace === namespace && i.name === req.name)) {
         throw new ApiError('already_exists', `an instance named ${req.name} exists`, 409);
       }
       seq += 1;
@@ -407,14 +423,13 @@ export function createMockEnginesClient(opts: MockOptions = {}): EnginesClient {
       const now = new Date().toISOString();
       const created = instance({
         id: `eng_new${String(seq).padStart(4, '0')}`,
-        project,
+        namespace,
         name: req.name,
         kind: req.kind,
         version: req.version ?? info?.default_version ?? null,
         size: sizeOf(req.size),
         config: req.config ?? {},
         labels: req.labels ?? {},
-        environment: req.environment ?? null,
         created_at: now,
         updated_at: now,
         status: { phase: 'provisioning', health: 'unknown', checks: [], observed_at: now },
@@ -422,21 +437,29 @@ export function createMockEnginesClient(opts: MockOptions = {}): EnginesClient {
       instances = [...instances, created];
       return created;
     },
-    update: (project, id, req) =>
-      patch(project, id, (i) =>
-        'size' in req
-          ? phase({ ...i, size: sizeOf(req.size) }, 'scaling')
-          : phase({ ...i, version: req.version }, 'upgrading'),
-      ),
-    remove: (project, id) => patch(project, id, (i) => phase(i, 'deleting')),
-    suspend: (project, id) => patch(project, id, (i) => phase(i, 'suspending')),
-    resume: (project, id) => patch(project, id, (i) => phase(i, 'resuming')),
-    usage: async (project, id) => {
-      const i = find(project, id);
+    update: (namespace, id, req) =>
+      patch(namespace, id, (i) => {
+        if ('size' in req) {
+          const next = sizeOf(req.size);
+          const up = next.vcpu_milli * next.replicas > i.size.vcpu_milli * i.size.replicas;
+          if (up) gate();
+          return phase({ ...i, size: next }, 'scaling');
+        }
+        return phase({ ...i, version: req.version }, 'upgrading');
+      }),
+    remove: (namespace, id) => patch(namespace, id, (i) => phase(i, 'deleting')),
+    suspend: (namespace, id) => patch(namespace, id, (i) => phase(i, 'suspending')),
+    resume: (namespace, id) =>
+      patch(namespace, id, (i) => {
+        gate();
+        return phase(i, 'resuming');
+      }),
+    usage: async (namespace, id) => {
+      const i = find(namespace, id);
       return sampleUsage(i.kind, i.status.phase);
     },
-    async sql(project, id, req) {
-      const i = find(project, id);
+    async sql(namespace, id, req) {
+      const i = find(namespace, id);
       if (i.kind === 'spark') {
         throw new ApiError('failed_precondition', 'use a Spark session for SQL on Spark', 400);
       }
@@ -448,12 +471,12 @@ export function createMockEnginesClient(opts: MockOptions = {}): EnginesClient {
       }
       return sqlResult(i.kind, req.sql);
     },
-    listSessions: async (project, id) => {
-      spark(project, id);
+    listSessions: async (namespace, id) => {
+      spark(namespace, id);
       return sessions.get(id) ?? [];
     },
-    async createSession(project, id, req) {
-      spark(project, id);
+    async createSession(namespace, id, req) {
+      spark(namespace, id);
       seq += 1;
       const s: SparkSession = {
         id: `ses_n${seq}`,
@@ -465,19 +488,19 @@ export function createMockEnginesClient(opts: MockOptions = {}): EnginesClient {
       sessions.set(id, [...(sessions.get(id) ?? []), s]);
       return s;
     },
-    async closeSession(project, id, session) {
-      spark(project, id);
+    async closeSession(namespace, id, session) {
+      spark(namespace, id);
       sessions.set(
         id,
         (sessions.get(id) ?? []).map((s) => (s.id === session ? { ...s, state: 'closed' } : s)),
       );
     },
-    listJobs: async (project, id) => {
-      spark(project, id);
+    listJobs: async (namespace, id) => {
+      spark(namespace, id);
       return jobs.get(id) ?? [];
     },
-    async submitJob(project, id, req) {
-      spark(project, id);
+    async submitJob(namespace, id, req) {
+      spark(namespace, id);
       seq += 1;
       const j: SparkJob = {
         id: `job_n${seq}`,
@@ -491,8 +514,8 @@ export function createMockEnginesClient(opts: MockOptions = {}): EnginesClient {
       jobs.set(id, [j, ...(jobs.get(id) ?? [])]);
       return j;
     },
-    async cancelJob(project, id, job) {
-      spark(project, id);
+    async cancelJob(namespace, id, job) {
+      spark(namespace, id);
       const list = jobs.get(id) ?? [];
       const j = list.find((x) => x.id === job);
       if (!j) throw new ApiError('not_found', `no job ${job}`, 404);

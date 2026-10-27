@@ -9,6 +9,7 @@ import {
   errorText,
   type HealthState,
   type Instance,
+  isEntitlementExhausted,
   KIND_LABELS,
   type Phase,
 } from './client.js';
@@ -116,6 +117,26 @@ export function useLoad<T>(
   return [out, reload];
 }
 
+/**
+ * A failed action. A 402 `entitlement_exhausted` (Loams Meter, design 63) is said plainly:
+ * the plan's allowance is used up, nothing changed, and what to do about it.
+ */
+export function ActionError({ error, title }: { error: unknown; title: string }) {
+  if (isEntitlementExhausted(error)) {
+    return (
+      <Notice tone="warn" title="Out of allowance">
+        {error.message}. Nothing was changed: add credit or raise the spend cap in Settings,
+        Billing, or wait for the allowance to reset, then try again.
+      </Notice>
+    );
+  }
+  return (
+    <Notice tone="danger" title={title}>
+      {errorText(error)}
+    </Notice>
+  );
+}
+
 export function LoadError({ message }: { message: string }) {
   return (
     <Notice tone="danger" title="Could not load">
@@ -125,5 +146,5 @@ export function LoadError({ message }: { message: string }) {
 }
 
 /** The detail route of an instance. */
-export const instanceHref = (i: Pick<Instance, 'project' | 'id'>, rest = '') =>
-  `/engines/${encodeURIComponent(i.project)}/${encodeURIComponent(i.id)}${rest}`;
+export const instanceHref = (i: Pick<Instance, 'namespace' | 'id'>, rest = '') =>
+  `/engines/${encodeURIComponent(i.namespace)}/${encodeURIComponent(i.id)}${rest}`;

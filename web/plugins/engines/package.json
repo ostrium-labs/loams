@@ -2,7 +2,7 @@
   "name": "@loams/plugin-engines",
   "version": "0.1.0",
   "private": true,
-  "description": "Managed engines (design 81, preview): RisingWave, Flink SQL and Spark instances per project, their lifecycle, a SQL workspace and Spark sessions and jobs, over the /v1/projects/{p}/engines API.",
+  "description": "Managed engines (design 81, preview): RisingWave, Flink SQL and Spark instances per Loams namespace, their lifecycle, a SQL workspace and Spark sessions and jobs, over the /v1/namespaces/{ns}/engines API.",
   "license": "Apache-2.0",
   "type": "module",
   "sideEffects": false,

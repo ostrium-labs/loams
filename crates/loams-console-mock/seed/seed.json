@@ -5643,9 +5643,8 @@
     "instances": [
       {
         "id": "eng_01docsrw",
-        "project": "docs-search",
+        "namespace": "docs-search-production",
         "org": "acme",
-        "environment": "production",
         "name": "docs-changes",
         "kind": "risingwave",
         "version": "v2.6.1",
@@ -5697,16 +5696,15 @@
             "internal": true
           }
         ],
-        "state_prefix": "engines/docs-search/eng_01docsrw/",
+        "state_prefix": "engines/docs-search-production/eng_01docsrw/",
         "stability": "preview",
         "created_at": "@now-6d",
         "updated_at": "@now-20m"
       },
       {
         "id": "eng_02docsfl",
-        "project": "docs-search",
+        "namespace": "docs-search-production",
         "org": "acme",
-        "environment": null,
         "name": "click-sessions",
         "kind": "flink",
         "version": "2.1.0",
@@ -5756,16 +5754,15 @@
             "internal": true
           }
         ],
-        "state_prefix": "engines/docs-search/eng_02docsfl/",
+        "state_prefix": "engines/docs-search-production/eng_02docsfl/",
         "stability": "preview",
         "created_at": "@now-6d",
         "updated_at": "@now-20m"
       },
       {
         "id": "eng_03suprw",
-        "project": "support-assistant",
+        "namespace": "support-assistant-staging",
         "org": "acme",
-        "environment": null,
         "name": "ticket-metrics",
         "kind": "risingwave",
         "version": "v2.5.3",
@@ -5786,16 +5783,15 @@
           "observed_at": "@now-2h"
         },
         "endpoints": [],
-        "state_prefix": "engines/support-assistant/eng_03suprw/",
+        "state_prefix": "engines/support-assistant-staging/eng_03suprw/",
         "stability": "preview",
         "created_at": "@now-6d",
         "updated_at": "@now-20m"
       },
       {
         "id": "eng_04codesp",
-        "project": "code-index",
+        "namespace": "code-index-development",
         "org": "acme",
-        "environment": null,
         "name": "nightly-embed",
         "kind": "spark",
         "version": "4.0.1",
@@ -5840,16 +5836,15 @@
             "internal": true
           }
         ],
-        "state_prefix": "engines/code-index/eng_04codesp/",
+        "state_prefix": "engines/code-index-development/eng_04codesp/",
         "stability": "preview",
         "created_at": "@now-6d",
         "updated_at": "@now-20m"
       },
       {
         "id": "eng_05codefl",
-        "project": "code-index",
+        "namespace": "code-index-development",
         "org": "acme",
-        "environment": null,
         "name": "commit-stream",
         "kind": "flink",
         "version": "2.1.0",
@@ -5870,16 +5865,15 @@
           "observed_at": "@now-5s"
         },
         "endpoints": [],
-        "state_prefix": "engines/code-index/eng_05codefl/",
+        "state_prefix": "engines/code-index-development/eng_05codefl/",
         "stability": "preview",
         "created_at": "@now-2m",
         "updated_at": "@now-2m"
       },
       {
         "id": "eng_06codesp",
-        "project": "code-index",
+        "namespace": "code-index-development",
         "org": "acme",
-        "environment": null,
         "name": "ml-features",
         "kind": "spark",
         "version": "3.5.7",
@@ -5906,7 +5900,7 @@
           "observed_at": "@now-40m"
         },
         "endpoints": [],
-        "state_prefix": "engines/code-index/eng_06codesp/",
+        "state_prefix": "engines/code-index-development/eng_06codesp/",
         "stability": "preview",
         "created_at": "@now-6d",
         "updated_at": "@now-20m"
@@ -5918,91 +5912,103 @@
           {
             "window_start": "@now-60m",
             "window_end": "@now-55m",
-            "vcpu_seconds": 240.0,
-            "memory_gb_seconds": 960.0,
-            "state_bytes": 1200000000
+            "cpu_ms": 240000,
+            "memory_mib_ms": 983040000,
+            "state_bytes": 1200000000,
+            "estimated": true
           },
           {
             "window_start": "@now-55m",
             "window_end": "@now-50m",
-            "vcpu_seconds": 277.0,
-            "memory_gb_seconds": 1013.0,
-            "state_bytes": 1215000000
+            "cpu_ms": 277000,
+            "memory_mib_ms": 1037312000,
+            "state_bytes": 1215000000,
+            "estimated": false
           },
           {
             "window_start": "@now-50m",
             "window_end": "@now-45m",
-            "vcpu_seconds": 254.0,
-            "memory_gb_seconds": 1066.0,
-            "state_bytes": 1230000000
+            "cpu_ms": 254000,
+            "memory_mib_ms": 1091584000,
+            "state_bytes": 1230000000,
+            "estimated": false
           },
           {
             "window_start": "@now-45m",
             "window_end": "@now-40m",
-            "vcpu_seconds": 291.0,
-            "memory_gb_seconds": 1119.0,
-            "state_bytes": 1245000000
+            "cpu_ms": 291000,
+            "memory_mib_ms": 1145856000,
+            "state_bytes": 1245000000,
+            "estimated": false
           },
           {
             "window_start": "@now-40m",
             "window_end": "@now-35m",
-            "vcpu_seconds": 268.0,
-            "memory_gb_seconds": 972.0,
-            "state_bytes": 1260000000
+            "cpu_ms": 268000,
+            "memory_mib_ms": 995328000,
+            "state_bytes": 1260000000,
+            "estimated": false
           },
           {
             "window_start": "@now-35m",
             "window_end": "@now-30m",
-            "vcpu_seconds": 245.0,
-            "memory_gb_seconds": 1025.0,
-            "state_bytes": 1275000000
+            "cpu_ms": 245000,
+            "memory_mib_ms": 1049600000,
+            "state_bytes": 1275000000,
+            "estimated": false
           },
           {
             "window_start": "@now-30m",
             "window_end": "@now-25m",
-            "vcpu_seconds": 282.0,
-            "memory_gb_seconds": 1078.0,
-            "state_bytes": 1290000000
+            "cpu_ms": 282000,
+            "memory_mib_ms": 1103872000,
+            "state_bytes": 1290000000,
+            "estimated": false
           },
           {
             "window_start": "@now-25m",
             "window_end": "@now-20m",
-            "vcpu_seconds": 259.0,
-            "memory_gb_seconds": 1131.0,
-            "state_bytes": 1305000000
+            "cpu_ms": 259000,
+            "memory_mib_ms": 1158144000,
+            "state_bytes": 1305000000,
+            "estimated": false
           },
           {
             "window_start": "@now-20m",
             "window_end": "@now-15m",
-            "vcpu_seconds": 296.0,
-            "memory_gb_seconds": 984.0,
-            "state_bytes": 1320000000
+            "cpu_ms": 296000,
+            "memory_mib_ms": 1007616000,
+            "state_bytes": 1320000000,
+            "estimated": false
           },
           {
             "window_start": "@now-15m",
             "window_end": "@now-10m",
-            "vcpu_seconds": 273.0,
-            "memory_gb_seconds": 1037.0,
-            "state_bytes": 1335000000
+            "cpu_ms": 273000,
+            "memory_mib_ms": 1061888000,
+            "state_bytes": 1335000000,
+            "estimated": false
           },
           {
             "window_start": "@now-10m",
             "window_end": "@now-5m",
-            "vcpu_seconds": 250.0,
-            "memory_gb_seconds": 1090.0,
-            "state_bytes": 1350000000
+            "cpu_ms": 250000,
+            "memory_mib_ms": 1116160000,
+            "state_bytes": 1350000000,
+            "estimated": false
           },
           {
             "window_start": "@now-5m",
             "window_end": "@now",
-            "vcpu_seconds": 287.0,
-            "memory_gb_seconds": 1143.0,
-            "state_bytes": 1365000000
+            "cpu_ms": 287000,
+            "memory_mib_ms": 1170432000,
+            "state_bytes": 1365000000,
+            "estimated": false
           }
         ],
         "totals": {
-          "vcpu_seconds": 3222.0,
-          "memory_gb_seconds": 12618.0,
+          "cpu_ms": 3222000,
+          "memory_mib_ms": 12920832000,
           "state_bytes": 1365000000
         }
       },
@@ -6011,91 +6017,103 @@
           {
             "window_start": "@now-60m",
             "window_end": "@now-55m",
-            "vcpu_seconds": 360.0,
-            "memory_gb_seconds": 1440.0,
-            "state_bytes": 1200000000
+            "cpu_ms": 360000,
+            "memory_mib_ms": 1474560000,
+            "state_bytes": 1200000000,
+            "estimated": true
           },
           {
             "window_start": "@now-55m",
             "window_end": "@now-50m",
-            "vcpu_seconds": 397.0,
-            "memory_gb_seconds": 1493.0,
-            "state_bytes": 1215000000
+            "cpu_ms": 397000,
+            "memory_mib_ms": 1528832000,
+            "state_bytes": 1215000000,
+            "estimated": false
           },
           {
             "window_start": "@now-50m",
             "window_end": "@now-45m",
-            "vcpu_seconds": 374.0,
-            "memory_gb_seconds": 1546.0,
-            "state_bytes": 1230000000
+            "cpu_ms": 374000,
+            "memory_mib_ms": 1583104000,
+            "state_bytes": 1230000000,
+            "estimated": false
           },
           {
             "window_start": "@now-45m",
             "window_end": "@now-40m",
-            "vcpu_seconds": 411.0,
-            "memory_gb_seconds": 1599.0,
-            "state_bytes": 1245000000
+            "cpu_ms": 411000,
+            "memory_mib_ms": 1637376000,
+            "state_bytes": 1245000000,
+            "estimated": false
           },
           {
             "window_start": "@now-40m",
             "window_end": "@now-35m",
-            "vcpu_seconds": 388.0,
-            "memory_gb_seconds": 1452.0,
-            "state_bytes": 1260000000
+            "cpu_ms": 388000,
+            "memory_mib_ms": 1486848000,
+            "state_bytes": 1260000000,
+            "estimated": false
           },
           {
             "window_start": "@now-35m",
             "window_end": "@now-30m",
-            "vcpu_seconds": 365.0,
-            "memory_gb_seconds": 1505.0,
-            "state_bytes": 1275000000
+            "cpu_ms": 365000,
+            "memory_mib_ms": 1541120000,
+            "state_bytes": 1275000000,
+            "estimated": false
           },
           {
             "window_start": "@now-30m",
             "window_end": "@now-25m",
-            "vcpu_seconds": 402.0,
-            "memory_gb_seconds": 1558.0,
-            "state_bytes": 1290000000
+            "cpu_ms": 402000,
+            "memory_mib_ms": 1595392000,
+            "state_bytes": 1290000000,
+            "estimated": false
           },
           {
             "window_start": "@now-25m",
             "window_end": "@now-20m",
-            "vcpu_seconds": 379.0,
-            "memory_gb_seconds": 1611.0,
-            "state_bytes": 1305000000
+            "cpu_ms": 379000,
+            "memory_mib_ms": 1649664000,
+            "state_bytes": 1305000000,
+            "estimated": false
           },
           {
             "window_start": "@now-20m",
             "window_end": "@now-15m",
-            "vcpu_seconds": 416.0,
-            "memory_gb_seconds": 1464.0,
-            "state_bytes": 1320000000
+            "cpu_ms": 416000,
+            "memory_mib_ms": 1499136000,
+            "state_bytes": 1320000000,
+            "estimated": false
           },
           {
             "window_start": "@now-15m",
             "window_end": "@now-10m",
-            "vcpu_seconds": 393.0,
-            "memory_gb_seconds": 1517.0,
-            "state_bytes": 1335000000
+            "cpu_ms": 393000,
+            "memory_mib_ms": 1553408000,
+            "state_bytes": 1335000000,
+            "estimated": false
           },
           {
             "window_start": "@now-10m",
             "window_end": "@now-5m",
-            "vcpu_seconds": 370.0,
-            "memory_gb_seconds": 1570.0,
-            "state_bytes": 1350000000
+            "cpu_ms": 370000,
+            "memory_mib_ms": 1607680000,
+            "state_bytes": 1350000000,
+            "estimated": false
           },
           {
             "window_start": "@now-5m",
             "window_end": "@now",
-            "vcpu_seconds": 407.0,
-            "memory_gb_seconds": 1623.0,
-            "state_bytes": 1365000000
+            "cpu_ms": 407000,
+            "memory_mib_ms": 1661952000,
+            "state_bytes": 1365000000,
+            "estimated": false
           }
         ],
         "totals": {
-          "vcpu_seconds": 4662.0,
-          "memory_gb_seconds": 18378.0,
+          "cpu_ms": 4662000,
+          "memory_mib_ms": 18819072000,
           "state_bytes": 1365000000
         }
       },
@@ -6104,91 +6122,103 @@
           {
             "window_start": "@now-60m",
             "window_end": "@now-55m",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1200000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1200000000,
+            "estimated": false
           },
           {
             "window_start": "@now-55m",
             "window_end": "@now-50m",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1215000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1215000000,
+            "estimated": false
           },
           {
             "window_start": "@now-50m",
             "window_end": "@now-45m",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1230000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1230000000,
+            "estimated": false
           },
           {
             "window_start": "@now-45m",
             "window_end": "@now-40m",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1245000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1245000000,
+            "estimated": false
           },
           {
             "window_start": "@now-40m",
             "window_end": "@now-35m",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1260000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1260000000,
+            "estimated": false
           },
           {
             "window_start": "@now-35m",
             "window_end": "@now-30m",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1275000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1275000000,
+            "estimated": false
           },
           {
             "window_start": "@now-30m",
             "window_end": "@now-25m",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1290000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1290000000,
+            "estimated": false
           },
           {
             "window_start": "@now-25m",
             "window_end": "@now-20m",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1305000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1305000000,
+            "estimated": false
           },
           {
             "window_start": "@now-20m",
             "window_end": "@now-15m",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1320000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1320000000,
+            "estimated": false
           },
           {
             "window_start": "@now-15m",
             "window_end": "@now-10m",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1335000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1335000000,
+            "estimated": false
           },
           {
             "window_start": "@now-10m",
             "window_end": "@now-5m",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1350000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1350000000,
+            "estimated": false
           },
           {
             "window_start": "@now-5m",
             "window_end": "@now",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1365000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1365000000,
+            "estimated": false
           }
         ],
         "totals": {
-          "vcpu_seconds": 0.0,
-          "memory_gb_seconds": 0.0,
+          "cpu_ms": 0,
+          "memory_mib_ms": 0,
           "state_bytes": 1365000000
         }
       },
@@ -6197,91 +6227,103 @@
           {
             "window_start": "@now-60m",
             "window_end": "@now-55m",
-            "vcpu_seconds": 480.0,
-            "memory_gb_seconds": 1920.0,
-            "state_bytes": 1200000000
+            "cpu_ms": 480000,
+            "memory_mib_ms": 1966080000,
+            "state_bytes": 1200000000,
+            "estimated": true
           },
           {
             "window_start": "@now-55m",
             "window_end": "@now-50m",
-            "vcpu_seconds": 517.0,
-            "memory_gb_seconds": 1973.0,
-            "state_bytes": 1215000000
+            "cpu_ms": 517000,
+            "memory_mib_ms": 2020352000,
+            "state_bytes": 1215000000,
+            "estimated": false
           },
           {
             "window_start": "@now-50m",
             "window_end": "@now-45m",
-            "vcpu_seconds": 494.0,
-            "memory_gb_seconds": 2026.0,
-            "state_bytes": 1230000000
+            "cpu_ms": 494000,
+            "memory_mib_ms": 2074624000,
+            "state_bytes": 1230000000,
+            "estimated": false
           },
           {
             "window_start": "@now-45m",
             "window_end": "@now-40m",
-            "vcpu_seconds": 531.0,
-            "memory_gb_seconds": 2079.0,
-            "state_bytes": 1245000000
+            "cpu_ms": 531000,
+            "memory_mib_ms": 2128896000,
+            "state_bytes": 1245000000,
+            "estimated": false
           },
           {
             "window_start": "@now-40m",
             "window_end": "@now-35m",
-            "vcpu_seconds": 508.0,
-            "memory_gb_seconds": 1932.0,
-            "state_bytes": 1260000000
+            "cpu_ms": 508000,
+            "memory_mib_ms": 1978368000,
+            "state_bytes": 1260000000,
+            "estimated": false
           },
           {
             "window_start": "@now-35m",
             "window_end": "@now-30m",
-            "vcpu_seconds": 485.0,
-            "memory_gb_seconds": 1985.0,
-            "state_bytes": 1275000000
+            "cpu_ms": 485000,
+            "memory_mib_ms": 2032640000,
+            "state_bytes": 1275000000,
+            "estimated": false
           },
           {
             "window_start": "@now-30m",
             "window_end": "@now-25m",
-            "vcpu_seconds": 522.0,
-            "memory_gb_seconds": 2038.0,
-            "state_bytes": 1290000000
+            "cpu_ms": 522000,
+            "memory_mib_ms": 2086912000,
+            "state_bytes": 1290000000,
+            "estimated": false
           },
           {
             "window_start": "@now-25m",
             "window_end": "@now-20m",
-            "vcpu_seconds": 499.0,
-            "memory_gb_seconds": 2091.0,
-            "state_bytes": 1305000000
+            "cpu_ms": 499000,
+            "memory_mib_ms": 2141184000,
+            "state_bytes": 1305000000,
+            "estimated": false
           },
           {
             "window_start": "@now-20m",
             "window_end": "@now-15m",
-            "vcpu_seconds": 536.0,
-            "memory_gb_seconds": 1944.0,
-            "state_bytes": 1320000000
+            "cpu_ms": 536000,
+            "memory_mib_ms": 1990656000,
+            "state_bytes": 1320000000,
+            "estimated": false
           },
           {
             "window_start": "@now-15m",
             "window_end": "@now-10m",
-            "vcpu_seconds": 513.0,
-            "memory_gb_seconds": 1997.0,
-            "state_bytes": 1335000000
+            "cpu_ms": 513000,
+            "memory_mib_ms": 2044928000,
+            "state_bytes": 1335000000,
+            "estimated": false
           },
           {
             "window_start": "@now-10m",
             "window_end": "@now-5m",
-            "vcpu_seconds": 490.0,
-            "memory_gb_seconds": 2050.0,
-            "state_bytes": 1350000000
+            "cpu_ms": 490000,
+            "memory_mib_ms": 2099200000,
+            "state_bytes": 1350000000,
+            "estimated": false
           },
           {
             "window_start": "@now-5m",
             "window_end": "@now",
-            "vcpu_seconds": 527.0,
-            "memory_gb_seconds": 2103.0,
-            "state_bytes": 1365000000
+            "cpu_ms": 527000,
+            "memory_mib_ms": 2153472000,
+            "state_bytes": 1365000000,
+            "estimated": false
           }
         ],
         "totals": {
-          "vcpu_seconds": 6102.0,
-          "memory_gb_seconds": 24138.0,
+          "cpu_ms": 6102000,
+          "memory_mib_ms": 24717312000,
           "state_bytes": 1365000000
         }
       },
@@ -6290,91 +6332,103 @@
           {
             "window_start": "@now-60m",
             "window_end": "@now-55m",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1200000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1200000000,
+            "estimated": false
           },
           {
             "window_start": "@now-55m",
             "window_end": "@now-50m",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1215000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1215000000,
+            "estimated": false
           },
           {
             "window_start": "@now-50m",
             "window_end": "@now-45m",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1230000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1230000000,
+            "estimated": false
           },
           {
             "window_start": "@now-45m",
             "window_end": "@now-40m",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1245000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1245000000,
+            "estimated": false
           },
           {
             "window_start": "@now-40m",
             "window_end": "@now-35m",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1260000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1260000000,
+            "estimated": false
           },
           {
             "window_start": "@now-35m",
             "window_end": "@now-30m",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1275000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1275000000,
+            "estimated": false
           },
           {
             "window_start": "@now-30m",
             "window_end": "@now-25m",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1290000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1290000000,
+            "estimated": false
           },
           {
             "window_start": "@now-25m",
             "window_end": "@now-20m",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1305000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1305000000,
+            "estimated": false
           },
           {
             "window_start": "@now-20m",
             "window_end": "@now-15m",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1320000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1320000000,
+            "estimated": false
           },
           {
             "window_start": "@now-15m",
             "window_end": "@now-10m",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1335000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1335000000,
+            "estimated": false
           },
           {
             "window_start": "@now-10m",
             "window_end": "@now-5m",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1350000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1350000000,
+            "estimated": false
           },
           {
             "window_start": "@now-5m",
             "window_end": "@now",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1365000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1365000000,
+            "estimated": false
           }
         ],
         "totals": {
-          "vcpu_seconds": 0.0,
-          "memory_gb_seconds": 0.0,
+          "cpu_ms": 0,
+          "memory_mib_ms": 0,
           "state_bytes": 1365000000
         }
       },
@@ -6383,91 +6437,103 @@
           {
             "window_start": "@now-60m",
             "window_end": "@now-55m",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1200000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1200000000,
+            "estimated": false
           },
           {
             "window_start": "@now-55m",
             "window_end": "@now-50m",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1215000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1215000000,
+            "estimated": false
           },
           {
             "window_start": "@now-50m",
             "window_end": "@now-45m",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1230000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1230000000,
+            "estimated": false
           },
           {
             "window_start": "@now-45m",
             "window_end": "@now-40m",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1245000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1245000000,
+            "estimated": false
           },
           {
             "window_start": "@now-40m",
             "window_end": "@now-35m",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1260000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1260000000,
+            "estimated": false
           },
           {
             "window_start": "@now-35m",
             "window_end": "@now-30m",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1275000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1275000000,
+            "estimated": false
           },
           {
             "window_start": "@now-30m",
             "window_end": "@now-25m",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1290000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1290000000,
+            "estimated": false
           },
           {
             "window_start": "@now-25m",
             "window_end": "@now-20m",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1305000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1305000000,
+            "estimated": false
           },
           {
             "window_start": "@now-20m",
             "window_end": "@now-15m",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1320000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1320000000,
+            "estimated": false
           },
           {
             "window_start": "@now-15m",
             "window_end": "@now-10m",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1335000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1335000000,
+            "estimated": false
           },
           {
             "window_start": "@now-10m",
             "window_end": "@now-5m",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1350000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1350000000,
+            "estimated": false
           },
           {
             "window_start": "@now-5m",
             "window_end": "@now",
-            "vcpu_seconds": 0.0,
-            "memory_gb_seconds": 0.0,
-            "state_bytes": 1365000000
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1365000000,
+            "estimated": false
           }
         ],
         "totals": {
-          "vcpu_seconds": 0.0,
-          "memory_gb_seconds": 0.0,
+          "cpu_ms": 0,
+          "memory_mib_ms": 0,
           "state_bytes": 1365000000
         }
       }

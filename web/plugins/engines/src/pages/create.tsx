@@ -1,16 +1,15 @@
 // New engine instance: kind, name, version (from the catalog), size tier and replicas.
 
-import { Button, Card, Field, Input, Notice, Select, SkeletonList } from '@loams/ui';
+import { Button, Card, Field, Input, Select, SkeletonList } from '@loams/ui';
 import { type FormEvent, useState } from 'react';
 import {
   type EngineKind,
   type EnginesClient,
-  errorText,
   type InstanceCreate,
   KIND_LABELS,
   type SizeTier,
 } from '../client.js';
-import { EnginesHead, instanceHref, LoadError, useLoad } from '../shared.js';
+import { ActionError, EnginesHead, instanceHref, LoadError, useLoad } from '../shared.js';
 
 const NAME = /^[a-z]([a-z0-9-]{0,38}[a-z0-9])?$/;
 
@@ -22,15 +21,15 @@ export function CreatePage({
   navigate: (to: string) => void;
 }) {
   const [catalog] = useLoad(() => client.catalog(), [client]);
-  const [projects] = useLoad(() => client.listProjects(), [client]);
-  const [project, setProject] = useState<string | undefined>();
+  const [namespaces] = useLoad(() => client.listNamespaces(), [client]);
+  const [namespace, setNamespace] = useState<string | undefined>();
   const [kind, setKind] = useState<EngineKind>('risingwave');
   const [name, setName] = useState('');
   const [version, setVersion] = useState('');
   const [tier, setTier] = useState<SizeTier>('s');
   const [replicas, setReplicas] = useState('1');
   const [busy, setBusy] = useState(false);
-  const [failure, setFailure] = useState<string | undefined>();
+  const [failure, setFailure] = useState<unknown>();
 
   const head = (
     <EnginesHead
@@ -67,8 +66,8 @@ export function CreatePage({
   }
   const { engines, sizes } = catalog.value;
   const info = engines.find((e) => e.kind === kind);
-  const chosenProject =
-    project ?? (projects.state === 'ok' ? (projects.value[0] ?? 'default') : 'default');
+  const chosenNamespace =
+    namespace ?? (namespaces.state === 'ok' ? (namespaces.value[0] ?? 'default') : 'default');
   const replicaCount = Number.parseInt(replicas, 10);
   const nameError = name && !NAME.test(name) ? 'Lowercase letters, digits and -, 1 to 40.' : '';
   const replicaError =
@@ -86,10 +85,10 @@ export function CreatePage({
     setBusy(true);
     setFailure(undefined);
     try {
-      const created = await client.create(chosenProject, req);
+      const created = await client.create(chosenNamespace, req);
       navigate(instanceHref(created));
     } catch (err) {
-      setFailure(errorText(err));
+      setFailure(err);
       setBusy(false);
     }
   }
@@ -99,14 +98,14 @@ export function CreatePage({
       {head}
       <Card>
         <form className="flex max-w-xl flex-col gap-4" onSubmit={submit} aria-label="New engine">
-          <Field label="Project">
+          <Field label="Namespace">
             {(p) => (
               <Select
                 {...p}
-                value={chosenProject}
-                onChange={(e) => setProject(e.currentTarget.value)}
+                value={chosenNamespace}
+                onChange={(e) => setNamespace(e.currentTarget.value)}
               >
-                {(projects.state === 'ok' ? projects.value : [chosenProject]).map((s) => (
+                {(namespaces.state === 'ok' ? namespaces.value : [chosenNamespace]).map((s) => (
                   <option key={s} value={s}>
                     {s}
                   </option>
@@ -196,10 +195,8 @@ export function CreatePage({
               />
             )}
           </Field>
-          {failure && (
-            <Notice tone="danger" title="Could not create the instance">
-              {failure}
-            </Notice>
+          {failure !== undefined && (
+            <ActionError error={failure} title="Could not create the instance" />
           )}
           <div className="flex gap-2">
             <Button

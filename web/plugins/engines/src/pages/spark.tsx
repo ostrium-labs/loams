@@ -43,15 +43,15 @@ const SESSION_VARIANT: Record<SparkSessionState, 'neutral' | 'info' | 'success' 
 export function SparkPage({
   client,
   navigate,
-  project,
+  namespace,
   id,
 }: {
   client: EnginesClient;
   navigate: (to: string) => void;
-  project: string;
+  namespace: string;
   id: string;
 }) {
-  const [inst] = useLoad(() => client.get(project, id), [client, project, id]);
+  const [inst] = useLoad(() => client.get(namespace, id), [client, namespace, id]);
   const crumbs = (i?: Instance) => (
     <>
       <a
@@ -106,8 +106,8 @@ export function SparkPage({
         </Notice>
       ) : (
         <>
-          <SessionsCard client={client} project={project} id={id} />
-          <JobsCard client={client} project={project} id={id} />
+          <SessionsCard client={client} namespace={namespace} id={id} />
+          <JobsCard client={client} namespace={namespace} id={id} />
         </>
       )}
     </div>
@@ -116,14 +116,17 @@ export function SparkPage({
 
 function SessionsCard({
   client,
-  project,
+  namespace,
   id,
 }: {
   client: EnginesClient;
-  project: string;
+  namespace: string;
   id: string;
 }) {
-  const [sessions, reload] = useLoad(() => client.listSessions(project, id), [client, project, id]);
+  const [sessions, reload] = useLoad(
+    () => client.listSessions(namespace, id),
+    [client, namespace, id],
+  );
   const [kind, setKind] = useState<SparkSessionKind>('sql');
   const [failure, setFailure] = useState<string | undefined>();
   const guard = async (f: () => Promise<unknown>) => {
@@ -150,7 +153,7 @@ function SessionsCard({
           </Select>
           <Button
             variant="primary"
-            onClick={() => guard(() => client.createSession(project, id, { kind }))}
+            onClick={() => guard(() => client.createSession(namespace, id, { kind }))}
           >
             Start session
           </Button>
@@ -196,7 +199,7 @@ function SessionsCard({
                           size="xs"
                           variant="quiet"
                           aria-label={`Close session ${s.id}`}
-                          onClick={() => guard(() => client.closeSession(project, id, s.id))}
+                          onClick={() => guard(() => client.closeSession(namespace, id, s.id))}
                         >
                           Close
                         </Button>
@@ -212,8 +215,16 @@ function SessionsCard({
   );
 }
 
-function JobsCard({ client, project, id }: { client: EnginesClient; project: string; id: string }) {
-  const [jobs, reload] = useLoad(() => client.listJobs(project, id), [client, project, id]);
+function JobsCard({
+  client,
+  namespace,
+  id,
+}: {
+  client: EnginesClient;
+  namespace: string;
+  id: string;
+}) {
+  const [jobs, reload] = useLoad(() => client.listJobs(namespace, id), [client, namespace, id]);
   const [name, setName] = useState('');
   const [kind, setKind] = useState<SparkJobKind>('sql');
   const [entrypoint, setEntrypoint] = useState('');
@@ -240,7 +251,7 @@ function JobsCard({ client, project, id }: { client: EnginesClient; project: str
     if (!name.trim() || !entrypoint.trim()) return;
     const argv = args.trim() ? args.trim().split(/\s+/) : [];
     const ok = await guard(() =>
-      client.submitJob(project, id, {
+      client.submitJob(namespace, id, {
         name: name.trim(),
         kind,
         entrypoint: entrypoint.trim(),
@@ -349,7 +360,7 @@ function JobsCard({ client, project, id }: { client: EnginesClient; project: str
                           size="xs"
                           variant="quiet"
                           aria-label={`Cancel job ${j.name}`}
-                          onClick={() => guard(() => client.cancelJob(project, id, j.id))}
+                          onClick={() => guard(() => client.cancelJob(namespace, id, j.id))}
                         >
                           Cancel
                         </Button>

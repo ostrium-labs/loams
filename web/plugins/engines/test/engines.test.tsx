@@ -65,7 +65,7 @@ describe('list', () => {
     const navigate = vi.fn();
     render(<ListPage client={createMockEnginesClient()} navigate={navigate} />);
     fireEvent.click(await screen.findByText('fraud-rules'));
-    expect(navigate).toHaveBeenCalledWith('/engines/default/eng_fl01fraud');
+    expect(navigate).toHaveBeenCalledWith('/engines/default-dev/eng_fl01fraud');
   });
 });
 
@@ -82,14 +82,14 @@ describe('create', () => {
     fireEvent.change(screen.getByLabelText('Executors'), { target: { value: '4' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create instance' }));
     await waitFor(() => expect(create).toHaveBeenCalled());
-    expect(create).toHaveBeenCalledWith('default', {
+    expect(create).toHaveBeenCalledWith('default-dev', {
       name: 'etl',
       kind: 'spark',
       version: '3.5.7',
       size: { tier: 'l', replicas: 4 },
     });
     await waitFor(() =>
-      expect(navigate).toHaveBeenCalledWith(expect.stringMatching(/^\/engines\/default\/eng_/)),
+      expect(navigate).toHaveBeenCalledWith(expect.stringMatching(/^\/engines\/default-dev\/eng_/)),
     );
   });
 
@@ -103,6 +103,33 @@ describe('create', () => {
   });
 });
 
+describe('out of allowance (402 entitlement_exhausted)', () => {
+  it('says so plainly when a create is refused', async () => {
+    render(
+      <CreatePage client={createMockEnginesClient({ exhausted: true })} navigate={() => {}} />,
+    );
+    fireEvent.change(await screen.findByLabelText('Name'), { target: { value: 'etl' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create instance' }));
+    expect(await screen.findByText('Out of allowance')).toBeTruthy();
+    expect(screen.getByText(/Nothing was changed/)).toBeTruthy();
+  });
+
+  it('says so plainly when a resume is refused', async () => {
+    render(
+      <DetailPage
+        client={createMockEnginesClient({ exhausted: true })}
+        navigate={() => {}}
+        namespace="default-dev"
+        id="eng_rw02clicks"
+        pollMs={0}
+      />,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Resume' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Resume instance' }));
+    expect(await screen.findByText('Out of allowance')).toBeTruthy();
+  });
+});
+
 describe('detail', () => {
   function mount(id = 'eng_rw01orders', client: EnginesClient = createMockEnginesClient()) {
     const copy = vi.fn();
@@ -110,7 +137,7 @@ describe('detail', () => {
       <DetailPage
         client={client}
         navigate={() => {}}
-        project="default"
+        namespace="default-dev"
         id={id}
         copy={copy}
         pollMs={0}
@@ -127,7 +154,10 @@ describe('detail', () => {
     expect(copy).toHaveBeenCalledWith('postgres://gateway.loams.internal:5432/orders-stream');
     expect(screen.getByRole('list', { name: 'Health checks' }).textContent).toContain('compute');
     expect(await screen.findByRole('table', { name: 'Usage samples' })).toBeTruthy();
-    expect(screen.getByText('vCPU-seconds')).toBeTruthy();
+    expect(screen.getByText('vCPU-hours')).toBeTruthy();
+    // The first window of the hour is billed from the reserved size and says so.
+    expect(screen.getByText(/1 window is estimated/)).toBeTruthy();
+    expect(screen.getAllByText('estimated').length).toBeGreaterThan(0);
     expect(screen.getByText('Preview')).toBeTruthy();
   });
 
@@ -137,7 +167,7 @@ describe('detail', () => {
     mount('eng_rw01orders', client);
     fireEvent.click(await screen.findByRole('button', { name: 'Suspend' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Suspend instance' }));
-    await waitFor(() => expect(suspend).toHaveBeenCalledWith('default', 'eng_rw01orders'));
+    await waitFor(() => expect(suspend).toHaveBeenCalledWith('default-dev', 'eng_rw01orders'));
     await waitFor(() => expect(screen.getAllByText('suspending').length).toBeGreaterThan(0));
   });
 
@@ -169,7 +199,9 @@ describe('SQL workspace', () => {
   it('runs a query on RisingWave and shows the rows', async () => {
     const client = createMockEnginesClient();
     const sql = vi.spyOn(client, 'sql');
-    render(<SqlPage client={client} navigate={() => {}} project="default" id="eng_rw01orders" />);
+    render(
+      <SqlPage client={client} navigate={() => {}} namespace="default-dev" id="eng_rw01orders" />,
+    );
     const box = await screen.findByLabelText('SQL');
     act(() => setCodeEditorText(box, 'SELECT region, count(*) FROM orders GROUP BY region'));
     fireEvent.click(screen.getByRole('button', { name: 'Run' }));
@@ -185,7 +217,7 @@ describe('SQL workspace', () => {
       <SqlPage
         client={createMockEnginesClient()}
         navigate={() => {}}
-        project="default"
+        namespace="default-dev"
         id="eng_fl01fraud"
       />,
     );
@@ -200,7 +232,7 @@ describe('SQL workspace', () => {
       <SqlPage
         client={createMockEnginesClient()}
         navigate={() => {}}
-        project="default"
+        namespace="default-dev"
         id="eng_rw02clicks"
       />,
     );
@@ -211,7 +243,9 @@ describe('SQL workspace', () => {
 
 describe('Spark', () => {
   const mount = (client: EnginesClient) =>
-    render(<SparkPage client={client} navigate={() => {}} project="default" id="eng_sp01batch" />);
+    render(
+      <SparkPage client={client} navigate={() => {}} namespace="default-dev" id="eng_sp01batch" />,
+    );
 
   it('submits a job', async () => {
     const client = createMockEnginesClient();
@@ -224,7 +258,7 @@ describe('Spark', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Submit job' }));
     await waitFor(() =>
-      expect(submit).toHaveBeenCalledWith('default', 'eng_sp01batch', {
+      expect(submit).toHaveBeenCalledWith('default-dev', 'eng_sp01batch', {
         name: 'backfill',
         kind: 'sql',
         entrypoint: 'INSERT INTO lake.t SELECT 1',
@@ -240,7 +274,7 @@ describe('Spark', () => {
     mount(client);
     fireEvent.click(await screen.findByRole('button', { name: 'Cancel job compact-events' }));
     await waitFor(() =>
-      expect(cancel).toHaveBeenCalledWith('default', 'eng_sp01batch', 'job_0002'),
+      expect(cancel).toHaveBeenCalledWith('default-dev', 'eng_sp01batch', 'job_0002'),
     );
     await waitFor(() => expect(screen.getAllByText('cancelled').length).toBeGreaterThan(0));
   });
@@ -253,9 +287,11 @@ describe('Spark', () => {
     await table('Spark sessions');
     fireEvent.click(screen.getByRole('button', { name: 'Start session' }));
     await waitFor(() =>
-      expect(create).toHaveBeenCalledWith('default', 'eng_sp01batch', { kind: 'sql' }),
+      expect(create).toHaveBeenCalledWith('default-dev', 'eng_sp01batch', { kind: 'sql' }),
     );
     fireEvent.click(await screen.findByRole('button', { name: 'Close session ses_01' }));
-    await waitFor(() => expect(close).toHaveBeenCalledWith('default', 'eng_sp01batch', 'ses_01'));
+    await waitFor(() =>
+      expect(close).toHaveBeenCalledWith('default-dev', 'eng_sp01batch', 'ses_01'),
+    );
   });
 });

@@ -1,7 +1,15 @@
 // The REST client builds the contract's paths (api/engines/openapi.json) and maps errors.
 
 import { describe, expect, it, vi } from 'vitest';
-import { ApiError, createEnginesClient, enginesPath, sizeText } from '../src/client.js';
+import {
+  ApiError,
+  createEnginesClient,
+  enginesPath,
+  gibHours,
+  isEntitlementExhausted,
+  sizeText,
+  vcpuHours,
+} from '../src/client.js';
 import { detectClient } from '../src/index.js';
 
 function recorder(status = 200, body: unknown = {}) {
@@ -17,9 +25,9 @@ function recorder(status = 200, body: unknown = {}) {
 }
 
 describe('paths', () => {
-  it('encodes the project and instance', () => {
-    expect(enginesPath('p 1')).toBe('/v1/projects/p%201/engines');
-    expect(enginesPath('p', 'eng_x', 'sql')).toBe('/v1/projects/p/engines/eng_x/sql');
+  it('encodes the namespace and instance', () => {
+    expect(enginesPath('p 1')).toBe('/v1/namespaces/p%201/engines');
+    expect(enginesPath('p', 'eng_x', 'sql')).toBe('/v1/namespaces/p/engines/eng_x/sql');
   });
 
   it('calls each operation at its contract path and method', async () => {
@@ -41,20 +49,20 @@ describe('paths', () => {
     await c.cancelJob('p', 'e1', 'job 1');
     await c.catalog();
     expect(calls.map((x) => `${x.init?.method ?? 'GET'} ${x.url}`)).toEqual([
-      'GET https://srv/v1/projects/p/engines?kind=flink',
-      'GET https://srv/v1/projects/p/engines/e1',
-      'POST https://srv/v1/projects/p/engines',
-      'PATCH https://srv/v1/projects/p/engines/e1',
-      'POST https://srv/v1/projects/p/engines/e1/suspend',
-      'POST https://srv/v1/projects/p/engines/e1/resume',
-      'DELETE https://srv/v1/projects/p/engines/e1',
-      'GET https://srv/v1/projects/p/engines/e1/usage?from=2026-10-27T00%3A00%3A00Z',
-      'POST https://srv/v1/projects/p/engines/e1/sql',
-      'GET https://srv/v1/projects/p/engines/e1/sessions',
-      'POST https://srv/v1/projects/p/engines/e1/sessions',
-      'GET https://srv/v1/projects/p/engines/e1/jobs',
-      'POST https://srv/v1/projects/p/engines/e1/jobs',
-      'POST https://srv/v1/projects/p/engines/e1/jobs/job%201/cancel',
+      'GET https://srv/v1/namespaces/p/engines?kind=flink',
+      'GET https://srv/v1/namespaces/p/engines/e1',
+      'POST https://srv/v1/namespaces/p/engines',
+      'PATCH https://srv/v1/namespaces/p/engines/e1',
+      'POST https://srv/v1/namespaces/p/engines/e1/suspend',
+      'POST https://srv/v1/namespaces/p/engines/e1/resume',
+      'DELETE https://srv/v1/namespaces/p/engines/e1',
+      'GET https://srv/v1/namespaces/p/engines/e1/usage?from=2026-10-27T00%3A00%3A00Z',
+      'POST https://srv/v1/namespaces/p/engines/e1/sql',
+      'GET https://srv/v1/namespaces/p/engines/e1/sessions',
+      'POST https://srv/v1/namespaces/p/engines/e1/sessions',
+      'GET https://srv/v1/namespaces/p/engines/e1/jobs',
+      'POST https://srv/v1/namespaces/p/engines/e1/jobs',
+      'POST https://srv/v1/namespaces/p/engines/e1/jobs/job%201/cancel',
       'GET https://srv/v1/engines',
     ]);
     expect(JSON.parse(String(calls[2]?.init?.body))).toEqual({
@@ -69,7 +77,7 @@ describe('paths', () => {
     const { calls, fetchFn } = recorder(204);
     await createEnginesClient(fetchFn).closeSession('p', 'e1', 's1');
     expect(calls[0]?.init?.method).toBe('DELETE');
-    expect(calls[0]?.url).toBe('/v1/projects/p/engines/e1/sessions/s1');
+    expect(calls[0]?.url).toBe('/v1/namespaces/p/engines/e1/sessions/s1');
   });
 });
 
@@ -99,11 +107,23 @@ describe('errors', () => {
     expect(err).toMatchObject({ code: 'error', message: 'Bad Gateway', status: 502 });
   });
 
-  it('lists projects, falling back to default', async () => {
-    const ok = recorder(200, { projects: [{ slug: 'web' }, { slug: 'data' }] });
-    expect(await createEnginesClient(ok.fetchFn).listProjects()).toEqual(['web', 'data']);
+  it('lists the namespaces of all project environments, falling back to default', async () => {
+    const fetchFn = (async (url: string | URL | Request) => {
+      const u = String(url);
+      const body = u.endsWith('/api/v1/projects')
+        ? { projects: [{ slug: 'web' }, { slug: 'data' }] }
+        : u.includes('/web/')
+          ? { environments: [{ namespace: 'web-dev' }, { namespace: 'web-prod' }] }
+          : { environments: [{ namespace: 'data-dev' }, { namespace: 'web-dev' }] };
+      return new Response(JSON.stringify(body), { status: 200 });
+    }) as typeof fetch;
+    expect(await createEnginesClient(fetchFn).listNamespaces()).toEqual([
+      'web-dev',
+      'web-prod',
+      'data-dev',
+    ]);
     const down = recorder(500, { error: 'internal', message: 'x' });
-    expect(await createEnginesClient(down.fetchFn).listProjects()).toEqual(['default']);
+    expect(await createEnginesClient(down.fetchFn).listNamespaces()).toEqual(['default']);
   });
 });
 
@@ -115,6 +135,25 @@ describe('detectClient', () => {
     expect((await detectClient({ fetch: missing.fetchFn, baseUrl: '' })).sample).toBe(true);
     const odd = recorder(200, {});
     expect((await detectClient({ fetch: odd.fetchFn, baseUrl: '' })).sample).toBe(true);
+  });
+});
+
+describe('entitlement', () => {
+  it('recognises a 402 entitlement_exhausted', async () => {
+    const { fetchFn } = recorder(402, {
+      error: 'entitlement_exhausted',
+      message: 'engine compute is at 100% of this month',
+    });
+    const err = await createEnginesClient(fetchFn)
+      .resume('ns', 'e1')
+      .catch((e: unknown) => e);
+    expect(isEntitlementExhausted(err)).toBe(true);
+    expect(isEntitlementExhausted(new ApiError('not_found', 'x', 404))).toBe(false);
+  });
+
+  it('converts metered units', () => {
+    expect(vcpuHours(7_200_000)).toBe(2);
+    expect(gibHours(1024 * 3_600_000)).toBe(1);
   });
 });
 

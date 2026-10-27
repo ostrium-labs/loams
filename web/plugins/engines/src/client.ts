@@ -76,10 +76,10 @@ export type Stability = 'preview' | 'beta' | 'stable';
 
 export interface Instance {
   id: string;
-  project: string;
-  /** The org that owns the project: the billing subject. */
+  /** The Loams namespace (a project's environment) the instance belongs to. */
+  namespace: string;
+  /** The org that owns the namespace: the billing subject is `org_<org>`. */
   org?: string | null;
-  environment?: string | null;
   name: string;
   kind: EngineKind;
   /** The requested version; `status.version` is the running one. */
@@ -102,7 +102,6 @@ export interface InstanceCreate {
   size: SizeRequest;
   config?: Record<string, string>;
   labels?: Record<string, string>;
-  environment?: string;
 }
 
 /** Exactly one of `size` (scale) or `version` (upgrade). */
@@ -134,18 +133,29 @@ export interface EngineCatalog {
   sizes: SizeInfo[];
 }
 
+/** One metering window (design 63): integers, as Loams Meter's usage events carry them. */
 export interface UsageSample {
   window_start: string;
   window_end: string;
-  vcpu_seconds: number;
-  memory_gb_seconds: number;
+  /** CPU time in milliseconds. */
+  cpu_ms: number;
+  /** Memory as MiB × milliseconds. */
+  memory_mib_ms: number;
   state_bytes: number;
+  /** The window was billed from the reserved size, not measured. */
+  estimated: boolean;
 }
 
 export interface Usage {
   samples: UsageSample[];
-  totals: { vcpu_seconds: number; memory_gb_seconds: number; state_bytes: number };
+  /** `state_bytes` is the latest sample's (a gauge). */
+  totals: { cpu_ms: number; memory_mib_ms: number; state_bytes: number };
 }
+
+/** CPU milliseconds as vCPU-hours. */
+export const vcpuHours = (cpuMs: number) => cpuMs / 3_600_000;
+/** MiB-milliseconds as GiB-hours. */
+export const gibHours = (mibMs: number) => mibMs / 1024 / 3_600_000;
 
 export interface SqlRequest {
   sql: string;
@@ -212,33 +222,33 @@ export interface EnginesClient {
   /** True when the client serves sample data, not a server's. */
   readonly sample: boolean;
   catalog(): Promise<EngineCatalog>;
-  listProjects(): Promise<string[]>;
-  list(project: string, kind?: EngineKind): Promise<Instance[]>;
-  get(project: string, id: string): Promise<Instance>;
-  create(project: string, req: InstanceCreate): Promise<Instance>;
-  update(project: string, id: string, req: InstanceUpdate): Promise<Instance>;
-  remove(project: string, id: string): Promise<Instance>;
-  suspend(project: string, id: string): Promise<Instance>;
-  resume(project: string, id: string): Promise<Instance>;
-  usage(project: string, id: string, range?: { from?: string; to?: string }): Promise<Usage>;
-  sql(project: string, id: string, req: SqlRequest, signal?: AbortSignal): Promise<SqlResult>;
-  listSessions(project: string, id: string): Promise<SparkSession[]>;
+  listNamespaces(): Promise<string[]>;
+  list(namespace: string, kind?: EngineKind): Promise<Instance[]>;
+  get(namespace: string, id: string): Promise<Instance>;
+  create(namespace: string, req: InstanceCreate): Promise<Instance>;
+  update(namespace: string, id: string, req: InstanceUpdate): Promise<Instance>;
+  remove(namespace: string, id: string): Promise<Instance>;
+  suspend(namespace: string, id: string): Promise<Instance>;
+  resume(namespace: string, id: string): Promise<Instance>;
+  usage(namespace: string, id: string, range?: { from?: string; to?: string }): Promise<Usage>;
+  sql(namespace: string, id: string, req: SqlRequest, signal?: AbortSignal): Promise<SqlResult>;
+  listSessions(namespace: string, id: string): Promise<SparkSession[]>;
   createSession(
-    project: string,
+    namespace: string,
     id: string,
     req: { kind: SparkSessionKind; conf?: Record<string, string> },
   ): Promise<SparkSession>;
-  closeSession(project: string, id: string, session: string): Promise<void>;
-  listJobs(project: string, id: string): Promise<SparkJob[]>;
-  submitJob(project: string, id: string, req: SparkJobSubmit): Promise<SparkJob>;
-  cancelJob(project: string, id: string, job: string): Promise<SparkJob>;
+  closeSession(namespace: string, id: string, session: string): Promise<void>;
+  listJobs(namespace: string, id: string): Promise<SparkJob[]>;
+  submitJob(namespace: string, id: string, req: SparkJobSubmit): Promise<SparkJob>;
+  cancelJob(namespace: string, id: string, job: string): Promise<SparkJob>;
 }
 
 const enc = encodeURIComponent;
 
-/** `/v1/projects/{p}/engines[/{id}[/rest]]`. */
-export function enginesPath(project: string, id?: string, rest?: string): string {
-  let p = `/v1/projects/${enc(project)}/engines`;
+/** `/v1/namespaces/{ns}/engines[/{id}[/rest]]`. */
+export function enginesPath(namespace: string, id?: string, rest?: string): string {
+  let p = `/v1/namespaces/${enc(namespace)}/engines`;
   if (id !== undefined) p += `/${enc(id)}`;
   if (rest) p += `/${rest}`;
   return p;
@@ -276,48 +286,68 @@ export function createEnginesClient(fetchFn: typeof globalThis.fetch, baseUrl = 
   return {
     sample: false,
     catalog: () => call<EngineCatalog>('/v1/engines'),
-    async listProjects() {
+    async listNamespaces() {
+      // Every project's environments name their Loams namespace (console contract).
       try {
         const r = await call<{ projects: { slug: string }[] }>('/api/v1/projects');
-        const slugs = r.projects.map((p) => p.slug);
-        return slugs.length > 0 ? slugs : ['default'];
+        const envs = await Promise.all(
+          r.projects.map((p) =>
+            call<{ environments: { namespace?: string }[] }>(
+              `/api/v1/projects/${enc(p.slug)}/environments`,
+            ).then(
+              (e) => e.environments.map((x) => x.namespace).filter((n): n is string => !!n),
+              () => [] as string[],
+            ),
+          ),
+        );
+        const ns = [...new Set(envs.flat())];
+        return ns.length > 0 ? ns : ['default'];
       } catch {
         return ['default'];
       }
     },
-    async list(project, kind) {
+    async list(namespace, kind) {
       const q = kind ? `?kind=${enc(kind)}` : '';
-      return (await call<{ instances: Instance[] }>(`${enginesPath(project)}${q}`)).instances;
+      return (await call<{ instances: Instance[] }>(`${enginesPath(namespace)}${q}`)).instances;
     },
-    get: (project, id) => call(enginesPath(project, id)),
-    create: (project, req) => send('POST', enginesPath(project), req),
-    update: (project, id, req) => send('PATCH', enginesPath(project, id), req),
-    remove: (project, id) => send('DELETE', enginesPath(project, id)),
-    suspend: (project, id) => send('POST', enginesPath(project, id, 'suspend')),
-    resume: (project, id) => send('POST', enginesPath(project, id, 'resume')),
-    usage(project, id, range) {
+    get: (namespace, id) => call(enginesPath(namespace, id)),
+    create: (namespace, req) => send('POST', enginesPath(namespace), req),
+    update: (namespace, id, req) => send('PATCH', enginesPath(namespace, id), req),
+    remove: (namespace, id) => send('DELETE', enginesPath(namespace, id)),
+    suspend: (namespace, id) => send('POST', enginesPath(namespace, id, 'suspend')),
+    resume: (namespace, id) => send('POST', enginesPath(namespace, id, 'resume')),
+    usage(namespace, id, range) {
       const q = new URLSearchParams();
       if (range?.from) q.set('from', range.from);
       if (range?.to) q.set('to', range.to);
       const qs = q.toString();
-      return call(`${enginesPath(project, id, 'usage')}${qs ? `?${qs}` : ''}`);
+      return call(`${enginesPath(namespace, id, 'usage')}${qs ? `?${qs}` : ''}`);
     },
-    sql: (project, id, req, signal) => send('POST', enginesPath(project, id, 'sql'), req, signal),
-    async listSessions(project, id) {
-      return (await call<{ sessions: SparkSession[] }>(enginesPath(project, id, 'sessions')))
+    sql: (namespace, id, req, signal) =>
+      send('POST', enginesPath(namespace, id, 'sql'), req, signal),
+    async listSessions(namespace, id) {
+      return (await call<{ sessions: SparkSession[] }>(enginesPath(namespace, id, 'sessions')))
         .sessions;
     },
-    createSession: (project, id, req) => send('POST', enginesPath(project, id, 'sessions'), req),
-    async closeSession(project, id, session) {
-      await send('DELETE', enginesPath(project, id, `sessions/${enc(session)}`));
+    createSession: (namespace, id, req) =>
+      send('POST', enginesPath(namespace, id, 'sessions'), req),
+    async closeSession(namespace, id, session) {
+      await send('DELETE', enginesPath(namespace, id, `sessions/${enc(session)}`));
     },
-    async listJobs(project, id) {
-      return (await call<{ jobs: SparkJob[] }>(enginesPath(project, id, 'jobs'))).jobs;
+    async listJobs(namespace, id) {
+      return (await call<{ jobs: SparkJob[] }>(enginesPath(namespace, id, 'jobs'))).jobs;
     },
-    submitJob: (project, id, req) => send('POST', enginesPath(project, id, 'jobs'), req),
-    cancelJob: (project, id, job) =>
-      send('POST', enginesPath(project, id, `jobs/${enc(job)}/cancel`)),
+    submitJob: (namespace, id, req) => send('POST', enginesPath(namespace, id, 'jobs'), req),
+    cancelJob: (namespace, id, job) =>
+      send('POST', enginesPath(namespace, id, `jobs/${enc(job)}/cancel`)),
   };
+}
+
+/** Loams Meter refused the work: the plan's allowance is used up (design 63, HTTP 402). */
+export const ENTITLEMENT_EXHAUSTED = 'entitlement_exhausted';
+
+export function isEntitlementExhausted(e: unknown): e is ApiError {
+  return e instanceof ApiError && (e.status === 402 || e.code === ENTITLEMENT_EXHAUSTED);
 }
 
 /** A phase in which the instance is changing; the pages poll while one holds. */
