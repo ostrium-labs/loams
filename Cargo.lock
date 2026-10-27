@@ -9221,6 +9221,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-identity-sync"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "axum 0.8.9",
+ "hex",
+ "hmac 0.13.0",
+ "loams-authz",
+ "loams-zitadel",
+ "reqwest 0.13.5",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.21",
+ "time",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "loams-iggy-sink"
 version = "0.1.2"
 dependencies = [
