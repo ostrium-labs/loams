@@ -995,7 +995,8 @@ async fn history_page_tokens() {
         assert!(p.next_page_token.is_empty());
         // A token is bound to its run.
         let first = s.history_page(&k, &[], 3).await.unwrap();
-        let other = key("wf-hp", "run-2");
+        // Another run (of another workflow ID: wf-hp's run-1 is running).
+        let other = key("wf-hp-2", "run-1");
         started(&*s, start(&other, "req-2", 5, 0)).await;
         assert!(matches!(
             s.history_page(&other, &first.next_page_token, 3).await,
