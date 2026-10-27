@@ -333,7 +333,8 @@ fn trim_set<'a>(v: &'a str, set: &[u8], side: Side) -> Option<&'a str> {
 }
 
 pub(super) fn register(r: &mut Registry) {
-    length("length", false).register(r);
+    // `length` itself is Task 32's (`func::arrays`): strings, arrays and
+    // maps in one function.
     length("lengthUTF8", true).register(r);
     concat().register(r);
     slicer("left", false, |n| (1, Some(n))).register(r);

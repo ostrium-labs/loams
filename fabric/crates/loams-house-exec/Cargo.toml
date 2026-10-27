@@ -12,7 +12,8 @@ publish = false
 loams-house-types = { path = "../loams-house-types" }
 # UDF, UDAF and UDWF traits and the physical-plan operators. Apache-2.0.
 datafusion.workspace = true
-# The function registry the engine plans against (`Registry`). Apache-2.0.
+# The function registry the engine plans against (`Registry`) and the
+# functions' internal names. Apache-2.0.
 loams-house-sql = { path = "../loams-house-sql" }
 # Regular expressions for `match`, `replaceRegexp*` and `like` (RE2 patterns,
 # translated; R31.3). MIT OR Apache-2.0.

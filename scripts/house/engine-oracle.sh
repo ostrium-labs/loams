@@ -18,7 +18,12 @@ target="$(cargo metadata --format-version 1 --no-deps | python3 -I -c 'import js
 cd "$root"
 export LOAMS_ORACLE_PASSWORD="${LOAMS_ORACLE_PASSWORD:-oracle}"
 curl -fsS http://127.0.0.1:28123/ping >/dev/null || { echo "the oracle is not up on 127.0.0.1:28123 (scripts/house/oracle.sh up)" >&2; exit 1; }
-"$target/loams-house-engine-dev" --listen 127.0.0.1:28126 >"${TMPDIR:-/tmp}/loams-house-engine-dev.log" 2>&1 &
+# Task 26's lake fixtures shadow the seeded copies of the same tables.
+lakes=()
+for dir in "$root"/conformance/clickhouse/oracle/corpus/he1/*/lake; do
+  [ -d "$dir" ] && lakes+=(--lake "$dir")
+done
+"$target/loams-house-engine-dev" --listen 127.0.0.1:28126 "${lakes[@]}" >"${TMPDIR:-/tmp}/loams-house-engine-dev.log" 2>&1 &
 pid=$!
 trap 'kill "$pid" 2>/dev/null || true' EXIT
 for _ in $(seq 1 30); do curl -fsS http://127.0.0.1:28126/ping >/dev/null 2>&1 && break; sleep 1; done

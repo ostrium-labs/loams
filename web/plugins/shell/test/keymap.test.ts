@@ -3,7 +3,7 @@
 // (kill-line, newline, tmux's prefix, next history, Tab); Esc in an input is the input's.
 
 import { SHELL_KEYBINDINGS } from '@loams/studio-ui';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { keyLabel, matchShellKey, SHELL_KEYMAP, type ShellKeyContext } from '../src/keys.js';
 
 const mac: ShellKeyContext = { mac: true, terminal: false, richText: false, editable: false };

@@ -6,19 +6,206 @@
 //! `multiIf(…)`. Clients read results by these names, so they are part of the
 //! answer. The rules were measured on the 26.9.2.8 oracle;
 //! `tests/fixtures/names.tsv` keeps its answers.
+//!
+//! A subquery is named `_subquery_N` (R25.4): `N` counts the statement's
+//! subqueries in the order ClickHouse's analyzer meets them ([`subquery_numbers`]).
 
 use datafusion::sql::sqlparser::ast::{
     AccessExpr, BinaryOperator, CastKind, DateTimeField, Expr, Function, FunctionArg,
     FunctionArgExpr, FunctionArguments, Ident, LambdaFunction, OneOrManyWithParens, Subscript,
     UnaryOperator, Value, WindowType,
 };
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
+
+use datafusion::sql::sqlparser::ast::{
+    GroupByExpr, Query, Select, SelectItem, SetExpr, TableFactor, TableWithJoins,
+};
 use loams_house_types::ty::quote;
+
+use crate::scope::{Walk, children};
 
 /// The name ClickHouse gives a select item `e` that has no alias.
 pub fn column_name(e: &Expr) -> String {
     let mut out = String::new();
     write(e, &mut out);
     out
+}
+
+/// A statement's subqueries, by the position of their first `SELECT`, to the
+/// `N` of `_subquery_N`.
+pub type Numbers = HashMap<(u64, u64), usize>;
+
+thread_local! {
+    static NUMBERS: RefCell<Option<Numbers>> = const { RefCell::new(None) };
+}
+
+/// [`column_name`], subqueries named `_subquery_N` by `numbers`.
+pub fn column_name_numbered(e: &Expr, numbers: &Numbers) -> String {
+    NUMBERS.with(|n| *n.borrow_mut() = Some(numbers.clone()));
+    let name = column_name(e);
+    NUMBERS.with(|n| *n.borrow_mut() = None);
+    name
+}
+
+/// Where a query's first `SELECT` is.
+fn query_key(q: &Query) -> Option<(u64, u64)> {
+    fn body(s: &SetExpr) -> Option<(u64, u64)> {
+        match s {
+            SetExpr::Select(sel) => {
+                let at = sel.select_token.0.span.start;
+                Some((at.line, at.column))
+            }
+            SetExpr::Query(q) => body(&q.body),
+            SetExpr::SetOperation { left, .. } => body(left),
+            _ => None,
+        }
+    }
+    body(&q.body)
+}
+
+fn subquery_name(q: &Query) -> Option<String> {
+    let key = query_key(q)?;
+    NUMBERS.with(|n| {
+        n.borrow()
+            .as_ref()
+            .and_then(|m| m.get(&key))
+            .map(|n| format!("_subquery_{n}"))
+    })
+}
+
+/// Numbers a statement's subqueries as ClickHouse's analyzer does, measured
+/// on the oracle: one counter for the statement; scalar `WITH` first, then
+/// the `FROM` tree (a derived table, or a reference to a CTE, counts), then
+/// the select list, `WHERE`, `GROUP BY`, `HAVING` and `ORDER BY`; a
+/// subquery is counted before the subqueries inside it, and `EXISTS` counts
+/// two.
+pub fn subquery_numbers(q: &Query) -> Numbers {
+    let mut n = Numberer {
+        next: 1,
+        map: Numbers::new(),
+        ctes: HashSet::new(),
+    };
+    let mut q = q.clone();
+    n.query_body(&mut q);
+    n.map
+}
+
+struct Numberer {
+    next: usize,
+    map: Numbers,
+    ctes: HashSet<String>,
+}
+
+impl Numberer {
+    fn number(&mut self, q: &Query) {
+        if let Some(k) = query_key(q) {
+            self.map.entry(k).or_insert(self.next);
+        }
+        self.next += 1;
+    }
+
+    fn query_body(&mut self, q: &mut Query) {
+        if let Some(w) = &mut q.with {
+            for cte in &mut w.cte_tables {
+                match crate::scope::scalar_with_expr(&mut cte.query) {
+                    Some(e) => {
+                        let _ = self.expr(e);
+                    }
+                    None => {
+                        self.ctes.insert(cte.alias.name.value.clone());
+                    }
+                }
+            }
+        }
+        self.set_expr(&mut q.body);
+        if let Some(ob) = &mut q.order_by
+            && let datafusion::sql::sqlparser::ast::OrderByKind::Expressions(items) = &mut ob.kind
+        {
+            for o in items {
+                let _ = self.expr(&mut o.expr);
+            }
+        }
+    }
+
+    fn set_expr(&mut self, s: &mut SetExpr) {
+        match s {
+            SetExpr::Select(sel) => self.select(sel),
+            SetExpr::Query(q) => self.query_body(q),
+            SetExpr::SetOperation { left, right, .. } => {
+                self.set_expr(left);
+                self.set_expr(right);
+            }
+            _ => {}
+        }
+    }
+
+    fn table_factor(&mut self, t: &mut TableFactor) {
+        match t {
+            TableFactor::Derived { subquery, .. } => {
+                self.number(subquery);
+                self.query_body(subquery);
+            }
+            TableFactor::Table { name, .. } => {
+                if name.0.len() == 1 && self.ctes.contains(&name.to_string()) {
+                    self.next += 1;
+                }
+            }
+            TableFactor::NestedJoin {
+                table_with_joins, ..
+            } => self.from(table_with_joins),
+            _ => {}
+        }
+    }
+
+    fn from(&mut self, t: &mut TableWithJoins) {
+        self.table_factor(&mut t.relation);
+        for j in &mut t.joins {
+            self.table_factor(&mut j.relation);
+        }
+    }
+
+    fn select(&mut self, s: &mut Select) {
+        for t in &mut s.from {
+            self.from(t);
+        }
+        for item in &mut s.projection {
+            if let SelectItem::UnnamedExpr(e) | SelectItem::ExprWithAlias { expr: e, .. } = item {
+                let _ = self.expr(e);
+            }
+        }
+        for e in s.prewhere.iter_mut().chain(s.selection.iter_mut()) {
+            let _ = self.expr(e);
+        }
+        if let GroupByExpr::Expressions(exprs, _) = &mut s.group_by {
+            for e in exprs {
+                let _ = self.expr(e);
+            }
+        }
+        if let Some(h) = &mut s.having {
+            let _ = self.expr(h);
+        }
+    }
+}
+
+impl Walk for Numberer {
+    fn expr(&mut self, e: &mut Expr) -> Result<(), loams_house_types::ChError> {
+        match e {
+            Expr::Exists { subquery, .. } => {
+                self.number(subquery);
+                self.next += 1;
+                self.query_body(subquery);
+                Ok(())
+            }
+            _ => children(e, self),
+        }
+    }
+
+    fn query(&mut self, q: &mut Query) -> Result<(), loams_house_types::ChError> {
+        self.number(q);
+        self.query_body(q);
+        Ok(())
+    }
 }
 
 fn call(out: &mut String, name: &str, args: &[&Expr]) {
@@ -164,9 +351,18 @@ fn write(e: &Expr, out: &mut String) {
         } => {
             out.push_str(if *negated { "notIn(" } else { "in(" });
             write(expr, out);
-            out.push_str(", (");
-            out.push_str(&subquery.to_string());
-            out.push_str("))");
+            match subquery_name(subquery) {
+                Some(n) => {
+                    out.push_str(", ");
+                    out.push_str(&n);
+                    out.push(')');
+                }
+                None => {
+                    out.push_str(", (");
+                    out.push_str(&subquery.to_string());
+                    out.push_str("))");
+                }
+            }
         }
         Expr::Between {
             expr,
@@ -375,11 +571,30 @@ fn write(e: &Expr, out: &mut String) {
             args.extend(trim_characters.iter().flatten());
             call(out, crate::guard::trim_function(trim_where.as_ref()), &args);
         }
-        Expr::Subquery(q) => {
-            out.push('(');
-            out.push_str(&q.to_string());
+        // `{'k': v}` is ClickHouse's `map('k', v)` (plan HE1 Task 32).
+        Expr::Dictionary(fields) => {
+            out.push_str("map(");
+            for (i, f) in fields.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                match f.key.quote_style {
+                    Some('\'') => out.push_str(&quote(&f.key.value)),
+                    _ => ident(&f.key, out),
+                }
+                out.push_str(", ");
+                write(&f.value, out);
+            }
             out.push(')');
         }
+        Expr::Subquery(q) => match subquery_name(q) {
+            Some(n) => out.push_str(&n),
+            None => {
+                out.push('(');
+                out.push_str(&q.to_string());
+                out.push(')');
+            }
+        },
         other => out.push_str(&other.to_string()),
     }
 }
@@ -452,6 +667,15 @@ fn function(f: &Function, out: &mut String) {
     let name = f.name.to_string();
     let name = name.trim_matches('"').trim_matches('`');
     let (distinct, args, _star) = function_args(&f.args);
+    // `(x AS n)` is named `n` (plan HE1 Task 25, [`crate::rewrite`]).
+    if name == "__ch_alias"
+        && let [_, Expr::Identifier(n)] = args.as_slice()
+    {
+        out.push_str(&n.value);
+        return;
+    }
+    // The internal names of [`crate::functions::internal_name`].
+    let name = name.strip_prefix("__ch_").unwrap_or(name);
     let name = if distinct && name.eq_ignore_ascii_case("count") {
         "countDistinct".to_string()
     } else {

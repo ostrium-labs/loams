@@ -1,0 +1,1 @@
+SELECT u25.*, t25.b FROM t25 JOIN u25 ON t25.a = u25.a ORDER BY t25.a

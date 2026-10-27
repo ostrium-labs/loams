@@ -8,9 +8,10 @@ use loams_temporal_history::time::ms;
 use loams_temporal_history::{Attributes, History, HistoryEvent, MutableState};
 use loams_temporal_proto::temporal::api::command::v1::{
     CancelTimerCommandAttributes, CancelWorkflowExecutionCommandAttributes, Command,
-    CompleteWorkflowExecutionCommandAttributes, FailWorkflowExecutionCommandAttributes,
-    RecordMarkerCommandAttributes, RequestCancelActivityTaskCommandAttributes,
-    ScheduleActivityTaskCommandAttributes, StartTimerCommandAttributes, command,
+    CompleteWorkflowExecutionCommandAttributes, ContinueAsNewWorkflowExecutionCommandAttributes,
+    FailWorkflowExecutionCommandAttributes, RecordMarkerCommandAttributes,
+    RequestCancelActivityTaskCommandAttributes, ScheduleActivityTaskCommandAttributes,
+    StartTimerCommandAttributes, command,
 };
 use loams_temporal_proto::temporal::api::workflowservice::v1::StartWorkflowExecutionRequest;
 use loams_temporal_statemachine::{Input, Reply, apply};
@@ -26,6 +27,10 @@ const DX1: &[&str] = &[
     "terminated",
     "workflow_failed_application_error",
     "activity_heartbeat_details",
+    // TMP-api (D2080).
+    "update_accepted_completed",
+    "signal_with_start",
+    "continue_as_new_3",
 ];
 
 fn nanos(e: &HistoryEvent) -> i128 {
@@ -99,6 +104,27 @@ fn command_of(a: &Attributes) -> Option<command::Attributes> {
                 details: x.details.clone(),
             })
         }
+        Attributes::WorkflowExecutionContinuedAsNewEventAttributes(x) => {
+            C::ContinueAsNewWorkflowExecutionCommandAttributes(
+                ContinueAsNewWorkflowExecutionCommandAttributes {
+                    workflow_type: x.workflow_type.clone(),
+                    task_queue: x.task_queue.clone(),
+                    input: x.input.clone(),
+                    workflow_run_timeout: x.workflow_run_timeout,
+                    workflow_task_timeout: x.workflow_task_timeout,
+                    backoff_start_interval: x.backoff_start_interval,
+                    initiator: x.initiator,
+                    failure: x.failure.clone(),
+                    last_completion_result: x.last_completion_result.clone(),
+                    header: x.header.clone(),
+                    memo: x.memo.clone(),
+                    search_attributes: x.search_attributes.clone(),
+                    #[allow(deprecated)]
+                    inherit_build_id: x.inherit_build_id,
+                    ..Default::default()
+                },
+            )
+        }
         _ => return None,
     })
 }
@@ -116,6 +142,9 @@ fn completed_by(a: &Attributes) -> i64 {
             x.workflow_task_completed_event_id
         }
         Attributes::WorkflowExecutionFailedEventAttributes(x) => x.workflow_task_completed_event_id,
+        Attributes::WorkflowExecutionContinuedAsNewEventAttributes(x) => {
+            x.workflow_task_completed_event_id
+        }
         Attributes::WorkflowExecutionCanceledEventAttributes(x) => {
             x.workflow_task_completed_event_id
         }
@@ -123,11 +152,95 @@ fn completed_by(a: &Attributes) -> i64 {
     }
 }
 
+fn any<M: prost::Message>(type_url: &str, m: &M) -> Option<prost_types::Any> {
+    Some(prost_types::Any {
+        type_url: type_url.into(),
+        value: m.encode_to_vec(),
+    })
+}
+
+/// The update protocol messages each workflow task completion carried, by
+/// its completed event: an update's accepted and completed events follow
+/// the completion that answered it.
+fn update_messages(
+    events: &[HistoryEvent],
+) -> std::collections::BTreeMap<i64, Vec<loams_temporal_proto::temporal::api::protocol::v1::Message>>
+{
+    use loams_temporal_proto::temporal::api::protocol::v1::Message;
+    use loams_temporal_proto::temporal::api::update::v1::{Acceptance, Response};
+    use loams_temporal_statemachine::update::{ACCEPTANCE_TYPE, RESPONSE_TYPE};
+    let mut out: std::collections::BTreeMap<i64, Vec<Message>> = Default::default();
+    let mut last_completed = 0;
+    for e in events {
+        match e.attributes.as_ref() {
+            Some(Attributes::WorkflowTaskCompletedEventAttributes(_)) => {
+                last_completed = e.event_id
+            }
+            Some(Attributes::WorkflowExecutionUpdateAcceptedEventAttributes(x)) => {
+                out.entry(last_completed).or_default().push(Message {
+                    id: format!("{}/accept", x.protocol_instance_id),
+                    protocol_instance_id: x.protocol_instance_id.clone(),
+                    sequencing_id: None,
+                    body: any(
+                        ACCEPTANCE_TYPE,
+                        &Acceptance {
+                            accepted_request_message_id: x.accepted_request_message_id.clone(),
+                            accepted_request_sequencing_event_id: x
+                                .accepted_request_sequencing_event_id,
+                            accepted_request: x.accepted_request.clone(),
+                        },
+                    ),
+                });
+            }
+            Some(Attributes::WorkflowExecutionUpdateCompletedEventAttributes(x)) => {
+                let id = x
+                    .meta
+                    .as_ref()
+                    .map(|m| m.update_id.clone())
+                    .unwrap_or_default();
+                out.entry(last_completed).or_default().push(Message {
+                    id: format!("{id}/complete"),
+                    protocol_instance_id: id,
+                    sequencing_id: None,
+                    body: any(
+                        RESPONSE_TYPE,
+                        &Response {
+                            meta: x.meta.clone(),
+                            outcome: x.outcome.clone(),
+                        },
+                    ),
+                });
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
 /// The inputs a server received, in the order they happened.
 pub fn script(events: &[HistoryEvent]) -> Vec<(i64, Input)> {
     let mut out: Vec<(i128, i64, Input)> = Vec::new();
     let mut wft_attempt = std::collections::BTreeMap::new();
     let mut act_attempt = std::collections::BTreeMap::new();
+    let mut messages = update_messages(events);
+    // An update was admitted just before the workflow task it went out with
+    // was scheduled (its acceptance's sequencing event).
+    for e in events {
+        if let Some(Attributes::WorkflowExecutionUpdateAcceptedEventAttributes(x)) =
+            e.attributes.as_ref()
+            && let Some(at) = events
+                .iter()
+                .find(|s| s.event_id == x.accepted_request_sequencing_event_id)
+        {
+            out.push((
+                nanos(at),
+                at.event_id,
+                Input::UpdateAdmitted {
+                    request: Box::new(x.accepted_request.clone().unwrap_or_default()),
+                },
+            ));
+        }
+    }
     for e in events {
         let t = nanos(e);
         let a = e.attributes.as_ref().expect("attributes");
@@ -183,6 +296,18 @@ pub fn script(events: &[HistoryEvent]) -> Vec<(i64, Input)> {
                 metering_metadata: x.metering_metadata,
                 worker_version: x.worker_version.clone(),
                 force_create_new_workflow_task: false,
+                messages: messages.remove(&e.event_id).unwrap_or_default(),
+                new_run_id: events
+                    .iter()
+                    .find_map(|c| match c.attributes.as_ref() {
+                        Some(Attributes::WorkflowExecutionContinuedAsNewEventAttributes(x))
+                            if x.workflow_task_completed_event_id == e.event_id =>
+                        {
+                            Some(x.new_execution_run_id.clone())
+                        }
+                        _ => None,
+                    })
+                    .unwrap_or_default(),
             },
             Attributes::WorkflowTaskFailedEventAttributes(x) => Input::WorkflowTaskFailed {
                 scheduled_event_id: x.scheduled_event_id,
@@ -250,6 +375,55 @@ pub fn script(events: &[HistoryEvent]) -> Vec<(i64, Input)> {
             _ => continue,
         };
         out.push((t, e.event_id, input));
+    }
+    // Signal-with-start: the signal written as event 2, between the
+    // started event and the first workflow task, came with the start.
+    if let Some(si) = out
+        .iter()
+        .position(|(_, id, i)| *id == 2 && matches!(i, Input::Signal { .. }))
+        && let Some(st) = out.iter().position(|(_, id, _)| *id == 1)
+    {
+        let (_, _, sig) = out.remove(si);
+        let Input::Signal {
+            name,
+            input,
+            identity,
+            header,
+            request_id,
+        } = sig
+        else {
+            unreachable!("matched above")
+        };
+        if let (
+            t,
+            id,
+            Input::Start {
+                namespace_id,
+                run_id,
+                request,
+            },
+        ) = out.remove(st)
+        {
+            out.insert(
+                st,
+                (
+                    t,
+                    id,
+                    Input::SignalWithStart {
+                        namespace_id,
+                        run_id,
+                        request,
+                        signal: loams_temporal_statemachine::StartSignal {
+                            name,
+                            input,
+                            identity,
+                            header,
+                            request_id,
+                        },
+                    },
+                ),
+            );
+        }
     }
     out.sort_by_key(|(t, id, _)| (*t, *id));
     out.into_iter()

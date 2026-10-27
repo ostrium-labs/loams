@@ -10,7 +10,7 @@ import {
 import { createMockControl } from '@loams/console-host/testing';
 import { createWebPlatform } from '@loams/platform-web';
 import { instance } from '@loams/proto';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import type { LoamsDesktopApi, ShellCommand } from './index.js';
 import {
   createElectronPlatform,

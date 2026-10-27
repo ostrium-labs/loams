@@ -22,6 +22,14 @@
 # - `kafka` (preview): Kafka clients (kcat, Kafka Connect, Flink, librdkafka)
 #   on 127.0.0.1:9093, through the Kafka gateway of Ostrium's Iggy fork in
 #   front of its own Iggy server. Never part of the default stack.
+# - `connectors` (preview): `loams-fabric connect`, native connector instances
+#   (Kafka and Confluent Cloud, Postgres and MySQL CDC) between Loams streams
+#   and outside systems (design §80, D1821). Instance files in
+#   ./connect/instances, secrets in ./secrets/connect. Never part of the
+#   default stack.
+# - `browser` (preview): Obscura, the agents' headless browser (D2114,
+#   deploy/browser), on an internal network that only agentd shares; no
+#   published port; set LOAMS_BROWSER_TOKEN and LOAMS_BROWSER_PROVIDER=service.
 # - `house-tailnet`: the House's own tailnet node (https://loams-house.<tailnet>/).
 # - `postgres-control`: Loams Postgres's control plane.
 # - `console`, `headscale` (coming soon): as below.
@@ -247,6 +255,12 @@ services:
       # console's Content-Security-Policy header's connect-src. None by default.
       LOAMS_AGENTD_ORIGINS: ${LOAMS_AGENTD_ORIGINS:-}
       LOAMS_TAILSCALE_LISTEN: ${LOAMS_TAILSCALE_LISTEN:-127.0.0.1:7781}
+      # The connect socket (CC1 ruling R1.1): the main API on a Unix socket in
+      # the connect-run volume, which only the engine and `connect`
+      # (`--profile connectors`) mount. API keys only, whatever
+      # LOAMS_AUTH_MODE says; Tailscale headers are never read there. Set it
+      # empty to serve no socket.
+      LOAMS_CONNECT_SOCKET: ${LOAMS_CONNECT_SOCKET-/run/loams-connect/engine.sock}
       LOAMS_OIDC_ISSUER: ${LOAMS_OIDC_ISSUER:-https://auth.loams.dev}
       LOAMS_OIDC_AUDIENCE: ${LOAMS_OIDC_AUDIENCE:-loams-console}
       LOAMS_OIDC_ALLOWED_EMAILS: ${LOAMS_OIDC_ALLOWED_EMAILS:-}
@@ -282,6 +296,7 @@ services:
       - ./config/stores.sh:/etc/loams/stores.sh:ro
       # The OpenFGA store and model ids (`authz` profile), read when LOAMS_AUTHZ=openfga.
       - authz:/var/lib/loams-authz:ro
+      - connect-run:/run/loams-connect
     depends_on:
       pd:
         condition: service_healthy
@@ -397,6 +412,55 @@ services:
         condition: service_completed_successfully
       house-init:
         condition: service_completed_successfully
+
+  # `loams-fabric connect` (`--profile connectors`, preview; design §80 §4.4,
+  # D1821): native connector instances, one YAML file each in
+  # ./connect/instances, reading outside systems into Loams streams and Loams
+  # streams out to them. It reaches the engine only through the connect
+  # socket (connect-run, a volume no other service mounts) with the API key
+  # in ./secrets/connect/engine-key, and joins no other service's network
+  # namespace (CC1 ruling R1.1). Its connectors reach out (Confluent Cloud,
+  # your databases); nothing reaches in: no published port, and its admin
+  # API (status, pause, resume, rate) is on its own loopback, 127.0.0.1:7790.
+  # Secrets are files under ./secrets/connect/<namespace_id>/<secret>/<key>,
+  # owner-only (the BYOC fetcher writes them); instance files name them.
+  # Its lock, checkpoints and controls are in its own volume unless
+  # LOAMS_CONNECT_STORE names the bucket (s3://…, with AWS_* in
+  # secrets/connect.env).
+  connect:
+    <<: *restart
+    profiles: [connectors]
+    image: ${HOUSE_IMAGE:-${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-fabric:${LOAMS_VERSION:-0.1.2}}
+    command:
+      - connect
+      - --instances=/etc/loams/connect
+      - --engine=unix:///run/loams-connect/engine.sock
+      - --secrets-root=/var/lib/loams-connect/secrets
+      - --store=${LOAMS_CONNECT_STORE:-file:///var/lib/loams-connect/state}
+      - --admin-listen=127.0.0.1:7790
+    environment:
+      RUST_LOG: ${RUST_LOG:-info}
+    env_file:
+      - path: ./secrets/connect.env
+        required: false
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - connect-run:/run/loams-connect
+      - connect-state:/var/lib/loams-connect/state
+      - ./connect/instances:/etc/loams/connect:ro
+      - ./secrets/connect:/var/lib/loams-connect/secrets:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:7790/health"]
+      interval: 10s
+      timeout: 3s
+      start_period: 20s
+      retries: 3
+    depends_on:
+      loams:
+        condition: service_healthy
 
   # The House's tailnet node (`--profile house-tailnet`), in the House's
   # network namespace (its only neighbour there). A second node on the
@@ -638,6 +702,44 @@ services:
       - agentd-data:/home/loams
       - ./agentd/config.toml:/home/loams/agentd/config.toml:ro
       - ./agentd:/etc/loams-agentd:ro
+    # The agents' headless browser (D2111, D2114): `local` launches Obscura
+    # inside this container if the image carries it; `service` drives the
+    # `browser` profile's engine over the internal `browser` network. The
+    # provider names the engine's token by reference (env:browser-token),
+    # which the bridge's env resolver reads from
+    # LOAMS_WEB_BRIDGE_SECRET_BROWSER_TOKEN.
+    environment:
+      LOAMS_BROWSER_PROVIDER: ${LOAMS_BROWSER_PROVIDER:-local}
+      LOAMS_BROWSER_SERVICE_URL: ws://browser:9222/devtools/browser
+      LOAMS_BROWSER_SERVICE_TOKEN_REF: env:browser-token
+      LOAMS_WEB_BRIDGE_SECRET_BROWSER_TOKEN: ${LOAMS_BROWSER_TOKEN:-}
+    networks:
+      - default
+      - browser
+
+  # The `browser` profile (D2110-D2114, preview): Obscura 0.2.3, the same
+  # engine agentd launches on a laptop, pinned by digest (deploy/browser).
+  # No published port. On `browser` (internal: agentd only) and on
+  # `browser-egress` (its own route out, shared with nobody). The engine
+  # refuses a non-loopback bind unless OBSCURA_CDP_TOKEN is at least 32 bytes,
+  # so an unset LOAMS_BROWSER_TOKEN stops it rather than exposing it. Each
+  # agent page is a throwaway browser context; nothing is stored.
+  browser:
+    <<: *restart
+    profiles: [browser]
+    image: ${BROWSER_IMAGE:-docker.io/h4ckf0r0day/obscura:0.2.3@sha256:475def3ddf1ec513b3d1bc36e8ad15f0d192538cb15f814c77215aa70c418ca2}
+    command: ["serve", "--port", "9222", "--host", "0.0.0.0", "--workers", "${BROWSER_WORKERS:-2}"]
+    environment:
+      OBSCURA_CDP_TOKEN: ${LOAMS_BROWSER_TOKEN:-}
+      OBSCURA_CDP_COMMAND_TIMEOUT_MS: "60000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks:
+      - browser
+      - browser-egress
 
   # The Kafka profile (D1796-D1798, preview): one image of Ostrium's fork of
   # Apache Iggy (ostrium-labs/iggy) holds both `iggy-server` and
@@ -833,6 +935,11 @@ networks:
   # The engine, OpenFGA and openfga-init only, with no route out (`authz` profile).
   authz:
     internal: true
+  # agentd and the `browser` profile's engine only, with no route out.
+  browser:
+    internal: true
+  # The browser engine's own way out to the web; no other service joins it.
+  browser-egress: {}
 
 volumes:
   pd-data:
@@ -848,6 +955,11 @@ volumes:
   agentd-data:
   # The `kafka` profile's Iggy data.
   iggy-data:
+  # The engine's connect socket (CC1 ruling R1.1): the engine and `connect`
+  # only.
+  connect-run:
+  # `connect`'s lock, checkpoints and controls (unless LOAMS_CONNECT_STORE).
+  connect-state:
   pg-control-data:
   pg-runner-data:
   pg-runner-token:

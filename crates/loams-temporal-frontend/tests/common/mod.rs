@@ -21,6 +21,11 @@ pub struct TestGateway {
 }
 
 pub async fn start() -> TestGateway {
+    start_with(|c| c).await
+}
+
+/// A gateway whose config the test adjusts (a short history wait, say).
+pub async fn start_with(adjust: impl FnOnce(FrontendConfig) -> FrontendConfig) -> TestGateway {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "warn".into()),
@@ -41,12 +46,12 @@ pub async fn start() -> TestGateway {
             pid: "gw-test".into(),
             shards: 64,
             lease: Duration::from_secs(60),
-            config: FrontendConfig {
+            config: adjust(FrontendConfig {
                 poll_timeout: Duration::from_secs(3),
                 query_timeout: Duration::from_secs(5),
                 history_wait: Duration::from_secs(5),
                 ..Default::default()
-            },
+            }),
         },
         rx,
     )

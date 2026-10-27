@@ -9,7 +9,7 @@ use std::sync::Arc;
 use datafusion::arrow::datatypes::{DataType, FieldRef};
 use datafusion::common::config::ConfigOptions;
 use datafusion::common::{DataFusionError, Result, TableReference};
-use datafusion::logical_expr::planner::TypePlanner;
+use datafusion::logical_expr::planner::{ExprPlanner, TypePlanner};
 use datafusion::logical_expr::{AggregateUDF, HigherOrderUDF, ScalarUDF, TableSource, WindowUDF};
 use datafusion::sql::planner::ContextProvider;
 use datafusion::sql::sqlparser::ast;
@@ -99,11 +99,14 @@ pub fn type_text(sql_type: &ast::DataType) -> String {
 }
 
 impl TypePlanner for ClickHouseTypes {
-    fn plan_type(&self, sql_type: &ast::DataType) -> Result<Option<DataType>> {
+    fn plan_type_field(&self, sql_type: &ast::DataType) -> Result<Option<FieldRef>> {
+        // The cast's field carries the ClickHouse type, so `CAST(x AS Date)`
+        // is a `Date`, not the `Date32` its Arrow layout would read as
+        // (plan HE1 Task 24, R24.1).
         let text = type_text(sql_type);
         let t = loams_house_types::parse(&text).map_err(external)?;
-        let (dt, _) = loams_house_types::arrow::data_type(&t).map_err(external)?;
-        Ok(Some(dt))
+        let field = loams_house_types::arrow::to_arrow("", &t).map_err(external)?;
+        Ok(Some(Arc::new(field.with_nullable(true))))
     }
 }
 
@@ -120,6 +123,7 @@ pub struct HouseContext<'a> {
     database: String,
     options: ConfigOptions,
     types: Arc<dyn TypePlanner>,
+    planners: Vec<Arc<dyn ExprPlanner>>,
 }
 
 impl<'a> HouseContext<'a> {
@@ -132,6 +136,7 @@ impl<'a> HouseContext<'a> {
             database: database.to_string(),
             options: ConfigOptions::default(),
             types: Arc::new(ClickHouseTypes),
+            planners: vec![Arc::new(crate::coerce::ClickHouseOperators)],
         }
     }
 }
@@ -160,7 +165,14 @@ impl ContextProvider for HouseContext<'_> {
         Some(self.types.clone())
     }
 
+    fn get_expr_planners(&self) -> &[Arc<dyn ExprPlanner>] {
+        &self.planners
+    }
+
     fn get_function_meta(&self, name: &str) -> Option<Arc<ScalarUDF>> {
+        if name == crate::coerce::COND {
+            return Some(crate::coerce::plan_time::cond_udf());
+        }
         self.registry.scalars.get(name).cloned()
     }
 

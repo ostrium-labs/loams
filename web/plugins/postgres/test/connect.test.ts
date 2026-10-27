@@ -1,5 +1,5 @@
 // The loams.postgres.v1 Connect JSON client against a fake pg-control (PG2 R9.1).
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import {
   createConnectPgControl,
   PG_CONTROL_STATUS_HEADER,

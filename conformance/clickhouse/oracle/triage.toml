@@ -22,15 +22,6 @@ task = "28"
 detail = '["String", "UInt64"] vs ["String", "Int64"]'
 
 [[mismatch]]
-case = "he1-22/literal_one"
-target = "house-rust"
-kind = "types"
-status = "bug"
-reason = "ClickHouse types a literal 1 as UInt8; DataFusion as Int64 (plan HE1 Task 24, type rules)"
-task = "24"
-detail = '["UInt8"] vs ["Int64"]'
-
-[[mismatch]]
 case = "he1-22/min_max_sum"
 target = "house-rust"
 kind = "types"
@@ -38,3 +29,326 @@ status = "bug"
 reason = "DataFusion's count/sum/min/max stand in until Task 28: count is Int64 not UInt64, and min/max/sum are Nullable"
 task = "28"
 detail = '["Int64", "Int64", "Int64"] vs ["Nullable(Int64)", "Nullable(Int64)", "Nullable(Int64)"]'
+
+[[mismatch]]
+case = "he1-24/bool_and_null"
+target = "house-rust"
+kind = "error"
+status = "bug"
+reason = 'a type-rule gap found by the oracle after Task 24 merged; to be fixed in a Task 24 follow-up'
+task = "24"
+detail = 'baseline 3 rows, target error 48 (Code: 48. DB::Exception: Cannot infer common argument type for logical boolean operation UInt8 AND Boolean (the Loams Ho…)'
+
+[[mismatch]]
+case = "he1-24/bool_not_numbers"
+target = "house-rust"
+kind = "error"
+status = "bug"
+reason = 'a type-rule gap found by the oracle after Task 24 merged; to be fixed in a Task 24 follow-up'
+task = "24"
+detail = 'baseline 3 rows, target error 1 (Code: 1. DB::Exception: Error during planning: Unary operator ’NOT’ requires a boolean expression, got UInt8. (LOGICAL_E…)'
+
+[[mismatch]]
+case = "he1-24/bool_where_not_number"
+target = "house-rust"
+kind = "error"
+status = "bug"
+reason = 'a type-rule gap found by the oracle after Task 24 merged; to be fixed in a Task 24 follow-up'
+task = "24"
+detail = 'baseline 1 rows, target error 48 (Code: 48. DB::Exception: Unary operator ’NOT’ requires a boolean expression, got Int64 (the Loams House engine cannot pl…)'
+
+[[mismatch]]
+case = "he1-24/bool_where_null"
+target = "house-rust"
+kind = "error"
+status = "bug"
+reason = 'a type-rule gap found by the oracle after Task 24 merged; to be fixed in a Task 24 follow-up'
+task = "24"
+detail = 'baseline 0 rows, target error 48 (Code: 48. DB::Exception: Cannot create filter with non-boolean predicate ’CAST(CAST(NULL AS Boolean) AS UInt8<{"loams.ch…)'
+
+[[mismatch]]
+case = "he1-24/dec_d5_plus_u8"
+target = "house-rust"
+kind = "error"
+status = "bug"
+reason = 'a Decimal result keeps its precision in ClickHouse without a range check (1000.99 in Decimal(5, 2)); the engine casts with the check'
+task = "24"
+detail = 'baseline 3 rows, target error 1 (Code: 1. DB::Exception: Arrow error: Invalid argument error: 1000.99 is too large to store in a Decimal128 of precision …)'
+
+[[mismatch]]
+case = "he1-24/dec_d5_times_d5"
+target = "house-rust"
+kind = "error"
+status = "bug"
+reason = 'a Decimal result keeps its precision in ClickHouse without a range check (1000.99 in Decimal(5, 2)); the engine casts with the check'
+task = "24"
+detail = 'baseline error 407 (Code: 407. DB::Exception: Decimal math overflow: while executing ’FUNCTION multiply(__table1.d5 : 2, __table1.d5 :: 2) -…), target error 1 (Code: 1. DB::Exception: Arrow error: Invalid argument error: 999980.0001 is too large to store in a Decimal128 of precis…)'
+
+[[mismatch]]
+case = "he1-24/fdiv_i64_f32"
+target = "house-rust"
+kind = "values"
+status = "bug"
+reason = 'a type-rule gap found by the oracle after Task 24 merged; to be fixed in a Task 24 follow-up'
+task = "24"
+detail = 'row 0: [0] vs [-0.5]'
+
+[[mismatch]]
+case = "he1-24/literal_numbers"
+target = "house-rust"
+kind = "names"
+status = "bug"
+reason = 'a type-rule gap found by the oracle after Task 24 merged; to be fixed in a Task 24 follow-up'
+task = "24"
+detail = '["1", "-1", "256", "-129", "65536", "4294967296", "-2147483649", "9223372036854775807", "18446744073709551615", "-9223372036854775808", "1.5", "1000.", "0"] vs ["1", "-1", "256", "-129", "65536", "4294967296", "-2147483649", "9223372036854775807", "18446744073709551615", "-9223372036854775808", "1.5", "1000.", "-0"]'
+
+[[mismatch]]
+case = "he1-24/negate"
+target = "house-rust"
+kind = "error"
+status = "bug"
+reason = 'a type-rule gap found by the oracle after Task 24 merged; to be fixed in a Task 24 follow-up'
+task = "24"
+detail = 'baseline 3 rows, target error 1 (Code: 1. DB::Exception: Error during planning: Unary operator ’-’ only supports signed numeric, interval and timestamp t…)'
+
+[[mismatch]]
+case = "he1-24/null_negate"
+target = "house-rust"
+kind = "error"
+status = "bug"
+reason = 'a type-rule gap found by the oracle after Task 24 merged; to be fixed in a Task 24 follow-up'
+task = "24"
+detail = 'baseline 3 rows, target error 48 (Code: 48. DB::Exception: Unary operator ’-’ only supports signed numeric, interval and timestamp types (the Loams House …)'
+
+[[mismatch]]
+case = "he1-24/str_enum_in"
+target = "house-rust"
+kind = "error"
+status = "bug"
+reason = 'a type-rule gap found by the oracle after Task 24 merged; to be fixed in a Task 24 follow-up'
+task = "24"
+detail = 'baseline 3 rows, target error 386 (Code: 386. DB::Exception: There is no supertype for types Int8, String because some of them are String/FixedString/Enum …)'
+
+[[mismatch]]
+case = "he1-24/str_enum_string_column"
+target = "house-rust"
+kind = "types"
+status = "bug"
+reason = 'a type-rule gap found by the oracle after Task 24 merged; to be fixed in a Task 24 follow-up'
+task = "24"
+detail = '["UInt8", "UInt8"] vs ["Nullable(UInt8)", "Nullable(UInt8)"]'
+
+[[mismatch]]
+case = "he1-24/str_enum_unknown"
+target = "house-rust"
+kind = "error"
+status = "bug"
+reason = 'a type-rule gap found by the oracle after Task 24 merged; to be fixed in a Task 24 follow-up'
+task = "24"
+detail = 'baseline error 691 (Code: 691. DB::Exception: Unknown element ’z’ for enum, maybe you meant: [’a’]: while converting ’z’ to Enum8(’a’ = 1, ’…), target 3 rows'
+
+[[mismatch]]
+case = "he1-24/str_ipv6_eq"
+target = "house-rust"
+kind = "error"
+status = "bug"
+reason = 'a type-rule gap found by the oracle after Task 24 merged; to be fixed in a Task 24 follow-up'
+task = "24"
+detail = 'baseline 3 rows, target error 48 (Code: 48. DB::Exception: Cannot infer common argument type for comparison operation FixedSizeBinary(16) = Utf8 (the Loam…)'
+
+[[mismatch]]
+case = "he1-24/str_lowcardinality_eq"
+target = "house-rust"
+kind = "types"
+status = "bug"
+reason = 'a type-rule gap found by the oracle after Task 24 merged; to be fixed in a Task 24 follow-up'
+task = "24"
+detail = '["LowCardinality(UInt8)", "UInt8"] vs ["UInt8", "UInt8"]'
+
+[[mismatch]]
+case = "he1-24/str_uint_eq_big_string"
+target = "house-rust"
+kind = "values"
+status = "bug"
+reason = 'a type-rule gap found by the oracle after Task 24 merged; to be fixed in a Task 24 follow-up'
+task = "24"
+detail = 'row 0: [0,0] vs [0,1]'
+
+[[mismatch]]
+case = "he1-24/str_uuid_eq"
+target = "house-rust"
+kind = "error"
+status = "bug"
+reason = 'a type-rule gap found by the oracle after Task 24 merged; to be fixed in a Task 24 follow-up'
+task = "24"
+detail = 'baseline 3 rows, target error 48 (Code: 48. DB::Exception: Cannot infer common argument type for comparison operation FixedSizeBinary(16) = Utf8 (the Loam…)'
+
+[[mismatch]]
+case = "he1-24/super_array"
+target = "house-rust"
+kind = "error"
+status = "bug"
+reason = 'array literals are planned by the array functions (Task 32)'
+task = "32"
+detail = 'baseline 3 rows, target error 1 (Code: 1. DB::Exception: This feature is not implemented: Could not plan array literal. Hint: Please try with `nested_exp…)'
+
+[[mismatch]]
+case = "he1-24/super_case_no_common"
+target = "house-rust"
+kind = "error"
+status = "incompatibility"
+reason = 'ClickHouse 26.9 answers a Variant where there is no common type; Variant has no Arrow layout, so the engine refuses with 48 (R24.5, R21.3)'
+detail = 'baseline 3 rows, target error 48 (Code: 48. DB::Exception: A common type of UInt8, String (ClickHouse 26.9 answers a Variant here) is not supported by the…)'
+
+[[mismatch]]
+case = "he1-24/super_case_strings"
+target = "house-rust"
+kind = "values"
+status = "bug"
+reason = 'a type-rule gap found by the oracle after Task 24 merged; to be fixed in a Task 24 follow-up'
+task = "24"
+detail = 'row 0: ["x","a"] vs ["x","1"]'
+
+[[mismatch]]
+case = "he1-24/super_coalesce"
+target = "house-rust"
+kind = "error"
+status = "bug"
+reason = "if/multiIf/coalesce are not registered until the conditionals (Task 33); their supertype rule is Task 24's"
+task = "33"
+detail = 'baseline 3 rows, target error 1 (Code: 1. DB::Exception: Error during planning: Invalid function ’coalesce’.)'
+
+[[mismatch]]
+case = "he1-24/super_if"
+target = "house-rust"
+kind = "error"
+status = "bug"
+reason = "if/multiIf/coalesce are not registered until the conditionals (Task 33); their supertype rule is Task 24's"
+task = "33"
+detail = 'baseline 3 rows, target error 48 (Code: 48. DB::Exception: Invalid function ’if’.)'
+
+[[mismatch]]
+case = "he1-24/super_multiif"
+target = "house-rust"
+kind = "error"
+status = "bug"
+reason = "if/multiIf/coalesce are not registered until the conditionals (Task 33); their supertype rule is Task 24's"
+task = "33"
+detail = 'baseline 3 rows, target error 48 (Code: 48. DB::Exception: Invalid function ’multiIf’.)'
+
+[[mismatch]]
+case = "he1-24/time_datetime64_plus"
+target = "house-rust"
+kind = "error"
+status = "bug"
+reason = 'DateTime/DateTime64 plus a number needs interval arithmetic (Task 30)'
+task = "30"
+detail = 'baseline 3 rows, target error 48 (Code: 48. DB::Exception: Cannot coerce arithmetic expression Timestamp(ms, "UTC") + Int64 to valid types (the Loams Hous…)'
+
+[[mismatch]]
+case = "he1-24/time_datetime_plus"
+target = "house-rust"
+kind = "error"
+status = "bug"
+reason = 'DateTime/DateTime64 plus a number needs interval arithmetic (Task 30)'
+task = "30"
+detail = 'baseline 3 rows, target error 48 (Code: 48. DB::Exception: Cannot coerce arithmetic expression Timestamp(s, "UTC") + Int64 to valid types (the Loams House…)'
+
+[[mismatch]]
+case = "he1-25/alias_swap"
+target = "house-rust"
+kind = "values"
+status = "bug"
+reason = 'an alias that leads through another alias back to a column resolves differently in ORDER BY'
+task = "25"
+detail = 'row 1: ["y",2] vs ["x",3]'
+
+[[mismatch]]
+case = "he1-25/analyzer_alias_in_aggregate"
+target = "house-rust"
+kind = "error"
+status = "bug"
+reason = 'DataFusion stand-in aggregates until Task 28: Nullable sums, and their error codes (184, 215) for misplaced aggregates'
+task = "28"
+detail = 'baseline error 184 (Code: 184. DB::Exception: Aggregate function sum(c) AS c is found inside another aggregate function in query. (ILLEGAL_A…), target error 48 (Code: 48. DB::Exception: Aggregate function calls cannot be nested: ’sum(t25.c)’ is nested inside ’min(sum(t25.c))’ (the…)'
+
+[[mismatch]]
+case = "he1-25/analyzer_having_not_aggregate"
+target = "house-rust"
+kind = "error"
+status = "bug"
+reason = 'DataFusion stand-in aggregates until Task 28: Nullable sums, and their error codes (184, 215) for misplaced aggregates'
+task = "28"
+detail = 'baseline error 215 (Code: 215. DB::Exception: Column ’default.t25.a’ is not under aggregate function and not in GROUP BY keys. In query SELE…), target error 48 (Code: 48. DB::Exception: Column in HAVING must be in GROUP BY or an aggregate function: While expanding wildcard, column…)'
+
+[[mismatch]]
+case = "he1-25/apply_function"
+target = "house-rust"
+kind = "types"
+status = "bug"
+reason = 'DataFusion stand-in aggregates until Task 28: Nullable sums, and their error codes (184, 215) for misplaced aggregates'
+task = "28"
+detail = '["Int64", "Int64"] vs ["Nullable(Int64)", "Nullable(Int64)"]'
+
+[[mismatch]]
+case = "he1-25/columns_apply"
+target = "house-rust"
+kind = "types"
+status = "bug"
+reason = 'DataFusion stand-in aggregates until Task 28: Nullable sums, and their error codes (184, 215) for misplaced aggregates'
+task = "28"
+detail = '["Int64", "Int64"] vs ["Nullable(Int64)", "Nullable(Int64)"]'
+
+[[mismatch]]
+case = "he1-25/columns_in_function"
+target = "house-rust"
+kind = "types"
+status = "bug"
+reason = 'DataFusion stand-in aggregates until Task 28: Nullable sums, and their error codes (184, 215) for misplaced aggregates'
+task = "28"
+detail = '["Int64"] vs ["Nullable(Int64)"]'
+
+[[mismatch]]
+case = "he1-25/lambda_shadows_column"
+target = "house-rust"
+kind = "error"
+status = "bug"
+reason = 'arrayMap and tupleElement come with the array and tuple functions (Task 32); the name resolution is in place'
+task = "32"
+detail = 'baseline 3 rows, target error 48 (Code: 48. DB::Exception: Invalid function ’arrayMap’.)'
+
+[[mismatch]]
+case = "he1-25/subquery_in_name"
+target = "house-rust"
+kind = "error"
+status = "bug"
+reason = 'IN with a subquery is planned by Task 35'
+task = "35"
+detail = 'baseline 3 rows, target error 48 (Code: 48. DB::Exception: Physical plan does not support logical expression InSubquery(InSubquery { expr: Column(Column {…)'
+
+[[mismatch]]
+case = "he1-25/ternary"
+target = "house-rust"
+kind = "error"
+status = "bug"
+reason = 'the ternary is rewritten to if(), which comes with the conditionals (Task 33)'
+task = "33"
+detail = 'baseline 3 rows, target error 48 (Code: 48. DB::Exception: Invalid function ’if’.)'
+
+[[mismatch]]
+case = "he1-25/untuple"
+target = "house-rust"
+kind = "error"
+status = "bug"
+reason = 'arrayMap and tupleElement come with the array and tuple functions (Task 32); the name resolution is in place'
+task = "32"
+detail = 'baseline 3 rows, target error 1 (Code: 1. DB::Exception: Error during planning: Invalid function ’tupleElement’.)'
+
+[[mismatch]]
+case = "he1-25/untuple_alias"
+target = "house-rust"
+kind = "error"
+status = "bug"
+reason = 'arrayMap and tupleElement come with the array and tuple functions (Task 32); the name resolution is in place'
+task = "32"
+detail = 'baseline 3 rows, target error 1 (Code: 1. DB::Exception: Error during planning: Invalid function ’tupleElement’.)'

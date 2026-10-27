@@ -24,7 +24,6 @@ pub const NAMES: &[&str] = &[
     "upper",
     "lowerUTF8",
     "upperUTF8",
-    "length",
     "lengthUTF8",
     "concat",
     "left",

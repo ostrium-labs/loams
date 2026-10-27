@@ -5591,6 +5591,7 @@ dependencies = [
 name = "loams-connector-kafka"
 version = "0.0.1"
 dependencies = [
+ "apache-avro 0.22.0",
  "async-trait",
  "base64 0.22.1",
  "bytes",
@@ -5892,16 +5893,34 @@ dependencies = [
 name = "loams-fabric"
 version = "0.0.1"
 dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "bytes",
  "clap",
+ "http",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "jsonschema",
  "loams-cache",
  "loams-chdb-sys",
  "loams-common",
+ "loams-connector-kafka",
+ "loams-connector-mysql",
+ "loams-connector-postgres",
+ "loams-connector-sdk",
+ "loams-flow",
  "loams-house",
  "loams-house-cache",
  "loams-store",
  "rustls",
+ "serde",
+ "serde_json",
+ "serde_norway",
  "tempfile",
+ "thiserror",
  "tokio",
+ "tracing",
  "uuid",
 ]
 
@@ -6033,11 +6052,14 @@ dependencies = [
 name = "loams-house-engine"
 version = "0.0.1"
 dependencies = [
+ "arrow-ipc 59.3.0",
  "bytes",
  "datafusion",
  "loams-house-exec",
  "loams-house-formats",
  "loams-house-iceberg",
+ "loams-house-ipc",
+ "loams-house-lake",
  "loams-house-sql",
  "loams-house-types",
  "serde_json",
@@ -6070,9 +6092,19 @@ dependencies = [
 name = "loams-house-iceberg"
 version = "0.0.1"
 dependencies = [
+ "arrow-ipc 59.3.0",
+ "async-trait",
+ "bytes",
  "datafusion",
+ "futures",
  "iceberg 0.10.1 (git+https://github.com/ostrium-labs/iceberg-rust?rev=d0788551f83b2ef2018d28d60a859d6283345a3b)",
+ "loams-house-lake",
+ "loams-house-sql",
  "loams-house-types",
+ "serde",
+ "serde_json",
+ "tokio",
+ "typetag",
 ]
 
 [[package]]
@@ -6149,6 +6181,7 @@ version = "0.0.1"
 dependencies = [
  "datafusion",
  "loams-house-types",
+ "regex",
  "serde_json",
  "tokio",
 ]
@@ -6176,6 +6209,7 @@ dependencies = [
  "buffa",
  "bytes",
  "connectrpc",
+ "datafusion",
  "flate2",
  "http",
  "landlock",
@@ -6185,6 +6219,9 @@ dependencies = [
  "loams-chdb-sys",
  "loams-house",
  "loams-house-cache",
+ "loams-house-engine",
+ "loams-house-formats",
+ "loams-house-iceberg",
  "loams-house-ipc",
  "loams-house-lake",
  "loams-house-native",

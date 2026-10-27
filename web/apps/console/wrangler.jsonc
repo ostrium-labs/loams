@@ -4,6 +4,8 @@
 // no Worker code, so it stays on the free plan. Build and stage first (web/README.md "Deploy the console"); the
 // stage step writes config.json from LOAMS_ENGINE_URL, LOAMS_AUTH_MODE (the
 // default sign-in mode: tailscale | oidc | apikey, default tailscale),
+// LOAMS_AUTH_MODES (the modes the connect screen offers, for example
+// `tailscale` while a deploy has tested only that; unset offers all of them),
 // LOAMS_AUTH_CLIENT_ID (loams-console, which offers oidc) and LOAMS_AUTH_ISSUER
 // (default https://auth.loams.dev):
 //   pnpm build && LOAMS_AUTH_CLIENT_ID=loams-console node apps/console/deploy/stage.mjs
@@ -17,7 +19,7 @@
     // Exact paths: the sandbox frame keeps its own headers, no canonical redirects.
     "html_handling": "none",
     // Unknown paths get /index.html, the console (it routes by hash).
-    "not_found_handling": "single-page-application"
+    "not_found_handling": "single-page-application",
   },
   "workers_dev": true,
   "observability": { "enabled": true },
@@ -25,7 +27,7 @@
     "byoc": {
       "name": "loams-console",
       "routes": [],
-      "workers_dev": true
-    }
-  }
+      "workers_dev": true,
+    },
+  },
 }
