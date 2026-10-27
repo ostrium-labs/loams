@@ -271,10 +271,16 @@ services:
   airflow-triggerer:
     <<: *airflow
     command: ["triggerer"]
-  # The edge workers reach only the API server (no database, Airflow 3).
+  # The edge workers reach only the API server (Airflow 3: a task talks to
+  # the Execution API, never the database). They keep the shared settings
+  # but skip the image entrypoint's database check, so a worker starts
+  # without a route to Loams Postgres (as it would on a remote host).
   airflow-edge-worker-1:
     <<: *airflow
     command: ["edge", "worker", "--edge-hostname", "edge-worker-1", "--queues", "default"]
+    environment:
+      <<: *airflow-env
+      CONNECTION_CHECK_MAX_COUNT: "0"
     depends_on:
       <<: *airflow-deps
       airflow-api-server:
@@ -282,6 +288,9 @@ services:
   airflow-edge-worker-2:
     <<: *airflow
     command: ["edge", "worker", "--edge-hostname", "edge-worker-2", "--queues", "default"]
+    environment:
+      <<: *airflow-env
+      CONNECTION_CHECK_MAX_COUNT: "0"
     depends_on:
       <<: *airflow-deps
       airflow-api-server:

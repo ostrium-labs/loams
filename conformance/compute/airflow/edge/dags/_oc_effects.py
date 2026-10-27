@@ -1,7 +1,10 @@
 """Effects the conformance DAGs leave behind, so the harness judges what ran,
 not only what Airflow recorded: one object per execution of a task, in the
 test bucket. A task that ran twice leaves two objects, whatever the metadata
-database says. Not a DAG file (Airflow skips modules without the word "dag").
+database says. Not a DAG: the DAG processor parses it and finds none. The
+DAG files import it from the bundle's root, which Airflow puts on sys.path
+both when it parses a bundle and when a task runs. The copy under
+edge/dags/ must stay identical (selftest.sh: airflow_effects_copies_match).
 """
 
 from __future__ import annotations

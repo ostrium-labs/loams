@@ -68,4 +68,14 @@ that ran twice shows up even when the metadata database records one try.
 The LocalExecutor leg runs OC0's seven cases with the tasks in the
 schedulers (`airflow-local::…`), for comparison.
 
-Results: the DX1 plan's rulings (T6.R*) and [endpoint-modes.md](../endpoint-modes.md).
+## Status
+
+Written, **not yet run end to end** (DX1 ruling T6.R9, 2026-10-27). Each
+pull request runs only the self-test (`conformance/compute/selftest.sh`: the
+Python parses, the effects module copies match, the REST client's log
+rendering, and the overlay resolves with no host ports). Both `xfail.toml`
+files are empty and strict: the first nightly fails on any failure until its
+results are recorded there, each with a reason and an issue.
+
+Rulings: the DX1 plan's T6.R1–T6.R9; endpoint modes:
+[endpoint-modes.md](../endpoint-modes.md).

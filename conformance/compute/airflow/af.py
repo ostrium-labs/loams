@@ -77,7 +77,8 @@ def wait_dags(dag_ids: list[str], timeout=300) -> None:
                 r = _request("GET", f"/api/v2/dags/{q(d)}")
             except SystemExit:
                 continue
-            if r.get("is_active", True) and not r.get("has_import_errors"):
+            # Airflow 3 reports `is_stale` (2.x had `is_active`).
+            if not r.get("is_stale", False) and r.get("is_active", True) and not r.get("has_import_errors"):
                 if r.get("is_paused"):
                     _request("PATCH", f"/api/v2/dags/{q(d)}", {"is_paused": False})
                 left.discard(d)
@@ -122,8 +123,18 @@ def wait_ti(dag_id, run_id, task_id, state, timeout, map_index) -> dict:
 
 
 def log(dag_id, run_id, task_id, try_number, map_index="-1") -> str:
+    """The task log as text, one line per event. Airflow 3.3's log endpoint
+    answers only application/json or application/x-ndjson (406 otherwise);
+    JSON gives `content`, a list of structured events (or plain strings)."""
     path = run_path(dag_id, run_id) + f"/taskInstances/{q(task_id)}/logs/{int(try_number)}?full_content=true&map_index={int(map_index)}"
-    return _request("GET", path, accept="text/plain", timeout=60)
+    r = _request("GET", path, timeout=60) or {}
+    return "\n".join(_log_line(e) for e in r.get("content", []))
+
+
+def _log_line(event) -> str:
+    if isinstance(event, dict):
+        return str(event.get("event", json.dumps(event, default=str)))
+    return str(event)
 
 
 def workers() -> list[dict]:
