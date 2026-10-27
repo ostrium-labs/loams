@@ -36,6 +36,7 @@ pub mod graph;
 pub mod hot;
 pub mod ir;
 pub mod json;
+pub mod metered;
 pub mod placement;
 pub mod read;
 pub mod scan;
