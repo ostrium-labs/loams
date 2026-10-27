@@ -11,12 +11,12 @@ use std::sync::Arc;
 use datafusion::arrow::array::{Array, ArrayRef, AsArray, PrimitiveArray};
 use datafusion::arrow::compute::cast;
 use datafusion::arrow::datatypes::{
-    DataType, Float64Type, Int8Type, Int16Type, Int32Type, Int64Type, UInt8Type, UInt16Type,
-    UInt32Type, UInt64Type,
+    DataType, Field, FieldRef, Float64Type, Int8Type, Int16Type, Int32Type, Int64Type, UInt8Type,
+    UInt16Type, UInt32Type, UInt64Type,
 };
 use datafusion::common::{DataFusionError, Result};
 use datafusion::logical_expr::{
-    ColumnarValue, ScalarFunctionArgs, ScalarUDFImpl, Signature, Volatility,
+    ColumnarValue, ReturnFieldArgs, ScalarFunctionArgs, ScalarUDFImpl, Signature, Volatility,
 };
 use loams_house_types::ChError;
 
@@ -83,6 +83,34 @@ pub fn result_type(a: &DataType, b: &DataType) -> Option<DataType> {
     })
 }
 
+/// For integer operands of which at least one is signed, the widths (in
+/// bytes) of the signed types ClickHouse divides them as: the dividend's own,
+/// the divisor's or the dividend's, whichever is wider.
+fn mixed_sign_widths(a: &DataType, b: &DataType) -> Option<(u8, u8)> {
+    let (sa, fa, wa) = shape(a)?;
+    let (sb, fb, wb) = shape(b)?;
+    if fa || fb || !(sa || sb) {
+        return None;
+    }
+    Some((wa, wa.max(wb)))
+}
+
+/// `v` wrapped into the signed integer of `bytes` bytes.
+fn wrap_signed(v: i128, bytes: u8) -> i128 {
+    let bits = 8 * u32::from(bytes);
+    let m = v & ((1i128 << bits) - 1);
+    if m >= 1i128 << (bits - 1) {
+        m - (1i128 << bits)
+    } else {
+        m
+    }
+}
+
+/// The smallest signed integer of `bytes` bytes.
+fn min_signed(bytes: u8) -> i128 {
+    -(1i128 << (8 * u32::from(bytes) - 1))
+}
+
 fn as_i128(a: &ArrayRef) -> Result<Vec<Option<i128>>> {
     macro_rules! ints {
         ($t:ty) => {
@@ -124,6 +152,21 @@ impl ScalarUDFImpl for IntDiv {
 
     fn return_type(&self, args: &[DataType]) -> Result<DataType> {
         result_type(&args[0], &args[1]).ok_or_else(|| illegal(&args[0], &args[1], self.name()))
+    }
+
+    /// `Nullable` only when an argument is (`intDiv(UInt8, Int8)` is `Int8`).
+    fn return_field_from_args(&self, args: ReturnFieldArgs) -> Result<FieldRef> {
+        let types: Vec<DataType> = args
+            .arg_fields
+            .iter()
+            .map(|f| f.data_type().clone())
+            .collect();
+        let nullable = args.arg_fields.iter().any(|f| f.is_nullable());
+        Ok(Arc::new(Field::new(
+            self.name(),
+            self.return_type(&types)?,
+            nullable,
+        )))
     }
 
     fn invoke_with_args(&self, args: ScalarFunctionArgs) -> Result<ColumnarValue> {
@@ -170,20 +213,40 @@ impl ScalarUDFImpl for IntDiv {
                 quotients.push(Some(q as i128));
             }
         } else {
+            let signs = mixed_sign_widths(cols[0].data_type(), cols[1].data_type());
             let (x, y) = (as_i128(&cols[0])?, as_i128(&cols[1])?);
             for (a, b) in x.into_iter().zip(y) {
-                quotients.push(match (a, b) {
-                    (Some(_), Some(0)) if self.or_zero => Some(0),
-                    (Some(_), Some(0)) => {
-                        return Err(ch(ChError {
-                            code: 153,
-                            name: "ILLEGAL_DIVISION",
-                            message: "Division by zero".into(),
-                        }));
+                let (Some(a), Some(b)) = (a, b) else {
+                    quotients.push(None);
+                    continue;
+                };
+                // ClickHouse divides a signed and an unsigned operand as
+                // signed numbers: the dividend as the signed type of its own
+                // width, the divisor as the signed type of the wider of the
+                // two (`DivideIntegralImpl`); `intDiv(toUInt8(255), -128)`
+                // is `0` and `intDiv(toInt8(-128), toUInt16(65535))` is `153`.
+                let (a, b) = match signs {
+                    Some((wa, wb)) => (wrap_signed(a, wa), wrap_signed(b, wb)),
+                    None => (a, b),
+                };
+                let fails = b == 0
+                    || (signs.is_some() && b == -1 && a == min_signed(signs.map_or(8, |s| s.0)));
+                if fails {
+                    if self.or_zero {
+                        quotients.push(Some(0));
+                        continue;
                     }
-                    (Some(a), Some(b)) => Some(a / b),
-                    _ => None,
-                });
+                    return Err(ch(ChError {
+                        code: 153,
+                        name: "ILLEGAL_DIVISION",
+                        message: if b == 0 {
+                            "Division by zero".into()
+                        } else {
+                            "Division of minimal signed number by minus one".into()
+                        },
+                    }));
+                }
+                quotients.push(Some(a / b));
             }
         }
         macro_rules! wrap {
@@ -213,6 +276,26 @@ impl ScalarUDFImpl for IntDiv {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mixed_signs_divide_as_signed() {
+        assert_eq!(wrap_signed(255, 1), -1);
+        assert_eq!(wrap_signed(65535, 2), -1);
+        assert_eq!(wrap_signed(127, 1), 127);
+        assert_eq!(min_signed(1), -128);
+        // intDiv(UInt8, Int8): both as Int8.
+        assert_eq!(
+            mixed_sign_widths(&DataType::UInt8, &DataType::Int8),
+            Some((1, 1))
+        );
+        // intDiv(Int8, UInt16): the divisor as Int16 (65535 is -1).
+        assert_eq!(
+            mixed_sign_widths(&DataType::Int8, &DataType::UInt16),
+            Some((1, 2))
+        );
+        // Both unsigned: as they are.
+        assert_eq!(mixed_sign_widths(&DataType::UInt8, &DataType::UInt64), None);
+    }
 
     #[test]
     fn result_types_as_measured() {

@@ -137,10 +137,8 @@ async fn aliases_resolve_as_clickhouse() {
     let (n, r) = run(&e, "SELECT (a + 1 AS p) * 2, p FROM t25 ORDER BY a").await;
     assert_eq!(n, names(&["multiply(p, 2)", "p"]));
     assert_eq!(r, rows(&[&["4", "2"], &["6", "3"], &["8", "4"]]));
-    // The ternary is `if`, and named so.
-    let (n, r) = run(&e, "SELECT a > 1 ? 'big' : 'small' FROM t25 ORDER BY a").await;
-    assert_eq!(n, names(&["if(greater(a, 1), 'big', 'small')"]));
-    assert_eq!(r, rows(&[&["small"], &["big"], &["big"]]));
+    // The ternary's name is `if(…)` (`names_match_the_oracle`); `if` itself
+    // comes with Task 33.
     // Matchers.
     let (n, _) = run(&e, "SELECT * EXCEPT d FROM u25 ORDER BY a").await;
     assert_eq!(n, names(&["a", "k"]));

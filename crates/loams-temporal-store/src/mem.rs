@@ -9,15 +9,16 @@ use std::collections::{BTreeMap, HashMap};
 #[cfg(feature = "faults")]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, MutexGuard};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use async_trait::async_trait;
 use tokio::sync::watch;
 
+use crate::page::{self, ListCursor};
 use crate::{
-    Commit, CurrentRun, EventRow, FIRST_EVENT_ID, Loaded, NamespaceRecord, OutboxRow, RunKey,
-    STATUS_RUNNING, StartExecution, StartOutcome, Store, StoreError, VisibilityRow, check_commit,
-    check_shards, shard_of,
+    Commit, CurrentRun, EventRow, FIRST_EVENT_ID, ListRuns, ListedRun, Loaded, NamespaceRecord,
+    OutboxRow, PurgeLimits, PurgeReport, RunKey, RunPage, STATUS_RUNNING, StartExecution,
+    StartOutcome, Store, StoreError, VisibilityRow, check_commit, check_shards, shard_of,
 };
 
 /// The in-process store.
@@ -40,12 +41,15 @@ struct Inner {
     outbox: BTreeMap<i64, Outbox>,
     next_outbox_id: i64,
     visibility: HashMap<RunKey, VisibilityRow>,
+    /// When each closed run closed (retention).
+    closed_at: HashMap<RunKey, SystemTime>,
 }
 
 #[derive(Debug)]
 struct Outbox {
     row: OutboxRow,
-    dispatched: bool,
+    /// When it was marked dispatched.
+    dispatched: Option<SystemTime>,
     claimed_until: Option<Instant>,
 }
 
@@ -131,13 +135,21 @@ impl MemStore {
                         request: o.request,
                         attempts: 0,
                     },
-                    dispatched: false,
+                    dispatched: None,
                     claimed_until: None,
                 },
             );
         }
         if let Some(v) = c.visibility {
             inner.visibility.insert(key.clone(), v);
+        }
+        if c.status == STATUS_RUNNING {
+            inner.closed_at.remove(key);
+        } else {
+            inner
+                .closed_at
+                .entry(key.clone())
+                .or_insert_with(SystemTime::now);
         }
     }
 }
@@ -199,6 +211,19 @@ impl Store for MemStore {
             return Err(StoreError::NamespaceExists);
         }
         inner.namespaces.insert(ns.namespace_id.clone(), ns);
+        Ok(())
+    }
+
+    async fn update_namespace(&self, ns: NamespaceRecord) -> Result<(), StoreError> {
+        json("config", &ns.config)?;
+        let mut inner = self.lock();
+        let cur = inner
+            .namespaces
+            .get_mut(&ns.namespace_id)
+            .ok_or(StoreError::NotFound)?;
+        cur.retention_secs = ns.retention_secs;
+        cur.state = ns.state;
+        cur.config = ns.config;
         Ok(())
     }
 
@@ -361,7 +386,7 @@ impl Store for MemStore {
                 break;
             }
             let free = o.claimed_until.is_none_or(|t| t < now);
-            if !o.dispatched && free && shards.contains(&o.row.shard_id) {
+            if o.dispatched.is_none() && free && shards.contains(&o.row.shard_id) {
                 o.claimed_until = Some(until);
                 o.row.attempts += 1;
                 out.push(o.row.clone());
@@ -371,10 +396,14 @@ impl Store for MemStore {
     }
 
     async fn mark_dispatched(&self, ids: &[i64]) -> Result<(), StoreError> {
+        let now = SystemTime::now();
         let mut inner = self.lock();
         for id in ids {
-            if let Some(o) = inner.outbox.get_mut(id) {
-                o.dispatched = true;
+            if let Some(o) = inner.outbox.get_mut(id)
+                && o.dispatched.is_none()
+            {
+                o.dispatched = Some(now);
+                o.claimed_until = None;
             }
         }
         Ok(())
@@ -386,5 +415,131 @@ impl Store for MemStore {
 
     async fn visibility(&self, key: &RunKey) -> Result<Option<VisibilityRow>, StoreError> {
         Ok(self.lock().visibility.get(key).cloned())
+    }
+
+    async fn list_runs(&self, req: &ListRuns) -> Result<RunPage, StoreError> {
+        page::check_page_size(req.page_size)?;
+        text("namespace_id", &req.namespace_id)?;
+        if let Some(w) = &req.filter.workflow_id {
+            text("workflow_id", w)?;
+        }
+        if let Some(t) = &req.filter.workflow_type {
+            text("workflow_type", t)?;
+        }
+        let cursor = page::decode_list(&req.namespace_id, &req.filter, &req.page_token)?;
+        let f = &req.filter;
+        let mut runs: Vec<ListedRun> = self
+            .lock()
+            .visibility
+            .iter()
+            .filter(|(k, v)| {
+                k.namespace_id == req.namespace_id
+                    && f.open
+                        .is_none_or(|open| (v.status == STATUS_RUNNING) == open)
+                    && f.workflow_id.as_ref().is_none_or(|w| *w == k.workflow_id)
+                    && f.workflow_type
+                        .as_ref()
+                        .is_none_or(|t| *t == v.workflow_type)
+                    && cursor
+                        .as_ref()
+                        .is_none_or(|c| c.before(v.start_time_ms, &k.workflow_id, &k.run_id))
+            })
+            .map(|(k, v)| ListedRun {
+                key: k.clone(),
+                visibility: v.clone(),
+            })
+            .collect();
+        runs.sort_by(|a, b| {
+            b.visibility
+                .start_time_ms
+                .cmp(&a.visibility.start_time_ms)
+                .then_with(|| a.key.workflow_id.cmp(&b.key.workflow_id))
+                .then_with(|| a.key.run_id.cmp(&b.key.run_id))
+        });
+        let next_page_token = if runs.len() > req.page_size {
+            runs.truncate(req.page_size);
+            match runs.last() {
+                Some(last) => page::encode_list(
+                    &req.namespace_id,
+                    &req.filter,
+                    &ListCursor {
+                        start_time_ms: last.visibility.start_time_ms,
+                        workflow_id: last.key.workflow_id.clone(),
+                        run_id: last.key.run_id.clone(),
+                    },
+                ),
+                None => Vec::new(),
+            }
+        } else {
+            Vec::new()
+        };
+        Ok(RunPage {
+            runs,
+            next_page_token,
+        })
+    }
+
+    async fn purge_expired(&self, limits: &PurgeLimits) -> Result<PurgeReport, StoreError> {
+        let now = SystemTime::now();
+        let mut report = PurgeReport::default();
+        let mut inner = self.lock();
+        let inner = &mut *inner;
+        if limits.max_runs > 0 {
+            let mut doomed: Vec<(SystemTime, RunKey)> = inner
+                .closed_at
+                .iter()
+                .filter(|(k, closed)| {
+                    let Some(ns) = inner.namespaces.get(&k.namespace_id) else {
+                        return false;
+                    };
+                    let retention =
+                        Duration::from_secs(u64::try_from(ns.retention_secs).unwrap_or(0));
+                    let expired = closed
+                        .checked_add(retention)
+                        .is_some_and(|until| until < now);
+                    let pending = inner
+                        .outbox
+                        .values()
+                        .any(|o| o.dispatched.is_none() && o.row.key == **k);
+                    expired && !pending
+                })
+                .map(|(k, t)| (*t, k.clone()))
+                .collect();
+            doomed.sort();
+            doomed.truncate(limits.max_runs);
+            for (_, k) in doomed {
+                inner.executions.remove(&k);
+                inner.closed_at.remove(&k);
+                inner.visibility.remove(&k);
+                report.events += inner.history.remove(&k).map_or(0, |h| h.len() as u64);
+                let before = inner.outbox.len();
+                inner.outbox.retain(|_, o| o.row.key != k);
+                report.run_outbox_rows += (before - inner.outbox.len()) as u64;
+                let wf = (k.namespace_id.clone(), k.workflow_id.clone());
+                if inner.current.get(&wf).is_some_and(|c| c.run_id == k.run_id) {
+                    inner.current.remove(&wf);
+                }
+                report.runs += 1;
+            }
+        }
+        if limits.max_outbox_rows > 0 {
+            let old: Vec<i64> = inner
+                .outbox
+                .iter()
+                .filter(|(_, o)| {
+                    o.dispatched.is_some_and(|t| {
+                        t.checked_add(limits.dispatched_outbox_ttl)
+                            .is_some_and(|until| until < now)
+                    })
+                })
+                .map(|(id, _)| *id)
+                .take(limits.max_outbox_rows)
+                .collect();
+            for id in &old {
+                inner.outbox.remove(id);
+            }
+            report.dispatched_outbox_rows = old.len() as u64;
+        }
+        Ok(report)
     }
 }

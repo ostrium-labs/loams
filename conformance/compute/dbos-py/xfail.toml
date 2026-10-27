@@ -1,0 +1,9 @@
+# DBOS Transact Python on Loams Postgres (conformance/compute/dbos-py/run.sh).
+product = "dbos-py"
+
+[[xfail]]
+id = "txn-mode"
+tests = ["dbos-py::dbos_py_txn_mode_xfail"]
+reason = "DBOS needs a session (LISTEN across transactions, session state); expected to fail through PgDog transaction pooling (design 74 §8.2)"
+issue = "https://github.com/ostrium-labs/loams/issues/1149"
+since = 2026-10-24

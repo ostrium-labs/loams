@@ -1,0 +1,17 @@
+# ClusterIP only: the browser is never exposed outside the cluster (D2114).
+apiVersion: v1
+kind: Service
+metadata:
+  name: loams-browser
+  labels:
+    app.kubernetes.io/name: loams-browser
+    app.kubernetes.io/component: browser
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: loams-browser
+  ports:
+    - name: cdp
+      port: 9222
+      targetPort: cdp
+      protocol: TCP

@@ -319,3 +319,39 @@ fn casts_to_clickhouse_types_plan() {
         schema.field(1)
     );
 }
+
+/// Array, tuple and map literals and subscripts become the House's own
+/// functions (plan HE1 Task 32), and lambda parameters keep their case.
+#[test]
+fn composite_literals_and_subscripts_become_functions() {
+    let g = guard(
+        "SELECT [1, 2][1], {'a': 1}['a'], (1, 'x'), arrayMap(X -> X + 1, a), mapFilter(kv -> kv.1 = 'a', m), mapFilter((k, v) -> v > 0, m) FROM t",
+        &[],
+    )
+    .unwrap();
+    let text = g.statement.to_string();
+    for want in [
+        r#""arrayElement"("array"(1, 2), 1)"#,
+        r#""arrayElement"("__ch_map"('a', 1), 'a')"#,
+        r#""tuple"(1, 'x')"#,
+        r#""X" -> X + 1"#,
+        r#""__ch_mapFilter_tuple"("kv" -> "tupleElement"(kv, 1) = 'a', m)"#,
+        r#""mapFilter"(("k", "v") -> v > 0, m)"#,
+        r#"AS "arrayElement([1, 2], 1)""#,
+        r#"AS "arrayElement(map('a', 1), 'a')""#,
+    ] {
+        assert!(text.contains(want), "{want} not in {text}");
+    }
+    let f: Vec<&str> = g.resolution.functions.iter().map(String::as_str).collect();
+    for name in [
+        "array",
+        "arrayElement",
+        "map",
+        "tuple",
+        "mapFilter",
+        "tupleElement",
+    ] {
+        assert!(f.contains(&name), "{name} not in {f:?}");
+    }
+    assert!(guard("SELECT untuple(t) FROM x", &[]).is_ok());
+}

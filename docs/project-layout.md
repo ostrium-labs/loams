@@ -42,7 +42,6 @@
 | [`sdks`](../sdks) | Client SDKs: TypeScript, Python, Go, Rust, C#, C++ and Swift supported; more coming |
 | [`proto`](../proto), [`api`](../api) | Protobuf and OpenAPI contracts |
 | [`fabric`](../fabric) | The `fabric/` workspace: Loams Flow's event fabric and its connectors (design §32, §33) |
-| [`platform`](../platform/README.md) | The `platform/` workspace: `loams-meter`, the node metering agent, imported from the former private platform repository ([`docs/platform`](platform/README.md)) |
 | [`connectors`](../connectors) | The connector registry: the 200-row catalog, the manifests and their JSON Schemas (§33) |
 | [`conformance`](../conformance) | External client conformance suites |
 | [`deploy`](../deploy) | Local compose files for TiKV and companion services |

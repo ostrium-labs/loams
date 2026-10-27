@@ -1,0 +1,4 @@
+# The LocalExecutor comparison leg (AIRFLOW_EXECUTOR=LocalExecutor airflow/run.sh).
+# Empty until the first run (DX1 ruling T6.R9): add [[xfail]] entries with
+# a reason and an issue, as ../xfail.schema.json describes.
+product = "airflow/local"

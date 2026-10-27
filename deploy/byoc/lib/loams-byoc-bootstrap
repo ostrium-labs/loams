@@ -64,10 +64,23 @@ engine_env() {
   esac
 }
 
+# The connect role (profile `connectors`, plan CC1 Task 1) reaches the engine's
+# connect socket with an API key, which the engine accepts only when apikey is
+# among its auth modes; people keep coming in over the tailnet.
+auth_mode() {
+  local p=",${LOAMS_PROFILES:-}," ints="${CONFLUENT_INTEGRATIONS:-}"
+  if [[ "$p" == *,connectors,* || -n "${ints//[ ,]/}" ]]; then
+    echo "tailscale,apikey"
+  else
+    echo "tailscale"
+  fi
+}
+
 env_values() {
   printf 'LOAMS_VERSION=%s\n' "$LOAMS_VERSION"
   printf 'LOAMS_BUCKET=%s\n' "$LOAMS_BUCKET_URL"
   printf 'COMPOSE_PROFILES=%s\n' "${LOAMS_PROFILES:-}"
+  printf 'LOAMS_AUTH_MODE=%s\n' "$(auth_mode)"
   printf 'TS_HOSTNAME=%s\n' "${TS_HOSTNAME:-loams}"
   printf 'TS_AUTHKEY=%s\n' '<from secret store>'
   printf 'LOAMS_SETUP_TOKEN=%s\n' '<from secret store>'
