@@ -110,6 +110,13 @@
               }
             ]
           },
+          "namespace_editor": {
+            "directly_related_user_types": [
+              {
+                "type": "service_account"
+              }
+            ]
+          },
           "owner": {
             "directly_related_user_types": [
               {
@@ -181,6 +188,20 @@
               {
                 "computedUserset": {
                   "relation": "admin"
+                }
+              }
+            ]
+          }
+        },
+        "namespace_editor": {
+          "union": {
+            "child": [
+              {
+                "this": {}
+              },
+              {
+                "computedUserset": {
+                  "relation": "member"
                 }
               }
             ]
@@ -303,6 +324,7 @@
               }
             ]
           },
+          "can_admin": {},
           "editor": {
             "directly_related_user_types": [
               {
@@ -369,6 +391,11 @@
             ]
           }
         },
+        "can_admin": {
+          "computedUserset": {
+            "relation": "admin"
+          }
+        },
         "editor": {
           "union": {
             "child": [
@@ -407,6 +434,9 @@
       "metadata": {
         "module": "core",
         "relations": {
+          "can_admin": {},
+          "can_read": {},
+          "can_write": {},
           "deployer": {
             "directly_related_user_types": [
               {
@@ -449,6 +479,13 @@
               }
             ]
           },
+          "org": {
+            "directly_related_user_types": [
+              {
+                "type": "org"
+              }
+            ]
+          },
           "project": {
             "directly_related_user_types": [
               {
@@ -483,6 +520,21 @@
         }
       },
       "relations": {
+        "can_admin": {
+          "computedUserset": {
+            "relation": "deployer"
+          }
+        },
+        "can_read": {
+          "computedUserset": {
+            "relation": "viewer"
+          }
+        },
+        "can_write": {
+          "computedUserset": {
+            "relation": "editor"
+          }
+        },
         "deployer": {
           "union": {
             "child": [
@@ -496,6 +548,16 @@
                   },
                   "tupleset": {
                     "relation": "project"
+                  }
+                }
+              },
+              {
+                "tupleToUserset": {
+                  "computedUserset": {
+                    "relation": "admin"
+                  },
+                  "tupleset": {
+                    "relation": "org"
                   }
                 }
               }
@@ -522,9 +584,22 @@
                     "relation": "project"
                   }
                 }
+              },
+              {
+                "tupleToUserset": {
+                  "computedUserset": {
+                    "relation": "namespace_editor"
+                  },
+                  "tupleset": {
+                    "relation": "org"
+                  }
+                }
               }
             ]
           }
+        },
+        "org": {
+          "this": {}
         },
         "project": {
           "this": {}
