@@ -126,6 +126,8 @@ loams byoc confluent key create --integration confluent \
 - A key that is not in the store yet is reported, not fatal.
 - User data and state hold secret names only.
 
+**Connector instances.** The connect role runs one instance file per topic or stream in `/opt/loams/release/connect/instances/` ([connect-role.md](../connectors/connect-role.md)). For an install over SSH, `deploy/release/byoc/install.sh --kafka confluent --confluent-bootstrap <endpoint> --confluent-topics <topics> --confluent-prefix "$(tofu output -json confluent_connect_integration | jq -r .consumer_group_prefix)"` writes them from `deploy/release/connect/templates/`, with the group and transactional ids under the module's prefix and the example's 64 KiB/s rate ([kafka.md](../kafka.md)). On a VM the example created, write them there yourself from the same templates (the `confluent_connect_integration` output has every value they need).
+
 **Rotate** without downtime:
 
 ```bash

@@ -122,13 +122,16 @@ t "install_cloud_refuses_a_mismatched_or_unsafe_bucket" bash -c "
   ! '$inst' --render-env-only --cloud azure --bucket az://c/loams --vault v &&
   ! '$inst' --render-env-only --bucket s3://b --region us-east-1"
 
+# install.sh --kafka (CC1 Task 8): the .env keys and instance files it would write
+t "install_kafka_flag_matrix" "$here/test_install_kafka.sh"
+
 # the guides name only files that exist, and open no port
 t "guides_reference_existing_files" "$here/guides_reference_existing_files.sh"
 
 # the linter
 sc="${SHELLCHECK:-$(command -v shellcheck || true)}"
 if [[ -n "$sc" ]]; then
-  t "shellcheck" "$sc" -x "$byoc/render.sh" "$byoc/gen-cloud-init.sh" "$byoc/lib/loams-byoc-bootstrap" "$byoc/lib/loams-byoc-secrets" "$inst" "$here/run.sh" "$here/test_secrets.sh" "$here/test_bootstrap.sh" "$here/test_exposure.sh" "$here/test_reaper.sh" "$repo/scripts/byoc/aws-matrix.sh" "$repo/scripts/byoc/confluent-tables.sh" "$here/test_confluent_tables.sh" "$repo/scripts/byoc/confluent-ci.sh" "$repo/tests/byoc/confluent_smoke.sh" "$here/test_confluent_ci.sh" "$repo/tests/byoc/exposure.sh" "$here/guides_reference_existing_files.sh"
+  t "shellcheck" "$sc" -x "$byoc/render.sh" "$byoc/gen-cloud-init.sh" "$byoc/lib/loams-byoc-bootstrap" "$byoc/lib/loams-byoc-secrets" "$inst" "$here/run.sh" "$here/test_secrets.sh" "$here/test_bootstrap.sh" "$here/test_exposure.sh" "$here/test_reaper.sh" "$repo/scripts/byoc/aws-matrix.sh" "$repo/scripts/byoc/confluent-tables.sh" "$here/test_confluent_tables.sh" "$repo/scripts/byoc/confluent-ci.sh" "$repo/tests/byoc/confluent_smoke.sh" "$here/test_confluent_ci.sh" "$repo/tests/byoc/exposure.sh" "$here/guides_reference_existing_files.sh" "$here/test_install_kafka.sh"
 else
   echo "skip shellcheck (not installed)"
 fi
