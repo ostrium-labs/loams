@@ -29,6 +29,11 @@ cargo_package(
             "root": "tests/golden.rs",
         },
         {
+            "name": "lifecycle",
+            "crate": "lifecycle",
+            "root": "tests/lifecycle.rs",
+        },
+        {
             "name": "props",
             "crate": "props",
             "root": "tests/props.rs",

@@ -30,6 +30,8 @@ pub const IMPLEMENTED: &[&str] = &[
     // TMP-api (design 74 §5.8's DX4 update methods, brought forward).
     "UpdateWorkflowExecution",
     "PollWorkflowExecutionUpdate",
+    "SignalWithStartWorkflowExecution",
+    "ResetWorkflowExecution",
 ];
 
 /// Where the per-method, per-SDK compatibility matrix lives (D1512).

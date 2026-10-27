@@ -3,12 +3,14 @@
 use loams_temporal_history::time::{dur, dur_ms, ts};
 use loams_temporal_history::{Attributes, Batch, MutableState, STATE_VERSION};
 use loams_temporal_proto::temporal::api::enums::v1::{TaskQueueKind, WorkflowExecutionStatus};
-use loams_temporal_proto::temporal::api::history::v1::WorkflowExecutionStartedEventAttributes;
+use loams_temporal_proto::temporal::api::history::v1::{
+    WorkflowExecutionSignaledEventAttributes, WorkflowExecutionStartedEventAttributes,
+};
 use loams_temporal_proto::temporal::api::taskqueue::v1::TaskQueue;
 use loams_temporal_proto::temporal::api::workflowservice::v1::StartWorkflowExecutionRequest;
 
 use crate::write::schedule_workflow_task;
-use crate::{Effect, Rejection, Reply};
+use crate::{Effect, Rejection, Reply, StartSignal};
 
 /// A workflow task's start-to-close timeout when the request sets none.
 pub const DEFAULT_WORKFLOW_TASK_TIMEOUT_MS: i64 = 10_000;
@@ -21,7 +23,15 @@ pub(crate) fn start(
     namespace_id: &str,
     run_id: &str,
     r: StartWorkflowExecutionRequest,
+    signal: Option<StartSignal>,
 ) -> Result<Reply, Rejection> {
+    if let Some(sig) = &signal
+        && sig.name.is_empty()
+    {
+        return Err(Rejection::InvalidArgument(
+            "SignalName is not set on request.".into(),
+        ));
+    }
     if r.workflow_id.is_empty() {
         return Err(Rejection::InvalidArgument(
             "WorkflowId is not set on request.".into(),
@@ -100,6 +110,19 @@ pub(crate) fn start(
             ..Default::default()
         },
     ));
+    if let Some(sig) = signal {
+        b.state().signal_count += 1;
+        b.push(Attributes::WorkflowExecutionSignaledEventAttributes(
+            WorkflowExecutionSignaledEventAttributes {
+                signal_name: sig.name,
+                input: sig.input,
+                identity: sig.identity,
+                header: Some(sig.header.unwrap_or_default()),
+                request_id: sig.request_id,
+                ..Default::default()
+            },
+        ));
+    }
     schedule_workflow_task(b, fx, 1);
     Ok(Reply::Done)
 }
