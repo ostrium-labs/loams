@@ -6,7 +6,7 @@ mod common;
 use common::*;
 use loams_temporal_history::{Attributes, EventType, WorkflowExecutionStatus};
 use loams_temporal_proto::temporal::api::command::v1::{
-    ContinueAsNewWorkflowExecutionCommandAttributes, command,
+    ScheduleNexusOperationCommandAttributes, command,
 };
 use loams_temporal_proto::temporal::api::enums::v1::WorkflowTaskFailedCause;
 use loams_temporal_statemachine::{COMPLETED, Effect, Input, Rejection, Reply, TimeoutKind, apply};
@@ -118,6 +118,7 @@ fn stale_token_is_not_found() {
             worker_version: None,
             force_create_new_workflow_task: false,
             messages: Vec::new(),
+            new_run_id: String::new(),
         },
         2_100,
     );
@@ -358,8 +359,8 @@ fn later_phase_commands_are_unimplemented() {
     let r = wft_completed(
         &s,
         vec![cmd(
-            command::Attributes::ContinueAsNewWorkflowExecutionCommandAttributes(
-                ContinueAsNewWorkflowExecutionCommandAttributes::default(),
+            command::Attributes::ScheduleNexusOperationCommandAttributes(
+                ScheduleNexusOperationCommandAttributes::default(),
             ),
         )],
         2_100,

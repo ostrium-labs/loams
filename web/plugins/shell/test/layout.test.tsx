@@ -7,7 +7,7 @@ import {
 } from '@loams/console-host';
 import { SlotProvider, SlotRegistry } from '@loams/slots';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 import { Layout } from '../src/layout.js';
 import { isSettingsPage, pageEntries } from '../src/pages.js';
 import { HashRouter, type HashSource } from '../src/router.js';

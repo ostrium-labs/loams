@@ -5591,6 +5591,7 @@ dependencies = [
 name = "loams-connector-kafka"
 version = "0.0.1"
 dependencies = [
+ "apache-avro 0.22.0",
  "async-trait",
  "base64 0.22.1",
  "bytes",
@@ -6057,6 +6058,7 @@ dependencies = [
  "loams-house-exec",
  "loams-house-formats",
  "loams-house-iceberg",
+ "loams-house-ipc",
  "loams-house-lake",
  "loams-house-sql",
  "loams-house-types",
@@ -6069,6 +6071,7 @@ name = "loams-house-exec"
 version = "0.0.1"
 dependencies = [
  "datafusion",
+ "loams-house-sql",
  "loams-house-types",
 ]
 

@@ -5,7 +5,7 @@
  * focus-visible and disabled states here. Every class starts with `loams-`, so the sheet can sit
  * beside any other CSS.
  */
-@import "./tokens.css";
+@import './tokens.css';
 
 .loams-logo {
   display: inline-flex;
@@ -65,7 +65,7 @@
 }
 
 /* Pressed: a 2% press on transform only, never on a disabled or busy button. */
-.loams-btn:active:not(:disabled, [aria-disabled="true"]) {
+.loams-btn:active:not(:disabled, [aria-disabled='true']) {
   transform: scale(0.98);
 }
 
@@ -75,7 +75,7 @@
 }
 
 .loams-btn:disabled,
-.loams-btn[aria-disabled="true"] {
+.loams-btn[aria-disabled='true'] {
   opacity: 0.55;
   cursor: not-allowed;
 }
@@ -96,12 +96,12 @@
   border-color: var(--op-accent);
 }
 
-.loams-btn-primary:hover:not(:disabled, [aria-disabled="true"]) {
+.loams-btn-primary:hover:not(:disabled, [aria-disabled='true']) {
   background: var(--op-accent-hover);
   border-color: var(--op-accent-hover);
 }
 
-.loams-btn-primary:active:not(:disabled, [aria-disabled="true"]) {
+.loams-btn-primary:active:not(:disabled, [aria-disabled='true']) {
   background: var(--op-accent-active);
   border-color: var(--op-accent-active);
 }
@@ -112,12 +112,12 @@
   border-color: var(--op-control-border);
 }
 
-.loams-btn-secondary:hover:not(:disabled, [aria-disabled="true"]) {
+.loams-btn-secondary:hover:not(:disabled, [aria-disabled='true']) {
   background: var(--op-raised);
 }
 
-.loams-btn-secondary:active:not(:disabled, [aria-disabled="true"]),
-.loams-btn-quiet:active:not(:disabled, [aria-disabled="true"]),
+.loams-btn-secondary:active:not(:disabled, [aria-disabled='true']),
+.loams-btn-quiet:active:not(:disabled, [aria-disabled='true']),
 .loams-btn-quiet[data-popup-open],
 .loams-btn-secondary[data-popup-open] {
   background: var(--op-row-selected);
@@ -127,7 +127,7 @@
   color: var(--op-muted);
 }
 
-.loams-btn-quiet:hover:not(:disabled, [aria-disabled="true"]),
+.loams-btn-quiet:hover:not(:disabled, [aria-disabled='true']),
 .loams-btn-quiet[data-popup-open] {
   color: var(--op-ink);
   background: var(--op-raised);
@@ -139,7 +139,7 @@
   border-color: var(--op-control-border);
 }
 
-.loams-btn-danger:hover:not(:disabled, [aria-disabled="true"]) {
+.loams-btn-danger:hover:not(:disabled, [aria-disabled='true']) {
   background: var(--op-danger-soft);
   border-color: color-mix(in oklab, var(--op-danger) 32%, transparent);
 }
@@ -150,7 +150,7 @@
   border-color: var(--op-danger);
 }
 
-.loams-btn-danger-solid:hover:not(:disabled, [aria-disabled="true"]) {
+.loams-btn-danger-solid:hover:not(:disabled, [aria-disabled='true']) {
   background: var(--op-danger-hover);
   border-color: var(--op-danger-hover);
 }
@@ -164,11 +164,11 @@
   text-underline-offset: 3px;
 }
 
-.loams-btn-link:hover:not(:disabled, [aria-disabled="true"]) {
+.loams-btn-link:hover:not(:disabled, [aria-disabled='true']) {
   text-decoration-color: currentColor;
 }
 
-.loams-btn-link:active:not(:disabled, [aria-disabled="true"]) {
+.loams-btn-link:active:not(:disabled, [aria-disabled='true']) {
   transform: none;
 }
 
@@ -219,29 +219,29 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .loams-btn:active:not(:disabled, [aria-disabled="true"]) {
+  .loams-btn:active:not(:disabled, [aria-disabled='true']) {
     transform: none;
   }
 }
 
 /* Joined buttons in a ButtonGroup (these rules are unlayered, so the group's utilities cannot reach them). */
-[data-slot="group"]:not([data-orientation="vertical"]) > .loams-btn:not(:last-child) {
+[data-slot='group']:not([data-orientation='vertical']) > .loams-btn:not(:last-child) {
   border-start-end-radius: 0;
   border-end-end-radius: 0;
 }
 
-[data-slot="group"]:not([data-orientation="vertical"]) > .loams-btn:not(:first-child) {
+[data-slot='group']:not([data-orientation='vertical']) > .loams-btn:not(:first-child) {
   border-start-start-radius: 0;
   border-end-start-radius: 0;
   border-inline-start-width: 0;
 }
 
-[data-slot="group"][data-orientation="vertical"] > .loams-btn:not(:last-child) {
+[data-slot='group'][data-orientation='vertical'] > .loams-btn:not(:last-child) {
   border-end-start-radius: 0;
   border-end-end-radius: 0;
 }
 
-[data-slot="group"][data-orientation="vertical"] > .loams-btn:not(:first-child) {
+[data-slot='group'][data-orientation='vertical'] > .loams-btn:not(:first-child) {
   border-start-start-radius: 0;
   border-start-end-radius: 0;
   border-top-width: 0;
@@ -264,7 +264,7 @@
 }
 
 .loams-status::before {
-  content: "";
+  content: '';
   width: 6px;
   height: 6px;
   border-radius: var(--op-radius-pill);
@@ -461,7 +461,7 @@
   color: var(--op-faint);
 }
 
-.loams-input:hover:not(:disabled, [aria-invalid="true"]) {
+.loams-input:hover:not(:disabled, [aria-invalid='true']) {
   border-color: var(--op-muted);
 }
 
@@ -470,11 +470,11 @@
   outline-offset: var(--op-focus-offset);
 }
 
-.loams-input[aria-invalid="true"] {
+.loams-input[aria-invalid='true'] {
   border-color: var(--op-danger);
 }
 
-.loams-input[aria-invalid="true"]:focus-visible {
+.loams-input[aria-invalid='true']:focus-visible {
   outline-color: var(--op-danger);
 }
 
@@ -580,7 +580,7 @@ textarea.loams-input {
   background: var(--op-row-hover);
 }
 
-.loams-table tbody tr[aria-selected="true"],
+.loams-table tbody tr[aria-selected='true'],
 .loams-table tbody tr[data-selected] {
   background: var(--op-row-selected);
 }
@@ -632,7 +632,7 @@ textarea.loams-input {
   transition: background-color var(--op-duration-fast) ease;
 }
 
-.loams-row[data-density="compact"] {
+.loams-row[data-density='compact'] {
   min-height: var(--op-row);
   font-size: var(--op-text-small);
   line-height: 16px;
@@ -645,15 +645,15 @@ textarea.loams-input {
   color: var(--op-muted);
 }
 
-.loams-row[data-density="compact"] svg {
+.loams-row[data-density='compact'] svg {
   width: var(--op-icon-sm);
   height: var(--op-icon-sm);
 }
 
 a.loams-row,
 button.loams-row,
-.loams-row[role="option"],
-.loams-row[role="button"],
+.loams-row[role='option'],
+.loams-row[role='button'],
 .loams-row[tabindex] {
   cursor: pointer;
 }
@@ -665,8 +665,8 @@ button.loams-row,
 
 /* Selected: the light theme's white chip with a 1px shadow, a soft fill in dark. */
 .loams-row[data-selected],
-.loams-row[aria-current="page"],
-.loams-row[aria-selected="true"] {
+.loams-row[aria-current='page'],
+.loams-row[aria-selected='true'] {
   background: var(--op-row-selected);
   box-shadow: var(--op-shadow-chip);
 }
@@ -749,7 +749,7 @@ button.loams-row,
 /* The tone is a dot beside the title, and the title's colour; never the only signal (the
    title says what happened). */
 .loams-notice::before {
-  content: "";
+  content: '';
   flex: none;
   width: 6px;
   height: 6px;
@@ -878,11 +878,11 @@ button.loams-row,
   animation: loams-grow var(--op-duration-page) var(--op-ease-out) both;
 }
 
-.loams-meter[data-level="high"] > span[aria-hidden] {
+.loams-meter[data-level='high'] > span[aria-hidden] {
   background: var(--op-accent);
 }
 
-.loams-meter[data-level="full"] > span[aria-hidden] {
+.loams-meter[data-level='full'] > span[aria-hidden] {
   background: var(--op-danger);
 }
 
@@ -906,18 +906,18 @@ button.loams-row,
   border: 1px solid var(--op-rule-soft);
 }
 
-.loams-avatar[data-kind="agent"] {
+.loams-avatar[data-kind='agent'] {
   border-radius: var(--op-radius-xs);
   color: var(--op-accent-fg);
   background: var(--op-accent-soft);
   border-color: transparent;
 }
 
-.loams-avatar[data-kind="team"] {
+.loams-avatar[data-kind='team'] {
   border-radius: var(--op-radius-xs);
 }
 
-.loams-avatar[data-kind="service_account"] {
+.loams-avatar[data-kind='service_account'] {
   border-radius: var(--op-radius-xs);
   color: var(--op-info);
   background: var(--op-info-soft);
@@ -1000,13 +1000,13 @@ button.loams-row,
     transform: translateY(3px);
   }
 }
-[data-slot="command-item"][data-enter] {
+[data-slot='command-item'][data-enter] {
   animation: loams-row-in var(--op-duration-enter) var(--op-ease-out) both;
   animation-delay: calc(min(var(--loams-i, 0), 8) * 25ms);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-slot="command-item"][data-enter] {
+  [data-slot='command-item'][data-enter] {
     animation: none;
   }
 }
@@ -1043,12 +1043,12 @@ button.loams-row,
     outline-offset: 2px;
   }
   .loams-row[data-selected],
-  .loams-row[aria-current="page"],
-  .loams-row[aria-selected="true"] {
+  .loams-row[aria-current='page'],
+  .loams-row[aria-selected='true'] {
     outline: 1px solid Highlight;
     outline-offset: -1px;
   }
-  [data-slot="selection-indicator"] {
+  [data-slot='selection-indicator'] {
     outline: 1px solid Highlight;
     outline-offset: -1px;
   }
@@ -1395,7 +1395,7 @@ button.loams-row,
   font-size: var(--op-text-small);
 }
 
-/* biome-ignore lint/style/noDescendingSpecificity: a different table from .loams-table */
+/* Lower specificity after .loams-table on purpose: a different table from .loams-table. */
 .loams-results-table th {
   position: sticky;
   top: 0;

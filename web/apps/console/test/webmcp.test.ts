@@ -1,5 +1,5 @@
 import { ActionRegistry, type ActionSpec } from '@loams/console-host';
-import { expect, it, vi } from 'vitest';
+import { expect, it, vi } from 'vite-plus/test';
 import {
   detectModelContext,
   exposedOrigins,

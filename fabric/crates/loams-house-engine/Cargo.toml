@@ -14,9 +14,13 @@ loams-house-sql = { path = "../loams-house-sql" }
 loams-house-exec = { path = "../loams-house-exec" }
 loams-house-iceberg = { path = "../loams-house-iceberg" }
 loams-house-formats = { path = "../loams-house-formats" }
+# The front's setting lists and chDB's defaults (plan HE1 Task 37, D1805): the
+# shared contract, never the front itself (`engine_crates_stay_apart`).
+loams-house-ipc = { path = "../loams-house-ipc" }
 datafusion.workspace = true
 # The dev server's runtime for DataFusion's async execution. MIT.
-tokio = { workspace = true, features = ["rt-multi-thread"] }
+# `time` holds a statement to `max_execution_time` (Task 37).
+tokio = { workspace = true, features = ["rt-multi-thread", "time"] }
 # Seeding: the columns' types in `X-Loams-Columns`; Parquet bodies. MIT OR Apache-2.0, MIT.
 serde_json.workspace = true
 bytes.workspace = true

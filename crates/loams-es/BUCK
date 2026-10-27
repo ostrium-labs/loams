@@ -37,7 +37,7 @@ cargo_package(
         "//crates/loams-common:loams-common",
         "//crates/loams-query:loams-query",
         "//third-party/rust:axum",
-        "//third-party/rust:base64",
+        "//third-party/rust:base64-0_23",
         "//third-party/rust:futures",
         "//third-party/rust:serde",
         "//third-party/rust:serde_json",

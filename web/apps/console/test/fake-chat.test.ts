@@ -1,5 +1,5 @@
 import type { ChatEvent } from '@loams/desktop/contracts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { createFakeDesktop } from '../src/cordis/fake-desktop.js';
 
 afterEach(() => vi.useRealTimers());
