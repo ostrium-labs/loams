@@ -1,6 +1,6 @@
 import { createWebPlatform } from '@loams/platform-web';
 import { waitFor } from '@testing-library/react';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, expect, it, vi } from 'vite-plus/test';
 import { startConsole } from '../src/cordis/start.js';
 
 vi.mock('@loams/platform-web', () => ({ createWebPlatform: vi.fn(() => ({ name: 'test' })) }));

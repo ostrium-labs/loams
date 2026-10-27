@@ -2,7 +2,7 @@
 // permissions and the agentd injection rule (SD1 Task 15), and the JSON
 // Schema kept in step with the validator.
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import schema from '../plugin-manifest.schema.json';
 import {
   boot,

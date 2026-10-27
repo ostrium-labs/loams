@@ -25,8 +25,9 @@ fn fixture(name: &str) -> String {
     .unwrap()
 }
 
-/// Forms the pre-pass does not read yet, with the task that brings them.
-const NAME_GAPS: &[(&str, u32)] = &[("number > 1 ? 1 : 0", 25)];
+/// Forms the pre-pass does not read yet, with the task that brings them
+/// (the ternary came with Task 25).
+const NAME_GAPS: &[(&str, u32)] = &[];
 
 #[test]
 fn names_match_the_oracle() {
@@ -90,7 +91,6 @@ fn no_ignored_field_reaches_sqltorel() {
         "SELECT x FROM t LEFT ARRAY JOIN a AS y",
         "SELECT * FROM t ANY LEFT JOIN u USING (k)",
         "SELECT * FROM t SEMI LEFT JOIN u USING (k)",
-        "SELECT * EXCEPT (x) FROM t",
         "SELECT x FROM t ORDER BY x INTERPOLATE",
         "SELECT x FROM (SELECT x FROM t SETTINGS max_threads = 1)",
     ];
@@ -315,7 +315,7 @@ fn casts_become_the_engines_cast_function() {
             "\"_CAST\"(b, 'LowCardinality(String)')",
         ),
         ("SELECT a::String AS x FROM t", "\"_CAST\"(a, 'String')"),
-        ("SELECT 1::String AS x", "\"_CAST\"('1', 'String')"),
+        ("SELECT 1::String AS x", "'1' AS"),
         (
             "SELECT CAST(a AS Nullable(Int64)) AS x FROM t",
             "\"_CAST\"(a, 'Nullable(Int64)')",

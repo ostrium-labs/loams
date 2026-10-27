@@ -79,7 +79,7 @@ function Row({ app, kind }: { app: FactoryApp; kind: StudioFactory['kind'] }) {
       )}
     </span>
   );
-  if (kind === 'desktop') {
+  if (kind === 'pages') {
     return (
       <a href={`#${factoryHref(app)}`} className={cx(ROW, 'hover:bg-row-hover hover:text-ink')}>
         {label}
@@ -167,7 +167,7 @@ export function FactoryGroup({ factory }: { factory: StudioFactory }) {
             </span>
           )}
         </button>
-        {factory.kind === 'desktop' && (
+        {factory.kind === 'pages' && (
           <a
             href={`#${FACTORY_HOME}`}
             aria-label="All factory apps"

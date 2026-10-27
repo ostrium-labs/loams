@@ -88,30 +88,28 @@ export function groupView(
 ): GroupView {
   const waiting = new Map<string, number>();
   for (const a of approvals) waiting.set(a.chatId, (waiting.get(a.chatId) ?? 0) + 1);
-  const members = group.members.map(
-    (m): GroupMemberView => ({
-      chatId: m.chatId,
-      label: memberLabel(m),
-      status: STATUS[m.status] ?? 'queued',
-      ...(lastLine(chats.get(m.chatId)) ? { lastMessage: lastLine(chats.get(m.chatId)) } : {}),
-      branch: m.branch,
-      cwd: m.cwd,
-      filesChanged: m.filesChanged,
-      additions: m.additions,
-      deletions: m.deletions,
-      elapsedMs: Number(m.elapsedMs),
-      ...(m.startedAtMs !== undefined ? { startedAtMs: Number(m.startedAtMs) } : {}),
-      ...(m.tokens !== undefined ? { tokens: Number(m.tokens) } : {}),
-      check: {
-        state: CHECK[m.check?.state ?? CheckState.UNSPECIFIED] ?? 'none',
-        ...(m.check?.exitCode !== undefined ? { exitCode: m.check.exitCode } : {}),
-        logTail: m.check?.logTail ?? [],
-      },
-      detached: m.detached,
-      archived: m.archived,
-      pendingApprovals: waiting.get(m.chatId) ?? 0,
-    }),
-  );
+  const members = group.members.map((m): GroupMemberView => ({
+    chatId: m.chatId,
+    label: memberLabel(m),
+    status: STATUS[m.status] ?? 'queued',
+    ...(lastLine(chats.get(m.chatId)) ? { lastMessage: lastLine(chats.get(m.chatId)) } : {}),
+    branch: m.branch,
+    cwd: m.cwd,
+    filesChanged: m.filesChanged,
+    additions: m.additions,
+    deletions: m.deletions,
+    elapsedMs: Number(m.elapsedMs),
+    ...(m.startedAtMs !== undefined ? { startedAtMs: Number(m.startedAtMs) } : {}),
+    ...(m.tokens !== undefined ? { tokens: Number(m.tokens) } : {}),
+    check: {
+      state: CHECK[m.check?.state ?? CheckState.UNSPECIFIED] ?? 'none',
+      ...(m.check?.exitCode !== undefined ? { exitCode: m.check.exitCode } : {}),
+      logTail: m.check?.logTail ?? [],
+    },
+    detached: m.detached,
+    archived: m.archived,
+    pendingApprovals: waiting.get(m.chatId) ?? 0,
+  }));
   const resolution = group.resolution;
   return {
     id: group.id,

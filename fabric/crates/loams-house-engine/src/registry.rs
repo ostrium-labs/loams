@@ -39,6 +39,9 @@ pub fn registry() -> Registry {
         }),
     );
     r.scalars.insert("version".into(), Arc::new(version));
+    loams_house_exec::ops::scalars()
+        .into_iter()
+        .for_each(|f| _ = r.scalars.insert(f.name().into(), f));
     loams_house_exec::func::register_t33(&mut r);
     r
 }

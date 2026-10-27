@@ -11,6 +11,7 @@ publish = false
 [dependencies]
 loams-temporal-history = { path = "../loams-temporal-history" }
 loams-temporal-proto = { path = "../loams-temporal-proto" }
+prost.workspace = true
 prost-types.workspace = true
 thiserror.workspace = true
 

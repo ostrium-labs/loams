@@ -42,7 +42,7 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vp test run"
   },
   "dependencies": {
     "@loams/agentd-client": "workspace:*",
@@ -87,6 +87,8 @@
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "typescript": "5.9.3",
-    "vitest": "5.0.3"
+    "vite-plus": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
   }
 }

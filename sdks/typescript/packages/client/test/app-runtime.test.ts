@@ -13,7 +13,7 @@
 import { Code, ConnectError } from '@connectrpc/connect';
 import { DocumentService } from '@loams/proto/documents';
 import { InstanceService } from '@loams/proto/instance';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { documentCalls, searchCalls, type UnaryCall } from '../src/app.js';
 import { Filter } from '../src/builders/filter.js';
 import { Search, Sort } from '../src/builders/search.js';
