@@ -112,17 +112,19 @@ left for a follow-up. Until then, run the binary next to a Resonate server as ab
 
 ## Limits
 
-| Limit | Value | Enforced in DX1 |
+| Limit | Value | Enforced |
 |---|---|---|
 | One gRPC request | 4 MiB (Temporal's) | Yes: larger requests are refused by the transport |
 | Signals per run | 2,000 | Yes: `RESOURCE_EXHAUSTED` |
-| One payload | 2 MiB | Not yet |
-| History per run | 50 MiB and 51,200 events | Not yet |
-| Pending activities per run | 2,000 | Not yet |
-| Long polls | answered empty after 60 s, or 5 s before the request's own deadline | Yes (X1.R3) |
+| One payload | 2 MiB | From #1291 (DX1F.R2), as Temporal does; unit tests only |
+| History per run | 50 MiB and 51,200 events | From #1291: the run is terminated, as Temporal does; unit tests only |
+| Pending activities per run | 2,000 | From #1291: the workflow task fails, as Temporal does; unit tests only |
+| Long polls | answered empty after 60 s, or 5 s before the request's own deadline (half of a deadline of 5 s or less) | Yes (X1.R3). A history long poll answered empty keeps a page token from #1291 on (DX1F.R1); before it the Go SDK failed under load (matrix below, known issue 1) |
 
-The values are Temporal's defaults at v1.32.1 (plan ruling R0.9, X1.R7). Three of them are
-defined but not checked yet (the [DX1 exit report](../../plans/dx1-exit-report.md), open issues).
+The values are Temporal's defaults at v1.32.1 (plan ruling R0.9, X1.R7). The payload, history
+and pending-activity limits were defined but not checked in DX1 (the
+[DX1 exit report](../../plans/dx1-exit-report.md), open issues); #1291 enforces them, and no SDK
+run has exercised them yet.
 Lowering them per namespace is DX2's.
 
 ## Deployment limits in DX1
@@ -160,6 +162,8 @@ and `matrix.py temporal-gateway --junit … --splice docs/guides/durable/tempora
 
 Run: 2026-10-27, dev 0e9c0e8fb, loams-temporal in development mode (memory store, in-process Resonate) on loopback, the corpus's Go and TypeScript generators.
 
+Not covered by this run: the SDK legs ran the gateway in development mode (memory store, in-process Resonate) on loopback with the corpus scenarios only, so they say nothing about the Postgres store, the Resonate server, the compose profile or load. The only run under load is the 2026-10-25 bench (Go SDK only; Postgres store, the fork's Resonate server): fan-out finished 500 of 500 at 1.3 workflows/s (p99 28.2 s), and burst and chain failed (known issue 1). The TypeScript SDK has not been run under load. Payload, pending-activity and history limits (X1.R7) are enforced from #1291 on and covered by unit tests only.
+
 SDK legs: 26 of 26 cases passed. 21 of the 123 `WorkflowService` methods are implemented (design 74 §5.8, DX1).
 
 | Method | Go SDK v1.49.0 | TypeScript SDK 1.24.0 | Exercised by |
@@ -170,7 +174,7 @@ SDK legs: 26 of 26 cases passed. 21 of the 123 `WorkflowService` methods are imp
 | `ListNamespaces` | not exercised | not exercised | no SDK call in these runs and no test yet |
 | `StartWorkflowExecution` | pass | pass | `gateway_dx1_scenarios_<sdk>`, `gateway_hello_<sdk>` |
 | `DescribeWorkflowExecution` | pass | pass | `gateway_dx1_differential_<sdk>_signal_then_complete`, `gateway_dx1_differential_<sdk>_query_while_running`, `gateway_dx1_differential_<sdk>_cancel_requested`, `gateway_dx1_differential_<sdk>_terminated`; the generators wait for a running run |
-| `GetWorkflowExecutionHistory` | pass | pass | `gateway_dx1_scenarios_<sdk>`, `gateway_histories_replay_<sdk>`; waiting for a result (close-event long poll) and the export |
+| `GetWorkflowExecutionHistory` | pass, known issue 1 | pass | `gateway_dx1_scenarios_<sdk>`, `gateway_histories_replay_<sdk>`; waiting for a result (close-event long poll) and the export |
 | `TerminateWorkflowExecution` | pass | pass | `gateway_dx1_differential_<sdk>_terminated` |
 | `RequestCancelWorkflowExecution` | pass | pass | `gateway_dx1_differential_<sdk>_cancel_requested` |
 | `PollWorkflowTaskQueue` | pass | pass | `gateway_dx1_scenarios_<sdk>`, `gateway_hello_<sdk>` |
@@ -185,6 +189,10 @@ SDK legs: 26 of 26 cases passed. 21 of the 123 `WorkflowService` methods are imp
 | `QueryWorkflow` | pass | pass | `gateway_dx1_differential_<sdk>_query_while_running` |
 | `RespondQueryTaskCompleted` | pass | pass | `gateway_dx1_differential_<sdk>_query_while_running` |
 | `ResetStickyTaskQueue` | not exercised | not exercised | a no-op; no SDK call in these runs and no test yet |
+
+Known issues (not shown by the cases above):
+
+1. `GetWorkflowExecutionHistory`, Go SDK v1.49.0: under load the Go SDK failed in `run.Get` with "could not get last history event for workflow" (bench 2026-10-25: 500 workflows started at once, and a chain of 5 activities and 5 one-second sleeps). A close-event long poll that reached its deadline before the run closed answered an empty page without a page token. Fixed in #1291 (DX1F.R1, DX1F.R3, with regression tests); the bench has not been re-run since.
 
 Not implemented (102; each answers `UNIMPLEMENTED` with a link to this page): `UpdateNamespace`, `DeprecateNamespace`, `ExecuteMultiOperation`, `GetWorkflowExecutionHistoryReverse`, `RecordActivityTaskHeartbeatById`, `RespondActivityTaskCompletedById`, `RespondActivityTaskFailedById`, `RespondActivityTaskCanceledById`, `SignalWithStartWorkflowExecution`, `ResetWorkflowExecution`, `DeleteWorkflowExecution`, `ListOpenWorkflowExecutions`, `ListClosedWorkflowExecutions`, `ListWorkflowExecutions`, `ListArchivedWorkflowExecutions`, `ScanWorkflowExecutions`, `CountWorkflowExecutions`, `GetSearchAttributes`, `ShutdownWorker`, `DescribeTaskQueue`, `GetClusterInfo`, `ListTaskQueuePartitions`, `CreateSchedule`, `DescribeSchedule`, `UpdateSchedule`, `PatchSchedule`, `ListScheduleMatchingTimes`, `DeleteSchedule`, `ListSchedules`, `CountSchedules`, `UpdateWorkerBuildIdCompatibility`, `GetWorkerBuildIdCompatibility`, `UpdateWorkerVersioningRules`, `GetWorkerVersioningRules`, `GetWorkerTaskReachability`, `DescribeDeployment`, `DescribeWorkerDeploymentVersion`, `ListDeployments`, `GetDeploymentReachability`, `GetCurrentDeployment`, `SetCurrentDeployment`, `SetWorkerDeploymentCurrentVersion`, `DescribeWorkerDeployment`, `DeleteWorkerDeployment`, `DeleteWorkerDeploymentVersion`, `SetWorkerDeploymentRampingVersion`, `ListWorkerDeployments`, `CreateWorkerDeployment`, `CreateWorkerDeploymentVersion`, `UpdateWorkerDeploymentVersionComputeConfig`, `ValidateWorkerDeploymentVersionComputeConfig`, `UpdateWorkerDeploymentVersionMetadata`, `SetWorkerDeploymentManager`, `UpdateWorkflowExecution`, `PollWorkflowExecutionUpdate`, `StartBatchOperation`, `StopBatchOperation`, `DescribeBatchOperation`, `ListBatchOperations`, `PollNexusTaskQueue`, `RespondNexusTaskCompleted`, `RespondNexusTaskFailed`, `UpdateActivityOptions`, `UpdateWorkflowExecutionOptions`, `PauseActivity`, `UnpauseActivity`, `ResetActivity`, `CreateWorkflowRule`, `DescribeWorkflowRule`, `DeleteWorkflowRule`, `ListWorkflowRules`, `TriggerWorkflowRule`, `RecordWorkerHeartbeat`, `ListWorkers`, `CountWorkers`, `UpdateTaskQueueConfig`, `FetchWorkerConfig`, `UpdateWorkerConfig`, `DescribeWorker`, `PauseWorkflowExecution`, `UnpauseWorkflowExecution`, `StartActivityExecution`, `StartNexusOperationExecution`, `DescribeActivityExecution`, `DescribeNexusOperationExecution`, `PollActivityExecution`, `PollNexusOperationExecution`, `ListActivityExecutions`, `ListNexusOperationExecutions`, `CountActivityExecutions`, `CountNexusOperationExecutions`, `RequestCancelActivityExecution`, `RequestCancelNexusOperationExecution`, `TerminateActivityExecution`, `DeleteActivityExecution`, `PauseActivityExecution`, `ResetActivityExecution`, `UnpauseActivityExecution`, `UpdateActivityExecutionOptions`, `TerminateNexusOperationExecution`, `DeleteNexusOperationExecution`, `PollWorkflowExecutionTimeSkipping`.
 <!-- matrix:temporal-gateway:end -->

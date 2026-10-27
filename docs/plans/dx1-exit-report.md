@@ -116,10 +116,14 @@ orchestrator should file them from the text here.
    the end of a history with no close event. The fix is to always return a non-empty token
    there, with a test of a run that stays open past a short `history_wait`. The DX1 scenarios
    finish in seconds, so the legs do not hit this.
+   *Follow-up (2026-10-27):* fixed in #1291 (DX1F.R1; DX1F.R3 records that the store's
+   compare-and-set path is not involved), with regression tests. The bench has not been re-run.
 2. **X1.R7's limits are only partly enforced.** `loams_temporal_history::Limits` defines all of
    them, but only the 4 MiB request (the transport) and the 2,000 signals per run are checked. The
    2 MiB payload, the 50 MiB and 51,200-event history and the 2,000 pending activities are not,
    so one run's history can grow without bound.
+   *Follow-up (2026-10-27):* #1291 enforces them as Temporal v1.32.1 does (DX1F.R2), with one
+   unit test per limit; no SDK run has exercised them.
 3. **The compose profile `temporal-gateway` and a gateway image** (Task 10's compose half).
 4. **No `/metrics` endpoint.** The relay's counters (`loams_temporal_outbox_*_total`) are
    rendered, but neither `loams-temporal` nor the gateway module serves them.
