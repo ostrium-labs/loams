@@ -29,6 +29,11 @@ cargo_package(
             "root": "tests/owner.rs",
         },
         {
+            "name": "plans",
+            "crate": "plans",
+            "root": "tests/plans.rs",
+        },
+        {
             "name": "reconcile",
             "crate": "reconcile",
             "root": "tests/reconcile.rs",
@@ -50,6 +55,8 @@ cargo_package(
         "//third-party/rust:connectrpc",
         "//third-party/rust:serde",
         "//third-party/rust:serde_json",
+        "//third-party/rust:serde_yaml_ng",
+        "//third-party/rust:sha2",
         "//third-party/rust:thiserror",
         "//third-party/rust:tokio",
         "//third-party/rust:tracing",

@@ -11,8 +11,8 @@ use std::sync::Mutex;
 
 use async_trait::async_trait;
 use loams_meter_core::{
-    Currency, Entitlement, EntitlementId, FeatureKey, Grant, GrantId, Money, PlanId, SubjectKey,
-    UtcNanos,
+    Currency, Entitlement, EntitlementId, Feature, FeatureKey, Grant, GrantId, Meter, Money,
+    PlanId, Slug, SubjectKey, UtcNanos,
 };
 use serde::{Deserialize, Serialize};
 
@@ -58,6 +58,17 @@ pub struct Customer {
     pub updated_at: UtcNanos,
     /// Bumped by every update; an update names the version it read.
     pub version: u64,
+}
+
+/// An applied plan version (ME1 Task 11): the YAML it came from and its
+/// digest; its templates are parsed from the YAML when needed.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlanRecord {
+    pub name: PlanId,
+    pub version: u32,
+    pub yaml: String,
+    pub digest: String,
+    pub created_at: UtcNanos,
 }
 
 /// The meter's record store.
@@ -115,6 +126,19 @@ pub trait MeterStore: Send + Sync + fmt::Debug {
         limit: usize,
     ) -> Result<Vec<Grant>>;
     async fn update_grant(&self, g: Grant) -> Result<Grant>;
+
+    /// Stores a plan version; one that exists is `already_exists`.
+    async fn create_plan(&self, p: PlanRecord) -> Result<PlanRecord>;
+    async fn plan(&self, name: &PlanId, version: u32) -> Result<Option<PlanRecord>>;
+    /// Every version of every plan (`name` set: of that plan), by name then
+    /// version.
+    async fn list_plans(&self, name: Option<&PlanId>) -> Result<Vec<PlanRecord>>;
+    async fn meter(&self, slug: &Slug) -> Result<Option<Meter>>;
+    async fn put_meter(&self, m: Meter) -> Result<()>;
+    async fn list_meters(&self) -> Result<Vec<Meter>>;
+    async fn feature(&self, key: &FeatureKey) -> Result<Option<Feature>>;
+    async fn put_feature(&self, f: Feature) -> Result<()>;
+    async fn list_features(&self) -> Result<Vec<Feature>>;
 }
 
 /// [`MeterStore`] in memory.
@@ -128,6 +152,9 @@ struct Inner {
     customers: BTreeMap<String, Customer>,
     entitlements: BTreeMap<String, Entitlement>,
     grants: BTreeMap<String, Grant>,
+    plans: BTreeMap<(String, u32), PlanRecord>,
+    meters: BTreeMap<String, Meter>,
+    features: BTreeMap<String, Feature>,
     /// (kind, idempotency key) → the id it created.
     idempotency: HashMap<(&'static str, String), String>,
 }
@@ -402,5 +429,58 @@ impl MeterStore for MemStore {
         }
         s.grants.insert(g.id.to_string(), g.clone());
         Ok(g)
+    }
+
+    async fn create_plan(&self, p: PlanRecord) -> Result<PlanRecord> {
+        let mut s = self.lock();
+        let key = (p.name.to_string(), p.version);
+        if s.plans.contains_key(&key) {
+            return Err(MeterError::exists(
+                "plan",
+                format!("{} v{}", p.name, p.version),
+            ));
+        }
+        s.plans.insert(key, p.clone());
+        Ok(p)
+    }
+
+    async fn plan(&self, name: &PlanId, version: u32) -> Result<Option<PlanRecord>> {
+        Ok(self.lock().plans.get(&(name.to_string(), version)).cloned())
+    }
+
+    async fn list_plans(&self, name: Option<&PlanId>) -> Result<Vec<PlanRecord>> {
+        Ok(self
+            .lock()
+            .plans
+            .values()
+            .filter(|p| name.is_none_or(|n| &p.name == n))
+            .cloned()
+            .collect())
+    }
+
+    async fn meter(&self, slug: &Slug) -> Result<Option<Meter>> {
+        Ok(self.lock().meters.get(slug.as_str()).cloned())
+    }
+
+    async fn put_meter(&self, m: Meter) -> Result<()> {
+        self.lock().meters.insert(m.slug.to_string(), m);
+        Ok(())
+    }
+
+    async fn list_meters(&self) -> Result<Vec<Meter>> {
+        Ok(self.lock().meters.values().cloned().collect())
+    }
+
+    async fn feature(&self, key: &FeatureKey) -> Result<Option<Feature>> {
+        Ok(self.lock().features.get(key.as_str()).cloned())
+    }
+
+    async fn put_feature(&self, f: Feature) -> Result<()> {
+        self.lock().features.insert(f.key.to_string(), f);
+        Ok(())
+    }
+
+    async fn list_features(&self) -> Result<Vec<Feature>> {
+        Ok(self.lock().features.values().cloned().collect())
     }
 }

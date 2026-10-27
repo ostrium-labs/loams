@@ -12,6 +12,7 @@
 
 pub mod customers;
 pub mod entitlements;
+pub mod plans;
 
 use connectrpc::{ConnectError, ErrorCode, ErrorDetail, RequestContext};
 use loams_meter_core::{Amount, Currency, Money, UtcNanos};
@@ -129,7 +130,9 @@ pub fn register(
     router: connectrpc::Router,
     customers: crate::customers::Customers,
     entitlements: crate::entitlements::Entitlements,
+    plans: crate::plans::Plans,
 ) -> connectrpc::Router {
     let router = customers::register(router, customers);
-    entitlements::register(router, entitlements)
+    let router = entitlements::register(router, entitlements);
+    plans::register(router, plans)
 }
