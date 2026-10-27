@@ -254,6 +254,14 @@ services:
       LOAMS_OIDC_ALLOWED_GROUPS: ${LOAMS_OIDC_ALLOWED_GROUPS:-}
       LOAMS_TAILSCALE_ALLOWED_USERS: ${LOAMS_TAILSCALE_ALLOWED_USERS:-}
       LOAMS_API_KEYS_FILE: /etc/loams/secrets/api-keys
+      # The authorizer (design 76): builtin (the default: model v1 over the engine's own
+      # principal store) or openfga (the `authz` profile, below). The store and model ids
+      # come from openfga-init (config/stores.sh) unless set here.
+      LOAMS_AUTHZ: ${LOAMS_AUTHZ:-builtin}
+      LOAMS_AUTHZ_OPENFGA_GRPC: ${LOAMS_AUTHZ_OPENFGA_GRPC:-http://openfga:8081}
+      LOAMS_AUTHZ_OPENFGA_STORE: ${LOAMS_AUTHZ_OPENFGA_STORE:-}
+      LOAMS_AUTHZ_OPENFGA_MODEL: ${LOAMS_AUTHZ_OPENFGA_MODEL:-}
+      LOAMS_AUTHZ_OPENFGA_KEY: ${LOAMS_AUTHZ_OPENFGA_KEY:-}
     # LOAMS_SETUP_TOKEN, for first-run setup with auth on (the console's
     # setup page asks for it once, to create the org and its owner), comes
     # through config/setup-token.env: it reads the value from .env, and
@@ -266,12 +274,14 @@ services:
         required: false
       - path: ./secrets/engine.env
         required: false
-    networks: [default, house-link]
+    networks: [default, house-link, authz]
     volumes:
       - loams-data:/var/lib/loams
       - ./secrets:/etc/loams/secrets:ro
       - house-link:/var/lib/loams-house-link:ro
       - ./config/stores.sh:/etc/loams/stores.sh:ro
+      # The OpenFGA store and model ids (`authz` profile), read when LOAMS_AUTHZ=openfga.
+      - authz:/var/lib/loams-authz:ro
     depends_on:
       pd:
         condition: service_healthy
@@ -287,6 +297,10 @@ services:
       # still starts once the House has written it.
       house:
         condition: service_healthy
+        required: false
+      # With the `authz` profile, OpenFGA's store and model exist before the engine starts.
+      openfga-init:
+        condition: service_completed_successfully
         required: false
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
@@ -713,6 +727,99 @@ services:
       start_period: 15s
       retries: 5
 
+  # The `authz` profile (design 76, D1610, D1613): OpenFGA, for LOAMS_AUTHZ=openfga. Off by
+  # default; the engine's default authorizer is built in (model v1 over its own principal
+  # store) and needs nothing here. OpenFGA v1.22.0 (Apache-2.0), its official image pinned by
+  # digest, unmodified.
+  #
+  # - SQLite in the openfga-data volume: one user's install only (D1626). A multi-user
+  #   install runs OpenFGA on Postgres (deploy/openfga/helm).
+  # - OpenFGA's own check caches stay off: the engine keeps the one decision cache, allows
+  #   only, 5 s (D1625).
+  # - On the `authz` network only (internal, no route out, no published port): the engine,
+  #   OpenFGA and its init job. Every call needs LOAMS_AUTHZ_OPENFGA_KEY (OpenFGA's preshared
+  #   key; it refuses to start without one).
+  # - openfga-init creates the `loams` store, writes model v1
+  #   (config/openfga-model.json, generated from deploy/openfga) when it changed, and records
+  #   their ids in the authz volume, where the engine reads them (config/stores.sh).
+  #
+  # The engine stays on the built-in authorizer until .env sets LOAMS_AUTHZ=openfga. OpenFGA's
+  # tuples come from the sync bridge (plan IA1, IA3); before it runs, an engine on OpenFGA
+  # denies every principal but the operator.
+  openfga-migrate:
+    profiles: [authz]
+    image: &openfga-image docker.io/openfga/openfga:v1.22.0@sha256:9cf9a20af32a40434cd3a788c429879439ee9ea9abf65c9c200ee17cd43f769e
+    command: migrate --datastore-engine sqlite --datastore-uri file:/home/nonroot/openfga.db
+    restart: "no"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [authz]
+    volumes:
+      # The image's /home/nonroot belongs to its user (65532), and a new volume takes that
+      # owner, so OpenFGA never runs as root.
+      - openfga-data:/home/nonroot
+
+  openfga:
+    <<: *restart
+    profiles: [authz]
+    image: *openfga-image
+    command:
+      - run
+      - --datastore-engine=sqlite
+      - --datastore-uri=file:/home/nonroot/openfga.db
+      - --playground-enabled=false
+      - --http-addr=0.0.0.0:8080
+      - --grpc-addr=0.0.0.0:8081
+      - --log-format=json
+      - --log-level=warn
+      - --check-query-cache-enabled=false
+      - --check-iterator-cache-enabled=false
+    environment:
+      OPENFGA_AUTHN_METHOD: preshared
+      OPENFGA_AUTHN_PRESHARED_KEYS: ${LOAMS_AUTHZ_OPENFGA_KEY:-}
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [authz]
+    volumes:
+      - openfga-data:/home/nonroot
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/grpc_health_probe", "-addr=127.0.0.1:8081"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    depends_on:
+      openfga-migrate:
+        condition: service_completed_successfully
+
+  openfga-init:
+    profiles: [authz]
+    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams:${LOAMS_VERSION:-0.1.2}
+    entrypoint: ["/bin/sh", "/etc/loams/openfga-init.sh"]
+    command: []
+    restart: "no"
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      LOAMS_AUTHZ_OPENFGA_KEY: ${LOAMS_AUTHZ_OPENFGA_KEY:-}
+      LOAMS_AUTHZ_DIR: /var/lib/loams-house
+    networks: [authz]
+    volumes:
+      # Mounted on a directory the image gives its user (10001), so a new volume takes that
+      # owner and the job runs as that user; the engine reads it at /var/lib/loams-authz.
+      - authz:/var/lib/loams-house
+      - ./config/openfga-init.sh:/etc/loams/openfga-init.sh:ro
+      - ./config/openfga-model.json:/etc/loams/openfga-model.json:ro
+    healthcheck:
+      disable: true
+    depends_on:
+      openfga:
+        condition: service_healthy
+
 networks:
   # The House's own network (see `house`): no other service joins it.
   house: {}
@@ -722,6 +829,9 @@ networks:
     internal: true
   # `pg-control` and `pg-runner` only, with no route out (see `pg-runner`).
   pg-runner:
+    internal: true
+  # The engine, OpenFGA and openfga-init only, with no route out (`authz` profile).
+  authz:
     internal: true
 
 volumes:
@@ -745,3 +855,7 @@ volumes:
   # Endpoint storage's local folder (without the `rustfs` profile).
   pg-endpoint-storage:
   upgrade-snapshots:
+  # The `authz` profile: OpenFGA's SQLite store, and the store and model ids openfga-init
+  # records for the engine.
+  openfga-data:
+  authz:

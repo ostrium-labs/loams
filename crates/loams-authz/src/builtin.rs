@@ -89,6 +89,11 @@ const MODEL: &[(&str, &str, &[Rule])] = &[
         "billing_viewer",
         &[Direct(PEOPLE_AND_TEAMS), Computed("billing_admin")],
     ),
+    (
+        "org",
+        "namespace_editor",
+        &[Direct(&[Type("service_account")]), Computed("member")],
+    ),
     ("team", "org", &[Direct(&[Type("org")])]),
     ("team", "member", &[Direct(PEOPLE_AND_TEAMS)]),
     ("agent", "owner", &[Direct(&[Type("user")])]),
@@ -110,11 +115,17 @@ const MODEL: &[(&str, &str, &[Rule])] = &[
         "viewer",
         &[Direct(PROJECT_GRANTEES), Computed("editor")],
     ),
+    ("project", "can_admin", &[Computed("admin")]),
     ("environment", "project", &[Direct(&[Type("project")])]),
+    ("environment", "org", &[Direct(&[Type("org")])]),
     (
         "environment",
         "deployer",
-        &[Direct(ENV_GRANTEES), From("project", "admin")],
+        &[
+            Direct(ENV_GRANTEES),
+            From("project", "admin"),
+            From("org", "admin"),
+        ],
     ),
     (
         "environment",
@@ -123,6 +134,7 @@ const MODEL: &[(&str, &str, &[Rule])] = &[
             Direct(ENV_GRANTEES),
             Computed("deployer"),
             From("project", "editor"),
+            From("org", "namespace_editor"),
         ],
     ),
     (
@@ -134,6 +146,9 @@ const MODEL: &[(&str, &str, &[Rule])] = &[
             From("project", "viewer"),
         ],
     ),
+    ("environment", "can_read", &[Computed("viewer")]),
+    ("environment", "can_write", &[Computed("editor")]),
+    ("environment", "can_admin", &[Computed("deployer")]),
     (
         "deployment",
         "environment",

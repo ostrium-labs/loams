@@ -48,6 +48,8 @@ http.workspace = true
 jsonwebtoken.workspace = true
 # The `loams.house.v1` proxy's streamed request body (HS1 Task 7).
 http-body.workspace = true
+# The `can_*` checks (design 76 §9, D1610): model v1 in process, or OpenFGA (IA2 Task 4).
+loams-authz.workspace = true
 loams-cache.workspace = true
 # `protobuf`: `loams.stream.v1`'s ProduceCloudEvents decodes a protobuf CloudEventBatch (SDKP P0c).
 loams-cloudevents = { workspace = true, features = ["protobuf"] }

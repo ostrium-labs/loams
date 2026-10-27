@@ -162,6 +162,15 @@ export_file(
 )
 
 export_file(
+    name = "file=schemas+marketplace+conformance-report.v1.json",
+    src = "schemas/marketplace/conformance-report.v1.json",
+    mode = "reference",
+    visibility = [
+        "PUBLIC",
+    ],
+)
+
+export_file(
     name = "file=schemas+marketplace+listing.v1.json",
     src = "schemas/marketplace/listing.v1.json",
     mode = "reference",

@@ -66,6 +66,9 @@ pub struct Target {
     pub fixed_topic: Option<(String, i32)>,
     /// The consumer group a source must use (an Event Hubs consumer group).
     pub group: Option<String>,
+    /// The replication factor of the topics the suite creates (`-1`: the
+    /// broker's default; Confluent Cloud refuses anything but 3 or the default).
+    pub replication: i32,
     mock: Option<MockCluster<'static, DefaultProducerContext>>,
 }
 
@@ -109,6 +112,7 @@ impl Target {
             can_admin: true,
             fixed_topic: None,
             group: None,
+            replication: 1,
             mock: Some(mock),
         }
     }
@@ -127,6 +131,7 @@ impl Target {
             can_admin: true,
             fixed_topic: None,
             group: None,
+            replication: 1,
             mock: None,
         })
     }
@@ -145,6 +150,7 @@ impl Target {
             can_admin: true,
             fixed_topic: None,
             group: None,
+            replication: 1,
             mock: None,
         })
     }
@@ -178,6 +184,7 @@ impl Target {
                 can_admin: false,
                 fixed_topic: Some((hub, partitions)),
                 group: Some(group),
+                replication: 1,
                 mock: None,
             });
         }
@@ -202,6 +209,46 @@ impl Target {
             can_admin: false,
             fixed_topic: Some((hub, partitions)),
             group: Some(group),
+            replication: 1,
+            mock: None,
+        })
+    }
+
+    /// A Confluent Cloud cluster (CC0 Task 0 of plan CC1), when
+    /// `LOAMS_CONFLUENT_BOOTSTRAP` is set: `sasl_ssl`, PLAIN with a Kafka API
+    /// key (`LOAMS_CONFLUENT_API_KEY`, `LOAMS_CONFLUENT_API_SECRET`), full
+    /// verification against the probed system roots. Never runs in CI. The
+    /// key needs CREATE on the `loams-cc0-` topic prefix and the checkpoint
+    /// topic (`LOAMS_CONFLUENT_CHECKPOINT_TOPIC`, default
+    /// `loams-cc0-checkpoints`), READ on the `grp-` and `suite-reader-` group
+    /// prefixes, WRITE on the `loams-` transactional-id prefix and
+    /// IDEMPOTENT_WRITE.
+    pub fn confluent() -> Option<Self> {
+        let bootstrap = std::env::var("LOAMS_CONFLUENT_BOOTSTRAP")
+            .ok()
+            .filter(|v| !v.is_empty());
+        let Some(bootstrap) = bootstrap else {
+            eprintln!("skipped: the Confluent Cloud suite needs LOAMS_CONFLUENT_BOOTSTRAP");
+            return None;
+        };
+        let key = std::env::var("LOAMS_CONFLUENT_API_KEY").expect("LOAMS_CONFLUENT_API_KEY");
+        let secret =
+            std::env::var("LOAMS_CONFLUENT_API_SECRET").expect("LOAMS_CONFLUENT_API_SECRET");
+        Some(Self {
+            name: "loams-cc0",
+            bootstrap,
+            base: json!({
+                "security_protocol": "sasl_ssl",
+                "sasl": { "mechanism": "plain", "username": key, "password": "confluent-api-secret" },
+                "tls": { "enabled": true, "verify_full": true },
+                "checkpoint_topic": env_or("LOAMS_CONFLUENT_CHECKPOINT_TOPIC", "loams-cc0-checkpoints"),
+            }),
+            secrets: Arc::new(StaticSecrets::new().with("confluent-api-secret", secret)),
+            profile: None,
+            can_admin: true,
+            fixed_topic: None,
+            group: None,
+            replication: -1,
             mock: None,
         })
     }
@@ -273,7 +320,7 @@ impl Target {
         }
         let admin: AdminClient<DefaultClientContext> =
             self.raw().await.create().expect("admin client");
-        let mut t = NewTopic::new(name, partitions, TopicReplication::Fixed(1));
+        let mut t = NewTopic::new(name, partitions, TopicReplication::Fixed(self.replication));
         if compacted {
             t = t.set("cleanup.policy", "compact");
         }

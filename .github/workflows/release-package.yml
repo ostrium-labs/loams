@@ -82,6 +82,14 @@ on:
         type: boolean
         required: false
         default: false
+      regenerate_checksums:
+        description: >-
+          This dispatch rebuilds a release's assets on purpose (they replace the
+          attached ones): rewrite SHA256SUMS over them instead of failing on the
+          entries that no longer match.
+        type: boolean
+        required: false
+        default: false
       dry_run:
         description: >-
           Build everything from the dispatched ref and keep the files as workflow
@@ -208,6 +216,13 @@ jobs:
           [[ -n "${LOAMS_GPG_PRIVATE_KEY:-}" ]] || missing+=("secret LOAMS_GPG_PRIVATE_KEY")
           [[ -n "${LOAMS_GPG_KEY_ID:-}" ]] || missing+=("variable LOAMS_GPG_KEY_ID")
           if [ ${#missing[@]} -eq 0 ]; then
+            # The current release key (docs/release/signing.md); the previous key
+            # still verifies 0.1.0 to 0.1.2 but should no longer sign.
+            current="$(gpg --batch --show-keys --with-colons docs/release/loams-release-key-2026-10.asc | awk -F: '$1=="fpr"{print $10; exit}')"
+            key_id="${LOAMS_GPG_KEY_ID// /}"
+            if [[ "${current^^}" != *"${key_id^^}" ]]; then
+              echo "::warning title=Previous GPG key::LOAMS_GPG_KEY_ID ($key_id) is not the current release key $current; this release would be signed with another key. See docs/release/signing.md."
+            fi
             echo "mode=sign" >> "$GITHUB_OUTPUT"
             echo "A GPG key is configured; the .deb and the .pkg.tar.zst will be signed."
             echo "The .rpm will still be unsigned here and is signed by .github/workflows/release-sign.yml (SignPath <rpm-sign>)."
@@ -227,7 +242,11 @@ jobs:
   linux:
     name: "Linux: packages (deb, rpm, pkg.tar.zst)"
     needs: [guard, preflight]
-    runs-on: ubuntu-latest
+    # Pinned, never ubuntu-latest: the binary needs the build machine's glibc or
+    # older. ubuntu-latest moved to Ubuntu 26.04 (glibc 2.43) in October 2026 and
+    # the v0.1.2 packages came out needing GLIBC_2.43, so they ran on Arch only.
+    # Ubuntu 24.04 (glibc 2.39) is what the packages and the notes promise.
+    runs-on: ubuntu-24.04
     timeout-minutes: 180
     outputs:
       assets: ${{ steps.collect.outputs.assets }}
@@ -309,6 +328,16 @@ jobs:
         run: |
           set -euo pipefail
           readelf -d target/release/loams | grep NEEDED | tee "$RUNNER_TEMP/needed.txt"
+          # The newest glibc symbol version either binary needs: the oldest glibc it
+          # runs on. 2.39 is Ubuntu 24.04's, which Debian 13 and Fedora 40 exceed.
+          for bin in target/release/loams target/release/git-remote-loams; do
+            need=$(objdump -T "$bin" | grep -o 'GLIBC_[0-9.]*' | sed 's/GLIBC_//' | sort -uV | tail -1)
+            echo "$bin needs glibc $need"
+            if [ "$(printf '%s\n%s\n' "$need" 2.39 | sort -V | tail -1)" != 2.39 ]; then
+              echo "::error::$bin needs glibc $need, newer than 2.39 (Ubuntu 24.04); build it on ubuntu-24.04"
+              exit 1
+            fi
+          done
           readelf -d target/release/git-remote-loams | grep NEEDED | tee "$RUNNER_TEMP/needed-git-remote.txt"
           extra=$(comm -13 <(grep -o '\[.*\]' "$RUNNER_TEMP/needed.txt" | sort -u) \
                            <(grep -o '\[.*\]' "$RUNNER_TEMP/needed-git-remote.txt" | sort -u))
@@ -824,6 +853,7 @@ jobs:
     uses: ./.github/workflows/release-checksums.yml
     with:
       tag: ${{ needs.guard.outputs.tag }}
+      regenerate: ${{ inputs.regenerate_checksums == true }}
     secrets: inherit
 
   # One job edits the release notes, so the Linux, Windows and macOS notes cannot

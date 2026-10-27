@@ -20,6 +20,7 @@ on:
       - "scripts/byoc/**"
       - ".github/workflows/byoc-aws-nightly.yml"
       - ".github/workflows/byoc-reaper.yml"
+      - ".github/workflows/byoc-confluent-*.yml"
       - ".github/workflows/byoc-static.yml"
 
 concurrency:

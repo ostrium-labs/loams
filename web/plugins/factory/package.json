@@ -25,7 +25,8 @@
       "inject": [
         "desktop",
         "router",
-        "slots"
+        "slots",
+        "transport"
       ],
       "provides": [],
       "slots": [
@@ -47,9 +48,11 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@loams/desktop-ui": "workspace:*",
+    "@connectrpc/connect": "2.2.0",
     "@loams/console-host": "workspace:*",
     "@loams/cordis": "workspace:*",
+    "@loams/desktop-ui": "workspace:*",
+    "@loams/proto": "workspace:*",
     "@loams/slots": "workspace:*",
     "@loams/ui": "workspace:*",
     "lucide-react": "catalog:"

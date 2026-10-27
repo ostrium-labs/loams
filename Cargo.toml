@@ -371,6 +371,10 @@ loams-agentd-proto = { path = "crates/loams-agentd-proto", version = "0.1.2" }
 loams-agentd-rpc = { path = "crates/loams-agentd-rpc", version = "0.1.2" }
 loams-agentd-sessions = { path = "crates/loams-agentd-sessions", version = "0.1.2" }
 loams-agentd-store = { path = "crates/loams-agentd-store", version = "0.1.2" }
+# MS1 Task 7 (D1813): the read-only project knowledge cache, and the Walrus
+# fast path it reads through (MS1 Task 4, D1811).
+loams-knowledge = { path = "crates/loams-knowledge", version = "0.1.2" }
+loams-walrus = { path = "crates/loams-walrus", version = "0.1.2" }
 chrono = { version = "0.4", features = ["serde"] }
 deser-hjson = "2.2"
 gethostname = "1"
