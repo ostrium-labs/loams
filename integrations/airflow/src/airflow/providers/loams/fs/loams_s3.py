@@ -34,7 +34,7 @@ def _filesystem_class() -> type:
         from s3fs import S3FileSystem
     except ImportError as exc:  # pragma: no cover
         raise ImportError(
-            "The loams-s3:// scheme needs s3fs: pip install 'apache-airflow-providers-loams[s3]'"
+            "The loams-s3:// scheme needs s3fs: pip install 'airflow-provider-loams[s3]'"
         ) from exc
 
     class LoamsS3FileSystem(S3FileSystem):

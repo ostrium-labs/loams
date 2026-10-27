@@ -4,7 +4,7 @@
 # Executors (LoamsResonateExecutor, lane AF-exec) are added under `executors:`
 # when they land.
 ---
-package-name: apache-airflow-providers-loams
+package-name: airflow-provider-loams
 name: Loams
 description: '`Loams <https://loams.dev/>`__: Postgres, House, streams, object storage, Iceberg tables
   and Graph on one open-source data platform.

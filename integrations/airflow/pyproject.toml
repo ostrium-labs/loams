@@ -3,7 +3,7 @@ requires = ["hatchling>=1.27.0"]
 build-backend = "hatchling.build"
 
 [project]
-name = "apache-airflow-providers-loams"
+name = "airflow-provider-loams"
 version = "0.1.0"
 description = "Apache Airflow provider for Loams: Loams Postgres, House, streams over the Kafka gateway, object storage, Iceberg tables and Graph."
 readme = "README.md"

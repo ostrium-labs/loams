@@ -1,4 +1,4 @@
-# apache-airflow-providers-loams
+# airflow-provider-loams
 
 An Apache Airflow 3.3 provider for [Loams](https://loams.dev): use Loams Postgres, Loams House,
 Loams streams, object storage, Iceberg tables and Loams Graph from your DAGs.
@@ -18,7 +18,7 @@ against a Loams stack. It is not published to PyPI yet. Not an Apache Software F
 | Assets | `loams://<namespace>/<kind>/<name>` URI scheme | | |
 
 ```sh
-pip install 'apache-airflow-providers-loams[all]'   # or [kafka], [s3], [iceberg]
+pip install 'airflow-provider-loams[all]'   # or [kafka], [s3], [iceberg]
 ```
 
 The full guide covers the connection fields, each service and what is not built yet:

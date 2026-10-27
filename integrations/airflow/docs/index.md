@@ -15,7 +15,7 @@ Where it sits in the designs:
 ## Install
 
 ```sh
-pip install 'apache-airflow-providers-loams[all]'
+pip install 'airflow-provider-loams[all]'
 ```
 
 The extras are optional and each one adds a group of hooks:
@@ -140,11 +140,19 @@ Loams's Kafka wire front end is the Iggy Kafka gateway, in the `kafka` compose p
 - `LoamsStreamMessageTrigger` is a `BaseEventTrigger` for `AssetWatcher`:
 
 ```python
-Asset("loams://acme/streams/table-commits", watchers=[AssetWatcher(
-    name="commits",
-    trigger=LoamsStreamMessageTrigger(topics="table-commits", group_id="airflow-commits",
-                                      match={"type": "io.loams.dev.table.commit.v1"}),
-)])
+Asset(
+    "loams://acme/streams/table-commits",
+    watchers=[
+        AssetWatcher(
+            name="commits",
+            trigger=LoamsStreamMessageTrigger(
+                topics="table-commits",
+                group_id="airflow-commits",
+                match={"type": "io.loams.dev.table.commit.v1"},
+            ),
+        )
+    ],
+)
 ```
 
 It fires at most once per record: the offset is committed before the event is yielded.

@@ -70,7 +70,7 @@ class LoamsIcebergHook(LoamsHook):
             from pyiceberg.catalog.rest import RestCatalog
         except ImportError as exc:  # pragma: no cover
             raise ImportError(
-                "Loams Iceberg needs pyiceberg: pip install 'apache-airflow-providers-loams[iceberg]'"
+                "Loams Iceberg needs pyiceberg: pip install 'airflow-provider-loams[iceberg]'"
             ) from exc
         return RestCatalog("loams", **self.catalog_properties())
 

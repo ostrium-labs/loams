@@ -1,4 +1,4 @@
-# The Airflow provider, apache-airflow-providers-loams (integrations/airflow):
+# The Airflow provider, airflow-provider-loams (integrations/airflow):
 # ruff and its unit tests (mocks only; no Loams stack). Runs when the provider,
 # the Python SDK it depends on, or this file changes.
 name: Airflow provider

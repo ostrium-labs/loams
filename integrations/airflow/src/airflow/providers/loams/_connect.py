@@ -219,7 +219,7 @@ class _Base:
         headers = {
             "Content-Type": content_type,
             "Connect-Protocol-Version": "1",
-            "User-Agent": "apache-airflow-providers-loams",
+            "User-Agent": "airflow-provider-loams",
             **self.headers,
         }
         if self.token:

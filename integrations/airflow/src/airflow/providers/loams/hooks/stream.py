@@ -36,7 +36,7 @@ def _kafka() -> Any:
         import confluent_kafka
     except ImportError as exc:  # pragma: no cover - the message is the point
         raise ImportError(
-            "Loams streams need confluent-kafka: pip install 'apache-airflow-providers-loams[kafka]'"
+            "Loams streams need confluent-kafka: pip install 'airflow-provider-loams[kafka]'"
         ) from exc
     return confluent_kafka
 

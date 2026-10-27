@@ -75,7 +75,7 @@ class LoamsObjectStorageHook(LoamsHook):
             from botocore.config import Config
         except ImportError as exc:  # pragma: no cover
             raise ImportError(
-                "Loams object storage needs boto3: pip install 'apache-airflow-providers-loams[s3]'"
+                "Loams object storage needs boto3: pip install 'airflow-provider-loams[s3]'"
             ) from exc
         s = self.settings
         config = Config(

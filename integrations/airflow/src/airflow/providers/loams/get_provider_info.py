@@ -83,7 +83,7 @@ _CONN_FIELDS: dict[str, dict[str, Any]] = {
 
 def get_provider_info() -> dict[str, Any]:
     return {
-        "package-name": "apache-airflow-providers-loams",
+        "package-name": "airflow-provider-loams",
         "name": "Loams",
         "description": "`Loams <https://loams.dev/>`__: Postgres, House, streams, object storage, "
         "Iceberg tables and Graph on one open-source data platform.\n",
