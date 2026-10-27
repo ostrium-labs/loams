@@ -13,7 +13,14 @@
 //!   integers bare (`output_format_json_quote_64bit_integers = 0` is 26.9's
 //!   default), `/` escaped, named tuples as objects;
 //! * **Quoted** (`Values`, and every element inside a composite): strings and
-//!   dates in single quotes, `NULL`, `[…]`, `(…)`, `{k:v}` without spaces.
+//!   dates in single quotes, `NULL`, `[…]`, `(…)`, `{k:v}` without spaces;
+//! * **Raw** (`TabSeparatedRaw*`, ClickHouse's `serializeTextRaw`): as TSV,
+//!   but strings unescaped;
+//! * **Text** (`Pretty*`, `JSONStrings*`, ClickHouse's `serializeText`): as
+//!   Raw, but `NULL` is `ᴺᵁᴸᴸ` (HE1 Task 36).
+//!
+//! `date_time_output_format` (`simple`, `iso`, `unix_timestamp`) changes how
+//! `DateTime` and `DateTime64` are written in every style.
 //!
 //! Floats are written in their shortest round-trip form, laid out as
 //! ClickHouse does: plain digits while the decimal exponent is in
@@ -50,6 +57,41 @@ pub enum Style {
     Json,
     /// `Values`, and values inside arrays, tuples and maps.
     Quoted,
+    /// `TabSeparatedRaw*`: TSV without escaping (`serializeTextRaw`).
+    Raw,
+    /// The presentational text of `Pretty*` and `JSONStrings*`
+    /// (`serializeText`): Raw, with `NULL` as `ᴺᵁᴸᴸ`.
+    Text,
+}
+
+/// `date_time_output_format`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DateTimeOutputFormat {
+    /// `YYYY-MM-DD hh:mm:ss[.f…]` in the column's zone (the default).
+    #[default]
+    Simple,
+    /// `YYYY-MM-DDThh:mm:ss[.f…]Z`, always in UTC.
+    Iso,
+    /// Seconds since the epoch (`DateTime64`: with its fraction digits).
+    UnixTimestamp,
+}
+
+impl DateTimeOutputFormat {
+    /// The setting's value as ClickHouse spells it.
+    ///
+    /// # Errors
+    ///
+    /// `36 BAD_ARGUMENTS` for any other value, as ClickHouse answers.
+    pub fn parse(value: &str) -> Result<Self, ChError> {
+        match value.to_ascii_lowercase().as_str() {
+            "simple" => Ok(Self::Simple),
+            "iso" => Ok(Self::Iso),
+            "unix_timestamp" => Ok(Self::UnixTimestamp),
+            other => Err(ChError::bad_arguments(format!(
+                "Unexpected value of DateTimeOutputFormat: '{other}'"
+            ))),
+        }
+    }
 }
 
 /// The settings that change how values are written.
@@ -68,6 +110,8 @@ pub struct TextSettings {
     pub json_named_tuples_as_objects: bool,
     /// `output_format_decimal_trailing_zeros` (default: off).
     pub decimal_trailing_zeros: bool,
+    /// `date_time_output_format` (default: `simple`).
+    pub date_time_output_format: DateTimeOutputFormat,
 }
 
 impl Default for TextSettings {
@@ -79,6 +123,7 @@ impl Default for TextSettings {
             json_escape_forward_slashes: true,
             json_named_tuples_as_objects: true,
             decimal_trailing_zeros: false,
+            date_time_output_format: DateTimeOutputFormat::Simple,
         }
     }
 }
@@ -172,9 +217,10 @@ fn bad_array(t: &ChType, array: &dyn Array) -> ChError {
 impl Writer<'_> {
     fn null(&self, style: Style, out: &mut Vec<u8>) {
         out.extend_from_slice(match style {
-            Style::Tsv | Style::Csv => b"\\N",
+            Style::Tsv | Style::Csv | Style::Raw => b"\\N",
             Style::Json => b"null",
             Style::Quoted => b"NULL",
+            Style::Text => "ᴺᵁᴸᴸ".as_bytes(),
         });
     }
 
@@ -397,12 +443,7 @@ impl Writer<'_> {
             }
             ChType::DateTime(tz) => {
                 let secs = timestamp_value(array, row).ok_or_else(|| bad_array(t, array))?;
-                let text = datetime_text(
-                    secs.0,
-                    0,
-                    0,
-                    tz.as_deref().unwrap_or(&self.settings.timezone),
-                )?;
+                let text = self.datetime(secs.0, 0, 0, tz.as_deref())?;
                 self.text_like(&text, style, out);
             }
             ChType::DateTime64(p, tz) => {
@@ -411,11 +452,11 @@ impl Writer<'_> {
                 let _ = unit;
                 let ticks = value.div_euclid(ticks_per_unit(*p));
                 let scale = 10i64.pow(u32::from(*p));
-                let text = datetime_text(
+                let text = self.datetime(
                     ticks.div_euclid(scale),
                     ticks.rem_euclid(scale),
                     *p,
-                    tz.as_deref().unwrap_or(&self.settings.timezone),
+                    tz.as_deref(),
                 )?;
                 self.text_like(&text, style, out);
             }
@@ -504,6 +545,36 @@ impl Writer<'_> {
         Ok(())
     }
 
+    /// A `DateTime` (`precision` 0) or `DateTime64` in
+    /// `date_time_output_format`.
+    fn datetime(
+        &self,
+        secs: i64,
+        frac: i64,
+        precision: u8,
+        tz: Option<&str>,
+    ) -> Result<String, ChError> {
+        match self.settings.date_time_output_format {
+            DateTimeOutputFormat::Simple => {
+                datetime_text(secs, frac, precision, tz.unwrap_or(&self.settings.timezone))
+            }
+            DateTimeOutputFormat::Iso => {
+                let mut text = datetime_text(secs, frac, precision, "UTC")?;
+                // `YYYY-MM-DD hh:mm:ss` → `YYYY-MM-DDThh:mm:ssZ`.
+                text.replace_range(10..11, "T");
+                text.push('Z');
+                Ok(text)
+            }
+            DateTimeOutputFormat::UnixTimestamp => {
+                if precision == 0 {
+                    return Ok(secs.to_string());
+                }
+                let ticks = secs as i128 * 10i128.pow(u32::from(precision)) + frac as i128;
+                Ok(decimal_text(&ticks.to_string(), precision, true))
+            }
+        }
+    }
+
     /// The bytes of a `String` or `FixedString` key, unescaped.
     fn raw_string(
         &self,
@@ -559,7 +630,7 @@ impl Writer<'_> {
     ) -> Result<(), ChError> {
         match style {
             Style::Json => body(self, Style::Json, out),
-            Style::Tsv | Style::Quoted => body(self, Style::Quoted, out),
+            Style::Tsv | Style::Quoted | Style::Raw | Style::Text => body(self, Style::Quoted, out),
             Style::Csv => {
                 let mut inner = Vec::new();
                 body(self, Style::Quoted, &mut inner)?;
@@ -597,7 +668,7 @@ impl Writer<'_> {
     /// A value ClickHouse writes as text: dates, times, UUIDs, IPs.
     fn text_like(&self, text: &str, style: Style, out: &mut Vec<u8>) {
         match style {
-            Style::Tsv => out.extend_from_slice(text.as_bytes()),
+            Style::Tsv | Style::Raw | Style::Text => out.extend_from_slice(text.as_bytes()),
             Style::Csv => csv_string(text.as_bytes(), out),
             Style::Json => self.json_string(text.as_bytes(), out),
             Style::Quoted => {
@@ -611,6 +682,7 @@ impl Writer<'_> {
     fn string(&self, bytes: &[u8], style: Style, out: &mut Vec<u8>) {
         match style {
             Style::Tsv => escape(bytes, out),
+            Style::Raw | Style::Text => out.extend_from_slice(bytes),
             Style::Csv => csv_string(bytes, out),
             Style::Json => self.json_string(bytes, out),
             Style::Quoted => {
@@ -622,25 +694,32 @@ impl Writer<'_> {
     }
 
     fn json_string(&self, bytes: &[u8], out: &mut Vec<u8>) {
-        out.push(b'"');
-        for &b in bytes {
-            match b {
-                b'"' => out.extend_from_slice(b"\\\""),
-                b'\\' => out.extend_from_slice(b"\\\\"),
-                b'/' if self.settings.json_escape_forward_slashes => out.extend_from_slice(b"\\/"),
-                b'\n' => out.extend_from_slice(b"\\n"),
-                b'\t' => out.extend_from_slice(b"\\t"),
-                b'\r' => out.extend_from_slice(b"\\r"),
-                0x08 => out.extend_from_slice(b"\\b"),
-                0x0c => out.extend_from_slice(b"\\f"),
-                b if b < 0x20 => {
-                    let _ = write!(Bytes(out), "\\u{b:04x}");
-                }
-                b => out.push(b),
-            }
-        }
-        out.push(b'"');
+        json_string(bytes, self.settings, out);
     }
+}
+
+/// A JSON string as ClickHouse's `writeJSONString` writes one: `/` escaped
+/// while `output_format_json_escape_forward_slashes` is on, control bytes as
+/// `\uXXXX`, other bytes (UTF-8 included) as they are.
+pub fn json_string(bytes: &[u8], settings: &TextSettings, out: &mut Vec<u8>) {
+    out.push(b'"');
+    for &b in bytes {
+        match b {
+            b'"' => out.extend_from_slice(b"\\\""),
+            b'\\' => out.extend_from_slice(b"\\\\"),
+            b'/' if settings.json_escape_forward_slashes => out.extend_from_slice(b"\\/"),
+            b'\n' => out.extend_from_slice(b"\\n"),
+            b'\t' => out.extend_from_slice(b"\\t"),
+            b'\r' => out.extend_from_slice(b"\\r"),
+            0x08 => out.extend_from_slice(b"\\b"),
+            0x0c => out.extend_from_slice(b"\\f"),
+            b if b < 0x20 => {
+                let _ = write!(Bytes(out), "\\u{b:04x}");
+            }
+            b => out.push(b),
+        }
+    }
+    out.push(b'"');
 }
 
 /// `std::fmt::Write` into a byte vector.
@@ -655,7 +734,7 @@ impl std::fmt::Write for Bytes<'_> {
 
 /// ClickHouse's backslash escapes (TSV, and inside single quotes): TSV
 /// escapes `'` too (measured: `it's` is `it\'s`).
-fn escape(bytes: &[u8], out: &mut Vec<u8>) {
+pub fn escape(bytes: &[u8], out: &mut Vec<u8>) {
     for &b in bytes {
         match b {
             b'\\' => out.extend_from_slice(b"\\\\"),
@@ -671,7 +750,8 @@ fn escape(bytes: &[u8], out: &mut Vec<u8>) {
     }
 }
 
-fn csv_string(bytes: &[u8], out: &mut Vec<u8>) {
+/// A CSV field in double quotes, `"` doubled.
+pub fn csv_string(bytes: &[u8], out: &mut Vec<u8>) {
     out.push(b'"');
     for &b in bytes {
         if b == b'"' {

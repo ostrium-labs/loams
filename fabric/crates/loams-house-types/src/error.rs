@@ -58,6 +58,8 @@ codes! {
     unexpected_ast_structure => 223, "UNEXPECTED_AST_STRUCTURE";
     support_is_disabled => 344, "SUPPORT_IS_DISABLED";
     unknown_setting => 115, "UNKNOWN_SETTING";
+    unknown_format => 73, "UNKNOWN_FORMAT";
+    network_error => 210, "NETWORK_ERROR";
 }
 
 impl ChError {

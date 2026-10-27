@@ -89,6 +89,9 @@ pub enum Kind {
     /// Same number of rows, different values (or, unordered, different
     /// multiplicities).
     Values,
+    /// A case in a named output format (`-- oracle: format = <F>`): the
+    /// answers' bytes differ.
+    Bytes,
 }
 
 impl Kind {
@@ -99,6 +102,7 @@ impl Kind {
             Self::Types => "types",
             Self::RowCount => "row_count",
             Self::Values => "values",
+            Self::Bytes => "bytes",
         }
     }
 }
@@ -325,6 +329,76 @@ pub fn compare(
     found
 }
 
+/// Compares two answers in a named output format as bytes, after removing
+/// `JSON*`'s `statistics` (times and read counts differ between runs). Errors
+/// compare by code, as in [`compare`].
+pub fn compare_bytes(
+    baseline: &Result<Vec<u8>, Outcome>,
+    other: &Result<Vec<u8>, Outcome>,
+) -> Vec<Mismatch> {
+    match (baseline, other) {
+        (Ok(a), Ok(b)) => {
+            let (a, b) = (strip_statistics(a), strip_statistics(b));
+            if a == b {
+                return Vec::new();
+            }
+            let at = a
+                .iter()
+                .zip(&b)
+                .position(|(x, y)| x != y)
+                .unwrap_or(a.len().min(b.len()));
+            let from = at.saturating_sub(24);
+            let show = |bytes: &[u8]| {
+                let end = (at + 40).min(bytes.len());
+                clip(
+                    &format!("{:?}", String::from_utf8_lossy(&bytes[from.min(end)..end])),
+                    120,
+                )
+            };
+            vec![Mismatch {
+                kind: Kind::Bytes,
+                detail: format!(
+                    "{} bytes vs {} bytes, first difference at byte {at}: {} vs {}",
+                    a.len(),
+                    b.len(),
+                    show(&a),
+                    show(&b)
+                ),
+            }]
+        }
+        (Err(Outcome::Error { code: a, .. }), Err(Outcome::Error { code: b, .. })) if a == b => {
+            Vec::new()
+        }
+        (a, b) => {
+            let side = |r: &Result<Vec<u8>, Outcome>| match r {
+                Ok(bytes) => format!("{} bytes", bytes.len()),
+                Err(e) => describe(e),
+            };
+            vec![Mismatch {
+                kind: Kind::Error,
+                detail: format!("baseline {}, target {}", side(a), side(b)),
+            }]
+        }
+    }
+}
+
+/// Removes `,\n\n\t"statistics":\n\t{ … \n\t}` from a `JSON*` document; any
+/// other answer comes back unchanged.
+pub fn strip_statistics(document: &[u8]) -> Vec<u8> {
+    const KEY: &[u8] = b",\n\n\t\"statistics\":\n\t{\n";
+    let find = |hay: &[u8], needle: &[u8]| hay.windows(needle.len()).position(|w| w == needle);
+    let Some(start) = find(document, KEY) else {
+        return document.to_vec();
+    };
+    let rest = start + KEY.len();
+    let Some(end) = find(&document[rest..], b"\n\t}").map(|e| rest + e + 3) else {
+        return document.to_vec();
+    };
+    let mut out = document[..start].to_vec();
+    out.extend_from_slice(&document[end..]);
+    out
+}
+
 /// The rows of each sorted multiset that the other lacks, multiplicity counted.
 fn multiset_difference<'a>(
     a: &'a [Vec<Canon>],
@@ -381,6 +455,30 @@ fn clip(s: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn byte_cases_compare_without_statistics() {
+        let a =
+            b"{\n\t\"rows\": 1,\n\n\t\"statistics\":\n\t{\n\t\t\"elapsed\": 0.1\n\t}\n}\n".to_vec();
+        let b =
+            b"{\n\t\"rows\": 1,\n\n\t\"statistics\":\n\t{\n\t\t\"elapsed\": 0.2\n\t}\n}\n".to_vec();
+        assert!(compare_bytes(&Ok(a.clone()), &Ok(b)).is_empty());
+        let c = b"{\n\t\"rows\": 2\n}\n".to_vec();
+        let found = compare_bytes(&Ok(a), &Ok(c));
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].kind, Kind::Bytes);
+        let err = |code| {
+            Err(Outcome::Error {
+                code,
+                message: String::new(),
+            })
+        };
+        assert!(compare_bytes(&err(48), &err(48)).is_empty());
+        assert_eq!(
+            compare_bytes(&Ok(Vec::new()), &err(48))[0].kind,
+            Kind::Error
+        );
+    }
     use serde_json::json;
 
     #[test]

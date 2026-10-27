@@ -128,6 +128,21 @@ impl Client {
         Ok(parse_response(status, code.as_deref(), &text))
     }
 
+    /// Runs a case's query in `format` and returns the answer's bytes, or the
+    /// error outcome.
+    pub fn query_bytes(
+        &self,
+        target: &Target,
+        sql: &str,
+        format: &str,
+    ) -> Result<Result<Vec<u8>, Outcome>, Unreachable> {
+        let body = format!("{}\nFORMAT {format}", sql.trim_end().trim_end_matches(';'));
+        Ok(match self.fetch(target, &body)? {
+            Ok(bytes) => Ok(bytes),
+            Err(text) => Err(error_outcome(None, &text)),
+        })
+    }
+
     /// Runs a setup statement; `Ok(None)` when it succeeded, else the error.
     pub fn execute(&self, target: &Target, sql: &str) -> Result<Option<Outcome>, Unreachable> {
         let (status, code, text) = self.post(target, sql)?;

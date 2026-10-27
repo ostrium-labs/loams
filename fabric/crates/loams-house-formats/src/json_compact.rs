@@ -1,24 +1,15 @@
-//! `JSONCompactEachRowWithNamesAndTypes`: a JSON array of the column names,
-//! one of their ClickHouse types, then one JSON array per row, each value in
-//! the JSON style of `loams_house_types::text`.
+//! `JSONCompactEachRowWithNamesAndTypes`, the format the oracle reads every
+//! answer in (HE0 R6.2): a JSON array of the column names, one of their
+//! ClickHouse types, then one JSON array per row. Since Task 36 it is one of
+//! [`crate::json`]'s writers; this is the shortcut Task 23's callers use.
 
 use arrow_array::RecordBatch;
 use loams_house_types::ChError;
-use loams_house_types::text::{Style, TextSettings, write_value};
+use loams_house_types::text::TextSettings;
 
 use crate::Column;
-
-fn json_string(s: &str, settings: &TextSettings, out: &mut Vec<u8>) -> Result<(), ChError> {
-    let array = arrow_array::StringArray::from(vec![s]);
-    write_value(
-        &loams_house_types::ChType::String,
-        &array,
-        0,
-        Style::Json,
-        settings,
-        out,
-    )
-}
+use crate::settings::FormatSettings;
+use crate::writer::{Format, Stats, writer_for};
 
 /// Writes `batches` (whose columns are `columns`) in
 /// `JSONCompactEachRowWithNamesAndTypes`.
@@ -32,50 +23,20 @@ pub fn write(
     settings: &TextSettings,
     out: &mut Vec<u8>,
 ) -> Result<(), ChError> {
-    for header in [true, false] {
-        out.push(b'[');
-        for (n, c) in columns.iter().enumerate() {
-            if n > 0 {
-                out.push(b',');
-            }
-            // Types on one line: ClickHouse writes `Tuple(a UInt8, b String)` here
-            // (measured), not `toTypeName`'s multi-line form.
-            let text = if header {
-                c.name.clone()
-            } else {
-                c.ty.to_compact_string()
-            };
-            json_string(&text, settings, out)?;
-        }
-        out.extend_from_slice(b"]\n");
-    }
+    let settings = FormatSettings {
+        text: settings.clone(),
+        ..FormatSettings::default()
+    };
+    let format = Format::JsonCompactEachRow {
+        strings: false,
+        names: true,
+        types: true,
+    };
+    let mut w = writer_for(format, columns, &settings, out)?;
     for batch in batches {
-        if batch.num_columns() != columns.len() {
-            return Err(ChError::logical_error(format!(
-                "a batch of {} columns for {} output columns",
-                batch.num_columns(),
-                columns.len()
-            )));
-        }
-        for row in 0..batch.num_rows() {
-            out.push(b'[');
-            for (n, c) in columns.iter().enumerate() {
-                if n > 0 {
-                    out.push(b',');
-                }
-                write_value(
-                    &c.ty,
-                    batch.column(n).as_ref(),
-                    row,
-                    Style::Json,
-                    settings,
-                    out,
-                )?;
-            }
-            out.extend_from_slice(b"]\n");
-        }
+        w.write_batch(batch)?;
     }
-    Ok(())
+    w.finish(&Stats::default())
 }
 
 #[cfg(test)]

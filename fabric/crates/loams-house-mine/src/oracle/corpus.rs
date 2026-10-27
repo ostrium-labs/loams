@@ -12,7 +12,10 @@
 //!
 //! - `-- oracle: precision = 6`: significant digits for float columns;
 //! - `-- oracle: order = unordered` (or `ordered`): overrides the detection,
-//!   which treats a case as ordered when its outermost query has `ORDER BY`.
+//!   which treats a case as ordered when its outermost query has `ORDER BY`;
+//! - `-- oracle: format = JSON`: the answer is read in that output format and
+//!   compared as bytes, after removing `JSON*`'s `statistics` (plan HE1 Task
+//!   36), instead of as `JSONCompactEachRowWithNamesAndTypes` values.
 
 use std::path::{Path, PathBuf};
 
@@ -58,6 +61,8 @@ pub struct Case {
     pub sql: String,
     pub order: Order,
     pub precision: Precision,
+    /// The output format compared as bytes, when the case names one.
+    pub format: Option<String>,
 }
 
 /// Reads `corpora.toml` and every corpus it names.
@@ -114,6 +119,7 @@ pub fn load(path: &Path) -> anyhow::Result<Vec<Corpus>> {
 pub fn parse_case(id: &str, text: &str) -> anyhow::Result<Case> {
     let mut precision = Precision::default();
     let mut order = None;
+    let mut format = None;
     for line in text.lines() {
         let Some(directive) = line.trim().strip_prefix("-- oracle:") else {
             continue;
@@ -133,6 +139,12 @@ pub fn parse_case(id: &str, text: &str) -> anyhow::Result<Case> {
             }
             ("order", "ordered") => order = Some(Order::Ordered),
             ("order", "unordered") => order = Some(Order::Unordered),
+            ("format", name)
+                if !name.is_empty()
+                    && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') =>
+            {
+                format = Some(name.to_string());
+            }
             (key, value) => bail!("unknown directive {key} = {value}"),
         }
     }
@@ -153,6 +165,7 @@ pub fn parse_case(id: &str, text: &str) -> anyhow::Result<Case> {
         sql: sql.clone(),
         order,
         precision,
+        format,
     })
 }
 
@@ -340,6 +353,10 @@ mod tests {
         let unordered =
             parse_case("c/f", "-- oracle: order = unordered\nSELECT 1 ORDER BY 1").expect("case");
         assert_eq!(unordered.order, Order::Unordered);
+        let json = parse_case("c/g", "-- oracle: format = JSON\nSELECT 1").expect("case");
+        assert_eq!(json.format.as_deref(), Some("JSON"));
+        assert!(parse_case("c/h", "-- oracle: format = JSON; DROP\nSELECT 1").is_err());
+        assert_eq!(parse_case("c/i", "SELECT 1").expect("case").format, None);
     }
 
     #[test]
