@@ -9869,6 +9869,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-risingwave"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "futures",
+ "loams-engines",
+ "object_store 0.14.2",
+ "rand 0.9.5",
+ "reqwest 0.13.5",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "time",
+ "tokio",
+ "tokio-postgres",
+ "toml 0.8.23",
+ "tracing",
+]
+
+[[package]]
 name = "loams-safekeeper"
 version = "0.1.2"
 dependencies = [
