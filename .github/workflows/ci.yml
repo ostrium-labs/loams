@@ -491,8 +491,11 @@ jobs:
       # build free of the git-pinned tikv-client.
       # The product features (git, buildcache, registry, sqldb, postgres) are linted here too:
       # dev once stopped building with `--features git` and no fast-tier job noticed (GT1 T18.4).
-      - name: clippy (loams with the tikv, graph, product and optional listener features)
-        run: cargo clippy -p loams --all-targets --features tikv,live-tikv,durable-tikv,stream-grpc,pgwire,mysql-wire,graph,git,buildcache,registry,sqldb,postgres --locked -- -D warnings
+      - name: clippy (loams with the tikv, graph, product, spark and optional listener features)
+        run: cargo clippy -p loams --all-targets --features tikv,live-tikv,durable-tikv,stream-grpc,pgwire,mysql-wire,graph,git,buildcache,registry,sqldb,postgres,spark --locked -- -D warnings
+      # loams-spark's Kubernetes runner (design 81 SP-b) is behind its own feature.
+      - name: clippy (loams-spark kubernetes runner)
+        run: cargo clippy -p loams-spark --features kubernetes --all-targets --locked -- -D warnings
       # loams-gateway's Temporal API module (design 74, plan DX1 Task 9) is
       # behind its own feature.
       - name: clippy (loams-gateway temporal module)
