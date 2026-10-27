@@ -1,7 +1,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { ProviderConfigs } from "../src/main/agent/providers/presets";
 import { ChatService } from "../src/main/agent/service";
 import { ChatStore } from "../src/main/agent/store";
