@@ -354,6 +354,9 @@ mod tests {
             window_end: time_from_unix_ms(1_000),
             resource: "r#ino=1".into(),
             counter: Some(seq + 1),
+            peak_bytes: None,
+            cpu_usec: None,
+            estimated: false,
         }
         .into_event("n", seq)
     }

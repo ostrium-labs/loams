@@ -37,8 +37,11 @@ cargo_package(
         },
     ],
     deps = [
+        "//crates/loams-cloudevents:loams-cloudevents",
+        "//crates/loams-log:loams-log",
         "//third-party/rust:async-trait",
         "//third-party/rust:base64-0_23",
+        "//third-party/rust:bytes",
         "//third-party/rust:clap",
         "//third-party/rust:reqwest-0_13",
         "//third-party/rust:serde",
@@ -48,7 +51,6 @@ cargo_package(
         "//third-party/rust:tokio",
         "//third-party/rust:tracing",
         "//third-party/rust:tracing-subscriber",
-        "//third-party/rust:xxhash-rust",
     ],
     dev_deps = [
         "//third-party/rust:httpmock",

@@ -118,7 +118,7 @@ impl<R: TenantResolver> Agent<R> {
             let resource = delta.sample.resource_id();
             let window_start = time_from_unix_ms(delta.window_start_ms);
             let window_end = time_from_unix_ms(delta.window_end_ms);
-            let mut push = |meter, value, counter| {
+            let mut push = |meter, value, counter, peak_bytes| {
                 let measurement = Measurement {
                     attribution: attribution.clone(),
                     source: SourceKind::Cgroup,
@@ -128,18 +128,27 @@ impl<R: TenantResolver> Agent<R> {
                     window_end,
                     resource: resource.clone(),
                     counter,
+                    peak_bytes,
+                    cpu_usec: None,
+                    estimated: false,
                 };
                 let seq = self.next_seq + events.len() as u64;
                 events.push(measurement.into_event(&self.node, seq));
             };
             if delta.cpu_usec > 0 {
-                push(Meter::CpuUsec, delta.cpu_usec, Some(delta.sample.cpu_usec));
+                push(
+                    Meter::CpuUsec,
+                    delta.cpu_usec,
+                    Some(delta.sample.cpu_usec),
+                    None,
+                );
             }
             if delta.memory_byte_seconds > 0 {
                 push(
                     Meter::MemoryByteSeconds,
                     delta.memory_byte_seconds,
                     delta.sample.memory_current,
+                    delta.sample.memory_peak,
                 );
             }
         }

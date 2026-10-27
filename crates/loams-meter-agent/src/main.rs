@@ -58,9 +58,13 @@ struct Cli {
     /// The meter stream.
     #[arg(long, default_value = "_meter")]
     stream: String,
-    /// The meter stream's partition count.
-    #[arg(long, default_value_t = 16)]
+    /// The meter stream's partition count (§63 §7.1: 32).
+    #[arg(long, default_value_t = 32)]
     partitions: u32,
+    /// The cluster named in each event's `source`
+    /// (`loams://<cluster>/meter-agent/<node>`).
+    #[arg(long, env = "LOAMS_CLUSTER", default_value = "local")]
+    cluster: String,
     /// Scan once, forward once, and exit.
     #[arg(long)]
     once: bool,
@@ -98,6 +102,7 @@ async fn run(cli: Cli) -> Result<(), MeterError> {
             let mut config = StreamSinkConfig::new(url, cli.partitions);
             config.namespace = cli.stream_namespace;
             config.stream = cli.stream;
+            config.cluster = cli.cluster;
             Some(StreamSink::new(config)?)
         }
         None => None,
