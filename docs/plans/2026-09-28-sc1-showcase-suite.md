@@ -60,7 +60,7 @@
 | # | Ruling | Why | Cost if wrong |
 |---|---|---|---|
 | 1 | **GlitchTip, not Sentry** (D-SC-2) | Sentry is FSL-1.1, not open source; GlitchTip is MIT and takes Sentry SDKs | Missing replays and profiling; Sentry self-hosted can be an optional non-OSS profile later |
-| 2 | **Keycloak** as the IdP (D-SC-3) | Apache-2.0, no enterprise split, already §19's broker | Keycloak's weight (Java); Authentik is the fallback |
+| 2 | **Keycloak** as the IdP (D-SC-3) | Apache-2.0, no enterprise split, already §19's broker | Keycloak's weight (Java); Zitadel (§76 D1600) is the fallback |
 | 3 | **Plane signs in through Forgejo's OAuth2 provider** with Plane's Gitea provider | Generic OIDC is a paid Plane feature; Forgejo serves the Gitea endpoints Plane calls | If a Plane release drops or changes the Gitea provider, Plane falls back to forward-auth plus provisioned accounts |
 | 4 | **PostHog is an optional profile**, behind forward-auth, FOSS build | SSO and RBAC are `ee/`; the hobby deploy is heavy and unsupported | The showcase without product analytics; documented |
 | 5 | **OpenFGA is the source of truth; app ACLs are projections** (D-SC-4) | Most apps cannot call OpenFGA | Drift between reconcile runs; bounded by the schedule interval and reported |

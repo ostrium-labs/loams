@@ -196,7 +196,6 @@ pub const DENIED_ENGINES: &[&str] = &[
     "Kafka",
     "RabbitMQ",
     "NATS",
-    "Distributed",
     "Dictionary",
     "Iceberg",
     "IcebergS3",
@@ -247,6 +246,9 @@ pub const DENIED_ENGINES: &[&str] = &[
 /// family) is the front's, mapped onto Iceberg (HS1 Task 10); views are the
 /// front's own (HS1 Tasks 11 and 17); the rest keep their data in the session.
 pub const ALLOWED_ENGINES: &[&str] = &[
+    // HE1 R9.13: topology syntax, accepted (a Distributed table reads and writes
+    // its local table; §75 §7.3).
+    "Distributed",
     "Memory",
     "Null",
     "View",
@@ -444,7 +446,7 @@ pub const HOST_FUNCTIONS: &[HostFunction] = &[
 
 /// The `system` tables a statement may read: catalogs of what the engine can do,
 /// the namespace's own objects, and generators. The rest describe the host
-/// (`disks`, `server_settings`, `asynchronous_metrics`, `macros`,
+/// (`disks`, `server_settings`, `asynchronous_metrics`,
 /// `user_directories`, `certificates`, `stack_trace`, …) or the engine's
 /// internals, and are `344` (§49 §13.1). `databases`, `tables`, `columns`,
 /// `parts`, `processes` and `errors` are the House's own ([`crate::system`],
@@ -488,6 +490,12 @@ pub const ALLOWED_SYSTEM_TABLES: &[&str] = &[
     // The namespace's `_house.query_log` (HS1 Task 23): never chDB's own,
     // the front's view answers it.
     "query_log",
+    // A one-node House's cluster (HE1 R9.62): never chDB's own, the front's
+    // views answer them.
+    "clusters",
+    "macros",
+    "mutations",
+    "distributed_ddl_queue",
 ];
 
 /// The database `merge()` may name besides the current one. HS1 Task 11 builds
@@ -561,9 +569,51 @@ fn listed(list: &[&str], name: &str) -> bool {
     list.iter().any(|entry| entry.eq_ignore_ascii_case(name))
 }
 
+/// Engines §75 §7.5 puts in Tier 2 (HE1 R8.3): a table may not name them, but
+/// they are features the House does not have, not a reach outside the
+/// namespace, so `CREATE` answers `48` naming the feature (the deny list keeps
+/// them out of every other statement, `344`).
+pub const TIER2_ENGINES: &[(&str, &str)] = &[
+    (
+        "Kafka",
+        "a Kafka consumer table: use a pipe (ENGINE = LoamsStream or IggyTopic)",
+    ),
+    (
+        "RabbitMQ",
+        "a RabbitMQ consumer table: use a pipe (ENGINE = LoamsStream)",
+    ),
+    (
+        "NATS",
+        "a NATS consumer table: use a pipe (ENGINE = LoamsStream)",
+    ),
+    ("MySQL", "a MySQL table: use a Loams connector"),
+    (
+        "MaterializedMySQL",
+        "a MySQL replica: use a Loams connector",
+    ),
+    (
+        "PostgreSQL",
+        "a PostgreSQL table: use Loams Postgres or a connector",
+    ),
+    (
+        "Buffer",
+        "a Buffer table: lake inserts are batched already (async_insert)",
+    ),
+];
+
 /// `344` for an engine a `CREATE` names: one on [`DENIED_ENGINES`] always, and,
-/// for a temporary table, anything outside [`ALLOWED_TEMPORARY_ENGINES`].
+/// for a temporary table, anything outside [`ALLOWED_TEMPORARY_ENGINES`]; `48`
+/// for a table of a [`TIER2_ENGINES`] engine.
 pub fn check_engine(engine: &str, temporary: bool) -> Result<(), ChError> {
+    if !temporary
+        && let Some((name, why)) = TIER2_ENGINES
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case(engine))
+    {
+        return Err(ChError::not_implemented(format!(
+            "Engine {name} is not on the House's surface (Tier 2, §75 §7.5): {why}"
+        )));
+    }
     if listed(DENIED_ENGINES, engine) || (temporary && !listed(ALLOWED_TEMPORARY_ENGINES, engine)) {
         return Err(disabled(format!(
             "Engine {engine} is disabled on the House: {}",
@@ -1745,7 +1795,6 @@ mod tests {
     fn engines_include_the_merge_buffer_and_object_store_ones() {
         for engine in [
             "Merge",
-            "Buffer",
             "Alias",
             "ExternalDistributed",
             "COSN",
@@ -1758,6 +1807,26 @@ mod tests {
         }
         for engine in ALLOWED_ENGINES {
             assert!(!listed(DENIED_ENGINES, engine), "{engine}");
+        }
+    }
+
+    /// HE1 R8.3: a table of a Tier 2 engine is `48`, naming the feature; a
+    /// temporary table of one is still `344`.
+    #[test]
+    fn tier2_engines_are_48() {
+        for engine in [
+            "Kafka",
+            "RabbitMQ",
+            "NATS",
+            "MySQL",
+            "MaterializedMySQL",
+            "PostgreSQL",
+            "Buffer",
+        ] {
+            let err = check_engine(engine, false).expect_err(engine);
+            assert_eq!(err.code, 48, "{engine}");
+            assert!(err.message.contains("Tier 2"), "{err:?}");
+            assert_eq!(code(check_engine(engine, true)), Some(344), "{engine}");
         }
     }
 

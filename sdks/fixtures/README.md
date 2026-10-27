@@ -54,12 +54,31 @@ Two more distinctions the corpus keeps:
   the Connect streaming envelope, so a streaming client that reports it has to
   read the envelope.
 
+## The app scenario (SDKP)
+
+`recorded/app/` is a notes app, recorded from `loams dev` by
+`record-fixtures.mjs --source app` (the scenario is
+`sdks/conformance/app-scenarios.mjs`, and `app-scenario.md` says it in prose):
+
+| Fixture | What it walks |
+|---|---|
+| `app_collections` | namespaces, collections from the `Schema` builder, paging, a keyed upsert and its replay, a read at the write's token, patch, delete, a typed `where` count, scrolling, `not_found`, `filter_conflict` |
+| `app_search` | every search the builder corpus spells: text with a filter, highlights and a projection, its `search_after` page, vector, hybrid RRF/DBSF/weighted, and the refused weighted sum |
+| `app_graph` | Loams Graph from the same app; `loams dev`'s default build has no `graph` feature, so each step is the `feature_not_in_variant` refusal |
+
+Each step names the facade `call` that makes it, and a step that a builder
+writes names its `builder` case: `verify-corpus.mjs` checks that the step sends
+exactly that case's `expect`, so the builders and the recording cannot drift
+apart. A language replays the steps through its public facade (with
+`loams-fixture-name` and `loams-fixture-step` headers) in its `<lang>_app_*`
+tests, and `check-languages.mjs --check <lang> --suite app` checks it ran them.
+The app fixtures are `required: false` until SDKP S1.
+
 ## What it does not cover yet
 
-`loams.collection.v1.ListCollections` and the rest of the API1 surface, so:
-pagination, idempotency-keyed mutations, the consistency token, and a stream
-that actually carries data. Those arrive with the RPCs (API1 Tasks 2–4) and are
-recorded the same way. Until then each SDK's suite pins the SDK's own half of
+A stream that actually carries data (`app_streams`, SDKP P0c), SQL with
+parameters (`app_sql`, P0b), and a graph scenario from a build with the `graph`
+feature. Until then each SDK's suite pins the SDK's own half of
 those behaviours against a stub, and says so — see
 `docs/sdk/runtime-contract.md`, where every clause names the test that pins it
 and what it does not pin.

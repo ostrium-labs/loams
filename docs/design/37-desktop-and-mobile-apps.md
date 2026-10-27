@@ -1,5 +1,9 @@
 # 37 — Loams Desktop and Mobile Apps: a cordis Console, a Tauri Shell, Native Phones
 
+> **Amendment (approved 2026-10-21) by [§76](76-identity-and-authorization.md): superseded in part by D1600** (owner: full cutover from Authentik to Zitadel, with no migration path, no compatibility period and no dual running, because there are no users). Desktop and phone sign-in (D431, D486) use the same OIDC flows (code + PKCE, system browser, loopback redirect) against Zitadel; `SIGN_IN_KIND_AUTHENTIK*` are deprecated in favour of IdP-neutral values (D1619).
+
+> **Updated 2026-10-19 ([D1119](13-decision-log.md)): Loams has no open core.** Where this document places metering, billing, the hosted control plane, commercial APIs or other components in the private `loams-platform` repository, or calls something private for open-core reasons, read that as superseded: everything is Apache-2.0, and the metering, billing and control-plane code is moving into the open repo now (design §63, Loams Meter). Ostrium Labs offers services (infrastructure efficiency, SLAs, support), not a paid edition. The rest of the design is unchanged.
+
 Status: **Approved** (owner defaults, 2026-10-02: "do suggested for all") · 2026-10-01, revised 2026-10-02 (the Authentik and D220 rulings). The direction is the owner's, given on 2026-10-01 in two messages:
 
 **Names after the hard fork (D823; NF1 Task 1b).** This document predates the rename and keeps the old names: read `ostrium-labs/neon` as `ostrium-labs/loams-postgres`, `crates/loams-neon` (package `loams-neon`) as `crates/loams-postgres` (package `loams-postgres`), and `deploy/neon` as `deploy/loams-postgres-dev` (the compose project `loams-neon` and the desktop's copied `stacks/neon` keep their names).
@@ -890,7 +894,7 @@ Zeron's chat surface already gives Loams Bot threads, an attention-sorted sideba
 The web bridge of §18.14 now supplies the third column's missing piece: a managed webview with persistent per-profile stores on all three operating systems ("Open in Loams Web"). So the defaults are: **panels first, "Open in browser" for the full app, and the sidebar browser as an opt-in that is on only where a spike proves it good enough.** Specifically:
 
 - **Zulip, Plane, Forgejo, GlitchTip:** a native panel for the objects (from `loams.collab.v1`, SF1), and **Open in browser** to the app's own URL, where the person is already signed in at Authentik.
-- **OpenPanel:** tiles in a panel, "Open" for the full UI. **Langfuse, OpenObserve:** links, never embeds (§39 D-SF-2).
+- **OpenPanel:** tiles in a panel, "Open" for the full UI. **Langfuse, SigNoz:** links, never embeds (§39 D-SF-2).
 - **The browser console itself** (`/ui` on the instance, with its cordis plugins) opens the same way: it is the place for administration, and it is where cordis plugins live (§18.6).
 - **The sidebar browser** is a top-level browsing context, not a frame, so **D-SF-3's edge changes are not needed for it**: no `X-Frame-Options` removal and no `frame-ancestors` for `tauri://localhost`. A page that cannot be framed works fine here.
 - **What the spike (AP1n Task 7, Q482) must prove:** a persistent data store on the Linux helper and on macOS, so that signing in to Authentik once lasts; passkeys and WebAuthn on each OS; a Windows browser on `wry` (WebView2); and whether `gpui-wry` (Apache-2.0, `longbridge/gpui-kit`, 0.7.0) can sit on zeron's pinned GPUI fork at all, since it targets Zed's own GPUI **(unverified; it may need a patch)**. Everything the spike produces is generally useful and goes upstream first (D491).
@@ -1024,10 +1028,10 @@ Status: **Proposed** · 2026-10-02. The direction is the owner's, given the same
   │ injected script (isolated world) ⇄ eval · native hooks per OS · CDP in-process on Windows     │
   └───────▲──────────────────────────────────────────────▲───────────────────────────────────────┘
           │ launch, supervise, approvals                  │ OTLP (content-free; content to Langfuse only, §39 D-SF-11)
-   Loams Desktop (zeron fork, loams-link)         collector → OpenObserve, Loams, Langfuse
+   Loams Desktop (zeron fork, loams-link)         collector → SigNoz, Loams, Langfuse
 ```
 
-- **D500, the role.** Loams Desktop stays native. **`loams-web-bridge`** is a separate Tauri 2 application whose job is to host webviews for websites (Zulip, Plane, Forgejo, GlitchTip, Langfuse, OpenObserve, any site) with persistent, isolated sessions, and to expose them as tools. A person can also use its windows by hand ("Open in Loams Web", §18.14.6).
+- **D500, the role.** Loams Desktop stays native. **`loams-web-bridge`** is a separate Tauri 2 application whose job is to host webviews for websites (Zulip, Plane, Forgejo, GlitchTip, Langfuse, SigNoz, any site) with persistent, isolated sessions, and to expose them as tools. A person can also use its windows by hand ("Open in Loams Web", §18.14.6).
 - **D501, the repository.** Its own repository, **`ostrium-labs/loams-web-bridge`**, Apache-2.0, not a fork, with its own Cargo workspace. Reasons: Tauri's dependency tree and per-OS webview libraries (`webkit2gtk-4.1`, WebView2, WKWebView) must stay out of the engine's `Cargo.lock` (the reason D439 gave for a separate workspace); the three-OS CI and signing are heavy and independent of the engine; and any MCP client may use it without Loams Desktop. It vendors the few protos it needs by pinned ref, as `loams-desktop` does (D493). Q500 asks whether to keep it in the monorepo instead.
 - **D502, processes and transport.** A **daemon** (single instance per user, a lock file) owns the webviews, profiles and policy. Agents never speak to it directly: each agent session spawns the thin stdio shim `loams-web-bridge mcp`, which proxies MCP over **local IPC** to the daemon, exactly as zeron's `zeron mcp` proxies to the engine (§18.1). Callers are identified by a **session handle** minted by Loams Desktop, or, for a standalone client with no Loams Desktop, by the user running `loams-web-bridge handle new --profile … --class … --origin … --ttl …` over the owner-only control channel (the same endpoint Desktop uses, authenticated by OS user identity), which prints the handle for the client's MCP configuration. A handle is random, scoped to a chat, a profile set, tool classes and an expiry, revocable, and passed in the shim's environment. **A handle is not a Loams token** and opens nothing off the machine, so D489 stands. A loopback Streamable-HTTP listener for clients that cannot spawn a process is off by default and needs a per-launch bearer.
 
@@ -1115,7 +1119,7 @@ What Tauri 2.12.1 exposes **(verified in `tauri-apps/tauri` at 2.12.1, 2026-09-3
 
 **Untrusted content (D509).** Everything derived from a page (text, names, console lines, network rows) is **untrusted data**. Results wrap it in a marker the harness and the policy can see (escaped so that page text cannot close it), the bridge never follows instructions found in a page, and Loams Bot's rule stands that an approval or a question it did not raise cannot be answered by page content (§39 D-SF-9). Pages cannot call the bridge (no IPC), cannot read other profiles, and run in webviews with the user's permissions prompts routed to the bridge window, not auto-granted.
 
-**Audit and observability (D510).** Every tool call emits an OpenTelemetry span (`loams.web.tool`) with the tool, class, profile, **origin (path and query redacted)**, agent principal, chat or run id, approval id, snapshot id, result size and outcome, joined to the agent's trace by the W3C `traceparent` that the shim receives. Spans go to the collector of §39 §9.1: **content-free** to OpenObserve and Loams' own ingest; snapshots and page text **only to Langfuse 4**, under the masking and retention policy of §39 §9.2 (Q476). A **local hash-chained JSONL audit log** in the profile directory (0600) survives a collector outage. The §39 D-SF-14 kill switch maps to a **pause-all** command that closes sessions' handles and blocks new calls.
+**Audit and observability (D510).** Every tool call emits an OpenTelemetry span (`loams.web.tool`) with the tool, class, profile, **origin (path and query redacted)**, agent principal, chat or run id, approval id, snapshot id, result size and outcome, joined to the agent's trace by the W3C `traceparent` that the shim receives. Spans go to the collector of §39 §9.1: **content-free** to SigNoz and Loams' own ingest; snapshots and page text **only to Langfuse 4**, under the masking and retention policy of §39 §9.2 (Q476). A **local hash-chained JSONL audit log** in the profile directory (0600) survives a collector outage. The §39 D-SF-14 kill switch maps to a **pause-all** command that closes sessions' handles and blocks new calls.
 
 #### 18.14.5 Platform and licence notes
 
@@ -1199,7 +1203,7 @@ One app with three areas, in one window and one cordis console:
    | OpenPanel | product analytics |
    | Matomo | web analytics |
    | Langfuse | LLM traces and cost |
-   | OpenObserve | full UI only; no adapter yet |
+   | SigNoz | full UI only; no adapter yet |
 
 Out of scope for v0.1: Loams Bot chat (SF3; the window reserves its place in the nav), the factory loop (SF4), SystemOne, the Tauri web bridge (AP1b), and phone pairing.
 
@@ -1276,7 +1280,7 @@ Every panel is read-only and backed by an existing adapter method. "Op" is the I
 | OpenPanel | `insights` (visitors, sessions, top pages), `health` | Metric tiles |
 | Matomo | `visits` (`VisitsSummary.get`), `pages`, `health` | Metric tiles |
 | Langfuse | `traces` (recent), `daily` (`/metrics/daily`), `health` | Recent traces, daily cost and tokens |
-| OpenObserve | none | Full UI only |
+| SigNoz | none | Full UI only |
 
 - Task 10's implementer fixes each op's exact adapter method and parameters by reading the adapter's `service.ts`, and records the table in `apps/desktop-electron/src/main/factory/ops.ts`.
 - Each app also has `health`. It is shown as the tile status: `unconfigured`, `ok`, `auth_failed` or `unreachable`.

@@ -8,7 +8,7 @@ The reasons are practical. A change that lives upstream is maintained by everyon
 
 ## What stays open, and what is yours
 
-The open-core boundary (see [CONTRIBUTING](CONTRIBUTING.md#open-core-boundary)) applies to everyone. Everything a single organization needs to self-host Loams is in this repository. Your product can add whatever it likes on top (a console, billing, a vertical UI, a hosted offer) and keep it private, as long as you follow the Apache-2.0 license and the [trademark policy](TRADEMARKS.md).
+Loams has no open core (see [CONTRIBUTING](CONTRIBUTING.md#everything-is-open-source)): everything is Apache-2.0, and the metering, billing and control-plane code is moving into the open repo now. Your product can add whatever it likes on top (a console, billing, a vertical UI, a hosted offer) and keep it private, as long as you follow the Apache-2.0 license and the [trademark policy](TRADEMARKS.md).
 
 Upstream the things that are **generic**: a new extension point, a bug fix, a new adapter that any user of that platform would want, a protocol compatibility fix, docs. Keep in your product the things that are **specific to you**: your brand, your UI, your pricing and billing, your hosted fleet's operations.
 

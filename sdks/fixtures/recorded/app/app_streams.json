@@ -1,0 +1,413 @@
+{
+  "name": "app_streams",
+  "kind": "app",
+  "about": "The notes app, part five: streams. Create `note-events` (and again: the same stream), list and describe it, produce two records keyed by a producer id and the same batch again (a duplicate), fetch them from offset 0 and past the end, produce and fetch two CloudEvents on `note-audit`, and fetch a stream that does not exist (`not_found`).",
+  "transport": "connect",
+  "required": false,
+  "pinnedBy": [
+    "R3",
+    "R8",
+    "R14"
+  ],
+  "part": "C",
+  "reason": null,
+  "source": {
+    "server": "loams dev",
+    "commit": "unknown",
+    "recordedAt": "2026-10-19T20:09:03.419Z"
+  },
+  "volatile": [
+    "token",
+    "readToken",
+    "consistencyToken",
+    "collectionId",
+    "namespaceId",
+    "createdAtMs",
+    "updatedAtMs",
+    "instanceId",
+    "performance",
+    "manifestVersion",
+    "version",
+    "seqNo",
+    "positions",
+    "pin",
+    "timestampMs",
+    "streamId"
+  ],
+  "steps": [
+    {
+      "about": "Create `note-events`, one partition.",
+      "call": "streams.create",
+      "request": {
+        "method": "POST",
+        "path": "/loams.stream.v1.StreamService/CreateStream",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"name\":\"note-events\",\"partitions\":1}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "stream": {
+            "namespace": "app",
+            "name": "note-events",
+            "id": "3",
+            "partitions": 1,
+            "retention": {}
+          },
+          "created": true
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "about": "Create it again: idempotent by name, the same stream with `created` unset.",
+      "call": "streams.create",
+      "request": {
+        "method": "POST",
+        "path": "/loams.stream.v1.StreamService/CreateStream",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"name\":\"note-events\",\"partitions\":1}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "stream": {
+            "namespace": "app",
+            "name": "note-events",
+            "id": "3",
+            "partitions": 1,
+            "retention": {}
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "about": "The namespace's streams (`list_all` pages through `next_page_token`).",
+      "call": "streams.list",
+      "request": {
+        "method": "POST",
+        "path": "/loams.stream.v1.StreamService/ListStreams",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\"}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "streams": [
+            {
+              "namespace": "app",
+              "name": "_collection.notes.1",
+              "id": "1",
+              "partitions": 4,
+              "retention": {}
+            },
+            {
+              "namespace": "app",
+              "name": "note-events",
+              "id": "3",
+              "partitions": 1,
+              "retention": {}
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "about": "Two records, keyed by `producer_id` + `producer_seq` so a retry cannot append twice.",
+      "call": "streams.produce",
+      "request": {
+        "method": "POST",
+        "path": "/loams.stream.v1.StreamService/Produce",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"stream\":\"note-events\",\"records\":[{\"key\":\"MQ==\",\"value\":\"eyJub3RlIjoxLCJvcCI6ImNyZWF0ZWQifQ==\"},{\"key\":\"NQ==\",\"value\":\"eyJub3RlIjo1LCJvcCI6ImRlbGV0ZWQifQ==\"}],\"producerId\":\"app-producer-1\",\"producerSeq\":\"1\"}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "streamId": "3",
+          "lastOffset": "1",
+          "consistencyToken": "v1:s3/p0@2"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "about": "The same batch again: answered as a `duplicate`, nothing appended.",
+      "call": "streams.produce",
+      "request": {
+        "method": "POST",
+        "path": "/loams.stream.v1.StreamService/Produce",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"stream\":\"note-events\",\"records\":[{\"key\":\"MQ==\",\"value\":\"eyJub3RlIjoxLCJvcCI6ImNyZWF0ZWQifQ==\"},{\"key\":\"NQ==\",\"value\":\"eyJub3RlIjo1LCJvcCI6ImRlbGV0ZWQifQ==\"}],\"producerId\":\"app-producer-1\",\"producerSeq\":\"1\"}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "streamId": "3",
+          "lastOffset": "1",
+          "consistencyToken": "v1:s3/p0@2",
+          "duplicate": true
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "about": "Fetch from offset 0: both records; `next_offset` is where `subscribe` reads next.",
+      "call": "streams.fetch",
+      "request": {
+        "method": "POST",
+        "path": "/loams.stream.v1.StreamService/Fetch",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"stream\":\"note-events\",\"maxRecords\":10}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "records": [
+            {
+              "key": "MQ==",
+              "value": "eyJub3RlIjoxLCJvcCI6ImNyZWF0ZWQifQ==",
+              "timestampMs": "1792440542846"
+            },
+            {
+              "offset": "1",
+              "key": "NQ==",
+              "value": "eyJub3RlIjo1LCJvcCI6ImRlbGV0ZWQifQ==",
+              "timestampMs": "1792440542846"
+            }
+          ],
+          "nextOffset": "2",
+          "highWatermark": "2"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "about": "Fetch past the end: no records, the page `subscribe` backs off on.",
+      "call": "streams.fetch",
+      "request": {
+        "method": "POST",
+        "path": "/loams.stream.v1.StreamService/Fetch",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"stream\":\"note-events\",\"offset\":\"2\",\"maxRecords\":10}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "nextOffset": "2",
+          "highWatermark": "2"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "about": "Describe it: each partition's offsets.",
+      "call": "streams.get",
+      "request": {
+        "method": "POST",
+        "path": "/loams.stream.v1.StreamService/DescribeStream",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"stream\":\"note-events\"}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "stream": {
+            "namespace": "app",
+            "name": "note-events",
+            "id": "3",
+            "partitions": 1,
+            "retention": {},
+            "offsets": [
+              {
+                "highWatermark": "2"
+              }
+            ]
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "about": "Create `note-audit` for CloudEvents.",
+      "call": "streams.create",
+      "request": {
+        "method": "POST",
+        "path": "/loams.stream.v1.StreamService/CreateStream",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"name\":\"note-audit\",\"partitions\":1}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "stream": {
+            "namespace": "app",
+            "name": "note-audit",
+            "id": "4",
+            "partitions": 1,
+            "retention": {}
+          },
+          "created": true
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "about": "Two CloudEvents as one JSON batch: each `appended`.",
+      "call": "streams.produce_events",
+      "request": {
+        "method": "POST",
+        "path": "/loams.stream.v1.StreamService/ProduceCloudEvents",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"stream\":\"note-audit\",\"partition\":0,\"jsonBatch\":\"W3sic3BlY3ZlcnNpb24iOiIxLjAiLCJpZCI6ImV2dC0xIiwic291cmNlIjoiL25vdGVzIiwidHlwZSI6Im5vdGUuY3JlYXRlZCIsImRhdGFjb250ZW50dHlwZSI6ImFwcGxpY2F0aW9uL2pzb24iLCJkYXRhIjp7ImlkIjoxfX0seyJzcGVjdmVyc2lvbiI6IjEuMCIsImlkIjoiZXZ0LTIiLCJzb3VyY2UiOiIvbm90ZXMiLCJ0eXBlIjoibm90ZS5kZWxldGVkIiwiZGF0YWNvbnRlbnR0eXBlIjoiYXBwbGljYXRpb24vanNvbiIsImRhdGEiOnsiaWQiOjV9fV0=\"}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "results": [
+            {
+              "status": "EVENT_STATUS_APPENDED"
+            },
+            {
+              "status": "EVENT_STATUS_APPENDED",
+              "offset": "1"
+            }
+          ],
+          "consistencyToken": "v1:s4/p0@2"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "about": "Fetch them back as a JSON batch.",
+      "call": "streams.fetch_events",
+      "request": {
+        "method": "POST",
+        "path": "/loams.stream.v1.StreamService/FetchCloudEvents",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"stream\":\"note-audit\"}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "jsonBatch": "W3sic3BlY3ZlcnNpb24iOiIxLjAiLCJpZCI6ImV2dC0xIiwic291cmNlIjoiL25vdGVzIiwidHlwZSI6Im5vdGUuY3JlYXRlZCIsImRhdGFjb250ZW50dHlwZSI6ImFwcGxpY2F0aW9uL2pzb24iLCJkYXRhIjp7ImlkIjoxfX0seyJzcGVjdmVyc2lvbiI6IjEuMCIsImlkIjoiZXZ0LTIiLCJzb3VyY2UiOiIvbm90ZXMiLCJ0eXBlIjoibm90ZS5kZWxldGVkIiwiZGF0YWNvbnRlbnR0eXBlIjoiYXBwbGljYXRpb24vanNvbiIsImRhdGEiOnsiaWQiOjV9fV0=",
+          "count": 2,
+          "nextOffset": "2",
+          "highWatermark": "2"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "about": "A stream that does not exist: `not_found`.",
+      "call": "streams.fetch",
+      "request": {
+        "method": "POST",
+        "path": "/loams.stream.v1.StreamService/Fetch",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"stream\":\"no-such-stream\"}"
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "code": "not_found",
+          "message": "stream app/no-such-stream not found",
+          "details": [
+            {
+              "type": "loams.errors.v1.ErrorInfo",
+              "value": "Cglub3RfZm91bmQ"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 404,
+        "reason": "not_found"
+      }
+    }
+  ]
+}

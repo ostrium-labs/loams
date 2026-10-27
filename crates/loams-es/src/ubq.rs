@@ -6,12 +6,16 @@
 //! `ctx._source.<path> = params.<name>` or
 //! `ctx._source[.<path>].remove('<key>')`. Assignments become a `MergeDeep`
 //! source, so a missing or non-object parent on the way is created as an
-//! object (Painless would fail on it); removes become `delete_keys`.
+//! object (Painless would fail on it); removes become `delete_keys`. A
+//! script that assigns an object param compiles to `MergeTop`, so the
+//! object replaces the key as in Painless; it may assign top-level keys
+//! only (MA1 Task 26, #903).
 
 use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::http::Uri;
 use axum::response::Response;
+use loams_collection::PatchMode;
 use loams_query::PatchSpec;
 use serde_json::{Map, Value, json};
 
@@ -173,9 +177,6 @@ pub fn compile_update_script(script: &Value) -> Result<PatchSpec, EsError> {
                 let value = params
                     .and_then(|params| params.get(&name))
                     .ok_or_else(refused)?;
-                if value.is_object() {
-                    return Err(refused());
-                }
                 // A later assignment of the same path wins, as in Painless.
                 assigned.retain(|(p, _)| *p != path);
                 assigned.push((path, value.clone()));
@@ -190,7 +191,18 @@ pub fn compile_update_script(script: &Value) -> Result<PatchSpec, EsError> {
             return Err(refused());
         }
     }
+    // An object param replaces its key, as in Painless (#903). Merging
+    // would keep the old object's other keys, so a script that assigns an
+    // object compiles to `MergeTop`, where every top-level key replaces;
+    // that holds only when every assignment is a top-level key.
+    let replaces_object = assigned.iter().any(|(_, value)| value.is_object());
+    if replaces_object && assigned.iter().any(|(path, _)| path.len() > 1) {
+        return Err(refused());
+    }
     let mut out = PatchSpec::merge_deep(Map::new());
+    if replaces_object {
+        out.mode = PatchMode::MergeTop;
+    }
     for (path, value) in assigned {
         insert(&mut out.source, &path, value);
     }
@@ -338,6 +350,21 @@ mod tests {
     }
 
     #[test]
+    fn an_object_param_replaces_a_top_level_key() {
+        let patch = compiled(
+            "ctx._source.metadata = params.metadata; ctx._source.n = params.x; ctx._source.remove('gone')",
+            json!({"metadata": {"userId": "u1", "status": "archived"}, "x": 1}),
+        )
+        .expect("recognised");
+        assert_eq!(patch.mode, loams_collection::PatchMode::MergeTop);
+        assert_eq!(
+            Value::Object(patch.source),
+            json!({"metadata": {"userId": "u1", "status": "archived"}, "n": 1})
+        );
+        assert_eq!(patch.delete_keys, vec!["gone"]);
+    }
+
+    #[test]
     fn everything_else_is_refused() {
         let params = json!({"x": 1, "o": {"a": 1}});
         for source in [
@@ -345,7 +372,8 @@ mod tests {
             "ctx._source.a == params.x",
             "ctx._source.a = 1",
             "ctx._source.a = params.missing",
-            "ctx._source.a = params.o",
+            "ctx._source.a.b = params.o",
+            "ctx._source.a = params.o; ctx._source.c.d = params.x",
             "ctx.op = 'noop'",
             "ctx._source.a = params.x; ctx._source.a.b = params.x",
             "ctx._source.a.b = params.x; ctx._source.a = params.x",

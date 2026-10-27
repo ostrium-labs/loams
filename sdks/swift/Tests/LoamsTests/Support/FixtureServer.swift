@@ -71,14 +71,11 @@ struct FixtureServer {
 
     /// Runs the shared fixture server and reads the URL it prints on stdout.
     private static func startNodeFixtureServer() throws -> FixtureServer {
-        let node = URL(fileURLWithPath: "#filePath")
-            .deletingLastPathComponent()   // Tests
-            .deletingLastPathComponent()   // swift
-            .appendingPathComponent("conformance/fixture-server.mjs")
-        let fixtures = URL(fileURLWithPath: "#filePath")
-            .deletingLastPathComponent()   // Tests
-            .deletingLastPathComponent()   // swift
-            .appendingPathComponent("fixtures")
+        // From this file's path (`loamsSdksDirectory`), not the working
+        // directory: `"#filePath"` as a string literal resolved against the cwd
+        // and only worked when `swift test` ran from sdks/swift.
+        let node = loamsSdksDirectory.appendingPathComponent("conformance/fixture-server.mjs")
+        let fixtures = loamsFixturesDirectory
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
@@ -183,10 +180,7 @@ struct FixtureCorpus: Decodable {
 /// Reads `sdks/fixtures/index.json`, failing the test if it cannot be read: a
 /// suite that cannot see the corpus is not a suite.
 func readCorpus() throws -> FixtureCorpus {
-    let index = URL(fileURLWithPath: "#filePath")
-        .deletingLastPathComponent()   // Tests
-        .deletingLastPathComponent()   // swift
-        .appendingPathComponent("fixtures/index.json")
+    let index = loamsFixturesDirectory.appendingPathComponent("index.json")
     let data = try Data(contentsOf: index)
     return try JSONDecoder().decode(FixtureCorpus.self, from: data)
 }

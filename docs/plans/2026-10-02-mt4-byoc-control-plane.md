@@ -49,11 +49,11 @@ Same as the M1 overview §8, plus:
 | 7 | **Agent commands** are the closed set of §41 §7.2 as a protobuf `oneof`; an unknown command is refused and logged; `SetLimits` carries a control-plane signature (Ed25519 over the canonical bytes) the agent verifies | No shell, no passthrough | Adding a command is a deliberate proto change |
 | 8 | **Release channels** `canary`, `early`, `stable`; rings 0 to 2 and the BYOC window ring as §41 §8.1; promotion = fast-forward of the next channel branch; gates are named checks recorded as `GateResult`s in the `ControlStore`; the first implementation uses **one ApplicationSet per ring** (the fallback of §41 §8.2) and switches to `RollingSync` only if Task 0 finds it stable | Nothing alpha on the critical path | A later switch is a generator change |
 | 9 | **Limits record:** `Limits { requests_per_s, ingest_bytes_per_s, concurrent_queries, storage_bytes, unapplied_records, unapplied_bytes, metadata_ops_per_s, k8s_cpu_millis, k8s_memory_bytes, k8s_pods, knative_max_scale }` with unset meaning "deployment default"; `EnforcementState { limit, used_approx, window_s, as_of }` per limit | §41 §9.1, D65, D98, D86, D443 | Adding a field is additive |
-| 10 | **Cross-org operator admin** is the OpenFGA relation `operator` on the object `deployment:<id>`; SCIM and enforced SSO are Authentik blueprints (`deploy/authentik/blueprints/scim.yaml`, `enforced-sso.yaml`) under MT1's guard (D458, D553) | Reuses MT1 | Moving the relation later is a model migration |
+| 10 | **Cross-org operator admin** is the OpenFGA relation `operator` on the object `deployment:<id>`; SCIM and enforced SSO are Zitadel settings kept in Git and applied by IA1's configuration (`scim.yaml`, `enforced-sso.yaml`; §76 §12, D553; MT1's guard D458 is superseded by D1600) | Reuses IA1 | Moving the relation later is a model migration |
 
 ## Carried in
 
-From §18 §6: the `ControlStore` and D65's quota record. From MT1: the OpenFGA model and the Authentik blueprints. From MT2: the operator's per-namespace tenancy (D443). From MT3: the waves, `Application`s and health checks. From RN1 Task 3: `InvocationObserver`.
+From §18 §6: the `ControlStore` and D65's quota record. From MT1, now IA1: the OpenFGA model (§76 D1603) and the Zitadel configuration. From MT2: the operator's per-namespace tenancy (D443). From MT3: the waves, `Application`s and health checks. From RN1 Task 3: `InvocationObserver`.
 
 ## Review Focus
 
@@ -79,7 +79,7 @@ crates/loams-byoc-agent/                    # Task 3
   src/{lib.rs,enrol.rs,streams.rs,commands.rs,observe_only.rs}
   tests/
 crates/loams-operator/src/tenant.rs         # Task 4 (existing crate)
-deploy/gitops/appset-tenants.yaml  deploy/gitops/appset-rings/  deploy/authentik/blueprints/{scim.yaml,enforced-sso.yaml}
+deploy/gitops/appset-tenants.yaml  deploy/gitops/appset-rings/  the Zitadel configuration's {scim.yaml,enforced-sso.yaml} (path set by IA1)
 deploy/helm/loams-stack/charts/control/     # chart for loams-control and the BYOC profile
 web/apps/console/src/pages/operator/        # Task 7
 .github/workflows/ci.yml                    # jobs control (path-filtered), mt4-e2e (k3d + Forgejo)
@@ -90,7 +90,7 @@ docs/design/41-multitenant-byoc-control-plane.md  docs/design/13-decision-log.md
 
 ### Task 0: Reconcile and check
 
-**Checks:** what is on `main` of `loams-operator`, the `ControlStore` (M2), MT1 to MT3 and RN1 Task 3; Argo CD's current `ApplicationSet` `RollingSync` status in the pinned version (**D545 verify**); Argo CD commit signature verification options (GPG, SSH, gitsign) in the pinned version (Q556); `gix` push support versus a `git` subprocess (measure: a commit and push of 1 000 files on the build machine); Forgejo's API for opening pull requests and its OIDC with Authentik; licences of every new dependency (`cargo deny`).
+**Checks:** what is on `main` of `loams-operator`, the `ControlStore` (M2), MT1 to MT3 and RN1 Task 3; Argo CD's current `ApplicationSet` `RollingSync` status in the pinned version (**D545 verify**); Argo CD commit signature verification options (GPG, SSH, gitsign) in the pinned version (Q556); `gix` push support versus a `git` subprocess (measure: a commit and push of 1 000 files on the build machine); Forgejo's API for opening pull requests and its OIDC with Zitadel (§76 D1600); licences of every new dependency (`cargo deny`).
 
 **Produces:** the findings, recorded in "Rulings made during execution", and decisions on Q540, Q541, Q556, Q558, Q559 at their defaults unless a finding changes them.
 
@@ -108,11 +108,11 @@ docs/design/41-multitenant-byoc-control-plane.md  docs/design/13-decision-log.md
 
 ### Task 2: The operations API and authorization
 
-**Files:** `crates/loams-control/src/{authz.rs,orgs.rs,namespaces.rs,clusters.rs,server.rs}`, `deploy/authentik/blueprints/{scim.yaml,enforced-sso.yaml}`.
+**Files:** `crates/loams-control/src/{authz.rs,orgs.rs,namespaces.rs,clusters.rs,server.rs}`, the Zitadel configuration's `{scim.yaml,enforced-sso.yaml}` (path set by IA1).
 
 **Produces:** `OrgService`, `NamespaceService`, `ClusterService` (Create, Get, List with pagination, Update, Delete; `client_token` idempotency); OpenFGA checks per call with the relations `org#admin`, `org#member`, `cluster#operator`, `deployment#operator` (Ruling 10); per-principal rate limits on `CreateOrg` and `CreateNamespace` and a per-deployment tenant cap, both configurable; service credentials as mTLS plus an attenuated Biscuit (Q542); audit events for every mutation (D221) naming the `act` chain; the SCIM and enforced-SSO blueprints (open, D553, Q545).
 
-**Tests:** `create_is_idempotent_by_token`; `unauthorized_is_denied_per_object`; `agent_cannot_hold_operator` (granting `deployment#operator` to an `agent` principal fails); `tenant_cap_and_rate_limit_enforced`; `audit_event_names_actor_chain`; `scim_and_sso_blueprints_pass_the_enterprise_guard` (MT1's lint: no `authentik_enterprise*` models); `no_endpoint_named_plan_or_billing` (a reflection test over the service descriptors).
+**Tests:** `create_is_idempotent_by_token`; `unauthorized_is_denied_per_object`; `agent_cannot_hold_operator` (granting `deployment#operator` to an `agent` principal fails); `tenant_cap_and_rate_limit_enforced`; `audit_event_names_actor_chain`; `scim_and_sso_settings_apply_to_an_empty_zitadel` (Zitadel starts empty and is configured from Git, §76 §13; MT1's Enterprise lint is superseded by D1600); `no_endpoint_named_plan_or_billing` (a reflection test over the service descriptors).
 
 **Commit:** `control: add the operations API with authorization`.
 
@@ -130,7 +130,7 @@ docs/design/41-multitenant-byoc-control-plane.md  docs/design/13-decision-log.md
 
 **Files:** `crates/loams-gitops/*`, `crates/loams-control/src/outbox.rs` (the consumer), `crates/loams-operator/src/tenant.rs`, `deploy/gitops/appset-tenants.yaml`.
 
-**Produces:** the deterministic renderer for the layout of Ruling 3; the Git writer (commit to a branch, then merge directly or open a pull request per policy, with signed commits per Q556 and the bot identity); the `ApplicationSet` of Ruling 4; the operator's `Tenant` and `Namespace` reconcile (Kubernetes namespace `loams-ns-<namespace>` with `NetworkPolicy`, `ResourceQuota`, `LimitRange`, labels, the Authentik group binding through a blueprint instance, OpenFGA tuples, the directory upsert) with status conditions `Ready`, `Degraded`, `Drift`, `ErasurePending` (Ruling 5); the directory entry flips to `active` only on `Ready`; offboarding as in §41 §6.
+**Produces:** the deterministic renderer for the layout of Ruling 3; the Git writer (commit to a branch, then merge directly or open a pull request per policy, with signed commits per Q556 and the bot identity); the `ApplicationSet` of Ruling 4; the operator's `Tenant` and `Namespace` reconcile (Kubernetes namespace `loams-ns-<namespace>` with `NetworkPolicy`, `ResourceQuota`, `LimitRange`, labels, the Zitadel org and project grant from the Git configuration (§76 D1612), OpenFGA tuples, the directory upsert) with status conditions `Ready`, `Degraded`, `Drift`, `ErasurePending` (Ruling 5); the directory entry flips to `active` only on `Ready`; offboarding as in §41 §6.
 
 **Tests:** `render_is_deterministic` (golden files); `rebuild_from_store_matches_repo`; `control_plane_never_applies_to_cluster`; `namespace_active_only_after_ready`; `delete_waits_for_erasure_receipt`; `directory_only_namespace_has_no_file`; `drift_is_reported_not_silently_fixed_for_unowned_objects`; **e2e `onboard_org_on_k3d`** (Forgejo + Argo CD + the operator on k3d: create an org and a namespace by API, see the commit, the `Application`, the Kubernetes namespace with `NetworkPolicy` and `ResourceQuota`, and the directory entry `active`).
 
@@ -191,7 +191,7 @@ docs/design/41-multitenant-byoc-control-plane.md  docs/design/13-decision-log.md
 | Item | Where |
 |---|---|
 | Metering, billing, plans, entitlements, the plan-to-limits mapping, invoices, credits | `loams-platform` (docs 01, 06, 07) |
-| The hosted cloud's commercial APIs and the marketplace install and billing APIs | `loams-platform` (docs 05, 07); the install saga calls Task 4's Git writer (Q552) |
+| The hosted cloud's commercial APIs and the marketplace install and billing APIs | `loams-platform` (docs 05, 07); the install saga calls Task 4's Git writer (Q552). *Updated 2026-10-21: the marketplace is open source and designed in [§73](../design/73-agent-marketplace.md) (D1446): installs go through `loams-agentd`'s `MarketplaceService` (plan [MK1](2026-10-21-mk1-agent-marketplace.md)), not a control-plane install saga, and there are no billing APIs* |
 | Hosted-fleet operations: pre-warming, capacity, hosted Neon/WeSQL automation, abuse handling | `loams-platform` (D554) |
 | `loams-meta-remote` (BYOC-managed-meta) | the M2.x plan (D64, Q551) |
 | A real CKE apply, a real BYOC customer | manual, after the owner's account decisions |

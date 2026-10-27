@@ -1,13 +1,13 @@
 # The factory in Studio
 
-The software factory's apps belong to Studio (design [§53](../../design/53-studio-ade.md) §5.9, D916; SD1 Task 27): Forgejo, Zulip, ItsAPlan (Plane), GlitchTip, OpenPanel, Matomo (Q813), Langfuse and OpenObserve.
+The software factory's apps belong to Studio (design [§53](../../design/53-studio-ade.md) §5.9, D916; SD1 Task 27): Forgejo, Zulip, ItsAPlan (Plane), GlitchTip, OpenPanel, Matomo (Q813), Langfuse and SigNoz (Preview: SigNoz on Loams House).
 
 ## Where they are
 
 **On the desktop only, for now.** The factory plugin's edition is `desktop`. In the browser, the apps' native panels and framed UIs wait for SF1 (D922).
 
 - **The factory hub** is at `/studio/factory`, with each app's panels at `/studio/factory/<app>`, its full UI at `/studio/factory/<app>/app` and its settings at `/studio/factory/<app>/configure`. The command palette (**Ctrl K**) reaches it as **Software Factory**; you can also pin it to the sidebar's Pages.
-- **Studio's sidebar** has a **Factory** group, below the projects when the daemon runs and on its own when it doesn't: one line with how many apps are connected, which opens to list the apps with their state, linking to their panels, to the full UI (OpenObserve has the full UI only) or to configure. Its icon opens the hub. The count updates as you configure apps.
+- **Studio's sidebar** has a **Factory** group, below the projects when the daemon runs and on its own when it doesn't: one line with how many apps are connected, which opens to list the apps with their state, linking to their panels, to the full UI (SigNoz has the full UI only; it is labelled "Preview: SigNoz on Loams House") or to configure. Its icon opens the hub. The count updates as you configure apps.
 - **In Console mode**, the overview keeps the factory's card.
 
 **Old addresses still work.** `/factory`, `/factory/<app>`, `/factory/<app>/app` and `/factory/<app>/configure` redirect to their `/studio/factory…` addresses, keeping the query, and replace the history entry so Back doesn't bounce. `loams://open/factory[/<app>]` opens `/studio/factory[/<app>]` directly.
@@ -16,13 +16,15 @@ The factory's credentials stay in Electron main's vault and never reach the page
 
 ## Connecting the apps
 
-**Save and test** checks the connection. For OpenObserve, which has no panels and no credentials, it checks that `/healthz` answers at the URL's origin.
+**Save and test** checks the connection. For SigNoz, which has no panels and no credentials, it checks that `/api/v2/healthz` answers at the URL's origin.
 
 **Sign-in inside the app.** In the full UI, pages on the app's origin stay in Studio and every other site opens in your browser. If the app signs in through a single sign-on provider, put the provider's origin (for example `https://sso.example.com`) in **SSO origin**, so the sign-in pages stay in Studio too.
 
 **Plane (ItsAPlan).** Its URL is the API's (for example `https://api.plan.example.com`). ItsAPlan serves its web UI on another origin: put that in **App URL**, and Open app, a new window and Open in browser load it.
 
 **Langfuse.** The recent traces panel reads Langfuse's v2 observations API (Langfuse 4, or 3.x on its v4 data model). On a Langfuse 3.x without it, the panel reads the older trace list instead.
+
+**SigNoz (Preview: SigNoz on Loams House).** SigNoz opens as its full UI only, with no native panels. Its URL is the one you run it at (for example `http://127.0.0.1:3301`, when you start it from `deploy/factory/signoz/compose.yaml`). Its telemetry is stored in your Loams House, not in a separate ClickHouse. It is a preview: SigNoz on House is the House's third gate application (D1571) and is not passing yet. It is not in the default compose, so you start it yourself. The MIT community build has no single sign-on, so it sits behind forward-auth with one service user.
 
 ## Threads from factory objects
 

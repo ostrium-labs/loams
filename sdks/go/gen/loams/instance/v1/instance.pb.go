@@ -96,12 +96,21 @@ const (
 	SignInKind_SIGN_IN_KIND_UNSPECIFIED SignInKind = 0
 	// No sign-in: a loopback stack before the auth plan (D111).
 	SignInKind_SIGN_IN_KIND_NONE SignInKind = 1
-	// OIDC authorization code + PKCE at the instance's Authentik (§38).
+	// Deprecated: use SIGN_IN_KIND_OIDC (D1619). Kept so the wire value still
+	// decodes; no server sends it.
+	//
+	// Deprecated: Marked as deprecated in loams/instance/v1/instance.proto.
 	SignInKind_SIGN_IN_KIND_AUTHENTIK SignInKind = 2
-	// Authentik's device authorization flow (RFC 8628).
+	// Deprecated: use SIGN_IN_KIND_OIDC_DEVICE_CODE (D1619).
+	//
+	// Deprecated: Marked as deprecated in loams/instance/v1/instance.proto.
 	SignInKind_SIGN_IN_KIND_AUTHENTIK_DEVICE_CODE SignInKind = 3
 	// A QR or typed pairing code from a signed-in session (§37 §7.2).
 	SignInKind_SIGN_IN_KIND_PAIRING SignInKind = 4
+	// OIDC authorization code + PKCE at the instance's issuer (design §76).
+	SignInKind_SIGN_IN_KIND_OIDC SignInKind = 5
+	// The issuer's device authorization flow (RFC 8628).
+	SignInKind_SIGN_IN_KIND_OIDC_DEVICE_CODE SignInKind = 6
 )
 
 // Enum value maps for SignInKind.
@@ -112,6 +121,8 @@ var (
 		2: "SIGN_IN_KIND_AUTHENTIK",
 		3: "SIGN_IN_KIND_AUTHENTIK_DEVICE_CODE",
 		4: "SIGN_IN_KIND_PAIRING",
+		5: "SIGN_IN_KIND_OIDC",
+		6: "SIGN_IN_KIND_OIDC_DEVICE_CODE",
 	}
 	SignInKind_value = map[string]int32{
 		"SIGN_IN_KIND_UNSPECIFIED":           0,
@@ -119,6 +130,8 @@ var (
 		"SIGN_IN_KIND_AUTHENTIK":             2,
 		"SIGN_IN_KIND_AUTHENTIK_DEVICE_CODE": 3,
 		"SIGN_IN_KIND_PAIRING":               4,
+		"SIGN_IN_KIND_OIDC":                  5,
+		"SIGN_IN_KIND_OIDC_DEVICE_CODE":      6,
 	}
 )
 
@@ -258,7 +271,8 @@ type GetInstanceResponse struct {
 	Issuer string `protobuf:"bytes,7,opt,name=issuer,proto3" json:"issuer,omitempty"`
 	// The JWKS of the instance's token-signing keys.
 	JwksUri string `protobuf:"bytes,8,opt,name=jwks_uri,json=jwksUri,proto3" json:"jwks_uri,omitempty"`
-	// How people sign in. Authentik is the identity provider (§37 §6.5).
+	// How people sign in: the instance's OIDC issuer (Zitadel, design §76), a
+	// pairing code, or none (§37 §6.5).
 	SignInMethods []*SignInMethod `protobuf:"bytes,9,rep,name=sign_in_methods,json=signInMethods,proto3" json:"sign_in_methods,omitempty"`
 	// A compact JWS, signed by the instance key, listing the current and next
 	// TLS SPKI hashes (§37 §7.2.3). Empty for instances with public CAs only.
@@ -508,7 +522,7 @@ func (x *ServiceStatus) GetUnstable() bool {
 type SignInMethod struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Kind  SignInKind             `protobuf:"varint,1,opt,name=kind,proto3,enum=loams.instance.v1.SignInKind" json:"kind,omitempty"`
-	// The OIDC issuer for KIND_AUTHENTIK (Authentik's application issuer URL).
+	// The OIDC issuer for SIGN_IN_KIND_OIDC and SIGN_IN_KIND_OIDC_DEVICE_CODE.
 	Issuer string `protobuf:"bytes,2,opt,name=issuer,proto3" json:"issuer,omitempty"`
 	// The public OAuth client id for this app, for example "loams-desktop".
 	ClientId string `protobuf:"bytes,3,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
@@ -1096,14 +1110,16 @@ const file_loams_instance_v1_instance_proto_rawDesc = "" +
 	"\x13EDITION_UNSPECIFIED\x10\x00\x12\x0f\n" +
 	"\vEDITION_OSS\x10\x01\x12\x11\n" +
 	"\rEDITION_CLOUD\x10\x02\x12\x10\n" +
-	"\fEDITION_BYOC\x10\x03*\x9f\x01\n" +
+	"\fEDITION_BYOC\x10\x03*\xe1\x01\n" +
 	"\n" +
 	"SignInKind\x12\x1c\n" +
 	"\x18SIGN_IN_KIND_UNSPECIFIED\x10\x00\x12\x15\n" +
-	"\x11SIGN_IN_KIND_NONE\x10\x01\x12\x1a\n" +
-	"\x16SIGN_IN_KIND_AUTHENTIK\x10\x02\x12&\n" +
-	"\"SIGN_IN_KIND_AUTHENTIK_DEVICE_CODE\x10\x03\x12\x18\n" +
-	"\x14SIGN_IN_KIND_PAIRING\x10\x04*\x86\x01\n" +
+	"\x11SIGN_IN_KIND_NONE\x10\x01\x12\x1e\n" +
+	"\x16SIGN_IN_KIND_AUTHENTIK\x10\x02\x1a\x02\b\x01\x12*\n" +
+	"\"SIGN_IN_KIND_AUTHENTIK_DEVICE_CODE\x10\x03\x1a\x02\b\x01\x12\x18\n" +
+	"\x14SIGN_IN_KIND_PAIRING\x10\x04\x12\x15\n" +
+	"\x11SIGN_IN_KIND_OIDC\x10\x05\x12!\n" +
+	"\x1dSIGN_IN_KIND_OIDC_DEVICE_CODE\x10\x06*\x86\x01\n" +
 	"\rPrincipalKind\x12\x1e\n" +
 	"\x1aPRINCIPAL_KIND_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13PRINCIPAL_KIND_USER\x10\x01\x12\"\n" +

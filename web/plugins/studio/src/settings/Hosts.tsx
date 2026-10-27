@@ -15,8 +15,10 @@ import { type FormEvent, useState, useSyncExternalStore } from 'react';
 import type { StudioAgentd } from '../agentd.js';
 import type { StudioHosts } from '../hosts/agentd.js';
 
+// Port 443 on the tailnet address: the hosted console's CSP allows `https://*.ts.net`,
+// which matches the default port only (docs/guides/studio/remote-agentd.md).
 const SERVE =
-  'loams-agentd serve --remote --listen 0.0.0.0:8443 --tls-cert cert.pem --tls-key key.pem ' +
+  'loams-agentd serve --remote --listen <tailnet IP>:443 --tls-cert cert.pem --tls-key key.pem ' +
   '--issuer https://auth.example.com/application/o/loams/ --audience loams-agentd ' +
   '--subject <your sub> --allow-origin <this console> --config config.toml';
 
@@ -187,7 +189,7 @@ function AddHost({ hosts }: { hosts: StudioHosts }) {
             {...p}
             value={url}
             inputMode="url"
-            placeholder="https://devbox.example.ts.net:8443"
+            placeholder="https://devbox.example.ts.net"
             onChange={(e) => setUrl(e.target.value)}
           />
         )}

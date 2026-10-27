@@ -5,8 +5,8 @@
 //! when the turn ends writes one `turn_usage` row (tokens, the harness's own
 //! cost if it reported one, and the duration). `GetThreadUsage` reads them
 //! back. It is a display for the thread header, informational only: there
-//! is no price table and nothing here has a billing meaning (CONTRIBUTING's
-//! open-core boundary).
+//! is no price table and nothing here has a billing meaning (billing-grade
+//! metering is a separate design, §63).
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};

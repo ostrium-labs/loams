@@ -53,13 +53,15 @@ export async function* paginate<Request extends object, Response extends object,
       } as Request,
       options,
     )) as unknown as Record<string, unknown>;
-    const items = page[pagination.items];
+    // The binding spells the field as the proto does (`service_accounts`);
+    // a decoded message has it in TypeScript case (`serviceAccounts`).
+    const items = page[pagination.items] ?? page[camelCase(pagination.items)];
     if (Array.isArray(items)) {
       for (const item of items as Item[]) {
         yield item;
       }
     }
-    const next = page[pagination.nextPageToken];
+    const next = page[pagination.nextPageToken] ?? page[camelCase(pagination.nextPageToken)];
     if (typeof next !== 'string' || next === '') {
       return;
     }
@@ -76,4 +78,9 @@ export function pageFields(binding: CallBinding): {
     throw new Error(`${binding.module}.${binding.name} is not a paged call`);
   }
   return { pageSizeField: 'pageSize', pageTokenField: 'pageToken' };
+}
+
+/** `snake_case` to `lowerCamelCase`, as protobuf-es names a field. */
+function camelCase(name: string): string {
+  return name.replace(/_([a-z0-9])/g, (_match, letter: string) => letter.toUpperCase());
 }

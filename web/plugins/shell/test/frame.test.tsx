@@ -115,17 +115,21 @@ describe('the frame (D1078)', () => {
     expect(router.current().path).toBe('/studio');
   });
 
-  it('toggles the sidebar with Mod+B, but not while typing', () => {
+  it('toggles the sidebar with Mod+B, but rich text keeps it for bold (D1081)', () => {
     setup();
+    // jsdom is not a Mac, so Mod is Ctrl and ⌘ does nothing.
     fireEvent.keyDown(window, { key: 'b', ctrlKey: true });
     expect(screen.queryByRole('navigation', { name: 'Sidebar' })).toBeNull();
     fireEvent.keyDown(window, { key: 'B', metaKey: true });
+    expect(screen.queryByRole('navigation', { name: 'Sidebar' })).toBeNull();
+    fireEvent.keyDown(window, { key: 'B', ctrlKey: true });
     expect(screen.getByRole('navigation', { name: 'Sidebar' })).toBeTruthy();
-    const field = document.createElement('textarea');
-    document.body.append(field);
-    fireEvent.keyDown(field, { key: 'b', ctrlKey: true });
+    const rich = document.createElement('div');
+    rich.setAttribute('contenteditable', 'true');
+    document.body.append(rich);
+    fireEvent.keyDown(rich, { key: 'b', ctrlKey: true });
     expect(screen.getByRole('navigation', { name: 'Sidebar' })).toBeTruthy();
-    field.remove();
+    rich.remove();
   });
 
   it('is a sheet below 960px, opened from the top bar', async () => {

@@ -1,0 +1,50 @@
+# PgDog for the transaction-mode legs (pgdog-txn.yaml): one pool per product
+# database on compute1, transaction pooling. Test config only.
+[general]
+host = "0.0.0.0"
+port = 6432
+pooler_mode = "transaction"
+checkout_timeout = 15000
+connect_timeout = 2000
+
+[[databases]]
+name = "temporal"
+host = "compute1"
+port = 55433
+database_name = "temporal"
+
+[[databases]]
+name = "temporal_visibility"
+host = "compute1"
+port = 55433
+database_name = "temporal_visibility"
+
+[[databases]]
+name = "airflow"
+host = "compute1"
+port = 55433
+database_name = "airflow"
+
+[[databases]]
+name = "dbos_py"
+host = "compute1"
+port = 55433
+database_name = "dbos_py"
+
+[[databases]]
+name = "dbos_ts"
+host = "compute1"
+port = 55433
+database_name = "dbos_ts"
+
+[[databases]]
+name = "dbos_go"
+host = "compute1"
+port = 55433
+database_name = "dbos_go"
+
+[[databases]]
+name = "dbos_java"
+host = "compute1"
+port = 55433
+database_name = "dbos_java"

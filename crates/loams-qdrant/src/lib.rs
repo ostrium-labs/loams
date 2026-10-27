@@ -101,8 +101,12 @@
 //!   batch, even next to a filter operation. Qdrant has no such limit (row
 //!   T5-12, owner ruling O1, row T8-11).
 //! - Geo conditions and indexes, `nested`, `has_vector` and `slice`
-//!   conditions, keys with `[n]` or quoted keys holding `.`, payload-index
-//!   deletion and type changes are unsupported (Ruling 15).
+//!   conditions, keys with `[n]` or quoted keys holding `.`, and
+//!   payload-index type changes are unsupported (Ruling 15).
+//! - Deleting a payload index retires it: `payload_schema` leaves it out,
+//!   filters on the key still work (D134), and re-creating it with the same
+//!   type revives it; re-creating it with another type is 501, and so is
+//!   deleting the index of a quoted key holding `,` (MA1 Task 23, D1210).
 //! - DBSF over Euclid or Manhattan prefetches normalizes Loams's
 //!   larger-is-better scores (negated distances), where Qdrant normalizes
 //!   the raw distances and so favours far points (Ruling 9).

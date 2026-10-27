@@ -77,16 +77,20 @@ const (
 	ReasonFeatureNotInVariant = facade.ReasonFeatureNotInVariant
 	ReasonTokenExpired        = facade.ReasonTokenExpired
 	ReasonInvalidArgument     = facade.ReasonInvalidArgument
-	ReasonNotFound            = facade.ReasonNotFound
-	ReasonAlreadyExists       = facade.ReasonAlreadyExists
-	ReasonPermissionDenied    = facade.ReasonPermissionDenied
-	ReasonUnauthenticated     = facade.ReasonUnauthenticated
-	ReasonFailedPrecondition  = facade.ReasonFailedPrecondition
-	ReasonResourceExhausted   = facade.ReasonResourceExhausted
-	ReasonUnavailable         = facade.ReasonUnavailable
-	ReasonDeadlineExceeded    = facade.ReasonDeadlineExceeded
-	ReasonAborted             = facade.ReasonAborted
-	ReasonInternal            = facade.ReasonInternal
+	// The client-side reasons SDKP registered (P0e).
+	ReasonNamespaceRequired        = facade.ReasonNamespaceRequired
+	ReasonInvalidConsistencyToken  = facade.ReasonInvalidConsistencyToken
+	ReasonSearchAfterNeedsTiebreak = facade.ReasonSearchAfterNeedsTiebreak
+	ReasonNotFound                 = facade.ReasonNotFound
+	ReasonAlreadyExists            = facade.ReasonAlreadyExists
+	ReasonPermissionDenied         = facade.ReasonPermissionDenied
+	ReasonUnauthenticated          = facade.ReasonUnauthenticated
+	ReasonFailedPrecondition       = facade.ReasonFailedPrecondition
+	ReasonResourceExhausted        = facade.ReasonResourceExhausted
+	ReasonUnavailable              = facade.ReasonUnavailable
+	ReasonDeadlineExceeded         = facade.ReasonDeadlineExceeded
+	ReasonAborted                  = facade.ReasonAborted
+	ReasonInternal                 = facade.ReasonInternal
 )
 
 // Variants of the reasons above are in `loams.dev/go/gen/facade`; the two the

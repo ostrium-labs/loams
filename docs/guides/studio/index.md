@@ -11,7 +11,7 @@ The console has two modes, **Console** and **Studio** (D900). They share one win
 - **Switch** with the segmented control in the header, with **Mod+Shift+M** (Ctrl on Linux and Windows, Cmd on macOS), or with "Switch to Studio" / "Switch to Console" in the palette (**Mod+K**). The switcher shows only when both modes are available.
 - **Studio's addresses** all start with `/studio` (`#/studio/t/<threadId>` for a thread), so a link opens its own mode.
 - **Which mode opens first:** the address decides when it names one. At the console's root, the last mode you used on this device decides (it is kept under `loams.shell.mode`). Without a stored mode, the desktop opens Studio and the browser opens Console (D902, Q801).
-- **The factory apps** (Forgejo, Zulip, Plane, GlitchTip, OpenPanel, Langfuse, Matomo and OpenObserve) live under Studio on the desktop. See [The factory in Studio](factory.md).
+- **The factory apps** (Forgejo, Zulip, Plane, GlitchTip, OpenPanel, Langfuse, Matomo and SigNoz, the last as a preview on Loams House) live under Studio on the desktop. See [The factory in Studio](factory.md).
 
 ## Where Studio runs
 

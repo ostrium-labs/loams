@@ -36,7 +36,7 @@ export interface MockControl {
 const STEP_UP_WINDOW_MS = 5 * 60 * 1000;
 
 /** The engine version the mock reports by default: the newest release (N). */
-export const MOCK_SERVER_VERSION = '0.1.0';
+export const MOCK_SERVER_VERSION = '0.1.1';
 
 function principal(id: string, name: string, kind: instance.PrincipalKind, email = '') {
   return create(instance.PrincipalSchema, { id, displayName: name, kind, email });

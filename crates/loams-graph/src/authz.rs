@@ -193,6 +193,9 @@ pub struct Caller {
     pub id: String,
     /// How it authenticated.
     pub kind: CallerKind,
+    /// The issuer of its OIDC token (the exact `iss`), which with `id` names its principal
+    /// link (design 76 §5, D1628); `None` for any other credential.
+    pub issuer: Option<String>,
     /// A name to show.
     pub name: String,
     /// A verified email, for people.
@@ -213,6 +216,7 @@ impl Caller {
             name: id.clone(),
             id,
             kind,
+            issuer: None,
             email: None,
             environment: None,
             scopes: None,

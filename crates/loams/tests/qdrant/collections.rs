@@ -1083,3 +1083,240 @@ async fn grpc_collections_round_trip() {
     let (status, _) = qd.get("/collections/g", None).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+// ----- payload-index delete (MA1 Task 23, D1210) -----
+
+impl Qd {
+    /// `PUT /collections/{name}/index?wait=true`, which must succeed.
+    async fn create_index(&self, name: &str, field: &str, schema: &str) {
+        let (status, reply) = self
+            .put(
+                &format!("/collections/{name}/index?wait=true"),
+                Some(json!({"field_name": field, "field_schema": schema})),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{reply}");
+    }
+
+    /// `DELETE /collections/{name}/index/{field}?wait=true`.
+    async fn delete_index(&self, name: &str, field: &str) -> (StatusCode, Value) {
+        self.delete(
+            &format!("/collections/{name}/index/{field}?wait=true"),
+            None,
+        )
+        .await
+    }
+
+    /// The keys of `payload_schema`, sorted.
+    async fn payload_schema_keys(&self, name: &str) -> Vec<String> {
+        let info = self.info(name).await;
+        let schema = info["payload_schema"].as_object().expect("payload_schema");
+        let mut keys: Vec<String> = schema.keys().cloned().collect();
+        keys.sort_unstable();
+        keys
+    }
+}
+
+/// A collection `name` with three points over `tenant` and `n`.
+async fn indexed_collection(qd: &Qd, name: &str) {
+    qd.create(name, json!({"vectors": dense(2)})).await;
+    let (status, reply) = qd
+        .put(
+            &format!("/collections/{name}/points?wait=true"),
+            Some(json!({"points": [
+                {"id": 1, "vector": [1.0, 0.0], "payload": {"tenant": "a", "n": 1}},
+                {"id": 2, "vector": [0.0, 1.0], "payload": {"tenant": "b", "n": 2}},
+                {"id": 3, "vector": [1.0, 1.0], "payload": {"tenant": "a", "n": 3}},
+            ]})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{reply}");
+    qd.create_index(name, "tenant", "keyword").await;
+    qd.create_index(name, "n", "integer").await;
+}
+
+/// The ids `filter` matches, sorted.
+async fn matching_ids(qd: &Qd, name: &str, filter: Value) -> Vec<u64> {
+    let (status, reply) = qd
+        .post(
+            &format!("/collections/{name}/points/scroll"),
+            Some(json!({"filter": filter, "limit": 100, "with_payload": false})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{reply}");
+    let mut ids: Vec<u64> = reply["result"]["points"]
+        .as_array()
+        .expect("points")
+        .iter()
+        .map(|p| p["id"].as_u64().expect("u64 id"))
+        .collect();
+    ids.sort_unstable();
+    ids
+}
+
+#[tokio::test]
+async fn delete_field_index_hides_it_from_payload_schema() {
+    let qd = Qd::start().await;
+    indexed_collection(&qd, "pd").await;
+    assert_eq!(qd.payload_schema_keys("pd").await, ["n", "tenant"]);
+    let (status, reply) = qd.delete_index("pd", "tenant").await;
+    assert_eq!(status, StatusCode::OK, "{reply}");
+    assert_eq!(reply["status"], "ok", "{reply}");
+    assert_eq!(reply["result"]["status"], "completed", "{reply}");
+    assert_eq!(qd.payload_schema_keys("pd").await, ["n"]);
+    // The schema keeps the field (collections cannot drop one) and records
+    // the key as retired.
+    let schema = qd.schema("pd").await;
+    assert!(schema.field("payload_index.tenant").is_some());
+    assert_eq!(
+        schema.annotations.get("qdrant.payload_index.retired"),
+        Some(&"tenant".to_string())
+    );
+    // Deleting it again, or the other one, keeps the set sorted.
+    let (status, _) = qd.delete_index("pd", "tenant").await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = qd.delete_index("pd", "n").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(qd.payload_schema_keys("pd").await.is_empty());
+    assert_eq!(
+        qd.schema("pd")
+            .await
+            .annotations
+            .get("qdrant.payload_index.retired"),
+        Some(&"n,tenant".to_string())
+    );
+    // Without `wait` the status is `acknowledged`, as for other writes.
+    let (status, reply) = qd.delete("/collections/pd/index/n", None).await;
+    assert_eq!(status, StatusCode::OK, "{reply}");
+    assert_eq!(reply["result"]["status"], "acknowledged", "{reply}");
+}
+
+#[tokio::test]
+async fn delete_field_index_keeps_filters() {
+    let qd = Qd::start().await;
+    indexed_collection(&qd, "pf").await;
+    let tenant_a = json!({"must": [{"key": "tenant", "match": {"value": "a"}}]});
+    let n_over_1 = json!({"must": [{"key": "n", "range": {"gt": 1}}]});
+    assert_eq!(matching_ids(&qd, "pf", tenant_a.clone()).await, [1, 3]);
+    assert_eq!(matching_ids(&qd, "pf", n_over_1.clone()).await, [2, 3]);
+    for key in ["tenant", "n"] {
+        let (status, reply) = qd.delete_index("pf", key).await;
+        assert_eq!(status, StatusCode::OK, "{reply}");
+    }
+    assert_eq!(matching_ids(&qd, "pf", tenant_a).await, [1, 3]);
+    assert_eq!(matching_ids(&qd, "pf", n_over_1).await, [2, 3]);
+}
+
+#[tokio::test]
+async fn recreate_same_type_after_delete() {
+    let qd = Qd::start().await;
+    indexed_collection(&qd, "pr").await;
+    let (status, _) = qd.delete_index("pr", "tenant").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(qd.payload_schema_keys("pr").await, ["n"]);
+    qd.create_index("pr", "tenant", "keyword").await;
+    assert_eq!(qd.payload_schema_keys("pr").await, ["n", "tenant"]);
+    let info = qd.info("pr").await;
+    assert_eq!(info["payload_schema"]["tenant"]["data_type"], "keyword");
+    assert_eq!(info["payload_schema"]["tenant"]["points"], 3);
+    assert_eq!(
+        qd.schema("pr")
+            .await
+            .annotations
+            .get("qdrant.payload_index.retired"),
+        Some(&String::new())
+    );
+}
+
+#[tokio::test]
+async fn recreate_with_other_type_unsupported() {
+    let qd = Qd::start().await;
+    indexed_collection(&qd, "po").await;
+    let (status, _) = qd.delete_index("po", "tenant").await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, reply) = qd
+        .put(
+            "/collections/po/index?wait=true",
+            Some(json!({"field_name": "tenant", "field_schema": "integer"})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_IMPLEMENTED, "{reply}");
+    assert_eq!(
+        error(&reply),
+        "Unsupported in Loams: changing payload index type"
+    );
+    // The key stays retired and the field keeps its type.
+    assert_eq!(qd.payload_schema_keys("po").await, ["n"]);
+    let schema = qd.schema("po").await;
+    assert_eq!(
+        schema.field("payload_index.tenant").map(|f| &f.kind),
+        Some(&loams_collection::FieldKind::Keyword)
+    );
+}
+
+#[tokio::test]
+async fn delete_missing_field_index_completes() {
+    let qd = Qd::start().await;
+    indexed_collection(&qd, "pm").await;
+    for field in ["nonExistentField", "a.b", "arr[]", "\"x.y\""] {
+        let (status, reply) = qd.delete_index("pm", field).await;
+        assert_eq!(status, StatusCode::OK, "{field}: {reply}");
+        assert_eq!(reply["result"]["status"], "completed", "{reply}");
+    }
+    assert_eq!(qd.payload_schema_keys("pm").await, ["n", "tenant"]);
+    assert_eq!(
+        qd.schema("pm")
+            .await
+            .annotations
+            .get("qdrant.payload_index.retired"),
+        None
+    );
+    // A missing collection is 404.
+    let (status, reply) = qd.delete_index("nope", "tenant").await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{reply}");
+}
+
+#[tokio::test]
+async fn delete_field_index_grpc() {
+    let qd = Qd::start().await;
+    indexed_collection(&qd, "pg").await;
+    let mut points = qd.points().await;
+    let reply = points
+        .delete_field_index(pb::DeleteFieldIndexCollection {
+            collection_name: "pg".into(),
+            wait: Some(true),
+            field_name: "tenant".into(),
+            ..Default::default()
+        })
+        .await
+        .expect("DeleteFieldIndex")
+        .into_inner();
+    assert_eq!(
+        reply.result.expect("result").status,
+        pb::UpdateStatus::Completed as i32
+    );
+    assert_eq!(qd.payload_schema_keys("pg").await, ["n"]);
+    // REST and gRPC see the same retired set.
+    let info = qd
+        .collections()
+        .await
+        .get(pb::GetCollectionInfoRequest {
+            collection_name: "pg".into(),
+        })
+        .await
+        .expect("Get")
+        .into_inner()
+        .result
+        .expect("info");
+    let keys: Vec<&String> = info.payload_schema.keys().collect();
+    assert_eq!(keys, ["n"]);
+    let status = points
+        .delete_field_index(pb::DeleteFieldIndexCollection {
+            collection_name: "nope".into(),
+            field_name: "tenant".into(),
+            ..Default::default()
+        })
+        .await
+        .expect_err("missing collection");
+    assert_eq!(status.code(), tonic::Code::NotFound);
+}

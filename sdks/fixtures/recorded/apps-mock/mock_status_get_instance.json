@@ -67,10 +67,10 @@
           "jwksUri": "https://mock.loams.invalid/.well-known/jwks.json",
           "signInMethods": [
             {
-              "kind": "SIGN_IN_KIND_AUTHENTIK",
-              "issuer": "https://authentik.mock.loams.invalid/application/o/loams/",
+              "kind": "SIGN_IN_KIND_OIDC",
+              "issuer": "https://auth.mock.loams.invalid",
               "clientId": "loams-desktop",
-              "displayName": "Sign in with Authentik"
+              "displayName": "Sign in with your organization"
             }
           ],
           "minAppVersions": {
@@ -102,7 +102,7 @@
         "headers": {
           "content-type": "application/proto"
         },
-        "bodyBase64": "ChowMUo5WjNNT0NLSU5TVEFOQ0UwMDAwMDAwMBIMTG9hbXMgKG1vY2spGAEiBTAuMC4xKhFsb2Ftcy5pbnN0YW5jZS52MSoQbG9hbXMuZGV2aWNlcy52MSoSbG9hbXMuYXBwcm92YWxzLnYxKhNsb2Ftcy5vcGVyYXRpb25zLnYxKhZsb2Ftcy5ub3RpZmljYXRpb25zLnYxMgwKCHBhc3NrZXlzEAEyCwoHYmlsbGluZxAAOhpodHRwczovL21vY2subG9hbXMuaW52YWxpZEIwaHR0cHM6Ly9tb2NrLmxvYW1zLmludmFsaWQvLndlbGwta25vd24vandrcy5qc29uSmQIAhI5aHR0cHM6Ly9hdXRoZW50aWsubW9jay5sb2Ftcy5pbnZhbGlkL2FwcGxpY2F0aW9uL28vbG9hbXMvGg1sb2Ftcy1kZXNrdG9wIhZTaWduIGluIHdpdGggQXV0aGVudGlrYhAKB2FuZHJvaWQSBTAuMS4wYhAKB2Rlc2t0b3ASBTAuMS4wYgwKA2lvcxIFMC4xLjA="
+        "bodyBase64": "ChowMUo5WjNNT0NLSU5TVEFOQ0UwMDAwMDAwMBIMTG9hbXMgKG1vY2spGAEiBTAuMC4xKhFsb2Ftcy5pbnN0YW5jZS52MSoQbG9hbXMuZGV2aWNlcy52MSoSbG9hbXMuYXBwcm92YWxzLnYxKhNsb2Ftcy5vcGVyYXRpb25zLnYxKhZsb2Ftcy5ub3RpZmljYXRpb25zLnYxMgsKB2JpbGxpbmcQADIMCghwYXNza2V5cxABOhpodHRwczovL21vY2subG9hbXMuaW52YWxpZEIwaHR0cHM6Ly9tb2NrLmxvYW1zLmludmFsaWQvLndlbGwta25vd24vandrcy5qc29uSlIIBRIfaHR0cHM6Ly9hdXRoLm1vY2subG9hbXMuaW52YWxpZBoNbG9hbXMtZGVza3RvcCIeU2lnbiBpbiB3aXRoIHlvdXIgb3JnYW5pemF0aW9uYhAKB2FuZHJvaWQSBTAuMS4wYhAKB2Rlc2t0b3ASBTAuMS4wYgwKA2lvcxIFMC4xLjA="
       },
       "expect": {
         "status": 200

@@ -280,10 +280,10 @@ impl Seed {
             issuer: "https://mock.loams.invalid".into(),
             jwks_uri: "https://mock.loams.invalid/.well-known/jwks.json".into(),
             sign_in_methods: vec![SignInMethod {
-                kind: SignInKind::SIGN_IN_KIND_AUTHENTIK.into(),
-                issuer: "https://authentik.mock.loams.invalid/application/o/loams/".into(),
+                kind: SignInKind::SIGN_IN_KIND_OIDC.into(),
+                issuer: "https://auth.mock.loams.invalid".into(),
                 client_id: "loams-desktop".into(),
-                display_name: "Sign in with Authentik".into(),
+                display_name: "Sign in with your organization".into(),
                 ..Default::default()
             }],
             min_app_versions: [

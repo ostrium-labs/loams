@@ -30,12 +30,20 @@ pub fn render(model: &Model, packages: &PackageMap, proto_rev: &str) -> Result<S
     header(&mut out, proto_rev);
 
     // One import per proto package, in the order the modules use them.
+    // Every package a module's service, a request or a response lives in: a
+    // call may answer a message of another package (`GraphAdminService/
+    // DeleteGraph` answers `loams.operations.v1.Operation`).
     let mut specifiers: Vec<&str> = Vec::new();
-    for module in &model.modules {
-        let specifier = packages.get(&module.package).ok_or_else(|| {
+    let mut needed: Vec<String> = model.modules.iter().map(|m| m.package.clone()).collect();
+    for call in model.calls() {
+        needed.push(call.package.clone());
+        needed.push(package_of(model, &call.input));
+        needed.push(package_of(model, &call.output));
+    }
+    for package in &needed {
+        let specifier = packages.get(package).ok_or_else(|| {
             format!(
-                "{} is not in the package map, so the SDK cannot import its message types",
-                module.package
+                "{package} is not in the package map, so the SDK cannot import its message types"
             )
         })?;
         if !specifiers.contains(&specifier) {
@@ -55,12 +63,15 @@ pub fn render(model: &Model, packages: &PackageMap, proto_rev: &str) -> Result<S
     writeln!(out, "import type {{ CallOptions }} from '{RUNTIME}';").ok();
     for specifier in &specifiers {
         let names = type_names(model, packages, specifier);
+        // Every service a call is on, not only each module's first: one
+        // module may span two services (`loams.graph` is `GraphAdminService`
+        // and `GraphService`).
         let mut value_names: Vec<String> = Vec::new();
-        for module in &model.modules {
-            if packages.get(&module.package) != Some(*specifier) {
+        for call in model.calls() {
+            if packages.get(&call.package) != Some(*specifier) {
                 continue;
             }
-            value_names.push(leaf(&module.service).to_owned());
+            value_names.push(leaf(&call.service).to_owned());
         }
         value_names.sort();
         value_names.dedup();
@@ -83,7 +94,7 @@ pub fn render(model: &Model, packages: &PackageMap, proto_rev: &str) -> Result<S
     }
 
     for module in &model.modules {
-        module_interface(&mut out, module)?;
+        module_interface(&mut out, model, module)?;
     }
     bindings(&mut out, model, packages)?;
     reasons(&mut out, model);
@@ -115,7 +126,7 @@ fn header(out: &mut String, proto_rev: &str) {
 
 /// The interface of one module: its summary, its service, and one method per
 /// facade call with the generated message types.
-fn module_interface(out: &mut String, module: &Module) -> Result<(), String> {
+fn module_interface(out: &mut String, model: &Model, module: &Module) -> Result<(), String> {
     let unstable = if module.unstable {
         " Its wire contract may still change, so `buf breaking` skips it and an SDK marks it experimental (§44 §10.3)."
     } else {
@@ -172,7 +183,7 @@ fn module_interface(out: &mut String, module: &Module) -> Result<(), String> {
     )
     .ok();
     for call in &module.calls {
-        call_signature(out, call)?;
+        call_signature(out, model, call)?;
     }
     out.push_str("}\n\n");
     Ok(())
@@ -181,9 +192,11 @@ fn module_interface(out: &mut String, module: &Module) -> Result<(), String> {
 /// One call's TypeScript signature. A server stream returns an
 /// `AsyncIterable` of the element message, which is the language's native
 /// async iteration (design §44 §7.1).
-fn call_signature(out: &mut String, call: &Call) -> Result<(), String> {
-    let input = schema_name(&call.input)?;
-    let output = message_name(&call.output)?;
+fn call_signature(out: &mut String, model: &Model, call: &Call) -> Result<(), String> {
+    schema_name(&call.input)?;
+    message_name(&call.output)?;
+    let input = format!("{}Schema", crate::naming::local_name(model, &call.input));
+    let output = crate::naming::local_name(model, &call.output);
     let name = camel(&call.name);
     let paging = match &call.pagination {
         Some(paging) => format!(
@@ -313,8 +326,8 @@ fn bindings(out: &mut String, model: &Model, _packages: &PackageMap) -> Result<(
     // `loams.tables` are both `loams.live.v1.LiveService`), so the same
     // descriptor is listed once.
     let mut descriptors: Vec<(&str, &str)> = Vec::new();
-    for module in &model.modules {
-        descriptors.push((module.service.as_str(), leaf(&module.service)));
+    for call in model.calls() {
+        descriptors.push((call.service.as_str(), leaf(&call.service)));
     }
     descriptors.sort();
     descriptors.dedup();
@@ -379,13 +392,31 @@ fn reasons(out: &mut String, model: &Model) {
 fn type_names(model: &Model, packages: &PackageMap, specifier: &str) -> Vec<String> {
     let mut names = Vec::new();
     for call in model.calls() {
-        if packages.get(call.package.as_str()) != Some(specifier) {
-            continue;
-        }
-        for name in [
-            schema_name(&call.input).unwrap_or_default(),
-            message_name(&call.output).unwrap_or_default(),
+        // Each type is imported from its own package's module, which is not
+        // always the call's.
+        // A leaf another package's message also has is imported under its
+        // `naming::local_name` alias.
+        for (full, name, suffix) in [
+            (
+                &call.input,
+                schema_name(&call.input).unwrap_or_default(),
+                "Schema",
+            ),
+            (
+                &call.output,
+                message_name(&call.output).unwrap_or_default(),
+                "",
+            ),
         ] {
+            if packages.get(&package_of(model, full)) != Some(specifier) {
+                continue;
+            }
+            let local = format!("{}{suffix}", crate::naming::local_name(model, full));
+            let name = if !name.is_empty() && local != name {
+                format!("{name} as {local}")
+            } else {
+                name
+            };
             if !name.is_empty() && !names.contains(&name) {
                 names.push(name);
             }
@@ -393,6 +424,23 @@ fn type_names(model: &Model, packages: &PackageMap, specifier: &str) -> Vec<Stri
     }
     names.sort();
     names
+}
+
+/// The proto package a fully qualified message name is in: the longest
+/// package of the model that prefixes it, so a nested message
+/// (`pkg.Outer.Inner`) is still `pkg`.
+pub(crate) fn package_of(model: &Model, full: &str) -> String {
+    let full = full.trim_start_matches('.');
+    model
+        .packages
+        .iter()
+        .filter(|package| full.starts_with(&format!("{package}.")))
+        .max_by_key(|package| package.len())
+        .cloned()
+        .unwrap_or_else(|| {
+            full.rsplit_once('.')
+                .map_or(String::new(), |(p, _)| p.to_owned())
+        })
 }
 
 /// `loams.instance.v1.GetInstanceRequest` → `GetInstanceRequestSchema`.

@@ -36,6 +36,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"loams.dev/go/gen/facade"
 )
@@ -48,10 +49,11 @@ type ConsistencyOptions struct {
 	// spells them once the proto carries them.
 	Token string
 	// Session folds every response's token into a store and attaches the
-	// stored one to later reads. `true` means the client's own session, which
-	// is what `Options.SessionConsistency` turned on; a store is one of your
-	// own.
+	// stored one to later reads. Nil means the client's own session, which
+	// `Options.SessionConsistency` turns on; a store is one of your own.
 	Session ConsistencyTokenStore
+	// NoSession opts this call out of the client's session (R4).
+	NoSession bool
 }
 
 // CallOption is a per-call override. Everything is optional: the client's
@@ -71,6 +73,8 @@ type callSettings struct {
 	headers http.Header
 	// consistency is the session and token this call uses.
 	consistency *ConsistencyOptions
+	// timeout is this call's budget (R12); nil means the client's.
+	timeout *time.Duration
 	// resume is a StreamResume, held type-erased. The invoker knows the
 	// request and response types and asserts it back, which is what lets
 	// WithStreamResume be generic and the option not be.
@@ -154,9 +158,21 @@ func WithConsistencyToken(token string) CallOption {
 	}
 }
 
+// WithoutSessionConsistency opts this call out of the client's session: its
+// response is not recorded and it is not held to the session's token (R4).
+func WithoutSessionConsistency() CallOption {
+	return func(settings *callSettings) {
+		if settings.consistency == nil {
+			settings.consistency = &ConsistencyOptions{}
+		}
+		settings.consistency.NoSession = true
+	}
+}
+
 // WithSessionConsistency folds this call's responses into a store and attaches
-// the stored token to later reads. Passing `true` uses the client's session,
-// which `Options.SessionConsistency` turned on; passing a store uses that one.
+// the stored token to later reads. A call with no consistency option already
+// uses the client's session when `Options.SessionConsistency` is on; this
+// passes a store of your own instead.
 func WithSessionConsistency(session ConsistencyTokenStore) CallOption {
 	return func(settings *callSettings) {
 		if settings.consistency == nil {
@@ -286,6 +302,8 @@ type CallInvoker struct {
 	// every call, unary and streaming. A call's `WithHeader` replaces one of the
 	// same name, and `Authorization` is the runtime's either way.
 	headers http.Header
+	// defaults are the default namespace and the unary budget (R11, R12).
+	defaults InvokerDefaults
 }
 
 // NewCallInvoker builds an invoker over already-constructed Connect clients.
@@ -351,13 +369,31 @@ func (invoker *CallInvoker) bearer(ctx context.Context, extra http.Header) (http
 	return headers, nil
 }
 
-// sessionFor resolves the store a call asked for: its own if it brought one,
-// the client's if it asked for the session's, none otherwise.
+// sessionFor resolves the store a call uses: its own if it brought one, none if
+// it opted out, the client's otherwise (nil when the client has none).
 func (invoker *CallInvoker) sessionFor(settings *callSettings) ConsistencyTokenStore {
-	if settings.consistency == nil || settings.consistency.Session == nil {
+	if settings.consistency != nil {
+		if settings.consistency.Session != nil {
+			return settings.consistency.Session
+		}
+		if settings.consistency.NoSession {
+			return nil
+		}
+	}
+	if isNilStore(invoker.session) {
 		return nil
 	}
-	return settings.consistency.Session
+	return invoker.session
+}
+
+// isNilStore reports a nil store, including a nil *ConsistencySession held in
+// the interface, which does not compare equal to nil.
+func isNilStore(store ConsistencyTokenStore) bool {
+	if store == nil {
+		return true
+	}
+	session, ok := store.(*ConsistencySession)
+	return ok && session == nil
 }
 
 // plan builds the retry plan for one call, given whether the call ended up

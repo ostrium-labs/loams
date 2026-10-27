@@ -39,7 +39,7 @@ import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import dev.loams.app.AppContainer
 import dev.loams.app.BuildConfig
-import dev.loams.app.session.AuthentikSignIn
+import dev.loams.app.session.OidcSignIn
 import dev.loams.app.ui.SecureScreen
 import kotlinx.coroutines.launch
 
@@ -62,7 +62,7 @@ fun WelcomeScreen(container: AppContainer) {
     }
 
     val context = LocalContext.current
-    val signIn = remember { AuthentikSignIn(context) }
+    val signIn = remember { OidcSignIn(context) }
     DisposableEffect(signIn) { onDispose { signIn.dispose() } }
     val browser = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val p = vm.pendingSignIn ?: run {
@@ -128,7 +128,7 @@ fun WelcomeScreen(container: AppContainer) {
 
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Sign in with Authentik", style = MaterialTheme.typography.titleMedium)
+                Text("Sign in with your organization", style = MaterialTheme.typography.titleMedium)
                 Text("Opens your instance's sign-in page in the browser (OIDC with PKCE).", style = MaterialTheme.typography.bodySmall)
                 OutlinedButton(
                     onClick = {

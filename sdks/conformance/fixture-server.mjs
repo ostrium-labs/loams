@@ -73,7 +73,7 @@ function stepsOf(fixture) {
 /**
  * Every recorded case, from both sources, keyed by request shape.
  *
- * `recorded/apps-mock/` is walked as well as `recorded/`: the flat directory is
+ * `recorded/apps-mock/` and `recorded/app/` are walked as well as `recorded/`: the flat directory is
  * the thirteen `loams dev` cases and is read first, so their keys resolve to
  * exactly what they did before any of this existed.
  *
@@ -89,7 +89,11 @@ function stepsOf(fixture) {
  */
 async function load(fixturesDir) {
   const byKey = new Map();
-  for (const dir of [join(fixturesDir, 'recorded'), join(fixturesDir, 'recorded', 'apps-mock')]) {
+  const flat = join(fixturesDir, 'recorded');
+  // `recorded/app/` is the SDKP app scenario (P0d). Its steps share keys with
+  // the flat cases (`GetInstance`), so like the app-mock scenarios it is
+  // reached by `loams-fixture-name` and is never the default.
+  for (const dir of [flat, join(flat, 'apps-mock'), join(flat, 'app')]) {
     let files;
     try {
       files = await readdir(dir);
@@ -103,7 +107,7 @@ async function load(fixturesDir) {
       // `loams-fixture-name` gets where a key overlaps, because that is what
       // every suite resolved before the app-mock scenarios existed and changing
       // it would break them. See the resolution rule in the request handler.
-      const entry = { name: fixture.name, steps, isDefault: !dir.endsWith('apps-mock') };
+      const entry = { name: fixture.name, steps, isDefault: dir === flat };
       const seen = new Set();
       for (const step of steps) {
         const key = keyOf(step.request);

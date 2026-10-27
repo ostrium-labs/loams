@@ -16,6 +16,7 @@ import {
 	type Page,
 	test,
 } from "@playwright/test";
+import { mainWindow } from "./windows";
 
 const appRoot = resolve(__dirname, "../..");
 const fakeEngine = join(appRoot, "test/fixtures/fake-engine.mjs");
@@ -181,7 +182,7 @@ test("electron smoke", async () => {
 			env,
 		});
 		appPid = app.process().pid ?? 0;
-		const page = await app.firstWindow();
+		const page = await mainWindow(app);
 		timings.window = Date.now() - t0;
 
 		// 1. The native window title (the page sets its own document title).

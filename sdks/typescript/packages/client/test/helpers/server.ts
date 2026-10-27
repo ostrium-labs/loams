@@ -25,10 +25,13 @@ export interface FixtureServer {
 }
 
 /** The endpoint a suite should talk to: a live server if one was named, a
- * fixture server otherwise. */
-export async function startFixtureServer(): Promise<FixtureServer> {
+ * fixture server otherwise. `forceFixtures` always starts the fixture server,
+ * for a suite that replays recordings a live server cannot answer. */
+export async function startFixtureServer(
+  options: { forceFixtures?: boolean } = {},
+): Promise<FixtureServer> {
   const live = process.env.LOAMS_TEST_ENDPOINT;
-  if (live !== undefined && live !== '') {
+  if (options.forceFixtures !== true && live !== undefined && live !== '') {
     return {
       endpoint: live.replace(/\/$/, ''),
       live: true,

@@ -53,7 +53,8 @@ func writeReport(endpoint: String) {
         "endpoint": endpoint,
         "language": "objc",
         "live": false,
-        "ran": requiredFixtures,
+        // The app replay (AppReplayTests) adds its fixtures to the same report.
+        "ran": withAppFixtures(requiredFixtures, resultsDir.appendingPathComponent("objc.json")),
         "skipped": [] as [String],
         "tests": [
             "objc_conformance_all_required_fixtures",
@@ -253,4 +254,12 @@ final class ConformanceTests: XCTestCase {
         }
         XCTAssertEqual(items as? [String], ["a", "b", "c", "d"])
     }
+}
+
+/// `ran` plus the `app_*` fixtures an earlier write of the same report recorded.
+func withAppFixtures(_ ran: [String], _ file: URL) -> [String] {
+    guard let data = try? Data(contentsOf: file),
+          let report = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+          let previous = report["ran"] as? [String] else { return ran }
+    return Array(Set(ran).union(previous.filter { $0.hasPrefix("app_") })).sorted()
 }

@@ -6,11 +6,13 @@
 	"targets": {
 		"build": {
 			"executor": "nx:run-commands",
-			"outputs": ["{projectRoot}/out"],
+			"inputs": ["production", "^production", "connectorCatalog"],
+			"outputs": ["{projectRoot}/out", "{projectRoot}/resources/connectors.json"],
 			"options": { "cwd": "apps/desktop-electron", "command": "pnpm run build" }
 		},
 		"test": {
 			"executor": "nx:run-commands",
+			"inputs": ["default", "^default", "testRuntime", "webTree"],
 			"options": { "cwd": "apps/desktop-electron", "command": "pnpm run test" }
 		},
 		"e2e": {

@@ -121,6 +121,7 @@ export class FactoryHost {
 					? "locked"
 					: "unconfigured",
 			hasPanels: def.hasPanels,
+			...(def.preview ? { preview: def.preview } : {}),
 			credentialFields: def.credentialFields.map((f: CredField) => ({ ...f })),
 			...(entry ? { fields: this.#plainFields(app) } : {}),
 			persistent: this.vault.persistent,
@@ -341,7 +342,7 @@ export class FactoryHost {
 		let health: FactoryHealth = "ok";
 		try {
 			if (!def.adapter) {
-				// No adapter (OpenObserve): its probe, if it has one, says whether it answers.
+				// No adapter (SigNoz): its probe, if it has one, says whether it answers.
 				const url = this.vault.get(app)?.url ?? "";
 				if (def.probe) await this.#timed(def.probe(url));
 			} else {

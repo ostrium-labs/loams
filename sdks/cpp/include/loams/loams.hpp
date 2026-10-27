@@ -14,10 +14,13 @@
 #ifndef LOAMS_LOAMS_HPP
 #define LOAMS_LOAMS_HPP
 
+#include "loams/app.hpp"
 #include "loams/base64.hpp"
+#include "loams/builders.hpp"
 #include "loams/call.hpp"
 #include "loams/client.hpp"
 #include "loams/consistency.hpp"
+#include "loams/data.hpp"
 #include "loams/error.hpp"
 #include "loams/facade.hpp"
 #include "loams/http.hpp"
@@ -26,6 +29,7 @@
 #include "loams/reason.hpp"
 #include "loams/retry.hpp"
 #include "loams/stream.hpp"
+#include "loams/subscribe.hpp"
 #include "loams/system.hpp"
 #include "loams/token_source.hpp"
 #include "loams/version.hpp"

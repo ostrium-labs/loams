@@ -23,7 +23,7 @@ public  final class IdentityProvider extends
   private java.lang.String issuer_;
   /**
    * <pre>
-   * The OIDC issuer, e.g. https://auth.acme.example/application/o/loams/.
+   * The OIDC issuer, e.g. https://auth.acme.example.
    * </pre>
    *
    * <code>string issuer = 1 [json_name = "issuer"];</code>
@@ -35,7 +35,7 @@ public  final class IdentityProvider extends
   }
   /**
    * <pre>
-   * The OIDC issuer, e.g. https://auth.acme.example/application/o/loams/.
+   * The OIDC issuer, e.g. https://auth.acme.example.
    * </pre>
    *
    * <code>string issuer = 1 [json_name = "issuer"];</code>
@@ -48,7 +48,7 @@ public  final class IdentityProvider extends
   }
   /**
    * <pre>
-   * The OIDC issuer, e.g. https://auth.acme.example/application/o/loams/.
+   * The OIDC issuer, e.g. https://auth.acme.example.
    * </pre>
    *
    * <code>string issuer = 1 [json_name = "issuer"];</code>
@@ -62,7 +62,7 @@ public  final class IdentityProvider extends
   }
   /**
    * <pre>
-   * The OIDC issuer, e.g. https://auth.acme.example/application/o/loams/.
+   * The OIDC issuer, e.g. https://auth.acme.example.
    * </pre>
    *
    * <code>string issuer = 1 [json_name = "issuer"];</code>
@@ -73,7 +73,7 @@ public  final class IdentityProvider extends
   }
   /**
    * <pre>
-   * The OIDC issuer, e.g. https://auth.acme.example/application/o/loams/.
+   * The OIDC issuer, e.g. https://auth.acme.example.
    * </pre>
    *
    * <code>string issuer = 1 [json_name = "issuer"];</code>
@@ -279,7 +279,7 @@ public  final class IdentityProvider extends
 
     /**
      * <pre>
-     * The OIDC issuer, e.g. https://auth.acme.example/application/o/loams/.
+     * The OIDC issuer, e.g. https://auth.acme.example.
      * </pre>
      *
      * <code>string issuer = 1 [json_name = "issuer"];</code>
@@ -291,7 +291,7 @@ public  final class IdentityProvider extends
     }
     /**
      * <pre>
-     * The OIDC issuer, e.g. https://auth.acme.example/application/o/loams/.
+     * The OIDC issuer, e.g. https://auth.acme.example.
      * </pre>
      *
      * <code>string issuer = 1 [json_name = "issuer"];</code>
@@ -304,7 +304,7 @@ public  final class IdentityProvider extends
     }
     /**
      * <pre>
-     * The OIDC issuer, e.g. https://auth.acme.example/application/o/loams/.
+     * The OIDC issuer, e.g. https://auth.acme.example.
      * </pre>
      *
      * <code>string issuer = 1 [json_name = "issuer"];</code>
@@ -319,7 +319,7 @@ public  final class IdentityProvider extends
     }
     /**
      * <pre>
-     * The OIDC issuer, e.g. https://auth.acme.example/application/o/loams/.
+     * The OIDC issuer, e.g. https://auth.acme.example.
      * </pre>
      *
      * <code>string issuer = 1 [json_name = "issuer"];</code>
@@ -332,7 +332,7 @@ public  final class IdentityProvider extends
     }
     /**
      * <pre>
-     * The OIDC issuer, e.g. https://auth.acme.example/application/o/loams/.
+     * The OIDC issuer, e.g. https://auth.acme.example.
      * </pre>
      *
      * <code>string issuer = 1 [json_name = "issuer"];</code>

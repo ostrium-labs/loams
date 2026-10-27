@@ -29,7 +29,7 @@ const APPS = [
   ['openpanel', 'OpenPanel', 'unconfigured'],
   ['matomo', 'Matomo', 'unconfigured'],
   ['langfuse', 'Langfuse', 'locked'],
-  ['openobserve', 'OpenObserve', 'ok'],
+  ['signoz', 'SigNoz', 'ok'],
 ] as const;
 
 /** The slice of `desktop.factory` Studio reads. */
@@ -42,7 +42,8 @@ function desktopFake(pulls: unknown[] = []) {
         label,
         health,
         url: health === 'ok' ? `https://${id}.example.test` : undefined,
-        hasPanels: id !== 'openobserve',
+        hasPanels: id !== 'signoz',
+        ...(id === 'signoz' ? { preview: 'Preview: SigNoz on Loams House' } : {}),
         credentialFields: [],
         persistent: true,
       })),
@@ -115,12 +116,13 @@ describe('the Factory group', () => {
       'OpenPanel Not configured',
       'Matomo Not configured',
       'Langfuse Locked',
-      'OpenObserve Connected',
+      'SigNoz Preview Connected',
     ]);
     const href = (name: RegExp) => within(group).getByRole('link', { name }).getAttribute('href');
     // Configured: the panels, or the full UI when there are none; otherwise configure.
     expect(href(/^Forgejo/)).toBe('#/studio/factory/forgejo');
-    expect(href(/^OpenObserve/)).toBe('#/studio/factory/openobserve/app');
+    expect(href(/^SigNoz/)).toBe('#/studio/factory/signoz/app');
+    expect(within(group).getByTitle('Preview: SigNoz on Loams House')).toBeTruthy();
     expect(href(/^GlitchTip/)).toBe('#/studio/factory/glitchtip/configure');
     expect(href(/^Langfuse/)).toBe('#/studio/factory/langfuse/configure');
     expect(within(group).getByRole('link', { name: 'All factory apps' }).getAttribute('href')).toBe(

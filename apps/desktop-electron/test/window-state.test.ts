@@ -41,7 +41,7 @@ describe("window state", () => {
 		expect(s.x).toBeUndefined();
 		expect(s.y).toBeUndefined();
 		expect(s.width).toBeGreaterThanOrEqual(900);
-		expect(s.height).toBeGreaterThanOrEqual(600);
+		expect(s.height).toBeGreaterThanOrEqual(640);
 	});
 	it("missing_or_corrupt_gives_defaults", () => {
 		expect(

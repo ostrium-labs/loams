@@ -31,9 +31,9 @@ export type ThreadJumpKeybindingCommand = (typeof THREAD_JUMP_KEYBINDING_COMMAND
 
 /**
  * The commands a Studio keybinding can run. Upstream's names where the command is
- * upstream's; `files.toggle` and `settings.open` are Studio's. The shell's own keys
- * (Mod+K the palette, Mod+J the agent panel, Mod+Shift+M the mode) are not here:
- * the shell owns them in both modes.
+ * upstream's; `files.toggle` and `settings.open` are Studio's. The shell owns its
+ * chords in both modes (D1081, `SHELL_KEYBINDINGS`) and sends Studio's half of them
+ * (`chat.new`, `thread.jump.N`, `thread.next`) as commands.
  */
 export const STUDIO_KEYBINDING_COMMANDS = [
   "sidebar.toggle",
@@ -197,32 +197,23 @@ type WhenToken =
   | { type: "rparen" };
 
 /**
- * Studio's defaults: upstream's chords where Studio has the command, except
- * `terminal.toggle`, which upstream binds to Mod+J (the shell's agent panel) and
- * Studio binds to Ctrl+` as VS Code does. Upstream's Mod+Shift+M (the model picker)
- * is the shell's mode switch, and Mod+K stays the shell's palette. The last of a
- * command's chords is the one shown (Mod+N for a new thread).
+ * Studio's defaults: upstream's chords where Studio has the command, except the chords the
+ * shell owns (design 59, D1081: Mod+K, Mod+Shift+P, Mod+N, Mod+B, Mod+I, Mod+J, Mod+1…9,
+ * Ctrl+Tab, Mod+[ and Mod+], Mod+Shift+T, Mod+, and Mod+Shift+M; `SHELL_KEYBINDINGS`).
+ * The shell sends Studio's half of those (`chat.new`, `thread.jump.N`, `thread.next`) as
+ * `SHELL_COMMAND_EVENT`, so Studio still runs them. `terminal.toggle`, which upstream binds
+ * to Mod+J, is Ctrl+` as in VS Code (the drawer's Terminal tab). The last of a command's
+ * chords is the one shown.
  */
 export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
-  { key: "mod+b", command: "sidebar.toggle", when: "!editableFocus" },
-  { key: "mod+[", command: "navigation.back", when: "!terminalFocus" },
-  { key: "mod+]", command: "navigation.forward", when: "!terminalFocus" },
   { key: "ctrl+`", command: "terminal.toggle" },
   { key: "mod+alt+b", command: "rightPanel.toggle" },
   { key: "mod+d", command: "diff.toggle", when: "threadOpen && !terminalFocus" },
   { key: "mod+shift+e", command: "files.toggle", when: "threadOpen && !terminalFocus" },
   { key: "mod+shift+j", command: "preview.toggle", when: "threadOpen" },
   { key: "mod+shift+o", command: "chat.new", when: "!terminalFocus" },
-  { key: "mod+n", command: "chat.new", when: "!terminalFocus" },
-  { key: "mod+,", command: "settings.open" },
   { key: "mod+shift+[", command: "thread.previous" },
   { key: "mod+shift+]", command: "thread.next" },
-  // Desktop only, as upstream: in a browser Mod+1…9 switch tabs.
-  ...THREAD_JUMP_KEYBINDING_COMMANDS.map((command, index) => ({
-    key: `mod+${index + 1}`,
-    command,
-    when: "isDesktop",
-  })),
 ];
 
 function normalizeKeyToken(token: string): string {
@@ -465,6 +456,25 @@ export function compileResolvedKeybindingsConfig(
 }
 
 export const DEFAULT_RESOLVED_KEYBINDINGS = compileResolvedKeybindingsConfig(DEFAULT_KEYBINDINGS);
+
+/**
+ * The Studio commands the shell runs on its own chords (D1081): Mod+N starts a thread,
+ * Mod+1…9 open the sidebar's threads (desktop only: in a browser they switch tabs) and
+ * Ctrl+Tab opens the next one. Studio does not listen for these; they label the palette's
+ * rows and the sidebar's jump hints (`KeybindingStore.shown`).
+ */
+export const SHELL_RUN_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
+  { key: "mod+n", command: "chat.new", when: "!terminalFocus" },
+  { key: "ctrl+tab", command: "thread.next" },
+  ...THREAD_JUMP_KEYBINDING_COMMANDS.map((command, index) => ({
+    key: `mod+${index + 1}`,
+    command,
+    when: "isDesktop",
+  })),
+];
+
+export const SHELL_RUN_RESOLVED_KEYBINDINGS =
+  compileResolvedKeybindingsConfig(SHELL_RUN_KEYBINDINGS);
 
 export function mergeWithDefaultKeybindings(
   custom: ResolvedKeybindingsConfig,

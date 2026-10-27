@@ -1,7 +1,7 @@
 // Portions of this file are from T3 Code (https://github.com/pingdotgg/t3code),
 // packages/shared/src/composerInlineTokens.ts at commit 6524a8d4, Copyright (c) 2026 T3 Tools Inc., MIT licence
 // (see web/packages/studio-ui/LICENSE.t3code). Modified by The Loams Authors:
-// this header only. Loams' changes are Apache-2.0.
+// this header, and the scoped-package test made linear-time (CodeQL js/redos); the pattern is exported for its test. Loams' changes are Apache-2.0.
 export type ComposerInlineToken =
   | {
       readonly type: "mention";
@@ -60,8 +60,12 @@ const FILE_LINK_TOKEN_REGEX = new RegExp(
 const URI_SCHEME_REGEX = /^[A-Za-z][A-Za-z0-9+.-]*:/;
 const WINDOWS_DRIVE_PATH_REGEX = /^[A-Za-z]:[\\/]/;
 // Autocomplete emits canonical file links, so ambiguous bare @scope/package text stays a package.
-const SCOPED_PACKAGE_REFERENCE_REGEX =
-  /^[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*(?:\/[^\s@"]+)*$/;
+// Upstream's tail, `(?:\/[^\s@"]+)*`, backtracks exponentially: the class holds `/`,
+// so a run of path segments splits many ways (CodeQL js/redos). Any number of those
+// segments is exactly one `/` followed by one or more such characters, so the tail is
+// optional instead of repeated: the same language, matched in linear time.
+export const SCOPED_PACKAGE_REFERENCE_REGEX =
+  /^[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*(?:\/[^\s@"]+)?$/;
 
 function collectMentionTokens(text: string): ComposerInlineToken[] {
   const matches: ComposerInlineToken[] = [];

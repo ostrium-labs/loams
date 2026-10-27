@@ -27,11 +27,15 @@ import type {
   IpcResult,
   LiveStoreChoice,
   LoamsDesktopApi,
+  PgControlFieldErrors,
+  PgControlSettings,
   ServerEntry,
   SqlResult,
   StackId,
   StackState,
+  UpdateState,
 } from '@loams/desktop/contracts';
+import { DEFAULT_PG_CONTROL_URL, parsePgControlUrl } from '@loams/desktop/pg-control';
 import { validateConfig } from '@loams/desktop/validate';
 import { createMockAgentdApi } from '@loams/plugin-desktop-agentd';
 import { installFakeAgentd } from './fake-agentd.js';
@@ -115,6 +119,7 @@ const PREVIEW_FACTORY_APPS: {
   fields: [string, string, boolean][];
   label: string;
   hasPanels: boolean;
+  preview?: string;
 }[] = [
   { id: 'forgejo', fields: [['token', 'Access token', true]], label: 'Forgejo', hasPanels: true },
   {
@@ -164,7 +169,13 @@ const PREVIEW_FACTORY_APPS: {
     label: 'Langfuse',
     hasPanels: true,
   },
-  { id: 'openobserve', fields: [], label: 'OpenObserve', hasPanels: false },
+  {
+    id: 'signoz',
+    fields: [],
+    label: 'SigNoz',
+    hasPanels: false,
+    preview: 'Preview: SigNoz on Loams House',
+  },
 ];
 
 /** Sample apps shown as configured in the preview. Every value is obviously fake. */
@@ -345,6 +356,73 @@ function previewInfo({ fields, ...a }: (typeof PREVIEW_FACTORY_APPS)[number]): F
   };
 }
 
+/** App settings > Postgres control plane: kept in memory; no file is read in a browser. */
+function fakePgControl(): NonNullable<LoamsDesktopApi['pgControl']> {
+  let saved: PgControlSettings = {
+    url: '',
+    apiKeyFile: '',
+    defaultUrl: DEFAULT_PG_CONTROL_URL,
+    effectiveUrl: DEFAULT_PG_CONTROL_URL,
+    envOverrides: [],
+    keySource: 'none',
+  };
+  const listeners = new Set<(s: PgControlSettings) => void>();
+  const check = (input: { url: string; apiKeyFile: string }) => {
+    const parsed = parsePgControlUrl(input.url);
+    const errors: PgControlFieldErrors = {};
+    if (!parsed.ok) errors.url = parsed.message;
+    const file = input.apiKeyFile.trim();
+    if (file && !file.startsWith('/') && !file.startsWith('~/'))
+      errors.apiKeyFile = 'Use an absolute path, like ~/.config/loams/pg-api-key.';
+    return { url: parsed.ok ? parsed.url : input.url, apiKeyFile: file, errors };
+  };
+  return {
+    settings: async () => saved,
+    save: async (input) => {
+      const c = check(input);
+      if (Object.keys(c.errors).length > 0)
+        return {
+          ok: false,
+          code: 'invalid_argument',
+          message: 'Some values need fixing.',
+          errors: c.errors,
+        };
+      saved = {
+        ...saved,
+        url: c.url,
+        apiKeyFile: c.apiKeyFile,
+        effectiveUrl: c.url || DEFAULT_PG_CONTROL_URL,
+        keySource: c.apiKeyFile ? 'settings-file' : 'none',
+      };
+      for (const l of listeners) l(saved);
+      return { ok: true, value: saved };
+    },
+    test: async (input) => {
+      const c = check(input);
+      const url = c.url || DEFAULT_PG_CONTROL_URL;
+      if (Object.keys(c.errors).length > 0)
+        return {
+          ok: false,
+          code: 'invalid',
+          message: 'Fix the highlighted values first.',
+          url,
+          errors: c.errors,
+        };
+      return {
+        ok: false,
+        code: 'unreachable',
+        message: `The browser preview cannot reach ${url}; the desktop app tests it from main.`,
+        url,
+      };
+    },
+    pickKeyFile: async () => null,
+    onChanged: (cb) => {
+      listeners.add(cb);
+      return () => void listeners.delete(cb);
+    },
+  };
+}
+
 export function createFakeDesktop(): LoamsDesktopApi {
   // Studio's daemon: a fake Connect agentd behind the desktop's agentd route (SD1 Task 17).
   installFakeAgentd();
@@ -424,6 +502,7 @@ export function createFakeDesktop(): LoamsDesktopApi {
         return { ok: true, value: undefined };
       },
     },
+    pgControl: fakePgControl(),
     factory: {
       list: async (): Promise<FactoryAppInfo[]> => PREVIEW_FACTORY_APPS.map(previewInfo),
       configure: async (app, url, fields) => {
@@ -485,8 +564,12 @@ export function createFakeDesktop(): LoamsDesktopApi {
       // No OS dialog in a browser preview: a prompt stands in for the folder picker.
       pickFolder: async (title) => globalThis.prompt(title ?? 'Folder path', '~/src/new-project'),
       setBadge: async () => undefined,
+      // No splash in a browser preview.
+      ready: async () => {},
       // No application menu in a browser preview.
       onCommand: () => () => undefined,
+      // A browser tab has no native window chrome to go fullscreen.
+      onFullscreen: () => () => undefined,
     },
     // Studio's editor hand-off (SD1 Task 28): a browser preview cannot start an editor.
     studio: {
@@ -1002,18 +1085,34 @@ function createFakeChat(): LoamsDesktopApi['chat'] {
 
 /** The preview's updater: a manual-mode feed that finds v0.2.0 on "Check now". */
 function previewUpdate(): LoamsDesktopApi['update'] {
-  let state: Awaited<ReturnType<LoamsDesktopApi['update']['state']>> = { phase: 'idle' };
+  let state: UpdateState = { phase: 'idle' };
   let auto = true;
+  let skipped: string | undefined;
+  const listeners = new Set<(s: UpdateState) => void>();
+  const set = (s: UpdateState) => {
+    state = s;
+    for (const cb of listeners) cb(s);
+  };
   return {
     state: async () => state,
+    // The update toast follows these pushes (CF1 Task 16).
+    onState: (cb) => {
+      listeners.add(cb);
+      return () => void listeners.delete(cb);
+    },
     autoCheck: async () => ({ enabled: auto, locked: false }),
     setAutoCheck: async (enabled) => {
       auto = enabled;
     },
+    // "Check now" is a manual check: it offers a skipped version again.
     check: async () => {
-      state = { phase: 'checking' };
+      set({ phase: 'checking' });
       await new Promise((r) => globalThis.setTimeout(r, 500));
-      state = { phase: 'available', version: '0.2.0', mode: 'manual' };
+      set({ phase: 'available', version: '0.2.0', mode: 'manual' });
+    },
+    skip: async (version) => {
+      skipped = version;
+      if (state.phase === 'available' && state.version === skipped) set({ phase: 'idle' });
     },
     download: async () => undefined,
     installAndRestart: async () => undefined,

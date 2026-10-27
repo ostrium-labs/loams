@@ -6,7 +6,7 @@ Both apps and the mock speak the app protos of design §37 §8 (`loams.instance.
 
 `conformance/proto-ref.lock` records the upstream repository, the commit `proto/` was last synced from, the packages the phones use, which of them are still **placeholders**, and a hash of `proto/`.
 
-> **Today every package is a placeholder.** AP0 (the upstream protos and `loams-apps-mock`) has not merged yet, so the files under `proto/loams/` were written here from the AP0 plan and carry a `PLACEHOLDER` header. When AP0 merges, run `scripts/sync-protos.sh <merge-commit>`: it replaces each placeholder that now exists upstream, empties the `placeholder` line, updates the hash and regenerates. Then fix the apps against the real contract in the same PR. The one field the placeholders add beyond the plan, `GetInstanceResponse.identity_provider` (the Authentik issuer and client ids for browser sign-in), is a request to AP0.
+> **Today every package is a placeholder.** AP0 (the upstream protos and `loams-apps-mock`) has not merged yet, so the files under `proto/loams/` were written here from the AP0 plan and carry a `PLACEHOLDER` header. When AP0 merges, run `scripts/sync-protos.sh <merge-commit>`: it replaces each placeholder that now exists upstream, empties the `placeholder` line, updates the hash and regenerates. Then fix the apps against the real contract in the same PR. The one field the placeholders add beyond the plan, `GetInstanceResponse.identity_provider` (the OIDC issuer and client ids for browser sign-in), is a request to AP0.
 
 Package names are `loams.*` (Q422, answered by the rename PR); Connect URL paths contain them, for example `/loams.approvals.v1.ApprovalService/WatchApprovals`.
 

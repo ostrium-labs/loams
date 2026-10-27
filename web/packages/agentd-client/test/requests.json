@@ -985,5 +985,89 @@
       "harness": "codex",
       "version": "0.41.0"
     }
+  },
+  {
+    "method": "CreateRunWorktree",
+    "params": {
+      "chatId": "chat-1",
+      "branch": "factory/run-1/1",
+      "base": "main"
+    }
+  },
+  {
+    "method": "GetThreadDiff",
+    "params": {
+      "chatId": "chat-1",
+      "baseRef": "main"
+    }
+  },
+  {
+    "method": "PostReviewComment",
+    "params": {
+      "chatId": "chat-1",
+      "path": "src/app.ts",
+      "side": "new",
+      "line": 3,
+      "body": "Check the limit.",
+      "diffChecksum": "sum-1"
+    }
+  },
+  {
+    "method": "OpenChangeRequest",
+    "params": {
+      "chatId": "chat-1",
+      "provider": "forgejo",
+      "base": "main",
+      "title": "Rate limit signup",
+      "body": "",
+      "draft": false
+    }
+  },
+  {
+    "method": "RequestApproval",
+    "params": {
+      "chatId": "chat-1",
+      "kind": "merge",
+      "summary": "Merge #7",
+      "payload": {
+        "repo": "dev/app",
+        "pr": 7,
+        "head_sha": "abcdef0"
+      }
+    }
+  },
+  {
+    "method": "GetApproval",
+    "params": {
+      "chatId": "chat-1",
+      "approvalId": "fa-1"
+    }
+  },
+  {
+    "method": "MergeChangeRequest",
+    "params": {
+      "chatId": "chat-1",
+      "approvalId": "fa-1",
+      "provider": "forgejo",
+      "number": 7,
+      "headSha": "abcdef0"
+    }
+  },
+  {
+    "method": "GetChecks",
+    "params": {
+      "chatId": "chat-1",
+      "provider": "github",
+      "sha": "abcdef0"
+    }
+  },
+  {
+    "method": "GetCheckLog",
+    "params": {
+      "chatId": "chat-1",
+      "provider": "github",
+      "logId": "901",
+      "lines": 200
+    }
   }
 ]

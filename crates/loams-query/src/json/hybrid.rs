@@ -37,7 +37,8 @@ pub fn parse_query_body(body: Value, now_ms: u64) -> Result<SearchRequest, Servi
         .as_object()
         .is_some_and(|o| o.contains_key("from") || o.contains_key("retrieve"));
     if !is_hybrid {
-        return serde_json::from_value(body)
+        return serde_json::from_value::<SearchRequest>(body)
+            .map(SearchRequest::with_default_k)
             .map_err(|err| invalid(format!("invalid search request: {err}")));
     }
     let Value::Object(body) = body else {
@@ -103,7 +104,16 @@ pub fn parse_query_body(body: Value, now_ms: u64) -> Result<SearchRequest, Servi
                 .map_err(|err| invalid(format!("invalid rerank: {err}")))?,
         );
     }
-    Ok(request)
+    Ok(request.with_default_k())
+}
+
+/// A retriever's `k`: absent or `null` is `0`, which
+/// [`SearchRequest::with_default_k`] fills in.
+fn optional_k(v: Option<&Value>, what: &str) -> Result<usize, ServiceError> {
+    match v {
+        None | Some(Value::Null) => Ok(0),
+        Some(v) => usize_from(v, what),
+    }
 }
 
 fn usize_from(v: &Value, what: &str) -> Result<usize, ServiceError> {
@@ -212,7 +222,7 @@ fn retriever_from(v: &Value) -> Result<Retriever, ServiceError> {
             Ok(Retriever::Vector {
                 field: text_of(map, "field", "vector")?,
                 query,
-                k: usize_from(map.get("k").unwrap_or(&Value::Null), "vector.k")?,
+                k: optional_k(map.get("k"), "vector.k")?,
                 params: AnnParams {
                     exact,
                     nprobes: opt_u32(map, "nprobes", "vector")?,
@@ -240,7 +250,7 @@ fn retriever_from(v: &Value) -> Result<Retriever, ServiceError> {
                     fuzziness: None,
                     analyzer: None,
                 },
-                k: usize_from(map.get("k").unwrap_or(&Value::Null), "text.k")?,
+                k: optional_k(map.get("k"), "text.k")?,
             })
         }
         other => Err(invalid(format!("unknown retriever {other}"))),

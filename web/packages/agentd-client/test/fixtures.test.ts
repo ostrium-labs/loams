@@ -123,6 +123,15 @@ describe('the method table', () => {
       'Mutate',
       'LocalDevice',
       'EngineInfo',
+      'CreateRunWorktree',
+      'GetThreadDiff',
+      'PostReviewComment',
+      'OpenChangeRequest',
+      'RequestApproval',
+      'GetApproval',
+      'MergeChangeRequest',
+      'GetChecks',
+      'GetCheckLog',
     ]);
   });
 });

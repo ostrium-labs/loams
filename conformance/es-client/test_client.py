@@ -165,12 +165,39 @@ def test_search_dsl(es, index, query, expected):
     assert r["hits"]["total"] == {"value": len(expected), "relation": "eq"}
 
 
-def test_aggregations_are_phase_b(es, index, is_loams):
-    if not is_loams:
-        pytest.skip("Loams refuses aggregations as Phase B")
+def test_terms_composite_and_top_hits(es, index):
+    """Aggregations the NVIDIA RAG Blueprint lists documents with (#951)."""
     _dsl_index(es, index)
-    with pytest.raises(BadRequestError):
-        es.search(index=index, aggs={"t": {"terms": {"field": "tag"}}})
+    r = es.search(index=index, size=0, aggs={"t": {"terms": {"field": "tag"}}})
+    buckets = {b["key"]: b["doc_count"] for b in r["aggregations"]["t"]["buckets"]}
+    assert buckets == {"animal": 2, "metal": 1, "food": 1}
+    seen = {}
+    after = None
+    while True:
+        composite = {"size": 2, "sources": [{"tag": {"terms": {"field": "tag"}}}]}
+        if after:
+            composite["after"] = after
+        r = es.search(
+            index=index,
+            size=0,
+            aggs={"u": {"composite": composite, "aggs": {"top": {"top_hits": {"size": 1}}}}},
+        )
+        agg = r["aggregations"]["u"]
+        if not agg["buckets"]:
+            break
+        for b in agg["buckets"]:
+            hits = b["top"]["hits"]
+            assert hits["total"]["value"] == b["doc_count"]
+            assert hits["hits"][0]["_index"] == index
+            assert hits["hits"][0]["_source"]["tag"] == b["key"]["tag"]
+            seen[b["key"]["tag"]] = b["doc_count"]
+        after = agg.get("after_key")
+        if after is None:
+            break
+    assert seen == {"animal": 2, "food": 1, "metal": 1}
+    r = es.search(index=index, size=0, aggs={"m": {"avg": {"field": "n"}}, "x": {"max": {"field": "n"}}})
+    assert r["aggregations"]["m"]["value"] == 2.5
+    assert r["aggregations"]["x"]["value"] == 4.0
 
 
 VECTORS = {
@@ -349,6 +376,23 @@ def test_indices_admin(es, names, is_loams):
         assert health["status"] in ("green", "yellow")
 
 
+def test_cat_indices_json(es, index):
+    """`@mastra/elasticsearch`'s `listIndexes()` reads `cat.indices(format="json")`
+    (MA1 Task 24)."""
+    es.indices.create(index=index)
+    es.index(index=index, id="1", document={"a": 1}, refresh=True)
+    es.index(index=index, id="2", document={"a": 2}, refresh=True)
+    rows = es.cat.indices(format="json")
+    mine = [r for r in rows if r["index"] == index]
+    assert len(mine) == 1, rows
+    assert mine[0]["docs.count"] == "2"
+    assert mine[0]["status"] == "open"
+    one = es.cat.indices(index=index, format="json", h="index,docs.count")
+    assert [dict(r) for r in one] == [{"index": index, "docs.count": "2"}]
+    text = es.cat.indices(index=index, v=True, h="index,docs.count")
+    assert str(text).split() == ["index", "docs.count", index, "2"]
+
+
 def test_alias_on_two_indices_like_the_langchain_caches(es, names):
     i1, i2, i3 = names("test_index1"), names("test_index2"), names("test_index3")
     alias = names("test_alias")
@@ -401,3 +445,17 @@ def test_errors_map_to_client_classes(es, index):
     with pytest.raises(NotFoundError) as e:
         es.search(index="missing_index_for_sure")
     assert e.value.error == "index_not_found_exception"
+
+
+def test_helpers_scan_uses_the_scroll_api(es, index):
+    """`elasticsearch.helpers.scan` (#950): scroll, then clear."""
+    helpers.bulk(es, ({"_index": index, "_id": f"d{i}", "n": i} for i in range(25)), refresh=True)
+    got = list(helpers.scan(es, index=index, query={"query": {"match_all": {}}}, size=10))
+    assert sorted(h["_id"] for h in got) == sorted(f"d{i}" for i in range(25))
+    ordered = list(
+        helpers.scan(
+            es, index=index, query={"query": {"range": {"n": {"gte": 20}}}, "sort": [{"n": "desc"}]},
+            size=2, preserve_order=True,
+        )
+    )
+    assert [h["_source"]["n"] for h in ordered] == [24, 23, 22, 21, 20]

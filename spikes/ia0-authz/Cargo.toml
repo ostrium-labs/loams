@@ -1,0 +1,29 @@
+# IA0 spike (design 76, plan IA1 IA0 Tasks 3-5). A standalone package outside the workspace:
+# build it with `cargo build --manifest-path spikes/ia0-authz/Cargo.toml`. Nothing here enters
+# `loams`'s default build; IA2's `crates/loams-authz` is the real crate.
+[package]
+name = "ia0-authz"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.97"
+license = "Apache-2.0"
+publish = false
+
+[workspace]
+
+[dependencies]
+anyhow = "1"
+axum = "0.8"
+base64 = "0.22"
+futures = "0.3"
+hex = "0.4"
+hmac = "0.12"
+jsonwebtoken = { version = "=10.4.0", default-features = false, features = ["aws_lc_rs", "use_pem"] }
+openfga-client = "=0.6.1"
+reqwest = { version = "0.13", default-features = false, features = ["json", "form", "query", "rustls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

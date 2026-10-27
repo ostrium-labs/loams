@@ -565,3 +565,180 @@ async fn delete_by_query_errors_follow_es() {
     assert_eq!(count(&es, "i").await, 6, "nothing was deleted");
     es.server.shutdown().await.expect("shutdown");
 }
+
+// ----- the scroll API (#950) -----
+
+/// The `_id`s of a page.
+fn page_ids(a: &Answer) -> Vec<String> {
+    a.body["hits"]["hits"]
+        .as_array()
+        .expect("hits")
+        .iter()
+        .map(|h| h["_id"].as_str().expect("_id").to_string())
+        .collect()
+}
+
+#[tokio::test]
+async fn scroll_pages_through_every_match() {
+    let es = Es::start().await;
+    let docs: Vec<(String, Value)> = (0..25)
+        .map(|i| (format!("d{i:02}"), json!({"n": i, "even": i % 2 == 0})))
+        .collect();
+    bulk_index(&es, "sc", &docs).await;
+    // helpers.scan's first request.
+    let a = Es::ok(
+        es.post(
+            "/sc/_search?scroll=5m",
+            json!({"query": {"match_all": {}}, "size": 10, "sort": "_doc"}),
+        )
+        .await,
+    );
+    let mut seen = page_ids(&a);
+    assert_eq!(seen.len(), 10);
+    assert_eq!(a.body["hits"]["total"]["value"], 25);
+    let mut id = a.body["_scroll_id"]
+        .as_str()
+        .expect("_scroll_id")
+        .to_string();
+    assert_eq!(
+        a.body
+            .as_object()
+            .expect("object")
+            .keys()
+            .next()
+            .map(String::as_str),
+        Some("_scroll_id")
+    );
+    let mut pages = 1;
+    loop {
+        let a = Es::ok(
+            es.post("/_search/scroll", json!({"scroll": "5m", "scroll_id": id}))
+                .await,
+        );
+        let ids = page_ids(&a);
+        id = a.body["_scroll_id"]
+            .as_str()
+            .expect("_scroll_id")
+            .to_string();
+        if ids.is_empty() {
+            break;
+        }
+        assert_eq!(a.body["hits"]["total"]["value"], 25);
+        seen.extend(ids);
+        pages += 1;
+        assert!(pages < 10, "the scroll does not end");
+    }
+    assert_eq!(pages, 3);
+    let mut expected: Vec<String> = docs.iter().map(|(id, _)| id.clone()).collect();
+    expected.sort();
+    let mut sorted = seen.clone();
+    sorted.sort();
+    assert_eq!(sorted, expected, "every match once");
+    // Clearing answers as ES does.
+    let a = es
+        .send(
+            Method::DELETE,
+            "/_search/scroll",
+            Some(json!({"scroll_id": [id]})),
+            &[],
+        )
+        .await;
+    assert_eq!(a.status, StatusCode::OK, "{}", a.text);
+    assert_eq!(a.body, json!({"succeeded": true, "num_freed": 1}));
+    let a = es
+        .send(Method::DELETE, "/_search/scroll/_all", None, &[])
+        .await;
+    assert_eq!(a.status, StatusCode::OK, "{}", a.text);
+}
+
+#[tokio::test]
+async fn scroll_with_a_query_a_sort_and_the_url_forms() {
+    let es = Es::start().await;
+    let docs: Vec<(String, Value)> = (0..12)
+        .map(|i| (format!("d{i:02}"), json!({"n": i, "even": i % 2 == 0})))
+        .collect();
+    bulk_index(&es, "sc", &docs).await;
+    // A query and a field sort, size as a URL parameter.
+    let a = Es::ok(
+        es.post(
+            "/sc/_search?scroll=1m&size=2",
+            json!({"query": {"term": {"even": true}}, "sort": [{"n": "desc"}]}),
+        )
+        .await,
+    );
+    let mut ns: Vec<i64> = Vec::new();
+    let collect = |a: &Answer, ns: &mut Vec<i64>| {
+        for h in a.body["hits"]["hits"].as_array().expect("hits") {
+            ns.push(h["_source"]["n"].as_i64().expect("n"));
+            assert_eq!(h["sort"][0], h["_source"]["n"], "the user sort stays");
+        }
+    };
+    collect(&a, &mut ns);
+    let mut id = a.body["_scroll_id"].as_str().expect("id").to_string();
+    loop {
+        // The id in the path, GET.
+        let a = Es::ok(es.get(&format!("/_search/scroll/{id}?scroll=1m")).await);
+        if a.body["hits"]["hits"].as_array().expect("hits").is_empty() {
+            break;
+        }
+        collect(&a, &mut ns);
+        id = a.body["_scroll_id"].as_str().expect("id").to_string();
+    }
+    assert_eq!(ns, [10, 8, 6, 4, 2, 0]);
+    // Without a sort, hits carry no `sort`.
+    let a = Es::ok(es.post("/sc/_search?scroll=1m", json!({"size": 5})).await);
+    assert!(
+        a.body["hits"]["hits"][0].get("sort").is_none(),
+        "{}",
+        a.text
+    );
+}
+
+#[tokio::test]
+async fn scroll_refusals_and_missing_contexts() {
+    let es = Es::start().await;
+    bulk_index(&es, "sc", &[("a".to_string(), json!({"n": 1}))]).await;
+    es.post("/sc/_search?scroll=1m", json!({"from": 1}))
+        .await
+        .assert_error(400, "action_request_validation_exception", None);
+    es.post(
+        "/sc/_search?scroll=1m",
+        json!({"search_after": [1], "sort": ["n"]}),
+    )
+    .await
+    .assert_error(400, "action_request_validation_exception", None);
+    es.post("/sc/_search?scroll=2d", json!({}))
+        .await
+        .assert_error(400, "illegal_argument_exception", None);
+    es.post(
+        "/_search/scroll",
+        json!({"scroll": "1m", "scroll_id": "bogus"}),
+    )
+    .await
+    .assert_error(404, "search_context_missing_exception", None);
+    es.post("/_search/scroll", json!({"scroll": "1m"}))
+        .await
+        .assert_error(400, "action_request_validation_exception", None);
+    // A scroll from another namespace is missing here.
+    let a = Es::ok(es.post("/sc/_search?scroll=1m", json!({})).await);
+    let id = a.body["_scroll_id"].as_str().expect("id").to_string();
+    let other = es
+        .send(
+            Method::POST,
+            "/_search/scroll",
+            Some(json!({"scroll": "1m", "scroll_id": id})),
+            &[("loams-namespace", "other")],
+        )
+        .await;
+    assert_eq!(other.status, StatusCode::NOT_FOUND, "{}", other.text);
+    let a = es
+        .send(
+            Method::DELETE,
+            "/_search/scroll",
+            Some(json!({"scroll_id": "bogus"})),
+            &[],
+        )
+        .await;
+    assert_eq!(a.status, StatusCode::NOT_FOUND);
+    assert_eq!(a.body, json!({"succeeded": true, "num_freed": 0}));
+}

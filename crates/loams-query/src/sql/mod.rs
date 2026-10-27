@@ -10,6 +10,7 @@ pub mod graph_algos;
 pub mod graph_ddl;
 pub mod graph_udtf;
 mod json_rows;
+mod params;
 mod provider;
 mod udtf;
 
@@ -31,6 +32,7 @@ pub use catalog::{CollectionsSchema, NamespaceCatalog};
 pub use exprs::expr_to_query;
 pub use graph_ddl::{CreateGraph, GraphDdlError, is_create_graph, parse_create_graph};
 pub use json_rows::{rows_to_json, value_to_json};
+pub use params::{ParamsError, plan_read_only_with_params};
 pub use provider::{CollectionProvider, CollectionScanExec, collection_arrow_schema};
 pub use udtf::{
     HybridSearchFunction, RerankFunction, RetrieverDescriptorUdf, RrfFunction, TextSearchFunction,
@@ -234,6 +236,20 @@ where
 /// created just before the statement is visible to it. Every served surface
 /// (REST, Flight SQL) plans through here.
 pub async fn plan_read_only(ctx: &SessionContext, sql: &str) -> Result<DataFrame, ServiceError> {
+    refresh_catalogs(ctx).await?;
+    // `sql_with_options`, split so a refused plan is told apart.
+    let plan = ctx
+        .state()
+        .create_logical_plan(sql)
+        .await
+        .map_err(planning)?;
+    verify_read_only(&plan)?;
+    ctx.execute_logical_plan(plan).await.map_err(planning)
+}
+
+/// Refreshes the namespaces of `ctx`, so a collection created just before a
+/// statement is visible to it.
+async fn refresh_catalogs(ctx: &SessionContext) -> Result<(), ServiceError> {
     for name in ctx.catalog_names() {
         if let Some(catalog) = ctx.catalog(&name)
             && let Some(catalog) = catalog.downcast_ref::<NamespaceCatalog>()
@@ -241,16 +257,14 @@ pub async fn plan_read_only(ctx: &SessionContext, sql: &str) -> Result<DataFrame
             catalog.refresh().await?;
         }
     }
-    // `sql_with_options`, split so a refused plan is told apart.
-    let plan = ctx
-        .state()
-        .create_logical_plan(sql)
-        .await
-        .map_err(planning)?;
-    read_only_options().verify_plan(&plan).map_err(|err| {
+    Ok(())
+}
+
+/// Rule 1: only queries plan.
+fn verify_read_only(plan: &datafusion::logical_expr::LogicalPlan) -> Result<(), ServiceError> {
+    read_only_options().verify_plan(plan).map_err(|err| {
         ServiceError::InvalidArgument(format!("only read-only queries are allowed: {err}"))
-    })?;
-    ctx.execute_logical_plan(plan).await.map_err(planning)
+    })
 }
 
 /// Starts executing a frame [`plan_read_only`] planned, as a stream.
@@ -290,4 +304,25 @@ async fn collect_bounded(frame: DataFrame, max_rows: usize) -> Result<SqlResult,
         batches,
         truncated,
     })
+}
+
+/// A result as one Arrow IPC stream: its schema, then its batches
+/// (`loams.sql.v1`'s `QueryArrow`, API2 Task 1). `max_bytes` caps the stream;
+/// past it the answer is `None`, which the caller turns into
+/// `result_too_large`.
+pub fn arrow_ipc(result: &SqlResult, max_bytes: usize) -> Result<Option<Vec<u8>>, ServiceError> {
+    use datafusion::arrow::ipc::writer::StreamWriter;
+    let internal = |err: datafusion::arrow::error::ArrowError| {
+        ServiceError::Internal(format!("arrow ipc: {err}"))
+    };
+    let mut writer = StreamWriter::try_new(Vec::new(), &result.schema).map_err(internal)?;
+    for batch in &result.batches {
+        writer.write(batch).map_err(internal)?;
+        if writer.get_ref().len() > max_bytes {
+            return Ok(None);
+        }
+    }
+    writer.finish().map_err(internal)?;
+    let bytes = writer.into_inner().map_err(internal)?;
+    Ok((bytes.len() <= max_bytes).then_some(bytes))
 }

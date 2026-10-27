@@ -38,7 +38,18 @@ from loams._gen.facade import (
     PROTO_REV     ,
     TablesModule  ,
 )
-from loams.runtime.call import AsyncCallInvoker
+from loams._gen.facade import GraphModule, VectorModule
+from loams.app import attach_async_app_calls
+from loams.app_types import (
+    AsyncCollectionsNamespace,
+    AsyncDocumentsNamespace,
+    AsyncNamespacesNamespace,
+    AsyncSearchNamespace,
+    AsyncSqlNamespace,
+    AsyncStreamsNamespace,
+)
+from loams.handle import AsyncCollectionHandle
+from loams.runtime.call import DEFAULT_TIMEOUT_MS, AsyncCallInvoker
 from loams.runtime.consistency import ConsistencySession
 from loams.runtime.errors import LoamsError
 from loams.runtime.options import CallOptions, ConsistencyTokenStore, PageRequestOptions
@@ -113,6 +124,7 @@ class AsyncLoams:
         max_retries: int = DEFAULT_MAX_RETRIES,
         session_consistency: bool = False,
         timeout_ms: int | None = None,
+        namespace: str | None = None,
     ) -> None:
         """Builds an async client for one instance. See `loams.Loams` for the arguments.
 
@@ -126,10 +138,11 @@ class AsyncLoams:
         if not endpoint.strip():
             raise ValueError("endpoint is empty")
 
+        # The deadline is the invoker's (R12), not the transport's, so one budget
+        # covers a call's retries and `timeout_ms=0` can disable it.
         options = transport_options or TransportOptions(
             proto_json=proto_json,
             protocol=protocol_of(protocol),
-            timeout_ms=timeout_ms,
         )
         client = make_async_client(options.merge(endpoint))
         self._client = client
@@ -143,15 +156,52 @@ class AsyncLoams:
         self._consistency: ConsistencySession | None = (
             ConsistencySession() if session_consistency else None
         )
-        self._invoker = AsyncCallInvoker(client, source, max_retries, self._consistency)
+        self._invoker = AsyncCallInvoker(
+            client,
+            source,
+            max_retries,
+            self._consistency,
+            namespace=namespace,
+            timeout_ms=DEFAULT_TIMEOUT_MS if timeout_ms is None else timeout_ms,
+        )
+        #: The default namespace (R11), if the client has one.
+        self.namespace: str | None = namespace
         self._endpoint = endpoint
 
         modules = build_async_modules(self._invoker)
+        attach_async_app_calls(modules, MODULES)
         self.modules: Mapping[str, Any] = modules
         self.instance = cast(InstanceModule, modules["instance"])
         self.live = cast(LiveModule, modules["live"])
         self.tables = cast(TablesModule, modules["tables"])
+        #: The app modules (SDKP), as `Loams` has them; see `loams.loams.Loams`.
+        self.namespaces = cast(AsyncNamespacesNamespace, modules["namespaces"])
+        self.collections = cast(AsyncCollectionsNamespace, modules["collections"])
+        self.documents = cast(AsyncDocumentsNamespace, modules["documents"])
+        self.search = cast(AsyncSearchNamespace, modules["search"])
+        self.vector = cast(VectorModule, modules["vector"])
+        self.graph = cast(GraphModule, modules["graph"])
+        #: `AsyncLoams.sql`: one read-only SQL statement over a namespace's collections.
+        self.sql = cast(AsyncSqlNamespace, modules["sql"])
+        #: `AsyncLoams.streams`: a namespace's logs, with `subscribe` (R14).
+        self.streams = cast(AsyncStreamsNamespace, modules["streams"])
         self.system = AsyncSystemApi(self.instance.get_instance)
+
+    @classmethod
+    def from_env(
+        cls,
+        environ: Mapping[str, str] | None = None,
+        **overrides: Any,
+    ) -> AsyncLoams:
+        """An async client from the environment; see `Loams.from_env`."""
+        from loams.loams import _from_env
+
+        endpoint, kwargs = _from_env(environ, overrides)
+        return cls(endpoint, **kwargs)
+
+    def collection(self, name: str, *, namespace: str | None = None) -> AsyncCollectionHandle:
+        """A handle on one collection, awaited (SDKP §2.8)."""
+        return AsyncCollectionHandle(self.modules, name, namespace=namespace)
 
     # -- lifecycle ---------------------------------------------------------
 

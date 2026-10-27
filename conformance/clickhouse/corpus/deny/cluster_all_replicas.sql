@@ -1,2 +1,3 @@
 -- expect: 344
-SELECT * FROM clusterAllReplicas('default', system.one)
+-- HE1 R9.62: clusterAllReplicas of anything but a system table stays refused.
+SELECT * FROM clusterAllReplicas('default', default.t)

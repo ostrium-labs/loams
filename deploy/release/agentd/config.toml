@@ -1,4 +1,4 @@
-# loams-agentd's config for `--profile agentd` (crates/loams-agentd/README.md).
+# loams-agentd's config for the stack's `agentd` service (on by default) (crates/loams-agentd/README.md).
 # Every key is optional; the daemon refuses to start without this file, so it
 # ships empty. Mounted read-only at /home/loams/agentd/config.toml; the daemon
 # keeps its token, lock and store in that directory (the agentd-data volume).

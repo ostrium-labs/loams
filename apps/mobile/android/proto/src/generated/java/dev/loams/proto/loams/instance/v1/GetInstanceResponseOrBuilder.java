@@ -288,7 +288,7 @@ java.lang.String defaultValue);
 
   /**
    * <pre>
-   * PLACEHOLDER addition, not in the AP0 plan: the Authentik issuer and the
+   * PLACEHOLDER addition, not in the AP0 plan: the OIDC issuer and the
    * public client ids the apps use for browser sign-in (§37 §7.2.2 path 2).
    * </pre>
    *
@@ -298,7 +298,7 @@ java.lang.String defaultValue);
   boolean hasIdentityProvider();
   /**
    * <pre>
-   * PLACEHOLDER addition, not in the AP0 plan: the Authentik issuer and the
+   * PLACEHOLDER addition, not in the AP0 plan: the OIDC issuer and the
    * public client ids the apps use for browser sign-in (§37 §7.2.2 path 2).
    * </pre>
    *

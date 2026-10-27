@@ -100,6 +100,22 @@ public sealed class FixtureServer : IDisposable
         return ReplayServer.Start(fixturesDir);
     }
 
+    /// <summary>
+    /// The shared Node fixture server alone, or null when Node is not on PATH.
+    /// </summary>
+    /// <remarks>
+    /// The app scenarios use this and never <c>LOAMS_TEST_ENDPOINT</c>: a live
+    /// <c>loams dev</c> cannot replay a recording, and replaying against one would
+    /// create the <c>app</c> namespace a re-record needs fresh. The in-process replay
+    /// is not a fallback either, because it compares bodies byte for byte where the
+    /// shared server compares them as JSON.
+    /// </remarks>
+    public static FixtureServer? StartShared(string conformanceDir)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(conformanceDir);
+        return TryStartNode(conformanceDir, out var spawned) ? spawned : null;
+    }
+
     private static bool TryStartNode(string conformanceDir, out FixtureServer? server)
     {
         server = null;

@@ -326,11 +326,13 @@ impl Run<'_> {
                 &out,
             ));
         }
-        let out = self
-            .runtime
-            .engine(&["pull".to_string(), self.opts.br_image.clone()])?;
-        if !out.ok() {
-            return Err(failed_output("registry", "pulling BR", &out));
+        if self.stack.tikv() {
+            let out = self
+                .runtime
+                .engine(&["pull".to_string(), self.opts.br_image.clone()])?;
+            if !out.ok() {
+                return Err(failed_output("registry", "pulling BR", &out));
+            }
         }
         Ok(())
     }
@@ -355,45 +357,26 @@ impl Run<'_> {
             "internal",
             "preparing the snapshot directory",
         )?;
-        let (config, _) = self.enabled()?;
-        let version = self
-            .stack
-            .env
-            .get("TIKV_TAG")
-            .filter(|v| !v.is_empty())
-            .cloned()
-            .unwrap_or_else(|| DEFAULT_TIKV.to_string());
-        let method = if helpers::tikv_mounts_snapshots(&config) {
-            helper(
-                self.runtime,
-                &helpers::br_helper(self.stack, &self.opts.br_image, false, &id),
-                "internal",
-                "BR's backup of TiKV",
-            )?;
-            "br"
+        // A stack on the embedded stores has no TiKV to copy: `migrate
+        // snapshot` copies its metastore with the data directory.
+        let tikv = if self.stack.tikv() {
+            Some(self.snapshot_tikv(&id, &image)?)
         } else {
-            let pd_tikv = vec!["pd".to_string(), "tikv".to_string()];
-            compose::stop(self.runtime, &self.stack.dir, &pd_tikv)?;
-            let copied = helper(
-                self.runtime,
-                &helpers::cold_copy_helper(self.stack, &image, false, &id),
-                "internal",
-                "the cold copy of TiKV",
-            );
-            compose::up(self.runtime, &self.stack.dir, &pd_tikv)?;
-            copied?;
-            "cold"
+            None
         };
         let mut sub = vec!["snapshot".to_string()];
         sub.extend(helpers::migrate_store_args(
             self.stack,
             self.postgres_running()?,
         ));
+        sub.extend([format!("--to={SNAPSHOTS}"), format!("--id={id}")]);
+        if let Some((method, version)) = &tikv {
+            sub.extend([
+                format!("--tikv={method}"),
+                format!("--tikv-version={version}"),
+            ]);
+        }
         sub.extend([
-            format!("--to={SNAPSHOTS}"),
-            format!("--id={id}"),
-            format!("--tikv={method}"),
-            format!("--tikv-version={version}"),
             format!("--target-release={}", self.to),
             "--output=json".to_string(),
         ]);
@@ -409,8 +392,44 @@ impl Run<'_> {
             return Err(failed_output(code, "loams migrate snapshot", &out));
         }
         self.snapshot = Some(id);
-        self.tikv = Some((method.to_string(), version));
+        self.tikv = tikv;
         Ok(())
+    }
+
+    /// TiKV's copy for snapshot `id`: BR's backup, or a cold copy of PD's
+    /// and TiKV's volumes when `tikv` does not mount the snapshots. Returns
+    /// the method and TiKV's version.
+    fn snapshot_tikv(&mut self, id: &str, image: &str) -> Result<(String, String)> {
+        let (config, _) = self.enabled()?;
+        let version = self
+            .stack
+            .env
+            .get("TIKV_TAG")
+            .filter(|v| !v.is_empty())
+            .cloned()
+            .unwrap_or_else(|| DEFAULT_TIKV.to_string());
+        let method = if helpers::tikv_mounts_snapshots(&config) {
+            helper(
+                self.runtime,
+                &helpers::br_helper(self.stack, &self.opts.br_image, false, id),
+                "internal",
+                "BR's backup of TiKV",
+            )?;
+            "br"
+        } else {
+            let pd_tikv = vec!["pd".to_string(), "tikv".to_string()];
+            compose::stop(self.runtime, &self.stack.dir, &pd_tikv)?;
+            let copied = helper(
+                self.runtime,
+                &helpers::cold_copy_helper(self.stack, image, false, id),
+                "internal",
+                "the cold copy of TiKV",
+            );
+            compose::up(self.runtime, &self.stack.dir, &pd_tikv)?;
+            copied?;
+            "cold"
+        };
+        Ok((method.to_string(), version))
     }
 
     fn install(&mut self) -> Result<()> {
@@ -421,6 +440,10 @@ impl Run<'_> {
     }
 
     fn third_party(&mut self) -> Result<()> {
+        if !self.stack.tikv() {
+            // The embedded stores: no third-party store to start first.
+            return Ok(());
+        }
         // PD, then TiKV (§9.2 rule 5); TiDB starts in the ordered start.
         compose::up(self.runtime, &self.stack.dir, &["pd".to_string()])?;
         compose::up(self.runtime, &self.stack.dir, &["tikv".to_string()])

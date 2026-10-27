@@ -25,7 +25,8 @@ public enum SignInMethod
   SIGN_IN_METHOD_PAIRING(1),
   /**
    * <pre>
-   * OIDC with PKCE in the system browser at the instance's Authentik.
+   * OIDC with PKCE in the system browser at the instance's issuer (Zitadel,
+   * design §76).
    * </pre>
    *
    * <code>SIGN_IN_METHOD_BROWSER = 2;</code>
@@ -33,7 +34,7 @@ public enum SignInMethod
   SIGN_IN_METHOD_BROWSER(2),
   /**
    * <pre>
-   * Authentik's device authorization flow (RFC 8628).
+   * The issuer's device authorization flow (RFC 8628).
    * </pre>
    *
    * <code>SIGN_IN_METHOD_DEVICE_CODE = 3;</code>
@@ -56,7 +57,8 @@ public enum SignInMethod
   public static final int SIGN_IN_METHOD_PAIRING_VALUE = 1;
   /**
    * <pre>
-   * OIDC with PKCE in the system browser at the instance's Authentik.
+   * OIDC with PKCE in the system browser at the instance's issuer (Zitadel,
+   * design §76).
    * </pre>
    *
    * <code>SIGN_IN_METHOD_BROWSER = 2;</code>
@@ -64,7 +66,7 @@ public enum SignInMethod
   public static final int SIGN_IN_METHOD_BROWSER_VALUE = 2;
   /**
    * <pre>
-   * Authentik's device authorization flow (RFC 8628).
+   * The issuer's device authorization flow (RFC 8628).
    * </pre>
    *
    * <code>SIGN_IN_METHOD_DEVICE_CODE = 3;</code>

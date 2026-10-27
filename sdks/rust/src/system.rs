@@ -408,11 +408,11 @@ mod tests {
     #[tokio::test]
     async fn a_module_this_sdk_does_not_speak_is_a_caller_mistake_not_a_yes_or_no() {
         let system = system();
-        let error = system.available("collections").await.unwrap_err();
+        let error = system.available("nosuchmodule").await.unwrap_err();
         assert!(
             error
                 .to_string()
-                .contains("no generated module named collections"),
+                .contains("no generated module named nosuchmodule"),
             "{error}"
         );
     }

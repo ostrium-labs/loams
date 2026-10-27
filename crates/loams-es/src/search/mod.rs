@@ -10,10 +10,12 @@
 //!   totals).
 //! - [`render`]: ES scores and the answer's shape.
 
+pub(crate) mod aggs;
 pub mod body;
 pub mod compile;
 pub mod exec;
 pub mod render;
+pub(crate) mod scroll;
 
 use loams_query::{BoolOperator, Query, SearchRequest, SortKey, TrackTotalHits};
 use serde_json::Value;
@@ -31,6 +33,7 @@ use crate::mapping::EsSimilarity;
 /// The query parameters `_search` accepts (Rulings 14 and 20); `typed_keys`
 /// is absent, so it is refused.
 pub const SEARCH_PARAMS: &[&str] = &[
+    "scroll",
     "from",
     "size",
     "sort",

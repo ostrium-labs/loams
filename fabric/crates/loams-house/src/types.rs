@@ -15,7 +15,7 @@
 //! | `FixedString(N)` | `fixed[N]` | yes |
 //! | `Date`, `Date32` | `date` | `Date` |
 //! | `DateTime[(tz)]`, `DateTime64(P ≤ 6[, tz])` | `timestamptz` | yes |
-//! | `DateTime64(7..9[, tz])` | `timestamptz_ns` (format v3) | yes |
+//! | `DateTime64(7..9[, tz])` | `long`, nanoseconds since the epoch (a column's own type; inside an `Array`, `Map` or `Tuple`, `timestamptz_ns`, format v3) | yes |
 //! | `UUID` | `uuid` | — |
 //! | `IPv4`, `IPv6`, `Enum8(…)`, `Enum16(…)` | `string` | yes |
 //! | `LowCardinality(T)` | `T` | yes |
@@ -23,6 +23,7 @@
 //! | `Array(T)` | `list<T>` | — |
 //! | `Map(K, V)` | `map<K, V>` | — |
 //! | `Tuple(a T, …)` | `struct<a: T, …>` (unnamed elements are `1`, `2`, …) | yes when unnamed |
+//! | `JSON[(…)]` (a column's own type) | `string`, the value's JSON text (interim, HE1 R9.63; Variant in HE4) | yes |
 //!
 //! A column that is not `Nullable` is a **required** Iceberg field. Every other
 //! ClickHouse type (`JSON`, `Object`, `Variant`, `Dynamic`, `AggregateFunction`,
@@ -68,6 +69,12 @@ pub enum ChType {
     DateTime64(u32, Option<String>),
     /// `Enum8(…)` or `Enum16(…)`, as written.
     Enum(String),
+    /// `SimpleAggregateFunction(f, T)`: a `T` that an `AggregatingMergeTree`
+    /// merges with `f` (HE1 R9.14); `f` as written.
+    SimpleAggregate(String, Box<ChType>),
+    /// `AggregateFunction(f, T…)`: a partial aggregation state (HE1 R9.14),
+    /// stored as its serialized bytes.
+    AggregateState,
     /// Anything else with arguments, by name.
     Other(String),
 }
@@ -291,6 +298,36 @@ impl Parser<'_> {
                 self.skip_args()?;
                 ChType::Enum(name)
             }
+            "SimpleAggregateFunction" => {
+                // The function (maybe parametric: `quantiles(0.5)`) runs to the
+                // first top-level comma.
+                let mut function = String::new();
+                let mut depth = 0;
+                loop {
+                    match self.next() {
+                        Some(Tok::Symbol(',')) if depth == 0 => break,
+                        Some(Tok::Symbol('(')) => {
+                            depth += 1;
+                            function.push('(');
+                        }
+                        Some(Tok::Symbol(')')) => {
+                            depth -= 1;
+                            function.push(')');
+                        }
+                        Some(Tok::Word(w)) | Some(Tok::Number(w)) => function.push_str(&w),
+                        Some(Tok::Quoted(q)) => function.push_str(&format!("'{q}'")),
+                        Some(Tok::Symbol(c)) => function.push(c),
+                        None => return Err("unbalanced parentheses".to_string()),
+                    }
+                }
+                let inner = self.ty()?;
+                self.expect(')')?;
+                ChType::SimpleAggregate(function, Box::new(inner))
+            }
+            "AggregateFunction" => {
+                self.skip_args()?;
+                ChType::AggregateState
+            }
             _ => {
                 self.skip_args()?;
                 let _ = open;
@@ -329,7 +366,7 @@ impl ChType {
     pub fn is_nullable(&self) -> bool {
         match self {
             Self::Nullable(_) => true,
-            Self::LowCardinality(inner) => inner.is_nullable(),
+            Self::LowCardinality(inner) | Self::SimpleAggregate(_, inner) => inner.is_nullable(),
             _ => false,
         }
     }
@@ -339,6 +376,28 @@ impl ChType {
         match self {
             Self::Nullable(inner) | Self::LowCardinality(inner) => inner.base(),
             other => other,
+        }
+    }
+
+    /// Whether this is ClickHouse's `JSON` type, with or without parameters
+    /// (`JSON(max_dynamic_paths = 100, message String)`).
+    pub fn is_json(&self) -> bool {
+        matches!(self, Self::Simple(name) | Self::Other(name) if name == "JSON")
+    }
+
+    /// For a column whose values are `DateTime64` with more than 6 digits (its
+    /// own type, under `Nullable` or `SimpleAggregateFunction`), the time zone
+    /// it was declared with: such a column is stored as nanoseconds in an
+    /// Iceberg `long` (D1572, HE1 R9.61). `None` for any other type.
+    pub fn nanos_zone(&self) -> Option<Option<&str>> {
+        match self {
+            Self::Nullable(inner)
+            | Self::LowCardinality(inner)
+            | Self::SimpleAggregate(_, inner) => inner.nanos_zone(),
+            Self::DateTime64(precision, zone) if (7..=9).contains(precision) => {
+                Some(zone.as_deref())
+            }
+            _ => None,
         }
     }
 }
@@ -392,7 +451,24 @@ pub fn to_iceberg_field(
 ) -> Result<NestedFieldRef, HouseError> {
     let ch = ChType::parse(ch_text)?;
     let id = ids.fresh();
-    let ty = to_iceberg(&ch, ch_text, ids, needs)?;
+    // D1572, HE1 R9.61: a column of nanosecond times is a `long` of
+    // nanoseconds since the epoch while the House writes format v2 (D1551);
+    // `loams.ch.types` keeps its type, and the read views and the write path
+    // convert ([`ChType::nanos_zone`]). `timestamptz_ns` once v3 is written
+    // (HE2, D1553).
+    let ty = if ch.nanos_zone().is_some() {
+        primitive(PrimitiveType::Long)
+    } else if ch.base().is_json() {
+        // HE1 R9.63 (interim; Iceberg v3's Variant in HE4): a `JSON` column is
+        // an Iceberg `string` of the value's JSON text, which the write path
+        // gives with `CAST(… AS String)`; `loams.ch.types` keeps its type, and
+        // the read views cast the text back to it, so its subcolumns
+        // (`resource.service.name`) and typed paths read as ClickHouse reads
+        // them.
+        primitive(PrimitiveType::String)
+    } else {
+        to_iceberg(&ch, ch_text, ids, needs)?
+    };
     let required = !ch.is_nullable() && !force_optional;
     Ok(if required {
         NestedField::required(id, name, ty).into()
@@ -507,6 +583,12 @@ pub fn to_iceberg(
             }
             Type::Struct(StructType::new(fields))
         }
+        // HE1 R9.14: an `AggregatingMergeTree`'s columns. A simple one stores its
+        // value; a state stores ClickHouse's serialization of it (what
+        // `CAST(state AS String)` gives and `CAST(bytes AS AggregateFunction(…))`
+        // reads back).
+        ChType::SimpleAggregate(_, inner) => to_iceberg(inner, text, ids, needs)?,
+        ChType::AggregateState => primitive(PrimitiveType::Binary),
         ChType::Other(name) => {
             return Err(unsupported(
                 text,
@@ -671,8 +753,29 @@ mod tests {
         let (ty, required, _) = iceberg("Nullable(String)");
         assert!(!required);
         assert_eq!(from_iceberg(&ty, required), "Nullable(String)");
-        let (ty, _, needs) = iceberg("DateTime64(9, 'UTC')");
-        assert_eq!(ty, Type::Primitive(PrimitiveType::TimestamptzNs));
+        // D1572, HE1 R9.61: a column of nanosecond times is a long
+        // of nanoseconds in a v2 table; inside a container, v3's type.
+        for text in [
+            "DateTime64(9, 'UTC')",
+            "DateTime64(7)",
+            "Nullable(DateTime64(9))",
+            "SimpleAggregateFunction(max, DateTime64(9))",
+        ] {
+            let (ty, _, needs) = iceberg(text);
+            assert_eq!(ty, Type::Primitive(PrimitiveType::Long), "{text}");
+            assert_eq!(needs, Needs::V2, "{text}");
+        }
+        assert_eq!(
+            ChType::parse("Nullable(DateTime64(9, 'UTC'))")
+                .expect("parses")
+                .nanos_zone(),
+            Some(Some("UTC"))
+        );
+        assert_eq!(
+            ChType::parse("DateTime64(6)").expect("parses").nanos_zone(),
+            None
+        );
+        let (_, _, needs) = iceberg("Array(DateTime64(9, 'UTC'))");
         assert_eq!(needs, Needs::V3);
         let (ty, required, _) = iceberg("Array(Nullable(Int64))");
         assert_eq!(from_iceberg(&ty, required), "Array(Nullable(Int64))");
@@ -685,14 +788,52 @@ mod tests {
         );
     }
 
+    /// HE1 R9.14: an `AggregatingMergeTree`'s columns.
+    #[test]
+    fn aggregate_columns_are_stored() {
+        let mut needs = Needs::V2;
+        let field = |text: &str, needs: &mut Needs| {
+            to_iceberg_field("c", text, &mut FieldIds::after(0), false, needs).expect(text)
+        };
+        let state = field(
+            "AggregateFunction(argMax, Nullable(Bool), DateTime64(3))",
+            &mut needs,
+        );
+        assert_eq!(*state.field_type, Type::Primitive(PrimitiveType::Binary));
+        assert!(state.required);
+        let simple = field(
+            "SimpleAggregateFunction(maxMap, Map(String, String))",
+            &mut needs,
+        );
+        assert!(matches!(*simple.field_type, Type::Map(_)));
+        let simple = field(
+            "SimpleAggregateFunction(anyLast, Nullable(String))",
+            &mut needs,
+        );
+        assert_eq!(*simple.field_type, Type::Primitive(PrimitiveType::String));
+        assert!(!simple.required, "Nullable inside stays optional");
+        assert_eq!(
+            ChType::parse("SimpleAggregateFunction(quantiles(0.5, 0.9), Float64)").expect("parses"),
+            ChType::SimpleAggregate(
+                "quantiles(0.5,0.9)".into(),
+                Box::new(ChType::Simple("Float64".into()))
+            )
+        );
+    }
+
     #[test]
     fn unsupported_types_are_48() {
+        // HE1 R9.63: `JSON` is stored as its text only as a column's own type.
+        for text in ["JSON", "JSON(max_dynamic_paths=0, message String)"] {
+            let (ty, required, needs) = iceberg(text);
+            assert_eq!(ty, Type::Primitive(PrimitiveType::String), "{text}");
+            assert!(required, "{text}");
+            assert_eq!(needs, Needs::V2, "{text}");
+        }
         for text in [
-            "JSON",
+            "Array(JSON)",
             "Dynamic",
             "Variant(UInt8, String)",
-            "AggregateFunction(sum, UInt64)",
-            "SimpleAggregateFunction(sum, UInt64)",
             "Nested(a UInt8)",
             "Int128",
             "UInt256",

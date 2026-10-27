@@ -12,7 +12,7 @@ public interface IdentityProviderOrBuilder extends
 
   /**
    * <pre>
-   * The OIDC issuer, e.g. https://auth.acme.example/application/o/loams/.
+   * The OIDC issuer, e.g. https://auth.acme.example.
    * </pre>
    *
    * <code>string issuer = 1 [json_name = "issuer"];</code>
@@ -21,7 +21,7 @@ public interface IdentityProviderOrBuilder extends
   java.lang.String getIssuer();
   /**
    * <pre>
-   * The OIDC issuer, e.g. https://auth.acme.example/application/o/loams/.
+   * The OIDC issuer, e.g. https://auth.acme.example.
    * </pre>
    *
    * <code>string issuer = 1 [json_name = "issuer"];</code>

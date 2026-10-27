@@ -66,7 +66,8 @@ module Loams
             "ruby_token_source_refresh",
             "ruby_pagination_iterator",
           ],
-          "ran" => run_res.ran,
+          # The app replay (AppReplayTest) adds its fixtures to the same report.
+          "ran" => (run_res.ran | previous_app_fixtures).sort,
           "skipped" => [],
           "failures" => run_res.failures,
         }
@@ -74,6 +75,15 @@ module Loams
         results_dir = File.join(@corpus_dir, "results")
         FileUtils.mkdir_p(results_dir)
         File.write(File.join(results_dir, "ruby.json"), JSON.pretty_generate(report) + "\n")
+      end
+
+      def previous_app_fixtures
+        path = File.join(@corpus_dir, "results", "ruby.json")
+        return [] unless File.exist?(path)
+
+        Array(JSON.parse(File.read(path))["ran"]).select { |n| n.start_with?("app_") }
+      rescue JSON::ParserError
+        []
       end
 
       private

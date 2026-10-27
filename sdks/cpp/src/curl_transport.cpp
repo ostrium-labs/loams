@@ -33,7 +33,7 @@ namespace {
 /// The user agent, read once. `curl_easy_setopt` copies the string, so the
 /// `std::string` has to outlive the call — a function-local static does.
 const std::string& UserAgentString() {
-  static const std::string* const agent = new std::string("loams-cpp/0.1.0 (Connect over HTTP)");
+  static const std::string* const agent = new std::string("loams-cpp/0.1.2 (Connect over HTTP)");
   return *agent;
 }
 
@@ -219,7 +219,16 @@ class CurlReader final : public ByteReader {
         // codes are: a name that does not resolve will not resolve on the third
         // attempt either. Everything below the API is `kUnknown` with a message,
         // which R8's "a failure from below the API carries no reason" covers.
-        failure_ = std::make_exception_ptr(TransportError(rpc_, std::string("loams: ") + curl_easy_strerror(code)));
+        if (code == CURLE_OPERATION_TIMEDOUT) {
+          // R12: the call's budget ran out. Typed as the client's own deadline so
+          // the call path never retries it.
+          const std::optional<Reason> known = ReasonFromString(kClientDeadlineExceeded);
+          failure_ = MakeLoamsError(Code::kDeadlineExceeded, rpc_, known.value_or(Reason::kUnknown),
+                                    known ? std::string() : std::string(kClientDeadlineExceeded), {}, std::string(),
+                                    std::string("loams: ") + curl_easy_strerror(code), std::string());
+        } else {
+          failure_ = std::make_exception_ptr(TransportError(rpc_, std::string("loams: ") + curl_easy_strerror(code)));
+        }
         failed_ = true;
       } else if (status_ == 0) {
         status_ = status;

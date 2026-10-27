@@ -52,6 +52,30 @@ describe('the desktop menu', () => {
   });
 });
 
+describe("the shell's commands (D1081)", () => {
+  it('runs the jumps and the next thread, and leaves the shell its own commands', () => {
+    const commands = new StudioCommands();
+    const target = new EventTarget();
+    const off = listenShellCommands(commands, target);
+    const send = (detail: string) => {
+      const e = new CustomEvent(SHELL_COMMAND_EVENT, { detail, cancelable: true });
+      target.dispatchEvent(e);
+      return e.defaultPrevented;
+    };
+    const ran: string[] = [];
+    for (const c of ['thread.jump.3', 'thread.next', 'settings.open', 'sidebar.toggle'] as const)
+      commands.register(c, () => ran.push(c));
+    expect(send('thread.jump.3')).toBe(true);
+    expect(send('thread.next')).toBe(true);
+    // Studio has commands of these names, but from the shell they are the shell's.
+    expect(send('settings.open')).toBe(false);
+    expect(send('sidebar.toggle')).toBe(false);
+    expect(send('no.such.command')).toBe(false);
+    expect(ran).toEqual(['thread.jump.3', 'thread.next']);
+    off();
+  });
+});
+
 describe('Settings › Studio on the desktop', () => {
   it('mirrors the notification choices to Electron main', async () => {
     const bridge = fakeBridge();

@@ -1,0 +1,303 @@
+//! The Software Factory loop's agentd tools (design §72 §5.2, D1431; plan FT1,
+//! FT0 Task 4).
+//!
+//! These are the `mcp`-role methods the factory host (Loams Bot, through the
+//! injected MCP shim) uses to drive a run: each names a `chatId` in the run's
+//! own session tree, and the daemon resolves the checkout, the repository
+//! and the code-host credential from that chat. No credential ever leaves
+//! agentd.
+//!
+//! - `CreateRunWorktree`: a worktree on a named branch (`factory/<run>/<n>`)
+//!   of the repository the chat works in, for a new build thread.
+//! - `GetThreadDiff`: a thread's diff, with the checksum review comments
+//!   anchor to.
+//! - `PostReviewComment`: an anchored review comment on a thread's checkout.
+//! - `OpenChangeRequest`: pushes the thread's branch and opens a pull request
+//!   on Forgejo or GitHub, or answers the open one for that branch
+//!   (idempotent by branch).
+//! - `RequestApproval`, `GetApproval`: a typed approval in Studio's queue. The
+//!   daemon hashes the payload; only a person settles it (`ResolveApproval`
+//!   stays role `owner`).
+//! - `MergeChangeRequest` (destructive): refused unless `approvalId` names a
+//!   settled, approved merge approval for this chat whose payload hash is the
+//!   hash of `{repo, pr, head_sha}` of this very call. An approval is used
+//!   once.
+
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
+
+use crate::ChangeRequestState;
+use crate::git_write::{ChangeRequestProvider, MergeStrategy};
+
+/// `MergeChangeRequest` without a settled, approved approval.
+pub const APPROVAL_REQUIRED: &str = "approval_required";
+/// An approval whose kind, chat or payload hash does not match the call, or
+/// one already used.
+pub const APPROVAL_MISMATCH: &str = "approval_mismatch";
+
+/// The approval kind `MergeChangeRequest` requires.
+pub const MERGE_APPROVAL_KIND: &str = "merge";
+
+/// The longest approval summary, in characters.
+pub const MAX_APPROVAL_SUMMARY: usize = 2_000;
+
+/// `CreateRunWorktree`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateRunWorktreeParams {
+    /// The chat whose repository gets the worktree (in the run's session).
+    pub chat_id: String,
+    /// The new branch, for example `factory/<run>/1`.
+    pub branch: String,
+    /// What the branch starts from; the chat's current branch when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base: Option<String>,
+}
+
+/// `GetThreadDiff`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct GetThreadDiffParams {
+    pub chat_id: String,
+    /// Diff against merge-base(`baseRef`, HEAD), committed work included;
+    /// without it, the working tree's uncommitted changes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_ref: Option<String>,
+}
+
+/// `PostReviewComment`: a comment on the chat's checkout, anchored to the
+/// diff whose checksum `GetThreadDiff` answered.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct PostReviewCommentParams {
+    pub chat_id: String,
+    /// Relative to the checkout, `/`-separated.
+    pub path: String,
+    /// `new` (the default) or `old`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub side: Option<crate::review::DiffSide>,
+    /// 1-based.
+    pub line: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_line: Option<u32>,
+    pub body: String,
+    /// The checksum of the diff the comment was written against.
+    pub diff_checksum: String,
+}
+
+/// `OpenChangeRequest`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenChangeRequestParams {
+    /// The thread whose checkout's branch is the head.
+    pub chat_id: String,
+    pub provider: ChangeRequestProvider,
+    /// The branch to merge into.
+    pub base: String,
+    pub title: String,
+    #[serde(default)]
+    pub body: String,
+    #[serde(default)]
+    pub draft: bool,
+}
+
+/// `OpenChangeRequest`'s answer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenChangeRequestReply {
+    pub provider: ChangeRequestProvider,
+    pub number: u64,
+    pub url: String,
+    pub state: ChangeRequestState,
+    /// `owner/repository` on the code host: the `repo` of a merge approval's
+    /// payload.
+    pub repo: String,
+    /// The head branch.
+    pub head: String,
+    /// The head commit that was pushed: the `head_sha` of a merge approval.
+    pub head_sha: String,
+    /// The pull request was already open for this branch.
+    pub existed: bool,
+}
+
+/// `RequestApproval`: ask a person to approve one typed action.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestApprovalParams {
+    /// The asking chat (the factory host's own thread).
+    pub chat_id: String,
+    /// `plan`, `merge`, `deploy`, or another lowercase word.
+    pub kind: String,
+    /// What the person is asked, in plain words.
+    pub summary: String,
+    /// What exactly is approved. The daemon stores only its hash (SHA-256 of
+    /// its canonical JSON, keys sorted); for `merge` it must be
+    /// `{repo, pr, head_sha}`.
+    #[ts(type = "unknown")]
+    pub payload: serde_json::Value,
+}
+
+/// `GetApproval`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct GetApprovalParams {
+    pub chat_id: String,
+    pub approval_id: String,
+}
+
+/// Where a typed approval is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum TypedApprovalState {
+    /// Waiting for a person.
+    Pending,
+    Approved,
+    Denied,
+    /// Approved, and spent by the action it approved.
+    Used,
+}
+
+impl TypedApprovalState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Approved => "approved",
+            Self::Denied => "denied",
+            Self::Used => "used",
+        }
+    }
+
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "pending" => Some(Self::Pending),
+            "approved" => Some(Self::Approved),
+            "denied" => Some(Self::Denied),
+            "used" => Some(Self::Used),
+            _ => None,
+        }
+    }
+}
+
+/// A typed approval (`RequestApproval`, `GetApproval`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct TypedApproval {
+    pub id: String,
+    pub chat_id: String,
+    pub kind: String,
+    pub summary: String,
+    /// SHA-256 (hex) of the payload's canonical JSON.
+    pub payload_hash: String,
+    pub state: TypedApprovalState,
+    pub created_at_ms: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decided_at_ms: Option<i64>,
+}
+
+/// `MergeChangeRequest` (destructive).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MergeChangeRequestParams {
+    /// The thread whose checkout's remote holds the pull request.
+    pub chat_id: String,
+    /// A settled, approved `merge` approval of this chat for exactly
+    /// `{repo, pr, head_sha}`.
+    pub approval_id: String,
+    pub provider: ChangeRequestProvider,
+    /// The pull request's number.
+    pub number: u64,
+    /// The head commit the person approved; the code host refuses the merge
+    /// when the pull request's head has moved.
+    pub head_sha: String,
+    /// `merge` (the default), `squash` or `rebase`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strategy: Option<MergeStrategy>,
+}
+
+/// `MergeChangeRequest`'s answer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct MergeChangeRequestReply {
+    pub provider: ChangeRequestProvider,
+    pub number: u64,
+    pub repo: String,
+    pub merged: bool,
+}
+
+/// The default and the ceiling of `GetCheckLog`'s tail, in lines.
+pub const CHECK_LOG_LINES: usize = 200;
+pub const MAX_CHECK_LOG_LINES: usize = 1_000;
+/// The ceiling of `GetCheckLog`'s tail, in bytes.
+pub const MAX_CHECK_LOG_BYTES: usize = 64 * 1024;
+
+/// One CI check's state, provider-neutral.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum CiState {
+    /// Queued or running.
+    Pending,
+    Success,
+    Failure,
+    /// Skipped, cancelled or neutral: neither passes nor fails the run.
+    Neutral,
+}
+
+/// `GetChecks` (FT0 Task 5, D1433): the checks of a commit on the chat's
+/// remote; the chat's `HEAD` when `sha` is omitted.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct GetChecksParams {
+    pub chat_id: String,
+    pub provider: ChangeRequestProvider,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha: Option<String>,
+}
+
+/// One check.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CiCheck {
+    pub name: String,
+    pub state: CiState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    /// What `GetCheckLog` takes as `logId`, when the check has a readable log.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub log_id: Option<String>,
+}
+
+/// `GetChecks`' answer. `state` is `failure` when any check failed, else
+/// `pending` while any runs, else `success` (no checks at all is `pending`:
+/// CI may not have started).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ChecksReply {
+    pub provider: ChangeRequestProvider,
+    pub repo: String,
+    pub sha: String,
+    pub state: CiState,
+    pub checks: Vec<CiCheck>,
+}
+
+/// `GetCheckLog`: the last `lines` of one check's log, scrubbed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct GetCheckLogParams {
+    pub chat_id: String,
+    pub provider: ChangeRequestProvider,
+    /// A check's `logId` from `GetChecks`.
+    pub log_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lines: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckLogReply {
+    /// The tail, secrets scrubbed.
+    pub text: String,
+    /// Lines in `text`.
+    pub lines: u32,
+    /// The log had more than the tail.
+    pub truncated: bool,
+}

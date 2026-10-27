@@ -1,0 +1,34 @@
+[package]
+name = "loams-agentd-marketplace"
+description = "The Loams Marketplace in agentd: listings, sources, signed index verification, install plans and installers (design 73, plan MK1)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+async-trait.workspace = true
+base64.workspace = true
+jsonschema.workspace = true
+semver.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+hex.workspace = true
+sigstore-verify.workspace = true
+thiserror.workspace = true
+# The conformance runner (MK1 Task 8): agentd's ACP JSON-RPC client, and the
+# agent process, its loopback world and the signals that stop it.
+loams-agentd-harness.workspace = true
+tokio.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+rustix = { workspace = true, features = ["process"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt"] }
+
+[lints]
+workspace = true

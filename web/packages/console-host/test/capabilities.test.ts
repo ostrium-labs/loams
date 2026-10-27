@@ -124,8 +124,10 @@ describe('capabilities', () => {
 
   it('min_engine_is_the_newest_release_source', () => {
     // N−1 is the `from` of the newest release in the release train.
-    const newest = /\[\[release\]\][^[]*?from\s*=\s*"([^"]+)"/.exec(train);
-    expect(newest?.[1]).toBe(MIN_ENGINE);
+    const newest = /\[\[release\]\][^[]*?from\s*=\s*"([^"]+)"/.exec(train)?.[1];
+    // A minor line (`0.1`) starts at its first release.
+    const n1 = newest && /^\d+\.\d+$/.test(newest) ? `${newest}.0` : newest;
+    expect(n1).toBe(MIN_ENGINE);
   });
 
   it('console_supports_previous_engine', async () => {

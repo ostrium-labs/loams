@@ -2359,3 +2359,153 @@ async fn document_source_round_trips_as_json_rpc() {
 
     running.shutdown().await;
 }
+
+// ----- SDKP P0a: the typed `where` filter -----
+
+/// `where` is a typed `Query`'s proto3 JSON (SDKP ruling P0a-1), and a scroll
+/// filtered by it pages exactly as the same filter in `filter` (the IR JSON)
+/// does.
+#[tokio::test]
+async fn scroll_where_matches_filter_value_rpc() {
+    let running = Running::start().await;
+    let (_info, token) = kb(&running, "w").await;
+    let page = |key: &str, value: Value| {
+        kb_request(&[
+            (key, value),
+            ("limit", json!(10)),
+            ("consistency", at_least(&token)),
+        ])
+    };
+    let by_filter = running
+        .connect(
+            SCROLL_DOCUMENTS,
+            &page(
+                "filter",
+                json!({"terms": {"field": "tenant", "values": ["a", "b"]}}),
+            ),
+        )
+        .await
+        .expect_ok();
+    let by_where = running
+        .connect(
+            SCROLL_DOCUMENTS,
+            &page(
+                "where",
+                json!({"bool": {"should": [
+                    {"term": {"field": "tenant", "value": "a"}},
+                    {"term": {"field": "tenant", "value": "b"}}
+                ]}}),
+            ),
+        )
+        .await
+        .expect_ok();
+    let ids = |body: &Value| -> Vec<Value> {
+        body["documents"]
+            .as_array()
+            .unwrap_or_else(|| panic!("documents: {body}"))
+            .iter()
+            .map(|doc| pk(&doc["id"]))
+            .collect()
+    };
+    assert_eq!(ids(&by_filter).len(), 3, "{by_filter}");
+    assert_eq!(ids(&by_where), ids(&by_filter));
+
+    // A `matchAll` arm, the spelling the IR's bare `"match_all"` has no
+    // proto3 form for, scrolls everything.
+    let all = running
+        .connect(SCROLL_DOCUMENTS, &page("where", json!({"matchAll": {}})))
+        .await
+        .expect_ok();
+    assert_eq!(ids(&all).len(), 6, "{all}");
+}
+
+/// A count filtered by `where` equals the count filtered by `filter`,
+/// including the camelCase arms only the typed spelling has.
+#[tokio::test]
+async fn count_where_matches_filter_value_rpc() {
+    let running = Running::start().await;
+    let (_info, token) = kb(&running, "w").await;
+    let by_filter = count(
+        &running,
+        "w",
+        "kb",
+        json!({"range": {"field": "n", "gte": 2}}),
+        &token,
+    )
+    .await;
+    let typed = running
+        .connect(
+            COUNT_DOCUMENTS,
+            &kb_request(&[
+                ("where", json!({"range": {"field": "n", "gte": 2}})),
+                ("consistency", at_least(&token)),
+            ]),
+        )
+        .await
+        .expect_ok();
+    assert_eq!(by_filter, 2);
+    assert_eq!(int64(&typed["count"]), Some(by_filter), "{typed}");
+
+    let not_c = running
+        .connect(
+            COUNT_DOCUMENTS,
+            &kb_request(&[
+                (
+                    "where",
+                    json!({"bool": {"mustNot": [{"term": {"field": "tenant", "value": "c"}}]}}),
+                ),
+                ("consistency", at_least(&token)),
+            ]),
+        )
+        .await
+        .expect_ok();
+    assert_eq!(int64(&not_c["count"]), Some(3), "{not_c}");
+
+    // A `where` that is not a `Query` is the field's own refusal.
+    let bad = running
+        .connect(
+            COUNT_DOCUMENTS,
+            &kb_request(&[("where", json!({"term": "tenant"}))]),
+        )
+        .await
+        .expect_error(StatusCode::BAD_REQUEST);
+    assert_reason(&bad, "invalid_argument");
+    assert_eq!(metadata(&bad, "field").as_deref(), Some("where"));
+}
+
+/// `filter` and `where` together name two filters, which no answer can honour:
+/// `invalid_argument` with reason `filter_conflict`, on a read and on a filter
+/// write alike, and nothing is written.
+#[tokio::test]
+async fn where_and_filter_conflict_refused_rpc() {
+    let running = Running::start().await;
+    let (_info, token) = kb(&running, "w").await;
+    let both = [
+        ("filter", tenant("a")),
+        ("where", json!({"term": {"field": "tenant", "value": "b"}})),
+    ];
+    for rpc in [SCROLL_DOCUMENTS, COUNT_DOCUMENTS, DELETE_BY_FILTER] {
+        let body = running
+            .connect(rpc, &kb_request(&both))
+            .await
+            .expect_error(StatusCode::BAD_REQUEST);
+        assert_reason(&body, "filter_conflict");
+        assert_eq!(metadata(&body, "field").as_deref(), Some("where"), "{rpc}");
+    }
+    let patch = running
+        .connect(
+            PATCH_BY_FILTER,
+            &kb_request(&[
+                both[0].clone(),
+                both[1].clone(),
+                ("patch", json!({"source": {"x": 1}})),
+            ]),
+        )
+        .await
+        .expect_error(StatusCode::BAD_REQUEST);
+    assert_reason(&patch, "filter_conflict");
+    assert_eq!(
+        count(&running, "w", "kb", json!("match_all"), &token).await,
+        6
+    );
+}

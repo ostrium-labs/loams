@@ -69,7 +69,12 @@ describe("factory host", () => {
 		expect(list).toHaveLength(8);
 		expect(list.every((a) => a.health === "unconfigured")).toBe(true);
 		expect(list.find((a) => a.id === "plane")?.label).toBe("Plane (ItsAPlan)");
-		expect(list.find((a) => a.id === "openobserve")?.hasPanels).toBe(false);
+		const signoz = list.find((a) => a.id === "signoz");
+		expect(signoz?.label).toBe("SigNoz");
+		expect(signoz?.hasPanels).toBe(false);
+		// SigNoz on the House is a preview until it passes the House gate (D1571, D1666).
+		expect(signoz?.preview).toBe("Preview: SigNoz on Loams House");
+		expect(list.filter((a) => a.preview)).toHaveLength(1);
 	});
 
 	it("ipc_replies_never_contain_secret", async () => {
@@ -324,8 +329,8 @@ describe("factory host", () => {
 	});
 
 	it("adapterless_app_health_is_probed_not_assumed", async () => {
-		// OpenObserve has no adapter: its health comes from its unauthenticated
-		// /healthz at the configured origin, never from "configured means ok".
+		// SigNoz has no adapter: its health comes from its unauthenticated
+		// /api/v2/healthz at the configured origin, never from "configured means ok".
 		const real = new FactoryHost(mkVault(), new Context());
 		const seen: string[] = [];
 		const cases: [() => Response | Promise<Response>, string][] = [
@@ -346,17 +351,17 @@ describe("factory host", () => {
 					return respond();
 				}),
 			);
-			await real.remove("openobserve");
+			await real.remove("signoz");
 			const r = await real.configure(
-				"openobserve",
-				"http://o2.example:5080/web/",
+				"signoz",
+				"http://signoz.example:8080/services/",
 				{},
 			);
 			expect(r).toMatchObject({ ok: true, value: { health } });
 		}
-		expect(seen.every((u) => u === "http://o2.example:5080/healthz")).toBe(
-			true,
-		);
+		expect(
+			seen.every((u) => u === "http://signoz.example:8080/api/v2/healthz"),
+		).toBe(true);
 	});
 
 	it("plane_app_url_is_the_embedded_ui_and_the_api_base_stays", async () => {

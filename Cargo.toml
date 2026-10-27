@@ -8,7 +8,7 @@ members = ["crates/*", "bench/git-wal"]
 exclude = ["crates/loams-wal-decoder"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.2"
 edition = "2024"
 rust-version = "1.97"
 license = "Apache-2.0"
@@ -23,6 +23,7 @@ anyhow = "1"
 arrow = "58.4"
 arrow-array = "58.4"
 arrow-flight = { version = "58.4", features = ["flight-sql-experimental"] }
+arrow-ipc = "58.4"
 arrow-schema = "58.4"
 async-trait = "0.1"
 axum = "0.8"
@@ -133,11 +134,6 @@ hex = "0.4"
 hmac = "0.13"
 http = "1"
 http-body = "1"
-# Structured-output validation in loams-llm (MM1 Task 2). 0.58.5 (2026-10-02,
-# MIT), the version fabric/ pins; 0.58.6 was 13 days old when this was added
-# (14-day rule). `default-features = false`: no HTTP or file `$ref` resolver,
-# so validating a model's output never touches the network or the disk.
-jsonschema = { version = "=0.58.5", default-features = false }
 httpmock = { version = "0.8.3", default-features = false, features = ["remote"] }
 humantime = "2"
 indexmap = { version = "2", features = ["serde"] }
@@ -148,6 +144,11 @@ itertools = "0.15"
 # the wrong JSON type instead of skipping it (GHSA-h395-gr6q-cpjc). The
 # aws-lc-rs backend, as Resonate's resonate-auth and rustls use; never also
 # enable `rust_crypto` (with both, jsonwebtoken picks no provider and panics).
+# JSON Schema validation of marketplace listings (MK1 Task 1,
+# loams-agentd-marketplace). The 0.58 line fabric already uses (MIT); no
+# default features, so no HTTP or file resolver: the listing schema has no
+# external $ref.
+jsonschema = { version = "0.58", default-features = false }
 jsonwebtoken = { version = "=10.4.0", default-features = false, features = ["aws_lc_rs"] }
 # The Kubernetes client (PG2 Task 6's KubeSecretStore first). Task 0 ruling 5
 # asks for the newest release at least 14 days old, 4.2.0; it is held at
@@ -174,6 +175,8 @@ landlock = "0.4.7"
 # (`gix-commitgraph` reads an `Mmap`; GT1 Task 20). Already linked by `gix-pack`.
 memmap2 = "0.9.11"
 moka = { version = "0.12", features = ["future"] }
+# The OpenFGA gRPC client (Apache-2.0), loams-authz only (design 76, D1610).
+openfga-client = { version = "=0.6.1", default-features = false }
 object_store = { version = "0.14", features = ["aws", "gcp", "azure", "fs"] }
 once_cell = "1"
 openraft = { version = "=0.10.0-alpha.34", default-features = false, features = ["serde", "tokio-rt"] }
@@ -182,6 +185,7 @@ openraft = { version = "=0.10.0-alpha.34", default-features = false, features = 
 opensrv-mysql = { version = "0.7", default-features = false }
 # Bulk import (D1 Task 8): Parquet over object_store, on the workspace's arrow 58.
 parquet = { version = "58", default-features = false, features = ["arrow", "async", "object_store", "snap", "zstd", "lz4"] }
+percent-encoding = "2"
 postcard = { version = "1", default-features = false, features = ["use-std"] }
 proptest = "1"
 prost = "0.14"
@@ -199,31 +203,31 @@ rquickjs = { version = "=0.14.0", default-features = false, features = ["std", "
 # Held at 2.0.1 for rquickjs's loader (LV1 row T3-1): 2.0.2 was two days old
 # when rquickjs was added (14-day rule). loams-live-js names it only to pin it;
 # drop the pin after 2026-10-21.
-relative-path = "=2.0.1"
+relative-path = "=2.0.2"
 regex = "1"
 reqwest = { version = "0.13", default-features = false, features = ["json"] }
 # Resonate, embedded by loams-durable (D1, D140): the fork ostrium-labs/resonate,
-# branch loam/0.10.1 = upstream 28dfd01 + PR 0c (#1164), the gcp-idtoken
-# feature, PR 0a (#1162), PR 1 (#1163), the SDK's reqwest defaults as a
-# feature and resonate-auth on jsonwebtoken 10.3 (31ffb201; 0001_initial.sql
-# unchanged from e3606698). Pinned by rev only; a bump compares each
-# 0001_initial.sql with the pinned one and says in its PR when existing
-# durable stores must be dropped (D1 plan X11). Never add resonate-server-scylladb or the NATS packages
-# (BUSL-1.1 lineage).
-resonate-base = { git = "https://github.com/ostrium-labs/resonate", rev = "31ffb2011b324c187f1d324b83feec2e16787e74" }
-resonate-server-blob = { git = "https://github.com/ostrium-labs/resonate", rev = "31ffb2011b324c187f1d324b83feec2e16787e74" }
-resonate-core = { git = "https://github.com/ostrium-labs/resonate", rev = "31ffb2011b324c187f1d324b83feec2e16787e74" }
-resonate-gateway-http = { git = "https://github.com/ostrium-labs/resonate", rev = "31ffb2011b324c187f1d324b83feec2e16787e74" }
-resonate-plugin = { git = "https://github.com/ostrium-labs/resonate", rev = "31ffb2011b324c187f1d324b83feec2e16787e74" }
+# branch loams/main = upstream main plus the carries listed in its CARRIES.md
+# (#1164, #1167, #1163, #1168, resonate-auth on jsonwebtoken 10.3) and the
+# fork-work items merged so far (design 74 §7.4; FW1 is the TiKV store that
+# durable-tikv runs on, `resonate-server-tikv`). Pinned by rev only; a bump
+# compares each 0001_initial.sql with the pinned one and says in its PR when
+# existing durable stores must be dropped (D1 plan X11). Never add
+# resonate-server-scylladb or the NATS packages (BUSL-1.1 lineage).
+resonate-base = { git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90" }
+resonate-server-blob = { git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90" }
+resonate-core = { git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90" }
+resonate-gateway-http = { git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90" }
+resonate-plugin = { git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90" }
 # The package is resonate-sdk (lib resonate_sdk); `resonate` in that repository
 # is the server binary. Its reqwest defaults (TLS, charset, system proxy) are
 # off: Loams talks to the server in process.
-resonate-sdk = { git = "https://github.com/ostrium-labs/resonate", rev = "31ffb2011b324c187f1d324b83feec2e16787e74", default-features = false }
-resonate-server-mysql = { git = "https://github.com/ostrium-labs/resonate", rev = "31ffb2011b324c187f1d324b83feec2e16787e74" }
-resonate-server-sqlite = { git = "https://github.com/ostrium-labs/resonate", rev = "31ffb2011b324c187f1d324b83feec2e16787e74" }
-resonate-transport-http-poll = { git = "https://github.com/ostrium-labs/resonate", rev = "31ffb2011b324c187f1d324b83feec2e16787e74" }
+resonate-sdk = { git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90", default-features = false }
+resonate-server-mysql = { git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90" }
+resonate-server-sqlite = { git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90" }
+resonate-transport-http-poll = { git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90" }
 # Without gcp-idtoken: no google-cloud-auth, and auth.mode = "gcp" is refused.
-resonate-transport-http-push = { git = "https://github.com/ostrium-labs/resonate", rev = "31ffb2011b324c187f1d324b83feec2e16787e74", default-features = false }
+resonate-transport-http-push = { git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90", default-features = false }
 # pg-control's Ed25519 signing key (PG2 Task 8). 0.17.14 (2025-03-11) is
 # already in the lockfile (rustls, jsonwebtoken).
 ring = "=0.17.14"
@@ -238,6 +242,9 @@ rustls = { version = "0.23", default-features = false }
 # Linux only.
 seccompiler = "0.5.0"
 serde = { version = "1", features = ["derive"] }
+# Version ranges in marketplace listings and revocations (MK1 Task 2 ruling 5:
+# Cargo's VersionReq syntax). MIT OR Apache-2.0.
+semver = "1"
 # `preserve_order`: qdrant-edge needs it, and Cargo unifies features, so the
 # whole workspace uses one insertion-ordered map type (M1.3 row E58).
 serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }
@@ -247,6 +254,11 @@ serde_with = "3"
 # in the lockfile.
 schemars = "0.8"
 sha2 = "0.11"
+# Sigstore bundle verification for the marketplace's signed index and
+# provenance (MK1 Task 0 ruling 3; loams-agentd-marketplace). Apache-2.0.
+# 0.14.0 is the newest release at least 14 days old (2026-09-29). No default
+# features: the production trusted root is embedded, so no TUF client.
+sigstore-verify = { version = "=0.14.0", default-features = false }
 slatedb = { version = "0.17", default-features = false }
 # The MySQL driver resonate-server-mysql uses (0.8.6, rustls); loams-durable
 # checks a TiDB store's schema with it before serving (D1 Task 4).
@@ -256,16 +268,20 @@ tantivy-fst = "0.5"
 tempfile = "3"
 thiserror = "2"
 # Loams's fork of tikv/client-rust, pinned by rev: branch `loam` of
-# ostrium-labs/client-rust, upstream ab4be1c plus the TSO stream reconnect, the
-# public generated protos, async-commit lock resolution on the read path,
-# async commit's max_commit_ts and fail 0.5 (off rand 0.7, 8126c49a)
-# (docs/plans/r1-dependency-spike.md, "The
+# ostrium-labs/client-rust, upstream 1b883bf (2026-10-19) plus the TSO stream
+# reconnect, the public generated protos, async commit's max_commit_ts, fail
+# 0.5 (off rand 0.7) and reads that go past the locks of a writer they pushed
+# above their timestamp (fix/read-past-pushed-locks). Upstream 1b883bf
+# resolves a crashed pessimistic writer's locks one by one (#561) and sees
+# CheckTxnStatus's TxnNotFound again (#557); before it, those locks stayed
+# until GC, and reads waited out a crashed writer's 20 s TTL (the nightly
+# crash gate, 2026-10-21) (docs/plans/r1-dependency-spike.md, "The
 # client-rust fork"). Not crates.io 0.4.0: it fails cargo-deny's advisories
 # through tonic 0.10 and reports lost async-commit and 1PC acknowledgements as
 # plain errors (R1 plan row R4). Default features pull in openssl, procfs and
 # protobuf 2 through prometheus. The pin moves only by a PR that reruns the
 # loams-tikv, loams-meta-tikv and loams-live suites.
-tikv-client = { git = "https://github.com/ostrium-labs/client-rust", rev = "8126c49a15c0af7f1e7427f3b9020ae8d2c280cf", default-features = false }
+tikv-client = { git = "https://github.com/ostrium-labs/client-rust", rev = "41b3588f9b63d505dd61e15bf3d26abfd53689a2", default-features = false }
 time = { version = "0.3", features = ["std", "formatting", "parsing", "macros"] }
 time-fmt = "0.3.8"
 toml = "0.8"
@@ -294,65 +310,72 @@ unicode-segmentation = "1.13"
 url = "2"
 uuid = { version = "1", features = ["v4"] }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
-zeroize = "=1.9.0"
+zeroize = "=1.9.1"
 zstd = "0.14"
-loams-cache = { path = "crates/loams-cache", version = "0.1.0" }
-loams-collection = { path = "crates/loams-collection", version = "0.1.0" }
-loams-cloudevents = { path = "crates/loams-cloudevents", version = "0.1.0" }
-loams-common = { path = "crates/loams-common", version = "0.1.0" }
-loams-durable = { path = "crates/loams-durable", version = "0.1.0" }
-loams-es = { path = "crates/loams-es", version = "0.1.0" }
+loams-authz = { path = "crates/loams-authz", version = "0.1.2" }
+loams-cache = { path = "crates/loams-cache", version = "0.1.2" }
+loams-collection = { path = "crates/loams-collection", version = "0.1.2" }
+loams-cloudevents = { path = "crates/loams-cloudevents", version = "0.1.2" }
+loams-common = { path = "crates/loams-common", version = "0.1.2" }
+loams-durable = { path = "crates/loams-durable", version = "0.1.2" }
+loams-es = { path = "crates/loams-es", version = "0.1.2" }
 # The Fs trait for warm, rebuildable state and scratch (design §36 §17, GT1 Task 2).
-loams-fs = { path = "crates/loams-fs", version = "0.1.0" }
+loams-fs = { path = "crates/loams-fs", version = "0.1.2" }
 # Loams Git's portable core (design §36, §19; GT1 Tasks 4 onwards).
-loams-git = { path = "crates/loams-git", version = "0.1.0" }
-loams-graph = { path = "crates/loams-graph", version = "0.1.0" }
-loams-hnsw = { path = "crates/loams-hnsw", version = "0.1.0" }
-loams-hot = { path = "crates/loams-hot", version = "0.1.0" }
-loams-link = { path = "crates/loams-link", version = "0.1.0" }
-# Model providers for Loams Memory and the desktop daemon (design §52 §10, MM1 Task 2).
-loams-llm = { path = "crates/loams-llm", version = "0.1.0" }
-loams-kv = { path = "crates/loams-kv", version = "0.1.0" }
-loams-live = { path = "crates/loams-live", version = "0.1.0" }
-loams-live-js = { path = "crates/loams-live-js", version = "0.1.0" }
-loams-live-js-alloc = { path = "crates/loams-live-js-alloc", version = "0.1.0" }
-loams-live-proto = { path = "crates/loams-live-proto", version = "0.1.0" }
+loams-git = { path = "crates/loams-git", version = "0.1.2" }
+loams-graph = { path = "crates/loams-graph", version = "0.1.2" }
+loams-hnsw = { path = "crates/loams-hnsw", version = "0.1.2" }
+loams-hot = { path = "crates/loams-hot", version = "0.1.2" }
+loams-link = { path = "crates/loams-link", version = "0.1.2" }
+# Model providers for Loams Memory and the desktop daemon (MM1 Task 2).
+loams-llm = { path = "crates/loams-llm", version = "0.1.2" }
+loams-kv = { path = "crates/loams-kv", version = "0.1.2" }
+loams-live = { path = "crates/loams-live", version = "0.1.2" }
+loams-live-js = { path = "crates/loams-live-js", version = "0.1.2" }
+loams-live-js-alloc = { path = "crates/loams-live-js-alloc", version = "0.1.2" }
+loams-live-proto = { path = "crates/loams-live-proto", version = "0.1.2" }
 # The public `loams.*.v1` packages of the unified Connect API and their
 # descriptor set for reflection (design §44, API1 Task 1).
-loams-postgres = { path = "crates/loams-postgres", version = "0.1.0" }
-loams-proto = { path = "crates/loams-proto", version = "0.1.0" }
-loams-log = { path = "crates/loams-log", version = "0.1.0" }
-loams-meta = { path = "crates/loams-meta", version = "0.1.0" }
-loams-meta-conformance = { path = "crates/loams-meta-conformance", version = "0.1.0" }
-loams-meta-tikv = { path = "crates/loams-meta-tikv", version = "0.1.0" }
-loams-migrate = { path = "crates/loams-migrate", version = "0.1.0" }
-loams-upgrade = { path = "crates/loams-upgrade", version = "0.1.0" }
-loams-stream-grpc = { path = "crates/loams-stream-grpc", version = "0.1.0" }
-loams-pk = { path = "crates/loams-pk", version = "0.1.0" }
-loams-qdrant = { path = "crates/loams-qdrant", version = "0.1.0" }
-loams-query = { path = "crates/loams-query", version = "0.1.0" }
-loams-quickwit = { path = "crates/loams-quickwit", version = "0.1.0" }
-loams-store = { path = "crates/loams-store", version = "0.1.0" }
-loams-text = { path = "crates/loams-text", version = "0.1.0" }
-loams-tikv = { path = "crates/loams-tikv", version = "0.1.0" }
-loams-tuple = { path = "crates/loams-tuple", version = "0.1.0" }
-loams-web-bridge = { path = "crates/loams-web-bridge", version = "0.1.0" }
-loams-worker = { path = "crates/loams-worker", version = "0.1.0" }
+loams-postgres = { path = "crates/loams-postgres", version = "0.1.2" }
+loams-proto = { path = "crates/loams-proto", version = "0.1.2" }
+loams-log = { path = "crates/loams-log", version = "0.1.2" }
+loams-meta = { path = "crates/loams-meta", version = "0.1.2" }
+loams-meta-conformance = { path = "crates/loams-meta-conformance", version = "0.1.2" }
+loams-meta-tikv = { path = "crates/loams-meta-tikv", version = "0.1.2" }
+loams-migrate = { path = "crates/loams-migrate", version = "0.1.2" }
+loams-upgrade = { path = "crates/loams-upgrade", version = "0.1.2" }
+loams-cloud-admin = { path = "crates/loams-cloud-admin", version = "0.1.2" }
+loams-stream-grpc = { path = "crates/loams-stream-grpc", version = "0.1.2" }
+loams-pk = { path = "crates/loams-pk", version = "0.1.2" }
+loams-qdrant = { path = "crates/loams-qdrant", version = "0.1.2" }
+loams-query = { path = "crates/loams-query", version = "0.1.2" }
+loams-quickwit = { path = "crates/loams-quickwit", version = "0.1.2" }
+loams-store = { path = "crates/loams-store", version = "0.1.2" }
+loams-text = { path = "crates/loams-text", version = "0.1.2" }
+loams-tikv = { path = "crates/loams-tikv", version = "0.1.2" }
+loams-tuple = { path = "crates/loams-tuple", version = "0.1.2" }
+loams-web-bridge = { path = "crates/loams-web-bridge", version = "0.1.2" }
+loams-worker = { path = "crates/loams-worker", version = "0.1.2" }
 
 # loams-agentd: the per-user desktop daemon, moved from the zeron fork
 # (design §50, D783, plan DD1 Task 1). Versions follow the fork's lockfile
 # (DD1 T0-4). The fork pins reqwest 0.12 and sha2 0.10, which differ from the
 # workspace keys above, so its crates name those two directly.
-loams-agentd-connect = { path = "crates/loams-agentd-connect", version = "0.1.0" }
-loams-agentd-doc = { path = "crates/loams-agentd-doc", version = "0.1.0" }
-loams-agentd-harness = { path = "crates/loams-agentd-harness", version = "0.1.0" }
-loams-agentd-link = { path = "crates/loams-agentd-link", version = "0.1.0" }
-loams-agentd-mcp = { path = "crates/loams-agentd-mcp", version = "0.1.0" }
-loams-agentd-preview = { path = "crates/loams-agentd-preview", version = "0.1.0" }
-loams-agentd-proto = { path = "crates/loams-agentd-proto", version = "0.1.0" }
-loams-agentd-rpc = { path = "crates/loams-agentd-rpc", version = "0.1.0" }
-loams-agentd-sessions = { path = "crates/loams-agentd-sessions", version = "0.1.0" }
-loams-agentd-store = { path = "crates/loams-agentd-store", version = "0.1.0" }
+loams-agentd-connect = { path = "crates/loams-agentd-connect", version = "0.1.2" }
+loams-agentd-doc = { path = "crates/loams-agentd-doc", version = "0.1.2" }
+loams-agentd-harness = { path = "crates/loams-agentd-harness", version = "0.1.2" }
+loams-agentd-link = { path = "crates/loams-agentd-link", version = "0.1.2" }
+loams-agentd-mcp = { path = "crates/loams-agentd-mcp", version = "0.1.2" }
+loams-agentd-marketplace = { path = "crates/loams-agentd-marketplace", version = "0.1.2" }
+loams-agentd-preview = { path = "crates/loams-agentd-preview", version = "0.1.2" }
+loams-agentd-proto = { path = "crates/loams-agentd-proto", version = "0.1.2" }
+loams-agentd-rpc = { path = "crates/loams-agentd-rpc", version = "0.1.2" }
+loams-agentd-sessions = { path = "crates/loams-agentd-sessions", version = "0.1.2" }
+loams-agentd-store = { path = "crates/loams-agentd-store", version = "0.1.2" }
+# MS1 Task 7 (D1813): the read-only project knowledge cache, and the Walrus
+# fast path it reads through (MS1 Task 4, D1811).
+loams-knowledge = { path = "crates/loams-knowledge", version = "0.1.2" }
+loams-walrus = { path = "crates/loams-walrus", version = "0.1.2" }
 chrono = { version = "0.4", features = ["serde"] }
 deser-hjson = "2.2"
 gethostname = "1"
@@ -360,9 +383,9 @@ ignore = "0.4"
 libc = "0.2"
 loro = "1.13"
 mimalloc = { version = "0.1", features = ["v2"] }
-notify = "7"
+notify = "8"
 nucleo-matcher = "0.3"
-portable-pty = "0.8"
+portable-pty = "0.9"
 rusqlite = { version = "0.32", features = ["bundled"] }
 similar = "2"
 # Generates the TypeScript wire types of `@loams/agentd-client` (design §50 §8,

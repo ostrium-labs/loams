@@ -2,7 +2,7 @@ package dev.loams.app.ui.welcome
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import dev.loams.app.session.AuthentikSignIn
+import dev.loams.app.session.OidcSignIn
 import dev.loams.app.session.PairResult
 import android.util.Log
 import kotlinx.coroutines.CancellationException
@@ -34,7 +34,7 @@ class WelcomeViewModel(private val session: SessionManager) : ViewModel() {
     }
 
     /** The browser sign-in in flight; kept here so it survives activity recreation. */
-    var pendingSignIn: AuthentikSignIn.Pending? = null
+    var pendingSignIn: OidcSignIn.Pending? = null
 
     private fun run(block: suspend () -> PairResult) {
         viewModelScope.launch {
@@ -72,8 +72,8 @@ class WelcomeViewModel(private val session: SessionManager) : ViewModel() {
         _confirm.value = null
     }
 
-    fun finishBrowser(issuer: String, instanceId: String, jkt: String, authentikToken: String) =
-        run { session.finishBrowserSignIn(issuer, instanceId, jkt, authentikToken) }
+    fun finishBrowser(issuer: String, instanceId: String, jkt: String, idpToken: String) =
+        run { session.finishBrowserSignIn(issuer, instanceId, jkt, idpToken) }
 
     /** Debug builds only: ask the local mock for a fresh pairing payload, as the console would show. */
     fun pairWithMock(server: String) = run {

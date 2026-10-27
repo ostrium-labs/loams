@@ -1,0 +1,33 @@
+# HE0 Task 9 (plan HE1): OpenPanel against the chDB House instead of
+# clickhouse-server. Used by `HE0_TARGET=house scripts/house/apps.sh openpanel …`
+# on top of compose.yaml. The House runs on the host (scripts/house/apps.sh
+# does not start it; see scripts/house/app-on-house.sh) with its TLS
+# listener on HE0_HOUSE_TLS_PORT; its self-signed certificate names `house`,
+# which resolves to the host, and Node trusts it through NODE_EXTRA_CA_CERTS.
+# OpenPanel's containers stay unmodified: only their environment changes.
+x-house-env: &house-env
+  CLICKHOUSE_URL: https://${HE0_HOUSE_USER:-openpanel}:${HE0_HOUSE_PASSWORD:?the House password}@house:${HE0_HOUSE_TLS_PORT:-28443}/openpanel
+  NODE_EXTRA_CA_CERTS: /house-tls/house.crt
+
+x-house-service: &house-service
+  extra_hosts: ["house:host-gateway"]
+  volumes: ["${HE0_HOUSE_TLS_DIR:?the House tls directory}:/house-tls:ro"]
+
+services:
+  op-api:
+    <<: *house-service
+    environment: *house-env
+    depends_on: !override
+      op-db: { condition: service_healthy }
+      op-kv: { condition: service_healthy }
+  op-worker:
+    <<: *house-service
+    environment: *house-env
+  op-dashboard:
+    <<: *house-service
+    environment: *house-env
+  # The oracle and its logging proxy do not start in a House run.
+  op-ch:
+    profiles: ["oracle"]
+  op-chlog:
+    profiles: ["oracle"]

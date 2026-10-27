@@ -2,7 +2,7 @@
 //! `CollectionInfo` JSON, the alias rules, and the executors REST and gRPC
 //! share.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use loams_collection::{
     CollectionSchema, DEFAULT_MAX_FIELDS, Distance, DynamicMapping, FieldKind, FieldSpec,
@@ -29,6 +29,11 @@ use crate::{EXT_CREATE, PAYLOAD_FIELD, PAYLOAD_INDEX_PREFIX, QdrantGateway};
 pub const EXT_VECTOR_PREFIX: &str = "qdrant.vector.";
 /// The longest annotation value (`CollectionSchema` rule).
 const MAX_ANNOTATION_BYTES: usize = 65_536;
+/// The annotation holding the payload-index keys deleted through the API
+/// (D1210): a sorted, comma-separated set. Collections cannot drop a
+/// field, so a deleted index is retired: left out of `payload_schema`,
+/// while filters keep reading the `payload` field (D134).
+pub const RETIRED_PAYLOAD_INDEXES: &str = "qdrant.payload_index.retired";
 /// The analyzer of the `payload` field's text companion (Ruling 6).
 const STANDARD_ANALYZER: &str = "standard";
 
@@ -277,6 +282,39 @@ pub fn payload_index_fields(schema: &CollectionSchema) -> Vec<(String, &FieldSpe
                 .strip_prefix(PAYLOAD_INDEX_PREFIX)
                 .map(|key| (key.to_string(), f))
         })
+        .collect()
+}
+
+/// The payload-index keys retired by `DELETE /collections/{c}/index/{k}`
+/// (D1210), from the `qdrant.payload_index.retired` annotation.
+pub fn retired_payload_indexes(schema: &CollectionSchema) -> BTreeSet<String> {
+    schema
+        .annotations
+        .get(RETIRED_PAYLOAD_INDEXES)
+        .map(|v| {
+            v.split(',')
+                .filter(|k| !k.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The `qdrant.payload_index.retired` annotation value of `keys`: sorted
+/// and comma-separated (a key holding `,` is never retired).
+pub fn retired_annotation(keys: &BTreeSet<String>) -> String {
+    keys.iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+/// The live payload-index fields: those not retired (D1210).
+fn live_payload_index_fields(schema: &CollectionSchema) -> Vec<(String, &FieldSpec)> {
+    let retired = retired_payload_indexes(schema);
+    payload_index_fields(schema)
+        .into_iter()
+        .filter(|(key, _)| !retired.contains(key))
         .collect()
 }
 
@@ -611,7 +649,7 @@ pub fn collection_info_json(
     }
 
     let mut payload_schema = Map::new();
-    for (key, field) in payload_index_fields(schema) {
+    for (key, field) in live_payload_index_fields(schema) {
         let Some(data_type) = data_type(&field.kind) else {
             continue;
         };
@@ -824,7 +862,7 @@ pub(crate) async fn collection_info(
         .count(&ctx.ns, &name, None, ctx.consistency.clone())
         .await?;
     let mut payload_points = BTreeMap::new();
-    for (key, _) in payload_index_fields(&info.schema) {
+    for (key, _) in live_payload_index_fields(&info.schema) {
         let filter = Query::Exists {
             field: format!("{PAYLOAD_FIELD}.{key}"),
         };
@@ -1031,13 +1069,23 @@ pub(crate) async fn create_field_index(
         status: UpdateStatus::Completed,
     };
     if let Some(existing) = info.schema.fields.iter().find(|f| f.name == field.name) {
-        return if existing.kind == field.kind {
-            Ok(completed)
-        } else {
-            Err(GatewayError::Unsupported(
+        if existing.kind != field.kind {
+            return Err(GatewayError::Unsupported(
                 "changing payload index type".to_string(),
-            ))
-        };
+            ));
+        }
+        // The same kind on a retired key revives it (D1210).
+        let mut retired = retired_payload_indexes(&info.schema);
+        if retired.remove(&field.source_path) {
+            let annotations = BTreeMap::from([(
+                RETIRED_PAYLOAD_INDEXES.to_string(),
+                retired_annotation(&retired),
+            )]);
+            service
+                .add_fields(&ctx.ns, &collection, Vec::new(), Vec::new(), annotations)
+                .await?;
+        }
+        return Ok(completed);
     }
     service
         .add_fields(
@@ -1056,6 +1104,59 @@ pub(crate) async fn create_field_index(
             UpdateStatus::Acknowledged
         },
     })
+}
+
+/// `DELETE /collections/{c}/index/{k}` (MA1 Task 23, D1210): collections
+/// cannot drop a field, so the index is retired. Its key joins the
+/// `qdrant.payload_index.retired` annotation, `payload_schema` leaves it
+/// out, and filters keep working (they read the `payload` field, D134).
+/// A key with no index answers `completed`, as Qdrant does.
+pub(crate) async fn delete_field_index(
+    gw: QdrantGateway,
+    ctx: RequestCtx,
+    collection: String,
+    field_name: String,
+    wait: bool,
+) -> Result<UpdateResult, GatewayError> {
+    let service = gw.service();
+    let info = service.get_collection(&ctx.ns, &collection).await?;
+    let status = if wait {
+        UpdateStatus::Completed
+    } else {
+        UpdateStatus::Acknowledged
+    };
+    let done = UpdateResult {
+        operation_id: None,
+        status,
+    };
+    // A key Loams cannot index has no index to delete.
+    let Some(key) = field_name
+        .parse::<JsonPath>()
+        .ok()
+        .and_then(|path| path.normalized().ok())
+    else {
+        return Ok(done);
+    };
+    let name = format!("{PAYLOAD_INDEX_PREFIX}{key}");
+    let mut retired = retired_payload_indexes(&info.schema);
+    if !info.schema.fields.iter().any(|f| f.name == name) || retired.contains(&key) {
+        return Ok(done);
+    }
+    // The retired set is comma-separated; only a quoted key holds a `,`.
+    if key.contains(',') {
+        return Err(GatewayError::Unsupported(format!(
+            "deleting the payload index of {field_name} (a key containing ',')"
+        )));
+    }
+    retired.insert(key);
+    let annotations = BTreeMap::from([(
+        RETIRED_PAYLOAD_INDEXES.to_string(),
+        retired_annotation(&retired),
+    )]);
+    service
+        .add_fields(&ctx.ns, &collection, Vec::new(), Vec::new(), annotations)
+        .await?;
+    Ok(done)
 }
 
 /// `GET /cluster`: clustering is Loams's own (step 7).

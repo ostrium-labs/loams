@@ -277,6 +277,12 @@ struct Native {
     /// in place of the caller's credentials (or LOAMS_HOUSE_KEY_FILE).
     #[arg(long)]
     house_key_file: Option<PathBuf>,
+    /// The connect socket (CC1 ruling R1.1): the main API on a Unix socket,
+    /// mode 0660, for `loams-fabric connect`, taking API keys only. Also
+    /// LOAMS_CONNECT_SOCKET. Put it in a volume only the engine and the
+    /// connect role mount.
+    #[arg(long)]
+    connect_socket: Option<PathBuf>,
     /// MySQL wire listener for collection queries (loopback only).
     #[cfg(feature = "mysql-wire")]
     #[arg(long)]
@@ -341,6 +347,14 @@ struct Native {
     /// Serve no Elasticsearch API.
     #[arg(long)]
     no_es: bool,
+    /// The built console to serve at /ui/ on the HTTP listeners, same-origin
+    /// with the API [default: /usr/share/loams/console, where the images and
+    /// the packages install it, when it holds a build].
+    #[arg(long, conflicts_with = "no_console")]
+    console_dir: Option<PathBuf>,
+    /// Serve no console at /ui/.
+    #[arg(long)]
+    no_console: bool,
     /// How long a CloudEvent's `source` + `id` is remembered, so a retry does
     /// not append it again, in seconds [default: 3600, at most 86400].
     #[arg(long)]
@@ -646,6 +660,17 @@ impl Native {
             .house_key_file
             .clone()
             .or_else(|| env_value("LOAMS_HOUSE_KEY_FILE").map(PathBuf::from));
+        config.connect_socket = self
+            .connect_socket
+            .clone()
+            .or_else(|| env_value("LOAMS_CONNECT_SOCKET").map(PathBuf::from));
+        config.console_dir = match (self.no_console, &self.console_dir) {
+            (true, _) => None,
+            // An explicit directory is kept even without a build, so the
+            // server says why /ui/ is not served.
+            (false, Some(dir)) => Some(dir.clone()),
+            (false, None) => loams::console::resolve(None),
+        };
         config.flight_sql = if self.no_flight_sql {
             None
         } else {
@@ -1248,6 +1273,9 @@ enum Command {
     /// Upgrade a self-hosted compose stack one release at a time, with a
     /// snapshot first (design §54 §10): `check`, `status`, `snapshots`.
     Upgrade(loams_upgrade::UpgradeArgs),
+    /// Loams Cloud, the hosted try-out (design §78 §25): `cloud admin …` for
+    /// allow-listed Ostrium admins (waitlist, invites, audit, the TOTP step-up).
+    Cloud(loams_cloud_admin::CloudArgs),
     /// Engine authentication (LOAMS_AUTH_MODE): API keys.
     Auth {
         #[command(subcommand)]
@@ -1407,6 +1435,7 @@ fn config(command: Command) -> ServerConfig {
         Command::Auth { .. } => unreachable!("loams auth starts no server"),
         Command::Migrate { .. } => unreachable!("loams migrate starts no server"),
         Command::Upgrade(_) => unreachable!("loams upgrade starts no server"),
+        Command::Cloud(_) => unreachable!("loams cloud starts no server"),
         #[cfg(feature = "live")]
         Command::LiveWorker => unreachable!("loams live-worker starts no server"),
         #[cfg(feature = "postgres")]
@@ -1615,6 +1644,10 @@ fn main() -> ExitCode {
     if let Command::Upgrade(args) = &cli.command {
         return loams_upgrade::run(args);
     }
+    // A client too (LC2a Tasks 4 and 5): its own runtime, no stores.
+    if let Command::Cloud(args) = &cli.command {
+        return loams_cloud_admin::run(args);
+    }
     serve(cli)
 }
 
@@ -1665,6 +1698,13 @@ async fn serve(cli: Cli) -> ExitCode {
     let mut config = config(cli.command);
     config.auth = match loams::auth::AuthConfig::from_env() {
         Ok(auth) => auth,
+        Err(err) => {
+            eprintln!("loams: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    config.console = match loams::console::ConsoleOptions::from_env() {
+        Ok(console) => console,
         Err(err) => {
             eprintln!("loams: {err}");
             return ExitCode::FAILURE;

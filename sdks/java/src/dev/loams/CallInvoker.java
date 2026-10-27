@@ -62,12 +62,39 @@ public final class CallInvoker {
 
     /** The client's session store, or {@code null} when session consistency is off. */
     private final ConsistencySession clientSession;
+    private final String defaultNamespace;
+    private final java.time.Duration timeout;
+
+    /** The unary deadline when neither client nor call names one (R12). */
+    public static final java.time.Duration DEFAULT_TIMEOUT = java.time.Duration.ofSeconds(30);
+
+    /** The namespace an app request with an empty {@code namespace} field gets (R11), or null. */
+    public String defaultNamespace() {
+        return defaultNamespace;
+    }
+
+    /** The client's unary deadline (R12). */
+    public java.time.Duration timeout() {
+        return timeout;
+    }
 
     CallInvoker(
             ConnectTransport transport,
             TokenSource source,
             int maxRetries,
             ConsistencySession clientSession) {
+        this(transport, source, maxRetries, clientSession, null, null);
+    }
+
+    CallInvoker(
+            ConnectTransport transport,
+            TokenSource source,
+            int maxRetries,
+            ConsistencySession clientSession,
+            String defaultNamespace,
+            java.time.Duration timeout) {
+        this.defaultNamespace = defaultNamespace == null || defaultNamespace.isEmpty() ? null : defaultNamespace;
+        this.timeout = timeout == null ? DEFAULT_TIMEOUT : timeout;
         this.transport = transport;
         this.source = source;
         this.maxRetries = maxRetries;
@@ -94,57 +121,157 @@ public final class CallInvoker {
      */
     public <Res extends Message> Res unary(
             CallBinding binding, Message request, CallOptions options, Parser<Res> parser) {
-        Idempotency.KeyedRequest keyed =
-                Idempotency.applyIdempotencyKey(
-                        request, options.idempotencyKey(), binding.takesIdempotencyKey());
-        // The keyed message is the *same value* on every attempt, which is the whole of R3.
+        ConsistencySession session = sessionFor(binding, options);
+        Prepared prepared = prepare(binding, request, options, session);
+        Message toKey = prepared.request();
+        Idempotency.KeyedRequest<Message> keyed =
+                Boolean.FALSE.equals(options.mintIdempotencyKey()) && !Idempotency.hasKey(toKey)
+                        ? new Idempotency.KeyedRequest<>(toKey, false)
+                        : Idempotency.applyIdempotencyKey(
+                                toKey, options.idempotencyKey(), binding.takesIdempotencyKey());
         Message message = keyed.request();
-
-        ConsistencySession session = sessionFor(options);
         RetryPlan plan = plan(binding, options, keyed.keyed());
-        String token = consistencyToken(options, session);
-
+        String token =
+                !options.consistencyToken().isEmpty()
+                        ? options.consistencyToken()
+                        : prepared.bodyCarriesToken() || session == null ? "" : session.current();
+        // R12: one budget for the whole logical call, retries and backoff included.
+        Deadline deadline = Deadline.start(options.timeout() != null ? options.timeout() : timeout);
         CallInvoker.Attempt send =
                 (attempt, refreshed) -> {
+                            java.time.Duration remaining = deadline.remaining();
+                            if (deadline.expired()) {
+                                throw deadline.exceeded(binding.rpc(), null);
+                            }
+                            Map<String, String> headers = headers(options, token);
+                            if (remaining != null) {
+                                headers.put("Connect-Timeout-Ms", Long.toString(Math.max(1, remaining.toMillis())));
+                            }
                             try {
                                 return transport.unary(
                                         binding.service(),
                                         binding.method(),
-                                        message.toByteArray(),
-                                        headers(options, token),
-                                        false);
+                                        transport.json()
+                                                ? dev.loams.internal.ProtoJsonCodec.print(message)
+                                                        .getBytes(java.nio.charset.StandardCharsets.UTF_8)
+                                                : message.toByteArray(),
+                                        headers,
+                                        transport.json(),
+                                        remaining);
                             } catch (IOException e) {
+                                if (deadline.active() && Deadline.isTimeout(e)) {
+                                    throw deadline.exceeded(binding.rpc(), e);
+                                }
                                 throw new UncheckedIOException(e);
                             } catch (InterruptedException e) {
-                                // An interrupt is the caller's own cancellation reaching the
-                                // transport. It is re-set on the thread before it is wrapped, so
-                                // the cancellation is still visible to code above this loop.
                                 Thread.currentThread().interrupt();
                                 throw new UncheckedIOException(new java.io.InterruptedIOException(
                                         "the caller interrupted the call: " + e.getMessage()));
                             }
                         };
-        Object result = retryLoop(binding.rpc(), plan, send);
-
+        Object result = retryLoop(binding.rpc(), plan, send, deadline);
         ConnectTransport.UnaryResponse response = (ConnectTransport.UnaryResponse) result;
-        if (session != null) {
-            // A store that cannot merge a token counts it and carries on: the RPC succeeded, and
-            // turning that into a failure would make a caller that retries on it perform the
-            // write twice.
-            String returned =
-                    response.header(ConsistencySession.HEADER.toLowerCase(java.util.Locale.ROOT));
-            if (returned != null && !returned.isEmpty()) {
-                session.record(returned);
-            }
-        }
+        Res parsed;
         try {
-            return parser.parseFrom(response.body());
-        } catch (IOException e) {
+            parsed = transport.json() ? parseJson(parser, response.body()) : parser.parseFrom(response.body());
+        } catch (IOException | IllegalArgumentException e) {
             throw Errors.internal(
                     binding.rpc(),
                     "the response from " + binding.rpc() + " is not a " + parser.getClass().getSimpleName(),
                     e);
         }
+        if (session != null) {
+            // A store that cannot merge a token counts it and carries on: the RPC succeeded.
+            for (String name : TOKEN_FIELDS) {
+                com.google.protobuf.Descriptors.FieldDescriptor field =
+                        parsed.getDescriptorForType().findFieldByName(name);
+                if (field != null
+                        && !field.isRepeated()
+                        && field.getJavaType() == com.google.protobuf.Descriptors.FieldDescriptor.JavaType.STRING) {
+                    session.record((String) parsed.getField(field));
+                }
+            }
+            session.record(response.header(ConsistencySession.HEADER.toLowerCase(java.util.Locale.ROOT)));
+        }
+        return parsed;
+    }
+
+    /** A JSON answer read into the response type the parser names. */
+    @SuppressWarnings("unchecked")
+    private static <Res extends Message> Res parseJson(Parser<Res> parser, byte[] body) throws IOException {
+        Res empty = parser.parseFrom(new byte[0]);
+        return (Res) dev.loams.internal.ProtoJsonCodec.merge(
+                        new String(body, java.nio.charset.StandardCharsets.UTF_8), empty.newBuilderForType())
+                .build();
+    }
+
+    /** The response fields a consistency token can arrive in (R4). */
+    static final java.util.List<String> TOKEN_FIELDS = java.util.List.of("consistency_token", "token", "read_token");
+
+    /**
+     * The packages R11 applies to: the app-building API, where every request is scoped to a
+     * namespace (SDKP §2.1). The older packages are left as they were.
+     */
+    static final java.util.Set<String> NAMESPACED_PACKAGES =
+            java.util.Set.of("loams.collection.v1", "loams.graph.v1", "loams.sql.v1", "loams.stream.v1");
+
+    /**
+     * The packages R4's session applies to without a per-call session. A graph token names one
+     * graph's own stream ({@code v1:s<graph>/p0@<offset>}) and a graph read refuses a merged one,
+     * so graph tokens are threaded by the caller.
+     */
+    static final java.util.Set<String> SESSION_PACKAGES = java.util.Set.of("loams.collection.v1", "loams.sql.v1");
+
+    record Prepared(Message request, boolean bodyCarriesToken) {}
+
+    // R11 and R4's read half, on a copy: the caller's message is never mutated.
+    private Prepared prepare(
+            CallBinding binding, Message request, CallOptions options, ConsistencySession session) {
+        Message.Builder copy = null;
+        if (NAMESPACED_PACKAGES.contains(binding.protoPackage())) {
+            com.google.protobuf.Descriptors.FieldDescriptor ns =
+                    request.getDescriptorForType().findFieldByName("namespace");
+            if (ns != null
+                    && !ns.isRepeated()
+                    && ns.getJavaType() == com.google.protobuf.Descriptors.FieldDescriptor.JavaType.STRING
+                    && ((String) request.getField(ns)).isEmpty()) {
+                String fill = options.namespace() != null ? options.namespace() : defaultNamespace;
+                if (fill == null || fill.isEmpty()) {
+                    throw new InvalidArgumentException(
+                            Code.INVALID_ARGUMENT,
+                            null,
+                            "namespace_required",
+                            Map.of("field", "namespace"),
+                            "",
+                            binding.rpc(),
+                            new IllegalArgumentException(
+                                    "no namespace: pass one, or give the client a default"
+                                            + " (Options.namespace or LOAMS_NAMESPACE)"));
+                }
+                copy = request.toBuilder();
+                copy.setField(ns, fill);
+            }
+        }
+        boolean bodyCarriesToken = false;
+        String current = session == null ? "" : session.current();
+        if (!current.isEmpty() && options.consistencyToken().isEmpty()) {
+            com.google.protobuf.Descriptors.FieldDescriptor consistency =
+                    request.getDescriptorForType().findFieldByName("consistency");
+            if (consistency != null
+                    && consistency.getJavaType() == com.google.protobuf.Descriptors.FieldDescriptor.JavaType.MESSAGE
+                    && consistency.getMessageType().findFieldByName("at_least") != null) {
+                if (!request.hasField(consistency)) {
+                    if (copy == null) {
+                        copy = request.toBuilder();
+                    }
+                    Message.Builder value = copy.newBuilderForField(consistency);
+                    value.setField(consistency.getMessageType().findFieldByName("at_least"), current);
+                    copy.setField(consistency, value.build());
+                }
+                bodyCarriesToken = true;
+            }
+        }
+        return new Prepared(copy == null ? request : copy.build(), bodyCarriesToken);
     }
 
     /**
@@ -227,6 +354,10 @@ public final class CallInvoker {
      * refresh-once behaviour are the SDK's own logic and are worth pinning without a server.
      */
     static Object retryLoop(String rpc, RetryPlan plan, Attempt send) {
+        return retryLoop(rpc, plan, send, Deadline.NONE);
+    }
+
+    static Object retryLoop(String rpc, RetryPlan plan, Attempt send, Deadline deadline) {
         boolean refreshed = false;
         for (int attempt = 0; ; attempt++) {
             try {
@@ -256,11 +387,17 @@ public final class CallInvoker {
                     throw mapped.withCallerGaveUp(
                             new InterruptedException("the caller interrupted the call"));
                 }
-                if (!Retry.shouldRetry(interrupted, mapped, plan.retrySafe(), attempt, plan.maxRetries())) {
+                if (Deadline.isClientDeadline(mapped)
+                        || !Retry.shouldRetry(interrupted, mapped, plan.retrySafe(), attempt, plan.maxRetries())) {
                     throw mapped;
                 }
+                java.time.Duration wait = Retry.backoff(attempt, java.time.Duration.ZERO);
+                if (deadline.wouldPass(wait)) {
+                    // No time left to wait out the backoff: the budget is spent (R12).
+                    throw deadline.exceeded(rpc, mapped);
+                }
                 try {
-                    Retry.sleep(Retry.backoff(attempt, java.time.Duration.ZERO));
+                    Retry.sleep(wait);
                 } catch (InterruptedException e) {
                     // The caller gave up during the backoff rather than before it. Same
                     // treatment: the retry still happened, the deadline still ended the call.
@@ -316,6 +453,13 @@ public final class CallInvoker {
             return options.session();
         }
         return clientSession;
+    }
+
+    private ConsistencySession sessionFor(CallBinding binding, CallOptions options) {
+        if (options.session() != null) {
+            return options.session();
+        }
+        return SESSION_PACKAGES.contains(binding.protoPackage()) ? clientSession : null;
     }
 
     /**

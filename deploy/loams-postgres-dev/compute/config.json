@@ -47,8 +47,18 @@
                 },
                 {
                     "name": "shared_buffers",
-                    "value": "1MB",
+                    "value": "128MB",
                     "vartype": "string"
+                },
+                {
+                    "name": "neon.max_file_cache_size",
+                    "value": "256",
+                    "vartype": "integer"
+                },
+                {
+                    "name": "neon.file_cache_size_limit",
+                    "value": "256",
+                    "vartype": "integer"
                 },
                 {
                     "name": "max_connections",

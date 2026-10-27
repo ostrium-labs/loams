@@ -107,8 +107,8 @@ export function loadAuthConfig(env: Env = process.env): AuthConfig {
       disabledReason:
         `${missing.join(" and ")} not set. Running UNAUTHENTICATED: every request is ` +
         `treated as an anonymous principal with no scopes, admin operations are refused, ` +
-        `and no session can be created. Set OIDC_ISSUER (with a trailing slash) and ` +
-        `OIDC_CLIENT_ID to enable login.`,
+        `and no session can be created. Set OIDC_ISSUER (exactly the "issuer" in the ` +
+        `provider's discovery document) and OIDC_CLIENT_ID to enable login.`,
       issuer,
       clientId,
       clientSecret,
@@ -182,14 +182,33 @@ function base(
 export function validateAuthConfig(config: AuthConfig): void {
   if (!config.enabled) return;
 
-  if (!config.issuer.endsWith("/")) {
+  // The issuer is NOT normalised here, and no trailing-slash convention is imposed.
+  // Identity providers differ (some issue "https://idp.example.com/<path>/", others a
+  // bare origin such as "https://auth.example.com"), and OIDC Discovery 4.3 requires the
+  // discovered `issuer` to be IDENTICAL to the one configured. That exact comparison is
+  // made by the OIDC client after discovery; here only the shape of an issuer identifier
+  // is checked: an absolute URL with no query and no fragment (OIDC Core 2, `iss`).
+  let issuerUrl: URL;
+  try {
+    issuerUrl = new URL(config.issuer);
+  } catch {
+    throw new AuthError(`OIDC_ISSUER must be an absolute URL. Got "${config.issuer}".`, {
+      code: "oidc_bad_issuer",
+      httpStatus: 500,
+    });
+  }
+  if (
+    (issuerUrl.protocol !== "https:" && issuerUrl.protocol !== "http:") ||
+    issuerUrl.search ||
+    issuerUrl.hash ||
+    config.issuer.includes("?") ||
+    config.issuer.includes("#")
+  ) {
     throw new AuthError(
-      `OIDC_ISSUER must end with a trailing slash. Got "${config.issuer}". Authentik's ` +
-        `per-application issuer is "https://idp.example.com/application/o/<slug>/" and ` +
-        `openid-client compares the issuer byte for byte against the discovered value, so a ` +
-        `missing slash makes every login fail with "discovered metadata issuer does not ` +
-        `match the expected issuer". Add the slash; do not let anything normalise it away.`,
-      { code: "oidc_issuer_not_slash_terminated", httpStatus: 500 },
+      `OIDC_ISSUER must be an http(s) URL with no query string and no fragment. Got ` +
+        `"${config.issuer}". Set it to EXACTLY the "issuer" value in the identity ` +
+        `provider's discovery document.`,
+      { code: "oidc_bad_issuer", httpStatus: 500 },
     );
   }
 

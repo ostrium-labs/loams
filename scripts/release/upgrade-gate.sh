@@ -34,10 +34,19 @@ echo "{}" > "$timings"
 
 train() {
   python3 - "$root/release/upgrade-path.toml" "$1" <<'PY'
-import re, sys
-text = open(sys.argv[1]).read()
-m = re.search(r'\[\[release\]\]\s*version\s*=\s*"([^"]+)"\s*from\s*=\s*"([^"]+)"', text)
-print(m.group(1) if sys.argv[2] == "candidate" else m.group(2))
+import re, sys, tomllib
+releases = tomllib.load(open(sys.argv[1], "rb"))["release"]
+newest = releases[0]
+src = newest["from"]
+if sys.argv[2] == "candidate":
+    print(newest["version"])
+elif re.fullmatch(r"\d+\.\d+", src):
+    # A patch release declares its line (`0.1`): the previous release is the
+    # newest earlier stable release of that line.
+    print(next(r["version"] for r in releases[1:]
+               if r["version"].startswith(src + ".") and "-" not in r["version"]))
+else:
+    print(src)
 PY
 }
 candidate="$(train candidate)"
@@ -50,6 +59,12 @@ print(" ".join(sorted({m["class"] for m in rel.get("migration", [])})) or "rever
 PY
 )"
 echo "upgrade-gate: $previous -> $candidate (migration classes: $classes)"
+# The House and agentd run on the previous release's published images: the
+# gate builds only the candidate's `loams` image, and the candidate's fabric
+# and agentd images are published with the release. (Releases before 0.1.1
+# run neither by default, and read neither variable.)
+export HOUSE_IMAGE="ghcr.io/ostrium-labs/loams-fabric:$previous"
+export AGENTD_IMAGE="ghcr.io/ostrium-labs/loams-agentd:$previous"
 
 timed() {
   local name="$1"; shift
@@ -71,6 +86,15 @@ gh release download "v$previous" -R "${GITHUB_REPOSITORY:-ostrium-labs/loams}" -
 tar -xzf "$dl/loams-compose-$previous.tar.gz" -C "$work"
 stack="$work/loams-compose-$previous/release"
 cp "$stack/.env.example" "$stack/.env"
+# A previous release from before the light default (0.1.0 and earlier) has no
+# `tikv` or `rustfs` profile: PD, TiKV and RustFS always run and hold its data.
+# An upgrade never moves a stack's stores (D1340, D1343), and the candidate's
+# default is the embedded store and local folders, so the gate names both
+# profiles in .env, as such a stack must before it upgrades. A previous
+# release with the profiles runs with its own .env.example as it is.
+if ! grep -q '^COMPOSE_PROFILES=' "$stack/.env"; then
+  echo "COMPOSE_PROFILES=tikv,rustfs" >> "$stack/.env"
+fi
 cp "$root/deploy/release/ci/compose.upgrade.yaml" "$stack/compose.override.yaml"
 compose() { "$engine" compose --project-directory "$stack" "$@"; }
 
@@ -85,6 +109,12 @@ cleanup() {
   compose ps -a > "$work/ps.txt" 2>&1 || true
   for s in $(compose config --services 2>/dev/null); do
     compose logs --no-color "$s" > "$work/log-$s.txt" 2>&1 || true
+  done
+  # And every container of the project, including those of services the
+  # restored release does not define (the candidate's new ones).
+  for c in $("$engine" ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME:-loams}" \
+               --format '{{.Names}}' 2>/dev/null); do
+    "$engine" logs "$c" > "$work/container-$c.txt" 2>&1 || true
   done
   compose down -v --remove-orphans > /dev/null 2>&1 || true
 }
@@ -115,7 +145,8 @@ timed upgrade "$up" --dir "$stack" --to "$candidate" --bundle "$bundle" --yes > 
 timed fixtures_check fixtures check --state /state/state.json
 fixtures write-new --state /state/state.json
 fixtures check --state /state/state.json --expect-new-writes present
-compose run --rm --no-deps migrate migrate status --meta=tikv://pd:2379/loams_meta \
+# The candidate's `migrate` adds the store flags the profiles select.
+compose run --rm --no-deps migrate migrate status \
   --bucket=file:///var/lib/loams/bucket --data-dir=/var/lib/loams --output json > "$work/ledger.json" || true
 
 # 2. Rollback from the snapshot.
@@ -123,7 +154,13 @@ timed rollback "$up" rollback --dir "$stack" --yes > "$work/rollback-1.json" 2> 
 fixtures check --state /state/state.json --expect-new-writes absent
 
 # 3. Reversibility, and --keep-writes.
-if [ "$classes" = "reversible" ]; then
+# 0.1.0's startup gate cannot serve data a later release stamped (it predates
+# design §54 §17 T14-2), so `--keep-writes` back to it is refused
+# (KEEP_WRITES_UNSERVED in crates/loams-upgrade/src/rollback.rs); every later
+# previous release gets the reversibility check.
+if [ "$classes" = "reversible" ] && [ "$previous" = "0.1.0" ]; then
+  echo "upgrade-gate: no --keep-writes run: 0.1.0 cannot start on data a later release stamped"
+elif [ "$classes" = "reversible" ]; then
   "$up" --dir "$stack" --to "$candidate" --bundle "$bundle" --yes > "$work/upgrade-2.json" 2> "$work/upgrade-2.log"
   fixtures write-new --state /state/state.json
   timed rollback_keep_writes "$up" rollback --dir "$stack" --keep-writes --yes > "$work/rollback-2.json" 2> "$work/rollback-2.log"

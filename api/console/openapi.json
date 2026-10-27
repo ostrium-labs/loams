@@ -2634,7 +2634,8 @@
               "google",
               "authentik",
               "dex",
-              "generic"
+              "generic",
+              "zitadel"
             ]
           }
         },

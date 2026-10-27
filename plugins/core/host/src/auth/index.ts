@@ -1,7 +1,7 @@
 /**
  * Authentication for the plugin platform.
  *
- * The security model is in `docs/security.md`. The Authentik setup, and the five
+ * The security model is in `docs/security.md`. The identity-provider setup, and the five
  * silent-failure traps this module exists to report legibly rather than swallow,
  * are in `docs/auth-setup.md`.
  */

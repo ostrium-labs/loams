@@ -1,0 +1,2050 @@
+{
+  "schema": "loams-house-mine/inventory/1",
+  "app": "hyperdx",
+  "variant": "2.40.0",
+  "statements": {
+    "total": 79,
+    "parsed": 40,
+    "explained": 39,
+    "unparsed": 0
+  },
+  "skipped": {
+    "failed_before_start": 1,
+    "not_initial": 0,
+    "duplicate": 0,
+    "harness": 0
+  },
+  "features": {
+    "combinator:ForEach": {
+      "count": 1,
+      "sources": [
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de"
+      ]
+    },
+    "combinator:If": {
+      "count": 4,
+      "sources": [
+        "q:105a12bb-6a69-4dba-be18-ba430c8cf506",
+        "q:3054b1d8-22a0-437f-901e-208021f793a2",
+        "q:91837ec8-5835-42b1-aa02-3cd5c1b54476",
+        "q:990651ea-4c67-404e-9bed-27cb3e3b804b"
+      ]
+    },
+    "engine:MergeTree": {
+      "count": 9,
+      "sources": [
+        "q:1b9dfc79-2906-4ede-b918-30245c30a6ea",
+        "q:2153f07d-4ba2-47f5-84ab-d21b1c40c67c",
+        "q:3098827d-5449-4095-811c-24ff3838c158",
+        "q:41b356b3-c9b1-4b57-b9a2-f8b0882504d3",
+        "q:4df35c4c-7321-432d-b4c5-d80e799cc5ef",
+        "q:9601f04c-ae85-4b7f-8c20-130adb04e8ed",
+        "q:a3de49b5-2a58-4735-849b-acdbac9ee2b0",
+        "q:b91d780c-3848-49a3-bcff-0b5ac2698f87",
+        "q:facc2fd4-9cfa-49c0-9ef3-7a2de91e22c3"
+      ]
+    },
+    "format:JSON": {
+      "count": 51,
+      "sources": [
+        "q:04b8f44f-3e5c-496d-8e40-15d069419c9f",
+        "q:0a8076ac-1e41-4f74-8a58-d502013ce831",
+        "q:105a12bb-6a69-4dba-be18-ba430c8cf506",
+        "q:3054b1d8-22a0-437f-901e-208021f793a2",
+        "q:3367f880-5dfc-480a-90a8-3473efdfb788",
+        "q:3b4fce17-b045-4647-86bf-a05af724fcd0",
+        "q:3e97669f-f507-4b83-9e8e-d4c3bfd9ef62",
+        "q:406d2d61-37be-48d5-b305-915226f62726",
+        "q:4509d072-85e8-4d8c-a3ce-74036eacdfd6",
+        "q:517f65f5-d66f-4617-b043-ac8f25a2847b",
+        "q:5f15b8ff-9192-423e-b5ec-c93fea673690",
+        "q:60cbdfef-1640-429c-8054-03d003847e40",
+        "q:68b13ea2-418d-451a-b363-4afbad0778fb",
+        "q:6d6f819f-3d6a-4483-b1d1-2faef5f4b7f6",
+        "q:7587f782-10be-426c-91a9-84f48bc462a3",
+        "q:79fda017-790a-4887-b0db-a95712ffd25c",
+        "q:7cead070-4fca-4895-a15a-37e05229a24c",
+        "q:7ff9a6d9-ed8c-44f8-947e-5d8358faf716",
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:84acda38-6e3c-42d7-bda8-0c4ee2c3cce5",
+        "q:8a092b4f-e41c-4635-9917-d56746245b4e",
+        "q:8bb7dff7-0b83-444e-bd62-9a9f835f04ef",
+        "q:91837ec8-5835-42b1-aa02-3cd5c1b54476",
+        "q:990651ea-4c67-404e-9bed-27cb3e3b804b",
+        "q:a7871c06-b534-4bb2-bb1e-b7c702efa142",
+        "q:ba4ca745-7fcc-492b-990d-f9d0697fed88",
+        "q:bf59afd4-991c-4d84-93ed-07790cd2777b",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713",
+        "q:d46902e2-08e6-4f4a-85bf-f689baa410fb",
+        "q:dc1720a4-43ff-47c8-a129-5035b920e7ea",
+        "q:de636f9a-1a1b-4ead-a8f5-3bc6afd1b826",
+        "q:e1e663d2-8cbd-458b-8269-aec723e35cee",
+        "q:e7223fb3-9675-46c2-8490-858011c3c574",
+        "q:e9a56a84-0405-4a19-bbe2-cc330a805da6",
+        "q:edca7d7c-def7-43ab-91a3-b91c8940f147",
+        "q:ee05822c-2ba7-4fec-8453-0b6e54f10abd",
+        "q:ee0e1f4d-bd4b-49cb-b3d1-f13303ae5773",
+        "q:f134ebff-329d-42e7-9332-f0449dcc5b79",
+        "q:f3a5c0f5-d576-4dd7-a573-0d744aa741df",
+        "q:fb0160cb-0b45-4fbe-b9d0-845a44a2e555"
+      ]
+    },
+    "format:Native": {
+      "count": 16,
+      "sources": [
+        "q:3452a7e5-2ae7-44da-bb77-1a731cbe5f47",
+        "q:3af1dbbe-7718-4e78-8850-b35d2e05e36c",
+        "q:5a80ba20-9351-425f-9112-f334b2271368",
+        "q:5cf7993b-e0bb-46aa-8998-bb51e7558a17",
+        "q:5e7d0509-ec3f-4776-a243-945cb5cf9f90",
+        "q:753eff65-bf34-4c27-bb31-5ab86cabee70",
+        "q:864dfcf3-ebf3-4078-8a1f-62f4f88497d4",
+        "q:8ac1b73f-13bb-43cd-bad9-271418d424dd",
+        "q:b5885285-7be6-4272-8441-e8370a6ace08",
+        "q:dda30aa2-7e70-48ab-881c-0b87b2ed4ff2"
+      ]
+    },
+    "function:CAST": {
+      "count": 1,
+      "sources": [
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de"
+      ]
+    },
+    "function:COUNTDistinct": {
+      "count": 2,
+      "sources": [
+        "q:3367f880-5dfc-480a-90a8-3473efdfb788",
+        "q:517f65f5-d66f-4617-b043-ac8f25a2847b"
+      ]
+    },
+    "function:and": {
+      "count": 42,
+      "sources": [
+        "q:04b8f44f-3e5c-496d-8e40-15d069419c9f",
+        "q:105a12bb-6a69-4dba-be18-ba430c8cf506",
+        "q:3054b1d8-22a0-437f-901e-208021f793a2",
+        "q:3367f880-5dfc-480a-90a8-3473efdfb788",
+        "q:3b4fce17-b045-4647-86bf-a05af724fcd0",
+        "q:406d2d61-37be-48d5-b305-915226f62726",
+        "q:517f65f5-d66f-4617-b043-ac8f25a2847b",
+        "q:60cbdfef-1640-429c-8054-03d003847e40",
+        "q:68b13ea2-418d-451a-b363-4afbad0778fb",
+        "q:6d6f819f-3d6a-4483-b1d1-2faef5f4b7f6",
+        "q:7587f782-10be-426c-91a9-84f48bc462a3",
+        "q:79fda017-790a-4887-b0db-a95712ffd25c",
+        "q:7cead070-4fca-4895-a15a-37e05229a24c",
+        "q:7ff9a6d9-ed8c-44f8-947e-5d8358faf716",
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:8bb7dff7-0b83-444e-bd62-9a9f835f04ef",
+        "q:91837ec8-5835-42b1-aa02-3cd5c1b54476",
+        "q:990651ea-4c67-404e-9bed-27cb3e3b804b",
+        "q:ba4ca745-7fcc-492b-990d-f9d0697fed88",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713",
+        "q:d46902e2-08e6-4f4a-85bf-f689baa410fb",
+        "q:dc1720a4-43ff-47c8-a129-5035b920e7ea",
+        "q:de636f9a-1a1b-4ead-a8f5-3bc6afd1b826",
+        "q:e7223fb3-9675-46c2-8490-858011c3c574",
+        "q:e9a56a84-0405-4a19-bbe2-cc330a805da6",
+        "q:edca7d7c-def7-43ab-91a3-b91c8940f147",
+        "q:ee05822c-2ba7-4fec-8453-0b6e54f10abd",
+        "q:ee0e1f4d-bd4b-49cb-b3d1-f13303ae5773",
+        "q:f134ebff-329d-42e7-9332-f0449dcc5b79",
+        "q:f3a5c0f5-d576-4dd7-a573-0d744aa741df",
+        "q:fb0160cb-0b45-4fbe-b9d0-845a44a2e555"
+      ]
+    },
+    "function:any": {
+      "count": 4,
+      "sources": [
+        "q:68b13ea2-418d-451a-b363-4afbad0778fb",
+        "q:7ff9a6d9-ed8c-44f8-947e-5d8358faf716",
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713"
+      ]
+    },
+    "function:argMax": {
+      "count": 1,
+      "sources": [
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713"
+      ]
+    },
+    "function:arrayCumSum": {
+      "count": 1,
+      "sources": [
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de"
+      ]
+    },
+    "function:arrayElement": {
+      "count": 3,
+      "sources": [
+        "q:2153f07d-4ba2-47f5-84ab-d21b1c40c67c",
+        "q:3098827d-5449-4095-811c-24ff3838c158",
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de"
+      ]
+    },
+    "function:arrayExists": {
+      "count": 1,
+      "sources": [
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de"
+      ]
+    },
+    "function:arrayFirstIndex": {
+      "count": 1,
+      "sources": [
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de"
+      ]
+    },
+    "function:arrayWithConstant": {
+      "count": 1,
+      "sources": [
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de"
+      ]
+    },
+    "function:arrayZip": {
+      "count": 1,
+      "sources": [
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de"
+      ]
+    },
+    "function:arrayZipUnaligned": {
+      "count": 1,
+      "sources": [
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de"
+      ]
+    },
+    "function:avg": {
+      "count": 2,
+      "sources": [
+        "q:7ff9a6d9-ed8c-44f8-947e-5d8358faf716",
+        "q:e7223fb3-9675-46c2-8490-858011c3c574"
+      ]
+    },
+    "function:cityHash64": {
+      "count": 3,
+      "sources": [
+        "q:7ff9a6d9-ed8c-44f8-947e-5d8358faf716",
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713"
+      ]
+    },
+    "function:count": {
+      "count": 12,
+      "sources": [
+        "q:105a12bb-6a69-4dba-be18-ba430c8cf506",
+        "q:3054b1d8-22a0-437f-901e-208021f793a2",
+        "q:60cbdfef-1640-429c-8054-03d003847e40",
+        "q:6d6f819f-3d6a-4483-b1d1-2faef5f4b7f6",
+        "q:79fda017-790a-4887-b0db-a95712ffd25c",
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:8a092b4f-e41c-4635-9917-d56746245b4e",
+        "q:91837ec8-5835-42b1-aa02-3cd5c1b54476",
+        "q:990651ea-4c67-404e-9bed-27cb3e3b804b",
+        "q:dc1720a4-43ff-47c8-a129-5035b920e7ea",
+        "q:de636f9a-1a1b-4ead-a8f5-3bc6afd1b826",
+        "q:e9a56a84-0405-4a19-bbe2-cc330a805da6"
+      ]
+    },
+    "function:countIf": {
+      "count": 4,
+      "sources": [
+        "q:105a12bb-6a69-4dba-be18-ba430c8cf506",
+        "q:3054b1d8-22a0-437f-901e-208021f793a2",
+        "q:91837ec8-5835-42b1-aa02-3cd5c1b54476",
+        "q:990651ea-4c67-404e-9bed-27cb3e3b804b"
+      ]
+    },
+    "function:divide": {
+      "count": 4,
+      "sources": [
+        "q:3b4fce17-b045-4647-86bf-a05af724fcd0",
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:8bb7dff7-0b83-444e-bd62-9a9f835f04ef",
+        "q:d46902e2-08e6-4f4a-85bf-f689baa410fb"
+      ]
+    },
+    "function:equals": {
+      "count": 21,
+      "sources": [
+        "q:04b8f44f-3e5c-496d-8e40-15d069419c9f",
+        "q:0a8076ac-1e41-4f74-8a58-d502013ce831",
+        "q:105a12bb-6a69-4dba-be18-ba430c8cf506",
+        "q:2153f07d-4ba2-47f5-84ab-d21b1c40c67c",
+        "q:3054b1d8-22a0-437f-901e-208021f793a2",
+        "q:3098827d-5449-4095-811c-24ff3838c158",
+        "q:3b4fce17-b045-4647-86bf-a05af724fcd0",
+        "q:7ff9a6d9-ed8c-44f8-947e-5d8358faf716",
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:8a092b4f-e41c-4635-9917-d56746245b4e",
+        "q:ba4ca745-7fcc-492b-990d-f9d0697fed88",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713",
+        "q:edca7d7c-def7-43ab-91a3-b91c8940f147"
+      ]
+    },
+    "function:fromUnixTimestamp64Milli": {
+      "count": 32,
+      "sources": [
+        "q:105a12bb-6a69-4dba-be18-ba430c8cf506",
+        "q:3054b1d8-22a0-437f-901e-208021f793a2",
+        "q:3367f880-5dfc-480a-90a8-3473efdfb788",
+        "q:3b4fce17-b045-4647-86bf-a05af724fcd0",
+        "q:406d2d61-37be-48d5-b305-915226f62726",
+        "q:517f65f5-d66f-4617-b043-ac8f25a2847b",
+        "q:60cbdfef-1640-429c-8054-03d003847e40",
+        "q:68b13ea2-418d-451a-b363-4afbad0778fb",
+        "q:6d6f819f-3d6a-4483-b1d1-2faef5f4b7f6",
+        "q:7587f782-10be-426c-91a9-84f48bc462a3",
+        "q:79fda017-790a-4887-b0db-a95712ffd25c",
+        "q:7cead070-4fca-4895-a15a-37e05229a24c",
+        "q:7ff9a6d9-ed8c-44f8-947e-5d8358faf716",
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:8bb7dff7-0b83-444e-bd62-9a9f835f04ef",
+        "q:91837ec8-5835-42b1-aa02-3cd5c1b54476",
+        "q:990651ea-4c67-404e-9bed-27cb3e3b804b",
+        "q:ba4ca745-7fcc-492b-990d-f9d0697fed88",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713",
+        "q:d46902e2-08e6-4f4a-85bf-f689baa410fb",
+        "q:dc1720a4-43ff-47c8-a129-5035b920e7ea",
+        "q:de636f9a-1a1b-4ead-a8f5-3bc6afd1b826",
+        "q:e7223fb3-9675-46c2-8490-858011c3c574",
+        "q:e9a56a84-0405-4a19-bbe2-cc330a805da6",
+        "q:ee05822c-2ba7-4fec-8453-0b6e54f10abd",
+        "q:ee0e1f4d-bd4b-49cb-b3d1-f13303ae5773",
+        "q:f134ebff-329d-42e7-9332-f0449dcc5b79",
+        "q:f3a5c0f5-d576-4dd7-a573-0d744aa741df",
+        "q:fb0160cb-0b45-4fbe-b9d0-845a44a2e555"
+      ]
+    },
+    "function:greater": {
+      "count": 2,
+      "sources": [
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:8a092b4f-e41c-4635-9917-d56746245b4e"
+      ]
+    },
+    "function:greaterOrEquals": {
+      "count": 32,
+      "sources": [
+        "q:105a12bb-6a69-4dba-be18-ba430c8cf506",
+        "q:3054b1d8-22a0-437f-901e-208021f793a2",
+        "q:3367f880-5dfc-480a-90a8-3473efdfb788",
+        "q:3b4fce17-b045-4647-86bf-a05af724fcd0",
+        "q:406d2d61-37be-48d5-b305-915226f62726",
+        "q:517f65f5-d66f-4617-b043-ac8f25a2847b",
+        "q:60cbdfef-1640-429c-8054-03d003847e40",
+        "q:68b13ea2-418d-451a-b363-4afbad0778fb",
+        "q:6d6f819f-3d6a-4483-b1d1-2faef5f4b7f6",
+        "q:7587f782-10be-426c-91a9-84f48bc462a3",
+        "q:79fda017-790a-4887-b0db-a95712ffd25c",
+        "q:7cead070-4fca-4895-a15a-37e05229a24c",
+        "q:7ff9a6d9-ed8c-44f8-947e-5d8358faf716",
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:8bb7dff7-0b83-444e-bd62-9a9f835f04ef",
+        "q:91837ec8-5835-42b1-aa02-3cd5c1b54476",
+        "q:990651ea-4c67-404e-9bed-27cb3e3b804b",
+        "q:ba4ca745-7fcc-492b-990d-f9d0697fed88",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713",
+        "q:d46902e2-08e6-4f4a-85bf-f689baa410fb",
+        "q:dc1720a4-43ff-47c8-a129-5035b920e7ea",
+        "q:de636f9a-1a1b-4ead-a8f5-3bc6afd1b826",
+        "q:e7223fb3-9675-46c2-8490-858011c3c574",
+        "q:e9a56a84-0405-4a19-bbe2-cc330a805da6",
+        "q:ee05822c-2ba7-4fec-8453-0b6e54f10abd",
+        "q:ee0e1f4d-bd4b-49cb-b3d1-f13303ae5773",
+        "q:f134ebff-329d-42e7-9332-f0449dcc5b79",
+        "q:f3a5c0f5-d576-4dd7-a573-0d744aa741df",
+        "q:fb0160cb-0b45-4fbe-b9d0-845a44a2e555"
+      ]
+    },
+    "function:greatest": {
+      "count": 1,
+      "sources": [
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713"
+      ]
+    },
+    "function:hasAllTokens": {
+      "count": 1,
+      "sources": [
+        "q:fb0160cb-0b45-4fbe-b9d0-845a44a2e555"
+      ]
+    },
+    "function:hasToken": {
+      "count": 1,
+      "sources": [
+        "q:d46902e2-08e6-4f4a-85bf-f689baa410fb"
+      ]
+    },
+    "function:if": {
+      "count": 2,
+      "sources": [
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713"
+      ]
+    },
+    "function:ifNull": {
+      "count": 1,
+      "sources": [
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de"
+      ]
+    },
+    "function:ilike": {
+      "count": 3,
+      "sources": [
+        "q:406d2d61-37be-48d5-b305-915226f62726",
+        "q:91837ec8-5835-42b1-aa02-3cd5c1b54476",
+        "q:990651ea-4c67-404e-9bed-27cb3e3b804b"
+      ]
+    },
+    "function:in": {
+      "count": 1,
+      "sources": [
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713"
+      ]
+    },
+    "function:isNotNull": {
+      "count": 1,
+      "sources": [
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713"
+      ]
+    },
+    "function:lagInFrame": {
+      "count": 1,
+      "sources": [
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713"
+      ]
+    },
+    "function:lambda": {
+      "count": 1,
+      "sources": [
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de"
+      ]
+    },
+    "function:last_value": {
+      "count": 2,
+      "sources": [
+        "q:7ff9a6d9-ed8c-44f8-947e-5d8358faf716",
+        "q:ee0e1f4d-bd4b-49cb-b3d1-f13303ae5773"
+      ]
+    },
+    "function:length": {
+      "count": 1,
+      "sources": [
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de"
+      ]
+    },
+    "function:less": {
+      "count": 1,
+      "sources": [
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de"
+      ]
+    },
+    "function:lessOrEquals": {
+      "count": 32,
+      "sources": [
+        "q:105a12bb-6a69-4dba-be18-ba430c8cf506",
+        "q:3054b1d8-22a0-437f-901e-208021f793a2",
+        "q:3367f880-5dfc-480a-90a8-3473efdfb788",
+        "q:3b4fce17-b045-4647-86bf-a05af724fcd0",
+        "q:406d2d61-37be-48d5-b305-915226f62726",
+        "q:517f65f5-d66f-4617-b043-ac8f25a2847b",
+        "q:60cbdfef-1640-429c-8054-03d003847e40",
+        "q:68b13ea2-418d-451a-b363-4afbad0778fb",
+        "q:6d6f819f-3d6a-4483-b1d1-2faef5f4b7f6",
+        "q:7587f782-10be-426c-91a9-84f48bc462a3",
+        "q:79fda017-790a-4887-b0db-a95712ffd25c",
+        "q:7cead070-4fca-4895-a15a-37e05229a24c",
+        "q:7ff9a6d9-ed8c-44f8-947e-5d8358faf716",
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:8bb7dff7-0b83-444e-bd62-9a9f835f04ef",
+        "q:91837ec8-5835-42b1-aa02-3cd5c1b54476",
+        "q:990651ea-4c67-404e-9bed-27cb3e3b804b",
+        "q:ba4ca745-7fcc-492b-990d-f9d0697fed88",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713",
+        "q:d46902e2-08e6-4f4a-85bf-f689baa410fb",
+        "q:dc1720a4-43ff-47c8-a129-5035b920e7ea",
+        "q:de636f9a-1a1b-4ead-a8f5-3bc6afd1b826",
+        "q:e7223fb3-9675-46c2-8490-858011c3c574",
+        "q:e9a56a84-0405-4a19-bbe2-cc330a805da6",
+        "q:ee05822c-2ba7-4fec-8453-0b6e54f10abd",
+        "q:ee0e1f4d-bd4b-49cb-b3d1-f13303ae5773",
+        "q:f134ebff-329d-42e7-9332-f0449dcc5b79",
+        "q:f3a5c0f5-d576-4dd7-a573-0d744aa741df",
+        "q:fb0160cb-0b45-4fbe-b9d0-845a44a2e555"
+      ]
+    },
+    "function:lower": {
+      "count": 4,
+      "sources": [
+        "q:2153f07d-4ba2-47f5-84ab-d21b1c40c67c",
+        "q:3098827d-5449-4095-811c-24ff3838c158",
+        "q:d46902e2-08e6-4f4a-85bf-f689baa410fb",
+        "q:fb0160cb-0b45-4fbe-b9d0-845a44a2e555"
+      ]
+    },
+    "function:mapKeys": {
+      "count": 8,
+      "sources": [
+        "q:1b9dfc79-2906-4ede-b918-30245c30a6ea",
+        "q:2153f07d-4ba2-47f5-84ab-d21b1c40c67c",
+        "q:3098827d-5449-4095-811c-24ff3838c158",
+        "q:4df35c4c-7321-432d-b4c5-d80e799cc5ef",
+        "q:9601f04c-ae85-4b7f-8c20-130adb04e8ed",
+        "q:a3de49b5-2a58-4735-849b-acdbac9ee2b0",
+        "q:b91d780c-3848-49a3-bcff-0b5ac2698f87",
+        "q:facc2fd4-9cfa-49c0-9ef3-7a2de91e22c3"
+      ]
+    },
+    "function:mapValues": {
+      "count": 8,
+      "sources": [
+        "q:1b9dfc79-2906-4ede-b918-30245c30a6ea",
+        "q:2153f07d-4ba2-47f5-84ab-d21b1c40c67c",
+        "q:3098827d-5449-4095-811c-24ff3838c158",
+        "q:4df35c4c-7321-432d-b4c5-d80e799cc5ef",
+        "q:9601f04c-ae85-4b7f-8c20-130adb04e8ed",
+        "q:a3de49b5-2a58-4735-849b-acdbac9ee2b0",
+        "q:b91d780c-3848-49a3-bcff-0b5ac2698f87",
+        "q:facc2fd4-9cfa-49c0-9ef3-7a2de91e22c3"
+      ]
+    },
+    "function:max": {
+      "count": 3,
+      "sources": [
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713",
+        "q:f134ebff-329d-42e7-9332-f0449dcc5b79",
+        "q:f3c65079-81d8-4d04-ae88-38ec4a7f20b6"
+      ]
+    },
+    "function:min": {
+      "count": 2,
+      "sources": [
+        "q:7587f782-10be-426c-91a9-84f48bc462a3",
+        "q:f3c65079-81d8-4d04-ae88-38ec4a7f20b6"
+      ]
+    },
+    "function:minus": {
+      "count": 2,
+      "sources": [
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713"
+      ]
+    },
+    "function:multiIf": {
+      "count": 1,
+      "sources": [
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de"
+      ]
+    },
+    "function:multiply": {
+      "count": 1,
+      "sources": [
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de"
+      ]
+    },
+    "function:notEquals": {
+      "count": 3,
+      "sources": [
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713",
+        "q:f3c65079-81d8-4d04-ae88-38ec4a7f20b6"
+      ]
+    },
+    "function:notILike": {
+      "count": 1,
+      "sources": [
+        "q:406d2d61-37be-48d5-b305-915226f62726"
+      ]
+    },
+    "function:or": {
+      "count": 1,
+      "sources": [
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de"
+      ]
+    },
+    "function:plus": {
+      "count": 11,
+      "sources": [
+        "q:1b9dfc79-2906-4ede-b918-30245c30a6ea",
+        "q:2153f07d-4ba2-47f5-84ab-d21b1c40c67c",
+        "q:3098827d-5449-4095-811c-24ff3838c158",
+        "q:41b356b3-c9b1-4b57-b9a2-f8b0882504d3",
+        "q:4df35c4c-7321-432d-b4c5-d80e799cc5ef",
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:9601f04c-ae85-4b7f-8c20-130adb04e8ed",
+        "q:a3de49b5-2a58-4735-849b-acdbac9ee2b0",
+        "q:b91d780c-3848-49a3-bcff-0b5ac2698f87",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713",
+        "q:facc2fd4-9cfa-49c0-9ef3-7a2de91e22c3"
+      ]
+    },
+    "function:quantile": {
+      "count": 4,
+      "sources": [
+        "q:ee05822c-2ba7-4fec-8453-0b6e54f10abd"
+      ]
+    },
+    "function:round": {
+      "count": 3,
+      "sources": [
+        "q:3b4fce17-b045-4647-86bf-a05af724fcd0",
+        "q:8bb7dff7-0b83-444e-bd62-9a9f835f04ef",
+        "q:d46902e2-08e6-4f4a-85bf-f689baa410fb"
+      ]
+    },
+    "function:sum": {
+      "count": 3,
+      "sources": [
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713",
+        "q:f3a5c0f5-d576-4dd7-a573-0d744aa741df"
+      ]
+    },
+    "function:sumForEach": {
+      "count": 1,
+      "sources": [
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de"
+      ]
+    },
+    "function:toDate": {
+      "count": 9,
+      "sources": [
+        "q:1b9dfc79-2906-4ede-b918-30245c30a6ea",
+        "q:2153f07d-4ba2-47f5-84ab-d21b1c40c67c",
+        "q:3098827d-5449-4095-811c-24ff3838c158",
+        "q:41b356b3-c9b1-4b57-b9a2-f8b0882504d3",
+        "q:4df35c4c-7321-432d-b4c5-d80e799cc5ef",
+        "q:9601f04c-ae85-4b7f-8c20-130adb04e8ed",
+        "q:a3de49b5-2a58-4735-849b-acdbac9ee2b0",
+        "q:b91d780c-3848-49a3-bcff-0b5ac2698f87",
+        "q:facc2fd4-9cfa-49c0-9ef3-7a2de91e22c3"
+      ]
+    },
+    "function:toDateTime": {
+      "count": 34,
+      "sources": [
+        "q:105a12bb-6a69-4dba-be18-ba430c8cf506",
+        "q:1b9dfc79-2906-4ede-b918-30245c30a6ea",
+        "q:2153f07d-4ba2-47f5-84ab-d21b1c40c67c",
+        "q:3054b1d8-22a0-437f-901e-208021f793a2",
+        "q:3098827d-5449-4095-811c-24ff3838c158",
+        "q:3367f880-5dfc-480a-90a8-3473efdfb788",
+        "q:41b356b3-c9b1-4b57-b9a2-f8b0882504d3",
+        "q:4df35c4c-7321-432d-b4c5-d80e799cc5ef",
+        "q:517f65f5-d66f-4617-b043-ac8f25a2847b",
+        "q:60cbdfef-1640-429c-8054-03d003847e40",
+        "q:68b13ea2-418d-451a-b363-4afbad0778fb",
+        "q:6d6f819f-3d6a-4483-b1d1-2faef5f4b7f6",
+        "q:7587f782-10be-426c-91a9-84f48bc462a3",
+        "q:79fda017-790a-4887-b0db-a95712ffd25c",
+        "q:7ff9a6d9-ed8c-44f8-947e-5d8358faf716",
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:91837ec8-5835-42b1-aa02-3cd5c1b54476",
+        "q:9601f04c-ae85-4b7f-8c20-130adb04e8ed",
+        "q:990651ea-4c67-404e-9bed-27cb3e3b804b",
+        "q:a3de49b5-2a58-4735-849b-acdbac9ee2b0",
+        "q:b91d780c-3848-49a3-bcff-0b5ac2698f87",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713",
+        "q:dc1720a4-43ff-47c8-a129-5035b920e7ea",
+        "q:de636f9a-1a1b-4ead-a8f5-3bc6afd1b826",
+        "q:e7223fb3-9675-46c2-8490-858011c3c574",
+        "q:e9a56a84-0405-4a19-bbe2-cc330a805da6",
+        "q:ee05822c-2ba7-4fec-8453-0b6e54f10abd",
+        "q:ee0e1f4d-bd4b-49cb-b3d1-f13303ae5773",
+        "q:f134ebff-329d-42e7-9332-f0449dcc5b79",
+        "q:f3a5c0f5-d576-4dd7-a573-0d744aa741df",
+        "q:facc2fd4-9cfa-49c0-9ef3-7a2de91e22c3"
+      ]
+    },
+    "function:toFloat64OrDefault": {
+      "count": 11,
+      "sources": [
+        "q:7587f782-10be-426c-91a9-84f48bc462a3",
+        "q:7ff9a6d9-ed8c-44f8-947e-5d8358faf716",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713",
+        "q:e7223fb3-9675-46c2-8490-858011c3c574",
+        "q:ee05822c-2ba7-4fec-8453-0b6e54f10abd",
+        "q:ee0e1f4d-bd4b-49cb-b3d1-f13303ae5773",
+        "q:f134ebff-329d-42e7-9332-f0449dcc5b79",
+        "q:f3a5c0f5-d576-4dd7-a573-0d744aa741df"
+      ]
+    },
+    "function:toInt64": {
+      "count": 1,
+      "sources": [
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de"
+      ]
+    },
+    "function:toIntervalDay": {
+      "count": 9,
+      "sources": [
+        "q:1b9dfc79-2906-4ede-b918-30245c30a6ea",
+        "q:2153f07d-4ba2-47f5-84ab-d21b1c40c67c",
+        "q:3098827d-5449-4095-811c-24ff3838c158",
+        "q:41b356b3-c9b1-4b57-b9a2-f8b0882504d3",
+        "q:4df35c4c-7321-432d-b4c5-d80e799cc5ef",
+        "q:9601f04c-ae85-4b7f-8c20-130adb04e8ed",
+        "q:a3de49b5-2a58-4735-849b-acdbac9ee2b0",
+        "q:b91d780c-3848-49a3-bcff-0b5ac2698f87",
+        "q:facc2fd4-9cfa-49c0-9ef3-7a2de91e22c3"
+      ]
+    },
+    "function:toIntervalMinute": {
+      "count": 25,
+      "sources": [
+        "q:105a12bb-6a69-4dba-be18-ba430c8cf506",
+        "q:3054b1d8-22a0-437f-901e-208021f793a2",
+        "q:3367f880-5dfc-480a-90a8-3473efdfb788",
+        "q:517f65f5-d66f-4617-b043-ac8f25a2847b",
+        "q:60cbdfef-1640-429c-8054-03d003847e40",
+        "q:68b13ea2-418d-451a-b363-4afbad0778fb",
+        "q:6d6f819f-3d6a-4483-b1d1-2faef5f4b7f6",
+        "q:7587f782-10be-426c-91a9-84f48bc462a3",
+        "q:79fda017-790a-4887-b0db-a95712ffd25c",
+        "q:7ff9a6d9-ed8c-44f8-947e-5d8358faf716",
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:91837ec8-5835-42b1-aa02-3cd5c1b54476",
+        "q:990651ea-4c67-404e-9bed-27cb3e3b804b",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713",
+        "q:dc1720a4-43ff-47c8-a129-5035b920e7ea",
+        "q:de636f9a-1a1b-4ead-a8f5-3bc6afd1b826",
+        "q:e7223fb3-9675-46c2-8490-858011c3c574",
+        "q:e9a56a84-0405-4a19-bbe2-cc330a805da6",
+        "q:ee05822c-2ba7-4fec-8453-0b6e54f10abd",
+        "q:ee0e1f4d-bd4b-49cb-b3d1-f13303ae5773",
+        "q:f134ebff-329d-42e7-9332-f0449dcc5b79",
+        "q:f3a5c0f5-d576-4dd7-a573-0d744aa741df"
+      ]
+    },
+    "function:toNullable": {
+      "count": 1,
+      "sources": [
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713"
+      ]
+    },
+    "function:toStartOfFiveMinutes": {
+      "count": 12,
+      "sources": [
+        "q:105a12bb-6a69-4dba-be18-ba430c8cf506",
+        "q:2153f07d-4ba2-47f5-84ab-d21b1c40c67c",
+        "q:3098827d-5449-4095-811c-24ff3838c158",
+        "q:406d2d61-37be-48d5-b305-915226f62726",
+        "q:517f65f5-d66f-4617-b043-ac8f25a2847b",
+        "q:60cbdfef-1640-429c-8054-03d003847e40",
+        "q:6d6f819f-3d6a-4483-b1d1-2faef5f4b7f6",
+        "q:79fda017-790a-4887-b0db-a95712ffd25c",
+        "q:7cead070-4fca-4895-a15a-37e05229a24c",
+        "q:990651ea-4c67-404e-9bed-27cb3e3b804b",
+        "q:ba4ca745-7fcc-492b-990d-f9d0697fed88",
+        "q:fb0160cb-0b45-4fbe-b9d0-845a44a2e555"
+      ]
+    },
+    "function:toStartOfInterval": {
+      "count": 25,
+      "sources": [
+        "q:105a12bb-6a69-4dba-be18-ba430c8cf506",
+        "q:3054b1d8-22a0-437f-901e-208021f793a2",
+        "q:3367f880-5dfc-480a-90a8-3473efdfb788",
+        "q:517f65f5-d66f-4617-b043-ac8f25a2847b",
+        "q:60cbdfef-1640-429c-8054-03d003847e40",
+        "q:68b13ea2-418d-451a-b363-4afbad0778fb",
+        "q:6d6f819f-3d6a-4483-b1d1-2faef5f4b7f6",
+        "q:7587f782-10be-426c-91a9-84f48bc462a3",
+        "q:79fda017-790a-4887-b0db-a95712ffd25c",
+        "q:7ff9a6d9-ed8c-44f8-947e-5d8358faf716",
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:91837ec8-5835-42b1-aa02-3cd5c1b54476",
+        "q:990651ea-4c67-404e-9bed-27cb3e3b804b",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713",
+        "q:dc1720a4-43ff-47c8-a129-5035b920e7ea",
+        "q:de636f9a-1a1b-4ead-a8f5-3bc6afd1b826",
+        "q:e7223fb3-9675-46c2-8490-858011c3c574",
+        "q:e9a56a84-0405-4a19-bbe2-cc330a805da6",
+        "q:ee05822c-2ba7-4fec-8453-0b6e54f10abd",
+        "q:ee0e1f4d-bd4b-49cb-b3d1-f13303ae5773",
+        "q:f134ebff-329d-42e7-9332-f0449dcc5b79",
+        "q:f3a5c0f5-d576-4dd7-a573-0d744aa741df"
+      ]
+    },
+    "function:toString": {
+      "count": 11,
+      "sources": [
+        "q:7587f782-10be-426c-91a9-84f48bc462a3",
+        "q:7ff9a6d9-ed8c-44f8-947e-5d8358faf716",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713",
+        "q:e7223fb3-9675-46c2-8490-858011c3c574",
+        "q:ee05822c-2ba7-4fec-8453-0b6e54f10abd",
+        "q:ee0e1f4d-bd4b-49cb-b3d1-f13303ae5773",
+        "q:f134ebff-329d-42e7-9332-f0449dcc5b79",
+        "q:f3a5c0f5-d576-4dd7-a573-0d744aa741df"
+      ]
+    },
+    "function:toUnixTimestamp64Nano": {
+      "count": 5,
+      "sources": [
+        "q:4df35c4c-7321-432d-b4c5-d80e799cc5ef",
+        "q:9601f04c-ae85-4b7f-8c20-130adb04e8ed",
+        "q:a3de49b5-2a58-4735-849b-acdbac9ee2b0",
+        "q:b91d780c-3848-49a3-bcff-0b5ac2698f87",
+        "q:facc2fd4-9cfa-49c0-9ef3-7a2de91e22c3"
+      ]
+    },
+    "function:tuple": {
+      "count": 11,
+      "sources": [
+        "q:1b9dfc79-2906-4ede-b918-30245c30a6ea",
+        "q:2153f07d-4ba2-47f5-84ab-d21b1c40c67c",
+        "q:3098827d-5449-4095-811c-24ff3838c158",
+        "q:41b356b3-c9b1-4b57-b9a2-f8b0882504d3",
+        "q:4df35c4c-7321-432d-b4c5-d80e799cc5ef",
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:9601f04c-ae85-4b7f-8c20-130adb04e8ed",
+        "q:a3de49b5-2a58-4735-849b-acdbac9ee2b0",
+        "q:b91d780c-3848-49a3-bcff-0b5ac2698f87",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713",
+        "q:facc2fd4-9cfa-49c0-9ef3-7a2de91e22c3"
+      ]
+    },
+    "function:tupleElement": {
+      "count": 1,
+      "sources": [
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de"
+      ]
+    },
+    "function:version": {
+      "count": 1,
+      "sources": [
+        "q:a7871c06-b534-4bb2-bb1e-b7c702efa142"
+      ]
+    },
+    "setting:allow_calculating_subcolumns_sizes_for_merge_tree_reading": {
+      "count": 48,
+      "sources": [
+        "q:04b8f44f-3e5c-496d-8e40-15d069419c9f",
+        "q:0a8076ac-1e41-4f74-8a58-d502013ce831",
+        "q:105a12bb-6a69-4dba-be18-ba430c8cf506",
+        "q:3054b1d8-22a0-437f-901e-208021f793a2",
+        "q:3367f880-5dfc-480a-90a8-3473efdfb788",
+        "q:3b4fce17-b045-4647-86bf-a05af724fcd0",
+        "q:3e97669f-f507-4b83-9e8e-d4c3bfd9ef62",
+        "q:406d2d61-37be-48d5-b305-915226f62726",
+        "q:4509d072-85e8-4d8c-a3ce-74036eacdfd6",
+        "q:517f65f5-d66f-4617-b043-ac8f25a2847b",
+        "q:60cbdfef-1640-429c-8054-03d003847e40",
+        "q:68b13ea2-418d-451a-b363-4afbad0778fb",
+        "q:6d6f819f-3d6a-4483-b1d1-2faef5f4b7f6",
+        "q:7587f782-10be-426c-91a9-84f48bc462a3",
+        "q:79fda017-790a-4887-b0db-a95712ffd25c",
+        "q:7cead070-4fca-4895-a15a-37e05229a24c",
+        "q:7ff9a6d9-ed8c-44f8-947e-5d8358faf716",
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:84acda38-6e3c-42d7-bda8-0c4ee2c3cce5",
+        "q:8bb7dff7-0b83-444e-bd62-9a9f835f04ef",
+        "q:91837ec8-5835-42b1-aa02-3cd5c1b54476",
+        "q:990651ea-4c67-404e-9bed-27cb3e3b804b",
+        "q:ba4ca745-7fcc-492b-990d-f9d0697fed88",
+        "q:bf59afd4-991c-4d84-93ed-07790cd2777b",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713",
+        "q:d46902e2-08e6-4f4a-85bf-f689baa410fb",
+        "q:dc1720a4-43ff-47c8-a129-5035b920e7ea",
+        "q:de636f9a-1a1b-4ead-a8f5-3bc6afd1b826",
+        "q:e1e663d2-8cbd-458b-8269-aec723e35cee",
+        "q:e7223fb3-9675-46c2-8490-858011c3c574",
+        "q:e9a56a84-0405-4a19-bbe2-cc330a805da6",
+        "q:edca7d7c-def7-43ab-91a3-b91c8940f147",
+        "q:ee05822c-2ba7-4fec-8453-0b6e54f10abd",
+        "q:ee0e1f4d-bd4b-49cb-b3d1-f13303ae5773",
+        "q:f134ebff-329d-42e7-9332-f0449dcc5b79",
+        "q:f3a5c0f5-d576-4dd7-a573-0d744aa741df",
+        "q:fb0160cb-0b45-4fbe-b9d0-845a44a2e555"
+      ]
+    },
+    "setting:cancel_http_readonly_queries_on_client_close": {
+      "count": 48,
+      "sources": [
+        "q:04b8f44f-3e5c-496d-8e40-15d069419c9f",
+        "q:0a8076ac-1e41-4f74-8a58-d502013ce831",
+        "q:105a12bb-6a69-4dba-be18-ba430c8cf506",
+        "q:3054b1d8-22a0-437f-901e-208021f793a2",
+        "q:3367f880-5dfc-480a-90a8-3473efdfb788",
+        "q:3b4fce17-b045-4647-86bf-a05af724fcd0",
+        "q:3e97669f-f507-4b83-9e8e-d4c3bfd9ef62",
+        "q:406d2d61-37be-48d5-b305-915226f62726",
+        "q:4509d072-85e8-4d8c-a3ce-74036eacdfd6",
+        "q:517f65f5-d66f-4617-b043-ac8f25a2847b",
+        "q:60cbdfef-1640-429c-8054-03d003847e40",
+        "q:68b13ea2-418d-451a-b363-4afbad0778fb",
+        "q:6d6f819f-3d6a-4483-b1d1-2faef5f4b7f6",
+        "q:7587f782-10be-426c-91a9-84f48bc462a3",
+        "q:79fda017-790a-4887-b0db-a95712ffd25c",
+        "q:7cead070-4fca-4895-a15a-37e05229a24c",
+        "q:7ff9a6d9-ed8c-44f8-947e-5d8358faf716",
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:84acda38-6e3c-42d7-bda8-0c4ee2c3cce5",
+        "q:8bb7dff7-0b83-444e-bd62-9a9f835f04ef",
+        "q:91837ec8-5835-42b1-aa02-3cd5c1b54476",
+        "q:990651ea-4c67-404e-9bed-27cb3e3b804b",
+        "q:ba4ca745-7fcc-492b-990d-f9d0697fed88",
+        "q:bf59afd4-991c-4d84-93ed-07790cd2777b",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713",
+        "q:d46902e2-08e6-4f4a-85bf-f689baa410fb",
+        "q:dc1720a4-43ff-47c8-a129-5035b920e7ea",
+        "q:de636f9a-1a1b-4ead-a8f5-3bc6afd1b826",
+        "q:e1e663d2-8cbd-458b-8269-aec723e35cee",
+        "q:e7223fb3-9675-46c2-8490-858011c3c574",
+        "q:e9a56a84-0405-4a19-bbe2-cc330a805da6",
+        "q:edca7d7c-def7-43ab-91a3-b91c8940f147",
+        "q:ee05822c-2ba7-4fec-8453-0b6e54f10abd",
+        "q:ee0e1f4d-bd4b-49cb-b3d1-f13303ae5773",
+        "q:f134ebff-329d-42e7-9332-f0449dcc5b79",
+        "q:f3a5c0f5-d576-4dd7-a573-0d744aa741df",
+        "q:fb0160cb-0b45-4fbe-b9d0-845a44a2e555"
+      ]
+    },
+    "setting:database": {
+      "count": 28,
+      "sources": [
+        "q:1b9dfc79-2906-4ede-b918-30245c30a6ea",
+        "q:2153f07d-4ba2-47f5-84ab-d21b1c40c67c",
+        "q:3098827d-5449-4095-811c-24ff3838c158",
+        "q:3452a7e5-2ae7-44da-bb77-1a731cbe5f47",
+        "q:3af1dbbe-7718-4e78-8850-b35d2e05e36c",
+        "q:41b356b3-c9b1-4b57-b9a2-f8b0882504d3",
+        "q:4df35c4c-7321-432d-b4c5-d80e799cc5ef",
+        "q:5a80ba20-9351-425f-9112-f334b2271368",
+        "q:5cf7993b-e0bb-46aa-8998-bb51e7558a17",
+        "q:5e7d0509-ec3f-4776-a243-945cb5cf9f90",
+        "q:753eff65-bf34-4c27-bb31-5ab86cabee70",
+        "q:864dfcf3-ebf3-4078-8a1f-62f4f88497d4",
+        "q:8719ff49-08b9-43b9-9c53-203ce8d3f281",
+        "q:8ac1b73f-13bb-43cd-bad9-271418d424dd",
+        "q:9601f04c-ae85-4b7f-8c20-130adb04e8ed",
+        "q:a3de49b5-2a58-4735-849b-acdbac9ee2b0",
+        "q:b5885285-7be6-4272-8441-e8370a6ace08",
+        "q:b91d780c-3848-49a3-bcff-0b5ac2698f87",
+        "q:dda30aa2-7e70-48ab-881c-0b87b2ed4ff2",
+        "q:f3c65079-81d8-4d04-ae88-38ec4a7f20b6",
+        "q:facc2fd4-9cfa-49c0-9ef3-7a2de91e22c3",
+        "q:fb223fb1-e09c-4bf7-9ea2-aed155adae92"
+      ]
+    },
+    "setting:date_time_output_format": {
+      "count": 48,
+      "sources": [
+        "q:04b8f44f-3e5c-496d-8e40-15d069419c9f",
+        "q:0a8076ac-1e41-4f74-8a58-d502013ce831",
+        "q:105a12bb-6a69-4dba-be18-ba430c8cf506",
+        "q:3054b1d8-22a0-437f-901e-208021f793a2",
+        "q:3367f880-5dfc-480a-90a8-3473efdfb788",
+        "q:3b4fce17-b045-4647-86bf-a05af724fcd0",
+        "q:3e97669f-f507-4b83-9e8e-d4c3bfd9ef62",
+        "q:406d2d61-37be-48d5-b305-915226f62726",
+        "q:4509d072-85e8-4d8c-a3ce-74036eacdfd6",
+        "q:517f65f5-d66f-4617-b043-ac8f25a2847b",
+        "q:60cbdfef-1640-429c-8054-03d003847e40",
+        "q:68b13ea2-418d-451a-b363-4afbad0778fb",
+        "q:6d6f819f-3d6a-4483-b1d1-2faef5f4b7f6",
+        "q:7587f782-10be-426c-91a9-84f48bc462a3",
+        "q:79fda017-790a-4887-b0db-a95712ffd25c",
+        "q:7cead070-4fca-4895-a15a-37e05229a24c",
+        "q:7ff9a6d9-ed8c-44f8-947e-5d8358faf716",
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:84acda38-6e3c-42d7-bda8-0c4ee2c3cce5",
+        "q:8bb7dff7-0b83-444e-bd62-9a9f835f04ef",
+        "q:91837ec8-5835-42b1-aa02-3cd5c1b54476",
+        "q:990651ea-4c67-404e-9bed-27cb3e3b804b",
+        "q:ba4ca745-7fcc-492b-990d-f9d0697fed88",
+        "q:bf59afd4-991c-4d84-93ed-07790cd2777b",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713",
+        "q:d46902e2-08e6-4f4a-85bf-f689baa410fb",
+        "q:dc1720a4-43ff-47c8-a129-5035b920e7ea",
+        "q:de636f9a-1a1b-4ead-a8f5-3bc6afd1b826",
+        "q:e1e663d2-8cbd-458b-8269-aec723e35cee",
+        "q:e7223fb3-9675-46c2-8490-858011c3c574",
+        "q:e9a56a84-0405-4a19-bbe2-cc330a805da6",
+        "q:edca7d7c-def7-43ab-91a3-b91c8940f147",
+        "q:ee05822c-2ba7-4fec-8453-0b6e54f10abd",
+        "q:ee0e1f4d-bd4b-49cb-b3d1-f13303ae5773",
+        "q:f134ebff-329d-42e7-9332-f0449dcc5b79",
+        "q:f3a5c0f5-d576-4dd7-a573-0d744aa741df",
+        "q:fb0160cb-0b45-4fbe-b9d0-845a44a2e555"
+      ]
+    },
+    "setting:enable_producing_buckets_out_of_order_in_aggregation": {
+      "count": 28,
+      "sources": [
+        "q:1b9dfc79-2906-4ede-b918-30245c30a6ea",
+        "q:2153f07d-4ba2-47f5-84ab-d21b1c40c67c",
+        "q:3098827d-5449-4095-811c-24ff3838c158",
+        "q:3452a7e5-2ae7-44da-bb77-1a731cbe5f47",
+        "q:3af1dbbe-7718-4e78-8850-b35d2e05e36c",
+        "q:41b356b3-c9b1-4b57-b9a2-f8b0882504d3",
+        "q:4df35c4c-7321-432d-b4c5-d80e799cc5ef",
+        "q:5a80ba20-9351-425f-9112-f334b2271368",
+        "q:5cf7993b-e0bb-46aa-8998-bb51e7558a17",
+        "q:5e7d0509-ec3f-4776-a243-945cb5cf9f90",
+        "q:753eff65-bf34-4c27-bb31-5ab86cabee70",
+        "q:864dfcf3-ebf3-4078-8a1f-62f4f88497d4",
+        "q:8719ff49-08b9-43b9-9c53-203ce8d3f281",
+        "q:8ac1b73f-13bb-43cd-bad9-271418d424dd",
+        "q:9601f04c-ae85-4b7f-8c20-130adb04e8ed",
+        "q:a3de49b5-2a58-4735-849b-acdbac9ee2b0",
+        "q:b5885285-7be6-4272-8441-e8370a6ace08",
+        "q:b91d780c-3848-49a3-bcff-0b5ac2698f87",
+        "q:dda30aa2-7e70-48ab-881c-0b87b2ed4ff2",
+        "q:f3c65079-81d8-4d04-ae88-38ec4a7f20b6",
+        "q:facc2fd4-9cfa-49c0-9ef3-7a2de91e22c3",
+        "q:fb223fb1-e09c-4bf7-9ea2-aed155adae92"
+      ]
+    },
+    "setting:index_granularity": {
+      "count": 9,
+      "sources": [
+        "q:1b9dfc79-2906-4ede-b918-30245c30a6ea",
+        "q:2153f07d-4ba2-47f5-84ab-d21b1c40c67c",
+        "q:3098827d-5449-4095-811c-24ff3838c158",
+        "q:41b356b3-c9b1-4b57-b9a2-f8b0882504d3",
+        "q:4df35c4c-7321-432d-b4c5-d80e799cc5ef",
+        "q:9601f04c-ae85-4b7f-8c20-130adb04e8ed",
+        "q:a3de49b5-2a58-4735-849b-acdbac9ee2b0",
+        "q:b91d780c-3848-49a3-bcff-0b5ac2698f87",
+        "q:facc2fd4-9cfa-49c0-9ef3-7a2de91e22c3"
+      ]
+    },
+    "setting:input_format_parallel_parsing": {
+      "count": 8,
+      "sources": [
+        "q:3452a7e5-2ae7-44da-bb77-1a731cbe5f47",
+        "q:5a80ba20-9351-425f-9112-f334b2271368",
+        "q:5cf7993b-e0bb-46aa-8998-bb51e7558a17",
+        "q:753eff65-bf34-4c27-bb31-5ab86cabee70",
+        "q:b5885285-7be6-4272-8441-e8370a6ace08"
+      ]
+    },
+    "setting:max_execution_time": {
+      "count": 16,
+      "sources": [
+        "q:3452a7e5-2ae7-44da-bb77-1a731cbe5f47",
+        "q:3af1dbbe-7718-4e78-8850-b35d2e05e36c",
+        "q:5a80ba20-9351-425f-9112-f334b2271368",
+        "q:5cf7993b-e0bb-46aa-8998-bb51e7558a17",
+        "q:5e7d0509-ec3f-4776-a243-945cb5cf9f90",
+        "q:753eff65-bf34-4c27-bb31-5ab86cabee70",
+        "q:864dfcf3-ebf3-4078-8a1f-62f4f88497d4",
+        "q:8ac1b73f-13bb-43cd-bad9-271418d424dd",
+        "q:b5885285-7be6-4272-8441-e8370a6ace08",
+        "q:dda30aa2-7e70-48ab-881c-0b87b2ed4ff2"
+      ]
+    },
+    "setting:output_format_json_quote_64bit_integers": {
+      "count": 48,
+      "sources": [
+        "q:04b8f44f-3e5c-496d-8e40-15d069419c9f",
+        "q:0a8076ac-1e41-4f74-8a58-d502013ce831",
+        "q:105a12bb-6a69-4dba-be18-ba430c8cf506",
+        "q:3054b1d8-22a0-437f-901e-208021f793a2",
+        "q:3367f880-5dfc-480a-90a8-3473efdfb788",
+        "q:3b4fce17-b045-4647-86bf-a05af724fcd0",
+        "q:3e97669f-f507-4b83-9e8e-d4c3bfd9ef62",
+        "q:406d2d61-37be-48d5-b305-915226f62726",
+        "q:4509d072-85e8-4d8c-a3ce-74036eacdfd6",
+        "q:517f65f5-d66f-4617-b043-ac8f25a2847b",
+        "q:60cbdfef-1640-429c-8054-03d003847e40",
+        "q:68b13ea2-418d-451a-b363-4afbad0778fb",
+        "q:6d6f819f-3d6a-4483-b1d1-2faef5f4b7f6",
+        "q:7587f782-10be-426c-91a9-84f48bc462a3",
+        "q:79fda017-790a-4887-b0db-a95712ffd25c",
+        "q:7cead070-4fca-4895-a15a-37e05229a24c",
+        "q:7ff9a6d9-ed8c-44f8-947e-5d8358faf716",
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:84acda38-6e3c-42d7-bda8-0c4ee2c3cce5",
+        "q:8bb7dff7-0b83-444e-bd62-9a9f835f04ef",
+        "q:91837ec8-5835-42b1-aa02-3cd5c1b54476",
+        "q:990651ea-4c67-404e-9bed-27cb3e3b804b",
+        "q:ba4ca745-7fcc-492b-990d-f9d0697fed88",
+        "q:bf59afd4-991c-4d84-93ed-07790cd2777b",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713",
+        "q:d46902e2-08e6-4f4a-85bf-f689baa410fb",
+        "q:dc1720a4-43ff-47c8-a129-5035b920e7ea",
+        "q:de636f9a-1a1b-4ead-a8f5-3bc6afd1b826",
+        "q:e1e663d2-8cbd-458b-8269-aec723e35cee",
+        "q:e7223fb3-9675-46c2-8490-858011c3c574",
+        "q:e9a56a84-0405-4a19-bbe2-cc330a805da6",
+        "q:edca7d7c-def7-43ab-91a3-b91c8940f147",
+        "q:ee05822c-2ba7-4fec-8453-0b6e54f10abd",
+        "q:ee0e1f4d-bd4b-49cb-b3d1-f13303ae5773",
+        "q:f134ebff-329d-42e7-9332-f0449dcc5b79",
+        "q:f3a5c0f5-d576-4dd7-a573-0d744aa741df",
+        "q:fb0160cb-0b45-4fbe-b9d0-845a44a2e555"
+      ]
+    },
+    "setting:query_plan_max_limit_for_lazy_materialization": {
+      "count": 48,
+      "sources": [
+        "q:04b8f44f-3e5c-496d-8e40-15d069419c9f",
+        "q:0a8076ac-1e41-4f74-8a58-d502013ce831",
+        "q:105a12bb-6a69-4dba-be18-ba430c8cf506",
+        "q:3054b1d8-22a0-437f-901e-208021f793a2",
+        "q:3367f880-5dfc-480a-90a8-3473efdfb788",
+        "q:3b4fce17-b045-4647-86bf-a05af724fcd0",
+        "q:3e97669f-f507-4b83-9e8e-d4c3bfd9ef62",
+        "q:406d2d61-37be-48d5-b305-915226f62726",
+        "q:4509d072-85e8-4d8c-a3ce-74036eacdfd6",
+        "q:517f65f5-d66f-4617-b043-ac8f25a2847b",
+        "q:60cbdfef-1640-429c-8054-03d003847e40",
+        "q:68b13ea2-418d-451a-b363-4afbad0778fb",
+        "q:6d6f819f-3d6a-4483-b1d1-2faef5f4b7f6",
+        "q:7587f782-10be-426c-91a9-84f48bc462a3",
+        "q:79fda017-790a-4887-b0db-a95712ffd25c",
+        "q:7cead070-4fca-4895-a15a-37e05229a24c",
+        "q:7ff9a6d9-ed8c-44f8-947e-5d8358faf716",
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:84acda38-6e3c-42d7-bda8-0c4ee2c3cce5",
+        "q:8bb7dff7-0b83-444e-bd62-9a9f835f04ef",
+        "q:91837ec8-5835-42b1-aa02-3cd5c1b54476",
+        "q:990651ea-4c67-404e-9bed-27cb3e3b804b",
+        "q:ba4ca745-7fcc-492b-990d-f9d0697fed88",
+        "q:bf59afd4-991c-4d84-93ed-07790cd2777b",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713",
+        "q:d46902e2-08e6-4f4a-85bf-f689baa410fb",
+        "q:dc1720a4-43ff-47c8-a129-5035b920e7ea",
+        "q:de636f9a-1a1b-4ead-a8f5-3bc6afd1b826",
+        "q:e1e663d2-8cbd-458b-8269-aec723e35cee",
+        "q:e7223fb3-9675-46c2-8490-858011c3c574",
+        "q:e9a56a84-0405-4a19-bbe2-cc330a805da6",
+        "q:edca7d7c-def7-43ab-91a3-b91c8940f147",
+        "q:ee05822c-2ba7-4fec-8453-0b6e54f10abd",
+        "q:ee0e1f4d-bd4b-49cb-b3d1-f13303ae5773",
+        "q:f134ebff-329d-42e7-9332-f0449dcc5b79",
+        "q:f3a5c0f5-d576-4dd7-a573-0d744aa741df",
+        "q:fb0160cb-0b45-4fbe-b9d0-845a44a2e555"
+      ]
+    },
+    "setting:query_plan_max_limit_for_top_k_optimization": {
+      "count": 48,
+      "sources": [
+        "q:04b8f44f-3e5c-496d-8e40-15d069419c9f",
+        "q:0a8076ac-1e41-4f74-8a58-d502013ce831",
+        "q:105a12bb-6a69-4dba-be18-ba430c8cf506",
+        "q:3054b1d8-22a0-437f-901e-208021f793a2",
+        "q:3367f880-5dfc-480a-90a8-3473efdfb788",
+        "q:3b4fce17-b045-4647-86bf-a05af724fcd0",
+        "q:3e97669f-f507-4b83-9e8e-d4c3bfd9ef62",
+        "q:406d2d61-37be-48d5-b305-915226f62726",
+        "q:4509d072-85e8-4d8c-a3ce-74036eacdfd6",
+        "q:517f65f5-d66f-4617-b043-ac8f25a2847b",
+        "q:60cbdfef-1640-429c-8054-03d003847e40",
+        "q:68b13ea2-418d-451a-b363-4afbad0778fb",
+        "q:6d6f819f-3d6a-4483-b1d1-2faef5f4b7f6",
+        "q:7587f782-10be-426c-91a9-84f48bc462a3",
+        "q:79fda017-790a-4887-b0db-a95712ffd25c",
+        "q:7cead070-4fca-4895-a15a-37e05229a24c",
+        "q:7ff9a6d9-ed8c-44f8-947e-5d8358faf716",
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:84acda38-6e3c-42d7-bda8-0c4ee2c3cce5",
+        "q:8bb7dff7-0b83-444e-bd62-9a9f835f04ef",
+        "q:91837ec8-5835-42b1-aa02-3cd5c1b54476",
+        "q:990651ea-4c67-404e-9bed-27cb3e3b804b",
+        "q:ba4ca745-7fcc-492b-990d-f9d0697fed88",
+        "q:bf59afd4-991c-4d84-93ed-07790cd2777b",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713",
+        "q:d46902e2-08e6-4f4a-85bf-f689baa410fb",
+        "q:dc1720a4-43ff-47c8-a129-5035b920e7ea",
+        "q:de636f9a-1a1b-4ead-a8f5-3bc6afd1b826",
+        "q:e1e663d2-8cbd-458b-8269-aec723e35cee",
+        "q:e7223fb3-9675-46c2-8490-858011c3c574",
+        "q:e9a56a84-0405-4a19-bbe2-cc330a805da6",
+        "q:edca7d7c-def7-43ab-91a3-b91c8940f147",
+        "q:ee05822c-2ba7-4fec-8453-0b6e54f10abd",
+        "q:ee0e1f4d-bd4b-49cb-b3d1-f13303ae5773",
+        "q:f134ebff-329d-42e7-9332-f0449dcc5b79",
+        "q:f3a5c0f5-d576-4dd7-a573-0d744aa741df",
+        "q:fb0160cb-0b45-4fbe-b9d0-845a44a2e555"
+      ]
+    },
+    "setting:short_circuit_function_evaluation": {
+      "count": 2,
+      "sources": [
+        "q:7ff9a6d9-ed8c-44f8-947e-5d8358faf716",
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de"
+      ]
+    },
+    "setting:ttl_only_drop_parts": {
+      "count": 9,
+      "sources": [
+        "q:1b9dfc79-2906-4ede-b918-30245c30a6ea",
+        "q:2153f07d-4ba2-47f5-84ab-d21b1c40c67c",
+        "q:3098827d-5449-4095-811c-24ff3838c158",
+        "q:41b356b3-c9b1-4b57-b9a2-f8b0882504d3",
+        "q:4df35c4c-7321-432d-b4c5-d80e799cc5ef",
+        "q:9601f04c-ae85-4b7f-8c20-130adb04e8ed",
+        "q:a3de49b5-2a58-4735-849b-acdbac9ee2b0",
+        "q:b91d780c-3848-49a3-bcff-0b5ac2698f87",
+        "q:facc2fd4-9cfa-49c0-9ef3-7a2de91e22c3"
+      ]
+    },
+    "syntax:CREATE MATERIALIZED VIEW": {
+      "count": 1,
+      "sources": [
+        "q:f3c65079-81d8-4d04-ae88-38ec4a7f20b6"
+      ]
+    },
+    "syntax:CREATE TABLE": {
+      "count": 9,
+      "sources": [
+        "q:1b9dfc79-2906-4ede-b918-30245c30a6ea",
+        "q:2153f07d-4ba2-47f5-84ab-d21b1c40c67c",
+        "q:3098827d-5449-4095-811c-24ff3838c158",
+        "q:41b356b3-c9b1-4b57-b9a2-f8b0882504d3",
+        "q:4df35c4c-7321-432d-b4c5-d80e799cc5ef",
+        "q:9601f04c-ae85-4b7f-8c20-130adb04e8ed",
+        "q:a3de49b5-2a58-4735-849b-acdbac9ee2b0",
+        "q:b91d780c-3848-49a3-bcff-0b5ac2698f87",
+        "q:facc2fd4-9cfa-49c0-9ef3-7a2de91e22c3"
+      ]
+    },
+    "syntax:DESCRIBE": {
+      "count": 7,
+      "sources": [
+        "q:3e97669f-f507-4b83-9e8e-d4c3bfd9ef62",
+        "q:4509d072-85e8-4d8c-a3ce-74036eacdfd6",
+        "q:84acda38-6e3c-42d7-bda8-0c4ee2c3cce5",
+        "q:8719ff49-08b9-43b9-9c53-203ce8d3f281",
+        "q:bf59afd4-991c-4d84-93ed-07790cd2777b",
+        "q:e1e663d2-8cbd-458b-8269-aec723e35cee",
+        "q:fb223fb1-e09c-4bf7-9ea2-aed155adae92"
+      ]
+    },
+    "syntax:GROUP BY": {
+      "count": 26,
+      "sources": [
+        "q:105a12bb-6a69-4dba-be18-ba430c8cf506",
+        "q:3054b1d8-22a0-437f-901e-208021f793a2",
+        "q:3367f880-5dfc-480a-90a8-3473efdfb788",
+        "q:517f65f5-d66f-4617-b043-ac8f25a2847b",
+        "q:60cbdfef-1640-429c-8054-03d003847e40",
+        "q:68b13ea2-418d-451a-b363-4afbad0778fb",
+        "q:6d6f819f-3d6a-4483-b1d1-2faef5f4b7f6",
+        "q:7587f782-10be-426c-91a9-84f48bc462a3",
+        "q:79fda017-790a-4887-b0db-a95712ffd25c",
+        "q:7ff9a6d9-ed8c-44f8-947e-5d8358faf716",
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:91837ec8-5835-42b1-aa02-3cd5c1b54476",
+        "q:990651ea-4c67-404e-9bed-27cb3e3b804b",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713",
+        "q:dc1720a4-43ff-47c8-a129-5035b920e7ea",
+        "q:de636f9a-1a1b-4ead-a8f5-3bc6afd1b826",
+        "q:e7223fb3-9675-46c2-8490-858011c3c574",
+        "q:e9a56a84-0405-4a19-bbe2-cc330a805da6",
+        "q:ee05822c-2ba7-4fec-8453-0b6e54f10abd",
+        "q:ee0e1f4d-bd4b-49cb-b3d1-f13303ae5773",
+        "q:f134ebff-329d-42e7-9332-f0449dcc5b79",
+        "q:f3a5c0f5-d576-4dd7-a573-0d744aa741df",
+        "q:f3c65079-81d8-4d04-ae88-38ec4a7f20b6"
+      ]
+    },
+    "syntax:INSERT": {
+      "count": 16,
+      "sources": [
+        "q:3452a7e5-2ae7-44da-bb77-1a731cbe5f47",
+        "q:3af1dbbe-7718-4e78-8850-b35d2e05e36c",
+        "q:5a80ba20-9351-425f-9112-f334b2271368",
+        "q:5cf7993b-e0bb-46aa-8998-bb51e7558a17",
+        "q:5e7d0509-ec3f-4776-a243-945cb5cf9f90",
+        "q:753eff65-bf34-4c27-bb31-5ab86cabee70",
+        "q:864dfcf3-ebf3-4078-8a1f-62f4f88497d4",
+        "q:8ac1b73f-13bb-43cd-bad9-271418d424dd",
+        "q:b5885285-7be6-4272-8441-e8370a6ace08",
+        "q:dda30aa2-7e70-48ab-881c-0b87b2ed4ff2"
+      ]
+    },
+    "syntax:INSERT FORMAT": {
+      "count": 16,
+      "sources": [
+        "q:3452a7e5-2ae7-44da-bb77-1a731cbe5f47",
+        "q:3af1dbbe-7718-4e78-8850-b35d2e05e36c",
+        "q:5a80ba20-9351-425f-9112-f334b2271368",
+        "q:5cf7993b-e0bb-46aa-8998-bb51e7558a17",
+        "q:5e7d0509-ec3f-4776-a243-945cb5cf9f90",
+        "q:753eff65-bf34-4c27-bb31-5ab86cabee70",
+        "q:864dfcf3-ebf3-4078-8a1f-62f4f88497d4",
+        "q:8ac1b73f-13bb-43cd-bad9-271418d424dd",
+        "q:b5885285-7be6-4272-8441-e8370a6ace08",
+        "q:dda30aa2-7e70-48ab-881c-0b87b2ed4ff2"
+      ]
+    },
+    "syntax:LIMIT": {
+      "count": 13,
+      "sources": [
+        "q:04b8f44f-3e5c-496d-8e40-15d069419c9f",
+        "q:3b4fce17-b045-4647-86bf-a05af724fcd0",
+        "q:406d2d61-37be-48d5-b305-915226f62726",
+        "q:7cead070-4fca-4895-a15a-37e05229a24c",
+        "q:8bb7dff7-0b83-444e-bd62-9a9f835f04ef",
+        "q:ba4ca745-7fcc-492b-990d-f9d0697fed88",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713",
+        "q:d46902e2-08e6-4f4a-85bf-f689baa410fb",
+        "q:fb0160cb-0b45-4fbe-b9d0-845a44a2e555"
+      ]
+    },
+    "syntax:MATERIALIZED VIEW TO": {
+      "count": 1,
+      "sources": [
+        "q:f3c65079-81d8-4d04-ae88-38ec4a7f20b6"
+      ]
+    },
+    "syntax:ORDER BY": {
+      "count": 32,
+      "sources": [
+        "q:105a12bb-6a69-4dba-be18-ba430c8cf506",
+        "q:3054b1d8-22a0-437f-901e-208021f793a2",
+        "q:3367f880-5dfc-480a-90a8-3473efdfb788",
+        "q:3b4fce17-b045-4647-86bf-a05af724fcd0",
+        "q:406d2d61-37be-48d5-b305-915226f62726",
+        "q:517f65f5-d66f-4617-b043-ac8f25a2847b",
+        "q:60cbdfef-1640-429c-8054-03d003847e40",
+        "q:68b13ea2-418d-451a-b363-4afbad0778fb",
+        "q:6d6f819f-3d6a-4483-b1d1-2faef5f4b7f6",
+        "q:7587f782-10be-426c-91a9-84f48bc462a3",
+        "q:79fda017-790a-4887-b0db-a95712ffd25c",
+        "q:7cead070-4fca-4895-a15a-37e05229a24c",
+        "q:7ff9a6d9-ed8c-44f8-947e-5d8358faf716",
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:8bb7dff7-0b83-444e-bd62-9a9f835f04ef",
+        "q:91837ec8-5835-42b1-aa02-3cd5c1b54476",
+        "q:990651ea-4c67-404e-9bed-27cb3e3b804b",
+        "q:ba4ca745-7fcc-492b-990d-f9d0697fed88",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713",
+        "q:d46902e2-08e6-4f4a-85bf-f689baa410fb",
+        "q:dc1720a4-43ff-47c8-a129-5035b920e7ea",
+        "q:de636f9a-1a1b-4ead-a8f5-3bc6afd1b826",
+        "q:e7223fb3-9675-46c2-8490-858011c3c574",
+        "q:e9a56a84-0405-4a19-bbe2-cc330a805da6",
+        "q:ee05822c-2ba7-4fec-8453-0b6e54f10abd",
+        "q:ee0e1f4d-bd4b-49cb-b3d1-f13303ae5773",
+        "q:f134ebff-329d-42e7-9332-f0449dcc5b79",
+        "q:f3a5c0f5-d576-4dd7-a573-0d744aa741df",
+        "q:fb0160cb-0b45-4fbe-b9d0-845a44a2e555"
+      ]
+    },
+    "syntax:PARTITION BY": {
+      "count": 9,
+      "sources": [
+        "q:1b9dfc79-2906-4ede-b918-30245c30a6ea",
+        "q:2153f07d-4ba2-47f5-84ab-d21b1c40c67c",
+        "q:3098827d-5449-4095-811c-24ff3838c158",
+        "q:41b356b3-c9b1-4b57-b9a2-f8b0882504d3",
+        "q:4df35c4c-7321-432d-b4c5-d80e799cc5ef",
+        "q:9601f04c-ae85-4b7f-8c20-130adb04e8ed",
+        "q:a3de49b5-2a58-4735-849b-acdbac9ee2b0",
+        "q:b91d780c-3848-49a3-bcff-0b5ac2698f87",
+        "q:facc2fd4-9cfa-49c0-9ef3-7a2de91e22c3"
+      ]
+    },
+    "syntax:SELECT": {
+      "count": 46,
+      "sources": [
+        "q:04b8f44f-3e5c-496d-8e40-15d069419c9f",
+        "q:0a8076ac-1e41-4f74-8a58-d502013ce831",
+        "q:105a12bb-6a69-4dba-be18-ba430c8cf506",
+        "q:3054b1d8-22a0-437f-901e-208021f793a2",
+        "q:3367f880-5dfc-480a-90a8-3473efdfb788",
+        "q:3b4fce17-b045-4647-86bf-a05af724fcd0",
+        "q:406d2d61-37be-48d5-b305-915226f62726",
+        "q:517f65f5-d66f-4617-b043-ac8f25a2847b",
+        "q:5f15b8ff-9192-423e-b5ec-c93fea673690",
+        "q:60cbdfef-1640-429c-8054-03d003847e40",
+        "q:68b13ea2-418d-451a-b363-4afbad0778fb",
+        "q:6d6f819f-3d6a-4483-b1d1-2faef5f4b7f6",
+        "q:7587f782-10be-426c-91a9-84f48bc462a3",
+        "q:79fda017-790a-4887-b0db-a95712ffd25c",
+        "q:7cead070-4fca-4895-a15a-37e05229a24c",
+        "q:7ff9a6d9-ed8c-44f8-947e-5d8358faf716",
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:8a092b4f-e41c-4635-9917-d56746245b4e",
+        "q:8bb7dff7-0b83-444e-bd62-9a9f835f04ef",
+        "q:91837ec8-5835-42b1-aa02-3cd5c1b54476",
+        "q:990651ea-4c67-404e-9bed-27cb3e3b804b",
+        "q:a7871c06-b534-4bb2-bb1e-b7c702efa142",
+        "q:ba4ca745-7fcc-492b-990d-f9d0697fed88",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713",
+        "q:d46902e2-08e6-4f4a-85bf-f689baa410fb",
+        "q:dc1720a4-43ff-47c8-a129-5035b920e7ea",
+        "q:de636f9a-1a1b-4ead-a8f5-3bc6afd1b826",
+        "q:e7223fb3-9675-46c2-8490-858011c3c574",
+        "q:e9a56a84-0405-4a19-bbe2-cc330a805da6",
+        "q:edca7d7c-def7-43ab-91a3-b91c8940f147",
+        "q:ee05822c-2ba7-4fec-8453-0b6e54f10abd",
+        "q:ee0e1f4d-bd4b-49cb-b3d1-f13303ae5773",
+        "q:f134ebff-329d-42e7-9332-f0449dcc5b79",
+        "q:f3a5c0f5-d576-4dd7-a573-0d744aa741df",
+        "q:fb0160cb-0b45-4fbe-b9d0-845a44a2e555"
+      ]
+    },
+    "syntax:TTL": {
+      "count": 9,
+      "sources": [
+        "q:1b9dfc79-2906-4ede-b918-30245c30a6ea",
+        "q:2153f07d-4ba2-47f5-84ab-d21b1c40c67c",
+        "q:3098827d-5449-4095-811c-24ff3838c158",
+        "q:41b356b3-c9b1-4b57-b9a2-f8b0882504d3",
+        "q:4df35c4c-7321-432d-b4c5-d80e799cc5ef",
+        "q:9601f04c-ae85-4b7f-8c20-130adb04e8ed",
+        "q:a3de49b5-2a58-4735-849b-acdbac9ee2b0",
+        "q:b91d780c-3848-49a3-bcff-0b5ac2698f87",
+        "q:facc2fd4-9cfa-49c0-9ef3-7a2de91e22c3"
+      ]
+    },
+    "syntax:WITH": {
+      "count": 3,
+      "sources": [
+        "q:7ff9a6d9-ed8c-44f8-947e-5d8358faf716",
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713"
+      ]
+    },
+    "syntax:codec DELTA": {
+      "count": 9,
+      "sources": [
+        "q:1b9dfc79-2906-4ede-b918-30245c30a6ea",
+        "q:2153f07d-4ba2-47f5-84ab-d21b1c40c67c",
+        "q:3098827d-5449-4095-811c-24ff3838c158",
+        "q:41b356b3-c9b1-4b57-b9a2-f8b0882504d3",
+        "q:4df35c4c-7321-432d-b4c5-d80e799cc5ef",
+        "q:9601f04c-ae85-4b7f-8c20-130adb04e8ed",
+        "q:a3de49b5-2a58-4735-849b-acdbac9ee2b0",
+        "q:b91d780c-3848-49a3-bcff-0b5ac2698f87",
+        "q:facc2fd4-9cfa-49c0-9ef3-7a2de91e22c3"
+      ]
+    },
+    "syntax:codec ZSTD": {
+      "count": 9,
+      "sources": [
+        "q:1b9dfc79-2906-4ede-b918-30245c30a6ea",
+        "q:2153f07d-4ba2-47f5-84ab-d21b1c40c67c",
+        "q:3098827d-5449-4095-811c-24ff3838c158",
+        "q:41b356b3-c9b1-4b57-b9a2-f8b0882504d3",
+        "q:4df35c4c-7321-432d-b4c5-d80e799cc5ef",
+        "q:9601f04c-ae85-4b7f-8c20-130adb04e8ed",
+        "q:a3de49b5-2a58-4735-849b-acdbac9ee2b0",
+        "q:b91d780c-3848-49a3-bcff-0b5ac2698f87",
+        "q:facc2fd4-9cfa-49c0-9ef3-7a2de91e22c3"
+      ]
+    },
+    "syntax:column CODEC": {
+      "count": 9,
+      "sources": [
+        "q:1b9dfc79-2906-4ede-b918-30245c30a6ea",
+        "q:2153f07d-4ba2-47f5-84ab-d21b1c40c67c",
+        "q:3098827d-5449-4095-811c-24ff3838c158",
+        "q:41b356b3-c9b1-4b57-b9a2-f8b0882504d3",
+        "q:4df35c4c-7321-432d-b4c5-d80e799cc5ef",
+        "q:9601f04c-ae85-4b7f-8c20-130adb04e8ed",
+        "q:a3de49b5-2a58-4735-849b-acdbac9ee2b0",
+        "q:b91d780c-3848-49a3-bcff-0b5ac2698f87",
+        "q:facc2fd4-9cfa-49c0-9ef3-7a2de91e22c3"
+      ]
+    },
+    "syntax:column MATERIALIZED": {
+      "count": 2,
+      "sources": [
+        "q:2153f07d-4ba2-47f5-84ab-d21b1c40c67c",
+        "q:3098827d-5449-4095-811c-24ff3838c158"
+      ]
+    },
+    "syntax:query parameter": {
+      "count": 32,
+      "sources": [
+        "q:105a12bb-6a69-4dba-be18-ba430c8cf506",
+        "q:3054b1d8-22a0-437f-901e-208021f793a2",
+        "q:3367f880-5dfc-480a-90a8-3473efdfb788",
+        "q:3b4fce17-b045-4647-86bf-a05af724fcd0",
+        "q:406d2d61-37be-48d5-b305-915226f62726",
+        "q:517f65f5-d66f-4617-b043-ac8f25a2847b",
+        "q:60cbdfef-1640-429c-8054-03d003847e40",
+        "q:68b13ea2-418d-451a-b363-4afbad0778fb",
+        "q:6d6f819f-3d6a-4483-b1d1-2faef5f4b7f6",
+        "q:7587f782-10be-426c-91a9-84f48bc462a3",
+        "q:79fda017-790a-4887-b0db-a95712ffd25c",
+        "q:7cead070-4fca-4895-a15a-37e05229a24c",
+        "q:7ff9a6d9-ed8c-44f8-947e-5d8358faf716",
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:8bb7dff7-0b83-444e-bd62-9a9f835f04ef",
+        "q:91837ec8-5835-42b1-aa02-3cd5c1b54476",
+        "q:990651ea-4c67-404e-9bed-27cb3e3b804b",
+        "q:ba4ca745-7fcc-492b-990d-f9d0697fed88",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713",
+        "q:d46902e2-08e6-4f4a-85bf-f689baa410fb",
+        "q:dc1720a4-43ff-47c8-a129-5035b920e7ea",
+        "q:de636f9a-1a1b-4ead-a8f5-3bc6afd1b826",
+        "q:e7223fb3-9675-46c2-8490-858011c3c574",
+        "q:e9a56a84-0405-4a19-bbe2-cc330a805da6",
+        "q:ee05822c-2ba7-4fec-8453-0b6e54f10abd",
+        "q:ee0e1f4d-bd4b-49cb-b3d1-f13303ae5773",
+        "q:f134ebff-329d-42e7-9332-f0449dcc5b79",
+        "q:f3a5c0f5-d576-4dd7-a573-0d744aa741df",
+        "q:fb0160cb-0b45-4fbe-b9d0-845a44a2e555"
+      ]
+    },
+    "syntax:scalar subquery": {
+      "count": 3,
+      "sources": [
+        "q:7ff9a6d9-ed8c-44f8-947e-5d8358faf716",
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713"
+      ]
+    },
+    "syntax:skip index bloom_filter": {
+      "count": 7,
+      "sources": [
+        "q:1b9dfc79-2906-4ede-b918-30245c30a6ea",
+        "q:41b356b3-c9b1-4b57-b9a2-f8b0882504d3",
+        "q:4df35c4c-7321-432d-b4c5-d80e799cc5ef",
+        "q:9601f04c-ae85-4b7f-8c20-130adb04e8ed",
+        "q:a3de49b5-2a58-4735-849b-acdbac9ee2b0",
+        "q:b91d780c-3848-49a3-bcff-0b5ac2698f87",
+        "q:facc2fd4-9cfa-49c0-9ef3-7a2de91e22c3"
+      ]
+    },
+    "syntax:skip index minmax": {
+      "count": 1,
+      "sources": [
+        "q:1b9dfc79-2906-4ede-b918-30245c30a6ea"
+      ]
+    },
+    "syntax:skip index text": {
+      "count": 2,
+      "sources": [
+        "q:2153f07d-4ba2-47f5-84ab-d21b1c40c67c",
+        "q:3098827d-5449-4095-811c-24ff3838c158"
+      ]
+    },
+    "syntax:subquery in FROM": {
+      "count": 2,
+      "sources": [
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713"
+      ]
+    },
+    "syntax:table ORDER BY": {
+      "count": 9,
+      "sources": [
+        "q:1b9dfc79-2906-4ede-b918-30245c30a6ea",
+        "q:2153f07d-4ba2-47f5-84ab-d21b1c40c67c",
+        "q:3098827d-5449-4095-811c-24ff3838c158",
+        "q:41b356b3-c9b1-4b57-b9a2-f8b0882504d3",
+        "q:4df35c4c-7321-432d-b4c5-d80e799cc5ef",
+        "q:9601f04c-ae85-4b7f-8c20-130adb04e8ed",
+        "q:a3de49b5-2a58-4735-849b-acdbac9ee2b0",
+        "q:b91d780c-3848-49a3-bcff-0b5ac2698f87",
+        "q:facc2fd4-9cfa-49c0-9ef3-7a2de91e22c3"
+      ]
+    },
+    "syntax:table SETTINGS": {
+      "count": 9,
+      "sources": [
+        "q:1b9dfc79-2906-4ede-b918-30245c30a6ea",
+        "q:2153f07d-4ba2-47f5-84ab-d21b1c40c67c",
+        "q:3098827d-5449-4095-811c-24ff3838c158",
+        "q:41b356b3-c9b1-4b57-b9a2-f8b0882504d3",
+        "q:4df35c4c-7321-432d-b4c5-d80e799cc5ef",
+        "q:9601f04c-ae85-4b7f-8c20-130adb04e8ed",
+        "q:a3de49b5-2a58-4735-849b-acdbac9ee2b0",
+        "q:b91d780c-3848-49a3-bcff-0b5ac2698f87",
+        "q:facc2fd4-9cfa-49c0-9ef3-7a2de91e22c3"
+      ]
+    },
+    "syntax:window function": {
+      "count": 2,
+      "sources": [
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713"
+      ]
+    },
+    "type:Array": {
+      "count": 3,
+      "sources": [
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:a3de49b5-2a58-4735-849b-acdbac9ee2b0",
+        "q:facc2fd4-9cfa-49c0-9ef3-7a2de91e22c3"
+      ]
+    },
+    "type:Boolean": {
+      "count": 1,
+      "sources": [
+        "q:9601f04c-ae85-4b7f-8c20-130adb04e8ed"
+      ]
+    },
+    "type:DateTime": {
+      "count": 1,
+      "sources": [
+        "q:41b356b3-c9b1-4b57-b9a2-f8b0882504d3"
+      ]
+    },
+    "type:DateTime64": {
+      "count": 8,
+      "sources": [
+        "q:1b9dfc79-2906-4ede-b918-30245c30a6ea",
+        "q:2153f07d-4ba2-47f5-84ab-d21b1c40c67c",
+        "q:3098827d-5449-4095-811c-24ff3838c158",
+        "q:4df35c4c-7321-432d-b4c5-d80e799cc5ef",
+        "q:9601f04c-ae85-4b7f-8c20-130adb04e8ed",
+        "q:a3de49b5-2a58-4735-849b-acdbac9ee2b0",
+        "q:b91d780c-3848-49a3-bcff-0b5ac2698f87",
+        "q:facc2fd4-9cfa-49c0-9ef3-7a2de91e22c3"
+      ]
+    },
+    "type:Float64": {
+      "count": 6,
+      "sources": [
+        "q:4df35c4c-7321-432d-b4c5-d80e799cc5ef",
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:9601f04c-ae85-4b7f-8c20-130adb04e8ed",
+        "q:a3de49b5-2a58-4735-849b-acdbac9ee2b0",
+        "q:b91d780c-3848-49a3-bcff-0b5ac2698f87",
+        "q:facc2fd4-9cfa-49c0-9ef3-7a2de91e22c3"
+      ]
+    },
+    "type:Int32": {
+      "count": 11,
+      "sources": [
+        "q:3b4fce17-b045-4647-86bf-a05af724fcd0",
+        "q:406d2d61-37be-48d5-b305-915226f62726",
+        "q:7cead070-4fca-4895-a15a-37e05229a24c",
+        "q:8bb7dff7-0b83-444e-bd62-9a9f835f04ef",
+        "q:9601f04c-ae85-4b7f-8c20-130adb04e8ed",
+        "q:a3de49b5-2a58-4735-849b-acdbac9ee2b0",
+        "q:ba4ca745-7fcc-492b-990d-f9d0697fed88",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713",
+        "q:d46902e2-08e6-4f4a-85bf-f689baa410fb",
+        "q:facc2fd4-9cfa-49c0-9ef3-7a2de91e22c3",
+        "q:fb0160cb-0b45-4fbe-b9d0-845a44a2e555"
+      ]
+    },
+    "type:Int64": {
+      "count": 32,
+      "sources": [
+        "q:105a12bb-6a69-4dba-be18-ba430c8cf506",
+        "q:3054b1d8-22a0-437f-901e-208021f793a2",
+        "q:3367f880-5dfc-480a-90a8-3473efdfb788",
+        "q:3b4fce17-b045-4647-86bf-a05af724fcd0",
+        "q:406d2d61-37be-48d5-b305-915226f62726",
+        "q:517f65f5-d66f-4617-b043-ac8f25a2847b",
+        "q:60cbdfef-1640-429c-8054-03d003847e40",
+        "q:68b13ea2-418d-451a-b363-4afbad0778fb",
+        "q:6d6f819f-3d6a-4483-b1d1-2faef5f4b7f6",
+        "q:7587f782-10be-426c-91a9-84f48bc462a3",
+        "q:79fda017-790a-4887-b0db-a95712ffd25c",
+        "q:7cead070-4fca-4895-a15a-37e05229a24c",
+        "q:7ff9a6d9-ed8c-44f8-947e-5d8358faf716",
+        "q:80dfaff6-874d-4c37-96bb-a3357a88f2de",
+        "q:8bb7dff7-0b83-444e-bd62-9a9f835f04ef",
+        "q:91837ec8-5835-42b1-aa02-3cd5c1b54476",
+        "q:990651ea-4c67-404e-9bed-27cb3e3b804b",
+        "q:ba4ca745-7fcc-492b-990d-f9d0697fed88",
+        "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713",
+        "q:d46902e2-08e6-4f4a-85bf-f689baa410fb",
+        "q:dc1720a4-43ff-47c8-a129-5035b920e7ea",
+        "q:de636f9a-1a1b-4ead-a8f5-3bc6afd1b826",
+        "q:e7223fb3-9675-46c2-8490-858011c3c574",
+        "q:e9a56a84-0405-4a19-bbe2-cc330a805da6",
+        "q:ee05822c-2ba7-4fec-8453-0b6e54f10abd",
+        "q:ee0e1f4d-bd4b-49cb-b3d1-f13303ae5773",
+        "q:f134ebff-329d-42e7-9332-f0449dcc5b79",
+        "q:f3a5c0f5-d576-4dd7-a573-0d744aa741df",
+        "q:fb0160cb-0b45-4fbe-b9d0-845a44a2e555"
+      ]
+    },
+    "type:LowCardinality": {
+      "count": 8,
+      "sources": [
+        "q:1b9dfc79-2906-4ede-b918-30245c30a6ea",
+        "q:2153f07d-4ba2-47f5-84ab-d21b1c40c67c",
+        "q:3098827d-5449-4095-811c-24ff3838c158",
+        "q:4df35c4c-7321-432d-b4c5-d80e799cc5ef",
+        "q:9601f04c-ae85-4b7f-8c20-130adb04e8ed",
+        "q:a3de49b5-2a58-4735-849b-acdbac9ee2b0",
+        "q:b91d780c-3848-49a3-bcff-0b5ac2698f87",
+        "q:facc2fd4-9cfa-49c0-9ef3-7a2de91e22c3"
+      ]
+    },
+    "type:Map": {
+      "count": 8,
+      "sources": [
+        "q:1b9dfc79-2906-4ede-b918-30245c30a6ea",
+        "q:2153f07d-4ba2-47f5-84ab-d21b1c40c67c",
+        "q:3098827d-5449-4095-811c-24ff3838c158",
+        "q:4df35c4c-7321-432d-b4c5-d80e799cc5ef",
+        "q:9601f04c-ae85-4b7f-8c20-130adb04e8ed",
+        "q:a3de49b5-2a58-4735-849b-acdbac9ee2b0",
+        "q:b91d780c-3848-49a3-bcff-0b5ac2698f87",
+        "q:facc2fd4-9cfa-49c0-9ef3-7a2de91e22c3"
+      ]
+    },
+    "type:Nested": {
+      "count": 6,
+      "sources": [
+        "q:1b9dfc79-2906-4ede-b918-30245c30a6ea",
+        "q:4df35c4c-7321-432d-b4c5-d80e799cc5ef",
+        "q:9601f04c-ae85-4b7f-8c20-130adb04e8ed",
+        "q:a3de49b5-2a58-4735-849b-acdbac9ee2b0",
+        "q:b91d780c-3848-49a3-bcff-0b5ac2698f87",
+        "q:facc2fd4-9cfa-49c0-9ef3-7a2de91e22c3"
+      ]
+    },
+    "type:String": {
+      "count": 9,
+      "sources": [
+        "q:1b9dfc79-2906-4ede-b918-30245c30a6ea",
+        "q:2153f07d-4ba2-47f5-84ab-d21b1c40c67c",
+        "q:3098827d-5449-4095-811c-24ff3838c158",
+        "q:41b356b3-c9b1-4b57-b9a2-f8b0882504d3",
+        "q:4df35c4c-7321-432d-b4c5-d80e799cc5ef",
+        "q:9601f04c-ae85-4b7f-8c20-130adb04e8ed",
+        "q:a3de49b5-2a58-4735-849b-acdbac9ee2b0",
+        "q:b91d780c-3848-49a3-bcff-0b5ac2698f87",
+        "q:facc2fd4-9cfa-49c0-9ef3-7a2de91e22c3"
+      ]
+    },
+    "type:UInt32": {
+      "count": 5,
+      "sources": [
+        "q:4df35c4c-7321-432d-b4c5-d80e799cc5ef",
+        "q:9601f04c-ae85-4b7f-8c20-130adb04e8ed",
+        "q:a3de49b5-2a58-4735-849b-acdbac9ee2b0",
+        "q:b91d780c-3848-49a3-bcff-0b5ac2698f87",
+        "q:facc2fd4-9cfa-49c0-9ef3-7a2de91e22c3"
+      ]
+    },
+    "type:UInt64": {
+      "count": 4,
+      "sources": [
+        "q:1b9dfc79-2906-4ede-b918-30245c30a6ea",
+        "q:4df35c4c-7321-432d-b4c5-d80e799cc5ef",
+        "q:a3de49b5-2a58-4735-849b-acdbac9ee2b0",
+        "q:facc2fd4-9cfa-49c0-9ef3-7a2de91e22c3"
+      ]
+    },
+    "type:UInt8": {
+      "count": 2,
+      "sources": [
+        "q:2153f07d-4ba2-47f5-84ab-d21b1c40c67c",
+        "q:3098827d-5449-4095-811c-24ff3838c158"
+      ]
+    }
+  },
+  "unparsed": {
+    "count": 0,
+    "sources": []
+  },
+  "samples": {
+    "q:04b8f44f-3e5c-496d-8e40-15d069419c9f": {
+      "query": "SELECT * FROM system.tables WHERE (database = {p1:String}) AND (name = {p2:String}) LIMIT {p3:Int64} FORMAT JSON",
+      "path": "parsed",
+      "executions": 5
+    },
+    "q:0a8076ac-1e41-4f74-8a58-d502013ce831": {
+      "query": "SELECT name, value FROM system.settings WHERE name = {p1:String} FORMAT JSON",
+      "path": "parsed",
+      "executions": 1
+    },
+    "q:105a12bb-6a69-4dba-be18-ba430c8cf506": {
+      "query": "SELECT countIf(ServiceName = {p1:String}) AS series_0, toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p2:Int64})) AS __hdx_time_bucket FROM default.otel_logs WHERE ((Timestamp >= fromUnixTimestamp64Milli(_CAST({p3:Int64}, {p4:String}))) AND (Timestamp <= fromUnixTimestamp64Milli(_CAST({p5:Int64}, {p6:String})))) AND ((toStartOfFiveMinutes(Timestamp) >= toStartOfFiveMinutes(fromUnixTimestamp64Milli(_CAST({p7:Int64}, {p8:String})))) AND (toStartOfFiveMinutes(Timestamp) <= toStartOfFiveMinutes(fromUnixTimestamp64Milli(_CAST({p9:Int64}, {p10:String}))))) AND (ServiceName = {p11:String}) GROUP BY toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p12:Int64})) AS __hdx_time_bucket ORDER BY toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p13:Int64})) AS __hdx_time_bucket ASC FORMAT JSON",
+      "path": "explained",
+      "executions": 1
+    },
+    "q:1b9dfc79-2906-4ede-b918-30245c30a6ea": {
+      "query": "CREATE TABLE IF NOT EXISTS \"default\".\"otel_traces\"  (\n    Timestamp DateTime64(9) CODEC(Delta, ZSTD({p1:Int64})),\n    TraceId String CODEC(ZSTD({p2:Int64})),\n    SpanId String CODEC(ZSTD({p3:Int64})),\n    ParentSpanId String CODEC(ZSTD({p4:Int64})),\n    TraceState String CODEC(ZSTD({p5:Int64})),\n    SpanName LowCardinality(String) CODEC(ZSTD({p6:Int64})),\n    SpanKind LowCardinality(String) CODEC(ZSTD({p7:Int64})),\n    ServiceName LowCardinality(String) CODEC(ZSTD({p8:Int64})),\n    ResourceAttributes Map(LowCardinality(String), String) CODEC(ZSTD({p9:Int64})),\n    ScopeName String CODEC(ZSTD({p10:Int64})),\n    ScopeVersion String CODEC(ZSTD({p11:Int64})),\n    SpanAttributes Map(LowCardinality(String), String) CODEC(ZSTD({p12:Int64})),\n    Duration UInt64 CODEC(ZSTD({p13:Int64})),\n    StatusCode LowCardinality(String) CODEC(ZSTD({p14:Int64})),\n    StatusMessage String CODEC(ZSTD({p15:Int64})),\n    Events Nested (\n        Timestamp DateTime64(9),\n        Name LowCardinality(String),\n        Attributes Map(LowCardinality(String), String)\n    ) CODEC(ZSTD({p16:Int64})),\n    Links Nested (\n        TraceId String,\n        SpanId String,\n        TraceState String,\n        Attributes Map(LowCardinality(String), String)\n    ) CODEC(ZSTD({p17:Int64})),\n    INDEX idx_trace_id TraceId TYPE bloom_filter({p18:Float64}) GRANULARITY {p19:Int64},\n    INDEX idx_res_attr_key mapKeys(ResourceAttributes) TYPE bloom_filter({p20:Float64}) GRANULARITY {p21:Int64},\n    INDEX idx_res_attr_value mapValues(ResourceAttributes) TYPE bloom_filter({p22:Float64}) GRANULARITY {p23:Int64},\n    INDEX idx_span_attr_key mapKeys(SpanAttributes) TYPE bloom_filter({p24:Float64}) GRANULARITY {p25:Int64},\n    INDEX idx_span_attr_value mapValues(SpanAttributes) TYPE bloom_filter({p26:Float64}) GRANULARITY {p27:Int64},\n    INDEX idx_duration Duration TYPE minmax GRANULARITY {p28:Int64}\n) ENGINE = MergeTree()\nPARTITION BY toDate(Timestamp)\nORDER BY (ServiceName, SpanName, toDateTime(Timestamp))\nTTL toDateTime(Timestamp) + toIntervalDay({p29:Int64})\nSETTINGS index_granularity={p30:Int64}, ttl_only_drop_parts = {p31:Int64}",
+      "path": "explained",
+      "executions": 1
+    },
+    "q:2153f07d-4ba2-47f5-84ab-d21b1c40c67c": {
+      "query": "CREATE TABLE IF NOT EXISTS `default`.`otel_logs`  (\n    `Timestamp` DateTime64(9) COMMENT {p1:String} CODEC(Delta({p2:Int64}), ZSTD({p3:Int64})),\n    `TraceId` String COMMENT {p4:String} CODEC(ZSTD({p5:Int64})),\n    `SpanId` String COMMENT {p6:String} CODEC(ZSTD({p7:Int64})),\n    `TraceFlags` UInt8 COMMENT {p8:String},\n    `SeverityText` LowCardinality(String) COMMENT {p9:String} CODEC(ZSTD({p10:Int64})),\n    `SeverityNumber` UInt8 COMMENT {p11:String},\n    `ServiceName` LowCardinality(String) COMMENT {p12:String} CODEC(ZSTD({p13:Int64})),\n    `Body` String COMMENT {p14:String} CODEC(ZSTD({p15:Int64})),\n    `ResourceSchemaUrl` LowCardinality(String) COMMENT {p16:String} CODEC(ZSTD({p17:Int64})),\n    `ResourceAttributes` Map(LowCardinality(String), String) COMMENT {p18:String} CODEC(ZSTD({p19:Int64})),\n    `ScopeSchemaUrl` LowCardinality(String) COMMENT {p20:String} CODEC(ZSTD({p21:Int64})),\n    `ScopeName` String COMMENT {p22:String} CODEC(ZSTD({p23:Int64})),\n    `ScopeVersion` LowCardinality(String) COMMENT {p24:String} CODEC(ZSTD({p25:Int64})),\n    `ScopeAttributes` Map(LowCardinality(String), String) COMMENT {p26:String} CODEC(ZSTD({p27:Int64})),\n    `LogAttributes` Map(LowCardinality(String), String) COMMENT {p28:String} CODEC(ZSTD({p29:Int64})),\n    `EventName` String COMMENT {p30:String} CODEC(ZSTD({p31:Int64})),\n    `__otel_materialized_k8s.cluster.name` LowCardinality(String) MATERIALIZED ResourceAttributes[{p32:String}] CODEC(ZSTD({p33:Int64})),\n    `__otel_materialized_k8s.container.name` LowCardinality(String) MATERIALIZED ResourceAttributes[{p34:String}] CODEC(ZSTD({p35:Int64})),\n    `__otel_materialized_k8s.deployment.name` LowCardinality(String) MATERIALIZED ResourceAttributes[{p36:String}] CODEC(ZSTD({p37:Int64})),\n    `__otel_materialized_k8s.namespace.name` LowCardinality(String) MATERIALIZED ResourceAttributes[{p38:String}] CODEC(ZSTD({p39:Int64})),\n    `__otel_materialized_k8s.node.name` LowCardinality(String) MATERIALIZED ResourceAttributes[{p40:String}] CODEC(ZSTD({p41:Int64})),\n    `__otel_materialized_k8s.pod.name` LowCardinality(String) MATERIALIZED ResourceAttributes[{p42:String}] CODEC(ZSTD({p43:Int64})),\n    `__otel_materialized_k8s.pod.uid` LowCardinality(String) MATERIALIZED ResourceAttributes[{p44:String}] CODEC(ZSTD({p45:Int64})),\n    `__otel_materialized_deployment.environment.name` LowCardinality(String) MATERIALIZED ResourceAttributes[{p46:String}] CODEC(ZSTD({p47:Int64})),\n    INDEX idx_trace_id TraceId TYPE text(tokenizer = {p48:String}),\n    INDEX idx_res_attr_key mapKeys(ResourceAttributes) TYPE text(tokenizer = {p49:String}),\n    INDEX idx_res_attr_value mapValues(ResourceAttributes) TYPE text(tokenizer = {p50:String}),\n    INDEX idx_scope_attr_key mapKeys(ScopeAttributes) TYPE text(tokenizer = {p51:String}),\n    INDEX idx_scope_attr_value mapValues(ScopeAttributes) TYPE text(tokenizer = {p52:String}),\n    INDEX idx_log_attr_key mapKeys(LogAttributes) TYPE text(tokenizer = {p53:String}),\n    INDEX idx_log_attr_value mapValues(LogAttributes) TYPE text(tokenizer = {p54:String}),\n    INDEX idx_lower_body lower(Body) TYPE text(tokenizer = {p55:String})\n) ENGINE = MergeTree()\nPARTITION BY toDate(Timestamp)\nORDER BY (toStartOfFiveMinutes(Timestamp), ServiceName, Timestamp)\nTTL toDateTime(Timestamp) + toIntervalDay({p56:Int64})\nSETTINGS index_granularity = {p57:Int64}, ttl_only_drop_parts = {p58:Int64}",
+      "path": "explained",
+      "executions": 1
+    },
+    "q:3054b1d8-22a0-437f-901e-208021f793a2": {
+      "query": "SELECT countIf(ServiceName = {p1:String}) AS series_0, toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p2:Int64})) AS __hdx_time_bucket FROM default.otel_traces WHERE ((Timestamp >= fromUnixTimestamp64Milli(_CAST({p3:Int64}, {p4:String}))) AND (Timestamp <= fromUnixTimestamp64Milli(_CAST({p5:Int64}, {p6:String})))) AND (ServiceName = {p7:String}) GROUP BY toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p8:Int64})) AS __hdx_time_bucket ORDER BY toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p9:Int64})) AS __hdx_time_bucket ASC FORMAT JSON",
+      "path": "explained",
+      "executions": 1
+    },
+    "q:3098827d-5449-4095-811c-24ff3838c158": {
+      "query": "CREATE TABLE IF NOT EXISTS `default`.`hyperdx_sessions`  (\n    `Timestamp` DateTime64(9) COMMENT {p1:String} CODEC(Delta({p2:Int64}), ZSTD({p3:Int64})),\n    `TraceId` String COMMENT {p4:String} CODEC(ZSTD({p5:Int64})),\n    `SpanId` String COMMENT {p6:String} CODEC(ZSTD({p7:Int64})),\n    `TraceFlags` UInt8 COMMENT {p8:String},\n    `SeverityText` LowCardinality(String) COMMENT {p9:String} CODEC(ZSTD({p10:Int64})),\n    `SeverityNumber` UInt8 COMMENT {p11:String},\n    `ServiceName` LowCardinality(String) COMMENT {p12:String} CODEC(ZSTD({p13:Int64})),\n    `Body` String COMMENT {p14:String} CODEC(ZSTD({p15:Int64})),\n    `ResourceSchemaUrl` LowCardinality(String) COMMENT {p16:String} CODEC(ZSTD({p17:Int64})),\n    `ResourceAttributes` Map(LowCardinality(String), String) COMMENT {p18:String} CODEC(ZSTD({p19:Int64})),\n    `ScopeSchemaUrl` LowCardinality(String) COMMENT {p20:String} CODEC(ZSTD({p21:Int64})),\n    `ScopeName` String COMMENT {p22:String} CODEC(ZSTD({p23:Int64})),\n    `ScopeVersion` LowCardinality(String) COMMENT {p24:String} CODEC(ZSTD({p25:Int64})),\n    `ScopeAttributes` Map(LowCardinality(String), String) COMMENT {p26:String} CODEC(ZSTD({p27:Int64})),\n    `LogAttributes` Map(LowCardinality(String), String) COMMENT {p28:String} CODEC(ZSTD({p29:Int64})),\n    `EventName` String COMMENT {p30:String} CODEC(ZSTD({p31:Int64})),\n    `__otel_materialized_k8s.cluster.name` LowCardinality(String) MATERIALIZED ResourceAttributes[{p32:String}] CODEC(ZSTD({p33:Int64})),\n    `__otel_materialized_k8s.container.name` LowCardinality(String) MATERIALIZED ResourceAttributes[{p34:String}] CODEC(ZSTD({p35:Int64})),\n    `__otel_materialized_k8s.deployment.name` LowCardinality(String) MATERIALIZED ResourceAttributes[{p36:String}] CODEC(ZSTD({p37:Int64})),\n    `__otel_materialized_k8s.namespace.name` LowCardinality(String) MATERIALIZED ResourceAttributes[{p38:String}] CODEC(ZSTD({p39:Int64})),\n    `__otel_materialized_k8s.node.name` LowCardinality(String) MATERIALIZED ResourceAttributes[{p40:String}] CODEC(ZSTD({p41:Int64})),\n    `__otel_materialized_k8s.pod.name` LowCardinality(String) MATERIALIZED ResourceAttributes[{p42:String}] CODEC(ZSTD({p43:Int64})),\n    `__otel_materialized_k8s.pod.uid` LowCardinality(String) MATERIALIZED ResourceAttributes[{p44:String}] CODEC(ZSTD({p45:Int64})),\n    `__otel_materialized_deployment.environment.name` LowCardinality(String) MATERIALIZED ResourceAttributes[{p46:String}] CODEC(ZSTD({p47:Int64})),\n    INDEX idx_trace_id TraceId TYPE text(tokenizer = {p48:String}),\n    INDEX idx_res_attr_key mapKeys(ResourceAttributes) TYPE text(tokenizer = {p49:String}),\n    INDEX idx_res_attr_value mapValues(ResourceAttributes) TYPE text(tokenizer = {p50:String}),\n    INDEX idx_scope_attr_key mapKeys(ScopeAttributes) TYPE text(tokenizer = {p51:String}),\n    INDEX idx_scope_attr_value mapValues(ScopeAttributes) TYPE text(tokenizer = {p52:String}),\n    INDEX idx_log_attr_key mapKeys(LogAttributes) TYPE text(tokenizer = {p53:String}),\n    INDEX idx_log_attr_value mapValues(LogAttributes) TYPE text(tokenizer = {p54:String}),\n    INDEX idx_lower_body lower(Body) TYPE text(tokenizer = {p55:String})\n) ENGINE = MergeTree()\nPARTITION BY toDate(Timestamp)\nORDER BY (toStartOfFiveMinutes(Timestamp), ServiceName, Timestamp)\nTTL toDateTime(Timestamp) + toIntervalDay({p56:Int64})\nSETTINGS index_granularity = {p57:Int64}, ttl_only_drop_parts = {p58:Int64}",
+      "path": "explained",
+      "executions": 1
+    },
+    "q:3367f880-5dfc-480a-90a8-3473efdfb788": {
+      "query": "SELECT COUNTDistinct(TraceId) AS series_0, toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p1:Int64})) AS __hdx_time_bucket FROM default.otel_traces WHERE ((Timestamp >= fromUnixTimestamp64Milli(_CAST({p2:Int64}, {p3:String}))) AND (Timestamp <= fromUnixTimestamp64Milli(_CAST({p4:Int64}, {p5:String})))) GROUP BY toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p6:Int64})) AS __hdx_time_bucket ORDER BY toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p7:Int64})) AS __hdx_time_bucket ASC FORMAT JSON",
+      "path": "explained",
+      "executions": 1
+    },
+    "q:3452a7e5-2ae7-44da-bb77-1a731cbe5f47": {
+      "query": "INSERT INTO default.otel_metrics_gauge (ResourceAttributes, ResourceSchemaUrl, ScopeName, ScopeVersion, ScopeAttributes, ScopeDroppedAttrCount, ScopeSchemaUrl, ServiceName, MetricName, MetricDescription, MetricUnit, Attributes, StartTimeUnix, TimeUnix, Value, Flags, `Exemplars.FilteredAttributes`, `Exemplars.TimeUnix`, `Exemplars.Value`, `Exemplars.SpanId`, `Exemplars.TraceId`) FORMAT Native",
+      "path": "parsed",
+      "executions": 2
+    },
+    "q:3af1dbbe-7718-4e78-8850-b35d2e05e36c": {
+      "query": "INSERT INTO `default`.`otel_logs` (\n    Timestamp,\n    TraceId,\n    SpanId,\n    TraceFlags,\n    SeverityText,\n    SeverityNumber,\n    ServiceName,\n    Body,\n    ResourceSchemaUrl,\n    ResourceAttributes,\n    ScopeSchemaUrl,\n    ScopeName,\n    ScopeVersion,\n    ScopeAttributes,\n    LogAttributes\n    , EventName\n) FORMAT Native",
+      "path": "parsed",
+      "executions": 1
+    },
+    "q:3b4fce17-b045-4647-86bf-a05af724fcd0": {
+      "query": "SELECT Timestamp, ServiceName, StatusCode, round(Duration / {p1:Float64}), SpanName FROM default.otel_traces WHERE ((Timestamp >= fromUnixTimestamp64Milli(_CAST({p2:Int64}, {p3:String}))) AND (Timestamp <= fromUnixTimestamp64Milli(_CAST({p4:Int64}, {p5:String})))) AND (ServiceName = {p6:String}) ORDER BY Timestamp DESC LIMIT _CAST({p7:Int64}, {p8:String}), _CAST({p9:Int64}, {p10:String}) FORMAT JSON",
+      "path": "parsed",
+      "executions": 1
+    },
+    "q:3e97669f-f507-4b83-9e8e-d4c3bfd9ef62": {
+      "query": "DESCRIBE TABLE default.otel_logs FORMAT JSON",
+      "path": "explained",
+      "executions": 1
+    },
+    "q:406d2d61-37be-48d5-b305-915226f62726": {
+      "query": "SELECT Timestamp, ServiceName, SeverityText, Body FROM default.otel_logs WHERE ((Timestamp >= fromUnixTimestamp64Milli(_CAST({p1:Int64}, {p2:String}))) AND (Timestamp <= fromUnixTimestamp64Milli(_CAST({p3:Int64}, {p4:String})))) AND ((toStartOfFiveMinutes(Timestamp) >= toStartOfFiveMinutes(fromUnixTimestamp64Milli(_CAST({p5:Int64}, {p6:String})))) AND (toStartOfFiveMinutes(Timestamp) <= toStartOfFiveMinutes(fromUnixTimestamp64Milli(_CAST({p7:Int64}, {p8:String}))))) AND ((ServiceName ILIKE {p9:String}) AND (SeverityText NOT ILIKE {p10:String})) ORDER BY Timestamp DESC LIMIT _CAST({p11:Int64}, {p12:String}), _CAST({p13:Int64}, {p14:String}) FORMAT JSON",
+      "path": "parsed",
+      "executions": 1
+    },
+    "q:41b356b3-c9b1-4b57-b9a2-f8b0882504d3": {
+      "query": "CREATE TABLE IF NOT EXISTS \"default\".\"otel_traces_trace_id_ts\"  (\n    TraceId String CODEC(ZSTD({p1:Int64})),\n    Start DateTime CODEC(Delta, ZSTD({p2:Int64})),\n    End DateTime CODEC(Delta, ZSTD({p3:Int64})),\n    INDEX idx_trace_id TraceId TYPE bloom_filter({p4:Float64}) GRANULARITY {p5:Int64}\n) ENGINE = MergeTree()\n    PARTITION BY toDate(Start)\n    ORDER BY (TraceId, Start)\n    TTL toDateTime(Start) + toIntervalDay({p6:Int64})\n    SETTINGS index_granularity={p7:Int64}, ttl_only_drop_parts = {p8:Int64}",
+      "path": "explained",
+      "executions": 1
+    },
+    "q:4509d072-85e8-4d8c-a3ce-74036eacdfd6": {
+      "query": "DESCRIBE TABLE default.otel_metrics_sum FORMAT JSON",
+      "path": "explained",
+      "executions": 1
+    },
+    "q:4df35c4c-7321-432d-b4c5-d80e799cc5ef": {
+      "query": "CREATE TABLE IF NOT EXISTS \"default\".\"otel_metrics_summary\"  (\n                                     ResourceAttributes Map(LowCardinality(String), String) CODEC(ZSTD({p1:Int64})),\n    ResourceSchemaUrl String CODEC(ZSTD({p2:Int64})),\n    ScopeName String CODEC(ZSTD({p3:Int64})),\n    ScopeVersion String CODEC(ZSTD({p4:Int64})),\n    ScopeAttributes Map(LowCardinality(String), String) CODEC(ZSTD({p5:Int64})),\n    ScopeDroppedAttrCount UInt32 CODEC(ZSTD({p6:Int64})),\n    ScopeSchemaUrl String CODEC(ZSTD({p7:Int64})),\n    ServiceName LowCardinality(String) CODEC(ZSTD({p8:Int64})),\n    MetricName String CODEC(ZSTD({p9:Int64})),\n    MetricDescription String CODEC(ZSTD({p10:Int64})),\n    MetricUnit String CODEC(ZSTD({p11:Int64})),\n    Attributes Map(LowCardinality(String), String) CODEC(ZSTD({p12:Int64})),\n    StartTimeUnix DateTime64(9) CODEC(Delta, ZSTD({p13:Int64})),\n    TimeUnix DateTime64(9) CODEC(Delta, ZSTD({p14:Int64})),\n    Count UInt64 CODEC(Delta, ZSTD({p15:Int64})),\n    Sum Float64 CODEC(ZSTD({p16:Int64})),\n    ValueAtQuantiles Nested(\n                               Quantile Float64,\n                               Value Float64\n                           ) CODEC(ZSTD({p17:Int64})),\n    Flags UInt32  CODEC(ZSTD({p18:Int64})),\n    INDEX idx_res_attr_key mapKeys(ResourceAttributes) TYPE bloom_filter({p19:Float64}) GRANULARITY {p20:Int64},\n    INDEX idx_res_attr_value mapValues(ResourceAttributes) TYPE bloom_filter({p21:Float64}) GRANULARITY {p22:Int64},\n    INDEX idx_scope_attr_key mapKeys(ScopeAttributes) TYPE bloom_filter({p23:Float64}) GRANULARITY {p24:Int64},\n    INDEX idx_scope_attr_value mapValues(ScopeAttributes) TYPE bloom_filter({p25:Float64}) GRANULARITY {p26:Int64},\n    INDEX idx_attr_key mapKeys(Attributes) TYPE bloom_filter({p27:Float64}) GRANULARITY {p28:Int64},\n    INDEX idx_attr_value mapValues(Attributes) TYPE bloom_filter({p29:Float64}) GRANULARITY {p30:Int64}\n    ) ENGINE = MergeTree()\n    TTL toDateTime(TimeUnix) + toIntervalDay({p31:Int64})\n    PARTITION BY toDate(TimeUnix)\n    ORDER BY (ServiceName, MetricName, Attributes, toUnixTimestamp64Nano(TimeUnix))\n    SETTINGS index_granularity={p32:Int64}, ttl_only_drop_parts = {p33:Int64}",
+      "path": "explained",
+      "executions": 1
+    },
+    "q:517f65f5-d66f-4617-b043-ac8f25a2847b": {
+      "query": "SELECT COUNTDistinct(TraceId) AS series_0, toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p1:Int64})) AS __hdx_time_bucket FROM default.otel_logs WHERE ((Timestamp >= fromUnixTimestamp64Milli(_CAST({p2:Int64}, {p3:String}))) AND (Timestamp <= fromUnixTimestamp64Milli(_CAST({p4:Int64}, {p5:String})))) AND ((toStartOfFiveMinutes(Timestamp) >= toStartOfFiveMinutes(fromUnixTimestamp64Milli(_CAST({p6:Int64}, {p7:String})))) AND (toStartOfFiveMinutes(Timestamp) <= toStartOfFiveMinutes(fromUnixTimestamp64Milli(_CAST({p8:Int64}, {p9:String}))))) GROUP BY toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p10:Int64})) AS __hdx_time_bucket ORDER BY toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p11:Int64})) AS __hdx_time_bucket ASC FORMAT JSON",
+      "path": "explained",
+      "executions": 1
+    },
+    "q:5a80ba20-9351-425f-9112-f334b2271368": {
+      "query": "INSERT INTO default.otel_metrics_histogram (ResourceAttributes, ResourceSchemaUrl, ScopeName, ScopeVersion, ScopeAttributes, ScopeDroppedAttrCount, ScopeSchemaUrl, ServiceName, MetricName, MetricDescription, MetricUnit, Attributes, StartTimeUnix, TimeUnix, Count, Sum, BucketCounts, ExplicitBounds, `Exemplars.FilteredAttributes`, `Exemplars.TimeUnix`, `Exemplars.Value`, `Exemplars.SpanId`, `Exemplars.TraceId`, Flags, Min, Max, AggregationTemporality) FORMAT Native",
+      "path": "parsed",
+      "executions": 2
+    },
+    "q:5cf7993b-e0bb-46aa-8998-bb51e7558a17": {
+      "query": "INSERT INTO default.otel_metrics_sum (ResourceAttributes, ResourceSchemaUrl, ScopeName, ScopeVersion, ScopeAttributes, ScopeDroppedAttrCount, ScopeSchemaUrl, ServiceName, MetricName, MetricDescription, MetricUnit, Attributes, StartTimeUnix, TimeUnix, Value, Flags, `Exemplars.FilteredAttributes`, `Exemplars.TimeUnix`, `Exemplars.Value`, `Exemplars.SpanId`, `Exemplars.TraceId`, AggregationTemporality, IsMonotonic) FORMAT Native",
+      "path": "parsed",
+      "executions": 2
+    },
+    "q:5e7d0509-ec3f-4776-a243-945cb5cf9f90": {
+      "query": "INSERT INTO \"default\".\"otel_metrics_gauge\" (\n    ResourceAttributes,\n    ResourceSchemaUrl,\n    ScopeName,\n    ScopeVersion,\n    ScopeAttributes,\n    ScopeDroppedAttrCount,\n    ScopeSchemaUrl,\n    ServiceName,\n    MetricName,\n    MetricDescription,\n    MetricUnit,\n    Attributes,\n    StartTimeUnix,\n    TimeUnix,\n    Value,\n    Flags,\n    Exemplars.FilteredAttributes,\n    Exemplars.TimeUnix,\n    Exemplars.Value,\n    Exemplars.SpanId,\n    Exemplars.TraceId) FORMAT Native",
+      "path": "parsed",
+      "executions": 2
+    },
+    "q:5f15b8ff-9192-423e-b5ec-c93fea673690": {
+      "query": "SELECT name, value FROM system.settings \nFORMAT JSON",
+      "path": "parsed",
+      "executions": 1
+    },
+    "q:60cbdfef-1640-429c-8054-03d003847e40": {
+      "query": "SELECT count() AS series_1, toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p1:Int64})) AS __hdx_time_bucket FROM default.otel_logs WHERE ((Timestamp >= fromUnixTimestamp64Milli(_CAST({p2:Int64}, {p3:String}))) AND (Timestamp <= fromUnixTimestamp64Milli(_CAST({p4:Int64}, {p5:String})))) AND ((toStartOfFiveMinutes(Timestamp) >= toStartOfFiveMinutes(fromUnixTimestamp64Milli(_CAST({p6:Int64}, {p7:String})))) AND (toStartOfFiveMinutes(Timestamp) <= toStartOfFiveMinutes(fromUnixTimestamp64Milli(_CAST({p8:Int64}, {p9:String}))))) GROUP BY toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p10:Int64})) AS __hdx_time_bucket ORDER BY toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p11:Int64})) AS __hdx_time_bucket ASC FORMAT JSON",
+      "path": "explained",
+      "executions": 1
+    },
+    "q:68b13ea2-418d-451a-b363-4afbad0778fb": {
+      "query": "SELECT any(Duration) AS series_0, SpanName, toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p1:Int64})) AS __hdx_time_bucket FROM default.otel_traces WHERE ((Timestamp >= fromUnixTimestamp64Milli(_CAST({p2:Int64}, {p3:String}))) AND (Timestamp <= fromUnixTimestamp64Milli(_CAST({p4:Int64}, {p5:String})))) GROUP BY SpanName, toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p6:Int64})) AS __hdx_time_bucket ORDER BY toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p7:Int64})) AS __hdx_time_bucket ASC FORMAT JSON",
+      "path": "explained",
+      "executions": 1
+    },
+    "q:6d6f819f-3d6a-4483-b1d1-2faef5f4b7f6": {
+      "query": "SELECT count() AS series_0, ServiceName, toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p1:Int64})) AS __hdx_time_bucket FROM default.otel_logs WHERE ((Timestamp >= fromUnixTimestamp64Milli(_CAST({p2:Int64}, {p3:String}))) AND (Timestamp <= fromUnixTimestamp64Milli(_CAST({p4:Int64}, {p5:String})))) AND ((toStartOfFiveMinutes(Timestamp) >= toStartOfFiveMinutes(fromUnixTimestamp64Milli(_CAST({p6:Int64}, {p7:String})))) AND (toStartOfFiveMinutes(Timestamp) <= toStartOfFiveMinutes(fromUnixTimestamp64Milli(_CAST({p8:Int64}, {p9:String}))))) GROUP BY ServiceName, toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p10:Int64})) AS __hdx_time_bucket ORDER BY toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p11:Int64})) AS __hdx_time_bucket ASC FORMAT JSON",
+      "path": "explained",
+      "executions": 1
+    },
+    "q:753eff65-bf34-4c27-bb31-5ab86cabee70": {
+      "query": "INSERT INTO default.otel_traces (Timestamp, TraceId, SpanId, ParentSpanId, TraceState, SpanName, SpanKind, ServiceName, ResourceAttributes, ScopeName, ScopeVersion, SpanAttributes, Duration, StatusCode, StatusMessage, `Events.Timestamp`, `Events.Name`, `Events.Attributes`, `Links.TraceId`, `Links.SpanId`, `Links.TraceState`, `Links.Attributes`) FORMAT Native",
+      "path": "parsed",
+      "executions": 1
+    },
+    "q:7587f782-10be-426c-91a9-84f48bc462a3": {
+      "query": "SELECT MIN(toFloat64OrDefault(toString(Duration))) AS series_0, SpanName, toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p1:Int64})) AS __hdx_time_bucket FROM default.otel_traces WHERE ((Timestamp >= fromUnixTimestamp64Milli(_CAST({p2:Int64}, {p3:String}))) AND (Timestamp <= fromUnixTimestamp64Milli(_CAST({p4:Int64}, {p5:String})))) GROUP BY SpanName, toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p6:Int64})) AS __hdx_time_bucket ORDER BY toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p7:Int64})) AS __hdx_time_bucket ASC FORMAT JSON",
+      "path": "explained",
+      "executions": 1
+    },
+    "q:79fda017-790a-4887-b0db-a95712ffd25c": {
+      "query": "SELECT count() AS series_0, toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p1:Int64})) AS __hdx_time_bucket FROM default.otel_logs WHERE ((Timestamp >= fromUnixTimestamp64Milli(_CAST({p2:Int64}, {p3:String}))) AND (Timestamp <= fromUnixTimestamp64Milli(_CAST({p4:Int64}, {p5:String})))) AND ((toStartOfFiveMinutes(Timestamp) >= toStartOfFiveMinutes(fromUnixTimestamp64Milli(_CAST({p6:Int64}, {p7:String})))) AND (toStartOfFiveMinutes(Timestamp) <= toStartOfFiveMinutes(fromUnixTimestamp64Milli(_CAST({p8:Int64}, {p9:String}))))) GROUP BY toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p10:Int64})) AS __hdx_time_bucket ORDER BY toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p11:Int64})) AS __hdx_time_bucket ASC FORMAT JSON",
+      "path": "explained",
+      "executions": 1
+    },
+    "q:7cead070-4fca-4895-a15a-37e05229a24c": {
+      "query": "SELECT Timestamp, ServiceName, SeverityText, Body FROM default.otel_logs WHERE ((Timestamp >= fromUnixTimestamp64Milli(_CAST({p1:Int64}, {p2:String}))) AND (Timestamp <= fromUnixTimestamp64Milli(_CAST({p3:Int64}, {p4:String})))) AND ((toStartOfFiveMinutes(Timestamp) >= toStartOfFiveMinutes(fromUnixTimestamp64Milli(_CAST({p5:Int64}, {p6:String})))) AND (toStartOfFiveMinutes(Timestamp) <= toStartOfFiveMinutes(fromUnixTimestamp64Milli(_CAST({p7:Int64}, {p8:String}))))) ORDER BY Timestamp DESC LIMIT _CAST({p9:Int64}, {p10:String}), _CAST({p11:Int64}, {p12:String}) FORMAT JSON",
+      "path": "parsed",
+      "executions": 1
+    },
+    "q:7ff9a6d9-ed8c-44f8-947e-5d8358faf716": {
+      "query": "WITH Source AS (SELECT *, cityHash64(ScopeAttributes, ResourceAttributes, Attributes) AS AttributesHash FROM default.otel_metrics_gauge WHERE ((TimeUnix >= fromUnixTimestamp64Milli(_CAST({p1:Int64}, {p2:String}))) AND (TimeUnix <= fromUnixTimestamp64Milli(_CAST({p3:Int64}, {p4:String})))) AND (MetricName = {p5:String})), Bucketed AS (SELECT toStartOfInterval(toDateTime(TimeUnix), toIntervalMinute({p6:Int64})) AS __hdx_time_bucket2, AttributesHash, last_value(Value) AS LastValue, any(ScopeAttributes) AS ScopeAttributes, any(ResourceAttributes) AS ResourceAttributes, any(Attributes) AS Attributes, any(ResourceSchemaUrl) AS ResourceSchemaUrl, any(ScopeName) AS ScopeName, any(ScopeVersion) AS ScopeVersion, any(ScopeDroppedAttrCount) AS ScopeDroppedAttrCount, any(ScopeSchemaUrl) AS ScopeSchemaUrl, any(ServiceName) AS ServiceName, any(MetricDescription) AS MetricDescription, any(MetricUnit) AS MetricUnit, any(StartTimeUnix) AS StartTimeUnix, any(Flags) AS Flags FROM Source GROUP BY AttributesHash, __hdx_time_bucket2 ORDER BY AttributesHash ASC, __hdx_time_bucket2 ASC) SELECT avg(toFloat64OrDefault(toString(LastValue))) AS series_0, toStartOfInterval(toDateTime(__hdx_time_bucket2), toIntervalMinute({p7:Int64})) AS __hdx_time_bucket FROM Bucketed WHERE ((__hdx_time_bucket2 >= fromUnixTimestamp64Milli(_CAST({p8:Int64}, {p9:String}))) AND (__hdx_time_bucket2 <= fromUnixTimestamp64Milli(_CAST({p10:Int64}, {p11:String})))) GROUP BY toStartOfInterval(toDateTime(__hdx_time_bucket2), toIntervalMinute({p12:Int64})) AS __hdx_time_bucket ORDER BY toStartOfInterval(toDateTime(__hdx_time_bucket2), toIntervalMinute({p13:Int64})) AS __hdx_time_bucket ASC SETTINGS short_circuit_function_evaluation = {p14:String} FORMAT JSON",
+      "path": "explained",
+      "executions": 1
+    },
+    "q:80dfaff6-874d-4c37-96bb-a3357a88f2de": {
+      "query": "WITH source AS (SELECT MetricName, ExplicitBounds, toStartOfInterval(toDateTime(TimeUnix), toIntervalMinute({p1:Int64})) AS __hdx_time_bucket, sumForEach(deltas) AS rates FROM (SELECT TimeUnix, MetricName, ExplicitBounds, attr_hash, any(attr_hash) OVER prev_row AS prev_attr_hash, (count() OVER prev_row = {p2:Int64}) OR (prev_attr_hash != attr_hash) AS is_first_series_point, any(bounds_hash) OVER prev_row AS prev_bounds_hash, any(counts) OVER prev_row AS prev_counts, counts, multiIf((AggregationTemporality = {p3:Int64}) AND is_first_series_point, arrayWithConstant(length(counts), toInt64({p4:Int64})), (AggregationTemporality = {p5:Int64}) OR (bounds_hash != prev_bounds_hash) OR arrayExists(x -> ((x.2) < (x.1)), arrayZip(prev_counts, counts)), counts, counts - prev_counts) AS deltas FROM (SELECT TimeUnix, MetricName, AggregationTemporality, ExplicitBounds, ResourceAttributes, Attributes, cityHash64(ScopeAttributes, ResourceAttributes, Attributes) AS attr_hash, cityHash64(ExplicitBounds) AS bounds_hash, CAST(BucketCounts, {p6:String}) AS counts FROM default.otel_metrics_histogram WHERE ((TimeUnix >= (toStartOfInterval(fromUnixTimestamp64Milli(_CAST({p7:Int64}, {p8:String})), toIntervalMinute({p9:Int64})) - toIntervalMinute({p10:Int64}))) AND (TimeUnix <= (toStartOfInterval(fromUnixTimestamp64Milli(_CAST({p11:Int64}, {p12:String})), toIntervalMinute({p13:Int64})) + toIntervalMinute({p14:Int64})))) AND (MetricName = {p15:String}) ORDER BY attr_hash ASC, TimeUnix ASC) WINDOW prev_row AS (ORDER BY attr_hash ASC, TimeUnix ASC ROWS BETWEEN {p16:Int64} PRECEDING AND {p17:Int64} PRECEDING)) GROUP BY __hdx_time_bucket, MetricName, ExplicitBounds ORDER BY __hdx_time_bucket ASC), points AS (SELECT __hdx_time_bucket, MetricName, arrayZipUnaligned(arrayCumSum(rates), ExplicitBounds) AS point, length(point) AS n FROM source), metrics AS (SELECT __hdx_time_bucket, MetricName, (point[n]).1 AS total, _CAST({p18:Float64}, {p19:String}) * total AS rank, arrayFirstIndex(x -> if((x.1) > rank, {p20:Int64}, {p21:Int64}), point) AS upper_idx, (point[upper_idx]).1 AS upper_count, ifNull((point[upper_idx]).2, inf) AS upper_bound, multiIf(upper_idx > {p22:Int64}, (point[upper_idx - {p23:Int64}]).2, ((point[upper_idx]).2) > {p24:Int64}, {p25:Int64}, inf) AS lower_bound, if(lower_bound = {p26:Int64}, {p27:Int64}, (point[upper_idx - {p28:Int64}]).1) AS lower_count, multiIf(upper_bound = inf, (point[upper_idx - {p29:Int64}]).2, lower_bound = inf, (point[{p30:Int64}]).2, lower_bound + ((upper_bound - lower_bound) * ((rank - lower_count) / (upper_count - lower_count)))) AS series_0 FROM points WHERE (length(point) > {p31:Int64}) AND (total > {p32:Int64})) SELECT __hdx_time_bucket, series_0 FROM metrics WHERE ((__hdx_time_bucket >= fromUnixTimestamp64Milli(_CAST({p33:Int64}, {p34:String}))) AND (__hdx_time_bucket <= fromUnixTimestamp64Milli(_CAST({p35:Int64}, {p36:String})))) SETTINGS short_circuit_function_evaluation = {p37:String} FORMAT JSON",
+      "path": "explained",
+      "executions": 1
+    },
+    "q:84acda38-6e3c-42d7-bda8-0c4ee2c3cce5": {
+      "query": "DESCRIBE TABLE default.otel_traces FORMAT JSON",
+      "path": "explained",
+      "executions": 1
+    },
+    "q:864dfcf3-ebf3-4078-8a1f-62f4f88497d4": {
+      "query": "INSERT INTO \"default\".\"otel_metrics_sum\" (\n    ResourceAttributes,\n    ResourceSchemaUrl,\n    ScopeName,\n    ScopeVersion,\n    ScopeAttributes,\n    ScopeDroppedAttrCount,\n    ScopeSchemaUrl,\n    ServiceName,\n    MetricName,\n    MetricDescription,\n    MetricUnit,\n    Attributes,\n    StartTimeUnix,\n    TimeUnix,\n    Value,\n    Flags,\n    Exemplars.FilteredAttributes,\n    Exemplars.TimeUnix,\n    Exemplars.Value,\n    Exemplars.SpanId,\n    Exemplars.TraceId,\n    AggregationTemporality,\n    IsMonotonic) FORMAT Native",
+      "path": "parsed",
+      "executions": 2
+    },
+    "q:8719ff49-08b9-43b9-9c53-203ce8d3f281": {
+      "query": "DESC TABLE \"default\".\"otel_logs\"",
+      "path": "parsed",
+      "executions": 1
+    },
+    "q:8a092b4f-e41c-4635-9917-d56746245b4e": {
+      "query": "SELECT count() > {p1:Int64} AS is_cloud FROM system.table_engines WHERE name = {p2:String} \nFORMAT JSON",
+      "path": "parsed",
+      "executions": 1
+    },
+    "q:8ac1b73f-13bb-43cd-bad9-271418d424dd": {
+      "query": "INSERT INTO \"default\".\"otel_metrics_histogram\" (\n    ResourceAttributes,\n    ResourceSchemaUrl,\n    ScopeName,\n    ScopeVersion,\n    ScopeAttributes,\n    ScopeDroppedAttrCount,\n    ScopeSchemaUrl,\n    ServiceName,\n    MetricName,\n    MetricDescription,\n    MetricUnit,\n    Attributes,\n    StartTimeUnix,\n    TimeUnix,\n    Count,\n    Sum,\n    BucketCounts,\n    ExplicitBounds,\n    Exemplars.FilteredAttributes,\n    Exemplars.TimeUnix,\n    Exemplars.Value,\n    Exemplars.SpanId,\n    Exemplars.TraceId,\n    Flags,\n    Min,\n    Max,\n    AggregationTemporality) FORMAT Native",
+      "path": "parsed",
+      "executions": 2
+    },
+    "q:8bb7dff7-0b83-444e-bd62-9a9f835f04ef": {
+      "query": "SELECT Timestamp, ServiceName, StatusCode, round(Duration / {p1:Float64}), SpanName FROM default.otel_traces WHERE ((Timestamp >= fromUnixTimestamp64Milli(_CAST({p2:Int64}, {p3:String}))) AND (Timestamp <= fromUnixTimestamp64Milli(_CAST({p4:Int64}, {p5:String})))) ORDER BY Timestamp DESC LIMIT _CAST({p6:Int64}, {p7:String}), _CAST({p8:Int64}, {p9:String}) FORMAT JSON",
+      "path": "parsed",
+      "executions": 1
+    },
+    "q:91837ec8-5835-42b1-aa02-3cd5c1b54476": {
+      "query": "SELECT countIf((StatusCode ILIKE {p1:String})) AS series_0, toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p2:Int64})) AS __hdx_time_bucket FROM default.otel_traces WHERE ((Timestamp >= fromUnixTimestamp64Milli(_CAST({p3:Int64}, {p4:String}))) AND (Timestamp <= fromUnixTimestamp64Milli(_CAST({p5:Int64}, {p6:String})))) AND (StatusCode ILIKE {p7:String}) GROUP BY toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p8:Int64})) AS __hdx_time_bucket ORDER BY toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p9:Int64})) AS __hdx_time_bucket ASC FORMAT JSON",
+      "path": "explained",
+      "executions": 1
+    },
+    "q:9601f04c-ae85-4b7f-8c20-130adb04e8ed": {
+      "query": "CREATE TABLE IF NOT EXISTS \"default\".\"otel_metrics_sum\"  (\n                                     ResourceAttributes Map(LowCardinality(String), String) CODEC(ZSTD({p1:Int64})),\n    ResourceSchemaUrl String CODEC(ZSTD({p2:Int64})),\n    ScopeName String CODEC(ZSTD({p3:Int64})),\n    ScopeVersion String CODEC(ZSTD({p4:Int64})),\n    ScopeAttributes Map(LowCardinality(String), String) CODEC(ZSTD({p5:Int64})),\n    ScopeDroppedAttrCount UInt32 CODEC(ZSTD({p6:Int64})),\n    ScopeSchemaUrl String CODEC(ZSTD({p7:Int64})),\n    ServiceName LowCardinality(String) CODEC(ZSTD({p8:Int64})),\n    MetricName String CODEC(ZSTD({p9:Int64})),\n    MetricDescription String CODEC(ZSTD({p10:Int64})),\n    MetricUnit String CODEC(ZSTD({p11:Int64})),\n    Attributes Map(LowCardinality(String), String) CODEC(ZSTD({p12:Int64})),\n    StartTimeUnix DateTime64(9) CODEC(Delta, ZSTD({p13:Int64})),\n    TimeUnix DateTime64(9) CODEC(Delta, ZSTD({p14:Int64})),\n    Value Float64 CODEC(ZSTD({p15:Int64})),\n    Flags UInt32  CODEC(ZSTD({p16:Int64})),\n    Exemplars Nested (\n                         FilteredAttributes Map(LowCardinality(String), String),\n    TimeUnix DateTime64(9),\n    Value Float64,\n    SpanId String,\n    TraceId String\n    ) CODEC(ZSTD({p17:Int64})),\n    AggregationTemporality Int32 CODEC(ZSTD({p18:Int64})),\n    IsMonotonic Boolean CODEC(Delta, ZSTD({p19:Int64})),\n    INDEX idx_res_attr_key mapKeys(ResourceAttributes) TYPE bloom_filter({p20:Float64}) GRANULARITY {p21:Int64},\n    INDEX idx_res_attr_value mapValues(ResourceAttributes) TYPE bloom_filter({p22:Float64}) GRANULARITY {p23:Int64},\n    INDEX idx_scope_attr_key mapKeys(ScopeAttributes) TYPE bloom_filter({p24:Float64}) GRANULARITY {p25:Int64},\n    INDEX idx_scope_attr_value mapValues(ScopeAttributes) TYPE bloom_filter({p26:Float64}) GRANULARITY {p27:Int64},\n    INDEX idx_attr_key mapKeys(Attributes) TYPE bloom_filter({p28:Float64}) GRANULARITY {p29:Int64},\n    INDEX idx_attr_value mapValues(Attributes) TYPE bloom_filter({p30:Float64}) GRANULARITY {p31:Int64}\n    ) ENGINE = MergeTree()\n    TTL toDateTime(TimeUnix) + toIntervalDay({p32:Int64})\n    PARTITION BY toDate(TimeUnix)\n    ORDER BY (ServiceName, MetricName, Attributes, toUnixTimestamp64Nano(TimeUnix))\n    SETTINGS index_granularity={p33:Int64}, ttl_only_drop_parts = {p34:Int64}",
+      "path": "explained",
+      "executions": 1
+    },
+    "q:990651ea-4c67-404e-9bed-27cb3e3b804b": {
+      "query": "SELECT countIf((SeverityText ILIKE {p1:String})) AS series_0, toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p2:Int64})) AS __hdx_time_bucket FROM default.otel_logs WHERE ((Timestamp >= fromUnixTimestamp64Milli(_CAST({p3:Int64}, {p4:String}))) AND (Timestamp <= fromUnixTimestamp64Milli(_CAST({p5:Int64}, {p6:String})))) AND ((toStartOfFiveMinutes(Timestamp) >= toStartOfFiveMinutes(fromUnixTimestamp64Milli(_CAST({p7:Int64}, {p8:String})))) AND (toStartOfFiveMinutes(Timestamp) <= toStartOfFiveMinutes(fromUnixTimestamp64Milli(_CAST({p9:Int64}, {p10:String}))))) AND (SeverityText ILIKE {p11:String}) GROUP BY toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p12:Int64})) AS __hdx_time_bucket ORDER BY toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p13:Int64})) AS __hdx_time_bucket ASC FORMAT JSON",
+      "path": "explained",
+      "executions": 1
+    },
+    "q:a3de49b5-2a58-4735-849b-acdbac9ee2b0": {
+      "query": "CREATE TABLE IF NOT EXISTS \"default\".\"otel_metrics_exponential_histogram\"  (\n    ResourceAttributes Map(LowCardinality(String), String) CODEC(ZSTD({p1:Int64})),\n    ResourceSchemaUrl String CODEC(ZSTD({p2:Int64})),\n    ScopeName String CODEC(ZSTD({p3:Int64})),\n    ScopeVersion String CODEC(ZSTD({p4:Int64})),\n    ScopeAttributes Map(LowCardinality(String), String) CODEC(ZSTD({p5:Int64})),\n    ScopeDroppedAttrCount UInt32 CODEC(ZSTD({p6:Int64})),\n    ScopeSchemaUrl String CODEC(ZSTD({p7:Int64})),\n    ServiceName LowCardinality(String) CODEC(ZSTD({p8:Int64})),\n    MetricName String CODEC(ZSTD({p9:Int64})),\n    MetricDescription String CODEC(ZSTD({p10:Int64})),\n    MetricUnit String CODEC(ZSTD({p11:Int64})),\n    Attributes Map(LowCardinality(String), String) CODEC(ZSTD({p12:Int64})),\n    StartTimeUnix DateTime64(9) CODEC(Delta, ZSTD({p13:Int64})),\n    TimeUnix DateTime64(9) CODEC(Delta, ZSTD({p14:Int64})),\n    Count UInt64 CODEC(Delta, ZSTD({p15:Int64})),\n    Sum Float64 CODEC(ZSTD({p16:Int64})),\n    Scale Int32 CODEC(ZSTD({p17:Int64})),\n    ZeroCount UInt64 CODEC(ZSTD({p18:Int64})),\n    PositiveOffset Int32 CODEC(ZSTD({p19:Int64})),\n    PositiveBucketCounts Array(UInt64) CODEC(ZSTD({p20:Int64})),\n    NegativeOffset Int32 CODEC(ZSTD({p21:Int64})),\n    NegativeBucketCounts Array(UInt64) CODEC(ZSTD({p22:Int64})),\n    Exemplars Nested (\n        FilteredAttributes Map(LowCardinality(String), String),\n        TimeUnix DateTime64(9),\n        Value Float64,\n        SpanId String,\n        TraceId String\n    ) CODEC(ZSTD({p23:Int64})),\n    Flags UInt32  CODEC(ZSTD({p24:Int64})),\n    Min Float64 CODEC(ZSTD({p25:Int64})),\n    Max Float64 CODEC(ZSTD({p26:Int64})),\n    AggregationTemporality Int32 CODEC(ZSTD({p27:Int64})),\n    INDEX idx_res_attr_key mapKeys(ResourceAttributes) TYPE bloom_filter({p28:Float64}) GRANULARITY {p29:Int64},\n    INDEX idx_res_attr_value mapValues(ResourceAttributes) TYPE bloom_filter({p30:Float64}) GRANULARITY {p31:Int64},\n    INDEX idx_scope_attr_key mapKeys(ScopeAttributes) TYPE bloom_filter({p32:Float64}) GRANULARITY {p33:Int64},\n    INDEX idx_scope_attr_value mapValues(ScopeAttributes) TYPE bloom_filter({p34:Float64}) GRANULARITY {p35:Int64},\n    INDEX idx_attr_key mapKeys(Attributes) TYPE bloom_filter({p36:Float64}) GRANULARITY {p37:Int64},\n    INDEX idx_attr_value mapValues(Attributes) TYPE bloom_filter({p38:Float64}) GRANULARITY {p39:Int64}\n    ) ENGINE = MergeTree()\n    TTL toDateTime(TimeUnix) + toIntervalDay({p40:Int64})\n    PARTITION BY toDate(TimeUnix)\n    ORDER BY (ServiceName, MetricName, Attributes, toUnixTimestamp64Nano(TimeUnix))\n    SETTINGS index_granularity={p41:Int64}, ttl_only_drop_parts = {p42:Int64}",
+      "path": "explained",
+      "executions": 1
+    },
+    "q:a7871c06-b534-4bb2-bb1e-b7c702efa142": {
+      "query": "SELECT version() AS version \nFORMAT JSON",
+      "path": "parsed",
+      "executions": 1
+    },
+    "q:b5885285-7be6-4272-8441-e8370a6ace08": {
+      "query": "INSERT INTO default.otel_logs (Timestamp, TraceId, SpanId, TraceFlags, SeverityText, SeverityNumber, ServiceName, Body, ResourceSchemaUrl, ResourceAttributes, ScopeSchemaUrl, ScopeName, ScopeVersion, ScopeAttributes, LogAttributes, EventName) FORMAT Native",
+      "path": "parsed",
+      "executions": 1
+    },
+    "q:b91d780c-3848-49a3-bcff-0b5ac2698f87": {
+      "query": "CREATE TABLE IF NOT EXISTS \"default\".\"otel_metrics_gauge\"  (\n    ResourceAttributes Map(LowCardinality(String), String) CODEC(ZSTD({p1:Int64})),\n    ResourceSchemaUrl String CODEC(ZSTD({p2:Int64})),\n    ScopeName String CODEC(ZSTD({p3:Int64})),\n    ScopeVersion String CODEC(ZSTD({p4:Int64})),\n    ScopeAttributes Map(LowCardinality(String), String) CODEC(ZSTD({p5:Int64})),\n    ScopeDroppedAttrCount UInt32 CODEC(ZSTD({p6:Int64})),\n    ScopeSchemaUrl String CODEC(ZSTD({p7:Int64})),\n    ServiceName LowCardinality(String) CODEC(ZSTD({p8:Int64})),\n    MetricName String CODEC(ZSTD({p9:Int64})),\n    MetricDescription String CODEC(ZSTD({p10:Int64})),\n    MetricUnit String CODEC(ZSTD({p11:Int64})),\n    Attributes Map(LowCardinality(String), String) CODEC(ZSTD({p12:Int64})),\n    StartTimeUnix DateTime64(9) CODEC(Delta, ZSTD({p13:Int64})),\n    TimeUnix DateTime64(9) CODEC(Delta, ZSTD({p14:Int64})),\n    Value Float64 CODEC(ZSTD({p15:Int64})),\n    Flags UInt32 CODEC(ZSTD({p16:Int64})),\n    Exemplars Nested (\n        FilteredAttributes Map(LowCardinality(String), String),\n        TimeUnix DateTime64(9),\n        Value Float64,\n        SpanId String,\n        TraceId String\n    ) CODEC(ZSTD({p17:Int64})),\n    INDEX idx_res_attr_key mapKeys(ResourceAttributes) TYPE bloom_filter({p18:Float64}) GRANULARITY {p19:Int64},\n    INDEX idx_res_attr_value mapValues(ResourceAttributes) TYPE bloom_filter({p20:Float64}) GRANULARITY {p21:Int64},\n    INDEX idx_scope_attr_key mapKeys(ScopeAttributes) TYPE bloom_filter({p22:Float64}) GRANULARITY {p23:Int64},\n    INDEX idx_scope_attr_value mapValues(ScopeAttributes) TYPE bloom_filter({p24:Float64}) GRANULARITY {p25:Int64},\n    INDEX idx_attr_key mapKeys(Attributes) TYPE bloom_filter({p26:Float64}) GRANULARITY {p27:Int64},\n    INDEX idx_attr_value mapValues(Attributes) TYPE bloom_filter({p28:Float64}) GRANULARITY {p29:Int64}\n    ) ENGINE = MergeTree()\n    TTL toDateTime(TimeUnix) + toIntervalDay({p30:Int64})\n    PARTITION BY toDate(TimeUnix)\n    ORDER BY (ServiceName, MetricName, Attributes, toUnixTimestamp64Nano(TimeUnix))\n    SETTINGS index_granularity={p31:Int64}, ttl_only_drop_parts = {p32:Int64}",
+      "path": "explained",
+      "executions": 1
+    },
+    "q:ba4ca745-7fcc-492b-990d-f9d0697fed88": {
+      "query": "SELECT Timestamp, ServiceName, SeverityText, Body FROM default.otel_logs WHERE ((Timestamp >= fromUnixTimestamp64Milli(_CAST({p1:Int64}, {p2:String}))) AND (Timestamp <= fromUnixTimestamp64Milli(_CAST({p3:Int64}, {p4:String})))) AND ((toStartOfFiveMinutes(Timestamp) >= toStartOfFiveMinutes(fromUnixTimestamp64Milli(_CAST({p5:Int64}, {p6:String})))) AND (toStartOfFiveMinutes(Timestamp) <= toStartOfFiveMinutes(fromUnixTimestamp64Milli(_CAST({p7:Int64}, {p8:String}))))) AND (ServiceName = {p9:String}) ORDER BY Timestamp DESC LIMIT _CAST({p10:Int64}, {p11:String}), _CAST({p12:Int64}, {p13:String}) FORMAT JSON",
+      "path": "parsed",
+      "executions": 1
+    },
+    "q:bf59afd4-991c-4d84-93ed-07790cd2777b": {
+      "query": "DESCRIBE TABLE default.otel_metrics_gauge FORMAT JSON",
+      "path": "explained",
+      "executions": 1
+    },
+    "q:c52c2eb3-a72f-4f46-a67b-ad918d7dc713": {
+      "query": "WITH Source AS (SELECT *, cityHash64(ScopeAttributes, ResourceAttributes, Attributes) AS AttributesHash, IF(AggregationTemporality = {p1:Int64}, Value, greatest(Value - lagInFrame(toNullable(Value), {p2:Int64}, NULL) OVER (PARTITION BY AttributesHash ORDER BY TimeUnix ASC), {p3:Int64})) AS Rate, IF(AggregationTemporality = {p4:Int64}, SUM(Value) OVER (PARTITION BY AttributesHash ORDER BY TimeUnix ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), Value) AS Sum FROM default.otel_metrics_sum WHERE ((TimeUnix >= (toStartOfInterval(fromUnixTimestamp64Milli(_CAST({p5:Int64}, {p6:String})), toIntervalMinute({p7:Int64})) - toIntervalMinute({p8:Int64}))) AND (TimeUnix <= (toStartOfInterval(fromUnixTimestamp64Milli(_CAST({p9:Int64}, {p10:String})), toIntervalMinute({p11:Int64})) + toIntervalMinute({p12:Int64})))) AND (MetricName = {p13:String})), Bucketed AS (SELECT __hdx_time_bucket2, AttributesHash, Rate, Sum, ResourceAttributes, ResourceSchemaUrl, ScopeName, ScopeVersion, ScopeAttributes, ScopeDroppedAttrCount, ScopeSchemaUrl, ServiceName, MetricName, MetricDescription, MetricUnit, Attributes, StartTimeUnix, Flags, AggregationTemporality, IsMonotonic FROM (SELECT toStartOfInterval(toDateTime(TimeUnix), toIntervalMinute({p14:Int64})) AS __hdx_time_bucket2, AttributesHash, sum(Source.Rate) AS Rate, argMax(Source.Sum, TimeUnix) AS Sum, any(ResourceAttributes) AS ResourceAttributes, any(ResourceSchemaUrl) AS ResourceSchemaUrl, any(ScopeName) AS ScopeName, any(ScopeVersion) AS ScopeVersion, any(ScopeAttributes) AS ScopeAttributes, any(ScopeDroppedAttrCount) AS ScopeDroppedAttrCount, any(ScopeSchemaUrl) AS ScopeSchemaUrl, any(ServiceName) AS ServiceName, any(MetricName) AS MetricName, any(MetricDescription) AS MetricDescription, any(MetricUnit) AS MetricUnit, any(Attributes) AS Attributes, any(StartTimeUnix) AS StartTimeUnix, any(Flags) AS Flags, any(AggregationTemporality) AS AggregationTemporality, any(IsMonotonic) AS IsMonotonic FROM Source GROUP BY AttributesHash, __hdx_time_bucket2 ORDER BY AttributesHash ASC, __hdx_time_bucket2 ASC)), TopGroups AS (SELECT group FROM (SELECT tuple(ServiceName) AS group, sum(Rate) AS bucket_value FROM Bucketed WHERE ((ServiceName IS NOT NULL) AND (toString(ServiceName) != {p15:String})) GROUP BY group, __hdx_time_bucket2) GROUP BY group ORDER BY max(bucket_value) DESC, group ASC LIMIT _CAST({p16:Int64}, {p17:String})) SELECT sum(toFloat64OrDefault(toString(Rate))) AS series_0, ServiceName, toStartOfInterval(toDateTime(__hdx_time_bucket2), toIntervalMinute({p18:Int64})) AS __hdx_time_bucket FROM Bucketed WHERE ((__hdx_time_bucket2 >= fromUnixTimestamp64Milli(_CAST({p19:Int64}, {p20:String}))) AND (__hdx_time_bucket2 <= fromUnixTimestamp64Milli(_CAST({p21:Int64}, {p22:String})))) AND (tuple(ServiceName) IN (SELECT group FROM TopGroups)) GROUP BY ServiceName, toStartOfInterval(toDateTime(__hdx_time_bucket2), toIntervalMinute({p23:Int64})) AS __hdx_time_bucket ORDER BY toStartOfInterval(toDateTime(__hdx_time_bucket2), toIntervalMinute({p24:Int64})) AS __hdx_time_bucket ASC FORMAT JSON",
+      "path": "explained",
+      "executions": 1
+    },
+    "q:d46902e2-08e6-4f4a-85bf-f689baa410fb": {
+      "query": "SELECT Timestamp, ServiceName, StatusCode, round(Duration / {p1:Float64}), SpanName FROM default.otel_traces WHERE ((Timestamp >= fromUnixTimestamp64Milli(_CAST({p2:Int64}, {p3:String}))) AND (Timestamp <= fromUnixTimestamp64Milli(_CAST({p4:Int64}, {p5:String})))) AND (hasToken(lower(SpanName), lower({p6:String}))) ORDER BY Timestamp DESC LIMIT _CAST({p7:Int64}, {p8:String}), _CAST({p9:Int64}, {p10:String}) FORMAT JSON",
+      "path": "parsed",
+      "executions": 1
+    },
+    "q:dc1720a4-43ff-47c8-a129-5035b920e7ea": {
+      "query": "SELECT count() AS series_0, ServiceName, toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p1:Int64})) AS __hdx_time_bucket FROM default.otel_traces WHERE ((Timestamp >= fromUnixTimestamp64Milli(_CAST({p2:Int64}, {p3:String}))) AND (Timestamp <= fromUnixTimestamp64Milli(_CAST({p4:Int64}, {p5:String})))) GROUP BY ServiceName, toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p6:Int64})) AS __hdx_time_bucket ORDER BY toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p7:Int64})) AS __hdx_time_bucket ASC FORMAT JSON",
+      "path": "explained",
+      "executions": 1
+    },
+    "q:dda30aa2-7e70-48ab-881c-0b87b2ed4ff2": {
+      "query": "INSERT INTO \"default\".\"otel_traces\" (\n    Timestamp,\n    TraceId,\n    SpanId,\n    ParentSpanId,\n    TraceState,\n    SpanName,\n    SpanKind,\n    ServiceName,\n    ResourceAttributes,\n    ScopeName,\n    ScopeVersion,\n    SpanAttributes,\n    Duration,\n    StatusCode,\n    StatusMessage,\n    Events.Timestamp,\n    Events.Name,\n    Events.Attributes,\n    Links.TraceId,\n    Links.SpanId,\n    Links.TraceState,\n    Links.Attributes\n) FORMAT Native",
+      "path": "parsed",
+      "executions": 1
+    },
+    "q:de636f9a-1a1b-4ead-a8f5-3bc6afd1b826": {
+      "query": "SELECT count() AS series_1, toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p1:Int64})) AS __hdx_time_bucket FROM default.otel_traces WHERE ((Timestamp >= fromUnixTimestamp64Milli(_CAST({p2:Int64}, {p3:String}))) AND (Timestamp <= fromUnixTimestamp64Milli(_CAST({p4:Int64}, {p5:String})))) GROUP BY toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p6:Int64})) AS __hdx_time_bucket ORDER BY toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p7:Int64})) AS __hdx_time_bucket ASC FORMAT JSON",
+      "path": "explained",
+      "executions": 1
+    },
+    "q:e1e663d2-8cbd-458b-8269-aec723e35cee": {
+      "query": "DESCRIBE TABLE default.otel_metrics_histogram FORMAT JSON",
+      "path": "explained",
+      "executions": 1
+    },
+    "q:e7223fb3-9675-46c2-8490-858011c3c574": {
+      "query": "SELECT AVG(toFloat64OrDefault(toString(Duration))) AS series_0, SpanName, toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p1:Int64})) AS __hdx_time_bucket FROM default.otel_traces WHERE ((Timestamp >= fromUnixTimestamp64Milli(_CAST({p2:Int64}, {p3:String}))) AND (Timestamp <= fromUnixTimestamp64Milli(_CAST({p4:Int64}, {p5:String})))) GROUP BY SpanName, toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p6:Int64})) AS __hdx_time_bucket ORDER BY toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p7:Int64})) AS __hdx_time_bucket ASC FORMAT JSON",
+      "path": "explained",
+      "executions": 1
+    },
+    "q:e9a56a84-0405-4a19-bbe2-cc330a805da6": {
+      "query": "SELECT count() AS series_0, toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p1:Int64})) AS __hdx_time_bucket FROM default.otel_traces WHERE ((Timestamp >= fromUnixTimestamp64Milli(_CAST({p2:Int64}, {p3:String}))) AND (Timestamp <= fromUnixTimestamp64Milli(_CAST({p4:Int64}, {p5:String})))) GROUP BY toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p6:Int64})) AS __hdx_time_bucket ORDER BY toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p7:Int64})) AS __hdx_time_bucket ASC FORMAT JSON",
+      "path": "explained",
+      "executions": 1
+    },
+    "q:edca7d7c-def7-43ab-91a3-b91c8940f147": {
+      "query": "SELECT name, type, type_full AS typeFull, expr AS expression, granularity FROM system.data_skipping_indices WHERE (database = {p1:String}) AND (`table` = {p2:String}) FORMAT JSON",
+      "path": "parsed",
+      "executions": 5
+    },
+    "q:ee05822c-2ba7-4fec-8453-0b6e54f10abd": {
+      "query": "SELECT quantile({p1:Float64})(toFloat64OrDefault(toString(Duration))) AS series_0, SpanName, toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p2:Int64})) AS __hdx_time_bucket FROM default.otel_traces WHERE ((Timestamp >= fromUnixTimestamp64Milli(_CAST({p3:Int64}, {p4:String}))) AND (Timestamp <= fromUnixTimestamp64Milli(_CAST({p5:Int64}, {p6:String})))) GROUP BY SpanName, toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p7:Int64})) AS __hdx_time_bucket ORDER BY toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p8:Int64})) AS __hdx_time_bucket ASC FORMAT JSON",
+      "path": "explained",
+      "executions": 4
+    },
+    "q:ee0e1f4d-bd4b-49cb-b3d1-f13303ae5773": {
+      "query": "SELECT last_value(toFloat64OrDefault(toString(Duration))) AS series_0, SpanName, toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p1:Int64})) AS __hdx_time_bucket FROM default.otel_traces WHERE ((Timestamp >= fromUnixTimestamp64Milli(_CAST({p2:Int64}, {p3:String}))) AND (Timestamp <= fromUnixTimestamp64Milli(_CAST({p4:Int64}, {p5:String})))) GROUP BY SpanName, toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p6:Int64})) AS __hdx_time_bucket ORDER BY toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p7:Int64})) AS __hdx_time_bucket ASC FORMAT JSON",
+      "path": "explained",
+      "executions": 1
+    },
+    "q:f134ebff-329d-42e7-9332-f0449dcc5b79": {
+      "query": "SELECT MAX(toFloat64OrDefault(toString(Duration))) AS series_0, SpanName, toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p1:Int64})) AS __hdx_time_bucket FROM default.otel_traces WHERE ((Timestamp >= fromUnixTimestamp64Milli(_CAST({p2:Int64}, {p3:String}))) AND (Timestamp <= fromUnixTimestamp64Milli(_CAST({p4:Int64}, {p5:String})))) GROUP BY SpanName, toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p6:Int64})) AS __hdx_time_bucket ORDER BY toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p7:Int64})) AS __hdx_time_bucket ASC FORMAT JSON",
+      "path": "explained",
+      "executions": 1
+    },
+    "q:f3a5c0f5-d576-4dd7-a573-0d744aa741df": {
+      "query": "SELECT SUM(toFloat64OrDefault(toString(Duration))) AS series_0, SpanName, toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p1:Int64})) AS __hdx_time_bucket FROM default.otel_traces WHERE ((Timestamp >= fromUnixTimestamp64Milli(_CAST({p2:Int64}, {p3:String}))) AND (Timestamp <= fromUnixTimestamp64Milli(_CAST({p4:Int64}, {p5:String})))) GROUP BY SpanName, toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p6:Int64})) AS __hdx_time_bucket ORDER BY toStartOfInterval(toDateTime(Timestamp), toIntervalMinute({p7:Int64})) AS __hdx_time_bucket ASC FORMAT JSON",
+      "path": "explained",
+      "executions": 1
+    },
+    "q:f3c65079-81d8-4d04-ae88-38ec4a7f20b6": {
+      "query": "CREATE MATERIALIZED VIEW IF NOT EXISTS \"default\".\"otel_traces_trace_id_ts_mv\" \nTO \"default\".\"otel_traces_trace_id_ts\"\nAS SELECT\n              TraceId,\n              min(Timestamp) as Start,\n              max(Timestamp) as End\n   FROM \"default\".\"otel_traces\"\n   WHERE TraceId != {p1:String}\n   GROUP BY TraceId",
+      "path": "parsed",
+      "executions": 1
+    },
+    "q:facc2fd4-9cfa-49c0-9ef3-7a2de91e22c3": {
+      "query": "CREATE TABLE IF NOT EXISTS \"default\".\"otel_metrics_histogram\"  (\n                                     ResourceAttributes Map(LowCardinality(String), String) CODEC(ZSTD({p1:Int64})),\n    ResourceSchemaUrl String CODEC(ZSTD({p2:Int64})),\n    ScopeName String CODEC(ZSTD({p3:Int64})),\n    ScopeVersion String CODEC(ZSTD({p4:Int64})),\n    ScopeAttributes Map(LowCardinality(String), String) CODEC(ZSTD({p5:Int64})),\n    ScopeDroppedAttrCount UInt32 CODEC(ZSTD({p6:Int64})),\n    ScopeSchemaUrl String CODEC(ZSTD({p7:Int64})),\n    ServiceName LowCardinality(String) CODEC(ZSTD({p8:Int64})),\n    MetricName String CODEC(ZSTD({p9:Int64})),\n    MetricDescription String CODEC(ZSTD({p10:Int64})),\n    MetricUnit String CODEC(ZSTD({p11:Int64})),\n    Attributes Map(LowCardinality(String), String) CODEC(ZSTD({p12:Int64})),\n    StartTimeUnix DateTime64(9) CODEC(Delta, ZSTD({p13:Int64})),\n    TimeUnix DateTime64(9) CODEC(Delta, ZSTD({p14:Int64})),\n    Count UInt64 CODEC(Delta, ZSTD({p15:Int64})),\n    Sum Float64 CODEC(ZSTD({p16:Int64})),\n    BucketCounts Array(UInt64) CODEC(ZSTD({p17:Int64})),\n    ExplicitBounds Array(Float64) CODEC(ZSTD({p18:Int64})),\n    Exemplars Nested (\n                         FilteredAttributes Map(LowCardinality(String), String),\n    TimeUnix DateTime64(9),\n    Value Float64,\n    SpanId String,\n    TraceId String\n    ) CODEC(ZSTD({p19:Int64})),\n    Flags UInt32 CODEC(ZSTD({p20:Int64})),\n    Min Float64 CODEC(ZSTD({p21:Int64})),\n    Max Float64 CODEC(ZSTD({p22:Int64})),\n    AggregationTemporality Int32 CODEC(ZSTD({p23:Int64})),\n    INDEX idx_res_attr_key mapKeys(ResourceAttributes) TYPE bloom_filter({p24:Float64}) GRANULARITY {p25:Int64},\n    INDEX idx_res_attr_value mapValues(ResourceAttributes) TYPE bloom_filter({p26:Float64}) GRANULARITY {p27:Int64},\n    INDEX idx_scope_attr_key mapKeys(ScopeAttributes) TYPE bloom_filter({p28:Float64}) GRANULARITY {p29:Int64},\n    INDEX idx_scope_attr_value mapValues(ScopeAttributes) TYPE bloom_filter({p30:Float64}) GRANULARITY {p31:Int64},\n    INDEX idx_attr_key mapKeys(Attributes) TYPE bloom_filter({p32:Float64}) GRANULARITY {p33:Int64},\n    INDEX idx_attr_value mapValues(Attributes) TYPE bloom_filter({p34:Float64}) GRANULARITY {p35:Int64}\n    ) ENGINE = MergeTree()\n    TTL toDateTime(TimeUnix) + toIntervalDay({p36:Int64})\n    PARTITION BY toDate(TimeUnix)\n    ORDER BY (ServiceName, MetricName, Attributes, toUnixTimestamp64Nano(TimeUnix))\n    SETTINGS index_granularity={p37:Int64}, ttl_only_drop_parts = {p38:Int64}",
+      "path": "explained",
+      "executions": 1
+    },
+    "q:fb0160cb-0b45-4fbe-b9d0-845a44a2e555": {
+      "query": "SELECT Timestamp, ServiceName, SeverityText, Body FROM default.otel_logs WHERE ((Timestamp >= fromUnixTimestamp64Milli(_CAST({p1:Int64}, {p2:String}))) AND (Timestamp <= fromUnixTimestamp64Milli(_CAST({p3:Int64}, {p4:String})))) AND ((toStartOfFiveMinutes(Timestamp) >= toStartOfFiveMinutes(fromUnixTimestamp64Milli(_CAST({p5:Int64}, {p6:String})))) AND (toStartOfFiveMinutes(Timestamp) <= toStartOfFiveMinutes(fromUnixTimestamp64Milli(_CAST({p7:Int64}, {p8:String}))))) AND (hasAllTokens(lower(Body), lower({p9:String}))) ORDER BY Timestamp DESC LIMIT _CAST({p10:Int64}, {p11:String}), _CAST({p12:Int64}, {p13:String}) FORMAT JSON",
+      "path": "parsed",
+      "executions": 1
+    },
+    "q:fb223fb1-e09c-4bf7-9ea2-aed155adae92": {
+      "query": "DESC TABLE \"default\".\"hyperdx_sessions\"",
+      "path": "parsed",
+      "executions": 1
+    }
+  }
+}

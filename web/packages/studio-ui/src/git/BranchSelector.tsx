@@ -32,7 +32,7 @@ export interface BranchSelectorProps {
 }
 
 const TRIGGER =
-  "inline-flex h-7 min-w-0 max-w-64 items-center gap-1.5 rounded-pill border border-rule-soft px-2.5 text-[0.8rem] text-muted hover:bg-raised hover:text-ink disabled:cursor-default disabled:hover:bg-transparent";
+  "inline-flex h-7 min-w-0 max-w-64 items-center gap-1.5 rounded-pill border border-rule-soft px-2.5 text-small text-muted transition-colors duration-(--op-duration-fast) ease-out hover:bg-raised hover:text-ink motion-reduce:transition-none disabled:cursor-default disabled:hover:bg-transparent";
 
 export function BranchSelector({
   refs,

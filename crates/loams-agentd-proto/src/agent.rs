@@ -26,6 +26,9 @@ pub enum HarnessId {
     /// loams: Loams Bot, driven over ACP by `loams-agentd loams bot-acp` (the
     /// `loams-desktop-link` crate). Wire name `loams-bot`.
     LoamsBot,
+    /// The Goose agent (aaif-goose/goose), driven over ACP (`goose acp`)
+    /// with a private home and the keyring disabled (D1809, D1453).
+    Goose,
     /// Test harness; never shown in production pickers.
     Mock,
     /// Any harness name this daemon does not ship: one it removed (the
@@ -842,6 +845,7 @@ mod tests {
             HarnessId::Opencode,
             HarnessId::Antigravity,
             HarnessId::LoamsBot,
+            HarnessId::Goose,
             HarnessId::Mock,
         ] {
             let wire = serde_json::to_value(id).unwrap();

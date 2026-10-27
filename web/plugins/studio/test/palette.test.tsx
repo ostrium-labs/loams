@@ -21,7 +21,7 @@ import { StudioPalette } from '../src/palette/StudioPalette.js';
 import { pendingPaletteSource, type StudioPaletteSource } from '../src/palette/source.js';
 import { SETTINGS_KEY } from '../src/settings/Settings.js';
 import { desktopFake, wrap as wrapServerState } from './fakes.js';
-import { StudioInShell } from './shell.js';
+import { StudioInShell, TestPanel } from './shell.js';
 
 const LINUX = 'Linux x86_64';
 
@@ -257,6 +257,7 @@ describe("Studio's keybindings in the view", () => {
   it('follows a binding changed in Settings › Studio, and keeps it on this device', async () => {
     const navigate = vi.fn();
     const keys = keysFor();
+    const inspector = new TestPanel();
     render(
       wrap(
         <StudioInShell
@@ -264,29 +265,30 @@ describe("Studio's keybindings in the view", () => {
           route={{ kind: 'settings' }}
           navigate={navigate}
           keys={keys}
+          inspector={inspector}
         />,
       ),
     );
     const change = await screen.findByRole('button', {
-      name: 'Shortcut for Settings: Open: mod+,. Change',
+      name: 'Shortcut for Panel: Show or Hide: mod+alt+b. Change',
     });
     fireEvent.click(change);
     fireEvent.keyDown(change, { key: 'u', code: 'KeyU', ctrlKey: true, shiftKey: true });
     expect(JSON.parse(localStorage.getItem(KEYBINDINGS_KEY) ?? '[]')).toEqual([
-      { key: 'mod+shift+u', command: 'settings.open' },
+      { key: 'mod+shift+u', command: 'rightPanel.toggle' },
     ]);
     expect(screen.getAllByText('Custom').length).toBeGreaterThan(0);
     fireEvent.keyDown(document.body, { key: 'u', code: 'KeyU', ctrlKey: true, shiftKey: true });
-    expect(navigate).toHaveBeenCalledWith('/studio/settings');
+    expect(inspector.state().open).toBe(true);
 
-    // A chord the shell owns is flagged.
+    // A chord the shell owns (D1081) is flagged.
     const again = screen.getByRole('button', {
-      name: 'Shortcut for Settings: Open: mod+shift+u. Change',
+      name: 'Shortcut for Panel: Show or Hide: mod+shift+u. Change',
     });
     fireEvent.click(again);
-    fireEvent.keyDown(again, { key: 'k', code: 'KeyK', ctrlKey: true });
-    expect(await screen.findByText('Conflicts with Shell: Command Palette')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Reset Settings: Open' }));
+    fireEvent.keyDown(again, { key: 'b', code: 'KeyB', ctrlKey: true });
+    expect(await screen.findByText('Conflicts with Shell: Toggle Sidebar')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Reset Panel: Show or Hide' }));
     expect(JSON.parse(localStorage.getItem(KEYBINDINGS_KEY) ?? '[]')).toEqual([]);
   });
 });

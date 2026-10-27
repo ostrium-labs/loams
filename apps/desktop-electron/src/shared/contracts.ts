@@ -34,7 +34,7 @@ export type FactoryAppId =
 	| "openpanel"
 	| "matomo"
 	| "langfuse"
-	| "openobserve";
+	| "signoz";
 export type FactoryHealth =
 	| "unconfigured"
 	| "ok"
@@ -48,6 +48,8 @@ export interface FactoryAppInfo {
 	url?: string;
 	health: FactoryHealth;
 	hasPanels: boolean;
+	/** An honest status label shown beside the app while it is a preview (D1666). */
+	preview?: string;
 	credentialFields: { key: string; label: string; secret: boolean }[];
 	/** Stored values of the non-secret credential fields only; never a secret. */
 	fields?: Record<string, string>;
@@ -130,6 +132,74 @@ export interface ConnectorValidation {
 /** The theme choice (D1074): System follows the OS, Dark and Light are explicit. */
 export type ThemeChoice = "system" | "dark" | "light";
 
+/** The updater's state, as `update.state()` returns it and `update.onState` pushes it. */
+export type UpdateState = Awaited<
+	ReturnType<LoamsDesktopApi["update"]["state"]>
+>;
+
+// ---- PG2 R9.1: where pg-control is, set in App settings ----
+
+/**
+ * Settings > Postgres control plane, as main reads it. The key itself never
+ * crosses IPC: main reads the file, and says only where its key comes from.
+ */
+export interface PgControlSettings {
+	/** settings.json's `postgres.control.url`, as an origin; "" uses `defaultUrl`. */
+	url: string;
+	/** settings.json's `postgres.control.apiKeyFile`; "" for none. */
+	apiKeyFile: string;
+	defaultUrl: string;
+	/** The URL requests go to now: the environment's, else `url`, else `defaultUrl`. */
+	effectiveUrl: string;
+	/** Environment variables set for this app that win over these settings. */
+	envOverrides: (
+		| "LOAMS_PG_CONTROL_URL"
+		| "LOAMS_PG_CONTROL_API_KEY"
+		| "LOAMS_PG_CONTROL_API_KEY_FILE"
+	)[];
+	/** Where the key main sends comes from, or "none" (no key is sent). */
+	keySource: "env" | "env-file" | "settings-file" | "none";
+}
+
+/** The two values the Settings form edits. */
+export interface PgControlSettingsInput {
+	url: string;
+	apiKeyFile: string;
+}
+
+/** A message per field that does not pass main's checks. */
+export type PgControlFieldErrors = Partial<
+	Record<keyof PgControlSettingsInput, string>
+>;
+
+export type PgControlSaveResult =
+	| { ok: true; value: PgControlSettings }
+	| {
+			ok: false;
+			code: string;
+			message: string;
+			errors?: PgControlFieldErrors;
+	  };
+
+/** "Test connection": one ListOperations call with the form's values, not yet saved. */
+export interface PgControlTestResult {
+	ok: boolean;
+	code:
+		| "ok"
+		| "invalid"
+		| "unreachable"
+		| "unauthenticated"
+		| "permission_denied"
+		| "not_pg_control"
+		| "error";
+	message: string;
+	/** The origin that was tried. */
+	url: string;
+	/** Round trip of the call, when one answered. */
+	ms?: number;
+	errors?: PgControlFieldErrors;
+}
+
 export interface LoamsDesktopApi {
 	version: string;
 	platform: DesktopPlatform;
@@ -187,6 +257,10 @@ export interface LoamsDesktopApi {
 		setBadge(count: number): Promise<void>; // pending approvals in tray
 		/** The application menu's renderer commands (SD1 Task 28): mode switches and a new thread. */
 		onCommand(cb: (command: ShellCommand) => void): () => void;
+		/** The window entered or left fullscreen (D1083); the preload also marks `<html>`. */
+		onFullscreen(cb: (fullscreen: boolean) => void): () => void;
+		/** The console has painted: close the splash and show the window (D1084). */
+		ready(): Promise<void>;
 	};
 	update: {
 		state(): Promise<{
@@ -208,7 +282,12 @@ export interface LoamsDesktopApi {
 			/** 0-100 while phase is "downloading". */
 			percent?: number;
 		}>;
+		/** A manual check: it offers a skipped version again (D1085). */
 		check(): Promise<void>;
+		/** Main pushes every state change (the update toast, D1085). */
+		onState(cb: (s: UpdateState) => void): () => void;
+		/** "Skip this version": automatic checks no longer offer it. */
+		skip(version: string): Promise<void>;
 		/**
 		 * "Check for updates automatically" (`update.autoCheck`, default on). `locked` is
 		 * true when `LOAMS_DESKTOP_NO_UPDATE_CHECK=1` forces updates off.
@@ -245,6 +324,20 @@ export interface LoamsDesktopApi {
 			name: string,
 			text: string,
 		): Promise<IpcResult<{ saved: boolean }>>;
+	};
+	/**
+	 * PG2 R9.1: where pg-control is, and the file its API key is in (App settings >
+	 * Postgres). Missing on an older desktop bridge.
+	 */
+	pgControl?: {
+		settings(): Promise<PgControlSettings>;
+		/** Checks and saves both values; the Postgres page picks them up at once. */
+		save(input: PgControlSettingsInput): Promise<PgControlSaveResult>;
+		test(input: PgControlSettingsInput): Promise<PgControlTestResult>;
+		/** The OS file picker for the key file; null when cancelled. Main never reads it here. */
+		pickKeyFile(): Promise<string | null>;
+		/** After a save, from any window. */
+		onChanged(cb: (s: PgControlSettings) => void): () => void;
 	};
 	/** D675: the agent panel. The loop runs in main; keys never cross IPC. */
 	chat: {
@@ -319,12 +412,15 @@ export const CH = {
 	shellPendingNav: "shell:pending-nav",
 	shellBadge: "shell:badge",
 	shellCommand: "shell:command",
+	shellFullscreen: "shell:fullscreen",
+	shellReady: "shell:ready",
 	updateState: "update:state",
 	updateCheck: "update:check",
 	updateAutoGet: "update:auto-get",
 	updateAutoSet: "update:auto-set",
 	updateDownload: "update:download",
 	updateInstall: "update:install",
+	updateSkip: "update:skip",
 	stacksState: "stacks:state",
 	stacksStart: "stacks:start",
 	stacksStop: "stacks:stop",
@@ -372,6 +468,11 @@ export const CH = {
 	studioEditorSet: "studio:editor-set",
 	studioEditorChooseCommand: "studio:editor-choose-command",
 	studioNotifySet: "studio:notify-set",
+	pgControlSettings: "pg-control:settings",
+	pgControlSave: "pg-control:save",
+	pgControlTest: "pg-control:test",
+	pgControlPickKeyFile: "pg-control:pick-key-file",
+	pgControlEvent: "pg-control:event",
 } as const;
 
 // ---- D675: the agent panel ----
@@ -625,7 +726,17 @@ export type ShellCommand =
 	| "mode.studio"
 	| "mode.console"
 	| "mode.toggle"
-	| "chat.new";
+	| "chat.new"
+	// The shell's D1081 commands from the application menu (CF1 Task 14).
+	| "palette.toggle"
+	| "sidebar.toggle"
+	| "inspector.toggle"
+	| "drawer.toggle"
+	| "navigation.back"
+	| "navigation.forward"
+	| "settings.open"
+	| "thread.next"
+	| "thread.reopen";
 
 /** "Open in editor" (Q810): an editor's URL scheme, or the program the person picked. */
 export type StudioEditorId = "vscode" | "zed" | "cursor" | "command";

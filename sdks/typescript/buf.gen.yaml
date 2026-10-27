@@ -53,4 +53,8 @@ plugins:
       - package=loams.live.v1=@loams/live/live
       - package=loams.auth.v1=@loams/proto/auth
       - package=loams.admin.v1=@loams/proto/admin
+      - package=loams.collection.v1=@loams/proto/collection-v1
+      - package=loams.graph.v1=@loams/proto/graph
+      - package=loams.sql.v1=@loams/proto/sql
+      - package=loams.stream.v1=@loams/proto/stream
 clean: true

@@ -17,11 +17,13 @@ import type { ChangedReply } from "./gen/ChangedReply";
 import type { Chat } from "./gen/Chat";
 import type { ChatIdParams } from "./gen/ChatIdParams";
 import type { ChatList } from "./gen/ChatList";
+import type { CheckLogReply } from "./gen/CheckLogReply";
 import type { CheckoutChangeRequestStatus } from "./gen/CheckoutChangeRequestStatus";
 import type { CheckoutDiff } from "./gen/CheckoutDiff";
 import type { CheckoutDiffList } from "./gen/CheckoutDiffList";
 import type { CheckoutFileDiffText } from "./gen/CheckoutFileDiffText";
 import type { CheckpointList } from "./gen/CheckpointList";
+import type { ChecksReply } from "./gen/ChecksReply";
 import type { CloneRepoParams } from "./gen/CloneRepoParams";
 import type { CommitWorktreeParams } from "./gen/CommitWorktreeParams";
 import type { CommitWorktreeReply } from "./gen/CommitWorktreeReply";
@@ -32,6 +34,7 @@ import type { CreateChangeRequestReply } from "./gen/CreateChangeRequestReply";
 import type { CreateRepoParams } from "./gen/CreateRepoParams";
 import type { CreateRunGroupParams } from "./gen/CreateRunGroupParams";
 import type { CreateRunGroupReply } from "./gen/CreateRunGroupReply";
+import type { CreateRunWorktreeParams } from "./gen/CreateRunWorktreeParams";
 import type { CreateWorktreeOutcome } from "./gen/CreateWorktreeOutcome";
 import type { CreateWorktreeParams } from "./gen/CreateWorktreeParams";
 import type { DeleteProjectActionParams } from "./gen/DeleteProjectActionParams";
@@ -52,9 +55,13 @@ import type { FinishQueueEditOutcome } from "./gen/FinishQueueEditOutcome";
 import type { FinishQueuedMessageEditParams } from "./gen/FinishQueuedMessageEditParams";
 import type { FolderListing } from "./gen/FolderListing";
 import type { ForkSideChatParams } from "./gen/ForkSideChatParams";
+import type { GetApprovalParams } from "./gen/GetApprovalParams";
+import type { GetCheckLogParams } from "./gen/GetCheckLogParams";
 import type { GetCheckoutDiffParams } from "./gen/GetCheckoutDiffParams";
 import type { GetCheckoutFileDiffTextRequest } from "./gen/GetCheckoutFileDiffTextRequest";
+import type { GetChecksParams } from "./gen/GetChecksParams";
 import type { GetRunGroupComparisonParams } from "./gen/GetRunGroupComparisonParams";
+import type { GetThreadDiffParams } from "./gen/GetThreadDiffParams";
 import type { GetThreadUsageParams } from "./gen/GetThreadUsageParams";
 import type { GitAvatars } from "./gen/GitAvatars";
 import type { GitHistoryPage } from "./gen/GitHistoryPage";
@@ -78,6 +85,8 @@ import type { LocalDeviceReply } from "./gen/LocalDeviceReply";
 import type { LoginIdParams } from "./gen/LoginIdParams";
 import type { MergeBranchParams } from "./gen/MergeBranchParams";
 import type { MergeBranchReply } from "./gen/MergeBranchReply";
+import type { MergeChangeRequestParams } from "./gen/MergeChangeRequestParams";
+import type { MergeChangeRequestReply } from "./gen/MergeChangeRequestReply";
 import type { MessagePart } from "./gen/MessagePart";
 import type { ModelList } from "./gen/ModelList";
 import type { MoveQueuedMessageParams } from "./gen/MoveQueuedMessageParams";
@@ -86,7 +95,10 @@ import type { MutateParams } from "./gen/MutateParams";
 import type { MutateReply } from "./gen/MutateReply";
 import type { Notification } from "./gen/Notification";
 import type { OkReply } from "./gen/OkReply";
+import type { OpenChangeRequestParams } from "./gen/OpenChangeRequestParams";
+import type { OpenChangeRequestReply } from "./gen/OpenChangeRequestReply";
 import type { OpenTerminalParams } from "./gen/OpenTerminalParams";
+import type { PostReviewCommentParams } from "./gen/PostReviewCommentParams";
 import type { PostReviewToChangeRequestParams } from "./gen/PostReviewToChangeRequestParams";
 import type { PostReviewToChangeRequestReply } from "./gen/PostReviewToChangeRequestReply";
 import type { PreviewSnapshot } from "./gen/PreviewSnapshot";
@@ -110,6 +122,7 @@ import type { Repo } from "./gen/Repo";
 import type { RepoList } from "./gen/RepoList";
 import type { RepoPathParams } from "./gen/RepoPathParams";
 import type { RepoRefList } from "./gen/RepoRefList";
+import type { RequestApprovalParams } from "./gen/RequestApprovalParams";
 import type { ResizeTerminalParams } from "./gen/ResizeTerminalParams";
 import type { ResolveApprovalParams } from "./gen/ResolveApprovalParams";
 import type { ResolveGitAvatarsParams } from "./gen/ResolveGitAvatarsParams";
@@ -152,6 +165,7 @@ import type { TitleSettings } from "./gen/TitleSettings";
 import type { ToolCall } from "./gen/ToolCall";
 import type { ToolOutputChunk } from "./gen/ToolOutputChunk";
 import type { TranscriptUpdate } from "./gen/TranscriptUpdate";
+import type { TypedApproval } from "./gen/TypedApproval";
 import type { UpdateQueuedMessageParams } from "./gen/UpdateQueuedMessageParams";
 import type { UploadChunkParams } from "./gen/UploadChunkParams";
 import type { UploadCommitParams } from "./gen/UploadCommitParams";
@@ -171,6 +185,7 @@ import type { WorkspaceFileText } from "./gen/WorkspaceFileText";
 import type { WorkspaceGitStatusFrame } from "./gen/WorkspaceGitStatusFrame";
 import type { WorkspaceImageChunk } from "./gen/WorkspaceImageChunk";
 import type { WorkspaceMutationOutcome } from "./gen/WorkspaceMutationOutcome";
+import type { Worktree } from "./gen/Worktree";
 import type { WorktreeList } from "./gen/WorktreeList";
 import type { WriteTerminalParams } from "./gen/WriteTerminalParams";
 import type { WriteWorkspaceFileOutcome } from "./gen/WriteWorkspaceFileOutcome";
@@ -2312,6 +2327,137 @@ export const fixture_ToolOutputChunk = {
   "truncated": false
 } satisfies ToolOutputChunk;
 
+export const fixture_CreateRunWorktreeParams = {
+  "base": "main",
+  "branch": "factory/fix-linker",
+  "chatId": "chat_01"
+} satisfies CreateRunWorktreeParams;
+
+export const fixture_Worktree = {
+  "branch": "factory/fix-linker",
+  "checkoutId": "ck_01",
+  "name": "factory-fix-linker",
+  "path": "/home/dev/.loams/worktrees/project/factory-fix-linker",
+  "repoPath": "/home/dev/project"
+} satisfies Worktree;
+
+export const fixture_GetThreadDiffParams = {
+  "baseRef": "main",
+  "chatId": "chat_01"
+} satisfies GetThreadDiffParams;
+
+export const fixture_PostReviewCommentParams = {
+  "body": "This drops the error.",
+  "chatId": "chat_01",
+  "diffChecksum": "sha256:0f1e",
+  "endLine": 14,
+  "line": 12,
+  "path": "src/linker.rs",
+  "side": "new"
+} satisfies PostReviewCommentParams;
+
+export const fixture_OpenChangeRequestParams = {
+  "base": "main",
+  "body": "Links again.",
+  "chatId": "chat_01",
+  "draft": false,
+  "provider": "forgejo",
+  "title": "Fix the linker"
+} satisfies OpenChangeRequestParams;
+
+export const fixture_OpenChangeRequestReply = {
+  "existed": false,
+  "head": "factory/fix-linker",
+  "headSha": "0123456789abcdef0123456789abcdef01234567",
+  "number": 7,
+  "provider": "forgejo",
+  "repo": "dev/project",
+  "state": "open",
+  "url": "https://forgejo.example.com/dev/project/pulls/7"
+} satisfies OpenChangeRequestReply;
+
+export const fixture_RequestApprovalParams = {
+  "chatId": "chat_01",
+  "kind": "merge",
+  "payload": {
+    "base": "main",
+    "number": 7
+  },
+  "summary": "Merge #7 into main"
+} satisfies RequestApprovalParams;
+
+export const fixture_GetApprovalParams = {
+  "approvalId": "appr_01",
+  "chatId": "chat_01"
+} satisfies GetApprovalParams;
+
+export const fixture_TypedApproval = {
+  "chatId": "chat_01",
+  "createdAtMs": 1791797400000,
+  "decidedAtMs": 1791797401000,
+  "id": "appr_01",
+  "kind": "merge",
+  "payloadHash": "sha256:9a8b",
+  "state": "approved",
+  "summary": "Merge #7 into main"
+} satisfies TypedApproval;
+
+export const fixture_MergeChangeRequestParams = {
+  "approvalId": "appr_01",
+  "chatId": "chat_01",
+  "headSha": "0123456789abcdef0123456789abcdef01234567",
+  "number": 7,
+  "provider": "forgejo",
+  "strategy": "squash"
+} satisfies MergeChangeRequestParams;
+
+export const fixture_MergeChangeRequestReply = {
+  "merged": true,
+  "number": 7,
+  "provider": "forgejo",
+  "repo": "dev/project"
+} satisfies MergeChangeRequestReply;
+
+export const fixture_GetChecksParams = {
+  "chatId": "chat_01",
+  "provider": "forgejo",
+  "sha": "0123456789abcdef0123456789abcdef01234567"
+} satisfies GetChecksParams;
+
+export const fixture_ChecksReply = {
+  "checks": [
+    {
+      "logId": "3/0",
+      "name": "build",
+      "state": "success",
+      "url": "https://forgejo.example.com/dev/project/actions/runs/3/jobs/0"
+    },
+    {
+      "logId": "3/1",
+      "name": "test",
+      "state": "failure",
+      "url": "https://forgejo.example.com/dev/project/actions/runs/3/jobs/1"
+    }
+  ],
+  "provider": "forgejo",
+  "repo": "dev/project",
+  "sha": "0123456789abcdef0123456789abcdef01234567",
+  "state": "failure"
+} satisfies ChecksReply;
+
+export const fixture_GetCheckLogParams = {
+  "chatId": "chat_01",
+  "lines": 200,
+  "logId": "3/1",
+  "provider": "forgejo"
+} satisfies GetCheckLogParams;
+
+export const fixture_CheckLogReply = {
+  "lines": 1,
+  "text": "test linker ... FAILED\n",
+  "truncated": false
+} satisfies CheckLogReply;
+
 export const fixture_ToolCall_exec = {
   "command": "cargo test",
   "kind": "exec"
@@ -2741,6 +2887,21 @@ export const FIXTURES = [
   { name: "AttachmentChunk", type: "AttachmentChunk", value: fixture_AttachmentChunk },
   { name: "FetchToolBlobParams", type: "FetchToolBlobParams", value: fixture_FetchToolBlobParams },
   { name: "ToolOutputChunk", type: "ToolOutputChunk", value: fixture_ToolOutputChunk },
+  { name: "CreateRunWorktreeParams", type: "CreateRunWorktreeParams", value: fixture_CreateRunWorktreeParams },
+  { name: "Worktree", type: "Worktree", value: fixture_Worktree },
+  { name: "GetThreadDiffParams", type: "GetThreadDiffParams", value: fixture_GetThreadDiffParams },
+  { name: "PostReviewCommentParams", type: "PostReviewCommentParams", value: fixture_PostReviewCommentParams },
+  { name: "OpenChangeRequestParams", type: "OpenChangeRequestParams", value: fixture_OpenChangeRequestParams },
+  { name: "OpenChangeRequestReply", type: "OpenChangeRequestReply", value: fixture_OpenChangeRequestReply },
+  { name: "RequestApprovalParams", type: "RequestApprovalParams", value: fixture_RequestApprovalParams },
+  { name: "GetApprovalParams", type: "GetApprovalParams", value: fixture_GetApprovalParams },
+  { name: "TypedApproval", type: "TypedApproval", value: fixture_TypedApproval },
+  { name: "MergeChangeRequestParams", type: "MergeChangeRequestParams", value: fixture_MergeChangeRequestParams },
+  { name: "MergeChangeRequestReply", type: "MergeChangeRequestReply", value: fixture_MergeChangeRequestReply },
+  { name: "GetChecksParams", type: "GetChecksParams", value: fixture_GetChecksParams },
+  { name: "ChecksReply", type: "ChecksReply", value: fixture_ChecksReply },
+  { name: "GetCheckLogParams", type: "GetCheckLogParams", value: fixture_GetCheckLogParams },
+  { name: "CheckLogReply", type: "CheckLogReply", value: fixture_CheckLogReply },
   { name: "ToolCall.exec", type: "ToolCall", value: fixture_ToolCall_exec },
   { name: "ToolCall.readFile", type: "ToolCall", value: fixture_ToolCall_readFile },
   { name: "ToolCall.writeFile", type: "ToolCall", value: fixture_ToolCall_writeFile },

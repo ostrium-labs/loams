@@ -40,6 +40,11 @@ struct HeldHarness {
     prompts: Arc<Mutex<Vec<String>>>,
     requests: Mutex<Vec<RunRequest>>,
     mailbox_gate: Mutex<Option<Arc<tokio::sync::Notify>>>,
+    /// Keep the next run's stream open after its Done until notified, then
+    /// close it without reading the mailbox: a per-turn adapter whose child
+    /// exits a beat after the turn ends, leaving any steer routed into that
+    /// window unconsumed.
+    linger_after_done: Mutex<Option<Arc<tokio::sync::Notify>>>,
     /// Park the first turn on a question instead of just hanging, so the chat
     /// sits in `AwaitingInput` rather than `Working`.
     asks: bool,
@@ -73,6 +78,7 @@ impl HeldHarness {
                 prompts: prompts.clone(),
                 requests: Mutex::new(Vec::new()),
                 mailbox_gate: Mutex::new(None),
+                linger_after_done: Mutex::new(None),
                 asks,
             }),
             prompts,
@@ -127,6 +133,7 @@ impl Harness for HeldHarness {
         let steering = controls.steering;
         let prompts = self.prompts.clone();
         let gate = self.mailbox_gate.lock().unwrap().take();
+        let linger = self.linger_after_done.lock().unwrap().take();
         let started = futures::stream::iter(vec![Ok(AgentEvent::SessionStarted {
             harness: HarnessId::Mock,
             model: "mock-1".into(),
@@ -136,9 +143,12 @@ impl Harness for HeldHarness {
             assistant_message_id: format!("a-{}", request.prompt),
         })]);
         let done = futures::stream::unfold(
-            (finish, steering, prompts, false),
-            |(mut finish, mut steering, prompts, ended)| async move {
+            (finish, steering, prompts, false, linger),
+            |(mut finish, mut steering, prompts, ended, linger)| async move {
                 if ended {
+                    if let Some(linger) = linger {
+                        linger.notified().await;
+                    }
                     return None;
                 }
                 let (event, ended) = tokio::select! {
@@ -151,7 +161,7 @@ impl Harness for HeldHarness {
                         None => (AgentEvent::Done { status: DoneStatus::Completed, result: None, error: None, session_id: Some("sess-queue".into()) }, true),
                     }
                 };
-                Some((Ok(event), (finish, steering, prompts, ended)))
+                Some((Ok(event), (finish, steering, prompts, ended, linger)))
             },
         );
         let gated = futures::stream::once(async move {
@@ -509,6 +519,7 @@ async fn cancelling_a_turn_freezes_the_queue_until_an_explicit_send() {
 
     core.doc_host
         .update_queued_message(CHAT, &second_id, "second edited")
+        .await
         .expect("edit frozen row");
     tokio::time::sleep(Duration::from_millis(150)).await;
     assert_eq!(queue_texts(&core), vec!["second edited", "third"]);
@@ -908,6 +919,71 @@ async fn steer_now_sends_a_turn_boundary_row_next() {
     core.shutdown().await;
 }
 
+/// A steered row the drain routes into a parked run's mailbox just before that
+/// run exits is re-dispatched as the next turn, and it stays next: the queue
+/// must not read the run's exit as idle and start the row behind it first.
+/// That overtake was the flake in `steer_now_sends_a_turn_boundary_row_next`
+/// on busy CI runners.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_steer_orphaned_by_a_closing_run_keeps_its_place() {
+    let (core, harness, prompts) = setup(SteeringMode::TurnBoundary).await;
+    let linger = Arc::new(tokio::sync::Notify::new());
+    *harness.linger_after_done.lock().unwrap() = Some(linger.clone());
+
+    core.doc_host
+        .queue_message(CHAT, "opening", Vec::new())
+        .expect("queue opening");
+    wait_for(
+        || prompts.lock().unwrap().iter().any(|p| p == "opening"),
+        "the first turn to start",
+    )
+    .await;
+    core.doc_host
+        .queue_message(CHAT, "ordinary", Vec::new())
+        .expect("queue ordinary message");
+    let first = core
+        .doc_host
+        .queue_message(CHAT, "steered first", Vec::new())
+        .expect("queue held message");
+    let second = core
+        .doc_host
+        .queue_message(CHAT, "steered second", Vec::new())
+        .expect("queue held message");
+    assert!(core.doc_host.steer_queued_now(CHAT, &first).await.unwrap());
+    assert!(core.doc_host.steer_queued_now(CHAT, &second).await.unwrap());
+
+    // The turn ends but the run stays open, so the drain routes the first
+    // steered row into its mailbox rather than starting a fresh run.
+    let _ = harness.finish.send(());
+    wait_for(
+        || user_messages(&core).iter().any(|m| m == "steered first"),
+        "the first steered row to be accepted by the parked run",
+    )
+    .await;
+    assert_eq!(queue_texts(&core), vec!["steered second", "ordinary"]);
+
+    // The run exits without reading its mailbox: the accepted row is
+    // re-dispatched, and nothing behind it may start first.
+    linger.notify_one();
+    wait_for(
+        || prompts.lock().unwrap().iter().any(|p| p == "steered first"),
+        "the orphaned row to start its own turn",
+    )
+    .await;
+    assert_eq!(
+        *prompts.lock().unwrap(),
+        vec!["opening".to_owned(), "steered first".to_owned()],
+        "the orphaned row runs next, alone"
+    );
+    assert_eq!(
+        queue_texts(&core),
+        vec!["steered second", "ordinary"],
+        "one row per turn"
+    );
+    let _ = harness.finish.send(());
+    core.shutdown().await;
+}
+
 /// A provider's queue action remains `Steer` even if the active turn finishes
 /// before the click lands. With nothing left to interrupt, the selected row
 /// becomes the next turn and unpauses normal queue draining.
@@ -1076,6 +1152,68 @@ async fn send_now_interrupts_the_running_turn() {
     core.shutdown().await;
 }
 
+/// An edit is serialized with the drain, like a removal. A send takes its row
+/// out of the queue and puts it back when the send fails; an edit that landed
+/// in between found no row, answered `false`, and the row came back with its
+/// old text (seen as a Connect/ndjson parity flake on an idle side chat whose
+/// queued message could not be sent).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_edit_waits_for_a_failed_send_to_put_its_row_back() {
+    let (core, harness, prompts) = setup(SteeringMode::TurnBoundary).await;
+    core.doc_host
+        .queue_message(CHAT, "opening", Vec::new())
+        .expect("queue opening");
+    wait_for(
+        || prompts.lock().unwrap().iter().any(|p| p == "opening"),
+        "the first turn to start",
+    )
+    .await;
+    let id = core
+        .doc_host
+        .queue_message(CHAT, "second", Vec::new())
+        .expect("queue second");
+    // Supervised, the next send is refused (the harness cannot ask for
+    // approvals), so the send below puts its row back.
+    loams_agentd_rpc::memory_client(core.rpc_service())
+        .call(
+            loams_agentd_rpc::methods::SET_THREAD_APPROVAL_MODE,
+            serde_json::json!({ "chatId": CHAT, "mode": "supervised" }),
+        )
+        .await
+        .expect("supervised");
+
+    // Send it now: the row leaves the queue, and the send waits for the held
+    // turn to take its interrupt, which this harness does only on `finish`.
+    let core = Arc::new(core);
+    let send = tokio::spawn({
+        let core = core.clone();
+        let id = id.clone();
+        async move { core.doc_host.send_queued_now(CHAT, &id).await }
+    });
+    wait_for(|| queue_texts(&core).is_empty(), "the send to take the row").await;
+    let edit = tokio::spawn({
+        let core = core.clone();
+        let id = id.clone();
+        async move {
+            core.doc_host
+                .update_queued_message(CHAT, &id, "second edited")
+                .await
+        }
+    });
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(
+        !edit.is_finished(),
+        "the edit answered while the send held the row"
+    );
+
+    let _ = harness.finish.send(());
+    let sent = send.await.unwrap();
+    assert!(sent.is_err(), "the supervised send is refused: {sent:?}");
+    assert!(edit.await.unwrap().expect("edit"), "the edit applies");
+    assert_eq!(queue_texts(&core), vec!["second edited"]);
+    core.shutdown().await;
+}
+
 /// Editing a queued message to nothing is the delete gesture.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn editing_a_queued_message_to_empty_removes_it() {
@@ -1097,6 +1235,7 @@ async fn editing_a_queued_message_to_empty_removes_it() {
     assert!(
         core.doc_host
             .update_queued_message(CHAT, &id, "fixed")
+            .await
             .expect("edit")
     );
     assert_eq!(queue_texts(&core), vec!["fixed"]);
@@ -1104,6 +1243,7 @@ async fn editing_a_queued_message_to_empty_removes_it() {
     assert!(
         core.doc_host
             .update_queued_message(CHAT, &id, "   ")
+            .await
             .expect("empty edit")
     );
     assert!(

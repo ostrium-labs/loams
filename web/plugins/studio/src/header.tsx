@@ -7,6 +7,7 @@ import { AgentdScope } from '@loams/console-host/query';
 import { FolderGit2, GitBranch, Server } from 'lucide-react';
 import { useSyncExternalStore } from 'react';
 import type { StudioAgentd } from './agentd.js';
+import type { StudioNotification } from './notifications/data.js';
 import { NotificationsBell } from './notifications/NotificationsBell.js';
 import { useProjects, useReach } from './projects/queries.js';
 
@@ -14,7 +15,16 @@ const CHIP =
   'inline-flex h-7 min-w-0 max-w-[180px] shrink items-center gap-1.5 rounded-pill border border-rule bg-bg px-2.5 ' +
   'text-[0.8rem] text-muted';
 
-function Context({ agentd, router }: { agentd: StudioAgentd; router: RouterService }) {
+function Context({
+  agentd,
+  router,
+  notify,
+}: {
+  agentd: StudioAgentd;
+  router: RouterService;
+  /** Posts an OS notification for one that just arrived (the web edition, CF1 Task 16). */
+  notify?: (n: StudioNotification) => void;
+}) {
   const location = useSyncExternalStore(router.subscribe, () => router.current());
   const projects = useProjects(agentd);
   const reach = useReach(agentd);
@@ -46,7 +56,9 @@ function Context({ agentd, router }: { agentd: StudioAgentd; router: RouterServi
           </span>
         )}
       </div>
-      {reach.state === 'ready' && <NotificationsBell navigate={(to) => router.navigate(to)} />}
+      {reach.state === 'ready' && (
+        <NotificationsBell navigate={(to) => router.navigate(to)} onArrive={notify} />
+      )}
     </div>
   );
 }

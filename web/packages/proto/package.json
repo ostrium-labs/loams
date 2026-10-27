@@ -2,7 +2,7 @@
   "name": "@loams/proto",
   "version": "0.1.0",
   "private": true,
-  "description": "Generated protobuf-es messages and Connect service descriptors for the Loams app protos (design §37 §8): loams.instance, devices, approvals, operations, notifications and errors v1, plus the collection, live, graph and house data planes, the console API (loams.auth.v1 and loams.admin.v1), and loams-agentd's loams.agentd.v1 for Loams Studio.",
+  "description": "Generated protobuf-es messages and Connect service descriptors for the Loams app protos (design §37 §8): loams.instance, devices, approvals, operations, notifications and errors v1, plus the collection, SQL, stream, live, graph and house data planes, the console API (loams.auth.v1 and loams.admin.v1), and loams-agentd's loams.agentd.v1 for Loams Studio.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -27,6 +27,7 @@
     "./agentd": "./src/agentd.ts",
     "./approvals": "./src/gen/loams/approvals/v1/approvals_pb.ts",
     "./collection": "./src/gen/loams/collection/v1/collection_pb.ts",
+    "./collection-v1": "./src/collection-v1.ts",
     "./documents": "./src/gen/loams/collection/v1/document_pb.ts",
     "./query": "./src/gen/loams/collection/v1/query_pb.ts",
     "./devices": "./src/gen/loams/devices/v1/devices_pb.ts",
@@ -39,6 +40,8 @@
     "./live-value": "./src/gen/loams/live/v1/value_pb.ts",
     "./notifications": "./src/gen/loams/notifications/v1/notifications_pb.ts",
     "./options": "./src/gen/loams/options/v1/options_pb.ts",
+    "./sql": "./src/gen/loams/sql/v1/sql_pb.ts",
+    "./stream": "./src/gen/loams/stream/v1/stream_pb.ts",
     "./operations": "./src/gen/loams/operations/v1/operations_pb.ts"
   },
   "scripts": {
@@ -55,5 +58,17 @@
     "@connectrpc/connect": "2.2.0",
     "typescript": "5.9.3",
     "vitest": "5.0.3"
+  },
+  "nx": {
+    "targets": {
+      "test": {
+        "inputs": [
+          "default",
+          "^default",
+          "testRuntime",
+          "graphConformance"
+        ]
+      }
+    }
   }
 }

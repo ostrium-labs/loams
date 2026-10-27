@@ -1,0 +1,125 @@
+# HE0 (plan HE1 Task 1): OpenPanel (AGPL-3.0), unmodified containers only:
+# never vendored, linked or redistributed (§75 §18). Its clickhouse-server is
+# the pinned oracle with query_log and part_log on (OpenPanel's own guide
+# turns them off). Driven by scripts/house/apps.sh openpanel up|drive|dump|down.
+# Every image is pinned by digest; host ports bind to 127.0.0.1.
+name: he0-openpanel
+
+x-openpanel-env: &openpanel-env
+  NODE_ENV: production
+  SELF_HOSTED: "true"
+  BATCH_SIZE: "5000"
+  # Flush the Redis buffers every second so the driver reads its own events.
+  BATCH_INTERVAL: "1000"
+  ALLOW_REGISTRATION: "true"
+  ALLOW_INVITATION: "true"
+  REDIS_URL: redis://op-kv:6379
+  # Through the logging proxy, which records every request's settings.
+  CLICKHOUSE_URL: http://op-chlog:8123/openpanel
+  DATABASE_URL: postgresql://postgres:postgres@op-db:5432/postgres?schema=public
+  DATABASE_URL_DIRECT: postgresql://postgres:postgres@op-db:5432/postgres?schema=public
+  DASHBOARD_URL: http://localhost:${HE0_OPENPANEL_PORT:-3200}
+  API_URL: http://localhost:${HE0_OPENPANEL_PORT:-3200}/api
+  COOKIE_SECRET: he0-not-a-secret-he0-not-a-secret
+
+services:
+  op-proxy:
+    image: docker.io/library/caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+    labels: { io.loams.licence: "Apache-2.0" }
+    volumes: [./Caddyfile:/etc/caddy/Caddyfile:ro]
+    depends_on:
+      op-api: { condition: service_healthy }
+      op-dashboard: { condition: service_started }
+    ports: ["127.0.0.1:${HE0_OPENPANEL_PORT:-3200}:80"]
+
+  op-api:
+    image: docker.io/lindesvard/openpanel-api:2.3.0@sha256:cee4855cd715a7248c5c49090fe93a28ffc505541de20cb238d8884a6bcb9223
+    labels: { io.loams.licence: "AGPL-3.0-only" }
+    # The command OpenPanel's self-hosting compose runs: migrations, then start.
+    command: ["sh", "-c", "CI=true pnpm -r run migrate:deploy && pnpm start"]
+    environment: *openpanel-env
+    depends_on:
+      op-db: { condition: service_healthy }
+      op-ch: { condition: service_healthy }
+      op-chlog: { condition: service_started }
+      op-kv: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/healthcheck || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+
+  op-dashboard:
+    image: docker.io/lindesvard/openpanel-dashboard:2.3.0@sha256:b773cf864454a0ec89b2a133b48bf06202880ed650a75cc2f1f5c87aaed1cffa
+    labels: { io.loams.licence: "AGPL-3.0-only" }
+    environment: *openpanel-env
+    depends_on:
+      op-api: { condition: service_healthy }
+
+  op-worker:
+    image: docker.io/lindesvard/openpanel-worker:2.3.0@sha256:b22e247fb6980b820c1a954d0e3d2fe88b3edf40a58aa53329467af239538e80
+    labels: { io.loams.licence: "AGPL-3.0-only" }
+    environment: *openpanel-env
+    depends_on:
+      op-api: { condition: service_healthy }
+
+  op-chlog:
+    image: docker.io/library/caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+    labels: { io.loams.licence: "Apache-2.0" }
+    environment:
+      HE0_CH_UPSTREAM: op-ch:8123
+    volumes:
+      - ../clickhouse/chlog.Caddyfile:/etc/caddy/Caddyfile:ro
+      - op-chlog:/var/log/chlog
+    depends_on:
+      op-ch: { condition: service_healthy }
+
+  op-ch:
+    image: ${HE0_CLICKHOUSE_IMAGE:-docker.io/clickhouse/clickhouse-server:26.9.2.8@sha256:7b9a0b6e9ab7ef79db5c4f8a9808f880258704eb7b4af9309f9029c16e727a80}
+    labels: { io.loams.licence: "Apache-2.0" }
+    environment:
+      CLICKHOUSE_SKIP_USER_SETUP: "1"
+      CLICKHOUSE_DB: openpanel
+    volumes:
+      - ../clickhouse/he0-logs.xml:/etc/clickhouse-server/config.d/he0-logs.xml:ro
+      - ../clickhouse/he0-users.xml:/etc/clickhouse-server/users.d/he0-users.xml:ro
+      - ./he0-merge-tree.xml:/etc/clickhouse-server/config.d/he0-merge-tree.xml:ro
+      - op-ch-data:/var/lib/clickhouse
+    # Loopback only: scripts/house/replay.py reads its query_log (Task 9).
+    ports: ["127.0.0.1:${HE0_OPENPANEL_CH_PORT:-28126}:8123"]
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    healthcheck:
+      # Tagged so apps.sh dump drops it from query_log.
+      test: ["CMD-SHELL", "clickhouse-client --log_comment he0-harness --query 'SELECT 1'"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+
+  op-kv:
+    image: docker.io/valkey/valkey:8.1.3@sha256:fea8b3e67b15729d4bb70589eb03367bab9ad1ee89c876f54327fc7c6e618571
+    labels: { io.loams.licence: "BSD-3-Clause" }
+    command: ["valkey-server", "--maxmemory-policy", "noeviction"]
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  op-db:
+    image: docker.io/library/postgres:17.6@sha256:00bc86618629af00d2937fdc5a5d63db3ff8450acf52f0636ec813c7f4902929
+    labels: { io.loams.licence: "PostgreSQL" }
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes: [op-db-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  op-chlog:
+  op-ch-data:
+  op-db-data:

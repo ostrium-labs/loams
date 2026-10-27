@@ -74,6 +74,10 @@ pub struct Observed {
 /// The pins a stack's `.env` names.
 pub fn current_components(stack: &StackDir) -> std::collections::BTreeMap<String, String> {
     let mut out = std::collections::BTreeMap::new();
+    if !stack.tikv() {
+        // The embedded stores: no PD, TiKV or TiDB runs.
+        return out;
+    }
     let tikv = stack
         .env
         .get("TIKV_TAG")
@@ -244,24 +248,23 @@ pub fn plan(
         .map_err(|e| UpgradeError::new("internal", format!("loams migrate plan's output: {e}")))
 }
 
-/// The bytes a snapshot would copy: the Loams-owned volumes and TiKV's, as
-/// `du` sees them in a helper of `image` (read-only mounts).
+/// The bytes a snapshot would copy: the Loams-owned volumes and TiKV's (when
+/// the stack runs it: mounting a volume that does not exist would create
+/// it), as `du` sees them in a helper of `image` (read-only mounts).
 pub fn snapshot_estimate(runtime: &dyn Runtime, stack: &StackDir, image: &str) -> Result<u64> {
     use crate::helpers::{HelperSpec, Mount, volume};
-    let mounts = [
-        "loams-data",
-        "house-data",
-        "pg-control-data",
-        "pd-data",
-        "tikv-data",
-    ]
-    .iter()
-    .map(|v| Mount {
-        source: volume(stack, v),
-        target: format!("/vol/{v}"),
-        read_only: true,
-    })
-    .collect();
+    let mut names = vec!["loams-data", "house-data", "pg-control-data"];
+    if stack.tikv() {
+        names.extend(["pd-data", "tikv-data"]);
+    }
+    let mounts = names
+        .iter()
+        .map(|v| Mount {
+            source: volume(stack, v),
+            target: format!("/vol/{v}"),
+            read_only: true,
+        })
+        .collect();
     let spec = HelperSpec {
         image: image.to_string(),
         entrypoint: Some("/bin/sh".to_string()),
@@ -319,6 +322,16 @@ pub fn check(
     path: &UpgradePath,
     target: &str,
 ) -> Result<CheckReport> {
+    if !stack.tikv() {
+        // `loams migrate plan`, `verify` and `status` open the embedded
+        // metastore, which the running engine holds locked (one writer).
+        return Err(UpgradeError::new(
+            "stack_unrecognised",
+            "this stack runs on the embedded stores (COMPOSE_PROFILES without `tikv`), which \
+             `loams upgrade` does not upgrade yet: back up the volumes, stop the stack, set \
+             LOAMS_VERSION and start it again (`migrate` runs first; see docs/release/upgrades.md)",
+        ));
+    }
     let current = stack.release().ok_or_else(|| {
         UpgradeError::new(
             "stack_unrecognised",

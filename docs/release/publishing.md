@@ -184,7 +184,7 @@ the tags.
 
 1. Sign in at central.sonatype.com → Namespaces → Add namespace `dev.loams`. The portal shows a verification key. Add a **DNS TXT** record on the apex `loams.dev` (name `@`) whose value is that key, then click Verify. The record can be removed once the namespace is verified.
 2. Go to Account → Generate User Token. Store the two values as the secrets `MAVEN_CENTRAL_USERNAME` and `MAVEN_CENTRAL_PASSWORD` in the `maven-central` environment. They are the token's username and password, not the login.
-3. Central rejects artifacts whose signing key it cannot find. Upload [`loams-release-key.asc`](loams-release-key.asc) (fingerprint `333AC94599D5A1EB2A416D1E83DC134D8CAF895D`, see [signing.md](signing.md)) at https://keyserver.ubuntu.com/ (Submit Key) and at https://keys.openpgp.org/upload. keys.openpgp.org then asks you to confirm `security@ostriumlabs.org`. The publish job also tries `gpg --send-keys` to keyserver.ubuntu.com. The workflow uses the existing repository secret `LOAMS_GPG_PRIVATE_KEY` and variable `LOAMS_GPG_KEY_ID`.
+3. Central rejects artifacts whose signing key it cannot find. Upload [`loams-release-key.asc`](loams-release-key.asc) (the current key, fingerprint `29C5CC3F0FD66A2AD32ECB309E8EC3E0AAB5BA68`, and the previous one, `333AC94599D5A1EB2A416D1E83DC134D8CAF895D`; see [signing.md](signing.md)) at https://keyserver.ubuntu.com/ (Submit Key) and at https://keys.openpgp.org/upload. keys.openpgp.org then asks you to confirm `security@ostriumlabs.org`. The publish job also tries `gpg --send-keys` to keyserver.ubuntu.com. The workflow uses the existing repository secret `LOAMS_GPG_PRIVATE_KEY` and variable `LOAMS_GPG_KEY_ID`.
 4. Set the variable `SDK_PUBLISH_MAVEN=true`. The job uploads each bundle with `publishingType=AUTOMATIC` and waits until Central reports `PUBLISHING` or `PUBLISHED`.
 
 ### CocoaPods (`Loams`)
@@ -215,7 +215,7 @@ The release images, the contract the compose stack in
 
 | Image | Containerfile | Contents |
 |---|---|---|
-| `ghcr.io/ostrium-labs/loams` | `deploy/release/Containerfile.loams` | The engine, built with the features `live,live-tikv,durable,graph,tikv,pgwire,mysql-wire,stream-grpc` |
+| `ghcr.io/ostrium-labs/loams` | `deploy/release/Containerfile.loams` | The engine, built with the features `live,live-tikv,durable,durable-tikv,graph,git,tikv,pgwire,mysql-wire,stream-grpc` |
 | `ghcr.io/ostrium-labs/loams-fabric` | `deploy/release/Containerfile.loams-fabric` | The House front, with `loams-house-worker` inside |
 | `ghcr.io/ostrium-labs/loams-agentd` | `deploy/release/Containerfile.loams-agentd` | The agent daemon (optional) |
 
@@ -368,5 +368,5 @@ workflow's secrets are in the table at the top of this page.
   marketplace, not publishing Loams itself.
 - D292 (cargo-dist for binaries and GitHub Releases), D294 (`cargo install
   loams`), D298 (the CLI track) and D400 (the `loams` package namespace).
-- D220 and D552 (the open-core boundary). A publish path may not add a
-  billing-grade name or a private package to anything it uploads.
+- D1119 (no open core; supersedes D220 and D552). A publish path still may
+  not add a private, unpublished package to anything it uploads.

@@ -607,6 +607,7 @@ pub struct ProcessLauncher {
     binary: PathBuf,
     tmp_root: PathBuf,
     memory_limit: Option<u64>,
+    max_execution_time_s: Option<u64>,
     s3_endpoint: Option<String>,
     sandbox: SandboxMode,
     forwarder: Option<Forward>,
@@ -627,6 +628,7 @@ impl ProcessLauncher {
             binary: binary.into(),
             tmp_root: tmp_root.into(),
             memory_limit: None,
+            max_execution_time_s: None,
             s3_endpoint: None,
             sandbox,
             forwarder: None,
@@ -688,6 +690,13 @@ impl ProcessLauncher {
     /// before it boots.
     pub fn with_cgroups(mut self, cgroups: WorkerCgroups) -> Self {
         self.cgroups = Some(cgroups);
+        self
+    }
+
+    /// Workers whose settings profile caps `max_execution_time` at `seconds`
+    /// (`--max-execution-time`, D1571): the front's own cap.
+    pub fn with_max_execution_time(mut self, seconds: u64) -> Self {
+        self.max_execution_time_s = Some(seconds);
         self
     }
 
@@ -753,6 +762,10 @@ impl ProcessLauncher {
         if let Some(bytes) = self.memory_limit {
             args.push("--memory-limit".to_string());
             args.push(bytes.to_string());
+        }
+        if let Some(seconds) = self.max_execution_time_s {
+            args.push("--max-execution-time".to_string());
+            args.push(seconds.to_string());
         }
         if let Some(endpoint) = endpoint {
             args.push("--s3-endpoint".to_string());
@@ -1161,6 +1174,7 @@ impl InprocWorker {
                 forwarder_port: None,
                 cgroup: None,
                 open_acl: false,
+                max_execution_time_s: loams_house_worker::settings::MAX_EXECUTION_TIME_S,
             },
         }
     }

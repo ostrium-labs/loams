@@ -1,7 +1,8 @@
 # PD for the release compose stack. Keyspaces created at bootstrap (PD creates
 # them only on a fresh cluster): loams_meta (the engine's metastore),
 # loams_live_dev (the Live app `dev`),
-# loams_live_system (Live's app directory; the engine also creates it), sql_dev (TiDB's keyspace) and
-# loams_pgwal (the Loams Postgres WAL hot tier, design §28 §6.5).
+# loams_live_system (Live's app directory; the engine also creates it), sql_dev (TiDB's keyspace),
+# loams_pgwal (the Loams Postgres WAL hot tier, design §28 §6.5) and
+# loams_durable (Durable's Resonate state, D261; the engine also creates it).
 [keyspace]
-pre-alloc = ["loams_meta", "loams_live_dev", "loams_live_system", "sql_dev", "loams_pgwal"]
+pre-alloc = ["loams_meta", "loams_live_dev", "loams_live_system", "sql_dev", "loams_pgwal", "loams_durable"]

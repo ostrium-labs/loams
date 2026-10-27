@@ -1,5 +1,7 @@
 # 49 — Loams House in Production: Serverless ClickHouse-Compatible Analytics on the Bucket
 
+> **Amendment (approved 2026-10-21) by [§75](75-loams-house-engine.md).** §75 keeps this document's product surface (ClickHouse HTTP, `loams.house.v1`, Lakekeeper, identities, quotas, the query log) and puts a Rust engine under it: D760 amended (D1540); D761, D766, D774 and D779 kept for chDB workers and amended for the Rust engine (D1557, D1558, D1567); D762 moved from Iceberg v2 to v3 with v2 as the fallback (D1551); D765 and §2.2 amended so deletion vectors, `ALTER … DELETE/UPDATE` and TTL are in (D1552, D1544); D767–D768 moved to phase HE5 (D1548, Q1178); D777's gates replaced for the Rust engine (D1564). chDB stays the shipped engine until HE2's exit and the oracle after. The owner approved §75 on 2026-10-21; where this document and §75 differ, §75 governs.
+
 Status: **Proposed** · 2026-10-08. The direction is the owner's, from 2026-10-08: "chDB / ClickHouse on S3 — Loams House — production ready." This document turns that into decisions **D760–D779** and open questions **Q685–Q699**, recorded in the [decision log](13-decision-log.md) with status "Proposed". Plan: [HS1](../plans/2026-10-08-hs1-house-production.md). **No code is written by this document.**
 
 It is an addendum to [§32](32-loams-flow-fabric-house.md) (Flow, Event Fabric, House; D330–D351, approved 2026-10-02) and builds on the [FL2 plan](../plans/2026-10-01-fl2-house-sql.md) and what it has built so far ([`fl2-dependency-spike.md`](../plans/fl2-dependency-spike.md), FL2 Rulings 1–14 during execution). Where it changes an approved decision (D346, Q336's answer, Q338's answer), §22 says so and the owner decides. It also draws on [§08](08-analytics.md) (Iceberg tables), [§04](04-hot-tier.md) (the hot tier and `loams-cache`), [§19](19-console-identity-and-agents.md) and [§38](38-knative-authentik-gitops.md) (identity; MT1's verifier, D451), [§27](27-usage-hooks.md) (usage hooks), [§44](44-unified-api-and-sdks.md) (the Connect API, one port) and [§37](37-desktop-and-mobile-apps.md) §19 (Loams Desktop on Electron, AP1e).
@@ -303,7 +305,7 @@ Session state (`session_id`: settings, current database, last consistency token)
 | Limit | Default (shared class) | Enforced by | Past it |
 |---|---|---|---|
 | `max_memory_usage` per query | 4 GiB (class may raise to 64 GiB) | chDB setting; the worker's cgroup `memory.max` = the cap + 512 MiB | `241 MEMORY_LIMIT_EXCEEDED` (chDB's, or the front's on a cgroup OOM kill) |
-| `max_execution_time` | 300 s | chDB setting; the front's watchdog kills the worker at the limit + 2 s | `159 TIMEOUT_EXCEEDED` |
+| `max_execution_time` | 900 s (D1573; was 300 s), `[house.limits] max_execution_time_s` | chDB setting, the workers' profile cap passed as `--max-execution-time`; the front's watchdog kills the worker at the limit + 2 s | `159 TIMEOUT_EXCEEDED` |
 | `max_threads` | 8 (class) | chDB setting; cgroup `cpu.max` | — |
 | `max_bytes_to_read` per query | 1 TiB | chDB setting | chDB's code (307 `TOO_MANY_BYTES`, verify) |
 | `max_result_bytes` / `max_result_rows` | 10 GiB / unlimited | chDB settings; the front counts streamed bytes | chDB's code |

@@ -15,6 +15,7 @@ import { type StudioAgentd, studioAgentd } from './agentd.js';
 import { desktopFactory } from './factory.js';
 import { GitActionBus, withGitActions } from './git/bus.js';
 import { hostedAgentd } from './hosts/agentd.js';
+import { webNotifier } from './notifications/data.js';
 import { BranchesSource } from './palette/BranchesSource.js';
 import { createStudioKeys, listenShellCommands } from './palette/commands.js';
 import { StudioPalette } from './palette/StudioPalette.js';
@@ -245,6 +246,8 @@ const plugin: PluginModule = {
         gitBus,
         openExternal: (url) => platform.openExternal(url),
         mode: service(ctx, 'mode'),
+        // On the desktop Electron main posts these from the same stream (W15).
+        ...(platform.kind === 'web' ? { notify: webNotifier((n) => platform.notify(n)) } : {}),
       });
       return () => {
         for (const dispose of disposers) dispose();

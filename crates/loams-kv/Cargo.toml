@@ -11,7 +11,7 @@ authors.workspace = true
 publish = false
 
 [features]
-# The TiKV backend: Store::Tikv, wrapping loams-tikv.
+# The TiKV backend: a Store on loams-tikv's handle.
 tikv = ["dep:loams-tikv"]
 # Store::with_faults: the runner's fault hooks for tests and the fault
 # matrix (R1 plan Tasks 2 and 6).
@@ -31,6 +31,8 @@ tracing.workspace = true
 
 [dev-dependencies]
 loams-kv = { path = ".", features = ["tikv", "faults"] }
+# The Wing–Gong–Lowe checker loams-sim re-exports (linearizable.rs).
+loams-meta-conformance.workspace = true
 loams-tikv.workspace = true
 proptest.workspace = true
 

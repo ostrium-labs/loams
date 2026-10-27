@@ -885,6 +885,8 @@ Commit `adapters: Vercel AI SDK tools and middleware`.
 
 ### Task 50: Mastra
 
+> **Moved (2026-10-20, D1221):** the Mastra adapter is built as `@loams/mastra/memory` (processors and tools) in `ostrium-labs/loams-mastra`, plan [MA1](2026-10-20-ma1-loams-mastra.md) Tasks 38–39; the test `mastra_agent_remembers_across_threads` moves there. The text below is kept for history.
+
 **Files:** `adapters/mastra/` (`@loams/memory-mastra`).
 
 **Interfaces:** Mastra's memory or storage adapter interface (verify at the pinned version).

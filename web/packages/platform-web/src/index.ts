@@ -83,10 +83,19 @@ export function createWebPlatform(options: WebPlatformOptions = {}): PluginModul
           }
           globalThis.open?.(url, '_blank', 'noopener,noreferrer');
         },
-        async notify({ title, body }) {
+        async notify({ title, body, route }) {
           if (typeof Notification === 'undefined') return;
           if (Notification.permission === 'default') await Notification.requestPermission();
-          if (Notification.permission === 'granted') new Notification(title, { body });
+          if (Notification.permission !== 'granted') return;
+          const n = new Notification(title, { body });
+          // A click brings the page forward and opens the route (CF1 Task 16, W15).
+          if (route) {
+            n.onclick = () => {
+              globalThis.focus?.();
+              globalThis.location.hash = route;
+              n.close();
+            };
+          }
         },
         async clipboardWrite(text) {
           await navigator.clipboard.writeText(text);

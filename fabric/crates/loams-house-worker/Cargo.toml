@@ -69,6 +69,8 @@ parquet.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "sync"] }
 # `classify_oracle.rs`: statement-shaped text for the classifier oracle.
 proptest.workspace = true
+# `native.rs` (HE0, R9.40): a native protocol client from the House's own codec.
+loams-house-native = { path = "../loams-house-native" }
 # `api.rs` (HS1 Task 8): `loams.house.v1` called over a socket with the generated
 # client, its errors' `ErrorInfo` decoded from the Connect error details.
 loams-house-proto = { path = "../loams-house-proto", features = ["client"] }

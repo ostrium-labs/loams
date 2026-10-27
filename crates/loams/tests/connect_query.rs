@@ -2359,3 +2359,98 @@ async fn scroll_all(running: &Running, cursor: &str) -> Vec<Vec<Value>> {
     }
     unreachable!("the loop returns or fails above")
 }
+
+// ----- SDKP: a retriever's `k` is optional, and `search_after` round-trips -----
+
+/// The fixture's hybrid body with no `k` on either retriever.
+fn hybrid_without_k() -> Value {
+    json!({
+        "collection": "kb",
+        "retrievers": [
+            {"vector": {"field": "embedding", "query": [1.0, 0.0, 0.0]}},
+            {"text": {"query": {"match": {"field": "body", "text": "refund"}}}}
+        ],
+        "fusion": {"rrf": {"k": 60}},
+        "limit": 3
+    })
+}
+
+/// A retriever without `k` takes `max(10, offset + limit)` on both surfaces,
+/// so the fixture's hybrid query (k 10, limit 3) ranks exactly as it does with
+/// `k` spelled out, rather than being refused with "k must be between 1 and
+/// 100000".
+#[tokio::test]
+async fn a_retriever_without_k_takes_the_window_rest_and_rpc() {
+    let running = Running::start().await;
+    kb(&running, "w").await;
+    let with_k = running.connect(SEARCH, &hybrid_rpc("w")).await.expect_ok();
+    let rpc = running
+        .connect(SEARCH, &ir_rpc("w", &hybrid_without_k()))
+        .await
+        .expect_ok();
+    let rest = running
+        .rest_query("w", &hybrid_without_k())
+        .await
+        .expect_ok();
+    assert_eq!(pks(&rpc), [json!(1u64), json!(3u64), json!(2u64)], "{rpc}");
+    assert_eq!(pks(&rpc), pks(&with_k), "{rpc} vs {with_k}");
+    assert_eq!(pks(&rest), pks(&rpc), "{rest} vs {rpc}");
+
+    // An explicit `k` out of range is still refused.
+    let mut too_many = hybrid_without_k();
+    too_many["retrievers"][1]["text"]["k"] = json!(200_000);
+    let refused = running.rest_query("w", &too_many).await;
+    assert_eq!(refused.status, StatusCode::BAD_REQUEST, "{}", refused.body);
+    running.shutdown().await;
+}
+
+/// Pages a filter-only query sorted by primary key, one hit a page, each next
+/// page asked for with the `sort_values` the previous page's last hit carried —
+/// on the RPC (where a number is a `google.protobuf.Value` double, `1.0`, and
+/// an id past 2^53 is `{"uint": "…"}`) and on REST. Both must walk every
+/// document once, in key order.
+#[tokio::test]
+async fn search_after_takes_back_the_sort_values_it_answered_rest_and_rpc() {
+    let running = Running::start().await;
+    kb(&running, "w").await;
+    let base = json!({"collection": "kb", "retrievers": [], "filter": "match_all",
+                      "sort": [{"pk": {}}], "limit": 1});
+    let walk = |rpc: bool| {
+        let running = &running;
+        let base = base.clone();
+        async move {
+            let mut seen = Vec::new();
+            let mut after: Option<Value> = None;
+            for _ in 0..10 {
+                let mut body = base.clone();
+                if let Some(values) = &after {
+                    body["search_after"] = values.clone();
+                }
+                let answer = if rpc {
+                    let mut request = ir_rpc("w", &body);
+                    request["filter"] = json!({"matchAll": {}});
+                    running.connect(SEARCH, &request).await.expect_ok()
+                } else {
+                    running.rest_query("w", &body).await.expect_ok()
+                };
+                let page = hits(&answer);
+                let Some(last) = page.last() else { break };
+                seen.extend(pks(&answer));
+                let values = if rpc {
+                    last["sortValues"].clone()
+                } else {
+                    last["sort_values"].clone()
+                };
+                assert!(values.is_array(), "a hit carries its sort values: {answer}");
+                after = Some(values);
+            }
+            seen
+        }
+    };
+    let rpc = walk(true).await;
+    let rest = walk(false).await;
+    assert_eq!(rpc.len(), 6, "every document once over the RPC: {rpc:?}");
+    assert_eq!(rest.len(), 6, "every document once over REST: {rest:?}");
+    assert_eq!(rpc, rest);
+    running.shutdown().await;
+}

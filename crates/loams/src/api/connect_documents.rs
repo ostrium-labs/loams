@@ -335,7 +335,7 @@ impl DocumentService for Documents {
         let (namespace, collection) = collection_ref(request.namespace, request.collection)?;
         let consistency = Documents::consistency(&ctx, &request.consistency)?;
         let select = projection_of(&request.select)?;
-        let filter = query(&request.filter, "filter")?;
+        let filter = filter_of(&request.filter, &request.r#where)?;
         let after = scroll_cursor(&request.after, &request.page_token)?;
         // `limit` is `optional`, so an explicit `0` is a page of nothing rather
         // than the default — proto3 JSON can spell the difference and the REST
@@ -376,7 +376,7 @@ impl DocumentService for Documents {
     ) -> ServiceResult<CountDocumentsResponse> {
         let (namespace, collection) = collection_ref(request.namespace, request.collection)?;
         let consistency = Documents::consistency(&ctx, &request.consistency)?;
-        let filter = query(&request.filter, "filter")?;
+        let filter = filter_of(&request.filter, &request.r#where)?;
         let (count, token) = self
             .state
             .collections
@@ -399,7 +399,7 @@ impl DocumentService for Documents {
         request: ServiceRequest<'_, DeleteByFilterRequest>,
     ) -> ServiceResult<FilterWriteResponse> {
         let (namespace, collection) = collection_ref(request.namespace, request.collection)?;
-        let filter = query(&request.filter, "filter")?.ok_or_else(|| {
+        let filter = filter_of(&request.filter, &request.r#where)?.ok_or_else(|| {
             invalid(
                 "filter",
                 "delete_by_filter needs a filter; `match_all` deletes everything",
@@ -427,7 +427,7 @@ impl DocumentService for Documents {
         request: ServiceRequest<'_, PatchByFilterRequest>,
     ) -> ServiceResult<FilterWriteResponse> {
         let (namespace, collection) = collection_ref(request.namespace, request.collection)?;
-        let filter = query(&request.filter, "filter")?.ok_or_else(|| {
+        let filter = filter_of(&request.filter, &request.r#where)?.ok_or_else(|| {
             invalid(
                 "filter",
                 "patch_by_filter needs a filter; `match_all` patches everything",
@@ -580,6 +580,53 @@ fn query(
     };
     serde_json::from_value(msg::json_of_value_view(filter))
         .map_err(|err| invalid(field, format!("{field} is not a query: {err}")))
+}
+
+/// The filter a document RPC asks for: `filter`, the IR's own JSON, or
+/// `where`, the proto3 JSON of a typed `loams.collection.v1.Query` (SDKP P0a,
+/// ruling P0a-1), which goes through the same mapping `SearchRequest.filter`
+/// does. Both set is `invalid_argument` with reason `filter_conflict`: two
+/// filters on one request cannot both be answered.
+fn filter_of(
+    filter: &MessageFieldView<ValueView<'_>>,
+    where_: &MessageFieldView<StructView<'_>>,
+) -> Result<Option<Query>, ConnectError> {
+    let Some(typed) = where_.as_option() else {
+        return query(filter, "filter");
+    };
+    if filter.as_option().is_some() {
+        return Err(super::connect::refuse(
+            connectrpc::ErrorCode::InvalidArgument,
+            "filter_conflict",
+            "set `filter` or `where`, not both",
+            &[("field", "where".to_owned())],
+        ));
+    }
+    typed_query(msg::json_of_view(typed)).map(Some)
+}
+
+/// A typed `Query`'s proto3 JSON, decoded with the generated mapping and
+/// lowered to the IR by `connect_query_filters`, so a typed filter reads
+/// exactly as the same `Query` in `SearchRequest.filter` does.
+fn typed_query(json: Value) -> Result<Query, ConnectError> {
+    use buffa::Message as _;
+    use buffa::view::MessageView as _;
+    let message: pb::Query = serde_json::from_value(json).map_err(|err| {
+        invalid(
+            "where",
+            format!("where is not a loams.collection.v1.Query: {err}"),
+        )
+    })?;
+    let bytes = message.encode_to_vec();
+    let view = pb::__buffa::view::QueryView::decode_view(&bytes).map_err(|err| {
+        invalid(
+            "where",
+            format!("where is not a loams.collection.v1.Query: {err}"),
+        )
+    })?;
+    let ir = super::connect_query_filters::query_json(&view)?;
+    serde_json::from_value(ir)
+        .map_err(|err| invalid("where", format!("where is not a query: {err}")))
 }
 
 /// The keys a get asks for, in order. Every id goes through the REST route's

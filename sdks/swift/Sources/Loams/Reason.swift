@@ -42,13 +42,21 @@ public enum Reason: String, Sendable, Hashable, CaseIterable {
     case liveWorkerCrashed = "live_worker_crashed"
     case liveDeployConflict = "live_deploy_conflict"
     case liveSchemaViolation = "live_schema_violation"
+    case filterConflict = "filter_conflict"
+    case searchAfterNeedsTiebreak = "search_after_needs_tiebreak"
+    case invalidConsistencyToken = "invalid_consistency_token"
+    case namespaceRequired = "namespace_required"
+    case sqlParamCount = "sql_param_count"
     case liveIndexNotReady = "live_index_not_ready"
     case liveAppDisabled = "live_app_disabled"
     case liveAppExists = "live_app_exists"
     case liveFunctionError = "live_function_error"
     case liveFunctionTimeout = "live_function_timeout"
+    case clientDeadlineExceeded = "client_deadline_exceeded"
+    case batchPartiallyApplied = "batch_partially_applied"
     case liveFunctionOutOfMemory = "live_function_out_of_memory"
     case liveLimitExceeded = "live_limit_exceeded"
+    case resultTooLarge = "result_too_large"
     case liveAppMismatch = "live_app_mismatch"
     case liveOriginNotAllowed = "live_origin_not_allowed"
     case sessionRotate = "session_rotate"
@@ -108,13 +116,21 @@ public let loamsReasonCodes: [Reason: Code] = [
     .liveWorkerCrashed: .internal,
     .liveDeployConflict: .failedPrecondition,
     .liveSchemaViolation: .invalidArgument,
+    .filterConflict: .invalidArgument,
+    .searchAfterNeedsTiebreak: .invalidArgument,
+    .invalidConsistencyToken: .invalidArgument,
+    .namespaceRequired: .invalidArgument,
+    .sqlParamCount: .invalidArgument,
     .liveIndexNotReady: .failedPrecondition,
     .liveAppDisabled: .failedPrecondition,
     .liveAppExists: .failedPrecondition,
     .liveFunctionError: .unknown,
     .liveFunctionTimeout: .deadlineExceeded,
+    .clientDeadlineExceeded: .deadlineExceeded,
+    .batchPartiallyApplied: .aborted,
     .liveFunctionOutOfMemory: .resourceExhausted,
     .liveLimitExceeded: .resourceExhausted,
+    .resultTooLarge: .resourceExhausted,
     .liveAppMismatch: .permissionDenied,
     .liveOriginNotAllowed: .permissionDenied,
     .sessionRotate: .unavailable,

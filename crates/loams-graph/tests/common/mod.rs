@@ -363,15 +363,118 @@ pub fn is_open(admin: &GraphAdmin, graph: &str) -> bool {
         .any(|g| g.name() == graph)
 }
 
-/// Waits until the metastore clock is past `graph`'s lease deadline.
+/// The longest [`wait_out_the_lease`] waits. A paused owner's lease runs out within its TTL, plus
+/// one renewal still in flight, so this is reached only when something still renews the lease.
+pub const LEASE_WAIT: Duration = Duration::from_secs(30);
+
+/// Waits until `graph`'s owner lease is out once its owner's renewals are paused: no node holds
+/// it any more ([`Ownership::held`]), and the metastore has it released or expired.
+///
+/// Both are read again each time round. A renewal the owner sent just before its renewals were
+/// paused can still land after that, and move the deadline on. So a deadline read once is not
+/// enough: the survivor then finds the lease held and is answered "served by node N now; retry"
+/// (#1085). The owner's renewer lets go of the lease only after its last renewal has answered.
+/// So once no node holds the lease, nothing in flight can extend it.
+///
+/// # Panics
+///
+/// When the lease is still held after [`LEASE_WAIT`].
 pub async fn wait_out_the_lease(cluster: &Cluster, graph: GraphId) {
-    let lease = cluster
-        .meta
-        .lease(Consistency::Linearizable, &owner_lease_key(graph))
-        .await
-        .expect("read")
-        .expect("a lease");
-    while cluster.meta.now_ms() <= lease.deadline_ms {
+    let key = owner_lease_key(graph);
+    let started = std::time::Instant::now();
+    loop {
+        let lease = cluster
+            .meta
+            .lease(Consistency::Linearizable, &key)
+            .await
+            .expect("read");
+        let held_at_meta = lease
+            .as_ref()
+            .is_some_and(|lease| lease.is_held_at(cluster.meta.now_ms()));
+        let holders: Vec<u64> = cluster
+            .nodes
+            .iter()
+            .filter(|node| node.ownership.held(graph).is_some())
+            .map(|node| node.me.node_id)
+            .collect();
+        if !held_at_meta && holders.is_empty() {
+            return;
+        }
+        assert!(
+            started.elapsed() < LEASE_WAIT,
+            "graph {graph}'s owner lease is still held after {LEASE_WAIT:?}: {lease:?}, held by \
+             nodes {holders:?}"
+        );
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
+}
+
+/// A hard deadline over a whole test, its runtime's shutdown included (#1085): past `limit` it
+/// prints the phase the test last named and aborts the process. A hang then fails in minutes, and
+/// says where it was, instead of holding the CI job until its timeout. Dropping it disarms it.
+///
+/// Create it before the test's runtime, so the runtime drops first: a runtime waits for its
+/// blocking tasks when it drops, and that wait is inside the deadline too.
+pub struct Deadline {
+    phase: Arc<Mutex<String>>,
+    disarm: Option<std::sync::mpsc::Sender<()>>,
+    watchdog: Option<std::thread::JoinHandle<()>>,
+}
+
+impl Deadline {
+    pub fn start(test: &'static str, limit: Duration) -> Self {
+        let phase = Arc::new(Mutex::new("starting".to_string()));
+        let (disarm, disarmed) = std::sync::mpsc::channel::<()>();
+        let seen = Arc::clone(&phase);
+        let watchdog = std::thread::Builder::new()
+            .name("test-deadline".to_string())
+            .spawn(move || {
+                if let Err(std::sync::mpsc::RecvTimeoutError::Timeout) =
+                    disarmed.recv_timeout(limit)
+                {
+                    let phase = seen
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .clone();
+                    eprintln!(
+                        "{test}: still running after {limit:?}, at {phase:?}: it hangs; aborting \
+                         the process so the test fails now"
+                    );
+                    std::process::abort();
+                }
+            })
+            .expect("the deadline's thread");
+        Self {
+            phase,
+            disarm: Some(disarm),
+            watchdog: Some(watchdog),
+        }
+    }
+
+    /// Names the phase the test is in now, for the message if the deadline passes.
+    pub fn phase(&self, phase: impl Into<String>) {
+        *self
+            .phase
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = phase.into();
+    }
+}
+
+impl Drop for Deadline {
+    fn drop(&mut self) {
+        drop(self.disarm.take());
+        if let Some(watchdog) = self.watchdog.take() {
+            let _ = watchdog.join();
+        }
+    }
+}
+
+/// A multi-thread runtime of `workers` threads, as `#[tokio::test(flavor = "multi_thread")]`
+/// builds, for a test that keeps a [`Deadline`] over it.
+pub fn runtime(workers: usize) -> tokio::runtime::Runtime {
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(workers)
+        .enable_all()
+        .build()
+        .expect("a runtime")
 }

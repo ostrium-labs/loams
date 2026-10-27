@@ -16,7 +16,7 @@ means in practice.
 | [Monorepo integration](monorepo.md)     | Nx validation, isolated toolchain versions, pnpm dependencies, and protobuf lint/generation/drift |
 | [Getting started](getting-started.md)   | Install, configure, run, first dashboard, first plugin enablement, troubleshooting                |
 | [Writing a plugin](plugin-authoring.md) | `PluginManifest`, `PluginLoader`, the loader lifecycle, scopes, UI pages, agent skills, A2A       |
-| [Auth setup](auth-setup.md)             | Authentik OIDC, including the configuration mistakes that fail silently                           |
+| [Auth setup](auth-setup.md)             | OIDC, including the configuration mistakes that fail silently                                     |
 | [Security model](security.md)           | What is enforced where, and the traps that are easy to get wrong                                  |
 | [A2A endpoint](a2a.md)                  | Agent cards, `message:send`, Task/Artifact mapping, and the documented deviations                 |
 | [Upstream adapters](upstreams.md)       | One subsection per upstream: base URL, auth, env vars, API quirks, rate limits                    |

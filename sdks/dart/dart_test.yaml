@@ -1,0 +1,3 @@
+# One test file at a time: the conformance suite and the app replay both write
+# sdks/fixtures/results/dart.json, and two writers racing would drop a fixture.
+concurrency: 1

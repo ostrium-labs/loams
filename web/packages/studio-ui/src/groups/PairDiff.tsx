@@ -48,13 +48,11 @@ export function PairDiff({
         <span className="truncate">{to}</span>
       </div>
       {renderable === null ? (
-        <p className="m-0 py-3 text-[0.86rem] text-muted">
-          No difference between these two results.
-        </p>
+        <p className="m-0 py-3 text-body text-muted">No difference between these two results.</p>
       ) : renderable.kind === "raw" ? (
         <div className="flex flex-col gap-1">
-          <p className="m-0 text-[0.8rem] text-muted">{renderable.reason}</p>
-          <pre className="m-0 max-h-[28rem] overflow-auto border border-rule-soft bg-surface p-3 font-mono text-[0.76rem] text-ink">
+          <p className="m-0 text-small text-muted">{renderable.reason}</p>
+          <pre className="m-0 max-h-[28rem] overflow-auto border border-rule-soft bg-surface p-3 font-mono text-small text-ink">
             {renderable.text}
           </pre>
         </div>
@@ -70,7 +68,7 @@ export function PairDiff({
             >
               <h4
                 className={
-                  /* mono-ok: path */ "m-0 border-b border-rule-soft bg-surface px-3 py-1.5 font-mono text-[0.76rem] font-normal text-ink"
+                  /* mono-ok: path */ "m-0 border-b border-rule-soft bg-surface px-3 py-1.5 font-mono text-small font-normal text-ink"
                 }
               >
                 {path}

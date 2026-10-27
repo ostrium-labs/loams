@@ -1,25 +1,27 @@
 module graph
 
-# Loams Graph's authorization type (GR1 Task 24, design §48 §11.1, D750).
+# Loams Graph's authorization type (GR1 Task 24, design §48 §11.1, D750), hung off
+# `environment` by design 76 (Q1207, D1603).
 #
-# The object is `graph:<ns>/<name>`. A relation on the namespace reaches every graph in it; a
-# direct tuple reaches one graph. `crates/loams-graph/src/authz.rs` checks these relations per
-# RPC: statements by their access (`can_read`, `can_write`, DDL `can_admin`), `GetGraph`,
-# `GetSchema` and `ListGraphs` `can_read` (`ListGraphs` filters the namespace's graphs),
-# `CreateGraph` `admin` on the namespace, and `UpdateGraph`/`DeleteGraph`/`RestoreGraph`/
-# `ExportGraph`/`ImportGraph` `can_admin`, plus the project `admin` role in a protected
-# environment. Credential scopes `graph:read|write|admin` cap the relation.
+# The object is `graph:<ns>/<name>`. A role on the environment (a Loams namespace) reaches every
+# graph in it; a direct tuple reaches one graph. `crates/loams-graph/src/authz.rs` checks these
+# relations per RPC: statements by their access (`can_read`, `can_write`, DDL `can_admin`),
+# `GetGraph`, `GetSchema` and `ListGraphs` `can_read` (`ListGraphs` filters the environment's
+# graphs), `CreateGraph` `deployer` on the environment, and `UpdateGraph`/`DeleteGraph`/
+# `RestoreGraph`/`ExportGraph`/`ImportGraph` `can_admin`, plus the project `admin` role in a
+# protected environment. Credential scopes `graph:read|write|admin` cap the relation.
 #
-# Until MT1's OpenFGA authorizer lands, the server answers these relations from its principal
-# store's org and project roles (`crates/loams/src/api/graph_auth.rs`). `core.fga` (CP1 Task 3)
-# owns the `namespace`, `user`, `service_account` and `agent` types this module names.
+# Until IA2's `loams-authz` lands (design 76, D1610), the server answers these relations from
+# its principal store's org and project roles (`crates/loams/src/api/graph_auth.rs`).
+# `core.fga` owns the `environment`, `user`, `service_account` and `agent` types this module
+# names.
 
 type graph
   relations
-    define namespace: [namespace]
-    define reader: [user, service_account, agent] or reader from namespace
-    define writer: [user, service_account, agent] or writer from namespace
-    define admin: [user, service_account] or admin from namespace
+    define environment: [environment]
+    define reader: [user, service_account, agent] or viewer from environment
+    define writer: [user, service_account, agent] or editor from environment
+    define admin: [user, service_account] or deployer from environment
     define can_read: reader or writer or admin
     define can_write: writer or admin
     define can_admin: admin

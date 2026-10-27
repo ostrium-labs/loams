@@ -24,7 +24,9 @@
 //!    __loams_insert … SELECT …` runs the query over the namespace's pinned read
 //!    views (HS1 Task 11), as any query.
 //! 4. **Files.** `SELECT CAST(c, '<the Iceberg type's ClickHouse type>') AS c, …
-//!    FROM __loams_insert ORDER BY <sorting key>` comes back as one `ArrowStream`
+//!    FROM __loams_insert ORDER BY <sorting key>, <insert order>` — merged
+//!    first as ClickHouse merges an inserted block ([`merged_on_insert`]) —
+//!    comes back as one `ArrowStream`
 //!    document, which `loams_house_lake::write::DataWriter` turns into Parquet
 //!    data files with Iceberg field ids and statistics, split by partition and
 //!    size, as it arrives.
@@ -45,6 +47,7 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use bytes::Bytes;
 use loams_house_ipc::{Execute, InputSpec, Limits, Output, Progress, SessionRef};
+use loams_house_lake::spec::{PrimitiveType, Type};
 use loams_house_lake::write::DataWriter;
 use sha2::{Digest, Sha256};
 use tokio::sync::oneshot;
@@ -77,6 +80,7 @@ const SESSION_TIMEOUT_MS: u64 = 600_000;
 /// The settings an `INSERT` into a lake table takes for itself; none reaches
 /// chDB.
 const CONSUMED: &[&str] = &[
+    crate::read::SEQUENCED,
     "insert_deduplicate",
     "insert_deduplication_token",
     "async_insert",
@@ -157,6 +161,29 @@ pub async fn target(
     if !crate::identity::granted(user, &database, &name) {
         return Err(crate::identity::not_granted(user, &database, &name));
     }
+    // HE1 R9.13: a `Distributed` table writes its local table; a view takes no
+    // rows, as in ClickHouse.
+    let (database, name, table) = if ddl::class_of(&table.metadata) == TableClass::View {
+        let Some((local_db, local)) = ddl::distributed_target(&table) else {
+            return Err(HouseError::from(ChError::not_implemented(format!(
+                "INSERT INTO {database}.{name}: it is a view, which holds no rows"
+            ))));
+        };
+        if !crate::identity::granted(user, &local_db, &local) {
+            return Err(crate::identity::not_granted(user, &local_db, &local));
+        }
+        let table = lake
+            .lake_table(
+                namespace,
+                &local_db,
+                &local,
+                "INSERT INTO a Distributed table over",
+            )
+            .await?;
+        (local_db, local, table)
+    } else {
+        (database, name, table)
+    };
     if ddl::class_of(&table.metadata) == TableClass::Pipe {
         return Err(HouseError::from(ChError::not_implemented(format!(
             "INSERT INTO {database}.{name}: the table is a pipe, which reads its stream; \
@@ -439,6 +466,15 @@ pub fn staging_ddl(ch: &ChTable) -> Result<String, HouseError> {
             ch.database, ch.name
         ))));
     }
+    // HE1 R9.12: a table's `CHECK` constraints hold on its staging table, so
+    // chDB checks every row (`469 VIOLATED_CONSTRAINT`, as ClickHouse).
+    for constraint in ch.constraints.iter().filter(|c| c.kind == "CHECK") {
+        let expression = expr::reprint(&constraint.expression).map_err(|why| refusal(ch, &why))?;
+        columns.push(format!(
+            "CONSTRAINT {} CHECK {expression}",
+            quote_name(&constraint.name)
+        ));
+    }
     Ok(format!(
         "CREATE TEMPORARY TABLE {STAGING} ({}) ENGINE = Memory",
         columns.join(", ")
@@ -462,24 +498,25 @@ pub fn staging_head(columns: Option<&[String]>) -> String {
 
 /// The `SELECT` that writes the rows out: every field of the table's Iceberg
 /// schema, in order, cast to the ClickHouse type chDB's Iceberg reader gives it
-/// (so its Arrow type is the field's, up to what the lake conforms), sorted by
-/// the table's `ORDER BY`.
+/// (so its Arrow type is the field's, up to what the lake conforms), merged as
+/// ClickHouse merges an inserted block ([`merged_on_insert`]) and sorted by the
+/// table's `ORDER BY`, then by insert order ([`ORDER`]).
 pub fn output_sql(target: &Target) -> Result<String, HouseError> {
     let ch = &target.ch;
     let schema = target.table.metadata.current_schema();
     let mut columns = Vec::new();
     for field in schema.as_struct().fields() {
-        if !ch
+        let Some(column) = ch
             .columns
             .iter()
-            .any(|c| c.stored() && c.name == field.name)
-        {
+            .find(|c| c.stored() && c.name == field.name)
+        else {
             return Err(HouseError::from(ChError::bad_arguments(format!(
                 "Table {}.{}: the Iceberg field {} has no ClickHouse column, so the House \
                  cannot write the table",
                 ch.database, ch.name, field.name
             ))));
-        }
+        };
         let Some(storage) =
             views::printable_type(&types::from_iceberg(&field.field_type, field.required))
         else {
@@ -492,18 +529,172 @@ pub fn output_sql(target: &Target) -> Result<String, HouseError> {
             ));
         };
         let name = quote_name(&field.name);
+        // D1572, HE1 R9.61: nanosecond times are written as
+        // nanoseconds since the epoch (a `CAST` to an integer would give
+        // seconds).
+        let nanos = matches!(*field.field_type, Type::Primitive(PrimitiveType::Long))
+            && types::ChType::parse(&column.ch_type).is_ok_and(|t| t.nanos_zone().is_some());
+        let value = if nanos {
+            format!("toUnixTimestamp64Nano({name})")
+        } else {
+            name.clone()
+        };
         columns.push(format!(
-            "CAST({name}, {}) AS {name}",
+            "CAST({value}, {}) AS {name}",
             quote_string(&storage)
         ));
     }
     let key = expr::key_elements(&ch.order_by).map_err(|why| refusal(ch, &why))?;
-    let mut sql = format!("SELECT {}\nFROM {STAGING}", columns.join(", "));
-    if !key.is_empty() {
-        let elements: Vec<String> = key.into_iter().map(|(element, _)| element).collect();
-        sql.push_str(&format!("\nORDER BY {}", elements.join(", ")));
-    }
-    Ok(sql)
+    let rows = merged_on_insert(ch, &key)?;
+    let mut order: Vec<String> = key.into_iter().map(|(element, _)| element).collect();
+    order.push(ORDER.to_string());
+    Ok(format!(
+        "SELECT {}\nFROM ({rows})\nORDER BY {}",
+        columns.join(", "),
+        order.join(", ")
+    ))
+}
+
+/// The staged rows' position in the `INSERT`: the files are sorted by the
+/// table's key and then by it, as ClickHouse's writer sorts stably, so rows of
+/// one key stay in the order they were inserted (the last of equal versions
+/// wins a `ReplacingMergeTree`, R9.4). It is read with `max_threads = 1`
+/// ([`OUTPUT_SETTINGS`]), so the staging table's blocks come in order.
+const ORDER: &str = "__loams_order";
+
+/// The settings the output `SELECT` runs with beyond [`ARROW_SETTINGS`].
+const OUTPUT_SETTINGS: &[(&str, &str)] = &[("max_threads", "1")];
+
+/// The staged rows, merged within the `INSERT` as ClickHouse merges an
+/// inserted block (`optimize_on_insert`, on by default; measured on the
+/// 26.9.2.8 oracle, R9.4): a `ReplacingMergeTree` keeps per key the row of the
+/// greatest version, the last inserted among equals (and keeps `is_deleted`
+/// rows, which only `FINAL` drops); a `SummingMergeTree` sums per key, keeps
+/// the first row's other columns, and drops a key whose sums are all zero; a
+/// `VersionedCollapsingMergeTree` cancels rows of opposite sign per key and
+/// version as `FINAL` does ([`views`]); a `MergeTree` keeps every row.
+fn merged_on_insert(ch: &ChTable, key: &[(String, Option<String>)]) -> Result<String, HouseError> {
+    // Named, not `*`: `*` leaves out `MATERIALIZED` columns.
+    let staged: Vec<String> = ch
+        .columns
+        .iter()
+        .filter(|c| c.stored())
+        .map(|c| quote_name(&c.name))
+        .collect();
+    let staged = staged.join(", ");
+    let rows = format!("SELECT {staged}, rowNumberInAllBlocks() AS {ORDER} FROM {STAGING}");
+    let elements: Vec<String> = key.iter().map(|(element, _)| element.clone()).collect();
+    let by = if elements.is_empty() {
+        "tuple()".to_string()
+    } else {
+        elements.join(", ")
+    };
+    let engine = ddl::LakeEngine::parse(&ch.engine).unwrap_or(ddl::LakeEngine::MergeTree);
+    Ok(match engine {
+        ddl::LakeEngine::MergeTree => rows,
+        ddl::LakeEngine::Replacing { ver, .. } => {
+            let mut order = Vec::new();
+            if let Some(ver) = ver {
+                order.push(format!("{} DESC", quote_name(&ver)));
+            }
+            order.push(format!("{ORDER} DESC"));
+            format!(
+                "SELECT * FROM ({rows}) ORDER BY {} LIMIT 1 BY {by}",
+                order.join(", ")
+            )
+        }
+        ddl::LakeEngine::Summing { columns: summed } => {
+            let key_columns: Vec<&str> = key.iter().filter_map(|(_, c)| c.as_deref()).collect();
+            let mut select = Vec::new();
+            let mut sums = Vec::new();
+            for column in ch.columns.iter().filter(|c| c.stored()) {
+                let name = quote_name(&column.name);
+                let is_summed = match &summed {
+                    Some(list) => list.iter().any(|s| s == &column.name),
+                    None => {
+                        !key_columns.contains(&column.name.as_str())
+                            && views::is_numeric(&column.ch_type)
+                    }
+                };
+                if key_columns.contains(&column.name.as_str()) {
+                    select.push(name);
+                } else if is_summed {
+                    select.push(format!("sumWithOverflow({name}) AS {name}"));
+                    sums.push(format!("{name} = 0"));
+                } else {
+                    select.push(format!("argMin({name}, __loams_position) AS {name}"));
+                }
+            }
+            // The group's first position, under another name than the rows'
+            // so that no aggregate reads another's alias.
+            select.push(format!("min(__loams_position) AS {ORDER}"));
+            let having = if sums.is_empty() {
+                String::new()
+            } else {
+                format!(" HAVING NOT ({})", sums.join(" AND "))
+            };
+            format!(
+                "SELECT {} FROM (SELECT {staged}, rowNumberInAllBlocks() AS __loams_position \
+                 FROM {STAGING}) GROUP BY {by}{having}",
+                select.join(", ")
+            )
+        }
+        // HE1 R9.14: a Null table's rows are stored for its materialized views
+        // (reads never see them).
+        ddl::LakeEngine::Null => rows,
+        // HE1 R9.14: an inserted block of an AggregatingMergeTree is merged as
+        // ClickHouse merges it (`optimize_on_insert`): per sorting key, states
+        // with their function's `-MergeState`, simple columns with their
+        // function, the first row's value of the rest.
+        ddl::LakeEngine::Aggregating => {
+            let key_columns: Vec<&str> = key.iter().filter_map(|(_, c)| c.as_deref()).collect();
+            let mut select = Vec::new();
+            for column in ch.columns.iter().filter(|c| c.stored()) {
+                let name = quote_name(&column.name);
+                let refused = || refusal(ch, &format!("the type of column {}", column.name));
+                if key_columns.contains(&column.name.as_str()) {
+                    select.push(name);
+                    continue;
+                }
+                select.push(match crate::types::ChType::parse(&column.ch_type)? {
+                    crate::types::ChType::AggregateState => {
+                        let (function, params) =
+                            views::state_function(&column.ch_type).ok_or_else(refused)?;
+                        format!("{function}MergeState{params}({name}) AS {name}")
+                    }
+                    crate::types::ChType::SimpleAggregate(function, _) => {
+                        let (function, params) =
+                            views::aggregate_function(&function).ok_or_else(refused)?;
+                        format!("{function}{params}({name}) AS {name}")
+                    }
+                    _ => format!("argMin({name}, __loams_position) AS {name}"),
+                });
+            }
+            select.push(format!("min(__loams_position) AS {ORDER}"));
+            format!(
+                "SELECT {} FROM (SELECT {staged}, rowNumberInAllBlocks() AS __loams_position \
+                 FROM {STAGING}) GROUP BY {by}",
+                select.join(", ")
+            )
+        }
+        ddl::LakeEngine::VersionedCollapsing { sign, version } => {
+            let sign = quote_name(&sign);
+            let group = if elements.is_empty() {
+                quote_name(&version)
+            } else {
+                format!("{by}, {}", quote_name(&version))
+            };
+            format!(
+                "SELECT * FROM (SELECT *, row_number() OVER (PARTITION BY {group}, \
+                 __loams_balance ORDER BY {ORDER} DESC) AS __loams_rank FROM (SELECT *, \
+                 sum({sign}) OVER (PARTITION BY {group} ORDER BY {ORDER} ROWS BETWEEN \
+                 UNBOUNDED PRECEDING AND CURRENT ROW) AS __loams_balance, sum({sign}) OVER \
+                 (PARTITION BY {group}) AS __loams_total FROM ({rows})) WHERE {sign} = \
+                 sign(__loams_total) AND {sign} * __loams_balance BETWEEN 1 AND \
+                 abs(__loams_total)) WHERE __loams_rank = 1"
+            )
+        }
+    })
 }
 
 /// `497`: the table's catalog properties hold what the House will not run.
@@ -875,6 +1066,7 @@ async fn stage(
     let mut out = execute(ctx, session, true, output, "ArrowStream");
     out.settings = ARROW_SETTINGS
         .iter()
+        .chain(OUTPUT_SETTINGS)
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
     out.output = Output::Document {
@@ -978,9 +1170,58 @@ pub struct CreateAs {
     pub name: String,
     /// `IF NOT EXISTS`.
     pub if_not_exists: bool,
+    /// An inner-table materialized view (HE1 R9.14): once the table is made,
+    /// the view `name TO name AS <select>` over its source.
+    pub inner_view: bool,
 }
 
 impl CreateAs {
+    /// `CREATE MATERIALIZED VIEW mv [(columns)] ENGINE = … AS SELECT …` with no
+    /// `TO` (HE1 R9.14): ClickHouse makes an inner table and reads the view's
+    /// name as that table. The House makes a lake table named as the view, with
+    /// the `SELECT`'s columns (or the ones written) and the clauses written,
+    /// then the view into it; `POPULATE` is refused as for any view.
+    pub fn inner_view(text: &str, current: &str) -> Result<Self, HouseError> {
+        let mv = ddl::parse_create_mv(text)?;
+        if mv.populate {
+            return Err(HouseError::from(ChError::not_implemented(
+                "POPULATE is not supported (ClickHouse advises against it: rows that arrive while \
+                 it runs are lost); fill the view's table with INSERT … SELECT instead",
+            )));
+        }
+        if mv.or_replace || mv.refresh {
+            return Err(HouseError::from(ChError::not_implemented(
+                "CREATE OR REPLACE and REFRESH materialized views are not on the House's surface",
+            )));
+        }
+        let database = mv.database.clone().unwrap_or_else(|| current.to_string());
+        let head = format!(
+            "CREATE TABLE {}{}.{}",
+            if mv.if_not_exists {
+                "IF NOT EXISTS "
+            } else {
+                ""
+            },
+            quote_name(&database),
+            quote_name(&mv.name)
+        );
+        Ok(Self {
+            statement: text.to_string(),
+            head: match &mv.inner_columns {
+                Some(columns) => format!("{head} {columns}"),
+                None => head,
+            },
+            clauses: mv.inner_clauses.clone(),
+            has_columns: mv.inner_columns.is_some(),
+            select: mv.select.clone(),
+            empty: true,
+            database,
+            name: mv.name,
+            if_not_exists: mv.if_not_exists,
+            inner_view: true,
+        })
+    }
+
     /// Reads a `CREATE TABLE … AS SELECT`; `current` is the request's database.
     pub fn parse(text: &str, current: &str) -> Result<Self, HouseError> {
         let create = ddl::parse_create_table(text)?;
@@ -1005,6 +1246,7 @@ impl CreateAs {
             database: create.database.unwrap_or_else(|| current.to_string()),
             name: create.name,
             if_not_exists: create.if_not_exists,
+            inner_view: false,
         })
     }
 }
@@ -1145,6 +1387,24 @@ pub async fn create_as(
             return Err(HouseError::from(ChError::syntax_error(
                 "the table's CREATE TABLE was not a lake table's",
             )));
+        }
+    }
+    if plan.inner_view {
+        let view = format!(
+            "CREATE MATERIALIZED VIEW {db}.{name} TO {db}.{name} AS {}",
+            plan.select,
+            db = quote_name(&plan.database),
+            name = quote_name(&plan.name),
+        );
+        if let Err(err) =
+            crate::pipes::create_view_into(ctx.lake, ctx.namespace, ctx.database, &view, true).await
+        {
+            // No inner table without its view.
+            let _ = ctx
+                .lake
+                .drop_table(ctx.namespace, &plan.database, &plan.name, true)
+                .await;
+            return Err(err);
         }
     }
     if plan.empty {

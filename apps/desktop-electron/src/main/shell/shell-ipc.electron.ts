@@ -16,6 +16,8 @@ export interface ShellIpcDeps {
 	onBadge: (n: number) => void;
 	/** Notification click: focus the window. */
 	onNotifyClick: (route?: string) => void;
+	/** The console has painted (`shell:ready`): the splash gate shows the window (D1084). */
+	onReady: () => void;
 }
 
 export function registerShellIpc(deps: ShellIpcDeps): void {
@@ -60,6 +62,10 @@ export function registerShellIpc(deps: ShellIpcDeps): void {
 		const w = BrowserWindow.fromWebContents(e.sender);
 		const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts);
 		return r.canceled ? null : (r.filePaths[0] ?? null);
+	});
+	ipcMain.handle(CH.shellReady, (e) => {
+		assertTrustedSender(e);
+		deps.onReady();
 	});
 	ipcMain.handle(CH.shellBadge, (e, count: unknown) => {
 		assertTrustedSender(e);

@@ -18,8 +18,8 @@ use crate::errors::{ChError, HouseError};
 /// Where the HTTP interface listens by default (§49 Shared contracts).
 pub const DEFAULT_LISTEN: &str = "127.0.0.1:8123";
 
-/// Where the native protocol listens by default (§49 Shared contracts; served from
-/// HS1 Task 31).
+/// Where the native protocol listens by default (§49 Shared contracts; served
+/// from HE0, R9.40, ahead of HS1 Task 31).
 pub const DEFAULT_NATIVE_LISTEN: &str = "127.0.0.1:9000";
 
 /// Where admin and metrics listen by default (§49 Shared contracts; served from
@@ -118,6 +118,17 @@ pub struct HouseConfig {
     /// The admin listener (`--admin-listen`, 8125, loopback only): `GET
     /// /metrics` (HS1 Task 23). `None`: not served.
     pub admin_listen: Option<SocketAddr>,
+    /// The ClickHouse native protocol's plaintext listener (`--native-listen`,
+    /// 9000, loopback only; HE0, R9.40). `None`: not served.
+    pub native_listen: Option<SocketAddr>,
+    /// Whether [`HouseConfig::native_listen`] is a default rather than asked
+    /// for (`--single-node`'s 127.0.0.1:9000): a port already taken then skips
+    /// the listener with a note on stderr instead of failing the start.
+    pub native_listen_optional: bool,
+    /// The native protocol's TLS listener (`--native-tls-listen`, 9440; HE0,
+    /// R9.40): any address, with [`HouseConfig::tls`]'s certificate, so it needs
+    /// the TLS listener's configuration. `None`: not served.
+    pub native_tls_listen: Option<SocketAddr>,
     /// The engine whose streams `LoamsStream` pipes read (HS1 Task 16);
     /// `None`: no pipe can be made.
     pub engine: Option<EngineLink>,
@@ -213,6 +224,9 @@ impl Default for HouseConfig {
             snapshot_retention: crate::catalog::DEFAULT_RETENTION,
             retention_interval: crate::retention::DEFAULT_SWEEP_INTERVAL,
             admin_listen: None,
+            native_listen: None,
+            native_listen_optional: false,
+            native_tls_listen: None,
             engine: None,
             pipe_interval: Duration::from_secs(1),
             view_interval: Duration::from_secs(5),
@@ -263,7 +277,7 @@ pub fn check_tls_users(listen: SocketAddr, users: &[UserMap]) -> Result<(), Hous
     if listen.ip().is_loopback() {
         return Ok(());
     }
-    match users.iter().find(|u| u.verifies("")) {
+    match users.iter().find(|u| u.has_empty_password()) {
         Some(user) => Err(HouseError::from(ChError::bad_arguments(format!(
             "house TLS listen on {listen}: user {:?} has an empty password, and a listener \
              other hosts reach takes none",
@@ -272,6 +286,10 @@ pub fn check_tls_users(listen: SocketAddr, users: &[UserMap]) -> Result<(), Hous
         None => Ok(()),
     }
 }
+
+/// SHA-256 of the empty string: the digest of a user with no password.
+const EMPTY_PASSWORD_SHA256: &str =
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
 /// A development user (FL2 Task 2): a name, the SHA-256 of its password, the
 /// namespace its queries run in, and whether it may only read. Task 20 replaces
@@ -315,6 +333,29 @@ impl UserMap {
             link: false,
             principal: None,
         }
+    }
+
+    /// An internal identity for the House's own work (compaction, pipes): every
+    /// scope in `namespace`, and no password, so it can never sign in
+    /// ([`Self::verifies`] compares against an empty digest, which no
+    /// password's SHA-256 equals).
+    pub fn system(user: &str, namespace: u64) -> Self {
+        Self {
+            user: user.to_string(),
+            password_sha256: String::new(),
+            namespace,
+            readonly: false,
+            scopes: crate::identity::Scopes::ALL,
+            grants: None,
+            link: false,
+            principal: None,
+        }
+    }
+
+    /// Whether this user signs in with the empty password.
+    pub fn has_empty_password(&self) -> bool {
+        self.password_sha256
+            .eq_ignore_ascii_case(EMPTY_PASSWORD_SHA256)
     }
 
     /// The engine's link user (HS1 Task 20): signs in with `key` and acts for

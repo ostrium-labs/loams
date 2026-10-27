@@ -62,7 +62,7 @@ const COMMAND_TITLES: Partial<Record<KeybindingCommand, string>> = {
 
 function toCommand(item: StudioPaletteItem, keys: StudioKeys, threadOpen: boolean): PaletteCommand {
   const shortcut = item.shortcutCommand
-    ? shortcutKeysForCommand(keys.keybindings.resolved(), item.shortcutCommand, {
+    ? shortcutKeysForCommand(keys.keybindings.shown(), item.shortcutCommand, {
         platform: keys.platform,
         context: {
           threadOpen,

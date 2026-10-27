@@ -47,7 +47,17 @@ func Unary[Req, Res any](
 	settings := &callSettings{}
 	settings.resolve(options)
 
-	keyed := ApplyIdempotencyKey(request, settings.idempotencyKey, binding.TakesIdempotencyKey)
+	session := invoker.sessionFor(settings)
+	// An explicit token wins; otherwise the session's, which is what makes a
+	// session read-your-writes rather than record a token and never send it
+	// (R4).
+	token := consistencyToken(settings, session, binding.Package)
+	prepared, inField, err := prepareRequest(binding, request, invoker.defaults.Namespace, token)
+	if err != nil {
+		return nil, err
+	}
+
+	keyed := ApplyIdempotencyKey(prepared, settings.idempotencyKey, binding.TakesIdempotencyKey)
 	message, ok := keyed.Request.(*Req)
 	if !ok {
 		// ApplyIdempotencyKey only clones, so this cannot happen; say so rather
@@ -55,14 +65,14 @@ func Unary[Req, Res any](
 		return nil, newInternalError(binding.RPC, "the keyed request is a %T, not %T", keyed.Request, request)
 	}
 
-	session := invoker.sessionFor(settings)
 	plan := invoker.plan(binding, settings, keyed.Keyed)
-	// An explicit token wins; otherwise the session's, which is what makes
-	// WithSessionConsistency read-your-writes rather than record a token and
-	// never send it (R4).
-	token := consistencyToken(settings, session)
+	// R12: one budget for the whole call, retries and backoff included.
+	timeout := invoker.timeoutFor(settings)
+	callCtx, cancel := withBudget(ctx, timeout)
+	defer cancel()
 
-	result, err := CallWithRetry(ctx, message, func(ctx context.Context, _ Attempt) (any, error) {
+	var headerToken string
+	result, err := CallWithRetry(callCtx, message, func(ctx context.Context, _ Attempt) (any, error) {
 		req := connect.NewRequest(message)
 		headers, headerErr := invoker.bearer(ctx, settings.headers)
 		if headerErr != nil {
@@ -70,26 +80,32 @@ func Unary[Req, Res any](
 		}
 		req.Header().Del(ConsistencyHeader)
 		applyHeaders(req.Header(), headers)
-		if token != "" {
+		// A request with a `consistency` field carries the token there; one
+		// without carries it as a header, which is all such an RPC can read.
+		if token != "" && !inField {
 			req.Header().Set(ConsistencyHeader, token)
 		}
 		response, callErr := method(ctx, req)
 		if callErr != nil {
 			return nil, callErr
 		}
+		headerToken = response.Header().Get(ConsistencyHeader)
 		return response.Msg, nil
 	}, plan, binding.RPC)
 	if err != nil {
+		if deadline, ok := clientDeadline(ctx, callCtx, binding.RPC, timeout, err); ok {
+			return nil, deadline
+		}
 		return nil, err
 	}
 	response, ok := result.(*Res)
 	if !ok {
 		return nil, newInternalError(binding.RPC, "the call returned %T, not %T", result, response)
 	}
-	// A store that cannot merge a token counts it and carries on: the RPC
+	// A token the session cannot parse is counted and dropped: the RPC
 	// succeeded, and turning that into an error would make a caller that
 	// retries on it perform the write twice.
-	recordConsistency(session, response)
+	recordConsistency(session, response, headerToken, binding.Package)
 	return response, nil
 }
 
@@ -114,7 +130,19 @@ func ServerStream[Req, Res any](
 	settings.resolve(options)
 
 	session := invoker.sessionFor(settings)
-	token := consistencyToken(settings, session)
+	token := consistencyToken(settings, session, binding.Package)
+	prepared, inField, err := prepareRequest(binding, request, invoker.defaults.Namespace, token)
+	if err != nil {
+		return nil, err
+	}
+	request = prepared
+	// A stream has no default deadline (R12); a per-call WithTimeout bounds
+	// opening it and every message after.
+	if settings.timeout != nil && *settings.timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeoutCause(ctx, *settings.timeout, errClientDeadline)
+		context.AfterFunc(ctx, cancel)
+	}
 
 	open := func(ctx context.Context, message *Req) (*connect.ServerStreamForClient[Res], error) {
 		req := connect.NewRequest(message)
@@ -124,7 +152,7 @@ func ServerStream[Req, Res any](
 		}
 		req.Header().Del(ConsistencyHeader)
 		applyHeaders(req.Header(), headers)
-		if token != "" {
+		if token != "" && !inField {
 			req.Header().Set(ConsistencyHeader, token)
 		}
 		return method(ctx, req)
@@ -196,14 +224,19 @@ func newStream[Req, Res any](
 // consistencyToken resolves which token a read goes out with: an explicit one
 // wins, otherwise the session's — which is what makes WithSessionConsistency
 // read-your-writes rather than record a token and never send it (R4).
-func consistencyToken(settings *callSettings, session ConsistencyTokenStore) string {
+func consistencyToken(settings *callSettings, session ConsistencyTokenStore, pkg string) string {
 	if settings.consistency != nil && settings.consistency.Token != "" {
 		return settings.consistency.Token
 	}
 	if session == nil {
 		return ""
 	}
-	return session.Current()
+	// An app package's read takes the session's token only for collections
+	// and SQL (SDKP-17); any other package reads its own scope.
+	if NamespacedPackages[pkg] && !SessionPackages[pkg] {
+		return ""
+	}
+	return currentIn(session, pkg)
 }
 
 // applyHeaders copies headers onto a request, replacing any with the same name.

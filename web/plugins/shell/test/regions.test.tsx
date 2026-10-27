@@ -252,7 +252,7 @@ describe('panel keys and focus', () => {
     });
     fireEvent.keyDown(window, { key: 'i', ctrlKey: true });
     expect(inspector.state().open).toBe(true);
-    fireEvent.keyDown(window, { key: 'J', metaKey: true });
+    fireEvent.keyDown(window, { key: 'J', ctrlKey: true });
     expect(drawer.state().open).toBe(true);
     fireEvent.keyDown(window, { key: 'j' });
     expect(drawer.state().open).toBe(true);
@@ -261,7 +261,7 @@ describe('panel keys and focus', () => {
     const term = document.createElement('div');
     term.className = 'xterm';
     document.body.append(rich, term);
-    fireEvent.keyDown(rich, { key: 'i', metaKey: true });
+    fireEvent.keyDown(rich, { key: 'i', ctrlKey: true });
     fireEvent.keyDown(term, { key: 'j', ctrlKey: true });
     expect(inspector.state().open).toBe(true);
     expect(drawer.state().open).toBe(true);

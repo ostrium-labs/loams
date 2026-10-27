@@ -6,10 +6,16 @@
 #   the fixtures reach its loopback listeners from a container that shares
 #   the `loams` container's network namespace;
 # - no Postgres compute (it needs a tenant and a timeline the gate does not
-#   create yet); the pageserver and the safekeeper run, so the drain runs;
+#   create yet), and so no `pg-bootstrap`: a one-shot nothing waits for makes
+#   `compose up --wait` fail once it exits (0.1.0's bundle has it); the
+#   pageserver and the safekeeper run, so the drain runs;
 # - no published host ports, so parallel stacks on one runner do not collide;
 # - TiKV's open-file limit raised (as the release compose file does since
-#   preview.3).
+#   preview.3);
+# - (upgrade-gate.sh, not this file) the House and agentd on the previous
+#   release's published images, through HOUSE_IMAGE and AGENTD_IMAGE: the
+#   gate builds only the candidate's `loams` image, and the candidate's
+#   fabric and agentd images are published with the release.
 services:
   # TiKV refuses to start below 82920 open files; preview.2's compose file
   # does not raise the limit, and CI's Docker defaults to 65536.
@@ -24,6 +30,8 @@ services:
   tailscale:
     profiles: [disabled]
   compute1:
+    profiles: [disabled]
+  pg-bootstrap:
     profiles: [disabled]
   pageserver:
     ports: !reset []

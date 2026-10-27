@@ -54,6 +54,12 @@ let package = Package(
             dependencies: ["Loams"],
             path: "Examples/Quickstart"
         ),
+        // The "Build an app" example (SDKP L7 part D).
+        .executableTarget(
+            name: "Notes",
+            dependencies: ["Loams"],
+            path: "Examples/Notes"
+        ),
     ],
     swiftLanguageVersions: [.v6]
 )

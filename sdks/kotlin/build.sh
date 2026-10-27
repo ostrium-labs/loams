@@ -181,6 +181,13 @@ nothing implements it yet — this is the state the tests were committed in."
   "$kotlinc_path" $kotlin_heap -nowarn -jvm-target 11 \
     -cp "$lib/$protobuf_java_jar:$classes" -d "$test_classes" "@$build/test-sources.txt" \
     || die "the suite did not compile"
+
+  # The "Build an app" example (SDKP L9 part D) compiles with the suite, so CI
+  # catches an example the API has moved away from. `./build.sh example` runs it.
+  mkdir -p "$build/example-classes"
+  "$kotlinc_path" $kotlin_heap -nowarn -jvm-target 11 \
+    -cp "$lib/$protobuf_java_jar:$classes" -d "$build/example-classes" "$root/examples/notes/Notes.kt" \
+    || die "examples/notes did not compile"
 }
 
 run_tests() {
@@ -245,6 +252,11 @@ case "${1:-test}" in
     ;;
   package)
     package_artifacts "${2:-}"
+    ;;
+  example)
+    compile
+    kotlin_stdlib="$(dirname "$(find_kotlinc)")/../lib/kotlin-stdlib.jar"
+    java -cp "$lib/$protobuf_java_jar:$classes:$build/example-classes:$kotlin_stdlib" NotesKt
     ;;
   test)
     compile

@@ -113,6 +113,46 @@ public sealed record LoamsClientOptions
     /// <c>CancellationToken</c> is the deadline for the call itself.
     /// </summary>
     public TimeSpan ResponseHeadersTimeout { get; init; } = TimeSpan.FromSeconds(100);
+
+    /// <summary>
+    /// The namespace a request with an empty <c>namespace</c> field goes to (R11).
+    /// An explicit argument always wins; with neither, an app call raises
+    /// <c>invalid_argument</c> before any network call.
+    /// </summary>
+    public string? Namespace { get; init; }
+
+    /// <summary>
+    /// The unary deadline (R12): 30 s when null. A call that runs out of it raises
+    /// <see cref="DeadlineExceededError"/> with reason <c>client_deadline_exceeded</c>
+    /// and is not retried. <see cref="System.Threading.Timeout.InfiniteTimeSpan"/> turns it off.
+    /// </summary>
+    public TimeSpan? Timeout { get; init; }
+
+    /// <summary>
+    /// Options from the environment (R1): <c>LOAMS_ENDPOINT</c>, then
+    /// <c>LOAMS_API_KEY</c> or <c>LOAMS_TOKEN</c>, and <c>LOAMS_NAMESPACE</c>.
+    /// </summary>
+    /// <exception cref="InvalidOperationException"><c>LOAMS_ENDPOINT</c> is not set.</exception>
+    public static LoamsClientOptions FromEnv()
+    {
+        var endpoint = Environment.GetEnvironmentVariable("LOAMS_ENDPOINT");
+        if (string.IsNullOrWhiteSpace(endpoint))
+        {
+            throw new InvalidOperationException("LOAMS_ENDPOINT is not set; it is the instance's base URL");
+        }
+        var key = Environment.GetEnvironmentVariable("LOAMS_API_KEY");
+        var token = Environment.GetEnvironmentVariable("LOAMS_TOKEN");
+        ITokenSource? auth = !string.IsNullOrEmpty(key) ? new ApiKeyTokenSource(key)
+            : !string.IsNullOrEmpty(token) ? new StaticTokenSource(token)
+            : null;
+        var ns = Environment.GetEnvironmentVariable("LOAMS_NAMESPACE");
+        return new LoamsClientOptions
+        {
+            Endpoint = endpoint,
+            Auth = auth,
+            Namespace = string.IsNullOrEmpty(ns) ? null : ns,
+        };
+    }
 }
 
 /// <summary>
@@ -183,7 +223,7 @@ public sealed class LoamsClient : IDisposable, IAsyncDisposable
             maxRetries = 0;
         }
 
-        Invoker = new CallInvoker(_transport, options.Auth, maxRetries, _session);
+        Invoker = new CallInvoker(_transport, options.Auth, maxRetries, _session, options.Namespace, options.Timeout);
 
         Instance = new InstanceModule(Invoker);
         Live = new LiveModule(Invoker);
@@ -193,6 +233,14 @@ public sealed class LoamsClient : IDisposable, IAsyncDisposable
         Devices = new DevicesModule(Invoker);
         Notifications = new NotificationsModule(Invoker);
         Operations = new OperationsModule(Invoker);
+        Namespaces = new NamespacesModule(Invoker);
+        Collections = new CollectionsModule(Invoker);
+        Documents = new DocumentsModule(Invoker);
+        Search = new SearchModule(Invoker);
+        Vector = new VectorModule(Invoker);
+        Graph = new GraphModule(Invoker);
+        Sql = new SqlModule(Invoker);
+        Streams = new StreamsModule(Invoker);
         System = new LoamsSystem(Invoker);
 
         Modules = new Dictionary<string, object>(StringComparer.Ordinal)
@@ -205,6 +253,14 @@ public sealed class LoamsClient : IDisposable, IAsyncDisposable
             ["devices"] = Devices,
             ["notifications"] = Notifications,
             ["operations"] = Operations,
+            ["namespaces"] = Namespaces,
+            ["collections"] = Collections,
+            ["documents"] = Documents,
+            ["search"] = Search,
+            ["vector"] = Vector,
+            ["graph"] = Graph,
+            ["sql"] = Sql,
+            ["streams"] = Streams,
         };
     }
 
@@ -237,6 +293,37 @@ public sealed class LoamsClient : IDisposable, IAsyncDisposable
 
     /// <summary><c>loams.operations</c> — running and finished operations.</summary>
     public OperationsModule Operations { get; }
+
+    /// <summary><c>loams.namespaces</c> (SDKP §2.2).</summary>
+    public NamespacesModule Namespaces { get; }
+
+    /// <summary><c>loams.collections</c> (SDKP §2.2).</summary>
+    public CollectionsModule Collections { get; }
+
+    /// <summary><c>loams.documents</c> (SDKP §2.3).</summary>
+    public DocumentsModule Documents { get; }
+
+    /// <summary><c>loams.search</c> (SDKP §2.4).</summary>
+    public SearchModule Search { get; }
+
+    /// <summary><c>loams.vector</c> (SDKP §2.4, Q613).</summary>
+    public VectorModule Vector { get; }
+
+    /// <summary><c>loams.graph</c> (SDKP §2.5). Experimental.</summary>
+    public GraphModule Graph { get; }
+
+    /// <summary><c>loams.sql</c> (SDKP §2.5).</summary>
+    public SqlModule Sql { get; }
+
+    /// <summary><c>loams.streams</c> (SDKP §2.5).</summary>
+    public StreamsModule Streams { get; }
+
+    /// <summary>A handle on one collection (SDKP §2.8); null <paramref name="namespace"/> takes the client's default.</summary>
+    public CollectionHandle Collection(string name, string? @namespace = null) =>
+        new(this, name ?? throw new ArgumentNullException(nameof(name)), @namespace);
+
+    /// <summary>A client from <see cref="LoamsClientOptions.FromEnv"/>.</summary>
+    public static LoamsClient FromEnv() => new(LoamsClientOptions.FromEnv());
 
     /// <summary>The module catalogue, feature detection and the version check.</summary>
     public LoamsSystem System { get; }

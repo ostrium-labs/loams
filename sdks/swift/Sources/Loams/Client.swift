@@ -75,6 +75,12 @@ public struct Options: Sendable {
     /// one process is both writing and reading, and remember it keeps the token it
     /// was given rather than merging — see `Consistency.swift`.
     public var sessionConsistency: Bool
+    /// The namespace an app request with no `namespace` goes to (R11).
+    public var namespace: String?
+    /// The unary deadline in seconds (R12): 30 by default, 0 for none. A call
+    /// that runs out of it throws `deadline_exceeded` with reason
+    /// `client_deadline_exceeded` and is not retried.
+    public var timeout: Double
 
     public init(
         endpoint: URL,
@@ -83,8 +89,12 @@ public struct Options: Sendable {
         session: URLSession? = nil,
         maxRetries: Int? = nil,
         noRetries: Bool = false,
-        sessionConsistency: Bool = false
+        sessionConsistency: Bool = false,
+        namespace: String? = nil,
+        timeout: Double = loamsDefaultTimeout
     ) {
+        self.namespace = namespace
+        self.timeout = timeout
         self.endpoint = endpoint
         self.auth = auth
         self.transport = transport
@@ -121,7 +131,14 @@ public final class Loams: Sendable {
     /// An empty or schemeless endpoint is a usage error rather than a request to
     /// localhost: a client that quietly talks to the wrong instance is worse than
     /// one that does not start.
-    public init(_ options: Options) throws {
+    public convenience init(_ options: Options) throws {
+        var config = options.transport ?? TransportConfig(endpoint: options.endpoint)
+        config.endpoint = options.endpoint
+        try self.init(options, transport: ConnectTransport(config: config, session: options.session ?? .shared))
+    }
+
+    /// A client over a transport of the caller's (a test stub, a custom stack).
+    public init(_ options: Options, transport: any HTTPTransport) throws {
         guard let scheme = options.endpoint.scheme,
               scheme == "https" || scheme == "http",
               options.endpoint.host != nil
@@ -133,14 +150,7 @@ public final class Loams: Sendable {
             )
         }
 
-        var config = options.transport ?? TransportConfig(endpoint: options.endpoint)
-        config.endpoint = options.endpoint
-
-        let transport = ConnectTransport(
-            config: config,
-            session: options.session ?? .shared
-        )
-        self.config = config
+        self.config = transport.config
 
         var resolved = options.maxRetries ?? loamsDefaultMaxRetries
         if resolved < 0 { resolved = loamsDefaultMaxRetries }
@@ -151,12 +161,36 @@ public final class Loams: Sendable {
             transport: transport,
             auth: options.auth,
             maxRetries: resolved,
-            session: session
+            session: session,
+            defaultNamespace: options.namespace,
+            timeout: options.timeout
         )
         self.instance = InstanceModule(invoker: invoker)
         self.live = LiveModule(invoker: invoker)
         self.tables = TablesModule(invoker: invoker)
         self.system = LoamsSystem(invoker: invoker, endpoint: options.endpoint)
+    }
+
+    /// `loams.namespaces` (SDKP §2.2).
+    public var namespaces: NamespacesModule { NamespacesModule(invoker: invoker) }
+    /// `loams.collections` (SDKP §2.2).
+    public var collections: CollectionsModule { CollectionsModule(invoker: invoker) }
+    /// `loams.documents` (SDKP §2.3).
+    public var documents: DocumentsModule { DocumentsModule(invoker: invoker) }
+    /// `loams.search` (SDKP §2.4).
+    public var search: SearchModule { SearchModule(invoker: invoker) }
+    /// `loams.vector` (SDKP §2.4, Q613).
+    public var vector: VectorModule { VectorModule(invoker: invoker) }
+    /// `loams.sql` (SDKP §2.5).
+    public var sql: SqlModule { SqlModule(invoker: invoker) }
+    /// `loams.streams` (SDKP §2.5).
+    public var streams: StreamsModule { StreamsModule(invoker: invoker) }
+    /// `loams.graph` (SDKP §2.5). Experimental.
+    public var graph: GraphModule { GraphModule(invoker: invoker) }
+
+    /// A handle on one collection (SDKP §2.8); nil `namespace` takes the client's default.
+    public func collection(_ name: String, namespace: String? = nil) -> CollectionHandle {
+        CollectionHandle(client: self, name: name, namespace: namespace)
     }
 
     /// The proto revision this SDK declares (§44 §10.3).
@@ -187,5 +221,24 @@ extension CallInvoker {
     /// The session store, or `nil` when R4's session was off.
     func sessionStore() async -> (any ConsistencyTokenStore)? {
         sessionStoreValue
+    }
+}
+extension Options {
+    /// Options from the environment (R1): `LOAMS_ENDPOINT`, then `LOAMS_API_KEY`
+    /// or `LOAMS_TOKEN`, and `LOAMS_NAMESPACE`.
+    public static func fromEnvironment(
+        _ environment: [String: String] = ProcessInfo.processInfo.environment
+    ) throws -> Options {
+        guard let text = environment["LOAMS_ENDPOINT"], !text.isEmpty, let endpoint = URL(string: text) else {
+            throw LoamsError.internalError("", "loams: LOAMS_ENDPOINT is not set; it is the instance's base URL")
+        }
+        var auth: (any TokenSource)?
+        if let key = environment["LOAMS_API_KEY"], !key.isEmpty {
+            auth = APIKeyTokenSource(key)
+        } else if let token = environment["LOAMS_TOKEN"], !token.isEmpty {
+            auth = StaticTokenSource(token)
+        }
+        let namespace = environment["LOAMS_NAMESPACE"].flatMap { $0.isEmpty ? nil : $0 }
+        return Options(endpoint: endpoint, auth: auth, namespace: namespace)
     }
 }

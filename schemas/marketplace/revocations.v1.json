@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loams.dev/schemas/revocations/v1.json",
+  "title": "Loams Marketplace revocations, v1",
+  "description": "The signed revocation list of an index (design 73 section 10.3, D1472). agentd checks it at start and every 6 hours: disable stops the agent and blocks runs, warn shows a banner. User data is never deleted. Version ranges use Cargo's VersionReq syntax (comma-separated comparators, such as >=1.0.0, <1.2.0).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["revocations"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "revocations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "versions", "severity", "reason", "date"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,38}/[a-z0-9][a-z0-9._-]{0,63}$" },
+          "versions": { "type": "string", "minLength": 1 },
+          "severity": { "type": "string", "enum": ["warn", "disable"] },
+          "reason": { "type": "string", "minLength": 1, "maxLength": 2000 },
+          "date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+          "advisory": { "type": "string", "pattern": "^https://\\S+$" }
+        }
+      }
+    }
+  }
+}

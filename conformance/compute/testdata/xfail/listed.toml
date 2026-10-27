@@ -1,0 +1,9 @@
+# Lists exactly the two Kafka failures: the run matches.
+product = "fixture"
+
+[[xfail]]
+id = "needs-kafka"
+tests = ["tests.test_kafka::*"]
+reason = "needs Kafka (not part of Loams)"
+issue = "#1"
+since = 2026-10-23

@@ -10,10 +10,11 @@ package root (PHP 8.2+, no Composer install needed):
 php examples/quickstart/main.php
 php examples/approvals/main.php
 php examples/status/main.php
+LOAMS_ENDPOINT=http://127.0.0.1:18080 LOAMS_NAMESPACE=app php examples/notes/notes.php
 ```
 
 `LOAMS_URL` overrides the engine address (default `http://127.0.0.1:18080`).
 
-Scope: the PHP SDK is preview and currently covers the instance, live, approval and
-device services. Collection, hybrid search and SQL clients are not in this SDK yet,
-so these examples use what it provides.
+Scope: the PHP SDK is preview. `notes/` is the app-building API (namespaces,
+collections, documents, hybrid search and graph); the others use the instance, live,
+approval and device services.

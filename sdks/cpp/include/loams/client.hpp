@@ -47,9 +47,15 @@ struct Options {
   std::shared_ptr<TokenSource> token_source;
   /// The HTTP layer. Null means libcurl.
   std::shared_ptr<HttpTransport> transport;
-  /// One attempt's deadline. Every outbound call has one; a client that can wait
-  /// forever is a client whose thread never comes back.
-  std::chrono::milliseconds timeout{20000};
+  /// A unary call's budget, retries included (R12): sent as `connect-timeout-ms`,
+  /// and a call that runs out throws `DeadlineExceededError` with the unknown
+  /// reason `client_deadline_exceeded` and is never retried. `0` means none.
+  /// A call can override it (`CallOptions::timeout`).
+  std::chrono::milliseconds timeout{30000};
+  /// The default namespace (R11): the app modules fill the `namespace` of every
+  /// request that leaves it empty, and refuse one that has neither before any
+  /// network call.
+  std::string default_namespace;
   /// The retries after the first attempt. `0` disables retries entirely, which
   /// is a supported setting and not the same as "use the default".
   int max_retries = kDefaultMaxRetries;
@@ -65,6 +71,11 @@ struct Options {
 };
 
 /// One Loams instance, reached over Connect.
+/// Options from the environment (R1): `LOAMS_ENDPOINT`, then `LOAMS_API_KEY` (an
+/// `ApiKey`) or `LOAMS_TOKEN`, then `LOAMS_NAMESPACE`. Throws
+/// `InvalidArgumentError` when `LOAMS_ENDPOINT` is not set.
+Options OptionsFromEnv();
+
 class Client {
  public:
   /// Builds a client. Throws `loams::LoamsError` (`internal`) when the endpoint
@@ -92,6 +103,12 @@ class Client {
   /// Always absent unless `Options::session_consistency` is on (R4).
   ConsistencyToken SessionToken() const;
 
+  /// The session store when `Options::session_consistency` is on, else null.
+  SessionTokenStore* Session();
+
+  /// `Options::default_namespace`.
+  const std::string& DefaultNamespace() const;
+
   // --- The runtime -------------------------------------------------------------------------------
 
   /// The whole unary call path. `attempt` performs one try and fills in the
@@ -118,7 +135,8 @@ class Client {
   void Unary(const MethodBinding& binding, const google::protobuf::Message& request,
              google::protobuf::Message* response, ContentType content_type,
              const std::string& idempotency_key = "",
-             const std::vector<std::pair<std::string, std::string>>& headers = {});
+             const std::vector<std::pair<std::string, std::string>>& headers = {},
+             std::optional<std::chrono::milliseconds> timeout = std::nullopt);
 
   /// Opens a server stream.
   ///

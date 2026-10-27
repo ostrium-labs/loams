@@ -2,19 +2,15 @@
 //! (LV1 plan Ruling 1).
 
 use std::path::PathBuf;
-#[cfg(feature = "faults")]
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use futures::future::BoxFuture;
 
 #[cfg(feature = "faults")]
 use crate::FaultPlan;
-use crate::{Committed, GcBarrier, Mode, Snap, Ts, Txn, TxnError, TxnOptions, embedded};
-
-/// The refusal of a pessimistic [`Store::run`] (row T21-15).
-pub const PESSIMISTIC_REFUSED: &str = "pessimistic transactions are refused: a read-modify-write \
-     needs get_for_update, which the store seam does not have yet";
+use crate::metrics::{KvObserver, NoopObserver, Outcome, op_metrics};
+use crate::{Committed, GcBarrier, Snap, Ts, Txn, TxnError, TxnOptions, embedded};
 
 /// Errors of opening a store, reading its clock, taking a snapshot or
 /// setting a GC barrier. A failed transaction is a [`TxnError`].
@@ -76,7 +72,14 @@ pub enum StoreConfig {
 /// key lives under, how long GC keeps old versions and how often it runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EmbeddedConfig {
+    /// The redb file (unused by an in-memory store, whose
+    /// [`EmbeddedConfig::in_memory`] sets it to `mem:<name>` for messages).
     pub path: PathBuf,
+    /// `Some(name)`: an in-memory store on redb's `InMemoryBackend`, shared
+    /// in this process by every handle opened with the same name and gone
+    /// when the last of them is dropped (KV0 Task 4). `None`: the file at
+    /// `path`.
+    pub memory: Option<String>,
     pub keyspace: String,
     pub root: Vec<u8>,
     /// Reads stay possible for `gc_life_time − 1 min` (more than a minute;
@@ -92,10 +95,27 @@ impl EmbeddedConfig {
     pub fn new(path: impl Into<PathBuf>, keyspace: impl Into<String>) -> Self {
         EmbeddedConfig {
             path: path.into(),
+            memory: None,
             keyspace: keyspace.into(),
             root: Vec::new(),
             gc_life_time: embedded::DEFAULT_GC_LIFE_TIME,
             gc_interval: embedded::DEFAULT_GC_INTERVAL,
+        }
+    }
+}
+
+impl EmbeddedConfig {
+    /// An in-memory store named `name` on the keyspace `keyspace`, with an
+    /// empty root and the default GC life time and interval: redb's
+    /// `InMemoryBackend`, no file and no `fsync`. Every handle this process
+    /// opens with the same name shares one database, timestamp oracle,
+    /// committer and GC thread, as handles on one file do; the data is gone
+    /// when the last handle is dropped. Nothing survives the process.
+    pub fn in_memory(name: &str, keyspace: impl Into<String>) -> Self {
+        EmbeddedConfig {
+            path: PathBuf::from(format!("{}{name}", embedded::MEMORY_PREFIX)),
+            memory: Some(name.to_string()),
+            ..EmbeddedConfig::new(PathBuf::new(), keyspace)
         }
     }
 }
@@ -204,18 +224,50 @@ impl KeyspaceState {
     }
 }
 
-/// A keyspace-scoped store under a root prefix. Cheap to clone.
+/// A keyspace-scoped store under a root prefix, on one backend, with the
+/// [`KvObserver`] its runs report to. Cheap to clone.
+#[derive(Clone)]
+pub struct Store {
+    inner: Inner,
+    observer: Arc<dyn KvObserver>,
+}
+
+/// The backend's handle.
 #[derive(Debug, Clone)]
-pub enum Store {
+enum Inner {
     Embedded(embedded::Handle),
     #[cfg(feature = "tikv")]
     Tikv(loams_tikv::Tikv),
 }
 
+impl std::fmt::Debug for Store {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Store")
+            .field("inner", &self.inner)
+            .field("observer", &self.observer)
+            .finish()
+    }
+}
+
+impl Inner {
+    fn into_store(self) -> Store {
+        Store {
+            inner: self,
+            observer: Arc::new(NoopObserver),
+        }
+    }
+}
+
+impl From<embedded::Handle> for Store {
+    fn from(handle: embedded::Handle) -> Self {
+        Inner::Embedded(handle).into_store()
+    }
+}
+
 #[cfg(feature = "tikv")]
 impl From<loams_tikv::Tikv> for Store {
     fn from(tikv: loams_tikv::Tikv) -> Self {
-        Store::Tikv(tikv)
+        Inner::Tikv(tikv).into_store()
     }
 }
 
@@ -226,20 +278,18 @@ impl Store {
     /// v2 (`loams_tikv::Tikv::connect`).
     pub async fn open(config: StoreConfig) -> Result<Self, KvError> {
         match config {
-            StoreConfig::Embedded(config) => {
-                Ok(Store::Embedded(embedded::Handle::open(config).await?))
-            }
+            StoreConfig::Embedded(config) => Ok(embedded::Handle::open(config).await?.into()),
             #[cfg(feature = "tikv")]
-            StoreConfig::Tikv(config) => Ok(Store::Tikv(loams_tikv::Tikv::connect(config).await?)),
+            StoreConfig::Tikv(config) => Ok(loams_tikv::Tikv::connect(config).await?.into()),
         }
     }
 
     /// Which backend this is.
     pub fn backend(&self) -> Backend {
-        match self {
-            Store::Embedded(_) => Backend::Embedded,
+        match &self.inner {
+            Inner::Embedded(_) => Backend::Embedded,
             #[cfg(feature = "tikv")]
-            Store::Tikv(_) => Backend::Tikv,
+            Inner::Tikv(_) => Backend::Tikv,
         }
     }
 
@@ -247,18 +297,18 @@ impl Store {
     /// tokens); `None` on the embedded backend.
     #[cfg(feature = "tikv")]
     pub fn as_tikv(&self) -> Option<&loams_tikv::Tikv> {
-        match self {
-            Store::Embedded(_) => None,
-            Store::Tikv(t) => Some(t),
+        match &self.inner {
+            Inner::Embedded(_) => None,
+            Inner::Tikv(t) => Some(t),
         }
     }
 
     /// A fresh timestamp from the store's oracle (PD's TSO on TiKV).
     pub async fn now(&self) -> Result<Ts, KvError> {
-        match self {
-            Store::Embedded(h) => h.now().await,
+        match &self.inner {
+            Inner::Embedded(h) => h.now().await,
             #[cfg(feature = "tikv")]
-            Store::Tikv(t) => Ok(Ts::from(t.now().await?)),
+            Inner::Tikv(t) => Ok(Ts::from(t.now().await?)),
         }
     }
 
@@ -266,10 +316,10 @@ impl Store {
     /// (gc_life_time − 1 min)` unless a [`GcBarrier`] of this store covers
     /// it (`loams_tikv::Tikv::snapshot`; [`embedded::Handle::snapshot`]).
     pub async fn snapshot(&self, at: Ts) -> Result<Snap, KvError> {
-        match self {
-            Store::Embedded(h) => Ok(Snap::Embedded(h.snapshot(at).await?)),
+        match &self.inner {
+            Inner::Embedded(h) => Ok(Snap::Embedded(h.snapshot(at).await?)),
             #[cfg(feature = "tikv")]
-            Store::Tikv(t) => Ok(Snap::Tikv(t.snapshot(at.into()).await?)),
+            Inner::Tikv(t) => Ok(Snap::Tikv(t.snapshot(at.into()).await?)),
         }
     }
 
@@ -278,8 +328,9 @@ impl Store {
     /// `commit_token`, an undetermined commit is resolved through a token
     /// written in the transaction.
     ///
-    /// [`Mode::Pessimistic`] is refused with `Fatal(PESSIMISTIC_REFUSED)` on
-    /// both backends until the seam has `get_for_update` (row T21-15).
+    /// [`Mode::Pessimistic`](crate::Mode::Pessimistic) takes each key's lock as the body reads it
+    /// with [`Txn::get_for_update`] or writes it (D851; KV0 Task 5), so a
+    /// second holder waits rather than conflicting at commit.
     ///
     /// A body is rerun, so it must be free of side effects outside `txn`. It
     /// returns `Err(TxnError::Conflict)` to ask for a restart; to reject
@@ -289,31 +340,49 @@ impl Store {
     where
         F: for<'t> FnMut(&'t mut Txn) -> BoxFuture<'t, Result<T, TxnError>>,
     {
-        if opts.mode == Mode::Pessimistic {
-            return Err(TxnError::Fatal(PESSIMISTIC_REFUSED.to_string()));
-        }
-        match self {
-            Store::Embedded(h) => h.run(opts, body).await,
+        let (op, started) = (opts.op, Instant::now());
+        let result = match &self.inner {
+            Inner::Embedded(h) => h.run(opts, body).await,
             #[cfg(feature = "tikv")]
-            Store::Tikv(t) => crate::tikv::run(t, opts, body).await,
+            Inner::Tikv(t) => crate::tikv::run(t, opts, body).await,
+        };
+        let (outcome, elapsed) = (Outcome::of(&result), started.elapsed());
+        op_metrics().record(self.backend(), op, outcome, elapsed);
+        self.observer.on_op(self.keyspace(), op, outcome, elapsed);
+        result
+    }
+
+    /// This store with its runs reported to `observer`, with the keyspace
+    /// (the only per-tenant view of them; the metrics carry no tenant,
+    /// D1021). Clones share it.
+    pub fn with_observer(self, observer: Arc<dyn KvObserver>) -> Self {
+        Store { observer, ..self }
+    }
+
+    /// The embedded handle of an embedded store; `None` on TiKV.
+    pub fn as_embedded(&self) -> Option<&embedded::Handle> {
+        match &self.inner {
+            Inner::Embedded(h) => Some(h),
+            #[cfg(feature = "tikv")]
+            Inner::Tikv(_) => None,
         }
     }
 
     /// The keyspace this store is bound to.
     pub fn keyspace(&self) -> &str {
-        match self {
-            Store::Embedded(h) => h.keyspace(),
+        match &self.inner {
+            Inner::Embedded(h) => h.keyspace(),
             #[cfg(feature = "tikv")]
-            Store::Tikv(t) => t.keyspace(),
+            Inner::Tikv(t) => t.keyspace(),
         }
     }
 
     /// The root prefix every key of this store lives under.
     pub fn root(&self) -> &[u8] {
-        match self {
-            Store::Embedded(h) => h.root(),
+        match &self.inner {
+            Inner::Embedded(h) => h.root(),
             #[cfg(feature = "tikv")]
-            Store::Tikv(t) => t.root(),
+            Inner::Tikv(t) => t.root(),
         }
     }
 
@@ -330,11 +399,12 @@ impl Store {
     /// [`run`](Self::run) (R1 plan Task 2; feature `faults`).
     #[cfg(feature = "faults")]
     pub fn with_faults(self, plan: Arc<dyn FaultPlan>) -> Self {
-        match self {
-            Store::Embedded(h) => Store::Embedded(h.with_faults(plan)),
+        let inner = match self.inner {
+            Inner::Embedded(h) => Inner::Embedded(h.with_faults(plan)),
             #[cfg(feature = "tikv")]
-            Store::Tikv(t) => Store::Tikv(t.with_faults(crate::tikv::faults(plan))),
-        }
+            Inner::Tikv(t) => Inner::Tikv(t.with_faults(crate::tikv::faults(plan))),
+        };
+        Store { inner, ..self }
     }
 
     /// Holds GC at or below `at` for `ttl` (whole seconds, at least 1) under
@@ -343,10 +413,10 @@ impl Store {
     /// lives. Setting the same `name` again moves it. Refused when GC is
     /// already past `at`.
     pub async fn barrier(&self, name: &str, at: Ts, ttl: Duration) -> Result<GcBarrier, KvError> {
-        match self {
-            Store::Embedded(h) => h.barrier(name, at, ttl).await,
+        match &self.inner {
+            Inner::Embedded(h) => h.barrier(name, at, ttl).await,
             #[cfg(feature = "tikv")]
-            Store::Tikv(t) => crate::tikv::barrier(t, name, at, ttl).await,
+            Inner::Tikv(t) => crate::tikv::barrier(t, name, at, ttl).await,
         }
     }
 }

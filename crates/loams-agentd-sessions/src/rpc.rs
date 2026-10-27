@@ -80,6 +80,7 @@ use crate::terminals::Terminals;
 use crate::uploads::Uploads;
 use crate::workspace_host::WorkspaceHost;
 
+mod factory_loop_rpc;
 mod groups_rpc;
 
 const FILE_SEARCH_RPC_TIMEOUT: Duration = Duration::from_secs(6);
@@ -1537,6 +1538,7 @@ impl RpcService for EngineRpc {
                 let changed = self
                     .doc_host
                     .update_queued_message(&p.chat_id, &p.id, &p.text)
+                    .await
                     .map_err(|e| RpcError::Failed(e.to_string()))?;
                 reply::<calls::UpdateQueuedMessage, _>(&ChangedReply { changed })
             }
@@ -1585,6 +1587,7 @@ impl RpcService for EngineRpc {
                 let changed = self
                     .doc_host
                     .move_queued_message(&p.chat_id, &p.id, p.to_index)
+                    .await
                     .map_err(|e| RpcError::Failed(e.to_string()))?;
                 reply::<calls::MoveQueuedMessage, _>(&ChangedReply { changed })
             }
@@ -2195,6 +2198,72 @@ impl RpcService for EngineRpc {
                     Ok(stream_reply::<calls::SearchWorkspaceContent, _, _>(
                         crate::content_search::search(workspace.root, query),
                     ))
+                })
+                .await
+            }
+            // FT1 FT0 Task 4 (§72 §5.2): the factory loop's tools, role `mcp`,
+            // in `rpc/factory_loop_rpc.rs`.
+            methods::CREATE_RUN_WORKTREE => {
+                Box::pin(async move {
+                    let p = params_of::<calls::CreateRunWorktree>(params)?;
+                    let worktree = self.create_run_worktree(p).await?;
+                    reply::<calls::CreateRunWorktree, _>(&worktree)
+                })
+                .await
+            }
+            methods::GET_THREAD_DIFF => {
+                Box::pin(async move {
+                    let p = params_of::<calls::GetThreadDiff>(params)?;
+                    let diff = self.thread_diff(p).await?;
+                    reply::<calls::GetThreadDiff, _>(&diff)
+                })
+                .await
+            }
+            methods::POST_REVIEW_COMMENT => {
+                Box::pin(async move {
+                    let p = params_of::<calls::PostReviewComment>(params)?;
+                    let id = self.post_review_comment(p).await?;
+                    reply::<calls::PostReviewComment, _>(&IdReply { id })
+                })
+                .await
+            }
+            methods::OPEN_CHANGE_REQUEST => {
+                Box::pin(async move {
+                    let p = params_of::<calls::OpenChangeRequest>(params)?;
+                    let opened = self.open_change_request(p).await?;
+                    reply::<calls::OpenChangeRequest, _>(&opened)
+                })
+                .await
+            }
+            methods::REQUEST_APPROVAL => {
+                let p = params_of::<calls::RequestApproval>(params)?;
+                reply::<calls::RequestApproval, _>(&self.request_typed_approval(p)?)
+            }
+            methods::GET_APPROVAL => {
+                let p = params_of::<calls::GetApproval>(params)?;
+                reply::<calls::GetApproval, _>(&self.get_typed_approval(p)?)
+            }
+            methods::GET_CHECKS => {
+                Box::pin(async move {
+                    let p = params_of::<calls::GetChecks>(params)?;
+                    let checks = self.get_checks(p).await?;
+                    reply::<calls::GetChecks, _>(&checks)
+                })
+                .await
+            }
+            methods::GET_CHECK_LOG => {
+                Box::pin(async move {
+                    let p = params_of::<calls::GetCheckLog>(params)?;
+                    let log = self.get_check_log(p).await?;
+                    reply::<calls::GetCheckLog, _>(&log)
+                })
+                .await
+            }
+            methods::MERGE_CHANGE_REQUEST => {
+                Box::pin(async move {
+                    let p = params_of::<calls::MergeChangeRequest>(params)?;
+                    let merged = self.merge_change_request(p).await?;
+                    reply::<calls::MergeChangeRequest, _>(&merged)
                 })
                 .await
             }

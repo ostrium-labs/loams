@@ -1,0 +1,5 @@
+# ported-from: https://github.com/tikv/migration
+# revision: a1a3f885bddf3a2774bea0d8adf9f0797c904dfd
+# path: cdc/cdc/kv/client.go
+# licence: Apache-2.0
+# modified by Ostrium Labs for Loams.

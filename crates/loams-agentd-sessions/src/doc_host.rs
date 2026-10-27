@@ -1169,13 +1169,19 @@ impl DocHost {
 
     /// Retype a queued message. Empty text deletes the row — emptying the box
     /// is how you say "drop it". `false` when the row is already gone.
-    pub fn update_queued_message(
+    ///
+    /// Serialized with the drain (`drain_lock`), like a removal: a drain takes
+    /// the head row out of the queue before it sends it and puts it back when
+    /// the send fails, and an edit landing in between found no row, answered
+    /// `false`, and was lost when the row came back with its old text.
+    pub async fn update_queued_message(
         &self,
         chat_id: &str,
         id: &str,
         text: &str,
     ) -> Result<bool, EngineError> {
         let handle = self.open(chat_id)?;
+        let _drain = handle.drain_lock.lock().await;
         let changed = handle.doc.set_queued_text(id, text, now_ms())?;
         if changed {
             handle.publish_queue();
@@ -1183,14 +1189,16 @@ impl DocHost {
         Ok(changed)
     }
 
-    /// Reorder a queued message (drag, or the up/down buttons).
-    pub fn move_queued_message(
+    /// Reorder a queued message (drag, or the up/down buttons). Serialized
+    /// with the drain, as [`Self::update_queued_message`] is.
+    pub async fn move_queued_message(
         &self,
         chat_id: &str,
         id: &str,
         to_index: usize,
     ) -> Result<bool, EngineError> {
         let handle = self.open(chat_id)?;
+        let _drain = handle.drain_lock.lock().await;
         let changed = handle.doc.move_queued(id, to_index)?;
         if changed {
             handle.publish_queue();

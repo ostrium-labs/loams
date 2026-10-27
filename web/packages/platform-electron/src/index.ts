@@ -220,6 +220,9 @@ export async function wireDeepLinks(
  * mode go to the `mode` service. "New thread" is offered to the mounted mode as a
  * `SHELL_COMMAND_EVENT` (Studio runs its `chat.new`); when nothing takes it (Console
  * mode, or Studio still loading), Studio's home opens, where a project is chosen.
+ * The shell's D1081 commands (CF1 Task 14: Command Palette, the panel toggles, Back,
+ * Forward, Settings, Next Thread, Reopen Closed Thread) go out the same way; the shell
+ * runs them as it runs their chords, and Studio takes `thread.next`.
  */
 export function wireShellCommands(
   api: LoamsDesktopApi,
@@ -248,6 +251,19 @@ export function wireShellCommands(
         if (!event.defaultPrevented) mode.set('studio', { navigate: MODE_HOME.studio });
         return;
       }
+      case 'palette.toggle':
+      case 'sidebar.toggle':
+      case 'inspector.toggle':
+      case 'drawer.toggle':
+      case 'navigation.back':
+      case 'navigation.forward':
+      case 'settings.open':
+      case 'thread.next':
+      case 'thread.reopen':
+        target.dispatchEvent(
+          new CustomEvent(SHELL_COMMAND_EVENT, { detail: command, cancelable: true }),
+        );
+        return;
     }
   });
 }
