@@ -363,6 +363,7 @@ loams-zitadel = { path = "crates/loams-zitadel", version = "0.1.2" }
 # (design §50, D783, plan DD1 Task 1). Versions follow the fork's lockfile
 # (DD1 T0-4). The fork pins reqwest 0.12 and sha2 0.10, which differ from the
 # workspace keys above, so its crates name those two directly.
+loams-agentd-cli = { path = "crates/loams-agentd-cli", version = "0.1.2" }
 loams-agentd-connect = { path = "crates/loams-agentd-connect", version = "0.1.2" }
 loams-agentd-doc = { path = "crates/loams-agentd-doc", version = "0.1.2" }
 loams-agentd-harness = { path = "crates/loams-agentd-harness", version = "0.1.2" }
