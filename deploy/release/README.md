@@ -272,6 +272,32 @@ Leave `LOAMS_AUTHZ` on `builtin` for now: OpenFGA's tuples come from the
 identity sync (plan IA1, IA3), and until it runs an engine on OpenFGA grants
 nothing to anyone but the operator's own credentials.
 
+### Managed RisingWave (preview, not yet run end to end)
+
+RisingWave, the companion stream processor (design 81, plan RW1), runs as
+four services (meta, compactor, compute, frontend) in the override file
+`compose.risingwave.yaml`. The shared engine services are in
+`compose.lake.yaml`: Lakekeeper (the Iceberg REST catalog, warehouse
+`loams`) and the one-shot `engines-init` (buckets, databases, roles). The
+engine profiles need `rustfs`, because engine state lives in the bucket
+`loams-engines` under `engines/<ns>/<instance>/`.
+
+```sh
+docker compose -f compose.yaml -f compose.lake.yaml -f compose.risingwave.yaml \
+  --profile rustfs --profile risingwave up -d
+docker compose -f compose.yaml -f compose.lake.yaml -f compose.risingwave.yaml \
+  run --rm --no-deps --entrypoint psql engines-init -h risingwave -p 4566 -U root -d dev
+```
+
+The meta store is the database `rw_default` on Loams Postgres (`compute1`).
+Hummock writes to `loams-engines/engines/default/risingwave/`. No port is
+published: the frontend is `risingwave:4566` on the compose network. A
+loopback port through `engine-gateway`, with Loams API keys, comes with the
+gateway's `risingwave` module. Set `RISINGWAVE_META_PASSWORD` (letters and
+digits only) and the RustFS keys in `.env` for anything but a test stack.
+Kubernetes uses the chart `deploy/helm/loams-risingwave`, one release per
+engine instance.
+
 ### Headscale (coming soon, unsupported)
 
 The supported setup is your own Tailscale tailnet, with the console your engine

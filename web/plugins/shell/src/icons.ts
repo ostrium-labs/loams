@@ -6,6 +6,7 @@ import {
   Circle,
   Cloud,
   Code,
+  CreditCard,
   Database,
   Factory,
   GitBranch,
@@ -70,6 +71,8 @@ const ICONS: Record<string, LucideIcon> = {
   agents: Bot,
   access: Shield,
   studio: SquareTerminal,
+  // Loams Meter (design 63 §18): Settings › Billing.
+  billing: CreditCard,
 };
 
 export const ICON_NAMES = Object.keys(ICONS);

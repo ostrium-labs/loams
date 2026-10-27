@@ -3,13 +3,19 @@
 
 use loams_temporal_history::{Attributes, Batch, WorkflowExecutionStatus};
 use loams_temporal_proto::temporal::api::common::v1::{Header, Payloads};
+use loams_temporal_proto::temporal::api::enums::v1::WorkflowTaskFailedCause;
 use loams_temporal_proto::temporal::api::history::v1::{
     TimerFiredEventAttributes, WorkflowExecutionCancelRequestedEventAttributes,
     WorkflowExecutionSignaledEventAttributes, WorkflowExecutionTerminatedEventAttributes,
+    WorkflowTaskFailedEventAttributes,
 };
 
-use crate::write::{arrive, close, flush};
+use crate::write::{arrive, close, flush, wft_started};
 use crate::{Effect, Rejection, Reply};
+
+/// The identity Temporal's history service writes on the events it makes
+/// itself (`consts.IdentityHistoryService`).
+pub const HISTORY_SERVICE: &str = "history-service";
 
 pub(crate) fn signal(
     b: &mut Batch<'_>,
@@ -84,7 +90,26 @@ pub(crate) fn terminate(
     details: Option<Payloads>,
     identity: String,
 ) -> Result<Reply, Rejection> {
-    // Events waiting behind a started workflow task are written first.
+    // A started workflow task is failed first (Temporal's
+    // `FORCE_CLOSE_COMMAND`, by the history service; D2084), then the
+    // events that waited behind it are written.
+    if wft_started(b) {
+        let wt = b.state_ref().workflow_task.clone().expect("started");
+        b.push(Attributes::WorkflowTaskFailedEventAttributes(
+            WorkflowTaskFailedEventAttributes {
+                scheduled_event_id: wt.scheduled_event_id,
+                started_event_id: wt.started_event_id,
+                cause: WorkflowTaskFailedCause::ForceCloseCommand as i32,
+                identity: HISTORY_SERVICE.to_string(),
+                ..Default::default()
+            },
+        ));
+        fx.push(Effect::WorkflowTaskDone {
+            scheduled_event_id: wt.scheduled_event_id,
+            attempt: wt.attempt,
+        });
+        b.state().workflow_task = None;
+    }
     flush(b);
     let id = b.push(Attributes::WorkflowExecutionTerminatedEventAttributes(
         WorkflowExecutionTerminatedEventAttributes {
@@ -102,6 +127,15 @@ pub(crate) fn timer_fired(
     fx: &mut Vec<Effect>,
     started_event_id: i64,
 ) -> Result<Reply, Rejection> {
+    // The first workflow task's backoff (a timer on the started event).
+    if started_event_id == 1 {
+        if !b.state_ref().first_task_backoff {
+            return Ok(Reply::Stale);
+        }
+        b.state().first_task_backoff = false;
+        crate::write::ensure_workflow_task(b, fx);
+        return Ok(Reply::Done);
+    }
     let Some(t) = b
         .state_ref()
         .timers

@@ -739,7 +739,7 @@
         "can_connect": {
           "tupleToUserset": {
             "computedUserset": {
-              "relation": "viewer"
+              "relation": "editor"
             },
             "tupleset": {
               "relation": "environment"
@@ -806,7 +806,7 @@
         "can_connect": {
           "tupleToUserset": {
             "computedUserset": {
-              "relation": "viewer"
+              "relation": "editor"
             },
             "tupleset": {
               "relation": "environment"

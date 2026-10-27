@@ -8388,6 +8388,7 @@ dependencies = [
  "loams-graph",
  "loams-hnsw",
  "loams-hot",
+ "loams-identity-sync",
  "loams-kv",
  "loams-link",
  "loams-live",
@@ -8402,12 +8403,14 @@ dependencies = [
  "loams-proto",
  "loams-qdrant",
  "loams-query",
+ "loams-risingwave",
  "loams-sqlgate",
  "loams-store",
  "loams-stream-grpc",
  "loams-tikv",
  "loams-upgrade",
  "loams-worker",
+ "loams-zitadel",
  "mysql_async",
  "object_store 0.14.2",
  "opensrv-mysql",
@@ -9091,6 +9094,7 @@ dependencies = [
 name = "loams-gateway"
 version = "0.1.2"
 dependencies = [
+ "async-trait",
  "clap",
  "hex",
  "http-body-util",
@@ -9098,7 +9102,9 @@ dependencies = [
  "hyper-util",
  "loams-spark",
  "loams-temporal-frontend",
+ "md-5 0.11.0",
  "rcgen",
+ "reqwest 0.13.5",
  "rustls",
  "serde",
  "serde_json",
@@ -9593,6 +9599,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-meter-agent"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "base64 0.23.1",
+ "bytes",
+ "clap",
+ "hmac 0.13.0",
+ "httpmock",
+ "loams-cloudevents",
+ "loams-log",
+ "prost 0.14.4",
+ "rand 0.9.5",
+ "reqwest 0.13.5",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "thiserror 2.0.21",
+ "time",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "loams-migrate"
 version = "0.1.2"
 dependencies = [
@@ -9642,6 +9674,7 @@ dependencies = [
  "k8s-openapi",
  "keyring",
  "kube",
+ "loams-authz",
  "loams-common",
  "loams-kv",
  "loams-pg-control",
@@ -9873,6 +9906,7 @@ name = "loams-risingwave"
 version = "0.1.2"
 dependencies = [
  "async-trait",
+ "clap",
  "futures",
  "loams-engines",
  "object_store 0.14.2",
@@ -10185,6 +10219,7 @@ dependencies = [
  "percent-encoding",
  "proptest",
  "reqwest 0.13.5",
+ "resonate-client",
  "rustls",
  "serde",
  "serde_json",
@@ -13791,6 +13826,19 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "resonate-client"
+version = "0.10.1"
+source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+dependencies = [
+ "async-trait",
+ "reqwest 0.12.28",
+ "resonate-core",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

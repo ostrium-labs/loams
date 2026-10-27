@@ -1,6 +1,6 @@
 [package]
 name = "loams-temporal-resonate"
-description = "The Temporal gateway's Durability port onto Resonate: deterministic promise IDs, an in-process fake, the interim HTTP adapter and the outbox relay (DX1 Task 6)."
+description = "The Temporal gateway's Durability port onto Resonate: deterministic promise IDs, an in-process fake, the adapter on resonate-client and the outbox relay (DX1 Task 6)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,9 +8,9 @@ license.workspace = true
 authors.workspace = true
 publish = false
 
-# No Loams-internal dependencies (D1539), no Temporal protos, and no Resonate
-# crates: the interim adapter speaks the wire protocol itself until FW3's
-# `resonate-client` replaces it (D1591).
+# No Loams-internal dependencies (D1539) and no Temporal protos. The one
+# Resonate crate is FW3's `resonate-client`, at the workspace's fork pin
+# (D2040); the poll subscription is still `wire_interim`'s (D1591, D2041).
 [dependencies]
 async-trait.workspace = true
 base64.workspace = true
@@ -19,7 +19,9 @@ hex.workspace = true
 percent-encoding.workspace = true
 # `rustls-no-provider`: https uses the process's rustls provider; `new`
 # installs ring's when none is installed, as loams-durable's MySQL path does.
+# The poll subscription's (`wire_interim`); resonate-client has its own.
 reqwest = { workspace = true, features = ["rustls-no-provider", "stream"] }
+resonate-client.workspace = true
 rustls = { workspace = true, features = ["ring", "std", "tls12"] }
 serde.workspace = true
 serde_json.workspace = true

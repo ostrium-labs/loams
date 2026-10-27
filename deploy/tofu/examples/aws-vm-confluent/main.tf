@@ -122,6 +122,9 @@ module "vm" {
   # The VM fetches confluent-confluent-api-key and -api-secret into the connect
   # role's secret files at boot (deploy/byoc/lib/loams-byoc-secrets).
   confluent_integrations = ["confluent"]
+  # The connect role runs in the `connectors` profile; with it the engine's
+  # LOAMS_AUTH_MODE becomes tailscale,apikey (loams-byoc-bootstrap).
+  profiles = "connectors"
 }
 
 module "confluent" {
