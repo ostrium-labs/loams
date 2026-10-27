@@ -244,6 +244,13 @@ methods! {
     NotificationService {
         WatchNotifications => Method("WatchNotifications"),
     }
+    FactoryService {
+        ListFactoryApps => Method("FactoryList"),
+        TestFactoryApp => Method("FactoryTest"),
+        QueryFactory => Method("FactoryQuery"),
+        ConfigureFactoryApp => Method("FactoryConfigure"),
+        RemoveFactoryApp => Method("FactoryRemove"),
+    }
     MarketplaceService {
         ListSources => Method("ListMarketplaceSources"),
         AddSource => Method("AddMarketplaceSource"),

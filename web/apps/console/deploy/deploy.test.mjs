@@ -186,6 +186,28 @@ describe('hosted config', () => {
     );
   });
 
+  test('narrows the offered modes with LOAMS_AUTH_MODES', () => {
+    // A deploy that has tested only Tailscale, even though it has a client.
+    assert.deepEqual(hostedConfig({ ...AUTH, LOAMS_AUTH_MODES: 'tailscale' }), {
+      hosted: true,
+      authMode: 'tailscale',
+      authModes: ['tailscale'],
+      authIssuer: 'https://auth.loams.dev',
+      authClientId: 'loams-console',
+    });
+    // Separators and order do not matter: the console's order comes back.
+    assert.deepEqual(
+      hostedConfig({ LOAMS_AUTH_MODES: 'apikey, tailscale', LOAMS_AUTH_MODE: 'apikey' }).authModes,
+      ['tailscale', 'apikey'],
+    );
+    assert.throws(() => hostedConfig({ LOAMS_AUTH_MODES: 'basic' }), /LOAMS_AUTH_MODES/);
+    assert.throws(
+      () => hostedConfig({ LOAMS_AUTH_MODE: 'apikey', LOAMS_AUTH_MODES: 'tailscale' }),
+      /must include the default LOAMS_AUTH_MODE/,
+    );
+    assert.throws(() => hostedConfig({ LOAMS_AUTH_MODES: 'tailscale,oidc' }), /oidc/);
+  });
+
   test('refuses plain http off loopback, oidc without a client id, and an unknown mode', () => {
     assert.throws(() => hostedConfig({ LOAMS_ENGINE_URL: 'http://loams.tail1.ts.net' }), /HTTPS/);
     assert.throws(() => hostedConfig({ LOAMS_ENGINE_URL: 'not a url' }), /HTTPS/);
@@ -485,6 +507,24 @@ describe('runtime config', () => {
       'tailscale',
       'apikey',
     ]);
+    // authModes narrows the offer; with one mode the connect screen has no picker.
+    const onlyTailscale = parseRuntimeConfig({
+      authMode: 'tailscale',
+      authModes: ['tailscale', 'nonsense'],
+    });
+    assert.deepEqual(onlyTailscale.authModes, ['tailscale']);
+    assert.deepEqual(offeredModes(onlyTailscale), ['tailscale']);
+    // A default the deploy left out lands on a mode it did offer, never on that one.
+    const narrowed = parseRuntimeConfig({ authMode: 'apikey', authModes: ['tailscale'] });
+    assert.equal(narrowed.authMode, 'tailscale');
+    assert.deepEqual(offeredModes(narrowed), ['tailscale']);
+    // ... but the deploy's own mistake stays loud: oidc asked for without a client.
+    assert.match(
+      parseRuntimeConfig({ hosted: true, authMode: 'oidc', authModes: ['oidc'] }).configError,
+      /authClientId/,
+    );
+    // A list that leaves nothing usable says so, rather than showing no way in.
+    assert.match(parseRuntimeConfig({ authModes: ['oidc'] }).configError, /no sign-in mode/);
     // oidc as the default without a client is a config error, never a quiet fall back.
     assert.match(
       parseRuntimeConfig({ hosted: true, authMode: 'oidc' }).configError,

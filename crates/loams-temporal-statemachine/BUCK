@@ -29,6 +29,11 @@ cargo_package(
             "root": "tests/golden.rs",
         },
         {
+            "name": "limits",
+            "crate": "limits",
+            "root": "tests/limits.rs",
+        },
+        {
             "name": "props",
             "crate": "props",
             "root": "tests/props.rs",
@@ -43,10 +48,16 @@ cargo_package(
             "crate": "table",
             "root": "tests/table.rs",
         },
+        {
+            "name": "update",
+            "crate": "update",
+            "root": "tests/update.rs",
+        },
     ],
     deps = [
         "//crates/loams-temporal-history:loams-temporal-history",
         "//crates/loams-temporal-proto:loams-temporal-proto",
+        "//third-party/rust:prost",
         "//third-party/rust:prost-types",
         "//third-party/rust:thiserror",
     ],

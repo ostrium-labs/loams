@@ -5,7 +5,8 @@ use std::sync::Arc;
 
 use datafusion::arrow::array::RecordBatch;
 use datafusion::arrow::datatypes::SchemaRef;
-use datafusion::prelude::{SessionConfig, SessionContext};
+use datafusion::execution::SessionStateBuilder;
+use datafusion::prelude::SessionConfig;
 use loams_house_sql::{Registry, prepare};
 use loams_house_types::ChError;
 
@@ -45,6 +46,11 @@ impl Engine {
         }
     }
 
+    /// The engine's functions (planning a lake table's catalog expressions).
+    pub fn registry(&self) -> &Registry {
+        &self.registry
+    }
+
     /// Runs one `SELECT` with `params` (`param_<name>` values) and request
     /// `settings`, `database` being the current database.
     ///
@@ -66,20 +72,73 @@ impl Engine {
                 "The setting {name} is not supported by the Loams House engine yet (plan HE1 Task 37)"
             )));
         }
-        let ctx = SessionContext::new_with_config(SessionConfig::new().with_target_partitions(1));
-        let frame = ctx
-            .execute_logical_plan(prepared.plan)
+        let names = prepared.names;
+        // DataFusion's defaults with ClickHouse's type rules in the analyzer
+        // (plan HE1 Task 24). The plan is analyzed once; the answer's schema
+        // is the analyzed plan's, whose fields carry the ClickHouse types
+        // (R24.1), and the optimized plan's batches are relabelled with it.
+        let state = SessionStateBuilder::new()
+            .with_config(SessionConfig::new().with_target_partitions(1))
+            .with_default_features()
+            .with_analyzer_rules(loams_house_sql::coerce::analyzer_rules())
+            .build();
+        let err = loams_house_sql::plan::ch_error;
+        let analyzed = state
+            .analyzer()
+            .execute_and_check(prepared.plan, state.config_options(), |_, _| {})
+            .map_err(err)?;
+        let schema: SchemaRef = Arc::new(analyzed.schema().as_arrow().clone());
+        let optimized = state
+            .optimizer()
+            .optimize(analyzed, &state, |_, _| {})
+            .map_err(err)?;
+        let physical = state
+            .query_planner()
+            .create_physical_plan(&optimized, &state)
             .await
-            .map_err(loams_house_sql::plan::ch_error)?;
-        let schema: SchemaRef = Arc::new(frame.schema().as_arrow().clone());
-        let batches = frame
-            .collect()
+            .map_err(err)?;
+        let batches = datafusion::physical_plan::collect(physical, state.task_ctx())
             .await
-            .map_err(loams_house_sql::plan::ch_error)?;
+            .map_err(err)?
+            .into_iter()
+            .map(|b| RecordBatch::try_new(schema.clone(), b.columns().to_vec()))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| ChError::logical_error(e.to_string()))?;
+        let (schema, batches) = match names {
+            Some(names) => named(schema, batches, &names)?,
+            None => (schema, batches),
+        };
         Ok(Answer {
             schema,
             batches,
             format: prepared.format,
         })
     }
+}
+
+/// The answer's columns under ClickHouse's names, which may repeat (plan HE1
+/// Task 25: the plan names duplicates apart).
+fn named(
+    schema: SchemaRef,
+    batches: Vec<RecordBatch>,
+    names: &[String],
+) -> Result<(SchemaRef, Vec<RecordBatch>), ChError> {
+    if names.len() != schema.fields().len() {
+        return Ok((schema, batches));
+    }
+    let fields: Vec<_> = schema
+        .fields()
+        .iter()
+        .zip(names)
+        .map(|(f, n)| f.as_ref().clone().with_name(n))
+        .collect();
+    let renamed = Arc::new(
+        datafusion::arrow::datatypes::Schema::new(fields).with_metadata(schema.metadata().clone()),
+    );
+    let batches = batches
+        .into_iter()
+        .map(|b| RecordBatch::try_new(renamed.clone(), b.columns().to_vec()))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| ChError::logical_error(e.to_string()))?;
+    Ok((renamed, batches))
 }

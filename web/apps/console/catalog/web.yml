@@ -35,3 +35,9 @@
     - id: durable
       name: '@loams/plugin-durable'
       inject: [router, slots, platform]
+    # The software factory (SF1 amendment F1-F5): its panels read through Studio's
+    # bridge to the selected agentd host (`studio.factory`), so it starts once Studio
+    # has; an app opens in a new tab, and credentials are configured on the desktop.
+    - id: factory
+      name: '@loams/plugin-factory'
+      inject: [studio.factory, platform, router, slots, transport]
