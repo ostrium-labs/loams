@@ -225,12 +225,13 @@ async fn pause_resume_and_rate() {
     .await;
     assert_eq!(s, 200, "{body}");
     assert_eq!(body["state"], "running");
-    // The SDK's size of one event (all are the same size).
+    // The SDK's size of one event, which the limiter charges (the stand-in
+    // engine keeps the JSON data re-serialised, without the padding).
     let size = {
-        let ev =
-            loams_fabric::connect::engine::event_from_json(&engine.events("w", "orders")[0][0])
-                .unwrap();
-        ev.size_bytes() as f64
+        use loams_connector_sdk::testing::reference::CounterSource;
+        use loams_connector_sdk::{EnvelopeBuilder, InstanceKey, SplitId};
+        let env = EnvelopeBuilder::new("reference", &InstanceKey::new(0, "orders-in"));
+        CounterSource::event(&env, &SplitId::new("a"), 1000, 1024).size_bytes() as f64
     };
     tokio::time::sleep(Duration::from_secs(2)).await;
     let n0 = engine.ids("w", "orders").len();

@@ -21,6 +21,8 @@ pub struct Cli {
 }
 
 /// The roles. FL1 adds `ingest` and `flow`.
+// Parsed once per process: the variants' sizes do not matter.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Subcommand)]
 pub enum Role {
     /// Loams House: the ClickHouse HTTP interface and its sealed chDB workers
