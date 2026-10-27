@@ -1,0 +1,1908 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Loams managed engines API",
+    "version": "0.1.0",
+    "summary": "Namespace-scoped lifecycle, SQL and Spark sessions/jobs for managed RisingWave, Flink SQL and Spark (preview).",
+    "description": "Design: docs/design/81-managed-stream-batch-engines.md (D2010-D2019). Served by crates/loams-engines (`loams_engines::http::router`) on the native REST listener under /v1. Every engine is preview. Lifecycle calls answer 202 with the instance in its transitional phase; poll GET for the outcome. An instance belongs to one Loams namespace (ENG81 R2). Reads need `can_read` on `environment:<ns>`, lifecycle, SQL, sessions and jobs `can_write`, create, PATCH and delete `can_admin` (D2016, R18: the same relations as `engine#can_view|can_operate|can_admin`). Timestamps are RFC 3339 in UTC. Lists are wrapped in an object keyed by the plural resource name.",
+    "license": {
+      "name": "Apache-2.0",
+      "identifier": "Apache-2.0"
+    }
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "The native REST listener"
+    }
+  ],
+  "security": [
+    {
+      "session": []
+    },
+    {
+      "bearer": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "engines",
+      "description": "Engine kinds and instance lifecycle."
+    },
+    {
+      "name": "sql",
+      "description": "SQL on RisingWave (Postgres dialect) and Flink SQL."
+    },
+    {
+      "name": "spark",
+      "description": "Spark sessions (Spark Connect) and batch jobs."
+    }
+  ],
+  "paths": {
+    "/v1/engines": {
+      "get": {
+        "operationId": "listEngineKinds",
+        "summary": "The engine kinds this install knows, with versions, sizes and stability",
+        "tags": [
+          "engines"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EngineCatalog"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "A server error (unavailable, internal; 501 engine_not_enabled when no adapter serves the kind)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/namespaces/{namespace}/engines": {
+      "get": {
+        "operationId": "listEngineInstances",
+        "summary": "A project's engine instances",
+        "tags": [
+          "engines"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceList"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "A server error (unavailable, internal; 501 engine_not_enabled when no adapter serves the kind)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The Loams namespace (an environment) the instance belongs to"
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/EngineKind"
+            }
+          }
+        ]
+      },
+      "post": {
+        "operationId": "createEngineInstance",
+        "summary": "Create an engine instance (provisioning starts; poll the instance)",
+        "tags": [
+          "engines"
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Instance"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "A server error (unavailable, internal; 501 engine_not_enabled when no adapter serves the kind)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The Loams namespace (an environment) the instance belongs to"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstanceCreate"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/namespaces/{namespace}/engines/{instance}": {
+      "get": {
+        "operationId": "getEngineInstance",
+        "summary": "One instance with its status, health and endpoints",
+        "tags": [
+          "engines"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Instance"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "A server error (unavailable, internal; 501 engine_not_enabled when no adapter serves the kind)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The Loams namespace (an environment) the instance belongs to"
+          },
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The engine instance's id (`eng_\u2026`)"
+          }
+        ]
+      },
+      "patch": {
+        "operationId": "updateEngineInstance",
+        "summary": "Scale (size) or upgrade (version) an instance",
+        "tags": [
+          "engines"
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Instance"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "A server error (unavailable, internal; 501 engine_not_enabled when no adapter serves the kind)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The Loams namespace (an environment) the instance belongs to"
+          },
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The engine instance's id (`eng_\u2026`)"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstanceUpdate"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteEngineInstance",
+        "summary": "Delete an instance and its state",
+        "tags": [
+          "engines"
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Instance"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "A server error (unavailable, internal; 501 engine_not_enabled when no adapter serves the kind)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The Loams namespace (an environment) the instance belongs to"
+          },
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The engine instance's id (`eng_\u2026`)"
+          }
+        ]
+      }
+    },
+    "/v1/namespaces/{namespace}/engines/{instance}/suspend": {
+      "post": {
+        "operationId": "suspendEngineInstance",
+        "summary": "Stop compute, keep state",
+        "tags": [
+          "engines"
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Instance"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "A server error (unavailable, internal; 501 engine_not_enabled when no adapter serves the kind)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The Loams namespace (an environment) the instance belongs to"
+          },
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The engine instance's id (`eng_\u2026`)"
+          }
+        ]
+      }
+    },
+    "/v1/namespaces/{namespace}/engines/{instance}/resume": {
+      "post": {
+        "operationId": "resumeEngineInstance",
+        "summary": "Start compute again from the kept state",
+        "tags": [
+          "engines"
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Instance"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "A server error (unavailable, internal; 501 engine_not_enabled when no adapter serves the kind)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The Loams namespace (an environment) the instance belongs to"
+          },
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The engine instance's id (`eng_\u2026`)"
+          }
+        ]
+      }
+    },
+    "/v1/namespaces/{namespace}/engines/{instance}/usage": {
+      "get": {
+        "operationId": "getEngineUsage",
+        "summary": "The metering samples this instance recorded (CPU ms, memory MiB-ms, state bytes)",
+        "tags": [
+          "engines"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Usage"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "A server error (unavailable, internal; 501 engine_not_enabled when no adapter serves the kind)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The Loams namespace (an environment) the instance belongs to"
+          },
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The engine instance's id (`eng_\u2026`)"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/namespaces/{namespace}/engines/{instance}/sql": {
+      "post": {
+        "operationId": "runEngineSql",
+        "summary": "Run SQL on a RisingWave or Flink SQL instance",
+        "tags": [
+          "sql"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SqlResult"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "A server error (unavailable, internal; 501 engine_not_enabled when no adapter serves the kind)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The Loams namespace (an environment) the instance belongs to"
+          },
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The engine instance's id (`eng_\u2026`)"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SqlRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/namespaces/{namespace}/engines/{instance}/sessions": {
+      "get": {
+        "operationId": "listSparkSessions",
+        "summary": "A Spark instance's sessions",
+        "tags": [
+          "spark"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SparkSessionList"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "A server error (unavailable, internal; 501 engine_not_enabled when no adapter serves the kind)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The Loams namespace (an environment) the instance belongs to"
+          },
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The engine instance's id (`eng_\u2026`)"
+          }
+        ]
+      },
+      "post": {
+        "operationId": "createSparkSession",
+        "summary": "Start a Spark session",
+        "tags": [
+          "spark"
+        ],
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SparkSession"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "A server error (unavailable, internal; 501 engine_not_enabled when no adapter serves the kind)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The Loams namespace (an environment) the instance belongs to"
+          },
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The engine instance's id (`eng_\u2026`)"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SparkSessionCreate"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/namespaces/{namespace}/engines/{instance}/sessions/{session}": {
+      "delete": {
+        "operationId": "closeSparkSession",
+        "summary": "Close a Spark session",
+        "tags": [
+          "spark"
+        ],
+        "responses": {
+          "204": {
+            "description": "Closed"
+          },
+          "4XX": {
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "A server error (unavailable, internal; 501 engine_not_enabled when no adapter serves the kind)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The Loams namespace (an environment) the instance belongs to"
+          },
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The engine instance's id (`eng_\u2026`)"
+          },
+          {
+            "name": "session",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The session's id"
+          }
+        ]
+      }
+    },
+    "/v1/namespaces/{namespace}/engines/{instance}/jobs": {
+      "get": {
+        "operationId": "listSparkJobs",
+        "summary": "A Spark instance's batch jobs",
+        "tags": [
+          "spark"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SparkJobList"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "A server error (unavailable, internal; 501 engine_not_enabled when no adapter serves the kind)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The Loams namespace (an environment) the instance belongs to"
+          },
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The engine instance's id (`eng_\u2026`)"
+          }
+        ]
+      },
+      "post": {
+        "operationId": "submitSparkJob",
+        "summary": "Submit a Spark batch job",
+        "tags": [
+          "spark"
+        ],
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SparkJob"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "A server error (unavailable, internal; 501 engine_not_enabled when no adapter serves the kind)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The Loams namespace (an environment) the instance belongs to"
+          },
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The engine instance's id (`eng_\u2026`)"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SparkJobSubmit"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/namespaces/{namespace}/engines/{instance}/jobs/{job}/cancel": {
+      "post": {
+        "operationId": "cancelSparkJob",
+        "summary": "Cancel a Spark batch job",
+        "tags": [
+          "spark"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SparkJob"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "A server error (unavailable, internal; 501 engine_not_enabled when no adapter serves the kind)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The Loams namespace (an environment) the instance belongs to"
+          },
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The engine instance's id (`eng_\u2026`)"
+          },
+          {
+            "name": "job",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The job's id"
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "message"
+        ],
+        "additionalProperties": false,
+        "description": "A stable code and a human message, as the console contract."
+      },
+      "EngineKind": {
+        "type": "string",
+        "enum": [
+          "risingwave",
+          "flink",
+          "spark"
+        ]
+      },
+      "SizeTier": {
+        "type": "string",
+        "enum": [
+          "xs",
+          "s",
+          "m",
+          "l",
+          "xl"
+        ],
+        "description": "Per replica: xs 0.5 vCPU / 1 GiB, s 1 / 4 GiB, m 2 / 8 GiB, l 4 / 16 GiB, xl 8 / 32 GiB (D2011)."
+      },
+      "EngineSize": {
+        "type": "object",
+        "properties": {
+          "tier": {
+            "$ref": "#/components/schemas/SizeTier"
+          },
+          "vcpu_milli": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "memory_mib": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "replicas": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "tier",
+          "vcpu_milli",
+          "memory_mib",
+          "replicas"
+        ],
+        "additionalProperties": false
+      },
+      "SizeRequest": {
+        "type": "object",
+        "properties": {
+          "tier": {
+            "$ref": "#/components/schemas/SizeTier"
+          },
+          "replicas": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64
+          }
+        },
+        "required": [
+          "tier"
+        ],
+        "additionalProperties": false
+      },
+      "Phase": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "provisioning",
+          "running",
+          "scaling",
+          "upgrading",
+          "suspending",
+          "suspended",
+          "resuming",
+          "deleting",
+          "deleted",
+          "failed"
+        ]
+      },
+      "HealthState": {
+        "type": "string",
+        "enum": [
+          "healthy",
+          "degraded",
+          "unhealthy",
+          "unknown"
+        ]
+      },
+      "HealthCheck": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/HealthState"
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "state"
+        ],
+        "additionalProperties": false
+      },
+      "InstanceStatus": {
+        "type": "object",
+        "properties": {
+          "phase": {
+            "$ref": "#/components/schemas/Phase"
+          },
+          "health": {
+            "$ref": "#/components/schemas/HealthState"
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HealthCheck"
+            }
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "phase",
+          "health",
+          "checks",
+          "observed_at"
+        ],
+        "additionalProperties": false
+      },
+      "EndpointProtocol": {
+        "type": "string",
+        "enum": [
+          "postgres",
+          "flink_sql_gateway",
+          "spark_connect",
+          "http",
+          "web_ui",
+          "kafka"
+        ]
+      },
+      "Endpoint": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "protocol": {
+            "$ref": "#/components/schemas/EndpointProtocol"
+          },
+          "url": {
+            "type": "string",
+            "description": "The loams-gateway address; engines are never exposed directly."
+          },
+          "internal": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "protocol",
+          "url",
+          "internal"
+        ],
+        "additionalProperties": false
+      },
+      "Stability": {
+        "type": "string",
+        "enum": [
+          "preview",
+          "beta",
+          "stable"
+        ]
+      },
+      "Instance": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "org": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The org that owns the namespace; the billing subject is org_<org> (design 63)."
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/EngineKind"
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The requested version; status.version is the running one."
+          },
+          "size": {
+            "$ref": "#/components/schemas/EngineSize"
+          },
+          "config": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "labels": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "$ref": "#/components/schemas/InstanceStatus"
+          },
+          "endpoints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Endpoint"
+            }
+          },
+          "state_prefix": {
+            "type": "string",
+            "description": "Where state and checkpoints live in Loams object storage."
+          },
+          "stability": {
+            "$ref": "#/components/schemas/Stability"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "namespace",
+          "name",
+          "kind",
+          "size",
+          "config",
+          "labels",
+          "status",
+          "endpoints",
+          "state_prefix",
+          "stability",
+          "created_at",
+          "updated_at"
+        ],
+        "additionalProperties": false
+      },
+      "InstanceList": {
+        "type": "object",
+        "properties": {
+          "instances": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Instance"
+            }
+          }
+        },
+        "required": [
+          "instances"
+        ],
+        "additionalProperties": false
+      },
+      "InstanceCreate": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z]([a-z0-9-]{0,38}[a-z0-9])?$"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/EngineKind"
+          },
+          "version": {
+            "type": "string"
+          },
+          "size": {
+            "$ref": "#/components/schemas/SizeRequest"
+          },
+          "config": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "labels": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "size"
+        ],
+        "additionalProperties": false
+      },
+      "InstanceUpdate": {
+        "type": "object",
+        "description": "Exactly one of size (scale) or version (upgrade).",
+        "properties": {
+          "size": {
+            "$ref": "#/components/schemas/SizeRequest"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SqlDialect": {
+        "type": "string",
+        "enum": [
+          "postgres",
+          "flink_sql",
+          "spark_sql"
+        ]
+      },
+      "EngineInfo": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/EngineKind"
+          },
+          "label": {
+            "type": "string"
+          },
+          "stability": {
+            "$ref": "#/components/schemas/Stability"
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "An adapter serves this kind on this install (its profile is on)."
+          },
+          "versions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "default_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sql_dialect": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SqlDialect"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessions": {
+            "type": "boolean"
+          },
+          "jobs": {
+            "type": "boolean"
+          },
+          "suspend": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kind",
+          "label",
+          "stability",
+          "enabled",
+          "versions",
+          "sessions",
+          "jobs",
+          "suspend"
+        ],
+        "additionalProperties": false
+      },
+      "SizeInfo": {
+        "type": "object",
+        "properties": {
+          "tier": {
+            "$ref": "#/components/schemas/SizeTier"
+          },
+          "vcpu_milli": {
+            "type": "integer"
+          },
+          "memory_mib": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tier",
+          "vcpu_milli",
+          "memory_mib"
+        ],
+        "additionalProperties": false
+      },
+      "EngineCatalog": {
+        "type": "object",
+        "properties": {
+          "engines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EngineInfo"
+            }
+          },
+          "sizes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SizeInfo"
+            }
+          }
+        },
+        "required": [
+          "engines",
+          "sizes"
+        ],
+        "additionalProperties": false
+      },
+      "UsageSample": {
+        "type": "object",
+        "properties": {
+          "window_start": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "window_end": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "cpu_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "CPU time in ms"
+          },
+          "memory_mib_ms": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "state_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "estimated": {
+            "type": "boolean",
+            "description": "The reserved size, not a measurement"
+          }
+        },
+        "required": [
+          "window_start",
+          "window_end",
+          "cpu_ms",
+          "memory_mib_ms",
+          "state_bytes",
+          "estimated"
+        ],
+        "additionalProperties": false
+      },
+      "UsageTotals": {
+        "type": "object",
+        "properties": {
+          "cpu_ms": {
+            "type": "integer"
+          },
+          "memory_mib_ms": {
+            "type": "integer"
+          },
+          "state_bytes": {
+            "type": "integer",
+            "description": "The latest sample's state bytes (a gauge)."
+          }
+        },
+        "required": [
+          "cpu_ms",
+          "memory_mib_ms",
+          "state_bytes"
+        ],
+        "additionalProperties": false
+      },
+      "Usage": {
+        "type": "object",
+        "properties": {
+          "samples": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UsageSample"
+            }
+          },
+          "totals": {
+            "$ref": "#/components/schemas/UsageTotals"
+          }
+        },
+        "required": [
+          "samples",
+          "totals"
+        ],
+        "additionalProperties": false
+      },
+      "SqlRequest": {
+        "type": "object",
+        "properties": {
+          "sql": {
+            "type": "string"
+          },
+          "max_rows": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300000
+          }
+        },
+        "required": [
+          "sql"
+        ],
+        "additionalProperties": false
+      },
+      "SqlColumn": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ],
+        "additionalProperties": false
+      },
+      "SqlResult": {
+        "type": "object",
+        "properties": {
+          "columns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SqlColumn"
+            }
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "array"
+            }
+          },
+          "row_count": {
+            "type": "integer"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "elapsed_ms": {
+            "type": "integer"
+          },
+          "notice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "For a statement that starts a streaming job (Flink INSERT), the job it started."
+          }
+        },
+        "required": [
+          "columns",
+          "rows",
+          "row_count",
+          "truncated",
+          "elapsed_ms"
+        ],
+        "additionalProperties": false
+      },
+      "SparkSessionKind": {
+        "type": "string",
+        "enum": [
+          "sql",
+          "python"
+        ]
+      },
+      "SparkSessionState": {
+        "type": "string",
+        "enum": [
+          "starting",
+          "idle",
+          "busy",
+          "closed",
+          "failed"
+        ]
+      },
+      "SparkSession": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/SparkSessionKind"
+          },
+          "state": {
+            "$ref": "#/components/schemas/SparkSessionState"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "connect_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "state",
+          "created_at"
+        ],
+        "additionalProperties": false
+      },
+      "SparkSessionList": {
+        "type": "object",
+        "properties": {
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SparkSession"
+            }
+          }
+        },
+        "required": [
+          "sessions"
+        ],
+        "additionalProperties": false
+      },
+      "SparkSessionCreate": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/SparkSessionKind"
+          },
+          "conf": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "additionalProperties": false
+      },
+      "SparkJobKind": {
+        "type": "string",
+        "enum": [
+          "sql",
+          "python",
+          "jar"
+        ]
+      },
+      "SparkJobState": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "running",
+          "succeeded",
+          "failed",
+          "cancelled"
+        ]
+      },
+      "SparkJob": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/SparkJobKind"
+          },
+          "state": {
+            "$ref": "#/components/schemas/SparkJobState"
+          },
+          "entrypoint": {
+            "type": "string"
+          },
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "submitted_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "finished_at": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "state",
+          "entrypoint",
+          "args",
+          "submitted_at"
+        ],
+        "additionalProperties": false
+      },
+      "SparkJobList": {
+        "type": "object",
+        "properties": {
+          "jobs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SparkJob"
+            }
+          }
+        },
+        "required": [
+          "jobs"
+        ],
+        "additionalProperties": false
+      },
+      "SparkJobSubmit": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/SparkJobKind"
+          },
+          "entrypoint": {
+            "type": "string",
+            "description": "SQL text, or an object-storage path to a .py file or .jar."
+          },
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "conf": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "entrypoint"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "securitySchemes": {
+      "session": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "loams_session",
+        "description": "Console sessions; mutating requests also send X-CSRF-Token."
+      },
+      "bearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "An access token or an lk_ API key."
+      }
+    }
+  }
+}

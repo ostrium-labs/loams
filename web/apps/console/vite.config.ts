@@ -4,8 +4,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import { defineConfig, type Plugin } from 'vite';
-import { configDefaults } from 'vitest/config';
+import { configDefaults, defineConfig, type Plugin } from 'vite-plus';
 
 // The engine serves the build at /ui (design §19 §3). In development the
 // console API comes from loams-apps-mock (`cargo run -p loams-apps-mock`,

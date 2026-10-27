@@ -4,7 +4,7 @@
 import { validateManifest } from '@loams/console-host';
 import { codeEditorText, resultWindow, setCodeEditorText } from '@loams/ui';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 import pkg from '../package.json';
 import { HouseError, PAGE_MAX_ROWS, type QueryFrame, SERVER_MAX_ROWS } from '../src/client.js';
 import { HousePage } from '../src/HousePage.js';

@@ -86,7 +86,7 @@ function FieldRow({
   const canValues = field.fast && ['keyword', 'uuid', 'bool'].includes(field.type);
   const canRange = field.fast && ['i64', 'f64', 'date'].includes(field.type);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: refetch when the filter's content changes
+  // oxlint-disable-next-line react/exhaustive-deps -- refetch when the filter's content changes
   useEffect(() => {
     if (!open || (!canValues && !canRange)) return;
     const ctrl = new AbortController();

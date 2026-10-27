@@ -6,7 +6,7 @@
 
 import type { LoamsDesktopApi } from '@loams/desktop/contracts';
 import { waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 import { startDesktop } from '../src/cordis/desktop.js';
 import { createFakeDesktop } from '../src/cordis/fake-desktop.js';
 

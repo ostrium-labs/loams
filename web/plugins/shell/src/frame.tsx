@@ -314,7 +314,7 @@ export function Trail({ crumbs }: { crumbs: Crumb[] }) {
         {crumbs.map((c, i) => {
           const last = i === crumbs.length - 1;
           return (
-            // biome-ignore lint/suspicious/noArrayIndexKey: crumbs are positional
+            // oxlint-disable-next-line react/no-array-index-key -- crumbs are positional
             <li key={i} aria-current={last ? 'page' : undefined}>
               {!last && c.href ? <a href={`#${c.href}`}>{c.label}</a> : <span>{c.label}</span>}
             </li>

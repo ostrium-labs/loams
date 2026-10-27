@@ -34,7 +34,7 @@ function Payload({ label, value }: { label: string; value: Value | undefined }) 
 export function StepPanel({ step, onClose }: { step: Step; onClose: () => void }) {
   const heading = useRef<HTMLHeadingElement>(null);
   // Move focus to the panel when a step is opened, so the detail is read next.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: refocus per opened step
+  // oxlint-disable-next-line react/exhaustive-deps -- refocus per opened step
   useEffect(() => {
     heading.current?.focus();
   }, [step.id]);
