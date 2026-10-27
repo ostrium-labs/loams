@@ -108,3 +108,5 @@
 | R24.2 (D2211) | Task 24: Stripe identifier `loams:<meter>:<subject>:<hour>:<rev>`, `<rev>` = highest `close_run` through the hour, `-<n>` for a new value at the same revision, hashed past 100 characters; ledger write before the request | A re-closed earlier hour changes later hours' overage; retries keep the identifier |
 | R24.3 (D2212) | Task 24: payment state from the customer's default payment method only, after a verified webhook or the daily poll; only ids read from webhook bodies; `invoice` never sent | No card data in Loams; webhooks are hints |
 | R25.1 (D2213) | Task 25: OpenMeter export from `_meter.events` rows, `loamslease` dropped, batches per partition in offset order, own cursor per partition moved after the accept | OpenMeter's dedup window is off by default |
+| R26.1 (D2214) | Task 26: Lago gets the difference for a re-closed window under a new `transaction_id`, not an overwrite; unaccepted events are resent first; 422 `value_already_exist` is accepted | Lago events are additive |
+| R26.2 (D2215) | Task 26: CloudEvents webhook of closed windows, Standard Webhooks signing, re-sent only on re-close | Same signing as the notifier |
