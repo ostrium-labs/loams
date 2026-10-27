@@ -1284,6 +1284,11 @@ enum Command {
     /// create|rotate` writes Confluent keys straight into the install's cloud
     /// secret store; `byoc confluent check` checks region and reachability.
     Byoc(loams_confluent::cli::ByocArgs),
+    /// The managed RisingWave (design 81, preview): run SQL, list
+    /// materialized views, sources and sinks, follow job progress, and
+    /// render or apply pipeline specs. Reaches the frontend through
+    /// loams-gateway.
+    Risingwave(loams_risingwave::cli::RisingWaveArgs),
     /// Engine authentication (LOAMS_AUTH_MODE): API keys.
     Auth {
         #[command(subcommand)]
@@ -1446,6 +1451,7 @@ fn config(command: Command) -> ServerConfig {
         Command::Cloud(_) => unreachable!("loams cloud starts no server"),
         Command::Marketplace(_) => unreachable!("loams marketplace starts no server"),
         Command::Byoc(_) => unreachable!("loams byoc starts no server"),
+        Command::Risingwave(_) => unreachable!("loams risingwave starts no server"),
         #[cfg(feature = "live")]
         Command::LiveWorker => unreachable!("loams live-worker starts no server"),
         #[cfg(feature = "postgres")]
@@ -1665,6 +1671,10 @@ fn main() -> ExitCode {
     // A client too (CC1 Task 6): the Confluent Cloud API and the cloud's CLI.
     if let Command::Byoc(args) = &cli.command {
         return loams_confluent::cli::run(args);
+    }
+    // A client (RW1, lane RW-b): its own runtime, no stores.
+    if let Command::Risingwave(args) = &cli.command {
+        return loams_risingwave::cli::run(args);
     }
     serve(cli)
 }

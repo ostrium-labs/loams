@@ -24,9 +24,11 @@
 #![allow(deprecated)]
 
 mod activity;
+pub mod children;
 mod commands;
 mod external;
-mod start;
+pub mod reset;
+pub mod start;
 pub mod update;
 mod workflow_task;
 mod write;
@@ -41,7 +43,9 @@ use loams_temporal_proto::temporal::api::protocol::v1::Message;
 use loams_temporal_proto::temporal::api::sdk::v1::WorkflowTaskCompletedMetadata;
 use loams_temporal_proto::temporal::api::workflowservice::v1::StartWorkflowExecutionRequest;
 
+pub use external::HISTORY_SERVICE;
 pub use loams_temporal_history as history;
+pub use start::StartChain;
 pub use update::{UpdateStatus, messages_for_task};
 pub use workflow_task::server_failure;
 
@@ -57,6 +61,20 @@ pub enum Input {
         run_id: String,
         /// The request as the SDK sent it.
         request: Box<StartWorkflowExecutionRequest>,
+    },
+    /// `SignalWithStartWorkflowExecution` with no running run: the run's
+    /// first events with the signal between `WorkflowExecutionStarted` and
+    /// the first `WorkflowTaskScheduled`, as Temporal writes them. The
+    /// state passed to [`apply`] is ignored.
+    SignalWithStart {
+        /// The gateway's namespace ID.
+        namespace_id: String,
+        /// The new run's ID.
+        run_id: String,
+        /// The start part of the request.
+        request: Box<StartWorkflowExecutionRequest>,
+        /// The signal part.
+        signal: StartSignal,
     },
     /// A poll took the outstanding workflow task.
     WorkflowTaskStarted {
@@ -91,6 +109,9 @@ pub enum Input {
         /// The worker's protocol messages (update acceptances, rejections
         /// and responses), in order.
         messages: Vec<Message>,
+        /// The run ID a `ContinueAsNew` command gives the next run (the
+        /// caller makes one for every completion; unused otherwise).
+        new_run_id: String,
     },
     /// `RespondWorkflowTaskFailed`.
     WorkflowTaskFailed {
@@ -212,12 +233,75 @@ pub enum Input {
         /// The timer's started event.
         started_event_id: i64,
     },
+    /// A child run, the next run of a continue-as-new, or a run started on
+    /// a schedule: a start with its lineage (parent, previous run, first
+    /// task backoff). The state passed to [`apply`] is ignored.
+    StartChained {
+        /// The gateway's namespace ID.
+        namespace_id: String,
+        /// The new run's ID.
+        run_id: String,
+        /// The start request.
+        request: Box<StartWorkflowExecutionRequest>,
+        /// Its lineage.
+        chain: Box<start::StartChain>,
+    },
+    /// A child this run initiated has started.
+    ChildStarted {
+        /// The `StartChildWorkflowExecutionInitiated` event.
+        initiated_event_id: i64,
+        /// The child's run ID.
+        run_id: String,
+        /// The child's header.
+        header: Option<Header>,
+    },
+    /// A child could not be started (`StartChildWorkflowExecutionFailedCause`).
+    ChildStartFailed {
+        /// The `StartChildWorkflowExecutionInitiated` event.
+        initiated_event_id: i64,
+        /// Why.
+        cause: i32,
+    },
+    /// A child's run closed.
+    ChildClosed {
+        /// The `StartChildWorkflowExecutionInitiated` event.
+        initiated_event_id: i64,
+        /// The child's run ID.
+        run_id: String,
+        /// How it closed.
+        outcome: children::ChildOutcome,
+    },
+    /// A signal to, or cancel request of, another workflow was delivered
+    /// (`failed_cause` `None`) or could not be.
+    ExternalResult {
+        /// Signal or cancel.
+        kind: children::ExternalKind,
+        /// The `…Initiated` event.
+        initiated_event_id: i64,
+        /// The failure cause, if it failed.
+        failed_cause: Option<i32>,
+    },
     /// `UpdateWorkflowExecution`: admit a workflow update. A known update
     /// ID changes nothing ([`Reply::Stale`]).
     UpdateAdmitted {
         /// The update's request.
         request: Box<loams_temporal_proto::temporal::api::update::v1::Request>,
     },
+}
+
+/// The signal a run is started with (`SignalWithStartWorkflowExecution`).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct StartSignal {
+    /// The signal's name.
+    pub name: String,
+    /// Its input.
+    pub input: Option<Payloads>,
+    /// The sender's identity.
+    pub identity: String,
+    /// Its header.
+    pub header: Option<Header>,
+    /// The request ID.
+    pub request_id: String,
 }
 
 /// Which deadline a timeout is (design 74 §5.4's `kind`).
@@ -298,6 +382,32 @@ pub enum Effect {
     CancelTimer {
         /// The timer's started event.
         started_event_id: i64,
+    },
+    /// Start the child initiated by this event (the frontend does it after
+    /// the commit and answers with `ChildStarted` or `ChildStartFailed`).
+    StartChild {
+        /// The `StartChildWorkflowExecutionInitiated` event.
+        initiated_event_id: i64,
+    },
+    /// Start the run this one continued as.
+    ContinuedAsNew {
+        /// Its run ID.
+        new_run_id: String,
+    },
+    /// Signal the workflow the initiated event names.
+    SignalExternal {
+        /// The `SignalExternalWorkflowExecutionInitiated` event.
+        initiated_event_id: i64,
+    },
+    /// Ask the workflow the initiated event names to cancel.
+    CancelExternal {
+        /// The `RequestCancelExternalWorkflowExecutionInitiated` event.
+        initiated_event_id: i64,
+    },
+    /// The run closed with children the parent close policy acts on.
+    ParentClosePolicy {
+        /// The children and their policies.
+        children: Vec<children::ChildRef>,
     },
     /// The run closed: settle everything it still has outstanding and wake
     /// whoever waits for the close.
@@ -483,7 +593,11 @@ fn over_history_limit(state: &MutableState, reason: &str, now_ms: i64) -> Transi
 }
 
 fn dispatch(b: &mut Batch<'_>, fx: &mut Vec<Effect>, input: Input) -> Result<Reply, Rejection> {
-    if !matches!(input, Input::Start { .. }) && !loams_temporal_history::is_open(b.state_ref()) {
+    if !matches!(
+        input,
+        Input::Start { .. } | Input::SignalWithStart { .. } | Input::StartChained { .. }
+    ) && !loams_temporal_history::is_open(b.state_ref())
+    {
         return match input {
             // A late timeout for a closed run changes nothing.
             Input::WorkflowTaskTimedOut { .. }
@@ -497,7 +611,38 @@ fn dispatch(b: &mut Batch<'_>, fx: &mut Vec<Effect>, input: Input) -> Result<Rep
             namespace_id,
             run_id,
             request,
-        } => start::start(b, fx, &namespace_id, &run_id, *request),
+        } => start::start(b, fx, &namespace_id, &run_id, *request, None, None),
+        Input::StartChained {
+            namespace_id,
+            run_id,
+            request,
+            chain,
+        } => start::start(b, fx, &namespace_id, &run_id, *request, None, Some(*chain)),
+        Input::ChildStarted {
+            initiated_event_id,
+            run_id,
+            header,
+        } => children::child_started(b, fx, initiated_event_id, run_id, header, None),
+        Input::ChildStartFailed {
+            initiated_event_id,
+            cause,
+        } => children::child_started(b, fx, initiated_event_id, String::new(), None, Some(cause)),
+        Input::ChildClosed {
+            initiated_event_id,
+            run_id,
+            outcome,
+        } => children::child_closed(b, fx, initiated_event_id, run_id, outcome),
+        Input::ExternalResult {
+            kind,
+            initiated_event_id,
+            failed_cause,
+        } => children::external_result(b, fx, kind, initiated_event_id, failed_cause),
+        Input::SignalWithStart {
+            namespace_id,
+            run_id,
+            request,
+            signal,
+        } => start::start(b, fx, &namespace_id, &run_id, *request, Some(signal), None),
         Input::WorkflowTaskStarted {
             scheduled_event_id,
             identity,
@@ -521,6 +666,7 @@ fn dispatch(b: &mut Batch<'_>, fx: &mut Vec<Effect>, input: Input) -> Result<Rep
             worker_version,
             force_create_new_workflow_task,
             messages,
+            new_run_id,
         } => workflow_task::completed(
             b,
             fx,
@@ -534,6 +680,7 @@ fn dispatch(b: &mut Batch<'_>, fx: &mut Vec<Effect>, input: Input) -> Result<Rep
                 worker_version,
                 force_create_new_workflow_task,
                 messages,
+                new_run_id,
             },
         ),
         Input::WorkflowTaskFailed {

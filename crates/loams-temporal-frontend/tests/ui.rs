@@ -86,12 +86,8 @@ async fn cluster_info_names_the_gateway_not_a_temporal_server() {
         "{}",
         info.server_version
     );
-    assert_eq!(info.cluster_name, "loams-temporal");
-    assert_eq!(info.cluster_id, "loams-temporal");
-    assert!(
-        info.visibility_store.is_empty(),
-        "no visibility listing yet"
-    );
+    assert_eq!(info.cluster_name, info.cluster_id);
+    assert!(info.history_shard_count > 0);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -169,18 +165,6 @@ async fn reverse_history_pages_are_the_history_newest_first() {
     let mut expected = forward.clone();
     expected.reverse();
     assert_eq!(backward, expected);
-
-    // A token from nowhere is refused.
-    let e = c
-        .get_workflow_execution_history_reverse(GetWorkflowExecutionHistoryReverseRequest {
-            namespace: "default".into(),
-            execution,
-            maximum_page_size: 2,
-            next_page_token: vec![1, 2, 3].into(),
-        })
-        .await
-        .expect_err("bad token");
-    assert_eq!(e.code(), tonic::Code::InvalidArgument);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

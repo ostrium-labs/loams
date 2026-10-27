@@ -14,17 +14,17 @@ Neither tool is changed or forked.
 
 ## What the gateway serves for them
 
-The UI and the CLI read a few methods that SDK workers never call. The gateway adds them
-(decisions D2050–D2053):
+The UI and the CLI read a few methods that SDK workers never call. The gateway serves them
+(decisions D2050–D2053; `GetClusterInfo` and the reverse history are lane TMP-api's):
 
 | Method | Used by | What the gateway answers |
 |---|---|---|
 | `GetSystemInfo` | both, on connect | The gateway's version (`loams-temporal x.y.z`) and the capabilities it really has (X1.R2) |
-| `GetClusterInfo` | UI (first call), `temporal operator cluster describe` | Cluster name `loams-temporal`, the store (`postgres` or `memory`), the shard count, and the gateway's version, never a Temporal server version. The UI enables features by version, so it keeps pages off whose methods the gateway does not serve. `visibility_store` is empty (see below) |
+| `GetClusterInfo` | UI (first call), `temporal operator cluster describe` | Served by lane TMP-api's `describe.rs`: cluster name `loams`, the store (`postgres` or `memory`) and its shard count when the standalone runner knows them, and the gateway's version (`loams-temporal x.y.z`), never a Temporal server version, so the UI's version gates keep pages off whose methods the gateway does not serve |
 | `ListNamespaces`, `DescribeNamespace` | UI namespace picker, `temporal operator namespace list/describe` | The Temporal namespaces of the caller's Loams namespace |
 | `OperatorService.ListSearchAttributes` | UI filter builder, `temporal operator search-attribute list` | The system attributes the gateway stores for every run (`WorkflowId`, `RunId`, `WorkflowType`, `ExecutionStatus`, `TaskQueue`, `StartTime`, `CloseTime`, `ExecutionTime`). It has no custom attributes yet |
 | `DescribeWorkflowExecution`, `GetWorkflowExecutionHistory` | UI workflow page, `temporal workflow describe/show` | As for SDKs |
-| `GetWorkflowExecutionHistoryReverse` | UI workflow page | The history newest first, in pages |
+| `GetWorkflowExecutionHistoryReverse` | UI workflow page | The history newest first, in pages (lane TMP-api) |
 | `QueryWorkflow` | UI "Queries" tab, `temporal workflow query` | As for SDKs; it needs a running worker |
 | Nexus endpoints (`OperatorService.ListNexusEndpoints`, `Get…`, `Create…`, `Update…`, `Delete…`) and every other Nexus method | UI Nexus page, SDK workers that register Nexus services | `UNIMPLEMENTED` with "Nexus is not supported by the Loams Temporal gateway…". An SDK or UI page can tell "no Nexus here" apart from an outage |
 

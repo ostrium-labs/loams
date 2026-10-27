@@ -27,12 +27,25 @@ pub const IMPLEMENTED: &[&str] = &[
     "QueryWorkflow",
     "RespondQueryTaskCompleted",
     "ResetStickyTaskQueue",
-    // For the Temporal Web UI and the `temporal` CLI (D2051).
-    "GetClusterInfo",
-    "GetWorkflowExecutionHistoryReverse",
     // TMP-api (design 74 §5.8's DX4 update methods, brought forward).
     "UpdateWorkflowExecution",
     "PollWorkflowExecutionUpdate",
+    "SignalWithStartWorkflowExecution",
+    "ResetWorkflowExecution",
+    "RespondActivityTaskCompletedById",
+    "RespondActivityTaskFailedById",
+    "RespondActivityTaskCanceledById",
+    "RecordActivityTaskHeartbeatById",
+    "GetWorkflowExecutionHistoryReverse",
+    "DescribeTaskQueue",
+    "GetClusterInfo",
+    "ListTaskQueuePartitions",
+    "ShutdownWorker",
+    "UpdateNamespace",
+    "DeprecateNamespace",
+    "GetWorkerBuildIdCompatibility",
+    "GetWorkerVersioningRules",
+    "GetWorkerTaskReachability",
 ];
 
 /// The `OperatorService` methods the frontend implements (D2052). Every

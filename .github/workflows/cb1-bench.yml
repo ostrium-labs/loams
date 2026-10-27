@@ -1,0 +1,45 @@
+# CB1: the cloud free-tier benchmark's offline checks
+# (docs/plans/2026-10-27-cb1-cloud-free-tier-bench.md, Tasks 2-3). No cloud
+# account: the bench app's unit tests and bundles. Not part of CI required (a
+# separate workflow, as byoc-static.yml).
+name: CB1 bench
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "bench/cloud/**"
+      - ".github/workflows/cb1-bench.yml"
+
+concurrency:
+  group: cb1-bench-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  app:
+    name: "CB1: bench app"
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: bench/cloud/app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - name: install (lockfile)
+        run: npm ci --no-audit --no-fund
+      - name: node --test
+        run: npm test
+      - name: bundles (aws, azure)
+        run: |
+          set -euo pipefail
+          node build.mjs aws azure
+          unzip -l dist/aws.zip | grep -q index.mjs
+          unzip -l dist/azure.zip | grep -q host.json

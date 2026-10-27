@@ -1,0 +1,4 @@
+# Design 81 R4: Loams runs RisingWave without a licence key, so a paid-tier
+# check must fail on every managed instance.
+statement error
+SELECT rw_test_paid_tier();
