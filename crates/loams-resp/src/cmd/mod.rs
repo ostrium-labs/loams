@@ -6,15 +6,20 @@
 //! commands get Valkey's error texts (design §77 §8.5).
 
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::{Arc, LazyLock};
 
 use bytes::Bytes;
+use loams_kv::{Txn, TxnError, TxnOptions};
 
 use crate::frame::{Value, parse_int};
 use crate::server::{Conn, Shared};
 
 mod conn;
+mod keys;
 mod server;
+mod string;
 
 pub use conn::REDIS_VERSION;
 pub use server::{delete_range, glob, store_error};
@@ -32,6 +37,10 @@ pub enum Flow {
 pub enum Family {
     Conn,
     Server,
+    /// The generic key commands (Task 3).
+    Keys,
+    /// Strings (Task 3).
+    String,
 }
 
 /// Command flags, as `COMMAND INFO` names them.
@@ -93,6 +102,12 @@ const fn spec(
 
 use flag::*;
 const NOKEYS: (i32, i32, i32) = (0, 0, 0);
+/// The first argument is the only key.
+const KEY1: (i32, i32, i32) = (1, 1, 1);
+/// Every argument from the first is a key.
+const ALLKEYS: (i32, i32, i32) = (1, -1, 1);
+/// Keys and values alternate from the first argument.
+const PAIRS: (i32, i32, i32) = (1, -1, 2);
 
 /// Every command this build serves.
 pub static COMMANDS: &[Spec] = &[
@@ -261,6 +276,7 @@ pub static NOT_SUPPORTED: &[&str] = &[
     "memory",
     "slowlog",
     "lolwut",
+    "lcs",
 ];
 
 static BY_NAME: LazyLock<HashMap<&'static str, &'static Spec>> =
