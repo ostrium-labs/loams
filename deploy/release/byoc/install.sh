@@ -432,6 +432,8 @@ if [[ -n "$cloud" ]]; then
   ssh_cmd "cat > loams-byoc-config.tmp" <"$cfg"
   ssh_cmd "cat > loams-byoc-secrets.tmp" <"$deploy/byoc/lib/loams-byoc-secrets"
   ssh_cmd "cat > loams-byoc.service.tmp" <"$deploy/byoc/lib/loams-byoc.service"
+  ssh_cmd "cat > loams-byoc-confluent.service.tmp" <"$deploy/byoc/lib/loams-byoc-confluent.service"
+  ssh_cmd "cat > loams-byoc-confluent.timer.tmp" <"$deploy/byoc/lib/loams-byoc-confluent.timer"
   rm -f "$cfg"
   # shellcheck disable=SC2016 # expanded on the host
   remote '
@@ -443,9 +445,14 @@ $sudo install -d -m 755 /etc/loams-byoc
 { cat loams-byoc-config.tmp; echo "LOAMS_BYOC_STACK=$abs/release"; echo "LOAMS_BYOC_OWNER=$(id -un)"; } | $sudo tee /etc/loams-byoc/config.env >/dev/null
 $sudo install -m 755 loams-byoc-secrets.tmp /usr/local/bin/loams-byoc-secrets
 sed "s#^WorkingDirectory=.*#WorkingDirectory=$abs/release#" loams-byoc.service.tmp | $sudo tee /etc/systemd/system/loams-byoc.service >/dev/null
-rm -f loams-byoc-config.tmp loams-byoc-secrets.tmp loams-byoc.service.tmp
+$sudo install -m 644 loams-byoc-confluent.service.tmp /etc/systemd/system/loams-byoc-confluent.service
+$sudo install -m 644 loams-byoc-confluent.timer.tmp /etc/systemd/system/loams-byoc-confluent.timer
+rm -f loams-byoc-config.tmp loams-byoc-secrets.tmp loams-byoc.service.tmp \
+  loams-byoc-confluent.service.tmp loams-byoc-confluent.timer.tmp
 $sudo systemctl daemon-reload
 $sudo systemctl enable loams-byoc.service   # at boot: fetch the secrets, then compose up
+# every 5 minutes: rotated Confluent keys into the connect role files (no-op without integrations)
+$sudo systemctl enable --now loams-byoc-confluent.timer
 # The first fetch happens here, so the first start already has the tailnet key.
 $sudo /usr/local/bin/loams-byoc-secrets
 ' "$dir"

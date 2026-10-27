@@ -43,6 +43,8 @@ for c in aws gcp azure; do
   t "scripts_in_${c}_match_lib" bash -c "
     diff <('$here/write_file.py' '$byoc/$c/cloud-init.yaml' /usr/local/bin/loams-byoc-secrets) '$byoc/lib/loams-byoc-secrets' &&
     diff <('$here/write_file.py' '$byoc/$c/cloud-init.yaml' /usr/local/bin/loams-byoc-bootstrap) '$byoc/lib/loams-byoc-bootstrap' &&
+    diff <('$here/write_file.py' '$byoc/$c/cloud-init.yaml' /etc/systemd/system/loams-byoc-confluent.service) '$byoc/lib/loams-byoc-confluent.service' &&
+    diff <('$here/write_file.py' '$byoc/$c/cloud-init.yaml' /etc/systemd/system/loams-byoc-confluent.timer) '$byoc/lib/loams-byoc-confluent.timer' &&
     diff <('$here/write_file.py' '$byoc/$c/cloud-init.yaml' /etc/loams-byoc/loams-release-key.asc) '$repo/docs/release/loams-release-key.asc'"
 done
 
