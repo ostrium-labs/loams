@@ -159,6 +159,17 @@ fn retry_decision(
     {
         return Err(RetryState::NonRetryableFailure);
     }
+    // A server failure marked non-retryable (the gateway's own, for an
+    // oversized result or heartbeat, X1.R7) is final, as in Temporal's
+    // `retrypolicy.IsRetryable`.
+    if let Some(Failure {
+        failure_info: Some(failure::FailureInfo::ServerFailureInfo(info)),
+        ..
+    }) = failure
+        && info.non_retryable
+    {
+        return Err(RetryState::NonRetryableFailure);
+    }
     if policy.maximum_attempts > 0 && a.attempt >= policy.maximum_attempts {
         return Err(RetryState::MaximumAttemptsReached);
     }

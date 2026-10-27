@@ -173,6 +173,11 @@ const MODEL: &[(&str, &str, &[Rule])] = &[
     ("database", "can_write", &[From("environment", "editor")]),
     ("database", "can_admin", &[From("environment", "deployer")]),
     ("database", "can_connect", &[From("environment", "viewer")]),
+    ("engine", "environment", &[Direct(&[Type("environment")])]),
+    ("engine", "can_view", &[From("environment", "viewer")]),
+    ("engine", "can_operate", &[From("environment", "editor")]),
+    ("engine", "can_admin", &[From("environment", "deployer")]),
+    ("engine", "can_connect", &[From("environment", "viewer")]),
     ("graph", "environment", &[Direct(&[Type("environment")])]),
     (
         "graph",

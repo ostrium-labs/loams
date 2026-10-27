@@ -78,7 +78,8 @@ export interface Listing {
   language?: string;
   artifact?: Artifact;
   provenance?: { type: string; ref: string };
-  runtime?: { kind: 'node' | 'python' | 'oci' | 'binary'; version?: string };
+  /** `engine` only on the node runtime: node (the default when absent) or bun (D1808). */
+  runtime?: { kind: 'node' | 'python' | 'oci' | 'binary'; engine?: 'node' | 'bun'; version?: string };
   entrypoint?: string;
   targets?: string[];
   surfaces?: Record<string, unknown>;

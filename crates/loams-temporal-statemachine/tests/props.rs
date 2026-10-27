@@ -82,6 +82,7 @@ proptest! {
                                 metering_metadata: None,
                                 worker_version: None,
                                 force_create_new_workflow_task: false,
+                                messages: Vec::new(),
                             }
                         }
                         _ => continue,

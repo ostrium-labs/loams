@@ -106,6 +106,17 @@ type database
     define can_admin: deployer from environment
     define can_connect: viewer from environment
 
+# A managed engine instance (design 81, D1919): RisingWave, Flink SQL or Spark, in one namespace.
+# `can_connect` is the gateway's check for the engine's own protocol (Postgres wire, Flink SQL
+# Gateway, Spark Connect).
+type engine
+  relations
+    define environment: [environment]
+    define can_view: viewer from environment
+    define can_operate: editor from environment
+    define can_admin: deployer from environment
+    define can_connect: viewer from environment
+
 # The tuple stores `allowed_session` and `expires`; the request supplies `session_id` and `now`.
 condition agent_session(session_id: string, allowed_session: string, now: timestamp, expires: timestamp) {
   session_id == allowed_session && now < expires

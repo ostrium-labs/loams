@@ -79,6 +79,10 @@ pub struct InstallPlan {
     pub provenance: Value,
     pub source_repository: String,
     pub framework: Option<String>,
+    /// The `node` runtime's engine, `node` or `bun` (D1808); `None` for other
+    /// runtimes. Bound by the digest, so the person consents to it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine: Option<String>,
     pub level: Option<String>,
     /// What the agent is not allowed, in plain words.
     pub cannot: Vec<String>,
@@ -262,6 +266,7 @@ pub fn plan(view: &ListingView, installed: &[InstalledVersion]) -> InstallPlan {
         provenance: listing.get("provenance").cloned().unwrap_or(Value::Null),
         source_repository: str_of(&listing["source"], "repository"),
         framework: listing["framework"]["name"].as_str().map(str::to_owned),
+        engine: crate::engine::Engine::of(listing).map(|e| e.as_str().to_owned()),
         level: listing["conformance"]["level"].as_str().map(str::to_owned),
         cannot: Vec::new(),
     };
@@ -308,9 +313,15 @@ fn access_rank(access: &str) -> u8 {
 
 /// Whether `new` asks for anything `old` did not: a tool or a higher risk, a
 /// host, a data scope or write access, a secret, a dependency, a role or a
-/// Loams capability. Such an update needs consent again (D1466).
+/// Loams capability, or another engine. Such an update needs consent again
+/// (D1466).
 pub fn widens(old: &InstallPlan, new: &InstallPlan) -> Vec<String> {
     let mut out = Vec::new();
+    if let (Some(was), Some(now)) = (&old.engine, &new.engine)
+        && was != now
+    {
+        out.push(format!("runs on {now} instead of {was}"));
+    }
     for tool in &new.tools {
         match old.tools.iter().find(|t| t.name == tool.name) {
             None => out.push(format!("new tool {} ({:?})", tool.name, tool.risk)),
