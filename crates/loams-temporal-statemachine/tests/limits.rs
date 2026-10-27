@@ -6,7 +6,9 @@
 mod common;
 
 use common::*;
-use loams_temporal_history::{Attributes, EventType, Limits, MutableState, WorkflowExecutionStatus};
+use loams_temporal_history::{
+    Attributes, EventType, Limits, MutableState, WorkflowExecutionStatus,
+};
 use loams_temporal_proto::temporal::api::command::v1::{
     CompleteWorkflowExecutionCommandAttributes, command,
 };
@@ -111,7 +113,10 @@ fn the_2001st_pending_activity_fails_the_workflow_task() {
     let t = wft_completed(&s, over, 2_100).expect("answered");
     assert_eq!(
         types(&t),
-        [EventType::WorkflowTaskFailed, EventType::WorkflowTaskScheduled]
+        [
+            EventType::WorkflowTaskFailed,
+            EventType::WorkflowTaskScheduled
+        ]
     );
     let Some(Attributes::WorkflowTaskFailedEventAttributes(f)) = &t.events[0].attributes else {
         panic!("failed event");

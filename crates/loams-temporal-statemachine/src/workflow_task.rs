@@ -8,8 +8,8 @@ use loams_temporal_proto::temporal::api::enums::v1::{TimeoutType, WorkflowTaskFa
 use loams_temporal_proto::temporal::api::failure::v1::{Failure, ServerFailureInfo, failure};
 use loams_temporal_proto::temporal::api::history::v1::{
     WorkflowExecutionTerminatedEventAttributes, WorkflowTaskCompletedEventAttributes,
-    WorkflowTaskFailedEventAttributes,
-    WorkflowTaskStartedEventAttributes, WorkflowTaskTimedOutEventAttributes,
+    WorkflowTaskFailedEventAttributes, WorkflowTaskStartedEventAttributes,
+    WorkflowTaskTimedOutEventAttributes,
 };
 use loams_temporal_proto::temporal::api::sdk::v1::WorkflowTaskCompletedMetadata;
 
@@ -240,9 +240,9 @@ fn over_limit(
 pub fn server_failure(message: String, non_retryable: bool) -> Failure {
     Failure {
         message,
-        failure_info: Some(failure::FailureInfo::ServerFailureInfo(
-            ServerFailureInfo { non_retryable },
-        )),
+        failure_info: Some(failure::FailureInfo::ServerFailureInfo(ServerFailureInfo {
+            non_retryable,
+        })),
         ..Default::default()
     }
 }

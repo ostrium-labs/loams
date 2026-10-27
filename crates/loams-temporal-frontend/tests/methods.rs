@@ -318,3 +318,156 @@ async fn a_payload_over_2_mib_is_invalid_argument() {
     assert_eq!(e.code(), tonic::Code::InvalidArgument);
     assert_eq!(e.message(), "Blob data size exceeds limit.");
 }
+
+/// What the Go SDK's `run.Get` does with a close-event long poll: poll again
+/// while the page is empty and has a token; an empty page *without* one is
+/// its `panic: could not get last history event for workflow`.
+async fn sdk_get_close_event(
+    mut c: loams_temporal_proto::temporal::api::workflowservice::v1::workflow_service_client::WorkflowServiceClient<tonic::transport::Channel>,
+    execution: WorkflowExecution,
+) -> (EventType, usize) {
+    let mut token = Vec::new();
+    let mut polls = 0;
+    loop {
+        polls += 1;
+        let r = c
+            .get_workflow_execution_history(GetWorkflowExecutionHistoryRequest {
+                namespace: "default".into(),
+                execution: Some(execution.clone()),
+                wait_new_event: true,
+                history_event_filter_type: HistoryEventFilterType::CloseEvent as i32,
+                skip_archival: true,
+                next_page_token: token.into(),
+                ..Default::default()
+            })
+            .await
+            .expect("long poll")
+            .into_inner();
+        let events = r.history.map(|h| h.events).unwrap_or_default();
+        if let Some(e) = events.first() {
+            return (
+                EventType::try_from(e.event_type).expect("event type"),
+                polls,
+            );
+        }
+        assert!(
+            !r.next_page_token.is_empty(),
+            "could not get last history event for workflow {} (poll {polls})",
+            execution.workflow_id
+        );
+        token = r.next_page_token.to_vec();
+    }
+}
+
+/// The resonate-bench burst shape (DX1F.R1): many runs started at once,
+/// each waited on with the SDK's close-event loop while the runs close at
+/// different times, most of them after one or more long polls have timed
+/// out. Every waiter gets its close event; none sees an empty, tokenless page.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn burst_close_event_waiters_all_get_their_close_event() {
+    let gw = common::start_with(|mut c| {
+        c.history_wait = Duration::from_millis(150);
+        c
+    })
+    .await;
+    let mut c = gw.client.clone();
+    const RUNS: usize = 40;
+    let mut runs = Vec::with_capacity(RUNS);
+    for i in 0..RUNS {
+        let id = format!("burst-{i}");
+        let run = c
+            .start_workflow_execution(start_req(&id, &format!("r{i}")))
+            .await
+            .expect("start")
+            .into_inner();
+        runs.push(WorkflowExecution {
+            workflow_id: id,
+            run_id: run.run_id,
+        });
+    }
+    let waiters: Vec<_> = runs
+        .iter()
+        .cloned()
+        .map(|e| tokio::spawn(sdk_get_close_event(gw.client.clone(), e)))
+        .collect();
+    // Close them in waves: some at once, the rest across several deadlines.
+    let closers: Vec<_> = runs
+        .iter()
+        .cloned()
+        .enumerate()
+        .map(|(i, e)| {
+            let mut c = gw.client.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(40 * (i % 13) as u64)).await;
+                c.terminate_workflow_execution(TerminateWorkflowExecutionRequest {
+                    namespace: "default".into(),
+                    workflow_execution: Some(e),
+                    reason: "burst".into(),
+                    ..Default::default()
+                })
+                .await
+                .expect("terminate");
+            })
+        })
+        .collect();
+    for h in closers {
+        h.await.expect("closer");
+    }
+    let mut timed_out_first = 0;
+    for h in waiters {
+        let (event, polls) = h.await.expect("waiter");
+        assert_eq!(event, EventType::WorkflowExecutionTerminated);
+        if polls > 1 {
+            timed_out_first += 1;
+        }
+    }
+    // The test only covers the bug if some waiters outlived a deadline.
+    assert!(timed_out_first > 0, "no long poll reached its deadline");
+}
+
+/// The full-history long poll (no filter) on an open run that does not move
+/// before the deadline keeps a token too, so a reader following the history
+/// does not take the page as the end of it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn full_history_long_poll_keeps_a_token_while_the_run_is_open() {
+    let gw = common::start_with(|mut c| {
+        c.history_wait = Duration::from_millis(200);
+        c
+    })
+    .await;
+    let mut c = gw.client.clone();
+    let run = c
+        .start_workflow_execution(start_req("wfull", "r1"))
+        .await
+        .expect("start")
+        .into_inner();
+    let execution = Some(WorkflowExecution {
+        workflow_id: "wfull".into(),
+        run_id: run.run_id,
+    });
+    let first = c
+        .get_workflow_execution_history(GetWorkflowExecutionHistoryRequest {
+            namespace: "default".into(),
+            execution: execution.clone(),
+            ..Default::default()
+        })
+        .await
+        .expect("history")
+        .into_inner();
+    let seen = first.history.expect("history").events;
+    assert!(!seen.is_empty());
+    let next = seen.last().expect("event").event_id + 1;
+    let r = c
+        .get_workflow_execution_history(GetWorkflowExecutionHistoryRequest {
+            namespace: "default".into(),
+            execution,
+            wait_new_event: true,
+            next_page_token: next.to_be_bytes().to_vec().into(),
+            ..Default::default()
+        })
+        .await
+        .expect("long poll")
+        .into_inner();
+    assert!(r.history.is_some_and(|h| h.events.is_empty()));
+    assert_eq!(r.next_page_token.to_vec(), next.to_be_bytes().to_vec());
+}

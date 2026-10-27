@@ -104,8 +104,6 @@ fn poll_build_id(capabilities: Option<&str>, deployment: Option<&str>) -> String
         .to_string()
 }
 
-/// The poll deadline: the configured timeout, or 5 s before the request's
-/// own deadline if that is sooner (X1.R3).
 /// Whether a payload or failure is over X1.R7's 2 MiB blob limit
 /// (DX1F.R2; Temporal sizes the encoded message).
 fn blob_too_large<M: prost::Message>(m: Option<&M>) -> bool {
@@ -117,15 +115,26 @@ fn blob_size_exceeded() -> Status {
     Status::invalid_argument(limit_messages::BLOB_SIZE)
 }
 
+/// The poll deadline: the configured timeout, or 5 s before the request's
+/// own deadline if that is sooner (X1.R3).
 fn poll_deadline<T>(req: &Request<T>, max: Duration) -> Duration {
     let header = req
         .metadata()
         .get("grpc-timeout")
         .and_then(|v| v.to_str().ok())
         .and_then(parse_grpc_timeout);
-    match header {
+    wait_within(header, max)
+}
+
+/// How long to hold a long poll given the client's deadline `client` (if it
+/// sent one) and the configured `max`. A deadline of 5 s or less gets half
+/// of it (DX1F.R3): holding the whole of it would let the client's deadline
+/// fire first, and the client would see `DEADLINE_EXCEEDED` instead of the
+/// empty page and token it can poll again with.
+fn wait_within(client: Option<Duration>, max: Duration) -> Duration {
+    match client {
         Some(d) if d > Duration::from_secs(5) => (d - Duration::from_secs(5)).min(max),
-        Some(d) => d.min(max),
+        Some(d) => (d / 2).min(max),
         None => max,
     }
 }
@@ -908,10 +917,7 @@ impl WorkflowService for WorkflowServiceImpl {
                     Input::ActivityFailed {
                         scheduled_event_id: t.scheduled_event_id,
                         attempt: t.attempt,
-                        failure: Some(server_failure(
-                            limit_messages::COMPLETE_RESULT.into(),
-                            true,
-                        )),
+                        failure: Some(server_failure(limit_messages::COMPLETE_RESULT.into(), true)),
                         identity: r.identity,
                         last_heartbeat_details: None,
                     }
@@ -956,7 +962,9 @@ impl WorkflowService for WorkflowServiceImpl {
                 last_heartbeat_details: r.last_heartbeat_details,
             })
             .await?;
-        Ok(Response::new(RespondActivityTaskFailedResponse { failures }))
+        Ok(Response::new(RespondActivityTaskFailedResponse {
+            failures,
+        }))
     }
 
     async fn respond_activity_task_canceled(
@@ -973,10 +981,7 @@ impl WorkflowService for WorkflowServiceImpl {
                     Input::ActivityFailed {
                         scheduled_event_id: t.scheduled_event_id,
                         attempt: t.attempt,
-                        failure: Some(server_failure(
-                            limit_messages::CANCEL_DETAILS.into(),
-                            true,
-                        )),
+                        failure: Some(server_failure(limit_messages::CANCEL_DETAILS.into(), true)),
                         identity: r.identity,
                         last_heartbeat_details: None,
                     }
@@ -1362,8 +1367,37 @@ impl WorkflowService for WorkflowServiceImpl {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_grpc_timeout;
+    use super::{parse_grpc_timeout, wait_within};
     use std::time::Duration;
+
+    #[test]
+    fn a_long_poll_answers_before_the_clients_deadline() {
+        let max = Duration::from_secs(60);
+        assert_eq!(wait_within(None, max), max);
+        // 5 s of room before a long deadline, capped at the configured wait.
+        assert_eq!(
+            wait_within(Some(Duration::from_secs(70)), max),
+            Duration::from_secs(60)
+        );
+        assert_eq!(
+            wait_within(Some(Duration::from_secs(20)), max),
+            Duration::from_secs(15)
+        );
+        // A short deadline gets half, never all of it (DX1F.R3).
+        assert_eq!(
+            wait_within(Some(Duration::from_secs(4)), max),
+            Duration::from_secs(2)
+        );
+        assert_eq!(
+            wait_within(Some(Duration::from_secs(5)), max),
+            Duration::from_millis(2500)
+        );
+        assert_eq!(wait_within(Some(Duration::ZERO), max), Duration::ZERO);
+        assert_eq!(
+            wait_within(Some(Duration::from_secs(4)), Duration::from_secs(1)),
+            Duration::from_secs(1)
+        );
+    }
 
     #[test]
     fn grpc_timeouts_parse() {

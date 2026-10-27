@@ -11,7 +11,6 @@ use loams_temporal_proto::temporal::api::common::v1::{Payloads, RetryPolicy};
 use loams_temporal_proto::temporal::api::enums::v1::{
     RetryState, TaskQueueKind, WorkflowTaskFailedCause,
 };
-use prost::Message as _;
 use loams_temporal_proto::temporal::api::history::v1::{
     ActivityTaskCancelRequestedEventAttributes, ActivityTaskCanceledEventAttributes,
     ActivityTaskScheduledEventAttributes, MarkerRecordedEventAttributes,
@@ -20,6 +19,7 @@ use loams_temporal_proto::temporal::api::history::v1::{
     WorkflowExecutionFailedEventAttributes,
 };
 use loams_temporal_proto::temporal::api::taskqueue::v1::TaskQueue;
+use prost::Message as _;
 
 use crate::write::close;
 use crate::{Effect, Rejection, TimeoutKind};
