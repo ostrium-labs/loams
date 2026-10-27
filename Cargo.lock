@@ -9574,6 +9574,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-meter-core"
+version = "0.1.2"
+dependencies = [
+ "bytes",
+ "loams-cloudevents",
+ "proptest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.21",
+ "time",
+]
+
+[[package]]
 name = "loams-migrate"
 version = "0.1.2"
 dependencies = [
