@@ -145,6 +145,19 @@ jobs:
       - name: run the suite
         run: cargo test -p loams-sidebar-browser --test provider_parity --locked -- --test-threads=1 --nocapture
 
+      # downloads_blocked on service: the suite cannot see the container's
+      # filesystem, so check that the run left no attachment in it (D2126).
+      - name: "service: no download written inside the container"
+        if: always() && matrix.provider == 'service'
+        run: |
+          runtime="$(command -v docker || command -v podman)"
+          changes="$("$runtime" diff loams-browser-parity 2>&1 || true)"
+          printf '%s\n' "$changes" > parity-out/service-container-diff.txt
+          if printf '%s' "$changes" | grep -q 'report\.bin\|loams-parity-downloads/.'; then
+            echo "the browser service wrote a download inside the container:"; printf '%s\n' "$changes"; exit 1
+          fi
+          echo "container filesystem: no download written"
+
       - name: summary
         if: always()
         run: python3 scripts/browser/parity-matrix.py "$LOAMS_BROWSER_PARITY_REPORT" >> "$GITHUB_STEP_SUMMARY"

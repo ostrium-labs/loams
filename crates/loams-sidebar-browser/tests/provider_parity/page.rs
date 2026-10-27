@@ -210,8 +210,6 @@ pub enum Verdict {
 pub struct Paused {
     pub request_id: String,
     pub url: String,
-    /// Present at the response stage.
-    pub response_headers: Option<Vec<(String, String)>>,
 }
 
 impl Paused {
@@ -223,33 +221,7 @@ impl Paused {
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_string();
-        let response_headers = event
-            .param("responseHeaders")
-            .and_then(Value::as_array)
-            .map(|headers| {
-                headers
-                    .iter()
-                    .filter_map(|header| {
-                        Some((
-                            header.get("name")?.as_str()?.to_ascii_lowercase(),
-                            header.get("value")?.as_str()?.to_string(),
-                        ))
-                    })
-                    .collect()
-            });
-        Some(Self {
-            request_id,
-            url,
-            response_headers,
-        })
-    }
-
-    pub fn header(&self, name: &str) -> Option<&str> {
-        self.response_headers
-            .as_ref()?
-            .iter()
-            .find(|(found, _)| found == name)
-            .map(|(_, value)| value.as_str())
+        Some(Self { request_id, url })
     }
 }
 

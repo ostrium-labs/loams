@@ -375,22 +375,18 @@ async fn content_extraction() {
 }
 
 // ----------------------------------------------------------------- downloads
-
-/// The download policy, enforced by Loams at the Fetch interception layer.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum DownloadPolicy {
-    Block,
-    Allow,
-}
-
-fn is_attachment(paused: &page::Paused) -> bool {
-    paused.header("content-disposition").is_some_and(|value| {
-        value
-            .trim_start()
-            .to_ascii_lowercase()
-            .starts_with("attachment")
-    })
-}
+//
+// The download policy is set through `Browser.setDownloadBehavior`, the CDP
+// call a browser honours for both "deny" and "allow into this directory"
+// (D2126). A download is detected by what a browser that downloads does: a
+// `Browser.downloadWillBegin` / `Page.downloadWillBegin` event, or a file
+// with the attachment's bytes in the download directory.
+//
+// Read from Obscura's source at v0.2.3 (2026-10-28): it acks
+// `setDownloadBehavior` without acting on it, because the engine never writes
+// a download to disk, and it emits no download events. Its `Fetch` domain
+// pauses at the request stage only. So "blocked" holds by construction, and
+// "allowed" cannot be honoured. Both scenarios say exactly that.
 
 const FETCH_RESULT: &str = "window.__r ?? null";
 
@@ -401,87 +397,156 @@ fn fetch_into_r(url: &str) -> String {
     )
 }
 
-async fn downloads_scenario(kind: Kind) -> Outcome {
+/// Files under `dir` whose bytes contain the fixture attachment.
+fn downloaded_files(dir: &std::path::Path) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(next) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&next) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if std::fs::read(&path).is_ok_and(|bytes| {
+                bytes
+                    .windows(DOWNLOAD_BYTES.len())
+                    .any(|window| window == DOWNLOAD_BYTES)
+            }) {
+                found.push(path.display().to_string());
+            }
+        }
+    }
+    found
+}
+
+/// Set the policy, navigate to the attachment, and report the download events
+/// seen within a few seconds.
+async fn attempt_download(
+    provider: &mut Provider,
+    page: &provider::PageHandle,
+    fixture: &Fixture,
+    behavior: Value,
+) -> Result<Vec<String>, Failure> {
+    provider
+        .client
+        .call("Browser.setDownloadBehavior", behavior, None)
+        .await
+        .map_err(|error| format!("Browser.setDownloadBehavior: {error}"))?;
+    navigate(&mut provider.client, page, &fixture.url("/"), LOAD).await?;
+    // The attachment as a top-level navigation, which is how a click on a
+    // download link reaches a browser. Its result is not the point: some
+    // engines answer with an error for a download, some with nothing.
+    let _ = provider
+        .client
+        .call(
+            "Page.navigate",
+            json!({ "url": fixture.url("/download.bin") }),
+            Some(&page.session_id),
+        )
+        .await;
+    let mut events = Vec::new();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline {
+        if let Some(event) =
+            page::next_event(&mut provider.client, Duration::from_millis(250)).await?
+            && event.method.to_ascii_lowercase().contains("download")
+        {
+            events.push(event.method);
+        }
+    }
+    ensure(!fixture.seen_path("/download.bin").is_empty(), || {
+        "the engine never requested the attachment, so the scenario proved nothing".to_string()
+    })?;
+    Ok(events)
+}
+
+async fn downloads_blocked_scenario(kind: Kind) -> Outcome {
     let fixture = Fixture::start(None).await;
     let mut provider = connect(kind, &fixture).await?;
     let page = provider.open(true).await?;
-    navigate(&mut provider.client, &page, &fixture.url("/"), LOAD).await?;
-    provider
-        .client
-        .call(
-            "Fetch.enable",
-            json!({ "patterns": [{ "urlPattern": "*", "requestStage": "Response" }] }),
-            Some(&page.session_id),
-        )
-        .await
-        .map_err(|error| format!("Fetch.enable at the response stage: {error}"))?;
-    let mut notes = Vec::new();
-    for policy in [DownloadPolicy::Block, DownloadPolicy::Allow] {
-        let decide = |paused: &page::Paused| match (policy, is_attachment(paused)) {
-            (DownloadPolicy::Block, true) => Verdict::Fail("BlockedByClient"),
-            _ => Verdict::Continue,
-        };
-        let (value, decisions) = run_intercepted(
-            &mut provider.client,
-            &page,
-            &fetch_into_r("/download.bin"),
-            FETCH_RESULT,
-            LOAD,
-            decide,
-        )
-        .await?;
-        let saw_headers = decisions.iter().any(|(paused, _)| {
-            paused.url.ends_with("/download.bin") && paused.response_headers.is_some()
-        });
-        ensure(saw_headers, || {
-            format!(
-                "{policy:?}: the engine never paused /download.bin at the response stage, so a \
-                 policy on Content-Disposition cannot be enforced; decisions {decisions:?}"
-            )
-        })?;
-        match policy {
-            DownloadPolicy::Block => ensure(value.get("ok") == Some(&json!(false)), || {
-                format!("Block: the attachment reached the page: {value}")
-            })?,
-            DownloadPolicy::Allow => ensure(
-                value.get("ok") == Some(&json!(true))
-                    && value.get("len") == Some(&json!(DOWNLOAD_BYTES.len())),
-                || format!("Allow: the attachment did not arrive intact: {value}"),
-            )?,
-        }
-        notes.push(format!("{policy:?} ok"));
-    }
-    // A non-attachment response still flows under the blocking policy.
-    let (value, _) = run_intercepted(
-        &mut provider.client,
+    let events = attempt_download(
+        &mut provider,
         &page,
-        &fetch_into_r("/inline.txt"),
-        FETCH_RESULT,
-        LOAD,
-        |paused| {
-            if is_attachment(paused) {
-                Verdict::Fail("BlockedByClient")
-            } else {
-                Verdict::Continue
-            }
-        },
+        &fixture,
+        json!({ "behavior": "deny" }),
     )
     .await?;
-    ensure(value.get("ok") == Some(&json!(true)), || {
-        format!("Block let nothing through, not even an inline response: {value}")
+    let begun: Vec<&String> = events
+        .iter()
+        .filter(|method| method.ends_with("downloadWillBegin"))
+        .collect();
+    ensure(begun.is_empty(), || {
+        format!("a download began under the deny policy: {events:?}")
     })?;
-    let _ = provider
-        .client
-        .call("Fetch.disable", json!({}), Some(&page.session_id))
-        .await;
+    // On local the suite owns the engine's filesystem view; on service the CI
+    // job checks the container with `docker diff` after the run.
+    let written = downloaded_files(&provider.profile_dir);
+    ensure(written.is_empty(), || {
+        format!("the attachment was written to disk under deny: {written:?}")
+    })?;
     provider.close(&page).await;
     provider.shutdown().await;
-    Ok(format!("{}; inline response unaffected", notes.join(", ")))
+    Ok(format!(
+        "deny accepted; no download event, no file{}",
+        if kind == Kind::Service {
+            " (container filesystem checked by CI)"
+        } else {
+            ""
+        }
+    ))
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn downloads_follow_policy() {
-    run("downloads_policy", downloads_scenario).await;
+async fn downloads_blocked_by_policy() {
+    run("downloads_blocked", downloads_blocked_scenario).await;
+}
+
+async fn downloads_allowed_scenario(kind: Kind) -> Outcome {
+    let fixture = Fixture::start(None).await;
+    let mut provider = connect(kind, &fixture).await?;
+    let page = provider.open(true).await?;
+    // On local the directory is the suite's; on service it is a path inside
+    // the container, which only the events can speak for.
+    let directory = match kind {
+        Kind::Local => {
+            let directory = provider.profile_dir.join("downloads");
+            std::fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+            directory.display().to_string()
+        }
+        Kind::Service => "/tmp/loams-parity-downloads".to_string(),
+    };
+    let events = attempt_download(
+        &mut provider,
+        &page,
+        &fixture,
+        json!({ "behavior": "allow", "downloadPath": directory, "eventsEnabled": true }),
+    )
+    .await?;
+    let began = events
+        .iter()
+        .any(|method| method.ends_with("downloadWillBegin"));
+    let written = if kind == Kind::Local {
+        downloaded_files(std::path::Path::new(&directory))
+    } else {
+        Vec::new()
+    };
+    ensure(began || !written.is_empty(), || {
+        format!(
+            "under allow, the engine emitted no download event ({events:?}) and wrote no file; \
+             Obscura 0.2.3 acks Browser.setDownloadBehavior without acting on it and never \
+             downloads to disk (D2126)"
+        )
+    })?;
+    provider.close(&page).await;
+    provider.shutdown().await;
+    Ok(format!("download began: event {began}, files {written:?}"))
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn downloads_allowed_by_policy() {
+    run("downloads_allowed", downloads_allowed_scenario).await;
 }
 
 // ------------------------------------------------------------ network policy
