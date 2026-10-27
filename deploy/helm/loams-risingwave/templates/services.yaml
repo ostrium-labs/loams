@@ -1,0 +1,42 @@
+{{- range $component, $role := .Values.roles }}
+{{- $sel := dict "component" $component "instance" $.Values.instance }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $role.name }}
+  labels:
+    {{- include "loams-risingwave.selector" $sel | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "loams-risingwave.selector" $sel | nindent 4 }}
+  ports:
+    {{- range $role.ports }}
+    - name: {{ .name }}
+      port: {{ .containerPort }}
+      targetPort: {{ .name }}
+    {{- end }}
+{{- if $role.stateful }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $role.name }}-headless
+  labels:
+    {{- include "loams-risingwave.selector" $sel | nindent 4 }}
+spec:
+  clusterIP: None
+  # Peers resolve each other before they are ready (meta replicas elect a
+  # leader through the meta store).
+  publishNotReadyAddresses: true
+  selector:
+    {{- include "loams-risingwave.selector" $sel | nindent 4 }}
+  ports:
+    {{- range $role.ports }}
+    - name: {{ .name }}
+      port: {{ .containerPort }}
+      targetPort: {{ .name }}
+    {{- end }}
+{{- end }}
+{{- end }}
