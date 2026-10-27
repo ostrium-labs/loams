@@ -110,6 +110,23 @@ impl ServerCerts {
         })
     }
 
+    /// The config of the first certificate whose names cover `host`; with
+    /// an empty `host` (a dedicated port, no SNI), the first certificate.
+    pub fn config_for_name(&self, host: &str) -> Option<Arc<ServerConfig>> {
+        if host.is_empty() {
+            return self.entries.first().map(|e| e.config.clone());
+        }
+        let host = host.to_ascii_lowercase();
+        self.entries
+            .iter()
+            .find(|e| {
+                e.names
+                    .iter()
+                    .any(|n| *n == host || wildcard_matches(n, &host))
+            })
+            .map(|e| e.config.clone())
+    }
+
     /// The config whose leaf certificate is `leaf` (PgDog's, as PgDog
     /// presented it).
     pub fn config_for_leaf(&self, leaf: &[u8]) -> Option<Arc<ServerConfig>> {

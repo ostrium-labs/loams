@@ -9091,6 +9091,7 @@ dependencies = [
 name = "loams-gateway"
 version = "0.1.2"
 dependencies = [
+ "async-trait",
  "clap",
  "hex",
  "http-body-util",
@@ -9098,7 +9099,9 @@ dependencies = [
  "hyper-util",
  "loams-spark",
  "loams-temporal-frontend",
+ "md-5 0.11.0",
  "rcgen",
+ "reqwest 0.13.5",
  "rustls",
  "serde",
  "serde_json",

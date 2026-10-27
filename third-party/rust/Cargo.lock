@@ -7383,6 +7383,7 @@ dependencies = [
  "landlock",
  "libc",
  "loro",
+ "md-5 0.11.0",
  "memmap2",
  "mimalloc",
  "moka",
