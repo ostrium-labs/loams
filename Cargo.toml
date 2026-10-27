@@ -355,6 +355,7 @@ loams-upgrade = { path = "crates/loams-upgrade", version = "0.1.2" }
 loams-cloud-admin = { path = "crates/loams-cloud-admin", version = "0.1.2" }
 loams-confluent = { path = "crates/loams-confluent", version = "0.1.2" }
 loams-risingwave = { path = "crates/loams-risingwave", version = "0.1.2" }
+loams-spark = { path = "crates/loams-spark", version = "0.1.2" }
 loams-stream-grpc = { path = "crates/loams-stream-grpc", version = "0.1.2" }
 loams-pk = { path = "crates/loams-pk", version = "0.1.2" }
 loams-qdrant = { path = "crates/loams-qdrant", version = "0.1.2" }
