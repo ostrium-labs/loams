@@ -8,7 +8,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use loams_temporal_resonate::{Durability, FakeDurability, HttpDurability};
-use loams_temporal_store::{MemStore, NamespaceRecord, PgStore, Store, StoreError};
+use loams_temporal_store::retention::{RetentionPolicy, spawn_sweeper};
+use loams_temporal_store::{
+    MemStore, NamespaceRecord, PgStore, PgStoreOptions, PurgeLimits, Store, StoreError,
+};
 use serde::Deserialize;
 
 use crate::{
@@ -41,13 +44,148 @@ pub struct Config {
     /// Temporal namespaces created at start when missing.
     #[serde(default)]
     pub bootstrap_namespaces: Vec<BootstrapNamespace>,
+    /// Deleting closed runs after their namespace's retention (Q1163).
+    #[serde(default)]
+    pub retention: RetentionConfig,
 }
 
+/// Where history, mutable state and the outbox live (design 74 §5.5).
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum StoreConfig {
+    /// In process; lost on restart (development only).
     Memory,
-    Postgres { url_env: String },
+    /// A Loams Postgres database on a session or direct endpoint, never
+    /// PgDog transaction mode (§5.5 rule 5) and never Loams SQL (rule 6).
+    Postgres {
+        /// The environment variable that holds the database URL.
+        url_env: String,
+        #[serde(default)]
+        pool: PoolConfig,
+    },
+}
+
+/// The Postgres store's connection pool (`[store.pool]`). Unset fields keep
+/// [`PgStoreOptions::new`]'s defaults.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PoolConfig {
+    /// At least 2: one connection is the outbox `LISTEN` (default 16).
+    pub max_connections: Option<u32>,
+    /// Default 0.
+    pub min_connections: Option<u32>,
+    /// Default 10.
+    pub acquire_timeout_secs: Option<u64>,
+    /// Default 600; 0 keeps idle connections forever.
+    pub idle_timeout_secs: Option<u64>,
+    /// Default 1800; 0 never recycles a connection.
+    pub max_lifetime_secs: Option<u64>,
+    /// Postgres `statement_timeout` (default 30000); 0 turns it off.
+    pub statement_timeout_ms: Option<u64>,
+    /// Postgres `idle_in_transaction_session_timeout` (default 60000); 0
+    /// turns it off.
+    pub idle_in_transaction_timeout_ms: Option<u64>,
+    /// Default `loams-temporal`.
+    pub application_name: Option<String>,
+}
+
+impl PoolConfig {
+    /// The store options for `shards` shards.
+    pub fn options(&self, shards: u32) -> PgStoreOptions {
+        let mut o = PgStoreOptions::new(shards);
+        let off_if_zero = |d: Duration| (!d.is_zero()).then_some(d);
+        if let Some(n) = self.max_connections {
+            o.max_connections = n;
+        }
+        if let Some(n) = self.min_connections {
+            o.min_connections = n;
+        }
+        if let Some(s) = self.acquire_timeout_secs {
+            o.acquire_timeout = Duration::from_secs(s);
+        }
+        if let Some(s) = self.idle_timeout_secs {
+            o.idle_timeout = off_if_zero(Duration::from_secs(s));
+        }
+        if let Some(s) = self.max_lifetime_secs {
+            o.max_lifetime = off_if_zero(Duration::from_secs(s));
+        }
+        if let Some(ms) = self.statement_timeout_ms {
+            o.statement_timeout = off_if_zero(Duration::from_millis(ms));
+        }
+        if let Some(ms) = self.idle_in_transaction_timeout_ms {
+            o.idle_in_transaction_timeout = off_if_zero(Duration::from_millis(ms));
+        }
+        if let Some(name) = &self.application_name {
+            o.application_name = name.clone();
+        }
+        o
+    }
+}
+
+/// The retention sweeper (`[retention]`).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RetentionConfig {
+    /// Default true.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Seconds between rounds (default 60).
+    #[serde(default = "default_retention_interval")]
+    pub interval_secs: u64,
+    /// Closed runs one purge call deletes (default 100).
+    #[serde(default = "default_max_runs")]
+    pub max_runs_per_call: usize,
+    /// Dispatched outbox rows one purge call deletes (default 1000).
+    #[serde(default = "default_max_outbox_rows")]
+    pub max_outbox_rows_per_call: usize,
+    /// How long a dispatched outbox row is kept, for debugging a relay
+    /// (default 24).
+    #[serde(default = "default_outbox_ttl_hours")]
+    pub dispatched_outbox_ttl_hours: u64,
+}
+
+impl Default for RetentionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            interval_secs: default_retention_interval(),
+            max_runs_per_call: default_max_runs(),
+            max_outbox_rows_per_call: default_max_outbox_rows(),
+            dispatched_outbox_ttl_hours: default_outbox_ttl_hours(),
+        }
+    }
+}
+
+impl RetentionConfig {
+    pub fn policy(&self) -> RetentionPolicy {
+        RetentionPolicy {
+            interval: Duration::from_secs(self.interval_secs.max(1)),
+            limits: PurgeLimits {
+                max_runs: self.max_runs_per_call,
+                max_outbox_rows: self.max_outbox_rows_per_call,
+                dispatched_outbox_ttl: Duration::from_secs(
+                    self.dispatched_outbox_ttl_hours.saturating_mul(3600),
+                ),
+            },
+            ..RetentionPolicy::default()
+        }
+    }
+}
+
+fn default_true() -> bool {
+    true
+}
+fn default_retention_interval() -> u64 {
+    60
+}
+fn default_max_runs() -> usize {
+    100
+}
+fn default_max_outbox_rows() -> usize {
+    1000
+}
+fn default_outbox_ttl_hours() -> u64 {
+    24
 }
 
 #[derive(Debug, Deserialize)]
@@ -117,6 +255,7 @@ pub fn dev_config() -> Config {
             name: "default".into(),
             retention_hours: 72,
         }],
+        retention: RetentionConfig::default(),
     }
 }
 
@@ -180,8 +319,8 @@ pub async fn run_on(
 
     let store: Arc<dyn Store> = match &config.store {
         StoreConfig::Memory => Arc::new(MemStore::new(config.shards).map_err(|e| e.to_string())?),
-        StoreConfig::Postgres { url_env } => {
-            let pg = PgStore::connect(&env(url_env)?, config.shards)
+        StoreConfig::Postgres { url_env, pool } => {
+            let pg = PgStore::connect_url(&env(url_env)?, &pool.options(config.shards))
                 .await
                 .map_err(|e| format!("postgres: {e}"))?;
             pg.migrate().await.map_err(|e| format!("migrate: {e}"))?;
@@ -214,8 +353,7 @@ pub async fn run_on(
             let token = match token_env {
                 Some(name) => {
                     let t = env(name)?;
-                    Some(Arc::new(move || Some(t.clone()))
-                        as loams_temporal_resonate::wire_interim::TokenFn)
+                    Some(Arc::new(move || Some(t.clone())) as loams_temporal_resonate::TokenFn)
                 }
                 None => None,
             };
@@ -274,6 +412,10 @@ pub async fn run_on(
     }
 
     let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
+    let sweeper = config
+        .retention
+        .enabled
+        .then(|| spawn_sweeper(store.clone(), config.retention.policy(), stop_rx.clone()));
     let gateway = Gateway::start(
         Parts {
             store,
@@ -299,6 +441,10 @@ pub async fn run_on(
         .await
         .map_err(|e| e.to_string())?;
     let _ = stop_tx.send(true);
+    if let Some(h) = sweeper {
+        // It stops at its next await; a purge in flight finishes first.
+        let _ = h.await;
+    }
     Ok(())
 }
 
@@ -320,5 +466,67 @@ mod tests {
             token_secret("K", "x".repeat(MIN_TOKEN_KEY_BYTES)).unwrap(),
             vec![b'x'; MIN_TOKEN_KEY_BYTES]
         );
+    }
+
+    #[test]
+    fn postgres_store_pool_and_retention_parse() {
+        let text = r#"
+listen = "0.0.0.0:7233"
+[store]
+kind = "postgres"
+url_env = "LOAMS_TEMPORAL_DATABASE_URL"
+[store.pool]
+max_connections = 32
+statement_timeout_ms = 0
+application_name = "temporal-a"
+[durability]
+kind = "resonate"
+url = "http://127.0.0.1:8001"
+[retention]
+interval_secs = 30
+max_runs_per_call = 10
+"#;
+        let c: Config = toml::from_str(text).expect("parses");
+        let StoreConfig::Postgres { url_env, pool } = &c.store else {
+            panic!("postgres store expected");
+        };
+        assert_eq!(url_env, "LOAMS_TEMPORAL_DATABASE_URL");
+        let o = pool.options(c.shards);
+        assert_eq!(o.shards, 64);
+        assert_eq!(o.max_connections, 32);
+        assert_eq!(o.statement_timeout, None);
+        assert_eq!(o.application_name, "temporal-a");
+        // Unset fields keep the store's defaults.
+        assert_eq!(o.min_connections, PgStoreOptions::new(64).min_connections);
+        let p = c.retention.policy();
+        assert_eq!(p.interval, Duration::from_secs(30));
+        assert_eq!(p.limits.max_runs, 10);
+        assert_eq!(p.limits.max_outbox_rows, 1000);
+        assert_eq!(
+            p.limits.dispatched_outbox_ttl,
+            Duration::from_secs(24 * 3600)
+        );
+        assert!(c.retention.enabled);
+    }
+
+    #[test]
+    fn store_without_pool_and_unknown_pool_key() {
+        let base = r#"
+[store]
+kind = "postgres"
+url_env = "U"
+[durability]
+kind = "in_process"
+"#;
+        let c: Config = toml::from_str(base).expect("parses");
+        let StoreConfig::Postgres { pool, .. } = &c.store else {
+            panic!("postgres store expected");
+        };
+        assert_eq!(pool.options(64), PgStoreOptions::new(64));
+        let bad = format!("{base}\n[store.pool]\nmax_conns = 3\n");
+        assert!(toml::from_str::<Config>(&bad).is_err());
+        let off = format!("{base}\n[retention]\nenabled = false\n");
+        let c: Config = toml::from_str(&off).expect("parses");
+        assert!(!c.retention.enabled);
     }
 }
