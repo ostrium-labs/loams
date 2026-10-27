@@ -95,6 +95,49 @@ fn bad_names_and_upstreams_rejected() {
     assert!(matches!(parse("bogus = 1"), Err(RouteError::Parse(_))));
 }
 
+const RW: &str = r#"
+[[risingwave.endpoints]]
+name = "eng_abcdefghijklmnopqrstuvwxyz"
+namespace = "dev"
+hostnames = ["clicks.dev.eu1.rw.example.com"]
+upstreams = ["rw-abcdefghijklmnopqrstuvwxyz-frontend.eng-abcdefghijklmnopqrstuvwxyz.svc:4566"]
+upstream_user = "loams_gateway"
+upstream_password_file = "/var/run/loams/risingwave/abcdefghijklmnopqrstuvwxyz/password"
+port = 16566
+"#;
+
+#[test]
+fn risingwave_endpoints_route_by_name_and_port() {
+    let t = parse(&format!("{FULL}{RW}")).unwrap();
+    let ep = t
+        .risingwave
+        .by_hostname("Clicks.dev.eu1.rw.example.com")
+        .unwrap();
+    assert_eq!(ep.namespace, "dev");
+    assert!(t.risingwave.by_port(16566).is_some());
+    let mut ports: Vec<u16> = t.dedicated_ports().collect();
+    ports.sort_unstable();
+    assert_eq!(ports, vec![16004, 16566]);
+    // RisingWave routes are not Postgres namespaces.
+    assert!(t.by_hostname("clicks.dev.eu1.rw.example.com").is_none());
+}
+
+#[test]
+fn risingwave_collisions_with_namespaces_rejected() {
+    let same_host = RW.replace("clicks.dev.eu1.rw.example.com", "beta.eu1.pg.example.com");
+    assert!(matches!(
+        parse(&format!("{FULL}{same_host}")),
+        Err(RouteError::Invalid(_))
+    ));
+    let same_port = RW.replace("16566", "16004");
+    assert!(matches!(
+        parse(&format!("{FULL}{same_port}")),
+        Err(RouteError::Invalid(_))
+    ));
+    let no_secret_inline = format!("{RW}upstream_password = \"x\"\n");
+    assert!(parse(&no_secret_inline).is_err());
+}
+
 #[test]
 fn missing_generation_refused_when_required() {
     assert_eq!(

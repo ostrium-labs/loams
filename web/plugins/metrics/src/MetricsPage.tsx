@@ -70,7 +70,7 @@ export function MetricsPage({ client, sample }: { client: MetricsClient; sample?
   // and kept if that load fails, so a failed reload never loses the edits.
   const staleDraft = useRef<string | undefined>(undefined);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `reload` re-reads on demand
+  // oxlint-disable-next-line react/exhaustive-deps -- `reload` re-reads on demand
   useEffect(() => {
     const ctl = new AbortController();
     setLoaded({ phase: 'loading' });

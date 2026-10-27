@@ -119,6 +119,7 @@ pub(crate) struct Completion {
     pub worker_version: Option<WorkerVersionStamp>,
     pub force_create_new_workflow_task: bool,
     pub messages: Vec<Message>,
+    pub new_run_id: String,
 }
 
 fn is_close(c: &Command) -> bool {
@@ -211,7 +212,7 @@ pub(crate) fn completed(
                 update::handle_message(b, m)?;
             }
         }
-        commands::apply(b, fx, command, completed_id, &c.identity)?;
+        commands::apply(b, fx, command, completed_id, &c.identity, &c.new_run_id)?;
     }
     for m in messages.into_iter().flatten() {
         update::handle_message(b, m)?;

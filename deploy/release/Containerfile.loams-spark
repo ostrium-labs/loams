@@ -1,0 +1,31 @@
+# syntax=docker/dockerfile:1.7
+# Apache Spark 4.1.3's Spark Connect server with Apache Iceberg's runtime and
+# Hadoop's S3A, for managed Spark's opt-in JVM backend (design 81 R15/R16,
+# SP-a D1990): ghcr.io/ostrium-labs/loams-spark:<spark version>.
+# Iceberg 1.12.0 (2026-09-30) ships a runtime for Spark 4.0 and 4.1, none for
+# 4.2, hence Spark 4.1.3 (image of 2026-07-24). hadoop-aws matches Spark
+# 4.1.3's Hadoop (3.4.2). The AWS SDK v2 classes hadoop-aws needs come from
+# iceberg-aws-bundle (verify: S3A on the bundle's SDK; fallback is
+# software.amazon.awssdk:bundle 2.29.52, Hadoop 3.4.2's own pin).
+# Jars are checked against Maven Central's SHA-1 (the digests Central
+# publishes for these artefacts).
+ARG SPARK_IMAGE=docker.io/apache/spark:4.1.3-scala2.13-java21-python3-ubuntu@sha256:bf9d035a7c32a8ca46aa58d6348182ffd7d2dff6409206ecfbb3915ff1fef211
+FROM ${SPARK_IMAGE}
+USER root
+ARG MAVEN=https://repo1.maven.org/maven2
+RUN set -eu; cd /opt/spark/jars; \
+    fetch() { curl -fsSL -o "$2" "$MAVEN/$1/$2"; echo "$3  $2" | sha1sum -c -; }; \
+    fetch org/apache/iceberg/iceberg-spark-runtime-4.1_2.13/1.12.0 iceberg-spark-runtime-4.1_2.13-1.12.0.jar 9e395e373a9a99643bf413ca1f74fa0c034887b4; \
+    fetch org/apache/iceberg/iceberg-aws-bundle/1.12.0 iceberg-aws-bundle-1.12.0.jar 64d5012217035a60924feb633636b744d318eb0a; \
+    fetch org/apache/hadoop/hadoop-aws/3.4.2 hadoop-aws-3.4.2.jar 16f9de6da5c7862241d55a13d34843404d0cbb88; \
+    mkdir -p /opt/loams/spark-conf && chown -R 185:185 /opt/loams
+# spark-defaults.conf is rendered by loams-spark (conf.rs) and mounted here.
+ENV SPARK_CONF_DIR=/opt/loams/spark-conf \
+    SPARK_NO_DAEMONIZE=1
+USER 185
+EXPOSE 15002 7078 7079 4040
+LABEL org.opencontainers.image.title="loams-spark" \
+      org.opencontainers.image.description="Apache Spark Connect server with Iceberg for Loams managed Spark (preview)" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      io.loams.licence="Apache-2.0"
+ENTRYPOINT ["/opt/spark/sbin/start-connect-server.sh"]

@@ -60,7 +60,7 @@ jobs:
       - uses: actions/checkout@v7
       # redis==3.5.3 (Tidis's requirements.txt) imports distutils, which
       # Python 3.12 removed.
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0 (v7 floats to 7.1.0, under 14 days old on 2026-10-27)
         with:
           python-version: "3.11"
       - name: valkey

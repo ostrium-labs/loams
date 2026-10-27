@@ -7,7 +7,7 @@ import { instance } from '@loams/proto';
 import { ProjectService } from '@loams/proto/agentd';
 import { useQueryClient } from '@tanstack/react-query';
 import { act, cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 import type { AgentdReach, AgentdService } from '../src/agentd.js';
 import {
   AgentdScope,

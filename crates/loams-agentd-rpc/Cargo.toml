@@ -10,7 +10,7 @@ publish = false
 loams-agentd-proto.workspace = true
 tokio.workspace = true
 # 0.24 as in the fork; loams-web-bridge is on 0.30 (not a workspace key).
-tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
 futures.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -23,7 +23,7 @@ httparse = "1.10"
 # Constant-time token comparison; already in the lock.
 subtle = "2.6"
 # Scoped run tokens: 32 bytes from the OS RNG, base64url.
-getrandom = "0.3"
+getrandom = "0.4"
 base64.workspace = true
 
 [dev-dependencies]
