@@ -170,7 +170,7 @@ public actor RefreshingTokenSource: TokenSource {
 
 // MARK: - OIDC token exchange
 
-/// The RFC 8693 token exchange a person signed in through Authentik needs
+/// The RFC 8693 token exchange a person signed in at the IdP needs
 /// (design §44 §7.4, D608; §19 §5.2).
 ///
 /// The instance's `/oauth/token` endpoint takes the identity token and answers

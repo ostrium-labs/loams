@@ -1,0 +1,62 @@
+{
+  "id": "vercel-labs/fx",
+  "kind": "harness",
+  "version": "0.0.14",
+  "title": "fx",
+  "summary": "A small coding-agent harness with an ACP server.",
+  "licence": "Apache-2.0",
+  "source": {
+    "repository": "https://github.com/vercel-labs/fx",
+    "commit": "0123456789abcdef0123456789abcdef01234567"
+  },
+  "publisher": {
+    "name": "Vercel Labs"
+  },
+  "artifact": {
+    "type": "archive",
+    "name": "fx",
+    "version": "0.0.14",
+    "files": [
+      {
+        "platform": "linux-x86_64",
+        "url": "https://github.com/vercel-labs/fx/releases/download/v0.0.14/fx-linux-x86_64.tar.gz",
+        "sha256": "213840ab495023fa2d584d2f93c121559fcacde0fb4793c6c20f7f751021a333",
+        "path": "fx",
+        "locations": [
+          {
+            "kind": "walrus",
+            "blob_id": "aVbh3_1oUc-gtUYXctEvHdfSJnb17uKq0658C2MNXIA",
+            "sha256": "213840ab495023fa2d584d2f93c121559fcacde0fb4793c6c20f7f751021a333"
+          }
+        ]
+      },
+      {
+        "platform": "darwin-aarch64",
+        "url": "https://github.com/vercel-labs/fx/releases/download/v0.0.14/fx-darwin-aarch64.tar.gz",
+        "sha256": "13fd7f2038ebaa546cd4ad1a809e978a5232ebf82649833a46f6523929ee5df2",
+        "path": "fx"
+      }
+    ]
+  },
+  "provenance": {
+    "type": "sigstore-bundle",
+    "ref": "https://github.com/vercel-labs/fx/releases/download/v0.0.14/fx.sigstore.json"
+  },
+  "runtime": {
+    "kind": "binary"
+  },
+  "entrypoint": "fx",
+  "harness": {
+    "launch": {
+      "protocol": "acp",
+      "command": "fx",
+      "args": [
+        "acp"
+      ]
+    },
+    "auth": [
+      "api-key"
+    ]
+  },
+  "pricing": "free"
+}

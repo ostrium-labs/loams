@@ -1,5 +1,7 @@
 # 40 — Loams SystemOne: One Decision API, a Backend per Host
 
+> **Updated 2026-10-19 ([D1119](13-decision-log.md)): Loams has no open core.** Where this document places metering, billing, the hosted control plane, commercial APIs or other components in the private `loams-platform` repository, or calls something private for open-core reasons, read that as superseded: everything is Apache-2.0, and the metering, billing and control-plane code is moving into the open repo now (design §63, Loams Meter). Ostrium Labs offers services (infrastructure efficiency, SLAs, support), not a paid edition. The rest of the design is unchanged.
+
 Status: **Proposed**, 2026-10-02. Decisions **D520–D539**, open questions **Q520–Q539** (recorded in the [decision log](13-decision-log.md)). **Amended 2026-10-18** by the owner's rulings on SO1 Task 0 ([spike](../plans/so1-systemone-spike.md); SO1 rulings R0.5a, R0.6, R0.8, R0.14, R0.20): D525 and D527 amended, Q523 answered; §1, §4.2, §6.3, §7.2 and §8 carry the changes. Plans: [SO1](../plans/2026-10-02-so1-systemone.md) (engine, API, backends, CLI) and [SO2](../plans/2026-10-02-so2-systemone-desktop.md) (desktop, browser, Apple sidecar, Loams Bot).
 
 The owner's request of 2026-10-02: "add this to our desktop app", with a pasted note that proposes one `POST /v1/systemone` whose backend is chosen from the host, with Jev (TypeSafe's closed cloud API) as a configurable cloud option. **The note is a third party's reading of third-party pages.** This document re-checked its important claims on 2026-10-02 (§2) and corrects the ones that were wrong. Nothing named `loams-systemone.ts` exists in any of our repositories, so this is a fresh design. **No code is written by this document.**
@@ -388,12 +390,12 @@ The 2026-10-02 order, struck: ~~(1) **kevala as a pinned git dependency** (Apach
 
 ### 7.3 `laya-coreml`: a Swift sidecar inside the desktop app (D528)
 
-- Code lives in `ostrium-labs/loams-desktop` at `sidecars/coreml/` (a SwiftPM executable `loams-coreml`), not in this repository (it needs Xcode and macOS CI).
+- ~~Code lives in `ostrium-labs/loams-desktop` at `sidecars/coreml/` (a SwiftPM executable `loams-coreml`), not in this repository (it needs Xcode and macOS CI).~~ Code lives in this repository at `apps/desktop-electron/sidecars/coreml/` (a SwiftPM executable `loams-coreml`), built only by the macOS arm64 job (amended 2026-10-18).
 - It depends on `FluidInference/FluidUse` (Apache-2.0; its library product `FluidUse` includes `LayaManager`) **pinned by revision**. If building the whole package pulls in too much (FluidAudio and the demo targets), SO2 Task 0 vendors only the Laya files with their Apache-2.0 notice instead (Q525).
-- It speaks the same HTTP/JSON as `laya-serve`, restricted to `POST /v1/systemone` and `GET /health`, on a **Unix domain socket** in `$LOAMS_HOME/run/` (mode 0600) with the same per-launch bearer key, so the Rust adapter is the same `LayaServeBackend` client over a different transport. No TCP port exists.
+- It speaks the same HTTP/JSON as `laya-serve`, restricted to `POST /v1/systemone` and `GET /health`, on a **Unix domain socket** in ~~`$LOAMS_HOME/run/`~~ the daemon's `<userData>/agentd/run/systemone/`, with a 0700 directory under `$TMPDIR` when the path would exceed `sun_path` (amended 2026-10-18) (mode 0600) with the same per-launch bearer key, so the Rust adapter is the same `LayaServeBackend` client over a different transport. No TCP port exists.
 - Models: `FluidInference/laya-coreml` buckets are fetched by our model manager (not by `LayaManager.load()`'s own download, so verification and the cache policy are ours) and given to the sidecar by path. Default: the 128 and 512 buckets (what `LayaManager.load()` loads), int8-embedding variants where the model card shows equal accuracy, 256 and 1024 on demand. Compute units per bucket as FluidUse documents.
 - Limits it enforces and reports: 32 options per `choice`, multilingual checkpoint only, a state over 1024 tokens truncated on the right with `usage.truncated`. The router already excludes it above 32 options (§6.3), and the sidecar returns `422` with `options_over_32` if asked anyway.
-- macOS 14+ and Apple silicon only. The sidecar is code-signed and notarised with the app, in `Contents/MacOS/` or `Contents/Helpers/`, and launched by `loams-link`.
+- macOS 14+ and Apple silicon only. The sidecar is code-signed and notarised with the app, in ~~`Contents/MacOS/` or `Contents/Helpers/`, and launched by `loams-link`~~ `Contents/Resources/bin/`, copied into the daemon's runtime directory by `install-runtime`, and started and supervised only by `loams-agentd` (amended 2026-10-18).
 - Not shipped by upstream: no server exists, so this is ours, and it is the largest piece of new code in SO2.
 
 ### 7.4 `laya-mlx`: optional (D529)
@@ -409,16 +411,15 @@ The 2026-10-02 order, struck: ~~(1) **kevala as a pinned git dependency** (Apach
 
 ## 8. The desktop integration (D538)
 
-**Superseded 2026-10-18 (owner, SO1 R0.20):** the desktop is Electron with the per-user daemon `loams-agentd` (D652, D780), and `loams-agentd` hosts SystemOne there. D538's new wording and this section's rewrite land with the SO2 re-plan ([#770](https://github.com/ostrium-labs/loams/pull/770)); the text below is the 2026-10-02 design, kept for the record.
-
-Loams Desktop is the zeron fork (§37 §18, `ostrium-labs/loams-desktop`). SystemOne enters it through `loams-link`, never through zeron's engine:
+~~Loams Desktop is the zeron fork (§37 §18, `ostrium-labs/loams-desktop`). SystemOne enters it through `loams-link`, never through zeron's engine.~~ (Amended 2026-10-18.) Loams Desktop is the Electron app, the cordis shell and the per-user daemon `loams-agentd` (§50, §53). SystemOne lives in the daemon, which is the desktop's only SystemOne host: the `loams dev` engine it supervises runs with its SystemOne route off. The shims and the shell are the daemon's clients (owner, SO1 R0.20 and SO2-Q2 to Q5):
 
 ```
- Loams Bot (harness / bot-acp shim)      zeron mcp (injected tool)       Settings > Decisions
+ Loams Bot (ACP shim, bot-acp)     agentd MCP shim + tool registry     Settings › Decisions (cordis plugin)
+   ndjson, scoped run token          ndjson, scoped run token            loams.agentd.v1 via Electron main
             │                                   │                              │
             └──────────────┬────────────────────┴──────────────────────────────┘
                            ▼
-                 loams-systemone-link (in loams-link, no GPUI)
+                 loams-agentd-systemone (in loams-agentd, headless)
                   · HostProfile · Registry · Router (the crate `loams-systemone`, as a library)
                   · ModelManager (download, verify, cache, residency)
                   · SidecarSupervisor ── CoremlSidecarBackend ── UDS ──► loams-coreml (Swift, ANE)
@@ -427,12 +428,12 @@ Loams Desktop is the zeron fork (§37 §18, `ostrium-labs/loams-desktop`). Syste
                                       └─ RemoteBackend ── Connect ──► the instance's SystemOneService (when signed in)
 ```
 
-- **The desktop links the `loams-systemone` crate** (small: no DataFusion or storage). That is allowed by §37 §18.3's rule against embedding the *engine*; this crate is a client library of 3 to 4 k lines, not the engine.
-- **Local first, instance second.** With a local backend ready the desktop answers locally. With none ready, or by setting, it calls the instance's `SystemOneService` (the `RemoteBackend`), which is another registry. Data locality is shown in the UI per answer (`loams.locality`).
+- **The daemon links the `loams-systemone` crate** (small: no DataFusion or storage). That is allowed by §37 §18.3's rule against embedding the *engine*; this crate is a client library of 3 to 4 k lines, not the engine.
+- **Local first, instance second.** The `RemoteBackend` is registered only once the daemon can sign in to an instance (Q703); until then the desktop is local-only (amended 2026-10-18). With a local backend ready the desktop answers locally. With none ready, or by setting, it calls the instance's `SystemOneService` (the `RemoteBackend`), which is another registry. Data locality is shown in the UI per answer (`loams.locality`).
 - **Models are the app's, kept resident.** The Model Manager downloads, verifies, caches and (setting) keeps the sidecar loaded; a lazy-start mode starts it on first use and stops it after N idle minutes. Resident memory is shown (Core ML fp16 bucket about 614 MB; torch English 808 MB, multilingual 647 MB per upstream).
-- **Settings, "Decisions" panel** (GPUI, in `loams-panels`): the active backend and why (`route_reason`), a table of backends with status and a one-line fix for each `NotInstalled`, model sizes, download/verify/delete, residency, a "run self-test" button with the result, calibration status per question type, and a **Cloud decisions** section: off by default, a Jev key field stored in the OS keychain (never in config), the consent text from §10 and a per-org policy override from the instance.
-- **Loams Bot uses it** (D538): (1) before dispatch, `route.agent` (choice over the five platform agents), `urgency` (score) and `needs_person` (noul) decide which A2A agent gets a message and whether to interrupt; (2) as a cheap pre-filter, "does this message need the LLM at all" (noul), which saves a model call for acknowledgements; (3) as the policy for notification priority on phones. The decision, its probabilities and the backend are shown on the thread's card ("routed to forgejo, 0.91") and sent into the A2A message metadata for tracing (`systemone.backend`, `systemone.latency_ms`, no content, §39 D-SF-11). **A SystemOne answer is advisory and never approves or authorises anything** (D537).
-- **Agent surface.** A read-only MCP tool `systemone_decide` is added to the MCP server the engine injects into every run (as `zeron mcp` is), so coding agents can ask local questions; it has no network path and is off if no local backend is ready.
+- **Settings, "Decisions" panel** (~~GPUI, in `loams-panels`~~ the cordis plugin `@loams/plugin-systemone`, a Settings section in both modes, reading the daemon over `loams.agentd.v1`; amended 2026-10-18): the active backend and why (`route_reason`), a table of backends with status and a one-line fix for each `NotInstalled`, model sizes, download/verify/delete, residency, a "run self-test" button with the result, calibration status per question type, and a **Cloud decisions** section: off by default, a Jev key field stored in the OS keychain (never in config), the consent text from §10 and a per-org policy override from the instance.
+- **Loams Bot uses it** (D538): (1) before dispatch, `route.agent` (choice over the five platform agents), `urgency` (score) and `needs_person` (noul) decide which A2A agent gets a message and whether to interrupt; (2) as a cheap pre-filter, "does this message need the LLM at all" (noul), which saves a model call for acknowledgements; ~~(3) as the policy for notification priority on phones~~ (amended 2026-10-18: phone notification priority is out of scope; on the desktop `needs_person` raises the daemon's OS notification and Studio's toast). The decision, its probabilities and the backend are shown on the thread's card ("routed to forgejo, 0.91") and sent into the A2A message metadata for tracing (`systemone.backend`, `systemone.latency_ms`, no content, §39 D-SF-11). **A SystemOne answer is advisory and never approves or authorises anything** (D537).
+- **Agent surface.** A read-only MCP tool `systemone_decide` is added to ~~the MCP server the engine injects into every run (as `zeron mcp` is)~~ the daemon's injected MCP shim (`loams-agentd-mcp`) and its tool registry (amended 2026-10-18), so coding agents can ask local questions; it has no network path and is off if no local backend is ready.
 - **Telemetry.** The desktop sends nothing to Loams or anyone else (zeron has none; D284). Two separate things stay local: the decision log (§9.4), opt-in and off by default, and, when the desktop talks to an instance, the usage event `io.loams.dev.systemone.decided.v1` (§11) is emitted **by the instance's server path only** into that operator's own stream (counts, backend, latency, locality; never content), enabled when the operator runs the route; the local sidecar path emits no event. A2A trace metadata (`systemone.*`, no content) travels to the operator's own collector like every other §39 span.
 
 ## 9. Calibration, self-test, fine-tuning, models, cache
@@ -518,7 +519,7 @@ Per plan task (see the plans). The cross-cutting ones:
 | Plan | Contents | Depends on |
 |---|---|---|
 | **SO1** | Spike (kevala, `ort`, `laya-serve` measurements); protos and mock; `loams-systemone` crate (types, wire, trait, registry, host detection, routing); `laya-serve` adapter and supervisor; Jev adapter; calibration; self-test; model manager; server route, CLI and MCP; decision log; docs and exit gate | AP0's proto and Connect conventions (D128); `loams-link` unaffected |
-| **SO2** | Reconcile with `loams-desktop`; the Swift Core ML sidecar; `loams-systemone-link` in the app; Model Manager and Settings panels; Loams Bot integration; zeron MCP tool; optional cordis browser plugin; Windows and Linux CPU path; optional MLX; exit gate | SO1 Tasks 1 to 8, AP1n Task 4 (Connect client in `loams-link`), SF3 Task 5 (the desktop harness) |
+| **SO2** (re-targeted 2026-10-18) | Reconcile with the daemon and Studio as built; the Swift Core ML sidecar supervised by `loams-agentd`; `loams-agentd-systemone`; Model Manager and Settings › Decisions in the cordis shell; Loams Bot integration in the ACP shim; `systemone_decide` in agentd's MCP shim; optional cordis browser plugin; Windows and Linux CPU path; optional MLX; exit gate | SO1 Tasks 1 to 10; DD1 and SD1 as built (see the SO2 plan's dependency table) |
 
 The track is **SO** (new label `track:so`, "SystemOne").
 
@@ -543,6 +544,7 @@ The track is **SO** (new label `track:so`, "SystemOne").
 
 - **§37 §18.3 "do not embed the engine in the app".** The desktop links the small client crate `loams-systemone`, not the engine; unchanged in spirit (D538).
 - **D220 (hosted or commercial inference goes in `loams-platform`).** A Jev client adapter is a client of someone else's API with the user's own key and is open; a Loams-hosted inference service is commercial (§11).
+- **§37 §18 and D538 as first written (the zeron fork in `ostrium-labs/loams-desktop`).** Superseded by §50 and §53: the fork is retired and its repository deleted; the desktop host is `loams-agentd` (D528 and D538 amended 2026-10-18).
 - **D111 (loopback only until auth).** The sidecars and the desktop route are loopback; the server route sits behind normal auth.
 - **§39 D-SF-11 (no content in spans).** Kept (D537.4).
 - **§37 §5.6 trust tiers.** The browser plugin is a first-party plugin; its worker document is a separate origin by design (§7.5).

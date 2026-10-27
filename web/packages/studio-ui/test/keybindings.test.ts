@@ -96,12 +96,14 @@ describe('keybinding_when_scopes', () => {
     );
     const opts = { platform: LINUX, context: { threadOpen: true } };
     expect(resolveShortcutCommand(key('d', { ctrlKey: true }), merged, opts)).toBe('chat.new');
-    // chat.new's default Mod+N is gone with the override.
-    expect(resolveShortcutCommand(key('n', { ctrlKey: true }), merged, opts)).toBeNull();
+    // chat.new's default Mod+Shift+O is gone with the override.
+    expect(
+      resolveShortcutCommand(key('o', { ctrlKey: true, shiftKey: true }), merged, opts),
+    ).toBeNull();
   });
 
-  it("stays clear of the shell's own keys", () => {
-    for (const reserved of ['k', 'j']) {
+  it("stays clear of the shell's own keys (D1081)", () => {
+    for (const reserved of ['k', 'j', 'b', 'i', 'n', ',', '[', ']', '1', '9']) {
       expect(
         resolveShortcutCommand(key(reserved, { ctrlKey: true }), DEFAULT_RESOLVED_KEYBINDINGS, {
           platform: LINUX,
@@ -116,6 +118,18 @@ describe('keybinding_when_scopes', () => {
         { platform: LINUX, context: { threadOpen: true } },
       ),
     ).toBeNull();
+  });
+
+  it("labels Studio's commands with the shell's chords, a custom rule first", () => {
+    const store = new KeybindingStore(null);
+    const opts = { platform: LINUX, context: { isDesktop: true } };
+    expect(shortcutLabelForCommand(store.shown(), 'chat.new', opts)).toBe('Ctrl+N');
+    expect(shortcutLabelForCommand(store.shown(), 'thread.jump.3', opts)).toBe('Ctrl+3');
+    expect(shortcutLabelForCommand(store.shown(), 'thread.next', opts)).toBe('Ctrl+Tab');
+    // A key press never resolves against the labels: the shell runs those chords.
+    expect(resolveShortcutCommand(key('n', { ctrlKey: true }), store.resolved(), opts)).toBeNull();
+    store.setCommandRules('chat.new', [{ key: 'mod+shift+y' }]);
+    expect(shortcutLabelForCommand(store.shown(), 'chat.new', opts)).toBe('Ctrl+Shift+Y');
   });
 
   it('gives the palette its keys as a chord', () => {
@@ -161,7 +175,9 @@ describe('keybinding_conflict_detected', () => {
     for (const [k, label] of [
       ['mod+k', 'Shell: Command Palette'],
       ['mod+shift+m', 'Shell: Switch Mode'],
-      ['mod+j', 'Shell: Agent Panel'],
+      ['mod+j', 'Shell: Toggle Drawer'],
+      ['mod+b', 'Shell: Toggle Sidebar'],
+      ['ctrl+tab', 'Shell: Next Thread'],
     ] as const) {
       const merged = mergeWithDefaultKeybindings(
         compileResolvedKeybindingsConfig([{ key: k, command: 'settings.open' }]),

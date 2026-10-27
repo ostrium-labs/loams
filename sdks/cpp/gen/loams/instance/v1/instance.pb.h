@@ -238,9 +238,11 @@ template <>
 enum SignInKind : int {
   SIGN_IN_KIND_UNSPECIFIED = 0,
   SIGN_IN_KIND_NONE = 1,
-  SIGN_IN_KIND_AUTHENTIK = 2,
-  SIGN_IN_KIND_AUTHENTIK_DEVICE_CODE = 3,
+  SIGN_IN_KIND_AUTHENTIK [[deprecated]] = 2,
+  SIGN_IN_KIND_AUTHENTIK_DEVICE_CODE [[deprecated]] = 3,
   SIGN_IN_KIND_PAIRING = 4,
+  SIGN_IN_KIND_OIDC = 5,
+  SIGN_IN_KIND_OIDC_DEVICE_CODE = 6,
   SignInKind_INT_MIN_SENTINEL_DO_NOT_USE_ =
       ::std::numeric_limits<::int32_t>::min(),
   SignInKind_INT_MAX_SENTINEL_DO_NOT_USE_ =
@@ -251,11 +253,11 @@ extern const uint32_t SignInKind_internal_data_[];
 inline constexpr SignInKind SignInKind_MIN =
     static_cast<SignInKind>(0);
 inline constexpr SignInKind SignInKind_MAX =
-    static_cast<SignInKind>(4);
+    static_cast<SignInKind>(6);
 [[nodiscard]] inline bool SignInKind_IsValid(int value) {
-  return 0 <= value && value <= 4;
+  return 0 <= value && value <= 6;
 }
-inline constexpr int SignInKind_ARRAYSIZE = 4 + 1;
+inline constexpr int SignInKind_ARRAYSIZE = 6 + 1;
 [[nodiscard]] const ::google::protobuf::EnumDescriptor* PROTOBUF_NONNULL
 SignInKind_descriptor();
 [[nodiscard]] inline auto ProtobufInternalGetEnumDescriptor(SignInKind) {
@@ -270,7 +272,7 @@ template <typename T>
 }
 template <>
 [[nodiscard]] inline const ::std::string& SignInKind_Name(SignInKind value) {
-  return ::google::protobuf::internal::NameOfDenseEnum<SignInKind_descriptor, 0, 4>(
+  return ::google::protobuf::internal::NameOfDenseEnum<SignInKind_descriptor, 0, 6>(
       static_cast<int>(value));
 }
 [[nodiscard]] inline bool SignInKind_Parse(

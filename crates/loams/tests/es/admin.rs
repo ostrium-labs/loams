@@ -696,3 +696,468 @@ async fn create_with_aliases_adds_them() {
     assert_eq!(es.head("/j").await.status, StatusCode::NOT_FOUND);
     es.server.shutdown().await.expect("shutdown");
 }
+
+// ----- _cat/indices (MA1 Task 24) -----
+
+/// Indices `a1` (2 documents), `a2` (empty) and `b1` (1 document), and an
+/// alias `al` over `b1`.
+async fn cat_fixture(es: &Es) {
+    for index in ["a1", "a2", "b1"] {
+        Es::ok(es.put(&format!("/{index}"), None).await);
+    }
+    for (index, id) in [("a1", "1"), ("a1", "2"), ("b1", "1")] {
+        let a = es
+            .put(
+                &format!("/{index}/_doc/{id}?refresh=true"),
+                Some(json!({"n": 1})),
+            )
+            .await;
+        assert_eq!(a.status, StatusCode::CREATED, "{}", a.text);
+    }
+    Es::ok(es.put("/b1/_alias/al", None).await);
+}
+
+/// The `index` values of a JSON answer, in order.
+fn cat_index_names(body: &Value) -> Vec<&str> {
+    body.as_array()
+        .expect("an array")
+        .iter()
+        .map(|row| row["index"].as_str().expect("index"))
+        .collect()
+}
+
+#[tokio::test]
+async fn cat_indices_json_lists_indices() {
+    let es = Es::start().await;
+    // No index yet: an empty array.
+    assert_eq!(
+        Es::ok(es.get("/_cat/indices?format=json").await).body,
+        json!([])
+    );
+    cat_fixture(&es).await;
+    let a = Es::ok(es.get("/_cat/indices?format=json").await);
+    assert!(a.header("content-type").starts_with("application/json"));
+    assert_eq!(a.header("x-elastic-product"), "Elasticsearch");
+    assert_eq!(cat_index_names(&a.body), ["a1", "a2", "b1"]);
+    let a1 = &a.body[0];
+    let columns: Vec<&str> = a1
+        .as_object()
+        .expect("object")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        columns,
+        [
+            "health",
+            "status",
+            "index",
+            "uuid",
+            "pri",
+            "rep",
+            "docs.count",
+            "docs.deleted",
+            "store.size",
+            "pri.store.size",
+            "dataset.size"
+        ]
+    );
+    // Every value is a string, as in ES.
+    for value in a1.as_object().expect("object").values() {
+        assert!(value.is_string(), "{value}");
+    }
+    assert_eq!(a1["health"], "green");
+    assert_eq!(a1["status"], "open");
+    assert_eq!(a1["pri"], "1");
+    assert_eq!(a1["rep"], "0");
+    assert_eq!(a1["docs.count"], "2");
+    assert_eq!(a1["docs.deleted"], "0");
+    assert_eq!(a.body[1]["docs.count"], "0");
+    assert_eq!(a.body[2]["docs.count"], "1");
+    let info = es
+        .server
+        .collections()
+        .get_collection(NS, "a1")
+        .await
+        .expect("a1");
+    assert_eq!(a1["uuid"], index_uuid(info.id));
+    // An Accept of JSON without `format` answers JSON too.
+    let a = es
+        .send(
+            reqwest::Method::GET,
+            "/_cat/indices",
+            None,
+            &[("accept", "application/json")],
+        )
+        .await;
+    assert_eq!(cat_index_names(&a.body), ["a1", "a2", "b1"]);
+    // `health=` filters (every index is green), unknown parameters are 400.
+    assert_eq!(
+        Es::ok(es.get("/_cat/indices?format=json&health=yellow").await).body,
+        json!([])
+    );
+    assert_eq!(
+        cat_index_names(&Es::ok(es.get("/_cat/indices?format=json&health=green").await).body),
+        ["a1", "a2", "b1"]
+    );
+    es.get("/_cat/indices?format=json&nope=1")
+        .await
+        .assert_error(
+            400,
+            "illegal_argument_exception",
+            Some("request [/_cat/indices] contains unrecognized parameter: [nope]"),
+        );
+    es.get("/_cat/indices?format=yaml")
+        .await
+        .assert_error(400, "illegal_argument_exception", None);
+    // `expand_wildcards` is accepted.
+    Es::ok(
+        es.get("/_cat/indices?format=json&expand_wildcards=all")
+            .await,
+    );
+}
+
+#[tokio::test]
+async fn cat_indices_text_with_header() {
+    let es = Es::start().await;
+    cat_fixture(&es).await;
+    let a = Es::ok(es.get("/_cat/indices?h=index,docs.count").await);
+    assert!(
+        a.header("content-type").starts_with("text/plain"),
+        "{:?}",
+        a.headers
+    );
+    assert_eq!(a.text, "a1 2\na2 0\nb1 1\n");
+    let a = Es::ok(es.get("/_cat/indices?v&h=health,index,docs.count").await);
+    assert_eq!(
+        a.text,
+        "health index docs.count\ngreen  a1             2\ngreen  a2             0\ngreen  b1             1\n"
+    );
+    // Without `h`, every column, in ES's order.
+    let a = Es::ok(es.get("/_cat/indices?v=true").await);
+    let header: Vec<&str> = a
+        .text
+        .lines()
+        .next()
+        .expect("header")
+        .split_whitespace()
+        .collect();
+    assert_eq!(
+        header,
+        [
+            "health",
+            "status",
+            "index",
+            "uuid",
+            "pri",
+            "rep",
+            "docs.count",
+            "docs.deleted",
+            "store.size",
+            "pri.store.size",
+            "dataset.size"
+        ]
+    );
+    assert_eq!(a.text.lines().count(), 4);
+}
+
+#[tokio::test]
+async fn cat_indices_h_and_s() {
+    let es = Es::start().await;
+    cat_fixture(&es).await;
+    // Aliases keep their spelling; patterns expand.
+    let a = Es::ok(es.get("/_cat/indices?format=json&h=i,dc&s=dc:desc").await);
+    assert_eq!(
+        a.body,
+        json!([
+            {"i": "a1", "dc": "2"},
+            {"i": "b1", "dc": "1"},
+            {"i": "a2", "dc": "0"},
+        ])
+    );
+    let a = Es::ok(
+        es.get("/_cat/indices?format=json&h=index,docs.*&s=index:desc")
+            .await,
+    );
+    assert_eq!(
+        a.body,
+        json!([
+            {"index": "b1", "docs.count": "1", "docs.deleted": "0"},
+            {"index": "a2", "docs.count": "0", "docs.deleted": "0"},
+            {"index": "a1", "docs.count": "2", "docs.deleted": "0"},
+        ])
+    );
+    // Numbers sort by value, several keys in order.
+    let a = Es::ok(
+        es.get("/_cat/indices?format=json&h=index&s=docs.count,index")
+            .await,
+    );
+    assert_eq!(cat_index_names(&a.body), ["a2", "b1", "a1"]);
+    es.get("/_cat/indices?format=json&s=nope")
+        .await
+        .assert_error(
+            400,
+            "illegal_argument_exception",
+            Some("Unable to sort by unknown sort key `nope`"),
+        );
+}
+
+#[tokio::test]
+async fn cat_indices_one_index_and_wildcard() {
+    let es = Es::start().await;
+    cat_fixture(&es).await;
+    let names = |path: String| {
+        let es = &es;
+        async move {
+            cat_index_names(&Es::ok(es.get(&path).await).body)
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>()
+        }
+    };
+    assert_eq!(names("/_cat/indices/a1?format=json".into()).await, ["a1"]);
+    assert_eq!(
+        names("/_cat/indices/*1?format=json".into()).await,
+        ["a1", "b1"]
+    );
+    // A pattern matches aliases too: `a*` reaches `b1` through `al`.
+    assert_eq!(
+        names("/_cat/indices/a*?format=json".into()).await,
+        ["a1", "a2", "b1"]
+    );
+    assert_eq!(
+        names("/_cat/indices/a2,b1?format=json".into()).await,
+        ["a2", "b1"]
+    );
+    // An alias lists its member; `_all` and `*` list everything.
+    assert_eq!(names("/_cat/indices/al?format=json".into()).await, ["b1"]);
+    assert_eq!(
+        names("/_cat/indices/_all?format=json".into()).await,
+        ["a1", "a2", "b1"]
+    );
+    assert_eq!(
+        names("/_cat/indices/*?format=json".into()).await,
+        ["a1", "a2", "b1"]
+    );
+    // A wildcard matching nothing is empty; a missing name is 404.
+    assert!(
+        names("/_cat/indices/zz*?format=json".into())
+            .await
+            .is_empty()
+    );
+    es.get("/_cat/indices/missing?format=json")
+        .await
+        .assert_error(404, "index_not_found_exception", None);
+}
+
+#[tokio::test]
+async fn cat_indices_bytes_units() {
+    let es = Es::start().await;
+    cat_fixture(&es).await;
+    let cell = |unit: &'static str| {
+        let es = &es;
+        async move {
+            let path =
+                format!("/_cat/indices/a1?format=json&h=store.size,pri.store.size&bytes={unit}");
+            let a = Es::ok(es.get(&path).await);
+            assert_eq!(a.body[0]["store.size"], a.body[0]["pri.store.size"]);
+            a.body[0]["store.size"].as_str().expect("size").to_string()
+        }
+    };
+    // The size moves while the link and compaction settle, so each unit is
+    // compared with a byte count read just before and just after it.
+    for unit in ["kb", "mb", "gb", "human"] {
+        let mut checked = false;
+        for _ in 0..100 {
+            let before: u64 = cell("b").await.parse().expect("bytes");
+            let value = if unit == "human" {
+                let a = Es::ok(es.get("/_cat/indices/a1?format=json&h=ss").await);
+                a.body[0]["ss"].as_str().expect("ss").to_string()
+            } else {
+                cell(unit).await
+            };
+            let after: u64 = cell("b").await.parse().expect("bytes");
+            if before != after {
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                continue;
+            }
+            let expected = match unit {
+                "kb" => (before / 1024).to_string(),
+                "mb" => (before >> 20).to_string(),
+                "gb" => (before >> 30).to_string(),
+                _ => loams_es::cat::size_text(before, None),
+            };
+            assert_eq!(value, expected, "{unit}");
+            checked = true;
+            break;
+        }
+        assert!(checked, "the size of a1 never held still ({unit})");
+    }
+    // `bytes=b` is the collection's `size_bytes`.
+    let size_bytes = || async {
+        es.server
+            .collections()
+            .get_collection(NS, "a1")
+            .await
+            .expect("a1")
+            .size_bytes
+    };
+    let mut checked = false;
+    for _ in 0..100 {
+        let before = size_bytes().await;
+        let b = cell("b").await;
+        if size_bytes().await == before {
+            assert_eq!(b, before.to_string());
+            checked = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(checked, "the size of a1 never held still (b)");
+    es.get("/_cat/indices?format=json&bytes=zb")
+        .await
+        .assert_error(400, "illegal_argument_exception", None);
+}
+
+// ----- _settings (#948) -----
+
+#[tokio::test]
+async fn settings_get_and_put_round_trip() {
+    let es = Es::start().await;
+    Es::ok(
+        es.put(
+            "/s1",
+            Some(json!({"settings": {"number_of_shards": 2, "refresh_interval": "1s"}})),
+        )
+        .await,
+    );
+    Es::ok(es.put("/s2", None).await);
+    let a = Es::ok(es.get("/s1/_settings").await);
+    let index = &a.body["s1"]["settings"]["index"];
+    assert_eq!(index["refresh_interval"], "1s", "{}", a.text);
+    assert_eq!(index["number_of_shards"], "2");
+    assert_eq!(index["provided_name"], "s1");
+    assert!(index["uuid"].is_string() && index["creation_date"].is_string());
+    // The NVIDIA RAG Blueprint's bulk-load toggle.
+    let a = Es::ok(
+        es.put(
+            "/s1/_settings",
+            Some(json!({"index": {"refresh_interval": "-1"}})),
+        )
+        .await,
+    );
+    assert_eq!(a.body, json!({"acknowledged": true}));
+    let a = Es::ok(es.get("/s1/_settings").await);
+    assert_eq!(a.body["s1"]["settings"]["index"]["refresh_interval"], "-1");
+    // Flat and bare keys; `null` resets.
+    Es::ok(
+        es.put(
+            "/s1/_settings",
+            Some(json!({"index.number_of_replicas": 0, "max_result_window": 500})),
+        )
+        .await,
+    );
+    let a = Es::ok(es.get("/s1/_settings?flat_settings=true").await);
+    let flat = &a.body["s1"]["settings"];
+    assert_eq!(flat["index.number_of_replicas"], "0", "{}", a.text);
+    assert_eq!(flat["index.max_result_window"], "500");
+    Es::ok(
+        es.put(
+            "/s1/_settings",
+            Some(json!({"index": {"refresh_interval": null}})),
+        )
+        .await,
+    );
+    let a = Es::ok(es.get("/s1/_settings").await);
+    assert!(
+        a.body["s1"]["settings"]["index"]["refresh_interval"].is_null(),
+        "{}",
+        a.text
+    );
+    // `preserve_existing` keeps a setting already set.
+    Es::ok(
+        es.put(
+            "/s1/_settings?preserve_existing=true",
+            Some(json!({"index": {"max_result_window": 9, "refresh_interval": "5s"}})),
+        )
+        .await,
+    );
+    let a = Es::ok(es.get("/s1/_settings").await);
+    assert_eq!(
+        a.body["s1"]["settings"]["index"]["max_result_window"],
+        "500"
+    );
+    assert_eq!(a.body["s1"]["settings"]["index"]["refresh_interval"], "5s");
+    // Several indices and one setting by name.
+    let a = Es::ok(es.get("/_settings").await);
+    let mut names: Vec<&String> = a.body.as_object().expect("object").keys().collect();
+    names.sort();
+    assert_eq!(names, ["s1", "s2"]);
+    let a = Es::ok(es.get("/s*/_settings/index.refresh_interval").await);
+    assert_eq!(
+        a.body,
+        json!({"s1": {"settings": {"index": {"refresh_interval": "5s"}}}})
+    );
+    let a = Es::ok(es.get("/s1/_settings/index.number_*").await);
+    assert_eq!(
+        a.body["s1"]["settings"]["index"],
+        json!({"number_of_shards": "2", "number_of_replicas": "0"})
+    );
+    // `PUT /_settings` changes every index.
+    Es::ok(
+        es.put(
+            "/_settings",
+            Some(json!({"index": {"refresh_interval": "2s"}})),
+        )
+        .await,
+    );
+    let a = Es::ok(es.get("/s2/_settings").await);
+    assert_eq!(a.body["s2"]["settings"]["index"]["refresh_interval"], "2s");
+}
+
+#[tokio::test]
+async fn settings_put_refuses_static_and_unknown_settings() {
+    let es = Es::start().await;
+    Es::ok(es.put("/s1", None).await);
+    let uuid = {
+        let info = es
+            .server
+            .collections()
+            .get_collection(NS, "s1")
+            .await
+            .expect("s1");
+        index_uuid(info.id)
+    };
+    es.put(
+        "/s1/_settings",
+        Some(json!({"index": {"number_of_shards": 3}})),
+    )
+    .await
+    .assert_error(
+        400,
+        "illegal_argument_exception",
+        Some(&format!(
+            "Can't update non dynamic settings [[index.number_of_shards]] for open indices [[s1/{uuid}]]"
+        )),
+    );
+    es.put("/s1/_settings", Some(json!({"index": {"nope": 1}})))
+        .await
+        .assert_error(400, "illegal_argument_exception", None);
+    es.put("/s1/_settings", Some(json!({}))).await.assert_error(
+        400,
+        "action_request_validation_exception",
+        None,
+    );
+    es.put(
+        "/missing/_settings",
+        Some(json!({"index": {"refresh_interval": "1s"}})),
+    )
+    .await
+    .assert_error(404, "index_not_found_exception", None);
+    es.get("/missing/_settings")
+        .await
+        .assert_error(404, "index_not_found_exception", None);
+    // A refusal changes nothing.
+    let a = Es::ok(es.get("/s1/_settings").await);
+    assert!(a.body["s1"]["settings"]["index"]["nope"].is_null());
+}

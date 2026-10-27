@@ -1,7 +1,7 @@
 //! `CreateCollection` to `CollectionSchema` and the `CollectionInfo` JSON
 //! (plan M1.4 Task 3).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use loams_collection::{
     CollectionSchema, Distance, DynamicMapping, FieldKind, HnswParams, Quantization,
@@ -9,7 +9,10 @@ use loams_collection::{
 };
 use loams_common::{CollectionId, StreamId};
 use loams_qdrant::model::collections::CreateCollection;
-use loams_qdrant::schema::{collection_info_json, schema_from_create};
+use loams_qdrant::schema::{
+    RETIRED_PAYLOAD_INDEXES, collection_info_json, retired_annotation, retired_payload_indexes,
+    schema_from_create,
+};
 use loams_qdrant::{EXT_CREATE, GatewayError};
 use loams_query::CollectionInfo;
 use serde_json::{Value, json};
@@ -426,4 +429,23 @@ fn info_echoes_the_vectors_form() {
         info["config"]["params"]["sparse_vectors"],
         json!({"s": {"modifier": "idf"}})
     );
+}
+
+#[test]
+fn retired_set_round_trips() {
+    let mut schema = create(json!({"vectors": {"size": 2, "distance": "Dot"}})).expect("create");
+    assert!(retired_payload_indexes(&schema).is_empty());
+    let keys: BTreeSet<String> = ["tenant", "a.b", "n"].map(String::from).into();
+    let value = retired_annotation(&keys);
+    assert_eq!(value, "a.b,n,tenant");
+    schema
+        .annotations
+        .insert(RETIRED_PAYLOAD_INDEXES.to_string(), value);
+    assert_eq!(retired_payload_indexes(&schema), keys);
+    // The empty set (every retired key revived) reads back empty.
+    schema.annotations.insert(
+        RETIRED_PAYLOAD_INDEXES.to_string(),
+        retired_annotation(&BTreeSet::new()),
+    );
+    assert!(retired_payload_indexes(&schema).is_empty());
 }

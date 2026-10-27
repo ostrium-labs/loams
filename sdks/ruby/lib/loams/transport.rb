@@ -4,7 +4,7 @@ require "net/http"
 require "uri"
 
 module Loams
-  Request = Struct.new(:method, :path, :headers, :body, :rpc, keyword_init: true)
+  Request = Struct.new(:method, :path, :headers, :body, :rpc, :timeout, keyword_init: true)
   Response = Struct.new(:status, :headers, :body, :stream, keyword_init: true)
 
   class HttpTransport
@@ -22,8 +22,10 @@ module Loams
       url = URI.join(@endpoint + "/", request.path.sub(%r{^/+}, ""))
       http = Net::HTTP.new(url.host, url.port)
       http.use_ssl = (url.scheme == "https")
-      http.read_timeout = 30
-      http.open_timeout = 5
+      # R12: the call's remaining budget, or no limit when it has none.
+      http.read_timeout = request.timeout
+      http.open_timeout = request.timeout ? [request.timeout, 5].min : 5
+      http.write_timeout = request.timeout if request.timeout
 
       req = Net::HTTPGenericRequest.new(
         request.method || "POST",

@@ -20,7 +20,7 @@ use rand::Rng as _;
 
 use crate::auth::caller;
 use crate::not_implemented;
-use crate::oauth::AUTHENTIK;
+use crate::oauth::OIDC;
 use crate::proto::loams::approvals::v1::{Approval, ApprovalPolicy, ApprovalState, Risk, StepUp};
 use crate::proto::loams::devices::v1::NotificationCategory;
 use crate::proto::loams::instance::v1::{
@@ -154,7 +154,7 @@ impl InstanceService for Instance {
             instance.issuer = base.clone();
             instance.jwks_uri = format!("{base}/.well-known/jwks.json");
             for method in &mut instance.sign_in_methods {
-                method.issuer = format!("{base}{AUTHENTIK}");
+                method.issuer = format!("{base}{OIDC}");
             }
         }
         Response::ok(instance)

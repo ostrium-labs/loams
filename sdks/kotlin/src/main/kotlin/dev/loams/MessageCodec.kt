@@ -60,7 +60,11 @@ object MessageCodec {
         val parsed = Json.parse(text)
             ?: throw IllegalArgumentException("the response body is not JSON, and a message the SDK cannot read is worse than a refusal")
         val builder = DynamicMessage.newBuilder(descriptor)
-        readMessage(builder, parsed, descriptor)
+        if (isWellKnown(descriptor.fullName)) {
+            writeWellKnown(builder, descriptor, parsed)
+        } else {
+            readMessage(builder, parsed, descriptor)
+        }
         return builder.build()
     }
 
@@ -193,6 +197,19 @@ object MessageCodec {
             }
             "google.protobuf.Empty" -> Unit
             "google.protobuf.Struct" -> readStruct(builder, requireNotNull(descriptor.findFieldByName("fields")), value)
+            // SDKP: the app-building API sends and answers `Value` (filter terms, document
+            // sources, search_after) and `ListValue` (rows).
+            "google.protobuf.Value" -> writeValue(builder, descriptor, value)
+            "google.protobuf.ListValue" -> {
+                val items = value.array
+                    ?: throw IllegalArgumentException("google.protobuf.ListValue was sent as ${describe(value)}")
+                val values = requireNotNull(descriptor.findFieldByName("values"))
+                for (item in items) {
+                    val entry = DynamicMessage.newBuilder(requireNotNull(values.messageType))
+                    writeValue(entry, requireNotNull(values.messageType), item)
+                    builder.addRepeatedField(values, entry.build())
+                }
+            }
             else -> throw IllegalArgumentException(
                 "${descriptor.fullName} has its own proto3 JSON mapping, which this reader does not " +
                     "implement; a value read as a plain message would read back as a zero the server never sent"

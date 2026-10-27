@@ -178,7 +178,13 @@ describe('analytics page', () => {
       }),
     });
     render(<HousePage client={client} />);
-    expect(await screen.findByText('Analytics — coming soon in a later preview')).toBeTruthy();
+    // The file's first render is cold (the editor's modules load); on a busy CI runner it takes
+    // over the 1s findBy default (#804).
+    expect(
+      await screen.findByText('Analytics — coming soon in a later preview', undefined, {
+        timeout: 10_000,
+      }),
+    ).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.queryByLabelText('SQL')).toBeNull();
   });

@@ -1,0 +1,28 @@
+{
+  "model": "fake-chat",
+  "rules": [
+    {
+      "when": {"user_contains": "Ada"},
+      "answer": {"name": "Ada Lovelace", "age": 36},
+      "input_tokens": 100,
+      "output_tokens": 10
+    },
+    {
+      "when": {"user_contains": "Grace"},
+      "times": 1,
+      "error": {"status": 503, "retryable": true}
+    },
+    {
+      "when": {"user_contains": "Grace"},
+      "text": "{\"name\": \"Grace Hopper\", \"age\": 85}"
+    },
+    {
+      "when": {"user_contains": "broken"},
+      "text": "{\"name\": \"unterminated"
+    },
+    {
+      "when": {"user_contains": "wrong"},
+      "answer": {"name": "Nobody", "age": -1}
+    }
+  ]
+}

@@ -13,7 +13,9 @@ spl_autoload_register(static function (string $class): void {
     static $loaded = false;
     if (!$loaded) {
         $loaded = true;
-        foreach (glob(__DIR__ . '/../src/*.php') ?: [] as $file) {
+        // Errors.php first: other files declare exceptions that extend its classes.
+        require_once __DIR__ . '/../src/Errors.php';
+        foreach (array_merge(glob(__DIR__ . '/../src/*.php') ?: [], glob(__DIR__ . '/../src/*/*.php') ?: []) as $file) {
             require_once $file;
         }
     }

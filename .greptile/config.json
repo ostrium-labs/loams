@@ -1,0 +1,66 @@
+{
+  "strictness": 2,
+  "commentTypes": ["logic", "syntax"],
+  "effort": "base",
+  "autoReview": ["open"],
+  "triggerOnDrafts": false,
+  "includeBranches": ["dev", "main"],
+  "excludeAuthors": ["dependabot[bot]", "nx-cloud[bot]", "github-actions[bot]", "release-please[bot]", "renovate[bot]"],
+  "labels": ["review:greptile"],
+  "disabledLabels": ["skip-greptile"],
+  "ignoreKeywords": "release: v",
+  "ignorePatterns": "Cargo.lock\npnpm-lock.yaml\n**/gen/**\n**/generated/**\n**/Generated/**\n**/*_pb2.py\n**/*_pb2.pyi\n**/*_pb2_grpc.py\n**/*_connect.py\n**/*_pb.ts\n**/*_pb.js\n**/*_pb.d.ts\n**/*_connect.ts\n**/*.pb.go\n**/*.pb.swift\n**/*.connect.swift\n**/*.pb.h\n**/*.pb.cc\nweb/apps/console/src/api/schema.d.ts\ndocs/house/compat-*.md\nconformance/clickhouse/profile/**\nconformance/clickhouse/matrix/chdb/**\nconformance/clickhouse/inventory/**\ncrates/loams-quickwit/src/**\n**/vendor/**\n**/0_stateless/**\n**/*.reference\n**/*.snap\n**/__snapshots__/**\n**/snapshots/**\n**/fixtures/**\n**/fixture/**\n**/testdata/**\n**/dist/**\n**/target/**\n**/node_modules/**",
+  "instructions": "Loams is an Apache-2.0 data platform: a Rust engine workspace plus TypeScript apps and SDKs. Review for correctness, security and data safety first; skip formatting and naming nits (rustfmt, clippy and Biome run in CI). Comment only when you can name the concrete failure: what input or interleaving breaks, and what happens. Prefer one specific suggestion over several vague ones. Do not ask for code changes in a docs-only PR.",
+  "rules": [
+    {
+      "id": "no-unwrap",
+      "severity": "high",
+      "scope": ["**/*.rs"],
+      "rule": "Non-test Rust code must not call unwrap() or expect() (clippy unwrap_used is on; tests are allowed) unless a comment says why it cannot fail. Errors are returned with context, not swallowed or turned into panics. Flag panics, unchecked indexing or overflow reachable from network or user input."
+    },
+    {
+      "id": "async-safety",
+      "severity": "high",
+      "scope": ["**/*.rs"],
+      "rule": "Check cancellation and lock safety across .await (no std Mutex guard held across an await, no partial writes left behind on cancel), and that memory, queues and retries are bounded."
+    },
+    {
+      "id": "storage-fencing",
+      "severity": "high",
+      "scope": ["crates/**", "fabric/**"],
+      "rule": "Object-storage, log and metastore writes must stay fenced and idempotent; a retry or a stale writer must not corrupt or duplicate data. Storage, log and metastore changes need simulation or fault-injection tests."
+    },
+    {
+      "id": "tenancy-auth",
+      "severity": "high",
+      "rule": "Tenancy and auth are deny by default. Every new endpoint, query path or handler must check the caller's tenant, project and permission before reading or writing data; flag any path that can reach another tenant's data, trusts a client-supplied tenant or role, or allows access when the policy lookup fails."
+    },
+    {
+      "id": "no-secrets",
+      "severity": "high",
+      "rule": "Never print, log, commit or echo secrets: tokens, passwords, keys, connection strings with credentials, or Authorization headers, including in error messages, debug output, tests and CI logs. Flag any secret in the diff."
+    },
+    {
+      "id": "licence",
+      "severity": "high",
+      "rule": "No code copied from AGPL, GPL, LGPL, BSL (Business Source), FSL, SSPL or ELv2 projects, and no such dependency (D11, D1574). Copied Apache-2.0 or MIT code keeps its notice. Never suggest code taken from such projects. New dependencies must pass deny.toml."
+    },
+    {
+      "id": "ci-workflows",
+      "severity": "medium",
+      "scope": [".github/**"],
+      "rule": "Workflows keep least-privilege permissions, pin third-party actions to a full commit SHA, and never expose secrets to pull_request_target code from forks."
+    },
+    {
+      "id": "plain-docs",
+      "severity": "low",
+      "scope": ["**/*.md", "**/*.mdx"],
+      "rule": "Docs are plain English: short sentences, no marketing language, statuses not overstated. Commands, flags and paths must match the repository. Flag only real errors, not wording preferences."
+    },
+    {
+      "id": "dco",
+      "severity": "low",
+      "rule": "Every commit needs a DCO Signed-off-by trailer (git commit -s); the DCO check enforces it, so mention it only if the PR asks contributors to skip it."
+    }
+  ]
+}

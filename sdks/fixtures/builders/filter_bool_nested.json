@@ -1,0 +1,77 @@
+{
+  "name": "filter_bool_nested",
+  "builder": "filter",
+  "message": "loams.collection.v1.Query",
+  "spec": {
+    "op": "and",
+    "args": [
+      {
+        "op": "eq",
+        "args": [
+          "tags",
+          "policy"
+        ]
+      },
+      {
+        "op": "or",
+        "args": [
+          {
+            "op": "range",
+            "args": [
+              "n",
+              {
+                "gte": 2
+              }
+            ]
+          },
+          {
+            "op": "not",
+            "args": [
+              {
+                "op": "exists",
+                "args": [
+                  "archived"
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "expect": {
+    "bool": {
+      "must": [
+        {
+          "term": {
+            "field": "tags",
+            "value": "policy"
+          }
+        },
+        {
+          "bool": {
+            "should": [
+              {
+                "range": {
+                  "field": "n",
+                  "gte": 2
+                }
+              },
+              {
+                "bool": {
+                  "mustNot": [
+                    {
+                      "exists": {
+                        "field": "archived"
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

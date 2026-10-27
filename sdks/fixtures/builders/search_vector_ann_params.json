@@ -1,0 +1,56 @@
+{
+  "name": "search_vector_ann_params",
+  "builder": "search",
+  "message": "loams.collection.v1.SearchRequest",
+  "spec": {
+    "on": "notes",
+    "calls": [
+      {
+        "op": "vector",
+        "args": [
+          "embedding",
+          [
+            1,
+            0,
+            0,
+            0
+          ],
+          {
+            "k": 3,
+            "nprobes": 8,
+            "refine_factor": 2
+          }
+        ]
+      },
+      {
+        "op": "limit",
+        "args": [
+          3
+        ]
+      }
+    ]
+  },
+  "expect": {
+    "collection": "notes",
+    "retrievers": [
+      {
+        "vector": {
+          "field": "embedding",
+          "query": [
+            1,
+            0,
+            0,
+            0
+          ],
+          "k": 3,
+          "params": {
+            "nprobes": 8,
+            "refineFactor": 2
+          }
+        }
+      }
+    ],
+    "limit": 3
+  },
+  "scenario_step": "app_search/3"
+}

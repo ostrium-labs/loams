@@ -1,0 +1,9 @@
+# DX0 Task 2's expected failures (conformance/compute/durable/run.sh).
+product = "durable"
+
+[[xfail]]
+id = "no-session-endpoint"
+tests = ["durable::pg_modes_reachable_session"]
+reason = "the release compose has no session-pooled Loams Postgres endpoint yet (PG2c, GW1); only direct endpoints"
+issue = "https://github.com/ostrium-labs/loams/issues/1129"
+since = 2026-10-24

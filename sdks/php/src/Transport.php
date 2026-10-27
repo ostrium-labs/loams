@@ -6,11 +6,27 @@ namespace Loams;
 
 class Transport
 {
+    /** The client default for a unary call, in seconds (R12). */
+    public const DEFAULT_TIMEOUT = 30.0;
+
+    /** @var (callable(string, array<string, string>, string, ?float): array{status: int, headers: array<string, string>, body: string})|null */
+    private $sender;
+
+    /** The budget left for the attempt in flight, or `false` outside one. */
+    private float|false|null $attemptTimeout = false;
+
+    /**
+     * @param ?float $timeout the unary default in seconds, null for none (R12)
+     * @param ?callable $sender replaces cURL: `fn(string $url, array $headers, string $body, ?float $timeout): array{status, headers, body}`
+     */
     public function __construct(
         public readonly string $endpoint,
         private ?TokenSourceInterface $tokenSource = null,
-        private int $maxRetries = 3
+        private int $maxRetries = 3,
+        public readonly ?float $timeout = self::DEFAULT_TIMEOUT,
+        ?callable $sender = null
     ) {
+        $this->sender = $sender;
     }
 
     /**
@@ -19,6 +35,9 @@ class Transport
      */
     public function execute(string $path, array $headers, string $body): array
     {
+        // The remaining budget of the call `callWithRetry` is making (R12);
+        // a direct call (a stream) gets the client default.
+        $timeout = $this->attemptTimeout === false ? $this->timeout : $this->attemptTimeout;
         $url = rtrim($this->endpoint, '/') . '/' . ltrim($path, '/');
 
         $effectiveHeaders = $headers;
@@ -27,6 +46,10 @@ class Transport
             if ($token !== '') {
                 $effectiveHeaders['Authorization'] = 'Bearer ' . $token;
             }
+        }
+
+        if ($this->sender !== null) {
+            return ($this->sender)($url, $effectiveHeaders, $body, $timeout);
         }
 
         $headerLines = [];
@@ -40,11 +63,16 @@ class Transport
         curl_setopt($ch, CURLOPT_HTTPHEADER, $headerLines);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_HEADER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+        if ($timeout !== null) {
+            curl_setopt($ch, CURLOPT_TIMEOUT_MS, max(1, (int) ceil($timeout * 1000)));
+        }
 
         $response = curl_exec($ch);
         if ($response === false) {
             $error = curl_error($ch);
+            if (curl_errno($ch) === CURLE_OPERATION_TIMEDOUT) {
+                throw DeadlineExceededException::client();
+            }
             throw new LoamsException("cURL error: {$error}", 'unavailable', null, null, 503);
         }
 
@@ -73,14 +101,31 @@ class Transport
      * @param array<string, string> $headers
      * @return array{status: int, headers: array<string, string>, body: string}
      */
-    public function callWithRetry(string $path, array $headers, string $body, bool $isMutation = false, ?string $idempotencyKey = null): array
-    {
+    public function callWithRetry(
+        string $path,
+        array $headers,
+        string $body,
+        bool $isMutation = false,
+        ?string $idempotencyKey = null,
+        float|false|null $timeout = false
+    ): array {
         $attempt = 0;
         $refreshed = false;
+        // R12: one budget for the call, retries included; `false` is the
+        // client default and `null` no deadline.
+        $budget = $timeout === false ? $this->timeout : $timeout;
+        $deadline = $budget === null ? null : microtime(true) + $budget;
 
         while (true) {
             $attempt++;
+            $remaining = $deadline === null ? null : $deadline - microtime(true);
+            if ($remaining !== null && $remaining <= 0) {
+                throw DeadlineExceededException::client();
+            }
             $currentHeaders = $headers;
+            if ($remaining !== null) {
+                $currentHeaders['connect-timeout-ms'] = (string) max(1, (int) ceil($remaining * 1000));
+            }
             if ($this->tokenSource !== null) {
                 $token = $this->tokenSource->getToken();
                 if ($token !== '') {
@@ -91,7 +136,12 @@ class Transport
                 $currentHeaders['idempotency-key'] = $idempotencyKey;
             }
 
-            $res = $this->execute($path, $currentHeaders, $body);
+            $this->attemptTimeout = $remaining;
+            try {
+                $res = $this->execute($path, $currentHeaders, $body);
+            } finally {
+                $this->attemptTimeout = false;
+            }
 
             if ($res['status'] >= 200 && $res['status'] < 300) {
                 return $res;

@@ -76,7 +76,7 @@ export function mountAuthApi(ctx: Context, options: AuthRoutesOptions = {}): () 
             res.end();
           } catch (err) {
             // An actionable configuration failure must arrive as a legible error naming the
-            // Authentik setting to change, never as a bare 500.
+            // identity-provider setting to change, never as a bare 500.
             sendJson(statusOf(err), { error: messageOf(err), code: codeOf(err) });
           }
           return true;
@@ -137,7 +137,7 @@ export function mountAuthApi(ctx: Context, options: AuthRoutesOptions = {}): () 
           try {
             const result = await auth.handleBackChannelLogout(token);
             // 200 with a count rather than 204: an operator debugging a misconfigured
-            // authentik logout mapping needs to see that the token validated AND matched
+            // back-channel logout setup on the identity provider needs to see that the token validated AND matched
             // zero sessions, which a 204 cannot distinguish from success.
             res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
             res.end(JSON.stringify({ ok: true, destroyed: result.destroyed }));

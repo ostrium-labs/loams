@@ -1,15 +1,16 @@
 /**
  * Errors that must never reach a client as a bare 500.
  *
- * Almost everything that goes wrong with an Authentik integration is a
- * CONFIGURATION mistake, and the failure modes are all silent on authentik's
- * side: no signing key means it signs HS256 without complaining, an unassigned
+ * Almost everything that goes wrong with an identity-provider integration is a
+ * CONFIGURATION mistake, and many of the failure modes are silent on the
+ * provider's side: some IdPs with no signing key configured sign HS256 without
+ * complaining, an unassigned
  * `offline_access` scope is intersected away, and a `redirect_uri` mismatch is
  * not even an error until the browser round-trips. openid-client's own message
  * for these is accurate but cryptic ("no applicable keys found"), which is the
  * worst possible thing to hand somebody who is trying to stand up an IdP.
  *
- * So every one of those is translated here into a message that names the Authentik
+ * So every one of those is translated here into a message that names the provider
  * setting to change. `AuthConfigError` carries a stable `code` so tests and logs
  * can assert on the diagnosis rather than on prose.
  */
@@ -19,7 +20,7 @@ export class AuthError extends Error {
   readonly httpStatus: number;
   readonly code: string;
   /**
-   * authentik's `request_id` from the failed response.
+   * The `request_id` from the failed response, when the identity provider sends one.
    *
    * Kept as structured data rather than only being interpolated into the message: it is
    * the only handle an operator has on a token-endpoint failure, and grepping the event
@@ -51,54 +52,61 @@ export class ForbiddenError extends AuthError {
   readonly missing: string[];
 }
 
-/** The single most common Authentik misconfiguration, named explicitly. */
+/** The single most common identity-provider misconfiguration, named explicitly. */
 export const RS256_HINT =
-  "configure a Certificate-key pair (RS256) on your Authentik OAuth2 provider";
+  "configure an asymmetric signing key (RS256) for this application on your identity provider";
 
 export const SIGNING_KEY_MESSAGE =
   `The identity provider's ID token could not be verified. This almost always means the ` +
-  `Authentik OAuth2 provider has no Signing Key configured: without one authentik falls ` +
-  `back to signing ID tokens with HS256 using the client secret and omits the "kid" ` +
-  `header, and openid-client cannot verify HS256 ID tokens at all (its underlying ` +
+  `application on the identity provider has no signing key configured: without one ` +
+  `some providers fall back to signing ID tokens with HS256 using the client secret and ` +
+  `omit the "kid" header, and openid-client cannot verify HS256 ID tokens at all (its underlying ` +
   `oauth4webapi engine has no symmetric verification branch and rejects any HS* ` +
-  `algorithm outright). To fix it, ${RS256_HINT}, save it, and redeploy the provider. ` +
+  `algorithm outright). To fix it, ${RS256_HINT}, save it, and re-apply the application's configuration. ` +
   `You can confirm the current state with: ` +
   `curl -s <jwks_uri> | jq '.keys[] | {kid, alg, kty}' -- expecting kty "RSA" and alg "RS256". ` +
   `Do not "fix" this by downgrading the client. openid-client's own message for this is ` +
   `"no applicable keys found", which names no setting and no cause.`;
 
 /**
- * The trailing-slash trap.
+ * The issuer must match byte for byte (OIDC Discovery 4.3).
  *
- * openid-client compares the discovered `issuer` to the configured one BYTE FOR
- * BYTE. Authentik's per-application issuer ends in a slash
- * (`https://idp.example.com/application/o/<slug>/`); configure it without and every
- * login fails at discovery with a message that reads like the IdP is misconfigured.
+ * The `issuer` in the discovery document must be IDENTICAL to the configured one, and
+ * the ID token's `iss` is then checked against it. Providers differ on whether their
+ * issuer ends in a slash (a path-based issuer often does, a bare origin often does not),
+ * and the two spellings look identical to an operator, so the message names both values.
  */
 export function issuerMismatchMessage(expected: string, discovered: string): string {
   return (
-    `OIDC issuer mismatch: discovery at "${expected}" returned issuer "${discovered}", ` +
-    `which does not match. openid-client compares the issuer byte for byte, so ` +
-    `OIDC_ISSUER must be EXACTLY the "issuer" field in ` +
-    `${expected}.well-known/openid-configuration, including its trailing slash. For a ` +
-    `per-application Authentik provider that means ` +
-    `https://idp.example.com/application/o/<slug>/ (with the slash). ` +
-    `Note that authorize/, token/ and userinfo/ are GLOBAL endpoints while jwks/ and ` +
-    `end-session/ are PER-APPLICATION, so the two paths are expected to differ -- do not ` +
-    `"fix" this by hand-editing endpoint URLs; only the issuer value is compared.`
+    `OIDC issuer mismatch: OIDC_ISSUER is "${expected}" but the discovery document ` +
+    `${discoveryUrl(expected)} returned issuer "${discovered}". The two must be equal ` +
+    `byte for byte (OIDC Discovery 4.3), and a trailing slash difference counts: ` +
+    `"https://idp.example.com/x/" and "https://idp.example.com/x" are different issuers. ` +
+    `Set OIDC_ISSUER to EXACTLY the "issuer" field of the discovery document. Do not ` +
+    `"fix" this by hand-editing endpoint URLs; only the issuer value is compared, and ` +
+    `the endpoints are always taken from discovery.`
   );
+}
+
+/**
+ * The discovery URL for an issuer: `<issuer>/.well-known/openid-configuration`, with no
+ * double slash whether or not the issuer ends in one. Used for messages; the request
+ * itself is built the same way by openid-client.
+ */
+export function discoveryUrl(issuer: string): string {
+  return `${issuer.replace(/\/+$/, "")}/.well-known/openid-configuration`;
 }
 
 /** `offline_access` was silently intersected away, so there is nothing to refresh. */
 export function offlineAccessMessage(): string {
   return (
-    `The identity provider returned no refresh token. Authentik does NOT error when a ` +
-    `requested scope is unassigned: it intersects the requested scope set with the ` +
-    `provider's assigned scopes and returns the remainder silently, so "offline_access" ` +
-    `disappears with no message anywhere. To fix it, add a Scope Mapping on your Authentik ` +
-    `OAuth2/provider provider that maps the scope name "offline_access" to the authentik ` +
-    `scope "offline_access" (Authentik 2025.x and later require the explicit mapping; the ` +
-    `scope is no longer granted implicitly). Without it this session cannot be renewed ` +
+    `The identity provider returned no refresh token. Some identity providers do NOT ` +
+    `error when a requested scope is not allowed for the application: they intersect the ` +
+    `requested scope set with the application's allowed scopes and return the remainder ` +
+    `silently, so "offline_access" disappears with no message anywhere. To fix it, allow ` +
+    `the "offline_access" scope (or enable refresh tokens) for this application on your ` +
+    `identity provider; some providers need an explicit scope mapping for it, and do not ` +
+    `grant it implicitly. Without it this session cannot be renewed ` +
     `and the user will be silently signed out when the access token expires.`
   );
 }
@@ -110,12 +118,15 @@ export function offlineAccessMessage(): string {
  * discarding what the library actually said would hide a genuine protocol bug
  * behind a guess about the common cause.
  */
-export function classifyOidcError(err: unknown, hints: { requestId?: string } = {}): AuthError {
+export function classifyOidcError(
+  err: unknown,
+  hints: { requestId?: string; issuer?: string } = {},
+): AuthError {
   const raw = err instanceof Error ? err.message : String(err);
   const text = raw.toLowerCase();
   // Prefer a request_id already discovered on a nested cause over the caller's hint.
   const requestId = requestIdFrom(err) ?? hints.requestId;
-  const suffix = requestId ? ` (authentik request_id: ${requestId})` : "";
+  const suffix = requestId ? ` (request_id: ${requestId})` : "";
 
   // THE AUTHORITATIVE SIGNAL. A failed token response arrives as oauth4webapi's
   // `ResponseBodyError`, whose `message` is the content-free "server responded with an
@@ -157,8 +168,23 @@ export function classifyOidcError(err: unknown, hints: { requestId?: string } = 
     text.includes("issuer") ||
     text.includes("op_error")
   ) {
+    // openid-client's ClientError carries `{ expected, body: { issuer } }` as its cause.
+    const detail = (err as { cause?: { expected?: unknown; body?: { issuer?: unknown } } })
+      ?.cause;
+    const expected =
+      hints.issuer ?? (typeof detail?.expected === "string" ? detail.expected : undefined);
+    const discovered =
+      typeof detail?.body?.issuer === "string" ? detail.body.issuer : undefined;
+    const message =
+      expected !== undefined && discovered !== undefined
+        ? issuerMismatchMessage(expected, discovered)
+        : `OIDC issuer mismatch: the "issuer" in the discovery document does not equal ` +
+          `OIDC_ISSUER${expected !== undefined ? ` ("${expected}")` : ""}. The two must be ` +
+          `equal byte for byte (OIDC Discovery 4.3), and a trailing slash difference ` +
+          `counts. Set OIDC_ISSUER to EXACTLY the "issuer" field of the discovery ` +
+          `document. (${raw})`;
     return new AuthError(
-      `${issuerMismatchMessage("the configured OIDC_ISSUER", "the discovered issuer")}${suffix}`,
+      `${message}${suffix}`,
       {
         code: "oidc_issuer_mismatch",
         httpStatus: 500,
@@ -198,7 +224,7 @@ export function classifyOidcError(err: unknown, hints: { requestId?: string } = 
   });
 }
 
-/** Pull authentik's `request_id` out of an OAuth error body, when present. */
+/** Pull the identity provider's `request_id` out of an OAuth error body, when present. */
 export function requestIdFrom(err: unknown): string | undefined {
   let current: unknown = err;
   for (let depth = 0; depth < 5 && current; depth += 1) {

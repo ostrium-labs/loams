@@ -5,7 +5,7 @@
 //! | Limit | Default | Enforced by | Past it |
 //! |---|---|---|---|
 //! | `max_memory_usage` | 4 GiB ([`MAX_MEMORY_USAGE`]) | chDB setting (the worker profile starts at the cap and constrains it); the worker's cgroup `memory.max` = the cap + 512 MiB | `241` (chDB's, or the front's when the cgroup's OOM killer ends the worker: [`crate::watchdog`] reads `memory.events`) |
-//! | `max_execution_time` | 300 s ([`MAX_EXECUTION_TIME_S`]) | chDB setting; the lease's watchdog kills the worker at the statement's limit + [`WATCHDOG_GRACE`] | `159` |
+//! | `max_execution_time` | 900 s ([`MAX_EXECUTION_TIME_S`], D1571; `[house.limits] max_execution_time_s`) | chDB setting; the lease's watchdog kills the worker at the statement's limit + [`WATCHDOG_GRACE`] | `159` |
 //! | `max_threads` | the node's cores | chDB setting; cgroup `cpu.max` | — |
 //! | `max_bytes_to_read` | 1 TiB ([`MAX_BYTES_TO_READ`]) | chDB setting | chDB's `307` |
 //! | `max_result_bytes` | 10 GiB ([`MAX_RESULT_BYTES`]) | chDB setting | chDB's `396` |
@@ -49,8 +49,9 @@ use crate::settings::SessionLimits;
 
 /// §49 §12: `max_memory_usage` per query, 4 GiB.
 pub const MAX_MEMORY_USAGE: u64 = 4 * 1024 * 1024 * 1024;
-/// §49 §12: `max_execution_time` per query, 300 s.
-pub const MAX_EXECUTION_TIME_S: f64 = 300.0;
+/// §49 §12 as D1571 amends it (owner, 2026-10-22): `max_execution_time` per
+/// query, 900 s by default, the House's `[house.limits] max_execution_time_s`.
+pub const MAX_EXECUTION_TIME_S: f64 = 900.0;
 /// §49 §12: `max_bytes_to_read` (1 TiB) and `max_result_bytes` (10 GiB) per
 /// query, one number for the front and the worker profile.
 pub use loams_house_ipc::policy::{MAX_BYTES_TO_READ, MAX_RESULT_BYTES};
@@ -296,7 +297,7 @@ mod tests {
         let config = crate::config::HouseConfig::default();
         let caps = config.session_limits;
         assert_eq!(caps.max_memory_usage, 4 * 1024 * 1024 * 1024);
-        assert!((caps.max_execution_time_s - 300.0).abs() < f64::EPSILON);
+        assert!((caps.max_execution_time_s - 900.0).abs() < f64::EPSILON);
         assert_eq!(caps.max_bytes_to_read, 1 << 40);
         assert_eq!(caps.max_result_bytes, 10 * (1 << 30));
         assert_eq!(config.body_limits.max_bytes, 16 * (1 << 30));

@@ -20,13 +20,15 @@ const reject = (status: number, code: string, message: string): Route => ({
 });
 
 /**
- * Per-prefix target routing. `/durable/` is served by the local engine's own
- * durable listener (not the main API port). `/loams.live.v1.` goes to
- * `engine.liveUrl`, which is the main API port on an engine that serves Live
- * there (LV1 Task 12) and Live's own listener on an older one; it is a 503
- * while Live is not running. Everything else goes to the active server. A
- * remote server has no durable surface until a control plane serves it, so
- * `/durable/` is a 404 there.
+ * Per-prefix target routing. On this computer `/durable/` is served by the local
+ * engine's own durable listener (not the main API port), at `/`. On another
+ * server it goes to that server's main port as-is: the engine serves the same
+ * API at `POST /durable/` behind its own auth (B12, PR #782), so the request
+ * carries the session the other engine routes use, and an engine without it
+ * answers 404 itself. `/loams.live.v1.` goes to `engine.liveUrl`, which is the
+ * main API port on an engine that serves Live there (LV1 Task 12) and Live's own
+ * listener on an older one; it is a 503 while Live is not running. Everything
+ * else goes to the active server.
  */
 export function routeRequest(
 	pathname: string,
@@ -37,13 +39,7 @@ export function routeRequest(
 	if (local && server.url === "")
 		return reject(503, "engine_not_ready", "the local engine is not ready yet");
 
-	if (pathname.startsWith(DURABLE)) {
-		if (!local)
-			return reject(
-				404,
-				"not_available_remote",
-				"Durable execution is not available on this server.",
-			);
+	if (local && pathname.startsWith(DURABLE)) {
 		if (engine.phase !== "ready")
 			return reject(
 				503,

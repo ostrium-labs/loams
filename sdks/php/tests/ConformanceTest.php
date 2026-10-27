@@ -218,7 +218,8 @@ class ConformanceTest extends TestCase
             'endpoint' => $endpoint,
             'language' => 'php',
             'live' => false,
-            'ran' => $ran,
+            // The app replay (AppReplayTest) adds its fixtures to the same report.
+            'ran' => self::withAppFixtures($ran, $resultsDir . '/php.json'),
             'skipped' => [],
             'tests' => [
                 'php_conformance_all_required_fixtures',
@@ -457,5 +458,20 @@ class ConformanceTest extends TestCase
 
         $items = iterator_to_array($generator, false);
         $this->assertEquals(['a', 'b', 'c', 'd'], $items);
+    }
+
+    /**
+     * `$ran` plus the `app_*` fixtures an earlier run of the app replay recorded.
+     *
+     * @param list<string> $ran
+     * @return list<string>
+     */
+    private static function withAppFixtures(array $ran, string $path): array
+    {
+        $previous = is_file($path) ? (json_decode((string) file_get_contents($path), true)['ran'] ?? []) : [];
+        $app = array_values(array_filter($previous, static fn ($n) => is_string($n) && str_starts_with($n, 'app_')));
+        $all = array_values(array_unique(array_merge($ran, $app)));
+        sort($all);
+        return $all;
     }
 }

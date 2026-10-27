@@ -2,7 +2,7 @@
 //!
 //! Each turn's tokens and duration, as the harness reported them, for the
 //! thread header. This is informational: it has no billing meaning
-//! (CONTRIBUTING's open-core boundary). The daemon keeps no price table, so
+//! (billing-grade metering is a separate design, §63). The daemon keeps no price table, so
 //! `costUsd` is present only when the harness itself reported a cost.
 
 use serde::{Deserialize, Serialize};

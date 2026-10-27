@@ -54,6 +54,12 @@ export interface SlotMap {
   'shell.topbar.right': { kind: 'list'; props: Record<string, never> };
   /** The agent home (Part 2 fills it; W11). Rendered on the mode's home route with its params. */
   'shell.home': { kind: 'single'; props: { params: Record<string, string> } };
+  /**
+   * Studio's agentd for another plugin's page (MK1 Task 9): its entry renders
+   * `children` under Studio's AgentdScope (on the web, the host picked in Studio's
+   * Settings › Agentd hosts). Empty until Studio loads.
+   */
+  'studio.agentd.scope': { kind: 'single'; props: { children: ReactNode } };
   /** A tab of the right inspector; `meta.id` is its tab id, `meta.label` its name, `meta.routes` where it shows. */
   'shell.inspector.tab': { kind: 'list'; props: PanelTabProps };
   /** A tab of the bottom drawer, as `shell.inspector.tab`. */

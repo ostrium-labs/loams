@@ -255,6 +255,25 @@ class TransportError : public LoamsError {
   TransportError(std::string rpc, std::string message);
 };
 
+/// The unknown reason a call that ran out of its own budget carries (R12): a
+/// client-side reason, not one the server sends.
+inline constexpr char kClientDeadlineExceeded[] = "client_deadline_exceeded";
+
+/// Whether `error` carries the reason named `name`, as a registry `Reason` or,
+/// when this SDK's registry lacks it, as the unknown reason.
+bool HasReason(const LoamsError& error, std::string_view name);
+
+/// Throws a client-side refusal carrying the registered reason `reason`
+/// (SDKP-23): the registry's `Reason` when this SDK has it, else the name as
+/// the unknown reason, so a caller reads it either way.
+[[noreturn]] void ThrowClientSide(Code code, const std::string& rpc, const std::string& reason,
+                                  const std::string& message,
+                                  std::map<std::string, std::string> metadata = {});
+
+/// Throws the `DeadlineExceededError` of a call whose budget ran out on the
+/// client (R12).
+[[noreturn]] void ThrowClientDeadline(const std::string& rpc);
+
 /// Builds the exception a failure maps to, as an `exception_ptr`, without
 /// throwing it.
 ///

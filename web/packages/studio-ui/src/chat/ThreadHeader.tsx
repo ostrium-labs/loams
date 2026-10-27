@@ -4,8 +4,8 @@
 // the thread header's title and chips as props (harness and model, approval mode and sandbox, branch, usage; G20) with Stop, Find and Open in editor actions (the editor picker is the desktop's Settings › Studio); no project favicon, rename, action menu or environment scope. Loams' changes are Apache-2.0.
 
 // The thread header (SD1 Task 18, §53 §5.4). Everything here is the parent's data; the
-// header owns no state. Usage is token counts only (no prices; CONTRIBUTING's
-// open-core rule).
+// header owns no state. Usage is token counts only (no prices; billing-grade
+// metering is a separate design, §63).
 
 import { Button, cx, Spinner } from "@loams/ui";
 import { FolderCode, GitBranch, Search, ShieldCheck, Square } from "lucide-react";

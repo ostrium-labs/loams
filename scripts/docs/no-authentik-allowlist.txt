@@ -1,0 +1,55 @@
+# The files that may still name Authentik after IA1 Task 1 (design §76 §13,
+# D1600). scripts/docs/check-no-authentik.sh enforces this list; a pattern is a
+# path from the repository root, and `*` also matches `/`. Links to design §38
+# and plan MT1 by file name are allowed anywhere and need no entry.
+#
+# Everything else that named Authentik was removed or reworded. Add a path here
+# only for a historical record, never for live config, code or a guide.
+
+# The decision log: rows stay, marked superseded by D1600.
+docs/design/13-decision-log.md
+
+# The designs that record history (§76 §13 and §17 list their amendments).
+docs/design/19-console-identity-and-agents.md
+docs/design/22-showcase-suite.md
+docs/design/37-desktop-and-mobile-apps.md
+docs/design/38-knative-authentik-gitops.md
+docs/design/39-software-factory-and-loams-bot.md
+docs/design/41-multitenant-byoc-control-plane.md
+docs/design/43-private-networking.md
+docs/design/63-loams-meter.md
+docs/design/64-loams-infra-stack.md
+docs/design/74-durable-execution-compat.md
+docs/design/76-identity-and-authorization.md
+
+# Plans: MT1 is superseded by IA1; IA1 itself specifies the removal.
+docs/plans/2026-10-02-mt1-authentik-identity.md
+docs/plans/2026-10-21-ia1-identity-authz.md
+
+# Past changelog entries, and the entry that records the removal.
+CHANGELOG.md
+
+# The deprecated SIGN_IN_KIND_AUTHENTIK* values (D1619) and
+# OIDC_PROVIDER_KIND_AUTHENTIK, which names a customer's own upstream IdP and
+# stays (§76 §13): the protos, the OpenAPI enum, the console's provider-kind
+# map and the generated code.
+proto/loams/instance/v1/instance.proto
+proto/loams/auth/v1/auth.proto
+crates/loams-agentd-link/proto/loams/instance/v1/instance.proto
+crates/loams-agentd-link/src/gen/buffa/loams.instance.v1.instance.rs
+api/console/openapi.json
+web/plugins/org/src/settings.tsx
+web/packages/proto/src/gen/loams/*
+sdks/cpp/gen/loams/instance/v1/*
+sdks/csharp/src/Loams/Gen/Instance.cs
+sdks/go/gen/loams/instance/v1/instance.pb.go
+sdks/java/gen/dev/loams/gen/loams/instance/v1/*
+sdks/kotlin/gen/loams-descriptor.binpb
+sdks/python/src/loams/auth/v1/auth_pb2.py*
+sdks/python/src/loams/instance/v1/instance_pb2.py*
+sdks/ruby/gen/loams-descriptor.binpb
+
+# This gate: its script, this list and its self-test data.
+scripts/docs/check-no-authentik.sh
+scripts/docs/no-authentik-allowlist.txt
+scripts/docs/testdata/no-authentik/*

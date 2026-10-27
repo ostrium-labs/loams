@@ -1,0 +1,48 @@
+<!-- HE0 (plan HE1 Task 5): SigNoz runs its schema on a cluster named
+     `cluster` with replicated tables. A one-node cluster, with ClickHouse
+     Keeper embedded in the server in place of ZooKeeper. Server
+     configuration, not SigNoz source. -->
+<clickhouse>
+    <listen_host>0.0.0.0</listen_host>
+    <keeper_server>
+        <tcp_port>9181</tcp_port>
+        <server_id>1</server_id>
+        <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+        <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+        <coordination_settings>
+            <operation_timeout_ms>10000</operation_timeout_ms>
+            <session_timeout_ms>30000</session_timeout_ms>
+            <raft_logs_level>warning</raft_logs_level>
+        </coordination_settings>
+        <raft_configuration>
+            <server>
+                <id>1</id>
+                <hostname>localhost</hostname>
+                <port>9234</port>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+    <zookeeper>
+        <node>
+            <host>127.0.0.1</host>
+            <port>9181</port>
+        </node>
+    </zookeeper>
+    <distributed_ddl>
+        <path>/clickhouse/task_queue/ddl</path>
+    </distributed_ddl>
+    <remote_servers>
+        <cluster>
+            <shard>
+                <replica>
+                    <host>clickhouse</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </cluster>
+    </remote_servers>
+    <macros>
+        <shard>01</shard>
+        <replica>01</replica>
+    </macros>
+</clickhouse>

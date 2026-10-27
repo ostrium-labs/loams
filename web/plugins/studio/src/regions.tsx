@@ -13,6 +13,7 @@ import { StudioGitTools } from './git/GitToolbar.js';
 import { StudioContext } from './header.js';
 import { Home } from './home/Home.js';
 import { NotConnected } from './home/states.js';
+import type { StudioNotification } from './notifications/data.js';
 import type { StudioKeys } from './palette/commands.js';
 import { useReach } from './projects/queries.js';
 import { type Panel, routeOf, STUDIO_PAGES, type StudioRoute } from './routes.js';
@@ -44,6 +45,8 @@ export interface StudioRegionDeps {
   openExternal: (url: string) => Promise<void>;
   /** The console's modes: the sidebar's Factory group is Studio mode's only. */
   mode?: ModeService | undefined;
+  /** Posts an OS notification for one that just arrived (the web edition only, W15). */
+  notify?: ((n: StudioNotification) => void) | undefined;
 }
 
 /** The Studio route the router is on, or the home for any other page. */
@@ -281,7 +284,7 @@ export function registerStudioRegions(slots: SlotRegistry, d: StudioRegionDeps):
     ),
     slots.register(
       { name: 'shell.topbar.left', plugin: 'studio', meta: { mode: 'studio' } },
-      () => <StudioContext agentd={d.agentd} router={d.router} />,
+      () => <StudioContext agentd={d.agentd} router={d.router} notify={d.notify} />,
     ),
     slots.register(
       { name: 'shell.topbar.right', plugin: 'studio', meta: { mode: 'studio' } },

@@ -10,7 +10,7 @@ Plan: AP3 in the main repository (`docs/plans/2026-10-01-ap3-ios-swiftui.md`); d
 | `ios/Packages/LoamsCore` | Pure Swift (Swift 6 mode): pairing payload v1, reasons, canonical `DecisionClaims` + JWS, decision rules, watch state, `ResumingWatch` (resume, back-off, 45 s dead stream), HPKE unsealing, JWK thumbprints, PKCE. Builds on Linux with swift-crypto |
 | `ios/Packages/LoamsProto` | Generated SwiftProtobuf + connect-swift code (committed; see [protos.md](protos.md)) |
 | `ios/Packages/LoamsData` | Connect clients (URLSession, binary codec, GET reads), the token endpoint, instance identity check, SPKI pin validation, Secure Enclave decision keys behind LocalAuthentication, the keychain, the session store, push keys, `RemoteBackend` and `DemoBackend` |
-| `ios/Loams` | SwiftUI app: welcome (VisionKit QR scanner, paste, typed code with fingerprint check, Authentik via `ASWebAuthenticationSession` with PKCE, demo), approvals, status, settings |
+| `ios/Loams` | SwiftUI app: welcome (VisionKit QR scanner, paste, typed code with fingerprint check, OIDC sign-in via `ASWebAuthenticationSession` with PKCE (`WebAuth`), demo), approvals, status, settings |
 | `ios/LoamsNotificationService` | The Notification Service Extension: unseals and replaces the generic alert, fails closed |
 | `ios/LoamsTests` | XCTest for the app model against `DemoBackend` |
 
@@ -40,6 +40,6 @@ The simulator shares the Mac's network, so the app's default server is `http://l
 
 - **TLS pinning in the transport.** connect-swift's `URLSessionHTTPClient` keeps its session delegate private and forwards no auth challenges or redirects, so `PinValidator` is written and tested but not wired; it needs a small custom `HTTPClientInterface` (AP3 Task 3). The instance id and `jkt` checks are wired.
 - **APNs.** `ApnsStub` returns a fake device token; real registration needs a signed build with `aps-environment` (Q420). The NSE reads push keys from the default keychain until the shared access group exists.
-- **DPoP, the real pairing grant and the Authentik exchange** belong to the unified auth plan (Q438); they run against the mock today.
+- **DPoP, the real pairing grant and the OIDC token exchange** belong to the unified auth plan (Q438); they run against the mock today.
 - **SwiftData cache, jobs and inbox screens, `BGAppRefreshTask`, multiple instances, XCUITest snapshots** (AP3 Tasks 5, 7, 8, 10).
 - **Signing and TestFlight** (Q420).

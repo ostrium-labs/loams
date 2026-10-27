@@ -2,6 +2,7 @@
 //
 //   node sdks/conformance/check-languages.mjs --list
 //   node sdks/conformance/check-languages.mjs --check typescript
+//   node sdks/conformance/check-languages.mjs --check typescript --suite app
 //   node sdks/conformance/check-languages.mjs --drift [--strict]
 //   node sdks/conformance/check-languages.mjs --toolchain
 //
@@ -30,7 +31,16 @@ import { readdir } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { LANGUAGES, REQUIRED_TESTS, checkLanguage, loadManifest, loadReport } from './required.mjs';
+import {
+  APP_FIXTURE_TESTS,
+  APP_TESTS,
+  LANGUAGES,
+  REQUIRED_TESTS,
+  checkAppSuite,
+  checkLanguage,
+  loadManifest,
+  loadReport,
+} from './required.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
@@ -193,6 +203,35 @@ if (has('list')) {
   process.exit(0);
 }
 
+if (value('check') && value('suite') === 'app') {
+  // SDKP P0d: the app suite. Run after the plain check in a language's job,
+  // until S1 makes the app fixtures required and the plain check covers them.
+  const language = value('check');
+  const report = await loadReport(language);
+  if (report === null) {
+    console.error(`${language} has no report at sdks/fixtures/results/${language}.json`);
+    process.exit(2);
+  }
+  const spec = LANGUAGES[language];
+  const files = await suiteFiles(join(root, spec.sources ?? spec.dir));
+  const text = files.map((file) => readFileSyncSafe(file)).join('\n');
+  const names = new Set(
+    [...APP_TESTS, 'facade_matches_index', ...Object.values(APP_FIXTURE_TESTS)]
+      .map((short) => `${language}_${short}`)
+      .filter((name) => text.includes(name)),
+  );
+  const verdict = await checkAppSuite(language, report, names);
+  for (const problem of verdict.problems) {
+    console.error(`  - ${problem}`);
+  }
+  if (!verdict.ok) {
+    console.error(`${language} does not pass the app suite (${verdict.problems.length} problem(s)).`);
+    process.exit(1);
+  }
+  console.log(`${language}: the app suite passes (${verdict.fixtures.join(', ') || 'no app fixtures yet'}).`);
+  process.exit(0);
+}
+
 if (value('check')) {
   const language = value('check');
   const report = await loadReport(language);
@@ -313,6 +352,8 @@ if (has('drift')) {
 }
 
 if (!toolchainMode) {
-  console.error('usage: check-languages.mjs --list | --check <language> | --drift [--strict] | --toolchain');
+  console.error(
+    'usage: check-languages.mjs --list | --check <language> [--suite app] | --drift [--strict] | --toolchain',
+  );
   process.exit(2);
 }

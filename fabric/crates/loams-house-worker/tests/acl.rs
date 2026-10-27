@@ -132,7 +132,7 @@ fn user_cases(url: &str) -> Vec<String> {
         "SELECT addressToLine(toUInt64(0)) SETTINGS allow_introspection_functions = 1".to_string(),
         "SELECT 1 SETTINGS max_rows_to_group_by = 1".to_string(),
         "SELECT 1 SETTINGS max_bytes_before_external_sort = 1".to_string(),
-        "SELECT 1 SETTINGS max_execution_time = 301".to_string(),
+        "SELECT 1 SETTINGS max_execution_time = 901".to_string(),
         "SELECT 1 SETTINGS max_memory_usage = 0".to_string(),
         "SELECT 1 SETTINGS distributed_foreground_insert = 1".to_string(),
     ]

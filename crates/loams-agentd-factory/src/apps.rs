@@ -13,7 +13,7 @@ pub enum AppId {
     Openpanel,
     Matomo,
     Langfuse,
-    Openobserve,
+    Signoz,
 }
 
 impl AppId {
@@ -26,7 +26,7 @@ impl AppId {
         AppId::Openpanel,
         AppId::Matomo,
         AppId::Langfuse,
-        AppId::Openobserve,
+        AppId::Signoz,
     ];
 
     /// The wire id.
@@ -39,7 +39,7 @@ impl AppId {
             AppId::Openpanel => "openpanel",
             AppId::Matomo => "matomo",
             AppId::Langfuse => "langfuse",
-            AppId::Openobserve => "openobserve",
+            AppId::Signoz => "signoz",
         }
     }
 
@@ -57,13 +57,23 @@ impl AppId {
             AppId::Openpanel => "OpenPanel",
             AppId::Matomo => "Matomo",
             AppId::Langfuse => "Langfuse",
-            AppId::Openobserve => "OpenObserve",
+            AppId::Signoz => "SigNoz",
         }
     }
 
-    /// OpenObserve has its own UI only.
+    /// The honest status label while an app is a preview, shown in the UI:
+    /// SigNoz stores its telemetry in the install's Loams House (D1666) and
+    /// is a preview until it passes the House gate (D1571).
+    pub fn preview(self) -> Option<&'static str> {
+        match self {
+            AppId::Signoz => Some("Preview: SigNoz on Loams House"),
+            _ => None,
+        }
+    }
+
+    /// SigNoz has its own UI only.
     pub fn has_panels(self) -> bool {
-        self != AppId::Openobserve
+        self != AppId::Signoz
     }
 
     /// The configure form's fields, in order: `(key, label, secret)`.
@@ -97,7 +107,7 @@ impl AppId {
                 ("secretKey", "Secret key", true),
                 SSO,
             ],
-            AppId::Openobserve => &[SSO],
+            AppId::Signoz => &[SSO],
         }
     }
 

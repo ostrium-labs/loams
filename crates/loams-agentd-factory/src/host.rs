@@ -141,6 +141,7 @@ impl FactoryHost {
             credential_fields: app.credential_fields(),
             fields: entry.map(|e| e.fields),
             persistent: self.secrets.persistent(),
+            preview: app.preview().map(str::to_owned),
         }
     }
 

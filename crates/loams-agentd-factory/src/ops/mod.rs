@@ -17,9 +17,9 @@ mod forgejo;
 mod glitchtip;
 mod langfuse;
 mod matomo;
-mod openobserve;
 mod openpanel;
 mod plane;
+mod signoz;
 mod zulip;
 
 /// One configured app, as the ops see it.
@@ -75,7 +75,7 @@ pub fn ops(app: AppId) -> &'static [&'static str] {
         AppId::Openpanel => &["insights", "health"],
         AppId::Matomo => &["visits", "pages", "health"],
         AppId::Langfuse => &["traces", "daily", "health"],
-        AppId::Openobserve => &[],
+        AppId::Signoz => &[],
     }
 }
 
@@ -93,7 +93,7 @@ pub fn check(app: AppId, op: &str, params: &Value) -> Result<Params, OpError> {
         AppId::Openpanel => openpanel::check(op, params),
         AppId::Matomo => matomo::check(op, params),
         AppId::Langfuse => langfuse::check(op, params),
-        AppId::Openobserve => Err(OpError::unsupported("OpenObserve has no ops")),
+        AppId::Signoz => Err(OpError::unsupported("SigNoz has no ops")),
     }
 }
 
@@ -117,18 +117,18 @@ pub async fn run(
         AppId::Openpanel => openpanel::run(op, params, conn).await,
         AppId::Matomo => matomo::run(op, params, conn).await,
         AppId::Langfuse => langfuse::run(op, params, conn, ctx).await,
-        AppId::Openobserve => Err(OpError::unsupported("OpenObserve has no ops")),
+        AppId::Signoz => Err(OpError::unsupported("SigNoz has no ops")),
     }
 }
 
-/// The app's health check: `health` for an app with ops, OpenObserve's `/healthz`.
+/// The app's health check: `health` for an app with ops, SigNoz's `/api/v2/healthz`.
 ///
 /// # Errors
 ///
 /// The check failed.
 pub async fn health(app: AppId, conn: &Connection, ctx: OpContext) -> Result<(), OpError> {
-    if app == AppId::Openobserve {
-        return openobserve::probe(conn).await;
+    if app == AppId::Signoz {
+        return signoz::probe(conn).await;
     }
     let params = check(app, "health", &Value::Null)?;
     run(app, "health", &params, conn, ctx).await.map(|_| ())

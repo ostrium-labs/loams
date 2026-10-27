@@ -171,6 +171,33 @@ tracing = "0.1"
 # workspace's 59, so only `loams-house-lake` depends on it (R0.3); no default
 # features (no storage backend: R1.6). Apache-2.0.
 iceberg = { version = "0.10.1", default-features = false }
+# The Loams House Rust engine (design §75, plan HE1; D1576): DataFusion 55.2.0
+# (2026-10-07, past the 14-day rule on 2026-10-21) on the workspace's Arrow 59,
+# with its sqlparser 0.62 used through `datafusion::sql::sqlparser` (R10.3).
+# Default features minus `crypto_expressions` (the engine implements
+# ClickHouse's hash functions itself); `recursive_protection` guards the
+# planner against deeply nested untrusted SQL. Only the `loams-house-{sql,exec,
+# iceberg,engine}` crates depend on it; the front never does
+# (`engine_crates_stay_apart`). Apache-2.0.
+datafusion = { version = "=55.2.0", default-features = false, features = [
+    "compression",
+    "datetime_expressions",
+    "encoding_expressions",
+    "nested_expressions",
+    "parquet",
+    "recursive_protection",
+    "regex_expressions",
+    "sql",
+    "string_expressions",
+    "unicode_expressions",
+] }
+# Iceberg for the Rust engine (D1576; plan HE1 R11.8, R11.9): Loams' fork
+# ostrium-labs/iceberg-rust at the merge of fork PR #6 on `loams/row-delta`
+# (deletion-vector reads and writes, RowDelta, row lineage; PR head 01243900c
+# passed the fork's CI), on Arrow 59.2. Named `iceberg-engine` so it sits beside
+# the 0.10.1 above until HE2 Task 60 retires that. No default features (no
+# storage backend). Apache-2.0.
+iceberg-engine = { package = "iceberg", git = "https://github.com/ostrium-labs/iceberg-rust", rev = "d0788551f83b2ef2018d28d60a859d6283345a3b", default-features = false }
 # The House's TLS listener (HS1 Task 20, §49 §14): rustls 0.23 with the ring
 # provider, through tokio-rustls 0.26, both already in this lockfile (through
 # reqwest and the connectors) and in the engine workspace's. Apache-2.0/ISC/MIT.

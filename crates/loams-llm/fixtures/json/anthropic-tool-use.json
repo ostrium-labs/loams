@@ -1,0 +1,22 @@
+{
+  "id": "msg_fixture_1",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-fixture",
+  "content": [
+    {
+      "type": "tool_use",
+      "id": "toolu_fixture_1",
+      "name": "person",
+      "input": {"name": "Ada Lovelace", "age": 36, "tags": ["mathematician"]}
+    }
+  ],
+  "stop_reason": "tool_use",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 410,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 57
+  }
+}

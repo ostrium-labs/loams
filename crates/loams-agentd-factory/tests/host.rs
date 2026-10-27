@@ -89,14 +89,15 @@ async fn lists_eight_apps_unconfigured() {
             .iter()
             .any(|f| f.key == "appUrl" && !f.secret)
     );
-    assert!(
-        !list
-            .apps
-            .iter()
-            .find(|a| a.id == "openobserve")
-            .unwrap()
-            .has_panels
+    let signoz = list.apps.iter().find(|a| a.id == "signoz").unwrap();
+    assert_eq!(signoz.label, "SigNoz");
+    assert!(!signoz.has_panels);
+    // SigNoz on the House is a preview until it passes the House gate (D1571, D1666).
+    assert_eq!(
+        signoz.preview.as_deref(),
+        Some("Preview: SigNoz on Loams House")
     );
+    assert_eq!(list.apps.iter().filter(|a| a.preview.is_some()).count(), 1);
 }
 
 #[tokio::test]
@@ -303,26 +304,26 @@ async fn a_secret_the_store_lost_is_locked() {
 }
 
 #[tokio::test]
-async fn openobserve_health_is_its_healthz() {
+async fn signoz_health_is_its_healthz() {
     let up = Fixed::new(200, r#"{"status":"ok"}"#);
     let (host, _) = host(up.clone());
     let r = host
         .configure(&configure(
-            "openobserve",
-            "http://o2.example:5080/web/",
+            "signoz",
+            "http://signoz.example:8080/services/",
             &[],
         ))
         .await;
     assert_eq!(r.app.unwrap().health, FactoryHealth::Ok);
     assert_eq!(
         up.sent.lock().unwrap()[0].url,
-        "http://o2.example:5080/healthz"
+        "http://signoz.example:8080/api/v2/healthz"
     );
     up.answer(502, "bad gateway");
     let r = host
         .configure(&configure(
-            "openobserve",
-            "http://o2.example:5080/web/",
+            "signoz",
+            "http://signoz.example:8080/services/",
             &[],
         ))
         .await;

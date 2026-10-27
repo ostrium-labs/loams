@@ -4,9 +4,11 @@
 // design 59 the list is the shell sidebar's (`StudioThreads`), shown beside the view, and
 // archived threads are in Studio's settings.
 
+import { SHELL_COMMAND_EVENT } from '@loams/console-host';
 import { SessionStatus } from '@loams/proto/agentd';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createStudioKeys, listenShellCommands, type StudioKeys } from '../src/palette/commands.js';
 import type { StudioRoute } from '../src/routes.js';
 import { agentdPaletteSource } from '../src/sidebar/paletteSource.js';
 import { wrap } from './fakes.js';
@@ -29,10 +31,11 @@ function viewport(wide: boolean) {
 async function show(
   daemon: ReturnType<typeof sidebarDaemon>,
   route: StudioRoute = { kind: 'home' },
+  keys?: StudioKeys,
 ) {
   const navigate = vi.fn();
   const view = render(
-    wrap(<StudioInShell agentd={daemon.agentd} route={route} navigate={navigate} />),
+    wrap(<StudioInShell agentd={daemon.agentd} route={route} navigate={navigate} keys={keys} />),
   );
   await screen.findByRole('navigation', { name: 'Projects' });
   return { navigate, view };
@@ -286,7 +289,9 @@ describe('the sidebar', () => {
 
   it('keyboard_navigation', async () => {
     const daemon = sidebarDaemon();
-    const { navigate } = await show(daemon, { kind: 'project', projectId: '~/src/loams' });
+    const keys = createStudioKeys({ edition: 'desktop' });
+    const off = listenShellCommands(keys.commands);
+    const { navigate } = await show(daemon, { kind: 'project', projectId: '~/src/loams' }, keys);
     const loams = await within(nav()).findByRole('link', { name: /^loams/ });
     await within(nav()).findByRole('link', { name: /^Fix the login redirect/ });
     // ↓ moves from the project row to its first thread; Enter opens it.
@@ -305,9 +310,15 @@ describe('the sidebar', () => {
     fireEvent.keyDown(first, { key: 'End' });
     expect(document.activeElement?.textContent).toContain('Scratch notes');
 
-    // Mod+2 opens the second thread (desktop), Mod+Shift+] the next one (the first, from a project).
+    // The shell's Mod+2 (D1081) asks Studio for the second thread; Mod+Shift+] (Studio's
+    // own) opens the next one (the first, from a project).
     navigate.mockClear();
-    fireEvent.keyDown(document.body, { key: '2', code: 'Digit2', ctrlKey: true });
+    const shell = (command: string) => {
+      const event = new CustomEvent(SHELL_COMMAND_EVENT, { detail: command, cancelable: true });
+      act(() => void window.dispatchEvent(event));
+      return event.defaultPrevented;
+    };
+    expect(shell('thread.jump.2')).toBe(true);
     expect(navigate).toHaveBeenCalledWith('/studio/t/t-fix');
     fireEvent.keyDown(document.body, {
       key: ']',
@@ -317,8 +328,8 @@ describe('the sidebar', () => {
     });
     expect(navigate).toHaveBeenLastCalledWith('/studio/t/t-login');
 
-    // Mod+N starts a thread in the project in view.
-    fireEvent.keyDown(document.body, { key: 'n', code: 'KeyN', ctrlKey: true });
+    // The shell's Mod+N starts a thread in the project in view.
+    expect(shell('chat.new')).toBe(true);
     await waitFor(() => expect(daemon.calls).toContain('CreateThread:~/src/loams'));
     // Settings › Studio's approval mode, supervised by default (Q803; SD1 Task 13).
     await waitFor(() => expect(daemon.calls).toContain('SetThreadApprovalMode:true:SUPERVISED'));
@@ -327,6 +338,7 @@ describe('the sidebar', () => {
         expect.stringMatching(/^\/studio\/t\/[0-9a-f-]{36}$/),
       ),
     );
+    off();
   });
 
   it('opening a thread marks it seen; rename, fork and archive go to the daemon', async () => {

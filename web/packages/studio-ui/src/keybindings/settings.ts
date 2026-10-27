@@ -23,11 +23,35 @@ import {
   shortcutKeyFromEvent,
 } from "./shared";
 
-/** The chords the shell owns in both modes (§53 §4.2, §5.10), with their editor labels. */
-export const SHELL_KEYBINDINGS: ReadonlyArray<{ readonly key: string; readonly label: string }> = [
+/** A chord the shell owns (D1081), with its editor label. */
+export interface ShellKeybinding {
+  readonly key: string;
+  readonly label: string;
+  /**
+   * The shell takes it even from a terminal on Linux and Windows, where Ctrl+letter is the
+   * shell program's (Review Focus 1). On macOS every ⌘ chord passes a terminal.
+   */
+  readonly terminal?: true;
+}
+
+/**
+ * The chords the shell owns in both modes (design 59, D1081; @loams/plugin-shell
+ * `SHELL_KEYMAP`, whose test keeps the two in step), with their editor labels.
+ */
+export const SHELL_KEYBINDINGS: ReadonlyArray<ShellKeybinding> = [
   { key: "mod+k", label: "Shell: Command Palette" },
-  { key: "mod+shift+m", label: "Shell: Switch Mode" },
-  { key: "mod+j", label: "Shell: Agent Panel" },
+  { key: "mod+shift+p", label: "Shell: Command Palette", terminal: true },
+  { key: "mod+n", label: "Shell: New Thread" },
+  { key: "mod+b", label: "Shell: Toggle Sidebar" },
+  { key: "mod+i", label: "Shell: Toggle Inspector" },
+  { key: "mod+j", label: "Shell: Toggle Drawer" },
+  ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => ({ key: `mod+${n}`, label: `Shell: Thread ${n}` })),
+  { key: "ctrl+tab", label: "Shell: Next Thread", terminal: true },
+  { key: "mod+[", label: "Shell: Back" },
+  { key: "mod+]", label: "Shell: Forward" },
+  { key: "mod+shift+t", label: "Shell: Reopen Closed Thread" },
+  { key: "mod+,", label: "Shell: Settings", terminal: true },
+  { key: "mod+shift+m", label: "Shell: Switch Mode", terminal: true },
 ];
 
 export type KeybindingSource = "Default" | "Custom";

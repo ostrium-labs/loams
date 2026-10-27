@@ -187,23 +187,7 @@ export function DataCard({ where, load }: { where: Where; load: Load<DataSummary
   );
 }
 
-export function DurableCard({
-  where,
-  load,
-  local = true,
-}: {
-  where: Where;
-  load: Load<DurableSummary>;
-  /** False when the active server is not this computer: durable runs on the local engine only. */
-  local?: boolean;
-}) {
-  if (!local) {
-    return (
-      <OverviewCard id="durable" title="Durable" href="/durable" tag={LOCAL_ONLY}>
-        <LocalOnly />
-      </OverviewCard>
-    );
-  }
+export function DurableCard({ where, load }: { where: Where; load: Load<DurableSummary> }) {
   const g = Gate({
     where,
     load,

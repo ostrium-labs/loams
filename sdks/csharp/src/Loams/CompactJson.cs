@@ -74,6 +74,10 @@ public static class CompactJson
     private static void WriteMessage(StringBuilder builder, IMessage message)
     {
         var descriptor = message.Descriptor;
+        if (WriteWellKnown(builder, message))
+        {
+            return;
+        }
         if (IsWellKnown(descriptor.FullName))
         {
             throw new NotSupportedException(
@@ -311,7 +315,7 @@ public static class CompactJson
                 return;
 
             case FieldType.Float:
-                builder.Append(FormatDouble(Convert.ToSingle(value, CultureInfo.InvariantCulture)));
+                builder.Append(FormatFloat(Convert.ToSingle(value, CultureInfo.InvariantCulture)));
                 return;
 
             case FieldType.Double:
@@ -336,6 +340,22 @@ public static class CompactJson
         {
             throw new NotSupportedException(
                 "a NaN or infinite double has no proto3 JSON form and cannot be serialized");
+        }
+        return value.ToString("R", CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// A JSON number for a <c>float</c> field: the shortest form that round-trips
+    /// as a float, as protojson writes it. Widening to a double first writes
+    /// <c>0.7f</c> as <c>0.699999988079071</c>, which is a different JSON number
+    /// from the <c>0.7</c> every other SDK sends (and the corpus records).
+    /// </summary>
+    private static string FormatFloat(float value)
+    {
+        if (float.IsNaN(value) || float.IsInfinity(value))
+        {
+            throw new NotSupportedException(
+                "a NaN or infinite float has no proto3 JSON form and cannot be serialized");
         }
         return value.ToString("R", CultureInfo.InvariantCulture);
     }
@@ -410,6 +430,96 @@ public static class CompactJson
         int number = EnumNumber(value) ?? 0;
         EnumValueDescriptor? named = field.EnumType?.FindValueByNumber(number);
         return named?.Name ?? number.ToString(CultureInfo.InvariantCulture);
+    }
+
+    // The well-known types the app-building API sends (SDKP): `Struct`, `Value`
+    // and `ListValue` (schemas, document sources, filter terms), `Empty` (unit
+    // oneof arms such as `match_all` and `dbsf`), and the string-valued
+    // `Timestamp`, `Duration` and `FieldMask`. Each in its proto3 JSON form,
+    // compact like everything else here. `Any` is still refused.
+    private static bool WriteWellKnown(StringBuilder builder, IMessage message)
+    {
+        switch (message)
+        {
+            case Google.Protobuf.WellKnownTypes.Empty:
+                builder.Append("{}");
+                return true;
+            case Google.Protobuf.WellKnownTypes.Struct value:
+                WriteStruct(builder, value);
+                return true;
+            case Google.Protobuf.WellKnownTypes.Value value:
+                WriteValue(builder, value);
+                return true;
+            case Google.Protobuf.WellKnownTypes.ListValue value:
+                WriteList(builder, value);
+                return true;
+            case Google.Protobuf.WellKnownTypes.Timestamp or Google.Protobuf.WellKnownTypes.Duration
+                or Google.Protobuf.WellKnownTypes.FieldMask:
+                // A JSON string; the generated formatter writes exactly that and no whitespace.
+                builder.Append(JsonFormatter.Default.Format(message));
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private static void WriteStruct(StringBuilder builder, Google.Protobuf.WellKnownTypes.Struct value)
+    {
+        builder.Append('{');
+        var first = true;
+        foreach (var (key, item) in value.Fields)
+        {
+            if (!first)
+            {
+                builder.Append(',');
+            }
+            first = false;
+            WriteString(builder, key);
+            builder.Append(':');
+            WriteValue(builder, item);
+        }
+        builder.Append('}');
+    }
+
+    private static void WriteList(StringBuilder builder, Google.Protobuf.WellKnownTypes.ListValue value)
+    {
+        builder.Append('[');
+        for (var i = 0; i < value.Values.Count; i++)
+        {
+            if (i > 0)
+            {
+                builder.Append(',');
+            }
+            WriteValue(builder, value.Values[i]);
+        }
+        builder.Append(']');
+    }
+
+    private static void WriteValue(StringBuilder builder, Google.Protobuf.WellKnownTypes.Value? value)
+    {
+        switch (value?.KindCase)
+        {
+            case null:
+            case Google.Protobuf.WellKnownTypes.Value.KindOneofCase.None:
+            case Google.Protobuf.WellKnownTypes.Value.KindOneofCase.NullValue:
+                builder.Append("null");
+                return;
+            case Google.Protobuf.WellKnownTypes.Value.KindOneofCase.BoolValue:
+                builder.Append(value.BoolValue ? "true" : "false");
+                return;
+            case Google.Protobuf.WellKnownTypes.Value.KindOneofCase.NumberValue:
+                builder.Append(FormatDouble(value.NumberValue));
+                return;
+            case Google.Protobuf.WellKnownTypes.Value.KindOneofCase.StringValue:
+                WriteString(builder, value.StringValue);
+                return;
+            case Google.Protobuf.WellKnownTypes.Value.KindOneofCase.ListValue:
+                WriteList(builder, value.ListValue);
+                return;
+            case Google.Protobuf.WellKnownTypes.Value.KindOneofCase.StructValue:
+                WriteStruct(builder, value.StructValue);
+                return;
+        }
     }
 
     private static bool IsWellKnown(string fullName) => fullName switch

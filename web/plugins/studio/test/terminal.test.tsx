@@ -229,12 +229,27 @@ describe('the toggle (Ctrl+`, T24-4)', () => {
     const press = (key: string, mods: KeyboardEventInit = {}) =>
       isStudioShortcut(keys, new KeyboardEvent('keydown', { key, ...mods }));
     expect(press('`', { ctrlKey: true, code: 'Backquote' })).toBe(true);
-    expect(press('k', { ctrlKey: true, code: 'KeyK' })).toBe(true);
+    // On Linux the shell program keeps Ctrl+K, J, B, N and I (D1081, Review Focus 1); the
+    // shell's chords it does not need pass.
+    for (const k of ['k', 'j', 'b', 'n', 'i'])
+      expect(press(k, { ctrlKey: true, code: `Key${k.toUpperCase()}` }), k).toBe(false);
+    expect(press('P', { ctrlKey: true, shiftKey: true, code: 'KeyP' })).toBe(true);
+    expect(press('Tab', { ctrlKey: true, code: 'Tab' })).toBe(true);
+    expect(press('M', { ctrlKey: true, shiftKey: true, code: 'KeyM' })).toBe(true);
     expect(press('c', { ctrlKey: true, code: 'KeyC' })).toBe(false);
     // Studio's own bindings with `!terminalFocus` stay the terminal's.
     expect(press('d', { ctrlKey: true, code: 'KeyD' })).toBe(false);
     off();
     expect(press('`', { ctrlKey: true, code: 'Backquote' })).toBe(false);
+  });
+
+  it('on macOS every ⌘ chord of the shell passes; Ctrl+letter stays the terminal’s', () => {
+    const keys = createStudioKeys({ edition: 'desktop', platform: 'MacIntel' });
+    const press = (key: string, mods: KeyboardEventInit = {}) =>
+      isStudioShortcut(keys, new KeyboardEvent('keydown', { key, ...mods }));
+    for (const k of ['k', 'j', 'b', 'n', 'i'])
+      expect(press(k, { metaKey: true, code: `Key${k.toUpperCase()}` }), k).toBe(true);
+    expect(press('k', { ctrlKey: true, code: 'KeyK' })).toBe(false);
   });
 
   it('shows and hides the thread’s terminal drawer', async () => {

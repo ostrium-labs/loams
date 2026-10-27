@@ -465,7 +465,7 @@ function SettingsNav({
   );
 }
 
-/** The foot's way into Settings (and ⌘, from Task 12). */
+/** The foot's way into Settings, where ⌘, also goes (D1081). */
 function SettingsLink({ router }: { router: HashRouter }) {
   const { all } = usePages(router);
   const home = settingsHome(all);

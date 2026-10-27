@@ -122,6 +122,12 @@ public final class Idempotency {
         return field != null;
     }
 
+    /** Whether {@code message} already carries a non-empty idempotency key. */
+    static boolean hasKey(Message message) {
+        Descriptors.FieldDescriptor field = keyField(message);
+        return field != null && !readString(message, field).isEmpty();
+    }
+
     private static Descriptors.FieldDescriptor keyField(Message message) {
         if (message == null) {
             return null;

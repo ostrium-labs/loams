@@ -56,49 +56,38 @@ public protocol ConsistencyTokenStore: Sendable {
 /// An `actor` because a session is shared by every concurrent call in a process
 /// and R4's whole value is that those calls agree on one token.
 public actor ConsistencySession: ConsistencyTokenStore {
-    private var token: String?
+    private var token: ConsistencyToken?
     private var conflictCount = 0
 
     public init() {}
 
-    public func current() -> String? { token }
+    /// The merged token later reads go out with, or nil when none has been recorded.
+    public func current() -> String? { token?.description }
 
-    /// Folds a token in. An empty token is not a token.
+    /// The merged token, parsed.
+    public func parsed() -> ConsistencyToken? { token }
+
+    /// Folds a response's token in (R4 as amended by SDKP §2.1): the max offset
+    /// per stream and partition. Empty is ignored. A token that is not a `v1:`
+    /// token is counted in `conflicts()` and refused, and the session keeps what
+    /// it had.
     public func record(_ incoming: String) async throws {
         guard !incoming.isEmpty else { return }
-        guard loamsIsConsistencyToken(incoming) else {
+        guard let parsed = ConsistencyToken.tryParse(incoming) else {
             conflictCount += 1
-            throw LoamsError.internalError(
-                "",
-                "loams: not a consistency token: \(incoming)"
-            )
+            throw LoamsError.internalError("", "loams: not a consistency token: \(incoming)")
         }
-        if token == nil || token == incoming {
-            token = incoming
-            return
-        }
-        conflictCount += 1
-        throw LoamsError.loams(
-            code: .failedPrecondition,
-            reason: .failedPrecondition,
-            unknownReason: nil,
-            metadata: [:],
-            hint: "",
-            rpc: "",
-            message: "two different consistency tokens met and the encoding cannot merge them yet; "
-                + "the session keeps the first. Merging by stream and partition offset arrives with "
-                + "the write paths that carry offsets (design §44 §7.4, D609)"
-        )
+        token = token.map { $0.merge(parsed) } ?? parsed
     }
 
     public func conflicts() -> Int { conflictCount }
 
-    /// Forgets the token, so the next read is not held to it.
     public func clear() {
         token = nil
         conflictCount = 0
     }
 }
+
 
 /// Folds the token a response carried into a session.
 ///

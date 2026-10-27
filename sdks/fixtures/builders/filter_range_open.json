@@ -1,0 +1,20 @@
+{
+  "name": "filter_range_open",
+  "builder": "filter",
+  "message": "loams.collection.v1.Query",
+  "spec": {
+    "op": "range",
+    "args": [
+      "n",
+      {
+        "gt": 1
+      }
+    ]
+  },
+  "expect": {
+    "range": {
+      "field": "n",
+      "gt": 1
+    }
+  }
+}

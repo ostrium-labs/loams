@@ -1,5 +1,7 @@
 # 56 — Loams Sandbox: One Isolation Crate for Every Untrusted Process
 
+> **Updated 2026-10-19 ([D1119](13-decision-log.md)): Loams has no open core.** Where this document places metering, billing, the hosted control plane, commercial APIs or other components in the private `loams-platform` repository, or calls something private for open-core reasons, read that as superseded: everything is Apache-2.0, and the metering, billing and control-plane code is moving into the open repo now (design §63, Loams Meter). Ostrium Labs offers services (infrastructure efficiency, SLAs, support), not a paid edition. The rest of the design is unchanged.
+
 Status: **Approved direction** (owner, 2026-10-15) · details **Proposed** · 2026-10-15. Source: the owner's direction of 2026-10-15 (§1.1), which is binding. The owner's decision of the same day: the design is written now, and the implementation plan runs **after v0.1.0-preview.3**. Decisions **D990–D1009** and open questions **Q880–Q894** are declared in the [decision log](13-decision-log.md). Rows that restate the owner's direction are *Approved*. Rows that add detail to it are *Proposed* until the owner confirms them. Plan: [SB1](../plans/2026-10-15-sb1-loams-sandbox.md). **No code is written by this document.**
 
 This document builds on five earlier designs:

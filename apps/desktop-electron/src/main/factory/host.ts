@@ -74,6 +74,7 @@ export function appInfo(a: FactoryApp): FactoryAppInfo {
 		...(configured ? { url: a.url } : {}),
 		health: HEALTH[a.health] ?? "unreachable",
 		hasPanels: a.hasPanels,
+		...(a.preview ? { preview: a.preview } : {}),
 		credentialFields: a.credentialFields.map((f) => ({
 			key: f.key,
 			label: f.label,

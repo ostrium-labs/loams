@@ -7,3 +7,6 @@ contact_links:
   - name: Read the design documents
     url: https://github.com/ostrium-labs/loams/tree/main/docs/design
     about: Most "how does this work" questions are answered in docs/design.
+  - name: "Questions and chat: Discord"
+    url: https://discord.gg/eK6NanHQq
+    about: Ask questions and chat with the community. Use issues for bugs and features only.

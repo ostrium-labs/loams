@@ -1,0 +1,9 @@
+# Lists one Kafka failure only: xfail_unlisted_failure_fails.
+product = "fixture"
+
+[[xfail]]
+id = "needs-kafka-produce"
+tests = ["tests.test_kafka::test_produce"]
+reason = "needs Kafka (not part of Loams)"
+issue = "https://github.com/ostrium-labs/loams/issues/1"
+since = 2026-10-23

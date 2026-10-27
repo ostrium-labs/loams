@@ -70,21 +70,86 @@ public static class ConformanceReport
         ArgumentException.ThrowIfNullOrWhiteSpace(repositoryRoot);
         ArgumentNullException.ThrowIfNull(run);
 
-        var report = new JsonObject
+        lock (Gate)
         {
-            ["about"] =
-                "What this SDK's suite ran. `ran` is what `CorpusDriver` replayed through the SDK's " +
-                "public surface and checked against each recording's own `expect` block; a fixture " +
-                "that could not be reached is absent from it rather than skipped, because " +
-                "sdks/conformance/required.mjs permits exactly one skip (a `transport: grpc-only` " +
-                "fixture on the Connect-unary fallback) and this SDK is not that fallback.",
-            ["language"] = "csharp",
-            ["transport"] = "connect",
-            ["tests"] = new JsonArray([.. tests.Select((name) => (JsonNode)name!)]),
-            ["ran"] = new JsonArray([.. run.Ran.Select((name) => (JsonNode)name!)]),
-            ["skipped"] = new JsonArray(),
-        };
+            var report = new JsonObject
+            {
+                ["about"] =
+                    "What this SDK's suite ran. `ran` is what `CorpusDriver` replayed through the SDK's " +
+                    "public surface and checked against each recording's own `expect` block; a fixture " +
+                    "that could not be reached is absent from it rather than skipped, because " +
+                    "sdks/conformance/required.mjs permits exactly one skip (a `transport: grpc-only` " +
+                    "fixture on the Connect-unary fallback) and this SDK is not that fallback.",
+                ["language"] = "csharp",
+                ["transport"] = "connect",
+                ["tests"] = new JsonArray([.. tests.Select((name) => (JsonNode)name!)]),
+                ["ran"] = new JsonArray([.. Ran(run).Select((name) => (JsonNode)name!)]),
+                ["skipped"] = new JsonArray(),
+            };
 
+            return Save(repositoryRoot, report);
+        }
+    }
+
+    /// <summary>
+    /// What a report written now from <paramref name="run"/> names in <c>ran</c>: the
+    /// corpus driver's fixtures and the app fixtures this process replayed
+    /// (<see cref="AppReplays"/>).
+    /// </summary>
+    public static IReadOnlyList<string> Ran(CorpusRun run)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+        return [.. run.Ran.Concat(AppReplays.Ran.Where((name) => !run.Ran.Contains(name, StringComparer.Ordinal)))];
+    }
+
+    /// <summary>
+    /// Adds one replayed app fixture to the report's <c>ran</c>.
+    /// </summary>
+    /// <remarks>
+    /// The app tests and <c>csharp_conformance_all_required_fixtures</c> run in an
+    /// order xunit chooses, so each side writes what it knows: this adds to the report
+    /// on disk (or starts one), and <see cref="Write"/> includes every app fixture
+    /// replayed so far. Whichever runs last, the report names both.
+    /// </remarks>
+    public static void AddRan(string repositoryRoot, string fixture)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(repositoryRoot);
+        lock (Gate)
+        {
+            var path = Path.Combine(repositoryRoot, ReportPath);
+            JsonObject report;
+            try
+            {
+                report = JsonNode.Parse(File.ReadAllText(path)) as JsonObject ?? throw new JsonException("not an object");
+            }
+            catch (Exception e) when (e is IOException or JsonException)
+            {
+                report = new JsonObject
+                {
+                    ["language"] = "csharp",
+                    ["transport"] = "connect",
+                    ["tests"] = new JsonArray([.. RequiredTestNames.Select((name) => (JsonNode)name!)]),
+                    ["ran"] = new JsonArray(),
+                    ["skipped"] = new JsonArray(),
+                };
+            }
+            if (report["ran"] is not JsonArray ran)
+            {
+                ran = [];
+                report["ran"] = ran;
+            }
+            if (!ran.Any((name) => name?.GetValue<string>() == fixture))
+            {
+                ran.Add((JsonNode)fixture!);
+            }
+            Save(repositoryRoot, report);
+        }
+    }
+
+    private static readonly object Gate = new();
+
+    private static string Save(string repositoryRoot, JsonObject report)
+    {
         var path = Path.Combine(repositoryRoot, ReportPath);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllText(path, report.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) + "\n");

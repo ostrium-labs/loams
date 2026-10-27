@@ -210,7 +210,7 @@ func wait(ctx context.Context, done <-chan error) error {
 }
 
 // OIDCExchange is the RFC 8693 token exchange a person signed in through
-// Authentik needs (design §44 §7.4, D608; §19 §5.2).
+// an OIDC identity provider needs (design §44 §7.4, D608; §19 §5.2).
 //
 // The instance's `/oauth/token` protocol endpoint takes the identity token and
 // answers with a Loams access token, which is then cached until the server says

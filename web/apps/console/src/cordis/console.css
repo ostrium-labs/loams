@@ -366,6 +366,21 @@ code {
   :is(button, a, input, select, textarea, [role="button"], [role="combobox"], [data-no-drag]) {
   -webkit-app-region: no-drag;
 }
+/* The rest of what can take a click or focus: tabs, switches, menu rows, labels and
+   anything focusable. desktop-drag-regions.test.ts scans the real top bar against both. */
+.lc-topbar [role="tab"],
+.lc-topbar [role="switch"],
+.lc-topbar [role="checkbox"],
+.lc-topbar [role="radio"],
+.lc-topbar [role="menuitem"],
+.lc-topbar [role="option"],
+.lc-topbar [role="link"],
+.lc-topbar [tabindex]:not([tabindex="-1"]),
+.lc-topbar [contenteditable="true"],
+.lc-topbar label,
+.lc-topbar summary {
+  -webkit-app-region: no-drag;
+}
 .lc-topbar-start,
 .lc-topbar-end {
   display: flex;
@@ -1364,6 +1379,19 @@ button.lc-hosted-engine {
   color: var(--op-muted);
   line-height: 1.5;
 }
+/* Demo mode: the way in from every gate screen, and the way back out from the header. */
+.lc-gate-demo {
+  margin: 4px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--op-rule);
+  color: var(--op-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.lc-demo-leave {
+  text-decoration: underline;
+  white-space: nowrap;
+}
 .lc-gate-form {
   display: grid;
   gap: 14px;
@@ -1461,9 +1489,10 @@ button.lc-hosted-engine {
 }
 /* With Studio's git tools in the top bar, the mode switch is icons only below 1536px
    (each option keeps its name for assistive technology and its tooltip), so the bar fits
-   at 1280 and 1440 with the sidebar open. */
+   at 1280 and 1440 with the sidebar open. Only the label is hidden: the option's icon and
+   the sliding selection chip (`data-slot="selection-indicator"`) stay. */
 @media (max-width: 1535px) {
-  .lc-topbar:has(.lc-studio-tools) .lc-mode span {
+  .lc-topbar:has(.lc-studio-tools) .lc-mode button > span:not([data-slot]) > span {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -1473,7 +1502,7 @@ button.lc-hosted-engine {
   }
 }
 @media (max-width: 640px) {
-  .lc-mode span {
+  .lc-mode button > span:not([data-slot]) > span {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -1620,4 +1649,37 @@ button.lc-hosted-engine {
   font-size: var(--op-text-micro);
   font-weight: 400;
   letter-spacing: 0.02em;
+}
+
+/* Desktop chrome (design 59, D1083) ------------------------------------------ */
+
+/* The desktop's preload sets data-platform and data-fullscreen on <html>; the web edition
+   sets neither, so none of this applies in a browser. macOS: the traffic lights sit at x 16
+   in the 44px bar, so the brand (sidebar open) or the top bar (sidebar closed) starts after
+   them, except in fullscreen, where they are gone. */
+html[data-platform="darwin"]:not([data-fullscreen="true"]) .lc-shell {
+  --lc-traffic: 76px;
+}
+html[data-platform="darwin"] .lc-brand {
+  -webkit-app-region: drag;
+}
+html[data-platform="darwin"] .lc-brand :is(button, a, input, [role="button"], [role="combobox"]) {
+  -webkit-app-region: no-drag;
+}
+/* Vibrancy behind the sidebar only (Q933: in light too); the top bar and work area stay solid.
+   A page without the shell (sign-in, the boot screen) keeps its solid background. */
+html[data-platform="darwin"]:has(.lc-shell),
+html[data-platform="darwin"]:has(.lc-shell) body,
+html[data-platform="darwin"] .lc-shell,
+html[data-platform="darwin"] .lc-side {
+  background: transparent;
+}
+html[data-platform="darwin"] .lc-body {
+  background: var(--op-window);
+}
+/* Windows and Linux: keep the top bar's end clear of the title bar overlay's buttons
+   (the Window Controls Overlay area; 0 when the overlay is absent). */
+html[data-platform="win32"] .lc-shell,
+html[data-platform="linux"] .lc-shell {
+  --lc-wco-end: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
 }

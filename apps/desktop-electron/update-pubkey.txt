@@ -1,0 +1,4 @@
+# Loams Desktop update public key (Ed25519, 64 hex characters), pinned into the app at build time.
+# The private half is the `desktop-release` environment secret LOAMS_UPDATE_SIGNING_KEY.
+# Empty (only comments): the in-app updater is off and no release publishes update manifests.
+# How to set it: docs/release/desktop.md, "The update key".

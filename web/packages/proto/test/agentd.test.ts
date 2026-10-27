@@ -14,6 +14,7 @@ import {
   FileService,
   GitService,
   HarnessService,
+  MarketplaceService,
   NotificationService,
   PreviewService,
   ProjectService,
@@ -43,6 +44,8 @@ const SERVICES = {
   NotificationService,
   AttachmentService,
   FactoryService,
+  // The Seed Exchange (MK1 Tasks 4b, 9).
+  MarketplaceService,
 };
 
 describe('loams.agentd.v1', () => {

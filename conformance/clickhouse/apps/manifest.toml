@@ -1,0 +1,157 @@
+# HE0 (plan HE1 Task 1, design §75 §7.1): the applications mined for the
+# House's ClickHouse compatibility profile. Each runs as unmodified containers
+# pinned by digest (`image`, `images`), against the pinned clickhouse-server
+# below, through scripts/house/apps.sh <name> up|drive|dump|down.
+#
+# Every entry needs a `licence` (SPDX) before it runs anywhere
+# (apps_manifest_requires_licence), and every image reference here and in each
+# compose file is `<repo>:<tag>@sha256:<64 hex>` (apps_manifest_pins_by_digest).
+# Pins are releases at least 14 days old when recorded (plan HE1, rulings R0.3 and R0.4).
+#
+# Fields per [[app]]:
+#   name                 the directory under apps/ and the compose project
+#   image                the application's main image, by digest
+#   images               its other images (worker, dashboard), by digest
+#   licence              SPDX expression for the application
+#   clickhouse_protocol  how its queries reach ClickHouse: "http" | "native"
+#   migrations_protocol  how its migrations reach ClickHouse, when different
+#   migrations           the migration directory inside `image` (dump copies it
+#                        out; never committed)
+#   clickhouse_min       the oldest ClickHouse the application supports
+#   driver               the script that exercises it (relative to apps/)
+#   suite                its own end-to-end command, if any ("" when none runs
+#                        without its source; ruling R0.7)
+#   runtime_minutes      wall time of up + drive + dump on a GitHub runner
+#   gate                 a gate application of §75 §7.1 (Langfuse, OpenPanel,
+#                        SigNoz: D1571)
+
+schema = 1
+
+[clickhouse]
+# The oracle: ClickHouse 26.9.2.8, the first published 26.9.2 build; chDB's
+# `SELECT version()` is 26.9.2.1, which has no image (HS1 R1.1, HE1 R0.3).
+oracle = "docker.io/clickhouse/clickhouse-server:26.9.2.8@sha256:7b9a0b6e9ab7ef79db5c4f8a9808f880258704eb7b4af9309f9029c16e727a80"
+# The version-range floor (Q1170): Langfuse v3 supports 24.3 and later.
+floor = "docker.io/clickhouse/clickhouse-server:24.3.18.7@sha256:85b97f63dcfff47790d26bb5d5801637aaddb2b93e5e9aee27a686c2fb2b9916"
+licence = "Apache-2.0"
+
+[[app]]
+name = "langfuse-v4"
+image = "docker.io/langfuse/langfuse:4.54.0@sha256:ea9f763af1181b444c081353cd2f8174323c84b2447ed7295857d04ae1153f2c"
+images = ["docker.io/langfuse/langfuse-worker:4.54.0@sha256:fe7ea9e288c6586783989920ced1704172624f45da495a68d8ae07ba466641f2"]
+# MIT for the core; the image also carries ee/, web/src/ee/ and worker/src/ee/
+# under the Langfuse Enterprise licence (ClickHouse, Inc.), inactive without a
+# LANGFUSE_EE_LICENSE_KEY, which the harness never sets (checked at the tag
+# through the GitHub API, 2026-10-22).
+licence = "MIT AND LicenseRef-Langfuse-EE"
+clickhouse_protocol = "http"
+migrations_protocol = "native"
+migrations = "/app/packages/shared/clickhouse/migrations"
+clickhouse_min = "25.12"
+driver = "langfuse-v4/driver.sh"
+suite = ""
+runtime_minutes = 10
+gate = true
+
+[[app]]
+name = "langfuse-v3"
+image = "docker.io/langfuse/langfuse:3.225.11@sha256:a343f64e035eb01aeea358703a0428945d909d01e19452509a5a830862dda878"
+images = ["docker.io/langfuse/langfuse-worker:3.225.11@sha256:8a28c946bb5401eef488153fa294db5a79bd99dd5c90db8e4d39559374c9ebd3"]
+# MIT for the core; the image also carries ee/, web/src/ee/ and worker/src/ee/
+# under the Langfuse Enterprise licence (ClickHouse, Inc.), inactive without a
+# LANGFUSE_EE_LICENSE_KEY, which the harness never sets (checked at the tag
+# through the GitHub API, 2026-10-22).
+licence = "MIT AND LicenseRef-Langfuse-EE"
+clickhouse_protocol = "http"
+migrations_protocol = "native"
+migrations = "/app/packages/shared/clickhouse/migrations"
+clickhouse_min = "24.3"
+driver = "langfuse-v4/driver.sh"
+suite = ""
+runtime_minutes = 10
+gate = true
+
+[[app]]
+name = "openpanel"
+image = "docker.io/lindesvard/openpanel-api:2.3.0@sha256:cee4855cd715a7248c5c49090fe93a28ffc505541de20cb238d8884a6bcb9223"
+images = [
+  "docker.io/lindesvard/openpanel-dashboard:2.3.0@sha256:b773cf864454a0ec89b2a133b48bf06202880ed650a75cc2f1f5c87aaed1cffa",
+  "docker.io/lindesvard/openpanel-worker:2.3.0@sha256:b22e247fb6980b820c1a954d0e3d2fe88b3edf40a58aa53329467af239538e80",
+]
+licence = "AGPL-3.0-only"
+clickhouse_protocol = "http"
+# Unverified path (Task 4 confirms it from the image).
+migrations = "/app/packages/db/code-migrations"
+clickhouse_min = "24.3"
+driver = "openpanel/driver.sh"
+suite = ""
+runtime_minutes = 10
+gate = true
+
+[[app]]
+# SigNoz, the community build: all telemetry in ClickHouse over the native
+# protocol, schema by its collector's migrator on a one-node cluster.
+name = "signoz"
+image = "docker.io/signoz/signoz-community:v0.145.0@sha256:5f9b59276590a5e0e0eb2a7f99e88c9b27f44e4575d18c555aaa07648bca9d0c"
+images = ["docker.io/signoz/signoz-otel-collector:v0.144.12@sha256:deb566a7a3c0ba544ee58ccc92ee1f0e6da827bc40383e52f3c824705e100a3d"]
+licence = "MIT AND AGPL-3.0-only"
+clickhouse_protocol = "native"
+migrations_protocol = "native"
+clickhouse_min = "25.12"
+driver = "signoz/driver.sh"
+suite = ""
+runtime_minutes = 15
+# The third gate application (D1571, owner 2026-10-22; HE1 R9.60): the MIT
+# build only, never the default `signoz/signoz` image, which links ee/.
+gate = true
+
+[[app]]
+# ClickHouse is Umami's optional store (Postgres always runs); its schema is
+# applied from db/clickhouse/schema.sql at the release commit (compose.yaml).
+name = "umami"
+image = "ghcr.io/umami-software/umami:3.4.0@sha256:85909afc45bdcda1917394594a087421fdbb05610fded0fa9f6fb861abb2f367"
+licence = "MIT"
+clickhouse_protocol = "http"
+clickhouse_min = "25.8"
+driver = "umami/driver.sh"
+suite = ""
+runtime_minutes = 8
+
+[[app]]
+# Plausible CE: events in ClickHouse over HTTP (Elixir `ch`/`ecto_ch`),
+# migrations over HTTP too, run by the release's `db migrate` (in query_log).
+name = "plausible"
+image = "ghcr.io/plausible/community-edition:v3.2.1@sha256:33e60bfb40f2df5da00f8753b76fad04f67dba3abe6d73eb516e440e3fb62985"
+licence = "AGPL-3.0-only"
+clickhouse_protocol = "http"
+clickhouse_min = "24.12"
+driver = "plausible/driver.sh"
+suite = ""
+runtime_minutes = 10
+
+[[app]]
+# HyperDX (ClickStack): ClickHouse is its only telemetry store; queries over
+# HTTP, the collector's schema and inserts over the native protocol.
+name = "hyperdx"
+image = "docker.io/hyperdx/hyperdx:2.40.0@sha256:2fcba6813f5c935f6a3e04123ffe62ab3baf0c1cd53f279b1ec9e300343ddf60"
+images = ["docker.io/clickhouse/clickstack-otel-collector:2.40.0@sha256:0e7dc29f8f6074afd106b96d53e5b98f1150e8882d926a20c03c6f680bd929ec"]
+licence = "MIT"
+clickhouse_protocol = "http"
+migrations_protocol = "native"
+clickhouse_min = "26.8"
+driver = "hyperdx/driver.sh"
+suite = ""
+runtime_minutes = 10
+
+[[app]]
+# OpenLIT (Q1185's "one more" in place of PostHog, ruling R5.1): LLM
+# telemetry in ClickHouse, queries over HTTP from its Next.js server.
+name = "openlit"
+image = "ghcr.io/openlit/openlit:2.1.0@sha256:94552ccd09379b5e2fec3c51c4fec1b41d88d6b56b0a5ccc895c116673884fa8"
+licence = "Apache-2.0"
+clickhouse_protocol = "http"
+migrations_protocol = "native"
+clickhouse_min = "24.4"
+driver = "openlit/driver.sh"
+suite = ""
+runtime_minutes = 8

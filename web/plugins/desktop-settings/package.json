@@ -27,6 +27,7 @@
       "slots": [
         "console.page",
         "shell.nav.section",
+        "shell.overlay",
         "console.settings.section"
       ],
       "permissions": [],
@@ -45,6 +46,7 @@
   },
   "dependencies": {
     "@loams/console-host": "workspace:*",
+    "@loams/desktop": "workspace:*",
     "@loams/cordis": "workspace:*",
     "@loams/slots": "workspace:*",
     "@loams/ui": "workspace:*"
@@ -56,12 +58,23 @@
     "@testing-library/react": "16.3.3",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
-    "jsdom": "30.1.1",
+    "jsdom": "30.1.2",
     "react": "catalog:",
     "react-dom": "catalog:",
     "typescript": "5.9.3",
     "vitest": "5.0.3",
-    "@loams/desktop": "workspace:*",
     "@loams/platform-electron": "workspace:*"
+  },
+  "nx": {
+    "targets": {
+      "test": {
+        "inputs": [
+          "default",
+          "^default",
+          "testRuntime",
+          "notice"
+        ]
+      }
+    }
   }
 }

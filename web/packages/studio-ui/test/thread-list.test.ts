@@ -31,6 +31,7 @@ import {
   resolveSidebarRowAccessibility,
   resolveSidebarThreadStatus,
   resolveThreadStatusPill,
+  SHELL_RUN_RESOLVED_KEYBINDINGS,
   type SidebarListItem,
   type SidebarListMarker,
   type SidebarSection,
@@ -678,7 +679,7 @@ describe('logic_matches_upstream_cases', () => {
       expect(threadTraversalDirectionFromCommand('thread.previous')).toBe('previous');
       expect(threadTraversalDirectionFromCommand(null)).toBeNull();
     });
-    it('binds Mod+1…9 on the desktop only', () => {
+    it('labels Mod+1…9 on the desktop only, and leaves the keys to the shell (D1081)', () => {
       const key = {
         key: '2',
         code: 'Digit2',
@@ -687,14 +688,21 @@ describe('logic_matches_upstream_cases', () => {
         shiftKey: false,
         altKey: false,
       };
+      // The shell's keymap runs the jumps; Studio's own defaults no longer bind them.
       expect(
         resolveShortcutCommand(key, DEFAULT_RESOLVED_KEYBINDINGS, {
           platform: LINUX,
           context: { isDesktop: true, isWeb: false },
         }),
+      ).toBeNull();
+      expect(
+        resolveShortcutCommand(key, SHELL_RUN_RESOLVED_KEYBINDINGS, {
+          platform: LINUX,
+          context: { isDesktop: true, isWeb: false },
+        }),
       ).toBe('thread.jump.2');
       expect(
-        resolveShortcutCommand(key, DEFAULT_RESOLVED_KEYBINDINGS, {
+        resolveShortcutCommand(key, SHELL_RUN_RESOLVED_KEYBINDINGS, {
           platform: LINUX,
           context: { isDesktop: false, isWeb: true },
         }),
@@ -703,18 +711,18 @@ describe('logic_matches_upstream_cases', () => {
     it('shows hints only while the held modifiers match a jump binding, never in a terminal', () => {
       const ctrl = { metaKey: false, ctrlKey: true, altKey: false, shiftKey: false };
       const opts = { platform: LINUX, context: { isDesktop: true } };
-      expect(shouldShowThreadJumpHintsForModifiers(ctrl, DEFAULT_RESOLVED_KEYBINDINGS, opts)).toBe(
-        true,
-      );
+      expect(
+        shouldShowThreadJumpHintsForModifiers(ctrl, SHELL_RUN_RESOLVED_KEYBINDINGS, opts),
+      ).toBe(true);
       expect(
         shouldShowThreadJumpHintsForModifiers(
           { ...ctrl, shiftKey: true },
-          DEFAULT_RESOLVED_KEYBINDINGS,
+          SHELL_RUN_RESOLVED_KEYBINDINGS,
           opts,
         ),
       ).toBe(false);
       expect(
-        shouldShowThreadJumpHintsForModifiers(ctrl, DEFAULT_RESOLVED_KEYBINDINGS, {
+        shouldShowThreadJumpHintsForModifiers(ctrl, SHELL_RUN_RESOLVED_KEYBINDINGS, {
           platform: LINUX,
           context: { isDesktop: true, terminalFocus: true },
         }),

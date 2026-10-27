@@ -7,18 +7,25 @@ require "loams/idempotency"
 require "loams/retry"
 require "loams/token_source"
 require "loams/streams"
+require "net/http"
+require "timeout"
 
 module Loams
   class CallInvoker
-    attr_reader :transport, :protocol, :codec, :token_source, :retry_policy
+    # The client default for a unary call, in seconds (R12). Streams have none.
+    DEFAULT_TIMEOUT = 30
+
+    attr_reader :transport, :protocol, :codec, :token_source, :retry_policy, :timeout
 
     def initialize(
       transport:,
       protocol: :connect,
       codec: :proto,
       token_source: nil,
-      retry_policy: nil
+      retry_policy: nil,
+      timeout: DEFAULT_TIMEOUT
     )
+      @timeout = timeout
       @transport = transport
       @protocol = protocol
       @codec = codec
@@ -33,9 +40,15 @@ module Loams
 
       attempt = 0
       refreshed_token = false
+      # R12: one budget for the call, retries included. `timeout: nil` on the
+      # call or the client means no deadline.
+      budget = options.key?(:timeout) ? options[:timeout] : @timeout
+      deadline = budget && (monotonic + budget.to_f)
 
       loop do
         attempt += 1
+        remaining = deadline && (deadline - monotonic)
+        raise deadline_error(binding.rpc) if remaining && remaining <= 0
 
         # Build headers
         ct = ContentTypes.content_type_for(@protocol, @codec, streaming: false)
@@ -47,6 +60,15 @@ module Loams
 
         if key && !key.empty?
           headers["idempotency-key"] = key
+        end
+
+        if remaining
+          ms = [(remaining * 1000).ceil, 1].max
+          if @protocol == :grpc_web
+            headers["grpc-timeout"] = "#{ms}m"
+          else
+            headers["connect-timeout-ms"] = ms.to_s
+          end
         end
 
         if options[:headers]
@@ -65,10 +87,14 @@ module Loams
           headers: headers,
           body: body,
           rpc: binding.rpc,
+          timeout: remaining,
         )
 
         res = begin
           @transport.call_unary(req)
+        rescue Net::OpenTimeout, Net::ReadTimeout, Timeout::Error
+          # The budget is spent, so this is never retried.
+          raise deadline_error(binding.rpc)
         rescue StandardError => e
           raise ErrorParser.build_error(:unknown, e.message, nil, nil, binding.rpc)
         end
@@ -191,6 +217,19 @@ module Loams
     end
 
     private
+
+    def monotonic
+      Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    end
+
+    def deadline_error(rpc)
+      DeadlineExceededError.new(
+        "the call ran out of time on the client",
+        code: :deadline_exceeded,
+        reason: :client_deadline_exceeded,
+        rpc: rpc,
+      )
+    end
 
     def current_token(force_refresh: false)
       @token_source&.token(force_refresh: force_refresh)

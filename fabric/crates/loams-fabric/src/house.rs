@@ -10,19 +10,21 @@
 //! # What is refused at start, and what is only named
 //!
 //! * A plaintext listener off loopback is refused with FL2's message (D111). That
-//!   holds for the native and admin listeners too, though they are not served yet.
+//!   holds for the native protocol's (9000) and the admin listener too.
 //! * The TLS listener (`--house-tls-listen`, HS1 Task 20) may face other hosts.
 //!   It needs a certificate and key (`--house-tls-cert`, `--house-tls-key` or
 //!   `[house.tls]`); with `--single-node` and neither, a self-signed pair is
 //!   made under `<data-dir>/tls/` on first start. Off loopback, no user may have
-//!   an empty password. The native TLS listener waits for the native protocol
-//!   (HS1 Task 31) and is refused.
+//!   an empty password. The native protocol's TLS listener
+//!   (`--native-tls-listen`, 9440; HE0, R9.40) uses the same certificate, so it
+//!   needs the TLS listener's configuration.
 //! * `--sandbox=none` needs `--unsafe-no-sandbox` (HS1 R1.10, R6.8), except on a
 //!   system with no L3 (macOS) in `--single-node` mode, and is logged either way.
 //! * `--workers=inproc` needs `--single-node` and a build with `inproc-worker`.
-//! * The native listener (Task 31) is resolved and validated now, and
-//!   [`start`] says on stderr that it is not served yet. The admin listener
-//!   serves `GET /metrics` (Task 23), loopback only.
+//! * The native protocol (HE0, R9.40, ahead of HS1 Task 31) is served on
+//!   `--native-listen`. `--single-node`'s default, 127.0.0.1:9000, is skipped
+//!   with a note on stderr when that port is taken (a named address must bind).
+//!   The admin listener serves `GET /metrics` (Task 23), loopback only.
 //!   The store is read through `house-cache` by process workers (Task 9) and
 //!   written by the front (Task 12).
 //! * `--catalog` (HS1 Task 10) needs `--store`: the catalog of lake tables writes
@@ -89,8 +91,13 @@ pub struct HouseSettings {
     pub sandbox: SandboxMode,
     /// The data directory, absolute.
     pub data_dir: PathBuf,
-    /// The native listener (not served until HS1 Task 31).
+    /// The native protocol's plaintext listener (HE0, R9.40).
     pub native_listen: Option<SocketAddr>,
+    /// Whether [`HouseSettings::native_listen`] is `--single-node`'s default
+    /// rather than named: then a port already taken skips it.
+    pub native_defaulted: bool,
+    /// The native protocol's TLS listener (HE0, R9.40).
+    pub native_tls_listen: Option<SocketAddr>,
     /// Admin and metrics: `GET /metrics` (HS1 Task 23).
     pub admin_listen: SocketAddr,
     /// The catalog (used from HS1 Task 10).
@@ -144,15 +151,23 @@ pub fn resolve(args: &HouseArgs, file: HouseFile) -> Result<HouseSettings, House
         .or(house.listen)
         .unwrap_or_else(|| addr(DEFAULT_LISTEN));
     config::check_listen(listen)?;
-    if let Some(tls) = args.native_tls_listen.or(house.native_tls_listen) {
-        return Err(bad(format!(
-            "native TLS listener {tls}: the native protocol is served from HS1 Task 31"
-        )));
-    }
-    let native_listen = args
-        .native_listen
-        .or(house.native_listen)
-        .or_else(|| single_node.then(|| addr(DEFAULT_NATIVE_LISTEN)));
+    // Also LOAMS_HOUSE_NATIVE_TLS_LISTEN, so a compose overlay can turn it on for a
+    // private network (the Factory's SigNoz, HE1 R9.67); empty is off.
+    let native_tls_env = match std::env::var("LOAMS_HOUSE_NATIVE_TLS_LISTEN") {
+        Ok(text) if !text.trim().is_empty() => Some(text.trim().parse().map_err(|_| {
+            bad(format!(
+                "LOAMS_HOUSE_NATIVE_TLS_LISTEN {text:?}: not a socket address (host:port)"
+            ))
+        })?),
+        _ => None,
+    };
+    let native_tls_listen = args
+        .native_tls_listen
+        .or(house.native_tls_listen)
+        .or(native_tls_env);
+    let named_native = args.native_listen.or(house.native_listen);
+    let native_defaulted = named_native.is_none() && single_node;
+    let native_listen = named_native.or_else(|| single_node.then(|| addr(DEFAULT_NATIVE_LISTEN)));
     if let Some(native) = native_listen {
         config::check_listen(native)?;
     }
@@ -336,6 +351,15 @@ pub fn resolve(args: &HouseArgs, file: HouseFile) -> Result<HouseSettings, House
         }
     };
 
+    if let Some(native_tls) = native_tls_listen
+        && tls.is_none()
+    {
+        return Err(bad(format!(
+            "native TLS listener {native_tls}: needs the TLS listener's certificate \
+             (--house-tls-listen with --house-tls-cert and --house-tls-key, or [house.tls])"
+        )));
+    }
+
     Ok(HouseSettings {
         http,
         pool,
@@ -344,6 +368,8 @@ pub fn resolve(args: &HouseArgs, file: HouseFile) -> Result<HouseSettings, House
         sandbox,
         data_dir,
         native_listen,
+        native_defaulted,
+        native_tls_listen,
         admin_listen,
         catalog,
         store,
@@ -381,6 +407,11 @@ impl Running {
     /// Where the admin listener (`GET /metrics`) listens (HS1 Task 23).
     pub fn admin_addr(&self) -> Option<SocketAddr> {
         self.handle.admin_addr()
+    }
+
+    /// Where the native protocol listens, plaintext and TLS (R9.40).
+    pub fn native_addrs(&self) -> (Option<SocketAddr>, Option<SocketAddr>) {
+        (self.handle.native_addr(), self.handle.native_tls_addr())
     }
 
     /// The worker pool.
@@ -460,6 +491,11 @@ pub async fn start(mut settings: HouseSettings) -> Result<Running, HouseError> {
             config: loams_house::tls::server_config(&tls.cert, &tls.key)?,
         });
     }
+    // The native protocol (HE0, R9.40): `--single-node`'s default port is
+    // skipped when something else holds it.
+    settings.http.native_listen = settings.native_listen;
+    settings.http.native_listen_optional = settings.native_defaulted;
+    settings.http.native_tls_listen = settings.native_tls_listen;
     // Spans (HS1 Task 23): to the collector, when one is named.
     if let Some(endpoint) = &settings.otlp_endpoint {
         let sink = loams_house::trace::OtlpHttp::start(endpoint, "loams-house").map_err(bad)?;
@@ -483,11 +519,6 @@ pub async fn start(mut settings: HouseSettings) -> Result<Running, HouseError> {
 /// What [`start`] resolved but does not serve yet, one line each, for stderr.
 pub fn not_served_yet(settings: &HouseSettings) -> Vec<String> {
     let mut out = Vec::new();
-    if let Some(native) = settings.native_listen {
-        out.push(format!(
-            "native protocol {native}: not served until HS1 Task 31"
-        ));
-    }
     if let Some(store) = &settings.store {
         out.push(match settings.workers {
             WorkersMode::Process => {
@@ -607,7 +638,9 @@ fn launcher(
             settings.worker_binary.display()
         )));
     }
-    let mut launcher = ProcessLauncher::new(&settings.worker_binary, workers_dir);
+    // D1571: the workers' profile holds the front's `max_execution_time` cap.
+    let mut launcher = ProcessLauncher::new(&settings.worker_binary, workers_dir)
+        .with_max_execution_time(settings.http.session_limits.max_execution_time_s.ceil() as u64);
     if settings.sandbox != launcher.sandbox() {
         launcher = match settings.sandbox {
             SandboxMode::None => launcher.unsandboxed(),

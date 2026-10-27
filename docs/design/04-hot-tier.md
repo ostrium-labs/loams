@@ -2,6 +2,8 @@
 
 Status: **Approved** · 2026-09-22 · amended 2026-09-26 (M1.2 as built) · amended 2026-09-27 (M1.3 as built)
 
+> **Amendment (approved 2026-10-21; [§77](77-kv-gateways.md), D1651).** The principle below holds for this document's hot tier and for `loams-kv-hot`'s default modes. A key-value keyspace that opts into `loams-kv-hot`'s `hot-only` (or, later, `hot-replicated`) mode holds acknowledged writes in the hot tier and can lose them inside a documented window. `crates/loams-hot` is unchanged; the KV hot tier is a separate crate.
+
 **Principle:** every object has a **durable tier** (open format on S3, source of truth) and a **hot tier** (derived, node-local, rebuildable acceleration + an in-memory tail). The hot tier can be lost at any time without affecting correctness; it only affects latency. The same model applies uniformly to streams, collections, tables (Iceberg) and graphs.
 
 ---

@@ -66,7 +66,7 @@ impl EventsConfig {
         Ok(())
     }
 
-    fn window_ms(&self) -> u64 {
+    pub(super) fn window_ms(&self) -> u64 {
         u64::try_from(self.dedup_window.as_millis()).unwrap_or(MAX_IDEMPOTENCY_TTL_MS)
     }
 }
@@ -134,7 +134,7 @@ pub struct IngestContext<'a> {
 
 /// A unique owner per request, so a retry of the same request is not
 /// mistaken for another one's claim.
-fn new_owner(node_id: u64) -> String {
+pub(super) fn new_owner(node_id: u64) -> String {
     format!("ce-{node_id}-{}", ulid::Ulid::generate())
 }
 

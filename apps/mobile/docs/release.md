@@ -13,7 +13,7 @@ Nothing is published. These are the owner actions and open questions (from desig
 | **Q435** | App review: the bundled demo mode (built: "Try the demo") or a hosted demo instance | Store review |
 | **Q439** | Whether and when to ship a `unifiedpush` flavor on F-Droid | The second Android flavor |
 
-Also needed before a real server works with the apps, on the main repository's side: the unified auth plan (the pairing grant, the Authentik token exchange, DPoP; Q438), AP0's real protos and AP4 (the server side of the app services and `loams-push`).
+Also needed before a real server works with the apps, on the main repository's side: the unified auth plan (the pairing grant, the OIDC token exchange, DPoP; Q438), AP0's real protos and AP4 (the server side of the app services and `loams-push`).
 
 ## When the accounts exist
 

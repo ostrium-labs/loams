@@ -30,7 +30,7 @@ that is both licence-clean and one code path for Linux, macOS and Windows.
 | E1's blocker | Closed by | Where |
 |---|---|---|
 | Ephemeral store on every platform | The engine's `--storage-dir`, keyed per `(environment, app)`; Loams keeps its own cookie ledger beside it and re-injects on the next launch | [`profile`](src/profile.rs), [`ledger`](src/ledger.rs) |
-| No WebAuthn in WebKitGTK | Loams runs the OIDC/Authentik ceremony itself with its own OIDC client; the engine is handed only post-auth scoped session cookies and never performs a ceremony | [`session`](src/session.rs) |
+| No WebAuthn in WebKitGTK | Loams runs the OIDC ceremony itself with its own OIDC client; the engine is handed only post-auth scoped session cookies and never performs a ceremony | [`session`](src/session.rs) |
 | No Windows browser at all | There is no per-platform webview left to be missing: one command line covers all three targets | [`engine`](src/engine.rs) |
 
 ## Install the engine
@@ -203,7 +203,7 @@ that constraint was easy to keep precisely because an ephemeral store retains
 nothing. A persistent profile is the opposite case, so here the constraint is
 enforced rather than inherited:
 
-1. **The engine is never asked to authenticate.** Loams runs the OIDC/Authentik
+1. **The engine is never asked to authenticate.** Loams runs the OIDC sign-in
    ceremony itself; only the resulting app session cookies cross into
    `ScopedSessionCookie`, which is the only type in the crate that crosses.
 2. **Cookies are host-only and origin-scoped by construction.**

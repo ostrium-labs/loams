@@ -11,7 +11,7 @@ export const FACTORY_LABELS: Record<FactoryAppId, string> = {
 	openpanel: "OpenPanel",
 	matomo: "Matomo",
 	langfuse: "Langfuse",
-	openobserve: "OpenObserve",
+	signoz: "SigNoz",
 };
 
 export const FACTORY_APP_IDS = Object.keys(FACTORY_LABELS) as FactoryAppId[];
@@ -19,7 +19,7 @@ export const FACTORY_APP_IDS = Object.keys(FACTORY_LABELS) as FactoryAppId[];
 export const isFactoryApp = (a: unknown): a is FactoryAppId =>
 	typeof a === "string" && Object.hasOwn(FACTORY_LABELS, a);
 
-/** The daemon's read ops per app (`health` aside); OpenObserve has none. */
+/** The daemon's read ops per app (`health` aside); SigNoz has none. */
 export const FACTORY_READ_OPS: Partial<Record<FactoryAppId, string[]>> = {
 	forgejo: ["repos", "issues", "version"],
 	zulip: ["streams", "messages", "server"],

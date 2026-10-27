@@ -9,9 +9,11 @@ import type { FlagsService } from './services.js';
 
 /**
  * The oldest engine this console supports: N−1, the `from` of the newest
- * release in `release/upgrade-path.toml` (a test keeps them equal).
+ * release in `release/upgrade-path.toml` (a test keeps them equal). A patch
+ * release's `from` is its minor line (`0.1`): every release of the line is
+ * supported, so N−1 is the line's first release (`0.1.0`).
  */
-export const MIN_ENGINE = '0.1.0-preview.2';
+export const MIN_ENGINE = '0.1.0';
 
 /** The command the upgrade page tells an operator to run. */
 export const UPGRADE_COMMAND = 'loams upgrade --to latest';

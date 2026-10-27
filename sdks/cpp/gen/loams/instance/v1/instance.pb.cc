@@ -2685,22 +2685,24 @@ const char descriptor_table_protodef_loams_2finstance_2fv1_2finstance_2eproto[] 
     "ceRef\022\016\n\002id\030\001 \001(\tR\002id\022\022\n\004name\030\002 \001(\tR\004nam"
     "e*X\n\007Edition\022\027\n\023EDITION_UNSPECIFIED\020\000\022\017\n"
     "\013EDITION_OSS\020\001\022\021\n\rEDITION_CLOUD\020\002\022\020\n\014EDI"
-    "TION_BYOC\020\003*\237\001\n\nSignInKind\022\034\n\030SIGN_IN_KI"
+    "TION_BYOC\020\003*\341\001\n\nSignInKind\022\034\n\030SIGN_IN_KI"
     "ND_UNSPECIFIED\020\000\022\025\n\021SIGN_IN_KIND_NONE\020\001\022"
-    "\032\n\026SIGN_IN_KIND_AUTHENTIK\020\002\022&\n\"SIGN_IN_K"
-    "IND_AUTHENTIK_DEVICE_CODE\020\003\022\030\n\024SIGN_IN_K"
-    "IND_PAIRING\020\004*\206\001\n\rPrincipalKind\022\036\n\032PRINC"
-    "IPAL_KIND_UNSPECIFIED\020\000\022\027\n\023PRINCIPAL_KIN"
-    "D_USER\020\001\022\"\n\036PRINCIPAL_KIND_SERVICE_ACCOU"
-    "NT\020\002\022\030\n\024PRINCIPAL_KIND_AGENT\020\0032\252\002\n\017Insta"
-    "nceService\022r\n\013GetInstance\022%.loams.instan"
-    "ce.v1.GetInstanceRequest\032&.loams.instanc"
-    "e.v1.GetInstanceResponse\"\024\220\002\001\222\265\030\r\022\013getIn"
-    "stance\022^\n\006WhoAmI\022 .loams.instance.v1.Who"
-    "AmIRequest\032!.loams.instance.v1.WhoAmIRes"
-    "ponse\"\017\220\002\001\222\265\030\010\022\006whoAmI\032C\212\265\030\?\n\010instance\0223"
-    "What this instance is, and who the calle"
-    "r is on it.b\006proto3"
+    "\036\n\026SIGN_IN_KIND_AUTHENTIK\020\002\032\002\010\001\022*\n\"SIGN_"
+    "IN_KIND_AUTHENTIK_DEVICE_CODE\020\003\032\002\010\001\022\030\n\024S"
+    "IGN_IN_KIND_PAIRING\020\004\022\025\n\021SIGN_IN_KIND_OI"
+    "DC\020\005\022!\n\035SIGN_IN_KIND_OIDC_DEVICE_CODE\020\006*"
+    "\206\001\n\rPrincipalKind\022\036\n\032PRINCIPAL_KIND_UNSP"
+    "ECIFIED\020\000\022\027\n\023PRINCIPAL_KIND_USER\020\001\022\"\n\036PR"
+    "INCIPAL_KIND_SERVICE_ACCOUNT\020\002\022\030\n\024PRINCI"
+    "PAL_KIND_AGENT\020\0032\252\002\n\017InstanceService\022r\n\013"
+    "GetInstance\022%.loams.instance.v1.GetInsta"
+    "nceRequest\032&.loams.instance.v1.GetInstan"
+    "ceResponse\"\024\220\002\001\222\265\030\r\022\013getInstance\022^\n\006WhoA"
+    "mI\022 .loams.instance.v1.WhoAmIRequest\032!.l"
+    "oams.instance.v1.WhoAmIResponse\"\017\220\002\001\222\265\030\010"
+    "\022\006whoAmI\032C\212\265\030\?\n\010instance\0223What this inst"
+    "ance is, and who the caller is on it.b\006p"
+    "roto3"
 };
 static const ::_pbi::DescriptorTable* PROTOBUF_NONNULL const
     descriptor_table_loams_2finstance_2fv1_2finstance_2eproto_deps[2] = {
@@ -2711,7 +2713,7 @@ static ::absl::once_flag descriptor_table_loams_2finstance_2fv1_2finstance_2epro
 PROTOBUF_CONSTINIT const ::_pbi::DescriptorTable descriptor_table_loams_2finstance_2fv1_2finstance_2eproto = {
     false,
     false,
-    2979,
+    3045,
     descriptor_table_protodef_loams_2finstance_2fv1_2finstance_2eproto,
     "loams/instance/v1/instance.proto",
     &descriptor_table_loams_2finstance_2fv1_2finstance_2eproto_once,
@@ -2740,7 +2742,7 @@ SignInKind_descriptor() {
   return file_level_enum_descriptors_loams_2finstance_2fv1_2finstance_2eproto[1];
 }
 PROTOBUF_CONSTINIT const uint32_t SignInKind_internal_data_[] = {
-    327680u, 0u, };
+    458752u, 0u, };
 [[nodiscard]] const ::google::protobuf::EnumDescriptor* PROTOBUF_NONNULL
 PrincipalKind_descriptor() {
   ::google::protobuf::internal::AssignDescriptors(&descriptor_table_loams_2finstance_2fv1_2finstance_2eproto);

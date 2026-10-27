@@ -182,6 +182,16 @@ public enum Reason
 
     /// <summary>A write did not match its Live table's validator; the message names the table and field paths.</summary>
     LiveSchemaViolation = 53,
+    /// <summary>A document RPC set both `filter` and `where`; set one.</summary>
+    FilterConflict = 125,
+    /// <summary>search.query_all needs a sort that ends in the primary key.</summary>
+    SearchAfterNeedsTiebreak = 129,
+    /// <summary>A consistency token is not the v1: encoding.</summary>
+    InvalidConsistencyToken = 128,
+    /// <summary>An app request has no namespace and the client has no default.</summary>
+    NamespaceRequired = 127,
+    /// <summary>The number of SQL parameters does not match the statement.</summary>
+    SqlParamCount = 126,
 
     /// <summary>A Live function read an index a deploy is still backfilling.</summary>
     LiveIndexNotReady = 54,
@@ -221,6 +231,8 @@ public enum Reason
 
     /// <summary>Another writer appended the workspace snapshot first.</summary>
     WorkspaceFenced = 66,
+    /// <summary>A batch write stopped at a failed chunk; earlier chunks stay applied.</summary>
+    BatchPartiallyApplied = 132,
 
     /// <summary>The workspace or snapshot is read-only.</summary>
     WorkspaceReadOnly = 67,
@@ -308,12 +320,16 @@ public enum Reason
 
     /// <summary>A Live function ran past its CPU limit.</summary>
     LiveFunctionTimeout = 95,
+    /// <summary>The client's own deadline for the call ran out; never retried.</summary>
+    ClientDeadlineExceeded = 131,
 
     /// <summary>A Live function ran past its memory limit.</summary>
     LiveFunctionOutOfMemory = 96,
 
     /// <summary>A Live call exceeded one of the app's limits.</summary>
     LiveLimitExceeded = 97,
+    /// <summary>A SQL answer is over the Arrow size cap; use Flight.</summary>
+    ResultTooLarge = 130,
 
     /// <summary>A credential reached a Live app outside its environment.</summary>
     LiveAppMismatch = 98,
@@ -511,6 +527,7 @@ public static class ReasonRegistry
         Reason.IdempotencyKeyReused,
         Reason.WorkspaceNotFound,
         Reason.WorkspaceFenced,
+        Reason.BatchPartiallyApplied,
         Reason.WorkspaceReadOnly,
         Reason.WorkspaceNameTaken,
         Reason.ObjectMissing,
@@ -544,13 +561,20 @@ public static class ReasonRegistry
         Reason.LiveWorkerCrashed,
         Reason.LiveDeployConflict,
         Reason.LiveSchemaViolation,
+        Reason.FilterConflict,
+        Reason.SearchAfterNeedsTiebreak,
+        Reason.InvalidConsistencyToken,
+        Reason.NamespaceRequired,
+        Reason.SqlParamCount,
         Reason.LiveIndexNotReady,
         Reason.LiveAppDisabled,
         Reason.LiveAppExists,
         Reason.LiveFunctionError,
         Reason.LiveFunctionTimeout,
+        Reason.ClientDeadlineExceeded,
         Reason.LiveFunctionOutOfMemory,
         Reason.LiveLimitExceeded,
+        Reason.ResultTooLarge,
         Reason.LiveAppMismatch,
         Reason.LiveOriginNotAllowed,
         Reason.SessionRotate,
@@ -640,6 +664,7 @@ public static class ReasonRegistry
             [Reason.IdempotencyKeyReused] = "idempotency_key_reused",
             [Reason.WorkspaceNotFound] = "workspace_not_found",
             [Reason.WorkspaceFenced] = "workspace_fenced",
+            [Reason.BatchPartiallyApplied] = "batch_partially_applied",
             [Reason.WorkspaceReadOnly] = "workspace_read_only",
             [Reason.WorkspaceNameTaken] = "workspace_name_taken",
             [Reason.ObjectMissing] = "object_missing",
@@ -673,13 +698,20 @@ public static class ReasonRegistry
             [Reason.LiveWorkerCrashed] = "live_worker_crashed",
             [Reason.LiveDeployConflict] = "live_deploy_conflict",
             [Reason.LiveSchemaViolation] = "live_schema_violation",
+            [Reason.FilterConflict] = "filter_conflict",
+            [Reason.SearchAfterNeedsTiebreak] = "search_after_needs_tiebreak",
+            [Reason.InvalidConsistencyToken] = "invalid_consistency_token",
+            [Reason.NamespaceRequired] = "namespace_required",
+            [Reason.SqlParamCount] = "sql_param_count",
             [Reason.LiveIndexNotReady] = "live_index_not_ready",
             [Reason.LiveAppDisabled] = "live_app_disabled",
             [Reason.LiveAppExists] = "live_app_exists",
             [Reason.LiveFunctionError] = "live_function_error",
             [Reason.LiveFunctionTimeout] = "live_function_timeout",
+            [Reason.ClientDeadlineExceeded] = "client_deadline_exceeded",
             [Reason.LiveFunctionOutOfMemory] = "live_function_out_of_memory",
             [Reason.LiveLimitExceeded] = "live_limit_exceeded",
+            [Reason.ResultTooLarge] = "result_too_large",
             [Reason.LiveAppMismatch] = "live_app_mismatch",
             [Reason.LiveOriginNotAllowed] = "live_origin_not_allowed",
             [Reason.SessionRotate] = "session_rotate",
@@ -794,6 +826,7 @@ public static class ReasonRegistry
             [Reason.IdempotencyKeyReused] = Code.FailedPrecondition,
             [Reason.WorkspaceNotFound] = Code.NotFound,
             [Reason.WorkspaceFenced] = Code.Aborted,
+            [Reason.BatchPartiallyApplied] = Code.Aborted,
             [Reason.WorkspaceReadOnly] = Code.FailedPrecondition,
             [Reason.WorkspaceNameTaken] = Code.AlreadyExists,
             [Reason.ObjectMissing] = Code.FailedPrecondition,
@@ -827,13 +860,20 @@ public static class ReasonRegistry
             [Reason.LiveWorkerCrashed] = Code.Internal,
             [Reason.LiveDeployConflict] = Code.FailedPrecondition,
             [Reason.LiveSchemaViolation] = Code.InvalidArgument,
+            [Reason.FilterConflict] = Code.InvalidArgument,
+            [Reason.SearchAfterNeedsTiebreak] = Code.InvalidArgument,
+            [Reason.InvalidConsistencyToken] = Code.InvalidArgument,
+            [Reason.NamespaceRequired] = Code.InvalidArgument,
+            [Reason.SqlParamCount] = Code.InvalidArgument,
             [Reason.LiveIndexNotReady] = Code.FailedPrecondition,
             [Reason.LiveAppDisabled] = Code.FailedPrecondition,
             [Reason.LiveAppExists] = Code.FailedPrecondition,
             [Reason.LiveFunctionError] = Code.Unknown,
             [Reason.LiveFunctionTimeout] = Code.DeadlineExceeded,
+            [Reason.ClientDeadlineExceeded] = Code.DeadlineExceeded,
             [Reason.LiveFunctionOutOfMemory] = Code.ResourceExhausted,
             [Reason.LiveLimitExceeded] = Code.ResourceExhausted,
+            [Reason.ResultTooLarge] = Code.ResourceExhausted,
             [Reason.LiveAppMismatch] = Code.PermissionDenied,
             [Reason.LiveOriginNotAllowed] = Code.PermissionDenied,
             [Reason.SessionRotate] = Code.Unavailable,

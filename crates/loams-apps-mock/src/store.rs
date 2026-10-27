@@ -58,7 +58,7 @@ pub(crate) struct State {
     /// Issued access tokens → the device they were issued for, so `WhoAmI`
     /// names the phone that presented it and not any device of its owner.
     pub(crate) issued: HashMap<String, String>,
-    /// Fake Authentik authorization codes → the PKCE challenge they bind.
+    /// The fake OIDC issuer's authorization codes → the PKCE challenge they bind.
     pub(crate) authz_codes: HashMap<String, String>,
     /// Push target id → the APNs/FCM token or endpoint URL it was given.
     pub(crate) push_tokens: HashMap<String, String>,

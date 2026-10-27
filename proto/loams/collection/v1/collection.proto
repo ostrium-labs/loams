@@ -89,7 +89,7 @@ import "loams/options/v1/options.proto";
 
 service NamespaceService {
   option (loams.options.v1.module) = {
-    name: "collections"
+    name: "namespaces"
     summary: "Namespaces: the container every collection and stream lives in."
   };
 
@@ -97,6 +97,7 @@ service NamespaceService {
   // there. Creating a collection creates its namespace, so this RPC is for
   // a caller that wants the namespace to exist before it writes to it.
   rpc CreateNamespace(CreateNamespaceRequest) returns (CreateNamespaceResponse) {
+    option (loams.options.v1.facade) = {name: "create" retry_safe: true};
   }
   // The namespaces the caller can reach, by name (AIP-158 paged). The
   // engine's own reserved namespace is never listed. A caller reaches a
@@ -111,6 +112,7 @@ service NamespaceService {
   // cost nothing per namespace; document counts and bytes are not here,
   // since the engine does not keep them per namespace.
   rpc ListNamespaces(ListNamespacesRequest) returns (ListNamespacesResponse) {
+    option (loams.options.v1.facade) = {name: "list" pagination: "namespaces:next_page_token"};
     option idempotency_level = NO_SIDE_EFFECTS;
   }
 }
@@ -126,6 +128,7 @@ service CollectionService {
   // not a free read, and `FacadeOptions.retry_safe` is what tells an SDK it
   // may repeat the call after a lost answer.
   rpc CreateCollection(CreateCollectionRequest) returns (CollectionInfo) {
+    option (loams.options.v1.facade) = {name: "create" retry_safe: true};
   }
   // Every collection of the namespace, by name.
   //
@@ -134,6 +137,7 @@ service CollectionService {
   // `ListCollections` embeds the same `CollectionInfo`, so a
   // `CreateCollectionResponse` wrapper would exist only to be unwrapped.
   rpc ListCollections(ListCollectionsRequest) returns (ListCollectionsResponse) {
+    option (loams.options.v1.facade) = {name: "list" pagination: "collections:next_page_token"};
     option idempotency_level = NO_SIDE_EFFECTS;
   }
   // One collection, by name or by alias.
@@ -142,20 +146,24 @@ service CollectionService {
   // configuration this node holds (M1.3 rule 4), so a caller that reads it
   // from any node reads the node that serves the queries.
   rpc GetCollection(GetCollectionRequest) returns (CollectionInfo) {
+    option (loams.options.v1.facade) = {name: "get"};
     option idempotency_level = NO_SIDE_EFFECTS;
   }
   // Drops the collection, by name (never by alias), and stops its tail.
   // Dropping what is not there is a success that dropped nothing, so a
   // retried drop is not an error.
   rpc DropCollection(DropCollectionRequest) returns (DropCollectionResponse) {
+    option (loams.options.v1.facade) = {name: "drop" retry_safe: true};
   }
   // Adds fields and vectors to the schema and publishes a new schema
   // version. Additive only: a field is never removed or retyped, so a repeat
   // that names the same fields is a no-op the caller can retry.
   rpc AddFields(AddFieldsRequest) returns (AddFieldsResponse) {
+    option (loams.options.v1.facade) = {name: "add_fields" retry_safe: true};
   }
   // Every retained manifest version of the collection, oldest first.
   rpc ListVersions(ListVersionsRequest) returns (ListVersionsResponse) {
+    option (loams.options.v1.facade) = {name: "list_versions" pagination: "versions:next_page_token"};
     option idempotency_level = NO_SIDE_EFFECTS;
   }
   // Plans an external read of one state of the collection (plan M1.2 Task 14,
@@ -168,19 +176,23 @@ service CollectionService {
   // serves it; this is a read that pins, not a free one, so it is not
   // `NO_SIDE_EFFECTS` and stays a `POST`.
   rpc Scan(ScanRequest) returns (ScanPlan) {
+    option (loams.options.v1.facade) = {name: "scan"};
   }
   // Applies alias actions to the namespace atomically. A repeated identical
   // request is a no-op, so the call is retry-safe.
   rpc UpdateAliases(UpdateAliasesRequest) returns (UpdateAliasesResponse) {
+    option (loams.options.v1.facade) = {name: "update_aliases" retry_safe: true};
   }
   // Writes the catalog's hot configuration for the collection and answers the
   // status the local hot tier then builds towards. It is the configuration,
   // not the work: nothing is awaited here.
   rpc SetHot(SetHotRequest) returns (SetHotResponse) {
+    option (loams.options.v1.facade) = {name: "set_hot" retry_safe: true};
   }
   // Starts warming the collection on its owner and answers as soon as the
   // warm has been started. The collection is named by its name or an alias.
   rpc WarmCollection(WarmCollectionRequest) returns (WarmCollectionResponse) {
+    option (loams.options.v1.facade) = {name: "warm" retry_safe: true};
   }
 }
 

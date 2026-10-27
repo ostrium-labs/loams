@@ -53,4 +53,8 @@ plugins:
       - package=loams.live.v1=loams.dev/go/gen/loams/live/v1
       - package=loams.auth.v1=loams.dev/go/gen/loams/auth/v1
       - package=loams.admin.v1=loams.dev/go/gen/loams/admin/v1
+      - package=loams.collection.v1=loams.dev/go/gen/loams/collection/v1
+      - package=loams.graph.v1=loams.dev/go/gen/loams/graph/v1
+      - package=loams.sql.v1=loams.dev/go/gen/loams/sql/v1
+      - package=loams.stream.v1=loams.dev/go/gen/loams/stream/v1
 clean: true

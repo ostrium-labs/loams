@@ -6,9 +6,9 @@ file for the full text.
 
 This repository is the Cordis plugin host, console, agent bus, A2A endpoint and
 auth layer that sits *alongside* Loams (https://github.com/ostrium-labs/loams),
-the Rust AI-native data platform. Loams is a separate Apache-2.0, open-core
-project: its metering, billing and other commercial APIs are proprietary to it,
-and none of that code is present here. Nothing in this repository is compiled
+the Rust AI-native data platform. Loams is a separate, fully open source
+Apache-2.0 project with no open core; none of its Rust code, including its
+metering and billing, is present here. Nothing in this repository is compiled
 from Rust — this is a TypeScript/Cordis codebase, and it vendors no Rust source.
 
 ---------------------------------------------------------------------------
@@ -102,6 +102,5 @@ The plugin id (`bi`) and the `LOAMS_BI_*` environment variables are this project
 naming; the wire is Superset's.
 
 Note on `loams-dev`: Loams is Apache-2.0, and this adapter calls it exactly as
-it calls any other upstream — over HTTP, with no code shared. The proprietary
-metering, billing and commercial API surfaces of the Loams platform are not
-reachable through, and not used by, this repository.
+it calls any other upstream — over HTTP, with no code shared. The metering and
+billing surfaces of the Loams platform are not used by this repository.

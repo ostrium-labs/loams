@@ -124,7 +124,10 @@ async fn compact_counted(
         .collect();
     let ch = ChTable::from_lake(database, name, &table);
     let engine = LakeEngine::parse(&ch.engine).unwrap_or(LakeEngine::MergeTree);
-    let merges = !matches!(engine, LakeEngine::MergeTree) || deduplicate;
+    if engine == LakeEngine::Null {
+        return Ok(Compacted::Nothing);
+    }
+    let merges = engine.merges() || deduplicate;
     if files.is_empty() || (files.len() == 1 && !merges) {
         return Ok(Compacted::Nothing);
     }
@@ -170,10 +173,38 @@ async fn compact_counted(
     lease.account_as(compaction_of(database, name));
     let written = crate::insert::write_files(&pinned_ctx, lease, &target).await?;
 
-    // The `replace`, on the snapshot that was read.
-    let committer = lake.committer();
+    *rewritten = (files.len() as u64, files.iter().map(|f| f.size_bytes).sum());
+    commit_replace(
+        ctx,
+        database,
+        name,
+        &table,
+        snapshot.manifest_list(),
+        &files,
+        written,
+        ("loams.compaction", "1"),
+    )
+    .await
+}
+
+/// Commits a rewrite of `table` (a compaction, or a mutation, HE1 R9.5): a
+/// `replace` snapshot that removes every file in `files` and adds `written`'s,
+/// on the snapshot whose manifest list is `manifest_list`. Another commit since
+/// that snapshot makes it [`Compacted::Abandoned`].
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn commit_replace(
+    ctx: &InsertContext<'_>,
+    database: &str,
+    name: &str,
+    table: &crate::catalog::LakeTable,
+    manifest_list: &str,
+    files: &[loams_house_lake::files::LiveFile],
+    written: loams_house_lake::write::Written,
+    property: (&str, &str),
+) -> Result<Compacted, HouseError> {
+    let committer = ctx.lake.committer();
     let io = committer.io();
-    let list = io.read(snapshot.manifest_list()).await?;
+    let list = io.read(manifest_list).await?;
     let unreadable = |err: loams_house_lake::LakeError| {
         HouseError::from(ChError::network_error(format!(
             "the manifests of {database}.{name}: {err}"
@@ -188,13 +219,12 @@ async fn compact_counted(
         manifests.push((manifest, bytes));
     }
     let removed: HashSet<String> = files.iter().map(|f| f.location.clone()).collect();
-    *rewritten = (files.len() as u64, files.iter().map(|f| f.size_bytes).sum());
     let built = loams_house_lake::rewrite::replace(
         &table.metadata,
         manifests,
         &removed,
         written.data_files,
-        vec![("loams.compaction".to_string(), "1".to_string())],
+        vec![(property.0.to_string(), property.1.to_string())],
         now_ms(),
     )
     .await
@@ -302,10 +332,7 @@ pub async fn needs_compaction(
         return Ok(true);
     }
     let ch = ChTable::from_lake(database, name, &table);
-    let merging = matches!(
-        LakeEngine::parse(&ch.engine),
-        Ok(LakeEngine::Replacing { .. } | LakeEngine::Summing { .. })
-    );
+    let merging = LakeEngine::parse(&ch.engine).is_ok_and(|e| e.merges());
     if !merging || files.len() < 2 {
         return Ok(false);
     }
@@ -414,7 +441,7 @@ impl Scheduler {
             let Some((namespace, database, name)) = Lake::names_of(&ident) else {
                 continue;
             };
-            let system = UserMap::dev("loams-compaction", "", namespace, false);
+            let system = UserMap::system("loams-compaction", namespace);
             let ctx = InsertContext {
                 lake: &self.lake,
                 pool: &self.pool,

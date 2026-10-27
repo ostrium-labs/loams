@@ -1,0 +1,10 @@
+<!-- HE0 (plan HE1 Task 4): OpenPanel 2.3.0's migration 14 creates an
+     AggregatingMergeTree with a column outside its sorting key, which
+     ClickHouse 26.7 and later refuse unless this MergeTree setting is on
+     (Umami hits the same check, HE1 R0.6). The application is run unmodified,
+     so the server takes the setting; the incompatibility is a mining finding. -->
+<clickhouse>
+    <merge_tree>
+        <allow_dimensions_outside_sorting_key>1</allow_dimensions_outside_sorting_key>
+    </merge_tree>
+</clickhouse>

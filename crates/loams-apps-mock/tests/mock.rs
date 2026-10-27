@@ -596,7 +596,7 @@ async fn a_pairing_code_from_the_rpc_redeems_at_the_token_endpoint() {
 }
 
 #[tokio::test]
-async fn the_fake_authentik_verifies_pkce_and_the_exchange_accepts_its_token() {
+async fn the_fake_oidc_issuer_verifies_pkce_and_the_exchange_accepts_its_token() {
     let mock = start(Duration::from_secs(15)).await;
     let base = mock.url();
     let rest = reqwest::Client::builder()
@@ -606,9 +606,7 @@ async fn the_fake_authentik_verifies_pkce_and_the_exchange_accepts_its_token() {
 
     // Discovery, addressed the way a phone would.
     let discovery: serde_json::Value = rest
-        .get(format!(
-            "{base}/mock/authentik/application/o/loams/.well-known/openid-configuration"
-        ))
+        .get(format!("{base}/mock/oidc/.well-known/openid-configuration"))
         .send()
         .await
         .unwrap()
@@ -624,9 +622,7 @@ async fn the_fake_authentik_verifies_pkce_and_the_exchange_accepts_its_token() {
     let challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
     let redirect = format!("{base}/callback");
     let authorize = rest
-        .get(format!(
-            "{base}/mock/authentik/application/o/loams/authorize/"
-        ))
+        .get(format!("{base}/mock/oidc/authorize/"))
         .query(&[
             ("response_type", "code"),
             ("redirect_uri", redirect.as_str()),
@@ -649,7 +645,7 @@ async fn the_fake_authentik_verifies_pkce_and_the_exchange_accepts_its_token() {
 
     // A wrong verifier is refused, the right one is not.
     let wrong = rest
-        .post(format!("{base}/mock/authentik/application/o/loams/token/"))
+        .post(format!("{base}/mock/oidc/token/"))
         .form(&[
             ("code", code.as_str()),
             ("code_verifier", "not-the-verifier"),
@@ -660,7 +656,7 @@ async fn the_fake_authentik_verifies_pkce_and_the_exchange_accepts_its_token() {
     assert_eq!(wrong.status(), 400);
 
     let idp: serde_json::Value = rest
-        .post(format!("{base}/mock/authentik/application/o/loams/token/"))
+        .post(format!("{base}/mock/oidc/token/"))
         .form(&[("code", code.as_str()), ("code_verifier", verifier)])
         .send()
         .await
@@ -671,7 +667,7 @@ async fn the_fake_authentik_verifies_pkce_and_the_exchange_accepts_its_token() {
         .await
         .unwrap();
     let subject = idp["access_token"].as_str().unwrap();
-    assert!(subject.starts_with("mock-authentik-"), "{subject}");
+    assert!(subject.starts_with("mock-oidc-"), "{subject}");
 
     // The gateway exchanges it for a Loams token, the RFC 8693 path.
     let exchanged: serde_json::Value = rest
@@ -778,7 +774,7 @@ async fn the_test_controls_drive_the_state_the_rpcs_read() {
 }
 
 /// A phone has to be able to follow what it is handed. The seed's URLs are
-/// `.invalid` placeholders and the fake Authentik used to answer on the host
+/// `.invalid` placeholders and the fake OIDC issuer used to answer on the host
 /// alone, dropping the port, so both are pinned here.
 #[tokio::test]
 async fn discovery_and_instance_hand_out_addresses_a_client_can_follow() {
@@ -819,9 +815,7 @@ async fn discovery_and_instance_hand_out_addresses_a_client_can_follow() {
     );
 
     let discovery: serde_json::Value = rest
-        .get(format!(
-            "{base}/mock/authentik/application/o/loams/.well-known/openid-configuration"
-        ))
+        .get(format!("{base}/mock/oidc/.well-known/openid-configuration"))
         .send()
         .await
         .unwrap()
@@ -851,7 +845,7 @@ async fn discovery_and_instance_hand_out_addresses_a_client_can_follow() {
             .unwrap()
             .error_for_status()
             .is_ok(),
-        "the advertised Authentik JWKS resolves"
+        "the advertised OIDC JWKS resolves"
     );
     mock.stop().await;
 }

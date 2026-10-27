@@ -25,27 +25,25 @@ export function SharedApprovals({
   return (
     <section
       aria-label="Pending in several variants"
-      className="flex flex-col gap-2 border border-info bg-info-soft p-3"
+      className="flex flex-col gap-2 rounded-lg border border-rule bg-elevated p-3 shadow-chip"
     >
-      <h2 className="m-0 flex items-center gap-1.5 text-[0.86rem] font-semibold text-ink">
+      <h2 className="m-0 flex items-center gap-1.5 text-body font-semibold text-ink">
         <ShieldCheck size={15} aria-hidden="true" className="text-info" />
         Approvals waiting in several variants
       </h2>
       <ul className="m-0 flex list-none flex-col gap-2 p-0">
         {shared.map((item) => (
           <li key={item.key} className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span className={/* mono-ok: id */ "font-mono text-[0.8rem] font-semibold text-ink"}>
+            <span className={/* mono-ok: id */ "font-mono text-small font-semibold text-ink"}>
               {item.tool}
             </span>
             <code
-              className={
-                /* mono-ok: code */ "max-w-full truncate font-mono text-[0.76rem] text-muted"
-              }
+              className={/* mono-ok: code */ "max-w-full truncate font-mono text-small text-muted"}
               title={item.argsText}
             >
               {item.argsText}
             </code>
-            <span className="text-[0.76rem] text-faint">
+            <span className="text-small text-faint">
               {item.approvals.map((a) => labelOf(a.chatId)).join(", ")}
             </span>
             <Button
@@ -73,7 +71,7 @@ export function SharedApprovals({
         ))}
       </ul>
       {error && (
-        <p role="alert" className="m-0 text-[0.8rem] text-danger">
+        <p role="alert" className="m-0 text-small text-danger">
           {error}
         </p>
       )}

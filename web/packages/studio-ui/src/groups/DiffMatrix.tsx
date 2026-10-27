@@ -9,9 +9,9 @@ import { type ComparisonRowView, type GroupMemberView, matrixCells } from "./mod
 
 const LEVEL_CLASS = {
   0: "",
-  1: "bg-grow/15 text-ink",
-  2: "bg-grow/40 text-ink",
-  3: "bg-grow/75 text-grow-on",
+  1: "bg-grow/10 text-ink",
+  2: "bg-grow/20 text-ink",
+  3: "bg-grow/35 text-ink",
 } as const;
 
 export function DiffMatrix({
@@ -35,13 +35,13 @@ export function DiffMatrix({
     [rows, members],
   );
   if (cells.length === 0) {
-    return <p className="m-0 py-3 text-[0.86rem] text-muted">No variant has changed a file yet.</p>;
+    return <p className="m-0 py-3 text-body text-muted">No variant has changed a file yet.</p>;
   }
   return (
     <div className="overflow-x-auto">
       <table
         aria-label="Files changed by each variant"
-        className="w-full border-collapse text-[0.82rem]"
+        className="w-full border-collapse text-body"
       >
         <thead>
           <tr>
@@ -55,7 +55,7 @@ export function DiffMatrix({
               <th
                 key={m.chatId}
                 scope="col"
-                className="border-b border-rule px-2 py-1.5 text-left text-[0.78rem] font-medium text-muted"
+                className="border-b border-rule px-2 py-1.5 text-left text-small font-medium text-muted"
               >
                 {m.label}
               </th>
@@ -68,7 +68,7 @@ export function DiffMatrix({
               <th
                 scope="row"
                 className={
-                  /* mono-ok: path */ "max-w-[28rem] truncate px-2 py-1 text-left font-mono text-[0.76rem] font-normal text-ink"
+                  /* mono-ok: path */ "max-w-[28rem] truncate px-2 py-1 text-left font-mono text-small font-normal text-ink"
                 }
                 title={row.path}
               >
@@ -91,16 +91,16 @@ export function DiffMatrix({
                         aria-pressed={isSelected}
                         onClick={() => onSelect({ path: row.path, chatId: cell.chatId })}
                         className={cx(
-                          "flex w-full cursor-pointer items-center gap-1.5 rounded-sm border-0 px-2 py-1 text-[0.74rem] tabular-nums",
+                          "flex w-full cursor-pointer items-center gap-1.5 rounded-sm border-0 px-2 py-1 text-small tabular-nums",
                           LEVEL_CLASS[cell.level],
-                          isSelected && "outline-2 outline-accent -outline-offset-2",
+                          isSelected && "outline-2 outline-focus -outline-offset-2",
                         )}
                       >
                         <span>+{cell.additions}</span>
                         <span>−{cell.deletions}</span>
                       </button>
                     ) : (
-                      <span className="block px-2 py-1 text-[0.74rem] text-faint">
+                      <span className="block px-2 py-1 text-small text-faint">
                         <span aria-hidden="true">—</span>
                         <span className="sr-only">
                           {label} did not change {row.path}

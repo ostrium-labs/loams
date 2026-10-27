@@ -487,7 +487,8 @@ private static final long serialVersionUID = 0L;
   private java.util.List<dev.loams.gen.loams.instance.v1.SignInMethod> signInMethods_;
   /**
    * <pre>
-   * How people sign in. Authentik is the identity provider (§37 §6.5).
+   * How people sign in: the instance's OIDC issuer (Zitadel, design §76), a
+   * pairing code, or none (§37 §6.5).
    * </pre>
    *
    * <code>repeated .loams.instance.v1.SignInMethod sign_in_methods = 9 [json_name = "signInMethods"];</code>
@@ -498,7 +499,8 @@ private static final long serialVersionUID = 0L;
   }
   /**
    * <pre>
-   * How people sign in. Authentik is the identity provider (§37 §6.5).
+   * How people sign in: the instance's OIDC issuer (Zitadel, design §76), a
+   * pairing code, or none (§37 §6.5).
    * </pre>
    *
    * <code>repeated .loams.instance.v1.SignInMethod sign_in_methods = 9 [json_name = "signInMethods"];</code>
@@ -510,7 +512,8 @@ private static final long serialVersionUID = 0L;
   }
   /**
    * <pre>
-   * How people sign in. Authentik is the identity provider (§37 §6.5).
+   * How people sign in: the instance's OIDC issuer (Zitadel, design §76), a
+   * pairing code, or none (§37 §6.5).
    * </pre>
    *
    * <code>repeated .loams.instance.v1.SignInMethod sign_in_methods = 9 [json_name = "signInMethods"];</code>
@@ -521,7 +524,8 @@ private static final long serialVersionUID = 0L;
   }
   /**
    * <pre>
-   * How people sign in. Authentik is the identity provider (§37 §6.5).
+   * How people sign in: the instance's OIDC issuer (Zitadel, design §76), a
+   * pairing code, or none (§37 §6.5).
    * </pre>
    *
    * <code>repeated .loams.instance.v1.SignInMethod sign_in_methods = 9 [json_name = "signInMethods"];</code>
@@ -532,7 +536,8 @@ private static final long serialVersionUID = 0L;
   }
   /**
    * <pre>
-   * How people sign in. Authentik is the identity provider (§37 §6.5).
+   * How people sign in: the instance's OIDC issuer (Zitadel, design §76), a
+   * pairing code, or none (§37 §6.5).
    * </pre>
    *
    * <code>repeated .loams.instance.v1.SignInMethod sign_in_methods = 9 [json_name = "signInMethods"];</code>
@@ -2558,7 +2563,8 @@ java.lang.String defaultValue) {
 
     /**
      * <pre>
-     * How people sign in. Authentik is the identity provider (§37 §6.5).
+     * How people sign in: the instance's OIDC issuer (Zitadel, design §76), a
+     * pairing code, or none (§37 §6.5).
      * </pre>
      *
      * <code>repeated .loams.instance.v1.SignInMethod sign_in_methods = 9 [json_name = "signInMethods"];</code>
@@ -2572,7 +2578,8 @@ java.lang.String defaultValue) {
     }
     /**
      * <pre>
-     * How people sign in. Authentik is the identity provider (§37 §6.5).
+     * How people sign in: the instance's OIDC issuer (Zitadel, design §76), a
+     * pairing code, or none (§37 §6.5).
      * </pre>
      *
      * <code>repeated .loams.instance.v1.SignInMethod sign_in_methods = 9 [json_name = "signInMethods"];</code>
@@ -2586,7 +2593,8 @@ java.lang.String defaultValue) {
     }
     /**
      * <pre>
-     * How people sign in. Authentik is the identity provider (§37 §6.5).
+     * How people sign in: the instance's OIDC issuer (Zitadel, design §76), a
+     * pairing code, or none (§37 §6.5).
      * </pre>
      *
      * <code>repeated .loams.instance.v1.SignInMethod sign_in_methods = 9 [json_name = "signInMethods"];</code>
@@ -2600,7 +2608,8 @@ java.lang.String defaultValue) {
     }
     /**
      * <pre>
-     * How people sign in. Authentik is the identity provider (§37 §6.5).
+     * How people sign in: the instance's OIDC issuer (Zitadel, design §76), a
+     * pairing code, or none (§37 §6.5).
      * </pre>
      *
      * <code>repeated .loams.instance.v1.SignInMethod sign_in_methods = 9 [json_name = "signInMethods"];</code>
@@ -2621,7 +2630,8 @@ java.lang.String defaultValue) {
     }
     /**
      * <pre>
-     * How people sign in. Authentik is the identity provider (§37 §6.5).
+     * How people sign in: the instance's OIDC issuer (Zitadel, design §76), a
+     * pairing code, or none (§37 §6.5).
      * </pre>
      *
      * <code>repeated .loams.instance.v1.SignInMethod sign_in_methods = 9 [json_name = "signInMethods"];</code>
@@ -2639,7 +2649,8 @@ java.lang.String defaultValue) {
     }
     /**
      * <pre>
-     * How people sign in. Authentik is the identity provider (§37 §6.5).
+     * How people sign in: the instance's OIDC issuer (Zitadel, design §76), a
+     * pairing code, or none (§37 §6.5).
      * </pre>
      *
      * <code>repeated .loams.instance.v1.SignInMethod sign_in_methods = 9 [json_name = "signInMethods"];</code>
@@ -2659,7 +2670,8 @@ java.lang.String defaultValue) {
     }
     /**
      * <pre>
-     * How people sign in. Authentik is the identity provider (§37 §6.5).
+     * How people sign in: the instance's OIDC issuer (Zitadel, design §76), a
+     * pairing code, or none (§37 §6.5).
      * </pre>
      *
      * <code>repeated .loams.instance.v1.SignInMethod sign_in_methods = 9 [json_name = "signInMethods"];</code>
@@ -2680,7 +2692,8 @@ java.lang.String defaultValue) {
     }
     /**
      * <pre>
-     * How people sign in. Authentik is the identity provider (§37 §6.5).
+     * How people sign in: the instance's OIDC issuer (Zitadel, design §76), a
+     * pairing code, or none (§37 §6.5).
      * </pre>
      *
      * <code>repeated .loams.instance.v1.SignInMethod sign_in_methods = 9 [json_name = "signInMethods"];</code>
@@ -2698,7 +2711,8 @@ java.lang.String defaultValue) {
     }
     /**
      * <pre>
-     * How people sign in. Authentik is the identity provider (§37 §6.5).
+     * How people sign in: the instance's OIDC issuer (Zitadel, design §76), a
+     * pairing code, or none (§37 §6.5).
      * </pre>
      *
      * <code>repeated .loams.instance.v1.SignInMethod sign_in_methods = 9 [json_name = "signInMethods"];</code>
@@ -2716,7 +2730,8 @@ java.lang.String defaultValue) {
     }
     /**
      * <pre>
-     * How people sign in. Authentik is the identity provider (§37 §6.5).
+     * How people sign in: the instance's OIDC issuer (Zitadel, design §76), a
+     * pairing code, or none (§37 §6.5).
      * </pre>
      *
      * <code>repeated .loams.instance.v1.SignInMethod sign_in_methods = 9 [json_name = "signInMethods"];</code>
@@ -2735,7 +2750,8 @@ java.lang.String defaultValue) {
     }
     /**
      * <pre>
-     * How people sign in. Authentik is the identity provider (§37 §6.5).
+     * How people sign in: the instance's OIDC issuer (Zitadel, design §76), a
+     * pairing code, or none (§37 §6.5).
      * </pre>
      *
      * <code>repeated .loams.instance.v1.SignInMethod sign_in_methods = 9 [json_name = "signInMethods"];</code>
@@ -2752,7 +2768,8 @@ java.lang.String defaultValue) {
     }
     /**
      * <pre>
-     * How people sign in. Authentik is the identity provider (§37 §6.5).
+     * How people sign in: the instance's OIDC issuer (Zitadel, design §76), a
+     * pairing code, or none (§37 §6.5).
      * </pre>
      *
      * <code>repeated .loams.instance.v1.SignInMethod sign_in_methods = 9 [json_name = "signInMethods"];</code>
@@ -2769,7 +2786,8 @@ java.lang.String defaultValue) {
     }
     /**
      * <pre>
-     * How people sign in. Authentik is the identity provider (§37 §6.5).
+     * How people sign in: the instance's OIDC issuer (Zitadel, design §76), a
+     * pairing code, or none (§37 §6.5).
      * </pre>
      *
      * <code>repeated .loams.instance.v1.SignInMethod sign_in_methods = 9 [json_name = "signInMethods"];</code>
@@ -2780,7 +2798,8 @@ java.lang.String defaultValue) {
     }
     /**
      * <pre>
-     * How people sign in. Authentik is the identity provider (§37 §6.5).
+     * How people sign in: the instance's OIDC issuer (Zitadel, design §76), a
+     * pairing code, or none (§37 §6.5).
      * </pre>
      *
      * <code>repeated .loams.instance.v1.SignInMethod sign_in_methods = 9 [json_name = "signInMethods"];</code>
@@ -2794,7 +2813,8 @@ java.lang.String defaultValue) {
     }
     /**
      * <pre>
-     * How people sign in. Authentik is the identity provider (§37 §6.5).
+     * How people sign in: the instance's OIDC issuer (Zitadel, design §76), a
+     * pairing code, or none (§37 §6.5).
      * </pre>
      *
      * <code>repeated .loams.instance.v1.SignInMethod sign_in_methods = 9 [json_name = "signInMethods"];</code>
@@ -2809,7 +2829,8 @@ java.lang.String defaultValue) {
     }
     /**
      * <pre>
-     * How people sign in. Authentik is the identity provider (§37 §6.5).
+     * How people sign in: the instance's OIDC issuer (Zitadel, design §76), a
+     * pairing code, or none (§37 §6.5).
      * </pre>
      *
      * <code>repeated .loams.instance.v1.SignInMethod sign_in_methods = 9 [json_name = "signInMethods"];</code>
@@ -2820,7 +2841,8 @@ java.lang.String defaultValue) {
     }
     /**
      * <pre>
-     * How people sign in. Authentik is the identity provider (§37 §6.5).
+     * How people sign in: the instance's OIDC issuer (Zitadel, design §76), a
+     * pairing code, or none (§37 §6.5).
      * </pre>
      *
      * <code>repeated .loams.instance.v1.SignInMethod sign_in_methods = 9 [json_name = "signInMethods"];</code>
@@ -2832,7 +2854,8 @@ java.lang.String defaultValue) {
     }
     /**
      * <pre>
-     * How people sign in. Authentik is the identity provider (§37 §6.5).
+     * How people sign in: the instance's OIDC issuer (Zitadel, design §76), a
+     * pairing code, or none (§37 §6.5).
      * </pre>
      *
      * <code>repeated .loams.instance.v1.SignInMethod sign_in_methods = 9 [json_name = "signInMethods"];</code>

@@ -1,0 +1,19 @@
+# HE0 (plan HE1, ruling R1.1 in he1-rulings/t1.md): a logging reverse proxy in
+# front of a mined application's clickhouse-server. Its JSON access log keeps
+# every request's URL, so scripts/house/http_settings.py can record the
+# settings a client sent even when they equal the server's defaults (which
+# query_log's Settings leaves out). Caddy redacts Authorization and Cookie
+# headers in its logs.
+{
+	admin off
+	auto_https off
+}
+:8123 {
+	log {
+		output file /var/log/chlog/access.log
+		format json
+	}
+	reverse_proxy {$HE0_CH_UPSTREAM} {
+		flush_interval -1
+	}
+}

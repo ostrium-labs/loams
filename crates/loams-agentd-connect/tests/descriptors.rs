@@ -170,6 +170,8 @@ const SERVICES: &[&str] = &[
     "NotificationService",
     "AttachmentService",
     "FactoryService",
+    // MK1 Task 4b.
+    "MarketplaceService",
 ];
 
 /// `(Service/Method, server streaming)` for every method in the descriptors.

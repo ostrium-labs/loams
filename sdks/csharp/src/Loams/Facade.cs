@@ -179,6 +179,10 @@ public static class Facade
         "loams.devices.v1",
         "loams.notifications.v1",
         "loams.operations.v1",
+        "loams.collection.v1",
+        "loams.graph.v1",
+        "loams.sql.v1",
+        "loams.stream.v1",
         "loams.errors.v1",
         "loams.options.v1",
     ];
@@ -202,6 +206,23 @@ public static class Facade
             "loams.notifications.v1", "loams.notifications.v1.NotificationService", Unstable: false),
         new ModuleBinding("operations", "Running and finished operations.",
             "loams.operations.v1", "loams.operations.v1.OperationsService", Unstable: false),
+        // SDKP §2.2–§2.5: the app-building modules.
+        new ModuleBinding("namespaces", "Namespaces: the container every collection and stream lives in.",
+            "loams.collection.v1", "loams.collection.v1.NamespaceService", Unstable: false),
+        new ModuleBinding("collections", "Collections: schema, aliases, versions, scan plans and the hot tier.",
+            "loams.collection.v1", "loams.collection.v1.CollectionService", Unstable: false),
+        new ModuleBinding("documents", "Documents: write, get, scroll, count, delete by filter and patch by filter.",
+            "loams.collection.v1", "loams.collection.v1.DocumentService", Unstable: false),
+        new ModuleBinding("search", "Queries: one search over one collection, dense, sparse, text or hybrid.",
+            "loams.collection.v1", "loams.collection.v1.QueryService", Unstable: false),
+        new ModuleBinding("vector", "Vector search: the search RPC with a vector's shape.",
+            "loams.collection.v1", "loams.collection.v1.QueryService", Unstable: false),
+        new ModuleBinding("graph", "Loams Graph: stored property graphs, queried with GQL.",
+            "loams.graph.v1", null, Unstable: true),
+        new ModuleBinding("sql", "SQL: one read-only statement over a namespace's collections, with parameters.",
+            "loams.sql.v1", "loams.sql.v1.SqlService", Unstable: false),
+        new ModuleBinding("streams", "Streams: create, list and describe a namespace's logs; produce and fetch.",
+            "loams.stream.v1", "loams.stream.v1.StreamService", Unstable: false),
     ];
 
     /// <summary>
@@ -228,8 +249,13 @@ public static class Facade
     /// <summary>The binding an RPC path identifies, or null when nothing binds it.</summary>
     public static CallBinding? BindingForRpc(string rpc) => ByRpc.GetValueOrDefault(rpc);
 
+    // Q613: `search.Query` and `vector.Search` are one RPC, so an RPC maps to its
+    // first binding in module order.
     private static readonly Dictionary<string, CallBinding> ByRpc =
-        Bindings.Values.ToDictionary((binding) => binding.Rpc, StringComparer.Ordinal);
+        Bindings.Values
+            .OrderBy((binding) => binding.Module, StringComparer.Ordinal)
+            .GroupBy((binding) => binding.Rpc, StringComparer.Ordinal)
+            .ToDictionary((group) => group.Key, (group) => group.First(), StringComparer.Ordinal);
 
     private static Dictionary<(string Module, string Name), CallBinding> BindingsByKey()
     {
@@ -387,6 +413,115 @@ public static class Facade
             IdempotencyLevel.None, Streaming.Unary,
             "Loams.Live.V1.DeleteAppRequest", "Loams.Live.V1.DeleteAppResponse");
 
+        AddApp(Add);
+
         return table;
+    }
+
+    // ---- SDKP §2.2–§2.5: the app-building API ----
+    //
+    // `loams.collection.v1` and `loams.graph.v1` carry no method-level
+    // `FacadeOptions` yet (SDKP P0a adds them), so these rows are transcribed from
+    // the plan's tables: module and call names, and the retry class each table
+    // gives. `retry_safe` rows pass `retry: RetryClass.Safe`. When P0a lands,
+    // `csharp_facade_matches_index` checks every row against
+    // `sdks/fixtures/facade-index.json`.
+    private delegate void Adder(string module, string name, string protoName, string service, string method,
+        IdempotencyLevel idempotency, Streaming streaming, string requestType, string responseType,
+        Pagination? pagination = null, RetryClass? retry = null);
+
+    private static void AddApp(Adder add)
+    {
+        const string Ns = "loams.collection.v1.NamespaceService";
+        const string Col = "loams.collection.v1.CollectionService";
+        const string Doc = "loams.collection.v1.DocumentService";
+        const string Q = "loams.collection.v1.QueryService";
+        const string GA = "loams.graph.v1.GraphAdminService";
+        const string G = "loams.graph.v1.GraphService";
+        const string C = "Loams.Collection.V1.";
+        const string GR = "Loams.Graph.V1.";
+        var none = IdempotencyLevel.None;
+        var read = IdempotencyLevel.NoSideEffects;
+        var unary = Streaming.Unary;
+
+        add("namespaces", "Create", "create", Ns, "CreateNamespace", none, unary,
+            C + "CreateNamespaceRequest", C + "CreateNamespaceResponse", retry: RetryClass.Safe);
+        add("namespaces", "List", "list", Ns, "ListNamespaces", read, unary,
+            C + "ListNamespacesRequest", C + "ListNamespacesResponse",
+            pagination: new Pagination("Namespaces", "NextPageToken"));
+
+        add("collections", "Create", "create", Col, "CreateCollection", none, unary,
+            C + "CreateCollectionRequest", C + "CollectionInfo", retry: RetryClass.Safe);
+        add("collections", "List", "list", Col, "ListCollections", read, unary,
+            C + "ListCollectionsRequest", C + "ListCollectionsResponse",
+            pagination: new Pagination("Collections", "NextPageToken"));
+        add("collections", "Get", "get", Col, "GetCollection", read, unary,
+            C + "GetCollectionRequest", C + "CollectionInfo");
+        add("collections", "Drop", "drop", Col, "DropCollection", none, unary,
+            C + "DropCollectionRequest", C + "DropCollectionResponse", retry: RetryClass.Safe);
+        add("collections", "AddFields", "addFields", Col, "AddFields", none, unary,
+            C + "AddFieldsRequest", C + "AddFieldsResponse", retry: RetryClass.Safe);
+        add("collections", "ListVersions", "listVersions", Col, "ListVersions", read, unary,
+            C + "ListVersionsRequest", C + "ListVersionsResponse",
+            pagination: new Pagination("Versions", "NextPageToken"));
+        add("collections", "UpdateAliases", "updateAliases", Col, "UpdateAliases", none, unary,
+            C + "UpdateAliasesRequest", C + "UpdateAliasesResponse", retry: RetryClass.Safe);
+        add("collections", "Scan", "scan", Col, "Scan", none, unary, C + "ScanRequest", C + "ScanPlan");
+        add("collections", "SetHot", "setHot", Col, "SetHot", none, unary,
+            C + "SetHotRequest", C + "SetHotResponse", retry: RetryClass.Safe);
+        add("collections", "Warm", "warm", Col, "WarmCollection", none, unary,
+            C + "WarmCollectionRequest", C + "WarmCollectionResponse", retry: RetryClass.Safe);
+
+        add("documents", "Write", "write", Doc, "WriteDocuments", none, unary,
+            C + "WriteDocumentsRequest", C + "WriteDocumentsResponse");
+        add("documents", "Get", "get", Doc, "GetDocuments", read, unary,
+            C + "GetDocumentsRequest", C + "GetDocumentsResponse");
+        add("documents", "Scroll", "scroll", Doc, "ScrollDocuments", read, unary,
+            C + "ScrollDocumentsRequest", C + "ScrollDocumentsResponse");
+        add("documents", "Count", "count", Doc, "CountDocuments", read, unary,
+            C + "CountDocumentsRequest", C + "CountDocumentsResponse");
+        add("documents", "DeleteByFilter", "deleteByFilter", Doc, "DeleteByFilter", none, unary,
+            C + "DeleteByFilterRequest", C + "FilterWriteResponse");
+        add("documents", "PatchByFilter", "patchByFilter", Doc, "PatchByFilter", none, unary,
+            C + "PatchByFilterRequest", C + "FilterWriteResponse");
+
+        // Q613: one RPC, two facade entries.
+        add("search", "Query", "query", Q, "Search", read, unary, C + "SearchRequest", C + "SearchResponse");
+        add("vector", "Search", "search", Q, "Search", read, unary, C + "SearchRequest", C + "SearchResponse");
+
+        add("graph", "Create", "create", GA, "CreateGraph", none, unary, GR + "CreateGraphRequest", GR + "Graph");
+        add("graph", "Get", "get", GA, "GetGraph", read, unary, GR + "GetGraphRequest", GR + "Graph");
+        add("graph", "List", "list", GA, "ListGraphs", read, unary, GR + "ListGraphsRequest", GR + "ListGraphsResponse",
+            pagination: new Pagination("Graphs", "NextPageToken"));
+        add("graph", "Update", "update", GA, "UpdateGraph", none, unary, GR + "UpdateGraphRequest", GR + "Graph");
+        add("graph", "Delete", "delete", GA, "DeleteGraph", none, unary,
+            GR + "DeleteGraphRequest", "Loams.Operations.V1.Operation");
+        add("graph", "Schema", "schema", GA, "GetSchema", read, unary, GR + "GetSchemaRequest", GR + "GraphSchema");
+        add("graph", "Query", "query", G, "Execute", none, unary, GR + "ExecuteRequest", GR + "ExecuteResponse");
+        add("graph", "QueryBatch", "queryBatch", G, "ExecuteBatch", none, unary,
+            GR + "ExecuteBatchRequest", GR + "ExecuteBatchResponse");
+        add("graph", "QueryStream", "queryStream", G, "ExecuteStream", none, Streaming.Server,
+            GR + "ExecuteStreamRequest", GR + "ResultChunk");
+        add("graph", "Explain", "explain", G, "Explain", none, unary, GR + "ExplainRequest", GR + "Plan",
+            retry: RetryClass.Safe);
+
+        // Part C: loams.sql.v1 and loams.stream.v1 (SDKP P0b and P0c).
+        const string Sql = "loams.sql.v1.SqlService";
+        const string S = "Loams.Sql.V1.";
+        const string St = "loams.stream.v1.StreamService";
+        const string T = "Loams.Stream.V1.";
+        add("sql", "Query", "query", Sql, "Query", read, unary, S + "QueryRequest", S + "QueryResponse");
+        add("sql", "QueryArrow", "queryArrow", Sql, "QueryArrow", read, unary, S + "QueryArrowRequest", S + "QueryArrowResponse");
+        add("streams", "Create", "create", St, "CreateStream", none, unary, T + "CreateStreamRequest",
+            T + "CreateStreamResponse", retry: RetryClass.Safe);
+        add("streams", "Get", "get", St, "DescribeStream", read, unary, T + "DescribeStreamRequest", T + "DescribeStreamResponse");
+        add("streams", "List", "list", St, "ListStreams", read, unary, T + "ListStreamsRequest", T + "ListStreamsResponse",
+            pagination: new Pagination("Streams", "NextPageToken"));
+        add("streams", "Produce", "produce", St, "Produce", none, unary, T + "ProduceRequest", T + "ProduceResponse");
+        add("streams", "Fetch", "fetch", St, "Fetch", read, unary, T + "FetchRequest", T + "FetchResponse");
+        add("streams", "ProduceEvents", "produceEvents", St, "ProduceCloudEvents", none, unary,
+            T + "ProduceCloudEventsRequest", T + "ProduceCloudEventsResponse");
+        add("streams", "FetchEvents", "fetchEvents", St, "FetchCloudEvents", read, unary,
+            T + "FetchCloudEventsRequest", T + "FetchCloudEventsResponse");
     }
 }

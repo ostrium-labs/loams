@@ -1,0 +1,11 @@
+# .env (keys that --cloud sets)
+LOAMS_VERSION=0.1.2
+LOAMS_BUCKET=az://loams/loams
+COMPOSE_PROFILES=tikv
+TS_AUTHKEY=<from secret store>
+LOAMS_SETUP_TOKEN=<from secret store>
+# secrets/engine.env
+AZURE_STORAGE_ACCOUNT_NAME=myacct
+AZURE_CREDENTIAL_TYPE=managed_identity
+AZURE_STORAGE_CLIENT_ID=11111111-2222-3333-4444-555555555555
+# secrets: loams-prod (tailnet-authkey, setup-token, api-keys optional) in the azure secret store

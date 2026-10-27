@@ -203,6 +203,8 @@ fn api_table(database: &str, name: &str, table: &LakeTable) -> pb::Table {
         TableClass::Realtime => pb::TableClass::TABLE_CLASS_REALTIME,
         TableClass::External => pb::TableClass::TABLE_CLASS_EXTERNAL,
         TableClass::Pipe => pb::TableClass::TABLE_CLASS_PIPE,
+        // A catalog view (HE1 R9.13) has no class of its own in loams.house.v1 yet.
+        TableClass::View => pb::TableClass::TABLE_CLASS_UNSPECIFIED,
     };
     let modified = table
         .metadata

@@ -89,8 +89,9 @@ fn insert_format_kept() {
 /// with sqlparser's message and the hint; a read runs unchanged.
 #[test]
 fn unparseable_ddl_is_62_with_hint() {
-    // A column CODEC was the form here until HS1 Task 10 made it lake DDL.
-    let sql = "ALTER TABLE t DELETE WHERE a = 1";
+    // A column CODEC was the form here until HS1 Task 10 made it lake DDL, and
+    // `ALTER TABLE … DELETE` until the House read every ALTER (HE1 R9.12).
+    let sql = "ALTER DATABASE d MODIFY COMMENT 'x'";
     let Classified::Unparsed { text, message, .. } = classify(sql).expect("classifies") else {
         panic!("sqlparser was expected not to parse this form");
     };

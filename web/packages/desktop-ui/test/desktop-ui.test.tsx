@@ -259,6 +259,7 @@ describe('isWrite', () => {
 });
 
 describe('renderer row cap', () => {
+  // A thousand rows in jsdom takes over 5s on a busy CI runner (#819, #821); give it room.
   it('slices to 1,000 rows, forces the notice and clips long cells', async () => {
     const rows = Array.from({ length: 1500 }, (_, i) => [i, i === 0 ? 'x'.repeat(5000) : 'v']);
     const run = async (): Promise<IpcResult<SqlResult>> => ({
@@ -268,12 +269,14 @@ describe('renderer row cap', () => {
     render(<SqlConsole dialect="postgres" run={run} />);
     act(() => setCodeEditorText(screen.getByLabelText('SQL editor'), 'select 1'));
     fireEvent.click(screen.getByRole('button', { name: 'Run' }));
-    expect(await screen.findByText(/truncated at 1,000 rows/i)).toBeTruthy();
+    expect(
+      await screen.findByText(/truncated at 1,000 rows/i, undefined, { timeout: 15_000 }),
+    ).toBeTruthy();
     expect(screen.getAllByRole('row')).toHaveLength(1001);
     expect(screen.getByText('1,000 rows in 1 ms')).toBeTruthy();
     const clipped = screen.getByText(/^x+…$/);
     expect(clipped.textContent?.length).toBe(MAX_CELL_CHARS + 1);
-  });
+  }, 30_000);
 });
 
 describe('open logs and reveal races', () => {

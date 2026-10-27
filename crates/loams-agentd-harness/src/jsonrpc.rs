@@ -10,6 +10,9 @@
 //!   [`Incoming`] channel the session loop drains.
 //! - Writes to a dead child's stdin (EPIPE) are tolerated and logged, matching
 //!   the TS harness's swallowed-EPIPE behavior.
+//!
+//! Public so the marketplace's conformance runner (`loams-agentd-marketplace`
+//! `conformance`, MK1 Task 8) drives agent packages with the same client.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
@@ -24,7 +27,7 @@ use crate::process::{ChildStdin, ChildStdout};
 
 /// A non-response line from the app server, in stdout order.
 #[derive(Debug)]
-pub(crate) enum Incoming {
+pub enum Incoming {
     Notification {
         method: String,
         params: Value,
@@ -44,8 +47,8 @@ type StdoutObserver = Box<dyn Fn(&str) + Send>;
 
 type Pending = Arc<Mutex<HashMap<i64, oneshot::Sender<Result<Value, String>>>>>;
 
-#[derive(Clone)]
-pub(crate) struct RpcClient {
+#[derive(Clone, Debug)]
+pub struct RpcClient {
     next_id: Arc<AtomicI64>,
     pending: Pending,
     writer: mpsc::UnboundedSender<String>,

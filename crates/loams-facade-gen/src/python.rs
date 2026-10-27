@@ -119,11 +119,21 @@ fn proto_rev(out: &mut String, proto_rev: &str) {
 /// the modules use them, so the file does not churn when a proto is reordered.
 fn imports(out: &mut String, model: &Model, packages: &PackageMap) -> Result<(), String> {
     let mut seen: Vec<&str> = Vec::new();
-    for module in &model.modules {
-        let specifier = packages.get(&module.package).ok_or_else(|| {
+    // The modules' packages first, then any package only a request or a
+    // response comes from.
+    let mut order: Vec<String> = model.modules.iter().map(|m| m.package.clone()).collect();
+    for call in model.calls() {
+        for full in [&call.input, &call.output] {
+            let package = naming::package_of(full).to_owned();
+            if !order.contains(&package) {
+                order.push(package);
+            }
+        }
+    }
+    for package in &order {
+        let specifier = packages.get(package).ok_or_else(|| {
             format!(
-                "{} is not in the package map, so the SDK cannot import its message types",
-                module.package
+                "{package} is not in the package map, so the SDK cannot import its message types"
             )
         })?;
         if seen.contains(&specifier) {
@@ -134,7 +144,7 @@ fn imports(out: &mut String, model: &Model, packages: &PackageMap) -> Result<(),
         // per file, so a package split over several files (`loams.live.v1`'s
         // `live.proto` and `admin.proto`) imports each type from its own. The
         // package map's module comes first, so a one-file package is unchanged.
-        for (messages, names) in grouped(specifier, package_types(model, &module.package)) {
+        for (messages, names) in grouped(specifier, package_types(model, package)) {
             writeln!(
                 out,
                 "from {messages} import {names}",
@@ -145,7 +155,7 @@ fn imports(out: &mut String, model: &Model, packages: &PackageMap) -> Result<(),
         // The client module sits beside the messages: protoc-gen-connectrpc
         // writes `<file>_connect.py` next to `<file>_pb2.py`, in the same
         // package directory.
-        for (messages, clients) in grouped(specifier, package_clients(model, &module.package)) {
+        for (messages, clients) in grouped(specifier, package_clients(model, package)) {
             writeln!(
                 out,
                 "from {module} import {clients}",
@@ -172,20 +182,29 @@ fn client_module(messages: &str) -> String {
 /// `protoc-gen-python` exports every message of a file from that file's `_pb2`
 /// module, so the leaf name is the Python name.
 fn package_types(model: &Model, package: &str) -> Vec<(String, String)> {
+    // By the type's own package, not the call's: a call may answer a message
+    // of another package (`GraphAdminService/DeleteGraph` answers
+    // `loams.operations.v1.Operation`).
     let mut names: Vec<(String, String)> = model
         .calls()
-        .filter(|call| call.package == package)
         .flat_map(|call| {
             [
-                (
-                    call.input_file.clone(),
-                    naming::leaf(&call.input).to_owned(),
-                ),
-                (
-                    call.output_file.clone(),
-                    naming::leaf(&call.output).to_owned(),
-                ),
+                (&call.input, call.input_file.clone()),
+                (&call.output, call.output_file.clone()),
             ]
+        })
+        .filter(|(full, _)| naming::package_of(full) == package)
+        .map(|(full, file)| {
+            // A leaf another package's message also has is imported under
+            // its `naming::local_name` alias.
+            let local = naming::local_name(model, full);
+            let name = naming::leaf(full);
+            let import = if local == name {
+                local
+            } else {
+                format!("{name} as {local}")
+            };
+            (file, import)
         })
         .filter(|(_, name)| !name.is_empty())
         .collect();
@@ -425,8 +444,8 @@ fn methods_table(out: &mut String, model: &Model) -> Result<(), String> {
     );
     for module in &model.modules {
         for call in &module.calls {
-            let input = message_ref(&call.package, &call.input);
-            let output = message_ref(&call.package, &call.output);
+            let input = crate::naming::local_name(model, &call.input);
+            let output = crate::naming::local_name(model, &call.output);
             writeln!(
                 out,
                 "    \"{rpc}\": MethodInfo(\n\
@@ -448,15 +467,6 @@ fn methods_table(out: &mut String, model: &Model) -> Result<(), String> {
     }
     out.push_str("}\n");
     Ok(())
-}
-
-/// A generated message class as Python writes it: the bare name, because the
-/// header already imports every message the protocols name from the `_pb2`
-/// module protoc emitted for its proto file. Spelling out the module would mean
-/// deriving the proto file's stem here, and the package's version segment is
-/// not it — `loams.instance.v1` is emitted as `instance_pb2`, not `v1_pb2`.
-fn message_ref(_package: &str, message: &str) -> String {
-    message.rsplit('.').next().unwrap_or(message).to_string()
 }
 
 /// One module's two protocols: the async client and the sync one.

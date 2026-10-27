@@ -8,7 +8,7 @@ use axum::extract::{FromRequest, FromRequestParts, Path, Request, State};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, Uri, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{MethodFilter, get, on, post, put};
+use axum::routing::{MethodFilter, delete, get, on, post, put};
 use loams_collection::ConsistencyToken;
 use loams_query::hot::{HOT_HEADER, HotLayer, parse_hot_header};
 use serde::Serialize;
@@ -46,10 +46,6 @@ const UNSUPPORTED: &[(&str, &str)] = &[
     ("DELETE", "/cluster/peer/{peer_id}"),
     ("GET", "/quotas"),
     ("PUT", "/quotas"),
-    (
-        "DELETE",
-        "/collections/{collection_name}/index/{field_name}",
-    ),
     (
         "DELETE",
         "/collections/{collection_name}/vectors/{vector_name}",
@@ -222,6 +218,10 @@ pub(crate) fn router(gw: QdrantGateway) -> Router {
         .route(
             "/collections/{collection_name}/index",
             put(create_field_index),
+        )
+        .route(
+            "/collections/{collection_name}/index/{field_name}",
+            delete(delete_field_index),
         )
         .route(
             "/collections/{collection_name}/aliases",
@@ -728,6 +728,19 @@ async fn create_field_index(
 ) -> Response {
     serve(&gw, &headers, params.timeout, |ctx| {
         schema::create_field_index(gw.clone(), ctx, collection, request, params.wait)
+    })
+    .await
+}
+
+/// `DELETE /collections/{c}/index/{field}` (MA1 Task 23, D1210).
+async fn delete_field_index(
+    State(gw): State<QdrantGateway>,
+    Path((collection, field_name)): Path<(String, String)>,
+    headers: HeaderMap,
+    QdrantQuery(params): QdrantQuery<WriteParams>,
+) -> Response {
+    serve(&gw, &headers, params.timeout, |ctx| {
+        schema::delete_field_index(gw.clone(), ctx, collection, field_name, params.wait)
     })
     .await
 }

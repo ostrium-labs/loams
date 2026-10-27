@@ -1,0 +1,196 @@
+{
+  "name": "app_graph",
+  "kind": "app",
+  "about": "The notes app, part three: a graph of notes and tags, queried with GQL and walked from a search. Recorded from `loams dev`'s default build, which carries no `graph` feature, so each step is the `feature_not_in_variant` refusal an SDK reports as `FeatureNotInVariant` — and the expand stage of a search is refused the same way.",
+  "transport": "connect",
+  "required": false,
+  "pinnedBy": [
+    "R5",
+    "R8"
+  ],
+  "reason": null,
+  "source": {
+    "server": "loams dev",
+    "commit": "59a22b48",
+    "recordedAt": "2026-10-19T07:02:02.950Z"
+  },
+  "volatile": [
+    "token",
+    "readToken",
+    "consistencyToken",
+    "collectionId",
+    "namespaceId",
+    "createdAtMs",
+    "updatedAtMs",
+    "instanceId",
+    "performance",
+    "manifestVersion",
+    "version",
+    "seqNo",
+    "positions",
+    "pin"
+  ],
+  "steps": [
+    {
+      "about": "Create the graph.",
+      "call": "graph.create",
+      "request": {
+        "method": "POST",
+        "path": "/loams.graph.v1.GraphAdminService/CreateGraph",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"name\":\"notes_graph\",\"idempotencyKey\":\"app-graph-create-1\"}"
+      },
+      "response": {
+        "status": 501,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "code": "unimplemented",
+          "message": "loams.graph.v1.GraphAdminService/CreateGraph is not in the standard variant",
+          "details": [
+            {
+              "type": "loams.errors.v1.ErrorInfo",
+              "value": "ChZmZWF0dXJlX25vdF9pbl92YXJpYW50EhMKB3ZhcmlhbnQSCHN0YW5kYXJk"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 501,
+        "reason": "feature_not_in_variant"
+      }
+    },
+    {
+      "about": "Insert notes, tags and `TAGGED` edges with GQL and parameters, keyed.",
+      "call": "graph.query",
+      "request": {
+        "method": "POST",
+        "path": "/loams.graph.v1.GraphService/Execute",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"graph\":\"notes_graph\",\"statement\":\"INSERT (:Note {id: $id, title: $title})-[:TAGGED]->(:Tag {name: $tag})\",\"parameters\":{\"id\":{\"int64\":\"1\"},\"title\":{\"string\":\"Refund policy\"},\"tag\":{\"string\":\"policy\"}},\"idempotencyKey\":\"app-graph-insert-1\"}"
+      },
+      "response": {
+        "status": 501,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "code": "unimplemented",
+          "message": "loams.graph.v1.GraphService/Execute is not in the standard variant",
+          "details": [
+            {
+              "type": "loams.errors.v1.ErrorInfo",
+              "value": "ChZmZWF0dXJlX25vdF9pbl92YXJpYW50EhMKB3ZhcmlhbnQSCHN0YW5kYXJk"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 501,
+        "reason": "feature_not_in_variant"
+      }
+    },
+    {
+      "about": "Read it back, read-only.",
+      "call": "graph.query",
+      "request": {
+        "method": "POST",
+        "path": "/loams.graph.v1.GraphService/Execute",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"graph\":\"notes_graph\",\"statement\":\"MATCH (n:Note)-[:TAGGED]->(t:Tag) RETURN n.title, t.name\",\"readOnly\":true,\"idempotencyKey\":\"app-graph-read-1\"}"
+      },
+      "response": {
+        "status": 501,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "code": "unimplemented",
+          "message": "loams.graph.v1.GraphService/Execute is not in the standard variant",
+          "details": [
+            {
+              "type": "loams.errors.v1.ErrorInfo",
+              "value": "ChZmZWF0dXJlX25vdF9pbl92YXJpYW50EhMKB3ZhcmlhbnQSCHN0YW5kYXJk"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 501,
+        "reason": "feature_not_in_variant"
+      }
+    },
+    {
+      "about": "The builder corpus case `search_expand`: a search that walks the graph from its hits. Without the graph feature the expand stage is refused as `invalid_argument` (\"expand runs on Loams Graph, which this server does not run\"), not `feature_not_in_variant`: the search itself is served.",
+      "call": "search.query",
+      "builder": "search_expand",
+      "request": {
+        "method": "POST",
+        "path": "/loams.collection.v1.QueryService/Search",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"collection\":\"notes\",\"retrievers\":[{\"text\":{\"query\":{\"match\":{\"field\":\"body\",\"text\":\"refund\"}}}}],\"expandSpec\":{\"graph\":\"notes_graph\",\"fromField\":\"id\",\"hops\":1}}"
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "code": "invalid_argument",
+          "message": "invalid argument: expand runs on Loams Graph, which this server does not run",
+          "details": [
+            {
+              "type": "loams.errors.v1.ErrorInfo",
+              "value": "ChBpbnZhbGlkX2FyZ3VtZW50"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 400,
+        "reason": "invalid_argument"
+      }
+    },
+    {
+      "about": "Delete the graph.",
+      "call": "graph.delete",
+      "request": {
+        "method": "POST",
+        "path": "/loams.graph.v1.GraphAdminService/DeleteGraph",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"name\":\"notes_graph\",\"idempotencyKey\":\"app-graph-delete-1\"}"
+      },
+      "response": {
+        "status": 501,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "code": "unimplemented",
+          "message": "loams.graph.v1.GraphAdminService/DeleteGraph is not in the standard variant",
+          "details": [
+            {
+              "type": "loams.errors.v1.ErrorInfo",
+              "value": "ChZmZWF0dXJlX25vdF9pbl92YXJpYW50EhMKB3ZhcmlhbnQSCHN0YW5kYXJk"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 501,
+        "reason": "feature_not_in_variant"
+      }
+    }
+  ]
+}

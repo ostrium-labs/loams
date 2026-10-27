@@ -29,7 +29,7 @@ struct Args {
     signed_out: bool,
     /// The issuer the mock names when a device cannot reach loopback, for
     /// example `--public-url http://10.0.2.2:8084` for the Android emulator.
-    /// Pairing payloads and the fake Authentik's discovery document use it.
+    /// Pairing payloads and the fake OIDC issuer's discovery document use it.
     #[arg(long)]
     public_url: Option<String>,
     /// The console's build to serve at `/ui/`. Defaults to
@@ -63,9 +63,7 @@ async fn main() -> anyhow::Result<()> {
         "  console:    /api/v1/* and Connect loams.{{auth,admin}}.v1 (signed {})",
         if args.signed_out { "out" } else { "in" }
     );
-    println!(
-        "  auth:       POST /api/v1/oauth/token (pairing, exchange, refresh), /mock/authentik/..."
-    );
+    println!("  auth:       POST /api/v1/oauth/token (pairing, exchange, refresh), /mock/oidc/...");
     println!("  engine:     /health, /ready, /v1/namespaces/{{ns}}/collections");
     println!("  console UI: /ui/ (when web/apps/console/dist is built, or --ui-dir)");
     println!(

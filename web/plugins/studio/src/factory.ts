@@ -23,6 +23,8 @@ export interface FactoryApp {
   url?: string;
   /** Desktop: whether the factory has native panels for it (else its full UI only). */
   hasPanels?: boolean;
+  /** The app's preview label, when it is a preview (SigNoz on the House, D1666). */
+  preview?: string;
 }
 
 /** A pull request as `forgejo.issues` (`type: "pulls"`) returns it. */
@@ -92,6 +94,7 @@ export function desktopFactory(
         state: a.health,
         url: a.url,
         hasPanels: a.hasPanels,
+        ...(a.preview ? { preview: a.preview } : {}),
       })),
     pulls: async (owner, repo) => {
       const r = await desktop.factory.query<FactoryPull[]>({

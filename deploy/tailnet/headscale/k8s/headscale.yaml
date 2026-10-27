@@ -1,0 +1,160 @@
+# One replica: SQLite has one writer, and the control plane's state is that
+# file (design 43 D595). Recreate, never rolling, so two pods never share it.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: headscale
+  labels: {app.kubernetes.io/name: headscale, app.kubernetes.io/part-of: loams}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app.kubernetes.io/name: headscale}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: headscale, app.kubernetes.io/part-of: loams}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: headscale
+          image: ghcr.io/juanfont/headscale:v0.29.4@sha256:8833f828b414c0907b7e5c71da76473216fe17cce0818a166b536ec552c0903f
+          args: ["serve"]
+          envFrom: [{secretRef: {name: headscale-env}}]
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+          ports:
+            - {name: http, containerPort: 8080}
+            - {name: stun, containerPort: 3478, protocol: UDP}
+            - {name: metrics, containerPort: 9090}
+          readinessProbe:
+            exec: {command: ["headscale", "health"]}
+            periodSeconds: 30
+          volumeMounts:
+            - {name: config, mountPath: /etc/headscale}
+            - {name: lib, mountPath: /var/lib/headscale}
+            - {name: run, mountPath: /var/run/headscale}
+            - {name: tmp, mountPath: /tmp}
+        - name: caddy
+          image: docker.io/library/caddy:2.11.4-alpine@sha256:6aeddd44c3078b0f9a35206472a11420648a79c184603ef95957d0a20044cb2b
+          env:
+            - {name: HEADSCALE_HOST, value: headscale.loams.dev}
+            - {name: HEADSCALE_UPSTREAM, value: "127.0.0.1:8080"}
+            - name: ACME_EMAIL
+              valueFrom: {secretKeyRef: {name: headscale-env, key: ACME_EMAIL}}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL], add: [NET_BIND_SERVICE]}
+          ports:
+            - {name: https, containerPort: 443}
+            - {name: acme, containerPort: 80}
+            - {name: admin, containerPort: 8081}
+          volumeMounts:
+            - {name: caddyfile, mountPath: /etc/caddy}
+            - {name: caddy-data, mountPath: /data}
+            - {name: caddy-config, mountPath: /config}
+      volumes:
+        - name: config
+          configMap: {name: headscale-config}
+        - name: caddyfile
+          configMap: {name: headscale-caddyfile}
+        - name: lib
+          persistentVolumeClaim: {claimName: headscale-lib}
+        - {name: run, emptyDir: {medium: Memory}}
+        - {name: tmp, emptyDir: {medium: Memory}}
+        - name: caddy-data
+          persistentVolumeClaim: {claimName: headscale-caddy}
+        - {name: caddy-config, emptyDir: {}}
+---
+# Caddy's ACME account and certificates: lost on a reschedule, they would burn
+# Let's Encrypt's duplicate-certificate limit.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: headscale-caddy
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 100Mi}}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: headscale-lib
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 1Gi}}
+---
+# 80/443 and 3478/udp on the node's public address (k3s servicelb). The
+# management listener (8081) is deliberately not exposed: reach it with
+# `kubectl port-forward` or from the tailnet.
+apiVersion: v1
+kind: Service
+metadata:
+  name: headscale
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  selector: {app.kubernetes.io/name: headscale}
+  ports:
+    - {name: https, port: 443, targetPort: https}
+    - {name: acme, port: 80, targetPort: acme}
+    - {name: stun, port: 3478, targetPort: stun, protocol: UDP}
+---
+# Nightly backup as a Job, not a sidecar: if the package mirror or the bucket is
+# down, only the Job fails; the control plane's pod stays Ready. It mounts the
+# same ReadWriteOnce volume, so it must run on the same node as the Deployment.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: headscale-backup
+spec:
+  schedule: "40 3 * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 1800
+      template:
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - topologyKey: kubernetes.io/hostname
+                  labelSelector:
+                    matchLabels: {app.kubernetes.io/name: headscale}
+          initContainers:
+            - name: rclone
+              image: docker.io/rclone/rclone:1.75.1@sha256:45401ad7410db1d67ffdb58e19059ad20b0d8e0285a60e38bbec55cc1019c7a5
+              command: ["cp", "/usr/local/bin/rclone", "/tools/rclone"]
+              volumeMounts: [{name: tools, mountPath: /tools}]
+          containers:
+            - name: backup
+              image: docker.io/library/alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+              # Same script as the compose image; the packages are fetched at
+              # start because this variant has no image of its own.
+              command: ["/bin/sh", "-c", "apk add --no-cache sqlite age tar >/dev/null && cp /tools/rclone /usr/local/bin/rclone && exec /scripts/backup.sh now"]
+              envFrom: [{secretRef: {name: headscale-backup}}]
+              env:
+                - {name: BACKUP_PREFIX, value: headscale}
+                - {name: BACKUP_RETENTION_DAYS, value: "30"}
+              volumeMounts:
+                - {name: lib, mountPath: /var/lib/headscale}
+                - {name: config, mountPath: /policy, readOnly: true}
+                - {name: scripts, mountPath: /scripts}
+                - {name: tools, mountPath: /tools}
+                - {name: scratch, mountPath: /scratch}
+          volumes:
+            - name: config
+              configMap: {name: headscale-config}
+            - name: scripts
+              configMap: {name: headscale-backup-scripts, defaultMode: 0755}
+            - name: lib
+              persistentVolumeClaim: {claimName: headscale-lib}
+            - {name: tools, emptyDir: {}}
+            - {name: scratch, emptyDir: {}}

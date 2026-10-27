@@ -26,6 +26,20 @@ published to crates.io (`publish = false`; owner, 2026-10-15). It is built by
 its own `cargo build -p loams-git-remote` call, so its dependencies cannot
 change the server binary's feature set.
 
+**`loams-agentd`**, the agent daemon behind Studio (`crates/loams-agentd`), is
+not in these packages. For a headless Linux host it ships as its own tarball per
+architecture ([#874](https://github.com/ostrium-labs/loams/issues/874)),
+`loams-agentd-<v>-linux-x86_64.tar.gz` and `loams-agentd-<v>-linux-aarch64.tar.gz`,
+each built on that architecture's runner by `build-artifacts.py agentd-tar`. Its
+top-level directory holds `loams-agentd`, `loams` (built with the packages'
+features), `SHA256SUMS` over the two and `VERSION`: the layout
+`loams-agentd install-runtime --from` reads
+(`crates/loams-agentd/src/runtime_install.rs`), which copies and checks both
+binaries. The root `LICENSE` and `NOTICE` and the daemon's own licence files
+(under `crates/loams-agentd/`) are beside them. The tarballs are unsigned; the
+release's `SHA256SUMS` lists them. The user's guide is
+[`remote-agentd.md`](../guides/studio/remote-agentd.md#get-the-binary).
+
 The workspace has five other `[[bin]]` targets. **None of them is packaged**,
 deliberately:
 
@@ -92,35 +106,72 @@ at all. It can now.
 Ubuntu, Fedora, RHEL, openSUSE, Arch and CachyOS. Arch and CachyOS also read
 `/etc`, but a unit that came from a package belongs under `/usr`.
 
-**The console is optional and may be absent.** The server binary does not serve
-it: there is no static-file route in the engine, and the console is deployed to
-Cloudflare by `console-deploy.yml`. It is packaged so an operator running their
-own front end has the exact assets the release built, next to the binary they
-installed. When the console build is missing, `build-artifacts.py` ships a
-`README.txt` in its place and warns; in CI the console step is
+**The console is optional and may be absent.** The engine serves it at `/ui/`
+from `/usr/share/loams/console` when that directory holds a build (from 0.1.2;
+`--console-dir` and `--no-console` change that), same-origin with its API.
+When the console build is missing, `build-artifacts.py` ships a `README.txt` in its place and warns; in CI the console step is
 `continue-on-error: true`, so a TypeScript error in the console cannot stop the
 server packages from being produced.
 
 ### Dependencies
 
-`release/nfpm.yaml` declares `libgcc-s1` and `libc6`, which nFPM maps onto each
-packager's own vocabulary (`gcc`/`glibc` for rpm, `gcc-libs`/`glibc` for Arch).
-**[verified]** — the mapping was checked against the JSON schema nFPM ships, so a
-dependency renamed upstream fails the build rather than the install.
+| Format | Declared dependencies |
+|---|---|
+| .deb | `libgcc-s1`, `libc6`, `zlib1g` |
+| .rpm | `libgcc_s.so.1()(64bit)`, `libc.so.6()(64bit)`, `libz.so.1()(64bit)` |
+| .pkg.tar.zst | `gcc-libs`, `glibc`, `zlib` |
 
-That list matches the `DT_NEEDED` set of the packaged build, which `readelf -d`
-gives as exactly `libgcc_s.so.1`, `libc.so.6`, `libm.so.6` and
-`ld-linux-x86-64.so.2`. **[verified]** — read off a real
-`cargo build --release -p loams --bin loams` of this tree.
+These are the `DT_NEEDED` set of the packaged build (`--features
+$LOAMS_PACKAGE_FEATURES`, the image's set), which `readelf -d` gives as
+`libz.so.1`, `libgcc_s.so.1`, `libc.so.6`, `libm.so.6` and
+`ld-linux-x86-64.so.2`. **[verified]**: read off the published 0.1.1 package on
+2026-10-23. The release workflow's "the binaries' dynamic dependencies" step
+fails the build when the server links a library outside that set.
 
-**`libm.so.6` is deliberately not declared separately.** Every target's glibc
-package already ships it — `libc6` on Debian and Ubuntu (glibc has carried libm
-since 2.34), `glibc` on Fedora/RHEL/openSUSE, and `glibc` on Arch and CachyOS
-(`pacman -Qo` confirms the last). There is no `libm` package on Debian to name,
-so declaring one would produce a dependency that does not exist.
+**nFPM does not translate package names.** `depends` in `release/nfpm.yaml` is
+written into every package as it stands, so it is in Debian's vocabulary, and
+`overrides` gives the .rpm and the Arch package their own. 0.1.0 and 0.1.1
+shipped `libgcc-s1` and `libc6` in all three formats, which dnf and pacman
+cannot resolve (#1105). `build-artifacts.py --self-test` now reads each built
+package's dependency list back (the .deb's `control`, the .rpm's
+`REQUIRENAME`, the Arch package's `.PKGINFO`) and compares it with nfpm.yaml.
 
-`git-remote-loams` needs the same four libraries and nothing else, so the one
-`depends` list covers both binaries. The workflow's "the binaries' dynamic
+The .rpm names sonames, not packages: the same requirement then resolves on
+Fedora (`libgcc`, `zlib-ng-compat`), RHEL (`libgcc`, `zlib`) and openSUSE
+(`libgcc_s1`, `libz1`), and it is what `rpmbuild` would generate from
+`DT_NEEDED` itself.
+
+**zlib is linked dynamically, on purpose.** `libz.so.1` arrived with the
+`mysql-wire` feature: `opensrv-mysql` depends on `mysql_common` with its
+default features, which turn on `flate2/zlib`, and that links the system zlib
+through `libz-sys`. The alternative is libz-sys's `static` feature (or
+`LIBZ_SYS_STATIC=1`), which builds a bundled zlib into the binary. The packages
+declare zlib instead, because:
+
+- zlib is already installed on every target. On Debian and Ubuntu, dpkg itself
+  depends on `zlib1g`, and Fedora, RHEL, openSUSE and Arch install zlib with the
+  base system. The dependency costs an install nothing.
+- A zlib security fix (CVE-2022-37434, for example) then reaches the server
+  through the distribution's own update. A static copy would wait for a Loams
+  release with a newer libz-sys.
+- The container image (`deploy/release/Containerfile.loams`, debian-slim)
+  already has `zlib1g`, so the packages and the image link the same way.
+
+If a target without a system zlib ever matters (a distroless or musl image),
+`LIBZ_SYS_STATIC=1` on that build alone is the switch, and that build's
+`DT_NEEDED` loses `libz.so.1`.
+
+**`libm.so.6` and the loader are deliberately not declared separately.** Every
+target's glibc package already ships them: `libc6` on Debian and Ubuntu (glibc
+has carried libm since 2.34), and `glibc` on Fedora, RHEL, openSUSE, Arch and
+CachyOS (`pacman -Qo` confirms the last). There is no `libm` package on Debian
+to name, so declaring one would produce a dependency that does not exist.
+
+The AUR `PKGBUILD` builds the default feature set, which has no `mysql-wire`
+and so no zlib. Its `depends` stays `gcc-libs`.
+
+`git-remote-loams` needs a subset of the server's libraries (no zlib), so the
+one `depends` list covers both binaries. The workflow's "the binaries' dynamic
 dependencies" step fails the build if the helper ever needs a library the
 server does not.
 
@@ -130,32 +181,32 @@ The list this short is a consequence of the server's `reqwest` being
 
 ### The feature set, and what is not in the package
 
-Packages are built from the **default** feature set —
-`default = ["es", "flight", "hnsw", "live", "qdrant"]` — with no extra flags.
-Since LV1 Task 23 that includes Loams Live on its embedded store: `loams dev`
-and `loams standalone` serve the Live API on loopback (127.0.0.1:7710) with
-data under `<data-dir>/live/`, unless started with `--no-live`.
-**[verified]** — read from `crates/loams/Cargo.toml`.
+Packages are built with the release image's features (#925):
+`live,live-tikv,durable,durable-tikv,graph,tikv,pgwire,mysql-wire,stream-grpc`
+on top of the default set (`es`, `flight`, `hnsw`, `live`, `qdrant`). The list is
+`LOAMS_PACKAGE_FEATURES` in `.github/workflows/release-package.yml`, and the
+Linux job fails if it differs from `ARG FEATURES` in
+`deploy/release/Containerfile.loams`. So `loams dev` from a package serves what
+the image serves: Live on 127.0.0.1:7710, and Durable (the embedded Resonate
+server) on 127.0.0.1:8001, with data under `<data-dir>/durable/`.
+`scripts/release/smoke-durable.sh` checks that Durable answers there, on Linux,
+on Windows and on the macOS runner that can run its binary natively.
 
-That means these are **not** in the packaged binary, and a flag for one of them
-will not work:
+The 0.1.0 packages were built from the default set alone, so they had no
+Durable: `loams dev` logged "this build has no durable execution" and nothing
+listened on 8001.
+
+The `depends` list above still holds. Resonate's SQLite comes from `rusqlite`
+with `bundled`, which compiles it into the binary, and the image's runtime stage
+installs no libraries beyond `ca-certificates`, `curl` and `tini`.
+
+Not in the package:
 
 | Feature | Not in the package because |
 |---|---|
-| `durable`, `durable-mysql`, `durable-tikv` | Opt-in, and the crate comment says it "rebuilds about 480 crates". It also pulls an embedded Resonate server, whose SQLite build would add a C dependency the `depends` list above does not declare. |
-| `tikv`, `live-tikv` | Opt-in; pull a git-pinned `tikv-client` that the default build must not carry. A packaged binary refuses `--live-store tikv://…`. |
-| `mysql-wire`, `pgwire` | Opt-in; add a DataFusion build. |
-| `stream-grpc` | Opt-in. |
+| `durable-mysql` | Not in the image either. |
+| `postgres` | `pg-control` ships as its own image (`loams-pg-control`). |
 | `failpoints` | Release builds must not contain failpoints. |
-
-**This is an assumption worth a maintainer's eye.** The `durable` comment in
-`crates/loams/Cargo.toml` says "release builds, CI's durable jobs and the Loams
-cloud build turn it on", and this workflow does not. Turning it on for a
-packaged build means re-deriving the dependency list against a real binary, and
-a C dependency in an .deb needs `Depends:` entries this page has not verified.
-Shipping the default-feature build is the conservative choice; enabling
-`durable` for packages is a follow-up that should update `depends` in the same
-commit.
 
 ## Windows
 
@@ -423,7 +474,7 @@ signature, read back off the finished files, so nothing has to be guessed.
 
 | Row | What it records |
 |---|---|
-| **D628** | Linux packages are built with nFPM from one config: `.deb`, `.rpm` and `.pkg.tar.zst`, default feature set. |
+| **D628** | Linux packages are built with nFPM from one config: `.deb`, `.rpm` and `.pkg.tar.zst`, default feature set (since #925, the release image's features). |
 | **D629** | The `.rpm` is built unsigned and signed by SignPath; the `.deb` and the pacman package are signed with the project GPG key. |
 | **D630** | Windows ships an unsigned `.zip`, not an MSI. |
 | **D631** | No repository is published until SignPath has signed the `.rpm`. |

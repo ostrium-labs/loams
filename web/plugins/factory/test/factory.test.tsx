@@ -426,11 +426,11 @@ describe('panels', () => {
     expect(screen.getAllByText('avg session duration')).toHaveLength(1);
   });
 
-  it('openobserve_is_full_ui_only', async () => {
+  it('signoz_is_full_ui_only', async () => {
     const { api, queries } = fakeDesktop({
-      apps: IDS.map((i) => info(i, i === 'openobserve' ? 'ok' : 'unconfigured')),
+      apps: IDS.map((i) => info(i, i === 'signoz' ? 'ok' : 'unconfigured')),
     });
-    render(<PanelsPage desktop={api} app="openobserve" navigate={nav().navigate} />);
+    render(<PanelsPage desktop={api} app="signoz" navigate={nav().navigate} />);
     expect(await screen.findByText('Full UI only')).toBeTruthy();
     expect(queries).toHaveLength(0);
   });

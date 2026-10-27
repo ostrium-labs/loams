@@ -56,7 +56,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/* \
  && groupadd --system --gid 10001 loams \
  && useradd --system --uid 10001 --gid loams --home-dir /var/lib/loams-house --shell /usr/sbin/nologin loams \
- && install -d -o loams -g loams -m 0750 /var/lib/loams-house
+ && install -d -o loams -g loams -m 0750 /var/lib/loams-house /var/lib/loams-house-link
 COPY --from=build /out/bin/ /usr/local/bin/
 COPY --from=build /out/lib/ /usr/local/lib/
 RUN ldconfig

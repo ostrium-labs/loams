@@ -1,5 +1,5 @@
 // The sidebar's Factory group (§53 §5.9, D916; SD1 Task 27): Forgejo, Zulip, Plane,
-// GlitchTip, OpenPanel, Matomo (Q813), Langfuse and OpenObserve, each with its
+// GlitchTip, OpenPanel, Matomo (Q813), Langfuse and SigNoz, each with its
 // configured state. On the desktop each opens on the factory's pages under
 // `/studio/factory`; a links-only source (the web, until SF1: D922) links to the
 // apps' own UIs in a new tab, and lists an app it cannot link without a link.
@@ -67,7 +67,18 @@ function State({ state }: { state: FactoryState }) {
 }
 
 function Row({ app, kind }: { app: FactoryApp; kind: StudioFactory['kind'] }) {
-  const label = <span className="min-w-0 flex-1 truncate">{app.label}</span>;
+  const label = (
+    <span className="min-w-0 flex-1 truncate" title={app.preview}>
+      {app.label}
+      {/* A preview app says so (SigNoz on the House, D1666); the tooltip has the full label. */}
+      {app.preview && (
+        <>
+          {' '}
+          <span className="text-micro text-faint">Preview</span>
+        </>
+      )}
+    </span>
+  );
   if (kind === 'pages') {
     return (
       <a href={`#${factoryHref(app)}`} className={cx(ROW, 'hover:bg-row-hover hover:text-ink')}>

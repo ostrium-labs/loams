@@ -98,7 +98,14 @@ public readonly record struct TransportRequest(CallBinding Binding, byte[] Body,
 /// with the error in the end frame — so every reader below reads the body, and
 /// <c>HttpResponseMessage.IsSuccessStatusCode</c> is never consulted on its own.
 /// </remarks>
-public sealed record TransportResponse(HttpStatusCode Status, string? ContentType, byte[] Body);
+public sealed record TransportResponse(HttpStatusCode Status, string? ContentType, byte[] Body)
+{
+    /// <summary>
+    /// The <c>loams-consistency-token</c> response header, when the server sent one
+    /// (R4: it merges into the session like a token field does).
+    /// </summary>
+    public string? ConsistencyToken { get; init; }
+}
 
 /// <summary>
 /// Sends one request and reads its body. The only type in the SDK that touches
@@ -190,7 +197,12 @@ public sealed class Transport : IDisposable
 
         var body = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
         return new TransportResponse(response.StatusCode,
-            response.Content.Headers.ContentType?.MediaType, body);
+            response.Content.Headers.ContentType?.MediaType, body)
+        {
+            ConsistencyToken = response.Headers.TryGetValues(ConsistencySession.Header, out var tokens)
+                ? tokens.FirstOrDefault()
+                : null,
+        };
     }
 
     /// <summary>

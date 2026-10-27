@@ -4,7 +4,7 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
 
-/** PKCE (RFC 7636) with S256, for browser sign-in at Authentik. */
+/** PKCE (RFC 7636) with S256, for browser sign-in at the identity provider. */
 data class Pkce(val verifier: String, val challenge: String) {
     val method: String get() = "S256"
 

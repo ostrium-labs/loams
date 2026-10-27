@@ -28,6 +28,7 @@ fn app(a: &rf::FactoryAppInfo) -> pb::FactoryApp {
         url: a.url.clone(),
         health: health(a.health),
         has_panels: a.has_panels,
+        preview: a.preview.clone(),
         credential_fields: a
             .credential_fields
             .iter()

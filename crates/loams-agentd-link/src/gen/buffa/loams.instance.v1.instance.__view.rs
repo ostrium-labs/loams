@@ -261,7 +261,8 @@ pub struct GetInstanceResponseView<'a> {
     ///
     /// Field 8: `jwks_uri`
     pub jwks_uri: &'a str,
-    /// How people sign in. Authentik is the identity provider (§37 §6.5).
+    /// How people sign in: the instance's OIDC issuer (Zitadel, design §76), a
+    /// pairing code, or none (§37 §6.5).
     ///
     /// Field 9: `sign_in_methods`
     pub sign_in_methods: ::buffa::RepeatedView<
@@ -1001,7 +1002,8 @@ impl GetInstanceResponseOwnedView {
     pub fn jwks_uri(&self) -> &'_ str {
         self.0.reborrow().jwks_uri
     }
-    /// How people sign in. Authentik is the identity provider (§37 §6.5).
+    /// How people sign in: the instance's OIDC issuer (Zitadel, design §76), a
+    /// pairing code, or none (§37 §6.5).
     ///
     /// Field 9: `sign_in_methods`
     #[must_use]
@@ -1084,7 +1086,7 @@ impl ::serde::Serialize for GetInstanceResponseOwnedView {
 pub struct SignInMethodView<'a> {
     /// Field 1: `kind`
     pub kind: ::buffa::EnumValue<super::super::SignInKind>,
-    /// The OIDC issuer for KIND_AUTHENTIK (Authentik's application issuer URL).
+    /// The OIDC issuer for SIGN_IN_KIND_OIDC and SIGN_IN_KIND_OIDC_DEVICE_CODE.
     ///
     /// Field 2: `issuer`
     pub issuer: &'a str,
@@ -1365,7 +1367,7 @@ impl SignInMethodOwnedView {
     pub fn kind(&self) -> ::buffa::EnumValue<super::super::SignInKind> {
         self.0.reborrow().kind
     }
-    /// The OIDC issuer for KIND_AUTHENTIK (Authentik's application issuer URL).
+    /// The OIDC issuer for SIGN_IN_KIND_OIDC and SIGN_IN_KIND_OIDC_DEVICE_CODE.
     ///
     /// Field 2: `issuer`
     #[must_use]

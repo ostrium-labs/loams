@@ -14,8 +14,8 @@
   <g transform="translate(70 68)" fill="#f0e8d9"><path d="M0 0H16V70H0Z M0 54H70V70H0Z M25 36H62V47H25Z M25 19H49V27H25Z"/><rect x="25" width="11" height="11" fill="#d9ad61"/></g>
   <g fill="#f0e8d9" font-family="Arial, Helvetica, sans-serif">
     <text x="165" y="125" font-size="68" font-weight="700" letter-spacing="-2">Loams</text>
-    <text x="70" y="194" font-size="34" font-weight="600">Your data. Your bucket.</text>
-    <text x="70" y="233" font-size="20" fill="#d8dfd7">Hybrid retrieval · Reactive data · Durable execution</text>
+    <text x="70" y="194" font-size="34" font-weight="600">Don't rent a cloud. Loam it.</text>
+    <text x="70" y="233" font-size="20" fill="#d8dfd7">Build software with agents, on ground you own.</text>
     <text x="1195" y="88" font-size="17" text-anchor="end" fill="#d8dfd7">Built in Rust</text>
     <text x="1195" y="116" font-size="17" text-anchor="end" fill="#d8dfd7">Open formats</text>
     <text x="1195" y="144" font-size="17" text-anchor="end" fill="#d8dfd7">Object storage</text>

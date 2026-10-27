@@ -1,22 +1,32 @@
 ![Loams — Your data. Your bucket.](../../docs/assets/loams-banner.svg)
 
-# Loams Postgres on RustFS (development)
+# Loams Postgres on local folders or RustFS (development)
 
 This directory was the `neon` stack under `deploy/` until NF1 Task 1b (D823). The compose project is
 still named `loams-neon`, because Docker names users' volumes after it.
 
 The stack from the Neon + WeSQL spike ([§23](../../docs/design/23-neon-and-wesql.md)). It runs
-Neon's storage (storage broker, one pageserver, one safekeeper) on a RustFS bucket and starts
-Postgres computes against an explicit tenant and timeline. Loams does not link Neon; in the
+Neon's storage (storage broker, one pageserver, one safekeeper) and starts Postgres computes
+against an explicit tenant and timeline. The pageserver's and the safekeeper's remote storage is
+a local folder in each one's volume by default (Neon's `LocalFs`: one disk, one copy); with the
+`rustfs` profile (`COMPOSE_PROFILES=rustfs` in `.env` or the shell) it is RustFS's `neon` bucket
+instead. Pick one before the first start: a timeline stays in the storage it was created in. Loams does not link Neon; in the
 design, Loams plays the part of the control plane that the commands below play by hand.
 
 It is derived from `neondatabase/neon` `docker-compose/` (Apache-2.0). `compute/config.json` is
 Neon's compute spec with one safekeeper; `compute/start.sh` replaces Neon's `compute.sh`, because
 the `compute-node` image has no `curl`, `jq` or `nc`, and tenants and timelines are created by
-the caller.
+the caller: the one-shot `pg-bootstrap` service for `compute1` (below), Loams, or the curl calls
+in [Run](#run).
 
 Not a production layout: no storage controller, no Neon proxy, no TLS, default credentials,
-`fsync = off` in the compute spec, and the safekeeper keeps WAL in its container filesystem.
+`fsync = off` in the compute spec, and remote storage on the same disk as the data by default.
+
+The compute spec keeps Postgres's default `shared_buffers` (128 MB) and turns on a 256 MB local
+file cache, as Loams's own spec does (`crates/loams-pg-control/src/upcall/spec.rs`). Neon's
+docker-compose uses `shared_buffers = 1MB` with no file cache, which sends every catalog read to
+the pageserver; after DDL those reads wait for WAL ingest, sometimes for seconds, and clients with
+short pool timeouts failed (#904).
 Images are pinned by digest in [`deploy/pins/loams-postgres-images.toml`](../pins/loams-postgres-images.toml)
 (NF1 Task 2). `scripts/nf1/pins.py set` writes that file and generates every consumer from it:
 this stack's and `deploy/loams-pg-bench`'s `x-neon-image` and `x-compute-image`, the release
@@ -110,7 +120,38 @@ Runbook (registry to registry; nothing is pulled into a local image store):
 With Docker, or Podman plus `DOCKER_HOST=unix:///run/user/$UID/podman/podman.sock`:
 
 ```sh
-docker compose up -d rustfs create-bucket storage_broker pageserver safekeeper1
+docker compose up -d
+# The compute takes a few seconds to accept connections.
+until pg_isready -q -h 127.0.0.1 -p 55433; do sleep 1; done
+PGPASSWORD=cloud_admin psql -h 127.0.0.1 -p 55433 -U cloud_admin postgres
+```
+
+`compute1` attaches to a tenant and a timeline that must exist on the pageserver. The one-shot
+`pg-bootstrap` service ([`bootstrap/pg-bootstrap.sh`](bootstrap/pg-bootstrap.sh), in the storage
+image, on the compose network only) makes sure they do, then exits 0, and `compute1` starts only
+after it succeeded (`service_completed_successfully`):
+
+- With `TENANT_ID` and `TIMELINE_ID` empty (the default), the first run creates a tenant
+  (`PUT /v1/tenant/<id>/location_config`, `AttachedSingle`, generation 1) and its first timeline
+  (`POST /v1/tenant/<id>/timeline/`, `pg_version` 17, which must match the compute image; set
+  `COMPUTE_PG_MAJOR` with a `COMPUTE_IMAGE` of another major) and writes their ids to `ids.env`
+  in the `pg-bootstrap` volume. `compute/start.sh` reads them from there.
+- Every later run reuses the stored ids, so `down` (without `-v`) and `up` come back to the same
+  data. An existing tenant is not attached again, and an existing timeline is not created again.
+- With both set in `.env` (or the shell), those win: `pg-bootstrap` only creates any that are
+  missing and leaves `ids.env` alone, and `compute1` uses them. Setting only one is refused.
+
+`docker compose logs pg-bootstrap` prints the ids. To read them into the shell, for the branch
+below:
+
+```sh
+eval "$(docker compose exec compute1 cat /var/lib/pg-bootstrap/ids.env | sed 's/^/export /')"
+```
+
+By hand, without `pg-bootstrap` (what it does, for a tenant of your own):
+
+```sh
+docker compose up -d storage_broker pageserver safekeeper1   # with the rustfs profile, rustfs and create-bucket too
 
 # Create a tenant and its first timeline through the pageserver API. The timeline's
 # Postgres version must match the compute image (loams-postgres-compute-v17).
@@ -123,9 +164,6 @@ curl -X POST -H 'Content-Type: application/json' \
   localhost:9898/v1/tenant/$TENANT_ID/timeline/
 
 docker compose up -d compute1
-# The compute takes a few seconds to accept connections.
-until pg_isready -q -h 127.0.0.1 -p 55433; do sleep 1; done
-PGPASSWORD=cloud_admin psql -h 127.0.0.1 -p 55433 -U cloud_admin postgres
 ```
 
 ## Branch
@@ -151,7 +189,8 @@ Add `"ancestor_start_lsn": "<lsn>"` to branch from a point in the past.
 docker compose --profile branch down
 ```
 
-To delete the data as well (destructive: removes the RustFS bucket and every tenant):
+To delete the data as well (destructive: removes the remote storage, the RustFS bucket with the
+profile, every tenant and `pg-bootstrap`'s stored ids):
 
 ```sh
 docker compose --profile branch down -v

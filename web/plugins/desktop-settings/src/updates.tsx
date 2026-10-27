@@ -44,7 +44,10 @@ export function UpdatesSection({ desktop }: { desktop: LoamsDesktopApi }) {
   useEffect(() => {
     void refresh();
   }, [refresh]);
-  // The state moves while a check or a download runs; poll only then.
+  // Main pushes every change (CF1 Task 16), so a skip or a download started from the update
+  // toast shows here too.
+  useEffect(() => desktop.update.onState((s) => setState(s)), [desktop]);
+  // The state moves while a check or a download runs; poll then too, in case a push is missed.
   const moving = state?.phase === 'checking' || state?.phase === 'downloading';
   useEffect(() => {
     if (!moving) return;

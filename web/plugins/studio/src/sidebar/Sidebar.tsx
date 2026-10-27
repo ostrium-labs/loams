@@ -64,6 +64,7 @@ import {
   AlertDialog,
   Button,
   Checkbox,
+  ConfirmDialog,
   cx,
   Dialog,
   Field,
@@ -542,26 +543,28 @@ function DeleteDialog({
   // Keyed by the thread (the parent's `key`), so each prompt starts unchecked.
   const [removeWorktree, setRemoveWorktree] = useState(false);
   return (
-    <AlertDialog
+    <ConfirmDialog
       open={thread !== null}
       onClose={onClose}
-      title={`Delete "${thread?.title ?? ''}"?`}
+      object={`"${thread?.title ?? ''}"`}
       confirm="Delete thread"
-      tone="danger"
       pending={pending}
       onConfirm={() => onDelete(removeWorktree)}
-    >
-      Its conversation is deleted for good. Archive keeps it instead.
-      {worktree && (
-        <span className="mt-3 block">
-          <Checkbox
-            label={`Also remove its worktree, ${formatWorktreePathForDisplay(worktree.worktreePath)}`}
-            checked={removeWorktree}
-            onChange={(e) => setRemoveWorktree(e.target.checked)}
-          />
-        </span>
-      )}
-    </AlertDialog>
+      impact={
+        <>
+          Its conversation is deleted for good. Archive keeps it instead.
+          {worktree && (
+            <span className="mt-3 block">
+              <Checkbox
+                label={`Also remove its worktree, ${formatWorktreePathForDisplay(worktree.worktreePath)}`}
+                checked={removeWorktree}
+                onChange={(e) => setRemoveWorktree(e.target.checked)}
+              />
+            </span>
+          )}
+        </>
+      }
+    />
   );
 }
 
@@ -770,7 +773,7 @@ export function StudioSidebar({
   const wantHints =
     keys !== undefined &&
     matchOptions !== undefined &&
-    shouldShowThreadJumpHintsForModifiers(modifiers, keys.keybindings.resolved(), matchOptions);
+    shouldShowThreadJumpHintsForModifiers(modifiers, keys.keybindings.shown(), matchOptions);
   const { showThreadJumpHints, updateThreadJumpHintsVisibility } = useThreadJumpHintVisibility();
   useEffect(
     () => updateThreadJumpHintsVisibility(wantHints),
@@ -785,7 +788,7 @@ export function StudioSidebar({
     };
     for (const [index, id] of ordered.entries()) {
       const label = shortcutLabelForCommand(
-        keys.keybindings.resolved(),
+        keys.keybindings.shown(),
         threadJumpCommandForIndex(index),
         options,
       );

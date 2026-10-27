@@ -97,10 +97,26 @@ digest = "sha256:52f7fd41ded2f1a6acab13ff7cb1832d36dfe2cbf44adea402b7a09cfa4ce80
 licence = "MIT (ee/ never enabled)"
 source = "https://github.com/langfuse/langfuse"
 
-[images.openobserve]
-image = "public.ecr.aws/zinclabs/openobserve"
-version = "v1.0.4"
-released = "2026-09-24"
-digest = "sha256:d4a878fac1f6c56003764f7f2a1625668917388f167e222c8c810de3f54c56ba"
-licence = "AGPL-3.0"
-source = "https://github.com/openobserve/openobserve"
+# SigNoz, the observability app (D1666, owner, 2026-10-22), pinned on 2026-10-22 at the
+# versions the House gate pins (D1571, plan HE1 R9.60). Only the MIT build is used:
+# `signoz/signoz-community` (built from cmd/community/, no ee/ code); the default
+# `signoz/signoz` image is the enterprise build and is never used. It serves the query
+# API and the web UI on one port (8080). Its telemetry lives in the install's Loams
+# House, not a bundled ClickHouse (deploy/factory/signoz/). Preview: SigNoz on Loams
+# House, until `signoz_on_house_smoke` passes.
+[images.signoz]
+image = "docker.io/signoz/signoz-community"
+version = "v0.145.0"
+released = "2026-10-05"
+digest = "sha256:5f9b59276590a5e0e0eb2a7f99e88c9b27f44e4575d18c555aaa07648bca9d0c"
+licence = "MIT (community build; ee/ never used)"
+source = "https://github.com/SigNoz/signoz"
+
+# The OTLP collector and, as one-shot jobs, the schema migrator: one image.
+[images.signoz-otel-collector]
+image = "docker.io/signoz/signoz-otel-collector"
+version = "v0.144.12"
+released = "2026-09-25"
+digest = "sha256:deb566a7a3c0ba544ee58ccc92ee1f0e6da827bc40383e52f3c824705e100a3d"
+licence = "AGPL-3.0-only"
+source = "https://github.com/SigNoz/signoz-otel-collector"

@@ -1,13 +1,14 @@
-//! Authentik OIDC sign-in for the desktop (design 37 section 6.5, D431):
+//! OIDC sign-in for the desktop at the instance's issuer (Zitadel, design 76;
+//! design 37 section 6.5, D431):
 //! authorization code with PKCE in the system browser, a loopback redirect,
 //! the refresh token in the OS keychain.
 //!
 //! The fork's own WorkOS login, which belonged to its private sync backend,
 //! is gone (plan DD1 Tasks 2 and 3).
 //!
-//! Not here yet (plan AP1n Task 4): the RFC 8693 exchange of the Authentik
+//! Not here yet (plan AP1n Task 4): the RFC 8693 exchange of the IdP's
 //! token for Loams tokens at the Loams gateway, which waits for the unified
-//! auth plan (Q438). Until then the Authentik access token is the bearer.
+//! auth plan (Q438). Until then the IdP's access token is the bearer.
 
 pub mod loopback;
 pub mod oidc;

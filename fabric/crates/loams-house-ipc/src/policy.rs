@@ -32,6 +32,50 @@ pub const ALLOWED_SETTINGS: &[&str] = &[
     "extremes",
 ];
 
+/// What the gate applications' ClickHouse clients send on every query (HE1 Task
+/// 9, R9.11): Langfuse v3 and v4 (`@clickhouse/client`) and OpenPanel 2.3.0, from
+/// their `system.query_log` on the oracle. Each changes how one statement is
+/// planned, executed or printed, inside the worker's own limits:
+///
+/// * `timeout_before_checking_execution_speed`: when `min_execution_speed` is
+///   checked (the House sets none).
+/// * `asterisk_include_materialized_columns`, `asterisk_include_alias_columns`:
+///   what `SELECT *` expands to.
+/// * `enable_producing_buckets_out_of_order_in_aggregation`, `join_use_nulls`,
+///   `distributed_product_mode`, `query_plan_convert_any_join_to_semi_or_anti_join`,
+///   `query_plan_optimize_lazy_materialization`: planner and join rules.
+/// * `max_bytes_before_external_group_by`: when a `GROUP BY` spills; the memory
+///   cap (`max_memory_usage`) still holds.
+/// * `max_insert_block_size`: the staging insert's block size.
+/// * `use_text_index_dictionary_cache`, `use_text_index_postings_cache`: text
+///   index caches (lake tables have no text index, so nothing is cached).
+/// * `send_progress_in_http_headers`: also a request parameter the front reads.
+/// * `use_query_cache`: only off. A read view is re-made per snapshot under the
+///   same name, so a cached result could be stale; the front refuses `1` (`164`)
+///   and the worker's profile caps it at 0.
+pub const CLIENT_SETTINGS: &[&str] = &[
+    "timeout_before_checking_execution_speed",
+    "asterisk_include_materialized_columns",
+    "asterisk_include_alias_columns",
+    "enable_producing_buckets_out_of_order_in_aggregation",
+    "join_use_nulls",
+    "distributed_product_mode",
+    "query_plan_convert_any_join_to_semi_or_anti_join",
+    "query_plan_optimize_lazy_materialization",
+    "max_bytes_before_external_group_by",
+    "max_insert_block_size",
+    "use_text_index_dictionary_cache",
+    "use_text_index_postings_cache",
+    "send_progress_in_http_headers",
+    "use_query_cache",
+    // SigNoz (HE1 R9.16): how JSON input with a path given twice is read.
+    "type_json_skip_duplicated_paths",
+];
+
+/// Settings the worker's profile leaves changeable only up to 0: on, they would
+/// be wrong on the House (see [`CLIENT_SETTINGS`]).
+pub const OFF_ONLY_SETTINGS: &[&str] = &["use_query_cache"];
+
 /// §49 §12's `max_bytes_to_read` per query, 1 TiB: the front's cap (`164` past
 /// it) and the worker profile's value and maximum (HS1 Task 21).
 pub const MAX_BYTES_TO_READ: u64 = 1024 * 1024 * 1024 * 1024;
@@ -90,6 +134,7 @@ pub const HOUSE_SETTINGS: &[&str] = &[
 /// some names these lists would allow; HS1 Task 5).
 pub fn on_the_lists(name: &str) -> bool {
     ALLOWED_SETTINGS.contains(&name)
+        || CLIENT_SETTINGS.contains(&name)
         || ALLOWED_EXPERIMENTS.contains(&name)
         || ALLOWED_PREFIXES.iter().any(|p| name.starts_with(p))
 }
@@ -102,6 +147,7 @@ mod tests {
     fn lists_are_distinct_and_house_settings_are_not_on_them() {
         let mut names: Vec<&str> = ALLOWED_SETTINGS
             .iter()
+            .chain(CLIENT_SETTINGS)
             .chain(ALLOWED_EXPERIMENTS)
             .chain(HOUSE_SETTINGS)
             .copied()
@@ -115,5 +161,8 @@ mod tests {
         }
         assert!(on_the_lists("output_format_json_quote_64bit_integers"));
         assert!(!on_the_lists("max_bytes_before_external_sort"));
+        for name in OFF_ONLY_SETTINGS {
+            assert!(CLIENT_SETTINGS.contains(name), "{name}");
+        }
     }
 }

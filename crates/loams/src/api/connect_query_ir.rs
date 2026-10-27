@@ -792,8 +792,18 @@ fn hit_group_message(group: &loams_query::HitGroup) -> pb::HitGroup {
 /// rather than a derive, so going through it is what makes a hit's `sortValues`
 /// the REST route's spelling — a `uuid` as `{"uuid": "…"}` and an integer as an
 /// integer — rather than a second rendering of the same value.
+///
+/// One exception: an integer past 2^53 is answered as `{"uint": "…"}` or
+/// `{"int": "…"}`, because a `google.protobuf.Value` number is a double and
+/// would change it, and a `search_after` must hand back the exact key it was
+/// given. Both spellings are read back by the same deserializer.
 fn sort_value(value: &SortValue) -> Value {
-    serde_json::to_value(value).unwrap_or(Value::Null)
+    const EXACT: u64 = 1 << 53;
+    match value {
+        SortValue::U64(n) if *n > EXACT => json!({"uint": n.to_string()}),
+        SortValue::I64(n) if n.unsigned_abs() > EXACT => json!({"int": n.to_string()}),
+        _ => serde_json::to_value(value).unwrap_or(Value::Null),
+    }
 }
 
 /// A `repeated float` field as the IR's JSON list of numbers.

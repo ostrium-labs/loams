@@ -23,6 +23,7 @@ class OidcProviderKind(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     OIDC_PROVIDER_KIND_AUTHENTIK: _ClassVar[OidcProviderKind]
     OIDC_PROVIDER_KIND_DEX: _ClassVar[OidcProviderKind]
     OIDC_PROVIDER_KIND_GENERIC: _ClassVar[OidcProviderKind]
+    OIDC_PROVIDER_KIND_ZITADEL: _ClassVar[OidcProviderKind]
 
 class ConsentDecision(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
@@ -37,6 +38,7 @@ OIDC_PROVIDER_KIND_GOOGLE: OidcProviderKind
 OIDC_PROVIDER_KIND_AUTHENTIK: OidcProviderKind
 OIDC_PROVIDER_KIND_DEX: OidcProviderKind
 OIDC_PROVIDER_KIND_GENERIC: OidcProviderKind
+OIDC_PROVIDER_KIND_ZITADEL: OidcProviderKind
 CONSENT_DECISION_UNSPECIFIED: ConsentDecision
 CONSENT_DECISION_ALLOW: ConsentDecision
 CONSENT_DECISION_DENY: ConsentDecision

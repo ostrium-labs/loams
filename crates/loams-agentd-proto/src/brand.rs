@@ -18,8 +18,8 @@ pub const BOT_NAME: &str = "Loams Bot";
 pub const FACTORY_NAME: &str = "Loams Software Factory";
 /// Reverse-DNS application id (Linux app id, macOS bundle id, Windows AUMID).
 pub const APP_ID: &str = "dev.loams.desktop";
-/// The public OAuth client id registered as an Authentik application
-/// (design 37 section 6.5).
+/// The public OAuth client id of the desktop application at the identity
+/// provider (Zitadel, design 76; design 37 section 6.5).
 pub const OIDC_CLIENT_ID: &str = "loams-desktop";
 /// The OS keychain service name for stored credentials.
 pub const KEYRING_SERVICE: &str = "dev.loams.desktop";

@@ -4,7 +4,7 @@ description = "The software factory's app connections in loams-agentd: the crede
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license = "MIT"
+license.workspace = true
 publish = false
 
 [dependencies]

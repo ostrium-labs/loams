@@ -29,7 +29,7 @@ The remote provider bills a Cloudflare account. It is **not** free, and it is no
 
 Read on 2026-10-03 from [Browser Run pricing](https://developers.cloudflare.com/browser-run/pricing/). Read it again before you enable the provider in production: these are Cloudflare's numbers, not ours, and they are the numbers that decide whether a runaway agent loop is a nuisance or an invoice.
 
-**Loams does not meter this.** The open-core boundary puts metering in the private platform (§41 D540–D559). What the open crate does instead is a **local guard**: a per-UTC-day ceiling on the browser time this process spends, a concurrency ceiling, and a minimum gap between new sessions. It stops a runaway loop early; it is not a meter, it does not see other processes, and Cloudflare's dashboard remains the source of truth.
+**Loams does not meter this yet.** Metering code is moving into the open repo now (D1119, design §63); until it lands, what this crate does is a **local guard**: a per-UTC-day ceiling on the browser time this process spends, a concurrency ceiling, and a minimum gap between new sessions. It stops a runaway loop early; it is not a meter, it does not see other processes, and Cloudflare's dashboard remains the source of truth.
 
 ### 1.2 Per-account limits
 

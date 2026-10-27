@@ -2,7 +2,7 @@
 
 # loams-mock
 
-A small, stateful Connect server for the app protos (`loams.instance.v1`, `devices`, `approvals`, `operations`, `notifications`), so both apps can be built and tried without a Loams server. It also serves the HTTP endpoints the apps need around the RPCs: the OAuth token endpoint (pairing grant, token exchange, refresh), the instance JWKS, and a fake Authentik for browser sign-in.
+A small, stateful Connect server for the app protos (`loams.instance.v1`, `devices`, `approvals`, `operations`, `notifications`), so both apps can be built and tried without a Loams server. It also serves the HTTP endpoints the apps need around the RPCs: the OAuth token endpoint (pairing grant, token exchange, refresh), the instance JWKS, and a fake OIDC issuer for browser sign-in (`SIGN_IN_KIND_OIDC`).
 
 **Everything here is test-only.** Tokens are fixed fake strings (`mock-access-…`), the instance key is derived from a public label, and the server binds loopback only.
 
@@ -58,7 +58,7 @@ curl -s -X POST -H 'Content-Type: application/json' -H 'Authorization: Bearer mo
 - Decision proofs are verified: ES256 over the canonical `DecisionClaims` with the decision key registered at pairing, matching id, revision and decision, `iat` within 5 minutes, `jti` single use. The requester (or the user an agent acts for) cannot approve; a rejection needs a reason; expired and already-decided approvals answer with their `ErrorInfo.reason`.
 - Watch streams send a snapshot, then changes, then heartbeats; a valid resume cursor replays what was missed, an unknown one answers with `snapshot_reset`.
 - Pushes are sealed with HPKE to the device's key; the push log never contains plaintext.
-- Browser sign-in checks PKCE S256 at the fake Authentik.
+- Browser sign-in checks PKCE S256 at the fake OIDC issuer.
 
 ## Tests and fixtures
 

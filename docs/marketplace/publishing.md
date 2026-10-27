@@ -1,5 +1,9 @@
 # Publish your project to the Loams Cloud Marketplace
 
+> **Read [the Seed Exchange](README.md) first** for what is built today (2026-10-26: experimental, first-party only).
+>
+> **Updated 2026-10-21.** The marketplace's design is now [§73](../design/73-agent-marketplace.md): open source, a signed static index, and three listing kinds first (agents in any framework with Mastra first, harnesses and MCP servers), with first-party listings only until MK1. This guide is rewritten for that in MK1; until then, where it differs, §73 wins.
+
 Status: **draft developer guide**. The marketplace is being built; the listing and install flow are not live yet, and this guide describes the process partners should plan for. Where a detail is not decided, it says so. Nothing here is an announcement of a partnership or listing.
 
 The Loams Cloud marketplace lets Loams Cloud users install third-party software, such as an OSS project or a vendor's product, into their own Loams environment. Listings install **from the same open package a self-hoster uses**, so what you publish is also what anyone can run themselves.
@@ -37,7 +41,7 @@ Every listing must meet these before it is published, and on every update.
 3. **Signed releases.** Release artifacts are signed. The project signs its own with SignPath ([issue #253](https://github.com/ostrium-labs/loams/issues/253)); partners sign with their own key or SignPath's free OSS program, and publish the verification key. Unsigned artifacts are rejected.
 4. **SBOM.** Each release ships a software bill of materials (SPDX or CycloneDX) listing all dependencies, and images are pinned by digest.
 5. **Vulnerability handling.** A security contact, and fixes for known high-severity issues within a security-fix window (TBD until the review policy is published).
-6. **No billing hooks inside packages.** A package must not contain metering, billing or license-enforcement calls to Loams Cloud's commercial systems, and must not call private platform APIs. Packages use only the open, documented Loams hooks and APIs. Any commercial arrangement is handled outside the package.
+6. **No billing hooks inside packages.** A package must not contain its own metering, billing or license-enforcement calls, and must not call undocumented APIs. Packages use only the open, documented Loams hooks and APIs (metering and billing included, as their code moves into the open repo under D1119). Any commercial arrangement is handled outside the package.
 7. **Tenant isolation.** The package runs inside the user's tenant and does not reach other tenants' data.
 8. **License clarity.** Your license and those of your dependencies are declared and compatible with redistribution.
 

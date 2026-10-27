@@ -74,3 +74,10 @@ vendor/
 # SQ1 Task 1 spike measurements and throwaway files
 /target-spike/
 /scratch/
+
+# HE0 raw dumps (query text; only scrubbed inventories are committed)
+/conformance/clickhouse/apps/.out/
+
+# Buck2 (scripts/buck/bootstrap.sh)
+/.tools/
+/buck-out

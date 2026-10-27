@@ -8,7 +8,7 @@ import type { FactoryHealth } from "./FactoryHealth";
 export type FactoryAppInfo = { 
 /**
  * `forgejo`, `zulip`, `plane`, `glitchtip`, `openpanel`, `matomo`, `langfuse` or
- * `openobserve`.
+ * `signoz`.
  */
 id: string, label: string, 
 /**
@@ -26,4 +26,9 @@ fields: { [key in string]: string } | null,
 /**
  * False when there is no keyring: secrets last until the daemon stops.
  */
-persistent: boolean, };
+persistent: boolean, 
+/**
+ * The honest status label while the app is a preview (SigNoz on Loams
+ * House, D1666); absent for an app that is not one.
+ */
+preview?: string | null, };

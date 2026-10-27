@@ -327,11 +327,19 @@ fn every_mapped_package_is_generated_by_the_crate_it_names() {
             // the Rust SDK (and `loams-apps-mock` for its server).
             "loams.admin.v1".to_owned(),
             "loams.auth.v1".to_owned(),
+            // SDKP P0a: the app data planes, which `loams-proto` has compiled
+            // since API1 and the Rust SDK now binds.
+            "loams.collection.v1".to_owned(),
+            "loams.graph.v1".to_owned(),
             "loams.instance.v1".to_owned(),
             "loams.live.v1".to_owned(),
             // GR1 Task 2: `loams-proto` compiles `operations.proto`, which
             // `loams.graph.v1` imports; the Rust map already names it.
             "loams.operations.v1".to_owned(),
+            // SDKP Part C: `sql` and `streams`, which `loams-proto` compiles
+            // since P0b and P0c.
+            "loams.sql.v1".to_owned(),
+            "loams.stream.v1".to_owned(),
         ],
         "the set of generated packages changed, so this check's coverage changed: \
          update this list and confirm each new package's map names its own crate"

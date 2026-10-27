@@ -101,6 +101,19 @@ pub const CATALOG_FUNCTIONS: &[&str] = &[
     "tuple", "tupleElement", "array", "arrayElement", "has", "hasAll", "hasAny", "indexOf",
     "arrayConcat", "arraySort", "arrayReverse", "arrayDistinct", "arrayUniq", "arraySlice",
     "arrayStringConcat", "emptyArrayString",
+    // Higher-order and more array functions, and maps (HE1 R9.12: Langfuse's
+    // `MATERIALIZED` and `DEFAULT` columns). Their lambdas are pure expressions
+    // too: [`print`] checks a lambda's body as it checks any other.
+    "arraySum", "arrayProduct", "arrayMin", "arrayMax", "arrayAvg", "arrayMap", "arrayFilter",
+    "arrayExists", "arrayAll", "arrayCount", "arrayFirst", "arrayLast", "arrayFirstIndex",
+    "arraySplit", "arrayReverseSort", "arrayEnumerate", "arrayEnumerateUniq", "arrayZip",
+    "arrayFlatten", "arrayCompact", "arrayPushBack", "arrayPushFront", "arrayPopBack",
+    "arrayPopFront", "arrayResize", "arrayIntersect", "arrayElementOrNull", "countEqual",
+    "emptyArrayUInt8", "emptyArrayUInt64", "emptyArrayInt64", "emptyArrayFloat64", "range",
+    "map", "mapKeys", "mapValues", "mapFilter", "mapApply", "mapContains", "mapFromArrays",
+    "mapUpdate", "mapConcat", "mapExists", "mapAll", "mapSort",
+    "splitByNonAlpha", "splitByWhitespace", "splitByRegexp", "positionUTF8",
+    "positionCaseInsensitiveUTF8", "multiSearchAny", "countSubstrings",
     // Generators.
     "generateUUIDv4", "generateUUIDv7", "generateSnowflakeID", "rand", "rand32", "rand64",
     "randCanonical",
@@ -121,7 +134,47 @@ pub fn is_catalog_function(name: &str) -> bool {
 /// Parses `text` as one ClickHouse expression and prints it again from its
 /// tree, or says why it is not a pure expression of [`CATALOG_FUNCTIONS`].
 pub fn reprint(text: &str) -> Result<String, String> {
-    print(&parse(text)?)
+    print(&parse(&tuple_indexes(text))?)
+}
+
+/// ClickHouse's tuple index `t.1` (`tupleElement(t, 1)`), which sqlparser 0.63
+/// reads as a name followed by the number `.1`: written out as the call before
+/// parsing (HE1 R9.12). A name is a word that does not start with a digit, right
+/// before a `.` and a number with nothing between them; string literals and
+/// quoted names are left alone.
+fn tuple_indexes(text: &str) -> String {
+    let toks = crate::request::tokens(text.as_bytes());
+    let raw = |i: usize| &text[toks[i].start..toks[i].end];
+    let mut out = String::with_capacity(text.len());
+    let mut copied = 0;
+    let mut i = 0;
+    while i < toks.len() {
+        let is_name = toks[i].word && !raw(i).starts_with(|c: char| c.is_ascii_digit());
+        let indexed = |j: usize| {
+            j + 2 < toks.len()
+                && raw(j + 1) == "."
+                && toks[j + 1].start == toks[j].end
+                && toks[j + 2].start == toks[j + 1].end
+                && toks[j + 2].word
+                && raw(j + 2).chars().all(|c| c.is_ascii_digit())
+        };
+        if is_name && indexed(i) {
+            let mut expr = raw(i).to_string();
+            let mut j = i;
+            while indexed(j) {
+                expr = format!("tupleElement({expr}, {})", raw(j + 2));
+                j += 2;
+            }
+            out.push_str(&text[copied..toks[i].start]);
+            out.push_str(&expr);
+            copied = toks[j].end;
+            i = j + 1;
+            continue;
+        }
+        i += 1;
+    }
+    out.push_str(&text[copied..]);
+    out
 }
 
 /// A sorting key's elements, each printed again from its tree, with the column
@@ -332,6 +385,29 @@ fn rounding(function: &str, expr: &Expr, field: &CeilFloorKind) -> Result<String
     }
 }
 
+/// A lambda's parameter: a plain name, no type.
+fn lambda_param(param: &sqlparser::ast::LambdaFunctionParameter) -> Result<String, String> {
+    if param.data_type.is_some() {
+        return Err(refuse("a typed lambda parameter"));
+    }
+    Ok(name(&param.name.value))
+}
+
+/// `x -> body` or `(x, y) -> body`, its body checked as any expression.
+fn print_lambda(lambda: &sqlparser::ast::LambdaFunction) -> Result<String, String> {
+    use sqlparser::ast::OneOrManyWithParens;
+    let params: Vec<String> = match &lambda.params {
+        OneOrManyWithParens::One(p) => vec![lambda_param(p)?],
+        OneOrManyWithParens::Many(ps) => ps.iter().map(lambda_param).collect::<Result<_, _>>()?,
+    };
+    let params = if params.len() == 1 {
+        params[0].clone()
+    } else {
+        format!("({})", params.join(", "))
+    };
+    Ok(format!("({params} -> {})", print(&lambda.body)?))
+}
+
 /// The text ClickHouse runs for a checked tree.
 fn print(expr: &Expr) -> Result<String, String> {
     let all = |items: &[Expr]| items.iter().map(print).collect::<Result<Vec<_>, _>>();
@@ -431,9 +507,13 @@ fn print(expr: &Expr) -> Result<String, String> {
             if !is_catalog_function(function_name) {
                 return Err(refuse(&format!("the function {function_name}")));
             }
+            // A lambda is only ever a higher-order function's argument.
             let args = plain_arguments(function)?
                 .into_iter()
-                .map(print)
+                .map(|arg| match arg {
+                    Expr::Lambda(lambda) => print_lambda(lambda),
+                    other => print(other),
+                })
                 .collect::<Result<Vec<_>, _>>()?;
             call(function_name, &args)
         }
@@ -473,6 +553,19 @@ fn print(expr: &Expr) -> Result<String, String> {
                 .ok_or_else(|| refuse("an INTERVAL without one unit"))?;
             call(function, &[print(&interval.value)?])
         }
+        Expr::CompoundFieldAccess { root, access_chain } => {
+            use sqlparser::ast::{AccessExpr, Subscript};
+            let mut out = print(root)?;
+            for access in access_chain {
+                out = match access {
+                    AccessExpr::Subscript(Subscript::Index { index }) => {
+                        call("arrayElement", &[out, print(index)?])
+                    }
+                    _ => return Err(refuse("a slice or a field access")),
+                };
+            }
+            out
+        }
         Expr::Subquery(_) | Expr::Exists { .. } | Expr::InSubquery { .. } => {
             return Err(refuse("a subquery"));
         }
@@ -493,6 +586,39 @@ mod tests {
             Ok(printed) => panic!("{text} was taken as {printed}"),
             Err(why) => why,
         }
+    }
+
+    /// HE1 R9.12: Langfuse's column expressions.
+    #[test]
+    fn lambdas_subscripts_and_tuple_indexes() {
+        assert_eq!(
+            ok(
+                "arraySum(mapValues(mapFilter(x -> positionCaseInsensitive(x.1, 'input') > 0, cost_details)))"
+            ),
+            "arraySum(mapValues(mapFilter((`x` -> greater(positionCaseInsensitive(tupleElement(`x`, 1), 'input'), 0)), `cost_details`)))"
+        );
+        assert_eq!(
+            ok("cost_details['total']"),
+            "arrayElement(`cost_details`, 'total')"
+        );
+        assert_eq!(
+            ok("arrayMap(v -> leftUTF8(v, 200), metadata_values)"),
+            "arrayMap((`v` -> leftUTF8(`v`, 200)), `metadata_values`)"
+        );
+        assert_eq!(
+            ok("arrayMap((k, v) -> k, a, b)"),
+            "arrayMap(((`k`, `v`) -> `k`), `a`, `b`)"
+        );
+        assert_eq!(ok("t.1.2"), "tupleElement(tupleElement(`t`, 1), 2)");
+        assert_eq!(ok("'x.1'"), "'x.1'");
+        assert_eq!(ok("1.5"), "1.5");
+        assert_eq!(
+            ok("arrayElement(metadata_values, indexOf(metadata_names, 'evaluator_id'))"),
+            "arrayElement(`metadata_values`, indexOf(`metadata_names`, 'evaluator_id'))"
+        );
+        // A lambda's body is held to the same rules.
+        refused("arrayMap(x -> file('/etc/passwd'), a)");
+        refused("arrayMap(x -> (SELECT 1), a)");
     }
 
     #[test]

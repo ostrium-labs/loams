@@ -470,13 +470,13 @@ func TestRevokedDeviceIsRefused(t *testing.T) {
 	}
 }
 
-func TestFakeAuthentikChecksPKCE(t *testing.T) {
+func TestFakeOidcChecksPKCE(t *testing.T) {
 	e := start(t)
 	verifier := "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
 	challenge := "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
 	noRedirect := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	q := url.Values{"client_id": {"loams-android"}, "redirect_uri": {"dev.loams.app:/oauth2redirect"}, "state": {"s1"}, "code_challenge": {challenge}, "code_challenge_method": {"S256"}, "response_type": {"code"}}
-	resp, err := noRedirect.Get(e.url + "/mock/authentik/application/o/loams/authorize/?" + q.Encode())
+	resp, err := noRedirect.Get(e.url + "/mock/oidc/authorize/?" + q.Encode())
 	if err != nil || resp.StatusCode != http.StatusFound {
 		t.Fatalf("authorize: %v %v", resp, err)
 	}
@@ -485,7 +485,7 @@ func TestFakeAuthentikChecksPKCE(t *testing.T) {
 		t.Fatalf("redirect %s", loc)
 	}
 	tok := func(v string) int {
-		r, err := http.PostForm(e.url+"/mock/authentik/application/o/loams/token/", url.Values{"grant_type": {"authorization_code"}, "code": {loc.Query().Get("code")}, "code_verifier": {v}})
+		r, err := http.PostForm(e.url+"/mock/oidc/token/", url.Values{"grant_type": {"authorization_code"}, "code": {loc.Query().Get("code")}, "code_verifier": {v}})
 		if err != nil {
 			t.Fatal(err)
 		}

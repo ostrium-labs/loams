@@ -51,10 +51,10 @@ public struct TokenEndpoint: Sendable {
         return try await post(f)
     }
 
-    public func exchange(authentikAccessToken: String, device: DeviceRegistration) async throws -> TokenResult {
+    public func exchange(idpAccessToken: String, device: DeviceRegistration) async throws -> TokenResult {
         try await post(fields(device) + [
             ("grant_type", Loams.tokenExchangeGrant),
-            ("subject_token", authentikAccessToken),
+            ("subject_token", idpAccessToken),
             ("subject_token_type", "urn:ietf:params:oauth:token-type:access_token"),
         ])
     }

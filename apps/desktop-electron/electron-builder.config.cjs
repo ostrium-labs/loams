@@ -57,6 +57,11 @@ module.exports = {
 		// for the vendored Loams Studio code in the console bundle.
 		{ from: "NOTICE", to: "NOTICE" },
 		{ from: "../../web/packages/studio-ui/LICENSE.t3code", to: "LICENSE.t3code" },
+		// dsh-desktop's MIT licence (CF1 Task 15, §10) and the splash with its loaders (D1084).
+		{ from: "LICENSE.dsh-desktop", to: "LICENSE.dsh-desktop" },
+		{ from: "build/splash.html", to: "splash/splash.html" },
+		{ from: "build/loams-loader.gif", to: "splash/loams-loader.gif" },
+		{ from: "build/loams-loader-dark.gif", to: "splash/loams-loader-dark.gif" },
 	],
 	artifactName: "loams-desktop-${version}-${os}-${arch}.${ext}",
 	linux: {

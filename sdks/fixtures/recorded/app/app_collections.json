@@ -1,0 +1,1324 @@
+{
+  "name": "app_collections",
+  "kind": "app",
+  "about": "The notes app, part one: create a namespace and a collection from the Schema builder, page the collections, upsert five notes with an idempotency key and replay it, read them back at the write's token, patch and delete, count with a typed `where`, scroll every page, and the two refusals an app meets first (`not_found`, `filter_conflict`).",
+  "transport": "connect",
+  "required": false,
+  "pinnedBy": [
+    "R3",
+    "R4",
+    "R6",
+    "R8",
+    "R11"
+  ],
+  "reason": null,
+  "source": {
+    "server": "loams dev",
+    "commit": "59a22b48",
+    "recordedAt": "2026-10-19T07:02:02.910Z"
+  },
+  "volatile": [
+    "token",
+    "readToken",
+    "consistencyToken",
+    "collectionId",
+    "namespaceId",
+    "createdAtMs",
+    "updatedAtMs",
+    "instanceId",
+    "performance",
+    "manifestVersion",
+    "version",
+    "seqNo",
+    "positions",
+    "pin"
+  ],
+  "steps": [
+    {
+      "about": "Feature detection: what this instance serves.",
+      "call": "instance.get_instance",
+      "request": {
+        "method": "POST",
+        "path": "/loams.instance.v1.InstanceService/GetInstance",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "instanceId": "01M59FF7D0VD41JBMQQ6E3FFZ2",
+          "name": "Loams",
+          "edition": "EDITION_OSS",
+          "serverVersion": "0.1.0",
+          "apiVersions": [
+            "loams.instance.v1",
+            "loams.collection.v1",
+            "loams.auth.v1",
+            "loams.admin.v1"
+          ],
+          "features": {
+            "feature.hnsw": true,
+            "feature.durable": false,
+            "feature.buildcache": false,
+            "role.house": false,
+            "feature.live": true,
+            "feature.tikv": false,
+            "feature.postgres": false,
+            "feature.graph": false,
+            "feature.durable-mysql": false,
+            "feature.registry": false,
+            "feature.sqldb": false,
+            "feature.stream-grpc": false,
+            "feature.live-tikv": false,
+            "role.live": false,
+            "feature.git": false,
+            "role.graph": false,
+            "feature.pgwire": false,
+            "feature.mysql-wire": false,
+            "feature.durable-tikv": false,
+            "feature.flight": true,
+            "feature.es": true,
+            "feature.qdrant": true
+          },
+          "signInMethods": [
+            {
+              "kind": "SIGN_IN_KIND_NONE",
+              "displayName": "No sign-in"
+            }
+          ],
+          "setupRequired": true,
+          "services": [
+            {
+              "package": "loams.instance.v1",
+              "version": "v1",
+              "available": true,
+              "services": [
+                "loams.instance.v1.InstanceService"
+              ]
+            },
+            {
+              "package": "loams.collection.v1",
+              "version": "v1",
+              "available": true,
+              "services": [
+                "loams.collection.v1.NamespaceService",
+                "loams.collection.v1.CollectionService",
+                "loams.collection.v1.DocumentService",
+                "loams.collection.v1.QueryService"
+              ]
+            },
+            {
+              "package": "loams.auth.v1",
+              "version": "v1",
+              "available": true,
+              "services": [
+                "loams.auth.v1.AuthService"
+              ]
+            },
+            {
+              "package": "loams.admin.v1",
+              "version": "v1",
+              "available": true,
+              "services": [
+                "loams.admin.v1.OrgService",
+                "loams.admin.v1.ProjectService",
+                "loams.admin.v1.AgentService",
+                "loams.admin.v1.KeyService",
+                "loams.admin.v1.AuditService"
+              ]
+            },
+            {
+              "package": "loams.live.v1",
+              "version": "v1",
+              "services": [
+                "loams.live.v1.LiveService",
+                "loams.live.v1.LiveAdminService"
+              ],
+              "unstable": true
+            },
+            {
+              "package": "loams.graph.v1",
+              "version": "v1",
+              "services": [
+                "loams.graph.v1.GraphAdminService",
+                "loams.graph.v1.GraphService"
+              ],
+              "unstable": true
+            },
+            {
+              "package": "loams.house.v1",
+              "version": "v1",
+              "services": [
+                "loams.house.v1.HouseService"
+              ],
+              "unstable": true
+            },
+            {
+              "package": "loams.repos.v1",
+              "version": "v1",
+              "services": [
+                "loams.repos.v1.RepoService",
+                "loams.repos.v1.ObjectService",
+                "loams.repos.v1.WorkspaceService"
+              ],
+              "unstable": true
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 200,
+        "apiVersions": [
+          "loams.collection.v1"
+        ]
+      }
+    },
+    {
+      "about": "Create the namespace.",
+      "call": "namespaces.create",
+      "request": {
+        "method": "POST",
+        "path": "/loams.collection.v1.NamespaceService/CreateNamespace",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\"}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "namespace": "app",
+          "namespaceId": "2"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "about": "Create it again: `already_exists`, which `retry_safe` callers treat as done.",
+      "call": "namespaces.create",
+      "request": {
+        "method": "POST",
+        "path": "/loams.collection.v1.NamespaceService/CreateNamespace",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\"}"
+      },
+      "response": {
+        "status": 409,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "code": "already_exists",
+          "message": "rejected: namespace already exists: 2",
+          "details": [
+            {
+              "type": "loams.errors.v1.ErrorInfo",
+              "value": "Cg5hbHJlYWR5X2V4aXN0cxIHCgJpZBIBMg"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 409,
+        "reason": "already_exists"
+      }
+    },
+    {
+      "about": "Create `notes` with the Schema builder's `schema_notes` output.",
+      "call": "collections.create",
+      "builder": "schema_notes",
+      "request": {
+        "method": "POST",
+        "path": "/loams.collection.v1.CollectionService/CreateCollection",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"name\":\"notes\",\"schema\":{\"fields\":[{\"name\":\"title\",\"source_path\":\"title\",\"kind\":{\"text\":{\"analyzer\":\"standard\",\"positions\":true}},\"indexed\":true,\"fast\":false},{\"name\":\"body\",\"source_path\":\"body\",\"kind\":{\"text\":{\"analyzer\":\"standard\",\"positions\":true}},\"indexed\":true,\"fast\":false},{\"name\":\"tags\",\"source_path\":\"tags\",\"kind\":\"keyword\",\"indexed\":true,\"fast\":true},{\"name\":\"n\",\"source_path\":\"n\",\"kind\":\"i64\",\"indexed\":true,\"fast\":true}],\"vectors\":[{\"name\":\"embedding\",\"dim\":4,\"distance\":\"cosine\"}],\"sparse_vectors\":[],\"dynamic\":\"ignore\",\"max_fields\":1000}}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "id": "1",
+          "name": "notes",
+          "namespace": "app",
+          "schema": {
+            "max_fields": 1000,
+            "version": 1,
+            "sparse_vectors": [],
+            "vectors": [
+              {
+                "element": "f32",
+                "hnsw": {
+                  "m": 16,
+                  "full_scan_threshold_kb": 10000,
+                  "ef_construct": 100,
+                  "payload_m": null,
+                  "on_disk": false
+                },
+                "quantization": null,
+                "name": "embedding",
+                "dim": 4,
+                "index": "auto",
+                "distance": "cosine"
+              }
+            ],
+            "annotations": {
+              "loams.created_at_ms": "1792393322015"
+            },
+            "dynamic": "ignore",
+            "fields": [
+              {
+                "source_path": "title",
+                "fast": false,
+                "indexed": true,
+                "ignore_malformed": false,
+                "kind": {
+                  "text": {
+                    "analyzer": "standard",
+                    "positions": true
+                  }
+                },
+                "name": "title"
+              },
+              {
+                "kind": {
+                  "text": {
+                    "analyzer": "standard",
+                    "positions": true
+                  }
+                },
+                "name": "body",
+                "ignore_malformed": false,
+                "indexed": true,
+                "source_path": "body",
+                "fast": false
+              },
+              {
+                "fast": true,
+                "name": "tags",
+                "indexed": true,
+                "source_path": "tags",
+                "kind": "keyword",
+                "ignore_malformed": false
+              },
+              {
+                "source_path": "n",
+                "ignore_malformed": false,
+                "kind": "i64",
+                "indexed": true,
+                "fast": true,
+                "name": "n"
+              }
+            ]
+          },
+          "partitions": 4,
+          "stream": "1",
+          "createdAtMs": "1792393322015",
+          "hot": {
+            "vectors": {
+              "state": "HOT_STATE_KIND_OFF"
+            },
+            "text": {
+              "state": "HOT_STATE_KIND_OFF"
+            },
+            "fragments": {
+              "state": "HOT_STATE_KIND_OFF"
+            }
+          },
+          "backpressure": {
+            "state": "BACKPRESSURE_STATE_OPEN",
+            "maxUnappliedRecords": "1000000",
+            "maxUnappliedBytes": "134217728"
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "about": "Read it back.",
+      "call": "collections.get",
+      "request": {
+        "method": "POST",
+        "path": "/loams.collection.v1.CollectionService/GetCollection",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"collection\":\"notes\"}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "id": "1",
+          "name": "notes",
+          "namespace": "app",
+          "schema": {
+            "version": 1,
+            "vectors": [
+              {
+                "quantization": null,
+                "hnsw": {
+                  "m": 16,
+                  "full_scan_threshold_kb": 10000,
+                  "payload_m": null,
+                  "on_disk": false,
+                  "ef_construct": 100
+                },
+                "dim": 4,
+                "name": "embedding",
+                "element": "f32",
+                "distance": "cosine",
+                "index": "auto"
+              }
+            ],
+            "max_fields": 1000,
+            "sparse_vectors": [],
+            "dynamic": "ignore",
+            "fields": [
+              {
+                "fast": false,
+                "source_path": "title",
+                "indexed": true,
+                "ignore_malformed": false,
+                "kind": {
+                  "text": {
+                    "positions": true,
+                    "analyzer": "standard"
+                  }
+                },
+                "name": "title"
+              },
+              {
+                "ignore_malformed": false,
+                "source_path": "body",
+                "kind": {
+                  "text": {
+                    "positions": true,
+                    "analyzer": "standard"
+                  }
+                },
+                "indexed": true,
+                "fast": false,
+                "name": "body"
+              },
+              {
+                "ignore_malformed": false,
+                "fast": true,
+                "name": "tags",
+                "indexed": true,
+                "kind": "keyword",
+                "source_path": "tags"
+              },
+              {
+                "name": "n",
+                "ignore_malformed": false,
+                "kind": "i64",
+                "indexed": true,
+                "fast": true,
+                "source_path": "n"
+              }
+            ],
+            "annotations": {
+              "loams.created_at_ms": "1792393322015"
+            }
+          },
+          "partitions": 4,
+          "stream": "1",
+          "createdAtMs": "1792393322015",
+          "hot": {
+            "enabled": true,
+            "config": {},
+            "owner": {
+              "nodeId": "1",
+              "local": true
+            },
+            "vectors": {
+              "state": "HOT_STATE_KIND_OFF"
+            },
+            "text": {
+              "state": "HOT_STATE_KIND_OFF"
+            },
+            "fragments": {
+              "state": "HOT_STATE_KIND_OFF"
+            }
+          },
+          "backpressure": {
+            "state": "BACKPRESSURE_STATE_OPEN",
+            "maxUnappliedRecords": "1000000",
+            "maxUnappliedBytes": "134217728"
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "about": "A second collection, so the list has two pages.",
+      "call": "collections.create",
+      "request": {
+        "method": "POST",
+        "path": "/loams.collection.v1.CollectionService/CreateCollection",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"name\":\"scratch\",\"schema\":{\"fields\":[{\"name\":\"title\",\"source_path\":\"title\",\"kind\":{\"text\":{\"analyzer\":\"standard\",\"positions\":true}},\"indexed\":true,\"fast\":false},{\"name\":\"body\",\"source_path\":\"body\",\"kind\":{\"text\":{\"analyzer\":\"standard\",\"positions\":true}},\"indexed\":true,\"fast\":false},{\"name\":\"tags\",\"source_path\":\"tags\",\"kind\":\"keyword\",\"indexed\":true,\"fast\":true},{\"name\":\"n\",\"source_path\":\"n\",\"kind\":\"i64\",\"indexed\":true,\"fast\":true}],\"vectors\":[{\"name\":\"embedding\",\"dim\":4,\"distance\":\"cosine\"}],\"sparse_vectors\":[],\"dynamic\":\"ignore\",\"max_fields\":1000}}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "id": "2",
+          "name": "scratch",
+          "namespace": "app",
+          "schema": {
+            "fields": [
+              {
+                "name": "title",
+                "fast": false,
+                "source_path": "title",
+                "kind": {
+                  "text": {
+                    "positions": true,
+                    "analyzer": "standard"
+                  }
+                },
+                "ignore_malformed": false,
+                "indexed": true
+              },
+              {
+                "ignore_malformed": false,
+                "source_path": "body",
+                "fast": false,
+                "name": "body",
+                "kind": {
+                  "text": {
+                    "analyzer": "standard",
+                    "positions": true
+                  }
+                },
+                "indexed": true
+              },
+              {
+                "ignore_malformed": false,
+                "name": "tags",
+                "kind": "keyword",
+                "indexed": true,
+                "source_path": "tags",
+                "fast": true
+              },
+              {
+                "source_path": "n",
+                "fast": true,
+                "name": "n",
+                "ignore_malformed": false,
+                "kind": "i64",
+                "indexed": true
+              }
+            ],
+            "version": 1,
+            "vectors": [
+              {
+                "name": "embedding",
+                "hnsw": {
+                  "m": 16,
+                  "full_scan_threshold_kb": 10000,
+                  "on_disk": false,
+                  "payload_m": null,
+                  "ef_construct": 100
+                },
+                "distance": "cosine",
+                "dim": 4,
+                "index": "auto",
+                "element": "f32",
+                "quantization": null
+              }
+            ],
+            "sparse_vectors": [],
+            "dynamic": "ignore",
+            "max_fields": 1000,
+            "annotations": {
+              "loams.created_at_ms": "1792393322034"
+            }
+          },
+          "partitions": 4,
+          "stream": "2",
+          "createdAtMs": "1792393322034",
+          "hot": {
+            "vectors": {
+              "state": "HOT_STATE_KIND_OFF"
+            },
+            "text": {
+              "state": "HOT_STATE_KIND_OFF"
+            },
+            "fragments": {
+              "state": "HOT_STATE_KIND_OFF"
+            }
+          },
+          "backpressure": {
+            "state": "BACKPRESSURE_STATE_OPEN",
+            "maxUnappliedRecords": "1000000",
+            "maxUnappliedBytes": "134217728"
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "about": "List one collection a page: the first page, with a `next_page_token`.",
+      "call": "collections.list",
+      "request": {
+        "method": "POST",
+        "path": "/loams.collection.v1.CollectionService/ListCollections",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"pageSize\":1}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "collections": [
+            {
+              "id": "1",
+              "name": "notes",
+              "namespace": "app",
+              "schema": {
+                "sparse_vectors": [],
+                "max_fields": 1000,
+                "annotations": {
+                  "loams.created_at_ms": "1792393322015"
+                },
+                "dynamic": "ignore",
+                "fields": [
+                  {
+                    "ignore_malformed": false,
+                    "indexed": true,
+                    "fast": false,
+                    "source_path": "title",
+                    "name": "title",
+                    "kind": {
+                      "text": {
+                        "positions": true,
+                        "analyzer": "standard"
+                      }
+                    }
+                  },
+                  {
+                    "name": "body",
+                    "indexed": true,
+                    "ignore_malformed": false,
+                    "fast": false,
+                    "kind": {
+                      "text": {
+                        "positions": true,
+                        "analyzer": "standard"
+                      }
+                    },
+                    "source_path": "body"
+                  },
+                  {
+                    "fast": true,
+                    "kind": "keyword",
+                    "ignore_malformed": false,
+                    "indexed": true,
+                    "source_path": "tags",
+                    "name": "tags"
+                  },
+                  {
+                    "source_path": "n",
+                    "kind": "i64",
+                    "indexed": true,
+                    "fast": true,
+                    "ignore_malformed": false,
+                    "name": "n"
+                  }
+                ],
+                "vectors": [
+                  {
+                    "dim": 4,
+                    "index": "auto",
+                    "distance": "cosine",
+                    "name": "embedding",
+                    "element": "f32",
+                    "hnsw": {
+                      "m": 16,
+                      "full_scan_threshold_kb": 10000,
+                      "payload_m": null,
+                      "on_disk": false,
+                      "ef_construct": 100
+                    },
+                    "quantization": null
+                  }
+                ],
+                "version": 1
+              },
+              "partitions": 4,
+              "stream": "1",
+              "createdAtMs": "1792393322015",
+              "hot": {
+                "vectors": {
+                  "state": "HOT_STATE_KIND_OFF"
+                },
+                "text": {
+                  "state": "HOT_STATE_KIND_OFF"
+                },
+                "fragments": {
+                  "state": "HOT_STATE_KIND_OFF"
+                }
+              },
+              "backpressure": {
+                "state": "BACKPRESSURE_STATE_OPEN",
+                "maxUnappliedRecords": "1000000",
+                "maxUnappliedBytes": "134217728"
+              }
+            }
+          ],
+          "nextPageToken": "1"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "about": "The second page, from the first page's token (`list_all` follows it).",
+      "call": "collections.list",
+      "request": {
+        "method": "POST",
+        "path": "/loams.collection.v1.CollectionService/ListCollections",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"pageSize\":1,\"pageToken\":\"1\"}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "collections": [
+            {
+              "id": "2",
+              "name": "scratch",
+              "namespace": "app",
+              "schema": {
+                "vectors": [
+                  {
+                    "hnsw": {
+                      "m": 16,
+                      "ef_construct": 100,
+                      "on_disk": false,
+                      "payload_m": null,
+                      "full_scan_threshold_kb": 10000
+                    },
+                    "name": "embedding",
+                    "dim": 4,
+                    "quantization": null,
+                    "distance": "cosine",
+                    "element": "f32",
+                    "index": "auto"
+                  }
+                ],
+                "fields": [
+                  {
+                    "fast": false,
+                    "kind": {
+                      "text": {
+                        "positions": true,
+                        "analyzer": "standard"
+                      }
+                    },
+                    "indexed": true,
+                    "source_path": "title",
+                    "ignore_malformed": false,
+                    "name": "title"
+                  },
+                  {
+                    "source_path": "body",
+                    "indexed": true,
+                    "fast": false,
+                    "kind": {
+                      "text": {
+                        "positions": true,
+                        "analyzer": "standard"
+                      }
+                    },
+                    "name": "body",
+                    "ignore_malformed": false
+                  },
+                  {
+                    "fast": true,
+                    "source_path": "tags",
+                    "kind": "keyword",
+                    "name": "tags",
+                    "ignore_malformed": false,
+                    "indexed": true
+                  },
+                  {
+                    "name": "n",
+                    "indexed": true,
+                    "ignore_malformed": false,
+                    "fast": true,
+                    "source_path": "n",
+                    "kind": "i64"
+                  }
+                ],
+                "sparse_vectors": [],
+                "dynamic": "ignore",
+                "version": 1,
+                "max_fields": 1000,
+                "annotations": {
+                  "loams.created_at_ms": "1792393322034"
+                }
+              },
+              "partitions": 4,
+              "stream": "2",
+              "createdAtMs": "1792393322034",
+              "hot": {
+                "vectors": {
+                  "state": "HOT_STATE_KIND_OFF"
+                },
+                "text": {
+                  "state": "HOT_STATE_KIND_OFF"
+                },
+                "fragments": {
+                  "state": "HOT_STATE_KIND_OFF"
+                }
+              },
+              "backpressure": {
+                "state": "BACKPRESSURE_STATE_OPEN",
+                "maxUnappliedRecords": "1000000",
+                "maxUnappliedBytes": "134217728"
+              }
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "about": "Upsert the five notes, keyed (R3).",
+      "call": "documents.write",
+      "request": {
+        "method": "POST",
+        "path": "/loams.collection.v1.DocumentService/WriteDocuments",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"collection\":\"notes\",\"ops\":[{\"upsert\":{\"id\":{\"uint\":\"1\"},\"source\":{\"title\":\"Refund policy\",\"body\":\"refund policy for every order\",\"tags\":\"policy\",\"n\":1},\"vectors\":{\"embedding\":[1,0,0,0]}}},{\"upsert\":{\"id\":{\"uint\":\"2\"},\"source\":{\"title\":\"Shipping times\",\"body\":\"shipping takes three days\",\"tags\":\"shipping\",\"n\":2},\"vectors\":{\"embedding\":[0.9,0.1,0,0]}}},{\"upsert\":{\"id\":{\"uint\":\"3\"},\"source\":{\"title\":\"Refund window\",\"body\":\"the refund window is thirty days\",\"tags\":\"policy\",\"n\":3},\"vectors\":{\"embedding\":[0,0,1,0]}}},{\"upsert\":{\"id\":{\"uint\":\"4\"},\"source\":{\"title\":\"Returns\",\"body\":\"returns need a receipt before a refund\",\"tags\":\"policy\",\"n\":4},\"vectors\":{\"embedding\":[0.5,0.5,0,0]}}},{\"upsert\":{\"id\":{\"uint\":\"5\"},\"source\":{\"title\":\"Gift cards\",\"body\":\"gift cards never expire\",\"tags\":\"billing\",\"n\":5},\"vectors\":{\"embedding\":[0,0,0,1]}}}],\"idempotencyKey\":\"app-upsert-1\"}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json",
+          "loams-consistency-token": "v1:s1/p0@2,s1/p1@2,s1/p3@1"
+        },
+        "body": {
+          "token": "v1:s1/p0@2,s1/p1@2,s1/p3@1",
+          "results": [
+            "OP_RESULT_ACCEPTED",
+            "OP_RESULT_ACCEPTED",
+            "OP_RESULT_ACCEPTED",
+            "OP_RESULT_ACCEPTED",
+            "OP_RESULT_ACCEPTED"
+          ],
+          "positions": [
+            {
+              "seqNo": "0"
+            },
+            {
+              "partition": 1,
+              "seqNo": "0"
+            },
+            {
+              "partition": 1,
+              "seqNo": "1"
+            },
+            {
+              "seqNo": "1"
+            },
+            {
+              "partition": 3,
+              "seqNo": "0"
+            }
+          ],
+          "unappliedRecords": "0",
+          "unappliedBytes": "0"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "about": "The same write with the same key: the first answer, not a second write.",
+      "call": "documents.write",
+      "request": {
+        "method": "POST",
+        "path": "/loams.collection.v1.DocumentService/WriteDocuments",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"collection\":\"notes\",\"ops\":[{\"upsert\":{\"id\":{\"uint\":\"1\"},\"source\":{\"title\":\"Refund policy\",\"body\":\"refund policy for every order\",\"tags\":\"policy\",\"n\":1},\"vectors\":{\"embedding\":[1,0,0,0]}}},{\"upsert\":{\"id\":{\"uint\":\"2\"},\"source\":{\"title\":\"Shipping times\",\"body\":\"shipping takes three days\",\"tags\":\"shipping\",\"n\":2},\"vectors\":{\"embedding\":[0.9,0.1,0,0]}}},{\"upsert\":{\"id\":{\"uint\":\"3\"},\"source\":{\"title\":\"Refund window\",\"body\":\"the refund window is thirty days\",\"tags\":\"policy\",\"n\":3},\"vectors\":{\"embedding\":[0,0,1,0]}}},{\"upsert\":{\"id\":{\"uint\":\"4\"},\"source\":{\"title\":\"Returns\",\"body\":\"returns need a receipt before a refund\",\"tags\":\"policy\",\"n\":4},\"vectors\":{\"embedding\":[0.5,0.5,0,0]}}},{\"upsert\":{\"id\":{\"uint\":\"5\"},\"source\":{\"title\":\"Gift cards\",\"body\":\"gift cards never expire\",\"tags\":\"billing\",\"n\":5},\"vectors\":{\"embedding\":[0,0,0,1]}}}],\"idempotencyKey\":\"app-upsert-1\"}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json",
+          "loams-consistency-token": "v1:s1/p0@2,s1/p1@2,s1/p3@1"
+        },
+        "body": {
+          "token": "v1:s1/p0@2,s1/p1@2,s1/p3@1",
+          "results": [
+            "OP_RESULT_ACCEPTED",
+            "OP_RESULT_ACCEPTED",
+            "OP_RESULT_ACCEPTED",
+            "OP_RESULT_ACCEPTED",
+            "OP_RESULT_ACCEPTED"
+          ],
+          "positions": [
+            {
+              "seqNo": "0"
+            },
+            {
+              "partition": 1,
+              "seqNo": "0"
+            },
+            {
+              "partition": 1,
+              "seqNo": "1"
+            },
+            {
+              "seqNo": "1"
+            },
+            {
+              "partition": 3,
+              "seqNo": "0"
+            }
+          ],
+          "unappliedRecords": "0",
+          "unappliedBytes": "0"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "identicalToStep": 8
+      }
+    },
+    {
+      "about": "Read the notes at the write's token: read-your-writes (R4).",
+      "call": "documents.get",
+      "request": {
+        "method": "POST",
+        "path": "/loams.collection.v1.DocumentService/GetDocuments",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"collection\":\"notes\",\"ids\":[{\"uint\":\"1\"},{\"uint\":\"2\"},{\"uint\":\"3\"},{\"uint\":\"4\"},{\"uint\":\"5\"}],\"consistency\":{\"atLeast\":\"v1:s1/p0@2,s1/p1@2,s1/p3@1\"}}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json",
+          "loams-consistency-token": "v1:s1/p0@2,s1/p1@2,s1/p2@0,s1/p3@1"
+        },
+        "body": {
+          "documents": [
+            {
+              "id": {
+                "uint": "1"
+              },
+              "source": {
+                "tags": "policy",
+                "body": "refund policy for every order",
+                "n": 1,
+                "title": "Refund policy"
+              },
+              "seqNo": "0"
+            },
+            {
+              "id": {
+                "uint": "2"
+              },
+              "source": {
+                "title": "Shipping times",
+                "n": 2,
+                "body": "shipping takes three days",
+                "tags": "shipping"
+              },
+              "seqNo": "0",
+              "partition": 1
+            },
+            {
+              "id": {
+                "uint": "3"
+              },
+              "source": {
+                "tags": "policy",
+                "title": "Refund window",
+                "n": 3,
+                "body": "the refund window is thirty days"
+              },
+              "seqNo": "1",
+              "partition": 1
+            },
+            {
+              "id": {
+                "uint": "4"
+              },
+              "source": {
+                "n": 4,
+                "tags": "policy",
+                "title": "Returns",
+                "body": "returns need a receipt before a refund"
+              },
+              "seqNo": "1"
+            },
+            {
+              "id": {
+                "uint": "5"
+              },
+              "source": {
+                "n": 5,
+                "body": "gift cards never expire",
+                "title": "Gift cards",
+                "tags": "billing"
+              },
+              "seqNo": "0",
+              "partition": 3
+            }
+          ],
+          "readToken": "v1:s1/p0@2,s1/p1@2,s1/p2@0,s1/p3@1"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "about": "Patch note 2 (`documents.patch`).",
+      "call": "documents.write",
+      "request": {
+        "method": "POST",
+        "path": "/loams.collection.v1.DocumentService/WriteDocuments",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"collection\":\"notes\",\"ops\":[{\"patch\":{\"id\":{\"uint\":\"2\"},\"source\":{\"pinned\":true}}}],\"idempotencyKey\":\"app-patch-1\"}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json",
+          "loams-consistency-token": "v1:s1/p1@3"
+        },
+        "body": {
+          "token": "v1:s1/p1@3",
+          "results": [
+            "OP_RESULT_ACCEPTED"
+          ],
+          "positions": [
+            {
+              "partition": 1,
+              "seqNo": "2"
+            }
+          ],
+          "unappliedRecords": "5",
+          "unappliedBytes": "870"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "about": "Delete note 5 (`documents.delete`).",
+      "call": "documents.write",
+      "request": {
+        "method": "POST",
+        "path": "/loams.collection.v1.DocumentService/WriteDocuments",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"collection\":\"notes\",\"ops\":[{\"delete\":{\"id\":{\"uint\":\"5\"}}}],\"idempotencyKey\":\"app-delete-1\"}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json",
+          "loams-consistency-token": "v1:s1/p3@2"
+        },
+        "body": {
+          "token": "v1:s1/p3@2",
+          "results": [
+            "OP_RESULT_ACCEPTED"
+          ],
+          "positions": [
+            {
+              "partition": 3,
+              "seqNo": "1"
+            }
+          ],
+          "unappliedRecords": "6",
+          "unappliedBytes": "972"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "about": "Count the policy notes with a typed `where` (the Filter builder's `filter_term`).",
+      "call": "documents.count",
+      "builder": "filter_term",
+      "request": {
+        "method": "POST",
+        "path": "/loams.collection.v1.DocumentService/CountDocuments",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"collection\":\"notes\",\"where\":{\"term\":{\"field\":\"tags\",\"value\":\"policy\"}},\"consistency\":{\"atLeast\":\"v1:s1/p3@2\"}}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json",
+          "loams-consistency-token": "v1:s1/p0@2,s1/p1@3,s1/p2@0,s1/p3@2"
+        },
+        "body": {
+          "count": "3",
+          "readToken": "v1:s1/p0@2,s1/p1@3,s1/p2@0,s1/p3@2"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "about": "Scroll two at a time: the first page.",
+      "call": "documents.scroll",
+      "request": {
+        "method": "POST",
+        "path": "/loams.collection.v1.DocumentService/ScrollDocuments",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"collection\":\"notes\",\"limit\":2,\"consistency\":{\"atLeast\":\"v1:s1/p3@2\"}}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json",
+          "loams-consistency-token": "v1:s1/p0@2,s1/p1@3,s1/p2@0,s1/p3@2"
+        },
+        "body": {
+          "documents": [
+            {
+              "id": {
+                "uint": "1"
+              },
+              "source": {
+                "n": 1,
+                "tags": "policy",
+                "title": "Refund policy",
+                "body": "refund policy for every order"
+              },
+              "seqNo": "0"
+            },
+            {
+              "id": {
+                "uint": "2"
+              },
+              "source": {
+                "tags": "shipping",
+                "pinned": true,
+                "title": "Shipping times",
+                "body": "shipping takes three days",
+                "n": 2
+              },
+              "seqNo": "2",
+              "partition": 1
+            }
+          ],
+          "next": {
+            "uint": "2"
+          },
+          "readToken": "v1:s1/p0@2,s1/p1@3,s1/p2@0,s1/p3@2"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "about": "The second and last page, `after` the first page's `next`: it answers no `next`, which is where `scroll_all` stops.",
+      "call": "documents.scroll",
+      "request": {
+        "method": "POST",
+        "path": "/loams.collection.v1.DocumentService/ScrollDocuments",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"collection\":\"notes\",\"limit\":2,\"consistency\":{\"atLeast\":\"v1:s1/p3@2\"},\"after\":{\"uint\":\"2\"}}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json",
+          "loams-consistency-token": "v1:s1/p0@2,s1/p1@3,s1/p2@0,s1/p3@2"
+        },
+        "body": {
+          "documents": [
+            {
+              "id": {
+                "uint": "3"
+              },
+              "source": {
+                "n": 3,
+                "body": "the refund window is thirty days",
+                "title": "Refund window",
+                "tags": "policy"
+              },
+              "seqNo": "1",
+              "partition": 1
+            },
+            {
+              "id": {
+                "uint": "4"
+              },
+              "source": {
+                "tags": "policy",
+                "n": 4,
+                "body": "returns need a receipt before a refund",
+                "title": "Returns"
+              },
+              "seqNo": "1"
+            }
+          ],
+          "readToken": "v1:s1/p0@2,s1/p1@3,s1/p2@0,s1/p3@2"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "about": "A collection that is not there: `not_found` (R8).",
+      "call": "collections.get",
+      "request": {
+        "method": "POST",
+        "path": "/loams.collection.v1.CollectionService/GetCollection",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"collection\":\"missing\"}"
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "code": "not_found",
+          "message": "collection \"missing\" not found",
+          "details": [
+            {
+              "type": "loams.errors.v1.ErrorInfo",
+              "value": "Cglub3RfZm91bmQSEgoEa2luZBIKY29sbGVjdGlvbhIPCgRuYW1lEgdtaXNzaW5n"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 404,
+        "reason": "not_found"
+      }
+    },
+    {
+      "about": "Both `filter` and `where`: `filter_conflict`, refused before anything is read.",
+      "call": "documents.count",
+      "request": {
+        "method": "POST",
+        "path": "/loams.collection.v1.DocumentService/CountDocuments",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"collection\":\"notes\",\"filter\":{\"term\":{\"field\":\"tags\",\"value\":\"policy\"}},\"where\":{\"term\":{\"field\":\"tags\",\"value\":\"policy\"}}}"
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "code": "invalid_argument",
+          "message": "set `filter` or `where`, not both",
+          "details": [
+            {
+              "type": "loams.errors.v1.ErrorInfo",
+              "value": "Cg9maWx0ZXJfY29uZmxpY3QSDgoFZmllbGQSBXdoZXJl"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 400,
+        "reason": "filter_conflict"
+      }
+    },
+    {
+      "about": "Drop `scratch`.",
+      "call": "collections.drop",
+      "request": {
+        "method": "POST",
+        "path": "/loams.collection.v1.CollectionService/DropCollection",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"collection\":\"scratch\"}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "dropped": true
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

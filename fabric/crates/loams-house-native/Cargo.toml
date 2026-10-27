@@ -1,0 +1,25 @@
+[package]
+name = "loams-house-native"
+description = "A sans-I/O codec for the ClickHouse native protocol (TCP), the minimal subset the Loams House serves: packets, varints, data blocks and their columns' framing (design §49 §8.1, D768; HE0, rulings R9.40 onward)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+# `Error`'s `Display`. Apache-2.0 OR MIT.
+thiserror.workspace = true
+# Compressed blocks (R9.48): CityHash v1.0.2's 128-bit hash for the frame
+# checksums (1.0.1 is MIT OR Apache-2.0; 1.0.0 was GPL, never use it), LZ4 block
+# compression (MIT, already in the lock through arrow), ZSTD frames from clients.
+cityhash-rs = "=1.0.1"
+lz4_flex = "0.14"
+zstd.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

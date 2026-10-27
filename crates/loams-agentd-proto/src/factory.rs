@@ -40,7 +40,7 @@ pub struct FactoryCredentialField {
 #[serde(rename_all = "camelCase")]
 pub struct FactoryAppInfo {
     /// `forgejo`, `zulip`, `plane`, `glitchtip`, `openpanel`, `matomo`, `langfuse` or
-    /// `openobserve`.
+    /// `signoz`.
     pub id: String,
     pub label: String,
     /// The configured URL (for Plane, its API's).
@@ -53,6 +53,10 @@ pub struct FactoryAppInfo {
     pub fields: Option<BTreeMap<String, String>>,
     /// False when there is no keyring: secrets last until the daemon stops.
     pub persistent: bool,
+    /// The honest status label while the app is a preview (SigNoz on Loams
+    /// House, D1666); absent for an app that is not one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preview: Option<String>,
 }
 
 /// `FactoryList`'s reply.

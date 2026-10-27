@@ -2,13 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Execute task by task, test first. Each task lists the interfaces it must produce and the tests that must exist and pass before it is done. Where this plan gives exact values (names, paths, ports, defaults), use them verbatim. The code is not pre-written in this plan (M0.3 Ruling 1).
 
-> **Status: Planned** (2026-10-02). **Track MT** (design [§43](../design/43-private-networking.md), D580–D599, recorded in the [decision log](../design/13-decision-log.md); the owner's notes of 2026-10-02, "you can use Headscale if you want, for added security and unified handling", and later that day "for now make it **BYOK Tailscale**, make it configurable so I can add [Headscale] in the future"). **The owner chose Tailscale BYOK for now**: the default provider is `tailscale`, and every task below builds the provider seam first and Headscale as the alternative; switching is a configuration change only. Optional and independent of MT4 except Task 5, which needs MT4's control-plane crates (§41) and so waits for them. Identity comes from MT1 (Authentik). Branches `net1-t<N>`, stacked; PRs target `dev` (or `main` until `dev` exists). The hosted service's tailnet configuration (the Tailscale policy workflow and node, and the Headscale alternative at `headscale.loams.dev`) is **not** in this repository: it is `loams-platform` `deploy/tailnet/`, whose shared policy, config and checkers this plan's templates mirror.
+> **Status: Planned** (2026-10-02). **Track MT** (design [§43](../design/43-private-networking.md), D580–D599, recorded in the [decision log](../design/13-decision-log.md); the owner's notes of 2026-10-02, "you can use Headscale if you want, for added security and unified handling", and later that day "for now make it **BYOK Tailscale**, make it configurable so I can add [Headscale] in the future"). **The owner chose Tailscale BYOK for now**: the default provider is `tailscale`, and every task below builds the provider seam first and Headscale as the alternative; switching is a configuration change only. Optional and independent of MT4 except Task 5, which needs MT4's control-plane crates (§41) and so waits for them. Identity comes from IA1 (Zitadel, [§76](../design/76-identity-and-authorization.md) D1600; it supersedes MT1). Branches `net1-t<N>`, stacked; PRs target `dev` (or `main` until `dev` exists). The hosted service's tailnet configuration (the Tailscale policy workflow and node, and the Headscale alternative at `headscale.loams.dev`) is **not** in this repository: it is `loams-platform` `deploy/tailnet/`, whose shared policy, config and checkers this plan's templates mirror.
 
 **Goal:**
 - **The provider seam:** `tailnet.provider = tailscale | headscale` and `tailnet.login_server` (empty for Tailscale), credentials per environment (never in Git), the same policy file and tags for both.
 - A default-deny policy kept as code, **one file for both providers**, with tests that fail the build: an offline lint, Headscale's own checker (also the portability gate), and `tailscale/gitops-acl-action` `test`/`apply` for Tailscale (skipped without its OAuth secrets).
-- A self-hosted template for either provider: a Tailscale node (compose service, k3s Deployment) and a Headscale stack (compose, k3s, config, an Authentik OIDC blueprint), pinned by version and digest.
-- A policy renderer for BYOC tenants with generated positive and negative isolation tests, and an Authentik-roster sync that proposes pull requests.
+- A self-hosted template for either provider: a Tailscale node (compose service, k3s Deployment) and a Headscale stack (compose, k3s, config, a Zitadel OIDC application), pinned by version and digest.
+- A policy renderer for BYOC tenants with generated positive and negative isolation tests, and a Zitadel roster sync that proposes pull requests.
 - `loams-net`: the `NetProvider` trait with `HeadscaleClient` and `TailscaleClient`; BYOC join automation (single-use tagged keys; the agent chart's tailnet mode with a per-tenant provider knob, so a customer can bring their own Tailscale key or a Headscale).
 - A nightly inventory diff that raises audit events.
 - Docs for reaching an instance over a tailnet from the CLI, desktop and phones, and an e2e with real `tailscaled` containers (Headscale; Tailscale needs a live account and is a manual check).
@@ -24,7 +24,7 @@
 
 **Spec:**
 - [§43](../design/43-private-networking.md) (all); §41 §5, §7, §11.2 (on the `byoc-control-plane` branch until merged); [§38](../design/38-knative-authentik-gitops.md) §4; [§37](../design/37-desktop-and-mobile-apps.md) §7.2; [§30](../design/30-loams-cli.md) §15.
-- [MT1](2026-10-02-mt1-authentik-identity.md) Task 1 (the blueprint location and the guard).
+- [IA1](2026-10-21-ia1-identity-authz.md) (the Zitadel configuration's location; it supersedes MT1 Task 1).
 
 ## Global Constraints
 
@@ -47,7 +47,7 @@ Same as the M1 overview §8, plus:
 | 2 | **Python for the renderer and sync** (as MT1's guard), **Rust only for `loams-net`** | Config rendering is text and tests; the provider is a library the control plane links | Two toolchains in one plan |
 | 3 | **Caddy fronts Headscale.** TLS, no `/api` on the public name, a tailnet-only management listener on `:8081` | Keeps the REST API off the internet without splitting the DERP/TLS listener | One more component; Headscale's own ACME is the fallback for a one-container install |
 | 4 | **The template's backup is an `age`-encrypted tar** (SQLite `.backup`, two private keys, the policy) | The Noise key is the server's identity and must be in the backup; encrypted so a bucket leak yields nothing | Key custody: the private age file is offline |
-| 5 | **Authentik blueprint lives with MT1's** (`deploy/authentik/blueprints/loams-headscale.yaml`), reusing its `groups` scope mapping | One place for IdP configuration | Depends on MT1 Task 1's file layout |
+| 5 | **The Zitadel application lives with IA1's Zitadel configuration** (`deploy/zitadel/apps/loams-headscale.yaml`), with the project roles mapped into the `groups` claim Headscale reads (verify the mapping in Task 0) | One place for IdP configuration | Depends on IA1's file layout |
 | 6 | **Tailscale is the default provider; Headscale is the alternative** (owner, 2026-10-02) | The owner's BYOK choice; the seam is paid for once and the second provider is a configuration change | Free-plan limits and its non-commercial terms (D582, Q593); mitigated by the switch |
 | 7 | **One policy file, the shared subset**, applied by the provider's tool: `gitops-acl-action` (`TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`, skip if absent) for Tailscale, the reload hook for Headscale; the Headscale check runs in CI for both | The two share HuJSON but differ in `postures`, `ipsets`, autogroups and how tests are evaluated (§43 §3.1) | A Tailscale-only feature is wanted later; then the policy forks or the lint grows an exception |
 
@@ -64,7 +64,7 @@ deploy/tailnet/
     policy/{check.sh,seed.py}
     check-config.sh
   check-env.sh                                   # provider and login server must agree
-deploy/authentik/blueprints/loams-headscale.yaml
+deploy/zitadel/apps/loams-headscale.yaml
 scripts/net/
   render_policy.py, sync_groups.py, inventory_diff.py, tests/
 crates/loams-net/            # NetProvider, HeadscaleClient, TailscaleClient, policy apply, key issue
@@ -78,7 +78,7 @@ tests/e2e/net/               # docker compose: headscale + tailscaled containers
 
 ### Task 0: Reconcile and check
 
-**Produces:** a note in "Rulings made during execution": the pins re-checked (Headscale release and digest, Caddy, Alpine, rclone, Tailscale client) and their licences; whether §41 and MT4 have merged and where `loams-control` lives; MT1 Task 1's blueprint path; the result of a **client login test on all five platforms** against a Headscale with a mock OIDC provider (`headscale mockoidc`): Linux, macOS, Windows, iOS ("Use custom coordination server") and Android ("Use an alternate server"), with the client version of each; whether `tailscale-rs` can register against Headscale (a one-hour spike, for Q584 only); **on a throwaway Tailscale account: the free-plan limits as shown in the console (users, tagged resources, ACL groups), whether custom OIDC with Authentik signs up on Free (WebFinger on `loams.dev`; Q594), the OAuth-client scopes `gitops-acl-action` needs, and that `TS_CLIENT_ID`/`TS_CLIENT_SECRET` mint a key for the node template (Q593, Q594)**; that a peer is invisible to a node whose policy has no rule between them.
+**Produces:** a note in "Rulings made during execution": the pins re-checked (Headscale release and digest, Caddy, Alpine, rclone, Tailscale client) and their licences; whether §41 and MT4 have merged and where `loams-control` lives; IA1's Zitadel configuration path; the result of a **client login test on all five platforms** against a Headscale with a mock OIDC provider (`headscale mockoidc`): Linux, macOS, Windows, iOS ("Use custom coordination server") and Android ("Use an alternate server"), with the client version of each; whether `tailscale-rs` can register against Headscale (a one-hour spike, for Q584 only); **on a throwaway Tailscale account: the free-plan limits as shown in the console (users, tagged resources, ACL groups), whether custom OIDC with Zitadel signs up on Free (WebFinger on `loams.dev`; Q594), the OAuth-client scopes `gitops-acl-action` needs, and that `TS_CLIENT_ID`/`TS_CLIENT_SECRET` mint a key for the node template (Q593, Q594)**; that a peer is invisible to a node whose policy has no rule between them.
 
 **Tests:** none (a reading and spike task). **Commit:** `docs: NET1 task 0 findings`.
 
@@ -102,25 +102,25 @@ tests/e2e/net/               # docker compose: headscale + tailscaled containers
 
 **Commit:** `net: render the BYOC tenant section of the policy with isolation tests`.
 
-### Task 3: Authentik roster sync
+### Task 3: Zitadel roster sync
 
 **Files:** `scripts/net/sync_groups.py`, `scripts/net/tests/test_sync.py`.
 
-**Produces:** reads members of `loams-net-ops` and `loams-net-users` from Authentik's API (a service-account token with read permission only), edits `group:ops` and the operator `tests` lines in the policy, and opens a pull request (never pushes to the default branch, never reloads Headscale). A member of `loams-net-ops` who is not in `loams-net-users` is reported as a configuration error.
+**Produces:** reads the holders of the Zitadel project roles `loams-net-ops` and `loams-net-users` (from IA3's `identity-sync` when it exists, D1608, and until then from Zitadel's management API through a machine user with read permission only), edits `group:ops` and the operator `tests` lines in the policy, and opens a pull request (never pushes to the default branch, never reloads Headscale). A member of `loams-net-ops` who is not in `loams-net-users` is reported as a configuration error.
 
 **Tests:** `adds_new_operator_and_a_test_line`; `removes_operator`; `no_change_no_pr`; `ops_not_in_users_is_error`; `never_writes_to_main` (the git client mock asserts a branch push only); `handles_pagination`.
 
-**Commit:** `net: propose policy changes from Authentik's operator group`.
+**Commit:** `net: propose policy changes from Zitadel's operator role`.
 
 ### Task 4: Node and server templates, and the OIDC blueprint
 
-**Files:** `deploy/tailnet/tailscale/*`, `deploy/tailnet/check-env.sh`, `deploy/tailnet/headscale/{compose/*,k8s/*,kustomization.yaml,config/config.yaml,check-config.sh}`, `deploy/authentik/blueprints/loams-headscale.yaml`, `scripts/net/tests/test_templates.py`.
+**Files:** `deploy/tailnet/tailscale/*`, `deploy/tailnet/check-env.sh`, `deploy/tailnet/headscale/{compose/*,k8s/*,kustomization.yaml,config/config.yaml,check-config.sh}`, `deploy/zitadel/apps/loams-headscale.yaml`, `scripts/net/tests/test_templates.py`.
 
 **Produces:** the **node template** (`tailscale/tailscale` pinned by digest; a compose service and a k3s Deployment in userspace networking; `TS_AUTHKEY` from the environment; the provider rule of §43 §6.5: `--login-server` only when `TAILNET_LOGIN_SERVER` is set, `--advertise-tags` only when it is not; `check-env.sh` rejects a provider and login server that disagree); the Headscale compose stack (Headscale, Caddy, backup sidecar), the k3s manifests (one pod, `Recreate`, one PVC, a `LoadBalancer` for 80/443/3478-udp, no published 8081), the config (OIDC optional, embedded DERP, `derp.urls: []`, `node.expiry: 90d`, `logtail` off, `taildrop` off, `only_start_if_oidc_is_available: false`), the blueprint (client `headscale`, groups `loams-net-users`, `loams-net-ops`, a policy binding), and `check-config.sh`. All images pinned.
 
-**Tests:** `node_template_switches_provider_by_config_only` (render the node template for `tailscale` and `headscale` from the same variables; the only differences are the three variables and the resulting `TS_EXTRA_ARGS`); `node_template_joins_headscale` (a real `tailscale/tailscale` userspace node registers with a tagged pre-auth key and a granted port is reachable while another is dropped); `check_env_rejects_mismatch`; `no_key_in_git` (`gitleaks`); `config_loads` (`headscale configtest`); `images_are_pinned_by_digest`; `kustomize_renders_and_validates` (`kubectl kustomize | kubeconform`); `compose_config_is_valid` (`docker compose config`); `caddy_blocks_private_paths` (a request for `/api/v1/node`, `/metrics`, `/debug/pprof/`, `/swagger` through the public listener returns 404; the same API path on `:8081` reaches Headscale); `blueprint_passes_guard` (MT1's `guard.py`); `blueprint_applies_cleanly` (against the MT1 compose stack); `oidc_login_with_authentik` (real `tailscale up --login-server` driven headlessly through the flow executor, a user in `loams-net-users` joins, a user outside it is refused).
+**Tests:** `node_template_switches_provider_by_config_only` (render the node template for `tailscale` and `headscale` from the same variables; the only differences are the three variables and the resulting `TS_EXTRA_ARGS`); `node_template_joins_headscale` (a real `tailscale/tailscale` userspace node registers with a tagged pre-auth key and a granted port is reachable while another is dropped); `check_env_rejects_mismatch`; `no_key_in_git` (`gitleaks`); `config_loads` (`headscale configtest`); `images_are_pinned_by_digest`; `kustomize_renders_and_validates` (`kubectl kustomize | kubeconform`); `compose_config_is_valid` (`docker compose config`); `caddy_blocks_private_paths` (a request for `/api/v1/node`, `/metrics`, `/debug/pprof/`, `/swagger` through the public listener returns 404; the same API path on `:8081` reaches Headscale); `zitadel_app_applies_cleanly` (against IA0's `conformance/identity/` stack); `oidc_login_with_zitadel` (real `tailscale up --login-server` driven headlessly through Zitadel's session API (verify), a user in `loams-net-users` joins, a user outside it is refused).
 
-**Commit:** `deploy: Headscale compose and k3s templates with the Authentik client`.
+**Commit:** `deploy: Headscale compose and k3s templates with the Zitadel client`.
 
 ### Task 5: `loams-net` and BYOC join automation
 
@@ -146,7 +146,7 @@ tests/e2e/net/               # docker compose: headscale + tailscaled containers
 
 **Files:** `docs/guides/private-networking.md`, `tests/e2e/net/*`, the plan's status line, the decision-log paste in the canonical decision log, README rows.
 
-**Produces:** the guide: choosing the provider (the setting, creating the tailnet and OAuth client, the free-plan limits and their non-commercial terms); running the template; joining each platform; MagicDNS names; the three TLS choices (D593); reaching an instance from `loams`, the desktop and the phones; the pairing `net` hint; what happens when the control server (Tailscale's or Headscale) or Authentik is down; backups and the restore drill; BYOC tailnet mode. The e2e (Headscale, Caddy, Authentik or `mockoidc`, and `tailscale/tailscale:v1.102.5` containers; Tailscale itself is not in CI because it needs a live account, so its steps are a documented manual check): (a) default deny, (b) tenant A cannot reach tenant B or an operator tag, (c) an ephemeral node is deleted after the timeout, (d) after restoring a backup into a new Headscale, existing nodes reconnect, (e) with Headscale stopped an established ping continues, (f) peers without a rule are absent from each other's network map. AP0's pairing fixtures gain a `net` case (a PR against the AP0 task, noted here).
+**Produces:** the guide: choosing the provider (the setting, creating the tailnet and OAuth client, the free-plan limits and their non-commercial terms); running the template; joining each platform; MagicDNS names; the three TLS choices (D593); reaching an instance from `loams`, the desktop and the phones; the pairing `net` hint; what happens when the control server (Tailscale's or Headscale) or Zitadel is down; backups and the restore drill; BYOC tailnet mode. The e2e (Headscale, Caddy, Zitadel or `mockoidc`, and `tailscale/tailscale:v1.102.5` containers; Tailscale itself is not in CI because it needs a live account, so its steps are a documented manual check): (a) default deny, (b) tenant A cannot reach tenant B or an operator tag, (c) an ephemeral node is deleted after the timeout, (d) after restoring a backup into a new Headscale, existing nodes reconnect, (e) with Headscale stopped an established ping continues, (f) peers without a rule are absent from each other's network map. AP0's pairing fixtures gain a `net` case (a PR against the AP0 task, noted here).
 
 **Tests:** the six e2e scenarios by those names: `e2e_default_deny`, `e2e_tenant_isolation`, `e2e_ephemeral_expiry`, `e2e_restore_reconnects`, `e2e_control_down_keeps_connections`, `e2e_peers_invisible_without_rule`; `docs_links_resolve`.
 

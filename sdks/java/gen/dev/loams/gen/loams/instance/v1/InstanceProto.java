@@ -163,26 +163,27 @@ public final class InstanceProto {
       "ceRef\022\016\n\002id\030\001 \001(\tR\002id\022\022\n\004name\030\002 \001(\tR\004nam" +
       "e*X\n\007Edition\022\027\n\023EDITION_UNSPECIFIED\020\000\022\017\n" +
       "\013EDITION_OSS\020\001\022\021\n\rEDITION_CLOUD\020\002\022\020\n\014EDI" +
-      "TION_BYOC\020\003*\237\001\n\nSignInKind\022\034\n\030SIGN_IN_KI" +
+      "TION_BYOC\020\003*\341\001\n\nSignInKind\022\034\n\030SIGN_IN_KI" +
       "ND_UNSPECIFIED\020\000\022\025\n\021SIGN_IN_KIND_NONE\020\001\022" +
-      "\032\n\026SIGN_IN_KIND_AUTHENTIK\020\002\022&\n\"SIGN_IN_K" +
-      "IND_AUTHENTIK_DEVICE_CODE\020\003\022\030\n\024SIGN_IN_K" +
-      "IND_PAIRING\020\004*\206\001\n\rPrincipalKind\022\036\n\032PRINC" +
-      "IPAL_KIND_UNSPECIFIED\020\000\022\027\n\023PRINCIPAL_KIN" +
-      "D_USER\020\001\022\"\n\036PRINCIPAL_KIND_SERVICE_ACCOU" +
-      "NT\020\002\022\030\n\024PRINCIPAL_KIND_AGENT\020\0032\252\002\n\017Insta" +
-      "nceService\022r\n\013GetInstance\022%.loams.instan" +
-      "ce.v1.GetInstanceRequest\032&.loams.instanc" +
-      "e.v1.GetInstanceResponse\"\024\220\002\001\222\265\030\r\022\013getIn" +
-      "stance\022^\n\006WhoAmI\022 .loams.instance.v1.Who" +
-      "AmIRequest\032!.loams.instance.v1.WhoAmIRes" +
-      "ponse\"\017\220\002\001\222\265\030\010\022\006whoAmI\032C\212\265\030?\n\010instance\0223" +
-      "What this instance is, and who the calle" +
-      "r is on it.B\226\001\n\037dev.loams.gen.loams.inst" +
-      "ance.v1B\rInstanceProtoP\001\242\002\003LIX\252\002\021Loams.I" +
-      "nstance.V1\312\002\021Loams\\Instance\\V1\342\002\035Loams\\I" +
-      "nstance\\V1\\GPBMetadata\352\002\023Loams::Instance" +
-      "::V1b\006proto3"
+      "\036\n\026SIGN_IN_KIND_AUTHENTIK\020\002\032\002\010\001\022*\n\"SIGN_" +
+      "IN_KIND_AUTHENTIK_DEVICE_CODE\020\003\032\002\010\001\022\030\n\024S" +
+      "IGN_IN_KIND_PAIRING\020\004\022\025\n\021SIGN_IN_KIND_OI" +
+      "DC\020\005\022!\n\035SIGN_IN_KIND_OIDC_DEVICE_CODE\020\006*" +
+      "\206\001\n\rPrincipalKind\022\036\n\032PRINCIPAL_KIND_UNSP" +
+      "ECIFIED\020\000\022\027\n\023PRINCIPAL_KIND_USER\020\001\022\"\n\036PR" +
+      "INCIPAL_KIND_SERVICE_ACCOUNT\020\002\022\030\n\024PRINCI" +
+      "PAL_KIND_AGENT\020\0032\252\002\n\017InstanceService\022r\n\013" +
+      "GetInstance\022%.loams.instance.v1.GetInsta" +
+      "nceRequest\032&.loams.instance.v1.GetInstan" +
+      "ceResponse\"\024\220\002\001\222\265\030\r\022\013getInstance\022^\n\006WhoA" +
+      "mI\022 .loams.instance.v1.WhoAmIRequest\032!.l" +
+      "oams.instance.v1.WhoAmIResponse\"\017\220\002\001\222\265\030\010" +
+      "\022\006whoAmI\032C\212\265\030?\n\010instance\0223What this inst" +
+      "ance is, and who the caller is on it.B\226\001" +
+      "\n\037dev.loams.gen.loams.instance.v1B\rInsta" +
+      "nceProtoP\001\242\002\003LIX\252\002\021Loams.Instance.V1\312\002\021L" +
+      "oams\\Instance\\V1\342\002\035Loams\\Instance\\V1\\GPB" +
+      "Metadata\352\002\023Loams::Instance::V1b\006proto3"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,

@@ -24,7 +24,7 @@ func (i instanceService) GetInstance(ctx context.Context, _ *connect.Request[ins
 		Push:           &instancev1.PushConfig{GatewayUrl: issuer + "/mock/push", AppIds: map[string]string{"android": "dev.loams.app", "ios": "dev.loams.app"}},
 		MinAppVersions: map[string]string{"android": "0.1.0", "ios": "0.1.0"},
 		IdentityProvider: &instancev1.IdentityProvider{
-			Issuer:          issuer + "/mock/authentik/application/o/loams/",
+			Issuer:          issuer + "/mock/oidc/",
 			AndroidClientId: "loams-android",
 			IosClientId:     "loams-ios",
 		},

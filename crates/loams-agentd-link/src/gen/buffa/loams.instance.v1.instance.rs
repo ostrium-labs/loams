@@ -163,12 +163,17 @@ pub enum SignInKind {
     SIGN_IN_KIND_UNSPECIFIED = 0i32,
     /// No sign-in: a loopback stack before the auth plan (D111).
     SIGN_IN_KIND_NONE = 1i32,
-    /// OIDC authorization code + PKCE at the instance's Authentik (§38).
+    /// Deprecated: use SIGN_IN_KIND_OIDC (D1619). Kept so the wire value still
+    /// decodes; no server sends it.
     SIGN_IN_KIND_AUTHENTIK = 2i32,
-    /// Authentik's device authorization flow (RFC 8628).
+    /// Deprecated: use SIGN_IN_KIND_OIDC_DEVICE_CODE (D1619).
     SIGN_IN_KIND_AUTHENTIK_DEVICE_CODE = 3i32,
     /// A QR or typed pairing code from a signed-in session (§37 §7.2).
     SIGN_IN_KIND_PAIRING = 4i32,
+    /// OIDC authorization code + PKCE at the instance's issuer (design §76).
+    SIGN_IN_KIND_OIDC = 5i32,
+    /// The issuer's device authorization flow (RFC 8628).
+    SIGN_IN_KIND_OIDC_DEVICE_CODE = 6i32,
 }
 impl SignInKind {
     ///Idiomatic alias for [`Self::SIGN_IN_KIND_UNSPECIFIED`]; `Debug` prints the variant name.
@@ -186,6 +191,12 @@ impl SignInKind {
     ///Idiomatic alias for [`Self::SIGN_IN_KIND_PAIRING`]; `Debug` prints the variant name.
     #[allow(non_upper_case_globals)]
     pub const Pairing: Self = Self::SIGN_IN_KIND_PAIRING;
+    ///Idiomatic alias for [`Self::SIGN_IN_KIND_OIDC`]; `Debug` prints the variant name.
+    #[allow(non_upper_case_globals)]
+    pub const Oidc: Self = Self::SIGN_IN_KIND_OIDC;
+    ///Idiomatic alias for [`Self::SIGN_IN_KIND_OIDC_DEVICE_CODE`]; `Debug` prints the variant name.
+    #[allow(non_upper_case_globals)]
+    pub const OidcDeviceCode: Self = Self::SIGN_IN_KIND_OIDC_DEVICE_CODE;
 }
 impl ::core::default::Default for SignInKind {
     fn default() -> Self {
@@ -288,6 +299,8 @@ impl ::buffa::Enumeration for SignInKind {
                 ::core::option::Option::Some(Self::SIGN_IN_KIND_AUTHENTIK_DEVICE_CODE)
             }
             4i32 => ::core::option::Option::Some(Self::SIGN_IN_KIND_PAIRING),
+            5i32 => ::core::option::Option::Some(Self::SIGN_IN_KIND_OIDC),
+            6i32 => ::core::option::Option::Some(Self::SIGN_IN_KIND_OIDC_DEVICE_CODE),
             _ => ::core::option::Option::None,
         }
     }
@@ -303,6 +316,8 @@ impl ::buffa::Enumeration for SignInKind {
                 "SIGN_IN_KIND_AUTHENTIK_DEVICE_CODE"
             }
             Self::SIGN_IN_KIND_PAIRING => "SIGN_IN_KIND_PAIRING",
+            Self::SIGN_IN_KIND_OIDC => "SIGN_IN_KIND_OIDC",
+            Self::SIGN_IN_KIND_OIDC_DEVICE_CODE => "SIGN_IN_KIND_OIDC_DEVICE_CODE",
         }
     }
     fn from_proto_name(name: &str) -> ::core::option::Option<Self> {
@@ -320,6 +335,10 @@ impl ::buffa::Enumeration for SignInKind {
             "SIGN_IN_KIND_PAIRING" => {
                 ::core::option::Option::Some(Self::SIGN_IN_KIND_PAIRING)
             }
+            "SIGN_IN_KIND_OIDC" => ::core::option::Option::Some(Self::SIGN_IN_KIND_OIDC),
+            "SIGN_IN_KIND_OIDC_DEVICE_CODE" => {
+                ::core::option::Option::Some(Self::SIGN_IN_KIND_OIDC_DEVICE_CODE)
+            }
             _ => ::core::option::Option::None,
         }
     }
@@ -330,6 +349,8 @@ impl ::buffa::Enumeration for SignInKind {
             Self::SIGN_IN_KIND_AUTHENTIK,
             Self::SIGN_IN_KIND_AUTHENTIK_DEVICE_CODE,
             Self::SIGN_IN_KIND_PAIRING,
+            Self::SIGN_IN_KIND_OIDC,
+            Self::SIGN_IN_KIND_OIDC_DEVICE_CODE,
         ]
     }
 }
@@ -678,7 +699,8 @@ pub struct GetInstanceResponse {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
     )]
     pub jwks_uri: ::buffa::alloc::string::String,
-    /// How people sign in. Authentik is the identity provider (§37 §6.5).
+    /// How people sign in: the instance's OIDC issuer (Zitadel, design §76), a
+    /// pairing code, or none (§37 §6.5).
     ///
     /// Field 9: `sign_in_methods`
     #[serde(
@@ -1123,7 +1145,7 @@ pub struct SignInMethod {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_default_enum_value"
     )]
     pub kind: ::buffa::EnumValue<SignInKind>,
-    /// The OIDC issuer for KIND_AUTHENTIK (Authentik's application issuer URL).
+    /// The OIDC issuer for SIGN_IN_KIND_OIDC and SIGN_IN_KIND_OIDC_DEVICE_CODE.
     ///
     /// Field 2: `issuer`
     #[serde(

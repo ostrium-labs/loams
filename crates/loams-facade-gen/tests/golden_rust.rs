@@ -39,6 +39,10 @@ const PACKAGE_PARAMETERS: &[&str] = &[
     "loams.live.v1=loams_live_proto::loams::live::v1",
     "loams.auth.v1=loams_proto::loams::auth::v1",
     "loams.admin.v1=loams_proto::loams::admin::v1",
+    "loams.collection.v1=loams_proto::loams::collection::v1",
+    "loams.graph.v1=loams_proto::loams::graph::v1",
+    "loams.sql.v1=loams_proto::loams::sql::v1",
+    "loams.stream.v1=loams_proto::loams::stream::v1",
 ];
 
 /// SDK1 Task 3's `golden_rust`.

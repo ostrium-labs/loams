@@ -200,11 +200,21 @@ mod tests {
         assert_eq!(
             promoted,
             [
+                // SDKP P0a: the app calls §2.2 and §2.5 mark `retry_safe`.
+                "loams.collection.v1.CollectionService/AddFields",
+                "loams.collection.v1.CollectionService/CreateCollection",
+                "loams.collection.v1.CollectionService/DropCollection",
+                "loams.collection.v1.CollectionService/SetHot",
+                "loams.collection.v1.CollectionService/UpdateAliases",
+                "loams.collection.v1.CollectionService/WarmCollection",
+                "loams.collection.v1.NamespaceService/CreateNamespace",
+                "loams.graph.v1.GraphService/Explain",
                 "loams.live.v1.LiveAdminService/GetApp",
                 "loams.live.v1.LiveAdminService/GetDeployment",
                 "loams.live.v1.LiveAdminService/GetIndexStatus",
                 "loams.live.v1.LiveAdminService/ListApps",
                 "loams.live.v1.LiveAdminService/ListDeployments",
+                "loams.stream.v1.StreamService/CreateStream",
             ],
             "a proto changed which calls set retry_safe: a behaviour change"
         );
@@ -246,6 +256,13 @@ mod tests {
             keyed,
             vec![
                 "loams.admin.v1.KeyService/CreateKey",
+                // SDKP P0a: the app mutations that take a key.
+                "loams.collection.v1.DocumentService/WriteDocuments",
+                "loams.graph.v1.GraphAdminService/CreateGraph",
+                "loams.graph.v1.GraphAdminService/DeleteGraph",
+                "loams.graph.v1.GraphService/Execute",
+                "loams.graph.v1.GraphService/ExecuteBatch",
+                "loams.graph.v1.GraphAdminService/UpdateGraph",
                 "loams.live.v1.LiveService/Mutate",
             ]
         );
@@ -293,18 +310,25 @@ mod tests {
                 "loams.admin.v1.ProjectService/ListAccess",
                 "loams.admin.v1.ProjectService/ListEnvironments",
                 "loams.admin.v1.ProjectService/ListProjects",
+                "loams.collection.v1.CollectionService/ListCollections",
+                "loams.collection.v1.CollectionService/ListVersions",
+                "loams.collection.v1.NamespaceService/ListNamespaces",
+                "loams.graph.v1.GraphAdminService/ListGraphs",
                 "loams.live.v1.LiveAdminService/ListApps",
                 "loams.live.v1.LiveAdminService/ListDeployments",
+                "loams.stream.v1.StreamService/ListStreams",
             ]
         );
     }
 
-    /// Only the watches (`Watch`, `WatchAuditEvents`) and `TailLogs` stream
-    /// server messages.
+    /// Only the watches (`Watch`, `WatchAuditEvents`), `TailLogs` and Graph's
+    /// `ExecuteStream` (SDKP P0a) stream server messages.
     #[test]
     fn only_watch_and_tail_logs_are_server_streams() {
         for binding in every_binding() {
-            let expected = if ["Watch", "WatchAuditEvents", "TailLogs"].contains(&binding.method) {
+            let expected = if ["Watch", "WatchAuditEvents", "TailLogs", "ExecuteStream"]
+                .contains(&binding.method)
+            {
                 facade::Streaming::Server
             } else {
                 facade::Streaming::Unary
@@ -366,11 +390,81 @@ mod tests {
             AUTH_SERVICE_DECIDE_CONSENT_SPEC, AUTH_SERVICE_DELETE_SESSION_SPEC,
             AUTH_SERVICE_GET_SESSION_SPEC, AUTH_SERVICE_LIST_PROVIDERS_SPEC,
         };
+        use loams_proto::loams::collection::v1::{
+            COLLECTION_SERVICE_ADD_FIELDS_SPEC, COLLECTION_SERVICE_CREATE_COLLECTION_SPEC,
+            COLLECTION_SERVICE_DROP_COLLECTION_SPEC, COLLECTION_SERVICE_GET_COLLECTION_SPEC,
+            COLLECTION_SERVICE_LIST_COLLECTIONS_SPEC, COLLECTION_SERVICE_LIST_VERSIONS_SPEC,
+            COLLECTION_SERVICE_SCAN_SPEC, COLLECTION_SERVICE_SET_HOT_SPEC,
+            COLLECTION_SERVICE_UPDATE_ALIASES_SPEC, COLLECTION_SERVICE_WARM_COLLECTION_SPEC,
+            DOCUMENT_SERVICE_COUNT_DOCUMENTS_SPEC, DOCUMENT_SERVICE_DELETE_BY_FILTER_SPEC,
+            DOCUMENT_SERVICE_GET_DOCUMENTS_SPEC, DOCUMENT_SERVICE_PATCH_BY_FILTER_SPEC,
+            DOCUMENT_SERVICE_SCROLL_DOCUMENTS_SPEC, DOCUMENT_SERVICE_WRITE_DOCUMENTS_SPEC,
+            NAMESPACE_SERVICE_CREATE_NAMESPACE_SPEC, NAMESPACE_SERVICE_LIST_NAMESPACES_SPEC,
+            QUERY_SERVICE_SEARCH_SPEC,
+        };
+        use loams_proto::loams::graph::v1::{
+            GRAPH_ADMIN_SERVICE_CREATE_GRAPH_SPEC, GRAPH_ADMIN_SERVICE_DELETE_GRAPH_SPEC,
+            GRAPH_ADMIN_SERVICE_GET_GRAPH_SPEC, GRAPH_ADMIN_SERVICE_GET_SCHEMA_SPEC,
+            GRAPH_ADMIN_SERVICE_LIST_GRAPHS_SPEC, GRAPH_ADMIN_SERVICE_UPDATE_GRAPH_SPEC,
+            GRAPH_SERVICE_EXECUTE_BATCH_SPEC, GRAPH_SERVICE_EXECUTE_SPEC,
+            GRAPH_SERVICE_EXECUTE_STREAM_SPEC, GRAPH_SERVICE_EXPLAIN_SPEC,
+        };
         use loams_proto::loams::instance::v1::{
             INSTANCE_SERVICE_GET_INSTANCE_SPEC, INSTANCE_SERVICE_WHO_AM_I_SPEC,
         };
+        use loams_proto::loams::sql::v1::{SQL_SERVICE_QUERY_ARROW_SPEC, SQL_SERVICE_QUERY_SPEC};
+        use loams_proto::loams::stream::v1::{
+            STREAM_SERVICE_CREATE_STREAM_SPEC, STREAM_SERVICE_DESCRIBE_STREAM_SPEC,
+            STREAM_SERVICE_FETCH_CLOUD_EVENTS_SPEC, STREAM_SERVICE_FETCH_SPEC,
+            STREAM_SERVICE_LIST_STREAMS_SPEC, STREAM_SERVICE_PRODUCE_CLOUD_EVENTS_SPEC,
+            STREAM_SERVICE_PRODUCE_SPEC,
+        };
 
         let generated = [
+            // SDKP P0a: the app data planes. `QueryService/Search` backs two
+            // facade calls (`search.query` and `vector.search`), so it is
+            // listed twice, once per row.
+            NAMESPACE_SERVICE_CREATE_NAMESPACE_SPEC,
+            NAMESPACE_SERVICE_LIST_NAMESPACES_SPEC,
+            COLLECTION_SERVICE_CREATE_COLLECTION_SPEC,
+            COLLECTION_SERVICE_LIST_COLLECTIONS_SPEC,
+            COLLECTION_SERVICE_GET_COLLECTION_SPEC,
+            COLLECTION_SERVICE_DROP_COLLECTION_SPEC,
+            COLLECTION_SERVICE_ADD_FIELDS_SPEC,
+            COLLECTION_SERVICE_LIST_VERSIONS_SPEC,
+            COLLECTION_SERVICE_SCAN_SPEC,
+            COLLECTION_SERVICE_UPDATE_ALIASES_SPEC,
+            COLLECTION_SERVICE_SET_HOT_SPEC,
+            COLLECTION_SERVICE_WARM_COLLECTION_SPEC,
+            DOCUMENT_SERVICE_WRITE_DOCUMENTS_SPEC,
+            DOCUMENT_SERVICE_GET_DOCUMENTS_SPEC,
+            DOCUMENT_SERVICE_SCROLL_DOCUMENTS_SPEC,
+            DOCUMENT_SERVICE_COUNT_DOCUMENTS_SPEC,
+            DOCUMENT_SERVICE_DELETE_BY_FILTER_SPEC,
+            DOCUMENT_SERVICE_PATCH_BY_FILTER_SPEC,
+            QUERY_SERVICE_SEARCH_SPEC,
+            QUERY_SERVICE_SEARCH_SPEC,
+            GRAPH_ADMIN_SERVICE_CREATE_GRAPH_SPEC,
+            GRAPH_ADMIN_SERVICE_GET_GRAPH_SPEC,
+            GRAPH_ADMIN_SERVICE_LIST_GRAPHS_SPEC,
+            GRAPH_ADMIN_SERVICE_UPDATE_GRAPH_SPEC,
+            GRAPH_ADMIN_SERVICE_DELETE_GRAPH_SPEC,
+            GRAPH_ADMIN_SERVICE_GET_SCHEMA_SPEC,
+            GRAPH_SERVICE_EXECUTE_SPEC,
+            GRAPH_SERVICE_EXECUTE_BATCH_SPEC,
+            GRAPH_SERVICE_EXECUTE_STREAM_SPEC,
+            GRAPH_SERVICE_EXPLAIN_SPEC,
+            // SDKP Part C: `sql`.
+            SQL_SERVICE_QUERY_SPEC,
+            SQL_SERVICE_QUERY_ARROW_SPEC,
+            // SDKP Part C: `streams`.
+            STREAM_SERVICE_CREATE_STREAM_SPEC,
+            STREAM_SERVICE_DESCRIBE_STREAM_SPEC,
+            STREAM_SERVICE_LIST_STREAMS_SPEC,
+            STREAM_SERVICE_PRODUCE_SPEC,
+            STREAM_SERVICE_FETCH_SPEC,
+            STREAM_SERVICE_PRODUCE_CLOUD_EVENTS_SPEC,
+            STREAM_SERVICE_FETCH_CLOUD_EVENTS_SPEC,
             // The console API (API2 Tasks 6 and 7).
             AUTH_SERVICE_LIST_PROVIDERS_SPEC,
             AUTH_SERVICE_COMPLETE_SETUP_SPEC,

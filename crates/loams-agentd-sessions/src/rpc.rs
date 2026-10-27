@@ -80,7 +80,9 @@ use crate::terminals::Terminals;
 use crate::uploads::Uploads;
 use crate::workspace_host::WorkspaceHost;
 
+mod factory_loop_rpc;
 mod groups_rpc;
+mod marketplace_rpc;
 
 const FILE_SEARCH_RPC_TIMEOUT: Duration = Duration::from_secs(6);
 const FILE_SEARCH_FEATURED_PATHS: usize = 32;
@@ -170,6 +172,8 @@ pub struct EngineRpc {
     usage: Option<crate::usage::ThreadUsageLog>,
     /// Supervised approvals (SD1 Task 13, G17, G18, G22).
     approvals: Option<crate::approvals::Approvals>,
+    /// The daemon's marketplace (MK1 Task 4b; `rpc/marketplace_rpc.rs`).
+    marketplace: crate::marketplace::MarketplaceSlot,
     engine_info: EngineInfo,
     /// Opens pull requests (G4) with the daemon's forge credentials.
     change_request_creator: ChangeRequestCreator,
@@ -258,6 +262,7 @@ impl EngineRpc {
             notifications: None,
             usage: None,
             approvals: None,
+            marketplace: Default::default(),
             engine_info,
             change_request_creator: ChangeRequestCreator::from_keyring(),
             git_writes: std::sync::Arc::new(tokio::sync::Mutex::new(())),
@@ -288,6 +293,11 @@ impl EngineRpc {
 
     pub fn with_approvals(mut self, approvals: crate::approvals::Approvals) -> Self {
         self.approvals = Some(approvals);
+        self
+    }
+
+    pub fn with_marketplace(mut self, marketplace: crate::marketplace::MarketplaceSlot) -> Self {
+        self.marketplace = marketplace;
         self
     }
 
@@ -1575,6 +1585,7 @@ impl RpcService for EngineRpc {
                 let changed = self
                     .doc_host
                     .update_queued_message(&p.chat_id, &p.id, &p.text)
+                    .await
                     .map_err(|e| RpcError::Failed(e.to_string()))?;
                 reply::<calls::UpdateQueuedMessage, _>(&ChangedReply { changed })
             }
@@ -1623,6 +1634,7 @@ impl RpcService for EngineRpc {
                 let changed = self
                     .doc_host
                     .move_queued_message(&p.chat_id, &p.id, p.to_index)
+                    .await
                     .map_err(|e| RpcError::Failed(e.to_string()))?;
                 reply::<calls::MoveQueuedMessage, _>(&ChangedReply { changed })
             }
@@ -2236,6 +2248,72 @@ impl RpcService for EngineRpc {
                 })
                 .await
             }
+            // FT1 FT0 Task 4 (§72 §5.2): the factory loop's tools, role `mcp`,
+            // in `rpc/factory_loop_rpc.rs`.
+            methods::CREATE_RUN_WORKTREE => {
+                Box::pin(async move {
+                    let p = params_of::<calls::CreateRunWorktree>(params)?;
+                    let worktree = self.create_run_worktree(p).await?;
+                    reply::<calls::CreateRunWorktree, _>(&worktree)
+                })
+                .await
+            }
+            methods::GET_THREAD_DIFF => {
+                Box::pin(async move {
+                    let p = params_of::<calls::GetThreadDiff>(params)?;
+                    let diff = self.thread_diff(p).await?;
+                    reply::<calls::GetThreadDiff, _>(&diff)
+                })
+                .await
+            }
+            methods::POST_REVIEW_COMMENT => {
+                Box::pin(async move {
+                    let p = params_of::<calls::PostReviewComment>(params)?;
+                    let id = self.post_review_comment(p).await?;
+                    reply::<calls::PostReviewComment, _>(&IdReply { id })
+                })
+                .await
+            }
+            methods::OPEN_CHANGE_REQUEST => {
+                Box::pin(async move {
+                    let p = params_of::<calls::OpenChangeRequest>(params)?;
+                    let opened = self.open_change_request(p).await?;
+                    reply::<calls::OpenChangeRequest, _>(&opened)
+                })
+                .await
+            }
+            methods::REQUEST_APPROVAL => {
+                let p = params_of::<calls::RequestApproval>(params)?;
+                reply::<calls::RequestApproval, _>(&self.request_typed_approval(p)?)
+            }
+            methods::GET_APPROVAL => {
+                let p = params_of::<calls::GetApproval>(params)?;
+                reply::<calls::GetApproval, _>(&self.get_typed_approval(p)?)
+            }
+            methods::GET_CHECKS => {
+                Box::pin(async move {
+                    let p = params_of::<calls::GetChecks>(params)?;
+                    let checks = self.get_checks(p).await?;
+                    reply::<calls::GetChecks, _>(&checks)
+                })
+                .await
+            }
+            methods::GET_CHECK_LOG => {
+                Box::pin(async move {
+                    let p = params_of::<calls::GetCheckLog>(params)?;
+                    let log = self.get_check_log(p).await?;
+                    reply::<calls::GetCheckLog, _>(&log)
+                })
+                .await
+            }
+            methods::MERGE_CHANGE_REQUEST => {
+                Box::pin(async move {
+                    let p = params_of::<calls::MergeChangeRequest>(params)?;
+                    let merged = self.merge_change_request(p).await?;
+                    reply::<calls::MergeChangeRequest, _>(&merged)
+                })
+                .await
+            }
             // SD1 Task 12 (§53 §6.5 G12–G16): run groups, in `rpc/groups_rpc.rs`.
             methods::CREATE_RUN_GROUP => {
                 Box::pin(async move {
@@ -2275,6 +2353,18 @@ impl RpcService for EngineRpc {
                 })
                 .await
             }
+            // MK1 Task 4b: `MarketplaceService`, in `rpc/marketplace_rpc.rs`.
+            methods::LIST_MARKETPLACE_SOURCES
+            | methods::ADD_MARKETPLACE_SOURCE
+            | methods::REMOVE_MARKETPLACE_SOURCE
+            | methods::SEARCH_LISTINGS
+            | methods::GET_LISTING
+            | methods::PLAN_INSTALL
+            | methods::INSTALL_LISTING
+            | methods::UNINSTALL_LISTING
+            | methods::LIST_INSTALLED_LISTINGS
+            | methods::CHECK_LISTING_UPDATES
+            | methods::UPDATE_LISTING => Box::pin(self.handle_marketplace(method, params)).await,
             methods::GET_CHECKOUT_FILE_DIFF_TEXT => {
                 // This branch contains several large nested async futures. Keep it
                 // behind an allocation so every unrelated RPC does not carry that

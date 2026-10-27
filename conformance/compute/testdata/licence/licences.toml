@@ -1,0 +1,9 @@
+[GOOD_PIN]
+value = "1.0.0"
+licence = "MIT"
+source = "https://example.invalid/LICENSE"
+
+[BUSL_PIN]
+value = "docker.io/example/server:1.0@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+licence = "BUSL-1.1"
+source = "https://example.invalid/LICENSE"

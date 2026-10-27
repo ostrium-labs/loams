@@ -509,6 +509,33 @@ PROBES += [
 ]
 
 
+def cat_columns_view(a):
+    """`_cat/indices?format=json` of one fresh index: the column names and
+    `docs.count`; values that cannot match (uuid, sizes, health on a
+    one-node ES with replicas) are masked."""
+    rows = a.body if isinstance(a.body, list) else []
+    return {
+        "status": a.status,
+        "rows": len(rows),
+        "columns": list(rows[0]) if rows else None,
+        "docs.count": rows[0].get("docs.count") if rows else None,
+        "types": sorted({type(v).__name__ for r in rows for v in r.values()}),
+    }
+
+
+PROBES += [
+    # --- MA1 Task 24 ---
+    Probe(
+        "cat_indices_json_columns",
+        "MA1 Task 24 _cat/indices JSON columns and docs.count",
+        ("GET", "/_cat/indices/o_1?format=json"),
+        [mk("o_1"), doc("o_1", "1", {"a": 1}), doc("o_1", "2", {"a": 2})],
+        view=cat_columns_view,
+        indices=("o_1",),
+    ),
+]
+
+
 def main(argv):
     loams, oracle = argv[1], argv[2]
     only = set(argv[3:])

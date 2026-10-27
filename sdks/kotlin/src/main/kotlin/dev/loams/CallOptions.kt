@@ -34,6 +34,12 @@ data class CallOptions(
      * thread, which surfaces as a `LoamsException` with [Code.CANCELLED].
      */
     val cancelled: Boolean = false,
+    /** This call's namespace (R11), over the client's default; a request's own `namespace` wins. */
+    val namespace: String? = null,
+    /** This call's deadline (R12); null takes the client's, [java.time.Duration.ZERO] means none. */
+    val timeout: java.time.Duration? = null,
+    /** Reads at this consistency token (the `loams-consistency-token` header). */
+    val consistencyToken: String? = null,
 ) {
     companion object {
         /** An empty set of overrides, which is what a caller who asked for nothing gets. */
@@ -165,6 +171,11 @@ object RetryLoop {
                     throw gaveUp(mapped)
                 }
 
+                // R12: a spent client budget is never retried; there is no time left.
+                if (Deadline.isClientDeadline(mapped)) {
+                    throw mapped
+                }
+
                 if (!RetryPolicy.shouldRetry(
                         attemptNumber, plan.maxRetries, plan.retrySafe, mapped.code, cancelled
                     )
@@ -248,6 +259,8 @@ data class TransportRequest(
     val contentType: String,
     val headers: Map<String, String>,
     val body: ByteArray,
+    /** What is left of the call's budget (R12), or null for the transport's own timeout. */
+    val timeout: java.time.Duration? = null,
 ) {
     override fun equals(other: Any?): Boolean = this === other || (
         other is TransportRequest && rpc == other.rpc && method == other.method && path == other.path &&
@@ -327,17 +340,42 @@ interface Transport {
  * against a real token.
  */
 class ConsistencySession {
+    private var current: ConsistencyToken? = null
+    private var unmergeable = 0
+
     /** The header a returned token is carried in. */
     val header: String get() = "loams-consistency-token"
 
-    /** The token to attach to a later read, or null when there is none. */
-    fun token(): String? = null
+    /** The merged token to attach to a later read, or null when there is none. */
+    @Synchronized
+    fun token(): String? = current?.toString()
+
+    /** How many tokens were not `v1:` tokens and were not merged. */
+    @Synchronized
+    fun conflicts(): Int = unmergeable
 
     /**
-     * Folds a returned token in, or returns null when there was nothing to merge.
-     *
-     * Never throws: no RPC returns one yet, and a store that refused a token no RPC
-     * could send would be a failure the SDK could raise on its own.
+     * Folds a returned token in (R4 as amended by SDKP §2.1: the max offset per stream and
+     * partition) and answers the merged token, or null when there was nothing to merge. A token
+     * that is not a `v1:` token is counted in [conflicts] and skipped. Never throws: the RPC that
+     * carried it already succeeded.
      */
-    fun merge(token: String?): String? = null
+    @Synchronized
+    fun merge(token: String?): String? {
+        if (token.isNullOrEmpty()) return null
+        val parsed = ConsistencyToken.tryParse(token)
+        if (parsed == null) {
+            unmergeable++
+            return null
+        }
+        current = current?.merge(parsed) ?: parsed
+        return current.toString()
+    }
+
+    /** Forgets every token. */
+    @Synchronized
+    fun clear() {
+        current = null
+        unmergeable = 0
+    }
 }

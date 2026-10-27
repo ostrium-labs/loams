@@ -192,8 +192,8 @@ final class AppModel {
         }
     }
 
-    /// Browser sign-in at Authentik with PKCE in ASWebAuthenticationSession, then the RFC 8693
-    /// exchange at the gateway (path 2). Against the mock, its fake Authentik redirects back.
+    /// Browser sign-in at the identity provider with PKCE in ASWebAuthenticationSession, then the RFC 8693
+    /// exchange at the gateway (path 2). Against the mock, its fake OIDC issuer redirects back.
     func signInWithBrowser() async {
         busy = true
         defer { busy = false }
@@ -212,7 +212,7 @@ final class AppModel {
             let token = try await webAuth.signIn(idpIssuer: info.identityProvider.issuer, clientID: info.identityProvider.iosClientID.isEmpty ? Loams.clientID : info.identityProvider.iosClientID)
             let jwk = try keys.publicJWK(instanceID: info.instanceID).json()
             let result = try await TokenEndpoint(issuer: serverURL).exchange(
-                authentikAccessToken: token, device: DeviceRegistration(deviceName: deviceName, decisionJWK: jwk, model: "iPhone", appVersion: appVersion))
+                idpAccessToken: token, device: DeviceRegistration(deviceName: deviceName, decisionJWK: jwk, model: "iPhone", appVersion: appVersion))
             let issuer = serverURL
             try finish(result, record: { SessionRecord(issuer: issuer, instanceID: info.instanceID, jkt: jkt, spki: nil, deviceID: $0, method: "browser") })
         } catch {

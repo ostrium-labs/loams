@@ -5,7 +5,7 @@
 The Cordis-based **plugin host, console, agent bus, A2A endpoint and auth layer
 for [Loams](https://github.com/ostrium-labs/loams)**.
 
-Loams is a Rust AI-native data platform, Apache-2.0 and open-core. This
+Loams is a Rust AI-native data platform, fully open source under Apache-2.0. This
 `plugins/` workspace is its imported TypeScript layer (the original
 `loams-plugins` checkout is preserved):
 the thing that loads plugins as Cordis fibers, lists and toggles them in a web
@@ -14,9 +14,8 @@ plugin's HTTP surface, publishes every loaded plugin's agent skills over A2A,
 and decides who is allowed to do any of it.
 
 **Nothing in this repository is Rust.** There is no Rust engine, no data
-warehouse, and no vendored Rust source. Loams' metering, billing and other
-commercial APIs are proprietary to that project and are neither used nor
-reachable from here; the only Loams surface this repository touches is the
+warehouse, and no vendored Rust source. Loams' metering and billing are
+neither used nor reachable from here; the only Loams surface this repository touches is the
 adapter that calls a Loams deployment's public HTTP API, exactly as it calls
 Zulip or Matomo.
 
@@ -265,7 +264,8 @@ Authentication is optional in development. With no `OIDC_ISSUER` and
 request is an anonymous principal, no session can be created, and the console's
 enable/disable endpoints refuse, so a dev-mode server cannot reconfigure itself.
 
-Authentik is the expected identity provider. The full walkthrough, including the
+Any OpenID Connect provider works; Loams' own, Zitadel at `auth.loams.dev`, is
+planned (IA1). The full walkthrough, including the
 several things that fail silently if you get them wrong, is in
 [docs/auth-setup.md](docs/auth-setup.md). The security model is in
 [docs/security.md](docs/security.md).
@@ -283,7 +283,7 @@ Guides live in [`docs/`](docs/README.md):
 
 - [Getting started](docs/getting-started.md)
 - [Writing a plugin](docs/plugin-authoring.md)
-- [Auth setup (Authentik OIDC)](docs/auth-setup.md)
+- [Auth setup (OIDC)](docs/auth-setup.md)
 - [Security model](docs/security.md)
 - [A2A endpoint](docs/a2a.md)
 - [Upstream adapters](docs/upstreams.md)

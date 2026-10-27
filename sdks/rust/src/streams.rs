@@ -400,7 +400,9 @@ mod tests {
         // `AuditService.WatchAuditEvents` (API2 Task 7), server streams too.
         for module in facade::MODULES {
             for call in module.calls {
-                if !["Watch", "TailLogs", "WatchAuditEvents"].contains(&call.method) {
+                if !["Watch", "TailLogs", "WatchAuditEvents", "ExecuteStream"]
+                    .contains(&call.method)
+                {
                     assert_eq!(call.streaming, facade::Streaming::Unary, "{}", call.rpc);
                 }
             }

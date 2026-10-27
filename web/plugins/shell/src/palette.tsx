@@ -1,6 +1,6 @@
 // The console's command palette (design §53 §4.5, §5.10; SD1 Task 24, ruling T3-6):
-// Mod+K in both modes, on @loams/ui's CommandPalette, ranked as T3 Code ranks
-// (@loams/ui `rankCommands`).
+// Mod+K (and Mod+Shift+P) in both modes, through the shell's keymap (keys.ts), on
+// @loams/ui's CommandPalette, ranked as T3 Code ranks (@loams/ui `rankCommands`).
 //
 // Plugins contribute through the `shell.palette.source` slot (design 59, W9; its older
 // name `palette.command` stays an alias): an entry renders nothing and,
@@ -20,6 +20,7 @@ import type { Mode } from '@loams/console-host';
 import { type PaletteCommand, SlotBoundary, type SlotEntry, useSlot } from '@loams/slots';
 import { type CommandItem, CommandPalette, rankCommands, useToast } from '@loams/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { isMacPlatform, matchShellKey } from './keys.js';
 import { MODE_LABEL } from './mode-switcher.js';
 
 /** A command with the mode it belongs to. */
@@ -134,13 +135,18 @@ function Source({
   );
 }
 
-/** True when the key press is Mod+K (Ctrl on Linux and Windows, Cmd on macOS). */
+/**
+ * True when the key press opens the palette (D1081: Mod+K or Mod+Shift+P; Ctrl on Linux
+ * and Windows, ⌘ on macOS). The shell's keymap (`useShellKeys`) is the one listener.
+ */
 export function isPaletteShortcut(e: KeyboardEvent): boolean {
   return (
-    (e.ctrlKey || e.metaKey) &&
-    !e.shiftKey &&
-    !e.altKey &&
-    (e.key.toLowerCase() === 'k' || e.code === 'KeyK')
+    matchShellKey(e, {
+      mac: isMacPlatform(),
+      terminal: false,
+      richText: false,
+      editable: false,
+    }) === 'palette.toggle'
   );
 }
 
@@ -163,8 +169,6 @@ export function ShellPalette({
 }) {
   const [own, setOwn] = useState(false);
   const open = given ?? own;
-  const openRef = useRef(open);
-  openRef.current = open;
   const setOpen = useCallback(
     (next: boolean) => {
       if (onOpenChange) onOpenChange(next);
@@ -181,16 +185,6 @@ export function ShellPalette({
   const toast = useToast();
   const published = useRef(new Map<number, { sig: string; commands: readonly PaletteCommand[] }>());
   const [, bump] = useState(0);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!isPaletteShortcut(e)) return;
-      e.preventDefault();
-      setOpen(!openRef.current);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [setOpen]);
 
   useEffect(() => {
     if (open) return;

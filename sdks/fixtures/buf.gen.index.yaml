@@ -1,0 +1,18 @@
+# `sdks/fixtures/facade-index.json` (SDKP P0a; API2 §"The facade index"):
+# protoc-gen-loams-facade with `lang=index`, over the whole proto module, so the
+# index lists every facade call the four generated facades have.
+#
+# Run `scripts/sdk/gen.sh index`, which substitutes the plugin path as it does
+# for the language templates. No `clean`: `out` is the fixtures directory,
+# which holds the whole conformance corpus.
+version: v2
+inputs:
+  - directory: proto
+plugins:
+  - local: ${LOAMS_FACADE_PLUGIN}
+    out: sdks/fixtures
+    strategy: all
+    opt:
+      - lang=index
+      - reasons=docs/api/reasons.md
+      - proto_rev=v1

@@ -13,7 +13,7 @@ import {
 import { autoUpdater } from "electron-updater";
 import { CH } from "../../shared/contracts";
 import { assertTrustedSender } from "../security/policy";
-import { readSetting, writeSetting } from "../settings";
+import { readSetting, UPDATE_SKIPPED_KEY, writeSetting } from "../settings";
 import { createController, type State, type UpdaterLike } from "./controller";
 import { fetchFeedFiles, manualGet, type NetRequestLike } from "./feed";
 import { verifyManifest } from "./manifest";
@@ -33,6 +33,8 @@ export interface UpdaterHandle {
 	state(): State;
 	hasVerifiedDownload(): boolean;
 	installOnQuit(): Promise<boolean>;
+	/** Help › Check for Updates… (CF1 Task 14); its result reaches the renderer as state. */
+	check(): Promise<void>;
 	stop(): void;
 }
 
@@ -104,15 +106,35 @@ export function startUpdater(opts: {
 				if (!w.isDestroyed()) w.webContents.send(CH.updateState, s);
 		},
 		log: (...a) => console.error("[updater]", ...a),
+		// "Skip this version" (D1085): automatic checks stay quiet about it.
+		skipped: () => {
+			const v = readSetting<unknown>(
+				opts.settingsFile,
+				UPDATE_SKIPPED_KEY,
+				undefined,
+			);
+			return typeof v === "string" ? v : undefined;
+		},
+		saveSkipped: (v) => writeSetting(opts.settingsFile, UPDATE_SKIPPED_KEY, v),
 	});
 
 	ipcMain.handle(CH.updateState, (e) => {
 		assertTrustedSender(e);
 		return ctl.state();
 	});
+	// "Check now" is a manual check: it offers a skipped version again.
 	ipcMain.handle(CH.updateCheck, async (e) => {
 		assertTrustedSender(e);
-		await ctl.check();
+		await ctl.check({ manual: true });
+	});
+	ipcMain.handle(CH.updateSkip, (e, version: unknown) => {
+		assertTrustedSender(e);
+		if (
+			typeof version === "string" &&
+			version.length > 0 &&
+			version.length < 64
+		)
+			ctl.skip(version);
 	});
 	ipcMain.handle(CH.updateDownload, async (e) => {
 		assertTrustedSender(e);
@@ -135,7 +157,7 @@ export function startUpdater(opts: {
 	});
 
 	const scheduler = createCheckScheduler({
-		check: () => void ctl.check(),
+		check: () => void ctl.check({ manual: false }),
 		onResume: (cb) => {
 			powerMonitor.on("resume", cb);
 			return () => void powerMonitor.removeListener("resume", cb);
@@ -146,6 +168,7 @@ export function startUpdater(opts: {
 		state: () => ctl.state(),
 		hasVerifiedDownload: () => ctl.hasVerifiedDownload(),
 		installOnQuit: () => ctl.installOnQuit(),
+		check: () => ctl.check(),
 		stop: () => scheduler.setEnabled(false),
 	};
 }

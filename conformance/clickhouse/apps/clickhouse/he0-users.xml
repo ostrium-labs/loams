@@ -1,0 +1,10 @@
+<!-- HE0: every profile logs its queries, including the ones an application
+     turns off with its own settings profile. -->
+<clickhouse>
+    <profiles>
+        <default>
+            <log_queries>1</log_queries>
+            <log_queries_min_type>QUERY_FINISH</log_queries_min_type>
+        </default>
+    </profiles>
+</clickhouse>

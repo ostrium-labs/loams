@@ -8,6 +8,7 @@
 
 import {
   compileResolvedKeybindingsConfig,
+  DEFAULT_RESOLVED_KEYBINDINGS,
   isKeybindingCommand,
   type KeybindingCommand,
   type KeybindingRule,
@@ -16,6 +17,7 @@ import {
   parseKeybindingShortcut,
   parseKeybindingWhenExpression,
   type ResolvedKeybindingsConfig,
+  SHELL_RUN_RESOLVED_KEYBINDINGS,
 } from "./shared";
 
 export const KEYBINDINGS_KEY = "loams.studio.keybindings";
@@ -87,11 +89,14 @@ export type CommandBinding = { key: string; when?: string };
 export class KeybindingStore {
   #rules: KeybindingRule[];
   #resolved: ResolvedKeybindingsConfig;
+  #shown: ResolvedKeybindingsConfig;
   readonly #listeners = new Set<() => void>();
 
   constructor(private readonly storage: KeybindingStorage | null | undefined = browserStorage()) {
     this.#rules = readCustomKeybindings(storage);
-    this.#resolved = this.#merge();
+    const [resolved, shown] = this.#merge();
+    this.#resolved = resolved;
+    this.#shown = shown;
   }
 
   /** The custom rules, in the order they apply. */
@@ -101,6 +106,13 @@ export class KeybindingStore {
 
   /** The defaults merged with the custom rules: what key presses resolve against. */
   readonly resolved = (): ResolvedKeybindingsConfig => this.#resolved;
+
+  /**
+   * What a label shows: `resolved()` with the shell's chords for Studio's commands
+   * (`SHELL_RUN_KEYBINDINGS`) between the defaults and the custom rules, so a custom rule
+   * is still the one shown. Never resolve a key press against it: the shell runs those.
+   */
+  readonly shown = (): ResolvedKeybindingsConfig => this.#shown;
 
   readonly subscribe = (listener: () => void): (() => void) => {
     this.#listeners.add(listener);
@@ -132,13 +144,19 @@ export class KeybindingStore {
 
   #set(rules: KeybindingRule[]): void {
     this.#rules = rules.slice(-MAX_KEYBINDINGS_COUNT);
-    this.#resolved = this.#merge();
+    const [resolved, shown] = this.#merge();
+    this.#resolved = resolved;
+    this.#shown = shown;
     // A refused write keeps the change for this page (keybindings_storage_failure_tolerated).
     writeCustomKeybindings(this.storage, this.#rules);
     for (const listener of [...this.#listeners]) listener();
   }
 
-  #merge(): ResolvedKeybindingsConfig {
-    return mergeWithDefaultKeybindings(compileResolvedKeybindingsConfig(this.#rules));
+  #merge(): [ResolvedKeybindingsConfig, ResolvedKeybindingsConfig] {
+    const custom = compileResolvedKeybindingsConfig(this.#rules);
+    const resolved = mergeWithDefaultKeybindings(custom);
+    const overridden = new Set(custom.map((binding) => binding.command));
+    const defaults = DEFAULT_RESOLVED_KEYBINDINGS.filter((b) => !overridden.has(b.command));
+    return [resolved, [...defaults, ...SHELL_RUN_RESOLVED_KEYBINDINGS, ...custom]];
   }
 }

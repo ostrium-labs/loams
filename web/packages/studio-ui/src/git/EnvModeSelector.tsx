@@ -74,7 +74,7 @@ export function EnvModeSelector({
     return (
       <Tooltip content={forceNewWorktree ? "Each run starts in its own worktree." : label}>
         <span
-          className="inline-flex h-7 min-w-0 items-center gap-1 px-1.5 text-[0.8rem] text-muted"
+          className="inline-flex h-7 min-w-0 items-center gap-1 px-1.5 text-small text-muted"
           data-studio-workspace
         >
           <ModeIcon mode={effectiveEnvMode} worktree={activeWorktreePath !== null} />
@@ -125,7 +125,7 @@ export function EnvModeSelector({
         }
         onEnvModeChange(value);
       }}
-      className="inline-flex h-7 min-w-0 shrink items-center gap-1 rounded-pill border border-rule-soft px-2.5 text-[0.8rem] text-muted hover:bg-raised hover:text-ink"
+      className="inline-flex h-7 min-w-0 shrink items-center gap-1 rounded-pill border border-rule-soft px-2.5 text-small text-muted transition-colors duration-(--op-duration-fast) ease-out hover:bg-raised hover:text-ink motion-reduce:transition-none"
     />
   );
 }

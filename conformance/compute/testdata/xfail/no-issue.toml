@@ -1,0 +1,9 @@
+# An entry without an issue and with a too-short reason:
+# xfail_entries_have_reason_and_issue.
+product = "fixture"
+
+[[xfail]]
+id = "needs-kafka"
+tests = ["tests.test_kafka::*"]
+reason = "flaky"
+since = 2026-10-23

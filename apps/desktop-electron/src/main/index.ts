@@ -41,6 +41,7 @@ import { FactoryHost } from "./factory/host";
 import { registerFactoryIpc } from "./factory/ipc.electron";
 import { Vault } from "./factory/vault";
 import { FactoryViews } from "./factory/views.electron";
+import { registerPgControlIpc } from "./pgcontrol/ipc.electron";
 import { readPgControlTarget } from "./pgcontrol/target";
 import { registerPreviewIpc } from "./preview/ipc.electron";
 import { StudioPreviewView } from "./preview/view.electron";
@@ -60,13 +61,16 @@ import {
 	readThemeChoice,
 	writeSetting,
 } from "./settings";
+import { installContextMenu } from "./shell/context-menu.electron";
 import { getMainWindow, setMainWindow } from "./shell/main-window";
 import { installAppMenu } from "./shell/menu.electron";
-import { DOCS_URL, menuCommand } from "./shell/menu-model";
+import { DOCS_URL, ISSUES_URL, menuCommand } from "./shell/menu-model";
 import { quitSequence } from "./shell/quit";
 import { reveal } from "./shell/reveal";
 import { registerShellIpc } from "./shell/shell-ipc.electron";
 import { initSingleInstance } from "./shell/single-instance.electron";
+import { SPLASH_TIMEOUT_MS, SplashGate } from "./shell/splash";
+import { showSplash } from "./shell/splash.electron";
 import {
 	EMPTY_STUDIO,
 	notificationContent,
@@ -78,6 +82,8 @@ import {
 import { registerThemeIpc } from "./shell/theme-ipc.electron";
 import { createTray, type TrayHandle } from "./shell/tray.electron";
 import { closeAction, TRAY_ROUTES } from "./shell/tray-model";
+import { ChromeSync, windowChromeOptions } from "./shell/window-chrome";
+import { installWindowChrome } from "./shell/window-chrome.electron";
 import {
 	loadWindowState,
 	MIN_HEIGHT,
@@ -110,6 +116,7 @@ let factoryEmbed: FactoryEmbed | undefined;
 let studioPreview: StudioPreviewView | undefined;
 let chat: ChatService | undefined;
 let tray: TrayHandle | undefined;
+let chrome: ChromeSync | undefined;
 let studioWatch: StudioWatch | undefined;
 let agentdLauncher: AgentdLauncher | undefined;
 let agentdService: AgentdService | undefined;
@@ -136,7 +143,13 @@ function closeToTray(): boolean | undefined {
 	return typeof v === "boolean" ? v : undefined;
 }
 
+/** True once the splash gate has shown the first console window (D1084). */
+let gateShown = false;
+let splashGate: SplashGate | undefined;
+
 function showMainWindow(create: () => BrowserWindow): void {
+	// Asking for the console (tray, menu, a notification) ends the splash early.
+	splashGate?.ready();
 	const win = getMainWindow() ?? create();
 	reveal(win);
 }
@@ -156,6 +169,10 @@ function createWindow(): BrowserWindow {
 		minHeight: MIN_HEIGHT,
 		show: false,
 		title: "Loams Desktop",
+		...windowChromeOptions(
+			process.platform,
+			chrome?.dark ?? nativeTheme.shouldUseDarkColors,
+		),
 		webPreferences: {
 			preload: join(__dirname, "../preload/index.cjs"),
 			contextIsolation: true,
@@ -170,6 +187,9 @@ function createWindow(): BrowserWindow {
 		},
 	});
 	secureWindow(win);
+	// Cut, copy, paste, links and Look Up (D1084); pages with their own menu keep it.
+	installContextMenu(win);
+	if (chrome) installWindowChrome(win, chrome);
 	// The console sets document.title per page; the native title stays the product name.
 	win.on("page-title-updated", (e) => e.preventDefault());
 	setMainWindow(win);
@@ -207,7 +227,11 @@ function createWindow(): BrowserWindow {
 			win.hide();
 		}
 	});
-	win.once("ready-to-show", () => win.show());
+	// The first window stays hidden behind the splash until the gate shows it (D1084); a
+	// window opened later (the tray, after the gate) shows as soon as it can paint.
+	win.once("ready-to-show", () => {
+		if (gateShown) win.show();
+	});
 	void win.loadURL("loams-app://console/ui/");
 	return win;
 }
@@ -217,9 +241,18 @@ const singleInstance = initSingleInstance({
 	onPrimary: () => {
 		void app.whenReady().then(async () => {
 			app.setAppUserModelId("dev.loams.desktop");
-			// The theme choice (D1074): OS dialogs and menus follow it; Task 13 syncs the chrome.
+			// The theme choice (D1074): OS dialogs and menus follow it, and so does the window
+			// chrome (D1083): on each theme:set, and on each OS flip while the choice is System.
 			nativeTheme.themeSource = readThemeChoice(settingsFile());
-			registerThemeIpc({ settingsFile, onTheme: () => {} });
+			chrome = new ChromeSync({
+				platform: process.platform,
+				window: getMainWindow,
+				choice: () => readThemeChoice(settingsFile()),
+				osDark: () => nativeTheme.shouldUseDarkColors,
+			});
+			const sync = chrome;
+			nativeTheme.on("updated", () => sync.onOsThemeChanged());
+			registerThemeIpc({ settingsFile, onTheme: (dark) => sync.onTheme(dark) });
 			registry = new ServerRegistry(
 				join(app.getPath("userData"), "servers.json"),
 				{ devDemo: !app.isPackaged },
@@ -362,6 +395,8 @@ const singleInstance = initSingleInstance({
 			}, 5_000);
 			// SD1 Task 28: Studio's editor hand-off and notification choices.
 			registerStudioIpc({ settingsFile: settingsFile() });
+			// PG2 R9.1: App settings > Postgres control plane.
+			registerPgControlIpc({ settingsFile });
 			// With the TiKV stack chosen, a stack left running from last time starts the engine
 			// with Live on it directly, but a slow or absent runtime must not hold the engine
 			// back for long.
@@ -388,7 +423,19 @@ const singleInstance = initSingleInstance({
 				singleInstance.watchMainWindow(w);
 				return w;
 			};
+			const splash = showSplash({ dark: sync.dark });
+			const gate = new SplashGate({
+				timeoutMs: SPLASH_TIMEOUT_MS,
+				onShow: () => {
+					gateShown = true;
+					const w = getMainWindow();
+					if (w && !w.isDestroyed()) w.show();
+					splash.close();
+				},
+			});
+			splashGate = gate;
 			registerShellIpc({
+				onReady: () => gate.ready(),
 				onBadge: (n) => tray?.setBadge(n),
 				onNotifyClick: (route) => {
 					showMainWindow(open);
@@ -420,8 +467,18 @@ const singleInstance = initSingleInstance({
 						getMainWindow()?.webContents.send(CH.shellCommand, command);
 					} else if (id === "quit") app.quit();
 					else if (id === "docs") void shell.openExternal(DOCS_URL);
-					else if (id === "logs") openLogs();
+					// "logs" is the pre-CF1 id, kept as an alias of show-logs for one release.
+					else if (id === "show-logs" || id === "logs") openLogs();
 					else if (id === "about") app.showAboutPanel();
+					else if (id === "check-updates") {
+						showMainWindow(open);
+						void updater?.check();
+					} else if (id === "restart-server")
+						void engine
+							?.stop()
+							.then(() => engine?.start())
+							.catch((e) => console.error("restart local server:", e));
+					else if (id === "report-issue") void shell.openExternal(ISSUES_URL);
 				},
 			});
 			const eng = engine;
@@ -474,12 +531,17 @@ const singleInstance = initSingleInstance({
 				},
 			});
 			open();
-			app.on("activate", () => showMainWindow(open));
+			// macOS can send activate during launch: the splash keeps the window until ready.
+			app.on("activate", () => {
+				if (gateShown) showMainWindow(open);
+			});
 		});
 		let quitting = false;
 		let quitDone = false;
 		app.on("before-quit", (e) => {
 			isQuitting = true;
+			// A quit during the splash must not show the console on the timeout.
+			splashGate?.dispose();
 			if (quitDone) return;
 			e.preventDefault();
 			if (quitting) return;

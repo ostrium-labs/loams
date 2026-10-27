@@ -3,103 +3,83 @@ package dev.loams;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * A session's consistency token (design §44 §7.4, D609; runtime contract R4).
+ * The session consistency token store (design §44 §7.4, D609; runtime contract R4 as amended by
+ * SDKP §2.1).
  *
- * <p>A write answers with a {@code consistency_token}; a read accepts one, so a caller that just
- * wrote can read its own write. Threading those by hand is the caller's job today. This store is
- * the alternative §44 §7.4 asks for: <b>off by default</b>, and when a call opts in, every
- * response's token is folded into the session and attached to later reads.
- *
- * <p><b>The token's encoding is not in the protos yet.</b> §05 §5 defines the semantics (offsets
- * per stream and partition, {@code STRONG} as the default, {@code EVENTUAL},
- * {@code AT_LEAST{token}}) and API1's write paths carry it as an opaque {@code v1:} string;
- * §44 §7.4 says it merges by "max offset per stream and partition", which needs the encoding
- * parsed. Until that lands this store keeps the token it was given and <b>refuses to merge two
- * different tokens</b>, counting the refusal rather than picking one.
- *
- * <p>That refusal is the whole point. A silently-wrong consistency token reads stale data, which
- * is worse than a failure: the caller sees an answer and believes it. So the conflict is
- * surfaced through {@link #conflicts()}, and the token the store already holds is kept rather than
- * overwritten by whichever write happened to land last.
+ * <p><strong>Off by default.</strong> Turn it on with {@code Options.sessionConsistency(true)}.
+ * Every {@code consistency_token}, {@code token} or {@code read_token} an app response carries, and
+ * the {@code Loams-Consistency-Token} response header, merge in ({@link ConsistencyToken#merge}: the
+ * max offset per stream and partition), and every collection read whose request has a {@code
+ * consistency} field the caller left unset goes out with {@code at_least} = the session's token:
+ * read-your-writes in one process. A token that is not a {@code v1:} token is counted in {@link
+ * #conflicts()} and not merged.
  */
 public final class ConsistencySession {
 
-    /** The prefix every consistency token carries (§44 §7.4). */
+    /** The token encoding's prefix. */
     public static final String TOKEN_PREFIX = "v1:";
 
-    /**
-     * The request header a read's token travels in.
-     *
-     * <p>§44 §7.4 names the <em>response</em> header {@code loams-consistency-token}; the request
-     * side is a {@code consistency} field, and until a proto carries it the header is how the
-     * token gets there.
-     */
+    /** The header a consistency token travels in. */
     public static final String HEADER = "Loams-Consistency-Token";
 
-    /** The token to attach to the next read, or the empty string for none. */
-    private volatile String current = "";
-
-    /** How many unmergeable pairs this session has seen, so the limitation is visible. */
+    private ConsistencyToken current;
     private final AtomicInteger conflicts = new AtomicInteger();
+    private final AtomicInteger recorded = new AtomicInteger();
 
-    /** Whether a string looks like a consistency token. */
+    /** Whether {@code value} looks like a consistency token: the {@code v1:} prefix and a body. */
     public static boolean isConsistencyToken(String value) {
         return value != null && value.startsWith(TOKEN_PREFIX) && value.length() > TOKEN_PREFIX.length();
     }
 
-    /** The token to attach to the next read, or the empty string. */
-    public String current() {
+    /** The merged token later reads go out with, or {@code ""} when none has been recorded. */
+    public synchronized String current() {
+        return current == null ? "" : current.toString();
+    }
+
+    /** The merged token, or {@code null}. */
+    public synchronized ConsistencyToken token() {
         return current;
     }
 
     /**
-     * Fold a token the server returned into the session's.
-     *
-     * @return {@code null} when the token was folded in or was nothing, or a message saying why
-     *     two different tokens were not merged. Returning the reason rather than throwing is
-     *     deliberate: the RPC that produced the token <em>succeeded</em>, and turning that into a
-     *     failure would make a caller that retries on it perform the write twice.
+     * Folds a token in. Answers {@code null} when it merged (or there was nothing to merge), and a
+     * description when the token was not a {@code v1:} token and was counted instead.
      */
     public String record(String token) {
         if (token == null || token.isEmpty()) {
             return null;
         }
-        synchronized (this) {
-            if (current.isEmpty()) {
-                current = token;
-                return null;
-            }
-            if (current.equals(token)) {
-                return null;
-            }
+        var parsed = ConsistencyToken.tryParse(token);
+        if (parsed.isEmpty()) {
             conflicts.incrementAndGet();
-            return "two different consistency tokens met and this store will not merge them "
-                    + "(the encoding is not in the protos yet): keeping "
-                    + current
-                    + " and reporting "
-                    + token;
+            return "consistency token " + token + " is not a v1: token and was not merged";
         }
+        synchronized (this) {
+            current = current == null ? parsed.get() : current.merge(parsed.get());
+        }
+        recorded.incrementAndGet();
+        return null;
     }
 
-    /** How many unmergeable pairs the session has seen. */
+    /** How many tokens were not {@code v1:} tokens and were not merged. */
     public int conflicts() {
         return conflicts.get();
     }
 
-    /**
-     * Forget the session's token.
-     *
-     * <p>The next read is then {@code STRONG} on its own, which is correct and loses only
-     * read-your-writes.
-     */
+    /** How many tokens this session has merged. */
+    public int recorded() {
+        return recorded.get();
+    }
+
+    /** Forgets every token. */
     public void clear() {
         synchronized (this) {
-            current = "";
+            current = null;
         }
     }
 
     @Override
     public String toString() {
-        return "consistencySession(" + (current.isEmpty() ? "empty" : TOKEN_PREFIX + "…") + ")";
+        return "consistencySession(" + (current().isEmpty() ? "empty" : current()) + ")";
     }
 }

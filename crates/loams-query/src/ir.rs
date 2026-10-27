@@ -142,6 +142,9 @@ pub enum Retriever {
     Vector {
         field: String,
         query: Vec<f32>,
+        /// Candidates. Absent (or `0`) is `max(10, offset + limit)`, filled in
+        /// by [`SearchRequest::with_default_k`] before validation.
+        #[serde(default)]
         k: usize,
         #[serde(default)]
         params: AnnParams,
@@ -150,23 +153,35 @@ pub enum Retriever {
     },
     Text {
         query: Query,
+        /// Candidates. Absent (or `0`) is `max(10, offset + limit)`, filled in
+        /// by [`SearchRequest::with_default_k`] before validation.
+        #[serde(default)]
         k: usize,
     },
     Fused {
         inputs: Vec<Retriever>,
         fusion: Fusion,
+        /// Candidates. Absent (or `0`) is `max(10, offset + limit)`, filled in
+        /// by [`SearchRequest::with_default_k`] before validation.
+        #[serde(default)]
         k: usize,
     },
     Rescore {
         input: Box<Retriever>,
         field: String,
         query: Vec<f32>,
+        /// Candidates. Absent (or `0`) is `max(10, offset + limit)`, filled in
+        /// by [`SearchRequest::with_default_k`] before validation.
+        #[serde(default)]
         k: usize,
     },
     /// Exact sparse-vector search (overview A29).
     Sparse {
         field: String,
         query: SparseVector,
+        /// Candidates. Absent (or `0`) is `max(10, offset + limit)`, filled in
+        /// by [`SearchRequest::with_default_k`] before validation.
+        #[serde(default)]
         k: usize,
         #[serde(default)]
         filter: Option<Query>,
@@ -175,7 +190,51 @@ pub enum Retriever {
     },
 }
 
+/// The candidates a retriever without `k` contributes: enough to fill the
+/// window, and never fewer than ten.
+pub const MIN_DEFAULT_K: usize = 10;
+
+impl SearchRequest {
+    /// Fills every retriever's omitted `k` (`0`) with `max(10, offset +
+    /// limit)`, so a caller need not size each retriever to the page it asks
+    /// for. A `k` the caller set is kept, and validation still bounds it.
+    #[must_use]
+    pub fn with_default_k(mut self) -> Self {
+        let k = MIN_DEFAULT_K.max(self.offset.saturating_add(self.limit));
+        for retriever in &mut self.retrievers {
+            retriever.fill_default_k(k);
+        }
+        self
+    }
+}
+
 impl Retriever {
+    fn fill_default_k(&mut self, default: usize) {
+        match self {
+            Retriever::Fused { inputs, k, .. } => {
+                for input in inputs {
+                    input.fill_default_k(default);
+                }
+                if *k == 0 {
+                    *k = default;
+                }
+            }
+            Retriever::Rescore { input, k, .. } => {
+                input.fill_default_k(default);
+                if *k == 0 {
+                    *k = default;
+                }
+            }
+            Retriever::Vector { k, .. }
+            | Retriever::Text { k, .. }
+            | Retriever::Sparse { k, .. } => {
+                if *k == 0 {
+                    *k = default;
+                }
+            }
+        }
+    }
+
     fn normalized(self) -> Self {
         match self {
             Retriever::Vector {
@@ -568,6 +627,10 @@ pub enum SortValue {
     Uuid([u8; 16]),
 }
 
+/// 2^53: the largest integer a double holds exactly, and so the largest id a
+/// `google.protobuf.Value` number can carry without changing.
+pub const MAX_EXACT_DOUBLE: f64 = 9_007_199_254_740_992.0;
+
 impl SortValue {
     /// `U64(n <= i64::MAX)` becomes `I64(n)`, as its JSON reads back.
     pub fn normalized(self) -> Self {
@@ -588,6 +651,13 @@ impl SortValue {
             SortValue::U64(n) => Some(PrimaryKey::U64(*n)),
             SortValue::Str(s) => Some(PrimaryKey::Str(s.clone())),
             SortValue::Uuid(bytes) => Some(PrimaryKey::Uuid(*bytes)),
+            // A whole number that came back as a double: a Connect answer
+            // spells every number as one (`google.protobuf.Value`), so `1.0` is
+            // the id `1` a hit's `sort_values` carried. Only an exact integer
+            // in the double's exact range is a key; anything else is refused.
+            SortValue::F64(x) if *x >= 0.0 && x.fract() == 0.0 && *x <= MAX_EXACT_DOUBLE => {
+                Some(PrimaryKey::U64(*x as u64))
+            }
             SortValue::Null | SortValue::Bool(_) | SortValue::F64(_) => None,
         }
     }

@@ -24,19 +24,22 @@ public enum SignInKind
   SIGN_IN_KIND_NONE(1),
   /**
    * <pre>
-   * OIDC authorization code + PKCE at the instance's Authentik (§38).
+   * Deprecated: use SIGN_IN_KIND_OIDC (D1619). Kept so the wire value still
+   * decodes; no server sends it.
    * </pre>
    *
-   * <code>SIGN_IN_KIND_AUTHENTIK = 2;</code>
+   * <code>SIGN_IN_KIND_AUTHENTIK = 2 [deprecated = true];</code>
    */
+  @java.lang.Deprecated
   SIGN_IN_KIND_AUTHENTIK(2),
   /**
    * <pre>
-   * Authentik's device authorization flow (RFC 8628).
+   * Deprecated: use SIGN_IN_KIND_OIDC_DEVICE_CODE (D1619).
    * </pre>
    *
-   * <code>SIGN_IN_KIND_AUTHENTIK_DEVICE_CODE = 3;</code>
+   * <code>SIGN_IN_KIND_AUTHENTIK_DEVICE_CODE = 3 [deprecated = true];</code>
    */
+  @java.lang.Deprecated
   SIGN_IN_KIND_AUTHENTIK_DEVICE_CODE(3),
   /**
    * <pre>
@@ -46,6 +49,22 @@ public enum SignInKind
    * <code>SIGN_IN_KIND_PAIRING = 4;</code>
    */
   SIGN_IN_KIND_PAIRING(4),
+  /**
+   * <pre>
+   * OIDC authorization code + PKCE at the instance's issuer (design §76).
+   * </pre>
+   *
+   * <code>SIGN_IN_KIND_OIDC = 5;</code>
+   */
+  SIGN_IN_KIND_OIDC(5),
+  /**
+   * <pre>
+   * The issuer's device authorization flow (RFC 8628).
+   * </pre>
+   *
+   * <code>SIGN_IN_KIND_OIDC_DEVICE_CODE = 6;</code>
+   */
+  SIGN_IN_KIND_OIDC_DEVICE_CODE(6),
   UNRECOGNIZED(-1),
   ;
 
@@ -72,20 +91,21 @@ public enum SignInKind
   public static final int SIGN_IN_KIND_NONE_VALUE = 1;
   /**
    * <pre>
-   * OIDC authorization code + PKCE at the instance's Authentik (§38).
+   * Deprecated: use SIGN_IN_KIND_OIDC (D1619). Kept so the wire value still
+   * decodes; no server sends it.
    * </pre>
    *
-   * <code>SIGN_IN_KIND_AUTHENTIK = 2;</code>
+   * <code>SIGN_IN_KIND_AUTHENTIK = 2 [deprecated = true];</code>
    */
-  public static final int SIGN_IN_KIND_AUTHENTIK_VALUE = 2;
+  @java.lang.Deprecated public static final int SIGN_IN_KIND_AUTHENTIK_VALUE = 2;
   /**
    * <pre>
-   * Authentik's device authorization flow (RFC 8628).
+   * Deprecated: use SIGN_IN_KIND_OIDC_DEVICE_CODE (D1619).
    * </pre>
    *
-   * <code>SIGN_IN_KIND_AUTHENTIK_DEVICE_CODE = 3;</code>
+   * <code>SIGN_IN_KIND_AUTHENTIK_DEVICE_CODE = 3 [deprecated = true];</code>
    */
-  public static final int SIGN_IN_KIND_AUTHENTIK_DEVICE_CODE_VALUE = 3;
+  @java.lang.Deprecated public static final int SIGN_IN_KIND_AUTHENTIK_DEVICE_CODE_VALUE = 3;
   /**
    * <pre>
    * A QR or typed pairing code from a signed-in session (§37 §7.2).
@@ -94,6 +114,22 @@ public enum SignInKind
    * <code>SIGN_IN_KIND_PAIRING = 4;</code>
    */
   public static final int SIGN_IN_KIND_PAIRING_VALUE = 4;
+  /**
+   * <pre>
+   * OIDC authorization code + PKCE at the instance's issuer (design §76).
+   * </pre>
+   *
+   * <code>SIGN_IN_KIND_OIDC = 5;</code>
+   */
+  public static final int SIGN_IN_KIND_OIDC_VALUE = 5;
+  /**
+   * <pre>
+   * The issuer's device authorization flow (RFC 8628).
+   * </pre>
+   *
+   * <code>SIGN_IN_KIND_OIDC_DEVICE_CODE = 6;</code>
+   */
+  public static final int SIGN_IN_KIND_OIDC_DEVICE_CODE_VALUE = 6;
 
 
   public final int getNumber() {
@@ -125,6 +161,8 @@ public enum SignInKind
       case 2: return SIGN_IN_KIND_AUTHENTIK;
       case 3: return SIGN_IN_KIND_AUTHENTIK_DEVICE_CODE;
       case 4: return SIGN_IN_KIND_PAIRING;
+      case 5: return SIGN_IN_KIND_OIDC;
+      case 6: return SIGN_IN_KIND_OIDC_DEVICE_CODE;
       default: return null;
     }
   }

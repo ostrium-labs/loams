@@ -47,7 +47,7 @@ struct WelcomeView: View {
                     Button("Continue") { Task { await model.startTyped() } }
                         .disabled(model.busy || userCode.count != 8)
                 }
-                Section("Sign in with Authentik") {
+                Section("Sign in with your organization") {
                     Button("Sign in") { Task { await model.signInWithBrowser() } }
                         .disabled(model.busy)
                 }

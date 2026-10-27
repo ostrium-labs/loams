@@ -86,6 +86,9 @@ pub fn restore(runtime: &dyn Runtime, stack: &mut StackDir, restore: &Restore) -
         }
         Some((_, version)) => {
             // BR restores into a fresh cluster at the snapshot's version.
+            // PD's and TiKV's stopped containers still hold their volumes:
+            // they go first, and `up` creates them again.
+            compose::remove(runtime, &stack.dir, &pd_tikv)?;
             let out = runtime.engine(&[
                 "volume".to_string(),
                 "rm".to_string(),
@@ -107,8 +110,12 @@ pub fn restore(runtime: &dyn Runtime, stack: &mut StackDir, restore: &Restore) -
             )?;
             Some(version.clone())
         }
+        // No TiKV copy: a stack on the embedded stores (its metastore is in
+        // the data directory `migrate restore` puts back).
         None => {
-            compose::up(runtime, &stack.dir, &pd_tikv)?;
+            if stack.tikv() {
+                compose::up(runtime, &stack.dir, &pd_tikv)?;
+            }
             None
         }
     };
@@ -126,15 +133,7 @@ pub fn restore(runtime: &dyn Runtime, stack: &mut StackDir, restore: &Restore) -
     )?;
     // The previous release, then its health, then the door.
     let config = compose::config(runtime, &stack.dir)?;
-    let services: Vec<String> = compose::long_running(&config)
-        .into_iter()
-        .filter(|s| !door::is_gate(&config, s))
-        .collect();
-    compose::up(runtime, &stack.dir, &services)?;
-    let bad: Vec<String> = compose::unhealthy(&compose::ps(runtime, &stack.dir)?)
-        .into_iter()
-        .filter(|s| !door::is_gate(&config, s))
-        .collect();
+    let bad = start_previous(runtime, &stack.dir, &config)?;
     if !bad.is_empty() {
         return Err(UpgradeError::new(
             "rollback_failed",
@@ -143,6 +142,38 @@ pub fn restore(runtime: &dyn Runtime, stack: &mut StackDir, restore: &Restore) -
     }
     crate::run::engine_ready(runtime, &stack.dir)?;
     door::open(runtime, &stack.dir, &config)
+}
+
+/// Starts the restored release's long-running services (the door aside) and
+/// returns those of them not healthy. Containers of services the restored
+/// release does not enable (the newer release added them, or moved them under
+/// a profile) are removed first: they are not the previous release's, and a
+/// stopped one would read as unhealthy.
+fn start_previous(
+    runtime: &dyn Runtime,
+    dir: &Path,
+    config: &serde_json::Value,
+) -> Result<Vec<String>> {
+    let enabled = compose::services(config);
+    let mut stale: Vec<String> = compose::ps(runtime, dir)?
+        .into_iter()
+        .map(|r| r.service)
+        .filter(|s| !s.is_empty() && !enabled.contains(s))
+        .collect();
+    stale.sort();
+    stale.dedup();
+    // Best effort: a service the compose file no longer defines at all is
+    // an orphan compose cannot name; it is left, and not counted below.
+    let _ = compose::remove(runtime, dir, &stale);
+    let services: Vec<String> = compose::long_running(config)
+        .into_iter()
+        .filter(|s| !door::is_gate(config, s))
+        .collect();
+    compose::up(runtime, dir, &services)?;
+    Ok(compose::unhealthy(&compose::ps(runtime, dir)?)
+        .into_iter()
+        .filter(|s| enabled.contains(s) && !door::is_gate(config, s))
+        .collect())
 }
 
 /// `rollback_failed` (exit 11): the failure, the rollback's failure, where
@@ -248,15 +279,30 @@ fn attempt_of(stack_dir: &Path, snapshot: Option<&str>) -> Result<Vec<crate::his
         .collect())
 }
 
-/// Why `--keep-writes` cannot be used, if it cannot: a point-of-no-return
+/// Releases whose startup gate cannot serve data a later release stamped:
+/// 0.1.0's gate counts its own migrations as pending under a stack record of
+/// a release its train does not list (fixed after it, design §54 §17
+/// T14-2), so it refuses to start on the writes `--keep-writes` keeps.
+/// Earlier releases have no startup gate and later ones have the fix.
+pub const KEEP_WRITES_UNSERVED: &[&str] = &["0.1.0"];
+
+/// Why `--keep-writes` cannot be used, if it cannot: the previous release
+/// (`from`) cannot start on a later release's data, a point-of-no-return
 /// migration was applied for `to` (the ledger, read by `to`'s image), or a
 /// third-party pin changed.
 fn keep_writes_refusal(
     runtime: &dyn Runtime,
     stack: &StackDir,
     id: &str,
+    from: &str,
     to: &str,
 ) -> Result<Option<String>> {
+    if KEEP_WRITES_UNSERVED.contains(&from) {
+        return Ok(Some(format!(
+            "{from}'s startup gate refuses data that {to} stamped (it predates design §54 §17 \
+             T14-2), so {from} would not start on the kept writes"
+        )));
+    }
     let status = crate::status::status(runtime, stack, to)?;
     let Some(ledger) = status
         .migrate
@@ -329,7 +375,7 @@ pub fn rollback(
         )
     };
     if opts.keep_writes
-        && let Some(why) = keep_writes_refusal(runtime, stack, &id, &first.to)?
+        && let Some(why) = keep_writes_refusal(runtime, stack, &id, &first.from, &first.to)?
     {
         return Err(UpgradeError::new(
             "rollback_needs_snapshot",
@@ -404,15 +450,7 @@ fn swap_images_back(runtime: &dyn Runtime, stack: &mut StackDir, id: &str) -> Re
     install::restore_host(&stack.dir, id)?;
     stack.env = read_env(&stack.dir.join(".env"));
     let config = compose::config(runtime, &stack.dir)?;
-    let services: Vec<String> = compose::long_running(&config)
-        .into_iter()
-        .filter(|s| !door::is_gate(&config, s))
-        .collect();
-    compose::up(runtime, &stack.dir, &services)?;
-    let bad: Vec<String> = compose::unhealthy(&compose::ps(runtime, &stack.dir)?)
-        .into_iter()
-        .filter(|s| !door::is_gate(&config, s))
-        .collect();
+    let bad = start_previous(runtime, &stack.dir, &config)?;
     if !bad.is_empty() {
         return Err(UpgradeError::new(
             "rollback_failed",

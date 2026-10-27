@@ -17,7 +17,10 @@ use serde_json::{Map, Value, json};
 use crate::EsGateway;
 use crate::error::{ErrorContext, EsError};
 use crate::http::{Params, RequestCtx, fail, json_body, respond, respond_head};
-use crate::mapping::{index_uuid, plan_create, plan_put_mapping, render_mappings, render_settings};
+use crate::mapping::{
+    ANN_SETTINGS, index_uuid, plan_create, plan_put_mapping, plan_put_settings, render_mappings,
+    render_settings,
+};
 use crate::names::{IndexExpr, ResolveOptions, glob, resolve, resolve_write, validate_index_name};
 
 const CREATE_PARAMS: &[&str] = &["wait_for_active_shards", "timeout", "master_timeout"];
@@ -67,6 +70,25 @@ const ALIAS_GET_PARAMS: &[&str] = &[
     "allow_no_indices",
     "expand_wildcards",
     "local",
+];
+const GET_SETTINGS_PARAMS: &[&str] = &[
+    "ignore_unavailable",
+    "allow_no_indices",
+    "expand_wildcards",
+    "local",
+    "flat_settings",
+    "include_defaults",
+    "master_timeout",
+];
+const PUT_SETTINGS_PARAMS: &[&str] = &[
+    "ignore_unavailable",
+    "allow_no_indices",
+    "expand_wildcards",
+    "flat_settings",
+    "preserve_existing",
+    "reopen",
+    "timeout",
+    "master_timeout",
 ];
 const REFRESH_PARAMS: &[&str] = &["ignore_unavailable", "allow_no_indices", "expand_wildcards"];
 
@@ -499,6 +521,183 @@ async fn get(
         out.insert(r.name, Value::Object(entry));
     }
     Ok((200, Value::Object(out)))
+}
+
+// ----- settings (#948) -----
+
+/// `GET /_settings`.
+pub(crate) async fn get_settings_all(
+    State(gw): State<EsGateway>,
+    ctx: RequestCtx,
+    uri: Uri,
+) -> Response {
+    answer(
+        &ctx,
+        settings_of(&gw, &ctx, &uri, IndexExpr::All, None).await,
+    )
+}
+
+/// `GET /{index}/_settings`.
+pub(crate) async fn get_settings(
+    State(gw): State<EsGateway>,
+    ctx: RequestCtx,
+    uri: Uri,
+    Path(index): Path<String>,
+) -> Response {
+    let expr = IndexExpr::parse(&index);
+    answer(&ctx, settings_of(&gw, &ctx, &uri, expr, None).await)
+}
+
+/// `GET /{index}/_settings/{name}`: only the settings `name` (a comma list
+/// of flat keys or `*` patterns, with or without `index.`) names.
+pub(crate) async fn get_settings_named(
+    State(gw): State<EsGateway>,
+    ctx: RequestCtx,
+    uri: Uri,
+    Path((index, name)): Path<(String, String)>,
+) -> Response {
+    let expr = IndexExpr::parse(&index);
+    answer(&ctx, settings_of(&gw, &ctx, &uri, expr, Some(&name)).await)
+}
+
+/// Rebuilds nested settings from flat `a.b.c` keys.
+fn unflatten(flat: &Map<String, Value>) -> Value {
+    let mut out = Map::new();
+    for (key, value) in flat {
+        let mut map = &mut out;
+        let mut parts = key.split('.').peekable();
+        while let Some(part) = parts.next() {
+            if parts.peek().is_none() {
+                map.insert(part.to_string(), value.clone());
+                break;
+            }
+            let entry = map
+                .entry(part.to_string())
+                .or_insert_with(|| Value::Object(Map::new()));
+            if !entry.is_object() {
+                *entry = Value::Object(Map::new());
+            }
+            let Value::Object(next) = entry else {
+                break;
+            };
+            map = next;
+        }
+    }
+    Value::Object(out)
+}
+
+async fn settings_of(
+    gw: &EsGateway,
+    ctx: &RequestCtx,
+    uri: &Uri,
+    expr: IndexExpr,
+    names: Option<&str>,
+) -> Result<(u16, Value), EsError> {
+    let params = Params::parse(uri.query(), uri.path(), GET_SETTINGS_PARAMS)?;
+    let opts = resolve_options(&params)?;
+    let flat = params.bool("flat_settings")?.unwrap_or(false);
+    let patterns: Option<Vec<String>> = names.map(|names| {
+        names
+            .split(',')
+            .filter(|n| !n.is_empty())
+            .map(str::to_string)
+            .collect()
+    });
+    let service = gw.service();
+    let ns = ctx.namespace.as_str();
+    let resolved = resolve(service, ns, &expr, opts).await?;
+    let mut out = Map::new();
+    for r in resolved {
+        let info = match service.get_collection(ns, &r.name).await {
+            Ok(info) => info,
+            Err(err) if is_missing(&err) => continue,
+            Err(err) => return Err(admin_error(err)),
+        };
+        let mut flat_map = Map::new();
+        flatten("", &render_settings(&info), &mut flat_map);
+        if let Some(patterns) = &patterns {
+            flat_map.retain(|key, _| {
+                let short = key.strip_prefix("index.").unwrap_or(key);
+                patterns
+                    .iter()
+                    .any(|p| p == "_all" || glob(p, key) || glob(p, short))
+            });
+            // ES leaves out an index none of whose settings match.
+            if flat_map.is_empty() {
+                continue;
+            }
+        }
+        let settings = if flat {
+            Value::Object(flat_map)
+        } else {
+            unflatten(&flat_map)
+        };
+        out.insert(r.name, json!({ "settings": settings }));
+    }
+    Ok((200, Value::Object(out)))
+}
+
+/// `PUT /_settings`.
+pub(crate) async fn put_settings_all(
+    State(gw): State<EsGateway>,
+    ctx: RequestCtx,
+    uri: Uri,
+    body: Bytes,
+) -> Response {
+    answer(
+        &ctx,
+        put_settings_of(&gw, &ctx, &uri, IndexExpr::All, &body).await,
+    )
+}
+
+/// `PUT /{index}/_settings`.
+pub(crate) async fn put_settings(
+    State(gw): State<EsGateway>,
+    ctx: RequestCtx,
+    uri: Uri,
+    Path(index): Path<String>,
+    body: Bytes,
+) -> Response {
+    let expr = IndexExpr::parse(&index);
+    answer(&ctx, put_settings_of(&gw, &ctx, &uri, expr, &body).await)
+}
+
+/// Stores dynamic settings in each index's `es.settings` annotation; every
+/// index is planned first, so a refusal changes nothing.
+async fn put_settings_of(
+    gw: &EsGateway,
+    ctx: &RequestCtx,
+    uri: &Uri,
+    expr: IndexExpr,
+    body: &[u8],
+) -> Result<(u16, Value), EsError> {
+    let params = Params::parse(uri.query(), uri.path(), PUT_SETTINGS_PARAMS)?;
+    let opts = resolve_options(&params)?;
+    let preserve = params.bool("preserve_existing")?.unwrap_or(false);
+    let Some(body) = json_body(body)? else {
+        return Err(EsError::body_required());
+    };
+    let service = gw.service();
+    let ns = ctx.namespace.as_str();
+    let resolved = resolve(service, ns, &expr, opts).await?;
+    let mut plans = Vec::with_capacity(resolved.len());
+    for r in resolved {
+        let info = service
+            .get_collection(ns, &r.name)
+            .await
+            .map_err(admin_error)?;
+        let annotation = plan_put_settings(&info.schema, &r.name, info.id, &body, preserve)
+            .map_err(|e| on_index(e, &r.name))?;
+        plans.push((r.name, annotation));
+    }
+    for (name, annotation) in plans {
+        let annotations = BTreeMap::from([(ANN_SETTINGS.to_string(), annotation)]);
+        service
+            .add_fields(ns, &name, Vec::new(), Vec::new(), annotations)
+            .await
+            .map_err(|e| on_index(admin_error(e), &name))?;
+    }
+    Ok(ack())
 }
 
 // ----- mappings -----

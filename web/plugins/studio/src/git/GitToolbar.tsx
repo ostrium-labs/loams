@@ -27,7 +27,7 @@ import {
   WorktreeSetupCard,
   type WorktreeSetupSnapshot,
 } from '@loams/studio-ui';
-import { AlertDialog, Button, Dialog, Notice } from '@loams/ui';
+import { AlertDialog, Button, Dialog, Notice, toastManager } from '@loams/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import type { Project, StudioAgentd } from '../agentd.js';
@@ -299,7 +299,7 @@ export function ProjectGitTools({
         }}
       >
         {error && (
-          <span role="alert" className="max-w-56 truncate text-[0.78rem] text-danger" title={error}>
+          <span role="alert" className="max-w-56 truncate text-small text-danger" title={error}>
             {error}
           </span>
         )}
@@ -325,6 +325,7 @@ export function ProjectGitTools({
           setConfirm(null);
           const outcome = await writes.switchRef(ref.name);
           if (!outcome.ok) setError(outcome.error.message);
+          else toastManager.add({ type: 'success', title: `Switched to ${ref.name}` });
         }}
       >
         {project.name}&apos;s checkout at <code>{cwd}</code> moves to this branch. Git refuses when

@@ -1,0 +1,35 @@
+{
+	email {$ACME_EMAIL}
+	# Public ACME only; no admin API on a TCP port.
+	admin off
+}
+
+# The control plane, DERP and OIDC callback. Tailscale's control protocol needs
+# `Upgrade: tailscale-control-protocol` over POST to pass through; Caddy does
+# this by default. Cloudflare's proxy and Tunnel cannot: the DNS record for
+# this name is DNS-only (grey cloud).
+{$HEADSCALE_HOST} {
+	# The management API and metrics are never on the public name.
+	@private path /api /api/* /metrics /debug /debug/* /swagger /swagger/*
+	respond @private 404
+
+	reverse_proxy {$HEADSCALE_UPSTREAM:headscale:8080} {
+		flush_interval -1
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}
+
+# Operators and the control plane's automation reach the management API on the
+# tailnet address of this host (ADMIN_BIND in .env). Plain HTTP is fine there:
+# the tailnet is WireGuard, and the API still needs a bearer key.
+:8081 {
+	reverse_proxy {$HEADSCALE_UPSTREAM:headscale:8080}
+	log {
+		output stdout
+		format json
+	}
+}

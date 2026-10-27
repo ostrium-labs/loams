@@ -42,9 +42,9 @@ const GRAPH_WIDGET = {
 /** The issues of a failed parse, flattened for a readable assertion. */
 function issuesOf(result: {
   success: boolean;
-  error?: { issues: { path: (string | number)[]; message: string }[] };
+  error?: { issues: { path: PropertyKey[]; message: string }[] };
 }) {
-  return (result.error?.issues ?? []).map((i) => `${i.path.join(".")}: ${i.message}`);
+  return (result.error?.issues ?? []).map((i) => `${i.path.map(String).join(".")}: ${i.message}`);
 }
 
 describe("graph widget type", () => {

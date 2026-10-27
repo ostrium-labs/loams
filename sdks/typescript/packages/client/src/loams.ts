@@ -29,19 +29,34 @@ import {
   type AdminProjectsModule,
   type AuthModule,
   type CallBinding,
+  type CollectionsModule,
+  type DocumentsModule,
+  type GraphModule,
+  type SqlModule,
+  type StreamsModule,
+  type NamespacesModule,
+  type SearchModule,
+  type VectorModule,
   type InstanceModule,
   type LiveAdminModule,
   type LiveModule,
   type ModuleBinding,
   type TablesModule,
 } from './gen/facade.js';
-import { CallInvoker, type CallOptions, type ConsistencyTokenStore } from './runtime/call.js';
+import { attachAppCalls, type documentCalls, type searchCalls, type sqlCalls, type streamCalls } from './app.js';
+import { CollectionHandle, type HandleModules } from './handle.js';
+import {
+  CallInvoker,
+  DEFAULT_TIMEOUT_MS,
+  type CallOptions,
+  type ConsistencyTokenStore,
+} from './runtime/call.js';
 import { ConsistencySession } from './runtime/consistency.js';
 import { LoamsError } from './runtime/errors.js';
 import { paginate, type PageRequestOptions } from './runtime/pagination.js';
 import { SystemApi, type VersionReport } from './system.js';
 import { DEFAULT_MAX_RETRIES } from './runtime/retry.js';
-import { apiKey, type TokenSource } from './runtime/token-source.js';
+import { apiKey, envToken, type TokenSource } from './runtime/token-source.js';
 import { createLoamsTransport, type TransportOptions } from './runtime/transports.js';
 import { watch, type ResumeOptions } from './runtime/streams.js';
 
@@ -59,7 +74,7 @@ export interface LoamsOptions {
   auth?: TokenSource | string;
   /**
    * The transport. Defaults to Connect over `fetch` pointed at `endpoint`,
-   * which is the browser, Node, Deno and Bun path (see `runtime/transports.ts`).
+   * which is the browser, Node and Bun path (see `runtime/transports.ts`).
    * `@loams/client/node` exports `createNodeTransport` for HTTP/2 gRPC.
    *
    * A transport carries its own base URL, so a transport passed here must be
@@ -77,8 +92,30 @@ export interface LoamsOptions {
    * read-your-writes across processes.
    */
   sessionConsistency?: boolean;
-  /** The client's deadline, when the transport does not set one. */
+  /**
+   * The deadline of every unary call that does not set its own `timeoutMs`
+   * (runtime contract R12). Default 30 000 ms; `0` disables it. Streams have
+   * no default deadline. The budget covers a call's retries, and a call that
+   * runs out raises `DeadlineExceededError` with reason
+   * `client_deadline_exceeded`, which is never retried.
+   */
   timeoutMs?: number;
+  /**
+   * The namespace of every request that has a `namespace` field and leaves it
+   * empty (runtime contract R11). An explicit `namespace` always wins; with
+   * neither, such a call fails with `InvalidArgumentError` before any network
+   * call.
+   */
+  namespace?: string;
+}
+
+/** The environment `Loams.fromEnv` reads (R1). */
+export interface LoamsEnvironment {
+  readonly LOAMS_ENDPOINT?: string;
+  readonly LOAMS_API_KEY?: string;
+  readonly LOAMS_TOKEN?: string;
+  readonly LOAMS_NAMESPACE?: string;
+  readonly [name: string]: string | undefined;
 }
 
 export type { Catalogue, VersionReport } from './system.js';
@@ -98,6 +135,26 @@ export type LiveNamespace = LiveModule & {
   /** `loams.live.admin` — apps, deploy, roll back, index status and logs. */
   readonly admin: LiveAdminModule;
 };
+
+/** A paged call's `<call>All` iterator, which `attachAppCalls` adds. */
+type AllOf<Item> = (request?: object, options?: CallOptions) => AsyncGenerator<Item, void, undefined>;
+
+/** `loams.namespaces`, with `listAll`. */
+export type NamespacesNamespace = NamespacesModule & { readonly listAll: AllOf<unknown> };
+/** `loams.collections`, with `listAll` and `listVersionsAll`. */
+export type CollectionsNamespace = CollectionsModule & {
+  readonly listAll: AllOf<unknown>;
+  readonly listVersionsAll: AllOf<unknown>;
+};
+/** `loams.documents`, with the hand-written conveniences (SDKP §2.3). */
+export type DocumentsNamespace = DocumentsModule & ReturnType<typeof documentCalls>;
+/** `loams.search`, with `text`, `hybrid` and `queryAll` (SDKP §2.4). */
+export type SearchNamespace = SearchModule & ReturnType<typeof searchCalls>;
+/** `loams.sql`, with `records` (SDKP §2.5). */
+export type SqlNamespace = SqlModule & ReturnType<typeof sqlCalls>;
+/** `loams.streams`, with `subscribe` and `<call>All` (SDKP §2.5, R14). */
+export type StreamsNamespace = StreamsModule &
+  ReturnType<typeof streamCalls> & { readonly listAll: AllOf<unknown> };
 
 /** `loams.admin`: the console's administration modules (design §44 §7.2). */
 export interface AdminNamespace {
@@ -121,12 +178,30 @@ export class Loams {
   readonly admin: AdminNamespace;
   /** `loams.auth` — sessions and sign-in. */
   readonly auth: AuthModule;
+  /** `loams.namespaces` — the containers every collection and stream live in. */
+  readonly namespaces: NamespacesNamespace;
+  /** `loams.collections` — collections, their schemas, aliases and versions. */
+  readonly collections: CollectionsNamespace;
+  /** `loams.documents` — write, read, scroll and count documents. */
+  readonly documents: DocumentsNamespace;
+  /** `loams.search` — text, vector and hybrid search (`Search` builds one). */
+  readonly search: SearchNamespace;
+  /** `loams.vector` — the kNN half of `search`, by its own name (Q613). */
+  readonly vector: VectorModule;
+  /** `loams.graph` — Loams Graph, queried with GQL. Its package is `unstable`. */
+  readonly graph: GraphModule;
+  /** `loams.sql` — one read-only SQL statement over a namespace's collections. */
+  readonly sql: SqlNamespace;
+  /** `loams.streams` — a namespace's logs: produce, fetch, CloudEvents and `subscribe`. */
+  readonly streams: StreamsNamespace;
   /** The module catalogue, feature detection and the version check. */
   readonly system: SystemApi;
   /** Every generated module, by its dotted name (`'live.admin'`): the
    * catalogue a caller iterates. The same objects are reachable as
    * properties, `loams.live.admin` for `'live.admin'`. */
   readonly modules: Readonly<Record<string, unknown>>;
+  /** The default namespace (R11), if the client has one. */
+  readonly namespace: string | undefined;
 
   readonly #invoker: CallInvoker;
   readonly #consistency: ConsistencySession | undefined;
@@ -151,15 +226,29 @@ export class Loams {
       tokenSource,
       options.maxRetries ?? DEFAULT_MAX_RETRIES,
       this.#consistency,
+      {
+        namespace: options.namespace,
+        timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      },
     );
+    this.namespace = options.namespace;
 
     this.modules = buildModules(this.#invoker);
+    attachAppCalls(this.modules as Record<string, unknown>, MODULES);
     const tree = nestModules(this.modules);
     this.instance = tree.instance as InstanceModule;
     this.live = tree.live as LiveNamespace;
     this.tables = tree.tables as TablesModule;
     this.admin = tree.admin as AdminNamespace;
     this.auth = tree.auth as AuthModule;
+    this.namespaces = tree.namespaces as NamespacesNamespace;
+    this.collections = tree.collections as CollectionsNamespace;
+    this.documents = tree.documents as DocumentsNamespace;
+    this.search = tree.search as SearchNamespace;
+    this.vector = tree.vector as VectorModule;
+    this.graph = tree.graph as GraphModule;
+    this.sql = tree.sql as SqlNamespace;
+    this.streams = tree.streams as StreamsNamespace;
     this.system = new SystemApi(
       (request, callOptions) => this.instance.getInstance(request, callOptions),
       {
@@ -168,6 +257,41 @@ export class Loams {
         timeoutMs: options.timeoutMs,
       },
     );
+  }
+
+  /**
+   * A client from the environment: `LOAMS_ENDPOINT`, then `LOAMS_API_KEY` or
+   * `LOAMS_TOKEN`, then `LOAMS_NAMESPACE` (R1). `options` wins over the
+   * environment where both say something.
+   */
+  static fromEnv(
+    options: Partial<LoamsOptions> = {},
+    environment: LoamsEnvironment = readEnvironment(),
+  ): Loams {
+    const endpoint = options.endpoint ?? environment.LOAMS_ENDPOINT;
+    if (endpoint === undefined || endpoint === '') {
+      throw new LoamsError('Loams.fromEnv: LOAMS_ENDPOINT is not set', {
+        code: Code.InvalidArgument,
+        metadata: { field: 'LOAMS_ENDPOINT' },
+      });
+    }
+    const hasKey =
+      (environment.LOAMS_API_KEY ?? '') !== '' || (environment.LOAMS_TOKEN ?? '') !== '';
+    const namespace = options.namespace ?? environment.LOAMS_NAMESPACE;
+    return new Loams({
+      ...options,
+      endpoint,
+      ...(options.auth === undefined && hasKey ? { auth: envToken(environment) } : {}),
+      ...(namespace === undefined || namespace === '' ? {} : { namespace }),
+    });
+  }
+
+  /**
+   * A handle on one collection: its document and search calls with
+   * `collection` (and `namespace`) filled in (SDKP §2.8). Holds no state.
+   */
+  collection(name: string, options: { namespace?: string } = {}): CollectionHandle {
+    return new CollectionHandle(this.modules as HandleModules, name, options);
   }
 
   /** The session consistency token store, when `sessionConsistency` is on. */
@@ -257,6 +381,13 @@ export class Loams {
   }
 }
 
+/** The process environment, where there is one (Node, Bun); empty in a
+ * browser. */
+function readEnvironment(): LoamsEnvironment {
+  const scope = globalThis as { process?: { env?: Record<string, string | undefined> } };
+  return scope.process?.env ?? {};
+}
+
 /**
  * Builds one object per generated module: one function per generated call,
  * each delegating to the same invoker.
@@ -268,11 +399,21 @@ export class Loams {
 function buildModules(invoker: CallInvoker): Record<string, unknown> {
   const modules: Record<string, unknown> = {};
   for (const module of MODULES) {
-    const descriptor = SERVICE_DESCRIPTORS[module.service];
-    if (descriptor === undefined) {
+    // A module may span two services (`loams.graph` is `GraphAdminService`
+    // and `GraphService`), so every call's own service is registered.
+    const services = new Set([module.service, ...module.calls.map((call) => call.service)]);
+    let missing = false;
+    for (const service of services) {
+      const descriptor = SERVICE_DESCRIPTORS[service];
+      if (descriptor === undefined) {
+        missing = true;
+        continue;
+      }
+      invoker.register(service, descriptor);
+    }
+    if (missing) {
       continue;
     }
-    invoker.register(module.service, descriptor);
     const calls: Record<string, unknown> = {
       module: module.name,
       service: module.service,

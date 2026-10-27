@@ -40,6 +40,10 @@ class CallInvoker(
     val codec: Codec,
     /** The consistency-token session, or null. Inert today; see [ConsistencySession]. */
     private val session: ConsistencySession? = null,
+    /** The namespace an app request with an empty `namespace` field gets (R11). */
+    val defaultNamespace: String? = null,
+    /** The client's unary deadline (R12); [java.time.Duration.ZERO] means none. */
+    val timeout: java.time.Duration = DEFAULT_TIMEOUT,
 ) {
     /** This client's protocol, for a caller that wants to branch on it. */
     val wireProtocol: Protocol get() = protocol
@@ -66,25 +70,93 @@ class CallInvoker(
         }
 
         val settings = options ?: CallOptions.NONE
+        val store = sessionFor(binding)
+        val prepared = prepare(binding, request, settings, store)
 
         // R3: keyed **once**, before the first attempt, and the same message goes to
-        // every attempt. A binding whose schema declares no `idempotency_key` is left
-        // exactly as the caller wrote it, and a caller who set `mintIdempotencyKey =
-        // false` has already decided this call goes out unkeyed (D655).
-        val keyed = Idempotency.apply(request, settings.idempotencyKey ?: "", settings.mintIdempotencyKey ?: true)
+        // every attempt (D655).
+        val keyed = Idempotency.apply(prepared.request, settings.idempotencyKey ?: "", settings.mintIdempotencyKey ?: true)
         val plan = planFor(binding, settings, keyed.keyed)
+        val token = settings.consistencyToken?.takeIf { it.isNotEmpty() }
+            ?: if (prepared.bodyCarriesToken) null else store?.token()
 
-        val response = RetryLoop.run(
-            rpc = binding.rpc,
-            request = keyed.request,
-            plan = plan,
-            cancelled = settings.cancelled,
-        ) { attempt ->
-            sendUnary(binding, attempt, settings)
+        // R12: one budget for the whole logical call, retries and backoff included.
+        val deadline = Deadline.start(settings.timeout ?: timeout)
+        var header: String? = null
+        val response = try {
+            RetryLoop.run(
+                rpc = binding.rpc,
+                request = keyed.request,
+                plan = plan,
+                cancelled = settings.cancelled,
+                sleep = { wait ->
+                    if (deadline.wouldPass(wait)) throw deadline.exceeded(binding.rpc)
+                    Thread.sleep(wait)
+                },
+            ) { attempt ->
+                if (deadline.expired()) throw deadline.exceeded(binding.rpc)
+                val (message, returned) = sendUnary(binding, attempt, settings, token, deadline)
+                header = returned
+                message
+            }
+        } catch (thrown: LoamsException) {
+            if (deadline.active && !Deadline.isClientDeadline(thrown) && deadline.expired()) {
+                throw deadline.exceeded(binding.rpc)
+            }
+            throw thrown
         }
 
-        recordConsistency(settings, response)
+        recordConsistency(store, response, header)
         return response
+    }
+
+    /** R4's session for this binding: collection reads and writes only (a graph token names one graph). */
+    private fun sessionFor(binding: CallBinding): ConsistencySession? =
+        if (binding.packageName in SESSION_PACKAGES) session else null
+
+    private data class Prepared(val request: DynamicMessage, val bodyCarriesToken: Boolean)
+
+    // R11 and R4's read half, on a copy: the caller's message is never mutated.
+    private fun prepare(
+        binding: CallBinding,
+        request: DynamicMessage,
+        settings: CallOptions,
+        store: ConsistencySession?,
+    ): Prepared {
+        var builder: DynamicMessage.Builder? = null
+        val descriptor = request.descriptorForType
+        val ns = descriptor.findFieldByName("namespace")
+        if (binding.packageName in NAMESPACED_PACKAGES && ns != null && !ns.isRepeated &&
+            ns.javaType == FieldDescriptor.JavaType.STRING && (request.getField(ns) as String).isEmpty()
+        ) {
+            val fill = settings.namespace ?: defaultNamespace
+            if (fill.isNullOrEmpty()) {
+                throw InvalidArgumentException(
+                    rpc = binding.rpc,
+                    unknownReason = "namespace_required",
+                    metadata = mapOf("field" to "namespace"),
+                    message = "${binding.rpc}: no namespace: pass one, or give the client a default " +
+                        "(LoamsClient(namespace = ...) or LOAMS_NAMESPACE)",
+                )
+            }
+            builder = request.toBuilder().setField(ns, fill)
+        }
+        var carries = false
+        val current = store?.token()
+        val consistency = descriptor.findFieldByName("consistency")
+        if (current != null && settings.consistencyToken.isNullOrEmpty() && consistency != null &&
+            consistency.javaType == FieldDescriptor.JavaType.MESSAGE &&
+            consistency.messageType.findFieldByName("at_least") != null
+        ) {
+            if (!request.hasField(consistency)) {
+                val value = DynamicMessage.newBuilder(consistency.messageType)
+                    .setField(consistency.messageType.findFieldByName("at_least"), current)
+                    .build()
+                builder = (builder ?: request.toBuilder()).setField(consistency, value)
+            }
+            carries = true
+        }
+        return Prepared(builder?.build() ?: request, carries)
     }
 
     /**
@@ -112,22 +184,38 @@ class CallInvoker(
     }
 
     /** Sends one attempt of a unary call and decodes the answer. */
-    private fun sendUnary(binding: CallBinding, attempt: Attempt, settings: CallOptions): DynamicMessage {
+    private fun sendUnary(
+        binding: CallBinding,
+        attempt: Attempt,
+        settings: CallOptions,
+        consistencyToken: String?,
+        deadline: Deadline,
+    ): Pair<DynamicMessage, String?> {
         val body = encodeRequest(binding, attempt.request, false)
         val request = TransportRequest(
             rpc = binding.rpc,
             method = "POST",
             path = "/" + binding.rpc,
             contentType = ContentTypes.forCall(protocol, codec, Streaming.UNARY),
-            headers = headers(settings),
+            headers = LinkedHashMap(headers(settings)).also { extra ->
+                if (!consistencyToken.isNullOrEmpty()) extra[CONSISTENCY_HEADER] = consistencyToken
+                deadline.remaining()?.let { extra["connect-timeout-ms"] = it.toMillis().coerceAtLeast(1).toString() }
+            },
             body = body,
+            timeout = deadline.remaining(),
         )
 
-        val response = transport.send(request)
+        val response = try {
+            transport.send(request)
+        } catch (timedOut: java.net.http.HttpTimeoutException) {
+            if (deadline.active) throw deadline.exceeded(binding.rpc)
+            throw timedOut
+        }
         if (readUnaryFailure(response, binding.rpc) != null) {
             throw ErrorMapper.map(readUnaryFailure(response, binding.rpc)!!, binding.rpc)
         }
-        return MessageCodec.deserialize(binding.response, response.body, codec)
+        val returned = response.headers.entries.firstOrNull { it.key.equals(CONSISTENCY_HEADER, ignoreCase = true) }?.value
+        return MessageCodec.deserialize(binding.response, response.body, codec) to returned
     }
 
     /**
@@ -208,19 +296,34 @@ class CallInvoker(
      * cannot. The call succeeded; refusing it here would make a caller that retries on
      * the error perform the write twice.
      */
-    private fun recordConsistency(settings: CallOptions, response: DynamicMessage) {
-        if (session == null) {
+    private fun recordConsistency(store: ConsistencySession?, response: DynamicMessage, header: String?) {
+        if (store == null) {
             return
         }
-        val field = response.descriptorForType.findFieldByName("consistency_token") ?: return
-        val token = response.getField(field)?.toString() ?: return
-        if (token.isEmpty()) {
-            return
+        for (name in TOKEN_FIELDS) {
+            val field = response.descriptorForType.findFieldByName(name) ?: continue
+            if (field.isRepeated || field.javaType != FieldDescriptor.JavaType.STRING) continue
+            store.merge(response.getField(field) as String)
         }
-        session.merge(token)
+        store.merge(header)
     }
 
     internal companion object {
+        /** The unary deadline when neither client nor call names one (R12). */
+        val DEFAULT_TIMEOUT: java.time.Duration = java.time.Duration.ofSeconds(30)
+
+        const val CONSISTENCY_HEADER: String = "loams-consistency-token"
+
+        /** The response fields a consistency token can arrive in (R4). */
+        val TOKEN_FIELDS: List<String> = listOf("consistency_token", "token", "read_token")
+
+        /** The packages R11 applies to: the app-building API (SDKP §2.1). */
+        val NAMESPACED_PACKAGES: Set<String> =
+            setOf("loams.collection.v1", "loams.graph.v1", "loams.sql.v1", "loams.stream.v1")
+
+        /** The packages R4's session applies to: collection reads accept a merged token. */
+        val SESSION_PACKAGES: Set<String> = setOf("loams.collection.v1", "loams.sql.v1")
+
         /**
          * Whether a unary response is a refusal, and which one.
          *

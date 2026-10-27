@@ -1,0 +1,915 @@
+{
+  "description": "Invalid listings, each a valid fixture with one rule broken. Applied by listing_schema_rejects_each_invalid_fixture (crates/loams-agentd-marketplace) and by loams-listing's lint tests. op is set (add or replace) or remove; paths are JSON Pointers.",
+  "cases": [
+    {
+      "name": "missing-id",
+      "rule": "Every listing has an id.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/id"
+        }
+      ]
+    },
+    {
+      "name": "id-without-namespace",
+      "rule": "An id is <namespace>/<name>.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/id",
+          "value": "loams-starter"
+        }
+      ]
+    },
+    {
+      "name": "id-uppercase",
+      "rule": "Ids are lower case.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/id",
+          "value": "Ostrium/Starter"
+        }
+      ]
+    },
+    {
+      "name": "unknown-kind",
+      "rule": "kind is agent, harness or mcp-server.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/kind",
+          "value": "plugin"
+        }
+      ]
+    },
+    {
+      "name": "version-not-semver",
+      "rule": "version is a semantic version.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/version",
+          "value": "1.0"
+        }
+      ]
+    },
+    {
+      "name": "unknown-field",
+      "rule": "No fields outside the schema.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/homepage",
+          "value": "https://example.com"
+        }
+      ]
+    },
+    {
+      "name": "pricing-paid",
+      "rule": "v1 accepts only free listings (D1474).",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/pricing",
+          "value": "paid"
+        }
+      ]
+    },
+    {
+      "name": "pricing-missing",
+      "rule": "pricing is required.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/pricing"
+        }
+      ]
+    },
+    {
+      "name": "licence-not-spdx",
+      "rule": "licence is an SPDX expression.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/licence",
+          "value": "Apache 2"
+        }
+      ]
+    },
+    {
+      "name": "source-short-commit",
+      "rule": "source.commit is a full commit id.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/source/commit",
+          "value": "0123abc"
+        }
+      ]
+    },
+    {
+      "name": "source-http",
+      "rule": "Repository URLs are https.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/source/repository",
+          "value": "http://github.com/x/y"
+        }
+      ]
+    },
+    {
+      "name": "agent-no-acp-or-a2a",
+      "rule": "An agent serves ACP or A2A (D1451).",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/surfaces",
+          "value": {
+            "mcp": {
+              "transport": "stdio"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "agent-without-surfaces",
+      "rule": "An agent declares its surfaces.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/surfaces"
+        }
+      ]
+    },
+    {
+      "name": "agent-without-tools",
+      "rule": "An agent declares its tools, even when it has none.",
+      "base": "valid/agent-pydantic-ai-a2a.json",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/tools"
+        }
+      ]
+    },
+    {
+      "name": "agent-without-models",
+      "rule": "An agent declares the model APIs it calls.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/models"
+        }
+      ]
+    },
+    {
+      "name": "agent-without-framework",
+      "rule": "An agent names its framework.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/framework"
+        }
+      ]
+    },
+    {
+      "name": "unknown-framework",
+      "rule": "framework.name is from the list, else other.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/framework/name",
+          "value": "autogen"
+        }
+      ]
+    },
+    {
+      "name": "unknown-language",
+      "rule": "language is from the list.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/language",
+          "value": "cobol"
+        }
+      ]
+    },
+    {
+      "name": "unknown-runtime",
+      "rule": "runtime.kind is node, python, oci or binary.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/runtime/kind",
+          "value": "wasm"
+        }
+      ]
+    },
+    {
+      "name": "runtime-artifact-mismatch",
+      "rule": "The node runtime installs npm artifacts.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/runtime/kind",
+          "value": "python"
+        }
+      ]
+    },
+    {
+      "name": "artifact-without-provenance",
+      "rule": "An artifact needs provenance (D1459).",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/provenance"
+        }
+      ]
+    },
+    {
+      "name": "npm-integrity-sha256",
+      "rule": "npm integrity is sha512.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/artifact/integrity",
+          "value": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "name": "npm-without-integrity",
+      "rule": "npm artifacts carry their integrity.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/artifact/integrity"
+        }
+      ]
+    },
+    {
+      "name": "pypi-bad-integrity",
+      "rule": "pypi integrity is sha256:<hex>.",
+      "base": "valid/agent-pydantic-ai-a2a.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/artifact/integrity",
+          "value": "sha256:XYZ"
+        }
+      ]
+    },
+    {
+      "name": "archive-without-files",
+      "rule": "An archive lists its files.",
+      "base": "valid/harness-acp-binary.json",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/artifact/files"
+        }
+      ]
+    },
+    {
+      "name": "archive-with-integrity",
+      "rule": "An archive's hashes are per file.",
+      "base": "valid/harness-acp-binary.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/artifact/integrity",
+          "value": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "name": "archive-bad-sha",
+      "rule": "Archive files carry a SHA-256.",
+      "base": "valid/harness-acp-binary.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/artifact/files/0/sha256",
+          "value": "abc"
+        }
+      ]
+    },
+    {
+      "name": "archive-unknown-platform",
+      "rule": "Platforms are from the list.",
+      "base": "valid/harness-acp-binary.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/artifact/files/0/platform",
+          "value": "linux-riscv64"
+        }
+      ]
+    },
+    {
+      "name": "no-targets",
+      "rule": "targets has at least one entry.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/targets",
+          "value": []
+        }
+      ]
+    },
+    {
+      "name": "unknown-target",
+      "rule": "targets are agentd, byoc-server or app-byoc.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/targets",
+          "value": [
+            "lambda"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "artifact-without-runtime",
+      "rule": "An artifact needs a runtime.",
+      "base": "valid/harness-native.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/artifact",
+          "value": {
+            "type": "npm",
+            "name": "x",
+            "version": "1.0.0",
+            "integrity": "sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+          }
+        }
+      ]
+    },
+    {
+      "name": "tool-unknown-risk",
+      "rule": "Tool risk is read, write, egress or destructive.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/tools/0/risk",
+          "value": "low"
+        }
+      ]
+    },
+    {
+      "name": "tool-without-risk",
+      "rule": "Every tool declares its risk.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/tools/0/risk"
+        }
+      ]
+    },
+    {
+      "name": "tool-without-description",
+      "rule": "Every tool has a description.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/tools/0/description"
+        }
+      ]
+    },
+    {
+      "name": "egress-not-host",
+      "rule": "Egress entries are host names.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/place/egress",
+          "value": [
+            "https://api.github.com/"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "data-scope-unknown-access",
+      "rule": "Data access is read or write.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/place/data/0/access",
+          "value": "admin"
+        }
+      ]
+    },
+    {
+      "name": "unknown-loams-capability",
+      "rule": "loams capabilities are from the list.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/loams/kafka",
+          "value": true
+        }
+      ]
+    },
+    {
+      "name": "loams-capability-not-boolean",
+      "rule": "loams capabilities are booleans.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/loams/postgres",
+          "value": "yes"
+        }
+      ]
+    },
+    {
+      "name": "unknown-model-api",
+      "rule": "Model APIs are chat-completions, responses or anthropic-messages.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/models/api",
+          "value": [
+            "gemini"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "empty-model-api",
+      "rule": "At least one model API.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/models/api",
+          "value": []
+        }
+      ]
+    },
+    {
+      "name": "secret-with-default",
+      "rule": "A secret has no default.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/config/1/default",
+          "value": "ghp_x"
+        }
+      ]
+    },
+    {
+      "name": "enum-config-without-values",
+      "rule": "An enum input lists its values.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/config/0/values"
+        }
+      ]
+    },
+    {
+      "name": "values-on-string-config",
+      "rule": "Only enum inputs have values.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/config/1/values",
+          "value": [
+            "a"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "config-bad-env",
+      "rule": "env is an upper-case variable name.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/config/1/env",
+          "value": "github-token"
+        }
+      ]
+    },
+    {
+      "name": "conformance-unknown-level",
+      "rule": "Conformance levels are core, compatible or native.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/conformance/level",
+          "value": "gold"
+        }
+      ]
+    },
+    {
+      "name": "a2a-without-card",
+      "rule": "An A2A surface embeds its Agent Card.",
+      "base": "valid/agent-pydantic-ai-a2a.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/surfaces/a2a",
+          "value": {}
+        }
+      ]
+    },
+    {
+      "name": "agent-with-harness-block",
+      "rule": "An agent has no harness block.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/harness",
+          "value": {
+            "launch": {
+              "protocol": "acp"
+            },
+            "auth": [
+              "none"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "harness-without-block",
+      "rule": "A harness has its harness block.",
+      "base": "valid/harness-acp-binary.json",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/harness"
+        }
+      ]
+    },
+    {
+      "name": "harness-with-surfaces",
+      "rule": "Harnesses do not declare agent surfaces.",
+      "base": "valid/harness-acp-binary.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/surfaces",
+          "value": {
+            "acp": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "acp-harness-without-artifact",
+      "rule": "An ACP harness installs from an artifact.",
+      "base": "valid/harness-acp-binary.json",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/artifact"
+        },
+        {
+          "op": "remove",
+          "path": "/provenance"
+        }
+      ]
+    },
+    {
+      "name": "native-harness-third-party",
+      "rule": "Native harnesses are first-party only (D1464).",
+      "base": "valid/harness-native.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/id",
+          "value": "example-org/claude-code"
+        }
+      ]
+    },
+    {
+      "name": "native-harness-without-adapter",
+      "rule": "A native harness names agentd's adapter.",
+      "base": "valid/harness-native.json",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/harness/native_adapter"
+        }
+      ]
+    },
+    {
+      "name": "acp-harness-with-adapter",
+      "rule": "Only native harnesses name an adapter.",
+      "base": "valid/harness-acp-binary.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/harness/native_adapter",
+          "value": "codex"
+        }
+      ]
+    },
+    {
+      "name": "harness-no-auth",
+      "rule": "A harness lists its auth kinds.",
+      "base": "valid/harness-acp-binary.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/harness/auth",
+          "value": []
+        }
+      ]
+    },
+    {
+      "name": "mcp-without-block",
+      "rule": "An MCP server has its mcp_server block.",
+      "base": "valid/mcp-server-local.json",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/mcp_server"
+        }
+      ]
+    },
+    {
+      "name": "mcp-without-tools",
+      "rule": "An MCP server declares its tools.",
+      "base": "valid/mcp-server-local.json",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/tools"
+        }
+      ]
+    },
+    {
+      "name": "mcp-server-json-without-name",
+      "rule": "The embedded server.json has a name.",
+      "base": "valid/mcp-server-local.json",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/mcp_server/server/name"
+        }
+      ]
+    },
+    {
+      "name": "mcp-local-without-artifact",
+      "rule": "A local MCP server installs from an artifact.",
+      "base": "valid/mcp-server-local.json",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/artifact"
+        },
+        {
+          "op": "remove",
+          "path": "/provenance"
+        }
+      ]
+    },
+    {
+      "name": "mcp-remote-without-url",
+      "rule": "A remote MCP server has its URL.",
+      "base": "valid/mcp-server-remote.json",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/mcp_server/remote_url"
+        }
+      ]
+    },
+    {
+      "name": "mcp-remote-with-artifact",
+      "rule": "A remote MCP server installs nothing.",
+      "base": "valid/mcp-server-remote.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/artifact",
+          "value": {
+            "type": "npm",
+            "name": "x",
+            "version": "1.0.0",
+            "integrity": "sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+          }
+        },
+        {
+          "op": "set",
+          "path": "/provenance",
+          "value": {
+            "type": "npm-slsa",
+            "ref": "https://x.example/a"
+          }
+        }
+      ]
+    },
+    {
+      "name": "mcp-remote-stdio",
+      "rule": "A remote MCP server speaks streamable HTTP.",
+      "base": "valid/mcp-server-remote.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/mcp_server/transport",
+          "value": "stdio"
+        }
+      ]
+    },
+    {
+      "name": "mcp-local-with-url",
+      "rule": "Only remote MCP servers have a URL.",
+      "base": "valid/mcp-server-local.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/mcp_server/remote_url",
+          "value": "https://x.example/mcp"
+        }
+      ]
+    },
+    {
+      "name": "mcp-with-surfaces",
+      "rule": "MCP servers do not declare agent surfaces.",
+      "base": "valid/mcp-server-local.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/surfaces",
+          "value": {
+            "mcp": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "walrus-blob-id-not-base64url",
+      "rule": "A Walrus blob id is URL-safe base64 without padding (D1812).",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/artifact/locations/0/blob_id",
+          "value": "++++++++++++++++++++++++++++++++++++++++++A"
+        }
+      ]
+    },
+    {
+      "name": "walrus-blob-id-wrong-length",
+      "rule": "A Walrus blob id is 32 bytes, 43 characters.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/artifact/locations/0/blob_id",
+          "value": "T_mWEmm_djDTLhUnZWnJRHAXSl2nn6VnwPYiUaqaNrkAAAA"
+        }
+      ]
+    },
+    {
+      "name": "walrus-sha256-not-hex",
+      "rule": "A Walrus location's sha256 is 64 lowercase hex characters.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/artifact/locations/0/sha256",
+          "value": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "name": "walrus-unknown-kind",
+      "rule": "walrus is the only artifact location kind.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/artifact/locations/0/kind",
+          "value": "ipfs"
+        }
+      ]
+    },
+    {
+      "name": "walrus-missing-sha256",
+      "rule": "A Walrus location is checked by its SHA-256, so it always has one.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/artifact/locations/0/sha256"
+        }
+      ]
+    },
+    {
+      "name": "walrus-locations-empty",
+      "rule": "locations, when present, names at least one.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/artifact/locations",
+          "value": []
+        }
+      ]
+    },
+    {
+      "name": "walrus-locations-on-archive-artifact",
+      "rule": "An archive's mirrors are on its files, not on the artifact.",
+      "base": "valid/harness-acp-binary.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/artifact/locations",
+          "value": [
+            {
+              "kind": "walrus",
+              "blob_id": "aVbh3_1oUc-gtUYXctEvHdfSJnb17uKq0658C2MNXIA",
+              "sha256": "213840ab495023fa2d584d2f93c121559fcacde0fb4793c6c20f7f751021a333"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "engine-unknown",
+      "rule": "runtime.engine is node or bun.",
+      "base": "valid/agent-mastra-bun.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/runtime/engine",
+          "value": "deno"
+        }
+      ]
+    },
+    {
+      "name": "engine-not-string",
+      "rule": "runtime.engine is a string.",
+      "base": "valid/agent-mastra-bun.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/runtime/engine",
+          "value": true
+        }
+      ]
+    },
+    {
+      "name": "engine-on-python",
+      "rule": "Only the node runtime has an engine (D1808).",
+      "base": "valid/agent-pydantic-ai-a2a.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/runtime/engine",
+          "value": "node"
+        }
+      ]
+    }
+  ]
+}

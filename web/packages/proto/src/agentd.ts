@@ -14,6 +14,7 @@ export * from './gen/loams/agentd/v1/files_pb.js';
 export * from './gen/loams/agentd/v1/git_pb.js';
 export * from './gen/loams/agentd/v1/groups_pb.js';
 export * from './gen/loams/agentd/v1/harness_pb.js';
+export * from './gen/loams/agentd/v1/marketplace_pb.js';
 export * from './gen/loams/agentd/v1/notifications_pb.js';
 export * from './gen/loams/agentd/v1/preview_pb.js';
 export * from './gen/loams/agentd/v1/projects_pb.js';

@@ -1,5 +1,7 @@
 # 18 — Metastore Backends, Tenancy and the Namespace Router
 
+> **Amendment (approved 2026-10-21) by [§76](76-identity-and-authorization.md)** (identity and authorization: Zitadel and OpenFGA; owner, all defaults). D66's `Authorizer` becomes one trait in `loams-authz` with `check`, `batch_check` and `list_objects`, and its lifecycle hooks become outbox rows (D1610); D67's single shared store with Lakekeeper becomes separate stores on one OpenFGA server, because Lakekeeper's model defines `project`, `namespace`, `user` and `role` (D1604, answering Q21). The outbox (D66) and the ≤ 5 s decision cache stand (D1609, D1611).
+
 Status: **Approved (owner)** · 2026-09-26 (decisions D58–D71; §3.5 and §5 amended by D75 and D76; §5, §6 and §9 amended by D86, D90, D95, D96, D98 and D99 after the turbopuffer gap analysis). Three parts are **defaults the owner has not yet confirmed** and may override: the OpenFGA timing (D67), the erasure policy (D69) and ids under sharding (D70). They are marked *(default)* below.
 
 Loams is the product name (D33, D400). API keys carry the `loams_` prefix from the start, and the crates are `loams-*`.

@@ -111,18 +111,18 @@ function MemberColumn({
       data-member={member.chatId}
       aria-label={member.label}
       className={cx(
-        "flex min-w-[15rem] flex-col gap-3 border bg-surface p-4",
+        "flex min-w-[15rem] flex-col gap-3 rounded-lg border bg-surface p-4",
         winner ? "border-accent" : "border-rule-soft",
         member.archived && "opacity-70",
       )}
     >
       <header className="flex flex-col gap-1">
-        <h3 className="m-0 truncate text-[0.95rem] font-semibold text-ink" title={member.label}>
+        <h3 className="m-0 truncate text-emphasis font-semibold text-ink" title={member.label}>
           {member.label}
         </h3>
         <p
           className={cx(
-            "m-0 flex items-center gap-1.5 text-[0.82rem] font-medium",
+            "m-0 flex items-center gap-1.5 text-body font-medium",
             STATUS_CLASS[member.status],
           )}
         >
@@ -131,17 +131,17 @@ function MemberColumn({
           {winner && <span className="ml-auto text-accent-fg text-micro font-medium">Winner</span>}
         </p>
         <p
-          className={/* mono-ok: path */ "m-0 truncate font-mono text-[0.7rem] text-faint"}
+          className={/* mono-ok: path */ "m-0 truncate font-mono text-micro text-faint"}
           title={member.cwd}
         >
           {member.branch}
         </p>
       </header>
-      <p className="m-0 flex min-h-[3.6em] gap-1.5 text-[0.84rem] text-muted">
+      <p className="m-0 flex min-h-[3.6em] gap-1.5 text-body text-muted">
         <MessageSquareText size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-faint" />
         <span className="line-clamp-3 break-words">{member.lastMessage || "No message yet."}</span>
       </p>
-      <dl className="m-0 grid grid-cols-2 gap-x-3 gap-y-1 text-[0.8rem]">
+      <dl className="m-0 grid grid-cols-2 gap-x-3 gap-y-1 text-small">
         <dt className="sr-only">Files changed</dt>
         <dd className="m-0 text-ink">
           {member.filesChanged} {member.filesChanged === 1 ? "file" : "files"}
@@ -162,12 +162,12 @@ function MemberColumn({
         </dd>
       </dl>
       {(check || hasCheck) && (
-        <p className={cx("m-0 text-[0.8rem] font-medium", CHECK_CLASS[member.check.state])}>
+        <p className={cx("m-0 text-small font-medium", CHECK_CLASS[member.check.state])}>
           {check ?? "No check run yet"}
         </p>
       )}
       {member.pendingApprovals > 0 && (
-        <p className="m-0 text-[0.8rem] text-info">
+        <p className="m-0 text-small text-info">
           {member.pendingApprovals === 1
             ? "1 approval waiting"
             : `${member.pendingApprovals} approvals waiting`}
@@ -218,24 +218,24 @@ export function GroupGrid({
 export function CheckResults({ members }: { readonly members: readonly GroupMemberView[] }) {
   const ran = members.filter((m) => m.check.state !== "none");
   if (ran.length === 0) {
-    return <p className="m-0 py-2 text-[0.86rem] text-muted">No check has run yet.</p>;
+    return <p className="m-0 py-2 text-body text-muted">No check has run yet.</p>;
   }
   return (
     <div className="flex flex-col gap-3">
       {ran.map((m) => (
         <section key={m.chatId} aria-label={`${m.label} check`} className="flex flex-col gap-1">
-          <h4 className="m-0 flex items-baseline gap-2 text-[0.84rem] font-medium text-ink">
+          <h4 className="m-0 flex items-baseline gap-2 text-body font-medium text-ink">
             {m.label}
-            <span className={cx("text-[0.78rem]", CHECK_CLASS[m.check.state])}>
+            <span className={cx("text-small", CHECK_CLASS[m.check.state])}>
               {checkLabel(m.check.state, m.check.exitCode)}
             </span>
           </h4>
           {m.check.logTail.length > 0 ? (
-            <pre className="m-0 max-h-56 overflow-auto border border-rule-soft bg-bg p-2 font-mono text-[0.72rem] leading-snug text-ink">
+            <pre className="m-0 max-h-56 overflow-auto rounded-md border border-rule-soft bg-bg p-2 font-mono text-micro leading-snug text-ink">
               {m.check.logTail.join("\n")}
             </pre>
           ) : (
-            <p className="m-0 text-[0.78rem] text-faint">No output.</p>
+            <p className="m-0 text-small text-faint">No output.</p>
           )}
         </section>
       ))}

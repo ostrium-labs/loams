@@ -1,0 +1,89 @@
+# HE0 (plan HE1 Task 5): OpenLIT 2.1.0 (Apache-2.0), an LLM observability
+# platform whose only telemetry store is ClickHouse (queries over HTTP from
+# its Next.js server; its built-in collector inserts over the native
+# protocol). Unmodified containers only. OpenLIT's compose mounts two files
+# from its repository: the ClickHouse init script (database and OTel tables)
+# and the collector configuration. `openlit-assets` fetches both at the
+# release's commit and checks their sha256, so no OpenLIT source is
+# committed. Its clickhouse-config.xml is not used (the harness's he0-logs.xml
+# keeps query_log on). NATS (realtime findings) is left out: NATS_URL is
+# empty, which OpenLIT documents as disabling it. Driven by
+# scripts/house/apps.sh openlit up|drive|dump|down. Every image is pinned by
+# digest; host ports bind to 127.0.0.1.
+name: he0-openlit
+
+services:
+  openlit:
+    image: ghcr.io/openlit/openlit:2.1.0@sha256:94552ccd09379b5e2fec3c51c4fec1b41d88d6b56b0a5ccc895c116673884fa8
+    labels: { io.loams.licence: "Apache-2.0" }
+    environment:
+      TELEMETRY_ENABLED: "false"
+      INIT_DB_HOST: clickhouse
+      INIT_DB_PORT: "8123"
+      INIT_DB_DATABASE: openlit
+      INIT_DB_USERNAME: default
+      INIT_DB_PASSWORD: OPENLIT
+      SQLITE_DATABASE_URL: file:/app/client/data/data.db
+      NATS_URL: ""
+      PORT: "3000"
+      DOCKER_PORT: "3000"
+    ports:
+      - "127.0.0.1:${HE0_OPENLIT_PORT:-3700}:3000"
+      - "127.0.0.1:${HE0_OPENLIT_OTLP_PORT:-3718}:4318"
+    volumes:
+      - openlit-data:/app/client/data
+      # The collector built into the image reads /etc/otel/otel-collector-config.yaml.
+      - openlit-assets:/etc/otel:ro
+    depends_on:
+      clickhouse: { condition: service_healthy }
+    restart: on-failure
+
+  openlit-assets:
+    image: docker.io/curlimages/curl:8.16.0@sha256:463eaf6072688fe96ac64fa623fe73e1dbe25d8ad6c34404a669ad3ce1f104b6
+    labels: { io.loams.licence: "curl" }
+    user: "0"
+    # Public resolvers: a bridge network's resolver may not reach the host's
+    # stub resolver (seen on podman with systemd-resolved).
+    dns: ["1.1.1.1", "9.9.9.9"]
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        set -e
+        base=https://raw.githubusercontent.com/openlit/openlit/9938c66638666ca5d3bcb850350faa82e510924b/assets
+        curl -fsSL -o /assets/init.sh "$$base/clickhouse-init.sh"
+        curl -fsSL -o /assets/otel-collector-config.yaml "$$base/otel-collector-config.yaml"
+        printf '%s\n' \
+          "f02227e14498d70bc6267ee7776b8fd5aa10699c8e0a1415cd5950289c7c370f  /assets/init.sh" \
+          "fd28456c7de928a5cb0dd27ebb97de3b7807d6357b407c068b9a801121860d9c  /assets/otel-collector-config.yaml" \
+          | sha256sum -c -
+        chmod 755 /assets/init.sh
+        chmod 644 /assets/otel-collector-config.yaml
+    volumes: [openlit-assets:/assets]
+
+  clickhouse:
+    image: ${HE0_CLICKHOUSE_IMAGE:-docker.io/clickhouse/clickhouse-server:26.9.2.8@sha256:7b9a0b6e9ab7ef79db5c4f8a9808f880258704eb7b4af9309f9029c16e727a80}
+    labels: { io.loams.licence: "Apache-2.0" }
+    environment:
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: OPENLIT
+      CLICKHOUSE_DATABASE: openlit
+      CLICKHOUSE_DB: openlit
+    volumes:
+      - ../clickhouse/he0-logs.xml:/etc/clickhouse-server/config.d/he0-logs.xml:ro
+      - ../clickhouse/he0-users.xml:/etc/clickhouse-server/users.d/he0-users.xml:ro
+      - openlit-assets:/docker-entrypoint-initdb.d:ro
+      - openlit-ch-data:/var/lib/clickhouse
+    depends_on:
+      openlit-assets: { condition: service_completed_successfully }
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8123/ping || exit 1"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  openlit-data:
+  openlit-assets:
+  openlit-ch-data:

@@ -1,110 +1,132 @@
-// Consistency tokens (design §44 §7.4, D609; runtime contract R4).
+// Consistency tokens (design §44 §7.4, D609; runtime contract R4 as amended by
+// SDKP §2.1).
 //
-// A write answers with a `consistency_token`; a read accepts one, so a caller
-// that just wrote can read its own write. Threading those by hand is the
-// caller's job today. The alternative is a **session store**, which is **off by
-// default** (`Options::session_consistency`): when a call opts in, every
-// response's token is folded into the session and attached to later reads.
+// A write answers with a `token` (a graph statement with a `consistency_token`)
+// and a read answers with a `read_token`; a read accepts one as
+// `consistency.at_least`, so a caller that just wrote can read its own write.
 //
-// **The token's encoding is not in the protos yet.** §05 §5 defines the
-// semantics and API1's write paths carry an opaque `v1:` string; §44 §7.4 says
-// it merges by "max offset per stream and partition", which needs the encoding
-// parsed. Until that lands, a store keeps the token it was given and reports
-// two different tokens meeting as an **error** rather than merging them into a
-// wrong one — a silently-wrong consistency token reads stale data, which is
-// worse than a failure.
+// The encoding is `crates/loams-collection/src/token.rs`'s:
+// `v1:s<stream>/p<partition>@<offset>,…`, every number canonical decimal.
+// Two tokens merge by keeping the largest offset per `(stream, partition)`.
+//
+// The **session store** is off by default (`Options::session_consistency`).
+// With it on, the app modules merge every token an answer carries into the
+// session and send `consistency.at_least` on every read that leaves
+// `consistency` unset. One token is kept per proto package: a graph's tokens
+// name the graph's own stream and a graph read refuses a token of another
+// stream.
 
 #ifndef LOAMS_CONSISTENCY_HPP
 #define LOAMS_CONSISTENCY_HPP
 
+#include <cstdint>
 #include <exception>
+#include <map>
 #include <mutex>
+#include <optional>
 #include <string>
+#include <vector>
 
 namespace loams {
 
-/// An opaque `consistency_token`. A value type with no interpretation of its
-/// own, because the encoding is not specified yet: anything that parsed the
-/// `v1:` string to merge two tokens would be inventing the format.
+/// A parsed consistency token. Default-constructed it is **absent**; `v1:` is a
+/// present token with no items.
 class ConsistencyToken {
  public:
+  /// One `s<stream>/p<partition>@<offset>`.
+  struct Item {
+    std::uint64_t stream = 0;
+    std::uint32_t partition = 0;
+    std::uint64_t offset = 0;
+    friend bool operator==(const Item& a, const Item& b) noexcept {
+      return a.stream == b.stream && a.partition == b.partition && a.offset == b.offset;
+    }
+  };
+
   ConsistencyToken() = default;
-  explicit ConsistencyToken(std::string value) : value_(std::move(value)) {}
 
-  /// The token as the API carries it, including any `v1:` prefix.
-  const std::string& Value() const noexcept { return value_; }
+  /// Parses `text`, keeping its order. Throws `loams::InvalidArgumentError`
+  /// (client-side, no network call) when it is not a `v1:` token.
+  static ConsistencyToken Parse(const std::string& text);
 
-  /// Whether there is a token at all. An empty string is the same thing, but a
-  /// caller reading a response should not have to know that.
-  bool Present() const noexcept { return !value_.empty(); }
+  /// Whether `text` parses.
+  static bool Valid(const std::string& text);
 
-  /// Identity, so a token can be compared and used as a map key. Two tokens are
-  /// equal when their strings are, which is the only equality the format
-  /// supports today.
+  /// The token's text (`v1:` and the items), or empty when absent.
+  const std::string& Value() const noexcept { return text_; }
+  std::string ToString() const { return text_; }
+
+  /// Whether there is a token at all.
+  bool Present() const noexcept { return present_; }
+
+  /// Whether the token holds no item (`v1:`).
+  bool Empty() const noexcept { return items_.empty(); }
+
+  /// The items, in the order the token spells them.
+  const std::vector<Item>& Items() const noexcept { return items_; }
+
+  /// Sorted by stream then partition, one item per pair (the largest offset).
+  ConsistencyToken Normalized() const;
+
+  /// A new token holding the larger offset of the two for every
+  /// `(stream, partition)`, normalised. An absent side is the identity.
+  ConsistencyToken Merge(const ConsistencyToken& other) const;
+
+  /// The offset this token holds for one partition.
+  std::optional<std::uint64_t> Offset(std::uint64_t stream, std::uint32_t partition) const;
+
   friend bool operator==(const ConsistencyToken& a, const ConsistencyToken& b) noexcept {
-    return a.value_ == b.value_;
+    return a.present_ == b.present_ && a.items_ == b.items_;
   }
-  friend bool operator!=(const ConsistencyToken& a, const ConsistencyToken& b) noexcept {
-    return !(a == b);
-  }
+  friend bool operator!=(const ConsistencyToken& a, const ConsistencyToken& b) noexcept { return !(a == b); }
 
  private:
-  std::string value_;
+  explicit ConsistencyToken(std::vector<Item> items);
+
+  bool present_ = false;
+  std::vector<Item> items_;
+  std::string text_;
 };
 
-/// Raised by `SessionTokenStore::Observe` when a second, **different** token
-/// arrives while one is already held.
-///
-/// It is a `LoamsError` with reason `internal` and a message that says so,
-/// because a store that cannot merge is not the caller's mistake in the sense
-/// that `internal` normally means — but it is not a Loams RPC failure either,
-/// so it carries no server code. The important part is the message: "two
-/// different tokens" names the cause and the fix (read your write through one
-/// token, or turn the session store off).
+/// **Deprecated, never thrown.** The session store once refused to merge two
+/// different tokens and raised this; now that the `v1:` encoding is parsed (R4
+/// as amended), it merges them. Kept because SDKs are additive-only (design §54
+/// §13.2), so code that catches it still compiles.
 class ConsistencyConflict : public std::exception {
  public:
   explicit ConsistencyConflict(std::string held, std::string arriving)
-      : message_("loams: the session consistency store holds '" + held +
-                 "' and cannot merge the arriving '" + arriving +
-                 "': the token encoding is not in the protos yet, and a merged "
-                 "token that is wrong reads stale data, so this is reported "
-                 "instead") {}
+      : message_("loams: the session consistency store holds '" + held + "' and cannot merge the arriving '" +
+                 arriving + "'") {}
   const char* what() const noexcept override { return message_.c_str(); }
 
  private:
   std::string message_;
 };
 
-/// Folds the tokens a session has seen into the one it attaches to later reads.
-///
-/// One store per client. Thread-safe: the token is shared mutable state on a
-/// client that a C++ program will happily call from several threads, so every
-/// access is under the mutex. The critical section is a string compare and an
-/// assign, never a network call.
+/// The session store (R4): one merged token per scope (a proto package).
+/// Thread-safe.
 class SessionTokenStore {
  public:
-  /// Folds a returned token in. An absent token is ignored: a response that
-  /// carries none is saying nothing about consistency, and treating that as
-  /// "the token is now empty" would drop a good token.
-  ///
-  /// Throws `ConsistencyConflict` when `token` differs from the one already
-  /// held.
-  void Observe(const ConsistencyToken& token);
+  /// The scope collection reads and writes share.
+  static constexpr const char* kCollections = "loams.collection.v1";
 
-  /// The token to attach to the next read, or an absent token when the store
-  /// holds none.
-  ConsistencyToken Merged() const;
+  /// Merges `token` into `scope`. An absent token is ignored rather than
+  /// clearing the one already held.
+  void Observe(const ConsistencyToken& token, const std::string& scope = kCollections);
 
-  /// Forgets the held token. `Options` calls nothing; this is for a caller that
-  /// wants to stop reading its own writes.
+  /// Merges `text` when it parses; a token that does not parse is ignored, so
+  /// the store never holds a token it cannot merge.
+  void ObserveText(const std::string& text, const std::string& scope = kCollections);
+
+  /// The merged token for `scope`, absent when none was observed.
+  ConsistencyToken Merged(const std::string& scope = kCollections) const;
+
   void Clear();
-
-  /// Whether a token is held.
-  bool Has() const;
+  bool Has(const std::string& scope = kCollections) const;
 
  private:
   mutable std::mutex mutex_;
-  ConsistencyToken token_;
+  std::map<std::string, ConsistencyToken> tokens_;
 };
 
 }  // namespace loams

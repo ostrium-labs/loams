@@ -1,0 +1,30 @@
+# LC0 Task 3 spike. workers.dev only: no routes, no custom domains, nothing on loams.dev.
+# Secrets (set with `wrangler secret put` from stdin, never here): DATABASE_URL, LC0_BEARER.
+name = "loams-cloud-lc0"
+main = "src/worker.ts"
+compatibility_date = "2026-10-01"
+workers_dev = true
+preview_urls = false
+
+[[durable_objects.bindings]]
+name = "USER_HIB"
+class_name = "UserHib"
+
+[[durable_objects.bindings]]
+name = "USER_AUTO"
+class_name = "UserAuto"
+
+[[durable_objects.bindings]]
+name = "USER_NOHIB"
+class_name = "UserNoHib"
+
+# SQLite-backed Durable Objects: the only kind on Workers Free.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["UserHib", "UserAuto", "UserNoHib"]
+
+# Probe only (LC0 Task 3): whether the rate-limiting binding is available on Workers Free.
+[[ratelimits]]
+name = "RL"
+namespace_id = "7301"
+simple = { limit = 5, period = 60 }

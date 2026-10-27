@@ -164,8 +164,17 @@ describe('overview loaders', () => {
     expect(screen.getByText('Not on this server')).toBeTruthy();
     expect(screen.getByText('This server does not serve streams and links.')).toBeTruthy();
     cleanup();
-    render(<DurableCard where={up} load={{ state: 'loading' }} local={false} />);
-    expect(screen.getByText('Local only')).toBeTruthy();
+    // A server without the durable API (404, envelope or not) is not served, not an error.
+    const noDurable: Net = {
+      baseUrl: 'http://x',
+      fetch: async () =>
+        new Response(JSON.stringify({ code: 'durable_not_served', message: 'no durable' }), {
+          status: 404,
+        }),
+    };
+    await expect(loadDurable(noDurable)).rejects.toBeInstanceOf(NotServedError);
+    render(<DurableCard where={up} load={{ state: 'error', message: 'x', notServed: true }} />);
+    expect(screen.getByText('Not on this server')).toBeTruthy();
   });
 
   it('streams_hide_internal_and_find_max_lag', async () => {
@@ -299,7 +308,7 @@ describe('overview page', () => {
     expect(calls.filter((c) => c === 'stacks.state:postgres')).toHaveLength(2);
   });
 
-  it('remote_server_shows_local_only_for_live_and_postgres', async () => {
+  it('remote_server_shows_local_only_for_live_and_postgres_and_reads_durable', async () => {
     const { api } = fakeDesktop({ engine: ready, active: 'demo' });
     render(page(api));
     await waitFor(() => expect(within(card('engine')).getByText('Connected')).toBeTruthy());
@@ -309,8 +318,10 @@ describe('overview page', () => {
         within(card(id)).getByText(/available when this computer is the active server/),
       ).toBeTruthy();
     }
-    // The server-backed cards still read from the remote server.
+    // The server-backed cards still read from the remote server, Durable included (B12).
     await waitFor(() => expect(within(card('data')).getByText('2')).toBeTruthy());
+    await waitFor(() => expect(within(card('durable')).getByText('1')).toBeTruthy());
+    expect(within(card('durable')).queryByText('Local only')).toBeNull();
   });
 });
 

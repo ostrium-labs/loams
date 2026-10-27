@@ -37,7 +37,7 @@ export interface AuthUser {
    * Group names from the `groups` claim.
    *
    * The claim is PLAIN and unnamespaced -- `claims.groups`, a `string[]` of names. There
-   * is no `goauthentik.io/...` namespace for claims; reading one returns undefined
+   * is no vendor namespace for claims; reading a namespaced key returns undefined
    * forever. It also contains DIRECT memberships only, so a user in a nested subgroup
    * does not appear in its parent's group list. Use leaf groups.
    */
@@ -51,7 +51,7 @@ export interface AuthSessionRecord {
   /**
    * Stable key for "this subject", used to find every session a user holds.
    * `hashed_user_id` by default: sha256(installId + sub), which is global and
-   * app-independent in Authentik, so the same person is one key across applications.
+   * app-independent, so the same person is one key across applications.
    */
   sessionKey: string;
   /**
@@ -270,8 +270,8 @@ export function newSessionId(): string {
 /**
  * The key a session row is stored under.
  *
- * `hashed_user_id` (the default) mirrors Authentik's own `sub_mode=hashed_user_id`:
- * sha256(userId + installId), which is global and application-independent, so one person
+ * `hashed_user_id` (the default) is a hashed, install-scoped subject:
+ * sha256(installId + sub), which is global and application-independent, so one person
  * is one key no matter which application they signed in through. `installId` is what
  * keeps two Bi installations sharing one database apart.
  */

@@ -52,8 +52,10 @@ use crate::types::{self, ChType, FieldIds, Needs};
 /// `clickhouse local` 26.7), and a Task 29 surface entry each.
 pub const CATALOG_CODES: &[(i32, &str)] = &[
     (15, "DUPLICATE_COLUMN"),
+    (16, "NO_SUCH_COLUMN_IN_TABLE"),
     (47, "UNKNOWN_IDENTIFIER"),
     (82, "DATABASE_ALREADY_EXISTS"),
+    (420, "CANNOT_UPDATE_COLUMN"),
     (620, "QUERY_NOT_ALLOWED"),
 ];
 
@@ -83,13 +85,30 @@ pub const PROP_PARTITION_BY: &str = "loams.ch.partition_by";
 pub const PROP_SETTINGS: &str = "loams.ch.settings";
 /// Property: the table class.
 pub const PROP_CLASS: &str = "loams.table_class";
+/// Property: the data-skipping indexes, as JSON (recorded, never built: a skip
+/// index only lets ClickHouse read less, HE1 R9.12).
+pub const PROP_INDEXES: &str = "loams.ch.indexes";
+/// Property: the projections, as JSON (recorded, never built, R9.12).
+pub const PROP_PROJECTIONS: &str = "loams.ch.projections";
+/// Property: the constraints, as JSON (`CHECK`s hold on every insert, R9.12).
+pub const PROP_CONSTRAINTS: &str = "loams.ch.constraints";
+/// Property: `SAMPLE BY` (R9.12).
+pub const PROP_SAMPLE_BY: &str = "loams.ch.sample_by";
+/// Property: the table `TTL` clause, as written (R9.12: reads hide expired rows).
+pub const PROP_TTL: &str = "loams.ch.ttl";
+/// Property: a view's `SELECT`, as written (R9.13).
+pub const PROP_VIEW_SELECT: &str = "loams.view.select";
+/// Property: a `Distributed` table's local table, `[db, table]` as JSON (R9.13):
+/// it reads and writes that table, since the bucket is every replica.
+pub const PROP_VIEW_DISTRIBUTED: &str = "loams.view.distributed";
 /// Property: Iceberg's own table comment.
 pub const PROP_COMMENT: &str = "comment";
 
 /// A table's class (§49 §5.2).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TableClass {
     /// Written by the House: Iceberg appends.
+    #[default]
     Lake,
     /// Written by Fluss (HS1 Task 14).
     Realtime,
@@ -98,6 +117,9 @@ pub enum TableClass {
     /// A pipe (HS1 Task 16): a stream's records, read only by its
     /// materialized views.
     Pipe,
+    /// A plain view, or a `Distributed` table read as one (HE1 R9.13): a
+    /// `SELECT` the read path expands; it holds no files.
+    View,
 }
 
 /// The class a table's metadata says it has.
@@ -109,6 +131,7 @@ pub fn class_of(metadata: &TableMetadata) -> TableClass {
     match properties.get(PROP_CLASS).map(String::as_str) {
         Some("realtime") => TableClass::Realtime,
         Some("pipe") => TableClass::Pipe,
+        Some("view") => TableClass::View,
         _ => TableClass::Lake,
     }
 }
@@ -240,18 +263,18 @@ pub(crate) fn unquote(raw: &str) -> String {
     out
 }
 
-fn syntax(message: impl Into<String>) -> HouseError {
+pub(crate) fn syntax(message: impl Into<String>) -> HouseError {
     HouseError::from(ChError::syntax_error(message.into()))
 }
 
-struct Cursor<'a> {
-    text: &'a str,
-    toks: Vec<Token>,
-    at: usize,
+pub(crate) struct Cursor<'a> {
+    pub(crate) text: &'a str,
+    pub(crate) toks: Vec<Token>,
+    pub(crate) at: usize,
 }
 
 impl<'a> Cursor<'a> {
-    fn new(text: &'a str) -> Self {
+    pub(crate) fn new(text: &'a str) -> Self {
         Self {
             text,
             toks: tokens(text.as_bytes()),
@@ -259,21 +282,21 @@ impl<'a> Cursor<'a> {
         }
     }
 
-    fn raw(&self, t: &Token) -> &'a str {
+    pub(crate) fn raw(&self, t: &Token) -> &'a str {
         &self.text[t.start..t.end]
     }
 
-    fn peek(&self) -> Option<Token> {
+    pub(crate) fn peek(&self) -> Option<Token> {
         self.toks.get(self.at).copied()
     }
 
-    fn is_word_at(&self, at: usize, word: &str) -> bool {
+    pub(crate) fn is_word_at(&self, at: usize, word: &str) -> bool {
         self.toks
             .get(at)
             .is_some_and(|t| t.word && self.raw(t).eq_ignore_ascii_case(word))
     }
 
-    fn eat(&mut self, word: &str) -> bool {
+    pub(crate) fn eat(&mut self, word: &str) -> bool {
         if self.is_word_at(self.at, word) {
             self.at += 1;
             true
@@ -283,7 +306,7 @@ impl<'a> Cursor<'a> {
     }
 
     /// All of `words` in a row, or nothing consumed.
-    fn eat_all(&mut self, words: &[&str]) -> bool {
+    pub(crate) fn eat_all(&mut self, words: &[&str]) -> bool {
         if words
             .iter()
             .enumerate()
@@ -296,7 +319,7 @@ impl<'a> Cursor<'a> {
         }
     }
 
-    fn expect(&mut self, word: &str) -> Result<(), HouseError> {
+    pub(crate) fn expect(&mut self, word: &str) -> Result<(), HouseError> {
         if self.eat(word) {
             Ok(())
         } else {
@@ -307,11 +330,11 @@ impl<'a> Cursor<'a> {
         }
     }
 
-    fn is_symbol(&self, t: &Token, symbol: u8) -> bool {
+    pub(crate) fn is_symbol(&self, t: &Token, symbol: u8) -> bool {
         !t.word && t.end == t.start + 1 && self.text.as_bytes()[t.start] == symbol
     }
 
-    fn eat_symbol(&mut self, symbol: u8) -> bool {
+    pub(crate) fn eat_symbol(&mut self, symbol: u8) -> bool {
         match self.peek() {
             Some(t) if self.is_symbol(&t, symbol) => {
                 self.at += 1;
@@ -322,7 +345,7 @@ impl<'a> Cursor<'a> {
     }
 
     /// A name: a word, or a backquoted or double-quoted name.
-    fn ident(&mut self) -> Result<String, HouseError> {
+    pub(crate) fn ident(&mut self) -> Result<String, HouseError> {
         let t = self
             .peek()
             .ok_or_else(|| syntax("Expected a name at the end of the statement"))?;
@@ -339,7 +362,7 @@ impl<'a> Cursor<'a> {
     }
 
     /// `[db.]name`.
-    fn qualified(&mut self) -> Result<(Option<String>, String), HouseError> {
+    pub(crate) fn qualified(&mut self) -> Result<(Option<String>, String), HouseError> {
         let first = self.ident()?;
         if self.eat_symbol(b'.') {
             let second = self.ident()?;
@@ -350,7 +373,7 @@ impl<'a> Cursor<'a> {
     }
 
     /// A string literal.
-    fn string(&mut self) -> Result<String, HouseError> {
+    pub(crate) fn string(&mut self) -> Result<String, HouseError> {
         match self.peek() {
             Some(t) if self.raw(&t).starts_with('\'') => {
                 self.at += 1;
@@ -363,8 +386,19 @@ impl<'a> Cursor<'a> {
         }
     }
 
+    /// `ON CLUSTER <name>`, accepted and ignored (D344); the name, if any.
+    fn on_cluster(&mut self) -> Result<Option<String>, HouseError> {
+        if self.eat_all(&["ON", "CLUSTER"]) {
+            return match self.peek() {
+                Some(t) if self.raw(&t).starts_with('\'') => self.string().map(Some),
+                _ => self.ident().map(Some),
+            };
+        }
+        Ok(None)
+    }
+
     /// `ON CLUSTER <name>`, accepted and ignored (D344).
-    fn skip_on_cluster(&mut self) -> Result<(), HouseError> {
+    pub(crate) fn skip_on_cluster(&mut self) -> Result<(), HouseError> {
         if self.eat_all(&["ON", "CLUSTER"]) {
             match self.peek() {
                 Some(t) if self.raw(&t).starts_with('\'') => {
@@ -378,19 +412,19 @@ impl<'a> Cursor<'a> {
         Ok(())
     }
 
-    fn done(&self) -> bool {
+    pub(crate) fn done(&self) -> bool {
         self.at >= self.toks.len()
     }
 
-    fn offset(&self) -> usize {
+    pub(crate) fn offset(&self) -> usize {
         self.toks.get(self.at).map_or(self.text.len(), |t| t.start)
     }
 
-    fn rest(&self) -> &'a str {
+    pub(crate) fn rest(&self) -> &'a str {
         &self.text[self.offset()..]
     }
 
-    fn expect_end(&self) -> Result<(), HouseError> {
+    pub(crate) fn expect_end(&self) -> Result<(), HouseError> {
         if self.done() {
             Ok(())
         } else {
@@ -402,14 +436,14 @@ impl<'a> Cursor<'a> {
     }
 
     /// The index of the `)` closing the `(` at `open`.
-    fn closing(&self, open: usize) -> Option<usize> {
+    pub(crate) fn closing(&self, open: usize) -> Option<usize> {
         let depth = self.toks[open].depth;
         (open + 1..self.toks.len())
             .find(|&i| self.is_symbol(&self.toks[i], b')') && self.toks[i].depth == depth)
     }
 
     /// The comma-separated pieces between the `(` at `open` and its `)`, as text.
-    fn pieces(&self, open: usize, close: usize) -> Vec<&'a str> {
+    pub(crate) fn pieces(&self, open: usize, close: usize) -> Vec<&'a str> {
         let depth = self.toks[open].depth;
         let mut out = Vec::new();
         let mut start = self.toks[open].end;
@@ -426,6 +460,54 @@ impl<'a> Cursor<'a> {
         }
         out
     }
+}
+
+/// `text` with its `--` and `/* */` comments made spaces, byte for byte, so
+/// offsets into it are offsets into `text`; string literals and quoted names
+/// are left alone. ClickHouse reads a comment as whitespace, and the House's
+/// tokenizer does not know comments: a `,`, `(` or `'` inside one would split
+/// or open something (HE1 R9.18).
+pub(crate) fn strip_comments(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            quote @ (b'\'' | b'"' | b'`') => {
+                let start = i;
+                i += 1;
+                while i < bytes.len() && bytes[i] != quote {
+                    if bytes[i] == b'\\' {
+                        i += 1;
+                    }
+                    i += 1;
+                }
+                i = (i + 1).min(bytes.len());
+                out.extend_from_slice(&bytes[start..i]);
+            }
+            b'-' if bytes.get(i + 1) == Some(&b'-') => {
+                while i < bytes.len() && bytes[i] != b'\n' {
+                    out.push(b' ');
+                    i += 1;
+                }
+            }
+            b'/' if bytes.get(i + 1) == Some(&b'*') => {
+                let end = (i + 2..bytes.len().saturating_sub(1))
+                    .find(|&j| bytes[j] == b'*' && bytes[j + 1] == b'/')
+                    .map_or(bytes.len(), |j| j + 2);
+                for &b in &bytes[i..end] {
+                    out.push(if b == b'\n' { b'\n' } else { b' ' });
+                }
+                i = end;
+            }
+            b => {
+                out.push(b);
+                i += 1;
+            }
+        }
+    }
+    // Only whole comments (ASCII-delimited) became spaces, so this is UTF-8.
+    String::from_utf8(out).unwrap_or_else(|_| text.to_string())
 }
 
 /// `36` for a name the House keeps for itself or chDB's own databases.
@@ -467,8 +549,12 @@ pub struct CreateTable {
     pub columns: Vec<String>,
     /// A `PRIMARY KEY (…)` entry of the column list.
     pub inline_primary_key: Option<String>,
-    /// An `INDEX`, `PROJECTION` or `CONSTRAINT` entry (refused), by keyword.
-    pub other_entry: Option<String>,
+    /// The column list's `INDEX` entries.
+    pub indexes: Vec<SkipIndex>,
+    /// The column list's `PROJECTION` entries.
+    pub projections: Vec<Projection>,
+    /// The column list's `CONSTRAINT` entries.
+    pub constraints: Vec<Constraint>,
     /// `ENGINE = name(args)`.
     pub engine: Option<(String, Vec<String>)>,
     /// `PARTITION BY`.
@@ -477,10 +563,10 @@ pub struct CreateTable {
     pub order_by: Option<String>,
     /// `PRIMARY KEY`.
     pub primary_key: Option<String>,
-    /// `SAMPLE BY` (refused).
-    pub sample_by: bool,
-    /// `TTL` (refused).
-    pub ttl: bool,
+    /// `SAMPLE BY`.
+    pub sample_by: Option<String>,
+    /// `TTL`, as written.
+    pub ttl: Option<String>,
     /// `SETTINGS`, as written (string literals unquoted).
     pub settings: Vec<(String, String)>,
     /// `COMMENT`.
@@ -495,6 +581,230 @@ pub struct CreateTable {
     pub as_at: Option<(usize, usize)>,
     /// `EMPTY AS`: the table only, no rows.
     pub empty_as: bool,
+    /// `AS [db.]t ENGINE = …`: the table whose columns it takes.
+    pub as_table: Option<QualifiedName>,
+}
+
+/// A data-skipping index (`INDEX name expr TYPE t [GRANULARITY n]`), recorded
+/// and never built (HE1 R9.12): an index only lets ClickHouse skip granules, and a
+/// lake table's files are read whole by row group, so answers are the same
+/// without it.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct SkipIndex {
+    /// Its name.
+    pub name: String,
+    /// The indexed expression, as written.
+    pub expression: String,
+    /// `TYPE`, as written (`bloom_filter(0.01)`).
+    #[serde(rename = "type")]
+    pub index_type: String,
+    /// `GRANULARITY`, when written.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub granularity: Option<String>,
+}
+
+impl SkipIndex {
+    /// Reads `INDEX name expr TYPE t [GRANULARITY n]` (the leading `INDEX` may
+    /// be left out, as `ALTER … ADD INDEX` writes it).
+    pub fn parse(text: &str) -> Result<Self, HouseError> {
+        let mut c = Cursor::new(text);
+        c.eat("INDEX");
+        let name = c.ident()?;
+        // The index's own `TYPE` is the last one at the top level (a column may
+        // be called `type`).
+        let top = c.toks.first().map_or(0, |t| t.depth);
+        let at_top = |i: usize| c.toks[i].depth == top;
+        let type_at = (c.at..c.toks.len())
+            .rev()
+            .find(|&i| at_top(i) && c.is_word_at(i, "TYPE"))
+            .ok_or_else(|| syntax(format!("INDEX {name} needs TYPE")))?;
+        let granularity_at =
+            (type_at..c.toks.len()).find(|&i| at_top(i) && c.is_word_at(i, "GRANULARITY"));
+        let expression = text[c.offset()..c.toks[type_at].start].trim().to_string();
+        let type_end = granularity_at.map_or(text.len(), |i| c.toks[i].start);
+        let index_type = text[c.toks[type_at].end..type_end].trim().to_string();
+        let granularity = granularity_at.map(|i| text[c.toks[i].end..].trim().to_string());
+        if expression.is_empty() || index_type.is_empty() || granularity.as_deref() == Some("") {
+            return Err(syntax(format!(
+                "INDEX {name}: expected <expression> TYPE <type> [GRANULARITY <n>]"
+            )));
+        }
+        Ok(Self {
+            name,
+            expression,
+            index_type,
+            granularity,
+        })
+    }
+
+    /// The entry as `SHOW CREATE TABLE` prints it.
+    pub fn render(&self) -> String {
+        let mut out = format!(
+            "INDEX {} {} TYPE {}",
+            quote_name(&self.name),
+            self.expression,
+            self.index_type
+        );
+        if let Some(g) = &self.granularity {
+            out.push_str(&format!(" GRANULARITY {g}"));
+        }
+        out
+    }
+}
+
+/// A projection (`PROJECTION name (SELECT …)`), recorded and never built (HE1
+/// R9.12): a projection is another order of the same rows, so answers are the
+/// same without it.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct Projection {
+    /// Its name.
+    pub name: String,
+    /// What is in its parentheses, as written.
+    pub query: String,
+}
+
+impl Projection {
+    /// Reads `PROJECTION name (…)` (the leading `PROJECTION` may be left out).
+    pub fn parse(text: &str) -> Result<Self, HouseError> {
+        let mut c = Cursor::new(text);
+        c.eat("PROJECTION");
+        let name = c.ident()?;
+        let open = c.at;
+        let ok = c.peek().is_some_and(|t| c.is_symbol(&t, b'('));
+        let close = ok
+            .then(|| c.closing(open))
+            .flatten()
+            .filter(|&close| close + 1 == c.toks.len());
+        let Some(close) = close else {
+            return Err(syntax(format!("PROJECTION {name}: expected (SELECT …)")));
+        };
+        let query = text[c.toks[open].end..c.toks[close].start]
+            .trim()
+            .to_string();
+        Ok(Self { name, query })
+    }
+
+    /// The entry as `SHOW CREATE TABLE` prints it.
+    pub fn render(&self) -> String {
+        format!("PROJECTION {} ({})", quote_name(&self.name), self.query)
+    }
+}
+
+/// A constraint (`CONSTRAINT name CHECK|ASSUME expr`), HE1 R9.12: a `CHECK` holds
+/// on every insert (the staging table carries it, so chDB checks each row, `469`
+/// as in ClickHouse); an `ASSUME` is only a hint to ClickHouse's optimizer and is
+/// recorded.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct Constraint {
+    /// Its name.
+    pub name: String,
+    /// `CHECK` or `ASSUME`.
+    pub kind: String,
+    /// The expression, as written.
+    pub expression: String,
+}
+
+impl Constraint {
+    /// Reads `CONSTRAINT name CHECK|ASSUME expr` (the leading `CONSTRAINT` may be
+    /// left out).
+    pub fn parse(text: &str) -> Result<Self, HouseError> {
+        let mut c = Cursor::new(text);
+        c.eat("CONSTRAINT");
+        let name = c.ident()?;
+        let kind = if c.eat("CHECK") {
+            "CHECK"
+        } else if c.eat("ASSUME") {
+            "ASSUME"
+        } else {
+            return Err(syntax(format!(
+                "CONSTRAINT {name}: expected CHECK or ASSUME"
+            )));
+        };
+        let expression = c.rest().trim().to_string();
+        if expression.is_empty() {
+            return Err(syntax(format!("CONSTRAINT {name}: expected an expression")));
+        }
+        Ok(Self {
+            name,
+            kind: kind.to_string(),
+            expression,
+        })
+    }
+
+    /// The entry as `SHOW CREATE TABLE` prints it.
+    pub fn render(&self) -> String {
+        format!(
+            "CONSTRAINT {} {} {}",
+            quote_name(&self.name),
+            self.kind,
+            self.expression
+        )
+    }
+}
+
+/// One rule of a table `TTL`: rows whose `expression` is in the past (and that
+/// match `condition`, when there is one) are deleted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TtlRule {
+    /// When a row expires, as written.
+    pub expression: String,
+    /// `WHERE …`, as written.
+    pub condition: Option<String>,
+}
+
+/// Reads a table `TTL` clause (HE1 R9.12). Only delete rules are on the House's
+/// surface: `expr [DELETE] [WHERE cond]`, comma-separated. A rule that moves
+/// (`TO DISK`, `TO VOLUME`), recompresses (`RECOMPRESS`) or rolls up (`GROUP BY`)
+/// rows is `48`: the bucket has one tier, and a roll-up changes rows.
+pub fn parse_ttl(text: &str) -> Result<Vec<TtlRule>, HouseError> {
+    let c = Cursor::new(text);
+    let mut rules = Vec::new();
+    let mut start = 0;
+    let mut cuts: Vec<usize> = (0..c.toks.len())
+        .filter(|&i| c.toks[i].depth == 0 && c.is_symbol(&c.toks[i], b','))
+        .collect();
+    cuts.push(c.toks.len());
+    for cut in cuts {
+        let toks = &c.toks[start..cut];
+        start = cut + 1;
+        if toks.is_empty() {
+            return Err(syntax("TTL: an empty rule"));
+        }
+        let word_at = |word: &str| {
+            toks.iter()
+                .position(|t| t.depth == 0 && t.word && c.raw(t).eq_ignore_ascii_case(word))
+        };
+        for refused in ["TO", "RECOMPRESS", "GROUP"] {
+            if word_at(refused).is_some() {
+                return Err(HouseError::from(ChError::not_implemented(format!(
+                    "TTL … {refused} is not supported on lake tables: a TTL there deletes \
+                     rows (HE1 R9.12)"
+                ))));
+            }
+        }
+        let rule_end = toks.last().map_or(0, |t| t.end);
+        let where_at = word_at("WHERE");
+        let delete_at = word_at("DELETE");
+        let expression_end = delete_at.or(where_at).map_or(rule_end, |i| toks[i].start);
+        let expression = text[toks[0].start..expression_end].trim().to_string();
+        let condition = where_at.map(|i| text[toks[i].end..rule_end].trim().to_string());
+        if let Some(d) = delete_at
+            && where_at.is_some_and(|w| w < d)
+        {
+            return Err(syntax("TTL: DELETE comes before WHERE"));
+        }
+        if expression.is_empty() || condition.as_deref() == Some("") {
+            return Err(syntax(format!(
+                "TTL: cannot read {:?}",
+                &text[toks[0].start..rule_end]
+            )));
+        }
+        rules.push(TtlRule {
+            expression,
+            condition,
+        });
+    }
+    Ok(rules)
 }
 
 fn engine_clause(body: &str) -> Result<(String, Vec<String>), HouseError> {
@@ -549,6 +859,10 @@ fn settings_clause(body: &str) -> Result<Vec<(String, String)>, HouseError> {
 
 /// Reads a `CREATE TABLE` (not `TEMPORARY`).
 pub fn parse_create_table(text: &str) -> Result<CreateTable, HouseError> {
+    // Comments are ClickHouse's whitespace (Langfuse v4's 0022 has them between
+    // and after column entries, HE1 R9.18); offsets stay those of `text`.
+    let stripped = strip_comments(text);
+    let text = stripped.as_str();
     let mut c = Cursor::new(text);
     let mut out = CreateTable::default();
     c.expect("CREATE")?;
@@ -576,17 +890,12 @@ pub fn parse_create_table(text: &str) -> Result<CreateTable, HouseError> {
             let mut e = Cursor::new(entry);
             if e.eat_all(&["PRIMARY", "KEY"]) {
                 out.inline_primary_key = Some(e.rest().trim().to_string());
-            } else if ["INDEX", "PROJECTION", "CONSTRAINT"]
-                .iter()
-                .any(|w| e.is_word_at(0, w))
-            {
-                out.other_entry = Some(
-                    entry
-                        .split_whitespace()
-                        .next()
-                        .unwrap_or_default()
-                        .to_ascii_uppercase(),
-                );
+            } else if e.is_word_at(0, "INDEX") {
+                out.indexes.push(SkipIndex::parse(entry)?);
+            } else if e.is_word_at(0, "PROJECTION") {
+                out.projections.push(Projection::parse(entry)?);
+            } else if e.is_word_at(0, "CONSTRAINT") {
+                out.constraints.push(Constraint::parse(entry)?);
             } else if !entry.is_empty() {
                 out.columns.push(entry.to_string());
             }
@@ -655,8 +964,8 @@ pub fn parse_create_table(text: &str) -> Result<CreateTable, HouseError> {
             "PARTITION BY" => out.partition_by = Some(body.to_string()),
             "ORDER BY" => out.order_by = Some(body.to_string()),
             "PRIMARY KEY" => out.primary_key = Some(body.to_string()),
-            "SAMPLE BY" => out.sample_by = true,
-            "TTL" => out.ttl = true,
+            "SAMPLE BY" => out.sample_by = Some(body.to_string()),
+            "TTL" => out.ttl = Some(body.to_string()),
             "SETTINGS" => out.settings = settings_clause(body)?,
             "COMMENT" => {
                 let mut b = Cursor::new(body);
@@ -669,6 +978,15 @@ pub fn parse_create_table(text: &str) -> Result<CreateTable, HouseError> {
                     out.as_select = true;
                 } else {
                     out.as_other = true;
+                    // `AS [db.]t [ENGINE = …]` (HE1 R9.13: a Distributed table's
+                    // usual form).
+                    let mut b = Cursor::new(body);
+                    if let Ok(name) = b.qualified()
+                        && b.eat("ENGINE")
+                    {
+                        out.as_table = Some(name);
+                        out.engine = Some(engine_clause(b.rest())?);
+                    }
                 }
             }
             _ => {}
@@ -778,12 +1096,25 @@ pub struct CreateMaterializedView {
     pub inner_table: bool,
     /// `POPULATE` (refused).
     pub populate: bool,
-    /// `REFRESH` (refused).
+    /// `REFRESH …` (HE1 R9.64).
     pub refresh: bool,
+    /// The `REFRESH` clause read: its schedule, or the `48` message of a form
+    /// the House refuses.
+    pub schedule: Option<Result<crate::refresh::Schedule, String>>,
+    /// `EMPTY`: a refreshable view's first run waits for its schedule.
+    pub empty: bool,
     /// The `SELECT` after `AS`.
     pub select: String,
     /// The table the `SELECT` reads first: the view's source.
     pub source: Option<QualifiedName>,
+    /// Every `FROM <name>` in order, subqueries included (the source is the
+    /// first that is a table: `trim(… FROM s)` names none).
+    pub candidates: Vec<QualifiedName>,
+    /// An inner table's column list, as written (with its parentheses).
+    pub inner_columns: Option<String>,
+    /// An inner table's clauses (`ENGINE = …`, `PARTITION BY`, `ORDER BY`, …),
+    /// as written (HE1 R9.14).
+    pub inner_clauses: String,
 }
 
 /// Reads a `CREATE MATERIALIZED VIEW`.
@@ -802,26 +1133,58 @@ pub fn parse_create_mv(text: &str) -> Result<CreateMaterializedView, HouseError>
     loop {
         if c.eat("REFRESH") {
             out.refresh = true;
-            // The schedule runs to `TO` or `AS`.
-            while !c.done() && !c.is_word_at(c.at, "TO") && !c.is_word_at(c.at, "AS") {
+            // The schedule runs to `TO`, `EMPTY`, `AS`, a column list or an
+            // `ENGINE`.
+            let mut words = Vec::new();
+            while let Some(t) = c.peek() {
+                if ["TO", "AS", "EMPTY", "ENGINE"]
+                    .iter()
+                    .any(|w| c.is_word_at(c.at, w))
+                    || c.is_symbol(&t, b'(')
+                {
+                    break;
+                }
+                words.push(c.raw(&t).to_string());
                 c.at += 1;
             }
+            out.schedule = Some(crate::refresh::parse_clause(&words));
         } else if c.eat("TO") {
             out.to = Some(c.qualified()?);
         } else if c.eat("POPULATE") {
             out.populate = true;
         } else if c.eat("EMPTY") {
+            out.empty = true;
         } else if c.eat("AS") {
             break;
         } else if let Some(t) = c.peek() {
             out.inner_table = true;
-            if c.is_symbol(&t, b'(') {
+            if c.is_symbol(&t, b'(') && out.inner_clauses.is_empty() && out.inner_columns.is_none()
+            {
                 let close = c
                     .closing(c.at)
                     .ok_or_else(|| syntax("Unbalanced parentheses in the column list"))?;
+                out.inner_columns = Some(text[t.start..c.toks[close].end].to_string());
                 c.at = close + 1;
             } else {
-                c.at += 1;
+                // The inner table's clauses run to `POPULATE`, `TO` or `AS` at
+                // this depth.
+                let start = t.start;
+                let depth = t.depth;
+                while let Some(next) = c.peek() {
+                    if next.depth == depth
+                        && ["AS", "POPULATE", "TO", "EMPTY"]
+                            .iter()
+                            .any(|w| c.is_word_at(c.at, w))
+                    {
+                        break;
+                    }
+                    c.at += 1;
+                }
+                let end = c.toks.get(c.at).map_or(text.len(), |t| t.start);
+                if !out.inner_clauses.is_empty() {
+                    out.inner_clauses.push(' ');
+                }
+                out.inner_clauses.push_str(text[start..end].trim());
             }
         } else {
             return Err(syntax("Expected AS SELECT in CREATE MATERIALIZED VIEW"));
@@ -832,24 +1195,88 @@ pub fn parse_create_mv(text: &str) -> Result<CreateMaterializedView, HouseError>
     if out.select.is_empty() {
         return Err(syntax("Expected a SELECT after AS"));
     }
-    // The source: the first table after a FROM at the SELECT's own depth.
-    let depth = c.peek().map_or(0, |t| t.depth);
+    // The source: the first table the SELECT reads, as ClickHouse picks a
+    // view's trigger table: the first `FROM <table>`, inside a subquery too
+    // (HE1 R9.14; OpenPanel's `event_property_values_mv`). A table function
+    // (`FROM numbers(…)`) or a subquery is no table.
     while let Some(t) = c.peek() {
-        if t.depth == depth && t.word && c.raw(&t).eq_ignore_ascii_case("FROM") {
+        if t.word && c.raw(&t).eq_ignore_ascii_case("FROM") {
             c.at += 1;
-            match c.peek() {
-                Some(next)
-                    if next.word
-                        || c.raw(&next).starts_with('`')
-                        || c.raw(&next).starts_with('"') =>
-                {
-                    out.source = Some(c.qualified()?);
+            if let Some(next) = c.peek()
+                && (next.word || c.raw(&next).starts_with('`') || c.raw(&next).starts_with('"'))
+            {
+                let at = c.at;
+                let name = c.qualified()?;
+                let called = c.peek().is_some_and(|t| c.is_symbol(&t, b'('));
+                if !called {
+                    if out.source.is_none() {
+                        out.source = Some(name.clone());
+                    }
+                    out.candidates.push(name);
+                } else {
+                    c.at = at + 1;
                 }
-                _ => {}
             }
-            break;
+            continue;
         }
         c.at += 1;
+    }
+    Ok(out)
+}
+
+/// `CREATE [OR REPLACE] VIEW`, as written (HE1 R9.13).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CreateView {
+    /// `OR REPLACE`.
+    pub or_replace: bool,
+    /// `IF NOT EXISTS`.
+    pub if_not_exists: bool,
+    /// The view's database, when named.
+    pub database: Option<String>,
+    /// The view.
+    pub name: String,
+    /// A column list (names the `SELECT`'s columns; refused for now).
+    pub columns: bool,
+    /// The `SELECT` after `AS`.
+    pub select: String,
+}
+
+/// Reads `CREATE [OR REPLACE] VIEW [IF NOT EXISTS] [db.]v [ON CLUSTER c] [SQL
+/// SECURITY …] AS SELECT …`.
+pub fn parse_create_view(text: &str) -> Result<CreateView, HouseError> {
+    let text = text.trim().trim_end_matches(';').trim_end();
+    let mut c = Cursor::new(text);
+    let mut out = CreateView::default();
+    c.expect("CREATE")?;
+    out.or_replace = c.eat_all(&["OR", "REPLACE"]);
+    c.expect("VIEW")?;
+    out.if_not_exists = c.eat_all(&["IF", "NOT", "EXISTS"]);
+    let (database, name) = c.qualified()?;
+    out.database = database;
+    out.name = name;
+    c.skip_on_cluster()?;
+    loop {
+        if let Some(t) = c.peek()
+            && c.is_symbol(&t, b'(')
+        {
+            out.columns = true;
+            c.at = c
+                .closing(c.at)
+                .ok_or_else(|| syntax("Unbalanced parentheses in the column list"))?
+                + 1;
+        } else if c.eat_all(&["SQL", "SECURITY"]) || c.eat("DEFINER") {
+            while !c.done() && !c.is_word_at(c.at, "AS") {
+                c.at += 1;
+            }
+        } else if c.eat("AS") {
+            break;
+        } else {
+            return Err(syntax("Expected AS SELECT in CREATE VIEW"));
+        }
+    }
+    out.select = c.rest().trim().to_string();
+    if out.select.is_empty() {
+        return Err(syntax("Expected a SELECT after AS"));
     }
     Ok(out)
 }
@@ -915,63 +1342,6 @@ pub struct AddColumn {
     pub definition: String,
     /// Its place.
     pub position: Position,
-}
-
-/// Reads `ALTER TABLE t ADD COLUMN …[, ADD COLUMN …]`; any other operation is
-/// `48`.
-pub fn parse_alter_add(text: &str) -> Result<(QualifiedName, Vec<AddColumn>), HouseError> {
-    let mut c = Cursor::new(text);
-    c.expect("ALTER")?;
-    c.expect("TABLE")?;
-    let table = c.qualified()?;
-    c.skip_on_cluster()?;
-    let mut adds = Vec::new();
-    loop {
-        if !c.eat_all(&["ADD", "COLUMN"]) {
-            return Err(HouseError::from(ChError::not_implemented(format!(
-                "ALTER TABLE … {} is not on the House's surface yet; ADD COLUMN is",
-                c.rest()
-                    .split_whitespace()
-                    .take(2)
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            ))));
-        }
-        let if_not_exists = c.eat_all(&["IF", "NOT", "EXISTS"]);
-        let first = c.at;
-        let mut last = first;
-        while last < c.toks.len() && !(c.toks[last].depth == 0 && c.is_symbol(&c.toks[last], b','))
-        {
-            last += 1;
-        }
-        // `FIRST` or `AFTER <column>` ends the operation.
-        let mut position = Position::Last;
-        let mut definition_end = last;
-        if last > first && c.is_word_at(last - 1, "FIRST") {
-            position = Position::First;
-            definition_end = last - 1;
-        } else if last >= first + 2 && c.is_word_at(last - 2, "AFTER") {
-            let mut after = Cursor::new(c.raw(&c.toks[last - 1]));
-            position = Position::After(after.ident()?);
-            definition_end = last - 2;
-        }
-        if definition_end <= first {
-            return Err(syntax("ADD COLUMN needs a column definition"));
-        }
-        let start = c.toks[first].start;
-        let end = c.toks[definition_end - 1].end;
-        c.at = last;
-        adds.push(AddColumn {
-            if_not_exists,
-            definition: text[start..end].trim().to_string(),
-            position,
-        });
-        if !c.eat_symbol(b',') {
-            break;
-        }
-    }
-    c.expect_end()?;
-    Ok((table, adds))
 }
 
 /// What `DESCRIBE`, `SHOW CREATE` and `EXISTS` name.
@@ -1300,6 +1670,40 @@ pub struct OptimizeStmt {
     pub deduplicate: bool,
 }
 
+/// The cluster a `CREATE TABLE`, `CREATE VIEW`, `CREATE MATERIALIZED VIEW` or
+/// `CREATE DATABASE` statement names in `ON CLUSTER` (HE1 R9.62), as the House
+/// keeps the statement in `loams.ch.ddl`: the words up to the object's name,
+/// the name, then the clause. `None` when it names none or is another form.
+pub fn on_cluster_of(statement: &str) -> Option<String> {
+    let mut c = Cursor::new(statement);
+    if !c.eat("CREATE") {
+        return None;
+    }
+    let _ = c.eat_all(&["OR", "REPLACE"]);
+    loop {
+        let word = c
+            .peek()
+            .filter(|t| t.word)
+            .map(|t| c.raw(&t).to_ascii_uppercase())?;
+        match word.as_str() {
+            "TEMPORARY" | "MATERIALIZED" | "LIVE" | "WINDOW" | "REFRESHABLE" => {
+                c.at += 1;
+            }
+            "TABLE" | "VIEW" | "DATABASE" => {
+                c.at += 1;
+                break;
+            }
+            _ => return None,
+        }
+    }
+    let _ = c.eat_all(&["IF", "NOT", "EXISTS"]);
+    c.ident().ok()?;
+    if c.eat_symbol(b'.') {
+        c.ident().ok()?;
+    }
+    c.on_cluster().ok().flatten()
+}
+
 /// Reads `OPTIMIZE TABLE [db.]t [ON CLUSTER c] [PARTITION p | PARTITION ID 'p']
 /// [FINAL] [DEDUPLICATE]`. `DEDUPLICATE BY` is `48`.
 pub fn parse_optimize(text: &str) -> Result<OptimizeStmt, HouseError> {
@@ -1465,6 +1869,19 @@ pub enum LakeEngine {
         /// The summed columns.
         columns: Option<Vec<String>>,
     },
+    /// `VersionedCollapsingMergeTree(sign, version)` (D1570): rows of one
+    /// sorting key and version cancel in pairs of opposite sign at `FINAL`.
+    VersionedCollapsing {
+        /// The sign column (`Int8`, 1 or -1).
+        sign: String,
+        /// The version column.
+        version: String,
+    },
+    /// `AggregatingMergeTree` (HE1 R9.14): state columns merged by their
+    /// functions at `FINAL` and in compaction.
+    Aggregating,
+    /// `Null` (HE1 R9.14): rows are discarded; reads are empty.
+    Null,
 }
 
 impl LakeEngine {
@@ -1472,6 +1889,8 @@ impl LakeEngine {
     pub fn render(&self) -> String {
         match self {
             Self::MergeTree => "MergeTree".to_string(),
+            Self::Aggregating => "AggregatingMergeTree".to_string(),
+            Self::Null => "Null".to_string(),
             Self::Replacing { ver, is_deleted } => {
                 let args: Vec<String> = ver
                     .iter()
@@ -1495,7 +1914,18 @@ impl LakeEngine {
                         .join(", ")
                 ),
             },
+            Self::VersionedCollapsing { sign, version } => format!(
+                "VersionedCollapsingMergeTree({}, {})",
+                quote_name(sign),
+                quote_name(version)
+            ),
         }
+    }
+
+    /// Whether `FINAL` reads a merge view of this engine rather than the rows
+    /// as stored (and compaction merges as that view does).
+    pub fn merges(&self) -> bool {
+        !matches!(self, Self::MergeTree | Self::Null)
     }
 
     /// The engine a table's `loams.ch.engine` property names (HS1 Task 11's
@@ -1525,6 +1955,8 @@ impl LakeEngine {
         };
         match base {
             "MergeTree" if args.is_empty() => Ok(Self::MergeTree),
+            "AggregatingMergeTree" if args.is_empty() => Ok(Self::Aggregating),
+            "Null" if args.is_empty() && base == name => Ok(Self::Null),
             "MergeTree" => Err(HouseError::from(ChError::bad_arguments(
                 "MergeTree takes no arguments: the old syntax MergeTree(date, key, granularity) \
                  is not supported; use ORDER BY and PARTITION BY",
@@ -1549,19 +1981,28 @@ impl LakeEngine {
                     ),
                 },
             }),
+            "VersionedCollapsingMergeTree" if args.len() == 2 => Ok(Self::VersionedCollapsing {
+                sign: column(args[0])?,
+                version: column(args[1])?,
+            }),
+            "VersionedCollapsingMergeTree" => Err(HouseError::from(ChError::bad_arguments(
+                "VersionedCollapsingMergeTree takes two arguments: the sign column and the \
+                 version column",
+            ))),
             "ReplacingMergeTree" | "SummingMergeTree" => Err(HouseError::from(
                 ChError::bad_arguments(format!("Engine {name} has too many arguments")),
             )),
             _ => Err(HouseError::from(ChError::not_implemented(format!(
                 "Engine {name} is not a lake table engine: lake tables are MergeTree, \
-                 ReplacingMergeTree or SummingMergeTree (§49 §6.2)"
+                 ReplacingMergeTree, SummingMergeTree, VersionedCollapsingMergeTree, \
+                 AggregatingMergeTree or Null (§49 §6.2, D1570, HE1 R9.14)"
             )))),
         }
     }
 }
 
 /// A catalog table as ClickHouse shows it.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct ChTable {
     /// Its database.
     pub database: String,
@@ -1585,6 +2026,16 @@ pub struct ChTable {
     pub comment: String,
     /// `SHOW CREATE TABLE`'s answer.
     pub ddl: String,
+    /// Its data-skipping indexes (recorded, R9.12).
+    pub indexes: Vec<SkipIndex>,
+    /// Its projections (recorded, R9.12).
+    pub projections: Vec<Projection>,
+    /// Its constraints (R9.12).
+    pub constraints: Vec<Constraint>,
+    /// `SAMPLE BY` (R9.12).
+    pub sample_by: String,
+    /// The table `TTL` clause (R9.12).
+    pub ttl: String,
 }
 
 impl ChTable {
@@ -1619,6 +2070,11 @@ impl ChTable {
                 settings: Vec::new(),
                 comment: get(PROP_COMMENT),
                 ddl: String::new(),
+                indexes: Vec::new(),
+                projections: Vec::new(),
+                constraints: Vec::new(),
+                sample_by: String::new(),
+                ttl: String::new(),
             };
             out.ddl = out.render();
             return out;
@@ -1638,6 +2094,11 @@ impl ChTable {
             settings,
             comment: get(PROP_COMMENT),
             ddl: get(PROP_DDL),
+            indexes: serde_json::from_str(&get(PROP_INDEXES)).unwrap_or_default(),
+            projections: serde_json::from_str(&get(PROP_PROJECTIONS)).unwrap_or_default(),
+            constraints: serde_json::from_str(&get(PROP_CONSTRAINTS)).unwrap_or_default(),
+            sample_by: get(PROP_SAMPLE_BY),
+            ttl: get(PROP_TTL),
         };
         if out.ddl.is_empty() {
             out.ddl = out.render();
@@ -1651,6 +2112,17 @@ impl ChTable {
             .columns
             .iter()
             .map(|c| format!("    {}", c.render()))
+            .chain(self.indexes.iter().map(|i| format!("    {}", i.render())))
+            .chain(
+                self.projections
+                    .iter()
+                    .map(|p| format!("    {}", p.render())),
+            )
+            .chain(
+                self.constraints
+                    .iter()
+                    .map(|c| format!("    {}", c.render())),
+            )
             .collect();
         let mut out = format!(
             "CREATE TABLE {}.{}\n(\n{}\n)\nENGINE = {}",
@@ -1673,6 +2145,12 @@ impl ChTable {
             };
             out.push_str(&format!("\nORDER BY {order_by}"));
         }
+        if !self.sample_by.is_empty() {
+            out.push_str(&format!("\nSAMPLE BY {}", self.sample_by));
+        }
+        if !self.ttl.is_empty() {
+            out.push_str(&format!("\nTTL {}", self.ttl));
+        }
         if !self.settings.is_empty() {
             let settings: Vec<String> = self
                 .settings
@@ -1686,6 +2164,12 @@ impl ChTable {
         }
         out
     }
+}
+
+/// A property's JSON text.
+pub(crate) fn json<T: Serialize + ?Sized>(value: &T) -> Result<String, HouseError> {
+    serde_json::to_string(value)
+        .map_err(|err| HouseError::from(ChError::bad_arguments(err.to_string())))
 }
 
 fn setting_literal(value: &str) -> String {
@@ -1709,7 +2193,7 @@ fn field_id(schema: &Schema, column: &str) -> Option<i32> {
         .map(|f| f.id)
 }
 
-fn unknown_column(column: &str, what: &str) -> HouseError {
+pub(crate) fn unknown_column(column: &str, what: &str) -> HouseError {
     clickhouse_error(
         47,
         "UNKNOWN_IDENTIFIER",
@@ -1734,14 +2218,8 @@ pub fn plan_table(
     if stmt.or_replace {
         return not_on_surface("CREATE OR REPLACE TABLE");
     }
-    if stmt.sample_by {
-        return not_on_surface("SAMPLE BY");
-    }
-    if stmt.ttl {
-        return not_on_surface("TTL");
-    }
-    if let Some(entry) = &stmt.other_entry {
-        return not_on_surface(&format!("{entry} in the column list"));
+    if let Some(ttl) = &stmt.ttl {
+        parse_ttl(ttl)?;
     }
     if stmt.as_other {
         return not_on_surface("CREATE TABLE … AS <table or table function>");
@@ -1849,6 +2327,11 @@ pub fn plan_table(
         ) {
             break;
         }
+        // A nanosecond time is a long of nanoseconds (D1572): no
+        // Iceberg time transform applies to it.
+        if ch.nanos_zone().is_some() && transform != Transform::Identity {
+            break;
+        }
         sort_fields.push(SortField {
             source_id,
             transform,
@@ -1867,13 +2350,16 @@ pub fn plan_table(
                  toYYYYMM, toYYYYMMDD, toDate or toStartOfHour of a date or time column"
             )))
         };
+        // An element no Iceberg transform matches leaves the files unpartitioned
+        // by it (HE1 R9.12): partitioning is where rows are stored, never which
+        // rows a query sees, and `PARTITION BY` keeps the expression as written.
         let (column, transform, suffix) = match &element {
             Element::Column(c) => (c.clone(), Transform::Identity, None),
             Element::Call(f, c) => match partition_transform(f) {
                 Some((t, suffix)) => (c.clone(), t, Some(suffix)),
-                None => return Err(refused(format!("{f} is not a supported transform"))),
+                None => continue,
             },
-            Element::Expr(e) => return Err(refused(format!("{e} is not a supported transform"))),
+            Element::Expr(_) => continue,
         };
         let Some(ch_text) = ch_type(&column) else {
             return Err(unknown_column(&column, "the partition key"));
@@ -1881,6 +2367,14 @@ pub fn plan_table(
         let source_id = field_id(&schema, &column)
             .ok_or_else(|| refused(format!("{column} is an ALIAS column")))?;
         let ch = ChType::parse(&ch_text)?;
+        // A nanosecond time is a long of nanoseconds (D1572; HE1
+        // R9.61): Iceberg's time transforms take no long, and a truncation
+        // wide enough for a day does not fit its width, so the files are not
+        // partitioned by this element (as R9.12 leaves any other), and which
+        // rows a query sees does not change.
+        if ch.nanos_zone().is_some() && transform != Transform::Identity {
+            continue;
+        }
         let base = ch.base();
         let ok = match transform {
             Transform::Identity => {
@@ -1892,8 +2386,11 @@ pub fn plan_table(
                     || matches!(base, ChType::Simple(s) if s == "Date" || s == "Date32")
             }
         };
+        // A transform of a type Iceberg cannot partition by leaves the files
+        // unpartitioned by it, as an unmapped expression does (HE1 R9.16:
+        // SigNoz's `toDate(<Int64 seconds>)`, `toDate(<SimpleAggregateFunction>)`).
         if !ok {
-            return Err(refused(format!("{column} is {ch_text}")));
+            continue;
         }
         let name = match suffix {
             Some(suffix) => format!("{column}_{suffix}"),
@@ -1927,7 +2424,7 @@ pub fn plan_table(
             || matches!(t, ChType::Decimal(..))
     };
     match &engine {
-        LakeEngine::MergeTree => {}
+        LakeEngine::MergeTree | LakeEngine::Aggregating | LakeEngine::Null => {}
         LakeEngine::Replacing { ver, is_deleted } => {
             if let Some(ver) = ver {
                 check_column(ver, &integer, "ReplacingMergeTree's version column")?;
@@ -1945,10 +2442,31 @@ pub fn plan_table(
                 check_column(column, &numeric, "SummingMergeTree's summed column")?;
             }
         }
+        LakeEngine::VersionedCollapsing { sign, version } => {
+            check_column(
+                sign,
+                &|t| matches!(t, ChType::Simple(s) if s == "Int8"),
+                "VersionedCollapsingMergeTree's sign column",
+            )?;
+            check_column(
+                version,
+                &integer,
+                "VersionedCollapsingMergeTree's version column",
+            )?;
+        }
     }
 
-    // SETTINGS: Loams's own, else MergeTree's (recorded, not applied), else 115.
+    // SETTINGS: Loams's own, else MergeTree's (recorded, not applied), else a
+    // query setting the request may set (HE1 R9.12: ClickHouse takes those in a
+    // `CREATE TABLE`'s SETTINGS for the statement itself; not recorded), else 115.
+    let mut table_settings = Vec::new();
     for (name, value) in &stmt.settings {
+        let query_setting = !name.starts_with("loams_")
+            && !merge_tree_settings.iter().any(|s| s == name)
+            && crate::settings::is_allowed(name);
+        if !query_setting {
+            table_settings.push((name.clone(), value.clone()));
+        }
         match name.as_str() {
             "loams_table_class" => match value.as_str() {
                 "lake" => {}
@@ -1966,6 +2484,7 @@ pub fn plan_table(
             },
             "loams_tiering_freshness" | "loams_bucket_key" => {}
             _ if merge_tree_settings.iter().any(|s| s == name) => {}
+            _ if query_setting => {}
             _ => {
                 return Err(HouseError::from(ChError::unknown_setting(format!(
                     "Unknown setting '{name}': for storage MergeTree"
@@ -1994,10 +2513,24 @@ pub fn plan_table(
             properties.insert(key.to_string(), value);
         }
     }
-    if !stmt.settings.is_empty() {
+    if !stmt.indexes.is_empty() {
+        properties.insert(PROP_INDEXES.to_string(), json(&stmt.indexes)?);
+    }
+    if !stmt.projections.is_empty() {
+        properties.insert(PROP_PROJECTIONS.to_string(), json(&stmt.projections)?);
+    }
+    if !stmt.constraints.is_empty() {
+        properties.insert(PROP_CONSTRAINTS.to_string(), json(&stmt.constraints)?);
+    }
+    for (key, value) in [(PROP_SAMPLE_BY, &stmt.sample_by), (PROP_TTL, &stmt.ttl)] {
+        if let Some(value) = value.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+            properties.insert(key.to_string(), value.to_string());
+        }
+    }
+    if !table_settings.is_empty() {
         properties.insert(
             PROP_SETTINGS.to_string(),
-            serde_json::to_string(&stmt.settings)
+            serde_json::to_string(&table_settings)
                 .map_err(|err| HouseError::from(ChError::bad_arguments(err.to_string())))?,
         );
     }
@@ -2073,8 +2606,11 @@ pub fn touched(kind: Kind, text: &str, current: &str) -> Vec<Object> {
                     .collect()
             })
             .unwrap_or_default(),
-        Kind::AlterAdd => parse_alter_add(text)
-            .map(|(name, _)| vec![table(name)])
+        Kind::Alter => crate::alter::parse_alter(text)
+            .map(|alter| vec![table(alter.table)])
+            .unwrap_or_default(),
+        Kind::CreateView => parse_create_view(text)
+            .map(|view| vec![table((view.database, view.name))])
             .unwrap_or_default(),
         Kind::Describe => parse_describe(text).map(table).into_iter().collect(),
         Kind::Show => parse_show_create(text).map(qualify).into_iter().collect(),
@@ -2104,8 +2640,10 @@ pub enum Kind {
     Undrop,
     /// `RENAME`.
     Rename,
-    /// `ALTER TABLE … ADD COLUMN`.
-    AlterAdd,
+    /// `ALTER TABLE` (HE1 R9.12).
+    Alter,
+    /// `CREATE VIEW` (HE1 R9.13).
+    CreateView,
     /// `DESCRIBE`.
     Describe,
     /// `SHOW …`.
@@ -2228,6 +2766,12 @@ pub async fn execute(
                 crate::pipes::create_pipe(lake, namespace, &database, &stmt, text, oracle).await?;
                 return Ok(Answer::Done);
             }
+            if let Some((engine, args)) = &stmt.engine
+                && engine == "Distributed"
+            {
+                create_distributed(lake, namespace, &database, &stmt, args, text).await?;
+                return Ok(Answer::Done);
+            }
             oracle.check(text).await?;
             let described = if stmt.columns.is_empty() {
                 Vec::new()
@@ -2258,12 +2802,11 @@ pub async fn execute(
                     for (db, name) in &stmt.names {
                         let database = db_of(db);
                         // A materialized view is dropped as a table too, as in
-                        // ClickHouse (HS1 Task 16).
-                        if lake.load(namespace, &database, name).await?.is_none()
-                            && crate::pipes::drop_materialized_view(
-                                lake, namespace, &database, name,
-                            )
+                        // ClickHouse (HS1 Task 16); an inner-table view with its
+                        // table (HE1 R9.14).
+                        if crate::pipes::drop_materialized_view(lake, namespace, &database, name)
                             .await?
+                            && lake.load(namespace, &database, name).await?.is_none()
                         {
                             continue;
                         }
@@ -2275,10 +2818,19 @@ pub async fn execute(
                 "VIEW" => {
                     for (db, name) in &stmt.names {
                         let database = db_of(db);
-                        if !crate::pipes::drop_materialized_view(lake, namespace, &database, name)
+                        if crate::pipes::drop_materialized_view(lake, namespace, &database, name)
                             .await?
-                            && !stmt.if_exists
                         {
+                            continue;
+                        }
+                        // A plain view is a catalog entry (HE1 R9.13).
+                        if let Some(table) = lake.load(namespace, &database, name).await?
+                            && class_of(&table.metadata) == TableClass::View
+                        {
+                            lake.drop_table(namespace, &database, name, false).await?;
+                            continue;
+                        }
+                        if !stmt.if_exists {
                             return Err(HouseError::from(ChError::unknown_table(format!(
                                 "Table {database}.{name} does not exist"
                             ))));
@@ -2317,6 +2869,10 @@ pub async fn execute(
                     .rename_table(namespace, (&from_db, &from), (&to_db, &to))
                     .await?;
                 // SHOW CREATE names the table: write it out again under the new name.
+                // A view keeps its text (HE1 R9.13).
+                if class_of(&renamed.metadata) == TableClass::View {
+                    continue;
+                }
                 let mut table = ChTable::from_lake(&to_db, &to, &renamed);
                 table.ddl = table.render();
                 lake.catalog()
@@ -2331,14 +2887,14 @@ pub async fn execute(
             }
             Ok(Answer::Done)
         }
-        Kind::AlterAdd => {
-            let ((db, name), adds) = parse_alter_add(text)?;
-            let database = db_of(&db);
-            let table = lake
-                .lake_table(namespace, &database, &name, "ALTER TABLE")
-                .await?;
+        Kind::Alter => {
+            crate::alter::execute(lake, namespace, current, text, oracle).await?;
+            Ok(Answer::Done)
+        }
+        Kind::CreateView => {
+            let view = parse_create_view(text)?;
             oracle.check(text).await?;
-            add_columns(lake, &database, &name, table, adds, oracle).await?;
+            create_view(lake, namespace, &db_of(&view.database), &view, text).await?;
             Ok(Answer::Done)
         }
         Kind::Describe => {
@@ -2347,6 +2903,11 @@ pub async fn execute(
             };
             let database = db_of(&db);
             match catalog_table(lake, namespace, &database, &name).await? {
+                // A plain view's columns are its SELECT's: chDB describes the
+                // view the read path makes (HE1 R9.13).
+                Some(table) if table.class == TableClass::View && table.columns.is_empty() => {
+                    Ok(Answer::PassThrough)
+                }
                 Some(table) => Ok(Answer::Rows(describe_query(&table))),
                 None => Ok(Answer::PassThrough),
             }
@@ -2410,6 +2971,184 @@ pub async fn execute(
     }
 }
 
+/// A view's catalog entry (HE1 R9.13): an Iceberg table with no files whose
+/// properties hold the `SELECT` (or a `Distributed` table's local table), so a
+/// view is listed, renamed, dropped and kept for `UNDROP` as a table is.
+fn view_creation(
+    name: &str,
+    location: String,
+    properties: HashMap<String, String>,
+) -> Result<TableCreation, HouseError> {
+    let schema = Schema::builder()
+        .with_schema_id(0)
+        .with_fields(vec![
+            NestedField::optional(
+                1,
+                "__loams_view",
+                loams_house_lake::spec::Type::Primitive(
+                    loams_house_lake::spec::PrimitiveType::String,
+                ),
+            )
+            .into(),
+        ])
+        .build()
+        .map_err(|err| HouseError::from(ChError::bad_arguments(err.to_string())))?;
+    Ok(TableCreation::builder()
+        .name(name.to_string())
+        .location(location)
+        .schema(schema)
+        .properties(properties)
+        .build())
+}
+
+/// `CREATE [OR REPLACE] VIEW` (HE1 R9.13).
+async fn create_view(
+    lake: &Lake,
+    namespace: u64,
+    database: &str,
+    view: &CreateView,
+    text: &str,
+) -> Result<(), HouseError> {
+    check_new_name("table", &view.name)?;
+    if view.columns {
+        return Err(HouseError::from(ChError::not_implemented(
+            "CREATE VIEW with a column list is not on the House's surface yet: name the columns in the SELECT",
+        )));
+    }
+    lake.require_database(namespace, database).await?;
+    let first = crate::request::first_keyword(&view.select);
+    if !matches!(first.as_str(), "SELECT" | "WITH") && !view.select.starts_with('(') {
+        return Err(syntax("A view's body is a SELECT"));
+    }
+    let properties = HashMap::from([
+        (
+            PROP_DDL.to_string(),
+            text.trim().trim_end_matches(';').to_string(),
+        ),
+        (PROP_ENGINE.to_string(), "View".to_string()),
+        (PROP_CLASS.to_string(), "view".to_string()),
+        (PROP_VIEW_SELECT.to_string(), view.select.clone()),
+    ]);
+    if let Some(existing) = lake.load(namespace, database, &view.name).await? {
+        if view.if_not_exists {
+            return Ok(());
+        }
+        if view.or_replace && class_of(&existing.metadata) == TableClass::View {
+            lake.catalog()
+                .commit(
+                    &existing.ident,
+                    Vec::new(),
+                    vec![loams_house_lake::TableUpdate::SetProperties {
+                        updates: properties,
+                    }],
+                )
+                .await?;
+            return Ok(());
+        }
+        return Err(HouseError::from(ChError::table_already_exists(format!(
+            "Table {database}.{} already exists",
+            view.name
+        ))));
+    }
+    let location = lake.root().table_location(namespace, database, &view.name);
+    lake.create_table(
+        namespace,
+        database,
+        view_creation(&view.name, location, properties)?,
+        view.if_not_exists,
+    )
+    .await?;
+    Ok(())
+}
+
+/// `CREATE TABLE … ENGINE = Distributed(cluster, db, table[, sharding_key[,
+/// policy]])` (HE1 R9.13, §75 §7.3: topology syntax accepted and ignored): the
+/// bucket is every replica, so the table reads and writes its local table.
+async fn create_distributed(
+    lake: &Lake,
+    namespace: u64,
+    database: &str,
+    stmt: &CreateTable,
+    args: &[String],
+    text: &str,
+) -> Result<(), HouseError> {
+    check_new_name("table", &stmt.name)?;
+    let [_cluster, local_db, local, ..] = args else {
+        return Err(HouseError::from(ChError::bad_arguments(
+            "Distributed takes (cluster, database, table[, sharding_key[, policy]])",
+        )));
+    };
+    let name_of = |arg: &str| -> String {
+        let arg = arg.trim();
+        if arg.starts_with('\'') || arg.starts_with('`') || arg.starts_with('"') {
+            unquote(arg)
+        } else if arg.eq_ignore_ascii_case("currentDatabase()") {
+            database.to_string()
+        } else {
+            arg.to_string()
+        }
+    };
+    let (local_db, local) = (name_of(local_db), name_of(local));
+    let target = lake
+        .lake_table(
+            namespace,
+            &local_db,
+            &local,
+            "CREATE TABLE … ENGINE = Distributed over",
+        )
+        .await?;
+    if class_of(&target.metadata) != TableClass::Lake {
+        return Err(HouseError::from(ChError::not_implemented(
+            "A Distributed table on the House reads a lake table",
+        )));
+    }
+    let shown = ChTable::from_lake(&local_db, &local, &target);
+    lake.require_database(namespace, database).await?;
+    if stmt.if_not_exists && lake.load(namespace, database, &stmt.name).await?.is_some() {
+        return Ok(());
+    }
+    let properties = HashMap::from([
+        (
+            PROP_DDL.to_string(),
+            text.trim().trim_end_matches(';').to_string(),
+        ),
+        (
+            PROP_ENGINE.to_string(),
+            format!("Distributed({})", args.join(", ")),
+        ),
+        (PROP_CLASS.to_string(), "view".to_string()),
+        (PROP_TYPES.to_string(), json(&shown.columns)?),
+        (
+            PROP_VIEW_SELECT.to_string(),
+            format!(
+                "SELECT * FROM {}.{}",
+                quote_name(&local_db),
+                quote_name(&local)
+            ),
+        ),
+        (
+            PROP_VIEW_DISTRIBUTED.to_string(),
+            json(&[&local_db, &local])?,
+        ),
+    ]);
+    let location = lake.root().table_location(namespace, database, &stmt.name);
+    lake.create_table(
+        namespace,
+        database,
+        view_creation(&stmt.name, location, properties)?,
+        stmt.if_not_exists,
+    )
+    .await?;
+    Ok(())
+}
+
+/// A `Distributed` table's local table (HE1 R9.13).
+pub fn distributed_target(table: &LakeTable) -> Option<(String, String)> {
+    let text = table.metadata.properties().get(PROP_VIEW_DISTRIBUTED)?;
+    let [db, name]: [String; 2] = serde_json::from_str(text).ok()?;
+    Some((db, name))
+}
+
 /// The catalog's table, or `None` when the database or table is not the
 /// catalog's (then chDB answers: a temporary table, `system`).
 async fn catalog_table(
@@ -2427,119 +3166,40 @@ async fn catalog_table(
         .map(|table| ChTable::from_lake(database, name, &table)))
 }
 
-/// `ALTER TABLE … ADD COLUMN`: Iceberg schema evolution. The new fields are
-/// optional (Iceberg v2 cannot add a required field to a table that may have
-/// rows); the ClickHouse type stays what was written, and the read views of HS1
-/// Task 11 give older rows the column's default.
-async fn add_columns(
-    lake: &Lake,
-    database: &str,
-    name: &str,
-    table: LakeTable,
-    adds: Vec<AddColumn>,
-    oracle: &mut dyn Oracle,
-) -> Result<(), HouseError> {
-    let mut ch = ChTable::from_lake(database, name, &table);
-    let mut fields: Vec<NestedFieldRef> = table
-        .metadata
-        .current_schema()
-        .as_struct()
-        .fields()
-        .to_vec();
-    let mut ids = FieldIds::after(table.metadata.last_column_id());
-    let mut needs = if table.metadata.format_version() == loams_house_lake::spec::FormatVersion::V3
-    {
-        Needs::V3
-    } else {
-        Needs::V2
-    };
-    let mut changed = false;
-    for add in adds {
-        let described = oracle.describe(&add.definition).await?;
-        let [column] = described.as_slice() else {
-            return Err(syntax(format!(
-                "ADD COLUMN {}: one column at a time",
-                add.definition
-            )));
-        };
-        if !column.ttl.is_empty() {
-            return Err(HouseError::from(ChError::not_implemented(
-                "A column TTL is not supported on lake tables (§49 §6.3)",
-            )));
-        }
-        let column = column.column.clone();
-        if ch.columns.iter().any(|c| c.name == column.name) {
-            if add.if_not_exists {
-                continue;
-            }
-            return Err(clickhouse_error(
-                15,
-                "DUPLICATE_COLUMN",
-                format!(
-                    "Cannot add column {}: column with this name already exists",
-                    quote_name(&column.name)
-                ),
-            ));
-        }
-        let at = match &add.position {
-            Position::Last => ch.columns.len(),
-            Position::First => 0,
-            Position::After(after) => {
-                ch.columns
-                    .iter()
-                    .position(|c| &c.name == after)
-                    .ok_or_else(|| unknown_column(after, "ADD COLUMN … AFTER"))?
-                    + 1
-            }
-        };
-        if column.stored() {
-            let mut field: NestedField =
-                types::to_iceberg_field(&column.name, &column.ch_type, &mut ids, true, &mut needs)?
-                    .as_ref()
-                    .clone();
-            if !column.comment.is_empty() {
-                field.doc = Some(column.comment.clone());
-            }
-            // Iceberg's field order follows the stored columns' order.
-            let stored_before = ch.columns[..at].iter().filter(|c| c.stored()).count();
-            fields.insert(stored_before.min(fields.len()), field.into());
-        }
-        ch.columns.insert(at, column);
-        changed = true;
-    }
-    if !changed {
-        return Ok(());
-    }
-    if needs == Needs::V3
-        && table.metadata.format_version() != loams_house_lake::spec::FormatVersion::V3
-    {
-        return Err(HouseError::from(ChError::not_implemented(
-            "A DateTime64 column with more than 6 digits needs Iceberg format v3; this table is v2",
-        )));
-    }
-    let schema = Schema::builder()
-        .with_fields(fields)
-        .build()
-        .map_err(|err| HouseError::from(ChError::bad_arguments(err.to_string())))?;
-    ch.ddl = ch.render();
-    let properties = HashMap::from([
-        (
-            PROP_TYPES.to_string(),
-            serde_json::to_string(&ch.columns)
-                .map_err(|err| HouseError::from(ChError::bad_arguments(err.to_string())))?,
-        ),
-        (PROP_DDL.to_string(), ch.ddl.clone()),
-    ]);
-    lake.catalog()
-        .update_schema(&table, schema, properties)
-        .await
-        .map_err(HouseError::from)?;
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// HE1 R9.62: the cluster a stored `CREATE` names.
+    #[test]
+    fn on_cluster_is_read_from_create_statements() {
+        for (statement, want) in [
+            (
+                "CREATE TABLE IF NOT EXISTS signoz_traces.t ON CLUSTER cluster (a UInt8) ENGINE = MergeTree ORDER BY a",
+                Some("cluster"),
+            ),
+            (
+                "CREATE DATABASE IF NOT EXISTS signoz_logs ON CLUSTER 'c1'",
+                Some("c1"),
+            ),
+            (
+                "CREATE MATERIALIZED VIEW IF NOT EXISTS d.v ON CLUSTER `my c` TO d.t AS SELECT 1",
+                Some("my c"),
+            ),
+            (
+                "create or replace view v on cluster x as select 1",
+                Some("x"),
+            ),
+            (
+                "CREATE TABLE t (a UInt8) ENGINE = MergeTree ORDER BY a",
+                None,
+            ),
+            ("CREATE TABLE t AS SELECT 'ON CLUSTER c'", None),
+            ("ALTER TABLE t ON CLUSTER c ADD COLUMN b UInt8", None),
+        ] {
+            assert_eq!(on_cluster_of(statement).as_deref(), want, "{statement}");
+        }
+    }
 
     #[test]
     fn create_table_reads_every_clause() {
@@ -2589,8 +3249,99 @@ mod tests {
             parse_create_table("CREATE TABLE t (a UInt8) ENGINE = MergeTree ORDER BY a TTL a + 1")
                 .expect("parses")
                 .ttl
+                .is_some()
         );
         assert!(parse_create_table("CREATE TABLE t (a UInt8) BANANA").is_err());
+    }
+
+    #[test]
+    fn versioned_collapsing_is_a_lake_engine() {
+        let args = |a: &[&str]| a.iter().map(|s| (*s).to_string()).collect::<Vec<_>>();
+        let engine =
+            LakeEngine::from_clause("VersionedCollapsingMergeTree", &args(&["sign", "version"]))
+                .expect("engine");
+        assert_eq!(
+            engine,
+            LakeEngine::VersionedCollapsing {
+                sign: "sign".to_string(),
+                version: "version".to_string(),
+            }
+        );
+        assert!(engine.merges());
+        assert!(!LakeEngine::MergeTree.merges());
+        assert_eq!(
+            engine.render(),
+            "VersionedCollapsingMergeTree(sign, version)"
+        );
+        assert_eq!(LakeEngine::parse(&engine.render()).expect("parse"), engine);
+        // Replicated: the Keeper path and replica name are dropped (D344).
+        assert_eq!(
+            LakeEngine::from_clause(
+                "ReplicatedVersionedCollapsingMergeTree",
+                &args(&["'/t/{shard}'", "'{replica}'", "sign", "version"])
+            )
+            .expect("engine"),
+            engine
+        );
+        let err = LakeEngine::from_clause("VersionedCollapsingMergeTree", &args(&["sign"]))
+            .expect_err("one argument");
+        assert!(err.to_string().contains("two arguments"), "{err}");
+        let err = LakeEngine::from_clause("CollapsingMergeTree", &args(&["sign"]))
+            .expect_err("not a lake engine");
+        assert!(err.to_string().contains("not a lake table engine"), "{err}");
+    }
+
+    /// HE1 R9.14: a view's trigger is the first table its SELECT reads, inside
+    /// a FROM subquery too; a table function is no table.
+    #[test]
+    fn view_sources_are_the_first_table_read() {
+        let mv = parse_create_mv(
+            "CREATE MATERIALIZED VIEW v ENGINE = AggregatingMergeTree ORDER BY a AS SELECT a, trim(BOTH ' ' FROM b) AS b \
+             FROM (SELECT a, b FROM db.events) GROUP BY a, b",
+        )
+        .expect("parses");
+        assert!(mv.inner_table && mv.to.is_none());
+        assert_eq!(mv.inner_clauses, "ENGINE = AggregatingMergeTree ORDER BY a");
+        // A token reading: the catalog picks the first name that is a table.
+        assert_eq!(
+            mv.candidates,
+            vec![
+                (None, "b".to_string()),
+                (Some("db".to_string()), "events".to_string())
+            ]
+        );
+        let mv =
+            parse_create_mv("CREATE MATERIALIZED VIEW v TO t AS SELECT number FROM numbers(3)")
+                .expect("parses");
+        assert!(mv.candidates.is_empty(), "a table function is no table");
+    }
+
+    /// HE1 R9.18: comments are whitespace; strings and names keep their text.
+    #[test]
+    fn comments_in_a_column_list_are_whitespace() {
+        assert_eq!(
+            strip_comments(
+                "`a` String CODEC(ZSTD(3)), -- json\n    `b` /* x, y */ UInt8 DEFAULT '--not' "
+            ),
+            "`a` String CODEC(ZSTD(3)),        \n    `b`            UInt8 DEFAULT '--not' "
+        );
+        // A comment's `,`, `(` and `'` are not the column list's (Langfuse's 0022
+        // has "fields (mutable, but snapshots are relevant)").
+        let create = parse_create_table(
+            "CREATE TABLE t (\n  -- don't (split, here\n  `id` String, /* a, ( */ `n` UInt8 -- last, one\n) ENGINE = MergeTree ORDER BY id -- the key",
+        )
+        .expect("parses");
+        assert_eq!(create.columns, vec!["`id` String", "`n` UInt8"]);
+        assert_eq!(create.order_by.as_deref(), Some("id"));
+        let create = parse_create_table(
+            "CREATE TABLE t (\n  -- ids\n  `id` String,\n  `x` Nullable(String) CODEC(ZSTD(3)), -- json\n  INDEX i id TYPE bloom_filter(0.001) GRANULARITY 1,\n) ENGINE = MergeTree ORDER BY id",
+        )
+        .expect("parses");
+        assert_eq!(
+            create.columns,
+            vec!["`id` String", "`x` Nullable(String) CODEC(ZSTD(3))"]
+        );
+        assert_eq!(create.indexes.len(), 1);
     }
 
     #[test]
@@ -2697,37 +3448,6 @@ mod tests {
                 ((None, "a".into()), (Some("d".into()), "b".into())),
                 ((None, "c".into()), (None, "e".into()))
             ]
-        );
-        let ((_, table), adds) = parse_alter_add(
-            "ALTER TABLE t ADD COLUMN IF NOT EXISTS x UInt8 DEFAULT 1 AFTER a, ADD COLUMN y String FIRST, ADD COLUMN z Array(UInt8)",
-        )
-        .expect("parses");
-        assert_eq!(table, "t");
-        assert_eq!(
-            adds,
-            vec![
-                AddColumn {
-                    if_not_exists: true,
-                    definition: "x UInt8 DEFAULT 1".into(),
-                    position: Position::After("a".into())
-                },
-                AddColumn {
-                    if_not_exists: false,
-                    definition: "y String".into(),
-                    position: Position::First
-                },
-                AddColumn {
-                    if_not_exists: false,
-                    definition: "z Array(UInt8)".into(),
-                    position: Position::Last
-                },
-            ]
-        );
-        assert_eq!(
-            parse_alter_add("ALTER TABLE t DROP COLUMN x")
-                .expect_err("48")
-                .code(),
-            48
         );
         assert_eq!(
             parse_describe("DESCRIBE TABLE d.t"),
