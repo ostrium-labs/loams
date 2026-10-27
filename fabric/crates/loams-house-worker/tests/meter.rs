@@ -220,6 +220,27 @@ impl Lakehouse {
         .await
     }
 
+    /// One period run of (`subject`, `feature`) over `periods` at `now_ms`.
+    async fn periods(
+        &self,
+        feature: &meter_sql::FeatureDef,
+        periods: &[(i64, i64)],
+        now_ms: i64,
+    ) -> Vec<(i64, i64, meter_sql::PeriodOutcome)> {
+        let mut run = meter_sql::PeriodRun::new(
+            "org_42",
+            feature.clone(),
+            periods.to_vec(),
+            now_ms,
+            meter_sql::PeriodConfig::default(),
+        );
+        let mut answer: Option<String> = None;
+        while let Some(sql) = run.next(answer.as_deref()).expect("a readable answer") {
+            answer = Some(ok(self.addr(), &sql).await);
+        }
+        run.summary().periods.clone()
+    }
+
     /// Appends usage events to `_system/_meter`'s `partition`.
     fn push(&self, partition: usize, events: &[serde_json::Value]) {
         for event in events {
@@ -276,7 +297,7 @@ async fn meter_schema_applies_twice() {
             "SELECT name FROM system.tables WHERE database = '_meter' ORDER BY name"
         )
         .await,
-        "close_runs\nevents\nevents_mv\nevents_q\nwindows\n"
+        "close_runs\nevents\nevents_mv\nevents_q\nperiod_totals\nwindows\n"
     );
 }
 
@@ -519,4 +540,88 @@ async fn unique_count_not_rolled_up() {
          hour\torg_42\t2026-10-19 09:00:00\t{}\t3\t5\n\
          day\torg_42\t2026-10-19 00:00:00\t{}\t3\t5\n"
     );
+}
+
+/// `period_closes_after_grace` (ME1 plan, Task 7): an hourly period of
+/// `org_42`'s `house_cpu` is provisional until 2 hours after its end, then
+/// closed; a late event re-closes it with the new total.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn period_closes_after_grace() {
+    use meter_sql::PeriodOutcome::{AlreadyClosed, Closed, Provisional, Reclosed};
+    const H09: i64 = 1_792_400_400;
+    const H10: i64 = 1_792_404_000;
+    const H11: i64 = 1_792_407_600;
+    let house = Lakehouse::start("meter-period").await;
+    house.schema().await;
+    house.push(
+        0,
+        &[
+            usage("q-1/1", "org_42", "2026-10-19T09:14:03Z", 1840),
+            usage("q-2/1", "org_42", "2026-10-19T09:40:00Z", 160),
+            // Another subject: not in org_42's total.
+            usage("q-3/1", "org_7", "2026-10-19T09:41:00Z", 5),
+        ],
+    );
+    house.drain().await;
+    let meter = cpu_meter();
+    house.close(&meter, NOW_MS).await;
+    let feature = meter_sql::FeatureDef {
+        key: "house_cpu".to_string(),
+        meter: meter.clone(),
+        filter: vec![("namespace".to_string(), "7".to_string())],
+        byte_hours: false,
+    };
+    let periods = [(H09, H10), (H10, H11)];
+
+    // 10:30 and 11:59:59: both periods provisional.
+    for now_ms in [NOW_MS + 1_800_000, NOW_MS + 7_199_000] {
+        assert_eq!(
+            house.periods(&feature, &periods, now_ms).await,
+            [(H09, H10, Provisional), (H10, H11, Provisional)]
+        );
+    }
+    assert_eq!(
+        period_totals(&house).await,
+        "org_42\thouse_cpu\t2026-10-19 09:00:00\t2000\t2\t0\n\
+         org_42\thouse_cpu\t2026-10-19 10:00:00\t0\t0\t0\n"
+    );
+    // 12:00, 2 hours after 09:00's period ended: it closes, once.
+    assert_eq!(
+        house.periods(&feature, &periods, NOW_MS + 7_200_000).await,
+        [(H09, H10, Closed), (H10, H11, Provisional)]
+    );
+    assert_eq!(
+        house.periods(&feature, &periods, NOW_MS + 7_260_000).await,
+        [(H09, H10, AlreadyClosed), (H10, H11, Provisional)]
+    );
+    assert_eq!(
+        period_totals(&house).await,
+        "org_42\thouse_cpu\t2026-10-19 09:00:00\t2000\t2\t1\n\
+         org_42\thouse_cpu\t2026-10-19 10:00:00\t0\t0\t0\n"
+    );
+    // A late event for 09:50: the close job re-closes its minute, and the
+    // period closes again with the new total.
+    house.push(0, &[usage("q-9/1", "org_42", "2026-10-19T09:50:00Z", 100)]);
+    tokio::time::sleep(Duration::from_millis(2_100)).await;
+    house.drain().await;
+    house.close(&meter, NOW_MS + 7_320_000).await;
+    assert_eq!(
+        house.periods(&feature, &periods, NOW_MS + 7_380_000).await,
+        [(H09, H10, Reclosed), (H10, H11, Provisional)]
+    );
+    assert_eq!(
+        period_totals(&house).await,
+        "org_42\thouse_cpu\t2026-10-19 09:00:00\t2100\t3\t1\n\
+         org_42\thouse_cpu\t2026-10-19 10:00:00\t0\t0\t0\n"
+    );
+}
+
+/// `_meter.period_totals`, by period.
+async fn period_totals(house: &Lakehouse) -> String {
+    ok(
+        house.addr(),
+        "SELECT subject, feature, period_start, value, events, closed \
+         FROM _meter.period_totals FINAL ORDER BY period_start",
+    )
+    .await
 }

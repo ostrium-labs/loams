@@ -17,6 +17,7 @@
 //! | `_meter.events_mv` | materialized view `events_q` → `events` | maps the CloudEvent onto the row |
 //! | `_meter.windows` | `ReplacingMergeTree(close_run)` | closed minute, hour and day windows per meter |
 //! | `_meter.close_runs` | `ReplacingMergeTree(close_run)` | each meter's last close run (Task 6) |
+//! | `_meter.period_totals` | `ReplacingMergeTree(close_run)` | per (subject, feature, period) the rated total (Task 7) |
 
 /// The House database of the meter's tables.
 pub const DATABASE: &str = "_meter";
@@ -139,6 +140,7 @@ pub fn schema() -> Vec<String> {
         create_events(),
         create_windows(),
         create_close_runs(),
+        create_period_totals(),
         create_events_pipe(),
         create_events_view(),
     ]
@@ -638,6 +640,351 @@ impl CloseRun {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Period totals and period close (§63 §8.3, §8.4; ME1 Task 7).
+
+/// `_meter.period_totals` (§63 §8.4): per (subject, feature, period) the
+/// value that rates the period. `closed = 1` once the period closed (2 hours
+/// after its end); before that the row is provisional. Versioned by
+/// `close_run`, so a re-close after a late event replaces the row.
+pub fn create_period_totals() -> String {
+    format!(
+        "CREATE TABLE IF NOT EXISTS {DATABASE}.period_totals (\
+         subject String, \
+         feature String, \
+         meter LowCardinality(String), \
+         period_start DateTime('UTC'), \
+         period_end DateTime('UTC'), \
+         value Decimal(38, 9), \
+         events UInt64, \
+         closed UInt8, \
+         close_run UInt64) \
+         ENGINE = ReplacingMergeTree(close_run) \
+         PARTITION BY toYYYYMM(period_start) \
+         ORDER BY (subject, feature, period_start)"
+    )
+}
+
+/// A feature as the period totals need it: the std-only mirror of
+/// `loams_meter_core::Feature` with its meter.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureDef {
+    /// The feature key.
+    pub key: String,
+    /// The meter it counts.
+    pub meter: MeterDef,
+    /// Group-by values selecting part of the meter (`model = gpt-x`), sorted.
+    pub filter: Vec<(String, String)>,
+    /// A gauge billed as byte-hours: the sum of the hourly `LATEST` values
+    /// (§63 §8.3) instead of the meter's aggregation over the period.
+    pub byte_hours: bool,
+}
+
+/// The filter of minute or hour windows by the feature's group-by values.
+fn window_filter(feature: &FeatureDef) -> String {
+    feature
+        .filter
+        .iter()
+        .map(|(k, v)| {
+            format!(
+                " AND JSONExtractString(group_key, {}) = {}",
+                quote(k),
+                quote(v)
+            )
+        })
+        .collect()
+}
+
+/// The filter of raw events by the feature's group-by values, through the
+/// meter's paths.
+fn event_filter(feature: &FeatureDef) -> String {
+    feature
+        .filter
+        .iter()
+        .map(|(k, v)| {
+            let path = feature
+                .meter
+                .group_by
+                .iter()
+                .find(|(name, _)| name == k)
+                .map(|(_, path)| path.as_str())
+                .unwrap_or("$.__loams_no_such_dimension");
+            format!(" AND JSON_VALUE(data, {}) = {}", quote(path), quote(v))
+        })
+        .collect()
+}
+
+/// Computes `subject`'s total of `feature` over `[start, end)` (Unix
+/// seconds) and writes it with `closed` and version `run`.
+///
+/// * Byte-hours: the sum of the hour windows starting in the period.
+/// * `SUM`, `COUNT`: the sum of the minute windows starting in the period;
+///   `MIN`, `MAX`: their minimum or maximum.
+/// * `UNIQUE_COUNT`, `AVG`, `LATEST`: recomputed from the raw events in the
+///   period (they do not roll up).
+///
+/// Windows count at minute resolution: a minute window belongs to the
+/// period its start is in (ruling T7-1).
+pub fn period_total(
+    subject: &str,
+    feature: &FeatureDef,
+    start: i64,
+    end: i64,
+    closed: bool,
+    run: u64,
+) -> String {
+    let meter = &feature.meter;
+    let head = format!(
+        "INSERT INTO {DATABASE}.period_totals \
+         (subject, feature, meter, period_start, period_end, value, events, closed, close_run) \
+         SELECT {subject}, {key}, {slug}, {start_at}, {end_at}",
+        subject = quote(subject),
+        key = quote(&feature.key),
+        slug = quote(&meter.slug),
+        start_at = at(start),
+        end_at = at(end),
+    );
+    let closed = u8::from(closed);
+    if feature.byte_hours || meter.aggregation.rolls_up() {
+        let (size, agg) = if feature.byte_hours {
+            ("hour", "sum(value)")
+        } else {
+            ("minute", rollup_agg_expr(meter.aggregation))
+        };
+        format!(
+            "{head}, ifNull({agg}, toDecimal128(0, 9)), sum(events), {closed}, {run} \
+             FROM {DATABASE}.windows FINAL \
+             WHERE meter = {slug} AND subject = {subject} AND window_size = '{size}' \
+             AND window_start >= {lo} AND window_start < {hi}{filter}",
+            slug = quote(&meter.slug),
+            subject = quote(subject),
+            lo = at(start),
+            hi = at(end),
+            filter = window_filter(feature),
+        )
+    } else {
+        format!(
+            "{head}, {agg}, count(), {closed}, {run} \
+             FROM {DATABASE}.events FINAL \
+             WHERE subject = {subject} AND {events} AND time >= {lo} AND time < {hi}{filter}",
+            agg = raw_agg_expr(meter),
+            subject = quote(subject),
+            events = events_filter(meter),
+            lo = at64(start),
+            hi = at64(end),
+            filter = event_filter(feature),
+        )
+    }
+}
+
+/// The stored total of a period: `closed\tclose_run`, or nothing.
+pub fn period_state(subject: &str, feature: &str, start: i64) -> String {
+    format!(
+        "SELECT closed, close_run FROM {DATABASE}.period_totals FINAL \
+         WHERE subject = {} AND feature = {} AND period_start = {} \
+         ORDER BY close_run DESC LIMIT 1",
+        quote(subject),
+        quote(feature),
+        at(start)
+    )
+}
+
+/// The newest version of the meter's minute windows of `subject` in
+/// `[start, end)`: newer than the closed total means a late event
+/// re-closed one of them.
+pub fn windows_version(subject: &str, slug: &str, start: i64, end: i64) -> String {
+    format!(
+        "SELECT max(close_run) FROM {DATABASE}.windows FINAL \
+         WHERE meter = {} AND subject = {} AND window_size = 'minute' \
+         AND window_start >= {} AND window_start < {}",
+        quote(slug),
+        quote(subject),
+        at(start),
+        at(end)
+    )
+}
+
+/// How periods close (§63 §8.4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PeriodConfig {
+    /// A period closes this long after its end (2 hours: a close-job lap,
+    /// the minute grace and margin).
+    pub grace_secs: i64,
+}
+
+impl Default for PeriodConfig {
+    fn default() -> Self {
+        PeriodConfig { grace_secs: 7_200 }
+    }
+}
+
+/// What happened to one period in a run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PeriodOutcome {
+    /// Not due yet: its provisional total was written.
+    Provisional,
+    /// Due and closed by this run.
+    Closed,
+    /// Closed before, and closed again: a late event re-closed a window in
+    /// it.
+    Reclosed,
+    /// Closed before and unchanged.
+    AlreadyClosed,
+}
+
+/// What a period run did, per period (`start`, `end`, outcome).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PeriodSummary {
+    pub run: u64,
+    pub periods: Vec<(i64, i64, PeriodOutcome)>,
+}
+
+#[derive(Debug)]
+enum PeriodState {
+    Next,
+    Stored,
+    Windows { stored: Option<(bool, u64)> },
+    Done,
+}
+
+/// The period totals of one (subject, feature), as a sans-I/O machine like
+/// [`CloseRun`]. It is given the periods to look at (from the entitlement's
+/// usage period, with the customer's anchor: the current one and enough
+/// earlier ones to reach a closed one). For each:
+///
+/// * not due (`now < end + grace`): writes the provisional total
+///   (`closed = 0`);
+/// * due and never closed: writes the closed total (`closed = 1`);
+/// * due and closed, but a minute window in it was re-closed since: writes
+///   the closed total again with a newer version (an exported period's
+///   exporter sends an adjustment, §63 §16);
+/// * due, closed and unchanged: nothing.
+#[derive(Debug)]
+pub struct PeriodRun {
+    subject: String,
+    feature: FeatureDef,
+    periods: std::collections::VecDeque<(i64, i64)>,
+    current: Option<(i64, i64)>,
+    now: i64,
+    config: PeriodConfig,
+    summary: PeriodSummary,
+    state: PeriodState,
+}
+
+impl PeriodRun {
+    /// A run at `now_ms` (Unix milliseconds; also the run's version) over
+    /// `periods` (`[start, end)` in Unix seconds).
+    pub fn new(
+        subject: impl Into<String>,
+        feature: FeatureDef,
+        periods: Vec<(i64, i64)>,
+        now_ms: i64,
+        config: PeriodConfig,
+    ) -> Self {
+        PeriodRun {
+            subject: subject.into(),
+            feature,
+            periods: periods.into(),
+            current: None,
+            now: now_ms.div_euclid(1_000),
+            config,
+            summary: PeriodSummary {
+                run: now_ms.max(0) as u64,
+                periods: Vec::new(),
+            },
+            state: PeriodState::Next,
+        }
+    }
+
+    /// What the run did (complete once [`PeriodRun::next`] returned `None`).
+    pub fn summary(&self) -> &PeriodSummary {
+        &self.summary
+    }
+
+    fn record(&mut self, outcome: PeriodOutcome) {
+        if let Some((start, end)) = self.current {
+            self.summary.periods.push((start, end, outcome));
+        }
+    }
+
+    fn total(&self, closed: bool) -> Option<String> {
+        self.current.map(|(start, end)| {
+            period_total(
+                &self.subject,
+                &self.feature,
+                start,
+                end,
+                closed,
+                self.summary.run,
+            )
+        })
+    }
+
+    /// The next statement, given the previous one's answer (`None` at the
+    /// start); `Ok(None)` once the run is done.
+    pub fn next(&mut self, answer: Option<&str>) -> Result<Option<String>, String> {
+        loop {
+            match std::mem::replace(&mut self.state, PeriodState::Done) {
+                PeriodState::Next => {
+                    let Some((start, end)) = self.periods.pop_front() else {
+                        return Ok(None);
+                    };
+                    self.current = Some((start, end));
+                    if self.now < end + self.config.grace_secs {
+                        self.record(PeriodOutcome::Provisional);
+                        self.state = PeriodState::Next;
+                        return Ok(self.total(false));
+                    }
+                    self.state = PeriodState::Stored;
+                    return Ok(Some(period_state(&self.subject, &self.feature.key, start)));
+                }
+                PeriodState::Stored => {
+                    let line = answer.unwrap_or("").lines().next().unwrap_or("").trim();
+                    let stored = if line.is_empty() {
+                        None
+                    } else {
+                        let mut fields = line.split('\t');
+                        let closed = parse_i64(fields.next().unwrap_or(""))? != 0;
+                        let run = parse_i64(fields.next().unwrap_or(""))?;
+                        Some((closed, run.max(0) as u64))
+                    };
+                    let (start, end) = self.current.unwrap_or((0, 0));
+                    self.state = PeriodState::Windows { stored };
+                    return Ok(Some(windows_version(
+                        &self.subject,
+                        &self.feature.meter.slug,
+                        start,
+                        end,
+                    )));
+                }
+                PeriodState::Windows { stored } => {
+                    let text = answer.unwrap_or("").trim();
+                    let windows = if text.is_empty() || text == "\\N" {
+                        0
+                    } else {
+                        parse_i64(text)?.max(0) as u64
+                    };
+                    self.state = PeriodState::Next;
+                    match stored {
+                        Some((true, run)) if windows <= run => {
+                            self.record(PeriodOutcome::AlreadyClosed);
+                        }
+                        Some((true, _)) => {
+                            self.record(PeriodOutcome::Reclosed);
+                            return Ok(self.total(true));
+                        }
+                        _ => {
+                            self.record(PeriodOutcome::Closed);
+                            return Ok(self.total(true));
+                        }
+                    }
+                }
+                PeriodState::Done => return Ok(None),
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -808,5 +1155,118 @@ mod close_tests {
         let mut run = CloseRun::new(sum_meter(), 0, CloseConfig::default());
         run.next(None).expect("ok");
         assert!(run.next(Some("yesterday\t1\n")).is_err());
+    }
+}
+
+#[cfg(test)]
+mod period_tests {
+    use super::*;
+
+    fn feature(aggregation: Aggregation, byte_hours: bool) -> FeatureDef {
+        FeatureDef {
+            key: "house_cpu".to_string(),
+            meter: MeterDef {
+                slug: "house_cpu_ms".to_string(),
+                event_type: "io.loams.dev.usage.house.query.v1".to_string(),
+                aggregation,
+                value_property: Some("$.cpu_ms".to_string()),
+                group_by: vec![("namespace".to_string(), "$.namespace".to_string())],
+                event_from: None,
+            },
+            filter: vec![("namespace".to_string(), "7".to_string())],
+            byte_hours,
+        }
+    }
+
+    #[test]
+    fn totals_read_the_right_source() {
+        let sum = period_total(
+            "org_42",
+            &feature(Aggregation::Sum, false),
+            0,
+            3_600,
+            true,
+            9,
+        );
+        assert!(sum.contains("FROM _meter.windows FINAL"), "{sum}");
+        assert!(sum.contains("window_size = 'minute'"));
+        assert!(sum.contains("JSONExtractString(group_key, 'namespace') = '7'"));
+        assert!(sum.contains(", 1, 9 FROM"));
+        let gauge = period_total(
+            "org_42",
+            &feature(Aggregation::Latest, true),
+            0,
+            3_600,
+            false,
+            9,
+        );
+        assert!(gauge.contains("window_size = 'hour'") && gauge.contains("sum(value)"));
+        assert!(gauge.contains(", 0, 9 FROM"));
+        let unique = period_total(
+            "org_42",
+            &feature(Aggregation::UniqueCount, false),
+            0,
+            3_600,
+            true,
+            9,
+        );
+        assert!(unique.contains("FROM _meter.events FINAL"), "{unique}");
+        assert!(unique.contains("JSON_VALUE(data, '$.namespace') = '7'"));
+    }
+
+    /// `period_closes_after_grace`, the machine's half: a period is
+    /// provisional until 2 hours after its end, then closed once, then
+    /// closed again only when a window in it was re-closed.
+    #[test]
+    fn period_machine_closes_after_grace() {
+        let f = feature(Aggregation::Sum, false);
+        let periods = vec![(3_600, 7_200)];
+        let drive = |now_ms: i64, stored: &str, windows: &str| {
+            let mut run = PeriodRun::new(
+                "org_42",
+                f.clone(),
+                periods.clone(),
+                now_ms,
+                PeriodConfig::default(),
+            );
+            let mut statements = Vec::new();
+            let mut answer: Option<String> = None;
+            while let Some(sql) = run.next(answer.as_deref()).expect("ok") {
+                answer = Some(if sql.contains("FROM _meter.period_totals FINAL") {
+                    stored.to_string()
+                } else if sql.contains("max(close_run)") {
+                    windows.to_string()
+                } else {
+                    String::new()
+                });
+                statements.push(sql);
+            }
+            (run.summary().periods.clone(), statements)
+        };
+        // An hour before the grace ends: provisional, no reads.
+        let (outcome, statements) = drive((7_200 + 7_199) * 1_000, "", "");
+        assert_eq!(outcome, [(3_600, 7_200, PeriodOutcome::Provisional)]);
+        assert_eq!(statements.len(), 1);
+        assert!(statements[0].contains(", 0, "));
+        // At end + 2 h: closed.
+        let (outcome, statements) = drive((7_200 + 7_200) * 1_000, "", "5000\n");
+        assert_eq!(outcome, [(3_600, 7_200, PeriodOutcome::Closed)]);
+        assert_eq!(statements.len(), 3);
+        assert!(
+            statements[2].contains(", 1, 14400000 FROM"),
+            "{}",
+            statements[2]
+        );
+        // Closed at 14400000 with nothing newer: unchanged.
+        let (outcome, statements) = drive(15_000_000, "1\t14400000\n", "5000\n");
+        assert_eq!(outcome, [(3_600, 7_200, PeriodOutcome::AlreadyClosed)]);
+        assert_eq!(statements.len(), 2);
+        // A minute window re-closed after the period closed: closed again.
+        let (outcome, statements) = drive(16_000_000, "1\t14400000\n", "15500000\n");
+        assert_eq!(outcome, [(3_600, 7_200, PeriodOutcome::Reclosed)]);
+        assert!(statements[2].contains(", 1, 16000000 FROM"));
+        // A provisional row of a due period is closed.
+        let (outcome, _) = drive(16_000_000, "0\t9000000\n", "0\n");
+        assert_eq!(outcome, [(3_600, 7_200, PeriodOutcome::Closed)]);
     }
 }
