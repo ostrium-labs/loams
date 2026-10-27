@@ -61,3 +61,23 @@ job goes into `CI required` once it has been stable. The compose half is
 checked on every pull request by `conformance/compute/selftest.sh` in
 `repo-checks` (which is in `CI required`): `gateway_profile_no_host_ports`,
 `gateway_profile_shape` and `gateway_image_is_release_image`.
+
+## Other SDKs (`SDK_LEGS`, D2138)
+
+`SDK_LEGS` (default `go,ts`) picks the SDKs. Go and TypeScript are inline in
+`run.sh`; every other SDK is `legs/<sdk>.sh`, which `run.sh` sources and
+which defines `leg_<sdk>_generate` (its worker and starters run the
+scenarios; the Go exporter writes `histories/<sdk>/`) and `leg_<sdk>_replay`
+(the SDK's own replayer). Its cases are `gateway_dx1_scenarios_<sdk>`,
+`gateway_{hello,signal}_<sdk>`, `gateway_histories_replay_<sdk>` and
+`gateway_dx1_differential_<sdk>_<scenario>`; a differential case is
+`skip` while the corpus has no history of that SDK (D2137).
+
+| SDK | Leg | Pin | Status |
+|---|---|---|---|
+| Python | `legs/python.sh` (`corpus/workers/python`) | temporalio 1.34.0, uv 0.12.24 (pins.env) | not yet run: CI job `sdk-leg (python)` |
+
+```sh
+SDK_LEGS=python conformance/compute/temporal/gateway/run.sh --profile
+```
+
