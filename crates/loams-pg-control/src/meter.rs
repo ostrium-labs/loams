@@ -173,4 +173,30 @@ mod tests {
         assert!(events.iter().all(|e| e.subject == "org_42"));
         events[0].validate().unwrap();
     }
+
+    #[test]
+    fn hard_stop_refuses_wake_with_resource_exhausted() {
+        use crate::service::{Reason, entitlement_error};
+        use loams_meter_gate::gate::{Refusal, RefusalReason};
+        use std::time::Duration;
+
+        let e = entitlement_error(&Refusal::new(
+            RefusalReason::EntitlementExhausted,
+            "pg_compute",
+        ));
+        assert_eq!(e.reason, Reason::ResourceExhausted);
+        assert_eq!(e.metadata["entitlement"], "pg_compute");
+        assert_eq!(e.metadata["reason"], "entitlement_exhausted");
+        let e = entitlement_error(&Refusal::new(
+            RefusalReason::PaymentMethodRequired,
+            "pg_compute",
+        ));
+        assert_eq!(e.reason, Reason::FailedPrecondition);
+        let e = entitlement_error(
+            &Refusal::new(RefusalReason::MeterUnavailable, "pg_compute")
+                .retry_after(Duration::from_secs(1)),
+        );
+        assert_eq!(e.reason, Reason::Unavailable);
+        assert_eq!(e.metadata["retry_after_s"], "1");
+    }
 }

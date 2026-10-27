@@ -4,6 +4,8 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use loams_meter_gate::entitle::{Entitlements, features};
+use loams_meter_gate::gate::Refusal;
 use rustls::pki_types::ServerName;
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -74,6 +76,12 @@ pub enum FrontError {
     /// A RisingWave client was not let in (design 81, D1957).
     #[error("risingwave: {0}")]
     RisingWave(String),
+    /// The meter's gate refused the namespace's org (design §63 §10.2):
+    /// new connections are refused at the TLS alert (`access_denied`); the
+    /// client is in TLS by then, so no Postgres error can be sent in splice
+    /// mode.
+    #[error("{0}")]
+    Entitlement(Refusal),
     /// A socket error.
     #[error(transparent)]
     Io(#[from] std::io::Error),
@@ -121,6 +129,7 @@ pub struct PgFrontDoor {
     ejections: Ejections,
     observer: Arc<dyn ConnectionObserver>,
     risingwave: Option<Arc<RwFrontDoor>>,
+    entitlements: Entitlements,
 }
 
 /// What [`PgFrontDoor::new`] takes.
@@ -134,6 +143,8 @@ pub struct FrontDoorOptions {
     pub observer: Arc<dyn ConnectionObserver>,
     /// The RisingWave module; `None` refuses RisingWave routes.
     pub risingwave: Option<Arc<RwFrontDoor>>,
+    /// The meter's gate, asked on route resolution (`NoGate` by default).
+    pub entitlements: Entitlements,
 }
 
 impl PgFrontDoor {
@@ -147,6 +158,7 @@ impl PgFrontDoor {
             upstream_tls: options.upstream_tls,
             ejections: Ejections::default(),
             observer: options.observer,
+            entitlements: options.entitlements,
             risingwave: options.risingwave,
         }
     }
@@ -300,6 +312,15 @@ impl PgFrontDoor {
             send_alert(&mut client, alert::UNRECOGNIZED_NAME).await;
             return Err(FrontError::UnknownName(hello.server_name));
         };
+        // Has the namespace's org access to Postgres at all (§63 §10.2)?
+        // A hard-stopped org's new connections end here; open ones run on.
+        if let Err(r) = self
+            .entitlements
+            .check(None, &ns.name, features::PG_COMPUTE, 0)
+        {
+            send_alert(&mut client, alert::ACCESS_DENIED).await;
+            return Err(FrontError::Entitlement(r));
+        }
         let terminate = match (negotiation, self.mode) {
             (Negotiation::Direct, TlsMode::Passthrough) => {
                 send_alert(&mut client, alert::NO_APPLICATION_PROTOCOL).await;
