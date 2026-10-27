@@ -29,6 +29,7 @@ pub mod authz;
 pub mod autoscale;
 pub mod idle;
 pub mod ids;
+pub mod meter;
 pub mod model;
 pub mod names;
 pub mod neon;

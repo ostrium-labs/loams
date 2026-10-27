@@ -100,6 +100,7 @@ pub mod http;
 pub mod identity;
 pub mod insert;
 pub mod limits;
+pub mod meter;
 pub mod metrics;
 pub mod mutate;
 pub mod mv;

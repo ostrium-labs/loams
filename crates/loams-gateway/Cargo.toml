@@ -21,6 +21,9 @@ temporal = ["dep:loams-temporal-frontend"]
 [dependencies]
 clap.workspace = true
 loams-temporal-frontend = { path = "../loams-temporal-frontend", optional = true }
+# Usage events and the entitlement gate (design §63; ME1 Tasks 3, 21, 23).
+# The dependency runs one way: the gate names no product (D202, D551).
+loams-meter-gate.workspace = true
 hex.workspace = true
 http-body-util = "0.1"
 hyper = { version = "1", features = ["server", "http1"] }
