@@ -9600,6 +9600,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-meter"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "buffa",
+ "connectrpc",
+ "loams-authz",
+ "loams-cloudevents",
+ "loams-common",
+ "loams-meter-core",
+ "loams-proto",
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "ulid 3.0.0",
+]
+
+[[package]]
 name = "loams-meter-agent"
 version = "0.1.2"
 dependencies = [
@@ -9623,6 +9644,20 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "loams-meter-core"
+version = "0.1.2"
+dependencies = [
+ "bytes",
+ "loams-cloudevents",
+ "proptest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.21",
+ "time",
 ]
 
 [[package]]
