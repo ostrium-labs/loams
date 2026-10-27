@@ -37,7 +37,7 @@ cargo_package(
     deps = [
         "//crates/loams-cloudevents:loams-cloudevents",
         "//third-party/rust:async-trait",
-        "//third-party/rust:base64",
+        "//third-party/rust:base64-0_23",
         "//third-party/rust:bytes",
         "//third-party/rust:iggy",
         "//third-party/rust:secrecy",

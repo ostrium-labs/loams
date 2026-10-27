@@ -138,6 +138,7 @@ cargo_package(
         },
     ],
     deps = [
+        "//crates/loams-authz:loams-authz",
         "//crates/loams-common:loams-common",
         "//crates/loams-kv:loams-kv",
         "//crates/loams-pgdog-sync:loams-pgdog-sync",
@@ -145,7 +146,7 @@ cargo_package(
         "//third-party/rust:age",
         "//third-party/rust:async-trait",
         "//third-party/rust:axum",
-        "//third-party/rust:base64",
+        "//third-party/rust:base64-0_23",
         "//third-party/rust:bytes",
         "//third-party/rust:futures",
         "//third-party/rust:hex",

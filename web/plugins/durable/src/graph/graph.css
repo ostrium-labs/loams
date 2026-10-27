@@ -45,37 +45,37 @@
   flex-direction: column;
   gap: 0.25rem;
 }
-.dg-node[data-status="running"],
-.dg-chip[data-status="running"] {
+.dg-node[data-status='running'],
+.dg-chip[data-status='running'] {
   --dg-tone: var(--op-accent);
 }
-.dg-node[data-status="retrying"],
-.dg-chip[data-status="retrying"] {
+.dg-node[data-status='retrying'],
+.dg-chip[data-status='retrying'] {
   --dg-tone: var(--op-accent);
 }
-.dg-node[data-status="sleeping"],
-.dg-chip[data-status="sleeping"] {
+.dg-node[data-status='sleeping'],
+.dg-chip[data-status='sleeping'] {
   --dg-tone: var(--op-info);
 }
-.dg-node[data-status="succeeded"],
-.dg-chip[data-status="succeeded"] {
+.dg-node[data-status='succeeded'],
+.dg-chip[data-status='succeeded'] {
   --dg-tone: var(--op-grow);
 }
-.dg-node[data-status="failed"],
-.dg-chip[data-status="failed"] {
+.dg-node[data-status='failed'],
+.dg-chip[data-status='failed'] {
   --dg-tone: var(--op-danger);
 }
-.dg-node[data-status="retrying"] {
+.dg-node[data-status='retrying'] {
   border-left-style: dashed;
 }
 
 /* Retries: earlier attempts peek out behind the card as a stack. */
-.dg-node[data-stack="2"] {
+.dg-node[data-stack='2'] {
   box-shadow:
     4px 4px 0 -1px var(--op-raised),
     4px 4px 0 0 var(--op-rule);
 }
-.dg-node[data-stack="3"] {
+.dg-node[data-stack='3'] {
   box-shadow:
     4px 4px 0 -1px var(--op-raised),
     4px 4px 0 0 var(--op-rule),
@@ -84,18 +84,18 @@
 }
 
 /* Timers are pills; awaits are dashed: neither is work the run is doing. */
-.dg-node[data-kind="timer"] {
+.dg-node[data-kind='timer'] {
   border-radius: 999px;
   border-left-width: 1px;
   border-color: var(--dg-tone);
   padding-inline: 0.875rem;
 }
-.dg-node[data-kind="await"] {
+.dg-node[data-kind='await'] {
   border-style: dashed;
   border-left-width: 1px;
   border-color: var(--dg-tone);
 }
-.dg-node[data-kind="workflow"] {
+.dg-node[data-kind='workflow'] {
   background: var(--op-accent-soft);
   font-weight: 600;
 }
@@ -165,7 +165,7 @@
   font-size: 0.75rem;
   cursor: pointer;
 }
-.dg-chip[aria-current="true"] {
+.dg-chip[aria-current='true'] {
   border-color: var(--op-ink);
   background: var(--op-raised);
 }
@@ -175,8 +175,8 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .dg-node[data-status="running"] .dg-dot,
-  .dg-chip[data-status="running"] .dg-dot {
+  .dg-node[data-status='running'] .dg-dot,
+  .dg-chip[data-status='running'] .dg-dot {
     animation: dg-pulse 1.4s var(--op-ease, ease-in-out) infinite;
   }
 }

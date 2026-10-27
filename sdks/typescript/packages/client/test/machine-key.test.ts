@@ -2,7 +2,7 @@
 // JWT key. The token endpoint is a fake `fetch`; the assertion is verified with the public key.
 
 import { generateKeyPairSync, createVerify } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import {
   JWT_BEARER_GRANT,
   MACHINE_KEY_ASSERTION_TTL_S,

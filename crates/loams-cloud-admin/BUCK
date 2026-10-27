@@ -30,7 +30,7 @@ cargo_package(
         },
     ],
     deps = [
-        "//third-party/rust:base64",
+        "//third-party/rust:base64-0_23",
         "//third-party/rust:clap",
         "//third-party/rust:keyring",
         "//third-party/rust:reqwest-0_13",

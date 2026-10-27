@@ -11,7 +11,7 @@ import {
 import type { admin } from '@loams/proto';
 import type { PaletteCommand } from '@loams/slots';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 import { AccessPage } from '../src/access.js';
 import { ProjectPill } from '../src/context.js';
 import { connectSnippet, EnvironmentPage } from '../src/environment.js';

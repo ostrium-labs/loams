@@ -10,7 +10,7 @@
 # CONFLUENT_CI_ENABLED=true (the CI stop sets it to false), and in the environment
 # byoc-confluent put the secrets CONFLUENT_CLOUD_API_KEY/_SECRET (the
 # loams-ci-provisioner key, EnvironmentAdmin on loams-ci) and the variables
-# CONFLUENT_CI_ENVIRONMENT (env-...) and CONFLUENT_CI_DATA_SA (the loams-ci-data
+# CONFLUENT_CI_ENVIRONMENT (env-3kqygo; the script refuses any other) and CONFLUENT_CI_DATA_SA (the loams-ci-data
 # account), plus AWS_ROLE_ARN and the Tailscale OAuth client for the VM leg.
 # workflow_dispatch with confluent_only runs the Confluent leg without AWS.
 name: BYOC Confluent nightly

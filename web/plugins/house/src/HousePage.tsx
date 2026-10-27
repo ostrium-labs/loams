@@ -153,7 +153,7 @@ export function HousePage({ client, sample, serverKey = '' }: HousePageProps) {
   const [tick, setTick] = useState(0);
   const notServed = useCallback(() => setDetected('not-served'), []);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: tick retries on purpose
+  // oxlint-disable-next-line react/exhaustive-deps -- tick retries on purpose
   useEffect(() => {
     let live = true;
     setDetected('loading');

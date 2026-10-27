@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { type SessionService, ThemeController } from '@loams/console-host';
 import { SlotProvider, SlotRegistry } from '@loams/slots';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { SIDEBAR } from '../src/frame.js';
 import { Layout } from '../src/layout.js';
 import { HashRouter, type HashSource } from '../src/router.js';

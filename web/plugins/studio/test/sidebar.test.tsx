@@ -7,7 +7,7 @@
 import { SHELL_COMMAND_EVENT } from '@loams/console-host';
 import { SessionStatus } from '@loams/proto/agentd';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { createStudioKeys, listenShellCommands, type StudioKeys } from '../src/palette/commands.js';
 import type { StudioRoute } from '../src/routes.js';
 import { agentdPaletteSource } from '../src/sidebar/paletteSource.js';

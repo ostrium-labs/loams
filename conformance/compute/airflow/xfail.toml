@@ -1,0 +1,5 @@
+# Airflow on Loams Postgres with the Edge executor (conformance/compute/airflow/run.sh,
+# with edge/run.sh). Strict: an unlisted failure or a listed pass fails the run.
+# Empty until the first run (DX1 ruling T6.R9): add [[xfail]] entries with
+# a reason and an issue, as ../xfail.schema.json describes.
+product = "airflow"
