@@ -10,6 +10,8 @@ publish = false
 
 [dependencies]
 async-trait.workspace = true
+# `loams risingwave …` (RW-b): the subcommand's args; `env` for LOAMS_RISINGWAVE_URL.
+clap = { workspace = true, features = ["env"] }
 futures.workspace = true
 # The shared managed-engines trait and model (ENG-UI, design 81 D2010).
 loams-engines.workspace = true
@@ -26,7 +28,7 @@ tokio.workspace = true
 tokio-postgres = "0.7"
 # Metering windows (loams-engines' usage()).
 time.workspace = true
-# risingwave.toml and the gateway's routes entries.
+# risingwave.toml, the gateway's routes entries and RW-b's pipeline specs.
 toml.workspace = true
 tracing.workspace = true
 

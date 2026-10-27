@@ -212,6 +212,7 @@ cargo_package(
         "//crates/loams-proto:loams-proto",
         "//crates/loams-qdrant:loams-qdrant",
         "//crates/loams-query:loams-query",
+        "//crates/loams-risingwave:loams-risingwave",
         "//crates/loams-store:loams-store",
         "//crates/loams-upgrade:loams-upgrade",
         "//crates/loams-worker:loams-worker",
