@@ -1,6 +1,6 @@
 # 81 — Managed Stream and Batch Engines: RisingWave, Flink SQL, Spark
 
-Status: **Proposed** · 2026-10-27. D1900–D1931 and Q1400–Q1411 wait for the owner. The code lanes' decisions D1950–D2019 are declared here too (§18), as proposed and as this design amends them.
+Status: **Proposed** · 2026-10-27. D1900–D1931 and Q1401–Q1411 wait for the owner; Q1400 (managed Flink SQL) is answered by the owner's request of 2026-10-27. The code lanes' decisions D1950–D2019 are declared here too (§18), as proposed and as this design amends them.
 
 Source: the owner, 2026-10-27: "start rising wave managed flink sql and spark write as much code as possible" (the wave brief, `loams-wt/.he0-shared/wave-2026-10-27.md`). Seven code lanes (RW-a, RW-b, FL-a, FL-b, SP-a, SP-b, ENG-UI) started at the same time as this design and logged their assumptions in `loams-wt/.he0-shared/engines-81.md`. This document reconciles them. Where they disagreed, it decides, and the ruling was written back into that file (rulings R0–R30) so the lanes follow it while they write code.
 
@@ -691,11 +691,11 @@ Declared here so that the decision log has one source. Each row is Proposed, as 
 
 ---
 
-## 20. Open questions (Q1400–Q1411)
+## 20. Open questions (Q1400–Q1411; Q1400 answered)
 
 | # | Question | Default |
 |---|---|---|
-| Q1400 | Approve managed Flink SQL on Apache Flink, amending D212 (Flink SQL ported to RisingWave only)? | **Yes** (the owner's request); the porting guide stays |
+| Q1400 | Approve managed Flink SQL on Apache Flink, amending D212 (Flink SQL ported to RisingWave only)? | Yes; the porting guide stays. **Answered 2026-10-27 by the owner's request ("start rising wave managed flink sql and spark"): yes** |
 | Q1401 | Should the Apache Spark backend be in SP1 or wait for SP2? | **In SP1, opt-in** (`spark-jvm` profile), because Sail's 4.x coverage is about 71 % (§26 §9.1) |
 | Q1402 | RisingWave embedded UDFs (Python, JavaScript, Wasm): when? | **RW2**, only on gVisor nodes or single-tenant clusters; off in RW1 |
 | Q1403 | Prices for `engine.runtime.v1` and `engine.storage.v1`? | **None in preview**: meter and show usage, charge nothing |

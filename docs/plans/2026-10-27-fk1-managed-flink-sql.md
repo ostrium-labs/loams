@@ -52,7 +52,7 @@
 - **SQL Gateway at 2.2.1:** the REST API versions offered (`/api_versions`), whether `scripts` (FLIP-480, Q1409) is present, and the `STOP JOB … WITH SAVEPOINT` statement's result shape.
 - **Iceberg v3:** whether Iceberg 1.12.0's Flink runtime reads v3 tables the House writes, including deletion vectors. Record per feature.
 - **Flink CDC 3.7.0** and Flink 2.2.1 compatibility, and the `postgres-cdc` option names.
-- **Is Q1400 answered?** If the owner declines managed Flink SQL, FK1 stops after Task 0 and the lanes' code stays unmerged.
+- **Q1400 is answered** (the owner's request of 2026-10-27): managed Flink SQL goes ahead, and FK1 is not gated on it.
 
 Files: this plan. Tests: none. Gate: rulings recorded.
 
@@ -200,7 +200,7 @@ Files: `docs/guides/flink-sql.md`, the exit report in rulings. Tests: `docs_engi
 
 ## Owner actions
 
-- Q1400 (managed Flink SQL, amending D212) gates Task 0. Q1405 and Q1409 are engineering defaults.
+- Q1400 (managed Flink SQL, amending D212) is answered: yes, by the owner's request of 2026-10-27. Q1405 and Q1409 stay open with engineering defaults.
 
 ## Rulings made during execution
 
