@@ -3,7 +3,7 @@
 // diff matrix, the side-by-side pair diff (Task 20's viewer), the model's rules.
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import {
   changeLevel,
   DiffMatrix,

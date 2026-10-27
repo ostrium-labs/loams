@@ -26,6 +26,8 @@ const DX1: &[&str] = &[
     "terminated",
     "workflow_failed_application_error",
     "activity_heartbeat_details",
+    // TMP-api (D2080).
+    "update_accepted_completed",
 ];
 
 fn nanos(e: &HistoryEvent) -> i128 {
@@ -123,11 +125,95 @@ fn completed_by(a: &Attributes) -> i64 {
     }
 }
 
+fn any<M: prost::Message>(type_url: &str, m: &M) -> Option<prost_types::Any> {
+    Some(prost_types::Any {
+        type_url: type_url.into(),
+        value: m.encode_to_vec(),
+    })
+}
+
+/// The update protocol messages each workflow task completion carried, by
+/// its completed event: an update's accepted and completed events follow
+/// the completion that answered it.
+fn update_messages(
+    events: &[HistoryEvent],
+) -> std::collections::BTreeMap<i64, Vec<loams_temporal_proto::temporal::api::protocol::v1::Message>>
+{
+    use loams_temporal_proto::temporal::api::protocol::v1::Message;
+    use loams_temporal_proto::temporal::api::update::v1::{Acceptance, Response};
+    use loams_temporal_statemachine::update::{ACCEPTANCE_TYPE, RESPONSE_TYPE};
+    let mut out: std::collections::BTreeMap<i64, Vec<Message>> = Default::default();
+    let mut last_completed = 0;
+    for e in events {
+        match e.attributes.as_ref() {
+            Some(Attributes::WorkflowTaskCompletedEventAttributes(_)) => {
+                last_completed = e.event_id
+            }
+            Some(Attributes::WorkflowExecutionUpdateAcceptedEventAttributes(x)) => {
+                out.entry(last_completed).or_default().push(Message {
+                    id: format!("{}/accept", x.protocol_instance_id),
+                    protocol_instance_id: x.protocol_instance_id.clone(),
+                    sequencing_id: None,
+                    body: any(
+                        ACCEPTANCE_TYPE,
+                        &Acceptance {
+                            accepted_request_message_id: x.accepted_request_message_id.clone(),
+                            accepted_request_sequencing_event_id: x
+                                .accepted_request_sequencing_event_id,
+                            accepted_request: x.accepted_request.clone(),
+                        },
+                    ),
+                });
+            }
+            Some(Attributes::WorkflowExecutionUpdateCompletedEventAttributes(x)) => {
+                let id = x
+                    .meta
+                    .as_ref()
+                    .map(|m| m.update_id.clone())
+                    .unwrap_or_default();
+                out.entry(last_completed).or_default().push(Message {
+                    id: format!("{id}/complete"),
+                    protocol_instance_id: id,
+                    sequencing_id: None,
+                    body: any(
+                        RESPONSE_TYPE,
+                        &Response {
+                            meta: x.meta.clone(),
+                            outcome: x.outcome.clone(),
+                        },
+                    ),
+                });
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
 /// The inputs a server received, in the order they happened.
 pub fn script(events: &[HistoryEvent]) -> Vec<(i64, Input)> {
     let mut out: Vec<(i128, i64, Input)> = Vec::new();
     let mut wft_attempt = std::collections::BTreeMap::new();
     let mut act_attempt = std::collections::BTreeMap::new();
+    let mut messages = update_messages(events);
+    // An update was admitted just before the workflow task it went out with
+    // was scheduled (its acceptance's sequencing event).
+    for e in events {
+        if let Some(Attributes::WorkflowExecutionUpdateAcceptedEventAttributes(x)) =
+            e.attributes.as_ref()
+            && let Some(at) = events
+                .iter()
+                .find(|s| s.event_id == x.accepted_request_sequencing_event_id)
+        {
+            out.push((
+                nanos(at),
+                at.event_id,
+                Input::UpdateAdmitted {
+                    request: Box::new(x.accepted_request.clone().unwrap_or_default()),
+                },
+            ));
+        }
+    }
     for e in events {
         let t = nanos(e);
         let a = e.attributes.as_ref().expect("attributes");
@@ -183,6 +269,7 @@ pub fn script(events: &[HistoryEvent]) -> Vec<(i64, Input)> {
                 metering_metadata: x.metering_metadata,
                 worker_version: x.worker_version.clone(),
                 force_create_new_workflow_task: false,
+                messages: messages.remove(&e.event_id).unwrap_or_default(),
             },
             Attributes::WorkflowTaskFailedEventAttributes(x) => Input::WorkflowTaskFailed {
                 scheduled_event_id: x.scheduled_event_id,

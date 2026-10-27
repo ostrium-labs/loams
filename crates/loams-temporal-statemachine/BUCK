@@ -48,6 +48,11 @@ cargo_package(
             "crate": "table",
             "root": "tests/table.rs",
         },
+        {
+            "name": "update",
+            "crate": "update",
+            "root": "tests/update.rs",
+        },
     ],
     deps = [
         "//crates/loams-temporal-history:loams-temporal-history",
