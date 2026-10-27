@@ -122,6 +122,7 @@
         ],
         "loams-house-engine": [
           "conformance/clickhouse/oracle/corpus/he1/26/**",
+          "conformance/clickhouse/profile/profile.toml",
           "fabric/crates/loams-house/src/settings.rs"
         ],
         "loams-house-worker": [
