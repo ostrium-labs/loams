@@ -28,6 +28,10 @@
 #   TS_SCENARIO_TIMEOUT seconds one TypeScript scenario may run (default 240)
 #   LEG_TIMEOUT         seconds one SDK container may run (default 900); a
 #                       hung leg is killed and fails its case instead of the job
+#   SDK_LEGS            comma-separated SDKs (default go,ts). Go and TypeScript
+#                       are inline below; every other SDK is legs/<sdk>.sh,
+#                       which defines leg_<sdk>_generate and leg_<sdk>_replay
+#                       (D2152; the other SDK lanes add theirs the same way)
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=conformance/compute/lib.sh
@@ -49,7 +53,21 @@ out=$OC_OUT/temporal-gateway$suffix
 junit=$out/temporal-gateway.junit.xml
 mkdir -p "$out"
 rm -rf "$out/histories" "$junit"
-mkdir -p "$out/histories/go" "$out/histories/ts"
+: "${SDK_LEGS:=go,ts}"
+sdks=${SDK_LEGS//,/ }
+# want <sdk>: whether SDK_LEGS names it.
+want() { [[ ",$SDK_LEGS," == *",$1,"* ]]; }
+for l in $sdks; do
+  mkdir -p "$out/histories/$l"
+  case $l in
+    go | ts) ;;
+    *)
+      [ -f "$here/legs/$l.sh" ] || { echo "run.sh: no legs/$l.sh for SDK_LEGS=$l" >&2; exit 2; }
+      # shellcheck source=/dev/null
+      . "$here/legs/$l.sh"
+      ;;
+  esac
+done
 pids=()
 names=()
 : "${LEG_TIMEOUT:=900}"
@@ -158,11 +176,14 @@ go_run() {
     sh -ec "cp -r /c /tmp/c && cd /tmp/c/$1"
 }
 
+if want go; then
 if go_run go-generate "workers/go && go build -o /tmp/corpus . && /tmp/corpus generate -address $addr -namespace default -no-search-attribute -scenarios $SCENARIOS -out /out/histories/go" >"$out/go.log" 2>&1; then
   case_ gateway_dx1_scenarios_go pass
 else
   case_ gateway_dx1_scenarios_go fail "$(tail -3 "$out/go.log")"
 fi
+fi
+if want ts; then
 # TypeScript: one generator run per scenario, each killed after
 # TS_SCENARIO_TIMEOUT seconds, so a scenario that hangs fails alone and the
 # ones after it still run; then the histories of every run are exported,
@@ -183,8 +204,21 @@ if [ -n "$ts_ok" ]; then
 else
   case_ gateway_dx1_scenarios_ts fail "$(grep -E 'FAILED|killed|Error' "$out/ts.log" | tail -3)"
 fi
+fi
+for l in $sdks; do
+  case $l in
+    go | ts) ;;
+    *)
+      if "leg_${l}_generate" >"$out/$l.log" 2>&1; then
+        case_ "gateway_dx1_scenarios_$l" pass
+      else
+        case_ "gateway_dx1_scenarios_$l" fail "$(tail -3 "$out/$l.log")"
+      fi
+      ;;
+  esac
+done
 for s in hello signal_then_complete; do
-  for lang in go ts; do
+  for lang in $sdks; do
     name=gateway_${s%%_*}_$lang
     if [ -s "$out/histories/$lang/$s.json" ] && grep -q EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED "$out/histories/$lang/$s.json"; then
       case_ "$name" pass
@@ -195,20 +229,36 @@ for s in hello signal_then_complete; do
 done
 
 # The SDKs' own replayers on the gateway's histories.
+if want go; then
 if go_run go-replay "replay/go && CORPUS_HISTORIES=/out/histories/go go test -count=1 ./..." >"$out/replay-go.log" 2>&1; then
   case_ gateway_histories_replay_go pass
 else
   case_ gateway_histories_replay_go fail "$(tail -5 "$out/replay-go.log")"
 fi
+fi
+if want ts; then
 if leg ts-replay --network none -v "$corpus:/c:ro" -v "$out:/out:ro" -v dx1-npmcache:/root/.npm -e CORPUS_HISTORIES=/out/histories/ts "$NODE_IMAGE" \
   sh -ec "cp -r /c/workers/ts /tmp/ts && cd /tmp/ts && npm ci --offline --no-audit --no-fund >/dev/null && npx tsc -p . && node --test dist/replay.test.js" >"$out/replay-ts.log" 2>&1; then
   case_ gateway_histories_replay_ts pass
 else
   case_ gateway_histories_replay_ts fail "$(tail -5 "$out/replay-ts.log")"
 fi
+fi
+for l in $sdks; do
+  case $l in
+    go | ts) ;;
+    *)
+      if "leg_${l}_replay" >"$out/replay-$l.log" 2>&1; then
+        case_ "gateway_histories_replay_$l" pass
+      else
+        case_ "gateway_histories_replay_$l" fail "$(tail -5 "$out/replay-$l.log")"
+      fi
+      ;;
+  esac
+done
 
 # The differential against the corpus.
-python3 -I "$here/compare.py" --corpus "$corpus/histories" --gateway "$out/histories" --scenarios "$SCENARIOS" --junit "$junit"
+python3 -I "$here/compare.py" --corpus "$corpus/histories" --gateway "$out/histories" --scenarios "$SCENARIOS" --langs "$SDK_LEGS" --junit "$junit"
 
 echo "temporal-gateway ($mode): results in $junit"
 oc_xfail_check temporal/gateway "$junit"

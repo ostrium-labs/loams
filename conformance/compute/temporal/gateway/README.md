@@ -45,6 +45,16 @@ LOAMS_RESONATE_BIN=…/resonate conformance/compute/temporal/gateway/run.sh   # 
 conformance/compute/temporal/gateway/run.sh --profile             # the compose profile
 ```
 
+Other SDKs run as legs (`SDK_LEGS=<sdk>`, `legs/<sdk>.sh`), each with its
+own workflow and a row in
+[temporal-sdk-matrix.md](../../../../docs/guides/durable/temporal-sdk-matrix.md).
+The Ruby leg (`SDK_LEGS=ruby run.sh --profile`, `temporal-sdk-ruby.yml`)
+adds `gateway_dx1_scenarios_ruby`, `gateway_hello_ruby`, `gateway_signal_ruby`,
+`gateway_histories_replay_ruby` and `gateway_dx1_differential_ruby_<scenario>`.
+The differential is skipped until `corpus/histories/ruby/` is committed. The
+workflow also diffs against a start-dev generation made in the same run
+(`ruby-vs-upstream.junit.xml`).
+
 Expected failures are in `xfail.toml`.
 
 ## On pull requests

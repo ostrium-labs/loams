@@ -25,6 +25,8 @@ replaces this one.
 | `scenarios.json` | the scenarios in plan order, each with its phase (DX1–DX4) and whether it is Go only |
 | `workers/go/` | Go module (SDK `go.temporal.io/sdk` v1.49.0): `scenarios/` holds one workflow per scenario; `main.go` is the generator (`generate`) and the exporter (`export`) |
 | `workers/ts/` | npm package (`@temporalio/*` 1.24.0): `src/workflows.ts`, `src/activities.ts`, `src/generate.ts`, and the replay test `src/replay.test.ts` |
+| `workers/ruby/` | Ruby (gem `temporalio` 1.9.0 on sdk-core, `Gemfile.lock`): `lib/workflows.rb`, `lib/activities.rb`, `lib/scenarios.rb`, the worker and starter `generate.rb`, the replay check `replay.rb` (`WorkflowReplayer`), and `test/` (minitest). Its histories are not committed yet (D2153) |
+| `generate-ruby.sh` | the Ruby half against a server: generate, Go export, replay, `manifest.py build --langs ruby` |
 | `replay/go/` | `replay_test.go`: every Go history replays with `worker.NewWorkflowReplayer` |
 | `histories/<lang>/<scenario>.{json,binpb}` | protojson (what `temporal workflow show -o json` writes and the replayers read) and the binary `History` message; a scenario with several runs has `<scenario>.run<k>.*`, oldest first |
 | `histories/generate-<lang>.json` | what each driver observed, expected errors included |
@@ -101,6 +103,20 @@ podman run -d --name dx0-corpus-temporal --network dx0-corpus-net \
 CORPUS_SERVER=start-dev OC_NETWORK=dx0-corpus-net \
   conformance/compute/temporal/corpus/generate.sh
 ```
+
+The Ruby half has its own generator, which rebuilds only the Ruby entries of
+the manifest:
+
+```sh
+CORPUS_SERVER=start-dev OC_NETWORK=dx0-corpus-net \
+  conformance/compute/temporal/corpus/generate-ruby.sh
+```
+
+`.github/workflows/temporal-sdk-ruby.yml` runs the same against start-dev on
+every pull request that touches the Ruby worker, and uploads the result as the
+artifact `temporal-sdk-ruby-upstream-corpus`. Until `histories/ruby/` is
+committed, `manifest.py check` checks only the Ruby worker's scenario list and
+its pin.
 
 Any change to a workflow under `workers/` changes its histories: regenerate in
 the same pull request.
