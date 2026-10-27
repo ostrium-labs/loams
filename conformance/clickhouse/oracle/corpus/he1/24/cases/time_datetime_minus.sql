@@ -1,0 +1,1 @@
+SELECT dt - dt FROM t24t ORDER BY id

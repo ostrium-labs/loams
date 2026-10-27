@@ -1,0 +1,1 @@
+SELECT dt = '2026-10-01 12:00:00', dt >= '2026-10-01' FROM t24t ORDER BY id

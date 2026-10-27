@@ -1,0 +1,1 @@
+SELECT d5 + d5 FROM t24d ORDER BY id

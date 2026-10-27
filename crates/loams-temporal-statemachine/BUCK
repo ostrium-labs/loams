@@ -34,6 +34,11 @@ cargo_package(
             "root": "tests/lifecycle.rs",
         },
         {
+            "name": "limits",
+            "crate": "limits",
+            "root": "tests/limits.rs",
+        },
+        {
             "name": "props",
             "crate": "props",
             "root": "tests/props.rs",
