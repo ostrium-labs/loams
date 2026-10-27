@@ -544,7 +544,7 @@ describe('the thread toolbar', () => {
         url: 'https://git.example.test/acme/site/pulls/12',
       },
     ]);
-    const factory: StudioFactory = { kind: 'desktop', list: async () => [], pulls };
+    const factory: StudioFactory = { kind: 'pages', list: async () => [], pulls };
     mount(d.transport, <ThreadGitTools threadId="c_1" factory={factory} />);
     const toolbar = await screen.findByRole('toolbar', { name: 'Branch and git' });
     await waitFor(() => expect(pulls).toHaveBeenCalledWith('acme', 'site'));

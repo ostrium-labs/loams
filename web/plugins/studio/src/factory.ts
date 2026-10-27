@@ -36,8 +36,10 @@ export interface FactoryPull {
 }
 
 export interface StudioFactory {
-  /** `desktop`: the factory's pages are here; `links`: the apps' own UIs only (D922). */
-  readonly kind: 'desktop' | 'links';
+  /** `pages`: the factory's pages are here; `links`: the apps' own UIs only (D922). */
+  readonly kind: 'pages' | 'links';
+  /** Its reads need a reachable agentd host (the browser): no group without one. */
+  readonly needsAgentd?: boolean;
   list(): Promise<FactoryApp[]>;
   /** The open pull requests of a Forgejo repository (desktop). */
   pulls?(owner: string, repo: string): Promise<FactoryPull[]>;
@@ -74,9 +76,17 @@ export function factoryHref(app: FactoryApp): string {
   return app.hasPanels === false ? `${FACTORY_HOME}/${app.id}/app` : `${FACTORY_HOME}/${app.id}`;
 }
 
-export function desktopFactory(desktop: Pick<LoamsDesktopApi, 'factory'>): StudioFactory {
+/**
+ * The factory through `desktop.factory`, or in a browser through the agentd host's
+ * bridge (`studio.factory`, SF1 amendment F1), which has the same reads.
+ */
+export function desktopFactory(
+  desktop: { factory: Pick<LoamsDesktopApi['factory'], 'list' | 'query'> },
+  options: { needsAgentd?: boolean } = {},
+): StudioFactory {
   return {
-    kind: 'desktop',
+    kind: 'pages',
+    ...(options.needsAgentd ? { needsAgentd: true } : {}),
     list: async () =>
       (await desktop.factory.list()).map((a) => ({
         id: a.id,
