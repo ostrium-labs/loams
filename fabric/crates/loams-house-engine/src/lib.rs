@@ -14,5 +14,7 @@ pub mod engine;
 pub mod registry;
 pub mod seed;
 pub mod server;
+pub mod settings;
 
 pub use engine::{Answer, Engine};
+pub use settings::Settings;

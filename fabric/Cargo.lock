@@ -6038,6 +6038,7 @@ dependencies = [
  "loams-house-exec",
  "loams-house-formats",
  "loams-house-iceberg",
+ "loams-house-ipc",
  "loams-house-sql",
  "loams-house-types",
  "serde_json",
