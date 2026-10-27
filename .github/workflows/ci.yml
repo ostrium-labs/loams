@@ -497,6 +497,9 @@ jobs:
       # behind its own feature.
       - name: clippy (loams-gateway temporal module)
         run: cargo clippy -p loams-gateway --features temporal --all-targets --locked -- -D warnings
+      # Loams Meter's exporters are each behind a feature (ME1 Tasks 24-26).
+      - name: clippy (loams-meter-export, every exporter)
+        run: cargo clippy -p loams-meter-export --all-targets --all-features --locked -- -D warnings
       # The release images build `loams` with these feature sets (deploy/release/Containerfile.*);
       # `postgres,tikv` turns on loams-kv's TiKV store without loams-live's `tikv`, a combination
       # nothing else here builds (v0.1.0-preview.2's loams-pg-control image broke on it).
@@ -629,6 +632,10 @@ jobs:
           node-version-file: .nvmrc
       - name: workspace tests
         run: cargo nextest run --workspace --locked
+      # The exporters' tests against fake providers need their features
+      # (ME1 Tasks 24-26); the workspace run builds default features only.
+      - name: Loams Meter exporters against fake providers (every exporter feature)
+        run: cargo nextest run -p loams-meter-export --all-features --locked
 
   # The desktop agent daemon (design §50, DD1 Task 4). The headless guard
   # (D782) fails if a GUI, webview or audio crate enters loams-agentd's tree on
@@ -723,10 +730,6 @@ jobs:
         run: cargo test -p loams-link --features failpoints --locked
       - name: collection with failpoints
         run: cargo test -p loams-collection --features failpoints --locked
-      - name: Loams Meter exporters against fake providers (loams-meter-export, every exporter feature)
-        run: |
-          cargo clippy -p loams-meter-export --all-targets --all-features --locked -- -D warnings
-          cargo test -p loams-meter-export --all-features --locked
       - name: migration runner crash matrix (UP1 Task 3)
         run: cargo test -p loams-migrate --features failpoints --test runner_failpoints --locked
       - name: WAL service over TCP and the NVMe store (loams-safekeeper, features server, nvme)
