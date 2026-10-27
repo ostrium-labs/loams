@@ -18,5 +18,10 @@ publish = false
 # deterministic either way.
 serde_json = "1"
 
+# ME1 Task 18's latency gate (std-only, D2183): run with `cargo bench`.
+[[bench]]
+name = "gate_check_p99_under_5us"
+harness = false
+
 [lints]
 workspace = true

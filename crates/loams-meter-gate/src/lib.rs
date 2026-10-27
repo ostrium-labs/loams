@@ -6,6 +6,9 @@
 //!   D365's batched plain produce (bounded queue, 50 ms or 1 MiB flush, oldest
 //!   dropped and counted); spooled mode appends to the node agent's spool before
 //!   a caller advances its baselines (§63 §7.2).
+//! - [`gate`]: [`Gate`](gate::Gate) (`check`, `reserve`, `settle`), the
+//!   leasing [`LeaseGate`](gate::LeaseGate) and [`NoGate`](gate::NoGate)
+//!   (§63 §10, §11).
 //!
 //! **The dependency runs one way** (D202, D551): products depend on this crate's
 //! traits and nothing here names a product. With [`sink::NoSink`] a product
@@ -20,7 +23,10 @@
 
 pub mod adapters;
 pub mod event;
+pub mod gate;
+pub mod policy;
 pub mod sink;
 
 pub use event::{EncodedEvent, UsageEvent};
+pub use gate::{Decision, Gate, NoGate, Refusal, RefusalReason};
 pub use sink::{MeterSink, NoSink};

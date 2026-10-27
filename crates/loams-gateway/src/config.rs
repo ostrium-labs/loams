@@ -20,6 +20,13 @@ pub struct GatewayConfig {
     /// The RisingWave module (design 81, D1957).
     #[serde(default)]
     pub risingwave: crate::risingwave::RwConfig,
+    /// The Spark Connect module (design 81 R8, SP-a D1992; `spark`
+    /// feature): the `loams-spark` proxy on its own listener, in this
+    /// process. Same keys as `loams-spark-proxy`'s file. Without the
+    /// feature a `[spark]` section is refused as an unknown field.
+    #[cfg(feature = "spark")]
+    #[serde(default)]
+    pub spark: Option<loams_spark::standalone::Config>,
 }
 
 impl GatewayConfig {
@@ -35,6 +42,11 @@ impl GatewayConfig {
                     cert.cert.display()
                 )));
             }
+        }
+        #[cfg(feature = "spark")]
+        if let Some(spark) = &config.spark {
+            loams_spark::standalone::check(spark)
+                .map_err(|e| ConfigError::Invalid(format!("spark: {e}")))?;
         }
         Ok(config)
     }
@@ -264,4 +276,56 @@ fn default_max_connections() -> usize {
 }
 fn default_drain_timeout_ms() -> u64 {
     60_000
+}
+
+#[cfg(all(test, feature = "spark"))]
+mod spark_tests {
+    use super::*;
+
+    const BASE: &str = r#"
+[routes]
+path = "/etc/loams-gateway/routes.toml"
+"#;
+
+    #[test]
+    fn spark_section_parses_and_is_checked() {
+        let ok = format!(
+            "{BASE}{}",
+            r#"
+[spark]
+listen = "0.0.0.0:15002"
+keys_file = "/etc/loams-gateway/spark-keys.json"
+[spark.authz]
+kind = "key_grants"
+[[spark.routes]]
+namespace = "local"
+instance = "spark"
+uri = "http://sail:50051"
+"#
+        );
+        let c = GatewayConfig::from_toml(&ok).unwrap();
+        assert_eq!(c.spark.unwrap().routes.len(), 1);
+
+        // The proxy's own checks apply: dev settings off loopback are refused.
+        let bad = format!(
+            "{BASE}{}",
+            r#"
+[spark]
+listen = "0.0.0.0:15002"
+insecure_dev = true
+dev_namespace = "local"
+[[spark.routes]]
+namespace = "local"
+instance = "spark"
+uri = "http://sail:50051"
+"#
+        );
+        let err = GatewayConfig::from_toml(&bad).unwrap_err().to_string();
+        assert!(err.contains("spark"), "{err}");
+    }
+
+    #[test]
+    fn no_spark_section_is_none() {
+        assert!(GatewayConfig::from_toml(BASE).unwrap().spark.is_none());
+    }
 }

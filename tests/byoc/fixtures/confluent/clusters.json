@@ -4,5 +4,6 @@
   {"id": "lkc-120zwvj", "spec": {"display_name": "loams-ci-oracle-lookalike"}, "metadata": {"created_at": "2027-01-13T08:00:00Z"}},
   {"id": "lkc-demo0003", "spec": {"display_name": "loams-demo-acme-20261026"}, "metadata": {"created_at": "2027-01-13T08:00:00Z"}},
   {"id": "lkc-hand0004", "spec": {"display_name": "someones-test"}, "metadata": {"created_at": "2027-01-13T08:00:00Z"}},
+  {"id": "lkc-bench0006", "spec": {"display_name": "loams-ci-cfb-bench-1"}, "metadata": {"created_at": "2027-01-13T08:00:00Z"}},
   {"id": "lkc-new00005", "spec": {"display_name": "someones-new-test"}, "metadata": {"created_at": "2027-01-15T07:00:00Z"}}
 ], "metadata": {}}

@@ -68,6 +68,18 @@ pub fn namespace_already_exists() -> Status {
     )
 }
 
+/// `ALREADY_EXISTS` for CreateSchedule on a taken schedule ID, with the
+/// `WorkflowExecutionAlreadyStartedFailure` detail the SDKs map to "schedule
+/// already running" (D2071).
+pub fn schedule_already_exists() -> Status {
+    with_detail(
+        Code::AlreadyExists,
+        "schedule with this ID is already registered".to_string(),
+        "temporal.api.errordetails.v1.WorkflowExecutionAlreadyStartedFailure",
+        &WorkflowExecutionAlreadyStartedFailure::default(),
+    )
+}
+
 /// `ALREADY_EXISTS` with `WorkflowExecutionAlreadyStartedFailure` and a
 /// message of the caller's (an ID reuse policy refusing a closed run).
 pub fn already_started_message(message: String, run_id: &str, request_id: &str) -> Status {

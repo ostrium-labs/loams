@@ -1,0 +1,31 @@
+# engine-gateway's config on the compose stack (compose.lake.yaml; design 81
+# R7, R8). loams-gateway's `pg` module, used here only for the managed
+# engines' routes: Loams Postgres keeps its own front door.
+#
+# Other engine lanes add their module's sections below under their own
+# comment block.
+
+[admin]
+# /healthz, /readyz, /v1/routes: inside the container's network only.
+listen = "0.0.0.0:9187"
+
+[routes]
+path = "/etc/loams-gateway/routes.toml"
+# A hand-written file: no `generation` line.
+require_generation = false
+
+[pg]
+# No namespace is routed here; the shared port stays inside the container.
+listen = "127.0.0.1:5432"
+dedicated_bind = "0.0.0.0"
+# The engines' loopback ports (R7): 4566 RisingWave.
+dedicated_ports = "4566-4566"
+tls_mode = "passthrough"
+
+# --- RisingWave (RW-a, D1957).
+[risingwave]
+# Self-signed, made at start: clients use sslmode=require.
+self_signed_names = ["localhost", "127.0.0.1"]
+# The test seam (R25): `<namespace> <sha256 hex>` lines that the service
+# writes at start from ENGINE_GATEWAY_KEY.
+auth = { kind = "keys_file", path = "/run/engine-gateway/keys" }
