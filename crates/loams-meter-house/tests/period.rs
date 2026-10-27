@@ -55,7 +55,7 @@ async fn period_closer_closes_due_periods_for_every_spec() {
         byte_hours: false,
     };
     let hourly = |n: i64| (n * 3_600, (n + 1) * 3_600);
-    // Now is 10:30 of day 0: 07:00 and 08:00 are due, 09:00 and 10:00 are not.
+    // Now is 10:30 of day 0: 07:00 (ended 08:00) is due; 08:00, 09:00 and 10:00 are not.
     let now_ms = (10 * 3_600 + 1_800) * 1_000;
     let specs = [
         PeriodSpec {
@@ -84,7 +84,7 @@ async fn period_closer_closes_due_periods_for_every_spec() {
         outcomes,
         [
             PeriodOutcome::Closed,
-            PeriodOutcome::Closed,
+            PeriodOutcome::Provisional,
             PeriodOutcome::Provisional,
             PeriodOutcome::Provisional
         ]
