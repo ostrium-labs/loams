@@ -19,6 +19,7 @@
 pub mod auth;
 pub mod callbacks;
 pub mod capabilities;
+pub mod describe;
 pub mod effects;
 pub mod engine;
 pub mod errors;

@@ -4,7 +4,7 @@
 
 Every RPC of `temporalio/api` v1.63.5 (vendored in `crates/loams-temporal-proto`) and whether the Loams Temporal gateway (`crates/loams-temporal-frontend`) answers it. Everything else answers `UNIMPLEMENTED` with a link to the compatibility matrix. Status is preview: "implemented" means the method is built and has unit tests (CI runs them); it does not mean every SDK has run it end to end.
 
-WorkflowService: 25 of 123 implemented. OperatorService: none yet (the gateway does not serve it).
+WorkflowService: 34 of 123 implemented. OperatorService: none yet (the gateway does not serve it).
 
 ## WorkflowService
 
@@ -18,19 +18,19 @@ WorkflowService: 25 of 123 implemented. OperatorService: none yet (the gateway d
 | `StartWorkflowExecution` | implemented (DX1) | ID reuse and conflict policies (TMP-api B); no start delay, no cron |
 | `ExecuteMultiOperation` | not planned yet | update-with-start; needs start and update in one commit |
 | `GetWorkflowExecutionHistory` | implemented (DX1) | paged; long poll; close-event filter |
-| `GetWorkflowExecutionHistoryReverse` | planned: TMP-api C |  |
+| `GetWorkflowExecutionHistoryReverse` | implemented (TMP-api) |  |
 | `PollWorkflowTaskQueue` | implemented (DX1) | no sticky queues (Q1156) |
 | `RespondWorkflowTaskCompleted` | implemented (DX1) | carries update protocol messages since TMP-api A |
 | `RespondWorkflowTaskFailed` | implemented (DX1) |  |
 | `PollActivityTaskQueue` | implemented (DX1) |  |
 | `RecordActivityTaskHeartbeat` | implemented (DX1) |  |
-| `RecordActivityTaskHeartbeatById` | planned: TMP-api C |  |
+| `RecordActivityTaskHeartbeatById` | implemented (TMP-api) |  |
 | `RespondActivityTaskCompleted` | implemented (DX1) |  |
-| `RespondActivityTaskCompletedById` | planned: TMP-api C |  |
+| `RespondActivityTaskCompletedById` | implemented (TMP-api) |  |
 | `RespondActivityTaskFailed` | implemented (DX1) |  |
-| `RespondActivityTaskFailedById` | planned: TMP-api C |  |
+| `RespondActivityTaskFailedById` | implemented (TMP-api) |  |
 | `RespondActivityTaskCanceled` | implemented (DX1) |  |
-| `RespondActivityTaskCanceledById` | planned: TMP-api C |  |
+| `RespondActivityTaskCanceledById` | implemented (TMP-api) |  |
 | `RequestCancelWorkflowExecution` | implemented (DX1) |  |
 | `SignalWorkflowExecution` | implemented (DX1) |  |
 | `SignalWithStartWorkflowExecution` | implemented (TMP-api) | ID reuse and conflict policies |
@@ -46,13 +46,13 @@ WorkflowService: 25 of 123 implemented. OperatorService: none yet (the gateway d
 | `GetSearchAttributes` | lane TMP-sched (schedules and visibility) |  |
 | `RespondQueryTaskCompleted` | implemented (DX1) |  |
 | `ResetStickyTaskQueue` | implemented (DX1) | no-op: no sticky queues |
-| `ShutdownWorker` | planned: TMP-api C | no-op: no sticky queues |
+| `ShutdownWorker` | implemented (TMP-api) | no-op: no sticky queues |
 | `QueryWorkflow` | implemented (DX1) | to a live poller after any outstanding workflow task; reject conditions (TMP-api B) |
-| `DescribeWorkflowExecution` | implemented (DX1) | fuller answer in TMP-api C |
-| `DescribeTaskQueue` | planned: TMP-api C | pollers seen by the matcher |
-| `GetClusterInfo` | planned: TMP-api C |  |
+| `DescribeWorkflowExecution` | implemented (DX1) | auto reset points, activity attempts and expiry (TMP-api B, C) |
+| `DescribeTaskQueue` | implemented (TMP-api) | pollers seen in the last 5 minutes; backlog with report_stats |
+| `GetClusterInfo` | implemented (TMP-api) |  |
 | `GetSystemInfo` | implemented (DX1) | advertises only what is built |
-| `ListTaskQueuePartitions` | planned: TMP-api C | one partition per queue (X1.R8) |
+| `ListTaskQueuePartitions` | implemented (TMP-api) | one partition per queue (X1.R8) |
 | `CreateSchedule` | lane TMP-sched (schedules and visibility) |  |
 | `DescribeSchedule` | lane TMP-sched (schedules and visibility) |  |
 | `UpdateSchedule` | lane TMP-sched (schedules and visibility) |  |

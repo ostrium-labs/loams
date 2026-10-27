@@ -38,6 +38,15 @@ const TMP_API: &[&str] = &[
     "PollWorkflowExecutionUpdate",
     "SignalWithStartWorkflowExecution",
     "ResetWorkflowExecution",
+    "RespondActivityTaskCompletedById",
+    "RespondActivityTaskFailedById",
+    "RespondActivityTaskCanceledById",
+    "RecordActivityTaskHeartbeatById",
+    "GetWorkflowExecutionHistoryReverse",
+    "DescribeTaskQueue",
+    "GetClusterInfo",
+    "ListTaskQueuePartitions",
+    "ShutdownWorker",
 ];
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
