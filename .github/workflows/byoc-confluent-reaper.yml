@@ -1,0 +1,43 @@
+# CC1 Task 10 (design 80 §9.3, D1831): hourly, delete loams-ci-* clusters and API
+# keys in the loams-ci environment that are past the 3-hour TTL (what a crashed
+# nightly left), and report (never delete) anything else there older than a day.
+# Never touches the oracle (env-3kqddw, lkc-120zwvj). A no-op until the
+# byoc-confluent environment has the CI key and CONFLUENT_CI_ENVIRONMENT; it runs
+# even when CONFLUENT_CI_ENABLED is false, since cleaning up is always wanted.
+name: BYOC Confluent reaper
+
+on:
+  schedule:
+    - cron: "47 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: byoc-confluent-reaper
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  reap:
+    name: "BYOC: reap expired Confluent CI resources"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: byoc-confluent
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: is the key set
+        id: guard
+        env:
+          KEY: ${{ secrets.CONFLUENT_CLOUD_API_KEY }}
+          ENV_ID: ${{ vars.CONFLUENT_CI_ENVIRONMENT }}
+        run: |
+          if [ -z "$KEY" ] || [ -z "$ENV_ID" ]; then echo "The byoc-confluent environment is not set up: nothing to reap."; echo "ready=false" >> "$GITHUB_OUTPUT"; else echo "ready=true" >> "$GITHUB_OUTPUT"; fi
+      - if: steps.guard.outputs.ready == 'true'
+        env:
+          CONFLUENT_CLOUD_API_KEY: ${{ secrets.CONFLUENT_CLOUD_API_KEY }}
+          CONFLUENT_CLOUD_API_SECRET: ${{ secrets.CONFLUENT_CLOUD_API_SECRET }}
+          CONFLUENT_CI_ENVIRONMENT: ${{ vars.CONFLUENT_CI_ENVIRONMENT }}
+        run: scripts/byoc/confluent-ci.sh reap

@@ -20,6 +20,13 @@ sha2.workspace = true
 hex.workspace = true
 sigstore-verify.workspace = true
 thiserror.workspace = true
+# The conformance runner (MK1 Task 8): agentd's ACP JSON-RPC client, and the
+# agent process, its loopback world and the signals that stop it.
+loams-agentd-harness.workspace = true
+tokio.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+rustix = { workspace = true, features = ["process"] }
 
 [dev-dependencies]
 # The mock Walrus aggregator and HTTPS registry of tests/walrus.rs.

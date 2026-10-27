@@ -59,6 +59,23 @@ if [ "$role" = standalone ] && [ -n "${LOAMS_DURABLE_STORE:-}" ]; then
   given --durable-store "$@" || set -- "$@" "--durable-store=$LOAMS_DURABLE_STORE"
 fi
 
+# LOAMS_AUTHZ=openfga (the `authz` profile): the OpenFGA store and model ids openfga-init
+# recorded, unless .env sets them. Only those two values are read from the file, never run.
+if [ "$role" = standalone ] && [ "$(printf %s "${LOAMS_AUTHZ:-}" | tr "[:upper:]" "[:lower:]")" = openfga ]; then
+  ids=/var/lib/loams-authz/openfga.env
+  for var in LOAMS_AUTHZ_OPENFGA_STORE LOAMS_AUTHZ_OPENFGA_MODEL; do
+    eval "set_=\${$var:-}"
+    if [ -z "$set_" ] && [ -f "$ids" ]; then
+      value="$(sed -n "s/^$var=\([0-9A-Za-z]*\)\$/\1/p" "$ids" | head -n 1)"
+      [ -n "$value" ] && export "$var=$value"
+    fi
+  done
+  if [ -z "${LOAMS_AUTHZ_OPENFGA_STORE:-}" ] || [ -z "${LOAMS_AUTHZ_OPENFGA_MODEL:-}" ]; then
+    echo "loams: LOAMS_AUTHZ=openfga, but OpenFGA's store and model are unknown: add authz to COMPOSE_PROFILES in .env (openfga-init records them), or set LOAMS_AUTHZ_OPENFGA_STORE and LOAMS_AUTHZ_OPENFGA_MODEL." >&2
+    exit 78
+  fi
+fi
+
 # The engine and `migrate run` claim the data directory for this store.
 if [ ! -f "$marker" ] && { [ "$role" = standalone ] || [ "${2:-}" = run ]; }; then
   printf '%s\n' "$store" > "$marker"
