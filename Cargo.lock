@@ -10412,6 +10412,7 @@ dependencies = [
  "base64 0.23.1",
  "futures",
  "loams-web-bridge",
+ "rand 0.9.5",
  "regex",
  "serde",
  "serde_json",
