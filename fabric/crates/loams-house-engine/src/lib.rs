@@ -11,6 +11,7 @@
 
 pub mod catalog;
 pub mod engine;
+pub mod lake;
 pub mod registry;
 pub mod seed;
 pub mod server;

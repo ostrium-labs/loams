@@ -1,3 +1,4 @@
+#![cfg_attr(not(feature = "live"), allow(dead_code, unused_imports))]
 //! The worker protocol's framing and conversions (LV1 plan Ruling 5 and
 //! Task 5): `loams.live.worker.v1` messages, each a 4-byte big-endian
 //! length and that many bytes, over the worker's stdin (host to worker) and
@@ -11,16 +12,22 @@
 use std::io::{self, Read, Write};
 
 use buffa::{DecodeOptions, Message};
+#[cfg(feature = "live")]
 use loams_live::{CallOutput, FnKind, LiveError, LiveValue, LogLevel, LogLine, Visibility};
 use loams_live_proto::loams::live::worker::v1 as wire;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
+#[cfg(feature = "live")]
 use crate::runtime::{Failure, FunctionMeta};
+#[cfg(feature = "live")]
 use crate::validators;
 
+#[cfg(feature = "live")]
 pub(crate) use wire::__buffa::oneof::done::Outcome as DoneOutcome;
+#[cfg(feature = "live")]
 pub(crate) use wire::__buffa::oneof::failure::Kind as FailureKind;
 pub(crate) use wire::__buffa::oneof::host_message::Message as ToWorker;
+#[cfg(feature = "live")]
 pub(crate) use wire::__buffa::oneof::host_reply::Answer as ReplyAnswer;
 pub(crate) use wire::__buffa::oneof::worker_message::Message as ToHost;
 pub(crate) use wire::{
@@ -179,6 +186,7 @@ pub(crate) fn to_worker(message: ToWorker) -> HostMessage {
 
 /// The wire form of a function's metadata; its validator travels as the
 /// descriptor `loams:server`'s `v` builds, which the host parses again.
+#[cfg(feature = "live")]
 pub(crate) fn meta_to_wire(meta: &FunctionMeta) -> wire::FunctionMeta {
     wire::FunctionMeta {
         path: meta.path.clone(),
@@ -203,6 +211,7 @@ pub(crate) fn meta_to_wire(meta: &FunctionMeta) -> wire::FunctionMeta {
 
 /// A function's metadata as the worker reported it, checked as the host
 /// checks anything from a worker.
+#[cfg(feature = "live")]
 pub(crate) fn meta_from_wire(meta: wire::FunctionMeta) -> Result<FunctionMeta, String> {
     let kind = match meta.kind.as_known() {
         Some(FunctionKind::FUNCTION_KIND_QUERY) => FnKind::Query,
@@ -234,6 +243,7 @@ pub(crate) fn meta_from_wire(meta: wire::FunctionMeta) -> Result<FunctionMeta, S
 }
 
 /// The wire form of a failure.
+#[cfg(feature = "live")]
 pub(crate) fn failure_to_wire(failure: &Failure) -> wire::Failure {
     let kind = match failure {
         Failure::Host(i) => FailureKind::HostError(u32::try_from(*i).unwrap_or(u32::MAX)),
@@ -261,6 +271,7 @@ pub(crate) fn failure_to_wire(failure: &Failure) -> wire::Failure {
 }
 
 /// The limits a worker may report exceeded; anything else is refused.
+#[cfg(feature = "live")]
 const LIMITS: &[&str] = &[
     "max_result_bytes",
     "max_document_bytes",
@@ -271,6 +282,7 @@ const LIMITS: &[&str] = &[
 /// A failure as the worker reported it. The limits named in timeouts and
 /// out-of-memory errors are the host's own configuration, not the
 /// worker's word.
+#[cfg(feature = "live")]
 pub(crate) fn failure_from_wire(
     failure: wire::Failure,
     cpu_limit: std::time::Duration,
@@ -303,6 +315,7 @@ pub(crate) fn failure_from_wire(
 }
 
 /// The wire form of a call's console output.
+#[cfg(feature = "live")]
 pub(crate) fn logs_to_wire(output: &CallOutput) -> Vec<wire::LogLine> {
     output
         .logs
@@ -325,6 +338,7 @@ pub(crate) fn logs_to_wire(output: &CallOutput) -> Vec<wire::LogLine> {
 
 /// A call's console output as the worker reported it, held to the
 /// configured limits again.
+#[cfg(feature = "live")]
 pub(crate) fn logs_from_wire(
     logs: Vec<wire::LogLine>,
     dropped: u64,
@@ -357,7 +371,7 @@ pub(crate) fn logs_from_wire(
     out
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "live"))]
 mod tests {
     use super::*;
 

@@ -1,0 +1,1 @@
+SELECT [u8, i8], [1, -1, 300] FROM t24 ORDER BY id

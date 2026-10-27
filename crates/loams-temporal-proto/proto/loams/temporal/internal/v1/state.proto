@@ -10,6 +10,7 @@ import "google/protobuf/timestamp.proto";
 import "temporal/api/common/v1/message.proto";
 import "temporal/api/failure/v1/message.proto";
 import "temporal/api/history/v1/message.proto";
+import "temporal/api/update/v1/message.proto";
 
 // What a task token carries (plan DX1 ruling X1.R4). The token an SDK
 // receives is this message, encoded, followed by an HMAC-SHA256 over the
@@ -83,6 +84,48 @@ message MutableState {
   int64 last_task_id = 24;
   // Signals recorded so far (Temporal's limits count them, X1.R7).
   int64 signal_count = 25;
+  // Workflow updates the run knows (TMP-api, D2080): admitted ones wait for
+  // a workflow task, accepted ones for the worker's response; completed,
+  // rejected and aborted ones stay so a retried update ID or a
+  // `PollWorkflowExecutionUpdate` gets the same outcome.
+  repeated UpdateInfo updates = 26;
+}
+
+// Where a workflow update is in its lifecycle (Temporal's update protocol:
+// admitted -> sent with a workflow task -> accepted or rejected by the
+// worker -> completed).
+enum UpdateState {
+  UPDATE_STATE_UNSPECIFIED = 0;
+  // Admitted by the gateway; not yet handed to a worker.
+  UPDATE_STATE_ADMITTED = 1;
+  // Its request message went out with the workflow task `sent_in_wft`.
+  UPDATE_STATE_SENT = 2;
+  // The worker accepted it (`WorkflowExecutionUpdateAccepted` written).
+  UPDATE_STATE_ACCEPTED = 3;
+  // The worker responded (`WorkflowExecutionUpdateCompleted` written).
+  UPDATE_STATE_COMPLETED = 4;
+  // The worker's validator rejected it; nothing was written to history.
+  UPDATE_STATE_REJECTED = 5;
+  // The run closed first. Without an outcome the caller gets "workflow
+  // execution already completed"; with one (it had been accepted) the
+  // outcome is the failure Temporal reports.
+  UPDATE_STATE_ABORTED = 6;
+}
+
+message UpdateInfo {
+  string update_id = 1;
+  UpdateState state = 2;
+  // The request as admitted (the SDK echoes it back in its acceptance, or
+  // the gateway fills it in).
+  .temporal.api.update.v1.Request request = 3;
+  // The scheduled event ID of the workflow task the request went out with.
+  int64 sent_in_wft = 4;
+  int64 accepted_event_id = 5;
+  int64 completed_event_id = 6;
+  // The outcome of a rejected or aborted update (a completed one's outcome
+  // is in its completed event).
+  .temporal.api.update.v1.Outcome outcome = 7;
+  google.protobuf.Timestamp admitted_time = 8;
 }
 
 message WorkflowTaskInfo {

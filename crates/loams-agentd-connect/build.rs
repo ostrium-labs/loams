@@ -28,6 +28,7 @@ const FILES: &[&str] = &[
     "loams/agentd/v1/approvals.proto",
     "loams/agentd/v1/groups.proto",
     "loams/agentd/v1/notifications.proto",
+    "loams/agentd/v1/factory.proto",
     // MK1 Task 4b: the marketplace service and the listing it serves.
     "loams/marketplace/v1/listing.proto",
     "loams/agentd/v1/marketplace.proto",
