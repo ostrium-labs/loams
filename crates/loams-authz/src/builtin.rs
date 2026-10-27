@@ -171,7 +171,7 @@ const MODEL: &[(&str, &str, &[Rule])] = &[
     ("database", "can_read", &[From("environment", "viewer")]),
     ("database", "can_write", &[From("environment", "editor")]),
     ("database", "can_admin", &[From("environment", "deployer")]),
-    ("database", "can_connect", &[From("environment", "viewer")]),
+    ("database", "can_connect", &[From("environment", "editor")]),
     ("engine", "environment", &[Direct(&[Type("environment")])]),
     ("engine", "can_view", &[From("environment", "viewer")]),
     ("engine", "can_operate", &[From("environment", "editor")]),

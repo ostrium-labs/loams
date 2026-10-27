@@ -98,7 +98,7 @@ tests:
         assertions: {can_view: true, can_operate: true, can_destroy: false}
       - user: user:tess
         object: database:dev-db
-        assertions: {can_read: true, can_write: true, can_admin: false}
+        assertions: {can_read: true, can_write: true, can_admin: false, can_connect: true}
       # Design 81 (D1919): a managed engine follows its environment, like a database.
       - user: user:tess
         object: engine:eng_dev_rw
@@ -126,10 +126,10 @@ tests:
         assertions: {can_view: true, can_operate: false, can_destroy: false}
       - user: user:vic
         object: database:prod-db
-        assertions: {can_read: true, can_connect: true, can_write: false, can_admin: false}
+        assertions: {can_read: true, can_connect: false, can_write: false, can_admin: false}
       - user: service_account:ci
         object: database:prod-db
-        assertions: {can_read: true, can_connect: true, can_write: false}
+        assertions: {can_read: true, can_connect: false, can_write: false}
 
   - name: deny_by_default_without_tuple
     check:

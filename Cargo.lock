@@ -9646,6 +9646,7 @@ dependencies = [
  "k8s-openapi",
  "keyring",
  "kube",
+ "loams-authz",
  "loams-common",
  "loams-kv",
  "loams-pg-control",
