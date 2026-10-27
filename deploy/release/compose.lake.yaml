@@ -1,0 +1,136 @@
+# Shared services of the managed engines on the compose stack (design 81,
+# ENG81 R7, R9, R30): Lakekeeper (the one Iceberg REST catalog), its
+# migration and warehouse setup, and the one-shot `engines-init` (buckets,
+# databases, roles). An override of compose.yaml, used together with an
+# engine's own file:
+#
+#   docker compose -f compose.yaml -f compose.lake.yaml -f compose.risingwave.yaml \
+#     --profile rustfs --profile risingwave up -d
+#
+# - Every engine profile (`risingwave`, `flink`, `spark`) needs `rustfs`:
+#   engine state lives in the bucket `loams-engines` under
+#   `engines/<ns>/<instance>/` and Iceberg data in `loams-lake` (R6).
+# - Metadata databases are on Loams Postgres through the direct endpoint
+#   `compute1:55433` (DX1 R0.7 pattern). Never Loams SQL.
+# - Lakekeeper runs with auth off (`allowall`): a single-tenant preview stack
+#   (R3, R9). It publishes no host port; only services on the compose network
+#   reach it. The Kubernetes deploy uses OIDC (Zitadel) and OpenFGA instead.
+# - The credentials below are defaults for a test stack; set them in .env for
+#   anything else.
+# - Other engine lanes add services here only under their own comment block,
+#   and shared services list all three engine profiles.
+#
+# Status: preview, not yet run end to end.
+
+x-engines-s3-env: &engines-s3-env
+  AWS_ACCESS_KEY_ID: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
+  AWS_SECRET_ACCESS_KEY: ${RUSTFS_SECRET_KEY:-rustfsadmin}
+  AWS_REGION: us-east-1
+  ENGINES_S3_ENDPOINT: http://rustfs:9000
+
+x-lakekeeper-env: &lakekeeper-env
+  LAKEKEEPER__PG_DATABASE_URL_READ: postgresql://lakekeeper:${LAKEKEEPER_DB_PASSWORD:-lakekeeper}@${LOAMS_PG_HOST:-compute1}:${LOAMS_PG_PORT:-55433}/lakekeeper
+  LAKEKEEPER__PG_DATABASE_URL_WRITE: postgresql://lakekeeper:${LAKEKEEPER_DB_PASSWORD:-lakekeeper}@${LOAMS_PG_HOST:-compute1}:${LOAMS_PG_PORT:-55433}/lakekeeper
+  LAKEKEEPER__PG_ENCRYPTION_KEY: ${LAKEKEEPER_ENCRYPTION_KEY:-loams-preview-not-secret}
+  LAKEKEEPER__AUTHZ_BACKEND: allowall
+  RUST_LOG: ${LAKEKEEPER_LOG:-info}
+
+# Lakekeeper v0.13.6 (Apache-2.0), pushed 2026-09-22 (SP-a's pin, R30).
+x-lakekeeper-image: &lakekeeper-image ${LAKEKEEPER_IMAGE:-quay.io/lakekeeper/catalog:v0.13.6@sha256:d6829722cac0d00dfc5665b0955766387b93ccadd8b1e70e679b49619bc30ea5}
+
+x-hardening: &hardening
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  # One-shot: the buckets `loams-engines` and `loams-lake` on RustFS. The
+  # Loams Postgres storage image, for its curl (as `create-bucket` does).
+  engines-buckets:
+    <<: *hardening
+    profiles: [risingwave, flink, spark]
+    image: ${NEON_IMAGE:-ghcr.io/ostrium-labs/loams-postgres-storage@sha256:4dcec4cbef637b92b1088ea2c0bc857f3b5ef4318f02e8d2d4a0f9263ed4140e}
+    restart: "no"
+    entrypoint: ["/bin/sh", "/engines/engines-init.sh", "buckets"]
+    environment: *engines-s3-env
+    volumes:
+      - ./engines/engines-init.sh:/engines/engines-init.sh:ro
+    depends_on:
+      rustfs:
+        condition: service_started
+        required: false
+
+  # One-shot: the roles and databases of Lakekeeper and the engines' meta
+  # stores on Loams Postgres, as the direct endpoint's admin role.
+  engines-init:
+    <<: *hardening
+    profiles: [risingwave, flink, spark]
+    image: ${PSQL_IMAGE:-docker.io/library/postgres:17.10@sha256:7958605b474b3d264a969cb3a123d6aa00ad1e1fe9da8a69984dabb704d93317}
+    restart: "no"
+    entrypoint: ["/bin/sh", "/engines/engines-init.sh", "databases"]
+    environment:
+      LOAMS_PG_HOST: ${LOAMS_PG_HOST:-compute1}
+      LOAMS_PG_PORT: ${LOAMS_PG_PORT:-55433}
+      LOAMS_PG_ADMIN_USER: ${LOAMS_PG_ADMIN_USER:-cloud_admin}
+      LOAMS_PG_ADMIN_PASSWORD: ${LOAMS_PG_ADMIN_PASSWORD:-cloud_admin}
+      LAKEKEEPER_DB_PASSWORD: ${LAKEKEEPER_DB_PASSWORD:-lakekeeper}
+      RISINGWAVE_META_DB: ${RISINGWAVE_META_DB:-rw_default}
+      RISINGWAVE_META_PASSWORD: ${RISINGWAVE_META_PASSWORD:-risingwave}
+    volumes:
+      - ./engines/engines-init.sh:/engines/engines-init.sh:ro
+    depends_on:
+      compute1:
+        condition: service_started
+        required: false
+
+  lakekeeper-migrate:
+    <<: *hardening
+    profiles: [risingwave, flink, spark]
+    image: *lakekeeper-image
+    restart: "no"
+    command: ["migrate"]
+    environment: *lakekeeper-env
+    depends_on:
+      engines-init:
+        condition: service_completed_successfully
+
+  # The Iceberg REST catalog, http://lakekeeper:8181/catalog, warehouse `loams`.
+  lakekeeper:
+    <<: *hardening
+    profiles: [risingwave, flink, spark]
+    image: *lakekeeper-image
+    restart: unless-stopped
+    command: ["serve"]
+    environment: *lakekeeper-env
+    healthcheck:
+      test: ["CMD", "/home/nonroot/lakekeeper", "healthcheck"]
+      interval: 5s
+      timeout: 10s
+      retries: 12
+      start_period: 5s
+    depends_on:
+      lakekeeper-migrate:
+        condition: service_completed_successfully
+
+  # One-shot: bootstraps Lakekeeper and creates the warehouse `loams` on
+  # `loams-lake`.
+  lakekeeper-init:
+    <<: *hardening
+    profiles: [risingwave, flink, spark]
+    image: ${NEON_IMAGE:-ghcr.io/ostrium-labs/loams-postgres-storage@sha256:4dcec4cbef637b92b1088ea2c0bc857f3b5ef4318f02e8d2d4a0f9263ed4140e}
+    restart: "no"
+    entrypoint: ["/bin/sh", "/engines/engines-init.sh", "warehouse"]
+    environment:
+      <<: *engines-s3-env
+      LAKEKEEPER_URL: http://lakekeeper:8181
+    volumes:
+      - ./engines/engines-init.sh:/engines/engines-init.sh:ro
+    depends_on:
+      lakekeeper:
+        condition: service_healthy
+      engines-buckets:
+        condition: service_completed_successfully
+
+  # --- RisingWave (RW-a) adds nothing here; its services are in
+  # compose.risingwave.yaml. `engine-gateway` (loams-gateway with the engine
+  # routes, R7) is added with the gateway's `risingwave` module.

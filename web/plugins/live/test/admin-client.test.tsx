@@ -6,7 +6,7 @@ import { create } from '@bufbuild/protobuf';
 import { Code, ConnectError, createRouterTransport } from '@connectrpc/connect';
 import { errors, liveAdmin, liveValue } from '@loams/proto';
 import { cleanup, render, screen, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 import { DeployConflictError, isSkipped, type LogLine, type LogsSkipped } from '../src/admin.js';
 import { ADMIN_UNSERVED, createLiveAdminApi, PAGE_SIZE } from '../src/admin-client.js';
 import { DeploymentsPage, PREVIEW_NOTICE } from '../src/deployments.js';

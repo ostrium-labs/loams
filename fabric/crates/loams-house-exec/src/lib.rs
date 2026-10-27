@@ -6,3 +6,4 @@
 //! JOIN`, `WITH FILL`), registered with DataFusion.
 
 pub mod agg;
+pub mod ops;

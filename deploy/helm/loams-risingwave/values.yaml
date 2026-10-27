@@ -1,0 +1,42 @@
+# The loams-risingwave chart (RW1). One release per engine instance,
+# `rw-<key>` in the namespace `eng-<key>` (ENG81 R24). The adapter in
+# crates/loams-risingwave renders every value below; nothing here is meant to
+# be edited by hand except for a local test (ci/example-values.yaml is one).
+# Every image is pinned by digest: the chart refuses to render without one
+# (values.schema.json).
+
+# The instance key, the 26-character part of `eng_<26>`.
+instance: ""
+
+# The Secret the roles read their credentials from, and its data (plain
+# text; the chart base64-encodes it): meta-db-password, s3-access-key-id,
+# s3-secret-access-key.
+secretName: ""
+credentials: {}
+
+# The ConfigMap mounted at /risingwave/config/risingwave.toml, and its text.
+configName: ""
+config: ""
+
+# One entry per role (meta, compactor, compute, frontend), as rendered:
+#   name, image (repository:tag@sha256:...), replicas, stateful (StatefulSet
+#   with a headless Service, or Deployment), args, env ([{name, value}] or
+#   [{name, secretKey}]; `$(POD_IP)` is defined first), ports
+#   ([{name, containerPort}]), labels, resources.
+roles: {}
+
+# Who may reach the cluster (D1957, R8): the frontend's PG wire only from
+# loams-gateway, the dashboard and PG wire from the engines controller, and
+# every port from the instance's own pods.
+networkPolicy:
+  enabled: false
+  controlNamespace: ""
+  gatewayPodLabels: {}
+  controllerPodLabels: {}
+
+# The pods' user. RisingWave's image runs as root by default (verify); the
+# chart drops every capability and privilege escalation either way.
+podSecurityContext:
+  seccompProfile:
+    type: RuntimeDefault
+terminationGracePeriodSeconds: 60

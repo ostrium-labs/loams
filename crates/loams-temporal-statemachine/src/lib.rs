@@ -27,6 +27,7 @@ mod activity;
 mod commands;
 mod external;
 mod start;
+pub mod update;
 mod workflow_task;
 mod write;
 
@@ -36,10 +37,13 @@ use loams_temporal_proto::temporal::api::common::v1::{
     Header, MeteringMetadata, Payloads, WorkerVersionStamp,
 };
 use loams_temporal_proto::temporal::api::failure::v1::Failure;
+use loams_temporal_proto::temporal::api::protocol::v1::Message;
 use loams_temporal_proto::temporal::api::sdk::v1::WorkflowTaskCompletedMetadata;
 use loams_temporal_proto::temporal::api::workflowservice::v1::StartWorkflowExecutionRequest;
 
 pub use loams_temporal_history as history;
+pub use update::{UpdateStatus, messages_for_task};
+pub use workflow_task::server_failure;
 
 /// One thing that happens to a run.
 #[derive(Debug, Clone, PartialEq)]
@@ -84,6 +88,9 @@ pub enum Input {
         worker_version: Option<WorkerVersionStamp>,
         /// Schedule another workflow task even with nothing new.
         force_create_new_workflow_task: bool,
+        /// The worker's protocol messages (update acceptances, rejections
+        /// and responses), in order.
+        messages: Vec<Message>,
     },
     /// `RespondWorkflowTaskFailed`.
     WorkflowTaskFailed {
@@ -204,6 +211,12 @@ pub enum Input {
     TimerFired {
         /// The timer's started event.
         started_event_id: i64,
+    },
+    /// `UpdateWorkflowExecution`: admit a workflow update. A known update
+    /// ID changes nothing ([`Reply::Stale`]).
+    UpdateAdmitted {
+        /// The update's request.
+        request: Box<loams_temporal_proto::temporal::api::update::v1::Request>,
     },
 }
 
@@ -380,6 +393,11 @@ impl Transition {
 
 /// Applies `input` to `state` at `now_ms`.
 pub fn apply(state: &MutableState, input: Input, now_ms: i64) -> Result<Transition, Rejection> {
+    let input_kind = if matches!(input, Input::Start { .. }) {
+        InputKind::Start
+    } else {
+        InputKind::Other
+    };
     let mut s = state.clone();
     let mut fx = Vec::new();
     let (reply, events) = {
@@ -394,6 +412,12 @@ pub fn apply(state: &MutableState, input: Input, now_ms: i64) -> Result<Transiti
             effects: Vec::new(),
             reply,
         });
+    }
+    if !matches!(input_kind, InputKind::Start)
+        && loams_temporal_history::is_open(&s)
+        && let Some(reason) = history_limit(state, &s)
+    {
+        return Ok(over_history_limit(state, reason, now_ms));
     }
     // Invariant 1 on every batch; the others need the whole history and are
     // checked by the tests over complete runs.
@@ -410,6 +434,52 @@ pub fn apply(state: &MutableState, input: Input, now_ms: i64) -> Result<Transiti
         effects: fx,
         reply,
     })
+}
+
+enum InputKind {
+    Start,
+    Other,
+}
+
+/// Which of X1.R7's history limits a change on `before` that leads to
+/// `after` breaks, as Temporal's `UpdateWorkflowExecutionAsActive` checks
+/// them (v1.32.1 `service/history/workflow/context.go`): the size is the
+/// history already written (`ExecutionStats.HistorySize`, over 50 MiB), the
+/// count includes the change's own events (`nextEventID - 1`, over 51,200).
+fn history_limit(before: &MutableState, after: &MutableState) -> Option<&'static str> {
+    let limits = loams_temporal_history::Limits::default();
+    if before.history_size_bytes > limits.history_size {
+        Some(loams_temporal_history::limit_messages::HISTORY_SIZE)
+    } else if after.next_event_id - 1 > limits.history_count {
+        Some(loams_temporal_history::limit_messages::HISTORY_COUNT)
+    } else {
+        None
+    }
+}
+
+/// Temporal's `forceTerminateWorkflow`: the change is discarded and the run,
+/// as it was, is terminated with the limit's reason by `history-service`.
+fn over_history_limit(state: &MutableState, reason: &str, now_ms: i64) -> Transition {
+    let mut s = state.clone();
+    let mut fx = Vec::new();
+    let events = {
+        let mut b = Batch::new(&mut s, now_ms);
+        external::terminate(
+            &mut b,
+            &mut fx,
+            reason.into(),
+            None,
+            loams_temporal_history::limit_messages::HISTORY_SERVICE.into(),
+        )
+        .expect("terminating an open run is always accepted");
+        b.finish()
+    };
+    Transition {
+        state: s,
+        events,
+        effects: fx,
+        reply: Reply::Done,
+    }
 }
 
 fn dispatch(b: &mut Batch<'_>, fx: &mut Vec<Effect>, input: Input) -> Result<Reply, Rejection> {
@@ -450,6 +520,7 @@ fn dispatch(b: &mut Batch<'_>, fx: &mut Vec<Effect>, input: Input) -> Result<Rep
             metering_metadata,
             worker_version,
             force_create_new_workflow_task,
+            messages,
         } => workflow_task::completed(
             b,
             fx,
@@ -462,6 +533,7 @@ fn dispatch(b: &mut Batch<'_>, fx: &mut Vec<Effect>, input: Input) -> Result<Rep
                 metering_metadata,
                 worker_version,
                 force_create_new_workflow_task,
+                messages,
             },
         ),
         Input::WorkflowTaskFailed {
@@ -543,5 +615,6 @@ fn dispatch(b: &mut Batch<'_>, fx: &mut Vec<Effect>, input: Input) -> Result<Rep
             identity,
         } => external::terminate(b, fx, reason, details, identity),
         Input::TimerFired { started_event_id } => external::timer_fired(b, fx, started_event_id),
+        Input::UpdateAdmitted { request } => update::admit(b, fx, *request),
     }
 }

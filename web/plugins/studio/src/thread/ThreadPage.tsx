@@ -268,7 +268,7 @@ function ThreadView({
     );
 
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: Mod+F opens find while focus is in the thread
+    // oxlint-disable-next-line jsx-a11y/no-static-element-interactions -- Mod+F opens find while focus is in the thread
     <div
       className="relative flex h-full min-h-0 flex-col"
       onKeyDown={onKeyDown}

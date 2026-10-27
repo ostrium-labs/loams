@@ -1,5 +1,5 @@
 import { composeCatalog, parseCatalog, parsePatch } from '@loams/console-host';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import baseCatalog from '../catalog/base.yml?raw';
 import desktopYml from '../catalog/desktop.yml?raw';
 import { desktopManifests, desktopModules } from '../src/cordis/desktop.js';

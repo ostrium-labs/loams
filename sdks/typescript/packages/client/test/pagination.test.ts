@@ -12,7 +12,7 @@
 // — the token threading, the stop condition, and what happens when a binding is
 // not paged — against a stub fetch shaped exactly like a paged response.
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { MODULES, type CallBinding } from '../src/gen/facade.js';
 import { Loams } from '../src/loams.js';
 import { paginate } from '../src/runtime/pagination.js';

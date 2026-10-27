@@ -7,7 +7,7 @@ import { type Mode, ModeController, type SessionService } from '@loams/console-h
 import { type PaletteCommand, SlotProvider, SlotRegistry, type SlotSpec } from '@loams/slots';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useEffect } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { Layout } from '../src/layout.js';
 import { HashRouter, type HashSource } from '../src/router.js';
 

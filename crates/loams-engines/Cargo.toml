@@ -1,0 +1,28 @@
+[package]
+name = "loams-engines"
+description = "Managed stream and batch engines (design 81): the ManagedEngine trait, registry, lifecycle, metering hook and the project-scoped HTTP facade for RisingWave, Flink SQL and Spark."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+axum.workspace = true
+loams-authz.workspace = true
+percent-encoding.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+time = { workspace = true, features = ["serde"] }
+tokio = { workspace = true, features = ["sync", "time", "rt"] }
+tracing.workspace = true
+ulid.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+tower = { workspace = true, features = ["util"] }
+
+[lints]
+workspace = true

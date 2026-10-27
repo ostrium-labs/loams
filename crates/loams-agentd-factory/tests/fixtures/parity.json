@@ -1,0 +1,2223 @@
+{
+  "now": "2026-10-19T12:00:00.000Z",
+  "cases": [
+    {
+      "name": "forgejo.version",
+      "app": "forgejo",
+      "url": "http://forgejo.test",
+      "fields": {
+        "token": "tok-F"
+      },
+      "op": "version",
+      "params": {},
+      "routes": [
+        {
+          "path": "/api/v1/version",
+          "body": {
+            "version": "16.0.5"
+          }
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/api/v1/version",
+            "query": [],
+            "headers": [
+              "accept",
+              "authorization"
+            ]
+          }
+        ],
+        "result": {
+          "ok": true,
+          "value": {
+            "version": "16.0.5"
+          }
+        }
+      }
+    },
+    {
+      "name": "forgejo.health",
+      "app": "forgejo",
+      "url": "http://forgejo.test",
+      "fields": {
+        "token": "tok-F"
+      },
+      "op": "health",
+      "params": {},
+      "routes": [
+        {
+          "path": "/api/v1/version",
+          "body": {
+            "version": "16.0.5"
+          }
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/api/v1/version",
+            "query": [],
+            "headers": [
+              "accept",
+              "authorization"
+            ]
+          }
+        ],
+        "result": {
+          "ok": true,
+          "value": {
+            "status": "ok"
+          }
+        }
+      }
+    },
+    {
+      "name": "forgejo.health.auth_failed",
+      "app": "forgejo",
+      "url": "http://forgejo.test",
+      "fields": {
+        "token": "tok-F"
+      },
+      "op": "health",
+      "params": {},
+      "routes": [
+        {
+          "path": "/api/v1/version",
+          "status": 401,
+          "body": {
+            "message": "token is required"
+          }
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/api/v1/version",
+            "query": [],
+            "headers": [
+              "accept",
+              "authorization"
+            ]
+          }
+        ],
+        "result": {
+          "ok": false,
+          "code": "auth_failed"
+        }
+      }
+    },
+    {
+      "name": "forgejo.repos",
+      "app": "forgejo",
+      "url": "http://forgejo.test",
+      "fields": {
+        "token": "tok-F"
+      },
+      "op": "repos",
+      "params": {
+        "limit": 20
+      },
+      "routes": [
+        {
+          "path": "/api/v1/repos/search",
+          "body": {
+            "ok": true,
+            "data": [
+              {
+                "full_name": "sfux/shop",
+                "description": "Demo shop",
+                "stars_count": 1,
+                "forks_count": 0,
+                "open_issues_count": 2,
+                "updated_at": "2026-10-18T10:00:00Z",
+                "html_url": "http://forgejo.test/sfux/shop"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/api/v1/repos/search",
+            "query": [
+              [
+                "q",
+                ""
+              ],
+              [
+                "page",
+                "1"
+              ],
+              [
+                "limit",
+                "20"
+              ]
+            ],
+            "headers": [
+              "accept",
+              "authorization"
+            ]
+          }
+        ],
+        "result": {
+          "ok": true,
+          "value": [
+            {
+              "fullName": "sfux/shop",
+              "description": "Demo shop",
+              "stars": 1,
+              "forks": 0,
+              "openIssues": 2,
+              "updatedAt": "2026-10-18T10:00:00Z",
+              "url": "http://forgejo.test/sfux/shop"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "forgejo.repos.query_page_and_clamp",
+      "app": "forgejo",
+      "url": "http://forgejo.test",
+      "fields": {
+        "token": "tok-F"
+      },
+      "op": "repos",
+      "params": {
+        "q": "shop & co",
+        "page": 2,
+        "limit": 500
+      },
+      "routes": [
+        {
+          "path": "/api/v1/repos/search",
+          "body": {
+            "ok": true,
+            "data": []
+          }
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/api/v1/repos/search",
+            "query": [
+              [
+                "q",
+                "shop & co"
+              ],
+              [
+                "page",
+                "2"
+              ],
+              [
+                "limit",
+                "50"
+              ]
+            ],
+            "headers": [
+              "accept",
+              "authorization"
+            ]
+          }
+        ],
+        "result": {
+          "ok": true,
+          "value": []
+        }
+      }
+    },
+    {
+      "name": "forgejo.issues",
+      "app": "forgejo",
+      "url": "http://forgejo.test",
+      "fields": {
+        "token": "tok-F"
+      },
+      "op": "issues",
+      "params": {
+        "limit": 20
+      },
+      "routes": [
+        {
+          "path": "/api/v1/repos/issues/search",
+          "body": [
+            {
+              "id": 101,
+              "number": 1,
+              "title": "Issue 1",
+              "state": "open",
+              "html_url": "http://forgejo.test/sfux/shop/issues/1",
+              "updated_at": "2026-10-17T10:00:00Z"
+            },
+            {
+              "id": 103,
+              "number": 3,
+              "title": "Issue 3",
+              "state": "open",
+              "html_url": "http://forgejo.test/sfux/shop/issues/3",
+              "updated_at": "2026-10-17T10:00:00Z"
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/api/v1/repos/issues/search",
+            "query": [
+              [
+                "q",
+                ""
+              ],
+              [
+                "type",
+                "issues"
+              ],
+              [
+                "page",
+                "1"
+              ],
+              [
+                "limit",
+                "20"
+              ]
+            ],
+            "headers": [
+              "accept",
+              "authorization"
+            ]
+          }
+        ],
+        "result": {
+          "ok": true,
+          "value": [
+            {
+              "id": "1",
+              "title": "Issue 1",
+              "state": "open",
+              "url": "http://forgejo.test/sfux/shop/issues/1",
+              "updatedAt": "2026-10-17T10:00:00Z"
+            },
+            {
+              "id": "3",
+              "title": "Issue 3",
+              "state": "open",
+              "url": "http://forgejo.test/sfux/shop/issues/3",
+              "updatedAt": "2026-10-17T10:00:00Z"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "forgejo.pulls",
+      "app": "forgejo",
+      "url": "http://forgejo.test",
+      "fields": {
+        "token": "tok-F"
+      },
+      "op": "issues",
+      "params": {
+        "type": "pulls",
+        "owner": "sfux",
+        "repo": "shop",
+        "limit": 50
+      },
+      "routes": [
+        {
+          "path": "/api/v1/repos/sfux/shop/pulls",
+          "body": [
+            {
+              "id": 102,
+              "number": 2,
+              "title": "Issue 2",
+              "state": "open",
+              "html_url": "http://forgejo.test/sfux/shop/issues/2",
+              "updated_at": "2026-10-17T10:00:00Z",
+              "head": {
+                "ref": "fac-42-fix"
+              }
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/api/v1/repos/sfux/shop/pulls",
+            "query": [
+              [
+                "state",
+                "open"
+              ],
+              [
+                "page",
+                "1"
+              ],
+              [
+                "limit",
+                "50"
+              ]
+            ],
+            "headers": [
+              "accept",
+              "authorization"
+            ]
+          }
+        ],
+        "result": {
+          "ok": true,
+          "value": [
+            {
+              "id": "2",
+              "title": "Issue 2",
+              "state": "open",
+              "url": "http://forgejo.test/sfux/shop/issues/2",
+              "updatedAt": "2026-10-17T10:00:00Z",
+              "head": "fac-42-fix"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "forgejo.pulls.needs_owner",
+      "app": "forgejo",
+      "url": "http://forgejo.test",
+      "fields": {
+        "token": "tok-F"
+      },
+      "op": "issues",
+      "params": {
+        "type": "pulls"
+      },
+      "routes": [],
+      "expect": {
+        "requests": [],
+        "result": {
+          "ok": false,
+          "code": "bad_params"
+        }
+      }
+    },
+    {
+      "name": "forgejo.repos.upstream_error",
+      "app": "forgejo",
+      "url": "http://forgejo.test",
+      "fields": {
+        "token": "tok-F"
+      },
+      "op": "repos",
+      "params": {},
+      "routes": [
+        {
+          "path": "/api/v1/repos/search",
+          "status": 500,
+          "body": {
+            "message": "boom"
+          }
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/api/v1/repos/search",
+            "query": [
+              [
+                "q",
+                ""
+              ],
+              [
+                "page",
+                "1"
+              ],
+              [
+                "limit",
+                "20"
+              ]
+            ],
+            "headers": [
+              "accept",
+              "authorization"
+            ]
+          }
+        ],
+        "result": {
+          "ok": false,
+          "code": "upstream_error"
+        }
+      }
+    },
+    {
+      "name": "forgejo.repos.unreachable",
+      "app": "forgejo",
+      "url": "http://forgejo.test",
+      "fields": {
+        "token": "tok-F"
+      },
+      "op": "repos",
+      "params": {},
+      "routes": [
+        {
+          "path": "/api/v1/repos/search",
+          "network": true
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/api/v1/repos/search",
+            "query": [
+              [
+                "q",
+                ""
+              ],
+              [
+                "page",
+                "1"
+              ],
+              [
+                "limit",
+                "20"
+              ]
+            ],
+            "headers": [
+              "accept",
+              "authorization"
+            ]
+          }
+        ],
+        "result": {
+          "ok": false,
+          "code": "unreachable"
+        }
+      }
+    },
+    {
+      "name": "forgejo.unknown_param",
+      "app": "forgejo",
+      "url": "http://forgejo.test",
+      "fields": {
+        "token": "tok-F"
+      },
+      "op": "repos",
+      "params": {
+        "evil": 1
+      },
+      "routes": [],
+      "expect": {
+        "requests": [],
+        "result": {
+          "ok": false,
+          "code": "bad_params"
+        }
+      }
+    },
+    {
+      "name": "zulip.streams",
+      "app": "zulip",
+      "url": "http://zulip.test",
+      "fields": {
+        "email": "bot@example.com",
+        "apiKey": "key-Z"
+      },
+      "op": "streams",
+      "params": {},
+      "routes": [
+        {
+          "path": "/api/v1/streams",
+          "body": {
+            "result": "success",
+            "msg": "",
+            "streams": [
+              {
+                "stream_id": 9,
+                "name": "factory",
+                "description": "Factory signals",
+                "invite_only": false
+              },
+              {
+                "stream_id": 10,
+                "name": "ops",
+                "description": "",
+                "invite_only": true
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/api/v1/streams",
+            "query": [],
+            "headers": [
+              "accept",
+              "authorization"
+            ]
+          }
+        ],
+        "result": {
+          "ok": true,
+          "value": [
+            {
+              "id": 9,
+              "name": "factory",
+              "description": "Factory signals",
+              "private": false
+            },
+            {
+              "id": 10,
+              "name": "ops",
+              "description": "",
+              "private": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "zulip.messages",
+      "app": "zulip",
+      "url": "http://zulip.test",
+      "fields": {
+        "email": "bot@example.com",
+        "apiKey": "key-Z"
+      },
+      "op": "messages",
+      "params": {
+        "channel": "factory",
+        "limit": 20
+      },
+      "routes": [
+        {
+          "path": "/api/v1/messages",
+          "body": {
+            "result": "success",
+            "msg": "",
+            "anchor": 3,
+            "found_newest": true,
+            "found_oldest": true,
+            "found_anchor": false,
+            "history_limited": false,
+            "messages": [
+              {
+                "id": 1,
+                "sender_full_name": "Sfux Dev",
+                "timestamp": 1792000001,
+                "subject": "checkout",
+                "content": "<p>message 1</p>"
+              },
+              {
+                "id": 2,
+                "sender_full_name": "Sfux Dev",
+                "timestamp": 1792000002,
+                "subject": "checkout",
+                "content": "<p>message 2</p>"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/api/v1/messages",
+            "query": [
+              [
+                "narrow",
+                "[{\"operator\":\"channel\",\"operand\":\"factory\"}]"
+              ],
+              [
+                "anchor",
+                "newest"
+              ],
+              [
+                "num_before",
+                "20"
+              ],
+              [
+                "num_after",
+                "0"
+              ]
+            ],
+            "headers": [
+              "accept",
+              "authorization"
+            ]
+          }
+        ],
+        "result": {
+          "ok": true,
+          "value": [
+            {
+              "id": 1,
+              "sender": "Sfux Dev",
+              "timestamp": 1792000001,
+              "topic": "checkout",
+              "content": "<p>message 1</p>"
+            },
+            {
+              "id": 2,
+              "sender": "Sfux Dev",
+              "timestamp": 1792000002,
+              "topic": "checkout",
+              "content": "<p>message 2</p>"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "zulip.server",
+      "app": "zulip",
+      "url": "http://zulip.test",
+      "fields": {
+        "email": "bot@example.com",
+        "apiKey": "key-Z"
+      },
+      "op": "server",
+      "params": {},
+      "routes": [
+        {
+          "path": "/api/v1/users/me",
+          "body": {
+            "result": "success",
+            "msg": "",
+            "full_name": "Sfux Dev",
+            "email": "user8@example.com",
+            "user_id": 8
+          }
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/api/v1/users/me",
+            "query": [],
+            "headers": [
+              "accept",
+              "authorization"
+            ]
+          }
+        ],
+        "result": {
+          "ok": true,
+          "value": {
+            "name": "Sfux Dev",
+            "email": "user8@example.com"
+          }
+        }
+      }
+    },
+    {
+      "name": "zulip.health.auth_failed",
+      "app": "zulip",
+      "url": "http://zulip.test",
+      "fields": {
+        "email": "bot@example.com",
+        "apiKey": "key-Z"
+      },
+      "op": "health",
+      "params": {},
+      "routes": [
+        {
+          "path": "/api/v1/users/me",
+          "status": 401,
+          "body": {
+            "result": "error",
+            "msg": "Invalid API key",
+            "code": "INVALID_API_KEY"
+          }
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/api/v1/users/me",
+            "query": [],
+            "headers": [
+              "accept",
+              "authorization"
+            ]
+          }
+        ],
+        "result": {
+          "ok": false,
+          "code": "auth_failed"
+        }
+      }
+    },
+    {
+      "name": "plane.stats",
+      "app": "plane",
+      "url": "http://plan-api.test",
+      "fields": {
+        "apiKey": "itp_key",
+        "projectKey": "FAC"
+      },
+      "op": "stats",
+      "params": {},
+      "routes": [
+        {
+          "path": "/projects/FAC/analytics/stats",
+          "body": {
+            "open": 2,
+            "inProgress": 1,
+            "backlog": 0,
+            "overdue": 0,
+            "unassigned": 2,
+            "closedLast7d": 0
+          }
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/projects/FAC/analytics/stats",
+            "query": [],
+            "headers": [
+              "accept",
+              "x-api-key"
+            ]
+          }
+        ],
+        "result": {
+          "ok": true,
+          "value": {
+            "open": 2,
+            "inProgress": 1,
+            "backlog": 0,
+            "overdue": 0,
+            "unassigned": 2,
+            "closedLast7d": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "plane.issues",
+      "app": "plane",
+      "url": "http://plan-api.test",
+      "fields": {
+        "apiKey": "itp_key",
+        "projectKey": "FAC"
+      },
+      "op": "issues",
+      "params": {
+        "limit": 20
+      },
+      "routes": [
+        {
+          "path": "/projects/FAC/issues",
+          "body": [
+            {
+              "id": 2,
+              "sequenceNumber": 2,
+              "identifier": "FAC-2",
+              "title": "Add retry to webhook sender",
+              "columnId": 3,
+              "typeId": null,
+              "priority": "medium",
+              "labelIds": [],
+              "archived": false
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/projects/FAC/issues",
+            "query": [
+              [
+                "limit",
+                "20"
+              ]
+            ],
+            "headers": [
+              "accept",
+              "x-api-key"
+            ]
+          }
+        ],
+        "result": {
+          "ok": true,
+          "value": [
+            {
+              "id": "FAC-2",
+              "title": "Add retry to webhook sender",
+              "priority": "medium"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "plane.health",
+      "app": "plane",
+      "url": "http://plan-api.test",
+      "fields": {
+        "apiKey": "itp_key",
+        "projectKey": "FAC"
+      },
+      "op": "health",
+      "params": {},
+      "routes": [
+        {
+          "path": "/",
+          "body": {
+            "name": "It's a Plan api",
+            "status": "ok"
+          }
+        },
+        {
+          "path": "/me",
+          "body": {
+            "authenticated": true,
+            "user": {
+              "id": "u1"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/",
+            "query": [],
+            "headers": [
+              "accept",
+              "x-api-key"
+            ]
+          },
+          {
+            "method": "GET",
+            "path": "/me",
+            "query": [],
+            "headers": [
+              "accept",
+              "x-api-key"
+            ]
+          }
+        ],
+        "result": {
+          "ok": true,
+          "value": {
+            "status": "ok"
+          }
+        }
+      }
+    },
+    {
+      "name": "plane.health.not_authenticated",
+      "app": "plane",
+      "url": "http://plan-api.test",
+      "fields": {
+        "apiKey": "itp_key",
+        "projectKey": "FAC"
+      },
+      "op": "health",
+      "params": {},
+      "routes": [
+        {
+          "path": "/",
+          "body": {
+            "name": "It's a Plan api",
+            "status": "ok"
+          }
+        },
+        {
+          "path": "/me",
+          "body": {
+            "authenticated": false
+          }
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/",
+            "query": [],
+            "headers": [
+              "accept",
+              "x-api-key"
+            ]
+          },
+          {
+            "method": "GET",
+            "path": "/me",
+            "query": [],
+            "headers": [
+              "accept",
+              "x-api-key"
+            ]
+          }
+        ],
+        "result": {
+          "ok": false,
+          "code": "auth_failed"
+        }
+      }
+    },
+    {
+      "name": "plane.stats.no_project_key",
+      "app": "plane",
+      "url": "http://plan-api.test",
+      "fields": {
+        "apiKey": "itp_key"
+      },
+      "op": "stats",
+      "params": {},
+      "routes": [],
+      "expect": {
+        "requests": [],
+        "result": {
+          "ok": false,
+          "code": "bad_params"
+        }
+      }
+    },
+    {
+      "name": "glitchtip.organizations",
+      "app": "glitchtip",
+      "url": "http://gt.test",
+      "fields": {
+        "token": "tok-G"
+      },
+      "op": "organizations",
+      "params": {},
+      "routes": [
+        {
+          "path": "/api/0/organizations/",
+          "headers": {
+            "X-Hits": "2",
+            "X-Max-Hits": "2",
+            "Link": "<http://gt.test/api/0/x/?cursor=a>; rel=\"previous\"; results=\"false\"; cursor=\"a\", <http://gt.test/api/0/x/?cursor=b>; rel=\"next\"; results=\"false\"; cursor=\"b\""
+          },
+          "body": [
+            {
+              "id": 1,
+              "slug": "factory",
+              "name": "Factory"
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/api/0/organizations/",
+            "query": [],
+            "headers": [
+              "accept",
+              "authorization"
+            ]
+          }
+        ],
+        "result": {
+          "ok": true,
+          "value": [
+            {
+              "slug": "factory",
+              "name": "Factory"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "glitchtip.issues",
+      "app": "glitchtip",
+      "url": "http://gt.test",
+      "fields": {
+        "token": "tok-G"
+      },
+      "op": "issues",
+      "params": {
+        "orgSlug": "factory",
+        "limit": 20,
+        "sort": "-last_seen"
+      },
+      "routes": [
+        {
+          "path": "/api/0/organizations/factory/issues/",
+          "headers": {
+            "X-Hits": "2",
+            "X-Max-Hits": "2",
+            "Link": "<http://gt.test/api/0/x/?cursor=a>; rel=\"previous\"; results=\"false\"; cursor=\"a\", <http://gt.test/api/0/x/?cursor=b>; rel=\"next\"; results=\"false\"; cursor=\"b\""
+          },
+          "body": [
+            {
+              "id": "1",
+              "title": "ZeroDivisionError: division by zero",
+              "level": "error",
+              "count": "3",
+              "lastSeen": "2026-10-18T10:00:00Z",
+              "permalink": "http://gt.test/factory/issues/1",
+              "status": "unresolved"
+            },
+            {
+              "id": "2",
+              "title": "ZeroDivisionError: division by zero",
+              "level": "error",
+              "count": "3",
+              "lastSeen": "2026-10-18T10:00:00Z",
+              "permalink": "http://gt.test/factory/issues/2",
+              "status": "resolved"
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/api/0/organizations/factory/issues/",
+            "query": [
+              [
+                "query",
+                "is:unresolved"
+              ],
+              [
+                "sort",
+                "-last_seen"
+              ],
+              [
+                "limit",
+                "20"
+              ]
+            ],
+            "headers": [
+              "accept",
+              "authorization"
+            ]
+          }
+        ],
+        "result": {
+          "ok": true,
+          "value": [
+            {
+              "id": "1",
+              "title": "ZeroDivisionError: division by zero",
+              "level": "error",
+              "count": "3",
+              "lastSeen": "2026-10-18T10:00:00Z",
+              "permalink": "http://gt.test/factory/issues/1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "glitchtip.latest_event",
+      "app": "glitchtip",
+      "url": "http://gt.test",
+      "fields": {
+        "token": "tok-G"
+      },
+      "op": "latestEvent",
+      "params": {
+        "issueId": "1"
+      },
+      "routes": [
+        {
+          "path": "/api/0/issues/1/events/latest/",
+          "body": {
+            "culprit": "shop/cart.py in total",
+            "release": {
+              "version": "shop@1.4.2"
+            },
+            "entries": [
+              {
+                "type": "exception",
+                "data": {
+                  "values": [
+                    {
+                      "type": "ZeroDivisionError",
+                      "value": "division by zero",
+                      "stacktrace": {
+                        "frames": [
+                          {
+                            "filename": "shop/app.py",
+                            "function": "handler",
+                            "lineNo": 10
+                          },
+                          {
+                            "filename": "shop/cart.py",
+                            "function": "total",
+                            "lineNo": 42
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/api/0/issues/1/events/latest/",
+            "query": [],
+            "headers": [
+              "accept",
+              "authorization"
+            ]
+          }
+        ],
+        "result": {
+          "ok": true,
+          "value": {
+            "release": "shop@1.4.2",
+            "culprit": "shop/cart.py in total",
+            "stack": "ZeroDivisionError: division by zero\n  at total (shop/cart.py:42)\n  at handler (shop/app.py:10)"
+          }
+        }
+      }
+    },
+    {
+      "name": "glitchtip.health",
+      "app": "glitchtip",
+      "url": "http://gt.test",
+      "fields": {
+        "token": "tok-G"
+      },
+      "op": "health",
+      "params": {},
+      "routes": [
+        {
+          "path": "/api/0/",
+          "body": {
+            "version": "6.2.6",
+            "auth": {
+              "scopes": [
+                "org:read"
+              ]
+            },
+            "user": {
+              "id": 1
+            }
+          }
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/api/0/",
+            "query": [],
+            "headers": [
+              "accept",
+              "authorization"
+            ]
+          }
+        ],
+        "result": {
+          "ok": true,
+          "value": {
+            "status": "ok"
+          }
+        }
+      }
+    },
+    {
+      "name": "glitchtip.health.no_auth",
+      "app": "glitchtip",
+      "url": "http://gt.test",
+      "fields": {
+        "token": "tok-G"
+      },
+      "op": "health",
+      "params": {},
+      "routes": [
+        {
+          "path": "/api/0/",
+          "body": {
+            "version": "6.2.6",
+            "auth": null,
+            "user": null
+          }
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/api/0/",
+            "query": [],
+            "headers": [
+              "accept",
+              "authorization"
+            ]
+          }
+        ],
+        "result": {
+          "ok": false,
+          "code": "auth_failed"
+        }
+      }
+    },
+    {
+      "name": "openpanel.insights",
+      "app": "openpanel",
+      "url": "http://op.test",
+      "fields": {
+        "clientId": "0195f2ae-7c1a-4c2b-9f3d-4e5a6b7c8d9e",
+        "clientSecret": "sec-O",
+        "projectId": "shop"
+      },
+      "op": "insights",
+      "params": {
+        "limit": 10
+      },
+      "routes": [
+        {
+          "path": "/api/insights/shop/overview",
+          "body": {
+            "summary": {
+              "unique_visitors": 1,
+              "total_sessions": 1,
+              "total_screen_views": 4
+            },
+            "series": [
+              {
+                "date": "2026-10-18T00:00:00.000Z",
+                "unique_visitors": 0,
+                "total_sessions": 0
+              },
+              {
+                "date": "2026-10-19T00:00:00.000Z",
+                "unique_visitors": 1,
+                "total_sessions": 1
+              }
+            ]
+          }
+        },
+        {
+          "path": "/api/insights/shop/pages/top",
+          "body": [
+            {
+              "origin": "http://127.0.0.1",
+              "path": "/cart",
+              "sessions": 1,
+              "pageviews": 2
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/api/insights/shop/overview",
+            "query": [
+              [
+                "range",
+                "30d"
+              ],
+              [
+                "interval",
+                "day"
+              ]
+            ],
+            "headers": [
+              "accept",
+              "openpanel-client-id",
+              "openpanel-client-secret"
+            ]
+          },
+          {
+            "method": "GET",
+            "path": "/api/insights/shop/pages/top",
+            "query": [
+              [
+                "range",
+                "30d"
+              ],
+              [
+                "limit",
+                "10"
+              ]
+            ],
+            "headers": [
+              "accept",
+              "openpanel-client-id",
+              "openpanel-client-secret"
+            ]
+          }
+        ],
+        "result": {
+          "ok": true,
+          "value": {
+            "summary": {
+              "unique_visitors": 1,
+              "total_sessions": 1,
+              "total_screen_views": 4
+            },
+            "series": [
+              {
+                "unique_visitors": 0,
+                "total_sessions": 0,
+                "date": "2026-10-18T00:00:00.000Z"
+              },
+              {
+                "unique_visitors": 1,
+                "total_sessions": 1,
+                "date": "2026-10-19T00:00:00.000Z"
+              }
+            ],
+            "topPages": [
+              {
+                "path": "/cart",
+                "sessions": 1,
+                "pageviews": 2
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "openpanel.health",
+      "app": "openpanel",
+      "url": "http://op.test",
+      "fields": {
+        "clientId": "0195f2ae-7c1a-4c2b-9f3d-4e5a6b7c8d9e",
+        "clientSecret": "sec-O",
+        "projectId": "shop"
+      },
+      "op": "health",
+      "params": {},
+      "routes": [
+        {
+          "path": "/api/healthcheck",
+          "body": {
+            "ready": true,
+            "redis": true,
+            "db": true,
+            "ch": true
+          }
+        },
+        {
+          "path": "/api/insights/shop/live",
+          "body": {
+            "visitors": 1
+          }
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/api/healthcheck",
+            "query": [],
+            "headers": [
+              "accept",
+              "openpanel-client-id",
+              "openpanel-client-secret"
+            ]
+          },
+          {
+            "method": "GET",
+            "path": "/api/insights/shop/live",
+            "query": [],
+            "headers": [
+              "accept",
+              "openpanel-client-id",
+              "openpanel-client-secret"
+            ]
+          }
+        ],
+        "result": {
+          "ok": true,
+          "value": {
+            "status": "ok"
+          }
+        }
+      }
+    },
+    {
+      "name": "matomo.visits",
+      "app": "matomo",
+      "url": "http://matomo.test",
+      "fields": {
+        "apiToken": "tok-M",
+        "idSite": "1"
+      },
+      "op": "visits",
+      "params": {},
+      "routes": [
+        {
+          "path": "/index.php",
+          "body": {
+            "2026-10-18": {
+              "nb_visits": 3,
+              "nb_uniq_visitors": 2,
+              "bounce_rate": 0.5
+            },
+            "2026-10-19": []
+          }
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/index.php",
+            "query": [
+              [
+                "module",
+                "API"
+              ],
+              [
+                "method",
+                "VisitsSummary.get"
+              ],
+              [
+                "format",
+                "JSON"
+              ],
+              [
+                "format_metrics",
+                "0"
+              ],
+              [
+                "filter_limit",
+                "100"
+              ],
+              [
+                "idSite",
+                "1"
+              ],
+              [
+                "period",
+                "day"
+              ],
+              [
+                "date",
+                "last7"
+              ]
+            ],
+            "headers": [
+              "accept",
+              "authorization"
+            ]
+          }
+        ],
+        "result": {
+          "ok": true,
+          "value": [
+            {
+              "date": "2026-10-18",
+              "nb_visits": 3,
+              "nb_uniq_visitors": 2,
+              "bounce_rate": 0.5
+            },
+            {
+              "date": "2026-10-19"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "matomo.pages",
+      "app": "matomo",
+      "url": "http://matomo.test",
+      "fields": {
+        "apiToken": "tok-M",
+        "idSite": "1"
+      },
+      "op": "pages",
+      "params": {
+        "limit": 5
+      },
+      "routes": [
+        {
+          "path": "/index.php",
+          "body": [
+            {
+              "label": "/cart",
+              "nb_hits": 4,
+              "nb_visits": 2
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/index.php",
+            "query": [
+              [
+                "module",
+                "API"
+              ],
+              [
+                "method",
+                "Actions.getPageUrls"
+              ],
+              [
+                "format",
+                "JSON"
+              ],
+              [
+                "format_metrics",
+                "0"
+              ],
+              [
+                "filter_limit",
+                "5"
+              ],
+              [
+                "idSite",
+                "1"
+              ],
+              [
+                "period",
+                "day"
+              ],
+              [
+                "date",
+                "today"
+              ]
+            ],
+            "headers": [
+              "accept",
+              "authorization"
+            ]
+          }
+        ],
+        "result": {
+          "ok": true,
+          "value": [
+            {
+              "label": "/cart",
+              "hits": 4,
+              "visits": 2
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "matomo.health",
+      "app": "matomo",
+      "url": "http://matomo.test",
+      "fields": {
+        "apiToken": "tok-M",
+        "idSite": "1"
+      },
+      "op": "health",
+      "params": {},
+      "routes": [
+        {
+          "path": "/index.php",
+          "body": {
+            "value": "5.5.0"
+          }
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/index.php",
+            "query": [
+              [
+                "module",
+                "API"
+              ],
+              [
+                "method",
+                "API.getMatomoVersion"
+              ],
+              [
+                "format",
+                "JSON"
+              ],
+              [
+                "format_metrics",
+                "0"
+              ],
+              [
+                "filter_limit",
+                "100"
+              ]
+            ],
+            "headers": [
+              "accept",
+              "authorization"
+            ]
+          }
+        ],
+        "result": {
+          "ok": true,
+          "value": {
+            "status": "ok"
+          }
+        }
+      }
+    },
+    {
+      "name": "matomo.health.bad_token",
+      "app": "matomo",
+      "url": "http://matomo.test",
+      "fields": {
+        "apiToken": "tok-M",
+        "idSite": "1"
+      },
+      "op": "health",
+      "params": {},
+      "routes": [
+        {
+          "path": "/index.php",
+          "body": {
+            "result": "error",
+            "message": "You must be logged in to access this functionality."
+          }
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/index.php",
+            "query": [
+              [
+                "module",
+                "API"
+              ],
+              [
+                "method",
+                "API.getMatomoVersion"
+              ],
+              [
+                "format",
+                "JSON"
+              ],
+              [
+                "format_metrics",
+                "0"
+              ],
+              [
+                "filter_limit",
+                "100"
+              ]
+            ],
+            "headers": [
+              "accept",
+              "authorization"
+            ]
+          }
+        ],
+        "result": {
+          "ok": false,
+          "code": "auth_failed"
+        }
+      }
+    },
+    {
+      "name": "langfuse.traces",
+      "app": "langfuse",
+      "url": "http://lf.test",
+      "fields": {
+        "publicKey": "pk-lf-1",
+        "secretKey": "sk-lf-1"
+      },
+      "op": "traces",
+      "params": {
+        "limit": 20
+      },
+      "routes": [
+        {
+          "path": "/api/public/v2/observations",
+          "body": {
+            "data": [
+              {
+                "id": "obs1",
+                "traceId": "t1",
+                "name": "checkout-agent",
+                "startTime": "2026-10-19T10:00:00Z",
+                "level": "DEFAULT",
+                "totalCost": 0.25
+              }
+            ],
+            "meta": {}
+          }
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/api/public/v2/observations",
+            "query": [
+              [
+                "limit",
+                "20"
+              ],
+              [
+                "isRootObservation",
+                "true"
+              ]
+            ],
+            "headers": [
+              "accept",
+              "authorization"
+            ]
+          }
+        ],
+        "result": {
+          "ok": true,
+          "value": [
+            {
+              "id": "obs1",
+              "traceId": "t1",
+              "name": "checkout-agent",
+              "startTime": "2026-10-19T10:00:00Z",
+              "level": "DEFAULT",
+              "totalCost": 0.25
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "langfuse.traces.legacy_fallback",
+      "app": "langfuse",
+      "url": "http://lf.test",
+      "fields": {
+        "publicKey": "pk-lf-1",
+        "secretKey": "sk-lf-1"
+      },
+      "op": "traces",
+      "params": {
+        "limit": 20
+      },
+      "routes": [
+        {
+          "path": "/api/public/v2/observations",
+          "status": 404,
+          "body": {
+            "message": "v4 only"
+          }
+        },
+        {
+          "path": "/api/public/traces",
+          "body": {
+            "data": [
+              {
+                "id": "t1",
+                "name": "checkout-agent",
+                "timestamp": "2026-10-19T10:00:00Z",
+                "totalCost": 0.5
+              }
+            ],
+            "meta": {
+              "page": 1,
+              "limit": 20,
+              "totalItems": 1,
+              "totalPages": 1
+            }
+          }
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/api/public/v2/observations",
+            "query": [
+              [
+                "limit",
+                "20"
+              ],
+              [
+                "isRootObservation",
+                "true"
+              ]
+            ],
+            "headers": [
+              "accept",
+              "authorization"
+            ]
+          },
+          {
+            "method": "GET",
+            "path": "/api/public/traces",
+            "query": [
+              [
+                "limit",
+                "20"
+              ]
+            ],
+            "headers": [
+              "accept",
+              "authorization"
+            ]
+          }
+        ],
+        "result": {
+          "ok": true,
+          "value": [
+            {
+              "id": "t1",
+              "traceId": "t1",
+              "name": "checkout-agent",
+              "startTime": "2026-10-19T10:00:00Z",
+              "totalCost": 0.5
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "langfuse.traces.neither",
+      "app": "langfuse",
+      "url": "http://lf.test",
+      "fields": {
+        "publicKey": "pk-lf-1",
+        "secretKey": "sk-lf-1"
+      },
+      "op": "traces",
+      "params": {},
+      "routes": [
+        {
+          "path": "/api/public/v2/observations",
+          "status": 404,
+          "body": {
+            "message": "no"
+          }
+        },
+        {
+          "path": "/api/public/traces",
+          "status": 404,
+          "body": {
+            "message": "no"
+          }
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/api/public/v2/observations",
+            "query": [
+              [
+                "limit",
+                "20"
+              ],
+              [
+                "isRootObservation",
+                "true"
+              ]
+            ],
+            "headers": [
+              "accept",
+              "authorization"
+            ]
+          },
+          {
+            "method": "GET",
+            "path": "/api/public/traces",
+            "query": [
+              [
+                "limit",
+                "20"
+              ]
+            ],
+            "headers": [
+              "accept",
+              "authorization"
+            ]
+          }
+        ],
+        "result": {
+          "ok": false,
+          "code": "unsupported"
+        }
+      }
+    },
+    {
+      "name": "langfuse.daily",
+      "app": "langfuse",
+      "url": "http://lf.test",
+      "fields": {
+        "publicKey": "pk-lf-1",
+        "secretKey": "sk-lf-1"
+      },
+      "op": "daily",
+      "params": {},
+      "routes": [
+        {
+          "path": "/api/public/metrics/daily",
+          "body": {
+            "data": [
+              {
+                "date": "2026-10-19",
+                "countTraces": 1,
+                "countObservations": 2,
+                "totalCost": 0.5,
+                "usage": []
+              }
+            ],
+            "meta": {}
+          }
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/api/public/metrics/daily",
+            "query": [],
+            "headers": [
+              "accept",
+              "authorization"
+            ]
+          }
+        ],
+        "result": {
+          "ok": true,
+          "value": {
+            "available": true,
+            "days": [
+              {
+                "date": "2026-10-19",
+                "countTraces": 1,
+                "countObservations": 2,
+                "totalCost": 0.5
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "langfuse.daily.v2_metrics",
+      "app": "langfuse",
+      "url": "http://lf.test",
+      "fields": {
+        "publicKey": "pk-lf-1",
+        "secretKey": "sk-lf-1"
+      },
+      "op": "daily",
+      "params": {},
+      "routes": [
+        {
+          "path": "/api/public/metrics/daily",
+          "status": 404,
+          "body": {
+            "message": "no"
+          }
+        },
+        {
+          "path": "/api/public/v2/metrics",
+          "body": {
+            "data": [
+              {
+                "time_dimension": "2026-10-18",
+                "count_count": 0,
+                "sum_totalCost": null
+              },
+              {
+                "time_dimension": "2026-10-19",
+                "count_count": 2,
+                "sum_totalCost": 0.5
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/api/public/metrics/daily",
+            "query": [],
+            "headers": [
+              "accept",
+              "authorization"
+            ]
+          },
+          {
+            "method": "GET",
+            "path": "/api/public/v2/metrics",
+            "query": [
+              [
+                "query",
+                "{\"view\":\"observations\",\"metrics\":[{\"measure\":\"count\",\"aggregation\":\"count\"},{\"measure\":\"totalCost\",\"aggregation\":\"sum\"}],\"timeDimension\":{\"granularity\":\"day\"},\"fromTimestamp\":\"2026-09-19T12:00:00Z\",\"toTimestamp\":\"2026-10-19T12:00:00Z\"}"
+              ]
+            ],
+            "headers": [
+              "accept",
+              "authorization"
+            ]
+          }
+        ],
+        "result": {
+          "ok": true,
+          "value": {
+            "available": true,
+            "days": [
+              {
+                "date": "2026-10-18",
+                "observations": 0
+              },
+              {
+                "date": "2026-10-19",
+                "observations": 2,
+                "totalCost": 0.5
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "langfuse.health",
+      "app": "langfuse",
+      "url": "http://lf.test",
+      "fields": {
+        "publicKey": "pk-lf-1",
+        "secretKey": "sk-lf-1"
+      },
+      "op": "health",
+      "params": {},
+      "routes": [
+        {
+          "path": "/api/public/health",
+          "body": {
+            "status": "OK",
+            "version": "4.50.0"
+          }
+        },
+        {
+          "path": "/api/public/v2/observations",
+          "body": {
+            "data": [],
+            "meta": {}
+          }
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/api/public/health",
+            "query": [],
+            "headers": [
+              "accept"
+            ]
+          },
+          {
+            "method": "GET",
+            "path": "/api/public/v2/observations",
+            "query": [
+              [
+                "limit",
+                "1"
+              ]
+            ],
+            "headers": [
+              "accept",
+              "authorization"
+            ]
+          }
+        ],
+        "result": {
+          "ok": true,
+          "value": {
+            "status": "ok"
+          }
+        }
+      }
+    },
+    {
+      "name": "langfuse.health.bad_keys",
+      "app": "langfuse",
+      "url": "http://lf.test",
+      "fields": {
+        "publicKey": "pk-lf-1",
+        "secretKey": "sk-lf-1"
+      },
+      "op": "health",
+      "params": {},
+      "routes": [
+        {
+          "path": "/api/public/health",
+          "body": {
+            "status": "OK",
+            "version": "4.50.0"
+          }
+        },
+        {
+          "path": "/api/public/v2/observations",
+          "status": 401,
+          "body": {
+            "message": "Invalid credentials"
+          }
+        }
+      ],
+      "expect": {
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/api/public/health",
+            "query": [],
+            "headers": [
+              "accept"
+            ]
+          },
+          {
+            "method": "GET",
+            "path": "/api/public/v2/observations",
+            "query": [
+              [
+                "limit",
+                "1"
+              ]
+            ],
+            "headers": [
+              "accept",
+              "authorization"
+            ]
+          }
+        ],
+        "result": {
+          "ok": false,
+          "code": "auth_failed"
+        }
+      }
+    }
+  ]
+}

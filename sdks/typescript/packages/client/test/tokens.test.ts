@@ -10,7 +10,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DocumentService } from '@loams/proto/documents';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { CallInvoker } from '../src/runtime/call.js';
 import { ConsistencySession, ConsistencyToken } from '../src/runtime/consistency.js';
 import { InvalidArgumentError } from '../src/runtime/errors.js';
