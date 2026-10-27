@@ -1,0 +1,136 @@
+# Apache Airflow 3.3 with the Resonate executor (design 74 §9.3, D2090–D2096).
+# PREVIEW: not yet run end to end. The Edge-executor stack in
+# compose.compute.yaml (profile `airflow`, DX0) stays the supported baseline.
+#
+#   cd deploy/release
+#   podman compose --env-file ../../conformance/compute/pins.env \
+#     -f compose.yaml -f compose.compute.yaml -f compose.airflow-resonate.yaml \
+#     --profile airflow-resonate up -d
+#
+# What runs (everything under the `airflow-resonate` profile, no host ports):
+# - afr-durable-relay: socat in the engine's network namespace, forwarding
+#   loams:18001 on the stack network to the engine's loopback durable listener
+#   (Resonate, 127.0.0.1:8001). The durable API has no authentication yet, so
+#   this exposes it to every container on the stack network (not to the host
+#   or the tailnet). Use it only on a stack you trust; DX1A replaces it with
+#   per-task JWTs and mTLS (§74 §9.3 "Credentials"). D2096.
+# - afr-init: `airflow db migrate` on Loams Postgres (the `airflow` database
+#   that compute-init creates; do not run the `airflow` profile against the
+#   same database at the same time).
+# - afr-api-server, afr-scheduler, afr-dag-processor, afr-triggerer: stock
+#   Airflow with `[core] executor = LoamsResonateExecutor`.
+# - afr-worker-1, afr-worker-2: `loams-airflow-resonate-worker`, polling the
+#   group of the `default` queue (af.default.default). They reach only the
+#   Execution API and Resonate, never the metadata database.
+#
+# The provider (airflow-provider-loams, integrations/airflow, which holds the
+# executor) and the Loams Python SDK it depends on are installed from this
+# checkout at container start (_PIP_ADDITIONAL_REQUIREMENTS, as DX0 does for
+# edge3), against Airflow's constraints file for the pinned image.
+
+x-afr: &afr
+  profiles: [airflow-resonate]
+  image: ${AIRFLOW_IMAGE:?pass conformance/compute/pins.env with --env-file}
+  restart: unless-stopped
+  environment: &afr-env
+    _PIP_ADDITIONAL_REQUIREMENTS: /opt/loams-sdk /opt/airflow-provider-loams
+    PIP_CONSTRAINT: ${AIRFLOW_CONSTRAINTS:?pass conformance/compute/pins.env with --env-file}
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW_RESONATE_DB_URL:-postgresql+psycopg2://airflow:airflow@compute1:55433/airflow}
+    AIRFLOW__CORE__EXECUTOR: airflow.providers.loams.executors.resonate_executor.LoamsResonateExecutor
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://afr-api-server:8080/execution/
+    AIRFLOW__API__BASE_URL: http://afr-api-server:8080
+    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:-loams-compute-test-only-jwt-secret}
+    # Claims must happen within the workload token's lifetime
+    # ([scheduler] task_queued_timeout, 600 s by default).
+    AIRFLOW__SCHEDULER__TASK_QUEUED_TIMEOUT: "600"
+    AIRFLOW__LOAMS_RESONATE__URL: http://loams:18001
+    AIRFLOW__LOAMS_RESONATE__NAMESPACE: ${LOAMS_RESONATE_NAMESPACE:-default}
+    AIRFLOW__LOAMS_RESONATE__CLAIM_TIMEOUT: ${LOAMS_RESONATE_CLAIM_TIMEOUT:-300}
+    AIRFLOW__LOAMS_RESONATE__TASK_TIMEOUT: ${LOAMS_RESONATE_TASK_TIMEOUT:-86400}
+  volumes:
+    - ${AIRFLOW_DAGS_DIR:-./compute/airflow/dags}:/opt/airflow/dags:ro
+    - ../../sdks/python:/opt/loams-sdk:ro
+    - ../../integrations/airflow:/opt/airflow-provider-loams:ro
+  depends_on: &afr-deps
+    afr-init:
+      condition: service_completed_successfully
+    afr-durable-relay:
+      condition: service_started
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  # compute-init (compose.compute.yaml) creates the `airflow` role and
+  # database; listing every profile here keeps it in the others too.
+  compute-init:
+    profiles: [temporal, dbos, airflow, airflow-resonate]
+
+  afr-durable-relay:
+    profiles: [airflow-resonate]
+    image: ${SOCAT_IMAGE:?pass conformance/compute/pins.env with --env-file}
+    restart: unless-stopped
+    network_mode: service:loams
+    command:
+      - TCP-LISTEN:18001,fork,reuseaddr
+      - TCP:127.0.0.1:8001
+    depends_on:
+      loams:
+        condition: service_started
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+
+  afr-init:
+    <<: *afr
+    restart: "no"
+    command: ["db", "migrate"]
+    depends_on:
+      compute-init:
+        condition: service_completed_successfully
+        required: false
+
+  afr-api-server:
+    <<: *afr
+    command: ["api-server"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/api/v2/version || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+
+  afr-scheduler:
+    <<: *afr
+    command: ["scheduler"]
+
+  afr-dag-processor:
+    <<: *afr
+    command: ["dag-processor"]
+
+  afr-triggerer:
+    <<: *afr
+    command: ["triggerer"]
+
+  afr-worker-1:
+    <<: *afr
+    command:
+      - bash
+      - -c
+      - exec loams-airflow-resonate-worker --url http://loams:18001 --queues default --pid afr-worker-1 --concurrency 4
+    depends_on:
+      <<: *afr-deps
+      afr-api-server:
+        condition: service_healthy
+
+  afr-worker-2:
+    <<: *afr
+    command:
+      - bash
+      - -c
+      - exec loams-airflow-resonate-worker --url http://loams:18001 --queues default --pid afr-worker-2 --concurrency 4
+    depends_on:
+      <<: *afr-deps
+      afr-api-server:
+        condition: service_healthy

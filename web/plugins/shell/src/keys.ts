@@ -60,14 +60,12 @@ export const SHELL_KEYMAP: readonly ShellKeyBinding[] = [
     when: (c) => notTerminal(c) && notRichText(c),
   },
   { key: 'mod+j', command: 'drawer.toggle', label: 'Toggle drawer', when: notTerminal },
-  ...JUMPS.map(
-    (n): ShellKeyBinding => ({
-      key: `mod+${n}`,
-      command: `thread.jump.${n}`,
-      label: `Thread ${n}`,
-      when: notTerminal,
-    }),
-  ),
+  ...JUMPS.map((n): ShellKeyBinding => ({
+    key: `mod+${n}`,
+    command: `thread.jump.${n}`,
+    label: `Thread ${n}`,
+    when: notTerminal,
+  })),
   { key: 'ctrl+tab', command: 'thread.next', label: 'Next thread' },
   {
     key: 'mod+[',

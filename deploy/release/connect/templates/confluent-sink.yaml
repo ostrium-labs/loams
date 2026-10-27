@@ -1,0 +1,26 @@
+# Written by byoc/install.sh --kafka confluent (CC1 Task 8, D1820): a Loams
+# stream written to a Confluent Cloud topic. Edit it freely: install.sh does
+# not replace an instance file that exists, except with --reconfigure. The
+# format is docs/guides/connectors/connect-role.md; the profile's defaults
+# (SASL_SSL, PLAIN, verified TLS) are docs/guides/connectors/confluent-cloud.md.
+name: @NAME@
+connector: kafka
+profile: confluent-cloud
+direction: sink
+namespace: default
+namespace_id: 0
+stream: "@STREAM@"
+config:
+  brokers: "@BOOTSTRAP@"
+  topics: ["@TOPIC@"]
+  group_id_prefix: "@PREFIX@"
+  # Under the confluent module's transactional_id_prefix, which its ACLs allow.
+  transactional_id_prefix: "@PREFIX@"
+  # The idempotent producer (effectively once). For exactly once, set
+  # `delivery: exactly_once` here once the cluster has the compacted
+  # __loams_checkpoints topic (the module's exactly_once_sinks = true).
+  delivery: effectively_once
+  sasl:
+    username_secret: confluent-@INTEGRATION@/username
+    password: confluent-@INTEGRATION@/password
+  rate_limit: { bytes_per_sec: @RATE@ }

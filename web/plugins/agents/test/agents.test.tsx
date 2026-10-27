@@ -9,7 +9,7 @@ import {
 } from '@loams/admin-ui/testing';
 import { admin } from '@loams/proto';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 import { AgentPage } from '../src/agent.js';
 import { AgentsPage } from '../src/agents.js';
 import { exchangeSnippet } from '../src/index.js';

@@ -12,7 +12,7 @@ import {
   type ResolveApprovalRequest,
 } from '@loams/proto/agentd';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 import { AgentInbox, followAgentApprovals, InboxPage, pendingCount } from '../src/index.js';
 import { Inbox, reasonOf } from '../src/store.js';
 
