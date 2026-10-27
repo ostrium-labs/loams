@@ -47,5 +47,7 @@ pub fn registry() -> Registry {
     loams_house_exec::func::maps::register(&mut r);
     loams_house_exec::func::tuples::register(&mut r);
     loams_house_exec::func::lambda::register(&mut r);
+    // Date and time functions (plan HE1 Task 30).
+    loams_house_exec::func::datetime::register(&mut r);
     r
 }

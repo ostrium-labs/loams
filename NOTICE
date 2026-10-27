@@ -430,6 +430,16 @@ command semantics where it is better than Tidis's, at revision
 Files whose logic follows Titan name it in their headers. Titan has no
 NOTICE file.
 
+ClickHouse (https://github.com/ClickHouse/ClickHouse), Apache License 2.0,
+Copyright 2016-2026 ClickHouse, Inc. The date and time functions of the
+Loams House Rust engine (fabric/crates/loams-house-exec/src/func/datetime/)
+port rules of src/Common/DateLUTImpl.h, src/Functions/DateTimeTransforms.h,
+src/Functions/toStartOfInterval.cpp, src/Functions/dateDiff.cpp,
+src/Functions/FunctionDateOrDateTimeAddInterval.h,
+src/Functions/formatDateTime.cpp and src/IO/parseDateTimeBestEffort.cpp at
+tag v26.9.2.8-stable (plan HE1 Task 30). Files that port it name the source
+in their headers.
+
 TiKV migration (https://github.com/tikv/migration), Apache License 2.0,
 Copyright TiKV Project Authors. loams-tikv's CDC consumer (KV1) ports the
 ChangeData/EventFeed consumer of TiKV-CDC (its cdc/cdc/kv package) at the
