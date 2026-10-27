@@ -34,7 +34,7 @@ import {
 } from '@loams/proto/agentd';
 import { ErrorInfoSchema } from '@loams/proto/errors';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import { GroupPage } from '../src/groups/GroupPage.js';
 import { wrap } from './fakes.js';
 import { live } from './sidebar-fakes.js';

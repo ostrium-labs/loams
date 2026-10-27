@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 import { CatalogPage, filterCatalog, runtimeClass } from '../src/catalog-page.js';
 import { formatLag } from '../src/flow-client.js';
 import { buildFields, secretValues } from '../src/form.js';

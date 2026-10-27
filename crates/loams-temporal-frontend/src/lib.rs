@@ -35,6 +35,7 @@ pub mod service;
 pub mod standalone;
 pub mod token;
 pub mod ui;
+pub mod update;
 pub mod visibility;
 
 pub use auth::{Authenticator, DevAllowAll, Principal, StaticKeys};

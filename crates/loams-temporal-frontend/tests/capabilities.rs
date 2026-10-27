@@ -54,6 +54,9 @@ const VISIBILITY: &[&str] = &[
 /// Added for the Temporal Web UI and the `temporal` CLI (D2051).
 const UI: &[&str] = &["GetClusterInfo", "GetWorkflowExecutionHistoryReverse"];
 
+/// The methods lane TMP-api added on top of DX1 (2026-10-27).
+const TMP_API: &[&str] = &["UpdateWorkflowExecution", "PollWorkflowExecutionUpdate"];
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn capabilities_match_impl() {
     let mut sorted_impl: Vec<_> = IMPLEMENTED.to_vec();
@@ -61,6 +64,7 @@ async fn capabilities_match_impl() {
     let mut sorted_dx1: Vec<_> = DX1
         .iter()
         .chain(UI)
+        .chain(TMP_API)
         .chain(SCHEDULES)
         .chain(VISIBILITY)
         .copied()
@@ -68,7 +72,7 @@ async fn capabilities_match_impl() {
     sorted_dx1.sort_unstable();
     assert_eq!(
         sorted_impl, sorted_dx1,
-        "IMPLEMENTED is design 74's DX1 set, the UI's methods and the schedule methods"
+        "IMPLEMENTED is design 74's DX1 set, the UI's, TMP-api's, the schedule and the visibility methods"
     );
 
     let gw = common::start().await;

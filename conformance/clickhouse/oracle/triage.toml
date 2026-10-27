@@ -22,15 +22,6 @@ task = "28"
 detail = '["String", "UInt64"] vs ["String", "Int64"]'
 
 [[mismatch]]
-case = "he1-22/literal_one"
-target = "house-rust"
-kind = "types"
-status = "bug"
-reason = "ClickHouse types a literal 1 as UInt8; DataFusion as Int64 (plan HE1 Task 24, type rules)"
-task = "24"
-detail = '["UInt8"] vs ["Int64"]'
-
-[[mismatch]]
 case = "he1-22/min_max_sum"
 target = "house-rust"
 kind = "types"

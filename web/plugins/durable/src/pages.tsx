@@ -413,7 +413,7 @@ export function PromisesTab({ api }: { api: DurableApi }) {
     [api],
   );
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: filters and reload trigger a fresh first page
+  // oxlint-disable-next-line react/exhaustive-deps -- filters and reload trigger a fresh first page
   useEffect(() => {
     let live = true;
     setStatus('loading');

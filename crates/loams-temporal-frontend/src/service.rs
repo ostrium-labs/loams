@@ -137,7 +137,7 @@ fn blob_size_exceeded() -> Status {
 
 /// The poll deadline: the configured timeout, or 5 s before the request's
 /// own deadline if that is sooner (X1.R3).
-fn poll_deadline<T>(req: &Request<T>, max: Duration) -> Duration {
+pub(crate) fn poll_deadline<T>(req: &Request<T>, max: Duration) -> Duration {
     let header = req
         .metadata()
         .get("grpc-timeout")
@@ -306,7 +306,7 @@ impl Frontend {
     }
 
     /// The token's run and its namespace, checked against the caller.
-    async fn token_run(
+    pub(crate) async fn token_run(
         &self,
         p: &Principal,
         raw: &[u8],
@@ -527,6 +527,11 @@ impl Frontend {
             }),
             scheduled_time: Some(ts(scheduled_time_ms)),
             started_time: Some(ts(started_time_ms)),
+            messages: loams_temporal_statemachine::messages_for_task(
+                &t.state,
+                scheduled_event_id,
+                started_event_id,
+            ),
             ..Default::default()
         }))
     }
@@ -644,7 +649,7 @@ impl Frontend {
     }
 
     /// Runs `input` on the token's run, then stops keeping the task's lease.
-    async fn finish_task(
+    pub(crate) async fn finish_task(
         &self,
         p: &Principal,
         raw: &[u8],
@@ -878,6 +883,7 @@ impl WorkflowService for WorkflowServiceImpl {
                     metering_metadata: r.metering_metadata,
                     worker_version,
                     force_create_new_workflow_task: r.force_create_new_workflow_task,
+                    messages: r.messages,
                 }
             })
             .await?;
@@ -1418,6 +1424,26 @@ impl WorkflowService for WorkflowServiceImpl {
             return Err(Status::not_found("query not found or already timed out"));
         }
         Ok(Response::new(RespondQueryTaskCompletedResponse {}))
+    }
+
+    async fn update_workflow_execution(
+        &self,
+        req: Request<UpdateWorkflowExecutionRequest>,
+    ) -> Result<Response<UpdateWorkflowExecutionResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        let wait = poll_deadline(&req, self.0.config.history_wait);
+        let r = req.into_inner();
+        self.0.update_workflow(&p, wait, r).await.map(Response::new)
+    }
+
+    async fn poll_workflow_execution_update(
+        &self,
+        req: Request<PollWorkflowExecutionUpdateRequest>,
+    ) -> Result<Response<PollWorkflowExecutionUpdateResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        let wait = poll_deadline(&req, self.0.config.history_wait);
+        let r = req.into_inner();
+        self.0.poll_update(&p, wait, r).await.map(Response::new)
     }
 
     async fn reset_sticky_task_queue(

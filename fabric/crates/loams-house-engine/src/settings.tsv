@@ -1,0 +1,85 @@
+# The Rust engine's settings (plan HE1 Task 37, D1805): every setting the House
+# front accepts, classed. Columns: name (a trailing * is a prefix), class,
+# default (the 26.9.2.8 oracle's; * is chDB's in loams-house-ipc's
+# chdb_setting_defaults.tsv; '' is the empty string; - is none), the task that
+# honours it (-: none), the construct it applies to (never, always,
+# outer_join, grouping_sets, aggregate, count_distinct, bare_union,
+# merge_tables, time, time_params, result_limit), and why.
+#
+# A setting not here and not under a prefix here is chDB's rule (R9.11):
+# accepted at its default, 164 at any other value, 115 when unknown.
+# Classes: honoured (the engine behaves as ClickHouse does), noop (the answer is
+# the same at any value), default_only (changes answers; 48 naming the task at
+# any other value where it applies), refused (164 at any value but its default).
+# An honoured setting with a task is honoured except where that construct
+# applies, where a value other than its default is 48 naming the task.
+# honoured: the engine behaves as ClickHouse does
+max_execution_time	honoured	0	-	never	The statement stops at the limit with 159 TIMEOUT_EXCEEDED; the front enforces it too
+max_result_rows	honoured	0	-	never	396 TOO_MANY_ROWS_OR_BYTES when the result has more rows (result_overflow_mode = 'throw')
+max_result_bytes	honoured	0	-	never	396 when the result is larger; bytes are Arrow's buffer sizes, near but not equal to ClickHouse's column bytes (R37.3)
+result_overflow_mode	honoured	throw	-	result_limit	'throw' is honoured; 'break' stops at a block boundary, which no other engine can reproduce, so it is refused while a result limit is set (R37.4)
+max_threads	honoured	auto	-	never	DataFusion's target_partitions (auto and 0 are the cores); it changes speed, never the answer
+session_timezone	honoured	''	30	time	The zone of zone-less DateTime values written out; refused while the statement converts, compares or computes times, until Task 30 reads Settings::timezone
+date_time_output_format	honoured	simple	-	never	simple, iso (UTC, T and Z) and unix_timestamp, in loams_house_types::text::DateTimeOutput
+union_default_mode	honoured	''	35	bare_union	'' answers a bare UNION with 559 EXPECTED_ALL_OR_DISTINCT; 'DISTINCT' is DataFusion's bare UNION; 'ALL' is refused until Task 35
+asterisk_include_materialized_columns	honoured	0	-	never	The engine's tables have no MATERIALIZED columns yet, so SELECT * is the same at any value; lake tables (Task 26) read Settings when they bring them
+asterisk_include_alias_columns	honoured	0	-	never	The engine's tables have no ALIAS columns yet, so SELECT * is the same at any value; lake tables (Task 26) read Settings when they bring them
+output_format_json_quote_64bit_integers	honoured	0	-	never	TextSettings::json_quote_64bit_integers
+output_format_json_quote_denormals	honoured	0	-	never	TextSettings::json_quote_denormals
+output_format_json_escape_forward_slashes	honoured	1	-	never	TextSettings::json_escape_forward_slashes
+output_format_json_named_tuples_as_objects	honoured	1	-	never	TextSettings::json_named_tuples_as_objects
+output_format_decimal_trailing_zeros	honoured	0	-	never	TextSettings::decimal_trailing_zeros
+# default_only: it changes answers and its task has not landed; any other value is 48 where it would apply
+join_use_nulls	default_only	0	35	outer_join	Only LEFT, RIGHT and FULL joins read it; Task 35 reads Settings::join_use_nulls
+final	default_only	0	27	merge_tables	Only merging MergeTree engines (Replacing, Collapsing, …) answer differently; Task 27 reads Settings::final_
+count_distinct_implementation	default_only	uniqExact	29	count_distinct	Only COUNT(DISTINCT …) and countDistinct read it; uniqExact is exact, the rest are Task 29's sketches
+aggregate_functions_null_for_empty	default_only	0	28	aggregate	Only aggregates read it (sum becomes sumOrNull, …); Task 28
+group_by_use_nulls	default_only	0	34	grouping_sets	Only ROLLUP, CUBE and GROUPING SETS read it; Task 34
+prefer_column_name_to_alias	default_only	0	25	always	Name resolution, Task 25
+date_time_input_format	default_only	basic	30	time_params	Read by query parameters bound to date and time types (and input formats, HE2 Task 61); Task 30
+max_rows_to_read	default_only	0	40	always	ClickHouse counts the rows left after its index pruning; the worker's limits are Task 40
+max_bytes_to_read	default_only	0	40	always	ClickHouse counts the bytes left after its index pruning; the worker's limits are Task 40
+extremes	default_only	0	36	always	Extremes in the JSON, Pretty and XML formats; Task 36
+describe_compact_output	default_only	0	38	always	DESCRIBE, Task 38
+iceberg_snapshot_id	default_only	0	39	always	Time travel arrives as the worker's table pins (D1578), Task 39
+allow_experimental_analyzer	default_only	1	-	always	The engine answers as ClickHouse's analyzer does; the old planner's answers are not reproduced
+allow_experimental_correlated_subqueries	default_only	1	-	always	Off refuses correlated subqueries in ClickHouse; the engine does not reproduce the refusal
+output_format_*	default_only	*	36	always	Output formats, Task 36 (the rows above are honoured)
+format_csv_*	default_only	*	36	always	CSV output, Task 36 (and CSV input, HE2 Task 61)
+format_tsv_*	default_only	*	36	always	TSV output, Task 36 (and TSV input, HE2 Task 61)
+# noop: performance, inserts or the front's own; the answer is the same at any value
+max_memory_usage	noop	0	-	never	Mapped to DataFusion's memory pool; over it the statement fails with 241 MEMORY_LIMIT_EXCEEDED by DataFusion's accounting
+max_block_size	noop	65409	-	never	Mapped to DataFusion's batch_size; blocks show only in Pretty formats and blockSize(), Tasks 36 and 33
+max_bytes_before_external_group_by	noop	0	-	never	Spilling; DataFusion spills under its memory pool
+join_algorithm	noop	*	-	never	DataFusion picks its join; the answer does not depend on it
+timeout_before_checking_execution_speed	noop	10	-	never	No min_execution_speed is set on the House
+enable_producing_buckets_out_of_order_in_aggregation	noop	1	-	never	Distributed aggregation's bucket order; one node
+distributed_product_mode	noop	deny	-	never	Distributed subqueries; the House has no Distributed tables
+query_plan_*	noop	*	-	never	ClickHouse's planner optimizations; they keep the answer
+use_text_index_*	noop	*	-	never	Text index caches; lake tables have no text index
+log_comment	noop	''	-	never	Recorded in ClickHouse's query_log only
+http_headers_progress_interval_ms	noop	100	-	never	The front's HTTP progress headers
+send_progress_in_http_headers	noop	0	-	never	The front's HTTP progress headers
+insert_deduplicate	noop	1	-	never	Inserts; the engine reads only (HE1)
+async_insert	noop	0	-	never	Inserts; the engine reads only (HE1)
+wait_for_async_insert	noop	1	-	never	Inserts; the engine reads only (HE1)
+max_insert_block_size	noop	1048449	-	never	Inserts; the engine reads only (HE1)
+input_format_*	noop	*	-	never	Input formats are an insert's (HE2 Task 61); a SELECT reads none
+type_json_skip_duplicated_paths	noop	0	-	never	Read only when JSON is parsed from text; the engine has no JSON type until Task 43, which reads Settings
+allow_experimental_join_right_table_sorting	noop	0	-	never	A join's speed
+readonly	noop	0	-	never	The engine only reads; the front opens every connection with 2
+allow_ddl	noop	1	-	never	The engine runs no DDL (HE1)
+database	noop	''	-	never	The request's database is the engine's current database
+flatten_nested	noop	1	-	never	The front's own column lists (R10.3); the front answers it and never passes it on
+mutations_sync	noop	1	-	never	The front answers it and never passes it on (R9.11)
+alter_sync	noop	1	-	never	The front answers it and never passes it on (R9.11)
+lightweight_deletes_sync	noop	2	-	never	The front answers it and never passes it on (R9.11)
+allow_experimental_lightweight_update	noop	1	-	never	The front answers it and never passes it on (R9.11)
+parallel_view_processing	noop	0	-	never	The front answers it and never passes it on (R9.11)
+enable_full_text_index	noop	1	-	never	The front answers it and never passes it on (R9.11)
+materialize_ttl_after_modify	noop	1	-	never	The front answers it and never passes it on (R9.16)
+insert_deduplication_token	noop	''	-	never	The front's own (HS1 Task 12); never passed on
+materialized_views_ignore_errors	noop	0	-	never	The front's own (HS1 Task 17); never passed on
+loams_*	noop	-	-	never	Loams's settings are the front's own; never passed on
+# refused: 164 at any value but its default
+use_query_cache	refused	0	-	never	A read view is made again per snapshot, so a cached result could be stale (R9.11)

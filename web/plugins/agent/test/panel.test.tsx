@@ -7,7 +7,7 @@ import type {
   LoamsDesktopApi,
 } from '@loams/desktop/contracts';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import pkg from '../package.json';
 import { contextHint } from '../src/index.js';
 import { AgentPanel } from '../src/panel.js';

@@ -6,7 +6,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { METHODS } from '../src/gen/methods';
 import { type Request, request } from '../src/requests';
 
@@ -30,6 +30,15 @@ const REQUESTS: Request[] = [
   request('ListHarnesses', {}),
   request('CancelInstall', { harness: 'codex' }),
   request('InstallHarness', { harness: 'codex' }),
+  request('FactoryList', {}),
+  request('FactoryTest', { app: 'forgejo' }),
+  request('FactoryQuery', { app: 'forgejo', op: 'repos', params: { limit: 20 } }),
+  request('FactoryConfigure', {
+    app: 'forgejo',
+    url: 'https://git.example.com',
+    fields: { token: 'pat-1' },
+  }),
+  request('FactoryRemove', { app: 'forgejo' }),
   request('GetTitleSettings', {}),
   request('SetTitleSettings', { harness: 'claude-code', model: null }),
   request('SetHarnessEnabled', { harness: 'pi', enabled: false }),
