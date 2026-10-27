@@ -1,0 +1,1 @@
+SELECT id FROM t24 WHERE f32 - 4.5 ORDER BY id

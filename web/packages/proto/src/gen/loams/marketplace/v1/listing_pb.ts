@@ -22,7 +22,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file loams/marketplace/v1/listing.proto.
  */
 export const file_loams_marketplace_v1_listing: GenFile = /*@__PURE__*/
-  fileDesc("CiJsb2Ftcy9tYXJrZXRwbGFjZS92MS9saXN0aW5nLnByb3RvEhRsb2Ftcy5tYXJrZXRwbGFjZS52MSLuCQoHTGlzdGluZxIKCgJpZBgBIAEoCRIoCgRraW5kGAIgASgOMhoubG9hbXMubWFya2V0cGxhY2UudjEuS2luZBIPCgd2ZXJzaW9uGAMgASgJEg0KBXRpdGxlGAQgASgJEg8KB3N1bW1hcnkYBSABKAkSEwoLZGVzY3JpcHRpb24YBiABKAkSDAoEaWNvbhgHIAEoCRIPCgdsaWNlbmNlGAggASgJEiwKBnNvdXJjZRgJIAEoCzIcLmxvYW1zLm1hcmtldHBsYWNlLnYxLlNvdXJjZRIyCglwdWJsaXNoZXIYCiABKAsyHy5sb2Ftcy5tYXJrZXRwbGFjZS52MS5QdWJsaXNoZXISDwoHc3VwcG9ydBgLIAEoCRIYChBzZWN1cml0eV9jb250YWN0GAwgASgJEjIKCWZyYW1ld29yaxgNIAEoCzIfLmxvYW1zLm1hcmtldHBsYWNlLnYxLkZyYW1ld29yaxIwCghsYW5ndWFnZRgOIAEoDjIeLmxvYW1zLm1hcmtldHBsYWNlLnYxLkxhbmd1YWdlEjAKCGFydGlmYWN0GA8gASgLMh4ubG9hbXMubWFya2V0cGxhY2UudjEuQXJ0aWZhY3QSNAoKcHJvdmVuYW5jZRgQIAEoCzIgLmxvYW1zLm1hcmtldHBsYWNlLnYxLlByb3ZlbmFuY2USLgoHcnVudGltZRgRIAEoCzIdLmxvYW1zLm1hcmtldHBsYWNlLnYxLlJ1bnRpbWUSEgoKZW50cnlwb2ludBgSIAEoCRItCgd0YXJnZXRzGBMgAygOMhwubG9hbXMubWFya2V0cGxhY2UudjEuVGFyZ2V0EjAKCHN1cmZhY2VzGBQgASgLMh4ubG9hbXMubWFya2V0cGxhY2UudjEuU3VyZmFjZXMSNgoFbG9hbXMYFSABKAsyJy5sb2Ftcy5tYXJrZXRwbGFjZS52MS5Mb2Ftc0NhcGFiaWxpdGllcxISCgpjb25uZWN0b3JzGBYgAygJEj4KC21jcF9zZXJ2ZXJzGBcgAygLMikubG9hbXMubWFya2V0cGxhY2UudjEuTWNwU2VydmVyRGVwZW5kZW5jeRIpCgV0b29scxgYIAMoCzIaLmxvYW1zLm1hcmtldHBsYWNlLnYxLlRvb2wSMgoFcGxhY2UYGSABKAsyIy5sb2Ftcy5tYXJrZXRwbGFjZS52MS5QbGFjZVRlbXBsYXRlEiwKBm1vZGVscxgaIAEoCzIcLmxvYW1zLm1hcmtldHBsYWNlLnYxLk1vZGVscxIvCgRjb3N0GBsgASgLMiEubG9hbXMubWFya2V0cGxhY2UudjEuQ29zdFByb2ZpbGUSMQoGY29uZmlnGBwgAygLMiEubG9hbXMubWFya2V0cGxhY2UudjEuQ29uZmlnSW5wdXQSNgoLY29uZm9ybWFuY2UYHSABKAsyIS5sb2Ftcy5tYXJrZXRwbGFjZS52MS5Db25mb3JtYW5jZRIuCgdoYXJuZXNzGB4gASgLMh0ubG9hbXMubWFya2V0cGxhY2UudjEuSGFybmVzcxIzCgptY3Bfc2VydmVyGB8gASgLMh8ubG9hbXMubWFya2V0cGxhY2UudjEuTWNwU2VydmVyEi4KB3ByaWNpbmcYICABKA4yHS5sb2Ftcy5tYXJrZXRwbGFjZS52MS5QcmljaW5nIjoKBlNvdXJjZRISCgpyZXBvc2l0b3J5GAEgASgJEg4KBmNvbW1pdBgCIAEoCRIMCgRwYXRoGAMgASgJIiYKCVB1Ymxpc2hlchIMCgRuYW1lGAEgASgJEgsKA3VybBgCIAEoCSJPCglGcmFtZXdvcmsSMQoEbmFtZRgBIAEoDjIjLmxvYW1zLm1hcmtldHBsYWNlLnYxLkZyYW1ld29ya05hbWUSDwoHdmVyc2lvbhgCIAEoCSKgAQoIQXJ0aWZhY3QSMAoEdHlwZRgBIAEoDjIiLmxvYW1zLm1hcmtldHBsYWNlLnYxLkFydGlmYWN0VHlwZRIMCgRuYW1lGAIgASgJEg8KB3ZlcnNpb24YAyABKAkSEQoJaW50ZWdyaXR5GAQgASgJEjAKBWZpbGVzGAUgAygLMiEubG9hbXMubWFya2V0cGxhY2UudjEuQXJjaGl2ZUZpbGUiagoLQXJjaGl2ZUZpbGUSMAoIcGxhdGZvcm0YASABKA4yHi5sb2Ftcy5tYXJrZXRwbGFjZS52MS5QbGF0Zm9ybRILCgN1cmwYAiABKAkSDgoGc2hhMjU2GAMgASgJEgwKBHBhdGgYBCABKAkiTQoKUHJvdmVuYW5jZRIyCgR0eXBlGAEgASgOMiQubG9hbXMubWFya2V0cGxhY2UudjEuUHJvdmVuYW5jZVR5cGUSCwoDcmVmGAIgASgJIksKB1J1bnRpbWUSLwoEa2luZBgBIAEoDjIhLmxvYW1zLm1hcmtldHBsYWNlLnYxLlJ1bnRpbWVLaW5kEg8KB3ZlcnNpb24YAiABKAki0gEKCFN1cmZhY2VzEi0KA2FjcBgBIAEoCzIgLmxvYW1zLm1hcmtldHBsYWNlLnYxLkFjcFN1cmZhY2USLQoDYTJhGAIgASgLMiAubG9hbXMubWFya2V0cGxhY2UudjEuQTJhU3VyZmFjZRItCgNtY3AYAyABKAsyIC5sb2Ftcy5tYXJrZXRwbGFjZS52MS5NY3BTdXJmYWNlEjkKCXJlc3BvbnNlcxgEIAEoCzImLmxvYW1zLm1hcmtldHBsYWNlLnYxLlJlc3BvbnNlc1N1cmZhY2UiJgoKQWNwU3VyZmFjZRIYChBwcm90b2NvbF92ZXJzaW9uGAEgASgFIjkKCkEyYVN1cmZhY2USKwoKYWdlbnRfY2FyZBgBIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QiQwoKTWNwU3VyZmFjZRI1Cgl0cmFuc3BvcnQYASABKA4yIi5sb2Ftcy5tYXJrZXRwbGFjZS52MS5NY3BUcmFuc3BvcnQiEgoQUmVzcG9uc2VzU3VyZmFjZSKwAQoRTG9hbXNDYXBhYmlsaXRpZXMSEAoIcG9zdGdyZXMYASABKAgSEwoLY29sbGVjdGlvbnMYAiABKAgSDgoGcWRyYW50GAMgASgIEhUKDWVsYXN0aWNzZWFyY2gYBCABKAgSDwoHc3RyZWFtcxgFIAEoCBIMCgRsaXZlGAYgASgIEg8KB2R1cmFibGUYByABKAgSDgoGbWVtb3J5GAggASgIEg0KBWhvdXNlGAkgASgIIjIKE01jcFNlcnZlckRlcGVuZGVuY3kSCgoCaWQYASABKAkSDwoHdmVyc2lvbhgCIAEoCSJnCgRUb29sEgwKBG5hbWUYASABKAkSEwoLZGVzY3JpcHRpb24YAiABKAkSKAoEcmlzaxgDIAEoDjIaLmxvYW1zLm1hcmtldHBsYWNlLnYxLlJpc2sSEgoKbWNwX3NlcnZlchgEIAEoCSJxCg1QbGFjZVRlbXBsYXRlEi0KBGRhdGEYASADKAsyHy5sb2Ftcy5tYXJrZXRwbGFjZS52MS5EYXRhU2NvcGUSDgoGZWdyZXNzGAIgAygJEhIKCmFsd2F5c19hc2sYAyADKAkSDQoFcm9sZXMYBCADKAkidQoJRGF0YVNjb3BlEiwKBGtpbmQYASABKA4yHi5sb2Ftcy5tYXJrZXRwbGFjZS52MS5EYXRhS2luZBIMCgRuYW1lGAIgASgJEiwKBmFjY2VzcxgDIAEoDjIcLmxvYW1zLm1hcmtldHBsYWNlLnYxLkFjY2VzcyKpAQoGTW9kZWxzEjkKCHJlcXVpcmVzGAEgASgLMicubG9hbXMubWFya2V0cGxhY2UudjEuTW9kZWxSZXF1aXJlbWVudHMSNwoJc3VnZ2VzdGVkGAIgASgLMiQubG9hbXMubWFya2V0cGxhY2UudjEuU3VnZ2VzdGVkTW9kZWwSKwoDYXBpGAMgAygOMh4ubG9hbXMubWFya2V0cGxhY2UudjEuTW9kZWxBcGkiRwoRTW9kZWxSZXF1aXJlbWVudHMSDQoFdG9vbHMYASABKAgSDgoGdmlzaW9uGAIgASgIEhMKC2NvbnRleHRfbWluGAMgASgDIjEKDlN1Z2dlc3RlZE1vZGVsEhAKCHByb3ZpZGVyGAEgASgJEg0KBW1vZGVsGAIgASgJIp8BCgtDb3N0UHJvZmlsZRIeChZ0eXBpY2FsX3Rva2Vuc19wZXJfcnVuGAEgASgDEhoKEm1heF90b2tlbnNfcGVyX3J1bhgCIAEoAxIcChR0eXBpY2FsX3J1bnNfcGVyX2RheRgDIAEoAxIaChJidWRnZXRfdXNkX3Blcl9ydW4YBCABKAESGgoSYnVkZ2V0X3VzZF9wZXJfZGF5GAUgASgBIsgBCgtDb25maWdJbnB1dBIMCgRuYW1lGAEgASgJEi4KBHR5cGUYAiABKA4yIC5sb2Ftcy5tYXJrZXRwbGFjZS52MS5Db25maWdUeXBlEhMKC2Rlc2NyaXB0aW9uGAMgASgJEhAKCHJlcXVpcmVkGAQgASgIEg4KBnNlY3JldBgFIAEoCBInCgdkZWZhdWx0GAYgASgLMhYuZ29vZ2xlLnByb3RvYnVmLlZhbHVlEg4KBnZhbHVlcxgHIAMoCRILCgNlbnYYCCABKAkiawoLQ29uZm9ybWFuY2USNQoFbGV2ZWwYASABKA4yJi5sb2Ftcy5tYXJrZXRwbGFjZS52MS5Db25mb3JtYW5jZUxldmVsEg4KBnJlcG9ydBgCIAEoCRIVCg1yZXBvcnRfc2hhMjU2GAMgASgJIpQBCgdIYXJuZXNzEjMKBmxhdW5jaBgBIAEoCzIjLmxvYW1zLm1hcmtldHBsYWNlLnYxLkhhcm5lc3NMYXVuY2gSLAoEYXV0aBgCIAMoDjIeLmxvYW1zLm1hcmtldHBsYWNlLnYxLkF1dGhLaW5kEg4KBm1vZGVscxgDIAMoCRIWCg5uYXRpdmVfYWRhcHRlchgEIAEoCSJnCg1IYXJuZXNzTGF1bmNoEjcKCHByb3RvY29sGAEgASgOMiUubG9hbXMubWFya2V0cGxhY2UudjEuSGFybmVzc1Byb3RvY29sEg8KB2NvbW1hbmQYAiABKAkSDAoEYXJncxgDIAMoCSLAAQoJTWNwU2VydmVyEicKBnNlcnZlchgBIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSMQoEbW9kZRgCIAEoDjIjLmxvYW1zLm1hcmtldHBsYWNlLnYxLk1jcFNlcnZlck1vZGUSDAoEYXJncxgDIAMoCRISCgpyZW1vdGVfdXJsGAQgASgJEjUKCXRyYW5zcG9ydBgFIAEoDjIiLmxvYW1zLm1hcmtldHBsYWNlLnYxLk1jcFRyYW5zcG9ydCpTCgRLaW5kEhQKEEtJTkRfVU5TUEVDSUZJRUQQABIOCgpLSU5EX0FHRU5UEAESEAoMS0lORF9IQVJORVNTEAISEwoPS0lORF9NQ1BfU0VSVkVSEAMqxAIKDUZyYW1ld29ya05hbWUSHgoaRlJBTUVXT1JLX05BTUVfVU5TUEVDSUZJRUQQABIZChVGUkFNRVdPUktfTkFNRV9NQVNUUkEQARIeChpGUkFNRVdPUktfTkFNRV9QWURBTlRJQ19BSRACEhwKGEZSQU1FV09SS19OQU1FX0xBTkdHUkFQSBADEhkKFUZSQU1FV09SS19OQU1FX0NSRVdBSRAEEiAKHEZSQU1FV09SS19OQU1FX09QRU5BSV9BR0VOVFMQBRIdChlGUkFNRVdPUktfTkFNRV9HT09HTEVfQURLEAYSLAooRlJBTUVXT1JLX05BTUVfTUlDUk9TT0ZUX0FHRU5UX0ZSQU1FV09SSxAHEhYKEkZSQU1FV09SS19OQU1FX0VWRRAIEhgKFEZSQU1FV09SS19OQU1FX09USEVSEAkq8gEKCExhbmd1YWdlEhgKFExBTkdVQUdFX1VOU1BFQ0lGSUVEEAASFwoTTEFOR1VBR0VfVFlQRVNDUklQVBABEhcKE0xBTkdVQUdFX0pBVkFTQ1JJUFQQAhITCg9MQU5HVUFHRV9QWVRIT04QAxIPCgtMQU5HVUFHRV9HTxAEEhEKDUxBTkdVQUdFX1JVU1QQBRIRCg1MQU5HVUFHRV9KQVZBEAYSEwoPTEFOR1VBR0VfS09UTElOEAcSEwoPTEFOR1VBR0VfQ1NIQVJQEAgSEAoMTEFOR1VBR0VfWklHEAkSEgoOTEFOR1VBR0VfT1RIRVIQCiqOAQoMQXJ0aWZhY3RUeXBlEh0KGUFSVElGQUNUX1RZUEVfVU5TUEVDSUZJRUQQABIVChFBUlRJRkFDVF9UWVBFX05QTRABEhYKEkFSVElGQUNUX1RZUEVfUFlQSRACEhUKEUFSVElGQUNUX1RZUEVfT0NJEAMSGQoVQVJUSUZBQ1RfVFlQRV9BUkNISVZFEAQqzwEKCFBsYXRmb3JtEhgKFFBMQVRGT1JNX1VOU1BFQ0lGSUVEEAASGQoVUExBVEZPUk1fTElOVVhfWDg2XzY0EAESGgoWUExBVEZPUk1fTElOVVhfQUFSQ0g2NBACEhoKFlBMQVRGT1JNX0RBUldJTl9YODZfNjQQAxIbChdQTEFURk9STV9EQVJXSU5fQUFSQ0g2NBAEEhsKF1BMQVRGT1JNX1dJTkRPV1NfWDg2XzY0EAUSHAoYUExBVEZPUk1fV0lORE9XU19BQVJDSDY0EAYq2QEKDlByb3ZlbmFuY2VUeXBlEh8KG1BST1ZFTkFOQ0VfVFlQRV9VTlNQRUNJRklFRBAAEhwKGFBST1ZFTkFOQ0VfVFlQRV9OUE1fU0xTQRABEh8KG1BST1ZFTkFOQ0VfVFlQRV9QWVBJX1BFUDc0MBACEhoKFlBST1ZFTkFOQ0VfVFlQRV9DT1NJR04QAxIjCh9QUk9WRU5BTkNFX1RZUEVfU0lHU1RPUkVfQlVORExFEAQSJgoiUFJPVkVOQU5DRV9UWVBFX0dJVEhVQl9BVFRFU1RBVElPThAFKooBCgtSdW50aW1lS2luZBIcChhSVU5USU1FX0tJTkRfVU5TUEVDSUZJRUQQABIVChFSVU5USU1FX0tJTkRfTk9ERRABEhcKE1JVTlRJTUVfS0lORF9QWVRIT04QAhIUChBSVU5USU1FX0tJTkRfT0NJEAMSFwoTUlVOVElNRV9LSU5EX0JJTkFSWRAEKmAKBlRhcmdldBIWChJUQVJHRVRfVU5TUEVDSUZJRUQQABIRCg1UQVJHRVRfQUdFTlREEAESFgoSVEFSR0VUX0JZT0NfU0VSVkVSEAISEwoPVEFSR0VUX0FQUF9CWU9DEAMqaQoMTWNwVHJhbnNwb3J0Eh0KGU1DUF9UUkFOU1BPUlRfVU5TUEVDSUZJRUQQABIXChNNQ1BfVFJBTlNQT1JUX1NURElPEAESIQodTUNQX1RSQU5TUE9SVF9TVFJFQU1BQkxFX0hUVFAQAipiCgRSaXNrEhQKEFJJU0tfVU5TUEVDSUZJRUQQABINCglSSVNLX1JFQUQQARIOCgpSSVNLX1dSSVRFEAISDwoLUklTS19FR1JFU1MQAxIUChBSSVNLX0RFU1RSVUNUSVZFEAQqgwEKCERhdGFLaW5kEhkKFURBVEFfS0lORF9VTlNQRUNJRklFRBAAEhYKEkRBVEFfS0lORF9EQVRBQkFTRRABEhgKFERBVEFfS0lORF9DT0xMRUNUSU9OEAISFAoQREFUQV9LSU5EX1NUUkVBTRADEhQKEERBVEFfS0lORF9CVUNLRVQQBCpDCgZBY2Nlc3MSFgoSQUNDRVNTX1VOU1BFQ0lGSUVEEAASDwoLQUNDRVNTX1JFQUQQARIQCgxBQ0NFU1NfV1JJVEUQAiqAAQoITW9kZWxBcGkSGQoVTU9ERUxfQVBJX1VOU1BFQ0lGSUVEEAASHgoaTU9ERUxfQVBJX0NIQVRfQ09NUExFVElPTlMQARIXChNNT0RFTF9BUElfUkVTUE9OU0VTEAISIAocTU9ERUxfQVBJX0FOVEhST1BJQ19NRVNTQUdFUxADKogBCgpDb25maWdUeXBlEhsKF0NPTkZJR19UWVBFX1VOU1BFQ0lGSUVEEAASFgoSQ09ORklHX1RZUEVfU1RSSU5HEAESFgoSQ09ORklHX1RZUEVfTlVNQkVSEAISFwoTQ09ORklHX1RZUEVfQk9PTEVBThADEhQKEENPTkZJR19UWVBFX0VOVU0QBCqRAQoQQ29uZm9ybWFuY2VMZXZlbBIhCh1DT05GT1JNQU5DRV9MRVZFTF9VTlNQRUNJRklFRBAAEhoKFkNPTkZPUk1BTkNFX0xFVkVMX0NPUkUQARIgChxDT05GT1JNQU5DRV9MRVZFTF9DT01QQVRJQkxFEAISHAoYQ09ORk9STUFOQ0VfTEVWRUxfTkFUSVZFEAMqfgoIQXV0aEtpbmQSGQoVQVVUSF9LSU5EX1VOU1BFQ0lGSUVEEAASEgoOQVVUSF9LSU5EX05PTkUQARIVChFBVVRIX0tJTkRfQVBJX0tFWRACEhMKD0FVVEhfS0lORF9PQVVUSBADEhcKE0FVVEhfS0lORF9DTElfTE9HSU4QBCpqCg9IYXJuZXNzUHJvdG9jb2wSIAocSEFSTkVTU19QUk9UT0NPTF9VTlNQRUNJRklFRBAAEhgKFEhBUk5FU1NfUFJPVE9DT0xfQUNQEAESGwoXSEFSTkVTU19QUk9UT0NPTF9OQVRJVkUQAipnCg1NY3BTZXJ2ZXJNb2RlEh8KG01DUF9TRVJWRVJfTU9ERV9VTlNQRUNJRklFRBAAEhkKFU1DUF9TRVJWRVJfTU9ERV9MT0NBTBABEhoKFk1DUF9TRVJWRVJfTU9ERV9SRU1PVEUQAio0CgdQcmljaW5nEhcKE1BSSUNJTkdfVU5TUEVDSUZJRUQQABIQCgxQUklDSU5HX0ZSRUUQAWIGcHJvdG8z", [file_google_protobuf_struct]);
+  fileDesc("CiJsb2Ftcy9tYXJrZXRwbGFjZS92MS9saXN0aW5nLnByb3RvEhRsb2Ftcy5tYXJrZXRwbGFjZS52MSLuCQoHTGlzdGluZxIKCgJpZBgBIAEoCRIoCgRraW5kGAIgASgOMhoubG9hbXMubWFya2V0cGxhY2UudjEuS2luZBIPCgd2ZXJzaW9uGAMgASgJEg0KBXRpdGxlGAQgASgJEg8KB3N1bW1hcnkYBSABKAkSEwoLZGVzY3JpcHRpb24YBiABKAkSDAoEaWNvbhgHIAEoCRIPCgdsaWNlbmNlGAggASgJEiwKBnNvdXJjZRgJIAEoCzIcLmxvYW1zLm1hcmtldHBsYWNlLnYxLlNvdXJjZRIyCglwdWJsaXNoZXIYCiABKAsyHy5sb2Ftcy5tYXJrZXRwbGFjZS52MS5QdWJsaXNoZXISDwoHc3VwcG9ydBgLIAEoCRIYChBzZWN1cml0eV9jb250YWN0GAwgASgJEjIKCWZyYW1ld29yaxgNIAEoCzIfLmxvYW1zLm1hcmtldHBsYWNlLnYxLkZyYW1ld29yaxIwCghsYW5ndWFnZRgOIAEoDjIeLmxvYW1zLm1hcmtldHBsYWNlLnYxLkxhbmd1YWdlEjAKCGFydGlmYWN0GA8gASgLMh4ubG9hbXMubWFya2V0cGxhY2UudjEuQXJ0aWZhY3QSNAoKcHJvdmVuYW5jZRgQIAEoCzIgLmxvYW1zLm1hcmtldHBsYWNlLnYxLlByb3ZlbmFuY2USLgoHcnVudGltZRgRIAEoCzIdLmxvYW1zLm1hcmtldHBsYWNlLnYxLlJ1bnRpbWUSEgoKZW50cnlwb2ludBgSIAEoCRItCgd0YXJnZXRzGBMgAygOMhwubG9hbXMubWFya2V0cGxhY2UudjEuVGFyZ2V0EjAKCHN1cmZhY2VzGBQgASgLMh4ubG9hbXMubWFya2V0cGxhY2UudjEuU3VyZmFjZXMSNgoFbG9hbXMYFSABKAsyJy5sb2Ftcy5tYXJrZXRwbGFjZS52MS5Mb2Ftc0NhcGFiaWxpdGllcxISCgpjb25uZWN0b3JzGBYgAygJEj4KC21jcF9zZXJ2ZXJzGBcgAygLMikubG9hbXMubWFya2V0cGxhY2UudjEuTWNwU2VydmVyRGVwZW5kZW5jeRIpCgV0b29scxgYIAMoCzIaLmxvYW1zLm1hcmtldHBsYWNlLnYxLlRvb2wSMgoFcGxhY2UYGSABKAsyIy5sb2Ftcy5tYXJrZXRwbGFjZS52MS5QbGFjZVRlbXBsYXRlEiwKBm1vZGVscxgaIAEoCzIcLmxvYW1zLm1hcmtldHBsYWNlLnYxLk1vZGVscxIvCgRjb3N0GBsgASgLMiEubG9hbXMubWFya2V0cGxhY2UudjEuQ29zdFByb2ZpbGUSMQoGY29uZmlnGBwgAygLMiEubG9hbXMubWFya2V0cGxhY2UudjEuQ29uZmlnSW5wdXQSNgoLY29uZm9ybWFuY2UYHSABKAsyIS5sb2Ftcy5tYXJrZXRwbGFjZS52MS5Db25mb3JtYW5jZRIuCgdoYXJuZXNzGB4gASgLMh0ubG9hbXMubWFya2V0cGxhY2UudjEuSGFybmVzcxIzCgptY3Bfc2VydmVyGB8gASgLMh8ubG9hbXMubWFya2V0cGxhY2UudjEuTWNwU2VydmVyEi4KB3ByaWNpbmcYICABKA4yHS5sb2Ftcy5tYXJrZXRwbGFjZS52MS5QcmljaW5nIjoKBlNvdXJjZRISCgpyZXBvc2l0b3J5GAEgASgJEg4KBmNvbW1pdBgCIAEoCRIMCgRwYXRoGAMgASgJIiYKCVB1Ymxpc2hlchIMCgRuYW1lGAEgASgJEgsKA3VybBgCIAEoCSJPCglGcmFtZXdvcmsSMQoEbmFtZRgBIAEoDjIjLmxvYW1zLm1hcmtldHBsYWNlLnYxLkZyYW1ld29ya05hbWUSDwoHdmVyc2lvbhgCIAEoCSLbAQoIQXJ0aWZhY3QSMAoEdHlwZRgBIAEoDjIiLmxvYW1zLm1hcmtldHBsYWNlLnYxLkFydGlmYWN0VHlwZRIMCgRuYW1lGAIgASgJEg8KB3ZlcnNpb24YAyABKAkSEQoJaW50ZWdyaXR5GAQgASgJEjAKBWZpbGVzGAUgAygLMiEubG9hbXMubWFya2V0cGxhY2UudjEuQXJjaGl2ZUZpbGUSOQoJbG9jYXRpb25zGAYgAygLMiYubG9hbXMubWFya2V0cGxhY2UudjEuQXJ0aWZhY3RMb2NhdGlvbiKlAQoLQXJjaGl2ZUZpbGUSMAoIcGxhdGZvcm0YASABKA4yHi5sb2Ftcy5tYXJrZXRwbGFjZS52MS5QbGF0Zm9ybRILCgN1cmwYAiABKAkSDgoGc2hhMjU2GAMgASgJEgwKBHBhdGgYBCABKAkSOQoJbG9jYXRpb25zGAUgAygLMiYubG9hbXMubWFya2V0cGxhY2UudjEuQXJ0aWZhY3RMb2NhdGlvbiJlChBBcnRpZmFjdExvY2F0aW9uEjAKBGtpbmQYASABKA4yIi5sb2Ftcy5tYXJrZXRwbGFjZS52MS5Mb2NhdGlvbktpbmQSDwoHYmxvYl9pZBgCIAEoCRIOCgZzaGEyNTYYAyABKAkiTQoKUHJvdmVuYW5jZRIyCgR0eXBlGAEgASgOMiQubG9hbXMubWFya2V0cGxhY2UudjEuUHJvdmVuYW5jZVR5cGUSCwoDcmVmGAIgASgJInkKB1J1bnRpbWUSLwoEa2luZBgBIAEoDjIhLmxvYW1zLm1hcmtldHBsYWNlLnYxLlJ1bnRpbWVLaW5kEg8KB3ZlcnNpb24YAiABKAkSLAoGZW5naW5lGAMgASgOMhwubG9hbXMubWFya2V0cGxhY2UudjEuRW5naW5lItIBCghTdXJmYWNlcxItCgNhY3AYASABKAsyIC5sb2Ftcy5tYXJrZXRwbGFjZS52MS5BY3BTdXJmYWNlEi0KA2EyYRgCIAEoCzIgLmxvYW1zLm1hcmtldHBsYWNlLnYxLkEyYVN1cmZhY2USLQoDbWNwGAMgASgLMiAubG9hbXMubWFya2V0cGxhY2UudjEuTWNwU3VyZmFjZRI5CglyZXNwb25zZXMYBCABKAsyJi5sb2Ftcy5tYXJrZXRwbGFjZS52MS5SZXNwb25zZXNTdXJmYWNlIiYKCkFjcFN1cmZhY2USGAoQcHJvdG9jb2xfdmVyc2lvbhgBIAEoBSI5CgpBMmFTdXJmYWNlEisKCmFnZW50X2NhcmQYASABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0IkMKCk1jcFN1cmZhY2USNQoJdHJhbnNwb3J0GAEgASgOMiIubG9hbXMubWFya2V0cGxhY2UudjEuTWNwVHJhbnNwb3J0IhIKEFJlc3BvbnNlc1N1cmZhY2UisAEKEUxvYW1zQ2FwYWJpbGl0aWVzEhAKCHBvc3RncmVzGAEgASgIEhMKC2NvbGxlY3Rpb25zGAIgASgIEg4KBnFkcmFudBgDIAEoCBIVCg1lbGFzdGljc2VhcmNoGAQgASgIEg8KB3N0cmVhbXMYBSABKAgSDAoEbGl2ZRgGIAEoCBIPCgdkdXJhYmxlGAcgASgIEg4KBm1lbW9yeRgIIAEoCBINCgVob3VzZRgJIAEoCCIyChNNY3BTZXJ2ZXJEZXBlbmRlbmN5EgoKAmlkGAEgASgJEg8KB3ZlcnNpb24YAiABKAkiZwoEVG9vbBIMCgRuYW1lGAEgASgJEhMKC2Rlc2NyaXB0aW9uGAIgASgJEigKBHJpc2sYAyABKA4yGi5sb2Ftcy5tYXJrZXRwbGFjZS52MS5SaXNrEhIKCm1jcF9zZXJ2ZXIYBCABKAkicQoNUGxhY2VUZW1wbGF0ZRItCgRkYXRhGAEgAygLMh8ubG9hbXMubWFya2V0cGxhY2UudjEuRGF0YVNjb3BlEg4KBmVncmVzcxgCIAMoCRISCgphbHdheXNfYXNrGAMgAygJEg0KBXJvbGVzGAQgAygJInUKCURhdGFTY29wZRIsCgRraW5kGAEgASgOMh4ubG9hbXMubWFya2V0cGxhY2UudjEuRGF0YUtpbmQSDAoEbmFtZRgCIAEoCRIsCgZhY2Nlc3MYAyABKA4yHC5sb2Ftcy5tYXJrZXRwbGFjZS52MS5BY2Nlc3MiqQEKBk1vZGVscxI5CghyZXF1aXJlcxgBIAEoCzInLmxvYW1zLm1hcmtldHBsYWNlLnYxLk1vZGVsUmVxdWlyZW1lbnRzEjcKCXN1Z2dlc3RlZBgCIAEoCzIkLmxvYW1zLm1hcmtldHBsYWNlLnYxLlN1Z2dlc3RlZE1vZGVsEisKA2FwaRgDIAMoDjIeLmxvYW1zLm1hcmtldHBsYWNlLnYxLk1vZGVsQXBpIkcKEU1vZGVsUmVxdWlyZW1lbnRzEg0KBXRvb2xzGAEgASgIEg4KBnZpc2lvbhgCIAEoCBITCgtjb250ZXh0X21pbhgDIAEoAyIxCg5TdWdnZXN0ZWRNb2RlbBIQCghwcm92aWRlchgBIAEoCRINCgVtb2RlbBgCIAEoCSKfAQoLQ29zdFByb2ZpbGUSHgoWdHlwaWNhbF90b2tlbnNfcGVyX3J1bhgBIAEoAxIaChJtYXhfdG9rZW5zX3Blcl9ydW4YAiABKAMSHAoUdHlwaWNhbF9ydW5zX3Blcl9kYXkYAyABKAMSGgoSYnVkZ2V0X3VzZF9wZXJfcnVuGAQgASgBEhoKEmJ1ZGdldF91c2RfcGVyX2RheRgFIAEoASLIAQoLQ29uZmlnSW5wdXQSDAoEbmFtZRgBIAEoCRIuCgR0eXBlGAIgASgOMiAubG9hbXMubWFya2V0cGxhY2UudjEuQ29uZmlnVHlwZRITCgtkZXNjcmlwdGlvbhgDIAEoCRIQCghyZXF1aXJlZBgEIAEoCBIOCgZzZWNyZXQYBSABKAgSJwoHZGVmYXVsdBgGIAEoCzIWLmdvb2dsZS5wcm90b2J1Zi5WYWx1ZRIOCgZ2YWx1ZXMYByADKAkSCwoDZW52GAggASgJImsKC0NvbmZvcm1hbmNlEjUKBWxldmVsGAEgASgOMiYubG9hbXMubWFya2V0cGxhY2UudjEuQ29uZm9ybWFuY2VMZXZlbBIOCgZyZXBvcnQYAiABKAkSFQoNcmVwb3J0X3NoYTI1NhgDIAEoCSKUAQoHSGFybmVzcxIzCgZsYXVuY2gYASABKAsyIy5sb2Ftcy5tYXJrZXRwbGFjZS52MS5IYXJuZXNzTGF1bmNoEiwKBGF1dGgYAiADKA4yHi5sb2Ftcy5tYXJrZXRwbGFjZS52MS5BdXRoS2luZBIOCgZtb2RlbHMYAyADKAkSFgoObmF0aXZlX2FkYXB0ZXIYBCABKAkiZwoNSGFybmVzc0xhdW5jaBI3Cghwcm90b2NvbBgBIAEoDjIlLmxvYW1zLm1hcmtldHBsYWNlLnYxLkhhcm5lc3NQcm90b2NvbBIPCgdjb21tYW5kGAIgASgJEgwKBGFyZ3MYAyADKAkiwAEKCU1jcFNlcnZlchInCgZzZXJ2ZXIYASABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EjEKBG1vZGUYAiABKA4yIy5sb2Ftcy5tYXJrZXRwbGFjZS52MS5NY3BTZXJ2ZXJNb2RlEgwKBGFyZ3MYAyADKAkSEgoKcmVtb3RlX3VybBgEIAEoCRI1Cgl0cmFuc3BvcnQYBSABKA4yIi5sb2Ftcy5tYXJrZXRwbGFjZS52MS5NY3BUcmFuc3BvcnQqUwoES2luZBIUChBLSU5EX1VOU1BFQ0lGSUVEEAASDgoKS0lORF9BR0VOVBABEhAKDEtJTkRfSEFSTkVTUxACEhMKD0tJTkRfTUNQX1NFUlZFUhADKsQCCg1GcmFtZXdvcmtOYW1lEh4KGkZSQU1FV09SS19OQU1FX1VOU1BFQ0lGSUVEEAASGQoVRlJBTUVXT1JLX05BTUVfTUFTVFJBEAESHgoaRlJBTUVXT1JLX05BTUVfUFlEQU5USUNfQUkQAhIcChhGUkFNRVdPUktfTkFNRV9MQU5HR1JBUEgQAxIZChVGUkFNRVdPUktfTkFNRV9DUkVXQUkQBBIgChxGUkFNRVdPUktfTkFNRV9PUEVOQUlfQUdFTlRTEAUSHQoZRlJBTUVXT1JLX05BTUVfR09PR0xFX0FESxAGEiwKKEZSQU1FV09SS19OQU1FX01JQ1JPU09GVF9BR0VOVF9GUkFNRVdPUksQBxIWChJGUkFNRVdPUktfTkFNRV9FVkUQCBIYChRGUkFNRVdPUktfTkFNRV9PVEhFUhAJKvIBCghMYW5ndWFnZRIYChRMQU5HVUFHRV9VTlNQRUNJRklFRBAAEhcKE0xBTkdVQUdFX1RZUEVTQ1JJUFQQARIXChNMQU5HVUFHRV9KQVZBU0NSSVBUEAISEwoPTEFOR1VBR0VfUFlUSE9OEAMSDwoLTEFOR1VBR0VfR08QBBIRCg1MQU5HVUFHRV9SVVNUEAUSEQoNTEFOR1VBR0VfSkFWQRAGEhMKD0xBTkdVQUdFX0tPVExJThAHEhMKD0xBTkdVQUdFX0NTSEFSUBAIEhAKDExBTkdVQUdFX1pJRxAJEhIKDkxBTkdVQUdFX09USEVSEAoqjgEKDEFydGlmYWN0VHlwZRIdChlBUlRJRkFDVF9UWVBFX1VOU1BFQ0lGSUVEEAASFQoRQVJUSUZBQ1RfVFlQRV9OUE0QARIWChJBUlRJRkFDVF9UWVBFX1BZUEkQAhIVChFBUlRJRkFDVF9UWVBFX09DSRADEhkKFUFSVElGQUNUX1RZUEVfQVJDSElWRRAEKkcKDExvY2F0aW9uS2luZBIdChlMT0NBVElPTl9LSU5EX1VOU1BFQ0lGSUVEEAASGAoUTE9DQVRJT05fS0lORF9XQUxSVVMQASrPAQoIUGxhdGZvcm0SGAoUUExBVEZPUk1fVU5TUEVDSUZJRUQQABIZChVQTEFURk9STV9MSU5VWF9YODZfNjQQARIaChZQTEFURk9STV9MSU5VWF9BQVJDSDY0EAISGgoWUExBVEZPUk1fREFSV0lOX1g4Nl82NBADEhsKF1BMQVRGT1JNX0RBUldJTl9BQVJDSDY0EAQSGwoXUExBVEZPUk1fV0lORE9XU19YODZfNjQQBRIcChhQTEFURk9STV9XSU5ET1dTX0FBUkNINjQQBirZAQoOUHJvdmVuYW5jZVR5cGUSHwobUFJPVkVOQU5DRV9UWVBFX1VOU1BFQ0lGSUVEEAASHAoYUFJPVkVOQU5DRV9UWVBFX05QTV9TTFNBEAESHwobUFJPVkVOQU5DRV9UWVBFX1BZUElfUEVQNzQwEAISGgoWUFJPVkVOQU5DRV9UWVBFX0NPU0lHThADEiMKH1BST1ZFTkFOQ0VfVFlQRV9TSUdTVE9SRV9CVU5ETEUQBBImCiJQUk9WRU5BTkNFX1RZUEVfR0lUSFVCX0FUVEVTVEFUSU9OEAUqQQoGRW5naW5lEhYKEkVOR0lORV9VTlNQRUNJRklFRBAAEg8KC0VOR0lORV9OT0RFEAESDgoKRU5HSU5FX0JVThACKooBCgtSdW50aW1lS2luZBIcChhSVU5USU1FX0tJTkRfVU5TUEVDSUZJRUQQABIVChFSVU5USU1FX0tJTkRfTk9ERRABEhcKE1JVTlRJTUVfS0lORF9QWVRIT04QAhIUChBSVU5USU1FX0tJTkRfT0NJEAMSFwoTUlVOVElNRV9LSU5EX0JJTkFSWRAEKmAKBlRhcmdldBIWChJUQVJHRVRfVU5TUEVDSUZJRUQQABIRCg1UQVJHRVRfQUdFTlREEAESFgoSVEFSR0VUX0JZT0NfU0VSVkVSEAISEwoPVEFSR0VUX0FQUF9CWU9DEAMqaQoMTWNwVHJhbnNwb3J0Eh0KGU1DUF9UUkFOU1BPUlRfVU5TUEVDSUZJRUQQABIXChNNQ1BfVFJBTlNQT1JUX1NURElPEAESIQodTUNQX1RSQU5TUE9SVF9TVFJFQU1BQkxFX0hUVFAQAipiCgRSaXNrEhQKEFJJU0tfVU5TUEVDSUZJRUQQABINCglSSVNLX1JFQUQQARIOCgpSSVNLX1dSSVRFEAISDwoLUklTS19FR1JFU1MQAxIUChBSSVNLX0RFU1RSVUNUSVZFEAQqgwEKCERhdGFLaW5kEhkKFURBVEFfS0lORF9VTlNQRUNJRklFRBAAEhYKEkRBVEFfS0lORF9EQVRBQkFTRRABEhgKFERBVEFfS0lORF9DT0xMRUNUSU9OEAISFAoQREFUQV9LSU5EX1NUUkVBTRADEhQKEERBVEFfS0lORF9CVUNLRVQQBCpDCgZBY2Nlc3MSFgoSQUNDRVNTX1VOU1BFQ0lGSUVEEAASDwoLQUNDRVNTX1JFQUQQARIQCgxBQ0NFU1NfV1JJVEUQAiqAAQoITW9kZWxBcGkSGQoVTU9ERUxfQVBJX1VOU1BFQ0lGSUVEEAASHgoaTU9ERUxfQVBJX0NIQVRfQ09NUExFVElPTlMQARIXChNNT0RFTF9BUElfUkVTUE9OU0VTEAISIAocTU9ERUxfQVBJX0FOVEhST1BJQ19NRVNTQUdFUxADKogBCgpDb25maWdUeXBlEhsKF0NPTkZJR19UWVBFX1VOU1BFQ0lGSUVEEAASFgoSQ09ORklHX1RZUEVfU1RSSU5HEAESFgoSQ09ORklHX1RZUEVfTlVNQkVSEAISFwoTQ09ORklHX1RZUEVfQk9PTEVBThADEhQKEENPTkZJR19UWVBFX0VOVU0QBCqRAQoQQ29uZm9ybWFuY2VMZXZlbBIhCh1DT05GT1JNQU5DRV9MRVZFTF9VTlNQRUNJRklFRBAAEhoKFkNPTkZPUk1BTkNFX0xFVkVMX0NPUkUQARIgChxDT05GT1JNQU5DRV9MRVZFTF9DT01QQVRJQkxFEAISHAoYQ09ORk9STUFOQ0VfTEVWRUxfTkFUSVZFEAMqfgoIQXV0aEtpbmQSGQoVQVVUSF9LSU5EX1VOU1BFQ0lGSUVEEAASEgoOQVVUSF9LSU5EX05PTkUQARIVChFBVVRIX0tJTkRfQVBJX0tFWRACEhMKD0FVVEhfS0lORF9PQVVUSBADEhcKE0FVVEhfS0lORF9DTElfTE9HSU4QBCpqCg9IYXJuZXNzUHJvdG9jb2wSIAocSEFSTkVTU19QUk9UT0NPTF9VTlNQRUNJRklFRBAAEhgKFEhBUk5FU1NfUFJPVE9DT0xfQUNQEAESGwoXSEFSTkVTU19QUk9UT0NPTF9OQVRJVkUQAipnCg1NY3BTZXJ2ZXJNb2RlEh8KG01DUF9TRVJWRVJfTU9ERV9VTlNQRUNJRklFRBAAEhkKFU1DUF9TRVJWRVJfTU9ERV9MT0NBTBABEhoKFk1DUF9TRVJWRVJfTU9ERV9SRU1PVEUQAio0CgdQcmljaW5nEhcKE1BSSUNJTkdfVU5TUEVDSUZJRUQQABIQCgxQUklDSU5HX0ZSRUUQAWIGcHJvdG8z", [file_google_protobuf_struct]);
 
 /**
  * @generated from message loams.marketplace.v1.Listing
@@ -307,6 +307,14 @@ export type Artifact = Message<"loams.marketplace.v1.Artifact"> & {
    * @generated from field: repeated loams.marketplace.v1.ArchiveFile files = 5;
    */
   files: ArchiveFile[];
+
+  /**
+   * Public mirrors of the package file (npm, pypi, oci), beside its registry
+   * reference and never instead of it (D1812). An archive's are on its files.
+   *
+   * @generated from field: repeated loams.marketplace.v1.ArtifactLocation locations = 6;
+   */
+  locations: ArtifactLocation[];
 };
 
 /**
@@ -339,6 +347,13 @@ export type ArchiveFile = Message<"loams.marketplace.v1.ArchiveFile"> & {
    * @generated from field: string path = 4;
    */
   path: string;
+
+  /**
+   * Public mirrors of this file, beside its url (D1812).
+   *
+   * @generated from field: repeated loams.marketplace.v1.ArtifactLocation locations = 5;
+   */
+  locations: ArtifactLocation[];
 };
 
 /**
@@ -347,6 +362,42 @@ export type ArchiveFile = Message<"loams.marketplace.v1.ArchiveFile"> & {
  */
 export const ArchiveFileSchema: GenMessage<ArchiveFile> = /*@__PURE__*/
   messageDesc(file_loams_marketplace_v1_listing, 5);
+
+/**
+ * A public mirror of an artifact's bytes (D1812): read first when its tier is
+ * enabled, checked by SHA-256, then by integrity and provenance as any
+ * artifact (D1459); the HTTPS location is the fallback. The index carries the
+ * reference, never the bytes (D1460).
+ *
+ * @generated from message loams.marketplace.v1.ArtifactLocation
+ */
+export type ArtifactLocation = Message<"loams.marketplace.v1.ArtifactLocation"> & {
+  /**
+   * @generated from field: loams.marketplace.v1.LocationKind kind = 1;
+   */
+  kind: LocationKind;
+
+  /**
+   * The Walrus blob id: 32 bytes, URL-safe base64 without padding.
+   *
+   * @generated from field: string blob_id = 2;
+   */
+  blobId: string;
+
+  /**
+   * The SHA-256 of the blob's bytes, lowercase hex.
+   *
+   * @generated from field: string sha256 = 3;
+   */
+  sha256: string;
+};
+
+/**
+ * Describes the message loams.marketplace.v1.ArtifactLocation.
+ * Use `create(ArtifactLocationSchema)` to create a new message.
+ */
+export const ArtifactLocationSchema: GenMessage<ArtifactLocation> = /*@__PURE__*/
+  messageDesc(file_loams_marketplace_v1_listing, 6);
 
 /**
  * @generated from message loams.marketplace.v1.Provenance
@@ -368,7 +419,7 @@ export type Provenance = Message<"loams.marketplace.v1.Provenance"> & {
  * Use `create(ProvenanceSchema)` to create a new message.
  */
 export const ProvenanceSchema: GenMessage<Provenance> = /*@__PURE__*/
-  messageDesc(file_loams_marketplace_v1_listing, 6);
+  messageDesc(file_loams_marketplace_v1_listing, 7);
 
 /**
  * @generated from message loams.marketplace.v1.Runtime
@@ -380,11 +431,20 @@ export type Runtime = Message<"loams.marketplace.v1.Runtime"> & {
   kind: RuntimeKind;
 
   /**
-   * A version range, such as `>=22.13`.
+   * A version range of the engine, such as `>=22.13` for node or `>=1.4.4`
+   * for bun.
    *
    * @generated from field: string version = 2;
    */
   version: string;
+
+  /**
+   * The program that runs a node runtime's entrypoint (D1808); unset means
+   * node. Only the node runtime has an engine.
+   *
+   * @generated from field: loams.marketplace.v1.Engine engine = 3;
+   */
+  engine: Engine;
 };
 
 /**
@@ -392,7 +452,7 @@ export type Runtime = Message<"loams.marketplace.v1.Runtime"> & {
  * Use `create(RuntimeSchema)` to create a new message.
  */
 export const RuntimeSchema: GenMessage<Runtime> = /*@__PURE__*/
-  messageDesc(file_loams_marketplace_v1_listing, 7);
+  messageDesc(file_loams_marketplace_v1_listing, 8);
 
 /**
  * Present fields are the surfaces served; an agent serves `acp` or `a2a`.
@@ -426,7 +486,7 @@ export type Surfaces = Message<"loams.marketplace.v1.Surfaces"> & {
  * Use `create(SurfacesSchema)` to create a new message.
  */
 export const SurfacesSchema: GenMessage<Surfaces> = /*@__PURE__*/
-  messageDesc(file_loams_marketplace_v1_listing, 8);
+  messageDesc(file_loams_marketplace_v1_listing, 9);
 
 /**
  * @generated from message loams.marketplace.v1.AcpSurface
@@ -443,7 +503,7 @@ export type AcpSurface = Message<"loams.marketplace.v1.AcpSurface"> & {
  * Use `create(AcpSurfaceSchema)` to create a new message.
  */
 export const AcpSurfaceSchema: GenMessage<AcpSurface> = /*@__PURE__*/
-  messageDesc(file_loams_marketplace_v1_listing, 9);
+  messageDesc(file_loams_marketplace_v1_listing, 10);
 
 /**
  * @generated from message loams.marketplace.v1.A2aSurface
@@ -462,7 +522,7 @@ export type A2aSurface = Message<"loams.marketplace.v1.A2aSurface"> & {
  * Use `create(A2aSurfaceSchema)` to create a new message.
  */
 export const A2aSurfaceSchema: GenMessage<A2aSurface> = /*@__PURE__*/
-  messageDesc(file_loams_marketplace_v1_listing, 10);
+  messageDesc(file_loams_marketplace_v1_listing, 11);
 
 /**
  * @generated from message loams.marketplace.v1.McpSurface
@@ -479,7 +539,7 @@ export type McpSurface = Message<"loams.marketplace.v1.McpSurface"> & {
  * Use `create(McpSurfaceSchema)` to create a new message.
  */
 export const McpSurfaceSchema: GenMessage<McpSurface> = /*@__PURE__*/
-  messageDesc(file_loams_marketplace_v1_listing, 11);
+  messageDesc(file_loams_marketplace_v1_listing, 12);
 
 /**
  * @generated from message loams.marketplace.v1.ResponsesSurface
@@ -492,7 +552,7 @@ export type ResponsesSurface = Message<"loams.marketplace.v1.ResponsesSurface"> 
  * Use `create(ResponsesSurfaceSchema)` to create a new message.
  */
 export const ResponsesSurfaceSchema: GenMessage<ResponsesSurface> = /*@__PURE__*/
-  messageDesc(file_loams_marketplace_v1_listing, 12);
+  messageDesc(file_loams_marketplace_v1_listing, 13);
 
 /**
  * @generated from message loams.marketplace.v1.LoamsCapabilities
@@ -549,7 +609,7 @@ export type LoamsCapabilities = Message<"loams.marketplace.v1.LoamsCapabilities"
  * Use `create(LoamsCapabilitiesSchema)` to create a new message.
  */
 export const LoamsCapabilitiesSchema: GenMessage<LoamsCapabilities> = /*@__PURE__*/
-  messageDesc(file_loams_marketplace_v1_listing, 13);
+  messageDesc(file_loams_marketplace_v1_listing, 14);
 
 /**
  * @generated from message loams.marketplace.v1.McpServerDependency
@@ -573,7 +633,7 @@ export type McpServerDependency = Message<"loams.marketplace.v1.McpServerDepende
  * Use `create(McpServerDependencySchema)` to create a new message.
  */
 export const McpServerDependencySchema: GenMessage<McpServerDependency> = /*@__PURE__*/
-  messageDesc(file_loams_marketplace_v1_listing, 14);
+  messageDesc(file_loams_marketplace_v1_listing, 15);
 
 /**
  * @generated from message loams.marketplace.v1.Tool
@@ -607,7 +667,7 @@ export type Tool = Message<"loams.marketplace.v1.Tool"> & {
  * Use `create(ToolSchema)` to create a new message.
  */
 export const ToolSchema: GenMessage<Tool> = /*@__PURE__*/
-  messageDesc(file_loams_marketplace_v1_listing, 15);
+  messageDesc(file_loams_marketplace_v1_listing, 16);
 
 /**
  * @generated from message loams.marketplace.v1.PlaceTemplate
@@ -639,7 +699,7 @@ export type PlaceTemplate = Message<"loams.marketplace.v1.PlaceTemplate"> & {
  * Use `create(PlaceTemplateSchema)` to create a new message.
  */
 export const PlaceTemplateSchema: GenMessage<PlaceTemplate> = /*@__PURE__*/
-  messageDesc(file_loams_marketplace_v1_listing, 16);
+  messageDesc(file_loams_marketplace_v1_listing, 17);
 
 /**
  * @generated from message loams.marketplace.v1.DataScope
@@ -666,7 +726,7 @@ export type DataScope = Message<"loams.marketplace.v1.DataScope"> & {
  * Use `create(DataScopeSchema)` to create a new message.
  */
 export const DataScopeSchema: GenMessage<DataScope> = /*@__PURE__*/
-  messageDesc(file_loams_marketplace_v1_listing, 17);
+  messageDesc(file_loams_marketplace_v1_listing, 18);
 
 /**
  * @generated from message loams.marketplace.v1.Models
@@ -693,7 +753,7 @@ export type Models = Message<"loams.marketplace.v1.Models"> & {
  * Use `create(ModelsSchema)` to create a new message.
  */
 export const ModelsSchema: GenMessage<Models> = /*@__PURE__*/
-  messageDesc(file_loams_marketplace_v1_listing, 18);
+  messageDesc(file_loams_marketplace_v1_listing, 19);
 
 /**
  * @generated from message loams.marketplace.v1.ModelRequirements
@@ -720,7 +780,7 @@ export type ModelRequirements = Message<"loams.marketplace.v1.ModelRequirements"
  * Use `create(ModelRequirementsSchema)` to create a new message.
  */
 export const ModelRequirementsSchema: GenMessage<ModelRequirements> = /*@__PURE__*/
-  messageDesc(file_loams_marketplace_v1_listing, 19);
+  messageDesc(file_loams_marketplace_v1_listing, 20);
 
 /**
  * @generated from message loams.marketplace.v1.SuggestedModel
@@ -742,7 +802,7 @@ export type SuggestedModel = Message<"loams.marketplace.v1.SuggestedModel"> & {
  * Use `create(SuggestedModelSchema)` to create a new message.
  */
 export const SuggestedModelSchema: GenMessage<SuggestedModel> = /*@__PURE__*/
-  messageDesc(file_loams_marketplace_v1_listing, 20);
+  messageDesc(file_loams_marketplace_v1_listing, 21);
 
 /**
  * @generated from message loams.marketplace.v1.CostProfile
@@ -779,7 +839,7 @@ export type CostProfile = Message<"loams.marketplace.v1.CostProfile"> & {
  * Use `create(CostProfileSchema)` to create a new message.
  */
 export const CostProfileSchema: GenMessage<CostProfile> = /*@__PURE__*/
-  messageDesc(file_loams_marketplace_v1_listing, 21);
+  messageDesc(file_loams_marketplace_v1_listing, 22);
 
 /**
  * @generated from message loams.marketplace.v1.ConfigInput
@@ -833,7 +893,7 @@ export type ConfigInput = Message<"loams.marketplace.v1.ConfigInput"> & {
  * Use `create(ConfigInputSchema)` to create a new message.
  */
 export const ConfigInputSchema: GenMessage<ConfigInput> = /*@__PURE__*/
-  messageDesc(file_loams_marketplace_v1_listing, 22);
+  messageDesc(file_loams_marketplace_v1_listing, 23);
 
 /**
  * @generated from message loams.marketplace.v1.Conformance
@@ -860,7 +920,7 @@ export type Conformance = Message<"loams.marketplace.v1.Conformance"> & {
  * Use `create(ConformanceSchema)` to create a new message.
  */
 export const ConformanceSchema: GenMessage<Conformance> = /*@__PURE__*/
-  messageDesc(file_loams_marketplace_v1_listing, 23);
+  messageDesc(file_loams_marketplace_v1_listing, 24);
 
 /**
  * @generated from message loams.marketplace.v1.Harness
@@ -894,7 +954,7 @@ export type Harness = Message<"loams.marketplace.v1.Harness"> & {
  * Use `create(HarnessSchema)` to create a new message.
  */
 export const HarnessSchema: GenMessage<Harness> = /*@__PURE__*/
-  messageDesc(file_loams_marketplace_v1_listing, 24);
+  messageDesc(file_loams_marketplace_v1_listing, 25);
 
 /**
  * @generated from message loams.marketplace.v1.HarnessLaunch
@@ -921,7 +981,7 @@ export type HarnessLaunch = Message<"loams.marketplace.v1.HarnessLaunch"> & {
  * Use `create(HarnessLaunchSchema)` to create a new message.
  */
 export const HarnessLaunchSchema: GenMessage<HarnessLaunch> = /*@__PURE__*/
-  messageDesc(file_loams_marketplace_v1_listing, 25);
+  messageDesc(file_loams_marketplace_v1_listing, 26);
 
 /**
  * @generated from message loams.marketplace.v1.McpServer
@@ -960,7 +1020,7 @@ export type McpServer = Message<"loams.marketplace.v1.McpServer"> & {
  * Use `create(McpServerSchema)` to create a new message.
  */
 export const McpServerSchema: GenMessage<McpServer> = /*@__PURE__*/
-  messageDesc(file_loams_marketplace_v1_listing, 26);
+  messageDesc(file_loams_marketplace_v1_listing, 27);
 
 /**
  * @generated from enum loams.marketplace.v1.Kind
@@ -1157,6 +1217,27 @@ export const ArtifactTypeSchema: GenEnum<ArtifactType> = /*@__PURE__*/
   enumDesc(file_loams_marketplace_v1_listing, 3);
 
 /**
+ * @generated from enum loams.marketplace.v1.LocationKind
+ */
+export enum LocationKind {
+  /**
+   * @generated from enum value: LOCATION_KIND_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: LOCATION_KIND_WALRUS = 1;
+   */
+  WALRUS = 1,
+}
+
+/**
+ * Describes the enum loams.marketplace.v1.LocationKind.
+ */
+export const LocationKindSchema: GenEnum<LocationKind> = /*@__PURE__*/
+  enumDesc(file_loams_marketplace_v1_listing, 4);
+
+/**
  * @generated from enum loams.marketplace.v1.Platform
  */
 export enum Platform {
@@ -1200,7 +1281,7 @@ export enum Platform {
  * Describes the enum loams.marketplace.v1.Platform.
  */
 export const PlatformSchema: GenEnum<Platform> = /*@__PURE__*/
-  enumDesc(file_loams_marketplace_v1_listing, 4);
+  enumDesc(file_loams_marketplace_v1_listing, 5);
 
 /**
  * @generated from enum loams.marketplace.v1.ProvenanceType
@@ -1243,7 +1324,33 @@ export enum ProvenanceType {
  * Describes the enum loams.marketplace.v1.ProvenanceType.
  */
 export const ProvenanceTypeSchema: GenEnum<ProvenanceType> = /*@__PURE__*/
-  enumDesc(file_loams_marketplace_v1_listing, 5);
+  enumDesc(file_loams_marketplace_v1_listing, 6);
+
+/**
+ * @generated from enum loams.marketplace.v1.Engine
+ */
+export enum Engine {
+  /**
+   * @generated from enum value: ENGINE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: ENGINE_NODE = 1;
+   */
+  NODE = 1,
+
+  /**
+   * @generated from enum value: ENGINE_BUN = 2;
+   */
+  BUN = 2,
+}
+
+/**
+ * Describes the enum loams.marketplace.v1.Engine.
+ */
+export const EngineSchema: GenEnum<Engine> = /*@__PURE__*/
+  enumDesc(file_loams_marketplace_v1_listing, 7);
 
 /**
  * @generated from enum loams.marketplace.v1.RuntimeKind
@@ -1279,7 +1386,7 @@ export enum RuntimeKind {
  * Describes the enum loams.marketplace.v1.RuntimeKind.
  */
 export const RuntimeKindSchema: GenEnum<RuntimeKind> = /*@__PURE__*/
-  enumDesc(file_loams_marketplace_v1_listing, 6);
+  enumDesc(file_loams_marketplace_v1_listing, 8);
 
 /**
  * @generated from enum loams.marketplace.v1.Target
@@ -1310,7 +1417,7 @@ export enum Target {
  * Describes the enum loams.marketplace.v1.Target.
  */
 export const TargetSchema: GenEnum<Target> = /*@__PURE__*/
-  enumDesc(file_loams_marketplace_v1_listing, 7);
+  enumDesc(file_loams_marketplace_v1_listing, 9);
 
 /**
  * @generated from enum loams.marketplace.v1.McpTransport
@@ -1336,7 +1443,7 @@ export enum McpTransport {
  * Describes the enum loams.marketplace.v1.McpTransport.
  */
 export const McpTransportSchema: GenEnum<McpTransport> = /*@__PURE__*/
-  enumDesc(file_loams_marketplace_v1_listing, 8);
+  enumDesc(file_loams_marketplace_v1_listing, 10);
 
 /**
  * @generated from enum loams.marketplace.v1.Risk
@@ -1372,7 +1479,7 @@ export enum Risk {
  * Describes the enum loams.marketplace.v1.Risk.
  */
 export const RiskSchema: GenEnum<Risk> = /*@__PURE__*/
-  enumDesc(file_loams_marketplace_v1_listing, 9);
+  enumDesc(file_loams_marketplace_v1_listing, 11);
 
 /**
  * @generated from enum loams.marketplace.v1.DataKind
@@ -1408,7 +1515,7 @@ export enum DataKind {
  * Describes the enum loams.marketplace.v1.DataKind.
  */
 export const DataKindSchema: GenEnum<DataKind> = /*@__PURE__*/
-  enumDesc(file_loams_marketplace_v1_listing, 10);
+  enumDesc(file_loams_marketplace_v1_listing, 12);
 
 /**
  * @generated from enum loams.marketplace.v1.Access
@@ -1434,7 +1541,7 @@ export enum Access {
  * Describes the enum loams.marketplace.v1.Access.
  */
 export const AccessSchema: GenEnum<Access> = /*@__PURE__*/
-  enumDesc(file_loams_marketplace_v1_listing, 11);
+  enumDesc(file_loams_marketplace_v1_listing, 13);
 
 /**
  * @generated from enum loams.marketplace.v1.ModelApi
@@ -1465,7 +1572,7 @@ export enum ModelApi {
  * Describes the enum loams.marketplace.v1.ModelApi.
  */
 export const ModelApiSchema: GenEnum<ModelApi> = /*@__PURE__*/
-  enumDesc(file_loams_marketplace_v1_listing, 12);
+  enumDesc(file_loams_marketplace_v1_listing, 14);
 
 /**
  * @generated from enum loams.marketplace.v1.ConfigType
@@ -1501,7 +1608,7 @@ export enum ConfigType {
  * Describes the enum loams.marketplace.v1.ConfigType.
  */
 export const ConfigTypeSchema: GenEnum<ConfigType> = /*@__PURE__*/
-  enumDesc(file_loams_marketplace_v1_listing, 13);
+  enumDesc(file_loams_marketplace_v1_listing, 15);
 
 /**
  * @generated from enum loams.marketplace.v1.ConformanceLevel
@@ -1532,7 +1639,7 @@ export enum ConformanceLevel {
  * Describes the enum loams.marketplace.v1.ConformanceLevel.
  */
 export const ConformanceLevelSchema: GenEnum<ConformanceLevel> = /*@__PURE__*/
-  enumDesc(file_loams_marketplace_v1_listing, 14);
+  enumDesc(file_loams_marketplace_v1_listing, 16);
 
 /**
  * @generated from enum loams.marketplace.v1.AuthKind
@@ -1568,7 +1675,7 @@ export enum AuthKind {
  * Describes the enum loams.marketplace.v1.AuthKind.
  */
 export const AuthKindSchema: GenEnum<AuthKind> = /*@__PURE__*/
-  enumDesc(file_loams_marketplace_v1_listing, 15);
+  enumDesc(file_loams_marketplace_v1_listing, 17);
 
 /**
  * @generated from enum loams.marketplace.v1.HarnessProtocol
@@ -1594,7 +1701,7 @@ export enum HarnessProtocol {
  * Describes the enum loams.marketplace.v1.HarnessProtocol.
  */
 export const HarnessProtocolSchema: GenEnum<HarnessProtocol> = /*@__PURE__*/
-  enumDesc(file_loams_marketplace_v1_listing, 16);
+  enumDesc(file_loams_marketplace_v1_listing, 18);
 
 /**
  * @generated from enum loams.marketplace.v1.McpServerMode
@@ -1620,7 +1727,7 @@ export enum McpServerMode {
  * Describes the enum loams.marketplace.v1.McpServerMode.
  */
 export const McpServerModeSchema: GenEnum<McpServerMode> = /*@__PURE__*/
-  enumDesc(file_loams_marketplace_v1_listing, 17);
+  enumDesc(file_loams_marketplace_v1_listing, 19);
 
 /**
  * @generated from enum loams.marketplace.v1.Pricing
@@ -1641,5 +1748,5 @@ export enum Pricing {
  * Describes the enum loams.marketplace.v1.Pricing.
  */
 export const PricingSchema: GenEnum<Pricing> = /*@__PURE__*/
-  enumDesc(file_loams_marketplace_v1_listing, 18);
+  enumDesc(file_loams_marketplace_v1_listing, 20);
 

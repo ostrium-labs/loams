@@ -1,0 +1,116 @@
+{
+  "schema": {},
+  "payload": {
+    "source": {
+      "version": "3.3.0.Final",
+      "connector": "mysql",
+      "name": "mysql",
+      "ts_ms": 1651535750218,
+      "ts_us": 1651535750218000,
+      "ts_ns": 1651535750218000000,
+      "snapshot": "false",
+      "db": "inventory",
+      "sequence": null,
+      "table": "customers",
+      "server_id": 223344,
+      "gtid": null,
+      "file": "mysql-bin.000003",
+      "pos": 570,
+      "row": 0,
+      "thread": null,
+      "query": null
+    },
+    "databaseName": "inventory",
+    "schemaName": null,
+    "ddl": "ALTER TABLE customers ADD middle_name varchar(255) AFTER first_name",
+    "tableChanges": [
+      {
+        "type": "ALTER",
+        "id": "\"inventory\".\"customers\"",
+        "table": {
+          "defaultCharsetName": "utf8mb4",
+          "primaryKeyColumnNames": [
+            "id"
+          ],
+          "columns": [
+            {
+              "name": "id",
+              "jdbcType": 4,
+              "nativeType": null,
+              "typeName": "INT",
+              "typeExpression": "INT",
+              "charsetName": null,
+              "length": null,
+              "scale": null,
+              "position": 1,
+              "optional": false,
+              "autoIncremented": true,
+              "generated": true
+            },
+            {
+              "name": "first_name",
+              "jdbcType": 12,
+              "nativeType": null,
+              "typeName": "VARCHAR",
+              "typeExpression": "VARCHAR",
+              "charsetName": "utf8mb4",
+              "length": 255,
+              "scale": null,
+              "position": 2,
+              "optional": false,
+              "autoIncremented": false,
+              "generated": false
+            },
+            {
+              "name": "middle_name",
+              "jdbcType": 12,
+              "nativeType": null,
+              "typeName": "VARCHAR",
+              "typeExpression": "VARCHAR",
+              "charsetName": "utf8mb4",
+              "length": 255,
+              "scale": null,
+              "position": 3,
+              "optional": true,
+              "autoIncremented": false,
+              "generated": false
+            },
+            {
+              "name": "last_name",
+              "jdbcType": 12,
+              "nativeType": null,
+              "typeName": "VARCHAR",
+              "typeExpression": "VARCHAR",
+              "charsetName": "utf8mb4",
+              "length": 255,
+              "scale": null,
+              "position": 4,
+              "optional": false,
+              "autoIncremented": false,
+              "generated": false
+            },
+            {
+              "name": "email",
+              "jdbcType": 12,
+              "nativeType": null,
+              "typeName": "VARCHAR",
+              "typeExpression": "VARCHAR",
+              "charsetName": "utf8mb4",
+              "length": 255,
+              "scale": null,
+              "position": 5,
+              "optional": false,
+              "autoIncremented": false,
+              "generated": false
+            }
+          ],
+          "attributes": [
+            {
+              "customAttribute": "attributeValue"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

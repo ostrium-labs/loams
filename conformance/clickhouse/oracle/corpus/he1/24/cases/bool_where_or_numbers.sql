@@ -1,0 +1,1 @@
+SELECT id FROM t24 WHERE u8 - 1 OR 0 ORDER BY id

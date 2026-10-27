@@ -6,9 +6,12 @@
 //! position is `PositionLost`, and anything else, including a fenced
 //! transactional producer, is `Fatal`.
 
+use std::sync::Mutex;
 use std::time::Duration;
 
 use loams_connector_sdk::{ConnectorError, ErrorClass};
+use rdkafka::ClientContext;
+use rdkafka::consumer::ConsumerContext;
 use rdkafka::error::{KafkaError, RDKafkaErrorCode as C};
 
 /// The class of a librdkafka error code.
@@ -93,6 +96,53 @@ pub fn class_of(e: &KafkaError) -> ErrorClass {
 pub fn kafka_error(what: &str, e: &KafkaError) -> ConnectorError {
     ConnectorError::new(class_of(e), format!("{what}: {e}"))
 }
+
+/// A client context that remembers librdkafka's last refused login.
+///
+/// A wrong SASL password or a revoked API key is reported by librdkafka only
+/// through the client's error callback; the call that was waiting (a
+/// metadata request) then fails with a transport error or a timeout, which
+/// is `Retryable`. The enumerator's metadata client carries this context and
+/// turns such a failure into `Auth`, so an instance with a bad key stops
+/// with that error instead of retrying it (CC1 Task 2: a rotated or revoked
+/// Confluent key).
+#[derive(Debug, Default)]
+pub struct AuthWatch {
+    refused: Mutex<Option<String>>,
+}
+
+impl AuthWatch {
+    /// librdkafka's reason for the last refused login, if any.
+    pub fn refused(&self) -> Option<String> {
+        self.refused
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
+    }
+
+    /// `err` as `Auth` when a login was refused, else unchanged.
+    pub fn classify(&self, err: ConnectorError) -> ConnectorError {
+        match self.refused() {
+            Some(reason) if err.class != ErrorClass::Auth => {
+                ConnectorError::new(ErrorClass::Auth, format!("{}: {reason}", err.message))
+            }
+            _ => err,
+        }
+    }
+}
+
+impl ClientContext for AuthWatch {
+    fn error(&self, error: KafkaError, reason: &str) {
+        if class_of(&error) == ErrorClass::Auth {
+            *self.refused.lock().unwrap_or_else(|p| p.into_inner()) = Some(reason.to_owned());
+        }
+        // librdkafka's reason names the mechanism and the broker, never the
+        // password.
+        tracing::warn!(target: "librdkafka", "librdkafka: {error}: {reason}");
+    }
+}
+
+impl ConsumerContext for AuthWatch {}
 
 /// A blocking call that panicked or was cancelled.
 pub fn join_error(what: &str, e: tokio::task::JoinError) -> ConnectorError {

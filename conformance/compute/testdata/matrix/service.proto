@@ -1,0 +1,11 @@
+// A fixture service for matrix_from_fixture (not a real API).
+service WorkflowService {
+  rpc GetSystemInfo (A) returns (B) {}
+  rpc StartWorkflowExecution (A) returns (B) {}
+  rpc SignalWorkflowExecution (A) returns (B) {}
+  rpc QueryWorkflow (A) returns (B) {}
+  rpc SignalWithStartWorkflowExecution (A) returns (B) {}
+  rpc RegisterNamespace (A) returns (B) {}
+  rpc ListWorkflowExecutions (A) returns (B) {}
+  rpc UpdateWorkflowExecution (A) returns (B) {}
+}

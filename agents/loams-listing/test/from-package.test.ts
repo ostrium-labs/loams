@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 import { fromPackageDir, fromPackageJson, integrityOf, normaliseRepository, PackageError, toPackageJson } from '../src/from-package.js';
 import { lint } from '../src/lint.js';
 import { fixture } from './helpers.js';
@@ -23,6 +23,9 @@ function tempDir(): string {
 describe('from-package', () => {
   it('from_package_round_trips', () => {
     const listing = fixture('valid/agent-mastra-acp.json');
+    // A walrus location exists only once the tarball is stored (D1812, MS1
+    // Task 9's publish step), so package.json never carries one.
+    delete listing.artifact!.locations;
     const pkg = toPackageJson(listing);
     const again = fromPackageJson(pkg, { commit: listing.source.commit, integrity: listing.artifact!.integrity! });
     expect(again).toEqual(listing);
@@ -75,6 +78,29 @@ describe('from-package', () => {
       targets: ['agentd'],
       pricing: 'free',
     });
+  });
+
+  it('from_package_round_trips_on_bun', () => {
+    const listing = fixture('valid/agent-mastra-bun.json');
+    const pkg = toPackageJson(listing);
+    expect(pkg.engines).toEqual({ bun: '>=1.4.4' });
+    expect(pkg.loams!.agent!.engine).toBe('bun');
+    const again = fromPackageJson(pkg, { commit: listing.source.commit, integrity: listing.artifact!.integrity! });
+    expect(again).toEqual(listing);
+    expect(lint(again)).toEqual([]);
+  });
+
+  it('reads engine from the block and the range from engines.bun', () => {
+    const pkg = toPackageJson(fixture('valid/agent-mastra-acp.json'));
+    pkg.engines = { node: '>=22.13', bun: '>=1.4.4, <2.0.0' };
+    // engines.bun alone does not choose Bun.
+    expect(fromPackageJson(pkg, { commit: COMMIT, integrity: 'sha512-x' }).runtime).toEqual({ kind: 'node', version: '>=22.13' });
+    (pkg.loams!.agent as Record<string, unknown>).engine = 'bun';
+    expect(fromPackageJson(pkg, { commit: COMMIT, integrity: 'sha512-x' }).runtime).toEqual({ kind: 'node', engine: 'bun', version: '>=1.4.4, <2.0.0' });
+    delete pkg.engines;
+    expect(fromPackageJson(pkg, { commit: COMMIT, integrity: 'sha512-x' }).runtime).toEqual({ kind: 'node', engine: 'bun', version: '>=1.4.4' });
+    (pkg.loams!.agent as Record<string, unknown>).engine = 'deno';
+    expect(() => fromPackageJson(pkg, { commit: COMMIT, integrity: 'sha512-x' })).toThrow(/node or bun/);
   });
 
   it('refuses a block that sets a field package.json owns', () => {

@@ -1,5 +1,5 @@
 import { act, cleanup, render, screen, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { ChartSpec } from '../src/types';
 
 // ECharts needs a real canvas; record what the component asks of it instead.
