@@ -20,6 +20,7 @@ mod conn;
 mod counter;
 mod hash;
 mod keys;
+mod keyspace;
 mod list;
 mod server;
 mod set;
@@ -56,6 +57,8 @@ pub enum Family {
     Zset,
     /// Lists (Task 8).
     List,
+    /// Keyspace commands (Task 9).
+    Keyspace,
 }
 
 /// Command flags, as `COMMAND INFO` names them.
@@ -341,6 +344,14 @@ pub static COMMANDS: &[Spec] = &[
     spec("lpos", -3, READONLY, KEY1, Family::List),
     spec("lmove", 5, WRITE | DENYOOM, (1, 2, 1), Family::List),
     spec("rpoplpush", 3, WRITE | DENYOOM, (1, 2, 1), Family::List),
+    // Keyspace commands (Task 9).
+    spec("keys", 2, READONLY, NOKEYS, Family::Keyspace),
+    spec("scan", -2, READONLY, NOKEYS, Family::Keyspace),
+    spec("randomkey", 1, READONLY, NOKEYS, Family::Keyspace),
+    spec("rename", 3, WRITE, (1, 2, 1), Family::Keyspace),
+    spec("renamenx", 3, WRITE | FAST, (1, 2, 1), Family::Keyspace),
+    spec("copy", -3, WRITE | DENYOOM, (1, 2, 1), Family::Keyspace),
+    spec("object", -2, READONLY, (2, 2, 1), Family::Keyspace),
 ];
 
 /// Commands Loams does not serve in v1 (design §77 §8.5), answered with a
@@ -480,6 +491,10 @@ pub async fn dispatch(shared: &Arc<Shared>, conn: &mut Conn, args: Vec<Bytes>) -
         Family::Set => (set::run(shared, conn, spec, &args).await, Flow::Continue),
         Family::Zset => (zset::run(shared, conn, spec, &args).await, Flow::Continue),
         Family::List => (list::run(shared, conn, spec, &args).await, Flow::Continue),
+        Family::Keyspace => (
+            keyspace::run(shared, conn, spec, &args).await,
+            Flow::Continue,
+        ),
     }
 }
 
