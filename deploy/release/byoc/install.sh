@@ -302,7 +302,7 @@ rm -f loams-byoc-config.tmp loams-byoc-secrets.tmp loams-byoc.service.tmp \
   loams-byoc-confluent.service.tmp loams-byoc-confluent.timer.tmp
 $sudo systemctl daemon-reload
 $sudo systemctl enable loams-byoc.service   # at boot: fetch the secrets, then compose up
-# every 5 minutes: rotated Confluent keys into the connect role's files (no-op without integrations)
+# every 5 minutes: rotated Confluent keys into the connect role files (no-op without integrations)
 $sudo systemctl enable --now loams-byoc-confluent.timer
 # The first fetch happens here, so the first start already has the tailnet key.
 $sudo /usr/local/bin/loams-byoc-secrets
