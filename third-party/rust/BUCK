@@ -7129,6 +7129,18 @@ buildscript_run(
     version = "0.8.6",
 )
 
+cargo_alias(
+    name = "chrono-tz",
+    actual = ":chrono-tz-0.10",
+    platforms = [
+        "linux-arm64",
+        "linux-x86_64",
+        "macos-arm64",
+        "macos-x86_64",
+    ],
+    visibility = ["PUBLIC"],
+)
+
 http_archive(
     name = "chrono-tz-0.10.4.crate",
     sha256 = "a6139a8597ed92cf816dfb33f5dd6cf0bb93a6adc938f11039f371bc5bcd26c3",

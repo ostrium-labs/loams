@@ -126,6 +126,11 @@ The Go and TypeScript SDK legs run through this profile on pull requests that to
 an image built from the pull request. That leg is new and not yet green; the results above are
 from the loopback runs. See `deploy/release/README.md`, "The Temporal gateway".
 
+## The Temporal Web UI and the CLI
+
+The stock Temporal Web UI and the `temporal` CLI can read from the gateway (preview): see
+[The Temporal Web UI and the `temporal` CLI](temporal-ui-cli.md).
+
 ## Limits
 
 | Limit | Value | Enforced |
@@ -213,9 +218,9 @@ SDK legs: 26 of 26 cases passed. 39 of the 123 `WorkflowService` methods are imp
 | `RespondActivityTaskFailedById` | not exercised | not exercised | TMP-api (D2086): unit tests only; no SDK leg yet |
 | `RespondActivityTaskCanceledById` | not exercised | not exercised | TMP-api (D2086): unit tests only; no SDK leg yet |
 | `RecordActivityTaskHeartbeatById` | not exercised | not exercised | TMP-api (D2086): unit tests only; no SDK leg yet |
-| `GetWorkflowExecutionHistoryReverse` | not exercised | not exercised | TMP-api (D2086): unit tests only; no SDK leg yet |
+| `GetWorkflowExecutionHistoryReverse` | not exercised | not exercised | TMP-api (D2086); the Temporal Web UI's workflow page; `reverse_history_pages_are_the_history_newest_first`; no SDK leg yet |
 | `DescribeTaskQueue` | not exercised | not exercised | TMP-api (D2086): unit tests only; no SDK leg yet |
-| `GetClusterInfo` | not exercised | not exercised | TMP-api (D2086): unit tests only; no SDK leg yet |
+| `GetClusterInfo` | not exercised | not exercised | TMP-api (D2086); the Temporal Web UI's first call and `temporal operator cluster describe` (D2051); `cluster_info_names_the_gateway_not_a_temporal_server`; no SDK leg yet |
 | `ListTaskQueuePartitions` | not exercised | not exercised | TMP-api (D2086): unit tests only; no SDK leg yet |
 | `ShutdownWorker` | not exercised | not exercised | TMP-api (D2086): unit tests only; no SDK leg yet |
 | `UpdateNamespace` | not exercised | not exercised | TMP-api (D2088): unit tests only; versioning reads answer no sets, no rules, all reachable |
