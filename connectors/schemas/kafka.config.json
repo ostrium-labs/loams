@@ -174,6 +174,31 @@
         "requests_per_sec": { "description": "Reads or writes (batches) per second, at least 1.", "type": "integer", "minimum": 1 }
       }
     },
+    "format": {
+      "description": "How the source reads a record's value (CC1 Task 3, D1822; §80 §4.2). plain: CloudEvents pass-through or a wrapped record. debezium-json: a Debezium change event from the JSON converter, with or without its schema/payload wrapper. debezium-avro: the same in Confluent wire-format Avro, decoded with the writer schema from schema_registry (required). A Debezium event becomes a Loams change event (loamsop c/u/d/r/t, loamslsn from Debezium's source block); a record from Debezium's schema-change topic becomes a schema-change event; anything else goes to the DLQ as poison. Source only: a sink refuses anything but plain.",
+      "type": "string",
+      "enum": ["plain", "debezium-json", "debezium-avro"],
+      "default": "plain"
+    },
+    "debezium": {
+      "description": "Options for format debezium-json and debezium-avro.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tombstones": {
+          "description": "What a tombstone (a key with no value, written after a delete for log compaction) becomes: a delete of that key, or nothing.",
+          "type": "string",
+          "enum": ["delete", "drop"],
+          "default": "delete"
+        },
+        "key_fields": {
+          "description": "The row fields that make the change's key (from after, or before for a delete). Empty: the record key, Debezium's key struct.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "default": []
+        }
+      }
+    },
     "pipeline": {
       "description": "The connector SDK's per-instance pipeline overrides (max_batch_rows, max_batch_bytes, linger_ms, max_in_flight_batches, memory_budget_bytes, checkpoint_interval_ms, retry).",
       "type": "object"
