@@ -288,6 +288,23 @@ fn env(name: &str) -> Result<String, String> {
     std::env::var(name).map_err(|_| format!("environment variable {name} is not set"))
 }
 
+/// The shortest task-token key accepted from the environment, in bytes
+/// (HMAC-SHA256's block is 64; 32 is its output size, D2032).
+pub const MIN_TOKEN_KEY_BYTES: usize = 32;
+
+/// A task-token key read from `name`: refused when it is empty or shorter
+/// than [`MIN_TOKEN_KEY_BYTES`], so an unset compose variable (`${VAR:-}`)
+/// never signs tokens with an empty key (D2032).
+pub fn token_secret(name: &str, value: String) -> Result<Vec<u8>, String> {
+    if value.len() < MIN_TOKEN_KEY_BYTES {
+        return Err(format!(
+            "task-token key {name} must be at least {MIN_TOKEN_KEY_BYTES} bytes (it has {})",
+            value.len()
+        ));
+    }
+    Ok(value.into_bytes())
+}
+
 /// Checks that the development-only settings are on a loopback listener
 /// with `insecure_dev` (plan DX1 Task 9).
 pub fn check(c: &Config) -> Result<(), String> {
@@ -430,7 +447,10 @@ pub async fn run_on(
     } else {
         let mut ring = Vec::new();
         for k in &config.task_token_keys {
-            ring.push((k.id.clone(), env(&k.secret_env)?.into_bytes()));
+            ring.push((
+                k.id.clone(),
+                token_secret(&k.secret_env, env(&k.secret_env)?)?,
+            ));
         }
         TokenKeys::new(ring)
     };
@@ -553,6 +573,16 @@ fn rand_byte() -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn token_secret_refuses_empty_and_short_keys() {
+        assert!(token_secret("K", String::new()).is_err());
+        assert!(token_secret("K", "x".repeat(MIN_TOKEN_KEY_BYTES - 1)).is_err());
+        assert_eq!(
+            token_secret("K", "x".repeat(MIN_TOKEN_KEY_BYTES)).unwrap(),
+            vec![b'x'; MIN_TOKEN_KEY_BYTES]
+        );
+    }
 
     #[test]
     fn postgres_store_pool_and_retention_parse() {

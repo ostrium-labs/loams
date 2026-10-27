@@ -104,11 +104,27 @@ D1591).
 
 ### Compose
 
-The compose profile `temporal-gateway` (the gateway in the engine container's network namespace,
-reaching the engine's durable listener over loopback, with its database on Loams Postgres) is
-**not in `deploy/release/compose.compute.yaml` yet**: it needs a gateway image, which DX1 Task 10
-left for a follow-up. Until then, run the binary next to a Resonate server as above; the SDK legs
-(`conformance/compute/temporal/gateway/run.sh`) do exactly that on loopback.
+The compose profile `temporal-gateway` in `deploy/release/compose.compute.yaml` runs the release
+image `ghcr.io/ostrium-labs/loams-temporal` (from the first release after 0.1.2; D2030, D2031):
+
+- in the engine container's network namespace, so it reaches the engine's Resonate on
+  `127.0.0.1:8001` and SDKs on the compose network dial `loams:7233`; no host port;
+- on its own database `loams_temporal` (role `loams_temporal`), which `compute-init` creates on
+  `compute1`'s direct endpoint;
+- with your `temporal-gateway.toml` (copy `deploy/release/temporal-gateway.toml.example`; API key
+  hashes in `[[keys]]`) and a task-token key of 32 bytes or more in `LOAMS_TEMPORAL_TOKEN_KEY_1`.
+
+```sh
+cd deploy/release
+cp temporal-gateway.toml.example temporal-gateway.toml   # then fill in [[keys]]
+docker compose --env-file .env --env-file ../../conformance/compute/pins.env \
+  -f compose.yaml -f compose.compute.yaml --profile temporal-gateway up -d
+```
+
+The Go and TypeScript SDK legs run through this profile on pull requests that touch the gateway
+(`conformance/compute/temporal/gateway/run.sh --profile`, workflow `temporal-gateway.yml`), with
+an image built from the pull request. That leg is new and not yet green; the results above are
+from the loopback runs. See `deploy/release/README.md`, "The Temporal gateway".
 
 ## The Temporal Web UI and the CLI
 
