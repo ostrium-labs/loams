@@ -34,14 +34,23 @@ cargo_package(
             "root": "tests/period.rs",
         },
         {
+            "name": "query",
+            "crate": "query",
+            "root": "tests/query.rs",
+        },
+        {
             "name": "schema",
             "crate": "schema",
             "root": "tests/schema.rs",
         },
     ],
     deps = [
+        "//crates/loams-meter-core:loams-meter-core",
+        "//third-party/rust:axum",
         "//third-party/rust:reqwest-0_13",
+        "//third-party/rust:serde_json",
         "//third-party/rust:thiserror",
+        "//third-party/rust:url",
     ],
     dev_deps = [
         "//third-party/rust:tokio",

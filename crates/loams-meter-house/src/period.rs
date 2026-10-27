@@ -84,3 +84,37 @@ pub fn closed_totals_sql(subject: &str, start: i64) -> String {
         sql::at(start)
     )
 }
+
+/// The std-only mirror of `feature` (counting `meter`) the period SQL takes.
+/// A `ByteHours` feature sums the meter's hourly values (§63 §8.3).
+pub fn feature_def(
+    feature: &loams_meter_core::Feature,
+    meter: &loams_meter_core::Meter,
+) -> FeatureDef {
+    FeatureDef {
+        key: feature.key.as_str().to_string(),
+        meter: crate::query::meter_def(meter),
+        filter: feature
+            .filter
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect(),
+        byte_hours: feature.unit == loams_meter_core::Unit::ByteHours,
+    }
+}
+
+/// The periods of `usage` to look at `now`, oldest first, as `[start, end)`
+/// Unix seconds: the current one and `back` earlier ones (with the
+/// customer's anchor, calendar months clamped as ME-core's `UsagePeriod`
+/// does).
+pub fn periods_for(
+    usage: &loams_meter_core::UsagePeriod,
+    now: loams_meter_core::UtcNanos,
+    back: i64,
+) -> Vec<(i64, i64)> {
+    let secs = |t: loams_meter_core::UtcNanos| t.0.div_euclid(loams_meter_core::UtcNanos::SECOND);
+    periods_back(usage.index_at(now), back, |n| {
+        let p = usage.period(n);
+        (secs(p.start), secs(p.end))
+    })
+}

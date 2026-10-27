@@ -9625,6 +9625,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-meter-core"
+version = "0.1.2"
+dependencies = [
+ "bytes",
+ "loams-cloudevents",
+ "proptest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.21",
+ "time",
+]
+
+[[package]]
 name = "loams-meter-gate"
 version = "0.1.2"
 dependencies = [
@@ -9635,9 +9649,13 @@ dependencies = [
 name = "loams-meter-house"
 version = "0.1.2"
 dependencies = [
+ "axum 0.8.9",
+ "loams-meter-core",
  "reqwest 0.13.5",
+ "serde_json",
  "thiserror 2.0.21",
  "tokio",
+ "url",
 ]
 
 [[package]]

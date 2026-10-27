@@ -241,6 +241,20 @@ impl Lakehouse {
         run.summary().periods.clone()
     }
 
+    /// A meter query of `meter`, driven as `query_meter` drives it.
+    async fn query(
+        &self,
+        meter: &meter_sql::MeterDef,
+        spec: meter_sql::QuerySpec,
+    ) -> meter_sql::QueryAnswer {
+        let mut run = meter_sql::QueryRun::new(meter.clone(), spec);
+        let mut answer: Option<String> = None;
+        while let Some(sql) = run.next(answer.as_deref()).expect("a readable answer") {
+            answer = Some(ok(self.addr(), &sql).await);
+        }
+        run.into_answer()
+    }
+
     /// Appends usage events to `_system/_meter`'s `partition`.
     fn push(&self, partition: usize, events: &[serde_json::Value]) {
         for event in events {
@@ -624,4 +638,84 @@ async fn period_totals(house: &Lakehouse) -> String {
          FROM _meter.period_totals FINAL ORDER BY period_start",
     )
     .await
+}
+
+/// `query_marks_provisional_open_window` (ME1 plan, Task 8): a query reads
+/// closed minutes from `_meter.windows`, the open edge from raw events, and
+/// marks the windows past `as_of` provisional.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn query_marks_provisional_open_window() {
+    const H09: i64 = 1_792_400_400;
+    const H10: i64 = 1_792_404_000;
+    let house = Lakehouse::start("meter-query").await;
+    house.schema().await;
+    house.push(
+        0,
+        &[
+            usage("q-1/1", "org_42", "2026-10-19T09:14:03Z", 1840),
+            // After 09:58: still open when the close runs at 10:00.
+            usage("q-2/1", "org_42", "2026-10-19T09:59:30Z", 999),
+            usage("q-3/1", "org_7", "2026-10-19T09:15:01Z", 5),
+        ],
+    );
+    house.drain().await;
+    let meter = cpu_meter();
+    let spec = |window| meter_sql::QuerySpec {
+        from: H09,
+        to: H10,
+        window,
+        subjects: vec!["org_42".to_string()],
+        by_subject: true,
+        group_by: vec!["namespace".to_string()],
+        filters: vec![("namespace".to_string(), vec!["7".to_string()])],
+    };
+    // Before any close run: everything from raw events, all provisional.
+    let early = house
+        .query(&meter, spec(meter_sql::QueryWindow::Hour))
+        .await;
+    assert_eq!(early.as_of, None);
+    assert_eq!(early.rows.len(), 1);
+    assert_eq!(early.rows[0].value, 2_839_000_000_000);
+    assert!(early.rows[0].provisional);
+
+    house.close(&meter, NOW_MS).await;
+    let as_of = H10 - 120;
+    // The hour straddles as_of: closed 09:14 plus raw 09:59, provisional.
+    let hour = house
+        .query(&meter, spec(meter_sql::QueryWindow::Hour))
+        .await;
+    assert_eq!(hour.as_of, Some(as_of));
+    assert_eq!(
+        hour.rows,
+        [meter_sql::QueryRow {
+            window_start: H09,
+            window_end: H10,
+            subject: Some("org_42".to_string()),
+            group: vec!["7".to_string()],
+            value: 2_839_000_000_000,
+            provisional: true,
+        }]
+    );
+    // By minute: 09:14 is closed, 09:59 provisional.
+    let minutes = house
+        .query(&meter, spec(meter_sql::QueryWindow::Minute))
+        .await;
+    let marks: Vec<_> = minutes
+        .rows
+        .iter()
+        .map(|r| (r.window_start - H09, r.value / 1_000_000_000, r.provisional))
+        .collect();
+    assert_eq!(marks, [(14 * 60, 1840, false), (59 * 60, 999, true)]);
+    // Over the whole range, without subjects: both subjects in one window.
+    let mut all = spec(meter_sql::QueryWindow::Whole);
+    all.subjects.clear();
+    all.by_subject = false;
+    all.group_by.clear();
+    let whole = house.query(&meter, all).await;
+    assert_eq!(whole.rows.len(), 1);
+    assert_eq!(whole.rows[0].value, 2_844_000_000_000);
+    assert_eq!(
+        (whole.rows[0].window_start, whole.rows[0].window_end),
+        (H09, H10)
+    );
 }

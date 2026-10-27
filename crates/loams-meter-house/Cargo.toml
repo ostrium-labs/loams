@@ -9,8 +9,13 @@ authors.workspace = true
 publish = false
 
 [dependencies]
+axum.workspace = true
+# ME-core's types (a path: the workspace has no entry for it yet).
+loams-meter-core = { path = "../loams-meter-core" }
 reqwest.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
+url.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true
