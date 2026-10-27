@@ -10,6 +10,7 @@ import {
   ApprovalService,
   AttachmentService,
   DiffService,
+  FactoryService,
   FileService,
   GitService,
   HarnessService,
@@ -42,6 +43,7 @@ const SERVICES = {
   ApprovalService,
   NotificationService,
   AttachmentService,
+  FactoryService,
   // The Seed Exchange (MK1 Tasks 4b, 9).
   MarketplaceService,
 };

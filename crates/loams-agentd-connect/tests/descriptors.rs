@@ -169,6 +169,7 @@ const SERVICES: &[&str] = &[
     "ApprovalService",
     "NotificationService",
     "AttachmentService",
+    "FactoryService",
     // MK1 Task 4b.
     "MarketplaceService",
 ];

@@ -14,7 +14,7 @@ chrono.workspace = true
 ts-rs.workspace = true
 thiserror.workspace = true
 # The fork renders with 0.12; the rest of the workspace is on 0.13 (not a workspace key).
-pulldown-cmark = "0.12"
+pulldown-cmark = "0.13"
 
 [lints]
 workspace = true

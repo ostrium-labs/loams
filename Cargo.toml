@@ -318,6 +318,8 @@ loams-collection = { path = "crates/loams-collection", version = "0.1.2" }
 loams-cloudevents = { path = "crates/loams-cloudevents", version = "0.1.2" }
 loams-common = { path = "crates/loams-common", version = "0.1.2" }
 loams-durable = { path = "crates/loams-durable", version = "0.1.2" }
+# Managed engines: the ManagedEngine trait and facade (design 81, D2010).
+loams-engines = { path = "crates/loams-engines", version = "0.1.2" }
 loams-es = { path = "crates/loams-es", version = "0.1.2" }
 # The Fs trait for warm, rebuildable state and scratch (design §36 §17, GT1 Task 2).
 loams-fs = { path = "crates/loams-fs", version = "0.1.2" }
@@ -366,6 +368,7 @@ loams-zitadel = { path = "crates/loams-zitadel", version = "0.1.2" }
 loams-agentd-cli = { path = "crates/loams-agentd-cli", version = "0.1.2" }
 loams-agentd-connect = { path = "crates/loams-agentd-connect", version = "0.1.2" }
 loams-agentd-doc = { path = "crates/loams-agentd-doc", version = "0.1.2" }
+loams-agentd-factory = { path = "crates/loams-agentd-factory", version = "0.1.2" }
 loams-agentd-harness = { path = "crates/loams-agentd-harness", version = "0.1.2" }
 loams-agentd-link = { path = "crates/loams-agentd-link", version = "0.1.2" }
 loams-agentd-mcp = { path = "crates/loams-agentd-mcp", version = "0.1.2" }
