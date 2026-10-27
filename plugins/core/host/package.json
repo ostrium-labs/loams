@@ -19,7 +19,7 @@
     "@loams-core/store": "workspace:*",
     "@loams-core/http": "workspace:*",
     "@loams-core/types": "workspace:*",
-    "cookie": "^1.1.1",
+    "cookie": "^2.0.1",
     "cordis": "^4.0.0-rc.10",
     "jose": "^6.2.12",
     "openid-client": "^6.8.8",
