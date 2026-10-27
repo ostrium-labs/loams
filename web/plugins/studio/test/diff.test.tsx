@@ -29,7 +29,7 @@ import {
   waitFor,
   within,
 } from '@testing-library/react';
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test';
 import { DiffTab } from '../src/thread/DiffTab.js';
 import { diffRequest, isStaleDiff } from '../src/thread/diff-source.js';
 import { wrap } from './fakes.js';

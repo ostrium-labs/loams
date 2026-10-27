@@ -14,7 +14,7 @@ import {
 } from '@loams/proto/agentd';
 import { useTerminalUiStateStore } from '@loams/studio-ui';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { fakeSurfaces } from '../../../packages/studio-ui/test/terminal-fakes.js';
 import { studioAgentd } from '../src/agentd.js';
 import { createStudioKeys } from '../src/palette/commands.js';

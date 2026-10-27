@@ -14,6 +14,7 @@ on:
       - "deploy/release/byoc/**"
       - "deploy/tofu/**"
       - "deploy/release/compose.yaml"
+      - "deploy/release/connect/templates/**"
       - "docs/release/loams-release-key.asc"
       - "docs/guides/byoc/**"
       - "tests/byoc/**"

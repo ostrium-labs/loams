@@ -17,6 +17,9 @@ pub struct GatewayConfig {
     pub routes: RoutesConfig,
     #[serde(default)]
     pub pg: PgConfig,
+    /// The RisingWave module (design 81, D1957).
+    #[serde(default)]
+    pub risingwave: crate::risingwave::RwConfig,
 }
 
 impl GatewayConfig {
@@ -25,6 +28,14 @@ impl GatewayConfig {
         let config: GatewayConfig =
             toml::from_str(text).map_err(|e| ConfigError::Parse(e.to_string()))?;
         config.pg.check()?;
+        for cert in &config.risingwave.certs {
+            if cert.names.is_empty() {
+                return Err(ConfigError::Invalid(format!(
+                    "risingwave.certs entry {} names no hostname",
+                    cert.cert.display()
+                )));
+            }
+        }
         Ok(config)
     }
 }

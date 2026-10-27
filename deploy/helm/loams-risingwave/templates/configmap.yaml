@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.configName }}
+  labels:
+    {{- include "loams-risingwave.instanceSelector" . | nindent 4 }}
+    app.kubernetes.io/managed-by: loams
+data:
+  risingwave.toml: |
+    {{- .Values.config | nindent 4 }}

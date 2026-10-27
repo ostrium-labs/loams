@@ -4,7 +4,7 @@ import { validateManifest } from '@loams/console-host';
 import { collection, documents, query } from '@loams/proto';
 import { setCodeEditorText } from '@loams/ui';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import pkg from '../package.json';
 import { createDataClient, toDocumentId } from '../src/client.js';
 import plugin, { DataRoute } from '../src/index.js';

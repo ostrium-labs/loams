@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useState } from 'react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 import { Button, DataTable, Dialog, Menu, MenuItem, Segmented, Tabs, VirtualList } from '../src';
 
 afterEach(cleanup);

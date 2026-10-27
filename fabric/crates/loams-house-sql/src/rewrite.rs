@@ -730,15 +730,15 @@ pub fn matchers(sql: &str) -> Result<String, ChError> {
         }
         // What sqlparser reads itself: `EXCEPT` (not STRICT) then `REPLACE`.
         let plain = columns.is_none()
-            && match chain.as_slice() {
+            && matches!(
+                chain.as_slice(),
                 [Transformer::Except { strict: false, .. }]
-                | [Transformer::Replace(_)]
-                | [
-                    Transformer::Except { strict: false, .. },
-                    Transformer::Replace(_),
-                ] => true,
-                _ => false,
-            };
+                    | [Transformer::Replace(_)]
+                    | [
+                        Transformer::Except { strict: false, .. },
+                        Transformer::Replace(_),
+                    ]
+            );
         if plain {
             continue;
         }

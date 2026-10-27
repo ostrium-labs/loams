@@ -122,7 +122,7 @@ export function ControlPlane({
   }, [client, ns, loadProjects]);
 
   // Only on a namespace (or client) change; loadOperations also changes with the project.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reload per namespace
+  // oxlint-disable-next-line react/exhaustive-deps -- reload per namespace
   useEffect(() => {
     generation.current += 1;
     setProjects(undefined);
@@ -136,7 +136,7 @@ export function ControlPlane({
   }, [ns, client]);
 
   // branchesRev is not read here: a bump is the signal to reload.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reload when an operation finishes
+  // oxlint-disable-next-line react/exhaustive-deps -- reload when an operation finishes
   useEffect(() => {
     void loadBranches();
   }, [loadBranches, branchesRev]);
