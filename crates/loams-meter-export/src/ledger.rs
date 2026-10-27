@@ -87,3 +87,56 @@ impl ExportLedger for MemLedger {
         Ok(())
     }
 }
+
+/// Where an exporter of raw events (OpenMeter) keeps its cursor: the next
+/// stream offset to export, per `_system/_meter` partition. The provider's
+/// own dedup window is configuration (OpenMeter's is off by default), so the
+/// exporter does not rely on it (§63 §16).
+#[async_trait]
+pub trait ExportCursors: Send + Sync + std::fmt::Debug {
+    async fn get(&self, exporter: &str, partition: u32) -> Result<Option<u64>, ExportError>;
+    /// Durable before it returns.
+    async fn put(
+        &self,
+        exporter: &str,
+        partition: u32,
+        next_offset: u64,
+    ) -> Result<(), ExportError>;
+}
+
+/// In-memory cursors.
+#[derive(Debug, Default)]
+pub struct MemCursors {
+    cursors: Mutex<BTreeMap<(String, u32), u64>>,
+}
+
+impl MemCursors {
+    pub fn new() -> MemCursors {
+        MemCursors::default()
+    }
+}
+
+#[async_trait]
+impl ExportCursors for MemCursors {
+    async fn get(&self, exporter: &str, partition: u32) -> Result<Option<u64>, ExportError> {
+        Ok(self
+            .cursors
+            .lock()
+            .await
+            .get(&(exporter.to_owned(), partition))
+            .copied())
+    }
+
+    async fn put(
+        &self,
+        exporter: &str,
+        partition: u32,
+        next_offset: u64,
+    ) -> Result<(), ExportError> {
+        self.cursors
+            .lock()
+            .await
+            .insert((exporter.to_owned(), partition), next_offset);
+        Ok(())
+    }
+}
