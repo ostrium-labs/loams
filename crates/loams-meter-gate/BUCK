@@ -22,6 +22,13 @@ cargo_package(
         "proc_macro": False,
         "test": True,
     },
+    benches = [
+        {
+            "name": "gate_check_p99_under_5us",
+            "crate": "gate_check_p99_under_5us",
+            "root": "benches/gate_check_p99_under_5us.rs",
+        },
+    ],
     deps = [
         "//third-party/rust:serde_json",
     ],
