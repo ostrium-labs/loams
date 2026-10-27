@@ -41,6 +41,11 @@ pub const IMPLEMENTED: &[&str] = &[
     "GetClusterInfo",
     "ListTaskQueuePartitions",
     "ShutdownWorker",
+    "UpdateNamespace",
+    "DeprecateNamespace",
+    "GetWorkerBuildIdCompatibility",
+    "GetWorkerVersioningRules",
+    "GetWorkerTaskReachability",
 ];
 
 /// Where the per-method, per-SDK compatibility matrix lives (D1512).

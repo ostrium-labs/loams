@@ -47,6 +47,11 @@ const TMP_API: &[&str] = &[
     "GetClusterInfo",
     "ListTaskQueuePartitions",
     "ShutdownWorker",
+    "UpdateNamespace",
+    "DeprecateNamespace",
+    "GetWorkerBuildIdCompatibility",
+    "GetWorkerVersioningRules",
+    "GetWorkerTaskReachability",
 ];
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

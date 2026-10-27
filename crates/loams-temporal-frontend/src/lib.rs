@@ -26,6 +26,7 @@ pub mod errors;
 pub mod fastpath;
 pub mod followups;
 pub mod lifecycle;
+pub mod namespaces;
 pub mod outbox;
 pub mod queries;
 pub mod server;

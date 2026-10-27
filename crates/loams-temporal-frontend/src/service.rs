@@ -177,6 +177,14 @@ impl Frontend {
         }
     }
 
+    /// Drops a namespace from the ID cache (it was updated).
+    pub(crate) fn forget_namespace(&self, id: &str) {
+        self.namespaces
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(id);
+    }
+
     pub(crate) fn principal<T>(&self, req: &Request<T>) -> Result<Principal, Status> {
         self.auth.authenticate(req.metadata())
     }
@@ -624,12 +632,25 @@ impl Frontend {
         Ok(t.reply)
     }
 
-    fn describe_namespace_response(ns: &NamespaceRecord) -> DescribeNamespaceResponse {
+    pub(crate) fn describe_namespace_response(ns: &NamespaceRecord) -> DescribeNamespaceResponse {
         DescribeNamespaceResponse {
             namespace_info: Some(NamespaceInfo {
                 name: ns.name.clone(),
-                state: NamespaceState::Registered as i32,
+                state: if ns.state == 0 {
+                    NamespaceState::Registered as i32
+                } else {
+                    ns.state
+                },
                 description: ns.config["description"].as_str().unwrap_or("").to_string(),
+                owner_email: ns.config["owner_email"].as_str().unwrap_or("").to_string(),
+                data: ns.config["data"]
+                    .as_object()
+                    .map(|m| {
+                        m.iter()
+                            .filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_string())))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
                 id: ns.namespace_id.clone(),
                 ..Default::default()
             }),
@@ -1635,6 +1656,57 @@ impl WorkflowService for WorkflowServiceImpl {
         self.0.principal(&req)?;
         // No sticky queues (Q1156): nothing to hand back.
         Ok(Response::new(ShutdownWorkerResponse::default()))
+    }
+
+    async fn update_namespace(
+        &self,
+        req: Request<UpdateNamespaceRequest>,
+    ) -> Result<Response<UpdateNamespaceResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        let r = req.into_inner();
+        self.0.update_namespace(&p, r).await.map(Response::new)
+    }
+
+    async fn deprecate_namespace(
+        &self,
+        req: Request<DeprecateNamespaceRequest>,
+    ) -> Result<Response<DeprecateNamespaceResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        let r = req.into_inner();
+        self.0.deprecate_namespace(&p, r).await.map(Response::new)
+    }
+
+    async fn get_worker_build_id_compatibility(
+        &self,
+        req: Request<GetWorkerBuildIdCompatibilityRequest>,
+    ) -> Result<Response<GetWorkerBuildIdCompatibilityResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        let r = req.into_inner();
+        self.0.namespace(&p, &r.namespace).await?;
+        // No version sets: the gateway routes by task queue only (D2088).
+        Ok(Response::new(
+            GetWorkerBuildIdCompatibilityResponse::default(),
+        ))
+    }
+
+    async fn get_worker_versioning_rules(
+        &self,
+        req: Request<GetWorkerVersioningRulesRequest>,
+    ) -> Result<Response<GetWorkerVersioningRulesResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        let r = req.into_inner();
+        self.0.namespace(&p, &r.namespace).await?;
+        Ok(Response::new(GetWorkerVersioningRulesResponse::default()))
+    }
+
+    async fn get_worker_task_reachability(
+        &self,
+        req: Request<GetWorkerTaskReachabilityRequest>,
+    ) -> Result<Response<GetWorkerTaskReachabilityResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        let r = req.into_inner();
+        self.0.namespace(&p, &r.namespace).await?;
+        Ok(Response::new(crate::namespaces::reachability(&r)))
     }
 
     async fn reset_sticky_task_queue(

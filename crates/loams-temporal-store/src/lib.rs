@@ -227,6 +227,17 @@ pub trait Store: Send + Sync + 'static {
         &self,
         namespace_id: &str,
     ) -> Result<Option<NamespaceRecord>, StoreError>;
+    /// Replaces a namespace's mutable fields (retention, state, config) by
+    /// ID; its name and Loams namespace never change. [`StoreError::NotFound`]
+    /// if there is no such namespace. Stores that cannot do it yet answer
+    /// [`StoreError::Unavailable`] (TMP-api D2088; the Postgres store's is
+    /// lane TMP-store's).
+    async fn update_namespace(&self, ns: NamespaceRecord) -> Result<(), StoreError> {
+        let _ = ns;
+        Err(StoreError::Unavailable(
+            "this store cannot update namespaces yet".into(),
+        ))
+    }
     /// Ordered by name.
     async fn list_namespaces(
         &self,
