@@ -13,6 +13,7 @@
 //! 5. `SqlToRel` plans over the House's catalog, functions and ClickHouse
 //!    types ([`context`]).
 
+pub mod coerce;
 pub mod context;
 pub mod functions;
 pub mod guard;

@@ -9424,6 +9424,7 @@ dependencies = [
  "rquickjs",
  "rustix 1.1.5",
  "seccompiler",
+ "serde_json",
  "sha2 0.11.0",
  "tokio",
  "tracing",

@@ -1,0 +1,1 @@
+SELECT d32 + 1 FROM t24t ORDER BY id
