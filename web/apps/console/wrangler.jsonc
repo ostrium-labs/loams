@@ -19,7 +19,7 @@
     // Exact paths: the sandbox frame keeps its own headers, no canonical redirects.
     "html_handling": "none",
     // Unknown paths get /index.html, the console (it routes by hash).
-    "not_found_handling": "single-page-application",
+    "not_found_handling": "single-page-application"
   },
   "workers_dev": true,
   "observability": { "enabled": true },
@@ -27,7 +27,7 @@
     "byoc": {
       "name": "loams-console",
       "routes": [],
-      "workers_dev": true,
-    },
-  },
+      "workers_dev": true
+    }
+  }
 }
