@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Work task by task, test first. Where this plan gives exact names, paths, branches or tests, use them verbatim. Record any deviation in "Rulings made during execution" at the end of this file.
 >
-> **Status: specified 2026-10-27; code in progress.** Track SP, design [§81](../design/81-managed-stream-batch-engines.md) (D1900–D1931, Q1400–Q1411, **Proposed**). The lanes SP-a (the Connect proxy, backends, lifecycle, deploy) and SP-b (jobs, catalog, Python helpers, CLI) started on 2026-10-27, at the same time as the design. Their assumptions (D1990–D2009) and ENG81's rulings (R15, R16, R27–R30) are in `loams-wt/.he0-shared/engines-81.md`. No local builds that wave: CI is the check. Nothing here has run end to end.
+> **Status: specified 2026-10-27; code in progress.** Track SP, design [§81](../design/81-managed-stream-batch-engines.md) (D1900–D1931 and the lanes' D1950–D2019 **approved by the owner on 2026-10-27** with all defaults; Q1400–Q1411 answered). The lanes SP-a (the Connect proxy, backends, lifecycle, deploy) and SP-b (jobs, catalog, Python helpers, CLI) started on 2026-10-27, at the same time as the design. Their assumptions (D1990–D2009) and ENG81's rulings (R15, R16, R27–R30) are in `loams-wt/.he0-shared/engines-81.md`. No local builds that wave: CI is the check. Nothing here has run end to end.
 
 **Goal:**
 - Each namespace can run Spark instances, reached with `pyspark` (`SparkSession.builder.remote("sc://…")`) through `loams-gateway`'s `spark` module (D1263) with a Loams key.
@@ -53,7 +53,7 @@
   - where Sail writes shuffle and checkpoints.
 - **PySpark 4.1.3:** how the `sc://…/;token=` parameter and a `ChannelBuilder` subclass send `authorization: Bearer` (§26 §9.2 asked to verify per version).
 - **Iceberg v3:** whether Sail 0.7.2 and Iceberg 1.12.0 on Spark 4.1.3 read the House's v3 tables, deletion vectors included.
-- **Is Q1401 answered?** The Apache Spark backend in SP1 (default yes, opt-in).
+- **Q1401 is answered** (the owner's approval of 2026-10-27, the default): the Apache Spark backend is in SP1, opt-in (`spark-jvm`).
 
 Files: this plan. Tests: none. Gate: rulings recorded.
 
@@ -181,7 +181,7 @@ Files: `docs/guides/spark.md`, the exit report in rulings. Tests: `docs_engines_
 
 ## Owner actions
 
-- Q1401 (the Apache Spark backend in SP1) gates Task 3's `ApacheSpark` half. Q1410 (History Server) is SP2.
+- None open. The owner approved design 81 with all defaults on 2026-10-27: Q1401 puts the Apache Spark backend in SP1, opt-in; Q1410 puts the History Server in SP2.
 
 ## Rulings made during execution
 

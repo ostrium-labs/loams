@@ -468,7 +468,7 @@ Design reference: [80 Confluent Cloud with Loams BYOC](../design/80-confluent-by
 
 ## Track RW, FK, SP: managed stream and batch engines
 
-Design reference: [81 Managed Stream and Batch Engines](../design/81-managed-stream-batch-engines.md) (D1900–D1931, Q1400–Q1411, and the code lanes' D1950–D2019; **Proposed** 2026-10-27). The owner asked on 2026-10-27 to start managed RisingWave, Flink SQL and Spark; seven code lanes write the code in parallel. The Flink track id is FK because FL1 and FL2 are the Fabric plans.
+Design reference: [81 Managed Stream and Batch Engines](../design/81-managed-stream-batch-engines.md) (D1900–D1931, Q1400–Q1411, and the code lanes' D1950–D2019; **approved by the owner 2026-10-27, all defaults**). The owner asked on 2026-10-27 to start managed RisingWave, Flink SQL and Spark; seven code lanes write the code in parallel. The Flink track id is FK because FL1 and FL2 are the Fabric plans.
 
 | Plan | Scope | Depends on | Status |
 |---|---|---|---|

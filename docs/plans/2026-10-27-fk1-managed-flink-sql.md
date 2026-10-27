@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Work task by task, test first. Where this plan gives exact names, paths, branches or tests, use them verbatim. Record any deviation in "Rulings made during execution" at the end of this file.
 >
-> **Status: specified 2026-10-27; code in progress.** Track FK, design [§81](../design/81-managed-stream-batch-engines.md) (D1900–D1931, Q1400–Q1411, **Proposed**). The track id is **FK**, not FL: FL1 and FL2 are the Fabric plans. The lanes are still called FL-a (core, controller, gateway, deploy) and FL-b (catalogs, connectors, API, image, CLI). They started on 2026-10-27, at the same time as the design. Their assumptions (D1970–D1989) and ENG81's rulings (R13, R14, R21–R26) are in `loams-wt/.he0-shared/engines-81.md`. No local builds that wave: CI is the check. Nothing here has run end to end.
+> **Status: specified 2026-10-27; code in progress.** Track FK, design [§81](../design/81-managed-stream-batch-engines.md) (D1900–D1931 and the lanes' D1950–D2019 **approved by the owner on 2026-10-27** with all defaults; Q1400–Q1411 answered). The track id is **FK**, not FL: FL1 and FL2 are the Fabric plans. The lanes are still called FL-a (core, controller, gateway, deploy) and FL-b (catalogs, connectors, API, image, CLI). They started on 2026-10-27, at the same time as the design. Their assumptions (D1970–D1989) and ENG81's rulings (R13, R14, R21–R26) are in `loams-wt/.he0-shared/engines-81.md`. No local builds that wave: CI is the check. Nothing here has run end to end.
 
 **Goal:**
 - Each namespace can run Apache Flink SQL instances: one session cluster and one Flink SQL Gateway per instance.
@@ -200,7 +200,7 @@ Files: `docs/guides/flink-sql.md`, the exit report in rulings. Tests: `docs_engi
 
 ## Owner actions
 
-- Q1400 (managed Flink SQL, amending D212) is answered: yes, by the owner's request of 2026-10-27. Q1405 and Q1409 stay open with engineering defaults.
+- Q1400 (managed Flink SQL, amending D212) is answered: yes, by the owner's request of 2026-10-27. Q1405 (patch upgrades only in FK1; compiled plans in FK2) and Q1409 (FLIP-480 evaluated in FK2) are answered with their defaults by the owner's approval of 2026-10-27.
 
 ## Rulings made during execution
 

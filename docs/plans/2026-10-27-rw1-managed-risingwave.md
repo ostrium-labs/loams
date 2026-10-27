@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Work task by task, test first. Where this plan gives exact names, paths, branches or tests, use them verbatim. Record any deviation in "Rulings made during execution" at the end of this file.
 >
-> **Status: specified 2026-10-27; code in progress.** Track RW, design [§81](../design/81-managed-stream-batch-engines.md) (D1900–D1931, Q1400–Q1411, **Proposed**). The lanes ENG-UI (foundation), RW-a (controller, deploy) and RW-b (connectors, SQL API, CLI) started on 2026-10-27, at the same time as the design. Their assumptions and ENG81's rulings R0–R30 are in `loams-wt/.he0-shared/engines-81.md`, and this plan follows those rulings. The owner rule for that wave is **no local builds**: CI is the compile and test check. Nothing here has run end to end.
+> **Status: specified 2026-10-27; code in progress.** Track RW, design [§81](../design/81-managed-stream-batch-engines.md) (D1900–D1931 and the lanes' D1950–D2019 **approved by the owner on 2026-10-27** with all defaults; Q1400–Q1411 answered). The lanes ENG-UI (foundation), RW-a (controller, deploy) and RW-b (connectors, SQL API, CLI) started on 2026-10-27, at the same time as the design. Their assumptions and ENG81's rulings R0–R30 are in `loams-wt/.he0-shared/engines-81.md`, and this plan follows those rulings. The owner rule for that wave is **no local builds**: CI is the compile and test check. Nothing here has run end to end.
 
 **Goal:**
 - **The shared foundation**, used by RW1, [FK1](2026-10-27-fk1-managed-flink-sql.md) and [SP1](2026-10-27-sp1-managed-spark.md):
@@ -239,7 +239,7 @@ Files: `docs/guides/risingwave.md`, `docs/guides/engines.md` (shared: what an in
 
 ## Owner actions
 
-- Q1400–Q1408 in [§81](../design/81-managed-stream-batch-engines.md) §20. Q1403 (prices) and Q1408 (Loams Cloud) block nothing in RW1.
+- None open. The owner approved design 81 with all defaults on 2026-10-27, so Q1400–Q1411 in [§81](../design/81-managed-stream-batch-engines.md) §20 are answered: among them no prices in preview (Q1403), no Loams Cloud hosting in this phase (Q1408), 7-day retention after a non-purge delete (Q1404), a manual rollback runbook in RW1 (Q1406) and Lakekeeper v0.14.x in Task 1 once its digest and round trip are recorded (Q1411).
 
 ## Rulings made during execution
 
