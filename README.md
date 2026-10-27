@@ -84,7 +84,7 @@ Examples for the native API, Qdrant clients, Flight SQL and reading the bucket d
 
 ## Repository
 
-The engine crates, the web console, Loams Desktop, the mobile apps, SDKs, protos, connectors and deploy files all live here; see the [project layout](docs/project-layout.md) and the [monorepo guide](docs/monorepo.md). Design documents are in [`docs/design`](docs/design/README.md) and task-by-task plans in [`docs/plans`](docs/plans/README.md). The metering agent and the hosted-cloud platform docs (metering, billing, identity and tailnet deploys), merged from the former private platform repository, are in [`platform/`](platform/README.md) and [`docs/platform`](docs/platform/README.md).
+The engine crates, the web console, Loams Desktop, the mobile apps, SDKs, protos, connectors and deploy files all live here; see the [project layout](docs/project-layout.md) and the [monorepo guide](docs/monorepo.md). Design documents are in [`docs/design`](docs/design/README.md) and task-by-task plans in [`docs/plans`](docs/plans/README.md). The metering agent and the hosted-cloud platform docs (metering, billing, identity and tailnet deploys), merged from the former private platform repository, are in [`crates/loams-meter-agent`](crates/loams-meter-agent) and [`docs/platform`](docs/platform/README.md).
 
 ## Contributing and community
 

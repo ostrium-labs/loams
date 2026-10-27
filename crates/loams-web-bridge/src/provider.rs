@@ -1,11 +1,10 @@
-//! The provider abstraction: one tool contract, two implementations.
+//! The provider abstraction: one tool contract, every provider behind it.
 //!
-//! D565's choice is a configuration switch, not a fork: credentialed work goes
-//! through the client's own browser ([`crate::local::LocalProvider`]), and
-//! unattended public-web work goes to Cloudflare Browser Run
-//! ([`crate::browser_run::BrowserRunProvider`]). Both answer the same trait, so
-//! a caller (the bridge's MCP server, the Factory's agents) does not know which
-//! one it is holding.
+//! D565's choice is a configuration switch, not a fork. Every provider answers
+//! the same trait, so a caller (agentd's browser tools, the Factory's agents)
+//! does not know which one it is holding. Cloudflare Browser Run was one of
+//! them until 2026-10-27; it was removed in favour of Obscura everywhere
+//! (D2110).
 
 use std::fmt;
 
@@ -87,14 +86,12 @@ impl OpenRequest {
 pub struct Capabilities {
     /// Snapshots, find, click, fill, wait, screenshot, extraction.
     pub core: bool,
-    /// Screenshots (Kitesurf renders, but not pixel-perfectly).
+    /// Screenshots.
     pub screenshots: bool,
-    /// Content extraction, the operation Kitesurf is cheapest for.
+    /// Content extraction.
     pub extraction: bool,
     /// A session that can be signed in and keep that state.
     pub authenticated_sessions: bool,
-    /// Server-side hostname enforcement for the whole session.
-    pub guardrails: bool,
     /// Tabs beyond the first.
     pub tabs: bool,
     /// The caller's own machine holds the credentials.

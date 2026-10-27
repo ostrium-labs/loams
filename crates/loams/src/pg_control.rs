@@ -35,7 +35,9 @@
 //! **Who may call** (`--pg-authz`): `dev` (the default) answers every call
 //! as one principal and refuses to start unless `--listen` is loopback;
 //! `api-key` checks `authorization: Bearer lk_…` against `--pg-api-keys`,
-//! whose grants it authorizes with; `openfga` waits for MT1.
+//! whose grants it authorizes with; `openfga` authenticates the same keys
+//! and asks model v1 through `loams-authz` (OpenFGA, `LOAMS_AUTHZ_OPENFGA_*`),
+//! ignoring the keys' grants.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -48,7 +50,7 @@ use axum::Router as AxumRouter;
 use loams_pg_control::audit::{AuditSink, LogAuditSink};
 use loams_pg_control::authz::{
     ApiKeyAuthenticator, Authenticator, Authorizer, DevAuthorizer, DevLoopbackAuthenticator,
-    GrantsAuthorizer, KeysFile,
+    GrantsAuthorizer, KeysFile, ModelAuthorizer,
 };
 use loams_pg_control::neon::NeonClients;
 use loams_pg_control::reconcile::endpoint::{Computes, HttpComputeCtl};
@@ -199,8 +201,48 @@ pub enum PgAuth {
     Dev,
     /// API keys and their grants, from this keys file (`--pg-api-keys`).
     ApiKeys(PathBuf),
-    /// OpenFGA, when MT1 lands; refused until then.
-    OpenFga,
+    /// API keys from this keys file for who calls, and OpenFGA (model v1, through
+    /// `loams-authz`) for what they may do; the keys' grants are not read.
+    OpenFga { keys: PathBuf, fga: FgaSettings },
+}
+
+/// Where OpenFGA is (`LOAMS_AUTHZ_OPENFGA_{GRPC,STORE,MODEL,KEY}`).
+#[derive(Clone, PartialEq, Eq)]
+pub struct FgaSettings {
+    pub grpc: String,
+    pub store: String,
+    pub model: String,
+    pub key: Option<String>,
+}
+
+impl fmt::Debug for FgaSettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FgaSettings")
+            .field("grpc", &self.grpc)
+            .field("store", &self.store)
+            .field("model", &self.model)
+            .field("key", &self.key.as_ref().map(|_| "[redacted]"))
+            .finish()
+    }
+}
+
+impl FgaSettings {
+    /// From `LOAMS_AUTHZ_OPENFGA_*` through `var`; an error names the missing variable.
+    pub fn from_vars(var: impl Fn(&str) -> Option<String>) -> Result<Self, String> {
+        let get = |name: &str| {
+            var(name)
+                .map(|v| v.trim().to_owned())
+                .filter(|v| !v.is_empty())
+        };
+        let required =
+            |name: &str| get(name).ok_or_else(|| format!("--pg-authz openfga needs {name}"));
+        Ok(Self {
+            grpc: required("LOAMS_AUTHZ_OPENFGA_GRPC")?,
+            store: required("LOAMS_AUTHZ_OPENFGA_STORE")?,
+            model: required("LOAMS_AUTHZ_OPENFGA_MODEL")?,
+            key: get("LOAMS_AUTHZ_OPENFGA_KEY"),
+        })
+    }
 }
 
 /// How `pg-control` runs.
@@ -349,7 +391,7 @@ impl fmt::Debug for PgControl {
 type Gatekeepers = (Arc<dyn Authenticator>, Arc<dyn Authorizer>);
 
 /// The authenticator and authorizer of `auth`, for a listener on `listen`.
-fn gatekeepers(auth: &PgAuth, listen: SocketAddr) -> Result<Gatekeepers, PgControlError> {
+async fn gatekeepers(auth: &PgAuth, listen: SocketAddr) -> Result<Gatekeepers, PgControlError> {
     match auth {
         PgAuth::Dev => Ok((
             Arc::new(DevLoopbackAuthenticator::new(listen).map_err(PgControlError::Config)?),
@@ -362,11 +404,30 @@ fn gatekeepers(auth: &PgAuth, listen: SocketAddr) -> Result<Gatekeepers, PgContr
                 Arc::new(GrantsAuthorizer::new(&keys)?),
             ))
         }
-        PgAuth::OpenFga => Err(PgControlError::Config(
-            "--pg-authz openfga needs MT1's OpenFGA model, which has not landed; \
-             use --pg-authz api-key (or dev on loopback)"
-                .into(),
-        )),
+        PgAuth::OpenFga { keys, fga } => {
+            let keys = KeysFile::read(keys)?;
+            if keys.keys.iter().any(|k| !k.grants.is_empty()) {
+                tracing::warn!(
+                    "--pg-authz openfga: the grants in --pg-api-keys are not read; OpenFGA's \
+                     tuples decide what each key may do"
+                );
+            }
+            let openfga = loams_authz::OpenFgaAuthorizer::connect(
+                &fga.grpc,
+                &fga.store,
+                &fga.model,
+                fga.key.as_deref(),
+            )
+            .await
+            .map_err(|e| PgControlError::Config(format!("LOAMS_AUTHZ_OPENFGA_GRPC: {e}")))?;
+            // One decision cache, allows only, at most 5 s (D1625).
+            let cached =
+                loams_authz::CachedAuthorizer::new(openfga, loams_authz::MAX_CACHE_TTL, 100_000);
+            Ok((
+                Arc::new(ApiKeyAuthenticator::new(&keys)),
+                Arc::new(ModelAuthorizer::new(Arc::new(cached))),
+            ))
+        }
     }
 }
 
@@ -592,7 +653,7 @@ impl PgControl {
     ///
     /// [`PgControlError`]; nothing is left running.
     pub async fn start(config: PgControlConfig) -> Result<Self, PgControlError> {
-        let (authenticator, authorizer) = gatekeepers(&config.auth, config.listen)?;
+        let (authenticator, authorizer) = gatekeepers(&config.auth, config.listen).await?;
         std::fs::create_dir_all(&config.data_dir).map_err(|e| {
             PgControlError::Config(format!("--data-dir {}: {e}", config.data_dir.display()))
         })?;

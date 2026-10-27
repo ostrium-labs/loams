@@ -43,7 +43,7 @@ cargo_package(
         "//third-party/rust:anyhow",
         "//third-party/rust:arrow-flight",
         "//third-party/rust:async-trait",
-        "//third-party/rust:base64",
+        "//third-party/rust:base64-0_23",
         "//third-party/rust:bytes",
         "//third-party/rust:crc32c",
         "//third-party/rust:datafusion",

@@ -2692,6 +2692,34 @@ impl Server {
                 .map_err(ServerError::Config)?;
             principals.with_authz(authz)
         };
+        // The identity sync (design 76 §8.1, plan IA1 IA3): off unless LOAMS_IDENTITY_SYNC=on,
+        // with LOAMS_AUTHZ=openfga. Its state is a document of its own in the metastore.
+        if config.cluster.is_none()
+            && let Some(sync) = crate::auth::identity_sync::SyncSettings::from_vars(
+                |k| std::env::var(k).ok(),
+                &config.auth.authz,
+                config
+                    .auth
+                    .oidc
+                    .as_ref()
+                    .and_then(|o| o.issuers.first())
+                    .map(|i| i.issuer.as_str()),
+            )
+            .map_err(ServerError::Config)?
+        {
+            let state = Arc::new(crate::auth::identity_sync::MetaSyncState::new(
+                meta_store.clone(),
+                store.clone(),
+            ));
+            crate::auth::identity_sync::start(
+                &sync,
+                &config.auth.authz,
+                principals.directory.clone(),
+                state,
+            )
+            .await
+            .map_err(ServerError::Config)?;
+        }
         // LV1 plan Task 17: a revoked key or a removed member closes its
         // Live sessions.
         #[cfg(feature = "live")]
