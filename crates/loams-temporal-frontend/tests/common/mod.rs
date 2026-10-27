@@ -47,6 +47,7 @@ pub async fn start() -> TestGateway {
                 history_wait: Duration::from_secs(5),
                 ..Default::default()
             },
+            ext: Default::default(),
         },
         rx,
     )

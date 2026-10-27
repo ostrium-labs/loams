@@ -25,6 +25,7 @@ pub mod errors;
 pub mod fastpath;
 pub mod outbox;
 pub mod queries;
+pub mod schedules;
 pub mod server;
 pub mod service;
 pub mod standalone;
@@ -32,6 +33,6 @@ pub mod token;
 
 pub use auth::{Authenticator, DevAllowAll, Principal, StaticKeys};
 pub use engine::Engine;
-pub use server::{Gateway, ImplementedOnly, Parts};
+pub use server::{Gateway, ImplementedOnly, Parts, PartsExt};
 pub use service::{Frontend, FrontendConfig, WorkflowServiceImpl};
 pub use token::TokenKeys;

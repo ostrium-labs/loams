@@ -7,6 +7,7 @@
 //! tmr    = <origin>:tmr.<started_event_id>
 //! to     = <origin>:to.<event_id>.<kind>.<attempt>      kind ∈ s2s | s2c | sc2c | hb | wft
 //! start  = <ns>.<schedule_id>.<nominal_time_unix_ms>    no ':'
+//! sch    = <ns>.<schedule_id>.<generation>:sch.<wake_unix_ms>
 //! ```
 //!
 //! Resonate calls the text before an ID's first `:` its **origin**: on the
@@ -17,6 +18,14 @@
 //! run. Every run-scoped ID has exactly one `:` (the Postgres store refuses
 //! more), and `start` has none: it is the ID Resonate's schedule template
 //! `<ns>.<schedule_id>.{{.timestamp}}` makes (FW7 profile §8.0).
+//!
+//! A `sch` ID is one wake-up of a Temporal schedule (D2070): a Resonate timer
+//! the gateway arms for the schedule's next action time. Its origin is the
+//! schedule's generation (`<ns>.<schedule_id>.<generation>`, a new
+//! generation per create), so every timer of one schedule shares one
+//! document and a deleted and re-created schedule never sees the old one's
+//! timers. The schedule ID is encoded as a segment but never hashed (a
+//! schedule ID past the limit is refused by [`PromiseId::encode_checked`]).
 //!
 //! - `<ns>` is `<loams-ns-id>.<temporal-ns-id>` (X1.R9), first, so a token
 //!   prefix can scope a tenant. `<wf>`, `<run>` and `<schedule_id>` are
@@ -58,7 +67,7 @@ pub const MAX_PROMISE_ID_LEN: usize = 255;
 pub const TAG_NS: &str = "loams:ns";
 /// Tag: the run ID (raw).
 pub const TAG_RUN: &str = "loams:run";
-/// Tag: `wft`, `act`, `tmr`, `to` or `start`.
+/// Tag: `wft`, `act`, `tmr`, `to`, `start` or `sch`.
 pub const TAG_KIND: &str = "loams:kind";
 /// Tag: the raw workflow ID, only when the ID carries its hash.
 pub const TAG_WF: &str = "loams:wf";
@@ -208,6 +217,14 @@ pub enum PromiseId {
         schedule_id: String,
         nominal_time_unix_ms: i64,
     },
+    /// One wake-up of a Temporal schedule (D2070): a timer at `wake_unix_ms`
+    /// for the schedule's `generation`.
+    Sch {
+        ns: String,
+        schedule_id: String,
+        generation: String,
+        wake_unix_ms: i64,
+    },
 }
 
 /// Why a string is not a gateway promise ID.
@@ -330,6 +347,7 @@ impl PromiseId {
             PromiseId::Tmr { .. } => "tmr",
             PromiseId::To { .. } => "to",
             PromiseId::Start { .. } => "start",
+            PromiseId::Sch { .. } => "sch",
         }
     }
 
@@ -340,29 +358,40 @@ impl PromiseId {
             | PromiseId::Act { ns, .. }
             | PromiseId::Tmr { ns, .. }
             | PromiseId::To { ns, .. }
-            | PromiseId::Start { ns, .. } => ns,
+            | PromiseId::Start { ns, .. }
+            | PromiseId::Sch { ns, .. } => ns,
         }
     }
 
-    /// The run ID, for every kind but `start`.
+    /// The run ID, for every kind but `start` and `sch`.
     pub fn run(&self) -> Option<&str> {
         match self {
             PromiseId::Wft { run, .. }
             | PromiseId::Act { run, .. }
             | PromiseId::Tmr { run, .. }
             | PromiseId::To { run, .. } => Some(run),
-            PromiseId::Start { .. } => None,
+            PromiseId::Start { .. } | PromiseId::Sch { .. } => None,
         }
     }
 
-    /// The workflow segment, for every kind but `start`.
+    /// The workflow segment, for every kind but `start` and `sch`.
     pub fn wf(&self) -> Option<&WorkflowRef> {
         match self {
             PromiseId::Wft { wf, .. }
             | PromiseId::Act { wf, .. }
             | PromiseId::Tmr { wf, .. }
             | PromiseId::To { wf, .. } => Some(wf),
-            PromiseId::Start { .. } => None,
+            PromiseId::Start { .. } | PromiseId::Sch { .. } => None,
+        }
+    }
+
+    /// The schedule ID, for `start` and `sch`.
+    pub fn schedule_id(&self) -> Option<&str> {
+        match self {
+            PromiseId::Start { schedule_id, .. } | PromiseId::Sch { schedule_id, .. } => {
+                Some(schedule_id)
+            }
+            _ => None,
         }
     }
 
@@ -402,6 +431,17 @@ impl PromiseId {
                 schedule_id,
                 nominal_time_unix_ms,
             } => format!("{}.{}.{nominal_time_unix_ms}", enc_ns(ns), enc(schedule_id)),
+            PromiseId::Sch {
+                ns,
+                schedule_id,
+                generation,
+                wake_unix_ms,
+            } => format!(
+                "{}.{}.{}:sch.{wake_unix_ms}",
+                enc_ns(ns),
+                enc(schedule_id),
+                enc(generation)
+            ),
         }
     }
 
@@ -466,6 +506,25 @@ impl PromiseId {
         };
         if lineage.contains(':') {
             return Err(IdError::Colons(id.to_string()));
+        }
+        if let Some(rest) = lineage.strip_prefix("sch.") {
+            // The origin is the schedule's generation; its middle segment is
+            // a schedule ID, which is never hashed.
+            let (ns, schedule, generation) = split3(id, origin)?;
+            if rest.contains('.') {
+                return Err(IdError::Parts {
+                    id: id.to_string(),
+                    kind: "sch".into(),
+                    expected: 1,
+                    found: rest.split('.').count(),
+                });
+            }
+            return Ok(PromiseId::Sch {
+                ns: dec_with(id, &ns, enc_ns)?,
+                schedule_id: dec_with(id, &schedule, enc)?,
+                generation: dec_with(id, &generation, enc)?,
+                wake_unix_ms: num(id, rest)?,
+            });
         }
         let (ns, wf, run) = split3(id, origin)?;
         let ns = dec_with(id, &ns, enc_ns)?;
@@ -550,6 +609,27 @@ pub fn namespace(loams_ns_id: &str, temporal_ns_id: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sch_ids_roundtrip_and_never_hash() {
+        let raw = format!("h{}", "0".repeat(32));
+        let id = PromiseId::Sch {
+            ns: "l.n".into(),
+            schedule_id: raw.clone(),
+            generation: "g1".into(),
+            wake_unix_ms: 1_792_800_000_000,
+        };
+        let (s, tags) = id.encode();
+        assert_eq!(s, format!("l.n.{raw}.g1:sch.1792800000000"));
+        assert_eq!(PromiseId::parse(&s).unwrap(), id);
+        assert_eq!(tags.get(TAG_KIND).map(String::as_str), Some("sch"));
+        assert!(!tags.contains_key(TAG_RUN));
+        assert_eq!(id.origin(), format!("l.n.{raw}.g1"));
+        assert_eq!(id.schedule_id(), Some(raw.as_str()));
+        assert!(PromiseId::parse("l.n.s.g:sch.1.2").is_err());
+        assert!(PromiseId::parse("l.n.s.g:sch.01").is_err());
+        assert!(PromiseId::parse("s.g:sch.1").is_err());
+    }
 
     #[test]
     fn hash_form_escape_keeps_raw_and_hash_apart() {

@@ -7320,6 +7320,7 @@ dependencies = [
  "bytes",
  "bytesize",
  "chrono",
+ "chrono-tz 0.10.4",
  "clap",
  "connectrpc",
  "connectrpc-build",

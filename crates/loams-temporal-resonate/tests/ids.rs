@@ -50,6 +50,14 @@ fn arb_id() -> impl Strategy<Value = PromiseId> {
             schedule_id,
             nominal_time_unix_ms: t
         }),
+        (s(), s(), s(), any::<i64>()).prop_map(|(ns, schedule_id, generation, t)| {
+            PromiseId::Sch {
+                ns,
+                schedule_id,
+                generation,
+                wake_unix_ms: t,
+            }
+        }),
         // Separators everywhere, near and past the limit.
         ("[a-z.:%/]{0,20}", "[a-z.:%/]{200,400}", "[a-z.:]{0,10}").prop_map(|(ns, wf, run)| {
             PromiseId::Wft {
@@ -287,6 +295,15 @@ fn ids_vectors() {
                 nominal_time_unix_ms: 1_792_800_000_000,
             },
             "01JC0FFEE0000000000000000.4f1c9a52-6d1e-4c7b-9a0e-2b3c4d5e6f70.nightly%2Freport.1792800000000",
+        ),
+        (
+            PromiseId::Sch {
+                ns: NS.into(),
+                schedule_id: "nightly/report".into(),
+                generation: "7c9e6679742540de944be07fc1f90ae7".into(),
+                wake_unix_ms: 1_792_800_000_000,
+            },
+            "01JC0FFEE0000000000000000.4f1c9a52-6d1e-4c7b-9a0e-2b3c4d5e6f70.nightly%2Freport.7c9e6679742540de944be07fc1f90ae7:sch.1792800000000",
         ),
     ];
     for (id, want) in vectors {

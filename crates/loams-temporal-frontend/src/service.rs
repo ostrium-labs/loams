@@ -27,6 +27,7 @@ use loams_temporal_proto::temporal::api::workflowservice::v1::workflow_service_s
 use loams_temporal_proto::temporal::api::workflowservice::v1::*;
 use loams_temporal_resonate::ids::{PromiseId, WorkflowRef};
 use loams_temporal_resonate::{Durability, SettleAs};
+use loams_temporal_schedule::{MemScheduleStore, ScheduleStore};
 use loams_temporal_statemachine::{Input, Reply};
 use loams_temporal_store::{NamespaceRecord, RunKey, Store, StoreError};
 use tonic::{Request, Response, Status};
@@ -75,6 +76,10 @@ pub struct Frontend {
     pub(crate) queries: Queries,
     pub(crate) config: FrontendConfig,
     namespaces: Mutex<HashMap<String, NamespaceRecord>>,
+    /// Temporal Schedules (D2072).
+    pub(crate) schedules: Arc<dyn ScheduleStore>,
+    /// Runs a schedule started, by run, so a close runs its pass at once.
+    pub(crate) scheduled_runs: Mutex<HashMap<RunKey, String>>,
 }
 
 impl std::fmt::Debug for Frontend {
@@ -152,19 +157,31 @@ impl Frontend {
             queries: Queries::default(),
             config,
             namespaces: Mutex::new(HashMap::new()),
+            schedules: Arc::new(MemScheduleStore::new()),
+            scheduled_runs: Mutex::new(HashMap::new()),
         }
     }
 
-    fn principal<T>(&self, req: &Request<T>) -> Result<Principal, Status> {
+    /// Keeps schedules in `store` (the memory store by default).
+    pub fn with_schedule_store(mut self, store: Arc<dyn ScheduleStore>) -> Self {
+        self.schedules = store;
+        self
+    }
+
+    pub(crate) fn principal<T>(&self, req: &Request<T>) -> Result<Principal, Status> {
         self.auth.authenticate(req.metadata())
     }
 
-    fn store(&self) -> &Arc<dyn Store> {
+    pub(crate) fn store(&self) -> &Arc<dyn Store> {
         self.engine.store()
     }
 
     /// The namespace `name` of the caller's Loams namespace.
-    async fn namespace(&self, p: &Principal, name: &str) -> Result<NamespaceRecord, Status> {
+    pub(crate) async fn namespace(
+        &self,
+        p: &Principal,
+        name: &str,
+    ) -> Result<NamespaceRecord, Status> {
         if name.is_empty() {
             return Err(Status::invalid_argument("Namespace not set on request."));
         }
@@ -176,7 +193,7 @@ impl Frontend {
     }
 
     /// A namespace by ID (cached: namespaces are never renamed in DX1).
-    async fn namespace_by_id(&self, id: &str) -> Result<NamespaceRecord, Status> {
+    pub(crate) async fn namespace_by_id(&self, id: &str) -> Result<NamespaceRecord, Status> {
         if let Some(ns) = self
             .namespaces
             .lock()
@@ -198,7 +215,7 @@ impl Frontend {
         Ok(ns)
     }
 
-    fn ctx(ns: &NamespaceRecord) -> EffectContext {
+    pub(crate) fn ctx(ns: &NamespaceRecord) -> EffectContext {
         EffectContext {
             namespace_id: ns.namespace_id.clone(),
             loams_namespace_id: ns.loams_namespace_id.clone(),
@@ -1271,6 +1288,80 @@ impl WorkflowService for WorkflowServiceImpl {
         self.0.principal(&req)?;
         // No sticky queues in DX1 (Q1156): nothing to reset.
         Ok(Response::new(ResetStickyTaskQueueResponse {}))
+    }
+
+    // Temporal Schedules (D2070-D2073): `crate::schedules`.
+
+    async fn create_schedule(
+        &self,
+        req: Request<CreateScheduleRequest>,
+    ) -> Result<Response<CreateScheduleResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        Ok(Response::new(
+            self.0.create_schedule(&p, req.into_inner()).await?,
+        ))
+    }
+
+    async fn describe_schedule(
+        &self,
+        req: Request<DescribeScheduleRequest>,
+    ) -> Result<Response<DescribeScheduleResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        Ok(Response::new(
+            self.0.describe_schedule(&p, req.into_inner()).await?,
+        ))
+    }
+
+    async fn update_schedule(
+        &self,
+        req: Request<UpdateScheduleRequest>,
+    ) -> Result<Response<UpdateScheduleResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        Ok(Response::new(
+            self.0.update_schedule(&p, req.into_inner()).await?,
+        ))
+    }
+
+    async fn patch_schedule(
+        &self,
+        req: Request<PatchScheduleRequest>,
+    ) -> Result<Response<PatchScheduleResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        Ok(Response::new(
+            self.0.patch_schedule(&p, req.into_inner()).await?,
+        ))
+    }
+
+    async fn delete_schedule(
+        &self,
+        req: Request<DeleteScheduleRequest>,
+    ) -> Result<Response<DeleteScheduleResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        Ok(Response::new(
+            self.0.delete_schedule(&p, req.into_inner()).await?,
+        ))
+    }
+
+    async fn list_schedules(
+        &self,
+        req: Request<ListSchedulesRequest>,
+    ) -> Result<Response<ListSchedulesResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        Ok(Response::new(
+            self.0.list_schedules(&p, req.into_inner()).await?,
+        ))
+    }
+
+    async fn list_schedule_matching_times(
+        &self,
+        req: Request<ListScheduleMatchingTimesRequest>,
+    ) -> Result<Response<ListScheduleMatchingTimesResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        Ok(Response::new(
+            self.0
+                .list_schedule_matching_times(&p, req.into_inner())
+                .await?,
+        ))
     }
 }
 

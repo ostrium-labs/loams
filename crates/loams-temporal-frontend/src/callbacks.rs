@@ -42,6 +42,15 @@ impl Frontend {
         if status == PromiseStatus::RejectedCanceled {
             return Ok(());
         }
+        if let PromiseId::Sch {
+            ns,
+            schedule_id,
+            generation,
+            ..
+        } = &id
+        {
+            return self.on_schedule_wake(ns, schedule_id, generation).await;
+        }
         let (Some(wf), Some(run)) = (id.wf().cloned(), id.run().map(str::to_string)) else {
             return Ok(());
         };

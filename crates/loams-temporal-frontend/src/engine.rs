@@ -12,7 +12,7 @@ use loams_temporal_store::{
     VisibilityRow,
 };
 use prost::Message as _;
-use tokio::sync::watch;
+use tokio::sync::{broadcast, watch};
 use tonic::Status;
 
 use crate::effects::{EffectContext, outbox_rows};
@@ -35,6 +35,8 @@ pub struct Engine {
     store: Arc<dyn Store>,
     clock: Arc<dyn Fn() -> i64 + Send + Sync>,
     watchers: Mutex<HashMap<RunKey, watch::Sender<RunProgress>>>,
+    /// Every run this engine closes (schedules wait on their runs, D2071).
+    closed: broadcast::Sender<RunKey>,
 }
 
 impl std::fmt::Debug for Engine {
@@ -105,7 +107,14 @@ impl Engine {
             store,
             clock,
             watchers: Mutex::new(HashMap::new()),
+            closed: broadcast::channel(1024).0,
         }
+    }
+
+    /// The runs this engine closes from now on. A lagging receiver loses
+    /// the oldest; schedules also re-check on a timer.
+    pub fn closed_runs(&self) -> broadcast::Receiver<RunKey> {
+        self.closed.subscribe()
     }
 
     /// The store.
@@ -165,6 +174,9 @@ impl Engine {
             match self.store.commit(key, run.version, commit).await {
                 Ok(_) => {
                     self.notify(key, &t.state);
+                    if closed {
+                        let _ = self.closed.send(key.clone());
+                    }
                     return Ok(t);
                 }
                 Err(StoreError::Conflict { .. }) => continue,

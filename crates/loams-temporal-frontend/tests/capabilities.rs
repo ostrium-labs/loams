@@ -32,15 +32,26 @@ const DX1: &[&str] = &[
     "ResetStickyTaskQueue",
 ];
 
+/// Temporal Schedules (D2070-D2073).
+const SCHEDULES: &[&str] = &[
+    "CreateSchedule",
+    "DescribeSchedule",
+    "UpdateSchedule",
+    "PatchSchedule",
+    "DeleteSchedule",
+    "ListSchedules",
+    "ListScheduleMatchingTimes",
+];
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn capabilities_match_impl() {
     let mut sorted_impl: Vec<_> = IMPLEMENTED.to_vec();
     sorted_impl.sort_unstable();
-    let mut sorted_dx1: Vec<_> = DX1.to_vec();
+    let mut sorted_dx1: Vec<_> = DX1.iter().chain(SCHEDULES).copied().collect();
     sorted_dx1.sort_unstable();
     assert_eq!(
         sorted_impl, sorted_dx1,
-        "IMPLEMENTED is design 74's DX1 set"
+        "IMPLEMENTED is design 74's DX1 set and the schedule methods"
     );
 
     let gw = common::start().await;
@@ -87,5 +98,5 @@ async fn capabilities_match_impl() {
         .into_inner();
     let caps = info.capabilities.expect("capabilities");
     assert_eq!(caps, capabilities());
-    assert!(caps.sdk_metadata && !caps.eager_workflow_start && !caps.supports_schedules);
+    assert!(caps.sdk_metadata && !caps.eager_workflow_start && caps.supports_schedules);
 }

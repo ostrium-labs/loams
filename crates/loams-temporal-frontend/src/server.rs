@@ -12,6 +12,7 @@ use std::time::Duration;
 use loams_temporal_matching::Matcher;
 use loams_temporal_proto::temporal::api::workflowservice::v1::workflow_service_server::WorkflowServiceServer;
 use loams_temporal_resonate::{Durability, Relay};
+use loams_temporal_schedule::ScheduleStore;
 use loams_temporal_store::Store;
 use tonic::Status;
 use tonic::body::Body;
@@ -44,6 +45,23 @@ pub struct Parts {
     pub lease: Duration,
     /// The frontend's settings.
     pub config: FrontendConfig,
+    /// The optional stores (defaults: in memory).
+    pub ext: PartsExt,
+}
+
+/// Stores beside the history store; `Default` keeps them in memory.
+#[derive(Default)]
+pub struct PartsExt {
+    /// Temporal Schedules (D2072); `None` is the memory store.
+    pub schedules: Option<Arc<dyn ScheduleStore>>,
+}
+
+impl std::fmt::Debug for PartsExt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PartsExt")
+            .field("schedules", &self.schedules.is_some())
+            .finish()
+    }
 }
 
 impl std::fmt::Debug for Parts {
@@ -84,14 +102,18 @@ impl Gateway {
         let fast: Arc<dyn Durability> = Arc::new(FastPath::new(raw.clone(), &matcher));
         let clock_source = raw.clone();
         let engine = Engine::new(parts.store.clone(), Arc::new(move || clock_source.now_ms()));
-        let frontend = Arc::new(Frontend::new(
+        let mut frontend = Frontend::new(
             engine,
             matcher.clone(),
             raw.clone(),
             parts.auth,
             parts.tokens,
             parts.config,
-        ));
+        );
+        if let Some(s) = parts.ext.schedules {
+            frontend = frontend.with_schedule_store(s);
+        }
+        let frontend = Arc::new(frontend);
         let outbox = Arc::new(StoreOutbox::new(
             parts.store,
             parts.shards,
@@ -109,6 +131,41 @@ impl Gateway {
         let m = matcher.clone();
         let sd = shutdown.clone();
         tokio::spawn(async move { m.run_leases(stop(sd)).await });
+
+        // Schedules: the overdue sweep, and passes when a scheduled run
+        // closes (D2071).
+        let f = frontend.clone();
+        let mut sd = shutdown.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(crate::schedules::SWEEP_EVERY);
+            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            loop {
+                tokio::select! {
+                    _ = sd.wait_for(|s| *s) => return,
+                    _ = tick.tick() => f.sweep_schedules().await,
+                }
+            }
+        });
+        let f = frontend.clone();
+        let mut closed = frontend.engine.closed_runs();
+        let mut sd = shutdown.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = sd.wait_for(|s| *s) => return,
+                    r = closed.recv() => match r {
+                        Ok(key) => {
+                            let f = f.clone();
+                            tokio::spawn(async move { f.on_run_closed(key).await });
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            tracing::warn!(missed = n, "schedule close notifications lagged; the re-check timers cover them");
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+                    }
+                }
+            }
+        });
 
         let mut callbacks = raw
             .subscribe(CALLBACK_GROUP)

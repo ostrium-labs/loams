@@ -27,6 +27,14 @@ pub const IMPLEMENTED: &[&str] = &[
     "QueryWorkflow",
     "RespondQueryTaskCompleted",
     "ResetStickyTaskQueue",
+    // Temporal Schedules (D2070-D2073).
+    "CreateSchedule",
+    "DescribeSchedule",
+    "UpdateSchedule",
+    "PatchSchedule",
+    "DeleteSchedule",
+    "ListSchedules",
+    "ListScheduleMatchingTimes",
 ];
 
 /// Where the per-method, per-SDK compatibility matrix lives (D1512).
@@ -41,6 +49,7 @@ pub fn capabilities() -> Capabilities {
         activity_failure_include_heartbeat: true,
         encoded_failure_attributes: true,
         sdk_metadata: true,
+        supports_schedules: true,
         ..Default::default()
     }
 }

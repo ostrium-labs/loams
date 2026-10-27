@@ -8,11 +8,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use loams_temporal_resonate::{Durability, FakeDurability, HttpDurability};
+use loams_temporal_schedule::PgScheduleStore;
 use loams_temporal_store::{MemStore, NamespaceRecord, PgStore, Store, StoreError};
 use serde::Deserialize;
 
 use crate::{
-    Authenticator, DevAllowAll, FrontendConfig, Gateway, Parts, Principal, StaticKeys, TokenKeys,
+    Authenticator, DevAllowAll, FrontendConfig, Gateway, Parts, PartsExt, Principal, StaticKeys,
+    TokenKeys,
 };
 
 #[derive(Debug, Deserialize)]
@@ -161,6 +163,7 @@ pub async fn run_on(
 ) -> Result<(), String> {
     check(&config)?;
 
+    let mut ext = PartsExt::default();
     let store: Arc<dyn Store> = match &config.store {
         StoreConfig::Memory => Arc::new(MemStore::new(config.shards).map_err(|e| e.to_string())?),
         StoreConfig::Postgres { url_env } => {
@@ -168,6 +171,13 @@ pub async fn run_on(
                 .await
                 .map_err(|e| format!("postgres: {e}"))?;
             pg.migrate().await.map_err(|e| format!("migrate: {e}"))?;
+            // Schedules live in their own table on the same database (D2072).
+            let schedules = PgScheduleStore::with_pool(pg.pool().clone());
+            schedules
+                .migrate()
+                .await
+                .map_err(|e| format!("migrate schedules: {e}"))?;
+            ext.schedules = Some(Arc::new(schedules));
             Arc::new(pg)
         }
     };
@@ -264,6 +274,7 @@ pub async fn run_on(
             shards: config.shards,
             lease: Duration::from_secs(60),
             config: FrontendConfig::default(),
+            ext,
         },
         stop_rx,
     )
