@@ -133,6 +133,12 @@ pub struct RotateOpts {
     /// Keep the old keys (print how to delete them later).
     #[arg(long)]
     pub keep_old: bool,
+    /// How long to wait after storing the new key before restarting the
+    /// instances: the VM copies Confluent keys from the secret store into the
+    /// connect role's files every 5 minutes (`loams-byoc-confluent.timer`).
+    /// Pass 0s after `sudo systemctl reload loams-byoc` on the VM.
+    #[arg(long, default_value = "6m", value_parser = humantime::parse_duration)]
+    pub refresh_wait: Duration,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -352,6 +358,21 @@ pub async fn key_rotate<S: SecretSink>(
 
     let mut restarted = true;
     if let Some(base) = &o.connect_admin {
+        if o.restart_instances.is_empty() {
+            let _ = writeln!(
+                out,
+                "warning: --connect-admin without --restart-instance restarts nothing; running instances keep the old key"
+            );
+            restarted = false;
+        } else if !o.refresh_wait.is_zero() {
+            let _ = writeln!(
+                out,
+                "waiting {} for the VM to copy the new key into the connect role's files",
+                humantime::format_duration(o.refresh_wait)
+            );
+            let _ = out.flush();
+            tokio::time::sleep(o.refresh_wait).await;
+        }
         for id in &o.restart_instances {
             let url = format!(
                 "{}/v1/connect/instances/{id}:restart",
@@ -386,7 +407,7 @@ pub async fn key_rotate<S: SecretSink>(
     } else {
         let _ = writeln!(
             out,
-            "the VM fetches the new key on its next start: run `sudo systemctl restart loams-byoc` there (or pass --connect-admin)"
+            "the VM copies the new key into the connect role's files within 5 minutes (or at once with `sudo systemctl reload loams-byoc`); then restart the integration's connector instances (or pass --connect-admin and --restart-instance)"
         );
     }
 

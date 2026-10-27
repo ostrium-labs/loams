@@ -307,6 +307,7 @@ fn rotate_opts(base: &str, token: &std::path::Path, grace: Duration) -> RotateOp
         admin_token_file: Some(token.to_path_buf()),
         restart_instances: vec!["orders-out".into(), "orders-in".into()],
         keep_old: false,
+        refresh_wait: Duration::ZERO,
     }
 }
 
@@ -622,4 +623,35 @@ mod tempfile_path {
             let _ = std::fs::remove_dir_all(&self.0);
         }
     }
+}
+
+#[tokio::test]
+async fn rotate_without_instances_keeps_old_keys() {
+    let f = Shared::default();
+    f.lock().unwrap().restart_status = 200;
+    let base = serve(f.clone()).await;
+    let c = client(&base);
+    let old = keys::create(&c, "sa-test01", "lkc-test01", "env-test01", "old", "old")
+        .await
+        .unwrap()
+        .id;
+    let token = token_file();
+    let mut o = rotate_opts(&base, token.path(), Duration::ZERO);
+    o.restart_instances.clear();
+    let mut out = Vec::new();
+    key_rotate(&c, &MemoryStore::default(), &http(), &o, &mut out)
+        .await
+        .unwrap();
+    let out = String::from_utf8(out).unwrap();
+    assert!(
+        out.contains("restarts nothing") && out.contains(&old),
+        "{out}"
+    );
+    let f = f.lock().unwrap();
+    assert!(f.keys.contains_key(&old));
+    assert!(
+        !f.calls.iter().any(|c| c.starts_with("RESTART")),
+        "{:?}",
+        f.calls
+    );
 }
