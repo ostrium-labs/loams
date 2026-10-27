@@ -1,0 +1,86 @@
+# D1977: nothing reaches the cluster but its own pods, loams-gateway (SQL
+# Gateway, 8083), the engine controller (8081, 8083) and the metrics scraper
+# (9249). Never exposed publicly.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: flink-default-deny
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: flink-intra-cluster
+spec:
+  podSelector:
+    matchLabels:
+      loams.dev/tenant: example
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              loams.dev/tenant: example
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: flink-sql-gateway-from-loams
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: sql-gateway
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: loams-gateway
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              loams.dev/component: engine-controller
+      ports:
+        - protocol: TCP
+          port: 8083
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: flink-rest-from-controller
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: jobmanager
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              loams.dev/component: engine-controller
+      ports:
+        - protocol: TCP
+          port: 8081
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: flink-metrics
+spec:
+  podSelector:
+    matchLabels:
+      loams.dev/tenant: example
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              loams.dev/component: metrics
+      ports:
+        - protocol: TCP
+          port: 9249

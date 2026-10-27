@@ -117,6 +117,24 @@ export_file(
 )
 
 export_file(
+    name = "file=deploy+flink+compose+config.yaml",
+    src = "deploy/flink/compose/config.yaml",
+    mode = "reference",
+    visibility = [
+        "PUBLIC",
+    ],
+)
+
+export_file(
+    name = "file=deploy+flink+k8s+config.yaml",
+    src = "deploy/flink/k8s/config.yaml",
+    mode = "reference",
+    visibility = [
+        "PUBLIC",
+    ],
+)
+
+export_file(
     name = "file=deploy+pins+loams-postgres-images.toml",
     src = "deploy/pins/loams-postgres-images.toml",
     mode = "reference",
