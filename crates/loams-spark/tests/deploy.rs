@@ -4,7 +4,9 @@
 use std::path::PathBuf;
 
 fn repo(rel: &str) -> String {
-    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..").join(rel);
+    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join(rel);
     std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("{}: {e}", p.display()))
 }
 
@@ -16,7 +18,8 @@ fn compose_proxy_configs_are_valid() {
         assert_eq!(c.routes.len(), 1, "{f}");
         assert_eq!(c.routes[0].namespace, "local");
     }
-    let spark = loams_spark::standalone::load(&repo("deploy/release/spark/proxy-spark.toml")).unwrap();
+    let spark =
+        loams_spark::standalone::load(&repo("deploy/release/spark/proxy-spark.toml")).unwrap();
     assert_eq!(
         spark.routes[0].token_env.as_deref(),
         Some("SPARK_CONNECT_AUTHENTICATE_TOKEN")
@@ -31,6 +34,7 @@ fn example_and_kubernetes_configs_are_valid() {
 
 #[test]
 fn compose_keys_file_is_well_formed() {
-    let v: serde_json::Value = serde_json::from_str(&repo("deploy/release/spark/keys.json")).unwrap();
+    let v: serde_json::Value =
+        serde_json::from_str(&repo("deploy/release/spark/keys.json")).unwrap();
     assert!(v["keys"].is_array());
 }

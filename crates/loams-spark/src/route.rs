@@ -232,9 +232,11 @@ impl StaticRouter {
         let mut out = Self::default();
         for r in routes {
             let token = match &r.token_env {
-                Some(var) => Some(Arc::<str>::from(
-                    env(var).ok_or_else(|| format!("environment variable {var} is not set"))?,
-                )),
+                Some(var) => {
+                    Some(Arc::<str>::from(env(var).ok_or_else(|| {
+                        format!("environment variable {var} is not set")
+                    })?))
+                }
                 None => None,
             };
             let backend = Backend {
@@ -250,7 +252,10 @@ impl StaticRouter {
                 && let Some(prev) = out.defaults.insert(r.namespace.clone(), r.instance.clone())
                 && prev != r.instance
             {
-                return Err(format!("namespace {} has two default instances", r.namespace));
+                return Err(format!(
+                    "namespace {} has two default instances",
+                    r.namespace
+                ));
             }
         }
         for r in routes {
@@ -277,9 +282,11 @@ impl Router for StaticRouter {
     async fn resolve(&self, target: &Target) -> Result<Backend, Status> {
         let instance = match &target.instance {
             Some(i) => i.clone(),
-            None => self.defaults.get(&target.namespace).cloned().ok_or_else(|| {
-                Status::not_found("this namespace has no Spark instance")
-            })?,
+            None => self
+                .defaults
+                .get(&target.namespace)
+                .cloned()
+                .ok_or_else(|| Status::not_found("this namespace has no Spark instance"))?,
         };
         self.routes
             .get(&(target.namespace.clone(), instance))
@@ -323,7 +330,9 @@ mod tests {
     #[test]
     fn hostname_namespace_must_match_the_credential() {
         let p = pattern();
-        let t = p.target("ns-a", Some("etl.ns-a.eu1.spark.loams.dev")).unwrap();
+        let t = p
+            .target("ns-a", Some("etl.ns-a.eu1.spark.loams.dev"))
+            .unwrap();
         assert_eq!(t.instance.as_deref(), Some("etl"));
         let err = p
             .target("ns-b", Some("etl.ns-a.eu1.spark.loams.dev"))
@@ -332,7 +341,10 @@ mod tests {
         let off = HostPattern {
             suffix: String::new(),
         };
-        assert_eq!(off.target("ns-b", Some("anything:1")).unwrap().instance, None);
+        assert_eq!(
+            off.target("ns-b", Some("anything:1")).unwrap().instance,
+            None
+        );
     }
 
     fn route(ns: &str, inst: &str, default: bool) -> RouteConfig {
@@ -360,8 +372,14 @@ mod tests {
             namespace: ns.into(),
             instance: i.map(Into::into),
         };
-        assert_eq!(r.resolve(&t("ns-a", None)).await.unwrap().instance_id, "ns-a/two");
-        assert_eq!(r.resolve(&t("ns-b", None)).await.unwrap().instance_id, "ns-b/one");
+        assert_eq!(
+            r.resolve(&t("ns-a", None)).await.unwrap().instance_id,
+            "ns-a/two"
+        );
+        assert_eq!(
+            r.resolve(&t("ns-b", None)).await.unwrap().instance_id,
+            "ns-b/one"
+        );
         assert_eq!(
             r.resolve(&t("ns-c", None)).await.unwrap_err().code(),
             tonic::Code::NotFound

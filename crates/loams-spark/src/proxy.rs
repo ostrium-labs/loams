@@ -224,7 +224,10 @@ impl SparkConnectProxy {
         }
         for (namespace, instance_id) in self.shared.sessions.idle_instances(now) {
             tracing::info!(%namespace, instance = %instance_id, "Spark instance idle");
-            self.shared.hook.instance_idle(&namespace, &instance_id).await;
+            self.shared
+                .hook
+                .instance_idle(&namespace, &instance_id)
+                .await;
         }
     }
 

@@ -202,7 +202,10 @@ mod tests {
         assert_eq!(env["SAIL_MODE"], "local");
         assert!(Sail.config_files(&conf()).unwrap().is_empty());
         assert!(!Sail.has_token_auth());
-        assert_eq!(Sail.image("ghcr.io/ostrium-labs"), "ghcr.io/ostrium-labs/loams-sail:0.7.2");
+        assert_eq!(
+            Sail.image("ghcr.io/ostrium-labs"),
+            "ghcr.io/ostrium-labs/loams-sail:0.7.2"
+        );
     }
 
     #[test]

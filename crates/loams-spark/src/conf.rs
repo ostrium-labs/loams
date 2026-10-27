@@ -294,7 +294,10 @@ impl ClusterConf {
             "org.apache.iceberg.aws.s3.S3FileIO".into(),
         );
         if let Some(d) = &self.catalog.access_delegation {
-            set(&format!("{cat}.header.X-Iceberg-Access-Delegation"), d.clone());
+            set(
+                &format!("{cat}.header.X-Iceberg-Access-Delegation"),
+                d.clone(),
+            );
         }
         if let Some(o) = &self.catalog.oauth2 {
             set(&format!("{cat}.oauth2-server-uri"), o.server_uri.clone());
@@ -340,8 +343,7 @@ impl ClusterConf {
         );
         set(
             "spark.hadoop.fs.s3a.aws.credentials.provider",
-            "software.amazon.awssdk.auth.credentials.EnvironmentVariableCredentialsProvider"
-                .into(),
+            "software.amazon.awssdk.auth.credentials.EnvironmentVariableCredentialsProvider".into(),
         );
         set(
             "spark.hadoop.fs.s3a.impl",
@@ -383,7 +385,10 @@ impl ClusterConf {
                 set("spark.master", "local[*]".into());
             }
             Placement::Kubernetes(k) => {
-                set("spark.master", "k8s://https://kubernetes.default.svc".into());
+                set(
+                    "spark.master",
+                    "k8s://https://kubernetes.default.svc".into(),
+                );
                 set("spark.submit.deployMode", "client".into());
                 set("spark.kubernetes.namespace", k.namespace.clone());
                 set("spark.kubernetes.container.image", k.image.clone());
@@ -434,10 +439,7 @@ impl ClusterConf {
                     self.shape.workers.to_string(),
                 );
                 set("spark.dynamicAllocation.executorIdleTimeout", "60s".into());
-                set(
-                    "spark.kubernetes.local.dirs.tmpfs",
-                    "false".into(),
-                );
+                set("spark.kubernetes.local.dirs.tmpfs", "false".into());
             }
         }
         for (k, v) in &c {
@@ -752,7 +754,10 @@ mod tests {
     #[test]
     fn kubernetes_executors() {
         let d = conf(kube()).spark_defaults().unwrap();
-        assert_eq!(d.get("spark.master"), Some("k8s://https://kubernetes.default.svc"));
+        assert_eq!(
+            d.get("spark.master"),
+            Some("k8s://https://kubernetes.default.svc")
+        );
         assert_eq!(d.get("spark.submit.deployMode"), Some("client"));
         assert_eq!(d.get("spark.dynamicAllocation.maxExecutors"), Some("4"));
         assert_eq!(d.get("spark.executor.cores"), Some("2"));
@@ -823,7 +828,10 @@ mod tests {
             d.get("spark.eventLog.dir"),
             Some("s3a://loams-engines/engines/local/eng_compose/eventlog/")
         );
-        assert!(d.get("spark.sql.catalog.loams.header.X-Iceberg-Access-Delegation").is_none());
+        assert!(
+            d.get("spark.sql.catalog.loams.header.X-Iceberg-Access-Delegation")
+                .is_none()
+        );
         let env = shell_env(&c.sail_env().unwrap());
         assert!(env.contains("export SAIL_MODE='local'\n"));
     }
@@ -840,6 +848,9 @@ mod tests {
         let file = d.to_file();
         assert!(file.contains("\nspark.master local[*]\n"));
         let args = d.to_args();
-        assert!(args.windows(2).any(|w| w[0] == "--conf" && w[1] == "spark.master=local[*]"));
+        assert!(
+            args.windows(2)
+                .any(|w| w[0] == "--conf" && w[1] == "spark.master=local[*]")
+        );
     }
 }

@@ -17,7 +17,11 @@ use loams_spark::auth::{KeyEntry, KeyTable};
 use loams_spark::standalone;
 
 #[derive(Debug, Parser)]
-#[command(name = "loams-spark-proxy", version, about = "The Loams Spark Connect proxy")]
+#[command(
+    name = "loams-spark-proxy",
+    version,
+    about = "The Loams Spark Connect proxy"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -54,7 +58,11 @@ enum Command {
         #[arg(long, default_value = "eng_compose")]
         instance: String,
         /// Lakekeeper's Iceberg REST URI.
-        #[arg(long, env = "LOAMS_LAKEKEEPER_URI", default_value = "http://lakekeeper:8181/catalog")]
+        #[arg(
+            long,
+            env = "LOAMS_LAKEKEEPER_URI",
+            default_value = "http://lakekeeper:8181/catalog"
+        )]
         catalog_uri: String,
         /// The S3 endpoint.
         #[arg(long, env = "LOAMS_S3_ENDPOINT", default_value = "http://rustfs:9000")]

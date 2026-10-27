@@ -224,9 +224,9 @@ pub fn build(c: &Config) -> Result<SparkConnectProxy, String> {
     };
     let authz: Arc<dyn Authorizer> = match &c.authz {
         AuthzConfig::KeyGrants => Arc::new(KeyGrants),
-        AuthzConfig::AllowAll => Arc::new(
-            AllowAllAuthorizer::loopback_only(&[c.listen]).map_err(|e| e.to_string())?,
-        ),
+        AuthzConfig::AllowAll => {
+            Arc::new(AllowAllAuthorizer::loopback_only(&[c.listen]).map_err(|e| e.to_string())?)
+        }
         AuthzConfig::Openfga {
             endpoint,
             store_id,
@@ -357,7 +357,10 @@ token_env = "SPARK_CONNECT_AUTHENTICATE_TOKEN"
         assert_eq!(c.limits.max_sessions, 4);
         assert_eq!(c.access.object_type, "engine");
         assert!(matches!(c.authz, AuthzConfig::Openfga { .. }));
-        assert_eq!(c.routes[0].token_env.as_deref(), Some("SPARK_CONNECT_AUTHENTICATE_TOKEN"));
+        assert_eq!(
+            c.routes[0].token_env.as_deref(),
+            Some("SPARK_CONNECT_AUTHENTICATE_TOKEN")
+        );
     }
 
     #[test]

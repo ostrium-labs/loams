@@ -300,8 +300,11 @@ pub trait ClusterApi: Send + Sync + 'static {
     /// Deletes every object (and worker pod) with the label selector.
     async fn delete_selected(&self, namespace: &str, selector: &str) -> Result<(), String>;
     /// A Deployment's readiness; `None` when it does not exist.
-    async fn readiness(&self, namespace: &str, deployment: &str)
-    -> Result<Option<Readiness>, String>;
+    async fn readiness(
+        &self,
+        namespace: &str,
+        deployment: &str,
+    ) -> Result<Option<Readiness>, String>;
 }
 
 /// Where the adapter puts things.
@@ -443,7 +446,11 @@ impl<C: ClusterApi> SparkAdapter<C> {
 
     fn observed(&self, inst: &Instance, r: Option<Readiness>, version: String) -> Observed {
         let (phase, health, message) = match r {
-            None => (Phase::Pending, HealthState::Unknown, Some("no server yet".into())),
+            None => (
+                Phase::Pending,
+                HealthState::Unknown,
+                Some("no server yet".into()),
+            ),
             Some(r) if r.desired == 0 => (Phase::Suspended, HealthState::Unknown, None),
             Some(r) if r.ready >= r.desired => (Phase::Running, HealthState::Healthy, None),
             Some(_) => (
@@ -499,7 +506,11 @@ impl<C: ClusterApi> ManagedEngine for SparkAdapter<C> {
         if spec.kind != EngineKind::Spark {
             return Err(EngineError::Invalid("not a Spark spec".into()));
         }
-        if let Some(k) = spec.config.keys().find(|k| !CONFIG_KEYS.contains(&k.as_str())) {
+        if let Some(k) = spec
+            .config
+            .keys()
+            .find(|k| !CONFIG_KEYS.contains(&k.as_str()))
+        {
             return Err(EngineError::Invalid(format!(
                 "unknown config key {k:?} (known: {CONFIG_KEYS:?})"
             )));
@@ -523,7 +534,9 @@ impl<C: ClusterApi> ManagedEngine for SparkAdapter<C> {
                 .bytes()
                 .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
         {
-            return Err(EngineError::Invalid("name must be a DNS label of 1-40 chars".into()));
+            return Err(EngineError::Invalid(
+                "name must be a DNS label of 1-40 chars".into(),
+            ));
         }
         Ok(())
     }
@@ -793,12 +806,10 @@ mod tests {
             Ok(())
         }
         async fn readiness(&self, _: &str, d: &str) -> Result<Option<Readiness>, String> {
-            Ok(self
-                .replicas
-                .lock()
-                .unwrap()
-                .get(d)
-                .map(|&n| Readiness { desired: n, ready: n }))
+            Ok(self.replicas.lock().unwrap().get(d).map(|&n| Readiness {
+                desired: n,
+                ready: n,
+            }))
         }
     }
 
@@ -863,7 +874,10 @@ mod tests {
         let o = a.create(&i).await.unwrap();
         assert_eq!(o.phase, Phase::Running);
         assert_eq!(o.version.as_deref(), Some("0.7.2"));
-        assert_eq!(o.endpoints[0].url, "sc://etl.ns-a.eu1.spark.loams.dev:443/;use_ssl=true");
+        assert_eq!(
+            o.endpoints[0].url,
+            "sc://etl.ns-a.eu1.spark.loams.dev:443/;use_ssl=true"
+        );
         assert!(
             fake.applied
                 .lock()
@@ -919,17 +933,17 @@ mod tests {
     #[async_trait]
     impl InstanceDirectory for Dir {
         async fn find(&self, ns: &str, name: Option<&str>) -> Result<Option<Instance>, String> {
-            Ok((ns == self.inst.namespace && name.is_none_or(|n| n == self.inst.spec.name))
-                .then(|| self.inst.clone()))
+            Ok(
+                (ns == self.inst.namespace && name.is_none_or(|n| n == self.inst.spec.name))
+                    .then(|| self.inst.clone()),
+            )
         }
         async fn get(&self, id: &str) -> Result<Option<Instance>, String> {
             Ok((id == self.inst.id).then(|| self.inst.clone()))
         }
         async fn request_resume(&self, inst: &Instance) -> Result<(), String> {
             *self.resumes.lock().unwrap() += 1;
-            self.cluster
-                .scale("", &k8s::server_name(&inst.id), 1)
-                .await
+            self.cluster.scale("", &k8s::server_name(&inst.id), 1).await
         }
     }
 

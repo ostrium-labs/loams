@@ -325,8 +325,14 @@ mod tests {
         assert_eq!(c["envFrom"].as_array().unwrap().len(), 1);
         assert_eq!(c["envFrom"][0]["secretRef"]["name"], "eng-01jabc-store");
         let env = c["env"].as_array().unwrap();
-        assert!(env.iter().any(|e| e["name"] == "SAIL_MODE" && e["value"] == "kubernetes-cluster"));
-        assert!(env.iter().any(|e| e["name"] == "SAIL_CLUSTER__DRIVER_EXTERNAL_HOST"));
+        assert!(
+            env.iter()
+                .any(|e| e["name"] == "SAIL_MODE" && e["value"] == "kubernetes-cluster")
+        );
+        assert!(
+            env.iter()
+                .any(|e| e["name"] == "SAIL_CLUSTER__DRIVER_EXTERNAL_HOST")
+        );
         assert!(!env.iter().any(|e| e["name"] == "AWS_SECRET_ACCESS_KEY"));
         assert_eq!(by_kind(&objs, "Service").len(), 1);
         assert_eq!(

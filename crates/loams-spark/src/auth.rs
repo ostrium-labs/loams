@@ -195,7 +195,10 @@ impl KeyTable {
                 return Err(format!("key {}: sha256 is not 64 hex digits", entry.id));
             }
             if entry.namespace.is_empty() || entry.subject.is_empty() {
-                return Err(format!("key {}: namespace and subject are required", entry.id));
+                return Err(format!(
+                    "key {}: namespace and subject are required",
+                    entry.id
+                ));
             }
             if let Some(prev) = by_id.insert(entry.id.clone(), entry) {
                 return Err(format!("key id {} is repeated", prev.id));
@@ -294,7 +297,9 @@ mod tests {
     fn bearer_and_header_credentials() {
         let bearer = format!("Bearer {KEY}");
         assert_eq!(
-            credential(&md(&[("authorization", &bearer)])).unwrap().expose(),
+            credential(&md(&[("authorization", &bearer)]))
+                .unwrap()
+                .expose(),
             KEY
         );
         assert_eq!(
@@ -311,7 +316,13 @@ mod tests {
         assert_eq!(missing.code(), tonic::Code::Unauthenticated);
         assert!(credential(&md(&[("authorization", "Basic abc")])).is_err());
         assert!(credential(&md(&[("authorization", "Bearer a"), (API_KEY_HEADER, "b")])).is_err());
-        assert!(credential(&md(&[("authorization", "Bearer a"), ("authorization", "Bearer a")])).is_err());
+        assert!(
+            credential(&md(&[
+                ("authorization", "Bearer a"),
+                ("authorization", "Bearer a")
+            ]))
+            .is_err()
+        );
         assert!(credential(&md(&[("authorization", "Bearer  ")])).is_err());
     }
 
@@ -323,13 +334,13 @@ mod tests {
 
     #[tokio::test]
     async fn key_table_maps_a_key_to_its_namespace() {
-        let p = table()
-            .authenticate(&Credential(KEY.into()))
-            .await
-            .unwrap();
+        let p = table().authenticate(&Credential(KEY.into())).await.unwrap();
         assert_eq!(p.namespace, "ns-a");
         assert_eq!(p.spark_user_id(), "service_account:ci-bot");
-        assert_eq!(p.credential_id.as_deref(), Some("01JABCDEFGHJKMNPQRSTVWXYZ0"));
+        assert_eq!(
+            p.credential_id.as_deref(),
+            Some("01JABCDEFGHJKMNPQRSTVWXYZ0")
+        );
     }
 
     #[tokio::test]

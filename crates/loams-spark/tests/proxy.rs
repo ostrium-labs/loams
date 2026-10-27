@@ -11,7 +11,8 @@ use futures::Stream;
 use loams_authz::SubjectKind;
 use loams_spark::auth::{KeyEntry, KeyTable};
 use loams_spark::proto::connect::{
-    self, spark_connect_service_client::SparkConnectServiceClient,
+    self,
+    spark_connect_service_client::SparkConnectServiceClient,
     spark_connect_service_server::{SparkConnectService, SparkConnectServiceServer},
 };
 use loams_spark::proxy::{AccessCheck, NoLifecycle, ProxySettings, SparkConnectProxy};
@@ -116,7 +117,12 @@ impl SparkConnectService for Fake {
         let mut sid = String::new();
         while let Some(chunk) = stream.message().await? {
             let probe = Request::from_parts(md.clone(), tonic::Extensions::default(), ());
-            self.record("AddArtifacts", &probe, &chunk.session_id, chunk.user_context.as_ref());
+            self.record(
+                "AddArtifacts",
+                &probe,
+                &chunk.session_id,
+                chunk.user_context.as_ref(),
+            );
             sid = chunk.session_id;
         }
         Ok(Response::new(connect::AddArtifactsResponse {
@@ -130,7 +136,12 @@ impl SparkConnectService for Fake {
         req: Request<connect::ReleaseSessionRequest>,
     ) -> Result<Response<connect::ReleaseSessionResponse>, Status> {
         let r = req.get_ref();
-        self.record("ReleaseSession", &req, &r.session_id, r.user_context.as_ref());
+        self.record(
+            "ReleaseSession",
+            &req,
+            &r.session_id,
+            r.user_context.as_ref(),
+        );
         Ok(Response::new(connect::ReleaseSessionResponse {
             session_id: r.session_id.clone(),
             ..Default::default()
@@ -165,8 +176,7 @@ async fn start(limits: Limits, host_suffix: &str) -> (Fake, SparkConnectProxy, S
     let backend_addr = serve_backend(fake.clone()).await;
     let backend = Backend {
         instance_id: "eng_a".into(),
-        channel: route::channel(&format!("http://{backend_addr}"), Duration::from_secs(2))
-            .unwrap(),
+        channel: route::channel(&format!("http://{backend_addr}"), Duration::from_secs(2)).unwrap(),
         token: Some(Arc::from(BACKEND_TOKEN)),
     };
     let proxy = SparkConnectProxy::new(
@@ -253,7 +263,10 @@ async fn forwards_with_pinned_identity_and_backend_token() {
     assert_eq!(resp.get_ref().server_side_session_id, "server-1");
     let seen = fake.seen();
     assert_eq!(seen.len(), 1);
-    assert_eq!(seen[0].user_id, "service_account:ci", "client's user_id replaced");
+    assert_eq!(
+        seen[0].user_id, "service_account:ci",
+        "client's user_id replaced"
+    );
     assert_eq!(seen[0].user_name, "alice", "other user_context fields kept");
     assert_eq!(
         seen[0].authorization.as_deref(),
@@ -311,7 +324,11 @@ async fn server_streaming_execute_plan() {
         operation_id: Some("6f1d1c8e-0000-4000-8000-000000000001".into()),
         ..Default::default()
     };
-    let mut stream = c.execute_plan(with_key(req, KEY_A)).await.unwrap().into_inner();
+    let mut stream = c
+        .execute_plan(with_key(req, KEY_A))
+        .await
+        .unwrap()
+        .into_inner();
     let mut ids = Vec::new();
     while let Some(r) = stream.message().await.unwrap() {
         ids.push(r.response_id);

@@ -61,7 +61,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     ""
                 },
-                if cfg!(feature = "spark") { ", spark" } else { "" }
+                if cfg!(feature = "spark") {
+                    ", spark"
+                } else {
+                    ""
+                }
             )
             .into());
         }

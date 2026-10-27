@@ -346,9 +346,9 @@ impl SessionTable {
             if a.reported_idle || now.saturating_duration_since(a.last_activity) < timeout {
                 continue;
             }
-            let busy = namespaces.get(&a.namespace).is_some_and(|ns| {
-                ns.sessions.keys().any(|(i, _)| i == instance_id)
-            });
+            let busy = namespaces
+                .get(&a.namespace)
+                .is_some_and(|ns| ns.sessions.keys().any(|(i, _)| i == instance_id));
             if !busy {
                 a.reported_idle = true;
                 out.push((a.namespace.clone(), instance_id.clone()));
@@ -432,11 +432,16 @@ mod tests {
         let a = t.begin("ns", "i", "s1", "u", CallKind::Use, now).unwrap();
         let b = t.begin("ns", "i", "s2", "u", CallKind::Use, now).unwrap();
         drop((a, b));
-        let err = t.begin("ns", "i", "s3", "u", CallKind::Use, now).unwrap_err();
+        let err = t
+            .begin("ns", "i", "s3", "u", CallKind::Use, now)
+            .unwrap_err();
         assert_eq!(err.code(), tonic::Code::ResourceExhausted);
         // Existing sessions still work; another namespace is unaffected.
         drop(t.begin("ns", "i", "s1", "u", CallKind::Use, now).unwrap());
-        drop(t.begin("other", "j", "s3", "u", CallKind::Use, now).unwrap());
+        drop(
+            t.begin("other", "j", "s3", "u", CallKind::Use, now)
+                .unwrap(),
+        );
         // Releasing frees a slot.
         t.close("ns", "i", "s2");
         drop(t.begin("ns", "i", "s3", "u", CallKind::Use, now).unwrap());
@@ -464,7 +469,10 @@ mod tests {
     async fn sessions_belong_to_their_principal() {
         let t = SessionTable::new(limits());
         let now = Instant::now();
-        drop(t.begin("ns", "i", "s1", "alice", CallKind::Use, now).unwrap());
+        drop(
+            t.begin("ns", "i", "s1", "alice", CallKind::Use, now)
+                .unwrap(),
+        );
         let err = t
             .begin("ns", "i", "s1", "bob", CallKind::Use, now)
             .unwrap_err();
@@ -498,7 +506,10 @@ mod tests {
         assert_eq!(reaped[0].session_id, "idle");
         assert_eq!(reaped[0].user_id, "u");
         drop(busy);
-        assert!(t.reap(Instant::now()).is_empty(), "just ended: not idle yet");
+        assert!(
+            t.reap(Instant::now()).is_empty(),
+            "just ended: not idle yet"
+        );
         tokio::time::advance(Duration::from_secs(61)).await;
         assert_eq!(t.reap(Instant::now())[0].session_id, "busy");
         assert_eq!(t.counts("ns"), (0, 0));
