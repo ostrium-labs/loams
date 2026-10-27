@@ -5,7 +5,7 @@
 import { create, fromBinary } from '@bufbuild/protobuf';
 import { createClient } from '@connectrpc/connect';
 import { HarnessService, TranscriptUpdateSchema } from '@loams/proto/agentd';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import {
   AGENTD_GIT_WRITE_METHODS,
   createAgentdTransport,

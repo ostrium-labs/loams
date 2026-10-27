@@ -41,5 +41,15 @@ write_files:
     owner: root:root
     content: |
 @@UNIT@@
+  - path: /etc/systemd/system/loams-byoc-confluent.service
+    permissions: "0644"
+    owner: root:root
+    content: |
+@@CONFLUENT_UNIT@@
+  - path: /etc/systemd/system/loams-byoc-confluent.timer
+    permissions: "0644"
+    owner: root:root
+    content: |
+@@CONFLUENT_TIMER@@
 runcmd:
   - [ /usr/local/bin/loams-byoc-bootstrap ]

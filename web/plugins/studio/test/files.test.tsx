@@ -16,7 +16,7 @@ import {
   WorkspaceTextEncoding,
 } from '@loams/proto/agentd';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import { fileLinkOf, routeOf, studioHref } from '../src/routes.js';
 import { FilesTab } from '../src/thread/FilesTab.js';
 import { agentdFilesSource } from '../src/thread/files-source.js';

@@ -8381,6 +8381,7 @@ dependencies = [
  "loams-cloudevents",
  "loams-collection",
  "loams-common",
+ "loams-confluent",
  "loams-durable",
  "loams-es",
  "loams-git",
@@ -8972,6 +8973,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-confluent"
+version = "0.1.2"
+dependencies = [
+ "axum 0.8.9",
+ "base64 0.23.1",
+ "clap",
+ "humantime",
+ "reqwest 0.13.5",
+ "rustls",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "zeroize",
+]
+
+[[package]]
 name = "loams-console-mock"
 version = "0.1.2"
 dependencies = [
@@ -9078,6 +9096,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
+ "loams-spark",
  "loams-temporal-frontend",
  "rcgen",
  "rustls",
@@ -9850,6 +9869,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-risingwave"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "futures",
+ "loams-engines",
+ "object_store 0.14.2",
+ "rand 0.9.5",
+ "reqwest 0.13.5",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "time",
+ "tokio",
+ "tokio-postgres",
+ "toml 0.8.23",
+ "tracing",
+]
+
+[[package]]
 name = "loams-safekeeper"
 version = "0.1.2"
 dependencies = [
@@ -9918,6 +9957,36 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "loams-spark"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "clap",
+ "futures",
+ "hex",
+ "http",
+ "loams-authz",
+ "prost 0.14.4",
+ "prost-types",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "subtle",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-stream",
+ "toml 0.8.23",
+ "tonic 0.14.6",
+ "tonic-prost",
+ "tonic-prost-build",
+ "tower 0.5.3",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

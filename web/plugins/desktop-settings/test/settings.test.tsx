@@ -1,7 +1,7 @@
 import type { LoamsDesktopApi, StackId, StackState } from '@loams/desktop/contracts';
 import { SlotProvider, SlotRegistry } from '@loams/slots';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 import { AboutSection } from '../src/about.js';
 import plugin from '../src/index.js';
 import { SettingsPage } from '../src/settings-page.js';

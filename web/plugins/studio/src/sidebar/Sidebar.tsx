@@ -760,7 +760,7 @@ export function StudioSidebar({
   useCommand(bus, 'thread.next', ready ? traverse('next') : undefined);
   for (const [index, command] of THREAD_JUMP_KEYBINDING_COMMANDS.entries()) {
     // A fixed list, so the hooks are called in the same order every render.
-    // biome-ignore lint/correctness/useHookAtTopLevel: THREAD_JUMP_KEYBINDING_COMMANDS is constant.
+    // oxlint-disable-next-line react/rules-of-hooks -- THREAD_JUMP_KEYBINDING_COMMANDS is constant.
     useCommand(bus, command, ready && ordered[index] ? () => open(ordered[index]) : undefined);
   }
 
