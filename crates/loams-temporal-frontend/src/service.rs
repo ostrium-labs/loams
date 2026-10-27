@@ -31,6 +31,7 @@ use loams_temporal_resonate::{Durability, SettleAs};
 use loams_temporal_schedule::{MemScheduleStore, ScheduleStore};
 use loams_temporal_statemachine::{Input, Reply, server_failure};
 use loams_temporal_store::{NamespaceRecord, RunKey, Store, StoreError};
+use loams_temporal_visibility::{MemVisibility, VisibilityStore};
 use tonic::{Request, Response, Status};
 
 use crate::auth::{Authenticator, Principal};
@@ -82,6 +83,10 @@ pub struct Frontend {
     pub(crate) schedules: Arc<dyn ScheduleStore>,
     /// Runs a schedule started, by run, so a close runs its pass at once.
     pub(crate) scheduled_runs: Mutex<HashMap<RunKey, String>>,
+    /// Visibility queries and the search-attribute registry (D2075).
+    pub(crate) visibility: Arc<dyn VisibilityStore>,
+    /// The memory visibility store, fed from the engine's commits.
+    pub(crate) visibility_feed: Option<Arc<MemVisibility>>,
 }
 
 impl std::fmt::Debug for Frontend {
@@ -170,6 +175,7 @@ impl Frontend {
         tokens: TokenKeys,
         config: FrontendConfig,
     ) -> Self {
+        let visibility = Arc::new(MemVisibility::new());
         Frontend {
             engine,
             matcher,
@@ -181,7 +187,18 @@ impl Frontend {
             namespaces: Mutex::new(HashMap::new()),
             schedules: Arc::new(MemScheduleStore::new()),
             scheduled_runs: Mutex::new(HashMap::new()),
+            visibility: visibility.clone(),
+            visibility_feed: Some(visibility),
         }
+    }
+
+    /// Answers visibility queries from `store` (the memory store, fed from
+    /// the engine, by default). A store other than the memory one reads the
+    /// rows the history store's commits write.
+    pub fn with_visibility_store(mut self, store: Arc<dyn VisibilityStore>) -> Self {
+        self.visibility = store;
+        self.visibility_feed = None;
+        self
     }
 
     /// Keeps schedules in `store` (the memory store by default).
@@ -1803,6 +1820,52 @@ impl WorkflowService for WorkflowServiceImpl {
                 .list_schedule_matching_times(&p, req.into_inner())
                 .await?,
         ))
+    }
+
+    // Visibility (D2074-D2076): `crate::visibility`.
+
+    async fn list_workflow_executions(
+        &self,
+        req: Request<ListWorkflowExecutionsRequest>,
+    ) -> Result<Response<ListWorkflowExecutionsResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        Ok(Response::new(
+            self.0
+                .list_workflow_executions(&p, req.into_inner())
+                .await?,
+        ))
+    }
+
+    async fn scan_workflow_executions(
+        &self,
+        req: Request<ScanWorkflowExecutionsRequest>,
+    ) -> Result<Response<ScanWorkflowExecutionsResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        Ok(Response::new(
+            self.0
+                .scan_workflow_executions(&p, req.into_inner())
+                .await?,
+        ))
+    }
+
+    async fn count_workflow_executions(
+        &self,
+        req: Request<CountWorkflowExecutionsRequest>,
+    ) -> Result<Response<CountWorkflowExecutionsResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        Ok(Response::new(
+            self.0
+                .count_workflow_executions(&p, req.into_inner())
+                .await?,
+        ))
+    }
+
+    async fn get_search_attributes(
+        &self,
+        req: Request<GetSearchAttributesRequest>,
+    ) -> Result<Response<GetSearchAttributesResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        Ok(Response::new(self.0.get_search_attributes(&p).await?))
     }
 }
 

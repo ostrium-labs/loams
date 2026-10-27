@@ -65,6 +65,14 @@ const TMP_API: &[&str] = &[
     "GetWorkerTaskReachability",
 ];
 
+/// Visibility (D2074-D2076).
+const VISIBILITY: &[&str] = &[
+    "ListWorkflowExecutions",
+    "ScanWorkflowExecutions",
+    "CountWorkflowExecutions",
+    "GetSearchAttributes",
+];
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn capabilities_match_impl() {
     let mut sorted_impl: Vec<_> = IMPLEMENTED.to_vec();
@@ -73,6 +81,7 @@ async fn capabilities_match_impl() {
         .iter()
         .chain(TMP_API)
         .chain(SCHEDULES)
+        .chain(VISIBILITY)
         .copied()
         .collect();
     sorted_dx1.sort_unstable();

@@ -13,6 +13,7 @@ use loams_temporal_store::retention::{RetentionPolicy, spawn_sweeper};
 use loams_temporal_store::{
     MemStore, NamespaceRecord, PgStore, PgStoreOptions, PurgeLimits, Store, StoreError,
 };
+use loams_temporal_visibility::PgVisibility;
 use serde::Deserialize;
 
 use crate::{
@@ -317,6 +318,14 @@ pub async fn run_on(
                 .await
                 .map_err(|e| format!("migrate schedules: {e}"))?;
             ext.schedules = Some(Arc::new(schedules));
+            // Visibility reads the store's `visibility` table; its migration
+            // adds the indexes and the search-attribute registry (D2075).
+            let visibility = PgVisibility::with_pool(pg.pool().clone());
+            visibility
+                .migrate()
+                .await
+                .map_err(|e| format!("migrate visibility: {e}"))?;
+            ext.visibility = Some(Arc::new(visibility));
             Arc::new(pg)
         }
     };
@@ -425,6 +434,7 @@ pub async fn run_on(
     tracing::info!(listen = %local, "loams-temporal serving the Temporal API");
     tonic::transport::Server::builder()
         .add_service(gateway.service())
+        .add_service(gateway.operator_service())
         .serve_with_incoming_shutdown(
             tokio_stream::wrappers::TcpListenerStream::new(listener),
             shutdown,

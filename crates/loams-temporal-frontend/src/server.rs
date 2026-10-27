@@ -14,6 +14,7 @@ use loams_temporal_proto::temporal::api::workflowservice::v1::workflow_service_s
 use loams_temporal_resonate::{Durability, Relay};
 use loams_temporal_schedule::ScheduleStore;
 use loams_temporal_store::Store;
+use loams_temporal_visibility::VisibilityStore;
 use tonic::Status;
 use tonic::body::Body;
 use tonic::server::NamedService;
@@ -54,12 +55,15 @@ pub struct Parts {
 pub struct PartsExt {
     /// Temporal Schedules (D2072); `None` is the memory store.
     pub schedules: Option<Arc<dyn ScheduleStore>>,
+    /// Visibility (D2075); `None` is the memory store fed from commits.
+    pub visibility: Option<Arc<dyn VisibilityStore>>,
 }
 
 impl std::fmt::Debug for PartsExt {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PartsExt")
             .field("schedules", &self.schedules.is_some())
+            .field("visibility", &self.visibility.is_some())
             .finish()
     }
 }
@@ -113,6 +117,10 @@ impl Gateway {
         if let Some(s) = parts.ext.schedules {
             frontend = frontend.with_schedule_store(s);
         }
+        if let Some(v) = parts.ext.visibility {
+            frontend = frontend.with_visibility_store(v);
+        }
+        frontend.attach_visibility();
         let frontend = Arc::new(frontend);
         let outbox = Arc::new(StoreOutbox::new(
             parts.store,
@@ -253,6 +261,21 @@ where
             return Box::pin(async move { Ok(status.into_http()) });
         }
         Box::pin(self.0.call(req))
+    }
+}
+
+impl Gateway {
+    /// The `OperatorService` to mount beside [`Gateway::service`] (D2052):
+    /// the search-attribute listing and registry, `UNIMPLEMENTED` for the
+    /// rest.
+    pub fn operator_service(
+        &self,
+    ) -> crate::operator::OperatorImplementedOnly<
+        loams_temporal_proto::temporal::api::operatorservice::v1::operator_service_server::OperatorServiceServer<
+            crate::operator::OperatorServiceImpl,
+        >,
+    >{
+        crate::operator::operator_service(self.frontend.clone())
     }
 }
 
