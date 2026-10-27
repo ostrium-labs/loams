@@ -1,0 +1,45 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $np := .Values.networkPolicy }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rw-{{ .Values.instance }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "loams-risingwave.instanceSelector" . | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    # The instance's own pods, every port.
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "loams-risingwave.instanceSelector" . | nindent 14 }}
+    # loams-gateway: the frontend's PG wire only (D1957, ENG81 R8).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $np.controlNamespace }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $np.gatewayPodLabels | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 4566
+    # The engines controller: PG wire (probes, bootstrap) and the meta
+    # dashboard (readiness), plus metrics.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $np.controlNamespace }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $np.controllerPodLabels | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 4566
+        - protocol: TCP
+          port: 5691
+        - protocol: TCP
+          port: 1250
+{{- end }}

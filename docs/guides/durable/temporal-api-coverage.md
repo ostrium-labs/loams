@@ -4,7 +4,7 @@
 
 Every RPC of `temporalio/api` v1.63.5 (vendored in `crates/loams-temporal-proto`) and whether the Loams Temporal gateway (`crates/loams-temporal-frontend`) answers it. Everything else answers `UNIMPLEMENTED` with a link to the compatibility matrix. Status is preview: "implemented" means the method is built and has unit tests (CI runs them); it does not mean every SDK has run it end to end.
 
-WorkflowService: 23 of 123 implemented. OperatorService: none yet (the gateway does not serve it).
+WorkflowService: 39 of 123 implemented. OperatorService: none yet (the gateway does not serve it).
 
 ## WorkflowService
 
@@ -13,29 +13,29 @@ WorkflowService: 23 of 123 implemented. OperatorService: none yet (the gateway d
 | `RegisterNamespace` | implemented (DX1) | admin role only |
 | `DescribeNamespace` | implemented (DX1) |  |
 | `ListNamespaces` | implemented (DX1) | one page |
-| `UpdateNamespace` | planned: TMP-api E | description, retention, owner email, data |
-| `DeprecateNamespace` | planned: TMP-api E | deprecated upstream too |
-| `StartWorkflowExecution` | implemented (DX1) | no start delay, no cron, reuse policy 'allow duplicate' |
+| `UpdateNamespace` | implemented (TMP-api) | admin role; description, owner email, data, state, retention (memory store; Postgres store pending TMP-store) |
+| `DeprecateNamespace` | implemented (TMP-api) | admin role |
+| `StartWorkflowExecution` | implemented (DX1) | ID reuse and conflict policies (TMP-api B); no start delay, no cron |
 | `ExecuteMultiOperation` | not planned yet | update-with-start; needs start and update in one commit |
 | `GetWorkflowExecutionHistory` | implemented (DX1) | paged; long poll; close-event filter |
-| `GetWorkflowExecutionHistoryReverse` | planned: TMP-api C |  |
+| `GetWorkflowExecutionHistoryReverse` | implemented (TMP-api) |  |
 | `PollWorkflowTaskQueue` | implemented (DX1) | no sticky queues (Q1156) |
-| `RespondWorkflowTaskCompleted` | implemented (DX1) | carries update protocol messages since TMP-api A |
+| `RespondWorkflowTaskCompleted` | implemented (DX1) | update messages (TMP-api A); child workflow, continue-as-new, external signal/cancel, upsert commands (TMP-api D) |
 | `RespondWorkflowTaskFailed` | implemented (DX1) |  |
 | `PollActivityTaskQueue` | implemented (DX1) |  |
 | `RecordActivityTaskHeartbeat` | implemented (DX1) |  |
-| `RecordActivityTaskHeartbeatById` | planned: TMP-api C |  |
+| `RecordActivityTaskHeartbeatById` | implemented (TMP-api) |  |
 | `RespondActivityTaskCompleted` | implemented (DX1) |  |
-| `RespondActivityTaskCompletedById` | planned: TMP-api C |  |
+| `RespondActivityTaskCompletedById` | implemented (TMP-api) |  |
 | `RespondActivityTaskFailed` | implemented (DX1) |  |
-| `RespondActivityTaskFailedById` | planned: TMP-api C |  |
+| `RespondActivityTaskFailedById` | implemented (TMP-api) |  |
 | `RespondActivityTaskCanceled` | implemented (DX1) |  |
-| `RespondActivityTaskCanceledById` | planned: TMP-api C |  |
+| `RespondActivityTaskCanceledById` | implemented (TMP-api) |  |
 | `RequestCancelWorkflowExecution` | implemented (DX1) |  |
 | `SignalWorkflowExecution` | implemented (DX1) |  |
-| `SignalWithStartWorkflowExecution` | planned: TMP-api B |  |
-| `ResetWorkflowExecution` | planned: TMP-api B | reset to a workflow task; reapply signals and updates |
-| `TerminateWorkflowExecution` | implemented (DX1) |  |
+| `SignalWithStartWorkflowExecution` | implemented (TMP-api) | ID reuse and conflict policies |
+| `ResetWorkflowExecution` | implemented (TMP-api) | to a workflow task boundary; signals reapplied, updates not yet |
+| `TerminateWorkflowExecution` | implemented (DX1) | fails a started workflow task first (TMP-api B, D2084) |
 | `DeleteWorkflowExecution` | not planned yet | needs the store's delete path (lane TMP-store) |
 | `ListOpenWorkflowExecutions` | lane TMP-sched (schedules and visibility) |  |
 | `ListClosedWorkflowExecutions` | lane TMP-sched (schedules and visibility) |  |
@@ -46,13 +46,13 @@ WorkflowService: 23 of 123 implemented. OperatorService: none yet (the gateway d
 | `GetSearchAttributes` | lane TMP-sched (schedules and visibility) |  |
 | `RespondQueryTaskCompleted` | implemented (DX1) |  |
 | `ResetStickyTaskQueue` | implemented (DX1) | no-op: no sticky queues |
-| `ShutdownWorker` | planned: TMP-api C | no-op: no sticky queues |
-| `QueryWorkflow` | implemented (DX1) | to a live poller; reject conditions in TMP-api B |
-| `DescribeWorkflowExecution` | implemented (DX1) | fuller answer in TMP-api C |
-| `DescribeTaskQueue` | planned: TMP-api C | pollers seen by the matcher |
-| `GetClusterInfo` | planned: TMP-api C |  |
+| `ShutdownWorker` | implemented (TMP-api) | no-op: no sticky queues |
+| `QueryWorkflow` | implemented (DX1) | to a live poller after any outstanding workflow task; reject conditions (TMP-api B) |
+| `DescribeWorkflowExecution` | implemented (DX1) | auto reset points, activity attempts and expiry (TMP-api B, C) |
+| `DescribeTaskQueue` | implemented (TMP-api) | pollers seen in the last 5 minutes; backlog with report_stats |
+| `GetClusterInfo` | implemented (TMP-api) |  |
 | `GetSystemInfo` | implemented (DX1) | advertises only what is built |
-| `ListTaskQueuePartitions` | planned: TMP-api C | one partition per queue (X1.R8) |
+| `ListTaskQueuePartitions` | implemented (TMP-api) | one partition per queue (X1.R8) |
 | `CreateSchedule` | lane TMP-sched (schedules and visibility) |  |
 | `DescribeSchedule` | lane TMP-sched (schedules and visibility) |  |
 | `UpdateSchedule` | lane TMP-sched (schedules and visibility) |  |
@@ -61,11 +61,11 @@ WorkflowService: 23 of 123 implemented. OperatorService: none yet (the gateway d
 | `DeleteSchedule` | lane TMP-sched (schedules and visibility) |  |
 | `ListSchedules` | lane TMP-sched (schedules and visibility) |  |
 | `CountSchedules` | lane TMP-sched (schedules and visibility) |  |
-| `UpdateWorkerBuildIdCompatibility` | planned: TMP-api E | accepted and recorded; no routing by build ID |
-| `GetWorkerBuildIdCompatibility` | planned: TMP-api E |  |
-| `UpdateWorkerVersioningRules` | planned: TMP-api E | accepted and recorded; no routing by build ID |
-| `GetWorkerVersioningRules` | planned: TMP-api E |  |
-| `GetWorkerTaskReachability` | planned: TMP-api E | every build ID reachable |
+| `UpdateWorkerBuildIdCompatibility` | not planned yet | no routing by build ID yet |
+| `GetWorkerBuildIdCompatibility` | implemented (TMP-api) | no version sets: routing is by task queue only |
+| `UpdateWorkerVersioningRules` | not planned yet | no routing by build ID yet |
+| `GetWorkerVersioningRules` | implemented (TMP-api) | no rules |
+| `GetWorkerTaskReachability` | implemented (TMP-api) | every build ID reachable |
 | `DescribeDeployment` | not planned yet | worker deployments |
 | `DescribeWorkerDeploymentVersion` | not planned yet | worker deployments |
 | `ListDeployments` | not planned yet | worker deployments |
@@ -141,7 +141,7 @@ WorkflowService: 23 of 123 implemented. OperatorService: none yet (the gateway d
 | `AddSearchAttributes` | lane TMP-sched (schedules and visibility) |  |
 | `RemoveSearchAttributes` | lane TMP-sched (schedules and visibility) |  |
 | `ListSearchAttributes` | lane TMP-sched (schedules and visibility) |  |
-| `DeleteNamespace` | planned: TMP-api E | marks the namespace deleted; runs are kept until retention |
+| `DeleteNamespace` | not planned yet | OperatorService is not served yet |
 | `AddOrUpdateRemoteCluster` | not planned yet | no multi-cluster replication |
 | `RemoveRemoteCluster` | not planned yet | no multi-cluster replication |
 | `ListClusters` | not planned yet | no multi-cluster replication |

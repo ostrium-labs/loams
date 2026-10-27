@@ -557,6 +557,22 @@ fn write(e: &Expr, out: &mut String) {
             args.extend(substring_for.as_deref());
             call(out, "substring", &args);
         }
+        // `{'k': v}` is ClickHouse's `map('k', v)` (plan HE1 Task 32).
+        Expr::Dictionary(fields) => {
+            out.push_str("map(");
+            for (i, f) in fields.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                match f.key.quote_style {
+                    Some('\'') => out.push_str(&quote(&f.key.value)),
+                    _ => ident(&f.key, out),
+                }
+                out.push_str(", ");
+                write(&f.value, out);
+            }
+            out.push(')');
+        }
         Expr::Subquery(q) => match subquery_name(q) {
             Some(n) => out.push_str(&n),
             None => {

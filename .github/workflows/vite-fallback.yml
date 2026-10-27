@@ -1,0 +1,57 @@
+name: Vite+ fallback lane
+
+# Design 79 D1774 (Q1309), plan VV1 item 5: once a week, build and test the console
+# and @loams/ui on plain Vite, Vitest and tsdown, without vite-plus. It fails when a
+# Vite+-only feature has crept into web/, so leaving Vite+ stays a one-day job.
+# A vite-plus bump PR runs it by hand (workflow_dispatch on the PR's branch).
+on:
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vite-fallback-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CI: 'true'
+  NX_DAEMON: 'false'
+  NX_NO_CLOUD: 'true'
+
+jobs:
+  fallback:
+    name: "Web: plain Vite, Vitest and tsdown"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      # Rewrites this throwaway checkout: catalog, manifests and imports.
+      - name: switch web/ to the plain tools vite-plus bundles
+        run: python3 tools/vite-fallback/apply.py
+      - name: install (the lockfile changes, so not frozen)
+        run: pnpm install --no-frozen-lockfile --filter '@loams/console...' --filter '@loams/ui...'
+      - name: vite-plus is not installed for the console or @loams/ui
+        run: |
+          if pnpm --filter @loams/console --filter @loams/ui list --depth 0 --json | grep -q '"vite-plus"'; then
+            echo "vite-plus is still a direct dependency"; exit 1
+          fi
+      - name: "@loams/ui: tsdown build and Vitest"
+        run: |
+          pnpm --filter @loams/ui build
+          test -f web/packages/ui/dist/index.js && test -f web/packages/ui/dist/index.d.ts
+          pnpm --filter @loams/ui test
+      - name: "console: Vite build and Vitest"
+        run: |
+          pnpm --filter @loams/console build
+          pnpm --filter @loams/console test

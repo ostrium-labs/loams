@@ -62,6 +62,12 @@ done
 t "aws_env_has_no_access_key" bash -c "! grep -E 'AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN' '$tmp/aws.rendered' && grep -q '^LOAMS_BUCKET=s3://my-bkt/loams\$' '$tmp/aws.rendered' && grep -q '^AWS_REGION=us-east-1\$' '$tmp/aws.rendered'"
 t "gcp_env_has_no_service_account_key" bash -c "! grep -E 'GOOGLE_SERVICE_ACCOUNT|GOOGLE_APPLICATION_CREDENTIALS|private_key' '$tmp/gcp.rendered' && grep -q '^LOAMS_BUCKET=gs://my-bkt/loams\$' '$tmp/gcp.rendered'"
 t "azure_env_has_no_account_key" bash -c "! grep -E 'AZURE_STORAGE_ACCOUNT_KEY|AZURE_STORAGE_SAS|AZURE_STORAGE_CLIENT_SECRET|AZURE_STORAGE_KEY' '$tmp/azure.rendered' && grep -q '^LOAMS_BUCKET=az://loams/loams\$' '$tmp/azure.rendered' && grep -q '^AZURE_STORAGE_ACCOUNT_NAME=myacct\$' '$tmp/azure.rendered' && grep -q '^AZURE_CREDENTIAL_TYPE=managed_identity\$' '$tmp/azure.rendered'"
+t "auth_mode_is_tailscale_without_connectors" bash -c "grep -q '^LOAMS_AUTH_MODE=tailscale\$' '$tmp/aws.rendered'"
+t "auth_mode_adds_apikey_for_connectors (CC1: the connect socket needs an API key)" bash -c "
+  { cat '$tmp/aws.config'; echo 'LOAMS_PROFILES=tikv,connectors'; } >'$tmp/conn.config' &&
+  LOAMS_BYOC_CONFIG='$tmp/conn.config' '$byoc/lib/loams-byoc-bootstrap' --render-env-only | grep -q '^LOAMS_AUTH_MODE=tailscale,apikey\$' &&
+  { cat '$tmp/aws.config'; echo 'CONFLUENT_INTEGRATIONS=confluent'; } >'$tmp/int.config' &&
+  LOAMS_BYOC_CONFIG='$tmp/int.config' '$byoc/lib/loams-byoc-bootstrap' --render-env-only | grep -q '^LOAMS_AUTH_MODE=tailscale,apikey\$'"
 t "render_env_never_holds_a_secret_value" bash -c "! grep -h -E '^(TS_AUTHKEY|LOAMS_SETUP_TOKEN)=' '$tmp'/*.rendered | grep -qvE '=<from secret store>\$'"
 t "bootstrap_refuses_a_bucket_of_the_wrong_cloud" bash -c "
   sed 's#s3://my-bkt#gs://my-bkt#' '$tmp/aws.config' >'$tmp/bad.config';
