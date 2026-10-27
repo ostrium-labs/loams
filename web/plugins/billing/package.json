@@ -41,7 +41,7 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vp test run"
   },
   "dependencies": {
     "@loams/charts": "workspace:*",
@@ -61,6 +61,8 @@
     "react": "catalog:",
     "react-dom": "catalog:",
     "typescript": "5.9.3",
-    "vitest": "5.0.3"
+    "vite": "catalog:",
+    "vitest": "catalog:",
+    "vite-plus": "catalog:"
   }
 }
