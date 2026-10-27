@@ -9870,6 +9870,7 @@ dependencies = [
  "loams-link",
  "loams-log",
  "loams-meta",
+ "loams-meter-gate",
  "loams-proto",
  "loams-query",
  "loams-quickwit",
