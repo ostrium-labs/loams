@@ -14,10 +14,11 @@
 //! first constraint-satisfying one wins, which is what keeps
 //! `GET /api/v1/audit?actor=…` and `?project=…` distinct.
 //!
-//! The two paths this serves that are not `/api/v1/*` are the engine's
-//! `GET /health`, `GET /ready` and the seeded collection reads under
-//! `/v1/namespaces/{ns}/collections`, so a console served from the same origin
-//! has something to render.
+//! The paths this serves that are not `/api/v1/*` are the engine's
+//! `GET /health`, `GET /ready`, the seeded collection reads under
+//! `/v1/namespaces/{ns}/collections` and the managed-engines API under
+//! `/v1/engines` and `/v1/projects/{p}/engines` (design 81), so a console served
+//! from the same origin has something to render.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -29,7 +30,7 @@ use axum::extract::Request;
 use axum::http::{HeaderValue, Method, StatusCode, header};
 use axum::response::Response;
 use axum::routing::any;
-use loams_console_mock::{Route, routes};
+use loams_console_mock::{Route, engine_routes, routes};
 
 /// The paths this module answers itself, which are therefore dropped from the
 /// seed's route list.
@@ -102,7 +103,11 @@ impl Console {
     /// `signed_in` false answers `GET /api/v1/session` with 401, which is how
     /// the console's sign-in and setup screens are built.
     pub(crate) fn from_seed(seed: &serde_json::Value, signed_in: bool) -> Result<Self> {
-        Self::from_routes(routes(seed, signed_in)?)
+        let mut all = routes(seed, signed_in)?;
+        // The managed-engines API (design 81, `api/engines/openapi.json`), so the
+        // console's Engines pages have data.
+        all.extend(engine_routes(seed)?);
+        Self::from_routes(all)
     }
 
     /// Prepares an already-expanded route list.

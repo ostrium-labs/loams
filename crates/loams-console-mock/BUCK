@@ -28,6 +28,11 @@ cargo_package(
             "crate": "contract",
             "root": "tests/contract.rs",
         },
+        {
+            "name": "engines_contract",
+            "crate": "engines_contract",
+            "root": "tests/engines_contract.rs",
+        },
     ],
     deps = [
         "//third-party/rust:anyhow",
@@ -41,6 +46,7 @@ cargo_package(
     ],
     extra_srcs = {
         "api/console/openapi.json": "//:file=api+console+openapi.json",
+        "api/engines/openapi.json": "//:file=api+engines+openapi.json",
         "crates/loams-console-mock/seed/seed.json": "seed/seed.json",
     },
     rustc_flags = [

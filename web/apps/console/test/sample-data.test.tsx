@@ -6,6 +6,7 @@
 import canvas from '@loams/plugin-canvas';
 import connectors from '@loams/plugin-connectors';
 import deployments from '@loams/plugin-deployments';
+import engines from '@loams/plugin-engines';
 import git from '@loams/plugin-git';
 import jobs from '@loams/plugin-jobs';
 import metrics from '@loams/plugin-metrics';
@@ -62,6 +63,8 @@ const PAGES: [string, Plugin, string][] = [
   ['pipelines', pipelines as Plugin, '/pipelines'],
   ['git', git as Plugin, '/git'],
   ['deployments', deployments as Plugin, '/deployments'],
+  // The stub platform's fetch answers `{}`, not a catalog, so the page falls back to its sample.
+  ['engines', engines as Plugin, '/engines'],
 ];
 
 describe('sample data notice', () => {
