@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """The executor's core, with no Airflow imports (D2093).
 
 :class:`Dispatcher` turns workloads into Resonate promises and promise states
@@ -28,8 +29,8 @@ from collections.abc import Callable, Hashable
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from loams_airflow_resonate import ids
-from loams_airflow_resonate.client import (
+from airflow.providers.loams.executors.resonate import ids
+from airflow.providers.loams.executors.resonate.client import (
     PENDING,
     REJECTED,
     REJECTED_CANCELED,
@@ -40,7 +41,7 @@ from loams_airflow_resonate.client import (
     ResonateError,
     Unavailable,
 )
-from loams_airflow_resonate.config import ExecutorSettings
+from airflow.providers.loams.executors.resonate.config import ExecutorSettings
 
 logger = logging.getLogger(__name__)
 
@@ -163,9 +164,7 @@ class Dispatcher:
 
     def submit(self, sub: Submission) -> SubmitResult:
         try:
-            record = self.client.promise_create(
-                sub.promise_id, sub.timeout_at_ms, sub.param, sub.tags
-            )
+            record = self.client.promise_create(sub.promise_id, sub.timeout_at_ms, sub.param, sub.tags)
         except Unavailable as exc:
             return self._submit_retry(sub.key, f"Resonate unavailable: {exc}")
         except ResonateError as exc:

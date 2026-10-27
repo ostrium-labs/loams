@@ -1,15 +1,15 @@
-# Airflow on Resonate: `ResonateExecutor` (preview)
+# Airflow on Resonate: `LoamsResonateExecutor` (preview)
 
 Status: **preview**. The code has unit tests against a fake Resonate and real Airflow 3.3.2 workload models. It has **not yet run end to end** against a Loams engine. The Edge executor stack (DX0, compose profile `airflow`) stays the supported baseline and fallback (D1524).
 
-Design: [§74 §9.3](../../design/74-durable-execution-compat.md) (D1525). This lane's decisions are D2090–D2096 in the [decision log](../../design/13-decision-log.md). The package is `integrations/airflow/loams-airflow-resonate`.
+Design: [§74 §9.3](../../design/74-durable-execution-compat.md) (D1525). This lane's decisions are D2090–D2096 in the [decision log](../../design/13-decision-log.md). The executor is part of the provider `airflow-provider-loams` ([integrations/airflow](../../../integrations/airflow/README.md)): `airflow.providers.loams.executors.resonate_executor`, with its Airflow-free core, protocol client and worker under `airflow.providers.loams.executors.resonate`. The provider registers it under `executors:`.
 
 ## What it does
 
 Each Airflow task instance try becomes one Resonate durable promise:
 
 ```
-scheduler ── ExecuteTask ──▶ ResonateExecutor ── promise.create ──▶ Resonate
+scheduler ── ExecuteTask ──▶ LoamsResonateExecutor  promise.create ──▶ Resonate
                                    ▲                                  │ execute (poll://any@<group>)
                                    │ promise.get (sync)               ▼
                                    └────────────────────────── loams-airflow-resonate-worker
@@ -41,7 +41,7 @@ scheduler ── ExecuteTask ──▶ ResonateExecutor ── promise.create �
 
 ```ini
 [core]
-executor = loams_airflow_resonate.executor.ResonateExecutor
+executor = airflow.providers.loams.executors.resonate_executor.LoamsResonateExecutor
 
 [loams_resonate]
 url = http://127.0.0.1:8001        # the engine's durable listener, or any Resonate server
@@ -58,7 +58,7 @@ cancel_on_terminate = false
 # execution_api_url = ...          # defaults to [core] execution_api_server_url
 ```
 
-`LoamsResonateExecutor` is an alias, under design 74's name.
+`ResonateExecutor` is an alias of `LoamsResonateExecutor`.
 
 ## Workers
 
@@ -66,7 +66,7 @@ cancel_on_terminate = false
 loams-airflow-resonate-worker --url http://127.0.0.1:8001 --queues default,gpu --concurrency 8
 ```
 
-A worker needs the same Airflow version as the scheduler, with the Dag bundle configuration but no database. It runs each workload in a child process (`python -m loams_airflow_resonate.runner`), which calls `BaseExecutor.run_workload` and so `supervise_task`. The workload's token reaches the child through a `0600` file that the child deletes after reading. The worker never logs it. Flags can also be set from the environment: `LOAMS_RESONATE_URL`, `LOAMS_RESONATE_QUEUES`, `LOAMS_RESONATE_GROUPS`, `LOAMS_RESONATE_TEAM`, `LOAMS_RESONATE_CONCURRENCY`, `LOAMS_RESONATE_TTL_MS`, `LOAMS_KILL_GRACE` and `LOAMS_RESONATE_TOKEN`.
+A worker needs the same Airflow version as the scheduler, with the Dag bundle configuration but no database. It needs `airflow-provider-loams` installed, which ships the `loams-airflow-resonate-worker` script. It runs each workload in a child process (`python -m airflow.providers.loams.executors.resonate.runner`), which calls `BaseExecutor.run_workload` and so `supervise_task`. The workload's token reaches the child through a `0600` file that the child deletes after reading. The worker never logs it. Flags can also be set from the environment: `LOAMS_RESONATE_URL`, `LOAMS_RESONATE_QUEUES`, `LOAMS_RESONATE_GROUPS`, `LOAMS_RESONATE_TEAM`, `LOAMS_RESONATE_CONCURRENCY`, `LOAMS_RESONATE_TTL_MS`, `LOAMS_KILL_GRACE` and `LOAMS_RESONATE_TOKEN`.
 
 Shutdown works in two steps. The first SIGTERM stops claiming new tries and lets the running ones finish. A second SIGTERM stops the running processes and exits without settling them, so they surface as `lease_lost`.
 
@@ -90,4 +90,4 @@ The engine's durable listener is loopback-only and unauthenticated (D111, D138),
 - An end-to-end run on a Loams engine, and the chaos cases from §74 §15: worker kill, lease expiry and scheduler failover.
 - Remote task logs: point `[logging]` at the bucket as DX0 does. Workers serve no logs.
 - `TestConnection` workloads (`supports_connection_test = False`).
-- Moving the package into `airflow-provider-loams` in `ostrium-labs/loams-airflow` once that repository exists (D2090).
+- Moving the provider to `ostrium-labs/loams-airflow` (Q1031), if that repository is created.

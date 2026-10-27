@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 from __future__ import annotations
 
 import json
@@ -6,7 +7,7 @@ from typing import Any
 import httpx
 import pytest
 
-from loams_airflow_resonate.client import (
+from airflow.providers.loams.executors.resonate.client import (
     PROTOCOL_VERSION,
     HttpResonateClient,
     ResonateError,
@@ -54,9 +55,7 @@ class Server:
 
 def make(answers: dict[str, tuple[int, Any]], token: str | None = None):
     server = Server(answers)
-    client = HttpResonateClient(
-        "http://resonate:8001/", token=token, transport=httpx.MockTransport(server)
-    )
+    client = HttpResonateClient("http://resonate:8001/", token=token, transport=httpx.MockTransport(server))
     return client, server
 
 

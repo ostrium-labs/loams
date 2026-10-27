@@ -18,24 +18,25 @@
 #   that compute-init creates; do not run the `airflow` profile against the
 #   same database at the same time).
 # - afr-api-server, afr-scheduler, afr-dag-processor, afr-triggerer: stock
-#   Airflow with `[core] executor = ResonateExecutor`.
+#   Airflow with `[core] executor = LoamsResonateExecutor`.
 # - afr-worker-1, afr-worker-2: `loams-airflow-resonate-worker`, polling the
 #   group of the `default` queue (af.default.default). They reach only the
 #   Execution API and Resonate, never the metadata database.
 #
-# The executor package is installed from this checkout at container start
-# (_PIP_ADDITIONAL_REQUIREMENTS, as DX0 does for edge3), against Airflow's
-# constraints file for the pinned image.
+# The provider (airflow-provider-loams, integrations/airflow, which holds the
+# executor) and the Loams Python SDK it depends on are installed from this
+# checkout at container start (_PIP_ADDITIONAL_REQUIREMENTS, as DX0 does for
+# edge3), against Airflow's constraints file for the pinned image.
 
 x-afr: &afr
   profiles: [airflow-resonate]
   image: ${AIRFLOW_IMAGE:?pass conformance/compute/pins.env with --env-file}
   restart: unless-stopped
   environment: &afr-env
-    _PIP_ADDITIONAL_REQUIREMENTS: /opt/loams-airflow-resonate
+    _PIP_ADDITIONAL_REQUIREMENTS: /opt/loams-sdk /opt/airflow-provider-loams
     PIP_CONSTRAINT: ${AIRFLOW_CONSTRAINTS:?pass conformance/compute/pins.env with --env-file}
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW_RESONATE_DB_URL:-postgresql+psycopg2://airflow:airflow@compute1:55433/airflow}
-    AIRFLOW__CORE__EXECUTOR: loams_airflow_resonate.executor.ResonateExecutor
+    AIRFLOW__CORE__EXECUTOR: airflow.providers.loams.executors.resonate_executor.LoamsResonateExecutor
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://afr-api-server:8080/execution/
@@ -50,7 +51,8 @@ x-afr: &afr
     AIRFLOW__LOAMS_RESONATE__TASK_TIMEOUT: ${LOAMS_RESONATE_TASK_TIMEOUT:-86400}
   volumes:
     - ${AIRFLOW_DAGS_DIR:-./compute/airflow/dags}:/opt/airflow/dags:ro
-    - ../../integrations/airflow/loams-airflow-resonate:/opt/loams-airflow-resonate:ro
+    - ../../sdks/python:/opt/loams-sdk:ro
+    - ../../integrations/airflow:/opt/airflow-provider-loams:ro
   depends_on: &afr-deps
     afr-init:
       condition: service_completed_successfully

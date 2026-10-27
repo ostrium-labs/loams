@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Settings for the executor, read from Airflow's ``[loams_resonate]`` section.
 
 Every key can be set the usual Airflow way, for example

@@ -1,9 +1,10 @@
-"""``ResonateExecutor``: an Airflow 3 executor on Resonate durable promises.
+# SPDX-License-Identifier: Apache-2.0
+"""``LoamsResonateExecutor``: an Airflow 3 executor on Resonate durable promises.
 
 Configure it with::
 
     [core]
-    executor = loams_airflow_resonate.executor.ResonateExecutor
+    executor = airflow.providers.loams.executors.resonate_executor.LoamsResonateExecutor
 
     [loams_resonate]
     url = http://127.0.0.1:8001
@@ -12,10 +13,10 @@ Configure it with::
 and run ``loams-airflow-resonate-worker --queues default`` where tasks should
 run. Each task instance try becomes one durable promise whose id is derived
 from ``dag_id``, ``run_id``, ``task_id``, ``map_index`` and ``try_number``
-(:func:`loams_airflow_resonate.ids.task_promise_id`), targeted at the
+(:func:`airflow.providers.loams.executors.resonate.ids.task_promise_id`), targeted at the
 Resonate group of its queue. Workers claim it, run it through the Task SDK
 against the Execution API, and settle the promise; ``sync`` reads the promises
-back and reports infrastructure outcomes (:mod:`loams_airflow_resonate.dispatch`).
+back and reports infrastructure outcomes (:mod:`airflow.providers.loams.executors.resonate.dispatch`).
 
 Design 74 §9.3 (D1525) and this lane's decisions D2090 to D2095. Preview: the
 unit tests run against a fake Resonate; it has not run end to end yet.
@@ -32,10 +33,10 @@ from airflow.executors import workloads
 from airflow.executors.base_executor import BaseExecutor
 from airflow.utils.state import TaskInstanceState
 
-from loams_airflow_resonate import ids
-from loams_airflow_resonate.client import HttpResonateClient, ResonateClient
-from loams_airflow_resonate.config import ExecutorSettings
-from loams_airflow_resonate.dispatch import (
+from airflow.providers.loams.executors.resonate import ids
+from airflow.providers.loams.executors.resonate.client import HttpResonateClient, ResonateClient
+from airflow.providers.loams.executors.resonate.config import ExecutorSettings
+from airflow.providers.loams.executors.resonate.dispatch import (
     KIND_CALLBACK,
     KIND_TASK,
     SCHEMA_VERSION,
@@ -69,7 +70,7 @@ def _state_class(key: Any) -> Any:
         return TaskInstanceState
 
 
-class ResonateExecutor(BaseExecutor):
+class LoamsResonateExecutor(BaseExecutor):
     """Run Airflow task instances as Resonate durable promises."""
 
     supports_ad_hoc_ti_run: bool = True
@@ -119,7 +120,7 @@ class ResonateExecutor(BaseExecutor):
     def start(self) -> None:
         self._ensure_dispatch()
         self.log.info(
-            "ResonateExecutor started: %s, namespace %r%s",
+            "LoamsResonateExecutor started: %s, namespace %r%s",
             self.settings.url,
             self.settings.namespace,
             f", team {self.team!r}" if self.team else "",
@@ -192,14 +193,12 @@ class ResonateExecutor(BaseExecutor):
             )
             promise_id = ids.task_promise_id(ns, ref)
             kind = KIND_TASK
-            tags.update(
-                {TAG_DAG: ti.dag_id, TAG_RUN: ti.run_id, TAG_TASK: ti.task_id, TAG_TI: str(ti.id)}
-            )
+            tags.update({TAG_DAG: ti.dag_id, TAG_RUN: ti.run_id, TAG_TASK: ti.task_id, TAG_TI: str(ti.id)})
         elif isinstance(workload, workloads.ExecuteCallback):
             promise_id = ids.callback_promise_id(ns, str(workload.callback.id))
             kind = KIND_CALLBACK
         else:
-            msg = f"ResonateExecutor cannot run {type(workload).__name__} workloads"
+            msg = f"LoamsResonateExecutor cannot run {type(workload).__name__} workloads"
             raise ValueError(msg)
         tags[TAG_KIND] = kind
 
@@ -257,9 +256,7 @@ class ResonateExecutor(BaseExecutor):
             self.running.add(key)
             # QUEUED with the promise id: the scheduler records it as the
             # try's external_executor_id, which adoption reads back.
-            self.change_state(
-                key, _state_class(key).QUEUED, submission.promise_id, remove_running=False
-            )
+            self.change_state(key, _state_class(key).QUEUED, submission.promise_id, remove_running=False)
 
     def _unqueue(self, key: Any) -> None:
         self.queued_tasks.pop(key, None)
@@ -331,5 +328,5 @@ class ResonateExecutor(BaseExecutor):
             self.log.info("resonate in-flight (%d)", self._dispatch.in_flight())
 
 
-#: Design 74's name for the same executor.
-LoamsResonateExecutor = ResonateExecutor
+#: The short name, for configuration written against the AF-exec preview.
+ResonateExecutor = LoamsResonateExecutor

@@ -1,16 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
 from __future__ import annotations
 
 from dataclasses import replace
 
-from fakes import FakeClock, FakeResonate
-from loams_airflow_resonate import ids
-from loams_airflow_resonate.config import ExecutorSettings
-from loams_airflow_resonate.dispatch import (
+from airflow.providers.loams.executors.resonate import ids
+from airflow.providers.loams.executors.resonate.config import ExecutorSettings
+from airflow.providers.loams.executors.resonate.dispatch import (
     KIND_TASK,
     SCHEMA_VERSION,
     Dispatcher,
     Submission,
 )
+from tests.executors.fakes import FakeClock, FakeResonate
 
 GROUP = "af.default.default"
 SETTINGS = ExecutorSettings(claim_timeout=60, sync_interval=5, submit_max_attempts=3)
@@ -59,7 +60,7 @@ def test_submit_creates_one_promise_with_a_task() -> None:
 
 
 def test_claim_then_exit_zero_is_running_then_success() -> None:
-    d, fake, clock = setup()
+    d, fake, _ = setup()
     sub = submission()
     d.submit(sub)
     assert d.poll(force=True) == []

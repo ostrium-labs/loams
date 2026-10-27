@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Deterministic Resonate identifiers for Airflow work (D2091, D2092).
 
 A task instance try maps to exactly one durable promise:
@@ -92,16 +93,10 @@ def task_promise_id(ns: str, ref: TaskRef) -> str:
     ns_e = escape(ns)
     map_e = escape(str(ref.map_index))
     try_e = escape(str(ref.try_number))
-    plain = (
-        f"{PREFIX}.{ns_e}.{escape(ref.dag_id)}.{escape(ref.run_id)}"
-        f":{escape(ref.task_id)}.{map_e}.{try_e}"
-    )
+    plain = f"{PREFIX}.{ns_e}.{escape(ref.dag_id)}.{escape(ref.run_id)}:{escape(ref.task_id)}.{map_e}.{try_e}"
     if len(plain.encode("utf-8")) <= MAX_ID_BYTES:
         return plain
-    return (
-        f"{PREFIX}.{ns_e}.h{_digest(ref.dag_id, ref.run_id)}"
-        f":h{_digest(ref.task_id)}.{map_e}.{try_e}"
-    )
+    return f"{PREFIX}.{ns_e}.h{_digest(ref.dag_id, ref.run_id)}:h{_digest(ref.task_id)}.{map_e}.{try_e}"
 
 
 def callback_promise_id(ns: str, callback_id: str) -> str:

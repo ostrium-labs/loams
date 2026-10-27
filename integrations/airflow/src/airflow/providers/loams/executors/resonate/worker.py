@@ -1,10 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
 """The interim worker: claims Airflow tasks from Resonate and runs them (D2094).
 
 Design 74 §9.3 names a Rust ``loams-worker`` as the long-term runner. Until it
 lands, this module is the worker: it subscribes to one or more target groups
 (``GET /poll/<group>/<pid>``), claims each ``execute`` with ``task.acquire``,
 and runs the workload in a child process through the Airflow Task SDK
-(:mod:`loams_airflow_resonate.runner`, which calls
+(:mod:`airflow.providers.loams.executors.resonate.runner`, which calls
 ``BaseExecutor.run_workload`` and so ``supervise_task``). The task talks to the
 Execution API itself, with the workload's short-lived token; this worker never
 logs the token or the workload.
@@ -51,8 +52,8 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from loams_airflow_resonate import ids
-from loams_airflow_resonate.client import (
+from airflow.providers.loams.executors.resonate import ids
+from airflow.providers.loams.executors.resonate.client import (
     REJECTED,
     RESOLVED,
     ExecuteMessage,
@@ -61,7 +62,7 @@ from loams_airflow_resonate.client import (
     ResonateError,
     Unavailable,
 )
-from loams_airflow_resonate.dispatch import (
+from airflow.providers.loams.executors.resonate.dispatch import (
     KIND_CALLBACK,
     KIND_TASK,
     OUTCOME_EXITED,
@@ -98,7 +99,7 @@ class ProcessRunner(Protocol):
 
 @dataclass
 class SubprocessRunner:
-    """Runs ``python -m loams_airflow_resonate.runner`` for each workload.
+    """Runs ``python -m airflow.providers.loams.executors.resonate.runner`` for each workload.
 
     The workload (which carries the task's token) goes through a ``0600``
     temporary file that the child deletes after reading, never through argv
@@ -119,7 +120,7 @@ class SubprocessRunner:
             cmd = [
                 self.python,
                 "-m",
-                "loams_airflow_resonate.runner",
+                "airflow.providers.loams.executors.resonate.runner",
                 "--json-path",
                 path,
                 "--delete",
@@ -284,9 +285,7 @@ class Worker:
                 return "abandoned"
             if deadline_ms and now * 1000 >= deadline_ms:
                 self._stop_process(proc)
-                self._settle(
-                    task_id, version, REJECTED, OUTCOME_TIMED_OUT, reason="task_timeout reached"
-                )
+                self._settle(task_id, version, REJECTED, OUTCOME_TIMED_OUT, reason="task_timeout reached")
                 return "timed_out"
             if now >= next_beat:
                 next_beat = now + period
@@ -295,9 +294,7 @@ class Worker:
                     self.client.task_heartbeat(self.settings.pid, task_id, version)
                 except (Unavailable, ResonateError) as exc:
                     logger.warning("heartbeat of %s failed: %s", task_id, exc)
-                if beats % max(1, self.settings.check_every) == 0 and self._settled_elsewhere(
-                    task_id
-                ):
+                if beats % max(1, self.settings.check_every) == 0 and self._settled_elsewhere(task_id):
                     self._stop_process(proc)
                     return "cancelled"
             self.sleep(self.settings.tick)
@@ -416,9 +413,7 @@ class Worker:
         if not self.settings.groups:
             msg = "no target groups to poll"
             raise ValueError(msg)
-        pool = ThreadPoolExecutor(
-            max_workers=self.settings.concurrency, thread_name_prefix="af-task"
-        )
+        pool = ThreadPoolExecutor(max_workers=self.settings.concurrency, thread_name_prefix="af-task")
         listeners = [
             threading.Thread(target=self._listen, args=(g, pool), name=f"af-poll-{g}", daemon=True)
             for g in self.settings.groups
@@ -517,9 +512,7 @@ def main(argv: list[str] | None = None) -> int:
         kill_grace=args.kill_grace,
         execution_api_url=args.execution_api_url,
     )
-    client = HttpResonateClient(
-        settings.url, token=settings.token, timeout=settings.request_timeout
-    )
+    client = HttpResonateClient(settings.url, token=settings.token, timeout=settings.request_timeout)
     worker = Worker(client=client, settings=settings)
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: worker.request_stop())

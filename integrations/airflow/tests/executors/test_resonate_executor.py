@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """ResonateExecutor against a fake Resonate, with real Airflow 3.3 workloads."""
 
 from __future__ import annotations
@@ -15,9 +16,9 @@ from airflow.executors.workloads import BundleInfo, ExecuteTask, TaskInstanceDTO
 from airflow.models.taskinstancekey import TaskInstanceKey
 from airflow.utils.state import TaskInstanceState
 
-from fakes import FakeClock, FakeResonate
-from loams_airflow_resonate import ids
-from loams_airflow_resonate.executor import LoamsResonateExecutor, ResonateExecutor
+from airflow.providers.loams.executors.resonate import ids
+from airflow.providers.loams.executors.resonate_executor import LoamsResonateExecutor, ResonateExecutor
+from tests.executors.fakes import FakeClock, FakeResonate
 
 RUN = "manual__2026-10-27T10:00:00+00:00"
 
@@ -78,9 +79,7 @@ def claim_and_finish(fake: FakeResonate, pid: str, rc: int | None) -> int:
     assert got is not None
     fake.promise_create(ids.started_marker_id(pid), got.promise.timeout_at, {"worker": "h/w1"}, {})
     if rc is not None:
-        fake.task_fulfill(
-            pid, got.task.version, "resolved", {"outcome": "exited", "returncode": rc}
-        )
+        fake.task_fulfill(pid, got.task.version, "resolved", {"outcome": "exited", "returncode": rc})
     return got.task.version
 
 
@@ -165,10 +164,7 @@ def test_queue_routing_and_overrides(fake: FakeResonate, monkeypatch: pytest.Mon
     for w in (gpu, special, plain):
         ex.queue_workload(w, session=None)
     ex.heartbeat()
-    target = {
-        t: fake.promises[promise_id(t)].tags["resonate:target"]
-        for t in ("train", "special", "other")
-    }
+    target = {t: fake.promises[promise_id(t)].tags["resonate:target"] for t in ("train", "special", "other")}
     assert target == {
         "train": "poll://any@af.default.gpu-pool",
         "special": "poll://any@af.default.big",
@@ -280,3 +276,17 @@ def test_terminate_can_cancel(fake: FakeResonate, monkeypatch: pytest.MonkeyPatc
     ex.heartbeat()
     ex.terminate()
     assert fake.promises[promise_id()].state == "rejected_canceled"
+
+
+def test_the_provider_registers_the_executor() -> None:
+    from airflow.executors.base_executor import BaseExecutor
+
+    from airflow.providers.loams.get_provider_info import get_provider_info
+
+    [path] = get_provider_info()["executors"]
+    module, _, name = path.rpartition(".")
+    import importlib
+
+    cls = getattr(importlib.import_module(module), name)
+    assert issubclass(cls, BaseExecutor)
+    assert cls is LoamsResonateExecutor

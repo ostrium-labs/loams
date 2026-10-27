@@ -1,8 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
 from __future__ import annotations
 
 import pytest
 
-from loams_airflow_resonate import ids
+from airflow.providers.loams.executors.resonate import ids
 
 RUN = "manual__2026-10-27T10:00:00+00:00"
 
@@ -22,9 +23,7 @@ def ref(**kw: object) -> ids.TaskRef:
 def test_task_promise_id_is_deterministic_and_readable() -> None:
     pid = ids.task_promise_id("default", ref())
     assert pid == ids.task_promise_id("default", ref())
-    assert pid == (
-        "af.default.etl%2Edaily.manual__2026-10-27T10%3A00%3A00%2B00%3A00:group%2Eload.-1.1"
-    )
+    assert pid == ("af.default.etl%2Edaily.manual__2026-10-27T10%3A00%3A00%2B00%3A00:group%2Eload.-1.1")
 
 
 def test_origin_is_the_dag_run_and_holds_no_colon() -> None:

@@ -1,6 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
 """Run one Airflow workload through the Task SDK; the worker's child process.
 
-``python -m loams_airflow_resonate.runner --json-path FILE [--delete] --server URL``
+``python -m airflow.providers.loams.executors.resonate.runner --json-path FILE [--delete] --server URL``
 
 This mirrors Airflow's own ``airflow.sdk.execution_time.execute_workload``
 (used by the ECS and Kubernetes executors) with two differences the worker
@@ -18,7 +19,7 @@ import sys
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="loams_airflow_resonate.runner")
+    parser = argparse.ArgumentParser(prog="airflow.providers.loams.executors.resonate.runner")
     parser.add_argument("--json-path", required=True)
     parser.add_argument("--delete", action="store_true", help="delete the file once read")
     parser.add_argument("--server", default="", help="the Execution API URL")
@@ -52,7 +53,7 @@ def main(argv: list[str] | None = None) -> int:
         workload,
         server=args.server or None,
         subprocess_logs_to_stdout=True,
-        proctitle=f"airflow worker -- ResonateExecutor: {args.title or workload.display_name}",
+        proctitle=f"airflow worker -- LoamsResonateExecutor: {args.title or workload.display_name}",
     )
     return int(rc or 0)
 

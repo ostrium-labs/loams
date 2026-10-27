@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """In-memory fakes: a Resonate server, a process runner and a clock.
 
 ``FakeResonate`` follows the protocol semantics the executor and the worker
@@ -20,7 +21,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
-from loams_airflow_resonate.client import (
+from airflow.providers.loams.executors.resonate.client import (
     PENDING,
     TASK_ACQUIRED,
     TASK_FULFILLED,
@@ -121,9 +122,7 @@ class FakeResonate:
 
     # -- promises -----------------------------------------------------------
 
-    def promise_create(
-        self, id: str, timeout_at: int, param: Any, tags: dict[str, str]
-    ) -> PromiseRecord:
+    def promise_create(self, id: str, timeout_at: int, param: Any, tags: dict[str, str]) -> PromiseRecord:
         self._op("promise.create", id)
         existing = self.promises.get(id)
         if existing is not None:

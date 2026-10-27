@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 from __future__ import annotations
 
 import argparse
@@ -7,15 +8,15 @@ from typing import Any
 
 import pytest
 
-from fakes import FakeClock, FakeProc, FakeResonate, FakeRunner
-from loams_airflow_resonate import ids
-from loams_airflow_resonate.client import ExecuteMessage
-from loams_airflow_resonate.dispatch import KIND_TASK, SCHEMA_VERSION
-from loams_airflow_resonate.worker import (
+from airflow.providers.loams.executors.resonate import ids
+from airflow.providers.loams.executors.resonate.client import ExecuteMessage
+from airflow.providers.loams.executors.resonate.dispatch import KIND_TASK, SCHEMA_VERSION
+from airflow.providers.loams.executors.resonate.worker import (
     Worker,
     WorkerSettings,
     groups_from_args,
 )
+from tests.executors.fakes import FakeClock, FakeProc, FakeResonate, FakeRunner
 
 GROUP = "af.default.default"
 PID = ids.task_promise_id("default", ids.TaskRef("dag", "run", "task", 1))
@@ -57,15 +58,11 @@ def make(
         if sleep_hook is not None:
             sleep_hook(clock.now)
 
-    worker = Worker(
-        client=fake, settings=WorkerSettings(**opts), runner=runner, clock=clock, sleep=sleep
-    )
+    worker = Worker(client=fake, settings=WorkerSettings(**opts), runner=runner, clock=clock, sleep=sleep)
     return worker, fake, clock, runner
 
 
-def submit(
-    fake: FakeResonate, clock: FakeClock, timeout_s: float = 3600, **p: Any
-) -> ExecuteMessage:
+def submit(fake: FakeResonate, clock: FakeClock, timeout_s: float = 3600, **p: Any) -> ExecuteMessage:
     fake.promise_create(
         PID,
         int((clock() + timeout_s) * 1000),
@@ -122,9 +119,7 @@ def test_a_started_try_is_never_run_twice() -> None:
     # Worker "dead" claimed it, wrote the marker, started the process, died.
     got = fake.task_acquire(msg.task_id, msg.version, "dead", 6_000)
     assert got is not None
-    fake.promise_create(
-        ids.started_marker_id(PID), got.promise.timeout_at, {"worker": "h/dead"}, {}
-    )
+    fake.promise_create(ids.started_marker_id(PID), got.promise.timeout_at, {"worker": "h/dead"}, {})
     redelivered = fake.expire_lease(PID)
     fake.take(GROUP)
     assert worker.handle(redelivered) == "lease_lost"
@@ -180,9 +175,7 @@ def test_the_deadline_terminates_then_kills() -> None:
 
 
 def test_the_execution_api_url_can_be_overridden() -> None:
-    worker, fake, clock, runner = make(
-        FakeProc(polls=0), execution_api_url="http://api.internal/execution/"
-    )
+    worker, fake, clock, runner = make(FakeProc(polls=0), execution_api_url="http://api.internal/execution/")
     worker.handle(submit(fake, clock))
     assert runner.started[0][1] == "http://api.internal/execution/"
 

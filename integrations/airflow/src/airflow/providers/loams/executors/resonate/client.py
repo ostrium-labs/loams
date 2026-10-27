@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """A small synchronous client for the Resonate server protocol (version 2026-04-01).
 
 It speaks the same envelope the Resonate SDKs do: every request is
@@ -174,9 +175,7 @@ class ExecuteMessage:
 class ResonateClient(Protocol):
     """The Resonate operations the executor and the worker use."""
 
-    def promise_create(
-        self, id: str, timeout_at: int, param: Any, tags: dict[str, str]
-    ) -> PromiseRecord:
+    def promise_create(self, id: str, timeout_at: int, param: Any, tags: dict[str, str]) -> PromiseRecord:
         """Create a promise; idempotent: an existing promise comes back as is."""
 
     def promise_get(self, id: str) -> PromiseRecord | None:
@@ -321,9 +320,7 @@ class HttpResonateClient:
 
     # -- promises -----------------------------------------------------------
 
-    def promise_create(
-        self, id: str, timeout_at: int, param: Any, tags: dict[str, str]
-    ) -> PromiseRecord:
+    def promise_create(self, id: str, timeout_at: int, param: Any, tags: dict[str, str]) -> PromiseRecord:
         data = {"id": id, "timeoutAt": timeout_at, "param": encode_value(param), "tags": tags}
         status, resp = self._send("promise.create", data)
         if status == 409:
