@@ -2,14 +2,17 @@
 //! `can_*` relation on one object through [`loams_authz::http`], and an undeclared route is
 //! refused.
 //!
-//! Engines have no OpenFGA type of their own yet, so every check is on `project:<p>`:
+//! An instance belongs to one Loams namespace (ENG81 R2). `deploy/openfga/core.fga` has an
+//! `engine` type (`can_view`, `can_operate`, `can_admin`, `can_connect` from its environment,
+//! R18/D1919), but until the facade writes `engine:<id>#environment` tuples every check is the
+//! matching relation on `environment:<ns>`:
 //!
-//! | Route | Relation |
-//! |---|---|
-//! | `GET /v1/engines` | authenticated |
-//! | list, get, usage, list sessions and jobs | `can_view` |
-//! | suspend, resume, SQL, create or close a session, submit or cancel a job | `can_operate` |
-//! | create, `PATCH` (scale or upgrade), delete | `can_admin`, strict (no cache) |
+//! | Route | On `environment:<ns>` | Same as on `engine:<id>` |
+//! |---|---|---|
+//! | `GET /v1/engines` | authenticated | |
+//! | list, get, usage, list sessions and jobs | `can_read` | `can_view` |
+//! | suspend, resume, SQL, create or close a session, submit or cancel a job | `can_write` | `can_operate` |
+//! | create, `PATCH` (scale or upgrade), delete | `can_admin`, strict (no cache) | `can_admin` |
 //!
 //! `PATCH` needs `can_admin` for a scale too, because the route table cannot see the body.
 
@@ -17,12 +20,15 @@ use axum::http::Method;
 use loams_authz::ObjectRef;
 use loams_authz::http::{Declared, Need, segments};
 
-pub const CAN_VIEW: &str = "can_view";
-pub const CAN_OPERATE: &str = "can_operate";
+/// Reads (`engine#can_view`).
+pub const CAN_VIEW: &str = "can_read";
+/// Lifecycle and use (`engine#can_operate`).
+pub const CAN_OPERATE: &str = "can_write";
+/// Create, change and delete (`engine#can_admin`).
 pub const CAN_ADMIN: &str = "can_admin";
 
-fn check(relation: &str, project: &str, strict: bool) -> Option<Declared> {
-    let need = Need::new(relation, ObjectRef::new("project", project)).ok()?;
+fn check(relation: &str, namespace: &str, strict: bool) -> Option<Declared> {
+    let need = Need::new(relation, ObjectRef::new("environment", namespace)).ok()?;
     Some(Declared::Check(if strict { need.strict() } else { need }))
 }
 
@@ -33,27 +39,29 @@ pub fn declare(method: &Method, path: &str) -> Option<Declared> {
     let seg: Vec<&str> = seg.iter().map(String::as_str).collect();
     match seg.as_slice() {
         ["v1", "engines"] if *method == Method::GET => Some(Declared::Authenticated),
-        ["v1", "projects", p, "engines"] => match *method {
+        ["v1", "namespaces", p, "engines"] => match *method {
             Method::GET => check(CAN_VIEW, p, false),
             Method::POST => check(CAN_ADMIN, p, true),
             _ => None,
         },
-        ["v1", "projects", p, "engines", _id] => match *method {
+        ["v1", "namespaces", p, "engines", _id] => match *method {
             Method::GET => check(CAN_VIEW, p, false),
             Method::PATCH | Method::DELETE => check(CAN_ADMIN, p, true),
             _ => None,
         },
-        ["v1", "projects", p, "engines", _id, action] => match (method, *action) {
+        ["v1", "namespaces", p, "engines", _id, action] => match (method, *action) {
             (&Method::POST, "suspend" | "resume" | "sql" | "sessions" | "jobs") => {
                 check(CAN_OPERATE, p, false)
             }
             (&Method::GET, "usage" | "sessions" | "jobs") => check(CAN_VIEW, p, false),
             _ => None,
         },
-        ["v1", "projects", p, "engines", _id, "sessions", _s] if *method == Method::DELETE => {
+        ["v1", "namespaces", p, "engines", _id, "sessions", _s] if *method == Method::DELETE => {
             check(CAN_OPERATE, p, false)
         }
-        ["v1", "projects", p, "engines", _id, "jobs", _j, "cancel"] if *method == Method::POST => {
+        ["v1", "namespaces", p, "engines", _id, "jobs", _j, "cancel"]
+            if *method == Method::POST =>
+        {
             check(CAN_OPERATE, p, false)
         }
         _ => None,
@@ -86,7 +94,7 @@ mod tests {
 
     #[test]
     fn every_route_is_declared() {
-        let base = "/v1/projects/p1/engines";
+        let base = "/v1/namespaces/p1/engines";
         let id = format!("{base}/eng_1");
         let cases = [
             (Method::GET, "/v1/engines".to_owned(), "authenticated"),
@@ -111,7 +119,7 @@ mod tests {
                 need(m.clone(), &path).unwrap_or_else(|| panic!("{m} {path} is undeclared"));
             assert_eq!(rel, want, "{m} {path}");
             if want != "authenticated" {
-                assert_eq!(obj, "project:p1", "{m} {path}");
+                assert_eq!(obj, "environment:p1", "{m} {path}");
             }
             let strict = want == CAN_ADMIN;
             assert_eq!(
@@ -126,14 +134,17 @@ mod tests {
     fn anything_else_is_denied() {
         for (m, path) in [
             (Method::DELETE, "/v1/engines"),
-            (Method::PUT, "/v1/projects/p1/engines"),
-            (Method::GET, "/v1/projects/p1/engines/eng_1/sql"),
-            (Method::POST, "/v1/projects/p1/engines/eng_1/usage"),
-            (Method::GET, "/v1/projects/p1/engines/eng_1/jobs/j1/cancel"),
-            (Method::GET, "/v1/projects/p1/engines/eng_1/other"),
-            (Method::GET, "/v1/projects//engines"),
-            (Method::GET, "/v1/projects/a%23b/engines"),
-            (Method::GET, "/v1/projects/../engines"),
+            (Method::PUT, "/v1/namespaces/p1/engines"),
+            (Method::GET, "/v1/namespaces/p1/engines/eng_1/sql"),
+            (Method::POST, "/v1/namespaces/p1/engines/eng_1/usage"),
+            (
+                Method::GET,
+                "/v1/namespaces/p1/engines/eng_1/jobs/j1/cancel",
+            ),
+            (Method::GET, "/v1/namespaces/p1/engines/eng_1/other"),
+            (Method::GET, "/v1/namespaces//engines"),
+            (Method::GET, "/v1/namespaces/a%23b/engines"),
+            (Method::GET, "/v1/namespaces/../engines"),
         ] {
             assert!(declare(&m, path).is_none(), "{m} {path}");
         }

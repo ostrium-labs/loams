@@ -23,6 +23,9 @@ pub enum EngineError {
     /// No adapter serves this engine kind on this install (its profile is off).
     #[error("{0}")]
     NotEnabled(String),
+    /// The Meter refused: an entitlement is used up or a spend cap reached (design 63 §17.4).
+    #[error("{0}")]
+    QuotaExceeded(String),
     /// The runtime could not be reached; retry.
     #[error("{0}")]
     Unavailable(String),
@@ -40,6 +43,7 @@ impl EngineError {
             Self::FailedPrecondition(_) => "failed_precondition",
             Self::Unsupported(_) => "unsupported",
             Self::NotEnabled(_) => "engine_not_enabled",
+            Self::QuotaExceeded(_) => "entitlement_exhausted",
             Self::Unavailable(_) => "unavailable",
             Self::Internal(_) => "internal",
         }
@@ -51,6 +55,7 @@ impl EngineError {
             Self::Invalid(_) | Self::Unsupported(_) => StatusCode::BAD_REQUEST,
             Self::Conflict(_) | Self::FailedPrecondition(_) => StatusCode::CONFLICT,
             Self::NotEnabled(_) => StatusCode::NOT_IMPLEMENTED,
+            Self::QuotaExceeded(_) => StatusCode::PAYMENT_REQUIRED,
             Self::Unavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
             Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }

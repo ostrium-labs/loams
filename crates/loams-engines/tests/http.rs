@@ -56,7 +56,7 @@ fn create_body(name: &str, kind: &str) -> Value {
 #[tokio::test]
 async fn lifecycle_over_http() {
     let app = router(service());
-    let base = "/v1/projects/p1/engines";
+    let base = "/v1/namespaces/p1/engines";
 
     let (s, cat) = call(&app, Method::GET, "/v1/engines", None).await;
     assert_eq!(s, StatusCode::OK);
@@ -135,7 +135,7 @@ async fn lifecycle_over_http() {
     .await;
     assert_eq!(s, StatusCode::OK);
     assert!(usage["samples"].is_array());
-    assert!(usage["totals"]["vcpu_seconds"].is_number());
+    assert!(usage["totals"]["cpu_ms"].is_u64());
 
     let (s, gone) = call(&app, Method::DELETE, &one, None).await;
     assert_eq!(s, StatusCode::ACCEPTED);
@@ -148,7 +148,7 @@ async fn lifecycle_over_http() {
 #[tokio::test]
 async fn bad_bodies_answer_the_error_shape() {
     let app = router(service());
-    let base = "/v1/projects/p1/engines";
+    let base = "/v1/namespaces/p1/engines";
     for body in [
         json!({ "name": "x" }),
         json!({ "name": "x", "kind": "risingwave", "size": { "tier": "xxl" } }),
@@ -170,7 +170,7 @@ async fn bad_bodies_answer_the_error_shape() {
 #[tokio::test]
 async fn spark_sessions_and_jobs_over_http() {
     let app = router(service());
-    let base = "/v1/projects/p1/engines";
+    let base = "/v1/namespaces/p1/engines";
     let (_, sp) = call(&app, Method::POST, base, Some(create_body("sp", "spark"))).await;
     let one = format!("{base}/{}", sp["id"].as_str().unwrap());
 
@@ -221,16 +221,16 @@ async fn spark_sessions_and_jobs_over_http() {
     assert_eq!(e["error"], "unsupported");
 }
 
-/// `user:viewer` may view project p1, `user:operator` operate it and `user:admin` administer
-/// it, each relation implying the weaker ones. Nothing on any other project.
+/// `user:viewer` may view namespace p1, `user:operator` operate it and `user:admin` administer
+/// it, each relation implying the weaker ones. Nothing on any other namespace.
 struct Model;
 
 #[async_trait]
 impl Authorizer for Model {
     async fn check(&self, req: CheckRequest) -> loams_authz::Result<Decision> {
         let rank = |r: &str| match r {
-            "can_view" => 1,
-            "can_operate" => 2,
+            "can_read" => 1,
+            "can_write" => 2,
             "can_admin" => 3,
             _ => 99,
         };
@@ -240,7 +240,7 @@ impl Authorizer for Model {
             "admin" => 3,
             _ => 0,
         };
-        let ok = req.object == ObjectRef::new("project", "p1") && rank(&req.relation) <= held;
+        let ok = req.object == ObjectRef::new("environment", "p1") && rank(&req.relation) <= held;
         Ok(if ok {
             Decision::allow(None)
         } else {
@@ -290,9 +290,9 @@ async fn as_user(
 }
 
 #[tokio::test]
-async fn the_enforcer_checks_project_relations() {
+async fn the_enforcer_checks_namespace_relations() {
     let app = router_with_authz(service(), Arc::new(Model)).layer(from_fn(authn));
-    let base = "/v1/projects/p1/engines";
+    let base = "/v1/namespaces/p1/engines";
     let create = Some(create_body("rw", "risingwave"));
 
     assert_eq!(
@@ -355,7 +355,14 @@ async fn the_enforcer_checks_project_relations() {
         StatusCode::FORBIDDEN
     );
     assert_eq!(
-        as_user(&app, "admin", Method::GET, "/v1/projects/p2/engines", None).await,
+        as_user(
+            &app,
+            "admin",
+            Method::GET,
+            "/v1/namespaces/p2/engines",
+            None
+        )
+        .await,
         StatusCode::FORBIDDEN
     );
     // No subject at all.

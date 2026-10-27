@@ -116,8 +116,6 @@ const MODEL: &[(&str, &str, &[Rule])] = &[
         &[Direct(PROJECT_GRANTEES), Computed("editor")],
     ),
     ("project", "can_admin", &[Computed("admin")]),
-    ("project", "can_view", &[Computed("viewer")]),
-    ("project", "can_operate", &[Computed("editor")]),
     ("environment", "project", &[Direct(&[Type("project")])]),
     ("environment", "org", &[Direct(&[Type("org")])]),
     (
@@ -172,6 +170,11 @@ const MODEL: &[(&str, &str, &[Rule])] = &[
     ("database", "can_write", &[From("environment", "editor")]),
     ("database", "can_admin", &[From("environment", "deployer")]),
     ("database", "can_connect", &[From("environment", "viewer")]),
+    ("engine", "environment", &[Direct(&[Type("environment")])]),
+    ("engine", "can_view", &[From("environment", "viewer")]),
+    ("engine", "can_operate", &[From("environment", "editor")]),
+    ("engine", "can_admin", &[From("environment", "deployer")]),
+    ("engine", "can_connect", &[From("environment", "viewer")]),
     ("graph", "environment", &[Direct(&[Type("environment")])]),
     (
         "graph",

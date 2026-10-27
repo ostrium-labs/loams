@@ -1,13 +1,16 @@
 //! The lifecycle service: owns the records, the phase machine and metering, and calls the
 //! adapters (D2010, D2012, D2013). The HTTP facade is a thin layer over this.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::meter::{MeterOrigin, MeterSink, NoopMeterSink, Usage, UsageEvent, UsageLog};
+use crate::meter::{
+    self, GateOp, MeterGate, MeterOrigin, MeterSink, NoopMeterSink, OpenGate, Usage, UsageEvent,
+    UsageLog,
+};
 use crate::{
     CreateSession, EngineCatalog, EngineError, EngineKind, EngineRegistry, Instance, InstanceId,
     InstanceSpec, InstanceStatus, InstanceStore, ManagedEngine, MemoryStore, Observed, Op, Phase,
@@ -15,7 +18,7 @@ use crate::{
     validate_name,
 };
 
-/// `POST /v1/projects/{p}/engines`.
+/// `POST /v1/namespaces/{p}/engines`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CreateInstance {
@@ -28,11 +31,9 @@ pub struct CreateInstance {
     pub config: BTreeMap<String, String>,
     #[serde(default)]
     pub labels: BTreeMap<String, String>,
-    #[serde(default)]
-    pub environment: Option<String>,
 }
 
-/// `PATCH /v1/projects/{p}/engines/{id}`: exactly one of the two.
+/// `PATCH /v1/namespaces/{p}/engines/{id}`: exactly one of the two.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateInstance {
@@ -82,7 +83,10 @@ pub struct EngineService {
     store: Arc<dyn InstanceStore>,
     meter: Arc<dyn MeterSink>,
     origin: MeterOrigin,
+    gate: Arc<dyn MeterGate>,
     usage: UsageLog,
+    /// When each instance's storage gauge last went out.
+    last_storage: Mutex<HashMap<InstanceId, OffsetDateTime>>,
     busy: Mutex<HashSet<InstanceId>>,
     /// Serializes create's name check and insert.
     creating: tokio::sync::Mutex<()>,
@@ -108,7 +112,9 @@ impl EngineService {
             store: Arc::new(MemoryStore::new()),
             meter: Arc::new(NoopMeterSink),
             origin: MeterOrigin::default(),
+            gate: Arc::new(OpenGate),
             usage: UsageLog::default(),
+            last_storage: Mutex::new(HashMap::new()),
             busy: Mutex::new(HashSet::new()),
             creating: tokio::sync::Mutex::new(()),
             window_secs: 60,
@@ -125,6 +131,13 @@ impl EngineService {
     pub fn with_meter(mut self, meter: Arc<dyn MeterSink>, origin: MeterOrigin) -> Self {
         self.meter = meter;
         self.origin = origin;
+        self
+    }
+
+    /// The Meter's entitlement gate, asked on create, resume and scale up (ENG81 R17).
+    #[must_use]
+    pub fn with_gate(mut self, gate: Arc<dyn MeterGate>) -> Self {
+        self.gate = gate;
         self
     }
 
@@ -163,24 +176,24 @@ impl EngineService {
         self.busy.lock().map(|s| s.contains(id)).unwrap_or(true)
     }
 
-    /// The instance, if it is in `project`. Another project's instance is not found, never
-    /// forbidden, so ids do not leak across projects.
-    async fn load(&self, project: &str, id: &str) -> Result<Instance, EngineError> {
+    /// The instance, if it is in `namespace`. Another namespace's instance is not found, never
+    /// forbidden, so ids do not leak across namespaces.
+    async fn load(&self, namespace: &str, id: &str) -> Result<Instance, EngineError> {
         let id = InstanceId(id.to_owned());
         match self.store.get(&id).await? {
-            Some(inst) if inst.project == project => Ok(inst),
+            Some(inst) if inst.namespace == namespace => Ok(inst),
             _ => Err(EngineError::NotFound(format!(
-                "no engine instance {id} in project {project}"
+                "no engine instance {id} in namespace {namespace}"
             ))),
         }
     }
 
     pub async fn list(
         &self,
-        project: &str,
+        namespace: &str,
         kind: Option<EngineKind>,
     ) -> Result<Vec<Instance>, EngineError> {
-        let mut all = self.store.list(project).await?;
+        let mut all = self.store.list(namespace).await?;
         if let Some(kind) = kind {
             all.retain(|i| i.spec.kind == kind);
         }
@@ -189,8 +202,8 @@ impl EngineService {
 
     /// One instance. While it is in a transitional phase and nothing else holds it, this asks
     /// the adapter first, so polling shows progress without a reconciler.
-    pub async fn get(&self, project: &str, id: &str) -> Result<Instance, EngineError> {
-        let inst = self.load(project, id).await?;
+    pub async fn get(&self, namespace: &str, id: &str) -> Result<Instance, EngineError> {
+        let inst = self.load(namespace, id).await?;
         if !is_transitional(inst.status.phase) || self.is_busy(&inst.id) {
             return Ok(inst);
         }
@@ -233,7 +246,7 @@ impl EngineService {
 
     pub async fn create(
         &self,
-        project: &str,
+        namespace: &str,
         org: Option<String>,
         req: CreateInstance,
     ) -> Result<Instance, EngineError> {
@@ -265,11 +278,10 @@ impl EngineService {
         let now = OffsetDateTime::now_utc();
         let id = InstanceId::generate();
         let mut inst = Instance {
-            state_prefix: Instance::state_prefix_for(project, &id),
+            state_prefix: Instance::state_prefix_for(namespace, &id),
             id,
-            project: project.to_owned(),
+            namespace: namespace.to_owned(),
             org,
-            environment: req.environment,
             spec,
             status: InstanceStatus::new(Phase::Provisioning, now),
             endpoints: Vec::new(),
@@ -282,16 +294,17 @@ impl EngineService {
             let _creating = self.creating.lock().await;
             let taken = self
                 .store
-                .list(project)
+                .list(namespace)
                 .await?
                 .iter()
                 .any(|i| i.spec.name == inst.spec.name && i.status.phase != Phase::Deleted);
             if taken {
                 return Err(EngineError::Conflict(format!(
-                    "project {project} already has an engine instance named {:?}",
+                    "namespace {namespace} already has an engine instance named {:?}",
                     inst.spec.name
                 )));
             }
+            self.gate.admit(&inst, GateOp::Create).await?;
             self.store.put(&inst).await?;
         }
         match engine.create(&inst).await {
@@ -319,14 +332,14 @@ impl EngineService {
     /// Returns the guard, the record as it was and the adapter.
     async fn begin(
         &self,
-        project: &str,
+        namespace: &str,
         id: &str,
         op: Op,
     ) -> Result<(Busy<'_>, Instance, Arc<dyn ManagedEngine>), EngineError> {
-        let inst = self.load(project, id).await?;
+        let inst = self.load(namespace, id).await?;
         let busy = self.claim(&inst.id)?;
         // Reload under the claim: another operation may have finished in between.
-        let inst = self.load(project, id).await?;
+        let inst = self.load(namespace, id).await?;
         let phase = inst.status.phase;
         if !phase.allows(op) {
             return Err(EngineError::FailedPrecondition(format!(
@@ -379,13 +392,13 @@ impl EngineService {
     /// Scales or upgrades, by which field the request sets.
     pub async fn update(
         &self,
-        project: &str,
+        namespace: &str,
         id: &str,
         req: UpdateInstance,
     ) -> Result<Instance, EngineError> {
         match (req.size, req.version) {
-            (Some(size), None) => self.scale(project, id, size).await,
-            (None, Some(version)) => self.upgrade(project, id, &version).await,
+            (Some(size), None) => self.scale(namespace, id, size).await,
+            (None, Some(version)) => self.upgrade(namespace, id, &version).await,
             _ => Err(EngineError::Invalid(
                 "set exactly one of size (scale) or version (upgrade)".into(),
             )),
@@ -394,15 +407,21 @@ impl EngineService {
 
     pub async fn scale(
         &self,
-        project: &str,
+        namespace: &str,
         id: &str,
         size: SizeRequest,
     ) -> Result<Instance, EngineError> {
         let to = size.resolve()?;
-        let (_busy, before, engine) = self.begin(project, id, Op::Scale).await?;
+        let (_busy, before, engine) = self.begin(namespace, id, Op::Scale).await?;
         let mut after = before.clone();
         after.spec.size = to;
-        if let Err(e) = engine.validate(&after.spec) {
+        let grows = to.total_vcpu_milli() > before.spec.size.total_vcpu_milli()
+            || to.total_memory_mib() > before.spec.size.total_memory_mib();
+        let admitted = match engine.validate(&after.spec) {
+            Ok(()) if grows => self.gate.admit(&after, GateOp::ScaleUp).await,
+            other => other,
+        };
+        if let Err(e) = admitted {
             // Put back the phase `begin` moved.
             self.store.put(&before).await?;
             return Err(e);
@@ -413,11 +432,11 @@ impl EngineService {
 
     pub async fn upgrade(
         &self,
-        project: &str,
+        namespace: &str,
         id: &str,
         version: &str,
     ) -> Result<Instance, EngineError> {
-        let (_busy, before, engine) = self.begin(project, id, Op::Upgrade).await?;
+        let (_busy, before, engine) = self.begin(namespace, id, Op::Upgrade).await?;
         let caps = engine.capabilities();
         if !caps.versions.iter().any(|v| v == version) {
             let e = EngineError::Invalid(format!(
@@ -435,8 +454,8 @@ impl EngineService {
         self.finish(before, after, outcome).await
     }
 
-    pub async fn suspend(&self, project: &str, id: &str) -> Result<Instance, EngineError> {
-        let (_busy, before, engine) = self.begin(project, id, Op::Suspend).await?;
+    pub async fn suspend(&self, namespace: &str, id: &str) -> Result<Instance, EngineError> {
+        let (_busy, before, engine) = self.begin(namespace, id, Op::Suspend).await?;
         // Bill the compute up to now before it stops.
         self.meter_one(&before, OffsetDateTime::now_utc()).await;
         let outcome = engine.suspend(&before).await;
@@ -444,8 +463,12 @@ impl EngineService {
         self.finish(before, after, outcome).await
     }
 
-    pub async fn resume(&self, project: &str, id: &str) -> Result<Instance, EngineError> {
-        let (_busy, before, engine) = self.begin(project, id, Op::Resume).await?;
+    pub async fn resume(&self, namespace: &str, id: &str) -> Result<Instance, EngineError> {
+        let (_busy, before, engine) = self.begin(namespace, id, Op::Resume).await?;
+        if let Err(e) = self.gate.admit(&before, GateOp::Resume).await {
+            self.store.put(&before).await?;
+            return Err(e);
+        }
         // Close the suspended window (state only) before compute restarts.
         self.meter_one(&before, OffsetDateTime::now_utc()).await;
         let outcome = engine.resume(&before).await;
@@ -453,15 +476,32 @@ impl EngineService {
         self.finish(before, after, outcome).await
     }
 
+    /// What the Meter does at a hard limit (ENG81 R17): suspend, never delete. The reason
+    /// stays on the instance's status until it is resumed.
+    pub async fn suspend_for_limit(
+        &self,
+        namespace: &str,
+        id: &str,
+        reason: &str,
+    ) -> Result<Instance, EngineError> {
+        let mut inst = self.suspend(namespace, id).await?;
+        inst.status.message = Some(format!("suspended at a usage limit: {reason}"));
+        self.store.put(&inst).await?;
+        Ok(inst)
+    }
+
     /// Deletes the runtime, its state and the record. Answers the record in `deleted`.
-    pub async fn delete(&self, project: &str, id: &str) -> Result<Instance, EngineError> {
-        let (_busy, before, engine) = self.begin(project, id, Op::Delete).await?;
+    pub async fn delete(&self, namespace: &str, id: &str) -> Result<Instance, EngineError> {
+        let (_busy, before, engine) = self.begin(namespace, id, Op::Delete).await?;
         // The last partial window.
         self.meter_one(&before, OffsetDateTime::now_utc()).await;
         match engine.delete(&before).await {
             Ok(()) => {
                 self.store.remove(&before.id).await?;
                 self.usage.forget(&before.id);
+                if let Ok(mut m) = self.last_storage.lock() {
+                    m.remove(&before.id);
+                }
                 let mut gone = before;
                 let now = OffsetDateTime::now_utc();
                 gone.status = InstanceStatus::new(Phase::Deleted, now);
@@ -476,22 +516,22 @@ impl EngineService {
     /// The samples this service emitted for an instance.
     pub async fn usage(
         &self,
-        project: &str,
+        namespace: &str,
         id: &str,
         from: Option<OffsetDateTime>,
         to: Option<OffsetDateTime>,
     ) -> Result<Usage, EngineError> {
-        let inst = self.load(project, id).await?;
+        let inst = self.load(namespace, id).await?;
         Ok(Usage::from_samples(self.usage.range(&inst.id, from, to)))
     }
 
     /// The instance and adapter for a call that needs the engine up.
     async fn running(
         &self,
-        project: &str,
+        namespace: &str,
         id: &str,
     ) -> Result<(Instance, Arc<dyn ManagedEngine>), EngineError> {
-        let inst = self.load(project, id).await?;
+        let inst = self.load(namespace, id).await?;
         let engine = self.registry.get(inst.spec.kind)?.clone();
         if !inst.status.phase.allows(Op::Use) {
             return Err(EngineError::FailedPrecondition(format!(
@@ -504,12 +544,12 @@ impl EngineService {
 
     pub async fn sql(
         &self,
-        project: &str,
+        namespace: &str,
         id: &str,
         req: SqlRequest,
     ) -> Result<SqlResult, EngineError> {
         req.validate()?;
-        let (inst, engine) = self.running(project, id).await?;
+        let (inst, engine) = self.running(namespace, id).await?;
         let Some(sql) = engine.sql() else {
             return Err(EngineError::Unsupported(format!(
                 "{} has no SQL endpoint here; use sessions and jobs",
@@ -533,21 +573,21 @@ impl EngineService {
 
     pub async fn list_sessions(
         &self,
-        project: &str,
+        namespace: &str,
         id: &str,
     ) -> Result<Vec<SparkSession>, EngineError> {
-        let (inst, engine) = self.running(project, id).await?;
+        let (inst, engine) = self.running(namespace, id).await?;
         Self::spark_of(&inst, &engine)?.list_sessions(&inst).await
     }
 
     pub async fn create_session(
         &self,
-        project: &str,
+        namespace: &str,
         id: &str,
         req: CreateSession,
     ) -> Result<SparkSession, EngineError> {
         check_map("conf", &req.conf)?;
-        let (inst, engine) = self.running(project, id).await?;
+        let (inst, engine) = self.running(namespace, id).await?;
         Self::spark_of(&inst, &engine)?
             .create_session(&inst, req)
             .await
@@ -555,49 +595,51 @@ impl EngineService {
 
     pub async fn close_session(
         &self,
-        project: &str,
+        namespace: &str,
         id: &str,
         session: &str,
     ) -> Result<(), EngineError> {
-        let (inst, engine) = self.running(project, id).await?;
+        let (inst, engine) = self.running(namespace, id).await?;
         Self::spark_of(&inst, &engine)?
             .close_session(&inst, session)
             .await
     }
 
-    pub async fn list_jobs(&self, project: &str, id: &str) -> Result<Vec<SparkJob>, EngineError> {
-        let (inst, engine) = self.running(project, id).await?;
+    pub async fn list_jobs(&self, namespace: &str, id: &str) -> Result<Vec<SparkJob>, EngineError> {
+        let (inst, engine) = self.running(namespace, id).await?;
         Self::spark_of(&inst, &engine)?.list_jobs(&inst).await
     }
 
     pub async fn submit_job(
         &self,
-        project: &str,
+        namespace: &str,
         id: &str,
         req: SubmitJob,
     ) -> Result<SparkJob, EngineError> {
         req.validate()?;
         check_map("conf", &req.conf)?;
-        let (inst, engine) = self.running(project, id).await?;
+        let (inst, engine) = self.running(namespace, id).await?;
         Self::spark_of(&inst, &engine)?.submit_job(&inst, req).await
     }
 
     pub async fn cancel_job(
         &self,
-        project: &str,
+        namespace: &str,
         id: &str,
         job: &str,
     ) -> Result<SparkJob, EngineError> {
-        let (inst, engine) = self.running(project, id).await?;
+        let (inst, engine) = self.running(namespace, id).await?;
         Self::spark_of(&inst, &engine)?.cancel_job(&inst, job).await
     }
 
-    /// Samples one instance up to `now`, records it and returns its event. `None` when the
-    /// window is empty, the adapter is gone or it could not measure (the next window covers
-    /// the gap, since it starts where the last recorded one ended).
-    async fn sample(&self, inst: &Instance, now: OffsetDateTime) -> Option<UsageEvent> {
+    /// Samples one instance up to `now`, records the sample and returns its events: the
+    /// runtime event while compute runs, and the storage gauge when an hour has passed since
+    /// the last one. Empty when the window is empty, the adapter is gone or it could not
+    /// measure (the next window covers the gap, since it starts where the last one ended).
+    async fn sample(&self, inst: &Instance, now: OffsetDateTime) -> Vec<UsageEvent> {
+        let mut out = Vec::new();
         if !inst.status.phase.has_state() {
-            return None;
+            return out;
         }
         let window = time::Duration::seconds(self.window_secs);
         let start = self
@@ -605,36 +647,55 @@ impl EngineService {
             .last_end(&inst.id)
             .unwrap_or_else(|| inst.created_at.max(now - window));
         if now <= start {
-            return None;
+            return out;
         }
-        let engine = self.registry.get(inst.spec.kind).ok()?;
+        let Ok(engine) = self.registry.get(inst.spec.kind) else {
+            return out;
+        };
         let mut s = match engine.usage(inst, start, now).await {
             Ok(s) => s,
             Err(e) => {
                 tracing::warn!(target: "loams_engines", id = %inst.id, error = %e, "usage sample failed");
-                return None;
+                return out;
             }
         };
         // The service owns the window, so windows never overlap or leave gaps.
         s.window_start = start;
         s.window_end = now;
-        if !inst.status.phase.has_compute() {
-            s.vcpu_seconds = 0.0;
-            s.memory_gb_seconds = 0.0;
+        let compute = inst.status.phase.has_compute();
+        if !compute {
+            s.cpu_ms = 0;
+            s.memory_mib_ms = 0;
         }
-        self.usage.push(&inst.id, s.clone());
-        Some(UsageEvent::new(&self.origin, inst, &s))
+        if compute {
+            out.push(UsageEvent::runtime(&self.origin, inst, &s));
+        }
+        let storage_due = self.last_storage.lock().is_ok_and(|mut m| {
+            let due = m.get(&inst.id).is_none_or(|last| {
+                now - *last >= time::Duration::seconds(meter::STORAGE_EVERY_SECS)
+            });
+            if due {
+                m.insert(inst.id.clone(), now);
+            }
+            due
+        });
+        if storage_due {
+            out.push(UsageEvent::storage(&self.origin, inst, s.state_bytes, now));
+        }
+        self.usage.push(&inst.id, s);
+        out
     }
 
     async fn meter_one(&self, inst: &Instance, now: OffsetDateTime) {
-        if let Some(ev) = self.sample(inst, now).await
-            && let Err(e) = self.meter.emit(vec![ev]).await
+        let events = self.sample(inst, now).await;
+        if !events.is_empty()
+            && let Err(e) = self.meter.emit(events).await
         {
             tracing::warn!(target: "loams_engines", id = %inst.id, error = %e, "usage emit failed");
         }
     }
 
-    /// One metering round: a sample per instance that holds state, emitted as one batch.
+    /// One metering round over every instance that holds state, emitted as one batch.
     /// Returns how many events went out.
     pub async fn meter_tick(&self, now: OffsetDateTime) -> Result<usize, EngineError> {
         let mut events = Vec::new();
@@ -643,9 +704,7 @@ impl EngineService {
                 // The operation holding it meters its own boundary.
                 continue;
             }
-            if let Some(ev) = self.sample(&inst, now).await {
-                events.push(ev);
-            }
+            events.extend(self.sample(&inst, now).await);
         }
         let n = events.len();
         if n > 0 {

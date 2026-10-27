@@ -1,4 +1,4 @@
-//! The project-scoped HTTP facade (D2015), the contract in `api/engines/openapi.json`.
+//! The namespace-scoped HTTP facade (D2015), the contract in `api/engines/openapi.json`.
 //!
 //! [`router`] serves the routes with no authorization of its own, for a host that already
 //! runs IA2's enforcer over `/v1` with [`crate::authz::declare`] in its route table;
@@ -76,7 +76,7 @@ async fn catalog(State(svc): Svc) -> Response {
     ok(svc.catalog())
 }
 
-async fn list(State(svc): Svc, Path(project): Path<String>, RawQuery(q): RawQuery) -> Response {
+async fn list(State(svc): Svc, Path(namespace): Path<String>, RawQuery(q): RawQuery) -> Response {
     respond(
         async {
             let mut kind = None;
@@ -85,7 +85,7 @@ async fn list(State(svc): Svc, Path(project): Path<String>, RawQuery(q): RawQuer
                     kind = Some(v.parse::<EngineKind>()?);
                 }
             }
-            let instances = svc.list(&project, kind).await?;
+            let instances = svc.list(&namespace, kind).await?;
             Ok::<_, EngineError>(ok(json!({ "instances": instances })))
         }
         .await,
@@ -94,7 +94,7 @@ async fn list(State(svc): Svc, Path(project): Path<String>, RawQuery(q): RawQuer
 
 async fn create(
     State(svc): Svc,
-    Path(project): Path<String>,
+    Path(namespace): Path<String>,
     subject: Option<Extension<Subject>>,
     body: Bytes,
 ) -> Response {
@@ -102,45 +102,45 @@ async fn create(
         async {
             let req: CreateInstance = parse(&body)?;
             let org = subject.and_then(|Extension(s)| s.org);
-            Ok::<_, EngineError>(accepted(svc.create(&project, org, req).await?))
+            Ok::<_, EngineError>(accepted(svc.create(&namespace, org, req).await?))
         }
         .await,
     )
 }
 
-async fn get_one(State(svc): Svc, Path((project, id)): Path<(String, String)>) -> Response {
-    respond(svc.get(&project, &id).await.map(ok))
+async fn get_one(State(svc): Svc, Path((namespace, id)): Path<(String, String)>) -> Response {
+    respond(svc.get(&namespace, &id).await.map(ok))
 }
 
 async fn update(
     State(svc): Svc,
-    Path((project, id)): Path<(String, String)>,
+    Path((namespace, id)): Path<(String, String)>,
     body: Bytes,
 ) -> Response {
     respond(
         async {
             let req: UpdateInstance = parse(&body)?;
-            Ok::<_, EngineError>(accepted(svc.update(&project, &id, req).await?))
+            Ok::<_, EngineError>(accepted(svc.update(&namespace, &id, req).await?))
         }
         .await,
     )
 }
 
-async fn remove(State(svc): Svc, Path((project, id)): Path<(String, String)>) -> Response {
-    respond(svc.delete(&project, &id).await.map(accepted))
+async fn remove(State(svc): Svc, Path((namespace, id)): Path<(String, String)>) -> Response {
+    respond(svc.delete(&namespace, &id).await.map(accepted))
 }
 
-async fn suspend(State(svc): Svc, Path((project, id)): Path<(String, String)>) -> Response {
-    respond(svc.suspend(&project, &id).await.map(accepted))
+async fn suspend(State(svc): Svc, Path((namespace, id)): Path<(String, String)>) -> Response {
+    respond(svc.suspend(&namespace, &id).await.map(accepted))
 }
 
-async fn resume(State(svc): Svc, Path((project, id)): Path<(String, String)>) -> Response {
-    respond(svc.resume(&project, &id).await.map(accepted))
+async fn resume(State(svc): Svc, Path((namespace, id)): Path<(String, String)>) -> Response {
+    respond(svc.resume(&namespace, &id).await.map(accepted))
 }
 
 async fn usage(
     State(svc): Svc,
-    Path((project, id)): Path<(String, String)>,
+    Path((namespace, id)): Path<(String, String)>,
     RawQuery(q): RawQuery,
 ) -> Response {
     respond(
@@ -153,7 +153,7 @@ async fn usage(
                     _ => {}
                 }
             }
-            Ok::<_, EngineError>(ok(svc.usage(&project, &id, from, to).await?))
+            Ok::<_, EngineError>(ok(svc.usage(&namespace, &id, from, to).await?))
         }
         .await,
     )
@@ -161,21 +161,21 @@ async fn usage(
 
 async fn sql(
     State(svc): Svc,
-    Path((project, id)): Path<(String, String)>,
+    Path((namespace, id)): Path<(String, String)>,
     body: Bytes,
 ) -> Response {
     respond(
         async {
             let req: SqlRequest = parse(&body)?;
-            Ok::<_, EngineError>(ok(svc.sql(&project, &id, req).await?))
+            Ok::<_, EngineError>(ok(svc.sql(&namespace, &id, req).await?))
         }
         .await,
     )
 }
 
-async fn list_sessions(State(svc): Svc, Path((project, id)): Path<(String, String)>) -> Response {
+async fn list_sessions(State(svc): Svc, Path((namespace, id)): Path<(String, String)>) -> Response {
     respond(
-        svc.list_sessions(&project, &id)
+        svc.list_sessions(&namespace, &id)
             .await
             .map(|sessions| ok(json!({ "sessions": sessions }))),
     )
@@ -183,13 +183,13 @@ async fn list_sessions(State(svc): Svc, Path((project, id)): Path<(String, Strin
 
 async fn create_session(
     State(svc): Svc,
-    Path((project, id)): Path<(String, String)>,
+    Path((namespace, id)): Path<(String, String)>,
     body: Bytes,
 ) -> Response {
     respond(
         async {
             let req: CreateSession = parse(&body)?;
-            Ok::<_, EngineError>(created(svc.create_session(&project, &id, req).await?))
+            Ok::<_, EngineError>(created(svc.create_session(&namespace, &id, req).await?))
         }
         .await,
     )
@@ -197,18 +197,18 @@ async fn create_session(
 
 async fn close_session(
     State(svc): Svc,
-    Path((project, id, session)): Path<(String, String, String)>,
+    Path((namespace, id, session)): Path<(String, String, String)>,
 ) -> Response {
     respond(
-        svc.close_session(&project, &id, &session)
+        svc.close_session(&namespace, &id, &session)
             .await
             .map(|()| StatusCode::NO_CONTENT.into_response()),
     )
 }
 
-async fn list_jobs(State(svc): Svc, Path((project, id)): Path<(String, String)>) -> Response {
+async fn list_jobs(State(svc): Svc, Path((namespace, id)): Path<(String, String)>) -> Response {
     respond(
-        svc.list_jobs(&project, &id)
+        svc.list_jobs(&namespace, &id)
             .await
             .map(|jobs| ok(json!({ "jobs": jobs }))),
     )
@@ -216,13 +216,13 @@ async fn list_jobs(State(svc): Svc, Path((project, id)): Path<(String, String)>)
 
 async fn submit_job(
     State(svc): Svc,
-    Path((project, id)): Path<(String, String)>,
+    Path((namespace, id)): Path<(String, String)>,
     body: Bytes,
 ) -> Response {
     respond(
         async {
             let req: SubmitJob = parse(&body)?;
-            Ok::<_, EngineError>(created(svc.submit_job(&project, &id, req).await?))
+            Ok::<_, EngineError>(created(svc.submit_job(&namespace, &id, req).await?))
         }
         .await,
     )
@@ -230,17 +230,17 @@ async fn submit_job(
 
 async fn cancel_job(
     State(svc): Svc,
-    Path((project, id, job)): Path<(String, String, String)>,
+    Path((namespace, id, job)): Path<(String, String, String)>,
 ) -> Response {
-    respond(svc.cancel_job(&project, &id, &job).await.map(ok))
+    respond(svc.cancel_job(&namespace, &id, &job).await.map(ok))
 }
 
 /// The facade's routes, at their full `/v1/…` paths, with no authorization layer.
 pub fn router(svc: Arc<EngineService>) -> Router {
-    const I: &str = "/v1/projects/{project}/engines/{instance}";
+    const I: &str = "/v1/namespaces/{namespace}/engines/{instance}";
     Router::new()
         .route("/v1/engines", get(catalog))
-        .route("/v1/projects/{project}/engines", get(list).post(create))
+        .route("/v1/namespaces/{namespace}/engines", get(list).post(create))
         .route(I, get(get_one).patch(update).delete(remove))
         .route(&format!("{I}/suspend"), post(suspend))
         .route(&format!("{I}/resume"), post(resume))

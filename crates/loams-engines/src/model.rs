@@ -124,14 +124,14 @@ impl EngineSize {
         }
     }
 
-    /// vCPUs over all replicas.
-    pub fn total_vcpu(&self) -> f64 {
-        f64::from(self.vcpu_milli) / 1000.0 * f64::from(self.replicas)
+    /// vCPU millicores over all replicas.
+    pub fn total_vcpu_milli(&self) -> u64 {
+        u64::from(self.vcpu_milli) * u64::from(self.replicas)
     }
 
-    /// Memory in GB (GiB, as metered) over all replicas.
-    pub fn total_memory_gb(&self) -> f64 {
-        f64::from(self.memory_mib) / 1024.0 * f64::from(self.replicas)
+    /// Memory in MiB over all replicas.
+    pub fn total_memory_mib(&self) -> u64 {
+        u64::from(self.memory_mib) * u64::from(self.replicas)
     }
 }
 
@@ -159,7 +159,7 @@ impl SizeRequest {
 /// What a caller wants an instance to be.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct InstanceSpec {
-    /// A DNS label, 1–40 characters, unique in the project.
+    /// A DNS label, 1–40 characters, unique in the namespace.
     pub name: String,
     pub kind: EngineKind,
     /// `None` runs the adapter's default version.
@@ -393,18 +393,16 @@ pub struct Endpoint {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Instance {
     pub id: InstanceId,
-    pub project: String,
-    /// The org that owns the project; the billing subject is `org_<org>` (design 63 §6.1).
+    pub namespace: String,
+    /// The org that owns the namespace; the billing subject is `org_<org>` (design 63 §6.1).
     #[serde(default)]
     pub org: Option<String>,
-    #[serde(default)]
-    pub environment: Option<String>,
     #[serde(flatten)]
     pub spec: InstanceSpec,
     pub status: InstanceStatus,
     #[serde(default)]
     pub endpoints: Vec<Endpoint>,
-    /// Where state and checkpoints live in Loams object storage: `engines/<project>/<id>/`.
+    /// Where state and checkpoints live in Loams object storage: `engines/<namespace>/<id>/`.
     pub state_prefix: String,
     pub stability: Stability,
     #[serde(with = "time::serde::rfc3339")]
@@ -415,8 +413,8 @@ pub struct Instance {
 
 impl Instance {
     /// The object-storage prefix for an instance's state.
-    pub fn state_prefix_for(project: &str, id: &InstanceId) -> String {
-        format!("engines/{project}/{id}/")
+    pub fn state_prefix_for(namespace: &str, id: &InstanceId) -> String {
+        format!("engines/{namespace}/{id}/")
     }
 
     /// Folds what the adapter observed into the record.
@@ -459,35 +457,43 @@ impl Observed {
     }
 }
 
-/// One metering window of one instance (D2013).
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+/// One metering window of one instance (D2013, units per ENG81 R17/D1920: integers).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UsageSample {
     #[serde(with = "time::serde::rfc3339")]
     pub window_start: OffsetDateTime,
     #[serde(with = "time::serde::rfc3339")]
     pub window_end: OffsetDateTime,
-    pub vcpu_seconds: f64,
-    pub memory_gb_seconds: f64,
+    /// CPU time in milliseconds (one vCPU busy for one second is 1000).
+    pub cpu_ms: u64,
+    /// Memory held, in MiB × milliseconds.
+    pub memory_mib_ms: u64,
     /// State held in object storage at the end of the window (a gauge).
     pub state_bytes: u64,
+    /// The reserved size, not a measurement (the runtime gave none).
+    pub estimated: bool,
 }
 
 impl UsageSample {
-    /// The usage of `size` running for the whole window, plus `state_bytes`. Adapters that
-    /// cannot measure use this; adapters that can report what the runtime saw.
+    /// The usage of `size` running for the whole window, plus `state_bytes`, marked
+    /// `estimated`. Adapters that cannot measure use this; adapters that can (cgroups, k8s
+    /// metrics) report what the runtime saw with `estimated: false`.
     pub fn provisioned(
         size: &EngineSize,
         window_start: OffsetDateTime,
         window_end: OffsetDateTime,
         state_bytes: u64,
     ) -> Self {
-        let secs = (window_end - window_start).as_seconds_f64().max(0.0);
+        let ms = u128::try_from((window_end - window_start).whole_milliseconds()).unwrap_or(0);
+        let scale = |per: u64| u64::try_from(u128::from(per) * ms).unwrap_or(u64::MAX);
         Self {
             window_start,
             window_end,
-            vcpu_seconds: size.total_vcpu() * secs,
-            memory_gb_seconds: size.total_memory_gb() * secs,
+            // millicores × ms / 1000 = CPU ms.
+            cpu_ms: scale(size.total_vcpu_milli()) / 1000,
+            memory_mib_ms: scale(size.total_memory_mib()),
             state_bytes,
+            estimated: true,
         }
     }
 }
@@ -548,8 +554,8 @@ mod tests {
         .resolve()
         .unwrap();
         assert_eq!((s.vcpu_milli, s.memory_mib, s.replicas), (2000, 8192, 3));
-        assert!((s.total_vcpu() - 6.0).abs() < 1e-9);
-        assert!((s.total_memory_gb() - 24.0).abs() < 1e-9);
+        assert_eq!(s.total_vcpu_milli(), 6000);
+        assert_eq!(s.total_memory_mib(), 24576);
         for r in [0, MAX_REPLICAS + 1] {
             assert!(
                 SizeRequest {
@@ -594,9 +600,13 @@ mod tests {
         let t0 = OffsetDateTime::UNIX_EPOCH;
         let size = EngineSize::tier(SizeTier::S, 2);
         let u = UsageSample::provisioned(&size, t0, t0 + time::Duration::seconds(60), 7);
-        assert!((u.vcpu_seconds - 120.0).abs() < 1e-9);
-        assert!((u.memory_gb_seconds - 480.0).abs() < 1e-9);
+        // s × 2: 2 vCPU and 8 GiB for 60 s.
+        assert_eq!(u.cpu_ms, 120_000);
+        assert_eq!(u.memory_mib_ms, 8192 * 60_000);
         assert_eq!(u.state_bytes, 7);
+        assert!(u.estimated);
+        let backwards = UsageSample::provisioned(&size, t0 + time::Duration::seconds(1), t0, 0);
+        assert_eq!((backwards.cpu_ms, backwards.memory_mib_ms), (0, 0));
     }
 
     #[test]
@@ -606,9 +616,8 @@ mod tests {
         let inst = Instance {
             state_prefix: Instance::state_prefix_for("p1", &id),
             id,
-            project: "p1".into(),
+            namespace: "p1".into(),
             org: Some("acme".into()),
-            environment: None,
             spec: InstanceSpec {
                 name: "rw".into(),
                 kind: EngineKind::Risingwave,

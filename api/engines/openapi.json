@@ -3,8 +3,8 @@
   "info": {
     "title": "Loams managed engines API",
     "version": "0.1.0",
-    "summary": "Project-scoped lifecycle, SQL and Spark sessions/jobs for managed RisingWave, Flink SQL and Spark (preview).",
-    "description": "Design: docs/design/81-managed-stream-batch-engines.md (D2010-D2019). Served by crates/loams-engines (`loams_engines::http::router`) on the native REST listener under /v1. Every engine is preview. Lifecycle calls answer 202 with the instance in its transitional phase; poll GET for the outcome. Reads need `can_view` on `project:<p>`, lifecycle, SQL, sessions and jobs `can_operate`, create, upgrade and delete `can_admin` (D2016). Timestamps are RFC 3339 in UTC. Lists are wrapped in an object keyed by the plural resource name.",
+    "summary": "Namespace-scoped lifecycle, SQL and Spark sessions/jobs for managed RisingWave, Flink SQL and Spark (preview).",
+    "description": "Design: docs/design/81-managed-stream-batch-engines.md (D2010-D2019). Served by crates/loams-engines (`loams_engines::http::router`) on the native REST listener under /v1. Every engine is preview. Lifecycle calls answer 202 with the instance in its transitional phase; poll GET for the outcome. An instance belongs to one Loams namespace (ENG81 R2). Reads need `can_read` on `environment:<ns>`, lifecycle, SQL, sessions and jobs `can_write`, create, PATCH and delete `can_admin` (D2016, R18: the same relations as `engine#can_view|can_operate|can_admin`). Timestamps are RFC 3339 in UTC. Lists are wrapped in an object keyed by the plural resource name.",
     "license": {
       "name": "Apache-2.0",
       "identifier": "Apache-2.0"
@@ -58,7 +58,7 @@
             }
           },
           "4XX": {
-            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, engine_not_enabled",
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
             "content": {
               "application/json": {
                 "schema": {
@@ -80,7 +80,7 @@
         }
       }
     },
-    "/v1/projects/{project}/engines": {
+    "/v1/namespaces/{namespace}/engines": {
       "get": {
         "operationId": "listEngineInstances",
         "summary": "A project's engine instances",
@@ -99,7 +99,7 @@
             }
           },
           "4XX": {
-            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, engine_not_enabled",
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
             "content": {
               "application/json": {
                 "schema": {
@@ -121,13 +121,13 @@
         },
         "parameters": [
           {
-            "name": "project",
+            "name": "namespace",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string"
             },
-            "description": "The project's slug"
+            "description": "The Loams namespace (an environment) the instance belongs to"
           },
           {
             "name": "kind",
@@ -157,7 +157,7 @@
             }
           },
           "4XX": {
-            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, engine_not_enabled",
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
             "content": {
               "application/json": {
                 "schema": {
@@ -179,13 +179,13 @@
         },
         "parameters": [
           {
-            "name": "project",
+            "name": "namespace",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string"
             },
-            "description": "The project's slug"
+            "description": "The Loams namespace (an environment) the instance belongs to"
           }
         ],
         "requestBody": {
@@ -200,7 +200,7 @@
         }
       }
     },
-    "/v1/projects/{project}/engines/{instance}": {
+    "/v1/namespaces/{namespace}/engines/{instance}": {
       "get": {
         "operationId": "getEngineInstance",
         "summary": "One instance with its status, health and endpoints",
@@ -219,7 +219,7 @@
             }
           },
           "4XX": {
-            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, engine_not_enabled",
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
             "content": {
               "application/json": {
                 "schema": {
@@ -241,13 +241,13 @@
         },
         "parameters": [
           {
-            "name": "project",
+            "name": "namespace",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string"
             },
-            "description": "The project's slug"
+            "description": "The Loams namespace (an environment) the instance belongs to"
           },
           {
             "name": "instance",
@@ -278,7 +278,7 @@
             }
           },
           "4XX": {
-            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, engine_not_enabled",
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
             "content": {
               "application/json": {
                 "schema": {
@@ -300,13 +300,13 @@
         },
         "parameters": [
           {
-            "name": "project",
+            "name": "namespace",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string"
             },
-            "description": "The project's slug"
+            "description": "The Loams namespace (an environment) the instance belongs to"
           },
           {
             "name": "instance",
@@ -347,7 +347,7 @@
             }
           },
           "4XX": {
-            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, engine_not_enabled",
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
             "content": {
               "application/json": {
                 "schema": {
@@ -369,13 +369,13 @@
         },
         "parameters": [
           {
-            "name": "project",
+            "name": "namespace",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string"
             },
-            "description": "The project's slug"
+            "description": "The Loams namespace (an environment) the instance belongs to"
           },
           {
             "name": "instance",
@@ -389,7 +389,7 @@
         ]
       }
     },
-    "/v1/projects/{project}/engines/{instance}/suspend": {
+    "/v1/namespaces/{namespace}/engines/{instance}/suspend": {
       "post": {
         "operationId": "suspendEngineInstance",
         "summary": "Stop compute, keep state",
@@ -408,7 +408,7 @@
             }
           },
           "4XX": {
-            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, engine_not_enabled",
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
             "content": {
               "application/json": {
                 "schema": {
@@ -430,13 +430,13 @@
         },
         "parameters": [
           {
-            "name": "project",
+            "name": "namespace",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string"
             },
-            "description": "The project's slug"
+            "description": "The Loams namespace (an environment) the instance belongs to"
           },
           {
             "name": "instance",
@@ -450,7 +450,7 @@
         ]
       }
     },
-    "/v1/projects/{project}/engines/{instance}/resume": {
+    "/v1/namespaces/{namespace}/engines/{instance}/resume": {
       "post": {
         "operationId": "resumeEngineInstance",
         "summary": "Start compute again from the kept state",
@@ -469,7 +469,7 @@
             }
           },
           "4XX": {
-            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, engine_not_enabled",
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
             "content": {
               "application/json": {
                 "schema": {
@@ -491,13 +491,13 @@
         },
         "parameters": [
           {
-            "name": "project",
+            "name": "namespace",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string"
             },
-            "description": "The project's slug"
+            "description": "The Loams namespace (an environment) the instance belongs to"
           },
           {
             "name": "instance",
@@ -511,10 +511,10 @@
         ]
       }
     },
-    "/v1/projects/{project}/engines/{instance}/usage": {
+    "/v1/namespaces/{namespace}/engines/{instance}/usage": {
       "get": {
         "operationId": "getEngineUsage",
-        "summary": "The metering samples this instance emitted (vCPU-seconds, memory GB-seconds, state bytes)",
+        "summary": "The metering samples this instance recorded (CPU ms, memory MiB-ms, state bytes)",
         "tags": [
           "engines"
         ],
@@ -530,7 +530,7 @@
             }
           },
           "4XX": {
-            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, engine_not_enabled",
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
             "content": {
               "application/json": {
                 "schema": {
@@ -552,13 +552,13 @@
         },
         "parameters": [
           {
-            "name": "project",
+            "name": "namespace",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string"
             },
-            "description": "The project's slug"
+            "description": "The Loams namespace (an environment) the instance belongs to"
           },
           {
             "name": "instance",
@@ -590,7 +590,7 @@
         ]
       }
     },
-    "/v1/projects/{project}/engines/{instance}/sql": {
+    "/v1/namespaces/{namespace}/engines/{instance}/sql": {
       "post": {
         "operationId": "runEngineSql",
         "summary": "Run SQL on a RisingWave or Flink SQL instance",
@@ -609,7 +609,7 @@
             }
           },
           "4XX": {
-            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, engine_not_enabled",
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
             "content": {
               "application/json": {
                 "schema": {
@@ -631,13 +631,13 @@
         },
         "parameters": [
           {
-            "name": "project",
+            "name": "namespace",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string"
             },
-            "description": "The project's slug"
+            "description": "The Loams namespace (an environment) the instance belongs to"
           },
           {
             "name": "instance",
@@ -661,7 +661,7 @@
         }
       }
     },
-    "/v1/projects/{project}/engines/{instance}/sessions": {
+    "/v1/namespaces/{namespace}/engines/{instance}/sessions": {
       "get": {
         "operationId": "listSparkSessions",
         "summary": "A Spark instance's sessions",
@@ -680,7 +680,7 @@
             }
           },
           "4XX": {
-            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, engine_not_enabled",
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
             "content": {
               "application/json": {
                 "schema": {
@@ -702,13 +702,13 @@
         },
         "parameters": [
           {
-            "name": "project",
+            "name": "namespace",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string"
             },
-            "description": "The project's slug"
+            "description": "The Loams namespace (an environment) the instance belongs to"
           },
           {
             "name": "instance",
@@ -739,7 +739,7 @@
             }
           },
           "4XX": {
-            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, engine_not_enabled",
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
             "content": {
               "application/json": {
                 "schema": {
@@ -761,13 +761,13 @@
         },
         "parameters": [
           {
-            "name": "project",
+            "name": "namespace",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string"
             },
-            "description": "The project's slug"
+            "description": "The Loams namespace (an environment) the instance belongs to"
           },
           {
             "name": "instance",
@@ -791,7 +791,7 @@
         }
       }
     },
-    "/v1/projects/{project}/engines/{instance}/sessions/{session}": {
+    "/v1/namespaces/{namespace}/engines/{instance}/sessions/{session}": {
       "delete": {
         "operationId": "closeSparkSession",
         "summary": "Close a Spark session",
@@ -803,7 +803,7 @@
             "description": "Closed"
           },
           "4XX": {
-            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, engine_not_enabled",
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
             "content": {
               "application/json": {
                 "schema": {
@@ -825,13 +825,13 @@
         },
         "parameters": [
           {
-            "name": "project",
+            "name": "namespace",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string"
             },
-            "description": "The project's slug"
+            "description": "The Loams namespace (an environment) the instance belongs to"
           },
           {
             "name": "instance",
@@ -854,7 +854,7 @@
         ]
       }
     },
-    "/v1/projects/{project}/engines/{instance}/jobs": {
+    "/v1/namespaces/{namespace}/engines/{instance}/jobs": {
       "get": {
         "operationId": "listSparkJobs",
         "summary": "A Spark instance's batch jobs",
@@ -873,7 +873,7 @@
             }
           },
           "4XX": {
-            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, engine_not_enabled",
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
             "content": {
               "application/json": {
                 "schema": {
@@ -895,13 +895,13 @@
         },
         "parameters": [
           {
-            "name": "project",
+            "name": "namespace",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string"
             },
-            "description": "The project's slug"
+            "description": "The Loams namespace (an environment) the instance belongs to"
           },
           {
             "name": "instance",
@@ -932,7 +932,7 @@
             }
           },
           "4XX": {
-            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, engine_not_enabled",
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
             "content": {
               "application/json": {
                 "schema": {
@@ -954,13 +954,13 @@
         },
         "parameters": [
           {
-            "name": "project",
+            "name": "namespace",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string"
             },
-            "description": "The project's slug"
+            "description": "The Loams namespace (an environment) the instance belongs to"
           },
           {
             "name": "instance",
@@ -984,7 +984,7 @@
         }
       }
     },
-    "/v1/projects/{project}/engines/{instance}/jobs/{job}/cancel": {
+    "/v1/namespaces/{namespace}/engines/{instance}/jobs/{job}/cancel": {
       "post": {
         "operationId": "cancelSparkJob",
         "summary": "Cancel a Spark batch job",
@@ -1003,7 +1003,7 @@
             }
           },
           "4XX": {
-            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, engine_not_enabled",
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1025,13 +1025,13 @@
         },
         "parameters": [
           {
-            "name": "project",
+            "name": "namespace",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string"
             },
-            "description": "The project's slug"
+            "description": "The Loams namespace (an environment) the instance belongs to"
           },
           {
             "name": "instance",
@@ -1274,7 +1274,7 @@
           "id": {
             "type": "string"
           },
-          "project": {
+          "namespace": {
             "type": "string"
           },
           "org": {
@@ -1282,13 +1282,7 @@
               "string",
               "null"
             ],
-            "description": "The org that owns the project; the billing subject is org_<org> (design 63)."
-          },
-          "environment": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "description": "The org that owns the namespace; the billing subject is org_<org> (design 63)."
           },
           "name": {
             "type": "string"
@@ -1345,7 +1339,7 @@
         },
         "required": [
           "id",
-          "project",
+          "namespace",
           "name",
           "kind",
           "size",
@@ -1402,9 +1396,6 @@
             "additionalProperties": {
               "type": "string"
             }
-          },
-          "environment": {
-            "type": "string"
           }
         },
         "required": [
@@ -1548,33 +1539,42 @@
             "type": "string",
             "format": "date-time"
           },
-          "vcpu_seconds": {
-            "type": "number"
+          "cpu_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "CPU time in ms"
           },
-          "memory_gb_seconds": {
-            "type": "number"
+          "memory_mib_ms": {
+            "type": "integer",
+            "minimum": 0
           },
           "state_bytes": {
-            "type": "integer"
+            "type": "integer",
+            "minimum": 0
+          },
+          "estimated": {
+            "type": "boolean",
+            "description": "The reserved size, not a measurement"
           }
         },
         "required": [
           "window_start",
           "window_end",
-          "vcpu_seconds",
-          "memory_gb_seconds",
-          "state_bytes"
+          "cpu_ms",
+          "memory_mib_ms",
+          "state_bytes",
+          "estimated"
         ],
         "additionalProperties": false
       },
       "UsageTotals": {
         "type": "object",
         "properties": {
-          "vcpu_seconds": {
-            "type": "number"
+          "cpu_ms": {
+            "type": "integer"
           },
-          "memory_gb_seconds": {
-            "type": "number"
+          "memory_mib_ms": {
+            "type": "integer"
           },
           "state_bytes": {
             "type": "integer",
@@ -1582,8 +1582,8 @@
           }
         },
         "required": [
-          "vcpu_seconds",
-          "memory_gb_seconds",
+          "cpu_ms",
+          "memory_mib_ms",
           "state_bytes"
         ],
         "additionalProperties": false

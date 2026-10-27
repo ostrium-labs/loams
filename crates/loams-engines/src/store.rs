@@ -11,8 +11,8 @@ use crate::{EngineError, Instance, InstanceId};
 #[async_trait]
 pub trait InstanceStore: Send + Sync + 'static {
     async fn get(&self, id: &InstanceId) -> Result<Option<Instance>, EngineError>;
-    /// A project's instances, oldest first.
-    async fn list(&self, project: &str) -> Result<Vec<Instance>, EngineError>;
+    /// A namespace's instances, oldest first.
+    async fn list(&self, namespace: &str) -> Result<Vec<Instance>, EngineError>;
     /// Every instance (the metering ticker and the reconciler walk this).
     async fn list_all(&self) -> Result<Vec<Instance>, EngineError>;
     /// Inserts or replaces by id.
@@ -51,11 +51,11 @@ impl InstanceStore for MemoryStore {
         Ok(self.rows.read().map_err(|_| poisoned())?.get(id).cloned())
     }
 
-    async fn list(&self, project: &str) -> Result<Vec<Instance>, EngineError> {
+    async fn list(&self, namespace: &str) -> Result<Vec<Instance>, EngineError> {
         let rows = self.rows.read().map_err(|_| poisoned())?;
         Ok(oldest_first(
             rows.values()
-                .filter(|i| i.project == project)
+                .filter(|i| i.namespace == namespace)
                 .cloned()
                 .collect(),
         ))

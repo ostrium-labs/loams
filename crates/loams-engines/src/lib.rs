@@ -8,7 +8,7 @@
 //! - [`EngineService`]: the instance records ([`InstanceStore`]), the phase machine
 //!   ([`Phase`]), validation and metering ([`meter`]): one Loams Meter usage event per
 //!   instance per window with vCPU-seconds, memory GB-seconds and state bytes.
-//! - [`http`]: the project-scoped facade `/v1/projects/{p}/engines/…`, contract
+//! - [`http`]: the namespace-scoped facade `/v1/namespaces/{p}/engines/…`, contract
 //!   `api/engines/openapi.json`, and [`authz`]: its `can_*` declarations for IA2's enforcer.
 //! - [`testing::FakeEngine`]: an adapter that runs nothing, for tests and the console.
 //!

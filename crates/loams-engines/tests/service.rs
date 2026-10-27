@@ -5,12 +5,14 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use loams_engines::meter::{MemoryMeterSink, MeterOrigin};
+use loams_engines::meter::{
+    GateOp, MemoryMeterSink, MeterGate, MeterOrigin, RUNTIME_TYPE, STORAGE_TYPE,
+};
 use loams_engines::testing::{FAKE_STATE_BYTES, FakeEngine};
 use loams_engines::{
-    CreateInstance, CreateSession, EngineError, EngineKind, EngineRegistry, EngineService, Phase,
-    SizeRequest, SizeTier, SparkJobKind, SparkJobState, SparkSessionKind, SqlRequest, SubmitJob,
-    UpdateInstance,
+    CreateInstance, CreateSession, EngineError, EngineKind, EngineRegistry, EngineService,
+    Instance, Phase, SizeRequest, SizeTier, SparkJobKind, SparkJobState, SparkSessionKind,
+    SqlRequest, SubmitJob, UpdateInstance,
 };
 use time::{Duration, OffsetDateTime};
 
@@ -50,12 +52,11 @@ fn req(name: &str, kind: EngineKind) -> CreateInstance {
         },
         config: BTreeMap::new(),
         labels: BTreeMap::new(),
-        environment: None,
     }
 }
 
 #[tokio::test]
-async fn create_runs_and_lists_by_project_and_kind() {
+async fn create_runs_and_lists_by_namespace_and_kind() {
     let w = world();
     let rw = w
         .svc
@@ -83,7 +84,7 @@ async fn create_runs_and_lists_by_project_and_kind() {
     let spark = w.svc.list("p1", Some(EngineKind::Spark)).await.unwrap();
     assert_eq!(spark.len(), 1);
     assert_eq!(spark[0].spec.name, "sessions");
-    // Another project's instance is not found, not forbidden.
+    // Another namespace's instance is not found, not forbidden.
     assert!(matches!(
         w.svc.get("p2", rw.id.as_str()).await,
         Err(EngineError::NotFound(_))
@@ -383,7 +384,7 @@ async fn sql_and_spark_surfaces_by_kind() {
 }
 
 #[tokio::test]
-async fn metering_emits_one_event_per_instance_per_window() {
+async fn metering_emits_runtime_per_window_and_storage_hourly() {
     let w = world();
     let inst = w
         .svc
@@ -391,28 +392,40 @@ async fn metering_emits_one_event_per_instance_per_window() {
         .await
         .unwrap();
     let t1 = inst.created_at + Duration::seconds(60);
-    assert_eq!(w.svc.meter_tick(t1).await.unwrap(), 1);
-    // A second tick at the same instant has an empty window.
+    // The first round sends the runtime window and the first storage gauge.
+    assert_eq!(w.svc.meter_tick(t1).await.unwrap(), 2);
+    // A second round at the same instant has an empty window.
     assert_eq!(w.svc.meter_tick(t1).await.unwrap(), 0);
     let t2 = t1 + Duration::seconds(60);
+    // Runtime only: the storage gauge is hourly.
     assert_eq!(w.svc.meter_tick(t2).await.unwrap(), 1);
 
     let events = w.meter.events();
-    assert_eq!(events.len(), 2);
-    let e = &events[1];
-    assert_eq!(e.ty, "io.loams.dev.usage.engine.risingwave.v1");
+    assert_eq!(events.len(), 3);
+    let storage = &events[1];
+    assert_eq!(storage.ty, STORAGE_TYPE);
+    assert_eq!(storage.data["state_bytes"], FAKE_STATE_BYTES);
+    assert_eq!(storage.data["namespace"], "p1");
+    assert_eq!(storage.data["engine"], "risingwave");
+
+    let e = &events[2];
+    assert_eq!(e.ty, RUNTIME_TYPE);
+    assert_eq!(e.ty, "io.loams.dev.usage.engine.runtime.v1");
     assert_eq!(e.subject, "org_acme");
     assert_eq!(e.tenantid, "acme/p1");
     assert_eq!(e.source, "loams://c1/engines/n1");
     assert_eq!(e.id, format!("{}/{}", inst.id, t2.unix_timestamp()));
-    assert_eq!(
-        e.dataschema,
-        "urn:loams:json:io.loams.dev.usage.engine.risingwave.v1"
-    );
-    // s × 2 replicas: 2 vCPU and 8 GiB for 60 s.
-    assert!((e.data["vcpu_seconds"].as_f64().unwrap() - 120.0).abs() < 1e-6);
-    assert!((e.data["memory_gb_seconds"].as_f64().unwrap() - 480.0).abs() < 1e-6);
-    assert_eq!(e.data["state_bytes"], FAKE_STATE_BYTES);
+    assert_eq!(e.dataschema, format!("urn:loams:json:{RUNTIME_TYPE}"));
+    // s × 2 replicas: 2 vCPU and 8 GiB for 60 s, as integers.
+    assert_eq!(e.data["cpu_ms"], 120_000);
+    assert_eq!(e.data["memory_mib_ms"], 8192_u64 * 60_000);
+    assert_eq!(e.data["size"], "s");
+    assert_eq!(e.data["estimated"], true);
+    assert_eq!(e.data["instance"], inst.id.as_str());
+
+    // Two hours on, the gauge goes out again.
+    let t3 = t2 + Duration::hours(2);
+    assert_eq!(w.svc.meter_tick(t3).await.unwrap(), 2);
 
     // Windows are contiguous.
     let usage = w
@@ -420,20 +433,20 @@ async fn metering_emits_one_event_per_instance_per_window() {
         .usage("p1", inst.id.as_str(), None, None)
         .await
         .unwrap();
-    assert_eq!(usage.samples.len(), 2);
+    assert_eq!(usage.samples.len(), 3);
     assert_eq!(usage.samples[0].window_end, usage.samples[1].window_start);
-    assert!((usage.totals.vcpu_seconds - 240.0).abs() < 1e-6);
+    assert_eq!(usage.samples[1].window_end, usage.samples[2].window_start);
     assert_eq!(usage.totals.state_bytes, FAKE_STATE_BYTES);
     let later = w
         .svc
-        .usage("p1", inst.id.as_str(), Some(t1), None)
+        .usage("p1", inst.id.as_str(), Some(t2), None)
         .await
         .unwrap();
     assert_eq!(later.samples.len(), 1);
 }
 
 #[tokio::test]
-async fn a_suspended_instance_meters_state_only() {
+async fn a_suspended_instance_meters_storage_only() {
     let w = world();
     let inst = w
         .svc
@@ -443,15 +456,17 @@ async fn a_suspended_instance_meters_state_only() {
     let id = inst.id.as_str();
     w.svc.suspend("p1", id).await.unwrap();
     let before = w.meter.events().len();
-    let later = OffsetDateTime::now_utc() + Duration::seconds(120);
+    let later = OffsetDateTime::now_utc() + Duration::hours(2);
     assert_eq!(w.svc.meter_tick(later).await.unwrap(), 1);
     let events = w.meter.events();
     assert_eq!(events.len(), before + 1);
     let e = events.last().unwrap();
+    assert_eq!(e.ty, STORAGE_TYPE);
     assert_eq!(e.subject, "org_default");
-    assert_eq!(e.data["vcpu_seconds"].as_f64().unwrap(), 0.0);
-    assert_eq!(e.data["memory_gb_seconds"].as_f64().unwrap(), 0.0);
     assert_eq!(e.data["state_bytes"], FAKE_STATE_BYTES);
+    let usage = w.svc.usage("p1", id, None, None).await.unwrap();
+    let last = usage.samples.last().unwrap();
+    assert_eq!((last.cpu_ms, last.memory_mib_ms), (0, 0));
 }
 
 #[tokio::test]
@@ -466,6 +481,73 @@ async fn delete_meters_the_last_window() {
     tokio::time::sleep(std::time::Duration::from_millis(5)).await;
     w.svc.delete("p1", inst.id.as_str()).await.unwrap();
     let events = w.meter.events();
-    assert_eq!(events.len(), 1);
-    assert!(events[0].id.starts_with(inst.id.as_str()));
+    assert!(
+        events
+            .iter()
+            .any(|e| e.ty == RUNTIME_TYPE && e.id.starts_with(inst.id.as_str()))
+    );
+}
+
+/// Refuses every resume and scale up; admits creates of xs only.
+struct Gate;
+
+#[async_trait::async_trait]
+impl MeterGate for Gate {
+    async fn admit(&self, inst: &Instance, op: GateOp) -> Result<(), EngineError> {
+        match op {
+            GateOp::Create if inst.spec.size.tier == SizeTier::Xs => Ok(()),
+            _ => Err(EngineError::QuotaExceeded(format!(
+                "engine compute is used up ({op:?})"
+            ))),
+        }
+    }
+}
+
+#[tokio::test]
+async fn the_meter_gate_guards_create_resume_and_scale_up() {
+    let registry = EngineRegistry::new().with(Arc::new(FakeEngine::new(EngineKind::Risingwave)));
+    let svc = EngineService::new(registry).with_gate(Arc::new(Gate));
+    let refused = svc
+        .create("p1", None, req("big", EngineKind::Risingwave))
+        .await
+        .unwrap_err();
+    assert!(matches!(refused, EngineError::QuotaExceeded(_)));
+    assert_eq!(refused.status().as_u16(), 402);
+    assert!(svc.list("p1", None).await.unwrap().is_empty());
+
+    let mut small = req("small", EngineKind::Risingwave);
+    small.size = SizeRequest {
+        tier: SizeTier::Xs,
+        replicas: None,
+    };
+    let inst = svc.create("p1", None, small).await.unwrap();
+    let id = inst.id.as_str();
+    let up = SizeRequest {
+        tier: SizeTier::M,
+        replicas: None,
+    };
+    assert!(matches!(
+        svc.scale("p1", id, up).await,
+        Err(EngineError::QuotaExceeded(_))
+    ));
+    assert_eq!(
+        svc.get("p1", id).await.unwrap().status.phase,
+        Phase::Running
+    );
+
+    // At a hard limit the Meter suspends, never deletes; resume is then refused.
+    let held = svc
+        .suspend_for_limit("p1", id, "monthly allowance")
+        .await
+        .unwrap();
+    assert_eq!(held.status.phase, Phase::Suspended);
+    assert!(held.status.message.unwrap().contains("monthly allowance"));
+    assert!(matches!(
+        svc.resume("p1", id).await,
+        Err(EngineError::QuotaExceeded(_))
+    ));
+    assert_eq!(
+        svc.get("p1", id).await.unwrap().status.phase,
+        Phase::Suspended
+    );
 }
