@@ -19,7 +19,11 @@ Decisions: D2110 (Cloudflare removed, Obscura everywhere), D2111 (the two provid
 **Status: preview.**
 
 - The provider code is checked in CI only against a scripted engine (`crates/loams-web-bridge/tests/it`).
-- The run against the real Obscura binary and the real image is lane BR-b's parity suite and CI job. Until that job is green, treat local and cloud browsing as **not yet run end to end**.
+- The runs against the real engine are two CI workflows:
+  - `browser-agentd-e2e.yml` (D2117) drives the agent tools through `loams-agentd mcp` on both providers and requires identical answers.
+  - BR-b's `browser-parity.yml` covers the engine-level scenarios.
+- Until both are green on dev, treat local and cloud browsing as **not yet run end to end**.
+- The agentd image carries the pinned Obscura (D2116), so `local` also works inside compose and Kubernetes.
 
 ## How agents get it
 
@@ -43,7 +47,7 @@ The two providers are one driver with two endpoints, so the following is shared 
 | Area | Default | Notes |
 |---|---|---|
 | Isolation | a browser context per page | Closing a page disposes its context. It never closes the engine, which other agents may share. |
-| Network policy | public web only | Private, loopback, link-local and cloud-metadata addresses are refused. The policy is checked before each navigation and on the URL the page lands on: a refused redirect sends the page to `about:blank`. It is also checked on every request the page makes, through `Fetch.requestPaused`. Underneath this, Obscura's own guard refuses private addresses after DNS resolution. |
+| Network policy | public web only | Private, loopback, link-local and cloud-metadata addresses are refused. Link-local and metadata addresses stay refused even with `allow_private_hosts`. The policy is checked before each navigation and on the URL the page lands on: a refused redirect sends the page to `about:blank`. It is also checked on every request the page makes, through `Fetch.requestPaused`. Underneath this, Obscura's own guard refuses private addresses after DNS resolution. |
 | Allow and deny lists | none | `allowed_domains` and `denied_domains`, or `LOAMS_BROWSER_ALLOWED_DOMAINS` and `LOAMS_BROWSER_DENIED_DOMAINS`. |
 | Credential boundary | secret fills off | `credentials.allow_secret_fills` and `credentials.allowed_fill_hosts` turn them on. A secret is resolved at the moment of the fill and scrubbed from every error and log. |
 | Budgets | 4 pages, 60 s per call, 10 min per page, no daily ceiling | `[budgets]`, or the `LOAMS_BROWSER_MAX_SESSIONS`, `…_REQUEST_TIMEOUT_MS`, `…_MAX_SESSION_MS` and `…_DAILY_BUDGET_MS` variables. |
