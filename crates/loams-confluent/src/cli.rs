@@ -164,6 +164,14 @@ pub struct CheckOpts {
     /// The Confluent Cloud API.
     #[arg(long, env = "CONFLUENT_API_URL", default_value = DEFAULT_BASE, hide = true)]
     pub api_url: String,
+    /// Loams' data service account (sa-…): describe its ACLs and check them
+    /// against D1826, with the Kafka key in KAFKA_API_KEY / KAFKA_API_SECRET
+    /// (one that may describe the cluster's ACLs; the data key usually may not).
+    #[arg(long)]
+    pub service_account: Option<String>,
+    /// The Kafka key for the ACL check (read from the environment by `run`).
+    #[arg(skip)]
+    pub acl_key: Option<CloudKey>,
 }
 
 /// The ids `key create` made.
@@ -494,7 +502,79 @@ pub async fn check(c: &Client, o: &CheckOpts, out: &mut dyn Write) -> Result<boo
             }
         }
     }
+    if !acl_check(c, &cl, o, out).await {
+        ok = false;
+    }
     Ok(ok)
+}
+
+/// The DescribeAcls sanity check (plan CC1 Task 6): false only when a grant is
+/// wider than D1826; a key that may not describe ACLs skips it.
+async fn acl_check(c: &Client, cl: &clusters::Cluster, o: &CheckOpts, out: &mut dyn Write) -> bool {
+    let Some(sa) = &o.service_account else {
+        let _ = writeln!(
+            out,
+            "skip ACLs: pass --service-account (and KAFKA_API_KEY/KAFKA_API_SECRET) to check Loams' grants"
+        );
+        return true;
+    };
+    if check_id(sa, "sa-", "--service-account").is_err() {
+        let _ = writeln!(out, "FAIL --service-account is an sa-… id, not '{sa}'");
+        return false;
+    }
+    let Some(key) = &o.acl_key else {
+        let _ = writeln!(
+            out,
+            "skip ACLs: set KAFKA_API_KEY and KAFKA_API_SECRET to a Kafka key that may describe ACLs"
+        );
+        return true;
+    };
+    if cl.rest.is_empty() {
+        let _ = writeln!(
+            out,
+            "skip ACLs: Confluent gave no REST endpoint for {}",
+            cl.id
+        );
+        return true;
+    }
+    let rest = c.for_endpoint(&cl.rest, key.clone());
+    let acls = match crate::acls::list(&rest, &cl.id, &format!("User:{sa}")).await {
+        Ok(a) => a,
+        Err(Error::Unauthorized | Error::Forbidden(_)) => {
+            let _ = writeln!(
+                out,
+                "skip ACLs: the Kafka key {} may not describe ACLs on {}",
+                key.id(),
+                cl.id
+            );
+            return true;
+        }
+        Err(e) => {
+            let _ = writeln!(out, "warn ACLs: {e}");
+            return true;
+        }
+    };
+    let findings = crate::acls::audit(&acls);
+    let mut ok = true;
+    for f in &findings {
+        match f.level {
+            crate::acls::Level::Fail => {
+                ok = false;
+                let _ = writeln!(out, "FAIL ACL {}", f.message);
+            }
+            crate::acls::Level::Warn => {
+                let _ = writeln!(out, "warn ACL {}", f.message);
+            }
+        }
+    }
+    if findings.is_empty() {
+        let _ = writeln!(
+            out,
+            "ok   {} ACLs for {sa}, none wider than D1826",
+            acls.len()
+        );
+    }
+    ok
 }
 
 /// Installs ring as the process's TLS provider (as the loams binary does).
@@ -538,6 +618,15 @@ async fn dispatch(args: &ByocArgs, out: &mut dyn Write) -> Result<bool, Error> {
             }
         }
         ConfluentCommand::Check(o) => {
+            let mut o = o.clone();
+            let (id, secret) = (
+                std::env::var("KAFKA_API_KEY").unwrap_or_default(),
+                std::env::var("KAFKA_API_SECRET").unwrap_or_default(),
+            );
+            if !id.is_empty() && !secret.is_empty() {
+                o.acl_key = Some(CloudKey::new(id, crate::Secret::new(secret)));
+            }
+            let o = &o;
             let c = Client::new(
                 &o.api_url,
                 CloudKey::from_env()?,
