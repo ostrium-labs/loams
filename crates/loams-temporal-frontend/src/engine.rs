@@ -131,7 +131,6 @@ impl Engine {
             closed: broadcast::channel(1024).0,
             visibility_tap: RwLock::new(None),
         }
-        }
     }
 
     /// Calls `tap` with every visibility row committed from now on.
