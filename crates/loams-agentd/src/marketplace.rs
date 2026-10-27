@@ -1,0 +1,51 @@
+//! The daemon's marketplace (MK1 Task 4b): the host over the daemon
+//! directory, with the HTTPS fetcher, Sigstore's public-good root, the npm
+//! and node agentd finds, and the keyring vault. The engine serves
+//! `MarketplaceService` from it; a task refreshes its sources at start and
+//! every 6 hours.
+
+use std::path::Path;
+use std::sync::Arc;
+
+use loams_agentd_marketplace::service::{Deps, NPM_REGISTRY, NoNpm, ProcessNpm, REFRESH_INTERVAL};
+use loams_agentd_marketplace::{HttpsFetcher, MarketplaceHost, SigstoreVerifier};
+
+/// Opens the marketplace under `dir` (`marketplace/`, `agents/`).
+///
+/// # Errors
+///
+/// When the fetcher or the trusted root cannot be built, or `sources.json`
+/// cannot be read.
+pub fn open(dir: &Path) -> anyhow::Result<MarketplaceHost> {
+    let (node, npm) = loams_agentd_harness::find_node_and_npm();
+    let npm: Arc<dyn loams_agentd_marketplace::install::Npm> = match npm {
+        Some(npm) => Arc::new(ProcessNpm {
+            npm,
+            node: node.clone(),
+        }),
+        None => Arc::new(NoNpm),
+    };
+    let deps = Deps {
+        data_dir: dir.to_owned(),
+        fetcher: Arc::new(HttpsFetcher::new().map_err(anyhow::Error::msg)?),
+        verifier: Arc::new(SigstoreVerifier::production().map_err(anyhow::Error::new)?),
+        npm,
+        vault: Arc::new(loams_agentd_sessions::marketplace::KeyringVault),
+        node,
+        registry: NPM_REGISTRY.into(),
+    };
+    MarketplaceHost::open(deps).map_err(anyhow::Error::new)
+}
+
+/// Opens the marketplace, attaches it to `core` and starts its refresh.
+/// A failure is logged: the daemon serves everything else without it.
+pub fn start(dir: &Path, core: &loams_agentd_sessions::EngineCore) {
+    match open(dir) {
+        Ok(host) => {
+            // The task ends with the runtime.
+            drop(host.spawn_refresh(REFRESH_INTERVAL));
+            core.attach_marketplace(host);
+        }
+        Err(error) => tracing::warn!(%error, "the marketplace is not running"),
+    }
+}

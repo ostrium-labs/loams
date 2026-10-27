@@ -281,6 +281,54 @@ Read on 2026-10-23 at `origin/dev` `710f47078`.
 
    Wiring the service into the daemon is the follow-up, Task 4b. That means ndjson methods in `loams-agentd-proto`, handlers in `loams-agentd-sessions`, the Connect service, `twins.rs` rows and the renderer allowlist, plus an HTTPS `Fetcher` and the 6-hour refresh. Until then `marketplace.proto` is not in `loams-agentd-connect`'s `FILES`, so nothing serves it.
 
+### Task 4b (2026-10-26)
+
+Brought into MS1's scope by D1806 and confirmed by the owner on 2026-10-25. Read at `origin/dev` `bc902971d`.
+
+1. **Where each part lives.**
+   - `loams-agentd-marketplace` gains `service.rs`: `MarketplaceHost`, the daemon's marketplace. It owns the sources, the installs under `<agentd data>/agents`, the vault, the refresh and the registrations. It knows neither wire.
+   - The crate also gains `fetch.rs` (`HttpsFetcher`) and, behind the `testkit` feature, a signed fake world that the sessions and Connect tests share.
+   - The ndjson types are `loams-agentd-proto::marketplace`, and the handlers are `loams-agentd-sessions`' `rpc/marketplace_rpc.rs`.
+   - The Connect service is `loams-agentd-connect`'s `services/marketplace.rs` and `map/marketplace.rs`.
+   - `listing.proto` and `marketplace.proto` join `FILES`.
+   - The daemon opens the host under its own directory (`loams-agentd/src/marketplace.rs`) and advertises the feature `marketplace`.
+2. **The ndjson names.** The ndjson method table is flat, so the twins carry the noun: `ListMarketplaceSources`, `AddMarketplaceSource`, `RemoveMarketplaceSource`, `SearchListings`, `GetListing`, `PlanInstall`, `InstallListing`, `UninstallListing`, `ListInstalledListings`, `CheckListingUpdates` and `UpdateListing`. All are `Owner` and `renderer: true`. None is open to the `mcp` role (`marketplace_not_in_mcp_role`): only the person installs.
+3. **Two wire forms, one value.**
+   - The ndjson wire keeps the listing schema's strings (`mcp-server`, `mastra`, `core`, `destructive`) and carries listing parts (the listing, its Place, models, cost, provenance) as JSON.
+   - Connect maps them to the `loams.marketplace.v1` messages through proto3 JSON. Each enum string is renamed by the schema's `x-proto-enum` annotation, and `$`-keys are dropped.
+   - The mapping test round-trips a fixture of every new type.
+4. **The fetcher.** `HttpsFetcher` uses reqwest 0.12 on rustls, as the other agentd crates fetch. It is `https_only`, with a 120-second timeout and a 512 MiB body cap. It refuses a plain-http URL before any request and treats any non-2xx status as an error. Every byte goes through the `Fetcher` trait, so MS1 Task 5's Walrus location is a second implementation, not a change here. Its tests run against a local TLS server with a test CA.
+5. **Refresh and revocations.**
+   - The host refreshes every source at start and every 6 hours (`REFRESH_INTERVAL`), and checks the installs against the new revocation lists after each refresh.
+   - It also checks them at open, from the verified cache, with no network.
+   - A `disable` finding removes that install's harness and MCP server registrations. The install and its `data/` stay (D1472).
+   - Tested with paused Tokio time.
+6. **Install.**
+   - `InstallListing` makes the plan again. The digest must equal the confirmed one, or the call answers `plan_changed`.
+   - A required secret must be given, or be in the vault already. Secrets go to the OS keyring (service `dev.loams.agentd`, account `marketplace/<id>/<input>`), never to a file. Non-secret configuration is `config.json` beside the install, and the listing JSON is kept as `listing.json` so registrations survive a restart.
+   - `UninstallListing` deletes the install's secrets: they are credentials, not the agent's data. `data/` stays.
+   - `UpdateListing` without the new plan's digest answers `consent_required` when the update widens anything (`plan::widens`). It also does when the installed version is no longer in its source.
+   - New error reasons: `plan_changed`, `consent_required`, `listing_revoked` and `untrusted_listing`, each `failed_precondition` on Connect.
+7. **What installs in Task 4b.**
+   - The `node` runtime with an npm artifact: Task 6's installer, with the tarball from `registry.npmjs.org` and the attestations from `/-/npm/v1/attestations/`.
+   - Listings with no artifact: remote MCP servers and native harnesses.
+   - A `binary` listing with an archive (the index's `vercel-labs/fx` and `ostrium/github-mcp-server`) answers `Unsupported`. The archive installer, which can reuse MS1 Task 3's tar.gz support in `archive_install`, is a follow-up.
+   - agentd's npm is `ProcessNpm`: the `npm` agentd finds for its adapters, run with `npm_args` (scripts off), a cleared environment and a cache beside the install. With no npm, an npm install fails with a plain message.
+8. **Harness registration** (Task 0 ruling 7, as built).
+   - `HarnessId::Marketplace` has wire name `marketplace` and proto value `HARNESS_ID_MARKETPLACE = 13` (after `HARNESS_ID_GOOSE = 12`, MS1 Task 3). `HarnessDescriptor.marketplace_listing` (proto field 9) names the listing.
+   - The registry keeps marketplace harnesses beside its id-keyed slots, by listing id. Each is an `AcpHarness::marketplace(AcpLaunch)`, with the owned launch line beside the static specs. A sync keeps an unchanged harness's instance.
+   - A marketplace harness's process runs in its install's `data/` directory, not in the project: Bun reads `bunfig.toml` from its working directory (MK0 Task 6, PR #1254), and a project's file must never configure an installed agent's runtime. The project still reaches the agent as ACP `cwd`. Installed MCP servers are spawned by the harness that runs them, so their working directory is that harness's choice until `McpServer` carries one (follow-up).
+   - Marketplace harnesses are listed `enabled` (the person installed each by consent). Harness updates skip them, because they update through the marketplace.
+   - `harness_descriptor_appears_in_list_harnesses` passes.
+   - **Not in this PR:** running a thread on one. That needs the listing id on the chat's config and session record, so dispatch can call `HarnessRegistry::resolve_marketplace`. MS1 Task 2 needs it, and it is the first follow-up.
+9. **MCP servers for runs.**
+   - `RunRequest` gains `mcp_servers`, which is additive and serde-defaulted. The engine adds every installed local MCP server to every run, with its declared secret variables read from the vault when the run starts. A `node` server runs as `node <entry> <args>`.
+   - ACP harnesses pass the servers in `session/new` `mcpServers`. Claude Code, Codex, OpenCode and Pi take only the one injected server today and ignore the list (follow-up).
+   - Remote MCP servers wait for agentd's MCP proxy (D1463): they are recorded as `remote_mcp` and not passed.
+   - `mcp_server_available_to_threads` passes.
+10. **The plan's `version_age_days`** is unset: the index carries no publish date yet.
+11. **Generated files.** The TypeScript bindings under `web/packages/agentd-client/src/` and the renderer allowlist `apps/desktop-electron/src/main/agentd/allowlist.gen.ts` were regenerated by their generators (`export_bindings`, `LOAMS_UPDATE_ALLOWLIST=1`), not edited by hand. The Marketplace page itself is MK0 Task 9.
+
 ### Task 8 (2026-10-26)
 
 Read at `origin/dev` `817d13814`. Brought into scope beside Task 4b; it does not need `@loams/mastra-resonate` (its fixtures are local packages).
@@ -340,7 +388,11 @@ The owner approved the pending decisions below on 2026-10-24 ("approve all with 
 | 4 | Built and tested (`cargo test -p loams-agentd-marketplace`), unmerged | branch `mk0-t4-marketplace-service`: `marketplace.proto`; sources, signed index (real Sigstore verification, `sigstore-verify` 0.14.0), revocations, search. Daemon wiring is the follow-up Task 4b (ruling 7 of Task 4) |
 | 5 | Built and tested, unmerged | branch `mk0-t5-install-plan`: `plan.rs` (consent plan, digest, widening) and `contract.rs` (environment, token rotation, MCP config, Postgres role) |
 | 6 | Built and tested (53 crate tests in all, real npm provenance), unmerged | branch `mk0-t6-installers`: `provenance.rs` and `install.rs` (npm installs with scripts off, script and lockfile refusal, uninstall keeps data, harness and MCP registrations). Registering them in agentd's `HarnessRegistry` and MCP runs (`harness_descriptor_appears_in_list_harnesses`, `mcp_server_available_to_threads`) waits for Task 4b's daemon wiring |
-| 4b, 7, 9–11 | Not started | Task 7 also waits for `@loams/mastra-resonate` on npm (Task 0 ruling 2) |
-| 8 | This PR (2026-10-26) | branch `mk0-t8-lapc-core`: the LAPC Core runner and `loams-agentd agent conformance`, rulings above. The `validate.yml` step in `loams-marketplace` is the follow-up (ruling 9) |
+| 4b | This PR (2026-10-26) | branch `mk0-t4b-daemon-wiring`: the daemon wiring, rulings above |
+| 7 | Blocked | waits for `@loams/mastra-resonate` on npm (Task 0 ruling 2), an owner step |
+| 8 | Merged | #1284: the LAPC Core runner and `loams-agentd agent conformance`, rulings above. The `validate.yml` step in `loams-marketplace` is the follow-up (ruling 9) |
+| 9 | In review | #1268, stacked on 4b |
+| 10 | In review | #1277, stacked on 4b |
+| 11 | Listings merged; docs in review | `ostrium-labs/loams-marketplace` #2 (native harnesses, GitHub and Plane MCP servers); docs #1272. The Mastra-agent listings wait for Task 7 |
 
 Each branch is stacked on the one before. To resume, merge Task 1, rebase each branch onto `dev` in order, and open one PR per task. Label Tasks 3, 4 and 6 `review:greptile`.

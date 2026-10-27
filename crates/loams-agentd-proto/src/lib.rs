@@ -16,6 +16,7 @@ pub mod file_mentions;
 pub mod git_write;
 pub mod groups;
 pub mod invocation;
+pub mod marketplace;
 pub mod motion;
 pub mod notify;
 pub mod params;

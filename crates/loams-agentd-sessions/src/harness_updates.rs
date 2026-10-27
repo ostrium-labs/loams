@@ -291,7 +291,8 @@ fn provider(id: HarnessId) -> ProviderSpec {
             update_args: None,
             manual_command: "Update Loams Desktop",
         },
-        HarnessId::Mock | HarnessId::Unsupported => ProviderSpec {
+        // A marketplace harness updates through the marketplace (MK1 Task 4b).
+        HarnessId::Mock | HarnessId::Unsupported | HarnessId::Marketplace => ProviderSpec {
             version_args: &["--version"],
             latest: LatestSource::Manual,
             update_args: None,
@@ -436,7 +437,9 @@ impl HarnessUpdateCoordinator {
         let order: Vec<_> = registry
             .descriptors()
             .into_iter()
-            .filter(|descriptor| descriptor.id != HarnessId::Mock)
+            .filter(|descriptor| {
+                descriptor.id != HarnessId::Mock && descriptor.id != HarnessId::Marketplace
+            })
             .map(|descriptor| descriptor.id)
             .collect();
         let statuses: HashMap<_, _> = order

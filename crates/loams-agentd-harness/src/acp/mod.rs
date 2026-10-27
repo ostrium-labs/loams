@@ -1301,6 +1301,8 @@ pub struct AcpHarness {
     models_cache: crate::catalog::Catalog,
     workspace_commands: crate::skills::CommandDiscovery,
     devin_models: devin_models::Catalog,
+    /// A marketplace harness's launch; `None` for the built-in agents.
+    launch: Option<AcpLaunch>,
     /// Goose's private launch environment (unused by other agents).
     goose: goose_env::GooseEnvironment,
 }
@@ -1331,8 +1333,24 @@ impl AcpHarness {
             models_cache: crate::catalog::Catalog::default(),
             workspace_commands: crate::skills::CommandDiscovery::default(),
             devin_models: devin_models::Catalog::default(),
+            launch: None,
             goose: goose_env::GooseEnvironment::default(),
         }
+    }
+
+    /// A harness installed from the marketplace (MK1 Task 4b): an ACP agent
+    /// spawned exactly as `launch` says, reported as
+    /// [`HarnessId::Marketplace`].
+    pub fn marketplace(launch: AcpLaunch) -> Self {
+        Self {
+            launch: Some(launch),
+            ..Self::with_spec(marketplace_spec())
+        }
+    }
+
+    /// The marketplace listing this harness runs, if it is one.
+    pub fn marketplace_listing(&self) -> Option<&str> {
+        self.launch.as_ref().map(|l| l.listing_id.as_str())
     }
 
     /// Devin (`devin acp`) — Cognition's native ACP server.
@@ -1623,6 +1641,9 @@ impl AcpHarness {
     }
 
     fn resolve_launch(&self) -> Result<Launch, HarnessError> {
+        if let Some(launch) = &self.launch {
+            return Ok(Launch::Program(launch.program.clone(), launch.args.clone()));
+        }
         let spec_args: Vec<String> = self.spec.args.iter().map(|a| a.to_string()).collect();
         if let Some(p) = &self.executable {
             return crate::executable::validate_native_override(p)
@@ -1749,6 +1770,9 @@ impl AcpHarness {
     }
 
     fn configure_adapter_environment(&self, cmd: &mut Command, executable: &Path) {
+        if let Some(launch) = &self.launch {
+            cmd.envs(&launch.env);
+        }
         if self.spec.id == HarnessId::Antigravity
             && let Some(parent) = executable.parent()
         {
@@ -1798,6 +1822,9 @@ impl AcpHarness {
         }
         if let Some(cwd) = cwd.filter(|c| !c.is_empty()) {
             cmd.current_dir(cwd);
+        }
+        if let Some(dir) = self.launch.as_ref().and_then(|launch| launch.cwd.as_ref()) {
+            cmd.current_dir(dir);
         }
         if self.spec.id == HarnessId::Antigravity {
             cmd.env("GEMINI_HOME", antigravity_paths::home()?);
@@ -2239,6 +2266,58 @@ fn trait_from_config_option(option: &Value) -> Option<ModelOption> {
     }
 }
 
+/// The launch line of a marketplace ACP harness (MK1 Task 0 ruling 7, Task
+/// 4b): owned, built at run time from an install, beside the static specs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AcpLaunch {
+    /// The listing id (`<namespace>/<name>`).
+    pub listing_id: String,
+    pub display_name: String,
+    /// What to spawn: `node` for the node runtime, else the installed entry.
+    pub program: PathBuf,
+    pub args: Vec<String>,
+    /// Added to the child's environment.
+    pub env: std::collections::BTreeMap<String, String>,
+    /// The child's working directory: the install's own data directory, so
+    /// a project's `bunfig.toml` or `.npmrc` is never read by the agent's
+    /// runtime (Bun reads `bunfig.toml` from its working directory). The
+    /// session's project directory still reaches the agent as ACP `cwd`.
+    pub cwd: Option<PathBuf>,
+}
+
+fn marketplace_spec() -> AcpAgentSpec {
+    AcpAgentSpec {
+        id: HarnessId::Marketplace,
+        display_name: "Marketplace harness",
+        // Never searched for: the launch is the install's (`AcpLaunch`).
+        executable: "",
+        env_override: "",
+        args: &[],
+        npm_package: None,
+        archive: None,
+        extra_paths: Vec::new,
+        cli_executable: "",
+        cli_extra_paths: Vec::new,
+        install_hint: "a marketplace harness (install it again from the Marketplace)",
+        // Discovered over ACP; a listing's declared models are the fallback
+        // the registry shows.
+        models: Vec::new,
+        steering_mode: SteeringMode::TurnBoundary,
+        reasoning_levels: &[],
+        prompt_transform: identity_transform,
+        effort_values: default_effort_values,
+        ladder_extras: &[],
+        prompt_complete_extension: false,
+        prompt_stall: None,
+        stall_hint: "The agent process is likely wedged.",
+        effort_in_model_id: false,
+        auth_method: None,
+        skill_dirs: Vec::new,
+        hidden_commands: &[],
+        drops_unstarted_cancelled_prompt: false,
+    }
+}
+
 #[async_trait]
 impl Harness for AcpHarness {
     fn supports_approvals(&self) -> bool {
@@ -2249,7 +2328,10 @@ impl Harness for AcpHarness {
         self.spec.id
     }
     fn display_name(&self) -> &str {
-        self.spec.display_name
+        match &self.launch {
+            Some(launch) => &launch.display_name,
+            None => self.spec.display_name,
+        }
     }
     fn authoritative_prompt_end(&self) -> bool {
         // ACP session/prompt owns the turn until its response. The engine's
@@ -2276,6 +2358,14 @@ impl Harness for AcpHarness {
         // serves it (D1454): it has no other provider to use.
         if self.spec.id == HarnessId::Goose && !self.goose.model_proxy_configured() {
             return false;
+        }
+        if let Some(launch) = &self.launch {
+            // The node runtime spawns `node` from PATH or an absolute path.
+            return launch.program.is_absolute() && launch.program.is_file()
+                || launch
+                    .args
+                    .first()
+                    .is_some_and(|entry| Path::new(entry).is_file());
         }
         // Overrides go through the same validation as `resolve_launch`, so an
         // override that points at nothing reports not-installed instead of an
@@ -2602,7 +2692,9 @@ fn initialize_params(harness: HarnessId) -> Value {
 /// server as name/command/args plus `[{name, value}]` env pairs. Empty when
 /// the host injected nothing — the user's own servers come from the agent's
 /// config, never from here.
-fn acp_mcp_servers(mcp: Option<&loams_agentd_proto::McpServer>) -> Vec<Value> {
+fn acp_mcp_servers<'a>(
+    mcp: impl IntoIterator<Item = &'a loams_agentd_proto::McpServer>,
+) -> Vec<Value> {
     mcp.into_iter()
         .map(|mcp| {
             json!({
@@ -3687,7 +3779,7 @@ async fn run_session(session: Session) {
 
         let session_params = json!({
             "cwd": request.cwd,
-            "mcpServers": acp_mcp_servers(request.mcp.as_ref()),
+            "mcpServers": acp_mcp_servers(request.mcp.iter().chain(&request.mcp_servers)),
         });
         let (session_id, mut session_response) = if let Some(resume) = &request.resume {
             let mut load = session_params.clone();
