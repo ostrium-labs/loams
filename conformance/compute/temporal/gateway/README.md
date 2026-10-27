@@ -46,8 +46,8 @@ conformance/compute/temporal/gateway/run.sh --profile             # the compose 
 ```
 
 Other SDKs run as legs (`SDK_LEGS=<sdk>`, `legs/<sdk>.sh`), each with its
-own workflow and a row in
-[temporal-sdk-matrix.md](../../../../docs/guides/durable/temporal-sdk-matrix.md).
+own workflow and a column of the guide's matrix (`methods.toml`'s `[sdks]`,
+"not yet run" until a committed run includes the leg).
 The Ruby leg (`SDK_LEGS=ruby run.sh --profile`, `temporal-sdk-ruby.yml`)
 adds `gateway_dx1_scenarios_ruby`, `gateway_hello_ruby`, `gateway_signal_ruby`,
 `gateway_histories_replay_ruby` and `gateway_dx1_differential_ruby_<scenario>`.
