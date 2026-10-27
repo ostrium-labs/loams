@@ -8606,9 +8606,11 @@ name = "loams-agentd-marketplace"
 version = "0.1.2"
 dependencies = [
  "async-trait",
+ "axum 0.8.9",
  "base64 0.23.1",
  "hex",
  "jsonschema",
+ "loams-walrus",
  "loams-agentd-harness",
  "loams-agentd-marketplace",
  "rcgen",

@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::artifact::{ArtifactFetch, ArtifactSources, FetchError, Origin};
 use crate::provenance::{self, ProvenanceError};
 use crate::verify::SignatureVerifier;
 
@@ -23,6 +24,8 @@ use crate::verify::SignatureVerifier;
 pub enum InstallError {
     #[error(transparent)]
     Provenance(#[from] ProvenanceError),
+    #[error(transparent)]
+    Fetch(#[from] FetchError),
     #[error("{package} runs code at install ({script}); Loams installs run no code (D1473)")]
     InstallScript { package: String, script: String },
     #[error(
@@ -369,6 +372,41 @@ pub fn install_node(
     }
     layout.write_record(&record)?;
     Ok(record)
+}
+
+/// Fetches a `node` listing's npm tarball, from its Walrus mirror when
+/// Walrus is enabled and from the registry otherwise or on any Walrus
+/// failure (D1812), then installs it with [`install_node`], unchanged:
+/// integrity and Sigstore provenance are checked on the bytes whichever way
+/// they came (D1459).
+pub async fn install_node_fetched(
+    layout: &Layout,
+    listing: &Value,
+    fetch: &ArtifactFetch<'_>,
+    provenance_bundles: &[Vec<u8>],
+    verifier: &dyn SignatureVerifier,
+    npm: &dyn Npm,
+    context: &Context,
+) -> Result<(Installed, Origin), InstallError> {
+    if str_at(listing, &["runtime", "kind"]) != Some("node")
+        || str_at(listing, &["artifact", "type"]) != Some("npm")
+    {
+        return Err(InstallError::Unsupported(
+            "only node listings with npm artifacts install in MK0".into(),
+        ));
+    }
+    let sources = ArtifactSources::package(listing, fetch.npm_registry)?;
+    let (tarball, origin) = fetch.fetch(&sources).await?;
+    let installed = install_node(
+        layout,
+        listing,
+        &tarball,
+        provenance_bundles,
+        verifier,
+        npm,
+        context,
+    )?;
+    Ok((installed, origin))
 }
 
 /// A marketplace ACP harness as agentd's harness registry takes it (D1464):

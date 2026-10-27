@@ -21,7 +21,14 @@
         "platform": "linux-x86_64",
         "url": "https://github.com/vercel-labs/fx/releases/download/v0.0.14/fx-linux-x86_64.tar.gz",
         "sha256": "213840ab495023fa2d584d2f93c121559fcacde0fb4793c6c20f7f751021a333",
-        "path": "fx"
+        "path": "fx",
+        "locations": [
+          {
+            "kind": "walrus",
+            "blob_id": "aVbh3_1oUc-gtUYXctEvHdfSJnb17uKq0658C2MNXIA",
+            "sha256": "213840ab495023fa2d584d2f93c121559fcacde0fb4793c6c20f7f751021a333"
+          }
+        ]
       },
       {
         "platform": "darwin-aarch64",

@@ -23,6 +23,9 @@ function tempDir(): string {
 describe('from-package', () => {
   it('from_package_round_trips', () => {
     const listing = fixture('valid/agent-mastra-acp.json');
+    // A walrus location exists only once the tarball is stored (D1812, MS1
+    // Task 9's publish step), so package.json never carries one.
+    delete listing.artifact!.locations;
     const pkg = toPackageJson(listing);
     const again = fromPackageJson(pkg, { commit: listing.source.commit, integrity: listing.artifact!.integrity! });
     expect(again).toEqual(listing);

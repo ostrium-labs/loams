@@ -22,11 +22,20 @@ export interface ConfigInput {
   env?: string;
 }
 
+/** A public mirror of an artifact's bytes, beside its own location (D1812). */
+export interface ArtifactLocation {
+  kind: 'walrus';
+  /** 32 bytes, URL-safe base64 without padding. */
+  blob_id: string;
+  sha256: string;
+}
+
 export interface ArchiveFile {
   platform: string;
   url: string;
   sha256: string;
   path?: string;
+  locations?: ArtifactLocation[];
 }
 
 export interface Artifact {
@@ -35,6 +44,7 @@ export interface Artifact {
   version: string;
   integrity?: string;
   files?: ArchiveFile[];
+  locations?: ArtifactLocation[];
 }
 
 export interface DataScope {
