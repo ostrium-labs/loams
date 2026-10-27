@@ -92,7 +92,8 @@ pub fn capabilities() -> Capabilities {
     }
 }
 
-/// The message of an `UNIMPLEMENTED` answer for `method`.
+/// The message of an `UNIMPLEMENTED` answer for `method` (of either
+/// service). A Nexus method says that Nexus is not supported (D2053).
 pub fn unimplemented_message(method: &str) -> String {
     if method.contains("Nexus") {
         return format!(
@@ -102,4 +103,25 @@ pub fn unimplemented_message(method: &str) -> String {
     format!(
         "{method} is not implemented by the Loams Temporal gateway yet; see the compatibility matrix: {MATRIX_URL}"
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn nexus_methods_say_nexus_is_unsupported() {
+        for m in [
+            "ListNexusEndpoints",
+            "CreateNexusEndpoint",
+            "PollNexusTaskQueue",
+            "StartNexusOperationExecution",
+        ] {
+            let msg = unimplemented_message(m);
+            assert!(msg.contains(NEXUS_UNSUPPORTED), "{msg}");
+            assert!(msg.contains(MATRIX_URL), "{msg}");
+        }
+        let msg = unimplemented_message("CreateSchedule");
+        assert!(!msg.contains("Nexus") && msg.contains(MATRIX_URL), "{msg}");
+    }
 }

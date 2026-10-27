@@ -55,6 +55,11 @@ pub struct FrontendConfig {
     pub server_version: String,
     /// The default page of `GetWorkflowExecutionHistory`.
     pub history_page_size: usize,
+    /// What `GetClusterInfo` reports as the shard count.
+    pub history_shard_count: i32,
+    /// What `GetClusterInfo` reports as the persistence store
+    /// (`postgres`, `memory`).
+    pub persistence_store: String,
 }
 
 impl Default for FrontendConfig {
@@ -65,6 +70,8 @@ impl Default for FrontendConfig {
             history_wait: Duration::from_secs(60),
             server_version: format!("loams-temporal {}", env!("CARGO_PKG_VERSION")),
             history_page_size: 1000,
+            history_shard_count: 0,
+            persistence_store: String::new(),
         }
     }
 }
@@ -215,7 +222,12 @@ impl Frontend {
             .remove(id);
     }
 
+    /// The caller: the UI listener's principal when the call came in there
+    /// (D2050), otherwise what the `authorization` header proves.
     pub(crate) fn principal<T>(&self, req: &Request<T>) -> Result<Principal, Status> {
+        if let Some(t) = req.extensions().get::<crate::ui::TrustedPrincipal>() {
+            return Ok(t.0.clone());
+        }
         self.auth.authenticate(req.metadata())
     }
 

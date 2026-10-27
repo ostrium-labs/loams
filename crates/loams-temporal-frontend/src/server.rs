@@ -230,6 +230,18 @@ impl Gateway {
                 .max_encoding_message_size(64 * 1024 * 1024),
         )
     }
+
+    /// The `OperatorService` to mount beside [`Gateway::service`] (D2052):
+    /// the search-attribute listing, `UNIMPLEMENTED` for the rest.
+    pub fn operator_service(
+        &self,
+    ) -> crate::operator::OperatorImplementedOnly<
+        loams_temporal_proto::temporal::api::operatorservice::v1::operator_service_server::OperatorServiceServer<
+            crate::operator::OperatorServiceImpl,
+        >,
+    >{
+        crate::operator::operator_service(self.frontend.clone())
+    }
 }
 
 /// Answers `UNIMPLEMENTED` with the matrix link for every `WorkflowService`
@@ -261,21 +273,6 @@ where
             return Box::pin(async move { Ok(status.into_http()) });
         }
         Box::pin(self.0.call(req))
-    }
-}
-
-impl Gateway {
-    /// The `OperatorService` to mount beside [`Gateway::service`] (D2052):
-    /// the search-attribute listing and registry, `UNIMPLEMENTED` for the
-    /// rest.
-    pub fn operator_service(
-        &self,
-    ) -> crate::operator::OperatorImplementedOnly<
-        loams_temporal_proto::temporal::api::operatorservice::v1::operator_service_server::OperatorServiceServer<
-            crate::operator::OperatorServiceImpl,
-        >,
-    >{
-        crate::operator::operator_service(self.frontend.clone())
     }
 }
 

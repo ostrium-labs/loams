@@ -55,6 +55,11 @@ cargo_package(
             "crate": "standalone",
             "root": "tests/standalone.rs",
         },
+        {
+            "name": "ui",
+            "crate": "ui",
+            "root": "tests/ui.rs",
+        },
     ],
     deps = [
         "//crates/loams-temporal-history:loams-temporal-history",
