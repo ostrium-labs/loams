@@ -112,3 +112,13 @@ cases = ["gateway_dx1_differential_{sdk}_query_while_running"]
 [[method]]
 name = "ResetStickyTaskQueue"
 note = "a no-op; no SDK call in these runs and no test yet"
+
+# Workflow updates (TMP-api, D2080-D2082): not in the SDK legs' corpus runs
+# yet; covered by the statemachine's update tests and golden corpus scenario.
+[[method]]
+name = "UpdateWorkflowExecution"
+note = "no SDK call in these runs; loams-temporal-statemachine tests/update.rs and the golden update scenario"
+
+[[method]]
+name = "PollWorkflowExecutionUpdate"
+note = "no SDK call in these runs; loams-temporal-statemachine tests/update.rs"
