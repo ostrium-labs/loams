@@ -287,6 +287,11 @@ pub fn chunk_count(len: u64) -> u32 {
 pub const HASH_FIELD: u8 = b'h';
 /// The tag of a set member, after the version.
 pub const SET_MEMBER: u8 = b's';
+/// The tag of a sorted-set member (→ its score), after the version.
+pub const ZSET_MEMBER: u8 = b'm';
+/// The tag of a sorted set's score index, after the version:
+/// `'z' ‖ key::f64(score) ‖ enc(member)` → empty.
+pub const ZSET_SCORE: u8 = b'z';
 /// The tag of a collection's length shard, after the version (Q1226).
 pub const LEN_SHARD: u8 = b'#';
 /// How many shards a collection's length is kept in (Q1226).

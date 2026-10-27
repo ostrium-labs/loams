@@ -53,6 +53,11 @@ cargo_package(
             "crate": "strings",
             "root": "tests/strings.rs",
         },
+        {
+            "name": "zsets",
+            "crate": "zsets",
+            "root": "tests/zsets.rs",
+        },
     ],
     deps = [
         "//crates/loams-kv:loams-kv",

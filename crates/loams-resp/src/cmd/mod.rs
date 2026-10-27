@@ -23,6 +23,7 @@ mod keys;
 mod server;
 mod set;
 mod string;
+mod zset;
 
 pub use conn::REDIS_VERSION;
 pub use server::{delete_range, glob, store_error};
@@ -50,6 +51,8 @@ pub enum Family {
     Hash,
     /// Sets (Task 6).
     Set,
+    /// Sorted sets (Task 7).
+    Zset,
 }
 
 /// Command flags, as `COMMAND INFO` names them.
@@ -286,6 +289,38 @@ pub static COMMANDS: &[Spec] = &[
     spec("sdiff", -2, READONLY, ALLKEYS, Family::Set),
     spec("sdiffstore", -3, WRITE | DENYOOM, ALLKEYS, Family::Set),
     spec("sscan", -3, READONLY, KEY1, Family::Set),
+    // Sorted sets (Task 7).
+    spec("zadd", -4, WRITE | DENYOOM | FAST, KEY1, Family::Zset),
+    spec("zincrby", 4, WRITE | DENYOOM | FAST, KEY1, Family::Zset),
+    spec("zrem", -3, WRITE | FAST, KEY1, Family::Zset),
+    spec("zcard", 2, READONLY | FAST, KEY1, Family::Zset),
+    spec("zscore", 3, READONLY | FAST, KEY1, Family::Zset),
+    spec("zmscore", -3, READONLY | FAST, KEY1, Family::Zset),
+    spec("zrank", -3, READONLY | FAST, KEY1, Family::Zset),
+    spec("zrevrank", -3, READONLY | FAST, KEY1, Family::Zset),
+    spec("zrange", -4, READONLY, KEY1, Family::Zset),
+    spec("zrangestore", -5, WRITE | DENYOOM, (1, 2, 1), Family::Zset),
+    spec("zrevrange", -4, READONLY, KEY1, Family::Zset),
+    spec("zrangebyscore", -4, READONLY, KEY1, Family::Zset),
+    spec("zrevrangebyscore", -4, READONLY, KEY1, Family::Zset),
+    spec("zrangebylex", -4, READONLY, KEY1, Family::Zset),
+    spec("zrevrangebylex", -4, READONLY, KEY1, Family::Zset),
+    spec("zcount", 4, READONLY | FAST, KEY1, Family::Zset),
+    spec("zlexcount", 4, READONLY | FAST, KEY1, Family::Zset),
+    spec("zremrangebyrank", 4, WRITE, KEY1, Family::Zset),
+    spec("zremrangebyscore", 4, WRITE, KEY1, Family::Zset),
+    spec("zremrangebylex", 4, WRITE, KEY1, Family::Zset),
+    spec("zpopmin", -2, WRITE | FAST, KEY1, Family::Zset),
+    spec("zpopmax", -2, WRITE | FAST, KEY1, Family::Zset),
+    spec("zrandmember", -2, READONLY, KEY1, Family::Zset),
+    spec("zunion", -3, READONLY, NOKEYS, Family::Zset),
+    spec("zinter", -3, READONLY, NOKEYS, Family::Zset),
+    spec("zdiff", -3, READONLY, NOKEYS, Family::Zset),
+    spec("zunionstore", -4, WRITE | DENYOOM, KEY1, Family::Zset),
+    spec("zinterstore", -4, WRITE | DENYOOM, KEY1, Family::Zset),
+    spec("zdiffstore", -4, WRITE | DENYOOM, KEY1, Family::Zset),
+    spec("zintercard", -3, READONLY, NOKEYS, Family::Zset),
+    spec("zscan", -3, READONLY, KEY1, Family::Zset),
 ];
 
 /// Commands Loams does not serve in v1 (design §77 §8.5), answered with a
@@ -423,6 +458,7 @@ pub async fn dispatch(shared: &Arc<Shared>, conn: &mut Conn, args: Vec<Bytes>) -
         ),
         Family::Hash => (hash::run(shared, conn, spec, &args).await, Flow::Continue),
         Family::Set => (set::run(shared, conn, spec, &args).await, Flow::Continue),
+        Family::Zset => (zset::run(shared, conn, spec, &args).await, Flow::Continue),
     }
 }
 
