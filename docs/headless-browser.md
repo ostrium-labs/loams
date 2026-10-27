@@ -117,3 +117,13 @@ Obscura is an independent engine. It is not Chromium, and its output is not pixe
   - `Runtime.evaluate`, `callFunctionOn`, `releaseObject`
   - `Page.navigate`, `captureScreenshot`
   - `Fetch.enable`, `continueRequest`, `failRequest`
+
+## Through loams-gateway
+
+`loams-gateway --module browser` (D2118, [example config](../deploy/browser/gateway-browser.toml.example)) sits between agents and the browser service.
+
+- Agents present a client token. The gateway checks its SHA-256 against a list that is re-read on every connection, so deleting a line revokes that client at once.
+- The gateway opens the engine with the engine's own token, which never leaves the gateway.
+- It serves only the CDP WebSocket handshake, never the discovery endpoints, and it does not parse CDP.
+
+To use it, point `LOAMS_BROWSER_SERVICE_URL` at the gateway.
