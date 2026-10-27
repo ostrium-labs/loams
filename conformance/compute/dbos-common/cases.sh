@@ -14,12 +14,25 @@
 
 json_eq() { python3 -c 'import json,sys; sys.exit(0 if json.loads(sys.argv[1]) == json.loads(sys.argv[2]) else 1)' "$1" "$2" 2>/dev/null; }
 
+# dbos_ensure_db <database>: create it on the direct endpoint if missing,
+# owned by the suites' role (`postgres`, DX1 R0.12).
+dbos_ensure_db() {
+  local admin
+  admin=$(oc_pg_mode direct)
+  [ "$(oc_psql "$admin" "SELECT count(*) FROM pg_database WHERE datname = '$1'")" = 1 ] ||
+    oc_psql "$admin" "CREATE DATABASE \"$1\" OWNER postgres"
+}
+
 # dbos_crash_case <name> <database> [ENV=value...]: SIGKILL when step 4 starts
 # (steps 1-3 are checkpointed), restart, resume; each step's row exactly once.
 dbos_crash_case() {
   local name=$1 db=$2 wf got
   shift 2
   wf="crash-$(date +%s%N)"
+  # The polling case uses a fresh database: create it as the admin, owned by
+  # the suites' role, before the app connects (its `setup` creates only the
+  # table, and DBOS creates its system tables on launch). DX1 ruling T5.R2.
+  if ! dbos_ensure_db "$db"; then case_ "$name" fail "could not create database $db"; return; fi
   if ! app DBOS_URL="$URL/$db" "$@" -- setup >/dev/null 2>&1; then case_ "$name" fail "setup failed"; return; fi
   if app DBOS_URL="$URL/$db" CRASH_AT=4 "$@" -- start "$wf" >/dev/null 2>&1; then
     case_ "$name" fail "the app was not killed at step 4"; return

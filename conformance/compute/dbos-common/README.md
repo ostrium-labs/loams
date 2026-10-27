@@ -1,6 +1,7 @@
 # DBOS Transact on Loams Postgres
 
-DX1 DX0 Task 5 (design 74 §8). Each SDK (MIT) runs unmodified against Loams
+DX1 DX0 Task 5 (design 74 §8). Status: **written, not yet run** (DX1 ruling
+T5.R4); the nightly's `dbos` leg runs it. Each SDK (MIT) runs unmodified against Loams
 Postgres's direct endpoint (`compute1`), judged by its own suite and by the
 Loams cases, which check the effects (rows each step wrote, event timestamps).
 
