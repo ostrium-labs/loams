@@ -9698,6 +9698,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-resp"
+version = "0.1.2"
+dependencies = [
+ "bytes",
+ "proptest",
+]
+
+[[package]]
 name = "loams-safekeeper"
 version = "0.1.2"
 dependencies = [
