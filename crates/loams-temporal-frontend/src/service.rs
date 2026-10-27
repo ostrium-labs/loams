@@ -6,7 +6,6 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use loams_temporal_history::Attributes;
 use loams_temporal_history::time::{dur, ts};
 use loams_temporal_history::{Attributes, Limits, limit_messages};
 use loams_temporal_matching::{Handout, Matcher, QueueKey, TaskKind as QueueKind};
