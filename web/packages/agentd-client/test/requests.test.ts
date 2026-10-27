@@ -389,6 +389,12 @@ const REQUESTS: Request[] = [
   }),
   request('GetChecks', { chatId: 'chat-1', provider: 'github', sha: 'abcdef0' }),
   request('GetCheckLog', { chatId: 'chat-1', provider: 'github', logId: '901', lines: 200 }),
+  request('DeployLiveApp', {
+    chatId: 'chat-1',
+    approvalId: 'fa-2',
+    app: 'notes',
+    commit: '0123456789abcdef0123456789abcdef01234567',
+  }),
 ];
 
 const file = join(import.meta.dirname, 'requests.json');

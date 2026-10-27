@@ -40,6 +40,8 @@ import type { DeleteProjectActionParams } from "./DeleteProjectActionParams";
 import type { DeleteReviewCommentParams } from "./DeleteReviewCommentParams";
 import type { DeleteWorkspaceEntryRequest } from "./DeleteWorkspaceEntryRequest";
 import type { DeleteWorktreeParams } from "./DeleteWorktreeParams";
+import type { DeployLiveAppParams } from "./DeployLiveAppParams";
+import type { DeployLiveAppReply } from "./DeployLiveAppReply";
 import type { DiscardPathsParams } from "./DiscardPathsParams";
 import type { DiscardWorkingTreeParams } from "./DiscardWorkingTreeParams";
 import type { DiscardWorkingTreeReply } from "./DiscardWorkingTreeReply";
@@ -357,6 +359,7 @@ export const METHODS = [
   { name: "MergeChangeRequest", kind: "unary", params: "MergeChangeRequestParams", result: "MergeChangeRequestReply", role: "mcp", renderer: false },
   { name: "GetChecks", kind: "unary", params: "GetChecksParams", result: "ChecksReply", role: "mcp", renderer: false },
   { name: "GetCheckLog", kind: "unary", params: "GetCheckLogParams", result: "CheckLogReply", role: "mcp", renderer: false },
+  { name: "DeployLiveApp", kind: "unary", params: "DeployLiveAppParams", result: "DeployLiveAppReply", role: "mcp", renderer: false },
 ] as const satisfies readonly MethodSpec[];
 
 /** Each method's params, result (or stream item), kind, role and renderer flag. */
@@ -485,6 +488,7 @@ export type Methods = {
   MergeChangeRequest: { params: MergeChangeRequestParams; result: MergeChangeRequestReply; kind: "unary"; role: "mcp"; renderer: false };
   GetChecks: { params: GetChecksParams; result: ChecksReply; kind: "unary"; role: "mcp"; renderer: false };
   GetCheckLog: { params: GetCheckLogParams; result: CheckLogReply; kind: "unary"; role: "mcp"; renderer: false };
+  DeployLiveApp: { params: DeployLiveAppParams; result: DeployLiveAppReply; kind: "unary"; role: "mcp"; renderer: false };
 };
 
 export type MethodName = keyof Methods;

@@ -174,6 +174,9 @@ pub struct EngineRpc {
     engine_info: EngineInfo,
     /// Opens pull requests (G4) with the daemon's forge credentials.
     change_request_creator: ChangeRequestCreator,
+    /// Deploys to Loams Live for the factory (FT0 Task 8) with the daemon's
+    /// Live credential.
+    live_deployer: crate::live_deploy::LiveDeployer,
     /// Serializes the git writes of SD1 Task 9 (G2, G3, G5, G21): one
     /// checksum check and its write at a time.
     git_writes: std::sync::Arc<tokio::sync::Mutex<()>>,
@@ -259,6 +262,7 @@ impl EngineRpc {
             approvals: None,
             engine_info,
             change_request_creator: ChangeRequestCreator::from_keyring(),
+            live_deployer: crate::live_deploy::LiveDeployer::from_keyring(),
             git_writes: std::sync::Arc::new(tokio::sync::Mutex::new(())),
             review,
         }
@@ -558,6 +562,12 @@ impl EngineRpc {
     /// Open change requests with `creator` (tests: a fake Forgejo or `gh`).
     pub fn with_change_request_creator(mut self, creator: ChangeRequestCreator) -> Self {
         self.change_request_creator = creator;
+        self
+    }
+
+    /// Deploy to Live with `deployer` (tests: a fake Live).
+    pub fn with_live_deployer(mut self, deployer: crate::live_deploy::LiveDeployer) -> Self {
+        self.live_deployer = deployer;
         self
     }
 
@@ -2256,6 +2266,14 @@ impl RpcService for EngineRpc {
                     let p = params_of::<calls::GetCheckLog>(params)?;
                     let log = self.get_check_log(p).await?;
                     reply::<calls::GetCheckLog, _>(&log)
+                })
+                .await
+            }
+            methods::DEPLOY_LIVE_APP => {
+                Box::pin(async move {
+                    let p = params_of::<calls::DeployLiveApp>(params)?;
+                    let deployed = self.deploy_live_app(p).await?;
+                    reply::<calls::DeployLiveApp, _>(&deployed)
                 })
                 .await
             }

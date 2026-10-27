@@ -21,6 +21,20 @@ export {
   reviewSchema,
   reviewThread,
 } from './agents/reviewer.js';
+export type {
+  AgentdCall,
+  DeployRecord,
+  DeployStepResult,
+  LiveDeployInput,
+  LiveDeployState,
+} from './deploy/live.js';
+export {
+  DEPLOY_TOOL,
+  DeployError,
+  deployPayload,
+  deploySummary,
+  liveDeployStep,
+} from './deploy/live.js';
 export type { FactoryEnv, FactoryOptions } from './mastra.js';
 export { createFactoryMastra, FactoryConfigError, readFactoryEnv } from './mastra.js';
 export type { AcpStdioServer, ShimDefinition } from './mcp.js';

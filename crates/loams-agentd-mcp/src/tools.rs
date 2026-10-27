@@ -283,6 +283,22 @@ fn catalog() -> Vec<ToolDef> {
             annotations: Value::Null,
         },
         ToolDef {
+            name: "deploy_live_app",
+            description: "Deploy a merged commit to a Loams Live app: the bundle and schema the commit's .loams/factory.toml [deploy.live] names, then a health check, and a rollback to the previous deployment when the check fails. DESTRUCTIVE: agentd refuses it unless approval_id names an approved deploy approval of the chat whose payload was {target: \"live\", app, commit} of this very call. Calling it again with the same approval answers the first call's deployment instead of deploying twice. Risk: destructive.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "approval_id": { "type": "string" },
+                    "app": { "type": "string", "description": "The Live app." },
+                    "commit": { "type": "string", "description": "The full commit id of the merge." },
+                    "message": { "type": "string", "description": "A note for the deployment's record." },
+                    "chat": { "type": "string", "description": "The chat that asked for the deploy approval and whose repository holds the commit. Defaults to the chat you speak from." }
+                },
+                "required": ["approval_id", "app", "commit"]
+            }),
+            annotations: Value::Null,
+        },
+        ToolDef {
             name: "get_checks",
             description: "The CI checks of a commit on a chat's remote (Forgejo or GitHub), the chat's HEAD by default: each check's state (pending, success, failure, neutral), URL and logId, and the overall state. Risk: read.",
             input_schema: chat_key_schema(json!({
@@ -343,7 +359,7 @@ pub fn risk_of(name: &str) -> &'static str {
         "whoami" | "list_projects" | "list_harnesses" | "list_models" | "list_chats"
         | "get_chat" | "read_chat" | "wait_for_turn" | "get_thread_diff" | "get_approval"
         | "get_checks" | "get_check_log" => "read",
-        "merge_change_request" => "destructive",
+        "merge_change_request" | "deploy_live_app" => "destructive",
         _ => "write",
     }
 }
@@ -354,8 +370,8 @@ fn annotations_for(name: &str) -> Value {
         "risk": risk,
         "readOnlyHint": risk == "read",
         "destructiveHint": risk == "destructive",
-        "idempotentHint": matches!(name, "open_change_request" | "get_thread_diff" | "get_approval"),
-        "openWorldHint": matches!(name, "open_change_request" | "merge_change_request"),
+        "idempotentHint": matches!(name, "open_change_request" | "get_thread_diff" | "get_approval" | "deploy_live_app"),
+        "openWorldHint": matches!(name, "open_change_request" | "merge_change_request" | "deploy_live_app"),
     })
 }
 
@@ -448,6 +464,15 @@ struct CheckLogArgs {
     provider: String,
     log_id: String,
     lines: Option<u32>,
+}
+
+#[derive(Deserialize)]
+struct DeployArgs {
+    chat: Option<String>,
+    approval_id: String,
+    app: String,
+    commit: String,
+    message: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -651,6 +676,7 @@ impl Tools {
             "request_approval" => self.request_approval(parse(args)?).await,
             "get_approval" => self.get_approval(parse(args)?).await,
             "merge_change_request" => self.merge_change_request(parse(args)?).await,
+            "deploy_live_app" => self.deploy_live_app(parse(args)?).await,
             "get_checks" => self.get_checks(parse(args)?).await,
             "get_check_log" => self.get_check_log(parse(args)?).await,
             other => return Err(format!("unknown tool: {other}")),
@@ -784,6 +810,20 @@ impl Tools {
                 json!({
                     "chatId": chat.id, "provider": args.provider.trim().to_ascii_lowercase(),
                     "logId": args.log_id, "lines": args.lines,
+                }),
+            )
+            .await
+    }
+
+    async fn deploy_live_app(&self, args: DeployArgs) -> anyhow::Result<Value> {
+        let chat = self.acting_chat(args.chat.as_deref()).await?;
+        self.loams_desktop
+            .call(
+                methods::DEPLOY_LIVE_APP,
+                json!({
+                    "chatId": chat, "approvalId": args.approval_id,
+                    "app": args.app.trim(), "commit": args.commit.trim(),
+                    "message": args.message,
                 }),
             )
             .await
@@ -1519,7 +1559,8 @@ mod tests {
                 methods::CREATE_RUN_WORKTREE
                 | methods::GET_THREAD_DIFF
                 | methods::REQUEST_APPROVAL
-                | methods::MERGE_CHANGE_REQUEST => {
+                | methods::MERGE_CHANGE_REQUEST
+                | methods::DEPLOY_LIVE_APP => {
                     self.writes
                         .lock()
                         .unwrap()
@@ -1644,6 +1685,7 @@ mod tests {
         assert_eq!(risk("open_change_request"), "write");
         assert_eq!(risk("request_approval"), "write");
         assert_eq!(risk("merge_change_request"), "destructive");
+        assert_eq!(risk("deploy_live_app"), "destructive");
         assert_eq!(risk("create_chat"), "write");
         assert_eq!(risk("read_chat"), "read");
         assert_eq!(risk("get_checks"), "read");
@@ -1659,6 +1701,7 @@ mod tests {
                     | "request_approval"
                     | "get_approval"
                     | "merge_change_request"
+                    | "deploy_live_app"
             ) {
                 let risk = tool.annotations["risk"].as_str().unwrap();
                 assert!(
@@ -1674,6 +1717,9 @@ mod tests {
             .unwrap();
         assert_eq!(merge.annotations["destructiveHint"], true);
         assert_eq!(merge.annotations["readOnlyHint"], false);
+        let deploy = list.iter().find(|t| t.name == "deploy_live_app").unwrap();
+        assert_eq!(deploy.annotations["destructiveHint"], true);
+        assert_eq!(deploy.annotations["openWorldHint"], true);
     }
 
     #[tokio::test]
@@ -1718,6 +1764,22 @@ mod tests {
         assert_eq!(
             writes[2].1,
             json!({ "chatId": "chat-alpha-1", "baseRef": "main" })
+        );
+        drop(writes);
+        let commit = "a".repeat(40);
+        tools
+            .call(
+                "deploy_live_app",
+                json!({ "approval_id": "fa-2", "app": " notes ", "commit": commit }),
+            )
+            .await
+            .unwrap();
+        let writes = world.writes.lock().unwrap();
+        assert_eq!(writes[3].0, methods::DEPLOY_LIVE_APP);
+        assert_eq!(
+            writes[3].1,
+            json!({ "chatId": "chat-alpha-1", "approvalId": "fa-2", "app": "notes",
+                    "commit": commit, "message": null })
         );
     }
 

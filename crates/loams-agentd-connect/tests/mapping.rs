@@ -310,6 +310,14 @@ const NOT_MAPPED: &[(&str, &str)] = &[
         "an `mcp`-role method's type, ndjson only (FT0-4-1)",
     ),
     (
+        "DeployLiveAppParams",
+        "an `mcp`-role method's type, ndjson only (FT0-4-1)",
+    ),
+    (
+        "DeployLiveAppReply",
+        "an `mcp`-role method's type, ndjson only (FT0-4-1)",
+    ),
+    (
         "GetApprovalParams",
         "an `mcp`-role method's type, ndjson only (FT0-4-1)",
     ),

@@ -26,10 +26,10 @@ use crate::checkpoints::{
 };
 use crate::daemon::DaemonMode;
 use crate::factory_loop::{
-    CheckLogReply, ChecksReply, CreateRunWorktreeParams, GetApprovalParams, GetCheckLogParams,
-    GetChecksParams, GetThreadDiffParams, MergeChangeRequestParams, MergeChangeRequestReply,
-    OpenChangeRequestParams, OpenChangeRequestReply, PostReviewCommentParams,
-    RequestApprovalParams, TypedApproval,
+    CheckLogReply, ChecksReply, CreateRunWorktreeParams, DeployLiveAppParams, DeployLiveAppReply,
+    GetApprovalParams, GetCheckLogParams, GetChecksParams, GetThreadDiffParams,
+    MergeChangeRequestParams, MergeChangeRequestReply, OpenChangeRequestParams,
+    OpenChangeRequestReply, PostReviewCommentParams, RequestApprovalParams, TypedApproval,
 };
 use crate::git_write::{
     CommitWorktreeParams, CommitWorktreeReply, CreateChangeRequestParams, CreateChangeRequestReply,
@@ -526,6 +526,11 @@ method_table! {
     GET_CHECKS = GetChecks: Unary(GetChecksParams -> ChecksReply), Mcp, renderer: false;
     /// The scrubbed, bounded tail of one check's log.
     GET_CHECK_LOG = GetCheckLog: Unary(GetCheckLogParams -> CheckLogReply), Mcp, renderer: false;
+    /// FT0 Task 8 (D1434), destructive: deploy a commit's Live bundle to a
+    /// Live app, only with a settled, approved deploy approval whose payload
+    /// hash is this call's `{target: "live", app, commit}`; health check and
+    /// rollback included. The Live credential stays in agentd.
+    DEPLOY_LIVE_APP = DeployLiveApp: Unary(DeployLiveAppParams -> DeployLiveAppReply), Mcp, renderer: false;
 }
 
 #[cfg(test)]
@@ -591,6 +596,7 @@ mod tests {
                 "MergeChangeRequest",
                 "GetChecks",
                 "GetCheckLog",
+                "DeployLiveApp",
             ]
         );
     }

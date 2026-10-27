@@ -1069,5 +1069,14 @@
       "logId": "901",
       "lines": 200
     }
+  },
+  {
+    "method": "DeployLiveApp",
+    "params": {
+      "chatId": "chat-1",
+      "approvalId": "fa-2",
+      "app": "notes",
+      "commit": "0123456789abcdef0123456789abcdef01234567"
+    }
   }
 ]

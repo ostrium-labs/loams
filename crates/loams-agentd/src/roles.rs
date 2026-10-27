@@ -787,6 +787,7 @@ mod tests {
             methods::MERGE_CHANGE_REQUEST,
             methods::GET_CHECKS,
             methods::GET_CHECK_LOG,
+            methods::DEPLOY_LIVE_APP,
         ] {
             assert!(
                 allowed(&run, method, json!({ "chatId": "side" })).await,
