@@ -1,0 +1,2 @@
+# The LocalExecutor comparison leg (AIRFLOW_EXECUTOR=LocalExecutor airflow/run.sh).
+product = "airflow/local"
