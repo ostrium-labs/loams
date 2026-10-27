@@ -170,7 +170,9 @@ fn special_form(e: &Expr) -> Result<Option<Expr>, ChError> {
             trim_characters,
         } => {
             if trim_where.is_none() && trim_what.is_some() {
-                return Err(ChError::syntax_error("TRIM(c FROM s) needs BOTH, LEADING or TRAILING"));
+                return Err(ChError::syntax_error(
+                    "TRIM(c FROM s) needs BOTH, LEADING or TRAILING",
+                ));
             }
             let mut args = vec![b(expr)];
             args.extend(trim_what.as_ref().map(b));

@@ -164,10 +164,12 @@ fn pod_bytes(t: &ChType, a: &dyn Array, row: usize) -> Option<Vec<u8>> {
             let b: &BooleanArray = a.as_boolean();
             vec![u8::from(b.value(row))]
         }
-        (ChType::Date, DataType::Date32) => {
-            (prim::<adt::Date32Type>(a).value(row) as u16).to_le_bytes().to_vec()
+        (ChType::Date, DataType::Date32) => (prim::<adt::Date32Type>(a).value(row) as u16)
+            .to_le_bytes()
+            .to_vec(),
+        (ChType::Date32, DataType::Date32) => {
+            prim::<adt::Date32Type>(a).value(row).to_le_bytes().to_vec()
         }
-        (ChType::Date32, DataType::Date32) => prim::<adt::Date32Type>(a).value(row).to_le_bytes().to_vec(),
         (ChType::DateTime(_), DataType::Timestamp(_, _)) => {
             let secs = timestamp(a, row)? / ticks_in(a.data_type(), 0);
             (secs as u32).to_le_bytes().to_vec()
@@ -192,8 +194,14 @@ fn pod_bytes(t: &ChType, a: &dyn Array, row: usize) -> Option<Vec<u8>> {
         (_, DataType::UInt16) => prim::<adt::UInt16Type>(a).value(row).to_le_bytes().to_vec(),
         (_, DataType::UInt32) => prim::<adt::UInt32Type>(a).value(row).to_le_bytes().to_vec(),
         (_, DataType::UInt64) => prim::<adt::UInt64Type>(a).value(row).to_le_bytes().to_vec(),
-        (_, DataType::Float32) => prim::<adt::Float32Type>(a).value(row).to_le_bytes().to_vec(),
-        (_, DataType::Float64) => prim::<adt::Float64Type>(a).value(row).to_le_bytes().to_vec(),
+        (_, DataType::Float32) => prim::<adt::Float32Type>(a)
+            .value(row)
+            .to_le_bytes()
+            .to_vec(),
+        (_, DataType::Float64) => prim::<adt::Float64Type>(a)
+            .value(row)
+            .to_le_bytes()
+            .to_vec(),
         _ => return None,
     })
 }
@@ -263,7 +271,9 @@ fn hash_into(
         ChType::Array(_) | ChType::Map(..) => {
             let inner = match t {
                 ChType::Array(e) => e.as_ref().clone(),
-                ChType::Map(k, v) => ChType::Tuple(vec![(None, (**k).clone()), (None, (**v).clone())]),
+                ChType::Map(k, v) => {
+                    ChType::Tuple(vec![(None, (**k).clone()), (None, (**v).clone())])
+                }
                 _ => unreachable!("matched above"),
             };
             let (offsets, values) = list_parts(a.as_ref()).ok_or_else(|| not_supported(t))?;

@@ -54,11 +54,7 @@ fn char_window(s: &str, offset: i128, length: Option<i128>) -> &str {
 }
 
 /// Slices strings: `offset` and `length` from the arguments.
-fn slicer(
-    name: &'static str,
-    utf8: bool,
-    plan: fn(i128) -> (i128, Option<i128>),
-) -> ChFunction {
+fn slicer(name: &'static str, utf8: bool, plan: fn(i128) -> (i128, Option<i128>)) -> ChFunction {
     ChFunction::new(
         name,
         Arc::new(move |args, _| {
@@ -166,9 +162,8 @@ fn length(name: &'static str, utf8: bool) -> ChFunction {
                     match b.get(row) {
                         // ClickHouse counts the bytes that do not continue a
                         // UTF-8 sequence.
-                        Some(v) if utf8 => out.append_value(
-                            v.iter().filter(|&&c| (c & 0xC0) != 0x80).count() as u64,
-                        ),
+                        Some(v) if utf8 => out
+                            .append_value(v.iter().filter(|&&c| (c & 0xC0) != 0x80).count() as u64),
                         Some(v) => out.append_value(v.len() as u64),
                         None => out.append_null(),
                     }
@@ -243,7 +238,11 @@ fn affix(name: &'static str, end: bool) -> ChFunction {
             for row in 0..call.rows {
                 match (s.get(row), p.get(row)) {
                     (Some(s), Some(p)) => {
-                        let hit = if end { s.ends_with(p) } else { s.starts_with(p) };
+                        let hit = if end {
+                            s.ends_with(p)
+                        } else {
+                            s.starts_with(p)
+                        };
                         out.append_value(u8::from(hit));
                     }
                     _ => out.append_null(),
@@ -355,11 +354,7 @@ pub(super) fn register(r: &mut Registry) {
 
 /// `right(s, n)`: the last `n`, or all but the first `-n`.
 fn right_plan(n: i128) -> (i128, Option<i128>) {
-    if n >= 0 {
-        (-n, Some(n))
-    } else {
-        (1 - n, None)
-    }
+    if n >= 0 { (-n, Some(n)) } else { (1 - n, None) }
 }
 
 #[cfg(test)]

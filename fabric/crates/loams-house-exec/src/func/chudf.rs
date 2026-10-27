@@ -123,7 +123,8 @@ impl ChFunction {
     /// Registers the function under its name.
     pub fn register(self, r: &mut Registry) {
         let name = self.name.clone();
-        r.scalars.insert(name, Arc::new(ScalarUDF::new_from_impl(self)));
+        r.scalars
+            .insert(name, Arc::new(ScalarUDF::new_from_impl(self)));
     }
 }
 
@@ -188,7 +189,9 @@ impl ScalarUDFImpl for ChFunction {
             .map(|f| from_arrow(f))
             .collect::<Result<Vec<_>, _>>()
             .map_err(df)?;
-        let full = self.result_type(&types, args.scalar_arguments).map_err(df)?;
+        let full = self
+            .result_type(&types, args.scalar_arguments)
+            .map_err(df)?;
         Ok(Arc::new(to_arrow(&self.name, &full).map_err(df)?))
     }
 

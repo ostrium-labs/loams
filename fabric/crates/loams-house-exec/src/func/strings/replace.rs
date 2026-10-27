@@ -28,9 +28,7 @@ fn typer(name: &'static str) -> crate::func::chudf::Typer {
                     return Err(ChError {
                         code: 44,
                         name: "ILLEGAL_COLUMN",
-                        message: format!(
-                            "Illegal column {t} of first argument of function {name}"
-                        ),
+                        message: format!("Illegal column {t} of first argument of function {name}"),
                     });
                 }
                 t => return Err(illegal_type(name, i, t)),

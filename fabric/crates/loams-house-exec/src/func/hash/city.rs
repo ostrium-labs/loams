@@ -57,7 +57,10 @@ fn hash_len0to16(s: &[u8]) -> u64 {
     if len > 8 {
         let a = fetch64(s, 0);
         let b = fetch64(s, len - 8);
-        return hash_len16(a, rotate_by_at_least_1(b.wrapping_add(len as u64), len as u32)) ^ b;
+        return hash_len16(
+            a,
+            rotate_by_at_least_1(b.wrapping_add(len as u64), len as u32),
+        ) ^ b;
     }
     if len >= 4 {
         let a = fetch32(s, 0);

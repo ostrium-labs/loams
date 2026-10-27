@@ -12,7 +12,15 @@ use loams_house_types::text::TextSettings;
 const FIXTURE: &str = include_str!("fixtures/t31_oracle.jsonl");
 const PROFILE: &str = include_str!("../../../../conformance/clickhouse/profile/profile.toml");
 
-async fn answer(engine: &Engine, sql: &str) -> String {
+/// The lines of a `JSONCompactEachRowWithNamesAndTypes` answer as JSON
+/// values (the server's text has spaces after commas, the engine's none).
+fn rows(text: &str) -> Vec<serde_json::Value> {
+    text.lines()
+        .map(|l| serde_json::from_str(l).unwrap_or_else(|e| panic!("{l}: {e}")))
+        .collect()
+}
+
+async fn answer(engine: &Engine, sql: &str) -> Vec<serde_json::Value> {
     let a = engine
         .query(sql, &[], &[], "default")
         .await
@@ -26,7 +34,7 @@ async fn answer(engine: &Engine, sql: &str) -> String {
         &mut out,
     )
     .unwrap();
-    String::from_utf8(out).unwrap()
+    rows(&String::from_utf8(out).unwrap())
 }
 
 /// The fixture's cases whose query passes `keep`.
@@ -56,7 +64,7 @@ async fn hashes_match_the_oracle() {
     let cases = cases(is_hash);
     assert!(cases.len() >= 12);
     for (q, want) in cases {
-        assert_eq!(answer(&engine, &q).await, want, "{q}");
+        assert_eq!(answer(&engine, &q).await, rows(&want), "{q}");
     }
 }
 
@@ -66,7 +74,7 @@ async fn string_functions_match_the_oracle() {
     let cases = cases(|q| !is_hash(q));
     assert!(cases.len() >= 10);
     for (q, want) in cases {
-        assert_eq!(answer(&engine, &q).await, want, "{q}");
+        assert_eq!(answer(&engine, &q).await, rows(&want), "{q}");
     }
 }
 

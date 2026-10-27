@@ -37,10 +37,7 @@ pub(crate) fn parse_uuid(s: &[u8]) -> Result<[u8; 16], ChError> {
         if s[13] != b'-' || s[18] != b'-' || s[23] != b'-' {
             return Err(cannot_parse_uuid(&text()));
         }
-        (
-            s[..36].iter().copied().filter(|&c| c != b'-').collect(),
-            36,
-        )
+        (s[..36].iter().copied().filter(|&c| c != b'-').collect(), 36)
     } else if s.len() >= 32 {
         (s[..32].to_vec(), 32)
     } else {
@@ -148,7 +145,10 @@ mod tests {
             parse_uuid(b"61F0C404-5CB3-11E7-907B-A6006AD3DBA0").unwrap(),
             want
         );
-        assert_eq!(parse_uuid(b"61f0c4045cb311e7907ba6006ad3dba0").unwrap(), want);
+        assert_eq!(
+            parse_uuid(b"61f0c4045cb311e7907ba6006ad3dba0").unwrap(),
+            want
+        );
         for bad in [
             &b"{61f0c404-5cb3-11e7-907b-a6006ad3dba0}"[..],
             b"abc",
@@ -158,7 +158,9 @@ mod tests {
             assert_eq!(parse_uuid(bad).unwrap_err().code, 376);
         }
         assert_eq!(
-            parse_uuid(b"61f0c4045cb311e7907ba6006ad3dba0f").unwrap_err().code,
+            parse_uuid(b"61f0c4045cb311e7907ba6006ad3dba0f")
+                .unwrap_err()
+                .code,
             6
         );
     }

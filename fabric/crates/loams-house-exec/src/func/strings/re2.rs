@@ -28,9 +28,7 @@ pub fn cannot_compile(pattern: &str, why: &str) -> ChError {
     ChError {
         code: 427,
         name: "CANNOT_COMPILE_REGEXP",
-        message: format!(
-            "OptimizedRegularExpression: cannot compile re2: {pattern}, error: {why}"
-        ),
+        message: format!("OptimizedRegularExpression: cannot compile re2: {pattern}, error: {why}"),
     }
 }
 
@@ -387,11 +385,7 @@ impl Parser<'_> {
                 return Err(self.fail("invalid named capture group"));
             };
             let name = &r[..end];
-            if name.is_empty()
-                || !name
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '_')
-            {
+            if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
                 return Err(self.fail("invalid named capture group"));
             }
             self.i += 1 + skip + name.chars().count() + 1;
@@ -594,7 +588,9 @@ pub fn like_regex(pattern: &str, case_insensitive: bool) -> Result<String, ChErr
                         ),
                     });
                 }
-                Some(e @ ('%' | '_' | '\\')) => out.push_str(&regex::escape(e.encode_utf8(&mut buf))),
+                Some(e @ ('%' | '_' | '\\')) => {
+                    out.push_str(&regex::escape(e.encode_utf8(&mut buf)))
+                }
                 Some(e) => {
                     out.push_str(r"\\");
                     out.push_str(&regex::escape(e.encode_utf8(&mut buf)));
@@ -653,7 +649,9 @@ mod tests {
         for p in [r"\C", r"\141", r"\p{Alphabetic}"] {
             assert_eq!(compile(p, false).unwrap_err().code, 36, "{p}");
         }
-        for p in ["a*?", "a{2,3}?", "(?i)a", "(?i:a)", "(?P<n>a)", "(?<n>a)", r"\pL", "a??"] {
+        for p in [
+            "a*?", "a{2,3}?", "(?i)a", "(?i:a)", "(?P<n>a)", "(?<n>a)", r"\pL", "a??",
+        ] {
             assert!(compile(p, false).is_ok(), "{p}");
         }
     }

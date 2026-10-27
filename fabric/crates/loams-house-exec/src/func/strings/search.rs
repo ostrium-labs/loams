@@ -68,7 +68,13 @@ fn position_of(haystack: &str, needle: &str, start: u64, fold: Fold) -> u64 {
             at(h.len(), found)
         }
         Fold::Chars | Fold::CharsCase => {
-            let map = |c: char| if fold == Fold::CharsCase { lower_char(c) } else { c };
+            let map = |c: char| {
+                if fold == Fold::CharsCase {
+                    lower_char(c)
+                } else {
+                    c
+                }
+            };
             let h: Vec<char> = haystack.chars().map(map).collect();
             let n: Vec<char> = needle.chars().map(map).collect();
             if start > h.len() + 1 {
