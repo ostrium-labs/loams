@@ -27,6 +27,7 @@ mod activity;
 mod commands;
 mod external;
 mod start;
+pub mod update;
 mod workflow_task;
 mod write;
 
@@ -36,10 +37,12 @@ use loams_temporal_proto::temporal::api::common::v1::{
     Header, MeteringMetadata, Payloads, WorkerVersionStamp,
 };
 use loams_temporal_proto::temporal::api::failure::v1::Failure;
+use loams_temporal_proto::temporal::api::protocol::v1::Message;
 use loams_temporal_proto::temporal::api::sdk::v1::WorkflowTaskCompletedMetadata;
 use loams_temporal_proto::temporal::api::workflowservice::v1::StartWorkflowExecutionRequest;
 
 pub use loams_temporal_history as history;
+pub use update::{UpdateStatus, messages_for_task};
 
 /// One thing that happens to a run.
 #[derive(Debug, Clone, PartialEq)]
@@ -84,6 +87,9 @@ pub enum Input {
         worker_version: Option<WorkerVersionStamp>,
         /// Schedule another workflow task even with nothing new.
         force_create_new_workflow_task: bool,
+        /// The worker's protocol messages (update acceptances, rejections
+        /// and responses), in order.
+        messages: Vec<Message>,
     },
     /// `RespondWorkflowTaskFailed`.
     WorkflowTaskFailed {
@@ -204,6 +210,12 @@ pub enum Input {
     TimerFired {
         /// The timer's started event.
         started_event_id: i64,
+    },
+    /// `UpdateWorkflowExecution`: admit a workflow update. A known update
+    /// ID changes nothing ([`Reply::Stale`]).
+    UpdateAdmitted {
+        /// The update's request.
+        request: Box<loams_temporal_proto::temporal::api::update::v1::Request>,
     },
 }
 
@@ -450,6 +462,7 @@ fn dispatch(b: &mut Batch<'_>, fx: &mut Vec<Effect>, input: Input) -> Result<Rep
             metering_metadata,
             worker_version,
             force_create_new_workflow_task,
+            messages,
         } => workflow_task::completed(
             b,
             fx,
@@ -462,6 +475,7 @@ fn dispatch(b: &mut Batch<'_>, fx: &mut Vec<Effect>, input: Input) -> Result<Rep
                 metering_metadata,
                 worker_version,
                 force_create_new_workflow_task,
+                messages,
             },
         ),
         Input::WorkflowTaskFailed {
@@ -543,5 +557,6 @@ fn dispatch(b: &mut Batch<'_>, fx: &mut Vec<Effect>, input: Input) -> Result<Rep
             identity,
         } => external::terminate(b, fx, reason, details, identity),
         Input::TimerFired { started_event_id } => external::timer_fired(b, fx, started_event_id),
+        Input::UpdateAdmitted { request } => update::admit(b, fx, *request),
     }
 }

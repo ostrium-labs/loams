@@ -32,7 +32,8 @@ pub(crate) fn validate(commands: &[Command]) -> Result<(), Rejection> {
             | command::Attributes::StartTimerCommandAttributes(_)
             | command::Attributes::CancelTimerCommandAttributes(_)
             | command::Attributes::RequestCancelActivityTaskCommandAttributes(_)
-            | command::Attributes::RecordMarkerCommandAttributes(_) => false,
+            | command::Attributes::RecordMarkerCommandAttributes(_)
+            | command::Attributes::ProtocolMessageCommandAttributes(_) => false,
             command::Attributes::CompleteWorkflowExecutionCommandAttributes(_)
             | command::Attributes::FailWorkflowExecutionCommandAttributes(_)
             | command::Attributes::CancelWorkflowExecutionCommandAttributes(_) => true,
