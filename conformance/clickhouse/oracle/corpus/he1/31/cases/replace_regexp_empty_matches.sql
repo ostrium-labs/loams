@@ -1,0 +1,1 @@
+SELECT replaceRegexpAll('abc', 'x*', '-'), replaceRegexpAll('abc', 'b*', 'x'), replaceRegexpAll('abc', '^', 'x'), replaceRegexpAll('ab', '$', 'x'), replaceRegexpAll('abc', '', 'x'), replaceRegexpOne('abc', 'x*', '-')

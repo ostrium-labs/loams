@@ -6049,7 +6049,12 @@ name = "loams-house-exec"
 version = "0.0.1"
 dependencies = [
  "datafusion",
+ "loams-house-sql",
  "loams-house-types",
+ "regex",
+ "siphasher",
+ "twox-hash",
+ "uuid",
 ]
 
 [[package]]

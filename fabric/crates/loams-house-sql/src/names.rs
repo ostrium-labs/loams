@@ -361,6 +361,20 @@ fn write(e: &Expr, out: &mut String) {
             args.extend(substring_for.as_deref());
             call(out, "substring", &args);
         }
+        // `POSITION(n IN h)` is `position(h, n)`; `TRIM([BOTH|LEADING|
+        // TRAILING] [c FROM] s)` is `trimBoth/trimLeft/trimRight(s[, c])`.
+        Expr::Position { expr, r#in } => call(out, "position", &[r#in, expr]),
+        Expr::Trim {
+            trim_where,
+            trim_what,
+            expr,
+            trim_characters,
+        } => {
+            let mut args: Vec<&Expr> = vec![expr];
+            args.extend(trim_what.as_deref());
+            args.extend(trim_characters.iter().flatten());
+            call(out, crate::guard::trim_function(trim_where.as_ref()), &args);
+        }
         Expr::Subquery(q) => {
             out.push('(');
             out.push_str(&q.to_string());

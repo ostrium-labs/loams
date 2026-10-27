@@ -39,5 +39,7 @@ pub fn registry() -> Registry {
         }),
     );
     r.scalars.insert("version".into(), Arc::new(version));
+    loams_house_exec::func::strings::register(&mut r);
+    loams_house_exec::func::hash::register(&mut r);
     r
 }

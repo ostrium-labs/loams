@@ -23,7 +23,12 @@
 //!   ClickHouse type text, for the House's type planner;
 //! * a select item without an alias gets ClickHouse's column name as its
 //!   alias ([`crate::names`]);
-//! * a table aliased `FINAL` (sqlparser's misreading, R2.3) is marked final.
+//! * a table aliased `FINAL` (sqlparser's misreading, R2.3) is marked final;
+//! * `POSITION(n IN h)`, `SUBSTRING(s FROM a FOR b)`, `TRIM(… FROM s)`,
+//!   `LIKE` and `ILIKE` become the functions ClickHouse reads them as
+//!   (`position(h, n)`, `substring(s, a, b)`, `trimBoth(s, c)`, `like(…)`,
+//!   `notILike(…)`, …), which carry ClickHouse's semantics (plan HE1
+//!   Task 31).
 
 use std::collections::BTreeSet;
 
@@ -33,8 +38,8 @@ use datafusion::sql::sqlparser::ast::{
     Join, JoinConstraint, JoinOperator, LambdaFunction, LimitClause, NamedWindowDefinition,
     NamedWindowExpr, ObjectName, ObjectNamePart, Offset, OrderBy, OrderByExpr, OrderByKind,
     OrderByOptions, Query, Select, SelectFlavor, SelectItem, SetExpr, Setting, TableAlias,
-    TableFactor, TableWithJoins, UnaryOperator, Value, ValueWithSpan, WindowFrame, WindowSpec,
-    WindowType, With,
+    TableFactor, TableWithJoins, TrimWhereField, UnaryOperator, Value, ValueWithSpan, WindowFrame,
+    WindowSpec, WindowType, With,
 };
 use loams_house_types::ChError;
 
@@ -81,6 +86,104 @@ fn later(what: &str, task: u32) -> ChError {
     ChError::not_implemented(format!(
         "{what} is not supported by the Loams House engine yet (plan HE1 Task {task})"
     ))
+}
+
+/// The function ClickHouse reads `TRIM(…)` as.
+pub fn trim_function(side: Option<&TrimWhereField>) -> &'static str {
+    match side {
+        Some(TrimWhereField::Leading) => "trimLeft",
+        Some(TrimWhereField::Trailing) => "trimRight",
+        Some(TrimWhereField::Both) | None => "trimBoth",
+    }
+}
+
+/// A call of the ClickHouse function `name`.
+fn call(name: &str, args: Vec<Expr>) -> Expr {
+    Expr::Function(Function {
+        name: ObjectName::from(vec![Ident::new(name)]),
+        uses_odbc_syntax: false,
+        parameters: FunctionArguments::None,
+        args: FunctionArguments::List(FunctionArgumentList {
+            duplicate_treatment: None,
+            args: args
+                .into_iter()
+                .map(|a| FunctionArg::Unnamed(FunctionArgExpr::Expr(a)))
+                .collect(),
+            clauses: vec![],
+        }),
+        filter: None,
+        null_treatment: None,
+        over: None,
+        within_group: vec![],
+    })
+}
+
+/// The function call a special form is in ClickHouse (plan HE1 Task 31), if
+/// `e` is one.
+fn special_form(e: &Expr) -> Result<Option<Expr>, ChError> {
+    let b = |x: &Box<Expr>| (**x).clone();
+    Ok(Some(match e {
+        Expr::Like {
+            negated,
+            any,
+            expr,
+            pattern,
+            escape_char,
+        }
+        | Expr::ILike {
+            negated,
+            any,
+            expr,
+            pattern,
+            escape_char,
+        } => {
+            if *any || escape_char.is_some() {
+                return Err(refuse("LIKE ANY / ESCAPE"));
+            }
+            let name = match (matches!(e, Expr::ILike { .. }), *negated) {
+                (false, false) => "like",
+                (false, true) => "notLike",
+                (true, false) => "ilike",
+                (true, true) => "notILike",
+            };
+            call(name, vec![b(expr), b(pattern)])
+        }
+        Expr::Position { expr, r#in } => call("position", vec![b(r#in), b(expr)]),
+        Expr::Substring {
+            expr,
+            substring_from,
+            substring_for,
+            special: _,
+            shorthand: _,
+        } => {
+            let Some(from) = substring_from else {
+                return Err(ChError::syntax_error("SUBSTRING(… FOR …) needs FROM"));
+            };
+            let mut args = vec![b(expr), b(from)];
+            args.extend(substring_for.as_ref().map(b));
+            call("substring", args)
+        }
+        Expr::Trim {
+            trim_where,
+            trim_what,
+            expr,
+            trim_characters,
+        } => {
+            if trim_where.is_none() && trim_what.is_some() {
+                return Err(ChError::syntax_error("TRIM(c FROM s) needs BOTH, LEADING or TRAILING"));
+            }
+            let mut args = vec![b(expr)];
+            args.extend(trim_what.as_ref().map(b));
+            args.extend(trim_characters.iter().flatten().cloned());
+            if args.len() > 2 {
+                return Err(ChError::number_of_arguments_doesnt_match(
+                    "TRIM takes one set of characters",
+                ));
+            }
+            call(trim_function(trim_where.as_ref()), args)
+        }
+        _ => return Ok(None),
+    }))
 }
 
 impl<'a> Guard<'a> {
@@ -734,6 +837,10 @@ impl<'a> Guard<'a> {
 
     /// Walks (and rewrites) an expression.
     pub fn expr(&mut self, e: &mut Expr) -> Result<(), ChError> {
+        if let Some(call) = special_form(e)? {
+            *e = call;
+            return self.expr(e);
+        }
         match e {
             Expr::Identifier(_) | Expr::CompoundIdentifier(_) => Ok(()),
             Expr::Value(v) => match &v.value {
@@ -781,26 +888,14 @@ impl<'a> Guard<'a> {
                 self.expr(low)?;
                 self.expr(high)
             }
-            Expr::Like {
-                negated: _,
-                any,
-                expr,
-                pattern,
-                escape_char,
-            }
-            | Expr::ILike {
-                negated: _,
-                any,
-                expr,
-                pattern,
-                escape_char,
-            } => {
-                if *any || escape_char.is_some() {
-                    return Err(refuse("LIKE ANY / ESCAPE"));
-                }
-                self.expr(expr)?;
-                self.expr(pattern)
-            }
+            // Rewritten to function calls by `special_form` above.
+            Expr::Like { .. }
+            | Expr::ILike { .. }
+            | Expr::Position { .. }
+            | Expr::Substring { .. }
+            | Expr::Trim { .. } => Err(ChError::logical_error(format!(
+                "{e} reached the guard unrewritten"
+            ))),
             Expr::Cast {
                 kind,
                 expr,
@@ -874,9 +969,6 @@ impl<'a> Guard<'a> {
             Expr::Convert { .. } => Err(refuse("CONVERT")),
             Expr::AtTimeZone { .. } => Err(refuse("AT TIME ZONE")),
             Expr::Ceil { .. } | Expr::Floor { .. } => Err(refuse("CEIL/FLOOR … TO")),
-            Expr::Position { .. } => Err(later("POSITION(… IN …)", 31)),
-            Expr::Substring { .. } => Err(later("SUBSTRING(… FROM …)", 31)),
-            Expr::Trim { .. } => Err(later("TRIM(… FROM …)", 31)),
             Expr::Overlay { .. } => Err(refuse("OVERLAY")),
             Expr::Collate { .. } => Err(refuse("COLLATE")),
             Expr::Prefixed { .. } => Err(refuse("Prefixed literals")),
