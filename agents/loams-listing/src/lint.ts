@@ -1,6 +1,7 @@
 // `loams-listing lint`: the schema, then the rules a JSON Schema cannot say
 // (design 73 sections 3.3, 3.6, 7.4 and 10.2).
 import { validateAgainst } from './schema.js';
+import { BUN_PINNED, satisfies } from './semver.js';
 import type { Listing, Tool } from './types.js';
 
 export type Severity = 'error' | 'warning';
@@ -35,9 +36,11 @@ export const RULES: Record<string, string> = {
   'config-names-unique': 'Configuration names and environment variables are unique.',
   'config-env-reserved': 'Configuration never sets a variable of the environment contract (D1453).',
   'mastra-profile': 'A Mastra agent runs on node and is written in TypeScript or JavaScript.',
+  'engine-version': `A Bun listing's runtime.version admits Bun ${BUN_PINNED}, the version agentd runs (D1791, D1808).`,
   'egress-declared': 'A listing with egress tools declares the hosts it reaches.',
   'tool-poisoning': 'Tool descriptions hold no instructions to the model and no hidden text.',
   'archive-platforms-unique': 'An archive has one file per platform.',
+  'walrus-sha256-matches': "A Walrus mirror of an archive file carries that file's sha256 (D1812).",
   'data-scopes-unique': 'Each data scope is declared once.',
 };
 
@@ -139,6 +142,13 @@ export function lint(doc: unknown, options: LintOptions = {}): LintIssue[] {
     }
   }
 
+  if (listing.runtime?.engine === 'bun') {
+    const range = listing.runtime.version ?? `>=${BUN_PINNED}`;
+    if (!satisfies(range, BUN_PINNED)) {
+      error('engine-version', '/runtime/version', `bun ${BUN_PINNED} is not in ${range}; is it a Node range?`);
+    }
+  }
+
   if (tools.some((t) => t.risk === 'egress') && (listing.place?.egress ?? []).length === 0) {
     warning('egress-declared', '/place/egress', 'egress tools are declared but no egress hosts');
   }
@@ -155,6 +165,13 @@ export function lint(doc: unknown, options: LintOptions = {}): LintIssue[] {
     for (const platform of duplicates((listing.artifact.files ?? []).map((f) => f.platform))) {
       error('archive-platforms-unique', '/artifact/files', `${platform} has more than one file`);
     }
+    (listing.artifact.files ?? []).forEach((file, i) => {
+      (file.locations ?? []).forEach((location, j) => {
+        if (location.kind === 'walrus' && location.sha256 !== file.sha256) {
+          error('walrus-sha256-matches', `/artifact/files/${i}/locations/${j}/sha256`, `the Walrus mirror's sha256 is not the ${file.platform} file's`);
+        }
+      });
+    });
   }
 
   for (const scope of duplicates((listing.place?.data ?? []).map((d) => `${d.kind}:${d.name}`))) {

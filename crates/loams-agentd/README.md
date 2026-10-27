@@ -117,5 +117,6 @@ Only the `new` rows may name a crate that does not exist yet. A crate added to t
 | `loams-agentd-factory` | Apache-2.0 | new | Factory ops (DD1 Task 23) |
 | `loams-agentd-supervisor` | Apache-2.0 | new | The engine and stack supervisor (DD1 Tasks 14, 15) |
 | `loams-agentd-connect` | Apache-2.0 | new | `loams.agentd.v1`, the Connect surface for Loams Studio: the loopback listener beside the ndjson one, and the remote TLS listener (SD1 Tasks 4, 5, 7) |
+| `loams-agentd-cli` | Apache-2.0 | new | The `loams` CLI commands of agentd, including `loams marketplace` (MK0 Task 10) |
 
 Changes that the Loams Authors make to the MIT crates are released under those crates' MIT licence.

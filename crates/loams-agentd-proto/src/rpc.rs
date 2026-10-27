@@ -41,6 +41,12 @@ use crate::groups::{
     ResolveRunGroupReply, RunGroupCheckParams, RunGroupCheckReply, RunGroupComparison,
     RunGroupList, WatchRunGroupsParams,
 };
+use crate::marketplace::{
+    AddMarketplaceSourceParams, AvailableUpdateList, InstallListingParams, InstalledListingList,
+    InstalledListingReply, ListingDetail, ListingRef, ListingSearchResults, MarketplaceSource,
+    MarketplaceSourceList, PlanInstallReply, RemoveMarketplaceSourceParams, SearchListingsParams,
+    UninstallListingParams, UpdateListingParams,
+};
 use crate::notify::Notification;
 use crate::params::*;
 use crate::review::{
@@ -112,6 +118,10 @@ pub const ERROR_REASONS: &[&str] = &[
     crate::approvals::APPROVAL_NOT_PENDING,
     crate::factory_loop::APPROVAL_REQUIRED,
     crate::factory_loop::APPROVAL_MISMATCH,
+    crate::marketplace::PLAN_CHANGED,
+    crate::marketplace::CONSENT_REQUIRED,
+    crate::marketplace::LISTING_REVOKED,
+    crate::marketplace::UNTRUSTED_LISTING,
 ];
 
 /// The MCP shim's environment, set only by the daemon when it injects the
@@ -472,6 +482,29 @@ method_table! {
     /// G16: merge, push and open a change request, or keep the winner, through
     /// Task 9's git writes; `group_not_ready` while members run.
     RESOLVE_RUN_GROUP = ResolveRunGroup: Unary(ResolveRunGroupParams -> ResolveRunGroupReply), Owner, renderer: true;
+    /// MK1 Task 4b (`MarketplaceService`): the sources, in search order.
+    LIST_MARKETPLACE_SOURCES = ListMarketplaceSources: Unary(Empty -> MarketplaceSourceList), Owner, renderer: true;
+    /// Adds a source pinned to its signing identity, kept only once its
+    /// index verifies.
+    ADD_MARKETPLACE_SOURCE = AddMarketplaceSource: Unary(AddMarketplaceSourceParams -> MarketplaceSource), Owner, renderer: true;
+    /// Removes a source; its installs stay.
+    REMOVE_MARKETPLACE_SOURCE = RemoveMarketplaceSource: Unary(RemoveMarketplaceSourceParams -> OkReply), Owner, renderer: true;
+    /// Searches every source's verified index.
+    SEARCH_LISTINGS = SearchListings: Unary(SearchListingsParams -> ListingSearchResults), Owner, renderer: true;
+    /// One listing with its versions and revocations.
+    GET_LISTING = GetListing: Unary(ListingRef -> ListingDetail), Owner, renderer: true;
+    /// The consent plan; creates nothing (D1466).
+    PLAN_INSTALL = PlanInstall: Unary(ListingRef -> PlanInstallReply), Owner, renderer: true;
+    /// Installs exactly the confirmed plan, by its digest (`plan_changed`).
+    INSTALL_LISTING = InstallListing: Unary(InstallListingParams -> InstalledListingReply), Owner, renderer: true;
+    /// Removes the package, its registration and its secrets; data stays.
+    UNINSTALL_LISTING = UninstallListing: Unary(UninstallListingParams -> OkReply), Owner, renderer: true;
+    LIST_INSTALLED_LISTINGS = ListInstalledListings: Unary(Empty -> InstalledListingList), Owner, renderer: true;
+    /// Newer versions of installs, and whether each widens a permission.
+    CHECK_LISTING_UPDATES = CheckListingUpdates: Unary(Empty -> AvailableUpdateList), Owner, renderer: true;
+    /// Updates one install (`consent_required` without the new plan's digest
+    /// when the update widens a permission).
+    UPDATE_LISTING = UpdateListing: Unary(UpdateListingParams -> InstalledListingReply), Owner, renderer: true;
     /// G17 (SD1 Task 13): the pending approvals, again on each change; with a
     /// `chatId`, that thread's only and its effective mode.
     WATCH_APPROVALS = WatchApprovals: Stream(WatchApprovalsParams -> ApprovalList), Owner, renderer: true;

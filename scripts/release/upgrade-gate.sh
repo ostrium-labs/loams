@@ -104,6 +104,15 @@ key="$("$engine" run --rm -u "$(id -u):$(id -g)" -v "$stack/secrets:/s" "ghcr.io
   auth new-key --label upgrade-gate --append /s/api-keys 2>/dev/null)"
 echo "::add-mask::$key"
 chmod 0644 "$stack/secrets/api-keys" 2>/dev/null || true
+# The House gives no access to a principal HOUSE_PRINCIPALS does not list
+# (HS1 Task 20), so the fixtures' key (`lk_<id>_<secret>`, principal
+# `apikey:<id>`) gets the scopes the House fixture uses. A release whose
+# compose file does not read HOUSE_PRINCIPALS ignores the line.
+key_id="${key#lk_}"; key_id="${key_id%%_*}"
+if grep -q '^HOUSE_PRINCIPALS=' "$stack/.env"; then
+  sed -i '/^HOUSE_PRINCIPALS=/d' "$stack/.env"
+fi
+echo "HOUSE_PRINCIPALS=apikey:$key_id=read+write+ddl" >> "$stack/.env"
 
 cleanup() {
   compose ps -a > "$work/ps.txt" 2>&1 || true

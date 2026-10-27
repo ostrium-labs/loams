@@ -24,6 +24,9 @@ loams-agentd-mcp.workspace = true
 loams-agentd-link.workspace = true
 # loams.agentd.v1, the Connect listener beside the ndjson one (SD1 Task 5).
 loams-agentd-connect.workspace = true
+# The marketplace host (MK1 Task 4b) and `agent conformance`, the LAPC Core
+# runner (Task 8).
+loams-agentd-marketplace.workspace = true
 tokio.workspace = true
 clap.workspace = true
 anyhow.workspace = true
@@ -68,3 +71,9 @@ missing_debug_implementations = "warn"
 dbg_macro = "warn"
 todo = "warn"
 unwrap_used = "warn"
+
+[features]
+# Studio's e2e (MK0 Task 9): a debug build with this feature serves the
+# marketplace's signed fake world under `LOAMS_AGENTD_TEST_MARKETPLACE`. Release
+# builds never enable it, so the testkit is not in a shipped daemon.
+e2e-marketplace = ["loams-agentd-marketplace/testkit"]

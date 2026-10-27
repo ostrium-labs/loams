@@ -55,6 +55,8 @@ connectrpc-build.workspace = true
 buffa-descriptor = { version = "0.9.2", features = ["reflect"] }
 # The in-process engine for the loopback tests, and the Connect clients.
 loams-agentd-sessions.workspace = true
+# The marketplace's signed fake world (MK1 Task 4b).
+loams-agentd-marketplace = { workspace = true, features = ["testkit"] }
 # The parity suite waits for a chat's queued commands to resolve.
 loams-agentd-doc.workspace = true
 connectrpc = { workspace = true, features = ["axum", "server", "client"] }

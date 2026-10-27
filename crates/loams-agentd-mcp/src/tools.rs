@@ -44,6 +44,8 @@ pub struct ToolDef {
 #[derive(Debug)]
 pub struct Tools {
     loams_desktop: Arc<LoamsDesktop>,
+    /// The read-only knowledge cache, when configured (MS1 Task 7).
+    knowledge: Option<Arc<loams_knowledge::KnowledgeReader>>,
 }
 
 fn chat_key_schema(extra: Value) -> Value {
@@ -342,13 +344,13 @@ pub fn risk_of(name: &str) -> &'static str {
     match name {
         "whoami" | "list_projects" | "list_harnesses" | "list_models" | "list_chats"
         | "get_chat" | "read_chat" | "wait_for_turn" | "get_thread_diff" | "get_approval"
-        | "get_checks" | "get_check_log" => "read",
+        | "get_checks" | "get_check_log" | "knowledge_get" | "knowledge_search" => "read",
         "merge_change_request" => "destructive",
         _ => "write",
     }
 }
 
-fn annotations_for(name: &str) -> Value {
+pub(crate) fn annotations_for(name: &str) -> Value {
     let risk = risk_of(name);
     json!({
         "risk": risk,
@@ -615,20 +617,39 @@ fn last_pending_input(messages: &[RenderedMessage]) -> Option<Value> {
 
 impl Tools {
     pub fn new(loams_desktop: Arc<LoamsDesktop>) -> Self {
-        Self { loams_desktop }
+        Self {
+            loams_desktop,
+            knowledge: None,
+        }
+    }
+
+    /// Adds the read-only knowledge tools over `reader`.
+    pub fn with_knowledge(mut self, reader: Arc<loams_knowledge::KnowledgeReader>) -> Self {
+        self.knowledge = Some(reader);
+        self
     }
 
     pub fn list(&self) -> Vec<ToolDef> {
-        catalog()
+        let mut tools = catalog();
+        if self.knowledge.is_some() {
+            tools.extend(crate::knowledge::defs());
+        }
+        tools
     }
 
     pub fn has(&self, name: &str) -> bool {
-        catalog().iter().any(|t| t.name == name)
+        self.list().iter().any(|t| t.name == name)
     }
 
     /// `Ok` is the tool's structured result; `Err` is a message the model
     /// should read (surfaced as `isError`, never as a protocol error).
     pub async fn call(&self, name: &str, args: Value) -> Result<Value, String> {
+        if crate::knowledge::is_tool(name) {
+            return match &self.knowledge {
+                Some(reader) => crate::knowledge::call(reader, name, args).await,
+                None => Err(format!("unknown tool: {name}")),
+            };
+        }
         let result = match name {
             "whoami" => self.whoami().await,
             "list_projects" => self.list_projects().await,
@@ -1337,6 +1358,7 @@ impl Tools {
                     .or_else(|| space.map(|s| s.path.clone()))
                     .unwrap_or_else(|| "~".into());
                 let request = RunRequest {
+                    mcp_servers: Vec::new(),
                     mcp: None,
                     prompt: text,
                     harness: Some(harness),

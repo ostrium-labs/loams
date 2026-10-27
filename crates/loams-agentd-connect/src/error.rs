@@ -46,6 +46,11 @@ pub const REASON_CODES: &[(&str, ErrorCode)] = &[
     ("approval_required", ErrorCode::PermissionDenied),
     ("approval_mismatch", ErrorCode::PermissionDenied),
     ("origin_not_allowed", ErrorCode::PermissionDenied),
+    // The marketplace (MK1 Task 4b).
+    ("plan_changed", ErrorCode::FailedPrecondition),
+    ("consent_required", ErrorCode::FailedPrecondition),
+    ("listing_revoked", ErrorCode::FailedPrecondition),
+    ("untrusted_listing", ErrorCode::FailedPrecondition),
 ];
 
 /// The Connect code of a reason, if the daemon knows it.

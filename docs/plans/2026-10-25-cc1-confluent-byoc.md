@@ -20,7 +20,7 @@
 
 **Tech stack:**
 - Rust 1.97, edition 2024, workspace lints; workspace dependencies only (`reqwest` or `hyper` as the workspace has them, `serde`, `tokio`, `tonic` through `loams-stream-grpc`, `wiremock` if already in the workspace, else a hand-written `hyper` fake as `loams-connector-kafka`'s registry tests do). `rdkafka` stays compiled only in `loams-connector-kafka` (OR-6).
-- OpenTofu ≥ 1.11 (state encryption, ephemeral values); providers `confluentinc/confluent` pinned to a release at least 14 days old (2.89.0 on 2026-10-25), `hashicorp/aws ~> 6.0`, from the OpenTofu registry. No Terraform CLI.
+- OpenTofu ≥ 1.11 (state encryption, ephemeral values; CI pins 1.13.2); providers `confluentinc/confluent` pinned to a release at least 14 days old (2.89.0 on 2026-10-25; 2.90.0 on 2026-10-26, CC0 R0.12), `hashicorp/aws ~> 6.0`, from the OpenTofu registry. No Terraform CLI.
 - Bash with `set -euo pipefail`, shellcheck-clean, as BY1's scripts.
 - GitHub Actions per the repository's runner routing (`CI_RUNNER`, `deploy/ci-hosts/route-workflows.py`); the cloud rows on GitHub-hosted runners with OIDC into AWS (BY1) and the `byoc-confluent` environment.
 
@@ -53,8 +53,8 @@ Owner actions; no step puts a credential in the repository or chat.
 ### Confluent (Ostrium's organisation, on the startup credits)
 
 1. **Confirm the credit balance and expiry** (Billing → Payment → Promotions). Q1333 is answered: $2,400 (owner, 2026-10-26); the balance check stays useful for the expiry date.
-2. **Create the environments** `loams-ci` and `loams-demo` (the oracle stays in `default`).
-3. **Create the service account `loams-ci-provisioner`** with the role EnvironmentAdmin on `loams-ci` only, and a Cloud API key for it. Put the key in the GitHub environment `byoc-confluent` (restricted to `dev`) as the secrets `CONFLUENT_CLOUD_API_KEY` and `CONFLUENT_CLOUD_API_SECRET`. Whether EnvironmentAdmin can create the per-run service accounts and keys the module needs is CC0 ruling 6; if not, also create `loams-ci-data` and `loams-ci-metrics` once and let the run create only API keys.
+2. **Create the environments** `loams-ci` and `loams-demo` (the oracle stays in `default`). `loams-ci` exists (`env-3kqygo`, created in CC0 on 2026-10-26, Stream Governance Essentials).
+3. **Create the service account `loams-ci-provisioner`** with the role EnvironmentAdmin on `loams-ci` only, and a Cloud API key for it. Put the key in the GitHub environment `byoc-confluent` (restricted to `dev`) as the secrets `CONFLUENT_CLOUD_API_KEY` and `CONFLUENT_CLOUD_API_SECRET`. EnvironmentAdmin can create Kafka keys and ACLs and read the environment's metrics, and it can create service accounts but **cannot delete them** (CC0 R0.6). So also create the service account `loams-ci-data` once (no role; the run gives it ACLs on its own cluster); the run creates only API keys and ACLs.
 4. **Create the service account `loams-ci-billing`** with BillingAdmin, and its Cloud API key, into `/etc/loams-ci/confluent-billing.env` (mode 0600, user `ci`) on laptop A only (CC2 Task 15). Not in GitHub.
 5. Keep the required **"Free usage is 80% consumed"** notification going to the owner's address; add "Cloud Service Quota surpassed 90% usage".
 6. **Set the repository variable `CONFLUENT_CI_ENABLED=true`** when the nightly should start (the CI stop sets it to `false`).
@@ -94,7 +94,8 @@ Commit: `docs: CC0 Task 0 rulings`.
 ### Task 1 — `loams-fabric connect` (D1821)
 
 Files:
-- `fabric/crates/loams-fabric/src/cli.rs`: a `Connect(ConnectArgs)` role: `--instances <dir>` (YAML instance files), `--engine <url>` (the engine's stream gRPC address; the engine's `--stream-grpc-listen` is loopback-only, so the profile sets it to `127.0.0.1:<port>` and runs `connect` with `network_mode: service:<engine>`, the pattern the compose file already uses for `house-tailnet`), `--engine-key-file <path>`, `--secrets-root <dir>` (default `/var/lib/loams-connect/secrets`), `--state-bucket-prefix` (default `_meta/connect/`), `--admin-listen` (default `127.0.0.1:7790`).
+- **Ruling R1.1 (owner via the coordinator, 2026-10-26; amends D1821's "shares the engine's network namespace"; security).** `connect` does **not** join the engine's network namespace: there, any process can reach the Tailscale serve target (`127.0.0.1:7781`) and forge `Tailscale-User-Login`, which is more than the connect role's own key allows. Also, `FetchCloudEvents` exists only on the main-port Connect service, not on the tonic `--stream-grpc-listen`. Instead the engine serves its main router on a **connect socket** (`--connect-socket`, `LOAMS_CONNECT_SOCKET`, default in the release compose `/run/loams-connect/engine.sock`): a Unix socket, mode 0660, in a volume (`connect-run`) that only the engine and `connect` mount. It takes a Loams API key and nothing else in every auth mode, strips Tailscale headers unread, answers no CORS, and has `/health` as its one public path. `connect --engine unix:///run/loams-connect/engine.sock` (or `http://host:port` for development). Engine PR: `cc1-engine-connect-socket`; tests `crates/loams/tests/connect_socket.rs`.
+- `fabric/crates/loams-fabric/src/cli.rs`: a `Connect(ConnectArgs)` role: `--instances <dir>` (YAML instance files), `--engine <url>` (per R1.1: the engine's connect socket, `unix:///run/loams-connect/engine.sock`; ~~the engine's stream gRPC address with `network_mode: service:<engine>`~~), `--engine-key-file <path>`, `--secrets-root <dir>` (default `/var/lib/loams-connect/secrets`), `--state-bucket-prefix` (default `_meta/connect/`), `--admin-listen` (default `127.0.0.1:7790`).
 - `fabric/crates/loams-fabric/src/connect/{mod,fabric_io,state,admin,instances}.rs`:
   - `fabric_io`: `EngineWriter` implements the SDK's `FabricWriter` with `ProduceCloudEvents` (idempotency by the event's `source` + `id`); `EngineReader` implements `FabricReader` with `FetchCloudEvents` and commits a consumer position per instance.
   - `state`: checkpoints and status in the bucket through `loams-store`, create-only versions; one process lock object per install (`_meta/connect/lock`, fenced by epoch, as D1354's create-only epoch object).
@@ -259,4 +260,102 @@ Gate: CC2; for the cloud rows, BY1's Google Cloud and Azure owner actions. **2�
 
 ## Rulings made during execution
 
-None yet.
+**CC0 Task 0: rulings and spikes (2026-10-26).** Evidence in the [CC0 spike report](cc0-spike-report.md). The owner gave CC0 $100 of credits and allowed ephemeral Basic and Standard clusters in a new `loams-ci` environment. That replaced the Task 0 text's "oracle cluster only": the oracle's ACLs cannot cover the transactional ids `loams-<ns>-…` and its 30 partitions are used up. The oracle was read, never changed. Estimated spend is about $1 (one billed Standard eCKU-hour plus a few MB of traffic; list prices, not reconciled). Every cluster, key, service account and role binding CC0 created was deleted and checked by id. Only the `loams-ci` environment (`env-3kqygo`) is kept.
+
+- **R0.1 Exactly-once on Basic: yes. The profile narrows nothing** (ruling 1, D1822).
+  - The suite: the existing roundtrip, kill-restart and transactions cases (`--test confluent`, new, skipped without `LOAMS_CONFLUENT_BOOTSTRAP`) with `sasl_ssl`, PLAIN, `verify_full` and probed roots.
+  - Results: it passed 3 of 3 times on Basic `us-east-1`, twice on Standard `us-east-1`, and on Basic `ap-south-1` (one `confluent_suite` timeout while CC0's latency runs shared the owner's slow link; the rerun passed in 22 s).
+  - It ran under the D1826 grant set (transactional ids PREFIXED `loams-`, IDEMPOTENT_WRITE, no ALTER/ALTER_CONFIGS/DELETE). The same key was refused when it tried to:
+    - raise `retention.bytes`;
+    - add partitions;
+    - delete a topic;
+    - create a topic outside its prefix;
+    - create an ACL.
+  - The checkpoint topic must exist before the sink starts (`create_checkpoint_topic: false` in the profile, Task 2). `__loams_checkpoints` is a legal name on Confluent Cloud. Topics the module creates take replication factor 3 (the broker default; Confluent refuses 1).
+- **R0.2 Latency baseline: the owner's link, not Confluent.**
+  - From the owner's machine: produce p50 289 ms (Basic `ap-south-1`) and 546 ms (`us-east-1`); end to end p50 406 and 819 ms.
+  - TCP connect alone took 290–680 ms, so these measure the access link.
+  - §80 §6.3 and the guide quote only the Task 10 nightly's same-region numbers (AWS VM to Basic `us-east-1`); this baseline stays in the report.
+- **R0.3 TLS: `ssl.ca.location=probe` works in the `loams-fabric` image** (Debian 13, `ca-certificates`). Without a CA bundle the same binary fails. The profile ships no CA path. The image must keep `ca-certificates`: add a check to the image's smoke test in Task 1.
+- **R0.4 Regions: `GET https://confluent.cloud/api/env_metadata`** (what `confluent kafka region list` calls) accepts a Cloud API key and lists each region's cluster types (`regions[].type[].name`), schedulability and networking. It is undocumented.
+  - Task 5's `scripts/byoc/confluent-tables.sh refresh` uses it and keeps only `cloud`, `region`, `types` and `schedulable`.
+  - `check` fails soft (it opens an issue) if the shape changes. The docs' regions page is the fallback for a manual refresh.
+  - `regions.toml` must record these exceptions:
+    - AWS `me-south-1` and `me-central-1` are not schedulable;
+    - Google Cloud `europe-north2` has no Basic or Standard;
+    - the Jio regions are Dedicated only.
+  - The BY1 defaults are all Basic and Standard.
+- **R0.5 OAuth is not available on Basic.** Confluent supports OAuth for Kafka on Standard, Enterprise, Dedicated and Freight only. Consequences:
+  - **CC3's keyless path is for Standard and above.** Basic installs keep out-of-band API keys (D1827 option 3).
+  - The AWS IAM identity provider uses STS `GetWebIdentityToken` (outbound identity federation on the AWS account). EC2 is listed. CC3 verifies an instance role end to end on the weekly Standard row.
+  - Azure takes user-assigned managed identities.
+  - GitHub Actions only as a generic OIDC provider (D1832's keyless CI, verify in CC3).
+- **R0.6 EnvironmentAdmin is enough for CI** (owner checklist item 3; D1832). A Cloud key for an account with EnvironmentAdmin on `loams-ci` only can:
+  - create and delete Basic and Standard clusters there;
+  - **create service accounts**;
+  - create Kafka API keys for itself and for other accounts;
+  - create topics and ACLs;
+  - bind environment- or cluster-scoped roles;
+  - read the Metrics API for its own clusters.
+
+  It cannot:
+  - **delete service accounts**, even ones it created (403 at teardown);
+  - create Cloud API keys for other accounts;
+  - bind organisation-scope roles;
+  - read billing, create environments or see `default`.
+
+  So the owner creates one persistent **`loams-ci-data`** service account (owner checklist item 3). The nightly creates only Kafka API keys and ACLs for it on the run's cluster, and those go with the cluster. No per-run service account is created, since per-run accounts would leak. No separate metrics account is needed, because EnvironmentAdmin's own key reads the Metrics API.
+- **R0.7 Metrics: per-principal bytes come from `request_bytes` and `response_bytes`, not `received_bytes`/`sent_bytes`.**
+  - `received_bytes`, `sent_bytes` and `retained_bytes` break down by topic and partition only.
+  - `request_bytes` and `response_bytes` break down by `metric.principal_id` and `metric.type` on Basic and Standard. Summed over all request types (Confluent bills every request type's bytes), they were 3–7 % above the cluster's `received_bytes`/`sent_bytes`.
+  - The guard's shared-cluster estimate (Task 12) is `request_bytes` (in) plus `response_bytes` (out) for Loams' principal. Its cluster estimate is `received_bytes` plus `sent_bytes`.
+  - Data is 1–3 minutes behind. The limit is 300 requests per minute per IP, and data is kept for 7 days.
+  - **The metrics account can be environment-scoped:** MetricsViewer bound on `loams-ci` read that environment's cluster and got 403 elsewhere. §80 §7.1's "organisation scope" becomes "the install's environment" where the install has its own environment. Task 7's `confluent_role_binding` uses the environment's CRN.
+- **R0.8 Storage is counted as post-replication until the bill says otherwise.**
+  - Confluent's billing docs bill storage on post-replication volume ("about 3x"), while the pricing page calls its $0.08 "pre-replication". `retained_bytes` is pre-replication.
+  - `confluent_ceiling_monthly_usd` uses `Σ retention.bytes × partitions × 3 × price` (conservative). `prices.toml` carries `storage_replication_factor = 3` with both sources.
+  - Task 10's first week compares the Costs API's storage line with `retained_bytes` and corrects the factor.
+- **R0.9 Costs API shape.**
+  - Daily lines with `original_amount` and `amount`. `PROMO_CREDIT` lines have no product or resource.
+  - The window is at most one month (400 otherwise). A future `end_date` is accepted.
+  - EnvironmentAdmin and MetricsViewer get 403.
+  - The lag for a new cluster is not measured yet (usage lines for 2026-10-24/25 were absent at 23:50 UTC on 2026-10-25). Task 10 records it, and Task 4's fixtures come from those lines.
+- **R0.10 Cloud-side transfer** (the guide's table, Task 9):
+  - **AWS:** about $0.01/GB each way for in-region traffic over public IPv4 (verify against the AWS price list before quoting); NAT gateway $0.045/GB plus $0.045/hour.
+  - **Google Cloud:** Cloud NAT $0.045/GiB. Whether traffic to Confluent's in-region endpoints counts as "Google service" (free) or internet egress is open.
+  - **Azure:** internet egress Zone 1 $0.087/GB after 100 GB; NAT Gateway price not shown.
+  - The BY1 VM modules egress through the VM's public IP, not NAT.
+  - Every figure carries "verify" until Task 9 reads the price list APIs.
+- **R0.11 IP filtering:** IP filters cover the Kafka data operation group on public networks, IPv4 only. No page names the cluster types. `confluent_ip_filter` stays an optional module input, verified on Basic and Standard in Task 7's first apply (Task 10).
+- **R0.12 OpenTofu and the provider:**
+  - **Pins.** OpenTofu **1.13.2** (the repository's CI pin; the plan's "≥ 1.11" holds) and `confluentinc/confluent` **2.90.0** from `registry.opentofu.org`, the newest release at least 14 days old on 2026-10-26. 2.91.0 becomes eligible on 2026-10-28 through Dependabot.
+  - **What worked:** `init`, `validate` and `fmt`; `apply` and `destroy` of three clusters with `pbkdf2`/`aes_gcm` state and plan encryption `enforced = true`.
+  - **`tofu test` with `mock_provider "confluent"`** passed with no network.
+  - **For Task 7's tests:** give `mock_resource "confluent_service_account"` and `"confluent_api_key"` realistic `defaults` (`sa-…`, `iam/v2`, `ServiceAccount`), because the provider validates references at plan time. Do not set `id` in `mock_data "confluent_environment"`.
+  - **Bootstrap.** `bootstrap_endpoint` sometimes carries `SASL_SSL://` and sometimes not; strip it.
+- **R0.13 A Basic cluster at `max_ecku = 1` holds at most 30 partitions** (topics visible in the console; a policy error past that).
+  - Task 7 adds `refuses_partitions_over_type_limit` (Basic: 30 × `max_ecku`) to the module's tests.
+  - `confluent_unbounded` and the guide state the limit.
+  - Task 10 keeps one run per fresh cluster.
+  - The Kafka gateway oracle (`lkc-120zwvj`) is at 30 of 30 with ten leftover `loams-oracle-<run>-…` topics; its owner should delete them before its next run (not done here).
+
+**Plan changes from CC0.** Task 2: no narrows. Task 4: per-principal metrics through `request_bytes`/`response_bytes`. Task 5: regions from `env_metadata`, plus the replication factor in `prices.toml`. Task 7: environment-scoped MetricsViewer, the partition check, mock defaults, provider 2.90.0. Task 10: one persistent `loams-ci-data` account (keys and ACLs per run), the storage and Costs-lag measurements. CC3: keyless only on Standard and above.
+
+**CC1 infrastructure rulings (lane B, 2026-10-26/27).** Tasks 5, 6, 7 and 10 are built (#1261, #1266, #1267, #1281, and the CLI PR); Task 9's BYOC guide is `docs/guides/byoc/confluent.md`.
+
+- **R1.B1 The Kafka admin key for topics and ACLs never enters state** (Task 7, D1827). §80 §5.2 has the module create topics and ACLs, but they need a cluster-scoped Kafka key, and `confluent_kafka_topic`/`_acl` store their `credentials` block in state. So `kafka_admin` decides:
+  - **`provider` (default):** the resources carry no credentials; the provider's `KAFKA_ID`, `KAFKA_REST_ENDPOINT`, `KAFKA_API_KEY` and `KAFKA_API_SECRET` supply them. A new cluster takes two applies, the first with `kafka_admin = "none"`. The CI script and the guide do this.
+  - **`module_key`:** the module creates `loams-<name>-admin` (CloudClusterAdmin on the cluster) and its key in one apply. That needs `create_api_keys = true` and a root with enforced state and plan encryption. `example_with_keys_enforces_encryption` checks the examples.
+  - The live run decrypted the state and found neither the admin key's id nor its secret.
+- **R1.B2 Tables in OpenTofu.** OpenTofu has no TOML decoder, so `scripts/byoc/confluent-tables.sh gen` writes `deploy/tofu/modules/confluent/confluent-tables.json` from the two TOML tables, and `check` fails when that copy is stale. Prices use the upper end of each range on the pricing page; Dedicated has no list price, so it is reported as unbounded.
+- **R1.B3 The existing-cluster type.** The module reads an existing cluster's type from its description, and falls back to `cluster_type` when the description carries no type block (as with mock providers).
+- **R1.B4 Secret files** (Task 6). The VM's fetcher writes `secrets/connect/<CONNECT_NAMESPACE, default 0>/confluent-<i>/{username,password,sr-username,sr-password,metrics-key,metrics-secret}`. Files are 0600, directories 0700, uid 10001 when run as root, and values have no trailing newline. Lane A's connect role mounts this directory (`.he0-shared/cc1-lanes.md`).
+- **R1.B5 The CLI writes through the cloud's own CLI** (`aws`, `gcloud`, `az`), with the value on stdin (`file:///dev/stdin`, `--data-file=-`, `--file /dev/stdin`). No cloud SDK is added to the binary and the user's own login is used. `key create` deletes the new key if the store refuses it. `key rotate` keeps the old keys when an instance restart fails, and calls lane A's `POST /v1/connect/instances/{id}:restart`. The client lives in the new `crates/loams-confluent` (the keys and clusters part of Task 4); metrics, costs and regions come with CC2.
+- **R1.B6 The nightly** (Task 10):
+  - **Identities:** the nightly reuses the persistent `loams-ci-data` account (R0.6) and mints only Kafka keys. The admin key is owned by the provisioner.
+  - **State:** local, encrypted with a passphrase made for the run, and deleted by `down`.
+  - **Teardown check:** the cluster's id must answer 404 and no key named `loams-ci-<run>-*` may be listed. An empty cluster list comes back as `"data": null`, and a key already deleted with its cluster answers 403; both are handled.
+  - **Workflow:** a GitHub job has one environment, so the nightly runs in `byoc-confluent` and reads `AWS_ROLE_ARN` from there. The AWS role's OIDC trust must also allow that environment.
+  - **Engine leg:** the round trip prints a skip until the connect role ships (Task 1).
+  - **Live runs:** two cycles in `loams-ci`, Confluent only, about 4 minutes each, about $0.
+- **R1.B7 The example's default connector rates** are 64 KiB/s each way, which gives a ceiling of $16.78 under its $25 budget. At 1 MiB/s, the ceiling would be about $257.

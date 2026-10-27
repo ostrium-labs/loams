@@ -277,6 +277,12 @@ struct Native {
     /// in place of the caller's credentials (or LOAMS_HOUSE_KEY_FILE).
     #[arg(long)]
     house_key_file: Option<PathBuf>,
+    /// The connect socket (CC1 ruling R1.1): the main API on a Unix socket,
+    /// mode 0660, for `loams-fabric connect`, taking API keys only. Also
+    /// LOAMS_CONNECT_SOCKET. Put it in a volume only the engine and the
+    /// connect role mount.
+    #[arg(long)]
+    connect_socket: Option<PathBuf>,
     /// MySQL wire listener for collection queries (loopback only).
     #[cfg(feature = "mysql-wire")]
     #[arg(long)]
@@ -654,6 +660,10 @@ impl Native {
             .house_key_file
             .clone()
             .or_else(|| env_value("LOAMS_HOUSE_KEY_FILE").map(PathBuf::from));
+        config.connect_socket = self
+            .connect_socket
+            .clone()
+            .or_else(|| env_value("LOAMS_CONNECT_SOCKET").map(PathBuf::from));
         config.console_dir = match (self.no_console, &self.console_dir) {
             (true, _) => None,
             // An explicit directory is kept even without a build, so the
@@ -1266,6 +1276,10 @@ enum Command {
     /// Loams Cloud, the hosted try-out (design §78 §25): `cloud admin …` for
     /// allow-listed Ostrium admins (waitlist, invites, audit, the TOTP step-up).
     Cloud(loams_cloud_admin::CloudArgs),
+    /// The agent marketplace through the local agent daemon (design §73
+    /// §7.1–§7.2): `search`, `info`, `install`, `uninstall`, `list`,
+    /// `update`, `source`. Install shows the plan and asks first.
+    Marketplace(loams_agentd_cli::marketplace::MarketplaceArgs),
     /// Engine authentication (LOAMS_AUTH_MODE): API keys.
     Auth {
         #[command(subcommand)]
@@ -1426,6 +1440,7 @@ fn config(command: Command) -> ServerConfig {
         Command::Migrate { .. } => unreachable!("loams migrate starts no server"),
         Command::Upgrade(_) => unreachable!("loams upgrade starts no server"),
         Command::Cloud(_) => unreachable!("loams cloud starts no server"),
+        Command::Marketplace(_) => unreachable!("loams marketplace starts no server"),
         #[cfg(feature = "live")]
         Command::LiveWorker => unreachable!("loams live-worker starts no server"),
         #[cfg(feature = "postgres")]
@@ -1637,6 +1652,10 @@ fn main() -> ExitCode {
     // A client too (LC2a Tasks 4 and 5): its own runtime, no stores.
     if let Command::Cloud(args) = &cli.command {
         return loams_cloud_admin::run(args);
+    }
+    // A client of the local agentd (MK1 Task 10): its own runtime, no stores.
+    if let Command::Marketplace(args) = &cli.command {
+        return loams_agentd_cli::marketplace::run(args);
     }
     serve(cli)
 }
@@ -2973,6 +2992,62 @@ mod tests {
             let cli = Cli::try_parse_from(args).unwrap_or_else(|e| panic!("{args:?}: {e}"));
             assert!(matches!(cli.command, Command::Upgrade(_)), "{args:?}");
         }
+    }
+
+    /// `loams marketplace …` (MK1 Task 10): a script's install names the
+    /// plan digest it reviewed; `--yes` alone is refused.
+    #[test]
+    fn marketplace_parses() {
+        for args in [
+            &[
+                "loams",
+                "marketplace",
+                "search",
+                "github",
+                "--kind",
+                "mcp-server",
+            ][..],
+            &[
+                "loams",
+                "marketplace",
+                "install",
+                "ostrium/x",
+                "--dry-run",
+                "--json",
+            ],
+            &[
+                "loams",
+                "marketplace",
+                "install",
+                "ostrium/x",
+                "--yes",
+                "--plan-digest",
+                "ab",
+            ],
+            &[
+                "loams",
+                "marketplace",
+                "update",
+                "ostrium/x",
+                "--yes",
+                "--plan-digest",
+                "ab",
+            ],
+            &[
+                "loams",
+                "marketplace",
+                "source",
+                "list",
+                "--agentd-dir",
+                "/d",
+            ],
+        ] {
+            let cli = Cli::try_parse_from(args).unwrap_or_else(|e| panic!("{args:?}: {e}"));
+            assert!(matches!(cli.command, Command::Marketplace(_)), "{args:?}");
+        }
+        assert!(
+            Cli::try_parse_from(["loams", "marketplace", "install", "ostrium/x", "--yes"]).is_err()
+        );
     }
 
     /// `loams durable migrate --durable-store …` (D1 Task 4): a store is

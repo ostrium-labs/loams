@@ -80,9 +80,15 @@ describe('the factory in Studio', () => {
     expect(m.editions).toEqual(['desktop']);
     const { pages, slots } = apply();
     const nav = slots.filter((s) => s.name === 'shell.nav.section');
-    expect(nav).toHaveLength(1);
+    expect(nav).toHaveLength(2);
     expect(nav[0]?.meta).toMatchObject({
       href: '/studio/factory',
+      group: 'Factory',
+      mode: 'studio',
+    });
+    // The Runs page (FT0 Task 9).
+    expect(nav[1]?.meta).toMatchObject({
+      href: '/studio/factory/runs',
       group: 'Factory',
       mode: 'studio',
     });
@@ -93,6 +99,7 @@ describe('the factory in Studio', () => {
       '/studio/factory/:app',
       '/studio/factory/:app/app',
       '/studio/factory/:app/configure',
+      '/studio/factory/runs',
     ]);
   });
 
@@ -118,6 +125,7 @@ describe('the factory in Studio', () => {
       '/factory/:app',
       '/factory/:app/app',
       '/factory/:app/configure',
+      '/factory/runs',
     ]);
     for (const [path, want] of [
       ['/factory', '/studio/factory'],

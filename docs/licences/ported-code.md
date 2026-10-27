@@ -49,6 +49,7 @@ attribution in a later edit.
 
 | Loams file | Origin | Origin files |
 |---|---|---|
+| `crates/loams-resp/src/frame.rs` | Tidis `5558562`, mini-redis (through Tidis) | `src/frame.rs`, `src/parse.rs` |
 
 ## The check
 
