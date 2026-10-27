@@ -309,14 +309,14 @@ function Source({ text }: { text: string }) {
     // A named, focusable region, so the scrollable contents are reachable by keyboard.
     <section
       className="max-h-[560px] overflow-auto rounded-md border border-solid border-rule p-2"
-      // biome-ignore lint/a11y/noNoninteractiveTabindex: a scroll container
+      // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a scroll container
       tabIndex={0}
       aria-label="File contents"
     >
       <pre className="m-0 text-xs">
         <code>
           {lines.map((line, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: lines are positional
+            // oxlint-disable-next-line react/no-array-index-key -- lines are positional
             <span key={i} className="block">
               <span
                 aria-hidden="true"

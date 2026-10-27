@@ -4,7 +4,7 @@
 import type { PanelService, RouterService } from '@loams/console-host';
 import { SlotRegistry } from '@loams/slots';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { GitActionBus } from '../src/git/bus.js';
 import { createStudioKeys } from '../src/palette/commands.js';
 import { registerStudioRegions, StudioThreads, THREAD_ROUTES } from '../src/regions.js';

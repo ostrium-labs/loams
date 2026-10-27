@@ -3,7 +3,7 @@
 // mutations, and nothing of the OpenAPI client is left.
 
 import { webFetch } from '@loams/platform-web';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import pkg from '../package.json';
 import { legacyUrl } from '../src/cordis/legacy.js';
 

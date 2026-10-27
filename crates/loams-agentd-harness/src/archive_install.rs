@@ -298,7 +298,7 @@ async fn download(
         }
     }
     file.flush().await?;
-    let actual = format!("{:x}", digest.finalize());
+    let actual = hex::encode(digest.finalize());
     if let Some(expected) = source.sha512
         && actual != expected
     {

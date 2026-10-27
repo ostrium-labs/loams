@@ -126,7 +126,7 @@ corepack enable                               # selects the pnpm pinned in packa
 pnpm install --frozen-lockfile
 pnpm build && pnpm typecheck && pnpm test     # every JavaScript project, through Nx
 pnpm affected --base=origin/dev               # only the projects your branch touches
-(cd web && pnpm lint)                         # Biome, for web/
+(cd web && pnpm lint)                         # vp check (Oxlint + Oxfmt), for web/
 
 # Loams Desktop: unit tests, then the Playwright smoke against a fake engine
 pnpm --filter @loams/desktop test

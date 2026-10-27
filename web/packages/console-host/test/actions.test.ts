@@ -12,7 +12,7 @@
 // go through, and an action that names a Connect method *derives* its
 // permission from `METHOD_PERMISSIONS` instead of restating it.
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import {
   ActionRegistry,
   type ActionSpec,

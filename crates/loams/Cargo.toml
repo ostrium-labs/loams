@@ -42,7 +42,7 @@ datafusion = { workspace = true, optional = true }
 datafusion-postgres = { workspace = true, optional = true }
 # `WatchAuditEvents` streams (API2 Task 7), and the optional engines below.
 futures.workspace = true
-getrandom = "0.3"
+getrandom = "0.4"
 fail = { workspace = true, optional = true }
 http.workspace = true
 jsonwebtoken.workspace = true
@@ -89,6 +89,10 @@ loams-migrate.workspace = true
 # it links no storage crate.
 loams-upgrade.workspace = true
 loams-cloud-admin.workspace = true
+# `loams marketplace` (MK1 Task 10): the agentd wire types and RPC client
+# only, no daemon crate (plan MK1, Task 10 ruling 1).
+loams-agentd-cli.workspace = true
+loams-confluent.workspace = true
 # Loams Postgres's control plane: the `loams pg-control` role (feature
 # `postgres`, PG2 Task 9, design §46 §6.1), and the Neon clients it is
 # configured with. Never in the default build (`pg_control.rs`'s

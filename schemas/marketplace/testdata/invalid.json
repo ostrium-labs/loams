@@ -785,6 +785,131 @@
           }
         }
       ]
+    },
+    {
+      "name": "walrus-blob-id-not-base64url",
+      "rule": "A Walrus blob id is URL-safe base64 without padding (D1812).",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/artifact/locations/0/blob_id",
+          "value": "++++++++++++++++++++++++++++++++++++++++++A"
+        }
+      ]
+    },
+    {
+      "name": "walrus-blob-id-wrong-length",
+      "rule": "A Walrus blob id is 32 bytes, 43 characters.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/artifact/locations/0/blob_id",
+          "value": "T_mWEmm_djDTLhUnZWnJRHAXSl2nn6VnwPYiUaqaNrkAAAA"
+        }
+      ]
+    },
+    {
+      "name": "walrus-sha256-not-hex",
+      "rule": "A Walrus location's sha256 is 64 lowercase hex characters.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/artifact/locations/0/sha256",
+          "value": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "name": "walrus-unknown-kind",
+      "rule": "walrus is the only artifact location kind.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/artifact/locations/0/kind",
+          "value": "ipfs"
+        }
+      ]
+    },
+    {
+      "name": "walrus-missing-sha256",
+      "rule": "A Walrus location is checked by its SHA-256, so it always has one.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "remove",
+          "path": "/artifact/locations/0/sha256"
+        }
+      ]
+    },
+    {
+      "name": "walrus-locations-empty",
+      "rule": "locations, when present, names at least one.",
+      "base": "valid/agent-mastra-acp.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/artifact/locations",
+          "value": []
+        }
+      ]
+    },
+    {
+      "name": "walrus-locations-on-archive-artifact",
+      "rule": "An archive's mirrors are on its files, not on the artifact.",
+      "base": "valid/harness-acp-binary.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/artifact/locations",
+          "value": [
+            {
+              "kind": "walrus",
+              "blob_id": "aVbh3_1oUc-gtUYXctEvHdfSJnb17uKq0658C2MNXIA",
+              "sha256": "213840ab495023fa2d584d2f93c121559fcacde0fb4793c6c20f7f751021a333"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "engine-unknown",
+      "rule": "runtime.engine is node or bun.",
+      "base": "valid/agent-mastra-bun.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/runtime/engine",
+          "value": "deno"
+        }
+      ]
+    },
+    {
+      "name": "engine-not-string",
+      "rule": "runtime.engine is a string.",
+      "base": "valid/agent-mastra-bun.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/runtime/engine",
+          "value": true
+        }
+      ]
+    },
+    {
+      "name": "engine-on-python",
+      "rule": "Only the node runtime has an engine (D1808).",
+      "base": "valid/agent-pydantic-ai-a2a.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/runtime/engine",
+          "value": "node"
+        }
+      ]
     }
   ]
 }

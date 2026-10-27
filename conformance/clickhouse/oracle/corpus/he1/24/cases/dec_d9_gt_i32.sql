@@ -1,0 +1,1 @@
+SELECT d9 > i32 FROM t24d ORDER BY id

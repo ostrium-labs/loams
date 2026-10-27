@@ -9,7 +9,7 @@ import type { ToolAction } from '@mastra/core/tools';
 
 import { type Decision, decide, type FactoryPolicy, type Risk } from '../policy.js';
 
-// biome-ignore lint/suspicious/noExplicitAny: Mastra's tool type is generic over its schemas.
+// oxlint-disable-next-line typescript/no-explicit-any -- Mastra's tool type is generic over its schemas.
 type AnyTool = ToolAction<any, any, any, any, any, any>;
 
 /** agentd's tool risks (`loams-agentd-mcp` `risk_of`); unknown tools ask. */

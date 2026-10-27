@@ -108,7 +108,7 @@ export function QueryInput({
 
   // Tell the owner what the cursor is on, so it can fetch values.
   const contextKey = JSON.stringify(result.context);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the context's content
+  // oxlint-disable-next-line react/exhaustive-deps -- keyed on the context's content
   useEffect(() => {
     if (open) onContext?.(result.context);
   }, [contextKey, open]);
@@ -122,7 +122,7 @@ export function QueryInput({
   });
 
   // A new list starts with nothing highlighted.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reset when the list changes
+  // oxlint-disable-next-line react/exhaustive-deps -- reset when the list changes
   useEffect(() => setActive(-1), [contextKey, items.length]);
 
   const sync = () => {
@@ -211,7 +211,7 @@ export function QueryInput({
           autoComplete="off"
           autoCapitalize="off"
           spellCheck={false}
-          // biome-ignore lint/a11y/noAutofocus: the filter editor opens to type in
+          // oxlint-disable-next-line jsx-a11y/no-autofocus -- the filter editor opens to type in
           autoFocus={autoFocus}
           placeholder={placeholder}
           value={value}

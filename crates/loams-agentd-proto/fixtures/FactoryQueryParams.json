@@ -1,0 +1,7 @@
+{
+  "app": "forgejo",
+  "op": "repos",
+  "params": {
+    "limit": 20
+  }
+}
