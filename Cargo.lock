@@ -10092,6 +10092,7 @@ dependencies = [
  "loams-temporal-proto",
  "loams-temporal-testkit",
  "proptest",
+ "prost 0.14.4",
  "prost-types",
  "serde_json",
  "thiserror 2.0.21",
