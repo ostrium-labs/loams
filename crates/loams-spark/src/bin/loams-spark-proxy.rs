@@ -4,7 +4,7 @@
 //! ```text
 //! loams-spark-proxy serve --config proxy.toml
 //! loams-spark-proxy check --config proxy.toml
-//! loams-spark-proxy mint-key --namespace local --subject dev
+//! loams-spark-proxy mint-key --namespace default --subject dev
 //! loams-spark-proxy render --out /conf      # compose: spark-defaults.conf, sail.env
 //! ```
 
@@ -53,7 +53,7 @@ enum Command {
     /// Write the compose instance's `spark-defaults.conf` (Apache Spark)
     /// and `sail.env` (Sail, shell exports) into a directory.
     Render {
-        #[arg(long, default_value = "local")]
+        #[arg(long, default_value = "default")]
         namespace: String,
         #[arg(long, default_value = "eng_compose")]
         instance: String,

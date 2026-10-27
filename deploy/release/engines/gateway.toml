@@ -29,3 +29,32 @@ self_signed_names = ["localhost", "127.0.0.1"]
 # The test seam (R25): `<namespace> <sha256 hex>` lines that the service
 # writes at start from ENGINE_GATEWAY_KEY.
 auth = { kind = "keys_file", path = "/run/engine-gateway/keys" }
+
+# --- Spark (SP-a, D1992; design 81 R8, R15). The Spark Connect proxy in
+# this process (GATEWAY_FEATURES has `spark`); compose.spark.yaml publishes
+# 127.0.0.1:15002. Clients: sc://127.0.0.1:15002/;x-loams-api-key=<ENGINE_GATEWAY_KEY>
+# (or ;use_ssl=true;token=… through TLS). Same keys as loams-spark-proxy's
+# file (deploy/release/spark/proxy.toml.example). Spark routes are static
+# here; routes.toml is not read by the spark module yet.
+[spark]
+listen = "0.0.0.0:15002"
+# The same `<namespace> <sha256>` lines the RisingWave module reads (R25).
+namespace_keys_file = "/run/engine-gateway/keys"
+
+[spark.authz]
+# Compose is single tenant (R3, R9): the key's namespace is its grant.
+kind = "key_grants"
+
+[spark.limits]
+max_sessions = 8
+max_operations = 16
+idle_timeout = 1800
+instance_idle_timeout = 900
+
+# Sail (profile `spark`), the default backend (D1262). Apache Spark
+# (profile `spark-jvm`) has its own proxy on 127.0.0.1:15003
+# (compose.spark.yaml), because its pre-shared token is only set there.
+[[spark.routes]]
+namespace = "default"
+instance = "spark"
+uri = "http://sail:50051"
