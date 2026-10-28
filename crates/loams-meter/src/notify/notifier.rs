@@ -250,7 +250,7 @@ impl MemInner {
             .filter(|d| d.customer_id == customer_id)
             .cloned()
             .collect();
-        all.sort_by(|a, b| b.at.cmp(&a.at));
+        all.sort_by_key(|d| std::cmp::Reverse(d.at));
         all.truncate(limit);
         Ok(all)
     }
@@ -362,7 +362,7 @@ impl MemInner {
     /// retrying.
     fn trim(&mut self) {
         let mut per: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
-        self.deliveries.sort_by(|a, b| b.at.cmp(&a.at));
+        self.deliveries.sort_by_key(|d| std::cmp::Reverse(d.at));
         self.deliveries.retain(|d| {
             let n = per.entry(d.customer_id.clone()).or_insert(0);
             *n += 1;

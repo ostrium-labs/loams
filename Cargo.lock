@@ -9687,6 +9687,7 @@ dependencies = [
  "loams-cloudevents",
  "loams-common",
  "loams-meter-core",
+ "loams-meter-house",
  "loams-proto",
  "proptest",
  "reqwest 0.13.5",
