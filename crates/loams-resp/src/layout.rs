@@ -115,7 +115,10 @@ impl StringBody {
 
     /// Whether the string is empty.
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        match self {
+            StringBody::Inline(b) => b.is_empty(),
+            StringBody::Chunked(n) => *n == 0,
+        }
     }
 }
 
