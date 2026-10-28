@@ -19077,3 +19077,21 @@ dependencies = [
  "syn 3.0.6",
  "winnow 1.0.4",
 ]
+
+[[package]]
+name = "loams-cql"
+version = "0.1.2"
+
+[[package]]
+name = "loams-meter-house"
+version = "0.1.2"
+dependencies = [
+ "axum 0.8.9",
+ "loams-meter-core",
+ "reqwest 0.13.5",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "url",
+]
+
