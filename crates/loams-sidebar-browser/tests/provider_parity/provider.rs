@@ -194,16 +194,20 @@ impl Provider {
         let Some(engine) = self.engine.take() else {
             return Err("this provider's engine is not the suite's to restart".to_string());
         };
-        // Shut down the way the Desktop does on quit, gracefully first:
-        // `Browser.close` on a second connection, then SIGTERM, then (in
-        // `stop`) a kill. An engine that only flushes its cookie store on a
-        // clean exit gets the chance to do so; a first CI run that killed
-        // straight away saw no cookies after the restart.
-        if let Ok(closer) =
-            CdpClient::connect_with_timeout(&engine.devtools_url(), Duration::from_secs(5)).await
-        {
-            closer.close().await;
-        }
+        // Obscura (v0.2.3 `server.rs`) merges a connection's cookie changes
+        // into `--storage-dir` when that WebSocket connection closes, and
+        // flushes on SIGTERM only what closed connections merged. A
+        // connection still open at shutdown loses its cookies (the first
+        // two CI runs). So close the connection that did the work first:
+        // swap in a second connection, `Browser.close` the original (the
+        // engine closes it server-side), give the merge a moment, then
+        // SIGTERM, then (in `stop`) kill.
+        let spare = CdpClient::connect_with_timeout(&engine.devtools_url(), CALL_TIMEOUT)
+            .await
+            .map_err(|error| format!("a spare connection before the restart: {error}"))?;
+        let working = std::mem::replace(&mut self.client, spare);
+        working.close().await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
         if let Some(pid) = engine.id() {
             let _ = tokio::process::Command::new("kill")
                 .args(["-TERM", &pid.to_string()])
