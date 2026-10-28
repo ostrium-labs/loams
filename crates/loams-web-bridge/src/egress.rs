@@ -1,24 +1,17 @@
-//! The egress policy: which URLs the provider is willing to ask a browser to
+//! The egress policy: which URLs a provider is willing to ask a browser to
 //! open.
 //!
-//! A remote browser fetches on our behalf and from our account, so without a
-//! policy Loams would be an open proxy into whatever the browser can reach,
-//! paid for by someone else's card. Two layers enforce the policy, and the
-//! second one only exists for one engine:
+//! A browser fetches on our behalf, so without a policy Loams would be an open
+//! proxy into whatever the browser can reach, including a cloud's metadata
+//! endpoint. Two layers enforce the policy:
 //!
-//! 1. **In the provider**, before every `Page.navigate` ([`EgressPolicy::check`]).
-//!    Scheme, private address, metadata endpoint, deny list, allow list.
-//! 2. **In Browser Run itself**, with session guardrails (`allowedDomains` and
-//!    `allowedDomainSets`, sent as the `cf-brapi-guardrails` header, read on
-//!    2026-10-03). Guardrails cover the sub-resources and redirects we never see.
-//!    **They are not supported on Kitesurf**, which is why the provider refuses
-//!    a Kitesurf session under an allow list unless the operator says so
-//!    explicitly.
-//!
-//! What layer one cannot do: resolve a hostname. A public name can resolve to a
-//! private address (DNS rebinding), and we do not resolve names on the caller's
-//! behalf. Layer two is the answer for the Chromium engine; for Kitesurf the
-//! answer is that an allow-listed Kitesurf session is refused by default.
+//! 1. **In the provider**, before every navigation and on every request the
+//!    engine pauses for it ([`EgressPolicy::check`]): scheme, private address,
+//!    metadata endpoint, deny list, allow list.
+//! 2. **In the engine**: Obscura refuses loopback, RFC1918, link-local and
+//!    unique-local targets after DNS resolution unless it was started with
+//!    `--allow-private-network`, which covers the DNS-rebinding case layer one
+//!    cannot see (it does not resolve names).
 
 use std::net::{Ipv4Addr, Ipv6Addr};
 
@@ -29,12 +22,9 @@ use crate::error::ConfigError;
 /// The schemes a browser tool may navigate to.
 const ALLOWED_SCHEMES: [&str; 2] = ["http", "https"];
 
-/// Cloudflare's own maximum, so a bad allow list fails here and not with a
-/// `400` from the API (read on 2026-10-03).
+/// The longest allow list a configuration may carry. Large lists belong in a
+/// network policy around the browser service, not in every agent's config.
 pub const MAX_ALLOWED_DOMAINS: usize = 50;
-
-/// Cloudflare's own maximum for domain sets.
-pub const MAX_ALLOWED_DOMAIN_SETS: usize = 4;
 
 /// Hostnames that are never allowed, whatever the allow list says. The
 /// instance metadata endpoints are the reason a remote browser behind a policy
@@ -53,8 +43,7 @@ const DENIED_SUFFIXES: [&str; 4] = [".localhost", ".internal", ".local", ".lan"]
 
 /// One entry of an allow or deny list.
 ///
-/// Cloudflare's own rules, which this matches: a hostname and no more (no
-/// scheme, no port, no path) with at most one `*`; `*.example.com` matches
+/// A hostname and no more (no scheme, no port, no path) with at most one `*`; `*.example.com` matches
 /// subdomains but not the apex; `*example.com` matches the apex too, and so
 /// matches lookalikes such as `evilexample.com`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,9 +79,9 @@ impl HostPattern {
         let host = host.to_ascii_lowercase();
         let host = host.strip_suffix('.').unwrap_or(&host);
         match self.0.strip_prefix("*") {
-            // Cloudflare's two wildcard forms differ in one respect:
-            // `*.example.com` covers subdomains only, while `*example.com`
-            // covers the apex too, and the lookalikes it warns about.
+            // The two wildcard forms differ in one respect: `*.example.com`
+            // covers subdomains only, while `*example.com` covers the apex
+            // too, and lookalikes such as `evilexample.com`.
             Some(rest) if self.0.starts_with("*.") => {
                 host.len() > rest.len() && host.ends_with(rest)
             }
@@ -107,25 +96,12 @@ impl HostPattern {
     }
 }
 
-/// The guardrails Browser Run enforces for the whole session.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct Guardrails {
-    /// Hostname patterns, at most [`MAX_ALLOWED_DOMAINS`].
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub allowed_domains: Vec<String>,
-    /// Domain set names or hosted list URLs, at most [`MAX_ALLOWED_DOMAIN_SETS`].
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub allowed_domain_sets: Vec<String>,
-}
-
 /// Which URLs a provider may open.
 #[derive(Debug, Clone)]
 pub struct EgressPolicy {
     allowed: Vec<HostPattern>,
-    allowed_domain_sets: Vec<String>,
     denied: Vec<HostPattern>,
     allow_private_hosts: bool,
-    allow_unenforced_guardrails: bool,
 }
 
 impl Default for EgressPolicy {
@@ -133,10 +109,8 @@ impl Default for EgressPolicy {
     fn default() -> Self {
         Self {
             allowed: Vec::new(),
-            allowed_domain_sets: Vec::new(),
             denied: Vec::new(),
             allow_private_hosts: false,
-            allow_unenforced_guardrails: false,
         }
     }
 }
@@ -167,19 +141,6 @@ impl EgressPolicy {
         self.check_limits()
     }
 
-    /// Add a domain set name or hosted list URL (`common-cdns`, or an HTTPS
-    /// URL Cloudflare fetches and caches).
-    pub fn allow_domain_set(&mut self, set: impl Into<String>) -> Result<(), ConfigError> {
-        self.allowed_domain_sets.push(set.into());
-        if self.allowed_domain_sets.len() > MAX_ALLOWED_DOMAIN_SETS {
-            return Err(ConfigError::Invalid {
-                field: "egress.allowed_domain_sets",
-                reason: format!("at most {MAX_ALLOWED_DOMAIN_SETS} are accepted"),
-            });
-        }
-        Ok(())
-    }
-
     /// Add a host that is refused even if an allow list would match it.
     pub fn deny(&mut self, host: &str) -> Result<(), ConfigError> {
         self.denied.push(HostPattern::parse(host)?);
@@ -192,38 +153,15 @@ impl EgressPolicy {
         self.allow_private_hosts = allow;
     }
 
-    /// Permit an engine that cannot enforce guardrails (Kitesurf) to run under
-    /// an allow list. Off by default: without it the provider refuses the
-    /// combination rather than silently running ungoverned.
-    pub fn set_allow_unenforced_guardrails(&mut self, allow: bool) {
-        self.allow_unenforced_guardrails = allow;
-    }
-
     /// Whether an allow list is configured.
     pub fn is_allow_listed(&self) -> bool {
-        !self.allowed.is_empty() || !self.allowed_domain_sets.is_empty()
+        !self.allowed.is_empty()
     }
 
-    /// Whether a Kitesurf session may run under this policy.
-    pub fn allows_unenforced_engine(&self) -> bool {
-        self.allow_unenforced_guardrails || !self.is_allow_listed()
-    }
-
-    /// The guardrails to send, if any. An empty `allowed_domains` is a
-    /// meaningful value to Cloudflare (it blocks every request), so an empty
-    /// list is only sent when the operator asked for it.
-    pub fn guardrails(&self) -> Option<Guardrails> {
-        if !self.is_allow_listed() {
-            return None;
-        }
-        Some(Guardrails {
-            allowed_domains: self
-                .allowed
-                .iter()
-                .map(|pattern| pattern.as_str().to_string())
-                .collect(),
-            allowed_domain_sets: self.allowed_domain_sets.clone(),
-        })
+    /// Whether private, loopback and link-local addresses are permitted (the
+    /// local launcher passes the engine's matching flag only then).
+    pub fn allows_private_hosts(&self) -> bool {
+        self.allow_private_hosts
     }
 
     /// Check a URL, in the order a URL is parsed: scheme, host, private
@@ -238,6 +176,10 @@ impl EgressPolicy {
             Some(host) => host,
             None => return Err(EgressError::NoHost),
         };
+        // The cloud metadata endpoints and the rest of link-local are refused
+        // even when private hosts are allowed: `allow_private_hosts` is for a
+        // loopback fixture or a LAN app, never for instance credentials.
+        check_always_denied(&host)?;
         if !self.allow_private_hosts {
             check_private(&host)?;
         }
@@ -273,8 +215,20 @@ impl EgressPolicy {
         Ok(())
     }
 
-    /// The same check for a hostname pattern that Cloudflare guardrails will
-    /// enforce: does the allow list cover it?
+    /// Check a request the page itself makes (a sub-resource, a redirect, a
+    /// fetch) while the engine holds it paused.
+    ///
+    /// The same rules as [`EgressPolicy::check`], except that the schemes a
+    /// page builds in memory (`data:`, `blob:`, `about:`) never leave the
+    /// engine and so are not network egress.
+    pub fn check_request(&self, url: &Url) -> Result<(), EgressError> {
+        if matches!(url.scheme(), "data" | "blob" | "about") {
+            return Ok(());
+        }
+        self.check(url)
+    }
+
+    /// Whether the allow list covers a hostname (always, without one).
     pub fn covers(&self, host: &str) -> bool {
         !self.is_allow_listed() || self.allowed.iter().any(|pattern| pattern.matches(host))
     }
@@ -284,12 +238,6 @@ impl EgressPolicy {
             return Err(ConfigError::Invalid {
                 field: "egress.allowed_domains",
                 reason: format!("at most {MAX_ALLOWED_DOMAINS} are accepted"),
-            });
-        }
-        if self.allowed_domain_sets.len() > MAX_ALLOWED_DOMAIN_SETS {
-            return Err(ConfigError::Invalid {
-                field: "egress.allowed_domain_sets",
-                reason: format!("at most {MAX_ALLOWED_DOMAIN_SETS} are accepted"),
             });
         }
         Ok(())
@@ -302,6 +250,33 @@ fn matches_host(pattern: &HostPattern, host: &Host<&str>) -> bool {
         Host::Ipv4(address) => pattern.matches(&address.to_string()),
         Host::Ipv6(address) => pattern.matches(&address.to_string()),
     }
+}
+
+/// Refuse the addresses no setting opens: link-local (which holds the cloud
+/// metadata endpoint), the other metadata addresses, and their IPv4-mapped
+/// IPv6 forms.
+fn check_always_denied(host: &Host<&str>) -> Result<(), EgressError> {
+    let v4_denied = |address: Ipv4Addr| {
+        address.is_link_local()
+            || address == Ipv4Addr::new(168, 254, 169, 254)
+            || address == Ipv4Addr::new(100, 100, 100, 200)
+            || address == Ipv4Addr::new(192, 0, 0, 192)
+    };
+    let denied = match host {
+        Host::Domain(_) => false,
+        Host::Ipv4(address) => v4_denied(*address),
+        Host::Ipv6(address) => {
+            (address.segments()[0] & 0xffc0) == 0xfe80
+                || *address == Ipv6Addr::new(0xfd00, 0xec2, 0, 0, 0, 0, 0, 0x254)
+                || address.to_ipv4_mapped().is_some_and(v4_denied)
+        }
+    };
+    if denied {
+        return Err(EgressError::PrivateHost {
+            host: host.to_string(),
+        });
+    }
+    Ok(())
 }
 
 /// Refuse an address that is not routable on the public internet, plus the
@@ -429,6 +404,40 @@ mod tests {
     }
 
     #[test]
+    fn the_metadata_endpoint_stays_refused_when_private_hosts_are_allowed() {
+        let mut policy = EgressPolicy::public_web();
+        policy.set_allow_private_hosts(true);
+        policy
+            .check(&url("http://127.0.0.1:8080/fixture"))
+            .unwrap_or_else(|error| panic!("loopback is allowed now: {error}"));
+        for raw in [
+            "http://169.254.169.254/latest/meta-data/",
+            "http://100.100.100.200/",
+            "http://[fd00:ec2::254]/",
+            "http://[::ffff:169.254.169.254]/",
+        ] {
+            assert!(policy.check(&url(raw)).is_err(), "{raw} must stay refused");
+        }
+    }
+
+    #[test]
+    fn in_memory_sub_resources_are_not_egress_but_private_ones_are() {
+        let policy = EgressPolicy::public_web();
+        policy
+            .check_request(&url("data:image/png;base64,AAAA"))
+            .unwrap_or_else(|error| panic!("data: stays in the engine: {error}"));
+        assert!(
+            policy.check(&url("data:text/html,hi")).is_err(),
+            "not navigable"
+        );
+        assert!(
+            policy
+                .check_request(&url("http://169.254.169.254/latest/meta-data/"))
+                .is_err()
+        );
+    }
+
+    #[test]
     fn an_allow_list_closes_the_door() {
         let policy = EgressPolicy::allow_list(["*.example.com"])
             .unwrap_or_else(|_| panic!("a valid allow list parses"));
@@ -437,14 +446,5 @@ mod tests {
             .unwrap_or_else(|error| panic!("a subdomain passes: {error}"));
         assert!(policy.check(&url("https://example.com/")).is_err());
         assert!(policy.check(&url("https://elsewhere.test/")).is_err());
-    }
-
-    #[test]
-    fn guardrails_carry_the_allow_list() {
-        let policy = EgressPolicy::allow_list(["example.com"])
-            .unwrap_or_else(|_| panic!("a valid allow list parses"));
-        let guardrails = policy.guardrails().unwrap_or_else(|| panic!("guardrails"));
-        assert_eq!(guardrails.allowed_domains, ["example.com"]);
-        assert!(EgressPolicy::public_web().guardrails().is_none());
     }
 }

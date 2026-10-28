@@ -1280,6 +1280,20 @@ enum Command {
     /// §7.1–§7.2): `search`, `info`, `install`, `uninstall`, `list`,
     /// `update`, `source`. Install shows the plan and asks first.
     Marketplace(loams_agentd_cli::marketplace::MarketplaceArgs),
+    /// BYOC helpers (design 80, plan CC1 Task 6): `byoc confluent key
+    /// create|rotate` writes Confluent keys straight into the install's cloud
+    /// secret store; `byoc confluent check` checks region and reachability.
+    Byoc(loams_confluent::cli::ByocArgs),
+    /// The managed RisingWave (design 81, preview): run SQL, list
+    /// materialized views, sources and sinks, follow job progress, and
+    /// render or apply pipeline specs. Reaches the frontend through
+    /// loams-gateway.
+    Risingwave(loams_risingwave::cli::RisingWaveArgs),
+    /// Managed Spark (design 81, preview): the namespace's Spark Connect URL,
+    /// batch jobs (submit, status, logs, cancel, schedules), local runs, and
+    /// the driver pod a job renders to.
+    #[cfg(feature = "spark")]
+    Spark(loams_spark::cli::SparkArgs),
     /// Engine authentication (LOAMS_AUTH_MODE): API keys.
     Auth {
         #[command(subcommand)]
@@ -1441,6 +1455,10 @@ fn config(command: Command) -> ServerConfig {
         Command::Upgrade(_) => unreachable!("loams upgrade starts no server"),
         Command::Cloud(_) => unreachable!("loams cloud starts no server"),
         Command::Marketplace(_) => unreachable!("loams marketplace starts no server"),
+        Command::Byoc(_) => unreachable!("loams byoc starts no server"),
+        Command::Risingwave(_) => unreachable!("loams risingwave starts no server"),
+        #[cfg(feature = "spark")]
+        Command::Spark(_) => unreachable!("loams spark starts no server"),
         #[cfg(feature = "live")]
         Command::LiveWorker => unreachable!("loams live-worker starts no server"),
         #[cfg(feature = "postgres")]
@@ -1657,6 +1675,19 @@ fn main() -> ExitCode {
     if let Command::Marketplace(args) = &cli.command {
         return loams_agentd_cli::marketplace::run(args);
     }
+    // A client too (CC1 Task 6): the Confluent Cloud API and the cloud's CLI.
+    if let Command::Byoc(args) = &cli.command {
+        return loams_confluent::cli::run(args);
+    }
+    // A client (RW1, lane RW-b): its own runtime, no stores.
+    if let Command::Risingwave(args) = &cli.command {
+        return loams_risingwave::cli::run(args);
+    }
+    // A client too (design 81 SP-b): the engines facade, or local runs.
+    #[cfg(feature = "spark")]
+    if let Command::Spark(args) = &cli.command {
+        return loams_spark::cli::run(args);
+    }
     serve(cli)
 }
 
@@ -1798,6 +1829,29 @@ mod tests {
     fn dev_config(args: &[&str]) -> ServerConfig {
         let cli = Cli::try_parse_from(["loams", "dev"].iter().chain(args)).expect("parse");
         config(cli.command)
+    }
+
+    #[test]
+    fn byoc_confluent_parses() {
+        let cli = Cli::try_parse_from([
+            "loams",
+            "byoc",
+            "confluent",
+            "key",
+            "create",
+            "--service-account",
+            "sa-test01",
+            "--cluster",
+            "lkc-test01",
+            "--environment",
+            "env-test01",
+            "--cloud",
+            "aws",
+            "--secret-prefix",
+            "loams/prod",
+        ])
+        .unwrap_or_else(|e| panic!("{e}"));
+        assert!(matches!(cli.command, Command::Byoc(_)));
     }
 
     /// GR1 Task 5: `loams dev` keeps graphs under `<data-dir>/graph`; `standalone` has no graph

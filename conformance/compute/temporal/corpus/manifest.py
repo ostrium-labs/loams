@@ -28,7 +28,12 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 HIST = HERE / "histories"
 MANIFEST = HERE / "manifest.json"
-SDK = {"go": "go.temporal.io/sdk", "ts": "@temporalio/worker"}
+SDK = {"go": "go.temporal.io/sdk", "ts": "@temporalio/worker", "python": "temporalio"}
+# Languages whose histories every corpus must have. Another language (an SDK
+# leg added later, D2137) is required once histories/<lang>/ has a file:
+# until its first generation against the oracle, only its worker's scenario
+# list is checked.
+REQUIRED = ("go", "ts")
 RUN = re.compile(r"^(?P<scenario>[a-z0-9_]+?)(\.run(?P<run>[0-9]+))?\.json$")
 
 
@@ -40,7 +45,29 @@ def sdk_versions() -> dict[str, str]:
     gomod = (HERE / "workers/go/go.mod").read_text()
     go = re.search(r"go\.temporal\.io/sdk v([0-9.]+)", gomod)
     pkg = json.loads((HERE / "workers/ts/package.json").read_text())
-    return {"go": go.group(1) if go else "?", "ts": pkg["dependencies"]["@temporalio/worker"]}
+    py = re.search(r'"temporalio==([0-9.]+)"', (HERE / "workers/python/pyproject.toml").read_text())
+    return {
+        "go": go.group(1) if go else "?",
+        "ts": pkg["dependencies"]["@temporalio/worker"],
+        "python": py.group(1) if py else "?",
+    }
+
+
+def languages() -> list[str]:
+    """REQUIRED, then every other language with a history directory that has files."""
+    extra = sorted(
+        d.name for d in HIST.iterdir()
+        if d.is_dir() and d.name not in REQUIRED and any(d.glob("*.json"))
+    ) if HIST.is_dir() else []
+    return [*REQUIRED, *extra]
+
+
+def pin(key: str) -> str:
+    """A value of conformance/compute/pins.env."""
+    for line in (HERE.parents[1] / "pins.env").read_text().splitlines():
+        if line.startswith(f"{key}="):
+            return line.split("=", 1)[1].strip()
+    return "?"
 
 
 def sha(p: Path) -> str:
@@ -49,7 +76,7 @@ def sha(p: Path) -> str:
 
 def histories() -> list[tuple[str, Path]]:
     out = []
-    for lang in ("go", "ts"):
+    for lang in languages():
         for p in sorted((HIST / lang).glob("*.json")):
             out.append((lang, p))
     return out
@@ -91,7 +118,9 @@ def worker_lists() -> dict[str, list[str]]:
     go = re.findall(r'\{"([a-z0-9_]+)", DX[1-4], \w+, (?:true|false)\}',
                     (HERE / "workers/go/scenarios/scenarios.go").read_text())
     ts = re.findall(r"\['([a-z0-9_]+)', 'DX[1-4]'\]", (HERE / "workers/ts/src/generate.ts").read_text())
-    return {"go": go, "ts": ts}
+    py = re.findall(r'^    \("([a-z0-9_]+)", "DX[1-4]"\),$',
+                    (HERE / "workers/python/corpus_py/scenarios.py").read_text(), re.M)
+    return {"go": go, "ts": ts, "python": py}
 
 
 def check() -> list[str]:
@@ -102,6 +131,11 @@ def check() -> list[str]:
         problems.append("workers/go/scenarios/scenarios.go does not list scenarios.json's scenarios in order")
     if lists["ts"] != [s["name"] for s in want if not s["go_only"]]:
         problems.append("workers/ts/src/generate.ts does not list scenarios.json's non-Go-only scenarios in order")
+    if lists["python"] != [s["name"] for s in want if not s["go_only"]]:
+        problems.append("workers/python/corpus_py/scenarios.py does not list scenarios.json's non-Go-only scenarios in order")
+    sdks = sdk_versions()
+    if sdks["python"] != pin("TEMPORAL_SDK_PY"):
+        problems.append(f"workers/python pins temporalio {sdks['python']}, pins.env TEMPORAL_SDK_PY {pin('TEMPORAL_SDK_PY')}")
     if not MANIFEST.exists():
         return problems + ["manifest.json is missing (run generate.sh)"]
     doc = json.loads(MANIFEST.read_text())
@@ -125,8 +159,9 @@ def check() -> list[str]:
             if not e.get(k):
                 problems.append(f"{rel}: no {k}")
     have = {(e["language"], e["scenario"]) for e in listed.values()}
+    langs = languages()
     for s in want:
-        for lang in ("go",) if s["go_only"] else ("go", "ts"):
+        for lang in ("go",) if s["go_only"] else langs:
             if (lang, s["name"]) not in have:
                 problems.append(f"scenario {s['name']} has no {lang} history")
     for b in sorted(HIST.glob("*/*.binpb")):
@@ -140,7 +175,7 @@ def stable(a: Path, b: Path) -> list[str]:
     import normalize  # noqa: PLC0415
 
     problems = []
-    for lang in ("go", "ts"):
+    for lang in sorted({*REQUIRED, *(d.name for d in a.iterdir() if d.is_dir())}):
         fa = {p.name for p in (a / lang).glob("*.json")}
         fb = {p.name for p in (b / lang).glob("*.json")}
         if fa != fb:

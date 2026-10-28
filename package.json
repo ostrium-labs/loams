@@ -20,7 +20,6 @@
     "affected:rust": "nx affected --targets=fmt,clippy,test --exclude='*,!tag:cargo-crate' --parallel=2"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.15",
     "nx": "23.3.0",
     "typescript": "5.9.3"
   }

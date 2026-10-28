@@ -1,7 +1,7 @@
 // The /postgres route's pg-control client follows App settings > Postgres: a saved change
 // drops the client, and the next resolve probes pg-control again (no restart).
 import type { LoamsDesktopApi, PgControlSettings } from '@loams/desktop/contracts';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { createPgControlSource } from '../src/route.js';
 
 const BASE = 'loams-app://console/pg-control/';

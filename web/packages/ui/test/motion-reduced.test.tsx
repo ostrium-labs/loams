@@ -2,7 +2,7 @@
 // page, so the media query is stubbed before anything renders.
 
 import { cleanup, render, renderHook, screen } from '@testing-library/react';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it } from 'vite-plus/test';
 import {
   LoadingSwap,
   REDUCED_PRESET,

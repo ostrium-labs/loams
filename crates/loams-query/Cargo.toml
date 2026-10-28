@@ -25,6 +25,8 @@ moka = { workspace = true, features = ["sync"] }
 loams-collection.workspace = true
 loams-common.workspace = true
 loams-log.workspace = true
+# The meter's gate on the produce path (design §63 §10.2, ME1 Task 22).
+loams-meter-gate.workspace = true
 # `CREATE GRAPH` (§07 §2.1) parses into `loams.graph.v1.GraphMapping`, the mapping a LINKED
 # graph's `CreateGraph` takes (GR1 Task 17).
 loams-proto.workspace = true

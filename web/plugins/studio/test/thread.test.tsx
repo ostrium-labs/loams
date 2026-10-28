@@ -21,7 +21,7 @@ import {
 } from '@loams/proto/agentd';
 import { Timeline, useThreadTranscript } from '@loams/studio-ui/chat';
 import { act, cleanup, fireEvent, render, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import connectFixtures from '../../../packages/agentd-client/test/transcript.connect.gen.json';
 import { useTranscriptStore } from '../src/thread/streams.js';
 import { ThreadPage } from '../src/thread/ThreadPage.js';

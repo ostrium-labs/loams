@@ -9,7 +9,7 @@ import {
   type TranscriptUpdate,
 } from '@loams/agentd-client';
 import { act, cleanup, fireEvent, render, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import * as fixtures from '../../agentd-client/src/fixtures.gen';
 import {
   computeStableTimelineRows,

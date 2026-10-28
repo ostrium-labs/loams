@@ -6,13 +6,12 @@ import {
 	type IpcResult,
 } from "../../shared/contracts";
 import { assertTrustedSender } from "../security/policy";
-import { FACTORY_APPS } from "./apps";
+import { isFactoryApp } from "./apps";
 import type { FactoryEmbed } from "./embed.electron";
 import type { FactoryHost } from "./host";
 import type { FactoryViews } from "./views.electron";
 
-const isApp = (a: unknown): a is FactoryAppId =>
-	typeof a === "string" && Object.hasOwn(FACTORY_APPS, a);
+const isApp = (a: unknown): a is FactoryAppId => isFactoryApp(a);
 const bad = (): IpcResult<never> => ({
 	ok: false,
 	code: "bad_request",
@@ -55,7 +54,7 @@ export function registerFactoryIpc(
 	ipcMain.handle(CH.factoryTest, async (e, app: unknown) => {
 		assertTrustedSender(e);
 		if (!isApp(app)) return bad();
-		return { ok: true, value: await host.test(app) };
+		return host.test(app);
 	});
 	ipcMain.handle(CH.factoryRemove, async (e, app: unknown) => {
 		assertTrustedSender(e);

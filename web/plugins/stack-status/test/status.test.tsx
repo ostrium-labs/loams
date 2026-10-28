@@ -1,7 +1,7 @@
 import type { FlagsService, PlatformService } from '@loams/console-host';
 import { SlotProvider, SlotRegistry } from '@loams/slots';
 import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 import plugin, { StatusPage } from '../src/index.js';
 
 afterEach(cleanup);

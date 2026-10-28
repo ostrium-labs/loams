@@ -1,7 +1,7 @@
 import type { LoamsDesktopApi } from '@loams/desktop/contracts';
 import { Toaster, ToastProvider } from '@loams/ui';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { UpdateToast } from '../src/update-toast.js';
 
 afterEach(cleanup);

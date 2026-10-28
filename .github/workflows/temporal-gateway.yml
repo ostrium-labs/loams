@@ -1,0 +1,137 @@
+name: Temporal gateway SDK legs
+
+# DX1 Task 10 and its follow-up (D2031): the official Temporal Go and
+# TypeScript SDKs run the corpus's DX1 scenarios against `loams-temporal` in
+# the compose profile `temporal-gateway` (deploy/release/compose.compute.yaml,
+# with conformance/compute/temporal-gateway.yaml building the release image
+# from this pull request's deploy/release/Containerfile.loams-temporal; the
+# gateway in the engine's network namespace, on Loams Postgres and the
+# engine's Resonate), each SDK's replayer accepts the histories, and
+# compare.py diffs them with the corpus. Each SDK container is killed after
+# LEG_TIMEOUT seconds, so a hung scenario fails its case, not the job.
+#
+# On pull requests that touch the gateway (the "Changed paths" filter below),
+# during DX2, and by hand. Not part of `CI required` yet
+# (conformance/compute/temporal/gateway/README.md): the job builds an image and
+# brings up the release stack, and earns its place there once it has been
+# stable for a while.
+#
+# Do not event-filter paths: the filter job decides, as in ci.yml and monorepo.yml.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: temporal-gateway-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  changes:
+    name: Changed paths
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      gateway: ${{ steps.filter.outputs.gateway }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # dorny/paths-filter is MIT-licensed; pinned to v4.0.3, as in ci.yml.
+      # Empty token forces local Git comparison, including fork PRs; no PR API permission.
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        if: github.event_name == 'pull_request'
+        with:
+          token: ''
+          base: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          filters: |
+            gateway:
+              - 'crates/loams-temporal-*/**'
+              - 'crates/loams-gateway/src/temporal/**'
+              - 'conformance/compute/temporal/**'
+              - 'conformance/compute/temporal-gateway.yaml'
+              - 'conformance/compute/lib.sh'
+              - 'conformance/compute/pins.env'
+              - 'deploy/release/compute/durable-init.sh'
+              - 'deploy/release/compose.compute.yaml'
+              - 'deploy/release/Containerfile.loams-temporal'
+              - 'deploy/release/temporal-gateway.toml.example'
+              - '.github/workflows/temporal-gateway.yml'
+
+  sdk-legs:
+    name: "Temporal gateway: Go and TypeScript SDK legs (temporal-gateway profile)"
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.gateway == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      OC_OUT: ${{ github.workspace }}/target/compute
+      # docker compose v2 builds the gateway's image with BuildKit.
+      DOCKER_BUILDKIT: '1'
+      LEG_TIMEOUT: '1500'
+      TS_SCENARIO_TIMEOUT: '120'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: the SDK legs through the temporal-gateway profile
+        run: conformance/compute/temporal/gateway/run.sh --profile
+      - name: the stack's logs
+        if: failure() || cancelled()
+        run: |
+          . conformance/compute/lib.sh
+          oc_compose --gateway --profile temporal-gateway ps -a || true
+          oc_compose --gateway --profile temporal-gateway logs --no-color --tail 500 temporal-gateway loams compute-init compute1 >"$OC_OUT/temporal-gateway-profile/stack.log" 2>&1 || true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: temporal-gateway-sdk-legs
+          path: target/compute/temporal-gateway-profile
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # The other official SDKs (D2138), one matrix entry each, in parallel with
+  # the Go and TypeScript job: each brings up its own profile stack and runs
+  # only its own leg (SDK_LEGS=<sdk>; conformance/compute/temporal/gateway/legs/<sdk>.sh).
+  # SDK lanes append their SDK to `sdk`. Python: temporalio under uv in the
+  # pinned PYTHON_IMAGE (pins.env TEMPORAL_SDK_PY, UV_VERSION).
+  sdk-leg:
+    name: "Temporal gateway: ${{ matrix.sdk }} SDK leg (temporal-gateway profile)"
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.gateway == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        sdk: [python]
+    env:
+      OC_OUT: ${{ github.workspace }}/target/compute
+      DOCKER_BUILDKIT: '1'
+      LEG_TIMEOUT: '900'
+      SDK_LEGS: ${{ matrix.sdk }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: the ${{ matrix.sdk }} leg through the temporal-gateway profile
+        run: conformance/compute/temporal/gateway/run.sh --profile
+      - name: the stack's logs
+        if: failure() || cancelled()
+        run: |
+          . conformance/compute/lib.sh
+          oc_compose --gateway --profile temporal-gateway ps -a || true
+          oc_compose --gateway --profile temporal-gateway logs --no-color --tail 500 temporal-gateway loams compute-init compute1 >"$OC_OUT/temporal-gateway-profile/stack.log" 2>&1 || true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: temporal-gateway-sdk-leg-${{ matrix.sdk }}
+          path: target/compute/temporal-gateway-profile
+          if-no-files-found: ignore
+          retention-days: 14

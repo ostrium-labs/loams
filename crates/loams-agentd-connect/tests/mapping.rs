@@ -245,6 +245,27 @@ const NOT_MAPPED: &[(&str, &str)] = &[
         "EngineReadyReply",
         "EngineReady is not on the Connect surface",
     ),
+    (
+        "FactoryAppList",
+        "mapped in the FactoryService handler; the parity suite compares both wires",
+    ),
+    ("FactoryAppParams", "one string, mapped in the handler"),
+    (
+        "FactoryAppReply",
+        "mapped in the FactoryService handler; the parity suite compares both wires",
+    ),
+    (
+        "FactoryConfigureParams",
+        "carries secrets: ndjson only, never on the Connect surface (SF1 amendment F4)",
+    ),
+    (
+        "FactoryQueryParams",
+        "params cross as JSON text (SF1 amendment F2), mapped in the handler",
+    ),
+    (
+        "FactoryQueryReply",
+        "the value crosses as JSON text (SF1 amendment F2), mapped in the handler",
+    ),
     ("FetchToolBlobParams", "three scalars"),
     ("GetCheckoutDiffParams", "five strings"),
     ("GetCheckoutFileDiffTextRequest", "eight strings"),

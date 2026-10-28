@@ -1,0 +1,54 @@
+# Who may drive the browser, and where the browser may go (D2112, D2114).
+#
+# Ingress: agentd and loams-gateway pods only, on the CDP port.
+# Egress: DNS, and the public internet on 80 and 443 with the private,
+# link-local (cloud metadata) and carrier-grade NAT ranges cut out. This is
+# the network half of the egress policy the provider enforces on every
+# request; it holds even if a page found a way around the provider.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: loams-browser
+  labels:
+    app.kubernetes.io/name: loams-browser
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: loams-browser
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: ["loams-agentd", "loams-gateway"]
+      ports:
+        - port: 9222
+          protocol: TCP
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+      ports:
+        - port: 80
+          protocol: TCP
+        - port: 443
+          protocol: TCP
