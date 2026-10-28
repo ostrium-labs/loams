@@ -4,7 +4,7 @@
 // prefix beats a substring; an earlier search term beats a later one; recency breaks
 // a tie between thread titles; a secondary row sorts last; groups keep their order.
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { normalizeSearchText, type RankableCommand, rankCommands } from '../src/command-rank';
 
 const row = (id: string, text: string, extra: Partial<RankableCommand> = {}): RankableCommand => ({

@@ -2,7 +2,7 @@
 // scopes, rebound to Studio's commands, with conflicts flagged in the editor's rows
 // and the per-device store under `loams.studio.keybindings`.
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import {
   buildKeybindingRows,
   commandLabel,

@@ -23,7 +23,7 @@ import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 import { REQUIRED_TESTS, testName } from '../../../../conformance/required.mjs';
 import { Loams } from '../src/loams.js';
 import { FeatureNotInVariantError } from '../src/runtime/errors.js';

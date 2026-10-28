@@ -28,7 +28,7 @@ export function ButtonGroup({
   children: React.ReactNode;
 } & React.ComponentProps<'div'>) {
   return (
-    // biome-ignore lint/a11y/useSemanticElements: a fieldset is a form section with a legend; this is a row of joined controls
+    // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a fieldset is a form section with a legend; this is a row of joined controls
     <div
       className={cx(
         'flex w-fit *:focus-visible:z-1 *:has-focus-visible:z-1 has-[>[data-slot=group]]:gap-2',

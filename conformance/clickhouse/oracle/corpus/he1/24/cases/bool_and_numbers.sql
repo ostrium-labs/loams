@@ -1,0 +1,1 @@
+SELECT u8 AND i8, u8 - 1 AND 1, f32 OR 0 FROM t24 ORDER BY id

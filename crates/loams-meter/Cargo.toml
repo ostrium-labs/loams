@@ -1,0 +1,33 @@
+[package]
+name = "loams-meter"
+description = "Loams Meter's `meter` role (design §63 §5.2): counter owners, reconciliation, the lease service, the entitlement, customer and plan services, the notifier and the OpenMeter-compatible API."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+buffa.workspace = true
+connectrpc = { workspace = true, features = ["server"] }
+loams-cloudevents = { path = "../loams-cloudevents", default-features = false }
+loams-authz.workspace = true
+loams-common.workspace = true
+loams-meter-core = { path = "../loams-meter-core" }
+loams-proto.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml_ng = "0.10"
+sha2.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["sync", "time", "rt", "macros"] }
+tracing.workspace = true
+ulid.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+tokio = { workspace = true, features = ["sync", "time", "rt", "rt-multi-thread", "macros", "test-util"] }
+
+[lints]
+workspace = true

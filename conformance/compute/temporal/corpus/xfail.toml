@@ -1,0 +1,4 @@
+# The corpus replays (conformance/compute/temporal/corpus/replay.sh). Strict:
+# every committed history must replay; a failure here is a corpus bug, not an
+# expected failure, so this list should stay empty.
+product = "temporal/corpus"

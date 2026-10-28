@@ -1,0 +1,27 @@
+{
+  "apps": [
+    {
+      "credentialFields": [
+        {
+          "key": "token",
+          "label": "Access token",
+          "secret": true
+        },
+        {
+          "key": "ssoOrigin",
+          "label": "SSO origin (optional)",
+          "secret": false
+        }
+      ],
+      "fields": {
+        "ssoOrigin": "https://sso.example.com"
+      },
+      "hasPanels": true,
+      "health": "ok",
+      "id": "forgejo",
+      "label": "Forgejo",
+      "persistent": true,
+      "url": "https://git.example.com"
+    }
+  ]
+}

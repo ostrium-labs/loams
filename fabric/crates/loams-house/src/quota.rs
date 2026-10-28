@@ -34,6 +34,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Deserialize;
 
+use loams_meter_gate::entitle::{Entitlements, features};
+use loams_meter_gate::gate::Refusal;
+
 use crate::errors::{ChError, HouseError};
 use crate::usage::UsageEvent;
 
@@ -249,6 +252,9 @@ pub struct QuotaUsage {
 pub struct Quotas {
     source: Arc<dyn QuotaSource>,
     namespaces: Mutex<HashMap<String, Counters>>,
+    /// The meter's gate (design §63 §10.2, ME1 Task 20), asked after the
+    /// protective quotas; `NoGate` by default.
+    entitlements: Entitlements,
 }
 
 /// An admitted statement's place under `concurrent_queries`; dropping it ends
@@ -287,6 +293,27 @@ pub fn refusal(code: i32, quota: &str, limit: u64, what: &str) -> HouseError {
     }
 }
 
+/// A refusal by the meter's gate (§63 §17.4): `202` for reads, `164` for
+/// writes, with a message that starts with [`QUOTA_EXCEEDED`] and names the
+/// entitlement and the reason (`entitlement_exhausted`,
+/// `payment_method_required`, `spend_cap_reached`, `not_entitled`,
+/// `meter_unavailable`). [`refusal_parts`] does not read it: it names no
+/// limit.
+pub fn entitlement_refusal(code: i32, r: &Refusal) -> HouseError {
+    let mut message = format!(
+        "{QUOTA_EXCEEDED}: entitlement {} is refused: {}",
+        r.feature, r.reason
+    );
+    if let Some(after) = r.retry_after {
+        message.push_str(&format!(" (retry after {} s)", after.as_secs().max(1)));
+    }
+    if code == 164 {
+        HouseError::from(ChError::readonly(message))
+    } else {
+        HouseError::from(ChError::too_many_simultaneous_queries(message))
+    }
+}
+
 /// The quota and limit a [`refusal`]'s message names, when it is one.
 pub fn refusal_parts(message: &str) -> Option<(&str, u64)> {
     let rest = message.strip_prefix(QUOTA_EXCEEDED)?;
@@ -299,9 +326,19 @@ pub fn refusal_parts(message: &str) -> Option<(&str, u64)> {
 impl Quotas {
     /// Counters over `source`'s quotas.
     pub fn new(source: Arc<dyn QuotaSource>) -> Arc<Self> {
+        Self::with_entitlements(source, Entitlements::default())
+    }
+
+    /// Counters over `source`'s quotas, then `entitlements` for each
+    /// admitted statement (§63 §10.2).
+    pub fn with_entitlements(
+        source: Arc<dyn QuotaSource>,
+        entitlements: Entitlements,
+    ) -> Arc<Self> {
         Arc::new(Self {
             source,
             namespaces: Mutex::new(HashMap::new()),
+            entitlements,
         })
     }
 
@@ -411,10 +448,40 @@ impl Quotas {
         counters.running += 1;
         counters.started.push_back(now);
         drop(namespaces);
-        Ok(QuotaGuard {
+        // The statement holds its place under the protective quotas while
+        // the gate is asked (a lease hit is local; a cold miss waits at most
+        // the gate's deadline), so the lock is not held across it.
+        let guard = QuotaGuard {
             quotas: Arc::clone(self),
             namespace: namespace.to_string(),
-        })
+        };
+        if let Err(r) = self.entitled(namespace, access) {
+            drop(guard);
+            let mut namespaces = self.lock();
+            if let Some(counters) = namespaces.get_mut(namespace) {
+                // A refused statement does not count toward the rate.
+                if let Some(i) = counters.started.iter().rposition(|t| *t == now) {
+                    counters.started.remove(i);
+                }
+            }
+            let code = if access == Access::Write { 164 } else { 202 };
+            return Err(entitlement_refusal(code, &r));
+        }
+        Ok(guard)
+    }
+
+    /// The entitlements a statement needs: CPU always, scanned bytes for a
+    /// read, each with the 1-unit floor. The statement that crosses the
+    /// limit finishes; the next is refused (R22.1). Its actual cost is
+    /// settled by its `house.query` usage event.
+    fn entitled(&self, namespace: &str, access: Access) -> Result<(), Refusal> {
+        self.entitlements
+            .check(None, namespace, features::HOUSE_CPU, 1)?;
+        if access == Access::Read {
+            self.entitlements
+                .check(None, namespace, features::HOUSE_SCAN, 1)?;
+        }
+        Ok(())
     }
 
     /// `164` when `namespace` holds `existing` pipes and its `pipes` quota
@@ -485,6 +552,73 @@ impl Quotas {
 mod tests {
     use super::*;
     use crate::usage::{InsertUsage, QueryUsage};
+    use loams_meter_gate::adapters::DeploymentOrg;
+    use loams_meter_gate::entitle::DenyGate;
+    use loams_meter_gate::gate::RefusalReason;
+
+    fn gated(feature: &str, reason: RefusalReason) -> Arc<Quotas> {
+        Quotas::with_entitlements(
+            Arc::new(ConfigQuotas::default()),
+            Entitlements::new(
+                Arc::new(DenyGate::new("org_42", feature, reason)),
+                Arc::new(DeploymentOrg::new("42")),
+            ),
+        )
+    }
+
+    #[test]
+    fn house_entitlement_refusal_names_feature() {
+        let q = gated(features::HOUSE_CPU, RefusalReason::EntitlementExhausted);
+        let now = Instant::now();
+        let at = SystemTime::now();
+        let read = q.admit("7", Access::Read, now, at).expect_err("refused");
+        assert_eq!(read.code(), 202);
+        assert!(
+            read.message().starts_with(QUOTA_EXCEEDED),
+            "{}",
+            read.message()
+        );
+        assert!(
+            read.message().contains("entitlement house_cpu"),
+            "{}",
+            read.message()
+        );
+        assert!(
+            read.message().contains("entitlement_exhausted"),
+            "{}",
+            read.message()
+        );
+        let write = q.admit("7", Access::Write, now, at).expect_err("refused");
+        assert_eq!(write.code(), 164);
+        // A refused statement holds no place under the quotas.
+        assert_eq!(q.usage("7", now, at).running, 0);
+    }
+
+    #[test]
+    fn scan_entitlement_refuses_reads_only() {
+        let q = gated(features::HOUSE_SCAN, RefusalReason::SpendCapReached);
+        let now = Instant::now();
+        let at = SystemTime::now();
+        let read = q.admit("7", Access::Read, now, at).expect_err("refused");
+        assert!(
+            read.message().contains("spend_cap_reached"),
+            "{}",
+            read.message()
+        );
+        drop(
+            q.admit("7", Access::Write, now, at)
+                .expect("writes scan nothing"),
+        );
+    }
+
+    #[test]
+    fn no_gate_admits_as_before() {
+        let q = Quotas::unlimited();
+        drop(
+            q.admit("7", Access::Read, Instant::now(), SystemTime::now())
+                .expect("no gate"),
+        );
+    }
 
     fn quotas(quota: NamespaceQuota) -> Arc<Quotas> {
         Quotas::new(Arc::new(ConfigQuotas {

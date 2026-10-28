@@ -1,0 +1,6 @@
+# The Spark Connect parity harness's expected failures (design 81 SP-b,
+# D2009). Empty until the first run: that run's failures are triaged into
+# entries here (each with a reason and an issue), and from then on a surprise
+# in either direction fails the run.
+product = "spark"
+xfail = []

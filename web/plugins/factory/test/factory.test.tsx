@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { ConfigurePage } from '../src/configure.js';
 import { EmbeddedApp } from '../src/embedded.js';
 import { FactoryHome } from '../src/home.js';
@@ -150,6 +150,40 @@ describe('embedded', () => {
     render(<EmbeddedApp desktop={api} app="zulip" navigate={nav().navigate} />);
     expect(await screen.findByText('Zulip is not configured')).toBeTruthy();
     expect(shown).toHaveLength(0);
+  });
+});
+
+describe('in a browser (SF1 amendment F4, F5)', () => {
+  it('open_app_opens_a_tab_instead_of_the_embedded_page', async () => {
+    const n = nav();
+    const { api, calls } = fakeDesktop({
+      apps: IDS.map((id) => info(id, id === 'forgejo' ? 'ok' : 'unconfigured')),
+    });
+    render(<FactoryHome desktop={api} navigate={n.navigate} embeds={false} />);
+    const tile = await screen.findByRole('article', { name: 'Forgejo' });
+    fireEvent.click(within(tile).getByRole('button', { name: 'Open app' }));
+    await waitFor(() => expect(calls).toContain('open:forgejo'));
+    expect(n.to).toEqual([]);
+    expect(within(tile).queryByRole('button', { name: 'Open in new window' })).toBeNull();
+  });
+
+  it('the_app_page_offers_a_tab_and_never_places_a_view', async () => {
+    const { api, calls, shown } = fakeDesktop({ apps: IDS.map((id) => info(id, 'ok')) });
+    render(<EmbeddedApp desktop={api} app="zulip" navigate={nav().navigate} embeds={false} />);
+    fireEvent.click(await screen.findByRole('button', { name: /Open Zulip in a new tab/ }));
+    await waitFor(() => expect(calls).toContain('open:zulip'));
+    expect(shown).toHaveLength(0);
+  });
+
+  it('configure_is_read_only_and_says_where_to_configure', async () => {
+    const { api, configured } = fakeDesktop({ apps: IDS.map((id) => info(id, 'ok')) });
+    render(<ConfigurePage desktop={api} app="forgejo" navigate={nav().navigate} embeds={false} />);
+    expect(await screen.findByText(/configure it in Loams Desktop/)).toBeTruthy();
+    expect(
+      (screen.getByRole('button', { name: 'Save and test' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect((screen.getByLabelText('Access token') as HTMLInputElement).disabled).toBe(true);
+    expect(configured).toHaveLength(0);
   });
 });
 

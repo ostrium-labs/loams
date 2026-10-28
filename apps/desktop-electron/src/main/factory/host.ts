@@ -1,4 +1,14 @@
-import { Context } from "cordis";
+// The factory as Electron main sees it: a client of loams-agentd's FactoryService
+// (SF1 amendment F1-F4; design §50 §13, D795). The daemon holds the apps'
+// credentials in its keyring and runs the read-only op allowlist; main passes a
+// configure form's secrets through once and never stores or returns them. Main
+// keeps the embedded views (D678), so it caches the apps' non-secret URLs.
+import { type Client, createClient, type Transport } from "@connectrpc/connect";
+import {
+	type FactoryApp,
+	FactoryService,
+	FactoryHealth as PbHealth,
+} from "@loams/proto/agentd";
 import type {
 	FactoryAppId,
 	FactoryAppInfo,
@@ -7,11 +17,11 @@ import type {
 	IpcResult,
 } from "../../shared/contracts";
 import { redact as redactSecrets } from "../redact";
-import { type Adapter, FACTORY_APPS, type FactoryAppDef } from "./apps";
-import { OPS, ParamError, UnsupportedError } from "./ops";
+import { FACTORY_APP_IDS, isFactoryApp } from "./apps";
 import type { Vault } from "./vault";
 
-export const QUERY_TIMEOUT_MS = 15_000;
+/** The longest a factory call may take (the daemon's own limit is 15 s). */
+export const QUERY_TIMEOUT_MS = 20_000;
 
 const b64 = (s: string): string[] => {
 	const full = Buffer.from(s).toString("base64");
@@ -38,224 +48,91 @@ export function secretForms(
 	return [...forms];
 }
 
-/** Factory errors and agent text: every secret form becomes `[redacted]` (see ../redact). */
+/** Agent text: every secret form becomes `[redacted]` (see ../redact). */
 export function redact(message: string, secrets: readonly string[]): string {
 	return redactSecrets(message, secrets);
 }
 
-const originOf = (u: string): string => {
-	try {
-		return new URL(u).origin;
-	} catch {
-		return "";
-	}
+/** What the factory pages show when the daemon does not answer. */
+export const DAEMON_DOWN =
+	"The factory's apps are reached through the agent daemon, which is not running. Start it from Studio.";
+
+const HEALTH: Record<number, FactoryHealth> = {
+	[PbHealth.OK]: "ok",
+	[PbHealth.AUTH_FAILED]: "auth_failed",
+	[PbHealth.UNREACHABLE]: "unreachable",
+	[PbHealth.UNCONFIGURED]: "unconfigured",
+	[PbHealth.LOCKED]: "locked",
 };
 
-type Code = "auth_failed" | "unreachable" | "upstream_error";
-
-export function classifyError(e: unknown): Code {
-	const err = (typeof e === "object" && e !== null ? e : {}) as {
-		status?: unknown;
-		name?: unknown;
-		code?: unknown;
-		message?: unknown;
+/** A daemon app as the console's `FactoryAppInfo`. */
+export function appInfo(a: FactoryApp): FactoryAppInfo {
+	const configured = a.url !== undefined;
+	return {
+		id: a.id as FactoryAppId,
+		label: a.label,
+		...(configured ? { url: a.url } : {}),
+		health: HEALTH[a.health] ?? "unreachable",
+		hasPanels: a.hasPanels,
+		...(a.preview ? { preview: a.preview } : {}),
+		credentialFields: a.credentialFields.map((f) => ({
+			key: f.key,
+			label: f.label,
+			secret: f.secret,
+		})),
+		...(configured ? { fields: { ...a.fields } } : {}),
+		persistent: a.persistent,
 	};
-	const status = typeof err.status === "number" ? err.status : undefined;
-	if (status === 401 || status === 403) return "auth_failed";
-	if (status === 0) return "unreachable";
-	const msg = typeof err.message === "string" ? err.message : "";
-	if (
-		status !== undefined &&
-		!(err.name === "MatomoApiError" && status === 200)
-	)
-		return "upstream_error";
-	// Matomo reports a bad token as an error inside a 200 body.
-	if (
-		err.name === "MatomoApiError" &&
-		/token|auth|permission|access|credential/i.test(msg)
-	)
-		return "auth_failed";
-	if (/invalid api key|unauthorized|forbidden/i.test(msg)) return "auth_failed";
-	if (
-		err.name === "TypeError" ||
-		err.name === "AbortError" ||
-		err.name === "TimeoutError" ||
-		(typeof err.code === "string" &&
-			/^E(CONN|NOTFOUND|HOSTUNREACH|TIMEDOUT)/.test(err.code))
-	)
-		return "unreachable";
-	return "upstream_error";
 }
 
-interface Live {
-	adapter: Adapter;
-	/** Every form of the secrets this adapter was built with (survives reconfigure). */
-	secrets: string[];
-	dispose(): void;
-}
-
-type CredField = FactoryAppInfo["credentialFields"][number];
+const fail = (code: string, message: string) =>
+	({ ok: false, code, message }) as const;
 
 export class FactoryHost {
-	readonly #live = new Map<FactoryAppId, Live>();
-	readonly #building = new Map<FactoryAppId, Promise<Live>>();
-	readonly #gen = new Map<FactoryAppId, number>();
-	readonly #health = new Map<FactoryAppId, FactoryHealth>();
+	readonly #apps = new Map<FactoryAppId, FactoryAppInfo>();
 
-	constructor(
-		private readonly vault: Vault,
-		private readonly ctx: Context = new Context(),
-		private readonly apps: Record<FactoryAppId, FactoryAppDef> = FACTORY_APPS,
-	) {}
+	/** `transport` answers null while no daemon runs. */
+	constructor(private readonly transport: () => Transport | null) {}
 
-	#info(app: FactoryAppId): FactoryAppInfo {
-		const def = this.apps[app];
-		const entry = this.vault.get(app);
-		return {
-			id: app,
-			label: def.label,
-			...(entry ? { url: entry.url } : {}),
-			health: entry
-				? (this.#health.get(app) ?? "unconfigured")
-				: this.vault.isLocked(app)
-					? "locked"
-					: "unconfigured",
-			hasPanels: def.hasPanels,
-			...(def.preview ? { preview: def.preview } : {}),
-			credentialFields: def.credentialFields.map((f: CredField) => ({ ...f })),
-			...(entry ? { fields: this.#plainFields(app) } : {}),
-			persistent: this.vault.persistent,
-		};
+	#client(): Client<typeof FactoryService> | null {
+		const t = this.transport();
+		return t ? createClient(FactoryService, t) : null;
 	}
 
+	#remember(info: FactoryAppInfo): FactoryAppInfo {
+		this.#apps.set(info.id, info);
+		return info;
+	}
+
+	/** Every app; throws `DAEMON_DOWN` when the daemon does not answer. */
 	async list(): Promise<FactoryAppInfo[]> {
-		return (Object.keys(this.apps) as FactoryAppId[]).map((a) => this.#info(a));
-	}
-
-	/** The configured URL and SSO origin of an app (used by the factory view). */
-	appUrls(app: FactoryAppId): { url: string; ssoOrigin?: string } | undefined {
-		const e = this.vault.get(app);
-		if (!e) return undefined;
-		const sso = e.fields["ssoOrigin"]?.reveal();
-		// The app's own UI, when it is not served at the API's URL (ItsAPlan).
-		const ui = e.fields["appUrl"]?.reveal();
-		return { url: ui || e.url, ...(sso ? { ssoOrigin: sso } : {}) };
-	}
-
-	#secrets(app: FactoryAppId): string[] {
-		const e = this.vault.get(app);
-		if (!e) return [];
-		const secret = this.apps[app].credentialFields
-			.filter((f) => f.secret)
-			.map((f) => e.fields[f.key]?.reveal() ?? "")
-			.filter(Boolean);
-		const plain = Object.values(this.#plainFields(app));
-		return secretForms(secret, plain);
-	}
-
-	/** Every configured app's secrets in every encoded form (the agent transcript scrubber). */
-	allSecrets(): string[] {
-		const out = new Set<string>();
-		for (const app of Object.keys(this.apps) as FactoryAppId[])
-			for (const f of this.#secrets(app)) out.add(f);
-		return [...out];
-	}
-
-	#plainFields(app: FactoryAppId): Record<string, string> {
-		const e = this.vault.get(app);
-		const out: Record<string, string> = {};
-		if (!e) return out;
-		for (const f of this.apps[app].credentialFields)
-			if (!f.secret && e.fields[f.key])
-				out[f.key] = e.fields[f.key]?.reveal() ?? "";
-		return out;
-	}
-
-	#fail(secrets: string[], e: unknown): { code: string; message: string } {
-		const raw = e instanceof Error ? e.message : String(e);
-		const code =
-			e instanceof ParamError
-				? "bad_params"
-				: e instanceof UnsupportedError
-					? "unsupported"
-					: classifyError(e);
-		return { code, message: redact(raw, secrets) };
-	}
-
-	#dispose(app: FactoryAppId): void {
-		this.#gen.set(app, (this.#gen.get(app) ?? 0) + 1);
-		const building = this.#building.get(app);
-		this.#building.delete(app);
-		const closeLive = (live: Live) => {
-			try {
-				(live.adapter as { detach?: () => void }).detach?.();
-			} catch {
-				// best effort
-			}
-			live.dispose();
-		};
-		const live = this.#live.get(app);
-		this.#live.delete(app);
-		if (live) closeLive(live);
-		// A build still in flight is discarded by its generation check.
-		void building?.then(
-			(l) => {
-				if (this.#live.get(app) !== l) closeLive(l);
-			},
-			() => undefined,
-		);
-	}
-
-	/** Single-flight: concurrent callers share one build; a stale build is discarded. */
-	#adapter(app: FactoryAppId): Promise<Live> {
-		const existing = this.#live.get(app);
-		if (existing) return Promise.resolve(existing);
-		const inflight = this.#building.get(app);
-		if (inflight) return inflight;
-		const gen = this.#gen.get(app) ?? 0;
-		const p = this.#build(app).then(async (live) => {
-			if ((this.#gen.get(app) ?? 0) !== gen) {
-				try {
-					(live.adapter as { detach?: () => void }).detach?.();
-				} catch {
-					// best effort
-				}
-				live.dispose();
-				throw new Error("configuration changed while connecting");
-			}
-			this.#live.set(app, live);
-			this.#building.delete(app);
-			return live;
-		});
-		this.#building.set(app, p);
-		p.catch(() => {
-			if (this.#building.get(app) === p) this.#building.delete(app);
-		});
-		return p;
-	}
-
-	async #build(app: FactoryAppId): Promise<Live> {
-		const def = this.apps[app];
-		const entry = this.vault.get(app);
-		if (!entry || !def.adapter) throw new Error("not configured");
-		const secrets = this.#secrets(app);
-		const Ctor = await def.adapter();
-		const raw: Record<string, string> = {};
-		for (const [k, s] of Object.entries(entry.fields)) raw[k] = s.reveal();
-		const config = def.configFrom(entry.url, raw);
-		let adapter: Adapter | undefined;
-		// One child scope per app: disposing it tears the adapter service down.
-		const scope = this.ctx.plugin((child: Context) => {
-			adapter = new Ctor(child, config);
-		});
+		const c = this.#client();
+		if (!c) throw new Error(DAEMON_DOWN);
+		let r: Awaited<ReturnType<typeof c.listFactoryApps>>;
 		try {
-			await scope;
-		} catch (e) {
-			scope.dispose();
-			throw e;
+			r = await c.listFactoryApps({}, { timeoutMs: QUERY_TIMEOUT_MS });
+		} catch {
+			throw new Error(DAEMON_DOWN);
 		}
-		if (!adapter) throw new Error("adapter failed to start");
-		return { adapter, secrets, dispose: () => scope.dispose() };
+		this.#apps.clear();
+		return r.apps.map((a) => this.#remember(appInfo(a)));
+	}
+
+	/**
+	 * The app's own UI (its App URL where set, as Plane's) and its SSO origin, for
+	 * the embedded views; from the last list, configure or test.
+	 */
+	appUrls(app: FactoryAppId): { url: string; ssoOrigin?: string } | undefined {
+		const info = this.#apps.get(app);
+		if (!info?.url) return undefined;
+		const ui = info.fields?.["appUrl"];
+		const sso = info.fields?.["ssoOrigin"];
+		return { url: ui || info.url, ...(sso ? { ssoOrigin: sso } : {}) };
+	}
+
+	/** Main never holds a factory secret: the daemon scrubs its own errors. */
+	allSecrets(): string[] {
+		return [];
 	}
 
 	async configure(
@@ -263,176 +140,91 @@ export class FactoryHost {
 		url: string,
 		fields: Record<string, string>,
 	): Promise<IpcResult<FactoryAppInfo>> {
-		const def = this.apps[app] as FactoryAppDef | undefined;
-		if (!def) return { ok: false, code: "unknown_app", message: "Unknown app" };
+		const c = this.#client();
+		if (!c) return fail("daemon_down", DAEMON_DOWN);
 		try {
-			const u = new URL(url);
-			if (u.protocol !== "http:" && u.protocol !== "https:") throw new Error();
-			if (u.username || u.password)
-				return {
-					ok: false,
-					code: "invalid_url",
-					message: "Put credentials in the credential fields, not in the URL",
-				};
+			const r = await c.configureFactoryApp(
+				{ app, url, fields },
+				{ timeoutMs: QUERY_TIMEOUT_MS },
+			);
+			if (r.result.case === "app")
+				return { ok: true, value: this.#remember(appInfo(r.result.value)) };
+			if (r.result.case === "error")
+				return fail(r.result.value.code, r.result.value.message);
+			return fail("internal", "The daemon gave no answer");
 		} catch {
-			return {
-				ok: false,
-				code: "invalid_url",
-				message: "Enter an http(s) URL",
-			};
+			return fail("daemon_down", DAEMON_DOWN);
 		}
-		const appUrl = fields["appUrl"];
-		if (typeof appUrl === "string" && appUrl.length > 0) {
-			let ok = false;
-			try {
-				const u = new URL(appUrl);
-				ok =
-					(u.protocol === "http:" || u.protocol === "https:") &&
-					!u.username &&
-					!u.password;
-			} catch {
-				// not a URL
-			}
-			if (!ok)
-				return {
-					ok: false,
-					code: "invalid_url",
-					message: "Enter an http(s) App URL",
-				};
-		}
-		const allowed = new Set(def.credentialFields.map((f) => f.key));
-		const clean: Record<string, string> = {};
-		for (const [k, v] of Object.entries(fields))
-			if (allowed.has(k) && typeof v === "string" && v.length > 0) clean[k] = v;
-		// Reconfiguring keeps a stored value for any field left blank, except that a
-		// secret is never carried to a different origin: it must be entered again.
-		const stored = this.vault.get(app);
-		const sameOrigin =
-			stored !== undefined && originOf(stored.url) === originOf(url);
-		if (stored)
-			for (const f of def.credentialFields) {
-				if (f.secret && !sameOrigin) continue;
-				const kept = stored.fields[f.key]?.reveal();
-				if (!clean[f.key] && kept) clean[f.key] = kept;
-			}
-		const missing = def.credentialFields.find((f) => f.secret && !clean[f.key]);
-		if (missing)
-			return {
-				ok: false,
-				code: "bad_fields",
-				message:
-					stored && !sameOrigin
-						? `${missing.label} is required again: the URL points to a different origin`
-						: `${missing.label} is required`,
-			};
-		this.#dispose(app);
-		this.vault.set(app, url, clean);
-		this.#health.delete(app);
-		const info = await this.test(app);
-		return { ok: true, value: info };
 	}
 
-	async test(app: FactoryAppId): Promise<FactoryAppInfo> {
-		const def = this.apps[app];
-		if (!this.vault.get(app)) {
-			this.#health.delete(app);
-			return this.#info(app);
-		}
-		const gen = this.#gen.get(app) ?? 0;
-		let health: FactoryHealth = "ok";
+	async test(app: FactoryAppId): Promise<IpcResult<FactoryAppInfo>> {
+		const c = this.#client();
+		if (!c) return fail("daemon_down", DAEMON_DOWN);
 		try {
-			if (!def.adapter) {
-				// No adapter (SigNoz): its probe, if it has one, says whether it answers.
-				const url = this.vault.get(app)?.url ?? "";
-				if (def.probe) await this.#timed(def.probe(url));
-			} else {
-				const live = await this.#adapter(app);
-				await this.#timed(
-					OPS[app]["health"]?.run(live.adapter, undefined as never, {
-						fields: this.#plainFields(app),
-					}),
-				);
-			}
-		} catch (e) {
-			health =
-				classifyError(e) === "auth_failed" ? "auth_failed" : "unreachable";
+			const r = await c.testFactoryApp(
+				{ app },
+				{ timeoutMs: QUERY_TIMEOUT_MS },
+			);
+			if (r.result.case === "app")
+				return { ok: true, value: this.#remember(appInfo(r.result.value)) };
+			if (r.result.case === "error")
+				return fail(r.result.value.code, r.result.value.message);
+			return fail("internal", "The daemon gave no answer");
+		} catch {
+			return fail("daemon_down", DAEMON_DOWN);
 		}
-		// A newer configure/remove superseded this probe: do not write its result.
-		if ((this.#gen.get(app) ?? 0) === gen) this.#health.set(app, health);
-		return this.#info(app);
 	}
 
 	async remove(app: FactoryAppId): Promise<void> {
-		this.#dispose(app);
-		this.vault.remove(app);
-		this.#health.delete(app);
-	}
-
-	#timed<T>(p: Promise<T> | undefined): Promise<T> {
-		return new Promise<T>((resolve, reject) => {
-			const t = setTimeout(
-				() =>
-					reject(
-						Object.assign(new Error("request timed out"), {
-							name: "TimeoutError",
-						}),
-					),
-				QUERY_TIMEOUT_MS,
-			);
-			(p ?? Promise.reject(new Error("unsupported"))).then(
-				(v) => {
-					clearTimeout(t);
-					resolve(v);
-				},
-				(e) => {
-					clearTimeout(t);
-					reject(e);
-				},
-			);
-		});
+		this.#apps.delete(app);
+		const c = this.#client();
+		if (!c) throw new Error(DAEMON_DOWN);
+		await c.removeFactoryApp({ app }, { timeoutMs: QUERY_TIMEOUT_MS });
 	}
 
 	async query(q: FactoryQuery): Promise<IpcResult<unknown>> {
-		const ops = Object.hasOwn(OPS, q?.app ?? "") ? OPS[q.app] : undefined;
-		if (!ops) return { ok: false, code: "unknown_app", message: "Unknown app" };
-		const op =
-			typeof q.op === "string" && Object.hasOwn(ops, q.op)
-				? ops[q.op]
-				: undefined;
-		if (!op)
-			return {
-				ok: false,
-				code: "unknown_op",
-				message: `Unknown operation: ${String(q.op).slice(0, 40)}`,
-			};
-		const parsed = op.params.safeParse(q.params ?? {});
-		if (!parsed.success)
-			return {
-				ok: false,
-				code: "bad_params",
-				message: parsed.error.issues
-					.map((i) => `${i.path.join(".") || "params"}: ${i.message}`)
-					.join("; "),
-			};
-		if (!this.vault.get(q.app))
-			return {
-				ok: false,
-				code: "unconfigured",
-				message: "This app is not configured yet",
-			};
-		// Snapshot before any await: a reconfigure mid-flight must not change
-		// which secrets this query's error message is scrubbed of.
-		const secrets = this.#secrets(q.app);
-		const fields = this.#plainFields(q.app);
+		if (!isFactoryApp(q?.app)) return fail("unknown_app", "Unknown app");
+		const c = this.#client();
+		if (!c) return fail("daemon_down", DAEMON_DOWN);
+		let paramsJson: string;
 		try {
-			const live = await this.#adapter(q.app);
-			secrets.push(...live.secrets);
-			const value = await this.#timed(
-				op.run(live.adapter, parsed.data as never, { fields }),
-			);
-			return { ok: true, value };
-		} catch (e) {
-			return { ok: false, ...this.#fail(secrets, e) };
+			paramsJson = JSON.stringify(q.params ?? {});
+		} catch {
+			return fail("bad_params", "params: not JSON");
 		}
+		try {
+			const r = await c.queryFactory(
+				{ app: q.app, op: String(q.op), paramsJson },
+				{ timeoutMs: QUERY_TIMEOUT_MS },
+			);
+			if (r.result.case === "valueJson")
+				return { ok: true, value: JSON.parse(r.result.value) };
+			if (r.result.case === "error")
+				return fail(r.result.value.code, r.result.value.message);
+			return fail("internal", "The daemon gave no answer");
+		} catch {
+			return fail("daemon_down", DAEMON_DOWN);
+		}
+	}
+
+	/**
+	 * Move the factory credentials the TypeScript vault kept before 0.2 into the
+	 * daemon (§50 §12, "Migration from Electron"). An entry leaves the vault only
+	 * once the daemon has stored it; a failure keeps it for the next attempt.
+	 */
+	async importLegacy(vault: Vault): Promise<number> {
+		let moved = 0;
+		for (const app of FACTORY_APP_IDS) {
+			const entry = vault.get(app);
+			if (!entry) continue;
+			const fields: Record<string, string> = {};
+			for (const [k, s] of Object.entries(entry.fields)) fields[k] = s.reveal();
+			const r = await this.configure(app, entry.url, fields);
+			if (r.ok) {
+				vault.remove(app);
+				moved++;
+			}
+		}
+		return moved;
 	}
 }

@@ -4,6 +4,10 @@
 //	corpus-go generate -address temporal-frontend:7233 -namespace corpus-1 -out histories/go
 //	corpus-go export   -address ... -namespace corpus-1 -out histories/ts -scenarios hello,memo -prefix corpus-ts-
 //
+// TEMPORAL_API_KEY, when set, is sent as `authorization: Bearer <key>` on
+// every call, in plain text (the Loams gateway's API keys, X1.R5; its
+// compose profile has no TLS on the compose network). Unset, nothing changes.
+//
 // generate runs a worker for the scenarios package and drives each scenario
 // (signals, queries, cancels, updates, resets) with the fixed workflow ID
 // corpus-go-<scenario>, then exports every run of that ID as
@@ -68,7 +72,7 @@ func main() {
 	if err := ensureNamespace(ctx, *address, *namespace, !*noSearchAttribute); err != nil {
 		log.Fatalf("corpus: namespace %s: %v", *namespace, err)
 	}
-	c, err := client.Dial(client.Options{HostPort: *address, Namespace: *namespace})
+	c, err := client.Dial(withAPIKey(client.Options{HostPort: *address, Namespace: *namespace}))
 	if err != nil {
 		log.Fatalf("corpus: dial: %v", err)
 	}
@@ -96,6 +100,24 @@ func main() {
 	}
 }
 
+// bearer sends TEMPORAL_API_KEY as a bearer token (not
+// client.NewAPIKeyStaticCredentials, which also turns TLS on).
+type bearer string
+
+func (b bearer) GetHeaders(context.Context) (map[string]string, error) {
+	return map[string]string{"authorization": "Bearer " + string(b)}, nil
+}
+
+// withAPIKey sets the bearer header provider when TEMPORAL_API_KEY is set.
+// The SDK does not export the provider's interface type at v1.49.0, so the
+// field is assigned here rather than returned.
+func withAPIKey(o client.Options) client.Options {
+	if k := os.Getenv("TEMPORAL_API_KEY"); k != "" {
+		o.HeadersProvider = bearer(k)
+	}
+	return o
+}
+
 func pick(only string) []scenarios.Scenario {
 	if only == "" {
 		return scenarios.All
@@ -116,7 +138,7 @@ func pick(only string) []scenarios.Scenario {
 // ensureNamespace registers the namespace (72 h retention, DX1 R0.9) and the
 // corpus's custom search attribute, both idempotently.
 func ensureNamespace(ctx context.Context, address, ns string, searchAttribute bool) error {
-	c, err := client.Dial(client.Options{HostPort: address})
+	c, err := client.Dial(withAPIKey(client.Options{HostPort: address}))
 	if err != nil {
 		return err
 	}
