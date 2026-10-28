@@ -217,7 +217,9 @@ services:
       image: ${AIRFLOW_IMAGE:?pass conformance/compute/pins.env with --env-file}
       restart: unless-stopped
       environment: &airflow-env
-        _PIP_ADDITIONAL_REQUIREMENTS: apache-airflow-providers-edge3==${AIRFLOW_EDGE3:?pass conformance/compute/pins.env with --env-file}
+        # edge3, and s3fs for the s3:// ObjectStoragePath of the XCom backend
+        # (not in the image's extras; the constraints pin its version; T6.R12).
+        _PIP_ADDITIONAL_REQUIREMENTS: apache-airflow-providers-edge3==${AIRFLOW_EDGE3:?pass conformance/compute/pins.env with --env-file} s3fs
         PIP_CONSTRAINT: ${AIRFLOW_CONSTRAINTS:?pass conformance/compute/pins.env with --env-file}
         AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER:-airflow}:${AIRFLOW_DB_PASSWORD:-airflow}@${LOAMS_PG_HOST:-compute1}:${LOAMS_PG_PORT:-55433}/airflow
         AIRFLOW__CORE__EXECUTOR: ${AIRFLOW_EXECUTOR:-airflow.providers.edge3.executors.EdgeExecutor}
