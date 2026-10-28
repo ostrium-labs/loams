@@ -216,6 +216,12 @@ licence = "MIT"
 source = "https://github.com/pdm-project/pdm/blob/2.29.2/LICENSE"
 resolve = "github:pdm-project/pdm"
 
+[PIP_GROUPS]
+value = "25.2"
+licence = "MIT"
+source = "https://github.com/pypa/pip/blob/25.2/LICENSE.txt"
+resolve = "github:pypa/pip"
+
 [JEST_JUNIT]
 value = "17.0.0"
 licence = "Apache-2.0"
