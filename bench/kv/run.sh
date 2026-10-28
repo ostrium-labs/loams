@@ -47,9 +47,9 @@ for ((i = 0; i < shards; i++)); do
   dir=$DATA/$name/shard$i
   mkdir -p "$dir"
   case $store in
-    memory) section=$'kind = "memory"\nname = "bq1-'"$name-$i"'"' ;;
-    embedded) section=$'kind = "embedded"\npath = "'"$dir"'/resp.redb"\nkeyspace = "kv"' ;;
-    tikv) section=$'kind = "tikv"\npd = ["'"$PD"'"]\nkeyspace = "'"$KEYSPACE"'"\nroot = "bq1-'"$name-$i-$$"'"' ;;
+    memory) section=$(printf 'kind = "memory"\nname = "bq1-%s-%s"' "$name" "$i") ;;
+    embedded) section=$(printf 'kind = "embedded"\npath = "%s/resp.redb"\nkeyspace = "kv"' "$dir") ;;
+    tikv) section=$(printf 'kind = "tikv"\npd = ["%s"]\nkeyspace = "%s"\nroot = "bq1-%s-%s-%s"' "$PD" "$KEYSPACE" "$name" "$i" "$$") ;;
     *) echo "unknown store $store" >&2; exit 2 ;;
   esac
   cat >"$dir/resp.toml" <<EOF

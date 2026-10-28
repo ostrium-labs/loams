@@ -18,7 +18,7 @@ common=(--duration "$D" --warmup 3 --keys 100000 --value-size 64)
 
 case $phase in
   single) # A: one gateway, 6 cores, memory and embedded stores
-    for store in memory embedded; do
+    for store in ${STORES:-memory embedded}; do
       $R "single-$store-ping-p1" "$store" 1 0-5 6-11 "${common[@]}" --conns 256 --pipeline 1 --threads 6 --ping
       $R "single-$store-get-p1" "$store" 1 0-5 6-11 "${common[@]}" --conns 256 --pipeline 1 --threads 6 --prefill
       $R "single-$store-get-p16" "$store" 1 0-5 6-11 "${common[@]}" --conns 256 --pipeline 16 --threads 6 --prefill
@@ -27,7 +27,7 @@ case $phase in
     done
     ;;
   scale) # B: 1, 2, 4 shards, one E-core each, 90% GET / 10% SET
-    for store in memory embedded; do
+    for store in ${STORES:-memory embedded}; do
       $R "scale-$store-1" "$store" 1 4 0-3,8-11 "${common[@]}" --conns 64 --pipeline 1 --threads 8 --set-ratio 0.1 --prefill
       $R "scale-$store-2" "$store" 2 4/5 0-3,8-11 "${common[@]}" --conns 128 --pipeline 1 --threads 8 --set-ratio 0.1 --prefill
       $R "scale-$store-4" "$store" 4 4/5/6/7 0-3,8-11 "${common[@]}" --conns 256 --pipeline 1 --threads 8 --set-ratio 0.1 --prefill
