@@ -9,6 +9,9 @@
 
 use serde::{Deserialize, Serialize};
 
+mod task;
+pub use task::{Task, TaskBudget, TaskError, TaskState};
+
 /// A grant identifying the holder and fencing epoch of one lease acquisition.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct LeaseToken {
