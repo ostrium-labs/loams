@@ -337,6 +337,30 @@ impl Entitlements {
         self.value_of(&e).await
     }
 
+    /// The entitlement an OpenMeter path names (`entitlementIdOrFeatureKey`):
+    /// `subject`'s entitlement to that feature, or the entitlement with that
+    /// id if it is `subject`'s.
+    pub async fn resolve(
+        &self,
+        caller: &Caller,
+        subject_key: &str,
+        id_or_feature: &str,
+    ) -> Result<Entitlement> {
+        let subject = subject(subject_key)?;
+        self.require_view(caller, &subject).await?;
+        if let Ok(f) = FeatureKey::new(id_or_feature)
+            && let Some(e) = self.store.entitlement_for(&subject, &f).await?
+        {
+            return Ok(e);
+        }
+        let id = EntitlementId::new(id_or_feature)
+            .map_err(|e| MeterError::invalid("entitlementIdOrFeatureKey", e.to_string()))?;
+        match self.store.entitlement(&id).await? {
+            Some(e) if e.subject == subject => Ok(e),
+            _ => Err(MeterError::not_found("entitlement", id_or_feature)),
+        }
+    }
+
     /// `CheckAccess` (batch). Each subject is authorized once.
     pub async fn check_access(
         &self,

@@ -43,6 +43,11 @@
           "api/console/openapi.json",
           "docs/api/route-map.md"
         ],
+        "loams-flink": [
+          "deploy/flink/compose/config.yaml",
+          "deploy/flink/connector-jars.toml",
+          "deploy/flink/k8s/config.yaml"
+        ],
         "loams-gateway": [
           "deploy/pgdog/compose.yaml",
           "deploy/release/engines/**"

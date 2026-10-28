@@ -20,6 +20,11 @@ temporal = ["dep:loams-temporal-frontend"]
 # The Spark Connect module (design 68 D1263, design 81 R8; SP-a D1992): the
 # Spark Connect proxy of `loams-spark` on its own listener.
 spark = ["dep:loams-spark"]
+# The Redis module (design 77 §10, D1646; plan KV2 Task 2): its own
+# listener and Deployment, on the embedded or in-memory store.
+resp = ["dep:loams-resp"]
+# The Redis module on TiKV too (the `tikv` profile).
+resp-tikv = ["resp", "loams-resp/tikv"]
 
 [dependencies]
 async-trait.workspace = true
@@ -29,6 +34,7 @@ loams-temporal-frontend = { path = "../loams-temporal-frontend", optional = true
 # The dependency runs one way: the gate names no product (D202, D551).
 loams-meter-gate.workspace = true
 loams-spark = { path = "../loams-spark", optional = true }
+loams-resp = { path = "../loams-resp", optional = true }
 hex.workspace = true
 http-body-util = "0.1"
 hyper = { version = "1", features = ["server", "http1"] }

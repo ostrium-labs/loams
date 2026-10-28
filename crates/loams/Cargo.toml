@@ -100,6 +100,9 @@ loams-confluent.workspace = true
 loams-risingwave.workspace = true
 # `loams spark` (design 81 SP-b, preview).
 loams-spark = { workspace = true, optional = true }
+# `loams flink …` (design 81, D1989): the managed Flink SQL client. Feature
+# `flink`, off by default.
+loams-flink = { workspace = true, optional = true }
 # Loams Postgres's control plane: the `loams pg-control` role (feature
 # `postgres`, PG2 Task 9, design §46 §6.1), and the Neon clients it is
 # configured with. Never in the default build (`pg_control.rs`'s
@@ -175,6 +178,8 @@ qdrant = ["dep:loams-qdrant"]
 # The qdrant-edge HNSW engine for hot artifacts (M1.3); without it the hot
 # tier builds only when `ServerConfig.hnsw_engine` is set.
 hnsw = ["loams-hot/hnsw"]
+# `loams flink …`, the managed Flink SQL client (design 81, D1989; preview).
+flink = ["dep:loams-flink"]
 # Durable execution (D1, design §21): the embedded Resonate server on SQLite,
 # on 127.0.0.1:8001 (--durable-*). Opt-in (owner ruling O1): toggling it
 # rebuilds about 480 crates. Release builds, CI's durable jobs and the Loams
