@@ -781,7 +781,7 @@ export function GitActions({
   // The palette asks for a dialog (T24-6): the same confirmation as the toolbar's.
   const requestNonce = request?.nonce;
   const requestAction = request?.action;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: a new nonce is the trigger.
+  // oxlint-disable-next-line react/exhaustive-deps -- a new nonce is the trigger.
   useEffect(() => {
     if (requestAction) open(requestAction);
   }, [requestNonce]);

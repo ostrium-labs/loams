@@ -1,8 +1,9 @@
 # Kafka
 
 The native Kafka connector (`loams-connector-kafka`, CN2 Task 9). The same
-code also serves [Redpanda](redpanda.md) and
-[Azure Event Hubs](azure-event-hubs.md) as target profiles.
+code also serves [Redpanda](redpanda.md),
+[Azure Event Hubs](azure-event-hubs.md) and
+[Confluent Cloud](confluent-cloud.md) as target profiles.
 
 ## Tested against
 
@@ -32,6 +33,36 @@ OpenSSL 3.6 (vendored), zlib and zstd. Every compression codec Kafka uses
   `<topic>/<partition>/<offset>`. The record key becomes the `partitionkey`
   extension, or `loamskeyb64` when the key is not UTF-8.
 
+### Debezium topics
+
+With `format: debezium-json` or `format: debezium-avro` (CC1 Task 3,
+D1822) the source reads change events written by a user's Debezium
+connectors and emits the same `change` events the Loams Postgres and MySQL
+CDC sources emit, so existing Debezium topics can feed collections and
+tables with no Loams CDC connector against the database.
+
+* `type` `io.loams.dev.flow.kafka.change.v1`, `subject` and `source` the
+  table (`<schema>.<table>` or `<db>.<table>` from Debezium's `source`
+  block), `id` `<topic>/<partition>/<offset>`.
+* `data` is `{table, op, key, before, after}`. `key` is the record key
+  (Debezium's key struct), or the row's `debezium.key_fields` when set.
+* `loamsop` is Debezium's `op` (`c`, `u`, `d`, `r`, and `t` for a
+  truncate). `loamslsn` comes from `source`: Postgres' `lsn` (16 hex digits
+  and an ordinal), MySQL's `file`/`pos`/`row`, Oracle's `scn`, SQL Server's
+  `change_lsn`. `time` is the event's `ts_ms`.
+* JSON may carry the converter's `{schema, payload}` wrapper or not. Avro is
+  the Confluent wire format, decoded with the writer schema from
+  `schema_registry` (required for `debezium-avro`).
+* A record from Debezium's schema-change topic becomes a `schema-change`
+  event whose `data` is Debezium's payload as it is.
+* A tombstone (a key and no value) is a delete of that key
+  (`debezium.tombstones: delete`, the default) or is skipped (`drop`).
+* Any other record goes to the DLQ as poison, with its
+  `<topic>/<partition>@<offset>`, and the source moves on. A registry that
+  cannot be reached is retried, never skipped.
+
+`format` applies to the source; a sink refuses anything but `plain`.
+
 ## Sink
 
 * `delivery: effectively_once` (the default) uses the idempotent producer
@@ -57,6 +88,23 @@ are names of secrets, never the secrets themselves. SASL mechanisms:
 `tls.key_pem`. OAUTHBEARER (and with it AWS MSK IAM) is not supported by the
 native connector yet. The consumer group is `group_id`, else
 `group_id_prefix`, else `loams-<ns>-<instance>`.
+
+CC1 Task 2 (D1822) added:
+
+* `sasl.username_secret`: the SASL username as a secret's name, in place of
+  `sasl.username` (exactly one of the two). Confluent Cloud's API key id
+  arrives this way.
+* `brokers` may carry a listener scheme per entry (`SASL_SSL://`, `SSL://`,
+  `PLAINTEXT://`, `SASL_PLAINTEXT://`, any case), as Confluent Cloud's
+  bootstrap endpoint sometimes does. It is removed.
+* `rate_limit: { bytes_per_sec, requests_per_sec }`: the instance's rates,
+  enforced by the SDK's rate limiter across its splits. Absent means
+  unlimited.
+* `schema_registry.basic_auth: { username | username_secret, password }`:
+  HTTP Basic credentials for the registry, `password` a secret's name.
+
+[Confluent Cloud](confluent-cloud.md) runs on this connector as a target
+profile.
 
 ## Narrowings and fallback
 

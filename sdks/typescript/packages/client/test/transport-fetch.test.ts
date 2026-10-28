@@ -1,7 +1,7 @@
 // A custom `fetch` reaches the transport, and Cloudflare Workers gets
 // `redirect: "manual"` (connect-web's `"error"` is rejected by workerd).
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { Loams } from '../src/loams.js';
 import {
   isWorkerd,

@@ -1,0 +1,1 @@
+SELECT d9 + d18 FROM t24d ORDER BY id

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+<testsuite name="corpus">
+<testcase classname="corpus" name="corpus_replays_go"/>
+<testcase classname="corpus" name="corpus_replays_ts"/>
+</testsuite>
+</testsuites>

@@ -31,7 +31,7 @@ export function isLocalPath(p: unknown): p is string {
 		typeof p === "string" &&
 		p.length > 0 &&
 		p.length <= MAX_PATH &&
-		// biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what is refused
+		// oxlint-disable-next-line no-control-regex -- control characters are what is refused
 		!/[\u0000-\u001f\u007f]/.test(p) &&
 		(p.startsWith("/") || /^[A-Za-z]:[\\/]/.test(p))
 	);

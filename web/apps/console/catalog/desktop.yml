@@ -15,6 +15,7 @@
       name: '@loams/plugin-data-studio'
     - id: factory
       name: '@loams/plugin-factory'
+      inject: [desktop, platform, router, slots, transport]
     - id: durable
       name: '@loams/plugin-durable'
     - id: connectors

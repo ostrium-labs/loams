@@ -4,6 +4,8 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use loams_meter_gate::entitle::{Entitlements, features};
+use loams_meter_gate::gate::Refusal;
 use rustls::pki_types::ServerName;
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -15,6 +17,7 @@ use crate::config::TlsMode;
 use crate::io::Prefixed;
 use crate::observe::{ConnectionObserver, Path};
 use crate::reload::RouteRx;
+use crate::risingwave::{RwEndpoint, RwFrontDoor};
 use crate::routes::{PgNamespace, RouteTable};
 use crate::sniff::SniffError;
 use crate::sniff::pg::{Opening, fatal_error, sniff_opening};
@@ -70,6 +73,15 @@ pub enum FrontError {
     /// The handshake deadline passed (D1020).
     #[error("handshake timed out")]
     Timeout,
+    /// A RisingWave client was not let in (design 81, D1957).
+    #[error("risingwave: {0}")]
+    RisingWave(String),
+    /// The meter's gate refused the namespace's org (design §63 §10.2):
+    /// new connections are refused at the TLS alert (`access_denied`); the
+    /// client is in TLS by then, so no Postgres error can be sent in splice
+    /// mode.
+    #[error("{0}")]
+    Entitlement(Refusal),
     /// A socket error.
     #[error(transparent)]
     Io(#[from] std::io::Error),
@@ -94,6 +106,13 @@ enum Ready {
         upstream: Box<tokio_rustls::client::TlsStream<TcpStream>>,
         ns: Arc<PgNamespace>,
     },
+    /// A RisingWave instance: TLS ended at the gateway, the client
+    /// checked against Loams, the gateway logged in upstream.
+    RisingWave {
+        client: Box<tokio_rustls::server::TlsStream<Prefixed<TcpStream>>>,
+        upstream: TcpStream,
+        ep: Arc<RwEndpoint>,
+    },
     /// Nothing to relay (a cancel request was handled).
     Done,
 }
@@ -109,6 +128,8 @@ pub struct PgFrontDoor {
     upstream_tls: Option<Arc<rustls::ClientConfig>>,
     ejections: Ejections,
     observer: Arc<dyn ConnectionObserver>,
+    risingwave: Option<Arc<RwFrontDoor>>,
+    entitlements: Entitlements,
 }
 
 /// What [`PgFrontDoor::new`] takes.
@@ -120,6 +141,10 @@ pub struct FrontDoorOptions {
     pub server_certs: ServerCerts,
     pub upstream_tls: Option<Arc<rustls::ClientConfig>>,
     pub observer: Arc<dyn ConnectionObserver>,
+    /// The RisingWave module; `None` refuses RisingWave routes.
+    pub risingwave: Option<Arc<RwFrontDoor>>,
+    /// The meter's gate, asked on route resolution (`NoGate` by default).
+    pub entitlements: Entitlements,
 }
 
 impl PgFrontDoor {
@@ -133,6 +158,8 @@ impl PgFrontDoor {
             upstream_tls: options.upstream_tls,
             ejections: Ejections::default(),
             observer: options.observer,
+            entitlements: options.entitlements,
+            risingwave: options.risingwave,
         }
     }
 
@@ -156,7 +183,7 @@ impl PgFrontDoor {
                 return;
             }
         };
-        let (ns, path, result) = match ready {
+        let (name, path, result) = match ready {
             Ready::Done => return,
             Ready::Splice {
                 mut client,
@@ -167,7 +194,7 @@ impl PgFrontDoor {
                 keepalive(&upstream);
                 self.observer.on_open(&ns.name, Path::Spliced);
                 let r = tokio::io::copy_bidirectional(&mut client, &mut upstream).await;
-                (ns, Path::Spliced, r)
+                (ns.name.clone(), Path::Spliced, r)
             }
             Ready::Terminate {
                 mut client,
@@ -178,19 +205,30 @@ impl PgFrontDoor {
                 keepalive(upstream.get_ref().0);
                 self.observer.on_open(&ns.name, Path::Terminated);
                 let r = tokio::io::copy_bidirectional(&mut *client, &mut *upstream).await;
-                (ns, Path::Terminated, r)
+                (ns.name.clone(), Path::Terminated, r)
+            }
+            Ready::RisingWave {
+                mut client,
+                mut upstream,
+                ep,
+            } => {
+                keepalive(client.get_ref().0.get_ref());
+                keepalive(&upstream);
+                self.observer.on_open(&ep.name, Path::Terminated);
+                let r = tokio::io::copy_bidirectional(&mut *client, &mut upstream).await;
+                (ep.name.clone(), Path::Terminated, r)
             }
         };
         let (bytes_in, bytes_out) = match result {
             Ok(counts) => counts,
             Err(e) => {
-                tracing::debug!(?peer, namespace = %ns.name, error = %e, "relay ended with an error");
+                tracing::debug!(?peer, namespace = %name, error = %e, "relay ended with an error");
                 (0, 0)
             }
         };
         self.observer
-            .on_close(&ns.name, bytes_in, bytes_out, started.elapsed());
-        tracing::debug!(?peer, namespace = %ns.name, ?path, bytes_in, bytes_out, "postgres connection closed");
+            .on_close(&name, bytes_in, bytes_out, started.elapsed());
+        tracing::debug!(?peer, namespace = %name, ?path, bytes_in, bytes_out, "postgres connection closed");
     }
 
     async fn handshake(&self, mut client: TcpStream, entry: Entry) -> Result<Ready, FrontError> {
@@ -253,6 +291,16 @@ impl PgFrontDoor {
         table: &RouteTable,
         negotiation: Negotiation,
     ) -> Result<Ready, FrontError> {
+        let rw = match entry {
+            Entry::Dedicated(port) => table.risingwave.by_port(port),
+            Entry::Shared => hello
+                .server_name
+                .as_deref()
+                .and_then(|n| table.risingwave.by_hostname(n)),
+        };
+        if let Some(ep) = rw.cloned() {
+            return self.risingwave(client, hello_bytes, hello, ep).await;
+        }
         let ns = match entry {
             Entry::Dedicated(port) => table.by_port(port),
             Entry::Shared => match &hello.server_name {
@@ -264,6 +312,15 @@ impl PgFrontDoor {
             send_alert(&mut client, alert::UNRECOGNIZED_NAME).await;
             return Err(FrontError::UnknownName(hello.server_name));
         };
+        // Has the namespace's org access to Postgres at all (§63 §10.2)?
+        // A hard-stopped org's new connections end here; open ones run on.
+        if let Err(r) = self
+            .entitlements
+            .check(None, &ns.name, features::PG_COMPUTE, 0)
+        {
+            send_alert(&mut client, alert::ACCESS_DENIED).await;
+            return Err(FrontError::Entitlement(r));
+        }
         let terminate = match (negotiation, self.mode) {
             (Negotiation::Direct, TlsMode::Passthrough) => {
                 send_alert(&mut client, alert::NO_APPLICATION_PROTOCOL).await;
@@ -282,6 +339,44 @@ impl PgFrontDoor {
         } else {
             self.splice(client, hello_bytes, ns).await
         }
+    }
+
+    /// A RisingWave instance (design 81, D1957): TLS ends here with a
+    /// certificate of `[risingwave]`, then [`RwFrontDoor::login`] checks the
+    /// client's Loams credential and logs in upstream.
+    async fn risingwave(
+        &self,
+        mut client: TcpStream,
+        hello_bytes: Vec<u8>,
+        hello: ClientHello,
+        ep: Arc<RwEndpoint>,
+    ) -> Result<Ready, FrontError> {
+        let Some(rw) = self.risingwave.clone() else {
+            send_alert(&mut client, alert::UNRECOGNIZED_NAME).await;
+            return Err(FrontError::UnknownName(hello.server_name));
+        };
+        let name = hello
+            .server_name
+            .clone()
+            .or_else(|| ep.hostnames.first().cloned())
+            .unwrap_or_default();
+        let Some(config) = rw.server_certs.config_for_name(&name) else {
+            send_alert(&mut client, alert::UNRECOGNIZED_NAME).await;
+            return Err(FrontError::NoCertificate(name));
+        };
+        let mut tls = TlsAcceptor::from(config)
+            .accept(Prefixed::new(hello_bytes, client))
+            .await
+            .map_err(FrontError::Tls)?;
+        let upstream = rw
+            .login(&mut tls, &ep)
+            .await
+            .map_err(|e| FrontError::RisingWave(e.to_string()))?;
+        Ok(Ready::RisingWave {
+            client: Box::new(tls),
+            upstream,
+            ep,
+        })
     }
 
     /// TLS stays between the client and PgDog: the gateway sends its own

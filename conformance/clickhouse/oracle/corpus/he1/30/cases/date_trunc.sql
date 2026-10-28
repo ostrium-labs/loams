@@ -1,0 +1,1 @@
+SELECT id, dateTrunc('day', dt), date_trunc('hour', dtz), DATE_TRUNC('month', dt), dateTrunc('week', d), dateTrunc('minute', dt64), dateTrunc('year', d32), dateTrunc('quarter', dny) FROM t30 ORDER BY id

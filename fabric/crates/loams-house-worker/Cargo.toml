@@ -88,6 +88,14 @@ loams-house-lake = { path = "../loams-house-lake" }
 loams-store = { path = "../../../crates/loams-store" }
 # `insert.rs` (HS1 Task 12): a catalog whose commits fail on demand.
 async-trait.workspace = true
+# `engine_reads.rs` (plan HE1 Task 26, R26.9): the Rust engine reads the
+# tables this House writes, compared with chDB's answers. Dev-dependencies
+# only: no binary of this package reaches an engine crate
+# (`engine_crates_stay_apart`).
+loams-house-engine = { path = "../loams-house-engine" }
+loams-house-iceberg = { path = "../loams-house-iceberg" }
+loams-house-formats = { path = "../loams-house-formats" }
+datafusion.workspace = true
 
 [lints]
 workspace = true

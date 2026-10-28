@@ -2,18 +2,24 @@
 //! is refused.
 use std::collections::HashMap;
 
-use loams_web_bridge::{ConfigError, Engine, Plan, ProviderKind, WebBridgeConfig};
+use loams_web_bridge::{ConfigError, ProviderKind, WebBridgeConfig};
 
-const REMOTE_TOML: &str = r#"
-provider = "browser-run"
+const SERVICE_TOML: &str = r#"
+provider = "service"
 
 allowed_domains = ["*.example.com"]
-allowed_domain_sets = ["common-cdns"]
+artifact_dir = "/var/lib/loams/browser"
 
-[browser_run]
-account_id = "0123456789abcdef0123456789abcdef"
-token_secret_ref = "env:cloudflare#api_token"
-plan = "free"
+[service]
+url = "ws://browser:9222/devtools/browser"
+token_secret_ref = "env:browser-token"
+
+[budgets]
+max_concurrent_sessions = 8
+daily_budget_ms = 3600000
+
+[recording]
+enabled = true
 
 [local]
 default_profile = "acme-staging/zulip"
@@ -21,128 +27,103 @@ default_profile = "acme-staging/zulip"
 
 #[test]
 fn a_toml_section_becomes_a_checked_configuration() {
-    let config = WebBridgeConfig::load(REMOTE_TOML).unwrap_or_else(|error| panic!("{error}"));
-    assert_eq!(config.provider, ProviderKind::BrowserRun);
-    assert_eq!(config.browser_run.engine, Engine::Chromium);
-    assert_eq!(config.browser_run.plan, Plan::Free);
+    let config = WebBridgeConfig::load(SERVICE_TOML).unwrap_or_else(|error| panic!("{error}"));
+    assert_eq!(config.provider, ProviderKind::Service);
     assert_eq!(
-        config.browser_run.token_secret_ref.as_deref(),
-        Some("env:cloudflare#api_token")
+        config.service.token_secret_ref.as_deref(),
+        Some("env:browser-token")
     );
+    assert_eq!(config.budgets.max_concurrent_sessions, 8);
+    assert_eq!(
+        config.budgets.daily_budget(),
+        Some(std::time::Duration::from_secs(3600))
+    );
+    assert_eq!(config.budgets.request_timeout_ms, 60_000, "a default");
+    assert!(config.recording.enabled);
     assert_eq!(
         config.local.default_profile.as_deref(),
         Some("acme-staging/zulip")
     );
-
     let egress = config.egress().unwrap_or_else(|error| panic!("{error}"));
     assert!(egress.is_allow_listed());
-    let guardrails = egress.guardrails().unwrap_or_else(|| panic!("guardrails"));
-    assert_eq!(guardrails.allowed_domains, ["*.example.com"]);
-    assert_eq!(guardrails.allowed_domain_sets, ["common-cdns"]);
 }
 
 #[test]
-fn the_environment_names_the_account_and_the_engine_but_never_the_token() {
+fn the_environment_names_the_service_and_a_token_reference_but_never_the_token() {
     let environment: HashMap<&str, &str> = HashMap::from([
+        ("LOAMS_BROWSER_PROVIDER", "service"),
         (
-            "LOAMS_WEB_BROWSER_RUN_ACCOUNT_ID",
-            "abcdef0123456789abcdef0123456789",
+            "LOAMS_BROWSER_SERVICE_URL",
+            "ws://browser.loams.svc.cluster.local:9222/devtools/browser",
         ),
-        ("LOAMS_WEB_BROWSER_RUN_ENGINE", "kitesurf"),
-        (
-            "LOAMS_WEB_BROWSER_RUN_TOKEN_SECRET_REF",
-            "env:cloudflare#api_token",
-        ),
+        ("LOAMS_BROWSER_SERVICE_TOKEN_REF", "env:browser-token"),
+        ("LOAMS_BROWSER_MAX_SESSIONS", "2"),
     ]);
     let mut config = WebBridgeConfig::default();
     config
         .apply_env_from(&|name| environment.get(name).map(|value| (*value).to_string()))
         .unwrap_or_else(|error| panic!("{error}"));
 
+    assert_eq!(config.provider, ProviderKind::Service);
+    assert_eq!(config.budgets.max_concurrent_sessions, 2);
     assert_eq!(
-        config.browser_run.account_id,
-        "abcdef0123456789abcdef0123456789"
-    );
-    assert_eq!(config.browser_run.engine, Engine::Kitesurf);
-    assert_eq!(
-        config.browser_run.token_secret_ref.as_deref(),
-        Some("env:cloudflare#api_token"),
+        config.service.token_secret_ref.as_deref(),
+        Some("env:browser-token"),
         "only a reference, never a token"
     );
-    assert!(
-        environment
-            .keys()
-            .all(|name| !name.to_string().contains("TOKEN_VALUE")),
-        "the environment has no place for a token value"
+    config.validate().unwrap_or_else(|error| panic!("{error}"));
+}
+
+#[test]
+fn the_local_provider_finds_its_binary_in_the_environment() {
+    let mut config = WebBridgeConfig::default();
+    config
+        .apply_env_from(&|name| {
+            (name == "LOAMS_OBSCURA_BIN").then(|| "/opt/obscura/0.2.3/obscura".to_string())
+        })
+        .unwrap_or_else(|error| panic!("{error}"));
+    assert_eq!(config.provider, ProviderKind::Local, "local is the default");
+    assert_eq!(
+        config.local.program(),
+        std::path::PathBuf::from("/opt/obscura/0.2.3/obscura")
     );
 }
 
 #[test]
 fn an_unknown_field_is_a_typo_not_a_silent_default() {
-    let error = WebBridgeConfig::load("provider = \"browser-run\"\nacount-id = \"x\"")
+    let error = WebBridgeConfig::load("provider = \"local\"\nacount-id = \"x\"")
         .err()
         .unwrap_or_else(|| panic!("an unknown field is refused"));
     assert!(matches!(error, ConfigError::Toml(_)), "{error:?}");
 }
 
 #[test]
-fn kitesurf_under_an_allow_list_is_refused_because_guardrails_are_unavailable() {
-    let mut config = WebBridgeConfig::load(REMOTE_TOML).unwrap_or_else(|error| panic!("{error}"));
-    config.browser_run.engine = Engine::Kitesurf;
-    let error = config.validate().err().unwrap_or_else(|| panic!("refused"));
+fn the_removed_cloudflare_sections_are_refused_not_ignored() {
+    for raw in [
+        "provider = \"browser-run\"",
+        "[browser_run]\naccount_id = \"0123456789abcdef0123456789abcdef\"",
+        "allowed_domain_sets = [\"common-cdns\"]",
+    ] {
+        assert!(
+            WebBridgeConfig::load(raw).is_err(),
+            "{raw} configures the removed provider"
+        );
+    }
+}
+
+#[test]
+fn a_service_without_a_token_reference_is_refused_off_loopback() {
+    let error = WebBridgeConfig::load("provider = \"service\"")
+        .err()
+        .unwrap_or_else(|| panic!("the default service url is not loopback"));
     assert!(
         matches!(
             error,
-            ConfigError::Unsupported {
-                field: "browser_run.engine",
-                ..
+            ConfigError::Missing {
+                field: "service.token_secret_ref"
             }
         ),
         "{error:?}"
-    );
-    assert!(error.to_string().contains("guardrails"), "{error}");
-}
-
-#[test]
-fn an_operator_may_accept_an_unenforced_engine_explicitly() {
-    let mut config = WebBridgeConfig::load(REMOTE_TOML).unwrap_or_else(|error| panic!("{error}"));
-    config.browser_run.engine = Engine::Kitesurf;
-    config.allow_unenforced_guardrails = true;
-    config
-        .validate()
-        .unwrap_or_else(|error| panic!("explicitly accepted: {error}"));
-}
-
-#[test]
-fn keep_alive_is_bounded_and_never_combined_with_kitesurf() {
-    let mut config = WebBridgeConfig::load(REMOTE_TOML).unwrap_or_else(|error| panic!("{error}"));
-    config.browser_run.keep_alive_ms = Some(9_999);
-    assert!(config.validate().is_err(), "below Browser Run's floor");
-
-    config.browser_run.keep_alive_ms = Some(600_000);
-    config.validate().unwrap_or_else(|error| panic!("{error}"));
-
-    config.browser_run.engine = Engine::Kitesurf;
-    config.allow_unenforced_guardrails = true;
-    assert!(config.validate().is_err(), "kitesurf takes no keep_alive");
-}
-
-#[test]
-fn the_free_plan_supplies_its_documented_limits() {
-    let config = WebBridgeConfig::load(REMOTE_TOML).unwrap_or_else(|error| panic!("{error}"));
-    let run = &config.browser_run;
-    assert_eq!(run.max_concurrent_sessions(), 3);
-    assert_eq!(
-        run.min_session_interval(),
-        Some(std::time::Duration::from_millis(20_000))
-    );
-    assert_eq!(
-        run.daily_budget(),
-        Some(std::time::Duration::from_millis(600_000))
-    );
-    assert_eq!(
-        run.keep_alive(),
-        Some(std::time::Duration::from_millis(60_000))
     );
 }
 
