@@ -16,6 +16,8 @@ the SDK legs ran the gateway in development mode (memory store, in-process Reson
 [sdks]
 go = "Go SDK v1.49.0"
 ts = "TypeScript SDK 1.24.0"
+# Lane TSDK-python (D2139): "not run" until the sdk-leg (python) job runs and last-run.* is re-spliced.
+python = "Python SDK 1.34.0"
 # Lane TSDK-ruby (D2152): "not yet run" until temporal-sdk-ruby.yml runs and last-run.* is re-spliced.
 ruby = "Ruby SDK 1.9.0"
 

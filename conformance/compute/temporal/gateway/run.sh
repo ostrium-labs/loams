@@ -31,7 +31,7 @@
 #   SDK_LEGS            comma-separated SDKs (default go,ts). Go and TypeScript
 #                       are inline below; every other SDK is legs/<sdk>.sh,
 #                       which defines leg_<sdk>_generate and leg_<sdk>_replay
-#                       (D2152; the other SDK lanes add theirs the same way)
+#                       (D2138; the other SDK lanes add theirs the same way)
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=conformance/compute/lib.sh

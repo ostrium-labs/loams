@@ -14,15 +14,18 @@
 //! node-local socket, and the agent splits the shared host cgroup's CPU by
 //! those reports, never past the cgroup total.
 //!
-//! Not here yet: the kube resolver and inotify final reads (MB2) and Envoy
-//! ALS (MB3, replaced by the gateway, §63 §21).
+//! On Kubernetes, [`pods`] resolves pod cgroups from the node's pods'
+//! `loams.dev/*` labels, and [`final_read`] scans as soon as a cgroup's
+//! `cgroup.events` says it is empty, before the kubelet removes it.
 
 pub mod agent;
 pub mod cgroup;
 pub mod delta;
 pub mod error;
 pub mod event;
+pub mod final_read;
 pub mod host;
+pub mod pods;
 pub mod resolver;
 pub mod sink;
 pub mod spool;

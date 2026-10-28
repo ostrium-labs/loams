@@ -76,6 +76,9 @@ pub async fn read_client_hello<R: AsyncRead + Unpin>(
 /// TLS alert descriptions the gateway sends in clear, before any key
 /// exchange (D1015).
 pub mod alert {
+    /// A namespace's org may not use Postgres now (the meter's gate, ME1
+    /// Task 21).
+    pub const ACCESS_DENIED: u8 = 49;
     pub const INTERNAL_ERROR: u8 = 80;
     pub const UNRECOGNIZED_NAME: u8 = 112;
     pub const NO_APPLICATION_PROTOCOL: u8 = 120;

@@ -8,7 +8,7 @@ cargo_package(
     manifest_dir = "crates/loams-web-bridge",
     env = {
         "CARGO_PKG_AUTHORS": "The Loams Authors",
-        "CARGO_PKG_DESCRIPTION": "The web toolbox's browser provider abstraction: the local (agent-driven) provider and the Cloudflare Browser Run remote provider.",
+        "CARGO_PKG_DESCRIPTION": "The web toolbox's browser providers: one Obscura CDP driver, launched locally or reached as the deployment's browser service.",
         "CARGO_PKG_HOMEPAGE": "",
         "CARGO_PKG_LICENSE": "Apache-2.0",
         "CARGO_PKG_LICENSE_FILE": "",
@@ -36,6 +36,7 @@ cargo_package(
         "//third-party/rust:async-trait",
         "//third-party/rust:base64-0_23",
         "//third-party/rust:futures",
+        "//third-party/rust:rand-0_9",
         "//third-party/rust:regex",
         "//third-party/rust:serde",
         "//third-party/rust:serde_json",

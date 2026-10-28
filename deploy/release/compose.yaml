@@ -702,8 +702,9 @@ services:
       - agentd-data:/home/loams
       - ./agentd/config.toml:/home/loams/agentd/config.toml:ro
       - ./agentd:/etc/loams-agentd:ro
-    # The agents' headless browser (D2111, D2114): `local` launches Obscura
-    # inside this container if the image carries it; `service` drives the
+    # The agents' headless browser (D2111, D2114, D2116): `local` launches
+    # the Obscura the image carries (LOAMS_OBSCURA_BIN) inside this container,
+    # per agent run; `service` drives the
     # `browser` profile's engine over the internal `browser` network. The
     # provider names the engine's token by reference (env:browser-token),
     # which the bridge's env resolver reads from

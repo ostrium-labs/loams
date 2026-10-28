@@ -17,6 +17,9 @@ use crate::{Effect, Rejection, Reply};
 /// itself (`consts.IdentityHistoryService`).
 pub const HISTORY_SERVICE: &str = "history-service";
 
+/// How many signal request IDs a run remembers for deduplication.
+pub const SIGNAL_REQUEST_IDS_KEPT: usize = 100;
+
 pub(crate) fn signal(
     b: &mut Batch<'_>,
     fx: &mut Vec<Effect>,
@@ -31,6 +34,17 @@ pub(crate) fn signal(
         return Err(Rejection::ResourceExhausted(
             "signal count limit exceeded for this workflow".into(),
         ));
+    }
+    if !request_id.is_empty() {
+        if b.state_ref().signal_request_ids.contains(&request_id) {
+            // A retried signal (or a follow-up carried out again).
+            return Ok(Reply::Stale);
+        }
+        let ids = &mut b.state().signal_request_ids;
+        ids.push(request_id.clone());
+        if ids.len() > SIGNAL_REQUEST_IDS_KEPT {
+            ids.remove(0);
+        }
     }
     b.state().signal_count += 1;
     let now = b.now_ms();

@@ -15,7 +15,7 @@ equivalences (plan rulings X1.R12, X1.R20):
 
 One JUnit case per language and scenario: gateway_dx1_differential_<lang>_<scenario>.
 A language whose corpus has no history of the scenario yet (a new SDK leg
-before its first compat-mode generation, D2152) reports `skip` with the
+before its first compat-mode generation, D2137) reports `skip` with the
 reason, never `pass`.
 
   compare.py --corpus DIR --gateway DIR --scenarios a,b [--langs go,ts] --junit FILE

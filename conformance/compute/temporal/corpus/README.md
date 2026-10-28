@@ -25,6 +25,7 @@ replaces this one.
 | `scenarios.json` | the scenarios in plan order, each with its phase (DX1–DX4) and whether it is Go only |
 | `workers/go/` | Go module (SDK `go.temporal.io/sdk` v1.49.0): `scenarios/` holds one workflow per scenario; `main.go` is the generator (`generate`) and the exporter (`export`) |
 | `workers/ts/` | npm package (`@temporalio/*` 1.24.0): `src/workflows.ts`, `src/activities.ts`, `src/generate.ts`, and the replay test `src/replay.test.ts` |
+| `workers/python/` | uv project (`temporalio` 1.34.0, D2136): `corpus_py/` holds the workflows, activities, the starter (`drive.py`), the generator and worker CLI (`python -m corpus_py`) and the replayer (`replay.py`); not yet run, and `histories/python/` is empty until its first generation (D2137) |
 | `workers/ruby/` | Ruby (gem `temporalio` 1.9.0 on sdk-core, `Gemfile.lock`): `lib/workflows.rb`, `lib/activities.rb`, `lib/scenarios.rb`, the worker and starter `generate.rb`, the replay check `replay.rb` (`WorkflowReplayer`), and `test/` (minitest). Its histories are not committed yet (D2153) |
 | `generate-ruby.sh` | the Ruby half against a server: generate, Go export, replay, `manifest.py build --langs ruby` |
 | `replay/go/` | `replay_test.go`: every Go history replays with `worker.NewWorkflowReplayer` |
@@ -87,7 +88,8 @@ With the compat-mode stack up (`conformance/compute/temporal/run.sh`, or
 `oc_up temporal`):
 
 ```sh
-conformance/compute/temporal/corpus/generate.sh
+conformance/compute/temporal/corpus/generate.sh                       # go,ts (CORPUS_LANGS)
+conformance/compute/temporal/corpus/generate.sh --langs go,ts,python  # with the Python worker
 python3 conformance/compute/temporal/corpus/manifest.py check
 ```
 

@@ -28,9 +28,9 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 HIST = HERE / "histories"
 MANIFEST = HERE / "manifest.json"
-SDK = {"go": "go.temporal.io/sdk", "ts": "@temporalio/worker", "ruby": "temporalio"}
+SDK = {"go": "go.temporal.io/sdk", "ts": "@temporalio/worker", "python": "temporalio", "ruby": "temporalio"}
 # Languages whose histories every corpus must have. Another language (an SDK
-# leg added later, D2152) is required once histories/<lang>/ has a file:
+# leg added later, D2137) is required once histories/<lang>/ has a file:
 # until its first generation against the oracle, only its worker's scenario
 # list is checked.
 REQUIRED = ("go", "ts")
@@ -45,10 +45,12 @@ def sdk_versions() -> dict[str, str]:
     gomod = (HERE / "workers/go/go.mod").read_text()
     go = re.search(r"go\.temporal\.io/sdk v([0-9.]+)", gomod)
     pkg = json.loads((HERE / "workers/ts/package.json").read_text())
+    py = re.search(r'"temporalio==([0-9.]+)"', (HERE / "workers/python/pyproject.toml").read_text())
     rb = re.search(r"gem 'temporalio', '([0-9.]+)'", (HERE / "workers/ruby/Gemfile").read_text())
     return {
         "go": go.group(1) if go else "?",
         "ts": pkg["dependencies"]["@temporalio/worker"],
+        "python": py.group(1) if py else "?",
         "ruby": rb.group(1) if rb else "?",
     }
 
@@ -124,9 +126,11 @@ def worker_lists() -> dict[str, list[str]]:
     go = re.findall(r'\{"([a-z0-9_]+)", DX[1-4], \w+, (?:true|false)\}',
                     (HERE / "workers/go/scenarios/scenarios.go").read_text())
     ts = re.findall(r"\['([a-z0-9_]+)', 'DX[1-4]'\]", (HERE / "workers/ts/src/generate.ts").read_text())
+    py = re.findall(r'^    \("([a-z0-9_]+)", "DX[1-4]"\),$',
+                    (HERE / "workers/python/corpus_py/scenarios.py").read_text(), re.M)
     rb = re.findall(r"^    \['([a-z0-9_]+)', 'DX[1-4]'\],?$",
                     (HERE / "workers/ruby/lib/scenarios.rb").read_text(), re.M)
-    return {"go": go, "ts": ts, "ruby": rb}
+    return {"go": go, "ts": ts, "python": py, "ruby": rb}
 
 
 def check() -> list[str]:
@@ -137,9 +141,13 @@ def check() -> list[str]:
         problems.append("workers/go/scenarios/scenarios.go does not list scenarios.json's scenarios in order")
     if lists["ts"] != [s["name"] for s in want if not s["go_only"]]:
         problems.append("workers/ts/src/generate.ts does not list scenarios.json's non-Go-only scenarios in order")
+    if lists["python"] != [s["name"] for s in want if not s["go_only"]]:
+        problems.append("workers/python/corpus_py/scenarios.py does not list scenarios.json's non-Go-only scenarios in order")
+    sdks = sdk_versions()
+    if sdks["python"] != pin("TEMPORAL_SDK_PY"):
+        problems.append(f"workers/python pins temporalio {sdks['python']}, pins.env TEMPORAL_SDK_PY {pin('TEMPORAL_SDK_PY')}")
     if lists["ruby"] != [s["name"] for s in want if not s["go_only"]]:
         problems.append("workers/ruby/lib/scenarios.rb does not list scenarios.json's non-Go-only scenarios in order")
-    sdks = sdk_versions()
     if sdks["ruby"] != pin("TEMPORAL_SDK_RUBY"):
         problems.append(f"workers/ruby pins temporalio {sdks['ruby']}, pins.env TEMPORAL_SDK_RUBY {pin('TEMPORAL_SDK_RUBY')}")
     if not MANIFEST.exists():
