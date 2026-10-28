@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { isSingleStatement, isWrite } from "../src/shared/sql-lex";
 
 // Cases ported from the agent's former sql-guard lexer (I8): the guard is now a

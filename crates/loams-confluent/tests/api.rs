@@ -133,6 +133,42 @@ async fn metrics_route(
     )
 }
 
+async fn acls_route(
+    State(f): State<Shared>,
+    Path(id): Path<String>,
+    Query(q): Query<BTreeMap<String, String>>,
+    headers: axum::http::HeaderMap,
+) -> (StatusCode, String) {
+    let mut f = f.lock().unwrap();
+    let principal = q.get("principal").cloned().unwrap_or_default();
+    f.calls.push(format!("GET acls {id} {principal}"));
+    let auth = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    // basic KAFKAKEY1:kafka-secret-PLANTED
+    if auth != "Basic S0FGS0FLRVkxOmthZmthLXNlY3JldC1QTEFOVEVE" {
+        return (StatusCode::FORBIDDEN, "{}".into());
+    }
+    let a = |ty: &str, name: &str, pattern: &str, op: &str| {
+        json!({"kind": "KafkaAcl", "cluster_id": id, "resource_type": ty, "resource_name": name,
+               "pattern_type": pattern, "principal": principal, "host": "*", "operation": op,
+               "permission": "ALLOW"})
+    };
+    (
+        StatusCode::OK,
+        json!({"kind": "KafkaAclDataList", "data": [
+            a("TOPIC", "orders", "LITERAL", "READ"),
+            a("TOPIC", "orders", "LITERAL", "WRITE"),
+            a("GROUP", "loams-prod-", "PREFIXED", "READ"),
+            a("CLUSTER", "kafka-cluster", "LITERAL", "IDEMPOTENT_WRITE"),
+            a("TOPIC", "*", "LITERAL", "ALL"),
+        ]})
+        .to_string(),
+    )
+}
+
 async fn serve(f: Shared) -> String {
     let app = Router::new()
         .route("/cmk/v2/clusters", get(list_clusters))
@@ -141,6 +177,7 @@ async fn serve(f: Shared) -> String {
             get(get_cluster).patch(patch_cluster),
         )
         .route("/billing/v1/costs", get(costs_route))
+        .route("/kafka/v3/clusters/{id}/acls", get(acls_route))
         .route("/v2/metrics/cloud/query", post(metrics_route))
         .with_state(f.clone());
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -241,4 +278,78 @@ async fn metrics_query_pages_with_the_token_and_groups() {
     assert_eq!(f.calls, ["POST metrics token=", "POST metrics token=t/2=="]);
     assert_eq!(f.bodies[0], f.bodies[1], "the same body on every page");
     assert_eq!(f.bodies[0]["group_by"][0], "metric.principal_id");
+}
+
+#[tokio::test]
+async fn acls_list_with_the_kafka_key_and_audit() {
+    let f = Shared::default();
+    let base = serve(f.clone()).await;
+    let c = client(&base);
+    let rest = c.for_endpoint(
+        &base,
+        CloudKey::new("KAFKAKEY1", Secret::new("kafka-secret-PLANTED")),
+    );
+    let acls = loams_confluent::acls::list(&rest, "lkc-one01", "User:sa-test01")
+        .await
+        .unwrap();
+    assert_eq!(acls.len(), 5);
+    assert!(acls.iter().all(|a| a.principal == "User:sa-test01"));
+    let findings = loams_confluent::acls::audit(&acls);
+    assert!(
+        findings
+            .iter()
+            .any(|x| x.level == loams_confluent::acls::Level::Fail && x.message.contains("ALL")),
+        "{findings:?}"
+    );
+    // the Cloud key is not a Kafka key: 403, which `check` reports as a skip
+    let err = loams_confluent::acls::list(&c, "lkc-one01", "User:sa-test01").await;
+    assert!(
+        matches!(err, Err(loams_confluent::Error::Forbidden(_))),
+        "{err:?}"
+    );
+    assert_eq!(
+        f.lock().unwrap().calls[0],
+        "GET acls lkc-one01 User:sa-test01"
+    );
+}
+
+#[tokio::test]
+async fn costs_report_totals_per_resource_and_credits() {
+    let f = Shared::default();
+    let base = serve(f.clone()).await;
+    let c = client(&base);
+    let o = loams_confluent::cli::CostsOpts {
+        from: "2026-10-01".into(),
+        to: Some("2026-10-03".into()),
+        resources: Vec::new(),
+        environment: Some("env-test01".into()),
+        api_url: base.clone(),
+    };
+    let mut out = Vec::new();
+    loams_confluent::cli::costs_report(&c, &o, 0, &mut out)
+        .await
+        .unwrap();
+    let s = String::from_utf8(out).unwrap();
+    // one window, two pages: lines of 1.0 and 2.0, a credit of -3.0
+    assert!(
+        s.contains("lkc-one01") && s.contains("KAFKA_NETWORK_READ"),
+        "{s}"
+    );
+    assert!(
+        s.contains("billed $3.0000") && s.contains("credits and other lines $-3.0000"),
+        "{s}"
+    );
+    assert!(!s.contains("PLANTED"), "{s}");
+    let bad = loams_confluent::cli::CostsOpts {
+        from: "2026-10-01".into(),
+        to: None,
+        resources: vec!["lkc-x;y".into()],
+        environment: None,
+        api_url: base,
+    };
+    assert!(
+        loams_confluent::cli::costs_report(&c, &bad, 0, &mut Vec::new())
+            .await
+            .is_err()
+    );
 }

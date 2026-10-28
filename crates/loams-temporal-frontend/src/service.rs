@@ -6,16 +6,16 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use loams_temporal_history::time::{dur, ts};
-use loams_temporal_history::{Attributes, Limits, WorkflowExecutionStatus, limit_messages};
+use loams_temporal_history::time::{dur, dur_ms, ms, ts};
+use loams_temporal_history::{Attributes, Limits, limit_messages};
 use loams_temporal_matching::{Handout, Matcher, QueueKey, TaskKind as QueueKind};
 use loams_temporal_proto::loams::temporal::internal::v1::{TaskKind, TaskToken};
 use loams_temporal_proto::temporal::api::common::v1::{
     WorkerVersionStamp, WorkflowExecution, WorkflowType,
 };
 use loams_temporal_proto::temporal::api::enums::v1::{
-    HistoryEventFilterType, NamespaceState, PendingActivityState, PendingWorkflowTaskState,
-    QueryResultType, TaskQueueKind,
+    EventType, HistoryEventFilterType, NamespaceState, PendingActivityState,
+    PendingWorkflowTaskState, QueryResultType, TaskQueueKind,
 };
 use loams_temporal_proto::temporal::api::history::v1::History;
 use loams_temporal_proto::temporal::api::namespace::v1::{NamespaceConfig, NamespaceInfo};
@@ -27,12 +27,15 @@ use loams_temporal_proto::temporal::api::workflowservice::v1::workflow_service_s
 use loams_temporal_proto::temporal::api::workflowservice::v1::*;
 use loams_temporal_resonate::ids::{PromiseId, WorkflowRef};
 use loams_temporal_resonate::{Durability, SettleAs};
+use loams_temporal_schedule::{MemScheduleStore, ScheduleStore};
 use loams_temporal_statemachine::{Input, Reply, server_failure};
 use loams_temporal_store::{NamespaceRecord, RunKey, Store, StoreError};
+use loams_temporal_visibility::{MemVisibility, VisibilityStore};
 use tonic::{Request, Response, Status};
 
 use crate::auth::{Authenticator, Principal};
 use crate::capabilities::capabilities;
+use crate::describe::ActivityRef;
 use crate::effects::{EffectContext, TaskRef};
 use crate::engine::{Engine, store_status};
 use crate::queries::{Queries, QueryAnswer, QueryTask};
@@ -51,6 +54,11 @@ pub struct FrontendConfig {
     pub server_version: String,
     /// The default page of `GetWorkflowExecutionHistory`.
     pub history_page_size: usize,
+    /// What `GetClusterInfo` reports as the shard count.
+    pub history_shard_count: i32,
+    /// What `GetClusterInfo` reports as the persistence store
+    /// (`postgres`, `memory`).
+    pub persistence_store: String,
 }
 
 impl Default for FrontendConfig {
@@ -61,6 +69,8 @@ impl Default for FrontendConfig {
             history_wait: Duration::from_secs(60),
             server_version: format!("loams-temporal {}", env!("CARGO_PKG_VERSION")),
             history_page_size: 1000,
+            history_shard_count: 0,
+            persistence_store: String::new(),
         }
     }
 }
@@ -75,6 +85,14 @@ pub struct Frontend {
     pub(crate) queries: Queries,
     pub(crate) config: FrontendConfig,
     namespaces: Mutex<HashMap<String, NamespaceRecord>>,
+    /// Temporal Schedules (D2072).
+    pub(crate) schedules: Arc<dyn ScheduleStore>,
+    /// Runs a schedule started, by run, so a close runs its pass at once.
+    pub(crate) scheduled_runs: Mutex<HashMap<RunKey, String>>,
+    /// Visibility queries and the search-attribute registry (D2075).
+    pub(crate) visibility: Arc<dyn VisibilityStore>,
+    /// The memory visibility store, fed from the engine's commits.
+    pub(crate) visibility_feed: Option<Arc<MemVisibility>>,
 }
 
 impl std::fmt::Debug for Frontend {
@@ -163,6 +181,7 @@ impl Frontend {
         tokens: TokenKeys,
         config: FrontendConfig,
     ) -> Self {
+        let visibility = Arc::new(MemVisibility::new());
         Frontend {
             engine,
             matcher,
@@ -172,10 +191,47 @@ impl Frontend {
             queries: Queries::default(),
             config,
             namespaces: Mutex::new(HashMap::new()),
+            schedules: Arc::new(MemScheduleStore::new()),
+            scheduled_runs: Mutex::new(HashMap::new()),
+            visibility: visibility.clone(),
+            visibility_feed: Some(visibility),
         }
     }
 
+    /// Answers visibility queries from `store` (the memory store, fed from
+    /// the engine, by default). A store other than the memory one reads the
+    /// rows the history store's commits write.
+    pub fn with_visibility_store(mut self, store: Arc<dyn VisibilityStore>) -> Self {
+        self.visibility = store;
+        self.visibility_feed = None;
+        self
+    }
+
+    /// Keeps schedules in `store` (the memory store by default).
+    pub fn with_schedule_store(mut self, store: Arc<dyn ScheduleStore>) -> Self {
+        self.schedules = store;
+        self
+    }
+
+    /// Drops a namespace from the ID cache (it was updated).
+    pub(crate) fn forget_namespace(&self, id: &str) {
+        self.namespaces
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(id);
+    }
+
+    /// The engine (tests and tools drive runs through it).
+    pub fn engine(&self) -> &Engine {
+        &self.engine
+    }
+
+    /// The caller: the UI listener's principal when the call came in there
+    /// (D2050), otherwise what the `authorization` header proves.
     pub(crate) fn principal<T>(&self, req: &Request<T>) -> Result<Principal, Status> {
+        if let Some(t) = req.extensions().get::<crate::ui::TrustedPrincipal>() {
+            return Ok(t.0.clone());
+        }
         self.auth.authenticate(req.metadata())
     }
 
@@ -278,7 +334,7 @@ impl Frontend {
         Ok((token, key, ns))
     }
 
-    fn promise_id(ns: &NamespaceRecord, key: &RunKey, token: &TaskToken) -> String {
+    pub(crate) fn promise_id(ns: &NamespaceRecord, key: &RunKey, token: &TaskToken) -> String {
         let nsseg =
             loams_temporal_resonate::ids::namespace(&ns.loams_namespace_id, &ns.namespace_id);
         let wf = WorkflowRef::Id(key.workflow_id.clone());
@@ -313,9 +369,9 @@ impl Frontend {
         }
     }
 
+    /// The history a poll answer carries, up to `up_to`, read page by page.
     async fn full_history(&self, key: &RunKey, up_to: i64) -> Result<History, Status> {
-        let mut events = self.engine.history(key, 1, usize::MAX).await?;
-        events.retain(|e| e.event_id <= up_to);
+        let events = self.engine.history_until(key, up_to, |_| true).await?;
         Ok(History { events })
     }
 
@@ -622,12 +678,25 @@ impl Frontend {
         Ok(t.reply)
     }
 
-    fn describe_namespace_response(ns: &NamespaceRecord) -> DescribeNamespaceResponse {
+    pub(crate) fn describe_namespace_response(ns: &NamespaceRecord) -> DescribeNamespaceResponse {
         DescribeNamespaceResponse {
             namespace_info: Some(NamespaceInfo {
                 name: ns.name.clone(),
-                state: NamespaceState::Registered as i32,
+                state: if ns.state == 0 {
+                    NamespaceState::Registered as i32
+                } else {
+                    ns.state
+                },
                 description: ns.config["description"].as_str().unwrap_or("").to_string(),
+                owner_email: ns.config["owner_email"].as_str().unwrap_or("").to_string(),
+                data: ns.config["data"]
+                    .as_object()
+                    .map(|m| {
+                        m.iter()
+                            .filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_string())))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
                 id: ns.namespace_id.clone(),
                 ..Default::default()
             }),
@@ -732,22 +801,32 @@ impl WorkflowService for WorkflowServiceImpl {
         req: Request<StartWorkflowExecutionRequest>,
     ) -> Result<Response<StartWorkflowExecutionResponse>, Status> {
         let p = self.0.principal(&req)?;
-        let mut r = req.into_inner();
-        let ns = self.0.namespace(&p, &r.namespace).await?;
+        let r = req.into_inner();
         if blob_too_large(r.input.as_ref()) {
             return Err(blob_size_exceeded());
         }
-        if r.request_id.is_empty() {
-            r.request_id = uuid::Uuid::new_v4().to_string();
+        self.0.start_workflow(&p, r).await.map(Response::new)
+    }
+
+    async fn signal_with_start_workflow_execution(
+        &self,
+        req: Request<SignalWithStartWorkflowExecutionRequest>,
+    ) -> Result<Response<SignalWithStartWorkflowExecutionResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        let r = req.into_inner();
+        if blob_too_large(r.input.as_ref()) || blob_too_large(r.signal_input.as_ref()) {
+            return Err(blob_size_exceeded());
         }
-        let run_id = uuid::Uuid::new_v4().to_string();
-        let (run_id, started) = self.0.engine.start(&Frontend::ctx(&ns), run_id, r).await?;
-        Ok(Response::new(StartWorkflowExecutionResponse {
-            run_id,
-            started,
-            status: WorkflowExecutionStatus::Running as i32,
-            ..Default::default()
-        }))
+        self.0.signal_with_start(&p, r).await.map(Response::new)
+    }
+
+    async fn reset_workflow_execution(
+        &self,
+        req: Request<ResetWorkflowExecutionRequest>,
+    ) -> Result<Response<ResetWorkflowExecutionResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        let r = req.into_inner();
+        self.0.reset_workflow(&p, r).await.map(Response::new)
     }
 
     async fn poll_workflow_task_queue(
@@ -783,6 +862,9 @@ impl WorkflowService for WorkflowServiceImpl {
             task_queue: tq,
             kind: QueueKind::Workflow,
         };
+        self.0
+            .matcher
+            .record_poller(&key, &r.identity, &build_id, self.0.engine.now_ms());
         let poll = self
             .0
             .workflow_task_response(&p, &key, &r.identity, &build_id);
@@ -823,6 +905,7 @@ impl WorkflowService for WorkflowServiceImpl {
                     worker_version,
                     force_create_new_workflow_task: r.force_create_new_workflow_task,
                     messages: r.messages,
+                    new_run_id: uuid::Uuid::new_v4().to_string(),
                 }
             })
             .await?;
@@ -883,6 +966,9 @@ impl WorkflowService for WorkflowServiceImpl {
             task_queue: tq,
             kind: QueueKind::Activity,
         };
+        self.0
+            .matcher
+            .record_poller(&key, &r.identity, &build_id, self.0.engine.now_ms());
         let me = self.0.clone();
         let poll = async move {
             let deadline = tokio::time::Instant::now() + wait;
@@ -1204,18 +1290,44 @@ impl WorkflowService for WorkflowServiceImpl {
                 ..Default::default()
             }));
         }
-        let events = self.0.engine.history(&key, from, page).await?;
-        let run = self.0.engine.load(&key).await?;
-        let next = events.last().map_or(from, |e| e.event_id + 1);
-        let more = next < run.state.next_event_id
-            || (r.wait_new_event && run.state.completion_event_id == 0);
+        // Pages come from the store's paged read (`Store::history_page`)
+        // and carry its token. The gateway's own 8-byte token (the next
+        // event ID) remains for one case only: a long poll that has read
+        // everything written so far and must wait for the next event.
+        let (events, store_next) = if r.next_page_token.len() == 8 {
+            let events = self.0.engine.history(&key, from, page).await?;
+            let next = events.last().map_or(from, |e| e.event_id + 1);
+            let run = self.0.engine.load(&key).await?;
+            let more = next < run.state.next_event_id;
+            // More written since the wait began: continue from here.
+            (
+                events,
+                if more {
+                    next.to_be_bytes().to_vec()
+                } else {
+                    Vec::new()
+                },
+            )
+        } else {
+            self.0
+                .engine
+                .history_page(&key, &r.next_page_token, page)
+                .await?
+        };
+        let next_page_token = if !store_next.is_empty() {
+            store_next
+        } else {
+            let run = self.0.engine.load(&key).await?;
+            if r.wait_new_event && run.state.completion_event_id == 0 {
+                let next = events.last().map_or(from, |e| e.event_id + 1);
+                next.max(from).to_be_bytes().to_vec()
+            } else {
+                Vec::new()
+            }
+        };
         Ok(Response::new(GetWorkflowExecutionHistoryResponse {
             history: Some(History { events }),
-            next_page_token: if more {
-                next.to_be_bytes().to_vec().into()
-            } else {
-                Default::default()
-            },
+            next_page_token: next_page_token.into(),
             ..Default::default()
         }))
     }
@@ -1258,6 +1370,13 @@ impl WorkflowService for WorkflowServiceImpl {
                 scheduled_time: a.attempt_scheduled_time,
                 last_worker_identity: a.started_identity.clone(),
                 last_failure: a.last_failure.clone(),
+                maximum_attempts: a.retry_policy.as_ref().map_or(0, |p| p.maximum_attempts),
+                expiration_time: match dur_ms(a.schedule_to_close_timeout.as_ref()) {
+                    0 => None,
+                    s2c => Some(ts(a.scheduled_time.as_ref().map_or(0, ms) + s2c)),
+                },
+                #[allow(deprecated)]
+                last_worker_version_stamp: a.started_worker_version.clone(),
                 ..Default::default()
             })
             .collect();
@@ -1296,6 +1415,22 @@ impl WorkflowService for WorkflowServiceImpl {
                 task_queue: s.task_queue.clone(),
                 history_size_bytes: s.history_size_bytes,
                 first_run_id: s.first_execution_run_id.clone(),
+                auto_reset_points: Some(
+                    loams_temporal_proto::temporal::api::workflow::v1::ResetPoints {
+                        // Only the completed workflow tasks matter; read
+                        // page by page and keep just those.
+                        points: loams_temporal_statemachine::reset::reset_points(
+                            &key.run_id,
+                            &self
+                                .0
+                                .engine
+                                .history_until(&key, i64::MAX, |e| {
+                                    e.event_type == EventType::WorkflowTaskCompleted as i32
+                                })
+                                .await?,
+                        ),
+                    },
+                ),
                 ..Default::default()
             }),
             pending_activities,
@@ -1317,6 +1452,18 @@ impl WorkflowService for WorkflowServiceImpl {
             .query
             .ok_or_else(|| Status::invalid_argument("Query is not set on request."))?;
         let state = self.0.engine.load(&key).await?.state;
+        if let Some(rejected) =
+            crate::lifecycle::query_rejected(r.query_reject_condition, state.status)
+        {
+            return Ok(Response::new(QueryWorkflowResponse {
+                query_rejected: Some(rejected),
+                ..Default::default()
+            }));
+        }
+        // Consistent query: let an outstanding workflow task finish first.
+        let started = tokio::time::Instant::now();
+        self.0.settle_for_query(&key, wait / 2).await?;
+        let wait = wait.saturating_sub(started.elapsed());
         let (id, rx) = self.0.queries.register(QueryTask {
             key: key.clone(),
             loams_namespace_id: ns.loams_namespace_id.clone(),
@@ -1336,7 +1483,9 @@ impl WorkflowService for WorkflowServiceImpl {
                 query_result: result,
                 ..Default::default()
             })),
-            Ok(Ok(QueryAnswer::Failed(message))) => Err(Status::invalid_argument(message)),
+            Ok(Ok(QueryAnswer::Failed(message, failure))) => {
+                Err(crate::errors::query_failed(message, failure))
+            }
             _ => Err(Status::deadline_exceeded(
                 "no worker answered the query in time (is a worker polling the task queue?)",
             )),
@@ -1353,7 +1502,7 @@ impl WorkflowService for WorkflowServiceImpl {
         let answer = if r.completed_type == QueryResultType::Answered as i32 {
             QueryAnswer::Answered(r.query_result)
         } else {
-            QueryAnswer::Failed(r.error_message)
+            QueryAnswer::Failed(r.error_message, r.failure)
         };
         if !self
             .0
@@ -1385,6 +1534,280 @@ impl WorkflowService for WorkflowServiceImpl {
         self.0.poll_update(&p, wait, r).await.map(Response::new)
     }
 
+    async fn respond_activity_task_completed_by_id(
+        &self,
+        req: Request<RespondActivityTaskCompletedByIdRequest>,
+    ) -> Result<Response<RespondActivityTaskCompletedByIdResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        let r = req.into_inner();
+        let oversized = blob_too_large(r.result.as_ref());
+        let a = ActivityRef {
+            namespace: &r.namespace,
+            workflow_id: &r.workflow_id,
+            run_id: &r.run_id,
+            activity_id: &r.activity_id,
+        };
+        let (result, identity) = (r.result.clone(), r.identity.clone());
+        self.0
+            .activity_by_id(&p, a, |scheduled_event_id, attempt| {
+                if oversized {
+                    Input::ActivityFailed {
+                        scheduled_event_id,
+                        attempt,
+                        failure: Some(server_failure(limit_messages::COMPLETE_RESULT.into(), true)),
+                        identity,
+                        last_heartbeat_details: None,
+                    }
+                } else {
+                    Input::ActivityCompleted {
+                        scheduled_event_id,
+                        attempt,
+                        result,
+                        identity,
+                    }
+                }
+            })
+            .await?;
+        Ok(Response::new(RespondActivityTaskCompletedByIdResponse {}))
+    }
+
+    async fn respond_activity_task_failed_by_id(
+        &self,
+        req: Request<RespondActivityTaskFailedByIdRequest>,
+    ) -> Result<Response<RespondActivityTaskFailedByIdResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        let r = req.into_inner();
+        let mut failures = Vec::new();
+        let mut details = r.last_heartbeat_details.clone();
+        if blob_too_large(details.as_ref()) {
+            failures.push(server_failure(limit_messages::HEARTBEAT.into(), true));
+            details = None;
+        }
+        let mut failure = r.failure.clone();
+        if blob_too_large(failure.as_ref()) {
+            let f = server_failure(limit_messages::FAILURE.into(), true);
+            failure = Some(f.clone());
+            failures.push(f);
+        }
+        let a = ActivityRef {
+            namespace: &r.namespace,
+            workflow_id: &r.workflow_id,
+            run_id: &r.run_id,
+            activity_id: &r.activity_id,
+        };
+        let identity = r.identity.clone();
+        self.0
+            .activity_by_id(&p, a, |scheduled_event_id, attempt| Input::ActivityFailed {
+                scheduled_event_id,
+                attempt,
+                failure,
+                identity,
+                last_heartbeat_details: details,
+            })
+            .await?;
+        Ok(Response::new(RespondActivityTaskFailedByIdResponse {
+            failures,
+        }))
+    }
+
+    async fn respond_activity_task_canceled_by_id(
+        &self,
+        req: Request<RespondActivityTaskCanceledByIdRequest>,
+    ) -> Result<Response<RespondActivityTaskCanceledByIdResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        let r = req.into_inner();
+        let oversized = blob_too_large(r.details.as_ref());
+        let a = ActivityRef {
+            namespace: &r.namespace,
+            workflow_id: &r.workflow_id,
+            run_id: &r.run_id,
+            activity_id: &r.activity_id,
+        };
+        let (details, identity) = (r.details.clone(), r.identity.clone());
+        self.0
+            .activity_by_id(&p, a, |scheduled_event_id, attempt| {
+                if oversized {
+                    Input::ActivityFailed {
+                        scheduled_event_id,
+                        attempt,
+                        failure: Some(server_failure(limit_messages::CANCEL_DETAILS.into(), true)),
+                        identity,
+                        last_heartbeat_details: None,
+                    }
+                } else {
+                    Input::ActivityCanceled {
+                        scheduled_event_id,
+                        attempt,
+                        details,
+                        identity,
+                    }
+                }
+            })
+            .await?;
+        Ok(Response::new(RespondActivityTaskCanceledByIdResponse {}))
+    }
+
+    async fn record_activity_task_heartbeat_by_id(
+        &self,
+        req: Request<RecordActivityTaskHeartbeatByIdRequest>,
+    ) -> Result<Response<RecordActivityTaskHeartbeatByIdResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        let r = req.into_inner();
+        let oversized = blob_too_large(r.details.as_ref());
+        let a = ActivityRef {
+            namespace: &r.namespace,
+            workflow_id: &r.workflow_id,
+            run_id: &r.run_id,
+            activity_id: &r.activity_id,
+        };
+        let (details, identity) = (r.details.clone(), r.identity.clone());
+        let reply = self
+            .0
+            .activity_by_id(&p, a, |scheduled_event_id, attempt| {
+                if oversized {
+                    // As by token: fail the activity and tell the worker
+                    // to stop.
+                    Input::ActivityFailed {
+                        scheduled_event_id,
+                        attempt,
+                        failure: Some(server_failure(limit_messages::HEARTBEAT.into(), true)),
+                        identity,
+                        last_heartbeat_details: None,
+                    }
+                } else {
+                    Input::ActivityHeartbeat {
+                        scheduled_event_id,
+                        attempt,
+                        details,
+                    }
+                }
+            })
+            .await?;
+        Ok(Response::new(RecordActivityTaskHeartbeatByIdResponse {
+            cancel_requested: oversized
+                || matches!(
+                    reply,
+                    Reply::Heartbeat {
+                        cancel_requested: true
+                    }
+                ),
+            ..Default::default()
+        }))
+    }
+
+    async fn get_workflow_execution_history_reverse(
+        &self,
+        req: Request<GetWorkflowExecutionHistoryReverseRequest>,
+    ) -> Result<Response<GetWorkflowExecutionHistoryReverseResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        let r = req.into_inner();
+        self.0.history_reverse(&p, r).await.map(Response::new)
+    }
+
+    async fn describe_task_queue(
+        &self,
+        req: Request<DescribeTaskQueueRequest>,
+    ) -> Result<Response<DescribeTaskQueueResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        let r = req.into_inner();
+        self.0.describe_task_queue(&p, r).await.map(Response::new)
+    }
+
+    async fn get_cluster_info(
+        &self,
+        req: Request<GetClusterInfoRequest>,
+    ) -> Result<Response<GetClusterInfoResponse>, Status> {
+        self.0.principal(&req)?;
+        Ok(Response::new(self.0.cluster_info()))
+    }
+
+    async fn list_task_queue_partitions(
+        &self,
+        req: Request<ListTaskQueuePartitionsRequest>,
+    ) -> Result<Response<ListTaskQueuePartitionsResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        let r = req.into_inner();
+        self.0.task_queue_partitions(&p, r).await.map(Response::new)
+    }
+
+    async fn shutdown_worker(
+        &self,
+        req: Request<ShutdownWorkerRequest>,
+    ) -> Result<Response<ShutdownWorkerResponse>, Status> {
+        self.0.principal(&req)?;
+        // No sticky queues (Q1156): nothing to hand back.
+        Ok(Response::new(ShutdownWorkerResponse::default()))
+    }
+
+    async fn update_namespace(
+        &self,
+        req: Request<UpdateNamespaceRequest>,
+    ) -> Result<Response<UpdateNamespaceResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        let r = req.into_inner();
+        self.0.update_namespace(&p, r).await.map(Response::new)
+    }
+
+    async fn deprecate_namespace(
+        &self,
+        req: Request<DeprecateNamespaceRequest>,
+    ) -> Result<Response<DeprecateNamespaceResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        let r = req.into_inner();
+        self.0.deprecate_namespace(&p, r).await.map(Response::new)
+    }
+
+    async fn get_worker_build_id_compatibility(
+        &self,
+        req: Request<GetWorkerBuildIdCompatibilityRequest>,
+    ) -> Result<Response<GetWorkerBuildIdCompatibilityResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        let r = req.into_inner();
+        self.0.namespace(&p, &r.namespace).await?;
+        // No version sets: the gateway routes by task queue only (D2088).
+        Ok(Response::new(
+            GetWorkerBuildIdCompatibilityResponse::default(),
+        ))
+    }
+
+    async fn get_worker_versioning_rules(
+        &self,
+        req: Request<GetWorkerVersioningRulesRequest>,
+    ) -> Result<Response<GetWorkerVersioningRulesResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        let r = req.into_inner();
+        self.0.namespace(&p, &r.namespace).await?;
+        Ok(Response::new(GetWorkerVersioningRulesResponse::default()))
+    }
+
+    async fn get_worker_task_reachability(
+        &self,
+        req: Request<GetWorkerTaskReachabilityRequest>,
+    ) -> Result<Response<GetWorkerTaskReachabilityResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        let r = req.into_inner();
+        self.0.namespace(&p, &r.namespace).await?;
+        Ok(Response::new(crate::namespaces::reachability(&r)))
+    }
+
+    async fn list_open_workflow_executions(
+        &self,
+        req: Request<ListOpenWorkflowExecutionsRequest>,
+    ) -> Result<Response<ListOpenWorkflowExecutionsResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        let r = req.into_inner();
+        self.0.list_open(&p, r).await.map(Response::new)
+    }
+
+    async fn list_closed_workflow_executions(
+        &self,
+        req: Request<ListClosedWorkflowExecutionsRequest>,
+    ) -> Result<Response<ListClosedWorkflowExecutionsResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        let r = req.into_inner();
+        self.0.list_closed(&p, r).await.map(Response::new)
+    }
+
     async fn reset_sticky_task_queue(
         &self,
         req: Request<ResetStickyTaskQueueRequest>,
@@ -1392,6 +1815,126 @@ impl WorkflowService for WorkflowServiceImpl {
         self.0.principal(&req)?;
         // No sticky queues in DX1 (Q1156): nothing to reset.
         Ok(Response::new(ResetStickyTaskQueueResponse {}))
+    }
+
+    // Temporal Schedules (D2070-D2073): `crate::schedules`.
+
+    async fn create_schedule(
+        &self,
+        req: Request<CreateScheduleRequest>,
+    ) -> Result<Response<CreateScheduleResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        Ok(Response::new(
+            self.0.create_schedule(&p, req.into_inner()).await?,
+        ))
+    }
+
+    async fn describe_schedule(
+        &self,
+        req: Request<DescribeScheduleRequest>,
+    ) -> Result<Response<DescribeScheduleResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        Ok(Response::new(
+            self.0.describe_schedule(&p, req.into_inner()).await?,
+        ))
+    }
+
+    async fn update_schedule(
+        &self,
+        req: Request<UpdateScheduleRequest>,
+    ) -> Result<Response<UpdateScheduleResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        Ok(Response::new(
+            self.0.update_schedule(&p, req.into_inner()).await?,
+        ))
+    }
+
+    async fn patch_schedule(
+        &self,
+        req: Request<PatchScheduleRequest>,
+    ) -> Result<Response<PatchScheduleResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        Ok(Response::new(
+            self.0.patch_schedule(&p, req.into_inner()).await?,
+        ))
+    }
+
+    async fn delete_schedule(
+        &self,
+        req: Request<DeleteScheduleRequest>,
+    ) -> Result<Response<DeleteScheduleResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        Ok(Response::new(
+            self.0.delete_schedule(&p, req.into_inner()).await?,
+        ))
+    }
+
+    async fn list_schedules(
+        &self,
+        req: Request<ListSchedulesRequest>,
+    ) -> Result<Response<ListSchedulesResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        Ok(Response::new(
+            self.0.list_schedules(&p, req.into_inner()).await?,
+        ))
+    }
+
+    async fn list_schedule_matching_times(
+        &self,
+        req: Request<ListScheduleMatchingTimesRequest>,
+    ) -> Result<Response<ListScheduleMatchingTimesResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        Ok(Response::new(
+            self.0
+                .list_schedule_matching_times(&p, req.into_inner())
+                .await?,
+        ))
+    }
+
+    // Visibility (D2074-D2076): `crate::visibility`.
+
+    async fn list_workflow_executions(
+        &self,
+        req: Request<ListWorkflowExecutionsRequest>,
+    ) -> Result<Response<ListWorkflowExecutionsResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        Ok(Response::new(
+            self.0
+                .list_workflow_executions(&p, req.into_inner())
+                .await?,
+        ))
+    }
+
+    async fn scan_workflow_executions(
+        &self,
+        req: Request<ScanWorkflowExecutionsRequest>,
+    ) -> Result<Response<ScanWorkflowExecutionsResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        Ok(Response::new(
+            self.0
+                .scan_workflow_executions(&p, req.into_inner())
+                .await?,
+        ))
+    }
+
+    async fn count_workflow_executions(
+        &self,
+        req: Request<CountWorkflowExecutionsRequest>,
+    ) -> Result<Response<CountWorkflowExecutionsResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        Ok(Response::new(
+            self.0
+                .count_workflow_executions(&p, req.into_inner())
+                .await?,
+        ))
+    }
+
+    async fn get_search_attributes(
+        &self,
+        req: Request<GetSearchAttributesRequest>,
+    ) -> Result<Response<GetSearchAttributesResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        Ok(Response::new(self.0.get_search_attributes(&p).await?))
     }
 }
 

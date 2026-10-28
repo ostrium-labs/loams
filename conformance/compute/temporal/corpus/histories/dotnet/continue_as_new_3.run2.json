@@ -1,0 +1,136 @@
+{
+  "events":  [
+    {
+      "eventId":  "1",
+      "eventTime":  "2026-10-28T03:06:26.390178026Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+      "taskId":  "1048617",
+      "workflowExecutionStartedEventAttributes":  {
+        "workflowType":  {
+          "name":  "continue_as_new_3"
+        },
+        "taskQueue":  {
+          "name":  "corpus-dotnet",
+          "kind":  "TASK_QUEUE_KIND_NORMAL"
+        },
+        "input":  {
+          "payloads":  [
+            {
+              "metadata":  {
+                "encoding":  "anNvbi9wbGFpbg=="
+              },
+              "data":  "MQ=="
+            }
+          ]
+        },
+        "workflowRunTimeout":  "0s",
+        "workflowTaskTimeout":  "10s",
+        "continuedExecutionRunId":  "01a18079-28c1-750a-b8ca-c7b679ad4ad3",
+        "initiator":  "CONTINUE_AS_NEW_INITIATOR_WORKFLOW",
+        "originalExecutionRunId":  "f8b35e04-6c1c-4f43-b28c-5815fb1ba949",
+        "firstExecutionRunId":  "01a18079-28c1-750a-b8ca-c7b679ad4ad3",
+        "attempt":  1,
+        "firstWorkflowTaskBackoff":  "0.979062697s",
+        "prevAutoResetPoints":  {
+          "points":  [
+            {
+              "buildId":  "f69ecbbc-edee-4b18-9ff4-451a33465b12",
+              "runId":  "01a18079-28c1-750a-b8ca-c7b679ad4ad3",
+              "firstWorkflowTaskCompletedId":  "4",
+              "createTime":  "2026-10-28T03:06:26.390121400Z",
+              "expireTime":  "2026-10-31T03:06:26.390178026Z",
+              "resettable":  true
+            }
+          ]
+        },
+        "workflowId":  "corpus-dotnet-continue_as_new_3"
+      }
+    },
+    {
+      "eventId":  "2",
+      "eventTime":  "2026-10-28T03:06:27.377073347Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId":  "1048624",
+      "workflowTaskScheduledEventAttributes":  {
+        "taskQueue":  {
+          "name":  "corpus-dotnet",
+          "kind":  "TASK_QUEUE_KIND_NORMAL"
+        },
+        "startToCloseTimeout":  "10s",
+        "attempt":  1
+      }
+    },
+    {
+      "eventId":  "3",
+      "eventTime":  "2026-10-28T03:06:27.382984940Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "taskId":  "1048627",
+      "workflowTaskStartedEventAttributes":  {
+        "scheduledEventId":  "2",
+        "identity":  "58@4f562dd56a86",
+        "requestId":  "20c3309a-4917-4dca-86d4-edd77497c33a",
+        "historySizeBytes":  "432",
+        "workerVersion":  {
+          "buildId":  "f69ecbbc-edee-4b18-9ff4-451a33465b12"
+        }
+      }
+    },
+    {
+      "eventId":  "4",
+      "eventTime":  "2026-10-28T03:06:27.390913098Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "taskId":  "1048631",
+      "workflowTaskCompletedEventAttributes":  {
+        "scheduledEventId":  "2",
+        "startedEventId":  "3",
+        "identity":  "58@4f562dd56a86",
+        "workerVersion":  {
+          "buildId":  "f69ecbbc-edee-4b18-9ff4-451a33465b12"
+        },
+        "sdkMetadata":  {
+          "coreUsedFlags":  [
+            1,
+            2,
+            3
+          ],
+          "langUsedFlags":  [
+            2
+          ],
+          "sdkName":  "temporal-dotnet",
+          "sdkVersion":  "1.20.0.0"
+        },
+        "meteringMetadata":  {}
+      }
+    },
+    {
+      "eventId":  "5",
+      "eventTime":  "2026-10-28T03:06:27.390965355Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW",
+      "taskId":  "1048632",
+      "workflowExecutionContinuedAsNewEventAttributes":  {
+        "newExecutionRunId":  "ae1d7a6f-74cc-48ec-a6ad-10930193197b",
+        "workflowType":  {
+          "name":  "continue_as_new_3"
+        },
+        "taskQueue":  {
+          "name":  "corpus-dotnet",
+          "kind":  "TASK_QUEUE_KIND_NORMAL"
+        },
+        "input":  {
+          "payloads":  [
+            {
+              "metadata":  {
+                "encoding":  "anNvbi9wbGFpbg=="
+              },
+              "data":  "Mg=="
+            }
+          ]
+        },
+        "workflowRunTimeout":  "0s",
+        "workflowTaskTimeout":  "10s",
+        "workflowTaskCompletedEventId":  "4",
+        "inheritBuildId":  true
+      }
+    }
+  ]
+}

@@ -34,6 +34,7 @@ pub mod evict;
 pub mod limits;
 pub mod link;
 pub mod mapping;
+pub mod model_authz;
 pub mod owner;
 pub mod recovery;
 pub mod redact;

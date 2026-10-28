@@ -1,0 +1,43 @@
+# Flink config.yaml rendered by loams-flink (design 81, D1972-D1975).
+# Do not edit: the controller re-renders it. Credentials come from FLINK_PROPERTIES.
+blob.server.port: 6124
+execution.checkpointing.dir: s3://flink/flink/example/checkpoints
+execution.checkpointing.externalized-checkpoint-retention: RETAIN_ON_CANCELLATION
+execution.checkpointing.incremental: true
+execution.checkpointing.interval: '60 s'
+execution.checkpointing.mode: EXACTLY_ONCE
+execution.checkpointing.num-retained: 3
+execution.checkpointing.savepoint-dir: s3://flink/flink/example/savepoints
+high-availability.storageDir: s3://flink/flink/example/ha
+high-availability.type: kubernetes
+jobmanager.bind-host: 0.0.0.0
+jobmanager.memory.process.size: 1600m
+jobmanager.rpc.address: flink-jobmanager
+jobmanager.rpc.port: 6123
+kubernetes.cluster-id: loams-flink-example
+kubernetes.namespace: loams-flink-example
+metrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
+metrics.reporter.prom.port: 9249
+parallelism.default: 1
+rest.address: flink-jobmanager
+rest.bind-address: 0.0.0.0
+rest.port: 8081
+restart-strategy.type: exponential-delay
+s3.endpoint: http://rustfs:9000
+s3.path.style.access: true
+sql-gateway.endpoint.rest.address: flink-sql-gateway
+sql-gateway.endpoint.rest.bind-address: 0.0.0.0
+sql-gateway.endpoint.rest.port: 8083
+sql-gateway.endpoint.type: rest
+sql-gateway.session.check-interval: '1 min'
+sql-gateway.session.idle-timeout: '30 min'
+sql-gateway.session.max-num: 1000
+state.backend.type: rocksdb
+state.checkpoints.dir: s3://flink/flink/example/checkpoints
+state.savepoints.dir: s3://flink/flink/example/savepoints
+taskmanager.bind-host: 0.0.0.0
+taskmanager.memory.process.size: 2048m
+taskmanager.numberOfTaskSlots: 2
+taskmanager.rpc.port: 6122
+web.cancel.enable: true
+web.submit.enable: false

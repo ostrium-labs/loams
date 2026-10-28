@@ -6007,6 +6007,7 @@ dependencies = [
  "loams-house-native",
  "loams-house-proto",
  "loams-house-worker",
+ "loams-meter-gate",
  "loams-store",
  "nix",
  "proptest",
@@ -6075,6 +6076,12 @@ dependencies = [
  "datafusion",
  "loams-house-sql",
  "loams-house-types",
+ "regex",
+ "serde_json",
+ "siphasher",
+ "tokio",
+ "twox-hash",
+ "uuid",
 ]
 
 [[package]]
@@ -6082,8 +6089,12 @@ name = "loams-house-formats"
 version = "0.0.1"
 dependencies = [
  "arrow-array 59.3.0",
+ "arrow-ipc 59.3.0",
  "arrow-schema 59.3.0",
+ "bytes",
+ "loams-house-native",
  "loams-house-types",
+ "parquet 59.3.0",
 ]
 
 [[package]]
@@ -6232,6 +6243,13 @@ dependencies = [
  "serde_json",
  "tokio",
  "zstd 0.13.3",
+]
+
+[[package]]
+name = "loams-meter-gate"
+version = "0.1.2"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]

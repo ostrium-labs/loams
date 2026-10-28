@@ -1,0 +1,91 @@
+# The Flink connector-jar bundle for Loams' managed Flink SQL (design 81,
+# D1986). Preview.
+#
+# Every jar is fetched from Maven Central at the pinned version and checked
+# against the sha256 below (computed 2026-10-27 by streaming each jar and
+# cross-checked against Maven Central's published sha1). Containerfile
+# layers them onto the official Flink image; crates/loams-flink keeps a copy
+# of this list (connectors::jars::BUNDLE) and a unit test checks the two are
+# equal, so change both in one commit.
+#
+# Every version is at least 14 days old on the day it was pinned. Licences:
+# Apache-2.0 except the PostgreSQL JDBC driver (BSD-2-Clause).
+
+[flink]
+version = "2.2.1"
+# docker.io/library/flink:2.2.1-scala_2.12-java21, the manifest list's digest.
+image = "docker.io/library/flink:2.2.1-scala_2.12-java21@sha256:521951efbfbb0cec74c2826446ce1d20a051bff18e6d3716a6affe97ddec692a"
+# Bumped whenever a jar changes; the image tag is <flink>-loams<bundle>.
+bundle = 1
+
+[[jar]]
+group = "org.apache.iceberg"
+artifact = "iceberg-flink-runtime-2.2"
+version = "1.12.0"
+sha256 = "c79bbee8792b1115c321e4be99fab3fb36db0bf8fa2bba24b481e6da14416de3"
+license = "Apache-2.0"
+purpose = "Iceberg catalog and table connector (REST catalog on Lakekeeper)"
+
+[[jar]]
+group = "org.apache.iceberg"
+artifact = "iceberg-aws-bundle"
+version = "1.12.0"
+sha256 = "dd7e49ffa4ac9b215bed846581991259e3aec9bb2fa08d6cec029c46cd66d957"
+license = "Apache-2.0"
+purpose = "S3FileIO for Loams object storage"
+
+[[jar]]
+group = "org.apache.flink"
+artifact = "flink-sql-connector-kafka"
+version = "5.0.0-2.2"
+sha256 = "5605c691d11a501382c383fecba37a7a552467da5ab7ba904ef5d6f3d62c5616"
+license = "Apache-2.0"
+purpose = "kafka and upsert-kafka, for Loams streams through the Iggy Kafka gateway"
+
+[[jar]]
+group = "org.apache.flink"
+artifact = "flink-connector-jdbc-core"
+version = "4.1.0-2.2"
+sha256 = "f8357ab799095e6486315db4019edf63ced762bc8c2eaa63614c7b962755564b"
+license = "Apache-2.0"
+purpose = "JDBC connector and catalog"
+
+[[jar]]
+group = "org.apache.flink"
+artifact = "flink-connector-jdbc-postgres"
+version = "4.1.0-2.2"
+sha256 = "ae6da5769d932123606f1b9e03d90d57cde9c1d0144df6ffa64a9701afb86d6b"
+license = "Apache-2.0"
+purpose = "The JDBC catalog's Postgres dialect"
+
+[[jar]]
+group = "org.postgresql"
+artifact = "postgresql"
+version = "42.7.14"
+sha256 = "73914527305a40cce504b0d3d90b23caf565136912d607ae8ae7c5895512332c"
+license = "BSD-2-Clause"
+purpose = "PostgreSQL JDBC driver"
+
+[[jar]]
+group = "org.apache.flink"
+artifact = "flink-sql-connector-postgres-cdc"
+version = "3.7.0-2.2"
+sha256 = "25cf92be4800609126c91c1951acae5a8d138ab0e6e57dcf7aef6f1c0dce13ee"
+license = "Apache-2.0"
+purpose = "Postgres CDC (flink-cdc, pgoutput)"
+
+[[jar]]
+group = "org.apache.hadoop"
+artifact = "hadoop-client-api"
+version = "3.4.2"
+sha256 = "607c0299f4df33013bd0a0f37c8cf255c635bbaddd247b8fec68c210cc17d19f"
+license = "Apache-2.0"
+purpose = "Hadoop Configuration, which Iceberg's Flink catalog loads"
+
+[[jar]]
+group = "org.apache.hadoop"
+artifact = "hadoop-client-runtime"
+version = "3.4.2"
+sha256 = "18d071c7f72f8a946677b398a57af9c7afa2dd41a81023c310f99373fec200b3"
+license = "Apache-2.0"
+purpose = "Shaded Hadoop runtime for hadoop-client-api"

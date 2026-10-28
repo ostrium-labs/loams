@@ -127,10 +127,23 @@ write_files:
         esac
       }
 
+      # The connect role (profile `connectors`, plan CC1 Task 1) reaches the engine's
+      # connect socket with an API key, which the engine accepts only when apikey is
+      # among its auth modes; people keep coming in over the tailnet.
+      auth_mode() {
+        local p=",${LOAMS_PROFILES:-}," ints="${CONFLUENT_INTEGRATIONS:-}"
+        if [[ "$p" == *,connectors,* || -n "${ints//[ ,]/}" ]]; then
+          echo "tailscale,apikey"
+        else
+          echo "tailscale"
+        fi
+      }
+
       env_values() {
         printf 'LOAMS_VERSION=%s\n' "$LOAMS_VERSION"
         printf 'LOAMS_BUCKET=%s\n' "$LOAMS_BUCKET_URL"
         printf 'COMPOSE_PROFILES=%s\n' "${LOAMS_PROFILES:-}"
+        printf 'LOAMS_AUTH_MODE=%s\n' "$(auth_mode)"
         printf 'TS_HOSTNAME=%s\n' "${TS_HOSTNAME:-loams}"
         printf 'TS_AUTHKEY=%s\n' '<from secret store>'
         printf 'LOAMS_SETUP_TOKEN=%s\n' '<from secret store>'
@@ -474,6 +487,7 @@ write_files:
       ints="${ints//,/ }"
       ns="${CONNECT_NAMESPACE:-0}"
       [[ "$ns" =~ ^[0-9]{1,19}$ ]] || die "CONNECT_NAMESPACE must be a number"
+      changed=0
       for i in $ints; do
         [[ "$i" =~ ^[a-z0-9][a-z0-9-]{0,30}$ ]] || die "CONFLUENT_INTEGRATIONS: '$i' is not an integration name (lowercase letters, digits, -)"
         dir="$stack/secrets/connect/$ns/confluent-$i"
@@ -487,8 +501,10 @@ write_files:
             # No trailing newline; the value never passes through argv.
             printf '%s' "$(cat "$work/value")" >"$tmpf"
             chmod 600 "$tmpf"
+            cmp -s "$tmpf" "$dir/$file" 2>/dev/null || changed=1
             mv "$tmpf" "$dir/$file"
           else
+            [[ ! -e "$dir/$file" ]] || changed=1
             rm -f "$dir/$file"
             case "$short" in
               api-key|api-secret) echo "loams-byoc-secrets: confluent-$i: $(secret_name "confluent-$i-$short") is not in the secret store yet (run loams byoc confluent key create)" >&2 ;;
@@ -499,6 +515,24 @@ write_files:
         [[ "$(id -u)" -ne 0 ]] || chown -R 10001 "$stack/secrets/connect"
         echo "loams-byoc-secrets: wrote secrets/connect/$ns/confluent-$i"
       done
+      # A rotated key (loams byoc confluent key rotate) reaches running connectors only
+      # when the connect role restarts its instances; its admin API is on its own
+      # loopback, so the refresh restarts the service (a graceful stop: drain and
+      # checkpoint, then start with the new files). At boot the stack starts after this.
+      if ((confluent_only && changed)); then
+        compose="${LOAMS_BYOC_COMPOSE:-docker compose}"
+        # shellcheck disable=SC2086 # the command and its subcommand
+        if (cd "$stack" && $compose ps --status running --services 2>/dev/null | grep -qx connect); then
+          # shellcheck disable=SC2086
+          if (cd "$stack" && $compose restart connect >/dev/null 2>&1); then
+            echo "loams-byoc-secrets: a Confluent key changed: restarted the connect service"
+          else
+            echo "loams-byoc-secrets: a Confluent key changed, but restarting the connect service failed; run: docker compose restart connect" >&2
+          fi
+        else
+          echo "loams-byoc-secrets: a Confluent key changed; the connect service is not running"
+        fi
+      fi
       echo "loams-byoc-secrets: ok ($cloud, prefix $prefix)"
   - path: /etc/systemd/system/loams-byoc.service
     permissions: "0644"

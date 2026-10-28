@@ -26,6 +26,9 @@ test-hooks = ["loams-house-ipc/test-hooks"]
 # `hsw1` `Error` frames as `loams_house_ipc::EngineError`, already taken apart by
 # the worker, so this crate renders them without depending on `loams-chdb`.
 loams-house-ipc = { path = "../loams-house-ipc" }
+# Usage events and the entitlement gate (design §63; ME1 Tasks 3, 20). Root
+# workspace crate by path: std and serde_json only, no Arrow (ME1 constraint).
+loams-meter-gate = { path = "../../../crates/loams-meter-gate" }
 # `posix_spawn` of workers with their socket on fd 3 and an empty environment,
 # `SIGKILL`, and `waitid` without reaping, all without `unsafe` here; `sendmsg`
 # with `SCM_RIGHTS` for the sandboxed worker's forwarder (HS1 Task 6).
