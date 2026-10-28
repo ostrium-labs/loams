@@ -33,7 +33,7 @@ pub const ROTATION_OVERLAP: Duration = Duration::from_secs(24 * 3600);
 pub const MAX_ENDPOINTS: usize = 20;
 
 /// A webhook endpoint of a customer.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Endpoint {
     pub id: String,
     pub customer_id: String,
@@ -63,7 +63,7 @@ impl Endpoint {
 }
 
 /// Where a rule sends.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Channel {
     Email,
     Console,
@@ -71,7 +71,7 @@ pub enum Channel {
 
 /// A notification rule: which thresholds of which feature reach which
 /// channels (webhooks get every subscribed event).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Rule {
     pub id: String,
     pub customer_id: String,
@@ -112,7 +112,7 @@ impl Rule {
 }
 
 /// The state of one delivery.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum DeliveryStatus {
     Delivered,
     /// Will be tried again at `next_attempt`.
@@ -122,7 +122,7 @@ pub enum DeliveryStatus {
 }
 
 /// One event to one endpoint.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Delivery {
     pub endpoint_id: String,
     pub customer_id: String,
@@ -170,7 +170,7 @@ pub struct MemNotifications {
     inner: Mutex<MemInner>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 struct MemInner {
     endpoints: Vec<Endpoint>,
     rules: Vec<Rule>,
@@ -187,59 +187,54 @@ impl MemNotifications {
     }
 }
 
-#[async_trait]
-impl NotificationStore for MemNotifications {
-    async fn put_endpoint(&self, e: Endpoint) -> Result<()> {
-        let mut s = self.lock();
+impl MemInner {
+    fn put_endpoint(&mut self, e: Endpoint) -> Result<()> {
+        let s = self;
         s.endpoints.retain(|x| x.id != e.id);
         s.endpoints.push(e);
         Ok(())
     }
-    async fn endpoint(&self, id: &str) -> Result<Option<Endpoint>> {
-        Ok(self.lock().endpoints.iter().find(|e| e.id == id).cloned())
+    fn endpoint(&mut self, id: &str) -> Result<Option<Endpoint>> {
+        Ok(self.endpoints.iter().find(|e| e.id == id).cloned())
     }
-    async fn endpoints_of(&self, customer_id: &str) -> Result<Vec<Endpoint>> {
+    fn endpoints_of(&mut self, customer_id: &str) -> Result<Vec<Endpoint>> {
         Ok(self
-            .lock()
             .endpoints
             .iter()
             .filter(|e| e.customer_id == customer_id)
             .cloned()
             .collect())
     }
-    async fn put_rule(&self, r: Rule) -> Result<()> {
-        let mut s = self.lock();
+    fn put_rule(&mut self, r: Rule) -> Result<()> {
+        let s = self;
         s.rules.retain(|x| x.id != r.id);
         s.rules.push(r);
         Ok(())
     }
-    async fn rules_of(&self, customer_id: &str) -> Result<Vec<Rule>> {
+    fn rules_of(&mut self, customer_id: &str) -> Result<Vec<Rule>> {
         Ok(self
-            .lock()
             .rules
             .iter()
             .filter(|r| r.customer_id == customer_id)
             .cloned()
             .collect())
     }
-    async fn delivery(&self, endpoint_id: &str, event_id: &str) -> Result<Option<Delivery>> {
+    fn delivery(&mut self, endpoint_id: &str, event_id: &str) -> Result<Option<Delivery>> {
         Ok(self
-            .lock()
             .deliveries
             .iter()
             .find(|d| d.endpoint_id == endpoint_id && d.event_id == event_id)
             .cloned())
     }
-    async fn put_delivery(&self, d: Delivery) -> Result<()> {
-        let mut s = self.lock();
+    fn put_delivery(&mut self, d: Delivery) -> Result<()> {
+        let s = self;
         s.deliveries
             .retain(|x| !(x.endpoint_id == d.endpoint_id && x.event_id == d.event_id));
         s.deliveries.push(d);
         Ok(())
     }
-    async fn due(&self, now: UtcNanos) -> Result<Vec<Delivery>> {
+    fn due(&mut self, now: UtcNanos) -> Result<Vec<Delivery>> {
         Ok(self
-            .lock()
             .deliveries
             .iter()
             .filter(|d| {
@@ -248,9 +243,8 @@ impl NotificationStore for MemNotifications {
             .cloned()
             .collect())
     }
-    async fn deliveries_of(&self, customer_id: &str, limit: usize) -> Result<Vec<Delivery>> {
+    fn deliveries_of(&mut self, customer_id: &str, limit: usize) -> Result<Vec<Delivery>> {
         let mut all: Vec<Delivery> = self
-            .lock()
             .deliveries
             .iter()
             .filter(|d| d.customer_id == customer_id)
@@ -259,6 +253,152 @@ impl NotificationStore for MemNotifications {
         all.sort_by(|a, b| b.at.cmp(&a.at));
         all.truncate(limit);
         Ok(all)
+    }
+}
+
+#[async_trait]
+impl NotificationStore for MemNotifications {
+    async fn put_endpoint(&self, e: Endpoint) -> Result<()> {
+        let s = &mut *self.lock();
+        s.put_endpoint(e)
+    }
+    async fn endpoint(&self, id: &str) -> Result<Option<Endpoint>> {
+        let s = &mut *self.lock();
+        s.endpoint(id)
+    }
+    async fn endpoints_of(&self, customer_id: &str) -> Result<Vec<Endpoint>> {
+        let s = &mut *self.lock();
+        s.endpoints_of(customer_id)
+    }
+    async fn put_rule(&self, r: Rule) -> Result<()> {
+        let s = &mut *self.lock();
+        s.put_rule(r)
+    }
+    async fn rules_of(&self, customer_id: &str) -> Result<Vec<Rule>> {
+        let s = &mut *self.lock();
+        s.rules_of(customer_id)
+    }
+    async fn delivery(&self, endpoint_id: &str, event_id: &str) -> Result<Option<Delivery>> {
+        let s = &mut *self.lock();
+        s.delivery(endpoint_id, event_id)
+    }
+    async fn put_delivery(&self, d: Delivery) -> Result<()> {
+        let s = &mut *self.lock();
+        s.put_delivery(d)
+    }
+    async fn due(&self, now: UtcNanos) -> Result<Vec<Delivery>> {
+        let s = &mut *self.lock();
+        s.due(now)
+    }
+    async fn deliveries_of(&self, customer_id: &str, limit: usize) -> Result<Vec<Delivery>> {
+        let s = &mut *self.lock();
+        s.deliveries_of(customer_id, limit)
+    }
+}
+
+/// The most deliveries kept per customer; older ones are dropped.
+pub const DELIVERIES_KEPT: usize = 1000;
+
+/// [`NotificationStore`] on a [`crate::store::VersionedDoc`] (endpoints,
+/// rules and the newest [`DELIVERIES_KEPT`] deliveries of each customer),
+/// written the same way as [`crate::store::DocStore`].
+pub struct DocNotifications {
+    doc: Arc<dyn crate::store::VersionedDoc>,
+    writes: tokio::sync::Mutex<()>,
+}
+
+impl fmt::Debug for DocNotifications {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DocNotifications").finish_non_exhaustive()
+    }
+}
+
+impl DocNotifications {
+    pub fn new(doc: Arc<dyn crate::store::VersionedDoc>) -> Self {
+        DocNotifications {
+            doc,
+            writes: tokio::sync::Mutex::new(()),
+        }
+    }
+
+    async fn current(&self) -> Result<(Option<u64>, MemInner)> {
+        match self.doc.load().await? {
+            None => Ok((None, MemInner::default())),
+            Some((v, bytes)) => Ok((
+                Some(v),
+                serde_json::from_slice(&bytes).map_err(|e| {
+                    MeterError::Unavailable(format!("the notification records do not parse: {e}"))
+                })?,
+            )),
+        }
+    }
+
+    async fn read<R>(&self, f: impl FnOnce(&mut MemInner) -> Result<R>) -> Result<R> {
+        let (_, mut inner) = self.current().await?;
+        f(&mut inner)
+    }
+
+    async fn write<R>(&self, mut f: impl FnMut(&mut MemInner) -> Result<R>) -> Result<R> {
+        let _one = self.writes.lock().await;
+        for _ in 0..8 {
+            let (version, mut inner) = self.current().await?;
+            let out = f(&mut inner)?;
+            inner.trim();
+            let bytes = serde_json::to_vec(&inner).map_err(|e| {
+                MeterError::Unavailable(format!("the notification records do not serialise: {e}"))
+            })?;
+            if self.doc.save(version, bytes).await?.is_some() {
+                return Ok(out);
+            }
+        }
+        Err(MeterError::Unavailable(
+            "the notification records changed concurrently too often; retry".into(),
+        ))
+    }
+}
+
+impl MemInner {
+    /// Keeps the newest deliveries of each customer, and every one still
+    /// retrying.
+    fn trim(&mut self) {
+        let mut per: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        self.deliveries.sort_by(|a, b| b.at.cmp(&a.at));
+        self.deliveries.retain(|d| {
+            let n = per.entry(d.customer_id.clone()).or_insert(0);
+            *n += 1;
+            *n <= DELIVERIES_KEPT || d.status == DeliveryStatus::Retrying
+        });
+    }
+}
+
+#[async_trait]
+impl NotificationStore for DocNotifications {
+    async fn put_endpoint(&self, e: Endpoint) -> Result<()> {
+        self.write(|s| s.put_endpoint(e.clone())).await
+    }
+    async fn endpoint(&self, id: &str) -> Result<Option<Endpoint>> {
+        self.read(|s| s.endpoint(id)).await
+    }
+    async fn endpoints_of(&self, customer_id: &str) -> Result<Vec<Endpoint>> {
+        self.read(|s| s.endpoints_of(customer_id)).await
+    }
+    async fn put_rule(&self, r: Rule) -> Result<()> {
+        self.write(|s| s.put_rule(r.clone())).await
+    }
+    async fn rules_of(&self, customer_id: &str) -> Result<Vec<Rule>> {
+        self.read(|s| s.rules_of(customer_id)).await
+    }
+    async fn delivery(&self, endpoint_id: &str, event_id: &str) -> Result<Option<Delivery>> {
+        self.read(|s| s.delivery(endpoint_id, event_id)).await
+    }
+    async fn put_delivery(&self, d: Delivery) -> Result<()> {
+        self.write(|s| s.put_delivery(d.clone())).await
+    }
+    async fn due(&self, now: UtcNanos) -> Result<Vec<Delivery>> {
+        self.read(|s| s.due(now)).await
+    }
+    async fn deliveries_of(&self, customer_id: &str, limit: usize) -> Result<Vec<Delivery>> {
+        self.read(|s| s.deliveries_of(customer_id, limit)).await
     }
 }
 
