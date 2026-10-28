@@ -17,6 +17,12 @@ async-trait.workspace = true
 base64.workspace = true
 bytes.workspace = true
 clap = { workspace = true, features = ["env"] }
+# The pod watch of the Kubernetes resolver (ME1 Task 30).
+futures.workspace = true
+k8s-openapi.workspace = true
+kube.workspace = true
+# inotify on cgroup.events for final reads (ME1 Task 30).
+notify.workspace = true
 reqwest.workspace = true
 # The host report's MAC (platform doc 06 PD64), epochs and keys.
 hmac.workspace = true

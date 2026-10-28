@@ -6,7 +6,6 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use loams_temporal_history::Attributes;
 use loams_temporal_history::time::{dur, dur_ms, ms, ts};
 use loams_temporal_history::{Attributes, Limits, limit_messages};
 use loams_temporal_matching::{Handout, Matcher, QueueKey, TaskKind as QueueKind};
@@ -28,8 +27,10 @@ use loams_temporal_proto::temporal::api::workflowservice::v1::workflow_service_s
 use loams_temporal_proto::temporal::api::workflowservice::v1::*;
 use loams_temporal_resonate::ids::{PromiseId, WorkflowRef};
 use loams_temporal_resonate::{Durability, SettleAs};
+use loams_temporal_schedule::{MemScheduleStore, ScheduleStore};
 use loams_temporal_statemachine::{Input, Reply, server_failure};
 use loams_temporal_store::{NamespaceRecord, RunKey, Store, StoreError};
+use loams_temporal_visibility::{MemVisibility, VisibilityStore};
 use tonic::{Request, Response, Status};
 
 use crate::auth::{Authenticator, Principal};
@@ -53,6 +54,11 @@ pub struct FrontendConfig {
     pub server_version: String,
     /// The default page of `GetWorkflowExecutionHistory`.
     pub history_page_size: usize,
+    /// What `GetClusterInfo` reports as the shard count.
+    pub history_shard_count: i32,
+    /// What `GetClusterInfo` reports as the persistence store
+    /// (`postgres`, `memory`).
+    pub persistence_store: String,
 }
 
 impl Default for FrontendConfig {
@@ -63,6 +69,8 @@ impl Default for FrontendConfig {
             history_wait: Duration::from_secs(60),
             server_version: format!("loams-temporal {}", env!("CARGO_PKG_VERSION")),
             history_page_size: 1000,
+            history_shard_count: 0,
+            persistence_store: String::new(),
         }
     }
 }
@@ -77,6 +85,14 @@ pub struct Frontend {
     pub(crate) queries: Queries,
     pub(crate) config: FrontendConfig,
     namespaces: Mutex<HashMap<String, NamespaceRecord>>,
+    /// Temporal Schedules (D2072).
+    pub(crate) schedules: Arc<dyn ScheduleStore>,
+    /// Runs a schedule started, by run, so a close runs its pass at once.
+    pub(crate) scheduled_runs: Mutex<HashMap<RunKey, String>>,
+    /// Visibility queries and the search-attribute registry (D2075).
+    pub(crate) visibility: Arc<dyn VisibilityStore>,
+    /// The memory visibility store, fed from the engine's commits.
+    pub(crate) visibility_feed: Option<Arc<MemVisibility>>,
 }
 
 impl std::fmt::Debug for Frontend {
@@ -165,6 +181,7 @@ impl Frontend {
         tokens: TokenKeys,
         config: FrontendConfig,
     ) -> Self {
+        let visibility = Arc::new(MemVisibility::new());
         Frontend {
             engine,
             matcher,
@@ -174,7 +191,26 @@ impl Frontend {
             queries: Queries::default(),
             config,
             namespaces: Mutex::new(HashMap::new()),
+            schedules: Arc::new(MemScheduleStore::new()),
+            scheduled_runs: Mutex::new(HashMap::new()),
+            visibility: visibility.clone(),
+            visibility_feed: Some(visibility),
         }
+    }
+
+    /// Answers visibility queries from `store` (the memory store, fed from
+    /// the engine, by default). A store other than the memory one reads the
+    /// rows the history store's commits write.
+    pub fn with_visibility_store(mut self, store: Arc<dyn VisibilityStore>) -> Self {
+        self.visibility = store;
+        self.visibility_feed = None;
+        self
+    }
+
+    /// Keeps schedules in `store` (the memory store by default).
+    pub fn with_schedule_store(mut self, store: Arc<dyn ScheduleStore>) -> Self {
+        self.schedules = store;
+        self
     }
 
     /// Drops a namespace from the ID cache (it was updated).
@@ -185,7 +221,17 @@ impl Frontend {
             .remove(id);
     }
 
+    /// The engine (tests and tools drive runs through it).
+    pub fn engine(&self) -> &Engine {
+        &self.engine
+    }
+
+    /// The caller: the UI listener's principal when the call came in there
+    /// (D2050), otherwise what the `authorization` header proves.
     pub(crate) fn principal<T>(&self, req: &Request<T>) -> Result<Principal, Status> {
+        if let Some(t) = req.extensions().get::<crate::ui::TrustedPrincipal>() {
+            return Ok(t.0.clone());
+        }
         self.auth.authenticate(req.metadata())
     }
 
@@ -1303,6 +1349,7 @@ impl WorkflowService for WorkflowServiceImpl {
                     0 => None,
                     s2c => Some(ts(a.scheduled_time.as_ref().map_or(0, ms) + s2c)),
                 },
+                #[allow(deprecated)]
                 last_worker_version_stamp: a.started_worker_version.clone(),
                 ..Default::default()
             })
@@ -1716,6 +1763,126 @@ impl WorkflowService for WorkflowServiceImpl {
         self.0.principal(&req)?;
         // No sticky queues in DX1 (Q1156): nothing to reset.
         Ok(Response::new(ResetStickyTaskQueueResponse {}))
+    }
+
+    // Temporal Schedules (D2070-D2073): `crate::schedules`.
+
+    async fn create_schedule(
+        &self,
+        req: Request<CreateScheduleRequest>,
+    ) -> Result<Response<CreateScheduleResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        Ok(Response::new(
+            self.0.create_schedule(&p, req.into_inner()).await?,
+        ))
+    }
+
+    async fn describe_schedule(
+        &self,
+        req: Request<DescribeScheduleRequest>,
+    ) -> Result<Response<DescribeScheduleResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        Ok(Response::new(
+            self.0.describe_schedule(&p, req.into_inner()).await?,
+        ))
+    }
+
+    async fn update_schedule(
+        &self,
+        req: Request<UpdateScheduleRequest>,
+    ) -> Result<Response<UpdateScheduleResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        Ok(Response::new(
+            self.0.update_schedule(&p, req.into_inner()).await?,
+        ))
+    }
+
+    async fn patch_schedule(
+        &self,
+        req: Request<PatchScheduleRequest>,
+    ) -> Result<Response<PatchScheduleResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        Ok(Response::new(
+            self.0.patch_schedule(&p, req.into_inner()).await?,
+        ))
+    }
+
+    async fn delete_schedule(
+        &self,
+        req: Request<DeleteScheduleRequest>,
+    ) -> Result<Response<DeleteScheduleResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        Ok(Response::new(
+            self.0.delete_schedule(&p, req.into_inner()).await?,
+        ))
+    }
+
+    async fn list_schedules(
+        &self,
+        req: Request<ListSchedulesRequest>,
+    ) -> Result<Response<ListSchedulesResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        Ok(Response::new(
+            self.0.list_schedules(&p, req.into_inner()).await?,
+        ))
+    }
+
+    async fn list_schedule_matching_times(
+        &self,
+        req: Request<ListScheduleMatchingTimesRequest>,
+    ) -> Result<Response<ListScheduleMatchingTimesResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        Ok(Response::new(
+            self.0
+                .list_schedule_matching_times(&p, req.into_inner())
+                .await?,
+        ))
+    }
+
+    // Visibility (D2074-D2076): `crate::visibility`.
+
+    async fn list_workflow_executions(
+        &self,
+        req: Request<ListWorkflowExecutionsRequest>,
+    ) -> Result<Response<ListWorkflowExecutionsResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        Ok(Response::new(
+            self.0
+                .list_workflow_executions(&p, req.into_inner())
+                .await?,
+        ))
+    }
+
+    async fn scan_workflow_executions(
+        &self,
+        req: Request<ScanWorkflowExecutionsRequest>,
+    ) -> Result<Response<ScanWorkflowExecutionsResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        Ok(Response::new(
+            self.0
+                .scan_workflow_executions(&p, req.into_inner())
+                .await?,
+        ))
+    }
+
+    async fn count_workflow_executions(
+        &self,
+        req: Request<CountWorkflowExecutionsRequest>,
+    ) -> Result<Response<CountWorkflowExecutionsResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        Ok(Response::new(
+            self.0
+                .count_workflow_executions(&p, req.into_inner())
+                .await?,
+        ))
+    }
+
+    async fn get_search_attributes(
+        &self,
+        req: Request<GetSearchAttributesRequest>,
+    ) -> Result<Response<GetSearchAttributesResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        Ok(Response::new(self.0.get_search_attributes(&p).await?))
     }
 }
 

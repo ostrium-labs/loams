@@ -108,6 +108,12 @@ pub struct Deps {
     pub node: Option<PathBuf>,
     /// Default [`NPM_REGISTRY`].
     pub registry: String,
+    /// Where installed agents' machine keys are traded for tokens (D1618, D1629); `None`: no
+    /// token files.
+    pub identity: Option<crate::identity::AgentIdentity>,
+    /// Zitadel's user API, to deactivate an uninstalled agent's machine user (D1632); `None`:
+    /// the key is forgotten and the user left for the console.
+    pub machine_users: Option<Arc<dyn crate::identity::MachineUsers>>,
 }
 
 impl std::fmt::Debug for Deps {
@@ -116,6 +122,8 @@ impl std::fmt::Debug for Deps {
             .field("data_dir", &self.data_dir)
             .field("node", &self.node)
             .field("registry", &self.registry)
+            .field("identity", &self.identity)
+            .field("machine_users", &self.machine_users.is_some())
             .finish_non_exhaustive()
     }
 }
@@ -679,6 +687,38 @@ impl MarketplaceHost {
     ///
     /// When it is not installed.
     pub fn uninstall(&self, id: &str) -> Result<(), ServiceError> {
+        let removed = self.uninstall_files(id)?;
+        self.inner
+            .deps
+            .vault
+            .delete(&crate::identity::machine_key_vault_key(&removed));
+        Ok(())
+    }
+
+    /// [`MarketplaceHost::uninstall`], and retires the agent's identity (D1632): its machine
+    /// user is deactivated and its key removed at Zitadel when agentd holds a management
+    /// credential, and the key leaves the vault in any case.
+    ///
+    /// # Errors
+    ///
+    /// When it is not installed; Zitadel's refusal, after the uninstall (the key is gone from
+    /// the vault anyway).
+    pub async fn uninstall_retiring(
+        &self,
+        id: &str,
+    ) -> Result<crate::identity::Retired, ServiceError> {
+        let removed = self.uninstall_files(id)?;
+        crate::identity::retire(
+            self.inner.deps.vault.as_ref(),
+            self.inner.deps.machine_users.as_deref(),
+            &removed,
+        )
+        .await
+        .map_err(|e| ServiceError::Vault(format!("{removed} is uninstalled, but {e}")))
+    }
+
+    /// Removes the package, its registration and its config secrets; answers the canonical id.
+    fn uninstall_files(&self, id: &str) -> Result<String, ServiceError> {
         let listing = self.installed_listing(id);
         let removed = self.inner.layout.uninstall(id)?;
         if let Some(listing) = listing {
@@ -690,7 +730,51 @@ impl MarketplaceHost {
             }
         }
         self.bump();
-        Ok(())
+        Ok(removed.id)
+    }
+
+    /// Keeps `id`'s machine key (the JSON Zitadel handed out when its machine user was made,
+    /// IA4 Task 1) in the vault; answers the machine user's id.
+    ///
+    /// # Errors
+    ///
+    /// When it is not installed, the file is not a machine key, or the vault refuses it.
+    pub fn store_machine_key(&self, id: &str, key_json: &str) -> Result<String, ServiceError> {
+        if self.installed_listing(id).is_none() {
+            return Err(ServiceError::Vault(format!("{id} is not installed")));
+        }
+        crate::identity::store_machine_key(self.inner.deps.vault.as_ref(), id, key_json)
+            .map_err(ServiceError::Vault)
+    }
+
+    /// The token file of a run of `id` (`LOAMS_TOKEN_FILE`, D1453), vended from its machine key
+    /// (D1618, D1629). Drive it with [`crate::identity::run_token_file`].
+    ///
+    /// # Errors
+    ///
+    /// When agentd has no issuer configured or `id` has no machine key.
+    pub fn token_file(
+        &self,
+        id: &str,
+        path: PathBuf,
+        namespace: String,
+    ) -> Result<crate::contract::TokenFile<crate::identity::ZitadelIssuer>, ServiceError> {
+        let identity = self.inner.deps.identity.clone().ok_or_else(|| {
+            ServiceError::Vault(format!(
+                "no agent identity: set {} and {}",
+                crate::identity::ISSUER_ENV,
+                crate::identity::PROJECT_ENV
+            ))
+        })?;
+        let issuer = crate::identity::ZitadelIssuer::from_vault(
+            identity,
+            self.inner.deps.vault.as_ref(),
+            id,
+        )
+        .map_err(ServiceError::Vault)?;
+        Ok(crate::contract::TokenFile::new_async(
+            path, namespace, issuer,
+        ))
     }
 
     fn installed_listing(&self, id: &str) -> Option<Value> {

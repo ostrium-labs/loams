@@ -1,0 +1,103 @@
+syntax = "proto3";
+
+// Loams Meter's plans (design §63 §9.5, §22; ME1 Tasks 10 and 11): a
+// versioned list of entitlement templates, written as YAML in the GitOps
+// repository and applied here by the reconciler. Assigning a plan to a
+// customer creates its entitlements and their recurring grants.
+//
+// Authorization: `can_manage_meters` on `platform:default` (`meter_admin`,
+// people only) for every method. Applies and assignments are audit events.
+package loams.meter.v1;
+
+import "google/protobuf/timestamp.proto";
+import "loams/meter/v1/customer.proto";
+import "loams/options/v1/options.proto";
+
+// Plans: named, versioned sets of entitlement templates.
+service PlanService {
+  option (loams.options.v1.module) = {
+    name: "meter.plans"
+    summary: "Meter plans: entitlement templates, applied from YAML and assigned to customers."
+  };
+
+  // Applies a plan's YAML (`plans/<name>.yaml`). A version that exists with
+  // the same content is a no-op; a version that exists with other content is
+  // refused, and so is a change to a meter's semantics once it is used.
+  rpc ApplyPlan(ApplyPlanRequest) returns (ApplyPlanResponse) {
+    option idempotency_level = IDEMPOTENT;
+    option (loams.options.v1.facade) = {name: "apply"};
+  }
+  rpc ListPlans(ListPlansRequest) returns (ListPlansResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+    option (loams.options.v1.facade) = {name: "list"};
+  }
+  // Assigns a plan version (the latest when 0) to a customer: creates or
+  // updates the entitlements of each of the customer's subjects.
+  rpc AssignPlan(AssignPlanRequest) returns (AssignPlanResponse) {
+    option idempotency_level = IDEMPOTENT;
+    option (loams.options.v1.facade) = {name: "assign"};
+  }
+  // Removes the customer's plan and the entitlements it created.
+  rpc UnassignPlan(UnassignPlanRequest) returns (UnassignPlanResponse) {
+    option idempotency_level = IDEMPOTENT;
+    option (loams.options.v1.facade) = {name: "unassign"};
+  }
+}
+
+message Plan {
+  // The plan's name (`free`, `pro`).
+  string name = 1;
+  uint32 version = 2;
+  // The YAML it was applied from.
+  string yaml = 3;
+  // The features it entitles.
+  repeated string features = 4;
+  // SHA-256 of the canonical form, hex.
+  string digest = 5;
+  google.protobuf.Timestamp create_time = 6;
+}
+
+message ApplyPlanRequest {
+  string yaml = 1;
+  // Recorded in the audit event (the GitOps commit, for the reconciler).
+  string reason = 2;
+}
+
+message ApplyPlanResponse {
+  Plan plan = 1;
+  // False when this version was already applied with the same content.
+  bool changed = 2;
+}
+
+message ListPlansRequest {
+  // Empty: every plan, latest version only unless `all_versions`.
+  string name = 1;
+  bool all_versions = 2;
+}
+
+message ListPlansResponse {
+  repeated Plan plans = 1;
+}
+
+message AssignPlanRequest {
+  string customer_id = 1;
+  string plan = 2;
+  // 0: the latest.
+  uint32 version = 3;
+  string reason = 4;
+}
+
+message AssignPlanResponse {
+  Customer customer = 1;
+  // How many entitlements were created or changed.
+  uint32 entitlements_changed = 2;
+}
+
+message UnassignPlanRequest {
+  string customer_id = 1;
+  string reason = 2;
+}
+
+message UnassignPlanResponse {
+  Customer customer = 1;
+}

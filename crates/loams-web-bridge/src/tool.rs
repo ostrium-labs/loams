@@ -1,10 +1,10 @@
 //! The tool contract every provider implements (§37 §18.14.2, D503, D504):
 //! a snapshot with uids, `find`, `click`, `fill`, `wait_for`, a screenshot and
-//! a content extraction. The types here are the contract; the providers in
-//! [`crate::local`] and [`crate::browser_run`] fill them in.
+//! a content extraction. The types here are the contract; the providers fill
+//! them in.
 //!
-//! The efficiency rules of D504 are implemented once, here, so the local and
-//! the remote provider answer identically:
+//! The efficiency rules of D504 are implemented once, here, so every provider
+//! answers identically:
 //!
 //! 1. a snapshot is text with uids, never a screenshot;
 //! 2. a uid carries its snapshot id (`s7_12`), so a stale uid is a
@@ -721,7 +721,7 @@ pub struct Screenshot {
     pub sha256: String,
 }
 
-/// The text of a page, for extraction (the Kitesurf-shaped use).
+/// The text of a page, for extraction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Extracted {
     /// The page title.
