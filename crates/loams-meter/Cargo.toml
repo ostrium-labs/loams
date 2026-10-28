@@ -11,10 +11,10 @@ authors.workspace = true
 async-trait.workspace = true
 buffa.workspace = true
 connectrpc = { workspace = true, features = ["server"] }
-loams-cloudevents = { path = "../loams-cloudevents", default-features = false }
+loams-cloudevents = { path = "../loams-cloudevents", version = "0.1.2", default-features = false }
 loams-authz.workspace = true
 loams-common.workspace = true
-loams-meter-core = { path = "../loams-meter-core" }
+loams-meter-core = { path = "../loams-meter-core", version = "0.1.2" }
 loams-proto.workspace = true
 serde.workspace = true
 serde_json.workspace = true
