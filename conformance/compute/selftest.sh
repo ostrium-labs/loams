@@ -145,6 +145,33 @@ pins_are_literal() {
   done <"$OC_PINS"
 }
 
+# --- DBOS (DX0 Task 5; no stack) -------------------------------------------------
+
+# The scripts and the apps parse (no SDK is installed or built here).
+dbos_files_parse() {
+  local f
+  for f in "$HERE"/dbos-common/cases.sh "$HERE"/dbos-*/run.sh; do
+    bash -n "$f" || { echo "does not parse: $f"; return 1; }
+  done
+  python3 -I -c 'import ast, sys; ast.parse(open(sys.argv[1], encoding="utf-8").read())' "$HERE/dbos-common/crash/py/app.py"
+  python3 -I -c 'import json, sys; json.load(open(sys.argv[1]))' "$HERE/dbos-common/crash/ts/package.json"
+  grep -q '^package main' "$HERE/dbos-common/crash/go/main.go"
+  grep -q 'class App' "$HERE/dbos-common/crash/java/src/main/java/loams/App.java"
+}
+
+# Each SDK's expected failures are well formed, and its app pins the same
+# SDK release as pins.env.
+dbos_xfail_and_pins() {
+  local l
+  for l in py ts go java; do
+    "${XFAIL[@]}" --validate "$HERE/dbos-$l/xfail.toml"
+  done
+  grep -q "\"@dbos-inc/dbos-sdk\": \"$DBOS_TS\"" "$HERE/dbos-common/crash/ts/package.json" || { echo "ts app is not on $DBOS_TS"; return 1; }
+  grep -q "dbos-transact-golang v$DBOS_GO\$" "$HERE/dbos-common/crash/go/go.mod" || { echo "go app is not on v$DBOS_GO"; return 1; }
+  grep -q "dbos==\$DBOS_PY" "$HERE/dbos-py/run.sh" || { echo "py app does not install dbos==\$DBOS_PY"; return 1; }
+  grep -q '"dev.dbos:transact:"' "$HERE/dbos-common/crash/java/build.gradle.kts"
+}
+
 # --- The Temporal history corpus (DX0 Task 4; per PR, no server) ----------------
 
 corpus_manifest_complete() {
@@ -153,6 +180,36 @@ corpus_manifest_complete() {
 
 normalize_selftest() {
   python3 "$HERE/temporal/corpus/normalize.py" --self-test
+}
+
+# --- Airflow (DX0 Task 6; no stack) ----------------------------------------------
+
+# The DAGs and the REST client parse (ast only: nothing is imported or written).
+airflow_python_parses() {
+  local f
+  for f in "$HERE"/airflow/af.py "$HERE"/airflow/dags/*.py "$HERE"/airflow/edge/dags/*.py; do
+    python3 -I -c 'import ast, sys; ast.parse(open(sys.argv[1], encoding="utf-8").read(), sys.argv[1])' "$f" ||
+      { echo "does not parse: $f"; return 1; }
+  done
+}
+
+# The two bundles carry the same effects module (common.sh judges both).
+airflow_effects_copies_match() {
+  cmp "$HERE/airflow/dags/_oc_effects.py" "$HERE/airflow/edge/dags/_oc_effects.py"
+}
+
+# af.py turns Airflow 3's structured log events into text lines.
+airflow_af_log_lines() {
+  python3 -I - "$HERE/airflow/af.py" <<'EOF2'
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("af", sys.argv[1])
+af = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(af)
+assert af._log_line({"event": "OC-LOG-MARKER r1", "level": "info"}) == "OC-LOG-MARKER r1"
+assert af._log_line("plain line") == "plain line"
+assert "level" in af._log_line({"level": "info"})
+assert af.run_path("d", "manual__2026-10-27T00:00:00+00:00") == "/api/v2/dags/d/dagRuns/manual__2026-10-27T00%3A00%3A00%2B00%3A00"
+EOF2
 }
 
 # --- The compatibility matrix (DX1 Task 11; DX0 Task 7 adds durable rows) --------
@@ -209,6 +266,8 @@ compose_compute_config_valid() {
     oc_compose --profile "$p" config -q
     oc_compose --txn --profile "$p" config -q
   done
+  gw_release config -q
+  oc_compose --gateway --profile temporal-gateway config -q
 }
 
 # No service starts without a compute profile: the stack's services are the
@@ -217,9 +276,9 @@ compose_compute_config_valid() {
 compose_compute_requires_profile() {
   local base with
   base=$( (cd "$OC_RELEASE" && "${COMPOSE[@]}" --env-file "$(oc_env_file)" -f compose.yaml config --services) | sort)
-  with=$(oc_compose --txn config --services | sort)
+  with=$(oc_compose --txn --gateway config --services | sort)
   [ "$base" = "$with" ] || { diff <(echo "$base") <(echo "$with"); return 1; }
-  python3 - "$OC_RELEASE/compose.compute.yaml" "$OC_DIR/pgdog-txn.yaml" <<'EOF'
+  python3 - "$OC_RELEASE/compose.compute.yaml" "$OC_DIR/pgdog-txn.yaml" "$OC_DIR/temporal-gateway.yaml" <<'EOF'
 import json, subprocess, sys
 # Read the files themselves (PyYAML is not assumed): every top-level service
 # block must carry a `profiles:` line, directly or through a merge anchor.
@@ -301,6 +360,135 @@ for s in ("dbos-py", "dbos-ts", "dbos-go", "dbos-java"):
 EOF
 }
 
+# --- The Temporal gateway's profile (DX1 Task 10; D2030, D2031) ---------------
+
+GW_DIR=$HERE/temporal/gateway
+
+# gw_release <compose args...>: the release profile alone (no conformance
+# overlay), with the shipped example config as its bind source.
+gw_release() {
+  LOAMS_TEMPORAL_CONFIG=$OC_RELEASE/temporal-gateway.toml.example \
+    oc_compose --profile temporal-gateway "$@"
+}
+
+# The profile publishes no host port, with and without the overlay: the
+# gateway has no `ports`, shares the engine's namespace, and the engine
+# publishes nothing new with it.
+gateway_profile_no_host_ports() {
+  compose_json >"$SCRATCH/base.json"
+  gw_release config --format json >"$SCRATCH/rel.json"
+  oc_compose --gateway --profile temporal-gateway config --format json >"$SCRATCH/gw.json"
+  python3 - "$SCRATCH/base.json" "$SCRATCH/rel.json" "$SCRATCH/gw.json" "$GW_DIR/gateway.toml" "$OC_RELEASE/temporal-gateway.toml.example" <<'EOF'
+import json, sys, tomllib
+base = json.load(open(sys.argv[1]))["services"]
+def ports(cfg):
+    return {(s, json.dumps(p, sort_keys=True)) for s, svc in cfg.items() for p in svc.get("ports", []) or []}
+for path in sys.argv[2:4]:
+    gw = json.load(open(path))["services"]
+    new = sorted(ports(gw) - ports(base))
+    assert not new, f"the temporal-gateway profile publishes host ports: {new}"
+    g = gw["temporal-gateway"]
+    assert not g.get("ports") and not g.get("expose"), g
+    assert g["network_mode"] == "service:loams", g.get("network_mode")
+    assert g["profiles"] == ["temporal-gateway"], g["profiles"]
+# 0.0.0.0 of the engine's namespace is the compose network, not the host.
+for path in sys.argv[4:6]:
+    cfg = tomllib.load(open(path, "rb"))
+    assert cfg["listen"] == "0.0.0.0:7233" and cfg["insecure_dev"] is False, (path, cfg)
+EOF
+}
+
+# The profile's shape (Task 10), in compose.compute.yaml itself: the
+# `loams_temporal` database that durable-init.sh creates, on the direct
+# endpoint, the engine's Resonate on its loopback, a read-only bind of the
+# config, and API keys with a task-token key (not insecure_dev).
+gateway_profile_shape() {
+  gw_release config --format json >"$SCRATCH/rel.json"
+  python3 - "$SCRATCH/rel.json" "$GW_DIR/gateway.toml" "$OC_RELEASE/temporal-gateway.toml.example" <<'EOF'
+import json, sys, tomllib
+svc = json.load(open(sys.argv[1]))["services"]
+g, init = svc["temporal-gateway"], svc["compute-init"]
+assert "temporal-gateway" in init["profiles"], init["profiles"]
+assert init["environment"]["LOAMS_TEMPORAL_DB_USER"] == "loams_temporal", init["environment"]
+assert g["depends_on"]["compute-init"]["condition"] == "service_completed_successfully", g["depends_on"]
+assert g["depends_on"]["loams"]["condition"] == "service_healthy", g["depends_on"]
+assert g["environment"]["LOAMS_TEMPORAL_DATABASE_URL"].endswith("@compute1:55433/loams_temporal"), g["environment"]
+assert "LOAMS_TEMPORAL_TOKEN_KEY_1" in g["environment"], g["environment"]
+assert g["read_only"] is True and g["cap_drop"] == ["ALL"], g
+[v] = [v for v in g["volumes"] if v["target"] == "/etc/loams-temporal/gateway.toml"]
+# Some compose versions drop `create_host_path: false` from `config`; the
+# source line is checked below.
+assert v["type"] == "bind" and v["read_only"] is True and v.get("bind", {}).get("create_host_path", False) is False, v
+for path in sys.argv[2:4]:
+    cfg = tomllib.load(open(path, "rb"))
+    assert cfg["store"] == {"kind": "postgres", "url_env": "LOAMS_TEMPORAL_DATABASE_URL"}, (path, cfg["store"])
+    d = cfg["durability"]
+    assert d["kind"] == "resonate" and d["url"] == "http://127.0.0.1:8001", (path, d)
+    assert cfg["keys"] and cfg["task_token_keys"], f"{path}: the profile runs with API keys and its own task-token key"
+EOF
+  grep -q '^  database loams_temporal "\$LOAMS_TEMPORAL_DB_USER"$' "$OC_RELEASE/compute/durable-init.sh"
+  grep -q '^          create_host_path: false$' "$OC_RELEASE/compose.compute.yaml"
+}
+
+# The gateway's image is a Loams release image (D2030): compose.compute.yaml
+# names <registry>/loams-temporal at the engine's tag, build.sh and both
+# release workflows build and attest it from
+# deploy/release/Containerfile.loams-temporal, and the conformance overlay
+# builds that same Containerfile locally (never pulled, named localhost/).
+gateway_image_is_release_image() {
+  gw_release config --format json >"$SCRATCH/rel.json"
+  oc_compose --gateway --profile temporal-gateway config --format json >"$SCRATCH/gw.json"
+  python3 - "$SCRATCH/rel.json" "$SCRATCH/gw.json" <<'EOF'
+import json, re, sys
+rel = json.load(open(sys.argv[1]))["services"]
+gw = json.load(open(sys.argv[2]))["services"]["temporal-gateway"]
+engine = rel["loams"]["image"]
+m = re.fullmatch(r"(.+)/loams:(\S+)", engine)
+assert m, engine
+want = f"{m.group(1)}/loams-temporal:{m.group(2)}"
+assert rel["temporal-gateway"]["image"] == want, (rel["temporal-gateway"]["image"], want)
+assert gw["image"].startswith("localhost/loams-temporal:"), gw["image"]
+assert gw["pull_policy"] == "never", gw.get("pull_policy")
+assert gw["build"]["dockerfile"] == "deploy/release/Containerfile.loams-temporal", gw["build"]
+EOF
+  test -f "$OC_RELEASE/Containerfile.loams-temporal"
+  # build.sh accepts loams-temporal and builds it by default; both release
+  # workflows build and attest it (other images may sit beside it).
+  grep -qE '^    loams\|[a-z|-]*\|loams-temporal\|' "$OC_RELEASE/build.sh"
+  grep -qE '^\(\(\$\{#images\[@\]\}\)\) \|\| images=\(.* loams-temporal( |\))' "$OC_RELEASE/build.sh"
+  local wf
+  for wf in release-images release-github; do
+    grep -qE 'image: \[loams, .*loams-temporal(, |\])' "$ROOT/.github/workflows/$wf.yml" ||
+      { echo "$wf.yml does not build loams-temporal"; return 1; }
+  done
+  # The first draft's conformance-only image name is gone.
+  if grep -rn --exclude=selftest.sh 'localhost/loams-temporal-conformance' "$ROOT/conformance" "$ROOT/deploy" "$ROOT/.github"; then return 1; fi
+}
+
+# The conformance overlay (airflow/compose.test.yaml) on top of the profile:
+# it resolves, publishes no host port at all, and the edge workers skip the
+# database check while the schedulers keep the direct endpoint.
+compose_airflow_test_overlay_valid() {
+  OC_COMPOSE_EXTRA="$HERE/airflow/compose.test.yaml" oc_compose --profile airflow --profile rustfs config --format json >"$SCRATCH/af.json"
+  OC_COMPOSE_EXTRA="$HERE/airflow/compose.test.yaml" oc_compose --txn --profile airflow --profile rustfs config -q
+  python3 - "$SCRATCH/af.json" <<'EOF2'
+import json, sys
+s = json.load(open(sys.argv[1]))["services"]
+for name in ("git-server", "airflow-init", "airflow-api-server", "airflow-scheduler-1", "airflow-scheduler-2",
+             "airflow-dag-processor", "airflow-triggerer", "airflow-edge-worker-1", "airflow-edge-worker-2",
+             "compute1", "rustfs"):
+    assert name in s, f"{name} missing"
+    assert not s[name].get("ports"), f"{name} publishes {s[name]['ports']}"
+for name in ("airflow-edge-worker-1", "airflow-edge-worker-2"):
+    e = s[name]["environment"]
+    assert e["CONNECTION_CHECK_MAX_COUNT"] == "0", name
+    assert "GitDagBundle" in e["AIRFLOW__DAG_PROCESSOR__DAG_BUNDLE_CONFIG_LIST"], name
+for name in ("airflow-scheduler-1", "airflow-scheduler-2", "airflow-triggerer"):
+    assert "@compute1:55433/airflow" in s[name]["environment"]["AIRFLOW__DATABASE__SQL_ALCHEMY_CONN"], name
+    assert s[name]["environment"]["AIRFLOW__SCHEDULER__TASK_INSTANCE_HEARTBEAT_TIMEOUT"] == "60", name
+EOF2
+}
+
 TESTS=(
   xfail_listed_run_passes xfail_strict_unexpected_pass xfail_unlisted_failure_fails
   xfail_stale_entry_fails xfail_entries_have_reason_and_issue xfail_empty_run_fails
@@ -308,13 +496,17 @@ TESTS=(
   licence_gate_compute_pins licence_gate_refuses_bsl_fixture no_licence_key_in_compute_files
   no_loams_sql_in_dx0 pg_mode_urls pins_are_literal
   corpus_manifest_complete normalize_selftest
+  airflow_python_parses airflow_effects_copies_match airflow_af_log_lines
   matrix_from_fixture matrix_guide_current
 )
 COMPOSE_TESTS=(
   compose_compute_config_valid compose_compute_requires_profile
   compose_compute_no_new_host_ports compose_compute_images_pinned_by_digest
-  compose_compute_uses_direct_endpoint
+  compose_compute_uses_direct_endpoint compose_airflow_test_overlay_valid
+  gateway_profile_no_host_ports gateway_profile_shape gateway_image_is_release_image
 )
+
+TESTS+=(dbos_files_parse dbos_xfail_and_pins)
 
 main() {
   local -a want=("$@") run=() t

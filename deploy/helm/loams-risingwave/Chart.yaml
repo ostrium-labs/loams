@@ -1,0 +1,17 @@
+apiVersion: v2
+name: loams-risingwave
+description: >-
+  One managed RisingWave cluster (meta, compactor, compute, frontend) of a
+  Loams engine instance (design 81, plan RW1). The values are rendered by
+  crates/loams-risingwave (runtime::helm::helm_values); this chart only lays
+  them out as StatefulSets, Deployments, Services, the credentials Secret,
+  the risingwave.toml ConfigMap and a NetworkPolicy. Preview.
+type: application
+version: 0.1.0
+appVersion: "v3.1.0"
+kubeVersion: ">=1.29.0-0"
+home: https://github.com/ostrium-labs/loams
+sources:
+  - https://github.com/ostrium-labs/loams/tree/dev/deploy/helm/loams-risingwave
+annotations:
+  licenses: Apache-2.0
