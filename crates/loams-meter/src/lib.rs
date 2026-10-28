@@ -30,4 +30,5 @@ pub mod owner;
 pub mod plan_yaml;
 pub mod plans;
 pub mod reconcile;
+pub mod role;
 pub mod store;

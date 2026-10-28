@@ -13,7 +13,9 @@ xfail_check.py). One section per kind of run:
     method to some SDKs; a method without cases is "not exercised";
     `[[method.known]]` records a known issue the legs do not show, such as
     one seen only under load, and marks those SDKs' cells; a top-level
-    `scope` says what the run does not cover). Every other method of the vendored `WorkflowService` is
+    `scope` says what the run does not cover; an SDK of `[sdks]` with no
+    case at all in the JUnit, such as a leg added since the committed run,
+    reads "not yet run" in every cell and is named under the table). Every other method of the vendored `WorkflowService` is
     listed as not implemented (it answers UNIMPLEMENTED with this matrix's
     link, plan ruling X1.R18).
   - "Durable execution" (DX0 Task 7): one row per leg of the compute nightly
@@ -63,6 +65,7 @@ CELL = {
     "xfail": "expected failure",
     "skip": "skipped",
     "missing": "not run",
+    "unrun": "not yet run",
 }
 
 
@@ -110,6 +113,11 @@ def render_temporal_gateway(args: argparse.Namespace) -> str:
     if unknown:
         raise SystemExit(f"matrix.py: methods.toml names methods the service does not have: {unknown}")
 
+    # An SDK none of whose cases is in the run: its leg was not part of it.
+    unrun = [
+        sdk for sdk in sdks
+        if not any(t.format(sdk=sdk) in states for m in methods for t in m.get("cases", []))
+    ]
     passed = sum(1 for s, _ in states.values() if s == "pass")
     lines = ["### Temporal API (gateway)", ""]
     if args.run:
@@ -127,24 +135,34 @@ def render_temporal_gateway(args: argparse.Namespace) -> str:
     for m in methods:
         templates = m.get("cases", [])
         only = m.get("only", list(sdks))
-        cells = [method_cell(templates if sdk in only else [], sdk, states) for sdk in sdks]
+        cells = [
+            CELL["unrun"] if sdk in unrun else method_cell(templates if sdk in only else [], sdk, states)
+            for sdk in sdks
+        ]
         for k in m.get("known", []):
             unknown_sdks = sorted(set(k.get("sdks", sdks)) - set(sdks))
             if unknown_sdks:
                 raise SystemExit(f"matrix.py: {m['name']}'s known issue names unknown SDKs: {unknown_sdks}")
             known.append(
                 f"{len(known) + 1}. `{m['name']}`, "
-                + ", ".join(sdks[sdk] for sdk in sdks if sdk in k.get("sdks", sdks))
+                + ", ".join(sdks[sdk] for sdk in sdks if sdk in k.get("sdks", sdks) and sdk not in unrun)
                 + f": {k['text'].strip()}"
             )
             for i, sdk in enumerate(sdks):
-                if sdk in k.get("sdks", sdks):
+                if sdk in k.get("sdks", sdks) and sdk not in unrun:
                     cells[i] += f", known issue {len(known)}"
         sdk_part = "<sdk>" if len(only) != 1 else only[0]
         by = ", ".join(f"`{t.format(sdk=sdk_part)}`" for t in templates)
         if m.get("note"):
             by = f"{by}; {m['note']}" if by else m["note"]
         lines.append(f"| `{m['name']}` | " + " | ".join(cells) + f" | {by} |")
+    if unrun:
+        lines += [
+            "",
+            "Not yet run: "
+            + ", ".join(sdks[sdk] for sdk in unrun)
+            + ". The leg exists, but this run did not include it, so its cells say nothing yet.",
+        ]
     if known:
         lines += ["", "Known issues (not shown by the cases above):", "", *known]
     rest = [n for n in all_methods if n not in listed]
@@ -170,6 +188,7 @@ class Row:
     mode: str
     version: str  # a format string over pins.env keys
     note: str = ""
+    leg: str = ""  # the nightly job (compute-compat.yml) whose artifact holds the results
 
 
 DURABLE_ROWS: tuple[Row, ...] = (
@@ -180,6 +199,7 @@ DURABLE_ROWS: tuple[Row, ...] = (
         ("durable.junit.xml",),
         "direct, txn",
         "Postgres client {PSQL_IMAGE_TAG}",
+        leg="durable",
     ),
     Row(
         "Durable execution",
@@ -188,6 +208,7 @@ DURABLE_ROWS: tuple[Row, ...] = (
         ("temporal-pg16.junit.xml", "temporal-pg16-persistence.junit.xml"),
         "direct",
         "Temporal {TEMPORAL_VERSION}",
+        leg="temporal-pg16",
     ),
     Row(
         "Durable execution",
@@ -197,6 +218,7 @@ DURABLE_ROWS: tuple[Row, ...] = (
         "direct",
         "Temporal {TEMPORAL_VERSION}",
         "expected-failure leg: Temporal lists Postgres 13-16",
+        leg="temporal-pg17",
     ),
     Row(
         "Durable execution",
@@ -205,6 +227,7 @@ DURABLE_ROWS: tuple[Row, ...] = (
         ("corpus.junit.xml",),
         "none (files)",
         "Go SDK {TEMPORAL_SDK_GO}, TypeScript SDK {TEMPORAL_SDK_TS}",
+        leg="corpus",
     ),
     Row(
         "Durable execution",
@@ -213,6 +236,7 @@ DURABLE_ROWS: tuple[Row, ...] = (
         ("dbos-py.junit.xml", "dbos-py-suite.junit.xml"),
         "direct",
         "dbos-transact-py {DBOS_PY}",
+        leg="dbos-py",
     ),
     Row(
         "Durable execution",
@@ -221,6 +245,7 @@ DURABLE_ROWS: tuple[Row, ...] = (
         ("dbos-ts.junit.xml", "dbos-ts-suite.junit.xml"),
         "direct",
         "dbos-transact-ts {DBOS_TS}",
+        leg="dbos-ts",
     ),
     Row(
         "Durable execution",
@@ -229,6 +254,7 @@ DURABLE_ROWS: tuple[Row, ...] = (
         ("dbos-go.junit.xml", "dbos-go-suite.junit.xml"),
         "direct",
         "dbos-transact-golang {DBOS_GO}",
+        leg="dbos-go",
     ),
     Row(
         "Durable execution",
@@ -237,6 +263,7 @@ DURABLE_ROWS: tuple[Row, ...] = (
         ("dbos-java.junit.xml", "dbos-java-suite.junit.xml"),
         "direct",
         "dbos-transact-java {DBOS_JAVA}",
+        leg="dbos-java",
     ),
     Row(
         "Durable execution",
@@ -245,6 +272,7 @@ DURABLE_ROWS: tuple[Row, ...] = (
         ("airflow.junit.xml", "airflow-edge.junit.xml"),
         "direct",
         "Airflow {AIRFLOW_VERSION}, edge3 {AIRFLOW_EDGE3}",
+        leg="airflow",
     ),
     Row(
         "Durable execution",
@@ -253,6 +281,7 @@ DURABLE_ROWS: tuple[Row, ...] = (
         ("airflow-local.junit.xml",),
         "direct",
         "Airflow {AIRFLOW_VERSION}",
+        leg="airflow-local",
     ),
 )
 
@@ -318,10 +347,20 @@ def durable_evaluate(row: Row, compute_dir: Path, junit_dir: Path | None, pins: 
     if not files:
         return Result(row, "not run", version, entries=entries, problems=problems)
     cases, junit_problems = xfail_check.load_cases(files)
-    problems += junit_problems
+    # Name files relative to the run's directory, not this machine's paths.
+    problems += [p.replace(f"{junit_dir}/", "") for p in junit_problems]
     if not cases and not junit_problems:
         problems.append("the JUnit files hold no test cases")
     problems += xfail_check.check(cases, entries)
+    # The nightly records each leg's exit status (compute-compat.yml): a leg
+    # that stopped early, before its strict check, is red (DX1 ruling T6.R11).
+    if row.leg and junit_dir is not None:
+        for exit_file in junit_dir.rglob("leg.exit"):
+            if exit_file.parent.name != f"compute-{row.leg}":
+                continue
+            code = exit_file.read_text(encoding="utf-8").strip()
+            if code != "0" and not problems:
+                problems.append(f"the leg exited {code} before its strict check finished")
     listed = lambda c: any(xfail_check.matches(p, c) for e in entries for p in e.tests)  # noqa: E731
     res = Result(
         row,

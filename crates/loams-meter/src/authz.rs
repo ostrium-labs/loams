@@ -36,6 +36,11 @@ pub enum Caller {
     /// A Loams service identity (the cluster's mTLS identity), such as
     /// `meter-export` or a product role holding leases.
     Service(String),
+    /// The install's operator (the server's `Standing::Operator`: the
+    /// operator's own credentials, a person). Holds every meter and billing
+    /// relation, as the operator holds everything else on the install; never
+    /// an agent.
+    Operator,
 }
 
 impl Caller {
@@ -44,6 +49,7 @@ impl Caller {
         match self {
             Caller::Principal(s) => s.fga_user(),
             Caller::Service(id) => format!("service:{id}"),
+            Caller::Operator => "operator".to_string(),
         }
     }
 
@@ -53,7 +59,7 @@ impl Caller {
             Caller::Principal(s) => {
                 s.kind == SubjectKind::Agent || s.act.iter().any(|a| a.kind == SubjectKind::Agent)
             }
-            Caller::Service(_) => false,
+            Caller::Service(_) | Caller::Operator => false,
         }
     }
 }
@@ -93,9 +99,12 @@ impl MeterAuthz {
         }
     }
 
-    fn principal(caller: &Caller) -> Result<&Subject> {
+    /// The subject to ask the authorizer about; `None` for the operator,
+    /// who passes every meter and billing check.
+    fn principal(caller: &Caller) -> Result<Option<&Subject>> {
         match caller {
-            Caller::Principal(s) => Ok(s),
+            Caller::Principal(s) => Ok(Some(s)),
+            Caller::Operator => Ok(None),
             Caller::Service(id) => Err(MeterError::denied(
                 "service_not_allowed",
                 format!("service identity {id} may not call this"),
@@ -116,7 +125,9 @@ impl MeterAuthz {
     /// Meters, plans, grants, entitlements and customers (`meter_admin`).
     pub async fn require_meter_admin(&self, caller: &Caller) -> Result<()> {
         Self::refuse_agents(caller, "change meters, plans, grants or customers")?;
-        let s = Self::principal(caller)?;
+        let Some(s) = Self::principal(caller)? else {
+            return Ok(());
+        };
         if self
             .check(s, CAN_MANAGE_METERS, ObjectRef::new("platform", PLATFORM))
             .await?
@@ -140,6 +151,7 @@ impl MeterAuthz {
                 self.check(s, CAN_MANAGE_METERS, ObjectRef::new("platform", PLATFORM))
                     .await
             }
+            Caller::Operator => Ok(true),
             Caller::Service(_) => Ok(false),
         }
     }
@@ -148,7 +160,9 @@ impl MeterAuthz {
     /// (`billing_admin`).
     pub async fn require_billing_admin(&self, caller: &Caller, org: &str) -> Result<()> {
         Self::refuse_agents(caller, "change spend controls or billing alerts")?;
-        let s = Self::principal(caller)?;
+        let Some(s) = Self::principal(caller)? else {
+            return Ok(());
+        };
         if self
             .check(s, CAN_MANAGE_BILLING, ObjectRef::new("org", org))
             .await?
@@ -165,7 +179,9 @@ impl MeterAuthz {
     /// Reading `org`'s usage, entitlements and customers (`billing_viewer`,
     /// or `meter_admin`).
     pub async fn require_billing_view(&self, caller: &Caller, org: &str) -> Result<()> {
-        let s = Self::principal(caller)?;
+        let Some(s) = Self::principal(caller)? else {
+            return Ok(());
+        };
         if self
             .check(s, CAN_VIEW_BILLING, ObjectRef::new("org", org))
             .await?
@@ -262,6 +278,21 @@ mod tests {
             .expect("meter admin views");
     }
 
+    #[tokio::test]
+    async fn the_operator_holds_every_meter_relation() {
+        let a = authz();
+        a.require_meter_admin(&Caller::Operator)
+            .await
+            .expect("meter admin");
+        a.require_billing_admin(&Caller::Operator, "acme")
+            .await
+            .expect("billing admin");
+        a.require_billing_view(&Caller::Operator, "other")
+            .await
+            .expect("views");
+        assert!(a.is_meter_admin(&Caller::Operator).await.expect("answer"));
+    }
+
     #[test]
     fn only_the_billing_service_sets_payment_state() {
         let a = authz();
@@ -275,5 +306,6 @@ mod tests {
             a.require_billing_service(&Caller::Principal(Subject::user("mia")))
                 .is_err()
         );
+        assert!(a.require_billing_service(&Caller::Operator).is_err());
     }
 }

@@ -46,14 +46,14 @@ catalogs:
       specifier: 4.3.3
       version: 4.3.3
     '@tanstack/react-query':
-      specifier: 5.104.1
-      version: 5.104.1
+      specifier: 5.104.2
+      version: 5.104.2
     '@tanstack/react-table':
-      specifier: 9.2.8
-      version: 9.2.8
+      specifier: 9.3.1
+      version: 9.3.1
     '@tanstack/react-virtual':
-      specifier: 3.14.14
-      version: 3.14.14
+      specifier: 3.14.18
+      version: 3.14.18
     '@tiptap/core':
       specifier: 3.31.4
       version: 3.31.4
@@ -109,8 +109,8 @@ catalogs:
       specifier: 6.1.0
       version: 6.1.0
     lucide-react:
-      specifier: 1.55.0
-      version: 1.55.0
+      specifier: 1.56.0
+      version: 1.56.0
     motion:
       specifier: 13.5.1
       version: 13.5.1
@@ -145,8 +145,8 @@ catalogs:
       specifier: 1.0.0
       version: 1.0.0
     zod:
-      specifier: 4.6.5
-      version: 4.6.5
+      specifier: 4.6.7
+      version: 4.6.7
     zustand:
       specifier: 5.0.15
       version: 5.0.15
@@ -157,6 +157,8 @@ overrides:
   nx@23.2.1>axios: 1.20.0
   nx@23.2.1>smol-toml: 1.9.0
   nx@23.2.1>brace-expansion: 5.0.12
+  dompurify@<3.4.17: 3.4.17
+  ip-address@<10.7.4: 10.7.4
   msw@3.0.3>@mswjs/interceptors: 0.45.8
   '@electron/get@3.1.0>global-agent': '-'
   builder-util-runtime@9.7.0>sax: 1.4.1
@@ -190,19 +192,19 @@ importers:
     dependencies:
       '@mastra/core':
         specifier: 1.78.0
-        version: 1.78.0(@bufbuild/protobuf@2.16.0)(express@5.2.1(supports-color@10.2.2))(supports-color@10.2.2)(zod-to-json-schema@3.25.2(zod@4.6.5))(zod@4.6.5)
+        version: 1.78.0(@bufbuild/protobuf@2.16.0)(express@5.2.1(supports-color@10.2.2))(supports-color@10.2.2)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7)
       '@mastra/mcp':
         specifier: 2.4.1
-        version: 2.4.1(@mastra/core@1.78.0(@bufbuild/protobuf@2.16.0)(express@5.2.1(supports-color@10.2.2))(supports-color@10.2.2)(zod-to-json-schema@3.25.2(zod@4.6.5))(zod@4.6.5))(hono@4.13.13)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)
+        version: 2.4.1(@mastra/core@1.78.0(@bufbuild/protobuf@2.16.0)(express@5.2.1(supports-color@10.2.2))(supports-color@10.2.2)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7))(hono@4.13.13)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.7)
       '@mastra/pg':
         specifier: 1.31.2
-        version: 1.31.2(@mastra/core@1.78.0(@bufbuild/protobuf@2.16.0)(express@5.2.1(supports-color@10.2.2))(supports-color@10.2.2)(zod-to-json-schema@3.25.2(zod@4.6.5))(zod@4.6.5))
+        version: 1.31.2(@mastra/core@1.78.0(@bufbuild/protobuf@2.16.0)(express@5.2.1(supports-color@10.2.2))(supports-color@10.2.2)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7))
       smol-toml:
         specifier: 1.9.1
         version: 1.9.1
       zod:
         specifier: 'catalog:'
-        version: 4.6.5
+        version: 4.6.7
     devDependencies:
       '@types/node':
         specifier: 24.13.6
@@ -325,7 +327,7 @@ importers:
         version: 2.9.1
       zod:
         specifier: 'catalog:'
-        version: 4.6.5
+        version: 4.6.7
 
   plugins:
     dependencies:
@@ -365,7 +367,7 @@ importers:
         version: 1.0.0(@types/node@22.20.5)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1)(esbuild@0.28.2)(happy-dom@21.0.1)(jiti@2.7.0)(jsdom@30.1.2(@noble/hashes@1.8.0))(msw@3.0.3(@types/node@22.20.5)(@voidzero-dev/vite-plus-core@1.0.0(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(graphql@16.14.2)(supports-color@10.2.2)(typescript@5.9.3))(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)
       vitest:
         specifier: 5.0.1
-        version: 5.0.1(@types/node@22.20.5)(@vitest/browser-preview@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1(vitest@5.0.1))(@voidzero-dev/vite-plus-core@1.0.0(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(happy-dom@21.0.1)(jsdom@30.1.2(@noble/hashes@1.8.0))(msw@3.0.3(@types/node@22.20.5)(@voidzero-dev/vite-plus-core@1.0.0(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(graphql@16.14.2)(supports-color@10.2.2)(typescript@5.9.3))
+        version: 5.0.1(@types/node@22.20.5)(@vitest/browser-preview@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1)(@voidzero-dev/vite-plus-core@1.0.0(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(happy-dom@21.0.1)(jsdom@30.1.2(@noble/hashes@1.8.0))(msw@3.0.3(@types/node@22.20.5)(@voidzero-dev/vite-plus-core@1.0.0(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(graphql@16.14.2)(supports-color@10.2.2)(typescript@5.9.3))
 
   plugins/apps/server:
     dependencies:
@@ -538,13 +540,13 @@ importers:
         version: 1.9.0(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@hookform/resolvers':
         specifier: ^5.9.1
-        version: 5.9.1(@standard-schema/spec@1.1.0)(ajv@8.20.0)(react-hook-form@7.89.0(@types/react@19.3.0)(react@19.3.0))(zod@4.6.7)
+        version: 5.9.1(@standard-schema/spec@1.1.0)(ajv@8.20.0)(react-hook-form@7.90.0(@types/react@19.3.0)(react@19.3.0))(zod@4.6.7)
       '@loams-core/host':
         specifier: workspace:*
         version: link:../host
       '@tanstack/react-query':
         specifier: 'catalog:'
-        version: 5.104.1(react@19.3.0)
+        version: 5.104.2(react@19.3.0)
       '@xyflow/react':
         specifier: 'catalog:'
         version: 12.12.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -562,7 +564,7 @@ importers:
         version: 3.1.1
       lucide-react:
         specifier: 'catalog:'
-        version: 1.55.0(@types/react@19.3.0)(react@19.3.0)
+        version: 1.56.0(@types/react@19.3.0)(react@19.3.0)
       react:
         specifier: 'catalog:'
         version: 19.3.0
@@ -573,8 +575,8 @@ importers:
         specifier: ^2.3.0
         version: 2.3.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       react-hook-form:
-        specifier: ^7.89.0
-        version: 7.89.0(@types/react@19.3.0)(react@19.3.0)
+        specifier: 7.90.0
+        version: 7.90.0(@types/react@19.3.0)(react@19.3.0)
       react-resizable:
         specifier: ^4.0.2
         version: 4.0.2(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -702,7 +704,7 @@ importers:
         version: link:../types
       '@tanstack/react-query':
         specifier: 'catalog:'
-        version: 5.104.1(react@19.3.0)
+        version: 5.104.2(react@19.3.0)
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -720,7 +722,7 @@ importers:
         version: 6.2.12
       lucide-react:
         specifier: 'catalog:'
-        version: 1.55.0(@types/react@19.3.0)(react@19.3.0)
+        version: 1.56.0(@types/react@19.3.0)(react@19.3.0)
       openid-client:
         specifier: ^6.8.8
         version: 6.8.8
@@ -782,7 +784,7 @@ importers:
     dependencies:
       zod:
         specifier: 'catalog:'
-        version: 4.6.5
+        version: 4.6.7
 
   plugins/packages/plugin-forgejo-adapter:
     dependencies:
@@ -1075,7 +1077,7 @@ importers:
         version: link:../../packages/ui
       lucide-react:
         specifier: 'catalog:'
-        version: 1.55.0(@types/react@19.3.0)(react@19.3.0)
+        version: 1.56.0(@types/react@19.3.0)(react@19.3.0)
       oauth4webapi:
         specifier: 3.8.8
         version: 3.8.8
@@ -1147,7 +1149,7 @@ importers:
         version: 2.2.0(@bufbuild/protobuf@2.16.0)
       '@connectrpc/connect-query':
         specifier: 'catalog:'
-        version: 2.3.1(@bufbuild/protobuf@2.16.0)(@connectrpc/connect@2.2.0(@bufbuild/protobuf@2.16.0))(@tanstack/query-core@5.104.1)(@tanstack/react-query@5.104.1(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        version: 2.3.1(@bufbuild/protobuf@2.16.0)(@connectrpc/connect@2.2.0(@bufbuild/protobuf@2.16.0))(@tanstack/query-core@5.104.2)(@tanstack/react-query@5.104.2(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@loams/console-host':
         specifier: workspace:*
         version: link:../console-host
@@ -1159,10 +1161,10 @@ importers:
         version: link:../ui
       '@tanstack/react-query':
         specifier: 'catalog:'
-        version: 5.104.1(react@19.3.0)
+        version: 5.104.2(react@19.3.0)
       lucide-react:
         specifier: 'catalog:'
-        version: 1.55.0(@types/react@19.3.0)(react@19.3.0)
+        version: 1.56.0(@types/react@19.3.0)(react@19.3.0)
     devDependencies:
       '@testing-library/react':
         specifier: 16.3.3
@@ -1288,7 +1290,7 @@ importers:
         version: 2.2.0(@bufbuild/protobuf@2.16.0)
       '@connectrpc/connect-query':
         specifier: 'catalog:'
-        version: 2.3.1(@bufbuild/protobuf@2.16.0)(@connectrpc/connect@2.2.0(@bufbuild/protobuf@2.16.0))(@tanstack/query-core@5.104.1)(@tanstack/react-query@5.104.1(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        version: 2.3.1(@bufbuild/protobuf@2.16.0)(@connectrpc/connect@2.2.0(@bufbuild/protobuf@2.16.0))(@tanstack/query-core@5.104.2)(@tanstack/react-query@5.104.2(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@loams/agentd-client':
         specifier: workspace:*
         version: link:../agentd-client
@@ -1303,7 +1305,7 @@ importers:
         version: link:../slots
       '@tanstack/react-query':
         specifier: 'catalog:'
-        version: 5.104.1(react@19.3.0)
+        version: 5.104.2(react@19.3.0)
       yaml:
         specifier: 2.9.1
         version: 2.9.1
@@ -1359,7 +1361,7 @@ importers:
         version: link:../ui
       lucide-react:
         specifier: 'catalog:'
-        version: 1.55.0(@types/react@19.3.0)(react@19.3.0)
+        version: 1.56.0(@types/react@19.3.0)(react@19.3.0)
     devDependencies:
       '@testing-library/react':
         specifier: 16.3.3
@@ -1543,10 +1545,10 @@ importers:
         version: 1.5.2(@shikijs/themes@4.5.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@tanstack/react-query':
         specifier: 'catalog:'
-        version: 5.104.1(react@19.3.0)
+        version: 5.104.2(react@19.3.0)
       '@tanstack/react-virtual':
         specifier: 'catalog:'
-        version: 3.14.14(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        version: 3.14.18(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@tiptap/core':
         specifier: 'catalog:'
         version: 3.31.4(@tiptap/pm@3.31.4)
@@ -1591,7 +1593,7 @@ importers:
         version: 6.0.0
       lucide-react:
         specifier: 'catalog:'
-        version: 1.55.0(@types/react@19.3.0)(react@19.3.0)
+        version: 1.56.0(@types/react@19.3.0)(react@19.3.0)
       react-markdown:
         specifier: 'catalog:'
         version: 10.1.0(@types/react@19.3.0)(react@19.3.0)(supports-color@10.2.2)
@@ -1612,7 +1614,7 @@ importers:
         version: 11.0.5
       zod:
         specifier: 'catalog:'
-        version: 4.6.5
+        version: 4.6.7
       zustand:
         specifier: 'catalog:'
         version: 5.0.15(@types/react@19.3.0)(react@19.3.0)(use-sync-external-store@1.7.0(react@19.3.0))
@@ -1679,13 +1681,13 @@ importers:
         version: 1.2.5
       '@tanstack/react-table':
         specifier: 'catalog:'
-        version: 9.2.8(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        version: 9.3.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@tanstack/react-virtual':
         specifier: 'catalog:'
-        version: 3.14.14(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        version: 3.14.18(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       lucide-react:
         specifier: 'catalog:'
-        version: 1.55.0(@types/react@19.3.0)(react@19.3.0)
+        version: 1.56.0(@types/react@19.3.0)(react@19.3.0)
       motion:
         specifier: 'catalog:'
         version: 13.5.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -1734,7 +1736,7 @@ importers:
         version: 2.2.0(@bufbuild/protobuf@2.16.0)
       '@connectrpc/connect-query':
         specifier: 'catalog:'
-        version: 2.3.1(@bufbuild/protobuf@2.16.0)(@connectrpc/connect@2.2.0(@bufbuild/protobuf@2.16.0))(@tanstack/query-core@5.104.1)(@tanstack/react-query@5.104.1(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        version: 2.3.1(@bufbuild/protobuf@2.16.0)(@connectrpc/connect@2.2.0(@bufbuild/protobuf@2.16.0))(@tanstack/query-core@5.104.2)(@tanstack/react-query@5.104.2(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@loams/admin-ui':
         specifier: workspace:*
         version: link:../../packages/admin-ui
@@ -1755,10 +1757,10 @@ importers:
         version: link:../../packages/ui
       '@tanstack/react-query':
         specifier: 'catalog:'
-        version: 5.104.1(react@19.3.0)
+        version: 5.104.2(react@19.3.0)
       lucide-react:
         specifier: 'catalog:'
-        version: 1.55.0(@types/react@19.3.0)(react@19.3.0)
+        version: 1.56.0(@types/react@19.3.0)(react@19.3.0)
     devDependencies:
       '@testing-library/react':
         specifier: 16.3.3
@@ -1806,14 +1808,14 @@ importers:
         specifier: workspace:*
         version: link:../../packages/ui
       dompurify:
-        specifier: 3.4.16
-        version: 3.4.16
+        specifier: 3.4.17
+        version: 3.4.17
       lucide-react:
         specifier: 'catalog:'
-        version: 1.55.0(@types/react@19.3.0)(react@19.3.0)
+        version: 1.56.0(@types/react@19.3.0)(react@19.3.0)
       marked:
-        specifier: 18.1.0
-        version: 18.1.0
+        specifier: 18.1.1
+        version: 18.1.1
     devDependencies:
       '@loams/desktop':
         specifier: workspace:*
@@ -1862,7 +1864,7 @@ importers:
         version: 2.2.0(@bufbuild/protobuf@2.16.0)
       '@connectrpc/connect-query':
         specifier: 'catalog:'
-        version: 2.3.1(@bufbuild/protobuf@2.16.0)(@connectrpc/connect@2.2.0(@bufbuild/protobuf@2.16.0))(@tanstack/query-core@5.104.1)(@tanstack/react-query@5.104.1(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        version: 2.3.1(@bufbuild/protobuf@2.16.0)(@connectrpc/connect@2.2.0(@bufbuild/protobuf@2.16.0))(@tanstack/query-core@5.104.2)(@tanstack/react-query@5.104.2(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@loams/admin-ui':
         specifier: workspace:*
         version: link:../../packages/admin-ui
@@ -1883,10 +1885,10 @@ importers:
         version: link:../../packages/ui
       '@tanstack/react-query':
         specifier: 'catalog:'
-        version: 5.104.1(react@19.3.0)
+        version: 5.104.2(react@19.3.0)
       lucide-react:
         specifier: 'catalog:'
-        version: 1.55.0(@types/react@19.3.0)(react@19.3.0)
+        version: 1.56.0(@types/react@19.3.0)(react@19.3.0)
     devDependencies:
       '@testing-library/react':
         specifier: 16.3.3
@@ -1984,7 +1986,7 @@ importers:
         version: 2.2.0(@bufbuild/protobuf@2.16.0)
       '@connectrpc/connect-query':
         specifier: 'catalog:'
-        version: 2.3.1(@bufbuild/protobuf@2.16.0)(@connectrpc/connect@2.2.0(@bufbuild/protobuf@2.16.0))(@tanstack/query-core@5.104.1)(@tanstack/react-query@5.104.1(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        version: 2.3.1(@bufbuild/protobuf@2.16.0)(@connectrpc/connect@2.2.0(@bufbuild/protobuf@2.16.0))(@tanstack/query-core@5.104.2)(@tanstack/react-query@5.104.2(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@loams/admin-ui':
         specifier: workspace:*
         version: link:../../packages/admin-ui
@@ -2005,10 +2007,10 @@ importers:
         version: link:../../packages/ui
       '@tanstack/react-query':
         specifier: 'catalog:'
-        version: 5.104.1(react@19.3.0)
+        version: 5.104.2(react@19.3.0)
       lucide-react:
         specifier: 'catalog:'
-        version: 1.55.0(@types/react@19.3.0)(react@19.3.0)
+        version: 1.56.0(@types/react@19.3.0)(react@19.3.0)
     devDependencies:
       '@testing-library/react':
         specifier: 16.3.3
@@ -2170,7 +2172,7 @@ importers:
         version: link:../../packages/ui
       lucide-react:
         specifier: 'catalog:'
-        version: 1.55.0(@types/react@19.3.0)(react@19.3.0)
+        version: 1.56.0(@types/react@19.3.0)(react@19.3.0)
       yaml:
         specifier: 2.9.1
         version: 2.9.1
@@ -2243,7 +2245,7 @@ importers:
         version: link:../../packages/ui
       lucide-react:
         specifier: 'catalog:'
-        version: 1.55.0(@types/react@19.3.0)(react@19.3.0)
+        version: 1.56.0(@types/react@19.3.0)(react@19.3.0)
     devDependencies:
       '@loams/desktop':
         specifier: workspace:*
@@ -2405,7 +2407,7 @@ importers:
         version: link:../../packages/ui
       lucide-react:
         specifier: 'catalog:'
-        version: 1.55.0(@types/react@19.3.0)(react@19.3.0)
+        version: 1.56.0(@types/react@19.3.0)(react@19.3.0)
     devDependencies:
       '@loams/desktop':
         specifier: workspace:*
@@ -2524,7 +2526,7 @@ importers:
         version: 12.12.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       lucide-react:
         specifier: 'catalog:'
-        version: 1.55.0(@types/react@19.3.0)(react@19.3.0)
+        version: 1.56.0(@types/react@19.3.0)(react@19.3.0)
     devDependencies:
       '@loams/desktop':
         specifier: workspace:*
@@ -2588,7 +2590,7 @@ importers:
         version: link:../../packages/ui
       lucide-react:
         specifier: 'catalog:'
-        version: 1.55.0(@types/react@19.3.0)(react@19.3.0)
+        version: 1.56.0(@types/react@19.3.0)(react@19.3.0)
     devDependencies:
       '@loams/desktop':
         specifier: workspace:*
@@ -2936,7 +2938,7 @@ importers:
         version: link:../../packages/ui
       lucide-react:
         specifier: 'catalog:'
-        version: 1.55.0(@types/react@19.3.0)(react@19.3.0)
+        version: 1.56.0(@types/react@19.3.0)(react@19.3.0)
     devDependencies:
       '@loams/desktop':
         specifier: workspace:*
@@ -2985,7 +2987,7 @@ importers:
         version: 2.2.0(@bufbuild/protobuf@2.16.0)
       '@connectrpc/connect-query':
         specifier: 'catalog:'
-        version: 2.3.1(@bufbuild/protobuf@2.16.0)(@connectrpc/connect@2.2.0(@bufbuild/protobuf@2.16.0))(@tanstack/query-core@5.104.1)(@tanstack/react-query@5.104.1(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        version: 2.3.1(@bufbuild/protobuf@2.16.0)(@connectrpc/connect@2.2.0(@bufbuild/protobuf@2.16.0))(@tanstack/query-core@5.104.2)(@tanstack/react-query@5.104.2(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@loams/agentd-client':
         specifier: workspace:*
         version: link:../../packages/agentd-client
@@ -3006,7 +3008,7 @@ importers:
         version: link:../../packages/ui
       '@tanstack/react-query':
         specifier: 'catalog:'
-        version: 5.104.1(react@19.3.0)
+        version: 5.104.2(react@19.3.0)
     devDependencies:
       '@testing-library/react':
         specifier: 16.3.3
@@ -3162,7 +3164,7 @@ importers:
         version: 2.2.0(@bufbuild/protobuf@2.16.0)
       '@connectrpc/connect-query':
         specifier: 'catalog:'
-        version: 2.3.1(@bufbuild/protobuf@2.16.0)(@connectrpc/connect@2.2.0(@bufbuild/protobuf@2.16.0))(@tanstack/query-core@5.104.1)(@tanstack/react-query@5.104.1(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        version: 2.3.1(@bufbuild/protobuf@2.16.0)(@connectrpc/connect@2.2.0(@bufbuild/protobuf@2.16.0))(@tanstack/query-core@5.104.2)(@tanstack/react-query@5.104.2(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@loams/admin-ui':
         specifier: workspace:*
         version: link:../../packages/admin-ui
@@ -3183,10 +3185,10 @@ importers:
         version: link:../../packages/ui
       '@tanstack/react-query':
         specifier: 'catalog:'
-        version: 5.104.1(react@19.3.0)
+        version: 5.104.2(react@19.3.0)
       lucide-react:
         specifier: 'catalog:'
-        version: 1.55.0(@types/react@19.3.0)(react@19.3.0)
+        version: 1.56.0(@types/react@19.3.0)(react@19.3.0)
     devDependencies:
       '@testing-library/react':
         specifier: 16.3.3
@@ -3366,7 +3368,7 @@ importers:
         version: link:../../packages/ui
       lucide-react:
         specifier: 'catalog:'
-        version: 1.55.0(@types/react@19.3.0)(react@19.3.0)
+        version: 1.56.0(@types/react@19.3.0)(react@19.3.0)
     devDependencies:
       '@loams/desktop':
         specifier: workspace:*
@@ -3418,7 +3420,7 @@ importers:
         version: 2.2.0(@bufbuild/protobuf@2.16.0)
       '@connectrpc/connect-query':
         specifier: 'catalog:'
-        version: 2.3.1(@bufbuild/protobuf@2.16.0)(@connectrpc/connect@2.2.0(@bufbuild/protobuf@2.16.0))(@tanstack/query-core@5.104.1)(@tanstack/react-query@5.104.1(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        version: 2.3.1(@bufbuild/protobuf@2.16.0)(@connectrpc/connect@2.2.0(@bufbuild/protobuf@2.16.0))(@tanstack/query-core@5.104.2)(@tanstack/react-query@5.104.2(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@loams/admin-ui':
         specifier: workspace:*
         version: link:../../packages/admin-ui
@@ -3439,10 +3441,10 @@ importers:
         version: link:../../packages/ui
       '@tanstack/react-query':
         specifier: 'catalog:'
-        version: 5.104.1(react@19.3.0)
+        version: 5.104.2(react@19.3.0)
       lucide-react:
         specifier: 'catalog:'
-        version: 1.55.0(@types/react@19.3.0)(react@19.3.0)
+        version: 1.56.0(@types/react@19.3.0)(react@19.3.0)
     devDependencies:
       '@testing-library/react':
         specifier: 16.3.3
@@ -3570,7 +3572,7 @@ importers:
         version: link:../../packages/ui
       lucide-react:
         specifier: 'catalog:'
-        version: 1.55.0(@types/react@19.3.0)(react@19.3.0)
+        version: 1.56.0(@types/react@19.3.0)(react@19.3.0)
     devDependencies:
       '@loams/studio-ui':
         specifier: workspace:*
@@ -3738,7 +3740,7 @@ importers:
         version: link:../../packages/ui
       lucide-react:
         specifier: 'catalog:'
-        version: 1.55.0(@types/react@19.3.0)(react@19.3.0)
+        version: 1.56.0(@types/react@19.3.0)(react@19.3.0)
     devDependencies:
       '@loams/desktop':
         specifier: workspace:*
@@ -3787,7 +3789,7 @@ importers:
         version: 2.2.0(@bufbuild/protobuf@2.16.0)
       '@connectrpc/connect-query':
         specifier: 'catalog:'
-        version: 2.3.1(@bufbuild/protobuf@2.16.0)(@connectrpc/connect@2.2.0(@bufbuild/protobuf@2.16.0))(@tanstack/query-core@5.104.1)(@tanstack/react-query@5.104.1(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        version: 2.3.1(@bufbuild/protobuf@2.16.0)(@connectrpc/connect@2.2.0(@bufbuild/protobuf@2.16.0))(@tanstack/query-core@5.104.2)(@tanstack/react-query@5.104.2(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@dnd-kit/core':
         specifier: 'catalog:'
         version: 6.3.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -3820,10 +3822,10 @@ importers:
         version: link:../../packages/ui
       '@tanstack/react-query':
         specifier: 'catalog:'
-        version: 5.104.1(react@19.3.0)
+        version: 5.104.2(react@19.3.0)
       lucide-react:
         specifier: 'catalog:'
-        version: 1.55.0(@types/react@19.3.0)(react@19.3.0)
+        version: 1.56.0(@types/react@19.3.0)(react@19.3.0)
     devDependencies:
       '@loams/desktop':
         specifier: workspace:*
@@ -5541,11 +5543,11 @@ packages:
     peerDependencies:
       vite: ^5.2.0 || ^6 || ^7 || ^8
 
-  '@tanstack/query-core@5.104.1':
-    resolution: {integrity: sha512-TiRghcrGkUTE+M4JBxvpPSpBhxvIzQairw+cksrHYGr+2uwC77yW1SY9nYxnYRYOppvucf8rEg6b5byoz4rTpw==}
+  '@tanstack/query-core@5.104.2':
+    resolution: {integrity: sha512-/qbsxJK5c3Ve1aFIULWYNcT2jeRUAiD4HME6Eu2ZdpofHoVgAjpkQhLg5xHuOoBkTPQUJLfP7zOxy0qsBcqROA==}
 
-  '@tanstack/react-query@5.104.1':
-    resolution: {integrity: sha512-Zz70EgjahNI7aCz8BZxM3vUGU44ycxEAzMuCUjLeA7SVhhOkg3ZgPjPJPvHjs6Rmky/dtmnu1WzjGHNHmhCoZQ==}
+  '@tanstack/react-query@5.104.2':
+    resolution: {integrity: sha512-xKmzWGhadbE5wGS/ZmXShRITnI9oItox5GO14KvFZco3+vhTAyXS1erYzJWdiY280zapAGJXFUL9nHgwP6SV/g==}
     peerDependencies:
       react: ^18 || ^19
 
@@ -5555,14 +5557,14 @@ packages:
       react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
       react-dom: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
-  '@tanstack/react-table@9.2.8':
-    resolution: {integrity: sha512-cJxgratJm3uMm2sXnmY3PCTvcvIEFleCJ2uSOM2nxCmIY8RWA1KjXt5fsWGlYisL7DODr2w9YpLRQ3i/7MdIsQ==}
+  '@tanstack/react-table@9.3.1':
+    resolution: {integrity: sha512-E6Ya5TnY6EaGyZYIUqig/29Lr/gJSAubQkLJFqiWkUl5nRCr0Xr9hvJot+NiRTtG+TzGxHTiqUW3bnLtQxlHug==}
     engines: {node: '>=20'}
     peerDependencies:
       react: '>=18'
 
-  '@tanstack/react-virtual@3.14.14':
-    resolution: {integrity: sha512-eo/arVIpYi9rGJXR5y4fDoTiz+BBOc4HKVBKQMoPRswxJtP6HV8iupW/DkBE9TRh+PjzikIDHw2h7aV25g0Z4w==}
+  '@tanstack/react-virtual@3.14.18':
+    resolution: {integrity: sha512-zuSuxQTfeLhvdS0LOi1MjQ/FrG4MVeVT2w+Iy33fviGFqjpWV9kbyNQOrNJXckyO0iNko2NlW3TaThcg2Cz9qA==}
     peerDependencies:
       react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
       react-dom: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
@@ -5570,12 +5572,12 @@ packages:
   '@tanstack/store@0.11.2':
     resolution: {integrity: sha512-sJ4mjol8uQsHV0gOJzzjwXfh2Fwm+Sz0+8deqiTm4jGbMdjzNSW+xZCFm0kUa870uhd8yi+DpKnZb5Kc4apa0Q==}
 
-  '@tanstack/table-core@9.2.8':
-    resolution: {integrity: sha512-M4D6fY5jnc7z7TaoD3Pjvz5R+8MbhzCGYdkcFf2T1AgjigwLinvFWZh6mtqfN016A7yGIroOL0GiTlVGsTh6Vg==}
+  '@tanstack/table-core@9.3.1':
+    resolution: {integrity: sha512-zQvlxSNi2qGM3L4jh85Z6hqMfdIR5qOfD9KHOU32nuKFJGN0RlJ7UvV1lsPb1fPVhpFYI0VP3jJGxLdLDpTKjQ==}
     engines: {node: '>=20'}
 
-  '@tanstack/virtual-core@3.18.0':
-    resolution: {integrity: sha512-8frWsyfyBwLGoDQ6wN6Lq3CoT8j4BPJUzE6nH4P9mruLhxPOamk82prC3JxRMLJzYnNa9ISaZ8NtfxEiOGkHEQ==}
+  '@tanstack/virtual-core@3.19.3':
+    resolution: {integrity: sha512-jPxPiyBaUn+IChc8sfYNKn7B2SCOxYO1mCJrh7U4ldmrMxun19q/iw+jHRYk2cR/KNEjW8ABJrufX41m342Sqw==}
 
   '@testing-library/dom@10.4.2':
     resolution: {integrity: sha512-yzr2S9HyAIdhz2/6qHgbs665Q7PKVcDF05vsOlHPxG1mo36gKVesdYVeDLnXgfjJ03CrKRk08knc6+E/9m8v2Q==}
@@ -6782,8 +6784,8 @@ packages:
   dom-accessibility-api@0.5.16:
     resolution: {integrity: sha512-X7BJ2yElsnOJ30pZF4uIIDfBEVgF4XEBxL9Bxhy6dnrm5hkzqmsWHGTiHqRiITNhMyFLyAiWndIJP7Z1NTteDg==}
 
-  dompurify@3.4.16:
-    resolution: {integrity: sha512-sqo+pNp3qRhCIpbgRi1y8Tgk27Bo2Ry7w0dC1NBeNTdZChWjz9Xb/KOoZbRP/R6pQZ80Qw8YhXw13hWWBbMRnQ==}
+  dompurify@3.4.17:
+    resolution: {integrity: sha512-B/pSlYVHQ58kqISD/yDjuJ1yfzI34m1gF4lAod2bwSRhiN4K5Cl3H8Af7hqB2PmTL911tdEudnnXn5FnhRoz0w==}
 
   dotenv-expand@11.0.7:
     resolution: {integrity: sha512-zIHwmZPRshsCdpMDyVsqGmgyP0yT8GAgXUnkdAoJisxvf33k7yO6OuoKmcTGuXPWSsm8Oh88nZicRLA9Y0rUeA==}
@@ -7313,8 +7315,8 @@ packages:
   inline-style-parser@0.2.7:
     resolution: {integrity: sha512-Nb2ctOyNR8DqQoR0OwRG95uNWIC0C1lCgf5Naz5H6Ji72KZ8OcFZLz2P5sNgwlyoJ8Yif11oMuYs5pBQa86csA==}
 
-  ip-address@10.7.3:
-    resolution: {integrity: sha512-A1kdq/tSb5QjvKvAMgIoEvDBIgL7qaqVP/jkvSwYYRZ9iEzvPpopxp2wQfu3SuZRHtpHNxMn8Fs0bS+gf5Xmwg==}
+  ip-address@10.7.4:
+    resolution: {integrity: sha512-DWBMKyeM25D70nrIiTkgQth59/G+naKOTep6huF9j+GmeK3DMD60Zvxg5d5qQnz+38AHgou6ean2LECX+lrKDg==}
     engines: {node: '>= 12'}
 
   ipaddr.js@1.9.1:
@@ -7697,8 +7699,8 @@ packages:
   lru_map@0.4.1:
     resolution: {integrity: sha512-I+lBvqMMFfqaV8CJCISjI3wbjmwVu/VyOoU7+qtu9d7ioW5klMgsTTiUOUp+DJvfTTzKXoPbyC6YfgkNcyPSOg==}
 
-  lucide-react@1.55.0:
-    resolution: {integrity: sha512-bSozQHiI3/8q7JvgoqVRGOYUi7fYT3siAZwmZsljjsOH2Husp/2ODdFf/leD+ZC/2yKfn7r8oh6yeoR3ITR5vA==}
+  lucide-react@1.56.0:
+    resolution: {integrity: sha512-b+hqj30/trHBma5r1zlKb6yLewQp6tUtnz9loc3xdrYerPmvLYhlEbyPVCJ8DOg2/blBf6lwPLznftFVACka6A==}
     peerDependencies:
       '@types/react': '*'
       react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
@@ -7726,8 +7728,8 @@ packages:
   markdown-table@3.0.4:
     resolution: {integrity: sha512-wiYz4+JrLyb/DqW2hkFJxP7Vd7JuTDm77fvbM8VfEQdmSMqcImWeeRbHwZjBjIFki/VaMK2BhFi7oUUZeM5bqw==}
 
-  marked@18.1.0:
-    resolution: {integrity: sha512-PamYXWWWg2nboG3oX5Ffzpy3EFZROqZJK9hSlMmUnekp7TxPs5DcT95vwd46m73/exfKCRVMtgXoPMI4FEJL6w==}
+  marked@18.1.1:
+    resolution: {integrity: sha512-zEGgrtUG8crk+TrMacJSVABU4DYDDkS8uqgU3ohrn/2fW9C2AEfUrO3m6IhpIpQpl7YcVpiXXC9cSMWDANT3dg==}
     engines: {node: '>= 20'}
     hasBin: true
 
@@ -8481,8 +8483,8 @@ packages:
       react: '>= 16.3.0'
       react-dom: '>= 16.3.0'
 
-  react-hook-form@7.89.0:
-    resolution: {integrity: sha512-vKcoCfy8RKZDrhSdqsRFp0uEOdS1AhLjOL6hR7Wmfzg1akNxEhaPf5WORx8SgEQPVXakdDyDkqQp+KNxVnnPHg==}
+  react-hook-form@7.90.0:
+    resolution: {integrity: sha512-+NdG0FLzCPhFOp2NNxaUYLF9fyZhNjx9FTBBSYWF71/l6BBlmIc/j6xlp3DbaHWLJbIG7Zd8oznA19xJClU97w==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
       '@types/react': '*'
@@ -9334,9 +9336,6 @@ packages:
     peerDependencies:
       zod: ^3.25.28 || ^4
 
-  zod@4.6.5:
-    resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
-
   zod@4.6.7:
     resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
 
@@ -9396,21 +9395,21 @@ snapshots:
       '@bufbuild/protobuf': 2.16.0
       express: 5.2.1(supports-color@10.2.2)
 
-  '@ai-sdk/provider-utils@4.0.40(zod@4.6.5)':
+  '@ai-sdk/provider-utils@4.0.40(zod@4.6.7)':
     dependencies:
       '@ai-sdk/provider': 3.0.14
       '@standard-schema/spec': 1.1.0
       eventsource-parser: 3.1.1
-      zod: 4.6.5
+      zod: 4.6.7
 
-  '@ai-sdk/provider-utils@5.0.54(zod@4.6.5)':
+  '@ai-sdk/provider-utils@5.0.54(zod@4.6.7)':
     dependencies:
       '@ai-sdk/provider': 4.0.22
       '@standard-schema/spec': 1.1.0
       '@workflow/serde': 4.1.0
       eventsource-parser: 3.1.1
       undici: 7.30.0
-      zod: 4.6.5
+      zod: 4.6.7
 
   '@ai-sdk/provider@2.0.3':
     dependencies:
@@ -9693,18 +9692,18 @@ snapshots:
       '@bufbuild/protobuf': 2.16.0
       '@connectrpc/connect': 2.2.0(@bufbuild/protobuf@2.16.0)
 
-  '@connectrpc/connect-query-core@2.3.1(@bufbuild/protobuf@2.16.0)(@connectrpc/connect@2.2.0(@bufbuild/protobuf@2.16.0))(@tanstack/query-core@5.104.1)':
+  '@connectrpc/connect-query-core@2.3.1(@bufbuild/protobuf@2.16.0)(@connectrpc/connect@2.2.0(@bufbuild/protobuf@2.16.0))(@tanstack/query-core@5.104.2)':
     dependencies:
       '@bufbuild/protobuf': 2.16.0
       '@connectrpc/connect': 2.2.0(@bufbuild/protobuf@2.16.0)
-      '@tanstack/query-core': 5.104.1
+      '@tanstack/query-core': 5.104.2
 
-  '@connectrpc/connect-query@2.3.1(@bufbuild/protobuf@2.16.0)(@connectrpc/connect@2.2.0(@bufbuild/protobuf@2.16.0))(@tanstack/query-core@5.104.1)(@tanstack/react-query@5.104.1(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+  '@connectrpc/connect-query@2.3.1(@bufbuild/protobuf@2.16.0)(@connectrpc/connect@2.2.0(@bufbuild/protobuf@2.16.0))(@tanstack/query-core@5.104.2)(@tanstack/react-query@5.104.2(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:
       '@bufbuild/protobuf': 2.16.0
       '@connectrpc/connect': 2.2.0(@bufbuild/protobuf@2.16.0)
-      '@connectrpc/connect-query-core': 2.3.1(@bufbuild/protobuf@2.16.0)(@connectrpc/connect@2.2.0(@bufbuild/protobuf@2.16.0))(@tanstack/query-core@5.104.1)
-      '@tanstack/react-query': 5.104.1(react@19.3.0)
+      '@connectrpc/connect-query-core': 2.3.1(@bufbuild/protobuf@2.16.0)(@connectrpc/connect@2.2.0(@bufbuild/protobuf@2.16.0))(@tanstack/query-core@5.104.2)
+      '@tanstack/react-query': 5.104.2(react@19.3.0)
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)
     transitivePeerDependencies:
@@ -9990,10 +9989,10 @@ snapshots:
       '@standard-schema/spec': 1.1.0
       hono: 4.13.13
 
-  '@hookform/resolvers@5.9.1(@standard-schema/spec@1.1.0)(ajv@8.20.0)(react-hook-form@7.89.0(@types/react@19.3.0)(react@19.3.0))(zod@4.6.7)':
+  '@hookform/resolvers@5.9.1(@standard-schema/spec@1.1.0)(ajv@8.20.0)(react-hook-form@7.90.0(@types/react@19.3.0)(react@19.3.0))(zod@4.6.7)':
     dependencies:
       '@standard-schema/utils': 0.3.0
-      react-hook-form: 7.89.0(@types/react@19.3.0)(react@19.3.0)
+      react-hook-form: 7.90.0(@types/react@19.3.0)(react@19.3.0)
     optionalDependencies:
       '@standard-schema/spec': 1.1.0
       ajv: 8.20.0
@@ -10133,27 +10132,27 @@ snapshots:
 
   '@marijn/find-cluster-break@1.0.4': {}
 
-  '@mastra/core@1.78.0(@bufbuild/protobuf@2.16.0)(express@5.2.1(supports-color@10.2.2))(supports-color@10.2.2)(zod-to-json-schema@3.25.2(zod@4.6.5))(zod@4.6.5)':
+  '@mastra/core@1.78.0(@bufbuild/protobuf@2.16.0)(express@5.2.1(supports-color@10.2.2))(supports-color@10.2.2)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7)':
     dependencies:
       '@a2a-js/sdk-v0_3': '@a2a-js/sdk@0.3.14(@bufbuild/protobuf@2.16.0)(express@5.2.1(supports-color@10.2.2))'
       '@a2a-js/sdk-v1': '@a2a-js/sdk@1.0.1(@bufbuild/protobuf@2.16.0)(express@5.2.1(supports-color@10.2.2))'
-      '@ai-sdk/provider-utils-v6': '@ai-sdk/provider-utils@4.0.40(zod@4.6.5)'
-      '@ai-sdk/provider-utils-v7': '@ai-sdk/provider-utils@5.0.54(zod@4.6.5)'
+      '@ai-sdk/provider-utils-v6': '@ai-sdk/provider-utils@4.0.40(zod@4.6.7)'
+      '@ai-sdk/provider-utils-v7': '@ai-sdk/provider-utils@5.0.54(zod@4.6.7)'
       '@ai-sdk/provider-v5': '@ai-sdk/provider@2.0.3'
       '@ai-sdk/provider-v6': '@ai-sdk/provider@3.0.14'
       '@ai-sdk/provider-v7': '@ai-sdk/provider@4.0.22'
       '@isaacs/ttlcache': 2.1.5
       '@lukeed/uuid': 2.0.1
-      '@mastra/schema-compat': 1.3.15(zod@4.6.5)
+      '@mastra/schema-compat': 1.3.15(zod@4.6.7)
       '@standard-schema/spec': 1.1.0
-      chat: 4.43.0(supports-color@10.2.2)(zod@4.6.5)
+      chat: 4.43.0(supports-color@10.2.2)(zod@4.6.7)
       croner: 10.0.1
       dotenv: 17.4.2
       execa: 9.6.1
       fastq: 1.20.3
       gray-matter: 4.0.3
       hono: 4.13.13
-      hono-openapi: 1.5.0(hono@4.13.13)(zod-to-json-schema@3.25.2(zod@4.6.5))(zod@4.6.5)
+      hono-openapi: 1.5.0(hono@4.13.13)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7)
       ignore: 7.0.5
       jpeg-js: 0.4.4
       json-schema: 0.4.0
@@ -10165,7 +10164,7 @@ snapshots:
       re2js: 2.9.0
       ws: 8.22.0
       xxhash-wasm: 1.1.0
-      zod: 4.6.5
+      zod: 4.6.7
     transitivePeerDependencies:
       - '@bufbuild/protobuf'
       - '@grpc/grpc-js'
@@ -10186,12 +10185,12 @@ snapshots:
       - zod-openapi
       - zod-to-json-schema
 
-  '@mastra/mcp@2.4.1(@mastra/core@1.78.0(@bufbuild/protobuf@2.16.0)(express@5.2.1(supports-color@10.2.2))(supports-color@10.2.2)(zod-to-json-schema@3.25.2(zod@4.6.5))(zod@4.6.5))(hono@4.13.13)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)':
+  '@mastra/mcp@2.4.1(@mastra/core@1.78.0(@bufbuild/protobuf@2.16.0)(express@5.2.1(supports-color@10.2.2))(supports-color@10.2.2)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7))(hono@4.13.13)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.7)':
     dependencies:
-      '@mastra/core': 1.78.0(@bufbuild/protobuf@2.16.0)(express@5.2.1(supports-color@10.2.2))(supports-color@10.2.2)(zod-to-json-schema@3.25.2(zod@4.6.5))(zod@4.6.5)
+      '@mastra/core': 1.78.0(@bufbuild/protobuf@2.16.0)(express@5.2.1(supports-color@10.2.2))(supports-color@10.2.2)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7)
       '@modelcontextprotocol/client': 2.2.0
       '@modelcontextprotocol/core': 2.2.0
-      '@modelcontextprotocol/ext-apps': 2.0.3(@modelcontextprotocol/client@2.2.0)(@modelcontextprotocol/core@2.2.0)(@modelcontextprotocol/server@2.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)
+      '@modelcontextprotocol/ext-apps': 2.0.3(@modelcontextprotocol/client@2.2.0)(@modelcontextprotocol/core@2.2.0)(@modelcontextprotocol/server@2.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.7)
       '@modelcontextprotocol/node': 2.0.0(@modelcontextprotocol/server@2.2.0)(hono@4.13.13)
       '@modelcontextprotocol/server': 2.2.0
       exit-hook: 5.1.0
@@ -10202,9 +10201,9 @@ snapshots:
       - react-dom
       - zod
 
-  '@mastra/pg@1.31.2(@mastra/core@1.78.0(@bufbuild/protobuf@2.16.0)(express@5.2.1(supports-color@10.2.2))(supports-color@10.2.2)(zod-to-json-schema@3.25.2(zod@4.6.5))(zod@4.6.5))':
+  '@mastra/pg@1.31.2(@mastra/core@1.78.0(@bufbuild/protobuf@2.16.0)(express@5.2.1(supports-color@10.2.2))(supports-color@10.2.2)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7))':
     dependencies:
-      '@mastra/core': 1.78.0(@bufbuild/protobuf@2.16.0)(express@5.2.1(supports-color@10.2.2))(supports-color@10.2.2)(zod-to-json-schema@3.25.2(zod@4.6.5))(zod@4.6.5)
+      '@mastra/core': 1.78.0(@bufbuild/protobuf@2.16.0)(express@5.2.1(supports-color@10.2.2))(supports-color@10.2.2)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7)
       async-mutex: 0.5.0
       pg: 8.23.1
       pg-connection-string: 2.14.1
@@ -10212,10 +10211,10 @@ snapshots:
     transitivePeerDependencies:
       - pg-native
 
-  '@mastra/schema-compat@1.3.15(zod@4.6.5)':
+  '@mastra/schema-compat@1.3.15(zod@4.6.7)':
     dependencies:
       json-schema-to-zod: 2.8.1
-      zod: 4.6.5
+      zod: 4.6.7
       zod-from-json-schema: 0.5.6
 
   '@modelcontextprotocol/client@2.2.0':
@@ -10226,18 +10225,18 @@ snapshots:
       eventsource-parser: 3.1.1
       jose: 6.2.12
       pkce-challenge: 5.0.1
-      zod: 4.6.5
+      zod: 4.6.7
 
   '@modelcontextprotocol/core@2.2.0':
     dependencies:
-      zod: 4.6.5
+      zod: 4.6.7
 
-  '@modelcontextprotocol/ext-apps@2.0.3(@modelcontextprotocol/client@2.2.0)(@modelcontextprotocol/core@2.2.0)(@modelcontextprotocol/server@2.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)':
+  '@modelcontextprotocol/ext-apps@2.0.3(@modelcontextprotocol/client@2.2.0)(@modelcontextprotocol/core@2.2.0)(@modelcontextprotocol/server@2.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.7)':
     dependencies:
       '@modelcontextprotocol/client': 2.2.0
       '@modelcontextprotocol/core': 2.2.0
       '@standard-schema/spec': 1.1.0
-      zod: 4.6.5
+      zod: 4.6.7
     optionalDependencies:
       '@modelcontextprotocol/server': 2.2.0
       react: 19.3.0
@@ -10275,7 +10274,7 @@ snapshots:
   '@modelcontextprotocol/server@2.2.0':
     dependencies:
       '@modelcontextprotocol/core': 2.2.0
-      zod: 4.6.5
+      zod: 4.6.7
 
   '@msw/url@0.1.2': {}
 
@@ -10725,22 +10724,22 @@ snapshots:
 
   '@sindresorhus/merge-streams@4.0.0': {}
 
-  '@standard-community/standard-json@0.3.7(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(zod-to-json-schema@3.25.2(zod@4.6.5))(zod@4.6.5)':
+  '@standard-community/standard-json@0.3.7(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7)':
     dependencies:
       '@standard-schema/spec': 1.1.0
       '@types/json-schema': 7.0.15
       quansync: 0.2.11
     optionalDependencies:
-      zod: 4.6.5
-      zod-to-json-schema: 3.25.2(zod@4.6.5)
+      zod: 4.6.7
+      zod-to-json-schema: 3.25.2(zod@4.6.7)
 
-  '@standard-community/standard-openapi@0.2.11(@standard-community/standard-json@0.3.7(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(zod-to-json-schema@3.25.2(zod@4.6.5))(zod@4.6.5))(@standard-schema/spec@1.1.0)(openapi-types@12.1.3)(zod@4.6.5)':
+  '@standard-community/standard-openapi@0.2.11(@standard-community/standard-json@0.3.7(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7))(@standard-schema/spec@1.1.0)(openapi-types@12.1.3)(zod@4.6.7)':
     dependencies:
-      '@standard-community/standard-json': 0.3.7(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(zod-to-json-schema@3.25.2(zod@4.6.5))(zod@4.6.5)
+      '@standard-community/standard-json': 0.3.7(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7)
       '@standard-schema/spec': 1.1.0
       openapi-types: 12.1.3
     optionalDependencies:
-      zod: 4.6.5
+      zod: 4.6.7
 
   '@standard-schema/spec@1.1.0': {}
 
@@ -10818,11 +10817,11 @@ snapshots:
       tailwindcss: 4.3.3
       vite: '@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)'
 
-  '@tanstack/query-core@5.104.1': {}
+  '@tanstack/query-core@5.104.2': {}
 
-  '@tanstack/react-query@5.104.1(react@19.3.0)':
+  '@tanstack/react-query@5.104.2(react@19.3.0)':
     dependencies:
-      '@tanstack/query-core': 5.104.1
+      '@tanstack/query-core': 5.104.2
       react: 19.3.0
 
   '@tanstack/react-store@0.11.2(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
@@ -10832,27 +10831,27 @@ snapshots:
       react-dom: 19.3.0(react@19.3.0)
       use-sync-external-store: 1.7.0(react@19.3.0)
 
-  '@tanstack/react-table@9.2.8(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+  '@tanstack/react-table@9.3.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:
       '@tanstack/react-store': 0.11.2(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      '@tanstack/table-core': 9.2.8
+      '@tanstack/table-core': 9.3.1
       react: 19.3.0
     transitivePeerDependencies:
       - react-dom
 
-  '@tanstack/react-virtual@3.14.14(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+  '@tanstack/react-virtual@3.14.18(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:
-      '@tanstack/virtual-core': 3.18.0
+      '@tanstack/virtual-core': 3.19.3
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)
 
   '@tanstack/store@0.11.2': {}
 
-  '@tanstack/table-core@9.2.8':
+  '@tanstack/table-core@9.3.1':
     dependencies:
       '@tanstack/store': 0.11.2
 
-  '@tanstack/virtual-core@3.18.0': {}
+  '@tanstack/virtual-core@3.19.3': {}
 
   '@testing-library/dom@10.4.2':
     dependencies:
@@ -11220,7 +11219,7 @@ snapshots:
       '@testing-library/dom': 10.4.2
       '@testing-library/user-event': 14.6.7(@testing-library/dom@10.4.2)
       '@vitest/browser': 5.0.1(@voidzero-dev/vite-plus-core@1.0.0(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(msw@3.0.3(@types/node@22.20.5)(@voidzero-dev/vite-plus-core@1.0.0(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(graphql@16.14.2)(supports-color@10.2.2)(typescript@5.9.3))(vitest@5.0.1)
-      vitest: 5.0.1(@types/node@22.20.5)(@vitest/browser-preview@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1(vitest@5.0.1))(@voidzero-dev/vite-plus-core@1.0.0(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(happy-dom@21.0.1)(jsdom@30.1.2(@noble/hashes@1.8.0))(msw@3.0.3(@types/node@22.20.5)(@voidzero-dev/vite-plus-core@1.0.0(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(graphql@16.14.2)(supports-color@10.2.2)(typescript@5.9.3))
+      vitest: 5.0.1(@types/node@22.20.5)(@vitest/browser-preview@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1)(@voidzero-dev/vite-plus-core@1.0.0(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(happy-dom@21.0.1)(jsdom@30.1.2(@noble/hashes@1.8.0))(msw@3.0.3(@types/node@22.20.5)(@voidzero-dev/vite-plus-core@1.0.0(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(graphql@16.14.2)(supports-color@10.2.2)(typescript@5.9.3))
     transitivePeerDependencies:
       - bufferutil
       - msw
@@ -11244,7 +11243,7 @@ snapshots:
       '@testing-library/dom': 10.4.2
       '@testing-library/user-event': 14.6.7(@testing-library/dom@10.4.2)
       '@vitest/browser': 5.0.1(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vitest@5.0.1)
-      vitest: 5.0.1(@types/node@24.13.6)(@vitest/browser-preview@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1(vitest@5.0.1))(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(happy-dom@21.0.1)(jsdom@30.1.2(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))
+      vitest: 5.0.1(@types/node@24.13.6)(@vitest/browser-preview@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1)(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(happy-dom@21.0.1)(jsdom@30.1.2(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))
     transitivePeerDependencies:
       - bufferutil
       - msw
@@ -11261,7 +11260,7 @@ snapshots:
       pngjs: 7.0.0
       sirv: 3.0.2
       tinyrainbow: 3.2.0
-      vitest: 5.0.1(@types/node@22.20.5)(@vitest/browser-preview@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1(vitest@5.0.1))(@voidzero-dev/vite-plus-core@1.0.0(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(happy-dom@21.0.1)(jsdom@30.1.2(@noble/hashes@1.8.0))(msw@3.0.3(@types/node@22.20.5)(@voidzero-dev/vite-plus-core@1.0.0(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(graphql@16.14.2)(supports-color@10.2.2)(typescript@5.9.3))
+      vitest: 5.0.1(@types/node@22.20.5)(@vitest/browser-preview@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1)(@voidzero-dev/vite-plus-core@1.0.0(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(happy-dom@21.0.1)(jsdom@30.1.2(@noble/hashes@1.8.0))(msw@3.0.3(@types/node@22.20.5)(@voidzero-dev/vite-plus-core@1.0.0(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(graphql@16.14.2)(supports-color@10.2.2)(typescript@5.9.3))
       ws: 8.22.0
     transitivePeerDependencies:
       - bufferutil
@@ -11297,7 +11296,7 @@ snapshots:
       pngjs: 7.0.0
       sirv: 3.0.2
       tinyrainbow: 3.2.0
-      vitest: 5.0.1(@types/node@24.13.6)(@vitest/browser-preview@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1(vitest@5.0.1))(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(happy-dom@21.0.1)(jsdom@30.1.2(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))
+      vitest: 5.0.1(@types/node@24.13.6)(@vitest/browser-preview@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1)(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(happy-dom@21.0.1)(jsdom@30.1.2(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))
       ws: 8.22.0
     transitivePeerDependencies:
       - bufferutil
@@ -11315,7 +11314,7 @@ snapshots:
       obug: 2.2.1
       std-env: 4.3.0
       tinyrainbow: 3.2.0
-      vitest: 5.0.1(@types/node@24.13.6)(@vitest/browser-preview@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1(vitest@5.0.1))(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(happy-dom@21.0.1)(jsdom@30.1.2(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))
+      vitest: 5.0.1(@types/node@24.13.6)(@vitest/browser-preview@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1)(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(happy-dom@21.0.1)(jsdom@30.1.2(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))
     optionalDependencies:
       '@vitest/browser': 5.0.1(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vitest@5.0.1)
 
@@ -11376,7 +11375,7 @@ snapshots:
       pathe: 2.0.3
       sirv: 3.0.2
       tinyrainbow: 3.2.0
-      vitest: 5.0.1(@types/node@24.13.6)(@vitest/browser-preview@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1(vitest@5.0.1))(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(happy-dom@21.0.1)(jsdom@30.1.2(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))
+      vitest: 5.0.1(@types/node@24.13.6)(@vitest/browser-preview@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1)(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(happy-dom@21.0.1)(jsdom@30.1.2(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))
 
   '@vitest/utils@5.0.1':
     dependencies:
@@ -11878,7 +11877,7 @@ snapshots:
 
   character-reference-invalid@2.0.1: {}
 
-  chat@4.43.0(supports-color@10.2.2)(zod@4.6.5):
+  chat@4.43.0(supports-color@10.2.2)(zod@4.6.7):
     dependencies:
       '@chat-adapter/catalog': 4.43.0
       '@workflow/serde': 4.1.0-beta.2
@@ -11889,7 +11888,7 @@ snapshots:
       remend: 1.4.0
       unified: 11.0.5
     optionalDependencies:
-      zod: 4.6.5
+      zod: 4.6.7
     transitivePeerDependencies:
       - supports-color
 
@@ -12113,7 +12112,7 @@ snapshots:
 
   dom-accessibility-api@0.5.16: {}
 
-  dompurify@3.4.16:
+  dompurify@3.4.17:
     optionalDependencies:
       '@types/trusted-types': 2.0.7
 
@@ -12358,7 +12357,7 @@ snapshots:
     dependencies:
       debug: 4.4.3(supports-color@10.2.2)
       express: 5.2.1(supports-color@10.2.2)
-      ip-address: 10.7.3
+      ip-address: 10.7.4
     transitivePeerDependencies:
       - supports-color
 
@@ -12691,11 +12690,11 @@ snapshots:
       '@types/set-cookie-parser': 2.4.10
       set-cookie-parser: 3.1.2
 
-  hono-openapi@1.5.0(hono@4.13.13)(zod-to-json-schema@3.25.2(zod@4.6.5))(zod@4.6.5):
+  hono-openapi@1.5.0(hono@4.13.13)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7):
     dependencies:
       '@hono/standard-validator': 0.4.0(@standard-schema/spec@1.1.0)(hono@4.13.13)
-      '@standard-community/standard-json': 0.3.7(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(zod-to-json-schema@3.25.2(zod@4.6.5))(zod@4.6.5)
-      '@standard-community/standard-openapi': 0.2.11(@standard-community/standard-json@0.3.7(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(zod-to-json-schema@3.25.2(zod@4.6.5))(zod@4.6.5))(@standard-schema/spec@1.1.0)(openapi-types@12.1.3)(zod@4.6.5)
+      '@standard-community/standard-json': 0.3.7(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7)
+      '@standard-community/standard-openapi': 0.2.11(@standard-community/standard-json@0.3.7(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7))(@standard-schema/spec@1.1.0)(openapi-types@12.1.3)(zod@4.6.7)
       '@standard-schema/spec': 1.1.0
       '@types/json-schema': 7.0.15
       hono: 4.13.13
@@ -12795,7 +12794,7 @@ snapshots:
 
   inline-style-parser@0.2.7: {}
 
-  ip-address@10.7.3: {}
+  ip-address@10.7.4: {}
 
   ipaddr.js@1.9.1: {}
 
@@ -13075,7 +13074,7 @@ snapshots:
 
   lru_map@0.4.1: {}
 
-  lucide-react@1.55.0(@types/react@19.3.0)(react@19.3.0):
+  lucide-react@1.56.0(@types/react@19.3.0)(react@19.3.0):
     dependencies:
       react: 19.3.0
     optionalDependencies:
@@ -13117,7 +13116,7 @@ snapshots:
 
   markdown-table@3.0.4: {}
 
-  marked@18.1.0: {}
+  marked@18.1.1: {}
 
   math-intrinsics@1.1.0: {}
 
@@ -14378,7 +14377,7 @@ snapshots:
       react-resizable: 3.2.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       resize-observer-polyfill: 1.5.1
 
-  react-hook-form@7.89.0(@types/react@19.3.0)(react@19.3.0):
+  react-hook-form@7.90.0(@types/react@19.3.0)(react@19.3.0):
     dependencies:
       react: 19.3.0
     optionalDependencies:
@@ -14737,7 +14736,7 @@ snapshots:
 
   socks@2.8.10:
     dependencies:
-      ip-address: 10.7.3
+      ip-address: 10.7.4
       smart-buffer: 4.2.0
 
   source-map-js@1.2.2: {}
@@ -15074,7 +15073,7 @@ snapshots:
       oxlint: 1.85.0(oxlint-tsgolint@7.0.2003)(vite-plus@1.0.0(@types/node@22.20.5)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1)(esbuild@0.28.2)(happy-dom@21.0.1)(jiti@2.7.0)(jsdom@30.1.2(@noble/hashes@1.8.0))(msw@3.0.3(@types/node@22.20.5)(@voidzero-dev/vite-plus-core@1.0.0(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(graphql@16.14.2)(supports-color@10.2.2)(typescript@5.9.3))(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))
       oxlint-tsgolint: 7.0.2003
       vite: '@voidzero-dev/vite-plus-core@1.0.0(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)'
-      vitest: 5.0.1(@types/node@22.20.5)(@vitest/browser-preview@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1(vitest@5.0.1))(@voidzero-dev/vite-plus-core@1.0.0(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(happy-dom@21.0.1)(jsdom@30.1.2(@noble/hashes@1.8.0))(msw@3.0.3(@types/node@22.20.5)(@voidzero-dev/vite-plus-core@1.0.0(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(graphql@16.14.2)(supports-color@10.2.2)(typescript@5.9.3))
+      vitest: 5.0.1(@types/node@22.20.5)(@vitest/browser-preview@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1)(@voidzero-dev/vite-plus-core@1.0.0(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(happy-dom@21.0.1)(jsdom@30.1.2(@noble/hashes@1.8.0))(msw@3.0.3(@types/node@22.20.5)(@voidzero-dev/vite-plus-core@1.0.0(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(graphql@16.14.2)(supports-color@10.2.2)(typescript@5.9.3))
     optionalDependencies:
       '@voidzero-dev/vite-plus-darwin-arm64': 1.0.0
       '@voidzero-dev/vite-plus-darwin-x64': 1.0.0
@@ -15184,7 +15183,7 @@ snapshots:
       oxlint: 1.85.0(oxlint-tsgolint@7.0.2003)(vite-plus@1.0.0(@types/node@24.13.6)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1)(esbuild@0.28.2)(happy-dom@21.0.1)(jiti@2.7.0)(jsdom@30.1.2(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))
       oxlint-tsgolint: 7.0.2003
       vite: '@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)'
-      vitest: 5.0.1(@types/node@24.13.6)(@vitest/browser-preview@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1(vitest@5.0.1))(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(happy-dom@21.0.1)(jsdom@30.1.2(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))
+      vitest: 5.0.1(@types/node@24.13.6)(@vitest/browser-preview@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1)(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(happy-dom@21.0.1)(jsdom@30.1.2(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))
     optionalDependencies:
       '@voidzero-dev/vite-plus-darwin-arm64': 1.0.0
       '@voidzero-dev/vite-plus-darwin-x64': 1.0.0
@@ -15224,7 +15223,7 @@ snapshots:
       - utf-8-validate
       - yaml
 
-  vitest@5.0.1(@types/node@22.20.5)(@vitest/browser-preview@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1(vitest@5.0.1))(@voidzero-dev/vite-plus-core@1.0.0(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(happy-dom@21.0.1)(jsdom@30.1.2(@noble/hashes@1.8.0))(msw@3.0.3(@types/node@22.20.5)(@voidzero-dev/vite-plus-core@1.0.0(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(graphql@16.14.2)(supports-color@10.2.2)(typescript@5.9.3)):
+  vitest@5.0.1(@types/node@22.20.5)(@vitest/browser-preview@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1)(@voidzero-dev/vite-plus-core@1.0.0(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(happy-dom@21.0.1)(jsdom@30.1.2(@noble/hashes@1.8.0))(msw@3.0.3(@types/node@22.20.5)(@voidzero-dev/vite-plus-core@1.0.0(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(graphql@16.14.2)(supports-color@10.2.2)(typescript@5.9.3)):
     dependencies:
       '@types/chai': 5.2.3
       '@vitest/mocker': 5.0.1(@voidzero-dev/vite-plus-core@1.0.0(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(msw@3.0.3(@types/node@22.20.5)(@voidzero-dev/vite-plus-core@1.0.0(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(graphql@16.14.2)(supports-color@10.2.2)(typescript@5.9.3))
@@ -15269,32 +15268,6 @@ snapshots:
     optionalDependencies:
       '@types/node': 24.10.1
       '@vitest/browser-preview': 5.0.1(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.10.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(msw@2.15.0(@types/node@24.10.1)(typescript@5.9.3))(vitest@5.0.1)
-      '@vitest/coverage-v8': 5.0.1(@vitest/browser@5.0.1)(vitest@5.0.1)
-      '@vitest/ui': 5.0.1(vitest@5.0.1)
-      happy-dom: 21.0.1
-      jsdom: 30.1.2(@noble/hashes@1.8.0)
-    transitivePeerDependencies:
-      - msw
-
-  vitest@5.0.1(@types/node@24.13.6)(@vitest/browser-preview@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1(vitest@5.0.1))(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(happy-dom@21.0.1)(jsdom@30.1.2(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3)):
-    dependencies:
-      '@types/chai': 5.2.3
-      '@vitest/mocker': 5.0.1(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))
-      chai: 6.3.0
-      es-module-lexer: 2.3.2
-      expect-type: 1.4.0
-      magic-string: 1.4.2
-      obug: 2.2.1
-      picomatch: 4.0.7
-      std-env: 4.3.0
-      tinybench: 6.1.4
-      tinyexec: 1.3.0
-      tinyglobby: 0.2.17
-      vite: '@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)'
-      why-is-node-running: 2.3.0
-    optionalDependencies:
-      '@types/node': 24.13.6
-      '@vitest/browser-preview': 5.0.1(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vitest@5.0.1)
       '@vitest/coverage-v8': 5.0.1(@vitest/browser@5.0.1)(vitest@5.0.1)
       '@vitest/ui': 5.0.1(vitest@5.0.1)
       happy-dom: 21.0.1
@@ -15497,18 +15470,11 @@ snapshots:
 
   zod-from-json-schema@0.5.6:
     dependencies:
-      zod: 4.6.5
-
-  zod-to-json-schema@3.25.2(zod@4.6.5):
-    dependencies:
-      zod: 4.6.5
-    optional: true
+      zod: 4.6.7
 
   zod-to-json-schema@3.25.2(zod@4.6.7):
     dependencies:
       zod: 4.6.7
-
-  zod@4.6.5: {}
 
   zod@4.6.7: {}
 

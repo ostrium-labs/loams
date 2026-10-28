@@ -244,7 +244,16 @@ impl ObscuraEngine {
     /// nobody can act on.
     pub async fn start(spec: EngineLaunchSpec, timeout: Duration) -> Result<Self> {
         spec.assert_loopback()?;
-        let mut child = tokio::process::Command::new(spec.program())
+        let mut command = tokio::process::Command::new(spec.program());
+        // The engine gets a scrubbed environment (D2122). It used to inherit
+        // the parent's whole environment, so a Loams token in the desktop's
+        // or agentd's env (`LOAMS_*`, a cloud key) reached the process that
+        // renders untrusted pages. Only what the engine needs to run passes.
+        command.env_clear();
+        for (name, value) in engine_environment(std::env::vars_os()) {
+            command.env(name, value);
+        }
+        let mut child = command
             .args(spec.args())
             // The engine's CDP transport is plaintext on loopback and its own
             // logging goes to stderr; keeping stdout quiet avoids it
@@ -282,6 +291,14 @@ impl ObscuraEngine {
     /// The DevTools URL to connect the CDP client to.
     pub fn devtools_url(&self) -> String {
         self.spec.devtools_url()
+    }
+
+    /// The engine's process id, while it is running.
+    ///
+    /// For diagnostics and for the parity suite's credential-boundary check,
+    /// which reads the process environment on Linux.
+    pub fn id(&self) -> Option<u32> {
+        self.child.as_ref().and_then(tokio::process::Child::id)
     }
 
     /// The spec this engine was launched from.
@@ -350,6 +367,53 @@ async fn terminate_then_kill(child: &mut tokio::process::Child, grace: Duration)
     let _ = tokio::time::timeout(grace, child.wait()).await;
 }
 
+/// The environment variables passed through to the engine, by exact name.
+///
+/// What a headless renderer needs to find its binary's libraries, fonts, a
+/// temp directory and a locale, plus `RUST_LOG`. Nothing else crosses.
+pub const ENGINE_ENV_PASSTHROUGH: &[&str] = &[
+    "PATH",
+    "HOME",
+    "TMPDIR",
+    "TEMP",
+    "TMP",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "TZ",
+    "XDG_RUNTIME_DIR",
+    "XDG_CACHE_HOME",
+    "XDG_DATA_HOME",
+    "XDG_CONFIG_HOME",
+    "FONTCONFIG_PATH",
+    "FONTCONFIG_FILE",
+    "SYSTEMROOT",
+    "RUST_LOG",
+];
+
+/// Filter an environment down to what the engine may see.
+///
+/// Exact names from [`ENGINE_ENV_PASSTHROUGH`], plus the engine's own
+/// `OBSCURA_*` settings except `OBSCURA_CDP_TOKEN`: the sidebar binds
+/// loopback and never sets a token, so an inherited one would be someone
+/// else's. Pure, so the rule is testable without spawning anything.
+pub fn engine_environment<I>(vars: I) -> Vec<(std::ffi::OsString, std::ffi::OsString)>
+where
+    I: IntoIterator<Item = (std::ffi::OsString, std::ffi::OsString)>,
+{
+    vars.into_iter()
+        .filter(|(name, _)| {
+            let Some(name) = name.to_str() else {
+                return false;
+            };
+            if ENGINE_ENV_PASSTHROUGH.contains(&name) {
+                return true;
+            }
+            name.starts_with("OBSCURA_") && name != "OBSCURA_CDP_TOKEN"
+        })
+        .collect()
+}
+
 async fn wait_for_port(host: &str, port: u16, timeout: Duration) -> std::io::Result<()> {
     let deadline = tokio::time::Instant::now() + timeout;
     let address = format!("{host}:{port}");
@@ -416,5 +480,40 @@ mod stop_tests {
         terminate_then_kill(&mut child, Duration::from_millis(300)).await;
         let status = child.wait().await.unwrap_or_else(|error| panic!("{error}"));
         assert!(!status.success(), "killed after the grace: {status:?}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn env(pairs: &[(&str, &str)]) -> Vec<(std::ffi::OsString, std::ffi::OsString)> {
+        pairs
+            .iter()
+            .map(|(name, value)| (name.into(), value.into()))
+            .collect()
+    }
+
+    #[test]
+    fn the_engine_environment_drops_loams_tokens() {
+        let kept = engine_environment(env(&[
+            ("PATH", "/usr/bin"),
+            ("HOME", "/home/a"),
+            ("LOAMS_TOKEN", "secret"),
+            ("LOAMS_API_KEY", "secret"),
+            ("AWS_SECRET_ACCESS_KEY", "secret"),
+            ("OBSCURA_NAV_TIMEOUT_MS", "5000"),
+            ("OBSCURA_CDP_TOKEN", "someone-elses"),
+            ("RUST_LOG", "obscura=info"),
+        ]));
+        let names: Vec<String> = kept
+            .iter()
+            .map(|(name, _)| name.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            names,
+            ["PATH", "HOME", "OBSCURA_NAV_TIMEOUT_MS", "RUST_LOG"],
+            "only the pass-through list and the engine's own settings cross"
+        );
     }
 }

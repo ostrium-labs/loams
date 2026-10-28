@@ -58,7 +58,8 @@ pub(crate) fn signal(
                     signal_name: name,
                     input,
                     identity,
-                    header: Some(header.unwrap_or_default()),
+                    // As sent (#1481).
+                    header,
                     request_id,
                     ..Default::default()
                 },

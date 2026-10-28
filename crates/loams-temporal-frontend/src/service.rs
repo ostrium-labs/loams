@@ -14,8 +14,8 @@ use loams_temporal_proto::temporal::api::common::v1::{
     WorkerVersionStamp, WorkflowExecution, WorkflowType,
 };
 use loams_temporal_proto::temporal::api::enums::v1::{
-    HistoryEventFilterType, NamespaceState, PendingActivityState, PendingWorkflowTaskState,
-    QueryResultType, TaskQueueKind,
+    EventType, HistoryEventFilterType, NamespaceState, PendingActivityState,
+    PendingWorkflowTaskState, QueryResultType, TaskQueueKind,
 };
 use loams_temporal_proto::temporal::api::history::v1::History;
 use loams_temporal_proto::temporal::api::namespace::v1::{NamespaceConfig, NamespaceInfo};
@@ -84,6 +84,7 @@ pub struct Frontend {
     pub(crate) tokens: TokenKeys,
     pub(crate) queries: Queries,
     pub(crate) config: FrontendConfig,
+    pub(crate) batches: crate::batch::Batches,
     namespaces: Mutex<HashMap<String, NamespaceRecord>>,
     /// Temporal Schedules (D2072).
     pub(crate) schedules: Arc<dyn ScheduleStore>,
@@ -190,6 +191,7 @@ impl Frontend {
             tokens,
             queries: Queries::default(),
             config,
+            batches: crate::batch::Batches::default(),
             namespaces: Mutex::new(HashMap::new()),
             schedules: Arc::new(MemScheduleStore::new()),
             scheduled_runs: Mutex::new(HashMap::new()),
@@ -369,9 +371,9 @@ impl Frontend {
         }
     }
 
+    /// The history a poll answer carries, up to `up_to`, read page by page.
     async fn full_history(&self, key: &RunKey, up_to: i64) -> Result<History, Status> {
-        let mut events = self.engine.history(key, 1, usize::MAX).await?;
-        events.retain(|e| e.event_id <= up_to);
+        let events = self.engine.history_until(key, up_to, |_| true).await?;
         Ok(History { events })
     }
 
@@ -1290,18 +1292,44 @@ impl WorkflowService for WorkflowServiceImpl {
                 ..Default::default()
             }));
         }
-        let events = self.0.engine.history(&key, from, page).await?;
-        let run = self.0.engine.load(&key).await?;
-        let next = events.last().map_or(from, |e| e.event_id + 1);
-        let more = next < run.state.next_event_id
-            || (r.wait_new_event && run.state.completion_event_id == 0);
+        // Pages come from the store's paged read (`Store::history_page`)
+        // and carry its token. The gateway's own 8-byte token (the next
+        // event ID) remains for one case only: a long poll that has read
+        // everything written so far and must wait for the next event.
+        let (events, store_next) = if r.next_page_token.len() == 8 {
+            let events = self.0.engine.history(&key, from, page).await?;
+            let next = events.last().map_or(from, |e| e.event_id + 1);
+            let run = self.0.engine.load(&key).await?;
+            let more = next < run.state.next_event_id;
+            // More written since the wait began: continue from here.
+            (
+                events,
+                if more {
+                    next.to_be_bytes().to_vec()
+                } else {
+                    Vec::new()
+                },
+            )
+        } else {
+            self.0
+                .engine
+                .history_page(&key, &r.next_page_token, page)
+                .await?
+        };
+        let next_page_token = if !store_next.is_empty() {
+            store_next
+        } else {
+            let run = self.0.engine.load(&key).await?;
+            if r.wait_new_event && run.state.completion_event_id == 0 {
+                let next = events.last().map_or(from, |e| e.event_id + 1);
+                next.max(from).to_be_bytes().to_vec()
+            } else {
+                Vec::new()
+            }
+        };
         Ok(Response::new(GetWorkflowExecutionHistoryResponse {
             history: Some(History { events }),
-            next_page_token: if more {
-                next.to_be_bytes().to_vec().into()
-            } else {
-                Default::default()
-            },
+            next_page_token: next_page_token.into(),
             ..Default::default()
         }))
     }
@@ -1391,9 +1419,17 @@ impl WorkflowService for WorkflowServiceImpl {
                 first_run_id: s.first_execution_run_id.clone(),
                 auto_reset_points: Some(
                     loams_temporal_proto::temporal::api::workflow::v1::ResetPoints {
+                        // Only the completed workflow tasks matter; read
+                        // page by page and keep just those.
                         points: loams_temporal_statemachine::reset::reset_points(
                             &key.run_id,
-                            &self.0.engine.history(&key, 1, usize::MAX).await?,
+                            &self
+                                .0
+                                .engine
+                                .history_until(&key, i64::MAX, |e| {
+                                    e.event_type == EventType::WorkflowTaskCompleted as i32
+                                })
+                                .await?,
                         ),
                     },
                 ),
@@ -1754,6 +1790,60 @@ impl WorkflowService for WorkflowServiceImpl {
         let r = req.into_inner();
         self.0.namespace(&p, &r.namespace).await?;
         Ok(Response::new(crate::namespaces::reachability(&r)))
+    }
+
+    async fn start_batch_operation(
+        &self,
+        req: Request<StartBatchOperationRequest>,
+    ) -> Result<Response<StartBatchOperationResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        let r = req.into_inner();
+        self.0.start_batch(&p, r).await.map(Response::new)
+    }
+
+    async fn stop_batch_operation(
+        &self,
+        req: Request<StopBatchOperationRequest>,
+    ) -> Result<Response<StopBatchOperationResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        let r = req.into_inner();
+        self.0.stop_batch(&p, r).await.map(Response::new)
+    }
+
+    async fn describe_batch_operation(
+        &self,
+        req: Request<DescribeBatchOperationRequest>,
+    ) -> Result<Response<DescribeBatchOperationResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        let r = req.into_inner();
+        self.0.describe_batch(&p, r).await.map(Response::new)
+    }
+
+    async fn list_batch_operations(
+        &self,
+        req: Request<ListBatchOperationsRequest>,
+    ) -> Result<Response<ListBatchOperationsResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        let r = req.into_inner();
+        self.0.list_batches(&p, r).await.map(Response::new)
+    }
+
+    async fn list_open_workflow_executions(
+        &self,
+        req: Request<ListOpenWorkflowExecutionsRequest>,
+    ) -> Result<Response<ListOpenWorkflowExecutionsResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        let r = req.into_inner();
+        self.0.list_open(&p, r).await.map(Response::new)
+    }
+
+    async fn list_closed_workflow_executions(
+        &self,
+        req: Request<ListClosedWorkflowExecutionsRequest>,
+    ) -> Result<Response<ListClosedWorkflowExecutionsResponse>, Status> {
+        let p = self.0.principal(&req)?;
+        let r = req.into_inner();
+        self.0.list_closed(&p, r).await.map(Response::new)
     }
 
     async fn reset_sticky_task_queue(

@@ -62,6 +62,41 @@ value = "1.20.0"
 licence = "MIT"
 source = "https://www.nuget.org/packages/Temporalio/1.20.0"
 resolve = "github:temporalio/sdk-dotnet"
+[TEMPORAL_SDK_JAVA]
+value = "1.40.0"
+licence = "Apache-2.0"
+source = "https://github.com/temporalio/sdk-java/blob/v1.40.0/LICENSE"
+resolve = "github:temporalio/sdk-java"
+
+[TEMPORAL_SDK_RUBY]
+value = "1.9.0"
+licence = "MIT"
+source = "https://github.com/temporalio/sdk-ruby/blob/v1.9.0/LICENSE"
+resolve = "github:temporalio/sdk-ruby"
+
+[TEMPORAL_SDK_RUST]
+value = "1.1.0"
+licence = "MIT"
+source = "https://crates.io/crates/temporalio-sdk/1.1.0 (LICENSE.txt in the crate)"
+resolve = "github:temporalio/sdk-rust"
+
+[TEMPORAL_SDK_CORE_RUST]
+value = "0.10.0"
+licence = "MIT"
+source = "https://crates.io/crates/temporalio-sdk-core/0.10.0 (LICENSE.txt in the crate)"
+resolve = "github:temporalio/sdk-rust"
+
+[TEMPORAL_SDK_PHP]
+value = "2.19.0"
+licence = "MIT"
+source = "https://github.com/temporalio/sdk-php/blob/v2.19/LICENSE"
+resolve = "github:temporalio/sdk-php"
+
+[ROADRUNNER_VERSION]
+value = "2025.1.15"
+licence = "MIT"
+source = "https://github.com/roadrunner-server/roadrunner/blob/v2025.1.15/LICENSE"
+resolve = "github:roadrunner-server/roadrunner"
 
 [TEMPORAL_SAMPLES_GO]
 value = "d3784428122e0cd4b28e91a0cd86b589749abf28"
@@ -144,10 +179,48 @@ value = "docker.io/library/python:3.12.14-bookworm@sha256:dbbe4ceb97851e2e5fa837
 licence = "PSF-2.0"
 source = "https://docs.python.org/3.12/license.html"
 
+[RUST_IMAGE]
+value = "docker.io/library/rust:1.97.1-bookworm@sha256:0e2bcaef56d041a486784e54104a81aebe0da44bd03019bd70bc0401e42e4a97"
+licence = "MIT OR Apache-2.0"
+source = "https://github.com/rust-lang/rust/blob/1.97.1/COPYRIGHT"
+
 [NODE_IMAGE]
 value = "docker.io/library/node:22.23.2-bookworm@sha256:dd5847a04b0deee391fa145f1f4c6d214196668b6bcc7988ebed67249f226844"
 licence = "MIT"
 source = "https://github.com/nodejs/node/blob/v22.23.2/LICENSE"
+
+[RUBY_IMAGE]
+value = "docker.io/library/ruby:3.4.10-bookworm@sha256:cc183c94af21fe763dcf1a89f731da75797b80b399e1c4d0a9408bcd3f87c63c"
+licence = "BSD-2-Clause"
+source = "https://github.com/ruby/ruby/blob/v3_4_10/COPYING"
+
+[BUNDLER_VERSION]
+value = "4.0.22"
+licence = "MIT"
+source = "https://github.com/rubygems/rubygems/blob/bundler-v4.0.22/bundler/LICENSE.md"
+
+[PHP_IMAGE]
+value = "docker.io/library/php:8.4.25-cli-bookworm@sha256:bafb189d08a8db0fcbf97aff7e362ada47b3bb2fc902468dc799e6ff8ab402b0"
+licence = "PHP-3.01"
+source = "https://github.com/php/php-src/blob/php-8.4.25/LICENSE"
+
+[COMPOSER_IMAGE]
+value = "docker.io/library/composer:2.10.2@sha256:d020706319701a44468968321dccd0fce6620190159a7a9ec195d78e6e971c71"
+licence = "MIT"
+source = "https://github.com/composer/composer/blob/2.10.2/LICENSE"
+resolve = "github:composer/composer"
+
+[ROADRUNNER_IMAGE]
+value = "ghcr.io/roadrunner-server/roadrunner:2025.1.15@sha256:18378c1313a71ce1c3cfc493c99e75c189ef5fb2eaf85290b8a99080fcb0f64f"
+licence = "MIT"
+source = "https://github.com/roadrunner-server/roadrunner/blob/v2025.1.15/LICENSE"
+resolve = "github:roadrunner-server/roadrunner"
+
+[PHP_GRPC_VERSION]
+value = "1.84.0"
+licence = "Apache-2.0"
+source = "https://pecl.php.net/package/grpc/1.84.0"
+resolve = "github:grpc/grpc"
 
 [JAVA_IMAGE]
 value = "docker.io/library/eclipse-temurin:21.0.12_8-jdk-noble@sha256:4d271cd5e0624598cf563342f47281b09cb364bc13acbbd7251f49f83470018d"
@@ -159,6 +232,10 @@ value = "mcr.microsoft.com/dotnet/sdk:8.0.425-bookworm-slim@sha256:ec9c0a0dc5f60
 licence = "MIT"
 source = "https://github.com/dotnet/sdk/blob/v8.0.425/LICENSE.TXT"
 resolve = "github:dotnet/sdk"
+[MAVEN_IMAGE]
+value = "docker.io/library/maven:3.9.16-eclipse-temurin-21-noble@sha256:99e61abcff91a9b1333463bd8451fb18495d6eba9250ac66a338b518f8278320"
+licence = "Apache-2.0 AND GPL-2.0-only WITH Classpath-exception-2.0"
+source = "https://github.com/apache/maven/blob/maven-3.9.16/LICENSE"
 
 [AIRFLOW_VERSION]
 value = "3.3.2"
@@ -215,6 +292,12 @@ value = "2.29.2"
 licence = "MIT"
 source = "https://github.com/pdm-project/pdm/blob/2.29.2/LICENSE"
 resolve = "github:pdm-project/pdm"
+
+[PIP_GROUPS]
+value = "25.2"
+licence = "MIT"
+source = "https://github.com/pypa/pip/blob/25.2/LICENSE.txt"
+resolve = "github:pypa/pip"
 
 [JEST_JUNIT]
 value = "17.0.0"

@@ -16,8 +16,6 @@
 name: BYOC Confluent nightly
 
 on:
-  schedule:
-    - cron: "15 4 * * *"
   workflow_dispatch:
     inputs:
       confluent_only:
