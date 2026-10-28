@@ -71,3 +71,8 @@ cases = "corpus/he1/36/cases"
 name = "he1-31"
 setup = "corpus/he1/31/setup.sql"
 cases = "corpus/he1/31/cases"
+
+[[corpus]]
+name = "he1-38"
+setup = "corpus/he1/38/setup.sql"
+cases = "corpus/he1/38/cases"

@@ -51,8 +51,9 @@ use datafusion::sql::sqlparser::ast::{
     FunctionArguments, GroupByExpr, Ident, Join, JoinConstraint, JoinOperator, LambdaFunction,
     LimitClause, Map, MapEntry, NamedWindowDefinition, NamedWindowExpr, ObjectName, ObjectNamePart,
     Offset, OneOrManyWithParens, OrderBy, OrderByExpr, OrderByKind, OrderByOptions, Query, Select,
-    SelectFlavor, SelectItem, SetExpr, Setting, Subscript, TableAlias, TableFactor, TableWithJoins,
-    TrimWhereField, UnaryOperator, Value, ValueWithSpan, WindowFrame, WindowSpec, WindowType, With,
+    SelectFlavor, SelectItem, SetExpr, Setting, Subscript, TableAlias, TableFactor,
+    TableFunctionArgs, TableWithJoins, TrimWhereField, UnaryOperator, Value, ValueWithSpan,
+    WindowFrame, WindowSpec, WindowType, With,
 };
 use loams_house_types::ChError;
 
@@ -80,6 +81,8 @@ pub struct Resolution {
     pub tables: Vec<TableRead>,
     /// The ClickHouse functions called, by canonical name.
     pub functions: BTreeSet<String>,
+    /// The table functions called (plan HE1 Task 38: `numbers`, `zeros`).
+    pub table_functions: BTreeSet<String>,
 }
 
 /// The guard's state while it walks one statement.
@@ -708,8 +711,18 @@ impl<'a> Guard<'a> {
                 sample,
                 index_hints,
             } => {
-                if args.is_some() {
-                    return Err(later("Table functions", 38));
+                // A table function (plan HE1 Task 38): the safe ones run,
+                // `clusterAllReplicas(c, system.t)` reads `system.t`, and
+                // everything else is refused.
+                let mut function = None;
+                if let Some(a) = args {
+                    match self.table_function(name, a)? {
+                        TableFunction::Safe(f) => function = Some(f),
+                        TableFunction::Local(local) => {
+                            *name = local;
+                            *args = None;
+                        }
+                    }
                 }
                 if !with_hints.is_empty()
                     || version.is_some()
@@ -751,6 +764,10 @@ impl<'a> Guard<'a> {
                 if final_ {
                     return Err(later("FINAL", 27));
                 }
+                if let Some(f) = function {
+                    self.resolution.table_functions.insert(f);
+                    return Ok(());
+                }
                 self.resolution.tables.push(TableRead {
                     name: parts,
                     final_,
@@ -783,8 +800,15 @@ impl<'a> Guard<'a> {
                 }
                 self.table_with_joins(table_with_joins)
             }
-            TableFactor::TableFunction { .. } | TableFactor::Function { .. } => {
-                Err(later("Table functions", 38))
+            TableFactor::TableFunction { expr, .. } => {
+                Err(refuse(format!("The table function TABLE({expr})")))
+            }
+            TableFactor::Function { name, .. } => {
+                let written = name.to_string();
+                if disabled_table_function(&written) {
+                    return Err(disabled(&written));
+                }
+                Err(refuse(format!("The table function {written}")))
             }
             TableFactor::UNNEST { .. } => Err(refuse("UNNEST in FROM")),
             TableFactor::JsonTable { .. } | TableFactor::OpenJsonTable { .. } => {
@@ -797,6 +821,50 @@ impl<'a> Guard<'a> {
             TableFactor::XmlTable { .. } => Err(refuse("XMLTABLE")),
             TableFactor::SemanticView { .. } => Err(refuse("SEMANTIC_VIEW")),
         }
+    }
+
+    /// Classifies the table function `name(args)` (plan HE1 Task 38).
+    fn table_function(
+        &mut self,
+        name: &ObjectName,
+        args: &mut TableFunctionArgs,
+    ) -> Result<TableFunction, ChError> {
+        let written = match name.0.as_slice() {
+            [ObjectNamePart::Identifier(i)] => i.value.clone(),
+            _ => return Err(refuse(format!("The table function {name}"))),
+        };
+        if disabled_table_function(&written) {
+            return Err(disabled(&written));
+        }
+        let TableFunctionArgs { args, settings } = args;
+        if settings.is_some() {
+            return Err(refuse(format!("SETTINGS in the arguments of {written}")));
+        }
+        if written == "clusterAllReplicas" {
+            return cluster_read(&written, args).map(TableFunction::Local);
+        }
+        let Some((_, max_args)) = SAFE_TABLE_FUNCTIONS.iter().find(|(n, _)| *n == written) else {
+            return Err(refuse(format!("The table function {written}")));
+        };
+        if args.len() > *max_args {
+            return Err(ChError::number_of_arguments_doesnt_match(format!(
+                "Table function '{written}' requires at most {max_args} arguments, got {}",
+                args.len()
+            )));
+        }
+        for a in args.iter_mut() {
+            match a {
+                FunctionArg::Unnamed(FunctionArgExpr::Expr(e)) if constant_count(e) => {
+                    self.expr(e)?;
+                }
+                other => {
+                    return Err(refuse(format!(
+                        "The argument {other} of table function {written} (only numbers)"
+                    )));
+                }
+            }
+        }
+        Ok(TableFunction::Safe(written))
     }
 
     fn window_spec(&mut self, w: &mut WindowSpec) -> Result<(), ChError> {
@@ -1270,6 +1338,142 @@ fn has_columns_matcher(e: &Expr) -> bool {
     let mut f = Find(false);
     let _ = crate::scope::Walk::expr(&mut f, &mut e.clone());
     f.0
+}
+
+/// The table functions the engine runs, with their most arguments (plan HE1
+/// Task 38): they read nothing outside the statement.
+pub const SAFE_TABLE_FUNCTIONS: &[(&str, usize)] = &[
+    ("numbers", 3),
+    ("numbers_mt", 3),
+    ("zeros", 1),
+    ("zeros_mt", 1),
+];
+
+/// The table functions that reach outside the namespace: `344`, never built
+/// (D1558; `conformance/clickhouse/matrix/classes.toml`'s `disabled` table
+/// functions, `disabled_table_functions_match_the_matrix`).
+pub const DISABLED_TABLE_FUNCTIONS: &[&str] = &[
+    "file",
+    "fileCluster",
+    "filesystem",
+    "url",
+    "urlCluster",
+    "remote",
+    "remoteSecure",
+    "cluster",
+    "clusterAllReplicas",
+    "mysql",
+    "postgresql",
+    "odbc",
+    "jdbc",
+    "sqlite",
+    "mongodb",
+    "redis",
+    "hdfs",
+    "hdfsCluster",
+    "hive",
+    "s3",
+    "s3Cluster",
+    "gcs",
+    "oss",
+    "cosn",
+    "azureBlobStorage",
+    "azureBlobStorageCluster",
+    "executable",
+    "dictionary",
+    "ytsaurus",
+    "arrowFlight",
+    "arrowflight",
+    "bigquery",
+    "arrowstream",
+    "loop",
+    "eval",
+    "fuzzJSON",
+    "fuzzQuery",
+    "viewIfPermitted",
+    "viewExplain",
+];
+
+/// The prefixes of disabled table functions (the matrix's `prefixes`).
+pub const DISABLED_TABLE_FUNCTION_PREFIXES: &[&str] = &[
+    "iceberg",
+    "deltaLake",
+    "hudi",
+    "paimon",
+    "prometheusQuery",
+    "timeSeries",
+    "mergeTree",
+];
+
+/// Whether `name` is a table function that reaches outside the namespace.
+/// Case is ignored, so no spelling slips past the refusal.
+/// `clusterAllReplicas(c, system.t)` is the one form read locally
+/// ([`Guard`]'s `cluster_read`, HE1 R9.62); it is checked before this.
+pub fn disabled_table_function(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    (lower != "clusterallreplicas"
+        && DISABLED_TABLE_FUNCTIONS
+            .iter()
+            .any(|d| d.eq_ignore_ascii_case(name)))
+        || DISABLED_TABLE_FUNCTION_PREFIXES
+            .iter()
+            .any(|p| lower.starts_with(&p.to_ascii_lowercase()))
+}
+
+fn disabled(name: &str) -> ChError {
+    ChError::support_is_disabled(format!(
+        "Table function {name} is disabled in the Loams House: it reaches outside the namespace"
+    ))
+}
+
+/// What a table function in `FROM` turned out to be.
+enum TableFunction {
+    /// One of [`SAFE_TABLE_FUNCTIONS`], by name.
+    Safe(String),
+    /// A local table to read in its place.
+    Local(ObjectName),
+}
+
+/// `clusterAllReplicas(<cluster>, system.<t>)` as `system.<t>` (HE1 R9.62):
+/// every cluster of a one-node House is that node. Any other form reaches
+/// another table's data or another host, and is `344`.
+fn cluster_read(written: &str, args: &[FunctionArg]) -> Result<ObjectName, ChError> {
+    let cluster_name = |e: &Expr| {
+        matches!(
+            e,
+            Expr::Identifier(_)
+                | Expr::Value(ValueWithSpan {
+                    value: Value::SingleQuotedString(_),
+                    ..
+                })
+        )
+    };
+    if let [
+        FunctionArg::Unnamed(FunctionArgExpr::Expr(c)),
+        FunctionArg::Unnamed(FunctionArgExpr::Expr(Expr::CompoundIdentifier(parts))),
+    ] = args
+        && cluster_name(c)
+        && let [db, table] = parts.as_slice()
+        && db.value == "system"
+    {
+        return Ok(ObjectName::from(vec![
+            Ident::new("system"),
+            Ident::new(table.value.clone()),
+        ]));
+    }
+    Err(disabled(written))
+}
+
+/// A table function's count argument: a number literal (`numbers(10)`,
+/// `numbers(18446744073709551615)`).
+fn constant_count(e: &Expr) -> bool {
+    matches!(
+        e,
+        Expr::Value(ValueWithSpan {
+            value: Value::Number(..),
+            ..
+        })
+    )
 }
 
 fn setting_text(v: &Expr) -> String {

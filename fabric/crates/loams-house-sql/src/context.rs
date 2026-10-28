@@ -8,9 +8,11 @@ use std::sync::Arc;
 
 use datafusion::arrow::datatypes::{DataType, FieldRef};
 use datafusion::common::config::ConfigOptions;
-use datafusion::common::{DataFusionError, Result, TableReference};
+use datafusion::common::{DataFusionError, Result, ScalarValue, TableReference};
 use datafusion::logical_expr::planner::{ExprPlanner, TypePlanner};
-use datafusion::logical_expr::{AggregateUDF, HigherOrderUDF, ScalarUDF, TableSource, WindowUDF};
+use datafusion::logical_expr::{
+    AggregateUDF, Expr, HigherOrderUDF, ScalarUDF, TableSource, WindowUDF,
+};
 use datafusion::sql::planner::ContextProvider;
 use datafusion::sql::sqlparser::ast;
 use loams_house_types::ChError;
@@ -19,6 +21,26 @@ use loams_house_types::ChError;
 pub trait Catalog: fmt::Debug + Send + Sync {
     /// The table `database.name`, if it exists.
     fn table(&self, database: &str, name: &str) -> Option<Arc<dyn TableSource>>;
+
+    /// Whether `database` exists (`SHOW TABLES FROM db` is `81` when it does
+    /// not, plan HE1 Task 38). A catalog that does not list its databases
+    /// answers `true`.
+    fn has_database(&self, _database: &str) -> bool {
+        true
+    }
+
+    /// The table function `name` over constant `args` (plan HE1 Task 38:
+    /// `numbers`, `numbers_mt`, `zeros`, `zeros_mt`); `None` when the catalog
+    /// has no such function. The guard has already refused every other table
+    /// function (`344` for those reaching outside the namespace, `48` for the
+    /// rest).
+    fn table_function(
+        &self,
+        _name: &str,
+        _args: &[ScalarValue],
+    ) -> Option<Result<Arc<dyn TableSource>, ChError>> {
+        None
+    }
 }
 
 /// The functions the engine has, by the names DataFusion looks them up with
@@ -183,6 +205,30 @@ impl ContextProvider for HouseContext<'_> {
                 message: format!("Unknown table expression identifier '{db}.{table}'"),
             })
         })
+    }
+
+    fn get_table_function_source(
+        &self,
+        name: &str,
+        args: Vec<Expr>,
+    ) -> Result<Arc<dyn TableSource>> {
+        let mut values = Vec::with_capacity(args.len());
+        for arg in args {
+            match arg {
+                Expr::Literal(v, _) => values.push(v),
+                other => {
+                    return Err(external(ChError::bad_arguments(format!(
+                        "The arguments of table function {name} must be constants, not {other}"
+                    ))));
+                }
+            }
+        }
+        match self.catalog.table_function(name, &values) {
+            Some(found) => found.map_err(external),
+            None => Err(external(ChError::unknown_function(format!(
+                "Unknown table function {name}"
+            )))),
+        }
     }
 
     fn get_type_planner(&self) -> Option<Arc<dyn TypePlanner>> {

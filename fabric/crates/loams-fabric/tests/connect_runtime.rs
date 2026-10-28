@@ -3,6 +3,9 @@
 //! the native-only rule, the single-writer lock, the admin API and the
 //! scrubbed log.
 
+// `unwrap_used` is a warning and CI runs `-D warnings`; tests unwrap freely.
+#![allow(clippy::unwrap_used)]
+
 mod common;
 
 use std::sync::{Arc, Mutex};

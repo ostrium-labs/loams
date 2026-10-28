@@ -446,6 +446,12 @@ src/Functions/FunctionDateOrDateTimeAddInterval.h,
 src/Functions/formatDateTime.cpp and src/IO/parseDateTimeBestEffort.cpp at
 tag v26.9.2.8-stable (plan HE1 Task 30). Files that port it name the source
 in their headers.
+The column lists in
+fabric/crates/loams-house-engine/src/system/shapes.rs are taken from
+tests/queries/0_stateless/02117_show_create_table_system.reference at
+v26.9.2.8, and the semantics of numbers()/zeros() and of the SHOW rewrites
+follow TableFunctionNumbers, StorageSystemNumbers and
+InterpreterShowTablesQuery (plan HE1 Task 38).
 
 TiKV migration (https://github.com/tikv/migration), Apache License 2.0,
 Copyright TiKV Project Authors. loams-tikv's CDC consumer (KV1) ports the
