@@ -13,7 +13,8 @@ loams-house-types = { path = "../loams-house-types" }
 # UDF, UDAF and UDWF traits and the physical-plan operators. Apache-2.0.
 datafusion.workspace = true
 # The function registry the engine plans against (`Registry`) and the
-# functions' internal names. Apache-2.0.
+# functions' internal names; aggregate names, combinators and parameters
+# (plan HE1 Task 28). Apache-2.0.
 loams-house-sql = { path = "../loams-house-sql" }
 # Date and time functions (HE1 Task 30): calendars and time zones. Both are
 # already in the lock (chrono 0.4.45, chrono-tz 0.10.4, IANA tzdata 2025b;
@@ -22,7 +23,9 @@ chrono = { version = "0.4", default-features = false, features = ["std"] }
 chrono-tz = "0.10"
 
 [dev-dependencies]
+# The partial-state test runs plans; fixtures are JSON. MIT, MIT OR Apache-2.0.
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+serde_json.workspace = true
 
 [lints]
 workspace = true

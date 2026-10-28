@@ -13,6 +13,7 @@
 //! 5. `SqlToRel` plans over the House's catalog, functions and ClickHouse
 //!    types ([`context`]).
 
+pub mod aggregates;
 pub mod coerce;
 pub mod context;
 pub mod functions;
@@ -26,6 +27,6 @@ pub mod scope;
 pub mod temporal;
 pub mod untuple;
 
-pub use context::{Catalog, HouseContext, Registry};
+pub use context::{AggregateFactory, Catalog, HouseContext, Registry};
 pub use guard::{Resolution, TableRead};
 pub use plan::{Guarded, Prepared, guard, prepare};
