@@ -7467,6 +7467,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "kv-native"
+version = "0.1.2"
+dependencies = [
+ "clap",
+ "futures",
+ "loams-kv",
+ "loams-tikv",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "lance"
 version = "12.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
