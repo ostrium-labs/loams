@@ -8,5 +8,14 @@ license.workspace = true
 authors.workspace = true
 publish = false
 
+[dependencies]
+loams-kv.workspace = true
+loams-tuple.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+
 [lints]
 workspace = true

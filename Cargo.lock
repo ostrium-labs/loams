@@ -9010,6 +9010,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-cql"
+version = "0.1.2"
+dependencies = [
+ "loams-kv",
+ "loams-tuple",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "loams-durable"
 version = "0.1.2"
 dependencies = [
@@ -9716,6 +9727,19 @@ name = "loams-meter-gate"
 version = "0.1.2"
 dependencies = [
  "serde_json",
+]
+
+[[package]]
+name = "loams-meter-house"
+version = "0.1.2"
+dependencies = [
+ "axum 0.8.9",
+ "loams-meter-core",
+ "reqwest 0.13.5",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "url",
 ]
 
 [[package]]
@@ -19076,21 +19100,4 @@ dependencies = [
  "serde",
  "syn 3.0.6",
  "winnow 1.0.4",
-]
-
-[[package]]
-name = "loams-cql"
-version = "0.1.2"
-
-[[package]]
-name = "loams-meter-house"
-version = "0.1.2"
-dependencies = [
- "axum 0.8.9",
- "loams-meter-core",
- "reqwest 0.13.5",
- "serde_json",
- "thiserror 2.0.21",
- "tokio",
- "url",
 ]

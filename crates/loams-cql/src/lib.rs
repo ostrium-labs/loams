@@ -6,3 +6,6 @@
 mod token;
 
 pub use token::cassandra_token;
+
+/// Transactional CQL scalar-row storage.
+pub mod storage;
