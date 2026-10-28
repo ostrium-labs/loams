@@ -12343,6 +12343,85 @@ cargo.rust_library(
 )
 
 http_archive(
+    name = "deadpool-0.12.3.crate",
+    sha256 = "0be2b1d1d6ec8d846f05e137292d0b89133caf95ef33695424c09568bdd39b1b",
+    strip_prefix = "deadpool-0.12.3",
+    urls = ["https://static.crates.io/crates/deadpool/0.12.3/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "deadpool-0.12",
+    srcs = [":deadpool-0.12.3.crate"],
+    crate = "deadpool",
+    crate_root = "deadpool-0.12.3.crate/src/lib.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "deadpool",
+        "CARGO_CRATE_NAME": "deadpool",
+        "CARGO_MANIFEST_DIR": "deadpool-0.12.3.crate",
+        "CARGO_PKG_AUTHORS": "Michael P. Jung <michael.jung@terreon.de>",
+        "CARGO_PKG_DESCRIPTION": "Dead simple async pool",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "deadpool",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/bikeshedder/deadpool",
+        "CARGO_PKG_RUST_VERSION": "1.75",
+        "CARGO_PKG_VERSION": "0.12.3",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "12",
+        "CARGO_PKG_VERSION_PATCH": "3",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "default",
+        "managed",
+        "unmanaged",
+    ],
+    visibility = [],
+    deps = [
+        ":deadpool-runtime-0.1",
+        ":lazy_static-1",
+        ":num_cpus-1",
+        ":tokio-1",
+    ],
+)
+
+http_archive(
+    name = "deadpool-runtime-0.1.4.crate",
+    sha256 = "092966b41edc516079bdf31ec78a2e0588d1d0c08f78b91d8307215928642b2b",
+    strip_prefix = "deadpool-runtime-0.1.4",
+    urls = ["https://static.crates.io/crates/deadpool-runtime/0.1.4/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "deadpool-runtime-0.1",
+    srcs = [":deadpool-runtime-0.1.4.crate"],
+    crate = "deadpool_runtime",
+    crate_root = "deadpool-runtime-0.1.4.crate/src/lib.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "deadpool_runtime",
+        "CARGO_CRATE_NAME": "deadpool_runtime",
+        "CARGO_MANIFEST_DIR": "deadpool-runtime-0.1.4.crate",
+        "CARGO_PKG_AUTHORS": "Michael P. Jung <michael.jung@terreon.de>",
+        "CARGO_PKG_DESCRIPTION": "Dead simple async pool utitities for sync managers",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "deadpool-runtime",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/bikeshedder/deadpool",
+        "CARGO_PKG_RUST_VERSION": "1.75",
+        "CARGO_PKG_VERSION": "0.1.4",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "1",
+        "CARGO_PKG_VERSION_PATCH": "4",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
+)
+
+http_archive(
     name = "der-0.7.10.crate",
     sha256 = "e7c1832837b905bbfb5101e07cc24c8deddf52f93225eee6ead5f4d63d53ddcb",
     strip_prefix = "der-0.7.10",
@@ -22121,6 +22200,7 @@ cargo.rust_library(
     features = [
         "client",
         "default",
+        "full",
         "http1",
         "http2",
         "server",
@@ -56338,6 +56418,69 @@ cargo.rust_library(
         "std",
     ],
     visibility = [],
+)
+
+cargo_alias(
+    name = "wiremock",
+    actual = ":wiremock-0.6",
+    platforms = [
+        "linux-arm64",
+        "linux-x86_64",
+        "macos-arm64",
+        "macos-x86_64",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+http_archive(
+    name = "wiremock-0.6.5.crate",
+    sha256 = "08db1edfb05d9b3c1542e521aea074442088292f00b5f28e435c714a98f85031",
+    strip_prefix = "wiremock-0.6.5",
+    urls = ["https://static.crates.io/crates/wiremock/0.6.5/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "wiremock-0.6",
+    srcs = [":wiremock-0.6.5.crate"],
+    crate = "wiremock",
+    crate_root = "wiremock-0.6.5.crate/src/lib.rs",
+    edition = "2024",
+    env = {
+        "CARGO_BIN_NAME": "wiremock",
+        "CARGO_CRATE_NAME": "wiremock",
+        "CARGO_MANIFEST_DIR": "wiremock-0.6.5.crate",
+        "CARGO_PKG_AUTHORS": "Luca Palmieri <rust@lpalmieri.com>",
+        "CARGO_PKG_DESCRIPTION": "HTTP mocking to test Rust applications.",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "wiremock",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/LukeMathWalker/wiremock-rs",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "0.6.5",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "6",
+        "CARGO_PKG_VERSION_PATCH": "5",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
+    deps = [
+        ":assert-json-diff-2",
+        ":base64-0.22",
+        ":deadpool-0.12",
+        ":futures-0.3",
+        ":http-1",
+        ":http-body-util-0.1",
+        ":hyper-1",
+        ":hyper-util-0.1",
+        ":log-0.4",
+        ":once_cell-1",
+        ":regex-1",
+        ":serde-1",
+        ":serde_json-1",
+        ":tokio-1",
+        ":url-2",
+    ],
 )
 
 http_archive(
