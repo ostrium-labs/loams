@@ -15,7 +15,7 @@ scenario of scenarios.json is missing in a language (Go-only ones in Go
 and Java only), or the workers' scenario lists differ from scenarios.json. `stable`
 compares two generations after normalize.py's masking. Stdlib only.
 
-Go and TypeScript are always required. Every other language (`dotnet`, `java`, `ruby`) is
+Go and TypeScript are always required. Every other language (`dotnet`, `java`, `ruby`, `rust`, `php`) is
 checked once `histories/<lang>/` has files, so its worker can land before its
 committed corpus; `build --languages dotnet` (or `java`) rebuilds only that language's
 entries and keeps the others as they are.
@@ -33,7 +33,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 HIST = HERE / "histories"
 MANIFEST = HERE / "manifest.json"
-SDK = {"go": "go.temporal.io/sdk", "ts": "@temporalio/worker", "python": "temporalio", "dotnet": "Temporalio", "java": "io.temporal:temporal-sdk", "ruby": "temporalio"}
+SDK = {"go": "go.temporal.io/sdk", "ts": "@temporalio/worker", "python": "temporalio", "dotnet": "Temporalio", "java": "io.temporal:temporal-sdk", "ruby": "temporalio", "rust": "temporalio-sdk", "php": "temporal/sdk"}
 # Languages whose histories every corpus must have. Another language (an SDK
 # leg added later, D2137) is required once histories/<lang>/ has a file:
 # until its first generation against the oracle, only its worker's scenario
@@ -55,6 +55,8 @@ def sdk_versions() -> dict[str, str]:
     java = re.search(r"<temporal\.sdk\.version>([0-9.]+)</temporal\.sdk\.version>",
                      (HERE / "workers/java/pom.xml").read_text())
     rb = re.search(r"gem 'temporalio', '([0-9.]+)'", (HERE / "workers/ruby/Gemfile").read_text())
+    rs = re.search(r'^temporalio-sdk = \{ version = "=([0-9.]+)"', (HERE / "workers/rust/Cargo.toml").read_text(), re.M)
+    php = json.loads((HERE / "workers/php/composer.json").read_text())["require"]["temporal/sdk"]
     return {
         "go": go.group(1) if go else "?",
         "ts": pkg["dependencies"]["@temporalio/worker"],
@@ -62,6 +64,8 @@ def sdk_versions() -> dict[str, str]:
         "dotnet": dotnet.group(1) if dotnet else "?",
         "java": java.group(1) if java else "?",
         "ruby": rb.group(1) if rb else "?",
+        "rust": rs.group(1) if rs else "?",
+        "php": php,
     }
 
 
@@ -144,7 +148,11 @@ def worker_lists() -> dict[str, list[str]]:
                       (HERE / "workers/java/src/main/java/dev/loams/conformance/temporal/corpus/Scenarios.java").read_text())
     rb = re.findall(r"^    \['([a-z0-9_]+)', 'DX[1-4]'\],?$",
                     (HERE / "workers/ruby/lib/scenarios.rb").read_text(), re.M)
-    return {"go": go, "ts": ts, "python": py, "dotnet": dotnet, "java": java, "ruby": rb}
+    rs = re.findall(r'^    \("([a-z0-9_]+)", "DX[1-4]"\),$',
+                    (HERE / "workers/rust/src/scenarios.rs").read_text(), re.M)
+    php = re.findall(r"^        \['([a-z0-9_]+)', 'DX[1-4]'\],$",
+                     (HERE / "workers/php/src/Scenarios.php").read_text(), re.M)
+    return {"go": go, "ts": ts, "python": py, "dotnet": dotnet, "java": java, "ruby": rb, "rust": rs, "php": php}
 
 
 def check() -> list[str]:
@@ -163,6 +171,10 @@ def check() -> list[str]:
     sdks = sdk_versions()
     if sdks["java"] != pin("TEMPORAL_SDK_JAVA"):
         problems.append(f"workers/java pins temporal-sdk {sdks['java']}, pins.env TEMPORAL_SDK_JAVA {pin('TEMPORAL_SDK_JAVA')}")
+    if lists["rust"] != [s["name"] for s in want if not s["go_only"]]:
+        problems.append("workers/rust/src/scenarios.rs does not list scenarios.json's non-Go-only scenarios in order")
+    if sdks["rust"] != pin("TEMPORAL_SDK_RUST"):
+        problems.append(f"workers/rust pins temporalio-sdk {sdks['rust']}, pins.env TEMPORAL_SDK_RUST {pin('TEMPORAL_SDK_RUST')}")
     if sdks["python"] != pin("TEMPORAL_SDK_PY"):
         problems.append(f"workers/python pins temporalio {sdks['python']}, pins.env TEMPORAL_SDK_PY {pin('TEMPORAL_SDK_PY')}")
     if lists["dotnet"] != [s["name"] for s in want if not s["go_only"]]:
@@ -173,6 +185,10 @@ def check() -> list[str]:
         problems.append("workers/ruby/lib/scenarios.rb does not list scenarios.json's non-Go-only scenarios in order")
     if sdks["ruby"] != pin("TEMPORAL_SDK_RUBY"):
         problems.append(f"workers/ruby pins temporalio {sdks['ruby']}, pins.env TEMPORAL_SDK_RUBY {pin('TEMPORAL_SDK_RUBY')}")
+    if lists["php"] != [s["name"] for s in want if not s["go_only"]]:
+        problems.append("workers/php/src/Scenarios.php does not list scenarios.json's non-Go-only scenarios in order")
+    if sdks["php"] != pin("TEMPORAL_SDK_PHP"):
+        problems.append(f"workers/php pins temporal/sdk {sdks['php']}, pins.env TEMPORAL_SDK_PHP {pin('TEMPORAL_SDK_PHP')}")
     if not MANIFEST.exists():
         return problems + ["manifest.json is missing (run generate.sh)"]
     doc = json.loads(MANIFEST.read_text())

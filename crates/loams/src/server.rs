@@ -1133,11 +1133,18 @@ struct ConnectSocket {
 /// container runs as the same uid), nobody else.
 pub const CONNECT_SOCKET_MODE: u32 = 0o660;
 
+/// The connect socket's listener: a Unix socket. Elsewhere there is none
+/// (`bind` refuses), so the type is uninhabited.
+#[cfg(unix)]
+type ConnectListener = tokio::net::UnixListener;
+#[cfg(not(unix))]
+type ConnectListener = std::convert::Infallible;
+
 impl ConnectSocket {
     /// Bind `path` (a stale socket there from an earlier run is replaced;
     /// anything else there is refused) and set its mode.
     #[cfg(unix)]
-    fn bind(path: &Path) -> Result<tokio::net::UnixListener, ServerError> {
+    fn bind(path: &Path) -> Result<ConnectListener, ServerError> {
         use std::os::unix::fs::{FileTypeExt as _, PermissionsExt as _};
         let fail = |what: &str, err: std::io::Error| {
             ServerError::Config(format!(
@@ -1168,14 +1175,20 @@ impl ConnectSocket {
     }
 
     #[cfg(not(unix))]
-    fn bind(path: &Path) -> Result<tokio::net::UnixListener, ServerError> {
+    fn bind(path: &Path) -> Result<ConnectListener, ServerError> {
         Err(ServerError::Config(format!(
             "--connect-socket {}: Unix sockets need a Unix host",
             path.display()
         )))
     }
 
-    fn start(listener: tokio::net::UnixListener, path: PathBuf, app: axum::Router) -> Self {
+    #[cfg(not(unix))]
+    fn start(listener: ConnectListener, _path: PathBuf, _app: axum::Router) -> Self {
+        match listener {}
+    }
+
+    #[cfg(unix)]
+    fn start(listener: ConnectListener, path: PathBuf, app: axum::Router) -> Self {
         let stop = CancellationToken::new();
         let stopped = stop.clone();
         let task = tokio::spawn(async move {

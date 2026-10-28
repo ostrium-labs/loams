@@ -348,6 +348,8 @@ matrix_from_fixture() {
 # and methods.toml lists exactly the frontend's DX1 set.
 matrix_guide_current() {
   local g=$HERE/temporal/gateway
+  # last-run.junit.xml and last-run.txt are the combine of last-run.toml's runs.
+  python3 "$ROOT/scripts/compute/last_run.py" --check
   "${MATRIX[@]}" temporal-gateway --junit "$g/last-run.junit.xml" --run "$(cat "$g/last-run.txt")" \
     --check "$ROOT/docs/guides/durable/temporal-gateway.md"
   python3 - "$g/methods.toml" "$ROOT/crates/loams-temporal-frontend/src/capabilities.rs" <<'PY'
