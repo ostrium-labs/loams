@@ -106,6 +106,14 @@
 |---|---|---|
 | T5-1 | `_meter.events` has `ingested_at DateTime('UTC')` (set by the view) instead of `stream_partition`/`stream_offset`; `tenantid`/`lease` read `_ce_ext[…]` (D2191) | HS1 Task 16's `CloudEvents` pipe has `_ce_*` and `_ce_ext` columns only; the cursor is in the target's properties |
 | T5-2 | The House schema is `loams_meter_house::sql::schema()` (all `IF NOT EXISTS`), applied by the `meter` role at start through `ensure_schema`; the SQL module is std-only and run on a real House by `fabric/crates/loams-house-worker/tests/meter.rs` via `#[path]` (D2191) | `migrate` never calls a service API (§54 §6.3); one source of SQL, no cross-workspace dependency |
+| 1 | **Task 0, reconcile (D2160):** D1119 and the three observers are on `dev`. D365's emitter is not built, so Task 2 builds it. The pipe's CloudEvents columns are `_ce_*` plus `_ce_ext`, not §63 §7.5's `_ce_tenantid`, `_ce_loamslease` and `data`, and Task 5 adds the stream partition and offset columns. There is no `loams-detsim` crate | Checked on `dev`, 2026-10-27 |
+| 2 | **`Amount` is an `i128` with nine decimal places** (D2161), not `rust_decimal` | Matches `Decimal(38, 9)` in `_meter.windows`; no new dependency |
+| 3 | **The core's dependencies** (D2162): `loams-cloudevents` by path with default features off, `bytes`, `serde`, `serde_json`, `sha2`, `thiserror`, `time` | Builds by path from `fabric/` with no Arrow and no `loams-log` |
+| 4 | **A JSONPath subset for meters** (D2163) | It covers OpenMeter's documented meters, and a full JSONPath engine is a dependency the core does not need |
+| 5 | **The usage profile, exactly** (D2164) | §63 §6.1 left the rules for external events and for meter notifications open |
+| 6 | **Model refinements** (D2165): `Boolean { enabled }`, `Grant.created_at`, the burn order, `Balance.grants` and `prepaid_only`, and `RefusalReason` in the core | The design's types had nowhere to hold these |
+| 7 | **Balance engine semantics** (D2166) | Pins down the order of resets, rollover, recurrence and overage for the property tests |
+| 8 | **Lease allocator** (D2167): how the chunk clamp is ordered, exact and learning mode, and an in-crate seeded simulation in place of `loams-detsim` | `loams-detsim` does not exist on `dev` |
 | D2220 | Task 27: the billing plugin runs on a fixture `BillingClient` under Demo data until `loams.meter.v1` is served | The pages are built before ME-svc's services; swapping the client touches no page |
 | D2221 | Task 27: Settings › Billing lives at `/settings/billing/:section`; Payment links only to the provider's hosted page | D1080; no card data in Loams |
 | D2222 | Task 27: the banner is a `shell.topbar.center` entry, most severe notice first; stops cannot be dismissed | §18, §13 |

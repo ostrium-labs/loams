@@ -2,6 +2,7 @@
 # DBOS Transact TypeScript on Loams Postgres (DX0 Task 5): its own unit suite
 # (`npm run test:unit`, jest) at the pinned tag, then the Loams cases with
 # dbos-common/crash/ts/app.mjs. As dbos-py/run.sh; runner dbos-ts.
+# Endpoint mode: direct (endpoint-modes.md; checked by selftest.sh recipe_endpoint_mode_matches_suite)
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=conformance/compute/lib.sh

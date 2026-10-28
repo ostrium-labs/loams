@@ -34,7 +34,7 @@ Don't rent a cloud. Loam it. Build, understand, and contribute to Loams: open-so
 | [ecosystem/](ecosystem/) | Deploy buttons and ecosystem integrations |
 | [wiki/](wiki/README.md) | Contributor and maintainer guides |
 
-Additional references: [remote browser provider](remote-browser-provider.md), [architecture review](architecture-review-and-recommendations.md), and [backlog analysis](open-issues-analysis.md).
+Additional references: [the headless browser](headless-browser.md) (the [remote browser provider](remote-browser-provider.md) it replaced), [architecture review](architecture-review-and-recommendations.md), and [backlog analysis](open-issues-analysis.md).
 
 ## Read status in context
 

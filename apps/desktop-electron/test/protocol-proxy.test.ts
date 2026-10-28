@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { gzipSync } from "node:zlib";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { isProxied, proxyRequest } from "../src/main/protocol/proxy";
 
 describe("isProxied", () => {

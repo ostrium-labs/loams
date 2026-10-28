@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 const app = resolve(__dirname, "..");
 const HEADER = /^\/\/ Adapted from dataelement\/dsh-desktop \(MIT\), (\S+)\.$|^<!-- Adapted from dataelement\/dsh-desktop \(MIT\), (\S+)\. -->$/m;

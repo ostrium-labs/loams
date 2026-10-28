@@ -1,7 +1,7 @@
 import { existsSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { ServerRegistry } from "../src/main/servers/registry";
 
 const fresh = () => join(mkdtempSync(join(tmpdir(), "reg-")), "servers.json");

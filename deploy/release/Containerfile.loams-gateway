@@ -1,0 +1,60 @@
+# syntax=docker/dockerfile:1.7
+# The Loams gateway image (ghcr.io/ostrium-labs/loams-gateway), built by
+# build.sh from the repository root (design 57, design 81 R7/R8). It holds
+# one `loams-gateway` binary. Its modules are chosen by `--module`: `pg`,
+# Postgres's front door, which also routes managed RisingWave instances with
+# Loams auth (D1957); `spark`, the Spark Connect proxy (SP-a D1992); and
+# `temporal`, the Temporal API (DX1). GATEWAY_FEATURES names the Cargo
+# features built in. FL-a adds `flink` when its module lands.
+#
+# compose.lake.yaml runs it as `engine-gateway` (profiles risingwave, flink
+# and spark), and the Kubernetes deploy runs one Deployment per module.
+#
+# Preview: the engine routes have not yet run end to end.
+ARG RUST_IMAGE=docker.io/library/rust:1.97.1-slim-trixie
+ARG RUNTIME_IMAGE=docker.io/library/debian:trixie-slim
+
+FROM ${RUST_IMAGE} AS build
+# loams-temporal-proto's and loams-spark's build scripts run the system protoc.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      protobuf-compiler libprotobuf-dev pkg-config libssl-dev clang g++ make cmake perl git \
+ && rm -rf /var/lib/apt/lists/*
+ENV RUSTUP_TOOLCHAIN=1.97.1 \
+    CARGO_TERM_COLOR=never
+WORKDIR /src
+COPY . .
+ARG CARGO_BUILD_JOBS=
+ARG GATEWAY_FEATURES=spark,temporal
+RUN --mount=type=cache,id=loams-cargo-registry,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=loams-target-gateway,target=/src/target \
+    if [ -n "$CARGO_BUILD_JOBS" ]; then export CARGO_BUILD_JOBS; else unset CARGO_BUILD_JOBS; fi \
+ && cargo build --locked --release -p loams-gateway --bin loams-gateway \
+      ${GATEWAY_FEATURES:+--features "$GATEWAY_FEATURES"} \
+ && install -D -m 0755 target/release/loams-gateway /out/loams-gateway
+
+FROM ${RUNTIME_IMAGE}
+ARG VERSION=dev
+ARG REVISION=unknown
+ARG GATEWAY_FEATURES=spark,temporal
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates tini \
+ && rm -rf /var/lib/apt/lists/* \
+ && groupadd --system --gid 10001 loams \
+ && useradd --system --uid 10001 --gid loams --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin loams \
+ && install -d -m 0755 /etc/loams-gateway
+COPY --from=build /out/loams-gateway /usr/local/bin/loams-gateway
+LABEL org.opencontainers.image.title="loams-gateway" \
+      org.opencontainers.image.description="Loams gateway (preview): Postgres front door, managed RisingWave, Spark Connect and Temporal routes" \
+      org.opencontainers.image.source="https://github.com/ostrium-labs/loams" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      dev.loams.gateway.features="${GATEWAY_FEATURES}"
+USER 10001:10001
+# 5432 Postgres/RisingWave (SNI), 4566 RisingWave's loopback port in
+# compose, 15002 Spark Connect, 7233 Temporal; 9187 admin (never published).
+EXPOSE 5432 4566 15002 7233 9187
+# No HEALTHCHECK: the binary has no client mode; /healthz on the admin port.
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/loams-gateway"]
+CMD ["--config", "/etc/loams-gateway/gateway.toml"]

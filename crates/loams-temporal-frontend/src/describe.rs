@@ -202,8 +202,18 @@ impl Frontend {
             server_version: self.config.server_version.clone(),
             cluster_id: CLUSTER_NAME.to_string(),
             cluster_name: CLUSTER_NAME.to_string(),
-            history_shard_count: loams_temporal_store::DEFAULT_SHARDS as i32,
-            persistence_store: "postgres".to_string(),
+            // The store's real shard count and kind when the standalone
+            // runner set them (D2051), Temporal's defaults otherwise.
+            history_shard_count: if self.config.history_shard_count > 0 {
+                self.config.history_shard_count
+            } else {
+                loams_temporal_store::DEFAULT_SHARDS as i32
+            },
+            persistence_store: if self.config.persistence_store.is_empty() {
+                "postgres".to_string()
+            } else {
+                self.config.persistence_store.clone()
+            },
             visibility_store: "postgres".to_string(),
             initial_failover_version: 1,
             failover_version_increment: 10,
