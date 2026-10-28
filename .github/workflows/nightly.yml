@@ -36,9 +36,3 @@ jobs:
           for wf in fabric.yml monorepo.yml nf1-pins.yml pg2.yml pg2-e2e.yml gt1.yml gt1-nightly.yml desktop-electron.yml studio-e2e.yml mastra-gate.yml; do
             gh workflow run "$wf" -R "$GITHUB_REPOSITORY" --ref "$REF"
           done
-          # The compute nightly (DX0 Task 7) can be dispatched only once its
-          # file is on main; until a release brings it there, run it by
-          # pushing $REF to a compute-compat/ branch (DX1 ruling T7.R6).
-          if ! gh workflow run compute-compat.yml -R "$GITHUB_REPOSITORY" --ref "$REF"; then
-            echo "::warning::compute-compat.yml is not on the default branch yet; not dispatched"
-          fi
