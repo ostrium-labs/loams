@@ -6,7 +6,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 
 const WEB = fileURLToPath(new URL('../../..', import.meta.url));
 const SKIP = new Set(['node_modules', 'dist', 'gen', 'test', 'tests', '.vite']);
@@ -40,7 +40,7 @@ describe('API2 Task 10', () => {
     // Data Studio's one REST call is SQL; collections, documents and search are Connect.
     const client = readFileSync(join(WEB, 'plugins/data-studio/src/client.ts'), 'utf8');
     expect(client.match(/\/v1\/namespaces[^`'"]*/g)).toEqual([
-      // biome-ignore lint/suspicious/noTemplateCurlyInString: the source text of the template
+      // oxlint-disable-next-line no-template-curly-in-string -- the source text of the template
       '/v1/namespaces/${encodeURIComponent(ns)}/sql',
     ]);
     for (const service of [

@@ -1,5 +1,5 @@
 // The runtime in an opaque-origin, framed document, as the console mounts it.
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import runtime from '../static/runtime.js?raw';
 
 declare global {

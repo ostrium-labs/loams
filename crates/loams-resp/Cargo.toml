@@ -8,10 +8,22 @@ license.workspace = true
 authors.workspace = true
 publish = false
 
+[features]
+# The TiKV store (the `tikv` profile).
+tikv = ["loams-kv/tikv"]
+
 [dependencies]
 bytes.workspace = true
+loams-kv.workspace = true
+serde.workspace = true
+tokio.workspace = true
+toml.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
+# Handler tests run on every backend: TiKV where LOAMS_TEST_PD is set
+# (loams_kv::testing::stores).
+loams-kv = { workspace = true, features = ["tikv"] }
 proptest.workspace = true
 
 [lints]

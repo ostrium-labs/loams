@@ -1,0 +1,60 @@
+# The loams-meter-agent chart (ME1 Task 30). Preview: no image of the agent
+# is published yet, so `image.digest` has no default and the chart refuses to
+# render without one.
+
+image:
+  repository: ghcr.io/ostrium-labs/loams-meter-agent
+  digest: ""
+  pullPolicy: IfNotPresent
+
+# The Loams engine's HTTP base URL. Empty keeps events spooled on the node.
+streamUrl: ""
+stream:
+  namespace: _system
+  name: _meter
+  partitions: 32
+# The cluster named in every event's source (loams://<cluster>/meter-agent/<node>).
+cluster: local
+
+# Resolve pod cgroups from the pods' loams.dev/* labels (needs the RBAC below).
+kube: true
+# Scan when a cgroup's cgroup.events says it is empty, before it is removed.
+finalReads: true
+# Milliseconds between scans (the periodic floor).
+intervalMs: 15000
+
+# Static tenant rules for non-pod cgroups (T0 slices), as JSON:
+# {"rules": [{"prefix": ..., "org": ..., "namespace": ..., "function": ..., "tier": ...}]}
+tenants: ""
+
+hostReport:
+  # The T1 host-report socket; wasmtime hosts on the node connect to it.
+  enabled: true
+  socketDir: /run/loams
+  # Cgroup patterns a reporting host must run in.
+  cgroups:
+    - wasm-host.scope
+
+spool:
+  # A hostPath, so a restart or upgrade keeps unsent usage.
+  hostPath: /var/lib/loams-meter
+  maxBytes: 268435456
+
+cgroupRoot: /sys/fs/cgroup
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 256Mi
+
+# The agent runs on every node, including tainted ones.
+tolerations:
+  - operator: Exists
+nodeSelector: {}
+priorityClassName: system-node-critical
+
+serviceAccount:
+  create: true
+  name: ""

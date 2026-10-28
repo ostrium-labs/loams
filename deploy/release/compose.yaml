@@ -27,6 +27,11 @@
 #   and outside systems (design §80, D1821). Instance files in
 #   ./connect/instances, secrets in ./secrets/connect. Never part of the
 #   default stack.
+# - `browser` (preview): Obscura, the agents' headless browser (D2114,
+#   deploy/browser), behind loams-gateway's browser module (D2118); agentd
+#   reaches the gateway, only the gateway reaches the engine; no published
+#   port; set LOAMS_BROWSER_TOKEN, LOAMS_BROWSER_CLIENT_TOKEN and
+#   LOAMS_BROWSER_PROVIDER=service.
 # - `house-tailnet`: the House's own tailnet node (https://loams-house.<tailnet>/).
 # - `postgres-control`: Loams Postgres's control plane.
 # - `console`, `headscale` (coming soon): as below.
@@ -699,6 +704,86 @@ services:
       - agentd-data:/home/loams
       - ./agentd/config.toml:/home/loams/agentd/config.toml:ro
       - ./agentd:/etc/loams-agentd:ro
+    # The agents' headless browser (D2111, D2116, D2118): `local` launches
+    # the Obscura the image carries (LOAMS_OBSCURA_BIN) inside this container,
+    # per agent run; `service` goes through `browser-gateway` with a client
+    # token of its own, so agentd never holds the engine's token. The
+    # provider names the client token by reference (env:browser-token),
+    # which the bridge's env resolver reads from
+    # LOAMS_WEB_BRIDGE_SECRET_BROWSER_TOKEN.
+    environment:
+      LOAMS_BROWSER_PROVIDER: ${LOAMS_BROWSER_PROVIDER:-local}
+      LOAMS_BROWSER_SERVICE_URL: ws://browser-gateway:9223/devtools/browser
+      LOAMS_BROWSER_SERVICE_TOKEN_REF: env:browser-token
+      LOAMS_WEB_BRIDGE_SECRET_BROWSER_TOKEN: ${LOAMS_BROWSER_CLIENT_TOKEN:-}
+    networks:
+      - default
+      - browser
+
+  # The `browser` profile (D2110-D2114, D2118, preview): Obscura 0.2.3, the
+  # same engine agentd launches on a laptop, pinned by digest
+  # (deploy/browser). No published port. On `browser-engine` (internal:
+  # browser-gateway only) and on `browser-egress` (its own route out, shared
+  # with nobody). The engine
+  # refuses a non-loopback bind unless OBSCURA_CDP_TOKEN is at least 32 bytes,
+  # so an unset LOAMS_BROWSER_TOKEN stops it rather than exposing it. Each
+  # agent page is a throwaway browser context; nothing is stored.
+  browser:
+    <<: *restart
+    profiles: [browser]
+    image: ${BROWSER_IMAGE:-docker.io/h4ckf0r0day/obscura:0.2.3@sha256:475def3ddf1ec513b3d1bc36e8ad15f0d192538cb15f814c77215aa70c418ca2}
+    command: ["serve", "--port", "9222", "--host", "0.0.0.0", "--workers", "${BROWSER_WORKERS:-2}"]
+    environment:
+      OBSCURA_CDP_TOKEN: ${LOAMS_BROWSER_TOKEN:-}
+      OBSCURA_CDP_COMMAND_TIMEOUT_MS: "60000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks:
+      - browser-engine
+      - browser-egress
+
+  # loams-gateway's browser module (D2118): the only way to the engine.
+  # agentd connects with LOAMS_BROWSER_CLIENT_TOKEN, whose SHA-256 is the
+  # gateway's client list; the gateway opens the engine with
+  # LOAMS_BROWSER_TOKEN, which nothing else on agentd's side holds. Both are
+  # written to a private tmpfs at start. No published port; an empty token
+  # stops it.
+  browser-gateway:
+    <<: *restart
+    profiles: [browser]
+    image: ${BROWSER_GATEWAY_IMAGE:-${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-gateway:${LOAMS_VERSION:-0.1.2}}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        umask 077
+        [ "$${#ENGINE_TOKEN}" -ge 32 ] || { echo "browser-gateway: set LOAMS_BROWSER_TOKEN (32+ bytes)" >&2; exit 1; }
+        [ "$${#CLIENT_TOKEN}" -ge 32 ] || { echo "browser-gateway: set LOAMS_BROWSER_CLIENT_TOKEN (32+ bytes)" >&2; exit 1; }
+        printf %s "$$ENGINE_TOKEN" > /run/browser-gateway/engine-token
+        printf %s "$$CLIENT_TOKEN" | sha256sum | cut -d' ' -f1 > /run/browser-gateway/clients
+        unset ENGINE_TOKEN CLIENT_TOKEN
+        printf '%s\n' \
+          'listen = "0.0.0.0:9223"' \
+          'upstream = "browser:9222"' \
+          'upstream_token_file = "/run/browser-gateway/engine-token"' \
+          'client_tokens_file = "/run/browser-gateway/clients"' \
+          > /run/browser-gateway/browser.toml
+        exec /usr/bin/tini -- /usr/local/bin/loams-gateway --module browser --config /run/browser-gateway/browser.toml
+    environment:
+      ENGINE_TOKEN: ${LOAMS_BROWSER_TOKEN:-}
+      CLIENT_TOKEN: ${LOAMS_BROWSER_CLIENT_TOKEN:-}
+      RUST_LOG: ${BROWSER_GATEWAY_LOG:-info}
+    tmpfs:
+      - /run/browser-gateway:mode=0700,uid=10001,gid=10001
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks:
+      - browser
+      - browser-engine
 
   # The Kafka profile (D1796-D1798, preview): one image of Ostrium's fork of
   # Apache Iggy (ostrium-labs/iggy) holds both `iggy-server` and
@@ -894,6 +979,15 @@ networks:
   # The engine, OpenFGA and openfga-init only, with no route out (`authz` profile).
   authz:
     internal: true
+  # agentd and browser-gateway only, with no route out.
+  browser:
+    internal: true
+  # browser-gateway and the engine only, with no route out: agentd cannot
+  # reach the engine directly.
+  browser-engine:
+    internal: true
+  # The browser engine's own way out to the web; no other service joins it.
+  browser-egress: {}
 
 volumes:
   pd-data:

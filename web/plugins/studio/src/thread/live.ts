@@ -21,7 +21,7 @@ function useStream(
   key: string,
   watch: (transport: Transport, signal: AbortSignal) => Promise<void>,
 ): void {
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `key` names what `watch` reads.
+  // oxlint-disable-next-line react/exhaustive-deps -- `key` names what `watch` reads.
   useEffect(() => {
     if (!transport) return;
     const controller = new AbortController();

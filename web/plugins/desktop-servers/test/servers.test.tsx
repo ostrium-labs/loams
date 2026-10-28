@@ -1,6 +1,6 @@
 import type { EngineState } from '@loams/desktop/contracts';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 import { EngineCard } from '../src/engine-card.js';
 import { ServersPage } from '../src/servers-page.js';
 import { Switcher } from '../src/switcher.js';

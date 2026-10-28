@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import {
 	engineArgs,
 	findEngineBinary,
@@ -43,7 +43,7 @@ class FakeChild extends EventEmitter {
 	}
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: test double
+// oxlint-disable-next-line typescript/no-explicit-any -- test double
 const asSpawn = (f: (...a: any[]) => unknown) => f as unknown as typeof spawn;
 const noFetch = (async () => {
 	throw new Error("down");
