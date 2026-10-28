@@ -138,7 +138,10 @@ pub(crate) fn start(
             prev_auto_reset_points: chain.prev_auto_reset_points.clone(),
             memo: r.memo,
             search_attributes: r.search_attributes,
-            header: Some(r.header.unwrap_or_default()),
+            // As the client sent it: upstream keeps an empty header the Go
+            // and TypeScript SDKs send and writes none when the .NET SDK
+            // sends none (#1481).
+            header: r.header,
             workflow_id: r.workflow_id,
             priority: r.priority,
             ..Default::default()
@@ -151,7 +154,7 @@ pub(crate) fn start(
                 signal_name: sig.name,
                 input: sig.input,
                 identity: sig.identity,
-                header: Some(sig.header.unwrap_or_default()),
+                header: sig.header,
                 request_id: sig.request_id,
                 ..Default::default()
             },

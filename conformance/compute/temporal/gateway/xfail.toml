@@ -1,19 +1,2 @@
 # The Temporal gateway's SDK legs (conformance/compute/temporal/gateway/run.sh, plan DX1 Task 10).
 product = "temporal-gateway"
-
-[[xfail]]
-id = "dotnet-empty-header"
-tests = [
-  "temporal-gateway::gateway_dx1_differential_dotnet_hello",
-  "temporal-gateway::gateway_dx1_differential_dotnet_two_activities_sequential",
-  "temporal-gateway::gateway_dx1_differential_dotnet_activity_parallel_fanout_10",
-  "temporal-gateway::gateway_dx1_differential_dotnet_signal_then_complete",
-  "temporal-gateway::gateway_dx1_differential_dotnet_query_while_running",
-  "temporal-gateway::gateway_dx1_differential_dotnet_cancel_requested",
-  "temporal-gateway::gateway_dx1_differential_dotnet_terminated",
-  "temporal-gateway::gateway_dx1_differential_dotnet_workflow_failed_application_error",
-  "temporal-gateway::gateway_dx1_differential_dotnet_activity_heartbeat_details",
-]
-reason = "the gateway writes an empty `header: {}` on WorkflowExecutionStarted/Signaled where upstream omits it; the .NET SDK sends an empty Header (Go and TypeScript do not). The .NET replayer accepts both"
-issue = "https://github.com/ostrium-labs/loams/issues/1481"
-since = 2026-10-28
