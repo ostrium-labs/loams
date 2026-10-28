@@ -16,6 +16,8 @@ pub struct SessionContext {
 /// Supported scalar Cassandra column types.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ColumnType {
+    /// ASCII string.
+    Ascii,
     /// Boolean value.
     Boolean,
     /// Signed 8-bit integer.
@@ -32,10 +34,14 @@ pub enum ColumnType {
     Double,
     /// UTF-8 string.
     Text,
+    /// Cassandra varchar (UTF-8 string).
+    Varchar,
     /// Arbitrary bytes.
     Blob,
     /// UUID value.
     Uuid,
+    /// Version-one UUID with Cassandra time ordering.
+    TimeUuid,
     /// Milliseconds since the Unix epoch.
     Timestamp,
     /// IPv4 or IPv6 address.
