@@ -3,6 +3,7 @@
 
 pub mod arrays;
 pub mod chudf;
+pub mod datetime;
 pub mod hash;
 pub mod lambda;
 pub mod maps;
