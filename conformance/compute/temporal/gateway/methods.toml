@@ -188,3 +188,47 @@ note = "TMP-api (D2088): unit tests only; versioning reads answer no sets, no ru
 [[method]]
 name = "GetWorkerTaskReachability"
 note = "TMP-api (D2088): unit tests only; versioning reads answer no sets, no rules, all reachable"
+
+[[method]]
+name = "CountWorkflowExecutions"
+note = "lane TMP-sched (D2070-D2076): crates/loams-temporal-frontend/tests/schedules.rs and visibility.rs (in-process)"
+
+[[method]]
+name = "CreateSchedule"
+note = "lane TMP-sched (D2070-D2076): crates/loams-temporal-frontend/tests/schedules.rs and visibility.rs (in-process)"
+
+[[method]]
+name = "DeleteSchedule"
+note = "lane TMP-sched (D2070-D2076): crates/loams-temporal-frontend/tests/schedules.rs and visibility.rs (in-process)"
+
+[[method]]
+name = "DescribeSchedule"
+note = "lane TMP-sched (D2070-D2076): crates/loams-temporal-frontend/tests/schedules.rs and visibility.rs (in-process)"
+
+[[method]]
+name = "GetSearchAttributes"
+note = "lane TMP-sched (D2070-D2076): crates/loams-temporal-frontend/tests/schedules.rs and visibility.rs (in-process)"
+
+[[method]]
+name = "ListScheduleMatchingTimes"
+note = "lane TMP-sched (D2070-D2076): crates/loams-temporal-frontend/tests/schedules.rs and visibility.rs (in-process)"
+
+[[method]]
+name = "ListSchedules"
+note = "lane TMP-sched (D2070-D2076): crates/loams-temporal-frontend/tests/schedules.rs and visibility.rs (in-process)"
+
+[[method]]
+name = "ListWorkflowExecutions"
+note = "lane TMP-sched (D2070-D2076): crates/loams-temporal-frontend/tests/schedules.rs and visibility.rs (in-process)"
+
+[[method]]
+name = "PatchSchedule"
+note = "lane TMP-sched (D2070-D2076): crates/loams-temporal-frontend/tests/schedules.rs and visibility.rs (in-process)"
+
+[[method]]
+name = "ScanWorkflowExecutions"
+note = "lane TMP-sched (D2070-D2076): crates/loams-temporal-frontend/tests/schedules.rs and visibility.rs (in-process)"
+
+[[method]]
+name = "UpdateSchedule"
+note = "lane TMP-sched (D2070-D2076): crates/loams-temporal-frontend/tests/schedules.rs and visibility.rs (in-process)"
