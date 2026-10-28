@@ -97,5 +97,18 @@ SDK_LEGS=java conformance/compute/temporal/gateway/run.sh --profile
 ```sh
 SDK_LEGS=python conformance/compute/temporal/gateway/run.sh --profile
 SDK_LEGS=rust conformance/compute/temporal/gateway/run.sh --profile
+| PHP | `legs/php.sh` (`corpus/workers/php`, RoadRunner) | temporal/sdk 2.19.0, RoadRunner 2025.1.15, PHP 8.4.25, PECL grpc 1.84.0 (pins.env) | not yet run: `temporal-sdk-php.yml` (D2147) |
+
+```sh
+SDK_LEGS=python conformance/compute/temporal/gateway/run.sh --profile
+SDK_LEGS=php conformance/compute/temporal/gateway/run.sh --profile
 ```
+
+The PHP leg builds the corpus's PHP image (`corpus/workers/php/Containerfile`)
+locally the first time; PECL grpc compiles for several minutes. A PHP worker
+is RoadRunner's Go SDK running PHP workflow code, so the gateway sees the Go
+SDK's RPCs, and the PHP `WorkflowReplayer` replays through RoadRunner (which
+dials the frontend at start). `temporal-sdk-php.yml` also diffs the gateway's
+PHP histories against a start-dev generation made in the same run
+(`php-vs-upstream.junit.xml`) until `corpus/histories/php/` is committed.
 
