@@ -532,13 +532,16 @@ async fn downloads_allowed_scenario(kind: Kind) -> Outcome {
     } else {
         Vec::new()
     };
-    ensure(began || !written.is_empty(), || {
-        format!(
-            "under allow, the engine emitted no download event ({events:?}) and wrote no file; \
-             Obscura 0.2.3 acks Browser.setDownloadBehavior without acting on it and never \
-             downloads to disk (D2126)"
-        )
-    })?;
+    if !began && written.is_empty() {
+        provider.close(&page).await;
+        provider.shutdown().await;
+        return Err(Failure::Unsupported(format!(
+            "under allow, the engine emitted no download event ({events:?}) and wrote no file: \
+             Obscura {} acks Browser.setDownloadBehavior without acting on it and never \
+             downloads to disk (D2126)",
+            loams_sidebar_browser::PINNED_ENGINE_VERSION
+        )));
+    }
     provider.close(&page).await;
     provider.shutdown().await;
     Ok(format!("download began: event {began}, files {written:?}"))

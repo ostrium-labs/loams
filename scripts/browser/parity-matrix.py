@@ -27,7 +27,13 @@ SCENARIOS = [
     "timeouts_budgets",
     "recording",
 ]
-MARK = {"pass": "pass", "fail": "**FAIL**", "n/a": "n/a", "skip": "skipped"}
+MARK = {
+    "pass": "pass",
+    "fail": "**FAIL**",
+    "n/a": "n/a",
+    "unsupported": "unsupported",
+    "skip": "skipped",
+}
 
 
 def main(paths):

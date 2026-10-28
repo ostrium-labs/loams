@@ -23,7 +23,7 @@ It lives in `crates/loams-sidebar-browser/tests/provider_parity/` (decision D212
 | `screenshot` | `Page.captureScreenshot` returns a PNG of at least 320×160. Its decoded pixels are not blank, and the fixture's red block is visible. |
 | `content_extraction` | `innerText` contains the fixture's sentence and heading, and `outerHTML` contains the form. |
 | `downloads_blocked` | After `Browser.setDownloadBehavior {behavior: "deny"}`, navigating to an attachment produces no `downloadWillBegin` event and writes no file. On `local` the suite checks the profile directory; on `service` CI checks the container with `docker diff` (D2126). |
-| `downloads_allowed` | After `Browser.setDownloadBehavior {behavior: "allow", downloadPath}`, the same navigation produces a `downloadWillBegin` event or a file holding the attachment's bytes. |
+| `downloads_allowed` | After `Browser.setDownloadBehavior {behavior: "allow", downloadPath}`, the same navigation produces a `downloadWillBegin` event or a file holding the attachment's bytes. On Obscura 0.2.3 it reports **unsupported**, which is neither a pass nor a failed run. See *Downloads* below. |
 | `network_policy_allowlist` | Loams refuses a navigation to the denied origin before the engine sees it. A subresource request to the denied origin is failed at Fetch's request stage, and that server receives nothing. The allowed origin still works. The cloud metadata address is refused. |
 | `cookie_ledger_persistence` | The engine keeps the app's session cookie, and Loams stores it in the profile's ledger. A fresh context gets the cookie back after Loams re-injects it. |
 | `profile_restart_persistence` | The cookie survives an engine restart through `--storage-dir` alone. This is **`n/a` on `service`** by design, because the shared engine is not restarted per session and the ledger provides persistence there. |
@@ -31,7 +31,7 @@ It lives in `crates/loams-sidebar-browser/tests/provider_parity/` (decision D212
 | `timeouts_budgets` | A 2 s per-call timeout fires on a request that hangs for 45 s. A 3 s Loams-side navigation budget cuts a page that never finishes. Afterwards a fresh page loads normally. |
 | `recording` | A screencast of an animated page is recorded through `VideoRecorder` into a WebM file that is not empty. |
 
-A scenario that cannot apply to a provider reports `n/a` and the reason. It is never counted as a pass.
+A scenario that cannot apply to a provider reports `n/a` and the reason. A capability the engine does not implement reports `unsupported`. Neither is ever counted as a pass.
 
 ## Running it
 
@@ -75,7 +75,7 @@ What the suite does not cover yet:
 
 ## Parity matrix
 
-Filled only from CI. Source: [run 40539985305](https://github.com/ostrium-labs/loams/actions/runs/40539985305), commit `bd6ade42`, Obscura 0.2.3, ubuntu-24.04 runners, 2026-10-27.
+Filled only from CI. Source: [run 40619354478](https://github.com/ostrium-labs/loams/actions/runs/40619354478), commit `aa287923`, Obscura 0.2.3, ubuntu-24.04 runners, 2026-10-28.
 
 | Scenario | `local` | `service` |
 |---|---|---|
@@ -84,17 +84,44 @@ Filled only from CI. Source: [run 40539985305](https://github.com/ostrium-labs/l
 | `click_type_forms` | pass | pass |
 | `screenshot` | pass (1280×720) | pass (1280×720) |
 | `content_extraction` | pass | pass |
-| `downloads_policy` | **FAIL** | **FAIL** |
+| `downloads_blocked` | pass | pass (plus `docker diff`) |
+| `downloads_allowed` | **FAIL** (now reported as unsupported) | **FAIL** (now reported as unsupported) |
 | `network_policy_allowlist` | pass | pass |
 | `cookie_ledger_persistence` | pass | pass |
-| `profile_restart_persistence` | **FAIL** | n/a |
-| `credential_boundary` | pass (process env included) | pass (container env checked by CI step) |
+| `profile_restart_persistence` | pass | n/a |
+| `credential_boundary` | pass (process env included) | pass (container env checked by CI) |
 | `timeouts_budgets` | pass | pass |
 | `recording` | pass | pass |
 
-In that run, 10 of 12 scenarios passed on both providers. The providers agree on every scenario except `profile_restart_persistence`, which applies only to `local`.
+In that run, 12 of 13 scenarios passed on `local` and 11 of 13 on `service`. On `service`, `profile_restart_persistence` is `n/a` by design.
 
-The two failures:
+The one failing scenario, `downloads_allowed`, failed identically on both providers because of the engine gap described below. The suite now reports it as `unsupported`, not as a failure. That change takes effect from the next run.
 
-- **`downloads_policy` fails on both providers, in the same way.** Obscura 0.2.3 accepts `Fetch.enable` with `requestStage: "Response"`, but it pauses requests only at the request stage, with no `responseHeaders`. So a policy that keys on `Content-Disposition` cannot be enforced through `Fetch` on this engine. The scenario stays red until the engine provides response-stage interception, or Loams enforces downloads some other way (D2125).
-- **`profile_restart_persistence` fails on `local`.** After a restart on the same `--storage-dir`, the server saw no cookie. That run killed the engine without a graceful shutdown. The suite now closes it with `Browser.close` and SIGTERM first, and lists the profile directory's files in the failure message. The next run will show whether the engine persists cookies at all. Until then, the ledger is the persistence path that works on both providers.
+Earlier runs:
+
+- [40539985305](https://github.com/ostrium-labs/loams/actions/runs/40539985305) and [40583789342](https://github.com/ostrium-labs/loams/actions/runs/40583789342) failed the old Fetch-based `downloads_policy` scenario on both providers, and `profile_restart_persistence` on `local`.
+- The restart failure came from the suite itself. It shut the engine down while its own CDP connection was still open, and the engine had not yet written that connection's cookies. See *Cookie persistence on `local`* below.
+
+### Downloads: unsupported on Obscura 0.2.3
+
+The engine does not download. This is from Obscura's v0.2.3 source (`obscura-cdp/src/domains/browser.rs` and `page.rs`), confirmed by the CI runs above:
+
+- `Browser.setDownloadBehavior` and `Page.setDownloadBehavior` are acknowledged and ignored ("Obscura does not download files to disk").
+- There are no `downloadWillBegin` or `downloadProgress` events and no `Browser.cancelDownload`.
+- `Fetch.enable` with `requestStage: "Response"` is accepted, but requests are paused only at the request stage, with no response headers.
+
+So:
+
+- **Blocked downloads hold on both providers**, because nothing is ever written. `downloads_blocked` checks this on each provider: the profile directory on `local`, and `docker diff` on the service container.
+- **Allowed downloads cannot be honoured on either provider.** `downloads_allowed` reports `unsupported` and does not pass. If a future engine release starts emitting download events or writing files, the scenario will pass without any change to the suite.
+- A page script can still read an attachment's bytes with `fetch()`. No policy on this engine can stop that by response header (D2125, D2126).
+
+### Cookie persistence on `local`
+
+Obscura 0.2.3 (`obscura-cdp/src/server.rs`) behaves as follows:
+
+- It merges a CDP connection's default-context cookies into `--storage-dir/cookies.json` only when that WebSocket connection closes.
+- On SIGTERM it saves only what had already been merged.
+- Contexts from `Target.createBrowserContext` are never persisted.
+
+A launcher that kills the engine, or stops it with the connection still open, therefore loses the session. To restart, close the CDP connection, then send SIGTERM, then kill. The suite does this, and `ObscuraProvider` should too.

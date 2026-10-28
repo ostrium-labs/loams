@@ -21,6 +21,11 @@ pub enum Failure {
     /// The scenario does not apply to this provider by design. Recorded as
     /// `n/a` in the matrix and never counted as a pass.
     NotApplicable(String),
+    /// The engine does not implement the capability at all. Recorded as
+    /// `unsupported`, never as a pass, and does not fail the run: the gap is
+    /// documented (`docs/browser-provider-parity.md`) rather than faked. If
+    /// the engine starts implementing it, the scenario passes on its own.
+    Unsupported(String),
 }
 
 impl From<String> for Failure {
@@ -71,6 +76,7 @@ where
             Ok(note) => ("pass", note.clone()),
             Err(Failure::Fail(message)) => ("fail", message.clone()),
             Err(Failure::NotApplicable(reason)) => ("n/a", reason.clone()),
+            Err(Failure::Unsupported(reason)) => ("unsupported", reason.clone()),
             Err(Failure::Unconfigured(reason)) if provider::required() => {
                 ("fail", format!("not configured: {reason}"))
             }
