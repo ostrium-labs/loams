@@ -1,0 +1,87 @@
+{
+ "trace_id": "7f05bc75b89cdc810dea396207676597",
+ "target": "loams-cfb-aws-1",
+ "spans": [
+  {
+   "name": "kafka.message",
+   "span_id": "d80335f5fcd24ec4",
+   "parent_span_id": "",
+   "start_ns": 1793155843240154770,
+   "duration_nano": 48980650666,
+   "attrs": {
+    "cfb.target": "loams-cfb-aws-1",
+    "cfb.acks": "all",
+    "cfb.mode": "throughput",
+    "messaging.destination.name": "loams-cfb-engine-baseline-20261028-throughput"
+   },
+   "res": {
+    "telemetry.sdk.name": "opentelemetry",
+    "telemetry.sdk.version": "1.45.1",
+    "service.namespace": "loams-bench",
+    "cfb.run": "engine-baseline-20261028",
+    "cfb.target": "loams-cfb-aws-1",
+    "cloud.region": "ap-south-1",
+    "telemetry.sdk.language": "python",
+    "service.instance.id": "66de28f2-99fa-43ee-825f-b7199f0d3047",
+    "service.name": "cfb-driver",
+    "cfb.kind": "confluent-cloud-basic",
+    "cloud.provider": "aws",
+    "messaging.system": "kafka"
+   }
+  },
+  {
+   "name": "kafka.produce",
+   "span_id": "5605b049a9433b60",
+   "parent_span_id": "d80335f5fcd24ec4",
+   "start_ns": 1793155843240154770,
+   "duration_nano": 37929068454,
+   "attrs": {
+    "cfb.mode": "throughput",
+    "messaging.destination.name": "loams-cfb-engine-baseline-20261028-throughput",
+    "cfb.target": "loams-cfb-aws-1",
+    "cfb.acks": "all"
+   },
+   "res": {
+    "telemetry.sdk.language": "python",
+    "service.instance.id": "66de28f2-99fa-43ee-825f-b7199f0d3047",
+    "cfb.target": "loams-cfb-aws-1",
+    "cloud.provider": "aws",
+    "cloud.region": "ap-south-1",
+    "telemetry.sdk.name": "opentelemetry",
+    "telemetry.sdk.version": "1.45.1",
+    "service.name": "cfb-driver",
+    "service.namespace": "loams-bench",
+    "cfb.run": "engine-baseline-20261028",
+    "cfb.kind": "confluent-cloud-basic",
+    "messaging.system": "kafka"
+   }
+  },
+  {
+   "name": "kafka.deliver",
+   "span_id": "b4156c30b51bc404",
+   "parent_span_id": "d80335f5fcd24ec4",
+   "start_ns": 1793155881169223224,
+   "duration_nano": 11051582212,
+   "attrs": {
+    "cfb.target": "loams-cfb-aws-1",
+    "cfb.acks": "all",
+    "cfb.mode": "throughput",
+    "messaging.destination.name": "loams-cfb-engine-baseline-20261028-throughput"
+   },
+   "res": {
+    "cfb.target": "loams-cfb-aws-1",
+    "messaging.system": "kafka",
+    "telemetry.sdk.name": "opentelemetry",
+    "cfb.run": "engine-baseline-20261028",
+    "cfb.kind": "confluent-cloud-basic",
+    "cloud.provider": "aws",
+    "cloud.region": "ap-south-1",
+    "telemetry.sdk.language": "python",
+    "telemetry.sdk.version": "1.45.1",
+    "service.instance.id": "66de28f2-99fa-43ee-825f-b7199f0d3047",
+    "service.name": "cfb-driver",
+    "service.namespace": "loams-bench"
+   }
+  }
+ ]
+}
