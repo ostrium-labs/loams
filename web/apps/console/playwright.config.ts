@@ -35,7 +35,9 @@ export default defineConfig({
     launchOptions: executablePath ? { executablePath } : {},
   },
   webServer: {
-    command: `node node_modules/vite/bin/vite.js --host 127.0.0.1 --port ${port} --strictPort`,
+    // Vite+ (design 79 D1772): `vite` is aliased to vite-plus-core, which ships no
+    // `vite` binary, so the dev server is `vp dev` (the same Vite dev server and flags).
+    command: `pnpm exec vp dev --host 127.0.0.1 --port ${port} --strictPort`,
     url: `http://127.0.0.1:${port}/`,
     env: { LOAMS_UI_BASE: '/' },
     reuseExistingServer: !process.env.CI,
