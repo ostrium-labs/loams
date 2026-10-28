@@ -83,9 +83,14 @@ for p in "${acct[@]}"; do before[$p]=$(ticks "$p"); done
 t0=$(date +%s.%N)
 
 addr_list=$(IFS=,; echo "${addrs[*]}")
+if [ -n "${PROFILE:-}" ]; then # sample shard 0 while the load runs (not for numbers)
+  (sleep 5; "$ROOT/bench/kv/pmp.sh" "${pids[0]}" "${PROFILE_SAMPLES:-120}" 0.1 "$PROFILE") &
+  prof=$!
+fi
 result=$(taskset -c "$loadgen_cpus" "$LG" --addr "$addr_list" --label "$name" "$@")
 
 t1=$(date +%s.%N)
+[ -z "${prof:-}" ] || wait "$prof"
 hz=$(getconf CLK_TCK)
 cpu_json="{"
 first=1

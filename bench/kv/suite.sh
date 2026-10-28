@@ -45,5 +45,13 @@ case $phase in
     $R tikv-scale-2 tikv 2 0/1 10-13 "${common[@]}" --conns 128 --pipeline 1 --threads 4 --set-ratio 0.1 --prefill
     $R tikv-scale-4 tikv 4 0/1/2/3 10-13 "${common[@]}" --conns 256 --pipeline 1 --threads 4 --set-ratio 0.1 --prefill
     ;;
-  *) echo "phases: single scale tikv tikv-scale" >&2; exit 2 ;;
+  profile) # E: stack samples of one gateway under load (not for numbers)
+    P=$H/../results/bq1/kv/profile
+    mkdir -p "$P"
+    for store in ${STORES:-memory embedded}; do
+      PROFILE=$P/$store-get-p1.txt $R "profile-$store-get" "$store" 1 0-5 6-11 --duration 25 --warmup 3 --keys 100000 --conns 256 --threads 6 --prefill
+      PROFILE=$P/$store-set-p1.txt $R "profile-$store-set" "$store" 1 0-5 6-11 --duration 25 --warmup 3 --keys 100000 --conns 256 --threads 6 --set-ratio 1
+    done
+    ;;
+  *) echo "phases: single scale tikv tikv-scale profile" >&2; exit 2 ;;
 esac
