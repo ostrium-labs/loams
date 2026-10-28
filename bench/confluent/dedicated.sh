@@ -7,8 +7,8 @@
 #
 #   A  produce 1 KB records:   GEN_PER_CKU x CKU statements  -> ingress MB/s
 #   B  produce 100 B records:  GEN_PER_CKU x CKU statements  -> records/s, requests/s
-#   C  consume:                windowed COUNT(*) over the 1 KB topic from the earliest
-#                              offset (readers in parallel)  -> egress MB/s
+#   C  consume:                readers scan the 1 KB topic from the earliest offset and
+#                              write nothing (a filter no record passes) -> egress MB/s
 #
 # Results: results/$CFB_DAY/dedicated/CLUSTER-{phases.tsv,series-*.json}
 set -euo pipefail
@@ -50,7 +50,7 @@ phase "B-stop"
 r=$(( readers * cku ))
 phase "C-start readers=$r"
 for i in $(seq 1 "$r"); do
-  "$f" run "$pool" "$c" "cfb-read-$short-rc$i" "INSERT INTO cfb_counts SELECT window_start, $i, COUNT(*) FROM TABLE(TUMBLE(TABLE cfb_sink /*+ OPTIONS('scan.startup.mode' = 'earliest-offset') */, DESCRIPTOR(\$rowtime), INTERVAL '10' SECOND)) GROUP BY window_start, window_end" >/dev/null
+  "$f" run "$pool" "$c" "cfb-read-$short-rc$i" "INSERT INTO cfb_counts SELECT \$rowtime, $i, CAST(1 AS BIGINT) FROM cfb_sink /*+ OPTIONS('scan.startup.mode' = 'earliest-offset') */ WHERE val = 'never'" >/dev/null
 done
 sleep $(( mc * 60 ))
 for i in $(seq 1 "$r"); do "$f" stop "$pool" "cfb-read-$short-rc$i" >/dev/null; done

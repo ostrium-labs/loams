@@ -41,7 +41,7 @@ rate_for() {  # type max_ecku|cku -> usd/h
 
 projected() {  # everything live billed to its deadline + done + data + extra
   awk -F'\t' -v data="$(cat "$CFB_STATE/data_usd" 2>/dev/null || echo 0)" -v extra="${1:-0}" '
-    FNR==NR { if ($1!="") { s=$6-$5; h=int((s+3599)/3600); t+=h*$7 }; next }
+    FILENAME==ARGV[1] { if ($1!="") { s=$6-$5; h=int((s+3599)/3600); t+=h*$7 }; next }
     { if ($1!="") { s=$2-$1; if (s<1) s=1; h=int((s+3599)/3600); t+=h*$3 } }
     END { printf "%.2f", t+data+extra }' "$live" "$CFB_STATE/billed_done.tsv"
 }
@@ -93,6 +93,7 @@ cmd_cluster() {
   [[ "$(cc_status)" == 20* ]] || die "create $name: HTTP $(cc_status) $(jq -c '.errors' <<<"$out")"
   local id t0 deadline; id="$(jq -r .id <<<"$out")"; t0="$(now)"; deadline=$((t0 + ttl * 3600))
   live_add kafka-cluster "$id" "$name" "$cloud/$region" "$t0" "$deadline" "$rate"
+  printf '%s\t%s\t%s\n' "$name" "$id" "$t0" >>"$CFB_STATE/clusters_all.tsv"  # data totals outlive live.tsv
   cc_log_created kafka-cluster "$id" "$name" "$cloud/$region" "$deadline" "$type max_ecku $ecku; CFB benchmark"
   echo "created $id $name ($type $cloud/$region max_ecku $ecku, \$$rate/h, deadline $(date -u -d "@$deadline" +%H:%MZ))"
   # release the live.tsv lock while waiting for provisioning (Dedicated takes up to hours)

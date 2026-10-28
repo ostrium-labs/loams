@@ -40,7 +40,9 @@ def main():
     charts = os.path.join(HERE, "results", a.day, "charts")
     os.makedirs(out, exist_ok=True)
     os.makedirs(charts, exist_ok=True)
-    base = "FROM signoz_traces.signoz_index_v3 WHERE resource_string_service$$name = 'cfb-driver'"
+    # latency-mode messages only (throughput runs queue for seconds at the uplink)
+    base = ("FROM signoz_traces.signoz_index_v3 WHERE resource_string_service$$name = 'cfb-driver'"
+            " AND (attributes_string['cfb.mode'] = 'latency' OR name = 'kafka.txn' OR attributes_string['cfb.mode'] = '')")
     summ = q(a.ch, f"""SELECT attributes_string['cfb.target'] AS target, name,
         count() AS spans, quantile(0.5)(duration_nano)/1e6 AS p50_ms, quantile(0.99)(duration_nano)/1e6 AS p99_ms
         {base} AND attributes_string['cfb.target'] != '' GROUP BY target, name ORDER BY target, name""")

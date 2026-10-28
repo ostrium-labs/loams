@@ -116,9 +116,18 @@ def rtt(day, charts, md):
 # --- latency -------------------------------------------------------------------------------------
 def latency(day, charts, md):
     rows = load(day, "latency") + load(day, "local/latency")
+    # Kafka 4.3.1 local: only the first run exists (its container was removed before
+    # the rerun), and that run's end-to-end column carries the consumer artefact.
+    sup = [d for d in load(day, "superseded/local-latency-batch-consume") if "apache-kafka" in d["target"]]
+    for d in sup:
+        d["_e2e_artefact"] = True
+    rows += sup
     if not rows:
         return
     md.append("### Produce and end-to-end latency at 10 msg/s (ms; p50 / p99 / p99.9)\n")
+    md.append("End to end marked † includes a driver artefact of 0–200 ms: the first runs read with "
+              "`consume(1000, timeout=0.2)`, which waits for a full batch. Produce latency is not affected. "
+              "Runs after 12:40Z (Iggy local, Cluster Linking) poll per message.\n")
     md.append("| Target | Size | acks | Produce p50 / p99 / p99.9 | End to end p50 / p99 / p99.9 | Sent | Lost after ack | Errors |")
     md.append("| --- | --- | --- | --- | --- | --- | --- | --- |")
     for d in sorted(rows, key=lambda d: (d["target"], d["result"].get("size", 0), str(d["result"].get("acks")))):
@@ -127,8 +136,9 @@ def latency(day, charts, md):
             md.append(f"| {label(d['target'])} | – | – | failed: {r['exception'][:80]} | | | | |")
             continue
         p, e = r["produce_latency_ms"], r["e2e_latency_ms"]
+        dag = " †" if (d.get("_e2e_artefact") or d.get("started_utc", "") < "2026-10-28T12:40") else ""
         md.append(f"| {label(d['target'])} | {r['size']} B | {r['acks']} | {fmt(p.get('p50'))} / {fmt(p.get('p99'))} / {fmt(p.get('p999'))} | "
-                  f"{fmt(e.get('p50'))} / {fmt(e.get('p99'))} / {fmt(e.get('p999'))} | {r['sent']} | {r['lost_after_ack']} | {r['errors']} |")
+                  f"{fmt(e.get('p50'))} / {fmt(e.get('p99'))} / {fmt(e.get('p999'))}{dag} | {r['sent']} | {r['lost_after_ack']} | {r['errors']} |")
     md.append("")
     sel = [d for d in rows if d["result"].get("size") == 1024 and str(d["result"].get("acks")) == "all"]
     if sel:

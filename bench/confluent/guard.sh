@@ -30,7 +30,7 @@ stop_usd="${CFB_STOP_USD:-$(cat "$CFB_STATE/stop_usd" 2>/dev/null || echo 380)}"
 hard_deadline="${CFB_HARD_DEADLINE:-$(cat "$CFB_STATE/hard_deadline" 2>/dev/null || echo 0)}"
 live="$CFB_STATE/live.tsv"; done_tsv="$CFB_STATE/billed_done.tsv"
 touch "$live" "$done_tsv"
-echo $$ >"$CFB_STATE/guard.pid"
+[[ "${1:-}" == --once ]] || echo $$ >"$CFB_STATE/guard.pid"
 
 log() { echo "$(date -u +%FT%TZ) $*"; }
 
@@ -42,7 +42,7 @@ hours_started() {  # created_epoch end_epoch -> whole hours started (>=1)
 estimate() {  # -> USD with 2 decimals
   local now; now="$(date +%s)"
   awk -F'\t' -v now="$now" -v data="$(cat "$CFB_STATE/data_usd" 2>/dev/null || echo 0)" '
-    FNR==NR { if ($1!="") { s=now-$5; if (s<1) s=1; h=int((s+3599)/3600); t+=h*$7 } ; next }
+    FILENAME==ARGV[1] { if ($1!="") { s=now-$5; if (s<1) s=1; h=int((s+3599)/3600); t+=h*$7 } ; next }
     { if ($1!="") { s=$2-$1; if (s<1) s=1; h=int((s+3599)/3600); t+=h*$3 } }
     END { printf "%.2f", t+data }' "$live" "$done_tsv"
 }
@@ -81,31 +81,66 @@ delete_all() {  # reason
   done
 }
 
-log "guard start pid $$ stop_usd=$stop_usd hard_deadline=$(date -u -d "@$hard_deadline" +%FT%TZ 2>/dev/null)"
-while :; do
-  exec {lockfd}>"$CFB_STATE/live.lock"; flock -w 120 "$lockfd" || { log "lock busy; next round"; sleep 30; continue; }
+# Idle rule (2026-10-28: a pause left Dedicated clusters idle for hours): a paid
+# cluster (rate > 0) older than CFB_IDLE_MIN (30) minutes whose ingress over the
+# last CFB_IDLE_MIN minutes is under 1 MB has no live generator, and is deleted.
+idle_check() {
+  local now="$1" mins="${CFB_IDLE_MIN:-30}" kind id name where created deadline rate b
+  while IFS=$'\t' read -r kind id name where created deadline rate; do
+    [[ "$kind" == kafka-cluster ]] || continue
+    awk -v r="$rate" 'BEGIN{exit !(r>0)}' || continue
+    (( now - created >= mins * 60 )) || continue
+    b="$(cc POST https://api.telemetry.confluent.cloud/v2/metrics/cloud/query "$(jq -cn --arg c "$id" \
+        --arg i "$(date -u -d "@$((now - mins * 60))" +%FT%TZ)/$(date -u -d "@$now" +%FT%TZ)" \
+        '{aggregations:[{metric:"io.confluent.kafka.server/received_bytes"}], filter:{field:"resource.kafka.id",op:"EQ",value:$c}, granularity:"ALL", intervals:[$i]}')" \
+        | jq '[.data[]?.value] | add // 0' 2>/dev/null || echo unknown)"
+    [[ "$b" == unknown || "$(cc_status)" != 200 ]] && { log "idle check $name: metrics unavailable (HTTP $(cc_status))"; continue; }
+    if awk -v b="$b" 'BEGIN{exit !(b<1e6)}'; then
+      log "idle: $name ingested ${b} bytes in ${mins} min"; delete_one "$kind" "$id" "$name" "$where" "$created" "$rate" idle
+    fi
+  done < <(cat "$live")
+}
+
+tick() {  # one round; the caller holds the lock
   now="$(date +%s)"
   # Data is billed per GB and is not capped by max eCKU: refresh it from the
   # Metrics API every 10 minutes (the 2026-10-28 morning run showed why).
-  if (( now - ${last_data:-0} >= 600 )); then
+  last_data="$(cat "$CFB_STATE/last_data" 2>/dev/null || echo 0)"
+  if (( now - last_data >= 600 )); then
     "$here/collect.sh" data >"$CFB_STATE/data.last" 2>&1 || log "collect.sh data failed: $(tail -1 "$CFB_STATE/data.last")"
-    last_data="$now"
+    echo "$now" >"$CFB_STATE/last_data"
   fi
   est="$(estimate)"
   echo "$est" >"$CFB_STATE/estimate_usd"
+  date -u +%FT%TZ >"$CFB_STATE/guard.heartbeat"
   if [[ -e "$CFB_STATE/ABORT" ]]; then
-    log "ABORT file present: deleting everything"; delete_all abort
+    [[ -s "$live" ]] && { log "ABORT file present: deleting everything"; delete_all abort; }
   elif awk -v e="$est" -v s="$stop_usd" 'BEGIN{exit !(e>=s)}'; then
     log "estimate \$$est >= \$$stop_usd: deleting everything"; delete_all budget; touch "$CFB_STATE/ABORT"
   elif (( hard_deadline > 0 && now >= hard_deadline )); then
-    log "hard deadline reached: deleting everything"; delete_all hard-deadline
+    [[ -s "$live" ]] && { log "hard deadline reached: deleting everything"; delete_all hard-deadline; }
   else
     while IFS=$'\t' read -r kind id name where created deadline rate; do
       [[ -n "$kind" ]] || continue
       (( now >= deadline )) && delete_one "$kind" "$id" "$name" "$where" "$created" "$rate" deadline
     done < <(cat "$live")
+    last_idle="$(cat "$CFB_STATE/last_idle" 2>/dev/null || echo 0)"
+    if (( now - last_idle >= 300 )); then idle_check "$now"; echo "$now" >"$CFB_STATE/last_idle"; fi
   fi
-  # exit when nothing is left after an abort or the hard deadline
+}
+
+# --once: one tick, for a systemd --user timer (guard-timer.sh), which survives the
+# loss of the shell that started it (2026-10-28: a detached loop died with its
+# process tree at ~15:21Z and the clusters' deadlines never fired).
+if [[ "${1:-}" == --once ]]; then
+  exec {lockfd}>"$CFB_STATE/live.lock"; flock -w 50 "$lockfd" || { log "lock busy; skip tick"; exit 0; }
+  tick; exit 0
+fi
+
+log "guard start pid $$ stop_usd=$stop_usd hard_deadline=$(date -u -d "@$hard_deadline" +%FT%TZ 2>/dev/null)"
+while :; do
+  exec {lockfd}>"$CFB_STATE/live.lock"; flock -w 120 "$lockfd" || { log "lock busy; next round"; sleep 30; continue; }
+  tick
   if [[ ! -s "$live" ]] && { [[ -e "$CFB_STATE/ABORT" ]] || (( hard_deadline > 0 && now >= hard_deadline )); }; then
     log "nothing live; guard exits (estimate \$$est)"; exit 0
   fi

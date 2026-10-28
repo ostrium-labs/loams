@@ -30,64 +30,43 @@
  {
   "target": "loams-cfb-aws-1",
   "name": "kafka.deliver",
-  "spans": 242,
-  "p50_ms": 6864.658005,
-  "p99_ms": 20369.85719551
+  "spans": 78,
+  "p50_ms": 225.326975,
+  "p99_ms": 1139.170368260002
  },
  {
   "target": "loams-cfb-aws-1",
   "name": "kafka.message",
-  "spans": 242,
-  "p50_ms": 48980.577593,
-  "p99_ms": 66928.46330436
+  "spans": 78,
+  "p50_ms": 479.803567,
+  "p99_ms": 14649.498659890003
  },
  {
   "target": "loams-cfb-aws-1",
   "name": "kafka.produce",
-  "spans": 242,
-  "p50_ms": 37929.102598,
-  "p99_ms": 56998.153236440005
- },
- {
-  "target": "loams-cfb-azure-1",
-  "name": "kafka.deliver",
-  "spans": 147,
-  "p50_ms": 3730.215071,
-  "p99_ms": 22465.584306099998
- },
- {
-  "target": "loams-cfb-azure-1",
-  "name": "kafka.message",
-  "spans": 164,
-  "p50_ms": 35186.460469,
-  "p99_ms": 57725.86376817
- },
- {
-  "target": "loams-cfb-azure-1",
-  "name": "kafka.produce",
-  "spans": 164,
-  "p50_ms": 30523.42668,
-  "p99_ms": 44396.69148412
+  "spans": 78,
+  "p50_ms": 288.070843,
+  "p99_ms": 14468.960476780003
  },
  {
   "target": "loams-cfb-gcp-1",
   "name": "kafka.deliver",
-  "spans": 176,
-  "p50_ms": 6236.01312,
-  "p99_ms": 22208.858236
+  "spans": 12,
+  "p50_ms": 72.7992105,
+  "p99_ms": 944.6926212700006
  },
  {
   "target": "loams-cfb-gcp-1",
   "name": "kafka.message",
-  "spans": 176,
-  "p50_ms": 32028.400814,
-  "p99_ms": 62956.7466815
+  "spans": 12,
+  "p50_ms": 411.4409095,
+  "p99_ms": 2877.7520608400005
  },
  {
   "target": "loams-cfb-gcp-1",
   "name": "kafka.produce",
-  "spans": 176,
-  "p50_ms": 22903.175233,
-  "p99_ms": 56593.4516345
+  "spans": 12,
+  "p50_ms": 318.230857,
+  "p99_ms": 2714.2582243400007
  }
 ]
