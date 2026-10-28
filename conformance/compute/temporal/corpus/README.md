@@ -26,6 +26,7 @@ replaces this one.
 | `workers/go/` | Go module (SDK `go.temporal.io/sdk` v1.49.0): `scenarios/` holds one workflow per scenario; `main.go` is the generator (`generate`) and the exporter (`export`) |
 | `workers/ts/` | npm package (`@temporalio/*` 1.24.0): `src/workflows.ts`, `src/activities.ts`, `src/generate.ts`, and the replay test `src/replay.test.ts` |
 | `workers/python/` | uv project (`temporalio` 1.34.0, D2136): `corpus_py/` holds the workflows, activities, the starter (`drive.py`), the generator and worker CLI (`python -m corpus_py`) and the replayer (`replay.py`); not yet run, and `histories/python/` is empty until its first generation (D2137) |
+| `workers/java/` | Maven project (`io.temporal:temporal-sdk` 1.40.0, D2130): `Workflows.java` (one `@WorkflowInterface` per scenario, every scenario including the Go-only ones), `CorpusActivities*.java`, `Generate.java` (generator, drivers and its own exporter, D2131) and the replayer test `CorpusReplayTest` (`WorkflowReplayer`, D2134); not yet run, and `histories/java/` is absent until its first generation (`generate-java.sh`, or the `temporal-corpus-java.yml` dispatch job) |
 | `replay/go/` | `replay_test.go`: every Go history replays with `worker.NewWorkflowReplayer` |
 | `histories/<lang>/<scenario>.{json,binpb}` | protojson (what `temporal workflow show -o json` writes and the replayers read) and the binary `History` message; a scenario with several runs has `<scenario>.run<k>.*`, oldest first |
 | `histories/generate-<lang>.json` | what each driver observed, expected errors included |
@@ -88,6 +89,8 @@ With the compat-mode stack up (`conformance/compute/temporal/run.sh`, or
 ```sh
 conformance/compute/temporal/corpus/generate.sh                       # go,ts (CORPUS_LANGS)
 conformance/compute/temporal/corpus/generate.sh --langs go,ts,python  # with the Python worker
+conformance/compute/temporal/corpus/generate.sh --langs go,ts,java    # with the Java worker
+conformance/compute/temporal/corpus/generate-java.sh                 # Java alone (manifest.py build --languages java)
 python3 conformance/compute/temporal/corpus/manifest.py check
 ```
 

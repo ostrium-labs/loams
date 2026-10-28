@@ -57,6 +57,12 @@ licence = "MIT OR Apache-2.0"
 source = "https://github.com/astral-sh/uv/blob/0.12.24/LICENSE-MIT"
 resolve = "pypi:uv"
 
+[TEMPORAL_SDK_JAVA]
+value = "1.40.0"
+licence = "Apache-2.0"
+source = "https://github.com/temporalio/sdk-java/blob/v1.40.0/LICENSE"
+resolve = "github:temporalio/sdk-java"
+
 [TEMPORAL_SAMPLES_GO]
 value = "d3784428122e0cd4b28e91a0cd86b589749abf28"
 licence = "Apache-2.0"
@@ -147,6 +153,11 @@ source = "https://github.com/nodejs/node/blob/v22.23.2/LICENSE"
 value = "docker.io/library/eclipse-temurin:21.0.12_8-jdk-noble@sha256:4d271cd5e0624598cf563342f47281b09cb364bc13acbbd7251f49f83470018d"
 licence = "GPL-2.0-only WITH Classpath-exception-2.0"
 source = "https://adoptium.net/docs/faq/"
+
+[MAVEN_IMAGE]
+value = "docker.io/library/maven:3.9.16-eclipse-temurin-21-noble@sha256:99e61abcff91a9b1333463bd8451fb18495d6eba9250ac66a338b518f8278320"
+licence = "Apache-2.0 AND GPL-2.0-only WITH Classpath-exception-2.0"
+source = "https://github.com/apache/maven/blob/maven-3.9.16/LICENSE"
 
 [AIRFLOW_VERSION]
 value = "3.3.2"

@@ -76,8 +76,10 @@ scenarios; the Go exporter writes `histories/<sdk>/`) and `leg_<sdk>_replay`
 | SDK | Leg | Pin | Status |
 |---|---|---|---|
 | Python | `legs/python.sh` (`corpus/workers/python`) | temporalio 1.34.0, uv 0.12.24 (pins.env) | not yet run: CI job `sdk-leg (python)` |
+| Java | `legs/java.sh` (`corpus/workers/java`, Maven) | io.temporal:temporal-sdk 1.40.0, `MAVEN_IMAGE` maven 3.9.16 on Temurin 21 (pins.env) | not yet run: CI job `sdk-leg (java)`; the worker's own tests in `temporal-corpus-java.yml` |
 
 ```sh
 SDK_LEGS=python conformance/compute/temporal/gateway/run.sh --profile
+SDK_LEGS=java conformance/compute/temporal/gateway/run.sh --profile
 ```
 
