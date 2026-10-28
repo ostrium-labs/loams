@@ -4,7 +4,7 @@
 
 Every RPC of `temporalio/api` v1.63.5 (vendored in `crates/loams-temporal-proto`) and whether the Loams Temporal gateway (`crates/loams-temporal-frontend`) answers it. Everything else answers `UNIMPLEMENTED` with a link to the compatibility matrix. Status is preview: "implemented" means the method is built and has unit tests (CI runs them); it does not mean every SDK has run it end to end.
 
-WorkflowService: 50 of 123 implemented. OperatorService: none yet (the gateway does not serve it).
+WorkflowService: 56 of 123 implemented. OperatorService: none yet (the gateway does not serve it).
 
 ## WorkflowService
 
@@ -37,8 +37,8 @@ WorkflowService: 50 of 123 implemented. OperatorService: none yet (the gateway d
 | `ResetWorkflowExecution` | implemented (TMP-api) | to a workflow task boundary; signals reapplied, updates not yet |
 | `TerminateWorkflowExecution` | implemented (DX1) | fails a started workflow task first (TMP-api B, D2084) |
 | `DeleteWorkflowExecution` | not planned yet | needs the store's delete path (lane TMP-store) |
-| `ListOpenWorkflowExecutions` | lane TMP-sched (schedules and visibility) |  |
-| `ListClosedWorkflowExecutions` | lane TMP-sched (schedules and visibility) |  |
+| `ListOpenWorkflowExecutions` | implemented (TMP-api) | keyset pages from Store::list_runs; workflow ID or type filter, start window |
+| `ListClosedWorkflowExecutions` | implemented (TMP-api) | keyset pages from Store::list_runs; workflow ID, type or status filter, start window |
 | `ListWorkflowExecutions` | implemented (TMP-sched) |  |
 | `ListArchivedWorkflowExecutions` | not planned yet | no archival |
 | `ScanWorkflowExecutions` | implemented (TMP-sched) |  |
@@ -86,10 +86,10 @@ WorkflowService: 50 of 123 implemented. OperatorService: none yet (the gateway d
 | `SetWorkerDeploymentManager` | not planned yet | worker deployments |
 | `UpdateWorkflowExecution` | implemented (TMP-api) | durable admission; ordinary (not speculative) workflow task |
 | `PollWorkflowExecutionUpdate` | implemented (TMP-api) |  |
-| `StartBatchOperation` | planned: TMP-api F | terminate, cancel, signal over a list of executions |
-| `StopBatchOperation` | planned: TMP-api F |  |
-| `DescribeBatchOperation` | planned: TMP-api F |  |
-| `ListBatchOperations` | planned: TMP-api F |  |
+| `StartBatchOperation` | implemented (TMP-api) | visibility query or listed executions; terminate, cancel, signal |
+| `StopBatchOperation` | implemented (TMP-api) |  |
+| `DescribeBatchOperation` | implemented (TMP-api) | jobs since this gateway started |
+| `ListBatchOperations` | implemented (TMP-api) | jobs since this gateway started; one page |
 | `PollNexusTaskQueue` | not planned yet | Nexus is out of scope (design 74 §2.2) |
 | `RespondNexusTaskCompleted` | not planned yet | Nexus |
 | `RespondNexusTaskFailed` | not planned yet | Nexus |

@@ -63,10 +63,16 @@ const TMP_API: &[&str] = &[
     "GetWorkerBuildIdCompatibility",
     "GetWorkerVersioningRules",
     "GetWorkerTaskReachability",
+    "StartBatchOperation",
+    "StopBatchOperation",
+    "DescribeBatchOperation",
+    "ListBatchOperations",
 ];
 
 /// Visibility (D2074-D2076).
 const VISIBILITY: &[&str] = &[
+    "ListOpenWorkflowExecutions",
+    "ListClosedWorkflowExecutions",
     "ListWorkflowExecutions",
     "ScanWorkflowExecutions",
     "CountWorkflowExecutions",

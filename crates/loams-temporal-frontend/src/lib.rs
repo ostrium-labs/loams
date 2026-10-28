@@ -20,6 +20,7 @@
 //! and the standalone `loams-temporal` binary mount it.
 
 pub mod auth;
+pub mod batch;
 pub mod callbacks;
 pub mod capabilities;
 pub mod describe;
@@ -29,6 +30,7 @@ pub mod errors;
 pub mod fastpath;
 pub mod followups;
 pub mod lifecycle;
+pub mod listing;
 pub mod namespaces;
 pub mod operator;
 pub mod outbox;

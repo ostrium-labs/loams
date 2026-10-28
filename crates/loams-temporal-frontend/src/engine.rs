@@ -17,6 +17,9 @@ use tonic::Status;
 
 use crate::effects::{EffectContext, outbox_rows};
 
+/// The page the engine reads a run's history in (`Engine::history_until`).
+pub const HISTORY_READ_PAGE: usize = 1000;
+
 /// How often a commit is retried after a version conflict before the
 /// request is answered `UNAVAILABLE`.
 pub const MAX_CAS_RETRIES: usize = 8;
@@ -385,6 +388,64 @@ impl Engine {
             });
         }
         Ok(rx)
+    }
+
+    /// One page of the run's history through the store's paged read
+    /// (`Store::history_page`): the events and the next page's token (empty
+    /// on the last page).
+    pub async fn history_page(
+        &self,
+        key: &RunKey,
+        token: &[u8],
+        page_size: usize,
+    ) -> Result<(Vec<HistoryEvent>, Vec<u8>), Status> {
+        let page = self
+            .store
+            .history_page(
+                key,
+                token,
+                page_size.clamp(1, loams_temporal_store::MAX_PAGE_SIZE),
+            )
+            .await
+            .map_err(store_status)?;
+        let events = page
+            .events
+            .into_iter()
+            .map(|r| {
+                HistoryEvent::decode(r.blob.as_slice())
+                    .map_err(|e| Status::internal(format!("corrupt event {}: {e}", r.event_id)))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok((events, page.next_page_token))
+    }
+
+    /// The run's events up to and including `up_to`, read page by page
+    /// (never one unbounded query), keeping only those `keep` accepts.
+    pub async fn history_until(
+        &self,
+        key: &RunKey,
+        up_to: i64,
+        mut keep: impl FnMut(&HistoryEvent) -> bool,
+    ) -> Result<Vec<HistoryEvent>, Status> {
+        let mut out = Vec::new();
+        let mut token = Vec::new();
+        loop {
+            let (events, next) = self.history_page(key, &token, HISTORY_READ_PAGE).await?;
+            let mut done = next.is_empty();
+            for e in events {
+                if e.event_id > up_to {
+                    done = true;
+                    break;
+                }
+                if keep(&e) {
+                    out.push(e);
+                }
+            }
+            if done {
+                return Ok(out);
+            }
+            token = next;
+        }
     }
 
     /// The run's events from `from_event_id`, decoded.

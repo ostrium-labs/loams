@@ -104,6 +104,9 @@ jobs:
   # in the pinned DOTNET_IMAGE (pins.env TEMPORAL_SDK_DOTNET; D2140).
   # Java: io.temporal:temporal-sdk with Maven in the pinned MAVEN_IMAGE
   # (pins.env TEMPORAL_SDK_JAVA; lane TSDK-java, D2132).
+  # Rust: temporalio-sdk on sdk-core (prerelease), built with cargo in the
+  # pinned RUST_IMAGE (pins.env TEMPORAL_SDK_RUST, RUST_IMAGE); its replay
+  # case is sdk-core's replayer (D2158).
   sdk-leg:
     name: "Temporal gateway: ${{ matrix.sdk }} SDK leg (temporal-gateway profile)"
     needs: changes
@@ -113,7 +116,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        sdk: [python, dotnet, java]
+        sdk: [python, dotnet, java, rust]
     env:
       OC_OUT: ${{ github.workspace }}/target/compute
       DOCKER_BUILDKIT: '1'
