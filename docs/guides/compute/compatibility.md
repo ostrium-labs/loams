@@ -3,9 +3,8 @@
 Status: **preview**. Each product runs unmodified on Loams Postgres and is
 judged by its own suite plus the Loams cases, strictly against its
 `xfail.toml` (design 68 §12, design 74 §13). The section below is rendered
-by `scripts/compute/matrix.py durable` from a run of the compute nightly
-(`.github/workflows/compute-compat.yml`) and refreshed by hand from that
-run's `compatibility-matrix` artifact. Do not edit it by hand. The Temporal
+by `scripts/compute/matrix.py durable` from a run of the local nightly
+([`scripts/nightly/run-local.sh`](../nightly-local.md)) and committed by hand. Do not edit it by hand. The Temporal
 gateway's own matrix is in [temporal-gateway.md](../durable/temporal-gateway.md).
 
 Verdicts:

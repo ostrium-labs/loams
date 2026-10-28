@@ -1,0 +1,22 @@
+# The Loams local nightly (scripts/nightly/run-local.sh), as a systemd user
+# service. Not installed by anything: see deploy/nightly/README.md.
+[Unit]
+Description=Loams local nightly (scripts/nightly/run-local.sh)
+Documentation=file://%h/Documents/Ostriumlabs/loams/docs/guides/nightly-local.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+# The checkout to test. Point it at a worktree that tracks dev; the service
+# fetches and fast-forwards it first, so the nightly tests what dev is.
+Environment=LOAMS_NIGHTLY_CHECKOUT=%h/Documents/Ostriumlabs/loams-wt/nightly
+Environment=CARGO_BUILD_JOBS=4
+WorkingDirectory=%h
+ExecStartPre=/usr/bin/git -C ${LOAMS_NIGHTLY_CHECKOUT} fetch -q origin dev
+ExecStartPre=/usr/bin/git -C ${LOAMS_NIGHTLY_CHECKOUT} merge -q --ff-only origin/dev
+ExecStart=/bin/bash -c '"$LOAMS_NIGHTLY_CHECKOUT"/scripts/nightly/run-local.sh'
+# A night's worth of suites; the limiter shares the machine with other work.
+TimeoutStartSec=8h
+Nice=10
+IOSchedulingClass=idle
