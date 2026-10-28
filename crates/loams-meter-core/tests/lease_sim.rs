@@ -190,7 +190,7 @@ fn run(s: Scenario) -> Outcome {
                     });
                 }
             }
-            if let Some(l) = node.lease.as_mut().filter(|l| usable(&**l)) {
+            if let Some(l) = node.lease.as_mut().filter(|l| usable(l)) {
                 l.spent += 1;
                 spent += 1;
                 let lag = rng.below(21) as i64 * STEP;

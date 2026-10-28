@@ -289,7 +289,7 @@ pub fn balance(
         }
     }
     budget(steps.len())?;
-    steps.sort_by(|a, b| (a.0, a.1.order(), a.1).cmp(&(b.0, b.1.order(), b.1)));
+    steps.sort_by_key(|a| (a.0, a.1.order(), a.1));
 
     let mut state = PeriodState::default();
     for (t, step) in steps {
