@@ -7,6 +7,7 @@
 //! `fabric/` workspace links this crate by path.
 
 pub mod amount;
+pub mod balance;
 pub mod entitlement;
 pub mod event;
 pub mod ids;
@@ -15,6 +16,7 @@ pub mod meter;
 pub mod refusal;
 
 pub use amount::{Amount, AmountError, Currency, Money};
+pub use balance::{BalanceError, UsageSegment};
 pub use entitlement::{
     AsOf, Balance, Entitlement, EntitlementKind, EntitlementSource, Expiry, ExpiryUnit, Feature,
     Grant, GrantError, GrantKind, Interval, Mode, Period, Rollover, Unit, UsagePeriod,
