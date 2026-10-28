@@ -1,6 +1,6 @@
 // frame.html opened directly (or framed without `sandbox`) has the console's
 // own origin: the runtime must not run plugin code there.
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import runtime from '../static/runtime.js?raw';
 
 describe('sandbox runtime outside a sandboxed frame', () => {

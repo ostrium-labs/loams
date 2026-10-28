@@ -37,10 +37,17 @@ pub(crate) fn validate(commands: &[Command]) -> Result<(), Rejection> {
             | command::Attributes::StartTimerCommandAttributes(_)
             | command::Attributes::CancelTimerCommandAttributes(_)
             | command::Attributes::RequestCancelActivityTaskCommandAttributes(_)
-            | command::Attributes::RecordMarkerCommandAttributes(_) => false,
+            | command::Attributes::RecordMarkerCommandAttributes(_)
+            | command::Attributes::ProtocolMessageCommandAttributes(_)
+            | command::Attributes::StartChildWorkflowExecutionCommandAttributes(_)
+            | command::Attributes::SignalExternalWorkflowExecutionCommandAttributes(_)
+            | command::Attributes::RequestCancelExternalWorkflowExecutionCommandAttributes(_)
+            | command::Attributes::UpsertWorkflowSearchAttributesCommandAttributes(_)
+            | command::Attributes::ModifyWorkflowPropertiesCommandAttributes(_) => false,
             command::Attributes::CompleteWorkflowExecutionCommandAttributes(_)
             | command::Attributes::FailWorkflowExecutionCommandAttributes(_)
-            | command::Attributes::CancelWorkflowExecutionCommandAttributes(_) => true,
+            | command::Attributes::CancelWorkflowExecutionCommandAttributes(_)
+            | command::Attributes::ContinueAsNewWorkflowExecutionCommandAttributes(_) => true,
             other => {
                 return Err(Rejection::Unimplemented(format!(
                     "command {} is not supported yet (design 74 §5.8)",
@@ -142,13 +149,13 @@ pub(crate) fn check_limits(commands: &[Command], state: &MutableState) -> Option
                     ));
                 }
             }
-            command::Attributes::FailWorkflowExecutionCommandAttributes(a) => {
-                if limits.blob_too_large(a.failure.as_ref().map_or(0, |f| f.encoded_len())) {
-                    return Some(LimitBreach::payload(
-                        C::BadFailWorkflowExecutionAttributes,
-                        "FailWorkflowExecutionCommandAttributes.Failure exceeds size limit.",
-                    ));
-                }
+            command::Attributes::FailWorkflowExecutionCommandAttributes(a)
+                if limits.blob_too_large(a.failure.as_ref().map_or(0, |f| f.encoded_len())) =>
+            {
+                return Some(LimitBreach::payload(
+                    C::BadFailWorkflowExecutionAttributes,
+                    "FailWorkflowExecutionCommandAttributes.Failure exceeds size limit.",
+                ));
             }
             _ => {}
         }
@@ -245,6 +252,7 @@ pub(crate) fn apply(
     c: Command,
     completed_id: i64,
     identity: &str,
+    new_run_id: &str,
 ) -> Result<(), Rejection> {
     let now = b.now_ms();
     let md = c.user_metadata;
@@ -475,6 +483,24 @@ pub(crate) fn apply(
                 ),
             );
             close(b, fx, id, WorkflowExecutionStatus::Canceled);
+        }
+        command::Attributes::ContinueAsNewWorkflowExecutionCommandAttributes(a) => {
+            crate::children::continue_as_new(b, fx, a, md, completed_id, new_run_id)?;
+        }
+        command::Attributes::StartChildWorkflowExecutionCommandAttributes(a) => {
+            crate::children::start_child(b, fx, a, md, completed_id)?;
+        }
+        command::Attributes::SignalExternalWorkflowExecutionCommandAttributes(a) => {
+            crate::children::signal_external(b, fx, a, md, completed_id)?;
+        }
+        command::Attributes::RequestCancelExternalWorkflowExecutionCommandAttributes(a) => {
+            crate::children::cancel_external(b, fx, a, md, completed_id)?;
+        }
+        command::Attributes::UpsertWorkflowSearchAttributesCommandAttributes(a) => {
+            crate::children::upsert_search_attributes(b, a, md, completed_id);
+        }
+        command::Attributes::ModifyWorkflowPropertiesCommandAttributes(a) => {
+            crate::children::modify_properties(b, a, md, completed_id);
         }
         _ => unreachable!("validate refuses other commands"),
     }

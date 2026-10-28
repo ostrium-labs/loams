@@ -10,7 +10,7 @@ import { desktopAgentdEndpoint } from '@loams/platform-electron';
 import { createMockAgentdApi } from '@loams/plugin-desktop-agentd';
 import { ProjectService, type Repo, RepoSchema } from '@loams/proto/agentd';
 import type { ReactNode } from 'react';
-import { vi } from 'vitest';
+import { vi } from 'vite-plus/test';
 import { type StudioAgentd, studioAgentd } from '../src/agentd.js';
 
 export function wrap(children: ReactNode) {

@@ -1,0 +1,1 @@
+SELECT toStartOfMinute(dt) AS minute, toStartOfHour(dt) AS hour, toStartOfDay(dt) AS day FROM t30 WHERE dt BETWEEN toDateTime(_CAST('2024-01-01 00:00:00', 'String')) AND toDateTime(_CAST('2024-12-31 00:00:00', 'String')) ORDER BY minute

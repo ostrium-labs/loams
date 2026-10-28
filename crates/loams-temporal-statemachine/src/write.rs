@@ -48,15 +48,34 @@ pub(crate) fn arrive(b: &mut Batch<'_>, fx: &mut Vec<Effect>, events: Vec<Pendin
 /// `started_event_id` from the `ActivityTaskStarted` written just before it.
 pub(crate) fn write(b: &mut Batch<'_>, events: Vec<Pending>) {
     let mut started: BTreeMap<i64, i64> = BTreeMap::new();
+    let mut child_started: BTreeMap<i64, i64> = BTreeMap::new();
     for (at, mut attributes) in events {
         link_started(&mut attributes, &started);
+        link_child_started(&mut attributes, &child_started);
         let scheduled = match &attributes {
             Attributes::ActivityTaskStartedEventAttributes(x) => Some(x.scheduled_event_id),
+            _ => None,
+        };
+        let initiated = match &attributes {
+            Attributes::ChildWorkflowExecutionStartedEventAttributes(x) => {
+                Some(x.initiated_event_id)
+            }
             _ => None,
         };
         let id = b.push_at(at, attributes);
         if let Some(s) = scheduled {
             started.insert(s, id);
+        }
+        if let Some(i) = initiated {
+            child_started.insert(i, id);
+            if let Some(c) = b
+                .state()
+                .children
+                .iter_mut()
+                .find(|c| c.initiated_event_id == i)
+            {
+                c.started_event_id = id;
+            }
         }
     }
 }
@@ -100,9 +119,41 @@ fn link_started(attributes: &mut Attributes, started: &BTreeMap<i64, i64>) {
     }
 }
 
-/// Schedules a workflow task (attempt 1) if the run is open and has none.
+/// A child's closing event written in the same batch as its started event
+/// gets that event's ID.
+fn link_child_started(attributes: &mut Attributes, started: &BTreeMap<i64, i64>) {
+    let (initiated, slot) = match attributes {
+        Attributes::ChildWorkflowExecutionCompletedEventAttributes(x) => {
+            (x.initiated_event_id, &mut x.started_event_id)
+        }
+        Attributes::ChildWorkflowExecutionFailedEventAttributes(x) => {
+            (x.initiated_event_id, &mut x.started_event_id)
+        }
+        Attributes::ChildWorkflowExecutionCanceledEventAttributes(x) => {
+            (x.initiated_event_id, &mut x.started_event_id)
+        }
+        Attributes::ChildWorkflowExecutionTimedOutEventAttributes(x) => {
+            (x.initiated_event_id, &mut x.started_event_id)
+        }
+        Attributes::ChildWorkflowExecutionTerminatedEventAttributes(x) => {
+            (x.initiated_event_id, &mut x.started_event_id)
+        }
+        _ => return,
+    };
+    if *slot <= 0
+        && let Some(id) = started.get(&initiated)
+    {
+        *slot = *id;
+    }
+}
+
+/// Schedules a workflow task (attempt 1) if the run is open and has none
+/// (and is not waiting out its first task's backoff).
 pub(crate) fn ensure_workflow_task(b: &mut Batch<'_>, fx: &mut Vec<Effect>) {
-    if b.state_ref().workflow_task.is_none() && loams_temporal_history::is_open(b.state_ref()) {
+    if b.state_ref().workflow_task.is_none()
+        && !b.state_ref().first_task_backoff
+        && loams_temporal_history::is_open(b.state_ref())
+    {
         schedule_workflow_task(b, fx, 1);
     }
 }
@@ -112,6 +163,7 @@ pub(crate) fn schedule_workflow_task(b: &mut Batch<'_>, fx: &mut Vec<Effect>, at
     let s = b.state_ref();
     let task_queue = s.task_queue.clone();
     let timeout = s.workflow_task_timeout;
+    b.state().first_task_backoff = false;
     let id = b.push(Attributes::WorkflowTaskScheduledEventAttributes(
         WorkflowTaskScheduledEventAttributes {
             task_queue: Some(TaskQueue {
@@ -146,13 +198,22 @@ pub(crate) fn close(
     event_id: i64,
     status: WorkflowExecutionStatus,
 ) {
+    let children = crate::children::close_policy_children(b);
+    if !children.is_empty() {
+        fx.push(Effect::ParentClosePolicy { children });
+    }
     let now = b.now_ms();
     let s = b.state();
+    s.children.clear();
+    s.external_signals.clear();
+    s.external_cancels.clear();
+    s.first_task_backoff = false;
     s.status = status as i32;
     s.completion_event_id = event_id;
     s.close_time = Some(ts(now));
     s.workflow_task = None;
     s.timers.clear();
     s.activities.clear();
+    loams_temporal_history::abort_updates(s);
     fx.push(Effect::RunClosed { status });
 }

@@ -1,6 +1,7 @@
 //! `prepare`: a ClickHouse statement's text to a DataFusion logical plan
 //! (plan HE1 Task 22): parameters bound, the lexical pre-pass, sqlparser's
-//! `ClickHouseDialect`, the guard, then `SqlToRel` over the House's context.
+//! `ClickHouseDialect`, the guard, name resolution ([`crate::scope`], Task
+//! 25), then `SqlToRel` over the House's context.
 
 use datafusion::common::DataFusionError;
 use datafusion::logical_expr::LogicalPlan;
@@ -26,6 +27,11 @@ pub struct Prepared {
     pub settings: Vec<(String, String)>,
     /// The statement's `FORMAT`, if any.
     pub format: Option<String>,
+    /// ClickHouse's output column names, when the plan's differ: ClickHouse
+    /// allows duplicate names (`SELECT a, a`), DataFusion does not, so the
+    /// plan names duplicates apart and the engine names the answer's columns
+    /// with these (plan HE1 Task 25).
+    pub names: Option<Vec<String>>,
 }
 
 /// A parsed and guarded statement, not yet planned.
@@ -94,11 +100,14 @@ pub fn prepare(
     database: &str,
 ) -> Result<Prepared, ChError> {
     let Guarded {
-        statement,
+        mut statement,
         resolution,
         settings,
         format,
     } = guard(sql, params)?;
+    // Name resolution (plan HE1 Task 25): aliases, scalar WITH, matchers.
+    let names = crate::scope::resolve(&mut statement, catalog, database)?;
+    crate::coerce::mark_conditions(&mut statement);
     let ctx = HouseContext::new(catalog, registry, database);
     let options = ParserOptions {
         enable_ident_normalization: false,
@@ -107,11 +116,13 @@ pub fn prepare(
     let plan = SqlToRel::new_with_options(&ctx, options)
         .sql_statement_to_plan(statement)
         .map_err(ch_error)?;
+    let plan = crate::untuple::expand(plan, registry).map_err(ch_error)?;
     Ok(Prepared {
         plan,
         resolution,
         settings,
         format,
+        names,
     })
 }
 
@@ -130,6 +141,16 @@ pub fn ch_error(e: DataFusionError) -> ChError {
             ChError::not_implemented(format!("{m} (the Loams House engine cannot plan this yet)"))
         }
         DataFusionError::NotImplemented(m) => ChError::not_implemented(m),
+        // Integer `%` by zero (plan HE1 Task 24): ClickHouse's `153`.
+        DataFusionError::ArrowError(e, _)
+            if matches!(*e, datafusion::arrow::error::ArrowError::DivideByZero) =>
+        {
+            ChError {
+                code: 153,
+                name: "ILLEGAL_DIVISION",
+                message: "Division by zero".into(),
+            }
+        }
         other => ChError::logical_error(other.to_string()),
     }
 }

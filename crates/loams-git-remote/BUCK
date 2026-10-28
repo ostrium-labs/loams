@@ -41,7 +41,7 @@ cargo_package(
         "//third-party/rust:bytes",
         "//third-party/rust:futures",
         "//third-party/rust:hex",
-        "//third-party/rust:sha2-0_11",
+        "//third-party/rust:sha2",
         "//third-party/rust:thiserror",
         "//third-party/rust:tokio",
         "//third-party/rust:ulid",

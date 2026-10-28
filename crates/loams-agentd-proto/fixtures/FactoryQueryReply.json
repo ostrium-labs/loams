@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "auth_failed",
+    "message": "GET /api/v1/repos/search failed with 401"
+  },
+  "value": null
+}

@@ -61,7 +61,7 @@ cargo_package(
     ],
     dev_deps = [
         "//third-party/rust:proptest",
-        "//third-party/rust:sha2-0_11",
+        "//third-party/rust:sha2",
         "//third-party/rust:tempfile",
     ],
     build_script = "build.rs",

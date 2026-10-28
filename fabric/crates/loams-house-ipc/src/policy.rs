@@ -139,6 +139,80 @@ pub fn on_the_lists(name: &str) -> bool {
         || ALLOWED_PREFIXES.iter().any(|p| name.starts_with(p))
 }
 
+/// chDB's query-level settings with their defaults (`system.settings` of chDB
+/// 26.9.2.1, TSV-escaped): the front's "a known setting at its default is
+/// accepted" rule (HE1 R9.11), and the Rust engine's table of every setting it
+/// may be sent (HE1 Task 37, D1805).
+pub const CHDB_SETTING_DEFAULTS: &str = include_str!("chdb_setting_defaults.tsv");
+
+/// TSV's escapes undone.
+fn unescape_tsv(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('t') => out.push('\t'),
+            Some('n') => out.push('\n'),
+            Some('r') => out.push('\r'),
+            Some('0') => out.push('\0'),
+            Some(other) => out.push(other),
+            None => out.push('\\'),
+        }
+    }
+    out
+}
+
+/// Every setting in [`CHDB_SETTING_DEFAULTS`], by name, with its default.
+pub fn chdb_defaults() -> &'static std::collections::HashMap<String, String> {
+    use std::collections::HashMap;
+    use std::sync::OnceLock;
+    static DEFAULTS: OnceLock<HashMap<String, String>> = OnceLock::new();
+    DEFAULTS.get_or_init(|| {
+        CHDB_SETTING_DEFAULTS
+            .lines()
+            .filter(|l| !l.starts_with('#') && !l.is_empty())
+            .filter_map(|l| l.split_once('\t'))
+            .map(|(n, d)| (unescape_tsv(n), unescape_tsv(d)))
+            .collect()
+    })
+}
+
+/// chDB's default for `name`, if it is one of its settings.
+pub fn chdb_default(name: &str) -> Option<String> {
+    chdb_defaults().get(name).cloned()
+}
+
+/// Whether `value` says the same as `default`, as ClickHouse would read a
+/// setting: the same text (`value`'s surrounding spaces and quotes aside), or the same boolean (`0`/`false`,
+/// `1`/`true`), or the same number.
+pub fn same_setting_value(value: &str, default: &str) -> bool {
+    let value = value.trim().trim_matches('\'');
+    if value == default {
+        return true;
+    }
+    let boolean = |v: &str| match v.to_ascii_lowercase().as_str() {
+        "0" | "false" => Some(false),
+        "1" | "true" => Some(true),
+        _ => None,
+    };
+    if let (Some(a), Some(b)) = (boolean(value), boolean(default)) {
+        return a == b;
+    }
+    matches!((value.parse::<f64>(), default.parse::<f64>()), (Ok(a), Ok(b)) if a == b)
+}
+
+/// Whether `value` is `name`'s default, as ClickHouse would read it (HE1
+/// R9.11). Clients send settings at their defaults (the query log, which
+/// records only changed settings, never shows them), and asking for the default
+/// changes nothing, so such a setting is accepted whatever list it is on.
+pub fn is_default(name: &str, value: &str) -> bool {
+    chdb_default(name).is_some_and(|default| same_setting_value(value, &default))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -164,5 +238,17 @@ mod tests {
         for name in OFF_ONLY_SETTINGS {
             assert!(CLIENT_SETTINGS.contains(name), "{name}");
         }
+    }
+
+    #[test]
+    fn defaults_read_as_clickhouse_reads_a_setting() {
+        assert!(chdb_default("format_custom_field_delimiter").is_some_and(|d| d.contains('\t')));
+        assert!(is_default("join_use_nulls", "false"));
+        assert!(is_default("join_use_nulls", "'0'"));
+        assert!(!is_default("join_use_nulls", "1"));
+        assert!(is_default("max_block_size", "65409.0"));
+        assert!(is_default("session_timezone", "''"));
+        assert!(!is_default("no_such_setting", "0"));
+        assert!(same_setting_value("true", "1"));
     }
 }

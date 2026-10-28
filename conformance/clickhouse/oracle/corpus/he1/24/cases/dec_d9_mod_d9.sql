@@ -1,0 +1,1 @@
+SELECT d9 % d9 FROM t24d ORDER BY id

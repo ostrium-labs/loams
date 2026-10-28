@@ -112,7 +112,7 @@ export function ApprovalCard({
       <ul className="lc-detail-lines">
         {approval.detailLines.map((line, i) => (
           // Server-rendered lines may repeat; the list is fixed per revision.
-          // biome-ignore lint/suspicious/noArrayIndexKey: see above
+          // oxlint-disable-next-line react/no-array-index-key -- see above
           <li key={i}>{line}</li>
         ))}
       </ul>

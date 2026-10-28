@@ -14,7 +14,7 @@ import {
 	WatchSessionsResponseSchema,
 	WatchThreadsResponseSchema,
 } from "@loams/proto/agentd";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { AgentdToken } from "../src/main/agentd/client";
 import { watchStudio } from "../src/main/agentd/studio-watch";
 import type {

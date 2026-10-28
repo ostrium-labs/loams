@@ -49,7 +49,7 @@ export function VirtualList<T>(p: VirtualListProps<T>) {
 
   // A new result set (a new search) starts at the top.
   const firstKey = items[0] ? p.getKey(items[0]) : '';
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reset only when the head changes
+  // oxlint-disable-next-line react/exhaustive-deps -- reset only when the head changes
   useEffect(() => {
     setActive(0);
     setScrollTop(0);
@@ -113,8 +113,8 @@ export function VirtualList<T>(p: VirtualListProps<T>) {
     const selected = key === p.selectedKey;
     rows.push(
       // Keyboard and focus live on the listbox (aria-activedescendant), not on each option.
-      // biome-ignore lint/a11y/useFocusableInteractive: focus stays on the listbox
-      // biome-ignore lint/a11y/useKeyWithClickEvents: the listbox handles the keys
+      // oxlint-disable-next-line jsx-a11y/interactive-supports-focus -- focus stays on the listbox
+      // oxlint-disable-next-line jsx-a11y/click-events-have-key-events -- the listbox handles the keys
       <div
         key={key}
         id={rowId(i)}

@@ -43,7 +43,7 @@ CONFLUENT_INTEGRATIONS=${INTEGRATIONS:-}
 CFG
   env LOAMS_BYOC_CONFIG="$tmp/config-$cloud.env" LOAMS_BYOC_STACK="$stack" \
     LOAMS_BYOC_IMDS_URL="$base/$cloud" LOAMS_BYOC_METADATA_URL="$base/$cloud" \
-    LOAMS_BYOC_SECRETS_URL="$base/$cloud-${SM:?}" "$@" "$script" "$cloud" >"$tmp/out-$cloud" 2>&1
+    LOAMS_BYOC_SECRETS_URL="$base/$cloud-${SM:?}" "$@" "$script" ${OPT:+"$OPT"} "$cloud" >"$tmp/out-$cloud" 2>&1
 }
 
 check_clean_output() {  # no planted value in what the script printed
@@ -92,6 +92,45 @@ if INTEGRATIONS="ok,Bad_Name" SM=sm run aws loams/t; then bad "aws: a bad integr
 if INTEGRATIONS="confluent" SM=sm run aws loams/t CONNECT_NAMESPACE=7; then
   [[ -s "$tmp/stack-aws/secrets/connect/7/confluent-confluent/password" ]] && ok "aws: CONNECT_NAMESPACE chooses the namespace directory" || bad "aws: namespace 7"
 else bad "aws: CONNECT_NAMESPACE=7 failed: $(cat "$tmp/out-aws")"; fi
+
+# --confluent-only (the 5-minute timer and `systemctl reload loams-byoc`): the
+# Confluent files only; .env is left alone, and the required secrets are not read.
+if INTEGRATIONS=confluent OPT=--confluent-only SM=sm run aws loams/t; then
+  d="$tmp/stack-aws/secrets/connect/0/confluent-confluent"
+  [[ "$(cat "$d/password")" == csecret-PLANTED-5 ]] && ok "confluent_only_refreshes_the_files" || bad "aws --confluent-only: files"
+  grep -q '^TS_AUTHKEY=$' "$tmp/stack-aws/.env" && grep -q '^LOAMS_SETUP_TOKEN=$' "$tmp/stack-aws/.env" \
+    && ok "confluent_only_leaves_env_alone" || bad "aws --confluent-only changed .env"
+  check_clean_output aws
+else bad "aws --confluent-only failed: $(cat "$tmp/out-aws")"; fi
+# even with a prefix that has no tailnet key: --confluent-only never reads it
+if INTEGRATIONS=confluent OPT=--confluent-only SM=sm run aws loams/other; then
+  grep -q 'loams/other/confluent-confluent-api-key is not in the secret store yet' "$tmp/out-aws" \
+    && ok "confluent_only_skips_required_secrets" || bad "aws --confluent-only: $(cat "$tmp/out-aws")"
+else bad "aws --confluent-only must not need the tailnet key: $(cat "$tmp/out-aws")"; fi
+# a changed key restarts the connect service; an unchanged one does not
+cat >"$tmp/compose" <<'SH'
+#!/usr/bin/env bash
+echo "$*" >>"${COMPOSE_LOG:?}"
+[[ "$1" == ps ]] && echo connect
+exit 0
+SH
+chmod +x "$tmp/compose"
+d="$tmp/stack-aws/secrets/connect/0/confluent-confluent"
+: >"$tmp/compose.log"
+INTEGRATIONS=confluent OPT=--confluent-only SM=sm run aws loams/t LOAMS_BYOC_COMPOSE="$tmp/compose" COMPOSE_LOG="$tmp/compose.log" || true
+: >"$tmp/compose.log"   # the run above may have restored files an earlier test removed
+INTEGRATIONS=confluent OPT=--confluent-only SM=sm run aws loams/t LOAMS_BYOC_COMPOSE="$tmp/compose" COMPOSE_LOG="$tmp/compose.log" || true
+! grep -q '^restart' "$tmp/compose.log" && ok "confluent_only_unchanged_keys_restart_nothing" || bad "restarted on unchanged keys: $(cat "$tmp/compose.log")"
+printf old-rotated >"$d/password"
+INTEGRATIONS=confluent OPT=--confluent-only SM=sm run aws loams/t LOAMS_BYOC_COMPOSE="$tmp/compose" COMPOSE_LOG="$tmp/compose.log" || true
+grep -qx 'restart connect' "$tmp/compose.log" && grep -q 'restarted the connect service' "$tmp/out-aws" && [[ "$(cat "$d/password")" == csecret-PLANTED-5 ]] \
+  && ok "confluent_only_changed_key_restarts_connect" || bad "no restart after a key change: $(cat "$tmp/compose.log") $(cat "$tmp/out-aws")"
+check_clean_output aws
+
+# no integration: a no-op that reads nothing (no metadata service needed)
+if INTEGRATIONS="" OPT=--confluent-only SM=sm run aws loams/t LOAMS_BYOC_IMDS_URL=http://127.0.0.1:9; then
+  ok "confluent_only_without_integrations_is_a_no_op"
+else bad "aws --confluent-only without integrations: $(cat "$tmp/out-aws")"; fi
 
 # a missing required secret names it and fails
 if SM=sm run aws loams/other; then bad "aws: a missing secret should fail"; else
