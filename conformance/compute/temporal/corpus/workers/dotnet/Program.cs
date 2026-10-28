@@ -117,7 +117,7 @@ namespace Loams.Corpus
                     {
                         continue;
                     }
-                    var o = await DriveAsync(client, name, Prefix + name);
+                    var o = await DriveAsync(client, ns, name, Prefix + name);
                     Console.WriteLine($"corpus: {name}: {o.Result ?? string.Empty}");
                     observations.Add(o);
                 }
@@ -193,12 +193,19 @@ namespace Loams.Corpus
 
         /// <summary>Waits until the run's first workflow task completed, so a
         /// signal, query, cancel or update lands on a running workflow.</summary>
-        private static async Task WaitStartedAsync(WorkflowHandle h)
+        private static async Task WaitStartedAsync(ITemporalClient client, string ns, string id)
         {
+            // The raw DescribeWorkflowExecution: the SDK's description keeps
+            // the pending workflow task internal (RawDescription) at 1.20.0.
+            var req = new DescribeWorkflowExecutionRequest
+            {
+                Namespace = ns,
+                Execution = new Temporalio.Api.Common.V1.WorkflowExecution { WorkflowId = id },
+            };
             while (true)
             {
-                var d = await h.DescribeAsync();
-                if (d.HistoryLength >= 4 && d.RawDescription.PendingWorkflowTask == null)
+                var d = await client.WorkflowService.DescribeWorkflowExecutionAsync(req);
+                if (d.WorkflowExecutionInfo?.HistoryLength >= 4 && d.PendingWorkflowTask == null)
                 {
                     return;
                 }
@@ -212,7 +219,7 @@ namespace Loams.Corpus
             o.Result = result is { } r ? r.GetRawText() : "null";
         }
 
-        private static async Task<Observation> DriveAsync(ITemporalClient client, string name, string id)
+        private static async Task<Observation> DriveAsync(ITemporalClient client, string ns, string name, string id)
         {
             var o = new Observation(name, id);
             WorkflowOptions Options() => new(id, Queue);
@@ -228,7 +235,7 @@ namespace Loams.Corpus
                 case "signal_then_complete":
                 {
                     var h = await Start();
-                    await WaitStartedAsync(h);
+                    await WaitStartedAsync(client, ns, id);
                     await h.SignalAsync("go", new object?[] { "s" });
                     await SettleAsync(o, h);
                     return o;
@@ -245,7 +252,7 @@ namespace Loams.Corpus
                 case "query_while_running":
                 {
                     var h = await Start();
-                    await WaitStartedAsync(h);
+                    await WaitStartedAsync(client, ns, id);
                     var state = await h.QueryAsync<string>("state", Array.Empty<object?>());
                     if (state != "waiting")
                     {
@@ -261,7 +268,7 @@ namespace Loams.Corpus
                 case "terminated":
                 {
                     var h = await Start();
-                    await WaitStartedAsync(h);
+                    await WaitStartedAsync(client, ns, id);
                     if (name == "cancel_requested")
                     {
                         await h.CancelAsync();
@@ -359,7 +366,7 @@ namespace Loams.Corpus
                 case "update_rejected":
                 {
                     var h = await Start();
-                    await WaitStartedAsync(h);
+                    await WaitStartedAsync(client, ns, id);
                     var by = name == "update_rejected" ? -1 : 2;
                     try
                     {
