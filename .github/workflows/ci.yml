@@ -491,8 +491,11 @@ jobs:
       # build free of the git-pinned tikv-client.
       # The product features (git, buildcache, registry, sqldb, postgres) are linted here too:
       # dev once stopped building with `--features git` and no fast-tier job noticed (GT1 T18.4).
-      - name: clippy (loams with the tikv, graph, product and optional listener features)
-        run: cargo clippy -p loams --all-targets --features tikv,live-tikv,durable-tikv,stream-grpc,pgwire,mysql-wire,graph,git,buildcache,registry,sqldb,postgres --locked -- -D warnings
+      - name: clippy (loams with the tikv, graph, product, spark and optional listener features)
+        run: cargo clippy -p loams --all-targets --features tikv,live-tikv,durable-tikv,stream-grpc,pgwire,mysql-wire,graph,git,buildcache,registry,sqldb,postgres,spark --locked -- -D warnings
+      # loams-spark's Kubernetes runner (design 81 SP-b) is behind its own feature.
+      - name: clippy (loams-spark kubernetes runner)
+        run: cargo clippy -p loams-spark --features kubernetes --all-targets --locked -- -D warnings
       # loams-gateway's Temporal API module (design 74, plan DX1 Task 9) is
       # behind its own feature.
       - name: clippy (loams-gateway temporal module)
@@ -500,6 +503,12 @@ jobs:
       # Loams Meter's exporters are each behind a feature (ME1 Tasks 24-26).
       - name: clippy (loams-meter-export, every exporter)
         run: cargo clippy -p loams-meter-export --all-targets --all-features --locked -- -D warnings
+      # The loams-gateway image's feature set (deploy/release/Containerfile.loams-gateway).
+      - name: clippy (loams-gateway with the image's features)
+        run: cargo clippy -p loams-gateway --features spark,temporal --all-targets --locked -- -D warnings
+      # Its Redis module (design 77, plan KV2 Task 2), with the TiKV store.
+      - name: clippy (loams-gateway resp module)
+        run: cargo clippy -p loams-gateway -p loams-resp --features loams-gateway/resp-tikv --all-targets --locked -- -D warnings
       # The release images build `loams` with these feature sets (deploy/release/Containerfile.*);
       # `postgres,tikv` turns on loams-kv's TiKV store without loams-live's `tikv`, a combination
       # nothing else here builds (v0.1.0-preview.2's loams-pg-control image broke on it).

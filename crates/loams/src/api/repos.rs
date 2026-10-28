@@ -600,12 +600,15 @@ pub(crate) mod served {
     }
 
     impl ReposServed {
-        /// Refuses a caller below `need` (GT1 Task 16): reads and writes need the org role
-        /// `member`, administration `admin`; the operator always passes.
+        /// Refuses a caller below `need` in namespace `namespace` (GT1 Task 16; design 76 §9,
+        /// plan IA1 ruling IA2.R4): reads and writes need the org role `member` and
+        /// `can_read`/`can_write` on `environment:<namespace>`, administration `admin` and
+        /// `can_admin`; the operator always passes.
         pub(crate) async fn require(
             &self,
             ctx: &RequestContext,
             need: GitAccess,
+            namespace: &str,
         ) -> Result<(), ConnectError> {
             let principal = ctx
                 .extensions()
@@ -618,9 +621,14 @@ pub(crate) mod served {
                         &[],
                     )
                 })?;
-            crate::api::git_auth::authorize_caller(&self.principals, principal, need)
-                .await
-                .map_err(crate::api::connect_admin::denied)
+            crate::api::git_auth::authorize_caller(
+                &self.principals,
+                principal,
+                need,
+                Some(namespace),
+            )
+            .await
+            .map_err(crate::api::connect_admin::denied)
         }
 
         /// The namespace named `name`; with `create`, made when it does not exist.
@@ -715,8 +723,8 @@ pub(crate) mod served {
             ctx: RequestContext,
             request: ServiceRequest<'_, pb::CreateRepoRequest>,
         ) -> ServiceResult<pb::CreateRepoResponse> {
-            self.require(&ctx, GitAccess::Admin).await?;
             let req = request.to_owned_message();
+            self.require(&ctx, GitAccess::Admin, &req.namespace).await?;
             let name = repo_name("name", &req.name)?;
             let object_format = match req.object_format {
                 EnumValue::Known(pb::ObjectFormat::OBJECT_FORMAT_UNSPECIFIED)
@@ -778,8 +786,8 @@ pub(crate) mod served {
             ctx: RequestContext,
             request: ServiceRequest<'_, pb::GetRepoRequest>,
         ) -> ServiceResult<pb::GetRepoResponse> {
-            self.require(&ctx, GitAccess::Read).await?;
             let req = request.to_owned_message();
+            self.require(&ctx, GitAccess::Read, &req.namespace).await?;
             let name = repo_name("name", &req.name)?;
             let ns = self.namespace(&req.namespace, false).await?;
             let record = self
@@ -811,8 +819,8 @@ pub(crate) mod served {
             ctx: RequestContext,
             request: ServiceRequest<'_, pb::ListReposRequest>,
         ) -> ServiceResult<pb::ListReposResponse> {
-            self.require(&ctx, GitAccess::Read).await?;
             let req = request.to_owned_message();
+            self.require(&ctx, GitAccess::Read, &req.namespace).await?;
             let limit = page_size(req.page_size, REPOS_PAGE)?;
             let after = match req.page_token.as_str() {
                 "" => None,
@@ -851,8 +859,8 @@ pub(crate) mod served {
             ctx: RequestContext,
             request: ServiceRequest<'_, pb::ForkRepoRequest>,
         ) -> ServiceResult<pb::ForkRepoResponse> {
-            self.require(&ctx, GitAccess::Admin).await?;
             let req = request.to_owned_message();
+            self.require(&ctx, GitAccess::Admin, &req.namespace).await?;
             let source = repo_name("source", &req.source)?;
             let name = repo_name("name", &req.name)?;
             let key = idem_key(&req.idempotency_key)?;
@@ -905,8 +913,8 @@ pub(crate) mod served {
             ctx: RequestContext,
             request: ServiceRequest<'_, pb::DeleteRepoRequest>,
         ) -> ServiceResult<pb::DeleteRepoResponse> {
-            self.require(&ctx, GitAccess::Admin).await?;
             let req = request.to_owned_message();
+            self.require(&ctx, GitAccess::Admin, &req.namespace).await?;
             let name = repo_name("name", &req.name)?;
             idem_key(&req.idempotency_key)?;
             let ns = self.namespace(&req.namespace, false).await?;
@@ -945,8 +953,8 @@ pub(crate) mod served {
             ctx: RequestContext,
             request: ServiceRequest<'_, pb::UpdateRepoConfigRequest>,
         ) -> ServiceResult<pb::UpdateRepoConfigResponse> {
-            self.require(&ctx, GitAccess::Admin).await?;
             let req = request.to_owned_message();
+            self.require(&ctx, GitAccess::Admin, &req.namespace).await?;
             let name = repo_name("name", &req.name)?;
             let paths: Vec<String> = req
                 .update_mask
@@ -1053,8 +1061,8 @@ pub(crate) mod served {
             ctx: RequestContext,
             request: ServiceRequest<'_, pb::ListRefsRequest>,
         ) -> ServiceResult<pb::ListRefsResponse> {
-            self.require(&ctx, GitAccess::Read).await?;
             let req = request.to_owned_message();
+            self.require(&ctx, GitAccess::Read, &req.namespace).await?;
             let name = repo_name("name", &req.name)?;
             let limit = page_size(req.page_size, REFS_PAGE)?;
             let ns = self.namespace(&req.namespace, false).await?;
@@ -1117,8 +1125,8 @@ pub(crate) mod served {
             ctx: RequestContext,
             request: ServiceRequest<'_, pb::CompactRepoRequest>,
         ) -> ServiceResult<pb::CompactRepoResponse> {
-            self.require(&ctx, GitAccess::Admin).await?;
             let req = request.to_owned_message();
+            self.require(&ctx, GitAccess::Admin, &req.namespace).await?;
             let name = repo_name("name", &req.name)?;
             let ns = self.namespace(&req.namespace, false).await?;
             self.active(ns, &name).await?;
@@ -1132,8 +1140,8 @@ pub(crate) mod served {
             ctx: RequestContext,
             request: ServiceRequest<'_, pb::WatchRepoRequest>,
         ) -> ServiceResult<ServiceStream<pb::WatchRepoResponse>> {
-            self.require(&ctx, GitAccess::Read).await?;
             let req = request.to_owned_message();
+            self.require(&ctx, GitAccess::Read, &req.namespace).await?;
             let name = repo_name("name", &req.name)?;
             let ns = self.namespace(&req.namespace, false).await?;
             let record = self.active(ns, &name).await?;

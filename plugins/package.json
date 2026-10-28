@@ -28,7 +28,7 @@
     "@connectrpc/connect-web": "^2.2.0",
     "@types/node": "^22.0.0",
     "@vitest/coverage-v8": "5.0.1",
-    "msw": "^2.15.0",
+    "msw": "3.0.3",
     "tsx": "^4.19.0",
     "typescript": "^5.9.0",
     "vite-plus": "catalog:",

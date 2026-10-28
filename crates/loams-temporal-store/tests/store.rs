@@ -1461,3 +1461,53 @@ async fn pg_upgrade_from_v1_keeps_history() {
         b.done().await;
     }
 }
+
+#[tokio::test]
+async fn update_namespace_replaces_mutable_fields() {
+    for b in backends("nsupdate").await {
+        let s = b.store();
+        let orig = namespace("ns-up", 72 * 3600);
+        s.create_namespace(orig.clone()).await.unwrap();
+        // The name and Loams namespace in the request are ignored.
+        let mut changed = orig.clone();
+        changed.retention_secs = 3600;
+        changed.state = 2;
+        changed.config = json!({"description": "updated", "limits": {"blob": 1024}});
+        changed.name = "renamed".into();
+        changed.loams_namespace_id = "L-other".into();
+        s.update_namespace(changed.clone()).await.unwrap();
+        let got = s.namespace_by_id("ns-up").await.unwrap().unwrap();
+        assert_eq!(got.retention_secs, 3600, "{}", b.name());
+        assert_eq!(got.state, 2);
+        assert_eq!(got.config, changed.config);
+        assert_eq!(got.name, orig.name);
+        assert_eq!(got.loams_namespace_id, orig.loams_namespace_id);
+        assert_eq!(
+            s.namespace_by_name(&orig.loams_namespace_id, &orig.name)
+                .await
+                .unwrap(),
+            Some(got)
+        );
+        assert_eq!(
+            s.update_namespace(namespace("nope", 1)).await,
+            Err(StoreError::NotFound)
+        );
+        // A shorter retention takes effect for runs already closed.
+        let k = RunKey::new("ns-up", "wf-r", "run-1");
+        started(&*s, start(&k, "req", 1, 0)).await;
+        close(&*s, &k, 1, 2).await;
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert_eq!(
+            s.purge_expired(&PurgeLimits::default()).await.unwrap().runs,
+            0
+        );
+        let mut zero = orig.clone();
+        zero.retention_secs = 0;
+        s.update_namespace(zero).await.unwrap();
+        assert_eq!(
+            s.purge_expired(&PurgeLimits::default()).await.unwrap().runs,
+            1
+        );
+        b.done().await;
+    }
+}

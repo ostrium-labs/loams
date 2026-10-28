@@ -15,11 +15,11 @@
 #   leaving the shared bucket's lifecycle rules alone (D1952, ENG81 R6).
 # - The image is pinned by digest: RisingWave v3.1.0, released 2026-09-21
 #   (D1958). No licence key; telemetry is off (D1959, R4).
-# - No host port. Clients use the frontend on the compose network
-#   (`risingwave:4566`, database `dev`), or `engine-gateway` on 127.0.0.1
-#   once the gateway's `risingwave` module lands (R7, R8). The root user has
-#   no password until loams-risingwave's bootstrap sets one, so keep the
-#   compose network private.
+# - No host port of its own. Clients use `engine-gateway` on
+#   127.0.0.1:4566 (compose.lake.yaml, R7, R8) with ENGINE_GATEWAY_KEY as
+#   the password, or the frontend on the compose network
+#   (`risingwave:4566`, database `dev`). `risingwave-init` sets root's
+#   password (RISINGWAVE_ROOT_PASSWORD) and creates the gateway's user.
 # - Every setting goes through RisingWave's RW_* environment variables, as
 #   crates/loams-risingwave renders them; credentials are never in argv.
 #
@@ -136,3 +136,31 @@ services:
         condition: service_healthy
       risingwave-compute:
         condition: service_started
+
+  # One-shot: sets root's password and creates `loams_gateway`, the user
+  # engine-gateway logs in as (engines/engines-init.sh risingwave-users).
+  risingwave-init:
+    profiles: [risingwave]
+    image: ${PSQL_IMAGE:-docker.io/library/postgres:17.10@sha256:7958605b474b3d264a969cb3a123d6aa00ad1e1fe9da8a69984dabb704d93317}
+    restart: "no"
+    entrypoint: ["/bin/sh", "/engines/engines-init.sh", "risingwave-users"]
+    environment:
+      RISINGWAVE_ROOT_PASSWORD: ${RISINGWAVE_ROOT_PASSWORD:-risingwave}
+      RISINGWAVE_GATEWAY_PASSWORD: ${RISINGWAVE_GATEWAY_PASSWORD:-gateway}
+    volumes:
+      - ./engines/engines-init.sh:/engines/engines-init.sh:ro
+    depends_on:
+      risingwave-frontend:
+        condition: service_healthy
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+
+  # engine-gateway (compose.lake.yaml) starts once the gateway's RisingWave
+  # user exists. Declared here, so compose.lake.yaml stays valid without
+  # this file (this file, as before, needs compose.lake.yaml).
+  engine-gateway:
+    depends_on:
+      risingwave-init:
+        condition: service_completed_successfully
+        required: false

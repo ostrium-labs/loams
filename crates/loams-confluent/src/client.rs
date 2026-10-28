@@ -118,6 +118,19 @@ impl Client {
         self
     }
 
+    /// Another API with another key (a cluster's REST endpoint with a Kafka
+    /// key), sharing this client's HTTP settings and retries.
+    #[must_use]
+    pub fn for_endpoint(&self, base: &str, key: CloudKey) -> Self {
+        Self {
+            base: base.trim_end_matches('/').to_string(),
+            http: self.http.clone(),
+            key,
+            tries: self.tries,
+            backoff: self.backoff,
+        }
+    }
+
     #[must_use]
     pub fn key_id(&self) -> &str {
         self.key.id()

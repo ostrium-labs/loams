@@ -3,7 +3,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { branchesFile, NeonClient } from "../src/main/sql/neon";
 import { createPgBackend, pgTools } from "../src/main/sql/pg";
 import { createWesqlBackend } from "../src/main/sql/wesql";
