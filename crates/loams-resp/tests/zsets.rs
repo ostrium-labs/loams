@@ -24,7 +24,7 @@ fn int(n: i64) -> Value {
 }
 
 fn arr(items: &[&str]) -> Value {
-    Value::Array(items.iter().map(|s| bulk(s)).collect())
+    Value::Array(items.iter().map(|s| bulk(*s)).collect())
 }
 
 #[tokio::test]
