@@ -7,7 +7,8 @@
 #   scripts/byoc/confluent-ci.sh up     [--dry-run]  apply examples/confluent (two phases), mint the keys
 #   scripts/byoc/confluent-ci.sh smoke               tests/byoc/confluent_smoke.sh against this run's cluster
 #   scripts/byoc/confluent-ci.sh down   [--dry-run]  destroy, delete the run's keys, check nothing is left
-#   scripts/byoc/confluent-ci.sh reap   [--dry-run]  delete loams-ci-* clusters and keys older than 3 hours;
+#   scripts/byoc/confluent-ci.sh reap   [--dry-run]  delete this script's own clusters (loams-ci-<run id>) and keys
+#                                                    (loams-ci-<run id>-admin|data) older than 3 hours;
 #                                                    report (never delete) anything else older than a day
 #
 # Environment:
@@ -33,6 +34,7 @@ repo="$(cd "$here/../.." && pwd)"
 api="${CONFLUENT_API_URL:-https://api.confluent.cloud}"
 region="${AWS_REGION:-us-east-1}"
 run="${GITHUB_RUN_ID:-local}"
+[[ "$run" =~ ^([0-9]+|local)$ ]] || { echo "confluent-ci.sh: GITHUB_RUN_ID must be a number" >&2; exit 2; }
 name="loams-ci-$run"
 env_id="${CONFLUENT_CI_ENVIRONMENT:-}"
 work="${CONFLUENT_CI_WORK:-${RUNNER_TEMP:-$repo/.confluent-ci}/confluent-ci-$run}"
@@ -47,6 +49,10 @@ protected_clusters=" lkc-120zwvj "
 # 2026-10-27). Any other CONFLUENT_CI_ENVIRONMENT is refused, except with
 # CONFLUENT_CI_FIXTURES, where no API call is made at all.
 ci_env="env-3kqygo"
+# What this script names, and so the only names the reaper deletes: other work in
+# env-3kqygo (the CFB benchmark, hand-made clusters) is reported, never deleted.
+run_cluster_re='^loams-ci-([0-9]+|local)$'
+run_key_re='^loams-ci-([0-9]+|local)-(admin|data)$'
 
 cmd="${1:-}"; shift || true
 dry=0
@@ -112,13 +118,13 @@ reap() {
     created="$(jq -r '.metadata.created_at // ""' <<<"$item")"; age=$((now - $(iso_to_epoch "$created")))
     [[ "$id" =~ ^lkc-[a-z0-9]+$ ]] && env_clusters+="$id "
     if [[ "$protected_clusters" == *" $id "* ]]; then echo "keep $id ($dname): protected"; continue; fi
-    if [[ "$dname" == loams-ci-* ]]; then
+    if [[ "$dname" =~ $run_cluster_re ]]; then
       if ((age > ttl_seconds)); then
         say "expired cluster $id $dname (age $((age / 60)) min)"
         act "cluster $id $dname" "/cmk/v2/clusters/$id?environment=$env_id" || failed=1; n=$((n + 1))
       else echo "keep $id $dname (age $((age / 60)) min, TTL $((ttl_seconds / 60)) min)"; fi
     elif ((age > report_seconds)); then
-      echo "REPORT: cluster $id \"$dname\" in $env_id is older than a day and not named loams-ci-* (not deleted)"
+      echo "REPORT: cluster $id \"$dname\" in $env_id is older than a day and not a nightly run's (not deleted)"
     fi
   done < <(list_all clusters "/cmk/v2/clusters?environment=$env_id&page_size=100")
   while IFS= read -r item; do
@@ -129,10 +135,11 @@ reap() {
     if [[ "$protected_clusters" == *" $res "* ]]; then echo "keep key $id: on a protected cluster"; continue; fi
     # API keys are listed for the whole organisation: only a key on a cluster of
     # this environment is ours to delete.
-    if [[ "$dname" == loams-ci-* && "$env_clusters" != *" $res "* ]]; then
+    [[ "$dname" =~ $run_key_re ]] || continue
+    if [[ "$env_clusters" != *" $res "* ]]; then
       echo "keep key $id ($dname): its resource ${res:-?} is not a cluster in $env_id"; continue
     fi
-    if [[ "$dname" == loams-ci-* ]] && ((age > ttl_seconds)); then
+    if ((age > ttl_seconds)); then
       say "expired API key $id $dname"
       act "API key $id $dname" "/iam/v2/api-keys/$id" || failed=1; n=$((n + 1))
     fi

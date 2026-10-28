@@ -19,8 +19,10 @@ loams-temporal-history = { path = "../loams-temporal-history" }
 loams-temporal-matching = { path = "../loams-temporal-matching" }
 loams-temporal-proto = { path = "../loams-temporal-proto" }
 loams-temporal-resonate = { path = "../loams-temporal-resonate" }
+loams-temporal-schedule = { path = "../loams-temporal-schedule" }
 loams-temporal-statemachine = { path = "../loams-temporal-statemachine" }
 loams-temporal-store = { path = "../loams-temporal-store" }
+loams-temporal-visibility = { path = "../loams-temporal-visibility" }
 prost.workspace = true
 prost-types.workspace = true
 serde.workspace = true

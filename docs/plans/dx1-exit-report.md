@@ -155,6 +155,13 @@ after a lost poll connection (X1.R19); the loopback-only path to Resonate (D111)
 `resonate-client`, report `DelaySupport::Native`, and run the `profile_*` tests and the SDK legs on
 the real server before and after the bump.
 
+**Update, 2026-10-28 (D2040, D2043; X1.R22, X1.R23):** the FW3 bump has landed in two steps. #1292
+moved the requests onto `resonate-client`. The follow-up moved the poll subscription onto the
+client's new poll consumer (fork #28), deleted `wire_interim`, and moved every Resonate crate,
+`loams-durable` included, to the fork's `53d38ab3` together (question 3 below, decided by the
+coordinator). `DelaySupport::Native` stays opt-in (D2042). The `profile_*` tests and the SDK legs
+have not yet been rerun on the real server after the bump.
+
 ## 6. Go or no-go for DX2
 
 **Go, with two conditions.** DX2's work should start with:

@@ -32,6 +32,6 @@
     "@loams-plugins/plugin-zulip-adapter": "workspace:*",
     "@loams-core/types": "workspace:*",
     "cordis": "^4.0.0-rc.10",
-    "msw": "^2.15.0"
+    "msw": "3.0.3"
   }
 }

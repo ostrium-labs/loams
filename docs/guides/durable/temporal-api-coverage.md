@@ -4,7 +4,7 @@
 
 Every RPC of `temporalio/api` v1.63.5 (vendored in `crates/loams-temporal-proto`) and whether the Loams Temporal gateway (`crates/loams-temporal-frontend`) answers it. Everything else answers `UNIMPLEMENTED` with a link to the compatibility matrix. Status is preview: "implemented" means the method is built and has unit tests (CI runs them); it does not mean every SDK has run it end to end.
 
-WorkflowService: 39 of 123 implemented. OperatorService: none yet (the gateway does not serve it).
+WorkflowService: 56 of 123 implemented. OperatorService: none yet (the gateway does not serve it).
 
 ## WorkflowService
 
@@ -37,13 +37,13 @@ WorkflowService: 39 of 123 implemented. OperatorService: none yet (the gateway d
 | `ResetWorkflowExecution` | implemented (TMP-api) | to a workflow task boundary; signals reapplied, updates not yet |
 | `TerminateWorkflowExecution` | implemented (DX1) | fails a started workflow task first (TMP-api B, D2084) |
 | `DeleteWorkflowExecution` | not planned yet | needs the store's delete path (lane TMP-store) |
-| `ListOpenWorkflowExecutions` | lane TMP-sched (schedules and visibility) |  |
-| `ListClosedWorkflowExecutions` | lane TMP-sched (schedules and visibility) |  |
-| `ListWorkflowExecutions` | lane TMP-sched (schedules and visibility) |  |
+| `ListOpenWorkflowExecutions` | implemented (TMP-api) | keyset pages from Store::list_runs; workflow ID or type filter, start window |
+| `ListClosedWorkflowExecutions` | implemented (TMP-api) | keyset pages from Store::list_runs; workflow ID, type or status filter, start window |
+| `ListWorkflowExecutions` | implemented (TMP-sched) |  |
 | `ListArchivedWorkflowExecutions` | not planned yet | no archival |
-| `ScanWorkflowExecutions` | lane TMP-sched (schedules and visibility) |  |
-| `CountWorkflowExecutions` | lane TMP-sched (schedules and visibility) |  |
-| `GetSearchAttributes` | lane TMP-sched (schedules and visibility) |  |
+| `ScanWorkflowExecutions` | implemented (TMP-sched) |  |
+| `CountWorkflowExecutions` | implemented (TMP-sched) |  |
+| `GetSearchAttributes` | implemented (TMP-sched) |  |
 | `RespondQueryTaskCompleted` | implemented (DX1) |  |
 | `ResetStickyTaskQueue` | implemented (DX1) | no-op: no sticky queues |
 | `ShutdownWorker` | implemented (TMP-api) | no-op: no sticky queues |
@@ -53,13 +53,13 @@ WorkflowService: 39 of 123 implemented. OperatorService: none yet (the gateway d
 | `GetClusterInfo` | implemented (TMP-api) |  |
 | `GetSystemInfo` | implemented (DX1) | advertises only what is built |
 | `ListTaskQueuePartitions` | implemented (TMP-api) | one partition per queue (X1.R8) |
-| `CreateSchedule` | lane TMP-sched (schedules and visibility) |  |
-| `DescribeSchedule` | lane TMP-sched (schedules and visibility) |  |
-| `UpdateSchedule` | lane TMP-sched (schedules and visibility) |  |
-| `PatchSchedule` | lane TMP-sched (schedules and visibility) |  |
-| `ListScheduleMatchingTimes` | lane TMP-sched (schedules and visibility) |  |
-| `DeleteSchedule` | lane TMP-sched (schedules and visibility) |  |
-| `ListSchedules` | lane TMP-sched (schedules and visibility) |  |
+| `CreateSchedule` | implemented (TMP-sched) |  |
+| `DescribeSchedule` | implemented (TMP-sched) |  |
+| `UpdateSchedule` | implemented (TMP-sched) |  |
+| `PatchSchedule` | implemented (TMP-sched) |  |
+| `ListScheduleMatchingTimes` | implemented (TMP-sched) |  |
+| `DeleteSchedule` | implemented (TMP-sched) |  |
+| `ListSchedules` | implemented (TMP-sched) |  |
 | `CountSchedules` | lane TMP-sched (schedules and visibility) |  |
 | `UpdateWorkerBuildIdCompatibility` | not planned yet | no routing by build ID yet |
 | `GetWorkerBuildIdCompatibility` | implemented (TMP-api) | no version sets: routing is by task queue only |
@@ -86,10 +86,10 @@ WorkflowService: 39 of 123 implemented. OperatorService: none yet (the gateway d
 | `SetWorkerDeploymentManager` | not planned yet | worker deployments |
 | `UpdateWorkflowExecution` | implemented (TMP-api) | durable admission; ordinary (not speculative) workflow task |
 | `PollWorkflowExecutionUpdate` | implemented (TMP-api) |  |
-| `StartBatchOperation` | planned: TMP-api F | terminate, cancel, signal over a list of executions |
-| `StopBatchOperation` | planned: TMP-api F |  |
-| `DescribeBatchOperation` | planned: TMP-api F |  |
-| `ListBatchOperations` | planned: TMP-api F |  |
+| `StartBatchOperation` | implemented (TMP-api) | visibility query or listed executions; terminate, cancel, signal |
+| `StopBatchOperation` | implemented (TMP-api) |  |
+| `DescribeBatchOperation` | implemented (TMP-api) | jobs since this gateway started |
+| `ListBatchOperations` | implemented (TMP-api) | jobs since this gateway started; one page |
 | `PollNexusTaskQueue` | not planned yet | Nexus is out of scope (design 74 §2.2) |
 | `RespondNexusTaskCompleted` | not planned yet | Nexus |
 | `RespondNexusTaskFailed` | not planned yet | Nexus |

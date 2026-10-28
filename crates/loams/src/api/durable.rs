@@ -17,8 +17,12 @@
 //! caller, and then
 //!
 //! - the operator (sign-in off, a key from `LOAMS_API_KEYS_FILE`, any API
-//!   key before first-run setup) and any member of the org (`member` and up)
-//!   may call it;
+//!   key before first-run setup) may call it;
+//! - anyone else needs both the org role `member` and, through
+//!   `loams-authz`, `can_run_durable` on `org:<id>` (model v1: any member and
+//!   the org's service accounts, never an agent; design 76 §9, plan IA1
+//!   ruling T4.R4). The model only narrows what the role gives: a key acting
+//!   as a person is checked with that person's live membership;
 //! - a credential bound to one environment may not (it reaches one
 //!   namespace, and this is no namespace's), nor may anyone outside the org.
 //!
@@ -43,6 +47,7 @@ use serde_json::json;
 
 use super::AppState;
 use crate::auth::authorizer::Denied;
+use crate::auth::authz::{self, Standing};
 use crate::auth::directory::Role;
 use crate::auth::{Principal, PrincipalKind, Principals};
 
@@ -93,23 +98,47 @@ async fn allowed(principals: &Principals, principal: Option<&Principal>) -> Resu
     if principal.kind == PrincipalKind::DevLoopback {
         return Ok(());
     }
+    let unavailable = |err: &dyn std::fmt::Display| {
+        tracing::warn!(error = %err, "authorizing a durable call failed");
+        refusal(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "unavailable",
+            "authorization could not be answered; retry",
+        )
+    };
     match principals
         .authorizer
         .authorize(principal, Role::Member)
         .await
     {
-        Ok(_) => Ok(()),
+        Ok(_) => {}
         // Before first-run setup the only keys are the operator's own.
-        Err(Denied::SetupRequired) if principal.kind == PrincipalKind::ApiKey => Ok(()),
-        Err(Denied::SetupRequired | Denied::RoleRequired { .. }) => Err(denied()),
-        Err(Denied::Unavailable(err)) => {
-            tracing::warn!(error = %err, "reading the principal store for a durable call failed");
-            Err(refusal(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "unavailable",
-                "the principal store could not be read; retry",
-            ))
-        }
+        Err(Denied::SetupRequired) if principal.kind == PrincipalKind::ApiKey => return Ok(()),
+        Err(Denied::SetupRequired | Denied::RoleRequired { .. }) => return Err(denied()),
+        Err(Denied::Unavailable(err)) => return Err(unavailable(&err)),
+    }
+    let subject = match authz::standing(principals, principal).await {
+        Ok(Standing::Operator) => return Ok(()),
+        Ok(Standing::Outside) => return Err(denied()),
+        Ok(Standing::Subject(subject)) => subject,
+        Err(err) => return Err(unavailable(&format!("{err:?}"))),
+    };
+    let org = match principals.directory.read().await {
+        Ok(doc) => match doc.org.as_ref() {
+            Some(org) => org.id.clone(),
+            None => return Err(denied()),
+        },
+        Err(err) => return Err(unavailable(&err.0)),
+    };
+    let check = loams_authz::CheckRequest::new(
+        subject,
+        "can_run_durable",
+        loams_authz::ObjectRef::new("org", org),
+    );
+    match principals.authz.check(check).await {
+        Ok(decision) if decision.allowed => Ok(()),
+        Ok(_) => Err(denied()),
+        Err(err) => Err(unavailable(&err)),
     }
 }
 
@@ -207,6 +236,41 @@ mod tests {
         }
     }
 
+    /// A key that acts as `gone`, made when they were an owner, left behind by a removal: the
+    /// role stored on it says owner, the model (their live membership) says nobody.
+    async fn stale_key(p: &Principals) -> Principal {
+        use crate::auth::directory::KeyRec;
+        p.directory
+            .update(|doc| {
+                doc.keys.push(KeyRec {
+                    key: admin_pb::ApiKey {
+                        id: "k_gone".into(),
+                        principal: admin_pb::SubjectRef {
+                            kind: admin_pb::SubjectKind::SUBJECT_KIND_USER.into(),
+                            id: "gone".into(),
+                            ..Default::default()
+                        }
+                        .into(),
+                        ..Default::default()
+                    },
+                    project: String::new(),
+                    hash: String::new(),
+                    role: Role::Owner,
+                    idempotency_key: "k".into(),
+                    created_by: "gone".into(),
+                    revoked: false,
+                });
+                Ok::<_, Denied>(())
+            })
+            .await
+            .expect("seed the key");
+        Principal {
+            kind: PrincipalKind::ApiKey,
+            issuer: None,
+            ..session("apikey:k_gone", None)
+        }
+    }
+
     #[tokio::test]
     async fn who_may_call_the_durable_api() {
         let p = principals().await;
@@ -231,6 +295,11 @@ mod tests {
                 false,
             ),
             ("anonymous", None, false),
+            (
+                "a key acting as someone who left the org",
+                Some(stale_key(&p).await),
+                false,
+            ),
         ];
         for (who, principal, expected) in cases {
             assert_eq!(

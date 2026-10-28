@@ -9,6 +9,7 @@
 # $OC_OUT/dbos-py.junit.xml and $OC_OUT/dbos-py-suite.junit.xml, then the
 # strict expected-failure check against dbos-py/xfail.toml.
 # OC_SKIP=suite,cases skips a part (its entries then read as stale).
+# Endpoint mode: direct (endpoint-modes.md; checked by selftest.sh recipe_endpoint_mode_matches_suite)
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=conformance/compute/lib.sh
@@ -43,16 +44,28 @@ app() { # app <env...> -- <args...>
 # 1. The SDK's own suite (pytest), against Loams Postgres (DBOS_DATABASE=POSTGRES).
 if [[ $skip != *,suite,* ]]; then
   set +e
+  # The suite's own lock first (pdm). The first nightly's pdm 2.29.2 failed
+  # with TypeError super(type, obj) while resolving it, so fall back to pip
+  # with the project's PEP 735 dev group (unlocked; DX1 ruling T5.R6).
   in_runner "
     cd /work/py
-    pip install -q pdm==$PDM
     export PDM_BUILD_SCM_VERSION=$DBOS_PY
-    pdm install -q
-    timeout 3000 pdm run pytest tests -p no:cacheprovider -q --junitxml=/work/py.junit.xml >/work/py.pytest.log 2>&1
+    pip install -q pdm==$PDM >/work/py.setup.log 2>&1
+    if pdm install -q -G otel >>/work/py.setup.log 2>&1; then
+      runner='pdm run'
+    else
+      echo 'pdm install failed; pip --group dev' >>/work/py.setup.log
+      python -m venv /work/pyenv && /work/pyenv/bin/pip install -q pip==$PIP_GROUPS >>/work/py.setup.log 2>&1
+      /work/pyenv/bin/pip install -q -e '.[otel]' --group dev >>/work/py.setup.log 2>&1
+      runner='/work/pyenv/bin/python -m'
+    fi
+    timeout 3000 \$runner pytest tests -p no:cacheprovider -q --junitxml=/work/py.junit.xml >/work/py.pytest.log 2>&1
   "
   set -e
-  dc exec -T dbos-py cat /work/py.junit.xml >"$OC_OUT/$suite-suite.junit.xml" 2>/dev/null || true
-  dc exec -T dbos-py tail -n 40 /work/py.pytest.log >"$OC_OUT/$suite-suite.tail.log" 2>/dev/null || true
+  dc exec -T dbos-py cat /work/py.junit.xml >"$OC_OUT/$suite-suite.junit.tmp" 2>/dev/null || true
+  # Only a JUnit file with content counts (an empty one is no result).
+  if [ -s "$OC_OUT/$suite-suite.junit.tmp" ]; then mv "$OC_OUT/$suite-suite.junit.tmp" "$OC_OUT/$suite-suite.junit.xml"; else rm -f "$OC_OUT/$suite-suite.junit.tmp"; fi
+  dc exec -T dbos-py sh -c 'tail -n 30 /work/py.setup.log; tail -n 40 /work/py.pytest.log' >"$OC_OUT/$suite-suite.tail.log" 2>/dev/null || true
   if [ -s "$OC_OUT/$suite-suite.junit.xml" ]; then case_ dbos_py_suite_ran pass; else case_ dbos_py_suite_ran fail "pytest wrote no JUnit"; fi
 fi
 

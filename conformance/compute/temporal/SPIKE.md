@@ -58,6 +58,29 @@ start-to-close 475 s, both across the outages; 6 activities ran twice
 (at-least-once delivery after the history restart, as Temporal documents);
 achieved rate 19.5 starts per second.
 
+## The first nightly (2026-10-28, run 40618803289, GitHub-hosted runner)
+
+These results are from the Loams Postgres 16 leg.
+
+- **Every case passed (1,579 cases).**
+- **The full soak passed.** It ran for 30 minutes at 20 starts per second, with a history restart and a 30-second compute stop:
+  - 35,999 workflows started and 35,999 completed;
+  - 0 failed;
+  - 0 activities ran twice;
+  - the longest start took 44 s, across the outage.
+- **The transaction-mode smoke passed again.**
+
+On the Postgres 17 leg, the persistence suite passed (1,575 cases). Every case after the compute stop failed, because the compute did not start again.
+
+**#1185's cause** is in `compute1`'s log:
+
+```
+FATAL:  lock file "/tmp/.s.PGSQL.55433.lock" already exists
+HINT:  Is another postmaster (PID 26) using socket file "/tmp/.s.PGSQL.55433"?
+```
+
+A container that is stopped and started again keeps its `/tmp`. When the new Postgres gets the PID that the stale lock records, it refuses to start. That explains why the failure came and went. #1475 removes the stale lock at start.
+
 ## Transaction-mode finding
 
 The four services ran through PgDog v0.1.60 in transaction pooling, and the

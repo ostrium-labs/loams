@@ -1,0 +1,92 @@
+{
+  "events":  [
+    {
+      "eventId":  "1",
+      "eventTime":  "2026-10-28T03:06:10.696258516Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+      "taskId":  "1048576",
+      "workflowExecutionStartedEventAttributes":  {
+        "workflowType":  {
+          "name":  "terminated"
+        },
+        "taskQueue":  {
+          "name":  "corpus-dotnet",
+          "kind":  "TASK_QUEUE_KIND_NORMAL"
+        },
+        "workflowTaskTimeout":  "10s",
+        "originalExecutionRunId":  "01a18078-eb88-73ed-b7b4-4f11bbab5363",
+        "identity":  "58@4f562dd56a86",
+        "firstExecutionRunId":  "01a18078-eb88-73ed-b7b4-4f11bbab5363",
+        "attempt":  1,
+        "firstWorkflowTaskBackoff":  "0s",
+        "workflowId":  "corpus-dotnet-terminated"
+      }
+    },
+    {
+      "eventId":  "2",
+      "eventTime":  "2026-10-28T03:06:10.696324449Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId":  "1048577",
+      "workflowTaskScheduledEventAttributes":  {
+        "taskQueue":  {
+          "name":  "corpus-dotnet",
+          "kind":  "TASK_QUEUE_KIND_NORMAL"
+        },
+        "startToCloseTimeout":  "10s",
+        "attempt":  1
+      }
+    },
+    {
+      "eventId":  "3",
+      "eventTime":  "2026-10-28T03:06:10.705418054Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "taskId":  "1048582",
+      "workflowTaskStartedEventAttributes":  {
+        "scheduledEventId":  "2",
+        "identity":  "58@4f562dd56a86",
+        "requestId":  "8831fab8-9d9c-4744-be82-91e6c84d2ba1",
+        "historySizeBytes":  "243",
+        "workerVersion":  {
+          "buildId":  "f69ecbbc-edee-4b18-9ff4-451a33465b12"
+        }
+      }
+    },
+    {
+      "eventId":  "4",
+      "eventTime":  "2026-10-28T03:06:10.713478241Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "taskId":  "1048586",
+      "workflowTaskCompletedEventAttributes":  {
+        "scheduledEventId":  "2",
+        "startedEventId":  "3",
+        "identity":  "58@4f562dd56a86",
+        "workerVersion":  {
+          "buildId":  "f69ecbbc-edee-4b18-9ff4-451a33465b12"
+        },
+        "sdkMetadata":  {
+          "coreUsedFlags":  [
+            2,
+            3,
+            1
+          ],
+          "langUsedFlags":  [
+            2
+          ],
+          "sdkName":  "temporal-dotnet",
+          "sdkVersion":  "1.20.0.0"
+        },
+        "meteringMetadata":  {}
+      }
+    },
+    {
+      "eventId":  "5",
+      "eventTime":  "2026-10-28T03:06:10.911936681Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_EXECUTION_TERMINATED",
+      "taskId":  "1048589",
+      "workflowExecutionTerminatedEventAttributes":  {
+        "reason":  "corpus terminates it",
+        "identity":  "58@4f562dd56a86"
+      }
+    }
+  ]
+}

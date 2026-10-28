@@ -1,0 +1,1949 @@
+count	UInt8	UInt64
+count	UInt16	UInt64
+count	UInt32	UInt64
+count	UInt64	UInt64
+count	Int8	UInt64
+count	Int16	UInt64
+count	Int32	UInt64
+count	Int64	UInt64
+count	Float32	UInt64
+count	Float64	UInt64
+count	Decimal(9, 2)	UInt64
+count	Decimal(18, 4)	UInt64
+count	Decimal(38, 3)	UInt64
+count	Decimal(76, 5)	UInt64
+count	Bool	UInt64
+count	String	UInt64
+count	Date	UInt64
+count	Date32	UInt64
+count	DateTime	UInt64
+count	DateTime64(3)	UInt64
+count	Enum8('a' = 1, 'b' = 2)	UInt64
+count	LowCardinality(String)	UInt64
+count	Nullable(UInt8)	UInt64
+count	Nullable(Int64)	UInt64
+count	Nullable(Float64)	UInt64
+count	Nullable(String)	UInt64
+count	LowCardinality(Nullable(String))	UInt64
+count	Array(UInt8)	UInt64
+count	Array(Nullable(Int32))	UInt64
+count	Array(String)	UInt64
+count	Map(String, UInt64)	UInt64
+count	Map(LowCardinality(String), Int32)	UInt64
+count	Tuple(UInt8, String)	UInt64
+sum	UInt8	UInt64
+sum	UInt16	UInt64
+sum	UInt32	UInt64
+sum	UInt64	UInt64
+sum	Int8	Int64
+sum	Int16	Int64
+sum	Int32	Int64
+sum	Int64	Int64
+sum	Float32	Float64
+sum	Float64	Float64
+sum	Decimal(9, 2)	Decimal(38, 2)
+sum	Decimal(18, 4)	Decimal(38, 4)
+sum	Decimal(38, 3)	Decimal(38, 3)
+sum	Decimal(76, 5)	Decimal(76, 5)
+sum	Bool	UInt64
+sum	String	ERROR 43
+sum	Date	ERROR 43
+sum	Date32	ERROR 43
+sum	DateTime	ERROR 43
+sum	DateTime64(3)	ERROR 43
+sum	Enum8('a' = 1, 'b' = 2)	Int64
+sum	LowCardinality(String)	ERROR 43
+sum	Nullable(UInt8)	Nullable(UInt64)
+sum	Nullable(Int64)	Nullable(Int64)
+sum	Nullable(Float64)	Nullable(Float64)
+sum	Nullable(String)	ERROR 43
+sum	LowCardinality(Nullable(String))	ERROR 43
+sum	Array(UInt8)	ERROR 43
+sum	Array(Nullable(Int32))	ERROR 43
+sum	Array(String)	ERROR 43
+sum	Map(String, UInt64)	ERROR 43
+sum	Map(LowCardinality(String), Int32)	ERROR 43
+sum	Tuple(UInt8, String)	ERROR 43
+avg	UInt8	Float64
+avg	UInt16	Float64
+avg	UInt32	Float64
+avg	UInt64	Float64
+avg	Int8	Float64
+avg	Int16	Float64
+avg	Int32	Float64
+avg	Int64	Float64
+avg	Float32	Float64
+avg	Float64	Float64
+avg	Decimal(9, 2)	Float64
+avg	Decimal(18, 4)	Float64
+avg	Decimal(38, 3)	Float64
+avg	Decimal(76, 5)	Float64
+avg	Bool	Float64
+avg	String	ERROR 43
+avg	Date	Date
+avg	Date32	Date32
+avg	DateTime	DateTime
+avg	DateTime64(3)	DateTime64(3)
+avg	Enum8('a' = 1, 'b' = 2)	ERROR 43
+avg	LowCardinality(String)	ERROR 43
+avg	Nullable(UInt8)	Nullable(Float64)
+avg	Nullable(Int64)	Nullable(Float64)
+avg	Nullable(Float64)	Nullable(Float64)
+avg	Nullable(String)	ERROR 43
+avg	LowCardinality(Nullable(String))	ERROR 43
+avg	Array(UInt8)	ERROR 43
+avg	Array(Nullable(Int32))	ERROR 43
+avg	Array(String)	ERROR 43
+avg	Map(String, UInt64)	ERROR 43
+avg	Map(LowCardinality(String), Int32)	ERROR 43
+avg	Tuple(UInt8, String)	ERROR 43
+min	UInt8	UInt8
+min	UInt16	UInt16
+min	UInt32	UInt32
+min	UInt64	UInt64
+min	Int8	Int8
+min	Int16	Int16
+min	Int32	Int32
+min	Int64	Int64
+min	Float32	Float32
+min	Float64	Float64
+min	Decimal(9, 2)	Decimal(9, 2)
+min	Decimal(18, 4)	Decimal(18, 4)
+min	Decimal(38, 3)	Decimal(38, 3)
+min	Decimal(76, 5)	Decimal(76, 5)
+min	Bool	Bool
+min	String	String
+min	Date	Date
+min	Date32	Date32
+min	DateTime	DateTime
+min	DateTime64(3)	DateTime64(3)
+min	Enum8('a' = 1, 'b' = 2)	Enum8('a' = 1, 'b' = 2)
+min	LowCardinality(String)	String
+min	Nullable(UInt8)	Nullable(UInt8)
+min	Nullable(Int64)	Nullable(Int64)
+min	Nullable(Float64)	Nullable(Float64)
+min	Nullable(String)	Nullable(String)
+min	LowCardinality(Nullable(String))	Nullable(String)
+min	Array(UInt8)	Array(UInt8)
+min	Array(Nullable(Int32))	Array(Nullable(Int32))
+min	Array(String)	Array(String)
+min	Map(String, UInt64)	Map(String, UInt64)
+min	Map(LowCardinality(String), Int32)	Map(String, Int32)
+min	Tuple(UInt8, String)	Tuple(UInt8, String)
+max	UInt8	UInt8
+max	UInt16	UInt16
+max	UInt32	UInt32
+max	UInt64	UInt64
+max	Int8	Int8
+max	Int16	Int16
+max	Int32	Int32
+max	Int64	Int64
+max	Float32	Float32
+max	Float64	Float64
+max	Decimal(9, 2)	Decimal(9, 2)
+max	Decimal(18, 4)	Decimal(18, 4)
+max	Decimal(38, 3)	Decimal(38, 3)
+max	Decimal(76, 5)	Decimal(76, 5)
+max	Bool	Bool
+max	String	String
+max	Date	Date
+max	Date32	Date32
+max	DateTime	DateTime
+max	DateTime64(3)	DateTime64(3)
+max	Enum8('a' = 1, 'b' = 2)	Enum8('a' = 1, 'b' = 2)
+max	LowCardinality(String)	String
+max	Nullable(UInt8)	Nullable(UInt8)
+max	Nullable(Int64)	Nullable(Int64)
+max	Nullable(Float64)	Nullable(Float64)
+max	Nullable(String)	Nullable(String)
+max	LowCardinality(Nullable(String))	Nullable(String)
+max	Array(UInt8)	Array(UInt8)
+max	Array(Nullable(Int32))	Array(Nullable(Int32))
+max	Array(String)	Array(String)
+max	Map(String, UInt64)	Map(String, UInt64)
+max	Map(LowCardinality(String), Int32)	Map(String, Int32)
+max	Tuple(UInt8, String)	Tuple(UInt8, String)
+any	UInt8	UInt8
+any	UInt16	UInt16
+any	UInt32	UInt32
+any	UInt64	UInt64
+any	Int8	Int8
+any	Int16	Int16
+any	Int32	Int32
+any	Int64	Int64
+any	Float32	Float32
+any	Float64	Float64
+any	Decimal(9, 2)	Decimal(9, 2)
+any	Decimal(18, 4)	Decimal(18, 4)
+any	Decimal(38, 3)	Decimal(38, 3)
+any	Decimal(76, 5)	Decimal(76, 5)
+any	Bool	Bool
+any	String	String
+any	Date	Date
+any	Date32	Date32
+any	DateTime	DateTime
+any	DateTime64(3)	DateTime64(3)
+any	Enum8('a' = 1, 'b' = 2)	Enum8('a' = 1, 'b' = 2)
+any	LowCardinality(String)	String
+any	Nullable(UInt8)	Nullable(UInt8)
+any	Nullable(Int64)	Nullable(Int64)
+any	Nullable(Float64)	Nullable(Float64)
+any	Nullable(String)	Nullable(String)
+any	LowCardinality(Nullable(String))	Nullable(String)
+any	Array(UInt8)	Array(UInt8)
+any	Array(Nullable(Int32))	Array(Nullable(Int32))
+any	Array(String)	Array(String)
+any	Map(String, UInt64)	Map(String, UInt64)
+any	Map(LowCardinality(String), Int32)	Map(String, Int32)
+any	Tuple(UInt8, String)	Tuple(UInt8, String)
+anyLast	UInt8	UInt8
+anyLast	UInt16	UInt16
+anyLast	UInt32	UInt32
+anyLast	UInt64	UInt64
+anyLast	Int8	Int8
+anyLast	Int16	Int16
+anyLast	Int32	Int32
+anyLast	Int64	Int64
+anyLast	Float32	Float32
+anyLast	Float64	Float64
+anyLast	Decimal(9, 2)	Decimal(9, 2)
+anyLast	Decimal(18, 4)	Decimal(18, 4)
+anyLast	Decimal(38, 3)	Decimal(38, 3)
+anyLast	Decimal(76, 5)	Decimal(76, 5)
+anyLast	Bool	Bool
+anyLast	String	String
+anyLast	Date	Date
+anyLast	Date32	Date32
+anyLast	DateTime	DateTime
+anyLast	DateTime64(3)	DateTime64(3)
+anyLast	Enum8('a' = 1, 'b' = 2)	Enum8('a' = 1, 'b' = 2)
+anyLast	LowCardinality(String)	String
+anyLast	Nullable(UInt8)	Nullable(UInt8)
+anyLast	Nullable(Int64)	Nullable(Int64)
+anyLast	Nullable(Float64)	Nullable(Float64)
+anyLast	Nullable(String)	Nullable(String)
+anyLast	LowCardinality(Nullable(String))	Nullable(String)
+anyLast	Array(UInt8)	Array(UInt8)
+anyLast	Array(Nullable(Int32))	Array(Nullable(Int32))
+anyLast	Array(String)	Array(String)
+anyLast	Map(String, UInt64)	Map(String, UInt64)
+anyLast	Map(LowCardinality(String), Int32)	Map(String, Int32)
+anyLast	Tuple(UInt8, String)	Tuple(UInt8, String)
+groupArray	UInt8	Array(UInt8)
+groupArray	UInt16	Array(UInt16)
+groupArray	UInt32	Array(UInt32)
+groupArray	UInt64	Array(UInt64)
+groupArray	Int8	Array(Int8)
+groupArray	Int16	Array(Int16)
+groupArray	Int32	Array(Int32)
+groupArray	Int64	Array(Int64)
+groupArray	Float32	Array(Float32)
+groupArray	Float64	Array(Float64)
+groupArray	Decimal(9, 2)	Array(Decimal(9, 2))
+groupArray	Decimal(18, 4)	Array(Decimal(18, 4))
+groupArray	Decimal(38, 3)	Array(Decimal(38, 3))
+groupArray	Decimal(76, 5)	Array(Decimal(76, 5))
+groupArray	Bool	Array(Bool)
+groupArray	String	Array(String)
+groupArray	Date	Array(Date)
+groupArray	Date32	Array(Date32)
+groupArray	DateTime	Array(DateTime)
+groupArray	DateTime64(3)	Array(DateTime64(3))
+groupArray	Enum8('a' = 1, 'b' = 2)	Array(Enum8('a' = 1, 'b' = 2))
+groupArray	LowCardinality(String)	Array(String)
+groupArray	Nullable(UInt8)	Array(UInt8)
+groupArray	Nullable(Int64)	Array(Int64)
+groupArray	Nullable(Float64)	Array(Float64)
+groupArray	Nullable(String)	Array(String)
+groupArray	LowCardinality(Nullable(String))	Array(String)
+groupArray	Array(UInt8)	Array(Array(UInt8))
+groupArray	Array(Nullable(Int32))	Array(Array(Nullable(Int32)))
+groupArray	Array(String)	Array(Array(String))
+groupArray	Map(String, UInt64)	Array(Map(String, UInt64))
+groupArray	Map(LowCardinality(String), Int32)	Array(Map(String, Int32))
+groupArray	Tuple(UInt8, String)	Array(Tuple(UInt8, String))
+groupUniqArray	UInt8	Array(UInt8)
+groupUniqArray	UInt16	Array(UInt16)
+groupUniqArray	UInt32	Array(UInt32)
+groupUniqArray	UInt64	Array(UInt64)
+groupUniqArray	Int8	Array(Int8)
+groupUniqArray	Int16	Array(Int16)
+groupUniqArray	Int32	Array(Int32)
+groupUniqArray	Int64	Array(Int64)
+groupUniqArray	Float32	Array(Float32)
+groupUniqArray	Float64	Array(Float64)
+groupUniqArray	Decimal(9, 2)	Array(Decimal(9, 2))
+groupUniqArray	Decimal(18, 4)	Array(Decimal(18, 4))
+groupUniqArray	Decimal(38, 3)	Array(Decimal(38, 3))
+groupUniqArray	Decimal(76, 5)	Array(Decimal(76, 5))
+groupUniqArray	Bool	Array(Bool)
+groupUniqArray	String	Array(String)
+groupUniqArray	Date	Array(Date)
+groupUniqArray	Date32	Array(Date32)
+groupUniqArray	DateTime	Array(DateTime)
+groupUniqArray	DateTime64(3)	Array(DateTime64(3))
+groupUniqArray	Enum8('a' = 1, 'b' = 2)	Array(Enum8('a' = 1, 'b' = 2))
+groupUniqArray	LowCardinality(String)	Array(String)
+groupUniqArray	Nullable(UInt8)	Array(UInt8)
+groupUniqArray	Nullable(Int64)	Array(Int64)
+groupUniqArray	Nullable(Float64)	Array(Float64)
+groupUniqArray	Nullable(String)	Array(String)
+groupUniqArray	LowCardinality(Nullable(String))	Array(String)
+groupUniqArray	Array(UInt8)	Array(Array(UInt8))
+groupUniqArray	Array(Nullable(Int32))	Array(Array(Nullable(Int32)))
+groupUniqArray	Array(String)	Array(Array(String))
+groupUniqArray	Map(String, UInt64)	Array(Map(String, UInt64))
+groupUniqArray	Map(LowCardinality(String), Int32)	Array(Map(String, Int32))
+groupUniqArray	Tuple(UInt8, String)	Array(Tuple(UInt8, String))
+topK	UInt8	Array(UInt8)
+topK	UInt16	Array(UInt16)
+topK	UInt32	Array(UInt32)
+topK	UInt64	Array(UInt64)
+topK	Int8	Array(Int8)
+topK	Int16	Array(Int16)
+topK	Int32	Array(Int32)
+topK	Int64	Array(Int64)
+topK	Float32	Array(Float32)
+topK	Float64	Array(Float64)
+topK	Decimal(9, 2)	Array(Decimal(9, 2))
+topK	Decimal(18, 4)	Array(Decimal(18, 4))
+topK	Decimal(38, 3)	Array(Decimal(38, 3))
+topK	Decimal(76, 5)	Array(Decimal(76, 5))
+topK	Bool	Array(Bool)
+topK	String	Array(String)
+topK	Date	Array(Date)
+topK	Date32	Array(Date32)
+topK	DateTime	Array(DateTime)
+topK	DateTime64(3)	Array(DateTime64(3))
+topK	Enum8('a' = 1, 'b' = 2)	Array(Enum8('a' = 1, 'b' = 2))
+topK	LowCardinality(String)	Array(String)
+topK	Nullable(UInt8)	Array(UInt8)
+topK	Nullable(Int64)	Array(Int64)
+topK	Nullable(Float64)	Array(Float64)
+topK	Nullable(String)	Array(String)
+topK	LowCardinality(Nullable(String))	Array(String)
+topK	Array(UInt8)	Array(Array(UInt8))
+topK	Array(Nullable(Int32))	Array(Array(Nullable(Int32)))
+topK	Array(String)	Array(Array(String))
+topK	Map(String, UInt64)	Array(Map(String, UInt64))
+topK	Map(LowCardinality(String), Int32)	Array(Map(String, Int32))
+topK	Tuple(UInt8, String)	Array(Tuple(UInt8, String))
+approx_top_k	UInt8	Array(Tuple(item UInt8, count UInt64, error UInt64))
+approx_top_k	UInt16	Array(Tuple(item UInt16, count UInt64, error UInt64))
+approx_top_k	UInt32	Array(Tuple(item UInt32, count UInt64, error UInt64))
+approx_top_k	UInt64	Array(Tuple(item UInt64, count UInt64, error UInt64))
+approx_top_k	Int8	Array(Tuple(item Int8, count UInt64, error UInt64))
+approx_top_k	Int16	Array(Tuple(item Int16, count UInt64, error UInt64))
+approx_top_k	Int32	Array(Tuple(item Int32, count UInt64, error UInt64))
+approx_top_k	Int64	Array(Tuple(item Int64, count UInt64, error UInt64))
+approx_top_k	Float32	Array(Tuple(item Float32, count UInt64, error UInt64))
+approx_top_k	Float64	Array(Tuple(item Float64, count UInt64, error UInt64))
+approx_top_k	Decimal(9, 2)	Array(Tuple(item Decimal(9, 2), count UInt64, error UInt64))
+approx_top_k	Decimal(18, 4)	Array(Tuple(item Decimal(18, 4), count UInt64, error UInt64))
+approx_top_k	Decimal(38, 3)	Array(Tuple(item Decimal(38, 3), count UInt64, error UInt64))
+approx_top_k	Decimal(76, 5)	Array(Tuple(item Decimal(76, 5), count UInt64, error UInt64))
+approx_top_k	Bool	Array(Tuple(item Bool, count UInt64, error UInt64))
+approx_top_k	String	Array(Tuple(item String, count UInt64, error UInt64))
+approx_top_k	Date	Array(Tuple(item Date, count UInt64, error UInt64))
+approx_top_k	Date32	Array(Tuple(item Date32, count UInt64, error UInt64))
+approx_top_k	DateTime	Array(Tuple(item DateTime, count UInt64, error UInt64))
+approx_top_k	DateTime64(3)	Array(Tuple(item DateTime64(3), count UInt64, error UInt64))
+approx_top_k	Enum8('a' = 1, 'b' = 2)	Array(Tuple(item Enum8('a' = 1, 'b' = 2), count UInt64, error UInt64))
+approx_top_k	LowCardinality(String)	Array(Tuple(item String, count UInt64, error UInt64))
+approx_top_k	Nullable(UInt8)	Array(Tuple(item UInt8, count UInt64, error UInt64))
+approx_top_k	Nullable(Int64)	Array(Tuple(item Int64, count UInt64, error UInt64))
+approx_top_k	Nullable(Float64)	Array(Tuple(item Float64, count UInt64, error UInt64))
+approx_top_k	Nullable(String)	Array(Tuple(item String, count UInt64, error UInt64))
+approx_top_k	LowCardinality(Nullable(String))	Array(Tuple(item String, count UInt64, error UInt64))
+approx_top_k	Array(UInt8)	Array(Tuple(item Array(UInt8), count UInt64, error UInt64))
+approx_top_k	Array(Nullable(Int32))	Array(Tuple(item Array(Nullable(Int32)), count UInt64, error UInt64))
+approx_top_k	Array(String)	Array(Tuple(item Array(String), count UInt64, error UInt64))
+approx_top_k	Map(String, UInt64)	Array(Tuple(item Map(String, UInt64), count UInt64, error UInt64))
+approx_top_k	Map(LowCardinality(String), Int32)	Array(Tuple(item Map(String, Int32), count UInt64, error UInt64))
+approx_top_k	Tuple(UInt8, String)	Array(Tuple(item Tuple(UInt8, String), count UInt64, error UInt64))
+sumOrNull	UInt8	Nullable(UInt64)
+sumOrNull	UInt16	Nullable(UInt64)
+sumOrNull	UInt32	Nullable(UInt64)
+sumOrNull	UInt64	Nullable(UInt64)
+sumOrNull	Int8	Nullable(Int64)
+sumOrNull	Int16	Nullable(Int64)
+sumOrNull	Int32	Nullable(Int64)
+sumOrNull	Int64	Nullable(Int64)
+sumOrNull	Float32	Nullable(Float64)
+sumOrNull	Float64	Nullable(Float64)
+sumOrNull	Decimal(9, 2)	Nullable(Decimal(38, 2))
+sumOrNull	Decimal(18, 4)	Nullable(Decimal(38, 4))
+sumOrNull	Decimal(38, 3)	Nullable(Decimal(38, 3))
+sumOrNull	Decimal(76, 5)	Nullable(Decimal(76, 5))
+sumOrNull	Bool	Nullable(UInt64)
+sumOrNull	String	ERROR 43
+sumOrNull	Date	ERROR 43
+sumOrNull	Date32	ERROR 43
+sumOrNull	DateTime	ERROR 43
+sumOrNull	DateTime64(3)	ERROR 43
+sumOrNull	Enum8('a' = 1, 'b' = 2)	Nullable(Int64)
+sumOrNull	LowCardinality(String)	ERROR 43
+sumOrNull	Nullable(UInt8)	Nullable(UInt64)
+sumOrNull	Nullable(Int64)	Nullable(Int64)
+sumOrNull	Nullable(Float64)	Nullable(Float64)
+sumOrNull	Nullable(String)	ERROR 43
+sumOrNull	LowCardinality(Nullable(String))	ERROR 43
+sumOrNull	Array(UInt8)	ERROR 43
+sumOrNull	Array(Nullable(Int32))	ERROR 43
+sumOrNull	Array(String)	ERROR 43
+sumOrNull	Map(String, UInt64)	ERROR 43
+sumOrNull	Map(LowCardinality(String), Int32)	ERROR 43
+sumOrNull	Tuple(UInt8, String)	ERROR 43
+sumOrDefault	UInt8	UInt64
+sumOrDefault	UInt16	UInt64
+sumOrDefault	UInt32	UInt64
+sumOrDefault	UInt64	UInt64
+sumOrDefault	Int8	Int64
+sumOrDefault	Int16	Int64
+sumOrDefault	Int32	Int64
+sumOrDefault	Int64	Int64
+sumOrDefault	Float32	Float64
+sumOrDefault	Float64	Float64
+sumOrDefault	Decimal(9, 2)	Decimal(38, 2)
+sumOrDefault	Decimal(18, 4)	Decimal(38, 4)
+sumOrDefault	Decimal(38, 3)	Decimal(38, 3)
+sumOrDefault	Decimal(76, 5)	Decimal(76, 5)
+sumOrDefault	Bool	UInt64
+sumOrDefault	String	ERROR 43
+sumOrDefault	Date	ERROR 43
+sumOrDefault	Date32	ERROR 43
+sumOrDefault	DateTime	ERROR 43
+sumOrDefault	DateTime64(3)	ERROR 43
+sumOrDefault	Enum8('a' = 1, 'b' = 2)	Int64
+sumOrDefault	LowCardinality(String)	ERROR 43
+sumOrDefault	Nullable(UInt8)	Nullable(UInt64)
+sumOrDefault	Nullable(Int64)	Nullable(Int64)
+sumOrDefault	Nullable(Float64)	Nullable(Float64)
+sumOrDefault	Nullable(String)	ERROR 43
+sumOrDefault	LowCardinality(Nullable(String))	ERROR 43
+sumOrDefault	Array(UInt8)	ERROR 43
+sumOrDefault	Array(Nullable(Int32))	ERROR 43
+sumOrDefault	Array(String)	ERROR 43
+sumOrDefault	Map(String, UInt64)	ERROR 43
+sumOrDefault	Map(LowCardinality(String), Int32)	ERROR 43
+sumOrDefault	Tuple(UInt8, String)	ERROR 43
+avgOrNull	UInt8	Nullable(Float64)
+avgOrNull	UInt16	Nullable(Float64)
+avgOrNull	UInt32	Nullable(Float64)
+avgOrNull	UInt64	Nullable(Float64)
+avgOrNull	Int8	Nullable(Float64)
+avgOrNull	Int16	Nullable(Float64)
+avgOrNull	Int32	Nullable(Float64)
+avgOrNull	Int64	Nullable(Float64)
+avgOrNull	Float32	Nullable(Float64)
+avgOrNull	Float64	Nullable(Float64)
+avgOrNull	Decimal(9, 2)	Nullable(Float64)
+avgOrNull	Decimal(18, 4)	Nullable(Float64)
+avgOrNull	Decimal(38, 3)	Nullable(Float64)
+avgOrNull	Decimal(76, 5)	Nullable(Float64)
+avgOrNull	Bool	Nullable(Float64)
+avgOrNull	String	ERROR 43
+avgOrNull	Date	Nullable(Date)
+avgOrNull	Date32	Nullable(Date32)
+avgOrNull	DateTime	Nullable(DateTime)
+avgOrNull	DateTime64(3)	Nullable(DateTime64(3))
+avgOrNull	Enum8('a' = 1, 'b' = 2)	ERROR 43
+avgOrNull	LowCardinality(String)	ERROR 43
+avgOrNull	Nullable(UInt8)	Nullable(Float64)
+avgOrNull	Nullable(Int64)	Nullable(Float64)
+avgOrNull	Nullable(Float64)	Nullable(Float64)
+avgOrNull	Nullable(String)	ERROR 43
+avgOrNull	LowCardinality(Nullable(String))	ERROR 43
+avgOrNull	Array(UInt8)	ERROR 43
+avgOrNull	Array(Nullable(Int32))	ERROR 43
+avgOrNull	Array(String)	ERROR 43
+avgOrNull	Map(String, UInt64)	ERROR 43
+avgOrNull	Map(LowCardinality(String), Int32)	ERROR 43
+avgOrNull	Tuple(UInt8, String)	ERROR 43
+avgOrDefault	UInt8	Float64
+avgOrDefault	UInt16	Float64
+avgOrDefault	UInt32	Float64
+avgOrDefault	UInt64	Float64
+avgOrDefault	Int8	Float64
+avgOrDefault	Int16	Float64
+avgOrDefault	Int32	Float64
+avgOrDefault	Int64	Float64
+avgOrDefault	Float32	Float64
+avgOrDefault	Float64	Float64
+avgOrDefault	Decimal(9, 2)	Float64
+avgOrDefault	Decimal(18, 4)	Float64
+avgOrDefault	Decimal(38, 3)	Float64
+avgOrDefault	Decimal(76, 5)	Float64
+avgOrDefault	Bool	Float64
+avgOrDefault	String	ERROR 43
+avgOrDefault	Date	Date
+avgOrDefault	Date32	Date32
+avgOrDefault	DateTime	DateTime
+avgOrDefault	DateTime64(3)	DateTime64(3)
+avgOrDefault	Enum8('a' = 1, 'b' = 2)	ERROR 43
+avgOrDefault	LowCardinality(String)	ERROR 43
+avgOrDefault	Nullable(UInt8)	Nullable(Float64)
+avgOrDefault	Nullable(Int64)	Nullable(Float64)
+avgOrDefault	Nullable(Float64)	Nullable(Float64)
+avgOrDefault	Nullable(String)	ERROR 43
+avgOrDefault	LowCardinality(Nullable(String))	ERROR 43
+avgOrDefault	Array(UInt8)	ERROR 43
+avgOrDefault	Array(Nullable(Int32))	ERROR 43
+avgOrDefault	Array(String)	ERROR 43
+avgOrDefault	Map(String, UInt64)	ERROR 43
+avgOrDefault	Map(LowCardinality(String), Int32)	ERROR 43
+avgOrDefault	Tuple(UInt8, String)	ERROR 43
+maxOrNull	UInt8	Nullable(UInt8)
+maxOrNull	UInt16	Nullable(UInt16)
+maxOrNull	UInt32	Nullable(UInt32)
+maxOrNull	UInt64	Nullable(UInt64)
+maxOrNull	Int8	Nullable(Int8)
+maxOrNull	Int16	Nullable(Int16)
+maxOrNull	Int32	Nullable(Int32)
+maxOrNull	Int64	Nullable(Int64)
+maxOrNull	Float32	Nullable(Float32)
+maxOrNull	Float64	Nullable(Float64)
+maxOrNull	Decimal(9, 2)	Nullable(Decimal(9, 2))
+maxOrNull	Decimal(18, 4)	Nullable(Decimal(18, 4))
+maxOrNull	Decimal(38, 3)	Nullable(Decimal(38, 3))
+maxOrNull	Decimal(76, 5)	Nullable(Decimal(76, 5))
+maxOrNull	Bool	Nullable(Bool)
+maxOrNull	String	Nullable(String)
+maxOrNull	Date	Nullable(Date)
+maxOrNull	Date32	Nullable(Date32)
+maxOrNull	DateTime	Nullable(DateTime)
+maxOrNull	DateTime64(3)	Nullable(DateTime64(3))
+maxOrNull	Enum8('a' = 1, 'b' = 2)	Nullable(Enum8('a' = 1, 'b' = 2))
+maxOrNull	LowCardinality(String)	Nullable(String)
+maxOrNull	Nullable(UInt8)	Nullable(UInt8)
+maxOrNull	Nullable(Int64)	Nullable(Int64)
+maxOrNull	Nullable(Float64)	Nullable(Float64)
+maxOrNull	Nullable(String)	Nullable(String)
+maxOrNull	LowCardinality(Nullable(String))	Nullable(String)
+maxOrNull	Array(UInt8)	Array(UInt8)
+maxOrNull	Array(Nullable(Int32))	Array(Nullable(Int32))
+maxOrNull	Array(String)	Array(String)
+maxOrNull	Map(String, UInt64)	Map(String, UInt64)
+maxOrNull	Map(LowCardinality(String), Int32)	Map(String, Int32)
+maxOrNull	Tuple(UInt8, String)	Nullable(Tuple(UInt8, String))
+countOrNull	UInt8	Nullable(UInt64)
+countOrNull	UInt16	Nullable(UInt64)
+countOrNull	UInt32	Nullable(UInt64)
+countOrNull	UInt64	Nullable(UInt64)
+countOrNull	Int8	Nullable(UInt64)
+countOrNull	Int16	Nullable(UInt64)
+countOrNull	Int32	Nullable(UInt64)
+countOrNull	Int64	Nullable(UInt64)
+countOrNull	Float32	Nullable(UInt64)
+countOrNull	Float64	Nullable(UInt64)
+countOrNull	Decimal(9, 2)	Nullable(UInt64)
+countOrNull	Decimal(18, 4)	Nullable(UInt64)
+countOrNull	Decimal(38, 3)	Nullable(UInt64)
+countOrNull	Decimal(76, 5)	Nullable(UInt64)
+countOrNull	Bool	Nullable(UInt64)
+countOrNull	String	Nullable(UInt64)
+countOrNull	Date	Nullable(UInt64)
+countOrNull	Date32	Nullable(UInt64)
+countOrNull	DateTime	Nullable(UInt64)
+countOrNull	DateTime64(3)	Nullable(UInt64)
+countOrNull	Enum8('a' = 1, 'b' = 2)	Nullable(UInt64)
+countOrNull	LowCardinality(String)	Nullable(UInt64)
+countOrNull	Nullable(UInt8)	Nullable(UInt64)
+countOrNull	Nullable(Int64)	Nullable(UInt64)
+countOrNull	Nullable(Float64)	Nullable(UInt64)
+countOrNull	Nullable(String)	Nullable(UInt64)
+countOrNull	LowCardinality(Nullable(String))	Nullable(UInt64)
+countOrNull	Array(UInt8)	Nullable(UInt64)
+countOrNull	Array(Nullable(Int32))	Nullable(UInt64)
+countOrNull	Array(String)	Nullable(UInt64)
+countOrNull	Map(String, UInt64)	Nullable(UInt64)
+countOrNull	Map(LowCardinality(String), Int32)	Nullable(UInt64)
+countOrNull	Tuple(UInt8, String)	Nullable(UInt64)
+groupArrayOrNull	UInt8	Array(UInt8)
+groupArrayOrNull	UInt16	Array(UInt16)
+groupArrayOrNull	UInt32	Array(UInt32)
+groupArrayOrNull	UInt64	Array(UInt64)
+groupArrayOrNull	Int8	Array(Int8)
+groupArrayOrNull	Int16	Array(Int16)
+groupArrayOrNull	Int32	Array(Int32)
+groupArrayOrNull	Int64	Array(Int64)
+groupArrayOrNull	Float32	Array(Float32)
+groupArrayOrNull	Float64	Array(Float64)
+groupArrayOrNull	Decimal(9, 2)	Array(Decimal(9, 2))
+groupArrayOrNull	Decimal(18, 4)	Array(Decimal(18, 4))
+groupArrayOrNull	Decimal(38, 3)	Array(Decimal(38, 3))
+groupArrayOrNull	Decimal(76, 5)	Array(Decimal(76, 5))
+groupArrayOrNull	Bool	Array(Bool)
+groupArrayOrNull	String	Array(String)
+groupArrayOrNull	Date	Array(Date)
+groupArrayOrNull	Date32	Array(Date32)
+groupArrayOrNull	DateTime	Array(DateTime)
+groupArrayOrNull	DateTime64(3)	Array(DateTime64(3))
+groupArrayOrNull	Enum8('a' = 1, 'b' = 2)	Array(Enum8('a' = 1, 'b' = 2))
+groupArrayOrNull	LowCardinality(String)	Array(String)
+groupArrayOrNull	Nullable(UInt8)	Array(UInt8)
+groupArrayOrNull	Nullable(Int64)	Array(Int64)
+groupArrayOrNull	Nullable(Float64)	Array(Float64)
+groupArrayOrNull	Nullable(String)	Array(String)
+groupArrayOrNull	LowCardinality(Nullable(String))	Array(String)
+groupArrayOrNull	Array(UInt8)	Array(Array(UInt8))
+groupArrayOrNull	Array(Nullable(Int32))	Array(Array(Nullable(Int32)))
+groupArrayOrNull	Array(String)	Array(Array(String))
+groupArrayOrNull	Map(String, UInt64)	Array(Map(String, UInt64))
+groupArrayOrNull	Map(LowCardinality(String), Int32)	Array(Map(String, Int32))
+groupArrayOrNull	Tuple(UInt8, String)	Array(Tuple(UInt8, String))
+sumDistinct	UInt8	UInt64
+sumDistinct	UInt16	UInt64
+sumDistinct	UInt32	UInt64
+sumDistinct	UInt64	UInt64
+sumDistinct	Int8	Int64
+sumDistinct	Int16	Int64
+sumDistinct	Int32	Int64
+sumDistinct	Int64	Int64
+sumDistinct	Float32	Float64
+sumDistinct	Float64	Float64
+sumDistinct	Decimal(9, 2)	Decimal(38, 2)
+sumDistinct	Decimal(18, 4)	Decimal(38, 4)
+sumDistinct	Decimal(38, 3)	Decimal(38, 3)
+sumDistinct	Decimal(76, 5)	Decimal(76, 5)
+sumDistinct	Bool	UInt64
+sumDistinct	String	ERROR 43
+sumDistinct	Date	ERROR 43
+sumDistinct	Date32	ERROR 43
+sumDistinct	DateTime	ERROR 43
+sumDistinct	DateTime64(3)	ERROR 43
+sumDistinct	Enum8('a' = 1, 'b' = 2)	Int64
+sumDistinct	LowCardinality(String)	ERROR 43
+sumDistinct	Nullable(UInt8)	Nullable(UInt64)
+sumDistinct	Nullable(Int64)	Nullable(Int64)
+sumDistinct	Nullable(Float64)	Nullable(Float64)
+sumDistinct	Nullable(String)	ERROR 43
+sumDistinct	LowCardinality(Nullable(String))	ERROR 43
+sumDistinct	Array(UInt8)	ERROR 43
+sumDistinct	Array(Nullable(Int32))	ERROR 43
+sumDistinct	Array(String)	ERROR 43
+sumDistinct	Map(String, UInt64)	ERROR 43
+sumDistinct	Map(LowCardinality(String), Int32)	ERROR 43
+sumDistinct	Tuple(UInt8, String)	ERROR 43
+countDistinct	UInt8	UInt64
+countDistinct	UInt16	UInt64
+countDistinct	UInt32	UInt64
+countDistinct	UInt64	UInt64
+countDistinct	Int8	UInt64
+countDistinct	Int16	UInt64
+countDistinct	Int32	UInt64
+countDistinct	Int64	UInt64
+countDistinct	Float32	UInt64
+countDistinct	Float64	UInt64
+countDistinct	Decimal(9, 2)	UInt64
+countDistinct	Decimal(18, 4)	UInt64
+countDistinct	Decimal(38, 3)	UInt64
+countDistinct	Decimal(76, 5)	UInt64
+countDistinct	Bool	UInt64
+countDistinct	String	UInt64
+countDistinct	Date	UInt64
+countDistinct	Date32	UInt64
+countDistinct	DateTime	UInt64
+countDistinct	DateTime64(3)	UInt64
+countDistinct	Enum8('a' = 1, 'b' = 2)	UInt64
+countDistinct	LowCardinality(String)	UInt64
+countDistinct	Nullable(UInt8)	UInt64
+countDistinct	Nullable(Int64)	UInt64
+countDistinct	Nullable(Float64)	UInt64
+countDistinct	Nullable(String)	UInt64
+countDistinct	LowCardinality(Nullable(String))	UInt64
+countDistinct	Array(UInt8)	UInt64
+countDistinct	Array(Nullable(Int32))	UInt64
+countDistinct	Array(String)	UInt64
+countDistinct	Map(String, UInt64)	UInt64
+countDistinct	Map(LowCardinality(String), Int32)	UInt64
+countDistinct	Tuple(UInt8, String)	UInt64
+sumSimpleState	UInt8	SimpleAggregateFunction(sum, UInt64)
+sumSimpleState	UInt16	SimpleAggregateFunction(sum, UInt64)
+sumSimpleState	UInt32	SimpleAggregateFunction(sum, UInt64)
+sumSimpleState	UInt64	SimpleAggregateFunction(sum, UInt64)
+sumSimpleState	Int8	SimpleAggregateFunction(sum, Int64)
+sumSimpleState	Int16	SimpleAggregateFunction(sum, Int64)
+sumSimpleState	Int32	SimpleAggregateFunction(sum, Int64)
+sumSimpleState	Int64	SimpleAggregateFunction(sum, Int64)
+sumSimpleState	Float32	SimpleAggregateFunction(sum, Float64)
+sumSimpleState	Float64	SimpleAggregateFunction(sum, Float64)
+sumSimpleState	Decimal(9, 2)	SimpleAggregateFunction(sum, Decimal(38, 2))
+sumSimpleState	Decimal(18, 4)	SimpleAggregateFunction(sum, Decimal(38, 4))
+sumSimpleState	Decimal(38, 3)	SimpleAggregateFunction(sum, Decimal(38, 3))
+sumSimpleState	Decimal(76, 5)	SimpleAggregateFunction(sum, Decimal(76, 5))
+sumSimpleState	Bool	SimpleAggregateFunction(sum, UInt64)
+sumSimpleState	String	ERROR 43
+sumSimpleState	Date	ERROR 43
+sumSimpleState	Date32	ERROR 43
+sumSimpleState	DateTime	ERROR 43
+sumSimpleState	DateTime64(3)	ERROR 43
+sumSimpleState	Enum8('a' = 1, 'b' = 2)	SimpleAggregateFunction(sum, Int64)
+sumSimpleState	LowCardinality(String)	ERROR 43
+sumSimpleState	Nullable(UInt8)	SimpleAggregateFunction(sum, Nullable(UInt64))
+sumSimpleState	Nullable(Int64)	SimpleAggregateFunction(sum, Nullable(Int64))
+sumSimpleState	Nullable(Float64)	SimpleAggregateFunction(sum, Nullable(Float64))
+sumSimpleState	Nullable(String)	ERROR 43
+sumSimpleState	LowCardinality(Nullable(String))	ERROR 43
+sumSimpleState	Array(UInt8)	ERROR 43
+sumSimpleState	Array(Nullable(Int32))	ERROR 43
+sumSimpleState	Array(String)	ERROR 43
+sumSimpleState	Map(String, UInt64)	ERROR 43
+sumSimpleState	Map(LowCardinality(String), Int32)	ERROR 43
+sumSimpleState	Tuple(UInt8, String)	ERROR 43
+maxSimpleState	UInt8	SimpleAggregateFunction(max, UInt8)
+maxSimpleState	UInt16	SimpleAggregateFunction(max, UInt16)
+maxSimpleState	UInt32	SimpleAggregateFunction(max, UInt32)
+maxSimpleState	UInt64	SimpleAggregateFunction(max, UInt64)
+maxSimpleState	Int8	SimpleAggregateFunction(max, Int8)
+maxSimpleState	Int16	SimpleAggregateFunction(max, Int16)
+maxSimpleState	Int32	SimpleAggregateFunction(max, Int32)
+maxSimpleState	Int64	SimpleAggregateFunction(max, Int64)
+maxSimpleState	Float32	SimpleAggregateFunction(max, Float32)
+maxSimpleState	Float64	SimpleAggregateFunction(max, Float64)
+maxSimpleState	Decimal(9, 2)	SimpleAggregateFunction(max, Decimal(9, 2))
+maxSimpleState	Decimal(18, 4)	SimpleAggregateFunction(max, Decimal(18, 4))
+maxSimpleState	Decimal(38, 3)	SimpleAggregateFunction(max, Decimal(38, 3))
+maxSimpleState	Decimal(76, 5)	SimpleAggregateFunction(max, Decimal(76, 5))
+maxSimpleState	Bool	SimpleAggregateFunction(max, Bool)
+maxSimpleState	String	SimpleAggregateFunction(max, String)
+maxSimpleState	Date	SimpleAggregateFunction(max, Date)
+maxSimpleState	Date32	SimpleAggregateFunction(max, Date32)
+maxSimpleState	DateTime	SimpleAggregateFunction(max, DateTime)
+maxSimpleState	DateTime64(3)	SimpleAggregateFunction(max, DateTime64(3))
+maxSimpleState	Enum8('a' = 1, 'b' = 2)	SimpleAggregateFunction(max, Enum8('a' = 1, 'b' = 2))
+maxSimpleState	LowCardinality(String)	SimpleAggregateFunction(max, String)
+maxSimpleState	Nullable(UInt8)	SimpleAggregateFunction(max, Nullable(UInt8))
+maxSimpleState	Nullable(Int64)	SimpleAggregateFunction(max, Nullable(Int64))
+maxSimpleState	Nullable(Float64)	SimpleAggregateFunction(max, Nullable(Float64))
+maxSimpleState	Nullable(String)	SimpleAggregateFunction(max, Nullable(String))
+maxSimpleState	LowCardinality(Nullable(String))	SimpleAggregateFunction(max, Nullable(String))
+maxSimpleState	Array(UInt8)	SimpleAggregateFunction(max, Array(UInt8))
+maxSimpleState	Array(Nullable(Int32))	SimpleAggregateFunction(max, Array(Nullable(Int32)))
+maxSimpleState	Array(String)	SimpleAggregateFunction(max, Array(String))
+maxSimpleState	Map(String, UInt64)	SimpleAggregateFunction(max, Map(String, UInt64))
+maxSimpleState	Map(LowCardinality(String), Int32)	SimpleAggregateFunction(max, Map(String, Int32))
+maxSimpleState	Tuple(UInt8, String)	SimpleAggregateFunction(max, Tuple(UInt8, String))
+anySimpleState	UInt8	SimpleAggregateFunction(any, UInt8)
+anySimpleState	UInt16	SimpleAggregateFunction(any, UInt16)
+anySimpleState	UInt32	SimpleAggregateFunction(any, UInt32)
+anySimpleState	UInt64	SimpleAggregateFunction(any, UInt64)
+anySimpleState	Int8	SimpleAggregateFunction(any, Int8)
+anySimpleState	Int16	SimpleAggregateFunction(any, Int16)
+anySimpleState	Int32	SimpleAggregateFunction(any, Int32)
+anySimpleState	Int64	SimpleAggregateFunction(any, Int64)
+anySimpleState	Float32	SimpleAggregateFunction(any, Float32)
+anySimpleState	Float64	SimpleAggregateFunction(any, Float64)
+anySimpleState	Decimal(9, 2)	SimpleAggregateFunction(any, Decimal(9, 2))
+anySimpleState	Decimal(18, 4)	SimpleAggregateFunction(any, Decimal(18, 4))
+anySimpleState	Decimal(38, 3)	SimpleAggregateFunction(any, Decimal(38, 3))
+anySimpleState	Decimal(76, 5)	SimpleAggregateFunction(any, Decimal(76, 5))
+anySimpleState	Bool	SimpleAggregateFunction(any, Bool)
+anySimpleState	String	SimpleAggregateFunction(any, String)
+anySimpleState	Date	SimpleAggregateFunction(any, Date)
+anySimpleState	Date32	SimpleAggregateFunction(any, Date32)
+anySimpleState	DateTime	SimpleAggregateFunction(any, DateTime)
+anySimpleState	DateTime64(3)	SimpleAggregateFunction(any, DateTime64(3))
+anySimpleState	Enum8('a' = 1, 'b' = 2)	SimpleAggregateFunction(any, Enum8('a' = 1, 'b' = 2))
+anySimpleState	LowCardinality(String)	SimpleAggregateFunction(any, String)
+anySimpleState	Nullable(UInt8)	SimpleAggregateFunction(any, Nullable(UInt8))
+anySimpleState	Nullable(Int64)	SimpleAggregateFunction(any, Nullable(Int64))
+anySimpleState	Nullable(Float64)	SimpleAggregateFunction(any, Nullable(Float64))
+anySimpleState	Nullable(String)	SimpleAggregateFunction(any, Nullable(String))
+anySimpleState	LowCardinality(Nullable(String))	SimpleAggregateFunction(any, Nullable(String))
+anySimpleState	Array(UInt8)	SimpleAggregateFunction(any, Array(UInt8))
+anySimpleState	Array(Nullable(Int32))	SimpleAggregateFunction(any, Array(Nullable(Int32)))
+anySimpleState	Array(String)	SimpleAggregateFunction(any, Array(String))
+anySimpleState	Map(String, UInt64)	SimpleAggregateFunction(any, Map(String, UInt64))
+anySimpleState	Map(LowCardinality(String), Int32)	SimpleAggregateFunction(any, Map(String, Int32))
+anySimpleState	Tuple(UInt8, String)	SimpleAggregateFunction(any, Tuple(UInt8, String))
+sumArray	UInt8	ERROR 43
+sumArray	UInt16	ERROR 43
+sumArray	UInt32	ERROR 43
+sumArray	UInt64	ERROR 43
+sumArray	Int8	ERROR 43
+sumArray	Int16	ERROR 43
+sumArray	Int32	ERROR 43
+sumArray	Int64	ERROR 43
+sumArray	Float32	ERROR 43
+sumArray	Float64	ERROR 43
+sumArray	Decimal(9, 2)	ERROR 43
+sumArray	Decimal(18, 4)	ERROR 43
+sumArray	Decimal(38, 3)	ERROR 43
+sumArray	Decimal(76, 5)	ERROR 43
+sumArray	Bool	ERROR 43
+sumArray	String	ERROR 43
+sumArray	Date	ERROR 43
+sumArray	Date32	ERROR 43
+sumArray	DateTime	ERROR 43
+sumArray	DateTime64(3)	ERROR 43
+sumArray	Enum8('a' = 1, 'b' = 2)	ERROR 43
+sumArray	LowCardinality(String)	ERROR 43
+sumArray	Nullable(UInt8)	ERROR 43
+sumArray	Nullable(Int64)	ERROR 43
+sumArray	Nullable(Float64)	ERROR 43
+sumArray	Nullable(String)	ERROR 43
+sumArray	LowCardinality(Nullable(String))	ERROR 43
+sumArray	Array(UInt8)	UInt64
+sumArray	Array(Nullable(Int32))	Nullable(Int64)
+sumArray	Array(String)	ERROR 43
+sumArray	Map(String, UInt64)	ERROR 43
+sumArray	Map(LowCardinality(String), Int32)	ERROR 43
+sumArray	Tuple(UInt8, String)	ERROR 43
+maxArray	UInt8	ERROR 43
+maxArray	UInt16	ERROR 43
+maxArray	UInt32	ERROR 43
+maxArray	UInt64	ERROR 43
+maxArray	Int8	ERROR 43
+maxArray	Int16	ERROR 43
+maxArray	Int32	ERROR 43
+maxArray	Int64	ERROR 43
+maxArray	Float32	ERROR 43
+maxArray	Float64	ERROR 43
+maxArray	Decimal(9, 2)	ERROR 43
+maxArray	Decimal(18, 4)	ERROR 43
+maxArray	Decimal(38, 3)	ERROR 43
+maxArray	Decimal(76, 5)	ERROR 43
+maxArray	Bool	ERROR 43
+maxArray	String	ERROR 43
+maxArray	Date	ERROR 43
+maxArray	Date32	ERROR 43
+maxArray	DateTime	ERROR 43
+maxArray	DateTime64(3)	ERROR 43
+maxArray	Enum8('a' = 1, 'b' = 2)	ERROR 43
+maxArray	LowCardinality(String)	ERROR 43
+maxArray	Nullable(UInt8)	ERROR 43
+maxArray	Nullable(Int64)	ERROR 43
+maxArray	Nullable(Float64)	ERROR 43
+maxArray	Nullable(String)	ERROR 43
+maxArray	LowCardinality(Nullable(String))	ERROR 43
+maxArray	Array(UInt8)	UInt8
+maxArray	Array(Nullable(Int32))	Nullable(Int32)
+maxArray	Array(String)	String
+maxArray	Map(String, UInt64)	ERROR 43
+maxArray	Map(LowCardinality(String), Int32)	ERROR 43
+maxArray	Tuple(UInt8, String)	ERROR 43
+countArray	UInt8	ERROR 43
+countArray	UInt16	ERROR 43
+countArray	UInt32	ERROR 43
+countArray	UInt64	ERROR 43
+countArray	Int8	ERROR 43
+countArray	Int16	ERROR 43
+countArray	Int32	ERROR 43
+countArray	Int64	ERROR 43
+countArray	Float32	ERROR 43
+countArray	Float64	ERROR 43
+countArray	Decimal(9, 2)	ERROR 43
+countArray	Decimal(18, 4)	ERROR 43
+countArray	Decimal(38, 3)	ERROR 43
+countArray	Decimal(76, 5)	ERROR 43
+countArray	Bool	ERROR 43
+countArray	String	ERROR 43
+countArray	Date	ERROR 43
+countArray	Date32	ERROR 43
+countArray	DateTime	ERROR 43
+countArray	DateTime64(3)	ERROR 43
+countArray	Enum8('a' = 1, 'b' = 2)	ERROR 43
+countArray	LowCardinality(String)	ERROR 43
+countArray	Nullable(UInt8)	ERROR 43
+countArray	Nullable(Int64)	ERROR 43
+countArray	Nullable(Float64)	ERROR 43
+countArray	Nullable(String)	ERROR 43
+countArray	LowCardinality(Nullable(String))	ERROR 43
+countArray	Array(UInt8)	UInt64
+countArray	Array(Nullable(Int32))	UInt64
+countArray	Array(String)	UInt64
+countArray	Map(String, UInt64)	ERROR 43
+countArray	Map(LowCardinality(String), Int32)	ERROR 43
+countArray	Tuple(UInt8, String)	ERROR 43
+groupArrayArray	UInt8	ERROR 43
+groupArrayArray	UInt16	ERROR 43
+groupArrayArray	UInt32	ERROR 43
+groupArrayArray	UInt64	ERROR 43
+groupArrayArray	Int8	ERROR 43
+groupArrayArray	Int16	ERROR 43
+groupArrayArray	Int32	ERROR 43
+groupArrayArray	Int64	ERROR 43
+groupArrayArray	Float32	ERROR 43
+groupArrayArray	Float64	ERROR 43
+groupArrayArray	Decimal(9, 2)	ERROR 43
+groupArrayArray	Decimal(18, 4)	ERROR 43
+groupArrayArray	Decimal(38, 3)	ERROR 43
+groupArrayArray	Decimal(76, 5)	ERROR 43
+groupArrayArray	Bool	ERROR 43
+groupArrayArray	String	ERROR 43
+groupArrayArray	Date	ERROR 43
+groupArrayArray	Date32	ERROR 43
+groupArrayArray	DateTime	ERROR 43
+groupArrayArray	DateTime64(3)	ERROR 43
+groupArrayArray	Enum8('a' = 1, 'b' = 2)	ERROR 43
+groupArrayArray	LowCardinality(String)	ERROR 43
+groupArrayArray	Nullable(UInt8)	ERROR 43
+groupArrayArray	Nullable(Int64)	ERROR 43
+groupArrayArray	Nullable(Float64)	ERROR 43
+groupArrayArray	Nullable(String)	ERROR 43
+groupArrayArray	LowCardinality(Nullable(String))	ERROR 43
+groupArrayArray	Array(UInt8)	Array(UInt8)
+groupArrayArray	Array(Nullable(Int32))	Array(Int32)
+groupArrayArray	Array(String)	Array(String)
+groupArrayArray	Map(String, UInt64)	ERROR 43
+groupArrayArray	Map(LowCardinality(String), Int32)	ERROR 43
+groupArrayArray	Tuple(UInt8, String)	ERROR 43
+sumForEach	UInt8	ERROR 43
+sumForEach	UInt16	ERROR 43
+sumForEach	UInt32	ERROR 43
+sumForEach	UInt64	ERROR 43
+sumForEach	Int8	ERROR 43
+sumForEach	Int16	ERROR 43
+sumForEach	Int32	ERROR 43
+sumForEach	Int64	ERROR 43
+sumForEach	Float32	ERROR 43
+sumForEach	Float64	ERROR 43
+sumForEach	Decimal(9, 2)	ERROR 43
+sumForEach	Decimal(18, 4)	ERROR 43
+sumForEach	Decimal(38, 3)	ERROR 43
+sumForEach	Decimal(76, 5)	ERROR 43
+sumForEach	Bool	ERROR 43
+sumForEach	String	ERROR 43
+sumForEach	Date	ERROR 43
+sumForEach	Date32	ERROR 43
+sumForEach	DateTime	ERROR 43
+sumForEach	DateTime64(3)	ERROR 43
+sumForEach	Enum8('a' = 1, 'b' = 2)	ERROR 43
+sumForEach	LowCardinality(String)	ERROR 43
+sumForEach	Nullable(UInt8)	ERROR 43
+sumForEach	Nullable(Int64)	ERROR 43
+sumForEach	Nullable(Float64)	ERROR 43
+sumForEach	Nullable(String)	ERROR 43
+sumForEach	LowCardinality(Nullable(String))	ERROR 43
+sumForEach	Array(UInt8)	Array(UInt64)
+sumForEach	Array(Nullable(Int32))	Array(Nullable(Int64))
+sumForEach	Array(String)	ERROR 43
+sumForEach	Map(String, UInt64)	ERROR 43
+sumForEach	Map(LowCardinality(String), Int32)	ERROR 43
+sumForEach	Tuple(UInt8, String)	ERROR 43
+countForEach	UInt8	ERROR 43
+countForEach	UInt16	ERROR 43
+countForEach	UInt32	ERROR 43
+countForEach	UInt64	ERROR 43
+countForEach	Int8	ERROR 43
+countForEach	Int16	ERROR 43
+countForEach	Int32	ERROR 43
+countForEach	Int64	ERROR 43
+countForEach	Float32	ERROR 43
+countForEach	Float64	ERROR 43
+countForEach	Decimal(9, 2)	ERROR 43
+countForEach	Decimal(18, 4)	ERROR 43
+countForEach	Decimal(38, 3)	ERROR 43
+countForEach	Decimal(76, 5)	ERROR 43
+countForEach	Bool	ERROR 43
+countForEach	String	ERROR 43
+countForEach	Date	ERROR 43
+countForEach	Date32	ERROR 43
+countForEach	DateTime	ERROR 43
+countForEach	DateTime64(3)	ERROR 43
+countForEach	Enum8('a' = 1, 'b' = 2)	ERROR 43
+countForEach	LowCardinality(String)	ERROR 43
+countForEach	Nullable(UInt8)	ERROR 43
+countForEach	Nullable(Int64)	ERROR 43
+countForEach	Nullable(Float64)	ERROR 43
+countForEach	Nullable(String)	ERROR 43
+countForEach	LowCardinality(Nullable(String))	ERROR 43
+countForEach	Array(UInt8)	Array(UInt64)
+countForEach	Array(Nullable(Int32))	Array(UInt64)
+countForEach	Array(String)	Array(UInt64)
+countForEach	Map(String, UInt64)	ERROR 43
+countForEach	Map(LowCardinality(String), Int32)	ERROR 43
+countForEach	Tuple(UInt8, String)	ERROR 43
+groupArrayForEach	UInt8	ERROR 43
+groupArrayForEach	UInt16	ERROR 43
+groupArrayForEach	UInt32	ERROR 43
+groupArrayForEach	UInt64	ERROR 43
+groupArrayForEach	Int8	ERROR 43
+groupArrayForEach	Int16	ERROR 43
+groupArrayForEach	Int32	ERROR 43
+groupArrayForEach	Int64	ERROR 43
+groupArrayForEach	Float32	ERROR 43
+groupArrayForEach	Float64	ERROR 43
+groupArrayForEach	Decimal(9, 2)	ERROR 43
+groupArrayForEach	Decimal(18, 4)	ERROR 43
+groupArrayForEach	Decimal(38, 3)	ERROR 43
+groupArrayForEach	Decimal(76, 5)	ERROR 43
+groupArrayForEach	Bool	ERROR 43
+groupArrayForEach	String	ERROR 43
+groupArrayForEach	Date	ERROR 43
+groupArrayForEach	Date32	ERROR 43
+groupArrayForEach	DateTime	ERROR 43
+groupArrayForEach	DateTime64(3)	ERROR 43
+groupArrayForEach	Enum8('a' = 1, 'b' = 2)	ERROR 43
+groupArrayForEach	LowCardinality(String)	ERROR 43
+groupArrayForEach	Nullable(UInt8)	ERROR 43
+groupArrayForEach	Nullable(Int64)	ERROR 43
+groupArrayForEach	Nullable(Float64)	ERROR 43
+groupArrayForEach	Nullable(String)	ERROR 43
+groupArrayForEach	LowCardinality(Nullable(String))	ERROR 43
+groupArrayForEach	Array(UInt8)	Array(Array(UInt8))
+groupArrayForEach	Array(Nullable(Int32))	Array(Array(Int32))
+groupArrayForEach	Array(String)	Array(Array(String))
+groupArrayForEach	Map(String, UInt64)	ERROR 43
+groupArrayForEach	Map(LowCardinality(String), Int32)	ERROR 43
+groupArrayForEach	Tuple(UInt8, String)	ERROR 43
+sumMap	UInt8	ERROR 43
+sumMap	UInt16	ERROR 43
+sumMap	UInt32	ERROR 43
+sumMap	UInt64	ERROR 43
+sumMap	Int8	ERROR 43
+sumMap	Int16	ERROR 43
+sumMap	Int32	ERROR 43
+sumMap	Int64	ERROR 43
+sumMap	Float32	ERROR 43
+sumMap	Float64	ERROR 43
+sumMap	Decimal(9, 2)	ERROR 43
+sumMap	Decimal(18, 4)	ERROR 43
+sumMap	Decimal(38, 3)	ERROR 43
+sumMap	Decimal(76, 5)	ERROR 43
+sumMap	Bool	ERROR 43
+sumMap	String	ERROR 43
+sumMap	Date	ERROR 43
+sumMap	Date32	ERROR 43
+sumMap	DateTime	ERROR 43
+sumMap	DateTime64(3)	ERROR 43
+sumMap	Enum8('a' = 1, 'b' = 2)	ERROR 43
+sumMap	LowCardinality(String)	ERROR 43
+sumMap	Nullable(UInt8)	ERROR 43
+sumMap	Nullable(Int64)	ERROR 43
+sumMap	Nullable(Float64)	ERROR 43
+sumMap	Nullable(String)	ERROR 43
+sumMap	LowCardinality(Nullable(String))	ERROR 43
+sumMap	Array(UInt8)	ERROR 43
+sumMap	Array(Nullable(Int32))	ERROR 43
+sumMap	Array(String)	ERROR 43
+sumMap	Map(String, UInt64)	Map(String, UInt64)
+sumMap	Map(LowCardinality(String), Int32)	Map(String, Int64)
+sumMap	Tuple(UInt8, String)	ERROR 43
+maxMap	UInt8	ERROR 43
+maxMap	UInt16	ERROR 43
+maxMap	UInt32	ERROR 43
+maxMap	UInt64	ERROR 43
+maxMap	Int8	ERROR 43
+maxMap	Int16	ERROR 43
+maxMap	Int32	ERROR 43
+maxMap	Int64	ERROR 43
+maxMap	Float32	ERROR 43
+maxMap	Float64	ERROR 43
+maxMap	Decimal(9, 2)	ERROR 43
+maxMap	Decimal(18, 4)	ERROR 43
+maxMap	Decimal(38, 3)	ERROR 43
+maxMap	Decimal(76, 5)	ERROR 43
+maxMap	Bool	ERROR 43
+maxMap	String	ERROR 43
+maxMap	Date	ERROR 43
+maxMap	Date32	ERROR 43
+maxMap	DateTime	ERROR 43
+maxMap	DateTime64(3)	ERROR 43
+maxMap	Enum8('a' = 1, 'b' = 2)	ERROR 43
+maxMap	LowCardinality(String)	ERROR 43
+maxMap	Nullable(UInt8)	ERROR 43
+maxMap	Nullable(Int64)	ERROR 43
+maxMap	Nullable(Float64)	ERROR 43
+maxMap	Nullable(String)	ERROR 43
+maxMap	LowCardinality(Nullable(String))	ERROR 43
+maxMap	Array(UInt8)	ERROR 43
+maxMap	Array(Nullable(Int32))	ERROR 43
+maxMap	Array(String)	ERROR 43
+maxMap	Map(String, UInt64)	Map(String, UInt64)
+maxMap	Map(LowCardinality(String), Int32)	Map(String, Int32)
+maxMap	Tuple(UInt8, String)	ERROR 43
+minMap	UInt8	ERROR 43
+minMap	UInt16	ERROR 43
+minMap	UInt32	ERROR 43
+minMap	UInt64	ERROR 43
+minMap	Int8	ERROR 43
+minMap	Int16	ERROR 43
+minMap	Int32	ERROR 43
+minMap	Int64	ERROR 43
+minMap	Float32	ERROR 43
+minMap	Float64	ERROR 43
+minMap	Decimal(9, 2)	ERROR 43
+minMap	Decimal(18, 4)	ERROR 43
+minMap	Decimal(38, 3)	ERROR 43
+minMap	Decimal(76, 5)	ERROR 43
+minMap	Bool	ERROR 43
+minMap	String	ERROR 43
+minMap	Date	ERROR 43
+minMap	Date32	ERROR 43
+minMap	DateTime	ERROR 43
+minMap	DateTime64(3)	ERROR 43
+minMap	Enum8('a' = 1, 'b' = 2)	ERROR 43
+minMap	LowCardinality(String)	ERROR 43
+minMap	Nullable(UInt8)	ERROR 43
+minMap	Nullable(Int64)	ERROR 43
+minMap	Nullable(Float64)	ERROR 43
+minMap	Nullable(String)	ERROR 43
+minMap	LowCardinality(Nullable(String))	ERROR 43
+minMap	Array(UInt8)	ERROR 43
+minMap	Array(Nullable(Int32))	ERROR 43
+minMap	Array(String)	ERROR 43
+minMap	Map(String, UInt64)	Map(String, UInt64)
+minMap	Map(LowCardinality(String), Int32)	Map(String, Int32)
+minMap	Tuple(UInt8, String)	ERROR 43
+countMap	UInt8	ERROR 43
+countMap	UInt16	ERROR 43
+countMap	UInt32	ERROR 43
+countMap	UInt64	ERROR 43
+countMap	Int8	ERROR 43
+countMap	Int16	ERROR 43
+countMap	Int32	ERROR 43
+countMap	Int64	ERROR 43
+countMap	Float32	ERROR 43
+countMap	Float64	ERROR 43
+countMap	Decimal(9, 2)	ERROR 43
+countMap	Decimal(18, 4)	ERROR 43
+countMap	Decimal(38, 3)	ERROR 43
+countMap	Decimal(76, 5)	ERROR 43
+countMap	Bool	ERROR 43
+countMap	String	ERROR 43
+countMap	Date	ERROR 43
+countMap	Date32	ERROR 43
+countMap	DateTime	ERROR 43
+countMap	DateTime64(3)	ERROR 43
+countMap	Enum8('a' = 1, 'b' = 2)	ERROR 43
+countMap	LowCardinality(String)	ERROR 43
+countMap	Nullable(UInt8)	ERROR 43
+countMap	Nullable(Int64)	ERROR 43
+countMap	Nullable(Float64)	ERROR 43
+countMap	Nullable(String)	ERROR 43
+countMap	LowCardinality(Nullable(String))	ERROR 43
+countMap	Array(UInt8)	ERROR 43
+countMap	Array(Nullable(Int32))	ERROR 43
+countMap	Array(String)	ERROR 43
+countMap	Map(String, UInt64)	Map(String, UInt64)
+countMap	Map(LowCardinality(String), Int32)	Map(String, UInt64)
+countMap	Tuple(UInt8, String)	ERROR 43
+avgMap	UInt8	ERROR 43
+avgMap	UInt16	ERROR 43
+avgMap	UInt32	ERROR 43
+avgMap	UInt64	ERROR 43
+avgMap	Int8	ERROR 43
+avgMap	Int16	ERROR 43
+avgMap	Int32	ERROR 43
+avgMap	Int64	ERROR 43
+avgMap	Float32	ERROR 43
+avgMap	Float64	ERROR 43
+avgMap	Decimal(9, 2)	ERROR 43
+avgMap	Decimal(18, 4)	ERROR 43
+avgMap	Decimal(38, 3)	ERROR 43
+avgMap	Decimal(76, 5)	ERROR 43
+avgMap	Bool	ERROR 43
+avgMap	String	ERROR 43
+avgMap	Date	ERROR 43
+avgMap	Date32	ERROR 43
+avgMap	DateTime	ERROR 43
+avgMap	DateTime64(3)	ERROR 43
+avgMap	Enum8('a' = 1, 'b' = 2)	ERROR 43
+avgMap	LowCardinality(String)	ERROR 43
+avgMap	Nullable(UInt8)	ERROR 43
+avgMap	Nullable(Int64)	ERROR 43
+avgMap	Nullable(Float64)	ERROR 43
+avgMap	Nullable(String)	ERROR 43
+avgMap	LowCardinality(Nullable(String))	ERROR 43
+avgMap	Array(UInt8)	ERROR 43
+avgMap	Array(Nullable(Int32))	ERROR 43
+avgMap	Array(String)	ERROR 43
+avgMap	Map(String, UInt64)	Map(String, Float64)
+avgMap	Map(LowCardinality(String), Int32)	Map(String, Float64)
+avgMap	Tuple(UInt8, String)	ERROR 43
+groupArray(2)	UInt8	Array(UInt8)
+groupArray(2)	UInt16	Array(UInt16)
+groupArray(2)	UInt32	Array(UInt32)
+groupArray(2)	UInt64	Array(UInt64)
+groupArray(2)	Int8	Array(Int8)
+groupArray(2)	Int16	Array(Int16)
+groupArray(2)	Int32	Array(Int32)
+groupArray(2)	Int64	Array(Int64)
+groupArray(2)	Float32	Array(Float32)
+groupArray(2)	Float64	Array(Float64)
+groupArray(2)	Decimal(9, 2)	Array(Decimal(9, 2))
+groupArray(2)	Decimal(18, 4)	Array(Decimal(18, 4))
+groupArray(2)	Decimal(38, 3)	Array(Decimal(38, 3))
+groupArray(2)	Decimal(76, 5)	Array(Decimal(76, 5))
+groupArray(2)	Bool	Array(Bool)
+groupArray(2)	String	Array(String)
+groupArray(2)	Date	Array(Date)
+groupArray(2)	Date32	Array(Date32)
+groupArray(2)	DateTime	Array(DateTime)
+groupArray(2)	DateTime64(3)	Array(DateTime64(3))
+groupArray(2)	Enum8('a' = 1, 'b' = 2)	Array(Enum8('a' = 1, 'b' = 2))
+groupArray(2)	LowCardinality(String)	Array(String)
+groupArray(2)	Nullable(UInt8)	Array(UInt8)
+groupArray(2)	Nullable(Int64)	Array(Int64)
+groupArray(2)	Nullable(Float64)	Array(Float64)
+groupArray(2)	Nullable(String)	Array(String)
+groupArray(2)	LowCardinality(Nullable(String))	Array(String)
+groupArray(2)	Array(UInt8)	Array(Array(UInt8))
+groupArray(2)	Array(Nullable(Int32))	Array(Array(Nullable(Int32)))
+groupArray(2)	Array(String)	Array(Array(String))
+groupArray(2)	Map(String, UInt64)	Array(Map(String, UInt64))
+groupArray(2)	Map(LowCardinality(String), Int32)	Array(Map(String, Int32))
+groupArray(2)	Tuple(UInt8, String)	Array(Tuple(UInt8, String))
+topK(3)	UInt8	Array(UInt8)
+topK(3)	UInt16	Array(UInt16)
+topK(3)	UInt32	Array(UInt32)
+topK(3)	UInt64	Array(UInt64)
+topK(3)	Int8	Array(Int8)
+topK(3)	Int16	Array(Int16)
+topK(3)	Int32	Array(Int32)
+topK(3)	Int64	Array(Int64)
+topK(3)	Float32	Array(Float32)
+topK(3)	Float64	Array(Float64)
+topK(3)	Decimal(9, 2)	Array(Decimal(9, 2))
+topK(3)	Decimal(18, 4)	Array(Decimal(18, 4))
+topK(3)	Decimal(38, 3)	Array(Decimal(38, 3))
+topK(3)	Decimal(76, 5)	Array(Decimal(76, 5))
+topK(3)	Bool	Array(Bool)
+topK(3)	String	Array(String)
+topK(3)	Date	Array(Date)
+topK(3)	Date32	Array(Date32)
+topK(3)	DateTime	Array(DateTime)
+topK(3)	DateTime64(3)	Array(DateTime64(3))
+topK(3)	Enum8('a' = 1, 'b' = 2)	Array(Enum8('a' = 1, 'b' = 2))
+topK(3)	LowCardinality(String)	Array(String)
+topK(3)	Nullable(UInt8)	Array(UInt8)
+topK(3)	Nullable(Int64)	Array(Int64)
+topK(3)	Nullable(Float64)	Array(Float64)
+topK(3)	Nullable(String)	Array(String)
+topK(3)	LowCardinality(Nullable(String))	Array(String)
+topK(3)	Array(UInt8)	Array(Array(UInt8))
+topK(3)	Array(Nullable(Int32))	Array(Array(Nullable(Int32)))
+topK(3)	Array(String)	Array(Array(String))
+topK(3)	Map(String, UInt64)	Array(Map(String, UInt64))
+topK(3)	Map(LowCardinality(String), Int32)	Array(Map(String, Int32))
+topK(3)	Tuple(UInt8, String)	Array(Tuple(UInt8, String))
+approx_top_k(2)	UInt8	Array(Tuple(item UInt8, count UInt64, error UInt64))
+approx_top_k(2)	UInt16	Array(Tuple(item UInt16, count UInt64, error UInt64))
+approx_top_k(2)	UInt32	Array(Tuple(item UInt32, count UInt64, error UInt64))
+approx_top_k(2)	UInt64	Array(Tuple(item UInt64, count UInt64, error UInt64))
+approx_top_k(2)	Int8	Array(Tuple(item Int8, count UInt64, error UInt64))
+approx_top_k(2)	Int16	Array(Tuple(item Int16, count UInt64, error UInt64))
+approx_top_k(2)	Int32	Array(Tuple(item Int32, count UInt64, error UInt64))
+approx_top_k(2)	Int64	Array(Tuple(item Int64, count UInt64, error UInt64))
+approx_top_k(2)	Float32	Array(Tuple(item Float32, count UInt64, error UInt64))
+approx_top_k(2)	Float64	Array(Tuple(item Float64, count UInt64, error UInt64))
+approx_top_k(2)	Decimal(9, 2)	Array(Tuple(item Decimal(9, 2), count UInt64, error UInt64))
+approx_top_k(2)	Decimal(18, 4)	Array(Tuple(item Decimal(18, 4), count UInt64, error UInt64))
+approx_top_k(2)	Decimal(38, 3)	Array(Tuple(item Decimal(38, 3), count UInt64, error UInt64))
+approx_top_k(2)	Decimal(76, 5)	Array(Tuple(item Decimal(76, 5), count UInt64, error UInt64))
+approx_top_k(2)	Bool	Array(Tuple(item Bool, count UInt64, error UInt64))
+approx_top_k(2)	String	Array(Tuple(item String, count UInt64, error UInt64))
+approx_top_k(2)	Date	Array(Tuple(item Date, count UInt64, error UInt64))
+approx_top_k(2)	Date32	Array(Tuple(item Date32, count UInt64, error UInt64))
+approx_top_k(2)	DateTime	Array(Tuple(item DateTime, count UInt64, error UInt64))
+approx_top_k(2)	DateTime64(3)	Array(Tuple(item DateTime64(3), count UInt64, error UInt64))
+approx_top_k(2)	Enum8('a' = 1, 'b' = 2)	Array(Tuple(item Enum8('a' = 1, 'b' = 2), count UInt64, error UInt64))
+approx_top_k(2)	LowCardinality(String)	Array(Tuple(item String, count UInt64, error UInt64))
+approx_top_k(2)	Nullable(UInt8)	Array(Tuple(item UInt8, count UInt64, error UInt64))
+approx_top_k(2)	Nullable(Int64)	Array(Tuple(item Int64, count UInt64, error UInt64))
+approx_top_k(2)	Nullable(Float64)	Array(Tuple(item Float64, count UInt64, error UInt64))
+approx_top_k(2)	Nullable(String)	Array(Tuple(item String, count UInt64, error UInt64))
+approx_top_k(2)	LowCardinality(Nullable(String))	Array(Tuple(item String, count UInt64, error UInt64))
+approx_top_k(2)	Array(UInt8)	Array(Tuple(item Array(UInt8), count UInt64, error UInt64))
+approx_top_k(2)	Array(Nullable(Int32))	Array(Tuple(item Array(Nullable(Int32)), count UInt64, error UInt64))
+approx_top_k(2)	Array(String)	Array(Tuple(item Array(String), count UInt64, error UInt64))
+approx_top_k(2)	Map(String, UInt64)	Array(Tuple(item Map(String, UInt64), count UInt64, error UInt64))
+approx_top_k(2)	Map(LowCardinality(String), Int32)	Array(Tuple(item Map(String, Int32), count UInt64, error UInt64))
+approx_top_k(2)	Tuple(UInt8, String)	Array(Tuple(item Tuple(UInt8, String), count UInt64, error UInt64))
+topK(3, 3, 'counts')	UInt8	Array(Tuple(item UInt8, count UInt64, error UInt64))
+topK(3, 3, 'counts')	UInt16	Array(Tuple(item UInt16, count UInt64, error UInt64))
+topK(3, 3, 'counts')	UInt32	Array(Tuple(item UInt32, count UInt64, error UInt64))
+topK(3, 3, 'counts')	UInt64	Array(Tuple(item UInt64, count UInt64, error UInt64))
+topK(3, 3, 'counts')	Int8	Array(Tuple(item Int8, count UInt64, error UInt64))
+topK(3, 3, 'counts')	Int16	Array(Tuple(item Int16, count UInt64, error UInt64))
+topK(3, 3, 'counts')	Int32	Array(Tuple(item Int32, count UInt64, error UInt64))
+topK(3, 3, 'counts')	Int64	Array(Tuple(item Int64, count UInt64, error UInt64))
+topK(3, 3, 'counts')	Float32	Array(Tuple(item Float32, count UInt64, error UInt64))
+topK(3, 3, 'counts')	Float64	Array(Tuple(item Float64, count UInt64, error UInt64))
+topK(3, 3, 'counts')	Decimal(9, 2)	Array(Tuple(item Decimal(9, 2), count UInt64, error UInt64))
+topK(3, 3, 'counts')	Decimal(18, 4)	Array(Tuple(item Decimal(18, 4), count UInt64, error UInt64))
+topK(3, 3, 'counts')	Decimal(38, 3)	Array(Tuple(item Decimal(38, 3), count UInt64, error UInt64))
+topK(3, 3, 'counts')	Decimal(76, 5)	Array(Tuple(item Decimal(76, 5), count UInt64, error UInt64))
+topK(3, 3, 'counts')	Bool	Array(Tuple(item Bool, count UInt64, error UInt64))
+topK(3, 3, 'counts')	String	Array(Tuple(item String, count UInt64, error UInt64))
+topK(3, 3, 'counts')	Date	Array(Tuple(item Date, count UInt64, error UInt64))
+topK(3, 3, 'counts')	Date32	Array(Tuple(item Date32, count UInt64, error UInt64))
+topK(3, 3, 'counts')	DateTime	Array(Tuple(item DateTime, count UInt64, error UInt64))
+topK(3, 3, 'counts')	DateTime64(3)	Array(Tuple(item DateTime64(3), count UInt64, error UInt64))
+topK(3, 3, 'counts')	Enum8('a' = 1, 'b' = 2)	Array(Tuple(item Enum8('a' = 1, 'b' = 2), count UInt64, error UInt64))
+topK(3, 3, 'counts')	LowCardinality(String)	Array(Tuple(item String, count UInt64, error UInt64))
+topK(3, 3, 'counts')	Nullable(UInt8)	Array(Tuple(item UInt8, count UInt64, error UInt64))
+topK(3, 3, 'counts')	Nullable(Int64)	Array(Tuple(item Int64, count UInt64, error UInt64))
+topK(3, 3, 'counts')	Nullable(Float64)	Array(Tuple(item Float64, count UInt64, error UInt64))
+topK(3, 3, 'counts')	Nullable(String)	Array(Tuple(item String, count UInt64, error UInt64))
+topK(3, 3, 'counts')	LowCardinality(Nullable(String))	Array(Tuple(item String, count UInt64, error UInt64))
+topK(3, 3, 'counts')	Array(UInt8)	Array(Tuple(item Array(UInt8), count UInt64, error UInt64))
+topK(3, 3, 'counts')	Array(Nullable(Int32))	Array(Tuple(item Array(Nullable(Int32)), count UInt64, error UInt64))
+topK(3, 3, 'counts')	Array(String)	Array(Tuple(item Array(String), count UInt64, error UInt64))
+topK(3, 3, 'counts')	Map(String, UInt64)	Array(Tuple(item Map(String, UInt64), count UInt64, error UInt64))
+topK(3, 3, 'counts')	Map(LowCardinality(String), Int32)	Array(Tuple(item Map(String, Int32), count UInt64, error UInt64))
+topK(3, 3, 'counts')	Tuple(UInt8, String)	Array(Tuple(item Tuple(UInt8, String), count UInt64, error UInt64))
+groupUniqArray(1)	UInt8	Array(UInt8)
+groupUniqArray(1)	UInt16	Array(UInt16)
+groupUniqArray(1)	UInt32	Array(UInt32)
+groupUniqArray(1)	UInt64	Array(UInt64)
+groupUniqArray(1)	Int8	Array(Int8)
+groupUniqArray(1)	Int16	Array(Int16)
+groupUniqArray(1)	Int32	Array(Int32)
+groupUniqArray(1)	Int64	Array(Int64)
+groupUniqArray(1)	Float32	Array(Float32)
+groupUniqArray(1)	Float64	Array(Float64)
+groupUniqArray(1)	Decimal(9, 2)	Array(Decimal(9, 2))
+groupUniqArray(1)	Decimal(18, 4)	Array(Decimal(18, 4))
+groupUniqArray(1)	Decimal(38, 3)	Array(Decimal(38, 3))
+groupUniqArray(1)	Decimal(76, 5)	Array(Decimal(76, 5))
+groupUniqArray(1)	Bool	Array(Bool)
+groupUniqArray(1)	String	Array(String)
+groupUniqArray(1)	Date	Array(Date)
+groupUniqArray(1)	Date32	Array(Date32)
+groupUniqArray(1)	DateTime	Array(DateTime)
+groupUniqArray(1)	DateTime64(3)	Array(DateTime64(3))
+groupUniqArray(1)	Enum8('a' = 1, 'b' = 2)	Array(Enum8('a' = 1, 'b' = 2))
+groupUniqArray(1)	LowCardinality(String)	Array(String)
+groupUniqArray(1)	Nullable(UInt8)	Array(UInt8)
+groupUniqArray(1)	Nullable(Int64)	Array(Int64)
+groupUniqArray(1)	Nullable(Float64)	Array(Float64)
+groupUniqArray(1)	Nullable(String)	Array(String)
+groupUniqArray(1)	LowCardinality(Nullable(String))	Array(String)
+groupUniqArray(1)	Array(UInt8)	Array(Array(UInt8))
+groupUniqArray(1)	Array(Nullable(Int32))	Array(Array(Nullable(Int32)))
+groupUniqArray(1)	Array(String)	Array(Array(String))
+groupUniqArray(1)	Map(String, UInt64)	Array(Map(String, UInt64))
+groupUniqArray(1)	Map(LowCardinality(String), Int32)	Array(Map(String, Int32))
+groupUniqArray(1)	Tuple(UInt8, String)	Array(Tuple(UInt8, String))
+array_agg	UInt8	Array(UInt8)
+array_agg	UInt16	Array(UInt16)
+array_agg	UInt32	Array(UInt32)
+array_agg	UInt64	Array(UInt64)
+array_agg	Int8	Array(Int8)
+array_agg	Int16	Array(Int16)
+array_agg	Int32	Array(Int32)
+array_agg	Int64	Array(Int64)
+array_agg	Float32	Array(Float32)
+array_agg	Float64	Array(Float64)
+array_agg	Decimal(9, 2)	Array(Decimal(9, 2))
+array_agg	Decimal(18, 4)	Array(Decimal(18, 4))
+array_agg	Decimal(38, 3)	Array(Decimal(38, 3))
+array_agg	Decimal(76, 5)	Array(Decimal(76, 5))
+array_agg	Bool	Array(Bool)
+array_agg	String	Array(String)
+array_agg	Date	Array(Date)
+array_agg	Date32	Array(Date32)
+array_agg	DateTime	Array(DateTime)
+array_agg	DateTime64(3)	Array(DateTime64(3))
+array_agg	Enum8('a' = 1, 'b' = 2)	Array(Enum8('a' = 1, 'b' = 2))
+array_agg	LowCardinality(String)	Array(String)
+array_agg	Nullable(UInt8)	Array(UInt8)
+array_agg	Nullable(Int64)	Array(Int64)
+array_agg	Nullable(Float64)	Array(Float64)
+array_agg	Nullable(String)	Array(String)
+array_agg	LowCardinality(Nullable(String))	Array(String)
+array_agg	Array(UInt8)	Array(Array(UInt8))
+array_agg	Array(Nullable(Int32))	Array(Array(Nullable(Int32)))
+array_agg	Array(String)	Array(Array(String))
+array_agg	Map(String, UInt64)	Array(Map(String, UInt64))
+array_agg	Map(LowCardinality(String), Int32)	Array(Map(String, Int32))
+array_agg	Tuple(UInt8, String)	Array(Tuple(UInt8, String))
+last_value	UInt8	UInt8
+last_value	UInt16	UInt16
+last_value	UInt32	UInt32
+last_value	UInt64	UInt64
+last_value	Int8	Int8
+last_value	Int16	Int16
+last_value	Int32	Int32
+last_value	Int64	Int64
+last_value	Float32	Float32
+last_value	Float64	Float64
+last_value	Decimal(9, 2)	Decimal(9, 2)
+last_value	Decimal(18, 4)	Decimal(18, 4)
+last_value	Decimal(38, 3)	Decimal(38, 3)
+last_value	Decimal(76, 5)	Decimal(76, 5)
+last_value	Bool	Bool
+last_value	String	String
+last_value	Date	Date
+last_value	Date32	Date32
+last_value	DateTime	DateTime
+last_value	DateTime64(3)	DateTime64(3)
+last_value	Enum8('a' = 1, 'b' = 2)	Enum8('a' = 1, 'b' = 2)
+last_value	LowCardinality(String)	String
+last_value	Nullable(UInt8)	Nullable(UInt8)
+last_value	Nullable(Int64)	Nullable(Int64)
+last_value	Nullable(Float64)	Nullable(Float64)
+last_value	Nullable(String)	Nullable(String)
+last_value	LowCardinality(Nullable(String))	Nullable(String)
+last_value	Array(UInt8)	Array(UInt8)
+last_value	Array(Nullable(Int32))	Array(Nullable(Int32))
+last_value	Array(String)	Array(String)
+last_value	Map(String, UInt64)	Map(String, UInt64)
+last_value	Map(LowCardinality(String), Int32)	Map(String, Int32)
+last_value	Tuple(UInt8, String)	Tuple(UInt8, String)
+first_value	UInt8	UInt8
+first_value	UInt16	UInt16
+first_value	UInt32	UInt32
+first_value	UInt64	UInt64
+first_value	Int8	Int8
+first_value	Int16	Int16
+first_value	Int32	Int32
+first_value	Int64	Int64
+first_value	Float32	Float32
+first_value	Float64	Float64
+first_value	Decimal(9, 2)	Decimal(9, 2)
+first_value	Decimal(18, 4)	Decimal(18, 4)
+first_value	Decimal(38, 3)	Decimal(38, 3)
+first_value	Decimal(76, 5)	Decimal(76, 5)
+first_value	Bool	Bool
+first_value	String	String
+first_value	Date	Date
+first_value	Date32	Date32
+first_value	DateTime	DateTime
+first_value	DateTime64(3)	DateTime64(3)
+first_value	Enum8('a' = 1, 'b' = 2)	Enum8('a' = 1, 'b' = 2)
+first_value	LowCardinality(String)	String
+first_value	Nullable(UInt8)	Nullable(UInt8)
+first_value	Nullable(Int64)	Nullable(Int64)
+first_value	Nullable(Float64)	Nullable(Float64)
+first_value	Nullable(String)	Nullable(String)
+first_value	LowCardinality(Nullable(String))	Nullable(String)
+first_value	Array(UInt8)	Array(UInt8)
+first_value	Array(Nullable(Int32))	Array(Nullable(Int32))
+first_value	Array(String)	Array(String)
+first_value	Map(String, UInt64)	Map(String, UInt64)
+first_value	Map(LowCardinality(String), Int32)	Map(String, Int32)
+first_value	Tuple(UInt8, String)	Tuple(UInt8, String)
+any_value	UInt8	UInt8
+any_value	UInt16	UInt16
+any_value	UInt32	UInt32
+any_value	UInt64	UInt64
+any_value	Int8	Int8
+any_value	Int16	Int16
+any_value	Int32	Int32
+any_value	Int64	Int64
+any_value	Float32	Float32
+any_value	Float64	Float64
+any_value	Decimal(9, 2)	Decimal(9, 2)
+any_value	Decimal(18, 4)	Decimal(18, 4)
+any_value	Decimal(38, 3)	Decimal(38, 3)
+any_value	Decimal(76, 5)	Decimal(76, 5)
+any_value	Bool	Bool
+any_value	String	String
+any_value	Date	Date
+any_value	Date32	Date32
+any_value	DateTime	DateTime
+any_value	DateTime64(3)	DateTime64(3)
+any_value	Enum8('a' = 1, 'b' = 2)	Enum8('a' = 1, 'b' = 2)
+any_value	LowCardinality(String)	String
+any_value	Nullable(UInt8)	Nullable(UInt8)
+any_value	Nullable(Int64)	Nullable(Int64)
+any_value	Nullable(Float64)	Nullable(Float64)
+any_value	Nullable(String)	Nullable(String)
+any_value	LowCardinality(Nullable(String))	Nullable(String)
+any_value	Array(UInt8)	Array(UInt8)
+any_value	Array(Nullable(Int32))	Array(Nullable(Int32))
+any_value	Array(String)	Array(String)
+any_value	Map(String, UInt64)	Map(String, UInt64)
+any_value	Map(LowCardinality(String), Int32)	Map(String, Int32)
+any_value	Tuple(UInt8, String)	Tuple(UInt8, String)
+argMax	UInt8|UInt8	UInt8
+argMax	UInt16|UInt8	UInt16
+argMax	UInt32|UInt8	UInt32
+argMax	UInt64|UInt8	UInt64
+argMax	Int8|UInt8	Int8
+argMax	Int16|UInt8	Int16
+argMax	Int32|UInt8	Int32
+argMax	Int64|UInt8	Int64
+argMax	Float32|UInt8	Float32
+argMax	Float64|UInt8	Float64
+argMax	Decimal(9, 2)|UInt8	Decimal(9, 2)
+argMax	Decimal(18, 4)|UInt8	Decimal(18, 4)
+argMax	Decimal(38, 3)|UInt8	Decimal(38, 3)
+argMax	Decimal(76, 5)|UInt8	Decimal(76, 5)
+argMax	Bool|UInt8	Bool
+argMax	String|UInt8	String
+argMax	Date|UInt8	Date
+argMax	Date32|UInt8	Date32
+argMax	DateTime|UInt8	DateTime
+argMax	DateTime64(3)|UInt8	DateTime64(3)
+argMax	Enum8('a' = 1, 'b' = 2)|UInt8	Enum8('a' = 1, 'b' = 2)
+argMax	LowCardinality(String)|UInt8	String
+argMax	Nullable(UInt8)|UInt8	Nullable(UInt8)
+argMax	Nullable(Int64)|UInt8	Nullable(Int64)
+argMax	Nullable(Float64)|UInt8	Nullable(Float64)
+argMax	Nullable(String)|UInt8	Nullable(String)
+argMax	LowCardinality(Nullable(String))|UInt8	Nullable(String)
+argMax	Array(UInt8)|UInt8	Array(UInt8)
+argMax	Array(Nullable(Int32))|UInt8	Array(Nullable(Int32))
+argMax	Array(String)|UInt8	Array(String)
+argMax	Map(String, UInt64)|UInt8	Map(String, UInt64)
+argMax	Map(LowCardinality(String), Int32)|UInt8	Map(String, Int32)
+argMax	Tuple(UInt8, String)|UInt8	Tuple(UInt8, String)
+argMin	UInt8|UInt8	UInt8
+argMin	UInt8|UInt16	UInt8
+argMin	UInt8|UInt32	UInt8
+argMin	UInt8|UInt64	UInt8
+argMin	UInt8|Int8	UInt8
+argMin	UInt8|Int16	UInt8
+argMin	UInt8|Int32	UInt8
+argMin	UInt8|Int64	UInt8
+argMin	UInt8|Float32	UInt8
+argMin	UInt8|Float64	UInt8
+argMin	UInt8|Decimal(9, 2)	UInt8
+argMin	UInt8|Decimal(18, 4)	UInt8
+argMin	UInt8|Decimal(38, 3)	UInt8
+argMin	UInt8|Decimal(76, 5)	UInt8
+argMin	UInt8|Bool	UInt8
+argMin	UInt8|String	UInt8
+argMin	UInt8|Date	UInt8
+argMin	UInt8|Date32	UInt8
+argMin	UInt8|DateTime	UInt8
+argMin	UInt8|DateTime64(3)	UInt8
+argMin	UInt8|Enum8('a' = 1, 'b' = 2)	UInt8
+argMin	UInt8|LowCardinality(String)	UInt8
+argMin	UInt8|Nullable(UInt8)	Nullable(UInt8)
+argMin	UInt8|Nullable(Int64)	Nullable(UInt8)
+argMin	UInt8|Nullable(Float64)	Nullable(UInt8)
+argMin	UInt8|Nullable(String)	Nullable(UInt8)
+argMin	UInt8|LowCardinality(Nullable(String))	Nullable(UInt8)
+argMin	UInt8|Array(UInt8)	UInt8
+argMin	UInt8|Array(Nullable(Int32))	UInt8
+argMin	UInt8|Array(String)	UInt8
+argMin	UInt8|Map(String, UInt64)	UInt8
+argMin	UInt8|Map(LowCardinality(String), Int32)	UInt8
+argMin	UInt8|Tuple(UInt8, String)	UInt8
+argMax	UInt8|Nullable(UInt8)	Nullable(UInt8)
+argMax	UInt16|Nullable(UInt8)	Nullable(UInt16)
+argMax	UInt32|Nullable(UInt8)	Nullable(UInt32)
+argMax	UInt64|Nullable(UInt8)	Nullable(UInt64)
+argMax	Int8|Nullable(UInt8)	Nullable(Int8)
+argMax	Int16|Nullable(UInt8)	Nullable(Int16)
+argMax	Int32|Nullable(UInt8)	Nullable(Int32)
+argMax	Int64|Nullable(UInt8)	Nullable(Int64)
+argMax	Float32|Nullable(UInt8)	Nullable(Float32)
+argMax	Float64|Nullable(UInt8)	Nullable(Float64)
+argMax	Decimal(9, 2)|Nullable(UInt8)	Nullable(Decimal(9, 2))
+argMax	Decimal(18, 4)|Nullable(UInt8)	Nullable(Decimal(18, 4))
+argMax	Decimal(38, 3)|Nullable(UInt8)	Nullable(Decimal(38, 3))
+argMax	Decimal(76, 5)|Nullable(UInt8)	Nullable(Decimal(76, 5))
+argMax	Bool|Nullable(UInt8)	Nullable(Bool)
+argMax	String|Nullable(UInt8)	Nullable(String)
+argMax	Date|Nullable(UInt8)	Nullable(Date)
+argMax	Date32|Nullable(UInt8)	Nullable(Date32)
+argMax	DateTime|Nullable(UInt8)	Nullable(DateTime)
+argMax	DateTime64(3)|Nullable(UInt8)	Nullable(DateTime64(3))
+argMax	Enum8('a' = 1, 'b' = 2)|Nullable(UInt8)	Nullable(Enum8('a' = 1, 'b' = 2))
+argMax	LowCardinality(String)|Nullable(UInt8)	Nullable(String)
+argMax	Nullable(UInt8)|Nullable(UInt8)	Nullable(UInt8)
+argMax	Nullable(Int64)|Nullable(UInt8)	Nullable(Int64)
+argMax	Nullable(Float64)|Nullable(UInt8)	Nullable(Float64)
+argMax	Nullable(String)|Nullable(UInt8)	Nullable(String)
+argMax	LowCardinality(Nullable(String))|Nullable(UInt8)	Nullable(String)
+argMax	Array(UInt8)|Nullable(UInt8)	Array(UInt8)
+argMax	Array(Nullable(Int32))|Nullable(UInt8)	Array(Nullable(Int32))
+argMax	Array(String)|Nullable(UInt8)	Array(String)
+argMax	Map(String, UInt64)|Nullable(UInt8)	Map(String, UInt64)
+argMax	Map(LowCardinality(String), Int32)|Nullable(UInt8)	Map(String, Int32)
+argMax	Tuple(UInt8, String)|Nullable(UInt8)	Nullable(Tuple(UInt8, String))
+sumIf	UInt8|UInt8	UInt64
+sumIf	UInt16|UInt8	UInt64
+sumIf	UInt32|UInt8	UInt64
+sumIf	UInt64|UInt8	UInt64
+sumIf	Int8|UInt8	Int64
+sumIf	Int16|UInt8	Int64
+sumIf	Int32|UInt8	Int64
+sumIf	Int64|UInt8	Int64
+sumIf	Float32|UInt8	Float64
+sumIf	Float64|UInt8	Float64
+sumIf	Decimal(9, 2)|UInt8	Decimal(38, 2)
+sumIf	Decimal(18, 4)|UInt8	Decimal(38, 4)
+sumIf	Decimal(38, 3)|UInt8	Decimal(38, 3)
+sumIf	Decimal(76, 5)|UInt8	Decimal(76, 5)
+sumIf	Bool|UInt8	UInt64
+sumIf	String|UInt8	ERROR 43
+sumIf	Date|UInt8	ERROR 43
+sumIf	Date32|UInt8	ERROR 43
+sumIf	DateTime|UInt8	ERROR 43
+sumIf	DateTime64(3)|UInt8	ERROR 43
+sumIf	Enum8('a' = 1, 'b' = 2)|UInt8	Int64
+sumIf	LowCardinality(String)|UInt8	ERROR 43
+sumIf	Nullable(UInt8)|UInt8	Nullable(UInt64)
+sumIf	Nullable(Int64)|UInt8	Nullable(Int64)
+sumIf	Nullable(Float64)|UInt8	Nullable(Float64)
+sumIf	Nullable(String)|UInt8	ERROR 43
+sumIf	LowCardinality(Nullable(String))|UInt8	ERROR 43
+sumIf	Array(UInt8)|UInt8	ERROR 43
+sumIf	Array(Nullable(Int32))|UInt8	ERROR 43
+sumIf	Array(String)|UInt8	ERROR 43
+sumIf	Map(String, UInt64)|UInt8	ERROR 43
+sumIf	Map(LowCardinality(String), Int32)|UInt8	ERROR 43
+sumIf	Tuple(UInt8, String)|UInt8	ERROR 43
+sumIf	UInt8|Nullable(UInt8)	UInt64
+sumIf	UInt16|Nullable(UInt8)	UInt64
+sumIf	UInt32|Nullable(UInt8)	UInt64
+sumIf	UInt64|Nullable(UInt8)	UInt64
+sumIf	Int8|Nullable(UInt8)	Int64
+sumIf	Int16|Nullable(UInt8)	Int64
+sumIf	Int32|Nullable(UInt8)	Int64
+sumIf	Int64|Nullable(UInt8)	Int64
+sumIf	Float32|Nullable(UInt8)	Float64
+sumIf	Float64|Nullable(UInt8)	Float64
+sumIf	Decimal(9, 2)|Nullable(UInt8)	Decimal(38, 2)
+sumIf	Decimal(18, 4)|Nullable(UInt8)	Decimal(38, 4)
+sumIf	Decimal(38, 3)|Nullable(UInt8)	Decimal(38, 3)
+sumIf	Decimal(76, 5)|Nullable(UInt8)	Decimal(76, 5)
+sumIf	Bool|Nullable(UInt8)	UInt64
+sumIf	String|Nullable(UInt8)	ERROR 43
+sumIf	Date|Nullable(UInt8)	ERROR 43
+sumIf	Date32|Nullable(UInt8)	ERROR 43
+sumIf	DateTime|Nullable(UInt8)	ERROR 43
+sumIf	DateTime64(3)|Nullable(UInt8)	ERROR 43
+sumIf	Enum8('a' = 1, 'b' = 2)|Nullable(UInt8)	Int64
+sumIf	LowCardinality(String)|Nullable(UInt8)	ERROR 43
+sumIf	Nullable(UInt8)|Nullable(UInt8)	Nullable(UInt64)
+sumIf	Nullable(Int64)|Nullable(UInt8)	Nullable(Int64)
+sumIf	Nullable(Float64)|Nullable(UInt8)	Nullable(Float64)
+sumIf	Nullable(String)|Nullable(UInt8)	ERROR 43
+sumIf	LowCardinality(Nullable(String))|Nullable(UInt8)	ERROR 43
+sumIf	Array(UInt8)|Nullable(UInt8)	ERROR 43
+sumIf	Array(Nullable(Int32))|Nullable(UInt8)	ERROR 43
+sumIf	Array(String)|Nullable(UInt8)	ERROR 43
+sumIf	Map(String, UInt64)|Nullable(UInt8)	ERROR 43
+sumIf	Map(LowCardinality(String), Int32)|Nullable(UInt8)	ERROR 43
+sumIf	Tuple(UInt8, String)|Nullable(UInt8)	ERROR 43
+groupArrayIf	UInt8|Bool	Array(UInt8)
+groupArrayIf	UInt16|Bool	Array(UInt16)
+groupArrayIf	UInt32|Bool	Array(UInt32)
+groupArrayIf	UInt64|Bool	Array(UInt64)
+groupArrayIf	Int8|Bool	Array(Int8)
+groupArrayIf	Int16|Bool	Array(Int16)
+groupArrayIf	Int32|Bool	Array(Int32)
+groupArrayIf	Int64|Bool	Array(Int64)
+groupArrayIf	Float32|Bool	Array(Float32)
+groupArrayIf	Float64|Bool	Array(Float64)
+groupArrayIf	Decimal(9, 2)|Bool	Array(Decimal(9, 2))
+groupArrayIf	Decimal(18, 4)|Bool	Array(Decimal(18, 4))
+groupArrayIf	Decimal(38, 3)|Bool	Array(Decimal(38, 3))
+groupArrayIf	Decimal(76, 5)|Bool	Array(Decimal(76, 5))
+groupArrayIf	Bool|Bool	Array(Bool)
+groupArrayIf	String|Bool	Array(String)
+groupArrayIf	Date|Bool	Array(Date)
+groupArrayIf	Date32|Bool	Array(Date32)
+groupArrayIf	DateTime|Bool	Array(DateTime)
+groupArrayIf	DateTime64(3)|Bool	Array(DateTime64(3))
+groupArrayIf	Enum8('a' = 1, 'b' = 2)|Bool	Array(Enum8('a' = 1, 'b' = 2))
+groupArrayIf	LowCardinality(String)|Bool	Array(String)
+groupArrayIf	Nullable(UInt8)|Bool	Array(UInt8)
+groupArrayIf	Nullable(Int64)|Bool	Array(Int64)
+groupArrayIf	Nullable(Float64)|Bool	Array(Float64)
+groupArrayIf	Nullable(String)|Bool	Array(String)
+groupArrayIf	LowCardinality(Nullable(String))|Bool	Array(String)
+groupArrayIf	Array(UInt8)|Bool	Array(Array(UInt8))
+groupArrayIf	Array(Nullable(Int32))|Bool	Array(Array(Nullable(Int32)))
+groupArrayIf	Array(String)|Bool	Array(Array(String))
+groupArrayIf	Map(String, UInt64)|Bool	Array(Map(String, UInt64))
+groupArrayIf	Map(LowCardinality(String), Int32)|Bool	Array(Map(String, Int32))
+groupArrayIf	Tuple(UInt8, String)|Bool	Array(Tuple(UInt8, String))
+avgIfOrNull	UInt8|UInt8	Nullable(Float64)
+avgIfOrNull	UInt16|UInt8	Nullable(Float64)
+avgIfOrNull	UInt32|UInt8	Nullable(Float64)
+avgIfOrNull	UInt64|UInt8	Nullable(Float64)
+avgIfOrNull	Int8|UInt8	Nullable(Float64)
+avgIfOrNull	Int16|UInt8	Nullable(Float64)
+avgIfOrNull	Int32|UInt8	Nullable(Float64)
+avgIfOrNull	Int64|UInt8	Nullable(Float64)
+avgIfOrNull	Float32|UInt8	Nullable(Float64)
+avgIfOrNull	Float64|UInt8	Nullable(Float64)
+avgIfOrNull	Decimal(9, 2)|UInt8	Nullable(Float64)
+avgIfOrNull	Decimal(18, 4)|UInt8	Nullable(Float64)
+avgIfOrNull	Decimal(38, 3)|UInt8	Nullable(Float64)
+avgIfOrNull	Decimal(76, 5)|UInt8	Nullable(Float64)
+avgIfOrNull	Bool|UInt8	Nullable(Float64)
+avgIfOrNull	String|UInt8	ERROR 43
+avgIfOrNull	Date|UInt8	Nullable(Date)
+avgIfOrNull	Date32|UInt8	Nullable(Date32)
+avgIfOrNull	DateTime|UInt8	Nullable(DateTime)
+avgIfOrNull	DateTime64(3)|UInt8	Nullable(DateTime64(3))
+avgIfOrNull	Enum8('a' = 1, 'b' = 2)|UInt8	ERROR 43
+avgIfOrNull	LowCardinality(String)|UInt8	ERROR 43
+avgIfOrNull	Nullable(UInt8)|UInt8	Nullable(Float64)
+avgIfOrNull	Nullable(Int64)|UInt8	Nullable(Float64)
+avgIfOrNull	Nullable(Float64)|UInt8	Nullable(Float64)
+avgIfOrNull	Nullable(String)|UInt8	ERROR 43
+avgIfOrNull	LowCardinality(Nullable(String))|UInt8	ERROR 43
+avgIfOrNull	Array(UInt8)|UInt8	ERROR 43
+avgIfOrNull	Array(Nullable(Int32))|UInt8	ERROR 43
+avgIfOrNull	Array(String)|UInt8	ERROR 43
+avgIfOrNull	Map(String, UInt64)|UInt8	ERROR 43
+avgIfOrNull	Map(LowCardinality(String), Int32)|UInt8	ERROR 43
+avgIfOrNull	Tuple(UInt8, String)|UInt8	ERROR 43
+maxOrNullIf	UInt8|UInt8	Nullable(UInt8)
+maxOrNullIf	UInt16|UInt8	Nullable(UInt16)
+maxOrNullIf	UInt32|UInt8	Nullable(UInt32)
+maxOrNullIf	UInt64|UInt8	Nullable(UInt64)
+maxOrNullIf	Int8|UInt8	Nullable(Int8)
+maxOrNullIf	Int16|UInt8	Nullable(Int16)
+maxOrNullIf	Int32|UInt8	Nullable(Int32)
+maxOrNullIf	Int64|UInt8	Nullable(Int64)
+maxOrNullIf	Float32|UInt8	Nullable(Float32)
+maxOrNullIf	Float64|UInt8	Nullable(Float64)
+maxOrNullIf	Decimal(9, 2)|UInt8	Nullable(Decimal(9, 2))
+maxOrNullIf	Decimal(18, 4)|UInt8	Nullable(Decimal(18, 4))
+maxOrNullIf	Decimal(38, 3)|UInt8	Nullable(Decimal(38, 3))
+maxOrNullIf	Decimal(76, 5)|UInt8	Nullable(Decimal(76, 5))
+maxOrNullIf	Bool|UInt8	Nullable(Bool)
+maxOrNullIf	String|UInt8	Nullable(String)
+maxOrNullIf	Date|UInt8	Nullable(Date)
+maxOrNullIf	Date32|UInt8	Nullable(Date32)
+maxOrNullIf	DateTime|UInt8	Nullable(DateTime)
+maxOrNullIf	DateTime64(3)|UInt8	Nullable(DateTime64(3))
+maxOrNullIf	Enum8('a' = 1, 'b' = 2)|UInt8	Nullable(Enum8('a' = 1, 'b' = 2))
+maxOrNullIf	LowCardinality(String)|UInt8	Nullable(String)
+maxOrNullIf	Nullable(UInt8)|UInt8	Nullable(UInt8)
+maxOrNullIf	Nullable(Int64)|UInt8	Nullable(Int64)
+maxOrNullIf	Nullable(Float64)|UInt8	Nullable(Float64)
+maxOrNullIf	Nullable(String)|UInt8	Nullable(String)
+maxOrNullIf	LowCardinality(Nullable(String))|UInt8	Nullable(String)
+maxOrNullIf	Array(UInt8)|UInt8	Array(UInt8)
+maxOrNullIf	Array(Nullable(Int32))|UInt8	Array(Nullable(Int32))
+maxOrNullIf	Array(String)|UInt8	Array(String)
+maxOrNullIf	Map(String, UInt64)|UInt8	Map(String, UInt64)
+maxOrNullIf	Map(LowCardinality(String), Int32)|UInt8	Map(String, Int32)
+maxOrNullIf	Tuple(UInt8, String)|UInt8	Nullable(Tuple(UInt8, String))
+countIf	UInt8	UInt64
+countIf	Nullable(UInt8)	UInt64
+windowFunnel(10)	UInt8|UInt8|UInt8	UInt8
+windowFunnel(10)	UInt16|UInt8|UInt8	UInt8
+windowFunnel(10)	UInt32|UInt8|UInt8	UInt8
+windowFunnel(10)	UInt64|UInt8|UInt8	UInt8
+windowFunnel(10)	Int8|UInt8|UInt8	ERROR 43
+windowFunnel(10)	Int16|UInt8|UInt8	ERROR 43
+windowFunnel(10)	Int32|UInt8|UInt8	ERROR 43
+windowFunnel(10)	Int64|UInt8|UInt8	ERROR 43
+windowFunnel(10)	Float32|UInt8|UInt8	ERROR 43
+windowFunnel(10)	Float64|UInt8|UInt8	ERROR 43
+windowFunnel(10)	Decimal(9, 2)|UInt8|UInt8	ERROR 43
+windowFunnel(10)	Decimal(18, 4)|UInt8|UInt8	ERROR 43
+windowFunnel(10)	Decimal(38, 3)|UInt8|UInt8	ERROR 43
+windowFunnel(10)	Decimal(76, 5)|UInt8|UInt8	ERROR 43
+windowFunnel(10)	Bool|UInt8|UInt8	UInt8
+windowFunnel(10)	String|UInt8|UInt8	ERROR 43
+windowFunnel(10)	Date|UInt8|UInt8	UInt8
+windowFunnel(10)	Date32|UInt8|UInt8	ERROR 43
+windowFunnel(10)	DateTime|UInt8|UInt8	UInt8
+windowFunnel(10)	DateTime64(3)|UInt8|UInt8	ERROR 43
+windowFunnel(10)	Enum8('a' = 1, 'b' = 2)|UInt8|UInt8	ERROR 43
+windowFunnel(10)	LowCardinality(String)|UInt8|UInt8	ERROR 43
+windowFunnel(10)	Nullable(UInt8)|UInt8|UInt8	Nullable(UInt8)
+windowFunnel(10)	Nullable(Int64)|UInt8|UInt8	ERROR 43
+windowFunnel(10)	Nullable(Float64)|UInt8|UInt8	ERROR 43
+windowFunnel(10)	Nullable(String)|UInt8|UInt8	ERROR 43
+windowFunnel(10)	LowCardinality(Nullable(String))|UInt8|UInt8	ERROR 43
+windowFunnel(10)	Array(UInt8)|UInt8|UInt8	ERROR 43
+windowFunnel(10)	Array(Nullable(Int32))|UInt8|UInt8	ERROR 43
+windowFunnel(10)	Array(String)|UInt8|UInt8	ERROR 43
+windowFunnel(10)	Map(String, UInt64)|UInt8|UInt8	ERROR 43
+windowFunnel(10)	Map(LowCardinality(String), Int32)|UInt8|UInt8	ERROR 43
+windowFunnel(10)	Tuple(UInt8, String)|UInt8|UInt8	ERROR 43
+windowFunnel(10)	UInt32|UInt8	UInt8
+windowFunnel(10)	UInt32|UInt16	ERROR 43
+windowFunnel(10)	UInt32|UInt32	ERROR 43
+windowFunnel(10)	UInt32|UInt64	ERROR 43
+windowFunnel(10)	UInt32|Int8	ERROR 43
+windowFunnel(10)	UInt32|Int16	ERROR 43
+windowFunnel(10)	UInt32|Int32	ERROR 43
+windowFunnel(10)	UInt32|Int64	ERROR 43
+windowFunnel(10)	UInt32|Float32	ERROR 43
+windowFunnel(10)	UInt32|Float64	ERROR 43
+windowFunnel(10)	UInt32|Decimal(9, 2)	ERROR 43
+windowFunnel(10)	UInt32|Decimal(18, 4)	ERROR 43
+windowFunnel(10)	UInt32|Decimal(38, 3)	ERROR 43
+windowFunnel(10)	UInt32|Decimal(76, 5)	ERROR 43
+windowFunnel(10)	UInt32|Bool	UInt8
+windowFunnel(10)	UInt32|String	ERROR 43
+windowFunnel(10)	UInt32|Date	ERROR 43
+windowFunnel(10)	UInt32|Date32	ERROR 43
+windowFunnel(10)	UInt32|DateTime	ERROR 43
+windowFunnel(10)	UInt32|DateTime64(3)	ERROR 43
+windowFunnel(10)	UInt32|Enum8('a' = 1, 'b' = 2)	ERROR 43
+windowFunnel(10)	UInt32|LowCardinality(String)	ERROR 43
+windowFunnel(10)	UInt32|Nullable(UInt8)	Nullable(UInt8)
+windowFunnel(10)	UInt32|Nullable(Int64)	ERROR 43
+windowFunnel(10)	UInt32|Nullable(Float64)	ERROR 43
+windowFunnel(10)	UInt32|Nullable(String)	ERROR 43
+windowFunnel(10)	UInt32|LowCardinality(Nullable(String))	ERROR 43
+windowFunnel(10)	UInt32|Array(UInt8)	ERROR 43
+windowFunnel(10)	UInt32|Array(Nullable(Int32))	ERROR 43
+windowFunnel(10)	UInt32|Array(String)	ERROR 43
+windowFunnel(10)	UInt32|Map(String, UInt64)	ERROR 43
+windowFunnel(10)	UInt32|Map(LowCardinality(String), Int32)	ERROR 43
+windowFunnel(10)	UInt32|Tuple(UInt8, String)	ERROR 43
+sumMap	Array(String)|Array(UInt8)	Tuple(Array(String), Array(UInt64))
+sumMap	Array(String)|Array(UInt16)	Tuple(Array(String), Array(UInt64))
+sumMap	Array(String)|Array(UInt32)	Tuple(Array(String), Array(UInt64))
+sumMap	Array(String)|Array(UInt64)	Tuple(Array(String), Array(UInt64))
+sumMap	Array(String)|Array(Int8)	Tuple(Array(String), Array(Int64))
+sumMap	Array(String)|Array(Int16)	Tuple(Array(String), Array(Int64))
+sumMap	Array(String)|Array(Int32)	Tuple(Array(String), Array(Int64))
+sumMap	Array(String)|Array(Int64)	Tuple(Array(String), Array(Int64))
+sumMap	Array(String)|Array(Float32)	Tuple(Array(String), Array(Float64))
+sumMap	Array(String)|Array(Float64)	Tuple(Array(String), Array(Float64))
+sumMap	Array(String)|Array(Decimal(9, 2))	Tuple(Array(String), Array(Decimal(9, 2)))
+sumMap	Array(String)|Array(Decimal(18, 4))	Tuple(Array(String), Array(Decimal(18, 4)))
+sumMap	Array(String)|Array(Decimal(38, 3))	Tuple(Array(String), Array(Decimal(38, 3)))
+sumMap	Array(String)|Array(Decimal(76, 5))	Tuple(Array(String), Array(Decimal(76, 5)))
+sumMap	Array(String)|Array(Bool)	Tuple(Array(String), Array(UInt64))
+sumMap	Array(String)|Array(String)	ERROR 43
+sumMap	Array(String)|Array(Date)	ERROR 43
+sumMap	Array(String)|Array(Date32)	ERROR 43
+sumMap	Array(String)|Array(DateTime)	ERROR 43
+sumMap	Array(String)|Array(DateTime64(3))	ERROR 43
+sumMap	Array(String)|Array(Enum8('a' = 1, 'b' = 2))	ERROR 43
+sumMap	Array(String)|Array(LowCardinality(String))	ERROR 43
+sumMap	Array(String)|Array(Nullable(UInt8))	Tuple(Array(String), Array(UInt64))
+sumMap	Array(String)|Array(Nullable(Int64))	Tuple(Array(String), Array(Int64))
+sumMap	Array(String)|Array(Nullable(Float64))	Tuple(Array(String), Array(Float64))
+sumMap	Array(String)|Array(Nullable(String))	ERROR 43
+sumMap	Array(String)|Array(LowCardinality(Nullable(String)))	ERROR 43
+sumMap	Array(String)|Array(Array(UInt8))	ERROR 43
+sumMap	Array(String)|Array(Array(Nullable(Int32)))	ERROR 43
+sumMap	Array(String)|Array(Array(String))	ERROR 43
+sumMap	Array(String)|Array(Map(String, UInt64))	ERROR 43
+sumMap	Array(String)|Array(Map(LowCardinality(String), Int32))	ERROR 43
+sumMap	Array(String)|Array(Tuple(UInt8, String))	ERROR 43
+maxMap	Array(UInt8)|Array(UInt8)	Tuple(Array(UInt8), Array(UInt8))
+maxMap	Array(UInt8)|Array(UInt16)	Tuple(Array(UInt8), Array(UInt16))
+maxMap	Array(UInt8)|Array(UInt32)	Tuple(Array(UInt8), Array(UInt32))
+maxMap	Array(UInt8)|Array(UInt64)	Tuple(Array(UInt8), Array(UInt64))
+maxMap	Array(UInt8)|Array(Int8)	Tuple(Array(UInt8), Array(Int8))
+maxMap	Array(UInt8)|Array(Int16)	Tuple(Array(UInt8), Array(Int16))
+maxMap	Array(UInt8)|Array(Int32)	Tuple(Array(UInt8), Array(Int32))
+maxMap	Array(UInt8)|Array(Int64)	Tuple(Array(UInt8), Array(Int64))
+maxMap	Array(UInt8)|Array(Float32)	Tuple(Array(UInt8), Array(Float32))
+maxMap	Array(UInt8)|Array(Float64)	Tuple(Array(UInt8), Array(Float64))
+maxMap	Array(UInt8)|Array(Decimal(9, 2))	Tuple(Array(UInt8), Array(Decimal(9, 2)))
+maxMap	Array(UInt8)|Array(Decimal(18, 4))	Tuple(Array(UInt8), Array(Decimal(18, 4)))
+maxMap	Array(UInt8)|Array(Decimal(38, 3))	Tuple(Array(UInt8), Array(Decimal(38, 3)))
+maxMap	Array(UInt8)|Array(Decimal(76, 5))	Tuple(Array(UInt8), Array(Decimal(76, 5)))
+maxMap	Array(UInt8)|Array(Bool)	Tuple(Array(UInt8), Array(Bool))
+maxMap	Array(UInt8)|Array(String)	Tuple(Array(UInt8), Array(String))
+maxMap	Array(UInt8)|Array(Date)	Tuple(Array(UInt8), Array(Date))
+maxMap	Array(UInt8)|Array(Date32)	Tuple(Array(UInt8), Array(Date32))
+maxMap	Array(UInt8)|Array(DateTime)	Tuple(Array(UInt8), Array(DateTime))
+maxMap	Array(UInt8)|Array(DateTime64(3))	Tuple(Array(UInt8), Array(DateTime64(3)))
+maxMap	Array(UInt8)|Array(Enum8('a' = 1, 'b' = 2))	Tuple(Array(UInt8), Array(Enum8('a' = 1, 'b' = 2)))
+maxMap	Array(UInt8)|Array(LowCardinality(String))	Tuple(Array(UInt8), Array(String))
+maxMap	Array(UInt8)|Array(Nullable(UInt8))	Tuple(Array(UInt8), Array(UInt8))
+maxMap	Array(UInt8)|Array(Nullable(Int64))	Tuple(Array(UInt8), Array(Int64))
+maxMap	Array(UInt8)|Array(Nullable(Float64))	Tuple(Array(UInt8), Array(Float64))
+maxMap	Array(UInt8)|Array(Nullable(String))	Tuple(Array(UInt8), Array(String))
+maxMap	Array(UInt8)|Array(LowCardinality(Nullable(String)))	Tuple(Array(UInt8), Array(String))
+maxMap	Array(UInt8)|Array(Array(UInt8))	Tuple(Array(UInt8), Array(Array(UInt8)))
+maxMap	Array(UInt8)|Array(Array(Nullable(Int32)))	Tuple(Array(UInt8), Array(Array(Nullable(Int32))))
+maxMap	Array(UInt8)|Array(Array(String))	Tuple(Array(UInt8), Array(Array(String)))
+maxMap	Array(UInt8)|Array(Map(String, UInt64))	Tuple(Array(UInt8), Array(Map(String, UInt64)))
+maxMap	Array(UInt8)|Array(Map(LowCardinality(String), Int32))	Tuple(Array(UInt8), Array(Map(String, Int32)))
+maxMap	Array(UInt8)|Array(Tuple(UInt8, String))	Tuple(Array(UInt8), Array(Tuple(UInt8, String)))
+sumMap	Array(UInt8)|Array(UInt8)|Array(Float32)	Tuple(Array(UInt8), Array(UInt64), Array(Float64))
+sumMap	Array(UInt16)|Array(UInt8)|Array(Float32)	Tuple(Array(UInt16), Array(UInt64), Array(Float64))
+sumMap	Array(UInt32)|Array(UInt8)|Array(Float32)	Tuple(Array(UInt32), Array(UInt64), Array(Float64))
+sumMap	Array(UInt64)|Array(UInt8)|Array(Float32)	Tuple(Array(UInt64), Array(UInt64), Array(Float64))
+sumMap	Array(Int8)|Array(UInt8)|Array(Float32)	Tuple(Array(Int8), Array(UInt64), Array(Float64))
+sumMap	Array(Int16)|Array(UInt8)|Array(Float32)	Tuple(Array(Int16), Array(UInt64), Array(Float64))
+sumMap	Array(Int32)|Array(UInt8)|Array(Float32)	Tuple(Array(Int32), Array(UInt64), Array(Float64))
+sumMap	Array(Int64)|Array(UInt8)|Array(Float32)	Tuple(Array(Int64), Array(UInt64), Array(Float64))
+sumMap	Array(Float32)|Array(UInt8)|Array(Float32)	Tuple(Array(Float32), Array(UInt64), Array(Float64))
+sumMap	Array(Float64)|Array(UInt8)|Array(Float32)	Tuple(Array(Float64), Array(UInt64), Array(Float64))
+sumMap	Array(Decimal(9, 2))|Array(UInt8)|Array(Float32)	Tuple(Array(Decimal(9, 2)), Array(UInt64), Array(Float64))
+sumMap	Array(Decimal(18, 4))|Array(UInt8)|Array(Float32)	Tuple(Array(Decimal(18, 4)), Array(UInt64), Array(Float64))
+sumMap	Array(Decimal(38, 3))|Array(UInt8)|Array(Float32)	Tuple(Array(Decimal(38, 3)), Array(UInt64), Array(Float64))
+sumMap	Array(Decimal(76, 5))|Array(UInt8)|Array(Float32)	Tuple(Array(Decimal(76, 5)), Array(UInt64), Array(Float64))
+sumMap	Array(Bool)|Array(UInt8)|Array(Float32)	Tuple(Array(Bool), Array(UInt64), Array(Float64))
+sumMap	Array(String)|Array(UInt8)|Array(Float32)	Tuple(Array(String), Array(UInt64), Array(Float64))
+sumMap	Array(Date)|Array(UInt8)|Array(Float32)	Tuple(Array(Date), Array(UInt64), Array(Float64))
+sumMap	Array(Date32)|Array(UInt8)|Array(Float32)	Tuple(Array(Date32), Array(UInt64), Array(Float64))
+sumMap	Array(DateTime)|Array(UInt8)|Array(Float32)	Tuple(Array(DateTime), Array(UInt64), Array(Float64))
+sumMap	Array(DateTime64(3))|Array(UInt8)|Array(Float32)	Tuple(Array(DateTime64(3)), Array(UInt64), Array(Float64))
+sumMap	Array(Enum8('a' = 1, 'b' = 2))|Array(UInt8)|Array(Float32)	Tuple(Array(Enum8('a' = 1, 'b' = 2)), Array(UInt64), Array(Float64))
+sumMap	Array(LowCardinality(String))|Array(UInt8)|Array(Float32)	Tuple(Array(String), Array(UInt64), Array(Float64))
+sumMap	Array(Nullable(UInt8))|Array(UInt8)|Array(Float32)	Tuple(Array(Nullable(UInt8)), Array(UInt64), Array(Float64))
+sumMap	Array(Nullable(Int64))|Array(UInt8)|Array(Float32)	Tuple(Array(Nullable(Int64)), Array(UInt64), Array(Float64))
+sumMap	Array(Nullable(Float64))|Array(UInt8)|Array(Float32)	Tuple(Array(Nullable(Float64)), Array(UInt64), Array(Float64))
+sumMap	Array(Nullable(String))|Array(UInt8)|Array(Float32)	Tuple(Array(Nullable(String)), Array(UInt64), Array(Float64))
+sumMap	Array(LowCardinality(Nullable(String)))|Array(UInt8)|Array(Float32)	Tuple(Array(Nullable(String)), Array(UInt64), Array(Float64))
+sumMap	Array(Array(UInt8))|Array(UInt8)|Array(Float32)	Tuple(Array(Array(UInt8)), Array(UInt64), Array(Float64))
+sumMap	Array(Array(Nullable(Int32)))|Array(UInt8)|Array(Float32)	Tuple(Array(Array(Nullable(Int32))), Array(UInt64), Array(Float64))
+sumMap	Array(Array(String))|Array(UInt8)|Array(Float32)	Tuple(Array(Array(String)), Array(UInt64), Array(Float64))
+sumMap	Array(Map(String, UInt64))|Array(UInt8)|Array(Float32)	Tuple(Array(Map(String, UInt64)), Array(UInt64), Array(Float64))
+sumMap	Array(Map(LowCardinality(String), Int32))|Array(UInt8)|Array(Float32)	Tuple(Array(Map(String, Int32)), Array(UInt64), Array(Float64))
+sumMap	Array(Tuple(UInt8, String))|Array(UInt8)|Array(Float32)	Tuple(Array(Tuple(UInt8, String)), Array(UInt64), Array(Float64))
+sumMap	Tuple(Array(String), Array(UInt8))	Tuple(Array(String), Array(UInt64))
+sumMap	Tuple(Array(String), Array(UInt16))	Tuple(Array(String), Array(UInt64))
+sumMap	Tuple(Array(String), Array(UInt32))	Tuple(Array(String), Array(UInt64))
+sumMap	Tuple(Array(String), Array(UInt64))	Tuple(Array(String), Array(UInt64))
+sumMap	Tuple(Array(String), Array(Int8))	Tuple(Array(String), Array(Int64))
+sumMap	Tuple(Array(String), Array(Int16))	Tuple(Array(String), Array(Int64))
+sumMap	Tuple(Array(String), Array(Int32))	Tuple(Array(String), Array(Int64))
+sumMap	Tuple(Array(String), Array(Int64))	Tuple(Array(String), Array(Int64))
+sumMap	Tuple(Array(String), Array(Float32))	Tuple(Array(String), Array(Float64))
+sumMap	Tuple(Array(String), Array(Float64))	Tuple(Array(String), Array(Float64))
+sumMap	Tuple(Array(String), Array(Decimal(9, 2)))	Tuple(Array(String), Array(Decimal(9, 2)))
+sumMap	Tuple(Array(String), Array(Decimal(18, 4)))	Tuple(Array(String), Array(Decimal(18, 4)))
+sumMap	Tuple(Array(String), Array(Decimal(38, 3)))	Tuple(Array(String), Array(Decimal(38, 3)))
+sumMap	Tuple(Array(String), Array(Decimal(76, 5)))	Tuple(Array(String), Array(Decimal(76, 5)))
+sumMap	Tuple(Array(String), Array(Bool))	Tuple(Array(String), Array(UInt64))
+sumMap	Tuple(Array(String), Array(String))	ERROR 43
+sumMap	Tuple(Array(String), Array(Date))	ERROR 43
+sumMap	Tuple(Array(String), Array(Date32))	ERROR 43
+sumMap	Tuple(Array(String), Array(DateTime))	ERROR 43
+sumMap	Tuple(Array(String), Array(DateTime64(3)))	ERROR 43
+sumMap	Tuple(Array(String), Array(Enum8('a' = 1, 'b' = 2)))	ERROR 43
+sumMap	Tuple(Array(String), Array(LowCardinality(String)))	ERROR 43
+sumMap	Tuple(Array(String), Array(Nullable(UInt8)))	Tuple(Array(String), Array(UInt64))
+sumMap	Tuple(Array(String), Array(Nullable(Int64)))	Tuple(Array(String), Array(Int64))
+sumMap	Tuple(Array(String), Array(Nullable(Float64)))	Tuple(Array(String), Array(Float64))
+sumMap	Tuple(Array(String), Array(Nullable(String)))	ERROR 43
+sumMap	Tuple(Array(String), Array(LowCardinality(Nullable(String))))	ERROR 43
+sumMap	Tuple(Array(String), Array(Array(UInt8)))	ERROR 43
+sumMap	Tuple(Array(String), Array(Array(Nullable(Int32))))	ERROR 43
+sumMap	Tuple(Array(String), Array(Array(String)))	ERROR 43
+sumMap	Tuple(Array(String), Array(Map(String, UInt64)))	ERROR 43
+sumMap	Tuple(Array(String), Array(Map(LowCardinality(String), Int32)))	ERROR 43
+sumMap	Tuple(Array(String), Array(Tuple(UInt8, String)))	ERROR 43
+sumArrayIf	Array(UInt8)|UInt8	UInt64
+sumArrayIf	Array(UInt16)|UInt8	UInt64
+sumArrayIf	Array(UInt32)|UInt8	UInt64
+sumArrayIf	Array(UInt64)|UInt8	UInt64
+sumArrayIf	Array(Int8)|UInt8	Int64
+sumArrayIf	Array(Int16)|UInt8	Int64
+sumArrayIf	Array(Int32)|UInt8	Int64
+sumArrayIf	Array(Int64)|UInt8	Int64
+sumArrayIf	Array(Float32)|UInt8	Float64
+sumArrayIf	Array(Float64)|UInt8	Float64
+sumArrayIf	Array(Decimal(9, 2))|UInt8	Decimal(38, 2)
+sumArrayIf	Array(Decimal(18, 4))|UInt8	Decimal(38, 4)
+sumArrayIf	Array(Decimal(38, 3))|UInt8	Decimal(38, 3)
+sumArrayIf	Array(Decimal(76, 5))|UInt8	Decimal(76, 5)
+sumArrayIf	Array(Bool)|UInt8	UInt64
+sumArrayIf	Array(String)|UInt8	ERROR 43
+sumArrayIf	Array(Date)|UInt8	ERROR 43
+sumArrayIf	Array(Date32)|UInt8	ERROR 43
+sumArrayIf	Array(DateTime)|UInt8	ERROR 43
+sumArrayIf	Array(DateTime64(3))|UInt8	ERROR 43
+sumArrayIf	Array(Enum8('a' = 1, 'b' = 2))|UInt8	Int64
+sumArrayIf	Array(LowCardinality(String))|UInt8	ERROR 43
+sumArrayIf	Array(Nullable(UInt8))|UInt8	Nullable(UInt64)
+sumArrayIf	Array(Nullable(Int64))|UInt8	Nullable(Int64)
+sumArrayIf	Array(Nullable(Float64))|UInt8	Nullable(Float64)
+sumArrayIf	Array(Nullable(String))|UInt8	ERROR 43
+sumArrayIf	Array(LowCardinality(Nullable(String)))|UInt8	ERROR 43
+sumArrayIf	Array(Array(UInt8))|UInt8	ERROR 43
+sumArrayIf	Array(Array(Nullable(Int32)))|UInt8	ERROR 43
+sumArrayIf	Array(Array(String))|UInt8	ERROR 43
+sumArrayIf	Array(Map(String, UInt64))|UInt8	ERROR 43
+sumArrayIf	Array(Map(LowCardinality(String), Int32))|UInt8	ERROR 43
+sumArrayIf	Array(Tuple(UInt8, String))|UInt8	ERROR 43

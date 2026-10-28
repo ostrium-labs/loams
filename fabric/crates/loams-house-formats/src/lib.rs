@@ -1,11 +1,32 @@
 //! ClickHouse output formats for the Loams House Rust engine (plan HE1 Task
 //! 36), and input formats from HE2 (Task 61).
 //!
-//! Task 23 brings the first one, [`json_compact`]'s
-//! `JSONCompactEachRowWithNamesAndTypes`, which the oracle reads every answer
-//! in (HE0 R6.2). Task 36 adds the rest behind one writer interface.
+//! [`writer`] picks a [`FormatWriter`] for a format name; each writer
+//! streams a result's batches as they come and ends it with
+//! [`FormatWriter::finish`]. The formats are the `JSON*` family ([`json`]),
+//! TSV, CSV and `Values` ([`text`]), `RowBinary*` ([`binary`]), `Native`
+//! ([`native`], through `loams-house-native`'s block framing), `Parquet`
+//! ([`parquet`]), `Arrow`/`ArrowStream` ([`arrow`]) and `Pretty*`
+//! ([`pretty`]). [`FormatSettings`] holds the settings that change them.
+//!
+//! Value text is `loams_house_types::text`, already checked against the
+//! oracle; the layouts follow ClickHouse's output formats
+//! (`src/Processors/Formats/Impl/`, Apache-2.0) and are checked byte for byte
+//! by the oracle corpus `he1/36` (`-- oracle: format = <F>`).
 
+pub mod arrow;
+pub mod binary;
+pub mod json;
 pub mod json_compact;
+pub mod native;
+pub mod parquet;
+pub mod pretty;
+pub mod settings;
+pub mod text;
+pub mod writer;
+
+pub use settings::FormatSettings;
+pub use writer::{Format, FormatWriter, Stats, write_all, writer, writer_for};
 
 use loams_house_types::{ChError, ChType};
 

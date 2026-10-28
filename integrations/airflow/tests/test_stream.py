@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 import pytest
+from airflow.sdk.exceptions import TaskDeferred
 
 from airflow.providers.loams.hooks.stream import LoamsStreamHook, decode_message, encode_value
 from airflow.providers.loams.operators.stream import (
@@ -279,20 +280,29 @@ def test_offset_sensor_defers(loams_connection, context) -> None:
     )
     with (
         mock.patch("airflow.providers.loams.sensors.stream.check_offsets", return_value=(False, {})),
-        pytest.raises(Exception) as deferred,
+        pytest.raises(TaskDeferred) as deferred,
     ):
         sensor.execute(context)
-    assert type(deferred.value).__name__ == "TaskDeferred"
+    assert deferred.value.method_name == "execute_complete"
     trigger = deferred.value.trigger
     assert trigger.poll_interval == 3.0
     assert trigger.group_id == "g"
+    resume = getattr(sensor, deferred.value.method_name)
+    assert resume(context, {"status": "success", "topic": "orders", "lag": {"0": 2}}) == {
+        "topic": "orders",
+        "lag": {"0": 2},
+    }
+    with pytest.raises(RuntimeError, match="no topic"):
+        resume(context, {"status": "error", "message": "no topic"})
 
 
 def test_wait_operator_defers_and_completes(context) -> None:
     op = LoamsStreamWaitOperator(task_id="w", topic="orders", mode="offset", target_offsets={0: 5})
-    with pytest.raises(Exception) as deferred:
+    with pytest.raises(TaskDeferred) as deferred:
         op.execute(context)
-    assert type(deferred.value).__name__ == "TaskDeferred"
-    assert op.execute_complete(context, {"status": "success", "watermarks": {}})["status"] == "success"
+    assert deferred.value.method_name == "execute_complete"
+    assert deferred.value.trigger.target_offsets == {"0": 5}
+    resume = getattr(op, deferred.value.method_name)
+    assert resume(context, {"status": "success", "watermarks": {}})["status"] == "success"
     with pytest.raises(RuntimeError):
-        op.execute_complete(context, {"status": "error", "message": "x"})
+        resume(context, {"status": "error", "message": "x"})
