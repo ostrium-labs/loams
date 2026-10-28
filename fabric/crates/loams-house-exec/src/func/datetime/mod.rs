@@ -16,7 +16,7 @@
 //!   and [`interval::DatePlanner`], which plans `plus` and `minus` on dates,
 //!   times and intervals (`INTERVAL n UNIT` literals are rewritten to
 //!   `toInterval*` calls by the front end, `loams_house_sql::temporal`);
-//! * [`format`]: `formatDateTime`.
+//! * [`format`][]: `formatDateTime`.
 
 pub mod calendar;
 pub mod convert;
