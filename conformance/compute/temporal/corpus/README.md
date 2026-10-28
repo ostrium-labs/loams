@@ -31,6 +31,7 @@ replaces this one.
 | `workers/java/` | Maven project (`io.temporal:temporal-sdk` 1.40.0, D2130): `Workflows.java` (one `@WorkflowInterface` per scenario, every scenario including the Go-only ones), `CorpusActivities*.java`, `Generate.java` (generator, drivers and its own exporter, D2131) and the replayer test `CorpusReplayTest` (`WorkflowReplayer`, D2134); not yet run, and `histories/java/` is absent until its first generation (`generate-java.sh`, or the `temporal-corpus-java.yml` dispatch job) |
 | `workers/ruby/` | Ruby (gem `temporalio` 1.9.0 on sdk-core, `Gemfile.lock`): `lib/workflows.rb`, `lib/activities.rb`, `lib/scenarios.rb`, the worker and starter `generate.rb`, the replay check `replay.rb` (`WorkflowReplayer`), and `test/` (minitest). Its histories are not committed yet (D2153) |
 | `generate-ruby.sh` | the Ruby half against a server: generate, Go export, replay, `manifest.py build --langs ruby` |
+| `workers/rust/` | cargo project, its own workspace, not a member of the repository's (`temporalio-sdk` 1.1.0 on `temporalio-sdk-core` 0.10.0, prerelease; D2156): `src/workflows.rs`, `src/activities.rs`, the starter (`src/drive.rs`), the scenario list (`src/scenarios.rs`) and sdk-core's replayer over the `.binpb` histories (`src/replay.rs`), all in one binary `corpus-rust`; built only in `RUST_IMAGE`. `generate-rust.sh` writes `histories/rust/` (empty until its first committed generation, D2157) |
 | `workers/php/` | Composer project (`temporal/sdk` 2.19.0 under RoadRunner 2025.1.15, D2146): `src/Workflows.php` (one class per scenario), `src/Activities.php`, `worker.php` (RoadRunner's `.rr.yaml` runs it), the starter (`starter.php`, `src/Driver.php`), the replayer (`replay.php`, the SDK's `WorkflowReplayer` through RoadRunner) and `corpus-php.sh`, which starts RoadRunner around them; built into a local image (`Containerfile`); `generate-php.sh` writes `histories/php/` against upstream Temporal (D2148); not yet run, and `histories/php/` is empty until its first generation |
 | `replay/go/` | `replay_test.go`: every Go history replays with `worker.NewWorkflowReplayer` |
 | `histories/<lang>/<scenario>.{json,binpb}` | protojson (what `temporal workflow show -o json` writes and the replayers read) and the binary `History` message; a scenario with several runs has `<scenario>.run<k>.*`, oldest first |
@@ -96,6 +97,7 @@ conformance/compute/temporal/corpus/generate.sh                       # go,ts (C
 conformance/compute/temporal/corpus/generate.sh --langs go,ts,python  # with the Python worker
 conformance/compute/temporal/corpus/generate.sh --langs go,ts,java    # with the Java worker
 conformance/compute/temporal/corpus/generate-java.sh                 # Java alone (manifest.py build --languages java)
+conformance/compute/temporal/corpus/generate-rust.sh                  # the Rust worker; manifest.py build --languages rust
 python3 conformance/compute/temporal/corpus/manifest.py check
 ```
 

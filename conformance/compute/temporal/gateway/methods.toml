@@ -25,6 +25,8 @@ dotnet = ".NET SDK 1.20.0"
 java = "Java SDK 1.40.0"
 # Lane TSDK-ruby (D2152): "not yet run" until temporal-sdk-ruby.yml runs and last-run.* is re-spliced.
 ruby = "Ruby SDK 1.9.0"
+# Lane TSDK-rust (D2159): prerelease Rust SDK on sdk-core 0.10.0; "not run" until the sdk-leg (rust) job runs and last-run.* is re-spliced.
+rust = "Rust SDK 1.1.0 (prerelease)"
 # Lane TSDK-php (D2147): "not run" until temporal-sdk-php.yml runs and last-run.* is re-spliced.
 php = "PHP SDK 2.19.0"
 
