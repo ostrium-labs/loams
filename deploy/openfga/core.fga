@@ -24,6 +24,8 @@ type platform
     define operator: [user]
     define limits_writer: [user, service_account]
     define meter_admin: [user]
+    # Loams Meter (design 63 §19, ME1 Task 10): what application code checks.
+    define can_manage_meters: meter_admin
     # Loams Cloud's admins (design 78 §25.8, D1746), on `platform:loams-cloud`.
     # People only: an agent or service account can never hold it, like meter_admin.
     define cloud_admin: [user]
@@ -36,9 +38,21 @@ type org
     define member: [user, team#member] or admin
     define billing_admin: [user] or owner
     define billing_viewer: [user, team#member] or billing_admin
+    # Loams Meter (design 63 §19, ME1 Task 10): spend controls and alerts need billing_admin;
+    # reading an org's usage and entitlements needs billing_viewer, or meter_admin on the platform.
+    define can_manage_billing: billing_admin
+    define can_view_billing: billing_viewer or meter_admin from platform
     # Who edits the org's own namespaces (`environment#org`): every member, and the service
     # accounts it lists (a project's service accounts, on a single-org install).
     define namespace_editor: [service_account] or member
+    # What the admin API (`loams.admin.v1`) checks, one relation per RPC (IA2 Task 5): reads by
+    # any member or the org's service accounts, changes by an admin.
+    define can_view: namespace_editor
+    define can_admin: admin
+    # The durable API (`/durable/`): promises, schedules and tasks belong to the instance, not to
+    # a namespace, so any member or the org's service accounts run them; never an agent, which
+    # reaches only the environments it is granted.
+    define can_run_durable: namespace_editor
 
 # Teams are owned by Loams, not Zitadel (§5). `org` roots every team for the cross-org scan.
 type team
@@ -96,7 +110,21 @@ type database
     define can_read: viewer from environment
     define can_write: editor from environment
     define can_admin: deployer from environment
-    define can_connect: viewer from environment
+    # Connection details and credentials need editor, not viewer (§46 R1.9, plan IA1 ruling
+    # IA2.R3): a viewer reads a database's settings but never gets a credential to it.
+    define can_connect: editor from environment
+
+# A managed engine instance (design 81, D1919): RisingWave, Flink SQL or Spark, in one namespace.
+# `can_connect` is the gateway's check for the engine's own protocol (Postgres wire, Flink SQL
+# Gateway, Spark Connect).
+type engine
+  relations
+    define environment: [environment]
+    define can_view: viewer from environment
+    define can_operate: editor from environment
+    define can_admin: deployer from environment
+    # Like `database` (§46 R1.9): a viewer sees an engine but never gets a credential to it.
+    define can_connect: editor from environment
 
 # The tuple stores `allowed_session` and `expires`; the request supplies `session_id` and `now`.
 condition agent_session(session_id: string, allowed_session: string, now: timestamp, expires: timestamp) {

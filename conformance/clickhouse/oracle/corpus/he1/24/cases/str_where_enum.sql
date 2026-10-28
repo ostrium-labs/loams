@@ -1,0 +1,1 @@
+SELECT id FROM t24s WHERE e = 'b' ORDER BY id

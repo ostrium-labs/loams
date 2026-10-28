@@ -1,0 +1,57 @@
+# The Loams `browser` service image: Obscura, unmodified, from its pinned
+# release tarball (D2113). For operators who build their own image; compose
+# and the Kubernetes manifests use upstream's image, pinned by digest, which
+# is the same release:
+#   docker.io/h4ckf0r0day/obscura:0.2.3@sha256:475def3ddf1ec513b3d1bc36e8ad15f0d192538cb15f814c77215aa70c418ca2
+#
+# Obscura is Apache-2.0 (https://github.com/h4ckf0r0day/obscura); nothing here
+# patches it. The render-enabled asset only: the -no-render variants cannot
+# take screenshots.
+#
+#   podman build -f deploy/browser/Containerfile -t loams-browser:0.2.3 .
+#   podman build --build-arg TARGETARCH=arm64 ...   # aarch64 hosts
+
+ARG OBSCURA_VERSION=0.2.3
+
+FROM docker.io/library/debian:12-slim AS fetch
+ARG OBSCURA_VERSION
+ARG TARGETARCH=amd64
+# Release asset digests, from the GitHub release API (2026-10-27).
+ARG OBSCURA_SHA256_AMD64=1534d1e6ddaf3d080ec4091eb41d0a4d8cc042a48b607d3c410fc13b482a9eec
+ARG OBSCURA_SHA256_ARM64=5ecf980bca3060236a7a86ec7ed83d943e6598ee87caa46d20325d90bc75f979
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl \
+ && rm -rf /var/lib/apt/lists/*
+RUN set -eu; \
+    case "$TARGETARCH" in \
+      amd64) arch=x86_64; sum="$OBSCURA_SHA256_AMD64" ;; \
+      arm64) arch=aarch64; sum="$OBSCURA_SHA256_ARM64" ;; \
+      *) echo "unsupported TARGETARCH $TARGETARCH" >&2; exit 1 ;; \
+    esac; \
+    asset="obscura-${arch}-linux.tar.gz"; \
+    curl -fsSL -o "/tmp/$asset" \
+      "https://github.com/h4ckf0r0day/obscura/releases/download/v${OBSCURA_VERSION}/${asset}"; \
+    echo "${sum}  /tmp/${asset}" | sha256sum -c -; \
+    mkdir -p /tmp/obscura /out; \
+    tar -xzf "/tmp/$asset" -C /tmp/obscura; \
+    bin="$(find /tmp/obscura -type f -name obscura | head -n 1)"; \
+    [ -n "$bin" ] || { echo "no obscura binary in $asset" >&2; exit 1; }; \
+    install -m 0755 "$bin" /out/obscura; \
+    worker="$(find /tmp/obscura -type f -name obscura-worker | head -n 1)"; \
+    if [ -n "$worker" ]; then install -m 0755 "$worker" /out/obscura-worker; fi; \
+    /out/obscura --version
+
+# glibc, libgcc and CA certificates only; no shell. uid/gid 65532: Obscura runs
+# untrusted page JavaScript in V8, so an exploit lands without root.
+FROM gcr.io/distroless/cc-debian12:nonroot
+ARG OBSCURA_VERSION
+LABEL org.opencontainers.image.title="loams-browser" \
+      org.opencontainers.image.description="Obscura ${OBSCURA_VERSION}, the Loams headless browser service (deploy/browser)" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.source="https://github.com/ostrium-labs/loams"
+COPY --from=fetch /out/ /
+EXPOSE 9222
+# A non-loopback bind is refused unless OBSCURA_CDP_TOKEN is at least 32
+# bytes, which is the guard: the service never runs unauthenticated.
+ENTRYPOINT ["/obscura"]
+CMD ["serve", "--port", "9222", "--host", "0.0.0.0", "--workers", "2"]

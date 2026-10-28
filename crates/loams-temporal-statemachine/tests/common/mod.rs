@@ -65,6 +65,8 @@ pub fn wft_completed(
             metering_metadata: None,
             worker_version: None,
             force_create_new_workflow_task: false,
+            messages: Vec::new(),
+            new_run_id: String::new(),
         },
         now,
     )

@@ -1,0 +1,1 @@
+SELECT a + 1 AS x, x * 2 FROM t25 ORDER BY a

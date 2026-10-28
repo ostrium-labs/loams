@@ -14,7 +14,7 @@ import { createMockControl } from '@loams/console-host/testing';
 import type { Context } from '@loams/cordis';
 import { Context as Root } from '@loams/cordis';
 import { GitService, ProjectService } from '@loams/proto/agentd';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import rpc, { AGENTD_SERVICES } from '../src/index.js';
 
 /** A daemon's GitService and ProjectService, recording what reaches it. */

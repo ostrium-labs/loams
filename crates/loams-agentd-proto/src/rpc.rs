@@ -25,6 +25,10 @@ use crate::checkpoints::{
     CheckpointList, ListCheckpointsParams, RestoreCheckpointParams, RestoreCheckpointReply,
 };
 use crate::daemon::DaemonMode;
+use crate::factory::{
+    FactoryAppList, FactoryAppParams, FactoryAppReply, FactoryConfigureParams, FactoryQueryParams,
+    FactoryQueryReply,
+};
 use crate::factory_loop::{
     CheckLogReply, ChecksReply, CreateRunWorktreeParams, GetApprovalParams, GetCheckLogParams,
     GetChecksParams, GetThreadDiffParams, MergeChangeRequestParams, MergeChangeRequestReply,
@@ -536,6 +540,18 @@ method_table! {
     APPLY_HARNESS_UPDATE = ApplyHarnessUpdate: Unary(HarnessParams -> ApplyHarnessUpdateReply), Owner, renderer: true;
     CANCEL_HARNESS_UPDATE = CancelHarnessUpdate: Unary(HarnessParams -> CancelledReply), Owner, renderer: true;
     DISMISS_HARNESS_UPDATE = DismissHarnessUpdate: Unary(DismissHarnessUpdateParams -> HarnessUpdateStatus), Owner, renderer: true;
+    /// The software factory's apps (SF1 amendment F1-F6; §50 §13, D795): every app
+    /// with its state; the non-secret fields only.
+    FACTORY_LIST = FactoryList: Unary(Empty -> FactoryAppList), Owner, renderer: true;
+    /// Check an app's stored connection.
+    FACTORY_TEST = FactoryTest: Unary(FactoryAppParams -> FactoryAppReply), Owner, renderer: true;
+    /// One read from the factory's op allowlist (D660).
+    FACTORY_QUERY = FactoryQuery: Unary(FactoryQueryParams -> FactoryQueryReply), Owner, renderer: true;
+    /// Store an app's URL and credentials, then check them. Write-only for secrets,
+    /// and Electron main's alone: not on the Connect surface (F4).
+    FACTORY_CONFIGURE = FactoryConfigure: Unary(FactoryConfigureParams -> FactoryAppReply), Owner, renderer: false;
+    /// Forget an app and its credentials (F4: main's alone).
+    FACTORY_REMOVE = FactoryRemove: Unary(FactoryAppParams -> Empty), Owner, renderer: false;
     // The Software Factory loop's tools (design §72 §5.2; plan FT1, FT0 Task 4):
     // role `mcp`, each on a `chatId` in the run's own session tree. The daemon
     // resolves checkouts, remotes and credentials; none reaches the caller.

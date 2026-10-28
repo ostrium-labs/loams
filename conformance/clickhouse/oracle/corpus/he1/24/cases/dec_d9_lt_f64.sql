@@ -1,0 +1,1 @@
+SELECT d9 < f64 FROM t24d ORDER BY id

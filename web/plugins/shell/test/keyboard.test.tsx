@@ -5,7 +5,7 @@
 import { SHELL_COMMAND_EVENT } from '@loams/console-host';
 import { SlotRegistry } from '@loams/slots';
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { contextOf, type ShellKeysOptions, useShellKeys } from '../src/keyboard.js';
 import { DRAWER, INSPECTOR, PanelController } from '../src/panel.js';
 import { HashRouter, type HashSource } from '../src/router.js';

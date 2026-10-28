@@ -20,7 +20,7 @@ use std::path::PathBuf;
 use anyhow::{Context as _, bail};
 
 use self::corpus::Corpus;
-use self::normalise::{Kind, compare};
+use self::normalise::{Kind, compare, compare_bytes};
 use self::target::{Client, Target, Targets};
 use self::triage::{Found, Reconciled, Scope, Triage};
 
@@ -197,6 +197,21 @@ pub fn execute(run: &Run) -> anyhow::Result<Summary> {
         for case in &corpus.cases {
             cases += 1;
             scope.cases.insert(case.id.clone());
+            if let Some(format) = &case.format {
+                let expected = client.query_bytes(&baseline, &case.sql, format)?;
+                for target in &targets {
+                    let got = client.query_bytes(target, &case.sql, format)?;
+                    for m in compare_bytes(&expected, &got) {
+                        found.push(Found {
+                            case: case.id.clone(),
+                            target: target.name.clone(),
+                            kind: m.kind,
+                            detail: m.detail,
+                        });
+                    }
+                }
+                continue;
+            }
             let expected = client.query(&baseline, &case.sql)?;
             for target in &targets {
                 let got = client.query(target, &case.sql)?;

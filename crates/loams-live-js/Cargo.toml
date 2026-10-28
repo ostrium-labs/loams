@@ -9,6 +9,16 @@ authors.workspace = true
 # loams-live depends on loams-kv, whose tikv backend is a git dependency.
 publish = false
 
+[features]
+default = ["live"]
+# Live's function runtime and its host (on `loams-live`). On by default;
+# everything Live had before MS1 Task 1 is behind it, unchanged.
+live = ["dep:futures", "dep:loams-kv", "dep:loams-live", "dep:sha2", "dep:tracing"]
+# SPIKE (MS1 Task 1, D1807): the agent profile on the same isolated worker.
+# Off by default; compiles without `live` (`--no-default-features
+# --features agent`), which is what agentd would depend on.
+agent = ["dep:futures", "dep:serde_json"]
+
 [[bin]]
 # The isolated worker on its own (LV1 plan Task 5): what `loams live-worker`
 # runs, for this crate's tests and for embedders without the `loams` binary.
@@ -16,14 +26,25 @@ name = "loams-live-worker"
 path = "src/bin/loams-live-worker.rs"
 test = false
 doc = false
+required-features = ["live"]
+
+[[bin]]
+# SPIKE (MS1 Task 1): `worker` is the sealed agent worker (Task 2 makes it
+# `loams-agentd agent-worker`); `acp <bundle.js>` is the agentd-side
+# adapter as a process, which `AcpHarness` spawns like any ACP agent.
+name = "loams-agent-worker"
+path = "src/bin/loams-agent-worker.rs"
+test = false
+doc = false
+required-features = ["agent"]
 
 [dependencies]
 # The worker protocol's frames (`loams.live.worker.v1`, LV1 Ruling 5).
 buffa.workspace = true
-futures.workspace = true
+futures = { workspace = true, optional = true }
 # `Ts`: a call's start timestamp, which the worker protocol carries.
-loams-kv.workspace = true
-loams-live.workspace = true
+loams-kv = { workspace = true, optional = true }
+loams-live = { workspace = true, optional = true }
 loams-live-proto.workspace = true
 # The counting allocator behind the memory limit (row T3-6): the one crate
 # of the runtime allowed `unsafe`.
@@ -35,9 +56,11 @@ rquickjs.workspace = true
 # Not used directly: pins rquickjs's loader dependency (LV1 row T3-1).
 relative-path.workspace = true
 # The seed of Math.random: SHA-256 of the start timestamp and the request id.
-sha2.workspace = true
+sha2 = { workspace = true, optional = true }
+# The agent profile's wire values (ACP and host-call payloads).
+serde_json = { workspace = true, optional = true }
 tokio.workspace = true
-tracing.workspace = true
+tracing = { workspace = true, optional = true }
 
 # The isolated worker's sandbox (LV1 plan Task 5).
 [target.'cfg(target_os = "linux")'.dependencies]

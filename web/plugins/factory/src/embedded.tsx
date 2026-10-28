@@ -19,10 +19,13 @@ export function EmbeddedApp({
   desktop,
   app,
   navigate,
+  embeds = true,
 }: {
   desktop: LoamsDesktopApi;
   app: FactoryAppId;
   navigate: (to: string) => void;
+  /** False in a browser: no embedded view, the app opens in a tab (SF1 amendment F5). */
+  embeds?: boolean;
 }) {
   const slot = useRef<HTMLDivElement>(null);
   const [info, setInfo] = useState<FactoryAppInfo>();
@@ -46,7 +49,7 @@ export function EmbeddedApp({
   const configured = !!info && isConfigured(info.health);
   useEffect(() => {
     const el = slot.current;
-    if (!el || !configured) return;
+    if (!el || !configured || !embeds) return;
     let frame = 0;
     let shown: Rect | undefined;
     let hidden = false;
@@ -103,7 +106,7 @@ export function EmbeddedApp({
       window.removeEventListener('scroll', schedule, true);
       void desktop.factory.hideEmbedded().catch(() => undefined);
     };
-  }, [desktop, app, configured]);
+  }, [desktop, app, configured, embeds]);
 
   if (info && !configured) {
     return (
@@ -114,6 +117,36 @@ export function EmbeddedApp({
             <Button onClick={() => navigate(`/studio/factory/${app}/configure`)}>Configure</Button>
           }
         />
+      </div>
+    );
+  }
+  if (!embeds) {
+    return (
+      <div className="lc-page">
+        <Empty
+          title={label}
+          actions={
+            <>
+              <Button
+                variant="primary"
+                disabled={!info}
+                onClick={() =>
+                  void desktop.factory.openApp(app).then((r) => {
+                    if (!r.ok) setError(r.message);
+                  })
+                }
+              >
+                <ExternalLink aria-hidden="true" size={14} /> Open {label} in a new tab
+              </Button>
+              <Button variant="quiet" onClick={() => navigate('/studio/factory')}>
+                All apps
+              </Button>
+            </>
+          }
+        >
+          In a browser, an app opens in its own tab.
+        </Empty>
+        {error && <Notice tone="danger" title={error} />}
       </div>
     );
   }

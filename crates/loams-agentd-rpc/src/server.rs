@@ -445,11 +445,9 @@ async fn serve_socket<S>(
         return;
     }
     tracing::debug!(peer_port = peer.port(), role = ?identity.role, "rpc: connection accepted");
-    let config = WebSocketConfig {
-        max_message_size: Some(limits.max_frame_bytes),
-        max_frame_size: Some(limits.max_frame_bytes),
-        ..WebSocketConfig::default()
-    };
+    let config = WebSocketConfig::default()
+        .max_message_size(Some(limits.max_frame_bytes))
+        .max_frame_size(Some(limits.max_frame_bytes));
     let ws = WebSocketStream::from_raw_socket(stream, WsRole::Server, Some(config)).await;
 
     let server = &shared.server;
@@ -534,7 +532,7 @@ async fn serve_websocket<S>(
             tokio::select! {
                 frame = out_rx.recv() => match frame {
                     Some(text) => {
-                        if sink.send(WsMessage::Text(text)).await.is_err() {
+                        if sink.send(WsMessage::Text(text.into())).await.is_err() {
                             break;
                         }
                     }
@@ -545,7 +543,7 @@ async fn serve_websocket<S>(
                 },
                 message = ws_stream.next() => match message {
                     Some(Ok(WsMessage::Text(text))) => {
-                        if in_tx.send(text).await.is_err() {
+                        if in_tx.send(text.to_string()).await.is_err() {
                             break;
                         }
                     }
