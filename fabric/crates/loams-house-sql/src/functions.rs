@@ -85,6 +85,34 @@ fn table() -> &'static Table {
     })
 }
 
+/// One row of the oracle's `system.functions`: name, whether it is an
+/// aggregate, whether its name is case-insensitive, and the function it is an
+/// alias of (empty for none).
+pub type FunctionRow = (&'static str, bool, bool, &'static str);
+
+/// Every function the oracle has, in `functions.tsv`'s order (plan HE1 Task
+/// 38's `system.functions` keeps the ones the engine registers).
+pub fn all() -> Vec<FunctionRow> {
+    FUNCTIONS
+        .lines()
+        .filter_map(|l| {
+            let mut c = l.split('\t');
+            Some((
+                c.next()?,
+                c.next()? == "1",
+                c.next()? == "1",
+                c.next().unwrap_or(""),
+            ))
+        })
+        .collect()
+}
+
+/// The canonical ClickHouse name of a function registered under `internal`
+/// (the inverse of [`internal_name`]).
+pub fn canonical_of_internal(internal: &str) -> &str {
+    internal.strip_prefix("__ch_").unwrap_or(internal)
+}
+
 /// The function written `name` if ClickHouse knows it as a function itself,
 /// not as a composition of combinators.
 pub fn resolve_exact(name: &str) -> Option<Known> {

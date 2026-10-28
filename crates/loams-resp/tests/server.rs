@@ -247,7 +247,8 @@ async fn flushdb_spares_other_dbs() {
     for key in [&b"\x00a"[..], b"\x01b", b"\x02c", b"gq", b"Llease"] {
         store.put(key, b"v".to_vec()).await.expect("a put");
     }
-    let s = start(config(""), store.clone()).await;
+    // No workers: the GC would drop the planted `gq` row.
+    let s = start(config("workers = false"), store.clone()).await;
     let mut c = Client::connect(s.addr).await;
     assert_eq!(c.call(&["SELECT", "1"]).await, Value::ok());
     assert_eq!(c.call(&["FLUSHDB"]).await, Value::ok());

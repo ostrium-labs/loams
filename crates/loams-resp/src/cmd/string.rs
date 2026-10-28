@@ -309,6 +309,7 @@ async fn getex(shared: &Shared, db: u8, args: &[Bytes]) -> Result<Value, Value> 
                 Some(at) => {
                     meta.expire_at_ms = u64::try_from(at).unwrap_or(0);
                     put_meta(t, db, &key, &meta).await?;
+                    crate::expire::note(t, db, &key, &meta).await?;
                 }
                 None if persist && meta.expire_at_ms != 0 => {
                     meta.expire_at_ms = 0;

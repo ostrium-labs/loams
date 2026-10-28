@@ -165,6 +165,13 @@ impl Server {
     ) -> Result<(), String> {
         let limit = Arc::new(Semaphore::new(self.shared.config.max_clients));
         let (stop_tx, stop_rx) = watch::channel(false);
+        if self.shared.config.workers {
+            tokio::spawn(crate::workers::run(
+                self.shared.store.clone(),
+                self.shared.config.worker_options(),
+                stop_rx.clone(),
+            ));
+        }
         tokio::pin!(shutdown);
         loop {
             let (mut stream, addr) = tokio::select! {
