@@ -300,7 +300,11 @@ async fn zscan_and_zrandmember() {
                 panic!("cursor and items");
             };
             for pair in items.chunks(2) {
-                assert!(seen.insert(pair[0].clone()), "a member twice");
+                // `Value` is not `Ord`: the set holds each member's bytes.
+                let Value::Bulk(member) = &pair[0] else {
+                    panic!("a member as a bulk string");
+                };
+                assert!(seen.insert(member.clone()), "a member twice");
             }
             cursor = String::from_utf8_lossy(next).into_owned();
             if cursor == "0" {
