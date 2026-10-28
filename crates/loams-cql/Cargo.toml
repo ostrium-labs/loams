@@ -8,5 +8,10 @@ license.workspace = true
 authors.workspace = true
 publish = false
 
+[dependencies]
+async-trait.workspace = true
+cassandra-protocol = "=4.0.1"
+tokio.workspace = true
+
 [lints]
 workspace = true

@@ -1787,6 +1787,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbbad30e4b4c14a39e3cc8aed085a12a327257c316619c93581e017bc52be591"
 
 [[package]]
+name = "cassandra-protocol"
+version = "4.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f2b9432628147943eb265642273714eb5a5451bb61f652c1f06001c0ef3e099b"
+dependencies = [
+ "arc-swap",
+ "bitflags 2.13.2",
+ "bytes",
+ "chrono",
+ "crc32fast",
+ "derivative",
+ "derive_more",
+ "float_eq",
+ "integer-encoding 4.1.0",
+ "itertools 0.14.0",
+ "lz4_flex 0.13.1",
+ "num-bigint",
+ "snap",
+ "thiserror 2.0.21",
+ "time",
+ "uuid",
+]
+
+[[package]]
 name = "cbc"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3815,6 +3839,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "derivative"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fcc3dd5e9e9c0b295d6e1e4d811fb6f157d5ffd784b8d202fc62eac8035a770b"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "derive-new"
 version = "0.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4557,6 +4592,12 @@ dependencies = [
  "miniz_oxide 0.9.1",
  "zlib-rs",
 ]
+
+[[package]]
+name = "float_eq"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "28a80e3145d8ad11ba0995949bbcf48b9df2be62772b3d351ef017dff6ecb853"
 
 [[package]]
 name = "float_next_after"
@@ -9010,6 +9051,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-cql"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "cassandra-protocol",
+ "tokio",
+]
+
+[[package]]
 name = "loams-durable"
 version = "0.1.2"
 dependencies = [
@@ -9716,6 +9766,19 @@ name = "loams-meter-gate"
 version = "0.1.2"
 dependencies = [
  "serde_json",
+]
+
+[[package]]
+name = "loams-meter-house"
+version = "0.1.2"
+dependencies = [
+ "axum 0.8.9",
+ "loams-meter-core",
+ "reqwest 0.13.5",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "url",
 ]
 
 [[package]]
@@ -19076,21 +19139,4 @@ dependencies = [
  "serde",
  "syn 3.0.6",
  "winnow 1.0.4",
-]
-
-[[package]]
-name = "loams-cql"
-version = "0.1.2"
-
-[[package]]
-name = "loams-meter-house"
-version = "0.1.2"
-dependencies = [
- "axum 0.8.9",
- "loams-meter-core",
- "reqwest 0.13.5",
- "serde_json",
- "thiserror 2.0.21",
- "tokio",
- "url",
 ]
