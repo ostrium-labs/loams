@@ -155,3 +155,12 @@ services:
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
+
+  # engine-gateway (compose.lake.yaml) starts once the gateway's RisingWave
+  # user exists. Declared here, so compose.lake.yaml stays valid without
+  # this file (this file, as before, needs compose.lake.yaml).
+  engine-gateway:
+    depends_on:
+      risingwave-init:
+        condition: service_completed_successfully
+        required: false

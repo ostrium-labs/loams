@@ -1,0 +1,1 @@
+SELECT match('٣', '^\\d$'), match('é', '^\\w$'), match('é', '^.$'), match('a\nb', 'a.b'), match('a\nb', '^b'), match('éx', '\\bx'), match('<a', '\\<a'), match('a{,2}', 'a{,2}'), match('a.b', '\\Qa.b\\E')

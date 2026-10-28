@@ -126,4 +126,4 @@ Obscura is an independent engine. It is not Chromium, and its output is not pixe
 - The gateway opens the engine with the engine's own token, which never leaves the gateway.
 - It serves only the CDP WebSocket handshake, never the discovery endpoints, and it does not parse CDP.
 
-To use it, point `LOAMS_BROWSER_SERVICE_URL` at the gateway.
+Compose (`browser-gateway`) and the Kubernetes manifests (`loams-browser-gateway`) put it in front of the engine by default (D2119): agentd holds only the client token, and only the gateway can reach the engine. `browser-agentd-e2e` checks this path as its third leg.

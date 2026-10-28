@@ -4,33 +4,6 @@
 # hand. `untriaged` fails the run; an `incompatibility` needs a `reason`.
 
 [[mismatch]]
-case = "he1-22/count"
-target = "house-rust"
-kind = "types"
-status = "bug"
-reason = "DataFusion's count/sum/min/max stand in until Task 28: count is Int64 not UInt64, and min/max/sum are Nullable"
-task = "28"
-detail = '["UInt64"] vs ["Int64"]'
-
-[[mismatch]]
-case = "he1-22/group_by"
-target = "house-rust"
-kind = "types"
-status = "bug"
-reason = "DataFusion's count/sum/min/max stand in until Task 28: count is Int64 not UInt64, and min/max/sum are Nullable"
-task = "28"
-detail = '["String", "UInt64"] vs ["String", "Int64"]'
-
-[[mismatch]]
-case = "he1-22/min_max_sum"
-target = "house-rust"
-kind = "types"
-status = "bug"
-reason = "DataFusion's count/sum/min/max stand in until Task 28: count is Int64 not UInt64, and min/max/sum are Nullable"
-task = "28"
-detail = '["Int64", "Int64", "Int64"] vs ["Nullable(Int64)", "Nullable(Int64)", "Nullable(Int64)"]'
-
-[[mismatch]]
 case = "he1-24/bool_and_null"
 target = "house-rust"
 kind = "error"
@@ -244,51 +217,6 @@ status = "bug"
 reason = 'an alias that leads through another alias back to a column resolves differently in ORDER BY'
 task = "25"
 detail = 'row 1: ["y",2] vs ["x",3]'
-
-[[mismatch]]
-case = "he1-25/analyzer_alias_in_aggregate"
-target = "house-rust"
-kind = "error"
-status = "bug"
-reason = 'DataFusion stand-in aggregates until Task 28: Nullable sums, and their error codes (184, 215) for misplaced aggregates'
-task = "28"
-detail = 'baseline error 184 (Code: 184. DB::Exception: Aggregate function sum(c) AS c is found inside another aggregate function in query. (ILLEGAL_A…), target error 48 (Code: 48. DB::Exception: Aggregate function calls cannot be nested: ’sum(t25.c)’ is nested inside ’min(sum(t25.c))’ (the…)'
-
-[[mismatch]]
-case = "he1-25/analyzer_having_not_aggregate"
-target = "house-rust"
-kind = "error"
-status = "bug"
-reason = 'DataFusion stand-in aggregates until Task 28: Nullable sums, and their error codes (184, 215) for misplaced aggregates'
-task = "28"
-detail = 'baseline error 215 (Code: 215. DB::Exception: Column ’default.t25.a’ is not under aggregate function and not in GROUP BY keys. In query SELE…), target error 48 (Code: 48. DB::Exception: Column in HAVING must be in GROUP BY or an aggregate function: While expanding wildcard, column…)'
-
-[[mismatch]]
-case = "he1-25/apply_function"
-target = "house-rust"
-kind = "types"
-status = "bug"
-reason = 'DataFusion stand-in aggregates until Task 28: Nullable sums, and their error codes (184, 215) for misplaced aggregates'
-task = "28"
-detail = '["Int64", "Int64"] vs ["Nullable(Int64)", "Nullable(Int64)"]'
-
-[[mismatch]]
-case = "he1-25/columns_apply"
-target = "house-rust"
-kind = "types"
-status = "bug"
-reason = 'DataFusion stand-in aggregates until Task 28: Nullable sums, and their error codes (184, 215) for misplaced aggregates'
-task = "28"
-detail = '["Int64", "Int64"] vs ["Nullable(Int64)", "Nullable(Int64)"]'
-
-[[mismatch]]
-case = "he1-25/columns_in_function"
-target = "house-rust"
-kind = "types"
-status = "bug"
-reason = 'DataFusion stand-in aggregates until Task 28: Nullable sums, and their error codes (184, 215) for misplaced aggregates'
-task = "28"
-detail = '["Int64"] vs ["Nullable(Int64)"]'
 
 [[mismatch]]
 case = "he1-25/lambda_shadows_column"

@@ -113,14 +113,20 @@ pub fn canonical_of_internal(internal: &str) -> &str {
     internal.strip_prefix("__ch_").unwrap_or(internal)
 }
 
+/// The function written `name` if ClickHouse knows it as a function itself,
+/// not as a composition of combinators.
+pub fn resolve_exact(name: &str) -> Option<Known> {
+    let t = table();
+    t.exact
+        .get(name)
+        .or_else(|| t.folded.get(&name.to_ascii_lowercase()))
+        .cloned()
+}
+
 /// What ClickHouse calls the function written `name`, if it has one.
 pub fn resolve(name: &str) -> Option<Known> {
-    let t = table();
-    if let Some(k) = t.exact.get(name) {
-        return Some(k.clone());
-    }
-    if let Some(k) = t.folded.get(&name.to_ascii_lowercase()) {
-        return Some(k.clone());
+    if let Some(k) = resolve_exact(name) {
+        return Some(k);
     }
     // An aggregate with combinators (`sumIf`, `uniqMergeState`).
     for c in COMBINATORS {

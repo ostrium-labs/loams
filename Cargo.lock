@@ -8384,6 +8384,7 @@ dependencies = [
  "loams-confluent",
  "loams-durable",
  "loams-es",
+ "loams-flink",
  "loams-git",
  "loams-graph",
  "loams-hnsw",
@@ -9079,6 +9080,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-flink"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "axum 0.8.9",
+ "bytes",
+ "clap",
+ "futures",
+ "hex",
+ "http",
+ "http-body-util",
+ "httpmock",
+ "k8s-openapi",
+ "kube",
+ "loams-store",
+ "reqwest 0.13.5",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.21",
+ "time",
+ "tokio",
+ "tokio-stream",
+ "toml 0.8.23",
+ "tower 0.5.3",
+ "tracing",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "loams-fs"
 version = "0.1.2"
 dependencies = [
@@ -9103,6 +9136,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "loams-meter-gate",
+ "loams-resp",
  "loams-spark",
  "loams-temporal-frontend",
  "md-5 0.11.0",
@@ -9606,14 +9640,17 @@ name = "loams-meter"
 version = "0.1.2"
 dependencies = [
  "async-trait",
+ "base64 0.23.1",
  "buffa",
  "connectrpc",
+ "hmac 0.13.0",
  "loams-authz",
  "loams-cloudevents",
  "loams-common",
  "loams-meter-core",
  "loams-proto",
  "proptest",
+ "reqwest 0.13.5",
  "serde",
  "serde_json",
  "serde_yaml_ng",
@@ -9951,7 +9988,12 @@ name = "loams-resp"
 version = "0.1.2"
 dependencies = [
  "bytes",
+ "loams-kv",
  "proptest",
+ "serde",
+ "tokio",
+ "toml 0.8.23",
+ "tracing",
 ]
 
 [[package]]

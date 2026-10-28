@@ -249,6 +249,25 @@ pub fn ch_error(e: DataFusionError) -> ChError {
         DataFusionError::Diagnostic(_, inner) => ch_error(*inner),
         DataFusionError::SchemaError(e, _) => ChError::unknown_identifier(e.to_string()),
         DataFusionError::Plan(m) if m.contains("No field named") => ChError::unknown_identifier(m),
+        // Misplaced aggregates (plan HE1 Task 28): ClickHouse's `184` for an
+        // aggregate inside another, `215` for a column outside the keys.
+        DataFusionError::Plan(m) if m.contains("Aggregate function calls cannot be nested") => {
+            ChError {
+                code: 184,
+                name: "ILLEGAL_AGGREGATION",
+                message: m,
+            }
+        }
+        DataFusionError::Plan(m)
+            if m.contains("must be in GROUP BY or an aggregate function")
+                || m.contains("must appear in the GROUP BY clause") =>
+        {
+            ChError {
+                code: 215,
+                name: "NOT_AN_AGGREGATE",
+                message: m,
+            }
+        }
         DataFusionError::Plan(m) => {
             ChError::not_implemented(format!("{m} (the Loams House engine cannot plan this yet)"))
         }
