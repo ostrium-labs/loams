@@ -311,16 +311,18 @@ sys.exit(1 if bad else 0)
 EOF2
 }
 
-# The nightly runs every product suite on this branch.
+# The local nightly (scripts/nightly/run-local.sh; owner, 2026-10-28: no
+# nightly in CI) runs every product suite on this branch, and the matrix has
+# a row for each of its compute legs.
 compute_compat_workflow_runs_every_suite() {
-  local wf="$ROOT/.github/workflows/compute-compat.yml" f hits=0
-  grep -q 'compute-compat.yml' "$ROOT/.github/workflows/nightly.yml" || { echo "nightly.yml does not dispatch compute-compat.yml"; hits=1; }
-  for f in "$HERE"/durable/run.sh "$HERE"/temporal/run.sh "$HERE"/temporal/corpus/replay.sh "$HERE"/airflow/run.sh; do
-    grep -qF "conformance/compute/${f#"$HERE"/}" "$wf" || { echo "compute-compat.yml does not run ${f#"$ROOT"/}"; hits=1; }
+  local runner="$ROOT/scripts/nightly/run-local.sh" f hits=0
+  for f in durable/run.sh temporal/run.sh temporal/corpus/replay.sh airflow/run.sh \
+    dbos-py/run.sh dbos-ts/run.sh dbos-go/run.sh dbos-java/run.sh; do
+    grep -qF "conformance/compute/$f" "$runner" || { echo "run-local.sh does not run $f"; hits=1; }
   done
-  for f in py ts go java; do
-    grep -qF "conformance/compute/dbos-$f/run.sh" "$wf" || { echo "compute-compat.yml does not run dbos-$f"; hits=1; }
-  done
+  "$runner" --list | awk '$2 == "compute" { print $1 }' | while read -r leg; do
+    grep -qF "leg=\"$leg\"" "$ROOT/scripts/compute/matrix.py" || { echo "matrix.py has no row for leg $leg"; exit 1; }
+  done || hits=1
   return $hits
 }
 

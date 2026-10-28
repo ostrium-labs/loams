@@ -135,6 +135,7 @@
         ],
         "loams-house-worker": [
           "conformance/clickhouse/corpus/**",
+          "crates/loams-meter-house/src/sql.rs",
           "deploy/house/kind/worker-pods.yaml"
         ]
       },

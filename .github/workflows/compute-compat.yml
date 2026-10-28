@@ -13,12 +13,10 @@
 name: Compute conformance
 
 on:
-  # A dispatch needs the file on the default branch (main), which moves only
-  # at a release. Until then, and for a one-off run of any branch, push that
-  # commit to a `compute-compat/<name>` branch: every leg runs (DX1 ruling
-  # T7.R6). Delete the branch afterwards.
-  push:
-    branches: ["compute-compat/**"]
+  # Owner, 2026-10-28: "do not run nightly in ci only local". The nightly is
+  # scripts/nightly/run-local.sh on the laptops (deploy/nightly/); this
+  # workflow stays for a deliberate one-off run on GitHub-hosted runners and
+  # is not scheduled, dispatched by nightly.yml or triggered by pushes.
   workflow_dispatch:
     inputs:
       products:
