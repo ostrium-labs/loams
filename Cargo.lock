@@ -9242,6 +9242,7 @@ dependencies = [
  "grafeo-engine",
  "hex",
  "loams-apps-mock",
+ "loams-authz",
  "loams-cache",
  "loams-collection",
  "loams-common",
