@@ -33,6 +33,11 @@ cargo_package(
             "crate": "server",
             "root": "tests/server.rs",
         },
+        {
+            "name": "strings",
+            "crate": "strings",
+            "root": "tests/strings.rs",
+        },
     ],
     deps = [
         "//crates/loams-kv:loams-kv",

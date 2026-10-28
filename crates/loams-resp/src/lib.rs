@@ -12,13 +12,18 @@
 //! - [`config`], [`server`], [`cmd`]: the module's configuration, the
 //!   listener and connection loop, and the command table with the
 //!   connection and server commands (KV2 Task 2).
+//! - [`layout`]: the key layout and the meta record of D1653 (KV2 Task 3);
+//!   `types`: the Redis types on `loams-kv` transactions (strings in
+//!   Task 3).
 //! - [`testing`]: a test gateway and client.
 
 pub mod cmd;
 pub mod config;
 pub mod frame;
+pub mod layout;
 pub mod server;
 pub mod testing;
+pub(crate) mod types;
 
 pub use config::RespConfig;
 pub use frame::{Decoder, Limits, Proto, ProtoError, Value};

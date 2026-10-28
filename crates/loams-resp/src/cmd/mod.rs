@@ -6,15 +6,20 @@
 //! commands get Valkey's error texts (design §77 §8.5).
 
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::{Arc, LazyLock};
 
 use bytes::Bytes;
+use loams_kv::{Txn, TxnError, TxnOptions};
 
 use crate::frame::{Value, parse_int};
 use crate::server::{Conn, Shared};
 
 mod conn;
+mod keys;
 mod server;
+mod string;
 
 pub use conn::REDIS_VERSION;
 pub use server::{delete_range, glob, store_error};
@@ -32,6 +37,10 @@ pub enum Flow {
 pub enum Family {
     Conn,
     Server,
+    /// The generic key commands (Task 3).
+    Keys,
+    /// Strings (Task 3).
+    String,
 }
 
 /// Command flags, as `COMMAND INFO` names them.
@@ -93,6 +102,12 @@ const fn spec(
 
 use flag::*;
 const NOKEYS: (i32, i32, i32) = (0, 0, 0);
+/// The first argument is the only key.
+const KEY1: (i32, i32, i32) = (1, 1, 1);
+/// Every argument from the first is a key.
+const ALLKEYS: (i32, i32, i32) = (1, -1, 1);
+/// Keys and values alternate from the first argument.
+const PAIRS: (i32, i32, i32) = (1, -1, 2);
 
 /// Every command this build serves.
 pub static COMMANDS: &[Spec] = &[
@@ -176,6 +191,39 @@ pub static COMMANDS: &[Spec] = &[
         NOKEYS,
         Family::Server,
     ),
+    spec("dbsize", 1, READONLY | FAST, NOKEYS, Family::Keys),
+    // Generic key commands (Task 3).
+    spec("del", -2, WRITE, ALLKEYS, Family::Keys),
+    spec("unlink", -2, WRITE | FAST, ALLKEYS, Family::Keys),
+    spec("exists", -2, READONLY | FAST, ALLKEYS, Family::Keys),
+    spec("touch", -2, READONLY | FAST, ALLKEYS, Family::Keys),
+    spec("type", 2, READONLY | FAST, KEY1, Family::Keys),
+    spec("expire", -3, WRITE | FAST, KEY1, Family::Keys),
+    spec("pexpire", -3, WRITE | FAST, KEY1, Family::Keys),
+    spec("expireat", -3, WRITE | FAST, KEY1, Family::Keys),
+    spec("pexpireat", -3, WRITE | FAST, KEY1, Family::Keys),
+    spec("ttl", 2, READONLY | FAST, KEY1, Family::Keys),
+    spec("pttl", 2, READONLY | FAST, KEY1, Family::Keys),
+    spec("expiretime", 2, READONLY | FAST, KEY1, Family::Keys),
+    spec("pexpiretime", 2, READONLY | FAST, KEY1, Family::Keys),
+    spec("persist", 2, WRITE | FAST, KEY1, Family::Keys),
+    // Strings (Task 3).
+    spec("get", 2, READONLY | FAST, KEY1, Family::String),
+    spec("set", -3, WRITE | DENYOOM, KEY1, Family::String),
+    spec("setnx", 3, WRITE | DENYOOM | FAST, KEY1, Family::String),
+    spec("setex", 4, WRITE | DENYOOM, KEY1, Family::String),
+    spec("psetex", 4, WRITE | DENYOOM, KEY1, Family::String),
+    spec("getset", 3, WRITE | DENYOOM | FAST, KEY1, Family::String),
+    spec("getdel", 2, WRITE | FAST, KEY1, Family::String),
+    spec("getex", -2, WRITE | FAST, KEY1, Family::String),
+    spec("mget", -2, READONLY | FAST, ALLKEYS, Family::String),
+    spec("mset", -3, WRITE | DENYOOM, PAIRS, Family::String),
+    spec("msetnx", -3, WRITE | DENYOOM, PAIRS, Family::String),
+    spec("append", 3, WRITE | DENYOOM | FAST, KEY1, Family::String),
+    spec("strlen", 2, READONLY | FAST, KEY1, Family::String),
+    spec("getrange", 4, READONLY, KEY1, Family::String),
+    spec("substr", 4, READONLY, KEY1, Family::String),
+    spec("setrange", 4, WRITE | DENYOOM, KEY1, Family::String),
 ];
 
 /// Commands Loams does not serve in v1 (design §77 §8.5), answered with a
@@ -261,6 +309,7 @@ pub static NOT_SUPPORTED: &[&str] = &[
     "memory",
     "slowlog",
     "lolwut",
+    "lcs",
 ];
 
 static BY_NAME: LazyLock<HashMap<&'static str, &'static Spec>> =
@@ -304,7 +353,33 @@ pub async fn dispatch(shared: &Arc<Shared>, conn: &mut Conn, args: Vec<Bytes>) -
     match spec.family {
         Family::Conn => conn::run(shared, conn, spec, &args),
         Family::Server => (server::run(shared, conn, spec, &args).await, Flow::Continue),
+        Family::Keys => (keys::run(shared, conn, spec, &args).await, Flow::Continue),
+        Family::String => (string::run(shared, conn, spec, &args).await, Flow::Continue),
     }
+}
+
+/// The body of one transaction attempt (`loams_kv`'s `BoxFuture`).
+pub(crate) type Body<'t, T> = Pin<Box<dyn Future<Output = Result<T, TxnError>> + Send + 't>>;
+
+/// Runs `body` in one `loams-kv` transaction (retried on conflict by the
+/// runner), as the operation `op` in the store's metrics. A store error
+/// becomes its error reply.
+pub(crate) async fn txn<T, F>(shared: &Shared, op: &'static str, body: F) -> Result<T, Value>
+where
+    T: Send,
+    F: for<'t> FnMut(&'t mut Txn) -> Body<'t, T>,
+{
+    shared
+        .store
+        .run(TxnOptions::new(op), body)
+        .await
+        .map(|c| c.value)
+        .map_err(|e| store_error(&e))
+}
+
+/// The `WRONGTYPE` reply.
+pub fn wrongtype() -> Value {
+    Value::err(crate::types::WRONGTYPE)
 }
 
 fn arity_ok(arity: i32, argc: usize) -> bool {
