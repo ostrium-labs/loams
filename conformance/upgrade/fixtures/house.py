@@ -20,7 +20,12 @@ def statements(insert: bool) -> list[str]:
 
 
 def run(stack, sql):
-    _, end = stack.http().connect_stream("loams.house.v1.HouseService/ExecuteQuery", {"sql": sql})
+    # Every fixture statement writes (DDL, INSERT): `readOnly` absent means
+    # true, which refuses them with `house_read_only`. A release from before
+    # the field ignores it.
+    _, end = stack.http().connect_stream(
+        "loams.house.v1.HouseService/ExecuteQuery", {"sql": sql, "readOnly": False}
+    )
     if end:
         raise AssertionError(f"House {sql!r}: {end}")
 
