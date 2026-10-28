@@ -1,0 +1,1 @@
+SELECT s = 1 FROM t24s

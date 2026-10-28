@@ -1,0 +1,30 @@
+{
+  "before": {
+    "id": 1
+  },
+  "after": {
+    "id": 1,
+    "first_name": "Anne Marie",
+    "last_name": "Kretchmar",
+    "email": "annek@noanswer.org"
+  },
+  "source": {
+    "version": "3.3.0.Final",
+    "connector": "postgresql",
+    "name": "PostgreSQL_server",
+    "ts_ms": 1559033904863,
+    "ts_us": 1559033904863769,
+    "ts_ns": 1559033904863769000,
+    "snapshot": false,
+    "db": "postgres",
+    "schema": "public",
+    "table": "customers",
+    "txId": 556,
+    "lsn": 24023128,
+    "xmin": null
+  },
+  "op": "u",
+  "ts_ms": 1465584025523,
+  "ts_us": 1465584025523514,
+  "ts_ns": 1465584025523514964
+}

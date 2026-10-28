@@ -31,8 +31,8 @@ export default defineConfig({
 				external: ["pg-native"],
 			},
 		},
-		// The workspace adapters are raw TypeScript: bundle them (and cordis, zod)
-		// so the packaged app does not need the workspace.
+		// Bundle these (cordis, zod, the protos) so the packaged app does not need the
+		// workspace. The factory's adapters run in loams-agentd (SF1 amendment F1).
 		plugins: [
 			externalizeDepsPlugin({
 				exclude: [
@@ -44,21 +44,10 @@ export default defineConfig({
 					// Main watches the daemon for Studio's tray and notifications (SD1 Task 28).
 					"@connectrpc/connect",
 					"@connectrpc/connect-web",
-					"@loams-core/http",
-					"@loams-core/host",
 					// SQL drivers: bundled so the packaged app needs no node_modules.
 					"pg",
 					"pg-cursor",
 					"mysql2",
-					...[
-						"forgejo",
-						"zulip",
-						"itsaplan",
-						"glitchtip",
-						"openpanel",
-						"matomo",
-						"langfuse",
-					].map((a) => `@loams-plugins/plugin-${a}-adapter`),
 				],
 			}),
 		],

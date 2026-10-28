@@ -13,8 +13,10 @@ use loams_temporal_proto::temporal::api::history::v1::{
 };
 use loams_temporal_proto::temporal::api::sdk::v1::WorkflowTaskCompletedMetadata;
 
+use loams_temporal_proto::temporal::api::protocol::v1::Message;
+
 use crate::write::{close, ensure_workflow_task, flush, schedule_workflow_task};
-use crate::{Effect, Rejection, Reply, TimeoutKind, commands};
+use crate::{Effect, Rejection, Reply, TimeoutKind, commands, update};
 
 fn stale(scheduled_event_id: i64) -> Rejection {
     Rejection::NotFound(format!(
@@ -69,6 +71,8 @@ pub(crate) fn started(
     w.request_id = request_id;
     w.started_time = Some(ts(now));
     let timeout = dur_ms(w.start_to_close_timeout.as_ref());
+    // Admitted updates go out with this task.
+    update::mark_sent(b, scheduled_event_id);
     fx.push(Effect::ArmTimeout {
         kind: TimeoutKind::WorkflowTask,
         event_id: scheduled_event_id,
@@ -114,6 +118,8 @@ pub(crate) struct Completion {
     pub metering_metadata: Option<MeteringMetadata>,
     pub worker_version: Option<WorkerVersionStamp>,
     pub force_create_new_workflow_task: bool,
+    pub messages: Vec<Message>,
+    pub new_run_id: String,
 }
 
 fn is_close(c: &Command) -> bool {
@@ -143,9 +149,12 @@ pub(crate) fn completed(
         attempt: wt.attempt,
     });
 
-    // A close command while new events wait would hide them from the
-    // workflow: fail the task so the worker sees them first.
-    if c.commands.iter().any(is_close) && !b.state_ref().buffered.is_empty() {
+    // A close command while new events (or admitted updates) wait would
+    // hide them from the workflow: fail the task so the worker sees them
+    // first.
+    if c.commands.iter().any(is_close)
+        && (!b.state_ref().buffered.is_empty() || update::has_admitted(b))
+    {
         b.push(Attributes::WorkflowTaskFailedEventAttributes(
             WorkflowTaskFailedEventAttributes {
                 scheduled_event_id: wt.scheduled_event_id,
@@ -156,6 +165,7 @@ pub(crate) fn completed(
             },
         ));
         b.state().workflow_task = None;
+        update::resend_after_failure(b, wt.scheduled_event_id);
         flush(b);
         ensure_workflow_task(b, fx);
         return Ok(Reply::Done);
@@ -177,11 +187,39 @@ pub(crate) fn completed(
         s.last_completed_wft_started_event_id = wt.started_event_id;
         s.workflow_task = None;
     }
+    // Protocol messages go where a `ProtocolMessage` command puts them; the
+    // rest after every command (before a closing one, so nothing follows
+    // the close).
+    let mut messages: Vec<Option<Message>> = c.messages.into_iter().map(Some).collect();
     for command in c.commands {
-        commands::apply(b, fx, command, completed_id, &c.identity)?;
+        if let Some(command::Attributes::ProtocolMessageCommandAttributes(p)) = &command.attributes
+        {
+            let m = messages
+                .iter_mut()
+                .find(|m| m.as_ref().is_some_and(|m| m.id == p.message_id))
+                .and_then(Option::take)
+                .ok_or_else(|| {
+                    Rejection::InvalidArgument(format!(
+                        "ProtocolMessageCommand names message {}, which the request does not carry",
+                        p.message_id
+                    ))
+                })?;
+            update::handle_message(b, m)?;
+            continue;
+        }
+        if is_close(&command) {
+            for m in messages.iter_mut().filter_map(Option::take) {
+                update::handle_message(b, m)?;
+            }
+        }
+        commands::apply(b, fx, command, completed_id, &c.identity, &c.new_run_id)?;
     }
+    for m in messages.into_iter().flatten() {
+        update::handle_message(b, m)?;
+    }
+    update::reject_unprocessed(b, wt.scheduled_event_id);
     let had_buffered = flush(b);
-    if had_buffered || c.force_create_new_workflow_task {
+    if had_buffered || c.force_create_new_workflow_task || update::has_admitted(b) {
         ensure_workflow_task(b, fx);
     }
     Ok(Reply::Done)
@@ -220,6 +258,7 @@ fn over_limit(
         },
     ));
     b.state().workflow_task = None;
+    update::resend_after_failure(b, wt.scheduled_event_id);
     flush(b);
     if breach.terminate {
         let id = b.push(Attributes::WorkflowExecutionTerminatedEventAttributes(
@@ -272,6 +311,7 @@ pub(crate) fn failed(
         attempt,
     });
     b.state().workflow_task = None;
+    update::resend_after_failure(b, scheduled_event_id);
     flush(b);
     // Every failed attempt is written in DX1; Temporal's transient attempts
     // (not written until one succeeds) are DX2's.
@@ -300,6 +340,7 @@ pub(crate) fn timed_out(
         attempt,
     });
     b.state().workflow_task = None;
+    update::resend_after_failure(b, scheduled_event_id);
     flush(b);
     schedule_workflow_task(b, fx, attempt + 1);
     Ok(Reply::Done)

@@ -2,7 +2,7 @@
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import { vi } from 'vitest';
+import { vi } from 'vite-plus/test';
 import type {
   ContentMatch,
   ContentSearchQuery,

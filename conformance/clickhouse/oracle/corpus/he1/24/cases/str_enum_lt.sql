@@ -1,0 +1,1 @@
+SELECT e < 'b' FROM t24s ORDER BY id
