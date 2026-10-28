@@ -234,3 +234,11 @@ note = "no SDK call in these runs; loams-temporal-frontend tests/visibility.rs"
 [[method]]
 name = "GetSearchAttributes"
 note = "no SDK call in these runs; loams-temporal-frontend tests/visibility.rs"
+
+[[method]]
+name = "ListOpenWorkflowExecutions"
+note = "TMP-api: unit tests (listing.rs); served from Store::list_runs"
+
+[[method]]
+name = "ListClosedWorkflowExecutions"
+note = "TMP-api: unit tests (listing.rs); served from Store::list_runs"
