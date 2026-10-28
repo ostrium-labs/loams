@@ -57,6 +57,18 @@ licence = "MIT OR Apache-2.0"
 source = "https://github.com/astral-sh/uv/blob/0.12.24/LICENSE-MIT"
 resolve = "pypi:uv"
 
+[TEMPORAL_SDK_PHP]
+value = "2.19.0"
+licence = "MIT"
+source = "https://github.com/temporalio/sdk-php/blob/v2.19/LICENSE"
+resolve = "github:temporalio/sdk-php"
+
+[ROADRUNNER_VERSION]
+value = "2025.1.15"
+licence = "MIT"
+source = "https://github.com/roadrunner-server/roadrunner/blob/v2025.1.15/LICENSE"
+resolve = "github:roadrunner-server/roadrunner"
+
 [TEMPORAL_SAMPLES_GO]
 value = "d3784428122e0cd4b28e91a0cd86b589749abf28"
 licence = "Apache-2.0"
@@ -142,6 +154,29 @@ source = "https://docs.python.org/3.12/license.html"
 value = "docker.io/library/node:22.23.2-bookworm@sha256:dd5847a04b0deee391fa145f1f4c6d214196668b6bcc7988ebed67249f226844"
 licence = "MIT"
 source = "https://github.com/nodejs/node/blob/v22.23.2/LICENSE"
+
+[PHP_IMAGE]
+value = "docker.io/library/php:8.4.25-cli-bookworm@sha256:bafb189d08a8db0fcbf97aff7e362ada47b3bb2fc902468dc799e6ff8ab402b0"
+licence = "PHP-3.01"
+source = "https://github.com/php/php-src/blob/php-8.4.25/LICENSE"
+
+[COMPOSER_IMAGE]
+value = "docker.io/library/composer:2.10.2@sha256:d020706319701a44468968321dccd0fce6620190159a7a9ec195d78e6e971c71"
+licence = "MIT"
+source = "https://github.com/composer/composer/blob/2.10.2/LICENSE"
+resolve = "github:composer/composer"
+
+[ROADRUNNER_IMAGE]
+value = "ghcr.io/roadrunner-server/roadrunner:2025.1.15@sha256:18378c1313a71ce1c3cfc493c99e75c189ef5fb2eaf85290b8a99080fcb0f64f"
+licence = "MIT"
+source = "https://github.com/roadrunner-server/roadrunner/blob/v2025.1.15/LICENSE"
+resolve = "github:roadrunner-server/roadrunner"
+
+[PHP_GRPC_VERSION]
+value = "1.84.0"
+licence = "Apache-2.0"
+source = "https://pecl.php.net/package/grpc/1.84.0"
+resolve = "github:grpc/grpc"
 
 [JAVA_IMAGE]
 value = "docker.io/library/eclipse-temurin:21.0.12_8-jdk-noble@sha256:4d271cd5e0624598cf563342f47281b09cb364bc13acbbd7251f49f83470018d"

@@ -1,0 +1,42 @@
+{
+    "name": "ostrium-labs/loams-temporal-corpus-php",
+    "description": "The Temporal history corpus's PHP worker (DX1 TSDK-php): temporal/sdk workflows and activities under RoadRunner, its starter and its WorkflowReplayer check.",
+    "type": "project",
+    "license": "Apache-2.0",
+    "require": {
+        "php": ">=8.4",
+        "ext-grpc": "*",
+        "ext-json": "*",
+        "temporal/sdk": "2.19.0"
+    },
+    "autoload": {
+        "classmap": [
+            "src/"
+        ]
+    },
+    "config": {
+        "platform": {
+            "php": "8.4.25"
+        },
+        "sort-packages": true,
+        "optimize-autoloader": true
+    },
+    "conflict": {
+        "composer/semver": ">=3.5.2",
+        "grpc/grpc": ">=1.85.1",
+        "nesbot/carbon": ">=3.15.0",
+        "roadrunner-php/version-checker": ">=1.4.1",
+        "roadrunner/goridge": ">=4.6.0",
+        "roadrunner/roadrunner": ">=3.0.1",
+        "spiral/core": ">=3.18.0",
+        "spiral/hmvc": ">=3.18.0",
+        "spiral/interceptors": ">=3.18.0",
+        "spiral/logger": ">=3.18.0",
+        "spiral/roadrunner-worker": ">=3.8.2",
+        "spiral/security": ">=3.18.0",
+        "spiral/tokenizer": ">=3.18.0"
+    },
+    "extra": {
+        "//": "conflict holds back every package released less than 14 days before the lock was written (2026-10-28; pins at least 14 days old). temporal/sdk 2.19.0 (2026-09-14) pairs with RoadRunner 2025.1.15 (spiral/roadrunner ^2025.1.5); 2.20 (2026-10-23) and RoadRunner 3.0 are newer or a new major."
+    }
+}
