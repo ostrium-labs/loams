@@ -7,14 +7,21 @@
 //!   [`house::ensure_schema`], which the `meter` role runs at start.
 //! - [`close`]: the close job (Task 6), which the `meter` role runs every
 //!   60 s on every instance ([`close::CloseJob::run_once`]).
+//! - [`period`]: period totals and period close (Task 7), run after each
+//!   close-job lap ([`period::PeriodCloser::run_once`]).
 //!
 //! The `meter` role (`crates/loams-meter`, feature `meter` of `loams`) wires
 //! this crate: it owns the House credentials and the schedule.
 
 pub mod close;
 pub mod house;
+pub mod period;
 pub mod sql;
 
 pub use close::{CloseError, CloseJob};
 pub use house::{HouseError, HouseSql, HttpHouse, ensure_schema};
-pub use sql::{Aggregation, CloseConfig, CloseSummary, MeterDef, WindowSize};
+pub use period::{PeriodCloser, PeriodSpec};
+pub use sql::{
+    Aggregation, CloseConfig, CloseSummary, FeatureDef, MeterDef, PeriodConfig, PeriodOutcome,
+    PeriodSummary, WindowSize,
+};

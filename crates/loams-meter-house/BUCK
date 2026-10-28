@@ -29,6 +29,11 @@ cargo_package(
             "root": "tests/close.rs",
         },
         {
+            "name": "period",
+            "crate": "period",
+            "root": "tests/period.rs",
+        },
+        {
             "name": "schema",
             "crate": "schema",
             "root": "tests/schema.rs",
