@@ -8,6 +8,8 @@
 //! against a real engine when `LOAMS_CONNECT_ENGINE_URL` is set.
 
 #![allow(dead_code)]
+// Test helpers: `unwrap_used` is a warning and CI runs `-D warnings`.
+#![allow(clippy::unwrap_used)]
 
 use std::collections::{BTreeMap, HashSet};
 use std::convert::Infallible;

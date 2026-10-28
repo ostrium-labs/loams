@@ -49,6 +49,16 @@ pub struct RespConfig {
     /// change, so they refuse lists longer than this (plan KV2 Task 8).
     #[serde(default = "default_list_max_shift")]
     pub list_max_shift: usize,
+    /// Run the expiry and GC workers (plan KV2 Task 10); each runs only
+    /// while this process holds its lease.
+    #[serde(default = "default_true")]
+    pub workers: bool,
+    /// How often the expiry worker sweeps due keys.
+    #[serde(default = "default_expire_interval_ms")]
+    pub expire_interval_ms: u64,
+    /// How often the GC worker pages its queue.
+    #[serde(default = "default_gc_interval_ms")]
+    pub gc_interval_ms: u64,
     /// How writes are acknowledged (D1651; ruling K2-3).
     #[serde(default)]
     pub durability: Durability,
@@ -70,6 +80,18 @@ fn default_databases() -> u16 {
 
 fn default_max_clients() -> usize {
     10_000
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_expire_interval_ms() -> u64 {
+    100
+}
+
+fn default_gc_interval_ms() -> u64 {
+    1_000
 }
 
 fn default_list_max_shift() -> usize {
@@ -181,6 +203,15 @@ impl RespConfig {
         Limits {
             max_bulk: self.proto_max_bulk_len,
             ..Limits::default()
+        }
+    }
+
+    /// The workers' options.
+    pub fn worker_options(&self) -> crate::workers::WorkerOptions {
+        crate::workers::WorkerOptions {
+            databases: self.databases,
+            expire_every: Duration::from_millis(self.expire_interval_ms.max(1)),
+            gc_every: Duration::from_millis(self.gc_interval_ms.max(1)),
         }
     }
 

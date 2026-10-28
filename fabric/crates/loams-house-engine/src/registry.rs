@@ -42,5 +42,6 @@ pub fn registry() -> Registry {
     // Strings, regular expressions, hashes and UUIDs (plan HE1 Task 31).
     loams_house_exec::func::strings::register(&mut r);
     loams_house_exec::func::hash::register(&mut r);
+    crate::system::functions::register(&mut r);
     r
 }

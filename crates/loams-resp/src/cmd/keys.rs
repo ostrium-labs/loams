@@ -224,6 +224,7 @@ pub(crate) async fn set_expiry<K: Kv>(
         Ok(at) if at > now => {
             meta.expire_at_ms = at;
             put_meta(t, db, ukey, &meta).await?;
+            crate::expire::note(t, db, ukey, &meta).await?;
         }
         _ => {
             delete_key(t, db, ukey, now).await?;

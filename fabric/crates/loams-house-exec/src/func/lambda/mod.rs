@@ -300,6 +300,8 @@ fn is_condition_type(t: &ChType) -> bool {
 }
 
 impl HigherOrderUDFImpl for ArrayHof {
+    // DataFusion looks the function up by its internal name.
+    #[allow(clippy::misnamed_getters)]
     fn name(&self) -> &str {
         self.internal
     }

@@ -56084,6 +56084,18 @@ cargo.rust_library(
     visibility = [],
 )
 
+cargo_alias(
+    name = "webpki-roots",
+    actual = ":webpki-roots-1",
+    platforms = [
+        "linux-arm64",
+        "linux-x86_64",
+        "macos-arm64",
+        "macos-x86_64",
+    ],
+    visibility = ["PUBLIC"],
+)
+
 http_archive(
     name = "webpki-roots-1.0.10.crate",
     sha256 = "1c1c8e20c8a38fc7d65abfe74eb7280e4aa667e8eec8bc84996d2874810748d9",

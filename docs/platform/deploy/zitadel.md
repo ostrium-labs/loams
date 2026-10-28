@@ -53,6 +53,10 @@ LOAMS_OIDC_AUDIENCE=<the Zitadel project id>
 
 The audience is the Zitadel project id; IA0 verifies that value (§76 §12.3). The install still decides membership and authorization itself, so Ostrium never sees its tuples.
 
+**Token lifetime (D1630).** Set the instance's access-token lifetime to 900 s (Default settings → OIDC token lifetimes, or `PUT /admin/v1/settings/oidc` with `{"accessTokenLifetime":"900s"}`). agentd writes each installed agent's Zitadel access token to its `LOAMS_TOKEN_FILE` (D1629), so this is the life of an agent's token; agentd warns when tokens live longer.
+
+**agentd** reads `LOAMS_AGENT_ISSUER` (this issuer) and `LOAMS_AGENT_PROJECT` (the project id) to vend agent tokens, and, optionally, `LOAMS_AGENT_ZITADEL_TOKEN_FILE` (a token that may deactivate the org's machine users and remove their keys) so that uninstalling an agent deactivates its machine user (D1632).
+
 ## 5. What to use today
 
 Until Zitadel answers at `auth.loams.dev`:
