@@ -251,3 +251,19 @@ note = "TMP-api: unit tests (listing.rs); served from Store::list_runs"
 [[method]]
 name = "ListClosedWorkflowExecutions"
 note = "TMP-api: unit tests (listing.rs); served from Store::list_runs"
+
+[[method]]
+name = "StartBatchOperation"
+note = "TMP-api (D2230): tests/batch.rs (in-process); visibility query or listed executions; terminate/cancel/signal; jobs in gateway memory"
+
+[[method]]
+name = "StopBatchOperation"
+note = "TMP-api (D2230): tests/batch.rs (in-process); visibility query or listed executions; terminate/cancel/signal; jobs in gateway memory"
+
+[[method]]
+name = "DescribeBatchOperation"
+note = "TMP-api (D2230): tests/batch.rs (in-process); visibility query or listed executions; terminate/cancel/signal; jobs in gateway memory"
+
+[[method]]
+name = "ListBatchOperations"
+note = "TMP-api (D2230): tests/batch.rs (in-process); visibility query or listed executions; terminate/cancel/signal; jobs in gateway memory"
