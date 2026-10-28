@@ -164,8 +164,11 @@ LOAMS_TEMPORAL_TEST_PG_URL=postgres://postgres:pg@127.0.0.1:5432/postgres \
 the Postgres leg is skipped and each test prints a line saying so.
 
 In CI, the `Temporal store: Postgres 17` job (`.github/workflows/ci.yml`)
-runs the same command against a `postgres:17` service container whenever
-`crates/loams-temporal-store/**` changes.
+runs the same command against a `postgres:17` service container. It is a
+full-tier job: it runs when `crates/loams-temporal-store/**` changes on a
+pull request labelled `ci:full` or into `main`, in the nightly on `dev`, and
+on a manual dispatch. On an ordinary pull request into `dev`, only the
+MemStore leg runs (in `Rust: tests`).
 
 To add a backend, add a `Backend` variant in `tests/store.rs`. Every test in
 the file then runs against it too.
