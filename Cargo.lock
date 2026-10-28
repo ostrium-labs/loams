@@ -9079,6 +9079,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-flink"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "axum 0.8.9",
+ "bytes",
+ "clap",
+ "futures",
+ "hex",
+ "http",
+ "http-body-util",
+ "httpmock",
+ "k8s-openapi",
+ "kube",
+ "loams-store",
+ "reqwest 0.13.5",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.21",
+ "time",
+ "tokio",
+ "tokio-stream",
+ "toml 0.8.23",
+ "tower 0.5.3",
+ "tracing",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "loams-fs"
 version = "0.1.2"
 dependencies = [
