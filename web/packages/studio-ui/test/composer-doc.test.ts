@@ -9,7 +9,7 @@ import { splitBlockKeepMarks } from '@tiptap/pm/commands';
 import { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { EditorState, TextSelection } from '@tiptap/pm/state';
 import StarterKit from '@tiptap/starter-kit';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import {
   buildDocJson,
   buildTiptapContent,

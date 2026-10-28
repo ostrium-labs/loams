@@ -1,0 +1,1 @@
+SELECT a AS b, b AS a FROM t25 ORDER BY b, a

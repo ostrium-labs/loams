@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { ConnectorCatalog, catalogPath } from "../src/main/connectors/catalog";
 import { saveYaml } from "../src/main/connectors/save";
 

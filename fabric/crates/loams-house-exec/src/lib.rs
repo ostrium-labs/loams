@@ -4,3 +4,6 @@
 //! ClickHouse's scalar functions, aggregate functions and combinators, the
 //! extension nodes' physical operators (`FINAL`, totals, `LIMIT BY`, `ARRAY
 //! JOIN`, `WITH FILL`), registered with DataFusion.
+
+pub mod func;
+pub mod ops;

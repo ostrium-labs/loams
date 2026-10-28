@@ -11,6 +11,7 @@ pub mod chat;
 pub mod checkpoints;
 pub mod daemon;
 pub mod entities;
+pub mod factory;
 pub mod factory_loop;
 pub mod file_mentions;
 pub mod git_write;

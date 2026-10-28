@@ -1,10 +1,10 @@
 // The `chat` IPC namespace (D675). Every handler checks the sender (D659).
 import { join } from "node:path";
 import { app, ipcMain, type Session } from "electron";
-import { CH, type ChatEvent, type FactoryAppId } from "../../shared/contracts";
+import { CH, type ChatEvent } from "../../shared/contracts";
 import type { ConnectorCatalog } from "../connectors/catalog";
+import { FACTORY_READ_OPS } from "../factory/apps";
 import type { FactoryHost } from "../factory/host";
-import { OPS } from "../factory/ops";
 import type { Vault } from "../factory/vault";
 import { assertTrustedSender } from "../security/policy";
 import { getMainWindow } from "../shell/main-window";
@@ -35,14 +35,7 @@ export function registerChatIpc(deps: AgentDeps): ChatService {
 				}),
 			connectors: () => deps.connectors.catalog(),
 			factoryQuery: (q) => deps.factory.query(q),
-			factoryOps: Object.fromEntries(
-				Object.entries(OPS)
-					.filter(([, ops]) => Object.keys(ops).some((o) => o !== "health"))
-					.map(([id, ops]) => [
-						id,
-						Object.keys(ops).filter((o) => o !== "health"),
-					]),
-			) as Partial<Record<FactoryAppId, string[]>>,
+			factoryOps: FACTORY_READ_OPS,
 			now: Date.now,
 		}),
 	);

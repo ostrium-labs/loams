@@ -1,0 +1,1 @@
+SELECT id FROM t24 WHERE NOT (u8 - 1) ORDER BY id

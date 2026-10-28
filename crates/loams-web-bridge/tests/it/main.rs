@@ -1,12 +1,13 @@
-//! The provider conformance suite and the remote provider's own tests (AP1c).
+//! The provider conformance suite and the Obscura provider's own tests.
 //!
 //! Everything here runs against the crate's deterministic drivers, so the whole
-//! suite is seconds long and needs no Cloudflare account. What that leaves
-//! unverified is listed in `docs/remote-browser-provider.md`.
+//! suite is seconds long and needs no browser. The same scenarios against a
+//! real Obscura binary and the real service image are lane BR-b's parity suite
+//! and CI job.
 
 mod config;
 mod contract;
 mod egress;
-mod remote;
+mod obscura;
 mod secrets;
 mod webmcp;

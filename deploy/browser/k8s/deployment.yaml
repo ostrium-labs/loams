@@ -1,0 +1,77 @@
+# Obscura as the `browser` service: the same engine and release that agentd
+# launches on a laptop (D2111, D2113). Non-root, read-only root filesystem, no
+# capabilities, no service-account token, no persistent storage: each agent
+# page is a throwaway browser context.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loams-browser
+  labels:
+    app.kubernetes.io/name: loams-browser
+    app.kubernetes.io/component: browser
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: loams-browser
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: loams-browser
+        app.kubernetes.io/component: browser
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: obscura
+          image: docker.io/h4ckf0r0day/obscura:0.2.3@sha256:475def3ddf1ec513b3d1bc36e8ad15f0d192538cb15f814c77215aa70c418ca2
+          args: ["serve", "--port", "9222", "--host", "0.0.0.0", "--workers", "2"]
+          ports:
+            - name: cdp
+              containerPort: 9222
+              protocol: TCP
+          env:
+            # Required for a non-loopback bind (at least 32 bytes); the engine
+            # refuses to start without it.
+            - name: OBSCURA_CDP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: loams-browser-token
+                  key: token
+            - name: OBSCURA_CDP_COMMAND_TIMEOUT_MS
+              value: "60000"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          readinessProbe:
+            tcpSocket:
+              port: cdp
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: cdp
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi

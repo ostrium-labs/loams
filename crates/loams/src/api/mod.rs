@@ -9,6 +9,7 @@
 //! and reflection. It does not replace any route here yet — API1 Tasks 2–8
 //! add one RPC per route and Task 9 deletes the route.
 
+mod admin_rpcs;
 mod collections;
 pub mod connect;
 mod connect_admin;

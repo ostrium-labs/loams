@@ -581,7 +581,7 @@ function ComposerWithDaemon({
       : 'Ask for a change. @ a file, / a command, $ a skill.';
 
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: a drop target for image files; the Attach button is the keyboard path.
+    // oxlint-disable-next-line jsx-a11y/no-static-element-interactions -- a drop target for image files; the Attach button is the keyboard path.
     <div
       data-composer=""
       className="relative flex flex-col gap-2"
@@ -658,7 +658,7 @@ function ComposerWithDaemon({
           >
             {terminal.map((selection, index) => (
               <Chip
-                // biome-ignore lint/suspicious/noArrayIndexKey: the same lines can be added twice; the list is positional.
+                // oxlint-disable-next-line react/no-array-index-key -- the same lines can be added twice; the list is positional.
                 key={`t:${selection.terminalId}:${selection.lineStart}:${index}`}
                 icon={<SquareTerminal size={12} aria-hidden="true" className="text-info" />}
                 label={formatTerminalContextLabel(selection)}
@@ -999,8 +999,8 @@ function SuggestionMenu({
             const row = menuRow(item);
             const selected = item === active;
             return (
-              // biome-ignore lint/a11y/useFocusableInteractive: focus stays in the editor (aria-activedescendant).
-              // biome-ignore lint/a11y/useKeyWithClickEvents: keys reach the menu through the editor.
+              // oxlint-disable-next-line jsx-a11y/interactive-supports-focus -- focus stays in the editor (aria-activedescendant).
+              // oxlint-disable-next-line jsx-a11y/click-events-have-key-events -- keys reach the menu through the editor.
               <div
                 key={item.id}
                 id={`${id}-${index}`}
@@ -1090,7 +1090,7 @@ function StashMenu({
           <MenuSeparator />
           <MenuLabel>Stashed</MenuLabel>
           {stash.map((entry, index) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: entries are positional.
+            // oxlint-disable-next-line react/no-array-index-key -- entries are positional.
             <MenuItem key={index} onSelect={() => onRestore(index)}>
               <span className="block max-w-[18rem] truncate">{entry}</span>
             </MenuItem>

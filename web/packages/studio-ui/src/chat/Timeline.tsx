@@ -199,7 +199,7 @@ export function Timeline(props: TimelineProps) {
   }, [rowGeometry, threadKey]);
 
   // After each change of rows: keep the anchor on a prepend, else follow the end.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the rows or cards change
+  // oxlint-disable-next-line react/exhaustive-deps -- runs when the rows or cards change
   useLayoutEffect(() => {
     const el = scroller.current;
     const previous = previousRows.current;
@@ -263,7 +263,7 @@ export function Timeline(props: TimelineProps) {
         aria-label="Thread timeline"
         aria-live="off"
         data-timeline={variant}
-        // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrolling region must be reachable by keyboard
+        // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a scrolling region must be reachable by keyboard
         tabIndex={0}
       >
         <div className={cx("mx-auto w-full", compact ? "py-1" : "max-w-3xl py-4")}>

@@ -1,0 +1,64 @@
+# The Spark Connect proxy (loams-spark-proxy serve, or
+# loams-gateway --module spark): every setting, with its default.
+# Design 81 R8/R15, SP-a D1992–D1995. PREVIEW.
+
+# h2c listener; TLS is terminated by the gateway or ingress in front.
+listen = "0.0.0.0:15002"
+
+# Cloud hostnames `<instance>.<namespace>.<region>.spark.<base-domain>`. With
+# a suffix, the hostname picks the instance and must name the key's own
+# namespace (else PERMISSION_DENIED). Empty: the namespace's default instance.
+host_suffix = "spark.loams.dev"
+
+# Development only, and only on a loopback listener: no keys, every caller is
+# `dev_namespace`.
+# insecure_dev = true
+# dev_namespace = "local"
+
+max_message_bytes = 134217728   # Spark's own default inbound limit (128 MiB)
+sweep_interval_secs = 30
+
+[limits]
+max_sessions = 8              # open Spark sessions per Loams namespace
+max_operations = 16           # calls in flight per namespace
+idle_timeout = 1800           # seconds; idle sessions get ReleaseSession
+instance_idle_timeout = 900   # seconds; then the lifecycle may suspend
+
+# After authentication: may this principal use Spark here? (design 81 R18)
+[access]
+relation = "can_read"         # can_connect once the `engine` type exists
+object_type = "environment"   # or "engine" (object id = the instance id)
+
+# Who decides: key_grants (a key's namespace is its grant), allow_all
+# (insecure_dev only) or openfga.
+[authz]
+kind = "openfga"
+endpoint = "http://openfga:8081"
+store_id = "01J..."
+model_id = "01J..."
+preshared_key_env = "OPENFGA_PRESHARED_KEY"
+cache_ttl_secs = 10
+
+# API keys: inline rows or a JSON file {"keys": [...]} (a mounted Secret).
+# Only the SHA-256 of a key is stored. `loams-spark-proxy mint-key` makes one.
+keys_file = "/etc/loams-spark-proxy/keys.json"
+# [[keys]]
+# id = "01JABCDEFGHJKMNPQRSTVWXYZ0"
+# sha256 = "<64 hex>"
+# namespace = "ns-a"
+# subject = "ci-bot"
+# kind = "service_account"
+
+# Backends. In Kubernetes the facade's InstanceRouter replaces this table
+# (start-on-first-connect); the file form serves compose and fixed setups.
+[[routes]]
+namespace = "ns-a"
+instance = "etl"
+default = true
+uri = "http://eng-01jabc.loams-ns-a.svc:50051"
+
+[[routes]]
+namespace = "ns-a"
+instance = "jvm"
+uri = "http://eng-01jdef.loams-ns-a.svc:15002"
+token_env = "SPARK_CONNECT_AUTHENTICATE_TOKEN_JVM"

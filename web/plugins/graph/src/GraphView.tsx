@@ -227,7 +227,7 @@ export function GraphView({ elements }: { elements: Elements }) {
             }.`}
       </p>
       <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_280px]">
-        {/* biome-ignore lint/a11y/useSemanticElements: an <svg> holding focusable nodes; a fieldset cannot draw */}
+        {/* oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- an <svg> holding focusable nodes; a fieldset cannot draw */}
         <svg
           viewBox={`0 0 ${W} ${H}`}
           className="h-[460px] w-full rounded-md border border-solid border-rule bg-surface"
@@ -280,7 +280,7 @@ export function GraphView({ elements }: { elements: Elements }) {
             const name = d.stub ? `node #${d.node.id}` : nodeText(d.node);
             const on = d.key === selected;
             return (
-              // biome-ignore lint/a11y/useSemanticElements: an SVG group cannot be a <button>
+              // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- an SVG group cannot be a <button>
               <g
                 key={d.key}
                 data-node={d.key}

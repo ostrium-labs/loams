@@ -706,6 +706,7 @@ impl<N: NeonRead> PgService<N> {
         caller: &Caller,
         req: EndpointAction,
     ) -> Result<OperationRec, ServiceError> {
+        self.may_wake(&req.namespace)?;
         self.endpoint_action(
             caller,
             "StartEndpoint",
@@ -758,6 +759,7 @@ impl<N: NeonRead> PgService<N> {
         caller: &Caller,
         req: EndpointAction,
     ) -> Result<OperationRec, ServiceError> {
+        self.may_wake(&req.namespace)?;
         self.endpoint_action(
             caller,
             "RestartEndpoint",

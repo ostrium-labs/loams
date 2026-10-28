@@ -1,0 +1,1 @@
+SELECT id FROM t24s WHERE u8 = '255' ORDER BY id

@@ -6,7 +6,7 @@ import { Code, ConnectError, createClient, createRouterTransport } from '@connec
 import { createHostRegistry, HOSTS_KEY, localHostStore } from '@loams/agentd-client/hosts';
 import { ProjectService } from '@loams/proto/agentd';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { StudioAgentd } from '../src/agentd.js';
 import { hostedAgentd } from '../src/hosts/agentd.js';
 import { wrap } from './fakes.js';

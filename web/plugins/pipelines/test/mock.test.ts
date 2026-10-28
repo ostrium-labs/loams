@@ -1,7 +1,7 @@
 // The mock client: the metric stream emits a backfill, then one point per interval,
 // and ends when the deployment stops; deploy records secret refs, never values.
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { createMockPipelinesClient } from '../src/mock.js';
 import { emptyGraph } from '../src/model.js';
 import { addNode, connect } from '../src/ops.js';

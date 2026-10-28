@@ -6,7 +6,8 @@
 //! * `GET /ping`: `Ok.`
 //! * `POST /?database=…&param_<name>=…&<setting>=…`: the body (after the
 //!   `query` parameter, if any) is one statement; the answer is in its
-//!   `FORMAT` (only `JSONCompactEachRowWithNamesAndTypes` until Task 36), and
+//!   `FORMAT`, else `default_format`, else `TabSeparated`, written by
+//!   `loams-house-formats` (Task 36) with the request's format settings;
 //!   an error is ClickHouse's: a non-200 status, `X-ClickHouse-Exception-Code`
 //!   and `Code: N. DB::Exception: … (NAME)`.
 //! * `POST /loams/seed?database=…&table=…&engine=…&sorting_key=…`: a table's
@@ -19,8 +20,8 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
 
 use datafusion::datasource::MemTable;
+use loams_house_formats::{Format, FormatSettings, Stats};
 use loams_house_types::ChError;
-use loams_house_types::text::TextSettings;
 
 use crate::catalog::Table;
 use crate::engine::Engine;
@@ -187,33 +188,49 @@ fn handle(engine: &Engine, runtime: &tokio::runtime::Runtime, req: Request) -> R
                 .filter(|(k, _)| !k.starts_with("param_") && !NOT_SETTINGS.contains(&k.as_str()))
                 .cloned()
                 .collect();
+            // The writer-only settings are taken here (Task 36); the rest go
+            // to the engine (Task 37), which resolves the value-text ones and
+            // refuses what it does not honour.
+            let (mut format_settings, settings) = match FormatSettings::split(&settings) {
+                Ok(split) => split,
+                Err(e) => return error(&e),
+            };
             let default_format =
                 param("default_format").unwrap_or_else(|| "TabSeparated".to_string());
+            let started = std::time::Instant::now();
             let result = runtime.block_on(engine.query(&sql, &params, &settings, &database));
             match result {
                 Ok(answer) => {
-                    let format = answer.format.clone().unwrap_or(default_format);
-                    if format != ORACLE_FORMAT {
-                        return error(&ChError::not_implemented(format!(
-                            "The format {format} is not supported by the Loams House engine yet (plan HE1 Task 36)"
-                        )));
-                    }
+                    format_settings.text = answer.settings.text();
+                    let name = answer.format.clone().unwrap_or(default_format);
+                    let format = match Format::parse(&name) {
+                        Ok(format) => format,
+                        Err(e) => return error(&e),
+                    };
+                    let stats = Stats {
+                        elapsed: started.elapsed(),
+                        ..Stats::default()
+                    };
                     let mut out = Vec::new();
                     let written = loams_house_formats::columns(&answer.schema).and_then(|cols| {
-                        loams_house_formats::json_compact::write(
+                        let mut w = loams_house_formats::writer_for(
+                            format,
                             &cols,
-                            &answer.batches,
-                            &TextSettings::default(),
+                            &format_settings,
                             &mut out,
-                        )
+                        )?;
+                        for batch in &answer.batches {
+                            w.write_batch(batch)?;
+                        }
+                        w.finish(&stats)
                     });
                     match written {
                         Ok(()) => Response {
                             status: 200,
-                            headers: vec![(
-                                "Content-Type".into(),
-                                "application/json; charset=UTF-8".into(),
-                            )],
+                            headers: vec![
+                                ("Content-Type".into(), format.content_type().into()),
+                                ("X-ClickHouse-Format".into(), name),
+                            ],
                             body: out,
                         },
                         Err(e) => error(&e),

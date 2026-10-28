@@ -17,7 +17,7 @@ import { createPlanner } from './agents/planner.js';
 import { createReviewer } from './agents/reviewer.js';
 import { DEFAULT_POLICY, type FactoryPolicy } from './policy.js';
 
-// biome-ignore lint/suspicious/noExplicitAny: Mastra's tool type is generic over its schemas.
+// oxlint-disable-next-line typescript/no-explicit-any -- Mastra's tool type is generic over its schemas.
 type AnyTool = ToolAction<any, any, any, any, any, any>;
 
 /** The environment the factory host reads, and nothing else (Task 3 builds it). */

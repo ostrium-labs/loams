@@ -57,7 +57,7 @@ export function GraphPage({ transport, openExternal, storage, namespace }: Graph
   const [detected, setDetected] = useState<Detected>({ state: 'loading' });
   const [tick, setTick] = useState(0);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: tick retries on purpose
+  // oxlint-disable-next-line react/exhaustive-deps -- tick retries on purpose
   useEffect(() => {
     let live = true;
     setDetected({ state: 'loading' });
