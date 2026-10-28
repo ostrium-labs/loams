@@ -17,6 +17,10 @@
 //!    whose password it reads from a mounted file (MD5 or cleartext, as
 //!    RisingWave asks), and splices the rest of the session.
 //!
+//! RisingWave v3.1 offers only cleartext and MD5 password authentication
+//! (no SCRAM-SHA-256), so the upstream login is MD5 on the instance's
+//! private network.
+//!
 //! The user's credential never reaches RisingWave (R5), and the routes file
 //! carries no password. Cancel requests are not routed to RisingWave.
 
@@ -53,6 +57,11 @@ pub struct RwConfig {
     /// self-signed one).
     #[serde(default)]
     pub certs: Vec<CertConfig>,
+    /// Names for a certificate the gateway makes itself at start when
+    /// `certs` is empty: the compose stack, whose clients connect with
+    /// `sslmode=require` (encrypted, not verified). Never in production.
+    #[serde(default)]
+    pub self_signed_names: Vec<String>,
     /// How client passwords are checked. Without it, RisingWave routes are
     /// refused.
     #[serde(default)]
@@ -652,6 +661,16 @@ pub async fn read_password(ep: &RwEndpoint) -> Result<String, RwError> {
     Ok(text.trim().to_owned())
 }
 
+/// A self-signed certificate and key (PEM) for `names`.
+pub fn self_signed(names: &[String]) -> Result<(String, String), String> {
+    let key = rcgen::KeyPair::generate().map_err(|e| e.to_string())?;
+    let cert = rcgen::CertificateParams::new(names.to_vec())
+        .map_err(|e| e.to_string())?
+        .self_signed(&key)
+        .map_err(|e| e.to_string())?;
+    Ok((cert.pem(), key.serialize_pem()))
+}
+
 /// The module's per-process state.
 #[derive(Debug)]
 pub struct RwFrontDoor {
@@ -663,8 +682,18 @@ pub struct RwFrontDoor {
 impl RwFrontDoor {
     /// Builds the module from its config.
     pub async fn from_config(config: &RwConfig) -> Result<Self, String> {
-        let server_certs =
+        let mut server_certs =
             crate::tls::ServerCerts::load(&config.certs).map_err(|e| e.to_string())?;
+        if server_certs.is_empty() && !config.self_signed_names.is_empty() {
+            let (cert, key) = self_signed(&config.self_signed_names)?;
+            server_certs
+                .add(&config.self_signed_names, cert.as_bytes(), key.as_bytes())
+                .map_err(|e| e.to_string())?;
+            tracing::warn!(
+                names = ?config.self_signed_names,
+                "risingwave: serving a self-signed certificate (local stacks only)"
+            );
+        }
         let verifier: Option<Arc<dyn Verifier>> = match &config.auth {
             None => None,
             Some(RwAuthConfig::Loams { api_url }) => Some(Arc::new(LoamsApiVerifier::new(
@@ -833,6 +862,19 @@ port = 4566
         ));
         assert!(KeysFileVerifier::parse("dev nothex").is_err());
         assert!(KeysFileVerifier::parse("dev").is_err());
+    }
+
+    #[tokio::test]
+    async fn a_self_signed_certificate_serves_its_names() {
+        let config = RwConfig {
+            self_signed_names: vec!["localhost".into()],
+            ..RwConfig::default()
+        };
+        let door = RwFrontDoor::from_config(&config).await.unwrap();
+        assert!(door.server_certs.config_for_name("localhost").is_some());
+        assert!(door.server_certs.config_for_name("").is_some());
+        assert!(door.server_certs.config_for_name("other.example").is_none());
+        assert!(door.verifier.is_none());
     }
 
     #[test]

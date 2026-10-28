@@ -2,13 +2,15 @@
 
 use std::path::PathBuf;
 use std::process::ExitCode;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
 use loams_meter_agent::cgroup::DEFAULT_TARGETS;
+use loams_meter_agent::final_read::FinalReads;
 use loams_meter_agent::host::Sessions;
 use loams_meter_agent::host::server::{self, HostEvent, HostServerConfig};
+use loams_meter_agent::pods::{PodIndex, PodResolver};
 use loams_meter_agent::{
     Agent, CgroupReader, MeterError, Sink, Spool, SpoolConfig, StaticResolver, StreamSink,
     StreamSinkConfig, forward,
@@ -77,6 +79,14 @@ struct Cli {
     /// `wasm-host.scope`.
     #[arg(long = "host-cgroup")]
     host_cgroups: Vec<String>,
+    /// Resolve pod cgroups from the node's pods' `loams.dev/*` labels,
+    /// watched from the Kubernetes API (in-cluster config).
+    #[arg(long, env = "LOAMS_METER_KUBE")]
+    kube: bool,
+    /// Scan as soon as a cgroup's `cgroup.events` says it is empty
+    /// (inotify), before it is removed.
+    #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+    final_reads: bool,
     /// Scan once, forward once, and exit.
     #[arg(long)]
     once: bool,
@@ -96,10 +106,23 @@ async fn run(cli: Cli) -> Result<(), MeterError> {
         cli.targets
     };
     let reader = CgroupReader::new(&cli.cgroup_root, cli.scopes, targets);
-    let resolver = match &cli.tenants {
+    let fallback = match &cli.tenants {
         Some(path) => StaticResolver::from_file(path)?,
         None => StaticResolver::default(),
     };
+    let pods = Arc::new(RwLock::new(PodIndex::new()));
+    if cli.kube {
+        let client = kube::Client::try_default()
+            .await
+            .map_err(|e| MeterError::Config(format!("kubernetes client: {e}")))?;
+        tokio::spawn(loams_meter_agent::pods::watch(
+            client,
+            cli.node.clone(),
+            pods.clone(),
+        ));
+        info!("resolving pods from the Kubernetes API");
+    }
+    let resolver = PodResolver::new(pods, fallback);
     let config = SpoolConfig {
         max_bytes: cli.spool_max_bytes,
         ..SpoolConfig::default()
@@ -146,16 +169,39 @@ async fn run(cli: Cli) -> Result<(), MeterError> {
     let mut interval = tokio::time::interval(Duration::from_millis(cli.interval_ms.max(1)));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut host_open = cli.host_socket.is_some();
+    let (final_tx, mut final_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let mut final_reads = if cli.final_reads {
+        match FinalReads::new(&cli.cgroup_root, final_tx) {
+            Ok(reads) => Some(reads),
+            Err(e) => {
+                warn!(error = %e, "no final reads; the periodic scan is the floor");
+                None
+            }
+        }
+    } else {
+        drop(final_tx);
+        None
+    };
     loop {
         tokio::select! {
             _ = interval.tick() => {
                 let report = agent.tick(now_ms())?;
                 tracing::debug!(?report, "tick");
+                if let Some(reads) = final_reads.as_mut() {
+                    reads.sync(agent.scanned());
+                }
                 if let Some(sink) = sink.as_mut() {
                     drain(&mut agent, sink).await?;
                 }
                 if cli.once {
                     return Ok(());
+                }
+            }
+            finished = final_rx.recv(), if final_reads.is_some() => {
+                if let Some(cgroup) = finished {
+                    tracing::debug!(cgroup = %cgroup, "final read");
+                    let report = agent.tick(now_ms())?;
+                    tracing::debug!(?report, "final-read tick");
                 }
             }
             event = host_rx.recv(), if host_open => match event {

@@ -52,7 +52,7 @@ pub fn bootstrap_sql(users: &ServiceUsers, existing: &[String]) -> Vec<String> {
     }
     let gw = quote_ident(&users.gateway_user);
     let pw = quote_literal(users.gateway_password.expose());
-    if existing.iter().any(|u| *u == users.gateway_user) {
+    if existing.contains(&users.gateway_user) {
         sql.push(format!("ALTER USER {gw} WITH PASSWORD {pw}"));
     } else {
         sql.push(format!(

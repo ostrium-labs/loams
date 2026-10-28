@@ -15,6 +15,9 @@
 //!   without SNI (D1016).
 //! - **Routes** come from a file `pg-control` renders, hot-reloaded (D1018).
 //!
+//! The [`browser`] module carries agents' CDP sessions to the deployment's
+//! headless browser service with the engine's own token (D2118).
+//!
 //! The [`risingwave`] module routes managed RisingWave instances
 //! (`<name>.<ns>.<region>.rw.<base-domain>`) behind Loams auth (design 81).
 //!
@@ -22,9 +25,11 @@
 //! this crate (§46 §8.3).
 
 pub mod admin;
+pub mod browser;
 pub mod config;
 pub mod io;
 pub mod listeners;
+pub mod meter;
 pub mod observe;
 pub mod pg;
 pub mod reload;

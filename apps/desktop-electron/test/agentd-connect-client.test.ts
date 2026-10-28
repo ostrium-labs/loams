@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { create, toBinary } from "@bufbuild/protobuf";
 import { DaemonMode, GetHostResponseSchema } from "@loams/proto/agentd";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vite-plus/test";
 import { AgentdToken } from "../src/main/agentd/client";
 import { connectAgentd } from "../src/main/agentd/connect-client";
 import type { AgentdTarget } from "../src/main/agentd/discover";

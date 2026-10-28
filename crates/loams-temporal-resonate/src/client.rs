@@ -7,19 +7,21 @@
 //!   and a proxy's `502`/`504`), correlation IDs and per-attempt auth. After
 //!   the policy the call is [`DurabilityError::Unavailable`] and may have
 //!   been applied.
-//! - Deliveries: the client has no poll consumer, so the private
-//!   `wire_interim` module still reads `GET {base}/poll/{group}/{pid}` (the
-//!   interim piece left, D2041).
+//! - Deliveries: [`Durability::subscribe`] is the client's poll consumer
+//!   (`Client::poll`, `GET {base}/poll/{group}/{pid}`, D2043), which
+//!   replaced D1591's interim reader. Its `Reconnected` event is
+//!   [`Delivery::Gap`] (X1.R19).
 //! - Auth: the token hook's value goes in `Authorization: Bearer …` on both
 //!   (the listener's auth, D111).
 
 use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use resonate_client::{
-    Client, PromiseCreate as RcCreate, PromiseRecord, PromiseSettle, PromiseState, PromiseValue,
-    SettleState,
+    Client, PollEvent, PollMessage, PollOptions, PromiseCreate as RcCreate, PromiseRecord,
+    PromiseSettle, PromiseState, PromiseValue, SettleState,
 };
 use tokio::sync::mpsc;
 
@@ -29,7 +31,20 @@ use crate::port::{
     Claim, CreatePromise, DelaySupport, Delivery, Durability, DurabilityError, PromiseStatus,
     PromiseView, SettleAs, b64, poll_address, unb64, valid_group, valid_pid,
 };
-use crate::wire_interim::{OpenRetry, Poller, TokenFn};
+
+/// Where a bearer token comes from, read before every request and every poll
+/// connection.
+pub type TokenFn = Arc<dyn Fn() -> Option<String> + Send + Sync>;
+
+/// This process's subscriptions, one per group.
+type Subs = Arc<Mutex<BTreeMap<String, mpsc::Sender<Delivery>>>>;
+
+fn lock(subs: &Subs) -> MutexGuard<'_, BTreeMap<String, mpsc::Sender<Delivery>>> {
+    subs.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Deliveries buffered per subscription.
+const SUBSCRIPTION_BUFFER: usize = 1024;
 
 /// Each attempt's own timeout.
 const ATTEMPT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -37,7 +52,7 @@ const ATTEMPT_TIMEOUT: Duration = Duration::from_secs(10);
 /// The adapter onto a Resonate server's protocol endpoint (module docs).
 pub struct HttpDurability {
     client: Client,
-    poller: Poller,
+    subs: Subs,
     pid: String,
     retry: RetryPolicy,
     base: String,
@@ -54,15 +69,6 @@ impl std::fmt::Debug for HttpDurability {
             .field("retry", &self.retry)
             .field("delay", &self.delay)
             .finish_non_exhaustive()
-    }
-}
-
-fn open_retry(p: &RetryPolicy) -> OpenRetry {
-    OpenRetry {
-        max_attempts: p.max_attempts,
-        base: p.base,
-        cap: p.cap,
-        deadline: p.deadline,
     }
 }
 
@@ -135,6 +141,29 @@ fn view(r: PromiseRecord) -> Result<PromiseView, DurabilityError> {
     })
 }
 
+/// A poll event as a delivery; `None` for a message kind the port ignores.
+fn delivery_of(group: &str, event: PollEvent) -> Option<Delivery> {
+    match event {
+        PollEvent::Message(PollMessage::Execute { id, version, .. }) => Some(Delivery::TaskReady {
+            task_id: id.clone(),
+            version,
+            promise_id: id,
+        }),
+        PollEvent::Message(PollMessage::Unblock { promise, .. }) => Some(Delivery::Settled {
+            promise_id: promise.id,
+            status: status_of(promise.state),
+        }),
+        PollEvent::Message(PollMessage::Unknown { kind, .. }) => {
+            tracing::debug!(group, kind = %kind, "poll message ignored");
+            None
+        }
+        // Anything sent to the group while the connection was down is lost.
+        PollEvent::Reconnected { .. } => Some(Delivery::Gap {
+            group: group.to_string(),
+        }),
+    }
+}
+
 /// The origin of an ID, as Resonate computes it: everything before the
 /// first `:`. A heartbeat names tasks of one origin only.
 fn origin(id: &str) -> &str {
@@ -160,10 +189,9 @@ impl HttpDurability {
         let base = base_url.into().trim_end_matches('/').to_string();
         let retry = RetryPolicy::default();
         let client = build_client(&base, token.as_ref(), retry)?;
-        let poller = Poller::new(base.clone(), pid.clone(), token.clone(), open_retry(&retry))?;
         Ok(Self {
             client,
-            poller,
+            subs: Arc::default(),
             pid,
             retry,
             base,
@@ -175,7 +203,6 @@ impl HttpDurability {
     /// Use `policy` for every call and for opening a subscription.
     pub fn with_retry(mut self, policy: RetryPolicy) -> Result<Self, DurabilityError> {
         self.client = build_client(&self.base, self.token.as_ref(), policy)?;
-        self.poller.set_retry(open_retry(&policy));
         self.retry = policy;
         Ok(self)
     }
@@ -183,9 +210,9 @@ impl HttpDurability {
     /// Whether the server honours `resonate:delay`. [`DelaySupport::Defer`]
     /// by default, which is right on every server. [`DelaySupport::Native`]
     /// is true for the fork's server from `loams/main` f29c04e1 on, on every
-    /// store (the SQL stores' fix, fork #8 and upstream #1196), but not for
-    /// a server older than that, such as `loams-durable`'s embedded one at
-    /// 37b177cd (X1.R14, D2042).
+    /// store (the SQL stores' fix, fork #8 and upstream #1196), including
+    /// `loams-durable`'s embedded one from the 53d38ab3 pin (D2043), but not
+    /// for an older server (X1.R14, D2042).
     pub fn with_delay_support(mut self, delay: DelaySupport) -> Self {
         self.delay = delay;
         self
@@ -253,7 +280,16 @@ impl Durability for HttpDurability {
             .await
             .map_err(map_err)?;
         let v = view(r.data)?;
-        self.poller.deliver_local(group, &v);
+        // Resonate registers no listener on a settled promise: tell this
+        // process's subscription of the group, if any.
+        if v.status.is_settled()
+            && let Some(tx) = lock(&self.subs).get(group)
+        {
+            let _ = tx.try_send(Delivery::Settled {
+                promise_id: v.id.clone(),
+                status: v.status,
+            });
+        }
         Ok(v)
     }
 
@@ -333,7 +369,51 @@ impl Durability for HttpDurability {
     }
 
     async fn subscribe(&self, group: &str) -> Result<mpsc::Receiver<Delivery>, DurabilityError> {
-        self.poller.subscribe(group).await
+        if !valid_group(group) {
+            return Err(DurabilityError::Rejected {
+                status: 400,
+                message: format!("invalid poll group {group:?}"),
+            });
+        }
+        if lock(&self.subs)
+            .get(group)
+            .is_some_and(|tx| !tx.is_closed())
+        {
+            return Err(DurabilityError::Conflict(
+                "group already subscribed in this process".into(),
+            ));
+        }
+        // Returns once the server has registered the connection, so every
+        // later message reaches it.
+        let options = PollOptions {
+            open: Some(self.retry),
+            ..PollOptions::default()
+        };
+        let mut sub = self
+            .client
+            .poll_with(group, &self.pid, options)
+            .await
+            .map_err(map_err)?;
+        let (tx, rx) = mpsc::channel(SUBSCRIPTION_BUFFER);
+        lock(&self.subs).insert(group.to_string(), tx.clone());
+        let group = group.to_string();
+        tokio::spawn(async move {
+            loop {
+                let event = tokio::select! {
+                    _ = tx.closed() => return,
+                    e = sub.recv() => e,
+                };
+                let Some(event) = event else { return };
+                let Some(delivery) = delivery_of(&group, event) else {
+                    continue;
+                };
+                if tx.send(delivery).await.is_err() {
+                    return;
+                }
+            }
+            // `sub` drops here, which closes the connection.
+        });
+        Ok(rx)
     }
 }
 
@@ -394,6 +474,48 @@ mod tests {
             v.tags.get("resonate:scope").map(String::as_str),
             Some("global")
         );
+    }
+
+    #[test]
+    fn poll_events_map_onto_deliveries() {
+        let exec = PollEvent::Message(PollMessage::Execute {
+            id: "n.w.r:wft.1".into(),
+            version: 3,
+            server_url: String::new(),
+            trace: resonate_client::TraceContext::default(),
+        });
+        assert_eq!(
+            delivery_of("g", exec),
+            Some(Delivery::TaskReady {
+                task_id: "n.w.r:wft.1".into(),
+                version: 3,
+                promise_id: "n.w.r:wft.1".into()
+            })
+        );
+        let promise: PromiseRecord = serde_json::from_str(
+            r#"{"id":"n.w.r:to.4","state":"rejected_timedout","param":{},"value":{},"tags":{},"timeoutAt":7,"createdAt":1,"settledAt":7}"#,
+        )
+        .expect("record");
+        let unblock = PollEvent::Message(PollMessage::Unblock {
+            promise,
+            trace: resonate_client::TraceContext::default(),
+        });
+        assert_eq!(
+            delivery_of("g", unblock),
+            Some(Delivery::Settled {
+                promise_id: "n.w.r:to.4".into(),
+                status: PromiseStatus::RejectedTimedout
+            })
+        );
+        assert_eq!(
+            delivery_of("g", PollEvent::Reconnected { attempts: 2 }),
+            Some(Delivery::Gap { group: "g".into() })
+        );
+        let unknown = PollEvent::Message(PollMessage::Unknown {
+            kind: "resume".into(),
+            message: serde_json::json!({}),
+        });
+        assert_eq!(delivery_of("g", unknown), None);
     }
 
     #[test]
