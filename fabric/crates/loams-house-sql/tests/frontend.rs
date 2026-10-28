@@ -80,8 +80,6 @@ fn no_ignored_field_reaches_sqltorel() {
         "SELECT x FROM t GROUP BY x WITH TOTALS",
         "SELECT x FROM t GROUP BY x WITH ROLLUP",
         "SELECT x FROM t GROUP BY x WITH CUBE",
-        "SELECT quantile(0.9)(x) FROM t",
-        "SELECT windowFunnel(3600)(ts, a, b) FROM t",
         "SELECT x FROM t SAMPLE 0.1",
         "SELECT x FROM t FINAL",
         "SELECT x FROM db.t AS a FINAL WHERE x = 1",

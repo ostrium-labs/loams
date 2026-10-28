@@ -329,6 +329,7 @@ impl Frontend {
             first_execution_run_id: state.first_execution_run_id.clone(),
             backoff_ms: dur_ms(a.backoff_start_interval.as_ref()),
             last_completion_result: a.last_completion_result.clone(),
+            #[allow(deprecated)]
             continued_failure: a.failure.clone(),
             prev_auto_reset_points: Some(
                 loams_temporal_proto::temporal::api::workflow::v1::ResetPoints {
