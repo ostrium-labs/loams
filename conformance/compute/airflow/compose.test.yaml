@@ -18,7 +18,11 @@ x-airflow-test-env: &env
   AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL: "5"
   AIRFLOW_CONN_LOAMS_GIT: '{"conn_type": "git", "host": "git://git-server/dags.git"}'
   AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: admin:admin
-  AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: /opt/airflow/simple_auth_manager_passwords.json
+  # The Simple auth manager opens its passwords file for appending ("a+"),
+  # so it cannot be a read-only mount: the API server copies the test
+  # password from a read-only seed into a writable place at start (DX1
+  # ruling T6.R10; first nightly, 2026-10-28).
+  AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: /tmp/simple_auth_manager_passwords.json
   AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG: "64"
   AIRFLOW__CORE__PARALLELISM: "64"
   AIRFLOW__SCHEDULER__TASK_INSTANCE_HEARTBEAT_TIMEOUT: "60"
@@ -38,7 +42,7 @@ x-airflow-test: &test
   environment: *env
   volumes:
     - ../../conformance/compute/airflow/edge/dags:/opt/airflow/edge-dags:ro
-    - ../../conformance/compute/airflow/auth/passwords.json:/opt/airflow/simple_auth_manager_passwords.json:ro
+    - ../../conformance/compute/airflow/auth/passwords.json:/opt/airflow/auth-seed/passwords.json:ro
 
 services:
   git-server:
@@ -56,7 +60,11 @@ services:
     depends_on:
       git-server:
         condition: service_started
-  airflow-api-server: *test
+  airflow-api-server:
+    <<: *test
+    # The image entrypoint runs `bash -c` after its own start-up (the edge3
+    # install, the database check), then the API server as before.
+    command: ["bash", "-c", "cp /opt/airflow/auth-seed/passwords.json /tmp/simple_auth_manager_passwords.json && exec airflow api-server"]
   airflow-scheduler-1: *test
   airflow-scheduler-2: *test
   airflow-dag-processor: *test
