@@ -875,12 +875,20 @@ impl<'a> Guard<'a> {
             }
             return Ok(None);
         }
-        if !matches!(parameters, FunctionArguments::None) {
-            return Err(later(
-                &format!("The parametric function {written}(…)(…)"),
-                28,
-            ));
-        }
+        // A parametric aggregate's parameters (`topK(10)(x)`) are literals,
+        // carried in the name it is planned under (plan HE1 Task 28).
+        let params = match parameters {
+            FunctionArguments::None => Vec::new(),
+            FunctionArguments::List(list) if list.duplicate_treatment.is_none() && list.clauses.is_empty() => {
+                list.args.iter().map(|a| match a {
+                    FunctionArg::Unnamed(FunctionArgExpr::Expr(e)) => param(e),
+                    _ => None,
+                }).collect::<Option<Vec<_>>>().ok_or_else(|| ChError::bad_arguments(format!(
+                    "Parameter for function '{written}' expected to have constant value. Actual: {parameters}"
+                )))?
+            }
+            _ => return Err(refuse(format!("The parameters of {written}"))),
+        };
         // `CAST(x, 'T')`, `_CAST(x, 'T')`: a cast to the ClickHouse type text.
         if (written.eq_ignore_ascii_case("cast") || written == "_CAST")
             && let FunctionArguments::List(list) = args
@@ -908,9 +916,41 @@ impl<'a> Guard<'a> {
             ChError::unknown_function(format!("Function with name `{written}` does not exist"))
         })?;
         self.resolution.functions.insert(known.canonical.clone());
+        if !params.is_empty() && !known.aggregate {
+            return Err(ChError {
+                code: 309,
+                name: "FUNCTION_CANNOT_HAVE_PARAMETERS",
+                message: format!("Function {written} cannot have parameters"),
+            });
+        }
+        let mut planned = known.canonical.clone();
+        // The outermost `-If` of an aggregate is DataFusion's `FILTER (WHERE
+        // cond)`, its last argument (plan HE1 Task 28); an inner one, or one
+        // over a window, is the `-If` wrapper of `loams-house-exec`.
+        if known.aggregate
+            && over.is_none()
+            && let Some((base, combinators)) = crate::aggregates::split(&known.canonical)
+            && combinators.first() == Some(&crate::aggregates::Combinator::If)
+            && let FunctionArguments::List(list) = args
+            && let Some(FunctionArg::Unnamed(FunctionArgExpr::Expr(_))) = list.args.last()
+            && let Some(FunctionArg::Unnamed(FunctionArgExpr::Expr(mut cond))) = list.args.pop()
+        {
+            self.expr(&mut cond)?;
+            *filter = Some(Box::new(cond));
+            planned = crate::aggregates::AggregateName {
+                base,
+                combinators: combinators[1..].to_vec(),
+                params: Vec::new(),
+            }
+            .function();
+        }
         // ClickHouse's `count()` and `count(*)` count rows: `count(1)` here
-        // (the column name was taken from the text before this rewrite).
-        if known.canonical == "count" {
+        // (the column name was taken from the text before this rewrite), also
+        // under combinators (`countOrNull()`).
+        if planned == "count"
+            || (known.aggregate
+                && crate::aggregates::split(&planned).is_some_and(|(b, _)| b == "count"))
+        {
             let one = || {
                 FunctionArg::Unnamed(FunctionArgExpr::Expr(Expr::Value(
                     Value::Number("1".into(), false).into(),
@@ -936,12 +976,14 @@ impl<'a> Guard<'a> {
                 _ => {}
             }
         }
-        let internal = if known.canonical == "mapFilter" && one_parameter_lambda_first(args) {
+        let planned = if known.aggregate {
+            crate::aggregates::planned_name(&planned, &params)
+        } else if known.canonical == "mapFilter" && one_parameter_lambda_first(args) {
             MAP_FILTER_TUPLE.to_string()
         } else {
-            functions::internal_name(&known.canonical)
+            functions::internal_name(&planned)
         };
-        *name = ObjectName::from(vec![Ident::with_quote('"', internal)]);
+        *name = ObjectName::from(vec![Ident::with_quote('"', planned)]);
         match args {
             FunctionArguments::None => {}
             FunctionArguments::Subquery(q) => self.query(q)?,
@@ -1237,5 +1279,52 @@ fn setting_text(v: &Expr) -> String {
             ..
         }) => s.clone(),
         other => other.to_string(),
+    }
+}
+
+/// A parametric aggregate's parameter: a literal number or string, possibly
+/// negated, or a bound query parameter (`_CAST(7, 'UInt8')`).
+fn param(e: &Expr) -> Option<crate::aggregates::Param> {
+    use crate::aggregates::Param;
+    match e {
+        Expr::Value(ValueWithSpan {
+            value: Value::Number(n, _),
+            ..
+        }) => crate::aggregates::number(n),
+        Expr::Value(ValueWithSpan {
+            value: Value::SingleQuotedString(s) | Value::DoubleQuotedString(s),
+            ..
+        }) => Some(Param::String(s.clone())),
+        Expr::UnaryOp {
+            op: UnaryOperator::Minus,
+            expr,
+        } => match param(expr)? {
+            Param::UInt(v) => i64::try_from(v)
+                .ok()
+                .and_then(i64::checked_neg)
+                .map(Param::Int),
+            Param::Float(v) => Some(Param::Float(-v)),
+            _ => None,
+        },
+        Expr::UnaryOp {
+            op: UnaryOperator::Plus,
+            expr,
+        } => param(expr),
+        Expr::Nested(inner) => param(inner),
+        Expr::Function(f) => {
+            let name = f.name.to_string();
+            if !(name == "_CAST" || name.eq_ignore_ascii_case("cast")) {
+                return None;
+            }
+            match &f.args {
+                FunctionArguments::List(list) => match list.args.first() {
+                    Some(FunctionArg::Unnamed(FunctionArgExpr::Expr(x))) => param(x),
+                    _ => None,
+                },
+                _ => None,
+            }
+        }
+        Expr::Cast { expr, .. } => param(expr),
+        _ => None,
     }
 }
