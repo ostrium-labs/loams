@@ -24,6 +24,11 @@ cargo_package(
     },
     tests = [
         {
+            "name": "docstore",
+            "crate": "docstore",
+            "root": "tests/docstore.rs",
+        },
+        {
             "name": "leases",
             "crate": "leases",
             "root": "tests/leases.rs",
@@ -47,6 +52,11 @@ cargo_package(
             "name": "reconcile",
             "crate": "reconcile",
             "root": "tests/reconcile.rs",
+        },
+        {
+            "name": "role",
+            "crate": "role",
+            "root": "tests/role.rs",
         },
         {
             "name": "services",

@@ -8398,6 +8398,8 @@ dependencies = [
  "loams-log",
  "loams-meta",
  "loams-meta-tikv",
+ "loams-meter",
+ "loams-meter-core",
  "loams-migrate",
  "loams-pg-control",
  "loams-postgres",
