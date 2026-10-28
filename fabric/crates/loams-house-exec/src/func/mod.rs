@@ -2,6 +2,7 @@
 //! module per family, each with a `register`.
 
 pub mod arrays;
+pub mod datetime;
 pub mod lambda;
 pub mod maps;
 pub mod nested;

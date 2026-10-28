@@ -214,24 +214,23 @@ reqwest = { version = "0.13", default-features = false, features = ["json"] }
 # compares each 0001_initial.sql with the pinned one and says in its PR when
 # existing durable stores must be dropped (D1 plan X11). Never add
 # resonate-server-scylladb or the NATS packages (BUSL-1.1 lineage).
-resonate-base = { git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90" }
-resonate-server-blob = { git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90" }
-resonate-core = { git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90" }
-resonate-gateway-http = { git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90" }
-resonate-plugin = { git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90" }
+resonate-base = { git = "https://github.com/ostrium-labs/resonate", rev = "53d38ab33631258d52a74497414e37c3270c4fe7" }
+resonate-server-blob = { git = "https://github.com/ostrium-labs/resonate", rev = "53d38ab33631258d52a74497414e37c3270c4fe7" }
+resonate-core = { git = "https://github.com/ostrium-labs/resonate", rev = "53d38ab33631258d52a74497414e37c3270c4fe7" }
+resonate-gateway-http = { git = "https://github.com/ostrium-labs/resonate", rev = "53d38ab33631258d52a74497414e37c3270c4fe7" }
+resonate-plugin = { git = "https://github.com/ostrium-labs/resonate", rev = "53d38ab33631258d52a74497414e37c3270c4fe7" }
 # The package is resonate-sdk (lib resonate_sdk); `resonate` in that repository
 # is the server binary. Its reqwest defaults (TLS, charset, system proxy) are
 # off: Loams talks to the server in process.
-resonate-sdk = { git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90", default-features = false }
-resonate-server-mysql = { git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90" }
-resonate-server-sqlite = { git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90" }
-resonate-transport-http-poll = { git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90" }
+resonate-sdk = { git = "https://github.com/ostrium-labs/resonate", rev = "53d38ab33631258d52a74497414e37c3270c4fe7", default-features = false }
+resonate-server-mysql = { git = "https://github.com/ostrium-labs/resonate", rev = "53d38ab33631258d52a74497414e37c3270c4fe7" }
+resonate-server-sqlite = { git = "https://github.com/ostrium-labs/resonate", rev = "53d38ab33631258d52a74497414e37c3270c4fe7" }
+resonate-transport-http-poll = { git = "https://github.com/ostrium-labs/resonate", rev = "53d38ab33631258d52a74497414e37c3270c4fe7" }
 # Without gcp-idtoken: no google-cloud-auth, and auth.mode = "gcp" is refused.
-resonate-transport-http-push = { git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90", default-features = false }
-# FW3's protocol client for loams-temporal-resonate (D2040), at the same pin
-# as the crates above: resonate-client and resonate-core are byte-identical at
-# 37b177cd and at loams/main f29c04e1, so the graph keeps one resonate-core.
-resonate-client = { git = "https://github.com/ostrium-labs/resonate", rev = "37b177cd019798f288a1dd5549f8a69de1613b90" }
+resonate-transport-http-push = { git = "https://github.com/ostrium-labs/resonate", rev = "53d38ab33631258d52a74497414e37c3270c4fe7", default-features = false }
+# FW3's protocol client for loams-temporal-resonate (D2040), with its poll
+# consumer (fork #28, D2043), at the same pin as the crates above.
+resonate-client = { git = "https://github.com/ostrium-labs/resonate", rev = "53d38ab33631258d52a74497414e37c3270c4fe7" }
 # pg-control's Ed25519 signing key (PG2 Task 8). 0.17.14 (2025-03-11) is
 # already in the lockfile (rustls, jsonwebtoken).
 ring = "=0.17.14"
@@ -357,6 +356,7 @@ loams-upgrade = { path = "crates/loams-upgrade", version = "0.1.2" }
 loams-cloud-admin = { path = "crates/loams-cloud-admin", version = "0.1.2" }
 loams-confluent = { path = "crates/loams-confluent", version = "0.1.2" }
 loams-risingwave = { path = "crates/loams-risingwave", version = "0.1.2" }
+loams-spark = { path = "crates/loams-spark", version = "0.1.2" }
 loams-stream-grpc = { path = "crates/loams-stream-grpc", version = "0.1.2" }
 loams-pk = { path = "crates/loams-pk", version = "0.1.2" }
 loams-qdrant = { path = "crates/loams-qdrant", version = "0.1.2" }

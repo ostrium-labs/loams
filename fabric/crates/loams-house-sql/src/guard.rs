@@ -34,7 +34,9 @@
 //!   House's own functions rather than its array and struct planners;
 //! * lambda parameters are quoted, so DataFusion keeps their case as the body
 //!   uses it, and `mapFilter` with a one-parameter lambda (the entry as a
-//!   tuple) is planned as `__ch_mapFilter_tuple`.
+//!   tuple) is planned as `__ch_mapFilter_tuple`;
+//! * `INTERVAL n UNIT` and `EXTRACT(f FROM x)` become ClickHouse's calls
+//!   (`toIntervalUnit(n)`, `toYear(x)`, [`crate::temporal`]).
 
 use std::collections::BTreeSet;
 
@@ -881,6 +883,7 @@ impl<'a> Guard<'a> {
                 }
             }
         }
+        crate::temporal::fold_constant_args(&known.canonical, args);
         match over {
             None | Some(WindowType::NamedWindow(_)) => {}
             Some(WindowType::WindowSpec(spec)) => self.window_spec(spec)?,
@@ -1027,8 +1030,20 @@ impl<'a> Guard<'a> {
                 }
                 self.expr(body)
             }
-            Expr::Interval(_) => Err(later("INTERVAL", 30)),
-            Expr::Extract { .. } => Err(later("EXTRACT", 30)),
+            // `INTERVAL n UNIT` and `EXTRACT(f FROM x)` are the calls ClickHouse
+            // makes of them (plan HE1 Task 30, [`crate::temporal`]).
+            Expr::Interval(iv) => {
+                *e = crate::temporal::interval_call(iv)?;
+                self.expr(e)
+            }
+            Expr::Extract {
+                field,
+                syntax: _,
+                expr,
+            } => {
+                *e = crate::temporal::extract_call(field, (**expr).clone())?;
+                self.expr(e)
+            }
             Expr::CompoundFieldAccess { root, access_chain } => {
                 let mut out = std::mem::replace(root.as_mut(), Expr::Value(Value::Null.into()));
                 for access in std::mem::take(access_chain) {

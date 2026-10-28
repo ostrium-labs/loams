@@ -254,6 +254,96 @@ impl Authenticator for KeyTable {
     }
 }
 
+/// Keys checked by their SHA-256 alone, from `<namespace> <sha256 hex>`
+/// lines: the engine-gateway's compose key file (design 81 R25, the
+/// RisingWave module's `keys_file`), so one `ENGINE_GATEWAY_KEY` opens every
+/// engine on the compose stack. Any credential format is accepted; the
+/// subject is `service_account:engine-gateway-key`.
+#[derive(Debug, Clone, Default)]
+pub struct NamespaceKeys {
+    by_hash: BTreeMap<String, String>,
+}
+
+impl NamespaceKeys {
+    /// Parses the lines (blank lines and `#` comments are skipped).
+    ///
+    /// # Errors
+    ///
+    /// A message naming the first malformed line.
+    pub fn parse(text: &str) -> Result<Self, String> {
+        let mut by_hash = BTreeMap::new();
+        for (n, line) in text.lines().enumerate() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let mut parts = line.split_whitespace();
+            let (Some(ns), Some(hash), None) = (parts.next(), parts.next(), parts.next()) else {
+                return Err(format!("line {}: expected `<namespace> <sha256>`", n + 1));
+            };
+            if hash.len() != 64 || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
+                return Err(format!("line {}: sha256 is not 64 hex digits", n + 1));
+            }
+            by_hash.insert(hash.to_ascii_lowercase(), ns.to_owned());
+        }
+        Ok(Self { by_hash })
+    }
+
+    /// How many keys.
+    pub fn len(&self) -> usize {
+        self.by_hash.len()
+    }
+
+    /// Whether there are none.
+    pub fn is_empty(&self) -> bool {
+        self.by_hash.is_empty()
+    }
+}
+
+#[async_trait]
+impl Authenticator for NamespaceKeys {
+    async fn authenticate(&self, credential: &Credential) -> Result<Principal, Status> {
+        let digest = KeyTable::hash(credential.expose());
+        // Looked up by the digest itself, so nothing about the secret is
+        // compared byte by byte.
+        let namespace = self
+            .by_hash
+            .get(&digest)
+            .ok_or_else(|| Status::unauthenticated("unknown API key"))?;
+        Ok(Principal {
+            namespace: namespace.clone(),
+            subject: Subject::new(SubjectKind::ServiceAccount, "engine-gateway-key"),
+            credential_id: None,
+        })
+    }
+}
+
+/// The first authenticator that accepts the credential; `UNAVAILABLE` from
+/// any of them wins over `UNAUTHENTICATED` (never an allow on an outage).
+#[derive(Clone)]
+pub struct AnyOf(pub Vec<std::sync::Arc<dyn Authenticator>>);
+
+impl fmt::Debug for AnyOf {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "AnyOf({} authenticators)", self.0.len())
+    }
+}
+
+#[async_trait]
+impl Authenticator for AnyOf {
+    async fn authenticate(&self, credential: &Credential) -> Result<Principal, Status> {
+        let mut last = Status::unauthenticated("unknown API key");
+        for a in &self.0 {
+            match a.authenticate(credential).await {
+                Ok(p) => return Ok(p),
+                Err(e) if e.code() == tonic::Code::Unavailable => return Err(e),
+                Err(e) => last = e,
+            }
+        }
+        Err(last)
+    }
+}
+
 /// Everyone is the given principal: the loopback-only dev mode
 /// (`insecure_dev`), never on a public listener. A credential is still
 /// required to be present, so clients are configured as in production.
@@ -353,6 +443,53 @@ mod tests {
                 .unwrap_err();
             assert_eq!(err.code(), tonic::Code::Unauthenticated, "{bad}");
         }
+    }
+
+    #[tokio::test]
+    async fn namespace_keys_from_lines() {
+        let text = format!(
+            "# engine-gateway\ndefault {}\n\n",
+            KeyTable::hash("loams-dev-engine-key")
+        );
+        let keys = NamespaceKeys::parse(&text).unwrap();
+        assert_eq!(keys.len(), 1);
+        let p = keys
+            .authenticate(&Credential("loams-dev-engine-key".into()))
+            .await
+            .unwrap();
+        assert_eq!(p.namespace, "default");
+        assert!(keys.authenticate(&Credential("nope".into())).await.is_err());
+        assert!(NamespaceKeys::parse("default xyz").is_err());
+        assert!(NamespaceKeys::parse("only-one-field").is_err());
+    }
+
+    #[tokio::test]
+    async fn any_of_tries_each() {
+        let lines = NamespaceKeys::parse(&format!("default {}", KeyTable::hash("plain"))).unwrap();
+        let first: std::sync::Arc<dyn Authenticator> = std::sync::Arc::new(table());
+        let second: std::sync::Arc<dyn Authenticator> = std::sync::Arc::new(lines);
+        let any = AnyOf(vec![first, second]);
+        assert_eq!(
+            any.authenticate(&Credential(KEY.into()))
+                .await
+                .unwrap()
+                .namespace,
+            "ns-a"
+        );
+        assert_eq!(
+            any.authenticate(&Credential("plain".into()))
+                .await
+                .unwrap()
+                .namespace,
+            "default"
+        );
+        assert_eq!(
+            any.authenticate(&Credential("x".into()))
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::Unauthenticated
+        );
     }
 
     #[test]

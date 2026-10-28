@@ -22,6 +22,13 @@ cargo_package(
         "proc_macro": False,
         "test": True,
     },
+    tests = [
+        {
+            "name": "lease_sim",
+            "crate": "lease_sim",
+            "root": "tests/lease_sim.rs",
+        },
+    ],
     deps = [
         "//crates/loams-cloudevents:loams-cloudevents",
         "//third-party/rust:bytes",

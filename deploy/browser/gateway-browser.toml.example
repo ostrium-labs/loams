@@ -1,0 +1,25 @@
+# loams-gateway's browser module (D2118): agents connect here instead of to
+# the browser service directly, so the engine's token stays in the gateway.
+#
+#   loams-gateway --module browser --config /etc/loams-gateway/browser.toml
+#
+# Agents (agentd) then use:
+#   LOAMS_BROWSER_PROVIDER=service
+#   LOAMS_BROWSER_SERVICE_URL=ws://loams-gateway:9223/devtools/browser
+#   LOAMS_BROWSER_SERVICE_TOKEN_REF=env:browser-token
+#   LOAMS_WEB_BRIDGE_SECRET_BROWSER_TOKEN=<a client token>
+# and the browser service's NetworkPolicy admits only the gateway's pods.
+
+# Private network only; never publish this port.
+listen = "0.0.0.0:9223"
+# The browser service (deploy/browser), host:port.
+upstream = "loams-browser:9222"
+# The engine's OBSCURA_CDP_TOKEN (the loams-browser-token secret, mounted).
+upstream_token_file = "/run/secrets/loams-browser-token/token"
+# One SHA-256 (hex) per line of each client token that may connect:
+#   printf %s "$token" | sha256sum | cut -d' ' -f1 >> browser-clients
+# Read on every connection, so removing a line revokes that client at once.
+client_tokens_file = "/etc/loams-gateway/browser-clients"
+# max_connections = 64
+# handshake_timeout_ms = 10000
+# connect_timeout_ms = 5000

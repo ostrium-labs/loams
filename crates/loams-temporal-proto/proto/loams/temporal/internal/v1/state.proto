@@ -107,6 +107,9 @@ message MutableState {
   // The Temporal namespace's name (children started in "the same
   // namespace" record it); empty for runs folded from history.
   string namespace_name = 34;
+  // The request IDs of the last signals (at most 100): a signal repeated
+  // with one of them is a retry and is not written again (D2089).
+  repeated string signal_request_ids = 35;
 }
 
 message ChildInfo {

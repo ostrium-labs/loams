@@ -4,7 +4,7 @@
 
 Every RPC of `temporalio/api` v1.63.5 (vendored in `crates/loams-temporal-proto`) and whether the Loams Temporal gateway (`crates/loams-temporal-frontend`) answers it. Everything else answers `UNIMPLEMENTED` with a link to the compatibility matrix. Status is preview: "implemented" means the method is built and has unit tests (CI runs them); it does not mean every SDK has run it end to end.
 
-WorkflowService: 39 of 123 implemented. OperatorService: none yet (the gateway does not serve it).
+WorkflowService: 50 of 123 implemented. OperatorService: none yet (the gateway does not serve it).
 
 ## WorkflowService
 
@@ -39,11 +39,11 @@ WorkflowService: 39 of 123 implemented. OperatorService: none yet (the gateway d
 | `DeleteWorkflowExecution` | not planned yet | needs the store's delete path (lane TMP-store) |
 | `ListOpenWorkflowExecutions` | lane TMP-sched (schedules and visibility) |  |
 | `ListClosedWorkflowExecutions` | lane TMP-sched (schedules and visibility) |  |
-| `ListWorkflowExecutions` | lane TMP-sched (schedules and visibility) |  |
+| `ListWorkflowExecutions` | implemented (TMP-sched) |  |
 | `ListArchivedWorkflowExecutions` | not planned yet | no archival |
-| `ScanWorkflowExecutions` | lane TMP-sched (schedules and visibility) |  |
-| `CountWorkflowExecutions` | lane TMP-sched (schedules and visibility) |  |
-| `GetSearchAttributes` | lane TMP-sched (schedules and visibility) |  |
+| `ScanWorkflowExecutions` | implemented (TMP-sched) |  |
+| `CountWorkflowExecutions` | implemented (TMP-sched) |  |
+| `GetSearchAttributes` | implemented (TMP-sched) |  |
 | `RespondQueryTaskCompleted` | implemented (DX1) |  |
 | `ResetStickyTaskQueue` | implemented (DX1) | no-op: no sticky queues |
 | `ShutdownWorker` | implemented (TMP-api) | no-op: no sticky queues |
@@ -53,13 +53,13 @@ WorkflowService: 39 of 123 implemented. OperatorService: none yet (the gateway d
 | `GetClusterInfo` | implemented (TMP-api) |  |
 | `GetSystemInfo` | implemented (DX1) | advertises only what is built |
 | `ListTaskQueuePartitions` | implemented (TMP-api) | one partition per queue (X1.R8) |
-| `CreateSchedule` | lane TMP-sched (schedules and visibility) |  |
-| `DescribeSchedule` | lane TMP-sched (schedules and visibility) |  |
-| `UpdateSchedule` | lane TMP-sched (schedules and visibility) |  |
-| `PatchSchedule` | lane TMP-sched (schedules and visibility) |  |
-| `ListScheduleMatchingTimes` | lane TMP-sched (schedules and visibility) |  |
-| `DeleteSchedule` | lane TMP-sched (schedules and visibility) |  |
-| `ListSchedules` | lane TMP-sched (schedules and visibility) |  |
+| `CreateSchedule` | implemented (TMP-sched) |  |
+| `DescribeSchedule` | implemented (TMP-sched) |  |
+| `UpdateSchedule` | implemented (TMP-sched) |  |
+| `PatchSchedule` | implemented (TMP-sched) |  |
+| `ListScheduleMatchingTimes` | implemented (TMP-sched) |  |
+| `DeleteSchedule` | implemented (TMP-sched) |  |
+| `ListSchedules` | implemented (TMP-sched) |  |
 | `CountSchedules` | lane TMP-sched (schedules and visibility) |  |
 | `UpdateWorkerBuildIdCompatibility` | not planned yet | no routing by build ID yet |
 | `GetWorkerBuildIdCompatibility` | implemented (TMP-api) | no version sets: routing is by task queue only |

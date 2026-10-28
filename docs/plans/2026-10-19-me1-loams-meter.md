@@ -121,3 +121,6 @@
 | 6 | **Model refinements** (D2165): `Boolean { enabled }`, `Grant.created_at`, the burn order, `Balance.grants` and `prepaid_only`, and `RefusalReason` in the core | The design's types had nowhere to hold these |
 | 7 | **Balance engine semantics** (D2166) | Pins down the order of resets, rollover, recurrence and overage for the property tests |
 | 8 | **Lease allocator** (D2167): how the chunk clamp is ordered, exact and learning mode, and an in-crate seeded simulation in place of `loams-detsim` | `loams-detsim` does not exist on `dev` |
+| D2220 | Task 27: the billing plugin runs on a fixture `BillingClient` under Demo data until `loams.meter.v1` is served | The pages are built before ME-svc's services; swapping the client touches no page |
+| D2221 | Task 27: Settings › Billing lives at `/settings/billing/:section`; Payment links only to the provider's hosted page | D1080; no card data in Loams |
+| D2222 | Task 27: the banner is a `shell.topbar.center` entry, most severe notice first; stops cannot be dismissed | §18, §13 |
