@@ -196,6 +196,9 @@ impl RetentionConfig {
     }
 }
 
+fn default_true() -> bool {
+    true
+}
 fn default_retention_interval() -> u64 {
     60
 }
