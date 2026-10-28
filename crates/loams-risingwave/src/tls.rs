@@ -99,10 +99,10 @@ pub fn choose(
 ) -> Result<Transport, TlsError> {
     let remote = remote_hosts(config)?;
     let disabled = config.get_ssl_mode() == SslMode::Disable;
-    if let Some(host) = remote.first() {
-        if disabled {
-            return Err(TlsError::PlainToRemote { host: host.clone() });
-        }
+    if let Some(host) = remote.first()
+        && disabled
+    {
+        return Err(TlsError::PlainToRemote { host: host.clone() });
     }
     let wants_tls =
         !remote.is_empty() || options.force_tls || config.get_ssl_mode() == SslMode::Require;
