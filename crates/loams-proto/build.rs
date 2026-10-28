@@ -75,8 +75,9 @@ const FILES: &[&str] = &[
     "loams/meter/v1/plan.proto",
     // ME1 Task 14: webhooks, rules and deliveries.
     "loams/meter/v1/notification.proto",
-    // ME1 Task 17: internal, between gates and counter owners.
-    "loams/meter/v1/lease.proto",
+    // ME1 Task 17: internal (`loams.meter.internal.v1`, D2202), between gates
+    // and counter owners; no SDK speaks it.
+    "loams/meter/internal/v1/lease.proto",
 ];
 
 fn main() {
