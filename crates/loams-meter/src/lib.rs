@@ -5,6 +5,7 @@
 //!
 //! | Module | Task | Does |
 //! |---|---|---|
+//! | [`notify`] | ME1 Task 14 | Threshold and lifecycle events (deterministic ids), the notifier (signed webhooks with retries, email, console) and `NotificationService` |
 //! | [`owner`] | ME1 Task 12 | Counter owners: who owns which `_system/_meter` partition (fenced leases), per-partition counters with offset buckets and recent-keys dedup, the rebuild from the House and the stream tail |
 //! | [`authz`], [`audit`], [`store`] | ME1 Task 10 | The OpenFGA checks (`meter_admin`, `billing_admin`, `billing_viewer`; agents never hold the admin relations), audit events, the record store |
 //! | [`customers`], [`entitlements`], [`connect`] | ME1 Task 10 | `CustomerService` and `EntitlementService`, and their Connect face (`loams.meter.v1`) |
@@ -22,6 +23,7 @@ pub mod customers;
 pub mod entitlements;
 pub mod error;
 pub mod lease_service;
+pub mod notify;
 pub mod owner;
 pub mod plan_yaml;
 pub mod plans;
