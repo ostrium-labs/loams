@@ -33,6 +33,8 @@ pub mod meter;
 pub mod observe;
 pub mod pg;
 pub mod reload;
+#[cfg(feature = "resp")]
+pub mod resp;
 pub mod risingwave;
 pub mod routes;
 pub mod sniff;

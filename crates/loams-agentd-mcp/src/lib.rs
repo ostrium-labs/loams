@@ -88,8 +88,14 @@ pub async fn run(config: McpConfig) -> anyhow::Result<()> {
     {
         tools = tools.with_knowledge(reader);
     }
-    if let Some(browser) = Browser::from_env() {
-        tools = tools.with_browser(std::sync::Arc::new(browser));
+    let browser = Browser::from_env().map(std::sync::Arc::new);
+    if let Some(browser) = &browser {
+        tools = tools.with_browser(std::sync::Arc::clone(browser));
     }
-    serve_stdio(std::sync::Arc::new(tools)).await
+    let served = serve_stdio(std::sync::Arc::new(tools)).await;
+    // The run is over: close its pages before stopping a local engine.
+    if let Some(browser) = browser {
+        browser.shutdown().await;
+    }
+    served
 }

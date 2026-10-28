@@ -1,0 +1,54 @@
+# The SQL Gateway: reached only through loams-gateway (networkpolicy.yaml).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flink-sql-gateway
+  labels:
+    app.kubernetes.io/name: flink
+    app.kubernetes.io/component: sql-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: flink
+      app.kubernetes.io/component: sql-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: flink
+        app.kubernetes.io/component: sql-gateway
+    spec:
+      serviceAccountName: default
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 9999
+        runAsGroup: 9999
+        fsGroup: 9999
+        runAsNonRoot: true
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: sql-gateway
+          image: docker.io/library/flink:2.2.1-scala_2.12-java21@sha256:521951efbfbb0cec74c2826446ce1d20a051bff18e6d3716a6affe97ddec692a
+          command: ["/bin/sh", "-c", "set -eu; cp /etc/loams-flink/config.yaml \"$FLINK_HOME/conf/config.yaml\"; if [ -n \"${FLINK_PROPERTIES:-}\" ]; then printf '%s\\n' \"$FLINK_PROPERTIES\" >> \"$FLINK_HOME/conf/config.yaml\"; fi; mkdir -p \"$FLINK_HOME/plugins/s3-fs-presto\"; cp \"$FLINK_HOME/opt/flink-s3-fs-presto-2.2.1.jar\" \"$FLINK_HOME/plugins/s3-fs-presto/\"; exec \"$FLINK_HOME/bin/sql-gateway.sh\" start-foreground"]
+          env:
+            - name: POD_IP
+              valueFrom: {fieldRef: {apiVersion: v1, fieldPath: status.podIP}}
+            - name: ENABLE_BUILT_IN_PLUGINS
+              value: flink-s3-fs-presto-2.2.1.jar
+            - name: FLINK_PROPERTIES
+              valueFrom: {secretKeyRef: {name: flink-s3, key: FLINK_PROPERTIES}}
+          ports:
+            - {name: sql, containerPort: 8083}
+            - {name: metrics, containerPort: 9249}
+          resources:
+            requests: {cpu: 500m, memory: 1024Mi}
+            limits: {memory: 1024Mi}
+          readinessProbe: {httpGet: {path: /v1/info, port: 8083}, periodSeconds: 10}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: config, mountPath: /etc/loams-flink, readOnly: true}
+      volumes:
+        - name: config
+          configMap: {name: flink-config}

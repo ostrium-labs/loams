@@ -1,0 +1,139 @@
+# loams-gateway's browser module in front of the browser service (D2118):
+# agents connect here with a client token; only this Deployment holds the
+# engine's token and only it may reach the engine (networkpolicy.yaml).
+#
+#   kubectl -n loams create secret generic loams-browser-clients \
+#     --from-literal=clients="$(printf %s "$CLIENT_TOKEN" | sha256sum | cut -d' ' -f1)"
+#
+# agentd: LOAMS_BROWSER_PROVIDER=service,
+# LOAMS_BROWSER_SERVICE_URL=ws://loams-browser-gateway:9223/devtools/browser,
+# LOAMS_BROWSER_SERVICE_TOKEN_REF=env:browser-token, and
+# LOAMS_WEB_BRIDGE_SECRET_BROWSER_TOKEN=$CLIENT_TOKEN.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: loams-browser-gateway
+  labels:
+    app.kubernetes.io/name: loams-gateway
+    app.kubernetes.io/component: browser-gateway
+data:
+  browser.toml: |
+    listen = "0.0.0.0:9223"
+    upstream = "loams-browser:9222"
+    upstream_token_file = "/run/secrets/engine/token"
+    # Re-read on every connection: edit the secret to revoke a client.
+    client_tokens_file = "/run/secrets/clients/clients"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loams-browser-gateway
+  labels:
+    app.kubernetes.io/name: loams-gateway
+    app.kubernetes.io/component: browser-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: loams-gateway
+      app.kubernetes.io/component: browser-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: loams-gateway
+        app.kubernetes.io/component: browser-gateway
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gateway
+          # The first loams-gateway release that carries the browser module;
+          # kustomization.yaml's `images` pins the tag.
+          image: ghcr.io/ostrium-labs/loams-gateway
+          args: ["--module", "browser", "--config", "/etc/loams-gateway/browser.toml"]
+          ports:
+            - name: cdp
+              containerPort: 9223
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: "1"
+              memory: 256Mi
+          readinessProbe:
+            tcpSocket:
+              port: cdp
+            periodSeconds: 10
+          volumeMounts:
+            - name: config
+              mountPath: /etc/loams-gateway
+              readOnly: true
+            - name: engine
+              mountPath: /run/secrets/engine
+              readOnly: true
+            - name: clients
+              mountPath: /run/secrets/clients
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: loams-browser-gateway
+        - name: engine
+          secret:
+            secretName: loams-browser-token
+        - name: clients
+          secret:
+            secretName: loams-browser-clients
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: loams-browser-gateway
+  labels:
+    app.kubernetes.io/name: loams-gateway
+    app.kubernetes.io/component: browser-gateway
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: loams-gateway
+    app.kubernetes.io/component: browser-gateway
+  ports:
+    - name: cdp
+      port: 9223
+      targetPort: cdp
+      protocol: TCP
+---
+# agentd pods only, on the gateway's CDP port.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: loams-browser-gateway
+  labels:
+    app.kubernetes.io/name: loams-gateway
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: loams-gateway
+      app.kubernetes.io/component: browser-gateway
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: loams-agentd
+      ports:
+        - port: 9223
+          protocol: TCP
