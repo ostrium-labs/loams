@@ -9748,6 +9748,7 @@ name = "loams-meter-export"
 version = "0.1.2"
 dependencies = [
  "async-trait",
+ "base64 0.23.1",
  "hex",
  "hmac 0.13.0",
  "reqwest 0.13.5",
@@ -9755,6 +9756,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "thiserror 2.0.21",
+ "time",
  "tokio",
  "tracing",
  "url",

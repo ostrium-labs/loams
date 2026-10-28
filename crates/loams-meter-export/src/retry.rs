@@ -3,7 +3,15 @@
 //! attempt with the same idempotency key.
 
 // Used only by the provider features.
-#![cfg_attr(not(any(feature = "stripe", feature = "openmeter")), allow(dead_code))]
+#![cfg_attr(
+    not(any(
+        feature = "stripe",
+        feature = "openmeter",
+        feature = "lago",
+        feature = "webhook"
+    )),
+    allow(dead_code)
+)]
 
 use std::future::Future;
 use std::time::Duration;
