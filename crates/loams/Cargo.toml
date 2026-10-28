@@ -98,6 +98,8 @@ loams-agentd-cli.workspace = true
 loams-confluent.workspace = true
 # `loams risingwave …`: the managed RisingWave's SQL client (design 81, RW1).
 loams-risingwave.workspace = true
+# `loams spark` (design 81 SP-b, preview).
+loams-spark = { workspace = true, optional = true }
 # Loams Postgres's control plane: the `loams pg-control` role (feature
 # `postgres`, PG2 Task 9, design §46 §6.1), and the Neon clients it is
 # configured with. Never in the default build (`pg_control.rs`'s
@@ -178,6 +180,9 @@ hnsw = ["loams-hot/hnsw"]
 # rebuilds about 480 crates. Release builds, CI's durable jobs and the Loams
 # cloud build turn it on; without it, a --durable-* flag only logs.
 durable = ["dep:loams-durable"]
+# `loams spark …` (design 81, plan SP1; preview): Spark batch jobs, the session URL and
+# local runs. A client command; off by default until SP1 leaves preview.
+spark = ["dep:loams-spark"]
 # The TiDB durable store through Resonate's MySQL plugin (D1 Task 4).
 durable-mysql = ["durable", "loams-durable/mysql"]
 # The native TiKV durable store (`--durable-store tikv://…`).

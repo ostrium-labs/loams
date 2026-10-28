@@ -16,7 +16,9 @@ use loams_authz::{
 };
 use serde::Deserialize;
 
-use crate::auth::{Authenticator, DevAuthenticator, KeyEntry, KeyTable, Principal};
+use crate::auth::{
+    AnyOf, Authenticator, DevAuthenticator, KeyEntry, KeyTable, NamespaceKeys, Principal,
+};
 use crate::proxy::{
     AccessCheck, DEFAULT_MAX_MESSAGE_BYTES, NoLifecycle, ProxySettings, SparkConnectProxy,
 };
@@ -60,6 +62,10 @@ pub struct Config {
     /// API keys from a JSON file `{"keys": [...]}` (a mounted secret).
     #[serde(default)]
     pub keys_file: Option<PathBuf>,
+    /// Keys as `<namespace> <sha256>` lines (engine-gateway's compose key
+    /// file, shared with the RisingWave module).
+    #[serde(default)]
+    pub namespace_keys_file: Option<PathBuf>,
     /// Backends.
     #[serde(default)]
     pub routes: Vec<RouteConfig>,
@@ -146,7 +152,7 @@ pub fn load(text: &str) -> Result<Config, String> {
 ///
 /// A message naming the problem.
 pub fn check(c: &Config) -> Result<(), String> {
-    let no_keys = c.keys.is_empty() && c.keys_file.is_none();
+    let no_keys = c.keys.is_empty() && c.keys_file.is_none() && c.namespace_keys_file.is_none();
     let dev_parts = no_keys || matches!(c.authz, AuthzConfig::AllowAll);
     if dev_parts && !c.insecure_dev {
         return Err("no API keys or authz = allow_all need insecure_dev = true".into());
@@ -183,6 +189,7 @@ pub fn dev_config(uri: &str) -> Config {
         authz: AuthzConfig::AllowAll,
         keys: Vec::new(),
         keys_file: None,
+        namespace_keys_file: None,
         routes: vec![RouteConfig {
             namespace: "local".into(),
             instance: "spark".into(),
@@ -208,7 +215,25 @@ pub fn build(c: &Config) -> Result<SparkConnectProxy, String> {
             serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
         entries.extend(file.keys);
     }
-    let auth: Arc<dyn Authenticator> = if entries.is_empty() {
+    let lines = match &c.namespace_keys_file {
+        Some(path) => {
+            let text = std::fs::read_to_string(path)
+                .map_err(|e| format!("reading {}: {e}", path.display()))?;
+            Some(NamespaceKeys::parse(&text).map_err(|e| format!("{}: {e}", path.display()))?)
+        }
+        None => None,
+    };
+    let auth: Arc<dyn Authenticator> = if let Some(lines) = lines {
+        if entries.is_empty() {
+            Arc::new(lines)
+        } else {
+            {
+                let table: Arc<dyn Authenticator> = Arc::new(KeyTable::new(entries)?);
+                let lines: Arc<dyn Authenticator> = Arc::new(lines);
+                Arc::new(AnyOf(vec![table, lines]))
+            }
+        }
+    } else if entries.is_empty() {
         let ns = c
             .dev_namespace
             .clone()

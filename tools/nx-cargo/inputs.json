@@ -121,6 +121,7 @@
           "conformance/connectors/fixtures/cloudflare-r2/**"
         ],
         "loams-house-engine": [
+          "conformance/clickhouse/profile/profile.toml",
           "conformance/clickhouse/oracle/corpus/he1/26/**",
           "fabric/crates/loams-house/src/settings.rs"
         ],

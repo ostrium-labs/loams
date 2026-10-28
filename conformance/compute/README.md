@@ -13,8 +13,10 @@ list of expected failures, so a surprise in either direction fails the run.
 Status: the harness (DX0 Task 1), the databases and endpoint modes (Task 2,
 `durable/`), Temporal compat mode (Task 3, `temporal/`), the history corpus
 (Task 4, `temporal/corpus/`) and Airflow with the Edge executor (Task 6,
-`airflow/`, written but not yet run end to end). DBOS (Task 5) is not merged
-yet.
+`airflow/`, written but not yet run end to end), and the nightly, matrix and
+docs (Task 7: `.github/workflows/compute-compat.yml`,
+`scripts/compute/matrix.py`, `docs/guides/durable/`). DBOS (Task 5, `dbos-*/`) is
+written but not yet run. Results: [the matrix](../../docs/guides/compute/compatibility.md).
 
 ## Layout
 
@@ -29,7 +31,7 @@ yet.
 | `selftest.sh`, `testdata/` | the harness's own tests; the pull-request CI runs them |
 | `<product>/` | `run.sh`, `xfail.toml`, `README.md` per product (with its task) |
 | `../../deploy/release/compose.compute.yaml` | the opt-in compose override: profiles `temporal`, `dbos`, `airflow` |
-| `../../scripts/compute/` | `xfail_check.py`, `junit.py`, `licence_gate.{sh,py}` |
+| `../../scripts/compute/` | `xfail_check.py`, `junit.py`, `licence_gate.{sh,py}`, `matrix.py` (the compatibility matrix) |
 
 ## Endpoint modes
 
