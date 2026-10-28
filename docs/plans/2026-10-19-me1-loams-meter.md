@@ -128,8 +128,5 @@
 | 7 | **Balance engine semantics** (D2166) | Pins down the order of resets, rollover, recurrence and overage for the property tests |
 | 8 | **Lease allocator** (D2167): how the chunk clamp is ordered (chunks floored to whole `min_chunk`s), exact and learning mode, and an in-crate seeded simulation in place of `loams-detsim` | `loams-detsim` does not exist on `dev` |
 | 8 | **Lease allocator** (D2167): how the chunk clamp is ordered, exact and learning mode, and an in-crate seeded simulation in place of `loams-detsim` | `loams-detsim` does not exist on `dev` |
-| D2220 | Task 27: the billing plugin runs on a fixture `BillingClient` under Demo data until `loams.meter.v1` is served | The pages are built before ME-svc's services; swapping the client touches no page |
-| D2221 | Task 27: Settings › Billing lives at `/settings/billing/:section`; Payment links only to the provider's hosted page | D1080; no card data in Loams |
-| D2222 | Task 27: the banner is a `shell.topbar.center` entry, most severe notice first; stops cannot be dismissed | §18, §13 |
 | R33.1 (D2216) | Task 33: the provider is `integrations/tofu` (Go, terraform-plugin-framework v1.19.0). Semantic attributes refuse in-place changes. A plan's definition change needs a higher version. REST paths are proposed to ME-svc in D2216 | No existing provider in the repository; the meter API isn't served yet, so the client follows D2216 until ME-svc confirms |
 | D2223 | Task 28: the operator view lives at `/operator/*` (Instance group), on a fixture `OperatorClient`; manual grants need a reason and a confirmation | §18, D555; alerts follow §12 and §14 |
