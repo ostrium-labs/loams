@@ -133,6 +133,46 @@ pub(crate) async fn items<K: Kv>(
     }
 }
 
+/// Every pair in `lo..hi`, ascending or descending, at most `limit`:
+/// paged scans in this transaction.
+pub(crate) async fn scan_range<K: Kv>(
+    txn: &mut K,
+    lo: &[u8],
+    hi: &[u8],
+    rev: bool,
+    limit: Option<usize>,
+) -> Result<Vec<Pair>, TxnError> {
+    let mut out: Vec<Pair> = Vec::new();
+    if lo >= hi {
+        return Ok(out);
+    }
+    let (mut lo, mut hi) = (lo.to_vec(), hi.to_vec());
+    loop {
+        let want = limit.map_or(PAGE, |l| l.saturating_sub(out.len()).min(PAGE));
+        if want == 0 {
+            return Ok(out);
+        }
+        let page = if rev {
+            txn.scan_reverse(&lo, Some(&hi), want).await?
+        } else {
+            txn.scan(&lo, Some(&hi), want).await?
+        };
+        let n = page.len();
+        if let Some((last, _)) = page.last() {
+            if rev {
+                hi = last.clone();
+            } else {
+                lo = last.clone();
+                lo.push(0);
+            }
+        }
+        out.extend(page);
+        if n < want {
+            return Ok(out);
+        }
+    }
+}
+
 /// One page of items under `tag` from `from` (an item; `None`: the
 /// first), at most `count`; and the item to resume from, if any remain.
 pub(crate) async fn items_page<K: Kv>(

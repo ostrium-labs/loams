@@ -292,6 +292,9 @@ pub const ZSET_MEMBER: u8 = b'm';
 /// The tag of a sorted set's score index, after the version:
 /// `'z' ‖ key::f64(score) ‖ enc(member)` → empty.
 pub const ZSET_SCORE: u8 = b'z';
+/// The tag of a list element, after the version:
+/// `'l' ‖ key::u64(index)` → the element.
+pub const LIST_ELEM: u8 = b'l';
 /// The tag of a collection's length shard, after the version (Q1226).
 pub const LEN_SHARD: u8 = b'#';
 /// How many shards a collection's length is kept in (Q1226).

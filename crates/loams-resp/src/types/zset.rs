@@ -14,9 +14,9 @@
 //! documented semantics, with Tidis's `src/tikv/zset.rs` read as a
 //! reference, not ported.
 
-use loams_kv::{Pair, TxnError, key};
+use loams_kv::{TxnError, key};
 
-use super::collection::{self, PAGE, open};
+use super::collection::{self, open};
 use super::{Kv, WrongType, delete_key, read_live};
 use crate::layout::{self, Kind, Meta, SET_MEMBER, ZSET_MEMBER, ZSET_SCORE};
 use crate::types::counter::parse_float;
@@ -167,46 +167,6 @@ fn lex_key(base: &[u8], b: &LexBound, lo: bool) -> Vec<u8> {
                 k.push(0);
             }
             k
-        }
-    }
-}
-
-/// Every pair in `lo..hi`, ascending or descending, at most `limit`:
-/// paged scans in this transaction.
-async fn scan_range<K: Kv>(
-    txn: &mut K,
-    lo: &[u8],
-    hi: &[u8],
-    rev: bool,
-    limit: Option<usize>,
-) -> Result<Vec<Pair>, TxnError> {
-    let mut out: Vec<Pair> = Vec::new();
-    if lo >= hi {
-        return Ok(out);
-    }
-    let (mut lo, mut hi) = (lo.to_vec(), hi.to_vec());
-    loop {
-        let want = limit.map_or(PAGE, |l| l.saturating_sub(out.len()).min(PAGE));
-        if want == 0 {
-            return Ok(out);
-        }
-        let page = if rev {
-            txn.scan_reverse(&lo, Some(&hi), want).await?
-        } else {
-            txn.scan(&lo, Some(&hi), want).await?
-        };
-        let n = page.len();
-        if let Some((last, _)) = page.last() {
-            if rev {
-                hi = last.clone();
-            } else {
-                lo = last.clone();
-                lo.push(0);
-            }
-        }
-        out.extend(page);
-        if n < want {
-            return Ok(out);
         }
     }
 }
@@ -446,7 +406,7 @@ pub(crate) async fn range_by_rank<K: Kv>(
     };
     let base = tag_base(db, ukey, meta.ver, ZSET_SCORE);
     let end = key::prefix_end(&base);
-    let pairs = scan_range(txn, &base, &end, rev, Some(stop + 1)).await?;
+    let pairs = collection::scan_range(txn, &base, &end, rev, Some(stop + 1)).await?;
     pairs
         .into_iter()
         .skip(start)
@@ -504,7 +464,7 @@ pub(crate) async fn range_by_score<K: Kv>(
     }
     let base = tag_base(db, ukey, meta.ver, ZSET_SCORE);
     let (lo, hi) = (score_lo(&base, min), score_hi(&base, max));
-    let pairs = scan_range(txn, &lo, &hi, rev, limit.scan_limit()).await?;
+    let pairs = collection::scan_range(txn, &lo, &hi, rev, limit.scan_limit()).await?;
     let entries = pairs
         .into_iter()
         .map(|(k, _)| decode_index(&k, base.len()).ok_or_else(bad_key))
@@ -536,7 +496,7 @@ pub(crate) async fn range_by_lex<K: Kv>(
     }
     let base = tag_base(db, ukey, meta.ver, ZSET_MEMBER);
     let (lo, hi) = (lex_key(&base, min, true), lex_key(&base, max, false));
-    let pairs = scan_range(txn, &lo, &hi, rev, limit.scan_limit()).await?;
+    let pairs = collection::scan_range(txn, &lo, &hi, rev, limit.scan_limit()).await?;
     let entries = pairs
         .into_iter()
         .map(|(k, v)| {
@@ -583,7 +543,9 @@ pub(crate) async fn rank<K: Kv>(
     } else {
         (base, at)
     };
-    let before = scan_range(txn, &lo, &hi, false, None).await?.len();
+    let before = collection::scan_range(txn, &lo, &hi, false, None)
+        .await?
+        .len();
     Ok(Some((i64::try_from(before).unwrap_or(i64::MAX), s)))
 }
 

@@ -45,6 +45,10 @@ pub struct RespConfig {
     /// Close a client idle for this many seconds; 0 never does.
     #[serde(default)]
     pub timeout_secs: u64,
+    /// `list-max-shift`: `LINSERT` and `LREM` move every element after the
+    /// change, so they refuse lists longer than this (plan KV2 Task 8).
+    #[serde(default = "default_list_max_shift")]
+    pub list_max_shift: usize,
     /// How writes are acknowledged (D1651; ruling K2-3).
     #[serde(default)]
     pub durability: Durability,
@@ -65,6 +69,10 @@ fn default_databases() -> u16 {
 }
 
 fn default_max_clients() -> usize {
+    10_000
+}
+
+fn default_list_max_shift() -> usize {
     10_000
 }
 
