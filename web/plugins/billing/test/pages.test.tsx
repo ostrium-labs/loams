@@ -157,7 +157,8 @@ describe('Settings › Billing', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add endpoint' }));
     expect(await screen.findByText('Signing secret')).toBeTruthy();
     expect(screen.getByText(/^whsec_sample/)).toBeTruthy();
-    expect(screen.getByText('https://example.org/hook')).toBeTruthy();
+    // The list rereads after the secret is shown.
+    expect(await screen.findByText('https://example.org/hook')).toBeTruthy();
     expect(screen.getByText('503')).toBeTruthy();
   });
 });
