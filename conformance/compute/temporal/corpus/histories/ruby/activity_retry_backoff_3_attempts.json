@@ -1,0 +1,218 @@
+{
+  "events":  [
+    {
+      "eventId":  "1",
+      "eventTime":  "2026-10-28T12:48:15.469337699Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+      "taskId":  "1049070",
+      "workflowExecutionStartedEventAttributes":  {
+        "workflowType":  {
+          "name":  "activity_retry_backoff_3_attempts"
+        },
+        "taskQueue":  {
+          "name":  "corpus-ruby",
+          "kind":  "TASK_QUEUE_KIND_NORMAL"
+        },
+        "input":  {},
+        "workflowTaskTimeout":  "10s",
+        "originalExecutionRunId":  "01a1828d-d46d-7523-8d66-ac53fb248693",
+        "identity":  "304@1566fbb5e9e4",
+        "firstExecutionRunId":  "01a1828d-d46d-7523-8d66-ac53fb248693",
+        "attempt":  1,
+        "firstWorkflowTaskBackoff":  "0s",
+        "workflowId":  "corpus-ruby-activity_retry_backoff_3_attempts"
+      }
+    },
+    {
+      "eventId":  "2",
+      "eventTime":  "2026-10-28T12:48:15.469377107Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId":  "1049071",
+      "workflowTaskScheduledEventAttributes":  {
+        "taskQueue":  {
+          "name":  "corpus-ruby",
+          "kind":  "TASK_QUEUE_KIND_NORMAL"
+        },
+        "startToCloseTimeout":  "10s",
+        "attempt":  1
+      }
+    },
+    {
+      "eventId":  "3",
+      "eventTime":  "2026-10-28T12:48:15.471267304Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "taskId":  "1049076",
+      "workflowTaskStartedEventAttributes":  {
+        "scheduledEventId":  "2",
+        "identity":  "304@1566fbb5e9e4",
+        "requestId":  "b2a7a9d7-2e0b-4892-a2fc-76c10136ed88",
+        "historySizeBytes":  "286",
+        "workerVersion":  {
+          "buildId":  "8c08acf3cbd117cfd4073b0011aee61c"
+        }
+      }
+    },
+    {
+      "eventId":  "4",
+      "eventTime":  "2026-10-28T12:48:15.474403961Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "taskId":  "1049080",
+      "workflowTaskCompletedEventAttributes":  {
+        "scheduledEventId":  "2",
+        "startedEventId":  "3",
+        "identity":  "304@1566fbb5e9e4",
+        "workerVersion":  {
+          "buildId":  "8c08acf3cbd117cfd4073b0011aee61c"
+        },
+        "sdkMetadata":  {
+          "coreUsedFlags":  [
+            1,
+            2,
+            3
+          ],
+          "sdkName":  "temporal-ruby",
+          "sdkVersion":  "1.9.0"
+        },
+        "meteringMetadata":  {}
+      }
+    },
+    {
+      "eventId":  "5",
+      "eventTime":  "2026-10-28T12:48:15.474435578Z",
+      "eventType":  "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "taskId":  "1049081",
+      "activityTaskScheduledEventAttributes":  {
+        "activityId":  "1",
+        "activityType":  {
+          "name":  "fail_twice"
+        },
+        "taskQueue":  {
+          "name":  "corpus-ruby",
+          "kind":  "TASK_QUEUE_KIND_NORMAL"
+        },
+        "header":  {},
+        "scheduleToCloseTimeout":  "0s",
+        "scheduleToStartTimeout":  "0s",
+        "startToCloseTimeout":  "10s",
+        "heartbeatTimeout":  "0s",
+        "workflowTaskCompletedEventId":  "4",
+        "retryPolicy":  {
+          "initialInterval":  "1s",
+          "backoffCoefficient":  2,
+          "maximumInterval":  "100s",
+          "maximumAttempts":  3
+        },
+        "useWorkflowBuildId":  true
+      }
+    },
+    {
+      "eventId":  "6",
+      "eventTime":  "2026-10-28T12:48:18.486496557Z",
+      "eventType":  "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "taskId":  "1049098",
+      "activityTaskStartedEventAttributes":  {
+        "scheduledEventId":  "5",
+        "identity":  "304@1566fbb5e9e4",
+        "requestId":  "6c4cec3e-0c76-4b6f-baa5-781cf738af73",
+        "attempt":  3,
+        "lastFailure":  {
+          "message":  "attempt 2 fails",
+          "stackTrace":  "/tmp/rb/lib/activities.rb:34:in 'Corpus::Activities::FailTwice#execute'\n/usr/local/bundle/gems/temporalio-1.9.0-x86_64-linux/lib/temporalio/activity/definition.rb:203:in 'block in Temporalio::Activity::Definition::Info.from_activity'\n/usr/local/bundle/gems/temporalio-1.9.0-x86_64-linux/lib/temporalio/internal/worker/activity_worker.rb:444:in 'Temporalio::Internal::Worker::ActivityWorker::InboundImplementation#execute'\n/usr/local/bundle/gems/temporalio-1.9.0-x86_64-linux/lib/temporalio/internal/worker/activity_worker.rb:283:in 'Temporalio::Internal::Worker::ActivityWorker#run_activity'\n/usr/local/bundle/gems/temporalio-1.9.0-x86_64-linux/lib/temporalio/internal/worker/activity_worker.rb:243:in 'Temporalio::Internal::Worker::ActivityWorker#execute_activity'\n/usr/local/bundle/gems/temporalio-1.9.0-x86_64-linux/lib/temporalio/internal/worker/activity_worker.rb:114:in 'block in Temporalio::Internal::Worker::ActivityWorker#handle_start_task'\n/usr/local/bundle/gems/temporalio-1.9.0-x86_64-linux/lib/temporalio/worker/thread_pool.rb:200:in 'block (3 levels) in Temporalio::Worker::ThreadPool::Worker#initialize'\n<internal:kernel>:168:in 'Kernel#loop'\n/usr/local/bundle/gems/temporalio-1.9.0-x86_64-linux/lib/temporalio/worker/thread_pool.rb:193:in 'block (2 levels) in Temporalio::Worker::ThreadPool::Worker#initialize'\n/usr/local/bundle/gems/temporalio-1.9.0-x86_64-linux/lib/temporalio/worker/thread_pool.rb:192:in 'Kernel#catch'\n/usr/local/bundle/gems/temporalio-1.9.0-x86_64-linux/lib/temporalio/worker/thread_pool.rb:192:in 'block in Temporalio::Worker::ThreadPool::Worker#initialize'",
+          "applicationFailureInfo":  {
+            "type":  "Transient",
+            "details":  {}
+          }
+        },
+        "workerVersion":  {
+          "buildId":  "8c08acf3cbd117cfd4073b0011aee61c"
+        }
+      }
+    },
+    {
+      "eventId":  "7",
+      "eventTime":  "2026-10-28T12:48:18.488915391Z",
+      "eventType":  "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "taskId":  "1049099",
+      "activityTaskCompletedEventAttributes":  {
+        "result":  {
+          "payloads":  [
+            {
+              "metadata":  {
+                "encoding":  "anNvbi9wbGFpbg=="
+              },
+              "data":  "Mw=="
+            }
+          ]
+        },
+        "scheduledEventId":  "5",
+        "startedEventId":  "6",
+        "identity":  "304@1566fbb5e9e4"
+      }
+    },
+    {
+      "eventId":  "8",
+      "eventTime":  "2026-10-28T12:48:18.488930323Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId":  "1049100",
+      "workflowTaskScheduledEventAttributes":  {
+        "taskQueue":  {
+          "name":  "304@1566fbb5e9e4-ad1f3803f5f14c98ab52d71d5a226d77",
+          "kind":  "TASK_QUEUE_KIND_STICKY",
+          "normalName":  "corpus-ruby"
+        },
+        "startToCloseTimeout":  "10s",
+        "attempt":  1
+      }
+    },
+    {
+      "eventId":  "9",
+      "eventTime":  "2026-10-28T12:48:18.490018243Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "taskId":  "1049104",
+      "workflowTaskStartedEventAttributes":  {
+        "scheduledEventId":  "8",
+        "identity":  "304@1566fbb5e9e4",
+        "requestId":  "7be0064c-cfa3-404c-845b-65e197b56e9f",
+        "historySizeBytes":  "2560",
+        "workerVersion":  {
+          "buildId":  "8c08acf3cbd117cfd4073b0011aee61c"
+        }
+      }
+    },
+    {
+      "eventId":  "10",
+      "eventTime":  "2026-10-28T12:48:18.492917498Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "taskId":  "1049108",
+      "workflowTaskCompletedEventAttributes":  {
+        "scheduledEventId":  "8",
+        "startedEventId":  "9",
+        "identity":  "304@1566fbb5e9e4",
+        "workerVersion":  {
+          "buildId":  "8c08acf3cbd117cfd4073b0011aee61c"
+        },
+        "sdkMetadata":  {},
+        "meteringMetadata":  {}
+      }
+    },
+    {
+      "eventId":  "11",
+      "eventTime":  "2026-10-28T12:48:18.492945069Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED",
+      "taskId":  "1049109",
+      "workflowExecutionCompletedEventAttributes":  {
+        "result":  {
+          "payloads":  [
+            {
+              "metadata":  {
+                "encoding":  "anNvbi9wbGFpbg=="
+              },
+              "data":  "Mw=="
+            }
+          ]
+        },
+        "workflowTaskCompletedEventId":  "10"
+      }
+    }
+  ]
+}

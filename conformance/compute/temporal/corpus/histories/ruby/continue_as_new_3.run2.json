@@ -1,0 +1,133 @@
+{
+  "events":  [
+    {
+      "eventId":  "1",
+      "eventTime":  "2026-10-28T12:48:28.564209112Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+      "taskId":  "1049398",
+      "workflowExecutionStartedEventAttributes":  {
+        "workflowType":  {
+          "name":  "continue_as_new_3"
+        },
+        "taskQueue":  {
+          "name":  "corpus-ruby",
+          "kind":  "TASK_QUEUE_KIND_NORMAL"
+        },
+        "input":  {
+          "payloads":  [
+            {
+              "metadata":  {
+                "encoding":  "anNvbi9wbGFpbg=="
+              },
+              "data":  "MQ=="
+            }
+          ]
+        },
+        "workflowRunTimeout":  "0s",
+        "workflowTaskTimeout":  "10s",
+        "continuedExecutionRunId":  "01a1828e-078e-76f1-a574-8ba529cdedae",
+        "initiator":  "CONTINUE_AS_NEW_INITIATOR_WORKFLOW",
+        "originalExecutionRunId":  "33807522-80cb-4163-a9a6-0eea662f2100",
+        "firstExecutionRunId":  "01a1828e-078e-76f1-a574-8ba529cdedae",
+        "attempt":  1,
+        "firstWorkflowTaskBackoff":  "0.994153134s",
+        "prevAutoResetPoints":  {
+          "points":  [
+            {
+              "buildId":  "8c08acf3cbd117cfd4073b0011aee61c",
+              "runId":  "01a1828e-078e-76f1-a574-8ba529cdedae",
+              "firstWorkflowTaskCompletedId":  "4",
+              "createTime":  "2026-10-28T12:48:28.563867787Z",
+              "expireTime":  "2026-10-31T12:48:28.564209112Z",
+              "resettable":  true
+            }
+          ]
+        },
+        "workflowId":  "corpus-ruby-continue_as_new_3"
+      }
+    },
+    {
+      "eventId":  "2",
+      "eventTime":  "2026-10-28T12:48:29.560453086Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId":  "1049405",
+      "workflowTaskScheduledEventAttributes":  {
+        "taskQueue":  {
+          "name":  "corpus-ruby",
+          "kind":  "TASK_QUEUE_KIND_NORMAL"
+        },
+        "startToCloseTimeout":  "10s",
+        "attempt":  1
+      }
+    },
+    {
+      "eventId":  "3",
+      "eventTime":  "2026-10-28T12:48:29.562068521Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "taskId":  "1049408",
+      "workflowTaskStartedEventAttributes":  {
+        "scheduledEventId":  "2",
+        "identity":  "304@1566fbb5e9e4",
+        "requestId":  "95db5aa9-7457-48ba-981b-4a2b0bea8689",
+        "historySizeBytes":  "422",
+        "workerVersion":  {
+          "buildId":  "8c08acf3cbd117cfd4073b0011aee61c"
+        }
+      }
+    },
+    {
+      "eventId":  "4",
+      "eventTime":  "2026-10-28T12:48:29.565813036Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "taskId":  "1049412",
+      "workflowTaskCompletedEventAttributes":  {
+        "scheduledEventId":  "2",
+        "startedEventId":  "3",
+        "identity":  "304@1566fbb5e9e4",
+        "workerVersion":  {
+          "buildId":  "8c08acf3cbd117cfd4073b0011aee61c"
+        },
+        "sdkMetadata":  {
+          "coreUsedFlags":  [
+            1,
+            2,
+            3
+          ],
+          "sdkName":  "temporal-ruby",
+          "sdkVersion":  "1.9.0"
+        },
+        "meteringMetadata":  {}
+      }
+    },
+    {
+      "eventId":  "5",
+      "eventTime":  "2026-10-28T12:48:29.566106070Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW",
+      "taskId":  "1049413",
+      "workflowExecutionContinuedAsNewEventAttributes":  {
+        "newExecutionRunId":  "9d0b053a-a89e-458d-ac26-85b3259a433a",
+        "workflowType":  {
+          "name":  "continue_as_new_3"
+        },
+        "taskQueue":  {
+          "name":  "corpus-ruby",
+          "kind":  "TASK_QUEUE_KIND_NORMAL"
+        },
+        "input":  {
+          "payloads":  [
+            {
+              "metadata":  {
+                "encoding":  "anNvbi9wbGFpbg=="
+              },
+              "data":  "Mg=="
+            }
+          ]
+        },
+        "workflowRunTimeout":  "0s",
+        "workflowTaskTimeout":  "10s",
+        "workflowTaskCompletedEventId":  "4",
+        "inheritBuildId":  true
+      }
+    }
+  ]
+}
