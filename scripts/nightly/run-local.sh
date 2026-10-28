@@ -33,6 +33,12 @@ LEGS=all
 MATRIX=1
 KEEP=0
 export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-4}
+# Rootless podman without docker: compose (docker-compose or podman compose)
+# talks to the user's podman socket.
+if ! command -v docker >/dev/null 2>&1 && [ -z "${DOCKER_HOST:-}" ] &&
+  [ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/podman/podman.sock" ]; then
+  export DOCKER_HOST="unix://${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/podman/podman.sock"
+fi
 SLOT=${LOAMS_BUILDSLOT:-$HOME/Documents/Ostriumlabs/loams-wt/.he0-shared/buildslot.sh}
 [ -x "$SLOT" ] || SLOT=
 
