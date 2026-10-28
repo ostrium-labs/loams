@@ -5591,6 +5591,7 @@ dependencies = [
 name = "loams-connector-kafka"
 version = "0.0.1"
 dependencies = [
+ "apache-avro 0.22.0",
  "async-trait",
  "base64 0.22.1",
  "bytes",
@@ -6006,6 +6007,7 @@ dependencies = [
  "loams-house-native",
  "loams-house-proto",
  "loams-house-worker",
+ "loams-meter-gate",
  "loams-store",
  "nix",
  "proptest",
@@ -6057,6 +6059,7 @@ dependencies = [
  "loams-house-exec",
  "loams-house-formats",
  "loams-house-iceberg",
+ "loams-house-ipc",
  "loams-house-lake",
  "loams-house-sql",
  "loams-house-types",
@@ -6068,8 +6071,13 @@ dependencies = [
 name = "loams-house-exec"
 version = "0.0.1"
 dependencies = [
+ "chrono",
+ "chrono-tz",
  "datafusion",
+ "loams-house-sql",
  "loams-house-types",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -6077,8 +6085,12 @@ name = "loams-house-formats"
 version = "0.0.1"
 dependencies = [
  "arrow-array 59.3.0",
+ "arrow-ipc 59.3.0",
  "arrow-schema 59.3.0",
+ "bytes",
+ "loams-house-native",
  "loams-house-types",
+ "parquet 59.3.0",
 ]
 
 [[package]]
@@ -6227,6 +6239,13 @@ dependencies = [
  "serde_json",
  "tokio",
  "zstd 0.13.3",
+]
+
+[[package]]
+name = "loams-meter-gate"
+version = "0.1.2"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]

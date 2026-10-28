@@ -437,7 +437,7 @@ export function SqlWorkbench({
   }));
   const abort = useRef<AbortController | null>(null);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reset on a new target
+  // oxlint-disable-next-line react/exhaustive-deps -- reset on a new target
   useEffect(() => {
     abort.current?.abort();
     abort.current = null;

@@ -1,7 +1,7 @@
 // jsdom has no layout, canvas or ResizeObserver. React Flow needs the
 // observer and DOMMatrixReadOnly to mount.
 
-import { vi } from 'vitest';
+import { vi } from 'vite-plus/test';
 
 class RO {
   observe() {}

@@ -1,0 +1,40 @@
+# What the engine controller's ServiceAccount needs to run tenants' Flink
+# session clusters (crates/loams-flink/src/runtime_kube.rs). Not part of the
+# kustomize base: apply it where the controller runs, binding it to the
+# controller's ServiceAccount (pods labelled loams.dev/component:
+# engine-controller, which the clusters' NetworkPolicies admit).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: loams-flink-controller
+rules:
+  - apiGroups: [""]
+    resources: [namespaces]
+    verbs: [get, create, patch, delete]
+  - apiGroups: [""]
+    resources: [serviceaccounts, configmaps, secrets, services]
+    verbs: [get, create, patch]
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [roles, rolebindings]
+    # Granting a Role needs the permissions it grants (configmaps above) or
+    # `bind`/`escalate` on it.
+    verbs: [get, create, patch, bind, escalate]
+  - apiGroups: [networking.k8s.io]
+    resources: [networkpolicies]
+    verbs: [get, create, patch]
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get, create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: loams-flink-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: loams-flink-controller
+subjects:
+  - kind: ServiceAccount
+    name: loams-engine-controller
+    namespace: loams

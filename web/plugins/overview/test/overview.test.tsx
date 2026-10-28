@@ -3,7 +3,7 @@ import type { EngineState, FactoryAppInfo, StackState } from '@loams/desktop/con
 import { collection } from '@loams/proto';
 import { SlotProvider, SlotRegistry } from '@loams/slots';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 import {
   ConnectorsCard,
   DataCard,

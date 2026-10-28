@@ -11,7 +11,7 @@ import {
   type SessionMessageEntry,
   ThreadService,
 } from '@loams/proto/agentd';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { fakeAgentdRoutes } from '../src/cordis/fake-agentd.js';
 import { DEMO_SCRIPTS } from '../src/cordis/fake-agentd-transcripts.js';
 

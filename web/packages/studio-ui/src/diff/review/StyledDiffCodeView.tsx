@@ -151,7 +151,7 @@ export function StyledDiffCodeView<LAnnotation>({
   );
 
   // Each mount owns its container and instance.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: created once; options follow below.
+  // oxlint-disable-next-line react/exhaustive-deps -- created once; options follow below.
   useLayoutEffect(() => {
     const parent = wrapper.current;
     if (!parent) return;

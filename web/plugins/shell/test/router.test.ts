@@ -1,5 +1,5 @@
 import { SlotRegistry } from '@loams/slots';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { compile, HashRouter, type HashSource } from '../src/router.js';
 
 function memory(start = '/'): HashSource & { go(path: string): void } {

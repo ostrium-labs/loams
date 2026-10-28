@@ -69,6 +69,13 @@ fn primitive(s: &Storage) -> Option<PrimitiveType> {
     })
 }
 
+/// The next nested field id (a function, not a closure: `iceberg` recurses
+/// with `next` too).
+fn id(next: &mut i32) -> i32 {
+    *next += 1;
+    *next
+}
+
 /// The Iceberg type of `t` (as `loams-house`'s `types.rs` makes it), with
 /// nested ids from `next`.
 fn iceberg(t: &ChType, top: bool, next: &mut i32) -> Type {
@@ -76,21 +83,17 @@ fn iceberg(t: &ChType, top: bool, next: &mut i32) -> Type {
     if let Some(p) = primitive(&s) {
         return Type::Primitive(p);
     }
-    let mut id = || {
-        *next += 1;
-        *next
-    };
     match t.base() {
         ChType::Array(inner) => {
-            let eid = id();
+            let eid = id(next);
             let et = iceberg(inner, false, next);
             Type::List(ListType {
                 element_field: Arc::new(NestedField::list_element(eid, et, !inner.is_nullable())),
             })
         }
         ChType::Map(k, v) => {
-            let kid = id();
-            let vid = id();
+            let kid = id(next);
+            let vid = id(next);
             let kt = iceberg(k, false, next);
             let vt = iceberg(v, false, next);
             Type::Map(MapType {
@@ -101,7 +104,7 @@ fn iceberg(t: &ChType, top: bool, next: &mut i32) -> Type {
         ChType::Tuple(elements) => {
             let mut fields = Vec::new();
             for (i, (name, et)) in elements.iter().enumerate() {
-                let fid = id();
+                let fid = id(next);
                 let ty = iceberg(et, false, next);
                 let name = name.clone().unwrap_or_else(|| (i + 1).to_string());
                 fields.push(Arc::new(if et.is_nullable() {
@@ -378,7 +381,11 @@ impl Lake {
     /// The pin of the current snapshot, as the dev server makes it.
     pub fn pin(&self) -> TablePin {
         let file = format!("file://{}", self.path(&self.file.to_string()).display());
-        let mut pin = TablePin::from_metadata(&self.db, &self.name, &file, &self.metadata).unwrap();
+        // The metadata as the engine reads it: through the fork's
+        // `TableMetadata` (`iceberg-engine`), not `loams-house-lake`'s
+        // iceberg 0.10.1 that wrote it.
+        let json = metadata::to_json(&self.metadata).unwrap();
+        let mut pin = TablePin::from_metadata_json(&self.db, &self.name, &file, &json).unwrap();
         pin.location = format!("file://{}", self.dir.display());
         pin
     }

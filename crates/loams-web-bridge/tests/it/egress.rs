@@ -101,7 +101,7 @@ fn a_deny_list_wins_over_an_allow_list() {
 }
 
 #[test]
-fn cloudflare_hostname_pattern_rules_are_enforced_locally() {
+fn hostname_pattern_rules_are_enforced_locally() {
     assert!(
         HostPattern::parse("https://example.com").is_err(),
         "no scheme"
@@ -117,7 +117,7 @@ fn cloudflare_hostname_pattern_rules_are_enforced_locally() {
     assert!(prefix.matches("example.com"));
     assert!(
         prefix.matches("evilexample.com"),
-        "Cloudflare's own semantics"
+        "the apex-matching wildcard"
     );
 
     let subdomains = HostPattern::parse("*.example.com").unwrap_or_else(|_| panic!("ok"));
@@ -126,52 +126,32 @@ fn cloudflare_hostname_pattern_rules_are_enforced_locally() {
 }
 
 #[test]
-fn guardrails_carry_the_allow_list_and_a_domain_set() {
-    let mut policy = EgressPolicy::allow_list(["example.com", "*.cdn.example.com"])
-        .unwrap_or_else(|_| panic!("ok"));
-    policy
-        .allow_domain_set("common-cdns")
-        .unwrap_or_else(|_| panic!("ok"));
-    let guardrails = policy.guardrails().unwrap_or_else(|| panic!("guardrails"));
-    assert_eq!(
-        guardrails.allowed_domains,
-        ["example.com", "*.cdn.example.com"]
-    );
-    assert_eq!(guardrails.allowed_domain_sets, ["common-cdns"]);
-    assert!(
-        !policy.allows_unenforced_engine(),
-        "guardrails are enforced here"
-    );
-}
-
-#[test]
-fn without_an_allow_list_no_guardrails_are_sent() {
-    let policy = EgressPolicy::public_web();
-    assert!(!policy.is_allow_listed());
-    assert!(policy.guardrails().is_none());
-    assert!(
-        policy.allows_unenforced_engine(),
-        "nothing to enforce, so an unenforced engine is allowed"
-    );
-}
-
-#[test]
-fn cloudflares_own_limits_are_checked_before_a_request_is_sent() {
+fn an_allow_list_has_a_ceiling() {
     let hosts: Vec<String> = (0..51)
         .map(|index| format!("host{index}.example.com"))
         .collect();
-    assert!(
-        EgressPolicy::allow_list(hosts).is_err(),
-        "51 entries would be a 400 from the API"
-    );
+    assert!(EgressPolicy::allow_list(hosts).is_err(), "51 entries");
     let hosts: Vec<String> = (0..50)
         .map(|index| format!("host{index}.example.com"))
         .collect();
-    let mut policy = EgressPolicy::allow_list(hosts).unwrap_or_else(|_| panic!("50 is fine"));
-    for index in 0..4 {
+    let policy = EgressPolicy::allow_list(hosts).unwrap_or_else(|_| panic!("50 is fine"));
+    assert!(policy.is_allow_listed());
+    assert!(!EgressPolicy::public_web().is_allow_listed());
+}
+
+#[test]
+fn a_page_request_follows_the_navigation_rules_except_for_in_memory_schemes() {
+    let policy = EgressPolicy::allow_list(["*.example.com"]).unwrap_or_else(|_| panic!("ok"));
+    policy
+        .check_request(&url("https://cdn.example.com/app.js"))
+        .unwrap_or_else(|error| panic!("{error}"));
+    policy
+        .check_request(&url("blob:https://app.example.com/1f2e"))
+        .unwrap_or_else(|error| panic!("{error}"));
+    assert!(
         policy
-            .allow_domain_set(format!("set-{index}"))
-            .unwrap_or_else(|_| panic!("four sets are fine"));
-    }
-    assert!(policy.allow_domain_set("set-5").is_err());
+            .check_request(&url("https://tracker.test/p.gif"))
+            .is_err()
+    );
+    assert!(policy.check_request(&url("http://10.0.0.1/admin")).is_err());
 }

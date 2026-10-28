@@ -1,0 +1,51 @@
+# The stock Temporal Web UI against the Loams Temporal gateway (D2050,
+# D2053; docs/guides/durable/temporal-ui-cli.md). An overlay on the profile
+# `temporal-gateway` (DX1-IMG's conformance/compute/temporal-gateway.yaml),
+# never distributed:
+#
+#   podman compose -f deploy/release/compose.yaml -f deploy/release/compose.compute.yaml \
+#     -f conformance/compute/temporal-gateway.yaml -f conformance/compute/temporal-ui.yaml \
+#     --profile temporal-gateway up -d
+#   open http://127.0.0.1:8233
+#
+# - The gateway must have a `[ui]` listener on 127.0.0.1:7234 in its
+#   gateway.toml (see the guide). `ui-server` cannot send a Loams API key,
+#   so it talks to that loopback-only listener, where every call is the
+#   configured Loams namespace's and only reads pass.
+# - `network_mode: service:loams`: the UI shares the engine's (and the
+#   gateway's) network namespace, so it reaches 127.0.0.1:7234 and nothing
+#   else can. Its own port, 8233 (the engine has 8080 there), is published
+#   on the host's loopback only, through the `loams` service that owns the
+#   namespace.
+# - The image is temporalio/ui 2.55.0 (2026-10-01, MIT), pinned by digest
+#   (14-day rule; D2053).
+services:
+  loams:
+    ports:
+      - "127.0.0.1:${TEMPORAL_UI_HOST_PORT:-8233}:8233"
+
+  temporal-ui:
+    profiles: [temporal-gateway]
+    image: docker.io/temporalio/ui:2.55.0@sha256:3899d5cf749b5555c9f798d46f2423b1d6190ea391ca713db5d1bba961759e58
+    restart: unless-stopped
+    network_mode: service:loams
+    environment:
+      TEMPORAL_ADDRESS: 127.0.0.1:7234
+      TEMPORAL_UI_PORT: "8233"
+      TEMPORAL_DEFAULT_NAMESPACE: ${TEMPORAL_UI_NAMESPACE:-default}
+      TEMPORAL_CORS_ORIGINS: http://127.0.0.1:${TEMPORAL_UI_HOST_PORT:-8233},http://localhost:${TEMPORAL_UI_HOST_PORT:-8233}
+      # The gateway's UI listener is read-only; hide the write buttons.
+      TEMPORAL_DISABLE_WRITE_ACTIONS: "true"
+      # No outbound calls from the UI container.
+      TEMPORAL_DISABLE_NEWS_FETCH: "true"
+      TEMPORAL_NOTIFY_ON_NEW_VERSION: "false"
+      TEMPORAL_FEEDBACK_URL: ""
+    depends_on:
+      temporal-gateway:
+        condition: service_started
+    # ui-server renders its baked config/docker.yaml template in memory, so
+    # the root filesystem can stay read-only.
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
