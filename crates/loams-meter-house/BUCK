@@ -24,6 +24,11 @@ cargo_package(
     },
     tests = [
         {
+            "name": "close",
+            "crate": "close",
+            "root": "tests/close.rs",
+        },
+        {
             "name": "schema",
             "crate": "schema",
             "root": "tests/schema.rs",

@@ -195,6 +195,31 @@ impl Lakehouse {
         }
     }
 
+    /// One close run of `meter` at `now_ms`, driven as the `meter` role's
+    /// `CloseJob` drives it.
+    async fn close(&self, meter: &meter_sql::MeterDef, now_ms: i64) -> meter_sql::CloseSummary {
+        let mut run =
+            meter_sql::CloseRun::new(meter.clone(), now_ms, meter_sql::CloseConfig::default());
+        let mut answer: Option<String> = None;
+        while let Some(sql) = run.next(answer.as_deref()).expect("a readable answer") {
+            answer = Some(ok(self.addr(), &sql).await);
+        }
+        run.summary().clone()
+    }
+
+    /// `meter`'s windows: size, subject, start, group key, value, events.
+    async fn windows(&self, slug: &str) -> String {
+        ok(
+            self.addr(),
+            &format!(
+                "SELECT window_size, subject, window_start, group_key, value, events \
+                 FROM _meter.windows FINAL WHERE meter = '{slug}' \
+                 ORDER BY window_size, subject, window_start, group_key"
+            ),
+        )
+        .await
+    }
+
     /// Appends usage events to `_system/_meter`'s `partition`.
     fn push(&self, partition: usize, events: &[serde_json::Value]) {
         for event in events {
@@ -251,7 +276,7 @@ async fn meter_schema_applies_twice() {
             "SELECT name FROM system.tables WHERE database = '_meter' ORDER BY name"
         )
         .await,
-        "events\nevents_mv\nevents_q\nwindows\n"
+        "close_runs\nevents\nevents_mv\nevents_q\nwindows\n"
     );
 }
 
@@ -306,5 +331,192 @@ async fn duplicate_event_counted_once_in_windows() {
         .await,
         "org_42\t2026-10-19 09:14:00\t2\t2000\n\
          org_7\t2026-10-19 09:15:00\t1\t5\n"
+    );
+}
+
+/// 2026-10-19T10:00:00Z, in ms: "now" for the close runs below (minute
+/// windows up to 09:58 close).
+const NOW_MS: i64 = 1_792_404_000_000;
+
+/// `house_cpu_ms`: `SUM` of `$.cpu_ms`, grouped by `$.namespace`.
+fn cpu_meter() -> meter_sql::MeterDef {
+    meter_sql::MeterDef {
+        slug: "house_cpu_ms".to_string(),
+        event_type: "io.loams.dev.usage.house.query.v1".to_string(),
+        aggregation: meter_sql::Aggregation::Sum,
+        value_property: Some("$.cpu_ms".to_string()),
+        group_by: vec![("namespace".to_string(), "$.namespace".to_string())],
+        event_from: None,
+    }
+}
+
+/// A usage event with its own `data`.
+fn event(id: &str, time: &str, data: serde_json::Value) -> serde_json::Value {
+    let mut e = usage(id, "org_42", time, 0);
+    e["data"] = data;
+    e
+}
+
+/// The windows the duplicates of `duplicate_event_counted_once_in_windows`
+/// close into, through the close job itself (ME1 Task 6).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn duplicates_close_once() {
+    let house = Lakehouse::start("meter-dup-close").await;
+    house.schema().await;
+    let a = usage("q-1/1", "org_42", "2026-10-19T09:14:03.218734Z", 1840);
+    let b = usage("q-2/1", "org_42", "2026-10-19T09:14:40Z", 160);
+    house.push(0, &[a.clone(), a.clone(), b.clone()]);
+    house.push(1, &[a.clone(), b]);
+    house.drain().await;
+    let summary = house.close(&cpu_meter(), NOW_MS).await;
+    assert_eq!((summary.minutes, summary.hours, summary.days), (1, 1, 1));
+    assert_eq!(
+        house.windows("house_cpu_ms").await,
+        "minute\torg_42\t2026-10-19 09:14:00\t{\"namespace\":\"7\"}\t2000\t2\n\
+         hour\torg_42\t2026-10-19 09:00:00\t{\"namespace\":\"7\"}\t2000\t2\n\
+         day\torg_42\t2026-10-19 00:00:00\t{\"namespace\":\"7\"}\t2000\t2\n"
+    );
+}
+
+/// `close_job_idempotent` (ME1 plan, Task 6): a run repeated, at the same
+/// time or later, leaves the same windows; only the version moves.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn close_job_idempotent() {
+    let house = Lakehouse::start("meter-idem").await;
+    house.schema().await;
+    house.push(
+        0,
+        &[
+            usage("q-1/1", "org_42", "2026-10-19T09:14:03Z", 1840),
+            usage("q-2/1", "org_42", "2026-10-19T09:59:30Z", 999),
+        ],
+    );
+    house.push(1, &[usage("q-3/1", "org_7", "2026-10-19T09:15:01Z", 5)]);
+    house.drain().await;
+    let meter = cpu_meter();
+    house.close(&meter, NOW_MS).await;
+    let first = house.windows("house_cpu_ms").await;
+    // 09:59 has not ended 2 minutes ago: it stays open.
+    assert_eq!(
+        first,
+        "minute\torg_42\t2026-10-19 09:14:00\t{\"namespace\":\"7\"}\t1840\t1\n\
+         minute\torg_7\t2026-10-19 09:15:00\t{\"namespace\":\"7\"}\t5\t1\n\
+         hour\torg_42\t2026-10-19 09:00:00\t{\"namespace\":\"7\"}\t1840\t1\n\
+         hour\torg_7\t2026-10-19 09:00:00\t{\"namespace\":\"7\"}\t5\t1\n\
+         day\torg_42\t2026-10-19 00:00:00\t{\"namespace\":\"7\"}\t1840\t1\n\
+         day\torg_7\t2026-10-19 00:00:00\t{\"namespace\":\"7\"}\t5\t1\n"
+    );
+    // The same run again, and a later one that closes nothing new.
+    house.close(&meter, NOW_MS).await;
+    assert_eq!(house.windows("house_cpu_ms").await, first);
+    house.close(&meter, NOW_MS + 1).await;
+    assert_eq!(house.windows("house_cpu_ms").await, first);
+    assert_eq!(
+        ok(house.addr(), "SELECT count() FROM _meter.close_runs FINAL").await,
+        "1\n"
+    );
+    // A run a minute later closes 09:59 too (and recomputes its hour and day).
+    house.close(&meter, NOW_MS + 120_000).await;
+    let later = house.windows("house_cpu_ms").await;
+    assert!(
+        later.contains("minute\torg_42\t2026-10-19 09:59:00\t{\"namespace\":\"7\"}\t999\t1\n"),
+        "{later}"
+    );
+    assert!(
+        later.contains("hour\torg_42\t2026-10-19 09:00:00\t{\"namespace\":\"7\"}\t2839\t2\n"),
+        "{later}"
+    );
+}
+
+/// `late_event_recloses_window` (ME1 plan, Task 6): an event that reaches
+/// the House after its minute closed re-closes the minute, its hour and its
+/// day, with a newer version.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn late_event_recloses_window() {
+    let house = Lakehouse::start("meter-late").await;
+    house.schema().await;
+    let mut meter = cpu_meter();
+    meter.group_by.clear();
+    house.push(0, &[usage("q-1/1", "org_42", "2026-10-19T09:14:03Z", 1840)]);
+    house.drain().await;
+    house.close(&meter, NOW_MS).await;
+    assert_eq!(
+        house.windows("house_cpu_ms").await,
+        "minute\torg_42\t2026-10-19 09:14:00\t{}\t1840\t1\n\
+         hour\torg_42\t2026-10-19 09:00:00\t{}\t1840\t1\n\
+         day\torg_42\t2026-10-19 00:00:00\t{}\t1840\t1\n"
+    );
+    // 46 minutes late.
+    house.push(0, &[usage("q-9/1", "org_42", "2026-10-19T09:14:50Z", 60)]);
+    tokio::time::sleep(Duration::from_millis(2_100)).await;
+    house.drain().await;
+    let later = NOW_MS + 60_000;
+    let summary = house.close(&meter, later).await;
+    assert_eq!(summary.minutes, 1);
+    assert_eq!(
+        house.windows("house_cpu_ms").await,
+        "minute\torg_42\t2026-10-19 09:14:00\t{}\t1900\t2\n\
+         hour\torg_42\t2026-10-19 09:00:00\t{}\t1900\t2\n\
+         day\torg_42\t2026-10-19 00:00:00\t{}\t1900\t2\n"
+    );
+    assert_eq!(
+        ok(
+            house.addr(),
+            "SELECT DISTINCT close_run FROM _meter.windows FINAL WHERE meter = 'house_cpu_ms'"
+        )
+        .await,
+        format!("{later}\n")
+    );
+}
+
+/// `unique_count_not_rolled_up` (ME1 plan, Task 6): a `UNIQUE_COUNT` hour is
+/// the distinct values of the hour's events, not the sum of its minutes'.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn unique_count_not_rolled_up() {
+    let house = Lakehouse::start("meter-unique").await;
+    house.schema().await;
+    house.push(
+        0,
+        &[
+            event(
+                "u-1",
+                "2026-10-19T09:14:10Z",
+                serde_json::json!({"user": "u1"}),
+            ),
+            event(
+                "u-2",
+                "2026-10-19T09:14:20Z",
+                serde_json::json!({"user": "u2"}),
+            ),
+            event(
+                "u-3",
+                "2026-10-19T09:15:10Z",
+                serde_json::json!({"user": "u2"}),
+            ),
+            event(
+                "u-4",
+                "2026-10-19T09:15:20Z",
+                serde_json::json!({"user": "u3"}),
+            ),
+            // No `user`: not counted.
+            event("u-5", "2026-10-19T09:15:30Z", serde_json::json!({})),
+        ],
+    );
+    house.drain().await;
+    let meter = meter_sql::MeterDef {
+        slug: "active_users".to_string(),
+        event_type: "io.loams.dev.usage.house.query.v1".to_string(),
+        aggregation: meter_sql::Aggregation::UniqueCount,
+        value_property: Some("$.user".to_string()),
+        group_by: Vec::new(),
+        event_from: None,
+    };
+    house.close(&meter, NOW_MS).await;
+    assert_eq!(
+        house.windows("active_users").await,
+        "minute\torg_42\t2026-10-19 09:14:00\t{}\t2\t2\n\
+         minute\torg_42\t2026-10-19 09:15:00\t{}\t2\t3\n\
+         hour\torg_42\t2026-10-19 09:00:00\t{}\t3\t5\n\
+         day\torg_42\t2026-10-19 00:00:00\t{}\t3\t5\n"
     );
 }
