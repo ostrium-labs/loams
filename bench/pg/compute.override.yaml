@@ -1,0 +1,17 @@
+# BQ1-pg: pins deploy/loams-postgres-dev's services to the bench's core sets
+# and publishes no host port (pgbench joins compute1's network namespace,
+# so no port forwarder sits in the path). Used only by bench/pg/compute.sh.
+services:
+  storage_broker:
+    cpuset: "${STORAGE_CORES:-12-13}"
+  pageserver:
+    cpuset: "${STORAGE_CORES:-12-13}"
+    ports: !reset []
+  safekeeper1:
+    cpuset: "${STORAGE_CORES:-12-13}"
+    ports: !reset []
+  pg-bootstrap:
+    cpuset: "${STORAGE_CORES:-12-13}"
+  compute1:
+    cpuset: "${PG_CORES:-0-5}"
+    ports: !reset []
