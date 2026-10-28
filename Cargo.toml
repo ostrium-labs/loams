@@ -352,6 +352,7 @@ loams-log = { path = "crates/loams-log", version = "0.1.2" }
 loams-meta = { path = "crates/loams-meta", version = "0.1.2" }
 loams-meta-conformance = { path = "crates/loams-meta-conformance", version = "0.1.2" }
 loams-meta-tikv = { path = "crates/loams-meta-tikv", version = "0.1.2" }
+loams-meter-house = { path = "crates/loams-meter-house", version = "0.1.2" }
 loams-migrate = { path = "crates/loams-migrate", version = "0.1.2" }
 loams-upgrade = { path = "crates/loams-upgrade", version = "0.1.2" }
 loams-cloud-admin = { path = "crates/loams-cloud-admin", version = "0.1.2" }
