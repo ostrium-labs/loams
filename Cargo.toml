@@ -324,6 +324,8 @@ loams-durable = { path = "crates/loams-durable", version = "0.1.2" }
 # Managed engines: the ManagedEngine trait and facade (design 81, D2010).
 loams-engines = { path = "crates/loams-engines", version = "0.1.2" }
 loams-es = { path = "crates/loams-es", version = "0.1.2" }
+# Managed Flink SQL (design 81, plan FL1).
+loams-flink = { path = "crates/loams-flink", version = "0.1.2" }
 # The Fs trait for warm, rebuildable state and scratch (design §36 §17, GT1 Task 2).
 loams-fs = { path = "crates/loams-fs", version = "0.1.2" }
 # Loams Git's portable core (design §36, §19; GT1 Tasks 4 onwards).
@@ -350,6 +352,7 @@ loams-log = { path = "crates/loams-log", version = "0.1.2" }
 loams-meta = { path = "crates/loams-meta", version = "0.1.2" }
 loams-meta-conformance = { path = "crates/loams-meta-conformance", version = "0.1.2" }
 loams-meta-tikv = { path = "crates/loams-meta-tikv", version = "0.1.2" }
+loams-meter-house = { path = "crates/loams-meter-house", version = "0.1.2" }
 loams-migrate = { path = "crates/loams-migrate", version = "0.1.2" }
 loams-upgrade = { path = "crates/loams-upgrade", version = "0.1.2" }
 loams-cloud-admin = { path = "crates/loams-cloud-admin", version = "0.1.2" }

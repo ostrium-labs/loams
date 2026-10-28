@@ -143,7 +143,7 @@ fn format_eval(call: &Call) -> Result<ArrayRef, ChError> {
                 'H' | 'k' => write!(o, "{h:02}"),
                 'i' => write!(o, "{mi:02}"),
                 't' => write!(o, "\t"),
-                'n' => write!(o, "\n"),
+                'n' => writeln!(o),
                 other => write!(o, "{other}"),
             };
         }

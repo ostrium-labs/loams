@@ -2,11 +2,13 @@
 #
 #   kubectl -n loams create secret generic loams-browser-token \
 #     --from-literal=token="$(openssl rand -hex 32)"
+#   kubectl -n loams create secret generic loams-browser-clients \
+#     --from-literal=clients="$(printf %s "$CLIENT_TOKEN" | sha256sum | cut -d' ' -f1)"
 #   kubectl apply -k deploy/browser/k8s -n loams
 #
-# agentd (and loams-gateway, once it routes CDP) read the same secret and set
-# LOAMS_BROWSER_PROVIDER=service with
-# LOAMS_BROWSER_SERVICE_URL=ws://loams-browser:9222/devtools/browser.
+# agentd goes through loams-browser-gateway (D2118) with CLIENT_TOKEN:
+# LOAMS_BROWSER_PROVIDER=service,
+# LOAMS_BROWSER_SERVICE_URL=ws://loams-browser-gateway:9223/devtools/browser.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 labels:
@@ -17,3 +19,10 @@ resources:
   - deployment.yaml
   - service.yaml
   - networkpolicy.yaml
+  - gateway.yaml
+images:
+  # The first loams-gateway release with the browser module (D2118). Until it
+  # is published, build deploy/release/Containerfile.loams-gateway and set
+  # newName/newTag to your image.
+  - name: ghcr.io/ostrium-labs/loams-gateway
+    newTag: "0.1.3"

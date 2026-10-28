@@ -9,7 +9,7 @@ name: Temporal Rust SDK corpus
 # the histories with the Go exporter; then sdk-core's replayer (the SDK's
 # WorkflowReplayer) must accept every one of them. The histories are
 # uploaded as an artifact: committing them as histories/rust/ (and
-# manifest.py build-lang rust) is a follow-up once a run is green.
+# manifest.py build --languages rust) is a follow-up once a run is green.
 #
 # The gateway half (the same worker against loams-temporal) is the
 # `sdk-leg (rust)` matrix entry in temporal-gateway.yml.

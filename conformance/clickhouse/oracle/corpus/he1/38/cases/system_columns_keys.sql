@@ -1,0 +1,1 @@
+SELECT name, default_kind, comment, is_in_partition_key, is_in_sorting_key, is_in_primary_key, compression_codec FROM system.columns WHERE database = currentDatabase() AND table = 't38' ORDER BY position

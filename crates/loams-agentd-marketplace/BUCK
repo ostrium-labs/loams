@@ -85,6 +85,7 @@ cargo_package(
     deps = [
         "//crates/loams-agentd-harness:loams-agentd-harness",
         "//crates/loams-walrus:loams-walrus",
+        "//crates/loams-zitadel:loams-zitadel",
         "//third-party/rust:async-trait",
         "//third-party/rust:base64-0_23",
         "//third-party/rust:hex",
@@ -97,6 +98,7 @@ cargo_package(
         "//third-party/rust:sha2",
         "//third-party/rust:sigstore-verify",
         "//third-party/rust:thiserror",
+        "//third-party/rust:time",
         "//third-party/rust:tokio",
         "//third-party/rust:tracing",
     ],

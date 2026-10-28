@@ -9,6 +9,7 @@ pub mod conformance;
 pub mod contract;
 pub mod engine;
 pub mod fetch;
+pub mod identity;
 pub mod index;
 pub mod install;
 pub mod listing;
