@@ -13,6 +13,8 @@ default = []
 # Stripe meter events for each closed hour's overage, and payment state from
 # Stripe's webhooks and a daily poll (ME1 Task 24, D2211, D2212).
 stripe = ["reqwest/form", "dep:hmac", "dep:sha2", "dep:hex"]
+# Raw usage events to OpenMeter, `loamslease` stripped (ME1 Task 25, D2213).
+openmeter = []
 
 [dependencies]
 async-trait.workspace = true
@@ -40,6 +42,10 @@ wiremock = "0.6.5"
 [[test]]
 name = "stripe"
 required-features = ["stripe"]
+
+[[test]]
+name = "openmeter"
+required-features = ["openmeter"]
 
 [lints]
 workspace = true
