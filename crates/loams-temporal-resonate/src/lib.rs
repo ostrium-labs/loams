@@ -7,11 +7,11 @@
 //!   `resonate-client` methods, with [`FakeDurability`] (in process, manual
 //!   clock, fault injection) for every test above the port.
 //! - [`HttpDurability`]: the adapter onto a real server, on FW3's
-//!   `resonate-client` (D2040). Only its poll subscription is still interim
-//!   code (a private module): the client has no poll consumer (D2041).
+//!   `resonate-client` (D2040), its poll subscription included (D2043):
+//!   nothing interim is left of D1591's adapter.
 //! - [`Relay`]: drains the store's outbox into the port.
 //!
-//! # How §74 §5.3 maps onto the protocol (31ffb201; `resonate-client` at 37b177cd)
+//! # How §74 §5.3 maps onto the protocol (31ffb201; the fork pinned at 53d38ab3)
 //!
 //! - A workflow or activity task is a [`CreatePromise`] with `target_group`
 //!   (tag `resonate:target = poll://any@<group>`). The task's ID is the
@@ -38,9 +38,8 @@ mod client;
 mod fake;
 mod port;
 mod relay;
-mod wire_interim;
 
-pub use client::{HttpDurability, RetryPolicy};
+pub use client::{HttpDurability, RetryPolicy, TokenFn};
 pub use fake::{
     DEFAULT_START_MS, DeliveryFault, FakeDurability, FakeTask, FakeTaskState, PENDING_RETRY_TTL_MS,
 };
@@ -53,4 +52,3 @@ pub use relay::{
     OUTBOX_CONFLICT_METRIC, OUTBOX_DISPATCHED_METRIC, OUTBOX_REJECTED_METRIC,
     OUTBOX_UNAVAILABLE_METRIC, OutboxSource, Relay, RelayConfig, RelayMetrics, RelayPass,
 };
-pub use wire_interim::TokenFn;
