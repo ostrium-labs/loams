@@ -50,6 +50,7 @@ attribution in a later edit.
 | Loams file | Origin | Origin files |
 |---|---|---|
 | `crates/loams-resp/src/frame.rs` | Tidis `5558562`, mini-redis (through Tidis) | `src/frame.rs`, `src/parse.rs` |
+| `crates/loams-resp/src/server.rs` | Tidis `5558562`, mini-redis (through Tidis) | `src/server.rs`, `src/connection.rs` |
 
 ## The check
 

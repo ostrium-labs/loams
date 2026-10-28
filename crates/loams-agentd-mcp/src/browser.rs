@@ -101,6 +101,14 @@ impl Browser {
         }
     }
 
+    /// Close the run's pages, then stop a local engine (D2112): called when
+    /// the run's MCP server exits.
+    pub async fn shutdown(&self) {
+        if let Ok(provider) = &self.provider {
+            provider.shutdown().await;
+        }
+    }
+
     fn provider(&self) -> Result<&Arc<dyn BrowserProvider>, String> {
         self.provider
             .as_ref()

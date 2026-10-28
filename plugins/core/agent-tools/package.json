@@ -16,7 +16,7 @@
     "@loams-core/types": "workspace:*"
   },
   "devDependencies": {
-    "@types/uuid": "^10.0.0"
+    "@types/uuid": "11.0.0"
   },
   "scripts": {
     "build": "pnpm --filter @loams-plugins/root build"

@@ -187,6 +187,7 @@ unicode-segmentation = { package = "unicode-segmentation", version = "=1.13.3", 
 url = { package = "url", version = "=2.5.8", default-features = true, features = ["serde", "std"] }
 uuid = { package = "uuid", version = "=1.28.0", default-features = true, features = ["fast-rng", "js", "rng", "serde", "std", "v4", "v7", "zerocopy"] }
 webbrowser = { package = "webbrowser", version = "=1.2.4", default-features = false }
+webpki-roots = { package = "webpki-roots", version = "=1.0.10", default-features = false }
 x509-parser = { package = "x509-parser", version = "=0.18.1", default-features = true, features = ["ring", "verify"] }
 xxhash-rust = { package = "xxhash-rust", version = "=0.8.19", default-features = false, features = ["xxh3", "xxh32", "xxh64"] }
 zeroize = { package = "zeroize", version = "=1.9.1", default-features = true, features = ["alloc", "derive", "zeroize_derive"] }
