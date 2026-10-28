@@ -1022,6 +1022,8 @@ async fn the_link_endpoint_shows_version_and_applied_for_collections() {
         #[cfg(feature = "live")]
         live: None,
         durable: None,
+        #[cfg(feature = "meter")]
+        meter: None,
     });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
