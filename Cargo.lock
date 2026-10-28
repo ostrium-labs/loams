@@ -10129,6 +10129,7 @@ name = "loams-sidebar-browser"
 version = "0.1.2"
 dependencies = [
  "base64 0.23.1",
+ "flate2",
  "futures",
  "serde",
  "serde_json",

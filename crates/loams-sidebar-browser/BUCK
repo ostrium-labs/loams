@@ -53,6 +53,11 @@ cargo_package(
             "root": "tests/persistence.rs",
         },
         {
+            "name": "provider_parity",
+            "crate": "provider_parity",
+            "root": "tests/provider_parity/main.rs",
+        },
+        {
             "name": "recording",
             "crate": "recording",
             "root": "tests/recording.rs",
@@ -79,6 +84,9 @@ cargo_package(
         "//third-party/rust:tokio-tungstenite",
         "//third-party/rust:tracing",
         "//third-party/rust:url",
+    ],
+    dev_deps = [
+        "//third-party/rust:flate2",
     ],
     rustc_flags = [
         "-Funsafe_code",
