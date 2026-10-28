@@ -10,12 +10,35 @@ publish = false
 
 [dependencies]
 loams-house-types = { path = "../loams-house-types" }
+# A column's `DEFAULT`, an `ALIAS` and a `TTL` are catalog text in ClickHouse's
+# dialect, planned with the engine's own front end (plan HE1 Task 26, R26.4).
+loams-house-sql = { path = "../loams-house-sql" }
 datafusion.workspace = true
 # Iceberg metadata, manifests and deletes from Loams' fork, pinned by commit on
 # `loams/row-delta` (D1576; R11.8, R11.9), on Arrow 59 like DataFusion 55.2.
 # Named `iceberg-engine` in the workspace so it can sit beside the 0.10.1 that
 # `loams-house-lake` keeps until HE2 Task 60. Apache-2.0.
 iceberg-engine.workspace = true
+# The fork's `Storage` trait is async and `typetag`-registered: the engine's
+# object_store-backed storage implements it (R26.2). All three are already in
+# the lock through the fork (async-trait 0.1, typetag 0.2, futures 0.3).
+# MIT OR Apache-2.0.
+async-trait.workspace = true
+typetag = "0.2"
+futures.workspace = true
+# `TablePin` is serialisable: Task 39 sends it in hsw1 v2; the House's
+# `loams.ch.types` property is JSON. MIT OR Apache-2.0.
+serde.workspace = true
+serde_json.workspace = true
+bytes.workspace = true
+
+[dev-dependencies]
+# Fixture tables are written with the House's own writer (plan HE1 Task 26):
+# a dev-dependency only, so the engine stays apart from the chDB write path
+# (`engine_crates_stay_apart` reads normal dependencies).
+loams-house-lake = { path = "../loams-house-lake" }
+arrow-ipc.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
 [lints]
 workspace = true

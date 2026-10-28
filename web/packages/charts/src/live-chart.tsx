@@ -90,7 +90,7 @@ export function LiveChart({
   useEffect(() => () => throttle.cancel(), [throttle]);
 
   // New data, window or spec: reset and paint at once.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: specKey is the trigger that stands in for spec; paintRef reads the current spec.
+  // oxlint-disable-next-line react/exhaustive-deps -- specKey is the trigger that stands in for spec; paintRef reads the current spec.
   useEffect(() => {
     seriesOrderRef.current = [];
     rowsRef.current = win ? appendWindow([], stableData as Row[], win) : [...(stableData as Row[])];
@@ -99,7 +99,7 @@ export function LiveChart({
   }, [stableData, win, specKey, throttle]);
 
   // Theme or motion preference changed: repaint the same rows.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: theme and reducedMotion are triggers; paintRef reads their current values.
+  // oxlint-disable-next-line react/exhaustive-deps -- theme and reducedMotion are triggers; paintRef reads their current values.
   useEffect(() => {
     paintRef.current();
   }, [theme, reducedMotion]);

@@ -1,0 +1,1 @@
+SELECT b AND u8, b OR 0, NOT b, b AND b FROM t24 ORDER BY id

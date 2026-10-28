@@ -1,12 +1,13 @@
 //! D1591's profile tests: each assumption §74 §5.3 makes about Resonate, run
-//! against a real server through the interim adapter. Set
-//! `LOAMS_TEMPORAL_TEST_RESONATE_URL` to its protocol endpoint (e.g.
-//! `http://127.0.0.1:8001`); without it each test prints why and passes.
-//! The same scenarios run on the fake in `tests/fake.rs`. Set
-//! `LOAMS_TEMPORAL_TEST_RESONATE_STORE` to the server's store: on the SQL
-//! stores `profile_delayed_create` is an expected failure. Postgres refuses
-//! IDs with more than one `:` at 31ffb201 (500), so run these on SQLite, the
-//! in-memory blob store or TiKV until the fork's fix lands.
+//! against a real server through [`HttpDurability`] (on `resonate-client`
+//! since D2040). Set `LOAMS_TEMPORAL_TEST_RESONATE_URL` to its protocol
+//! endpoint (e.g. `http://127.0.0.1:8001`); without it each test prints why
+//! and passes. The same scenarios run on the fake in `tests/fake.rs`.
+//!
+//! The server should be the fork's `loams/main` at f29c04e1 or later, where
+//! every store honours `resonate:delay` (D2042). For an older server set
+//! `LOAMS_TEMPORAL_TEST_RESONATE_DELAY=ignored`: `profile_delayed_create` is
+//! then an expected failure.
 #![allow(clippy::unwrap_used)]
 
 mod common;
@@ -15,7 +16,7 @@ use common::{Clock, Names};
 use loams_temporal_resonate::HttpDurability;
 
 const ENV: &str = "LOAMS_TEMPORAL_TEST_RESONATE_URL";
-const STORE_ENV: &str = "LOAMS_TEMPORAL_TEST_RESONATE_STORE";
+const DELAY_ENV: &str = "LOAMS_TEMPORAL_TEST_RESONATE_DELAY";
 
 fn server(name: &str) -> Option<(HttpDurability, Clock, Names)> {
     let Ok(url) = std::env::var(ENV) else {
@@ -60,32 +61,21 @@ async fn profile_idempotent_create_conflicting_param() {
     common::idempotent_create_conflicting_param(&d, &c, &n).await;
 }
 
-/// Which store the server runs on (`LOAMS_TEMPORAL_TEST_RESONATE_STORE`:
-/// `sqlite`, `postgres`, `mysql`, `blob`, `tikv`; unset means strict).
-fn store() -> String {
-    std::env::var(STORE_ENV).unwrap_or_default()
-}
-
 #[tokio::test]
 async fn profile_delayed_create() {
     let Some((d, c, n)) = server("profile_delayed_create") else {
         return;
     };
-    if matches!(store().as_str(), "sqlite" | "postgres" | "mysql") {
-        // Expected failure: the SQL stores ignore `resonate:delay` at
-        // 31ffb201 and dispatch at create (FW7 profile; fork fix coming).
-        // The relay defers delayed creates for them (`DelaySupport::Defer`).
-        // When this starts passing, remove the expected failure.
+    if std::env::var(DELAY_ENV).as_deref() == Ok("ignored") {
+        // Expected failure on a server older than the fork's f29c04e1, whose
+        // SQL stores ignore `resonate:delay` and dispatch at create (X1.R11
+        // (5)). The relay defers delayed creates for it (`DelaySupport::Defer`).
         let run = tokio::spawn(async move { common::delayed_create(&d, &c, &n).await }).await;
         assert!(
             run.is_err(),
-            "{} now honours resonate:delay: remove this expected failure",
-            store()
+            "the server honours resonate:delay: unset {DELAY_ENV}"
         );
-        eprintln!(
-            "expected failure on {}: the SQL stores ignore resonate:delay (31ffb201)",
-            store()
-        );
+        eprintln!("expected failure: the server ignores resonate:delay ({DELAY_ENV}=ignored)");
         return;
     }
     common::delayed_create(&d, &c, &n).await;

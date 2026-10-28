@@ -352,3 +352,68 @@ fn field_of_a_type_carries_the_type() {
     );
     assert!(f.is_nullable());
 }
+
+/// `date_time_output_format` (HE1 Task 37): `iso` is always UTC with `T` and
+/// `Z`; `unix_timestamp` is the seconds, with a `DateTime64`'s fraction; and a
+/// zone-less `DateTime` is written in the session's zone.
+#[test]
+fn date_time_output_format_and_session_zone() {
+    use loams_house_types::text::{DateTimeOutput, unix_timestamp_text};
+    let kolkata: ArrayRef = Arc::new(
+        TimestampSecondArray::from(vec![1_792_697_523]).with_timezone_opt(Some("Asia/Kolkata")),
+    );
+    let t = ty("DateTime('Asia/Kolkata')");
+    let text = |settings: &TextSettings, t: &ChType, a: &ArrayRef, style: Style| {
+        let mut out = Vec::new();
+        write_value(t, a.as_ref(), 0, style, settings, &mut out).unwrap();
+        String::from_utf8(out).unwrap()
+    };
+    let simple = TextSettings::default();
+    assert_eq!(
+        text(&simple, &t, &kolkata, Style::Tsv),
+        "2026-10-23 01:02:03"
+    );
+    let iso = TextSettings {
+        date_time_output: DateTimeOutput::Iso,
+        ..TextSettings::default()
+    };
+    assert_eq!(text(&iso, &t, &kolkata, Style::Tsv), "2026-10-22T19:32:03Z");
+    assert_eq!(
+        text(&iso, &t, &kolkata, Style::Json),
+        "\"2026-10-22T19:32:03Z\""
+    );
+    let unix = TextSettings {
+        date_time_output: DateTimeOutput::UnixTimestamp,
+        ..TextSettings::default()
+    };
+    assert_eq!(text(&unix, &t, &kolkata, Style::Tsv), "1792697523");
+    let ms: ArrayRef = Arc::new(
+        TimestampMillisecondArray::from(vec![1_792_717_323_500]).with_timezone_opt(Some("UTC")),
+    );
+    let t64 = ty("DateTime64(3, 'UTC')");
+    assert_eq!(text(&unix, &t64, &ms, Style::Tsv), "1792717323.500");
+    assert_eq!(
+        text(&iso, &t64, &ms, Style::Tsv),
+        "2026-10-23T01:02:03.500Z"
+    );
+    // A zone-less DateTime takes the session's zone.
+    let plain: ArrayRef = Arc::new(TimestampSecondArray::from(vec![1_792_697_523]));
+    let session = TextSettings {
+        timezone: "Asia/Kolkata".into(),
+        ..TextSettings::default()
+    };
+    assert_eq!(
+        text(&session, &ty("DateTime"), &plain, Style::Tsv),
+        "2026-10-23 01:02:03"
+    );
+    assert_eq!(
+        text(&simple, &ty("DateTime"), &plain, Style::Tsv),
+        "2026-10-22 19:32:03"
+    );
+    // Negative values split towards zero, as ClickHouse's DecimalUtils::split.
+    assert_eq!(unix_timestamp_text(-2, 5, 1), "-1.5");
+    assert_eq!(unix_timestamp_text(-1, 5, 1), "-0.5");
+    assert_eq!(unix_timestamp_text(-3, 0, 2), "-3.00");
+    assert_eq!(DateTimeOutput::parse("iso"), Some(DateTimeOutput::Iso));
+    assert_eq!(DateTimeOutput::parse("ISO"), None);
+}

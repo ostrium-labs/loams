@@ -1,6 +1,7 @@
 //! The transactional Kafka sink (`exactly_once`, OR-7, plan Task 9).
 //!
-//! * `transactional.id = loams-<ns>-<instance>-<split>`, where the split is
+//! * `transactional.id = <prefix><instance>-<split>` (`prefix` is the
+//!   config's `transactional_id_prefix`, default `loams-<ns>-`), where the split is
 //!   the SDK's Fabric split. `recover()` calls `init_transactions`, which
 //!   fences any older producer with the same id (a zombie after a crash or a
 //!   reschedule) and aborts the transaction it left open, then reads the
@@ -48,9 +49,12 @@ use crate::error::{join_error, kafka_error};
 use crate::record::OutRecord;
 use crate::sink::{producer_config, records, send_all};
 
-/// `loams-<ns>-<instance>-<split>`.
-pub fn transactional_id(instance: &InstanceKey, split: &str) -> String {
-    format!("loams-{}-{}-{split}", instance.namespace, instance.name)
+/// `<prefix><instance>-<split>`, the prefix defaulting to `loams-<ns>-`.
+pub fn transactional_id(instance: &InstanceKey, prefix: Option<&str>, split: &str) -> String {
+    match prefix {
+        Some(p) => format!("{p}{}-{split}", instance.name),
+        None => format!("loams-{}-{}-{split}", instance.namespace, instance.name),
+    }
 }
 
 /// The checkpoint record's key: `<ns>/<instance>/<split>`.
@@ -170,7 +174,11 @@ fn token_seq(t: &TxnToken) -> Result<u64, ConnectorError> {
 
 impl TransactionalKafkaSink {
     pub fn new(conn: Arc<Connection>) -> Self {
-        let txn_id = transactional_id(&conn.instance, FABRIC_SPLIT);
+        let txn_id = transactional_id(
+            &conn.instance,
+            conn.cfg.transactional_id_prefix.as_deref(),
+            FABRIC_SPLIT,
+        );
         let key = checkpoint_key(&conn.instance, FABRIC_SPLIT);
         Self {
             conn,
@@ -538,8 +546,13 @@ mod tests {
     fn names() {
         let i = InstanceKey::new(4, "orders-out");
         assert_eq!(
-            transactional_id(&i, FABRIC_SPLIT),
+            transactional_id(&i, None, FABRIC_SPLIT),
             "loams-4-orders-out-fabric"
+        );
+        assert_eq!(
+            transactional_id(&i, Some("loams-prod-"), FABRIC_SPLIT),
+            "loams-prod-orders-out-fabric",
+            "under the Confluent module's PREFIXED ACL"
         );
         assert_eq!(checkpoint_key(&i, FABRIC_SPLIT), "4/orders-out/fabric");
         let p = checkpoint_partition("4/orders-out/fabric", 7);

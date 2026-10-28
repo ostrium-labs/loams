@@ -119,7 +119,7 @@ export function RouteLink({
 /** The page's breadcrumbs (and tab title, the last crumb), as the original console showed them. */
 export function useTrail(router: RouterService, crumbs: { label: string; href?: string }[]) {
   const key = JSON.stringify(crumbs);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the crumbs' content
+  // oxlint-disable-next-line react/exhaustive-deps -- keyed on the crumbs' content
   useEffect(() => {
     router.setTrail?.(crumbs);
   }, [key, router]);

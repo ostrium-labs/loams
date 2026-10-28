@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 import {
   Alert,
   AlertDescription,
@@ -202,7 +202,7 @@ describe('display', () => {
 
 describe('review follow-ups (#714)', () => {
   it('a Button rendered as a <button> keeps type=button', () => {
-    // biome-ignore lint/a11y/useButtonType: the point is that Button supplies the type
+    // oxlint-disable-next-line react/button-has-type -- the point is that Button supplies the type
     render(<Button render={<button />}>Go</Button>);
     expect(screen.getByRole('button', { name: 'Go' }).getAttribute('type')).toBe('button');
   });

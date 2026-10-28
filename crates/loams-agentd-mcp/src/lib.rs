@@ -22,13 +22,21 @@
 //! shim's methods on the run's own session and its side chats. Every send
 //! from such an agent is attributed to its originating chat, and a chat can
 //! never message itself.
+//!
+//! With `LOAMS_BROWSER_PROVIDER` set (`local` or `service`), the server also
+//! lists the browser tools (`browser_open`, `browser_snapshot`, `browser_click`
+//! and the rest; D2115): the agents' headless browser, Obscura, launched on
+//! loopback for this run or reached as the deployment's `browser` service,
+//! with the same tools and the same policy either way.
 
+mod browser;
 mod jsonrpc;
 mod knowledge;
 mod loams_desktop;
 mod tools;
 mod transcript;
 
+pub use browser::{Browser, ENV_BROWSER_PROVIDER};
 pub use jsonrpc::serve_stdio;
 pub use knowledge::{ENV_KNOWLEDGE_CONFIG, load_reader};
 pub use loams_desktop::{Endpoint, LoamsDesktop, Origin};
@@ -79,6 +87,9 @@ pub async fn run(config: McpConfig) -> anyhow::Result<()> {
         && let Some(reader) = load_reader(path).await
     {
         tools = tools.with_knowledge(reader);
+    }
+    if let Some(browser) = Browser::from_env() {
+        tools = tools.with_browser(std::sync::Arc::new(browser));
     }
     serve_stdio(std::sync::Arc::new(tools)).await
 }

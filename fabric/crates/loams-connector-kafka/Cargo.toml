@@ -13,6 +13,11 @@ publish = false
 loams-connector-sdk = { path = "../loams-connector-sdk" }
 # The SDK's own async-trait pin (0.1.92 in fabric/Cargo.lock).
 async-trait = "0.1.89"
+# Debezium's Avro change events (CC1 Task 3, `format: debezium-avro`):
+# apache-avro 0.22.0 (Apache-2.0), already in fabric/Cargo.lock through the
+# Iceberg fork. Default features off (no codecs: Confluent wire-format
+# datums are not object-container files).
+apache-avro = { version = "=0.22.0", default-features = false }
 base64.workspace = true
 bytes.workspace = true
 # Awaiting a batch's delivery reports together. Already in fabric/Cargo.lock.

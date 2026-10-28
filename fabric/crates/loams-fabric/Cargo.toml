@@ -1,6 +1,6 @@
 [package]
 name = "loams-fabric"
-description = "The Loams Fabric binary: `loams-fabric house` runs the Loams House front (HS1 Task 7, design §49 §3). The roles of FL1 (`ingest`, `flow`) join it when FL1 lands. Links no libchdb (D761) unless built with `inproc-worker`."
+description = "The Loams Fabric binary: `loams-fabric house` runs the Loams House front (HS1 Task 7, design §49 §3); `loams-fabric connect` runs native connector instances on a BYOC VM (CC1 Task 1, D1821). The roles of FL1 (`ingest`, `flow`) join it when FL1 lands. Links no libchdb (D761) unless built with `inproc-worker`."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -20,6 +20,14 @@ path = "src/main.rs"
 # forbids in release images, so it is off by default; `no_libchdb_in_front`
 # checks the default graph.
 inproc-worker = ["loams-house/inproc-worker", "dep:loams-chdb-sys"]
+# The connector families `connect` runs (CC1 Task 1, OR-6: `rdkafka` and the
+# database drivers stay in their family crates). The release image builds with
+# all three (`connectors`); a dev build has none and runs only what tests
+# register.
+conn-kafka = ["dep:loams-connector-kafka"]
+conn-postgres = ["dep:loams-connector-postgres"]
+conn-mysql = ["dep:loams-connector-mysql"]
+connectors = ["conn-kafka", "conn-postgres", "conn-mysql"]
 
 [dependencies]
 clap.workspace = true
@@ -35,13 +43,41 @@ loams-store = { path = "../../../crates/loams-store" }
 # `--single-node`'s generated local key.
 uuid.workspace = true
 # The front runs on a multi-threaded runtime and stops on SIGINT or SIGTERM.
-tokio = { workspace = true, features = ["rt-multi-thread", "signal", "macros"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "signal", "macros", "net", "fs", "io-util", "time", "sync"] }
+
+# `connect` (CC1 Task 1, D1821): the SDK's pipeline, the registry and
+# `FileSecretStore` from loams-flow, and the families behind `conn-*`.
+loams-connector-sdk = { path = "../loams-connector-sdk" }
+loams-flow = { path = "../loams-flow" }
+loams-connector-kafka = { path = "../loams-connector-kafka", optional = true }
+loams-connector-postgres = { path = "../loams-connector-postgres", optional = true }
+loams-connector-mysql = { path = "../loams-connector-mysql", optional = true }
+async-trait.workspace = true
+base64.workspace = true
+bytes.workspace = true
+# The engine's Connect API over TCP or its Unix socket, and the loopback admin
+# API: hyper 1 HTTP/1.1, already in the graph through the SDK. MIT.
+http.workspace = true
+http-body-util.workspace = true
+hyper = { workspace = true, features = ["client", "server", "http1"] }
+hyper-util = { workspace = true, features = ["tokio"] }
+jsonschema.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_norway.workspace = true
+thiserror.workspace = true
+# The role's own subscriber (scrubbing every line) is written by hand; the
+# SDK logs through `tracing`.
+tracing.workspace = true
 
 # Only with `inproc-worker`: the `links = "chdb"` package whose
 # `DEP_CHDB_LIB_DIR` this package's `build.rs` turns into an rpath.
 loams-chdb-sys = { path = "../loams-chdb-sys", optional = true }
 
 [dev-dependencies]
+# `connect_*` tests: the SDK's reference connector and paused clocks.
+loams-connector-sdk = { path = "../loams-connector-sdk" }
+tokio = { workspace = true, features = ["rt-multi-thread", "signal", "macros", "net", "fs", "io-util", "time", "sync", "test-util"] }
 # The data directory stamp's tests (UP1 Task 6).
 tempfile.workspace = true
 # `tls_listener_serves_with_its_certificate` (HS1 Task 20): a TLS client that

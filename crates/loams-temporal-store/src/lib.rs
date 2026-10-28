@@ -11,6 +11,13 @@
 //! next event ID are checked, and the events, the new state, the outbox rows
 //! and the visibility row are written together or not at all.
 //!
+//! Around the commit path the store also offers what a production gateway
+//! needs (D2060–D2065): opaque, run-bound history page tokens
+//! ([`Store::history_page`]), the run listing with keyset page tokens
+//! ([`Store::list_runs`]), retention of closed runs and of dispatched outbox
+//! rows ([`Store::purge_expired`], driven by [`retention::spawn_sweeper`]),
+//! and shard ownership for several relays ([`owned_shards`]).
+//!
 //! Two implementations:
 //! - [`MemStore`]: in process, for tests and the dev mode.
 //! - [`PgStore`]: Postgres through sqlx. It needs a **session-pooled or
@@ -25,12 +32,15 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 mod mem;
+mod page;
 mod pg;
+pub mod retention;
 mod shard;
 
 pub use mem::MemStore;
-pub use pg::{OUTBOX_CHANNEL, PgStore};
-pub use shard::{DEFAULT_SHARDS, MAX_SHARDS, shard_of};
+pub use page::MAX_PAGE_SIZE;
+pub use pg::{OUTBOX_CHANNEL, PgStore, PgStoreOptions, SCHEMA_VERSION};
+pub use shard::{DEFAULT_SHARDS, MAX_SHARDS, owned_shards, shard_of};
 
 /// The status value the store treats as "running" in `current_runs`
 /// (`temporal.api.enums.v1.WorkflowExecutionStatus.RUNNING`). Every other
@@ -179,6 +189,92 @@ pub struct Loaded {
     pub status: i32,
 }
 
+/// One page of a run's history ([`Store::history_page`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HistoryPage {
+    pub events: Vec<EventRow>,
+    /// Opaque; empty when this page is the last one written so far. The
+    /// token is bound to the run: another run refuses it.
+    pub next_page_token: Vec<u8>,
+}
+
+/// Which runs [`Store::list_runs`] returns. Every set field must match.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RunFilter {
+    /// `Some(true)`: running only; `Some(false)`: closed only.
+    pub open: Option<bool>,
+    pub workflow_id: Option<String>,
+    pub workflow_type: Option<String>,
+}
+
+/// A [`Store::list_runs`] request.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ListRuns {
+    pub namespace_id: String,
+    pub filter: RunFilter,
+    /// 1..=[`MAX_PAGE_SIZE`].
+    pub page_size: usize,
+    /// Empty for the first page; otherwise a previous page's token, with the
+    /// same namespace and filter.
+    pub page_token: Vec<u8>,
+}
+
+/// A run in a listing, with its visibility row.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ListedRun {
+    pub key: RunKey,
+    pub visibility: VisibilityRow,
+}
+
+/// One page of [`Store::list_runs`]: newest start first, then by workflow ID
+/// and run ID.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RunPage {
+    pub runs: Vec<ListedRun>,
+    /// Opaque; empty on the last page.
+    pub next_page_token: Vec<u8>,
+}
+
+/// How much one [`Store::purge_expired`] call may delete.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PurgeLimits {
+    /// Closed runs past their namespace's retention, oldest close first.
+    pub max_runs: usize,
+    /// Outbox rows dispatched more than `dispatched_outbox_ttl` ago.
+    pub max_outbox_rows: usize,
+    pub dispatched_outbox_ttl: Duration,
+}
+
+impl Default for PurgeLimits {
+    fn default() -> Self {
+        Self {
+            max_runs: 100,
+            max_outbox_rows: 1000,
+            dispatched_outbox_ttl: Duration::from_secs(24 * 3600),
+        }
+    }
+}
+
+/// What one [`Store::purge_expired`] call deleted.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PurgeReport {
+    pub runs: u64,
+    pub events: u64,
+    /// Outbox rows of the purged runs (all dispatched: a run with an
+    /// undispatched row is never purged).
+    pub run_outbox_rows: u64,
+    /// Dispatched outbox rows past the TTL, of runs still kept.
+    pub dispatched_outbox_rows: u64,
+}
+
+impl PurgeReport {
+    /// Whether a limit was reached, so another call may find more.
+    pub fn saturated(&self, l: &PurgeLimits) -> bool {
+        (l.max_runs > 0 && self.runs >= l.max_runs as u64)
+            || (l.max_outbox_rows > 0 && self.dispatched_outbox_rows >= l.max_outbox_rows as u64)
+    }
+}
+
 #[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]
 pub enum StoreError {
     /// The run's version moved on: reload and apply again, or reject.
@@ -227,6 +323,11 @@ pub trait Store: Send + Sync + 'static {
         &self,
         namespace_id: &str,
     ) -> Result<Option<NamespaceRecord>, StoreError>;
+    /// Replaces a namespace's mutable fields (retention, state, config) by
+    /// ID; its name and Loams namespace never change (TMP-api D2088). The
+    /// new retention applies to runs already closed: the next retention
+    /// purge uses it. [`StoreError::NotFound`] if there is no such namespace.
+    async fn update_namespace(&self, ns: NamespaceRecord) -> Result<(), StoreError>;
     /// Ordered by name.
     async fn list_namespaces(
         &self,
@@ -286,6 +387,48 @@ pub trait Store: Send + Sync + 'static {
     fn outbox_wakeups(&self) -> tokio::sync::watch::Receiver<u64>;
 
     async fn visibility(&self, key: &RunKey) -> Result<Option<VisibilityRow>, StoreError>;
+
+    /// One page of a run's history: up to `page_size` events (1..=
+    /// [`MAX_PAGE_SIZE`]) from where `page_token` points (the first event when
+    /// it is empty). [`StoreError::InvalidArgument`] for a token that is
+    /// malformed or was issued for another run; [`StoreError::NotFound`] if
+    /// the run does not exist.
+    async fn history_page(
+        &self,
+        key: &RunKey,
+        page_token: &[u8],
+        page_size: usize,
+    ) -> Result<HistoryPage, StoreError> {
+        page::check_page_size(page_size)?;
+        let from = page::decode_history(key, page_token)?;
+        // One more than asked, to know whether another page exists.
+        let mut events = self.history(key, from, page_size + 1).await?;
+        let next_page_token = if events.len() > page_size {
+            events.truncate(page_size);
+            let next = events.last().map_or(from, |e| e.event_id + 1);
+            page::encode_history(key, next)
+        } else {
+            Vec::new()
+        };
+        Ok(HistoryPage {
+            events,
+            next_page_token,
+        })
+    }
+
+    /// The runs of one namespace that have a visibility row, newest start
+    /// first, filtered and paged by keyset (a run started while paging never
+    /// shifts a page). [`StoreError::InvalidArgument`] for a bad page size or
+    /// a token issued for another namespace or filter.
+    async fn list_runs(&self, req: &ListRuns) -> Result<RunPage, StoreError>;
+
+    /// Deletes, within `limits`: closed runs whose close time plus their
+    /// namespace's retention has passed and that have no undispatched outbox
+    /// row (each with its history, visibility, outbox rows, and its
+    /// current-run row if it is still the current run); then dispatched
+    /// outbox rows older than the TTL. Safe to run from several replicas at
+    /// once: a run being committed is skipped, never waited for.
+    async fn purge_expired(&self, limits: &PurgeLimits) -> Result<PurgeReport, StoreError>;
 }
 
 /// Checks a commit's shape against the run's stored next event ID.

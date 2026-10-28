@@ -9,7 +9,7 @@
 // namespace a `--drift` re-record needs to be fresh, so the replay runs against
 // the fixture server only.
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 import { Loams } from '../src/loams.js';
 import { replayAppFixture } from './helpers/app-replay.js';
 import { startFixtureServer, type FixtureServer } from './helpers/server.js';

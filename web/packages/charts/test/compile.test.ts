@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { ChartSpecError, compileSpec, kindForChartType, pivotRows } from '../src/compile';
 import { readChartTheme } from '../src/theme';
 import type { ChartSpec } from '../src/types';
