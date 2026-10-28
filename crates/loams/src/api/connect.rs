@@ -287,6 +287,9 @@ const PRODUCT_FEATURES: &[(&str, bool)] = &[
     ("registry", cfg!(feature = "registry")),
     ("buildcache", cfg!(feature = "buildcache")),
     ("meter", cfg!(feature = "meter")),
+    // The managed engines' CLIs (design 81; preview).
+    ("flink", cfg!(feature = "flink")),
+    ("spark", cfg!(feature = "spark")),
 ];
 
 /// `GetInstance.features`: every product feature of the build
