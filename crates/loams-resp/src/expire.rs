@@ -69,7 +69,9 @@ pub async fn sweep(
                 let (n, full) = store
                     .run(TxnOptions::new("resp.expire"), move |t| {
                         let (start, end) = (start.clone(), end.clone());
-                        Box::pin(async move { sweep_page(t, db, &start, &end, batch, now_ms).await })
+                        Box::pin(
+                            async move { sweep_page(t, db, &start, &end, batch, now_ms).await },
+                        )
                     })
                     .await?
                     .value;
@@ -132,51 +134,109 @@ mod tests {
 
     #[tokio::test]
     async fn expired_keys_are_reclaimed_without_reads() {
-        let mut t = Recording { ts: 5, ..Recording::default() };
-        string::write(&mut t, 0, b"s", b"v", 100, None).await.expect("a write");
+        let mut t = Recording {
+            ts: 5,
+            ..Recording::default()
+        };
+        string::write(&mut t, 0, b"s", b"v", 100, None)
+            .await
+            .expect("a write");
         let fields = vec![(b"f".to_vec(), b"v".to_vec())];
-        hash::set(&mut t, 0, b"h", &fields, false, 0).await.expect("hset").expect("a hash");
-        let mut m = read_meta(&mut t, 0, b"h").await.expect("a read").expect("meta");
+        hash::set(&mut t, 0, b"h", &fields, false, 0)
+            .await
+            .expect("hset")
+            .expect("a hash");
+        let mut m = read_meta(&mut t, 0, b"h")
+            .await
+            .expect("a read")
+            .expect("meta");
         m.expire_at_ms = 100;
-        crate::types::put_meta(&mut t, 0, b"h", &m).await.expect("a put");
+        crate::types::put_meta(&mut t, 0, b"h", &m)
+            .await
+            .expect("a put");
         note(&mut t, 0, b"h", &m).await.expect("a note");
-        string::write(&mut t, 0, b"keep", b"v", 0, None).await.expect("a write");
+        string::write(&mut t, 0, b"keep", b"v", 0, None)
+            .await
+            .expect("a write");
         let mut total = 0;
         for bucket in 0..EXPIRY_BUCKETS {
             let (start, end) = due_range(0, bucket, 200);
-            total += sweep_page(&mut t, 0, &start, &end, 256, 200).await.expect("a sweep").0;
+            total += sweep_page(&mut t, 0, &start, &end, 256, 200)
+                .await
+                .expect("a sweep")
+                .0;
         }
         assert_eq!(total, 2);
         assert_eq!(read_meta(&mut t, 0, b"s").await.expect("a read"), None);
         assert_eq!(read_meta(&mut t, 0, b"h").await.expect("a read"), None);
-        assert!(t.data.contains_key(&layout::gc_key(0, b"h", m.ver)), "the hash goes to GC");
-        assert!(read_meta(&mut t, 0, b"keep").await.expect("a read").is_some());
-        assert!(!t.data.keys().any(|k| k.get(1) == Some(&EXPIRY)), "the index is empty");
+        assert!(
+            t.data.contains_key(&layout::gc_key(0, b"h", m.ver)),
+            "the hash goes to GC"
+        );
+        assert!(
+            read_meta(&mut t, 0, b"keep")
+                .await
+                .expect("a read")
+                .is_some()
+        );
+        assert!(
+            !t.data.keys().any(|k| k.get(1) == Some(&EXPIRY)),
+            "the index is empty"
+        );
     }
 
     #[tokio::test]
     async fn overwritten_key_is_not_expired_by_stale_index() {
-        let mut t = Recording { ts: 5, ..Recording::default() };
-        string::write(&mut t, 0, b"k", b"old", 100, None).await.expect("a write");
-        let old = read_meta(&mut t, 0, b"k").await.expect("a read").expect("meta");
+        let mut t = Recording {
+            ts: 5,
+            ..Recording::default()
+        };
+        string::write(&mut t, 0, b"k", b"old", 100, None)
+            .await
+            .expect("a write");
+        let old = read_meta(&mut t, 0, b"k")
+            .await
+            .expect("a read")
+            .expect("meta");
         // Overwritten without a TTL, and a second key whose TTL was later
         // extended: both stale entries must leave the keys alone.
         t.ts = 6;
-        string::write(&mut t, 0, b"k", b"new", 0, Some(&old)).await.expect("a write");
-        string::write(&mut t, 0, b"x", b"v", 100, None).await.expect("a write");
-        let mut x = read_meta(&mut t, 0, b"x").await.expect("a read").expect("meta");
+        string::write(&mut t, 0, b"k", b"new", 0, Some(&old))
+            .await
+            .expect("a write");
+        string::write(&mut t, 0, b"x", b"v", 100, None)
+            .await
+            .expect("a write");
+        let mut x = read_meta(&mut t, 0, b"x")
+            .await
+            .expect("a read")
+            .expect("meta");
         x.expire_at_ms = 10_000;
-        crate::types::put_meta(&mut t, 0, b"x", &x).await.expect("a put");
+        crate::types::put_meta(&mut t, 0, b"x", &x)
+            .await
+            .expect("a put");
         note(&mut t, 0, b"x", &x).await.expect("a note");
         let mut total = 0;
         for bucket in 0..EXPIRY_BUCKETS {
             let (start, end) = due_range(0, bucket, 200);
-            total += sweep_page(&mut t, 0, &start, &end, 256, 200).await.expect("a sweep").0;
+            total += sweep_page(&mut t, 0, &start, &end, 256, 200)
+                .await
+                .expect("a sweep")
+                .0;
         }
         assert_eq!(total, 0);
-        assert_eq!(string::get(&mut t, 0, b"k", 200).await.expect("get"), Ok(Some(b"new".to_vec())));
-        assert_eq!(string::get(&mut t, 0, b"x", 200).await.expect("get"), Ok(Some(b"v".to_vec())));
+        assert_eq!(
+            string::get(&mut t, 0, b"k", 200).await.expect("get"),
+            Ok(Some(b"new".to_vec()))
+        );
+        assert_eq!(
+            string::get(&mut t, 0, b"x", 200).await.expect("get"),
+            Ok(Some(b"v".to_vec()))
+        );
         // The extended TTL's own entry is still there for later.
-        assert!(t.data.contains_key(&layout::expiry_key(0, b"x", x.ver, 10_000)));
+        assert!(
+            t.data
+                .contains_key(&layout::expiry_key(0, b"x", x.ver, 10_000))
+        );
     }
 }

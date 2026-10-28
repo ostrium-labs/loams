@@ -57,13 +57,44 @@ mod tests {
     #[tokio::test]
     async fn one_lease_holder() {
         let store = loams_kv::testing::embedded().await;
-        assert!(hold_at(&store, "expire", 1, 1_000, 10_000).await.expect("a hold"));
-        assert!(!hold_at(&store, "expire", 2, 1_000, 10_500).await.expect("a hold"), "held by 1");
-        assert!(hold_at(&store, "expire", 1, 1_000, 10_900).await.expect("a renewal"));
-        assert!(!hold_at(&store, "expire", 2, 1_000, 11_800).await.expect("a hold"), "renewed to 11,900");
-        assert!(hold_at(&store, "expire", 2, 1_000, 12_000).await.expect("a takeover"), "expired");
-        assert!(!hold_at(&store, "expire", 1, 1_000, 12_100).await.expect("a hold"));
+        assert!(
+            hold_at(&store, "expire", 1, 1_000, 10_000)
+                .await
+                .expect("a hold")
+        );
+        assert!(
+            !hold_at(&store, "expire", 2, 1_000, 10_500)
+                .await
+                .expect("a hold"),
+            "held by 1"
+        );
+        assert!(
+            hold_at(&store, "expire", 1, 1_000, 10_900)
+                .await
+                .expect("a renewal")
+        );
+        assert!(
+            !hold_at(&store, "expire", 2, 1_000, 11_800)
+                .await
+                .expect("a hold"),
+            "renewed to 11,900"
+        );
+        assert!(
+            hold_at(&store, "expire", 2, 1_000, 12_000)
+                .await
+                .expect("a takeover"),
+            "expired"
+        );
+        assert!(
+            !hold_at(&store, "expire", 1, 1_000, 12_100)
+                .await
+                .expect("a hold")
+        );
         // Leases of different names are independent.
-        assert!(hold_at(&store, "gc", 1, 1_000, 12_100).await.expect("a hold"));
+        assert!(
+            hold_at(&store, "gc", 1, 1_000, 12_100)
+                .await
+                .expect("a hold")
+        );
     }
 }

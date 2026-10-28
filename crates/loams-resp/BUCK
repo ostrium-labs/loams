@@ -64,6 +64,11 @@ cargo_package(
             "root": "tests/strings.rs",
         },
         {
+            "name": "workers",
+            "crate": "workers",
+            "root": "tests/workers.rs",
+        },
+        {
             "name": "zsets",
             "crate": "zsets",
             "root": "tests/zsets.rs",
