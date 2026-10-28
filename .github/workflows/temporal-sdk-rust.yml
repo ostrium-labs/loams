@@ -64,6 +64,11 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    # An explicit `shell: bash` runs with -o pipefail, so a failing step
+    # piped into tee fails the job.
+    defaults:
+      run:
+        shell: bash
     env:
       OC_OUT: ${{ github.workspace }}/target/compute
       CARGO_BUILD_JOBS: '4'

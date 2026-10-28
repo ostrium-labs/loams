@@ -181,6 +181,7 @@ name = "corpus-rust"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "futures",
  "prost",
  "serde",
  "serde_json",
@@ -188,6 +189,7 @@ dependencies = [
  "temporalio-common",
  "temporalio-macros",
  "temporalio-sdk",
+ "temporalio-workflow",
  "tokio",
 ]
 

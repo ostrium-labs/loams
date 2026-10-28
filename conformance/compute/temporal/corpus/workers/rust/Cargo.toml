@@ -35,6 +35,10 @@ path = "src/main.rs"
 # connects with explicit options), which keeps the build small.
 temporalio-sdk = { version = "=1.1.0", default-features = false }
 temporalio-macros = "=1.1.0"
+# The macros expand to paths in these two crates (`::temporalio_workflow`,
+# `::futures`), so the worker must depend on them directly.
+temporalio-workflow = "=1.1.0"
+futures = "0.3"
 # vendored-protox: the protos compile with the pure-Rust protox, so the
 # build image needs no protoc. tls-ring stays on (the client's default).
 temporalio-client = { version = "=1.1.0", features = ["vendored-protox"] }
