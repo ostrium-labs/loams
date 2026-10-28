@@ -28,6 +28,7 @@ replaces this one.
 | `workers/python/` | uv project (`temporalio` 1.34.0, D2136): `corpus_py/` holds the workflows, activities, the starter (`drive.py`), the generator and worker CLI (`python -m corpus_py`) and the replayer (`replay.py`); not yet run, and `histories/python/` is empty until its first generation (D2137) |
 | `workers/dotnet/` | .NET project (NuGet `Temporalio` 1.20.0, net8.0; TSDK-dotnet): `Workflows.cs` (one class per scenario), `Activities.cs`, `Scenarios.cs` (the list), `Program.cs` (`generate`: worker and starter; `replay`: `WorkflowReplayer` over a directory) |
 | `generate-dotnet.sh` | the .NET histories into `histories/dotnet/` against upstream Temporal (compat mode by default), exported by the Go exporter, and the manifest's `dotnet` entries |
+| `workers/java/` | Maven project (`io.temporal:temporal-sdk` 1.40.0, D2130): `Workflows.java` (one `@WorkflowInterface` per scenario, every scenario including the Go-only ones), `CorpusActivities*.java`, `Generate.java` (generator, drivers and its own exporter, D2131) and the replayer test `CorpusReplayTest` (`WorkflowReplayer`, D2134); not yet run, and `histories/java/` is absent until its first generation (`generate-java.sh`, or the `temporal-corpus-java.yml` dispatch job) |
 | `workers/ruby/` | Ruby (gem `temporalio` 1.9.0 on sdk-core, `Gemfile.lock`): `lib/workflows.rb`, `lib/activities.rb`, `lib/scenarios.rb`, the worker and starter `generate.rb`, the replay check `replay.rb` (`WorkflowReplayer`), and `test/` (minitest). Its histories are not committed yet (D2153) |
 | `generate-ruby.sh` | the Ruby half against a server: generate, Go export, replay, `manifest.py build --langs ruby` |
 | `replay/go/` | `replay_test.go`: every Go history replays with `worker.NewWorkflowReplayer` |
@@ -92,6 +93,8 @@ With the compat-mode stack up (`conformance/compute/temporal/run.sh`, or
 ```sh
 conformance/compute/temporal/corpus/generate.sh                       # go,ts (CORPUS_LANGS)
 conformance/compute/temporal/corpus/generate.sh --langs go,ts,python  # with the Python worker
+conformance/compute/temporal/corpus/generate.sh --langs go,ts,java    # with the Java worker
+conformance/compute/temporal/corpus/generate-java.sh                 # Java alone (manifest.py build --languages java)
 python3 conformance/compute/temporal/corpus/manifest.py check
 ```
 

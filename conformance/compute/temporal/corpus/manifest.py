@@ -12,12 +12,12 @@ language, SDK version, server version and image, Loams Postgres major (or
 SHA-256 of its .json and .binpb. `check` fails when a file is not listed, a
 listed file is missing or its hash differs, a .json has no .binpb, a
 scenario of scenarios.json is missing in a language (Go-only ones in Go
-only), or the workers' scenario lists differ from scenarios.json. `stable`
+and Java only), or the workers' scenario lists differ from scenarios.json. `stable`
 compares two generations after normalize.py's masking. Stdlib only.
 
-Go and TypeScript are always required. Every other language (`dotnet`, `ruby`) is
+Go and TypeScript are always required. Every other language (`dotnet`, `java`, `ruby`) is
 checked once `histories/<lang>/` has files, so its worker can land before its
-committed corpus; `build --languages dotnet` rebuilds only that language's
+committed corpus; `build --languages dotnet` (or `java`) rebuilds only that language's
 entries and keeps the others as they are.
 """
 
@@ -33,7 +33,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 HIST = HERE / "histories"
 MANIFEST = HERE / "manifest.json"
-SDK = {"go": "go.temporal.io/sdk", "ts": "@temporalio/worker", "python": "temporalio", "dotnet": "Temporalio", "ruby": "temporalio"}
+SDK = {"go": "go.temporal.io/sdk", "ts": "@temporalio/worker", "python": "temporalio", "dotnet": "Temporalio", "java": "io.temporal:temporal-sdk", "ruby": "temporalio"}
 # Languages whose histories every corpus must have. Another language (an SDK
 # leg added later, D2137) is required once histories/<lang>/ has a file:
 # until its first generation against the oracle, only its worker's scenario
@@ -52,12 +52,15 @@ def sdk_versions() -> dict[str, str]:
     pkg = json.loads((HERE / "workers/ts/package.json").read_text())
     py = re.search(r'"temporalio==([0-9.]+)"', (HERE / "workers/python/pyproject.toml").read_text())
     dotnet = re.search(r'Include="Temporalio" Version="([0-9.]+)"', (HERE / "workers/dotnet/Corpus.csproj").read_text())
+    java = re.search(r"<temporal\.sdk\.version>([0-9.]+)</temporal\.sdk\.version>",
+                     (HERE / "workers/java/pom.xml").read_text())
     rb = re.search(r"gem 'temporalio', '([0-9.]+)'", (HERE / "workers/ruby/Gemfile").read_text())
     return {
         "go": go.group(1) if go else "?",
         "ts": pkg["dependencies"]["@temporalio/worker"],
         "python": py.group(1) if py else "?",
         "dotnet": dotnet.group(1) if dotnet else "?",
+        "java": java.group(1) if java else "?",
         "ruby": rb.group(1) if rb else "?",
     }
 
@@ -137,9 +140,11 @@ def worker_lists() -> dict[str, list[str]]:
     py = re.findall(r'^    \("([a-z0-9_]+)", "DX[1-4]"\),$',
                     (HERE / "workers/python/corpus_py/scenarios.py").read_text(), re.M)
     dotnet = re.findall(r'\("([a-z0-9_]+)", "DX[1-4]"\)', (HERE / "workers/dotnet/Scenarios.cs").read_text())
+    java = re.findall(r'new Scenario\("([a-z0-9_]+)", "DX[1-4]"\)',
+                      (HERE / "workers/java/src/main/java/dev/loams/conformance/temporal/corpus/Scenarios.java").read_text())
     rb = re.findall(r"^    \['([a-z0-9_]+)', 'DX[1-4]'\],?$",
                     (HERE / "workers/ruby/lib/scenarios.rb").read_text(), re.M)
-    return {"go": go, "ts": ts, "python": py, "dotnet": dotnet, "ruby": rb}
+    return {"go": go, "ts": ts, "python": py, "dotnet": dotnet, "java": java, "ruby": rb}
 
 
 def check() -> list[str]:
@@ -152,7 +157,12 @@ def check() -> list[str]:
         problems.append("workers/ts/src/generate.ts does not list scenarios.json's non-Go-only scenarios in order")
     if lists["python"] != [s["name"] for s in want if not s["go_only"]]:
         problems.append("workers/python/corpus_py/scenarios.py does not list scenarios.json's non-Go-only scenarios in order")
+    # Java runs every scenario, the Go-only ones included.
+    if lists["java"] != [s["name"] for s in want]:
+        problems.append("workers/java's Scenarios.java does not list scenarios.json's scenarios in order")
     sdks = sdk_versions()
+    if sdks["java"] != pin("TEMPORAL_SDK_JAVA"):
+        problems.append(f"workers/java pins temporal-sdk {sdks['java']}, pins.env TEMPORAL_SDK_JAVA {pin('TEMPORAL_SDK_JAVA')}")
     if sdks["python"] != pin("TEMPORAL_SDK_PY"):
         problems.append(f"workers/python pins temporalio {sdks['python']}, pins.env TEMPORAL_SDK_PY {pin('TEMPORAL_SDK_PY')}")
     if lists["dotnet"] != [s["name"] for s in want if not s["go_only"]]:
@@ -188,7 +198,8 @@ def check() -> list[str]:
     have = {(e["language"], e["scenario"]) for e in listed.values()}
     langs = languages()
     for s in want:
-        for lang in ("go",) if s["go_only"] else langs:
+        # Go and Java have every scenario; the others lack the Go-only ones.
+        for lang in (lang for lang in langs if lang in ("go", "java") or not s["go_only"]):
             if (lang, s["name"]) not in have:
                 problems.append(f"scenario {s['name']} has no {lang} history")
     for b in sorted(HIST.glob("*/*.binpb")):
