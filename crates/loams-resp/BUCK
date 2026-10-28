@@ -44,9 +44,19 @@ cargo_package(
             "root": "tests/server.rs",
         },
         {
+            "name": "sets",
+            "crate": "sets",
+            "root": "tests/sets.rs",
+        },
+        {
             "name": "strings",
             "crate": "strings",
             "root": "tests/strings.rs",
+        },
+        {
+            "name": "zsets",
+            "crate": "zsets",
+            "root": "tests/zsets.rs",
         },
     ],
     deps = [

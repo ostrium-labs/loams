@@ -18,7 +18,9 @@ use crate::layout::{self, Kind, Meta, StringBody};
 pub mod collection;
 pub mod counter;
 pub mod hash;
+pub mod set;
 pub mod string;
+pub mod zset;
 
 /// The transaction operations the types use.
 #[allow(async_fn_in_trait)]
@@ -28,6 +30,13 @@ pub(crate) trait Kv {
     async fn get(&mut self, key: &[u8]) -> Result<Option<Vec<u8>>, TxnError>;
     async fn batch_get(&mut self, keys: Vec<Vec<u8>>) -> Result<Vec<Pair>, TxnError>;
     async fn scan(
+        &mut self,
+        start: &[u8],
+        end: Option<&[u8]>,
+        limit: usize,
+    ) -> Result<Vec<Pair>, TxnError>;
+    /// Like [`scan`](Kv::scan), in descending key order.
+    async fn scan_reverse(
         &mut self,
         start: &[u8],
         end: Option<&[u8]>,
@@ -54,6 +63,14 @@ impl Kv for Txn {
         limit: usize,
     ) -> Result<Vec<Pair>, TxnError> {
         Txn::scan(self, start, end, limit).await
+    }
+    async fn scan_reverse(
+        &mut self,
+        start: &[u8],
+        end: Option<&[u8]>,
+        limit: usize,
+    ) -> Result<Vec<Pair>, TxnError> {
+        Txn::scan_reverse(self, start, end, limit).await
     }
     async fn put(&mut self, key: &[u8], value: Vec<u8>) -> Result<(), TxnError> {
         Txn::put(self, key, value).await
@@ -216,6 +233,23 @@ pub(crate) mod recording {
                 .data
                 .range(start.to_vec()..)
                 .take_while(|(k, _)| end.is_none_or(|e| k.as_slice() < e))
+                .take(limit)
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect())
+        }
+        async fn scan_reverse(
+            &mut self,
+            start: &[u8],
+            end: Option<&[u8]>,
+            limit: usize,
+        ) -> Result<Vec<Pair>, TxnError> {
+            Ok(self
+                .data
+                .range(start.to_vec()..)
+                .take_while(|(k, _)| end.is_none_or(|e| k.as_slice() < e))
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
                 .take(limit)
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect())
