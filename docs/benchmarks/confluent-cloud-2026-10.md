@@ -2,7 +2,7 @@
 
 Lane CFB, for the owner's request of 2026-10-28: "in confluent set 400 dollar limit and use it now fully, run multi cluster and back traces using signoz, push to max, use it to test aws, azure and gcp also and publish the benchmarks". The budget was raised to $2,000 the same day.
 
-The harness, raw results and ledger are in [`bench/confluent/`](../../bench/confluent/). The numbers are in [`results/2026-10-28/`](../../bench/confluent/results/2026-10-28/). Every number below is **measured** unless it is labelled **projected**.
+Summary issue: #1509. The harness, raw results and ledger are in [`bench/confluent/`](../../bench/confluent/). The numbers are in [`results/2026-10-28/`](../../bench/confluent/results/2026-10-28/). Every number below is **measured** unless it is labelled **projected**.
 
 ## Summary
 
