@@ -2692,6 +2692,34 @@ impl Server {
                 .map_err(ServerError::Config)?;
             principals.with_authz(authz)
         };
+        // The identity sync (design 76 §8.1, plan IA1 IA3): off unless LOAMS_IDENTITY_SYNC=on,
+        // with LOAMS_AUTHZ=openfga. Its state is a document of its own in the metastore.
+        if config.cluster.is_none()
+            && let Some(sync) = crate::auth::identity_sync::SyncSettings::from_vars(
+                |k| std::env::var(k).ok(),
+                &config.auth.authz,
+                config
+                    .auth
+                    .oidc
+                    .as_ref()
+                    .and_then(|o| o.issuers.first())
+                    .map(|i| i.issuer.as_str()),
+            )
+            .map_err(ServerError::Config)?
+        {
+            let state = Arc::new(crate::auth::identity_sync::MetaSyncState::new(
+                meta_store.clone(),
+                store.clone(),
+            ));
+            crate::auth::identity_sync::start(
+                &sync,
+                &config.auth.authz,
+                principals.directory.clone(),
+                state,
+            )
+            .await
+            .map_err(ServerError::Config)?;
+        }
         // LV1 plan Task 17: a revoked key or a removed member closes its
         // Live sessions.
         #[cfg(feature = "live")]
@@ -3227,6 +3255,22 @@ impl Server {
                 git_listener,
             )
         });
+        // Loams Meter's public services, on gateway nodes (ME1 role wiring,
+        // part 1): records in the metastore and the bucket, beside the
+        // principal directory. A node that cannot build it serves without it
+        // (its RPCs answer `meter_not_served`) rather than not starting.
+        #[cfg(feature = "meter")]
+        let meter = if roles.gateway {
+            match api::meter::build(meta_store.clone(), store.clone(), &principals) {
+                Ok(m) => Some(m),
+                Err(err) => {
+                    tracing::warn!(%err, "Loams Meter's services are off on this node");
+                    None
+                }
+            }
+        } else {
+            None
+        };
         let state = AppState {
             meta: meta_store.clone(),
             writer: writer.clone(),
@@ -3258,6 +3302,8 @@ impl Server {
             #[cfg(feature = "live")]
             live,
             durable: durable.filter(|_| main_port_serves_durable(config)),
+            #[cfg(feature = "meter")]
+            meter,
         };
         let (app, tailscale, connect_socket) = match (roles.gateway, config.cluster.is_some()) {
             (true, false) => {

@@ -25,6 +25,16 @@ setup = "corpus/he1/22/setup.sql"
 cases = "corpus/he1/22/cases"
 
 [[corpus]]
+name = "he1-28"
+setup = "corpus/he1/28/setup.sql"
+cases = "corpus/he1/28/cases"
+
+[[corpus]]
+name = "he1-30"
+setup = "corpus/he1/30/setup.sql"
+cases = "corpus/he1/30/cases"
+
+[[corpus]]
 name = "he1-24"
 setup = "corpus/he1/24/setup.sql"
 cases = "corpus/he1/24/cases"
@@ -46,3 +56,23 @@ cases = "corpus/he1/26/cases"
 name = "he1-37"
 setup = "corpus/he1/37/setup.sql"
 cases = "corpus/he1/37/cases"
+
+[[corpus]]
+name = "he1-32"
+setup = "corpus/he1/32/setup.sql"
+cases = "corpus/he1/32/cases"
+
+[[corpus]]
+name = "he1-36"
+setup = "corpus/he1/36/setup.sql"
+cases = "corpus/he1/36/cases"
+
+[[corpus]]
+name = "he1-31"
+setup = "corpus/he1/31/setup.sql"
+cases = "corpus/he1/31/cases"
+
+[[corpus]]
+name = "he1-38"
+setup = "corpus/he1/38/setup.sql"
+cases = "corpus/he1/38/cases"

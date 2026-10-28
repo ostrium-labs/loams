@@ -317,7 +317,10 @@ impl EngineRpc {
             }
             methods::UNINSTALL_LISTING => {
                 let p = params_of::<calls::UninstallListing>(params)?;
-                host.uninstall(&p.id).map_err(|e| failed(&e))?;
+                // Retires the agent's machine user too (D1632).
+                host.uninstall_retiring(&p.id)
+                    .await
+                    .map_err(|e| failed(&e))?;
                 self.marketplace_changed(host);
                 reply::<calls::UninstallListing, _>(&OkReply::OK)
             }

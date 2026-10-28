@@ -17,7 +17,11 @@ use tracing::warn;
 use crate::cgroup::CgroupReader;
 use crate::delta::{DeltaTracker, TrackerState};
 use crate::error::MeterError;
-use crate::event::{Attribution, Measurement, Meter, MeterEvent, SourceKind, time_from_unix_ms};
+use crate::event::{
+    Attribution, Measurement, Meter, MeterEvent, PLATFORM_ORG, SourceKind, Tier, time_from_unix_ms,
+};
+use crate::host::proto::Invocation;
+use crate::host::reconcile::{DEFAULT_TOLERANCE_BP, HostLedger, SplitKind, TenantKey};
 use crate::resolver::TenantResolver;
 use crate::spool::{Spool, sync_dir, write_synced};
 
@@ -25,6 +29,17 @@ use crate::spool::{Spool, sync_dir, write_synced};
 struct AgentState {
     next_seq: u64,
     tracker: TrackerState,
+    /// Host-reported CPU not yet reconciled (T1, crate::host).
+    #[serde(default)]
+    host: HostLedger,
+}
+
+/// The last path component of the shared T1 host cgroup.
+pub const WASM_HOST_SCOPE: &str = "wasm-host.scope";
+
+/// Whether the cgroup at `path` is the shared T1 host.
+pub fn is_wasm_host(path: &str) -> bool {
+    path.rsplit('/').next() == Some(WASM_HOST_SCOPE)
 }
 
 /// What one tick did.
@@ -51,6 +66,10 @@ pub struct Agent<R> {
     tracker: DeltaTracker,
     spool: Spool,
     next_seq: u64,
+    host_ledger: HostLedger,
+    host_reports: bool,
+    tolerance_bp: u64,
+    scanned: Vec<String>,
 }
 
 impl<R: TenantResolver> Agent<R> {
@@ -73,19 +92,35 @@ impl<R: TenantResolver> Agent<R> {
             .map(|e| e.data.seq + 1)
             .max()
             .unwrap_or(0);
-        let (tracker, next_seq) = match load_state(&state_path)? {
+        let (tracker, next_seq, host_ledger) = match load_state(&state_path)? {
             Some(state) => {
                 let mut tracker = DeltaTracker::from_state(state.tracker);
+                let mut host = state.host;
                 for event in &spooled {
                     if event.data.node == node && event.data.seq >= state.next_seq {
                         tracker.replay(event);
+                        // A host report spooled after the state was saved.
+                        if event.data.meter == Meter::WasmFuel {
+                            host.add_cpu(
+                                TenantKey {
+                                    org: event.data.org.clone(),
+                                    namespace: event.data.namespace.clone(),
+                                    function: event.data.function.clone().unwrap_or_default(),
+                                },
+                                event.data.cpu_usec.unwrap_or(0),
+                            );
+                        }
                     }
                 }
-                (tracker, state.next_seq.max(max_spooled))
+                (tracker, state.next_seq.max(max_spooled), host)
             }
             None => {
                 let fresh = u64::try_from(now_ms).unwrap_or(0).saturating_mul(1_000);
-                (DeltaTracker::new(), fresh.max(max_spooled))
+                (
+                    DeltaTracker::new(),
+                    fresh.max(max_spooled),
+                    HostLedger::default(),
+                )
             }
         };
         Ok(Self {
@@ -96,7 +131,75 @@ impl<R: TenantResolver> Agent<R> {
             tracker,
             spool,
             next_seq,
+            host_ledger,
+            host_reports: false,
+            tolerance_bp: DEFAULT_TOLERANCE_BP,
+            scanned: Vec::new(),
         })
+    }
+
+    /// Turns on the T1 source: the CPU of the shared wasmtime host cgroup is
+    /// split by the host reports ([`Agent::record_host_report`]) instead of
+    /// being attributed to the cgroup's resolved tenant.
+    pub fn set_host_reports(&mut self, enabled: bool) {
+        self.host_reports = enabled;
+    }
+
+    /// Spools one host report's invocations as
+    /// `io.loams.dev.usage.function.fuel.v1` events and adds their CPU to
+    /// the window being reconciled. `Ok` means durable: the caller may ack
+    /// the report. The event ids derive from the work
+    /// (`<node>/wasm/<host_id>:<seq>:<index>`), so a report the host resends
+    /// after an agent crash deduplicates downstream.
+    pub fn record_host_report(
+        &mut self,
+        host_id: &str,
+        report_seq: u64,
+        invocations: &[Invocation],
+    ) -> Result<usize, MeterError> {
+        let mut events = Vec::with_capacity(invocations.len());
+        let mut cleaned = Vec::with_capacity(invocations.len());
+        for (index, inv) in invocations.iter().enumerate() {
+            let mut inv = inv.clone();
+            if inv.org.is_empty() || inv.namespace.is_empty() {
+                inv.org = PLATFORM_ORG.to_string();
+                inv.namespace = PLATFORM_ORG.to_string();
+            }
+            let measurement = Measurement {
+                attribution: Attribution {
+                    org: inv.org.clone(),
+                    namespace: inv.namespace.clone(),
+                    function: (!inv.function.is_empty()).then(|| inv.function.clone()),
+                    tier: Some(Tier::T1),
+                },
+                source: SourceKind::Wasm,
+                meter: Meter::WasmFuel,
+                value: inv.fuel,
+                window_start: time_from_unix_ms(inv.start_unix_ms),
+                window_end: time_from_unix_ms(inv.end_unix_ms),
+                resource: format!("{host_id}/{}", inv.invocation_id),
+                counter: None,
+                peak_bytes: None,
+                cpu_usec: Some(inv.cpu_usec),
+                estimated: inv.cpu_estimated,
+            };
+            let mut event = measurement.into_event(&self.node, self.next_seq + index as u64);
+            event.id = format!("{}/wasm/{host_id}:{report_seq}:{index}", self.node);
+            events.push(event);
+            cleaned.push(inv);
+        }
+        self.spool.append(&events)?;
+        self.next_seq += events.len() as u64;
+        self.host_ledger.add(&cleaned);
+        self.save_state()?;
+        Ok(events.len())
+    }
+
+    /// Records a host's gap: the window being reconciled is incomplete and
+    /// is split by the last complete window's shares. `Ok` means durable.
+    pub fn record_gap(&mut self) -> Result<(), MeterError> {
+        self.host_ledger.gap();
+        self.save_state()
     }
 
     /// Scans once at `now_ms` and spools the resulting events.
@@ -106,10 +209,17 @@ impl<R: TenantResolver> Agent<R> {
             warn!(cgroup = %path, error = %e, "cgroup unreadable; skipped this tick");
         }
         let samples = scan.samples;
+        self.scanned = samples.iter().map(|s| s.path.clone()).collect();
         let skipped: Vec<String> = scan.skipped.into_iter().map(|(p, _)| p).collect();
         let mut observation = self.tracker.observe(&samples, now_ms);
         self.tracker.carry(&mut observation, &skipped);
-        let mut events = Vec::new();
+        let node = self.node.as_str();
+        let base_seq = self.next_seq;
+        let split_host = self.host_reports;
+        let tolerance_bp = self.tolerance_bp;
+        // Committed with the baselines, only once the events are spooled.
+        let mut ledger = self.host_ledger.clone();
+        let mut events: Vec<MeterEvent> = Vec::new();
         for delta in &observation.deltas {
             let attribution = self
                 .resolver
@@ -118,9 +228,15 @@ impl<R: TenantResolver> Agent<R> {
             let resource = delta.sample.resource_id();
             let window_start = time_from_unix_ms(delta.window_start_ms);
             let window_end = time_from_unix_ms(delta.window_end_ms);
-            let mut push = |meter, value, counter, peak_bytes| {
+            let push = |events: &mut Vec<MeterEvent>,
+                        attribution: Attribution,
+                        meter: Meter,
+                        value: u64,
+                        counter: Option<u64>,
+                        peak_bytes: Option<u64>,
+                        estimated: bool| {
                 let measurement = Measurement {
-                    attribution: attribution.clone(),
+                    attribution,
                     source: SourceKind::Cgroup,
                     meter,
                     value,
@@ -130,25 +246,72 @@ impl<R: TenantResolver> Agent<R> {
                     counter,
                     peak_bytes,
                     cpu_usec: None,
-                    estimated: false,
+                    estimated,
                 };
-                let seq = self.next_seq + events.len() as u64;
-                events.push(measurement.into_event(&self.node, seq));
+                let seq = base_seq + events.len() as u64;
+                events.push(measurement.into_event(node, seq));
             };
-            if delta.cpu_usec > 0 {
+            let counter = Some(delta.sample.cpu_usec);
+            if delta.cpu_usec > 0 && split_host && is_wasm_host(&delta.sample.path) {
+                // T1: the host cgroup's CPU, split by the host reports; the
+                // tenants' sum never exceeds it (crate::host::reconcile).
+                let split = ledger.reconcile(delta.cpu_usec, tolerance_bp);
+                if matches!(split.kind, SplitKind::Scaled | SplitKind::PreviousShares) {
+                    warn!(
+                        total = delta.cpu_usec,
+                        kind = ?split.kind,
+                        "host reports disagree with the host cgroup; total apportioned"
+                    );
+                }
+                let estimated = split.kind.estimated();
+                for (tenant, cpu) in &split.tenants {
+                    let tenant_attribution = Attribution {
+                        org: tenant.org.clone(),
+                        namespace: tenant.namespace.clone(),
+                        function: (!tenant.function.is_empty()).then(|| tenant.function.clone()),
+                        tier: Some(Tier::T1),
+                    };
+                    push(
+                        &mut events,
+                        tenant_attribution,
+                        Meter::CpuUsec,
+                        *cpu,
+                        counter,
+                        None,
+                        estimated,
+                    );
+                }
+                if split.overhead > 0 {
+                    push(
+                        &mut events,
+                        Attribution::platform(),
+                        Meter::CpuUsec,
+                        split.overhead,
+                        counter,
+                        None,
+                        false,
+                    );
+                }
+            } else if delta.cpu_usec > 0 {
                 push(
+                    &mut events,
+                    attribution.clone(),
                     Meter::CpuUsec,
                     delta.cpu_usec,
-                    Some(delta.sample.cpu_usec),
+                    counter,
                     None,
+                    false,
                 );
             }
             if delta.memory_byte_seconds > 0 {
                 push(
+                    &mut events,
+                    attribution.clone(),
                     Meter::MemoryByteSeconds,
                     delta.memory_byte_seconds,
                     delta.sample.memory_current,
                     delta.sample.memory_peak,
+                    false,
                 );
             }
         }
@@ -170,8 +333,15 @@ impl<R: TenantResolver> Agent<R> {
         }
         self.next_seq += events.len() as u64;
         self.tracker.commit(observation);
+        self.host_ledger = ledger;
         self.save_state()?;
         Ok(report)
+    }
+
+    /// The target cgroups the last scan read (paths relative to the cgroup
+    /// root), for the final-read watches ([`crate::final_read`]).
+    pub fn scanned(&self) -> &[String] {
+        &self.scanned
     }
 
     /// The spool, for the forwarder.
@@ -193,6 +363,7 @@ impl<R: TenantResolver> Agent<R> {
         let state = AgentState {
             next_seq: self.next_seq,
             tracker: self.tracker.state().clone(),
+            host: self.host_ledger.clone(),
         };
         let json = serde_json::to_vec(&state)
             .map_err(|e| MeterError::parse(&self.state_path, e.to_string()))?;

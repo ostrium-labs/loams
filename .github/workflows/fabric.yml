@@ -127,6 +127,9 @@ jobs:
               - "proto/loams/options/**"
               - "proto/loams/errors/**"
               - "docs/api/reasons.md"
+              # `loams-house-worker`'s meter test (ME1) compiles Loams Meter's
+              # House SQL from the root workspace with `#[path]`.
+              - "crates/loams-meter-house/src/sql.rs"
               # `loams-house-mine`'s checks (HE0): the function and engine
               # matrix (`the_committed_matrix_is_up_to_date`) reads chDB's
               # dumps, the classes and the mined profile, and writes

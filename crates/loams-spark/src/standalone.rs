@@ -16,7 +16,9 @@ use loams_authz::{
 };
 use serde::Deserialize;
 
-use crate::auth::{Authenticator, DevAuthenticator, KeyEntry, KeyTable, Principal};
+use crate::auth::{
+    AnyOf, Authenticator, DevAuthenticator, KeyEntry, KeyTable, NamespaceKeys, Principal,
+};
 use crate::proxy::{
     AccessCheck, DEFAULT_MAX_MESSAGE_BYTES, NoLifecycle, ProxySettings, SparkConnectProxy,
 };
@@ -24,7 +26,7 @@ use crate::route::{HostPattern, RouteConfig, StaticRouter};
 use crate::sessions::Limits;
 
 /// The proxy's configuration file.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     /// Where to listen (h2c; TLS is the gateway's or the ingress's).
@@ -60,13 +62,17 @@ pub struct Config {
     /// API keys from a JSON file `{"keys": [...]}` (a mounted secret).
     #[serde(default)]
     pub keys_file: Option<PathBuf>,
+    /// Keys as `<namespace> <sha256>` lines (engine-gateway's compose key
+    /// file, shared with the RisingWave module).
+    #[serde(default)]
+    pub namespace_keys_file: Option<PathBuf>,
     /// Backends.
     #[serde(default)]
     pub routes: Vec<RouteConfig>,
 }
 
 /// Who decides access after authentication.
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum AuthzConfig {
     /// A key's namespace is its grant: holding a key of namespace `n` allows
@@ -146,7 +152,7 @@ pub fn load(text: &str) -> Result<Config, String> {
 ///
 /// A message naming the problem.
 pub fn check(c: &Config) -> Result<(), String> {
-    let no_keys = c.keys.is_empty() && c.keys_file.is_none();
+    let no_keys = c.keys.is_empty() && c.keys_file.is_none() && c.namespace_keys_file.is_none();
     let dev_parts = no_keys || matches!(c.authz, AuthzConfig::AllowAll);
     if dev_parts && !c.insecure_dev {
         return Err("no API keys or authz = allow_all need insecure_dev = true".into());
@@ -183,6 +189,7 @@ pub fn dev_config(uri: &str) -> Config {
         authz: AuthzConfig::AllowAll,
         keys: Vec::new(),
         keys_file: None,
+        namespace_keys_file: None,
         routes: vec![RouteConfig {
             namespace: "local".into(),
             instance: "spark".into(),
@@ -208,7 +215,25 @@ pub fn build(c: &Config) -> Result<SparkConnectProxy, String> {
             serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
         entries.extend(file.keys);
     }
-    let auth: Arc<dyn Authenticator> = if entries.is_empty() {
+    let lines = match &c.namespace_keys_file {
+        Some(path) => {
+            let text = std::fs::read_to_string(path)
+                .map_err(|e| format!("reading {}: {e}", path.display()))?;
+            Some(NamespaceKeys::parse(&text).map_err(|e| format!("{}: {e}", path.display()))?)
+        }
+        None => None,
+    };
+    let auth: Arc<dyn Authenticator> = if let Some(lines) = lines {
+        if entries.is_empty() {
+            Arc::new(lines)
+        } else {
+            {
+                let table: Arc<dyn Authenticator> = Arc::new(KeyTable::new(entries)?);
+                let lines: Arc<dyn Authenticator> = Arc::new(lines);
+                Arc::new(AnyOf(vec![table, lines]))
+            }
+        }
+    } else if entries.is_empty() {
         let ns = c
             .dev_namespace
             .clone()
@@ -276,6 +301,24 @@ pub fn build(c: &Config) -> Result<SparkConnectProxy, String> {
 /// A message when the proxy cannot be built or the listener fails.
 pub async fn run(config: Config, shutdown: impl Future<Output = ()> + Send) -> Result<(), String> {
     let proxy = build(&config)?;
+    let listener = tokio::net::TcpListener::bind(config.listen)
+        .await
+        .map_err(|e| format!("binding {}: {e}", config.listen))?;
+    serve(proxy, listener, shutdown).await
+}
+
+/// Serves a built proxy on a bound listener until `shutdown`, with its idle
+/// sweeper. `loams-gateway` binds the listener itself (so a bind error fails
+/// its start) and calls this for its `[spark]` section.
+///
+/// # Errors
+///
+/// A message when the server fails.
+pub async fn serve(
+    proxy: SparkConnectProxy,
+    listener: tokio::net::TcpListener,
+    shutdown: impl Future<Output = ()> + Send,
+) -> Result<(), String> {
     let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
     let sweeper = tokio::spawn(proxy.clone().run_sweeper({
         let mut rx = stop_rx.clone();
@@ -283,11 +326,15 @@ pub async fn run(config: Config, shutdown: impl Future<Output = ()> + Send) -> R
             let _ = rx.wait_for(|stop| *stop).await;
         }
     }));
-    tracing::info!(listen = %config.listen, routes = config.routes.len(), "Spark Connect proxy");
+    let addr = listener.local_addr().map_err(|e| e.to_string())?;
+    tracing::info!(listen = %addr, "Spark Connect proxy");
     let served = tonic::transport::Server::builder()
         .http2_keepalive_interval(Some(Duration::from_secs(30)))
         .add_service(proxy)
-        .serve_with_shutdown(config.listen, shutdown)
+        .serve_with_incoming_shutdown(
+            tokio_stream::wrappers::TcpListenerStream::new(listener),
+            shutdown,
+        )
         .await
         .map_err(|e| e.to_string());
     let _ = stop_tx.send(true);

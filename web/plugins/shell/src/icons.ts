@@ -6,8 +6,10 @@ import {
   Circle,
   Cloud,
   Code,
+  CreditCard,
   Database,
   Factory,
+  Gauge,
   GitBranch,
   LayoutDashboard,
   LayoutGrid,
@@ -70,6 +72,9 @@ const ICONS: Record<string, LucideIcon> = {
   agents: Bot,
   access: Shield,
   studio: SquareTerminal,
+  // Loams Meter (design 63 §18): Settings › Billing.
+  billing: CreditCard,
+  meter: Gauge,
 };
 
 export const ICON_NAMES = Object.keys(ICONS);

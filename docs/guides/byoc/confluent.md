@@ -132,12 +132,12 @@ loams byoc confluent key create --integration confluent \
 **Rotate** without downtime:
 
 ```bash
-loams byoc confluent key rotate <same flags as create> \
-  --connect-admin http://loams-connect.<tailnet>.ts.net:7790 --admin-token-file ./connect-admin-token \
-  --restart-instance orders-in --restart-instance orders-out --grace 1h
+loams byoc confluent key rotate <same flags as create> --grace 1h
 ```
 
-It creates a new key and writes a new secret version. It then waits `--refresh-wait` (default 6m) for the VM's timer to copy the key, restarts the named instances, waits `--grace` and deletes the old keys. If you ran `sudo systemctl reload loams-byoc` on the VM already, pass `--refresh-wait 0s`. If a restart fails, or no instance is named, it keeps the old keys and says so. Without `--connect-admin`, it tells you to restart the instances yourself once the VM has the key.
+It creates a new key, writes a new secret version, waits `--grace`, then deletes the old keys. On the VM, `loams-byoc-confluent.timer` copies the new key within 5 minutes. When a key file changed, it restarts the `connect` service: each instance drains and checkpoints, then starts with the new key. `sudo systemctl reload loams-byoc` does the same at once. Keep `--grace` well above 5 minutes.
+
+The connect role's admin API (`POST /v1/connect/instances/{id}:restart`) is on the container's own loopback (`127.0.0.1:7790`), not on the tailnet. To restart single instances instead, run `rotate` on the VM: forward the port, then pass `--connect-admin http://127.0.0.1:7790 --restart-instance <name>` (and `--admin-token-file` if the role runs with `--admin-token-file`). With `--connect-admin`, it waits `--refresh-wait` (default 6m) for the copy, then restarts the named instances. If a restart fails, or no instance is named, it keeps the old keys.
 
 **Check** the placement and reachability from the VM (or anywhere):
 

@@ -8,8 +8,29 @@
 //! (Apache-2.0) as the second reference. Ported files carry the header of
 //! `docs/licences/ported-code.md`. No Redis source is used (D1649).
 //!
-//! Built so far: [`frame`], RESP frames and the request decoder (KV2 Task 1).
+//! - [`frame`]: RESP frames and the request decoder (KV2 Task 1).
+//! - [`config`], [`server`], [`cmd`]: the module's configuration, the
+//!   listener and connection loop, and the command table with the
+//!   connection and server commands (KV2 Task 2).
+//! - [`layout`]: the key layout and the meta record of D1653 (KV2 Task 3);
+//!   `types`: the Redis types on `loams-kv` transactions (strings in
+//!   Task 3).
+//! - [`testing`]: a test gateway and client.
 
+pub mod cmd;
+pub mod config;
+pub mod cursor;
+pub mod expire;
 pub mod frame;
+pub mod gc;
+pub mod layout;
+pub mod lease;
+pub mod metrics;
+pub mod server;
+pub mod testing;
+pub(crate) mod types;
+pub mod workers;
 
+pub use config::RespConfig;
 pub use frame::{Decoder, Limits, Proto, ProtoError, Value};
+pub use server::Server;

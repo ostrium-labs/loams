@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+<testsuite name="durable">
+<testcase classname="durable" name="durable_init_idempotent"/>
+<testcase classname="durable" name="pg_modes_reachable_direct"/>
+<testcase classname="durable" name="pg_modes_reachable_session"><failure message="no session endpoint (#1129)"/></testcase>
+</testsuite>
+</testsuites>

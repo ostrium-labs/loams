@@ -47,9 +47,9 @@
     "@loams/cordis": "workspace:*",
     "@loams/slots": "workspace:*",
     "@loams/ui": "workspace:*",
-    "dompurify": "3.4.16",
+    "dompurify": "3.4.17",
     "lucide-react": "catalog:",
-    "marked": "18.1.0"
+    "marked": "18.1.1"
   },
   "peerDependencies": {
     "react": ">=19"

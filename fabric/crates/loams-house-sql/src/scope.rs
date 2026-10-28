@@ -454,8 +454,14 @@ impl Scope<'_> {
         out: &mut Vec<Source>,
     ) -> Result<(), ChError> {
         match t {
-            TableFactor::Table { name, alias, .. } => {
-                let cols = self.table_columns(name);
+            TableFactor::Table {
+                name, alias, args, ..
+            } => {
+                let cols = if args.is_some() {
+                    table_function_columns(name)
+                } else {
+                    self.table_columns(name)
+                };
                 let parts: Vec<Ident> = name
                     .0
                     .iter()
@@ -1129,38 +1135,51 @@ impl Walk for ColumnsIn<'_> {
             }
             return Ok(());
         }
-        if let Expr::Function(f) = e {
-            if let FunctionArguments::List(list) = &mut f.args {
-                let mut args = Vec::new();
-                for a in std::mem::take(&mut list.args) {
-                    match a {
-                        FunctionArg::Unnamed(FunctionArgExpr::Expr(x)) if is_columns(&x) => {
-                            let Expr::Function(cf) = &x else {
-                                unreachable!()
-                            };
-                            match matched(self.sources, &plain_args(cf))? {
-                                Some(found) => {
-                                    args.extend(found.into_iter().map(|m| {
-                                        FunctionArg::Unnamed(FunctionArgExpr::Expr(m.expr))
-                                    }))
-                                }
-                                None => {
-                                    self.failed = true;
-                                    args.push(FunctionArg::Unnamed(FunctionArgExpr::Expr(x)));
-                                }
+        if let Expr::Function(f) = e
+            && let FunctionArguments::List(list) = &mut f.args
+        {
+            let mut args = Vec::new();
+            for a in std::mem::take(&mut list.args) {
+                match a {
+                    FunctionArg::Unnamed(FunctionArgExpr::Expr(x)) if is_columns(&x) => {
+                        let Expr::Function(cf) = &x else {
+                            unreachable!()
+                        };
+                        match matched(self.sources, &plain_args(cf))? {
+                            Some(found) => args.extend(
+                                found
+                                    .into_iter()
+                                    .map(|m| FunctionArg::Unnamed(FunctionArgExpr::Expr(m.expr))),
+                            ),
+                            None => {
+                                self.failed = true;
+                                args.push(FunctionArg::Unnamed(FunctionArgExpr::Expr(x)));
                             }
                         }
-                        other => args.push(other),
                     }
+                    other => args.push(other),
                 }
-                list.args = args;
             }
+            list.args = args;
         }
         children(e, self)
     }
 
     fn query(&mut self, _q: &mut Query) -> Result<(), ChError> {
         Ok(())
+    }
+}
+
+/// `untuple` of an expression the plan types: left as one select item for
+/// [`crate::untuple`] to expand after `SqlToRel` (plan HE1 Task 32).
+fn deferred_untuple(e: &Expr, alias: Option<&Ident>) -> SelectItem {
+    let alias = match alias.filter(|a| !is_generated(a)) {
+        Some(a) => a.clone(),
+        None => generated(&names::column_name(e)),
+    };
+    SelectItem::ExprWithAlias {
+        expr: e.clone(),
+        alias,
     }
 }
 
@@ -1206,16 +1225,12 @@ fn untuple(
                     ));
                 }
                 None => {
-                    return Err(ChError::not_implemented(
-                        "untuple of an expression whose type is known only after planning is not supported by the Loams House engine yet",
-                    ));
+                    return Ok(vec![deferred_untuple(e, alias)]);
                 }
             }
         }
         _ => {
-            return Err(ChError::not_implemented(
-                "untuple of an expression whose type is known only after planning is not supported by the Loams House engine yet",
-            ));
+            return Ok(vec![deferred_untuple(e, alias)]);
         }
     };
     let base = names::column_name(&arg);
@@ -1479,4 +1494,23 @@ impl Walk for Subst<'_, '_> {
     fn query(&mut self, q: &mut Query) -> Result<(), ChError> {
         self.scope.query(q, self.for_subqueries).map(|_| ())
     }
+}
+
+/// The columns of a table function the guard lets through (plan HE1 Task
+/// 38): `numbers*` give `number UInt64`, `zeros*` give `zero UInt8`.
+fn table_function_columns(name: &ObjectName) -> Option<Vec<Col>> {
+    let written = match name.0.as_slice() {
+        [ObjectNamePart::Identifier(i)] => i.value.as_str(),
+        _ => return None,
+    };
+    let (column, data_type) = match written {
+        "numbers" | "numbers_mt" => ("number", DataType::UInt64),
+        "zeros" | "zeros_mt" => ("zero", DataType::UInt8),
+        _ => return None,
+    };
+    Some(vec![Col {
+        name: column.to_string(),
+        internal: column.to_string(),
+        data_type: Some(data_type),
+    }])
 }
