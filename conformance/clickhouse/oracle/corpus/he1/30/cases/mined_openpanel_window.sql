@@ -1,0 +1,1 @@
+SELECT id FROM t30 WHERE dt64 >= toDateTime64(_CAST('2024-03-12 00:00:00', 'String'), _CAST(3, 'UInt8')) - INTERVAL _CAST(7, 'Int64') DAY ORDER BY id

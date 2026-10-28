@@ -29,6 +29,10 @@ thiserror.workspace = true
 # watch, and logs.
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "system-proxy"] }
 tracing.workspace = true
+# An installed agent's identity (IA4 Task 3, D1618, D1629): its Zitadel machine key's RFC 7523
+# assertion, and the assertion's clock.
+loams-zitadel.workspace = true
+time.workspace = true
 # The conformance runner (MK1 Task 8): agentd's ACP JSON-RPC client, and the
 # agent process, its loopback world and the signals that stop it. The
 # workspace tokio has "full", which covers both.

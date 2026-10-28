@@ -352,6 +352,7 @@ fn negate(f: Filter, negated: bool) -> Filter {
 }
 
 /// Resolves names against the system attributes and `custom`.
+#[derive(Debug)]
 pub struct Resolver<'a> {
     pub custom: &'a BTreeMap<String, ValueType>,
 }

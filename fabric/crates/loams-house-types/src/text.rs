@@ -13,7 +13,11 @@
 //!   integers bare (`output_format_json_quote_64bit_integers = 0` is 26.9's
 //!   default), `/` escaped, named tuples as objects;
 //! * **Quoted** (`Values`, and every element inside a composite): strings and
-//!   dates in single quotes, `NULL`, `[…]`, `(…)`, `{k:v}` without spaces.
+//!   dates in single quotes, `NULL`, `[…]`, `(…)`, `{k:v}` without spaces;
+//! * **Raw** (`TabSeparatedRaw*`, ClickHouse's `serializeTextRaw`): as TSV,
+//!   but strings unescaped;
+//! * **Text** (`Pretty*`, `JSONStrings*`, ClickHouse's `serializeText`): as
+//!   Raw, but `NULL` is `ᴺᵁᴸᴸ` (HE1 Task 36).
 //!
 //! Floats are written in their shortest round-trip form, laid out as
 //! ClickHouse does: plain digits while the decimal exponent is in
@@ -50,6 +54,11 @@ pub enum Style {
     Json,
     /// `Values`, and values inside arrays, tuples and maps.
     Quoted,
+    /// `TabSeparatedRaw*`: TSV without escaping (`serializeTextRaw`).
+    Raw,
+    /// The presentational text of `Pretty*` and `JSONStrings*`
+    /// (`serializeText`): Raw, with `NULL` as `ᴺᵁᴸᴸ`.
+    Text,
 }
 
 /// `date_time_output_format`: how `DateTime` and `DateTime64` values are
@@ -201,7 +210,8 @@ fn bad_array(t: &ChType, array: &dyn Array) -> ChError {
 impl Writer<'_> {
     fn null(&self, style: Style, out: &mut Vec<u8>) {
         out.extend_from_slice(match style {
-            Style::Tsv | Style::Csv => b"\\N",
+            Style::Tsv | Style::Csv | Style::Raw => b"\\N",
+            Style::Text => "ᴺᵁᴸᴸ".as_bytes(),
             Style::Json => b"null",
             Style::Quoted => b"NULL",
         });
@@ -588,7 +598,7 @@ impl Writer<'_> {
     ) -> Result<(), ChError> {
         match style {
             Style::Json => body(self, Style::Json, out),
-            Style::Tsv | Style::Quoted => body(self, Style::Quoted, out),
+            Style::Tsv | Style::Quoted | Style::Raw | Style::Text => body(self, Style::Quoted, out),
             Style::Csv => {
                 let mut inner = Vec::new();
                 body(self, Style::Quoted, &mut inner)?;
@@ -638,7 +648,7 @@ impl Writer<'_> {
 
     fn text_like(&self, text: &str, style: Style, out: &mut Vec<u8>) {
         match style {
-            Style::Tsv => out.extend_from_slice(text.as_bytes()),
+            Style::Tsv | Style::Raw | Style::Text => out.extend_from_slice(text.as_bytes()),
             Style::Csv => csv_string(text.as_bytes(), out),
             Style::Json => self.json_string(text.as_bytes(), out),
             Style::Quoted => {
@@ -652,6 +662,7 @@ impl Writer<'_> {
     fn string(&self, bytes: &[u8], style: Style, out: &mut Vec<u8>) {
         match style {
             Style::Tsv => escape(bytes, out),
+            Style::Raw | Style::Text => out.extend_from_slice(bytes),
             Style::Csv => csv_string(bytes, out),
             Style::Json => self.json_string(bytes, out),
             Style::Quoted => {
@@ -663,25 +674,32 @@ impl Writer<'_> {
     }
 
     fn json_string(&self, bytes: &[u8], out: &mut Vec<u8>) {
-        out.push(b'"');
-        for &b in bytes {
-            match b {
-                b'"' => out.extend_from_slice(b"\\\""),
-                b'\\' => out.extend_from_slice(b"\\\\"),
-                b'/' if self.settings.json_escape_forward_slashes => out.extend_from_slice(b"\\/"),
-                b'\n' => out.extend_from_slice(b"\\n"),
-                b'\t' => out.extend_from_slice(b"\\t"),
-                b'\r' => out.extend_from_slice(b"\\r"),
-                0x08 => out.extend_from_slice(b"\\b"),
-                0x0c => out.extend_from_slice(b"\\f"),
-                b if b < 0x20 => {
-                    let _ = write!(Bytes(out), "\\u{b:04x}");
-                }
-                b => out.push(b),
-            }
-        }
-        out.push(b'"');
+        json_string(bytes, self.settings, out);
     }
+}
+
+/// A JSON string as ClickHouse's `writeJSONString` writes one: `/` escaped
+/// while `output_format_json_escape_forward_slashes` is on, control bytes as
+/// `\\uXXXX`, other bytes (UTF-8 included) as they are.
+pub fn json_string(bytes: &[u8], settings: &TextSettings, out: &mut Vec<u8>) {
+    out.push(b'"');
+    for &b in bytes {
+        match b {
+            b'"' => out.extend_from_slice(b"\\\""),
+            b'\\' => out.extend_from_slice(b"\\\\"),
+            b'/' if settings.json_escape_forward_slashes => out.extend_from_slice(b"\\/"),
+            b'\n' => out.extend_from_slice(b"\\n"),
+            b'\t' => out.extend_from_slice(b"\\t"),
+            b'\r' => out.extend_from_slice(b"\\r"),
+            0x08 => out.extend_from_slice(b"\\b"),
+            0x0c => out.extend_from_slice(b"\\f"),
+            b if b < 0x20 => {
+                let _ = write!(Bytes(out), "\\u{b:04x}");
+            }
+            b => out.push(b),
+        }
+    }
+    out.push(b'"');
 }
 
 /// `std::fmt::Write` into a byte vector.
@@ -696,7 +714,7 @@ impl std::fmt::Write for Bytes<'_> {
 
 /// ClickHouse's backslash escapes (TSV, and inside single quotes): TSV
 /// escapes `'` too (measured: `it's` is `it\'s`).
-fn escape(bytes: &[u8], out: &mut Vec<u8>) {
+pub fn escape(bytes: &[u8], out: &mut Vec<u8>) {
     for &b in bytes {
         match b {
             b'\\' => out.extend_from_slice(b"\\\\"),
@@ -712,7 +730,8 @@ fn escape(bytes: &[u8], out: &mut Vec<u8>) {
     }
 }
 
-fn csv_string(bytes: &[u8], out: &mut Vec<u8>) {
+/// A CSV field in double quotes, `"` doubled.
+pub fn csv_string(bytes: &[u8], out: &mut Vec<u8>) {
     out.push(b'"');
     for &b in bytes {
         if b == b'"' {

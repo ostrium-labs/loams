@@ -4,12 +4,15 @@
 //! parent its child closed. Each answer re-enters through the engine as an
 //! input.
 //!
-//! Preview limit, stated plainly: these run after the commit, in this
-//! process. If the gateway stops between the commit and the follow-up, the
-//! follow-up is lost until a reconciler re-derives it from mutable state
-//! (pending children without a started event, a continued run without its
-//! next run). Every step uses a deterministic request ID, so re-running one
-//! is safe.
+//! Crash safety (D2089): every follow-up is an outbox row (kind `fu`)
+//! written in the same commit as the events that ask for it. The relay hands
+//! claimed rows to [`Frontend::run_claimed_follow_up`], which marks a row
+//! dispatched only after carrying it out. A gateway that stops in between
+//! leaves the row claimed. When the lease runs out, the next gateway claims
+//! it again and redoes it. Each step reads what it needs back from the
+//! store and is idempotent: deterministic request IDs, signal request IDs
+//! deduplicated by the target, and answers the parent already has are
+//! `Stale`.
 
 use std::sync::Arc;
 
@@ -20,17 +23,23 @@ use loams_temporal_proto::temporal::api::enums::v1::{
     SignalExternalWorkflowExecutionFailedCause, StartChildWorkflowExecutionFailedCause,
 };
 use loams_temporal_proto::temporal::api::workflowservice::v1::StartWorkflowExecutionRequest;
-use loams_temporal_statemachine::children::{ChildOutcome, ChildRef, ExternalKind};
-use loams_temporal_statemachine::{Effect, HISTORY_SERVICE, Input, StartChain};
+use loams_temporal_statemachine::children::{ChildOutcome, ExternalKind};
+use loams_temporal_statemachine::{HISTORY_SERVICE, Input, StartChain};
 use loams_temporal_store::{NamespaceRecord, RunKey, STATUS_RUNNING};
 use tonic::Status;
 
-use crate::engine::{FollowUp, store_status};
+use crate::effects::{ChildTarget, EffectContext, FollowUpIntent, FollowUpRow};
+use crate::engine::store_status;
 use crate::lifecycle::{PolicyDecision, id_policy};
+use crate::outbox::ClaimedFollowUp;
 use crate::service::Frontend;
 
-fn event(f: &FollowUp, id: i64) -> Option<&HistoryEvent> {
-    f.transition.events.iter().find(|e| e.event_id == id)
+/// The run a follow-up row belongs to, read back from the store.
+#[derive(Debug, Clone)]
+pub(crate) struct Site {
+    ctx: EffectContext,
+    key: RunKey,
+    state: loams_temporal_history::MutableState,
 }
 
 /// How a closed run's last event reads to its parent; `None` for a run that
@@ -56,37 +65,64 @@ pub(crate) fn child_outcome(close: &Attributes) -> Option<ChildOutcome> {
 }
 
 impl Frontend {
-    /// Carries out one follow-up; failures are logged (the caller's commit
-    /// already happened).
-    pub async fn on_follow_up(self: &Arc<Self>, f: FollowUp) {
-        for e in &f.transition.effects {
-            let r = match e {
-                Effect::StartChild { initiated_event_id } => {
-                    self.start_child(&f, *initiated_event_id).await
+    /// Carries out a claimed follow-up row and marks it dispatched; on an
+    /// error the row stays claimed and is carried out again when its lease
+    /// runs out.
+    pub async fn run_claimed_follow_up(self: &Arc<Self>, c: ClaimedFollowUp) {
+        match self.run_follow_up(&c.row).await {
+            Ok(()) => {
+                if let Err(e) = self.store().mark_dispatched(&[c.id]).await {
+                    tracing::warn!(id = c.id, error = %e, "follow-up done but not marked");
                 }
-                Effect::ContinuedAsNew { new_run_id } => self.continue_run(&f, new_run_id).await,
-                Effect::SignalExternal { initiated_event_id } => {
-                    self.external(&f, ExternalKind::Signal, *initiated_event_id)
-                        .await
-                }
-                Effect::CancelExternal { initiated_event_id } => {
-                    self.external(&f, ExternalKind::Cancel, *initiated_event_id)
-                        .await
-                }
-                Effect::ParentClosePolicy { children } => self.parent_close(&f, children).await,
-                Effect::RunClosed { status } => self.tell_parent(&f, *status).await,
-                _ => Ok(()),
-            };
-            if let Err(s) = r {
-                tracing::warn!(
-                    workflow = %f.key.workflow_id,
-                    run = %f.key.run_id,
-                    effect = ?e,
-                    error = %s,
-                    "follow-up not carried out"
-                );
             }
+            Err(s) => tracing::warn!(
+                id = c.id,
+                attempts = c.attempts,
+                row = ?c.row,
+                error = %s,
+                "follow-up not carried out; it is retried after its lease"
+            ),
         }
+    }
+
+    /// Carries out one follow-up row. Safe to repeat.
+    pub async fn run_follow_up(&self, row: &FollowUpRow) -> Result<(), Status> {
+        let ctx = EffectContext {
+            namespace_id: row.namespace_id.clone(),
+            loams_namespace_id: row.loams_namespace_id.clone(),
+        };
+        let key = RunKey::new(&row.namespace_id, &row.workflow_id, &row.run_id);
+        let state = match self.engine.load(&key).await {
+            Ok(r) => r.state,
+            // The run is gone (retention): nothing left to do.
+            Err(s) if s.code() == tonic::Code::NotFound => return Ok(()),
+            Err(s) => return Err(s),
+        };
+        let f = Site { ctx, key, state };
+        match &row.intent {
+            FollowUpIntent::StartChild { initiated_event_id } => {
+                self.start_child(&f, *initiated_event_id).await
+            }
+            FollowUpIntent::ContinueAsNew { new_run_id } => self.continue_run(&f, new_run_id).await,
+            FollowUpIntent::SignalExternal { initiated_event_id } => {
+                self.external(&f, ExternalKind::Signal, *initiated_event_id)
+                    .await
+            }
+            FollowUpIntent::CancelExternal { initiated_event_id } => {
+                self.external(&f, ExternalKind::Cancel, *initiated_event_id)
+                    .await
+            }
+            FollowUpIntent::ParentClose { children } => self.parent_close(&f, children).await,
+            FollowUpIntent::NotifyParent => self.tell_parent(&f).await,
+        }
+    }
+
+    /// One event of the follow-up's run.
+    async fn event(&self, f: &Site, id: i64) -> Result<Option<HistoryEvent>, Status> {
+        if id <= 0 {
+            return Ok(None);
+        }
+        Ok(self.engine.history(&f.key, id, 1).await?.into_iter().next())
     }
 
     /// A namespace of the same Loams namespace, by ID or by name.
@@ -112,7 +148,7 @@ impl Frontend {
     }
 
     /// Applies `input` to the run of the follow-up; a closed run is fine.
-    async fn answer(&self, f: &FollowUp, input: Input) -> Result<(), Status> {
+    async fn answer(&self, f: &Site, input: Input) -> Result<(), Status> {
         match self.engine.execute(&f.key, &f.ctx, input).await {
             Ok(_) => Ok(()),
             Err(s) if s.code() == tonic::Code::NotFound => Ok(()),
@@ -120,9 +156,17 @@ impl Frontend {
         }
     }
 
-    async fn start_child(&self, f: &FollowUp, initiated_event_id: i64) -> Result<(), Status> {
-        let Some(Attributes::StartChildWorkflowExecutionInitiatedEventAttributes(a)) =
-            event(f, initiated_event_id).and_then(|e| e.attributes.clone())
+    async fn start_child(&self, f: &Site, initiated_event_id: i64) -> Result<(), Status> {
+        // Already answered (started, failed, or closed): nothing to redo.
+        if loams_temporal_history::child(&f.state, initiated_event_id)
+            .is_none_or(|c| c.started_event_id != 0)
+        {
+            return Ok(());
+        }
+        let Some(Attributes::StartChildWorkflowExecutionInitiatedEventAttributes(a)) = self
+            .event(f, initiated_event_id)
+            .await?
+            .and_then(|e| e.attributes)
         else {
             return Ok(());
         };
@@ -252,21 +296,15 @@ impl Frontend {
         }
     }
 
-    async fn continue_run(&self, f: &FollowUp, new_run_id: &str) -> Result<(), Status> {
-        let Some(a) = f
-            .transition
-            .events
-            .iter()
-            .find_map(|e| match &e.attributes {
-                Some(Attributes::WorkflowExecutionContinuedAsNewEventAttributes(a)) => {
-                    Some(a.clone())
-                }
-                _ => None,
-            })
+    async fn continue_run(&self, f: &Site, new_run_id: &str) -> Result<(), Status> {
+        let Some(Attributes::WorkflowExecutionContinuedAsNewEventAttributes(a)) = self
+            .event(f, f.state.completion_event_id)
+            .await?
+            .and_then(|e| e.attributes)
         else {
             return Ok(());
         };
-        let state = &f.transition.state;
+        let state = &f.state;
         let ns = self.namespace_by_id(&f.ctx.namespace_id).await?;
         let history = self.engine.history(&f.key, 1, usize::MAX).await?;
         let request = StartWorkflowExecutionRequest {
@@ -291,6 +329,7 @@ impl Frontend {
             first_execution_run_id: state.first_execution_run_id.clone(),
             backoff_ms: dur_ms(a.backoff_start_interval.as_ref()),
             last_completion_result: a.last_completion_result.clone(),
+            #[allow(deprecated)]
             continued_failure: a.failure.clone(),
             prev_auto_reset_points: Some(
                 loams_temporal_proto::temporal::api::workflow::v1::ResetPoints {
@@ -322,27 +361,39 @@ impl Frontend {
 
     async fn external(
         &self,
-        f: &FollowUp,
+        f: &Site,
         kind: ExternalKind,
         initiated_event_id: i64,
     ) -> Result<(), Status> {
-        let (namespace, namespace_id, execution, target_input) =
-            match event(f, initiated_event_id).and_then(|e| e.attributes.clone()) {
-                Some(Attributes::SignalExternalWorkflowExecutionInitiatedEventAttributes(a)) => (
-                    a.namespace,
-                    a.namespace_id,
-                    a.workflow_execution.unwrap_or_default(),
-                    Input::Signal {
-                        name: a.signal_name,
-                        input: a.input,
-                        identity: String::new(),
-                        header: a.header,
-                        request_id: format!("sig:{}:{initiated_event_id}", f.key.run_id),
-                    },
-                ),
-                Some(
-                    Attributes::RequestCancelExternalWorkflowExecutionInitiatedEventAttributes(a),
-                ) => (
+        let pending = match kind {
+            ExternalKind::Signal => &f.state.external_signals,
+            ExternalKind::Cancel => &f.state.external_cancels,
+        };
+        if !pending
+            .iter()
+            .any(|x| x.initiated_event_id == initiated_event_id)
+        {
+            return Ok(());
+        }
+        let (namespace, namespace_id, execution, target_input) = match self
+            .event(f, initiated_event_id)
+            .await?
+            .and_then(|e| e.attributes)
+        {
+            Some(Attributes::SignalExternalWorkflowExecutionInitiatedEventAttributes(a)) => (
+                a.namespace,
+                a.namespace_id,
+                a.workflow_execution.unwrap_or_default(),
+                Input::Signal {
+                    name: a.signal_name,
+                    input: a.input,
+                    identity: String::new(),
+                    header: a.header,
+                    request_id: format!("sig:{}:{initiated_event_id}", f.key.run_id),
+                },
+            ),
+            Some(Attributes::RequestCancelExternalWorkflowExecutionInitiatedEventAttributes(a)) => {
+                (
                     a.namespace,
                     a.namespace_id,
                     a.workflow_execution.unwrap_or_default(),
@@ -350,9 +401,10 @@ impl Frontend {
                         reason: a.reason,
                         identity: String::new(),
                     },
-                ),
-                _ => return Ok(()),
-            };
+                )
+            }
+            _ => return Ok(()),
+        };
         let (not_found, ns_not_found) = match kind {
             ExternalKind::Signal => (
                 SignalExternalWorkflowExecutionFailedCause::ExternalWorkflowExecutionNotFound
@@ -403,7 +455,7 @@ impl Frontend {
         }
     }
 
-    async fn parent_close(&self, f: &FollowUp, children: &[ChildRef]) -> Result<(), Status> {
+    async fn parent_close(&self, f: &Site, children: &[ChildTarget]) -> Result<(), Status> {
         for c in children.iter().filter(|c| !c.run_id.is_empty()) {
             let input = if c.policy == ParentClosePolicy::RequestCancel as i32 {
                 Input::CancelRequested {
@@ -433,20 +485,19 @@ impl Frontend {
         Ok(())
     }
 
-    async fn tell_parent(
-        &self,
-        f: &FollowUp,
-        status: WorkflowExecutionStatus,
-    ) -> Result<(), Status> {
-        let state = &f.transition.state;
+    async fn tell_parent(&self, f: &Site) -> Result<(), Status> {
+        let state = &f.state;
         let Some(parent) = state.parent.clone() else {
             return Ok(());
         };
-        if status == WorkflowExecutionStatus::ContinuedAsNew {
+        if state.status == WorkflowExecutionStatus::ContinuedAsNew as i32 {
             return Ok(());
         }
-        let Some(outcome) = event(f, state.completion_event_id)
-            .and_then(|e| e.attributes.as_ref())
+        let Some(outcome) = self
+            .event(f, state.completion_event_id)
+            .await?
+            .and_then(|e| e.attributes)
+            .as_ref()
             .and_then(child_outcome)
         else {
             return Ok(());

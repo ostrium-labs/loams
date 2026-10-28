@@ -225,6 +225,8 @@ impl BrowserProvider for LocalProvider {
             authenticated_sessions: true,
             tabs: true,
             credentials_stay_local: true,
+            // A host driver may download; this seam does not model it yet.
+            downloads: false,
         }
     }
 

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:loams:json:io.loams.dev.usage.mcp.call.v1",
+  "title": "io.loams.dev.usage.mcp.call.v1",
+  "description": "The `data` of a `io.loams.dev.usage.mcp.call.v1` usage event: An MCP tool call through the gateway (§57 §12.3). Producer: gateway mcp module. Design §63 §6.3. Measured values are integers in the unit named; dimensions are strings. New optional fields may be added within v1.",
+  "type": "object",
+  "properties": {
+    "server": {
+      "type": "string",
+      "description": "The MCP server"
+    },
+    "tool": {
+      "type": "string",
+      "description": "The tool"
+    },
+    "duration_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Call duration, ms"
+    }
+  },
+  "required": [
+    "server",
+    "tool",
+    "duration_ms"
+  ],
+  "additionalProperties": true
+}

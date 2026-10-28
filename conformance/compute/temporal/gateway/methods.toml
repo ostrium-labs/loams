@@ -16,6 +16,12 @@ the SDK legs ran the gateway in development mode (memory store, in-process Reson
 [sdks]
 go = "Go SDK v1.49.0"
 ts = "TypeScript SDK 1.24.0"
+# Lane TSDK-python (D2139): "not run" until the sdk-leg (python) job runs and last-run.* is re-spliced.
+python = "Python SDK 1.34.0"
+# Lane TSDK-dotnet (D2140): "not run" until the sdk-leg (dotnet) job runs and last-run.* is re-spliced.
+dotnet = ".NET SDK 1.20.0"
+# Lane TSDK-java (D2133): "not yet run" until the sdk-leg (java) job runs and last-run.* is re-spliced.
+java = "Java SDK 1.40.0"
 
 [[method]]
 name = "GetSystemInfo"
@@ -30,8 +36,8 @@ note = "worker start"
 [[method]]
 name = "RegisterNamespace"
 cases = ["gateway_dx1_scenarios_{sdk}"]
-only = ["go"]
-note = "the Go corpus generator (admin role, X1.R9); `api_keys_authenticate_and_bind_the_loams_namespace`"
+only = ["go", "java"]
+note = "the Go and Java corpus generators (admin role, X1.R9); `api_keys_authenticate_and_bind_the_loams_namespace`"
 
 [[method]]
 name = "ListNamespaces"
@@ -184,3 +190,49 @@ note = "TMP-api (D2088): unit tests only; versioning reads answer no sets, no ru
 [[method]]
 name = "GetWorkerTaskReachability"
 note = "TMP-api (D2088): unit tests only; versioning reads answer no sets, no rules, all reachable"
+
+# Visibility and schedules (TMP-api): not in the SDK legs' corpus runs yet;
+# covered by the frontend's in-process tests.
+[[method]]
+name = "CreateSchedule"
+note = "no SDK call in these runs; loams-temporal-frontend tests/schedules.rs"
+
+[[method]]
+name = "DescribeSchedule"
+note = "no SDK call in these runs; loams-temporal-frontend tests/schedules.rs"
+
+[[method]]
+name = "UpdateSchedule"
+note = "no SDK call in these runs; loams-temporal-frontend tests/schedules.rs"
+
+[[method]]
+name = "PatchSchedule"
+note = "no SDK call in these runs; loams-temporal-frontend tests/schedules.rs"
+
+[[method]]
+name = "DeleteSchedule"
+note = "no SDK call in these runs; loams-temporal-frontend tests/schedules.rs"
+
+[[method]]
+name = "ListSchedules"
+note = "no SDK call in these runs; loams-temporal-frontend tests/schedules.rs"
+
+[[method]]
+name = "ListScheduleMatchingTimes"
+note = "no SDK call in these runs; loams-temporal-frontend tests/schedules.rs"
+
+[[method]]
+name = "ListWorkflowExecutions"
+note = "no SDK call in these runs; loams-temporal-frontend tests/visibility.rs"
+
+[[method]]
+name = "ScanWorkflowExecutions"
+note = "no SDK call in these runs; loams-temporal-frontend tests/visibility.rs"
+
+[[method]]
+name = "CountWorkflowExecutions"
+note = "no SDK call in these runs; loams-temporal-frontend tests/visibility.rs"
+
+[[method]]
+name = "GetSearchAttributes"
+note = "no SDK call in these runs; loams-temporal-frontend tests/visibility.rs"

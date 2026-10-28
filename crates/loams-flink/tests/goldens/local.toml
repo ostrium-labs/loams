@@ -1,0 +1,60 @@
+# A local compose stack: RustFS with static keys, SASL on the Kafka gateway.
+savepoint_dir = "s3://loams/engines/acme/eng_demo/savepoints"
+
+[iceberg]
+warehouse = "loams"
+base_namespace = "ns_acme"
+auth = { kind = "none" }
+
+[iceberg.storage]
+endpoint = "http://rustfs:9000"
+region = "us-east-1"
+access = { kind = "static", access_key_id = "loams-dev", secret_access_key = { ref = "s3-secret" } }
+
+[[postgres]]
+host = "compute1"
+database = "shop"
+username = "flink"
+password = { ref = "pg-password" }
+
+[[tables]]
+connector = "kafka"
+name = "clicks"
+stream = "clicks"
+startup = { mode = "earliest-offset" }
+columns = [
+  { name = "user_id", type = "STRING" },
+  { name = "url", type = "STRING" },
+  { name = "ts", type = "TIMESTAMP_LTZ(3)" },
+  { name = "offset", type = "BIGINT", metadata = { virtual = true } },
+]
+watermark = { column = "ts", delay_ms = 5000 }
+gateway = { bootstrap = "kafka-gateway:9093", security = "sasl_plaintext", auth = { username = "key_01", password = { ref = "loams-api-key" } } }
+
+[[tables]]
+connector = "upsert_kafka"
+name = "user_profiles"
+stream = "user-profiles"
+primary_key = ["user_id"]
+columns = [
+  { name = "user_id", type = "STRING", not_null = true },
+  { name = "plan", type = "STRING" },
+]
+gateway = { security = "plaintext" }
+
+[[tables]]
+connector = "postgres_cdc"
+name = "orders"
+host = "compute1"
+database = "shop"
+table = "orders"
+username = "flink_cdc"
+password = { ref = "pg-password" }
+slot = "loams_fk_01jbx3k9q2w7r5t8y6u4i0p3a_1"
+publication = "loams_fk_01jbx3k9q2w7r5t8y6u4i0p3a_pub"
+primary_key = ["id"]
+columns = [
+  { name = "id", type = "BIGINT", not_null = true },
+  { name = "amount", type = "DECIMAL(10, 2)" },
+  { name = "op_ts", type = "TIMESTAMP_LTZ(3)", metadata = { virtual = true } },
+]

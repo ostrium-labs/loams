@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+<testsuite name="airflow-edge">
+<testcase classname="airflow-edge" name="airflow_edge_workers_register"/>
+<testcase classname="airflow-edge" name="airflow_txn_mode_leg"/>
+</testsuite>
+</testsuites>
