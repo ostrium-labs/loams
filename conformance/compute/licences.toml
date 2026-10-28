@@ -68,6 +68,12 @@ licence = "Apache-2.0"
 source = "https://github.com/temporalio/sdk-java/blob/v1.40.0/LICENSE"
 resolve = "github:temporalio/sdk-java"
 
+[TEMPORAL_SDK_RUBY]
+value = "1.9.0"
+licence = "MIT"
+source = "https://github.com/temporalio/sdk-ruby/blob/v1.9.0/LICENSE"
+resolve = "github:temporalio/sdk-ruby"
+
 [TEMPORAL_SAMPLES_GO]
 value = "d3784428122e0cd4b28e91a0cd86b589749abf28"
 licence = "Apache-2.0"
@@ -153,6 +159,16 @@ source = "https://docs.python.org/3.12/license.html"
 value = "docker.io/library/node:22.23.2-bookworm@sha256:dd5847a04b0deee391fa145f1f4c6d214196668b6bcc7988ebed67249f226844"
 licence = "MIT"
 source = "https://github.com/nodejs/node/blob/v22.23.2/LICENSE"
+
+[RUBY_IMAGE]
+value = "docker.io/library/ruby:3.4.10-bookworm@sha256:cc183c94af21fe763dcf1a89f731da75797b80b399e1c4d0a9408bcd3f87c63c"
+licence = "BSD-2-Clause"
+source = "https://github.com/ruby/ruby/blob/v3_4_10/COPYING"
+
+[BUNDLER_VERSION]
+value = "4.0.22"
+licence = "MIT"
+source = "https://github.com/rubygems/rubygems/blob/bundler-v4.0.22/bundler/LICENSE.md"
 
 [JAVA_IMAGE]
 value = "docker.io/library/eclipse-temurin:21.0.12_8-jdk-noble@sha256:4d271cd5e0624598cf563342f47281b09cb364bc13acbbd7251f49f83470018d"

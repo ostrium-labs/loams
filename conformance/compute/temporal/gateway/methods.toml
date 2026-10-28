@@ -22,6 +22,8 @@ python = "Python SDK 1.34.0"
 dotnet = ".NET SDK 1.20.0"
 # Lane TSDK-java (D2133): "not yet run" until the sdk-leg (java) job runs and last-run.* is re-spliced.
 java = "Java SDK 1.40.0"
+# Lane TSDK-ruby (D2152): "not yet run" until temporal-sdk-ruby.yml runs and last-run.* is re-spliced.
+ruby = "Ruby SDK 1.9.0"
 
 [[method]]
 name = "GetSystemInfo"
