@@ -27,18 +27,27 @@
 //! * matchers (`* EXCEPT/REPLACE/APPLY`, `COLUMNS(…)`), `untuple(…)` and
 //!   aliases inside expressions are let through for [`crate::scope`], which
 //!   expands and resolves them after the guard (plan HE1 Task 25); an
-//!   `APPLY`'s function is resolved here.
+//!   `APPLY`'s function is resolved here;
+//! * `[a, b]`, `(a, b)` and `{'k': v}` become `array(…)`, `tuple(…)` and
+//!   `map(…)`, and the subscripts `a[i]` and `m['k']` become
+//!   `arrayElement(…)` (plan HE1 Task 32), which DataFusion plans through the
+//!   House's own functions rather than its array and struct planners;
+//! * lambda parameters are quoted, so DataFusion keeps their case as the body
+//!   uses it, and `mapFilter` with a one-parameter lambda (the entry as a
+//!   tuple) is planned as `__ch_mapFilter_tuple`;
+//! * `INTERVAL n UNIT` and `EXTRACT(f FROM x)` become ClickHouse's calls
+//!   (`toIntervalUnit(n)`, `toYear(x)`, [`crate::temporal`]).
 
 use std::collections::BTreeSet;
 
 use datafusion::sql::sqlparser::ast::{
-    Array, BinaryOperator, CaseWhen, CastKind, Cte, DataType, Distinct, Expr, Function,
-    FunctionArg, FunctionArgExpr, FunctionArgumentList, FunctionArguments, GroupByExpr, Ident,
-    Join, JoinConstraint, JoinOperator, LambdaFunction, LimitClause, NamedWindowDefinition,
-    NamedWindowExpr, ObjectName, ObjectNamePart, Offset, OrderBy, OrderByExpr, OrderByKind,
-    OrderByOptions, Query, Select, SelectFlavor, SelectItem, SetExpr, Setting, TableAlias,
-    TableFactor, TableWithJoins, UnaryOperator, Value, ValueWithSpan, WindowFrame, WindowSpec,
-    WindowType, With,
+    AccessExpr, Array, BinaryOperator, CaseWhen, CastKind, Cte, DataType, DictionaryField,
+    Distinct, Expr, Function, FunctionArg, FunctionArgExpr, FunctionArgumentList,
+    FunctionArguments, GroupByExpr, Ident, Join, JoinConstraint, JoinOperator, LambdaFunction,
+    LimitClause, Map, MapEntry, NamedWindowDefinition, NamedWindowExpr, ObjectName, ObjectNamePart,
+    Offset, OneOrManyWithParens, OrderBy, OrderByExpr, OrderByKind, OrderByOptions, Query, Select,
+    SelectFlavor, SelectItem, SetExpr, Setting, Subscript, TableAlias, TableFactor, TableWithJoins,
+    UnaryOperator, Value, ValueWithSpan, WindowFrame, WindowSpec, WindowType, With,
 };
 use loams_house_types::ChError;
 
@@ -80,6 +89,45 @@ pub struct Guard<'a> {
 
 fn refuse(what: impl std::fmt::Display) -> ChError {
     ChError::unsupported(what)
+}
+
+/// A call of the ClickHouse function `name` on `args`, for the guard to walk
+/// (it resolves and quotes the name).
+fn call(name: &str, args: Vec<Expr>) -> Expr {
+    Expr::Function(Function {
+        name: ObjectName::from(vec![Ident::new(name)]),
+        uses_odbc_syntax: false,
+        parameters: FunctionArguments::None,
+        args: FunctionArguments::List(FunctionArgumentList {
+            duplicate_treatment: None,
+            args: args
+                .into_iter()
+                .map(|a| FunctionArg::Unnamed(FunctionArgExpr::Expr(a)))
+                .collect(),
+            clauses: vec![],
+        }),
+        filter: None,
+        null_treatment: None,
+        over: None,
+        within_group: vec![],
+    })
+}
+
+/// The name `mapFilter` with a one-parameter lambda is planned under (plan
+/// HE1 Task 32): the lambda takes each entry as a `Tuple(K, V)`.
+pub const MAP_FILTER_TUPLE: &str = "__ch_mapFilter_tuple";
+
+fn one_parameter_lambda_first(args: &FunctionArguments) -> bool {
+    let FunctionArguments::List(list) = args else {
+        return false;
+    };
+    match list.args.first() {
+        Some(FunctionArg::Unnamed(FunctionArgExpr::Expr(Expr::Lambda(l)))) => match &l.params {
+            OneOrManyWithParens::One(_) => true,
+            OneOrManyWithParens::Many(ps) => ps.len() == 1,
+        },
+        _ => false,
+    }
 }
 
 /// A refusal for a construct a later HE1 task brings.
@@ -802,10 +850,12 @@ impl<'a> Guard<'a> {
                 _ => {}
             }
         }
-        *name = ObjectName::from(vec![Ident::with_quote(
-            '"',
-            functions::internal_name(&known.canonical),
-        )]);
+        let internal = if known.canonical == "mapFilter" && one_parameter_lambda_first(args) {
+            MAP_FILTER_TUPLE.to_string()
+        } else {
+            functions::internal_name(&known.canonical)
+        };
+        *name = ObjectName::from(vec![Ident::with_quote('"', internal)]);
         match args {
             FunctionArguments::None => {}
             FunctionArguments::Subquery(q) => self.query(q)?,
@@ -833,6 +883,7 @@ impl<'a> Guard<'a> {
                 }
             }
         }
+        crate::temporal::fold_constant_args(&known.canonical, args);
         match over {
             None | Some(WindowType::NamedWindow(_)) => {}
             Some(WindowType::WindowSpec(spec)) => self.window_spec(spec)?,
@@ -943,8 +994,14 @@ impl<'a> Guard<'a> {
                 }
                 Ok(())
             }
-            Expr::Tuple(items) => items.iter_mut().try_for_each(|x| self.expr(x)),
-            Expr::Array(Array { elem, named: _ }) => elem.iter_mut().try_for_each(|x| self.expr(x)),
+            Expr::Tuple(items) => {
+                *e = call("tuple", std::mem::take(items));
+                self.expr(e)
+            }
+            Expr::Array(Array { elem, named: _ }) => {
+                *e = call("array", std::mem::take(elem));
+                self.expr(e)
+            }
             Expr::Function(f) => {
                 if let Some(replacement) = self.function(f)? {
                     *e = replacement;
@@ -957,13 +1014,65 @@ impl<'a> Guard<'a> {
                 negated: _,
             } => self.query(subquery),
             Expr::Lambda(LambdaFunction {
-                params: _,
+                params,
                 body,
                 syntax: _,
-            }) => self.expr(body),
-            Expr::Interval(_) => Err(later("INTERVAL", 30)),
-            Expr::Extract { .. } => Err(later("EXTRACT", 30)),
-            Expr::CompoundFieldAccess { .. } => Err(later("Subscripts (`a[i]`, `m['k']`)", 32)),
+            }) => {
+                let params: Vec<&mut _> = match params {
+                    OneOrManyWithParens::One(p) => vec![p],
+                    OneOrManyWithParens::Many(ps) => ps.iter_mut().collect(),
+                };
+                for p in params {
+                    if p.data_type.is_some() {
+                        return Err(refuse("Typed lambda parameters"));
+                    }
+                    p.name.quote_style = Some('"');
+                }
+                self.expr(body)
+            }
+            // `INTERVAL n UNIT` and `EXTRACT(f FROM x)` are the calls ClickHouse
+            // makes of them (plan HE1 Task 30, [`crate::temporal`]).
+            Expr::Interval(iv) => {
+                *e = crate::temporal::interval_call(iv)?;
+                self.expr(e)
+            }
+            Expr::Extract {
+                field,
+                syntax: _,
+                expr,
+            } => {
+                *e = crate::temporal::extract_call(field, (**expr).clone())?;
+                self.expr(e)
+            }
+            Expr::CompoundFieldAccess { root, access_chain } => {
+                let mut out = std::mem::replace(root.as_mut(), Expr::Value(Value::Null.into()));
+                for access in std::mem::take(access_chain) {
+                    out = match access {
+                        AccessExpr::Subscript(Subscript::Index { index }) => {
+                            call("arrayElement", vec![out, index])
+                        }
+                        AccessExpr::Dot(Expr::Identifier(i)) => call(
+                            "tupleElement",
+                            vec![out, Expr::Value(Value::SingleQuotedString(i.value).into())],
+                        ),
+                        AccessExpr::Dot(Expr::Value(ValueWithSpan {
+                            value: Value::Number(n, l),
+                            ..
+                        })) => call(
+                            "tupleElement",
+                            vec![out, Expr::Value(Value::Number(n, l).into())],
+                        ),
+                        AccessExpr::Subscript(Subscript::Slice { .. }) => {
+                            return Err(refuse("Array slices (`a[i:j]`); use arraySlice"));
+                        }
+                        AccessExpr::Dot(other) => {
+                            return Err(refuse(format!("The field access .{other}")));
+                        }
+                    };
+                }
+                *e = out;
+                self.expr(e)
+            }
             Expr::IsFalse(_)
             | Expr::IsNotFalse(_)
             | Expr::IsTrue(_)
@@ -994,7 +1103,27 @@ impl<'a> Guard<'a> {
             }
             Expr::Struct { .. } => Err(refuse("STRUCT literals")),
             Expr::Named { .. } => Err(refuse("Named expressions")),
-            Expr::Dictionary(_) | Expr::Map(_) => Err(later("Map literals", 32)),
+            Expr::Dictionary(fields) => {
+                let mut args = Vec::with_capacity(fields.len() * 2);
+                for DictionaryField { key, value } in std::mem::take(fields) {
+                    args.push(match key.quote_style {
+                        Some('\'') => Expr::Value(Value::SingleQuotedString(key.value).into()),
+                        _ => Expr::Identifier(key),
+                    });
+                    args.push(*value);
+                }
+                *e = call("map", args);
+                self.expr(e)
+            }
+            Expr::Map(Map { entries }) => {
+                let mut args = Vec::with_capacity(entries.len() * 2);
+                for MapEntry { key, value } in std::mem::take(entries) {
+                    args.push(*key);
+                    args.push(*value);
+                }
+                *e = call("map", args);
+                self.expr(e)
+            }
             Expr::MatchAgainst { .. } => Err(refuse("MATCH … AGAINST")),
             Expr::Wildcard(_) | Expr::QualifiedWildcard(..) => Ok(()),
             Expr::OuterJoin(_) => Err(refuse("(+) outer joins")),

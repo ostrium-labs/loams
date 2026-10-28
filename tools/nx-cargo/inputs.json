@@ -12,6 +12,7 @@
         "loams-graph",
         "loams-pg-control",
         "loams-proto",
+        "loams-spark",
         "loams-specview",
         "loams-sqldb",
         "loams-sqlgate",
@@ -123,6 +124,11 @@
         ],
         "loams-connector-objects": [
           "conformance/connectors/fixtures/cloudflare-r2/**"
+        ],
+        "loams-house-engine": [
+          "conformance/clickhouse/profile/profile.toml",
+          "conformance/clickhouse/oracle/corpus/he1/26/**",
+          "fabric/crates/loams-house/src/settings.rs"
         ],
         "loams-house-worker": [
           "conformance/clickhouse/corpus/**",

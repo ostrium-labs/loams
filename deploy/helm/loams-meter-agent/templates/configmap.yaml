@@ -1,0 +1,11 @@
+{{- if .Values.tenants }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "loams-meter-agent.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "loams-meter-agent.labels" . | nindent 4 }}
+data:
+  tenants.json: {{ .Values.tenants | quote }}
+{{- end }}

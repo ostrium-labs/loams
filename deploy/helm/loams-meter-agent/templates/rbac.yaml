@@ -1,0 +1,40 @@
+{{- if .Values.serviceAccount.create }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "loams-meter-agent.serviceAccount" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "loams-meter-agent.labels" . | nindent 4 }}
+{{- end }}
+{{- if .Values.kube }}
+---
+# The pod resolver lists and watches pods with spec.nodeName=<its node>.
+# Kubernetes RBAC cannot narrow a ClusterRole to one node's pods; the field
+# selector does, and the agent reads only labels and UIDs.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "loams-meter-agent.fullname" . }}
+  labels:
+    {{- include "loams-meter-agent.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "loams-meter-agent.fullname" . }}
+  labels:
+    {{- include "loams-meter-agent.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "loams-meter-agent.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "loams-meter-agent.serviceAccount" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

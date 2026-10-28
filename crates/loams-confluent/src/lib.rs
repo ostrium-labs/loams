@@ -21,6 +21,7 @@
 //! Regions are read by `scripts/byoc/confluent-tables.sh` (CC0 R0.4: an
 //! undocumented endpoint), not here. The budget guard (CC2) comes later.
 
+pub mod acls;
 pub mod cli;
 pub mod clusters;
 pub mod costs;

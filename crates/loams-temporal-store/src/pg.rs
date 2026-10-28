@@ -22,10 +22,11 @@ use sqlx::{Postgres, Row, Transaction};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
+use crate::page::{self, ListCursor};
 use crate::{
-    Commit, CurrentRun, EventRow, FIRST_EVENT_ID, Loaded, NamespaceRecord, OutboxRow, RunKey,
-    STATUS_RUNNING, StartExecution, StartOutcome, Store, StoreError, VisibilityRow, check_commit,
-    check_shards, shard_of,
+    Commit, CurrentRun, EventRow, FIRST_EVENT_ID, ListRuns, ListedRun, Loaded, NamespaceRecord,
+    OutboxRow, PurgeLimits, PurgeReport, RunKey, RunPage, STATUS_RUNNING, StartExecution,
+    StartOutcome, Store, StoreError, VisibilityRow, check_commit, check_shards, shard_of,
 };
 
 /// The `NOTIFY` channel a commit with outbox rows signals; the payload is the
@@ -37,7 +38,94 @@ pub const OUTBOX_CHANNEL: &str = "loams_temporal_outbox";
 const MIGRATION_LOCK: i64 = 0x6c74_7374_6f72_6500;
 
 /// The embedded migrations, in order: (version, SQL).
-const MIGRATIONS: &[(i32, &str)] = &[(1, include_str!("../migrations/0001_init.sql"))];
+const MIGRATIONS: &[(i32, &str)] = &[
+    (1, include_str!("../migrations/0001_init.sql")),
+    (2, include_str!("../migrations/0002_retention_listing.sql")),
+];
+
+/// The schema version [`PgStore::migrate`] brings a database to.
+pub const SCHEMA_VERSION: i32 = 2;
+
+/// How [`PgStore`] connects (D2060): the shard count and the connection
+/// pool. The defaults suit one gateway replica on a session or direct
+/// endpoint.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PgStoreOptions {
+    /// Fixed when the database is created (X1.R6).
+    pub shards: u32,
+    /// The pool's ceiling. One connection is held for the outbox `LISTEN`
+    /// for the store's lifetime, so this must be at least 2.
+    pub max_connections: u32,
+    /// Connections kept open while idle.
+    pub min_connections: u32,
+    /// How long a request waits for a free connection before
+    /// [`StoreError::Unavailable`].
+    pub acquire_timeout: Duration,
+    /// An idle connection above `min_connections` is closed after this.
+    pub idle_timeout: Option<Duration>,
+    /// A connection is replaced after this (lets a failover or a compute
+    /// restart rebalance).
+    pub max_lifetime: Option<Duration>,
+    /// Postgres `statement_timeout` for every statement; migrations lift it.
+    pub statement_timeout: Option<Duration>,
+    /// Postgres `idle_in_transaction_session_timeout`: a transaction left
+    /// open (a stuck caller) gives its row locks back after this.
+    pub idle_in_transaction_timeout: Option<Duration>,
+    /// Shown in `pg_stat_activity`.
+    pub application_name: String,
+}
+
+impl PgStoreOptions {
+    /// The defaults with `shards` shards.
+    pub fn new(shards: u32) -> Self {
+        Self {
+            shards,
+            max_connections: 16,
+            min_connections: 0,
+            acquire_timeout: Duration::from_secs(10),
+            idle_timeout: Some(Duration::from_secs(600)),
+            max_lifetime: Some(Duration::from_secs(1800)),
+            statement_timeout: Some(Duration::from_secs(30)),
+            idle_in_transaction_timeout: Some(Duration::from_secs(60)),
+            application_name: "loams-temporal".into(),
+        }
+    }
+
+    fn check(&self) -> Result<(), StoreError> {
+        check_shards(self.shards)?;
+        if self.max_connections < 2 {
+            return Err(StoreError::InvalidArgument(format!(
+                "max_connections {} is below 2 (one is the outbox listener)",
+                self.max_connections
+            )));
+        }
+        if self.min_connections > self.max_connections {
+            return Err(StoreError::InvalidArgument(format!(
+                "min_connections {} is above max_connections {}",
+                self.min_connections, self.max_connections
+            )));
+        }
+        if self.acquire_timeout.is_zero() {
+            return Err(StoreError::InvalidArgument(
+                "acquire_timeout must be positive".into(),
+            ));
+        }
+        text_arg("application_name", &self.application_name)
+    }
+
+    /// The server settings sent at connect (`-c name=value`).
+    fn server_settings(&self) -> Vec<(&'static str, String)> {
+        let ms = |d: Duration| d.as_millis().to_string();
+        let mut out = Vec::new();
+        if let Some(d) = self.statement_timeout {
+            out.push(("statement_timeout", ms(d)));
+        }
+        if let Some(d) = self.idle_in_transaction_timeout {
+            out.push(("idle_in_transaction_session_timeout", ms(d)));
+        }
+        out
+    }
+}
 
 /// The store on Postgres. Cheap to clone; the clones share one pool and one
 /// listener, which stops when the last clone is dropped.
@@ -66,17 +154,40 @@ impl PgStore {
     /// must equal `shards` ([`StoreError::ShardCountMismatch`], X1.R6). Call
     /// [`PgStore::migrate`] before serving.
     pub async fn connect(url: &str, shards: u32) -> Result<Self, StoreError> {
-        let opts = PgConnectOptions::from_str(url)
-            .map_err(|e| StoreError::InvalidArgument(format!("database URL: {e}")))?;
-        Self::connect_with(opts, shards).await
+        Self::connect_url(url, &PgStoreOptions::new(shards)).await
     }
 
-    /// [`PgStore::connect`] with parsed options (TLS, application name, …).
+    /// [`PgStore::connect`] with parsed options (TLS, …) and the default
+    /// pool ([`PgStoreOptions::new`]).
     pub async fn connect_with(opts: PgConnectOptions, shards: u32) -> Result<Self, StoreError> {
-        check_shards(shards)?;
+        Self::connect_with_options(opts, &PgStoreOptions::new(shards)).await
+    }
+
+    /// Connects to `url` with the pool `o` describes.
+    pub async fn connect_url(url: &str, o: &PgStoreOptions) -> Result<Self, StoreError> {
+        let opts = PgConnectOptions::from_str(url)
+            .map_err(|e| StoreError::InvalidArgument(format!("database URL: {e}")))?;
+        Self::connect_with_options(opts, o).await
+    }
+
+    /// [`PgStore::connect_with`] with an explicit pool configuration.
+    pub async fn connect_with_options(
+        opts: PgConnectOptions,
+        o: &PgStoreOptions,
+    ) -> Result<Self, StoreError> {
+        o.check()?;
+        let shards = o.shards;
+        let mut opts = opts.application_name(&o.application_name);
+        let settings = o.server_settings();
+        if !settings.is_empty() {
+            opts = opts.options(settings);
+        }
         let pool = PgPoolOptions::new()
-            .max_connections(16)
-            .acquire_timeout(Duration::from_secs(10))
+            .max_connections(o.max_connections)
+            .min_connections(o.min_connections)
+            .acquire_timeout(o.acquire_timeout)
+            .idle_timeout(o.idle_timeout)
+            .max_lifetime(o.max_lifetime)
             .connect_with(opts)
             .await
             .map_err(map_err)?;
@@ -121,6 +232,12 @@ impl PgStore {
     /// once. Refuses a database created with another shard count.
     pub async fn migrate(&self) -> Result<(), StoreError> {
         let mut tx = self.pool.begin().await.map_err(map_err)?;
+        // A migration may copy a large table; the pool's statement timeout
+        // is for requests, not for this.
+        sqlx::query("SET LOCAL statement_timeout = 0")
+            .execute(&mut *tx)
+            .await
+            .map_err(map_err)?;
         sqlx::query("SELECT pg_advisory_xact_lock($1)")
             .bind(MIGRATION_LOCK)
             .execute(&mut *tx)
@@ -458,6 +575,25 @@ impl Store for PgStore {
         Ok(())
     }
 
+    async fn update_namespace(&self, ns: NamespaceRecord) -> Result<(), StoreError> {
+        let updated = sqlx::query(
+            "UPDATE namespaces SET retention_secs = $2, state = $3, config = $4, \
+             db_record_version = db_record_version + 1 WHERE namespace_id = $1",
+        )
+        .bind(&ns.namespace_id)
+        .bind(ns.retention_secs)
+        .bind(ns.state)
+        .bind(&ns.config)
+        .execute(&self.pool)
+        .await
+        .map_err(map_err)?
+        .rows_affected();
+        if updated == 0 {
+            return Err(StoreError::NotFound);
+        }
+        Ok(())
+    }
+
     async fn namespace_by_name(
         &self,
         loams_namespace_id: &str,
@@ -568,7 +704,9 @@ impl Store for PgStore {
         }
         sqlx::query(
             "INSERT INTO executions (shard_id, namespace_id, workflow_id, run_id, status, \
-             next_event_id, db_record_version, state_blob) VALUES ($1, $2, $3, $4, $5, $6, 1, $7)",
+             next_event_id, db_record_version, state_blob, closed_at) \
+             VALUES ($1, $2, $3, $4, $5, $6, 1, $7, \
+             CASE WHEN $5 = $8 THEN NULL ELSE now() END)",
         )
         .bind(shard)
         .bind(&key.namespace_id)
@@ -577,6 +715,7 @@ impl Store for PgStore {
         .bind(s.commit.status)
         .bind(s.commit.next_event_id)
         .bind(&s.commit.state_blob)
+        .bind(STATUS_RUNNING)
         .execute(&mut *tx)
         .await
         .map_err(|e| {
@@ -680,7 +819,8 @@ impl Store for PgStore {
             i64::try_from(version).map_err(|_| StoreError::Corrupt("version overflow".into()))?;
         sqlx::query(
             "UPDATE executions SET state_blob = $5, status = $6, next_event_id = $7, \
-             db_record_version = $8, last_write_ts = now() \
+             db_record_version = $8, last_write_ts = now(), \
+             closed_at = CASE WHEN $6 = $9 THEN NULL ELSE coalesce(closed_at, now()) END \
              WHERE shard_id = $1 AND namespace_id = $2 AND workflow_id = $3 AND run_id = $4",
         )
         .bind(shard)
@@ -691,6 +831,7 @@ impl Store for PgStore {
         .bind(c.status)
         .bind(c.next_event_id)
         .bind(new_version)
+        .bind(STATUS_RUNNING)
         .execute(&mut *tx)
         .await
         .map_err(map_err)?;
@@ -815,32 +956,229 @@ impl Store for PgStore {
     }
 
     async fn visibility(&self, key: &RunKey) -> Result<Option<VisibilityRow>, StoreError> {
-        let Some(r) = sqlx::query(
-            "SELECT workflow_type, status, \
-             floor(extract(epoch FROM start_time) * 1000)::bigint AS start_ms, \
-             floor(extract(epoch FROM close_time) * 1000)::bigint AS close_ms, \
-             floor(extract(epoch FROM execution_time) * 1000)::bigint AS exec_ms, \
-             task_queue, memo, search_attrs FROM visibility \
-             WHERE namespace_id = $1 AND workflow_id = $2 AND run_id = $3",
-        )
-        .bind(&key.namespace_id)
-        .bind(&key.workflow_id)
-        .bind(&key.run_id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(map_err)?
-        else {
-            return Ok(None);
-        };
-        Ok(Some(VisibilityRow {
-            workflow_type: r.try_get("workflow_type").map_err(map_err)?,
-            status: r.try_get("status").map_err(map_err)?,
-            start_time_ms: r.try_get("start_ms").map_err(map_err)?,
-            close_time_ms: r.try_get("close_ms").map_err(map_err)?,
-            execution_time_ms: r.try_get("exec_ms").map_err(map_err)?,
-            task_queue: r.try_get("task_queue").map_err(map_err)?,
-            memo: r.try_get("memo").map_err(map_err)?,
-            search_attrs: r.try_get("search_attrs").map_err(map_err)?,
-        }))
+        let q = format!(
+            "SELECT {VIS_COLS} FROM visibility \
+             WHERE namespace_id = $1 AND workflow_id = $2 AND run_id = $3"
+        );
+        sqlx::query(sqlx::AssertSqlSafe(q))
+            .bind(&key.namespace_id)
+            .bind(&key.workflow_id)
+            .bind(&key.run_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(map_err)?
+            .as_ref()
+            .map(visibility_row)
+            .transpose()
     }
+
+    async fn list_runs(&self, req: &ListRuns) -> Result<RunPage, StoreError> {
+        page::check_page_size(req.page_size)?;
+        text_arg("namespace_id", &req.namespace_id)?;
+        if let Some(w) = &req.filter.workflow_id {
+            text_arg("workflow_id", w)?;
+        }
+        if let Some(t) = &req.filter.workflow_type {
+            text_arg("workflow_type", t)?;
+        }
+        let cursor = page::decode_list(&req.namespace_id, &req.filter, &req.page_token)?;
+        // start_time is written as to_timestamp(0) + ms, so the same
+        // expression on the cursor's ms compares exactly.
+        let q = format!(
+            "SELECT workflow_id, run_id, {VIS_COLS} FROM visibility \
+             WHERE namespace_id = $1 \
+             AND ($2::boolean IS NULL OR (status = $3) = $2) \
+             AND ($4::text IS NULL OR workflow_id = $4) \
+             AND ($5::text IS NULL OR workflow_type = $5) \
+             AND ($6::double precision IS NULL \
+               OR start_time < to_timestamp(0) + $6 * interval '1 millisecond' \
+               OR (start_time = to_timestamp(0) + $6 * interval '1 millisecond' \
+                   AND (workflow_id, run_id) > ($7::text, $8::text))) \
+             ORDER BY start_time DESC, workflow_id, run_id LIMIT $9"
+        );
+        let rows = sqlx::query(sqlx::AssertSqlSafe(q))
+            .bind(&req.namespace_id)
+            .bind(req.filter.open)
+            .bind(STATUS_RUNNING)
+            .bind(req.filter.workflow_id.as_deref())
+            .bind(req.filter.workflow_type.as_deref())
+            .bind(cursor.as_ref().map(|c| c.start_time_ms as f64))
+            .bind(cursor.as_ref().map(|c| c.workflow_id.as_str()))
+            .bind(cursor.as_ref().map(|c| c.run_id.as_str()))
+            // One more than asked, to know whether another page exists.
+            .bind(req.page_size as i64 + 1)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(map_err)?;
+        let mut runs = rows
+            .iter()
+            .map(|r| {
+                Ok(ListedRun {
+                    key: RunKey {
+                        namespace_id: req.namespace_id.clone(),
+                        workflow_id: r.try_get("workflow_id").map_err(map_err)?,
+                        run_id: r.try_get("run_id").map_err(map_err)?,
+                    },
+                    visibility: visibility_row(r)?,
+                })
+            })
+            .collect::<Result<Vec<_>, StoreError>>()?;
+        let next_page_token = if runs.len() > req.page_size {
+            runs.truncate(req.page_size);
+            match runs.last() {
+                Some(last) => page::encode_list(
+                    &req.namespace_id,
+                    &req.filter,
+                    &ListCursor {
+                        start_time_ms: last.visibility.start_time_ms,
+                        workflow_id: last.key.workflow_id.clone(),
+                        run_id: last.key.run_id.clone(),
+                    },
+                ),
+                None => Vec::new(),
+            }
+        } else {
+            Vec::new()
+        };
+        Ok(RunPage {
+            runs,
+            next_page_token,
+        })
+    }
+
+    async fn purge_expired(&self, limits: &PurgeLimits) -> Result<PurgeReport, StoreError> {
+        let mut report = PurgeReport::default();
+        if limits.max_runs > 0 {
+            let mut tx = self.pool.begin().await.map_err(map_err)?;
+            // Closed runs past retention with nothing left to hand to
+            // Resonate. SKIP LOCKED: a run being committed, or claimed by
+            // another replica's sweeper, waits for the next round.
+            let doomed = sqlx::query(
+                "SELECT e.shard_id, e.namespace_id, e.workflow_id, e.run_id \
+                 FROM executions e JOIN namespaces n ON n.namespace_id = e.namespace_id \
+                 WHERE e.closed_at IS NOT NULL \
+                 AND e.closed_at + make_interval(secs => n.retention_secs::double precision) \
+                     < now() \
+                 AND NOT EXISTS (SELECT 1 FROM outbox o \
+                   WHERE o.shard_id = e.shard_id AND o.namespace_id = e.namespace_id \
+                   AND o.workflow_id = e.workflow_id AND o.run_id = e.run_id \
+                   AND o.dispatched_at IS NULL) \
+                 ORDER BY e.closed_at LIMIT $1 FOR UPDATE OF e SKIP LOCKED",
+            )
+            .bind(i64::try_from(limits.max_runs).unwrap_or(i64::MAX))
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(map_err)?;
+            if !doomed.is_empty() {
+                let mut shards = Vec::with_capacity(doomed.len());
+                let mut nss = Vec::with_capacity(doomed.len());
+                let mut wfs = Vec::with_capacity(doomed.len());
+                let mut runs = Vec::with_capacity(doomed.len());
+                for r in &doomed {
+                    shards.push(r.try_get::<i32, _>("shard_id").map_err(map_err)?);
+                    nss.push(r.try_get::<String, _>("namespace_id").map_err(map_err)?);
+                    wfs.push(r.try_get::<String, _>("workflow_id").map_err(map_err)?);
+                    runs.push(r.try_get::<String, _>("run_id").map_err(map_err)?);
+                }
+                let by_run = "t.shard_id = k.shard_id AND t.namespace_id = k.namespace_id \
+                              AND t.workflow_id = k.workflow_id AND t.run_id = k.run_id";
+                let (shards, nss, wfs, runs) = (&shards[..], &nss[..], &wfs[..], &runs[..]);
+                let delete = move |table: &str, cond: &str| {
+                    purge_delete(table, cond)
+                        .bind(shards)
+                        .bind(nss)
+                        .bind(wfs)
+                        .bind(runs)
+                };
+                report.events = delete("history_events", by_run)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(map_err)?
+                    .rows_affected();
+                report.run_outbox_rows = delete("outbox", by_run)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(map_err)?
+                    .rows_affected();
+                delete(
+                    "visibility",
+                    "t.namespace_id = k.namespace_id AND t.workflow_id = k.workflow_id \
+                     AND t.run_id = k.run_id",
+                )
+                .execute(&mut *tx)
+                .await
+                .map_err(map_err)?;
+                // Only if it is still the current run: a newer run of the
+                // same workflow ID keeps its row.
+                delete("current_runs", by_run)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(map_err)?;
+                report.runs = delete("executions", by_run)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(map_err)?
+                    .rows_affected();
+            }
+            tx.commit().await.map_err(map_err)?;
+        }
+        if limits.max_outbox_rows > 0 {
+            report.dispatched_outbox_rows = sqlx::query(
+                "DELETE FROM outbox WHERE id IN (SELECT id FROM outbox \
+                 WHERE dispatched_at IS NOT NULL \
+                 AND dispatched_at < now() - make_interval(secs => $1) \
+                 ORDER BY dispatched_at LIMIT $2 FOR UPDATE SKIP LOCKED)",
+            )
+            .bind(limits.dispatched_outbox_ttl.as_secs_f64())
+            .bind(i64::try_from(limits.max_outbox_rows).unwrap_or(i64::MAX))
+            .execute(&self.pool)
+            .await
+            .map_err(map_err)?
+            .rows_affected();
+        }
+        if report.runs > 0 || report.dispatched_outbox_rows > 0 {
+            tracing::info!(
+                runs = report.runs,
+                events = report.events,
+                run_outbox_rows = report.run_outbox_rows,
+                dispatched_outbox_rows = report.dispatched_outbox_rows,
+                "loams-temporal-store: retention purge"
+            );
+        }
+        Ok(report)
+    }
+}
+
+/// `DELETE FROM <table> t USING k WHERE <cond>`, where `k` is the purged
+/// runs' keys bound as four arrays ($1 shard IDs, $2 namespace IDs, $3
+/// workflow IDs, $4 run IDs).
+fn purge_delete<'q>(
+    table: &str,
+    cond: &str,
+) -> sqlx::query::Query<'q, Postgres, sqlx::postgres::PgArguments> {
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "WITH k AS (SELECT * FROM UNNEST($1::integer[], $2::text[], $3::text[], $4::text[]) \
+         AS k(shard_id, namespace_id, workflow_id, run_id)) \
+         DELETE FROM {table} t USING k WHERE {cond}"
+    )))
+}
+
+/// The visibility columns [`visibility_row`] reads, times as Unix ms.
+const VIS_COLS: &str = "workflow_type, status, \
+     floor(extract(epoch FROM start_time) * 1000)::bigint AS start_ms, \
+     floor(extract(epoch FROM close_time) * 1000)::bigint AS close_ms, \
+     floor(extract(epoch FROM execution_time) * 1000)::bigint AS exec_ms, \
+     task_queue, memo, search_attrs";
+
+fn visibility_row(r: &PgRow) -> Result<VisibilityRow, StoreError> {
+    Ok(VisibilityRow {
+        workflow_type: r.try_get("workflow_type").map_err(map_err)?,
+        status: r.try_get("status").map_err(map_err)?,
+        start_time_ms: r.try_get("start_ms").map_err(map_err)?,
+        close_time_ms: r.try_get("close_ms").map_err(map_err)?,
+        execution_time_ms: r.try_get("exec_ms").map_err(map_err)?,
+        task_queue: r.try_get("task_queue").map_err(map_err)?,
+        memo: r.try_get("memo").map_err(map_err)?,
+        search_attrs: r.try_get("search_attrs").map_err(map_err)?,
+    })
 }

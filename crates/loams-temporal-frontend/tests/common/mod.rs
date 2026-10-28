@@ -52,6 +52,7 @@ pub async fn start_with(adjust: impl FnOnce(FrontendConfig) -> FrontendConfig) -
                 history_wait: Duration::from_secs(5),
                 ..Default::default()
             }),
+            ext: Default::default(),
         },
         rx,
     )
@@ -62,9 +63,11 @@ pub async fn start_with(adjust: impl FnOnce(FrontendConfig) -> FrontendConfig) -
         .expect("bind");
     let addr = listener.local_addr().expect("addr");
     let svc = gateway.service();
+    let op = gateway.operator_service();
     tokio::spawn(async move {
         tonic::transport::Server::builder()
             .add_service(svc)
+            .add_service(op)
             .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
             .await
             .expect("serve");

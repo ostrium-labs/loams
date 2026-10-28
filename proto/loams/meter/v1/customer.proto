@@ -1,0 +1,184 @@
+syntax = "proto3";
+
+// Loams Meter's customers (design §63 §9.1, §13, §17.1; ME1 Task 10): who
+// pays, the subjects their usage events carry, their payment state and their
+// spend controls.
+//
+// Authorization (§63 §19 point 5, OpenFGA model `deploy/openfga/core.fga`):
+// creating and changing customers needs `can_manage_meters` on
+// `platform:default` (people only: `meter_admin`); reading one also allows
+// `can_view_billing` on its org; `SetSpendControls` needs
+// `can_manage_billing` on the org (`billing_admin`); `SetPaymentState` is
+// callable only by the billing exporter's service identity. Agent principals
+// never pass the admin checks. Every change is an audit event.
+//
+// Amounts of money are integer micros of an ISO 4217 currency (D374).
+package loams.meter.v1;
+
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+import "loams/options/v1/options.proto";
+
+// Customers: who pays.
+service CustomerService {
+  option (loams.options.v1.module) = {
+    name: "meter.customers"
+    summary: "Meter customers: subjects, payment state and spend controls."
+  };
+
+  // Creates a customer. A retry with the same `idempotency_key` answers the
+  // customer the first call created.
+  rpc CreateCustomer(CreateCustomerRequest) returns (CreateCustomerResponse) {
+    option (loams.options.v1.facade) = {name: "create"};
+  }
+  // One customer, by id.
+  rpc GetCustomer(GetCustomerRequest) returns (GetCustomerResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+    option (loams.options.v1.facade) = {name: "get"};
+  }
+  // The customers of an org, or every customer for a meter admin.
+  rpc ListCustomers(ListCustomersRequest) returns (ListCustomersResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+    option (loams.options.v1.facade) = {
+      name: "list"
+      pagination: "customers:next_page_token"
+    };
+  }
+  // Changes the fields named in `update_mask`: `display_name`, `subjects`,
+  // `stripe_customer_id`.
+  rpc UpdateCustomer(UpdateCustomerRequest) returns (UpdateCustomerResponse) {
+    option idempotency_level = IDEMPOTENT;
+    option (loams.options.v1.facade) = {name: "update"};
+  }
+  // Sets the payment state from the billing provider. Only the billing
+  // exporter's service identity may call it, and it never changes an
+  // operator's `PAYMENT_STATE_INVOICE`.
+  rpc SetPaymentState(SetPaymentStateRequest) returns (SetPaymentStateResponse) {
+    option idempotency_level = IDEMPOTENT;
+    option (loams.options.v1.facade) = {name: "setPaymentState"};
+  }
+  // Turns overage on or off and sets the spend cap (§63 §13): overage needs
+  // a card on file and a cap.
+  rpc SetSpendControls(SetSpendControlsRequest) returns (SetSpendControlsResponse) {
+    option idempotency_level = IDEMPOTENT;
+    option (loams.options.v1.facade) = {name: "setSpendControls"};
+  }
+}
+
+// How a customer pays (§63 §13).
+enum PaymentState {
+  PAYMENT_STATE_UNSPECIFIED = 0;
+  // No payment method: the free tier, hard-stopped at its limits.
+  PAYMENT_STATE_NONE = 1;
+  // A card on file with the billing provider.
+  PAYMENT_STATE_CARD = 2;
+  // A contract, invoiced; set by an operator.
+  PAYMENT_STATE_INVOICE = 3;
+}
+
+// An amount of money (D374).
+message Money {
+  int64 micros = 1;
+  // ISO 4217, upper case.
+  string currency = 2;
+}
+
+// Overage and its cap (§63 §13).
+message SpendControls {
+  // Allow use past the included allowance, billed per unit.
+  bool overage_enabled = 1;
+  // Required with `overage_enabled`: overage stops here.
+  Money spend_cap = 2;
+  // Buy prepaid credit when it falls below `top_up_threshold`.
+  bool auto_top_up = 3;
+  Money top_up_amount = 4;
+  Money top_up_threshold = 5;
+}
+
+message Customer {
+  // A ULID.
+  string id = 1;
+  // The org that pays.
+  string org = 2;
+  string display_name = 3;
+  // The `subject` values its usage events carry.
+  repeated string subjects = 4;
+  PaymentState payment_state = 5;
+  SpendControls spend_controls = 6;
+  // The billing provider's customer, when it has one.
+  string stripe_customer_id = 7;
+  // ISO 4217: the currency the customer is billed in.
+  string currency = 8;
+  // The plan assigned, and its version; empty when none.
+  string plan = 9;
+  uint32 plan_version = 10;
+  google.protobuf.Timestamp create_time = 11;
+  google.protobuf.Timestamp update_time = 12;
+}
+
+message CreateCustomerRequest {
+  string org = 1;
+  string display_name = 2;
+  repeated string subjects = 3;
+  string currency = 4;
+  string stripe_customer_id = 5;
+  string idempotency_key = 6;
+}
+
+message CreateCustomerResponse {
+  Customer customer = 1;
+}
+
+message GetCustomerRequest {
+  string id = 1;
+}
+
+message GetCustomerResponse {
+  Customer customer = 1;
+}
+
+message ListCustomersRequest {
+  // Empty: every customer (meter admins only).
+  string org = 1;
+  uint32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListCustomersResponse {
+  repeated Customer customers = 1;
+  string next_page_token = 2;
+}
+
+message UpdateCustomerRequest {
+  string id = 1;
+  Customer customer = 2;
+  google.protobuf.FieldMask update_mask = 3;
+  string reason = 4;
+}
+
+message UpdateCustomerResponse {
+  Customer customer = 1;
+}
+
+message SetPaymentStateRequest {
+  // The customer, by id or by the billing provider's id.
+  string id = 1;
+  string stripe_customer_id = 2;
+  PaymentState payment_state = 3;
+  string reason = 4;
+}
+
+message SetPaymentStateResponse {
+  Customer customer = 1;
+}
+
+message SetSpendControlsRequest {
+  string id = 1;
+  SpendControls spend_controls = 2;
+  // Recorded in the audit event.
+  string reason = 3;
+}
+
+message SetSpendControlsResponse {
+  Customer customer = 1;
+}

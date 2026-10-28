@@ -10,6 +10,9 @@
 #   - role temporal (CREATEDB: Temporal's own persistence suite creates and
 #     drops test_* databases, DX1 R0.5) owning temporal and temporal_visibility;
 #   - role airflow owning airflow;
+#   - role loams_temporal owning loams_temporal: the Loams Temporal gateway's
+#     history, mutable state and outbox (design 74 §5.5, profile
+#     `temporal-gateway`; the gateway migrates its own schema at start);
 #   - role postgres (CREATEDB: DBOS's suites log in as `postgres` and create
 #     their own databases, R0.12) owning dbos_py, dbos_ts, dbos_go, dbos_java,
 #     one system database per app (D1520).
@@ -31,6 +34,8 @@ TEMPORAL_DB_USER=${TEMPORAL_DB_USER:-temporal}
 TEMPORAL_DB_PASSWORD=${TEMPORAL_DB_PASSWORD:-temporal}
 AIRFLOW_DB_USER=${AIRFLOW_DB_USER:-airflow}
 AIRFLOW_DB_PASSWORD=${AIRFLOW_DB_PASSWORD:-airflow}
+LOAMS_TEMPORAL_DB_USER=${LOAMS_TEMPORAL_DB_USER:-loams_temporal}
+LOAMS_TEMPORAL_DB_PASSWORD=${LOAMS_TEMPORAL_DB_PASSWORD:-loams_temporal}
 DBOS_DB_USER=${DBOS_DB_USER:-postgres}
 DBOS_DB_PASSWORD=${DBOS_DB_PASSWORD:-dbos}
 WAIT_SECONDS=${DURABLE_INIT_WAIT_SECONDS:-300}
@@ -45,8 +50,8 @@ plain() {
 }
 
 roles() {
-  for v in "$TEMPORAL_DB_USER" "$AIRFLOW_DB_USER" "$DBOS_DB_USER"; do plain role "$v"; done
-  for v in "$TEMPORAL_DB_PASSWORD" "$AIRFLOW_DB_PASSWORD" "$DBOS_DB_PASSWORD"; do plain password "$v"; done
+  for v in "$TEMPORAL_DB_USER" "$AIRFLOW_DB_USER" "$DBOS_DB_USER" "$LOAMS_TEMPORAL_DB_USER"; do plain role "$v"; done
+  for v in "$TEMPORAL_DB_PASSWORD" "$AIRFLOW_DB_PASSWORD" "$DBOS_DB_PASSWORD" "$LOAMS_TEMPORAL_DB_PASSWORD"; do plain password "$v"; done
   export PGPASSWORD="$ADMIN_PASSWORD" PGCONNECT_TIMEOUT=5
   psql_admin() { psql -h "$PG_HOST" -p "$PG_PORT" -U "$ADMIN_USER" -d postgres -v ON_ERROR_STOP=1 -XAtq "$@"; }
 
@@ -88,9 +93,11 @@ SQL
   role "$TEMPORAL_DB_USER" "$TEMPORAL_DB_PASSWORD" CREATEDB
   role "$AIRFLOW_DB_USER" "$AIRFLOW_DB_PASSWORD" NOCREATEDB
   role "$DBOS_DB_USER" "$DBOS_DB_PASSWORD" CREATEDB
+  role "$LOAMS_TEMPORAL_DB_USER" "$LOAMS_TEMPORAL_DB_PASSWORD" NOCREATEDB
   for db in temporal temporal_visibility; do database "$db" "$TEMPORAL_DB_USER"; done
   database airflow "$AIRFLOW_DB_USER"
   for db in dbos_py dbos_ts dbos_go dbos_java; do database "$db" "$DBOS_DB_USER"; done
+  database loams_temporal "$LOAMS_TEMPORAL_DB_USER"
   log "roles and databases ready"
 }
 
