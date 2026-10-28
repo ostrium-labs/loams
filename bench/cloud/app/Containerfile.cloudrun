@@ -1,0 +1,14 @@
+# The Cloud Run image (design 79 D1791): the app compiled ahead of time with Bun
+# into one binary, on a distroless base. Build from bench/cloud/app:
+#   podman build -f Containerfile.cloudrun -t <repo>/bench-app:<run-id> .
+FROM docker.io/oven/bun:1.4.3@sha256:ec06c3b6cea04192ae6770c434f668ca41d343ad19fa6472216c7b48be39c598 AS build
+WORKDIR /src
+COPY src ./src
+RUN bun build --compile --minify --target=bun-linux-x64 src/shims/cloudrun.mjs --outfile /out/server
+
+FROM gcr.io/distroless/cc-debian12:nonroot@sha256:9dac0a79194e45a7da0158a9c6da57b217585af0786db3845d1f0ec1a0dd182f
+COPY --from=build /out/server /server
+USER nonroot
+ENV PORT=8080
+EXPOSE 8080
+ENTRYPOINT ["/server"]

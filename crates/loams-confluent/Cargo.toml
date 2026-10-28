@@ -1,0 +1,29 @@
+[package]
+name = "loams-confluent"
+description = "A small Confluent Cloud API client (keys, clusters, metrics, costs) and `loams byoc confluent key|check` (design 80 §7.2, D1827; plan CC1 Tasks 4 and 6). No Confluent code."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+clap = { workspace = true, features = ["env"] }
+humantime.workspace = true
+# `rustls-no-provider`: TLS with the ring provider, installed by `run`, as the loams binary does.
+reqwest = { workspace = true, features = ["rustls-no-provider", "query"] }
+rustls = { workspace = true, features = ["ring", "std", "tls12", "logging"] }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["rt", "macros", "time", "net", "process", "io-util"] }
+zeroize.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+base64.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time", "sync", "process", "io-util"] }
+
+[lints]
+workspace = true

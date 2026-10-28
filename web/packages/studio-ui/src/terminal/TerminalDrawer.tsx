@@ -266,7 +266,7 @@ export function linkRange(
  * sent.
  */
 export function sanitizePaste(text: string): string {
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what is removed
+  // oxlint-disable-next-line no-control-regex -- control characters are what is removed
   return text.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g, "");
 }
 
@@ -487,7 +487,7 @@ export function TerminalViewport({
     if (visible) surfaceRef.current?.fit();
   }, [visible]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: focusRequestId asks again.
+  // oxlint-disable-next-line react/exhaustive-deps -- focusRequestId asks again.
   useEffect(() => {
     if (!autoFocus || !visible) return;
     surfaceRef.current?.focus();
@@ -925,7 +925,7 @@ export function TerminalDrawer({
               }
             >
               {visibleTerminalIds.map((terminalId) => (
-                // biome-ignore lint/a11y/noStaticElementInteractions: a pointer shortcut; the tab list is the keyboard path.
+                // oxlint-disable-next-line jsx-a11y/no-static-element-interactions -- a pointer shortcut; the tab list is the keyboard path.
                 <div
                   key={terminalId}
                   className={cx(

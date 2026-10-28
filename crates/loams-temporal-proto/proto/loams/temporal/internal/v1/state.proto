@@ -10,6 +10,7 @@ import "google/protobuf/timestamp.proto";
 import "temporal/api/common/v1/message.proto";
 import "temporal/api/failure/v1/message.proto";
 import "temporal/api/history/v1/message.proto";
+import "temporal/api/update/v1/message.proto";
 
 // What a task token carries (plan DX1 ruling X1.R4). The token an SDK
 // receives is this message, encoded, followed by an HMAC-SHA256 over the
@@ -83,6 +84,98 @@ message MutableState {
   int64 last_task_id = 24;
   // Signals recorded so far (Temporal's limits count them, X1.R7).
   int64 signal_count = 25;
+  // Workflow updates the run knows (TMP-api, D2080): admitted ones wait for
+  // a workflow task, accepted ones for the worker's response; completed,
+  // rejected and aborted ones stay so a retried update ID or a
+  // `PollWorkflowExecutionUpdate` gets the same outcome.
+  repeated UpdateInfo updates = 26;
+  // Child workflows initiated and not yet closed (TMP-api D2087).
+  repeated ChildInfo children = 27;
+  // The parent, when this run is a child workflow.
+  ParentInfo parent = 28;
+  // Signals to, and cancel requests of, other workflows that are initiated
+  // and not yet answered: initiated event ID -> its target.
+  repeated ExternalInfo external_signals = 29;
+  repeated ExternalInfo external_cancels = 30;
+  // Waiting for the first workflow task's backoff (a continued run's
+  // `backoff_start_interval`): no workflow task until it passes.
+  bool first_task_backoff = 31;
+  // The parent close policy of each child is in ChildInfo; this run's own
+  // memo and search attributes, as upserted.
+  .temporal.api.common.v1.Memo memo = 32;
+  .temporal.api.common.v1.SearchAttributes search_attributes = 33;
+  // The Temporal namespace's name (children started in "the same
+  // namespace" record it); empty for runs folded from history.
+  string namespace_name = 34;
+  // The request IDs of the last signals (at most 100): a signal repeated
+  // with one of them is a retry and is not written again (D2089).
+  repeated string signal_request_ids = 35;
+}
+
+message ChildInfo {
+  int64 initiated_event_id = 1;
+  // 0 until the child has started.
+  int64 started_event_id = 2;
+  string namespace = 3;
+  string namespace_id = 4;
+  string workflow_id = 5;
+  string run_id = 6;
+  string workflow_type = 7;
+  // temporal.api.enums.v1.ParentClosePolicy.
+  int32 parent_close_policy = 8;
+}
+
+message ParentInfo {
+  string namespace = 1;
+  string namespace_id = 2;
+  string workflow_id = 3;
+  string run_id = 4;
+  int64 initiated_event_id = 5;
+}
+
+message ExternalInfo {
+  int64 initiated_event_id = 1;
+  string namespace = 2;
+  string namespace_id = 3;
+  string workflow_id = 4;
+  string run_id = 5;
+}
+
+// Where a workflow update is in its lifecycle (Temporal's update protocol:
+// admitted -> sent with a workflow task -> accepted or rejected by the
+// worker -> completed).
+enum UpdateState {
+  UPDATE_STATE_UNSPECIFIED = 0;
+  // Admitted by the gateway; not yet handed to a worker.
+  UPDATE_STATE_ADMITTED = 1;
+  // Its request message went out with the workflow task `sent_in_wft`.
+  UPDATE_STATE_SENT = 2;
+  // The worker accepted it (`WorkflowExecutionUpdateAccepted` written).
+  UPDATE_STATE_ACCEPTED = 3;
+  // The worker responded (`WorkflowExecutionUpdateCompleted` written).
+  UPDATE_STATE_COMPLETED = 4;
+  // The worker's validator rejected it; nothing was written to history.
+  UPDATE_STATE_REJECTED = 5;
+  // The run closed first. Without an outcome the caller gets "workflow
+  // execution already completed"; with one (it had been accepted) the
+  // outcome is the failure Temporal reports.
+  UPDATE_STATE_ABORTED = 6;
+}
+
+message UpdateInfo {
+  string update_id = 1;
+  UpdateState state = 2;
+  // The request as admitted (the SDK echoes it back in its acceptance, or
+  // the gateway fills it in).
+  .temporal.api.update.v1.Request request = 3;
+  // The scheduled event ID of the workflow task the request went out with.
+  int64 sent_in_wft = 4;
+  int64 accepted_event_id = 5;
+  int64 completed_event_id = 6;
+  // The outcome of a rejected or aborted update (a completed one's outcome
+  // is in its completed event).
+  .temporal.api.update.v1.Outcome outcome = 7;
+  google.protobuf.Timestamp admitted_time = 8;
 }
 
 message WorkflowTaskInfo {

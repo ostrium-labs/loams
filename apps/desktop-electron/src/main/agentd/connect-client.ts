@@ -17,7 +17,10 @@
 // No electron import; setup.ts wires it.
 import { createClient, type Transport } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
-import { DaemonMode as ProtoDaemonMode, StudioService } from "@loams/proto/agentd";
+import {
+	DaemonMode as ProtoDaemonMode,
+	StudioService,
+} from "@loams/proto/agentd";
 import type { AgentdClient, ConnectFn, Subscription } from "./client";
 import { type AgentdTarget, agentdDir, readAgentdTarget } from "./discover";
 import {
@@ -46,7 +49,11 @@ function modeOf(m: ProtoDaemonMode): DaemonMode {
 	return m === ProtoDaemonMode.SERVICE ? "service" : "child";
 }
 
-function transportFor(t: AgentdTarget, doFetch: typeof fetch): Transport {
+/** A Connect transport to the daemon's loopback listener, with the token only main holds. */
+export function transportFor(
+	t: AgentdTarget,
+	doFetch: typeof fetch = (i, init) => globalThis.fetch(i, init),
+): Transport {
 	return createConnectTransport({
 		baseUrl: t.url,
 		useBinaryFormat: true,
@@ -66,9 +73,13 @@ async function getHost(
 	const client = createClient(StudioService, transportFor(t, doFetch));
 	const r = await client.getHost({}, { timeoutMs });
 	const h = r.host;
-	if (!h) throw new AgentdError("unavailable", "The daemon did not describe itself");
+	if (!h)
+		throw new AgentdError("unavailable", "The daemon did not describe itself");
 	if (h.protocol !== AGENTD_PROTOCOL)
-		throw new AgentdError("protocol_mismatch", `The daemon speaks protocol ${h.protocol}`);
+		throw new AgentdError(
+			"protocol_mismatch",
+			`The daemon speaks protocol ${h.protocol}`,
+		);
 	return {
 		protocol: h.protocol,
 		version: h.version,
@@ -94,15 +105,18 @@ function statusOf(h: HelloReply): DaemonStatus {
 
 /** A ConnectFn over the daemon's `loams.agentd.v1` listener. */
 export function connectAgentd(deps: ConnectClientDeps = {}): ConnectFn {
-	const target = deps.target ?? ((dataDir: string) => readAgentdTarget(agentdDir(dataDir)));
-	const doFetch: typeof fetch = deps.fetch ?? ((input, init) => globalThis.fetch(input, init));
+	const target =
+		deps.target ?? ((dataDir: string) => readAgentdTarget(agentdDir(dataDir)));
+	const doFetch: typeof fetch =
+		deps.fetch ?? ((input, init) => globalThis.fetch(input, init));
 	const pollMs = deps.pollMs ?? 5_000;
 	const timeoutMs = deps.timeoutMs ?? 5_000;
 	const kill = deps.kill ?? ((pid, signal) => void process.kill(pid, signal));
 
 	return async ({ dataDir }) => {
 		const first = target(dataDir);
-		if (!first) throw new AgentdError("unavailable", "The daemon is not running");
+		if (!first)
+			throw new AgentdError("unavailable", "The daemon is not running");
 		let hello: HelloReply;
 		try {
 			hello = await getHost(first, doFetch, timeoutMs);
@@ -111,7 +125,10 @@ export function connectAgentd(deps: ConnectClientDeps = {}): ConnectFn {
 			throw new AgentdError("unavailable", "The daemon did not answer");
 		}
 
-		const listeners = { disconnected: new Set<() => void>(), reconnected: new Set<() => void>() };
+		const listeners = {
+			disconnected: new Set<() => void>(),
+			reconnected: new Set<() => void>(),
+		};
 		const timers = new Set<ReturnType<typeof setInterval>>();
 		let closed = false;
 		let lost = false;
@@ -140,11 +157,13 @@ export function connectAgentd(deps: ConnectClientDeps = {}): ConnectFn {
 				return hello;
 			},
 			async call(method) {
-				if (closed) throw new AgentdError("unavailable", "The daemon is not running");
+				if (closed)
+					throw new AgentdError("unavailable", "The daemon is not running");
 				switch (method) {
 					case "DaemonStatus": {
 						const h = await probe();
-						if (!h) throw new AgentdError("unavailable", "The daemon is not running");
+						if (!h)
+							throw new AgentdError("unavailable", "The daemon is not running");
 						hello = h;
 						return statusOf(h) as never;
 					}

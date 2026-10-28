@@ -1,0 +1,1 @@
+SELECT a + 1 AS x FROM t25 WHERE x > 2 ORDER BY x DESC

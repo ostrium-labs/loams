@@ -16,6 +16,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::artifact::{ArtifactFetch, ArtifactSources, FetchError, Origin};
+use crate::engine::{self, Engine, EngineError, EngineProbe, ResolvedEngine};
 use crate::provenance::{self, ProvenanceError};
 use crate::verify::SignatureVerifier;
 
@@ -23,6 +25,10 @@ use crate::verify::SignatureVerifier;
 pub enum InstallError {
     #[error(transparent)]
     Provenance(#[from] ProvenanceError),
+    #[error(transparent)]
+    Fetch(#[from] FetchError),
+    #[error(transparent)]
+    Engine(#[from] EngineError),
     #[error("{package} runs code at install ({script}); Loams installs run no code (D1473)")]
     InstallScript { package: String, script: String },
     #[error(
@@ -83,6 +89,20 @@ pub struct Installed {
     pub entry: String,
     /// The signing identity the provenance named, or empty.
     pub built_by: String,
+    /// The `node` runtime's engine (`node` or `bun`, D1808); absent for other
+    /// runtimes and in records written before it, which mean `node`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine: Option<String>,
+}
+
+impl Installed {
+    /// The engine this install runs on, for a `node` runtime install.
+    pub fn engine(&self) -> Engine {
+        match self.engine.as_deref() {
+            Some("bun") => Engine::Bun,
+            _ => Engine::Node,
+        }
+    }
 }
 
 /// Where a listing lives on disk.
@@ -357,6 +377,7 @@ pub fn install_node(
             .display()
             .to_string(),
         built_by: built.identity,
+        engine: Engine::of(listing).map(|e| e.as_str().to_owned()),
     };
     // Only one version is kept: the old one goes after the new one is in place.
     if let Some(previous) = layout.installed(id)
@@ -371,13 +392,78 @@ pub fn install_node(
     Ok(record)
 }
 
+/// Resolves the listing's engine (D1808), then installs with
+/// [`install_node`]. A Bun listing on a machine without Bun at a version in
+/// its range is refused here, before anything is written: the "Bun not
+/// installed" state is [`EngineError::NotInstalled`]. The install itself is
+/// the same scripts-off npm path for both engines (MS1 Task 6 ruling 2).
+#[allow(clippy::too_many_arguments)]
+pub fn install_node_with_engine(
+    layout: &Layout,
+    listing: &Value,
+    tarball: &[u8],
+    provenance_bundles: &[Vec<u8>],
+    verifier: &dyn SignatureVerifier,
+    npm: &dyn Npm,
+    probe: &dyn EngineProbe,
+    context: &Context,
+) -> Result<(Installed, ResolvedEngine), InstallError> {
+    let resolved = engine::resolve(listing, probe)?;
+    let installed = install_node(
+        layout,
+        listing,
+        tarball,
+        provenance_bundles,
+        verifier,
+        npm,
+        context,
+    )?;
+    Ok((installed, resolved))
+}
+
+/// Fetches a `node` listing's npm tarball, from its Walrus mirror when
+/// Walrus is enabled and from the registry otherwise or on any Walrus
+/// failure (D1812), then installs it with [`install_node`], unchanged:
+/// integrity and Sigstore provenance are checked on the bytes whichever way
+/// they came (D1459).
+pub async fn install_node_fetched(
+    layout: &Layout,
+    listing: &Value,
+    fetch: &ArtifactFetch<'_>,
+    provenance_bundles: &[Vec<u8>],
+    verifier: &dyn SignatureVerifier,
+    npm: &dyn Npm,
+    context: &Context,
+) -> Result<(Installed, Origin), InstallError> {
+    if str_at(listing, &["runtime", "kind"]) != Some("node")
+        || str_at(listing, &["artifact", "type"]) != Some("npm")
+    {
+        return Err(InstallError::Unsupported(
+            "only node listings with npm artifacts install in MK0".into(),
+        ));
+    }
+    let sources = ArtifactSources::package(listing, fetch.npm_registry)?;
+    let (tarball, origin) = fetch.fetch(&sources).await?;
+    let installed = install_node(
+        layout,
+        listing,
+        &tarball,
+        provenance_bundles,
+        verifier,
+        npm,
+        context,
+    )?;
+    Ok((installed, origin))
+}
+
 /// A marketplace ACP harness as agentd's harness registry takes it (D1464):
 /// the listing id and the launch line for its installed entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HarnessRegistration {
     pub listing_id: String,
     pub display_name: String,
-    /// `node`, run on `entry` (the node runtime), or the entry itself (binary).
+    /// The engine (`node` or `bun`) run on `entry` (the node runtime), or the
+    /// entry itself (binary).
     pub program: String,
     pub args: Vec<String>,
     pub models: Vec<String>,
@@ -385,19 +471,21 @@ pub struct HarnessRegistration {
 
 /// Builds the registration for an installed ACP harness; native harnesses
 /// are agentd's own adapters and are only enabled, never registered.
+/// `engine` is the resolved engine's program for the node runtime
+/// ([`engine::resolve`]): `node`, or `bun` with its flags (D1808).
 pub fn harness_registration(
     listing: &Value,
     installed: &Installed,
-    node: &Path,
+    engine_program: &Path,
 ) -> Result<Option<HarnessRegistration>, InstallError> {
     let harness = &listing["harness"];
     match str_at(harness, &["launch", "protocol"]) {
         Some("native") => Ok(None),
         Some("acp") => {
             let mut args: Vec<String> = Vec::new();
-            let program = if str_at(listing, &["runtime", "kind"]) == Some("node") {
-                args.push(installed.entry.clone());
-                node.display().to_string()
+            let program = if let Some(engine) = Engine::of(listing) {
+                args.extend(engine::engine_args(engine, &installed.entry));
+                engine_program.display().to_string()
             } else {
                 installed.entry.clone()
             };
@@ -514,6 +602,7 @@ pub fn install_without_artifact(
         plan_digest: context.plan_digest.clone(),
         entry: String::new(),
         built_by: String::new(),
+        engine: None,
     };
     layout.write_record(&record)?;
     Ok(record)

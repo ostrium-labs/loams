@@ -1,0 +1,7 @@
+{
+  "app": "forgejo",
+  "fields": {
+    "token": "pat-1"
+  },
+  "url": "https://git.example.com"
+}

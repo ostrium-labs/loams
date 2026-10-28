@@ -253,7 +253,7 @@ export function DocumentsTab({ api, tables, sel, onSel, onGone }: TabProps) {
   const [tick, setTick] = useState(0);
   const args = queryArgs(sel, limit);
   const key = JSON.stringify(args);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `key` is the args, `tick` the refresh
+  // oxlint-disable-next-line react/exhaustive-deps -- `key` is the args, `tick` the refresh
   useEffect(() => {
     if (!args) return;
     const ctl = new AbortController();
@@ -682,7 +682,7 @@ export function LivePage({
   const gone = useCallback(() => setLoaded({ state: 'needs-tikv' }), []);
   const notice = useLiveNotice(desktop?.engine);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `tick` is the reload trigger
+  // oxlint-disable-next-line react/exhaustive-deps -- `tick` is the reload trigger
   useEffect(() => {
     const ctl = new AbortController();
     let retry: ReturnType<typeof setTimeout> | undefined;

@@ -2,13 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://loams.dev/schemas/kafka.config.json",
   "title": "Apache Kafka connector instance config (loams.flow/v1)",
-  "description": "One Kafka connector instance's settings: the brokers and topics it reads or writes, the consumer group, and the SASL/TLS material. Covers both directions of the ★ Kafka connector (design §33 §8 row 1; CN1 plan Task 6). Secrets are named, never stored here: `sasl.password` and `tls.key_pem` resolve through the namespace's secret store (D189) and are exactly the manifest's `secrets` list (CN1 Task 1's semantic rule).",
+  "description": "One Kafka connector instance's settings: the brokers and topics it reads or writes, the consumer group, and the SASL/TLS material. Covers both directions of the ★ Kafka connector (design §33 §8 row 1; CN1 plan Task 6). Secrets are named, never stored here: `sasl.password`, `sasl.username_secret`, `tls.key_pem`, `schema_registry.basic_auth.password` and `schema_registry.basic_auth.username_secret` resolve through the namespace's secret store (D189) and are exactly the manifest's `secrets` list (CN1 Task 1's semantic rule).",
   "type": "object",
   "additionalProperties": false,
   "required": ["brokers", "topics", "group_id_prefix"],
   "properties": {
     "brokers": {
-      "description": "Bootstrap brokers as host:port, comma separated. Required: there is no default cluster.",
+      "description": "Bootstrap brokers as host:port, comma separated. Required: there is no default cluster. A listener scheme on an entry (SASL_SSL://, SSL://, PLAINTEXT://, SASL_PLAINTEXT://, any case), as Confluent Cloud's bootstrap_endpoint sometimes carries, is removed (CC0 R0.12); any other scheme is refused.",
       "type": "string",
       "minLength": 1
     },
@@ -25,6 +25,11 @@
     },
     "group_id": {
       "description": "Full consumer group id, when an instance overrides the runtime's `loams-<ns>-<instance>` default (CN1 Task 6).",
+      "type": "string",
+      "minLength": 1
+    },
+    "transactional_id_prefix": {
+      "description": "Prefix of the exactly-once sink's transactional.id, which becomes <prefix><instance>-<split>; unset, loams-<ns>-. On Confluent Cloud set the confluent module's transactional_id_prefix output (default loams-<name>-), the prefix its PREFIXED ACL allows (CC1 Task 8, D1826).",
       "type": "string",
       "minLength": 1
     },
@@ -58,7 +63,7 @@
       "default": "ssl"
     },
     "sasl": {
-      "description": "SASL material. Present only when security_protocol starts with sasl_.",
+      "description": "SASL material. Present only when security_protocol starts with sasl_. Exactly one of username and username_secret is required once a target profile's defaults are merged (a profile may supply username, as azure-event-hubs does), so the schema itself refuses only both.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -69,9 +74,15 @@
           "default": "scram-sha-512"
         },
         "username": {
-          "description": "The SASL username.",
+          "description": "The SASL username, as a value. Mutually exclusive with username_secret.",
           "type": "string",
           "minLength": 1
+        },
+        "username_secret": {
+          "description": "The SASL username as the name of a secret, resolved through the secret store (D189) like password: a Confluent Cloud API key id, which loams-byoc-secrets writes beside its secret (confluent-<integration>/username, D1827). Mutually exclusive with username.",
+          "type": "string",
+          "minLength": 1,
+          "writeOnly": true
         },
         "password": {
           "description": "The SASL password. Resolved through the secret store (D189); never stored in the instance (CN1 Global Constraints).",
@@ -80,7 +91,8 @@
           "writeOnly": true
         }
       },
-      "required": ["username", "password"]
+      "required": ["password"],
+      "not": { "required": ["username", "username_secret"] }
     },
     "tls": {
       "description": "TLS material. Present only when security_protocol ends with _ssl or is ssl.",
@@ -125,7 +137,7 @@
       "default": "__loams_checkpoints"
     },
     "create_checkpoint_topic": {
-      "description": "Create checkpoint_topic (compacted, one partition) when it is missing.",
+      "description": "Create checkpoint_topic (compacted, one partition) when it is missing. The confluent-cloud profile sets false: Loams' data account has no CREATE there (D1826), so the module or the user creates the topic.",
       "type": "boolean",
       "default": true
     },
@@ -153,6 +165,40 @@
       "minimum": 0,
       "default": 100
     },
+    "rate_limit": {
+      "description": "The instance's rates, shared by its splits (D1822; §80 §8.1: Loams' connector byte rate bounds its share of a cluster's throughput charges). Mapped to the connector SDK's RateLimit, a token bucket the pipeline applies before each read or write. An absent rate is unlimited.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "bytes_per_sec": { "description": "Bytes per second, at least 1.", "type": "integer", "minimum": 1 },
+        "requests_per_sec": { "description": "Reads or writes (batches) per second, at least 1.", "type": "integer", "minimum": 1 }
+      }
+    },
+    "format": {
+      "description": "How the source reads a record's value (CC1 Task 3, D1822; §80 §4.2). plain: CloudEvents pass-through or a wrapped record. debezium-json: a Debezium change event from the JSON converter, with or without its schema/payload wrapper. debezium-avro: the same in Confluent wire-format Avro, decoded with the writer schema from schema_registry (required). A Debezium event becomes a Loams change event (loamsop c/u/d/r/t, loamslsn from Debezium's source block); a record from Debezium's schema-change topic becomes a schema-change event; anything else goes to the DLQ as poison. Source only: a sink refuses anything but plain.",
+      "type": "string",
+      "enum": ["plain", "debezium-json", "debezium-avro"],
+      "default": "plain"
+    },
+    "debezium": {
+      "description": "Options for format debezium-json and debezium-avro.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tombstones": {
+          "description": "What a tombstone (a key with no value, written after a delete for log compaction) becomes: a delete of that key, or nothing.",
+          "type": "string",
+          "enum": ["delete", "drop"],
+          "default": "delete"
+        },
+        "key_fields": {
+          "description": "The row fields that make the change's key (from after, or before for a delete). Empty: the record key, Debezium's key struct.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "default": []
+        }
+      }
+    },
     "pipeline": {
       "description": "The connector SDK's per-instance pipeline overrides (max_batch_rows, max_batch_bytes, linger_ms, max_in_flight_batches, memory_budget_bytes, checkpoint_interval_ms, retry).",
       "type": "object"
@@ -163,10 +209,32 @@
       "additionalProperties": false,
       "required": ["url"],
       "properties": {
-        "url": { "description": "The registry base URL.", "type": "string", "minLength": 1 },
+        "url": { "description": "The registry base URL, http:// or https://.", "type": "string", "minLength": 1 },
         "subject_prefix": {
           "description": "Subject prefix for this instance's topics.",
           "type": "string"
+        },
+        "basic_auth": {
+          "description": "HTTP Basic credentials for the registry (Confluent Cloud's Schema Registry API key and secret). password, and username_secret when used, are secret names resolved through the secret store (D189); exactly one of username and username_secret.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["password"],
+          "oneOf": [{ "required": ["username"] }, { "required": ["username_secret"] }],
+          "properties": {
+            "username": { "description": "The username, as a value.", "type": "string", "minLength": 1 },
+            "username_secret": {
+              "description": "The username as a secret's name (confluent-<integration>/sr-username, D1827).",
+              "type": "string",
+              "minLength": 1,
+              "writeOnly": true
+            },
+            "password": {
+              "description": "The password as a secret's name (confluent-<integration>/sr-password). Resolved through the secret store (D189); never stored in the instance.",
+              "type": "string",
+              "minLength": 1,
+              "writeOnly": true
+            }
+          }
         }
       }
     }

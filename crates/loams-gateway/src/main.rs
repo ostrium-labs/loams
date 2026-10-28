@@ -14,7 +14,9 @@ struct Args {
     #[arg(long, default_value = "/etc/loams-gateway/gateway.toml")]
     config: PathBuf,
     /// Which module this process runs: `pg` (the Postgres front door) or,
-    /// with the `temporal` feature, `temporal` (its own Deployment, §74 §12).
+    /// with the `temporal` feature, `temporal` (its own Deployment, §74 §12),
+    /// or with the `spark` feature, `spark` (the Spark Connect proxy), or
+    /// `browser` (agents' CDP sessions to the browser service, D2118).
     #[arg(long, default_value = "pg")]
     module: String,
 }
@@ -34,6 +36,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()?;
     match args.module.as_str() {
         "pg" => {}
+        "browser" => {
+            let config = loams_gateway::browser::load(&text)?;
+            return runtime.block_on(async move {
+                loams_gateway::browser::serve(config, terminate())
+                    .await
+                    .map_err(Into::into)
+            });
+        }
         #[cfg(feature = "temporal")]
         "temporal" => {
             let config = loams_gateway::temporal::load(&text)?;
@@ -43,11 +53,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .map_err(Into::into)
             });
         }
+        #[cfg(feature = "spark")]
+        "spark" => {
+            let config = loams_gateway::spark::load(&text)?;
+            return runtime.block_on(async move {
+                loams_gateway::spark::serve(config, terminate())
+                    .await
+                    .map_err(Into::into)
+            });
+        }
         other => {
             return Err(format!(
-                "unknown module {other:?} (built: pg{})",
+                "unknown module {other:?} (built: pg, browser{}{})",
                 if cfg!(feature = "temporal") {
                     ", temporal"
+                } else {
+                    ""
+                },
+                if cfg!(feature = "spark") {
+                    ", spark"
                 } else {
                     ""
                 }

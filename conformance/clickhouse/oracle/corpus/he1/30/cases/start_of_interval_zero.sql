@@ -1,0 +1,1 @@
+SELECT toStartOfInterval(toDateTime('2024-03-05 10:34:56'), INTERVAL 0 MINUTE)

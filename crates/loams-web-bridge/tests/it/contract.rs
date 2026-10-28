@@ -1,21 +1,18 @@
-//! One conformance suite, run against both providers.
+//! One conformance suite, run against every provider.
 //!
 //! This is the point of the abstraction: the same assertions hold whichever
-//! provider a deployment selects, and the local provider cannot drift from the
-//! remote one without a test failing.
+//! provider a deployment selects — Obscura launched locally, Obscura as the
+//! deployment's `browser` service, or a host's own page driver — and none can
+//! drift from the others without a test failing (D2112).
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use loams_web_bridge::testing::{
-    FakeCdp, FakeDriver, FakeTransport, ax_tree_with_button, login_page, read_page,
-};
+use loams_web_bridge::testing::{FakeCdp, FakeDriver, login_page, obscura_answers, obscura_over};
 use loams_web_bridge::{
-    BrowserProvider, BrowserRunProvider, CredentialPolicy, MapSecretResolver, OpenRequest, PageRef,
-    ProviderKind, SecretRef, SnapshotRequest, WaitCondition, WaitRequest, WebBridgeConfig,
-    local_provider,
+    BrowserProvider, MapSecretResolver, OpenRequest, PageRef, ProviderKind, SecretRef,
+    SnapshotRequest, WaitCondition, WaitRequest, WebBridgeConfig, local_provider,
 };
-use serde_json::{Value, json};
 
 const URL: &str = "https://example.com/login";
 
@@ -25,62 +22,33 @@ fn url(raw: &str) -> url::Url {
 
 fn resolver() -> Arc<MapSecretResolver> {
     Arc::new(MapSecretResolver::new().with(
-        SecretRef::parse("env:cloudflare#api_token").unwrap_or_else(|_| panic!("ref")),
+        SecretRef::parse("env:browser-token").unwrap_or_else(|_| panic!("ref")),
         "canary-token-4f8b2c19d7e3",
     ))
 }
 
-fn remote() -> Box<dyn BrowserProvider> {
-    let mut config = WebBridgeConfig {
-        provider: ProviderKind::BrowserRun,
+/// The Obscura provider of `kind` over a scripted engine.
+fn obscura(kind: ProviderKind) -> Box<dyn BrowserProvider> {
+    let config = WebBridgeConfig {
+        provider: kind,
         ..WebBridgeConfig::default()
     };
-    config.browser_run.account_id = "0123456789abcdef0123456789abcdef".to_string();
-    config.browser_run.token_secret_ref = Some("env:cloudflare#api_token".to_string());
-    config.browser_run.plan = loams_web_bridge::Plan::Paid;
-    config.browser_run.min_session_interval_ms = Some(0);
-    let mut answers: HashMap<String, Value> = HashMap::new();
-    answers.insert(
-        "Target.createTarget".to_string(),
-        json!({ "targetId": "t1" }),
-    );
-    answers.insert(
-        "Target.attachToTarget".to_string(),
-        json!({ "sessionId": "s1" }),
-    );
-    answers.insert(
-        "Accessibility.getFullAXTree".to_string(),
-        ax_tree_with_button("Sign in", 42),
-    );
-    answers.insert(
-        "Runtime.evaluate".to_string(),
-        read_page(URL, "Sign in", "Sign in to continue"),
-    );
-    answers.insert(
-        "DOM.resolveNode".to_string(),
-        json!({ "object": { "objectId": "o1" } }),
-    );
-    answers.insert("Page.navigate".to_string(), json!({ "frameId": "f1" }));
-    let transport = Arc::new(FakeTransport::new(Arc::new(FakeCdp::new(answers))));
-    Box::new(
-        BrowserRunProvider::new(
-            config.browser_run.clone(),
-            config.egress().unwrap_or_else(|error| panic!("{error}")),
-            config.credentials.clone(),
-            resolver(),
-            transport,
-        )
-        .unwrap_or_else(|error| panic!("{error}")),
-    )
+    Box::new(obscura_over(
+        kind,
+        &config,
+        Arc::new(FakeCdp::new(obscura_answers(URL)).with_events()),
+        resolver(),
+    ))
 }
 
+/// The host-driver seam over the deterministic driver.
 fn local() -> Box<dyn BrowserProvider> {
     let driver = Arc::new(FakeDriver::new(login_page(URL)));
     let mut config = WebBridgeConfig {
         provider: ProviderKind::Local,
         ..WebBridgeConfig::default()
     };
-    config.local.artifact_dir = None;
+    config.artifact_dir = None;
     local_provider(&config, driver, resolver()).unwrap_or_else(|error| panic!("{error}"))
 }
 
@@ -205,37 +173,43 @@ async fn contract(provider: &dyn BrowserProvider) {
 }
 
 #[tokio::test]
-async fn the_local_provider_satisfies_the_contract() {
+async fn the_host_driver_seam_satisfies_the_contract() {
     contract(local().as_ref()).await;
 }
 
 #[tokio::test]
-async fn the_remote_provider_satisfies_the_same_contract() {
-    contract(remote().as_ref()).await;
+async fn obscura_launched_locally_satisfies_the_contract() {
+    contract(obscura(ProviderKind::Local).as_ref()).await;
 }
 
 #[tokio::test]
-async fn the_providers_report_different_engines_and_different_trust() {
-    let local = local();
-    let remote = remote();
+async fn obscura_as_the_browser_service_satisfies_the_same_contract() {
+    contract(obscura(ProviderKind::Service).as_ref()).await;
+}
 
-    assert_eq!(local.engine(), None);
-    assert_eq!(remote.engine(), Some(loams_web_bridge::Engine::Chromium));
+#[tokio::test]
+async fn local_and_service_differ_only_in_where_the_credentials_live() {
+    let local = obscura(ProviderKind::Local);
+    let service = obscura(ProviderKind::Service);
+
+    assert_eq!(local.engine(), Some(loams_web_bridge::Engine::Obscura));
+    assert_eq!(service.engine(), Some(loams_web_bridge::Engine::Obscura));
 
     let local_caps = local.capabilities();
-    let remote_caps = remote.capabilities();
+    let service_caps = service.capabilities();
     assert!(local_caps.credentials_stay_local);
-    assert!(!remote_caps.credentials_stay_local);
-    assert!(local_caps.authenticated_sessions);
-    assert!(
-        remote_caps.authenticated_sessions,
-        "chromium keeps a session"
+    assert!(!service_caps.credentials_stay_local);
+    assert_eq!(
+        loams_web_bridge::Capabilities {
+            credentials_stay_local: false,
+            ..local_caps
+        },
+        service_caps,
+        "everything else is the same"
     );
-    assert!(!remote_caps.guardrails, "no allow list was configured");
 
     // Both are swappable behind the one trait.
-    let providers: Vec<Arc<dyn BrowserProvider>> = vec![Arc::from(local), Arc::from(remote)];
-    assert_eq!(providers.len(), 2);
+    let providers: Vec<Arc<dyn BrowserProvider>> = vec![Arc::from(local), Arc::from(service)];
     for provider in providers {
         assert!(provider.capabilities().core);
     }
@@ -243,60 +217,38 @@ async fn the_providers_report_different_engines_and_different_trust() {
 
 #[tokio::test]
 async fn a_handle_is_opaque_and_says_only_what_it_must() {
-    let page = PageRef::new(ProviderKind::BrowserRun, "remote-target-1");
+    let page = PageRef::new(ProviderKind::Service, "service-1");
     let rendered = format!("{page:?}");
-    assert!(rendered.contains("remote-target-1"));
+    assert!(rendered.contains("service-1"));
     assert!(!rendered.contains("session"), "{rendered}");
     assert!(!rendered.contains("token"), "{rendered}");
 }
 
 #[tokio::test]
-async fn the_remote_provider_honours_an_allow_list_it_was_given() {
-    let mut config = WebBridgeConfig {
-        provider: ProviderKind::BrowserRun,
-        ..WebBridgeConfig::default()
-    };
-    config.browser_run.account_id = "0123456789abcdef0123456789abcdef".to_string();
-    config.browser_run.token_secret_ref = Some("env:cloudflare#api_token".to_string());
-    config.browser_run.plan = loams_web_bridge::Plan::Paid;
-    config.browser_run.min_session_interval_ms = Some(0);
-    config.allowed_domains = vec!["*.example.com".to_string()];
-    let mut answers: HashMap<String, Value> = HashMap::new();
-    answers.insert(
-        "Target.createTarget".to_string(),
-        json!({ "targetId": "t1" }),
-    );
-    answers.insert(
-        "Target.attachToTarget".to_string(),
-        json!({ "sessionId": "s1" }),
-    );
-    answers.insert(
-        "Accessibility.getFullAXTree".to_string(),
-        ax_tree_with_button("Sign in", 42),
-    );
-    answers.insert(
-        "Runtime.evaluate".to_string(),
-        read_page(URL, "Sign in", "Sign in"),
-    );
-    answers.insert("Page.navigate".to_string(), json!({ "frameId": "f1" }));
-    let provider = BrowserRunProvider::new(
-        config.browser_run.clone(),
-        config.egress().unwrap_or_else(|error| panic!("{error}")),
-        CredentialPolicy::default(),
-        resolver(),
-        Arc::new(FakeTransport::new(Arc::new(FakeCdp::new(answers)))),
-    )
-    .unwrap_or_else(|error| panic!("{error}"));
-
-    let page = provider
-        .open(OpenRequest::at(url("https://app.example.com/login")))
-        .await
-        .unwrap_or_else(|error| panic!("{error}"));
-    let error = provider
-        .navigate(&page, &url("https://elsewhere.test/"))
-        .await
-        .err()
-        .unwrap_or_else(|| panic!("off the allow list"));
-    assert!(error.to_string().contains("allow list"), "{error}");
-    assert!(provider.capabilities().guardrails);
+async fn both_kinds_honour_an_allow_list_they_were_given() {
+    for kind in [ProviderKind::Local, ProviderKind::Service] {
+        let mut config = WebBridgeConfig {
+            provider: kind,
+            ..WebBridgeConfig::default()
+        };
+        config.allowed_domains = vec!["*.example.com".to_string()];
+        let provider = obscura_over(
+            kind,
+            &config,
+            Arc::new(FakeCdp::new(obscura_answers(
+                "https://app.example.com/login",
+            ))),
+            resolver(),
+        );
+        let page = provider
+            .open(OpenRequest::at(url("https://app.example.com/login")))
+            .await
+            .unwrap_or_else(|error| panic!("{error}"));
+        let error = provider
+            .navigate(&page, &url("https://elsewhere.test/"))
+            .await
+            .err()
+            .unwrap_or_else(|| panic!("off the allow list"));
+        assert!(error.to_string().contains("allow list"), "{error}");
+    }
 }

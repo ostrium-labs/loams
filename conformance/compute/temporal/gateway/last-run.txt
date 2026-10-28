@@ -1,0 +1,1 @@
+2026-10-27, dev 0e9c0e8fb, loams-temporal in development mode (memory store, in-process Resonate) on loopback, the corpus's Go and TypeScript generators

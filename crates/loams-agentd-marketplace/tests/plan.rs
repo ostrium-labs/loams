@@ -241,6 +241,40 @@ async fn widening_updates_are_found() {
     assert_ne!(plan::digest(&old), plan::digest(&new));
 }
 
+#[tokio::test]
+async fn plan_shows_engine() {
+    let dir = tempfile::tempdir().unwrap();
+    let market = market(dir.path()).await;
+    let view = market
+        .get_listing("ostrium/loams-starter", None, None)
+        .unwrap();
+    // No `engine` in the listing: the node runtime runs on node.
+    assert_eq!(plan::plan(&view, &[]).engine.as_deref(), Some("node"));
+    let mut bun = view.clone();
+    bun.version.listing["runtime"]["engine"] = "bun".into();
+    let on_bun = plan::plan(&bun, &[]);
+    assert_eq!(on_bun.engine.as_deref(), Some("bun"));
+    assert_ne!(plan::digest(&on_bun), plan::digest(&plan::plan(&view, &[])));
+    // Other runtimes have no engine.
+    let mcp = market
+        .get_listing("ostrium/github-mcp-server", None, None)
+        .unwrap();
+    assert_eq!(plan::plan(&mcp, &[]).engine, None);
+}
+
+#[tokio::test]
+async fn engine_change_widens() {
+    let dir = tempfile::tempdir().unwrap();
+    let market = market(dir.path()).await;
+    let (old, _) = market
+        .plan_install("ostrium/loams-starter", None, None, &[])
+        .unwrap();
+    let mut new = old.clone();
+    new.engine = Some("bun".into());
+    assert_eq!(plan::widens(&old, &new), ["runs on bun instead of node"]);
+    assert!(plan::widens(&old, &old).is_empty());
+}
+
 fn provisioned(dir: &Path) -> Provisioned {
     Provisioned {
         endpoint: "http://127.0.0.1:7700".into(),

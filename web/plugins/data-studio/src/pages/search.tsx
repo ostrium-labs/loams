@@ -181,7 +181,7 @@ export function SearchTab({
   );
 
   // The first search: the URL's state, reading the "similar to" document's vector first.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: once per collection
+  // oxlint-disable-next-line react/exhaustive-deps -- once per collection
   useEffect(() => {
     const initial = fromParams(params, fields);
     if (initial.similarTo && initial.vectorField) {
@@ -281,7 +281,7 @@ export function SearchTab({
       )}
 
       {/* Filter pills */}
-      {/* biome-ignore lint/a11y/useSemanticElements: a labelled row of pills, not a form fieldset */}
+      {/* oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a labelled row of pills, not a form fieldset */}
       <div role="group" className="flex flex-wrap items-center gap-1.5" aria-label="Filters">
         {state.pills.map((p) =>
           editing === p.id ? (
@@ -565,7 +565,7 @@ function PillEditor({
   const err = check && !check.ok ? check.error : undefined;
   return (
     // Escape that the suggestion list did not take cancels the edit.
-    // biome-ignore lint/a11y/noStaticElementInteractions: keyboard handling for the editor inside
+    // oxlint-disable-next-line jsx-a11y/no-static-element-interactions -- keyboard handling for the editor inside
     <span
       className="inline-flex w-96 max-w-full flex-col gap-1"
       onKeyDown={(e) => {
@@ -760,7 +760,7 @@ const SMALL_CONTROL =
 
 function Control({ label, children }: { label: string; children: ReactNode }) {
   return (
-    // biome-ignore lint/a11y/useSemanticElements: a labelled group of inline controls
+    // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a labelled group of inline controls
     <div role="group" aria-label={label} className="inline-flex flex-wrap items-center gap-1.5">
       <span className="text-muted">{label}</span>
       {children}

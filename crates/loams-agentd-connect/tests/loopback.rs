@@ -100,6 +100,10 @@ const LIST_HARNESSES: &str = "/loams.agentd.v1.HarnessService/ListHarnesses";
 
 /// A raw Connect unary POST with JSON, so headers are fully under test.
 async fn post(url: &str, headers: &[(&str, &str)]) -> (u16, serde_json::Value) {
+    // Feature unification can build reqwest with `rustls-no-provider` (as
+    // loams-walrus asks for), and then a client panics without a process
+    // provider; install ring's, as the remote listener uses, if none is set.
+    let _ = rustls::crypto::ring::default_provider().install_default();
     let mut request = reqwest::Client::new()
         .post(url)
         .header("content-type", "application/json")
