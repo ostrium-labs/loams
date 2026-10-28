@@ -10,8 +10,18 @@ publish = false
 
 [dependencies]
 loams-house-types = { path = "../loams-house-types" }
+# `Native` blocks in the native protocol's framing (HE1 Task 36, R9.41).
+loams-house-native = { path = "../loams-house-native" }
 arrow-array.workspace = true
 arrow-schema.workspace = true
+# `Arrow`/`ArrowStream` and `Parquet` output: the workspace's Arrow 59 line.
+# Apache-2.0.
+arrow-ipc.workspace = true
+parquet.workspace = true
+
+[dev-dependencies]
+# `parquet_reads_back_identically` reads the file from memory. MIT.
+bytes.workspace = true
 
 [lints]
 workspace = true

@@ -1,0 +1,16 @@
+apiVersion: v2
+name: loams-meter-agent
+description: >-
+  The Loams Meter node agent as a DaemonSet (design 63 §21, ME1 Task 30):
+  cgroup v2 metering from outside the tenant sandboxes, the Kubernetes pod
+  resolver, inotify final reads, the T1 host-report socket and the spool
+  forwarded to the _system/_meter stream. Preview.
+type: application
+version: 0.1.0
+appVersion: "0.1.2"
+kubeVersion: ">=1.29.0-0"
+home: https://github.com/ostrium-labs/loams
+sources:
+  - https://github.com/ostrium-labs/loams/tree/main/deploy/helm/loams-meter-agent
+annotations:
+  licenses: Apache-2.0

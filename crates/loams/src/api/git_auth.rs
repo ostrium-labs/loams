@@ -444,13 +444,26 @@ pub(crate) fn role_for(need: GitAccess) -> Role {
     }
 }
 
+/// The model relation on `environment:<namespace>` that `need` asks (design 76 §9).
+pub(crate) fn relation_for(need: GitAccess) -> &'static str {
+    match need {
+        GitAccess::Read => "can_read",
+        GitAccess::Write => "can_write",
+        GitAccess::Admin => "can_admin",
+    }
+}
+
 /// Whether a main-port caller holds `need` on Loams Git: the operator always (the developer on
 /// loopback, or a key from `LOAMS_API_KEYS_FILE` before first-run setup); anyone else by their
-/// org role ([`role_for`]).
+/// org role ([`role_for`]) and, in `namespace` when given, by model v1 through `loams-authz`
+/// ([`relation_for`] on `environment:<namespace>`, plan IA1 ruling IA2.R4). Both must allow,
+/// so the model only narrows what the role gives: an org member writes only the namespaces of
+/// the projects they are granted, and the org's own namespaces.
 pub(crate) async fn authorize_caller(
     principals: &Principals,
     principal: &Principal,
     need: GitAccess,
+    namespace: Option<&str>,
 ) -> Result<(), Denied> {
     if principal.kind == PrincipalKind::DevLoopback {
         return Ok(());
@@ -460,10 +473,34 @@ pub(crate) async fn authorize_caller(
         .authorize(principal, role_for(need))
         .await
     {
-        Ok(_) => Ok(()),
+        Ok(_) => {}
         // Before first-run setup the only keys are the operator's own.
-        Err(Denied::SetupRequired) if principal.kind == PrincipalKind::ApiKey => Ok(()),
-        Err(denied) => Err(denied),
+        Err(Denied::SetupRequired) if principal.kind == PrincipalKind::ApiKey => return Ok(()),
+        Err(denied) => return Err(denied),
+    }
+    let Some(namespace) = namespace else {
+        return Ok(());
+    };
+    let refused = || Denied::RoleRequired {
+        need: role_for(need),
+        have: None,
+    };
+    let subject = match crate::auth::authz::standing(principals, principal).await? {
+        crate::auth::authz::Standing::Operator => return Ok(()),
+        crate::auth::authz::Standing::Outside => return Err(refused()),
+        crate::auth::authz::Standing::Subject(subject) => subject,
+    };
+    let doc = principals.directory.read().await?;
+    let mut check =
+        crate::auth::authz::environment_check(&doc, &subject, relation_for(need), namespace);
+    drop(doc);
+    if matches!(need, GitAccess::Admin) {
+        check = check.consistency(loams_authz::Consistency::HigherConsistency);
+    }
+    match principals.authz.check(check).await {
+        Ok(decision) if decision.allowed => Ok(()),
+        Ok(_) => Err(refused()),
+        Err(err) => Err(Denied::Unavailable(err.to_string())),
     }
 }
 

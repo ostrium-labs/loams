@@ -52,28 +52,28 @@ pub fn plain_cast(t: &ChType, stored: &Type) -> Option<PrimitiveType> {
         ChType::SimpleAggregateFunction(spec) => spec.args[0].base().clone(),
         other => other.clone(),
     };
-    let fine = match base {
+    let fine = matches!(
+        base,
         ChType::Int8
-        | ChType::Int16
-        | ChType::Int32
-        | ChType::Int64
-        | ChType::UInt8
-        | ChType::UInt16
-        | ChType::UInt32
-        | ChType::UInt64
-        | ChType::Float32
-        | ChType::Float64
-        | ChType::Decimal { .. }
-        | ChType::Bool
-        | ChType::String
-        | ChType::FixedString(_)
-        | ChType::Date
-        | ChType::Date32
-        | ChType::DateTime(_)
-        | ChType::DateTime64(..)
-        | ChType::Uuid => true,
-        _ => false,
-    };
+            | ChType::Int16
+            | ChType::Int32
+            | ChType::Int64
+            | ChType::UInt8
+            | ChType::UInt16
+            | ChType::UInt32
+            | ChType::UInt64
+            | ChType::Float32
+            | ChType::Float64
+            | ChType::Decimal { .. }
+            | ChType::Bool
+            | ChType::String
+            | ChType::FixedString(_)
+            | ChType::Date
+            | ChType::Date32
+            | ChType::DateTime(_)
+            | ChType::DateTime64(..)
+            | ChType::Uuid
+    );
     fine.then(|| p.clone())
 }
 

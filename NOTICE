@@ -39,6 +39,13 @@ arrayEnumerateExtended.h, arraySort, arrayAggregation, FunctionArrayMapped.h),
 src/Functions/map.cpp, src/Functions/tuple.cpp, src/Functions/tupleElement.cpp,
 src/Functions/IFunction.cpp's default implementations and
 src/Analyzer/Resolve/QueryAnalyzer.cpp's untuple expansion.
+The output format writers in
+fabric/crates/loams-house-formats/ (plan HE1 Task 36) follow the layouts of
+ClickHouse's src/Processors/Formats/Impl/ (JSON, JSONCompact, JSONEachRow,
+JSONCompactEachRow, TabSeparated, CSV, Values, RowBinary, Native, Pretty and
+PrettyCompact output formats), src/Formats/JSONUtils.cpp and the binary
+serializations of src/DataTypes/Serializations/; each file names the sources
+it follows. No ClickHouse code is copied.
 
 Quickwit (https://github.com/quickwit-oss/quickwit), Apache License 2.0.
 Files under crates/loams-quickwit/ are derived from Quickwit revision
@@ -429,6 +436,16 @@ command semantics where it is better than Tidis's, at revision
 97868f5d24e0c13621658fbcb712064fec59e8be (design 77 sections 8.1 and 8.3).
 Files whose logic follows Titan name it in their headers. Titan has no
 NOTICE file.
+
+ClickHouse (https://github.com/ClickHouse/ClickHouse), Apache License 2.0,
+Copyright 2016-2026 ClickHouse, Inc. The date and time functions of the
+Loams House Rust engine (fabric/crates/loams-house-exec/src/func/datetime/)
+port rules of src/Common/DateLUTImpl.h, src/Functions/DateTimeTransforms.h,
+src/Functions/toStartOfInterval.cpp, src/Functions/dateDiff.cpp,
+src/Functions/FunctionDateOrDateTimeAddInterval.h,
+src/Functions/formatDateTime.cpp and src/IO/parseDateTimeBestEffort.cpp at
+tag v26.9.2.8-stable (plan HE1 Task 30). Files that port it name the source
+in their headers.
 
 TiKV migration (https://github.com/tikv/migration), Apache License 2.0,
 Copyright TiKV Project Authors. loams-tikv's CDC consumer (KV1) ports the

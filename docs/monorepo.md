@@ -73,7 +73,7 @@ Nx discovers the JS, mobile and native projects, including existing package scri
 - `peerDependencyRules.allowedVersions.vite` names the same version as the pin, because `vite-plus-core` identifies as its own version and Vite plugins' `vite: ^8` peer ranges would otherwise fail. A bump changes both lines in one PR, and only to a release at least 14 days old.
 - Test files import from `vite-plus/test`, and configs (`vite.config.ts`) from `vite-plus`. Scripts call `vp dev`, `vp build`, `vp preview` and `vp test run`: with `vite` aliased there is no `vite` binary.
 - Lint and format are `vp check` (Oxlint and Oxfmt; design 79 D1773), configured in the `lint` and `fmt` sections of `web/vite.config.ts` and `agents/factory/vite.config.ts`. The rules are VV0 Task 1's Biome parity table ([vv0-report.md](plans/vv0-report.md)); suppressions are `// oxlint-disable-next-line <rule> -- <reason>`. `pnpm format` (`vp fmt`) rewrites. Formatting-only commits go in `.git-blame-ignore-revs`. Biome and ESLint are gone.
-- The desktop is the one exception until it moves to electron-vite 6.0.0 (from 2026-10-28): it keeps Vite 7.3.7 and Vitest 5.0.3 of its own.
+- A global `vite` override (and `vitest`) in `pnpm-workspace.yaml` points every other `vite` in the tree, peers included, at the same `vite-plus-core`. The desktop builds on it through electron-vite 6.0.0 (VV0 Task 6: electron-vite 5 on Vite 8 inlined Electron's launcher, #811, #935).
 
 MSW's nonessential postinstall is explicitly disabled.
 

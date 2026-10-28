@@ -42,6 +42,8 @@ loams-authz.workspace = true
 # The format registry (UP1 Task 1).
 loams-common.workspace = true
 loams-kv.workspace = true
+# Usage events and the entitlement gate (design §63; ME1 Tasks 3, 21).
+loams-meter-gate.workspace = true
 # The clients NeonClients adapts (src/neon.rs); loams-postgres never
 # depends on this crate.
 loams-postgres.workspace = true
