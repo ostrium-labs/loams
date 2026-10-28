@@ -8,6 +8,10 @@
 # Ruby corpus in the same pull request.
 require 'temporalio/api'
 require 'temporalio/cancellation'
+# Workflow::Definition refers to Temporalio::VersioningBehavior without
+# requiring it (gem 1.9.0); the worker and the client load it, a bare
+# Definition::Info.from_class (the unit test, the replayer) does not.
+require 'temporalio/common_enums'
 require 'temporalio/error'
 require 'temporalio/retry_policy'
 require 'temporalio/search_attributes'
