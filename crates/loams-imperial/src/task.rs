@@ -17,6 +17,8 @@ pub enum TaskState {
     Done,
     /// The task ended unsuccessfully.
     Failed,
+    /// The task was cancelled by an authorized supervisor.
+    Cancelled,
 }
 
 /// Hard per-task limits. `deadline_ms` is an absolute trusted-clock deadline.
@@ -56,6 +58,19 @@ pub struct Task {
 }
 
 impl Task {
+    // Caller verifies the supervisor lease in the same transaction. Task
+    // deadlines never prevent cleanup of a stuck or expired task.
+    pub(crate) fn cancel_by_supervisor(&mut self) -> Result<(), TaskError> {
+        match self.state {
+            TaskState::Ready | TaskState::Running | TaskState::Blocked => {
+                self.state = TaskState::Cancelled;
+                Ok(())
+            }
+            TaskState::Done | TaskState::Failed | TaskState::Cancelled => {
+                Err(TaskError::InvalidTransition)
+            }
+        }
+    }
     /// Creates a ready task with positive token, step and wall-time limits.
     pub fn new(id: &str, budget: TaskBudget) -> Result<Self, TaskError> {
         if id.is_empty() || budget.tokens == 0 || budget.steps == 0 || budget.deadline_ms == 0 {

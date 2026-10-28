@@ -31,12 +31,12 @@ enum Action {
     Finish,
 }
 
-fn decode_task(bytes: Option<Vec<u8>>) -> Result<Task, TxnError> {
+pub(crate) fn decode_task(bytes: Option<Vec<u8>>) -> Result<Task, TxnError> {
     let bytes = bytes.ok_or_else(|| TxnError::Fatal("task not found".into()))?;
     serde_json::from_slice(&bytes).map_err(|_| TxnError::Fatal("invalid persisted task".into()))
 }
 
-fn encode_task(task: &Task) -> Result<Vec<u8>, TxnError> {
+pub(crate) fn encode_task(task: &Task) -> Result<Vec<u8>, TxnError> {
     serde_json::to_vec(task).map_err(|_| TxnError::Fatal("task encoding failed".into()))
 }
 
