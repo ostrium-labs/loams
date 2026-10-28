@@ -43,8 +43,14 @@
           "api/console/openapi.json",
           "docs/api/route-map.md"
         ],
+        "loams-flink": [
+          "deploy/flink/compose/config.yaml",
+          "deploy/flink/connector-jars.toml",
+          "deploy/flink/k8s/config.yaml"
+        ],
         "loams-gateway": [
-          "deploy/pgdog/compose.yaml"
+          "deploy/pgdog/compose.yaml",
+          "deploy/release/engines/**"
         ],
         "loams-live": [
           "docs/api/reasons.md"
@@ -121,6 +127,7 @@
           "conformance/connectors/fixtures/cloudflare-r2/**"
         ],
         "loams-house-engine": [
+          "conformance/clickhouse/profile/profile.toml",
           "conformance/clickhouse/oracle/corpus/he1/26/**",
           "fabric/crates/loams-house/src/settings.rs"
         ],

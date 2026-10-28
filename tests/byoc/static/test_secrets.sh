@@ -107,6 +107,26 @@ if INTEGRATIONS=confluent OPT=--confluent-only SM=sm run aws loams/other; then
   grep -q 'loams/other/confluent-confluent-api-key is not in the secret store yet' "$tmp/out-aws" \
     && ok "confluent_only_skips_required_secrets" || bad "aws --confluent-only: $(cat "$tmp/out-aws")"
 else bad "aws --confluent-only must not need the tailnet key: $(cat "$tmp/out-aws")"; fi
+# a changed key restarts the connect service; an unchanged one does not
+cat >"$tmp/compose" <<'SH'
+#!/usr/bin/env bash
+echo "$*" >>"${COMPOSE_LOG:?}"
+[[ "$1" == ps ]] && echo connect
+exit 0
+SH
+chmod +x "$tmp/compose"
+d="$tmp/stack-aws/secrets/connect/0/confluent-confluent"
+: >"$tmp/compose.log"
+INTEGRATIONS=confluent OPT=--confluent-only SM=sm run aws loams/t LOAMS_BYOC_COMPOSE="$tmp/compose" COMPOSE_LOG="$tmp/compose.log" || true
+: >"$tmp/compose.log"   # the run above may have restored files an earlier test removed
+INTEGRATIONS=confluent OPT=--confluent-only SM=sm run aws loams/t LOAMS_BYOC_COMPOSE="$tmp/compose" COMPOSE_LOG="$tmp/compose.log" || true
+! grep -q '^restart' "$tmp/compose.log" && ok "confluent_only_unchanged_keys_restart_nothing" || bad "restarted on unchanged keys: $(cat "$tmp/compose.log")"
+printf old-rotated >"$d/password"
+INTEGRATIONS=confluent OPT=--confluent-only SM=sm run aws loams/t LOAMS_BYOC_COMPOSE="$tmp/compose" COMPOSE_LOG="$tmp/compose.log" || true
+grep -qx 'restart connect' "$tmp/compose.log" && grep -q 'restarted the connect service' "$tmp/out-aws" && [[ "$(cat "$d/password")" == csecret-PLANTED-5 ]] \
+  && ok "confluent_only_changed_key_restarts_connect" || bad "no restart after a key change: $(cat "$tmp/compose.log") $(cat "$tmp/out-aws")"
+check_clean_output aws
+
 # no integration: a no-op that reads nothing (no metadata service needed)
 if INTEGRATIONS="" OPT=--confluent-only SM=sm run aws loams/t LOAMS_BYOC_IMDS_URL=http://127.0.0.1:9; then
   ok "confluent_only_without_integrations_is_a_no_op"

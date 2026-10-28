@@ -16,6 +16,12 @@
 //! - [`managed`]: the `ManagedEngine` adapter and the proxy's Kubernetes
 //!   router (start-on-first-connect).
 //! - [`proto`]: the Spark Connect protos (apache/spark v4.1.3).
+//! - [`jobs`] (SP-b): Spark batch jobs (a PySpark file, a JAR, or a SQL file)
+//!   on a Connect driver, Spark on Kubernetes or a local runner, with
+//!   retries, status, log links and Resonate schedules; [`cli`] is
+//!   `loams spark`.
+//! - [`catalog`] (SP-b): the job and session side of the `loams` Iceberg
+//!   catalog (vended credentials; the House's `ns_<id>.<db>` names).
 //!
 //! Everything here is **preview** (design 81 R20) and has not yet been run
 //! end to end.
@@ -32,8 +38,8 @@ pub mod sessions;
 pub mod standalone;
 pub mod wire;
 
-// SP-b's modules (jobs, catalog, CLI). Whichever lane lands second keeps
-// both sets of lines (engines-81.md, SP-a/SP-b):
-// pub mod catalog;
-// pub mod jobs;
-// pub use jobs::cli;
+// SP-b's modules: Spark batch jobs on the Jobs API (design 26 §9.2, §9.4),
+// the job and session side of the Iceberg catalog, and the `loams spark` CLI.
+pub mod catalog;
+pub mod jobs;
+pub use jobs::cli;

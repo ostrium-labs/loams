@@ -9,6 +9,7 @@
 # $OC_OUT/dbos-py.junit.xml and $OC_OUT/dbos-py-suite.junit.xml, then the
 # strict expected-failure check against dbos-py/xfail.toml.
 # OC_SKIP=suite,cases skips a part (its entries then read as stale).
+# Endpoint mode: direct (endpoint-modes.md; checked by selftest.sh recipe_endpoint_mode_matches_suite)
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=conformance/compute/lib.sh

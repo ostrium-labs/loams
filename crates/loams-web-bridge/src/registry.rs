@@ -33,9 +33,9 @@ impl ProviderRegistry {
                     && (!requirements.screenshots || caps.screenshots)
                     && (!requirements.extraction || caps.extraction)
                     && (!requirements.authenticated_sessions || caps.authenticated_sessions)
-                    && (!requirements.guardrails || caps.guardrails)
                     && (!requirements.tabs || caps.tabs)
                     && (!requirements.credentials_stay_local || caps.credentials_stay_local)
+                    && (!requirements.downloads || caps.downloads)
             })
             .cloned()
     }
@@ -158,27 +158,27 @@ mod tests {
             screenshots: true,
             extraction: true,
             authenticated_sessions: true,
-            guardrails: false,
             tabs: true,
             credentials_stay_local: true,
+            downloads: false,
         };
         registry.register(Arc::new(MockProvider {
             kind: ProviderKind::Local,
             capabilities: local_caps,
         }));
 
-        let remote_caps = Capabilities {
+        let shared_caps = Capabilities {
             core: true,
             screenshots: true,
-            extraction: true,
+            extraction: false,
             authenticated_sessions: false,
-            guardrails: true,
             tabs: false,
             credentials_stay_local: false,
+            downloads: false,
         };
         registry.register(Arc::new(MockProvider {
-            kind: ProviderKind::BrowserRun,
-            capabilities: remote_caps,
+            kind: ProviderKind::Local,
+            capabilities: shared_caps,
         }));
 
         // Requirements matching local
@@ -187,23 +187,28 @@ mod tests {
             ..Capabilities::default()
         };
         let p1 = registry.select(&req1).unwrap();
-        assert_eq!(p1.kind(), ProviderKind::Local);
+        assert!(p1.capabilities().credentials_stay_local);
 
-        // Requirements matching remote (guardrails)
+        // The first provider that satisfies every requirement wins.
         let req2 = Capabilities {
-            guardrails: true,
+            screenshots: true,
             ..Capabilities::default()
         };
         let p2 = registry.select(&req2).unwrap();
-        assert_eq!(p2.kind(), ProviderKind::BrowserRun);
+        assert!(p2.capabilities().extraction, "the first match, in order");
 
         // Requirements matching none
         let req3 = Capabilities {
-            guardrails: true,
-            credentials_stay_local: true,
+            extraction: true,
             ..Capabilities::default()
         };
-        assert!(registry.select(&req3).is_none());
+        let mut empty = ProviderRegistry::new();
+        assert!(empty.select(&req3).is_none());
+        empty.register(Arc::new(MockProvider {
+            kind: ProviderKind::Local,
+            capabilities: Capabilities::default(),
+        }));
+        assert!(empty.select(&req3).is_none());
     }
 
     #[test]
@@ -224,6 +229,5 @@ mod tests {
             registry.select_by_kind(ProviderKind::Local).unwrap().kind(),
             ProviderKind::Local
         );
-        assert!(registry.select_by_kind(ProviderKind::BrowserRun).is_none());
     }
 }

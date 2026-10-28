@@ -33,13 +33,14 @@ The browser fetches whatever an agent asks for, so whoever can reach it has a br
 
 - **Compose:**
   - The service publishes no port.
-  - It sits on the internal `browser` network, which only agentd shares, and on a `browser-egress` network of its own for the internet.
-  - It refuses to start without `LOAMS_BROWSER_TOKEN`, which must be at least 32 bytes.
+  - agentd reaches only `browser-gateway`, over the internal `browser` network. Only the gateway reaches the engine, over the internal `browser-engine` network.
+  - The engine has a `browser-egress` network of its own for the internet.
+  - The engine and the gateway refuse to start without `LOAMS_BROWSER_TOKEN` and `LOAMS_BROWSER_CLIENT_TOKEN`, each at least 32 bytes.
 - **Kubernetes:**
   - The Service is ClusterIP only.
-  - The NetworkPolicy admits only `loams-agentd` and `loams-gateway` pods.
+  - The engine's NetworkPolicy admits only the browser gateway's pods (`k8s/gateway.yaml`), and the gateway's policy admits only `loams-agentd` pods.
   - It lets the browser out only to DNS and to public addresses on ports 80 and 443. Private, link-local (cloud metadata) and CGNAT ranges are excluded.
-- **loams-gateway:** there is no CDP WebSocket route yet (design 57). Until there is one, agentd connects to the service directly on the private network, and the gateway is only admitted by the policy ahead of time.
+- **loams-gateway** (D2118): `loams-gateway --module browser` ([`gateway-browser.toml.example`](gateway-browser.toml.example)) accepts agents' CDP handshakes with a client token of its own and opens the engine with the engine's token, so agents never hold that token. Compose and the Kubernetes manifests put it in front by default (D2119).
 
 The provider adds the same egress policy, in code, on every request the page makes (D2112). The network rules are the second layer.
 
@@ -47,26 +48,32 @@ The provider adds the same egress policy, in code, on every request the page mak
 
 ```sh
 # .env
-COMPOSE_PROFILES=browser               # plus whatever else you run
-LOAMS_BROWSER_TOKEN=$(openssl rand -hex 32)
+COMPOSE_PROFILES=browser                       # plus whatever else you run
+LOAMS_BROWSER_TOKEN=$(openssl rand -hex 32)    # the engine's; only the gateway holds it
+LOAMS_BROWSER_CLIENT_TOKEN=$(openssl rand -hex 32)   # agentd's, for the gateway
 LOAMS_BROWSER_PROVIDER=service
 ```
 
-agentd then reaches `ws://browser:9222/devtools/browser`. It reads the token from `LOAMS_WEB_BRIDGE_SECRET_BROWSER_TOKEN`, which compose fills from `LOAMS_BROWSER_TOKEN`.
+agentd then reaches `ws://browser-gateway:9223/devtools/browser` with the client token, which compose passes as `LOAMS_WEB_BRIDGE_SECRET_BROWSER_TOKEN`.
+
+The gateway runs the `loams-gateway` image at `LOAMS_VERSION`. The browser module is in the first release after 0.1.2, so until then set `BROWSER_GATEWAY_IMAGE` to a build of `deploy/release/Containerfile.loams-gateway`.
 
 ## Kubernetes
 
 ```sh
 kubectl -n loams create secret generic loams-browser-token \
   --from-literal=token="$(openssl rand -hex 32)"
+CLIENT_TOKEN="$(openssl rand -hex 32)"
+kubectl -n loams create secret generic loams-browser-clients \
+  --from-literal=clients="$(printf %s "$CLIENT_TOKEN" | sha256sum | cut -d' ' -f1)"
 kubectl apply -k deploy/browser/k8s -n loams
 ```
 
 Give agentd these settings:
 
-- the same secret, as `LOAMS_WEB_BRIDGE_SECRET_BROWSER_TOKEN`
+- `CLIENT_TOKEN`, as `LOAMS_WEB_BRIDGE_SECRET_BROWSER_TOKEN` (never the engine's token)
 - `LOAMS_BROWSER_PROVIDER=service`
-- `LOAMS_BROWSER_SERVICE_URL=ws://loams-browser:9222/devtools/browser`
+- `LOAMS_BROWSER_SERVICE_URL=ws://loams-browser-gateway:9223/devtools/browser`
 - `LOAMS_BROWSER_SERVICE_TOKEN_REF=env:browser-token`
 
 Label the agentd pods `app.kubernetes.io/name: loams-agentd` so the NetworkPolicy admits them.

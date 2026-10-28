@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { isAgentdPath, rendererMayCall } from "../src/main/agentd/allowlist";
 import { AGENTD_RENDERER_METHODS } from "../src/main/agentd/allowlist.gen";
 import { AgentdToken } from "../src/main/agentd/client";

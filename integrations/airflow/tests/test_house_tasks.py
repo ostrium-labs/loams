@@ -4,6 +4,7 @@ from __future__ import annotations
 from unittest import mock
 
 import pytest
+from airflow.sdk.exceptions import TaskDeferred
 
 from airflow.providers.loams.hooks.house import HouseResult, LoamsHouseHook
 from airflow.providers.loams.operators.house import LoamsHouseQueryOperator, task_query_id
@@ -37,15 +38,21 @@ def test_operator_defers_the_last_statement(loams_connection, context) -> None:
     )
     with (
         mock.patch.object(LoamsHouseHook, "run", return_value=HouseResult()) as run,
-        pytest.raises(Exception) as d,
+        pytest.raises(TaskDeferred) as d,
     ):
         op.execute(context)
-    assert type(d.value).__name__ == "TaskDeferred"
+    assert d.value.method_name == "execute_complete"
     assert run.call_count == 1
     trigger = d.value.trigger
     assert trigger.sql == "INSERT INTO t SELECT 1"
     assert trigger.query_id == task_query_id(context, 1)
     assert trigger.read_only is False
+    # Resume with the trigger's event, as the triggerer would.
+    resume = getattr(op, d.value.method_name)
+    out = resume(context, {"status": "success", "query_id": trigger.query_id, "rows": [], "summary": {}})
+    assert out["query_id"] == trigger.query_id
+    with pytest.raises(RuntimeError, match="boom"):
+        resume(context, {"status": "error", "query_id": trigger.query_id, "message": "boom"})
 
 
 def test_execute_complete(context) -> None:
@@ -79,9 +86,14 @@ def test_sensor_poke(loams_connection, context) -> None:
 
 def test_sensor_defers(loams_connection, context) -> None:
     sensor = LoamsHouseQuerySensor(task_id="s", query_id="q", deferrable=True, poke_interval=7)
-    with mock.patch.object(LoamsHouseHook, "get_query", return_value=None), pytest.raises(Exception) as d:
+    with mock.patch.object(LoamsHouseHook, "get_query", return_value=None), pytest.raises(TaskDeferred) as d:
         sensor.execute(context)
-    assert type(d.value).__name__ == "TaskDeferred"
+    assert d.value.method_name == "execute_complete"
     assert d.value.trigger.sql is None
     assert d.value.trigger.poll_interval == 7.0
     assert d.value.trigger.not_found_timeout is None
+    resume = getattr(sensor, d.value.method_name)
+    record = {"status": "QUERY_STATUS_FINISHED", "query_id": "q"}
+    assert resume(context, {"status": "success", "query_id": "q", "record": record}) == record
+    with pytest.raises(RuntimeError, match="failed"):
+        resume(context, {"status": "error", "query_id": "q", "message": "query failed"})

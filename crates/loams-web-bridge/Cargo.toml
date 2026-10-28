@@ -1,6 +1,6 @@
 [package]
 name = "loams-web-bridge"
-description = "The web toolbox's browser provider abstraction: the local (agent-driven) provider and the Cloudflare Browser Run remote provider."
+description = "The web toolbox's browser providers: one Obscura CDP driver, launched locally or reached as the deployment's browser service."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -16,6 +16,8 @@ publish = false
 async-trait.workspace = true
 base64.workspace = true
 futures.workspace = true
+# The local engine's per-launch CDP token (32 random bytes).
+rand.workspace = true
 regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -23,9 +25,9 @@ sha2.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 toml.workspace = true
-# Browser Run's CDP endpoint is a WebSocket over TLS (design §42 §4, AP1c).
-# rustls with webpki roots: the endpoint is always api.cloudflare.com, so the
-# system trust store is not needed. Kept out of [workspace.dependencies] so
+# The engine's CDP endpoint is a WebSocket: plain ws:// on loopback or the
+# private network, wss:// when a deployment puts TLS in front of the browser
+# service. rustls with webpki roots. Kept out of [workspace.dependencies] so
 # Cargo does not union these features into loams-sidebar-browser, which is
 # loopback-only and deliberately TLS-free. MIT/Apache-2.0 (cargo deny).
 tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }

@@ -21,6 +21,37 @@ RUN --mount=type=cache,id=loams-cargo-registry,target=/usr/local/cargo/registry 
  && cargo build --locked --release -p loams-agentd --bin loams-agentd \
  && install -D -m 0755 target/release/loams-agentd /out/loams-agentd
 
+# The agents' headless browser (D2111, D2113, D2116): the pinned Obscura
+# release, checked against its digest, so LOAMS_BROWSER_PROVIDER=local works
+# inside this image exactly as it does on a laptop. Apache-2.0, unmodified;
+# the render-enabled asset only (never -no-render). Bump together with
+# deploy/browser and PINNED_OBSCURA_VERSION in loams-web-bridge and
+# loams-sidebar-browser.
+FROM ${RUNTIME_IMAGE} AS obscura
+ARG TARGETARCH
+ARG OBSCURA_VERSION=0.2.3
+ARG OBSCURA_SHA256_AMD64=1534d1e6ddaf3d080ec4091eb41d0a4d8cc042a48b607d3c410fc13b482a9eec
+ARG OBSCURA_SHA256_ARM64=5ecf980bca3060236a7a86ec7ed83d943e6598ee87caa46d20325d90bc75f979
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl \
+ && rm -rf /var/lib/apt/lists/*
+RUN set -eu; \
+    arch="${TARGETARCH:-$(dpkg --print-architecture)}"; \
+    case "$arch" in \
+      amd64) asset=obscura-x86_64-linux.tar.gz; sum="$OBSCURA_SHA256_AMD64" ;; \
+      arm64) asset=obscura-aarch64-linux.tar.gz; sum="$OBSCURA_SHA256_ARM64" ;; \
+      *) echo "no Obscura release for $arch" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL --retry 3 -o "/tmp/$asset" \
+      "https://github.com/h4ckf0r0day/obscura/releases/download/v${OBSCURA_VERSION}/${asset}"; \
+    echo "${sum}  /tmp/${asset}" | sha256sum -c -; \
+    mkdir -p /tmp/obscura /out; \
+    tar -xzf "/tmp/$asset" -C /tmp/obscura; \
+    install -m 0755 "$(find /tmp/obscura -type f -name obscura | head -n 1)" /out/obscura; \
+    worker="$(find /tmp/obscura -type f -name obscura-worker | head -n 1)"; \
+    if [ -n "$worker" ]; then install -m 0755 "$worker" /out/obscura-worker; fi; \
+    /out/obscura --version
+
 FROM ${RUNTIME_IMAGE}
 ARG VERSION=dev
 ARG REVISION=unknown
@@ -31,6 +62,7 @@ RUN apt-get update \
  && useradd --system --uid 10001 --gid loams --create-home --home-dir /home/loams --shell /usr/sbin/nologin loams \
  && install -d -m 0700 -o loams -g loams /home/loams/agentd
 COPY --from=build /out/loams-agentd /usr/local/bin/loams-agentd
+COPY --from=obscura /out/ /usr/local/bin/
 LABEL org.opencontainers.image.title="loams-agentd" \
       org.opencontainers.image.description="Loams agent daemon (optional)" \
       org.opencontainers.image.source="https://github.com/ostrium-labs/loams" \
@@ -43,6 +75,9 @@ LABEL org.opencontainers.image.title="loams-agentd" \
 # mounts its config.toml there read-only, and anything else it names (TLS
 # files) under /etc/loams-agentd (SD1 Task 30).
 ENV LOAMS_AGENTD_CONFIG=/home/loams/agentd/config.toml
+# The local browser engine (D2116): what LOAMS_BROWSER_PROVIDER=local starts,
+# on loopback inside this container, per agent run.
+ENV LOAMS_OBSCURA_BIN=/usr/local/bin/obscura
 USER 10001:10001
 WORKDIR /home/loams
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

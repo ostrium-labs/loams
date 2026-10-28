@@ -1,0 +1,54 @@
+# TaskManagers: size dev = 1 x 2 slots, 2 GiB.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flink-taskmanager
+  labels:
+    app.kubernetes.io/name: flink
+    app.kubernetes.io/component: taskmanager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: flink
+      app.kubernetes.io/component: taskmanager
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: flink
+        app.kubernetes.io/component: taskmanager
+    spec:
+      serviceAccountName: flink
+      automountServiceAccountToken: true
+      securityContext:
+        runAsUser: 9999
+        runAsGroup: 9999
+        fsGroup: 9999
+        runAsNonRoot: true
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: taskmanager
+          image: docker.io/library/flink:2.2.1-scala_2.12-java21@sha256:521951efbfbb0cec74c2826446ce1d20a051bff18e6d3716a6affe97ddec692a
+          command: ["/bin/sh", "-c", "set -eu; cp /etc/loams-flink/config.yaml \"$FLINK_HOME/conf/config.yaml\"; exec /docker-entrypoint.sh taskmanager"]
+          env:
+            - name: POD_IP
+              valueFrom: {fieldRef: {apiVersion: v1, fieldPath: status.podIP}}
+            - name: ENABLE_BUILT_IN_PLUGINS
+              value: flink-s3-fs-presto-2.2.1.jar
+            - name: FLINK_PROPERTIES
+              valueFrom: {secretKeyRef: {name: flink-s3, key: FLINK_PROPERTIES}}
+          ports:
+            - {name: rpc, containerPort: 6122}
+            - {name: metrics, containerPort: 9249}
+          resources:
+            requests: {cpu: 1000m, memory: 2048Mi}
+            limits: {memory: 2048Mi}
+          readinessProbe: {tcpSocket: {port: 6122}, periodSeconds: 10}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: config, mountPath: /etc/loams-flink, readOnly: true}
+      volumes:
+        - name: config
+          configMap: {name: flink-config}

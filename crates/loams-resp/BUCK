@@ -24,13 +24,58 @@ cargo_package(
     },
     tests = [
         {
+            "name": "counters",
+            "crate": "counters",
+            "root": "tests/counters.rs",
+        },
+        {
             "name": "frame",
             "crate": "frame",
             "root": "tests/frame.rs",
         },
+        {
+            "name": "hashes",
+            "crate": "hashes",
+            "root": "tests/hashes.rs",
+        },
+        {
+            "name": "keyspace",
+            "crate": "keyspace",
+            "root": "tests/keyspace.rs",
+        },
+        {
+            "name": "lists",
+            "crate": "lists",
+            "root": "tests/lists.rs",
+        },
+        {
+            "name": "server",
+            "crate": "server",
+            "root": "tests/server.rs",
+        },
+        {
+            "name": "sets",
+            "crate": "sets",
+            "root": "tests/sets.rs",
+        },
+        {
+            "name": "strings",
+            "crate": "strings",
+            "root": "tests/strings.rs",
+        },
+        {
+            "name": "zsets",
+            "crate": "zsets",
+            "root": "tests/zsets.rs",
+        },
     ],
     deps = [
+        "//crates/loams-kv:loams-kv",
         "//third-party/rust:bytes",
+        "//third-party/rust:serde",
+        "//third-party/rust:tokio",
+        "//third-party/rust:toml",
+        "//third-party/rust:tracing",
     ],
     dev_deps = [
         "//third-party/rust:proptest",

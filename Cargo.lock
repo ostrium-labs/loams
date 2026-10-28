@@ -8384,6 +8384,7 @@ dependencies = [
  "loams-confluent",
  "loams-durable",
  "loams-es",
+ "loams-flink",
  "loams-git",
  "loams-graph",
  "loams-hnsw",
@@ -8404,6 +8405,7 @@ dependencies = [
  "loams-qdrant",
  "loams-query",
  "loams-risingwave",
+ "loams-spark",
  "loams-sqlgate",
  "loams-store",
  "loams-stream-grpc",
@@ -8668,6 +8670,7 @@ dependencies = [
  "loams-knowledge",
  "loams-store",
  "loams-walrus",
+ "loams-web-bridge",
  "serde",
  "serde_json",
  "tokio",
@@ -9077,6 +9080,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-flink"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "axum 0.8.9",
+ "bytes",
+ "clap",
+ "futures",
+ "hex",
+ "http",
+ "http-body-util",
+ "httpmock",
+ "k8s-openapi",
+ "kube",
+ "loams-store",
+ "reqwest 0.13.5",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.21",
+ "time",
+ "tokio",
+ "tokio-stream",
+ "toml 0.8.23",
+ "tower 0.5.3",
+ "tracing",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "loams-fs"
 version = "0.1.2"
 dependencies = [
@@ -9100,6 +9135,8 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
+ "loams-meter-gate",
+ "loams-resp",
  "loams-spark",
  "loams-temporal-frontend",
  "md-5 0.11.0",
@@ -9599,6 +9636,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-meter"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "base64 0.23.1",
+ "buffa",
+ "connectrpc",
+ "hmac 0.13.0",
+ "loams-authz",
+ "loams-cloudevents",
+ "loams-common",
+ "loams-meter-core",
+ "loams-proto",
+ "proptest",
+ "reqwest 0.13.5",
+ "serde",
+ "serde_json",
+ "serde_yaml_ng",
+ "sha2 0.11.0",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "ulid 3.0.0",
+]
+
+[[package]]
 name = "loams-meter-agent"
 version = "0.1.2"
 dependencies = [
@@ -9606,10 +9669,14 @@ dependencies = [
  "base64 0.23.1",
  "bytes",
  "clap",
+ "futures",
  "hmac 0.13.0",
  "httpmock",
+ "k8s-openapi",
+ "kube",
  "loams-cloudevents",
  "loams-log",
+ "notify",
  "prost 0.14.4",
  "rand 0.9.5",
  "reqwest 0.13.5",
@@ -9622,6 +9689,20 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "loams-meter-core"
+version = "0.1.2"
+dependencies = [
+ "bytes",
+ "loams-cloudevents",
+ "proptest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.21",
+ "time",
 ]
 
 [[package]]
@@ -9684,6 +9765,7 @@ dependencies = [
  "loams-authz",
  "loams-common",
  "loams-kv",
+ "loams-meter-gate",
  "loams-pg-control",
  "loams-pgdog-sync",
  "loams-postgres",
@@ -9832,6 +9914,7 @@ dependencies = [
  "loams-link",
  "loams-log",
  "loams-meta",
+ "loams-meter-gate",
  "loams-proto",
  "loams-query",
  "loams-quickwit",
@@ -9905,7 +9988,12 @@ name = "loams-resp"
 version = "0.1.2"
 dependencies = [
  "bytes",
+ "loams-kv",
  "proptest",
+ "serde",
+ "tokio",
+ "toml 0.8.23",
+ "tracing",
 ]
 
 [[package]]
@@ -10005,19 +10093,26 @@ name = "loams-spark"
 version = "0.1.2"
 dependencies = [
  "async-trait",
+ "base64 0.23.1",
  "bytes",
  "clap",
  "futures",
  "hex",
  "http",
+ "k8s-openapi",
+ "kube",
  "loams-authz",
  "prost 0.14.4",
  "prost-types",
+ "reqwest 0.13.5",
+ "rustls",
  "serde",
  "serde_json",
  "sha2 0.11.0",
  "subtle",
+ "tempfile",
  "thiserror 2.0.21",
+ "time",
  "tokio",
  "tokio-stream",
  "toml 0.8.23",
@@ -10027,6 +10122,8 @@ dependencies = [
  "tower 0.5.3",
  "tracing",
  "tracing-subscriber",
+ "ulid 3.0.0",
+ "url",
  "uuid",
 ]
 
@@ -10159,9 +10256,11 @@ dependencies = [
  "loams-temporal-matching",
  "loams-temporal-proto",
  "loams-temporal-resonate",
+ "loams-temporal-schedule",
  "loams-temporal-statemachine",
  "loams-temporal-store",
  "loams-temporal-testkit",
+ "loams-temporal-visibility",
  "prost 0.14.4",
  "prost-types",
  "serde",
@@ -10225,12 +10324,29 @@ dependencies = [
  "hex",
  "percent-encoding",
  "proptest",
- "reqwest 0.13.5",
  "resonate-client",
- "rustls",
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "loams-temporal-schedule"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "chrono-tz 0.10.4",
+ "loams-temporal-proto",
+ "prost 0.14.4",
+ "prost-types",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "sqlx 0.9.0",
  "thiserror 2.0.21",
  "tokio",
  "tracing",
@@ -10278,6 +10394,20 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "loams-temporal-visibility"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "serde",
+ "serde_json",
+ "sqlx 0.9.0",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -10377,6 +10507,7 @@ dependencies = [
  "base64 0.23.1",
  "futures",
  "loams-web-bridge",
+ "rand 0.9.5",
  "regex",
  "serde",
  "serde_json",
@@ -13809,7 +13940,7 @@ dependencies = [
 [[package]]
 name = "resonate-auth"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "jsonwebtoken",
  "reqwest 0.12.28",
@@ -13822,7 +13953,7 @@ dependencies = [
 [[package]]
 name = "resonate-base"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "lazy_static",
@@ -13838,7 +13969,7 @@ dependencies = [
 [[package]]
 name = "resonate-client"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "reqwest 0.12.28",
@@ -13851,7 +13982,7 @@ dependencies = [
 [[package]]
 name = "resonate-core"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -13867,7 +13998,7 @@ dependencies = [
 [[package]]
 name = "resonate-gateway-http"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "lazy_static",
@@ -13885,7 +14016,7 @@ dependencies = [
 [[package]]
 name = "resonate-plugin"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "axum 0.7.9",
  "figment",
@@ -13898,7 +14029,7 @@ dependencies = [
 [[package]]
 name = "resonate-sdk"
 version = "0.6.0"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -13918,7 +14049,7 @@ dependencies = [
 [[package]]
 name = "resonate-sdk-macros"
 version = "0.1.0"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -13929,7 +14060,7 @@ dependencies = [
 [[package]]
 name = "resonate-server-blob"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "chrono",
@@ -13954,7 +14085,7 @@ dependencies = [
 [[package]]
 name = "resonate-server-mysql"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "resonate-core",
@@ -13971,7 +14102,7 @@ dependencies = [
 [[package]]
 name = "resonate-server-sqlite"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "resonate-core",
@@ -13989,7 +14120,7 @@ dependencies = [
 [[package]]
 name = "resonate-sql"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "lazy_static",
@@ -14009,7 +14140,7 @@ dependencies = [
 [[package]]
 name = "resonate-timer-wheel"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "tokio",
  "verus_builtin",
@@ -14020,7 +14151,7 @@ dependencies = [
 [[package]]
 name = "resonate-trace"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "lazy_static",
  "opentelemetry",
@@ -14038,7 +14169,7 @@ dependencies = [
 [[package]]
 name = "resonate-transport-http-poll"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -14056,7 +14187,7 @@ dependencies = [
 [[package]]
 name = "resonate-transport-http-push"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "reqwest 0.12.28",

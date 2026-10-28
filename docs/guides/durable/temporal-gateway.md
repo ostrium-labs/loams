@@ -34,6 +34,16 @@ const connection = await NativeConnection.connect({
 });
 ```
 
+```python
+# Python SDK (temporalio): its leg is new and not yet run; see the matrix below.
+client = await Client.connect(
+    "loams-temporal.example:7233",
+    namespace="default",
+    api_key=os.environ["LOAMS_API_KEY"],
+    tls=True,  # False only against a plaintext test listener
+)
+```
+
 The gateway itself serves plaintext gRPC (h2c), so off loopback put TLS in front of it. Some SDKs
 switch TLS on by default when an API key is set: against a plaintext listener (a test setup), turn
 TLS off in the SDK's connection options. The SDKs send the key as `authorization: Bearer <key>`. The gateway hashes it with SHA-256 and
@@ -97,18 +107,41 @@ The Postgres database must be reached through a session or direct endpoint, neve
 transaction pooling: the store uses `LISTEN`/`NOTIFY` for its outbox (design 74 §5.5 rule 5). The
 gateway creates and migrates its schema at start.
 
-The Resonate connection is an interim adapter (`HttpDurability`, module `wire_interim`) that
-speaks Resonate's protocol envelope and its poll transport. It is replaced by the fork's
-`resonate-client` crate in a later pin bump, with no configuration change (design 74 D1516, plan
-D1591).
+The gateway reaches Resonate through the fork's `resonate-client` crate (`HttpDurability`): its
+typed protocol requests, and its poll consumer for the task and settlement messages (design 74
+D1516; D2040, D2043). The interim adapter of plan D1591 is gone, and the configuration did not
+change.
 
 ### Compose
 
-The compose profile `temporal-gateway` (the gateway in the engine container's network namespace,
-reaching the engine's durable listener over loopback, with its database on Loams Postgres) is
-**not in `deploy/release/compose.compute.yaml` yet**: it needs a gateway image, which DX1 Task 10
-left for a follow-up. Until then, run the binary next to a Resonate server as above; the SDK legs
-(`conformance/compute/temporal/gateway/run.sh`) do exactly that on loopback.
+The compose profile `temporal-gateway` in `deploy/release/compose.compute.yaml` runs the release
+image `ghcr.io/ostrium-labs/loams-temporal` (from the first release after 0.1.2; D2030, D2031):
+
+- in the engine container's network namespace, so it reaches the engine's Resonate on
+  `127.0.0.1:8001` and SDKs on the compose network dial `loams:7233`; no host port;
+- on its own database `loams_temporal` (role `loams_temporal`), which `compute-init` creates on
+  `compute1`'s direct endpoint;
+- with your `temporal-gateway.toml` (copy `deploy/release/temporal-gateway.toml.example`; API key
+  hashes in `[[keys]]`) and a task-token key of 32 bytes or more in `LOAMS_TEMPORAL_TOKEN_KEY_1`.
+
+```sh
+cd deploy/release
+cp temporal-gateway.toml.example temporal-gateway.toml   # then fill in [[keys]]
+docker compose --env-file .env --env-file ../../conformance/compute/pins.env \
+  -f compose.yaml -f compose.compute.yaml --profile temporal-gateway up -d
+```
+
+The Go and TypeScript SDK legs run through this profile on pull requests that touch the gateway
+(`conformance/compute/temporal/gateway/run.sh --profile`, workflow `temporal-gateway.yml`), with
+an image built from the pull request. That leg is new and not yet green; the results above are
+from the loopback runs. The Python SDK (temporalio 1.34.0, lane TSDK-python) has a leg of its own
+in the same workflow (job `sdk-leg`, `SDK_LEGS=python`); it has not been run yet, so its matrix
+column reads "not run". See `deploy/release/README.md`, "The Temporal gateway".
+
+## The Temporal Web UI and the CLI
+
+The stock Temporal Web UI and the `temporal` CLI can read from the gateway (preview): see
+[The Temporal Web UI and the `temporal` CLI](temporal-ui-cli.md).
 
 ## Limits
 
@@ -164,53 +197,64 @@ Run: 2026-10-27, dev 0e9c0e8fb, loams-temporal in development mode (memory store
 
 Not covered by this run: the SDK legs ran the gateway in development mode (memory store, in-process Resonate) on loopback with the corpus scenarios only, so they say nothing about the Postgres store, the Resonate server, the compose profile or load. The only run under load is the 2026-10-25 bench (Go SDK only; Postgres store, the fork's Resonate server): fan-out finished 500 of 500 at 1.3 workflows/s (p99 28.2 s), and burst and chain failed (known issue 1). The TypeScript SDK has not been run under load. Payload, pending-activity and history limits (X1.R7) are enforced from #1291 on and covered by unit tests only.
 
-SDK legs: 26 of 26 cases passed. 39 of the 123 `WorkflowService` methods are implemented (design 74 §5.8, DX1).
+SDK legs: 26 of 26 cases passed. 50 of the 123 `WorkflowService` methods are implemented (design 74 §5.8, DX1).
 
-| Method | Go SDK v1.49.0 | TypeScript SDK 1.24.0 | Exercised by |
-|---|---|---|---|
-| `GetSystemInfo` | pass | pass | `gateway_dx1_scenarios_<sdk>`; client connect |
-| `DescribeNamespace` | pass | pass | `gateway_dx1_scenarios_<sdk>`; worker start |
-| `RegisterNamespace` | pass | not exercised | `gateway_dx1_scenarios_go`; the Go corpus generator (admin role, X1.R9); `api_keys_authenticate_and_bind_the_loams_namespace` |
-| `ListNamespaces` | not exercised | not exercised | no SDK call in these runs and no test yet |
-| `StartWorkflowExecution` | pass | pass | `gateway_dx1_scenarios_<sdk>`, `gateway_hello_<sdk>` |
-| `DescribeWorkflowExecution` | pass | pass | `gateway_dx1_differential_<sdk>_signal_then_complete`, `gateway_dx1_differential_<sdk>_query_while_running`, `gateway_dx1_differential_<sdk>_cancel_requested`, `gateway_dx1_differential_<sdk>_terminated`; the generators wait for a running run |
-| `GetWorkflowExecutionHistory` | pass, known issue 1 | pass | `gateway_dx1_scenarios_<sdk>`, `gateway_histories_replay_<sdk>`; waiting for a result (close-event long poll) and the export |
-| `TerminateWorkflowExecution` | pass | pass | `gateway_dx1_differential_<sdk>_terminated` |
-| `RequestCancelWorkflowExecution` | pass | pass | `gateway_dx1_differential_<sdk>_cancel_requested` |
-| `PollWorkflowTaskQueue` | pass | pass | `gateway_dx1_scenarios_<sdk>`, `gateway_hello_<sdk>` |
-| `RespondWorkflowTaskCompleted` | pass | pass | `gateway_dx1_scenarios_<sdk>`, `gateway_hello_<sdk>` |
-| `RespondWorkflowTaskFailed` | not exercised | not exercised | no SDK call in these runs; the state machine's table tests |
-| `PollActivityTaskQueue` | pass | pass | `gateway_hello_<sdk>`, `gateway_dx1_differential_<sdk>_two_activities_sequential`, `gateway_dx1_differential_<sdk>_activity_parallel_fanout_10` |
-| `RespondActivityTaskCompleted` | pass | pass | `gateway_hello_<sdk>`, `gateway_dx1_differential_<sdk>_two_activities_sequential`, `gateway_dx1_differential_<sdk>_activity_parallel_fanout_10` |
-| `RespondActivityTaskFailed` | not exercised | not exercised | no SDK call in these runs (no DX1 scenario fails an activity); the scripted worker of `tests/scenarios.rs` |
-| `RespondActivityTaskCanceled` | not exercised | not exercised | no SDK call in these runs and no test yet |
-| `RecordActivityTaskHeartbeat` | pass | pass | `gateway_dx1_differential_<sdk>_activity_heartbeat_details` |
-| `SignalWorkflowExecution` | pass | pass | `gateway_signal_<sdk>`, `gateway_dx1_differential_<sdk>_signal_then_complete` |
-| `QueryWorkflow` | pass | pass | `gateway_dx1_differential_<sdk>_query_while_running` |
-| `RespondQueryTaskCompleted` | pass | pass | `gateway_dx1_differential_<sdk>_query_while_running` |
-| `ResetStickyTaskQueue` | not exercised | not exercised | a no-op; no SDK call in these runs and no test yet |
-| `UpdateWorkflowExecution` | not exercised | not exercised | TMP-api (D2080): statemachine unit tests and the golden corpus scenario only; no SDK leg yet |
-| `PollWorkflowExecutionUpdate` | not exercised | not exercised | TMP-api (D2080): statemachine unit tests and the golden corpus scenario only; no SDK leg yet |
-| `SignalWithStartWorkflowExecution` | not exercised | not exercised | TMP-api (D2085, D2083): statemachine and policy unit tests and the golden corpus scenario only; no SDK leg yet |
-| `ResetWorkflowExecution` | not exercised | not exercised | TMP-api (D2085, D2083): statemachine and policy unit tests and the golden corpus scenario only; no SDK leg yet |
-| `RespondActivityTaskCompletedById` | not exercised | not exercised | TMP-api (D2086): unit tests only; no SDK leg yet |
-| `RespondActivityTaskFailedById` | not exercised | not exercised | TMP-api (D2086): unit tests only; no SDK leg yet |
-| `RespondActivityTaskCanceledById` | not exercised | not exercised | TMP-api (D2086): unit tests only; no SDK leg yet |
-| `RecordActivityTaskHeartbeatById` | not exercised | not exercised | TMP-api (D2086): unit tests only; no SDK leg yet |
-| `GetWorkflowExecutionHistoryReverse` | not exercised | not exercised | TMP-api (D2086): unit tests only; no SDK leg yet |
-| `DescribeTaskQueue` | not exercised | not exercised | TMP-api (D2086): unit tests only; no SDK leg yet |
-| `GetClusterInfo` | not exercised | not exercised | TMP-api (D2086): unit tests only; no SDK leg yet |
-| `ListTaskQueuePartitions` | not exercised | not exercised | TMP-api (D2086): unit tests only; no SDK leg yet |
-| `ShutdownWorker` | not exercised | not exercised | TMP-api (D2086): unit tests only; no SDK leg yet |
-| `UpdateNamespace` | not exercised | not exercised | TMP-api (D2088): unit tests only; versioning reads answer no sets, no rules, all reachable |
-| `DeprecateNamespace` | not exercised | not exercised | TMP-api (D2088): unit tests only; versioning reads answer no sets, no rules, all reachable |
-| `GetWorkerBuildIdCompatibility` | not exercised | not exercised | TMP-api (D2088): unit tests only; versioning reads answer no sets, no rules, all reachable |
-| `GetWorkerVersioningRules` | not exercised | not exercised | TMP-api (D2088): unit tests only; versioning reads answer no sets, no rules, all reachable |
-| `GetWorkerTaskReachability` | not exercised | not exercised | TMP-api (D2088): unit tests only; versioning reads answer no sets, no rules, all reachable |
+| Method | Go SDK v1.49.0 | TypeScript SDK 1.24.0 | Python SDK 1.34.0 | .NET SDK 1.20.0 | Exercised by |
+|---|---|---|---|---|---|
+| `GetSystemInfo` | pass | pass | not run | not run | `gateway_dx1_scenarios_<sdk>`; client connect |
+| `DescribeNamespace` | pass | pass | not run | not run | `gateway_dx1_scenarios_<sdk>`; worker start |
+| `RegisterNamespace` | pass | not exercised | not exercised | not exercised | `gateway_dx1_scenarios_go`; the Go corpus generator (admin role, X1.R9); `api_keys_authenticate_and_bind_the_loams_namespace` |
+| `ListNamespaces` | not exercised | not exercised | not exercised | not exercised | no SDK call in these runs and no test yet |
+| `StartWorkflowExecution` | pass | pass | not run | not run | `gateway_dx1_scenarios_<sdk>`, `gateway_hello_<sdk>` |
+| `DescribeWorkflowExecution` | pass | pass | not run | not run | `gateway_dx1_differential_<sdk>_signal_then_complete`, `gateway_dx1_differential_<sdk>_query_while_running`, `gateway_dx1_differential_<sdk>_cancel_requested`, `gateway_dx1_differential_<sdk>_terminated`; the generators wait for a running run |
+| `GetWorkflowExecutionHistory` | pass, known issue 1 | pass | not run | not run | `gateway_dx1_scenarios_<sdk>`, `gateway_histories_replay_<sdk>`; waiting for a result (close-event long poll) and the export |
+| `TerminateWorkflowExecution` | pass | pass | not run | not run | `gateway_dx1_differential_<sdk>_terminated` |
+| `RequestCancelWorkflowExecution` | pass | pass | not run | not run | `gateway_dx1_differential_<sdk>_cancel_requested` |
+| `PollWorkflowTaskQueue` | pass | pass | not run | not run | `gateway_dx1_scenarios_<sdk>`, `gateway_hello_<sdk>` |
+| `RespondWorkflowTaskCompleted` | pass | pass | not run | not run | `gateway_dx1_scenarios_<sdk>`, `gateway_hello_<sdk>` |
+| `RespondWorkflowTaskFailed` | not exercised | not exercised | not exercised | not exercised | no SDK call in these runs; the state machine's table tests |
+| `PollActivityTaskQueue` | pass | pass | not run | not run | `gateway_hello_<sdk>`, `gateway_dx1_differential_<sdk>_two_activities_sequential`, `gateway_dx1_differential_<sdk>_activity_parallel_fanout_10` |
+| `RespondActivityTaskCompleted` | pass | pass | not run | not run | `gateway_hello_<sdk>`, `gateway_dx1_differential_<sdk>_two_activities_sequential`, `gateway_dx1_differential_<sdk>_activity_parallel_fanout_10` |
+| `RespondActivityTaskFailed` | not exercised | not exercised | not exercised | not exercised | no SDK call in these runs (no DX1 scenario fails an activity); the scripted worker of `tests/scenarios.rs` |
+| `RespondActivityTaskCanceled` | not exercised | not exercised | not exercised | not exercised | no SDK call in these runs and no test yet |
+| `RecordActivityTaskHeartbeat` | pass | pass | not run | not run | `gateway_dx1_differential_<sdk>_activity_heartbeat_details` |
+| `SignalWorkflowExecution` | pass | pass | not run | not run | `gateway_signal_<sdk>`, `gateway_dx1_differential_<sdk>_signal_then_complete` |
+| `QueryWorkflow` | pass | pass | not run | not run | `gateway_dx1_differential_<sdk>_query_while_running` |
+| `RespondQueryTaskCompleted` | pass | pass | not run | not run | `gateway_dx1_differential_<sdk>_query_while_running` |
+| `ResetStickyTaskQueue` | not exercised | not exercised | not exercised | not exercised | a no-op; no SDK call in these runs and no test yet |
+| `UpdateWorkflowExecution` | not exercised | not exercised | not exercised | not exercised | TMP-api (D2080): statemachine unit tests and the golden corpus scenario only; no SDK leg yet |
+| `PollWorkflowExecutionUpdate` | not exercised | not exercised | not exercised | not exercised | TMP-api (D2080): statemachine unit tests and the golden corpus scenario only; no SDK leg yet |
+| `SignalWithStartWorkflowExecution` | not exercised | not exercised | not exercised | not exercised | TMP-api (D2085, D2083): statemachine and policy unit tests and the golden corpus scenario only; no SDK leg yet |
+| `ResetWorkflowExecution` | not exercised | not exercised | not exercised | not exercised | TMP-api (D2085, D2083): statemachine and policy unit tests and the golden corpus scenario only; no SDK leg yet |
+| `RespondActivityTaskCompletedById` | not exercised | not exercised | not exercised | not exercised | TMP-api (D2086): unit tests only; no SDK leg yet |
+| `RespondActivityTaskFailedById` | not exercised | not exercised | not exercised | not exercised | TMP-api (D2086): unit tests only; no SDK leg yet |
+| `RespondActivityTaskCanceledById` | not exercised | not exercised | not exercised | not exercised | TMP-api (D2086): unit tests only; no SDK leg yet |
+| `RecordActivityTaskHeartbeatById` | not exercised | not exercised | not exercised | not exercised | TMP-api (D2086): unit tests only; no SDK leg yet |
+| `GetWorkflowExecutionHistoryReverse` | not exercised | not exercised | not exercised | not exercised | TMP-api (D2086); the Temporal Web UI's workflow page; `reverse_history_pages_are_the_history_newest_first`; no SDK leg yet |
+| `DescribeTaskQueue` | not exercised | not exercised | not exercised | not exercised | TMP-api (D2086): unit tests only; no SDK leg yet |
+| `GetClusterInfo` | not exercised | not exercised | not exercised | not exercised | TMP-api (D2086); the Temporal Web UI's first call and `temporal operator cluster describe` (D2051); `cluster_info_names_the_gateway_not_a_temporal_server`; no SDK leg yet |
+| `ListTaskQueuePartitions` | not exercised | not exercised | not exercised | not exercised | TMP-api (D2086): unit tests only; no SDK leg yet |
+| `ShutdownWorker` | not exercised | not exercised | not exercised | not exercised | TMP-api (D2086): unit tests only; no SDK leg yet |
+| `UpdateNamespace` | not exercised | not exercised | not exercised | not exercised | TMP-api (D2088): unit tests only; versioning reads answer no sets, no rules, all reachable |
+| `DeprecateNamespace` | not exercised | not exercised | not exercised | not exercised | TMP-api (D2088): unit tests only; versioning reads answer no sets, no rules, all reachable |
+| `GetWorkerBuildIdCompatibility` | not exercised | not exercised | not exercised | not exercised | TMP-api (D2088): unit tests only; versioning reads answer no sets, no rules, all reachable |
+| `GetWorkerVersioningRules` | not exercised | not exercised | not exercised | not exercised | TMP-api (D2088): unit tests only; versioning reads answer no sets, no rules, all reachable |
+| `GetWorkerTaskReachability` | not exercised | not exercised | not exercised | not exercised | TMP-api (D2088): unit tests only; versioning reads answer no sets, no rules, all reachable |
+| `CreateSchedule` | not exercised | not exercised | not exercised | not exercised | no SDK call in these runs; loams-temporal-frontend tests/schedules.rs |
+| `DescribeSchedule` | not exercised | not exercised | not exercised | not exercised | no SDK call in these runs; loams-temporal-frontend tests/schedules.rs |
+| `UpdateSchedule` | not exercised | not exercised | not exercised | not exercised | no SDK call in these runs; loams-temporal-frontend tests/schedules.rs |
+| `PatchSchedule` | not exercised | not exercised | not exercised | not exercised | no SDK call in these runs; loams-temporal-frontend tests/schedules.rs |
+| `DeleteSchedule` | not exercised | not exercised | not exercised | not exercised | no SDK call in these runs; loams-temporal-frontend tests/schedules.rs |
+| `ListSchedules` | not exercised | not exercised | not exercised | not exercised | no SDK call in these runs; loams-temporal-frontend tests/schedules.rs |
+| `ListScheduleMatchingTimes` | not exercised | not exercised | not exercised | not exercised | no SDK call in these runs; loams-temporal-frontend tests/schedules.rs |
+| `ListWorkflowExecutions` | not exercised | not exercised | not exercised | not exercised | no SDK call in these runs; loams-temporal-frontend tests/visibility.rs |
+| `ScanWorkflowExecutions` | not exercised | not exercised | not exercised | not exercised | no SDK call in these runs; loams-temporal-frontend tests/visibility.rs |
+| `CountWorkflowExecutions` | not exercised | not exercised | not exercised | not exercised | no SDK call in these runs; loams-temporal-frontend tests/visibility.rs |
+| `GetSearchAttributes` | not exercised | not exercised | not exercised | not exercised | no SDK call in these runs; loams-temporal-frontend tests/visibility.rs |
 
 Known issues (not shown by the cases above):
 
 1. `GetWorkflowExecutionHistory`, Go SDK v1.49.0: under load the Go SDK failed in `run.Get` with "could not get last history event for workflow" (bench 2026-10-25: 500 workflows started at once, and a chain of 5 activities and 5 one-second sleeps). A close-event long poll that reached its deadline before the run closed answered an empty page without a page token. Fixed in #1291 (DX1F.R1, DX1F.R3, with regression tests); the bench has not been re-run since.
 
-Not implemented (84; each answers `UNIMPLEMENTED` with a link to this page): `ExecuteMultiOperation`, `DeleteWorkflowExecution`, `ListOpenWorkflowExecutions`, `ListClosedWorkflowExecutions`, `ListWorkflowExecutions`, `ListArchivedWorkflowExecutions`, `ScanWorkflowExecutions`, `CountWorkflowExecutions`, `GetSearchAttributes`, `CreateSchedule`, `DescribeSchedule`, `UpdateSchedule`, `PatchSchedule`, `ListScheduleMatchingTimes`, `DeleteSchedule`, `ListSchedules`, `CountSchedules`, `UpdateWorkerBuildIdCompatibility`, `UpdateWorkerVersioningRules`, `DescribeDeployment`, `DescribeWorkerDeploymentVersion`, `ListDeployments`, `GetDeploymentReachability`, `GetCurrentDeployment`, `SetCurrentDeployment`, `SetWorkerDeploymentCurrentVersion`, `DescribeWorkerDeployment`, `DeleteWorkerDeployment`, `DeleteWorkerDeploymentVersion`, `SetWorkerDeploymentRampingVersion`, `ListWorkerDeployments`, `CreateWorkerDeployment`, `CreateWorkerDeploymentVersion`, `UpdateWorkerDeploymentVersionComputeConfig`, `ValidateWorkerDeploymentVersionComputeConfig`, `UpdateWorkerDeploymentVersionMetadata`, `SetWorkerDeploymentManager`, `StartBatchOperation`, `StopBatchOperation`, `DescribeBatchOperation`, `ListBatchOperations`, `PollNexusTaskQueue`, `RespondNexusTaskCompleted`, `RespondNexusTaskFailed`, `UpdateActivityOptions`, `UpdateWorkflowExecutionOptions`, `PauseActivity`, `UnpauseActivity`, `ResetActivity`, `CreateWorkflowRule`, `DescribeWorkflowRule`, `DeleteWorkflowRule`, `ListWorkflowRules`, `TriggerWorkflowRule`, `RecordWorkerHeartbeat`, `ListWorkers`, `CountWorkers`, `UpdateTaskQueueConfig`, `FetchWorkerConfig`, `UpdateWorkerConfig`, `DescribeWorker`, `PauseWorkflowExecution`, `UnpauseWorkflowExecution`, `StartActivityExecution`, `StartNexusOperationExecution`, `DescribeActivityExecution`, `DescribeNexusOperationExecution`, `PollActivityExecution`, `PollNexusOperationExecution`, `ListActivityExecutions`, `ListNexusOperationExecutions`, `CountActivityExecutions`, `CountNexusOperationExecutions`, `RequestCancelActivityExecution`, `RequestCancelNexusOperationExecution`, `TerminateActivityExecution`, `DeleteActivityExecution`, `PauseActivityExecution`, `ResetActivityExecution`, `UnpauseActivityExecution`, `UpdateActivityExecutionOptions`, `TerminateNexusOperationExecution`, `DeleteNexusOperationExecution`, `PollWorkflowExecutionTimeSkipping`.
+Not implemented (73; each answers `UNIMPLEMENTED` with a link to this page): `ExecuteMultiOperation`, `DeleteWorkflowExecution`, `ListOpenWorkflowExecutions`, `ListClosedWorkflowExecutions`, `ListArchivedWorkflowExecutions`, `CountSchedules`, `UpdateWorkerBuildIdCompatibility`, `UpdateWorkerVersioningRules`, `DescribeDeployment`, `DescribeWorkerDeploymentVersion`, `ListDeployments`, `GetDeploymentReachability`, `GetCurrentDeployment`, `SetCurrentDeployment`, `SetWorkerDeploymentCurrentVersion`, `DescribeWorkerDeployment`, `DeleteWorkerDeployment`, `DeleteWorkerDeploymentVersion`, `SetWorkerDeploymentRampingVersion`, `ListWorkerDeployments`, `CreateWorkerDeployment`, `CreateWorkerDeploymentVersion`, `UpdateWorkerDeploymentVersionComputeConfig`, `ValidateWorkerDeploymentVersionComputeConfig`, `UpdateWorkerDeploymentVersionMetadata`, `SetWorkerDeploymentManager`, `StartBatchOperation`, `StopBatchOperation`, `DescribeBatchOperation`, `ListBatchOperations`, `PollNexusTaskQueue`, `RespondNexusTaskCompleted`, `RespondNexusTaskFailed`, `UpdateActivityOptions`, `UpdateWorkflowExecutionOptions`, `PauseActivity`, `UnpauseActivity`, `ResetActivity`, `CreateWorkflowRule`, `DescribeWorkflowRule`, `DeleteWorkflowRule`, `ListWorkflowRules`, `TriggerWorkflowRule`, `RecordWorkerHeartbeat`, `ListWorkers`, `CountWorkers`, `UpdateTaskQueueConfig`, `FetchWorkerConfig`, `UpdateWorkerConfig`, `DescribeWorker`, `PauseWorkflowExecution`, `UnpauseWorkflowExecution`, `StartActivityExecution`, `StartNexusOperationExecution`, `DescribeActivityExecution`, `DescribeNexusOperationExecution`, `PollActivityExecution`, `PollNexusOperationExecution`, `ListActivityExecutions`, `ListNexusOperationExecutions`, `CountActivityExecutions`, `CountNexusOperationExecutions`, `RequestCancelActivityExecution`, `RequestCancelNexusOperationExecution`, `TerminateActivityExecution`, `DeleteActivityExecution`, `PauseActivityExecution`, `ResetActivityExecution`, `UnpauseActivityExecution`, `UpdateActivityExecutionOptions`, `TerminateNexusOperationExecution`, `DeleteNexusOperationExecution`, `PollWorkflowExecutionTimeSkipping`.
 <!-- matrix:temporal-gateway:end -->

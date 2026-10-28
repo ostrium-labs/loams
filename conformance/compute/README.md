@@ -13,8 +13,10 @@ list of expected failures, so a surprise in either direction fails the run.
 Status: the harness (DX0 Task 1), the databases and endpoint modes (Task 2,
 `durable/`), Temporal compat mode (Task 3, `temporal/`), the history corpus
 (Task 4, `temporal/corpus/`) and Airflow with the Edge executor (Task 6,
-`airflow/`, written but not yet run end to end). DBOS (Task 5) is not merged
-yet.
+`airflow/`, written but not yet run end to end), and the nightly, matrix and
+docs (Task 7: `.github/workflows/compute-compat.yml`,
+`scripts/compute/matrix.py`, `docs/guides/durable/`). DBOS (Task 5, `dbos-*/`) is
+written but not yet run. Results: [the matrix](../../docs/guides/compute/compatibility.md).
 
 ## Layout
 
@@ -25,10 +27,11 @@ yet.
 | `lib.sh` | the shared functions (below) |
 | `xfail.schema.json` | the format of `<product>/xfail.toml` |
 | `pgdog-txn.yaml`, `pgdog/` | the transaction-mode overlay: PgDog in transaction pooling in front of Loams Postgres, for the legs that show what fails there. Never distributed; PgDog is AGPL-3.0 and runs unmodified as a separate process ([notice](../../deploy/pgdog/LICENSE-NOTICE.md)) |
+| `temporal-gateway.yaml` | the Temporal gateway's overlay on the profile `temporal-gateway` of `deploy/release/compose.compute.yaml`: builds the release image `loams-temporal` locally from `deploy/release/Containerfile.loams-temporal` and mounts the harness's `temporal/gateway/gateway.toml`. Never distributed; `oc_up temporal-gateway` adds it (D2031) |
 | `selftest.sh`, `testdata/` | the harness's own tests; the pull-request CI runs them |
 | `<product>/` | `run.sh`, `xfail.toml`, `README.md` per product (with its task) |
 | `../../deploy/release/compose.compute.yaml` | the opt-in compose override: profiles `temporal`, `dbos`, `airflow` |
-| `../../scripts/compute/` | `xfail_check.py`, `junit.py`, `licence_gate.{sh,py}` |
+| `../../scripts/compute/` | `xfail_check.py`, `junit.py`, `licence_gate.{sh,py}`, `matrix.py` (the compatibility matrix) |
 
 ## Endpoint modes
 
@@ -55,7 +58,7 @@ oc_down temporal               # that profile's services and volumes only
 
 `lib.sh` provides:
 
-- `oc_up <profile> [txn]`, `oc_down <profile> [txn]`, `oc_compose [--txn] <args>`
+- `oc_up <profile> [txn]`, `oc_down <profile> [txn]`, `oc_compose [--txn] [--gateway] <args>`
 - `oc_pg_mode <txn|session|direct> [database] [user:password]`
 - `oc_psql <url> <sql>`, `oc_wait_pg [url]`, `oc_wait_http <url>`,
   `oc_temporal_wait [address]`, `oc_bucket_ls s3://bucket/prefix`: all from a

@@ -1289,6 +1289,15 @@ enum Command {
     /// render or apply pipeline specs. Reaches the frontend through
     /// loams-gateway.
     Risingwave(loams_risingwave::cli::RisingWaveArgs),
+    /// Managed Spark (design 81, preview): the namespace's Spark Connect URL,
+    /// batch jobs (submit, status, logs, cancel, schedules), local runs, and
+    /// the driver pod a job renders to.
+    #[cfg(feature = "spark")]
+    Spark(loams_spark::cli::SparkArgs),
+    /// Managed Flink SQL (design 81, preview): `flink sql` is a REPL, `flink
+    /// jobs …` manages saved INSERT pipelines, `flink jars` lists the bundle.
+    #[cfg(feature = "flink")]
+    Flink(loams_flink::cli::FlinkArgs),
     /// Engine authentication (LOAMS_AUTH_MODE): API keys.
     Auth {
         #[command(subcommand)]
@@ -1452,6 +1461,10 @@ fn config(command: Command) -> ServerConfig {
         Command::Marketplace(_) => unreachable!("loams marketplace starts no server"),
         Command::Byoc(_) => unreachable!("loams byoc starts no server"),
         Command::Risingwave(_) => unreachable!("loams risingwave starts no server"),
+        #[cfg(feature = "spark")]
+        Command::Spark(_) => unreachable!("loams spark starts no server"),
+        #[cfg(feature = "flink")]
+        Command::Flink(_) => unreachable!("loams flink starts no server"),
         #[cfg(feature = "live")]
         Command::LiveWorker => unreachable!("loams live-worker starts no server"),
         #[cfg(feature = "postgres")]
@@ -1675,6 +1688,16 @@ fn main() -> ExitCode {
     // A client (RW1, lane RW-b): its own runtime, no stores.
     if let Command::Risingwave(args) = &cli.command {
         return loams_risingwave::cli::run(args);
+    }
+    // A client too (design 81 SP-b): the engines facade, or local runs.
+    #[cfg(feature = "spark")]
+    if let Command::Spark(args) = &cli.command {
+        return loams_spark::cli::run(args);
+    }
+    // A client of the Loams API (design 81, D1989): its own runtime.
+    #[cfg(feature = "flink")]
+    if let Command::Flink(args) = &cli.command {
+        return loams_flink::cli::run(args);
     }
     serve(cli)
 }
