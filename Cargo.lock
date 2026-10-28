@@ -9387,8 +9387,10 @@ dependencies = [
 name = "loams-imperial"
 version = "0.1.2"
 dependencies = [
+ "loams-kv",
  "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]
