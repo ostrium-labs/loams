@@ -67,6 +67,8 @@ const TMP_API: &[&str] = &[
 
 /// Visibility (D2074-D2076).
 const VISIBILITY: &[&str] = &[
+    "ListOpenWorkflowExecutions",
+    "ListClosedWorkflowExecutions",
     "ListWorkflowExecutions",
     "ScanWorkflowExecutions",
     "CountWorkflowExecutions",

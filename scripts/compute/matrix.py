@@ -188,6 +188,7 @@ class Row:
     mode: str
     version: str  # a format string over pins.env keys
     note: str = ""
+    leg: str = ""  # the nightly job (compute-compat.yml) whose artifact holds the results
 
 
 DURABLE_ROWS: tuple[Row, ...] = (
@@ -198,6 +199,7 @@ DURABLE_ROWS: tuple[Row, ...] = (
         ("durable.junit.xml",),
         "direct, txn",
         "Postgres client {PSQL_IMAGE_TAG}",
+        leg="durable",
     ),
     Row(
         "Durable execution",
@@ -206,6 +208,7 @@ DURABLE_ROWS: tuple[Row, ...] = (
         ("temporal-pg16.junit.xml", "temporal-pg16-persistence.junit.xml"),
         "direct",
         "Temporal {TEMPORAL_VERSION}",
+        leg="temporal-pg16",
     ),
     Row(
         "Durable execution",
@@ -215,6 +218,7 @@ DURABLE_ROWS: tuple[Row, ...] = (
         "direct",
         "Temporal {TEMPORAL_VERSION}",
         "expected-failure leg: Temporal lists Postgres 13-16",
+        leg="temporal-pg17",
     ),
     Row(
         "Durable execution",
@@ -223,6 +227,7 @@ DURABLE_ROWS: tuple[Row, ...] = (
         ("corpus.junit.xml",),
         "none (files)",
         "Go SDK {TEMPORAL_SDK_GO}, TypeScript SDK {TEMPORAL_SDK_TS}",
+        leg="corpus",
     ),
     Row(
         "Durable execution",
@@ -231,6 +236,7 @@ DURABLE_ROWS: tuple[Row, ...] = (
         ("dbos-py.junit.xml", "dbos-py-suite.junit.xml"),
         "direct",
         "dbos-transact-py {DBOS_PY}",
+        leg="dbos-py",
     ),
     Row(
         "Durable execution",
@@ -239,6 +245,7 @@ DURABLE_ROWS: tuple[Row, ...] = (
         ("dbos-ts.junit.xml", "dbos-ts-suite.junit.xml"),
         "direct",
         "dbos-transact-ts {DBOS_TS}",
+        leg="dbos-ts",
     ),
     Row(
         "Durable execution",
@@ -247,6 +254,7 @@ DURABLE_ROWS: tuple[Row, ...] = (
         ("dbos-go.junit.xml", "dbos-go-suite.junit.xml"),
         "direct",
         "dbos-transact-golang {DBOS_GO}",
+        leg="dbos-go",
     ),
     Row(
         "Durable execution",
@@ -255,6 +263,7 @@ DURABLE_ROWS: tuple[Row, ...] = (
         ("dbos-java.junit.xml", "dbos-java-suite.junit.xml"),
         "direct",
         "dbos-transact-java {DBOS_JAVA}",
+        leg="dbos-java",
     ),
     Row(
         "Durable execution",
@@ -263,6 +272,7 @@ DURABLE_ROWS: tuple[Row, ...] = (
         ("airflow.junit.xml", "airflow-edge.junit.xml"),
         "direct",
         "Airflow {AIRFLOW_VERSION}, edge3 {AIRFLOW_EDGE3}",
+        leg="airflow",
     ),
     Row(
         "Durable execution",
@@ -271,6 +281,7 @@ DURABLE_ROWS: tuple[Row, ...] = (
         ("airflow-local.junit.xml",),
         "direct",
         "Airflow {AIRFLOW_VERSION}",
+        leg="airflow-local",
     ),
 )
 
@@ -336,10 +347,20 @@ def durable_evaluate(row: Row, compute_dir: Path, junit_dir: Path | None, pins: 
     if not files:
         return Result(row, "not run", version, entries=entries, problems=problems)
     cases, junit_problems = xfail_check.load_cases(files)
-    problems += junit_problems
+    # Name files relative to the run's directory, not this machine's paths.
+    problems += [p.replace(f"{junit_dir}/", "") for p in junit_problems]
     if not cases and not junit_problems:
         problems.append("the JUnit files hold no test cases")
     problems += xfail_check.check(cases, entries)
+    # The nightly records each leg's exit status (compute-compat.yml): a leg
+    # that stopped early, before its strict check, is red (DX1 ruling T6.R11).
+    if row.leg and junit_dir is not None:
+        for exit_file in junit_dir.rglob("leg.exit"):
+            if exit_file.parent.name != f"compute-{row.leg}":
+                continue
+            code = exit_file.read_text(encoding="utf-8").strip()
+            if code != "0" and not problems:
+                problems.append(f"the leg exited {code} before its strict check finished")
     listed = lambda c: any(xfail_check.matches(p, c) for e in entries for p in e.tests)  # noqa: E731
     res = Result(
         row,

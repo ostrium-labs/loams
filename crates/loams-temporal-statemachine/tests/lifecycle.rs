@@ -340,3 +340,56 @@ fn reset_points_are_the_first_completion_of_each_build() {
     );
     assert!(points.iter().all(|p| p.resettable && p.run_id == "run"));
 }
+
+/// #1481: the started and signalled events carry the header as the client
+/// sent it: none when it sent none (the .NET SDK), an empty one when it sent
+/// an empty one (Go, TypeScript), as upstream Temporal writes them.
+#[test]
+fn headers_are_written_as_sent() {
+    use loams_temporal_proto::temporal::api::common::v1::Header;
+    for header in [None, Some(Header::default())] {
+        let t = apply(
+            &MutableState::default(),
+            Input::Start {
+                namespace_id: "ns".into(),
+                run_id: "run".into(),
+                request: Box::new(StartWorkflowExecutionRequest {
+                    workflow_id: "wf".into(),
+                    workflow_type: Some(WorkflowType { name: "t".into() }),
+                    task_queue: Some(TaskQueue {
+                        name: "q".into(),
+                        ..Default::default()
+                    }),
+                    header: header.clone(),
+                    ..Default::default()
+                }),
+            },
+            1_000,
+        )
+        .expect("started");
+        match t.events[0].attributes.as_ref() {
+            Some(Attributes::WorkflowExecutionStartedEventAttributes(a)) => {
+                assert_eq!(a.header, header);
+            }
+            other => panic!("{other:?}"),
+        }
+        let s = apply(
+            &t.state,
+            Input::Signal {
+                name: "go".into(),
+                input: None,
+                identity: "c".into(),
+                header: header.clone(),
+                request_id: "s1".into(),
+            },
+            1_100,
+        )
+        .expect("signalled");
+        match s.events[0].attributes.as_ref() {
+            Some(Attributes::WorkflowExecutionSignaledEventAttributes(a)) => {
+                assert_eq!(a.header, header);
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+}
