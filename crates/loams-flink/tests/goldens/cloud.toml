@@ -1,0 +1,25 @@
+# The cloud shape: OAuth2 to Lakekeeper with vended credentials, SASL_SSL to
+# the Kafka gateway through loams-gateway. Rendered with resolved (fake)
+# secrets that need quoting and JAAS escaping.
+checkpoint_interval = "10 s"
+
+[settings]
+"pipeline.name" = "clicks-per-minute"
+
+[iceberg]
+warehouse = "prod-eu"
+base_namespace = "ns_7f3k"
+auth = { kind = "oauth2", server_uri = "https://auth.loams.dev/oauth/v2/token", client_id = "flink-eng_demo", client_secret = { ref = "lakekeeper-client" }, scope = "lakekeeper" }
+
+[[tables]]
+connector = "kafka"
+name = "events"
+stream = "events"
+topic = "ns_7f3k.events"
+startup = { mode = "timestamp", millis = 1793059200000 }
+format = { kind = "json-lenient" }
+columns = [
+  { name = "id", type = "STRING" },
+  { name = "proc", proctime = true },
+]
+gateway = { bootstrap = "kafka.loams.internal:9094", security = "sasl_ssl", auth = { username = "key_01", password = { ref = "loams-api-key" } } }
