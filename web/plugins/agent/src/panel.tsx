@@ -67,15 +67,15 @@ export function Markdown({ text, desktop }: { text: string; desktop: LoamsDeskto
   };
   return (
     <>
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: delegated clicks on sanitised links and copy buttons */}
-      {/* biome-ignore lint/a11y/useKeyWithClickEvents: links and buttons inside handle the keyboard natively */}
+      {/* oxlint-disable-next-line jsx-a11y/no-static-element-interactions -- delegated clicks on sanitised links and copy buttons */}
+      {/* oxlint-disable-next-line jsx-a11y/click-events-have-key-events -- links and buttons inside handle the keyboard natively */}
       <div
         className="text-sm break-words"
         onClick={onClick}
         onAuxClick={(e) =>
           e.target instanceof Element && e.target.closest('a') && e.preventDefault()
         }
-        // biome-ignore lint/security/noDangerouslySetInnerHtml: renderMarkdown sanitises with DOMPurify, no raw HTML or images
+        // oxlint-disable-next-line react/no-danger -- renderMarkdown sanitises with DOMPurify, no raw HTML or images
         dangerouslySetInnerHTML={{ __html: html }}
       />
       {pending && (

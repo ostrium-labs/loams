@@ -1,0 +1,1 @@
+SELECT NULL + 1, n8 + NULL FROM t24n ORDER BY id

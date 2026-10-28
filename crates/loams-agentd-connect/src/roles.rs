@@ -7,7 +7,9 @@
 //!   are confirmed from the desktop only (Q808);
 //! - the agent account logins and account switching (Q808);
 //! - `Shutdown` and every secret method, which are not on the Connect surface
-//!   at all (`twins::the_lifecycle_is_never_on_the_connect_surface`).
+//!   at all (`twins::the_lifecycle_is_never_on_the_connect_surface`);
+//! - the factory's configure and remove, which carry its apps' credentials:
+//!   Electron main's alone on the loopback listener (SF1 amendment F4).
 //!
 //! The list below is a deny list over the twins table, so a §53 §6.5 gap
 //! that a later SD1 task serves is a Studio method without a change here.
@@ -49,6 +51,16 @@ pub const STUDIO_EXCLUDED: &[(&str, &str, &str)] = &[
     ),
     ("HarnessService", "PollAgentLogin", "account login (Q808)"),
     ("HarnessService", "CancelAgentLogin", "account login (Q808)"),
+    (
+        "FactoryService",
+        "ConfigureFactoryApp",
+        "factory credentials stay local (SF1 F4)",
+    ),
+    (
+        "FactoryService",
+        "RemoveFactoryApp",
+        "factory credentials stay local (SF1 F4)",
+    ),
 ];
 
 /// What `studio` may do with a request path.
@@ -109,6 +121,24 @@ mod tests {
             assert!(
                 twin_of(service, method).is_some(),
                 "{service}/{method} is not a loams.agentd.v1 method"
+            );
+        }
+    }
+
+    #[test]
+    fn a_browser_reads_the_factory_but_never_stores_its_credentials() {
+        for read in ["ListFactoryApps", "TestFactoryApp", "QueryFactory"] {
+            assert_eq!(
+                studio_access(&format!("/loams.agentd.v1.FactoryService/{read}")),
+                Access::Allowed,
+                "{read}"
+            );
+        }
+        for write in ["ConfigureFactoryApp", "RemoveFactoryApp"] {
+            assert_eq!(
+                studio_access(&format!("/loams.agentd.v1.FactoryService/{write}")),
+                Access::Forbidden,
+                "{write}"
             );
         }
     }

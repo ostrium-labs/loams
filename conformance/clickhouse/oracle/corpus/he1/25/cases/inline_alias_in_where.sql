@@ -1,0 +1,1 @@
+SELECT n FROM t25 WHERE (a * 10 AS n) > 15 ORDER BY n

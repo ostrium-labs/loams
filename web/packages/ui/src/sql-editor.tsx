@@ -230,7 +230,7 @@ export function SqlEditor({
   const latest = useRef({ onChange, onRun });
   latest.current = { onChange, onRun };
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the view is made once; props sync below
+  // oxlint-disable-next-line react/exhaustive-deps -- the view is made once; props sync below
   useEffect(() => {
     if (!host.current) return;
     const c = comps.current;

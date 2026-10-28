@@ -119,7 +119,25 @@ struct Inner {
     subscribed: HashSet<String>,
     /// Leases handed out and not finished: task ID → version.
     held: HashMap<String, i64>,
+    /// Pollers seen, by poll group: identity → what they last reported
+    /// (`DescribeTaskQueue`).
+    pollers: HashMap<String, HashMap<String, Poller>>,
 }
+
+/// A worker that polled a queue (`DescribeTaskQueue`'s pollers).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Poller {
+    /// The worker's identity.
+    pub identity: String,
+    /// When it last polled (Unix ms).
+    pub last_access_ms: i64,
+    /// The build ID it reported, if any.
+    pub build_id: String,
+}
+
+/// How long a poller is listed after its last poll (Temporal lists pollers
+/// seen in the last few minutes).
+pub const POLLER_TTL_MS: i64 = 5 * 60 * 1000;
 
 /// A waiting poll; on drop it leaves the queue and gives back anything that
 /// reached it unclaimed.
@@ -186,6 +204,52 @@ impl Matcher {
             next_waiter: AtomicU64::new(1),
             inner: Mutex::new(Inner::default()),
         })
+    }
+
+    /// Records that `identity` polled `key` at `now_ms`.
+    pub fn record_poller(&self, key: &QueueKey, identity: &str, build_id: &str, now_ms: i64) {
+        let mut inner = self.lock();
+        let seen = inner.pollers.entry(key.group()).or_default();
+        seen.retain(|_, p| now_ms - p.last_access_ms <= POLLER_TTL_MS);
+        seen.insert(
+            identity.to_string(),
+            Poller {
+                identity: identity.to_string(),
+                last_access_ms: now_ms,
+                build_id: build_id.to_string(),
+            },
+        );
+    }
+
+    /// The pollers of `key` seen within [`POLLER_TTL_MS`] of `now_ms`, most
+    /// recent first.
+    pub fn pollers(&self, key: &QueueKey, now_ms: i64) -> Vec<Poller> {
+        let inner = self.lock();
+        let mut out: Vec<Poller> = inner
+            .pollers
+            .get(&key.group())
+            .map(|m| {
+                m.values()
+                    .filter(|p| now_ms - p.last_access_ms <= POLLER_TTL_MS)
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default();
+        out.sort_by(|a, b| {
+            b.last_access_ms
+                .cmp(&a.last_access_ms)
+                .then_with(|| a.identity.cmp(&b.identity))
+        });
+        out
+    }
+
+    /// How many tasks wait in `key`'s backlog (the poll answers'
+    /// `backlog_count_hint`).
+    pub fn backlog(&self, key: &QueueKey) -> usize {
+        self.lock()
+            .queues
+            .get(&key.group())
+            .map_or(0, |q| q.backlog.len())
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
@@ -437,5 +501,35 @@ impl Matcher {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod poller_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn pollers_are_listed_newest_first_and_expire() {
+        let m = Matcher::new(
+            Arc::new(loams_temporal_resonate::FakeDurability::new()),
+            "p",
+            30_000,
+        );
+        let key = QueueKey {
+            namespace_id: "ns".into(),
+            task_queue: "q".into(),
+            kind: TaskKind::Workflow,
+        };
+        m.record_poller(&key, "w1", "", 1_000);
+        m.record_poller(&key, "w2", "b2", 2_000);
+        m.record_poller(&key, "w1", "", 3_000);
+        let p = m.pollers(&key, 3_000);
+        assert_eq!(
+            p.iter().map(|p| p.identity.as_str()).collect::<Vec<_>>(),
+            ["w1", "w2"]
+        );
+        assert_eq!(p[1].build_id, "b2");
+        assert!(m.pollers(&key, 3_000 + POLLER_TTL_MS + 1).is_empty());
+        assert_eq!(m.backlog(&key), 0);
     }
 }

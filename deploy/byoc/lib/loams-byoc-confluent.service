@@ -1,0 +1,12 @@
+[Unit]
+Description=Loams: copy Confluent keys from the cloud's secret store into the connect role's files
+# Only once the stack has been set up (loams-byoc.service fetched everything once).
+After=loams-byoc.service network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/loams-byoc/config.env
+
+[Service]
+Type=oneshot
+# --confluent-only: no .env change, no restart; a no-op without CONFLUENT_INTEGRATIONS.
+ExecStart=/usr/local/bin/loams-byoc-secrets --confluent-only
+TimeoutStartSec=120

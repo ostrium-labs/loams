@@ -76,7 +76,7 @@ cargo_package(
         "//third-party/rust:tempfile",
         "//third-party/rust:thiserror",
         "//third-party/rust:tokio",
-        "//third-party/rust:tokio-tungstenite-0_24",
+        "//third-party/rust:tokio-tungstenite",
         "//third-party/rust:tracing",
         "//third-party/rust:url",
     ],

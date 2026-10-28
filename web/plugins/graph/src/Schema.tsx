@@ -27,7 +27,7 @@ export function Schema({
   const [error, setError] = useState<GraphFailure>();
   const [tick, setTick] = useState(0);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: refresh and tick re-read on purpose
+  // oxlint-disable-next-line react/exhaustive-deps -- refresh and tick re-read on purpose
   useEffect(() => {
     let live = true;
     setError(undefined);

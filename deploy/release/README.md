@@ -35,7 +35,7 @@ Built by [`build.sh`](build.sh) from `Containerfile.<name>` and published to
 `ghcr.io/ostrium-labs` as `:<version>`, `:<major>.<minor>` and `:latest` (a
 prerelease gets `:preview` instead), for linux/amd64 and
 linux/arm64. Each runs as uid 10001 on debian-slim, with tini as PID 1 and a
-healthcheck.
+healthcheck, except `loams-gateway` and `loams-temporal`, which have no client mode yet.
 
 | Image | Contains |
 |---|---|
@@ -43,6 +43,8 @@ healthcheck.
 | `loams-fabric` | `loams-fabric house` and `loams-house-worker`, with the digest-pinned libchdb; workers sealed with `--sandbox pods` by default |
 | `loams-agentd` | the agent daemon |
 | `loams-pg-control` | `loams` with features `postgres,tikv` and the standalone `docker-compose` CLI: `pg-control` and `pg-runner` (`--profile postgres-control`; from 0.1.0) |
+| `loams-gateway` | `loams-gateway` with features `spark,temporal` (preview): the Postgres front door, managed RisingWave behind Loams auth, Spark Connect and Temporal modules; compose's `engine-gateway`. It has no healthcheck; use the admin port's `/healthz` |
+| `loams-temporal` | the Temporal gateway (preview, design 74): the standalone `loams-temporal` binary, run by `compose.compute.yaml`'s profile `temporal-gateway` (below; from the release after 0.1.2) |
 
 ```sh
 deploy/release/build.sh loams                        # both platforms, local manifest list
@@ -272,6 +274,34 @@ Leave `LOAMS_AUTHZ` on `builtin` for now: OpenFGA's tuples come from the
 identity sync (plan IA1, IA3), and until it runs an engine on OpenFGA grants
 nothing to anyone but the operator's own credentials.
 
+### Managed RisingWave (preview, not yet run end to end)
+
+RisingWave, the companion stream processor (design 81, plan RW1), runs as
+four services (meta, compactor, compute, frontend) in the override file
+`compose.risingwave.yaml`. The shared engine services are in
+`compose.lake.yaml`: Lakekeeper (the Iceberg REST catalog, warehouse
+`loams`) and the one-shot `engines-init` (buckets, databases, roles). The
+engine profiles need `rustfs`, because engine state lives in the bucket
+`loams-engines` under `engines/<ns>/<instance>/`.
+
+```sh
+docker compose -f compose.yaml -f compose.lake.yaml -f compose.risingwave.yaml \
+  --profile rustfs --profile risingwave up -d
+psql "host=127.0.0.1 port=4566 dbname=dev user=me sslmode=require"   # password: ENGINE_GATEWAY_KEY
+```
+
+The meta store is the database `rw_default` on Loams Postgres (`compute1`).
+Hummock writes to `loams-engines/engines/default/risingwave/`. The only
+published port is `engine-gateway`'s 127.0.0.1:4566 (image `loams-gateway`).
+It terminates TLS with a self-signed certificate and checks the password
+against `ENGINE_GATEWAY_KEY`, then logs in to RisingWave as `loams_gateway`.
+On a stack with no published image yet, `docker compose build engine-gateway`
+builds it from source. Set `ENGINE_GATEWAY_KEY`, `RISINGWAVE_ROOT_PASSWORD`,
+`RISINGWAVE_GATEWAY_PASSWORD` and `RISINGWAVE_META_PASSWORD` (letters and
+digits only) and the RustFS keys in `.env` for anything but a test stack.
+Kubernetes uses the chart `deploy/helm/loams-risingwave`, one release per
+engine instance.
+
 ### Headscale (coming soon, unsupported)
 
 The supported setup is your own Tailscale tailnet, with the console your engine
@@ -296,6 +326,38 @@ HTTP on the tailnet (`TS_SERVE_MODE=http`, inside WireGuard). The console the
 engine serves at `http://loams.<tailnet>/ui/` is same-origin with it, so it
 works there; a console served over HTTPS from another origin cannot call it
 (mixed content).
+
+## The Temporal gateway (preview)
+
+`loams-temporal` speaks the Temporal API for the official Temporal SDKs
+(design 74; the methods it serves are in the matrix of
+[the gateway guide](../../docs/guides/durable/temporal-gateway.md)). It keeps
+history in its own Loams Postgres database and runs timers, leases and task
+delivery on the engine's Resonate. It is a preview: the Go and TypeScript
+SDK legs run on pull requests that touch it, and it has not yet run end to
+end on a deployed stack. The image ships from the first release after 0.1.2.
+
+```sh
+cd deploy/release
+cp temporal-gateway.toml.example temporal-gateway.toml
+# put the SHA-256 of each lk_ API key, its Loams namespace and role in [[keys]],
+# and a random task-token key of 32 bytes or more in .env:
+#   LOAMS_TEMPORAL_TOKEN_KEY_1=$(openssl rand -hex 32)
+docker compose --env-file .env --env-file ../../conformance/compute/pins.env \
+  -f compose.yaml -f compose.compute.yaml --profile temporal-gateway up -d
+```
+
+- The profile adds `compute-init`, which creates the role and database
+  `loams_temporal` on `compute1`'s direct endpoint (set
+  `LOAMS_TEMPORAL_DB_PASSWORD` in `.env`), and `temporal-gateway`, which
+  runs in the engine's network namespace. SDKs on the compose network dial
+  `loams:7233` with an API key as a bearer token; no host port is
+  published. To reach it from outside the stack, put a TLS proxy in front.
+- `LOAMS_TEMPORAL_CONFIG` names another config file. The gateway refuses to
+  start without one, and refuses an empty or short task-token key.
+- `compose.compute.yaml` takes its other images from
+  `conformance/compute/pins.env`; the gateway's image follows
+  `LOAMS_VERSION` like the engine's (`LOAMS_TEMPORAL_IMAGE` overrides it).
 
 ## Upgrading
 

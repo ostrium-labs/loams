@@ -221,7 +221,7 @@ impl CdpClient {
         }
         let text = serde_json::Value::Object(message).to_string();
         self.socket
-            .send(Message::Text(text))
+            .send(Message::Text(text.into()))
             .await
             .map_err(|error| SidebarBrowserError::Transport(format!("sending {method}: {error}")))
     }

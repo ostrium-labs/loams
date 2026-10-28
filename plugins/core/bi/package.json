@@ -9,7 +9,7 @@
     "@loams-core/types": "workspace:*"
   },
   "devDependencies": {
-    "vite-plus": "1.0.0"
+    "vite-plus": "catalog:"
   },
   "scripts": {
     "build": "pnpm --filter @loams-plugins/root build"

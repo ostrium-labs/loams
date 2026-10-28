@@ -1,0 +1,1 @@
+SELECT * EXCEPT (d) APPLY(x -> x + 1) FROM u25 ORDER BY a

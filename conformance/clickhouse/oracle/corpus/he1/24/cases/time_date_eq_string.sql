@@ -1,0 +1,1 @@
+SELECT d = '2026-10-01', d > '2026-10-01' FROM t24t ORDER BY id
