@@ -152,7 +152,9 @@ pub fn trim_function(side: Option<&TrimWhereField>) -> &'static str {
 /// The function call a special form is in ClickHouse (plan HE1 Task 31), if
 /// `e` is one.
 fn special_form(e: &Expr) -> Result<Option<Expr>, ChError> {
-    let b = |x: &Box<Expr>| (**x).clone();
+    fn b(x: &Expr) -> Expr {
+        x.clone()
+    }
     Ok(Some(match e {
         Expr::Like {
             negated,
@@ -191,7 +193,7 @@ fn special_form(e: &Expr) -> Result<Option<Expr>, ChError> {
                 return Err(ChError::syntax_error("SUBSTRING(… FOR …) needs FROM"));
             };
             let mut args = vec![b(expr), b(from)];
-            args.extend(substring_for.as_ref().map(b));
+            args.extend(substring_for.as_deref().map(b));
             call("substring", args)
         }
         Expr::Trim {
@@ -206,7 +208,7 @@ fn special_form(e: &Expr) -> Result<Option<Expr>, ChError> {
                 ));
             }
             let mut args = vec![b(expr)];
-            args.extend(trim_what.as_ref().map(b));
+            args.extend(trim_what.as_deref().map(b));
             args.extend(trim_characters.iter().flatten().cloned());
             if args.len() > 2 {
                 return Err(ChError::number_of_arguments_doesnt_match(
