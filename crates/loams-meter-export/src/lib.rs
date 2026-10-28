@@ -8,6 +8,7 @@
 //! | Feature | Module | Sends |
 //! |---|---|---|
 //! | `stripe` | `stripe` | Each closed hour's overage as a Stripe meter event; payment state from webhooks and a daily poll |
+//! | `openmeter` | `openmeter` | Raw usage events, unchanged but for `loamslease`, to OpenMeter's `POST /api/v1/events` |
 //!
 //! **Where this lives (D2210).** §63 §5.2 puts the exporters under
 //! `crates/loams-meter/src/export/`. They are a crate of their own so the
@@ -28,10 +29,12 @@ pub mod ledger;
 pub mod quantity;
 pub mod retry;
 
+#[cfg(feature = "openmeter")]
+pub mod openmeter;
 #[cfg(feature = "stripe")]
 pub mod stripe;
 
-pub use ledger::{ExportLedger, LedgerEntry, LedgerKey, MemLedger};
+pub use ledger::{ExportCursors, ExportLedger, LedgerEntry, LedgerKey, MemCursors, MemLedger};
 pub use quantity::{Quantity, QuantityError};
 pub use retry::RetryPolicy;
 
@@ -73,7 +76,7 @@ pub enum ExportError {
     Webhook(String),
 }
 
-#[cfg_attr(not(feature = "stripe"), allow(dead_code))]
+#[cfg_attr(not(any(feature = "stripe", feature = "openmeter")), allow(dead_code))]
 /// Cuts a provider's message for an error (300 characters, one line).
 pub(crate) fn short(message: &str) -> String {
     let one_line: String = message

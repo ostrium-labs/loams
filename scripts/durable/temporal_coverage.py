@@ -82,8 +82,8 @@ STATUS: dict[str, tuple[str, str]] = {
     "UpdateWorkflowExecution": (TMP, "durable admission; ordinary (not speculative) workflow task"),
     "PollWorkflowExecutionUpdate": (TMP, ""),
     # Visibility and schedules
-    "ListOpenWorkflowExecutions": (SCHED, ""),
-    "ListClosedWorkflowExecutions": (SCHED, ""),
+    "ListOpenWorkflowExecutions": (TMP, "keyset pages from Store::list_runs; workflow ID or type filter, start window"),
+    "ListClosedWorkflowExecutions": (TMP, "keyset pages from Store::list_runs; workflow ID, type or status filter, start window"),
     "ListWorkflowExecutions": (SCHED_DONE, ""),
     "ListArchivedWorkflowExecutions": (LATER, "no archival"),
     "ScanWorkflowExecutions": (SCHED_DONE, ""),

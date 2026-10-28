@@ -216,7 +216,7 @@ EOF2
 
 DOCS=("$ROOT/docs/guides/durable" "$ROOT/docs/guides/compute")
 
-# The durable section of the matrix renders the fixture's run as committed:
+# The durable section of the matrix renders the fixture's run as committed (a leg that exited early is red):
 # green with an expected failure, red (an unlisted failure, an unexpected
 # pass), not run and not merged.
 matrix_durable_from_fixture() {
@@ -318,7 +318,9 @@ compute_compat_workflow_runs_every_suite() {
   for f in "$HERE"/durable/run.sh "$HERE"/temporal/run.sh "$HERE"/temporal/corpus/replay.sh "$HERE"/airflow/run.sh; do
     grep -qF "conformance/compute/${f#"$HERE"/}" "$wf" || { echo "compute-compat.yml does not run ${f#"$ROOT"/}"; hits=1; }
   done
-  grep -qF 'conformance/compute/dbos-$l/run.sh' "$wf" || { echo "compute-compat.yml does not run the DBOS suites"; hits=1; }
+  for f in py ts go java; do
+    grep -qF "conformance/compute/dbos-$f/run.sh" "$wf" || { echo "compute-compat.yml does not run dbos-$f"; hits=1; }
+  done
   return $hits
 }
 
