@@ -1,0 +1,116 @@
+name: Temporal corpus .NET histories
+
+# TSDK-dotnet (D2140, D2141): the .NET corpus. corpus/generate-dotnet.sh runs
+# the official Temporal .NET SDK (Temporalio 1.20.0) against upstream
+# Temporal (compat mode, the stock server on Loams Postgres, by default;
+# start-dev by hand), the .NET WorkflowReplayer checks the fresh histories
+# (corpus_replays_dotnet), and histories/dotnet, generate-dotnet.json and
+# manifest.json are uploaded as an artifact to commit under
+# corpus/histories/dotnet/. The .NET leg against the gateway is the `dotnet`
+# entry of temporal-gateway.yml's sdk-leg matrix (D2138).
+#
+# Do not event-filter paths: the filter job decides, as in ci.yml and monorepo.yml.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      corpus_server:
+        description: upstream Temporal for the .NET corpus
+        type: choice
+        options: [compat-mode, start-dev]
+        default: compat-mode
+
+permissions:
+  contents: read
+
+concurrency:
+  group: temporal-corpus-dotnet-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  changes:
+    name: Changed paths
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      corpus: ${{ steps.filter.outputs.corpus }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # dorny/paths-filter is MIT-licensed; pinned to v4.0.3, as in ci.yml.
+      # Empty token forces local Git comparison, including fork PRs; no PR API permission.
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        if: github.event_name == 'pull_request'
+        with:
+          token: ''
+          base: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          filters: |
+            corpus:
+              - 'conformance/compute/temporal/corpus/workers/dotnet/**'
+              - 'conformance/compute/temporal/corpus/generate-dotnet.sh'
+              - '.github/workflows/temporal-corpus-dotnet.yml'
+
+  dotnet-corpus:
+    name: "Temporal corpus: .NET histories against upstream Temporal"
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.corpus == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      OC_OUT: ${{ github.workspace }}/target/compute
+      CORPUS_SERVER: ${{ inputs.corpus_server || 'compat-mode' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: upstream Temporal
+        run: |
+          . conformance/compute/lib.sh
+          if [ "$CORPUS_SERVER" = start-dev ]; then
+            docker network create dx1-corpus-net
+            docker run -d --name dx1-corpus-temporal --network dx1-corpus-net \
+              --network-alias temporal-frontend "$TEMPORAL_ADMIN_TOOLS_IMAGE" \
+              temporal server start-dev --ip 0.0.0.0 --headless
+            echo "OC_NETWORK=dx1-corpus-net" >>"$GITHUB_ENV"
+            OC_NETWORK=dx1-corpus-net oc_temporal_wait
+          else
+            # Compat mode: the stock server on Loams Postgres (DX0 Task 3).
+            oc_up temporal
+            oc_temporal_wait
+          fi
+      - name: the .NET corpus (generate-dotnet.sh)
+        run: conformance/compute/temporal/corpus/generate-dotnet.sh
+      - name: corpus_manifest_complete
+        run: python3 conformance/compute/temporal/corpus/manifest.py check
+      - name: corpus_replays_dotnet
+        run: |
+          . conformance/compute/lib.sh
+          docker run --rm --network none -v "$PWD/conformance/compute/temporal/corpus:/c:ro" \
+            -v dx1-nugetcache:/root/.nuget/packages -e DOTNET_CLI_TELEMETRY_OPTOUT=1 -e DOTNET_NOLOGO=1 "$DOTNET_IMAGE" \
+            sh -ec "cp -r /c/workers/dotnet /tmp/d && cd /tmp/d && dotnet build -c Release -o /tmp/bin -v quiet -nologo && dotnet /tmp/bin/corpus-dotnet.dll replay /c/histories/dotnet"
+      - name: the upstream server's logs
+        if: failure() || cancelled()
+        run: |
+          mkdir -p "$OC_OUT"
+          . conformance/compute/lib.sh
+          if [ "$CORPUS_SERVER" = start-dev ]; then
+            docker logs dx1-corpus-temporal >"$OC_OUT/temporal.log" 2>&1 || true
+          else
+            oc_compose --profile temporal logs --no-color --tail 500 >"$OC_OUT/temporal.log" 2>&1 || true
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: temporal-corpus-dotnet
+          path: |
+            conformance/compute/temporal/corpus/histories/dotnet
+            conformance/compute/temporal/corpus/histories/generate-dotnet.json
+            conformance/compute/temporal/corpus/manifest.json
+            target/compute/temporal.log
+          if-no-files-found: ignore
+          retention-days: 30

@@ -154,9 +154,7 @@ impl PgStore {
     /// must equal `shards` ([`StoreError::ShardCountMismatch`], X1.R6). Call
     /// [`PgStore::migrate`] before serving.
     pub async fn connect(url: &str, shards: u32) -> Result<Self, StoreError> {
-        let opts = PgConnectOptions::from_str(url)
-            .map_err(|e| StoreError::InvalidArgument(format!("database URL: {e}")))?;
-        Self::connect_with(opts, shards).await
+        Self::connect_url(url, &PgStoreOptions::new(shards)).await
     }
 
     /// [`PgStore::connect`] with parsed options (TLS, …) and the default
@@ -574,6 +572,25 @@ impl Store for PgStore {
                 map_err(e)
             }
         })?;
+        Ok(())
+    }
+
+    async fn update_namespace(&self, ns: NamespaceRecord) -> Result<(), StoreError> {
+        let updated = sqlx::query(
+            "UPDATE namespaces SET retention_secs = $2, state = $3, config = $4, \
+             db_record_version = db_record_version + 1 WHERE namespace_id = $1",
+        )
+        .bind(&ns.namespace_id)
+        .bind(ns.retention_secs)
+        .bind(ns.state)
+        .bind(&ns.config)
+        .execute(&self.pool)
+        .await
+        .map_err(map_err)?
+        .rows_affected();
+        if updated == 0 {
+            return Err(StoreError::NotFound);
+        }
         Ok(())
     }
 

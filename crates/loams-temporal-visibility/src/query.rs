@@ -246,11 +246,10 @@ fn lex(input: &str) -> Result<Vec<(usize, Tok)>, ParseError> {
                 let start = i;
                 i += 1;
                 while let Some(&(_, ch)) = chars.get(i) {
-                    if ch.is_ascii_alphanumeric() || ch == '.' || ch == '_' {
-                        i += 1;
-                    } else if (ch == '-' || ch == '+')
-                        && matches!(chars.get(i - 1).map(|x| x.1), Some('e' | 'E'))
-                    {
+                    // A sign continues a number only after an exponent's `e`.
+                    let exponent_sign = (ch == '-' || ch == '+')
+                        && matches!(chars.get(i - 1).map(|x| x.1), Some('e' | 'E'));
+                    if ch.is_ascii_alphanumeric() || ch == '.' || ch == '_' || exponent_sign {
                         i += 1;
                     } else {
                         break;

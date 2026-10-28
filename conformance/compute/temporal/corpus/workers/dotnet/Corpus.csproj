@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    DX1 TSDK-dotnet: the .NET half of the Temporal history corpus (generator,
+    worker, starter and replayer) on the official Temporal .NET SDK
+    (Temporalio, MIT, built on sdk-core). Pinned to 1.20.0 (2026-09-28), the
+    newest release at least 14 days old when this was written (D2140).
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>12</LangVersion>
+    <AssemblyName>corpus-dotnet</AssemblyName>
+    <RootNamespace>Loams.Corpus</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Workflow handlers without an await are fine here. -->
+    <NoWarn>$(NoWarn);CS1998</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Temporalio" Version="1.20.0" />
+  </ItemGroup>
+</Project>
