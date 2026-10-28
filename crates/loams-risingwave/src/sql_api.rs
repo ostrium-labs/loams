@@ -10,17 +10,18 @@
 //! releases) never decide whether a read works: values are cast to
 //! `varchar` in SQL and parsed here.
 //!
-//! The connection is plain TCP (`NoTls`): in compose it goes to the
-//! loopback `engine-gateway` port. TLS to a remote gateway (R8: the gateway
-//! terminates TLS) needs a rustls connector for tokio-postgres, which is not
-//! in the lockfile yet; that is a follow-up. Status: preview, not yet run
-//! end to end.
+//! Transport ([`crate::tls`]): a remote host always gets TLS with a
+//! verified certificate (design 81 R8: loams-gateway terminates TLS); plain
+//! TCP is allowed only to loopback, which is how the compose
+//! `engine-gateway` is reached. Status: preview, not yet run end to end.
 
 use std::fmt;
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use tokio_postgres::{Client, NoTls, SimpleQueryMessage};
+
+use crate::tls::{self, TlsError, TlsOptions, Transport};
 
 use crate::connectors::pipeline::Rendered;
 use crate::connectors::{Ddl, DdlError, quote_ident, quote_literal};
@@ -35,6 +36,8 @@ pub const DEFAULT_URL: &str = "postgres://loams@127.0.0.1:4566/dev";
 pub enum SqlApiError {
     #[error("connecting to RisingWave: {0}")]
     Connect(#[source] tokio_postgres::Error),
+    #[error("connecting to RisingWave: {0}")]
+    Tls(#[from] TlsError),
     #[error("{context}: {message}")]
     Query {
         context: String,
@@ -275,18 +278,38 @@ impl SqlApi {
     /// a Tokio runtime.
     pub async fn connect(url: &str) -> Result<Self, SqlApiError> {
         let config: tokio_postgres::Config = url.parse().map_err(SqlApiError::Connect)?;
-        Self::connect_config(&config).await
+        Self::connect_config(config, &TlsOptions::default()).await
     }
 
     /// Connects with a parsed configuration (the CLI adds the password from
-    /// the environment this way, so it never sits in a URL).
-    pub async fn connect_config(config: &tokio_postgres::Config) -> Result<Self, SqlApiError> {
-        let (client, connection) = config.connect(NoTls).await.map_err(SqlApiError::Connect)?;
-        let connection = tokio::spawn(async move {
-            if let Err(err) = connection.await {
-                tracing::warn!(%err, "RisingWave connection closed");
+    /// the environment this way, so it never sits in a URL). TLS follows
+    /// [`tls::choose`]: required and verified for any non-loopback host.
+    pub async fn connect_config(
+        mut config: tokio_postgres::Config,
+        options: &TlsOptions,
+    ) -> Result<Self, SqlApiError> {
+        let (client, connection) = match tls::choose(&mut config, options)? {
+            Transport::Plain => {
+                let (client, connection) =
+                    config.connect(NoTls).await.map_err(SqlApiError::Connect)?;
+                let connection = tokio::spawn(async move {
+                    if let Err(err) = connection.await {
+                        tracing::warn!(%err, "RisingWave connection closed");
+                    }
+                });
+                (client, connection)
             }
-        });
+            Transport::Tls(make) => {
+                let (client, connection) =
+                    config.connect(make).await.map_err(SqlApiError::Connect)?;
+                let connection = tokio::spawn(async move {
+                    if let Err(err) = connection.await {
+                        tracing::warn!(%err, "RisingWave connection closed");
+                    }
+                });
+                (client, connection)
+            }
+        };
         Ok(Self { client, connection })
     }
 

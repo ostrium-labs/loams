@@ -1,0 +1,24 @@
+[package]
+name = "loams-meter-house"
+description = "Loams Meter's House side: the _meter tables and pipe, the close job, period totals and the meter query (design §63 §7.5, §8; ME1 Tasks 5-8)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+axum.workspace = true
+# ME-core's types (a path: the workspace has no entry for it yet).
+loams-meter-core = { path = "../loams-meter-core" }
+reqwest.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+
+[lints]
+workspace = true

@@ -161,6 +161,13 @@ pub trait TokenIssuer {
     fn issue(&self, namespace: &str, lifetime: Duration) -> Result<String, String>;
 }
 
+/// [`TokenIssuer`] for an issuer that calls a token endpoint: agentd's
+/// [`crate::identity::ZitadelIssuer`] (D1618, D1629).
+#[async_trait::async_trait]
+pub trait AsyncTokenIssuer: Send + Sync {
+    async fn issue(&self, namespace: &str, lifetime: Duration) -> Result<String, String>;
+}
+
 /// Keeps `LOAMS_TOKEN_FILE` fresh: a new 15-minute token every 10 minutes,
 /// written atomically with mode 0600.
 pub struct TokenFile<I> {
@@ -204,6 +211,38 @@ impl<I: TokenIssuer> TokenFile<I> {
         write_private(&self.path, token.as_bytes()).map_err(|e| e.to_string())?;
         self.next = Some(now + TOKEN_ROTATION);
         Ok(true)
+    }
+}
+
+impl<I: AsyncTokenIssuer> TokenFile<I> {
+    /// A token file over an [`AsyncTokenIssuer`].
+    pub fn new_async(path: PathBuf, namespace: String, issuer: I) -> Self {
+        Self {
+            path,
+            namespace,
+            issuer,
+            next: None,
+        }
+    }
+
+    /// [`TokenFile::tick`] for an [`AsyncTokenIssuer`].
+    ///
+    /// # Errors
+    ///
+    /// The issuer's refusal, or the write's.
+    pub async fn tick_async(&mut self, now: SystemTime) -> Result<bool, String> {
+        if self.next.is_some_and(|next| now < next) {
+            return Ok(false);
+        }
+        let token = self.issuer.issue(&self.namespace, TOKEN_LIFETIME).await?;
+        write_private(&self.path, token.as_bytes()).map_err(|e| e.to_string())?;
+        self.next = Some(now + TOKEN_ROTATION);
+        Ok(true)
+    }
+
+    /// When the next rotation is due ([`TokenFile::next_rotation`]).
+    pub fn next_async_rotation(&self) -> Option<SystemTime> {
+        self.next
     }
 }
 

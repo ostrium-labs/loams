@@ -309,31 +309,9 @@ pub fn environment_check(
     req
 }
 
-/// A check of `relation` on `graph:<namespace>/<graph>`, with the tuples that hang the graph
-/// off its namespace (the engine does not write a tuple per graph) and root that namespace.
-pub fn graph_check(
-    doc: &Doc,
-    subject: &Subject,
-    relation: &str,
-    namespace: &str,
-    graph: &str,
-) -> CheckRequest {
-    let object = format!("graph:{namespace}/{graph}");
-    let mut req = CheckRequest::new(
-        subject.clone(),
-        relation,
-        ObjectRef::new("graph", format!("{namespace}/{graph}")),
-    );
-    req.contextual_tuples = namespace_roots(doc, namespace);
-    req.contextual_tuples.push(Tuple::new(
-        format!("environment:{namespace}"),
-        "environment",
-        object,
-    ));
-    req
-}
-
-fn namespace_roots(doc: &Doc, namespace: &str) -> Vec<Tuple> {
+/// The contextual tuple that roots a namespace that is no project's environment in the org (the
+/// engine writes no tuple per namespace).
+pub fn namespace_roots(doc: &Doc, namespace: &str) -> Vec<Tuple> {
     match (&doc.org, project_of(doc, namespace)) {
         (Some(org), None) => vec![Tuple::new(
             format!("org:{}", org.id),

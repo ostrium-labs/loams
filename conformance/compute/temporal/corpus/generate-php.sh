@@ -75,6 +75,6 @@ if [ "$out" = "$here/histories" ]; then
     start-dev) version=1.32.0 image="temporal server start-dev (CLI $TEMPORAL_CLI in $TEMPORAL_ADMIN_TOOLS_IMAGE)" pg=start-dev ;;
     *) echo "generate-php.sh: CORPUS_SERVER is compat-mode or start-dev" >&2; exit 2 ;;
   esac
-  python3 "$here/manifest.py" build --server-version "$version" --server-image "$image" --pg-major "$pg" --langs php
+  python3 "$here/manifest.py" build --server-version "$version" --server-image "$image" --pg-major "$pg" --languages php
 fi
 echo "generate-php.sh: namespace $ns, $(find "$out/php" -name "*.json" | wc -l) PHP histories in $out"

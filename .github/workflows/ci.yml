@@ -503,6 +503,9 @@ jobs:
       # The loams-gateway image's feature set (deploy/release/Containerfile.loams-gateway).
       - name: clippy (loams-gateway with the image's features)
         run: cargo clippy -p loams-gateway --features spark,temporal --all-targets --locked -- -D warnings
+      # Its Redis module (design 77, plan KV2 Task 2), with the TiKV store.
+      - name: clippy (loams-gateway resp module)
+        run: cargo clippy -p loams-gateway -p loams-resp --features loams-gateway/resp-tikv --all-targets --locked -- -D warnings
       # The release images build `loams` with these feature sets (deploy/release/Containerfile.*);
       # `postgres,tikv` turns on loams-kv's TiKV store without loams-live's `tikv`, a combination
       # nothing else here builds (v0.1.0-preview.2's loams-pg-control image broke on it).
