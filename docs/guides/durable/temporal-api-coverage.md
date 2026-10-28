@@ -86,7 +86,7 @@ WorkflowService: 54 of 123 implemented. OperatorService: none yet (the gateway d
 | `SetWorkerDeploymentManager` | not planned yet | worker deployments |
 | `UpdateWorkflowExecution` | implemented (TMP-api) | durable admission; ordinary (not speculative) workflow task |
 | `PollWorkflowExecutionUpdate` | implemented (TMP-api) |  |
-| `StartBatchOperation` | implemented (TMP-api) | listed executions; terminate, cancel, signal; no visibility query yet |
+| `StartBatchOperation` | implemented (TMP-api) | visibility query or listed executions; terminate, cancel, signal |
 | `StopBatchOperation` | implemented (TMP-api) |  |
 | `DescribeBatchOperation` | implemented (TMP-api) | jobs since this gateway started |
 | `ListBatchOperations` | implemented (TMP-api) | jobs since this gateway started; one page |

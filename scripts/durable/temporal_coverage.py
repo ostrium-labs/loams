@@ -123,7 +123,7 @@ STATUS: dict[str, tuple[str, str]] = {
     "UpdateWorkerDeploymentVersionMetadata": (LATER, "worker deployments"),
     "SetWorkerDeploymentManager": (LATER, "worker deployments"),
     # Batch
-    "StartBatchOperation": (TMP, "listed executions; terminate, cancel, signal; no visibility query yet"),
+    "StartBatchOperation": (TMP, "visibility query or listed executions; terminate, cancel, signal"),
     "StopBatchOperation": (TMP, ""),
     "DescribeBatchOperation": (TMP, "jobs since this gateway started"),
     "ListBatchOperations": (TMP, "jobs since this gateway started; one page"),

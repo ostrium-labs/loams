@@ -228,10 +228,10 @@ SDK legs: 26 of 26 cases passed. 43 of the 123 `WorkflowService` methods are imp
 | `GetWorkerBuildIdCompatibility` | not exercised | not exercised | TMP-api (D2088): unit tests only; versioning reads answer no sets, no rules, all reachable |
 | `GetWorkerVersioningRules` | not exercised | not exercised | TMP-api (D2088): unit tests only; versioning reads answer no sets, no rules, all reachable |
 | `GetWorkerTaskReachability` | not exercised | not exercised | TMP-api (D2088): unit tests only; versioning reads answer no sets, no rules, all reachable |
-| `StartBatchOperation` | not exercised | not exercised | TMP-api (D2230): unit tests only; listed executions, terminate/cancel/signal, jobs in gateway memory |
-| `StopBatchOperation` | not exercised | not exercised | TMP-api (D2230): unit tests only; listed executions, terminate/cancel/signal, jobs in gateway memory |
-| `DescribeBatchOperation` | not exercised | not exercised | TMP-api (D2230): unit tests only; listed executions, terminate/cancel/signal, jobs in gateway memory |
-| `ListBatchOperations` | not exercised | not exercised | TMP-api (D2230): unit tests only; listed executions, terminate/cancel/signal, jobs in gateway memory |
+| `StartBatchOperation` | not exercised | not exercised | TMP-api (D2230): tests/batch.rs (in-process); visibility query or listed executions; terminate/cancel/signal; jobs in gateway memory |
+| `StopBatchOperation` | not exercised | not exercised | TMP-api (D2230): tests/batch.rs (in-process); visibility query or listed executions; terminate/cancel/signal; jobs in gateway memory |
+| `DescribeBatchOperation` | not exercised | not exercised | TMP-api (D2230): tests/batch.rs (in-process); visibility query or listed executions; terminate/cancel/signal; jobs in gateway memory |
+| `ListBatchOperations` | not exercised | not exercised | TMP-api (D2230): tests/batch.rs (in-process); visibility query or listed executions; terminate/cancel/signal; jobs in gateway memory |
 
 Known issues (not shown by the cases above):
 

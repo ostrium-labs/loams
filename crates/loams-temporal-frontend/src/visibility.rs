@@ -221,7 +221,7 @@ impl Frontend {
         Ok((r, all_types(&custom)))
     }
 
-    async fn list_page(
+    pub(crate) async fn list_page(
         &self,
         p: &Principal,
         namespace: &str,

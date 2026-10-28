@@ -2,10 +2,10 @@
 //! signal a list of workflow executions.
 //!
 //! What is built, honestly:
-//! - Targets are the executions the request lists (`target_executions`, or
-//!   the deprecated `executions`). A `visibility_query` needs the list
-//!   filter grammar (lane TMP-sched) and is refused with `INVALID_ARGUMENT`
-//!   until then.
+//! - Targets are the executions a `visibility_query` matches when the job
+//!   starts (the list filter grammar of lane TMP-sched, D2074–D2076), or
+//!   the executions the request lists (`target_executions`, or the
+//!   deprecated `executions`).
 //! - Terminate, cancel and signal. Deletion, reset and the activity and
 //!   options operations answer `UNIMPLEMENTED`.
 //! - Jobs live in this gateway's memory: `DescribeBatchOperation` and
@@ -139,13 +139,9 @@ pub(crate) fn action(r: &StartBatchOperationRequest) -> Result<BatchAction, Stat
     }
 }
 
-/// The workflow executions a request lists.
+/// The workflow executions a request lists. Empty is allowed only when a
+/// visibility query picks the targets instead.
 pub(crate) fn targets(r: &StartBatchOperationRequest) -> Result<Vec<WorkflowExecution>, Status> {
-    if !r.visibility_query.is_empty() {
-        return Err(Status::invalid_argument(
-            "batch operations by visibility query are not supported yet; list the executions",
-        ));
-    }
     let mut out: Vec<WorkflowExecution> = r
         .target_executions
         .iter()
@@ -164,9 +160,14 @@ pub(crate) fn targets(r: &StartBatchOperationRequest) -> Result<Vec<WorkflowExec
     out.extend(r.executions.iter().cloned());
     out.retain(|e| !e.workflow_id.is_empty());
     out.dedup();
-    if out.is_empty() {
+    if !r.visibility_query.is_empty() && !out.is_empty() {
         return Err(Status::invalid_argument(
-            "Executions are not set on request.",
+            "a batch operation takes a visibility query or a list of executions, not both",
+        ));
+    }
+    if out.is_empty() && r.visibility_query.is_empty() {
+        return Err(Status::invalid_argument(
+            "Executions or VisibilityQuery is not set on request.",
         ));
     }
     if out.len() > MAX_TARGETS {
@@ -242,7 +243,12 @@ impl Frontend {
             return Err(Status::invalid_argument("Reason is not set on request."));
         }
         let action = action(&r)?;
-        let targets = targets(&r)?;
+        let mut targets = targets(&r)?;
+        if !r.visibility_query.is_empty() {
+            targets = self
+                .query_targets(p, &r.namespace, &r.visibility_query)
+                .await?;
+        }
         let identity = match &action {
             BatchAction::Terminate { identity, .. }
             | BatchAction::Cancel { identity, .. }
@@ -332,6 +338,31 @@ impl Frontend {
         };
         *job.state.lock().unwrap_or_else(PoisonError::into_inner) = state;
         job.close_ms.store(self.engine.now_ms(), Ordering::Relaxed);
+    }
+
+    /// The executions a visibility query matches now, page by page, at most
+    /// [`MAX_TARGETS`].
+    async fn query_targets(
+        &self,
+        p: &Principal,
+        namespace: &str,
+        query: &str,
+    ) -> Result<Vec<WorkflowExecution>, Status> {
+        let mut out = Vec::new();
+        let mut token = Vec::new();
+        loop {
+            let (page, next) = self.list_page(p, namespace, query, 1000, &token).await?;
+            out.extend(page.into_iter().filter_map(|i| i.execution));
+            if out.len() > MAX_TARGETS {
+                return Err(Status::invalid_argument(format!(
+                    "the visibility query matches more than {MAX_TARGETS} executions; narrow it"
+                )));
+            }
+            if next.is_empty() {
+                return Ok(out);
+            }
+            token = next.to_vec();
+        }
     }
 
     async fn batch_target(
@@ -464,10 +495,20 @@ mod tests {
             tonic::Code::Unimplemented
         );
 
+        // A query and a list together are refused; a query alone leaves
+        // the list empty for the query to fill.
         let mut q = r.clone();
         q.visibility_query = "WorkflowType = 'x'".into();
         assert_eq!(
-            targets(&q).expect_err("query").code(),
+            targets(&q).expect_err("both").code(),
+            tonic::Code::InvalidArgument
+        );
+        q.target_executions.clear();
+        assert!(targets(&q).expect("query only").is_empty());
+        let mut none = q.clone();
+        none.visibility_query.clear();
+        assert_eq!(
+            targets(&none).expect_err("neither").code(),
             tonic::Code::InvalidArgument
         );
     }
