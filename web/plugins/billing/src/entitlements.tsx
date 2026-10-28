@@ -53,7 +53,7 @@ function kindText(e: EntitlementView): string {
   }
 }
 
-function EntitlementCard({ e }: { e: EntitlementView }) {
+export function EntitlementCard({ e }: { e: EntitlementView }) {
   return (
     <Card
       title={e.label}

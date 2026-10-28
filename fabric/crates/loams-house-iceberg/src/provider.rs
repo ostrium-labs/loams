@@ -469,7 +469,7 @@ impl TableProvider for LakeTable {
 
         // What the scan must read, and where each output column finds it.
         let mut read: Vec<usize> = Vec::new();
-        let mut at = |i: usize, read: &mut Vec<usize>| match read.iter().position(|&r| r == i) {
+        let at = |i: usize, read: &mut Vec<usize>| match read.iter().position(|&r| r == i) {
             Some(p) => p,
             None => {
                 read.push(i);

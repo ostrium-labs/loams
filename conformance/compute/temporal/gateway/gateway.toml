@@ -1,0 +1,50 @@
+# The gateway's configuration in the compose profile `temporal-gateway`
+# under the harness (deploy/release/compose.compute.yaml, with
+# conformance/compute/temporal-gateway.yaml mounting this file; plan DX1
+# Task 10, D2031). The shape of deploy/release/temporal-gateway.toml.example with
+# test-only credentials: nothing here is a development setting, so the
+# gateway runs as it would in a deployment (API keys, its own task-token key,
+# Postgres, the engine's Resonate), not in `insecure_dev`.
+
+# In the engine's network namespace (`network_mode: service:loams`), so on
+# the compose network as `loams:7233`; no host port.
+listen = "0.0.0.0:7233"
+insecure_dev = false
+pid = "loams-temporal-conformance"
+
+# The `loams_temporal` database that compute/durable-init.sh creates, on the
+# direct endpoint (DX1 R0.7; never PgDog transaction mode, §74 §5.5 rule 5).
+[store]
+kind = "postgres"
+url_env = "LOAMS_TEMPORAL_DATABASE_URL"
+
+# The engine's durable listener, on the engine's loopback (D138).
+[durability]
+kind = "resonate"
+url = "http://127.0.0.1:8001"
+
+[[task_token_keys]]
+id = "k1"
+secret_env = "LOAMS_TEMPORAL_TOKEN_KEY_1"
+
+# The test-only key `lk_temporal_conformance_test_only` (run.sh passes it to
+# the SDK workers as TEMPORAL_API_KEY). Never use it outside this harness.
+[[keys]]
+sha256 = "a81abc5c9670db2321752ec74def8d1d85d286d9102ac79720bdd58908338583"
+loams_namespace_id = "conformance"
+role = "admin"
+
+[[bootstrap_namespaces]]
+loams_namespace_id = "conformance"
+name = "default"
+retention_hours = 72
+
+# The loopback-only listener the stock Temporal Web UI talks to
+# (conformance/compute/temporal-ui.yaml, #1333; docs/guides/durable/temporal-ui-cli.md):
+# every call on it is Loams namespace `conformance`'s, never admin, and only
+# reads pass. It is in the engine's network namespace, so nothing outside
+# that namespace reaches it.
+[ui]
+listen = "127.0.0.1:7234"
+loams_namespace_id = "conformance"
+read_only = true

@@ -33,6 +33,21 @@ pub struct Registry {
     pub windows: HashMap<String, Arc<WindowUDF>>,
     /// Higher-order functions (lambdas).
     pub higher_order: HashMap<String, Arc<HigherOrderUDF>>,
+    /// Planners `SqlToRel` asks first for operators and special syntax, with
+    /// the operands' types in hand: date arithmetic with intervals (plan HE1
+    /// Task 30, R30.3).
+    pub expr_planners: Vec<Arc<dyn ExprPlanner>>,
+    /// Aggregates made on demand for names `aggregates` does not hold:
+    /// combinator compositions and parametric calls (plan HE1 Task 28).
+    pub aggregate_factory: Option<Arc<dyn AggregateFactory>>,
+}
+
+/// Makes the aggregate function planned under a name
+/// ([`crate::aggregates::planned_name`]): `sumIf`, `topK(10)`,
+/// `groupUniqArrayArrayIf`.
+pub trait AggregateFactory: fmt::Debug + Send + Sync {
+    /// The aggregate planned as `name`, if `name` is an aggregate's.
+    fn aggregate(&self, name: &str) -> Option<Arc<AggregateUDF>>;
 }
 
 /// ClickHouse type text in casts (`CAST(x AS LowCardinality(String))`,
@@ -136,7 +151,16 @@ impl<'a> HouseContext<'a> {
             database: database.to_string(),
             options: ConfigOptions::default(),
             types: Arc::new(ClickHouseTypes),
-            planners: vec![Arc::new(crate::coerce::ClickHouseOperators)],
+            // The registry's planners first (date arithmetic, plan HE1 Task
+            // 30), then the operators' type rules (Task 24).
+            planners: registry
+                .expr_planners
+                .iter()
+                .cloned()
+                .chain(std::iter::once(
+                    Arc::new(crate::coerce::ClickHouseOperators) as Arc<dyn ExprPlanner>,
+                ))
+                .collect(),
         }
     }
 }
@@ -181,7 +205,12 @@ impl ContextProvider for HouseContext<'_> {
     }
 
     fn get_aggregate_meta(&self, name: &str) -> Option<Arc<AggregateUDF>> {
-        self.registry.aggregates.get(name).cloned()
+        self.registry.aggregates.get(name).cloned().or_else(|| {
+            self.registry
+                .aggregate_factory
+                .as_ref()
+                .and_then(|f| f.aggregate(name))
+        })
     }
 
     fn get_window_meta(&self, name: &str) -> Option<Arc<WindowUDF>> {

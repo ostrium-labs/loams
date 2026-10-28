@@ -44,6 +44,7 @@ pub struct Deletes {
     store: Arc<dyn ObjectStore>,
     storage: StoreStorage,
     paths: Arc<Paths>,
+    #[allow(clippy::type_complexity)]
     position_files: Mutex<HashMap<String, Arc<HashMap<String, Vec<u64>>>>>,
 }
 

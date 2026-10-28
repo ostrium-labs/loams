@@ -68,6 +68,15 @@ const FILES: &[&str] = &[
     "loams/auth/v1/auth.proto",
     "loams/sql/v1/sql.proto",
     "loams/stream/v1/stream.proto",
+    // Loams Meter (design §63 §17.1, ME1 Tasks 10 and 11): the customer,
+    // entitlement and plan services, served by the `meter` role (`loams-meter`).
+    "loams/meter/v1/customer.proto",
+    "loams/meter/v1/entitlement.proto",
+    "loams/meter/v1/plan.proto",
+    // ME1 Task 14: webhooks, rules and deliveries.
+    "loams/meter/v1/notification.proto",
+    // ME1 Task 17: internal, between gates and counter owners.
+    "loams/meter/v1/lease.proto",
 ];
 
 fn main() {

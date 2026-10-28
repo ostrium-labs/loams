@@ -1,0 +1,1 @@
+SELECT id, formatDateTime(dt, '%Y-%m-%d %H:%i:%S'), formatDateTime(d, '%F %T %a %b %j %p %e'), formatDateTime(dtz, '%D %R %r %y %C %Q %u %w %W %M'), formatDateTime(dt64u, '%f %G %g %V %z %h %I %k %l'), formatDateTime(dt, '%H:%i', 'Asia/Kolkata'), DATE_FORMAT(dny, '%z %%') FROM t30 ORDER BY id

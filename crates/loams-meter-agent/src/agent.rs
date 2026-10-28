@@ -69,6 +69,7 @@ pub struct Agent<R> {
     host_ledger: HostLedger,
     host_reports: bool,
     tolerance_bp: u64,
+    scanned: Vec<String>,
 }
 
 impl<R: TenantResolver> Agent<R> {
@@ -133,6 +134,7 @@ impl<R: TenantResolver> Agent<R> {
             host_ledger,
             host_reports: false,
             tolerance_bp: DEFAULT_TOLERANCE_BP,
+            scanned: Vec::new(),
         })
     }
 
@@ -207,6 +209,7 @@ impl<R: TenantResolver> Agent<R> {
             warn!(cgroup = %path, error = %e, "cgroup unreadable; skipped this tick");
         }
         let samples = scan.samples;
+        self.scanned = samples.iter().map(|s| s.path.clone()).collect();
         let skipped: Vec<String> = scan.skipped.into_iter().map(|(p, _)| p).collect();
         let mut observation = self.tracker.observe(&samples, now_ms);
         self.tracker.carry(&mut observation, &skipped);
@@ -333,6 +336,12 @@ impl<R: TenantResolver> Agent<R> {
         self.host_ledger = ledger;
         self.save_state()?;
         Ok(report)
+    }
+
+    /// The target cgroups the last scan read (paths relative to the cgroup
+    /// root), for the final-read watches ([`crate::final_read`]).
+    pub fn scanned(&self) -> &[String] {
+        &self.scanned
     }
 
     /// The spool, for the forwarder.

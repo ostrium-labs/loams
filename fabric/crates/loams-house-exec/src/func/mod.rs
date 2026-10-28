@@ -2,7 +2,11 @@
 //! module per family, each with a `register`.
 
 pub mod arrays;
+pub mod chudf;
+pub mod datetime;
+pub mod hash;
 pub mod lambda;
 pub mod maps;
 pub mod nested;
+pub mod strings;
 pub mod tuples;
