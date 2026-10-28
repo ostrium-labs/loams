@@ -178,11 +178,14 @@ PY
 }
 
 log "local nightly: $LABEL; results in $RESULTS; limiter ${SLOT:-none}; bench lock ${BENCH:-none}; CARGO_BUILD_JOBS=$CARGO_BUILD_JOBS"
-while IFS='|' read -r name kind cmd build; do
+while IFS='|' read -r -u 3 name kind cmd build; do
   [ -n "$name" ] || continue
   selected "$name" || continue
-  run_leg "$name" "$kind" "$cmd" "$build"
-done <<<"$LEG_TABLE"
+  # stdin from /dev/null: compose and the suites read stdin, and would
+  # otherwise swallow the rest of the leg table (the first local run stopped
+  # after one leg).
+  run_leg "$name" "$kind" "$cmd" "$build" </dev/null
+done 3<<<"$LEG_TABLE"
 
 # --- The results ---------------------------------------------------------------
 python3 - "$SUMMARY" "$RESULTS/summary.json" "$LABEL" "$SHA" "$DATE" <<'PY'
