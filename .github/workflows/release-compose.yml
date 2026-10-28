@@ -94,7 +94,7 @@ jobs:
         working-directory: deploy/release
         run: |
           services() { docker compose --env-file .env.example config --services | sort | tr '\n' ' '; }
-          [ "$(COMPOSE_PROFILES=browser services)" = "agentd browser compute1 house house-init loams migrate pageserver pg-bootstrap safekeeper1 storage_broker tailscale " ] \
+          [ "$(COMPOSE_PROFILES=browser services)" = "agentd browser browser-gateway compute1 house house-init loams migrate pageserver pg-bootstrap safekeeper1 storage_broker tailscale " ] \
             || { echo "browser services: $(COMPOSE_PROFILES=browser services)"; exit 1; }
           cfg="$(COMPOSE_PROFILES=browser docker compose --env-file .env.example config --format json)"
           jq -e '.services.browser
@@ -102,13 +102,20 @@ jobs:
                    and (.image | test("^docker\\.io/h4ckf0r0day/obscura:[0-9.]+@sha256:[0-9a-f]{64}$"))
                    and ((.ports // []) == []) and (.network_mode == null) and (.privileged != true)
                    and (.read_only == true) and ((.cap_drop // []) == ["ALL"])
-                   and ((.networks | keys | sort) == ["browser", "browser-egress"])' <<<"$cfg"
-          jq -e '.networks.browser.internal == true' <<<"$cfg"
+                   and ((.networks | keys | sort) == ["browser-egress", "browser-engine"])' <<<"$cfg"
+          # agentd reaches only the gateway (D2118); only the gateway reaches the engine.
+          jq -e '.services["browser-gateway"]
+                 | .profiles == ["browser"] and ((.ports // []) == []) and (.read_only == true)
+                   and ((.cap_drop // []) == ["ALL"])
+                   and ((.networks | keys | sort) == ["browser", "browser-engine"])' <<<"$cfg"
+          jq -e '(.networks.browser.internal == true) and (.networks["browser-engine"].internal == true)' <<<"$cfg"
           jq -e '[.services | to_entries[] | select((.value.networks // {}) | has("browser")) | .key]
-                 | sort == ["agentd", "browser"]' <<<"$cfg"
+                 | sort == ["agentd", "browser-gateway"]' <<<"$cfg"
+          jq -e '[.services | to_entries[] | select((.value.networks // {}) | has("browser-engine")) | .key]
+                 | sort == ["browser", "browser-gateway"]' <<<"$cfg"
           jq -e '[.services | to_entries[] | select((.value.networks // {}) | has("browser-egress")) | .key]
                  == ["browser"]' <<<"$cfg"
-          jq -e '.services.agentd.environment.LOAMS_BROWSER_SERVICE_URL == "ws://browser:9222/devtools/browser"' <<<"$cfg"
+          jq -e '.services.agentd.environment.LOAMS_BROWSER_SERVICE_URL == "ws://browser-gateway:9223/devtools/browser"' <<<"$cfg"
       # The `kafka` profile (KW-L2, D1798): Iggy and its Kafka gateway, off in
       # the default stack (the exact service list above), pinned by digest, on
       # loopback, and not part of the engine's network namespace.
