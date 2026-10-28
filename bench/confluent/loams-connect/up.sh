@@ -52,20 +52,22 @@ write_client_config
 # (the input's append time travels as the event's `time`). On Confluent Cloud
 # a key without CREATE gets an error here: create the topics yourself.
 ensure_topic() {
+  local tool=kafka_tool
+  if [[ $1 == --sink ]]; then tool=kafka_tool_sink; shift; fi
   local topic=$1; shift
-  if kafka_tool kafka-topics.sh --describe --topic "$topic" >/dev/null 2>&1; then
+  if $tool kafka-topics.sh --describe --topic "$topic" >/dev/null 2>&1; then
     log "topic $topic exists"; return 0
   fi
-  kafka_tool kafka-topics.sh --create --if-not-exists --topic "$topic" "$@" >/dev/null 2>"$CFB_RUN/logs/topic-$topic.err" \
+  $tool kafka-topics.sh --create --if-not-exists --topic "$topic" "$@" >/dev/null 2>"$CFB_RUN/logs/topic-$topic.err" \
     && log "topic $topic created" \
     || log "warning: could not create topic $topic: $(tail -n1 "$CFB_RUN/logs/topic-$topic.err")"
 }
 RF=()
 [[ $KAFKA_LOCAL == 1 ]] && RF=(--replication-factor 1)
 ensure_topic "$CFB_TOPIC_IN"  --partitions "$CFB_PARTITIONS" "${RF[@]}" --config message.timestamp.type=LogAppendTime
-ensure_topic "$CFB_TOPIC_OUT" --partitions "$CFB_PARTITIONS" "${RF[@]}" --config message.timestamp.type=LogAppendTime
+ensure_topic --sink "$CFB_TOPIC_OUT" --partitions "$CFB_PARTITIONS" "${RF[@]}" --config message.timestamp.type=LogAppendTime
 # The exactly-once sink's checkpoint topic: compacted, one partition.
-ensure_topic "$CFB_CHECKPOINT_TOPIC" --partitions 1 "${RF[@]}" --config cleanup.policy=compact
+ensure_topic --sink "$CFB_CHECKPOINT_TOPIC" --partitions 1 "${RF[@]}" --config cleanup.policy=compact
 [[ $CFB_DEBEZIUM == 1 ]] && ensure_topic "$CFB_TOPIC_DBZ" --partitions 1 "${RF[@]}"
 
 # ---------------------------------------------------------------- engine
@@ -110,6 +112,15 @@ else
   PROFILE_LINE="# no profile: a plaintext local broker"
   SEC="  security_protocol: plaintext"
 fi
+# The sink's credentials: a second integration when it is on another cluster.
+SINK_SEC="$SEC"
+if [[ $SINK_SEPARATE == 1 && -n $SINK_KAFKA_KEY_FILE ]]; then
+  d="$SECRETS/0/confluent-$CFB_INTEGRATION-sink"
+  (umask 077; mkdir -p "$d"; keyfile_get id "$SINK_KAFKA_KEY_FILE" >"$d/username"; keyfile_get secret "$SINK_KAFKA_KEY_FILE" >"$d/password")
+  SINK_SEC="  sasl:
+    username_secret: confluent-$CFB_INTEGRATION-sink/username
+    password: confluent-$CFB_INTEGRATION-sink/password"
+fi
 
 cat >"$CFB_RUN/instances/cfb-in.yaml" <<EOF
 # Kafka topic $CFB_TOPIC_IN -> Loams stream $CFB_STREAM.
@@ -147,14 +158,14 @@ namespace_id: 0
 stream: $CFB_STREAM
 delivery: exactly_once
 config:
-  brokers: "$KAFKA_BOOTSTRAP"
+  brokers: "$SINK_KAFKA_BOOTSTRAP"
   topics: ["$CFB_TOPIC_OUT"]
   group_id_prefix: "$CFB_PREFIX"
   transactional_id_prefix: "$CFB_PREFIX"
   delivery: exactly_once
   checkpoint_topic: "$CFB_CHECKPOINT_TOPIC"
   create_checkpoint_topic: false
-$SEC
+$SINK_SEC
 EOF
 
 if [[ $CFB_DEBEZIUM == 1 ]]; then
