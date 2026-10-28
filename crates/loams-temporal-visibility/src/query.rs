@@ -246,10 +246,12 @@ fn lex(input: &str) -> Result<Vec<(usize, Tok)>, ParseError> {
                 let start = i;
                 i += 1;
                 while let Some(&(_, ch)) = chars.get(i) {
-                    if ch.is_ascii_alphanumeric() || ch == '.' || ch == '_' {
-                        i += 1;
-                    } else if (ch == '-' || ch == '+')
-                        && matches!(chars.get(i - 1).map(|x| x.1), Some('e' | 'E'))
+                    // An exponent's sign (`1e-3`) continues the number.
+                    if ch.is_ascii_alphanumeric()
+                        || ch == '.'
+                        || ch == '_'
+                        || ((ch == '-' || ch == '+')
+                            && matches!(chars.get(i - 1).map(|x| x.1), Some('e' | 'E')))
                     {
                         i += 1;
                     } else {
