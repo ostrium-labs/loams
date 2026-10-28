@@ -15,6 +15,8 @@ pub struct RouteTable {
     /// `sha256:<hex>` of the file without its `generation` line.
     pub generation: String,
     pub pg: PgRoutes,
+    /// Managed RisingWave instances (design 81, D1957).
+    pub risingwave: crate::risingwave::RwRoutes,
 }
 
 /// The Postgres module's routes.
@@ -69,6 +71,8 @@ struct RoutesFile {
     generation: Option<String>,
     #[serde(default)]
     pg: PgRoutesFile,
+    #[serde(default)]
+    risingwave: crate::risingwave::RwRoutesFile,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -113,9 +117,25 @@ impl RouteTable {
             _ => {}
         }
         let pg = PgRoutes::build(file.pg, dedicated)?;
+        let risingwave = crate::risingwave::RwRoutes::build(file.risingwave, dedicated)?;
+        for h in risingwave.hostnames() {
+            if pg.by_host.contains_key(h) {
+                return Err(invalid(format!(
+                    "hostname {h:?} is both a namespace's and a RisingWave instance's"
+                )));
+            }
+        }
+        for port in risingwave.ports() {
+            if pg.by_port.contains_key(&port) {
+                return Err(invalid(format!(
+                    "port {port} is both a namespace's and a RisingWave instance's"
+                )));
+            }
+        }
         Ok(RouteTable {
             generation: computed,
             pg,
+            risingwave,
         })
     }
 
@@ -131,7 +151,11 @@ impl RouteTable {
 
     /// Every dedicated port in the table.
     pub fn dedicated_ports(&self) -> impl Iterator<Item = u16> + '_ {
-        self.pg.by_port.keys().copied()
+        self.pg
+            .by_port
+            .keys()
+            .copied()
+            .chain(self.risingwave.ports())
     }
 }
 
@@ -244,7 +268,7 @@ fn check_name(name: &str) -> Result<(), RouteError> {
     }
 }
 
-fn check_hostname(host: &str) -> Result<(), RouteError> {
+pub(crate) fn check_hostname(host: &str) -> Result<(), RouteError> {
     let ok = !host.is_empty()
         && host.len() <= 253
         && host.split('.').all(|label| {
@@ -263,7 +287,7 @@ fn check_hostname(host: &str) -> Result<(), RouteError> {
     }
 }
 
-fn check_upstream(upstream: &str) -> Result<(), RouteError> {
+pub(crate) fn check_upstream(upstream: &str) -> Result<(), RouteError> {
     let bad = || invalid(format!("upstream {upstream:?} is not host:port"));
     let (host, port) = upstream.rsplit_once(':').ok_or_else(bad)?;
     let host = host

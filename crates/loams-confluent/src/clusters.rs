@@ -17,6 +17,9 @@ pub struct Cluster {
     pub kind: String,
     /// `host:port`, without the `SASL_SSL://` some answers carry (CC0 R0.12).
     pub bootstrap: String,
+    /// The Kafka REST endpoint (`https://pkc-….confluent.cloud:443`), for
+    /// the v3 Admin API (ACLs). Empty when the answer has none.
+    pub rest: String,
 }
 
 /// Reads cluster `id` in `environment`.
@@ -52,6 +55,7 @@ fn parse(v: &serde_json::Value) -> Cluster {
         bootstrap: s(&spec["kafka_bootstrap_endpoint"])
             .trim_start_matches("SASL_SSL://")
             .to_string(),
+        rest: s(&spec["http_endpoint"]).trim_end_matches('/').to_string(),
     }
 }
 
