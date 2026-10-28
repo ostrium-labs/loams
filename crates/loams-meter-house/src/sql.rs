@@ -18,6 +18,8 @@
 //! | `_meter.windows` | `ReplacingMergeTree(close_run)` | closed minute, hour and day windows per meter |
 //! | `_meter.close_runs` | `ReplacingMergeTree(close_run)` | each meter's last close run (Task 6) |
 //! | `_meter.period_totals` | `ReplacingMergeTree(close_run)` | per (subject, feature, period) the rated total (Task 7) |
+//!
+//! [`QueryRun`] answers a meter query from these tables (Task 8).
 
 /// The House database of the meter's tables.
 pub const DATABASE: &str = "_meter";
@@ -985,6 +987,414 @@ impl PeriodRun {
     }
 }
 
+// ---------------------------------------------------------------------------
+// The meter query (§63 §8.5; ME1 Task 8).
+
+/// The windows of a meter query (OpenMeter's `windowSize`, or none: one
+/// window over the whole range).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueryWindow {
+    Minute,
+    Hour,
+    Day,
+    Month,
+    Whole,
+}
+
+impl QueryWindow {
+    /// The window start (Unix seconds) of time column `column`, in UTC.
+    fn start(self, column: &str, from: i64) -> String {
+        match self {
+            Self::Minute => format!("toUnixTimestamp(toStartOfMinute({column}))"),
+            Self::Hour => format!("toUnixTimestamp(toStartOfHour({column}))"),
+            Self::Day => format!("toUnixTimestamp(toStartOfDay({column}))"),
+            Self::Month => {
+                format!("toUnixTimestamp(toDateTime(toStartOfMonth({column}), 'UTC'))")
+            }
+            Self::Whole => from.to_string(),
+        }
+    }
+
+    /// The window end (Unix seconds) of time column `column`.
+    fn end(self, column: &str, to: i64) -> String {
+        match self {
+            Self::Minute => format!("toUnixTimestamp(toStartOfMinute({column})) + 60"),
+            Self::Hour => format!("toUnixTimestamp(toStartOfHour({column})) + 3600"),
+            Self::Day => format!("toUnixTimestamp(toStartOfDay({column})) + 86400"),
+            Self::Month => format!(
+                "toUnixTimestamp(toDateTime(addMonths(toStartOfMonth({column}), 1), 'UTC'))"
+            ),
+            Self::Whole => to.to_string(),
+        }
+    }
+}
+
+/// A meter query, as the SQL needs it (`loams_meter_house::query` parses
+/// OpenMeter's parameters into it).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuerySpec {
+    /// `[from, to)`, Unix seconds.
+    pub from: i64,
+    pub to: i64,
+    pub window: QueryWindow,
+    /// Only these subjects (all when empty).
+    pub subjects: Vec<String>,
+    /// Whether rows are per subject (`groupBy=subject`, or a subject filter).
+    pub by_subject: bool,
+    /// The meter's dimensions the rows are grouped by.
+    pub group_by: Vec<String>,
+    /// Dimension filters: each dimension one of its values.
+    pub filters: Vec<(String, Vec<String>)>,
+}
+
+/// One row of a meter query's answer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QueryRow {
+    pub window_start: i64,
+    pub window_end: i64,
+    pub subject: Option<String>,
+    /// The `group_by` dimensions' values, in [`QuerySpec::group_by`] order.
+    pub group: Vec<String>,
+    /// The value × 10^9 (`Decimal(38, 9)`).
+    pub value: i128,
+    /// The window reaches past the latest closed minute: its value may
+    /// still change (§63 §8.5).
+    pub provisional: bool,
+}
+
+/// A query's answer.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct QueryAnswer {
+    /// The latest closed minute (Unix seconds; the meter's `closed_to`), or
+    /// `None` before the meter's first close run.
+    pub as_of: Option<i64>,
+    pub rows: Vec<QueryRow>,
+}
+
+/// A `Decimal(38, 9)` as ClickHouse prints it (`12`, `-0.5`), × 10^9.
+pub fn parse_decimal9(text: &str) -> Result<i128, String> {
+    let text = text.trim();
+    let bad = || format!("not a decimal: {text:?}");
+    let (negative, digits) = match text.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, text),
+    };
+    let (whole, fraction) = digits.split_once('.').unwrap_or((digits, ""));
+    if whole.is_empty() && fraction.is_empty()
+        || fraction.len() > 9
+        || !whole.bytes().all(|b| b.is_ascii_digit())
+        || !fraction.bytes().all(|b| b.is_ascii_digit())
+    {
+        return Err(bad());
+    }
+    let whole: i128 = if whole.is_empty() {
+        0
+    } else {
+        whole.parse().map_err(|_| bad())?
+    };
+    let mut frac: i128 = if fraction.is_empty() {
+        0
+    } else {
+        fraction.parse().map_err(|_| bad())?
+    };
+    for _ in fraction.len()..9 {
+        frac *= 10;
+    }
+    let value = whole
+        .checked_mul(1_000_000_000)
+        .and_then(|w| w.checked_add(frac))
+        .ok_or_else(bad)?;
+    Ok(if negative { -value } else { value })
+}
+
+/// A `TabSeparated` field, unescaped.
+pub fn unescape_tsv(field: &str) -> String {
+    let mut out = String::with_capacity(field.len());
+    let mut chars = field.chars();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('t') => out.push('\t'),
+            Some('n') => out.push('\n'),
+            Some('r') => out.push('\r'),
+            Some('0') => out.push('\0'),
+            Some('b') => out.push('\u{8}'),
+            Some('f') => out.push('\u{c}'),
+            Some(other) => out.push(other),
+            None => out.push('\\'),
+        }
+    }
+    out
+}
+
+fn in_list(values: &[String]) -> String {
+    values
+        .iter()
+        .map(|v| quote(v))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// The closed part of a query whose aggregation rolls up: the minute
+/// windows in `[from, until)`, combined into the query's windows.
+pub fn query_closed(meter: &MeterDef, spec: &QuerySpec, until: i64) -> String {
+    let mut select = vec![
+        format!("{} AS w", spec.window.start("window_start", spec.from)),
+        format!("{} AS wend", spec.window.end("window_start", spec.to)),
+    ];
+    let mut group = vec!["w".to_string(), "wend".to_string()];
+    if spec.by_subject {
+        select.push("subject".to_string());
+        group.push("subject".to_string());
+    }
+    for (i, dim) in spec.group_by.iter().enumerate() {
+        select.push(format!(
+            "JSONExtractString(group_key, {}) AS g{i}",
+            quote(dim)
+        ));
+        group.push(format!("g{i}"));
+    }
+    select.push(rollup_agg_expr(meter.aggregation).to_string());
+    let mut filter = format!(
+        "meter = {} AND window_size = 'minute' AND window_start >= {} AND window_start < {}",
+        quote(&meter.slug),
+        at(spec.from),
+        at(until)
+    );
+    if !spec.subjects.is_empty() {
+        filter.push_str(&format!(" AND subject IN ({})", in_list(&spec.subjects)));
+    }
+    for (dim, values) in &spec.filters {
+        filter.push_str(&format!(
+            " AND JSONExtractString(group_key, {}) IN ({})",
+            quote(dim),
+            in_list(values)
+        ));
+    }
+    format!(
+        "SELECT {} FROM {DATABASE}.windows FINAL WHERE {filter} GROUP BY {} ORDER BY {}",
+        select.join(", "),
+        group.join(", "),
+        group.join(", ")
+    )
+}
+
+/// The raw part of a query: events in `[since, to)`, aggregated into the
+/// query's windows.
+pub fn query_raw(meter: &MeterDef, spec: &QuerySpec, since: i64) -> String {
+    let path_of = |dim: &str| {
+        meter
+            .group_by
+            .iter()
+            .find(|(name, _)| name == dim)
+            .map(|(_, path)| path.clone())
+            .unwrap_or_else(|| "$.__loams_no_such_dimension".to_string())
+    };
+    let mut select = vec![
+        format!("{} AS w", spec.window.start("time", spec.from)),
+        format!("{} AS wend", spec.window.end("time", spec.to)),
+    ];
+    let mut group = vec!["w".to_string(), "wend".to_string()];
+    if spec.by_subject {
+        select.push("subject".to_string());
+        group.push("subject".to_string());
+    }
+    for (i, dim) in spec.group_by.iter().enumerate() {
+        select.push(format!(
+            "JSON_VALUE(data, {}) AS g{i}",
+            quote(&path_of(dim))
+        ));
+        group.push(format!("g{i}"));
+    }
+    select.push(raw_agg_expr(meter));
+    let mut filter = format!(
+        "{} AND time >= {} AND time < {}",
+        events_filter(meter),
+        at64(since),
+        at64(spec.to)
+    );
+    if !spec.subjects.is_empty() {
+        filter.push_str(&format!(" AND subject IN ({})", in_list(&spec.subjects)));
+    }
+    for (dim, values) in &spec.filters {
+        filter.push_str(&format!(
+            " AND JSON_VALUE(data, {}) IN ({})",
+            quote(&path_of(dim)),
+            in_list(values)
+        ));
+    }
+    format!(
+        "SELECT {} FROM {DATABASE}.events FINAL WHERE {filter} GROUP BY {} ORDER BY {}",
+        select.join(", "),
+        group.join(", "),
+        group.join(", ")
+    )
+}
+
+#[derive(Debug)]
+enum QueryState {
+    Start,
+    AsOf,
+    ClosedRows { raw_from: i64 },
+    RawRows,
+    Done,
+}
+
+/// A meter query (§63 §8.5) as a sans-I/O machine like [`CloseRun`]:
+///
+/// 1. reads the meter's latest closed minute (`as_of`, its last close run's
+///    `closed_to`);
+/// 2. for an aggregation that rolls up, reads `[from, as_of)` from the closed
+///    minute windows (`_meter.windows FINAL`) and `[as_of, to)` from the raw
+///    events, and combines the two in the windows that straddle `as_of`;
+///    `UNIQUE_COUNT`, `AVG` and `LATEST` do not combine, so they read the
+///    raw events over the whole range (ruling T8-1);
+/// 3. marks every window that ends after `as_of` provisional.
+#[derive(Debug)]
+pub struct QueryRun {
+    meter: MeterDef,
+    spec: QuerySpec,
+    state: QueryState,
+    answer: QueryAnswer,
+}
+
+impl QueryRun {
+    pub fn new(meter: MeterDef, spec: QuerySpec) -> Self {
+        QueryRun {
+            meter,
+            spec,
+            state: QueryState::Start,
+            answer: QueryAnswer::default(),
+        }
+    }
+
+    /// The answer (complete once [`QueryRun::next`] returned `None`).
+    pub fn answer(&self) -> &QueryAnswer {
+        &self.answer
+    }
+
+    /// Consumes the run for its answer.
+    pub fn into_answer(self) -> QueryAnswer {
+        self.answer
+    }
+
+    fn rows(&mut self, text: &str) -> Result<(), String> {
+        let dims = self.spec.group_by.len();
+        let width = 3 + usize::from(self.spec.by_subject) + dims;
+        for line in text.lines() {
+            if line.is_empty() {
+                continue;
+            }
+            let fields: Vec<&str> = line.split('\t').collect();
+            if fields.len() != width {
+                return Err(format!(
+                    "expected {width} columns, not {}: {line:?}",
+                    fields.len()
+                ));
+            }
+            let mut i = 0;
+            let mut next = || {
+                i += 1;
+                fields[i - 1]
+            };
+            let window_start = parse_i64(next())?;
+            let window_end = parse_i64(next())?;
+            let subject = if self.spec.by_subject {
+                Some(unescape_tsv(next()))
+            } else {
+                None
+            };
+            let group: Vec<String> = (0..dims).map(|_| unescape_tsv(next())).collect();
+            let value = parse_decimal9(next())?;
+            let row = QueryRow {
+                window_start,
+                window_end,
+                subject,
+                group,
+                value,
+                provisional: false,
+            };
+            self.merge(row);
+        }
+        Ok(())
+    }
+
+    fn merge(&mut self, row: QueryRow) {
+        let found = self.answer.rows.iter_mut().find(|r| {
+            r.window_start == row.window_start && r.subject == row.subject && r.group == row.group
+        });
+        match found {
+            Some(existing) => {
+                existing.value = match self.meter.aggregation {
+                    Aggregation::Min => existing.value.min(row.value),
+                    Aggregation::Max => existing.value.max(row.value),
+                    _ => existing.value.saturating_add(row.value),
+                };
+            }
+            None => self.answer.rows.push(row),
+        }
+    }
+
+    fn finish(&mut self) {
+        let as_of = self.answer.as_of;
+        for row in &mut self.answer.rows {
+            row.provisional = as_of.is_none_or(|a| row.window_end > a);
+        }
+        self.answer.rows.sort_by(|a, b| {
+            (a.window_start, &a.subject, &a.group).cmp(&(b.window_start, &b.subject, &b.group))
+        });
+    }
+
+    /// The next statement, given the previous one's answer (`None` at the
+    /// start); `Ok(None)` once the answer is complete.
+    pub fn next(&mut self, answer: Option<&str>) -> Result<Option<String>, String> {
+        match std::mem::replace(&mut self.state, QueryState::Done) {
+            QueryState::Start => {
+                self.state = QueryState::AsOf;
+                Ok(Some(last_close_run(&self.meter.slug)))
+            }
+            QueryState::AsOf => {
+                let line = answer.unwrap_or("").lines().next().unwrap_or("").trim();
+                self.answer.as_of = if line.is_empty() {
+                    None
+                } else {
+                    Some(parse_i64(line.split('\t').nth(1).unwrap_or(""))?)
+                };
+                match self.answer.as_of {
+                    Some(as_of) if self.meter.aggregation.rolls_up() && as_of > self.spec.from => {
+                        let until = as_of.min(self.spec.to);
+                        self.state = QueryState::ClosedRows { raw_from: until };
+                        Ok(Some(query_closed(&self.meter, &self.spec, until)))
+                    }
+                    _ => {
+                        self.state = QueryState::RawRows;
+                        Ok(Some(query_raw(&self.meter, &self.spec, self.spec.from)))
+                    }
+                }
+            }
+            QueryState::ClosedRows { raw_from } => {
+                self.rows(answer.unwrap_or(""))?;
+                if raw_from < self.spec.to {
+                    self.state = QueryState::RawRows;
+                    Ok(Some(query_raw(&self.meter, &self.spec, raw_from)))
+                } else {
+                    self.finish();
+                    Ok(None)
+                }
+            }
+            QueryState::RawRows => {
+                self.rows(answer.unwrap_or(""))?;
+                self.finish();
+                Ok(None)
+            }
+            QueryState::Done => Ok(None),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1268,5 +1678,125 @@ mod period_tests {
         // A provisional row of a due period is closed.
         let (outcome, _) = drive(16_000_000, "0\t9000000\n", "0\n");
         assert_eq!(outcome, [(3_600, 7_200, PeriodOutcome::Closed)]);
+    }
+}
+
+#[cfg(test)]
+mod query_tests {
+    use super::*;
+
+    fn meter(aggregation: Aggregation) -> MeterDef {
+        MeterDef {
+            slug: "house_cpu_ms".to_string(),
+            event_type: "io.loams.dev.usage.house.query.v1".to_string(),
+            aggregation,
+            value_property: Some("$.cpu_ms".to_string()),
+            group_by: vec![("namespace".to_string(), "$.namespace".to_string())],
+            event_from: None,
+        }
+    }
+
+    fn spec(window: QueryWindow) -> QuerySpec {
+        QuerySpec {
+            from: 3_600,
+            to: 7_200,
+            window,
+            subjects: vec!["org_42".to_string()],
+            by_subject: true,
+            group_by: vec!["namespace".to_string()],
+            filters: vec![("namespace".to_string(), vec!["7".to_string()])],
+        }
+    }
+
+    #[test]
+    fn decimals_and_fields() {
+        assert_eq!(parse_decimal9("12"), Ok(12_000_000_000));
+        assert_eq!(parse_decimal9("-0.5"), Ok(-500_000_000));
+        assert_eq!(parse_decimal9("0.000000001"), Ok(1));
+        assert!(parse_decimal9("1e3").is_err());
+        assert!(parse_decimal9("").is_err());
+        assert!(parse_decimal9("0.0000000001").is_err());
+        assert_eq!(unescape_tsv("a\\tb\\\\c"), "a\tb\\c");
+    }
+
+    #[test]
+    fn closed_and_raw_sql() {
+        let closed = query_closed(&meter(Aggregation::Sum), &spec(QueryWindow::Minute), 5_000);
+        assert!(closed.contains("FROM _meter.windows FINAL"), "{closed}");
+        assert!(closed.contains("window_size = 'minute'"));
+        assert!(closed.contains(&format!("window_start < {}", at(5_000))));
+        assert!(closed.contains("subject IN ('org_42')"));
+        assert!(closed.contains("JSONExtractString(group_key, 'namespace') IN ('7')"));
+        assert!(closed.contains("sum(value)"));
+        let raw = query_raw(&meter(Aggregation::Sum), &spec(QueryWindow::Month), 5_000);
+        assert!(raw.contains("FROM _meter.events FINAL"), "{raw}");
+        assert!(raw.contains(&format!("time >= {}", at64(5_000))));
+        assert!(raw.contains("JSON_VALUE(data, '$.namespace') IN ('7')"));
+        assert!(raw.contains("toStartOfMonth(time)"));
+        let whole = query_raw(&meter(Aggregation::Sum), &spec(QueryWindow::Whole), 3_600);
+        assert!(
+            whole.starts_with("SELECT 3600 AS w, 7200 AS wend"),
+            "{whole}"
+        );
+    }
+
+    /// `query_marks_provisional_open_window`, the machine's half: the closed
+    /// minutes and the raw tail combine in the window that straddles
+    /// `as_of`, which is provisional.
+    #[test]
+    fn query_machine_combines_and_marks_provisional() {
+        let mut run = QueryRun::new(meter(Aggregation::Sum), spec(QueryWindow::Hour));
+        let first = run.next(None).expect("ok").expect("as_of");
+        assert!(first.contains("_meter.close_runs"));
+        // Closed up to 6000 (01:40).
+        let closed = run.next(Some("10\t6000\n")).expect("ok").expect("closed");
+        assert!(closed.contains("_meter.windows"));
+        let raw = run
+            .next(Some("3600\t7200\torg_42\t7\t1840\n"))
+            .expect("ok")
+            .expect("raw");
+        assert!(raw.contains(&format!("time >= {}", at64(6_000))), "{raw}");
+        assert_eq!(
+            run.next(Some("3600\t7200\torg_42\t7\t999.5\n"))
+                .expect("ok"),
+            None
+        );
+        let answer = run.into_answer();
+        assert_eq!(answer.as_of, Some(6_000));
+        assert_eq!(
+            answer.rows,
+            [QueryRow {
+                window_start: 3_600,
+                window_end: 7_200,
+                subject: Some("org_42".to_string()),
+                group: vec!["7".to_string()],
+                value: 2_839_500_000_000,
+                provisional: true,
+            }]
+        );
+    }
+
+    #[test]
+    fn non_additive_and_unclosed_meters_read_raw_events_only() {
+        let mut run = QueryRun::new(meter(Aggregation::UniqueCount), spec(QueryWindow::Hour));
+        run.next(None).expect("ok");
+        let raw = run.next(Some("10\t6000\n")).expect("ok").expect("raw");
+        assert!(raw.contains("_meter.events") && raw.contains(&format!("time >= {}", at64(3_600))));
+        assert_eq!(run.next(Some("")).expect("ok"), None);
+        // No close run yet: raw, and everything provisional.
+        let mut run = QueryRun::new(meter(Aggregation::Sum), spec(QueryWindow::Minute));
+        run.next(None).expect("ok");
+        run.next(Some("")).expect("ok").expect("raw");
+        assert_eq!(
+            run.next(Some("3600\t3660\torg_42\t7\t5\n")).expect("ok"),
+            None
+        );
+        assert_eq!(run.answer().as_of, None);
+        assert!(run.answer().rows[0].provisional);
+        // A malformed row is an error.
+        let mut run = QueryRun::new(meter(Aggregation::Sum), spec(QueryWindow::Minute));
+        run.next(None).expect("ok");
+        run.next(Some("")).expect("ok");
+        assert!(run.next(Some("3600\t3660\n")).is_err());
     }
 }
