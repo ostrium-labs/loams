@@ -1,0 +1,37 @@
+# syntax=docker/dockerfile:1.7
+# The Loams Flink image (ghcr.io/ostrium-labs/loams-flink:<flink>-loams<bundle>),
+# design 81 D1987. Preview; not built by CI yet.
+#
+# The official Apache Flink image, unmodified, with the connector-jar bundle
+# of connector-jars.toml (D1986) layered into /opt/flink/lib: Iceberg (REST
+# catalog on Lakekeeper, S3FileIO), Kafka and upsert-kafka (Loams streams
+# through the Iggy Kafka gateway), JDBC with the Postgres dialect and driver,
+# flink-cdc's Postgres CDC, and the shaded Hadoop client Iceberg's Flink
+# catalog loads. Each jar is checked against its sha256 before it is copied.
+#
+# Build from the repository root:
+#   podman build -f deploy/flink/Containerfile -t ghcr.io/ostrium-labs/loams-flink:2.2.1-loams1 .
+#
+# FLINK_IMAGE and FETCH_IMAGE are pinned by digest; move FLINK_IMAGE only with
+# [flink] in connector-jars.toml.
+ARG FLINK_IMAGE=docker.io/library/flink:2.2.1-scala_2.12-java21@sha256:521951efbfbb0cec74c2826446ce1d20a051bff18e6d3716a6affe97ddec692a
+ARG FETCH_IMAGE=docker.io/curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777
+
+FROM ${FETCH_IMAGE} AS fetch
+# Maven Central by default; a mirror with the same layout may stand in.
+ARG MAVEN_BASE=https://repo1.maven.org/maven2
+COPY deploy/flink/connector-jars.toml deploy/flink/fetch-jars.sh /tmp/loams-flink/
+RUN sh /tmp/loams-flink/fetch-jars.sh /tmp/loams-flink/connector-jars.toml /tmp/loams-flink/jars "${MAVEN_BASE}"
+
+FROM ${FLINK_IMAGE}
+ARG FLINK_VERSION=2.2.1
+ARG BUNDLE=1
+LABEL org.opencontainers.image.title="loams-flink" \
+      org.opencontainers.image.description="Apache Flink ${FLINK_VERSION} with the Loams connector bundle ${BUNDLE} (Iceberg, Kafka, JDBC, Postgres CDC). Preview." \
+      org.opencontainers.image.source="https://github.com/ostrium-labs/loams" \
+      org.opencontainers.image.licenses="Apache-2.0 AND BSD-2-Clause" \
+      org.opencontainers.image.version="${FLINK_VERSION}-loams${BUNDLE}"
+COPY --from=fetch --chown=flink:flink /tmp/loams-flink/jars/ /opt/flink/lib/
+# The manifest travels with the image, so anyone can tell which bundle a
+# running cluster has (`cat /opt/flink/loams/connector-jars.toml`).
+COPY --chown=flink:flink deploy/flink/connector-jars.toml /opt/flink/loams/connector-jars.toml

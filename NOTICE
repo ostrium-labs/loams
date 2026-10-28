@@ -459,3 +459,24 @@ CC0-1.0. deploy/loams-cloud/policy/disposable_email_blocklist.conf is that
 project's list at the revision recorded in deploy/loams-cloud/policy/PINS.md,
 unmodified; the dedication is in
 deploy/loams-cloud/policy/LICENSE-disposable-email-domains.txt.
+
+
+ClickHouse (https://github.com/ClickHouse/ClickHouse), Apache License 2.0,
+Copyright 2016-2026 ClickHouse, Inc. The Loams House engine's string and hash
+functions (fabric/crates/loams-house-exec/src/func/strings and func/hash, plan
+HE1 Task 31) follow ClickHouse's src/Functions (FunctionsHashing.h,
+PositionImpl.h, ReplaceRegexpImpl.h, substring.cpp, MatchImpl.h); each file
+names its source.
+
+CityHash v1.0.2 (https://github.com/google/cityhash), MIT License, Copyright
+(c) 2011 Google, Inc., as vendored by ClickHouse in contrib/cityhash102.
+fabric/crates/loams-house-exec/src/func/hash/city.rs ports its 64-bit
+CityHash64 and Hash128to64. Permission is hereby granted, free of charge, to
+any person obtaining a copy of this software and associated documentation
+files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to permit
+persons to whom the Software is furnished to do so, subject to the following
+conditions: The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software. THE SOFTWARE
+IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED.

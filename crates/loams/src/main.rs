@@ -1294,6 +1294,10 @@ enum Command {
     /// the driver pod a job renders to.
     #[cfg(feature = "spark")]
     Spark(loams_spark::cli::SparkArgs),
+    /// Managed Flink SQL (design 81, preview): `flink sql` is a REPL, `flink
+    /// jobs …` manages saved INSERT pipelines, `flink jars` lists the bundle.
+    #[cfg(feature = "flink")]
+    Flink(loams_flink::cli::FlinkArgs),
     /// Engine authentication (LOAMS_AUTH_MODE): API keys.
     Auth {
         #[command(subcommand)]
@@ -1459,6 +1463,8 @@ fn config(command: Command) -> ServerConfig {
         Command::Risingwave(_) => unreachable!("loams risingwave starts no server"),
         #[cfg(feature = "spark")]
         Command::Spark(_) => unreachable!("loams spark starts no server"),
+        #[cfg(feature = "flink")]
+        Command::Flink(_) => unreachable!("loams flink starts no server"),
         #[cfg(feature = "live")]
         Command::LiveWorker => unreachable!("loams live-worker starts no server"),
         #[cfg(feature = "postgres")]
@@ -1687,6 +1693,11 @@ fn main() -> ExitCode {
     #[cfg(feature = "spark")]
     if let Command::Spark(args) = &cli.command {
         return loams_spark::cli::run(args);
+    }
+    // A client of the Loams API (design 81, D1989): its own runtime.
+    #[cfg(feature = "flink")]
+    if let Command::Flink(args) = &cli.command {
+        return loams_flink::cli::run(args);
     }
     serve(cli)
 }

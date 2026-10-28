@@ -1,0 +1,3 @@
+# Valkey 9.1.2 suite tests the Redis gateway skips (plan KV2, report §1.4).
+# One test name per line (as runtest prints it), then " # " and the reason.
+# The list only shrinks: every entry needs a reason and a task that removes it.

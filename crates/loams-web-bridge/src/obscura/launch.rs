@@ -130,11 +130,14 @@ impl LocalEngine {
         }
     }
 
-    /// Stop the engine, if it runs.
+    /// Stop the engine, if it runs: SIGTERM first, then a kill after a grace
+    /// period. Close the pages' CDP connections before calling this
+    /// ([`crate::ObscuraProvider::shutdown`] does): Obscura merges what a
+    /// connection holds only when that connection closes, and SIGTERM saves
+    /// only what was already merged.
     pub async fn stop(&self) {
         if let Some(mut running) = self.running.lock().await.take() {
-            let _ = running.child.start_kill();
-            let _ = tokio::time::timeout(Duration::from_secs(5), running.child.wait()).await;
+            terminate_then_kill(&mut running.child, Duration::from_secs(5)).await;
         }
     }
 
@@ -183,10 +186,43 @@ impl LocalEngine {
     }
 }
 
+/// SIGTERM, wait up to `grace` for the process to exit, then kill it.
+///
+/// SIGTERM is sent with the system's `kill` command rather than a syscall
+/// binding: the workspace forbids `unsafe`, and this keeps the crate free of a
+/// new dependency. Where there is no SIGTERM (Windows) the kill comes at once.
+pub async fn terminate_then_kill(child: &mut tokio::process::Child, grace: Duration) {
+    if matches!(child.try_wait(), Ok(Some(_))) {
+        return;
+    }
+    #[cfg(unix)]
+    if let Some(pid) = child.id() {
+        let sent = tokio::process::Command::new("kill")
+            .arg("-TERM")
+            .arg(pid.to_string())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .await
+            .map(|status| status.success())
+            .unwrap_or(false);
+        if sent && tokio::time::timeout(grace, child.wait()).await.is_ok() {
+            return;
+        }
+    }
+    let _ = child.start_kill();
+    let _ = tokio::time::timeout(grace, child.wait()).await;
+}
+
 #[async_trait]
 impl EngineEndpoint for LocalEngine {
     fn kind(&self) -> ProviderKind {
         ProviderKind::Local
+    }
+
+    async fn shutdown(&self) {
+        self.stop().await;
     }
 
     async fn handshake(&self) -> Result<(String, RequestHeaders), BridgeError> {
@@ -282,6 +318,48 @@ mod tests {
         assert_eq!(first.len(), 64);
         assert!(first.chars().all(|c| c.is_ascii_hexdigit()));
         assert_ne!(first, random_token());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn stopping_sends_sigterm_before_any_kill() {
+        let dir = tempfile::tempdir().unwrap_or_else(|error| panic!("{error}"));
+        let marker = dir.path().join("terminated");
+        // A process that records SIGTERM and exits cleanly on it, the way
+        // Obscura saves its merged cookies.
+        let script = format!(
+            "trap 'echo term > {}; exit 0' TERM; while :; do sleep 0.05; done",
+            marker.display()
+        );
+        let mut child = tokio::process::Command::new("sh")
+            .arg("-c")
+            .arg(&script)
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap_or_else(|error| panic!("{error}"));
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        terminate_then_kill(&mut child, Duration::from_secs(5)).await;
+        let status = child.wait().await.unwrap_or_else(|error| panic!("{error}"));
+        assert!(
+            status.success(),
+            "exited on SIGTERM, not killed: {status:?}"
+        );
+        assert!(marker.exists(), "the TERM trap ran");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_process_that_ignores_sigterm_is_killed_after_the_grace() {
+        let mut child = tokio::process::Command::new("sh")
+            .arg("-c")
+            .arg("trap '' TERM; while :; do sleep 0.05; done")
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap_or_else(|error| panic!("{error}"));
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        terminate_then_kill(&mut child, Duration::from_millis(300)).await;
+        let status = child.wait().await.unwrap_or_else(|error| panic!("{error}"));
+        assert!(!status.success(), "killed: {status:?}");
     }
 
     #[tokio::test]
