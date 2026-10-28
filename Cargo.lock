@@ -9134,6 +9134,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "loams-meter-gate",
+ "loams-resp",
  "loams-spark",
  "loams-temporal-frontend",
  "md-5 0.11.0",
@@ -9982,7 +9983,12 @@ name = "loams-resp"
 version = "0.1.2"
 dependencies = [
  "bytes",
+ "loams-kv",
  "proptest",
+ "serde",
+ "tokio",
+ "toml 0.8.23",
+ "tracing",
 ]
 
 [[package]]
