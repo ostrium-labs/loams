@@ -57,6 +57,12 @@ licence = "MIT OR Apache-2.0"
 source = "https://github.com/astral-sh/uv/blob/0.12.24/LICENSE-MIT"
 resolve = "pypi:uv"
 
+[TEMPORAL_SDK_DOTNET]
+value = "1.20.0"
+licence = "MIT"
+source = "https://www.nuget.org/packages/Temporalio/1.20.0"
+resolve = "github:temporalio/sdk-dotnet"
+
 [TEMPORAL_SDK_RUBY]
 value = "1.9.0"
 licence = "MIT"
@@ -163,6 +169,12 @@ source = "https://github.com/rubygems/rubygems/blob/bundler-v4.0.22/bundler/LICE
 value = "docker.io/library/eclipse-temurin:21.0.12_8-jdk-noble@sha256:4d271cd5e0624598cf563342f47281b09cb364bc13acbbd7251f49f83470018d"
 licence = "GPL-2.0-only WITH Classpath-exception-2.0"
 source = "https://adoptium.net/docs/faq/"
+
+[DOTNET_IMAGE]
+value = "mcr.microsoft.com/dotnet/sdk:8.0.425-bookworm-slim@sha256:ec9c0a0dc5f60adc2065762050638dd5ed5facfc53716d4580a42d86027c8e80"
+licence = "MIT"
+source = "https://github.com/dotnet/sdk/blob/v8.0.425/LICENSE.TXT"
+resolve = "github:dotnet/sdk"
 
 [AIRFLOW_VERSION]
 value = "3.3.2"

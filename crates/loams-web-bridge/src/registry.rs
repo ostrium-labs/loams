@@ -35,6 +35,7 @@ impl ProviderRegistry {
                     && (!requirements.authenticated_sessions || caps.authenticated_sessions)
                     && (!requirements.tabs || caps.tabs)
                     && (!requirements.credentials_stay_local || caps.credentials_stay_local)
+                    && (!requirements.downloads || caps.downloads)
             })
             .cloned()
     }
@@ -159,6 +160,7 @@ mod tests {
             authenticated_sessions: true,
             tabs: true,
             credentials_stay_local: true,
+            downloads: false,
         };
         registry.register(Arc::new(MockProvider {
             kind: ProviderKind::Local,
@@ -172,6 +174,7 @@ mod tests {
             authenticated_sessions: false,
             tabs: false,
             credentials_stay_local: false,
+            downloads: false,
         };
         registry.register(Arc::new(MockProvider {
             kind: ProviderKind::Local,

@@ -1,0 +1,136 @@
+syntax = "proto3";
+
+// Loams Meter's notifications (design §63 §15, §17.1; ME1 Task 14): a
+// customer's webhook endpoints, threshold rules and delivery log.
+//
+// Authorization: changes need `can_manage_billing` on the customer's org
+// (`billing_admin`, people only); reads need `can_view_billing`. Changes
+// are audit events. Webhooks receive `io.loams.dev.meter.*` CloudEvents in
+// structured mode, signed as Standard Webhooks specifies (`webhook-id`,
+// `webhook-timestamp`, `webhook-signature: v1,<base64 HMAC-SHA256>`).
+package loams.meter.v1;
+
+import "google/protobuf/timestamp.proto";
+import "loams/options/v1/options.proto";
+
+// Webhooks, rules and deliveries.
+service NotificationService {
+  option (loams.options.v1.module) = {
+    name: "meter.notifications"
+    summary: "Meter notifications: threshold rules, signed webhooks and their deliveries."
+  };
+
+  rpc CreateRule(CreateRuleRequest) returns (CreateRuleResponse) {
+    option (loams.options.v1.facade) = {name: "createRule"};
+  }
+  rpc ListRules(ListRulesRequest) returns (ListRulesResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+    option (loams.options.v1.facade) = {name: "listRules"};
+  }
+  // Answers the endpoint and its secret, which is never shown again.
+  rpc CreateWebhook(CreateWebhookRequest) returns (CreateWebhookResponse) {
+    option (loams.options.v1.facade) = {name: "createWebhook"};
+  }
+  // A new secret; the old one still signs for 24 hours.
+  rpc RotateWebhookSecret(RotateWebhookSecretRequest) returns (RotateWebhookSecretResponse) {
+    option (loams.options.v1.facade) = {name: "rotateWebhookSecret"};
+  }
+  // The newest deliveries first.
+  rpc ListDeliveries(ListDeliveriesRequest) returns (ListDeliveriesResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+    option (loams.options.v1.facade) = {name: "listDeliveries"};
+  }
+}
+
+enum NotificationChannel {
+  NOTIFICATION_CHANNEL_UNSPECIFIED = 0;
+  NOTIFICATION_CHANNEL_EMAIL = 1;
+  NOTIFICATION_CHANNEL_CONSOLE = 2;
+}
+
+message Rule {
+  string id = 1;
+  string customer_id = 2;
+  // Empty: every feature.
+  string feature = 3;
+  // Percentages of the period's allowance.
+  repeated uint32 thresholds = 4;
+  // Also the same percentages of the spend cap.
+  bool spend_cap = 5;
+  repeated NotificationChannel channels = 6;
+}
+
+message Webhook {
+  string id = 1;
+  string customer_id = 2;
+  string url = 3;
+  // Empty: every `io.loams.dev.meter.*` type.
+  repeated string types = 4;
+  google.protobuf.Timestamp create_time = 5;
+}
+
+enum DeliveryStatus {
+  DELIVERY_STATUS_UNSPECIFIED = 0;
+  DELIVERY_STATUS_DELIVERED = 1;
+  DELIVERY_STATUS_RETRYING = 2;
+  DELIVERY_STATUS_FAILED = 3;
+}
+
+message Delivery {
+  string webhook_id = 1;
+  string event_id = 2;
+  string event_type = 3;
+  google.protobuf.Timestamp time = 4;
+  DeliveryStatus status = 5;
+  uint32 attempt = 6;
+  // The last HTTP status, or the connection error.
+  string last_outcome = 7;
+  google.protobuf.Timestamp next_attempt_time = 8;
+}
+
+message CreateRuleRequest {
+  Rule rule = 1;
+}
+
+message CreateRuleResponse {
+  Rule rule = 1;
+}
+
+message ListRulesRequest {
+  string customer_id = 1;
+}
+
+message ListRulesResponse {
+  repeated Rule rules = 1;
+}
+
+message CreateWebhookRequest {
+  string customer_id = 1;
+  string url = 2;
+  repeated string types = 3;
+}
+
+message CreateWebhookResponse {
+  Webhook webhook = 1;
+  // `whsec_…`; shown once.
+  string secret = 2;
+}
+
+message RotateWebhookSecretRequest {
+  string id = 1;
+}
+
+message RotateWebhookSecretResponse {
+  Webhook webhook = 1;
+  string secret = 2;
+}
+
+message ListDeliveriesRequest {
+  string customer_id = 1;
+  // At most 500; 0 asks for 100.
+  uint32 page_size = 2;
+}
+
+message ListDeliveriesResponse {
+  repeated Delivery deliveries = 1;
+}
