@@ -316,6 +316,8 @@ pub fn element_of<'t>(name: &str, types: &'t [ChType], i: usize) -> Result<&'t C
 }
 
 impl ScalarUDFImpl for Composite {
+    // DataFusion looks the function up by its internal name.
+    #[allow(clippy::misnamed_getters)]
     fn name(&self) -> &str {
         &self.internal
     }

@@ -24,9 +24,24 @@ cargo_package(
     },
     tests = [
         {
+            "name": "docstore",
+            "crate": "docstore",
+            "root": "tests/docstore.rs",
+        },
+        {
             "name": "leases",
             "crate": "leases",
             "root": "tests/leases.rs",
+        },
+        {
+            "name": "notify",
+            "crate": "notify",
+            "root": "tests/notify.rs",
+        },
+        {
+            "name": "openmeter_conformance",
+            "crate": "openmeter_conformance",
+            "root": "tests/openmeter_conformance.rs",
         },
         {
             "name": "owner",
@@ -44,6 +59,11 @@ cargo_package(
             "root": "tests/reconcile.rs",
         },
         {
+            "name": "role",
+            "crate": "role",
+            "root": "tests/role.rs",
+        },
+        {
             "name": "services",
             "crate": "services",
             "root": "tests/services.rs",
@@ -56,8 +76,12 @@ cargo_package(
         "//crates/loams-meter-core:loams-meter-core",
         "//crates/loams-proto:loams-proto",
         "//third-party/rust:async-trait",
+        "//third-party/rust:axum",
+        "//third-party/rust:base64-0_23",
         "//third-party/rust:buffa",
         "//third-party/rust:connectrpc",
+        "//third-party/rust:hmac",
+        "//third-party/rust:reqwest-0_13",
         "//third-party/rust:serde",
         "//third-party/rust:serde_json",
         "//third-party/rust:serde_yaml_ng",
@@ -68,7 +92,9 @@ cargo_package(
         "//third-party/rust:ulid",
     ],
     dev_deps = [
+        "//third-party/rust:jsonschema",
         "//third-party/rust:proptest",
+        "//third-party/rust:tower",
     ],
     rustc_flags = [
         "-Funsafe_code",

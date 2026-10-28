@@ -336,6 +336,8 @@ loams-hot = { path = "crates/loams-hot", version = "0.1.2" }
 loams-identity-sync = { path = "crates/loams-identity-sync", version = "0.1.2" }
 loams-link = { path = "crates/loams-link", version = "0.1.2" }
 # What products link to meter and enforce usage (design §63, ME1 Tasks 2, 3, 18, 19).
+loams-meter = { path = "crates/loams-meter", version = "0.1.2" }
+loams-meter-core = { path = "crates/loams-meter-core", version = "0.1.2" }
 loams-meter-gate = { path = "crates/loams-meter-gate", version = "0.1.2" }
 # Model providers for Loams Memory and the desktop daemon (MM1 Task 2).
 loams-llm = { path = "crates/loams-llm", version = "0.1.2" }
@@ -352,6 +354,7 @@ loams-log = { path = "crates/loams-log", version = "0.1.2" }
 loams-meta = { path = "crates/loams-meta", version = "0.1.2" }
 loams-meta-conformance = { path = "crates/loams-meta-conformance", version = "0.1.2" }
 loams-meta-tikv = { path = "crates/loams-meta-tikv", version = "0.1.2" }
+loams-meter-house = { path = "crates/loams-meter-house", version = "0.1.2" }
 loams-migrate = { path = "crates/loams-migrate", version = "0.1.2" }
 loams-upgrade = { path = "crates/loams-upgrade", version = "0.1.2" }
 loams-cloud-admin = { path = "crates/loams-cloud-admin", version = "0.1.2" }

@@ -1,6 +1,7 @@
 //! The meter's records: customers, entitlements and grants (design §63
 //! §9.1), behind [`MeterStore`]. The role keeps them in the `ControlStore`
-//! (§41); [`MemStore`] keeps them in memory, for tests and `loams dev`.
+//! (§41) through [`DocStore`] on a [`VersionedDoc`]; [`MemStore`] keeps them in
+//! memory, for tests.
 //!
 //! Lists are paged by id (ids are ULIDs, so pages are in creation order):
 //! a page token is the last id of the previous page.
@@ -147,7 +148,7 @@ pub struct MemStore {
     inner: Mutex<Inner>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 struct Inner {
     customers: BTreeMap<String, Customer>,
     entitlements: BTreeMap<String, Entitlement>,
@@ -183,14 +184,195 @@ fn page<'a, T: 'a>(
         .collect()
 }
 
+/// A versioned document: how the server keeps a control-plane record set
+/// (a pointer in the metastore and the bytes in the bucket, as the
+/// principal directory is kept). `save` stores only if the version is still
+/// `expected`.
 #[async_trait]
-impl MeterStore for MemStore {
-    async fn create_customer(
-        &self,
-        c: Customer,
-        idempotency_key: Option<&str>,
-    ) -> Result<Customer> {
-        let mut s = self.lock();
+pub trait VersionedDoc: Send + Sync + fmt::Debug {
+    async fn load(&self) -> Result<Option<(u64, Vec<u8>)>>;
+    /// `Some(new version)`, or `None` when another writer moved it first.
+    async fn save(&self, expected: Option<u64>, doc: Vec<u8>) -> Result<Option<u64>>;
+}
+
+/// How often a write is redone after losing a race.
+const MAX_WRITE_ATTEMPTS: usize = 8;
+
+/// The records as stored (JSON): lists, so no map key needs to be a string.
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct Snapshot {
+    #[serde(default)]
+    customers: Vec<Customer>,
+    #[serde(default)]
+    entitlements: Vec<Entitlement>,
+    #[serde(default)]
+    grants: Vec<Grant>,
+    #[serde(default)]
+    plans: Vec<PlanRecord>,
+    #[serde(default)]
+    meters: Vec<Meter>,
+    #[serde(default)]
+    features: Vec<Feature>,
+    /// (kind, key, id).
+    #[serde(default)]
+    idempotency: Vec<(String, String, String)>,
+}
+
+fn kind_of(k: &str) -> Option<&'static str> {
+    match k {
+        "customer" => Some("customer"),
+        "entitlement" => Some("entitlement"),
+        "grant" => Some("grant"),
+        _ => None,
+    }
+}
+
+impl Inner {
+    fn snapshot(&self) -> Snapshot {
+        Snapshot {
+            customers: self.customers.values().cloned().collect(),
+            entitlements: self.entitlements.values().cloned().collect(),
+            grants: self.grants.values().cloned().collect(),
+            plans: self.plans.values().cloned().collect(),
+            meters: self.meters.values().cloned().collect(),
+            features: self.features.values().cloned().collect(),
+            idempotency: self
+                .idempotency
+                .iter()
+                .map(|((k, key), id)| ((*k).to_string(), key.clone(), id.clone()))
+                .collect(),
+        }
+    }
+
+    fn from_snapshot(s: Snapshot) -> Inner {
+        Inner {
+            customers: s.customers.into_iter().map(|c| (c.id.clone(), c)).collect(),
+            entitlements: s
+                .entitlements
+                .into_iter()
+                .map(|e| (e.id.to_string(), e))
+                .collect(),
+            grants: s
+                .grants
+                .into_iter()
+                .map(|g| (g.id.to_string(), g))
+                .collect(),
+            plans: s
+                .plans
+                .into_iter()
+                .map(|p| ((p.name.to_string(), p.version), p))
+                .collect(),
+            meters: s
+                .meters
+                .into_iter()
+                .map(|m| (m.slug.to_string(), m))
+                .collect(),
+            features: s
+                .features
+                .into_iter()
+                .map(|f| (f.key.to_string(), f))
+                .collect(),
+            idempotency: s
+                .idempotency
+                .into_iter()
+                .filter_map(|(k, key, id)| kind_of(&k).map(|k| ((k, key), id)))
+                .collect(),
+        }
+    }
+}
+
+/// [`MeterStore`] on a [`VersionedDoc`]: every write reads the document,
+/// applies the change and stores it if nobody moved it meanwhile (redone
+/// otherwise), so several `meter` instances share one record set. Meant for
+/// control-plane volumes (thousands of customers and grants), which is what
+/// the meter's records are; usage never goes here.
+pub struct DocStore {
+    doc: std::sync::Arc<dyn VersionedDoc>,
+    writes: tokio::sync::Mutex<()>,
+}
+
+impl fmt::Debug for DocStore {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DocStore").finish_non_exhaustive()
+    }
+}
+
+impl DocStore {
+    pub fn new(doc: std::sync::Arc<dyn VersionedDoc>) -> Self {
+        DocStore {
+            doc,
+            writes: tokio::sync::Mutex::new(()),
+        }
+    }
+
+    async fn current(&self) -> Result<(Option<u64>, Inner)> {
+        match self.doc.load().await? {
+            None => Ok((None, Inner::default())),
+            Some((version, bytes)) => {
+                let snap: Snapshot = serde_json::from_slice(&bytes).map_err(|e| {
+                    MeterError::Unavailable(format!("the meter records do not parse: {e}"))
+                })?;
+                Ok((Some(version), Inner::from_snapshot(snap)))
+            }
+        }
+    }
+
+    async fn read<R>(&self, f: impl FnOnce(&mut Inner) -> Result<R>) -> Result<R> {
+        let (_, mut inner) = self.current().await?;
+        f(&mut inner)
+    }
+
+    async fn write<R>(&self, mut f: impl FnMut(&mut Inner) -> Result<R>) -> Result<R> {
+        let _one_writer_per_process = self.writes.lock().await;
+        for _ in 0..MAX_WRITE_ATTEMPTS {
+            let (version, mut inner) = self.current().await?;
+            let out = f(&mut inner)?;
+            let bytes = serde_json::to_vec(&inner.snapshot()).map_err(|e| {
+                MeterError::Unavailable(format!("the meter records do not serialise: {e}"))
+            })?;
+            if self.doc.save(version, bytes).await?.is_some() {
+                return Ok(out);
+            }
+        }
+        Err(MeterError::Unavailable(
+            "the meter records changed concurrently too often; retry".into(),
+        ))
+    }
+}
+
+/// A [`VersionedDoc`] in memory (tests).
+#[derive(Debug, Default)]
+pub struct MemDoc(Mutex<Option<(u64, Vec<u8>)>>);
+
+#[async_trait]
+impl VersionedDoc for MemDoc {
+    async fn load(&self) -> Result<Option<(u64, Vec<u8>)>> {
+        Ok(self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone())
+    }
+
+    async fn save(&self, expected: Option<u64>, doc: Vec<u8>) -> Result<Option<u64>> {
+        let mut slot = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if slot.as_ref().map(|(v, _)| *v) != expected {
+            return Ok(None);
+        }
+        let version = expected.map_or(1, |v| v + 1);
+        *slot = Some((version, doc));
+        Ok(Some(version))
+    }
+}
+
+/// The records as one value: what [`MemStore`] keeps behind a lock and
+/// [`DocStore`] keeps in a versioned document.
+impl Inner {
+    fn create_customer(&mut self, c: Customer, idempotency_key: Option<&str>) -> Result<Customer> {
+        let s = self;
         if let Some(k) = idempotency_key
             && let Some(id) = s.idempotency.get(&("customer", k.to_string()))
         {
@@ -223,35 +405,33 @@ impl MeterStore for MemStore {
         Ok(c)
     }
 
-    async fn customer(&self, id: &str) -> Result<Option<Customer>> {
-        Ok(self.lock().customers.get(id).cloned())
+    fn customer(&mut self, id: &str) -> Result<Option<Customer>> {
+        Ok(self.customers.get(id).cloned())
     }
 
-    async fn customer_by_stripe(&self, stripe_customer_id: &str) -> Result<Option<Customer>> {
+    fn customer_by_stripe(&mut self, stripe_customer_id: &str) -> Result<Option<Customer>> {
         Ok(self
-            .lock()
             .customers
             .values()
             .find(|c| c.stripe_customer_id.as_deref() == Some(stripe_customer_id))
             .cloned())
     }
 
-    async fn customer_by_subject(&self, subject: &SubjectKey) -> Result<Option<Customer>> {
+    fn customer_by_subject(&mut self, subject: &SubjectKey) -> Result<Option<Customer>> {
         Ok(self
-            .lock()
             .customers
             .values()
             .find(|c| c.subjects.contains(subject))
             .cloned())
     }
 
-    async fn list_customers(
-        &self,
+    fn list_customers(
+        &mut self,
         org: Option<&str>,
         after: Option<&str>,
         limit: usize,
     ) -> Result<Vec<Customer>> {
-        let s = self.lock();
+        let s = &*self;
         Ok(page(
             s.customers
                 .iter()
@@ -264,8 +444,8 @@ impl MeterStore for MemStore {
         .collect())
     }
 
-    async fn update_customer(&self, mut c: Customer) -> Result<Customer> {
-        let mut s = self.lock();
+    fn update_customer(&mut self, mut c: Customer) -> Result<Customer> {
+        let s = self;
         let Some(stored) = s.customers.get(&c.id) else {
             return Err(MeterError::not_found("customer", c.id));
         };
@@ -288,12 +468,12 @@ impl MeterStore for MemStore {
         Ok(c)
     }
 
-    async fn create_entitlement(
-        &self,
+    fn create_entitlement(
+        &mut self,
         e: Entitlement,
         idempotency_key: Option<&str>,
     ) -> Result<Entitlement> {
-        let mut s = self.lock();
+        let s = self;
         if let Some(k) = idempotency_key
             && let Some(id) = s.idempotency.get(&("entitlement", k.to_string()))
         {
@@ -320,31 +500,30 @@ impl MeterStore for MemStore {
         Ok(e)
     }
 
-    async fn entitlement(&self, id: &EntitlementId) -> Result<Option<Entitlement>> {
-        Ok(self.lock().entitlements.get(id.as_str()).cloned())
+    fn entitlement(&mut self, id: &EntitlementId) -> Result<Option<Entitlement>> {
+        Ok(self.entitlements.get(id.as_str()).cloned())
     }
 
-    async fn entitlement_for(
-        &self,
+    fn entitlement_for(
+        &mut self,
         subject: &SubjectKey,
         feature: &FeatureKey,
     ) -> Result<Option<Entitlement>> {
         Ok(self
-            .lock()
             .entitlements
             .values()
             .find(|e| &e.subject == subject && &e.feature == feature)
             .cloned())
     }
 
-    async fn list_entitlements(
-        &self,
+    fn list_entitlements(
+        &mut self,
         subject: Option<&SubjectKey>,
         feature: Option<&FeatureKey>,
         after: Option<&str>,
         limit: usize,
     ) -> Result<Vec<Entitlement>> {
-        let s = self.lock();
+        let s = &*self;
         Ok(page(
             s.entitlements.iter().filter(|(_, e)| {
                 subject.is_none_or(|x| &e.subject == x) && feature.is_none_or(|f| &e.feature == f)
@@ -357,8 +536,8 @@ impl MeterStore for MemStore {
         .collect())
     }
 
-    async fn update_entitlement(&self, e: Entitlement) -> Result<Entitlement> {
-        let mut s = self.lock();
+    fn update_entitlement(&mut self, e: Entitlement) -> Result<Entitlement> {
+        let s = self;
         if !s.entitlements.contains_key(e.id.as_str()) {
             return Err(MeterError::not_found("entitlement", e.id.as_str()));
         }
@@ -366,15 +545,15 @@ impl MeterStore for MemStore {
         Ok(e)
     }
 
-    async fn delete_entitlement(&self, id: &EntitlementId) -> Result<()> {
-        let mut s = self.lock();
+    fn delete_entitlement(&mut self, id: &EntitlementId) -> Result<()> {
+        let s = self;
         s.entitlements.remove(id.as_str());
         s.grants.retain(|_, g| &g.entitlement != id);
         Ok(())
     }
 
-    async fn create_grant(&self, g: Grant, idempotency_key: Option<&str>) -> Result<Grant> {
-        let mut s = self.lock();
+    fn create_grant(&mut self, g: Grant, idempotency_key: Option<&str>) -> Result<Grant> {
+        let s = self;
         if let Some(k) = idempotency_key
             && let Some(id) = s.idempotency.get(&("grant", k.to_string()))
         {
@@ -398,18 +577,18 @@ impl MeterStore for MemStore {
         Ok(g)
     }
 
-    async fn grant(&self, id: &GrantId) -> Result<Option<Grant>> {
-        Ok(self.lock().grants.get(id.as_str()).cloned())
+    fn grant(&mut self, id: &GrantId) -> Result<Option<Grant>> {
+        Ok(self.grants.get(id.as_str()).cloned())
     }
 
-    async fn list_grants(
-        &self,
+    fn list_grants(
+        &mut self,
         entitlement: &EntitlementId,
         include_voided: bool,
         after: Option<&str>,
         limit: usize,
     ) -> Result<Vec<Grant>> {
-        let s = self.lock();
+        let s = &*self;
         Ok(page(
             s.grants.iter().filter(|(_, g)| {
                 &g.entitlement == entitlement && (include_voided || g.voided_at.is_none())
@@ -422,8 +601,8 @@ impl MeterStore for MemStore {
         .collect())
     }
 
-    async fn update_grant(&self, g: Grant) -> Result<Grant> {
-        let mut s = self.lock();
+    fn update_grant(&mut self, g: Grant) -> Result<Grant> {
+        let s = self;
         if !s.grants.contains_key(g.id.as_str()) {
             return Err(MeterError::not_found("grant", g.id.as_str()));
         }
@@ -431,8 +610,8 @@ impl MeterStore for MemStore {
         Ok(g)
     }
 
-    async fn create_plan(&self, p: PlanRecord) -> Result<PlanRecord> {
-        let mut s = self.lock();
+    fn create_plan(&mut self, p: PlanRecord) -> Result<PlanRecord> {
+        let s = self;
         let key = (p.name.to_string(), p.version);
         if s.plans.contains_key(&key) {
             return Err(MeterError::exists(
@@ -444,13 +623,12 @@ impl MeterStore for MemStore {
         Ok(p)
     }
 
-    async fn plan(&self, name: &PlanId, version: u32) -> Result<Option<PlanRecord>> {
-        Ok(self.lock().plans.get(&(name.to_string(), version)).cloned())
+    fn plan(&mut self, name: &PlanId, version: u32) -> Result<Option<PlanRecord>> {
+        Ok(self.plans.get(&(name.to_string(), version)).cloned())
     }
 
-    async fn list_plans(&self, name: Option<&PlanId>) -> Result<Vec<PlanRecord>> {
+    fn list_plans(&mut self, name: Option<&PlanId>) -> Result<Vec<PlanRecord>> {
         Ok(self
-            .lock()
             .plans
             .values()
             .filter(|p| name.is_none_or(|n| &p.name == n))
@@ -458,29 +636,253 @@ impl MeterStore for MemStore {
             .collect())
     }
 
+    fn meter(&mut self, slug: &Slug) -> Result<Option<Meter>> {
+        Ok(self.meters.get(slug.as_str()).cloned())
+    }
+
+    fn put_meter(&mut self, m: Meter) -> Result<()> {
+        self.meters.insert(m.slug.to_string(), m);
+        Ok(())
+    }
+
+    fn list_meters(&mut self) -> Result<Vec<Meter>> {
+        Ok(self.meters.values().cloned().collect())
+    }
+
+    fn feature(&mut self, key: &FeatureKey) -> Result<Option<Feature>> {
+        Ok(self.features.get(key.as_str()).cloned())
+    }
+
+    fn put_feature(&mut self, f: Feature) -> Result<()> {
+        self.features.insert(f.key.to_string(), f);
+        Ok(())
+    }
+
+    fn list_features(&mut self) -> Result<Vec<Feature>> {
+        Ok(self.features.values().cloned().collect())
+    }
+}
+
+#[async_trait]
+impl MeterStore for MemStore {
+    async fn create_customer(
+        &self,
+        c: Customer,
+        idempotency_key: Option<&str>,
+    ) -> Result<Customer> {
+        self.lock().create_customer(c, idempotency_key)
+    }
+    async fn customer(&self, id: &str) -> Result<Option<Customer>> {
+        self.lock().customer(id)
+    }
+    async fn customer_by_stripe(&self, stripe_customer_id: &str) -> Result<Option<Customer>> {
+        self.lock().customer_by_stripe(stripe_customer_id)
+    }
+    async fn customer_by_subject(&self, subject: &SubjectKey) -> Result<Option<Customer>> {
+        self.lock().customer_by_subject(subject)
+    }
+    async fn list_customers(
+        &self,
+        org: Option<&str>,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<Customer>> {
+        self.lock().list_customers(org, after, limit)
+    }
+    async fn update_customer(&self, c: Customer) -> Result<Customer> {
+        self.lock().update_customer(c)
+    }
+    async fn create_entitlement(
+        &self,
+        e: Entitlement,
+        idempotency_key: Option<&str>,
+    ) -> Result<Entitlement> {
+        self.lock().create_entitlement(e, idempotency_key)
+    }
+    async fn entitlement(&self, id: &EntitlementId) -> Result<Option<Entitlement>> {
+        self.lock().entitlement(id)
+    }
+    async fn entitlement_for(
+        &self,
+        subject: &SubjectKey,
+        feature: &FeatureKey,
+    ) -> Result<Option<Entitlement>> {
+        self.lock().entitlement_for(subject, feature)
+    }
+    async fn list_entitlements(
+        &self,
+        subject: Option<&SubjectKey>,
+        feature: Option<&FeatureKey>,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<Entitlement>> {
+        self.lock()
+            .list_entitlements(subject, feature, after, limit)
+    }
+    async fn update_entitlement(&self, e: Entitlement) -> Result<Entitlement> {
+        self.lock().update_entitlement(e)
+    }
+    async fn delete_entitlement(&self, id: &EntitlementId) -> Result<()> {
+        self.lock().delete_entitlement(id)
+    }
+    async fn create_grant(&self, g: Grant, idempotency_key: Option<&str>) -> Result<Grant> {
+        self.lock().create_grant(g, idempotency_key)
+    }
+    async fn grant(&self, id: &GrantId) -> Result<Option<Grant>> {
+        self.lock().grant(id)
+    }
+    async fn list_grants(
+        &self,
+        entitlement: &EntitlementId,
+        include_voided: bool,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<Grant>> {
+        self.lock()
+            .list_grants(entitlement, include_voided, after, limit)
+    }
+    async fn update_grant(&self, g: Grant) -> Result<Grant> {
+        self.lock().update_grant(g)
+    }
+    async fn create_plan(&self, p: PlanRecord) -> Result<PlanRecord> {
+        self.lock().create_plan(p)
+    }
+    async fn plan(&self, name: &PlanId, version: u32) -> Result<Option<PlanRecord>> {
+        self.lock().plan(name, version)
+    }
+    async fn list_plans(&self, name: Option<&PlanId>) -> Result<Vec<PlanRecord>> {
+        self.lock().list_plans(name)
+    }
     async fn meter(&self, slug: &Slug) -> Result<Option<Meter>> {
-        Ok(self.lock().meters.get(slug.as_str()).cloned())
+        self.lock().meter(slug)
     }
-
     async fn put_meter(&self, m: Meter) -> Result<()> {
-        self.lock().meters.insert(m.slug.to_string(), m);
-        Ok(())
+        self.lock().put_meter(m)
     }
-
     async fn list_meters(&self) -> Result<Vec<Meter>> {
-        Ok(self.lock().meters.values().cloned().collect())
+        self.lock().list_meters()
     }
-
     async fn feature(&self, key: &FeatureKey) -> Result<Option<Feature>> {
-        Ok(self.lock().features.get(key.as_str()).cloned())
+        self.lock().feature(key)
     }
-
     async fn put_feature(&self, f: Feature) -> Result<()> {
-        self.lock().features.insert(f.key.to_string(), f);
-        Ok(())
+        self.lock().put_feature(f)
     }
-
     async fn list_features(&self) -> Result<Vec<Feature>> {
-        Ok(self.lock().features.values().cloned().collect())
+        self.lock().list_features()
+    }
+}
+
+#[async_trait]
+impl MeterStore for DocStore {
+    async fn create_customer(
+        &self,
+        c: Customer,
+        idempotency_key: Option<&str>,
+    ) -> Result<Customer> {
+        self.write(|s| s.create_customer(c.clone(), idempotency_key))
+            .await
+    }
+    async fn customer(&self, id: &str) -> Result<Option<Customer>> {
+        self.read(|s| s.customer(id)).await
+    }
+    async fn customer_by_stripe(&self, stripe_customer_id: &str) -> Result<Option<Customer>> {
+        self.read(|s| s.customer_by_stripe(stripe_customer_id))
+            .await
+    }
+    async fn customer_by_subject(&self, subject: &SubjectKey) -> Result<Option<Customer>> {
+        self.read(|s| s.customer_by_subject(subject)).await
+    }
+    async fn list_customers(
+        &self,
+        org: Option<&str>,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<Customer>> {
+        self.read(|s| s.list_customers(org, after, limit)).await
+    }
+    async fn update_customer(&self, c: Customer) -> Result<Customer> {
+        self.write(|s| s.update_customer(c.clone())).await
+    }
+    async fn create_entitlement(
+        &self,
+        e: Entitlement,
+        idempotency_key: Option<&str>,
+    ) -> Result<Entitlement> {
+        self.write(|s| s.create_entitlement(e.clone(), idempotency_key))
+            .await
+    }
+    async fn entitlement(&self, id: &EntitlementId) -> Result<Option<Entitlement>> {
+        self.read(|s| s.entitlement(id)).await
+    }
+    async fn entitlement_for(
+        &self,
+        subject: &SubjectKey,
+        feature: &FeatureKey,
+    ) -> Result<Option<Entitlement>> {
+        self.read(|s| s.entitlement_for(subject, feature)).await
+    }
+    async fn list_entitlements(
+        &self,
+        subject: Option<&SubjectKey>,
+        feature: Option<&FeatureKey>,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<Entitlement>> {
+        self.read(|s| s.list_entitlements(subject, feature, after, limit))
+            .await
+    }
+    async fn update_entitlement(&self, e: Entitlement) -> Result<Entitlement> {
+        self.write(|s| s.update_entitlement(e.clone())).await
+    }
+    async fn delete_entitlement(&self, id: &EntitlementId) -> Result<()> {
+        self.write(|s| s.delete_entitlement(id)).await
+    }
+    async fn create_grant(&self, g: Grant, idempotency_key: Option<&str>) -> Result<Grant> {
+        self.write(|s| s.create_grant(g.clone(), idempotency_key))
+            .await
+    }
+    async fn grant(&self, id: &GrantId) -> Result<Option<Grant>> {
+        self.read(|s| s.grant(id)).await
+    }
+    async fn list_grants(
+        &self,
+        entitlement: &EntitlementId,
+        include_voided: bool,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<Grant>> {
+        self.read(|s| s.list_grants(entitlement, include_voided, after, limit))
+            .await
+    }
+    async fn update_grant(&self, g: Grant) -> Result<Grant> {
+        self.write(|s| s.update_grant(g.clone())).await
+    }
+    async fn create_plan(&self, p: PlanRecord) -> Result<PlanRecord> {
+        self.write(|s| s.create_plan(p.clone())).await
+    }
+    async fn plan(&self, name: &PlanId, version: u32) -> Result<Option<PlanRecord>> {
+        self.read(|s| s.plan(name, version)).await
+    }
+    async fn list_plans(&self, name: Option<&PlanId>) -> Result<Vec<PlanRecord>> {
+        self.read(|s| s.list_plans(name)).await
+    }
+    async fn meter(&self, slug: &Slug) -> Result<Option<Meter>> {
+        self.read(|s| s.meter(slug)).await
+    }
+    async fn put_meter(&self, m: Meter) -> Result<()> {
+        self.write(|s| s.put_meter(m.clone())).await
+    }
+    async fn list_meters(&self) -> Result<Vec<Meter>> {
+        self.read(|s| s.list_meters()).await
+    }
+    async fn feature(&self, key: &FeatureKey) -> Result<Option<Feature>> {
+        self.read(|s| s.feature(key)).await
+    }
+    async fn put_feature(&self, f: Feature) -> Result<()> {
+        self.write(|s| s.put_feature(f.clone())).await
+    }
+    async fn list_features(&self) -> Result<Vec<Feature>> {
+        self.read(|s| s.list_features()).await
     }
 }

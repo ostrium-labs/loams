@@ -224,6 +224,7 @@ pub(crate) async fn set_expiry<K: Kv>(
         Ok(at) if at > now => {
             meta.expire_at_ms = at;
             put_meta(t, db, ukey, &meta).await?;
+            crate::expire::note(t, db, ukey, &meta).await?;
         }
         _ => {
             delete_key(t, db, ukey, now).await?;
@@ -335,7 +336,7 @@ mod tests {
 
     #[test]
     fn expire_conditions() {
-        let parse = |opts: &[&str]| Cond::parse(&opts.iter().map(|o| b(o)).collect::<Vec<_>>());
+        let parse = |opts: &[&str]| Cond::parse(&opts.iter().map(|o| b(*o)).collect::<Vec<_>>());
         assert!(parse(&["NX", "XX"]).is_err());
         assert!(parse(&["GT", "LT"]).is_err());
         assert!(parse(&["FOO"]).is_err());

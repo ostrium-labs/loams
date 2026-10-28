@@ -6076,8 +6076,12 @@ dependencies = [
  "datafusion",
  "loams-house-sql",
  "loams-house-types",
+ "regex",
  "serde_json",
+ "siphasher",
  "tokio",
+ "twox-hash",
+ "uuid",
 ]
 
 [[package]]

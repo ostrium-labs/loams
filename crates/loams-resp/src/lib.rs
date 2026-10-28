@@ -20,11 +20,16 @@
 pub mod cmd;
 pub mod config;
 pub mod cursor;
+pub mod expire;
 pub mod frame;
+pub mod gc;
 pub mod layout;
+pub mod lease;
+pub mod metrics;
 pub mod server;
 pub mod testing;
 pub(crate) mod types;
+pub mod workers;
 
 pub use config::RespConfig;
 pub use frame::{Decoder, Limits, Proto, ProtoError, Value};

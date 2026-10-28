@@ -98,6 +98,11 @@ pub trait EngineEndpoint: Send + Sync + fmt::Debug {
     /// The DevTools WebSocket URL and the handshake headers for one new
     /// connection. A local endpoint starts its engine on the first call.
     async fn handshake(&self) -> Result<(String, RequestHeaders), BridgeError>;
+
+    /// Stop what this endpoint started. Called after every page's connection
+    /// is closed. A service endpoint owns no process, so the default does
+    /// nothing.
+    async fn shutdown(&self) {}
 }
 
 /// The handshake headers for a bearer token, registered for scrubbing first.
@@ -223,6 +228,28 @@ impl ObscuraProvider {
     /// The policies this provider applies.
     pub fn policies(&self) -> &Policies {
         &self.policies
+    }
+
+    /// Close every open page, then stop the endpoint, in that order.
+    ///
+    /// The order matters for Obscura: an engine merges a connection's state
+    /// only when that connection closes, and SIGTERM saves only what was
+    /// merged, so closing the sockets first is what a graceful stop means.
+    async fn close_all_then_stop(&self) {
+        let open: Vec<String> = self
+            .pages
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .keys()
+            .cloned()
+            .collect();
+        for id in open {
+            let page = PageRef::new(self.kind_of(), id);
+            if let Err(error) = BrowserProvider::close(self, &page).await {
+                tracing::debug!(%error, "closing a page at shutdown failed");
+            }
+        }
+        self.endpoint.shutdown().await;
     }
 
     fn kind_of(&self) -> ProviderKind {
@@ -610,10 +637,20 @@ impl BrowserProvider for ObscuraProvider {
             screenshots: true,
             extraction: true,
             // Each page is its own throwaway browser context, on both kinds:
-            // state lasts for the page's life and no longer.
+            // state lasts for the page's life and no longer. Obscura never
+            // persists a `Target.createBrowserContext` context (only the
+            // default context, and only into `--storage-dir`, when its
+            // connection closes), so this provider cannot keep a sign-in
+            // across pages. Persistence is the sidebar's job
+            // (`loams-sidebar-browser`: the default context, a storage dir
+            // and the cookie ledger).
             authenticated_sessions: false,
             tabs: true,
             credentials_stay_local: self.kind_of() == ProviderKind::Local,
+            // Obscura 0.2.3 acknowledges Browser.setDownloadBehavior but has
+            // no download path: no events, nothing written. Downloads are
+            // denied on every connection and never reported as done.
+            downloads: false,
         }
     }
 
@@ -635,6 +672,19 @@ impl BrowserProvider for ObscuraProvider {
             self.policies.budgets.request_timeout(),
         ));
 
+        // Downloads are denied before the page exists. Obscura 0.2.3 only
+        // acknowledges the call (it has no download path), so an engine that
+        // refuses it is logged and not fatal: nothing can be downloaded
+        // either way, and `Capabilities::downloads` is false.
+        if let Err(error) = client
+            .call("Browser.setDownloadBehavior", json!({ "behavior": "deny" }))
+            .await
+        {
+            tracing::debug!(%error, "the engine refused Browser.setDownloadBehavior");
+        }
+        // A throwaway context per page. The engine never persists these
+        // (only its default context, on connection close), which is what a
+        // shared service wants: one agent's cookies never reach another's.
         let context = client
             .call("Target.createBrowserContext", json!({}))
             .await?;
@@ -959,6 +1009,10 @@ impl BrowserProvider for ObscuraProvider {
             log.record("close", "", None, slot.opened_at.elapsed());
         }
         slot.client.close().await
+    }
+
+    async fn shutdown(&self) {
+        self.close_all_then_stop().await;
     }
 
     async fn list_webmcp_tools(

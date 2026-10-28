@@ -39,6 +39,11 @@ cargo_package(
             "root": "tests/hashes.rs",
         },
         {
+            "name": "keyspace",
+            "crate": "keyspace",
+            "root": "tests/keyspace.rs",
+        },
+        {
             "name": "lists",
             "crate": "lists",
             "root": "tests/lists.rs",
@@ -57,6 +62,11 @@ cargo_package(
             "name": "strings",
             "crate": "strings",
             "root": "tests/strings.rs",
+        },
+        {
+            "name": "workers",
+            "crate": "workers",
+            "root": "tests/workers.rs",
         },
         {
             "name": "zsets",

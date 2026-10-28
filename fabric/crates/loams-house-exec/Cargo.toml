@@ -21,6 +21,15 @@ loams-house-sql = { path = "../loams-house-sql" }
 # R30.2). MIT OR Apache-2.0.
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 chrono-tz = "0.10"
+# Regular expressions for `match`, `replaceRegexp*` and `like` (RE2 patterns,
+# translated; R31.3). MIT OR Apache-2.0.
+regex = "1.12"
+# xxHash32 and xxHash64. MIT.
+twox-hash = { version = "2.1", default-features = false, features = ["xxhash32", "xxhash64"] }
+# SipHash-2-4 for sipHash64. MIT OR Apache-2.0.
+siphasher = "1.0"
+# generateUUIDv4. MIT OR Apache-2.0.
+uuid = { workspace = true }
 
 [dev-dependencies]
 # The partial-state test runs plans; fixtures are JSON. MIT, MIT OR Apache-2.0.

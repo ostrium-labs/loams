@@ -3255,6 +3255,22 @@ impl Server {
                 git_listener,
             )
         });
+        // Loams Meter's public services, on gateway nodes (ME1 role wiring,
+        // part 1): records in the metastore and the bucket, beside the
+        // principal directory. A node that cannot build it serves without it
+        // (its RPCs answer `meter_not_served`) rather than not starting.
+        #[cfg(feature = "meter")]
+        let meter = if roles.gateway {
+            match api::meter::build(meta_store.clone(), store.clone(), &principals) {
+                Ok(m) => Some(m),
+                Err(err) => {
+                    tracing::warn!(%err, "Loams Meter's services are off on this node");
+                    None
+                }
+            }
+        } else {
+            None
+        };
         let state = AppState {
             meta: meta_store.clone(),
             writer: writer.clone(),
@@ -3286,6 +3302,8 @@ impl Server {
             #[cfg(feature = "live")]
             live,
             durable: durable.filter(|_| main_port_serves_durable(config)),
+            #[cfg(feature = "meter")]
+            meter,
         };
         let (app, tailscale, connect_socket) = match (roles.gateway, config.cluster.is_some()) {
             (true, false) => {
