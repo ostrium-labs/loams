@@ -5596,6 +5596,7 @@ dependencies = [
  "http",
  "hyper",
  "hyper-util",
+ "log",
  "rustls",
  "rustls-native-certs",
  "tokio",
@@ -6457,6 +6458,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "jsonpath-rust"
+version = "1.0.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d23892d4caa103325a558250e9f4e406d81cf64f7c01679ae7a64e0413321e51"
+dependencies = [
+ "pest",
+ "pest_derive",
+ "regex",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "jsonschema"
 version = "0.58.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6528,6 +6542,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "k8s-openapi"
+version = "0.27.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "51b326f5219dd55872a72c1b6ddd1b830b8334996c667449c29391d657d78d5e"
+dependencies = [
+ "base64 0.22.1",
+ "jiff",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "kafka-protocol"
 version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6589,6 +6615,69 @@ checksum = "07293a4e297ac234359b510362495713f75ea345d5307140414f20c69ffeb087"
 dependencies = [
  "bitflags 2.13.2",
  "libc",
+]
+
+[[package]]
+name = "kube"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "acc5a6a69da2975ed9925d56b5dcfc9cc739b66f37add06785b7c9f6d1e88741"
+dependencies = [
+ "k8s-openapi",
+ "kube-client",
+ "kube-core",
+]
+
+[[package]]
+name = "kube-client"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0fcaf2d1f1a91e1805d4cd82e8333c022767ae8ffd65909bbef6802733a7dd40"
+dependencies = [
+ "base64 0.22.1",
+ "bytes",
+ "either",
+ "futures",
+ "http",
+ "http-body",
+ "http-body-util",
+ "hyper",
+ "hyper-rustls",
+ "hyper-timeout",
+ "hyper-util",
+ "jiff",
+ "jsonpath-rust",
+ "k8s-openapi",
+ "kube-core",
+ "pem 3.0.6",
+ "rustls",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "tower 0.5.3",
+ "tower-http 0.6.11",
+ "tracing",
+]
+
+[[package]]
+name = "kube-core"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f126d2db7a8b532ec1d839ece2a71e2485dc3bbca6cc3c3f929becaa810e719e"
+dependencies = [
+ "derive_more",
+ "form_urlencoded",
+ "http",
+ "jiff",
+ "k8s-openapi",
+ "serde",
+ "serde-value",
+ "serde_json",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -7320,6 +7409,7 @@ dependencies = [
  "bytes",
  "bytesize",
  "chrono",
+ "chrono-tz 0.10.4",
  "clap",
  "connectrpc",
  "connectrpc-build",
@@ -7372,8 +7462,10 @@ dependencies = [
  "itertools 0.15.0",
  "jsonschema",
  "jsonwebtoken",
+ "k8s-openapi",
  "kafka-protocol",
  "keyring",
+ "kube",
  "lance",
  "lance-file",
  "lance-index",
@@ -7383,6 +7475,7 @@ dependencies = [
  "landlock",
  "libc",
  "loro",
+ "md-5 0.11.0",
  "memmap2",
  "mimalloc",
  "moka",
@@ -7415,6 +7508,7 @@ dependencies = [
  "reqwest 0.12.28",
  "reqwest 0.13.5",
  "resonate-base",
+ "resonate-client",
  "resonate-gateway-http",
  "resonate-plugin",
  "resonate-sdk",
@@ -10529,7 +10623,7 @@ dependencies = [
 [[package]]
 name = "resonate-auth"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "jsonwebtoken",
  "reqwest 0.12.28",
@@ -10542,7 +10636,7 @@ dependencies = [
 [[package]]
 name = "resonate-base"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "lazy_static",
@@ -10556,9 +10650,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "resonate-client"
+version = "0.10.1"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
+dependencies = [
+ "async-trait",
+ "reqwest 0.12.28",
+ "resonate-core",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "resonate-core"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -10574,7 +10681,7 @@ dependencies = [
 [[package]]
 name = "resonate-gateway-http"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "lazy_static",
@@ -10592,7 +10699,7 @@ dependencies = [
 [[package]]
 name = "resonate-plugin"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "axum 0.7.9",
  "figment",
@@ -10605,7 +10712,7 @@ dependencies = [
 [[package]]
 name = "resonate-sdk"
 version = "0.6.0"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -10625,7 +10732,7 @@ dependencies = [
 [[package]]
 name = "resonate-sdk-macros"
 version = "0.1.0"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -10636,7 +10743,7 @@ dependencies = [
 [[package]]
 name = "resonate-server-sqlite"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "resonate-core",
@@ -10654,7 +10761,7 @@ dependencies = [
 [[package]]
 name = "resonate-sql"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "lazy_static",
@@ -10674,7 +10781,7 @@ dependencies = [
 [[package]]
 name = "resonate-timer-wheel"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "tokio",
  "verus_builtin",
@@ -10685,7 +10792,7 @@ dependencies = [
 [[package]]
 name = "resonate-trace"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "lazy_static",
  "opentelemetry",
@@ -10703,7 +10810,7 @@ dependencies = [
 [[package]]
 name = "resonate-transport-http-poll"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -10721,7 +10828,7 @@ dependencies = [
 [[package]]
 name = "resonate-transport-http-push"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "reqwest 0.12.28",
@@ -13460,6 +13567,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4cfcf7e2740e6fc6d4d688b4ef00650406bb94adf4731e43c096c3a19fe40840"
 dependencies = [
  "async-compression",
+ "base64 0.22.1",
  "bitflags 2.13.2",
  "bytes",
  "futures-core",
@@ -13467,6 +13575,7 @@ dependencies = [
  "http",
  "http-body",
  "http-body-util",
+ "mime",
  "pin-project-lite",
  "tokio",
  "tokio-util",

@@ -150,6 +150,7 @@ fn complete_with(
             worker_version: None,
             force_create_new_workflow_task: false,
             messages,
+            new_run_id: String::new(),
         },
         now,
     )

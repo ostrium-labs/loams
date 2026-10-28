@@ -210,24 +210,6 @@ task = "33"
 detail = 'baseline 3 rows, target error 48 (Code: 48. DB::Exception: Invalid function ’multiIf’.)'
 
 [[mismatch]]
-case = "he1-24/time_datetime64_plus"
-target = "house-rust"
-kind = "error"
-status = "bug"
-reason = 'DateTime/DateTime64 plus a number needs interval arithmetic (Task 30)'
-task = "30"
-detail = 'baseline 3 rows, target error 48 (Code: 48. DB::Exception: Cannot coerce arithmetic expression Timestamp(ms, "UTC") + Int64 to valid types (the Loams Hous…)'
-
-[[mismatch]]
-case = "he1-24/time_datetime_plus"
-target = "house-rust"
-kind = "error"
-status = "bug"
-reason = 'DateTime/DateTime64 plus a number needs interval arithmetic (Task 30)'
-task = "30"
-detail = 'baseline 3 rows, target error 48 (Code: 48. DB::Exception: Cannot coerce arithmetic expression Timestamp(s, "UTC") + Int64 to valid types (the Loams House…)'
-
-[[mismatch]]
 case = "he1-25/alias_swap"
 target = "house-rust"
 kind = "values"

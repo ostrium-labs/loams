@@ -151,5 +151,6 @@ mod tests {
         );
         assert!(resolve("noSuchFunction").is_none());
         assert_eq!(internal_name("map"), "__ch_map");
+        assert_eq!(resolve("mapContains").unwrap().canonical, "mapContainsKey");
     }
 }

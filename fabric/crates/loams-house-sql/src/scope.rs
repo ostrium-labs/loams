@@ -1164,6 +1164,19 @@ impl Walk for ColumnsIn<'_> {
     }
 }
 
+/// `untuple` of an expression the plan types: left as one select item for
+/// [`crate::untuple`] to expand after `SqlToRel` (plan HE1 Task 32).
+fn deferred_untuple(e: &Expr, alias: Option<&Ident>) -> SelectItem {
+    let alias = match alias.filter(|a| !is_generated(a)) {
+        Some(a) => a.clone(),
+        None => generated(&names::column_name(e)),
+    };
+    SelectItem::ExprWithAlias {
+        expr: e.clone(),
+        alias,
+    }
+}
+
 /// `untuple(t)`: one `tupleElement(t, 'field')` per field, named
 /// `tupleElement(t, 'field')`, or `alias.field` under an alias.
 fn untuple(
@@ -1206,16 +1219,12 @@ fn untuple(
                     ));
                 }
                 None => {
-                    return Err(ChError::not_implemented(
-                        "untuple of an expression whose type is known only after planning is not supported by the Loams House engine yet",
-                    ));
+                    return Ok(vec![deferred_untuple(e, alias)]);
                 }
             }
         }
         _ => {
-            return Err(ChError::not_implemented(
-                "untuple of an expression whose type is known only after planning is not supported by the Loams House engine yet",
-            ));
+            return Ok(vec![deferred_untuple(e, alias)]);
         }
     };
     let base = names::column_name(&arg);

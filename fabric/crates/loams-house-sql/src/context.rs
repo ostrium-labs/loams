@@ -33,6 +33,10 @@ pub struct Registry {
     pub windows: HashMap<String, Arc<WindowUDF>>,
     /// Higher-order functions (lambdas).
     pub higher_order: HashMap<String, Arc<HigherOrderUDF>>,
+    /// Planners `SqlToRel` asks first for operators and special syntax, with
+    /// the operands' types in hand: date arithmetic with intervals (plan HE1
+    /// Task 30, R30.3).
+    pub expr_planners: Vec<Arc<dyn ExprPlanner>>,
     /// Aggregates made on demand for names `aggregates` does not hold:
     /// combinator compositions and parametric calls (plan HE1 Task 28).
     pub aggregate_factory: Option<Arc<dyn AggregateFactory>>,
@@ -147,7 +151,16 @@ impl<'a> HouseContext<'a> {
             database: database.to_string(),
             options: ConfigOptions::default(),
             types: Arc::new(ClickHouseTypes),
-            planners: vec![Arc::new(crate::coerce::ClickHouseOperators)],
+            // The registry's planners first (date arithmetic, plan HE1 Task
+            // 30), then the operators' type rules (Task 24).
+            planners: registry
+                .expr_planners
+                .iter()
+                .cloned()
+                .chain(std::iter::once(
+                    Arc::new(crate::coerce::ClickHouseOperators) as Arc<dyn ExprPlanner>,
+                ))
+                .collect(),
         }
     }
 }

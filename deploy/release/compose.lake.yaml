@@ -131,6 +131,52 @@ services:
       engines-buckets:
         condition: service_completed_successfully
 
-  # --- RisingWave (RW-a) adds nothing here; its services are in
-  # compose.risingwave.yaml. `engine-gateway` (loams-gateway with the engine
-  # routes, R7) is added with the gateway's `risingwave` module.
+  # The engines' front door (R7, R8): loams-gateway's `pg` module, which
+  # routes managed RisingWave with Loams auth (D1957), on 127.0.0.1 only.
+  # The `loams-gateway` image also carries the `spark` module
+  # (`--module spark`, one process per module); SP-a and FL-a add their
+  # services or listeners under their own blocks below.
+  #
+  # Clients: psql "host=127.0.0.1 port=4566 dbname=dev sslmode=require",
+  # with any user name and ENGINE_GATEWAY_KEY as the password. The compose
+  # stack checks that key against a keys file the service writes at start
+  # (the gateway's test seam, R25); the engine's API is not on the compose
+  # network, so the Loams API check (`auth = { kind = "loams" }`) is for the
+  # Kubernetes deploy. The certificate is self-signed (`sslmode=require`
+  # encrypts and does not verify).
+  engine-gateway:
+    <<: *hardening
+    profiles: [risingwave, flink, spark]
+    image: ${ENGINE_GATEWAY_IMAGE:-${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-gateway:${LOAMS_VERSION:-0.1.2}}
+    build:
+      context: ../..
+      dockerfile: deploy/release/Containerfile.loams-gateway
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        umask 077
+        key_hash=$$(printf %s "$$ENGINE_GATEWAY_KEY" | sha256sum | cut -d' ' -f1)
+        printf '%s %s\n' "$$ENGINE_GATEWAY_NAMESPACE" "$$key_hash" > /run/engine-gateway/keys
+        printf %s "$$RISINGWAVE_GATEWAY_PASSWORD" > /run/engine-gateway/risingwave-password
+        exec /usr/bin/tini -- /usr/local/bin/loams-gateway --config /etc/loams-gateway/gateway.toml
+    environment:
+      ENGINE_GATEWAY_KEY: ${ENGINE_GATEWAY_KEY:-loams-dev-engine-key}
+      # The namespace of the compose instance in engines/routes.toml.
+      ENGINE_GATEWAY_NAMESPACE: default
+      RISINGWAVE_GATEWAY_PASSWORD: ${RISINGWAVE_GATEWAY_PASSWORD:-gateway}
+      RUST_LOG: ${ENGINE_GATEWAY_LOG:-info}
+    volumes:
+      - ./engines/gateway.toml:/etc/loams-gateway/gateway.toml:ro
+      - ./engines/routes.toml:/etc/loams-gateway/routes.toml:ro
+    tmpfs:
+      - /run/engine-gateway:mode=0700,uid=10001,gid=10001
+    ports:
+      - 127.0.0.1:${RISINGWAVE_GATEWAY_PORT:-4566}:4566
+    depends_on:
+      risingwave-init:
+        condition: service_completed_successfully
+        required: false
+
+  # --- RisingWave (RW-a): its services are in compose.risingwave.yaml.

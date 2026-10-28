@@ -16,6 +16,10 @@ the SDK legs ran the gateway in development mode (memory store, in-process Reson
 [sdks]
 go = "Go SDK v1.49.0"
 ts = "TypeScript SDK 1.24.0"
+# Lane TSDK-python (D2139): "not run" until the sdk-leg (python) job runs and last-run.* is re-spliced.
+python = "Python SDK 1.34.0"
+# Lane TSDK-dotnet (D2140): "not run" until the sdk-leg (dotnet) job runs and last-run.* is re-spliced.
+dotnet = ".NET SDK 1.20.0"
 
 [[method]]
 name = "GetSystemInfo"
@@ -112,3 +116,75 @@ cases = ["gateway_dx1_differential_{sdk}_query_while_running"]
 [[method]]
 name = "ResetStickyTaskQueue"
 note = "a no-op; no SDK call in these runs and no test yet"
+
+[[method]]
+name = "UpdateWorkflowExecution"
+note = "TMP-api (D2080): statemachine unit tests and the golden corpus scenario only; no SDK leg yet"
+
+[[method]]
+name = "PollWorkflowExecutionUpdate"
+note = "TMP-api (D2080): statemachine unit tests and the golden corpus scenario only; no SDK leg yet"
+
+[[method]]
+name = "SignalWithStartWorkflowExecution"
+note = "TMP-api (D2085, D2083): statemachine and policy unit tests and the golden corpus scenario only; no SDK leg yet"
+
+[[method]]
+name = "ResetWorkflowExecution"
+note = "TMP-api (D2085, D2083): statemachine and policy unit tests and the golden corpus scenario only; no SDK leg yet"
+
+[[method]]
+name = "RespondActivityTaskCompletedById"
+note = "TMP-api (D2086): unit tests only; no SDK leg yet"
+
+[[method]]
+name = "RespondActivityTaskFailedById"
+note = "TMP-api (D2086): unit tests only; no SDK leg yet"
+
+[[method]]
+name = "RespondActivityTaskCanceledById"
+note = "TMP-api (D2086): unit tests only; no SDK leg yet"
+
+[[method]]
+name = "RecordActivityTaskHeartbeatById"
+note = "TMP-api (D2086): unit tests only; no SDK leg yet"
+
+[[method]]
+name = "GetWorkflowExecutionHistoryReverse"
+note = "TMP-api (D2086); the Temporal Web UI's workflow page; `reverse_history_pages_are_the_history_newest_first`; no SDK leg yet"
+
+[[method]]
+name = "DescribeTaskQueue"
+note = "TMP-api (D2086): unit tests only; no SDK leg yet"
+
+[[method]]
+name = "GetClusterInfo"
+note = "TMP-api (D2086); the Temporal Web UI's first call and `temporal operator cluster describe` (D2051); `cluster_info_names_the_gateway_not_a_temporal_server`; no SDK leg yet"
+
+[[method]]
+name = "ListTaskQueuePartitions"
+note = "TMP-api (D2086): unit tests only; no SDK leg yet"
+
+[[method]]
+name = "ShutdownWorker"
+note = "TMP-api (D2086): unit tests only; no SDK leg yet"
+
+[[method]]
+name = "UpdateNamespace"
+note = "TMP-api (D2088): unit tests only; versioning reads answer no sets, no rules, all reachable"
+
+[[method]]
+name = "DeprecateNamespace"
+note = "TMP-api (D2088): unit tests only; versioning reads answer no sets, no rules, all reachable"
+
+[[method]]
+name = "GetWorkerBuildIdCompatibility"
+note = "TMP-api (D2088): unit tests only; versioning reads answer no sets, no rules, all reachable"
+
+[[method]]
+name = "GetWorkerVersioningRules"
+note = "TMP-api (D2088): unit tests only; versioning reads answer no sets, no rules, all reachable"
+
+[[method]]
+name = "GetWorkerTaskReachability"
+note = "TMP-api (D2088): unit tests only; versioning reads answer no sets, no rules, all reachable"
