@@ -5,8 +5,6 @@
 name: Nightly
 
 on:
-  schedule:
-    - cron: "17 2 * * *"
   workflow_dispatch:
     inputs:
       ref:
