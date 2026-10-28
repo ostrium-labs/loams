@@ -171,3 +171,5 @@ impl Lease {
 
 /// Durable lease and checkpoint transactions.
 pub mod durable;
+/// Transactional task state and budget accounting.
+pub mod task_store;

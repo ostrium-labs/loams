@@ -128,6 +128,18 @@ impl Task {
         self.transition(lease, token, now_ms, TaskState::Ready, TaskState::Running)
     }
 
+    /// Validates resuming a previously running task under a newly acquired lease.
+    ///
+    /// The caller must atomically acquire that lease and retain the last
+    /// checkpoint; this transition does not itself establish exclusivity.
+    pub fn recover(&self, lease: &Lease, token: &LeaseToken, now_ms: u64) -> Result<(), TaskError> {
+        self.authorize(lease, token, now_ms)?;
+        if self.state != TaskState::Running {
+            return Err(TaskError::InvalidTransition);
+        }
+        Ok(())
+    }
+
     /// Accounts a running task's tokens and steps without exceeding either limit.
     pub fn consume(
         &mut self,
