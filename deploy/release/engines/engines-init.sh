@@ -7,6 +7,8 @@
 #   engines-init.sh databases    # in the psql image (compose: engines-init)
 #   engines-init.sh warehouse    # in an image with curl, once Lakekeeper is up
 #                                # (compose: lakekeeper-init)
+#   engines-init.sh risingwave-users  # in the psql image, once the RisingWave
+#                                # frontend is up (compose: risingwave-init)
 #
 # `buckets` creates `loams-engines` (engine state under engines/<ns>/<id>/)
 # and `loams-lake` (the Lakekeeper warehouse `loams`) on RustFS. That needs
@@ -17,6 +19,11 @@
 #     meta store (D1951; RISINGWAVE_META_DB, default rw_default).
 # `warehouse` bootstraps Lakekeeper and creates the warehouse `loams` on
 # `loams-lake` (ENG81 R9).
+#
+# `risingwave-users` sets the compose RisingWave instance's `root` password
+# and creates or updates `loams_gateway`, the user engine-gateway logs in
+# as (D1957). It does on compose what loams-risingwave's bootstrap does for
+# managed instances.
 #
 # Each product gets its own database and role. PUBLIC may not connect to any of them.
 set -eu
@@ -31,6 +38,10 @@ RW_META_PASSWORD=${RISINGWAVE_META_PASSWORD:-risingwave}
 S3_ENDPOINT=${ENGINES_S3_ENDPOINT:-http://rustfs:9000}
 S3_REGION=${AWS_REGION:-us-east-1}
 LAKEKEEPER_URL=${LAKEKEEPER_URL:-http://lakekeeper:8181}
+RW_HOST=${RISINGWAVE_HOST:-risingwave-frontend}
+RW_PORT=${RISINGWAVE_PORT:-4566}
+RW_ROOT_PASSWORD=${RISINGWAVE_ROOT_PASSWORD:-risingwave}
+RW_GATEWAY_PASSWORD=${RISINGWAVE_GATEWAY_PASSWORD:-gateway}
 WAIT_SECONDS=${ENGINES_INIT_WAIT_SECONDS:-300}
 
 log() { echo "engines-init: $*"; }
@@ -149,9 +160,28 @@ JSON
   log "warehouse loams created"
 }
 
+risingwave_users() {
+  alnum "RISINGWAVE_ROOT_PASSWORD" "$RW_ROOT_PASSWORD"
+  alnum "RISINGWAVE_GATEWAY_PASSWORD" "$RW_GATEWAY_PASSWORD"
+  export PGCONNECT_TIMEOUT=5
+  # root has no password on a fresh cluster; after a first run it has
+  # RISINGWAVE_ROOT_PASSWORD.
+  rw() { psql -h "$RW_HOST" -p "$RW_PORT" -U root -d dev -v ON_ERROR_STOP=1 -XAtq "$@"; }
+  rw_any() { PGPASSWORD="$RW_ROOT_PASSWORD" rw "$@" 2>/dev/null || PGPASSWORD= rw "$@"; }
+  wait_for "RisingWave at $RW_HOST:$RW_PORT" rw_any -c 'SELECT 1'
+  if [ -n "$(rw_any -c "SELECT 1 FROM pg_catalog.pg_user WHERE usename = 'loams_gateway'")" ]; then
+    rw_any -c "ALTER USER loams_gateway WITH PASSWORD '$RW_GATEWAY_PASSWORD'"
+  else
+    rw_any -c "CREATE USER loams_gateway WITH SUPERUSER CREATEDB LOGIN PASSWORD '$RW_GATEWAY_PASSWORD'"
+  fi
+  rw_any -c "ALTER USER root WITH PASSWORD '$RW_ROOT_PASSWORD'"
+  log "risingwave users ready"
+}
+
 case ${1:-} in
   buckets) buckets ;;
   databases) databases ;;
   warehouse) warehouse ;;
-  *) echo "usage: $0 buckets|databases|warehouse" >&2; exit 2 ;;
+  risingwave-users) risingwave_users ;;
+  *) echo "usage: $0 buckets|databases|warehouse|risingwave-users" >&2; exit 2 ;;
 esac

@@ -8,14 +8,17 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use loams_temporal_resonate::{Durability, FakeDurability, HttpDurability};
+use loams_temporal_schedule::PgScheduleStore;
 use loams_temporal_store::retention::{RetentionPolicy, spawn_sweeper};
 use loams_temporal_store::{
     MemStore, NamespaceRecord, PgStore, PgStoreOptions, PurgeLimits, Store, StoreError,
 };
+use loams_temporal_visibility::PgVisibility;
 use serde::Deserialize;
 
 use crate::{
-    Authenticator, DevAllowAll, FrontendConfig, Gateway, Parts, Principal, StaticKeys, TokenKeys,
+    Authenticator, DevAllowAll, FrontendConfig, Gateway, Parts, PartsExt, Principal, StaticKeys,
+    TokenKeys,
 };
 
 #[derive(Debug, Deserialize)]
@@ -47,6 +50,27 @@ pub struct Config {
     /// Deleting closed runs after their namespace's retention (Q1163).
     #[serde(default)]
     pub retention: RetentionConfig,
+    /// A second, loopback-only listener for the Temporal Web UI's
+    /// `ui-server`, which cannot send an API key (D2050).
+    #[serde(default)]
+    pub ui: Option<UiConfig>,
+}
+
+/// The UI listener (D2050): every call on it is `loams_namespace_id`'s
+/// (never admin), and with `read_only` (the default) only reads pass.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UiConfig {
+    /// A loopback address, such as `127.0.0.1:7234`.
+    pub listen: SocketAddr,
+    /// The Loams namespace whose Temporal namespaces the UI sees.
+    pub loams_namespace_id: String,
+    #[serde(default = "default_true")]
+    pub read_only: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// Where history, mutable state and the outbox live (design 74 §5.5).
@@ -255,12 +279,30 @@ pub fn dev_config() -> Config {
             name: "default".into(),
             retention_hours: 72,
         }],
+        ui: None,
         retention: RetentionConfig::default(),
     }
 }
 
 fn env(name: &str) -> Result<String, String> {
     std::env::var(name).map_err(|_| format!("environment variable {name} is not set"))
+}
+
+/// The shortest task-token key accepted from the environment, in bytes
+/// (HMAC-SHA256's block is 64; 32 is its output size, D2032).
+pub const MIN_TOKEN_KEY_BYTES: usize = 32;
+
+/// A task-token key read from `name`: refused when it is empty or shorter
+/// than [`MIN_TOKEN_KEY_BYTES`], so an unset compose variable (`${VAR:-}`)
+/// never signs tokens with an empty key (D2032).
+pub fn token_secret(name: &str, value: String) -> Result<Vec<u8>, String> {
+    if value.len() < MIN_TOKEN_KEY_BYTES {
+        return Err(format!(
+            "task-token key {name} must be at least {MIN_TOKEN_KEY_BYTES} bytes (it has {})",
+            value.len()
+        ));
+    }
+    Ok(value.into_bytes())
 }
 
 /// Checks that the development-only settings are on a loopback listener
@@ -278,6 +320,23 @@ pub fn check(c: &Config) -> Result<(), String> {
             "insecure_dev is only allowed on a loopback listener, not {}",
             c.listen
         ));
+    }
+    if let Some(ui) = &c.ui {
+        // Anyone who reaches the UI listener acts as its principal, so it
+        // must not be reachable off the host (or the pod's network
+        // namespace).
+        if !ui.listen.ip().is_loopback() {
+            return Err(format!(
+                "[ui] listen must be a loopback address, not {}",
+                ui.listen
+            ));
+        }
+        if ui.listen == c.listen {
+            return Err("[ui] listen must differ from listen".into());
+        }
+        if ui.loams_namespace_id.is_empty() {
+            return Err("[ui] loams_namespace_id is empty".into());
+        }
     }
     Ok(())
 }
@@ -300,6 +359,7 @@ pub async fn run_on(
 ) -> Result<(), String> {
     check(&config)?;
 
+    let mut ext = PartsExt::default();
     let store: Arc<dyn Store> = match &config.store {
         StoreConfig::Memory => Arc::new(MemStore::new(config.shards).map_err(|e| e.to_string())?),
         StoreConfig::Postgres { url_env, pool } => {
@@ -307,6 +367,21 @@ pub async fn run_on(
                 .await
                 .map_err(|e| format!("postgres: {e}"))?;
             pg.migrate().await.map_err(|e| format!("migrate: {e}"))?;
+            // Schedules live in their own table on the same database (D2072).
+            let schedules = PgScheduleStore::with_pool(pg.pool().clone());
+            schedules
+                .migrate()
+                .await
+                .map_err(|e| format!("migrate schedules: {e}"))?;
+            ext.schedules = Some(Arc::new(schedules));
+            // Visibility reads the store's `visibility` table; its migration
+            // adds the indexes and the search-attribute registry (D2075).
+            let visibility = PgVisibility::with_pool(pg.pool().clone());
+            visibility
+                .migrate()
+                .await
+                .map_err(|e| format!("migrate visibility: {e}"))?;
+            ext.visibility = Some(Arc::new(visibility));
             Arc::new(pg)
         }
     };
@@ -372,7 +447,10 @@ pub async fn run_on(
     } else {
         let mut ring = Vec::new();
         for k in &config.task_token_keys {
-            ring.push((k.id.clone(), env(&k.secret_env)?.into_bytes()));
+            ring.push((
+                k.id.clone(),
+                token_secret(&k.secret_env, env(&k.secret_env)?)?,
+            ));
         }
         TokenKeys::new(ring)
     };
@@ -405,27 +483,85 @@ pub async fn run_on(
             pid: config.pid.clone(),
             shards: config.shards,
             lease: Duration::from_secs(60),
-            config: FrontendConfig::default(),
+            config: FrontendConfig {
+                history_shard_count: i32::try_from(config.shards).unwrap_or(i32::MAX),
+                persistence_store: match &config.store {
+                    StoreConfig::Memory => "memory".into(),
+                    StoreConfig::Postgres { .. } => "postgres".into(),
+                },
+                ..FrontendConfig::default()
+            },
+            ext,
         },
         stop_rx,
     )
     .await?;
     let local = listener.local_addr().map_err(|e| e.to_string())?;
     tracing::info!(listen = %local, "loams-temporal serving the Temporal API");
-    tonic::transport::Server::builder()
+    let (shutdown_all, _) = tokio::sync::broadcast::channel::<()>(1);
+    let ui_server = match &config.ui {
+        Some(ui) => {
+            let ui_listener = tokio::net::TcpListener::bind(ui.listen)
+                .await
+                .map_err(|e| format!("bind [ui] {}: {e}", ui.listen))?;
+            tracing::info!(
+                listen = %ui.listen,
+                read_only = ui.read_only,
+                loams_namespace = %ui.loams_namespace_id,
+                "loams-temporal serving the Temporal Web UI listener (no API key)"
+            );
+            let principal = Principal {
+                loams_namespace_id: ui.loams_namespace_id.clone(),
+                admin: false,
+            };
+            let router = tonic::transport::Server::builder()
+                .add_service(crate::ui::UiListener::new(
+                    gateway.service(),
+                    principal.clone(),
+                    ui.read_only,
+                ))
+                .add_service(crate::ui::UiListener::new(
+                    gateway.operator_service(),
+                    principal,
+                    ui.read_only,
+                ));
+            let mut rx = shutdown_all.subscribe();
+            Some(tokio::spawn(async move {
+                router
+                    .serve_with_incoming_shutdown(
+                        tokio_stream::wrappers::TcpListenerStream::new(ui_listener),
+                        async move {
+                            let _ = rx.recv().await;
+                        },
+                    )
+                    .await
+            }))
+        }
+        None => None,
+    };
+    let served = tonic::transport::Server::builder()
         .add_service(gateway.service())
+        .add_service(gateway.operator_service())
         .serve_with_incoming_shutdown(
             tokio_stream::wrappers::TcpListenerStream::new(listener),
             shutdown,
         )
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string());
+    let _ = shutdown_all.send(());
+    if let Some(h) = ui_server {
+        match h.await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => tracing::warn!("the UI listener stopped: {e}"),
+            Err(e) => tracing::warn!("the UI listener's task failed: {e}"),
+        }
+    }
     let _ = stop_tx.send(true);
     if let Some(h) = sweeper {
         // It stops at its next await; a purge in flight finishes first.
         let _ = h.await;
     }
-    Ok(())
+    served
 }
 
 /// A random byte for the development token key (from the OS through
@@ -437,6 +573,16 @@ fn rand_byte() -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn token_secret_refuses_empty_and_short_keys() {
+        assert!(token_secret("K", String::new()).is_err());
+        assert!(token_secret("K", "x".repeat(MIN_TOKEN_KEY_BYTES - 1)).is_err());
+        assert_eq!(
+            token_secret("K", "x".repeat(MIN_TOKEN_KEY_BYTES)).unwrap(),
+            vec![b'x'; MIN_TOKEN_KEY_BYTES]
+        );
+    }
 
     #[test]
     fn postgres_store_pool_and_retention_parse() {

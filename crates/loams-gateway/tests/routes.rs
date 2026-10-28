@@ -275,3 +275,18 @@ async fn sighup_reloads_at_once() {
     let _ = stop_tx.send(());
     task.await.unwrap();
 }
+
+/// The compose stack's engine-gateway files (deploy/release/engines) parse
+/// as the gateway reads them.
+#[test]
+fn compose_engine_gateway_files_parse() {
+    let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../deploy/release/engines");
+    let config = loams_gateway::GatewayConfig::from_toml(
+        &std::fs::read_to_string(format!("{root}/gateway.toml")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(config.risingwave.self_signed_names.len(), 2);
+    let routes = std::fs::read_to_string(format!("{root}/routes.toml")).unwrap();
+    let t = RouteTable::parse(&routes, &config.pg.dedicated_ports.0, false).unwrap();
+    assert!(t.risingwave.by_port(4566).is_some());
+}

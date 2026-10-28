@@ -4,6 +4,7 @@
 # -race; DX1 ruling T5.R2) at the pinned tag, then the Loams cases with
 # dbos-common/crash/go. As dbos-py/run.sh; runner dbos-go. Go has no polling
 # switch (R0.11), so there is no dbos_go_polling_mode.
+# Endpoint mode: direct (endpoint-modes.md; checked by selftest.sh recipe_endpoint_mode_matches_suite)
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=conformance/compute/lib.sh
