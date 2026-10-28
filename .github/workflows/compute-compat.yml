@@ -13,6 +13,12 @@
 name: Compute conformance
 
 on:
+  # A dispatch needs the file on the default branch (main), which moves only
+  # at a release. Until then, and for a one-off run of any branch, push that
+  # commit to a `compute-compat/<name>` branch: every leg runs (DX1 ruling
+  # T7.R6). Delete the branch afterwards.
+  push:
+    branches: ["compute-compat/**"]
   workflow_dispatch:
     inputs:
       products:
