@@ -11,8 +11,9 @@ module graph
 # `RestoreGraph`/`ExportGraph`/`ImportGraph` `can_admin`, plus the project `admin` role in a
 # protected environment. Credential scopes `graph:read|write|admin` cap the relation.
 #
-# Until IA2's `loams-authz` lands (design 76, D1610), the server answers these relations from
-# its principal store's org and project roles (`crates/loams/src/api/graph_auth.rs`).
+# Every host asks these relations through `loams-authz` (design 76, D1610; plan IA1 IA2.R5):
+# `crates/loams-graph/src/model_authz.rs` (`ModelGraphAuthorizer`), which the engine's main port
+# uses over its principal store (`crates/loams/src/api/graph_auth.rs`) or OpenFGA.
 # `core.fga` owns the `environment`, `user`, `service_account` and `agent` types this module
 # names.
 
