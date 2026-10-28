@@ -1,0 +1,220 @@
+# BQ1-stream bench stack (docs/benchmarks/2026-10-28-1b-qps/stream.md).
+# Pinned images, the same digests as deploy/release. One engine runs at a
+# time (profiles `risingwave`, `flink`). Every service is pinned with cpuset:
+#
+#   0-5    the engine under test (all roles share these 6 cores)
+#   6-7    Iggy server and its Kafka gateway
+#   8-11   the load generator (run.sh starts it with --cpuset-cpus)
+#   12-13  infrastructure (Postgres for metadata, RustFS, Lakekeeper)
+#
+# Bench only: credentials are fixed test values, and nothing is published
+# beyond 127.0.0.1. Run it only through run.sh, which holds benchslot.sh.
+name: bq1-stream
+
+x-infra: &infra
+  cpuset: "12-13"
+  restart: "no"
+
+x-rw: &rw
+  profiles: [risingwave]
+  image: docker.io/risingwavelabs/risingwave:v3.1.0@sha256:ee2e8e7a10b728d01b0e149d2a4f35864f0f52a0c889fa6cf9bc32c8ff46c602
+  cpuset: "0-5"
+  restart: "no"
+  volumes:
+    - ../../deploy/release/risingwave/risingwave.toml:/risingwave/config/risingwave.toml:ro
+
+x-rw-env: &rw-env
+  RW_CONFIG_PATH: /risingwave/config/risingwave.toml
+  ENABLE_TELEMETRY: "false"
+  RW_PROMETHEUS_LISTENER_ADDR: 0.0.0.0:1250
+  AWS_ACCESS_KEY_ID: bench
+  AWS_SECRET_ACCESS_KEY: benchbench
+  AWS_REGION: us-east-1
+  RW_S3_ENDPOINT: http://rustfs:9000
+  RW_IS_FORCE_PATH_STYLE: "true"
+  RW_META_ADDR: http://rw-meta:5690
+
+services:
+  iggy:
+    image: ghcr.io/ostrium-labs/iggy@sha256:649c20714dcde257131be46e456ab32bf62d283a047c26b41b3c8c3132cea332
+    command: ["/usr/local/bin/iggy-server"]
+    cpuset: "6-7"
+    cap_add: [SYS_NICE]
+    security_opt: ["seccomp:unconfined"]
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+    environment:
+      IGGY_ROOT_USERNAME: iggy
+      IGGY_ROOT_PASSWORD: benchbench
+      IGGY_TCP_ADDRESS: 0.0.0.0:8090
+      IGGY_HTTP_ADDRESS: 0.0.0.0:3000
+      IGGY_QUIC_ADDRESS: 0.0.0.0:8080
+      IGGY_WEBSOCKET_ADDRESS: 0.0.0.0:8092
+      IGGY_NODE_ADVERTISED_ADDRESS: iggy
+    volumes:
+      - /mnt/Projects/bench-data/bq1-stream/iggy:/app/local_data
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/iggy", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
+  kafka-gateway:
+    image: ghcr.io/ostrium-labs/iggy@sha256:649c20714dcde257131be46e456ab32bf62d283a047c26b41b3c8c3132cea332
+    command: ["/usr/local/bin/iggy-gateway-kafka"]
+    cpuset: "6-7"
+    environment:
+      RUST_LOG: warn
+      IGGY_KAFKA_BIND_ADDR: 0.0.0.0:9093
+      # The load generator and the engines both run on the compose network.
+      IGGY_KAFKA_ADVERTISED_HOST: kafka-gateway
+      IGGY_KAFKA_ADVERTISED_PORT: "9093"
+      IGGY_KAFKA_BRIDGE_ENABLED: "true"
+      IGGY_KAFKA_IGGY_ADDR: iggy:8090
+      IGGY_KAFKA_IGGY_USERNAME: iggy
+      IGGY_KAFKA_IGGY_PASSWORD: benchbench
+      IGGY_KAFKA_SASL_ENABLED: "false"
+      IGGY_KAFKA_AUTO_CREATE_TOPICS_ENABLED: "false"
+    depends_on:
+      iggy: { condition: service_healthy }
+
+  postgres:
+    <<: *infra
+    image: docker.io/library/postgres:17.10@sha256:7958605b474b3d264a969cb3a123d6aa00ad1e1fe9da8a69984dabb704d93317
+    environment:
+      POSTGRES_PASSWORD: bench
+    command: ["postgres", "-c", "max_connections=200", "-c", "fsync=off"]
+    tmpfs: [/var/lib/postgresql/data]
+    volumes:
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 2s
+      retries: 30
+
+  rustfs:
+    <<: *infra
+    image: docker.io/rustfs/rustfs:1.0.0
+    environment:
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+      RUSTFS_CONSOLE_ENABLE: "false"
+      RUSTFS_ACCESS_KEY: bench
+      RUSTFS_SECRET_KEY: benchbench
+    volumes:
+      - /mnt/Projects/bench-data/bq1-stream/rustfs:/data
+    ports:
+      - 127.0.0.1:19000:9000
+
+  lakekeeper-migrate:
+    <<: *infra
+    image: quay.io/lakekeeper/catalog:v0.13.6@sha256:d6829722cac0d00dfc5665b0955766387b93ccadd8b1e70e679b49619bc30ea5
+    command: ["migrate"]
+    environment: &lk-env
+      LAKEKEEPER__PG_DATABASE_URL_READ: postgresql://postgres:bench@postgres:5432/lakekeeper
+      LAKEKEEPER__PG_DATABASE_URL_WRITE: postgresql://postgres:bench@postgres:5432/lakekeeper
+      LAKEKEEPER__PG_ENCRYPTION_KEY: bench-not-secret
+      LAKEKEEPER__AUTHZ_BACKEND: allowall
+      RUST_LOG: warn
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  lakekeeper:
+    <<: *infra
+    image: quay.io/lakekeeper/catalog:v0.13.6@sha256:d6829722cac0d00dfc5665b0955766387b93ccadd8b1e70e679b49619bc30ea5
+    command: ["serve"]
+    environment: *lk-env
+    ports:
+      - 127.0.0.1:18181:8181
+    depends_on:
+      lakekeeper-migrate: { condition: service_completed_successfully }
+
+  rw-meta:
+    <<: *rw
+    command: ["meta-node"]
+    environment:
+      <<: *rw-env
+      RW_LISTEN_ADDR: 0.0.0.0:5690
+      RW_ADVERTISE_ADDR: rw-meta:5690
+      RW_DASHBOARD_HOST: 0.0.0.0:5691
+      RW_PROMETHEUS_HOST: 0.0.0.0:1250
+      RW_BACKEND: postgres
+      RW_SQL_ENDPOINT: postgres:5432
+      RW_SQL_USERNAME: postgres
+      RW_SQL_PASSWORD: bench
+      RW_SQL_DATABASE: postgres
+      RW_STATE_STORE: hummock+s3://bench-engines
+      RW_DATA_DIRECTORY: engines/bench/risingwave/hummock
+      RW_DO_NOT_CONFIG_BUCKET_LIFECYCLE: "true"
+    ports:
+      - 127.0.0.1:15691:5691
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  rw-compactor:
+    <<: *rw
+    command: ["compactor-node"]
+    environment:
+      <<: *rw-env
+      RW_LISTEN_ADDR: 0.0.0.0:6660
+      RW_ADVERTISE_ADDR: rw-compactor:6660
+      RW_COMPACTOR_TOTAL_MEMORY_BYTES: "1073741824"
+    mem_limit: 1g
+    depends_on: [rw-meta]
+
+  rw-compute:
+    <<: *rw
+    command: ["compute-node"]
+    environment:
+      <<: *rw-env
+      RW_LISTEN_ADDR: 0.0.0.0:5688
+      RW_ADVERTISE_ADDR: rw-compute:5688
+      RW_TOTAL_MEMORY_BYTES: "4294967296"
+      RW_PARALLELISM: "6"
+      RW_COMPUTE_NODE_ROLE: both
+    mem_limit: 4g
+    depends_on: [rw-meta]
+
+  rw-frontend:
+    <<: *rw
+    command: ["frontend-node"]
+    environment:
+      <<: *rw-env
+      RW_LISTEN_ADDR: 0.0.0.0:4566
+      RW_ADVERTISE_ADDR: rw-frontend:4566
+      RW_FRONTEND_TOTAL_MEMORY_BYTES: "1073741824"
+    mem_limit: 1g
+    ports:
+      - 127.0.0.1:14566:4566
+    depends_on: [rw-meta]
+
+  flink-jobmanager:
+    profiles: [flink]
+    image: docker.io/library/flink:2.2.1-scala_2.12-java21@sha256:521951efbfbb0cec74c2826446ce1d20a051bff18e6d3716a6affe97ddec692a
+    cpuset: "0-5"
+    command: ["jobmanager"]
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        jobmanager.memory.process.size: 1600m
+        rest.address: 0.0.0.0
+        parallelism.default: 1
+    volumes:
+      - /mnt/Projects/bench-data/bq1-stream/flink-lib/flink-sql-connector-kafka.jar:/opt/flink/lib/flink-sql-connector-kafka.jar:ro
+      - ./sql:/sql:ro
+    ports:
+      - 127.0.0.1:18081:8081
+
+  flink-taskmanager:
+    profiles: [flink]
+    image: docker.io/library/flink:2.2.1-scala_2.12-java21@sha256:521951efbfbb0cec74c2826446ce1d20a051bff18e6d3716a6affe97ddec692a
+    cpuset: "0-5"
+    command: ["taskmanager"]
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 4
+        taskmanager.memory.process.size: 4096m
+    volumes:
+      - /mnt/Projects/bench-data/bq1-stream/flink-lib/flink-sql-connector-kafka.jar:/opt/flink/lib/flink-sql-connector-kafka.jar:ro
+    depends_on: [flink-jobmanager]
