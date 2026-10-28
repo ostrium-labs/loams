@@ -51,14 +51,14 @@ cargo_package(
             "root": "tests/methods.rs",
         },
         {
-            "name": "scenarios",
-            "crate": "scenarios",
-            "root": "tests/scenarios.rs",
-        },
-        {
             "name": "paging",
             "crate": "paging",
             "root": "tests/paging.rs",
+        },
+        {
+            "name": "scenarios",
+            "crate": "scenarios",
+            "root": "tests/scenarios.rs",
         },
         {
             "name": "schedules",

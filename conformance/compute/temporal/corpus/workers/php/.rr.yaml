@@ -1,0 +1,34 @@
+# RoadRunner for the PHP corpus worker (DX1 TSDK-php). RoadRunner 2025.1.15
+# (pins.env ROADRUNNER_VERSION) with its temporal plugin: the plugin's Go
+# SDK client and workers talk to the Temporal frontend (upstream Temporal,
+# or the Loams gateway `loams-temporal`), and run the PHP workflow and
+# activity code of worker.php over Goridge pipes.
+#
+#   TEMPORAL_ADDRESS    host:port of the frontend (the gateway profile: loams:7233)
+#   TEMPORAL_NAMESPACE  the namespace (default: default)
+#   TEMPORAL_API_KEY    read by worker.php, not here (RoadRunner gets it from the worker)
+#   RR_RPC_PORT         the loopback RPC port (default 6001; the legs use host networking in loopback mode)
+#
+# No `temporal.tls` block: plaintext, as the gateway profile serves on the
+# stack's network (the plugin sets TLSDisabled when tls is absent, even with
+# an API key). The RPC listener is what WorkflowReplayer (replay.php) calls;
+# loopback only.
+version: "3"
+
+rpc:
+  listen: tcp://127.0.0.1:${RR_RPC_PORT:-6001}
+
+server:
+  command: "php worker.php"
+
+temporal:
+  address: ${TEMPORAL_ADDRESS}
+  namespace: ${TEMPORAL_NAMESPACE:-default}
+  activities:
+    # Two PHP processes: sleep_for blocks one while the server times it out.
+    num_workers: 2
+
+logs:
+  mode: production
+  level: ${RR_LOG_LEVEL:-info}
+  encoding: console
