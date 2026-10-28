@@ -90,11 +90,24 @@ pub enum SelectColumns {
     Named(Vec<String>),
 }
 
+/// The bounded SimpleStrategy keyspace replication options.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct Replication {
+    /// The short or fully qualified Cassandra SimpleStrategy class name.
+    pub class: String,
+    /// Requested positive replication factor; the executor validates its policy.
+    pub replication_factor: u32,
+}
+
 /// The supported statement forms.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Statement {
-    /// CREATE KEYSPACE without replication options.
-    CreateKeyspace { name: String, if_not_exists: bool },
+    /// CREATE KEYSPACE with bounded SimpleStrategy replication options.
+    CreateKeyspace {
+        name: String,
+        if_not_exists: bool,
+        replication: Replication,
+    },
     /// Change the connection's keyspace.
     Use { keyspace: String },
     /// Create a table with one primary-key column.
@@ -152,6 +165,9 @@ enum Kind {
     Bind,
     Left,
     Right,
+    LeftBrace,
+    RightBrace,
+    Colon,
     Comma,
     Dot,
     Star,
@@ -192,6 +208,18 @@ fn lex(sql: &str) -> Result<Vec<Token>, ParseError> {
             b')' => {
                 i += 1;
                 Kind::Right
+            }
+            b'{' => {
+                i += 1;
+                Kind::LeftBrace
+            }
+            b'}' => {
+                i += 1;
+                Kind::RightBrace
+            }
+            b':' => {
+                i += 1;
+                Kind::Colon
             }
             b',' => {
                 i += 1;
@@ -432,12 +460,73 @@ impl Parser {
         }
         Ok(values)
     }
+    fn replication(&mut self) -> Result<Replication, ParseError> {
+        self.require_keyword("with")?;
+        self.require_keyword("replication")?;
+        self.expect(Kind::Equal)?;
+        self.expect(Kind::LeftBrace)?;
+        let mut class = None;
+        let mut factor = None;
+        loop {
+            let key = match self.value()? {
+                Value::String(key) => key,
+                _ => return self.fail("replication option names must be strings"),
+            };
+            self.expect(Kind::Colon)?;
+            match key.as_str() {
+                "class" => {
+                    let value = match self.value()? {
+                        Value::String(value) => value,
+                        _ => return self.fail("replication class must be a string"),
+                    };
+                    if value != "SimpleStrategy"
+                        && value != "org.apache.cassandra.locator.SimpleStrategy"
+                    {
+                        return self.fail("unsupported replication strategy");
+                    }
+                    if class.replace(value).is_some() {
+                        return self.fail("duplicate replication class");
+                    }
+                }
+                "replication_factor" => {
+                    let value = match self.value()? {
+                        Value::Integer(value) => u32::try_from(value).ok(),
+                        Value::String(value) => value.parse::<u32>().ok(),
+                        _ => None,
+                    }
+                    .filter(|value| *value > 0)
+                    .ok_or_else(|| {
+                        error(
+                            self.at(),
+                            "replication factor must be a positive 32-bit integer",
+                        )
+                    })?;
+                    if factor.replace(value).is_some() {
+                        return self.fail("duplicate replication factor");
+                    }
+                }
+                _ => return self.fail("unsupported replication option"),
+            }
+            if !self.take(&Kind::Comma) {
+                break;
+            }
+        }
+        self.expect(Kind::RightBrace)?;
+        Ok(Replication {
+            class: class.ok_or_else(|| error(self.at(), "replication class is required"))?,
+            replication_factor: factor
+                .ok_or_else(|| error(self.at(), "replication factor is required"))?,
+        })
+    }
     fn create(&mut self) -> Result<Statement, ParseError> {
         if self.keyword("keyspace") {
             let if_not_exists = self.optional_if_not_exists()?;
+            let name = self.ident()?;
+            let replication = self.replication()?;
             return Ok(Statement::CreateKeyspace {
-                name: self.ident()?,
+                name,
                 if_not_exists,
+                replication,
             });
         }
         self.require_keyword("table")?;

@@ -1,4 +1,6 @@
-use loams_cql::parser::{Column, DataType, QualifiedName, SelectColumns, Statement, Value, parse};
+use loams_cql::parser::{
+    Column, DataType, QualifiedName, Replication, SelectColumns, Statement, Value, parse,
+};
 
 fn name(keyspace: Option<&str>, table: &str) -> QualifiedName {
     QualifiedName {
@@ -10,10 +12,11 @@ fn name(keyspace: Option<&str>, table: &str) -> QualifiedName {
 #[test]
 fn parses_keyspace_and_use_with_identifier_case() {
     assert_eq!(
-        parse("CREATE KEYSPACE IF NOT EXISTS Foo;").expect("valid CQL statement"),
+        parse("CREATE KEYSPACE IF NOT EXISTS Foo WITH replication = {'class':'SimpleStrategy','replication_factor':1};").expect("valid CQL statement"),
         Statement::CreateKeyspace {
             name: "foo".into(),
-            if_not_exists: true
+            if_not_exists: true,
+            replication: Replication { class: "SimpleStrategy".into(), replication_factor: 1 },
         }
     );
     assert_eq!(
@@ -22,6 +25,38 @@ fn parses_keyspace_and_use_with_identifier_case() {
             keyspace: "Foo".into()
         }
     );
+}
+
+#[test]
+fn parses_bounded_replication_options_in_any_order() {
+    assert_eq!(
+        parse("CREATE KEYSPACE ks WITH replication = {'replication_factor': 2, 'class': 'org.apache.cassandra.locator.SimpleStrategy'}").expect("valid CQL statement"),
+        Statement::CreateKeyspace { name:"ks".into(), if_not_exists:false, replication:Replication { class:"org.apache.cassandra.locator.SimpleStrategy".into(), replication_factor:2 } }
+    );
+    assert!(matches!(
+        parse(
+            "CREATE KEYSPACE ks WITH replication = {'class':'SimpleStrategy','replication_factor':'1'}"
+        ),
+        Ok(Statement::CreateKeyspace {
+            replication: Replication {
+                replication_factor: 1,
+                ..
+            },
+            ..
+        })
+    ));
+    for sql in [
+        "CREATE KEYSPACE ks",
+        "CREATE KEYSPACE ks WITH replication = {'class':'SimpleStrategy','replication_factor':0}",
+        "CREATE KEYSPACE ks WITH replication = {'class':'NetworkTopologyStrategy','replication_factor':1}",
+        "CREATE KEYSPACE ks WITH replication = {'class':'SimpleStrategy','replication_factor':1,'replication_factor':2}",
+        "CREATE KEYSPACE ks WITH replication = {'class':'SimpleStrategy'}",
+        "CREATE KEYSPACE ks WITH replication = {'class':'SimpleStrategy','replication_factor':1,'unexpected':1}",
+        "CREATE KEYSPACE ks WITH replication = {'class':'SimpleStrategy','replication_factor':?}",
+        "CREATE KEYSPACE ks WITH replication = {'class':'SimpleStrategy','replication_factor':4294967296}",
+    ] {
+        assert!(parse(sql).is_err(), "unexpectedly accepted {sql}");
+    }
 }
 
 #[test]
