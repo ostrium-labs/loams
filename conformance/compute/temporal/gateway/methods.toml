@@ -188,3 +188,49 @@ note = "TMP-api (D2088): unit tests only; versioning reads answer no sets, no ru
 [[method]]
 name = "GetWorkerTaskReachability"
 note = "TMP-api (D2088): unit tests only; versioning reads answer no sets, no rules, all reachable"
+
+# Visibility and schedules (TMP-api): not in the SDK legs' corpus runs yet;
+# covered by the frontend's in-process tests.
+[[method]]
+name = "CreateSchedule"
+note = "no SDK call in these runs; loams-temporal-frontend tests/schedules.rs"
+
+[[method]]
+name = "DescribeSchedule"
+note = "no SDK call in these runs; loams-temporal-frontend tests/schedules.rs"
+
+[[method]]
+name = "UpdateSchedule"
+note = "no SDK call in these runs; loams-temporal-frontend tests/schedules.rs"
+
+[[method]]
+name = "PatchSchedule"
+note = "no SDK call in these runs; loams-temporal-frontend tests/schedules.rs"
+
+[[method]]
+name = "DeleteSchedule"
+note = "no SDK call in these runs; loams-temporal-frontend tests/schedules.rs"
+
+[[method]]
+name = "ListSchedules"
+note = "no SDK call in these runs; loams-temporal-frontend tests/schedules.rs"
+
+[[method]]
+name = "ListScheduleMatchingTimes"
+note = "no SDK call in these runs; loams-temporal-frontend tests/schedules.rs"
+
+[[method]]
+name = "ListWorkflowExecutions"
+note = "no SDK call in these runs; loams-temporal-frontend tests/visibility.rs"
+
+[[method]]
+name = "ScanWorkflowExecutions"
+note = "no SDK call in these runs; loams-temporal-frontend tests/visibility.rs"
+
+[[method]]
+name = "CountWorkflowExecutions"
+note = "no SDK call in these runs; loams-temporal-frontend tests/visibility.rs"
+
+[[method]]
+name = "GetSearchAttributes"
+note = "no SDK call in these runs; loams-temporal-frontend tests/visibility.rs"
