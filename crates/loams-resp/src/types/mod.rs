@@ -15,6 +15,9 @@ use loams_kv::{Pair, Txn, TxnError};
 
 use crate::layout::{self, Kind, Meta, StringBody};
 
+pub mod collection;
+pub mod counter;
+pub mod hash;
 pub mod string;
 
 /// The transaction operations the types use.
