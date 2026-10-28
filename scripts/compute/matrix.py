@@ -404,9 +404,14 @@ def durable_cell(s: str) -> str:
     return s.replace("|", "\\|").replace("\n", " ")
 
 
-def render_durable_results(results: list[Result], *, date: str, loams_version: str, commit: str, corpus: str) -> str:
+def render_durable_results(
+    results: list[Result], *, date: str, loams_version: str, commit: str, corpus: str, label: str = ""
+) -> str:
     out: list[str] = []
-    out.append(f"Run: {date}; Loams {loams_version}" + (f" (commit `{commit}`)" if commit else "") + ".")
+    if label:
+        out.append(f"Run: {label}.")
+    else:
+        out.append(f"Run: {date}; Loams {loams_version}" + (f" (commit `{commit}`)" if commit else "") + ".")
     out.append("")
     out.append("| Product | Version | Endpoint mode | Verdict | Passed | Failed (expected) | Skipped | Expected failures |")
     out.append("|---|---|---|---|---|---|---|---|")
@@ -446,7 +451,12 @@ def render_durable(args: argparse.Namespace) -> str:
     pins = read_pins(compute_dir / "pins.env")
     results = [durable_evaluate(r, compute_dir, junit_dir, pins) for r in DURABLE_ROWS]
     return render_durable_results(
-        results, date=args.date, loams_version=args.loams_version, commit=args.commit, corpus=corpus_summary(compute_dir)
+        results,
+        date=args.date,
+        loams_version=args.loams_version,
+        commit=args.commit,
+        corpus=corpus_summary(compute_dir),
+        label=args.run_label,
     )
 
 
@@ -480,6 +490,7 @@ def main(argv: list[str]) -> int:
     du.add_argument("--date", default=dt.date.today().isoformat())
     du.add_argument("--loams-version", default="dev")
     du.add_argument("--commit", default="")
+    du.add_argument("--run-label", default="", help='the run line instead of date and version, e.g. "local run 2026-10-28 abc1234"')
     for p in (tg, du):
         out = p.add_mutually_exclusive_group()
         out.add_argument("--out")
