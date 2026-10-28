@@ -4,6 +4,7 @@
 //! semantics. It does not check a table's schema: the executor must verify
 //! that a SELECT predicate names its actual single-column primary key.
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fmt;
 
@@ -20,7 +21,7 @@ pub struct QualifiedName {
 }
 
 /// Supported scalar column types. Collection types require a later milestone.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum DataType {
     /// ASCII text.
     Ascii,
@@ -55,7 +56,7 @@ pub enum DataType {
 }
 
 /// A named scalar column in a CREATE TABLE statement.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct Column {
     /// The normalized column name.
     pub name: String,
