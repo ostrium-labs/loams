@@ -361,9 +361,13 @@ Commit: `authz: BuiltinAuthorizer, with the differential test against OpenFGA (I
 
 **What to write:** a `MachineKey` token source in the Rust SDK (`sdks/rust/src/token.rs`): read Zitadel's JSON key file (`LOAMS_AGENT_KEY_FILE`), sign a 5-minute RFC 7523 assertion, trade it for an access token with the project audience scope, refresh before `exp`. Then the TypeScript, Python and Go SDKs.
 
-### IA4 Task 3 — agentd vends 15-minute tokens (D1618)
+### IA4 Task 3 — agentd vends 15-minute tokens (D1618, D1629–D1633)
 
-Outlined; specified after IA4 Task 1 lands.
+**Decided 2026-10-28** (owner's defaults rule; the owner may veto): D1629 (agentd trades each agent's Zitadel machine key, RFC 7523, and writes Zitadel's access token), D1630 (900 s instance-wide lifetime), D1631 (no Place claim; OpenFGA grants only), D1632 (uninstall deactivates the machine user and removes its key), D1633 (the supervisor uses the same issuer).
+
+**What is written** (`crates/loams-agentd-marketplace/src/identity.rs`): the machine key kept per install in agentd's vault (`store_machine_key`, `MarketplaceHost::store_machine_key`); `ZitadelIssuer`, an `AsyncTokenIssuer` behind the contract's `TokenFile` (`MarketplaceHost::token_file`, driven by `run_token_file`); `retire` on uninstall (`MarketplaceHost::uninstall_retiring`, which `UninstallListing` now calls) over `ZitadelUsers` (Zitadel's v2 user API). agentd reads `LOAMS_AGENT_ISSUER`, `LOAMS_AGENT_PROJECT` and, optionally, `LOAMS_AGENT_ZITADEL_URL` and `LOAMS_AGENT_ZITADEL_TOKEN_FILE`.
+
+**Not yet:** creating the machine user at install time goes through the engine's agent RPCs (`Agents::create`), which are not wired yet; until then the key reaches agentd through `store_machine_key`. Starting an installed agent's run with the contract environment and a running token file follows with agentd's run path for marketplace agents. Not run end to end against Zitadel.
 
 ## IA2–IA6 outline
 
