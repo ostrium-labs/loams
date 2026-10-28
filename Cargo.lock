@@ -9719,6 +9719,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-meter-house"
+version = "0.1.2"
+dependencies = [
+ "axum 0.8.9",
+ "loams-meter-core",
+ "reqwest 0.13.5",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "loams-migrate"
 version = "0.1.2"
 dependencies = [
