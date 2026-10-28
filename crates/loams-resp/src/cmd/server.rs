@@ -306,7 +306,7 @@ fn command(args: &[Bytes]) -> Value {
             let specs: Vec<&Spec> = if args.len() == 2 {
                 COMMANDS.iter().collect()
             } else {
-                args[2..].iter().filter_map(|n| lookup(n)).collect()
+                args[2..].iter().filter_map(|n| lookup(n.as_ref())).collect()
             };
             Value::Map(
                 specs
