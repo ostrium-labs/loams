@@ -154,7 +154,7 @@ pub fn register(r: &mut Registry) {
         r.higher_order.insert(
             (*internal).to_string(),
             Arc::new(HigherOrderUDF::new_from_impl(ArrayHof::new(
-                *internal, *name, *kind,
+                internal, name, *kind,
             ))),
         );
     }
@@ -164,7 +164,7 @@ pub fn register(r: &mut Registry) {
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct ArrayHof {
     internal: &'static str,
-    name: &'static str,
+    ch_name: &'static str,
     kind: Kind,
     signature: HigherOrderSignature,
 }
@@ -174,7 +174,7 @@ impl ArrayHof {
     pub fn new(internal: &'static str, name: &'static str, kind: Kind) -> Self {
         Self {
             internal,
-            name,
+            ch_name: name,
             kind,
             signature: HigherOrderSignature::user_defined(Volatility::Immutable),
         }
@@ -187,7 +187,7 @@ impl ArrayHof {
         values: &[ChType],
         lambda: Option<&ChType>,
     ) -> Result<ChType, ChError> {
-        let name = self.name;
+        let name = self.ch_name;
         if values.is_empty() {
             return Err(arity(name, 0, "at least 1"));
         }
@@ -247,22 +247,22 @@ impl ArrayHof {
         let entries = |f: &FieldRef| -> Result<FieldRef, ChError> {
             match f.data_type() {
                 DataType::Map(entries, _) => Ok(Arc::clone(entries)),
-                _ => Err(illegal_type(self.name, 1, &from_arrow(f)?)),
+                _ => Err(illegal_type(self.ch_name, 1, &from_arrow(f)?)),
             }
         };
         match self.kind {
             Kind::MapFilter => {
-                let e = entries(values.first().ok_or_else(|| arity(self.name, 1, "2"))?)?;
+                let e = entries(values.first().ok_or_else(|| arity(self.ch_name, 1, "2"))?)?;
                 let DataType::Struct(kv) = e.data_type() else {
                     return Err(ChError::logical_error("Map entries are not a Struct"));
                 };
                 Ok(vec![Arc::clone(&kv[0]), Arc::clone(&kv[1])])
             }
             Kind::MapFilterTuple => {
-                let f = values.first().ok_or_else(|| arity(self.name, 1, "2"))?;
+                let f = values.first().ok_or_else(|| arity(self.ch_name, 1, "2"))?;
                 let e = entries(f)?;
                 let ChType::Map(k, v) = from_arrow(f)? else {
-                    return Err(illegal_type(self.name, 1, &from_arrow(f)?));
+                    return Err(illegal_type(self.ch_name, 1, &from_arrow(f)?));
                 };
                 let tuple = ChType::Tuple(vec![(None, *k), (None, *v)]);
                 let mut metadata = e.metadata().clone();
@@ -274,7 +274,7 @@ impl ArrayHof {
                 .enumerate()
                 .map(|(i, f)| match f.data_type() {
                     DataType::List(item) | DataType::LargeList(item) => Ok(Arc::clone(item)),
-                    _ => Err(illegal_type(self.name, i + 1, &from_arrow(f)?)),
+                    _ => Err(illegal_type(self.ch_name, i + 1, &from_arrow(f)?)),
                 })
                 .collect(),
         }
@@ -300,6 +300,8 @@ fn is_condition_type(t: &ChType) -> bool {
 }
 
 impl HigherOrderUDFImpl for ArrayHof {
+    // DataFusion looks the function up by its internal name.
+    #[allow(clippy::misnamed_getters)]
     fn name(&self) -> &str {
         self.internal
     }
@@ -327,7 +329,7 @@ impl HigherOrderUDFImpl for ArrayHof {
         if lambdas > 1 {
             return Err(df(ChError::number_of_arguments_doesnt_match(format!(
                 "Function {} takes one lambda function, got {lambdas}",
-                self.name
+                self.ch_name
             ))));
         }
         let values: Vec<FieldRef> = fields
@@ -351,7 +353,7 @@ impl HigherOrderUDFImpl for ArrayHof {
             }
         }
         let t = self.result_type(&values, lambda.as_ref()).map_err(df)?;
-        Ok(Arc::new(to_arrow(self.name, &t).map_err(df)?))
+        Ok(Arc::new(to_arrow(self.ch_name, &t).map_err(df)?))
     }
 
     fn invoke_with_args(&self, args: HigherOrderFunctionArgs) -> Result<ColumnarValue> {
@@ -375,7 +377,7 @@ impl HigherOrderUDFImpl for ArrayHof {
                 (ValueOrLambda::Value(_), ValueOrLambda::Lambda(_)) => {
                     return Err(DataFusionError::Internal(format!(
                         "{}: a value argument has a lambda's field",
-                        self.name
+                        self.ch_name
                     )));
                 }
             }
@@ -433,7 +435,7 @@ impl ArrayHof {
         for r in 0..rows {
             let n = parts[0].len(r);
             if parts.iter().any(|p| p.len(r) != n) {
-                return Err(sizes_dont_match(self.name).into());
+                return Err(sizes_dont_match(self.ch_name).into());
             }
         }
         let base = parts[0].offsets[0];
@@ -523,7 +525,7 @@ impl ArrayHof {
                     ))
                 } else {
                     let ChType::Array(elem) = &types[0] else {
-                        return Err(illegal_type(self.name, 1, &types[0]).into());
+                        return Err(illegal_type(self.ch_name, 1, &types[0]).into());
                     };
                     let source = with_default(&used[0], elem)?;
                     let picks: Vec<u64> = found
@@ -539,10 +541,10 @@ impl ArrayHof {
                     Some((_, None)) => from_lambda_type(&produced),
                     None => match &types[0] {
                         ChType::Array(e) => (**e).clone(),
-                        other => return Err(illegal_type(self.name, 0, other).into()),
+                        other => return Err(illegal_type(self.ch_name, 0, other).into()),
                     },
                 };
-                sum(self.name, &produced, &t, &rel)?
+                sum(self.ch_name, &produced, &t, &rel)?
             }
             Kind::Sort | Kind::ReverseSort => {
                 let order = sort_order(&produced, &rel, self.kind == Kind::ReverseSort)?;

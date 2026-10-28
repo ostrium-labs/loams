@@ -45,8 +45,10 @@ if [[ $skip != *,suite,* ]]; then
     timeout 3000 gotestsum --junitfile /work/go.junit.xml -- -count=1 -timeout 45m ./dbos/... >/work/go.test.log 2>&1
   "
   set -e
-  dc exec -T dbos-go cat /work/go.junit.xml >"$OC_OUT/$suite-suite.junit.xml" 2>/dev/null || true
-  dc exec -T dbos-go tail -n 60 /work/go.test.log >"$OC_OUT/$suite-suite.tail.log" 2>/dev/null || true
+  dc exec -T dbos-go cat /work/go.junit.xml >"$OC_OUT/$suite-suite.junit.tmp" 2>/dev/null || true
+  # Only a JUnit file with content counts (an empty one is no result).
+  if [ -s "$OC_OUT/$suite-suite.junit.tmp" ]; then mv "$OC_OUT/$suite-suite.junit.tmp" "$OC_OUT/$suite-suite.junit.xml"; else rm -f "$OC_OUT/$suite-suite.junit.tmp"; fi
+  dc exec -T dbos-go sh -c 'tail -n 30 /work/go.setup.log; tail -n 60 /work/go.test.log' >"$OC_OUT/$suite-suite.tail.log" 2>/dev/null || true
   if [ -s "$OC_OUT/$suite-suite.junit.xml" ]; then case_ dbos_go_suite_ran pass; else case_ dbos_go_suite_ran fail "gotestsum wrote no JUnit"; fi
 fi
 

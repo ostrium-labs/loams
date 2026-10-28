@@ -1,8 +1,8 @@
 # DX0 exit report (draft)
 
-Status: **draft, DX0 has not exited.** Written on 2026-10-27 with DX0 Task 7. The
-results below are the ones recorded so far, mostly local runs on 2026-10-24. The
-first full nightly (`.github/workflows/compute-compat.yml`) has not run yet.
+Status: **draft, DX0 has not exited.** Written on 2026-10-27 with DX0 Task 7.
+Updated on 2026-10-28 with the first compute nightly (run 40618803289, DX1
+ruling T7.R7).
 This report is updated from that nightly's [matrix](../guides/compute/compatibility.md)
 before the owner reviews it. Plan: [DX1](2026-10-21-dx1-durable-execution-compat.md)
 (DX0, Tasks 0–7). Design: [§74](../design/74-durable-execution-compat.md).
@@ -11,7 +11,7 @@ before the owner reviews it. Plan: [DX1](2026-10-21-dx1-durable-execution-compat
 
 | Criterion (plan, "DX0 exit") | State |
 |---|---|
-| Every product has a nightly run with a committed `xfail.toml` | **not met.** The nightly workflow and every `xfail.toml` are committed, but no nightly has run |
+| Every product has a nightly run with a committed `xfail.toml` | **not met yet.** The first nightly ran every leg on 2026-10-28. Durable, the corpus and Temporal on 16 were green. The DBOS and Airflow legs stopped on harness defects, which are now fixed (T5.R5, T6.R10). The Postgres 17 leg hit #1185 (fix #1475). The second run decides |
 | The corpus has at least the DX1 and DX2 scenarios in both languages and replays clean | **met against start-dev.** 31 scenarios (DX1 9, DX2 15, DX3 3, DX4 4) and 68 histories (36 Go, 32 TypeScript) replayed clean locally (#1207). They were generated against `temporal server start-dev`, not compat mode (T4.R1) |
 | `SPIKE.md` and this report give the go or no-go | compat mode is **not yet go** (below) |
 | The owner reviews the report before DX1 starts | superseded: the owner started DX1 in parallel on 2026-10-24 (D1590) |
@@ -31,7 +31,10 @@ before the owner reviews it. Plan: [DX1](2026-10-21-dx1-durable-execution-compat
 
 ## Go or no-go
 
-- **Compat mode (the Temporal server on Loams Postgres 16, direct): not yet go.** It becomes go when #1185 is explained or fixed, the soak with the compute stop and start passes three nightly runs in a row, and the 30-minute soak at 20 starts per second passes once (SPIKE.md).
+- **Compat mode (the Temporal server on Loams Postgres 16, direct): not yet go, one step left.**
+  - The 30-minute soak at 20 starts per second passed in the first nightly, with a history restart and a compute stop and start: 35,999 workflows, 0 failed.
+  - #1185 is explained: a stopped container kept its stale Postgres socket lock. #1475 fixes it.
+  - What remains is three nightly runs in a row that pass the compute stop and start, after #1475 merges.
 - **DX1, the Temporal gateway: go, and already running** (D1590). Its oracle is the start-dev corpus. All 18 DX1 histories replayed through the gateway on the fork's Resonate server (X1.R21). When compat mode is go, the corpus is regenerated against it (T4.R1).
 - **DX1A, `LoamsResonateExecutor`: not yet.** The Edge executor baseline (Task 6) must first run green in the nightly, because DX1A is judged against it.
 
@@ -52,8 +55,8 @@ before the owner reviews it. Plan: [DX1](2026-10-21-dx1-durable-execution-compat
 
 ## Recommendations
 
-1. Run the nightly once by hand (`gh workflow run compute-compat.yml`). Record its failures in each `xfail.toml` with reasons and issues, then refresh this report and the committed matrix.
-2. Fix or explain #1185 (the compute restart). Compat mode waits on it.
+1. Merge #1475 (#1185's fix) and the nightly fixes, then run the nightly again by pushing to a `compute-compat/` branch (T7.R6). Record any remaining failures in `xfail.toml`.
+2. Run three more nightlies with green compute resumes on 16. Compat mode then becomes go and is offered as a documented option (owner ruling below).
 3. Record DBOS's first results (Task 5): its `txn_mode` entries may turn into unexpected passes, as Temporal's did (T3.R6).
 4. Before DX1A, run the Airflow Edge baseline green twice. If the start-up `edge3` install is slow or flaky there, switch to a built image (T6.R2).
 

@@ -13,10 +13,16 @@
 name: Compute conformance
 
 on:
+  # A dispatch needs the file on the default branch (main), which moves only
+  # at a release. Until then, and for a one-off run of any branch, push that
+  # commit to a `compute-compat/<name>` branch: every leg runs (DX1 ruling
+  # T7.R6). Delete the branch afterwards.
+  push:
+    branches: ["compute-compat/**"]
   workflow_dispatch:
     inputs:
       products:
-        description: "Comma-separated legs to run (durable, temporal-pg16, temporal-pg17, corpus, dbos, airflow, airflow-local), or all."
+        description: "Comma-separated legs to run (durable, temporal-pg16, temporal-pg17, corpus, dbos-py, dbos-ts, dbos-go, dbos-java, airflow, airflow-local), or all."
         default: all
 
 concurrency:
@@ -62,19 +68,20 @@ jobs:
           - leg: corpus
             timeout: 45
             run: conformance/compute/temporal/corpus/replay.sh
-          - leg: dbos
+          # One leg per DBOS SDK: each suite takes up to 50 minutes, and a
+          # compute that does not come back must not take the next SDK with it.
+          - leg: dbos-py
             timeout: 120
-            # DX0 Task 5's harness is not merged yet: the leg says so and passes.
-            run: |
-              ran=0 rc=0
-              for l in py ts go java; do
-                if [ -x "conformance/compute/dbos-$l/run.sh" ]; then
-                  ran=1
-                  "conformance/compute/dbos-$l/run.sh" || rc=1
-                fi
-              done
-              [ "$ran" = 1 ] || echo "::notice::the DBOS harness (DX0 Task 5) is not on this branch"
-              exit "$rc"
+            run: conformance/compute/dbos-py/run.sh
+          - leg: dbos-ts
+            timeout: 120
+            run: conformance/compute/dbos-ts/run.sh
+          - leg: dbos-go
+            timeout: 120
+            run: conformance/compute/dbos-go/run.sh
+          - leg: dbos-java
+            timeout: 120
+            run: conformance/compute/dbos-java/run.sh
           - leg: airflow
             timeout: 150
             run: conformance/compute/airflow/run.sh
@@ -103,9 +110,14 @@ jobs:
       - name: ${{ matrix.leg }}
         if: ${{ steps.want.outputs.run == 'true' }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
           mkdir -p "$OC_OUT"
-          ${{ matrix.run }}
+          # The leg's exit status, for the matrix: a run that stopped before
+          # its strict check is red even when its few cases passed (T6.R11).
+          ( set -e; ${{ matrix.run }} )
+          rc=$?
+          echo "$rc" >"$OC_OUT/leg.exit"
+          exit "$rc"
       - name: container logs
         if: ${{ failure() && steps.want.outputs.run == 'true' }}
         run: |

@@ -17,6 +17,13 @@ fi
 : "${TENANT_ID:?set TENANT_ID (or let pg-bootstrap create one)}" "${TIMELINE_ID:?set TIMELINE_ID (or let pg-bootstrap create one)}"
 echo "attaching to tenant ${TENANT_ID}, timeline ${TIMELINE_ID}"
 until (exec 3<>/dev/tcp/pageserver/6400) 2>/dev/null; do echo "waiting for pageserver"; sleep 1; done
+# A container that was stopped and started again keeps its /tmp, including the
+# previous Postgres's socket lock (/tmp/.s.PGSQL.55433.lock). When the new
+# Postgres happens to get the PID recorded there, it refuses to start ("Is
+# another postmaster using socket file"), compute_ctl exits, and the compute
+# never answers again (#1185; found by the DX0 compute nightly, 2026-10-28).
+# Nothing else runs in this container yet, so the lock is always stale here.
+rm -f /tmp/.s.PGSQL.* /var/db/postgres/compute/postmaster.pid
 sed -e "s|TENANT_ID|${TENANT_ID}|" -e "s|TIMELINE_ID|${TIMELINE_ID}|" \
     /var/db/postgres/configs/config.json > /tmp/config.json
 exec /usr/local/bin/compute_ctl --pgdata /var/db/postgres/compute \

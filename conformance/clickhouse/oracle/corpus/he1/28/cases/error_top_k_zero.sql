@@ -1,0 +1,1 @@
+SELECT topK(0)(g) FROM t28
