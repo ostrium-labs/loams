@@ -30,6 +30,7 @@ pub mod errors;
 pub mod fastpath;
 pub mod followups;
 pub mod lifecycle;
+pub mod listing;
 pub mod namespaces;
 pub mod operator;
 pub mod outbox;

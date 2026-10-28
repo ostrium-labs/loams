@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use loams_meter_gate::entitle::{Entitlements, features};
 use loams_meter_gate::gate::Refusal;
 use rustls::pki_types::ServerName;
-use tokio::io::{AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio_rustls::{TlsAcceptor, TlsConnector};
 
@@ -312,15 +312,6 @@ impl PgFrontDoor {
             send_alert(&mut client, alert::UNRECOGNIZED_NAME).await;
             return Err(FrontError::UnknownName(hello.server_name));
         };
-        // Has the namespace's org access to Postgres at all (§63 §10.2)?
-        // A hard-stopped org's new connections end here; open ones run on.
-        if let Err(r) = self
-            .entitlements
-            .check(None, &ns.name, features::PG_COMPUTE, 0)
-        {
-            send_alert(&mut client, alert::ACCESS_DENIED).await;
-            return Err(FrontError::Entitlement(r));
-        }
         let terminate = match (negotiation, self.mode) {
             (Negotiation::Direct, TlsMode::Passthrough) => {
                 send_alert(&mut client, alert::NO_APPLICATION_PROTOCOL).await;
@@ -333,6 +324,24 @@ impl PgFrontDoor {
         if negotiation == Negotiation::Direct && !hello.offers_alpn(ALPN_POSTGRESQL) {
             send_alert(&mut client, alert::NO_APPLICATION_PROTOCOL).await;
             return Err(FrontError::NoAlpn);
+        }
+        // Has the namespace's org access to Postgres at all (§63 §10.2,
+        // D2186)? A hard-stopped org's new connections end here; open ones
+        // run on. Spliced (passthrough), the client is in TLS with PgDog's
+        // certificate the gateway cannot speak for: the TLS alert
+        // `access_denied`. Terminated, the gateway ends TLS itself and
+        // answers the startup with SQLSTATE 53400.
+        if let Err(r) = self
+            .entitlements
+            .check(None, &ns.name, features::PG_COMPUTE, 0)
+        {
+            if terminate {
+                return Err(self
+                    .refuse_terminated(client, hello_bytes, &hello, &ns, r)
+                    .await);
+            }
+            send_alert(&mut client, alert::ACCESS_DENIED).await;
+            return Err(FrontError::Entitlement(r));
         }
         if terminate {
             self.terminate(client, hello_bytes, hello, ns).await
@@ -471,6 +480,46 @@ impl PgFrontDoor {
         })
     }
 
+    /// Refuses a terminate-mode connection the gate refused: TLS with the
+    /// gateway's certificate for the name, the client's startup read (at
+    /// most 2 s), then a Postgres `ErrorResponse` naming the entitlement:
+    /// SQLSTATE `53400` (`configuration_limit_exceeded`), or `53300` when
+    /// the meter is unavailable (§63 §17.4). Without a certificate for the
+    /// name it falls back to the TLS alert `access_denied`.
+    async fn refuse_terminated(
+        &self,
+        mut client: TcpStream,
+        hello_bytes: Vec<u8>,
+        hello: &ClientHello,
+        ns: &PgNamespace,
+        r: Refusal,
+    ) -> FrontError {
+        let name = hello
+            .server_name
+            .clone()
+            .or_else(|| ns.canonical_hostname().map(str::to_owned))
+            .unwrap_or_default();
+        let Some(config) = self.server_certs.config_for_name(&name) else {
+            send_alert(&mut client, alert::ACCESS_DENIED).await;
+            return FrontError::Entitlement(r);
+        };
+        if let Ok(mut tls) = TlsAcceptor::from(config)
+            .accept(Prefixed::new(hello_bytes, client))
+            .await
+        {
+            let mut startup = [0u8; 1024];
+            let _ = tokio::time::timeout(Duration::from_secs(2), tls.read(&mut startup)).await;
+            let _ = tls
+                .write_all(&fatal_error(
+                    entitlement_sqlstate(&r),
+                    &entitlement_message(&r),
+                ))
+                .await;
+            let _ = tls.shutdown().await;
+        }
+        FrontError::Entitlement(r)
+    }
+
     /// A plaintext cancel: every replica of the namespace on a dedicated
     /// port; dropped on the shared port, which cannot route it (Q895).
     async fn cancel(&self, packet: &[u8; 16], entry: Entry, table: &RouteTable) {
@@ -500,5 +549,57 @@ fn keepalive(stream: &TcpStream) {
         .with_interval(Duration::from_secs(15));
     if let Err(e) = socket2::SockRef::from(stream).set_tcp_keepalive(&ka) {
         tracing::debug!(error = %e, "tcp keepalive not set");
+    }
+}
+
+/// The SQLSTATE of a gate refusal (§63 §17.4): `53400`
+/// (`configuration_limit_exceeded`) for an exhausted allowance, the spend
+/// cap, a missing payment method or entitlement; `53300`
+/// (`too_many_connections`, retryable) when the meter is unavailable.
+pub fn entitlement_sqlstate(r: &Refusal) -> &'static str {
+    match r.reason {
+        loams_meter_gate::gate::RefusalReason::MeterUnavailable => "53300",
+        _ => "53400",
+    }
+}
+
+/// The message of a gate refusal: names the entitlement and the reason.
+pub fn entitlement_message(r: &Refusal) -> String {
+    format!(
+        "Loams: entitlement {} is refused ({}); new connections are not accepted",
+        r.feature, r.reason
+    )
+}
+
+#[cfg(test)]
+mod entitlement_tests {
+    use super::*;
+    use loams_meter_gate::gate::RefusalReason;
+
+    #[test]
+    fn hard_stop_is_53400_and_names_the_feature() {
+        let r = Refusal::new(RefusalReason::EntitlementExhausted, "pg_compute");
+        assert_eq!(entitlement_sqlstate(&r), "53400");
+        let msg = entitlement_message(&r);
+        assert!(msg.contains("pg_compute") && msg.contains("entitlement_exhausted"));
+        let frame = fatal_error(entitlement_sqlstate(&r), &msg);
+        assert_eq!(frame[0], b'E');
+        assert!(frame.windows(6).any(|w| w == b"C53400"));
+    }
+
+    #[test]
+    fn meter_unavailable_is_retryable_53300() {
+        let r = Refusal::new(RefusalReason::MeterUnavailable, "pg_compute");
+        assert_eq!(entitlement_sqlstate(&r), "53300");
+        for reason in [
+            RefusalReason::SpendCapReached,
+            RefusalReason::PaymentMethodRequired,
+            RefusalReason::NotEntitled,
+        ] {
+            assert_eq!(
+                entitlement_sqlstate(&Refusal::new(reason, "pg_compute")),
+                "53400"
+            );
+        }
     }
 }

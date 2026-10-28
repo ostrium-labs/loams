@@ -59,6 +59,8 @@ pub const IMPLEMENTED: &[&str] = &[
     "ListSchedules",
     "ListScheduleMatchingTimes",
     // Visibility (D2074-D2076).
+    "ListOpenWorkflowExecutions",
+    "ListClosedWorkflowExecutions",
     "ListWorkflowExecutions",
     "ScanWorkflowExecutions",
     "CountWorkflowExecutions",

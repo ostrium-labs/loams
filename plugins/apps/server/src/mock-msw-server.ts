@@ -724,7 +724,7 @@ export function startMswBiMock(
 ): Promise<{ mswServer: any; httpServer: http.Server }> {
   // 1. Activate MSW Node Server for global fetch interception
   const mswServer = setupServer(...biMockHandlers);
-  mswServer.listen({ onUnhandledRequest: "bypass" });
+  mswServer.listen({ onUnhandledFrame: "bypass" });
 
   // 2. Also start native HTTP Server on port 8088 to serve non-intercepted callers
   return new Promise((resolve) => {

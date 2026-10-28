@@ -1,0 +1,1 @@
+SELECT cityHash64(''), cityHash64('a'), cityHash64('abcdefgh'), cityHash64('abcdefghijklmnopq'), cityHash64('hello world, this is 33 bytes ok!'), cityHash64(repeat('x', 100)), cityHash64(repeat('ab', 40)), cityHash64(repeat('xyz', 200))

@@ -16,7 +16,8 @@ struct Args {
     /// Which module this process runs: `pg` (the Postgres front door) or,
     /// with the `temporal` feature, `temporal` (its own Deployment, §74 §12),
     /// or with the `spark` feature, `spark` (the Spark Connect proxy), or
-    /// `browser` (agents' CDP sessions to the browser service, D2118).
+    /// `browser` (agents' CDP sessions to the browser service, D2118), or
+    /// with the `resp` feature, `resp` (the Redis gateway, §77 §10).
     #[arg(long, default_value = "pg")]
     module: String,
 }
@@ -62,9 +63,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .map_err(Into::into)
             });
         }
+        #[cfg(feature = "resp")]
+        "resp" => {
+            let config = loams_gateway::resp::load(&text)?;
+            return runtime.block_on(async move {
+                loams_gateway::resp::serve(config, terminate())
+                    .await
+                    .map_err(Into::into)
+            });
+        }
         other => {
             return Err(format!(
-                "unknown module {other:?} (built: pg, browser{}{})",
+                "unknown module {other:?} (built: pg, browser{}{}{})",
                 if cfg!(feature = "temporal") {
                     ", temporal"
                 } else {
@@ -74,7 +84,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ", spark"
                 } else {
                     ""
-                }
+                },
+                if cfg!(feature = "resp") { ", resp" } else { "" }
             )
             .into());
         }

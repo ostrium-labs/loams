@@ -289,21 +289,65 @@ impl ObscuraEngine {
         &self.spec
     }
 
-    /// Stop the engine: ask it to close over CDP, then kill it if it will not.
+    /// Stop the engine: SIGTERM, then a kill if it has not exited within
+    /// [`STOP_GRACE`].
     ///
-    /// The kill is unconditional on the second path because the engine's CDP
-    /// endpoint has no shutdown guarantee. `kill_on_drop` is also set, so a
+    /// **Close every CDP connection first** ([`ObscuraEngine::stop_after`]
+    /// does it for the panel's one connection). Obscura 0.2.3 merges a
+    /// connection's default-context cookies into `--storage-dir/cookies.json`
+    /// only when that connection closes, and SIGTERM saves only what was
+    /// already merged: a connection still open at shutdown loses its session
+    /// cookies (BR-b, CI runs 40539985305 and 40583789342). Contexts made with
+    /// `Target.createBrowserContext` are never persisted at all, which is why
+    /// the panel uses the default context. `kill_on_drop` is also set, so a
     /// dropped engine cannot outlive the desktop.
     pub async fn stop(mut self) -> Result<()> {
         match self.child.take() {
             Some(mut child) => {
-                let _ = child.start_kill();
-                let _ = tokio::time::timeout(Duration::from_secs(5), child.wait()).await;
+                terminate_then_kill(&mut child, STOP_GRACE).await;
                 Ok(())
             }
             None => Ok(()),
         }
     }
+
+    /// Close `client`'s connection (the engine merges its cookies when the
+    /// socket closes), then [`ObscuraEngine::stop`]. The order is the whole
+    /// point: the other way round, the session is lost.
+    pub async fn stop_after(self, client: crate::cdp::CdpClient) -> Result<()> {
+        client.close().await;
+        self.stop().await
+    }
+}
+
+/// How long a stopping engine has between SIGTERM and the kill.
+pub const STOP_GRACE: Duration = Duration::from_secs(5);
+
+/// SIGTERM, wait up to `grace`, then kill. SIGTERM goes through the system's
+/// `kill` command: the workspace forbids `unsafe`, and no signal crate is
+/// needed for one call. Without SIGTERM (Windows) the kill comes at once.
+async fn terminate_then_kill(child: &mut tokio::process::Child, grace: Duration) {
+    if matches!(child.try_wait(), Ok(Some(_))) {
+        return;
+    }
+    #[cfg(unix)]
+    if let Some(pid) = child.id() {
+        let sent = tokio::process::Command::new("kill")
+            .arg("-TERM")
+            .arg(pid.to_string())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .await
+            .map(|status| status.success())
+            .unwrap_or(false);
+        if sent && tokio::time::timeout(grace, child.wait()).await.is_ok() {
+            return;
+        }
+    }
+    let _ = child.start_kill();
+    let _ = tokio::time::timeout(grace, child.wait()).await;
 }
 
 async fn wait_for_port(host: &str, port: u16, timeout: Duration) -> std::io::Result<()> {
@@ -321,5 +365,56 @@ async fn wait_for_port(host: &str, port: u16, timeout: Duration) -> std::io::Res
             Err(error) => last = Some(error),
         }
         tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+}
+
+#[cfg(all(test, unix))]
+mod stop_tests {
+    use super::*;
+
+    fn engine_running(script: &str, dir: &Path) -> ObscuraEngine {
+        let spec =
+            EngineLaunchSpec::build("sh", dir, DEFAULT_CDP_PORT, &PrivateNetworkDecision::Public)
+                .unwrap_or_else(|error| panic!("{error}"));
+        let child = tokio::process::Command::new("sh")
+            .arg("-c")
+            .arg(script)
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap_or_else(|error| panic!("{error}"));
+        ObscuraEngine {
+            spec,
+            child: Some(child),
+        }
+    }
+
+    #[tokio::test]
+    async fn stop_sends_sigterm_so_the_engine_can_save_what_it_merged() {
+        let dir = tempfile::tempdir().unwrap_or_else(|error| panic!("{error}"));
+        let marker = dir.path().join("saved");
+        let engine = engine_running(
+            &format!(
+                "trap 'echo saved > {}; exit 0' TERM; while :; do sleep 0.05; done",
+                marker.display()
+            ),
+            dir.path(),
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        engine
+            .stop()
+            .await
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert!(marker.exists(), "the engine got SIGTERM, not only a kill");
+    }
+
+    #[tokio::test]
+    async fn stop_still_kills_an_engine_that_ignores_sigterm() {
+        let dir = tempfile::tempdir().unwrap_or_else(|error| panic!("{error}"));
+        let mut engine = engine_running("trap '' TERM; while :; do sleep 0.05; done", dir.path());
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let mut child = engine.child.take().unwrap_or_else(|| panic!("running"));
+        terminate_then_kill(&mut child, Duration::from_millis(300)).await;
+        let status = child.wait().await.unwrap_or_else(|error| panic!("{error}"));
+        assert!(!status.success(), "killed after the grace: {status:?}");
     }
 }

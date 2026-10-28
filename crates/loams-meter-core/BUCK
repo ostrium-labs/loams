@@ -24,6 +24,11 @@ cargo_package(
     },
     tests = [
         {
+            "name": "balance_replay",
+            "crate": "balance_replay",
+            "root": "tests/balance_replay.rs",
+        },
+        {
             "name": "lease_sim",
             "crate": "lease_sim",
             "root": "tests/lease_sim.rs",

@@ -27,7 +27,7 @@ use loams_temporal_schedule::spec::{ms_duration, ms_ts};
 use loams_temporal_store::{NamespaceRecord, RunKey, VisibilityRow};
 use loams_temporal_visibility::filter::{status_name, system_attributes};
 use loams_temporal_visibility::{
-    QueryError, Record, Resolved, ValueType, VisibilityError, VisibilityStore, compile,
+    QueryError, Record, Resolved, ValueType, VisibilityError, compile,
 };
 use prost::Message as _;
 use tonic::Status;

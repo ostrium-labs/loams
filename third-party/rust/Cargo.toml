@@ -77,7 +77,7 @@ http-body-util = { package = "http-body-util", version = "=0.1.5", default-featu
 httparse = { package = "httparse", version = "=1.10.1", default-features = true, features = ["std"] }
 httpmock = { package = "httpmock", version = "=0.8.3", default-features = false, features = ["remote"] }
 humantime = { package = "humantime", version = "=2.4.0", default-features = false }
-hyper = { package = "hyper", version = "=1.12.0", default-features = true, features = ["client", "http1", "http2", "server"] }
+hyper = { package = "hyper", version = "=1.12.0", default-features = true, features = ["client", "full", "http1", "http2", "server"] }
 hyper-util = { package = "hyper-util", version = "=0.1.21", default-features = true, features = ["client", "client-legacy", "client-proxy", "client-proxy-system", "http1", "http2", "server", "server-auto", "server-graceful", "service", "tokio", "tracing"] }
 iggy = { package = "iggy", version = "=0.11.1-edge.2", default-features = false }
 ignore = { package = "ignore", version = "=0.4.33", default-features = false }
@@ -187,6 +187,8 @@ unicode-segmentation = { package = "unicode-segmentation", version = "=1.13.3", 
 url = { package = "url", version = "=2.5.8", default-features = true, features = ["serde", "std"] }
 uuid = { package = "uuid", version = "=1.28.0", default-features = true, features = ["fast-rng", "js", "rng", "serde", "std", "v4", "v7", "zerocopy"] }
 webbrowser = { package = "webbrowser", version = "=1.2.4", default-features = false }
+webpki-roots = { package = "webpki-roots", version = "=1.0.10", default-features = false }
+wiremock = { package = "wiremock", version = "=0.6.5", default-features = false }
 x509-parser = { package = "x509-parser", version = "=0.18.1", default-features = true, features = ["ring", "verify"] }
 xxhash-rust = { package = "xxhash-rust", version = "=0.8.19", default-features = false, features = ["xxh3", "xxh32", "xxh64"] }
 zeroize = { package = "zeroize", version = "=1.9.1", default-features = true, features = ["alloc", "derive", "zeroize_derive"] }

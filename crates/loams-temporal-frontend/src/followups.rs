@@ -306,7 +306,15 @@ impl Frontend {
         };
         let state = &f.state;
         let ns = self.namespace_by_id(&f.ctx.namespace_id).await?;
-        let history = self.engine.history(&f.key, 1, usize::MAX).await?;
+        // Reset points need the completed workflow tasks only.
+        let history = self
+            .engine
+            .history_until(&f.key, i64::MAX, |e| {
+                e.event_type
+                    == loams_temporal_proto::temporal::api::enums::v1::EventType::WorkflowTaskCompleted
+                        as i32
+            })
+            .await?;
         let request = StartWorkflowExecutionRequest {
             namespace: ns.name.clone(),
             workflow_id: f.key.workflow_id.clone(),
@@ -329,6 +337,7 @@ impl Frontend {
             first_execution_run_id: state.first_execution_run_id.clone(),
             backoff_ms: dur_ms(a.backoff_start_interval.as_ref()),
             last_completion_result: a.last_completion_result.clone(),
+            #[allow(deprecated)]
             continued_failure: a.failure.clone(),
             prev_auto_reset_points: Some(
                 loams_temporal_proto::temporal::api::workflow::v1::ResetPoints {
