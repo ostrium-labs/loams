@@ -115,3 +115,12 @@ fn quoted_identifiers_escape_quotes_and_keep_case() {
         }
     );
 }
+
+#[test]
+fn parses_inet_scalar_and_rejects_quoted_builtin_type() {
+    assert!(matches!(
+        parse("CREATE TABLE addresses (id uuid PRIMARY KEY, address inet)"),
+        Ok(Statement::CreateTable { columns, .. }) if columns[1].data_type == DataType::Inet
+    ));
+    assert!(parse("CREATE TABLE t (id \"text\" PRIMARY KEY)").is_err());
+}

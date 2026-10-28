@@ -36,6 +36,8 @@ pub enum DataType {
     Float,
     /// Signed 32-bit integer.
     Int,
+    /// IPv4 or IPv6 address.
+    Inet,
     /// Signed 16-bit integer.
     SmallInt,
     /// Signed 8-bit integer.
@@ -411,6 +413,7 @@ impl Parser {
             "double" => Ok(DataType::Double),
             "float" => Ok(DataType::Float),
             "int" => Ok(DataType::Int),
+            "inet" => Ok(DataType::Inet),
             "smallint" => Ok(DataType::SmallInt),
             "tinyint" => Ok(DataType::TinyInt),
             "text" => Ok(DataType::Text),
