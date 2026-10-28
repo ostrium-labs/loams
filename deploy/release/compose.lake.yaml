@@ -174,9 +174,7 @@ services:
       - /run/engine-gateway:mode=0700,uid=10001,gid=10001
     ports:
       - 127.0.0.1:${RISINGWAVE_GATEWAY_PORT:-4566}:4566
-    depends_on:
-      risingwave-init:
-        condition: service_completed_successfully
-        required: false
+    # Each engine's file adds its own depends_on (compose.risingwave.yaml:
+    # risingwave-init), so this file loads on its own.
 
   # --- RisingWave (RW-a): its services are in compose.risingwave.yaml.
