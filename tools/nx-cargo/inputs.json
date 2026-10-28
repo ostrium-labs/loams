@@ -44,7 +44,8 @@
           "docs/api/route-map.md"
         ],
         "loams-gateway": [
-          "deploy/pgdog/compose.yaml"
+          "deploy/pgdog/compose.yaml",
+          "deploy/release/engines/**"
         ],
         "loams-live": [
           "docs/api/reasons.md"
