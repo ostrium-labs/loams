@@ -10,9 +10,15 @@ use loams_resp::layout::{self, Kind, Meta};
 use loams_resp::testing::{Client, TestServer, config, start};
 
 async fn servers(name: &str) -> Vec<(Store, TestServer)> {
+    servers_with(name, "").await
+}
+
+/// Servers with extra configuration lines (`workers = false` where a test
+/// looks at GC-queue rows the GC worker would collect).
+async fn servers_with(name: &str, extra: &str) -> Vec<(Store, TestServer)> {
     let mut out = Vec::new();
     for store in loams_kv::testing::stores(name).await {
-        let server = start(config(""), store.clone()).await;
+        let server = start(config(extra), store.clone()).await;
         out.push((store, server));
     }
     out
@@ -132,7 +138,7 @@ async fn lazy_expiry_hides_and_replaces() {
 
 #[tokio::test]
 async fn wrongtype_on_every_write() {
-    for (store, s) in servers("wrongtype_on_every_write").await {
+    for (store, s) in servers_with("wrongtype_on_every_write", "workers = false").await {
         plant_hash(&store, 0, "h").await;
         let mut c = Client::connect(s.addr).await;
         let wrong = Value::err(WRONGTYPE);

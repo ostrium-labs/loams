@@ -114,6 +114,7 @@ pub(crate) async fn write<K: Kv>(
     };
     let meta = Meta::string(ver, expire_at_ms, &body);
     txn.put(&layout::meta_key(db, ukey), meta.encode()).await?;
+    crate::expire::note(txn, db, ukey, &meta).await?;
     if let Some(old) = stored {
         drop_version(txn, db, ukey, old).await?;
     }

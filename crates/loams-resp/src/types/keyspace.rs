@@ -131,6 +131,7 @@ pub(crate) async fn copy<K: Kv>(
     };
     txn.put(&layout::meta_key(dst_db, dst), copy.encode())
         .await?;
+    crate::expire::note(txn, dst_db, dst, &copy).await?;
     if let Some(old) = &stored {
         drop_version(txn, dst_db, dst, old).await?;
     }
