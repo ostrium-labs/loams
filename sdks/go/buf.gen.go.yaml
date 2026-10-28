@@ -88,6 +88,7 @@ plugins:
       - Mloams/meter/v1/entitlement.proto=loams.dev/go/gen/loams/meter/v1;meterv1
       - Mloams/meter/v1/notification.proto=loams.dev/go/gen/loams/meter/v1;meterv1
       - Mloams/meter/v1/plan.proto=loams.dev/go/gen/loams/meter/v1;meterv1
+      - Mloams/meter/v1/meter.proto=loams.dev/go/gen/loams/meter/v1;meterv1
   - remote: buf.build/connectrpc/go:v1.21.0
     out: sdks/go
     opt:
@@ -116,6 +117,7 @@ plugins:
       - Mloams/meter/v1/entitlement.proto=loams.dev/go/gen/loams/meter/v1;meterv1
       - Mloams/meter/v1/notification.proto=loams.dev/go/gen/loams/meter/v1;meterv1
       - Mloams/meter/v1/plan.proto=loams.dev/go/gen/loams/meter/v1;meterv1
+      - Mloams/meter/v1/meter.proto=loams.dev/go/gen/loams/meter/v1;meterv1
 # Not `clean: true`: `out` is the module root, and `gen/facade/` (the Q604
 # hand-written facade) and the runtime's own files live under it.
 clean: false
