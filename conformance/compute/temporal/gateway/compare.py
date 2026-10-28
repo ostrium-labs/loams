@@ -77,8 +77,20 @@ def compare(corpus: Path, gateway: Path, scenario: str) -> list[str]:
     a = normalize.normalize(gateway_equivalent(json.loads(corpus.read_text())))
     b = normalize.normalize(gateway_equivalent(json.loads(gateway.read_text())))
     if scenario in normalize.ORDER_FREE:
-        a, b = without_workflow_tasks(a), without_workflow_tasks(b)
+        return multiset_diff(without_workflow_tasks(a)["events"], without_workflow_tasks(b)["events"])
     return normalize.compare(a, b)
+
+
+def multiset_diff(corpus: list[str], gateway: list[str]) -> list[str]:
+    """The events (serialised JSON) one side has more often than the other.
+    normalize.compare walks event dicts, so a parallel scenario's sorted strings
+    are compared here instead (it raised AttributeError on any difference)."""
+    from collections import Counter  # noqa: PLC0415
+
+    ca, cb = Counter(corpus), Counter(gateway)
+    out = [f"only in the corpus: {e[:200]}" for e in sorted((ca - cb).elements())]
+    out += [f"only in the gateway: {e[:200]}" for e in sorted((cb - ca).elements())]
+    return out
 
 
 def main() -> int:
