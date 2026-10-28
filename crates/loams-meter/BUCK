@@ -34,6 +34,11 @@ cargo_package(
             "root": "tests/notify.rs",
         },
         {
+            "name": "openmeter_conformance",
+            "crate": "openmeter_conformance",
+            "root": "tests/openmeter_conformance.rs",
+        },
+        {
             "name": "owner",
             "crate": "owner",
             "root": "tests/owner.rs",
@@ -61,6 +66,7 @@ cargo_package(
         "//crates/loams-meter-core:loams-meter-core",
         "//crates/loams-proto:loams-proto",
         "//third-party/rust:async-trait",
+        "//third-party/rust:axum",
         "//third-party/rust:base64-0_23",
         "//third-party/rust:buffa",
         "//third-party/rust:connectrpc",
@@ -76,7 +82,9 @@ cargo_package(
         "//third-party/rust:ulid",
     ],
     dev_deps = [
+        "//third-party/rust:jsonschema",
         "//third-party/rust:proptest",
+        "//third-party/rust:tower",
     ],
     rustc_flags = [
         "-Funsafe_code",
