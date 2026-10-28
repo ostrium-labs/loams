@@ -454,6 +454,8 @@ pub struct FakeCdp {
     pub expressions: Mutex<Vec<String>>,
     /// When set, `Target.createTarget` fails with this message.
     pub fail_create_target: Option<String>,
+    /// Methods the scripted engine refuses with a protocol error.
+    pub refuses: Vec<String>,
     /// Whether the connection hands out an event stream.
     pub delivers_events: bool,
     events: Mutex<Option<tokio::sync::mpsc::UnboundedSender<CdpEvent>>>,
@@ -522,6 +524,12 @@ impl CdpConnection for FakeCdp {
             && let Some(message) = &self.fail_create_target
         {
             return Err(BridgeError::cdp(message.clone()));
+        }
+        if self.refuses.iter().any(|method| *method == request.method) {
+            return Err(BridgeError::cdp(format!(
+                "'{}' wasn't found",
+                request.method
+            )));
         }
         if request.method == "Runtime.evaluate" {
             let expression = request
@@ -655,6 +663,9 @@ pub struct FakeEndpoint {
     pub kind: ProviderKind,
     /// The token it sends.
     pub token: crate::secret::SecretValue,
+    /// Where `shutdown` is recorded, as the call `endpoint.shutdown`, so a
+    /// test can check it came after the pages' CDP calls.
+    pub record_into: Option<Arc<FakeCdp>>,
 }
 
 impl FakeEndpoint {
@@ -663,7 +674,14 @@ impl FakeEndpoint {
         Self {
             kind,
             token: crate::secret::SecretValue::new(token),
+            record_into: None,
         }
+    }
+
+    /// Record `shutdown` into `cdp`'s call log.
+    pub fn recording_into(mut self, cdp: Arc<FakeCdp>) -> Self {
+        self.record_into = Some(cdp);
+        self
     }
 }
 
@@ -678,6 +696,15 @@ impl EngineEndpoint for FakeEndpoint {
             "ws://127.0.0.1:9222/devtools/browser".to_string(),
             crate::obscura::bearer(&self.token),
         ))
+    }
+
+    async fn shutdown(&self) {
+        if let Some(cdp) = &self.record_into {
+            cdp.calls
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push("endpoint.shutdown".to_string());
+        }
     }
 }
 
@@ -695,6 +722,22 @@ pub fn obscura_over(
             kind,
             "fake-engine-token-0123456789abcdef",
         )),
+        policies,
+        secrets,
+        Arc::new(FakeTransport::new(cdp)),
+    )
+}
+
+/// An [`ObscuraProvider`] over a given endpoint.
+pub fn obscura_over_endpoint(
+    endpoint: Arc<dyn EngineEndpoint>,
+    config: &WebBridgeConfig,
+    cdp: Arc<FakeCdp>,
+    secrets: Arc<dyn SecretResolver>,
+) -> ObscuraProvider {
+    let policies = crate::policies(config).unwrap_or_else(|error| panic!("{error}"));
+    ObscuraProvider::new(
+        endpoint,
         policies,
         secrets,
         Arc::new(FakeTransport::new(cdp)),

@@ -107,6 +107,11 @@ Obscura **0.2.3**, released 2026-09-20 (D2113):
 
 ## Engine limits to know
 
+- **Downloads:** none. Obscura 0.2.3 acknowledges `Browser.setDownloadBehavior` but has no download path. The provider sends `deny` on every connection, `Capabilities::downloads` is false, and no tool ever reports a download.
+- **Persistence:** contexts made with `Target.createBrowserContext` are never saved. The engine saves only its default context, into `--storage-dir`, and only when that connection closes. Agent pages use throwaway contexts on purpose. Desktop's sidebar uses the default context with a storage dir, and closes its connection before SIGTERM.
+- **Stopping:** `ObscuraProvider::shutdown` closes every page's connection, then stops a local engine with SIGTERM, then a kill after a grace period. agentd's MCP server calls it when the run ends.
+
+
 Obscura is an independent engine. It is not Chromium, and its output is not pixel-identical to Chromium's.
 
 - It has no `Input.insertText` and no `Browser.setDownloadBehavior`.
