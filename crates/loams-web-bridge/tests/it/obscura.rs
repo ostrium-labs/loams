@@ -7,7 +7,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use loams_web_bridge::cdp::CdpEvent;
-use loams_web_bridge::testing::{FakeCdp, FakeTransport, obscura_answers, read_page};
+use loams_web_bridge::testing::{
+    FakeCdp, FakeEndpoint, FakeTransport, obscura_answers, obscura_over_endpoint, read_page,
+};
 use loams_web_bridge::{
     BridgeError, BrowserProvider, MapSecretResolver, ObscuraProvider, OpenRequest, ProviderKind,
     SecretRef, ServiceEndpoint, WebBridgeConfig,
@@ -317,4 +319,76 @@ async fn a_secret_fill_is_refused_by_default_on_both_kinds() {
             .unwrap_or_else(|| panic!("{} refuses a secret fill", kind.as_str()));
         assert!(matches!(error, BridgeError::Policy(_)), "{error:?}");
     }
+}
+
+#[tokio::test]
+async fn downloads_are_denied_on_every_connection_and_never_claimed() {
+    let cdp = Arc::new(FakeCdp::new(obscura_answers(URL)));
+    let (_transport, provider) = service(&service_config(), cdp.clone());
+    assert!(!provider.capabilities().downloads);
+    provider
+        .open(OpenRequest::blank())
+        .await
+        .unwrap_or_else(|error| panic!("{error}"));
+    let calls = cdp.calls();
+    let deny = calls
+        .iter()
+        .position(|call| call.starts_with("Browser.setDownloadBehavior"))
+        .unwrap_or_else(|| panic!("downloads are denied: {calls:?}"));
+    let context = calls
+        .iter()
+        .position(|call| call.starts_with("Target.createBrowserContext"))
+        .unwrap_or_else(|| panic!("{calls:?}"));
+    assert!(deny < context, "denied before the page exists: {calls:?}");
+}
+
+#[tokio::test]
+async fn an_engine_that_refuses_the_download_call_still_opens_a_page() {
+    let mut cdp = FakeCdp::new(obscura_answers(URL));
+    cdp.refuses = vec!["Browser.setDownloadBehavior".to_string()];
+    let (_transport, provider) = service(&service_config(), Arc::new(cdp));
+    provider
+        .open(OpenRequest::blank())
+        .await
+        .unwrap_or_else(|error| panic!("a refused download call is not fatal: {error}"));
+    assert!(!provider.capabilities().downloads);
+}
+
+#[tokio::test]
+async fn shutdown_closes_every_page_before_stopping_the_engine() {
+    let cdp = Arc::new(FakeCdp::new(obscura_answers(URL)));
+    let config = WebBridgeConfig::default();
+    let endpoint = Arc::new(
+        FakeEndpoint::new(ProviderKind::Local, "fake-engine-token-0123456789abcdef")
+            .recording_into(cdp.clone()),
+    );
+    let provider = obscura_over_endpoint(endpoint, &config, cdp.clone(), resolver());
+    for _ in 0..2 {
+        provider
+            .open(OpenRequest::blank())
+            .await
+            .unwrap_or_else(|error| panic!("{error}"));
+    }
+    provider.shutdown().await;
+    let calls = cdp.calls();
+    let disposed: Vec<usize> = calls
+        .iter()
+        .enumerate()
+        .filter(|(_, call)| call.starts_with("Target.disposeBrowserContext"))
+        .map(|(index, _)| index)
+        .collect();
+    assert_eq!(disposed.len(), 2, "{calls:?}");
+    let stopped = calls
+        .iter()
+        .position(|call| call == "endpoint.shutdown")
+        .unwrap_or_else(|| panic!("the endpoint was stopped: {calls:?}"));
+    assert!(
+        disposed.iter().all(|index| *index < stopped),
+        "pages close before the engine stops: {calls:?}"
+    );
+    assert_eq!(
+        calls.iter().filter(|call| call.as_str() == "close").count(),
+        2,
+        "each page's connection is closed: {calls:?}"
+    );
 }

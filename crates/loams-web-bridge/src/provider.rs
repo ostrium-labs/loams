@@ -96,6 +96,10 @@ pub struct Capabilities {
     pub tabs: bool,
     /// The caller's own machine holds the credentials.
     pub credentials_stay_local: bool,
+    /// The browser can save a download to disk. A provider that answers
+    /// `false` never claims a download happened; a link that would download
+    /// does nothing (Obscura 0.2.3 has no download path at all).
+    pub downloads: bool,
 }
 
 /// A browser a provider drives.
@@ -201,4 +205,9 @@ pub trait BrowserProvider: Send + Sync + fmt::Debug {
     /// Close the page. Closing an unknown or already closed handle is not an
     /// error, so a caller can always clean up.
     async fn close(&self, page: &PageRef) -> Result<(), BridgeError>;
+
+    /// Close every page and stop whatever the provider started, pages first
+    /// (an engine may save a connection's state only when it closes). The
+    /// default does nothing, for providers that start nothing.
+    async fn shutdown(&self) {}
 }

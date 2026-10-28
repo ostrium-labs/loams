@@ -1,0 +1,1 @@
+SELECT g, sum(u8) AS s FROM t28 GROUP BY g HAVING count() > 1 ORDER BY s DESC

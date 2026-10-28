@@ -337,6 +337,8 @@ impl World {
             vault: Arc::new(MemoryVault::default()),
             node: Some(PathBuf::from("/usr/bin/node")),
             registry: NPM_REGISTRY.into(),
+            identity: None,
+            machine_users: None,
         }
     }
 }

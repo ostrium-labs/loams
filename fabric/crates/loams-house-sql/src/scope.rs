@@ -454,8 +454,14 @@ impl Scope<'_> {
         out: &mut Vec<Source>,
     ) -> Result<(), ChError> {
         match t {
-            TableFactor::Table { name, alias, .. } => {
-                let cols = self.table_columns(name);
+            TableFactor::Table {
+                name, alias, args, ..
+            } => {
+                let cols = if args.is_some() {
+                    table_function_columns(name)
+                } else {
+                    self.table_columns(name)
+                };
                 let parts: Vec<Ident> = name
                     .0
                     .iter()
@@ -1488,4 +1494,23 @@ impl Walk for Subst<'_, '_> {
     fn query(&mut self, q: &mut Query) -> Result<(), ChError> {
         self.scope.query(q, self.for_subqueries).map(|_| ())
     }
+}
+
+/// The columns of a table function the guard lets through (plan HE1 Task
+/// 38): `numbers*` give `number UInt64`, `zeros*` give `zero UInt8`.
+fn table_function_columns(name: &ObjectName) -> Option<Vec<Col>> {
+    let written = match name.0.as_slice() {
+        [ObjectNamePart::Identifier(i)] => i.value.as_str(),
+        _ => return None,
+    };
+    let (column, data_type) = match written {
+        "numbers" | "numbers_mt" => ("number", DataType::UInt64),
+        "zeros" | "zeros_mt" => ("zero", DataType::UInt8),
+        _ => return None,
+    };
+    Some(vec![Col {
+        name: column.to_string(),
+        internal: column.to_string(),
+        data_type: Some(data_type),
+    }])
 }

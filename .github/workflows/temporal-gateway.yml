@@ -100,7 +100,8 @@ jobs:
   # the Go and TypeScript job: each brings up its own profile stack and runs
   # only its own leg (SDK_LEGS=<sdk>; conformance/compute/temporal/gateway/legs/<sdk>.sh).
   # SDK lanes append their SDK to `sdk`. Python: temporalio under uv in the
-  # pinned PYTHON_IMAGE (pins.env TEMPORAL_SDK_PY, UV_VERSION).
+  # pinned PYTHON_IMAGE (pins.env TEMPORAL_SDK_PY, UV_VERSION). .NET: Temporalio
+  # in the pinned DOTNET_IMAGE (pins.env TEMPORAL_SDK_DOTNET; D2140).
   # Java: io.temporal:temporal-sdk with Maven in the pinned MAVEN_IMAGE
   # (pins.env TEMPORAL_SDK_JAVA; lane TSDK-java, D2132).
   sdk-leg:
@@ -112,7 +113,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        sdk: [python, java]
+        sdk: [python, dotnet, java]
     env:
       OC_OUT: ${{ github.workspace }}/target/compute
       DOCKER_BUILDKIT: '1'

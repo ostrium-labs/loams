@@ -211,6 +211,19 @@ pub fn format_double(d: f64) -> String {
     format!("{d}")
 }
 
+/// A float as `INCRBYFLOAT` and `HINCRBYFLOAT` store and reply with it:
+/// plain decimal notation, never an exponent, no trailing zeros, the
+/// shortest digits that read back to the same `f64` (Valkey's human mode
+/// prints a long double with 17 decimals and trims; for values beyond 17
+/// significant digits the two can differ in the last digits). `-0` is
+/// written `0`. The caller has refused NaN and infinities.
+pub fn format_float_human(d: f64) -> String {
+    if d == 0.0 {
+        return "0".into();
+    }
+    format!("{d}")
+}
+
 /// A protocol error. Its text is Valkey's (`Protocol error: …`), replied as
 /// `-ERR <text>` before the connection closes.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -727,5 +740,15 @@ mod tests {
         ] {
             assert_eq!(format_double(d), text);
         }
+    }
+
+    #[test]
+    fn human_floats() {
+        assert_eq!(super::format_float_human(10.5 + 0.1), "10.6");
+        assert_eq!(super::format_float_human(5200.0), "5200");
+        assert_eq!(super::format_float_human(-0.0), "0");
+        assert_eq!(super::format_float_human(-1.25), "-1.25");
+        assert_eq!(super::format_float_human(1e20), "100000000000000000000");
+        assert_eq!(super::format_float_human(1e-7), "0.0000001");
     }
 }

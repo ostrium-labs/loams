@@ -1,17 +1,19 @@
 //! [`Engine`]: plans a statement with `loams-house-sql` and runs it with
 //! DataFusion over the engine's catalog.
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 
 use datafusion::arrow::array::RecordBatch;
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::common::DataFusionError;
 use datafusion::execution::SessionStateBuilder;
-use loams_house_sql::{Registry, prepare};
+use loams_house_sql::{Command, Registry, command};
 use loams_house_types::ChError;
 
 use crate::catalog::MemCatalog;
 use crate::settings::{Settings, Shape, memory_limit_exceeded, merging_engine, timeout_exceeded};
+use crate::system::{InlineTable, QueryCatalog, SystemTables};
 
 /// A statement's answer.
 #[derive(Debug)]
@@ -32,6 +34,8 @@ pub struct Engine {
     /// The tables.
     pub catalog: Arc<MemCatalog>,
     registry: Registry,
+    /// `system` tables the front sent (plan HE1 Tasks 38–39), by name.
+    inline: RwLock<HashMap<String, InlineTable>>,
 }
 
 impl Default for Engine {
@@ -46,12 +50,29 @@ impl Engine {
         Self {
             catalog: Arc::new(MemCatalog::default()),
             registry: crate::registry::registry(),
+            inline: RwLock::new(HashMap::new()),
         }
     }
 
     /// The engine's functions (planning a lake table's catalog expressions).
     pub fn registry(&self) -> &Registry {
         &self.registry
+    }
+
+    /// Serves `system.<table.name>` as `table` holds it, in place of what the
+    /// engine fills from its catalog (plan HE1 Task 38; the front's
+    /// `TablePin::Inline` in Task 39).
+    ///
+    /// # Errors
+    ///
+    /// A table the engine does not serve, or columns that are not its
+    /// shape.
+    pub fn set_inline(&self, table: InlineTable) -> Result<(), ChError> {
+        table.check()?;
+        if let Ok(mut i) = self.inline.write() {
+            i.insert(table.name.clone(), table);
+        }
+        Ok(())
     }
 
     /// Runs one `SELECT` with `params` (`param_<name>` values) and request
@@ -70,7 +91,42 @@ impl Engine {
         // The request's settings first, as ClickHouse checks them before it
         // parses the statement (D1805: refused, never ignored).
         Settings::resolve(settings)?;
-        let prepared = prepare(sql, params, self.catalog.as_ref(), &self.registry, database)?;
+        // What `system.settings`, `timezone()` and `currentDatabase()` answer
+        // (plan HE1 Task 38): the request's settings and the statement's own,
+        // read before planning; a statement that does not parse fails below.
+        let early = Settings::resolve(settings.iter().chain(&statement_settings(sql, params)))
+            .unwrap_or_default();
+        let registry =
+            crate::system::functions::for_statement(&self.registry, database, early.timezone());
+        let inline = self.inline.read().map(|i| i.clone()).unwrap_or_default();
+        let catalog = QueryCatalog::new(
+            self.catalog.as_ref(),
+            SystemTables::new(
+                self.catalog.as_ref(),
+                &registry,
+                crate::system::settings::rows(&early),
+                inline,
+            ),
+        );
+        let prepared = match command(sql, params, &catalog, &registry, database) {
+            Ok(Command::Query(p)) => p,
+            Ok(Command::Meta {
+                meta,
+                settings: own,
+                format,
+            }) => {
+                let applied = Settings::resolve(settings.iter().chain(&own))?;
+                let (schema, batches) =
+                    crate::system::meta::answer(self.catalog.as_ref(), &meta, database)?;
+                return Ok(Answer {
+                    schema,
+                    batches,
+                    format,
+                    settings: applied,
+                });
+            }
+            Err(e) => return Err(catalog.take_error().unwrap_or(e)),
+        };
         let applied = Settings::resolve(settings.iter().chain(&prepared.settings))?;
         let shape = Shape::of(
             sql,
@@ -189,4 +245,13 @@ fn named(
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| ChError::logical_error(e.to_string()))?;
     Ok((renamed, batches))
+}
+
+/// The statement's own `SETTINGS`, read without planning it (empty when it
+/// does not bind or tokenize; planning reports that).
+fn statement_settings(sql: &str, params: &[(String, String)]) -> Vec<(String, String)> {
+    loams_house_sql::params::bind(sql, params)
+        .and_then(|bound| loams_house_sql::lex::pre_pass(&bound))
+        .map(|pre| pre.marks.settings)
+        .unwrap_or_default()
 }
