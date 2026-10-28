@@ -27,6 +27,8 @@ pub mod params;
 pub mod plan;
 pub mod rewrite;
 pub mod scope;
+pub mod temporal;
+pub mod untuple;
 
 pub use context::{Catalog, HouseContext, Registry};
 pub use guard::{Resolution, TableRead};

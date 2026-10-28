@@ -89,6 +89,56 @@ message MutableState {
   // rejected and aborted ones stay so a retried update ID or a
   // `PollWorkflowExecutionUpdate` gets the same outcome.
   repeated UpdateInfo updates = 26;
+  // Child workflows initiated and not yet closed (TMP-api D2087).
+  repeated ChildInfo children = 27;
+  // The parent, when this run is a child workflow.
+  ParentInfo parent = 28;
+  // Signals to, and cancel requests of, other workflows that are initiated
+  // and not yet answered: initiated event ID -> its target.
+  repeated ExternalInfo external_signals = 29;
+  repeated ExternalInfo external_cancels = 30;
+  // Waiting for the first workflow task's backoff (a continued run's
+  // `backoff_start_interval`): no workflow task until it passes.
+  bool first_task_backoff = 31;
+  // The parent close policy of each child is in ChildInfo; this run's own
+  // memo and search attributes, as upserted.
+  .temporal.api.common.v1.Memo memo = 32;
+  .temporal.api.common.v1.SearchAttributes search_attributes = 33;
+  // The Temporal namespace's name (children started in "the same
+  // namespace" record it); empty for runs folded from history.
+  string namespace_name = 34;
+  // The request IDs of the last signals (at most 100): a signal repeated
+  // with one of them is a retry and is not written again (D2089).
+  repeated string signal_request_ids = 35;
+}
+
+message ChildInfo {
+  int64 initiated_event_id = 1;
+  // 0 until the child has started.
+  int64 started_event_id = 2;
+  string namespace = 3;
+  string namespace_id = 4;
+  string workflow_id = 5;
+  string run_id = 6;
+  string workflow_type = 7;
+  // temporal.api.enums.v1.ParentClosePolicy.
+  int32 parent_close_policy = 8;
+}
+
+message ParentInfo {
+  string namespace = 1;
+  string namespace_id = 2;
+  string workflow_id = 3;
+  string run_id = 4;
+  int64 initiated_event_id = 5;
+}
+
+message ExternalInfo {
+  int64 initiated_event_id = 1;
+  string namespace = 2;
+  string namespace_id = 3;
+  string workflow_id = 4;
+  string run_id = 5;
 }
 
 // Where a workflow update is in its lifecycle (Temporal's update protocol:

@@ -213,16 +213,14 @@ export function GroupPage({
         { groupId, a: firstMember },
         { signal },
       );
-      return res.matrix.map(
-        (row): ComparisonRowView => ({
-          path: row.path,
-          perMember: row.perMember.map((d) => ({
-            chatId: d.chatId,
-            additions: d.additions,
-            deletions: d.deletions,
-          })),
-        }),
-      );
+      return res.matrix.map((row): ComparisonRowView => ({
+        path: row.path,
+        perMember: row.perMember.map((d) => ({
+          chatId: d.chatId,
+          additions: d.additions,
+          deletions: d.deletions,
+        })),
+      }));
     },
   });
 

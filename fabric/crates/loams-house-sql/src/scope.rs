@@ -1135,38 +1135,51 @@ impl Walk for ColumnsIn<'_> {
             }
             return Ok(());
         }
-        if let Expr::Function(f) = e {
-            if let FunctionArguments::List(list) = &mut f.args {
-                let mut args = Vec::new();
-                for a in std::mem::take(&mut list.args) {
-                    match a {
-                        FunctionArg::Unnamed(FunctionArgExpr::Expr(x)) if is_columns(&x) => {
-                            let Expr::Function(cf) = &x else {
-                                unreachable!()
-                            };
-                            match matched(self.sources, &plain_args(cf))? {
-                                Some(found) => {
-                                    args.extend(found.into_iter().map(|m| {
-                                        FunctionArg::Unnamed(FunctionArgExpr::Expr(m.expr))
-                                    }))
-                                }
-                                None => {
-                                    self.failed = true;
-                                    args.push(FunctionArg::Unnamed(FunctionArgExpr::Expr(x)));
-                                }
+        if let Expr::Function(f) = e
+            && let FunctionArguments::List(list) = &mut f.args
+        {
+            let mut args = Vec::new();
+            for a in std::mem::take(&mut list.args) {
+                match a {
+                    FunctionArg::Unnamed(FunctionArgExpr::Expr(x)) if is_columns(&x) => {
+                        let Expr::Function(cf) = &x else {
+                            unreachable!()
+                        };
+                        match matched(self.sources, &plain_args(cf))? {
+                            Some(found) => args.extend(
+                                found
+                                    .into_iter()
+                                    .map(|m| FunctionArg::Unnamed(FunctionArgExpr::Expr(m.expr))),
+                            ),
+                            None => {
+                                self.failed = true;
+                                args.push(FunctionArg::Unnamed(FunctionArgExpr::Expr(x)));
                             }
                         }
-                        other => args.push(other),
                     }
+                    other => args.push(other),
                 }
-                list.args = args;
             }
+            list.args = args;
         }
         children(e, self)
     }
 
     fn query(&mut self, _q: &mut Query) -> Result<(), ChError> {
         Ok(())
+    }
+}
+
+/// `untuple` of an expression the plan types: left as one select item for
+/// [`crate::untuple`] to expand after `SqlToRel` (plan HE1 Task 32).
+fn deferred_untuple(e: &Expr, alias: Option<&Ident>) -> SelectItem {
+    let alias = match alias.filter(|a| !is_generated(a)) {
+        Some(a) => a.clone(),
+        None => generated(&names::column_name(e)),
+    };
+    SelectItem::ExprWithAlias {
+        expr: e.clone(),
+        alias,
     }
 }
 
@@ -1212,16 +1225,12 @@ fn untuple(
                     ));
                 }
                 None => {
-                    return Err(ChError::not_implemented(
-                        "untuple of an expression whose type is known only after planning is not supported by the Loams House engine yet",
-                    ));
+                    return Ok(vec![deferred_untuple(e, alias)]);
                 }
             }
         }
         _ => {
-            return Err(ChError::not_implemented(
-                "untuple of an expression whose type is known only after planning is not supported by the Loams House engine yet",
-            ));
+            return Ok(vec![deferred_untuple(e, alias)]);
         }
     };
     let base = names::column_name(&arg);

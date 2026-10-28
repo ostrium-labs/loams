@@ -164,6 +164,7 @@ fn plan_guarded(
     let plan = SqlToRel::new_with_options(&ctx, options)
         .sql_statement_to_plan(statement)
         .map_err(ch_error)?;
+    let plan = crate::untuple::expand(plan, registry).map_err(ch_error)?;
     Ok(Prepared {
         plan,
         resolution,

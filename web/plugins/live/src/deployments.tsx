@@ -388,7 +388,7 @@ export function LogsCard({
           role="log"
           aria-live="polite"
           aria-label="Function log lines"
-          // biome-ignore lint/a11y/noNoninteractiveTabindex: the scrolled log must be reachable by keyboard
+          // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- the scrolled log must be reachable by keyboard
           tabIndex={0}
           className={
             /* mono-ok: code */ 'font-mono text-small border border-rule rounded p-2 overflow-auto max-h-80'
@@ -447,7 +447,7 @@ export function DeploymentsPage({
 
   const reload = useCallback(() => setTick((n) => n + 1), []);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `tick` is the reload trigger
+  // oxlint-disable-next-line react/exhaustive-deps -- `tick` is the reload trigger
   useEffect(() => {
     const ctl = new AbortController();
     Promise.all([api.listDeployments(ctl.signal), api.workerHealth?.(ctl.signal)])
@@ -466,7 +466,7 @@ export function DeploymentsPage({
     return () => ctl.abort();
   }, [api, tick]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `tick` reloads the detail after an activation
+  // oxlint-disable-next-line react/exhaustive-deps -- `tick` reloads the detail after an activation
   useEffect(() => {
     if (!selected) {
       setDetail(undefined);

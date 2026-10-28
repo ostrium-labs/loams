@@ -5,6 +5,12 @@ All notable changes to this project are documented here. The format follows [Kee
 ## [Unreleased]
 
 ### Added
+- **The Temporal gateway ships as an image (preview).** `ghcr.io/ostrium-labs/loams-temporal` is
+  built and attested with the other release images, and `compose.compute.yaml` runs it as the
+  profile `temporal-gateway`: in the engine's network namespace, on its own `loams_temporal`
+  database and the engine's Resonate, with API keys and no host port (deploy/release/README.md,
+  "The Temporal gateway"). The Go and TypeScript SDK legs run through that profile on pull
+  requests that touch the gateway. The gateway now refuses task-token keys shorter than 32 bytes.
 - **Loams Desktop can update itself from product releases.** A `vX.Y.Z` release now keeps its
   signed update manifests (`latest*.yml` + `.sig`), and the desktop release run promotes them onto
   the `desktop-latest` feed, which Windows and Linux AppImage installs update from (deb, rpm,

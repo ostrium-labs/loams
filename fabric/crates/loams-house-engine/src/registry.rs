@@ -42,6 +42,13 @@ pub fn registry() -> Registry {
     loams_house_exec::ops::scalars()
         .into_iter()
         .for_each(|f| _ = r.scalars.insert(f.name().into(), f));
+    // Arrays, maps, tuples and lambdas (plan HE1 Task 32).
+    loams_house_exec::func::arrays::register(&mut r);
+    loams_house_exec::func::maps::register(&mut r);
+    loams_house_exec::func::tuples::register(&mut r);
+    loams_house_exec::func::lambda::register(&mut r);
+    // Date and time functions (plan HE1 Task 30).
+    loams_house_exec::func::datetime::register(&mut r);
     crate::system::functions::register(&mut r);
     r
 }

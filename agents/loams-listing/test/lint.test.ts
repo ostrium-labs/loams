@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { hasErrors, lint, RULES } from '../src/lint.js';
 import { satisfies } from '../src/semver.js';
 import { fixture, invalidCases, patched, validFixtures } from './helpers.js';

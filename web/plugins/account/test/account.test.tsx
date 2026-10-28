@@ -10,7 +10,7 @@ import {
 import type { FlagsService } from '@loams/console-host';
 import { auth } from '@loams/proto';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 import { safeNext } from '../src/index.js';
 import { ConsentPage, SetupPage, SignInPage } from '../src/pages.js';
 
