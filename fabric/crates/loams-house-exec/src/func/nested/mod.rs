@@ -108,7 +108,7 @@ enum Nulls {
 /// A ClickHouse function over composite types as a DataFusion scalar
 /// function.
 pub struct Composite {
-    name: String,
+    ch_name: String,
     internal: String,
     signature: Signature,
     typer: Typer,
@@ -120,7 +120,7 @@ pub struct Composite {
 impl fmt::Debug for Composite {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Composite")
-            .field("name", &self.name)
+            .field("name", &self.ch_name)
             .finish_non_exhaustive()
     }
 }
@@ -145,7 +145,7 @@ impl Composite {
     /// handling.
     pub fn new(name: &str, typer: Typer, kernel: Kernel) -> Self {
         Self {
-            name: name.to_string(),
+            ch_name: name.to_string(),
             internal: internal_name(name),
             signature: Signature::user_defined(Volatility::Immutable),
             typer,
@@ -316,6 +316,8 @@ pub fn element_of<'t>(name: &str, types: &'t [ChType], i: usize) -> Result<&'t C
 }
 
 impl ScalarUDFImpl for Composite {
+    // DataFusion looks the function up by its internal name.
+    #[allow(clippy::misnamed_getters)]
     fn name(&self) -> &str {
         &self.internal
     }
@@ -331,7 +333,7 @@ impl ScalarUDFImpl for Composite {
     fn return_type(&self, _arg_types: &[DataType]) -> Result<DataType> {
         Err(DataFusionError::Internal(format!(
             "{} is typed by return_field_from_args",
-            self.name
+            self.ch_name
         )))
     }
 
@@ -345,7 +347,7 @@ impl ScalarUDFImpl for Composite {
         let t = self
             .result_type(&types, args.scalar_arguments)
             .map_err(df)?;
-        Ok(Arc::new(to_arrow(&self.name, &t).map_err(df)?))
+        Ok(Arc::new(to_arrow(&self.ch_name, &t).map_err(df)?))
     }
 
     fn invoke_with_args(&self, args: ScalarFunctionArgs) -> Result<ColumnarValue> {
@@ -388,7 +390,7 @@ impl ScalarUDFImpl for Composite {
             Nulls::Default => (full.iter().map(strip_top).collect(), strip_top(&ret)),
         };
         let out = (self.kernel)(&Call {
-            name: &self.name,
+            name: &self.ch_name,
             args: &arrays,
             consts: &consts,
             types: &types,

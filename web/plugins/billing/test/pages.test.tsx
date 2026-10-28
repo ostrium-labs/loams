@@ -4,7 +4,7 @@
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import plugin, {
   BillingBanner,
   BillingSectionPage,
@@ -87,7 +87,10 @@ describe('Settings › Billing', () => {
   });
 
   it('Spend controls turn overage on with a cap, after a confirmation', async () => {
-    const client = createMockBillingClient({ now: () => NOW, paymentState: 'card' });
+    const client = createMockBillingClient({
+      now: () => NOW,
+      paymentState: 'card',
+    });
     const set = vi.spyOn(client, 'setSpendControls');
     page('spend', client);
     fireEvent.click(await screen.findByRole('switch', { name: /Allow overage/ }));
@@ -110,17 +113,27 @@ describe('Settings › Billing', () => {
   it('a person without billing_admin cannot change spend controls', async () => {
     page(
       'spend',
-      createMockBillingClient({ now: () => NOW, paymentState: 'card', billingAdmin: false }),
+      createMockBillingClient({
+        now: () => NOW,
+        paymentState: 'card',
+        billingAdmin: false,
+      }),
     );
     expect(await screen.findByText('Read only')).toBeTruthy();
     expect(
-      (screen.getByRole('button', { name: 'Save spend controls' }) as HTMLButtonElement).disabled,
+      (
+        screen.getByRole('button', {
+          name: 'Save spend controls',
+        }) as HTMLButtonElement
+      ).disabled,
     ).toBe(true);
   });
 
   it('Payment links only to the provider’s hosted page', async () => {
     page('payment', createMockBillingClient({ now: () => NOW }));
-    const link = await screen.findByRole('link', { name: /Add a card on Stripe/ });
+    const link = await screen.findByRole('link', {
+      name: /Add a card on Stripe/,
+    });
     expect(link.getAttribute('href')).toMatch(/^https:\/\/billing\.stripe\.com\//);
     expect(link.getAttribute('rel')).toContain('noopener');
     expect(document.querySelector('input[autocomplete^="cc-"]')).toBeNull();
@@ -129,8 +142,12 @@ describe('Settings › Billing', () => {
   it('Alerts adds a rule and shows a new endpoint’s secret once', async () => {
     page('alerts', createMockBillingClient({ now: () => NOW }));
     await screen.findByRole('heading', { name: 'Threshold rules' });
-    fireEvent.change(screen.getByLabelText('Feature'), { target: { value: 'house_cpu' } });
-    fireEvent.change(screen.getByLabelText(/Thresholds/), { target: { value: '50, 90' } });
+    fireEvent.change(screen.getByLabelText('Feature'), {
+      target: { value: 'house_cpu' },
+    });
+    fireEvent.change(screen.getByLabelText(/Thresholds/), {
+      target: { value: '50, 90' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Add rule' }));
     expect(await screen.findByText('50%, 90%, and of the spend cap')).toBeTruthy();
 
@@ -140,7 +157,8 @@ describe('Settings › Billing', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add endpoint' }));
     expect(await screen.findByText('Signing secret')).toBeTruthy();
     expect(screen.getByText(/^whsec_sample/)).toBeTruthy();
-    expect(screen.getByText('https://example.org/hook')).toBeTruthy();
+    // The list rereads after the secret is shown.
+    expect(await screen.findByText('https://example.org/hook')).toBeTruthy();
     expect(screen.getByText('503')).toBeTruthy();
   });
 });
@@ -163,7 +181,10 @@ describe('the banner', () => {
     const base = await client.usage();
     const warnOnly: BillingClient = {
       ...client,
-      usage: async () => ({ ...base, features: base.features.filter((f) => f.hasAccess) }),
+      usage: async () => ({
+        ...base,
+        features: base.features.filter((f) => f.hasAccess),
+      }),
     };
     render(<BillingBanner client={warnOnly} navigate={vi.fn()} />);
     const banner = await screen.findByRole('status');
@@ -174,7 +195,7 @@ describe('the banner', () => {
 });
 
 describe('the plugin', () => {
-  it('registers Settings › Billing, its sections, the nav entry and the banner', () => {
+  it('registers Settings › Billing, the operator view, their nav entries and the banner', () => {
     const pages = new Map<string, (p: { params: Record<string, string> }) => ReactNode>();
     const slots: { name: string; meta?: unknown }[] = [];
     const ctx = {
@@ -192,8 +213,27 @@ describe('the plugin', () => {
       },
     };
     (plugin as { apply(ctx: never, config: unknown): void }).apply(ctx as never, {});
-    expect([...pages.keys()]).toEqual(['/settings/billing', '/settings/billing/:section']);
-    expect(slots.map((s) => s.name)).toEqual(['shell.nav.section', 'shell.topbar.center']);
-    expect(slots[0]?.meta).toMatchObject({ label: 'Billing', group: 'Settings' });
+    expect([...pages.keys()]).toEqual([
+      '/settings/billing',
+      '/settings/billing/:section',
+      '/operator/meters',
+      '/operator/plans',
+      '/operator/customers',
+      '/operator/customers/:customer',
+      '/operator/meter-health',
+    ]);
+    expect(slots.map((s) => s.name)).toEqual([
+      'shell.nav.section',
+      'shell.nav.section',
+      'shell.topbar.center',
+    ]);
+    expect(slots[0]?.meta).toMatchObject({
+      label: 'Billing',
+      group: 'Settings',
+    });
+    expect(slots[1]?.meta).toMatchObject({
+      label: 'Loams Meter',
+      group: 'Instance',
+    });
   });
 });

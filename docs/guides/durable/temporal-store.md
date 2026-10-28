@@ -164,8 +164,10 @@ LOAMS_TEMPORAL_TEST_PG_URL=postgres://postgres:pg@127.0.0.1:5432/postgres \
 the Postgres leg is skipped and each test prints a line saying so.
 
 In CI, the `Temporal store: Postgres 17` job (`.github/workflows/ci.yml`)
-runs the same command against a `postgres:17` service container whenever
-`crates/loams-temporal-store/**` changes.
+runs the same command against a `postgres:17` service container on every
+pull request and push that changes `crates/loams-temporal-store/**` or
+`crates/loams-temporal-frontend/**`, as well as in the nightly run and on a
+manual dispatch.
 
 To add a backend, add a `Backend` variant in `tests/store.rs`. Every test in
 the file then runs against it too.

@@ -268,6 +268,29 @@ impl Reason {
     }
 }
 
+/// A refusal by the meter's gate as a service error (design §63 §17.4):
+/// exhausted allowance and spend cap are `resource_exhausted`, a missing
+/// payment method or entitlement `failed_precondition`, an unreachable
+/// meter `unavailable`. Metadata carries `entitlement` and `reason`.
+pub fn entitlement_error(r: &loams_meter_gate::gate::Refusal) -> ServiceError {
+    use loams_meter_gate::gate::RefusalReason as R;
+    let reason = match r.reason {
+        R::EntitlementExhausted | R::SpendCapReached => Reason::ResourceExhausted,
+        R::PaymentMethodRequired | R::NotEntitled => Reason::FailedPrecondition,
+        R::MeterUnavailable => Reason::Unavailable,
+    };
+    let mut e = ServiceError::new(
+        reason,
+        format!("entitlement {} is refused: {}", r.feature, r.reason),
+    )
+    .with("entitlement", r.feature.clone())
+    .with("reason", r.reason.reason());
+    if let Some(after) = r.retry_after {
+        e = e.with("retry_after_s", after.as_secs().max(1).to_string());
+    }
+    e
+}
+
 /// A refused or failed call: a reason, a message for the caller and the
 /// reason's metadata. Never carries a secret or an internal address.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -431,6 +454,9 @@ pub struct PgService<N> {
     /// Kicks the reconciler after a role or database change, so running
     /// computes take the new spec now (Task 24); `None`: the resync does.
     kicker: Option<crate::reconcile::Kicker>,
+    /// The meter's gate, asked before a compute is woken (design §63
+    /// §10.2, ME1 Task 21); `NoGate` by default.
+    entitlements: loams_meter_gate::entitle::Entitlements,
 }
 
 impl<N: fmt::Debug> fmt::Debug for PgService<N> {
@@ -458,6 +484,7 @@ impl<N: NeonRead> PgService<N> {
             secrets,
             config,
             kicker: None,
+            entitlements: loams_meter_gate::entitle::Entitlements::default(),
         }
     }
 
@@ -466,6 +493,32 @@ impl<N: NeonRead> PgService<N> {
     pub fn with_kicker(mut self, kicker: crate::reconcile::Kicker) -> Self {
         self.kicker = Some(kicker);
         self
+    }
+
+    /// Asks the meter's gate before each compute wake (`StartEndpoint`,
+    /// `RestartEndpoint`).
+    #[must_use]
+    pub fn with_entitlements(
+        mut self,
+        entitlements: loams_meter_gate::entitle::Entitlements,
+    ) -> Self {
+        self.entitlements = entitlements;
+        self
+    }
+
+    /// Whether `namespace`'s org may run a Postgres compute now (§63 §10.2:
+    /// `check(pg_compute, 0)`, access at all). The compute's time is then
+    /// counted by its `postgres.compute` ticks.
+    pub(crate) fn may_wake(&self, namespace: &str) -> Result<(), ServiceError> {
+        self.entitlements
+            .check(
+                None,
+                namespace,
+                loams_meter_gate::entitle::features::PG_COMPUTE,
+                0,
+            )
+            .map(|_| ())
+            .map_err(|r| entitlement_error(&r))
     }
 
     /// Marks `project_id` for a reconciler pass, when there is a kicker.

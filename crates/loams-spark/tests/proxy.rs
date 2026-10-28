@@ -72,13 +72,13 @@ impl Fake {
     }
 }
 
+// With `generate_default_stubs`, tonic-build gives server-streaming methods
+// a `BoxStream` return type instead of an associated stream type; this is
+// the same type.
 type ExecStream = Pin<Box<dyn Stream<Item = Result<connect::ExecutePlanResponse, Status>> + Send>>;
 
 #[tonic::async_trait]
 impl SparkConnectService for Fake {
-    type ExecutePlanStream = ExecStream;
-    type ReattachExecuteStream = ExecStream;
-
     async fn config(
         &self,
         req: Request<connect::ConfigRequest>,

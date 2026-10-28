@@ -43,6 +43,7 @@ pub mod runtime;
 pub mod cli;
 pub mod connectors;
 pub mod sql_api;
+pub mod tls;
 
 pub use adapter::{AdapterConfig, AdapterError, Observation, ObservedPhase, RisingWaveAdapter};
 pub use engines::RisingWaveEngine;

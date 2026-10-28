@@ -33,6 +33,7 @@ def planned(group: str) -> str:
 
 
 SCHED = "lane TMP-sched (schedules and visibility)"
+SCHED_DONE = "implemented (TMP-sched)"
 LATER = "not planned yet"
 
 # RPC -> (status, note). Groups: A update, B signal-with-start/query/reset,
@@ -83,18 +84,18 @@ STATUS: dict[str, tuple[str, str]] = {
     # Visibility and schedules
     "ListOpenWorkflowExecutions": (SCHED, ""),
     "ListClosedWorkflowExecutions": (SCHED, ""),
-    "ListWorkflowExecutions": (SCHED, ""),
+    "ListWorkflowExecutions": (SCHED_DONE, ""),
     "ListArchivedWorkflowExecutions": (LATER, "no archival"),
-    "ScanWorkflowExecutions": (SCHED, ""),
-    "CountWorkflowExecutions": (SCHED, ""),
-    "GetSearchAttributes": (SCHED, ""),
-    "CreateSchedule": (SCHED, ""),
-    "DescribeSchedule": (SCHED, ""),
-    "UpdateSchedule": (SCHED, ""),
-    "PatchSchedule": (SCHED, ""),
-    "ListScheduleMatchingTimes": (SCHED, ""),
-    "DeleteSchedule": (SCHED, ""),
-    "ListSchedules": (SCHED, ""),
+    "ScanWorkflowExecutions": (SCHED_DONE, ""),
+    "CountWorkflowExecutions": (SCHED_DONE, ""),
+    "GetSearchAttributes": (SCHED_DONE, ""),
+    "CreateSchedule": (SCHED_DONE, ""),
+    "DescribeSchedule": (SCHED_DONE, ""),
+    "UpdateSchedule": (SCHED_DONE, ""),
+    "PatchSchedule": (SCHED_DONE, ""),
+    "ListScheduleMatchingTimes": (SCHED_DONE, ""),
+    "DeleteSchedule": (SCHED_DONE, ""),
+    "ListSchedules": (SCHED_DONE, ""),
     "CountSchedules": (SCHED, ""),
     # Worker versioning (build IDs)
     "UpdateWorkerBuildIdCompatibility": (LATER, "no routing by build ID yet"),

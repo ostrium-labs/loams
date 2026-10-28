@@ -194,6 +194,32 @@ pub fn subject_partition(subject: &str, partitions: u32) -> u32 {
     kafka_partition(subject.as_bytes(), partitions)
 }
 
+/// Translates an event the imported agent wrote (type `dev.loams.meter.v1`,
+/// JSON structured mode, as the record value) into the usage event of
+/// §63 §6, **keeping its `source` and `id`** so that a re-read deduplicates
+/// against the first read (§63 §21: the meter role translates these for one
+/// release). `None` for anything else, and for the imported agent's meters
+/// that the node agent never emitted (requests, durable counts).
+pub fn translate_legacy(structured_json: &[u8]) -> Option<CloudEvent> {
+    let event: MeterEvent = serde_json::from_slice(structured_json).ok()?;
+    if event.event_type != crate::event::EVENT_TYPE {
+        return None;
+    }
+    let translated = to_cloudevent(&event, DEFAULT_CLUSTER).ok()?;
+    let attrs = translated
+        .attrs()
+        .iter()
+        .cloned()
+        .map(|mut attr| {
+            if attr.name == "source" {
+                attr.value = event.source.clone();
+            }
+            attr
+        })
+        .collect();
+    CloudEvent::new(attrs, translated.data().cloned()).ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -270,6 +296,39 @@ mod tests {
         let data: Value = serde_json::from_slice(ce.data().unwrap()).unwrap();
         assert_eq!(data["byte_seconds"], 1834);
         assert_eq!(data["peak_bytes"], 4096);
+    }
+
+    #[test]
+    fn legacy_stream_event_translates_keeping_source_and_id() {
+        // As the imported agent wrote it to _system/_meter.
+        let legacy = serde_json::json!({
+            "specversion": "1.0",
+            "id": "node-7/cgroup/42",
+            "source": "loams-meter://node-7/cgroup",
+            "type": "dev.loams.meter.v1",
+            "subject": "org_a/prod",
+            "time": "2026-09-21T14:13:21Z",
+            "datacontenttype": "application/json",
+            "data": {
+                "org": "org_a", "namespace": "prod", "meter": "memory_byte_seconds",
+                "value": 2000, "window_start": "2026-09-21T14:13:20Z",
+                "window_end": "2026-09-21T14:13:21Z", "resource": "r#ino=1",
+                "counter": 5, "node": "node-7", "seq": 42
+            }
+        });
+        let ce = translate_legacy(&serde_json::to_vec(&legacy).unwrap()).unwrap();
+        assert_eq!(ce.ty(), NODE_MEMORY_TYPE);
+        assert_eq!(ce.id(), "node-7/cgroup/42");
+        assert_eq!(ce.source(), "loams-meter://node-7/cgroup");
+        assert_eq!(ce.attr("subject"), Some("org_a"));
+        let data: Value = serde_json::from_slice(ce.data().unwrap()).unwrap();
+        assert_eq!(data["byte_seconds"], 2000);
+        // A meter the agent never emitted, and a new-format event, are not
+        // translated.
+        let mut requests = legacy.clone();
+        requests["data"]["meter"] = "requests".into();
+        assert!(translate_legacy(&serde_json::to_vec(&requests).unwrap()).is_none());
+        assert!(translate_legacy(b"{}").is_none());
     }
 
     #[test]

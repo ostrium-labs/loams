@@ -1,0 +1,1 @@
+SELECT toDateTime64('2024-03-05 10:00:00.123456', 3), toDateTime64(1700000000, 3), toDateTime64(1700000000123, 3), toDateTime64('1899-12-31 00:00:00', 3), toDateTime64(-1.5, 3), toDateTime64('2024-03-05 10:00:00.5', 0), toDateTime64(1700000000.5, 3, 'UTC')

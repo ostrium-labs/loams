@@ -26,6 +26,8 @@ set +e; run env CONFLUENT_CI_ENVIRONMENT='env-x;rm' "$s" reap --dry-run >/dev/nu
 [[ $rc != 0 ]] && ok "a malformed environment id is refused" || bad "env-x;rm accepted"
 grep -q 'keep key KEYOTHERENV5' <<<"$out" && ! grep -q 'WOULD DELETE API key KEYOTHERENV5' <<<"$out" \
   && ok "reaper_keeps_keys_outside_the_environment (API keys are listed org-wide)" || bad "a key outside the environment would be deleted: $out"
+! grep -E 'WOULD DELETE.*(lkc-bench0006|KEYBENCH0006)' <<<"$out" >/dev/null && grep -q 'REPORT: cluster lkc-bench0006' <<<"$out" \
+  && ok "reaper_keeps_other_work_in_loams_ci (only loams-ci-<run id> names; the CFB benchmark is reported)" || bad "a non-run cluster or key would be deleted: $out"
 # Without fixtures, only loams-ci (env-3kqygo) is accepted; refused before any API call.
 set +e; o3="$(env -u CONFLUENT_CI_FIXTURES CONFLUENT_CLOUD_API_KEY=x CONFLUENT_CLOUD_API_SECRET=x CONFLUENT_API_URL=http://127.0.0.1:9 \
   CONFLUENT_CI_ENVIRONMENT=env-test01 CONFLUENT_CI_WORK="$(mktemp -d)" "$s" reap --dry-run 2>&1)"; rc=$?; set -e
