@@ -1555,7 +1555,9 @@ pub fn parse_create_dictionary(text: &str) -> Result<CreateDictionary, HouseErro
         }
         let ty = entry[start..end].trim();
         let ch_type = crate::views::printable_type(ty).ok_or_else(|| {
-            syntax(format!("Dictionary attribute {name}: {ty:?} is not a type the House reads"))
+            syntax(format!(
+                "Dictionary attribute {name}: {ty:?} is not a type the House reads"
+            ))
         })?;
         out.attributes.push(DictionaryAttribute {
             name,
@@ -1625,7 +1627,9 @@ pub fn parse_create_dictionary(text: &str) -> Result<CreateDictionary, HouseErro
             let close = c
                 .closing(open)
                 .ok_or_else(|| syntax(format!("Unbalanced parentheses in {word}")))?;
-            let inside = text[c.toks[open].end..c.toks[close].start].trim().to_string();
+            let inside = text[c.toks[open].end..c.toks[close].start]
+                .trim()
+                .to_string();
             c.at = close + 1;
             match word.as_str() {
                 "LIFETIME" => out.lifetime = Some(inside),
@@ -1735,7 +1739,11 @@ pub struct CreateFunction {
 impl CreateFunction {
     /// The statement as `SHOW CREATE FUNCTION` would print it.
     pub fn render(&self) -> String {
-        format!("CREATE FUNCTION {} AS {}", quote_name(&self.name), self.lambda)
+        format!(
+            "CREATE FUNCTION {} AS {}",
+            quote_name(&self.name),
+            self.lambda
+        )
     }
 }
 
@@ -1755,7 +1763,10 @@ pub fn parse_create_function(text: &str) -> Result<CreateFunction, HouseError> {
         .chars()
         .next()
         .is_some_and(|ch| ch.is_ascii_alphabetic() || ch == '_')
-        && out.name.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_');
+        && out
+            .name
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_');
     if !plain {
         return Err(syntax(format!(
             "A function's name is a plain identifier, not {:?}",
@@ -3432,9 +3443,7 @@ pub async fn execute(
             let database = db_of(&dictionary.database);
             // A query source is held to the deny list as a view's body is.
             if let Some(query) = &dictionary.source.query {
-                oracle
-                    .check(&crate::views::analysable(query))
-                    .await?;
+                oracle.check(&crate::views::analysable(query)).await?;
             }
             create_dictionary(lake, namespace, &database, &dictionary).await?;
             Ok(Answer::Done)
@@ -3442,7 +3451,9 @@ pub async fn execute(
         Kind::CreateFunction => {
             let function = parse_create_function(text)?;
             // The lambda is held to the deny list as a query's expressions are.
-            oracle.check(&format!("SELECT ({})", function.lambda)).await?;
+            oracle
+                .check(&format!("SELECT ({})", function.lambda))
+                .await?;
             if oracle.builtin_function(&function.name).await? {
                 return Err(clickhouse_error(
                     609,
@@ -3626,7 +3637,12 @@ pub(crate) fn view_creation(
 
 /// Whether a catalog entry is a dictionary (HE1 R14.12).
 pub fn is_dictionary(table: &LakeTable) -> bool {
-    table.metadata.properties().get(PROP_ENGINE).map(String::as_str) == Some("Dictionary")
+    table
+        .metadata
+        .properties()
+        .get(PROP_ENGINE)
+        .map(String::as_str)
+        == Some("Dictionary")
 }
 
 /// What a dictionary's catalog entry keeps for the read path (HE1 R14.12).

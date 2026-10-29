@@ -604,13 +604,13 @@ impl HouseApi {
             &views,
         )
         .map_err(|err| to_connect(&err))
-            .and_then(|()| {
-                if read_only && analysis.classification.class != QueryClass::ReadOnly {
-                    Err(refuse_write())
-                } else {
-                    Ok(())
-                }
-            });
+        .and_then(|()| {
+            if read_only && analysis.classification.class != QueryClass::ReadOnly {
+                Err(refuse_write())
+            } else {
+                Ok(())
+            }
+        });
         if let Err(err) = admitted {
             self.pool.release(lease, Outcome::Completed);
             return Err(err);

@@ -15,6 +15,7 @@
 //! Its file operations are blocking and small; the agent calls them from
 //! its tick.
 
+use std::collections::VecDeque;
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -66,9 +67,21 @@ pub struct Spool {
     segments: Vec<Segment>,
     next_offset: u64,
     acked: Option<u64>,
+    /// The unacknowledged events, in order, while there are at most
+    /// [`CACHE_EVENTS`] of them; `None` means read them from disk. Without
+    /// it every `pending` re-read and re-parsed the open segment (up to
+    /// `segment_bytes`, acknowledged lines included), which held the
+    /// spooled agent near 600 events/s (BQ1-meter).
+    cache: Option<VecDeque<(u64, MeterEvent)>>,
+    /// [`CACHE_EVENTS`], smaller in tests.
+    cache_cap: usize,
 }
 
 const ACK_FILE: &str = "ack";
+
+/// The most unacknowledged events [`Spool`] keeps in memory; past it (a
+/// long sink outage) `pending` reads the segments, as it always did.
+pub const CACHE_EVENTS: usize = 65_536;
 
 impl Spool {
     /// Opens (or creates) the spool in `dir`, recovering its segments.
@@ -91,8 +104,20 @@ impl Spool {
         names.sort();
         let count = names.len();
         let mut segments = Vec::new();
+        let mut cache = Some(VecDeque::new());
         for (i, (_, path)) in names.into_iter().enumerate() {
             let lines = read_segment(&path, i + 1 == count)?;
+            for line in &lines {
+                if acked.is_some_and(|a| line.offset <= a) {
+                    continue;
+                }
+                match cache.as_mut() {
+                    Some(c) if c.len() < CACHE_EVENTS => {
+                        c.push_back((line.offset, line.event.clone()));
+                    }
+                    _ => cache = None,
+                }
+            }
             let Some(last) = lines.last().map(|line| line.offset) else {
                 fs::remove_file(&path).map_err(|e| MeterError::io(&path, e))?;
                 continue;
@@ -113,6 +138,8 @@ impl Spool {
             segments,
             next_offset,
             acked,
+            cache,
+            cache_cap: CACHE_EVENTS,
         };
         spool.delete_acked()?;
         Ok(spool)
@@ -174,11 +201,26 @@ impl Spool {
             }),
         }
         self.next_offset = last + 1;
+        if let Some(cache) = self.cache.as_mut() {
+            if cache.len() + events.len() <= self.cache_cap {
+                cache.extend(
+                    events
+                        .iter()
+                        .enumerate()
+                        .map(|(i, e)| (first + i as u64, e.clone())),
+                );
+            } else {
+                self.cache = None;
+            }
+        }
         Ok(first)
     }
 
     /// Up to `max` unacknowledged events, oldest first, with their offsets.
     pub fn pending(&self, max: usize) -> Result<Vec<(u64, MeterEvent)>, MeterError> {
+        if let Some(cache) = &self.cache {
+            return Ok(cache.iter().take(max).cloned().collect());
+        }
         let mut out = Vec::new();
         for segment in &self.segments {
             if self.acked.is_some_and(|a| segment.last <= a) {
@@ -228,6 +270,16 @@ impl Spool {
         fs::rename(&tmp, &path).map_err(|e| MeterError::io(&path, e))?;
         sync_dir(&self.dir)?;
         self.acked = Some(offset);
+        match self.cache.as_mut() {
+            Some(cache) => {
+                while cache.front().is_some_and(|(o, _)| *o <= offset) {
+                    cache.pop_front();
+                }
+            }
+            // Everything is acknowledged: the (empty) cache is complete again.
+            None if offset + 1 == self.next_offset => self.cache = Some(VecDeque::new()),
+            None => {}
+        }
         self.delete_acked()
     }
 
@@ -363,6 +415,49 @@ mod tests {
 
     fn offsets(p: &[(u64, MeterEvent)]) -> Vec<u64> {
         p.iter().map(|(o, _)| *o).collect()
+    }
+
+    #[test]
+    fn cache_overflow_reads_disk_and_rearms_when_drained() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut spool = Spool::open(dir.path(), SpoolConfig::default()).unwrap();
+        spool.cache_cap = 3;
+        spool.append(&[event(0), event(1)]).unwrap();
+        assert!(spool.cache.is_some());
+        // Past the cap the cache is dropped and pending reads the segments.
+        spool.append(&[event(2), event(3)]).unwrap();
+        assert!(spool.cache.is_none());
+        let pending = spool.pending(10).unwrap();
+        assert_eq!(offsets(&pending), vec![0, 1, 2, 3]);
+        assert_eq!(pending[3].1, event(3));
+        spool.ack(1).unwrap();
+        assert!(spool.cache.is_none(), "still events left");
+        assert_eq!(offsets(&spool.pending(10).unwrap()), vec![2, 3]);
+        // Draining everything re-arms the (empty) cache.
+        spool.ack(3).unwrap();
+        assert_eq!(spool.cache.as_ref().map(VecDeque::len), Some(0));
+        spool.append(&[event(4)]).unwrap();
+        assert_eq!(offsets(&spool.pending(10).unwrap()), vec![4]);
+    }
+
+    #[test]
+    fn cache_matches_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut spool = Spool::open(dir.path(), SpoolConfig::default()).unwrap();
+        for i in 0..20 {
+            spool.append(&[event(2 * i), event(2 * i + 1)]).unwrap();
+            if i % 3 == 2 {
+                let first = spool.pending(1).unwrap()[0].0;
+                spool.ack(first + 2).unwrap();
+            }
+        }
+        let cached = spool.pending(100).unwrap();
+        spool.cache = None;
+        assert_eq!(spool.pending(100).unwrap(), cached);
+        drop(spool);
+        let reopened = Spool::open(dir.path(), SpoolConfig::default()).unwrap();
+        assert!(reopened.cache.is_some());
+        assert_eq!(reopened.pending(100).unwrap(), cached);
     }
 
     #[test]

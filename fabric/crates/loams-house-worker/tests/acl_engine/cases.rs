@@ -131,7 +131,11 @@ pub fn run(open: bool) {
         failures.push(format!("user: DROP FUNCTION: {dropped:?}"));
     }
     if !open
-        && let Err(err) = control.query("CREATE OR REPLACE FUNCTION loams_acl_f AS (x) -> x + 1", "TSV", &[])
+        && let Err(err) = control.query(
+            "CREATE OR REPLACE FUNCTION loams_acl_f AS (x) -> x + 1",
+            "TSV",
+            &[],
+        )
     {
         failures.push(format!("control: CREATE FUNCTION: {err:?}"));
     }

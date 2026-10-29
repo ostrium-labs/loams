@@ -1006,7 +1006,10 @@ impl Lake {
         let parked = Self::table_ident(
             namespace,
             a.0,
-            &format!("{RESERVED_PREFIX}_exchange_{}", uuid::Uuid::new_v4().simple()),
+            &format!(
+                "{RESERVED_PREFIX}_exchange_{}",
+                uuid::Uuid::new_v4().simple()
+            ),
         );
         let a_ident = Self::table_ident(namespace, a.0, a.1);
         let b_ident = Self::table_ident(namespace, b.0, b.1);

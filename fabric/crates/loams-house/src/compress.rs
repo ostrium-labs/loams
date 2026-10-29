@@ -354,9 +354,9 @@ impl Decoder {
                     let mut reader = loams_house_native::wire::Reader::new(&input[..whole]);
                     held.clear();
                     *at = 0;
-                    loams_house_native::compress::read_frame(&mut reader, held).map_err(
-                        |err| bad(format!("the compressed request body (decompress=1): {err}")),
-                    )?;
+                    loams_house_native::compress::read_frame(&mut reader, held).map_err(|err| {
+                        bad(format!("the compressed request body (decompress=1): {err}"))
+                    })?;
                     self.consumed += whole;
                 }
                 Codec::Zstd {
@@ -564,12 +564,20 @@ mod tests {
         let plain = b"RowBinary bytes".repeat(1000);
         let mut wire = Vec::new();
         loams_house_native::compress::write_frames(&mut wire, &plain);
-        let (back, _) = decode(Some(Encoding::ClickHouse), &wire, 10, BodyLimits::default())
-            .expect("decodes");
+        let (back, _) =
+            decode(Some(Encoding::ClickHouse), &wire, 10, BodyLimits::default()).expect("decodes");
         assert_eq!(back, plain);
         let mut bad_sum = wire.clone();
         bad_sum[0] ^= 1;
-        assert!(decode(Some(Encoding::ClickHouse), &bad_sum, 64, BodyLimits::default()).is_err());
+        assert!(
+            decode(
+                Some(Encoding::ClickHouse),
+                &bad_sum,
+                64,
+                BodyLimits::default()
+            )
+            .is_err()
+        );
         let mut huge = wire.clone();
         huge[21..25].copy_from_slice(&u32::MAX.to_le_bytes());
         let err = decode(Some(Encoding::ClickHouse), &huge, 64, BodyLimits::default())

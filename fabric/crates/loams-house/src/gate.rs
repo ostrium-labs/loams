@@ -97,7 +97,8 @@ pub async fn view_calls(
     let tree = deny::QueryTree::from_explain(&analysis.ast, analysis.query_tree.as_deref());
     let mut out = Vec::new();
     for printed in tree.view_calls() {
-        if let Some((_, _, table)) = crate::read::resolve(lake, namespace, current, &printed).await?
+        if let Some((_, _, table)) =
+            crate::read::resolve(lake, namespace, current, &printed).await?
             && ddl::class_of(&table.metadata) == ddl::TableClass::View
         {
             out.push(printed);
@@ -664,10 +665,7 @@ impl Oracle for WorkerOracle<'_> {
         let rows = self
             .rows(
                 "DESCRIBE TABLE null({columns:String})",
-                vec![(
-                    "columns".to_string(),
-                    crate::http::tsv_escape(columns),
-                )],
+                vec![("columns".to_string(), crate::http::tsv_escape(columns))],
                 vec![("flatten_nested".to_string(), "0".to_string())],
             )
             .await?;

@@ -1128,7 +1128,11 @@ async fn coalescing_merge_tree_keeps_the_last_non_null() {
         ok(addr, "SELECT * FROM co ORDER BY k FORMAT TSV").await,
         "1\tx\t5\tc2\n2\ty\t\\N\td\n"
     );
-    ok(addr, "INSERT INTO co VALUES (1, 'z', NULL, 'c3'), (2, NULL, 7, 'd2')").await;
+    ok(
+        addr,
+        "INSERT INTO co VALUES (1, 'z', NULL, 'c3'), (2, NULL, 7, 'd2')",
+    )
+    .await;
     assert_eq!(
         ok(addr, "SELECT * FROM co FINAL ORDER BY k FORMAT TSV").await,
         "1\tz\t5\tc3\n2\ty\t7\td2\n"
@@ -1359,7 +1363,11 @@ async fn keyword_named_columns_insert_select() {
          ENGINE = ReplacingMergeTree ORDER BY (id, `index`)",
     )
     .await;
-    ok(addr, "INSERT INTO ed VALUES (1, 0, 'p', 'a'), (1, 1, 'q', 'b')").await;
+    ok(
+        addr,
+        "INSERT INTO ed VALUES (1, 0, 'p', 'a'), (1, 1, 'q', 'b')",
+    )
+    .await;
     ok(
         addr,
         "CREATE TABLE ed2 (id UInt64, `index` UInt64, `projection` String, data String) \
@@ -1476,14 +1484,26 @@ async fn exchange_tables_swaps_the_names() {
     )
     .await;
     ok(addr, "INSERT INTO m1 VALUES (1, 'old')").await;
-    ok(addr, "INSERT INTO m2 (id, body) VALUES (2, 'new'), (3, 'newer')").await;
+    ok(
+        addr,
+        "INSERT INTO m2 (id, body) VALUES (2, 'new'), (3, 'newer')",
+    )
+    .await;
     ok(addr, "EXCHANGE TABLES m1 AND m2").await;
     assert_eq!(
-        ok(addr, "SELECT 'm1', count(), groupArray(body) FROM m1 FORMAT TSV").await,
+        ok(
+            addr,
+            "SELECT 'm1', count(), groupArray(body) FROM m1 FORMAT TSV"
+        )
+        .await,
         "m1\t2\t['new','newer']\n"
     );
     assert_eq!(
-        ok(addr, "SELECT 'm2', count(), groupArray(body) FROM m2 FORMAT TSV").await,
+        ok(
+            addr,
+            "SELECT 'm2', count(), groupArray(body) FROM m2 FORMAT TSV"
+        )
+        .await,
         "m2\t1\t['old']\n"
     );
     let shown = ok(addr, "SHOW CREATE TABLE m1 FORMAT TSVRaw").await;
@@ -1494,15 +1514,22 @@ async fn exchange_tables_swaps_the_names() {
     // Writes land in the table the name now holds.
     ok(addr, "INSERT INTO m2 VALUES (4, 'later')").await;
     assert_eq!(
-        ok(addr, "SELECT groupArray(body) FROM (SELECT body FROM m2 ORDER BY id) FORMAT TSV").await,
+        ok(
+            addr,
+            "SELECT groupArray(body) FROM (SELECT body FROM m2 ORDER BY id) FORMAT TSV"
+        )
+        .await,
         "['old','later']\n"
     );
     ok(addr, "EXCHANGE TABLES m1 AND m1").await;
     refused(addr, "EXCHANGE TABLES m1 AND nope", "60").await;
     refused(addr, "EXCHANGE DICTIONARIES m1 AND m2", "48").await;
     assert_eq!(
-        ok(addr, "SELECT name FROM system.tables WHERE database = 'default' ORDER BY name FORMAT TSV")
-            .await,
+        ok(
+            addr,
+            "SELECT name FROM system.tables WHERE database = 'default' ORDER BY name FORMAT TSV"
+        )
+        .await,
         "m1\nm2\n"
     );
 }
@@ -1751,7 +1778,11 @@ async fn column_lists_over_several_lines() {
          ENGINE = MergeTree ORDER BY id",
     )
     .await;
-    ok(addr, "INSERT INTO plain (id, events) VALUES (1, [(5, 'e')])").await;
+    ok(
+        addr,
+        "INSERT INTO plain (id, events) VALUES (1, [(5, 'e')])",
+    )
+    .await;
     assert_eq!(
         ok(addr, "SELECT id, note, events FROM plain FORMAT TSV").await,
         "1\ta\\\\b\t[(5,'e')]\n"
@@ -1930,10 +1961,7 @@ async fn parameterised_views_are_called_as_table_functions() {
         None,
         b"SELECT id, tokens FROM traces_v(project_id = {p:UInt64}, start = {s:DateTime64(9)}) \
           ORDER BY id FORMAT TSV",
-        &[
-            ("param_p", "1"),
-            ("param_s", "2026-01-01 00:00:00"),
-        ],
+        &[("param_p", "1"), ("param_s", "2026-01-01 00:00:00")],
     )
     .await;
     assert_eq!(response.status, 200, "{}", response.text());
@@ -1942,7 +1970,11 @@ async fn parameterised_views_are_called_as_table_functions() {
         "00000000-0000-0000-0000-00000000000a\t7\n00000000-0000-0000-0000-00000000000b\t5\n"
     );
     // A view two others read (directly and through a view) is made first.
-    ok(addr, "CREATE VIEW a_v AS SELECT trace_id, tokens FROM spans").await;
+    ok(
+        addr,
+        "CREATE VIEW a_v AS SELECT trace_id, tokens FROM spans",
+    )
+    .await;
     ok(
         addr,
         "CREATE VIEW b_v AS SELECT trace_id, sum(tokens) AS total FROM a_v GROUP BY trace_id",
@@ -2021,7 +2053,7 @@ async fn sql_functions_are_the_namespaces() {
         ),
         false
     )
-)"#
+)"#,
     ] {
         ok(addr, function).await;
     }
@@ -2048,7 +2080,11 @@ async fn sql_functions_are_the_namespaces() {
         "CREATE TABLE notes (id UInt64, body String) ENGINE = MergeTree ORDER BY id",
     )
     .await;
-    ok(addr, "INSERT INTO notes VALUES (1, 'call bob'), (2, 'plain')").await;
+    ok(
+        addr,
+        "INSERT INTO notes VALUES (1, 'call bob'), (2, 'plain')",
+    )
+    .await;
     ok(
         addr,
         "CREATE VIEW masked AS SELECT id, apply_pii_masks(body, \
@@ -2062,7 +2098,11 @@ async fn sql_functions_are_the_namespaces() {
     ok(addr, "CREATE FUNCTION twice AS (x) -> x * 2").await;
     ok(addr, "CREATE FUNCTION plus_twice AS (x, y) -> twice(x) + y").await;
     assert_eq!(
-        ok(addr, "SELECT plus_twice(id, 1) FROM notes ORDER BY id FORMAT TSV").await,
+        ok(
+            addr,
+            "SELECT plus_twice(id, 1) FROM notes ORDER BY id FORMAT TSV"
+        )
+        .await,
         "3\n5\n"
     );
     refused(addr, "CREATE FUNCTION twice AS (x) -> x", "609").await;
@@ -2167,7 +2207,11 @@ async fn dictionaries_read_the_namespaces_tables() {
     // found by the next statement.
     ok(addr, "INSERT INTO kv VALUES (3, 'three')").await;
     assert_eq!(
-        ok(addr, "SELECT dictGet('kv_dict', 'v', toUInt64(3)) FORMAT TSV").await,
+        ok(
+            addr,
+            "SELECT dictGet('kv_dict', 'v', toUInt64(3)) FORMAT TSV"
+        )
+        .await,
         "three\n"
     );
     // Credentials are not kept.
@@ -2176,26 +2220,46 @@ async fn dictionaries_read_the_namespaces_tables() {
         shown.starts_with("CREATE DICTIONARY default.dc_dict") && !shown.contains("PASSWORD"),
         "{shown}"
     );
-    refused(addr, "CREATE DICTIONARY kv_dict (k UInt64, v String) PRIMARY KEY k \
-         SOURCE(CLICKHOUSE(TABLE 'kv')) LAYOUT(HASHED())", "57").await;
-    refused(addr, "CREATE DICTIONARY far (k UInt64, v String) PRIMARY KEY k \
-         SOURCE(CLICKHOUSE(HOST 'example.com' TABLE 'kv')) LAYOUT(HASHED())", "344").await;
-    refused(addr, "CREATE DICTIONARY far (k UInt64, v String) PRIMARY KEY k \
-         SOURCE(MYSQL(host 'example.com' table 'kv')) LAYOUT(HASHED())", "344").await;
-    refused(addr, "CREATE DICTIONARY far (k UInt64, v String) PRIMARY KEY k \
+    refused(
+        addr,
+        "CREATE DICTIONARY kv_dict (k UInt64, v String) PRIMARY KEY k \
+         SOURCE(CLICKHOUSE(TABLE 'kv')) LAYOUT(HASHED())",
+        "57",
+    )
+    .await;
+    refused(
+        addr,
+        "CREATE DICTIONARY far (k UInt64, v String) PRIMARY KEY k \
+         SOURCE(CLICKHOUSE(HOST 'example.com' TABLE 'kv')) LAYOUT(HASHED())",
+        "344",
+    )
+    .await;
+    refused(
+        addr,
+        "CREATE DICTIONARY far (k UInt64, v String) PRIMARY KEY k \
+         SOURCE(MYSQL(host 'example.com' table 'kv')) LAYOUT(HASHED())",
+        "344",
+    )
+    .await;
+    refused(
+        addr,
+        "CREATE DICTIONARY far (k UInt64, v String) PRIMARY KEY k \
          SOURCE(CLICKHOUSE(QUERY 'SELECT * FROM url(''http://127.0.0.1:1/x'', CSV)')) \
-         LAYOUT(HASHED())", "344").await;
-    refused(addr, "CREATE DICTIONARY far (k UInt64, v String) PRIMARY KEY k \
-         SOURCE(CLICKHOUSE(TABLE 'kv')) LAYOUT(RANGE_HASHED())", "48").await;
+         LAYOUT(HASHED())",
+        "344",
+    )
+    .await;
+    refused(
+        addr,
+        "CREATE DICTIONARY far (k UInt64, v String) PRIMARY KEY k \
+         SOURCE(CLICKHOUSE(TABLE 'kv')) LAYOUT(RANGE_HASHED())",
+        "48",
+    )
+    .await;
     ok(addr, "DROP DICTIONARY kv_dict").await;
     refused(addr, "DROP DICTIONARY kv_dict", "60").await;
     ok(addr, "DROP DICTIONARY IF EXISTS kv_dict").await;
-    refused(
-        addr,
-        "SELECT dictGet('kv_dict', 'v', toUInt64(2))",
-        "36",
-    )
-    .await;
+    refused(addr, "SELECT dictGet('kv_dict', 'v', toUInt64(2))", "36").await;
 }
 
 /// HE1 R9.14: readable `AggregatingMergeTree` and `Null`, against the oracle.

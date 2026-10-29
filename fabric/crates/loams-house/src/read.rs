@@ -971,9 +971,11 @@ pub async fn plan(
                 (
                     true,
                     Some(id),
-                    Ok(LakeEngine::Replacing { .. }
-                    | LakeEngine::VersionedCollapsing { .. }
-                    | LakeEngine::Coalescing),
+                    Ok(
+                        LakeEngine::Replacing { .. }
+                        | LakeEngine::VersionedCollapsing { .. }
+                        | LakeEngine::Coalescing,
+                    ),
                 ) if pin.table.class != TableClass::External => {
                     live_files(lake, &table.metadata, id).await?
                 }
@@ -990,6 +992,9 @@ pub async fn plan(
         }
     }
     plan.views.extend(batch_views);
+    // BQ1-house: a statement that reads one lake table, directly, may push its
+    // key predicates on `UInt64` columns into the view (`crate::pushdown`).
+    let pushable = tables.len() == 1 && plan_views.is_empty() && ctx.batch.is_none();
     for (pin, fin, files) in tables {
         let Some(endpoint) = endpoint.as_deref() else {
             return Err(HouseError::from(ChError::not_implemented(format!(
@@ -1021,7 +1026,20 @@ pub async fn plan(
             crate::gate::admit(&analysis, body, crate::classify::Expect::Read, true, None)
                 .map_err(|err| views::catalog_refusal(&pin, &err.to_string()))?;
         }
-        plan.views.push(views::view_ddl(&pin, &source, mode)?);
+        let filters = if pushable && mode == Mode::Plain && pin.table.class != TableClass::External
+        {
+            crate::pushdown::key_filters(
+                &plan.sql,
+                &pin.table.database,
+                &pin.table.name,
+                ctx.database,
+                &views::uint64_columns(&pin),
+            )
+        } else {
+            Vec::new()
+        };
+        plan.views
+            .push(views::view_ddl_filtered(&pin, &source, mode, &filters)?);
         plan.pins.push(pin);
     }
     // Deepest first, and among equals the one met last first (the order

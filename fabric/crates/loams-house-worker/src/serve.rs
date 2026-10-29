@@ -138,12 +138,51 @@ pub fn engine_config(args: &WorkerArgs) -> EngineConfig {
         tmp_dir: args.data_dir(),
         cache_dir: args.tmp_dir.join("no-cache"),
         cache_bytes: 0,
-        max_server_memory: args.memory_limit,
+        max_server_memory: boot_memory_limit(args.memory_limit, available_memory()),
         // HS1 R1.4: no `filesystem_caches_path`, so nothing is cached on disk.
         filesystem_cache: false,
         server_args: vec![format!("--config-file={}", args.config_file().display())],
         // §49 §4.1: the worker is chDB's process, so chDB keeps its own handlers.
         install_signal_handlers: true,
+    }
+}
+
+/// The smallest ceiling a worker boots with when memory is short.
+pub const MIN_BOOT_MEMORY: u64 = 256 * 1024 * 1024;
+
+/// `MemAvailable` from `/proc/meminfo`, in bytes; `None` where there is none.
+pub fn available_memory() -> Option<u64> {
+    let text = std::fs::read_to_string("/proc/meminfo").ok()?;
+    let line = text.lines().find(|l| l.starts_with("MemAvailable:"))?;
+    let kib: u64 = line.split_whitespace().nth(1)?.parse().ok()?;
+    kib.checked_mul(1024)
+}
+
+/// The `--max_server_memory_usage` a worker boots with: its limit, or 90% of
+/// the memory available now when that is less (never under
+/// [`MIN_BOOT_MEMORY`]).
+///
+/// BQ1-house (2026-10-28), measured with chDB 26.9: `chdb_connect` returns
+/// null, with no error text, when `max_server_memory_usage` is above the
+/// machine's available memory at boot (9 GiB held by another process, 1.6 GiB
+/// available: 4.5 GiB and 2 GB failed, 1 GB booted). Under memory pressure
+/// every worker the pool started failed this way, and statements failed with
+/// `210`. A worker booted with the smaller ceiling answers what fits and
+/// `241` past it, as it would with that much memory.
+pub fn boot_memory_limit(limit: u64, available: Option<u64>) -> u64 {
+    match available {
+        Some(available) if available < limit => {
+            let clamped = (available / 10 * 9).max(MIN_BOOT_MEMORY).min(limit);
+            eprintln!(
+                "loams-house-worker: {} MiB available, below the worker's {} MiB memory \
+                 limit; booting with {} MiB",
+                available >> 20,
+                limit >> 20,
+                clamped >> 20
+            );
+            clamped
+        }
+        _ => limit,
     }
 }
 
@@ -1241,6 +1280,22 @@ fn fill_memory(progress: &mut Progress) {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn boot_memory_follows_what_is_available() {
+        use super::{MIN_BOOT_MEMORY, boot_memory_limit};
+        const GIB: u64 = 1024 * 1024 * 1024;
+        assert_eq!(boot_memory_limit(4 * GIB, Some(8 * GIB)), 4 * GIB);
+        assert_eq!(boot_memory_limit(4 * GIB, None), 4 * GIB);
+        assert_eq!(boot_memory_limit(4 * GIB, Some(2 * GIB)), 2 * GIB / 10 * 9);
+        assert_eq!(boot_memory_limit(4 * GIB, Some(1)), MIN_BOOT_MEMORY);
+        assert_eq!(
+            boot_memory_limit(100, Some(1)),
+            100,
+            "never above the limit"
+        );
+    }
+
     use super::{control_ddl_shape, is_setting_name};
 
     #[test]

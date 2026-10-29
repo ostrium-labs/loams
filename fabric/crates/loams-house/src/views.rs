@@ -120,7 +120,10 @@ pub fn is_parameterised(select: &str) -> bool {
 /// shape for a function. The worker drops it before its next statement, as it
 /// drops the views.
 pub fn function_ddl(name: &str, lambda: &str) -> String {
-    format!("CREATE OR REPLACE FUNCTION {} AS {lambda}", quote_name(name))
+    format!(
+        "CREATE OR REPLACE FUNCTION {} AS {lambda}",
+        quote_name(name)
+    )
 }
 
 /// A catalog view (HE1 R9.13) in the worker, over the read views of what it
@@ -192,6 +195,36 @@ pub const SEQUENCE_COLUMNS: [&str; 2] = [SEQ, ROW];
 
 /// The view DDL for a pin.
 pub fn view_ddl(pin: &ReadPin, source: &str, mode: Mode<'_>) -> Result<String, HouseError> {
+    view_ddl_filtered(pin, source, mode, &[])
+}
+
+/// The table's `UInt64` columns stored as `decimal(20, 0)` that every row
+/// holds (a required field): the columns [`crate::pushdown`] may filter on.
+/// An optional field (a column `ALTER` added) reads its default for older
+/// rows, which a filter on the stored column would drop, so it is left out.
+pub fn uint64_columns(pin: &ReadPin) -> Vec<&str> {
+    columns(pin)
+        .into_iter()
+        .filter(|c| c.ch_type == "UInt64")
+        .filter(|c| {
+            pin.fields
+                .iter()
+                .any(|f| f.name == c.name && f.required && !f.long)
+        })
+        .map(|c| c.name.as_str())
+        .collect()
+}
+
+/// [`view_ddl`] with `filters` on the stored columns of a plain view's source
+/// (aliased [`crate::pushdown::SOURCE_ALIAS`]), so chDB prunes row groups with
+/// them (BQ1-house). They must be implied by the statement's own predicates
+/// ([`crate::pushdown::key_filters`]); other modes ignore them.
+pub fn view_ddl_filtered(
+    pin: &ReadPin,
+    source: &str,
+    mode: Mode<'_>,
+    filters: &[String],
+) -> Result<String, HouseError> {
     let mut name = format!(
         "{}.{}",
         quote_name(&pin.table.database),
@@ -228,9 +261,13 @@ pub fn view_ddl(pin: &ReadPin, source: &str, mode: Mode<'_>) -> Result<String, H
                 collapsing(pin, source, &engine, files)?
             }
             (Mode::Final(_), Some(LakeEngine::Aggregating)) => aggregating(pin, source)?,
-            (Mode::Final(files), Some(LakeEngine::Coalescing)) => {
-                coalescing(pin, source, files)?
-            }
+            (Mode::Final(files), Some(LakeEngine::Coalescing)) => coalescing(pin, source, files)?,
+            _ if !filters.is_empty() && matches!(mode, Mode::Plain) => format!(
+                "SELECT {}\nFROM {source} AS {}\nWHERE {}",
+                casts(pin)?.join(", "),
+                crate::pushdown::SOURCE_ALIAS,
+                filters.join(" AND ")
+            ),
             _ => format!("SELECT {}\nFROM {source}", casts(pin)?.join(", ")),
         }
     };

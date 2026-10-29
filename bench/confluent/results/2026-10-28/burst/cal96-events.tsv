@@ -1,0 +1,3 @@
+2026-10-28T17:44:33Z	start tag=cal96 size=10 clusters=loams-cfb-aws-x2:96 pools=loams-cfb-flink-xb loams-cfb-flink-xc
+2026-10-28T17:48:27Z	submitted 96 statements
+2026-10-28T17:53:00Z	stopping (series saved to 17:53Z; runs ended by the coordinator STOP, guard abort 18:02Z)

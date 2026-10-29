@@ -1,0 +1,136 @@
+{
+ "lane": "bq1-meter",
+ "pinned_core": 0,
+ "benches": {
+  "event/encode_cloudevent": {
+   "ns_per_iter": 2148.3,
+   "elements_per_iter": 1,
+   "ns_per_element": 2148.26,
+   "elements_per_sec": 465493,
+   "ci95_ns": [
+    2126.1,
+    2173.9
+   ]
+  },
+  "event/gate_usage_event_encode": {
+   "ns_per_iter": 4045.5,
+   "elements_per_iter": 1,
+   "ns_per_element": 4045.53,
+   "elements_per_sec": 247187,
+   "ci95_ns": [
+    3952.6,
+    4163.7
+   ]
+  },
+  "event/parse_validate": {
+   "ns_per_iter": 5559.2,
+   "elements_per_iter": 1,
+   "ns_per_element": 5559.18,
+   "elements_per_sec": 179883,
+   "ci95_ns": [
+    5503.9,
+    5620.9
+   ]
+  },
+  "aggregate/sum_by_group": {
+   "ns_per_iter": 467527.6,
+   "elements_per_iter": 1024,
+   "ns_per_element": 456.57,
+   "elements_per_sec": 2190245,
+   "ci95_ns": [
+    461324.6,
+    474492.2
+   ]
+  },
+  "lease/acquire_and_retire": {
+   "ns_per_iter": 8161.7,
+   "elements_per_iter": 16,
+   "ns_per_element": 510.11,
+   "elements_per_sec": 1960376,
+   "ci95_ns": [
+    8012.9,
+    8339.1
+   ]
+  },
+  "gate/check_hit_100k_subjects": {
+   "ns_per_iter": 909.6,
+   "elements_per_iter": 1,
+   "ns_per_element": 909.57,
+   "elements_per_sec": 1099425,
+   "ci95_ns": [
+    887.4,
+    934.4
+   ]
+  },
+  "gate/check_hit_hot": {
+   "ns_per_iter": 228.4,
+   "elements_per_iter": 1,
+   "ns_per_element": 228.43,
+   "elements_per_sec": 4377697,
+   "ci95_ns": [
+    224.6,
+    233.2
+   ]
+  },
+  "gate/nogate_check": {
+   "ns_per_iter": 1.1,
+   "elements_per_iter": 1,
+   "ns_per_element": 1.06,
+   "elements_per_sec": 944724167,
+   "ci95_ns": [
+    1.0,
+    1.1
+   ]
+  },
+  "gate/reserve_settle": {
+   "ns_per_iter": 292.7,
+   "elements_per_iter": 1,
+   "ns_per_element": 292.68,
+   "elements_per_sec": 3416753,
+   "ci95_ns": [
+    286.0,
+    301.9
+   ]
+  },
+  "agent/measurement_to_record": {
+   "ns_per_iter": 12086.1,
+   "elements_per_iter": 1,
+   "ns_per_element": 12086.12,
+   "elements_per_sec": 82740,
+   "ci95_ns": [
+    11969.4,
+    12231.9
+   ]
+  },
+  "agent/spool_append_1": {
+   "ns_per_iter": 1948229.5,
+   "elements_per_iter": 1,
+   "ns_per_element": 1948229.54,
+   "elements_per_sec": 513,
+   "ci95_ns": [
+    1515707.8,
+    2579539.5
+   ]
+  },
+  "agent/spool_append_256": {
+   "ns_per_iter": 14394316.1,
+   "elements_per_iter": 256,
+   "ns_per_element": 56227.8,
+   "elements_per_sec": 17785,
+   "ci95_ns": [
+    9326835.4,
+    21166104.7
+   ]
+  },
+  "agent/spool_append_64": {
+   "ns_per_iter": 6921018.2,
+   "elements_per_iter": 64,
+   "ns_per_element": 108140.91,
+   "elements_per_sec": 9247,
+   "ci95_ns": [
+    6070255.9,
+    7947261.4
+   ]
+  }
+ }
+}
