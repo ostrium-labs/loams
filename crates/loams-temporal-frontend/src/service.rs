@@ -1486,7 +1486,7 @@ impl WorkflowService for WorkflowServiceImpl {
                 ..Default::default()
             })),
             Ok(Ok(QueryAnswer::Failed(message, failure))) => {
-                Err(crate::errors::query_failed(message, failure))
+                Err(crate::errors::query_failed(message, failure.map(|f| *f)))
             }
             _ => Err(Status::deadline_exceeded(
                 "no worker answered the query in time (is a worker polling the task queue?)",
@@ -1504,7 +1504,7 @@ impl WorkflowService for WorkflowServiceImpl {
         let answer = if r.completed_type == QueryResultType::Answered as i32 {
             QueryAnswer::Answered(r.query_result)
         } else {
-            QueryAnswer::Failed(r.error_message, r.failure)
+            QueryAnswer::Failed(r.error_message, r.failure.map(Box::new))
         };
         if !self
             .0

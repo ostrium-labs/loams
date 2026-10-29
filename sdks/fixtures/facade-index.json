@@ -101,6 +101,7 @@
     {"module": "meter.entitlements", "call": "reset", "rpc": "loams.meter.v1.EntitlementService/ResetEntitlement", "retry": "safe", "idempotencyKeyField": "", "pagination": null, "stream": false, "unstable": false},
     {"module": "meter.entitlements", "call": "value", "rpc": "loams.meter.v1.EntitlementService/GetEntitlementValue", "retry": "safe", "idempotencyKeyField": "", "pagination": null, "stream": false, "unstable": false},
     {"module": "meter.entitlements", "call": "voidGrant", "rpc": "loams.meter.v1.EntitlementService/VoidGrant", "retry": "safe", "idempotencyKeyField": "", "pagination": null, "stream": false, "unstable": false},
+    {"module": "meter.meters", "call": "query", "rpc": "loams.meter.v1.MeterService/QueryMeter", "retry": "safe", "idempotencyKeyField": "", "pagination": null, "stream": false, "unstable": false},
     {"module": "meter.notifications", "call": "createRule", "rpc": "loams.meter.v1.NotificationService/CreateRule", "retry": "never", "idempotencyKeyField": "", "pagination": null, "stream": false, "unstable": false},
     {"module": "meter.notifications", "call": "createWebhook", "rpc": "loams.meter.v1.NotificationService/CreateWebhook", "retry": "never", "idempotencyKeyField": "", "pagination": null, "stream": false, "unstable": false},
     {"module": "meter.notifications", "call": "listDeliveries", "rpc": "loams.meter.v1.NotificationService/ListDeliveries", "retry": "safe", "idempotencyKeyField": "", "pagination": null, "stream": false, "unstable": false},

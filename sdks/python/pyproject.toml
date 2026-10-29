@@ -108,6 +108,7 @@ module = [
   "loams.graph.*",
   "loams.instance.*",
   "loams.live.*",
+  "loams.meter.*",
   "loams.notifications.*",
   "loams.operations.*",
   "loams.options.*",

@@ -6,6 +6,7 @@ import {
   Circle,
   Cloud,
   Code,
+  Cpu,
   CreditCard,
   Database,
   Factory,
@@ -48,6 +49,8 @@ const ICONS: Record<string, LucideIcon> = {
   live: Radio,
   durable: Workflow,
   streams: Waypoints,
+  // Managed RisingWave, Flink SQL and Spark (design 81).
+  engines: Cpu,
   connectors: Plug,
   graph: Network,
   jobs: ListChecks,

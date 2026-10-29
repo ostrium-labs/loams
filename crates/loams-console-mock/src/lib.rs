@@ -891,6 +891,210 @@ pub const ENGINE_TEMPLATES: [&str; 4] = [
     "/v1/namespaces/{ns}/collections/{c}",
 ];
 
+/// The managed-engines API contract (design 81, D2015), OpenAPI 3.1. Its
+/// routes are not part of [`CONTRACT`]: [`engine_routes`] answers them from
+/// the seed's `engines` key, and `tests/engines_contract.rs` holds the two
+/// together.
+pub const ENGINES_CONTRACT: &str = include_str!("../../../api/engines/openapi.json");
+
+/// An instance as a lifecycle call answers it: the seed record in the
+/// transitional `phase` the call starts.
+fn in_phase(instance: &Value, phase: &str) -> Value {
+    let mut out = instance.clone();
+    out["status"]["phase"] = json!(phase);
+    out
+}
+
+/// Every mocked response of the managed-engines API ([`ENGINES_CONTRACT`]),
+/// from the seed's `engines` key: the catalog, each namespace's instances, each
+/// instance's lifecycle answers and usage, SQL on RisingWave and Flink, and
+/// sessions and jobs on Spark. Static like [`routes`]: a lifecycle call
+/// answers the instance in its transitional phase and the next `GET` is
+/// unchanged.
+pub fn engine_routes(seed: &Value) -> Result<Vec<Route>> {
+    const B: &str = "/v1/namespaces/{namespace}/engines";
+    const I: &str = "/v1/namespaces/{namespace}/engines/{instance}";
+    let engines = get(seed, "engines")?;
+    let instances = items(engines, "instances")?;
+    let usage = entries(engines, "usage")?;
+    let sessions = entries(engines, "spark_sessions")?;
+    let jobs = entries(engines, "spark_jobs")?;
+    let sql_result = get(engines, "sql_result")?.clone();
+    let mut r = vec![Route::json(
+        "GET",
+        "/v1/engines",
+        "/v1/engines".into(),
+        200,
+        get(engines, "catalog")?.clone(),
+    )];
+
+    // Every seeded environment's Loams namespace (design 81 ruling R2: engines are
+    // namespace-scoped).
+    for env in items(seed, "environments")? {
+        let ns = str_field(env, "namespace")?;
+        let base = format!("/v1/namespaces/{ns}/engines");
+        let mine: Vec<&Value> = instances.iter().filter(|i| i["namespace"] == ns).collect();
+        for kind in ["risingwave", "flink", "spark"] {
+            let of_kind: Vec<&Value> = mine.iter().copied().filter(|i| i["kind"] == kind).collect();
+            let mut route =
+                Route::json("GET", B, base.clone(), 200, json!({ "instances": of_kind }));
+            route.query.push(("kind".to_string(), kind.to_string()));
+            r.push(route);
+        }
+        r.push(Route::json(
+            "GET",
+            B,
+            base.clone(),
+            200,
+            json!({ "instances": mine }),
+        ));
+        // A create answers a new instance shaped like the namespace's first, or the
+        // first seeded one, still provisioning.
+        let template = mine
+            .first()
+            .copied()
+            .or_else(|| instances.first())
+            .ok_or_else(|| anyhow!("seed engines.instances is empty"))?;
+        let mut created = in_phase(template, "provisioning");
+        created["id"] = json!("eng_created01");
+        created["namespace"] = json!(ns);
+        created["state_prefix"] = json!(format!("engines/{ns}/eng_created01/"));
+        created["endpoints"] = json!([]);
+        created["status"]["checks"] = json!([]);
+        created["status"]["health"] = json!("unknown");
+        r.push(Route::json("POST", B, base, 202, created));
+    }
+
+    for inst in instances {
+        let id = str_field(inst, "id")?;
+        let ns = str_field(inst, "namespace")?;
+        let kind = str_field(inst, "kind")?;
+        let base = format!("/v1/namespaces/{ns}/engines/{id}");
+        r.push(Route::json("GET", I, base.clone(), 200, inst.clone()));
+        r.push(Route::json(
+            "PATCH",
+            I,
+            base.clone(),
+            202,
+            in_phase(inst, "scaling"),
+        ));
+        r.push(Route::json(
+            "DELETE",
+            I,
+            base.clone(),
+            202,
+            in_phase(inst, "deleting"),
+        ));
+        r.push(Route::json(
+            "POST",
+            "/v1/namespaces/{namespace}/engines/{instance}/suspend",
+            format!("{base}/suspend"),
+            202,
+            in_phase(inst, "suspending"),
+        ));
+        r.push(Route::json(
+            "POST",
+            "/v1/namespaces/{namespace}/engines/{instance}/resume",
+            format!("{base}/resume"),
+            202,
+            in_phase(inst, "resuming"),
+        ));
+        let samples = usage
+            .get(id)
+            .cloned()
+            .ok_or_else(|| anyhow!("no engines.usage for {id}"))?;
+        r.push(Route::json(
+            "GET",
+            "/v1/namespaces/{namespace}/engines/{instance}/usage",
+            format!("{base}/usage"),
+            200,
+            samples,
+        ));
+        if kind == "spark" {
+            let ss = sessions.get(id).cloned().unwrap_or(json!([]));
+            for s in ss.as_array().into_iter().flatten() {
+                let sid = str_field(s, "id")?;
+                r.push(Route::empty(
+                    "DELETE",
+                    "/v1/namespaces/{namespace}/engines/{instance}/sessions/{session}",
+                    format!("{base}/sessions/{sid}"),
+                ));
+            }
+            r.push(Route::json(
+                "GET",
+                "/v1/namespaces/{namespace}/engines/{instance}/sessions",
+                format!("{base}/sessions"),
+                200,
+                json!({ "sessions": ss }),
+            ));
+            r.push(Route::json(
+                "POST",
+                "/v1/namespaces/{namespace}/engines/{instance}/sessions",
+                format!("{base}/sessions"),
+                201,
+                json!({
+                    "id": "ses_created01",
+                    "kind": "sql",
+                    "state": "starting",
+                    "created_at": inst["updated_at"].clone(),
+                    "connect_url": null,
+                }),
+            ));
+            let js = jobs.get(id).cloned().unwrap_or(json!([]));
+            for j in js.as_array().into_iter().flatten() {
+                let jid = str_field(j, "id")?;
+                let mut cancelled = j.clone();
+                cancelled["state"] = json!("cancelled");
+                r.push(Route::json(
+                    "POST",
+                    "/v1/namespaces/{namespace}/engines/{instance}/jobs/{job}/cancel",
+                    format!("{base}/jobs/{jid}/cancel"),
+                    200,
+                    cancelled,
+                ));
+            }
+            r.push(Route::json(
+                "GET",
+                "/v1/namespaces/{namespace}/engines/{instance}/jobs",
+                format!("{base}/jobs"),
+                200,
+                json!({ "jobs": js }),
+            ));
+            r.push(Route::json(
+                "POST",
+                "/v1/namespaces/{namespace}/engines/{instance}/jobs",
+                format!("{base}/jobs"),
+                201,
+                json!({
+                    "id": "job_created01",
+                    "name": "submitted",
+                    "kind": "sql",
+                    "state": "queued",
+                    "entrypoint": "SELECT 1",
+                    "args": [],
+                    "submitted_at": inst["updated_at"].clone(),
+                    "finished_at": null,
+                    "message": null,
+                }),
+            ));
+        } else {
+            let mut result = sql_result.clone();
+            if kind == "flink" {
+                result["notice"] =
+                    json!("The statement ran; an INSERT INTO would start a streaming job.");
+            }
+            r.push(Route::json(
+                "POST",
+                "/v1/namespaces/{namespace}/engines/{instance}/sql",
+                format!("{base}/sql"),
+                200,
+                result,
+            ));
+        }
+    }
+    Ok(r)
+}
+
 /// Installs `routes` on an `httpmock` server.
 ///
 /// Only this crate's contract tests use it now. The routes are served over

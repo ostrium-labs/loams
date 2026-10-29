@@ -994,9 +994,12 @@ impl Frontend {
     }
 }
 
+/// A predicate over schedules.
+type KeepFn = Box<dyn Fn(&ScheduleRecord) -> bool + Send + Sync>;
+
 /// Which schedules a ListSchedules query keeps.
 pub(crate) struct ScheduleFilter {
-    keep: Option<Box<dyn Fn(&ScheduleRecord) -> bool + Send + Sync>>,
+    keep: Option<KeepFn>,
 }
 
 impl ScheduleFilter {
