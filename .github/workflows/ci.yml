@@ -145,6 +145,10 @@ jobs:
               - *toolchain
               - "crates/loams/**"
               - "crates/loams-cloud-admin/**"
+              # `loams knowledge` (feature `knowledge`, MS1 Task 9).
+              - "crates/loams-knowledge/**"
+              - "crates/loams-walrus/**"
+              - "crates/loams-agentd-marketplace/**"
               - "crates/loams-confluent/**"
               - "crates/loams-cache/**"
               - "crates/loams-collection/**"
