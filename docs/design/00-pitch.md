@@ -104,6 +104,8 @@ Primary buyer: platform teams at companies running AI apps at scale who are payi
 - **Not a general-purpose graph database.** 1–2 hop expansion, shortest path and graph algorithms as table functions, planned with the retrieval query; no graph query language and no deep recursive traversal.
 - **Not a stream processor.** Stateless transforms and mergeable aggregates in links, yes; windowed joins with checkpointed state, no. External stream processors can write their results as Iceberg tables through Lakekeeper. RisingWave, the companion stream processor (D22), connects over the Kafka gateway in M5 (D74); before that it writes to Loams through its Elasticsearch, HTTP and Iceberg sinks (§02 §7.3).
 
+  > **Amended (approved 2026-10-29): D2240** ([§82](82-loams-stream-flink-compatible-engine.md)). Loams ships **Loams Stream**, a stream processor compatible with Apache Flink's SQL and REST APIs; Loams still invents no stream-processing dialect of its own.
+
 ## 8. Governance and business model (recommendation)
 
 - **License:** Apache-2.0 for the entire engine, all gateways and the operator. Big-company adoption requires it; AGPL/BSL/SSPL dependencies are excluded (§11).

@@ -1,0 +1,1 @@
+[range(0; .received_bytes|length) as $i | {t:.received_bytes[$i].t[11:16], MBps:(.received_bytes[$i].v/60/1e6*100|round/100), krec_s:(((.received_records[$i].v // 0)/60/10)|round/100), B_per_rec:((.received_bytes[$i].v / ((.received_records[$i].v // 0)+0.001))|round)}]

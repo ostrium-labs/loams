@@ -54,6 +54,11 @@ cargo_package(
             "root": "tests/plans.rs",
         },
         {
+            "name": "queries",
+            "crate": "queries",
+            "root": "tests/queries.rs",
+        },
+        {
             "name": "reconcile",
             "crate": "reconcile",
             "root": "tests/reconcile.rs",
@@ -74,6 +79,7 @@ cargo_package(
         "//crates/loams-cloudevents:loams-cloudevents",
         "//crates/loams-common:loams-common",
         "//crates/loams-meter-core:loams-meter-core",
+        "//crates/loams-meter-house:loams-meter-house",
         "//crates/loams-proto:loams-proto",
         "//third-party/rust:async-trait",
         "//third-party/rust:axum",
