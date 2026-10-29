@@ -303,7 +303,7 @@ fn config(args: PgControlArgs) -> Result<PgControlConfig, String> {
         (AuthzArg::ApiKey, None) => return Err("--pg-authz api-key needs --pg-api-keys".into()),
         (AuthzArg::Openfga, Some(keys)) => PgAuth::OpenFga {
             keys,
-            fga: crate::pg_control::FgaSettings::from_vars(|k| std::env::var(k).ok())?,
+            fga: loams::pg_control::FgaSettings::from_vars(|k| std::env::var(k).ok())?,
         },
         (AuthzArg::Openfga, None) => {
             return Err("--pg-authz openfga needs --pg-api-keys (who calls)".into());
