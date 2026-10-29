@@ -36,8 +36,13 @@ scripts/nightly/run-local.sh --legs durable,corpus    # some legs
 scripts/nightly/run-local.sh --keep --legs airflow    # leave the stack up to look at it
 ```
 
-- Each leg runs whole under the shared build-slot limiter (`LOAMS_BUILDSLOT`,
-  by default `.he0-shared/buildslot.sh`), with `CARGO_BUILD_JOBS=4`.
+- Each leg runs under the shared build-slot limiter (`LOAMS_BUILDSLOT`, by
+  default `.he0-shared/buildslot.sh`), with `CARGO_BUILD_JOBS=4`. A cargo
+  leg compiles first (`--no-run`) and then runs.
+- `NIGHTLY_BENCHSLOT=.he0-shared/benchslot.sh` is opt-in. With it, each
+  leg's execution phase (not its build) waits for the exclusive bench lock,
+  as lane `dx0-nightly`, and holds it for that one leg. Nightly legs and
+  benchmark runs then take turns, so the benchmark numbers stay clean.
 - After each compute leg, the script removes that leg's compose project and its
   volumes. At the end it also removes the harness's named volumes. It never
   prunes images, containers or volumes that it did not create.

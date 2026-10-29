@@ -17,6 +17,10 @@
 #                     when it exists, else none); every heavy step runs under it
 #   CARGO_BUILD_JOBS  cargo's parallelism (default 4)
 #   NIGHTLY_LABEL     the matrix's run line (default "local run <date> <commit>")
+#   NIGHTLY_BENCHSLOT opt-in: a bench lock (e.g. .he0-shared/benchslot.sh); each
+#                     leg's execution phase (not its build) runs under
+#                     `<lock> dx0-nightly <cmd>`, one leg per hold, so legs
+#                     interleave with benchmark runs instead of skewing them
 #
 # Results: <results>/compute-<leg>/ holds the leg's JUnit, logs and
 # leg.exit; <results>/summary.json lists every leg with its exit status,
@@ -33,11 +37,20 @@ LEGS=all
 MATRIX=1
 KEEP=0
 export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-4}
+# Rootless podman without docker: compose (docker-compose or podman compose)
+# talks to the user's podman socket.
+if ! command -v docker >/dev/null 2>&1 && [ -z "${DOCKER_HOST:-}" ] &&
+  [ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/podman/podman.sock" ]; then
+  export DOCKER_HOST="unix://${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/podman/podman.sock"
+fi
 SLOT=${LOAMS_BUILDSLOT:-$HOME/Documents/Ostriumlabs/loams-wt/.he0-shared/buildslot.sh}
 [ -x "$SLOT" ] || SLOT=
+BENCH=${NIGHTLY_BENCHSLOT:-}
+if [ -n "$BENCH" ] && [ ! -x "$BENCH" ]; then echo "run-local.sh: NIGHTLY_BENCHSLOT=$BENCH is not executable" >&2; exit 2; fi
 
 # --- The legs ------------------------------------------------------------------
-# name | kind | command. `compute` legs run a conformance/compute suite in a
+# name | kind | command [| build]. The optional build phase (compiling, no
+# measurement) runs first under the build-slot limiter only. `compute` legs run a conformance/compute suite in a
 # compose project of their own; `cargo` legs are the nightly-only Rust suites
 # of ci.yml and gt1-nightly.yml (the rest of the GitHub nightly re-ran the
 # per-PR workflows, which the local runners already run on every PR).
@@ -53,13 +66,19 @@ dbos-java|compute|conformance/compute/dbos-java/run.sh
 airflow|compute|conformance/compute/airflow/run.sh
 airflow-local|compute|AIRFLOW_EXECUTOR=LocalExecutor OC_SKIP=edge conformance/compute/airflow/run.sh
 spec|cargo|scripts/spec/check.sh --all --nightly
-sim|cargo|SIM_SEEDS=1000 cargo test -p loams-sim --release --locked --test it sim::
-tail-merge|cargo|TAIL_PROP_CASES=256 cargo test -p loams-query --release --locked --test it tail_vs_rebuild::
-git-seeds|cargo|LOAMS_GIT_LIN_SEEDS=1024 cargo test -p loams-git --locked --test linearizable
+sim|cargo|SIM_SEEDS=1000 cargo test -p loams-sim --release --locked --test it sim::|cargo test -p loams-sim --release --locked --test it --no-run
+tail-merge|cargo|TAIL_PROP_CASES=256 cargo test -p loams-query --release --locked --test it tail_vs_rebuild::|cargo test -p loams-query --release --locked --test it --no-run
+git-seeds|cargo|LOAMS_GIT_LIN_SEEDS=1024 cargo test -p loams-git --locked --test linearizable|cargo test -p loams-git --locked --test linearizable --no-run
 EOF
 )
 
 usage() { sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; }
+
+# Internal: the bench lock re-enters this script to take a build slot.
+if [ "${1:-}" = --_slot ]; then
+  shift
+  if [ -x "$SLOT" ]; then exec "$SLOT" "$@"; else exec "$@"; fi
+fi
 
 while [ $# -gt 0 ]; do
   case $1 in
@@ -78,6 +97,9 @@ mkdir -p "$RESULTS"
 
 selected() { [ "$LEGS" = all ] || [[ ",$LEGS," == *",$1,"* ]]; }
 slot() { if [ -n "$SLOT" ]; then "$SLOT" "$@"; else "$@"; fi; }
+# exec_slot: the execution phase; with NIGHTLY_BENCHSLOT, waits for the bench
+# lock first (one leg per hold), then for a build slot.
+exec_slot() { if [ -n "$BENCH" ]; then "$BENCH" dx0-nightly "$0" --_slot "$@"; else slot "$@"; fi; }
 log() { printf '%s %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 
 # --- Cleaning up ---------------------------------------------------------------
@@ -110,7 +132,7 @@ SUMMARY="$RESULTS/summary.jsonl"
 failed=0
 
 run_leg() {
-  local name=$1 kind=$2 cmd=$3 dir rc t0 t1
+  local name=$1 kind=$2 cmd=$3 build=${4:-} dir rc t0 t1
   dir="$RESULTS/compute-$name"
   rm -rf "$dir"
   mkdir -p "$dir"
@@ -121,12 +143,20 @@ run_leg() {
     clean_compute "$project"
     # Each leg in a project of its own, beside any running stack.
     ( export OC_OUT=$dir OC_PROJECT=$project OC_NETWORK=${project}_default
-      slot bash -c "set -e; cd '$ROOT'; $cmd" ) >"$dir/leg.log" 2>&1
+      exec_slot bash -c "set -e; cd '$ROOT'; $cmd" ) >"$dir/leg.log" 2>&1
     rc=$?
     if [ "$KEEP" = 0 ]; then clean_compute "$project"; fi
   else
-    ( slot bash -c "set -e; cd '$ROOT'; $cmd" ) >"$dir/leg.log" 2>&1
-    rc=$?
+    rc=0
+    if [ -n "$build" ]; then
+      ( slot bash -c "set -e; cd '$ROOT'; $build" ) >"$dir/build.log" 2>&1 || rc=$?
+    fi
+    if [ "$rc" = 0 ]; then
+      ( exec_slot bash -c "set -e; cd '$ROOT'; $cmd" ) >"$dir/leg.log" 2>&1
+      rc=$?
+    else
+      cp "$dir/build.log" "$dir/leg.log"
+    fi
     # One JUnit case per cargo leg, so the summary and the matrix agree.
     if [ "$rc" = 0 ]; then
       python3 "$ROOT/scripts/compute/junit.py" add "$dir/$name.junit.xml" "nightly-$name" "$name" pass ""
@@ -147,12 +177,15 @@ PY
   if [ "$rc" = 0 ]; then log "ok   $name ($((t1 - t0)) s)"; else log "FAIL $name (exit $rc, $((t1 - t0)) s; $dir/leg.log)"; failed=1; fi
 }
 
-log "local nightly: $LABEL; results in $RESULTS; limiter ${SLOT:-none}; CARGO_BUILD_JOBS=$CARGO_BUILD_JOBS"
-while IFS='|' read -r name kind cmd; do
+log "local nightly: $LABEL; results in $RESULTS; limiter ${SLOT:-none}; bench lock ${BENCH:-none}; CARGO_BUILD_JOBS=$CARGO_BUILD_JOBS"
+while IFS='|' read -r -u 3 name kind cmd build; do
   [ -n "$name" ] || continue
   selected "$name" || continue
-  run_leg "$name" "$kind" "$cmd"
-done <<<"$LEG_TABLE"
+  # stdin from /dev/null: compose and the suites read stdin, and would
+  # otherwise swallow the rest of the leg table (the first local run stopped
+  # after one leg).
+  run_leg "$name" "$kind" "$cmd" "$build" </dev/null
+done 3<<<"$LEG_TABLE"
 
 # --- The results ---------------------------------------------------------------
 python3 - "$SUMMARY" "$RESULTS/summary.json" "$LABEL" "$SHA" "$DATE" <<'PY'

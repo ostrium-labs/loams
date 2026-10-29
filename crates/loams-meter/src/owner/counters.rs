@@ -95,7 +95,7 @@ impl FeatureIndex {
 /// The usage period an event falls in, from the subject's entitlement to
 /// the feature; `None` when the subject has no metered entitlement to it, so
 /// there is nothing to enforce (the House still bills it).
-pub trait Periods {
+pub trait Periods: Sync {
     fn period(&self, subject: &SubjectKey, feature: &FeatureKey, at: UtcNanos) -> Option<Period>;
 }
 

@@ -11,6 +11,9 @@ publish = false
 [dependencies]
 async-trait.workspace = true
 bytes.workspace = true
+# `loams knowledge publish` and `verify` (MS1 Task 9), dispatched by the
+# `loams` binary.
+clap.workspace = true
 futures.workspace = true
 hex.workspace = true
 # The manifest's signature is a Sigstore bundle, verified as the marketplace
@@ -25,15 +28,15 @@ sha2.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
 time.workspace = true
-tokio = { workspace = true, features = ["fs", "process", "sync"] }
+tokio = { workspace = true, features = ["fs", "process", "rt", "sync"] }
 toml.workspace = true
 tracing.workspace = true
+url.workspace = true
 
 [dev-dependencies]
 # The mock aggregator and publisher of the tests.
 axum.workspace = true
 tokio = { workspace = true, features = ["full"] }
-url.workspace = true
 
 [lints]
 workspace = true
