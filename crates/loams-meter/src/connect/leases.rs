@@ -76,6 +76,9 @@ impl LeaseService for Adapter {
                     .refusal
                     .map(|r| r.reason().to_string())
                     .unwrap_or_default(),
+                counting: g.counting,
+                overage: g.overage,
+                fail_open: g.fail_open.to_string(),
                 ..Default::default()
             }
             .into(),

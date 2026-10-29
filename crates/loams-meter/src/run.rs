@@ -207,6 +207,37 @@ pub fn policy(mode: &Mode, customer: Option<&Customer>) -> LeasePolicy {
     }
 }
 
+/// Whole units of `a` for ME-gate's integer amounts (D2180), floored, and
+/// zero below zero.
+pub fn gate_units(a: Amount) -> u64 {
+    u64::try_from(a.raw().div_euclid(Amount::SCALE).max(0)).unwrap_or(u64::MAX)
+}
+
+/// What a gate may spend for a subject's feature when the owner cannot be
+/// reached and its lease has expired: ME-gate's policy table (§13's "when
+/// unreachable" row). No payment method fails closed; a card fails open up
+/// to the overage headroom (else the allowance); a contract up to the
+/// headroom (else without bound).
+pub fn fail_open(policy: LeasePolicy, customer: Option<&Customer>, allowance: Amount) -> Amount {
+    use loams_meter_gate::policy::{Funding, PolicyTable, WhenUnreachable};
+    let funding = match customer.map(|c| (c.payment_state, c.spend_controls.overage_enabled)) {
+        None | Some((PaymentState::None, _)) => Funding::Free,
+        Some((PaymentState::Card, true)) => Funding::PaidOverage,
+        Some((PaymentState::Card, false)) => Funding::Paid,
+        Some((PaymentState::Invoice, _)) => Funding::Contract,
+    };
+    let headroom = match policy {
+        LeasePolicy::Overage { headroom } => Some(gate_units(headroom)),
+        _ => None,
+    };
+    match PolicyTable::default().when_unreachable(funding, headroom, gate_units(allowance)) {
+        WhenUnreachable::FailClosed => Amount::ZERO,
+        WhenUnreachable::FailOpen { budget } => {
+            Amount::from_raw(i128::from(budget).saturating_mul(Amount::SCALE))
+        }
+    }
+}
+
 /// The records the runtime works from, read every [`CATALOG_REFRESH`].
 #[derive(Debug, Default)]
 pub struct Catalog {
@@ -563,6 +594,11 @@ impl LeaseInputs for CatalogInputs {
             min_chunk: min_chunk(&f.unit),
             policy: policy(mode, catalog.customer(subject)),
             counted,
+            fail_open: fail_open(
+                policy(mode, catalog.customer(subject)),
+                catalog.customer(subject),
+                allowance,
+            ),
         }))
     }
 }

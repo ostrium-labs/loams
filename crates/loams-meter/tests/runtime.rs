@@ -467,3 +467,113 @@ async fn a_non_owner_reads_the_owner_and_then_the_house() {
         Err(loams_meter::error::MeterError::Unavailable(_))
     ));
 }
+
+/// A remote owner that answers one canned `AcquireLeaseResponse`.
+#[derive(Debug)]
+struct Remote(serde_json::Value);
+
+#[async_trait::async_trait]
+impl loams_meter::lease_client::LeaseTransport for Remote {
+    async fn acquire(
+        &self,
+        addr: &str,
+        body: serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        assert_eq!(addr, "10.0.0.2:9000");
+        assert_eq!(body["subject"], "org_a");
+        Ok(self.0.clone())
+    }
+}
+
+#[tokio::test]
+async fn the_lease_client_asks_the_local_owner_then_a_remote_one() {
+    use loams_meter::lease_client::{LeaseClient, LeaseRouter};
+    use loams_meter::lease_service::EpochFence;
+    use loams_meter::owner::PartitionLeases;
+    use loams_meter_gate::gate::{LeaseRequest as GateRequest, LeaseSource};
+
+    let mut w = world().await;
+    w.runtime.step().await;
+    let fence = Arc::new(EpochFence::new());
+    let request = GateRequest {
+        subject: "org_a",
+        feature: "house_cpu",
+        node: "node-9",
+        want: 10,
+        held: None,
+    };
+
+    // This process owns the partition: no network.
+    let local = LeaseClient::start(LeaseRouter {
+        partitions: 1,
+        local: Some(w.leases.clone()),
+        owners: Arc::new(MemLeases::new()),
+        transport: Arc::new(Remote(serde_json::Value::Null)),
+        fence: fence.clone(),
+        clock: Arc::new(|| NOW),
+    })
+    .expect("client");
+    let g = local
+        .acquire(&request, std::time::Duration::from_secs(2))
+        .expect("a lease");
+    assert!(g.has_access);
+    assert!(g.amount > 0 && g.amount <= 850);
+    assert!(!g.counting, "a hard limit refuses locally");
+    assert_eq!(
+        g.fail_open, 0,
+        "no customer, no payment method: fail closed"
+    );
+
+    // Another node owns it: the request goes to its address.
+    let owners = Arc::new(MemLeases::new());
+    owners
+        .acquire(
+            &loams_meter::owner::assign::partition_key(0),
+            &loams_meter::run::holder_name(2, "01J", Some("10.0.0.2:9000")),
+            std::time::Duration::from_secs(15),
+        )
+        .await
+        .expect("held");
+    let answer = serde_json::json!({ "lease": {
+        "leaseId": "abc", "amount": "40.5", "hasAccess": true,
+        "expireTime": "1970-01-01T02:00:30Z", "refreshTime": "1970-01-01T02:00:10Z",
+        "ownerEpoch": "7", "partition": 0, "counting": true, "overage": false, "failOpen": "12"
+    }});
+    let remote = LeaseClient::start(LeaseRouter {
+        partitions: 1,
+        local: None,
+        owners: owners.clone(),
+        transport: Arc::new(Remote(answer)),
+        fence: fence.clone(),
+        clock: Arc::new(|| NOW),
+    })
+    .expect("client");
+    let g = remote
+        .acquire(&request, std::time::Duration::from_secs(2))
+        .expect("a lease");
+    assert_eq!(g.amount, 40, "whole base units, floored");
+    assert_eq!(g.owner_epoch, 7);
+    assert!(g.counting);
+    assert_eq!(g.fail_open, 12);
+    assert_eq!(g.ttl, std::time::Duration::from_secs(30));
+    assert_eq!(g.refresh_after, std::time::Duration::from_secs(10));
+
+    // A grant from an older epoch than one seen is dropped.
+    let stale = serde_json::json!({ "lease": {
+        "leaseId": "abd", "amount": "1", "hasAccess": true, "ownerEpoch": "6"
+    }});
+    let fenced = LeaseClient::start(LeaseRouter {
+        partitions: 1,
+        local: None,
+        owners,
+        transport: Arc::new(Remote(stale)),
+        fence,
+        clock: Arc::new(|| NOW),
+    })
+    .expect("client");
+    assert!(
+        fenced
+            .acquire(&request, std::time::Duration::from_secs(2))
+            .is_err()
+    );
+}

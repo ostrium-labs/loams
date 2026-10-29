@@ -9808,6 +9808,7 @@ dependencies = [
  "loams-common",
  "loams-meter-core",
  "loams-meter-export",
+ "loams-meter-gate",
  "loams-meter-house",
  "loams-proto",
  "proptest",
