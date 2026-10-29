@@ -11,7 +11,7 @@
     "@loams-core/chart-specs": "workspace:*",
     "@loams-core/store": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "cordis": "^4.0.0-rc.10",
+    "cordis": "^4.0.0-rc.11",
     "uuid": "^14.0.3",
     "@loams-core/types": "workspace:*"
   },
