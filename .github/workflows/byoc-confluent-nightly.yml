@@ -1,0 +1,128 @@
+# CC1 Task 10 (design 80 §9, §11; D1831, D1832): the nightly Confluent Cloud row.
+# An ephemeral Basic cluster (max_ecku 1) in Ostrium's loams-ci environment, in
+# us-east-1 next to the AWS nightly VM (Q1334), through deploy/tofu/modules/confluent;
+# the data key goes to the VM through Secrets Manager; then the smoke
+# (tests/byoc/confluent_smoke.sh) and a teardown under always() that checks by id
+# that nothing of the run is left. Names loams-ci-<run>-*, TTL 3 hours, the hourly
+# reaper (byoc-confluent-reaper.yml) as the backstop.
+#
+# A no-op that says so until the owner has: set the repository variable
+# CONFLUENT_CI_ENABLED=true (the CI stop sets it to false), and in the environment
+# byoc-confluent put the secrets CONFLUENT_CLOUD_API_KEY/_SECRET (the
+# loams-ci-provisioner key, EnvironmentAdmin on loams-ci) and the variables
+# CONFLUENT_CI_ENVIRONMENT (env-...) and CONFLUENT_CI_DATA_SA (the loams-ci-data
+# account), plus AWS_ROLE_ARN and the Tailscale OAuth client for the VM leg.
+# workflow_dispatch with confluent_only runs the Confluent leg without AWS.
+name: BYOC Confluent nightly
+
+on:
+  schedule:
+    - cron: "15 4 * * *"
+  workflow_dispatch:
+    inputs:
+      confluent_only:
+        description: "Confluent only (no AWS VM)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: byoc-confluent
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  confluent:
+    name: "BYOC: AWS + Confluent Basic row"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    environment: byoc-confluent
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      LOAMS_CI_VERSION: "0.1.2"
+      GITHUB_RUN_ID: ${{ github.run_id }}
+      CONFLUENT_CI_ENVIRONMENT: ${{ vars.CONFLUENT_CI_ENVIRONMENT }}
+      CONFLUENT_CI_DATA_SA: ${{ vars.CONFLUENT_CI_DATA_SA }}
+      TOFU_VERSION: "1.13.2"
+      TOFU_SHA256: "ac05d9952662c7db28dd57e93f0a68018837bfdf9342384ec0987977c16a9645"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: is the row enabled and set up
+        id: guard
+        env:
+          ENABLED: ${{ vars.CONFLUENT_CI_ENABLED }}
+          KEY: ${{ secrets.CONFLUENT_CLOUD_API_KEY }}
+          ROLE: ${{ vars.AWS_ROLE_ARN }}
+          CONFLUENT_ONLY: ${{ inputs.confluent_only || false }}
+        run: |
+          ready=true; vm=1
+          if [ "$ENABLED" != "true" ]; then echo "CONFLUENT_CI_ENABLED is not true: the Confluent rows are off (or stopped by the budget guard); nothing to do."; ready=false; fi
+          if [ -z "$KEY" ] || [ -z "$CONFLUENT_CI_ENVIRONMENT" ] || [ -z "$CONFLUENT_CI_DATA_SA" ]; then echo "The byoc-confluent environment lacks CONFLUENT_CLOUD_API_KEY, CONFLUENT_CI_ENVIRONMENT or CONFLUENT_CI_DATA_SA: the owner has not set it up yet; nothing to do."; ready=false; fi
+          if [ "$CONFLUENT_ONLY" = "true" ]; then vm=0; elif [ -z "$ROLE" ]; then echo "AWS_ROLE_ARN is not set: the AWS account is not set up yet; nothing to do (dispatch with confluent_only for the Confluent leg)."; ready=false; fi
+          echo "ready=$ready" >> "$GITHUB_OUTPUT"
+          echo "vm=$vm" >> "$GITHUB_OUTPUT"
+      - if: steps.guard.outputs.ready == 'true'
+        name: OpenTofu (pinned, checked by hash)
+        run: |
+          set -euo pipefail
+          bin="$RUNNER_TEMP/bin"; mkdir -p "$bin"
+          curl --proto '=https' --tlsv1.2 -fsSL --retry 3 \
+            "https://github.com/opentofu/opentofu/releases/download/v$TOFU_VERSION/tofu_${TOFU_VERSION}_linux_amd64.tar.gz" -o "$RUNNER_TEMP/tofu.tgz"
+          echo "$TOFU_SHA256  $RUNNER_TEMP/tofu.tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/tofu.tgz" -C "$bin" tofu
+          echo "$bin" >> "$GITHUB_PATH"
+      - if: steps.guard.outputs.ready == 'true' && steps.guard.outputs.vm == '1'
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          role-duration-seconds: 3600
+          aws-region: ${{ env.AWS_REGION }}
+      - if: steps.guard.outputs.ready == 'true'
+        name: up (Confluent)
+        env:
+          CONFLUENT_CLOUD_API_KEY: ${{ secrets.CONFLUENT_CLOUD_API_KEY }}
+          CONFLUENT_CLOUD_API_SECRET: ${{ secrets.CONFLUENT_CLOUD_API_SECRET }}
+          CONFLUENT_CI_VM: ${{ steps.guard.outputs.vm }}
+        run: scripts/byoc/confluent-ci.sh up
+      - if: steps.guard.outputs.ready == 'true' && steps.guard.outputs.vm == '1'
+        name: up (AWS VM, fetching the Confluent key)
+        env:
+          TS_OAUTH_CLIENT_ID: ${{ vars.TS_OAUTH_CLIENT_ID }}
+          TS_OAUTH_CLIENT_SECRET: ${{ secrets.TS_OAUTH_CLIENT_SECRET }}
+          AWS_MATRIX_CONFLUENT_INTEGRATIONS: confluent
+        run: |
+          set -euo pipefail
+          token=$(curl -fsS -d "client_id=$TS_OAUTH_CLIENT_ID" -d "client_secret=$TS_OAUTH_CLIENT_SECRET" -d grant_type=client_credentials https://api.tailscale.com/api/v2/oauth/token | jq -r .access_token)
+          echo "::add-mask::$token"
+          key=$(curl -fsS -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+            -d '{"capabilities":{"devices":{"create":{"reusable":false,"ephemeral":true,"preauthorized":true,"tags":["tag:byoc-ci"]}}},"expirySeconds":7200}' \
+            https://api.tailscale.com/api/v2/tailnet/-/keys | jq -r .key)
+          echo "::add-mask::$key"
+          TS_AUTHKEY="$key" scripts/byoc/aws-matrix.sh up
+      - if: steps.guard.outputs.ready == 'true'
+        name: smoke (Confluent)
+        env:
+          CONFLUENT_CLOUD_API_KEY: ${{ secrets.CONFLUENT_CLOUD_API_KEY }}
+          CONFLUENT_CLOUD_API_SECRET: ${{ secrets.CONFLUENT_CLOUD_API_SECRET }}
+        run: scripts/byoc/confluent-ci.sh smoke
+      - if: steps.guard.outputs.ready == 'true' && steps.guard.outputs.vm == '1'
+        name: the VM's exposure scan
+        run: |
+          sleep 180
+          scripts/byoc/aws-matrix.sh smoke
+      - if: always() && steps.guard.outputs.ready == 'true'
+        name: down (Confluent, checked by id)
+        env:
+          CONFLUENT_CLOUD_API_KEY: ${{ secrets.CONFLUENT_CLOUD_API_KEY }}
+          CONFLUENT_CLOUD_API_SECRET: ${{ secrets.CONFLUENT_CLOUD_API_SECRET }}
+          CONFLUENT_CI_VM: ${{ steps.guard.outputs.vm }}
+        run: scripts/byoc/confluent-ci.sh down
+      - if: always() && steps.guard.outputs.ready == 'true' && steps.guard.outputs.vm == '1'
+        name: down (AWS VM)
+        run: scripts/byoc/aws-matrix.sh down
