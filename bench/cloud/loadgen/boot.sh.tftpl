@@ -1,0 +1,95 @@
+#!/bin/bash
+# CB1 loadgen boot (plan §5.4), rendered by bench/cloud/<cloud>/loadgen.tf.
+# The VM drives itself: it installs oha (checked by SHA-256), runs
+# run-scenarios.sh against the target, uploads the raw results with done.json
+# last, and powers off. It has no inbound rule and needs no shell.
+#
+# The deadline is set before anything else, so the VM stops even if the
+# laptop that applied it disconnects (plan §7.2).
+set -uo pipefail
+exec >>/var/log/loams-bench-boot.log 2>&1
+echo "loams-bench boot $(date -u +%FT%TZ)"
+
+state=/var/lib/loams-bench
+mkdir -p "$state" /opt/loams-bench/loadgen
+
+finish() {
+%{ if cloud == "azure" ~}
+  # An OS shutdown leaves an Azure VM "Stopped" and still billed: deallocate it
+  # through Resource Manager with the VM's own identity (Virtual Machine
+  # Contributor on itself only), and power off if that fails.
+  /opt/loams-bench/deallocate.sh || shutdown -h now
+%{ else ~}
+  shutdown -h now
+%{ endif ~}
+}
+
+# A reboot must not start a second run: the boot script runs on every boot on
+# some images (the GCE startup-script does).
+if [[ -e "$state/started" ]]; then
+  echo "already started once; powering off"
+  finish
+  exit 0
+fi
+touch "$state/started"
+
+%{ if cloud == "azure" ~}
+cat > /opt/loams-bench/deallocate.sh <<'DEALLOC'
+#!/bin/bash
+set -uo pipefail
+imds=http://169.254.169.254/metadata
+tok=$(curl -sf -H Metadata:true "$imds/identity/oauth2/token?api-version=2018-02-01&resource=https://management.azure.com/" | jq -r .access_token) || exit 1
+rid=$(curl -sf -H Metadata:true "$imds/instance/compute/resourceId?api-version=2021-02-01&format=text") || exit 1
+curl -sf -X POST -H "Authorization: Bearer $tok" -H 'content-length: 0' \
+  "https://management.azure.com$rid/deallocate?api-version=2024-07-01"
+DEALLOC
+chmod +x /opt/loams-bench/deallocate.sh
+# the deadline: deallocate at max_minutes, power off five minutes later regardless
+systemd-run --on-active=${max_minutes}m --unit=loams-bench-deadline /opt/loams-bench/deallocate.sh || true
+shutdown -h +${max_minutes + 5} "loams-bench deadline" || true
+%{ else ~}
+shutdown -h +${max_minutes} "loams-bench deadline" || true
+%{ endif ~}
+
+# --- packages: jq and curl (vmstat and the cloud's CLI are on the image) -------------
+for i in 1 2 3 4 5; do
+%{ if cloud == "aws" ~}
+  dnf install -y -q jq && break
+%{ else ~}
+  (apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq jq curl procps) && break
+%{ endif ~}
+  sleep $((i * 10))
+done
+
+# --- oha, pinned and checked -----------------------------------------------------------
+for i in 1 2 3 4 5; do
+  curl --proto '=https' --tlsv1.2 -fsSL "${oha_url}" -o /usr/local/bin/oha.download && break
+  sleep $((i * 5))
+done
+if ! echo "${oha_sha256}  /usr/local/bin/oha.download" | sha256sum -c -; then
+  echo "oha checksum mismatch: not running"
+  finish
+  exit 1
+fi
+mv /usr/local/bin/oha.download /usr/local/bin/oha
+chmod 0755 /usr/local/bin/oha
+
+# --- the harness scripts (gzip + base64 of bench/cloud/loadgen/*) ---------------------------
+%{ for name, content in files ~}
+printf '%s' '${content}' | base64 -d | gunzip > /opt/loams-bench/loadgen/${name}
+%{ endfor ~}
+chmod 0755 /opt/loams-bench/loadgen/*.sh
+
+# --- the run's settings (no secrets: URLs, names and sizes only) -----------------------------
+cat > /opt/loams-bench/env <<'BENCHENV'
+%{ for k, v in env ~}
+export ${k}='${replace(v, "'", "'\\''")}'
+%{ endfor ~}
+BENCHENV
+# shellcheck source=/dev/null
+. /opt/loams-bench/env
+export BENCH_OUT="$state/out" BENCH_OHA=/usr/local/bin/oha
+
+/opt/loams-bench/loadgen/run-scenarios.sh
+echo "loams-bench finished $(date -u +%FT%TZ)"
+finish

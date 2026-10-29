@@ -1,0 +1,30 @@
+{
+  "_comment": "CB1 list prices for usage x price (plan §5.3 (a)). (estimate): list prices for us-east-1, us-central1 and eastus as used in the plan's §6, read 2026-10-27; each entry is (verify) until a run's billed amount (b) confirms it. unit_usd is per one unit of the usage key; free is the always-free allowance for the period named.",
+  "read": "2026-10-27",
+  "aws": {
+    "lambda_requests": { "unit_usd": 0.0000002, "free": 1000000, "period": "month" },
+    "lambda_gb_s": { "unit_usd": 0.0000133334, "free": 400000, "period": "month", "note": "arm64" },
+    "dynamodb_read_units": { "unit_usd": 0.000000125, "free": 0, "period": "month", "only_if": { "dynamodb_mode": "on_demand" }, "note": "on-demand read request units; provisioned 25 RCU is free" },
+    "dynamodb_write_units": { "unit_usd": 0.000000625, "free": 0, "period": "month", "only_if": { "dynamodb_mode": "on_demand" }, "note": "on-demand write request units; provisioned 25 WCU is free" },
+    "sqs_requests": { "unit_usd": 0.0000004, "free": 1000000, "period": "month" },
+    "loadgen_hours": { "unit_usd": 0.10264, "free": 0, "period": "run", "note": "c7a.large on demand; disk and IPv4 excluded" }
+  },
+  "gcp": {
+    "run_requests": { "unit_usd": 0.0000004, "free": 2000000, "period": "month" },
+    "run_vcpu_s": { "unit_usd": 0.000024, "free": 180000, "period": "month" },
+    "run_gib_s": { "unit_usd": 0.0000025, "free": 360000, "period": "month" },
+    "firestore_reads": { "unit_usd": 0.0000003, "free": 50000, "period": "day" },
+    "firestore_writes": { "unit_usd": 0.0000009, "free": 20000, "period": "day" },
+    "firestore_deletes": { "unit_usd": 0.0000001, "free": 20000, "period": "day" },
+    "tasks_operations": { "unit_usd": 0.0000004, "free": 1000000, "period": "month" },
+    "loadgen_hours": { "unit_usd": 0.067, "free": 0, "period": "run", "note": "e2-standard-2 on demand; disk and IPv4 excluded" }
+  },
+  "azure": {
+    "flex_executions": { "unit_usd": 0.0000004, "free": 250000, "period": "month" },
+    "flex_gb_s": { "unit_usd": 0.000026, "free": 100000, "period": "month" },
+    "storage_transactions": { "unit_usd": 0.0000004, "free": 0, "period": "month", "note": "queue and blob class-2 operations, approximated at $0.004 per 10,000" },
+    "cosmos_request_units": { "unit_usd": 0, "free": 0, "period": "month", "note": "free tier: 1,000 RU/s provisioned" },
+    "loadgen_hours": { "unit_usd": 0.086, "free": 0, "period": "run", "note": "Standard_D2as_v5 on demand; disk and IP excluded" }
+  },
+  "requests_key": { "aws": "lambda_requests", "gcp": "run_requests", "azure": "flex_executions" }
+}
