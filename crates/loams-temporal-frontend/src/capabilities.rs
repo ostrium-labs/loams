@@ -46,6 +46,10 @@ pub const IMPLEMENTED: &[&str] = &[
     "GetWorkerBuildIdCompatibility",
     "GetWorkerVersioningRules",
     "GetWorkerTaskReachability",
+    "StartBatchOperation",
+    "StopBatchOperation",
+    "DescribeBatchOperation",
+    "ListBatchOperations",
     // Temporal Schedules (D2070-D2073).
     "CreateSchedule",
     "DescribeSchedule",
@@ -55,6 +59,8 @@ pub const IMPLEMENTED: &[&str] = &[
     "ListSchedules",
     "ListScheduleMatchingTimes",
     // Visibility (D2074-D2076).
+    "ListOpenWorkflowExecutions",
+    "ListClosedWorkflowExecutions",
     "ListWorkflowExecutions",
     "ScanWorkflowExecutions",
     "CountWorkflowExecutions",

@@ -31,6 +31,11 @@ cargo_package(
     ],
     tests = [
         {
+            "name": "batch",
+            "crate": "batch",
+            "root": "tests/batch.rs",
+        },
+        {
             "name": "capabilities",
             "crate": "capabilities",
             "root": "tests/capabilities.rs",
@@ -44,6 +49,11 @@ cargo_package(
             "name": "methods",
             "crate": "methods",
             "root": "tests/methods.rs",
+        },
+        {
+            "name": "paging",
+            "crate": "paging",
+            "root": "tests/paging.rs",
         },
         {
             "name": "scenarios",

@@ -1589,6 +1589,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "bq1-native"
+version = "0.1.2"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "clap",
+ "futures",
+ "http",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "loams-kv",
+ "mysql_async",
+ "rand 0.9.5",
+ "serde_json",
+ "tokio",
+ "tokio-postgres",
+]
+
+[[package]]
 name = "brotli"
 version = "8.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3728,6 +3748,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "46c4cf71a36b46dcfc00e5014c0c20ccad2b1b6a008304d7d57d2749b2d41b3d"
 
 [[package]]
+name = "deadpool"
+version = "0.12.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0be2b1d1d6ec8d846f05e137292d0b89133caf95ef33695424c09568bdd39b1b"
+dependencies = [
+ "deadpool-runtime",
+ "lazy_static",
+ "num_cpus",
+ "tokio",
+]
+
+[[package]]
+name = "deadpool-runtime"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "092966b41edc516079bdf31ec78a2e0588d1d0c08f78b91d8307215928642b2b"
+
+[[package]]
 name = "defmt"
 version = "0.3.100"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5054,6 +5092,19 @@ dependencies = [
  "memchr",
  "pin-project-lite",
  "slab",
+]
+
+[[package]]
+name = "gateway-bench"
+version = "0.1.2"
+dependencies = [
+ "clap",
+ "loams-gateway",
+ "rcgen",
+ "rustls",
+ "serde_json",
+ "tokio",
+ "tokio-rustls",
 ]
 
 [[package]]
@@ -8390,6 +8441,7 @@ dependencies = [
  "loams-hnsw",
  "loams-hot",
  "loams-identity-sync",
+ "loams-knowledge",
  "loams-kv",
  "loams-link",
  "loams-live",
@@ -8398,6 +8450,8 @@ dependencies = [
  "loams-log",
  "loams-meta",
  "loams-meta-tikv",
+ "loams-meter",
+ "loams-meter-core",
  "loams-migrate",
  "loams-pg-control",
  "loams-postgres",
@@ -9010,6 +9064,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-cql"
+version = "0.1.2"
+
+[[package]]
 name = "loams-durable"
 version = "0.1.2"
 dependencies = [
@@ -9387,8 +9445,10 @@ dependencies = [
 name = "loams-imperial"
 version = "0.1.2"
 dependencies = [
+ "loams-kv",
  "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -9398,6 +9458,7 @@ dependencies = [
  "async-trait",
  "axum 0.8.9",
  "bytes",
+ "clap",
  "futures",
  "hex",
  "loams-agentd-marketplace",
@@ -9661,6 +9722,7 @@ dependencies = [
  "loams-cloudevents",
  "loams-common",
  "loams-meter-core",
+ "loams-meter-house",
  "loams-proto",
  "proptest",
  "reqwest 0.13.5",
@@ -9717,6 +9779,26 @@ dependencies = [
  "sha2 0.11.0",
  "thiserror 2.0.21",
  "time",
+]
+
+[[package]]
+name = "loams-meter-export"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "base64 0.23.1",
+ "hex",
+ "hmac 0.13.0",
+ "reqwest 0.13.5",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.21",
+ "time",
+ "tokio",
+ "tracing",
+ "url",
+ "wiremock",
 ]
 
 [[package]]
@@ -10083,6 +10165,7 @@ name = "loams-sidebar-browser"
 version = "0.1.2"
 dependencies = [
  "base64 0.23.1",
+ "flate2",
  "futures",
  "serde",
  "serde_json",
@@ -18663,6 +18746,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "wiremock"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08db1edfb05d9b3c1542e521aea074442088292f00b5f28e435c714a98f85031"
+dependencies = [
+ "assert-json-diff",
+ "base64 0.22.1",
+ "deadpool",
+ "futures",
+ "http",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "log",
+ "once_cell",
+ "regex",
+ "serde",
+ "serde_json",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "wit-bindgen"
 version = "0.57.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -19097,21 +19203,4 @@ dependencies = [
  "serde",
  "syn 3.0.6",
  "winnow 1.0.4",
-]
-
-[[package]]
-name = "loams-cql"
-version = "0.1.2"
-
-[[package]]
-name = "loams-meter-house"
-version = "0.1.2"
-dependencies = [
- "axum 0.8.9",
- "loams-meter-core",
- "reqwest 0.13.5",
- "serde_json",
- "thiserror 2.0.21",
- "tokio",
- "url",
 ]

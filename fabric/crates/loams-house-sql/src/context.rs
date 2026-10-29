@@ -240,6 +240,9 @@ impl ContextProvider for HouseContext<'_> {
     }
 
     fn get_function_meta(&self, name: &str) -> Option<Arc<ScalarUDF>> {
+        if name == "currentDatabase" {
+            return Some(crate::session::CurrentDatabase::udf(&self.database));
+        }
         if name == crate::coerce::COND {
             return Some(crate::coerce::plan_time::cond_udf());
         }

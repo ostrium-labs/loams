@@ -13,6 +13,7 @@
 pub mod customers;
 pub mod entitlements;
 pub mod leases;
+pub mod meters;
 pub mod notifications;
 pub mod plans;
 

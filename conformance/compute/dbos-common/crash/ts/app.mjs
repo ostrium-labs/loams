@@ -3,7 +3,7 @@
 // step starts), resume <wf>, count <wf>, enqueue <prefix> <n>, serve <s>,
 // queued <prefix>, set-event <wf> <v> [s], get-event <wf> <s>.
 // Environment: DBOS_URL, DBOS_LISTEN (1 or 0), DBOS_EXECUTOR.
-import { DBOS, WorkflowQueue } from '@dbos-inc/dbos-sdk';
+import { DBOS } from '@dbos-inc/dbos-sdk';
 import pg from 'pg';
 
 const URL = process.env.DBOS_URL;
@@ -26,7 +26,9 @@ DBOS.setConfig({
   useListenNotify: (process.env.DBOS_LISTEN ?? '1') === '1',
   executorID: process.env.DBOS_EXECUTOR ?? 'local',
 });
-const queue = new WorkflowQueue('loams', { concurrency: 10 });
+// Queues are registered after launch (DBOS.registerQueue, v5); the SDK is
+// CommonJS, so only its documented named exports are imported (T5.R8).
+let queue;
 
 async function step(wf, n) {
   return DBOS.runStep(
@@ -76,6 +78,7 @@ async function main() {
     return;
   }
   await DBOS.launch();
+  queue = await DBOS.registerQueue('loams', { concurrency: 10 });
   if (cmd === 'start') {
     const h = await DBOS.startWorkflow(five, { workflowID: args[0] })(args[0]);
     console.log(await h.getResult());

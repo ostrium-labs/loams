@@ -383,7 +383,7 @@ impl Frontend {
                 "WorkflowTaskFinishEventId is not set on request.",
             ));
         }
-        let events = self.engine.history(&base, 1, usize::MAX).await?;
+        let events = self.engine.history_until(&base, i64::MAX, |_| true).await?;
         let new_run_id = uuid::Uuid::new_v4().to_string();
         let request_id = if r.request_id.is_empty() {
             uuid::Uuid::new_v4().to_string()

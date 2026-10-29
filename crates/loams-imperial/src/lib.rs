@@ -165,3 +165,6 @@ impl Lease {
         Ok(())
     }
 }
+
+/// Durable lease and checkpoint transactions.
+pub mod durable;

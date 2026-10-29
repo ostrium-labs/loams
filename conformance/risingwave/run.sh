@@ -46,26 +46,38 @@ password="${RW_PASSWORD:-${LOAMS_API_KEY:-}}"
 
 mkdir -p "$work/bin" "$work/junit"
 
-# 1. The runner, pinned, in the harness's own root.
-slt="$work/bin/bin/sqllogictest"
+# 1. The runner, pinned: SQLLOGICTEST names an installed binary of the pinned
+# version, or it is installed into the harness's own root.
+slt="${SQLLOGICTEST:-$work/bin/bin/sqllogictest}"
 if [ ! -x "$slt" ] || ! "$slt" --version 2>/dev/null | grep -q "$SQLLOGICTEST_BIN"; then
+  slt="$work/bin/bin/sqllogictest"
   cargo install --locked --quiet --root "$work/bin" sqllogictest-bin --version "=$SQLLOGICTEST_BIN"
 fi
 
-run_slt() { # <junit-name> <files...>
-  local name="$1"; shift
+run_slt() { # <junit-name> <base-dir> <files relative to base-dir...>
+  # Run from the base directory with relative paths, so case names (which
+  # sqllogictest derives from the path) are the same on every machine.
+  # --jobs gives each file its own database, as RisingWave's own CI does, so
+  # one file's leftovers cannot fail the next.
+  local name="$1" base="$2"; shift 2
   (
-    cd "$work/junit"
+    cd "$base"
     PGPASSWORD="$password" "$slt" \
       --engine postgres \
       --host "$host" --port "$port" --db "$db" --user "$user" --pass "$password" \
+      --jobs "${RW_SLT_JOBS:-4}" \
       --junit "$name" \
       "$@"
   ) || true # failures are judged by xfail_check below, not by the exit code
+  # The JUnit file lands in the base directory as <name>-junit.xml.
+  mv -f "$base/$name-junit.xml" "$work/junit/" 2>/dev/null || true
 }
 
 # 2. Loams' own cases.
-run_slt loams "$here"/loams/*.slt
+rm -f "$work"/junit/*.xml
+(cd "$here" && ls loams/*.slt) > "$work/loams-files.txt"
+# shellcheck disable=SC2046
+run_slt loams "$here" $(cat "$work/loams-files.txt")
 
 # 3. RisingWave's e2e subset from the pinned tag's tarball (a download, not a clone).
 if [ "$loams_only" = 0 ]; then
@@ -100,9 +112,9 @@ if [ "$loams_only" = 0 ]; then
       echo "run.sh: subset.txt pattern '$pattern' matches no file at $RISINGWAVE_TAG" >&2
       exit 2
     fi
-    files+=( "${matched[@]}" )
+    files+=( "${matched[@]#"$src"/}" )
   done < "$here/subset.txt"
-  run_slt upstream "${files[@]}"
+  run_slt upstream "$src" "${files[@]}"
 fi
 
 # 4. Strict expected-failure check.
