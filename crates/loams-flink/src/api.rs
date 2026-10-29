@@ -29,7 +29,9 @@
 //! `{"type":"error","error":"…","message":"…"}`.
 
 pub mod backend;
+pub mod job_catalog;
 pub mod jobs;
+pub mod pg_store;
 pub mod run;
 pub mod split;
 pub mod sql_gateway_adapter;

@@ -38,6 +38,11 @@ cargo_package(
             "root": "tests/gateway_router.rs",
         },
         {
+            "name": "pg_store",
+            "crate": "pg_store",
+            "root": "tests/pg_store.rs",
+        },
+        {
             "name": "rest_client",
             "crate": "rest_client",
             "root": "tests/rest_client.rs",
