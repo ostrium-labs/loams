@@ -137,7 +137,7 @@ async fn world() -> World {
 #[tokio::test]
 async fn balances_wait_for_the_counters_then_come_from_them() {
     let mut w = world().await;
-    let values = CounterValues(w.counters.clone());
+    let values = CounterValues::new(w.counters.clone());
     let e = entitlement(Mode::HardLimit);
     let g = [grant(1_000)];
 
@@ -152,7 +152,11 @@ async fn balances_wait_for_the_counters_then_come_from_them() {
     assert_eq!(w.leases.owned().len(), 1, "granting once rebuilt");
 
     let b = values.value(&e, &g, NOW).await.expect("a balance");
-    assert_eq!(b.usage, Amount::from_units(150), "the duplicate counts once");
+    assert_eq!(
+        b.usage,
+        Amount::from_units(150),
+        "the duplicate counts once"
+    );
     assert_eq!(b.balance, Amount::from_units(850));
     assert!(b.has_access);
 
@@ -269,7 +273,10 @@ fn overage_needs_a_payer_who_turned_it_on() {
         "100 EUR at 2 EUR a unit"
     );
     assert_eq!(
-        policy(&mode, Some(&customer(PaymentState::Invoice, true, Some(10_000_000)))),
+        policy(
+            &mode,
+            Some(&customer(PaymentState::Invoice, true, Some(10_000_000)))
+        ),
         LeasePolicy::Overage {
             headroom: Amount::from_units(5)
         },
@@ -359,4 +366,104 @@ async fn crossed_thresholds_are_appended_and_read_back_to_the_notifier() {
     );
     // Nothing new crossed: nothing more appended.
     assert_eq!(captured.appended.lock().expect("lock").len(), 1);
+}
+
+/// The owner on another node: answers a fixed count for its address.
+#[derive(Debug)]
+struct Peer {
+    addr: String,
+    counted: Amount,
+}
+
+#[async_trait::async_trait]
+impl loams_meter::run::CounterPeer for Peer {
+    async fn counted(
+        &self,
+        addr: &str,
+        _key: &loams_meter::owner::CounterKey,
+    ) -> loams_meter::error::Result<Option<(Amount, loams_meter_core::AsOf)>> {
+        Ok((addr == self.addr).then_some((
+            self.counted,
+            loams_meter_core::AsOf::Counter {
+                owner_epoch: 3,
+                offset: 9,
+            },
+        )))
+    }
+}
+
+/// The House: a fixed usage so far.
+#[derive(Debug)]
+struct HouseSoFar(Amount);
+
+#[async_trait::async_trait]
+impl loams_meter::run::UsageSoFar for HouseSoFar {
+    async fn usage(
+        &self,
+        _e: &Entitlement,
+        _start: UtcNanos,
+        _at: UtcNanos,
+    ) -> loams_meter::error::Result<Amount> {
+        Ok(self.0)
+    }
+}
+
+#[tokio::test]
+async fn a_non_owner_reads_the_owner_and_then_the_house() {
+    use loams_meter::owner::PartitionLeases;
+    use loams_meter::run::{holder_addr, holder_name};
+
+    // This node counts nothing; another holds partition 0 of 1.
+    let counters = Counters::new(1);
+    let leases = Arc::new(MemLeases::new());
+    let other = holder_name(2, "01J", Some("10.0.0.2:9000"));
+    assert_eq!(holder_addr(&other), Some("10.0.0.2:9000"));
+    assert_eq!(holder_addr(&holder_name(1, "01J", None)), None);
+    leases
+        .acquire(
+            &loams_meter::owner::assign::partition_key(0),
+            &other,
+            std::time::Duration::from_secs(15),
+        )
+        .await
+        .expect("the other node holds it");
+    let e = entitlement(Mode::HardLimit);
+    let g = [grant(1_000)];
+
+    let forwarded = CounterValues::new(counters.clone())
+        .with_owners(
+            leases.clone(),
+            Arc::new(Peer {
+                addr: "10.0.0.2:9000".into(),
+                counted: Amount::from_units(300),
+            }),
+        )
+        .with_house(Arc::new(HouseSoFar(Amount::from_units(1))));
+    let b = forwarded.value(&e, &g, NOW).await.expect("from the owner");
+    assert_eq!(b.usage, Amount::from_units(300));
+    assert!(matches!(
+        b.as_of,
+        loams_meter_core::AsOf::Counter { owner_epoch: 3, .. }
+    ));
+
+    // The owner does not answer for this address: the House does.
+    let fallback = CounterValues::new(counters.clone())
+        .with_owners(
+            leases,
+            Arc::new(Peer {
+                addr: "elsewhere:1".into(),
+                counted: Amount::ZERO,
+            }),
+        )
+        .with_house(Arc::new(HouseSoFar(Amount::from_units(40))));
+    let b = fallback.value(&e, &g, NOW).await.expect("from the House");
+    assert_eq!(b.usage, Amount::from_units(40));
+    assert!(matches!(b.as_of, loams_meter_core::AsOf::House { .. }));
+
+    // Nobody answers: unavailable, never a balance without usage.
+    let none = CounterValues::new(counters).value(&e, &g, NOW).await;
+    assert!(matches!(
+        none,
+        Err(loams_meter::error::MeterError::Unavailable(_))
+    ));
 }

@@ -699,7 +699,7 @@ fn window_filter(feature: &FeatureDef) -> String {
 
 /// The filter of raw events by the feature's group-by values, through the
 /// meter's paths.
-fn event_filter(feature: &FeatureDef) -> String {
+pub fn event_filter(feature: &FeatureDef) -> String {
     feature
         .filter
         .iter()

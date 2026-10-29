@@ -3135,6 +3135,12 @@ impl Server {
         // The placement, for Loams Git's sequencer owners on a cluster node (GT1 Task 14).
         #[cfg(feature = "git")]
         let git_placement = routing.as_ref().map(|(placement, _)| placement.clone());
+        // Where other nodes reach this one, for the meter's counter reads
+        // forwarded to a partition's owner.
+        #[cfg(feature = "meter")]
+        let meter_advertise = routing
+            .as_ref()
+            .map(|(placement, _)| placement.registry().me().addr.to_string());
         if let Some((placement, remote)) = routing {
             collections.set_placement(placement, remote);
         }
@@ -3301,6 +3307,7 @@ impl Server {
                 writer.clone(),
                 &config.meter,
                 &config.data_dir,
+                meter_advertise,
             ) {
                 Ok(node) => {
                     let (role, runtime, internal, main) = node.start();
