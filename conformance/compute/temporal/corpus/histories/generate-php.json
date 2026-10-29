@@ -1,0 +1,187 @@
+{
+    "namespace": "corpus-php-1793189650",
+    "language": "php",
+    "scenarios": [
+        {
+            "scenario": "hello",
+            "workflow_id": "corpus-php-hello",
+            "expected": [],
+            "result": "\"hello corpus\""
+        },
+        {
+            "scenario": "two_activities_sequential",
+            "workflow_id": "corpus-php-two_activities_sequential",
+            "expected": [],
+            "result": "\"hello one, hello two\""
+        },
+        {
+            "scenario": "activity_parallel_fanout_10",
+            "workflow_id": "corpus-php-activity_parallel_fanout_10",
+            "expected": [],
+            "result": "[\"hello n0\",\"hello n1\",\"hello n2\",\"hello n3\",\"hello n4\",\"hello n5\",\"hello n6\",\"hello n7\",\"hello n8\",\"hello n9\"]"
+        },
+        {
+            "scenario": "signal_then_complete",
+            "workflow_id": "corpus-php-signal_then_complete",
+            "expected": [],
+            "result": "\"got s\""
+        },
+        {
+            "scenario": "query_while_running",
+            "workflow_id": "corpus-php-query_while_running",
+            "expected": [
+                "query state=waiting"
+            ],
+            "result": "\"done\""
+        },
+        {
+            "scenario": "cancel_requested",
+            "workflow_id": "corpus-php-cancel_requested",
+            "expected": [
+                "Temporal\\Exception\\Client\\WorkflowFailedException: workflowId='corpus-php-cancel_requested', runId='01a18281-f321-7bdd-821b-b300391292ee', workflowType='cancel_requested', retryState=2 <- Temporal\\Exception\\Failure\\CanceledFailure: Workflow canceled"
+            ]
+        },
+        {
+            "scenario": "terminated",
+            "workflow_id": "corpus-php-terminated",
+            "expected": [
+                "Temporal\\Exception\\Client\\WorkflowFailedException: workflowId='corpus-php-terminated', runId='01a18281-f400-7b96-b9af-ff9e327277dd', workflowType='terminated', retryState=2 <- Temporal\\Exception\\Failure\\TerminatedFailure: corpus terminates it"
+            ]
+        },
+        {
+            "scenario": "workflow_failed_application_error",
+            "workflow_id": "corpus-php-workflow_failed_application_error",
+            "expected": [
+                "Temporal\\Exception\\Client\\WorkflowFailedException: workflowId='corpus-php-workflow_failed_application_error', runId='01a18281-f4d7-7cb7-9295-9230a9c07bf5', workflowType='workflow_failed_application_error', workflowTaskCompletedEventId=1048967, retryState=5 <- Temporal\\Exception\\Failure\\ApplicationFailure: CorpusBoom: CorpusBoom: boom\n\nnonRetryable=true\n\nnonRetryable=true\nStackTrace:\n#0  [internal function]\n    Corpus\\Workflows\\WorkflowFailedApplicationError->run()\n#1  /tmp/c/workers/php/vendor/temporal/sdk/src/Internal/Declaration/Dispatcher/Dispatcher.php:93\n    ReflectionMethod->invokeArgs(Corpus\\Workflows\\WorkflowFailedApplicationError,array(0))\n[22 hidden internal calls]"
+            ]
+        },
+        {
+            "scenario": "activity_heartbeat_details",
+            "workflow_id": "corpus-php-activity_heartbeat_details",
+            "expected": [],
+            "result": "3"
+        },
+        {
+            "scenario": "timer_short",
+            "workflow_id": "corpus-php-timer_short",
+            "expected": [],
+            "result": "null"
+        },
+        {
+            "scenario": "timer_cancelled",
+            "workflow_id": "corpus-php-timer_cancelled",
+            "expected": [],
+            "result": "\"cancelled\""
+        },
+        {
+            "scenario": "activity_retry_backoff_3_attempts",
+            "workflow_id": "corpus-php-activity_retry_backoff_3_attempts",
+            "expected": [],
+            "result": "3"
+        },
+        {
+            "scenario": "activity_start_to_close_timeout",
+            "workflow_id": "corpus-php-activity_start_to_close_timeout",
+            "expected": [],
+            "result": "\"TIMEOUT_TYPE_START_TO_CLOSE\""
+        },
+        {
+            "scenario": "activity_schedule_to_start_timeout",
+            "workflow_id": "corpus-php-activity_schedule_to_start_timeout",
+            "expected": [],
+            "result": "\"TIMEOUT_TYPE_SCHEDULE_TO_START\""
+        },
+        {
+            "scenario": "activity_heartbeat_timeout",
+            "workflow_id": "corpus-php-activity_heartbeat_timeout",
+            "expected": [],
+            "result": "\"TIMEOUT_TYPE_HEARTBEAT\""
+        },
+        {
+            "scenario": "signal_with_start",
+            "workflow_id": "corpus-php-signal_with_start",
+            "expected": [],
+            "result": "\"started with s\""
+        },
+        {
+            "scenario": "child_workflow",
+            "workflow_id": "corpus-php-child_workflow",
+            "expected": [],
+            "result": "\"hello child\""
+        },
+        {
+            "scenario": "child_workflow_cancelled",
+            "workflow_id": "corpus-php-child_workflow_cancelled",
+            "expected": [],
+            "result": "\"child cancelled\""
+        },
+        {
+            "scenario": "continue_as_new_3",
+            "workflow_id": "corpus-php-continue_as_new_3",
+            "expected": [],
+            "result": "3"
+        },
+        {
+            "scenario": "id_reuse_allow_duplicate_failed_only",
+            "workflow_id": "corpus-php-id_reuse_allow_duplicate_failed_only",
+            "expected": [
+                "the first run failed; the second started with the same ID"
+            ],
+            "result": "\"second run\""
+        },
+        {
+            "scenario": "id_conflict_fail",
+            "workflow_id": "corpus-php-id_conflict_fail",
+            "expected": [
+                "the second start was refused: WorkflowExecutionAlreadyStarted"
+            ],
+            "result": "null"
+        },
+        {
+            "scenario": "local_activity",
+            "workflow_id": "corpus-php-local_activity",
+            "expected": [],
+            "result": "\"hello local\""
+        },
+        {
+            "scenario": "side_effect_and_version_marker",
+            "workflow_id": "corpus-php-side_effect_and_version_marker",
+            "expected": [],
+            "result": "\"version 1 side effect 42\""
+        },
+        {
+            "scenario": "search_attributes_upsert",
+            "workflow_id": "corpus-php-search_attributes_upsert",
+            "expected": [],
+            "result": "null"
+        },
+        {
+            "scenario": "memo",
+            "workflow_id": "corpus-php-memo",
+            "expected": [],
+            "result": "null"
+        },
+        {
+            "scenario": "large_payload_1mb",
+            "workflow_id": "corpus-php-large_payload_1mb",
+            "expected": [],
+            "result": "1048576"
+        },
+        {
+            "scenario": "update_accepted_completed",
+            "workflow_id": "corpus-php-update_accepted_completed",
+            "expected": [
+                "update returned 2"
+            ],
+            "result": "\"total 2\""
+        },
+        {
+            "scenario": "update_rejected",
+            "workflow_id": "corpus-php-update_rejected",
+            "expected": [
+                "update rejected: Temporal\\Exception\\Client\\WorkflowUpdateException: runId='01a18282-4193-7073-a438-793321abe157', workflowType='update_rejected' <- Temporal\\Exception\\Failure\\ApplicationFailure: InvalidArgumentException: increment must not be negative\nStackTrace:\n#0  [internal function]\n    Corpus\\Workflows\\UpdateRejected->validateIncrement(-1)\n#1  /tmp/c/workers/php/vendor/temporal/sdk/src/Internal/Declaration/Dispatcher/Dispatcher.php:93\n    ReflectionMethod->invokeArgs(Corpus\\Workflows\\UpdateRejected,array(1))\n[19 hidden internal calls]"
+            ],
+            "result": "\"total 0\""
+        }
+    ]
+}

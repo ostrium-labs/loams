@@ -1,3 +1,2 @@
 # The Temporal gateway's SDK legs (conformance/compute/temporal/gateway/run.sh, plan DX1 Task 10).
-# No expected failures.
 product = "temporal-gateway"

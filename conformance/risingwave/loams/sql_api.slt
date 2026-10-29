@@ -1,0 +1,32 @@
+# The exact statements crates/loams-risingwave/src/sql_api.rs sends (simple
+# query protocol, text casts), so a RisingWave upgrade that renames a catalog
+# column fails here first.
+
+statement ok
+SELECT r.id::varchar, s.name::varchar, r.name::varchar, NULL::varchar, r.definition::varchar FROM rw_catalog.rw_materialized_views r JOIN rw_catalog.rw_schemas s ON s.id = r.schema_id WHERE s.name NOT IN ('rw_catalog', 'pg_catalog', 'information_schema') ORDER BY s.name, r.name
+
+statement ok
+SELECT r.id::varchar, s.name::varchar, r.name::varchar, r.connector::varchar, r.definition::varchar FROM rw_catalog.rw_sources r JOIN rw_catalog.rw_schemas s ON s.id = r.schema_id WHERE s.name NOT IN ('rw_catalog', 'pg_catalog', 'information_schema') ORDER BY s.name, r.name
+
+statement ok
+SELECT r.id::varchar, s.name::varchar, r.name::varchar, r.connector::varchar, r.definition::varchar FROM rw_catalog.rw_sinks r JOIN rw_catalog.rw_schemas s ON s.id = r.schema_id WHERE s.name NOT IN ('rw_catalog', 'pg_catalog', 'information_schema') ORDER BY s.name, r.name
+
+statement ok
+SELECT r.id::varchar, s.name::varchar, r.name::varchar, NULL::varchar, r.definition::varchar FROM rw_catalog.rw_tables r JOIN rw_catalog.rw_schemas s ON s.id = r.schema_id WHERE s.name NOT IN ('rw_catalog', 'pg_catalog', 'information_schema') ORDER BY s.name, r.name
+
+statement ok
+SELECT ddl_id::varchar, ddl_statement::varchar, progress::varchar, initialized_at::varchar FROM rw_catalog.rw_ddl_progress ORDER BY ddl_id
+
+query T
+SELECT count(*)::varchar FROM rw_catalog.rw_secrets WHERE name = 'loams_conformance_none'
+----
+0
+
+statement ok
+CREATE TABLE "loams_conf_show" ("a" INT)
+
+statement ok
+SHOW CREATE TABLE "loams_conf_show"
+
+statement ok
+DROP TABLE "loams_conf_show"

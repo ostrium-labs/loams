@@ -6474,6 +6474,70 @@ cargo.rust_library(
     visibility = [],
 )
 
+cargo_alias(
+    name = "cassandra-protocol",
+    actual = ":cassandra-protocol-4",
+    platforms = [
+        "linux-arm64",
+        "linux-x86_64",
+        "macos-arm64",
+        "macos-x86_64",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+http_archive(
+    name = "cassandra-protocol-4.0.1.crate",
+    sha256 = "f2b9432628147943eb265642273714eb5a5451bb61f652c1f06001c0ef3e099b",
+    strip_prefix = "cassandra-protocol-4.0.1",
+    urls = ["https://static.crates.io/crates/cassandra-protocol/4.0.1/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "cassandra-protocol-4",
+    srcs = [":cassandra-protocol-4.0.1.crate"],
+    crate = "cassandra_protocol",
+    crate_root = "cassandra-protocol-4.0.1.crate/src/lib.rs",
+    edition = "2018",
+    env = {
+        "CARGO_BIN_NAME": "cassandra_protocol",
+        "CARGO_CRATE_NAME": "cassandra_protocol",
+        "CARGO_MANIFEST_DIR": "cassandra-protocol-4.0.1.crate",
+        "CARGO_PKG_AUTHORS": "Alex Pikalov <alex.pikalov.khar@gmail.com>:Kamil Rojewski <kamil.rojewski@gmail.com>",
+        "CARGO_PKG_DESCRIPTION": "Cassandra protocol implementation",
+        "CARGO_PKG_HOMEPAGE": "https://github.com/krojew/cdrs-tokio",
+        "CARGO_PKG_NAME": "cassandra-protocol",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/krojew/cdrs-tokio",
+        "CARGO_PKG_RUST_VERSION": "1.74",
+        "CARGO_PKG_VERSION": "4.0.1",
+        "CARGO_PKG_VERSION_MAJOR": "4",
+        "CARGO_PKG_VERSION_MINOR": "0",
+        "CARGO_PKG_VERSION_PATCH": "1",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
+    deps = [
+        ":arc-swap-1",
+        ":bitflags-2",
+        ":bytes-1",
+        ":chrono-0.4",
+        ":crc32fast-1",
+        ":derivative-2",
+        ":derive_more-2",
+        ":float_eq-1",
+        ":integer-encoding-4",
+        ":itertools-0.14",
+        ":lz4_flex-0.13",
+        ":num-bigint-0.4",
+        ":snap-1",
+        ":thiserror-2",
+        ":time-0.3",
+        ":uuid-1",
+    ],
+)
+
 http_archive(
     name = "cbc-0.2.1.crate",
     sha256 = "ce2dc9ee5f88d11e0beb842c88b33c8a5cf0d1329c4b19494af42b07dbfe8896",
@@ -12343,6 +12407,85 @@ cargo.rust_library(
 )
 
 http_archive(
+    name = "deadpool-0.12.3.crate",
+    sha256 = "0be2b1d1d6ec8d846f05e137292d0b89133caf95ef33695424c09568bdd39b1b",
+    strip_prefix = "deadpool-0.12.3",
+    urls = ["https://static.crates.io/crates/deadpool/0.12.3/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "deadpool-0.12",
+    srcs = [":deadpool-0.12.3.crate"],
+    crate = "deadpool",
+    crate_root = "deadpool-0.12.3.crate/src/lib.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "deadpool",
+        "CARGO_CRATE_NAME": "deadpool",
+        "CARGO_MANIFEST_DIR": "deadpool-0.12.3.crate",
+        "CARGO_PKG_AUTHORS": "Michael P. Jung <michael.jung@terreon.de>",
+        "CARGO_PKG_DESCRIPTION": "Dead simple async pool",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "deadpool",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/bikeshedder/deadpool",
+        "CARGO_PKG_RUST_VERSION": "1.75",
+        "CARGO_PKG_VERSION": "0.12.3",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "12",
+        "CARGO_PKG_VERSION_PATCH": "3",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "default",
+        "managed",
+        "unmanaged",
+    ],
+    visibility = [],
+    deps = [
+        ":deadpool-runtime-0.1",
+        ":lazy_static-1",
+        ":num_cpus-1",
+        ":tokio-1",
+    ],
+)
+
+http_archive(
+    name = "deadpool-runtime-0.1.4.crate",
+    sha256 = "092966b41edc516079bdf31ec78a2e0588d1d0c08f78b91d8307215928642b2b",
+    strip_prefix = "deadpool-runtime-0.1.4",
+    urls = ["https://static.crates.io/crates/deadpool-runtime/0.1.4/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "deadpool-runtime-0.1",
+    srcs = [":deadpool-runtime-0.1.4.crate"],
+    crate = "deadpool_runtime",
+    crate_root = "deadpool-runtime-0.1.4.crate/src/lib.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "deadpool_runtime",
+        "CARGO_CRATE_NAME": "deadpool_runtime",
+        "CARGO_MANIFEST_DIR": "deadpool-runtime-0.1.4.crate",
+        "CARGO_PKG_AUTHORS": "Michael P. Jung <michael.jung@terreon.de>",
+        "CARGO_PKG_DESCRIPTION": "Dead simple async pool utitities for sync managers",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "deadpool-runtime",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/bikeshedder/deadpool",
+        "CARGO_PKG_RUST_VERSION": "1.75",
+        "CARGO_PKG_VERSION": "0.1.4",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "1",
+        "CARGO_PKG_VERSION_PATCH": "4",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
+)
+
+http_archive(
     name = "der-0.7.10.crate",
     sha256 = "e7c1832837b905bbfb5101e07cc24c8deddf52f93225eee6ead5f4d63d53ddcb",
     strip_prefix = "der-0.7.10",
@@ -12517,6 +12660,46 @@ cargo.rust_library(
     ],
     visibility = [],
     deps = [":serde_core-1"],
+)
+
+http_archive(
+    name = "derivative-2.2.0.crate",
+    sha256 = "fcc3dd5e9e9c0b295d6e1e4d811fb6f157d5ffd784b8d202fc62eac8035a770b",
+    strip_prefix = "derivative-2.2.0",
+    urls = ["https://static.crates.io/crates/derivative/2.2.0/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "derivative-2",
+    srcs = [":derivative-2.2.0.crate"],
+    crate = "derivative",
+    crate_root = "derivative-2.2.0.crate/src/lib.rs",
+    edition = "2015",
+    env = {
+        "CARGO_BIN_NAME": "derivative",
+        "CARGO_CRATE_NAME": "derivative",
+        "CARGO_MANIFEST_DIR": "derivative-2.2.0.crate",
+        "CARGO_PKG_AUTHORS": "mcarton <cartonmartin+git@gmail.com>",
+        "CARGO_PKG_DESCRIPTION": "A set of alternative `derive` attributes for Rust",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "derivative",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/mcarton/rust-derivative",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "2.2.0",
+        "CARGO_PKG_VERSION_MAJOR": "2",
+        "CARGO_PKG_VERSION_MINOR": "2",
+        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    proc_macro = True,
+    visibility = [],
+    deps = [
+        ":proc-macro2-1",
+        ":quote-1",
+        ":syn-1",
+    ],
 )
 
 http_archive(
@@ -15620,6 +15803,44 @@ cargo.rust_library(
         ":miniz_oxide-0.9",
         ":zlib-rs-0.6",
     ],
+)
+
+http_archive(
+    name = "float_eq-1.0.1.crate",
+    sha256 = "28a80e3145d8ad11ba0995949bbcf48b9df2be62772b3d351ef017dff6ecb853",
+    strip_prefix = "float_eq-1.0.1",
+    urls = ["https://static.crates.io/crates/float_eq/1.0.1/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "float_eq-1",
+    srcs = [":float_eq-1.0.1.crate"],
+    crate = "float_eq",
+    crate_root = "float_eq-1.0.1.crate/src/lib.rs",
+    edition = "2018",
+    env = {
+        "CARGO_BIN_NAME": "float_eq",
+        "CARGO_CRATE_NAME": "float_eq",
+        "CARGO_MANIFEST_DIR": "float_eq-1.0.1.crate",
+        "CARGO_PKG_AUTHORS": "jtempest",
+        "CARGO_PKG_DESCRIPTION": "Compare IEEE floating point primitives, structs and collections for equality.",
+        "CARGO_PKG_HOMEPAGE": "https://jtempest.github.io/float_eq-rs/",
+        "CARGO_PKG_NAME": "float_eq",
+        "CARGO_PKG_README": "crates-io.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/jtempest/float_eq-rs",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "1.0.1",
+        "CARGO_PKG_VERSION_MAJOR": "1",
+        "CARGO_PKG_VERSION_MINOR": "0",
+        "CARGO_PKG_VERSION_PATCH": "1",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    features = [
+        "default",
+        "std",
+    ],
+    visibility = [],
 )
 
 http_archive(
@@ -22121,6 +22342,7 @@ cargo.rust_library(
     features = [
         "client",
         "default",
+        "full",
         "http1",
         "http2",
         "server",
@@ -29816,7 +30038,11 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
+        "checked-decode",
+        "default",
         "frame",
+        "safe-decode",
+        "safe-encode",
         "std",
     ],
     visibility = [],
@@ -49306,11 +49532,13 @@ cargo.rust_library(
         "clone-impls",
         "default",
         "derive",
+        "extra-traits",
         "full",
         "parsing",
         "printing",
         "proc-macro",
         "quote",
+        "visit",
     ],
     rustc_flags = ["@$(location :syn-1-build-script-run[rustc_flags])"],
     visibility = [],
@@ -49348,11 +49576,13 @@ cargo.rust_binary(
         "clone-impls",
         "default",
         "derive",
+        "extra-traits",
         "full",
         "parsing",
         "printing",
         "proc-macro",
         "quote",
+        "visit",
     ],
     visibility = [],
 )
@@ -49377,11 +49607,13 @@ buildscript_run(
         "clone-impls",
         "default",
         "derive",
+        "extra-traits",
         "full",
         "parsing",
         "printing",
         "proc-macro",
         "quote",
+        "visit",
     ],
     rustc_link_lib = True,
     rustc_link_search = True,
@@ -56338,6 +56570,69 @@ cargo.rust_library(
         "std",
     ],
     visibility = [],
+)
+
+cargo_alias(
+    name = "wiremock",
+    actual = ":wiremock-0.6",
+    platforms = [
+        "linux-arm64",
+        "linux-x86_64",
+        "macos-arm64",
+        "macos-x86_64",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+http_archive(
+    name = "wiremock-0.6.5.crate",
+    sha256 = "08db1edfb05d9b3c1542e521aea074442088292f00b5f28e435c714a98f85031",
+    strip_prefix = "wiremock-0.6.5",
+    urls = ["https://static.crates.io/crates/wiremock/0.6.5/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "wiremock-0.6",
+    srcs = [":wiremock-0.6.5.crate"],
+    crate = "wiremock",
+    crate_root = "wiremock-0.6.5.crate/src/lib.rs",
+    edition = "2024",
+    env = {
+        "CARGO_BIN_NAME": "wiremock",
+        "CARGO_CRATE_NAME": "wiremock",
+        "CARGO_MANIFEST_DIR": "wiremock-0.6.5.crate",
+        "CARGO_PKG_AUTHORS": "Luca Palmieri <rust@lpalmieri.com>",
+        "CARGO_PKG_DESCRIPTION": "HTTP mocking to test Rust applications.",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "wiremock",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/LukeMathWalker/wiremock-rs",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "0.6.5",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "6",
+        "CARGO_PKG_VERSION_PATCH": "5",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
+    deps = [
+        ":assert-json-diff-2",
+        ":base64-0.22",
+        ":deadpool-0.12",
+        ":futures-0.3",
+        ":http-1",
+        ":http-body-util-0.1",
+        ":hyper-1",
+        ":hyper-util-0.1",
+        ":log-0.4",
+        ":once_cell-1",
+        ":regex-1",
+        ":serde-1",
+        ":serde_json-1",
+        ":tokio-1",
+        ":url-2",
+    ],
 )
 
 http_archive(

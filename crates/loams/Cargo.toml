@@ -50,6 +50,8 @@ jsonwebtoken.workspace = true
 http-body.workspace = true
 # The `can_*` checks (design 76 §9, D1610): model v1 in process, or OpenFGA (IA2 Task 4).
 loams-authz.workspace = true
+loams-meter = { workspace = true, optional = true }
+loams-meter-core = { workspace = true, optional = true }
 # The identity sync (design 76 §8.1, plan IA1 IA3), off unless LOAMS_IDENTITY_SYNC=on.
 loams-identity-sync.workspace = true
 loams-zitadel.workspace = true
@@ -69,6 +71,9 @@ loams-git = { workspace = true, optional = true }
 toml = { workspace = true, optional = true }
 hex = { workspace = true, optional = true }
 loams-hnsw.workspace = true
+# `loams knowledge publish|verify` (feature `knowledge`, MS1 Task 9): the
+# knowledge cache's client, with the marketplace's Sigstore verifier.
+loams-knowledge = { workspace = true, optional = true }
 loams-hot.workspace = true
 loams-link.workspace = true
 # The Loams Live sync service (R1 Task 12).
@@ -146,7 +151,7 @@ ulid.workspace = true
 url.workspace = true
 
 [features]
-default = ["es", "flight", "hnsw", "live", "qdrant"]
+default = ["es", "flight", "hnsw", "knowledge", "live", "qdrant"]
 # Serve the Elasticsearch REST API (plan M1.5; `--es-listen`).
 es = ["dep:loams-es"]
 # The TiKV metastore (R1 plan Task 6; `--meta tikv://…` on `dev` and
@@ -171,8 +176,16 @@ postgres = ["dep:loams-pg-control", "dep:loams-postgres"]
 # `--runtime kubernetes`: role secrets and the signing key as Kubernetes
 # Secrets (the kube client).
 postgres-kubernetes = ["postgres", "loams-pg-control/kubernetes"]
+# `loams knowledge publish|verify` (MS1 Task 9, D1813): a client of the
+# bucket and Walrus that starts no server. In the default set: every crate it
+# adds is already in the lockfile (agentd links them).
+knowledge = ["dep:loams-knowledge"]
 # Serve Arrow Flight SQL (Task 12; `--flight-sql-listen`).
 flight = []
+# Loams Meter's `meter` role (design §63 §5.2; ME1 role wiring): the
+# customer, entitlement, plan and notification services on the main port of
+# a gateway node. Off by default.
+meter = ["dep:loams-meter", "dep:loams-meter-core"]
 # Serve the Qdrant REST and gRPC APIs (plan M1.4; `--qdrant-listen`).
 qdrant = ["dep:loams-qdrant"]
 # The qdrant-edge HNSW engine for hot artifacts (M1.3); without it the hot

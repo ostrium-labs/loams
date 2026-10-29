@@ -21,7 +21,7 @@ use loams_house_types::{ChError, ChType};
 
 use super::registry::arity;
 use super::{
-    Agg, AggRef, arrow_type, ch, conform, item_field, list_scalar, state_list, state_list_type,
+    Agg, AggRef, arrow_type, conform, item_field, list_scalar, state_list, state_list_type,
 };
 
 /// ClickHouse's `AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ELEMENT_SIZE`.

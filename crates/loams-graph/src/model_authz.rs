@@ -139,6 +139,7 @@ impl<D: fmt::Debug> fmt::Debug for ModelGraphAuthorizer<D> {
 }
 
 impl<D: GraphDirectory> ModelGraphAuthorizer<D> {
+    /// Creates a graph authorizer backed by the given directory and authorization service.
     pub fn new(directory: D, authz: Arc<dyn Authorizer>) -> Self {
         Self { directory, authz }
     }

@@ -1,0 +1,220 @@
+{
+  "events":  [
+    {
+      "eventId":  "1",
+      "eventTime":  "2026-10-28T12:35:19.407975956Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+      "taskId":  "1049070",
+      "workflowExecutionStartedEventAttributes":  {
+        "workflowType":  {
+          "name":  "activity_retry_backoff_3_attempts"
+        },
+        "taskQueue":  {
+          "name":  "corpus-php",
+          "kind":  "TASK_QUEUE_KIND_NORMAL"
+        },
+        "workflowExecutionTimeout":  "0s",
+        "workflowRunTimeout":  "0s",
+        "workflowTaskTimeout":  "10s",
+        "originalExecutionRunId":  "01a18281-fcef-7ee1-81de-30d2db29bd9a",
+        "identity":  "176@cddb73508697",
+        "firstExecutionRunId":  "01a18281-fcef-7ee1-81de-30d2db29bd9a",
+        "attempt":  1,
+        "firstWorkflowTaskBackoff":  "0s",
+        "workflowId":  "corpus-php-activity_retry_backoff_3_attempts",
+        "priority":  {}
+      }
+    },
+    {
+      "eventId":  "2",
+      "eventTime":  "2026-10-28T12:35:19.408026432Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId":  "1049071",
+      "workflowTaskScheduledEventAttributes":  {
+        "taskQueue":  {
+          "name":  "corpus-php",
+          "kind":  "TASK_QUEUE_KIND_NORMAL"
+        },
+        "startToCloseTimeout":  "10s",
+        "attempt":  1
+      }
+    },
+    {
+      "eventId":  "3",
+      "eventTime":  "2026-10-28T12:35:19.410714164Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "taskId":  "1049076",
+      "workflowTaskStartedEventAttributes":  {
+        "scheduledEventId":  "2",
+        "identity":  "roadrunner:corpus-php:effd30ac-0f82-45c6-b261-092d50718175",
+        "requestId":  "883d9401-dbdb-4c13-9226-387b7ede65cd",
+        "historySizeBytes":  "288",
+        "workerVersion":  {
+          "buildId":  "04ae426167056a41c1c8243affd06944"
+        }
+      }
+    },
+    {
+      "eventId":  "4",
+      "eventTime":  "2026-10-28T12:35:19.414975203Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "taskId":  "1049080",
+      "workflowTaskCompletedEventAttributes":  {
+        "scheduledEventId":  "2",
+        "startedEventId":  "3",
+        "identity":  "roadrunner:corpus-php:effd30ac-0f82-45c6-b261-092d50718175",
+        "workerVersion":  {
+          "buildId":  "04ae426167056a41c1c8243affd06944"
+        },
+        "sdkMetadata":  {
+          "langUsedFlags":  [
+            3
+          ],
+          "sdkName":  "temporal-go",
+          "sdkVersion":  "1.44.1"
+        },
+        "meteringMetadata":  {}
+      }
+    },
+    {
+      "eventId":  "5",
+      "eventTime":  "2026-10-28T12:35:19.415030476Z",
+      "eventType":  "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "taskId":  "1049081",
+      "activityTaskScheduledEventAttributes":  {
+        "activityId":  "5",
+        "activityType":  {
+          "name":  "fail_twice"
+        },
+        "taskQueue":  {
+          "name":  "corpus-php",
+          "kind":  "TASK_QUEUE_KIND_NORMAL"
+        },
+        "header":  {},
+        "input":  {},
+        "scheduleToCloseTimeout":  "0s",
+        "scheduleToStartTimeout":  "0s",
+        "startToCloseTimeout":  "10s",
+        "heartbeatTimeout":  "0s",
+        "workflowTaskCompletedEventId":  "4",
+        "retryPolicy":  {
+          "initialInterval":  "1s",
+          "backoffCoefficient":  2,
+          "maximumInterval":  "100s",
+          "maximumAttempts":  3
+        },
+        "useWorkflowBuildId":  true,
+        "priority":  {}
+      }
+    },
+    {
+      "eventId":  "6",
+      "eventTime":  "2026-10-28T12:35:22.434676931Z",
+      "eventType":  "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "taskId":  "1049098",
+      "activityTaskStartedEventAttributes":  {
+        "scheduledEventId":  "5",
+        "identity":  "roadrunner:corpus-php:effd30ac-0f82-45c6-b261-092d50718175",
+        "requestId":  "de2e749d-304b-4f5e-b24d-6d3665aa51d1",
+        "attempt":  3,
+        "lastFailure":  {
+          "message":  "Transient: attempt 2 fails",
+          "source":  "PHP_SDK",
+          "stackTrace":  "#0  [internal function]\n    Corpus\\Activities->failTwice()\n#1  /tmp/c/workers/php/vendor/temporal/sdk/src/Internal/Declaration/Dispatcher/Dispatcher.php:93\n    ReflectionMethod->invokeArgs(Corpus\\Activities,array(0))\n[17 hidden internal calls]",
+          "applicationFailureInfo":  {
+            "type":  "Transient"
+          }
+        },
+        "workerVersion":  {
+          "buildId":  "04ae426167056a41c1c8243affd06944"
+        }
+      }
+    },
+    {
+      "eventId":  "7",
+      "eventTime":  "2026-10-28T12:35:22.437933780Z",
+      "eventType":  "EVENT_TYPE_ACTIVITY_TASK_COMPLETED",
+      "taskId":  "1049099",
+      "activityTaskCompletedEventAttributes":  {
+        "result":  {
+          "payloads":  [
+            {
+              "metadata":  {
+                "encoding":  "anNvbi9wbGFpbg=="
+              },
+              "data":  "Mw=="
+            }
+          ]
+        },
+        "scheduledEventId":  "5",
+        "startedEventId":  "6",
+        "identity":  "roadrunner:corpus-php:effd30ac-0f82-45c6-b261-092d50718175"
+      }
+    },
+    {
+      "eventId":  "8",
+      "eventTime":  "2026-10-28T12:35:22.437949784Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId":  "1049100",
+      "workflowTaskScheduledEventAttributes":  {
+        "taskQueue":  {
+          "name":  "cddb73508697:0ed45373-7578-4903-a6ff-8cba8ac38fe9",
+          "kind":  "TASK_QUEUE_KIND_STICKY",
+          "normalName":  "corpus-php"
+        },
+        "startToCloseTimeout":  "10s",
+        "attempt":  1
+      }
+    },
+    {
+      "eventId":  "9",
+      "eventTime":  "2026-10-28T12:35:22.439674889Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "taskId":  "1049104",
+      "workflowTaskStartedEventAttributes":  {
+        "scheduledEventId":  "8",
+        "identity":  "roadrunner:corpus-php:effd30ac-0f82-45c6-b261-092d50718175",
+        "requestId":  "43a71e78-9fe2-4919-b8af-163870e7f540",
+        "historySizeBytes":  "1398",
+        "workerVersion":  {
+          "buildId":  "04ae426167056a41c1c8243affd06944"
+        }
+      }
+    },
+    {
+      "eventId":  "10",
+      "eventTime":  "2026-10-28T12:35:22.442969284Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "taskId":  "1049108",
+      "workflowTaskCompletedEventAttributes":  {
+        "scheduledEventId":  "8",
+        "startedEventId":  "9",
+        "identity":  "roadrunner:corpus-php:effd30ac-0f82-45c6-b261-092d50718175",
+        "workerVersion":  {
+          "buildId":  "04ae426167056a41c1c8243affd06944"
+        },
+        "sdkMetadata":  {},
+        "meteringMetadata":  {}
+      }
+    },
+    {
+      "eventId":  "11",
+      "eventTime":  "2026-10-28T12:35:22.443004196Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED",
+      "taskId":  "1049109",
+      "workflowExecutionCompletedEventAttributes":  {
+        "result":  {
+          "payloads":  [
+            {
+              "metadata":  {
+                "encoding":  "anNvbi9wbGFpbg=="
+              },
+              "data":  "Mw=="
+            }
+          ]
+        },
+        "workflowTaskCompletedEventId":  "10"
+      }
+    }
+  ]
+}

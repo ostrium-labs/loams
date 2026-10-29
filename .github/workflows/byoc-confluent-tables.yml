@@ -11,8 +11,6 @@
 name: BYOC Confluent tables
 
 on:
-  schedule:
-    - cron: "20 5 * * 1"
   workflow_dispatch:
 
 concurrency:

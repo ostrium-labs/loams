@@ -1,0 +1,12 @@
+# Runs loams-nightly.service at 02:17 local time (the old GitHub nightly's
+# minute). Persistent: a night missed while the laptop slept runs at wake-up.
+[Unit]
+Description=Loams local nightly, every night
+
+[Timer]
+OnCalendar=*-*-* 02:17:00
+Persistent=true
+RandomizedDelaySec=10m
+
+[Install]
+WantedBy=timers.target
