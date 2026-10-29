@@ -1,0 +1,200 @@
+name: Temporal SDK leg (PHP)
+
+# TSDK-php (D2145-D2149): the PHP SDK (temporal/sdk at
+# conformance/compute/pins.env's TEMPORAL_SDK_PHP, its workers run by
+# RoadRunner's temporal plugin at ROADRUNNER_VERSION) beside the Go and
+# TypeScript legs of temporal-gateway.yml, one workflow per extra SDK so the
+# SDK lanes do not edit the same file.
+#
+#   unit       composer install from the lock, php -l, and the worker's
+#              offline scenario check (no server, no grpc extension)
+#   upstream   the PHP corpus against upstream Temporal (`temporal server
+#              start-dev`, the corpus's fallback oracle until compat mode is
+#              go), replayed by the SDK's WorkflowReplayer; uploaded as an
+#              artifact, from which histories/php/ is committed
+#   gateway    the PHP leg through the compose profile `temporal-gateway`
+#              (run.sh --profile with SDK_LEGS=php): the scenarios through
+#              loams-temporal, the replayer on the gateway's histories, and
+#              compare.py against the committed PHP corpus and against this
+#              run's upstream one
+#
+# The PHP image (corpus/workers/php/Containerfile: PHP 8.4, PECL grpc,
+# Composer, RoadRunner) is built in each job that needs it; grpc compiles
+# for several minutes.
+#
+# On pull requests that touch the gateway or the PHP leg, and by hand. Not
+# part of `CI required`, like temporal-gateway.yml.
+#
+# Do not event-filter paths: the filter job decides, as in ci.yml.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: temporal-sdk-php-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  changes:
+    name: Changed paths
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      gateway: ${{ steps.filter.outputs.gateway }}
+      php: ${{ steps.filter.outputs.php }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # dorny/paths-filter is MIT-licensed; pinned to v4.0.3, as in ci.yml.
+      # Empty token forces local Git comparison, including fork PRs; no PR API permission.
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        if: github.event_name == 'pull_request'
+        with:
+          token: ''
+          base: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          filters: |
+            php:
+              - 'conformance/compute/temporal/corpus/workers/php/**'
+              - 'conformance/compute/temporal/corpus/generate-php.sh'
+              - 'conformance/compute/temporal/corpus/scenarios.json'
+              - 'conformance/compute/temporal/gateway/legs/php.sh'
+              - 'conformance/compute/pins.env'
+              - '.github/workflows/temporal-sdk-php.yml'
+            gateway:
+              - 'crates/loams-temporal-*/**'
+              - 'crates/loams-gateway/src/temporal/**'
+              - 'conformance/compute/temporal/**'
+              - 'conformance/compute/temporal-gateway.yaml'
+              - 'conformance/compute/lib.sh'
+              - 'conformance/compute/pins.env'
+              - 'deploy/release/compute/durable-init.sh'
+              - 'deploy/release/compose.compute.yaml'
+              - 'deploy/release/Containerfile.loams-temporal'
+              - 'deploy/release/temporal-gateway.toml.example'
+              - '.github/workflows/temporal-sdk-php.yml'
+
+  unit:
+    name: "Temporal SDK PHP: corpus worker offline checks (composer, php -l)"
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.php == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: composer install, php -l and scenarios_check in the pinned Composer image
+        run: |
+          . conformance/compute/lib.sh
+          # The Composer image's PHP has neither grpc nor sockets; the check
+          # needs neither (it reads the classes' attributes), so those
+          # requirements are ignored here only. The legs' image has both.
+          docker run --rm -v "$PWD/conformance/compute/temporal/corpus:/c:ro" "$COMPOSER_IMAGE" \
+            sh -ec "cp -r /c /tmp/corpus && cd /tmp/corpus/workers/php && \
+              composer validate --no-check-publish && \
+              composer install --no-interaction --no-progress --prefer-dist --quiet --ignore-platform-req='ext-*' && \
+              for f in worker.php starter.php replay.php src/*.php tests/*.php; do php -l \$f >/dev/null; done && \
+              php tests/scenarios_check.php"
+      - name: the manifest's PHP checks (scenario list, pins.env)
+        run: python3 conformance/compute/temporal/corpus/manifest.py check
+
+  upstream:
+    name: "Temporal SDK PHP: corpus against upstream Temporal (start-dev)"
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.php == 'true' || needs.changes.outputs.gateway == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      OC_OUT: ${{ github.workspace }}/target/compute
+      OC_NETWORK: tsdk-php-corpus-net
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: start-dev on a network of its own
+        run: |
+          . conformance/compute/lib.sh
+          docker network create "$OC_NETWORK"
+          docker run -d --name tsdk-php-temporal --network "$OC_NETWORK" --network-alias temporal-frontend \
+            "$TEMPORAL_ADMIN_TOOLS_IMAGE" temporal server start-dev --ip 0.0.0.0 --headless
+          for _ in $(seq 60); do
+            docker run --rm --network "$OC_NETWORK" "$TEMPORAL_ADMIN_TOOLS_IMAGE" \
+              temporal operator cluster health --address temporal-frontend:7233 >/dev/null 2>&1 && exit 0
+            sleep 2
+          done
+          docker logs tsdk-php-temporal | tail -50
+          exit 1
+      - name: generate-php.sh (generate, export, replay)
+        run: |
+          set -o pipefail
+          mkdir -p "$OC_OUT/php-upstream"
+          CORPUS_SERVER=start-dev conformance/compute/temporal/corpus/generate-php.sh --out "$OC_OUT/php-upstream" \
+            2>&1 | tee "$OC_OUT/php-upstream/generate.log"
+      - name: the server's logs
+        if: failure() || cancelled()
+        run: docker logs tsdk-php-temporal >"$OC_OUT/php-upstream/server.log" 2>&1 || true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: temporal-sdk-php-upstream-corpus
+          path: target/compute/php-upstream
+          if-no-files-found: ignore
+          retention-days: 14
+
+  gateway:
+    name: "Temporal gateway: PHP SDK leg (temporal-gateway profile)"
+    needs: [changes, upstream]
+    # Runs even when the upstream generation failed: the gateway half still says something.
+    if: >-
+      always() && needs.changes.result == 'success' &&
+      (github.event_name == 'workflow_dispatch' || needs.changes.outputs.gateway == 'true' || needs.changes.outputs.php == 'true')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      OC_OUT: ${{ github.workspace }}/target/compute
+      DOCKER_BUILDKIT: '1'
+      LEG_TIMEOUT: '900'
+      SDK_LEGS: php
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: the PHP leg through the temporal-gateway profile
+        run: conformance/compute/temporal/gateway/run.sh --profile
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: always() && needs.upstream.result == 'success'
+        with:
+          name: temporal-sdk-php-upstream-corpus
+          path: target/compute/php-upstream
+      - name: the gateway's PHP histories against this run's upstream ones
+        if: always() && needs.upstream.result == 'success'
+        run: |
+          . conformance/compute/lib.sh
+          scenarios=$(python3 -c 'import json,sys; print(",".join(s["name"] for s in json.load(open(sys.argv[1]))["scenarios"] if s["phase"]=="DX1"))' conformance/compute/temporal/corpus/scenarios.json)
+          mkdir -p target/compute/php-oracle
+          ln -sfn "$OC_OUT/php-upstream/php" target/compute/php-oracle/php
+          python3 -I conformance/compute/temporal/gateway/compare.py --corpus target/compute/php-oracle \
+            --gateway "$OC_OUT/temporal-gateway-profile/histories" --scenarios "$scenarios" --langs php \
+            --junit "$OC_OUT/temporal-gateway-profile/php-vs-upstream.junit.xml"
+          oc_xfail_check temporal/gateway "$OC_OUT/temporal-gateway-profile/php-vs-upstream.junit.xml"
+      - name: the stack's logs
+        if: failure() || cancelled()
+        run: |
+          . conformance/compute/lib.sh
+          oc_compose --gateway --profile temporal-gateway ps -a || true
+          oc_compose --gateway --profile temporal-gateway logs --no-color --tail 500 temporal-gateway loams compute-init compute1 >"$OC_OUT/temporal-gateway-profile/stack.log" 2>&1 || true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: temporal-sdk-php-gateway-leg
+          path: target/compute/temporal-gateway-profile
+          if-no-files-found: ignore
+          retention-days: 14

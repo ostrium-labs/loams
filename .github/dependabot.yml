@@ -57,11 +57,9 @@ updates:
       - dependency-name: "openraft"
       # Major bumps that break compilation; do them by hand, together where noted.
       # arrow*/datafusion*: Lance 12 re-exports Arrow 58, so they move with Lance.
-      - dependency-name: "arrow-array"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "arrow-schema"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "arrow-flight"
+      # Every arrow crate (arrow, arrow-array, arrow-ipc, arrow-schema,
+      # arrow-flight, ...): #1351 proposed arrow-ipc 60 alone, beside arrow 58.
+      - dependency-name: "arrow*"
         update-types: ["version-update:semver-major"]
       - dependency-name: "datafusion*"
         update-types: ["version-update:semver-major"]

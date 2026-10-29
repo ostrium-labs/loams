@@ -1,0 +1,32 @@
+[package]
+name = "bq1-native"
+description = "BQ1 combined run (bench/all): closed-loop load through native APIs (loams-kv embedded and TiKV, PG wire, MySQL wire, HTTP/2) printing the bench/all/CONTRACT.md JSON lines."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[[bin]]
+name = "bq1-native"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+bytes.workspace = true
+clap.workspace = true
+futures.workspace = true
+http.workspace = true
+http-body-util = "0.1"
+hyper = { version = "1", features = ["client", "http2"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+loams-kv = { workspace = true, features = ["tikv"] }
+mysql_async = { version = "0.37", default-features = false, features = ["minimal-rust"] }
+rand.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tokio-postgres = "0.7"
+
+[lints]
+workspace = true

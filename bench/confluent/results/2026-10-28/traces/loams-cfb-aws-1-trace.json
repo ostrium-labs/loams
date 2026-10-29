@@ -1,0 +1,573 @@
+{
+ "trace_id": "9ff8381331c523d17be559449bb059f6",
+ "target": "loams-cfb-aws-1",
+ "spans": [
+  {
+   "name": "kafka.message",
+   "span_id": "5533d99ce19b81fc",
+   "parent_span_id": "",
+   "start_ns": 1793154380372851444,
+   "duration_nano": 479803567,
+   "attrs": {
+    "cfb.target": "loams-cfb-aws-1",
+    "cfb.acks": "1",
+    "cfb.mode": "latency",
+    "messaging.destination.name": "loams-cfb-075523-latency"
+   },
+   "res": {
+    "telemetry.sdk.name": "opentelemetry",
+    "telemetry.sdk.version": "1.45.1",
+    "service.instance.id": "7ace849d-308f-4837-9d25-d00ab9594ffb",
+    "cfb.kind": "confluent-cloud-basic",
+    "cloud.provider": "aws",
+    "cloud.region": "ap-south-1",
+    "messaging.system": "kafka",
+    "service.name": "cfb-driver",
+    "service.namespace": "loams-bench",
+    "cfb.run": "075523",
+    "cfb.target": "loams-cfb-aws-1",
+    "telemetry.sdk.language": "python"
+   }
+  },
+  {
+   "name": "kafka.message",
+   "span_id": "5533d99ce19b81fc",
+   "parent_span_id": "",
+   "start_ns": 1793154380372851444,
+   "duration_nano": 479803567,
+   "attrs": {
+    "cfb.mode": "latency",
+    "messaging.destination.name": "loams-cfb-075523-latency",
+    "cfb.target": "loams-cfb-aws-1",
+    "cfb.acks": "1"
+   },
+   "res": {
+    "telemetry.sdk.name": "opentelemetry",
+    "service.instance.id": "7ace849d-308f-4837-9d25-d00ab9594ffb",
+    "service.name": "cfb-driver",
+    "service.namespace": "loams-bench",
+    "cfb.run": "075523",
+    "messaging.system": "kafka",
+    "telemetry.sdk.language": "python",
+    "telemetry.sdk.version": "1.45.1",
+    "cfb.target": "loams-cfb-aws-1",
+    "cfb.kind": "confluent-cloud-basic",
+    "cloud.provider": "aws",
+    "cloud.region": "ap-south-1"
+   }
+  },
+  {
+   "name": "kafka.message",
+   "span_id": "5533d99ce19b81fc",
+   "parent_span_id": "",
+   "start_ns": 1793154380372851444,
+   "duration_nano": 479803567,
+   "attrs": {
+    "cfb.target": "loams-cfb-aws-1",
+    "cfb.acks": "1",
+    "cfb.mode": "latency",
+    "messaging.destination.name": "loams-cfb-075523-latency"
+   },
+   "res": {
+    "telemetry.sdk.version": "1.45.1",
+    "service.instance.id": "7ace849d-308f-4837-9d25-d00ab9594ffb",
+    "service.namespace": "loams-bench",
+    "cfb.run": "075523",
+    "cfb.target": "loams-cfb-aws-1",
+    "cloud.region": "ap-south-1",
+    "service.name": "cfb-driver",
+    "cfb.kind": "confluent-cloud-basic",
+    "cloud.provider": "aws",
+    "messaging.system": "kafka",
+    "telemetry.sdk.language": "python",
+    "telemetry.sdk.name": "opentelemetry"
+   }
+  },
+  {
+   "name": "kafka.message",
+   "span_id": "5533d99ce19b81fc",
+   "parent_span_id": "",
+   "start_ns": 1793154380372851444,
+   "duration_nano": 479803567,
+   "attrs": {
+    "cfb.target": "loams-cfb-aws-1",
+    "cfb.acks": "1",
+    "cfb.mode": "latency",
+    "messaging.destination.name": "loams-cfb-075523-latency"
+   },
+   "res": {
+    "telemetry.sdk.version": "1.45.1",
+    "service.instance.id": "7ace849d-308f-4837-9d25-d00ab9594ffb",
+    "service.namespace": "loams-bench",
+    "cfb.run": "075523",
+    "cfb.kind": "confluent-cloud-basic",
+    "cloud.region": "ap-south-1",
+    "messaging.system": "kafka",
+    "telemetry.sdk.name": "opentelemetry",
+    "service.name": "cfb-driver",
+    "cfb.target": "loams-cfb-aws-1",
+    "cloud.provider": "aws",
+    "telemetry.sdk.language": "python"
+   }
+  },
+  {
+   "name": "kafka.message",
+   "span_id": "5533d99ce19b81fc",
+   "parent_span_id": "",
+   "start_ns": 1793154380372851444,
+   "duration_nano": 479803567,
+   "attrs": {
+    "cfb.target": "loams-cfb-aws-1",
+    "cfb.acks": "1",
+    "cfb.mode": "latency",
+    "messaging.destination.name": "loams-cfb-075523-latency"
+   },
+   "res": {
+    "telemetry.sdk.language": "python",
+    "telemetry.sdk.version": "1.45.1",
+    "service.name": "cfb-driver",
+    "cfb.run": "075523",
+    "cloud.provider": "aws",
+    "cloud.region": "ap-south-1",
+    "telemetry.sdk.name": "opentelemetry",
+    "service.instance.id": "7ace849d-308f-4837-9d25-d00ab9594ffb",
+    "service.namespace": "loams-bench",
+    "cfb.target": "loams-cfb-aws-1",
+    "cfb.kind": "confluent-cloud-basic",
+    "messaging.system": "kafka"
+   }
+  },
+  {
+   "name": "kafka.message",
+   "span_id": "5533d99ce19b81fc",
+   "parent_span_id": "",
+   "start_ns": 1793154380372851444,
+   "duration_nano": 479803567,
+   "attrs": {
+    "cfb.mode": "latency",
+    "messaging.destination.name": "loams-cfb-075523-latency",
+    "cfb.target": "loams-cfb-aws-1",
+    "cfb.acks": "1"
+   },
+   "res": {
+    "service.instance.id": "7ace849d-308f-4837-9d25-d00ab9594ffb",
+    "cfb.kind": "confluent-cloud-basic",
+    "cloud.region": "ap-south-1",
+    "messaging.system": "kafka",
+    "telemetry.sdk.language": "python",
+    "telemetry.sdk.name": "opentelemetry",
+    "telemetry.sdk.version": "1.45.1",
+    "service.name": "cfb-driver",
+    "service.namespace": "loams-bench",
+    "cfb.run": "075523",
+    "cfb.target": "loams-cfb-aws-1",
+    "cloud.provider": "aws"
+   }
+  },
+  {
+   "name": "kafka.message",
+   "span_id": "5533d99ce19b81fc",
+   "parent_span_id": "",
+   "start_ns": 1793154380372851444,
+   "duration_nano": 479803567,
+   "attrs": {
+    "cfb.target": "loams-cfb-aws-1",
+    "cfb.acks": "1",
+    "cfb.mode": "latency",
+    "messaging.destination.name": "loams-cfb-075523-latency"
+   },
+   "res": {
+    "cfb.run": "075523",
+    "cfb.target": "loams-cfb-aws-1",
+    "cfb.kind": "confluent-cloud-basic",
+    "cloud.provider": "aws",
+    "cloud.region": "ap-south-1",
+    "telemetry.sdk.language": "python",
+    "service.name": "cfb-driver",
+    "service.namespace": "loams-bench",
+    "messaging.system": "kafka",
+    "telemetry.sdk.name": "opentelemetry",
+    "telemetry.sdk.version": "1.45.1",
+    "service.instance.id": "7ace849d-308f-4837-9d25-d00ab9594ffb"
+   }
+  },
+  {
+   "name": "kafka.produce",
+   "span_id": "15d374b0972ba75f",
+   "parent_span_id": "5533d99ce19b81fc",
+   "start_ns": 1793154380372851444,
+   "duration_nano": 279046286,
+   "attrs": {
+    "cfb.target": "loams-cfb-aws-1",
+    "cfb.acks": "1",
+    "cfb.mode": "latency",
+    "messaging.destination.name": "loams-cfb-075523-latency"
+   },
+   "res": {
+    "telemetry.sdk.language": "python",
+    "telemetry.sdk.name": "opentelemetry",
+    "telemetry.sdk.version": "1.45.1",
+    "service.name": "cfb-driver",
+    "cfb.kind": "confluent-cloud-basic",
+    "cloud.provider": "aws",
+    "cloud.region": "ap-south-1",
+    "service.instance.id": "7ace849d-308f-4837-9d25-d00ab9594ffb",
+    "service.namespace": "loams-bench",
+    "cfb.run": "075523",
+    "cfb.target": "loams-cfb-aws-1",
+    "messaging.system": "kafka"
+   }
+  },
+  {
+   "name": "kafka.produce",
+   "span_id": "15d374b0972ba75f",
+   "parent_span_id": "5533d99ce19b81fc",
+   "start_ns": 1793154380372851444,
+   "duration_nano": 279046286,
+   "attrs": {
+    "cfb.target": "loams-cfb-aws-1",
+    "cfb.acks": "1",
+    "cfb.mode": "latency",
+    "messaging.destination.name": "loams-cfb-075523-latency"
+   },
+   "res": {
+    "service.instance.id": "7ace849d-308f-4837-9d25-d00ab9594ffb",
+    "service.namespace": "loams-bench",
+    "cfb.target": "loams-cfb-aws-1",
+    "cloud.provider": "aws",
+    "messaging.system": "kafka",
+    "telemetry.sdk.name": "opentelemetry",
+    "telemetry.sdk.version": "1.45.1",
+    "service.name": "cfb-driver",
+    "cfb.run": "075523",
+    "cfb.kind": "confluent-cloud-basic",
+    "cloud.region": "ap-south-1",
+    "telemetry.sdk.language": "python"
+   }
+  },
+  {
+   "name": "kafka.produce",
+   "span_id": "15d374b0972ba75f",
+   "parent_span_id": "5533d99ce19b81fc",
+   "start_ns": 1793154380372851444,
+   "duration_nano": 279046286,
+   "attrs": {
+    "cfb.target": "loams-cfb-aws-1",
+    "cfb.acks": "1",
+    "cfb.mode": "latency",
+    "messaging.destination.name": "loams-cfb-075523-latency"
+   },
+   "res": {
+    "cfb.target": "loams-cfb-aws-1",
+    "telemetry.sdk.version": "1.45.1",
+    "service.instance.id": "7ace849d-308f-4837-9d25-d00ab9594ffb",
+    "cfb.kind": "confluent-cloud-basic",
+    "cloud.provider": "aws",
+    "cloud.region": "ap-south-1",
+    "messaging.system": "kafka",
+    "telemetry.sdk.language": "python",
+    "telemetry.sdk.name": "opentelemetry",
+    "service.name": "cfb-driver",
+    "service.namespace": "loams-bench",
+    "cfb.run": "075523"
+   }
+  },
+  {
+   "name": "kafka.produce",
+   "span_id": "15d374b0972ba75f",
+   "parent_span_id": "5533d99ce19b81fc",
+   "start_ns": 1793154380372851444,
+   "duration_nano": 279046286,
+   "attrs": {
+    "cfb.target": "loams-cfb-aws-1",
+    "cfb.acks": "1",
+    "cfb.mode": "latency",
+    "messaging.destination.name": "loams-cfb-075523-latency"
+   },
+   "res": {
+    "cfb.target": "loams-cfb-aws-1",
+    "cfb.kind": "confluent-cloud-basic",
+    "messaging.system": "kafka",
+    "telemetry.sdk.language": "python",
+    "telemetry.sdk.name": "opentelemetry",
+    "telemetry.sdk.version": "1.45.1",
+    "service.namespace": "loams-bench",
+    "cloud.provider": "aws",
+    "cloud.region": "ap-south-1",
+    "service.instance.id": "7ace849d-308f-4837-9d25-d00ab9594ffb",
+    "service.name": "cfb-driver",
+    "cfb.run": "075523"
+   }
+  },
+  {
+   "name": "kafka.produce",
+   "span_id": "15d374b0972ba75f",
+   "parent_span_id": "5533d99ce19b81fc",
+   "start_ns": 1793154380372851444,
+   "duration_nano": 279046286,
+   "attrs": {
+    "cfb.mode": "latency",
+    "messaging.destination.name": "loams-cfb-075523-latency",
+    "cfb.target": "loams-cfb-aws-1",
+    "cfb.acks": "1"
+   },
+   "res": {
+    "telemetry.sdk.version": "1.45.1",
+    "service.namespace": "loams-bench",
+    "cloud.provider": "aws",
+    "messaging.system": "kafka",
+    "service.instance.id": "7ace849d-308f-4837-9d25-d00ab9594ffb",
+    "service.name": "cfb-driver",
+    "cfb.run": "075523",
+    "cfb.target": "loams-cfb-aws-1",
+    "cfb.kind": "confluent-cloud-basic",
+    "cloud.region": "ap-south-1",
+    "telemetry.sdk.language": "python",
+    "telemetry.sdk.name": "opentelemetry"
+   }
+  },
+  {
+   "name": "kafka.produce",
+   "span_id": "15d374b0972ba75f",
+   "parent_span_id": "5533d99ce19b81fc",
+   "start_ns": 1793154380372851444,
+   "duration_nano": 279046286,
+   "attrs": {
+    "cfb.target": "loams-cfb-aws-1",
+    "cfb.acks": "1",
+    "cfb.mode": "latency",
+    "messaging.destination.name": "loams-cfb-075523-latency"
+   },
+   "res": {
+    "service.name": "cfb-driver",
+    "cfb.run": "075523",
+    "cloud.provider": "aws",
+    "cloud.region": "ap-south-1",
+    "telemetry.sdk.language": "python",
+    "telemetry.sdk.name": "opentelemetry",
+    "telemetry.sdk.version": "1.45.1",
+    "service.instance.id": "7ace849d-308f-4837-9d25-d00ab9594ffb",
+    "service.namespace": "loams-bench",
+    "cfb.target": "loams-cfb-aws-1",
+    "cfb.kind": "confluent-cloud-basic",
+    "messaging.system": "kafka"
+   }
+  },
+  {
+   "name": "kafka.produce",
+   "span_id": "15d374b0972ba75f",
+   "parent_span_id": "5533d99ce19b81fc",
+   "start_ns": 1793154380372851444,
+   "duration_nano": 279046286,
+   "attrs": {
+    "cfb.target": "loams-cfb-aws-1",
+    "cfb.acks": "1",
+    "cfb.mode": "latency",
+    "messaging.destination.name": "loams-cfb-075523-latency"
+   },
+   "res": {
+    "telemetry.sdk.name": "opentelemetry",
+    "cfb.run": "075523",
+    "cfb.target": "loams-cfb-aws-1",
+    "cloud.provider": "aws",
+    "telemetry.sdk.language": "python",
+    "telemetry.sdk.version": "1.45.1",
+    "service.instance.id": "7ace849d-308f-4837-9d25-d00ab9594ffb",
+    "service.name": "cfb-driver",
+    "service.namespace": "loams-bench",
+    "cfb.kind": "confluent-cloud-basic",
+    "cloud.region": "ap-south-1",
+    "messaging.system": "kafka"
+   }
+  },
+  {
+   "name": "kafka.deliver",
+   "span_id": "50a37d80c685e2cb",
+   "parent_span_id": "5533d99ce19b81fc",
+   "start_ns": 1793154380651897730,
+   "duration_nano": 200757281,
+   "attrs": {
+    "cfb.acks": "1",
+    "cfb.mode": "latency",
+    "messaging.destination.name": "loams-cfb-075523-latency",
+    "cfb.target": "loams-cfb-aws-1"
+   },
+   "res": {
+    "service.name": "cfb-driver",
+    "cloud.provider": "aws",
+    "telemetry.sdk.version": "1.45.1",
+    "service.namespace": "loams-bench",
+    "cfb.run": "075523",
+    "cfb.target": "loams-cfb-aws-1",
+    "cfb.kind": "confluent-cloud-basic",
+    "cloud.region": "ap-south-1",
+    "messaging.system": "kafka",
+    "telemetry.sdk.language": "python",
+    "telemetry.sdk.name": "opentelemetry",
+    "service.instance.id": "7ace849d-308f-4837-9d25-d00ab9594ffb"
+   }
+  },
+  {
+   "name": "kafka.deliver",
+   "span_id": "50a37d80c685e2cb",
+   "parent_span_id": "5533d99ce19b81fc",
+   "start_ns": 1793154380651897730,
+   "duration_nano": 200757281,
+   "attrs": {
+    "cfb.target": "loams-cfb-aws-1",
+    "cfb.acks": "1",
+    "cfb.mode": "latency",
+    "messaging.destination.name": "loams-cfb-075523-latency"
+   },
+   "res": {
+    "telemetry.sdk.name": "opentelemetry",
+    "telemetry.sdk.version": "1.45.1",
+    "service.instance.id": "7ace849d-308f-4837-9d25-d00ab9594ffb",
+    "cfb.run": "075523",
+    "cfb.target": "loams-cfb-aws-1",
+    "cfb.kind": "confluent-cloud-basic",
+    "messaging.system": "kafka",
+    "telemetry.sdk.language": "python",
+    "service.name": "cfb-driver",
+    "service.namespace": "loams-bench",
+    "cloud.provider": "aws",
+    "cloud.region": "ap-south-1"
+   }
+  },
+  {
+   "name": "kafka.deliver",
+   "span_id": "50a37d80c685e2cb",
+   "parent_span_id": "5533d99ce19b81fc",
+   "start_ns": 1793154380651897730,
+   "duration_nano": 200757281,
+   "attrs": {
+    "cfb.mode": "latency",
+    "messaging.destination.name": "loams-cfb-075523-latency",
+    "cfb.target": "loams-cfb-aws-1",
+    "cfb.acks": "1"
+   },
+   "res": {
+    "telemetry.sdk.version": "1.45.1",
+    "service.name": "cfb-driver",
+    "service.namespace": "loams-bench",
+    "cfb.run": "075523",
+    "cfb.target": "loams-cfb-aws-1",
+    "cloud.provider": "aws",
+    "cloud.region": "ap-south-1",
+    "telemetry.sdk.language": "python",
+    "telemetry.sdk.name": "opentelemetry",
+    "service.instance.id": "7ace849d-308f-4837-9d25-d00ab9594ffb",
+    "cfb.kind": "confluent-cloud-basic",
+    "messaging.system": "kafka"
+   }
+  },
+  {
+   "name": "kafka.deliver",
+   "span_id": "50a37d80c685e2cb",
+   "parent_span_id": "5533d99ce19b81fc",
+   "start_ns": 1793154380651897730,
+   "duration_nano": 200757281,
+   "attrs": {
+    "cfb.target": "loams-cfb-aws-1",
+    "cfb.acks": "1",
+    "cfb.mode": "latency",
+    "messaging.destination.name": "loams-cfb-075523-latency"
+   },
+   "res": {
+    "telemetry.sdk.language": "python",
+    "telemetry.sdk.name": "opentelemetry",
+    "service.name": "cfb-driver",
+    "cfb.run": "075523",
+    "cfb.target": "loams-cfb-aws-1",
+    "cfb.kind": "confluent-cloud-basic",
+    "cloud.provider": "aws",
+    "telemetry.sdk.version": "1.45.1",
+    "service.instance.id": "7ace849d-308f-4837-9d25-d00ab9594ffb",
+    "service.namespace": "loams-bench",
+    "cloud.region": "ap-south-1",
+    "messaging.system": "kafka"
+   }
+  },
+  {
+   "name": "kafka.deliver",
+   "span_id": "50a37d80c685e2cb",
+   "parent_span_id": "5533d99ce19b81fc",
+   "start_ns": 1793154380651897730,
+   "duration_nano": 200757281,
+   "attrs": {
+    "cfb.target": "loams-cfb-aws-1",
+    "cfb.acks": "1",
+    "cfb.mode": "latency",
+    "messaging.destination.name": "loams-cfb-075523-latency"
+   },
+   "res": {
+    "cloud.region": "ap-south-1",
+    "telemetry.sdk.language": "python",
+    "cfb.kind": "confluent-cloud-basic",
+    "cloud.provider": "aws",
+    "messaging.system": "kafka",
+    "telemetry.sdk.name": "opentelemetry",
+    "telemetry.sdk.version": "1.45.1",
+    "service.instance.id": "7ace849d-308f-4837-9d25-d00ab9594ffb",
+    "service.name": "cfb-driver",
+    "service.namespace": "loams-bench",
+    "cfb.run": "075523",
+    "cfb.target": "loams-cfb-aws-1"
+   }
+  },
+  {
+   "name": "kafka.deliver",
+   "span_id": "50a37d80c685e2cb",
+   "parent_span_id": "5533d99ce19b81fc",
+   "start_ns": 1793154380651897730,
+   "duration_nano": 200757281,
+   "attrs": {
+    "cfb.mode": "latency",
+    "messaging.destination.name": "loams-cfb-075523-latency",
+    "cfb.target": "loams-cfb-aws-1",
+    "cfb.acks": "1"
+   },
+   "res": {
+    "telemetry.sdk.language": "python",
+    "telemetry.sdk.name": "opentelemetry",
+    "telemetry.sdk.version": "1.45.1",
+    "service.instance.id": "7ace849d-308f-4837-9d25-d00ab9594ffb",
+    "cloud.region": "ap-south-1",
+    "messaging.system": "kafka",
+    "service.name": "cfb-driver",
+    "service.namespace": "loams-bench",
+    "cfb.run": "075523",
+    "cfb.target": "loams-cfb-aws-1",
+    "cfb.kind": "confluent-cloud-basic",
+    "cloud.provider": "aws"
+   }
+  },
+  {
+   "name": "kafka.deliver",
+   "span_id": "50a37d80c685e2cb",
+   "parent_span_id": "5533d99ce19b81fc",
+   "start_ns": 1793154380651897730,
+   "duration_nano": 200757281,
+   "attrs": {
+    "cfb.target": "loams-cfb-aws-1",
+    "cfb.acks": "1",
+    "cfb.mode": "latency",
+    "messaging.destination.name": "loams-cfb-075523-latency"
+   },
+   "res": {
+    "cfb.run": "075523",
+    "cfb.kind": "confluent-cloud-basic",
+    "cloud.provider": "aws",
+    "telemetry.sdk.language": "python",
+    "telemetry.sdk.name": "opentelemetry",
+    "telemetry.sdk.version": "1.45.1",
+    "service.name": "cfb-driver",
+    "service.namespace": "loams-bench",
+    "cfb.target": "loams-cfb-aws-1",
+    "cloud.region": "ap-south-1",
+    "messaging.system": "kafka",
+    "service.instance.id": "7ace849d-308f-4837-9d25-d00ab9594ffb"
+   }
+  }
+ ]
+}

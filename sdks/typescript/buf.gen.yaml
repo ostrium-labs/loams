@@ -57,4 +57,7 @@ plugins:
       - package=loams.graph.v1=@loams/proto/graph
       - package=loams.sql.v1=@loams/proto/sql
       - package=loams.stream.v1=@loams/proto/stream
+      # Loams Meter's public services (D2202); `loams.meter.internal.v1` is in
+      # no SDK.
+      - package=loams.meter.v1=@loams/proto/meter
 clean: true

@@ -1,0 +1,116 @@
+name: Temporal Rust SDK corpus
+
+# Lane TSDK-rust (D2157, D2158). The Temporal Rust SDK (temporalio-sdk 1.1.0
+# on sdk-core 0.10.0; prerelease) against upstream Temporal: the CLI's dev
+# server (`temporal server start-dev` from the pinned admin-tools image, the
+# corpus's current oracle; corpus/README.md) in a network of its own.
+# corpus/generate-rust.sh builds the Rust worker in RUST_IMAGE (its unit
+# tests run first), drives every scenario the Rust SDK supports and exports
+# the histories with the Go exporter; then sdk-core's replayer (the SDK's
+# WorkflowReplayer) must accept every one of them. The histories are
+# uploaded as an artifact: committing them as histories/rust/ (and
+# manifest.py build --languages rust) is a follow-up once a run is green.
+#
+# The gateway half (the same worker against loams-temporal) is the
+# `sdk-leg (rust)` matrix entry in temporal-gateway.yml.
+#
+# Not part of `CI required`. Do not event-filter paths: the filter job decides.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: temporal-sdk-rust-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  changes:
+    name: Changed paths
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # dorny/paths-filter is MIT-licensed; pinned to v4.0.3, as in ci.yml.
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        if: github.event_name == 'pull_request'
+        with:
+          token: ''
+          base: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          filters: |
+            rust:
+              - 'conformance/compute/temporal/corpus/workers/rust/**'
+              - 'conformance/compute/temporal/corpus/workers/go/**'
+              - 'conformance/compute/temporal/corpus/generate-rust.sh'
+              - 'conformance/compute/temporal/corpus/scenarios.json'
+              - 'conformance/compute/temporal/gateway/legs/rust.sh'
+              - 'conformance/compute/lib.sh'
+              - 'conformance/compute/pins.env'
+              - '.github/workflows/temporal-sdk-rust.yml'
+
+  upstream:
+    name: "Temporal Rust SDK: corpus against upstream (start-dev) and sdk-core replay"
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    # An explicit `shell: bash` runs with -o pipefail, so a failing step
+    # piped into tee fails the job.
+    defaults:
+      run:
+        shell: bash
+    env:
+      OC_OUT: ${{ github.workspace }}/target/compute
+      CARGO_BUILD_JOBS: '4'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: start-dev on a network of its own
+        run: |
+          . conformance/compute/lib.sh
+          rt=$(oc_container_cmd)
+          "$rt" network create dx0-corpus-net
+          "$rt" run -d --name dx0-corpus-temporal --network dx0-corpus-net \
+            --network-alias temporal-frontend "$TEMPORAL_ADMIN_TOOLS_IMAGE" \
+            temporal server start-dev --ip 0.0.0.0 --headless
+          for _ in $(seq 60); do
+            if "$rt" run --rm --network dx0-corpus-net "$TEMPORAL_ADMIN_TOOLS_IMAGE" \
+              temporal operator cluster health --address temporal-frontend:7233; then exit 0; fi
+            sleep 2
+          done
+          "$rt" logs dx0-corpus-temporal | tail -50
+          exit 1
+      - name: generate the Rust histories (generate-rust.sh)
+        run: |
+          mkdir -p "$OC_OUT/corpus-rust"
+          CORPUS_SERVER=start-dev OC_NETWORK=dx0-corpus-net \
+            conformance/compute/temporal/corpus/generate-rust.sh --out "$OC_OUT/corpus-rust" 2>&1 | tee "$OC_OUT/corpus-rust/generate.log"
+      - name: sdk-core's replayer on the histories
+        run: |
+          . conformance/compute/lib.sh
+          rt=$(oc_container_cmd)
+          "$rt" run --rm --network none -v dx0-rust-target:/target -v "$OC_OUT/corpus-rust:/h:ro" \
+            "$RUST_IMAGE" /target/debug/corpus-rust replay /h/rust 2>&1 | tee "$OC_OUT/corpus-rust/replay.log"
+      - name: the dev server's log
+        if: failure() || cancelled()
+        run: |
+          . conformance/compute/lib.sh
+          "$(oc_container_cmd)" logs dx0-corpus-temporal >"$OC_OUT/corpus-rust/start-dev.log" 2>&1 || true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: temporal-sdk-rust-corpus
+          path: target/compute/corpus-rust
+          if-no-files-found: ignore
+          retention-days: 14

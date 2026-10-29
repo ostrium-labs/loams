@@ -336,7 +336,7 @@ mod tests {
 
     #[test]
     fn expire_conditions() {
-        let parse = |opts: &[&str]| Cond::parse(&opts.iter().map(|o| b(o)).collect::<Vec<_>>());
+        let parse = |opts: &[&str]| Cond::parse(&opts.iter().map(|o| b(*o)).collect::<Vec<_>>());
         assert!(parse(&["NX", "XX"]).is_err());
         assert!(parse(&["GT", "LT"]).is_err());
         assert!(parse(&["FOO"]).is_err());

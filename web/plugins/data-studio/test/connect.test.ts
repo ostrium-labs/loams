@@ -19,6 +19,10 @@ const PENDING: Record<string, string> = {
   // Streams and links: until loams.stream.v1 (API2 Task 2).
   'plugins/streams/src/client.ts': 'loams.stream.v1, API2 Task 2',
   'plugins/overview/src/load.ts': 'loams.stream.v1, API2 Task 2',
+  // Managed engines: the design 81 REST facade (api/engines/openapi.json) has no Connect
+  // service yet (ENG-UI D2015).
+  'plugins/engines/src/client.ts': 'design 81 engines facade, D2015',
+  'plugins/engines/src/index.tsx': 'design 81 engines facade, D2015',
 };
 
 function* files(dir: string): Generator<string> {

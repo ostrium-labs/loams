@@ -381,7 +381,7 @@ mod tests {
         assert_eq!(quote_ident(""), Err(SqlError::EmptyIdent));
         assert!(quote_ident("a\0b").is_err());
         assert_eq!(
-            quote_name(&["loams_lake", "an.alytics", "t"]).as_deref(),
+            quote_name(&["loams", "an.alytics", "t"]).as_deref(),
             Ok("`loams`.`an.alytics`.`t`")
         );
     }
