@@ -55,6 +55,9 @@ public final class ReasonCodes {
         map.put(Reason.PROJECT_NOT_FOUND, "not_found");
         map.put(Reason.BRANCH_HAS_CHILDREN, "failed_precondition");
         map.put(Reason.BRANCH_PROTECTED, "failed_precondition");
+        map.put(Reason.BETA_MAJOR_REQUIRES_OPT_IN, "failed_precondition");
+        map.put(Reason.COMPUTE_MAJOR_MISMATCH_REFUSED, "failed_precondition");
+        map.put(Reason.IMPORT_CHECKSUMS_ENABLED, "failed_precondition");
         map.put(Reason.LSN_OUT_OF_RETENTION, "failed_precondition");
         map.put(Reason.ENDPOINT_EXISTS_FOR_BRANCH, "already_exists");
         map.put(Reason.COMPUTE_START_FAILED, "unavailable");
@@ -112,6 +115,7 @@ public final class ReasonCodes {
         map.put(Reason.INVALID_CONSISTENCY_TOKEN, "invalid_argument");
         map.put(Reason.NAMESPACE_REQUIRED, "invalid_argument");
         map.put(Reason.SQL_PARAM_COUNT, "invalid_argument");
+        map.put(Reason.UNSUPPORTED_PG_VERSION, "invalid_argument");
         map.put(Reason.LIVE_INDEX_NOT_READY, "failed_precondition");
         map.put(Reason.LIVE_APP_DISABLED, "failed_precondition");
         map.put(Reason.LIVE_APP_EXISTS, "failed_precondition");

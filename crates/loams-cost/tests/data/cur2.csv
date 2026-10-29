@@ -1,0 +1,5 @@
+bill_invoice_id,line_item_usage_start_date,line_item_usage_end_date,line_item_line_item_type,line_item_product_code,line_item_usage_type,line_item_resource_id,line_item_usage_amount,line_item_unblended_cost,line_item_net_unblended_cost,line_item_currency_code,product_region_code,resource_tags
+inv-9,2026-10-01T00:00:00Z,2026-10-01T01:00:00Z,Usage,AmazonEC2,BoxUsage:c7g.xlarge,i-0bbb,1,0.145,0.13,USD,eu-west-1,"{""user_loams-pool"":""eu/compute""}"
+inv-9,2026-10-01T00:00:00Z,2026-10-02T00:00:00Z,Usage,AmazonS3,TimedStorage-ByteHrs,bucket-b,2.5,60,60,USD,eu-west-1,{}
+inv-9,2026-10-01T00:00:00Z,2026-10-02T00:00:00Z,Tax,AmazonEC2,,,,13.12,13.12,USD,,{}
+inv-9,2026-10-01T00:00:00Z,2026-10-02T00:00:00Z,Credit,AmazonEC2,,i-0bbb,,-1E-0,,USD,eu-west-1,"{""user_loams-pool"":""eu/compute""}"

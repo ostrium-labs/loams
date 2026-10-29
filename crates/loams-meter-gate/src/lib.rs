@@ -26,6 +26,7 @@ pub mod entitle;
 pub mod event;
 pub mod gate;
 pub mod policy;
+pub mod scope;
 pub mod sink;
 
 pub use entitle::{Entitlements, features};

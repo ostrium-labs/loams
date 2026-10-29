@@ -144,6 +144,7 @@ async fn seed(store: &KvControlStore) {
         created_at_ms: 1,
         parent_time_ms: None,
         updated_at_ms: 1,
+        pg_version: 17,
     };
     let role = RoleRec {
         project_id: PID.into(),

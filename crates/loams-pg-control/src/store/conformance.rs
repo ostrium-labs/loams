@@ -135,6 +135,7 @@ fn branch(project: &str, id: &str, name: &str) -> BranchRec {
         created_at_ms: 1,
         parent_time_ms: None,
         updated_at_ms: 1,
+        pg_version: 17,
     }
 }
 

@@ -11,6 +11,7 @@ import { fixtureState, type MockState } from './fixtures.js';
 import {
   type CreateBranchInput,
   type CreateProjectInput,
+  type PgVersionInfo,
   type IssuedPassword,
   type PgBranch,
   type PgControlClient,
@@ -38,6 +39,13 @@ function randomPassword(): string {
   for (const b of bytes) s += String.fromCharCode(b);
   return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
+
+/** The mock's majors: design 62 §7.1's "18 beta" row. */
+export const MOCK_PG_VERSIONS: PgVersionInfo[] = [
+  { major: 18, state: 'beta', isDefault: false, minor: '18.6', eolDate: '2030-11-14' },
+  { major: 17, state: 'supported', isDefault: true, minor: '17.11', eolDate: '2029-11-08' },
+  { major: 16, state: 'supported', isDefault: false, minor: '16.15', eolDate: '2028-11-09' },
+];
 
 export function createMockPgControl(opts: MockOptions = {}): PgControlClient {
   const st: MockState = structuredClone(opts.state ?? fixtureState());
@@ -139,9 +147,26 @@ export function createMockPgControl(opts: MockOptions = {}): PgControlClient {
       return structuredClone(st.projects.filter((p) => p.namespace === ns));
     },
 
+    async listPgVersions() {
+      return structuredClone(MOCK_PG_VERSIONS);
+    },
+
     async createProject(ns, input: CreateProjectInput) {
       const name = input.name.trim();
       checkName(name);
+      const v = MOCK_PG_VERSIONS.find((m) => m.major === input.pgVersion);
+      if (!v || v.state === 'maintenance') {
+        throw new PgControlError(
+          'unsupported_pg_version',
+          `Postgres ${input.pgVersion} is not offered`,
+        );
+      }
+      if (v.state === 'beta' && !input.allowBetaMajor) {
+        throw new PgControlError(
+          'beta_major_requires_opt_in',
+          `Postgres ${input.pgVersion} is in beta: set allow_beta_major to use it`,
+        );
+      }
       if (st.projects.some((p) => p.namespace === ns && p.name === name)) {
         throw new PgControlError('already_exists', `a project named ${name} exists`);
       }
