@@ -635,6 +635,8 @@ Rules, as in §68 §12 and DX0:
 - No hosting in Loams Cloud on TiDB X in this phase (Q1408).
 - No Loams-written stream or Spark engine (D1261 and D1262 hold).
 
+> **Amended (approved 2026-10-29): D2244, D2264** ([§82](82-loams-stream-flink-compatible-engine.md)). Arroyo is hard-forked as a code donor for Loams Stream, and the managed Flink kind gains `backend: apache | loams`, with `apache` the default until FC3's gate.
+
 ---
 
 ## 17. Relation to earlier decisions
