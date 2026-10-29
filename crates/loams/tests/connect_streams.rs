@@ -51,10 +51,15 @@ struct Running {
 
 impl Running {
     async fn start() -> Self {
+        Self::start_with(Duration::from_millis(20)).await
+    }
+
+    /// With this WAL flush interval: how long an append waits for its flush.
+    async fn start_with(flush_interval: Duration) -> Self {
         let dir = TempDir::new().expect("temp dir");
         let mut config = ServerConfig::new(dir.path());
         config.listen = SocketAddr::from(([127, 0, 0, 1], 0));
-        config.log.flush_interval = Duration::from_millis(20);
+        config.log.flush_interval = flush_interval;
         config.worker_poll_interval = Duration::from_millis(50);
         config.link.batch_interval = Duration::ZERO;
         let server = Server::start(config).await.expect("start");
@@ -396,6 +401,60 @@ async fn cloudevents_produce_and_fetch_rpc() {
     let events: Value = serde_json::from_str(&text(&fetched["jsonBatch"])).expect("a JSON batch");
     assert_eq!(events[0]["id"], "e1");
     assert_eq!(events[1]["data"], json!({"n": 2}));
+    running.shutdown().await;
+}
+
+/// A client that goes away mid-request leaves no open claims behind: the
+/// ingest finishes on its own task, so re-sending the batch is answered
+/// `DUPLICATE` at once and the stream holds each event once. Before, the
+/// dropped handler left the appended events' claims open: the retry was
+/// answered `IN_FLIGHT` until they lapsed (120 s) and then appended the events
+/// again (a `loams-fabric connect` source killed with -9, 2026-10-28).
+#[tokio::test]
+async fn cloudevents_produce_survives_a_dropped_client() {
+    // A long WAL flush holds the append, so the client gives up while the
+    // engine is between claiming the ids and completing them.
+    let running = Running::start_with(Duration::from_millis(1500)).await;
+    create(&running, "orders", 1).await;
+    let batch = json!([
+        {"specversion": "1.0", "id": "e1", "source": "/orders", "type": "order.created", "data": {"n": 1}},
+        {"specversion": "1.0", "id": "e2", "source": "/orders", "type": "order.created", "data": {"n": 2}},
+    ]);
+    let body = json!({"namespace": "w", "stream": "orders", "partition": 0, "jsonBatch": b64(&batch.to_string())});
+    let dropped = running
+        .http
+        .post(format!("{}{PRODUCE_EVENTS}", running.base))
+        .header("content-type", "application/json")
+        .body(body.to_string())
+        .timeout(Duration::from_millis(300))
+        .send()
+        .await;
+    assert!(
+        dropped.as_ref().is_err_and(reqwest::Error::is_timeout),
+        "the client should give up before the flush: {dropped:?}"
+    );
+    // Past the flush, far inside the claims' 120 s.
+    tokio::time::sleep(Duration::from_millis(3000)).await;
+
+    let again = running.connect(PRODUCE_EVENTS, &body).await.expect_ok();
+    let statuses: Vec<&str> = again["results"]
+        .as_array()
+        .expect("results")
+        .iter()
+        .map(|r| r["status"].as_str().expect("a status"))
+        .collect();
+    assert_eq!(
+        statuses,
+        ["EVENT_STATUS_DUPLICATE", "EVENT_STATUS_DUPLICATE"]
+    );
+    let fetched = running
+        .connect(
+            FETCH_EVENTS,
+            &json!({"namespace": "w", "stream": "orders", "offset": 0, "maxWaitMs": 0}),
+        )
+        .await
+        .expect_ok();
+    assert_eq!(fetched["count"], json!(2));
     running.shutdown().await;
 }
 
