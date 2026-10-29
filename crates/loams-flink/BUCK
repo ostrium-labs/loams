@@ -74,6 +74,7 @@ cargo_package(
         "//third-party/rust:serde",
         "//third-party/rust:serde_json",
         "//third-party/rust:sha2",
+        "//third-party/rust:sqlx",
         "//third-party/rust:thiserror",
         "//third-party/rust:time",
         "//third-party/rust:tokio",
@@ -89,6 +90,7 @@ cargo_package(
         "//third-party/rust:tower",
     ],
     extra_srcs = {
+        "crates/loams-flink/migrations/0001_saved_jobs.sql": "migrations/0001_saved_jobs.sql",
         "deploy/flink/compose/config.yaml": "//:file=deploy+flink+compose+config.yaml",
         "deploy/flink/k8s/config.yaml": "//:file=deploy+flink+k8s+config.yaml",
     },
