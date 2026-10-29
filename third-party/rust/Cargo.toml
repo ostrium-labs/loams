@@ -152,7 +152,7 @@ serde_json = { package = "serde_json", version = "=1.0.154", default-features = 
 serde_path_to_error = { package = "serde_path_to_error", version = "=0.1.20", default-features = false }
 serde_with = { package = "serde_with", version = "=3.24.0", default-features = true, features = ["alloc", "base64", "json", "macros", "std"] }
 serde_yaml_ng = { package = "serde_yaml_ng", version = "=0.10.0", default-features = false }
-sha2 = { package = "sha2", version = "=0.11.0", default-features = true, features = ["alloc", "oid"] }
+sha2 = { package = "sha2", version = "=0.11.1", default-features = true, features = ["alloc", "oid"] }
 sigstore-verify = { package = "sigstore-verify", version = "=0.14.0", default-features = false }
 similar = { package = "similar", version = "=2.7.0", default-features = true, features = ["text"] }
 slatedb = { package = "slatedb", version = "=0.17.0", default-features = false }
@@ -194,7 +194,7 @@ x509-parser = { package = "x509-parser", version = "=0.18.1", default-features =
 xxhash-rust = { package = "xxhash-rust", version = "=0.8.19", default-features = false, features = ["xxh3", "xxh32", "xxh64"] }
 zeroize = { package = "zeroize", version = "=1.9.1", default-features = true, features = ["alloc", "derive", "zeroize_derive"] }
 zip = { package = "zip", version = "=7.2.0", default-features = false, features = ["_deflate-any", "deflate-flate2", "deflate-flate2-zlib-rs"] }
-zstd = { package = "zstd", version = "=0.14.0", default-features = true, features = ["arrays", "legacy", "zdict_builder"] }
+zstd = { package = "zstd", version = "=0.14.2", default-features = true, features = ["arrays", "legacy", "zdict_builder"] }
 
 [target.'cfg(any(all(target_os = "linux", target_arch = "aarch64"), all(target_os = "linux", target_arch = "x86_64")))'.dependencies]
 landlock = { package = "landlock", version = "=0.4.7", default-features = false }

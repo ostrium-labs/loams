@@ -19,6 +19,27 @@ use crate::model::{
 /// Where `risingwave.toml` is mounted in every container.
 pub const CONFIG_PATH: &str = "/risingwave/config/risingwave.toml";
 
+/// The licence key file meta nodes read (`RW_LICENSE_KEY_PATH`), mounted
+/// next to `risingwave.toml` (D1901, ENG81 R4).
+///
+/// RisingWave v3.x release builds embed a default licence key
+/// (`rw-default-all-4-core`, tier `all`) that turns on every Premium
+/// feature for clusters of up to 4 cores and 16 GiB, which covers the
+/// smaller managed sizes. Loams uses no Premium feature, so every cluster
+/// gets an empty key file instead:
+///
+/// - an empty key is RisingWave's free tier (`rw_license()` reports tier
+///   `free`, and `rw_test_feature(..)` errors for every Premium feature);
+/// - while a key path is set, `ALTER SYSTEM SET license_key ..` is refused,
+///   so not even a superuser can switch the built-in trial back on with
+///   `ALTER SYSTEM SET license_key TO DEFAULT`.
+///
+/// Checked against the v3.1.0 image on 2026-10-29.
+pub const LICENSE_KEY_PATH: &str = "/risingwave/config/license.key";
+
+/// The licence key file's contents. Always empty: see [`LICENSE_KEY_PATH`].
+pub const LICENSE_KEY_FILE: &str = "";
+
 /// The keys of the credentials Secret.
 pub mod secret_keys {
     pub const META_DB_PASSWORD: &str = "meta-db-password";
@@ -435,6 +456,8 @@ fn meta_env(input: &RenderInput<'_>, env: &mut BTreeMap<String, EnvValue>) {
         &format!("0.0.0.0:{}", ports::DASHBOARD),
     );
     plain(env, "RW_BACKEND", "postgres");
+    // The free tier, locked (D1901): see LICENSE_KEY_PATH.
+    plain(env, "RW_LICENSE_KEY_PATH", LICENSE_KEY_PATH);
     plain(env, "RW_SQL_ENDPOINT", &db.endpoint());
     plain(env, "RW_SQL_USERNAME", &db.username);
     secret(env, "RW_SQL_PASSWORD", secret_keys::META_DB_PASSWORD);
@@ -758,6 +781,57 @@ pub(crate) mod tests {
             render_with(&bad, &HostStyle::Compose, false),
             Err(RenderError::Model(_))
         ));
+    }
+
+    /// D1901: no rendered cluster may run on RisingWave's built-in licence
+    /// key. Meta nodes read an empty key file, and nothing else names a key.
+    #[test]
+    fn licence_key_is_always_the_empty_file() {
+        let k8s = HostStyle::Kubernetes {
+            namespace: "eng-acme".into(),
+            cluster_domain: "cluster.local".into(),
+        };
+        assert!(LICENSE_KEY_FILE.is_empty());
+        assert_eq!(
+            std::path::Path::new(LICENSE_KEY_PATH).parent(),
+            std::path::Path::new(CONFIG_PATH).parent(),
+            "the key file must sit in the mounted config directory"
+        );
+        for size in [Size::Xs, Size::S, Size::M, Size::Xl] {
+            for hosts in [&HostStyle::Compose, &k8s] {
+                for suspended in [false, true] {
+                    let mut spec = ClusterSpec::new(size);
+                    spec.embedded_udfs = suspended;
+                    let c = render_with(&spec, hosts, suspended).unwrap();
+                    assert_eq!(
+                        env(&c, Role::Meta, "RW_LICENSE_KEY_PATH").cloned(),
+                        p(LICENSE_KEY_PATH)
+                    );
+                    for role in &c.roles {
+                        assert!(
+                            !role.env.contains_key("RW_LICENSE_KEY"),
+                            "{} sets a licence key",
+                            role.name
+                        );
+                        if role.role != Role::Meta {
+                            assert!(!role.env.contains_key("RW_LICENSE_KEY_PATH"));
+                        }
+                        assert!(
+                            !role.args.iter().any(|a| a.contains("license")),
+                            "{} passes a licence flag",
+                            role.name
+                        );
+                    }
+                    let v: toml::Value = toml::from_str(&c.config_toml).unwrap();
+                    assert!(
+                        v.get("system").is_none(),
+                        "system params in risingwave.toml"
+                    );
+                    assert!(!c.config_toml.contains("license"));
+                    assert!(c.secrets.keys().all(|k| !k.contains("license")));
+                }
+            }
+        }
     }
 
     #[test]
