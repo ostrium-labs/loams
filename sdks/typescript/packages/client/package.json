@@ -1,6 +1,6 @@
 {
   "name": "@loams/client",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "The Loams SDK for TypeScript and JavaScript: one Loams object with namespaced modules over the unified Connect API, generated from proto/.",
   "license": "Apache-2.0",
   "repository": {

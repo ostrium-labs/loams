@@ -5435,7 +5435,7 @@ checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
 
 [[package]]
 name = "loams-cache"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "bytes",
  "crc32c",
@@ -5473,7 +5473,7 @@ dependencies = [
 
 [[package]]
 name = "loams-common"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "async-trait",
  "serde",
@@ -6247,14 +6247,14 @@ dependencies = [
 
 [[package]]
 name = "loams-meter-gate"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "loams-store"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "async-trait",
  "bytes",

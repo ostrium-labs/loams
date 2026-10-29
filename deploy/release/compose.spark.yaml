@@ -45,7 +45,7 @@ services:
   # instance (loams_spark::conf::compose_conf) into the spark-conf volume.
   spark-render:
     profiles: [spark, spark-jvm]
-    image: ${SPARK_PROXY_IMAGE:-${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-spark-proxy:${LOAMS_VERSION:-0.1.2}}
+    image: ${SPARK_PROXY_IMAGE:-${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-spark-proxy:${LOAMS_VERSION:-0.1.3}}
     build:
       context: ../..
       dockerfile: deploy/release/Containerfile.loams-spark-proxy
@@ -113,7 +113,7 @@ services:
   # the same ENGINE_GATEWAY_KEY.
   spark-proxy-jvm:
     profiles: [spark-jvm]
-    image: ${SPARK_PROXY_IMAGE:-${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-spark-proxy:${LOAMS_VERSION:-0.1.2}}
+    image: ${SPARK_PROXY_IMAGE:-${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-spark-proxy:${LOAMS_VERSION:-0.1.3}}
     build:
       context: ../..
       dockerfile: deploy/release/Containerfile.loams-spark-proxy

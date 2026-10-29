@@ -155,7 +155,7 @@ services:
   # snapshot first. No listener, no published port, no tailnet door, no
   # container socket.
   migrate:
-    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams:${LOAMS_VERSION:-0.1.2}
+    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams:${LOAMS_VERSION:-0.1.3}
     # config/stores.sh adds the store flags the profiles select (--meta and
     # --live-store on TiKV with `tikv`; none, the embedded stores, without).
     entrypoint: ["/usr/bin/tini", "--", "/bin/sh", "/etc/loams/stores.sh"]
@@ -204,7 +204,7 @@ services:
 
   loams:
     <<: *restart
-    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams:${LOAMS_VERSION:-0.1.2}
+    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams:${LOAMS_VERSION:-0.1.3}
     # The stores come from the profiles (config/stores.sh): embedded by
     # default, the metastore and Live on TiKV with `tikv`, Durable on SQLite
     # unless LOAMS_DURABLE_STORE says otherwise.
@@ -363,7 +363,7 @@ services:
   # certificate there (Podman hands it to the container's user itself). No
   # network, every capability dropped but CHOWN and FOWNER.
   house-init:
-    image: ${HOUSE_IMAGE:-${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-fabric:${LOAMS_VERSION:-0.1.2}}
+    image: ${HOUSE_IMAGE:-${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-fabric:${LOAMS_VERSION:-0.1.3}}
     restart: "no"
     user: "0:0"
     network_mode: none
@@ -381,7 +381,7 @@ services:
 
   house:
     <<: *restart
-    image: ${HOUSE_IMAGE:-${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-fabric:${LOAMS_VERSION:-0.1.2}}
+    image: ${HOUSE_IMAGE:-${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-fabric:${LOAMS_VERSION:-0.1.3}}
     command:
       - house
       - --single-node
@@ -432,7 +432,7 @@ services:
   connect:
     <<: *restart
     profiles: [connectors]
-    image: ${HOUSE_IMAGE:-${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-fabric:${LOAMS_VERSION:-0.1.2}}
+    image: ${HOUSE_IMAGE:-${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-fabric:${LOAMS_VERSION:-0.1.3}}
     command:
       - connect
       - --instances=/etc/loams/connect
@@ -561,7 +561,7 @@ services:
   pg-control:
     <<: *restart
     profiles: [postgres-control]
-    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-pg-control:${LOAMS_VERSION:-0.1.2}
+    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-pg-control:${LOAMS_VERSION:-0.1.3}
     command:
       - pg-control
       - --store=local
@@ -656,7 +656,7 @@ services:
   pg-runner:
     <<: *restart
     profiles: [postgres-control]
-    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-pg-control:${LOAMS_VERSION:-0.1.2}
+    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-pg-control:${LOAMS_VERSION:-0.1.3}
     command:
       - pg-runner
       - --listen=0.0.0.0:7691
@@ -693,7 +693,7 @@ services:
   # the compose network.
   agentd:
     <<: *restart
-    image: ${AGENTD_IMAGE:-${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-agentd:${LOAMS_VERSION:-0.1.2}}
+    image: ${AGENTD_IMAGE:-${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-agentd:${LOAMS_VERSION:-0.1.3}}
     # The daemon writes its token, lock and store beside its config.toml, in
     # a directory it makes owner-only (0700): that is /home/loams/agentd, in
     # the data volume. Only config.toml comes from ./agentd, read-only, and
@@ -754,7 +754,7 @@ services:
   browser-gateway:
     <<: *restart
     profiles: [browser]
-    image: ${BROWSER_GATEWAY_IMAGE:-${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-gateway:${LOAMS_VERSION:-0.1.2}}
+    image: ${BROWSER_GATEWAY_IMAGE:-${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-gateway:${LOAMS_VERSION:-0.1.3}}
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
@@ -942,7 +942,7 @@ services:
 
   openfga-init:
     profiles: [authz]
-    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams:${LOAMS_VERSION:-0.1.2}
+    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams:${LOAMS_VERSION:-0.1.3}
     entrypoint: ["/bin/sh", "/etc/loams/openfga-init.sh"]
     command: []
     restart: "no"
