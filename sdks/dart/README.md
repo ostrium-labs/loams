@@ -7,15 +7,16 @@
 
 ## Install
 
-```sh
-dart pub add loams:0.1.2
-```
-
-or in `pubspec.yaml`:
+The `v0.1.2` source tag is published. The 0.1.2 package is not currently
+available from pub.dev, so install the SDK from the tagged monorepo source:
 
 ```yaml
 dependencies:
-  loams: 0.1.2
+  loams:
+    git:
+      url: https://github.com/ostrium-labs/loams.git
+      ref: v0.1.2
+      path: sdks/dart
 ```
 
 It works with Dart 3 and Flutter.
@@ -32,6 +33,9 @@ The app-building modules are `namespaces`, `collections`, `documents`,
 `search`, `vector` and `graph` (experimental), with the `Schema`, `Filter` and
 `Search` builders. [`example/notes/main.dart`](example/notes/main.dart) is the
 whole flow:
+
+See the [notes example instructions](example/notes/README.md) to run it from
+the matching source checkout.
 
 ```dart
 import 'package:loams/loams.dart';
