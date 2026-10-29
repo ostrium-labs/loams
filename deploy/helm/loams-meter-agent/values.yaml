@@ -7,11 +7,10 @@ image:
   digest: ""
   pullPolicy: IfNotPresent
 
-# The Loams engine's HTTP base URL. Empty keeps events spooled on the node.
+# A gateway node's cluster listener (the meter's service ingest, D2206).
+# Empty keeps events spooled on the node.
 streamUrl: ""
 stream:
-  namespace: _system
-  name: _meter
   partitions: 32
 # The cluster named in every event's source (loams://<cluster>/meter-agent/<node>).
 cluster: local

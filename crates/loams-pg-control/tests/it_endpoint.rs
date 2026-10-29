@@ -335,6 +335,7 @@ async fn stack(ns: &'static str) -> Stack {
             created_at_ms: now,
             parent_time_ms: None,
             updated_at_ms: now,
+            pg_version: 17,
         },
         None,
     )

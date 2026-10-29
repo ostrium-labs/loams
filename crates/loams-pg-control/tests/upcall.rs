@@ -198,6 +198,7 @@ impl Rig {
                     created_at_ms: T0_MS,
                     parent_time_ms: None,
                     updated_at_ms: T0_MS,
+                    pg_version: 17,
                 },
                 None,
             )

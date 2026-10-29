@@ -1,0 +1,7 @@
+BillingAccountId,ChargePeriodStart,ChargePeriodEnd,BilledCost,EffectiveCost,ListCost,BillingCurrency,ChargeCategory,ChargeClass,ResourceId,ServiceName,SkuId,RegionId,ConsumedQuantity,ConsumedUnit,Tags,InvoiceId,ServiceProviderName
+acct-0001,2026-10-01T00:00:00Z,2026-10-02T00:00:00Z,48.00,40.00,60.00,USD,Usage,,i-0aaa,Amazon Elastic Compute Cloud,BoxUsage:m7i.4xlarge,eu-central-1,24,Hours,"{""loams-pool"":""eu/compute"",""loams-kind"":""cpu""}",inv-1,AWS
+acct-0001,2026-10-01T00:00:00Z,2026-11-01T00:00:00Z,31.00,31.00,31.00,USD,Usage,,bucket-a,Amazon Simple Storage Service,TimedStorage-ByteHrs,eu-central-1,100,GB-Mo,{},inv-1,AWS
+acct-0001,2026-10-01T12:00:00Z,2026-10-02T12:00:00Z,10.00,10.00,10.00,USD,Usage,,nat-1,Amazon Virtual Private Cloud,NatGateway-Hours,eu-central-1,24,Hours,{},inv-1,AWS
+acct-0001,2026-10-01T00:00:00Z,2026-10-02T00:00:00Z,8.50,8.50,,USD,Tax,,,Tax,,,,,{},inv-1,AWS
+acct-0001,2026-10-01T00:00:00Z,2026-10-02T00:00:00Z,-2.00,-2.00,,USD,Credit,,i-0aaa,Amazon Elastic Compute Cloud,,eu-central-1,,,"{""loams-pool"":""eu/compute""}",inv-1,AWS
+acct-0001,2026-10-01T00:00:00Z,2026-10-02T00:00:00Z,40.00,40.00,40.00,USD,Purchase,,ri-1,Amazon Elastic Compute Cloud,,eu-central-1,,,"{""loams-pool"":""eu/compute""}",inv-1,AWS

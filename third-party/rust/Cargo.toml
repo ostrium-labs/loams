@@ -40,6 +40,7 @@ connectrpc-health = { package = "connectrpc-health", version = "=0.9.0", default
 connectrpc-reflection = { package = "connectrpc-reflection", version = "=0.9.0", default-features = false, features = ["client"] }
 crc = { package = "crc", version = "=3.4.0", default-features = false }
 crc32c = { package = "crc32c", version = "=0.6.8", default-features = false }
+csv = { package = "csv", version = "=1.4.0", default-features = false }
 data-encoding = { package = "data-encoding", version = "=2.11.1", default-features = true, features = ["alloc", "std"] }
 datafusion = { package = "datafusion", version = "=54.1.0", default-features = false, features = ["crypto_expressions", "datafusion-functions-nested", "datafusion-sql", "datetime_expressions", "encoding_expressions", "nested_expressions", "regex_expressions", "sql", "sqlparser", "string_expressions", "unicode_expressions"] }
 des = { package = "des", version = "=0.9.0", default-features = false }
@@ -122,7 +123,7 @@ rand-0_10 = { package = "rand", version = "=0.10.3", default-features = true, fe
 rand-0_9 = { package = "rand", version = "=0.9.5", default-features = true, features = ["alloc", "os_rng", "small_rng", "std", "std_rng", "thread_rng"] }
 rand_chacha = { package = "rand_chacha", version = "=0.9.0", default-features = true, features = ["std"] }
 rand_core = { package = "rand_core", version = "=0.10.1", default-features = false }
-rcgen = { package = "rcgen", version = "=0.14.10", default-features = false, features = ["crypto", "pem", "ring"] }
+rcgen = { package = "rcgen", version = "=0.14.10", default-features = false, features = ["aws_lc_rs", "crypto", "pem", "ring"] }
 redb = { package = "redb", version = "=4.4.0", default-features = true, features = ["std"] }
 regex = { package = "regex", version = "=1.13.1", default-features = true, features = ["perf", "perf-backtrack", "perf-cache", "perf-dfa", "perf-inline", "perf-literal", "perf-onepass", "std", "unicode", "unicode-age", "unicode-bool", "unicode-case", "unicode-gencat", "unicode-perl", "unicode-script", "unicode-segment"] }
 relative-path = { package = "relative-path", version = "=2.0.2", default-features = true, features = ["alloc", "std"] }
@@ -144,6 +145,7 @@ rusqlite = { package = "rusqlite", version = "=0.32.1", default-features = false
 rustc-hash = { package = "rustc-hash", version = "=2.1.3", default-features = true, features = ["std"] }
 rustix = { package = "rustix", version = "=1.1.5", default-features = true, features = ["alloc", "event", "fs", "net", "param", "pipe", "process", "std", "system", "termios", "thread", "time"] }
 rustls = { package = "rustls", version = "=0.23.46", default-features = true, features = ["aws-lc-rs", "aws_lc_rs", "log", "logging", "prefer-post-quantum", "ring", "std", "tls12"] }
+rustls-pki-types = { package = "rustls-pki-types", version = "=1.15.1", default-features = true, features = ["alloc", "std", "web", "web-time"] }
 schemars = { package = "schemars", version = "=0.8.22", default-features = true, features = ["chrono", "derive", "indexmap", "indexmap2", "preserve_order", "schemars_derive", "url", "uuid1"] }
 secrecy = { package = "secrecy", version = "=0.10.3", default-features = false, features = ["serde"] }
 semver = { package = "semver", version = "=1.0.28", default-features = true, features = ["serde", "std"] }
@@ -190,7 +192,7 @@ uuid = { package = "uuid", version = "=1.28.0", default-features = true, feature
 webbrowser = { package = "webbrowser", version = "=1.2.4", default-features = false }
 webpki-roots = { package = "webpki-roots", version = "=1.0.10", default-features = false }
 wiremock = { package = "wiremock", version = "=0.6.5", default-features = false }
-x509-parser = { package = "x509-parser", version = "=0.18.1", default-features = true, features = ["ring", "verify"] }
+x509-parser = { package = "x509-parser", version = "=0.18.1", default-features = true, features = ["aws-lc-rs", "ring", "verify", "verify-aws"] }
 xxhash-rust = { package = "xxhash-rust", version = "=0.8.19", default-features = false, features = ["xxh3", "xxh32", "xxh64"] }
 zeroize = { package = "zeroize", version = "=1.9.1", default-features = true, features = ["alloc", "derive", "zeroize_derive"] }
 zip = { package = "zip", version = "=7.2.0", default-features = false, features = ["_deflate-any", "deflate-flate2", "deflate-flate2-zlib-rs"] }

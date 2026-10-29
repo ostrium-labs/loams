@@ -826,6 +826,7 @@ mod served {
         clock: loams_meter::customers::Clock,
         appender: Arc<MeterAppender>,
         principals: Principals,
+        meta: Arc<dyn MetaStore>,
         counters: Arc<Counters>,
         /// The exporters' schedule, when one is configured, not started.
         exports: Option<std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>>,
@@ -896,6 +897,20 @@ mod served {
         /// service ingest) and the main port's own (the ingest, for the
         /// operator of a single node).
         pub fn start(self) -> MeterStarted {
+            // `_system/_meter` exists on a stack `migrate` ran on; a process
+            // without it (`loams dev`, the desktop) makes it here (§63 §7.1).
+            let meta = self.meta.clone();
+            tokio::spawn(async move {
+                loop {
+                    match loams_migrate::system::ensure_meter_stream(&*meta).await {
+                        Ok(_) => return,
+                        Err(err) => {
+                            tracing::warn!(%err, "the meter stream could not be made; retrying");
+                            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                        }
+                    }
+                }
+            });
             let stop = Arc::new(tokio::sync::Notify::new());
             let task = tokio::spawn(self.runtime.run(stop.clone()));
             // The House schedule: schema at start, then the close job every
@@ -1225,7 +1240,7 @@ mod served {
             clock: clock.clone(),
             values: Arc::new(values),
             usage,
-            house,
+            house: house.clone(),
             sealer: Arc::new(sealer),
         }));
         let runtime = CounterRuntime::new(RuntimeParts {
@@ -1241,9 +1256,19 @@ mod served {
                 id: tokio::sync::OnceCell::new(),
                 missing_logged: std::sync::atomic::AtomicBool::new(false),
             }),
-            // The House pipe's cursor is not readable over SQL (D2203): the
-            // counters rebuild from the stream alone.
-            house: Arc::new(StreamOnly),
+            // With a House: rebuilds and reconciliation split at the pipe's
+            // cursor (`system.loams_pipe_cursors`, D2401). Without one the
+            // counters rebuild from the stream alone (D2203).
+            house: if house.is_configured() {
+                Arc::new(loams_meter::house::HousePipeTotals {
+                    house: house.clone(),
+                    counters: counters.clone(),
+                    partitions: METER_PARTITIONS,
+                    clock: clock.clone(),
+                })
+            } else {
+                Arc::new(StreamOnly)
+            },
             store: Arc::new(DocStore::new(records.clone())) as Arc<dyn MeterStore>,
             counters: counters.clone(),
             lease_server: leases.clone(),
@@ -1356,6 +1381,7 @@ mod served {
             clock,
             appender,
             principals: principals.clone(),
+            meta: meta.clone(),
             counters,
             exports,
             exports_stop,

@@ -8,6 +8,7 @@ import { NamespacePicker } from '@loams/desktop-ui';
 import {
   Badge,
   Button,
+  Checkbox,
   Dialog,
   Empty,
   Field,
@@ -26,10 +27,14 @@ import {
   type PgControlClient,
   type PgOperation,
   type PgProject,
+  type PgVersionInfo,
   TERMINAL_OPERATION_STATES,
 } from './types.js';
 
-export const PG_VERSIONS = [17, 16, 15, 14] as const;
+/** The majors a new project may pick: supported ones, and beta ones (labelled). */
+export function offeredVersions(versions: PgVersionInfo[]): PgVersionInfo[] {
+  return versions.filter((v) => v.state !== 'maintenance');
+}
 const NAMESPACES_KEY = 'loams.postgres.namespaces';
 
 export interface ControlPlaneProps {
@@ -56,6 +61,21 @@ export function ControlPlane({
   const [operations, setOperations] = useState<PgOperation[]>([]);
   const [error, setError] = useState<string>();
   const [creating, setCreating] = useState(false);
+  const [pgVersions, setPgVersions] = useState<PgVersionInfo[]>([]);
+  useEffect(() => {
+    let live = true;
+    client
+      .listPgVersions()
+      .then((v) => {
+        if (live) setPgVersions(v);
+      })
+      .catch(() => {
+        if (live) setPgVersions([]);
+      });
+    return () => {
+      live = false;
+    };
+  }, [client]);
   const [deleting, setDeleting] = useState(false);
   const openIds = useRef(new Set<string>());
   // Bumped on a namespace (or client) change: a load that started under an older value
@@ -274,9 +294,10 @@ export function ControlPlane({
 
       <CreateProjectDialog
         open={creating}
+        versions={offeredVersions(pgVersions)}
         onClose={() => setCreating(false)}
-        onCreate={async (name, pgVersion) => {
-          const r = await client.createProject(ns, { name, pgVersion });
+        onCreate={async (name, pgVersion, allowBetaMajor) => {
+          const r = await client.createProject(ns, { name, pgVersion, allowBetaMajor });
           track(r.operation);
           setProjectId(r.project.id);
           await loadProjects();
@@ -299,15 +320,28 @@ export function ControlPlane({
 
 function CreateProjectDialog({
   open,
+  versions,
   onClose,
   onCreate,
 }: {
   open: boolean;
+  /** Supported and beta majors, newest first (`ListPgVersions`). */
+  versions: PgVersionInfo[];
   onClose: () => void;
-  onCreate: (name: string, pgVersion: number) => Promise<void>;
+  onCreate: (name: string, pgVersion: number, allowBetaMajor: boolean) => Promise<void>;
 }) {
   const [name, setName] = useState('');
-  const [version, setVersion] = useState<number>(PG_VERSIONS[0]);
+  // 0 takes the server's default major until the list has loaded.
+  const [version, setVersion] = useState<number>(0);
+  const [betaOptIn, setBetaOptIn] = useState(false);
+  const chosen = versions.find((v) => v.major === version);
+  const isBeta = chosen?.state === 'beta';
+  useEffect(() => {
+    const preferred = versions.find((v) => v.isDefault) ?? versions[0];
+    if (version === 0 && preferred) {
+      setVersion(preferred.major);
+    }
+  }, [versions, version]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const close = () => {
@@ -320,7 +354,7 @@ function CreateProjectDialog({
     setBusy(true);
     setError(undefined);
     try {
-      await onCreate(name.trim(), version);
+      await onCreate(name.trim(), version, isBeta && betaOptIn);
       close();
     } catch (e) {
       setError(failureText(e));
@@ -336,7 +370,11 @@ function CreateProjectDialog({
       footer={
         <>
           <Button onClick={close}>Cancel</Button>
-          <Button variant="primary" disabled={busy || !name.trim()} onClick={submit}>
+          <Button
+            variant="primary"
+            disabled={busy || !name.trim() || (isBeta && !betaOptIn)}
+            onClick={submit}
+          >
             {busy ? 'Creating…' : 'Create project'}
           </Button>
         </>
@@ -354,15 +392,31 @@ function CreateProjectDialog({
         </Field>
         <Field label="Postgres version">
           {(p) => (
-            <Select {...p} value={version} onChange={(e) => setVersion(Number(e.target.value))}>
-              {PG_VERSIONS.map((v) => (
-                <option key={v} value={v}>
-                  {v}
+            <Select
+              {...p}
+              value={version}
+              onChange={(e) => {
+                setVersion(Number(e.target.value));
+                setBetaOptIn(false);
+              }}
+            >
+              {versions.length === 0 && <option value={0}>Default</option>}
+              {versions.map((v) => (
+                <option key={v.major} value={v.major}>
+                  {v.state === 'beta' ? `${v.major} (beta)` : String(v.major)}
+                  {v.isDefault ? ' (default)' : ''}
                 </option>
               ))}
             </Select>
           )}
         </Field>
+        {isBeta && (
+          <Checkbox
+            label={`Use Postgres ${version}, which is in beta`}
+            checked={betaOptIn}
+            onChange={(e) => setBetaOptIn(e.target.checked)}
+          />
+        )}
         {error && (
           <Notice tone="danger" title="Could not create the project">
             {error}

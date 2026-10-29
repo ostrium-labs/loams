@@ -620,3 +620,156 @@ async fn a_pair_without_a_policy_gets_an_unmetered_grant_without_asking() {
     assert!(g.amount > 1 << 40);
     assert_eq!(g, loams_meter::lease_client::unmetered_grant());
 }
+
+#[tokio::test]
+async fn usage_right_after_an_entitlement_is_made_is_counted() {
+    use std::sync::atomic::{AtomicI64, Ordering};
+    // The store has the meter and feature, but not the entitlement yet.
+    let store = Arc::new(MemStore::new());
+    let full = self::store().await;
+    for m in full.list_meters().await.expect("meters") {
+        store.put_meter(m).await.expect("meter");
+    }
+    for f in full.list_features().await.expect("features") {
+        store.put_feature(f).await.expect("feature");
+    }
+    let stream = Arc::new(Stream(Mutex::new(Vec::new())));
+    let counters = Counters::new(1);
+    let now = Arc::new(AtomicI64::new(NOW.0));
+    let n = now.clone();
+    let clock: loams_meter::customers::Clock = Arc::new(move || UtcNanos(n.load(Ordering::SeqCst)));
+    let leases = Arc::new(LeaseServer::new(
+        1,
+        AllocatorConfig::default(),
+        Arc::new(CatalogInputs(counters.clone())),
+        vec![CLUSTER_SERVICE.to_string()],
+        clock.clone(),
+    ));
+    let mut runtime = CounterRuntime::new(RuntimeParts {
+        leases: MemLeases::new(),
+        me: "node-1".into(),
+        reader: stream.clone(),
+        house: Arc::new(StreamOnly),
+        store: store.clone(),
+        counters: counters.clone(),
+        lease_server: leases,
+        clock,
+        events: None,
+        notifier: None,
+    });
+    runtime.step().await;
+
+    // An entitlement, and usage two seconds later: well inside the regular
+    // 10 s refresh of the cached records.
+    store
+        .create_entitlement(entitlement(Mode::HardLimit), None)
+        .await
+        .expect("entitlement");
+    store.create_grant(grant(1_000), None).await.expect("grant");
+    now.fetch_add(2 * UtcNanos::SECOND, Ordering::SeqCst);
+    stream
+        .0
+        .lock()
+        .expect("lock")
+        .push((0, event("e1", "org_a", 70)));
+    runtime.step().await;
+    let b = CounterValues::new(counters)
+        .value(&entitlement(Mode::HardLimit), &[grant(1_000)], NOW)
+        .await
+        .expect("a balance");
+    assert_eq!(b.usage, Amount::from_units(70));
+}
+
+/// A House with a pipe cursor and a total it reports for org_a.
+#[derive(Debug)]
+struct ReconcileHouse {
+    cursor: &'static str,
+    total: Mutex<String>,
+}
+
+impl loams_meter_house::HouseSql for ReconcileHouse {
+    async fn query(&self, sql: &str) -> Result<String, loams_meter_house::HouseError> {
+        if sql.contains("system.loams_pipe_cursors") {
+            return Ok(self.cursor.to_string());
+        }
+        if sql.contains("SETTINGS loams_snapshot_id = 77") {
+            return Ok(format!("org_a\t{}\n", self.total.lock().expect("lock")));
+        }
+        Ok(String::new())
+    }
+}
+
+#[tokio::test]
+async fn reconciliation_rebases_on_the_house_at_its_cursor() {
+    use std::sync::atomic::{AtomicI64, Ordering};
+    let store = store().await;
+    // Offsets 0 and 1 are in the House's snapshot 77 (cursor 2); offset 2
+    // is the stream's tail.
+    let stream = Arc::new(Stream(Mutex::new(vec![
+        (0, event("e1", "org_a", 100)),
+        (1, event("e2", "org_a", 50)),
+        (2, event("e3", "org_a", 25)),
+    ])));
+    let house = Arc::new(ReconcileHouse {
+        cursor: "2\t77\n",
+        total: Mutex::new("150".into()),
+    });
+    let counters = Counters::new(1);
+    let now = Arc::new(AtomicI64::new(NOW.0));
+    let n = now.clone();
+    let clock: loams_meter::customers::Clock = Arc::new(move || UtcNanos(n.load(Ordering::SeqCst)));
+    let leases = Arc::new(LeaseServer::new(
+        1,
+        AllocatorConfig::default(),
+        Arc::new(CatalogInputs(counters.clone())),
+        vec![CLUSTER_SERVICE.to_string()],
+        clock.clone(),
+    ));
+    let mut runtime = CounterRuntime::new(RuntimeParts {
+        leases: MemLeases::new(),
+        me: "node-1".into(),
+        reader: stream.clone(),
+        house: Arc::new(loams_meter::house::HousePipeTotals {
+            house: house.clone(),
+            counters: counters.clone(),
+            partitions: 1,
+            clock: clock.clone(),
+        }),
+        store,
+        counters: counters.clone(),
+        lease_server: leases,
+        clock,
+        events: None,
+        notifier: None,
+    });
+    // The rebuild: the House's 150 at the cursor, then the tail's 25.
+    runtime.step().await;
+    let values = CounterValues::new(counters.clone());
+    let e = entitlement(Mode::HardLimit);
+    let at = UtcNanos(now.load(Ordering::SeqCst));
+    let b = values
+        .value(&e, &[grant(1_000)], at)
+        .await
+        .expect("a balance");
+    assert_eq!(b.usage, Amount::from_units(175));
+
+    // The House's deduplicated total is lower (a duplicate the counters
+    // took twice): five minutes on, reconciliation rebases on it.
+    *house.total.lock().expect("lock") = "140".into();
+    now.fetch_add(
+        i64::try_from(loams_meter::reconcile::RECONCILE_EVERY.as_nanos()).expect("nanos")
+            + UtcNanos::SECOND,
+        Ordering::SeqCst,
+    );
+    runtime.step().await;
+    let at = UtcNanos(now.load(Ordering::SeqCst));
+    let b = values
+        .value(&e, &[grant(1_000)], at)
+        .await
+        .expect("a balance");
+    assert_eq!(
+        b.usage,
+        Amount::from_units(165),
+        "140 at the cursor plus the 25 after it"
+    );
+}

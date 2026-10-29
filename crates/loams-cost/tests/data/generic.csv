@@ -1,0 +1,4 @@
+From,To,Amount,Item,Tags
+2026-10-01,2026-10-02,30.00,colo rack,loams-pool=fra/rack
+2026-10-01,2026-10-02,20.00,transit,loams-pool=fra/net;loams-kind=network_egress
+2026-10-01,2026-10-02,10.00,remote hands,

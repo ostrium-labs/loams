@@ -9860,6 +9860,18 @@ cargo.rust_library(
     ],
 )
 
+cargo_alias(
+    name = "csv",
+    actual = ":csv-1",
+    platforms = [
+        "linux-arm64",
+        "linux-x86_64",
+        "macos-arm64",
+        "macos-x86_64",
+    ],
+    visibility = ["PUBLIC"],
+)
+
 http_archive(
     name = "csv-1.4.0.crate",
     sha256 = "52cd9d68cf7efc6ddfaaee42e7288d3a99d613d4b50f76ce9827ae0c6e14f938",
@@ -40967,6 +40979,7 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
+        "aws_lc_rs",
         "crypto",
         "pem",
         "ring",
@@ -40976,6 +40989,7 @@ cargo.rust_library(
     },
     visibility = [],
     deps = [
+        ":aws-lc-rs-1",
         ":pem-4",
         ":ring-0.17",
         ":time-0.3",
@@ -44136,6 +44150,18 @@ cargo.rust_library(
     visibility = [],
 )
 
+cargo_alias(
+    name = "rustls-pki-types",
+    actual = ":rustls-pki-types-1",
+    platforms = [
+        "linux-arm64",
+        "linux-x86_64",
+        "macos-arm64",
+        "macos-x86_64",
+    ],
+    visibility = ["PUBLIC"],
+)
+
 http_archive(
     name = "rustls-pki-types-1.15.1.crate",
     sha256 = "2f4925028c7eb5d1fcdaf196971378ed9d2c1c4efc7dc5d011256f76c99c0a96",
@@ -44171,6 +44197,8 @@ cargo.rust_library(
         "alloc",
         "default",
         "std",
+        "web",
+        "web-time",
     ],
     visibility = [],
     deps = [":zeroize-1"],
@@ -56881,13 +56909,16 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
+        "aws-lc-rs",
         "default",
         "ring",
         "verify",
+        "verify-aws",
     ],
     visibility = [],
     deps = [
         ":asn1-rs-0.7",
+        ":aws-lc-rs-1",
         ":data-encoding-2",
         ":der-parser-10",
         ":lazy_static-1",
