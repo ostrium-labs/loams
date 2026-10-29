@@ -692,7 +692,17 @@ impl loams_meter_house::HouseSql for ReconcileHouse {
         if sql.contains("system.loams_pipe_cursors") {
             return Ok(self.cursor.to_string());
         }
-        if sql.contains("SETTINGS loams_snapshot_id = 77") {
+        Ok(String::new())
+    }
+
+    async fn query_with(
+        &self,
+        sql: &str,
+        settings: &[(&str, String)],
+    ) -> Result<String, loams_meter_house::HouseError> {
+        if sql.contains("_meter.events FINAL")
+            && settings == [("loams_snapshot_id", "77".to_string())]
+        {
             return Ok(format!("org_a\t{}\n", self.total.lock().expect("lock")));
         }
         Ok(String::new())

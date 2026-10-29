@@ -63,6 +63,17 @@ impl HouseSql for RoleHouse {
             )),
         }
     }
+
+    async fn query_with(
+        &self,
+        sql: &str,
+        settings: &[(&str, String)],
+    ) -> std::result::Result<String, HouseError> {
+        match self {
+            RoleHouse::Http(h) => h.query_with(sql, settings).await,
+            RoleHouse::Absent => self.query(sql).await,
+        }
+    }
 }
 
 impl RoleHouse {
@@ -188,52 +199,6 @@ impl<H: HouseSql + 'static> crate::run::UsageSoFar for HouseUsageSoFar<H> {
     }
 }
 
-/// `system.loams_pipe_cursors`' row for `_meter.events` and `partition`
-/// (D2401): `next_offset\tsnapshot_id`.
-pub fn pipe_cursor_sql(partition: u32) -> String {
-    format!(
-        "SELECT min(next_offset), any(snapshot_id) FROM system.loams_pipe_cursors \
-         WHERE database = {} AND table = 'events' AND partition = {partition} \
-         HAVING count() > 0 FORMAT TabSeparated",
-        sql::quote(sql::DATABASE)
-    )
-}
-
-/// The period-to-date usage of `feature` by each of `subjects` in
-/// `[start, end)` (Unix seconds) from `_meter.events FINAL`, pinned to
-/// `snapshot`: what the counters count, summed per event as they do
-/// (`COUNT` is one per event).
-pub fn pinned_totals_sql(
-    subjects: &[&str],
-    feature: &sql::FeatureDef,
-    start: i64,
-    end: i64,
-    snapshot: i64,
-) -> String {
-    let value = match feature.meter.aggregation {
-        sql::Aggregation::Count => "toDecimal128(count(), 9)".to_string(),
-        _ => format!(
-            "sum(ifNull({}, toDecimal128(0, 9)))",
-            sql::value_expr(&feature.meter)
-        ),
-    };
-    let list = subjects
-        .iter()
-        .map(|s| sql::quote(s))
-        .collect::<Vec<_>>()
-        .join(", ");
-    format!(
-        "SELECT subject, {value} FROM {}.events FINAL WHERE subject IN ({list}) AND {} \
-         AND time >= {} AND time < {}{} GROUP BY subject \
-         SETTINGS loams_snapshot_id = {snapshot} FORMAT TabSeparated",
-        sql::DATABASE,
-        sql::events_filter(&feature.meter),
-        sql::at64(start),
-        sql::at64(end),
-        sql::event_filter(feature),
-    )
-}
-
 /// [`crate::owner::HouseTotals`] over the House (D2401): the pipe's cursor
 /// for a partition from `system.loams_pipe_cursors`, and the totals of
 /// every metered entitlement of the partition's subjects from
@@ -264,7 +229,7 @@ impl<H: HouseSql + 'static> crate::owner::HouseTotals for HousePipeTotals<H> {
     ) -> std::result::Result<Option<(u64, i64)>, crate::owner::OwnerError> {
         let answer = self
             .house
-            .query(&pipe_cursor_sql(partition))
+            .query(&sql::pipe_cursor_sql(partition))
             .await
             .map_err(owner_err)?;
         let Some(line) = answer.lines().find(|l| !l.trim().is_empty()) else {
@@ -315,7 +280,10 @@ impl<H: HouseSql + 'static> crate::owner::HouseTotals for HousePipeTotals<H> {
             let refs: Vec<&str> = subjects.iter().map(String::as_str).collect();
             let answer = self
                 .house
-                .query(&pinned_totals_sql(&refs, &def, start, end, snapshot))
+                .query_with(
+                    &sql::pinned_totals_sql(&refs, &def, start, end),
+                    &[(sql::SNAPSHOT_SETTING, snapshot.to_string())],
+                )
                 .await
                 .map_err(owner_err)?;
             for line in answer.lines().filter(|l| !l.trim().is_empty()) {
