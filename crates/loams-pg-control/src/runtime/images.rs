@@ -42,42 +42,62 @@ pub fn check_image(image: &str) -> Result<(), ImageError> {
     Ok(())
 }
 
-/// The compute image of each supported major in pin file `text`
-/// (`[majors] supported`, each `[images.compute-v<major>]`'s `repository`
-/// and `digest`).
+/// The `[majors]` lists whose majors run computes (design §62 §9.1): a
+/// supported major's new projects, a beta major's opted-in ones, and a
+/// maintenance major's existing projects, exports and upgrades.
+const MAJOR_LISTS: [&str; 3] = ["supported", "beta", "maintenance"];
+
+/// The compute image of each major in pin file `text` (`[majors]
+/// supported`, `beta` and `maintenance`; each `[images.compute-v<major>]`'s
+/// `repository` and `digest`). A missing `beta` or `maintenance` list is
+/// empty; `supported` is required.
 ///
 /// # Errors
 ///
 /// [`ImageError::Pins`] for a file that does not parse or misses a
-/// supported major's image; the checks of [`check_image`].
+/// listed major's image; the checks of [`check_image`].
 pub fn from_pins(text: &str) -> Result<BTreeMap<u32, String>, ImageError> {
     let pins: toml::Value = toml::from_str(text).map_err(|e| ImageError::Pins(e.to_string()))?;
-    let supported = pins
+    let majors = pins
         .get("majors")
-        .and_then(|m| m.get("supported"))
-        .and_then(toml::Value::as_array)
-        .ok_or_else(|| ImageError::Pins("no [majors] supported".into()))?;
+        .ok_or_else(|| ImageError::Pins("no [majors]".into()))?;
+    if majors.get("supported").is_none() {
+        return Err(ImageError::Pins("no [majors] supported".into()));
+    }
     let mut out = BTreeMap::new();
-    for major in supported {
-        let major = major
-            .as_integer()
-            .and_then(|m| u32::try_from(m).ok())
-            .ok_or_else(|| ImageError::Pins("a supported major is not a number".into()))?;
-        let entry = pins
-            .get("images")
-            .and_then(|i| i.get(format!("compute-v{major}")))
-            .ok_or_else(|| ImageError::Pins(format!("no [images.compute-v{major}]")))?;
-        let field = |name: &str| {
-            entry
-                .get(name)
-                .and_then(toml::Value::as_str)
-                .ok_or_else(|| ImageError::Pins(format!("compute-v{major} has no {name}")))
+    for list in MAJOR_LISTS {
+        let Some(entries) = majors.get(list) else {
+            continue;
         };
-        let image = format!("{}@{}", field("repository")?, field("digest")?);
-        check_image(&image)?;
-        out.insert(major, image);
+        let entries = entries
+            .as_array()
+            .ok_or_else(|| ImageError::Pins(format!("[majors] {list} is not a list")))?;
+        for major in entries {
+            let major = major
+                .as_integer()
+                .and_then(|m| u32::try_from(m).ok())
+                .ok_or_else(|| ImageError::Pins(format!("a {list} major is not a number")))?;
+            out.insert(major, image_of(&pins, major)?);
+        }
     }
     Ok(out)
+}
+
+/// `[images.compute-v<major>]`'s `repository@digest`, checked.
+fn image_of(pins: &toml::Value, major: u32) -> Result<String, ImageError> {
+    let entry = pins
+        .get("images")
+        .and_then(|i| i.get(format!("compute-v{major}")))
+        .ok_or_else(|| ImageError::Pins(format!("no [images.compute-v{major}]")))?;
+    let field = |name: &str| {
+        entry
+            .get(name)
+            .and_then(toml::Value::as_str)
+            .ok_or_else(|| ImageError::Pins(format!("compute-v{major} has no {name}")))
+    };
+    let image = format!("{}@{}", field("repository")?, field("digest")?);
+    check_image(&image)?;
+    Ok(image)
 }
 
 /// The compute images this build was pinned with ([`PINS`]).
@@ -140,6 +160,47 @@ mod tests {
             parse_override("seventeen=x"),
             Err(ImageError::Malformed(_))
         ));
+    }
+
+    #[test]
+    fn beta_and_maintenance_majors_have_images() {
+        let image = |m: u32| {
+            format!(
+                "[images.compute-v{m}]\nrepository = \"ghcr.io/ostrium-labs/loams-postgres-compute-v{m}\"\ndigest = \"{DIGEST}\"\n"
+            )
+        };
+        let text = format!(
+            "[majors]\nsupported = [17]\nbeta = [18]\nmaintenance = [16]\ndefault = 17\n{}{}{}",
+            image(16),
+            image(17),
+            image(18)
+        );
+        let images = from_pins(&text).expect("ok");
+        assert_eq!(images.keys().copied().collect::<Vec<_>>(), [16, 17, 18]);
+        assert_eq!(
+            images[&18],
+            format!("ghcr.io/ostrium-labs/loams-postgres-compute-v18@{DIGEST}")
+        );
+        // A beta major without its image is refused like a supported one.
+        let text = format!(
+            "[majors]\nsupported = [17]\nbeta = [18]\nmaintenance = []\ndefault = 17\n{}",
+            image(17)
+        );
+        assert!(matches!(from_pins(&text), Err(ImageError::Pins(m)) if m.contains("compute-v18")));
+    }
+
+    #[test]
+    fn the_pin_file_has_an_image_per_listed_major() {
+        let images = pinned().expect("the pin file parses");
+        for major in [
+            loams_postgres::majors::SUPPORTED,
+            loams_postgres::majors::BETA,
+            loams_postgres::majors::MAINTENANCE,
+        ]
+        .concat()
+        {
+            assert!(images.contains_key(&major), "{major}: {images:?}");
+        }
     }
 
     #[test]
