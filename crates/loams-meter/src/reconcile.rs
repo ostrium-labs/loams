@@ -41,7 +41,7 @@ pub const DRIFT_METRIC: &str = "loams_meter_reconcile_drift_ratio";
 /// A counter's allowance for the period (the total available at its
 /// start), for the drift ratio; `None` for counters with none (a soft limit
 /// without grants), which never alert.
-pub trait Allowances {
+pub trait Allowances: Sync {
     fn allowance(&self, key: &CounterKey) -> Option<Amount>;
 }
 

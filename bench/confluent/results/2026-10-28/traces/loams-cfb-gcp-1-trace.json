@@ -1,0 +1,87 @@
+{
+ "trace_id": "3720a5ee347f7c9d349effc3bb7f5788",
+ "target": "loams-cfb-gcp-1",
+ "spans": [
+  {
+   "name": "kafka.message",
+   "span_id": "a493616df1ef2375",
+   "parent_span_id": "",
+   "start_ns": 1793154691778772344,
+   "duration_nano": 424016630,
+   "attrs": {
+    "cfb.target": "loams-cfb-gcp-1",
+    "cfb.acks": "1",
+    "cfb.mode": "latency",
+    "messaging.destination.name": "loams-cfb-080112-latency"
+   },
+   "res": {
+    "telemetry.sdk.language": "python",
+    "telemetry.sdk.version": "1.45.1",
+    "service.instance.id": "c9848295-5443-4941-a563-9eaae79349a6",
+    "service.namespace": "loams-bench",
+    "cfb.run": "080112",
+    "cloud.region": "asia-south1",
+    "messaging.system": "kafka",
+    "telemetry.sdk.name": "opentelemetry",
+    "service.name": "cfb-driver",
+    "cfb.target": "loams-cfb-gcp-1",
+    "cfb.kind": "confluent-cloud-basic",
+    "cloud.provider": "gcp"
+   }
+  },
+  {
+   "name": "kafka.produce",
+   "span_id": "23a3c65606b0378a",
+   "parent_span_id": "a493616df1ef2375",
+   "start_ns": 1793154691778772344,
+   "duration_nano": 353901576,
+   "attrs": {
+    "cfb.target": "loams-cfb-gcp-1",
+    "cfb.acks": "1",
+    "cfb.mode": "latency",
+    "messaging.destination.name": "loams-cfb-080112-latency"
+   },
+   "res": {
+    "cfb.kind": "confluent-cloud-basic",
+    "messaging.system": "kafka",
+    "telemetry.sdk.language": "python",
+    "cfb.run": "080112",
+    "cfb.target": "loams-cfb-gcp-1",
+    "cloud.provider": "gcp",
+    "cloud.region": "asia-south1",
+    "telemetry.sdk.name": "opentelemetry",
+    "telemetry.sdk.version": "1.45.1",
+    "service.instance.id": "c9848295-5443-4941-a563-9eaae79349a6",
+    "service.name": "cfb-driver",
+    "service.namespace": "loams-bench"
+   }
+  },
+  {
+   "name": "kafka.deliver",
+   "span_id": "60df0aed0d47e4fd",
+   "parent_span_id": "a493616df1ef2375",
+   "start_ns": 1793154692132673920,
+   "duration_nano": 70115054,
+   "attrs": {
+    "cfb.acks": "1",
+    "cfb.mode": "latency",
+    "messaging.destination.name": "loams-cfb-080112-latency",
+    "cfb.target": "loams-cfb-gcp-1"
+   },
+   "res": {
+    "cloud.provider": "gcp",
+    "messaging.system": "kafka",
+    "telemetry.sdk.language": "python",
+    "telemetry.sdk.name": "opentelemetry",
+    "telemetry.sdk.version": "1.45.1",
+    "service.namespace": "loams-bench",
+    "cfb.target": "loams-cfb-gcp-1",
+    "cloud.region": "asia-south1",
+    "service.instance.id": "c9848295-5443-4941-a563-9eaae79349a6",
+    "service.name": "cfb-driver",
+    "cfb.run": "080112",
+    "cfb.kind": "confluent-cloud-basic"
+   }
+  }
+ ]
+}

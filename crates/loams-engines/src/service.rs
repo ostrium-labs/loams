@@ -12,10 +12,10 @@ use crate::meter::{
     UsageLog,
 };
 use crate::{
-    CreateSession, EngineCatalog, EngineError, EngineKind, EngineRegistry, Instance, InstanceId,
-    InstanceSpec, InstanceStatus, InstanceStore, ManagedEngine, MemoryStore, Observed, Op, Phase,
-    SizeRequest, SparkEngine, SparkJob, SparkSession, SqlRequest, SqlResult, SubmitJob,
-    validate_name,
+    CreateSchedule, CreateSession, EngineCatalog, EngineError, EngineKind, EngineRegistry,
+    Instance, InstanceId, InstanceSpec, InstanceStatus, InstanceStore, ManagedEngine, MemoryStore,
+    Observed, Op, Phase, SizeRequest, SparkEngine, SparkJob, SparkSchedule, SparkSession,
+    SqlRequest, SqlResult, SubmitJob, validate_name,
 };
 
 /// `POST /v1/namespaces/{p}/engines`.
@@ -632,6 +632,66 @@ impl EngineService {
         Self::spark_of(&inst, &engine)?.cancel_job(&inst, job).await
     }
 
+    pub async fn get_job(
+        &self,
+        namespace: &str,
+        id: &str,
+        job: &str,
+    ) -> Result<SparkJob, EngineError> {
+        let (inst, engine) = self.running(namespace, id).await?;
+        Self::spark_of(&inst, &engine)?.get_job(&inst, job).await
+    }
+
+    /// A job's log, cut to its last [`crate::MAX_LOG_BYTES`] whatever the adapter returned.
+    pub async fn job_logs(
+        &self,
+        namespace: &str,
+        id: &str,
+        job: &str,
+        attempt: Option<u32>,
+    ) -> Result<String, EngineError> {
+        let (inst, engine) = self.running(namespace, id).await?;
+        let text = Self::spark_of(&inst, &engine)?
+            .job_logs(&inst, job, attempt)
+            .await?;
+        Ok(tail(text, crate::MAX_LOG_BYTES))
+    }
+
+    pub async fn list_schedules(
+        &self,
+        namespace: &str,
+        id: &str,
+    ) -> Result<Vec<SparkSchedule>, EngineError> {
+        let (inst, engine) = self.running(namespace, id).await?;
+        Self::spark_of(&inst, &engine)?.list_schedules(&inst).await
+    }
+
+    pub async fn create_schedule(
+        &self,
+        namespace: &str,
+        id: &str,
+        req: CreateSchedule,
+    ) -> Result<SparkSchedule, EngineError> {
+        req.validate()?;
+        check_map("conf", &req.job.conf)?;
+        let (inst, engine) = self.running(namespace, id).await?;
+        Self::spark_of(&inst, &engine)?
+            .create_schedule(&inst, req)
+            .await
+    }
+
+    pub async fn delete_schedule(
+        &self,
+        namespace: &str,
+        id: &str,
+        schedule: &str,
+    ) -> Result<(), EngineError> {
+        let (inst, engine) = self.running(namespace, id).await?;
+        Self::spark_of(&inst, &engine)?
+            .delete_schedule(&inst, schedule)
+            .await
+    }
+
     /// Samples one instance up to `now`, records the sample and returns its events: the
     /// runtime event while compute runs, and the storage gauge when an hour has passed since
     /// the last one. Empty when the window is empty, the adapter is gone or it could not
@@ -733,6 +793,18 @@ impl EngineService {
             }
         })
     }
+}
+
+/// The last `max` bytes of `text`, cut at a character boundary.
+fn tail(text: String, max: usize) -> String {
+    if text.len() <= max {
+        return text;
+    }
+    let mut start = text.len() - max;
+    while !text.is_char_boundary(start) {
+        start += 1;
+    }
+    text[start..].to_owned()
 }
 
 fn is_transitional(p: Phase) -> bool {

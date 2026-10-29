@@ -11,6 +11,7 @@ import contextlib
 import importlib.util
 import io
 import shutil
+import subprocess
 import tempfile
 import tomllib
 import unittest
@@ -126,6 +127,71 @@ class Candidate(unittest.TestCase):
         path.write_text("schema = [")
         with self.assertRaises(candidate.Refused):
             candidate.apply(str(self.root), str(path), COMMIT)
+
+
+class PerMajor(unittest.TestCase):
+    """NF2 Task 7 (design §62 §8, D1118): G3 runs pg2-e2e.yml once per candidate major."""
+
+    def doc(self, beta=(18,)):
+        d = tomllib.loads((REPO / pins.PIN_FILE).read_text())
+        d["majors"]["beta"] = list(beta)
+        return d
+
+    def test_g3_runs_e2e_per_major(self):
+        # The legs come from the candidate's majors: beta advisory unless own.
+        legs = candidate.legs(self.doc())
+        self.assertEqual(legs, {"majors": [16, 17, 18], "required": [16, 17], "advisory": [18], "default": 17})
+        own = candidate.legs(self.doc(), own=[18])
+        self.assertEqual((own["required"], own["advisory"]), ([16, 17, 18], []))
+        today = candidate.legs(tomllib.loads((REPO / pins.PIN_FILE).read_text()))
+        self.assertEqual(today["majors"], sorted(today["required"] + today["advisory"]))
+        with self.assertRaisesRegex(candidate.Refused, "own major 19"):
+            candidate.legs(self.doc(), own=[19])
+
+        # nf1-candidate.yml: one pg2-e2e.yml call per major, from prepare's
+        # outputs (no hard-coded major), beta legs in their own job.
+        wf = (REPO / ".github/workflows/nf1-candidate.yml").read_text()
+        for job, outputs in (("e2e", "required"), ("e2e-beta", "advisory")):
+            block = wf.split(f"\n  {job}:\n", 1)[1].split("\n\n  ", 1)[0]
+            self.assertIn("uses: ./.github/workflows/pg2-e2e.yml", block, job)
+            self.assertIn(f"major: ${{{{ fromJSON(needs.prepare.outputs.{outputs}) }}}}", block, job)
+            self.assertIn("major: ${{ format('{0}', matrix.major) }}", block, job)
+        report = wf.split("\n  report:\n", 1)[1]
+        self.assertIn("e2e-beta", report)
+
+        # pg2-e2e.yml reads compute-v<N> from its `major` input, never compute-v17.
+        e2e = (REPO / ".github/workflows/pg2-e2e.yml").read_text()
+        self.assertTrue("      major:\n" in e2e, "pg2-e2e.yml has no `major` input")
+        kind = e2e.split("\n  pg-control-kind:\n", 1)[1].split("\n\n  ", 1)[0]
+        self.assertNotIn("compute-v17", kind)
+        self.assertIn("scripts/nf1/candidate.py image", kind)
+        self.assertIn("IT_KIND_IMAGE", kind)
+        ingest = e2e.split("\n  pageserver-loams-wal:\n", 1)[1].split("\n\n  ", 1)[0]
+        self.assertIn("PG_MAJOR: ${{ inputs.major }}", ingest)
+
+    def test_image_of_a_pinned_major(self):
+        doc = self.doc(beta=())
+        c = doc["images"]["compute-v16"]
+        self.assertEqual(candidate.image(doc, 16), f"{c['repository']}@{c['digest']}")
+        with self.assertRaisesRegex(candidate.Refused, "Postgres 15 is not in the pin file"):
+            candidate.image(doc, 15)
+
+    def test_it_pageserver_loams_wal_takes_any_pinned_major(self):
+        script = REPO / "scripts/pg2/it-pageserver-loams-wal.sh"
+        text = script.read_text()
+        self.assertNotRegex(text, r"(?m)^PG_MAJOR=17$")
+        env = {"PATH": "/usr/bin:/bin", "HOME": tempfile.gettempdir()}
+        def run(*args, **extra):
+            return subprocess.run(["bash", str(script), *args], env={**env, **extra},
+                                  capture_output=True, text=True, timeout=60)
+        r = run(PG_MAJOR="15")
+        self.assertEqual(r.returncode, 1, r.stderr)
+        self.assertIn("Postgres 15 is not in the pin file", r.stderr)
+        r = run("16")
+        self.assertIn("LOAMS_WAL", r.stderr)  # 16 passed the check; the next one stops it
+        r = run(PG_MAJOR="16", COMPUTE_IMAGE="ghcr.io/ostrium-labs/loams-postgres-compute-v17@" + NEW)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("not a Postgres 16 compute image", r.stderr)
 
 
 if __name__ == "__main__":

@@ -18,8 +18,8 @@ fn secrets() -> BTreeMap<String, String> {
     [
         ("lakekeeper-client", "s3cr'et"),
         ("loams-api-key", "lk_\"quoted\"\\x"),
-        ("pg-password", "pg-pass"),
-        ("s3-secret", "s3-pass"),
+        ("pg-password", "pgSecretValue1"),
+        ("s3-secret", "s3SecretValue1"),
     ]
     .into_iter()
     .map(|(k, v)| (k.to_string(), v.to_string()))

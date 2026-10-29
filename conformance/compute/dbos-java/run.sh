@@ -21,7 +21,9 @@ URL=postgresql://postgres:${DBOS_DB_PASSWORD:-dbos}@localhost:5432
 
 oc_up dbos
 in_runner "
-  command -v git >/dev/null || (apt-get update -qq && apt-get install -y -qq git >/dev/null)
+  # git for the Gradle build's version tag; apt mirrors fail now and then (local run, 2026-10-28).
+  for i in 1 2 3 4 5; do command -v git >/dev/null && break; apt-get update -qq && apt-get install -y -qq git >/dev/null && break; sleep 15; done
+  command -v git >/dev/null
   rm -rf /work/java /work/appjava && mkdir -p /work/java /work/appjava/src/main/java/loams
   curl -fsSL https://codeload.github.com/dbos-inc/dbos-transact-java/tar.gz/$DBOS_JAVA_COMMIT | tar xz --strip-components=1 -C /work/java
   cd /work/java && git init -q && git add -A && git -c user.email=ci@example.invalid -c user.name=ci commit -qm 'dbos-transact-java $DBOS_JAVA' && git tag $DBOS_JAVA

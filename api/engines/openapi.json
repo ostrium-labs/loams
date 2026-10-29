@@ -1053,6 +1053,349 @@
           }
         ]
       }
+    },
+    "/v1/namespaces/{namespace}/engines/{instance}/jobs/{job}": {
+      "get": {
+        "operationId": "getSparkJob",
+        "summary": "One Spark job with its full status",
+        "tags": [
+          "spark"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SparkJob"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "A server error (unavailable, internal; 501 engine_not_enabled when no adapter serves the kind)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The Loams namespace (an environment) the instance belongs to"
+          },
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The engine instance's id (`eng_\u2026`)"
+          },
+          {
+            "name": "job",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The job's id"
+          }
+        ]
+      }
+    },
+    "/v1/namespaces/{namespace}/engines/{instance}/jobs/{job}/logs": {
+      "get": {
+        "operationId": "getSparkJobLogs",
+        "summary": "A Spark job's driver log as text (the last 1 MiB)",
+        "tags": [
+          "spark"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "A server error (unavailable, internal; 501 engine_not_enabled when no adapter serves the kind)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The Loams namespace (an environment) the instance belongs to"
+          },
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The engine instance's id (`eng_\u2026`)"
+          },
+          {
+            "name": "job",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The job's id"
+          },
+          {
+            "name": "attempt",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Which attempt; the latest when absent"
+          }
+        ]
+      }
+    },
+    "/v1/namespaces/{namespace}/engines/{instance}/schedules": {
+      "get": {
+        "operationId": "listSparkSchedules",
+        "summary": "A Spark instance's schedules",
+        "tags": [
+          "spark"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SparkScheduleList"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "A server error (unavailable, internal; 501 engine_not_enabled when no adapter serves the kind)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The Loams namespace (an environment) the instance belongs to"
+          },
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The engine instance's id (`eng_\u2026`)"
+          }
+        ]
+      },
+      "post": {
+        "operationId": "createSparkSchedule",
+        "summary": "Run a job on a cron schedule (idempotent by id)",
+        "tags": [
+          "spark"
+        ],
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SparkSchedule"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "A server error (unavailable, internal; 501 engine_not_enabled when no adapter serves the kind)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The Loams namespace (an environment) the instance belongs to"
+          },
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The engine instance's id (`eng_\u2026`)"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SparkScheduleCreate"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/namespaces/{namespace}/engines/{instance}/schedules/{schedule}": {
+      "delete": {
+        "operationId": "deleteSparkSchedule",
+        "summary": "Delete a schedule",
+        "tags": [
+          "spark"
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "4XX": {
+            "description": "A client error: invalid_argument, unauthenticated, permission_denied, not_found, already_exists, failed_precondition, unsupported; 402 entitlement_exhausted when the Meter refuses (create, resume, scale up)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "A server error (unavailable, internal; 501 engine_not_enabled when no adapter serves the kind)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The Loams namespace (an environment) the instance belongs to"
+          },
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The engine instance's id (`eng_\u2026`)"
+          },
+          {
+            "name": "schedule",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The schedule's id"
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -1829,6 +2172,9 @@
               "string",
               "null"
             ]
+          },
+          "detail": {
+            "description": "The adapter's full run status (attempts, driver, timings); only on GET \u2026/jobs/{job}."
           }
         },
         "required": [
@@ -1887,6 +2233,81 @@
           "name",
           "kind",
           "entrypoint"
+        ],
+        "additionalProperties": true,
+        "description": "The fields the facade checks; any other field is the engine's own job spec (SP-b's SparkJobSpec) and is passed to the adapter unchanged."
+      },
+      "SparkScheduleCreate": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$",
+            "description": "Chosen by the caller, so a retry is idempotent."
+          },
+          "cron": {
+            "type": "string",
+            "description": "UTC; five fields, or six with seconds."
+          },
+          "job": {
+            "$ref": "#/components/schemas/SparkJobSubmit"
+          }
+        },
+        "required": [
+          "id",
+          "cron",
+          "job"
+        ],
+        "additionalProperties": false
+      },
+      "SparkSchedule": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "cron": {
+            "type": "string"
+          },
+          "job": {
+            "$ref": "#/components/schemas/SparkJobSubmit"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "next_run_at": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "cron",
+          "job",
+          "created_at"
+        ],
+        "additionalProperties": false
+      },
+      "SparkScheduleList": {
+        "type": "object",
+        "properties": {
+          "schedules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SparkSchedule"
+            }
+          }
+        },
+        "required": [
+          "schedules"
         ],
         "additionalProperties": false
       }
