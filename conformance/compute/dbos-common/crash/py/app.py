@@ -24,7 +24,7 @@ import sys
 import time
 
 import psycopg
-from dbos import DBOS, DBOSConfig, Queue, SetWorkflowID
+from dbos import DBOS, DBOSConfig, SetWorkflowID
 
 URL = os.environ["DBOS_URL"]
 CRASH_AT = int(os.environ.get("CRASH_AT", "0"))
@@ -35,7 +35,9 @@ config: DBOSConfig = {
     "executor_id": os.environ.get("DBOS_EXECUTOR", "local"),
 }
 DBOS(config=config)
-queue = Queue("loams", concurrency=10)
+# DBOS 3.2 declares queues after launch (DBOS.register_queue persists them in
+# the system database); `Queue(...)` at import time raises (DX1 ruling T5.R8).
+queue = None
 
 
 def sql(q: str, args: tuple = ()) -> list[tuple]:
@@ -85,6 +87,8 @@ def main(argv: list[str]) -> None:
         print(json.dumps({"workflows": len(rows), "max_runs": max((n for _, n in rows), default=0)}))
         return
     DBOS.launch()
+    global queue
+    queue = DBOS.register_queue("loams", global_concurrency=10)
     if cmd == "start":
         with SetWorkflowID(argv[1]):
             h = DBOS.start_workflow(five, argv[1])

@@ -12,9 +12,9 @@ use loams_flink::config::{ClusterSpec, Platform, Size, render};
 /// `golden` its path from the crate, for rewriting.
 fn check(golden: &str, want: &str, spec: &ClusterSpec) {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(golden);
-    let rendered = render(spec).unwrap().to_yaml();
+    let rendered = render(spec).expect("render the cluster spec").to_yaml();
     if std::env::var_os("LOAMS_UPDATE_GOLDENS").is_some() {
-        std::fs::write(&path, &rendered).unwrap();
+        std::fs::write(&path, &rendered).expect("rewrite the golden");
         return;
     }
     assert_eq!(

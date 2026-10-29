@@ -708,12 +708,11 @@ impl FlinkController {
     async fn wait_ready(&self, spec: &ClusterSpec, want: Replicas) -> Result<(), EngineError> {
         let deadline = Instant::now() + self.timeouts.ready;
         let tenant = &spec.tenant;
-        let mut last = String::from("nothing checked yet");
         loop {
-            match self.check_ready(spec, want).await {
+            let last = match self.check_ready(spec, want).await {
                 Ok(()) => return Ok(()),
-                Err(why) => last = why,
-            }
+                Err(why) => why,
+            };
             if Instant::now() + self.timeouts.poll > deadline {
                 return Err(EngineError::Runtime(format!(
                     "tenant {tenant}: not ready after {:?}: {last}",

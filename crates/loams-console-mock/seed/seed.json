@@ -5562,5 +5562,1079 @@
         "alg": "EdDSA"
       }
     ]
+  },
+  "engines": {
+    "catalog": {
+      "engines": [
+        {
+          "kind": "risingwave",
+          "label": "RisingWave",
+          "stability": "preview",
+          "enabled": true,
+          "versions": [
+            "v2.6.1",
+            "v2.5.3"
+          ],
+          "default_version": "v2.6.1",
+          "sql_dialect": "postgres",
+          "sessions": false,
+          "jobs": false,
+          "suspend": true
+        },
+        {
+          "kind": "flink",
+          "label": "Flink SQL",
+          "stability": "preview",
+          "enabled": true,
+          "versions": [
+            "2.1.0",
+            "1.20.2"
+          ],
+          "default_version": "2.1.0",
+          "sql_dialect": "flink_sql",
+          "sessions": false,
+          "jobs": false,
+          "suspend": true
+        },
+        {
+          "kind": "spark",
+          "label": "Spark",
+          "stability": "preview",
+          "enabled": true,
+          "versions": [
+            "4.0.1",
+            "3.5.7"
+          ],
+          "default_version": "4.0.1",
+          "sql_dialect": "spark_sql",
+          "sessions": true,
+          "jobs": true,
+          "suspend": true
+        }
+      ],
+      "sizes": [
+        {
+          "tier": "xs",
+          "vcpu_milli": 500,
+          "memory_mib": 1024
+        },
+        {
+          "tier": "s",
+          "vcpu_milli": 1000,
+          "memory_mib": 4096
+        },
+        {
+          "tier": "m",
+          "vcpu_milli": 2000,
+          "memory_mib": 8192
+        },
+        {
+          "tier": "l",
+          "vcpu_milli": 4000,
+          "memory_mib": 16384
+        },
+        {
+          "tier": "xl",
+          "vcpu_milli": 8000,
+          "memory_mib": 32768
+        }
+      ]
+    },
+    "instances": [
+      {
+        "id": "eng_01docsrw",
+        "namespace": "docs-search-production",
+        "org": "acme",
+        "name": "docs-changes",
+        "kind": "risingwave",
+        "version": "v2.6.1",
+        "size": {
+          "tier": "m",
+          "vcpu_milli": 2000,
+          "memory_mib": 8192,
+          "replicas": 2
+        },
+        "config": {},
+        "labels": {
+          "team": "search"
+        },
+        "status": {
+          "phase": "running",
+          "health": "healthy",
+          "checks": [
+            {
+              "name": "meta",
+              "state": "healthy",
+              "message": null
+            },
+            {
+              "name": "compute",
+              "state": "healthy",
+              "message": null
+            },
+            {
+              "name": "state store (s3)",
+              "state": "healthy",
+              "message": null
+            }
+          ],
+          "version": "v2.6.1",
+          "message": null,
+          "observed_at": "@now-15s"
+        },
+        "endpoints": [
+          {
+            "name": "sql",
+            "protocol": "postgres",
+            "url": "postgres://gateway.loams.internal:5432/docs-changes",
+            "internal": false
+          },
+          {
+            "name": "dashboard",
+            "protocol": "web_ui",
+            "url": "https://gateway.loams.internal/engines/eng_01docsrw/ui",
+            "internal": true
+          }
+        ],
+        "state_prefix": "engines/docs-search-production/eng_01docsrw/",
+        "stability": "preview",
+        "created_at": "@now-6d",
+        "updated_at": "@now-20m"
+      },
+      {
+        "id": "eng_02docsfl",
+        "namespace": "docs-search-production",
+        "org": "acme",
+        "name": "click-sessions",
+        "kind": "flink",
+        "version": "2.1.0",
+        "size": {
+          "tier": "l",
+          "vcpu_milli": 4000,
+          "memory_mib": 16384,
+          "replicas": 3
+        },
+        "config": {},
+        "labels": {},
+        "status": {
+          "phase": "running",
+          "health": "degraded",
+          "checks": [
+            {
+              "name": "jobmanager",
+              "state": "healthy",
+              "message": null
+            },
+            {
+              "name": "taskmanagers",
+              "state": "degraded",
+              "message": "2 of 3 TaskManagers ready"
+            },
+            {
+              "name": "checkpoints",
+              "state": "healthy",
+              "message": null
+            }
+          ],
+          "version": "2.1.0",
+          "message": null,
+          "observed_at": "@now-15s"
+        },
+        "endpoints": [
+          {
+            "name": "sql-gateway",
+            "protocol": "flink_sql_gateway",
+            "url": "https://gateway.loams.internal/engines/eng_02docsfl/sql",
+            "internal": false
+          },
+          {
+            "name": "web-ui",
+            "protocol": "web_ui",
+            "url": "https://gateway.loams.internal/engines/eng_02docsfl/ui",
+            "internal": true
+          }
+        ],
+        "state_prefix": "engines/docs-search-production/eng_02docsfl/",
+        "stability": "preview",
+        "created_at": "@now-6d",
+        "updated_at": "@now-20m"
+      },
+      {
+        "id": "eng_03suprw",
+        "namespace": "support-assistant-staging",
+        "org": "acme",
+        "name": "ticket-metrics",
+        "kind": "risingwave",
+        "version": "v2.5.3",
+        "size": {
+          "tier": "s",
+          "vcpu_milli": 1000,
+          "memory_mib": 4096,
+          "replicas": 1
+        },
+        "config": {},
+        "labels": {},
+        "status": {
+          "phase": "suspended",
+          "health": "unknown",
+          "checks": [],
+          "version": "v2.5.3",
+          "message": "Suspended; state is kept in object storage.",
+          "observed_at": "@now-2h"
+        },
+        "endpoints": [],
+        "state_prefix": "engines/support-assistant-staging/eng_03suprw/",
+        "stability": "preview",
+        "created_at": "@now-6d",
+        "updated_at": "@now-20m"
+      },
+      {
+        "id": "eng_04codesp",
+        "namespace": "code-index-development",
+        "org": "acme",
+        "name": "nightly-embed",
+        "kind": "spark",
+        "version": "4.0.1",
+        "size": {
+          "tier": "l",
+          "vcpu_milli": 4000,
+          "memory_mib": 16384,
+          "replicas": 4
+        },
+        "config": {},
+        "labels": {},
+        "status": {
+          "phase": "running",
+          "health": "healthy",
+          "checks": [
+            {
+              "name": "driver",
+              "state": "healthy",
+              "message": null
+            },
+            {
+              "name": "executors",
+              "state": "healthy",
+              "message": null
+            }
+          ],
+          "version": "4.0.1",
+          "message": null,
+          "observed_at": "@now-15s"
+        },
+        "endpoints": [
+          {
+            "name": "connect",
+            "protocol": "spark_connect",
+            "url": "sc://gateway.loams.internal:15002/;engine=eng_04codesp",
+            "internal": false
+          },
+          {
+            "name": "spark-ui",
+            "protocol": "web_ui",
+            "url": "https://gateway.loams.internal/engines/eng_04codesp/ui",
+            "internal": true
+          }
+        ],
+        "state_prefix": "engines/code-index-development/eng_04codesp/",
+        "stability": "preview",
+        "created_at": "@now-6d",
+        "updated_at": "@now-20m"
+      },
+      {
+        "id": "eng_05codefl",
+        "namespace": "code-index-development",
+        "org": "acme",
+        "name": "commit-stream",
+        "kind": "flink",
+        "version": "2.1.0",
+        "size": {
+          "tier": "s",
+          "vcpu_milli": 1000,
+          "memory_mib": 4096,
+          "replicas": 1
+        },
+        "config": {},
+        "labels": {},
+        "status": {
+          "phase": "provisioning",
+          "health": "unknown",
+          "checks": [],
+          "version": null,
+          "message": "Starting the JobManager.",
+          "observed_at": "@now-5s"
+        },
+        "endpoints": [],
+        "state_prefix": "engines/code-index-development/eng_05codefl/",
+        "stability": "preview",
+        "created_at": "@now-2m",
+        "updated_at": "@now-2m"
+      },
+      {
+        "id": "eng_06codesp",
+        "namespace": "code-index-development",
+        "org": "acme",
+        "name": "ml-features",
+        "kind": "spark",
+        "version": "3.5.7",
+        "size": {
+          "tier": "m",
+          "vcpu_milli": 2000,
+          "memory_mib": 8192,
+          "replicas": 2
+        },
+        "config": {},
+        "labels": {},
+        "status": {
+          "phase": "failed",
+          "health": "unhealthy",
+          "checks": [
+            {
+              "name": "driver",
+              "state": "unhealthy",
+              "message": "OOMKilled"
+            }
+          ],
+          "version": "3.5.7",
+          "message": "The driver ran out of memory; scale to a larger size and resume.",
+          "observed_at": "@now-40m"
+        },
+        "endpoints": [],
+        "state_prefix": "engines/code-index-development/eng_06codesp/",
+        "stability": "preview",
+        "created_at": "@now-6d",
+        "updated_at": "@now-20m"
+      }
+    ],
+    "usage": {
+      "eng_01docsrw": {
+        "samples": [
+          {
+            "window_start": "@now-60m",
+            "window_end": "@now-55m",
+            "cpu_ms": 240000,
+            "memory_mib_ms": 983040000,
+            "state_bytes": 1200000000,
+            "estimated": true
+          },
+          {
+            "window_start": "@now-55m",
+            "window_end": "@now-50m",
+            "cpu_ms": 277000,
+            "memory_mib_ms": 1037312000,
+            "state_bytes": 1215000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-50m",
+            "window_end": "@now-45m",
+            "cpu_ms": 254000,
+            "memory_mib_ms": 1091584000,
+            "state_bytes": 1230000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-45m",
+            "window_end": "@now-40m",
+            "cpu_ms": 291000,
+            "memory_mib_ms": 1145856000,
+            "state_bytes": 1245000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-40m",
+            "window_end": "@now-35m",
+            "cpu_ms": 268000,
+            "memory_mib_ms": 995328000,
+            "state_bytes": 1260000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-35m",
+            "window_end": "@now-30m",
+            "cpu_ms": 245000,
+            "memory_mib_ms": 1049600000,
+            "state_bytes": 1275000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-30m",
+            "window_end": "@now-25m",
+            "cpu_ms": 282000,
+            "memory_mib_ms": 1103872000,
+            "state_bytes": 1290000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-25m",
+            "window_end": "@now-20m",
+            "cpu_ms": 259000,
+            "memory_mib_ms": 1158144000,
+            "state_bytes": 1305000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-20m",
+            "window_end": "@now-15m",
+            "cpu_ms": 296000,
+            "memory_mib_ms": 1007616000,
+            "state_bytes": 1320000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-15m",
+            "window_end": "@now-10m",
+            "cpu_ms": 273000,
+            "memory_mib_ms": 1061888000,
+            "state_bytes": 1335000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-10m",
+            "window_end": "@now-5m",
+            "cpu_ms": 250000,
+            "memory_mib_ms": 1116160000,
+            "state_bytes": 1350000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-5m",
+            "window_end": "@now",
+            "cpu_ms": 287000,
+            "memory_mib_ms": 1170432000,
+            "state_bytes": 1365000000,
+            "estimated": false
+          }
+        ],
+        "totals": {
+          "cpu_ms": 3222000,
+          "memory_mib_ms": 12920832000,
+          "state_bytes": 1365000000
+        }
+      },
+      "eng_02docsfl": {
+        "samples": [
+          {
+            "window_start": "@now-60m",
+            "window_end": "@now-55m",
+            "cpu_ms": 360000,
+            "memory_mib_ms": 1474560000,
+            "state_bytes": 1200000000,
+            "estimated": true
+          },
+          {
+            "window_start": "@now-55m",
+            "window_end": "@now-50m",
+            "cpu_ms": 397000,
+            "memory_mib_ms": 1528832000,
+            "state_bytes": 1215000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-50m",
+            "window_end": "@now-45m",
+            "cpu_ms": 374000,
+            "memory_mib_ms": 1583104000,
+            "state_bytes": 1230000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-45m",
+            "window_end": "@now-40m",
+            "cpu_ms": 411000,
+            "memory_mib_ms": 1637376000,
+            "state_bytes": 1245000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-40m",
+            "window_end": "@now-35m",
+            "cpu_ms": 388000,
+            "memory_mib_ms": 1486848000,
+            "state_bytes": 1260000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-35m",
+            "window_end": "@now-30m",
+            "cpu_ms": 365000,
+            "memory_mib_ms": 1541120000,
+            "state_bytes": 1275000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-30m",
+            "window_end": "@now-25m",
+            "cpu_ms": 402000,
+            "memory_mib_ms": 1595392000,
+            "state_bytes": 1290000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-25m",
+            "window_end": "@now-20m",
+            "cpu_ms": 379000,
+            "memory_mib_ms": 1649664000,
+            "state_bytes": 1305000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-20m",
+            "window_end": "@now-15m",
+            "cpu_ms": 416000,
+            "memory_mib_ms": 1499136000,
+            "state_bytes": 1320000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-15m",
+            "window_end": "@now-10m",
+            "cpu_ms": 393000,
+            "memory_mib_ms": 1553408000,
+            "state_bytes": 1335000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-10m",
+            "window_end": "@now-5m",
+            "cpu_ms": 370000,
+            "memory_mib_ms": 1607680000,
+            "state_bytes": 1350000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-5m",
+            "window_end": "@now",
+            "cpu_ms": 407000,
+            "memory_mib_ms": 1661952000,
+            "state_bytes": 1365000000,
+            "estimated": false
+          }
+        ],
+        "totals": {
+          "cpu_ms": 4662000,
+          "memory_mib_ms": 18819072000,
+          "state_bytes": 1365000000
+        }
+      },
+      "eng_03suprw": {
+        "samples": [
+          {
+            "window_start": "@now-60m",
+            "window_end": "@now-55m",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1200000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-55m",
+            "window_end": "@now-50m",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1215000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-50m",
+            "window_end": "@now-45m",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1230000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-45m",
+            "window_end": "@now-40m",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1245000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-40m",
+            "window_end": "@now-35m",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1260000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-35m",
+            "window_end": "@now-30m",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1275000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-30m",
+            "window_end": "@now-25m",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1290000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-25m",
+            "window_end": "@now-20m",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1305000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-20m",
+            "window_end": "@now-15m",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1320000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-15m",
+            "window_end": "@now-10m",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1335000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-10m",
+            "window_end": "@now-5m",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1350000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-5m",
+            "window_end": "@now",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1365000000,
+            "estimated": false
+          }
+        ],
+        "totals": {
+          "cpu_ms": 0,
+          "memory_mib_ms": 0,
+          "state_bytes": 1365000000
+        }
+      },
+      "eng_04codesp": {
+        "samples": [
+          {
+            "window_start": "@now-60m",
+            "window_end": "@now-55m",
+            "cpu_ms": 480000,
+            "memory_mib_ms": 1966080000,
+            "state_bytes": 1200000000,
+            "estimated": true
+          },
+          {
+            "window_start": "@now-55m",
+            "window_end": "@now-50m",
+            "cpu_ms": 517000,
+            "memory_mib_ms": 2020352000,
+            "state_bytes": 1215000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-50m",
+            "window_end": "@now-45m",
+            "cpu_ms": 494000,
+            "memory_mib_ms": 2074624000,
+            "state_bytes": 1230000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-45m",
+            "window_end": "@now-40m",
+            "cpu_ms": 531000,
+            "memory_mib_ms": 2128896000,
+            "state_bytes": 1245000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-40m",
+            "window_end": "@now-35m",
+            "cpu_ms": 508000,
+            "memory_mib_ms": 1978368000,
+            "state_bytes": 1260000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-35m",
+            "window_end": "@now-30m",
+            "cpu_ms": 485000,
+            "memory_mib_ms": 2032640000,
+            "state_bytes": 1275000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-30m",
+            "window_end": "@now-25m",
+            "cpu_ms": 522000,
+            "memory_mib_ms": 2086912000,
+            "state_bytes": 1290000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-25m",
+            "window_end": "@now-20m",
+            "cpu_ms": 499000,
+            "memory_mib_ms": 2141184000,
+            "state_bytes": 1305000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-20m",
+            "window_end": "@now-15m",
+            "cpu_ms": 536000,
+            "memory_mib_ms": 1990656000,
+            "state_bytes": 1320000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-15m",
+            "window_end": "@now-10m",
+            "cpu_ms": 513000,
+            "memory_mib_ms": 2044928000,
+            "state_bytes": 1335000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-10m",
+            "window_end": "@now-5m",
+            "cpu_ms": 490000,
+            "memory_mib_ms": 2099200000,
+            "state_bytes": 1350000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-5m",
+            "window_end": "@now",
+            "cpu_ms": 527000,
+            "memory_mib_ms": 2153472000,
+            "state_bytes": 1365000000,
+            "estimated": false
+          }
+        ],
+        "totals": {
+          "cpu_ms": 6102000,
+          "memory_mib_ms": 24717312000,
+          "state_bytes": 1365000000
+        }
+      },
+      "eng_05codefl": {
+        "samples": [
+          {
+            "window_start": "@now-60m",
+            "window_end": "@now-55m",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1200000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-55m",
+            "window_end": "@now-50m",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1215000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-50m",
+            "window_end": "@now-45m",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1230000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-45m",
+            "window_end": "@now-40m",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1245000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-40m",
+            "window_end": "@now-35m",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1260000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-35m",
+            "window_end": "@now-30m",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1275000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-30m",
+            "window_end": "@now-25m",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1290000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-25m",
+            "window_end": "@now-20m",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1305000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-20m",
+            "window_end": "@now-15m",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1320000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-15m",
+            "window_end": "@now-10m",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1335000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-10m",
+            "window_end": "@now-5m",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1350000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-5m",
+            "window_end": "@now",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1365000000,
+            "estimated": false
+          }
+        ],
+        "totals": {
+          "cpu_ms": 0,
+          "memory_mib_ms": 0,
+          "state_bytes": 1365000000
+        }
+      },
+      "eng_06codesp": {
+        "samples": [
+          {
+            "window_start": "@now-60m",
+            "window_end": "@now-55m",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1200000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-55m",
+            "window_end": "@now-50m",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1215000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-50m",
+            "window_end": "@now-45m",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1230000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-45m",
+            "window_end": "@now-40m",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1245000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-40m",
+            "window_end": "@now-35m",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1260000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-35m",
+            "window_end": "@now-30m",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1275000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-30m",
+            "window_end": "@now-25m",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1290000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-25m",
+            "window_end": "@now-20m",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1305000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-20m",
+            "window_end": "@now-15m",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1320000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-15m",
+            "window_end": "@now-10m",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1335000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-10m",
+            "window_end": "@now-5m",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1350000000,
+            "estimated": false
+          },
+          {
+            "window_start": "@now-5m",
+            "window_end": "@now",
+            "cpu_ms": 0,
+            "memory_mib_ms": 0,
+            "state_bytes": 1365000000,
+            "estimated": false
+          }
+        ],
+        "totals": {
+          "cpu_ms": 0,
+          "memory_mib_ms": 0,
+          "state_bytes": 1365000000
+        }
+      }
+    },
+    "sql_result": {
+      "columns": [
+        {
+          "name": "region",
+          "type": "varchar"
+        },
+        {
+          "name": "orders",
+          "type": "bigint"
+        },
+        {
+          "name": "revenue",
+          "type": "numeric"
+        }
+      ],
+      "rows": [
+        [
+          "eu-west",
+          1842,
+          "58210.40"
+        ],
+        [
+          "us-east",
+          2930,
+          "91877.15"
+        ],
+        [
+          "ap-south",
+          611,
+          "17002.90"
+        ]
+      ],
+      "row_count": 3,
+      "truncated": false,
+      "elapsed_ms": 24,
+      "notice": null
+    },
+    "spark_sessions": {
+      "eng_04codesp": [
+        {
+          "id": "ses_01",
+          "kind": "sql",
+          "state": "idle",
+          "created_at": "@now-30m",
+          "connect_url": "sc://gateway.loams.internal:15002/;session_id=ses_01"
+        },
+        {
+          "id": "ses_02",
+          "kind": "python",
+          "state": "busy",
+          "created_at": "@now-5m",
+          "connect_url": "sc://gateway.loams.internal:15002/;session_id=ses_02"
+        }
+      ],
+      "eng_06codesp": []
+    },
+    "spark_jobs": {
+      "eng_04codesp": [
+        {
+          "id": "job_0001",
+          "name": "daily-embed",
+          "kind": "sql",
+          "state": "succeeded",
+          "entrypoint": "INSERT INTO lake.embeddings SELECT * FROM lake.chunks_new",
+          "args": [],
+          "submitted_at": "@now-9h",
+          "finished_at": "@now-8h",
+          "message": null
+        },
+        {
+          "id": "job_0002",
+          "name": "compact-chunks",
+          "kind": "python",
+          "state": "running",
+          "entrypoint": "s3://loams-jobs/compact.py",
+          "args": [
+            "--table",
+            "lake.chunks"
+          ],
+          "submitted_at": "@now-12m",
+          "finished_at": null,
+          "message": null
+        }
+      ],
+      "eng_06codesp": [
+        {
+          "id": "job_0003",
+          "name": "feature-build",
+          "kind": "python",
+          "state": "failed",
+          "entrypoint": "s3://loams-jobs/features.py",
+          "args": [],
+          "submitted_at": "@now-50m",
+          "finished_at": "@now-40m",
+          "message": "Driver OOMKilled"
+        }
+      ]
+    }
   }
 }

@@ -1589,6 +1589,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "bq1-native"
+version = "0.1.2"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "clap",
+ "futures",
+ "http",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "loams-kv",
+ "mysql_async",
+ "rand 0.9.5",
+ "serde_json",
+ "tokio",
+ "tokio-postgres",
+]
+
+[[package]]
 name = "brotli"
 version = "8.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5075,6 +5095,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "gateway-bench"
+version = "0.1.2"
+dependencies = [
+ "clap",
+ "loams-gateway",
+ "rcgen",
+ "rustls",
+ "serde_json",
+ "tokio",
+ "tokio-rustls",
+]
+
+[[package]]
 name = "generator"
 version = "0.8.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8408,6 +8441,7 @@ dependencies = [
  "loams-hnsw",
  "loams-hot",
  "loams-identity-sync",
+ "loams-knowledge",
  "loams-kv",
  "loams-link",
  "loams-live",
@@ -8416,6 +8450,8 @@ dependencies = [
  "loams-log",
  "loams-meta",
  "loams-meta-tikv",
+ "loams-meter",
+ "loams-meter-core",
  "loams-migrate",
  "loams-pg-control",
  "loams-postgres",
@@ -9409,8 +9445,10 @@ dependencies = [
 name = "loams-imperial"
 version = "0.1.2"
 dependencies = [
+ "loams-kv",
  "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -9420,6 +9458,7 @@ dependencies = [
  "async-trait",
  "axum 0.8.9",
  "bytes",
+ "clap",
  "futures",
  "hex",
  "loams-agentd-marketplace",
@@ -9683,6 +9722,7 @@ dependencies = [
  "loams-cloudevents",
  "loams-common",
  "loams-meter-core",
+ "loams-meter-house",
  "loams-proto",
  "proptest",
  "reqwest 0.13.5",
@@ -9746,6 +9786,7 @@ name = "loams-meter-export"
 version = "0.1.2"
 dependencies = [
  "async-trait",
+ "base64 0.23.1",
  "hex",
  "hmac 0.13.0",
  "reqwest 0.13.5",
@@ -9753,6 +9794,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "thiserror 2.0.21",
+ "time",
  "tokio",
  "tracing",
  "url",
@@ -10123,6 +10165,7 @@ name = "loams-sidebar-browser"
 version = "0.1.2"
 dependencies = [
  "base64 0.23.1",
+ "flate2",
  "futures",
  "serde",
  "serde_json",

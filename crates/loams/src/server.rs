@@ -1133,11 +1133,18 @@ struct ConnectSocket {
 /// container runs as the same uid), nobody else.
 pub const CONNECT_SOCKET_MODE: u32 = 0o660;
 
+/// The connect socket's listener: a Unix socket. Elsewhere there is none
+/// (`bind` refuses), so the type is uninhabited.
+#[cfg(unix)]
+type ConnectListener = tokio::net::UnixListener;
+#[cfg(not(unix))]
+type ConnectListener = std::convert::Infallible;
+
 impl ConnectSocket {
     /// Bind `path` (a stale socket there from an earlier run is replaced;
     /// anything else there is refused) and set its mode.
     #[cfg(unix)]
-    fn bind(path: &Path) -> Result<tokio::net::UnixListener, ServerError> {
+    fn bind(path: &Path) -> Result<ConnectListener, ServerError> {
         use std::os::unix::fs::{FileTypeExt as _, PermissionsExt as _};
         let fail = |what: &str, err: std::io::Error| {
             ServerError::Config(format!(
@@ -1168,14 +1175,20 @@ impl ConnectSocket {
     }
 
     #[cfg(not(unix))]
-    fn bind(path: &Path) -> Result<tokio::net::UnixListener, ServerError> {
+    fn bind(path: &Path) -> Result<ConnectListener, ServerError> {
         Err(ServerError::Config(format!(
             "--connect-socket {}: Unix sockets need a Unix host",
             path.display()
         )))
     }
 
-    fn start(listener: tokio::net::UnixListener, path: PathBuf, app: axum::Router) -> Self {
+    #[cfg(not(unix))]
+    fn start(listener: ConnectListener, _path: PathBuf, _app: axum::Router) -> Self {
+        match listener {}
+    }
+
+    #[cfg(unix)]
+    fn start(listener: ConnectListener, path: PathBuf, app: axum::Router) -> Self {
         let stop = CancellationToken::new();
         let stopped = stop.clone();
         let task = tokio::spawn(async move {
@@ -3255,6 +3268,22 @@ impl Server {
                 git_listener,
             )
         });
+        // Loams Meter's public services, on gateway nodes (ME1 role wiring,
+        // part 1): records in the metastore and the bucket, beside the
+        // principal directory. A node that cannot build it serves without it
+        // (its RPCs answer `meter_not_served`) rather than not starting.
+        #[cfg(feature = "meter")]
+        let meter = if roles.gateway {
+            match api::meter::build(meta_store.clone(), store.clone(), &principals) {
+                Ok(m) => Some(m),
+                Err(err) => {
+                    tracing::warn!(%err, "Loams Meter's services are off on this node");
+                    None
+                }
+            }
+        } else {
+            None
+        };
         let state = AppState {
             meta: meta_store.clone(),
             writer: writer.clone(),
@@ -3286,6 +3315,8 @@ impl Server {
             #[cfg(feature = "live")]
             live,
             durable: durable.filter(|_| main_port_serves_durable(config)),
+            #[cfg(feature = "meter")]
+            meter,
         };
         let (app, tailscale, connect_socket) = match (roles.gateway, config.cluster.is_some()) {
             (true, false) => {

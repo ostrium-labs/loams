@@ -50,14 +50,28 @@ pub fn declare(method: &Method, path: &str) -> Option<Declared> {
             _ => None,
         },
         ["v1", "namespaces", p, "engines", _id, action] => match (method, *action) {
-            (&Method::POST, "suspend" | "resume" | "sql" | "sessions" | "jobs") => {
+            (&Method::POST, "suspend" | "resume" | "sql" | "sessions" | "jobs" | "schedules") => {
                 check(CAN_OPERATE, p, false)
             }
-            (&Method::GET, "usage" | "sessions" | "jobs") => check(CAN_VIEW, p, false),
+            (&Method::GET, "usage" | "sessions" | "jobs" | "schedules") => {
+                check(CAN_VIEW, p, false)
+            }
             _ => None,
         },
-        ["v1", "namespaces", p, "engines", _id, "sessions", _s] if *method == Method::DELETE => {
-            check(CAN_OPERATE, p, false)
+        [
+            "v1",
+            "namespaces",
+            p,
+            "engines",
+            _id,
+            "sessions" | "schedules",
+            _s,
+        ] if *method == Method::DELETE => check(CAN_OPERATE, p, false),
+        ["v1", "namespaces", p, "engines", _id, "jobs", _j] if *method == Method::GET => {
+            check(CAN_VIEW, p, false)
+        }
+        ["v1", "namespaces", p, "engines", _id, "jobs", _j, "logs"] if *method == Method::GET => {
+            check(CAN_VIEW, p, false)
         }
         ["v1", "namespaces", p, "engines", _id, "jobs", _j, "cancel"]
             if *method == Method::POST =>
@@ -113,6 +127,15 @@ mod tests {
             (Method::GET, format!("{id}/jobs"), CAN_VIEW),
             (Method::POST, format!("{id}/jobs"), CAN_OPERATE),
             (Method::POST, format!("{id}/jobs/j1/cancel"), CAN_OPERATE),
+            (Method::GET, format!("{id}/jobs/j1"), CAN_VIEW),
+            (Method::GET, format!("{id}/jobs/j1/logs"), CAN_VIEW),
+            (Method::GET, format!("{id}/schedules"), CAN_VIEW),
+            (Method::POST, format!("{id}/schedules"), CAN_OPERATE),
+            (
+                Method::DELETE,
+                format!("{id}/schedules/nightly"),
+                CAN_OPERATE,
+            ),
         ];
         for (m, path, want) in cases {
             let (rel, obj, consistency) =

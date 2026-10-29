@@ -29,6 +29,7 @@ xfail_check.py). One section per kind of run:
   matrix.py temporal-gateway --junit RUN.xml [--xfail xfail.toml]
             [--methods methods.toml] [--service service.proto]
             [--run "label"] [--out FILE | --splice FILE | --check FILE]
+            (a --run of several lines, as last_run.py writes, is listed as several runs)
   matrix.py durable [--junit-dir DIR] [--compute-dir DIR] [--date D]
             [--loams-version V] [--commit SHA] [--out FILE | --splice FILE | --check FILE]
 
@@ -120,10 +121,16 @@ def render_temporal_gateway(args: argparse.Namespace) -> str:
     ]
     passed = sum(1 for s, _ in states.values() if s == "pass")
     lines = ["### Temporal API (gateway)", ""]
-    if args.run:
-        lines += [f"Run: {args.run}.", ""]
+    runs = [r for r in (args.run or "").splitlines() if r.strip()]
+    if len(runs) == 1:
+        lines += [f"Run: {runs[0]}.", ""]
+    elif runs:
+        # A combined last run (scripts/compute/last_run.py): one line per run,
+        # each naming its SDKs, run ID and date.
+        lines += ["Runs (each SDK's cells come from its own run):", "", *(f"- {r}." for r in runs), ""]
     if spec.get("scope"):
-        lines += [f"Not covered by this run: {spec['scope'].strip()}", ""]
+        these = "these runs" if len(runs) > 1 else "this run"
+        lines += [f"Not covered by {these}: {spec['scope'].strip()}", ""]
     lines += [
         f"SDK legs: {passed} of {len(states)} cases passed. "
         f"{len(listed)} of the {len(all_methods)} `WorkflowService` methods are implemented (design 74 §5.8, DX1).",
@@ -161,7 +168,11 @@ def render_temporal_gateway(args: argparse.Namespace) -> str:
             "",
             "Not yet run: "
             + ", ".join(sdks[sdk] for sdk in unrun)
-            + ". The leg exists, but this run did not include it, so its cells say nothing yet.",
+            + (
+                ". The leg exists, but no run listed above reached it, so its cells say nothing yet."
+                if len(runs) > 1
+                else ". The leg exists, but this run did not include it, so its cells say nothing yet."
+            ),
         ]
     if known:
         lines += ["", "Known issues (not shown by the cases above):", "", *known]
@@ -188,6 +199,7 @@ class Row:
     mode: str
     version: str  # a format string over pins.env keys
     note: str = ""
+    leg: str = ""  # the nightly job (compute-compat.yml) whose artifact holds the results
 
 
 DURABLE_ROWS: tuple[Row, ...] = (
@@ -198,6 +210,7 @@ DURABLE_ROWS: tuple[Row, ...] = (
         ("durable.junit.xml",),
         "direct, txn",
         "Postgres client {PSQL_IMAGE_TAG}",
+        leg="durable",
     ),
     Row(
         "Durable execution",
@@ -206,6 +219,7 @@ DURABLE_ROWS: tuple[Row, ...] = (
         ("temporal-pg16.junit.xml", "temporal-pg16-persistence.junit.xml"),
         "direct",
         "Temporal {TEMPORAL_VERSION}",
+        leg="temporal-pg16",
     ),
     Row(
         "Durable execution",
@@ -215,6 +229,7 @@ DURABLE_ROWS: tuple[Row, ...] = (
         "direct",
         "Temporal {TEMPORAL_VERSION}",
         "expected-failure leg: Temporal lists Postgres 13-16",
+        leg="temporal-pg17",
     ),
     Row(
         "Durable execution",
@@ -223,6 +238,7 @@ DURABLE_ROWS: tuple[Row, ...] = (
         ("corpus.junit.xml",),
         "none (files)",
         "Go SDK {TEMPORAL_SDK_GO}, TypeScript SDK {TEMPORAL_SDK_TS}",
+        leg="corpus",
     ),
     Row(
         "Durable execution",
@@ -231,6 +247,7 @@ DURABLE_ROWS: tuple[Row, ...] = (
         ("dbos-py.junit.xml", "dbos-py-suite.junit.xml"),
         "direct",
         "dbos-transact-py {DBOS_PY}",
+        leg="dbos-py",
     ),
     Row(
         "Durable execution",
@@ -239,6 +256,7 @@ DURABLE_ROWS: tuple[Row, ...] = (
         ("dbos-ts.junit.xml", "dbos-ts-suite.junit.xml"),
         "direct",
         "dbos-transact-ts {DBOS_TS}",
+        leg="dbos-ts",
     ),
     Row(
         "Durable execution",
@@ -247,6 +265,7 @@ DURABLE_ROWS: tuple[Row, ...] = (
         ("dbos-go.junit.xml", "dbos-go-suite.junit.xml"),
         "direct",
         "dbos-transact-golang {DBOS_GO}",
+        leg="dbos-go",
     ),
     Row(
         "Durable execution",
@@ -255,6 +274,7 @@ DURABLE_ROWS: tuple[Row, ...] = (
         ("dbos-java.junit.xml", "dbos-java-suite.junit.xml"),
         "direct",
         "dbos-transact-java {DBOS_JAVA}",
+        leg="dbos-java",
     ),
     Row(
         "Durable execution",
@@ -263,6 +283,7 @@ DURABLE_ROWS: tuple[Row, ...] = (
         ("airflow.junit.xml", "airflow-edge.junit.xml"),
         "direct",
         "Airflow {AIRFLOW_VERSION}, edge3 {AIRFLOW_EDGE3}",
+        leg="airflow",
     ),
     Row(
         "Durable execution",
@@ -271,6 +292,7 @@ DURABLE_ROWS: tuple[Row, ...] = (
         ("airflow-local.junit.xml",),
         "direct",
         "Airflow {AIRFLOW_VERSION}",
+        leg="airflow-local",
     ),
 )
 
@@ -336,10 +358,20 @@ def durable_evaluate(row: Row, compute_dir: Path, junit_dir: Path | None, pins: 
     if not files:
         return Result(row, "not run", version, entries=entries, problems=problems)
     cases, junit_problems = xfail_check.load_cases(files)
-    problems += junit_problems
+    # Name files relative to the run's directory, not this machine's paths.
+    problems += [p.replace(f"{junit_dir}/", "") for p in junit_problems]
     if not cases and not junit_problems:
         problems.append("the JUnit files hold no test cases")
     problems += xfail_check.check(cases, entries)
+    # The nightly records each leg's exit status (compute-compat.yml): a leg
+    # that stopped early, before its strict check, is red (DX1 ruling T6.R11).
+    if row.leg and junit_dir is not None:
+        for exit_file in junit_dir.rglob("leg.exit"):
+            if exit_file.parent.name != f"compute-{row.leg}":
+                continue
+            code = exit_file.read_text(encoding="utf-8").strip()
+            if code != "0" and not problems:
+                problems.append(f"the leg exited {code} before its strict check finished")
     listed = lambda c: any(xfail_check.matches(p, c) for e in entries for p in e.tests)  # noqa: E731
     res = Result(
         row,
@@ -383,9 +415,14 @@ def durable_cell(s: str) -> str:
     return s.replace("|", "\\|").replace("\n", " ")
 
 
-def render_durable_results(results: list[Result], *, date: str, loams_version: str, commit: str, corpus: str) -> str:
+def render_durable_results(
+    results: list[Result], *, date: str, loams_version: str, commit: str, corpus: str, label: str = ""
+) -> str:
     out: list[str] = []
-    out.append(f"Run: {date}; Loams {loams_version}" + (f" (commit `{commit}`)" if commit else "") + ".")
+    if label:
+        out.append(f"Run: {label}.")
+    else:
+        out.append(f"Run: {date}; Loams {loams_version}" + (f" (commit `{commit}`)" if commit else "") + ".")
     out.append("")
     out.append("| Product | Version | Endpoint mode | Verdict | Passed | Failed (expected) | Skipped | Expected failures |")
     out.append("|---|---|---|---|---|---|---|---|")
@@ -425,7 +462,12 @@ def render_durable(args: argparse.Namespace) -> str:
     pins = read_pins(compute_dir / "pins.env")
     results = [durable_evaluate(r, compute_dir, junit_dir, pins) for r in DURABLE_ROWS]
     return render_durable_results(
-        results, date=args.date, loams_version=args.loams_version, commit=args.commit, corpus=corpus_summary(compute_dir)
+        results,
+        date=args.date,
+        loams_version=args.loams_version,
+        commit=args.commit,
+        corpus=corpus_summary(compute_dir),
+        label=args.run_label,
     )
 
 
@@ -459,6 +501,7 @@ def main(argv: list[str]) -> int:
     du.add_argument("--date", default=dt.date.today().isoformat())
     du.add_argument("--loams-version", default="dev")
     du.add_argument("--commit", default="")
+    du.add_argument("--run-label", default="", help='the run line instead of date and version, e.g. "local run 2026-10-28 abc1234"')
     for p in (tg, du):
         out = p.add_mutually_exclusive_group()
         out.add_argument("--out")

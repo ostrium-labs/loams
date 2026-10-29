@@ -333,6 +333,9 @@ fn every_mapped_package_is_generated_by_the_crate_it_names() {
             "loams.graph.v1".to_owned(),
             "loams.instance.v1".to_owned(),
             "loams.live.v1".to_owned(),
+            // ME1 (D2202): Loams Meter's public services, which `loams-proto`
+            // compiles for the `meter` role and the Rust SDK binds.
+            "loams.meter.v1".to_owned(),
             // GR1 Task 2: `loams-proto` compiles `operations.proto`, which
             // `loams.graph.v1` imports; the Rust map already names it.
             "loams.operations.v1".to_owned(),

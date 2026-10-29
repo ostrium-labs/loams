@@ -18,6 +18,15 @@ export_file(
 )
 
 export_file(
+    name = "file=api+engines+openapi.json",
+    src = "api/engines/openapi.json",
+    mode = "reference",
+    visibility = [
+        "PUBLIC",
+    ],
+)
+
+export_file(
     name = "file=conformance+graph+desktop+error_denied.json",
     src = "conformance/graph/desktop/error_denied.json",
     mode = "reference",
@@ -119,15 +128,6 @@ export_file(
 export_file(
     name = "file=deploy+flink+compose+config.yaml",
     src = "deploy/flink/compose/config.yaml",
-    mode = "reference",
-    visibility = [
-        "PUBLIC",
-    ],
-)
-
-export_file(
-    name = "file=deploy+flink+connector-jars.toml",
-    src = "deploy/flink/connector-jars.toml",
     mode = "reference",
     visibility = [
         "PUBLIC",

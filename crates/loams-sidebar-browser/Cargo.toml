@@ -43,6 +43,10 @@ url.workspace = true
 
 [dev-dependencies]
 base64.workspace = true
+# The parity suite's screenshot check inflates PNG pixel data
+# (tests/provider_parity/png.rs). Already in the lockfile via
+# loams-agentd-harness; MIT OR Apache-2.0.
+flate2 = "1"
 futures.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true

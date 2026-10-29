@@ -8,6 +8,9 @@
 //! | Feature | Module | Sends |
 //! |---|---|---|
 //! | `stripe` | `stripe` | Each closed hour's overage as a Stripe meter event; payment state from webhooks and a daily poll |
+//! | `openmeter` | `openmeter` | Raw usage events, unchanged but for `loamslease`, to OpenMeter's `POST /api/v1/events` |
+//! | `lago` | `lago` | Closed windows as Lago events over HTTP; a re-closed window sends the difference |
+//! | `webhook` | `webhook` | Closed windows as signed CloudEvents to an in-house billing system |
 //!
 //! **Where this lives (D2210).** §63 §5.2 puts the exporters under
 //! `crates/loams-meter/src/export/`. They are a crate of their own so the
@@ -24,16 +27,24 @@
 //! ledger is backed by the `ControlStore` in the `meter` role (§63 §16:
 //! "Each exporter's cursor … is in the `ControlStore`").
 
+#[cfg(feature = "lago")]
+pub mod lago;
 pub mod ledger;
 pub mod quantity;
 pub mod retry;
 
+#[cfg(feature = "openmeter")]
+pub mod openmeter;
 #[cfg(feature = "stripe")]
 pub mod stripe;
+#[cfg(feature = "webhook")]
+pub mod webhook;
+pub mod window;
 
-pub use ledger::{ExportLedger, LedgerEntry, LedgerKey, MemLedger};
+pub use ledger::{ExportCursors, ExportLedger, LedgerEntry, LedgerKey, MemCursors, MemLedger};
 pub use quantity::{Quantity, QuantityError};
 pub use retry::RetryPolicy;
+pub use window::{WindowRow, WindowSize};
 
 /// What an exporter can fail with. Provider messages are cut to 300
 /// characters and never carry request bodies.
@@ -73,7 +84,15 @@ pub enum ExportError {
     Webhook(String),
 }
 
-#[cfg_attr(not(feature = "stripe"), allow(dead_code))]
+#[cfg_attr(
+    not(any(
+        feature = "stripe",
+        feature = "openmeter",
+        feature = "lago",
+        feature = "webhook"
+    )),
+    allow(dead_code)
+)]
 /// Cuts a provider's message for an error (300 characters, one line).
 pub(crate) fn short(message: &str) -> String {
     let one_line: String = message
