@@ -305,12 +305,6 @@ licence = "Apache-2.0"
 source = "https://www.npmjs.com/package/jest-junit/v/17.0.0"
 resolve = "npm:jest-junit"
 
-[MOCKERY]
-value = "3.8.0"
-licence = "BSD-3-Clause"
-source = "https://github.com/vektra/mockery/blob/v3.8.0/LICENSE"
-resolve = "github:vektra/mockery"
-
 [GOTESTSUM]
 value = "1.13.0"
 licence = "Apache-2.0"

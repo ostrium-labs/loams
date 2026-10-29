@@ -1,0 +1,165 @@
+{
+  "events":  [
+    {
+      "eventId":  "1",
+      "eventTime":  "2026-10-28T12:48:13.441763548Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+      "taskId":  "1049007",
+      "workflowExecutionStartedEventAttributes":  {
+        "workflowType":  {
+          "name":  "timer_short"
+        },
+        "taskQueue":  {
+          "name":  "corpus-ruby",
+          "kind":  "TASK_QUEUE_KIND_NORMAL"
+        },
+        "input":  {},
+        "workflowTaskTimeout":  "10s",
+        "originalExecutionRunId":  "01a1828d-cc81-7ba4-b8f8-c963ba1bc53b",
+        "identity":  "304@1566fbb5e9e4",
+        "firstExecutionRunId":  "01a1828d-cc81-7ba4-b8f8-c963ba1bc53b",
+        "attempt":  1,
+        "firstWorkflowTaskBackoff":  "0s",
+        "workflowId":  "corpus-ruby-timer_short"
+      }
+    },
+    {
+      "eventId":  "2",
+      "eventTime":  "2026-10-28T12:48:13.441810097Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId":  "1049008",
+      "workflowTaskScheduledEventAttributes":  {
+        "taskQueue":  {
+          "name":  "corpus-ruby",
+          "kind":  "TASK_QUEUE_KIND_NORMAL"
+        },
+        "startToCloseTimeout":  "10s",
+        "attempt":  1
+      }
+    },
+    {
+      "eventId":  "3",
+      "eventTime":  "2026-10-28T12:48:13.443650064Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "taskId":  "1049013",
+      "workflowTaskStartedEventAttributes":  {
+        "scheduledEventId":  "2",
+        "identity":  "304@1566fbb5e9e4",
+        "requestId":  "13cfccb8-e637-417b-86b2-77c522a5f81d",
+        "historySizeBytes":  "242",
+        "workerVersion":  {
+          "buildId":  "8c08acf3cbd117cfd4073b0011aee61c"
+        }
+      }
+    },
+    {
+      "eventId":  "4",
+      "eventTime":  "2026-10-28T12:48:13.447328277Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "taskId":  "1049017",
+      "workflowTaskCompletedEventAttributes":  {
+        "scheduledEventId":  "2",
+        "startedEventId":  "3",
+        "identity":  "304@1566fbb5e9e4",
+        "workerVersion":  {
+          "buildId":  "8c08acf3cbd117cfd4073b0011aee61c"
+        },
+        "sdkMetadata":  {
+          "coreUsedFlags":  [
+            1,
+            2,
+            3
+          ],
+          "sdkName":  "temporal-ruby",
+          "sdkVersion":  "1.9.0"
+        },
+        "meteringMetadata":  {}
+      }
+    },
+    {
+      "eventId":  "5",
+      "eventTime":  "2026-10-28T12:48:13.447355858Z",
+      "eventType":  "EVENT_TYPE_TIMER_STARTED",
+      "taskId":  "1049018",
+      "timerStartedEventAttributes":  {
+        "timerId":  "1",
+        "startToFireTimeout":  "1s",
+        "workflowTaskCompletedEventId":  "4"
+      }
+    },
+    {
+      "eventId":  "6",
+      "eventTime":  "2026-10-28T12:48:14.449195042Z",
+      "eventType":  "EVENT_TYPE_TIMER_FIRED",
+      "taskId":  "1049022",
+      "timerFiredEventAttributes":  {
+        "timerId":  "1",
+        "startedEventId":  "5"
+      }
+    },
+    {
+      "eventId":  "7",
+      "eventTime":  "2026-10-28T12:48:14.449255171Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId":  "1049023",
+      "workflowTaskScheduledEventAttributes":  {
+        "taskQueue":  {
+          "name":  "304@1566fbb5e9e4-ad1f3803f5f14c98ab52d71d5a226d77",
+          "kind":  "TASK_QUEUE_KIND_STICKY",
+          "normalName":  "corpus-ruby"
+        },
+        "startToCloseTimeout":  "10s",
+        "attempt":  1
+      }
+    },
+    {
+      "eventId":  "8",
+      "eventTime":  "2026-10-28T12:48:14.450585464Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "taskId":  "1049027",
+      "workflowTaskStartedEventAttributes":  {
+        "scheduledEventId":  "7",
+        "identity":  "304@1566fbb5e9e4",
+        "requestId":  "31d32f5e-f7ee-4827-9bbe-013dfa831180",
+        "historySizeBytes":  "648",
+        "workerVersion":  {
+          "buildId":  "8c08acf3cbd117cfd4073b0011aee61c"
+        }
+      }
+    },
+    {
+      "eventId":  "9",
+      "eventTime":  "2026-10-28T12:48:14.453838493Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "taskId":  "1049031",
+      "workflowTaskCompletedEventAttributes":  {
+        "scheduledEventId":  "7",
+        "startedEventId":  "8",
+        "identity":  "304@1566fbb5e9e4",
+        "workerVersion":  {
+          "buildId":  "8c08acf3cbd117cfd4073b0011aee61c"
+        },
+        "sdkMetadata":  {},
+        "meteringMetadata":  {}
+      }
+    },
+    {
+      "eventId":  "10",
+      "eventTime":  "2026-10-28T12:48:14.453887125Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED",
+      "taskId":  "1049032",
+      "workflowExecutionCompletedEventAttributes":  {
+        "result":  {
+          "payloads":  [
+            {
+              "metadata":  {
+                "encoding":  "YmluYXJ5L251bGw="
+              }
+            }
+          ]
+        },
+        "workflowTaskCompletedEventId":  "9"
+      }
+    }
+  ]
+}

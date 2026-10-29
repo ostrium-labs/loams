@@ -8,8 +8,11 @@
 //! 1. reads the request head (bounded in size and time);
 //! 2. requires `Upgrade: websocket` and `Authorization: Bearer <client token>`,
 //!    where the client token's SHA-256 is in `client_tokens_file` (one hex
-//!    digest per line, read on every connection so a rotation needs no
-//!    restart);
+//!    digest per line). The file is checked on every connection, so a
+//!    rotation needs no restart, but re-read and re-parsed only when its
+//!    modification time or size changed ([`WatchedFile`]; BQ1-gw measured
+//!    the per-connection re-read at 28 µs with 100 clients and 284 µs with
+//!    1 000);
 //! 3. opens the upstream engine, rewrites the head with the engine's own
 //!    token (`upstream_token_file`) and the upstream `Host`, and splices the
 //!    rest of the session.
@@ -61,6 +64,15 @@ pub struct Config {
     /// How long connecting to the engine may take, in milliseconds.
     #[serde(default = "default_connect_timeout_ms")]
     pub connect_timeout_ms: u64,
+    /// The splice's buffer per direction, in bytes. Smaller holds more
+    /// sessions per GB; CDP frames larger than this are copied in several
+    /// reads.
+    #[serde(default = "default_copy_buffer_bytes")]
+    pub copy_buffer_bytes: usize,
+}
+
+fn default_copy_buffer_bytes() -> usize {
+    4 * 1024
 }
 
 fn default_max_connections() -> usize {
@@ -94,6 +106,9 @@ pub fn check(config: &Config) -> Result<(), String> {
     if config.handshake_timeout_ms == 0 || config.connect_timeout_ms == 0 {
         return Err("browser: timeouts must be more than 0".to_string());
     }
+    if !(512..=1 << 20).contains(&config.copy_buffer_bytes) {
+        return Err("browser: copy_buffer_bytes must be between 512 and 1048576".to_string());
+    }
     Ok(())
 }
 
@@ -117,6 +132,13 @@ pub async fn serve_on(
     shutdown: impl std::future::Future<Output = ()> + Send,
 ) {
     let permits = Arc::new(Semaphore::new(config.max_connections));
+    let state = Arc::new(State {
+        clients: WatchedFile::new(config.client_tokens_file.clone(), digests),
+        engine_token: WatchedFile::new(config.upstream_token_file.clone(), |text| {
+            text.trim().to_string()
+        }),
+        config,
+    });
     tokio::pin!(shutdown);
     loop {
         let accepted = tokio::select! {
@@ -136,10 +158,10 @@ pub async fn serve_on(
             let _ = client.write_all(&status(503, "Service Unavailable")).await;
             continue;
         };
-        let config = Arc::clone(&config);
+        let state = Arc::clone(&state);
         tokio::spawn(async move {
             let _permit = permit;
-            match session(client, &config).await {
+            match session(client, &state).await {
                 Ok(()) => tracing::info!(%peer, "browser session ended"),
                 Err(refusal) => tracing::info!(%peer, %refusal, "browser session refused"),
             }
@@ -174,7 +196,68 @@ impl std::fmt::Display for Refusal {
     }
 }
 
-async fn session(mut client: TcpStream, config: &Config) -> Result<(), Refusal> {
+/// What every session reads: the configuration and the two watched files.
+#[derive(Debug)]
+struct State {
+    config: Arc<Config>,
+    clients: WatchedFile<HashSet<String>>,
+    engine_token: WatchedFile<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Stamp {
+    modified: Option<std::time::SystemTime>,
+    len: u64,
+}
+
+/// A file that is checked on every use and re-read only when its
+/// modification time or size changed, so a rotation still takes effect on
+/// the next connection without a restart.
+#[derive(Debug)]
+pub struct WatchedFile<T> {
+    path: PathBuf,
+    parse: fn(&str) -> T,
+    cached: std::sync::Mutex<Option<(Stamp, Arc<T>)>>,
+}
+
+impl<T> WatchedFile<T> {
+    /// Watch `path`, turning its text into a `T` with `parse`.
+    pub fn new(path: PathBuf, parse: fn(&str) -> T) -> Self {
+        Self {
+            path,
+            parse,
+            cached: std::sync::Mutex::new(None),
+        }
+    }
+
+    /// The current value: from the cache when the file has not changed.
+    pub fn get(&self) -> Result<Arc<T>, String> {
+        let meta = std::fs::metadata(&self.path)
+            .map_err(|e| format!("reading {}: {e}", self.path.display()))?;
+        let stamp = Stamp {
+            modified: meta.modified().ok(),
+            len: meta.len(),
+        };
+        let mut cached = self
+            .cached
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some((seen, value)) = cached.as_ref()
+            && *seen == stamp
+            && stamp.modified.is_some()
+        {
+            return Ok(Arc::clone(value));
+        }
+        let text = std::fs::read_to_string(&self.path)
+            .map_err(|e| format!("reading {}: {e}", self.path.display()))?;
+        let value = Arc::new((self.parse)(&text));
+        *cached = Some((stamp, Arc::clone(&value)));
+        Ok(value)
+    }
+}
+
+async fn session(mut client: TcpStream, state: &State) -> Result<(), Refusal> {
+    let config = &*state.config;
     let handshake = Duration::from_millis(config.handshake_timeout_ms);
     let (head, rest) = match tokio::time::timeout(handshake, read_head(&mut client)).await {
         Ok(Ok(read)) => read,
@@ -188,7 +271,7 @@ async fn session(mut client: TcpStream, config: &Config) -> Result<(), Refusal> 
             return Err(refusal);
         }
     };
-    let allowed = read_client_digests(config).map_err(Refusal::Upstream)?;
+    let allowed = state.clients.get().map_err(Refusal::Upstream)?;
     if !request
         .bearer
         .as_deref()
@@ -197,9 +280,11 @@ async fn session(mut client: TcpStream, config: &Config) -> Result<(), Refusal> 
         let _ = client.write_all(&status(401, "Unauthorized")).await;
         return Err(Refusal::Unauthorized);
     }
-    let upstream_token = std::fs::read_to_string(&config.upstream_token_file)
-        .map_err(|e| Refusal::Upstream(format!("reading the engine token: {e}")))?;
-    let upstream_token = upstream_token.trim();
+    let upstream_token = state
+        .engine_token
+        .get()
+        .map_err(|e| Refusal::Upstream(format!("the engine token: {e}")))?;
+    let upstream_token = upstream_token.as_str();
     let connect = Duration::from_millis(config.connect_timeout_ms);
     let mut upstream =
         match tokio::time::timeout(connect, TcpStream::connect(&config.upstream)).await {
@@ -224,7 +309,13 @@ async fn session(mut client: TcpStream, config: &Config) -> Result<(), Refusal> 
             .await
             .map_err(|e| Refusal::Upstream(e.to_string()))?;
     }
-    let _ = tokio::io::copy_bidirectional(&mut client, &mut upstream).await;
+    let _ = tokio::io::copy_bidirectional_with_sizes(
+        &mut client,
+        &mut upstream,
+        config.copy_buffer_bytes,
+        config.copy_buffer_bytes,
+    )
+    .await;
     Ok(())
 }
 
@@ -327,12 +418,6 @@ pub fn rewrite(request: &Handshake, upstream: &str, token: &str) -> String {
     out
 }
 
-fn read_client_digests(config: &Config) -> Result<HashSet<String>, String> {
-    let text = std::fs::read_to_string(&config.client_tokens_file)
-        .map_err(|e| format!("reading the client tokens: {e}"))?;
-    Ok(digests(&text))
-}
-
 /// The digests in a client tokens file.
 pub fn digests(text: &str) -> HashSet<String> {
     text.lines()
@@ -410,6 +495,31 @@ mod tests {
     }
 
     #[test]
+    fn a_watched_file_is_reread_only_when_it_changes() {
+        let dir = tempfile::tempdir().unwrap_or_else(|e| panic!("{e}"));
+        let path = dir.path().join("clients");
+        std::fs::write(&path, format!("{}\n", digest("a"))).unwrap_or_else(|e| panic!("{e}"));
+        let watched = WatchedFile::new(path.clone(), digests);
+        let first = watched.get().unwrap_or_else(|e| panic!("{e}"));
+        let again = watched.get().unwrap_or_else(|e| panic!("{e}"));
+        assert!(
+            Arc::ptr_eq(&first, &again),
+            "an unchanged file is not re-read"
+        );
+        // A rotation: different size, so it is seen on the next call.
+        std::fs::write(&path, format!("{}\n{}\n", digest("a"), digest("b")))
+            .unwrap_or_else(|e| panic!("{e}"));
+        let rotated = watched.get().unwrap_or_else(|e| panic!("{e}"));
+        assert!(rotated.contains(&digest("b")));
+        // A revocation that keeps the size: the modification time moves.
+        std::thread::sleep(Duration::from_millis(20));
+        std::fs::write(&path, format!("{}\n{}\n", digest("c"), digest("b")))
+            .unwrap_or_else(|e| panic!("{e}"));
+        let revoked = watched.get().unwrap_or_else(|e| panic!("{e}"));
+        assert!(!revoked.contains(&digest("a")), "revoked at once");
+    }
+
+    #[test]
     fn client_tokens_are_compared_by_digest() {
         let file = format!("# agents\n\n{}\n", digest("client-token-1").to_uppercase());
         let allowed = digests(&file);
@@ -477,6 +587,7 @@ client_tokens_file = "/b"
             max_connections: 4,
             handshake_timeout_ms: 2_000,
             connect_timeout_ms: 2_000,
+            copy_buffer_bytes: 4096,
         });
         let gateway = TcpListener::bind("127.0.0.1:0")
             .await

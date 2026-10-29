@@ -90,7 +90,7 @@ async fn reconcile_splits_at_pipe_offset() {
         events: events.clone(),
         committed: 100_500,
     };
-    assert!(100_500 > BUCKET_SPAN && 100_500 < 2 * BUCKET_SPAN);
+    const { assert!(100_500 > BUCKET_SPAN && 100_500 < 2 * BUCKET_SPAN) };
     let counters = owners.get_mut(0).expect("owned");
     let report = reconcile(counters, &house, &reader, &index(), &OnePeriod, &Thousand)
         .await

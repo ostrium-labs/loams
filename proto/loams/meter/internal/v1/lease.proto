@@ -9,28 +9,25 @@ syntax = "proto3";
 // owner epoch of its partition: a gate keeps the newest epoch it has seen
 // per partition and drops any grant from an older one (a fenced owner that
 // has not noticed it lost the partition).
-package loams.meter.v1;
+//
+// The package is internal (design §44 §7.2, D2202): it is served only on the
+// meter's cluster listener, is in no `CATALOGUE`, and no SDK speaks it, so
+// its methods carry no `loams.options.v1` facade annotations and the package
+// is in `NOT_SDK_PACKAGES` (`crates/loams-facade-gen`).
+package loams.meter.internal.v1;
 
 import "google/protobuf/timestamp.proto";
-import "loams/options/v1/options.proto";
 
 // Leases of entitlement capacity for one (subject, feature).
 service LeaseService {
-  option (loams.options.v1.module) = {
-    name: "meter.leases"
-    summary: "Internal: meter capacity leases between gates and counter owners."
-  };
 
   // A lease (or a cached refusal) for the next operations of a subject's
   // feature. A call on an instance that does not own the subject's partition
   // is `failed_precondition` with reason `not_owner`.
-  rpc AcquireLease(AcquireLeaseRequest) returns (AcquireLeaseResponse) {
-    option (loams.options.v1.facade) = {name: "acquire"};
-  }
+  rpc AcquireLease(AcquireLeaseRequest) returns (AcquireLeaseResponse);
   // Gives a lease back early with what was spent of it.
   rpc ReturnLease(ReturnLeaseRequest) returns (ReturnLeaseResponse) {
     option idempotency_level = IDEMPOTENT;
-    option (loams.options.v1.facade) = {name: "return"};
   }
 }
 

@@ -16,10 +16,13 @@ use loams_meter::owner::CounterKey;
 use loams_meter::store::MemStore;
 use loams_meter_core::{Amount, FeatureKey, Period, SubjectKey, UtcNanos};
 
+/// One recorded request: URL, headers, body.
+type Sent = (String, Vec<(String, String)>, Vec<u8>);
+
 /// Records requests; answers the queued outcomes, then 204.
 #[derive(Debug, Default)]
 struct Recorder {
-    sent: Mutex<Vec<(String, Vec<(String, String)>, Vec<u8>)>>,
+    sent: Mutex<Vec<Sent>>,
     answers: Mutex<Vec<Outcome>>,
 }
 

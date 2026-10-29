@@ -91,10 +91,25 @@ cp "$stack/.env.example" "$stack/.env"
 # An upgrade never moves a stack's stores (D1340, D1343), and the candidate's
 # default is the embedded store and local folders, so the gate names both
 # profiles in .env, as such a stack must before it upgrades. A previous
-# release with the profiles runs with its own .env.example as it is.
+# release with the profiles (0.1.1 on) defaults to the embedded stores, which
+# `loams upgrade` does not upgrade yet (stack_unrecognised; the manual path is
+# docs/release/upgrades.md), so the gate adds `tikv` and `rustfs` to its
+# profiles too: it gates the path `loams upgrade` supports.
 if ! grep -q '^COMPOSE_PROFILES=' "$stack/.env"; then
   echo "COMPOSE_PROFILES=tikv,rustfs" >> "$stack/.env"
+else
+  python3 - "$stack/.env" <<'PY'
+import sys
+path = sys.argv[1]
+lines = open(path).read().splitlines()
+for i, line in enumerate(lines):
+    if line.startswith("COMPOSE_PROFILES="):
+        have = [p for p in line.split("=", 1)[1].split(",") if p.strip()]
+        lines[i] = "COMPOSE_PROFILES=" + ",".join(have + [p for p in ("tikv", "rustfs") if p not in have])
+open(path, "w").write("\n".join(lines) + "\n")
+PY
 fi
+grep '^COMPOSE_PROFILES=' "$stack/.env"
 cp "$root/deploy/release/ci/compose.upgrade.yaml" "$stack/compose.override.yaml"
 compose() { "$engine" compose --project-directory "$stack" "$@"; }
 

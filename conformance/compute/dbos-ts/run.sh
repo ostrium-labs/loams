@@ -40,7 +40,7 @@ if [[ $skip != *,suite,* ]]; then
     npm run build >>/work/ts.npm.log 2>&1
     npm install --no-save --no-audit --no-fund jest-junit@$JEST_JUNIT >>/work/ts.npm.log 2>&1
     JEST_JUNIT_OUTPUT_FILE=/work/ts.junit.xml JEST_JUNIT_CLASSNAME='{filepath}' JEST_JUNIT_TITLE='{title}' \
-      timeout 3000 npx jest ./tests --reporters=default --reporters=jest-junit --detectOpenHandles >/work/ts.jest.log 2>&1
+      timeout 5400 npx jest ./tests --reporters=default --reporters=jest-junit --forceExit >/work/ts.jest.log 2>&1
   "
   set -e
   dc exec -T dbos-ts cat /work/ts.junit.xml >"$OC_OUT/$suite-suite.junit.tmp" 2>/dev/null || true

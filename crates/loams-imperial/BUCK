@@ -24,16 +24,23 @@ cargo_package(
     },
     tests = [
         {
+            "name": "durable",
+            "crate": "durable",
+            "root": "tests/durable.rs",
+        },
+        {
             "name": "lease",
             "crate": "lease",
             "root": "tests/lease.rs",
         },
     ],
     deps = [
+        "//crates/loams-kv:loams-kv",
         "//third-party/rust:serde",
+        "//third-party/rust:serde_json",
     ],
     dev_deps = [
-        "//third-party/rust:serde_json",
+        "//third-party/rust:tokio",
     ],
     rustc_flags = [
         "-Funsafe_code",
