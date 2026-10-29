@@ -37,5 +37,10 @@ toml.workspace = true
 tracing.workspace = true
 webpki-roots = "1"
 
+[dev-dependencies]
+# examples/engines_facade_bench.rs (BQ1-stream).
+axum.workspace = true
+tower = { workspace = true, features = ["util"] }
+
 [lints]
 workspace = true

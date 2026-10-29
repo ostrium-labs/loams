@@ -29,6 +29,11 @@ cargo_package(
             "root": "tests/docstore.rs",
         },
         {
+            "name": "house",
+            "crate": "house",
+            "root": "tests/house.rs",
+        },
+        {
             "name": "leases",
             "crate": "leases",
             "root": "tests/leases.rs",
@@ -86,6 +91,7 @@ cargo_package(
         "//crates/loams-meter-core:loams-meter-core",
         "//crates/loams-meter-house:loams-meter-house",
         "//crates/loams-proto:loams-proto",
+        "//third-party/rust:age",
         "//third-party/rust:async-trait",
         "//third-party/rust:axum",
         "//third-party/rust:base64-0_23",

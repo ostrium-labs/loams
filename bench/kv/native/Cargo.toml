@@ -1,0 +1,24 @@
+[package]
+name = "kv-native"
+description = "The BQ1 KV native-API benchmark: loams-kv transactions (embedded in-memory, redb, TiKV) and TiKV raw batch_get/batch_put, at a batch depth, as JSON lines."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[[bin]]
+name = "kv-native"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+futures.workspace = true
+loams-kv = { workspace = true, features = ["tikv"] }
+loams-tikv.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

@@ -54,7 +54,7 @@ const queue = "corpus-go"
 
 func main() {
 	if len(os.Args) < 2 {
-		log.Fatal("usage: corpus-go generate|export [flags]")
+		log.Fatal("usage: corpus-go generate|export|burst [flags]")
 	}
 	cmd := os.Args[1]
 	fs := flag.NewFlagSet(cmd, flag.ExitOnError)
@@ -62,6 +62,8 @@ func main() {
 	namespace := fs.String("namespace", "corpus", "created when missing")
 	out := fs.String("out", "histories/go", "")
 	only := fs.String("scenarios", "", "comma-separated; default all (generate) or required (export)")
+	burstN := fs.Int("n", 100, "workflows to start at once (burst)")
+	burstWorkflow := fs.String("workflow", "hello", "the scenario each burst workflow runs: hello or timer_short (burst)")
 	prefix := fs.String("prefix", "corpus-go-", "workflow ID prefix (export)")
 	// The Loams gateway serves no OperatorService before DX4 (design 74
 	// §5.8); its DX1 scenarios need no custom search attribute.
@@ -85,6 +87,10 @@ func main() {
 	case "generate":
 		if err := generate(ctx, c, *namespace, *out, pick(*only)); err != nil {
 			log.Fatalf("corpus: %v", err)
+		}
+	case "burst":
+		if err := burst(ctx, c, *burstWorkflow, *burstN); err != nil {
+			log.Fatalf("corpus: burst: %v", err)
 		}
 	case "export":
 		if *only == "" {
@@ -628,3 +634,66 @@ func exportCount(ctx context.Context, c client.Client, id, base string) (int, er
 func workflowOptions(name string) workflow.RegisterOptions { return workflow.RegisterOptions{Name: name} }
 
 func activityOptions(name string) activity.RegisterOptions { return activity.RegisterOptions{Name: name} }
+
+// burst starts n workflows of one scenario at once and waits for every
+// result with run.Get, the way an SDK client waits (a long poll for the
+// close event). It is the DX1 gateway's regression for "could not get last
+// history event" (a close wait that timed out answered without a page
+// token) and a rough throughput figure, not a benchmark.
+func burst(ctx context.Context, c client.Client, name string, n int) error {
+	w := newWorker(c)
+	if err := w.Start(); err != nil {
+		return err
+	}
+	defer w.Stop()
+	var args []any
+	if name == "hello" {
+		args = []any{"burst"}
+	}
+	stamp := time.Now().UnixNano()
+	begin := time.Now()
+	runs := make([]client.WorkflowRun, n)
+	errs := make(chan error, n)
+	for i := 0; i < n; i++ {
+		go func(i int) {
+			run, err := c.ExecuteWorkflow(ctx, opts(fmt.Sprintf("burst-%s-%d-%d", name, stamp, i)), name, args...)
+			runs[i] = run
+			errs <- err
+		}(i)
+	}
+	for i := 0; i < n; i++ {
+		if err := <-errs; err != nil {
+			return fmt.Errorf("start: %w", err)
+		}
+	}
+	gctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+	type outcome struct{ err error }
+	done := make(chan outcome, n)
+	for _, run := range runs {
+		go func(run client.WorkflowRun) {
+			var out any
+			done <- outcome{run.Get(gctx, &out)}
+		}(run)
+	}
+	failed := 0
+	var first error
+	for i := 0; i < n; i++ {
+		if o := <-done; o.err != nil {
+			failed++
+			if first == nil {
+				first = o.err
+			}
+		}
+	}
+	secs := time.Since(begin).Seconds()
+	b, _ := json.Marshal(map[string]any{
+		"workflow": name, "n": n, "completed": n - failed, "failed": failed,
+		"seconds": secs, "workflows_per_second": float64(n-failed) / secs,
+	})
+	fmt.Println(string(b))
+	if failed > 0 {
+		return fmt.Errorf("%d of %d failed; first: %v", failed, n, first)
+	}
+	return nil
+}

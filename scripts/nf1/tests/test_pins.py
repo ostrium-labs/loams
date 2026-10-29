@@ -38,6 +38,7 @@ MAJORS_RS = "crates/loams-postgres/src/majors.rs"
 
 NEON = "ghcr.io/neondatabase/neon@sha256:7a4f124917bb929964b2d696d710f19584f80bb9bd51b2af4a6e2425434c761f"
 COMPUTE17 = "ghcr.io/neondatabase/compute-node-v17@sha256:13ab146d3e7bbabb25a8532f315ac443e7512351d1ede0bab586def5c70e26c3"
+COMPUTE16 = "ghcr.io/neondatabase/compute-node-v16@sha256:b3e151661bd2ee11eb2843c8926001966cb23969227e9673c5f42fc3fbe14249"
 OTHER = "sha256:" + "e" * 64
 MIRROR_PINS = FIXTURES / "pins-mirror-77e22e4b.toml"
 
@@ -177,6 +178,18 @@ class PinsMatchConsumers(Tree):
         self.write(PIN_FILE, self.read(PIN_FILE) + "# a note\n")
         self.assertFails(PIN_FILE)
 
+    def test_compute_block_edited_by_hand_fails(self):
+        self.edit(COMPOSE[0], '      - 127.0.0.1:${PG16_PORT:-55416}:55433', '      - 0.0.0.0:55416:55433')
+        self.assertFails(COMPOSE[0])
+
+    def test_compute_block_markers_missing_fails(self):
+        self.edit(COMPOSE[0], "  # pins.py: end computes\n", "")
+        self.assertFails(COMPOSE[0])
+
+    def test_bootstrap_major_edited_by_hand_fails(self):
+        self.edit(COMPOSE[0], "PG_VERSION: ${COMPUTE_PG_MAJOR:-17}", "PG_VERSION: ${COMPUTE_PG_MAJOR:-16}")
+        self.assertFails(COMPOSE[0])
+
     def test_stale_majors_rs_fails_and_rust_fixes_it(self):
         self.write(MAJORS_RS, "pub const DEFAULT: u32 = 16;\n")
         self.assertFails(MAJORS_RS)
@@ -294,6 +307,13 @@ class SetRewritesAllConsumers(Tree):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(after, {c: self.read(c) for c in after})
 
+    def test_set_writes_majors_rs(self):
+        (self.root / MAJORS_RS).unlink()
+        self.assertFails(MAJORS_RS)
+        r = self.pins("set")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertPasses()
+
     def test_set_rewrites_existing_majors_rs(self):
         self.pins("rust")
         r = self.pins("set", "--from-release", str(FIXTURES / "release-lp-2026.10.0.toml"))
@@ -326,6 +346,109 @@ class Rust(Tree):
         self.assertPasses()
 
 
+class MajorsRsMatchesPins(Tree):
+    """majors_rs_matches_pins (NF2 Task 10, design 62 §9.1): `set` writes
+    crates/loams-postgres/src/majors.rs, `check` verifies it, and it carries
+    each major's state, pinned minor and upstream end of life."""
+
+    def test_majors_rs_matches_pins(self):
+        text = self.read(MAJORS_RS)
+        self.assertIn("pub const SUPPORTED: &[u32] = &[17];", text)
+        self.assertIn("pub const BETA: &[u32] = &[];", text)
+        self.assertIn("pub const MAINTENANCE: &[u32] = &[16];", text)
+        self.assertIn("pub const DEFAULT: u32 = 17;", text)
+        self.assertIn('pub const MINORS: &[(u32, &str)] = &[(16, "16.9"), (17, "17.5")];', text)
+        self.assertIn('pub const EOL: &[(u32, &str)] = &[(16, "2028-11-09"), (17, "2029-11-08")];', text)
+        self.assertPasses()
+        self.edit(MAJORS_RS, '(17, "2029-11-08")', '(17, "2030-11-08")')
+        self.assertFails(MAJORS_RS)
+
+    def test_the_repository_majors_rs_matches_its_pins(self):
+        pins = tomllib.loads((REPO / PIN_FILE).read_text())
+        text = (REPO / MAJORS_RS).read_text()
+        mj = pins["majors"]
+        self.assertIn(f"pub const DEFAULT: u32 = {mj['default']};", text)
+        for name in ("supported", "beta", "maintenance"):
+            want = ", ".join(str(m) for m in mj[name])
+            self.assertIn(f"pub const {name.upper()}: &[u32] = &[{want}];", text)
+
+    def test_a_major_without_an_upstream_eol_is_refused(self):
+        self.edit(PIN_FILE, "beta = []", "beta = [99]")
+        self.assertFails("major 99: no upstream end of life")
+
+
+class SetMajors(Tree):
+    """`set --supported/--beta/--maintenance/--default` moves majors (Q949:
+    16 accepts new projects again) and rewrites every consumer."""
+
+    def test_set_moves_16_to_supported(self):
+        r = self.pins("set", "--supported", "16,17", "--maintenance", "", "--default", "17")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        pin = self.read(PIN_FILE)
+        self.assertIn("[majors]\nsupported = [16, 17]\nbeta = []\nmaintenance = []\ndefault = 17\n", pin)
+        self.assertIn("pub const SUPPORTED: &[u32] = &[16, 17];", self.read(MAJORS_RS))
+        self.assertIn("pub const MAINTENANCE: &[u32] = &[];", self.read(MAJORS_RS))
+        self.assertIn("Postgres majors: supported 16, 17; beta none; maintenance none; default 17.", self.read(README))
+        self.assertIn("    # Postgres 16: supported.\n", self.read(COMPOSE[0]))
+        self.assertPasses()
+
+    def test_set_majors_refuses_an_invalid_window_and_writes_nothing(self):
+        before = {c: self.read(c) for c in (PIN_FILE, MAJORS_RS) + CONSUMERS}
+        for args in (("--default", "16"), ("--beta", "17"), ("--beta", "18"), ("--supported", "x")):
+            with self.subTest(args=args):
+                r = self.pins("set", *args)
+                self.assertNotEqual(r.returncode, 0, r.stdout + r.stderr)
+                self.assertEqual(before, {c: self.read(c) for c in before})
+
+
+class ComputePerMajor(Tree):
+    """design 62 §9.4: one `compute-v<N>` per major in the pin file, behind
+    profile `pg<N>` (and `beta` for a beta major), in the dev stack (which the
+    release stack includes); the default major's compute1 is unchanged."""
+
+    def test_one_compute_per_major(self):
+        text = self.read(COMPOSE[0])
+        self.assertIn('  compute-v16:\n    # Postgres 16: maintenance.\n    profiles: ["pg16"]\n'
+                      "    image: ${COMPUTE_V16_IMAGE:-" + COMPUTE16 + "}\n", text)
+        self.assertIn('  compute-v17:\n    # Postgres 17: supported.\n    profiles: ["pg17"]\n'
+                      "    image: ${COMPUTE_V17_IMAGE:-" + COMPUTE17 + "}\n", text)
+        self.assertIn("      TIMELINE_ID: ${PG17_TIMELINE_ID:-}\n", text)
+        self.assertIn("      - 127.0.0.1:${PG17_PORT:-55417}:55433\n", text)
+        # compute1 stays the default major's compute, on the shared anchor.
+        self.assertIn("  compute1:\n    image: *compute-image\n", text)
+        self.assertIn("PG_VERSION: ${COMPUTE_PG_MAJOR:-17}", text)
+        self.assertNotIn("compute-v17:", self.read(COMPOSE[1]))
+
+    def test_a_beta_major_has_the_beta_profile(self):
+        r = self.pins("set", "--supported", "17", "--maintenance", "", "--beta", "16", "--default", "17")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn('  compute-v16:\n    # Postgres 16: beta.\n    profiles: ["pg16", "beta"]\n', self.read(COMPOSE[0]))
+        self.assertPasses()
+
+    def test_a_major_leaving_the_pin_file_loses_its_compute(self):
+        r = self.pins("set", "--maintenance", "")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertNotIn("compute-v16", self.read(COMPOSE[0]))
+        self.assertPasses()
+
+    def test_compose_profiles_select_the_computes(self):
+        cli = compose_cli()
+        if cli is None:
+            self.skipTest("no docker compose CLI")
+
+        def services(*profiles):
+            argv = cli + ["-f", str(self.root / COMPOSE[0])]
+            for p in profiles:
+                argv += ["--profile", p]
+            r = subprocess.run(argv + ["config", "--services"], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            return set(r.stdout.split())
+        self.assertFalse({"compute-v16", "compute-v17"} & services())
+        self.assertIn("compute1", services())
+        self.assertEqual({"compute-v16", "compute-v17"} & services("pg16"), {"compute-v16"})
+        self.assertEqual({"compute-v16", "compute-v17"} & services("pg16", "pg17"), {"compute-v16", "compute-v17"})
+
+
 class OverrideEnvsStillWork(Tree):
     """override_envs_still_work: NEON_IMAGE and COMPUTE_IMAGE still override
     the compose defaults (PG2 R2.1)."""
@@ -341,12 +464,18 @@ class OverrideEnvsStillWork(Tree):
         cli = compose_cli()
         if cli is None:
             self.skipTest("no docker compose CLI")
+        # The dev stack's compute-v<N> (profile `*`) keep their own pins under
+        # NEON_IMAGE and COMPUTE_IMAGE; COMPUTE_V<N>_IMAGE overrides each.
         for rel in COMPOSE:
-            for env, want in (({}, {NEON, COMPUTE17}),
+            extra = {COMPUTE16, COMPUTE17} if rel == COMPOSE[0] else set()
+            for env, want in (({}, {NEON, COMPUTE17} | extra),
                               ({"NEON_IMAGE": "example.org/n@" + OTHER, "COMPUTE_IMAGE": "example.org/c@" + OTHER},
-                               {"example.org/n@" + OTHER, "example.org/c@" + OTHER})):
+                               {"example.org/n@" + OTHER, "example.org/c@" + OTHER} | extra),
+                              ({"COMPUTE_V16_IMAGE": "example.org/c16@" + OTHER},
+                               {NEON, COMPUTE17} | ({"example.org/c16@" + OTHER, COMPUTE17} if extra else set()))):
                 with self.subTest(rel=rel, env=env):
-                    full = {k: v for k, v in os.environ.items() if k not in ("NEON_IMAGE", "COMPUTE_IMAGE")}
+                    full = {k: v for k, v in os.environ.items()
+                            if k not in ("NEON_IMAGE", "COMPUTE_IMAGE", "COMPUTE_V16_IMAGE", "COMPUTE_V17_IMAGE")}
                     full.update(env)
                     r = subprocess.run(cli + ["-f", str(self.root / rel), "--profile", "*", "config", "--images"],
                                        capture_output=True, text=True, env=full)

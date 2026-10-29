@@ -3,6 +3,7 @@
 
     pins.py [--root DIR] check
     pins.py [--root DIR] set [--from-release URL|PATH]
+                             [--supported N,..] [--beta N,..] [--maintenance N,..] [--default N]
     pins.py [--root DIR] rust
 
 `deploy/pins/loams-postgres-images.toml` names each image Loams runs by
@@ -15,7 +16,17 @@ digest. The consumers repeat those references and are generated from it:
   services outside the included stack, in deploy/release/compose.yaml (NF1 Task 14);
 - `PG_HEADERS_IMAGE` (images.storage) in pg2.yml, pg2-e2e.yml and loams-pg-bench.yml;
 - the image table between the `pins.py` markers in deploy/loams-postgres-dev/README.md;
-- crates/loams-postgres/src/majors.rs, once `rust` has created it.
+- one `compute-v<N>` service per major in [majors] (supported, beta and maintenance),
+  between the `pins.py` markers in deploy/loams-postgres-dev/compose.yaml (design 62
+  §9.4; profiles `pg<N>`, and `beta` for a beta major), and pg-bootstrap's default
+  major (majors.default); deploy/release/compose.yaml includes that stack, so the
+  release stack has the same services;
+- crates/loams-postgres/src/majors.rs (design 62 §9.1, NF2 Task 10): the majors, each
+  one's pinned minor (images.storage.pg_minors) and upstream end of life.
+
+Upstream's end-of-life dates are not release facts, so they are not in the pin file
+(its schema stays as built, D1116): they are UPSTREAM_EOL below, from postgresql.org's
+versions.json, and a major in [majors] without one is refused.
 
 check  fails (exit 1) unless the pin file is valid and in pins.py's own layout,
        every consumer equals it, every `mirror:` source has its audit file
@@ -25,9 +36,11 @@ check  fails (exit 1) unless the pin file is valid and in pins.py's own layout,
 set    validates the release's pin document (a TOML file in the pin file's
        schema: a local path or an https URL, the asset Task 13 attaches to a
        release), then rewrites the pin file and every consumer. Without
-       --from-release it re-renders them from the current pin file. A refused
-       document writes nothing.
-rust   writes crates/loams-postgres/src/majors.rs.
+       --from-release it re-renders them from the current pin file. The
+       --supported, --beta, --maintenance and --default flags replace those
+       [majors] entries first (a comma-separated list; "" for none), the only
+       way to move a major between states. A refused document writes nothing.
+rust   writes crates/loams-postgres/src/majors.rs alone (`set` writes it too).
 
 Exit codes: 0 ok, 1 check or validation failure, 2 usage. Stdlib only.
 """
@@ -51,6 +64,19 @@ WORKFLOWS = (".github/workflows/pg2.yml", ".github/workflows/pg2-e2e.yml", ".git
 HEADER = "# Written by scripts/nf1/pins.py (set); checked by pins.py (check). Do not edit by hand."
 README_BEGIN = "<!-- pins.py: begin images (generated from deploy/pins/loams-postgres-images.toml) -->"
 README_END = "<!-- pins.py: end images -->"
+COMPUTES_BEGIN = "  # pins.py: begin computes (generated from deploy/pins/loams-postgres-images.toml)"
+COMPUTES_END = "  # pins.py: end computes"
+
+# Upstream's end of life per major (postgresql.org versions.json, `eolDate`;
+# checked 2026-10-18, design 62 §2). Not in the pin file: a release does not
+# change them. A major enters [majors] only with its date here.
+UPSTREAM_EOL = {
+    14: "2026-11-12",
+    15: "2027-11-11",
+    16: "2028-11-09",
+    17: "2029-11-08",
+    18: "2030-11-14",
+}
 
 # The neon-archive packages hold Neon's binaries with CDDL `inferno` and Neon's
 # private `subzero-core`: private for good, never deployed. Reference use only:
@@ -112,6 +138,10 @@ def validate(pins, root):
             errs.append("a major is in more than one of majors.supported, beta and maintenance")
         if type(majors.get("default")) is not int or majors.get("default") not in (majors.get("supported") or []):
             errs.append("majors.default must be one of majors.supported")
+        for major in listed:
+            if major not in UPSTREAM_EOL:
+                errs.append(f"major {major}: no upstream end of life in pins.py's UPSTREAM_EOL "
+                            "(postgresql.org versions.json)")
 
     images = pins.get("images")
     if not isinstance(images, dict) or not images:
@@ -222,6 +252,8 @@ def consumer_lines(pins):
                       "x-compute-image: &compute-image ${COMPUTE_IMAGE:-" + compute + "}"))
     lines.append((RELEASE_COMPOSE, r"^(?P<indent>[ ]+)image: \$\{NEON_IMAGE:-[^}\n]*\}$",
                   "image: ${NEON_IMAGE:-" + storage + "}"))
+    lines.append((COMPOSE[0], r"^(?P<indent>[ ]+)PG_VERSION: \$\{COMPUTE_PG_MAJOR:-[^}\n]*\}$",
+                  "PG_VERSION: ${COMPUTE_PG_MAJOR:-" + str(pins["majors"]["default"]) + "}"))
     for path in WORKFLOWS:
         lines.append((path, r"^(?P<indent>[ ]+)PG_HEADERS_IMAGE: \S+$", "PG_HEADERS_IMAGE: " + storage))
     return lines
@@ -248,15 +280,31 @@ def render_readme_block(pins):
     return "\n".join(out)
 
 
+def all_majors(pins):
+    mj = pins["majors"]
+    return sorted(m for name in MAJOR_LISTS for m in mj[name])
+
+
+def major_state(pins, major):
+    return next(name for name in MAJOR_LISTS if major in pins["majors"][name])
+
+
 def render_rust(pins):
     mj = pins["majors"]
+    minors = pins["images"]["storage"]["pg_minors"]
 
     def arr(v):
         return "&[" + ", ".join(str(m) for m in v) + "]"
+
+    def pairs(f):
+        return "&[" + ", ".join(f"({m}, {q(f(m))})" for m in all_majors(pins)) + "]"
     return "\n".join([
-        "//! Postgres majors Loams Postgres serves, from deploy/pins/loams-postgres-images.toml.",
+        "//! Postgres majors Loams Postgres serves, from deploy/pins/loams-postgres-images.toml",
+        "//! (design 62 §9.1, D1114).",
         "//!",
-        "//! Generated by `scripts/nf1/pins.py rust`; do not edit by hand.",
+        "//! Generated by `scripts/nf1/pins.py set` (or `rust`); checked by `pins.py check`.",
+        "//! Do not edit by hand: move a major with `pins.py set --supported .. --beta ..",
+        "//! --maintenance .. --default ..`.",
         "",
         "/// Majors new projects may use.",
         f"pub const SUPPORTED: &[u32] = {arr(mj['supported'])};",
@@ -266,7 +314,49 @@ def render_rust(pins):
         f"pub const MAINTENANCE: &[u32] = {arr(mj['maintenance'])};",
         "/// The major for new projects and new desktop tenants.",
         f"pub const DEFAULT: u32 = {mj['default']};",
+        "/// The pinned minor of each major above (`images.storage.pg_minors`).",
+        f"pub const MINORS: &[(u32, &str)] = {pairs(lambda m: minors[str(m)])};",
+        "/// Upstream's end of life of each major above (postgresql.org `versions.json`),",
+        "/// as `YYYY-MM-DD`.",
+        f"pub const EOL: &[(u32, &str)] = {pairs(lambda m: UPSTREAM_EOL[m])};",
         ""])
+
+
+def render_computes(pins):
+    """The compose services between the COMPUTES markers: one compute per major."""
+    out = [COMPUTES_BEGIN,
+           "  # One compute per Postgres major in the pin file (design 62 §9.4), off unless its profile",
+           "  # `pg<N>` is selected (a beta major's also by `beta`). Each attaches only to the timeline",
+           "  # PG<N>_TENANT_ID and PG<N>_TIMELINE_ID name, which must be a timeline of that major (a",
+           "  # compute of another major is refused by loams-wal), and never falls back to compute1's.",
+           "  # COMPUTE_V<N>_IMAGE overrides the pinned image; PG<N>_PORT the loopback port."]
+    for major in all_majors(pins):
+        state = major_state(pins, major)
+        profiles = [f"pg{major}"] + (["beta"] if state == "beta" else [])
+        img = ref(pins["images"][f"compute-v{major}"])
+        out += [f"  compute-v{major}:",
+                f"    # Postgres {major}: {state}.",
+                "    profiles: [" + ", ".join(f'"{p}"' for p in profiles) + "]",
+                f"    image: ${{COMPUTE_V{major}_IMAGE:-{img}}}",
+                "    environment:",
+                f"      TENANT_ID: ${{PG{major}_TENANT_ID:-}}",
+                f"      TIMELINE_ID: ${{PG{major}_TIMELINE_ID:-}}",
+                "    volumes:",
+                "      - ./compute/config.json:/var/db/postgres/configs/config.json:ro",
+                "      - ./compute/start.sh:/shell/start.sh:ro",
+                "    ports:",
+                f"      - 127.0.0.1:${{PG{major}_PORT:-{55400 + major}}}:55433",
+                '    entrypoint: ["/bin/bash", "/shell/start.sh"]',
+                "    depends_on: [pageserver, safekeeper1]"]
+    out.append(COMPUTES_END)
+    return "\n".join(out)
+
+
+def replace_block(path, text, begin, end, block):
+    b, e = text.find(begin), text.find(end)
+    if b < 0 or e < b or text.count(begin) != 1 or text.count(end) != 1:
+        raise Refused(f"{path}: expected one pins.py begin/end marker pair")
+    return text[:b] + block + text[e + len(end):]
 
 
 def generate(root, pins):
@@ -282,13 +372,10 @@ def generate(root, pins):
         m = matches[0]
         indent = m.groupdict().get("indent") or ""
         wanted[path] = text[:m.start()] + indent + line + text[m.end():]
-    text = read(root, README)
-    begin, end = text.find(README_BEGIN), text.find(README_END)
-    if begin < 0 or end < begin or text.count(README_BEGIN) != 1 or text.count(README_END) != 1:
-        raise Refused(f"{README}: expected one pins.py begin/end marker pair")
-    wanted[README] = text[:begin] + render_readme_block(pins) + text[end + len(README_END):]
-    if Path(root, MAJORS_RS).is_file():
-        wanted[MAJORS_RS] = render_rust(pins)
+    wanted[README] = replace_block(README, read(root, README), README_BEGIN, README_END, render_readme_block(pins))
+    wanted[COMPOSE[0]] = replace_block(COMPOSE[0], wanted[COMPOSE[0]], COMPUTES_BEGIN, COMPUTES_END,
+                                       render_computes(pins))
+    wanted[MAJORS_RS] = render_rust(pins)
     return wanted
 
 
@@ -363,7 +450,9 @@ def cmd_check(root):
     if not errs:
         try:
             for path, want in generate(root, pins).items():
-                if read(root, path) != want:
+                if not Path(root, path).is_file():
+                    errs.append(f"{path}: missing (run pins.py set)")
+                elif read(root, path) != want:
                     what = "is not in pins.py's layout (run pins.py set)" if path == PIN_FILE else \
                         "differs from the pin file (run pins.py set)"
                     errs.append(f"{path}: {what}")
@@ -382,7 +471,7 @@ def cmd_check(root):
     return 1 if errs else 0
 
 
-def cmd_set(root, src):
+def cmd_set(root, src, majors=None):
     try:
         if src is None:
             pins = load_toml(read(root, PIN_FILE), PIN_FILE)
@@ -392,6 +481,10 @@ def cmd_set(root, src):
             except OSError as e:
                 raise Refused(f"{src}: {e}") from None
             pins = load_toml(text, src)
+        if majors:
+            if not isinstance(pins.get("majors"), dict):
+                pins["majors"] = {}
+            pins["majors"].update(majors)
         errs = validate(pins, root)
         if errs:
             raise Refused("; ".join(errs))
@@ -402,6 +495,7 @@ def cmd_set(root, src):
     for path, text in wanted.items():
         p = Path(root, path)
         if not p.is_file() or p.read_text() != text:
+            p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(text)
             print(f"pins.py set: wrote {path}")
     return 0
@@ -423,6 +517,13 @@ def cmd_rust(root):
     return 0
 
 
+def major_list(text):
+    try:
+        return [int(m) for m in text.split(",") if m.strip()]
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r}: expected majors like 16,17") from None
+
+
 def main(argv):
     ap = argparse.ArgumentParser(prog="pins.py", description=__doc__.split("\n\n")[0])
     ap.add_argument("--root", default=str(Path(__file__).resolve().parents[2]), help="repository root")
@@ -430,6 +531,10 @@ def main(argv):
     sub.add_parser("check")
     s = sub.add_parser("set")
     s.add_argument("--from-release", metavar="URL|PATH")
+    for name in MAJOR_LISTS:
+        s.add_argument(f"--{name}", metavar="N,..", type=major_list,
+                       help=f"replace [majors] {name} (comma-separated; \"\" for none)")
+    s.add_argument("--default", metavar="N", type=int, help="replace [majors] default")
     sub.add_parser("rust")
     args = ap.parse_args(argv)
     if args.cmd == "check":
@@ -438,7 +543,9 @@ def main(argv):
         if args.from_release and re.match(r"[a-z][a-z0-9+.-]*://", args.from_release) \
                 and not args.from_release.startswith("https://"):
             ap.error("--from-release: only https URLs or local paths")
-        return cmd_set(args.root, args.from_release)
+        majors = {name: getattr(args, name) for name in MAJOR_LISTS + ("default",)
+                  if getattr(args, name) is not None}
+        return cmd_set(args.root, args.from_release, majors)
     return cmd_rust(args.root)
 
 

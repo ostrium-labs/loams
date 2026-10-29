@@ -28,7 +28,8 @@
 //!   the row with the greatest `(ver, file sequence number, row number)` and
 //!   drops it when its `is_deleted` is 1; Summing groups by the key and sums;
 //!   VersionedCollapsing cancels rows of opposite sign per key and version
-//!   (D1570, [`collapsing`]).
+//!   (D1570, [`collapsing`]); Coalescing keeps each column's last non-`NULL`
+//!   value per key (HE1 R14.13, [`coalescing`]).
 //!   chDB ignores `FINAL` on a view (measured), so the user's text runs as it is.
 //! * An external table (another writer's) reads as chDB reads Iceberg: no casts.
 //! * A view that reads the bucket names its columns and is `SQL SECURITY NONE`
@@ -62,6 +63,65 @@ pub fn drop_ddl(database: &str, name: &str) -> String {
     format!(
         "DROP TABLE IF EXISTS {}.{}",
         quote_name(database),
+        quote_name(name)
+    )
+}
+
+/// A view's `SELECT` as the worker can explain it (HE1 R14.5). A
+/// parameterised view's body holds query parameters (`{project_id:UUID}`),
+/// and ClickHouse explains nothing with a parameter unset (`456`, measured on
+/// 26.9.2.8); each one becomes `defaultValueOfTypeName('<type>')`, an
+/// expression of its type, so the trees the deny list and the read plan walk
+/// keep every table, function and `FINAL` of the body. The text the worker
+/// makes the view from is the body as written.
+pub fn analysable(select: &str) -> String {
+    use crate::classify::{Lexeme, lex};
+    let lexemes = lex(select);
+    let mut out = String::with_capacity(select.len());
+    let mut copied = 0;
+    let mut i = 0;
+    while i < lexemes.len() {
+        let open = matches!(lexemes[i].0, Lexeme::Symbol(b'{'));
+        let named = matches!(lexemes.get(i + 1), Some((Lexeme::Word(..), _)));
+        let colon = matches!(lexemes.get(i + 2), Some((Lexeme::Symbol(b':'), _)));
+        if !(open && named && colon) {
+            i += 1;
+            continue;
+        }
+        let Some(close) = (i + 3..lexemes.len())
+            .find(|&j| matches!(lexemes[j].0, Lexeme::Symbol(b'}' | b'{')))
+            .filter(|&j| matches!(lexemes[j].0, Lexeme::Symbol(b'}')))
+        else {
+            i += 1;
+            continue;
+        };
+        let ty = select[lexemes[i + 2].1.end..lexemes[close].1.start].trim();
+        if ty.is_empty() {
+            i += 1;
+            continue;
+        }
+        out.push_str(&select[copied..lexemes[i].1.start]);
+        out.push_str(&format!("defaultValueOfTypeName({})", quote_string(ty)));
+        copied = lexemes[close].1.end;
+        i = close + 1;
+    }
+    out.push_str(&select[copied..]);
+    out
+}
+
+/// Whether a view's `SELECT` holds query parameters: a parameterised view,
+/// read only as a table function with their values (HE1 R14.5).
+pub fn is_parameterised(select: &str) -> bool {
+    analysable(select) != select
+}
+
+/// One of the namespace's SQL functions (HE1 R14.11) in the worker:
+/// `CREATE OR REPLACE FUNCTION f AS <lambda>`, the control connection's one
+/// shape for a function. The worker drops it before its next statement, as it
+/// drops the views.
+pub fn function_ddl(name: &str, lambda: &str) -> String {
+    format!(
+        "CREATE OR REPLACE FUNCTION {} AS {lambda}",
         quote_name(name)
     )
 }
@@ -135,6 +195,36 @@ pub const SEQUENCE_COLUMNS: [&str; 2] = [SEQ, ROW];
 
 /// The view DDL for a pin.
 pub fn view_ddl(pin: &ReadPin, source: &str, mode: Mode<'_>) -> Result<String, HouseError> {
+    view_ddl_filtered(pin, source, mode, &[])
+}
+
+/// The table's `UInt64` columns stored as `decimal(20, 0)` that every row
+/// holds (a required field): the columns [`crate::pushdown`] may filter on.
+/// An optional field (a column `ALTER` added) reads its default for older
+/// rows, which a filter on the stored column would drop, so it is left out.
+pub fn uint64_columns(pin: &ReadPin) -> Vec<&str> {
+    columns(pin)
+        .into_iter()
+        .filter(|c| c.ch_type == "UInt64")
+        .filter(|c| {
+            pin.fields
+                .iter()
+                .any(|f| f.name == c.name && f.required && !f.long)
+        })
+        .map(|c| c.name.as_str())
+        .collect()
+}
+
+/// [`view_ddl`] with `filters` on the stored columns of a plain view's source
+/// (aliased [`crate::pushdown::SOURCE_ALIAS`]), so chDB prunes row groups with
+/// them (BQ1-house). They must be implied by the statement's own predicates
+/// ([`crate::pushdown::key_filters`]); other modes ignore them.
+pub fn view_ddl_filtered(
+    pin: &ReadPin,
+    source: &str,
+    mode: Mode<'_>,
+    filters: &[String],
+) -> Result<String, HouseError> {
     let mut name = format!(
         "{}.{}",
         quote_name(&pin.table.database),
@@ -171,6 +261,13 @@ pub fn view_ddl(pin: &ReadPin, source: &str, mode: Mode<'_>) -> Result<String, H
                 collapsing(pin, source, &engine, files)?
             }
             (Mode::Final(_), Some(LakeEngine::Aggregating)) => aggregating(pin, source)?,
+            (Mode::Final(files), Some(LakeEngine::Coalescing)) => coalescing(pin, source, files)?,
+            _ if !filters.is_empty() && matches!(mode, Mode::Plain) => format!(
+                "SELECT {}\nFROM {source} AS {}\nWHERE {}",
+                casts(pin)?.join(", "),
+                crate::pushdown::SOURCE_ALIAS,
+                filters.join(" AND ")
+            ),
             _ => format!("SELECT {}\nFROM {source}", casts(pin)?.join(", ")),
         }
     };
@@ -767,6 +864,37 @@ fn aggregating(pin: &ReadPin, source: &str) -> Result<String, HouseError> {
         "SELECT {}\nFROM (\nSELECT {}\nFROM {source}\n)\nGROUP BY {group_by}",
         select.join(", "),
         casts(pin)?.join(", ")
+    ))
+}
+
+/// Coalescing `FINAL` (HE1 R14.13): rows grouped by the sorting key; each
+/// other column's last value in write order (`(file sequence number, row
+/// number)`) that is not `NULL`, as ClickHouse's merge keeps it (`argMax`
+/// skips `NULL`s; a column all `NULL` in the group stays `NULL`).
+fn coalescing(pin: &ReadPin, source: &str, files: &[LiveFile]) -> Result<String, HouseError> {
+    let key = key(pin)?;
+    let key_columns: Vec<&str> = key.iter().filter_map(|(_, c)| c.as_deref()).collect();
+    let mut select = Vec::new();
+    for column in columns(pin) {
+        let name = quote_name(&column.name);
+        if key_columns.contains(&column.name.as_str()) {
+            select.push(name);
+        } else {
+            select.push(format!("argMax({name}, ({SEQ}, {ROW})) AS {name}"));
+        }
+    }
+    let group_by = if key.is_empty() {
+        "tuple()".to_string()
+    } else {
+        key.iter()
+            .map(|(text, _)| text.clone())
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    Ok(format!(
+        "SELECT {}\nFROM (\nSELECT {}\nFROM {source}\n)\nGROUP BY {group_by}",
+        select.join(", "),
+        sequenced(pin, files)?.join(", ")
     ))
 }
 

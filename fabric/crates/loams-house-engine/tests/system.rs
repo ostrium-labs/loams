@@ -75,6 +75,8 @@ fn engine() -> Engine {
     engine
 }
 
+// 64-bit integers are bare: `output_format_json_quote_64bit_integers` is off
+// by default in 26.9 (`loams_house_types::text`).
 async fn run(engine: &Engine, sql: &str) -> Result<String, loams_house_types::ChError> {
     let answer = engine
         .query(&format!("{sql} FORMAT {FORMAT}"), &[], &[], "d38")
@@ -100,7 +102,7 @@ async fn system_tables_list_the_catalog() {
         out,
         "[\"name\",\"engine\",\"sorting_key\",\"primary_key\",\"total_rows\"]\n\
          [\"String\",\"String\",\"String\",\"String\",\"Nullable(UInt64)\"]\n\
-         [\"t\",\"MergeTree\",\"a\",\"a\",\"3\"]\n"
+         [\"t\",\"MergeTree\",\"a\",\"a\",3]\n"
     );
     let out = run(
         &e,
@@ -110,7 +112,7 @@ async fn system_tables_list_the_catalog() {
     .await
     .unwrap();
     assert!(
-        out.ends_with("[\"a\",\"Int64\",\"1\",1]\n[\"s\",\"String\",\"2\",0]\n"),
+        out.ends_with("[\"a\",\"Int64\",1,1]\n[\"s\",\"String\",2,0]\n"),
         "{out}"
     );
     let out = run(&e, "SELECT name FROM system.databases ORDER BY name")
@@ -125,7 +127,7 @@ async fn system_tables_list_the_catalog() {
     )
     .await
     .unwrap();
-    assert!(out.ends_with("[\"tuple()\",\"3\"]\n"), "{out}");
+    assert!(out.ends_with("[\"tuple()\",3]\n"), "{out}");
     // SigNoz's existence check and Langfuse's listing.
     let out = run(
         &e,
@@ -133,7 +135,7 @@ async fn system_tables_list_the_catalog() {
     )
     .await
     .unwrap();
-    assert!(out.ends_with("[\"1\"]\n"), "{out}");
+    assert!(out.ends_with("[1]\n"), "{out}");
     let out = run(
         &e,
         "SELECT name FROM system.tables WHERE database = 'd38' AND name LIKE 't%' ORDER BY name",
@@ -221,16 +223,16 @@ async fn safe_table_functions_run() {
     let out = run(&e, "SELECT number FROM numbers(3)").await.unwrap();
     assert_eq!(
         out,
-        "[\"number\"]\n[\"UInt64\"]\n[\"0\"]\n[\"1\"]\n[\"2\"]\n"
+        "[\"number\"]\n[\"UInt64\"]\n[0]\n[1]\n[2]\n"
     );
     let out = run(&e, "SELECT number FROM numbers(10, 10, 4)")
         .await
         .unwrap();
-    assert!(out.ends_with("[\"10\"]\n[\"14\"]\n[\"18\"]\n"), "{out}");
+    assert!(out.ends_with("[10]\n[14]\n[18]\n"), "{out}");
     let out = run(&e, "SELECT number FROM system.numbers LIMIT 2")
         .await
         .unwrap();
-    assert!(out.ends_with("[\"0\"]\n[\"1\"]\n"), "{out}");
+    assert!(out.ends_with("[0]\n[1]\n"), "{out}");
     let out = run(&e, "SELECT zero FROM zeros(2)").await.unwrap();
     assert_eq!(out, "[\"zero\"]\n[\"UInt8\"]\n[0]\n[0]\n");
     let out = run(&e, "SELECT dummy FROM system.one").await.unwrap();
@@ -262,7 +264,7 @@ async fn outside_table_functions_are_344() {
     )
     .await
     .unwrap();
-    assert!(out.ends_with("[\"1\"]\n"), "{out}");
+    assert!(out.ends_with("[1]\n"), "{out}");
     // Others that read nothing outside are not built yet: `48`.
     assert_eq!(
         run(&e, "SELECT * FROM generateRandom('a Int8')")
@@ -311,10 +313,10 @@ async fn system_functions_list_the_engine_registry() {
     )
     .await
     .unwrap();
-    // `toStartOfDay` is not registered yet (Task 30): not offered.
+    // `toStartOfDay` is registered since Task 30, so it is listed.
     assert!(out.contains("[\"DATABASE\",\"currentDatabase\"]"), "{out}");
     assert!(out.contains("[\"version\",\"\"]"), "{out}");
-    assert!(!out.contains("toStartOfDay"), "{out}");
+    assert!(out.contains("[\"toStartOfDay\",\"\"]"), "{out}");
 }
 
 /// The cluster tables' shapes are the front's (`loams-house/src/system.rs`):
@@ -351,7 +353,8 @@ fn shapes_match_the_front() {
         } else {
             format!("{list},")
         };
-        assert_eq!(compact(&list).replace(",)", ")"), body, "{constant}");
+        // Both sides without spaces (`Map(String, String)`).
+        assert_eq!(compact(&list).replace(",)", ")"), compact(&body), "{constant}");
     }
 }
 

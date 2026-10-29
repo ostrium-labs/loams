@@ -39,6 +39,11 @@ cargo_package(
             "root": "tests/import_lsn.rs",
         },
         {
+            "name": "majors",
+            "crate": "majors",
+            "root": "tests/majors.rs",
+        },
+        {
             "name": "nvme_service",
             "crate": "nvme_service",
             "root": "tests/nvme_service.rs",

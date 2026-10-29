@@ -23,6 +23,7 @@ pub mod connect;
 pub mod customers;
 pub mod entitlements;
 pub mod error;
+pub mod house;
 pub mod lease_service;
 pub mod notify;
 pub mod openmeter;

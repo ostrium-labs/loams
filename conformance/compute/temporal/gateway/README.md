@@ -34,6 +34,7 @@ Either way, it then runs:
 |---|---|
 | `gateway_dx1_scenarios_{go,ts}` | the corpus's own generators run every DX1 scenario through the gateway |
 | `gateway_hello_{go,ts}`, `gateway_signal_{go,ts}` | §74 §13.3's DX1 exit: hello (one activity) and a signal complete |
+| `gateway_burst_{hello,timer_short}_go` | `BURST_N` (100) hello workflows, and half as many one-second timers, started at once; every result awaited with `run.Get`, whose long poll for the close event outlives the gateway's `history_wait_ms` (1 s here) |
 | `gateway_histories_replay_{go,ts}` | each SDK's replayer accepts every history the gateway wrote |
 | `gateway_profile_serving`, `gateway_profile_no_host_ports` | profile mode only: the gateway in the profile answers, and neither it nor the engine's namespace publishes a host port (the self-test's `gateway_profile_no_host_ports` checks the compose half) |
 | `gateway_dx1_differential_<lang>_<scenario>` | `compare.py`: the gateway's history equals the corpus's after `normalize.py`, a sticky queue read as its normal queue, and the SDK's name and version dropped from later tasks' `sdkMetadata` (plan ruling X1.R20) |

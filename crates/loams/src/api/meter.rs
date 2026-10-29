@@ -24,6 +24,28 @@ use super::AppState;
 /// The package (`connect.rs`'s catalogue row).
 pub const PACKAGE: &str = "loams.meter.v1";
 
+/// The meter's House user when `LOAMS_METER_HOUSE_USER` is not set.
+pub const DEFAULT_HOUSE_USER: &str = "meter";
+
+/// The `meter` role's settings (environment only for now).
+#[derive(Clone, Debug, Default)]
+pub struct MeterConfig {
+    /// Where the meter's House is (design §63 §7.5): the ClickHouse HTTP
+    /// interface (`LOAMS_METER_HOUSE_URL`, `http://house:8123`), signed in
+    /// to as the meter's own House user, which the operator maps to the
+    /// system namespace. `None`: no House side.
+    pub house_url: Option<String>,
+    /// `LOAMS_METER_HOUSE_USER` ([`DEFAULT_HOUSE_USER`]).
+    pub house_user: String,
+    /// `LOAMS_METER_HOUSE_PASSWORD_FILE`: the user's password, read at start.
+    pub house_password_file: Option<std::path::PathBuf>,
+    /// `LOAMS_METER_SECRETS_KEY_FILE`: the age identity webhook secrets are
+    /// sealed to (D2205), 0600, created on first use. Default
+    /// `<data_dir>/meter/secrets.key`. Every gateway node of a cluster needs
+    /// the same one.
+    pub secrets_key_file: Option<std::path::PathBuf>,
+}
+
 /// Whether this build serves the meter.
 pub const SERVED: bool = cfg!(feature = "meter");
 
@@ -38,6 +60,7 @@ pub(super) fn register(router: Router, state: &AppState) -> Router {
     let router = pb::CustomerServiceExt::register(std::sync::Arc::clone(&absent), router);
     let router = pb::EntitlementServiceExt::register(std::sync::Arc::clone(&absent), router);
     let router = pb::PlanServiceExt::register(std::sync::Arc::clone(&absent), router);
+    let router = pb::MeterServiceExt::register(std::sync::Arc::clone(&absent), router);
     pb::NotificationServiceExt::register(absent, router)
 }
 
@@ -217,6 +240,16 @@ impl pb::PlanService for MeterAbsent {
     }
 }
 
+impl pb::MeterService for MeterAbsent {
+    async fn query_meter(
+        &self,
+        _ctx: RequestContext,
+        _request: ServiceRequest<'_, pb::QueryMeterRequest>,
+    ) -> ServiceResult<pb::QueryMeterResponse> {
+        Err(absent("MeterService/QueryMeter"))
+    }
+}
+
 impl pb::NotificationService for MeterAbsent {
     async fn create_rule(
         &self,
@@ -278,6 +311,11 @@ mod served {
     use loams_meter::owner::{
         CONSUMER, METER_PARTITIONS, MetaLeases, OwnerError, PartitionReader,
     };
+    use loams_meter::house::{HouseUsage, RoleHouse};
+    use loams_meter::notify::MeterEvent;
+    use loams_meter::notify::sealing::AgeSealer;
+    use loams_meter::run::{MeterEventHandler, MeterEventSink, own_event, to_cloudevent};
+    use loams_meter::plans::MeterUsage;
     use loams_meter::role::{MeterRole, NoHouseYet, RoleParts};
     use loams_meter::run::{
         CLUSTER_SERVICE, CatalogInputs, CounterRuntime, CounterValues, Counters, RuntimeParts,
@@ -495,6 +533,10 @@ mod served {
                             offset: r.offset,
                         },
                     );
+                    if let Some(e) = own_event(&ce) {
+                        out.push((r.offset, e));
+                        continue;
+                    }
                     match Event::from_cloudevent(&ce, Origin::Service) {
                         Ok(e) => out.push((r.offset, e)),
                         Err(err) => tracing::warn!(
@@ -519,12 +561,76 @@ mod served {
         }
     }
 
+    /// Appends the meter's own events to `_system/_meter`, keyed by
+    /// subject (so each lands in the partition of its subject's owner). No
+    /// idempotency ledger: their ids are deterministic, and the counter
+    /// owners' recent keys and the House's `FINAL` drop a re-emission.
+    struct MeterAppender {
+        meta: Arc<dyn MetaStore>,
+        writer: loams_log::LogWriter,
+        id: tokio::sync::OnceCell<(loams_common::StreamId, u32)>,
+    }
+
+    impl std::fmt::Debug for MeterAppender {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("MeterAppender").finish_non_exhaustive()
+        }
+    }
+
+    impl MeterAppender {
+        async fn stream(&self) -> MeterResult<(loams_common::StreamId, u32)> {
+            if let Some(found) = self.id.get() {
+                return Ok(*found);
+            }
+            use loams_common::meta::{Consistency, METER_STREAM, SYSTEM_NAMESPACE};
+            let unavailable = |e: String| MeterError::Unavailable(e);
+            let ns = self
+                .meta
+                .namespace_by_name(Consistency::Local, SYSTEM_NAMESPACE)
+                .await
+                .map_err(|e| unavailable(e.to_string()))?
+                .ok_or_else(|| unavailable("the _system namespace does not exist yet".into()))?;
+            let stream = self
+                .meta
+                .stream_by_name(Consistency::Local, ns.id, METER_STREAM)
+                .await
+                .map_err(|e| unavailable(e.to_string()))?
+                .ok_or_else(|| unavailable("the _system/_meter stream does not exist yet".into()))?;
+            let found = (stream.id, stream.partitions);
+            let _ = self.id.set(found);
+            Ok(found)
+        }
+    }
+
+    #[async_trait]
+    impl MeterEventSink for MeterAppender {
+        async fn append(&self, events: Vec<MeterEvent>) -> MeterResult<()> {
+            let (id, partitions) = self.stream().await?;
+            let mut batches: std::collections::BTreeMap<u32, Vec<loams_log::Record>> =
+                std::collections::BTreeMap::new();
+            for e in &events {
+                let ce = to_cloudevent(e)?;
+                let p = loams_cloudevents::partition::partition_of(&ce, partitions);
+                batches
+                    .entry(p)
+                    .or_default()
+                    .push(loams_cloudevents::record::to_record(&ce));
+            }
+            self.writer
+                .append_many(id, batches.into_iter().collect())
+                .await
+                .map(|_| ())
+                .map_err(|e| MeterError::Unavailable(format!("appending meter events: {e}")))
+        }
+    }
+
     /// This node's meter: the role's services, the lease server and the
     /// counter runtime not yet started.
     pub struct MeterNode {
         pub role: Arc<MeterRole>,
         pub leases: Arc<LeaseServer>,
         runtime: CounterRuntime<MetaLeases>,
+        clock: loams_meter::customers::Clock,
     }
 
     impl std::fmt::Debug for MeterNode {
@@ -539,10 +645,18 @@ mod served {
     pub struct MeterRuntime {
         stop: Arc<tokio::sync::Notify>,
         task: tokio::task::JoinHandle<()>,
+        house_stop: Arc<tokio::sync::Notify>,
+        house: Option<tokio::task::JoinHandle<()>>,
     }
 
     impl MeterRuntime {
         pub async fn stop(self) {
+            self.house_stop.notify_one();
+            if let Some(house) = self.house
+                && let Err(err) = house.await
+            {
+                tracing::warn!(%err, "the meter's House schedule ended badly");
+            }
             self.stop.notify_one();
             if let Err(err) = self.task.await {
                 tracing::warn!(%err, "the meter's counter runtime ended badly");
@@ -556,9 +670,27 @@ mod served {
         pub fn start(self) -> (Arc<MeterRole>, MeterRuntime, axum::Router) {
             let stop = Arc::new(tokio::sync::Notify::new());
             let task = tokio::spawn(self.runtime.run(stop.clone()));
+            // The House schedule: schema at start, then the close job every
+            // 60 s with the period close after it.
+            let house_stop = Arc::new(tokio::sync::Notify::new());
+            let house = self
+                .role
+                .house_schedule(self.clock.clone())
+                .map(|schedule| tokio::spawn(schedule.run(house_stop.clone())));
+            if house.is_none() {
+                tracing::info!(
+                    "Loams Meter runs without its House (no LOAMS_METER_HOUSE_URL): no close \
+                     job, meter queries answer unavailable, every meter counts as used"
+                );
+            }
             (
                 self.role,
-                MeterRuntime { stop, task },
+                MeterRuntime {
+                    stop,
+                    task,
+                    house_stop,
+                    house,
+                },
                 internal_routes(self.leases),
             )
         }
@@ -594,7 +726,31 @@ mod served {
         reader: loams_log::LogReader,
         node_id: u64,
         principals: &Principals,
+        writer: loams_log::LogWriter,
+        config: &super::MeterConfig,
+        data_dir: &std::path::Path,
     ) -> Result<MeterNode, String> {
+        let key_file = config
+            .secrets_key_file
+            .clone()
+            .unwrap_or_else(|| data_dir.join("meter").join("secrets.key"));
+        let sealer = AgeSealer::from_key_file(&key_file).map_err(|e| e.to_string())?;
+        let house = Arc::new(match &config.house_url {
+            None => RoleHouse::Absent,
+            Some(url) => {
+                let password = match &config.house_password_file {
+                    Some(path) => std::fs::read_to_string(path)
+                        .map_err(|e| format!("LOAMS_METER_HOUSE_PASSWORD_FILE {}: {e}", path.display()))?
+                        .trim_end_matches(['\r', '\n'])
+                        .to_string(),
+                    None => String::new(),
+                };
+                RoleHouse::Http(
+                    loams_meter::house::HttpHouse::new(url.clone(), config.house_user.clone(), password)
+                        .map_err(|e| e.to_string())?,
+                )
+            }
+        });
         let records: Arc<dyn VersionedDoc> = Arc::new(MeterDoc(MetaDirectoryStore::with_key(
             meta.clone(),
             store.clone(),
@@ -617,11 +773,42 @@ mod served {
             vec![CLUSTER_SERVICE.to_string()],
             clock.clone(),
         ));
+        let meter_store: Arc<dyn MeterStore> = Arc::new(DocStore::new(records.clone()));
+        let usage: Arc<dyn MeterUsage> = if house.is_configured() {
+            Arc::new(HouseUsage {
+                house: house.clone(),
+                store: meter_store,
+            })
+        } else {
+            Arc::new(NoHouseYet)
+        };
+        let role = Arc::new(MeterRole::new(RoleParts {
+            records: records.clone(),
+            notifications: Arc::new(DocNotifications::new(Arc::new(notes))),
+            authorizer: principals.authz.clone(),
+            audit: Arc::new(OrgAudit(principals.directory.clone())),
+            transport: Arc::new(transport),
+            // No deployment mailer or console channel is wired yet: webhooks
+            // only.
+            mailer: None,
+            console: None,
+            random: Arc::new(|| {
+                let mut b = [0u8; 32];
+                getrandom::fill(&mut b)
+                    .unwrap_or_else(|e| panic!("OS randomness unavailable: {e}"));
+                b
+            }),
+            clock: clock.clone(),
+            values: Arc::new(CounterValues(counters.clone())),
+            usage,
+            house,
+            sealer: Arc::new(sealer),
+        }));
         let runtime = CounterRuntime::new(RuntimeParts {
             leases: MetaLeases(meta.clone()),
             me: format!("{CONSUMER}-{node_id}-{}", ulid::Ulid::generate()),
             reader: Arc::new(MeterStream {
-                meta,
+                meta: meta.clone(),
                 reader,
                 id: tokio::sync::OnceCell::new(),
                 missing_logged: std::sync::atomic::AtomicBool::new(false),
@@ -633,35 +820,23 @@ mod served {
             counters: counters.clone(),
             lease_server: leases.clone(),
             clock: clock.clone(),
+            events: Some(Arc::new(MeterAppender {
+                meta,
+                writer,
+                id: tokio::sync::OnceCell::new(),
+            })),
+            notifier: Some(Arc::new(role.notifier.clone()) as Arc<dyn MeterEventHandler>),
         });
-        let role = Arc::new(MeterRole::new(RoleParts {
-            records,
-            notifications: Arc::new(DocNotifications::new(Arc::new(notes))),
-            authorizer: principals.authz.clone(),
-            audit: Arc::new(OrgAudit(principals.directory.clone())),
-            transport: Arc::new(transport),
-            // The deployment's mailer and the console's notifications join
-            // with the notifier's consumer (part 2).
-            mailer: None,
-            console: None,
-            random: Arc::new(|| {
-                let mut b = [0u8; 32];
-                getrandom::fill(&mut b)
-                    .unwrap_or_else(|e| panic!("OS randomness unavailable: {e}"));
-                b
-            }),
-            clock,
-            values: Arc::new(CounterValues(counters)),
-            usage: Arc::new(NoHouseYet),
-        }));
         Ok(MeterNode {
             role,
             leases,
             runtime,
+            clock,
         })
     }
 
-    /// Gives a `/loams.meter.v1.*` call its [`Caller`]: the operator's own
+    /// Gives a `/loams.meter.v1.*` call, and an OpenMeter-compatible
+    /// `/api/v1/meters/*` or `/api/v1/subjects/*` one, its [`Caller`]: the operator's own
     /// credentials are [`Caller::Operator`]; anyone the org knows is the
     /// subject the authorizer answers for; anyone else has none and is
     /// refused as unauthenticated by the service.
@@ -670,7 +845,11 @@ mod served {
         mut request: axum::extract::Request,
         next: axum::middleware::Next,
     ) -> axum::response::Response {
-        if request.uri().path().starts_with("/loams.meter.v1.")
+        let path = request.uri().path();
+        let meter_path = path.starts_with("/loams.meter.v1.")
+            || path.starts_with("/api/v1/meters/")
+            || path.starts_with("/api/v1/subjects/");
+        if meter_path
             && let Some(principal) = request.extensions().get::<crate::auth::Principal>()
         {
             match standing(&principals, principal).await {

@@ -66,7 +66,7 @@ delete_one() {  # kind id name where created usd_per_hour reason
       printf '%s\t%s\t%s\n' "$5" "$(date +%s)" "$6" >>"$done_tsv"
       grep -v -P "^$kind\t$id\t" "$live" >"$live.tmp"; mv "$live.tmp" "$live"
       ;;
-    *) log "FAILED to delete $kind $id: HTTP $st $(head -c 300 "$CFB_STATE/last.body")"; return 1 ;;
+    *) log "FAILED to delete $kind $id: HTTP $st $(head -c 300 "$CFB_STATE/last.$$.body")"; return 1 ;;
   esac
 }
 
@@ -89,7 +89,12 @@ idle_check() {
   while IFS=$'\t' read -r kind id name where created deadline rate; do
     [[ "$kind" == kafka-cluster ]] || continue
     awk -v r="$rate" 'BEGIN{exit !(r>0)}' || continue
-    (( now - created >= mins * 60 )) || continue
+    # idle is counted from when the cluster became usable: cfb.sh writes
+    # clusters/<name>/cluster.json once it is PROVISIONED (Dedicated can take an hour)
+    local cj="$CFB_STATE/clusters/$name/cluster.json" ready
+    [[ -s "$cj" ]] || continue
+    ready="$(stat -c %Y "$cj")"; (( ready < created )) && ready="$created"
+    (( now - ready >= mins * 60 )) || continue
     b="$(cc POST https://api.telemetry.confluent.cloud/v2/metrics/cloud/query "$(jq -cn --arg c "$id" \
         --arg i "$(date -u -d "@$((now - mins * 60))" +%FT%TZ)/$(date -u -d "@$now" +%FT%TZ)" \
         '{aggregations:[{metric:"io.confluent.kafka.server/received_bytes"}], filter:{field:"resource.kafka.id",op:"EQ",value:$c}, granularity:"ALL", intervals:[$i]}')" \

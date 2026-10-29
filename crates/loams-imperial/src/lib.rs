@@ -9,6 +9,9 @@
 
 use serde::{Deserialize, Serialize};
 
+mod task;
+pub use task::{Task, TaskBudget, TaskError, TaskState};
+
 /// A grant identifying the holder and fencing epoch of one lease acquisition.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct LeaseToken {
@@ -164,7 +167,22 @@ impl Lease {
         self.grant = None;
         Ok(())
     }
+
+    // Called only after the supervisor's lease is verified in the same transaction.
+    pub(crate) fn revoke_by_supervisor(&mut self, now_ms: u64) -> Result<(), LeaseError> {
+        if now_ms < self.last_transition_ms {
+            return Err(LeaseError::ClockRegression);
+        }
+        self.epoch = self.epoch.checked_add(1).ok_or(LeaseError::EpochOverflow)?;
+        self.last_transition_ms = now_ms;
+        self.grant = None;
+        Ok(())
+    }
 }
 
 /// Durable lease and checkpoint transactions.
 pub mod durable;
+/// Leader election and transactional cancellation.
+pub mod supervisor;
+/// Transactional task state and budget accounting.
+pub mod task_store;

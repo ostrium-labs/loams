@@ -16,6 +16,7 @@ use loams_kv::{Txn, TxnError, TxnOptions};
 use crate::frame::{Value, parse_int};
 use crate::server::{Conn, Shared};
 
+pub(crate) mod batch;
 mod conn;
 mod counter;
 mod hash;

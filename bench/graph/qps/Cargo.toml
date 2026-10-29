@@ -1,0 +1,23 @@
+[package]
+name = "graph-qps-bench"
+description = "BQ1: Loams Graph (embedded Grafeo) query throughput and latency: point lookups, 1-3 hop traversals and memory recall, on 1, 2 or 4 shards."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[[bin]]
+name = "graph-qps-bench"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+grafeo.workspace = true
+loams-graph = { path = "../../../crates/loams-graph" }
+loams-proto.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

@@ -602,25 +602,25 @@ mod tests {
         let s = arr(ChType::String);
         assert_eq!(
             f(Kind::Map)
-                .result_type(&[s.clone()], Some(&ChType::UInt64))
+                .result_type(std::slice::from_ref(&s), Some(&ChType::UInt64))
                 .unwrap(),
             arr(ChType::UInt64)
         );
         assert_eq!(
             f(Kind::Filter)
-                .result_type(&[s.clone()], Some(&ChType::UInt8))
+                .result_type(std::slice::from_ref(&s), Some(&ChType::UInt8))
                 .unwrap(),
             s
         );
         assert_eq!(
             f(Kind::FirstIndex)
-                .result_type(&[s.clone()], Some(&ChType::UInt8))
+                .result_type(std::slice::from_ref(&s), Some(&ChType::UInt8))
                 .unwrap(),
             ChType::UInt32
         );
         assert_eq!(
             f(Kind::First)
-                .result_type(&[s.clone()], Some(&ChType::Bool))
+                .result_type(std::slice::from_ref(&s), Some(&ChType::Bool))
                 .unwrap(),
             ChType::String
         );
@@ -632,14 +632,14 @@ mod tests {
         );
         assert_eq!(
             f(Kind::Filter)
-                .result_type(&[s.clone()], Some(&ChType::String))
+                .result_type(std::slice::from_ref(&s), Some(&ChType::String))
                 .unwrap_err()
                 .code,
             43
         );
         assert_eq!(
             f(Kind::Map)
-                .result_type(&[s.clone()], None)
+                .result_type(std::slice::from_ref(&s), None)
                 .unwrap_err()
                 .code,
             42
@@ -657,11 +657,12 @@ mod tests {
         let m = ChType::Map(Box::new(ChType::String), Box::new(ChType::UInt64));
         let f = ArrayHof::new("mapFilter", "mapFilter", Kind::MapFilter);
         assert_eq!(
-            f.result_type(&[m.clone()], Some(&ChType::UInt8)).unwrap(),
+            f.result_type(std::slice::from_ref(&m), Some(&ChType::UInt8))
+                .unwrap(),
             m
         );
         let field = Arc::new(to_arrow("m", &m).unwrap());
-        assert_eq!(f.parameters(&[field.clone()]).unwrap().len(), 2);
+        assert_eq!(f.parameters(std::slice::from_ref(&field)).unwrap().len(), 2);
         let t = ArrayHof::new(MAP_FILTER_TUPLE, "mapFilter", Kind::MapFilterTuple);
         let p = t.parameters(&[field]).unwrap();
         assert_eq!(p.len(), 1);

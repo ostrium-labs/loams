@@ -8,6 +8,8 @@ license.workspace = true
 authors.workspace = true
 
 [dependencies]
+# Webhook secrets sealed at rest, as pg-control seals role passwords (D2205).
+age.workspace = true
 async-trait.workspace = true
 axum.workspace = true
 base64.workspace = true
