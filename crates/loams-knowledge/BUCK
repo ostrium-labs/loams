@@ -24,6 +24,11 @@ cargo_package(
     },
     tests = [
         {
+            "name": "cli",
+            "crate": "cli",
+            "root": "tests/cli.rs",
+        },
+        {
             "name": "manifest",
             "crate": "manifest",
             "root": "tests/manifest.rs",
@@ -45,6 +50,7 @@ cargo_package(
         "//crates/loams-walrus:loams-walrus",
         "//third-party/rust:async-trait",
         "//third-party/rust:bytes",
+        "//third-party/rust:clap",
         "//third-party/rust:futures",
         "//third-party/rust:hex",
         "//third-party/rust:serde",
@@ -56,10 +62,10 @@ cargo_package(
         "//third-party/rust:tokio",
         "//third-party/rust:toml",
         "//third-party/rust:tracing",
+        "//third-party/rust:url",
     ],
     dev_deps = [
         "//third-party/rust:axum",
-        "//third-party/rust:url",
     ],
     rustc_flags = [
         "-Funsafe_code",

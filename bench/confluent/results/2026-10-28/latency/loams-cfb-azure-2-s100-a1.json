@@ -1,0 +1,70 @@
+{
+ "run": "132644",
+ "target": "loams-cfb-azure-2",
+ "kind": "confluent-cloud-standard",
+ "cloud": "azure",
+ "region": "centralindia",
+ "scenario": "latency",
+ "started_utc": "2026-10-28T07:56:44Z",
+ "client": "librdkafka 2.16.0",
+ "driver_host": "owner laptop, India (carrier uplink; WAN-bound)",
+ "params": {
+  "target": "loams-cfb-azure-2",
+  "kind": "confluent-cloud-standard",
+  "bootstrap": "pkc-7prvp.centralindia.azure.confluent.cloud:9092",
+  "cloud": "azure",
+  "region": "centralindia",
+  "run": "132644",
+  "no_otel": false,
+  "trace_sample": 0.01,
+  "topic": null,
+  "keep_topic": false,
+  "partitions": 3,
+  "retention_ms": 3600000,
+  "fetch_wait_ms": 50,
+  "settle": 3.0,
+  "drain_s": 60,
+  "no_consume": false,
+  "consume_bootstrap": null,
+  "consume_topic": null,
+  "scenario": "latency",
+  "size": 100,
+  "acks": "1",
+  "rate": 10.0,
+  "seconds": 60.0,
+  "linger_ms": 5,
+  "batch_size": 1048576,
+  "compression": "none",
+  "max_mb": 200
+ },
+ "ok": true,
+ "seconds": 298.1,
+ "result": {
+  "topic": "loams-cfb-132644-latency",
+  "partitions": 3,
+  "size": 100,
+  "acks": "1",
+  "linger_ms": 5,
+  "rate_target": 10.0,
+  "seconds": 180.34,
+  "sent": 600,
+  "acked": 0,
+  "unacked_at_flush": 0,
+  "errors": 600,
+  "error_samples": [
+   "KafkaError{code=_MSG_TIMED_OUT,val=-192,str=\"Local: Message timed out\"}"
+  ],
+  "produce_msgs_per_s": 0.0,
+  "produce_mb_per_s": 0.0,
+  "send_phase_s": 60.0,
+  "produce_latency_ms": {
+   "n": 0
+  },
+  "e2e_latency_ms": {
+   "n": 0
+  },
+  "consumed": 0,
+  "consumer_duplicates": 0,
+  "lost_after_ack": 0
+ }
+}

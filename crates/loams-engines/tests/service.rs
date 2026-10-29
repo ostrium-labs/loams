@@ -366,6 +366,7 @@ async fn sql_and_spark_surfaces_by_kind() {
                 entrypoint: "s3://jobs/etl.py".into(),
                 args: vec!["--day".into(), "2026-10-27".into()],
                 conf: BTreeMap::new(),
+                extra: serde_json::Map::new(),
             },
         )
         .await

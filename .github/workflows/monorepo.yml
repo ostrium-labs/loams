@@ -410,6 +410,21 @@ jobs:
       # an available iPhone, and runs unsigned xcodebuild test (which builds the app).
       - run: pnpm nx run mobile-ios:test --outputStyle=static
 
+  mobile-ios-core:
+    name: "Mobile: iOS core on Linux"
+    needs: changes
+    # AP3 Ruling 6: LoamsCore builds with swift-crypto on Linux, so the golden fixtures it
+    # shares with Android and the mock are checked on every iOS change, drafts included.
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.ios == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    container: swift:6.2-noble
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: swift test --package-path apps/mobile/ios/Packages/LoamsCore
+
   mobile-contracts:
     name: "Mobile: proto contracts"
     needs: changes
@@ -440,7 +455,7 @@ jobs:
   summary:
     name: Web and mobile required
     if: always()
-    needs: [changes, web, plugins, npm-licences, mobile-mock, mobile-android, mobile-conformance, mobile-ios, mobile-contracts]
+    needs: [changes, web, plugins, npm-licences, mobile-mock, mobile-android, mobile-conformance, mobile-ios, mobile-ios-core, mobile-contracts]
     runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 5
     steps:
@@ -461,7 +476,7 @@ jobs:
               'web': 'web', 'plugins': 'plugins', 'npm-licences': 'npm-licences',
               'mobile-mock': 'mock', 'mobile-android': 'android',
               'mobile-conformance': 'conformance', 'mobile-ios': 'ios',
-              'mobile-contracts': 'contracts',
+              'mobile-ios-core': 'ios', 'mobile-contracts': 'contracts',
           }
           manual = '${{ github.event_name }}' == 'workflow_dispatch'
           failed = []

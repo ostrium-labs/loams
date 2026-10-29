@@ -1,0 +1,187 @@
+{
+  "namespace": "corpus-ruby-1793191657",
+  "language": "ruby",
+  "scenarios": [
+    {
+      "scenario": "hello",
+      "workflow_id": "corpus-ruby-hello",
+      "expected": [],
+      "result": "\"hello corpus\""
+    },
+    {
+      "scenario": "two_activities_sequential",
+      "workflow_id": "corpus-ruby-two_activities_sequential",
+      "expected": [],
+      "result": "\"hello one, hello two\""
+    },
+    {
+      "scenario": "activity_parallel_fanout_10",
+      "workflow_id": "corpus-ruby-activity_parallel_fanout_10",
+      "expected": [],
+      "result": "[\"hello n0\",\"hello n1\",\"hello n2\",\"hello n3\",\"hello n4\",\"hello n5\",\"hello n6\",\"hello n7\",\"hello n8\",\"hello n9\"]"
+    },
+    {
+      "scenario": "signal_then_complete",
+      "workflow_id": "corpus-ruby-signal_then_complete",
+      "expected": [],
+      "result": "\"got s\""
+    },
+    {
+      "scenario": "query_while_running",
+      "workflow_id": "corpus-ruby-query_while_running",
+      "expected": [
+        "query state=waiting"
+      ],
+      "result": "\"done\""
+    },
+    {
+      "scenario": "cancel_requested",
+      "workflow_id": "corpus-ruby-cancel_requested",
+      "expected": [
+        "Temporalio::Error::WorkflowFailedError: Temporalio::Error::CanceledError: Workflow execution canceled"
+      ]
+    },
+    {
+      "scenario": "terminated",
+      "workflow_id": "corpus-ruby-terminated",
+      "expected": [
+        "Temporalio::Error::WorkflowFailedError: Temporalio::Error::TerminatedError: corpus terminates it"
+      ]
+    },
+    {
+      "scenario": "workflow_failed_application_error",
+      "workflow_id": "corpus-ruby-workflow_failed_application_error",
+      "expected": [
+        "Temporalio::Error::ApplicationError: boom (CorpusBoom)"
+      ]
+    },
+    {
+      "scenario": "activity_heartbeat_details",
+      "workflow_id": "corpus-ruby-activity_heartbeat_details",
+      "expected": [],
+      "result": "3"
+    },
+    {
+      "scenario": "timer_short",
+      "workflow_id": "corpus-ruby-timer_short",
+      "expected": [],
+      "result": "null"
+    },
+    {
+      "scenario": "timer_cancelled",
+      "workflow_id": "corpus-ruby-timer_cancelled",
+      "expected": [],
+      "result": "\"cancelled\""
+    },
+    {
+      "scenario": "activity_retry_backoff_3_attempts",
+      "workflow_id": "corpus-ruby-activity_retry_backoff_3_attempts",
+      "expected": [],
+      "result": "3"
+    },
+    {
+      "scenario": "activity_start_to_close_timeout",
+      "workflow_id": "corpus-ruby-activity_start_to_close_timeout",
+      "expected": [],
+      "result": "\"TIMEOUT_TYPE_START_TO_CLOSE\""
+    },
+    {
+      "scenario": "activity_schedule_to_start_timeout",
+      "workflow_id": "corpus-ruby-activity_schedule_to_start_timeout",
+      "expected": [],
+      "result": "\"TIMEOUT_TYPE_SCHEDULE_TO_START\""
+    },
+    {
+      "scenario": "activity_heartbeat_timeout",
+      "workflow_id": "corpus-ruby-activity_heartbeat_timeout",
+      "expected": [],
+      "result": "\"TIMEOUT_TYPE_HEARTBEAT\""
+    },
+    {
+      "scenario": "signal_with_start",
+      "workflow_id": "corpus-ruby-signal_with_start",
+      "expected": [],
+      "result": "\"started with s\""
+    },
+    {
+      "scenario": "child_workflow",
+      "workflow_id": "corpus-ruby-child_workflow",
+      "expected": [],
+      "result": "\"hello child\""
+    },
+    {
+      "scenario": "child_workflow_cancelled",
+      "workflow_id": "corpus-ruby-child_workflow_cancelled",
+      "expected": [],
+      "result": "\"child cancelled\""
+    },
+    {
+      "scenario": "continue_as_new_3",
+      "workflow_id": "corpus-ruby-continue_as_new_3",
+      "expected": [],
+      "result": "3"
+    },
+    {
+      "scenario": "id_reuse_allow_duplicate_failed_only",
+      "workflow_id": "corpus-ruby-id_reuse_allow_duplicate_failed_only",
+      "expected": [
+        "the first run failed; the second started with the same ID"
+      ],
+      "result": "\"second run\""
+    },
+    {
+      "scenario": "id_conflict_fail",
+      "workflow_id": "corpus-ruby-id_conflict_fail",
+      "expected": [
+        "the second start was refused: WorkflowExecutionAlreadyStarted"
+      ],
+      "result": "null"
+    },
+    {
+      "scenario": "local_activity",
+      "workflow_id": "corpus-ruby-local_activity",
+      "expected": [],
+      "result": "\"hello local\""
+    },
+    {
+      "scenario": "side_effect_and_version_marker",
+      "workflow_id": "corpus-ruby-side_effect_and_version_marker",
+      "expected": [],
+      "result": "\"version 1\""
+    },
+    {
+      "scenario": "search_attributes_upsert",
+      "workflow_id": "corpus-ruby-search_attributes_upsert",
+      "expected": [],
+      "result": "null"
+    },
+    {
+      "scenario": "memo",
+      "workflow_id": "corpus-ruby-memo",
+      "expected": [],
+      "result": "null"
+    },
+    {
+      "scenario": "large_payload_1mb",
+      "workflow_id": "corpus-ruby-large_payload_1mb",
+      "expected": [],
+      "result": "1048576"
+    },
+    {
+      "scenario": "update_accepted_completed",
+      "workflow_id": "corpus-ruby-update_accepted_completed",
+      "expected": [
+        "update returned 2"
+      ],
+      "result": "\"total 2\""
+    },
+    {
+      "scenario": "update_rejected",
+      "workflow_id": "corpus-ruby-update_rejected",
+      "expected": [
+        "update rejected: increment must not be negative"
+      ],
+      "result": "\"total 0\""
+    }
+  ]
+}

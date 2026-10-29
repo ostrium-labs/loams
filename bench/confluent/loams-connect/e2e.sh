@@ -38,7 +38,7 @@ dlq_hw0() { engine_call FetchCloudEvents "{\"namespace\":\"$CFB_NAMESPACE\",\"st
   | python3 -I -c 'import json,sys; print(int(json.load(sys.stdin).get("highWatermark",0)))' 2>/dev/null || echo 0; }
 dlq_in0=$(dlq_hw0 cfb-in-dlq); dlq_out0=$(dlq_hw0 cfb-out-dlq)
 "${PY[@]}" poll "$RUN" "$CFB_N" "$W/loams.jsonl" "$start" 2>"$W/poll.err" & pids+=($!)
-kafka_tool kafka-console-consumer.sh --topic "$CFB_TOPIC_OUT" --from-beginning \
+kafka_tool_sink kafka-console-consumer.sh --topic "$CFB_TOPIC_OUT" --from-beginning \
   --isolation-level read_committed --formatter-property print.timestamp=true \
   >"$W/out.tsv" 2>"$W/consumer.err" & pids+=($!)
 sleep 3

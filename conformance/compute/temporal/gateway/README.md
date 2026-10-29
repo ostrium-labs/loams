@@ -97,7 +97,7 @@ SDK_LEGS=java conformance/compute/temporal/gateway/run.sh --profile
 ```sh
 SDK_LEGS=python conformance/compute/temporal/gateway/run.sh --profile
 SDK_LEGS=rust conformance/compute/temporal/gateway/run.sh --profile
-| PHP | `legs/php.sh` (`corpus/workers/php`, RoadRunner) | temporal/sdk 2.19.0, RoadRunner 2025.1.15, PHP 8.4.25, PECL grpc 1.84.0 (pins.env) | not yet run: `temporal-sdk-php.yml` (D2147) |
+| PHP | `legs/php.sh` (`corpus/workers/php`, RoadRunner) | temporal/sdk 2.19.0, RoadRunner 2025.1.15, PHP 8.4.25, PECL grpc 1.84.0 (pins.env) | `temporal-sdk-php.yml` run [40686083193](https://github.com/ostrium-labs/loams/actions/runs/40686083193) (2026-10-28, on dev): the 9 DX1 scenarios, hello, signal and the replayer (9/9) pass on the profile, and the 9 differentials against that run's start-dev generation pass; the guide's matrix column waits for a committed run (D2147) |
 
 ```sh
 SDK_LEGS=python conformance/compute/temporal/gateway/run.sh --profile
@@ -110,5 +110,5 @@ is RoadRunner's Go SDK running PHP workflow code, so the gateway sees the Go
 SDK's RPCs, and the PHP `WorkflowReplayer` replays through RoadRunner (which
 dials the frontend at start). `temporal-sdk-php.yml` also diffs the gateway's
 PHP histories against a start-dev generation made in the same run
-(`php-vs-upstream.junit.xml`) until `corpus/histories/php/` is committed.
+(`php-vs-upstream.junit.xml`); `corpus/histories/php/` is that run's start-dev generation (28 scenarios, 32 histories, replayed 32/32 by the PHP replayer).
 
