@@ -10672,6 +10672,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-transfer"
+version = "0.1.3"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "futures",
+ "hex",
+ "loams-common",
+ "loams-meta",
+ "loams-store",
+ "object_store 0.14.2",
+ "rand 0.9.5",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "ulid 3.0.0",
+]
+
+[[package]]
 name = "loams-transport"
 version = "0.1.3"
 dependencies = [
