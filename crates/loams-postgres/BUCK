@@ -33,6 +33,11 @@ cargo_package(
             "crate": "it_deploy_neon",
             "root": "tests/it_deploy_neon.rs",
         },
+        {
+            "name": "majors",
+            "crate": "majors",
+            "root": "tests/majors.rs",
+        },
     ],
     deps = [
         "//crates/loams-proto:loams-proto",
@@ -48,7 +53,11 @@ cargo_package(
     dev_deps = [
         "//third-party/rust:axum",
         "//third-party/rust:tokio",
+        "//third-party/rust:toml",
     ],
+    extra_srcs = {
+        "deploy/pins/loams-postgres-images.toml": "//:file=deploy+pins+loams-postgres-images.toml",
+    },
     rustc_flags = [
         "-Funsafe_code",
         "-Wmissing_debug_implementations",

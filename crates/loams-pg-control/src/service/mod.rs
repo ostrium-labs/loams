@@ -114,9 +114,11 @@ impl fmt::Debug for Clock {
 /// The service's defaults and limits.
 #[derive(Clone)]
 pub struct ServiceConfig {
-    /// The Postgres major a create without one gets (Task 0 ruling 7: 17).
+    /// The Postgres major a create without one gets: the pin file's
+    /// `[majors] default` (`loams_postgres::majors::DEFAULT`, D1114).
     pub default_pg_version: u32,
-    /// The majors a project may have.
+    /// The majors a new project may have: the pin file's `[majors]
+    /// supported` (`loams_postgres::majors::SUPPORTED`, D1114).
     pub pg_versions: Vec<u32>,
     pub default_region: String,
     /// The `loams-wal` pool a create without one gets.
@@ -156,8 +158,8 @@ impl fmt::Debug for ServiceConfig {
 impl Default for ServiceConfig {
     fn default() -> Self {
         ServiceConfig {
-            default_pg_version: 17,
-            pg_versions: vec![17],
+            default_pg_version: loams_postgres::majors::DEFAULT,
+            pg_versions: loams_postgres::majors::SUPPORTED.to_vec(),
             default_region: "local".into(),
             default_wal_pool: "default".into(),
             default_history_retention: Duration::from_secs(7 * 24 * 3600),
@@ -698,4 +700,19 @@ fn check_namespace(namespace: &str) -> Result<(), ServiceError> {
 /// A duration in the proto's JSON form, for error metadata: `604800s`.
 fn seconds(s: u64) -> String {
     format!("{s}s")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// D1114: the offered majors come from the pin file through
+    /// `loams_postgres::majors`, not from a hard-coded list.
+    #[test]
+    fn default_config_majors_come_from_majors_rs() {
+        let c = ServiceConfig::default();
+        assert_eq!(c.default_pg_version, loams_postgres::majors::DEFAULT);
+        assert_eq!(c.pg_versions, loams_postgres::majors::SUPPORTED);
+        assert!(c.pg_versions.contains(&c.default_pg_version));
+    }
 }
