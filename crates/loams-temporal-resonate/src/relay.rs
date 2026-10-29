@@ -8,13 +8,8 @@
 //! promise; it is sent once its time has come. Each pass claims the batch
 //! plus the rows the previous pass deferred, so deferred rows at the head of
 //! the outbox never starve the rest.
-//!
-//! Rows of different promises are independent, so a pass sends them
-//! concurrently (up to [`RelayConfig::concurrency`] at once); the rows of one
-//! promise (a create, then its settle) are sent in order, and a row that got
-//! no answer holds back the later rows of its promise only.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::future::Future;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -142,18 +137,11 @@ pub struct RelayConfig {
 impl Default for RelayConfig {
     fn default() -> Self {
         Self {
-            batch: 256,
+            batch: 64,
             unavailable_backoff: Duration::from_millis(500),
             concurrency: 64,
         }
     }
-}
-
-/// What sending one promise's rows came to.
-#[derive(Default)]
-struct GroupOutcome {
-    done: Vec<i64>,
-    unavailable: bool,
 }
 
 /// The outbox relay (module docs).
@@ -226,8 +214,6 @@ impl Relay {
         };
         let defer = self.durability.delay_support() == DelaySupport::Defer;
         let now = self.durability.now_ms();
-        // Deferral first, in outbox order: a row not yet due holds back every
-        // later row of its promise.
         let mut held: HashSet<&str> = HashSet::new();
         // The rows to send now (indices into `rows`), grouped by promise in
         // claim order. Indices, not references: the stream's closure then takes
