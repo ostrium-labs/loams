@@ -43,7 +43,7 @@ if [[ $skip != *,suite,* ]]; then
     # integration/ module (which needs mockery's generated mocks) is not run
     # (DX1 ruling T5.R7).
     cd /work/go/dbos
-    timeout 3000 /root/go/bin/gotestsum --junitfile /work/go.junit.xml -- -count=1 -timeout 45m ./... >/work/go.test.log 2>&1
+    timeout 3000 \$(go env GOPATH)/bin/gotestsum --junitfile /work/go.junit.xml -- -count=1 -timeout 45m ./... >/work/go.test.log 2>&1
   "
   set -e
   dc exec -T dbos-go cat /work/go.junit.xml >"$OC_OUT/$suite-suite.junit.tmp" 2>/dev/null || true

@@ -1,0 +1,96 @@
+syntax = "proto3";
+
+// Loams Meter's meters (design §63 §8, §17.1; ME1 Task 8): querying a
+// meter's usage from the House windows. The meter definitions themselves
+// (CreateMeter, GetMeter, ListMeters, UpdateMeter, ArchiveMeter) join this
+// service when they are served; meters come from the plans' YAML today
+// (§63 §22).
+//
+// `QueryMeter` answers what OpenMeter's `GET /api/v1/meters/{slug}/query`
+// answers, through the same code (`loams_meter_house::query_meter`): closed
+// minute windows up to `as_of` (the latest closed minute), raw events after
+// it, and every window that reaches past `as_of` marked `provisional`.
+//
+// Authorization (§63 §17.1): `meter_admin` (`can_manage_meters` on
+// `platform:default`) may query any subject; a `billing_viewer` of an org
+// (`can_view_billing`) may query the subjects of that org's customers, and
+// must name them.
+package loams.meter.v1;
+
+import "google/protobuf/timestamp.proto";
+import "loams/options/v1/options.proto";
+
+// Meters: usage queries.
+service MeterService {
+  option (loams.options.v1.module) = {
+    name: "meter.meters"
+    summary: "Meter usage queries over the House windows."
+  };
+
+  // A meter's usage over `[from, to)`, by window, subject and group-by
+  // dimension.
+  rpc QueryMeter(QueryMeterRequest) returns (QueryMeterResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+    option (loams.options.v1.facade) = {name: "query"};
+  }
+}
+
+// The windows of a query (OpenMeter's `windowSize`).
+enum WindowSize {
+  // One window over the whole range.
+  WINDOW_SIZE_UNSPECIFIED = 0;
+  WINDOW_SIZE_MINUTE = 1;
+  WINDOW_SIZE_HOUR = 2;
+  WINDOW_SIZE_DAY = 3;
+  WINDOW_SIZE_MONTH = 4;
+}
+
+// One dimension filter: the dimension is one of `values`.
+message DimensionFilter {
+  string dimension = 1;
+  repeated string values = 2;
+}
+
+message QueryMeterRequest {
+  // The meter's slug.
+  string meter = 1;
+  // The range, `[from, to)`. `to` unset means now.
+  google.protobuf.Timestamp from = 2;
+  google.protobuf.Timestamp to = 3;
+  WindowSize window_size = 4;
+  // Only `UTC` (or empty): windows are UTC-aligned.
+  string window_time_zone = 5;
+  // Only these subjects. Required unless the caller is a meter admin.
+  repeated string subjects = 6;
+  // Rows per subject and per these dimensions of the meter; `subject` may be
+  // named here too.
+  repeated string group_by = 7;
+  repeated DimensionFilter filters = 8;
+}
+
+// One dimension's value in a row.
+message DimensionValue {
+  string dimension = 1;
+  string value = 2;
+}
+
+message MeterQueryRow {
+  // The aggregated value: a decimal with up to nine fractional digits.
+  string value = 1;
+  google.protobuf.Timestamp window_start = 2;
+  google.protobuf.Timestamp window_end = 3;
+  // Empty when the rows are not per subject.
+  string subject = 4;
+  repeated DimensionValue group_by = 5;
+  // The window reaches past `as_of`: its value may still change.
+  bool provisional = 6;
+}
+
+message QueryMeterResponse {
+  google.protobuf.Timestamp from = 1;
+  google.protobuf.Timestamp to = 2;
+  WindowSize window_size = 3;
+  // The latest closed minute; unset before the meter's first close run.
+  google.protobuf.Timestamp as_of = 4;
+  repeated MeterQueryRow rows = 5;
+}

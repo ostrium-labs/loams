@@ -1,0 +1,56 @@
+# CFB: the HE0 SigNoz collector pipelines (conformance/clickhouse/apps/signoz)
+# with OTLP gRPC added for the Loams engine and connect role. Collector
+# configuration, not SigNoz source.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+processors:
+  batch:
+    send_batch_size: 10000
+    timeout: 2s
+  signozspanmetrics/delta:
+    metrics_exporter: signozclickhousemetrics
+    metrics_flush_interval: 10s
+    latency_histogram_buckets: [1ms, 10ms, 100ms, 250ms, 500ms, 1000ms, 5s]
+    dimensions_cache_size: 100000
+    aggregation_temporality: AGGREGATION_TEMPORALITY_DELTA
+    enable_exp_histogram: true
+    dimensions:
+      - name: service.namespace
+        default: default
+      - name: deployment.environment
+        default: default
+      - name: signoz.collector.id
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+exporters:
+  clickhousetraces:
+    datasource: ${env:SIGNOZ_CH_BASE}/signoz_traces${env:SIGNOZ_CH_OPTIONS}
+    low_cardinal_exception_grouping: ${env:LOW_CARDINAL_EXCEPTION_GROUPING}
+    use_new_schema: true
+  signozclickhousemetrics:
+    dsn: ${env:SIGNOZ_CH_BASE}/signoz_metrics${env:SIGNOZ_CH_OPTIONS}
+  clickhouselogsexporter:
+    dsn: ${env:SIGNOZ_CH_BASE}/signoz_logs${env:SIGNOZ_CH_OPTIONS}
+    timeout: 10s
+    use_new_schema: true
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [signozspanmetrics/delta, batch]
+      exporters: [clickhousetraces]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [signozclickhousemetrics]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [clickhouselogsexporter]

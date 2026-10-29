@@ -134,6 +134,7 @@ jobs:
           exit 1
       - name: generate-php.sh (generate, export, replay)
         run: |
+          set -o pipefail
           mkdir -p "$OC_OUT/php-upstream"
           CORPUS_SERVER=start-dev conformance/compute/temporal/corpus/generate-php.sh --out "$OC_OUT/php-upstream" \
             2>&1 | tee "$OC_OUT/php-upstream/generate.log"

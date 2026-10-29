@@ -1,0 +1,67 @@
+{
+  "name": "@loams/plugin-engines",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Managed engines (design 81, preview): RisingWave, Flink SQL and Spark instances per Loams namespace, their lifecycle, a SQL workspace and Spark sessions and jobs, over the /v1/namespaces/{ns}/engines API.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./src/index.tsx",
+      "default": "./src/index.tsx"
+    },
+    "./package.json": "./package.json"
+  },
+  "loams": {
+    "plugin": {
+      "kind": "console",
+      "entry": ".",
+      "tier": "first-party",
+      "inject": [
+        "router",
+        "slots",
+        "platform"
+      ],
+      "provides": [],
+      "slots": [
+        "console.page",
+        "shell.nav.section"
+      ],
+      "permissions": [],
+      "requires": {
+        "console": "^0.1.0"
+      },
+      "editions": [
+        "oss",
+        "desktop",
+        "cloud"
+      ]
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vp test run"
+  },
+  "dependencies": {
+    "@loams/console-host": "workspace:*",
+    "@loams/cordis": "workspace:*",
+    "@loams/desktop-ui": "workspace:*",
+    "@loams/ui": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": ">=19"
+  },
+  "devDependencies": {
+    "@testing-library/react": "16.3.3",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "jsdom": "30.1.2",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "typescript": "5.9.3",
+    "vite": "catalog:",
+    "vitest": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

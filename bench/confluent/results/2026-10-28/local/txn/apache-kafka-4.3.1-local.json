@@ -1,0 +1,78 @@
+{
+ "run": "175647",
+ "target": "apache-kafka-4.3.1-local",
+ "kind": "apache-kafka-local",
+ "cloud": "local",
+ "region": "laptop",
+ "scenario": "txn",
+ "started_utc": "2026-10-28T12:26:47Z",
+ "client": "librdkafka 2.16.0",
+ "driver_host": "owner laptop (local)",
+ "params": {
+  "target": "apache-kafka-4.3.1-local",
+  "kind": "apache-kafka-local",
+  "bootstrap": "127.0.0.1:39092",
+  "cloud": "local",
+  "region": "laptop",
+  "run": "175647",
+  "no_otel": false,
+  "trace_sample": 0.01,
+  "topic": null,
+  "keep_topic": false,
+  "partitions": 3,
+  "retention_ms": 3600000,
+  "fetch_wait_ms": 50,
+  "settle": 3.0,
+  "drain_s": 60,
+  "no_consume": false,
+  "consume_bootstrap": null,
+  "consume_topic": null,
+  "scenario": "txn",
+  "txns": 60,
+  "msgs_per_txn": 10,
+  "size": 512,
+  "abort_every": 5,
+  "linger_ms": 5
+ },
+ "ok": true,
+ "seconds": 75.0,
+ "result": {
+  "topic": "loams-cfb-175647-txn",
+  "txns": 60,
+  "msgs_per_txn": 10,
+  "size": 512,
+  "abort_every": 5,
+  "seconds": 60.01,
+  "init_transactions_ms": 60.0,
+  "commit_latency_ms": {
+   "n": 0
+  },
+  "abort_latency_ms": {
+   "n": 0
+  },
+  "txn_latency_ms": {
+   "n": 0
+  },
+  "txn_per_s": 0.0,
+  "errors": 60,
+  "error_samples": [
+   "KafkaError{code=_TIMED_OUT,val=-185,str=\"Failed to flush all outstanding messages within the API timeout: 10 message(s) remaining\"}",
+   "KafkaError{code=_CONFLICT,val=-173,str=\"Conflicting commit_transaction API call is already in progress\"}",
+   "KafkaError{code=_CONFLICT,val=-173,str=\"Conflicting commit_transaction API call is already in progress\"}",
+   "KafkaError{code=_CONFLICT,val=-173,str=\"Conflicting commit_transaction API call is already in progress\"}",
+   "KafkaError{code=_CONFLICT,val=-173,str=\"Conflicting commit_transaction API call is already in progress\"}"
+  ],
+  "eos": {
+   "committed": 0,
+   "aborted": 0,
+   "read_committed_seen": 0,
+   "read_committed_missing": 0,
+   "read_committed_saw_aborted": 0,
+   "read_committed_duplicates": 0,
+   "read_uncommitted_seen": 0,
+   "read_uncommitted_saw_aborted": 0,
+   "pass": false,
+   "aborted_reached_broker": true
+  }
+ }
+}

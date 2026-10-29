@@ -1499,7 +1499,7 @@ mod close_tests {
         assert_eq!(run.summary().closed_to, closed_to);
         assert!(touched.contains(&format!("time < {}", at64(closed_to))));
         // Two minutes in one hour.
-        let m1 = 1_792_400_040 - 1_792_400_040 % 60;
+        let m1 = 1_792_400_040; // 08:54, on a minute
         let m2 = m1 + 60;
         let mut statements = Vec::new();
         let mut answer = Some(format!("{m1}\n{m2}\n"));

@@ -393,6 +393,7 @@ pub const PROTO_PACKAGES: &[&str] = &[
     "loams.live.v1",
     "loams.live.worker.v1",
     "loams.memory.v1",
+    "loams.meter.v1",
     "loams.notifications.v1",
     "loams.operations.v1",
     "loams.options.v1",
@@ -683,6 +684,81 @@ pub static MODULES: &[ModuleBinding] = &[
             CallBinding { module: "live.admin", name: "list_deployments", proto_name: "listDeployments", method: "ListDeployments", rpc: "loams.live.v1.LiveAdminService/ListDeployments", service: "loams.live.v1.LiveAdminService", package: "loams.live.v1", keyed: false, idempotency: Idempotency::None, retry: Retry::Safe, streaming: Streaming::Unary, pagination: Some(Pagination { items: "deployments", next_page_token: "next_page_token" }) },
             CallBinding { module: "live.admin", name: "tail_logs", proto_name: "tailLogs", method: "TailLogs", rpc: "loams.live.v1.LiveAdminService/TailLogs", service: "loams.live.v1.LiveAdminService", package: "loams.live.v1", keyed: false, idempotency: Idempotency::None, retry: Retry::Manual, streaming: Streaming::Server, pagination: None },
             CallBinding { module: "live.admin", name: "update_app", proto_name: "updateApp", method: "UpdateApp", rpc: "loams.live.v1.LiveAdminService/UpdateApp", service: "loams.live.v1.LiveAdminService", package: "loams.live.v1", keyed: false, idempotency: Idempotency::None, retry: Retry::Manual, streaming: Streaming::Unary, pagination: None },
+        ],
+    },
+    ModuleBinding {
+        name: "meter.customers",
+        summary: "Meter customers: subjects, payment state and spend controls.",
+        service: "loams.meter.v1.CustomerService",
+        package: "loams.meter.v1",
+        unstable: false,
+        derived: false,
+        calls: &[
+            CallBinding { module: "meter.customers", name: "create", proto_name: "create", method: "CreateCustomer", rpc: "loams.meter.v1.CustomerService/CreateCustomer", service: "loams.meter.v1.CustomerService", package: "loams.meter.v1", keyed: true, idempotency: Idempotency::None, retry: Retry::Manual, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "meter.customers", name: "get", proto_name: "get", method: "GetCustomer", rpc: "loams.meter.v1.CustomerService/GetCustomer", service: "loams.meter.v1.CustomerService", package: "loams.meter.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "meter.customers", name: "list", proto_name: "list", method: "ListCustomers", rpc: "loams.meter.v1.CustomerService/ListCustomers", service: "loams.meter.v1.CustomerService", package: "loams.meter.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: Some(Pagination { items: "customers", next_page_token: "next_page_token" }) },
+            CallBinding { module: "meter.customers", name: "set_payment_state", proto_name: "setPaymentState", method: "SetPaymentState", rpc: "loams.meter.v1.CustomerService/SetPaymentState", service: "loams.meter.v1.CustomerService", package: "loams.meter.v1", keyed: false, idempotency: Idempotency::Idempotent, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "meter.customers", name: "set_spend_controls", proto_name: "setSpendControls", method: "SetSpendControls", rpc: "loams.meter.v1.CustomerService/SetSpendControls", service: "loams.meter.v1.CustomerService", package: "loams.meter.v1", keyed: false, idempotency: Idempotency::Idempotent, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "meter.customers", name: "update", proto_name: "update", method: "UpdateCustomer", rpc: "loams.meter.v1.CustomerService/UpdateCustomer", service: "loams.meter.v1.CustomerService", package: "loams.meter.v1", keyed: false, idempotency: Idempotency::Idempotent, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+        ],
+    },
+    ModuleBinding {
+        name: "meter.entitlements",
+        summary: "Meter entitlements: what a subject may use, grants and balances.",
+        service: "loams.meter.v1.EntitlementService",
+        package: "loams.meter.v1",
+        unstable: false,
+        derived: false,
+        calls: &[
+            CallBinding { module: "meter.entitlements", name: "balance_history", proto_name: "balanceHistory", method: "GetBalanceHistory", rpc: "loams.meter.v1.EntitlementService/GetBalanceHistory", service: "loams.meter.v1.EntitlementService", package: "loams.meter.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "meter.entitlements", name: "check_access", proto_name: "checkAccess", method: "CheckAccess", rpc: "loams.meter.v1.EntitlementService/CheckAccess", service: "loams.meter.v1.EntitlementService", package: "loams.meter.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "meter.entitlements", name: "create", proto_name: "create", method: "CreateEntitlement", rpc: "loams.meter.v1.EntitlementService/CreateEntitlement", service: "loams.meter.v1.EntitlementService", package: "loams.meter.v1", keyed: true, idempotency: Idempotency::None, retry: Retry::Manual, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "meter.entitlements", name: "create_grant", proto_name: "createGrant", method: "CreateGrant", rpc: "loams.meter.v1.EntitlementService/CreateGrant", service: "loams.meter.v1.EntitlementService", package: "loams.meter.v1", keyed: true, idempotency: Idempotency::None, retry: Retry::Manual, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "meter.entitlements", name: "list", proto_name: "list", method: "ListEntitlements", rpc: "loams.meter.v1.EntitlementService/ListEntitlements", service: "loams.meter.v1.EntitlementService", package: "loams.meter.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: Some(Pagination { items: "entitlements", next_page_token: "next_page_token" }) },
+            CallBinding { module: "meter.entitlements", name: "list_grants", proto_name: "listGrants", method: "ListGrants", rpc: "loams.meter.v1.EntitlementService/ListGrants", service: "loams.meter.v1.EntitlementService", package: "loams.meter.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: Some(Pagination { items: "grants", next_page_token: "next_page_token" }) },
+            CallBinding { module: "meter.entitlements", name: "reset", proto_name: "reset", method: "ResetEntitlement", rpc: "loams.meter.v1.EntitlementService/ResetEntitlement", service: "loams.meter.v1.EntitlementService", package: "loams.meter.v1", keyed: false, idempotency: Idempotency::Idempotent, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "meter.entitlements", name: "value", proto_name: "value", method: "GetEntitlementValue", rpc: "loams.meter.v1.EntitlementService/GetEntitlementValue", service: "loams.meter.v1.EntitlementService", package: "loams.meter.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "meter.entitlements", name: "void_grant", proto_name: "voidGrant", method: "VoidGrant", rpc: "loams.meter.v1.EntitlementService/VoidGrant", service: "loams.meter.v1.EntitlementService", package: "loams.meter.v1", keyed: false, idempotency: Idempotency::Idempotent, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+        ],
+    },
+    ModuleBinding {
+        name: "meter.meters",
+        summary: "Meter usage queries over the House windows.",
+        service: "loams.meter.v1.MeterService",
+        package: "loams.meter.v1",
+        unstable: false,
+        derived: false,
+        calls: &[
+            CallBinding { module: "meter.meters", name: "query", proto_name: "query", method: "QueryMeter", rpc: "loams.meter.v1.MeterService/QueryMeter", service: "loams.meter.v1.MeterService", package: "loams.meter.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+        ],
+    },
+    ModuleBinding {
+        name: "meter.notifications",
+        summary: "Meter notifications: threshold rules, signed webhooks and their deliveries.",
+        service: "loams.meter.v1.NotificationService",
+        package: "loams.meter.v1",
+        unstable: false,
+        derived: false,
+        calls: &[
+            CallBinding { module: "meter.notifications", name: "create_rule", proto_name: "createRule", method: "CreateRule", rpc: "loams.meter.v1.NotificationService/CreateRule", service: "loams.meter.v1.NotificationService", package: "loams.meter.v1", keyed: false, idempotency: Idempotency::None, retry: Retry::Manual, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "meter.notifications", name: "create_webhook", proto_name: "createWebhook", method: "CreateWebhook", rpc: "loams.meter.v1.NotificationService/CreateWebhook", service: "loams.meter.v1.NotificationService", package: "loams.meter.v1", keyed: false, idempotency: Idempotency::None, retry: Retry::Manual, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "meter.notifications", name: "list_deliveries", proto_name: "listDeliveries", method: "ListDeliveries", rpc: "loams.meter.v1.NotificationService/ListDeliveries", service: "loams.meter.v1.NotificationService", package: "loams.meter.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "meter.notifications", name: "list_rules", proto_name: "listRules", method: "ListRules", rpc: "loams.meter.v1.NotificationService/ListRules", service: "loams.meter.v1.NotificationService", package: "loams.meter.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "meter.notifications", name: "rotate_webhook_secret", proto_name: "rotateWebhookSecret", method: "RotateWebhookSecret", rpc: "loams.meter.v1.NotificationService/RotateWebhookSecret", service: "loams.meter.v1.NotificationService", package: "loams.meter.v1", keyed: false, idempotency: Idempotency::None, retry: Retry::Manual, streaming: Streaming::Unary, pagination: None },
+        ],
+    },
+    ModuleBinding {
+        name: "meter.plans",
+        summary: "Meter plans: entitlement templates, applied from YAML and assigned to customers.",
+        service: "loams.meter.v1.PlanService",
+        package: "loams.meter.v1",
+        unstable: false,
+        derived: false,
+        calls: &[
+            CallBinding { module: "meter.plans", name: "apply", proto_name: "apply", method: "ApplyPlan", rpc: "loams.meter.v1.PlanService/ApplyPlan", service: "loams.meter.v1.PlanService", package: "loams.meter.v1", keyed: false, idempotency: Idempotency::Idempotent, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "meter.plans", name: "assign", proto_name: "assign", method: "AssignPlan", rpc: "loams.meter.v1.PlanService/AssignPlan", service: "loams.meter.v1.PlanService", package: "loams.meter.v1", keyed: false, idempotency: Idempotency::Idempotent, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "meter.plans", name: "list", proto_name: "list", method: "ListPlans", rpc: "loams.meter.v1.PlanService/ListPlans", service: "loams.meter.v1.PlanService", package: "loams.meter.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "meter.plans", name: "unassign", proto_name: "unassign", method: "UnassignPlan", rpc: "loams.meter.v1.PlanService/UnassignPlan", service: "loams.meter.v1.PlanService", package: "loams.meter.v1", keyed: false, idempotency: Idempotency::Idempotent, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
         ],
     },
     ModuleBinding {
@@ -1504,6 +1580,246 @@ pub trait LiveAdminModule {
         request: loams_live_proto::loams::live::v1::UpdateAppRequest,
         options: Option<&CallOptions>,
     ) -> impl std::future::Future<Output = Result<loams_live_proto::loams::live::v1::UpdateAppResponse, LoamsError>> + Send;
+}
+
+/// `MeterCustomersModule` is `loams.meter.customers` — Meter customers: subjects, payment state and spend controls.
+///
+/// Wraps `loams.meter.v1.CustomerService`.
+#[rustfmt::skip]
+pub trait MeterCustomersModule {
+    /// The SDK module, as it appears on `loams.meter.customers`.
+    const MODULE: &'static str = "meter.customers";
+    /// The service behind the module.
+    const SERVICE: &'static str = "loams.meter.v1.CustomerService";
+    /// Whether the package's wire contract may still change.
+    const UNSTABLE: bool = false;
+
+    /// `loams.meter.v1.CustomerService/CreateCustomer`, retried: manual.
+    fn create(
+        &self,
+        request: loams_proto::loams::meter::v1::CreateCustomerRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::meter::v1::CreateCustomerResponse, LoamsError>> + Send;
+
+    /// `loams.meter.v1.CustomerService/GetCustomer`, retried: safe.
+    fn get(
+        &self,
+        request: loams_proto::loams::meter::v1::GetCustomerRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::meter::v1::GetCustomerResponse, LoamsError>> + Send;
+
+    /// `loams.meter.v1.CustomerService/ListCustomers`, retried: safe. AIP-158: page with `customers` and follow `next_page_token` through `loams::paginate`.
+    fn list(
+        &self,
+        request: loams_proto::loams::meter::v1::ListCustomersRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::meter::v1::ListCustomersResponse, LoamsError>> + Send;
+
+    /// `loams.meter.v1.CustomerService/SetPaymentState`, retried: safe.
+    fn set_payment_state(
+        &self,
+        request: loams_proto::loams::meter::v1::SetPaymentStateRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::meter::v1::SetPaymentStateResponse, LoamsError>> + Send;
+
+    /// `loams.meter.v1.CustomerService/SetSpendControls`, retried: safe.
+    fn set_spend_controls(
+        &self,
+        request: loams_proto::loams::meter::v1::SetSpendControlsRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::meter::v1::SetSpendControlsResponse, LoamsError>> + Send;
+
+    /// `loams.meter.v1.CustomerService/UpdateCustomer`, retried: safe.
+    fn update(
+        &self,
+        request: loams_proto::loams::meter::v1::UpdateCustomerRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::meter::v1::UpdateCustomerResponse, LoamsError>> + Send;
+}
+
+/// `MeterEntitlementsModule` is `loams.meter.entitlements` — Meter entitlements: what a subject may use, grants and balances.
+///
+/// Wraps `loams.meter.v1.EntitlementService`.
+#[rustfmt::skip]
+pub trait MeterEntitlementsModule {
+    /// The SDK module, as it appears on `loams.meter.entitlements`.
+    const MODULE: &'static str = "meter.entitlements";
+    /// The service behind the module.
+    const SERVICE: &'static str = "loams.meter.v1.EntitlementService";
+    /// Whether the package's wire contract may still change.
+    const UNSTABLE: bool = false;
+
+    /// `loams.meter.v1.EntitlementService/GetBalanceHistory`, retried: safe.
+    fn balance_history(
+        &self,
+        request: loams_proto::loams::meter::v1::GetBalanceHistoryRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::meter::v1::GetBalanceHistoryResponse, LoamsError>> + Send;
+
+    /// `loams.meter.v1.EntitlementService/CheckAccess`, retried: safe.
+    fn check_access(
+        &self,
+        request: loams_proto::loams::meter::v1::CheckAccessRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::meter::v1::CheckAccessResponse, LoamsError>> + Send;
+
+    /// `loams.meter.v1.EntitlementService/CreateEntitlement`, retried: manual.
+    fn create(
+        &self,
+        request: loams_proto::loams::meter::v1::CreateEntitlementRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::meter::v1::CreateEntitlementResponse, LoamsError>> + Send;
+
+    /// `loams.meter.v1.EntitlementService/CreateGrant`, retried: manual.
+    fn create_grant(
+        &self,
+        request: loams_proto::loams::meter::v1::CreateGrantRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::meter::v1::CreateGrantResponse, LoamsError>> + Send;
+
+    /// `loams.meter.v1.EntitlementService/ListEntitlements`, retried: safe. AIP-158: page with `entitlements` and follow `next_page_token` through `loams::paginate`.
+    fn list(
+        &self,
+        request: loams_proto::loams::meter::v1::ListEntitlementsRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::meter::v1::ListEntitlementsResponse, LoamsError>> + Send;
+
+    /// `loams.meter.v1.EntitlementService/ListGrants`, retried: safe. AIP-158: page with `grants` and follow `next_page_token` through `loams::paginate`.
+    fn list_grants(
+        &self,
+        request: loams_proto::loams::meter::v1::ListGrantsRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::meter::v1::ListGrantsResponse, LoamsError>> + Send;
+
+    /// `loams.meter.v1.EntitlementService/ResetEntitlement`, retried: safe.
+    fn reset(
+        &self,
+        request: loams_proto::loams::meter::v1::ResetEntitlementRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::meter::v1::ResetEntitlementResponse, LoamsError>> + Send;
+
+    /// `loams.meter.v1.EntitlementService/GetEntitlementValue`, retried: safe.
+    fn value(
+        &self,
+        request: loams_proto::loams::meter::v1::GetEntitlementValueRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::meter::v1::GetEntitlementValueResponse, LoamsError>> + Send;
+
+    /// `loams.meter.v1.EntitlementService/VoidGrant`, retried: safe.
+    fn void_grant(
+        &self,
+        request: loams_proto::loams::meter::v1::VoidGrantRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::meter::v1::VoidGrantResponse, LoamsError>> + Send;
+}
+
+/// `MeterMetersModule` is `loams.meter.meters` — Meter usage queries over the House windows.
+///
+/// Wraps `loams.meter.v1.MeterService`.
+#[rustfmt::skip]
+pub trait MeterMetersModule {
+    /// The SDK module, as it appears on `loams.meter.meters`.
+    const MODULE: &'static str = "meter.meters";
+    /// The service behind the module.
+    const SERVICE: &'static str = "loams.meter.v1.MeterService";
+    /// Whether the package's wire contract may still change.
+    const UNSTABLE: bool = false;
+
+    /// `loams.meter.v1.MeterService/QueryMeter`, retried: safe.
+    fn query(
+        &self,
+        request: loams_proto::loams::meter::v1::QueryMeterRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::meter::v1::QueryMeterResponse, LoamsError>> + Send;
+}
+
+/// `MeterNotificationsModule` is `loams.meter.notifications` — Meter notifications: threshold rules, signed webhooks and their deliveries.
+///
+/// Wraps `loams.meter.v1.NotificationService`.
+#[rustfmt::skip]
+pub trait MeterNotificationsModule {
+    /// The SDK module, as it appears on `loams.meter.notifications`.
+    const MODULE: &'static str = "meter.notifications";
+    /// The service behind the module.
+    const SERVICE: &'static str = "loams.meter.v1.NotificationService";
+    /// Whether the package's wire contract may still change.
+    const UNSTABLE: bool = false;
+
+    /// `loams.meter.v1.NotificationService/CreateRule`, retried: manual.
+    fn create_rule(
+        &self,
+        request: loams_proto::loams::meter::v1::CreateRuleRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::meter::v1::CreateRuleResponse, LoamsError>> + Send;
+
+    /// `loams.meter.v1.NotificationService/CreateWebhook`, retried: manual.
+    fn create_webhook(
+        &self,
+        request: loams_proto::loams::meter::v1::CreateWebhookRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::meter::v1::CreateWebhookResponse, LoamsError>> + Send;
+
+    /// `loams.meter.v1.NotificationService/ListDeliveries`, retried: safe.
+    fn list_deliveries(
+        &self,
+        request: loams_proto::loams::meter::v1::ListDeliveriesRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::meter::v1::ListDeliveriesResponse, LoamsError>> + Send;
+
+    /// `loams.meter.v1.NotificationService/ListRules`, retried: safe.
+    fn list_rules(
+        &self,
+        request: loams_proto::loams::meter::v1::ListRulesRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::meter::v1::ListRulesResponse, LoamsError>> + Send;
+
+    /// `loams.meter.v1.NotificationService/RotateWebhookSecret`, retried: manual.
+    fn rotate_webhook_secret(
+        &self,
+        request: loams_proto::loams::meter::v1::RotateWebhookSecretRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::meter::v1::RotateWebhookSecretResponse, LoamsError>> + Send;
+}
+
+/// `MeterPlansModule` is `loams.meter.plans` — Meter plans: entitlement templates, applied from YAML and assigned to customers.
+///
+/// Wraps `loams.meter.v1.PlanService`.
+#[rustfmt::skip]
+pub trait MeterPlansModule {
+    /// The SDK module, as it appears on `loams.meter.plans`.
+    const MODULE: &'static str = "meter.plans";
+    /// The service behind the module.
+    const SERVICE: &'static str = "loams.meter.v1.PlanService";
+    /// Whether the package's wire contract may still change.
+    const UNSTABLE: bool = false;
+
+    /// `loams.meter.v1.PlanService/ApplyPlan`, retried: safe.
+    fn apply(
+        &self,
+        request: loams_proto::loams::meter::v1::ApplyPlanRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::meter::v1::ApplyPlanResponse, LoamsError>> + Send;
+
+    /// `loams.meter.v1.PlanService/AssignPlan`, retried: safe.
+    fn assign(
+        &self,
+        request: loams_proto::loams::meter::v1::AssignPlanRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::meter::v1::AssignPlanResponse, LoamsError>> + Send;
+
+    /// `loams.meter.v1.PlanService/ListPlans`, retried: safe.
+    fn list(
+        &self,
+        request: loams_proto::loams::meter::v1::ListPlansRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::meter::v1::ListPlansResponse, LoamsError>> + Send;
+
+    /// `loams.meter.v1.PlanService/UnassignPlan`, retried: safe.
+    fn unassign(
+        &self,
+        request: loams_proto::loams::meter::v1::UnassignPlanRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::meter::v1::UnassignPlanResponse, LoamsError>> + Send;
 }
 
 /// `NamespacesModule` is `loams.namespaces` — Namespaces: the container every collection and stream lives in.
