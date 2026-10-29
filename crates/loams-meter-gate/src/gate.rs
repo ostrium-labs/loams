@@ -190,6 +190,14 @@ impl Decision {
     }
 }
 
+/// One request of a batched [`Gate::check_many`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CheckRequest<'a> {
+    pub subject: &'a str,
+    pub feature: &'a str,
+    pub cost: Amount,
+}
+
 /// What products call (§63 §10.1).
 pub trait Gate: Send + Sync + fmt::Debug + 'static {
     /// May `cost` units of `feature` be spent for `subject` now? A lease hit
@@ -203,6 +211,19 @@ pub trait Gate: Send + Sync + fmt::Debug + 'static {
         feature: &str,
         estimate: Amount,
     ) -> Result<Reservation, Refusal>;
+
+    /// Decides a batch of requests at once (pipelining, BQ1): `out[i]` is
+    /// the decision for `requests[i]`, as if each were `check`ed in turn.
+    /// A product that drains a socket or a queue in batches calls this once
+    /// per batch. The default checks one by one.
+    fn check_many(&self, requests: &[CheckRequest<'_>], out: &mut Vec<Decision>) {
+        out.clear();
+        out.extend(
+            requests
+                .iter()
+                .map(|r| self.check(r.subject, r.feature, r.cost)),
+        );
+    }
 }
 
 impl<T: Gate + ?Sized> Gate for Arc<T> {
@@ -217,6 +238,10 @@ impl<T: Gate + ?Sized> Gate for Arc<T> {
         estimate: Amount,
     ) -> Result<Reservation, Refusal> {
         (**self).reserve(subject, feature, estimate)
+    }
+
+    fn check_many(&self, requests: &[CheckRequest<'_>], out: &mut Vec<Decision>) {
+        (**self).check_many(requests, out);
     }
 }
 
@@ -503,6 +528,14 @@ impl Slot {
             queued: AtomicBool::new(false),
             fail_open_left: AtomicI64::new(UNSET),
             down_until_ms: AtomicU64::new(0),
+        }
+    }
+
+    /// Marks the slot used at `now`. Writes only when the millisecond
+    /// changed, so concurrent hits on one subject do not bounce the line.
+    fn touch(&self, now: u64) {
+        if self.last_used_ms.load(Ordering::Relaxed) != now {
+            self.last_used_ms.store(now, Ordering::Relaxed);
         }
     }
 
@@ -817,7 +850,87 @@ impl Drop for LeaseGate {
 
 impl Gate for LeaseGate {
     fn check(&self, subject: &str, feature: &str, cost: Amount) -> Decision {
+        // The hit path borrows the slot under the shard's read lock instead
+        // of cloning its `Arc`: two fewer atomic read-modify-writes on a
+        // cache line every thread checking that subject shares (BQ1-meter).
+        if let Some(d) = self.inner.check_hit(subject, feature, cost) {
+            return d;
+        }
         self.inner.spend(subject, feature, cost).0
+    }
+
+    /// The batched hit path: one clock read per batch, one read lock per
+    /// shard the batch touches, and one atomic take per (subject, feature)
+    /// for the sum of its requests' costs (amortised lease use). A key whose
+    /// lease cannot cover the sum, or that has no live lease, falls back to
+    /// one `check` per request after the locks are released, so every
+    /// decision is one a sequence of `check`s could have produced.
+    fn check_many(&self, requests: &[CheckRequest<'_>], out: &mut Vec<Decision>) {
+        out.clear();
+        out.resize(
+            requests.len(),
+            Decision::Allow {
+                lease: LeaseId::NONE,
+            },
+        );
+        let mut order: Vec<(usize, usize)> = requests
+            .iter()
+            .enumerate()
+            .map(|(i, r)| (shard_of(r.subject, r.feature), i))
+            .collect();
+        order.sort_unstable_by(|a, b| {
+            let (ra, rb) = (&requests[a.1], &requests[b.1]);
+            a.0.cmp(&b.0)
+                .then_with(|| ra.subject.cmp(rb.subject))
+                .then_with(|| ra.feature.cmp(rb.feature))
+                .then_with(|| a.1.cmp(&b.1))
+        });
+        let now = self.inner.clock.now_ms();
+        let mut fallback = Vec::new();
+        let mut i = 0;
+        while i < order.len() {
+            let shard_index = order[i].0;
+            let shard = self.inner.shards[shard_index]
+                .read()
+                .unwrap_or_else(|e| e.into_inner());
+            while i < order.len() && order[i].0 == shard_index {
+                let first = &requests[order[i].1];
+                let mut j = i + 1;
+                let mut total = first.cost;
+                while j < order.len() && order[j].0 == shard_index {
+                    let r = &requests[order[j].1];
+                    if r.subject != first.subject || r.feature != first.feature {
+                        break;
+                    }
+                    total = total.saturating_add(r.cost);
+                    j += 1;
+                }
+                let group = &order[i..j];
+                let decided = shard
+                    .get(first.subject)
+                    .and_then(|features| features.get(first.feature))
+                    .and_then(|slot| {
+                        slot.touch(now);
+                        if now >= slot.expires_ms.load(Ordering::Acquire) {
+                            return None;
+                        }
+                        self.inner.hit(slot, total, now)
+                    });
+                match decided {
+                    Some(d) => {
+                        for &(_, k) in group {
+                            out[k] = d.clone();
+                        }
+                    }
+                    None => fallback.extend(group.iter().map(|&(_, k)| k)),
+                }
+                i = j;
+            }
+        }
+        for k in fallback {
+            let r = &requests[k];
+            out[k] = self.check(r.subject, r.feature, r.cost);
+        }
     }
 
     fn reserve(
@@ -875,6 +988,21 @@ impl Inner {
         shard.get(subject)?.get(feature).cloned()
     }
 
+    /// A lease hit decided under the shard's read lock; `None` sends the
+    /// caller to [`Inner::spend`] (no slot, expired, or not coverable).
+    fn check_hit(&self, subject: &str, feature: &str, cost: Amount) -> Option<Decision> {
+        let now = self.clock.now_ms();
+        let shard = self.shards[shard_of(subject, feature)]
+            .read()
+            .unwrap_or_else(|e| e.into_inner());
+        let slot = shard.get(subject)?.get(feature)?;
+        slot.touch(now);
+        if now >= slot.expires_ms.load(Ordering::Acquire) {
+            return None;
+        }
+        self.hit(slot, cost, now)
+    }
+
     fn slot_or_insert(&self, subject: &str, feature: &str) -> Arc<Slot> {
         if let Some(s) = self.lookup(subject, feature) {
             return s;
@@ -899,7 +1027,7 @@ impl Inner {
             Some(s) => s,
             None => self.slot_or_insert(subject, feature),
         };
-        slot.last_used_ms.store(now, Ordering::Relaxed);
+        slot.touch(now);
         if now < slot.expires_ms.load(Ordering::Acquire)
             && let Some(d) = self.hit(&slot, cost, now)
         {
@@ -1103,24 +1231,39 @@ impl Inner {
     fn sweep(&self) {
         let now = self.clock.now_ms();
         let idle = u64::try_from(self.config.idle_after.as_millis()).unwrap_or(u64::MAX);
+        let keep = |slot: &Slot| {
+            let used = slot.last_used_ms.load(Ordering::Relaxed);
+            now.saturating_sub(used) < idle
+                || now < slot.expires_ms.load(Ordering::Acquire)
+                || slot.fetching.load(Ordering::Acquire)
+                || slot.queued.load(Ordering::Acquire)
+        };
         let mut due = Vec::new();
         for shard in &self.shards {
-            let mut shard = shard.write().unwrap_or_else(|e| e.into_inner());
-            shard.retain(|_, features| {
-                features.retain(|_, slot| {
+            // A read lock finds what is due; the write lock, which stalls
+            // every check on the shard, is taken only when a slot is evicted
+            // (BQ1-meter: the sweep wrote-locked all 64 shards every 250 ms).
+            let evict = {
+                let shard = shard.read().unwrap_or_else(|e| e.into_inner());
+                let mut evict = false;
+                for slot in shard.values().flat_map(HashMap::values) {
                     let used = slot.last_used_ms.load(Ordering::Relaxed);
                     let recent = now.saturating_sub(used) < idle;
                     let expired = now >= slot.expires_ms.load(Ordering::Acquire);
                     if recent && !expired && now >= slot.refresh_ms.load(Ordering::Acquire) {
                         due.push(Arc::clone(slot));
                     }
-                    recent
-                        || !expired
-                        || slot.fetching.load(Ordering::Acquire)
-                        || slot.queued.load(Ordering::Acquire)
+                    evict |= !keep(slot);
+                }
+                evict
+            };
+            if evict {
+                let mut shard = shard.write().unwrap_or_else(|e| e.into_inner());
+                shard.retain(|_, features| {
+                    features.retain(|_, slot| keep(slot));
+                    !features.is_empty()
                 });
-                !features.is_empty()
-            });
+            }
         }
         for slot in due {
             self.queue_refresh(&slot);
@@ -1245,6 +1388,95 @@ mod tests {
         )
         .unwrap();
         (g, clock)
+    }
+
+    #[test]
+    fn check_many_amortises_and_matches_sequential_checks() {
+        let (g, _clock) = gate(Arc::new(Scripted::default()));
+        let grant = LeaseGrant {
+            ttl: Duration::from_secs(3600),
+            refresh_after: Duration::from_secs(3600),
+            ..LeaseGrant::limit(LeaseId(7), 10, 1)
+        };
+        g.install("org_a", "f", &grant);
+        let remaining = |g: &LeaseGate| {
+            g.inner
+                .lookup("org_a", "f")
+                .unwrap()
+                .remaining
+                .load(Ordering::Acquire)
+        };
+        let req = |subject, cost| CheckRequest {
+            subject,
+            feature: "f",
+            cost,
+        };
+        let mut out = Vec::new();
+        // Four requests on one lease plus one subject with no lease (the
+        // scripted owner is unreachable, so it fails closed).
+        g.check_many(
+            &[
+                req("org_a", 2),
+                req("org_b", 1),
+                req("org_a", 2),
+                req("org_a", 2),
+                req("org_a", 2),
+            ],
+            &mut out,
+        );
+        assert_eq!(out.len(), 5);
+        for k in [0, 2, 3, 4] {
+            assert_eq!(out[k], Decision::Allow { lease: LeaseId(7) }, "request {k}");
+        }
+        assert!(matches!(
+            &out[1],
+            Decision::Refuse(r) if r.reason == RefusalReason::MeterUnavailable
+        ));
+        assert_eq!(remaining(&g), 2);
+        // The sum (3) exceeds what is left (2): each request is decided on
+        // its own, as sequential checks would be.
+        g.check_many(
+            &[req("org_a", 1), req("org_a", 1), req("org_a", 1)],
+            &mut out,
+        );
+        assert!(out[0].is_allowed() && out[1].is_allowed());
+        assert!(!out[2].is_allowed());
+        assert_eq!(remaining(&g), 0);
+        // An empty batch is an empty answer.
+        g.check_many(&[], &mut out);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn sweep_evicts_only_idle_expired_slots() {
+        let (g, clock) = gate(Arc::new(Scripted::default()));
+        let grant = LeaseGrant {
+            ttl: Duration::from_secs(1),
+            refresh_after: Duration::from_secs(3600),
+            ..LeaseGrant::limit(LeaseId(1), 100, 1)
+        };
+        g.install("org_idle", "f", &grant);
+        g.install("org_busy", "f", &grant);
+        assert!(
+            g.check("org_busy", "f", 1).is_allowed(),
+            "a hit under the read lock"
+        );
+        let slots = |g: &LeaseGate| {
+            g.inner
+                .shards
+                .iter()
+                .map(|s| s.read().unwrap().values().map(HashMap::len).sum::<usize>())
+                .sum::<usize>()
+        };
+        g.refresh_now();
+        assert_eq!(slots(&g), 2, "nothing idle yet");
+        // Past the TTL and `idle_after`: only the subject still checked stays.
+        clock.advance(Duration::from_secs(61));
+        let _ = g.check("org_busy", "f", 1);
+        g.refresh_now();
+        assert_eq!(slots(&g), 1);
+        assert!(g.inner.lookup("org_busy", "f").is_some());
+        assert!(g.inner.lookup("org_idle", "f").is_none());
     }
 
     #[test]
