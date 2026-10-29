@@ -324,22 +324,21 @@ mod served {
     use loams_meter::audit::{AuditEvent, AuditSink};
     use loams_meter::authz::Caller;
     use loams_meter::error::{MeterError, Result as MeterResult};
-    use loams_meter::notify::notifier::DocNotifications;
-    use loams_meter::notify::webhook::HttpTransport;
+    use loams_meter::house::{HouseUsage, HouseUsageSoFar, RoleHouse};
     use loams_meter::lease_service::LeaseServer;
-    use loams_meter::owner::{
-        CONSUMER, METER_PARTITIONS, MetaLeases, OwnerError, PartitionReader,
-    };
-    use loams_meter::house::{HouseUsage, RoleHouse};
     use loams_meter::notify::MeterEvent;
+    use loams_meter::notify::notifier::DocNotifications;
     use loams_meter::notify::sealing::AgeSealer;
-    use loams_meter::run::{MeterEventHandler, MeterEventSink, own_event, to_cloudevent};
+    use loams_meter::notify::webhook::HttpTransport;
+    use loams_meter::owner::{METER_PARTITIONS, MetaLeases, OwnerError, PartitionReader};
     use loams_meter::plans::MeterUsage;
     use loams_meter::role::{MeterRole, NoHouseYet, RoleParts};
     use loams_meter::run::{
         CLUSTER_SERVICE, CatalogInputs, CounterRuntime, CounterValues, Counters, RuntimeParts,
         StreamOnly,
     };
+    use loams_meter::run::{CounterPeer, holder_name};
+    use loams_meter::run::{MeterEventHandler, MeterEventSink, own_event, to_cloudevent};
     use loams_meter::store::{DocStore, MeterStore, VersionedDoc};
     use loams_meter_core::{AllocatorConfig, Event, Origin, UtcNanos};
     use loams_proto::loams::admin::v1 as admin;
@@ -356,19 +355,25 @@ mod served {
     const NOTIFY_POINTER: &str = "meter-notifications";
     const NOTIFY_PREFIX: &str = "system/meter/notifications/";
     /// The exporters' ledger and cursors (D2207).
-    #[cfg_attr(not(any(
-        feature = "meter-export-webhook",
-        feature = "meter-export-stripe",
-        feature = "meter-export-lago",
-        feature = "meter-export-openmeter"
-    )), allow(dead_code))]
+    #[cfg_attr(
+        not(any(
+            feature = "meter-export-webhook",
+            feature = "meter-export-stripe",
+            feature = "meter-export-lago",
+            feature = "meter-export-openmeter"
+        )),
+        allow(dead_code)
+    )]
     const EXPORTS_POINTER: &str = "meter-exports";
-    #[cfg_attr(not(any(
-        feature = "meter-export-webhook",
-        feature = "meter-export-stripe",
-        feature = "meter-export-lago",
-        feature = "meter-export-openmeter"
-    )), allow(dead_code))]
+    #[cfg_attr(
+        not(any(
+            feature = "meter-export-webhook",
+            feature = "meter-export-stripe",
+            feature = "meter-export-lago",
+            feature = "meter-export-openmeter"
+        )),
+        allow(dead_code)
+    )]
     const EXPORTS_PREFIX: &str = "system/meter/exports/";
 
     /// A meter document kept the way the principal directory is.
@@ -629,7 +634,9 @@ mod served {
                 .stream_by_name(Consistency::Local, ns.id, METER_STREAM)
                 .await
                 .map_err(|e| unavailable(e.to_string()))?
-                .ok_or_else(|| unavailable("the _system/_meter stream does not exist yet".into()))?;
+                .ok_or_else(|| {
+                    unavailable("the _system/_meter stream does not exist yet".into())
+                })?;
             let found = (stream.id, stream.partitions);
             let _ = self.id.set(found);
             Ok(found)
@@ -766,6 +773,7 @@ mod served {
         clock: loams_meter::customers::Clock,
         appender: Arc<MeterAppender>,
         principals: Principals,
+        counters: Arc<Counters>,
         /// The exporters' schedule, when one is configured, not started.
         exports: Option<std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>>,
         exports_stop: Arc<tokio::sync::Notify>,
@@ -858,7 +866,11 @@ mod served {
                     exports_stop: self.exports_stop,
                     exports,
                 },
-                internal: internal_routes(self.leases, self.appender.clone()),
+                internal: internal_routes(
+                    self.leases,
+                    self.appender.clone(),
+                    self.counters.clone(),
+                ),
                 main: ingest_route(self.appender).layer(axum::middleware::from_fn_with_state(
                     self.principals,
                     caller,
@@ -868,15 +880,143 @@ mod served {
         }
     }
 
+    /// Where a counter read forwarded to a partition's owner goes, on that
+    /// owner's cluster listener.
+    pub const COUNTED_PATH: &str = "/internal/v1/meter/counted";
+
+    /// How long a forwarded counter read may take before the House answers
+    /// instead.
+    const PEER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
+    #[derive(serde::Serialize, serde::Deserialize)]
+    struct CountedRequest {
+        subject: String,
+        feature: String,
+        /// Unix nanoseconds.
+        period_start: i64,
+    }
+
+    #[derive(serde::Serialize, serde::Deserialize)]
+    struct CountedResponse {
+        counted: String,
+        owner_epoch: u64,
+        offset: u64,
+    }
+
+    /// `POST /internal/v1/meter/counted`: one counter of a partition this
+    /// node owns; 404 when it does not count it.
+    fn counted_route(counters: Arc<Counters>) -> axum::Router {
+        use axum::response::IntoResponse;
+        axum::Router::new()
+            .route(
+                COUNTED_PATH,
+                axum::routing::post(
+                    |axum::extract::State(counters): axum::extract::State<Arc<Counters>>,
+                     axum::Json(req): axum::Json<CountedRequest>| async move {
+                        let (Ok(subject), Ok(feature)) = (
+                            loams_meter_core::SubjectKey::new(req.subject),
+                            loams_meter_core::FeatureKey::new(req.feature),
+                        ) else {
+                            return axum::http::StatusCode::BAD_REQUEST.into_response();
+                        };
+                        let key = loams_meter::owner::CounterKey {
+                            subject,
+                            feature,
+                            period_start: UtcNanos(req.period_start),
+                        };
+                        match counters.counted(&key).await {
+                            Some((
+                                counted,
+                                loams_meter_core::AsOf::Counter {
+                                    owner_epoch,
+                                    offset,
+                                },
+                            )) => axum::Json(CountedResponse {
+                                counted: counted.to_string(),
+                                owner_epoch,
+                                offset,
+                            })
+                            .into_response(),
+                            _ => axum::http::StatusCode::NOT_FOUND.into_response(),
+                        }
+                    },
+                ),
+            )
+            .with_state(counters)
+    }
+
+    /// Reads a counter on its owner over the owner's cluster listener.
+    #[derive(Debug)]
+    struct HttpPeer(reqwest::Client);
+
+    impl HttpPeer {
+        fn new() -> Result<Self, String> {
+            reqwest::Client::builder()
+                .connect_timeout(PEER_TIMEOUT)
+                .timeout(PEER_TIMEOUT)
+                .build()
+                .map(HttpPeer)
+                .map_err(|e| format!("the meter's peer client: {e}"))
+        }
+    }
+
+    #[async_trait]
+    impl CounterPeer for HttpPeer {
+        async fn counted(
+            &self,
+            addr: &str,
+            key: &loams_meter::owner::CounterKey,
+        ) -> MeterResult<Option<(loams_meter_core::Amount, loams_meter_core::AsOf)>> {
+            let unavailable = |e: String| MeterError::Unavailable(e);
+            let response = self
+                .0
+                .post(format!("http://{addr}{COUNTED_PATH}"))
+                .json(&CountedRequest {
+                    subject: key.subject.to_string(),
+                    feature: key.feature.to_string(),
+                    period_start: key.period_start.0,
+                })
+                .send()
+                .await
+                .map_err(|e| unavailable(e.to_string()))?;
+            if response.status() == reqwest::StatusCode::NOT_FOUND {
+                return Ok(None);
+            }
+            if !response.status().is_success() {
+                return Err(unavailable(format!(
+                    "the owner answered {}",
+                    response.status()
+                )));
+            }
+            let body: CountedResponse = response
+                .json()
+                .await
+                .map_err(|e| unavailable(e.to_string()))?;
+            let counted = loams_meter_core::Amount::parse(&body.counted)
+                .map_err(|e| unavailable(e.to_string()))?;
+            Ok(Some((
+                counted,
+                loams_meter_core::AsOf::Counter {
+                    owner_epoch: body.owner_epoch,
+                    offset: body.offset,
+                },
+            )))
+        }
+    }
+
     /// `loams.meter.internal.v1.LeaseService` for the cluster listener. A
     /// caller there is a product role on another node: the cluster's service
     /// identity ([`CLUSTER_SERVICE`]), admitted by the network as every route
     /// of that listener is in M1.
-    fn internal_routes(leases: Arc<LeaseServer>, appender: Arc<MeterAppender>) -> axum::Router {
+    fn internal_routes(
+        leases: Arc<LeaseServer>,
+        appender: Arc<MeterAppender>,
+        counters: Arc<Counters>,
+    ) -> axum::Router {
         let rpc = loams_meter::connect::register_internal(connectrpc::Router::new(), leases);
         let paths: Vec<String> = rpc.methods().map(|path| format!("/{path}")).collect();
         let service = rpc.into_axum_service();
-        let mut router = ingest_route(appender);
+        let mut router = ingest_route(appender).merge(counted_route(counters));
         for path in paths {
             router = router.route_service(&path, service.clone());
         }
@@ -901,6 +1041,7 @@ mod served {
         writer: loams_log::LogWriter,
         config: &super::MeterConfig,
         data_dir: &std::path::Path,
+        advertise: Option<String>,
     ) -> Result<MeterNode, String> {
         let key_file = config
             .secrets_key_file
@@ -912,14 +1053,20 @@ mod served {
             Some(url) => {
                 let password = match &config.house_password_file {
                     Some(path) => std::fs::read_to_string(path)
-                        .map_err(|e| format!("LOAMS_METER_HOUSE_PASSWORD_FILE {}: {e}", path.display()))?
+                        .map_err(|e| {
+                            format!("LOAMS_METER_HOUSE_PASSWORD_FILE {}: {e}", path.display())
+                        })?
                         .trim_end_matches(['\r', '\n'])
                         .to_string(),
                     None => String::new(),
                 };
                 RoleHouse::Http(
-                    loams_meter::house::HttpHouse::new(url.clone(), config.house_user.clone(), password)
-                        .map_err(|e| e.to_string())?,
+                    loams_meter::house::HttpHouse::new(
+                        url.clone(),
+                        config.house_user.clone(),
+                        password,
+                    )
+                    .map_err(|e| e.to_string())?,
                 )
             }
         });
@@ -951,6 +1098,18 @@ mod served {
             id: tokio::sync::OnceCell::new(),
         });
         let meter_store: Arc<dyn MeterStore> = Arc::new(DocStore::new(records.clone()));
+        // Balances: this node's counters, else the owner's (over its cluster
+        // listener), else the House.
+        let mut values = CounterValues::new(counters.clone()).with_owners(
+            Arc::new(MetaLeases(meta.clone())),
+            Arc::new(HttpPeer::new()?),
+        );
+        if house.is_configured() {
+            values = values.with_house(Arc::new(HouseUsageSoFar {
+                house: house.clone(),
+                store: meter_store.clone(),
+            }));
+        }
         let usage: Arc<dyn MeterUsage> = if house.is_configured() {
             Arc::new(HouseUsage {
                 house: house.clone(),
@@ -976,14 +1135,18 @@ mod served {
                 b
             }),
             clock: clock.clone(),
-            values: Arc::new(CounterValues(counters.clone())),
+            values: Arc::new(values),
             usage,
             house,
             sealer: Arc::new(sealer),
         }));
         let runtime = CounterRuntime::new(RuntimeParts {
             leases: MetaLeases(meta.clone()),
-            me: format!("{CONSUMER}-{node_id}-{}", ulid::Ulid::generate()),
+            me: holder_name(
+                node_id,
+                &ulid::Ulid::generate().to_string(),
+                advertise.as_deref(),
+            ),
             reader: Arc::new(MeterStream {
                 meta: meta.clone(),
                 reader,
@@ -1004,8 +1167,9 @@ mod served {
         #[allow(unused_mut)]
         let mut public = axum::Router::new();
         #[allow(unused_mut)]
-        let mut exports: Option<std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>> =
-            None;
+        let mut exports: Option<
+            std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>,
+        > = None;
         #[cfg(any(
             feature = "meter-export-webhook",
             feature = "meter-export-stripe",
@@ -1036,7 +1200,11 @@ mod served {
                 };
                 exporters.webhook = Some(
                     WebhookExporter::new(
-                        WebhookConfig::new(url.clone(), secret, format!("loams://node-{node_id}/meter")),
+                        WebhookConfig::new(
+                            url.clone(),
+                            secret,
+                            format!("loams://node-{node_id}/meter"),
+                        ),
                         ledger.clone(),
                     )
                     .map_err(|e| e.to_string())?,
@@ -1046,11 +1214,18 @@ mod served {
             #[cfg(feature = "meter-export-stripe")]
             if let Some(path) = &config.stripe_api_key_file {
                 use loams_meter::export::exporters::stripe::StripeConfig;
-                use loams_meter::export::exporters::stripe::payment::{StripePayments, WebhookVerifier};
+                use loams_meter::export::exporters::stripe::payment::{
+                    StripePayments, WebhookVerifier,
+                };
                 let key = super::read_secret(path, "LOAMS_METER_STRIPE_API_KEY_FILE")?;
                 let secrets: Vec<String> = match &config.stripe_webhook_secret_file {
                     Some(p) => std::fs::read_to_string(p)
-                        .map_err(|e| format!("LOAMS_METER_STRIPE_WEBHOOK_SECRET_FILE {}: {e}", p.display()))?
+                        .map_err(|e| {
+                            format!(
+                                "LOAMS_METER_STRIPE_WEBHOOK_SECRET_FILE {}: {e}",
+                                p.display()
+                            )
+                        })?
                         .lines()
                         .map(str::trim)
                         .filter(|l| !l.is_empty())
@@ -1062,7 +1237,9 @@ mod served {
                     StripePayments::new(
                         StripeConfig::new(key),
                         WebhookVerifier::new(secrets).map_err(|e| e.to_string())?,
-                        Arc::new(loams_meter::export::CustomerPayments(role.customers.clone())),
+                        Arc::new(loams_meter::export::CustomerPayments(
+                            role.customers.clone(),
+                        )),
                     )
                     .map_err(|e| e.to_string())?,
                 );
@@ -1091,6 +1268,7 @@ mod served {
             clock,
             appender,
             principals: principals.clone(),
+            counters,
             exports,
             exports_stop,
             public,
@@ -1112,8 +1290,7 @@ mod served {
             || path.starts_with("/internal/v1/meter/")
             || path.starts_with("/api/v1/meters/")
             || path.starts_with("/api/v1/subjects/");
-        if meter_path
-            && let Some(principal) = request.extensions().get::<crate::auth::Principal>()
+        if meter_path && let Some(principal) = request.extensions().get::<crate::auth::Principal>()
         {
             match standing(&principals, principal).await {
                 Ok(Standing::Operator) => {

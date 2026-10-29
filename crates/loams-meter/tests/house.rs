@@ -142,7 +142,11 @@ fn period_specs_cover_every_metered_entitlement() {
     assert_eq!(daily[0].feature.key, "house_cpu");
     assert_eq!(daily[0].periods.len(), 3, "the current day and two before");
     let hourly = period_specs(&records(Interval::Hour), now);
-    assert_eq!(hourly[0].periods.len(), 5, "the current hour and four before");
+    assert_eq!(
+        hourly[0].periods.len(),
+        5,
+        "the current hour and four before"
+    );
 }
 
 #[tokio::test]
@@ -180,4 +184,15 @@ async fn the_openmeter_query_route_needs_a_caller() {
         .await
         .expect("a response");
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[test]
+fn usage_so_far_reads_raw_events_final_in_the_period() {
+    let r = records(Interval::Month);
+    let feature = loams_meter_house::period::feature_def(&r.features[0], &r.meters[0]);
+    let sql = loams_meter::house::usage_sql("org_a", &feature, 100, 200);
+    assert!(sql.contains("_meter.events FINAL"), "{sql}");
+    assert!(sql.contains("subject = 'org_a'"), "{sql}");
+    assert!(sql.contains(TYPE), "{sql}");
+    assert!(sql.contains("time >= ") && sql.contains("time < "), "{sql}");
 }
