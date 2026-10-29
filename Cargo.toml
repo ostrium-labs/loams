@@ -1,7 +1,8 @@
 [workspace]
 resolver = "3"
-# bench/git-wal: the bucket WAL benchmark (GT1 Task 11).
-members = ["crates/*", "bench/git-wal"]
+# bench/git-wal: the bucket WAL benchmark (GT1 Task 11). bench/all/loadgen:
+# the BQ1 combined run's native-API load generator.
+members = ["crates/*", "bench/git-wal", "bench/all/loadgen"]
 # loams-wal-decoder is a workspace of its own: it links the Neon fork's
 # crates, whose dependency tree stays out of this lockfile and licence check
 # (PG2 ruling R31.3, owner ruling 2026-10-08).
