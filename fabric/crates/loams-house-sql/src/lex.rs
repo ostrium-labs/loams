@@ -265,7 +265,15 @@ fn trailing_clauses(
     };
     if !matches!(
         sig.first().map(|_| kw(0)),
-        Some(Some(Keyword::SELECT | Keyword::WITH))
+        Some(Some(
+            Keyword::SELECT
+                | Keyword::WITH
+                // Metadata statements carry them too (plan HE1 Task 38).
+                | Keyword::SHOW
+                | Keyword::DESCRIBE
+                | Keyword::DESC
+                | Keyword::EXISTS
+        ))
     ) && !matches!(sig.first().map(|&i| &tokens[i].token), Some(Token::LParen))
     {
         return Ok(());

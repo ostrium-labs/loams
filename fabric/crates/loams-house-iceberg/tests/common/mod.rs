@@ -164,6 +164,7 @@ fn fields(columns: &[ChColumn], first_id: i32) -> (Vec<Arc<NestedField>>, i32) {
 impl Lake {
     /// `CREATE TABLE db.name (columns) ENGINE = engine ORDER BY order_by
     /// [PARTITION BY identity(partition)] [TTL ttl]`.
+    #[allow(clippy::too_many_arguments)]
     pub fn create(
         root: &Path,
         db: &str,
