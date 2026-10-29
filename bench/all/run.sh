@@ -52,8 +52,8 @@ log() { printf '[run %s] %s\n' "$(date +%H:%M:%S)" "$*" >&2; }
 #      | align (startat | lead:<s>) | extra args (D = depth)
 slots=(
   "kv|kv|bench/all/native/kv.sh|$KV_CORES|$KV_CORES|startat|--ops get,put"
-  "kv-tikv|kv|bench/all/native/kv-tikv.sh|$TIKV_CORES|$SQL_LOAD|startat|--ops get,put"
-  "sql|sql|bench/all/native/sql.sh|$TIDB_CORES|$SQL_LOAD|startat|"
+  "kv-tikv|kv|bench/all/native/kv-tikv.sh|$KV_TIKV_CORES|$SQL_LOAD|startat|--ops get,put"
+  "sql|sql|bench/all/native/sql.sh|$TIKV_CORES,$TIDB_CORES|$SQL_LOAD|startat|"
   "pg|pg|bench/all/native/pg.sh|$PG_CORES|$PG_LOAD|startat|"
   "house|house|bench/house/native-load.sh|$HOUSE_CORES|$HOUSE_LOAD|lead:${HOUSE_LEAD:-5}|--ops point --port-base 48600"
   "iggy|iggy|bench/all/native/iggy.sh|$IGGY_CORES|$IGGY_LOAD|startat|"

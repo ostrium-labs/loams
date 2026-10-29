@@ -9,8 +9,9 @@
 # What it starts (ports on 127.0.0.1):
 #   sql      PD 39479, one TiKV 40260 (API v2, keyspaces), one keyspace-mode
 #            TiDB 44100 (keyspace "bq1all"), images pinned in
-#            release/sqldb-images.toml. The kv engine's TiKV op uses this
-#            TiKV too, in its own keyspace.
+#            release/sqldb-images.toml.
+#   kv       a second cluster for the kv engine's TiKV op: PD 39579, one
+#            TiKV 40360, on its own core, so sql and kv do not share a store.
 #   pg       the pinned Postgres 17.10 image (stock compute, PGDATA on a
 #            tmpfs), port 55701
 #   durable  the Resonate server on SQLite, port 38101
@@ -61,8 +62,11 @@ start_bg() { # <name> <cores> <cmd...>: a host process, PID in $run/<name>.pid
   echo $! > "$run/$name.pid"
 }
 
-up_sql() {
-  local d="$DATA/sql"
+# pd_tikv <name> <pd cores> <tikv cores> <pd port> <tikv port>: one PD and one
+# TiKV store (API v2, keyspaces) in $DATA/<name>, their own cluster.
+pd_tikv() {
+  local name=$1 pd_cores=$2 tikv_cores=$3 pd=$4 kv=$5
+  local d="$DATA/$name"
   mkdir -p "$d/pd" "$d/tikv"
   cat > "$d/pd.toml" <<'EOF'
 [keyspace]
@@ -91,7 +95,27 @@ max-background-jobs = 2
 max-open-files = 4096
 max-background-jobs = 1
 EOF
-  cat > "$d/tidb.toml" <<'EOF'
+  log "$name: PD on $pd_cores, TiKV on $tikv_cores"
+  podman run -d --name "$prefix-$name-pd" --network host --cpuset-cpus "$pd_cores" --memory "$PD_MEM" \
+    -v "$d:/data:Z" "$(image_ref pd)" \
+    --name=pd --data-dir=/data/pd --config=/data/pd.toml \
+    --client-urls="http://127.0.0.1:$pd" --advertise-client-urls="http://127.0.0.1:$pd" \
+    --peer-urls="http://127.0.0.1:$((pd + 1))" --advertise-peer-urls="http://127.0.0.1:$((pd + 1))" \
+    --initial-cluster="pd=http://127.0.0.1:$((pd + 1))" > /dev/null
+  wait_for "$name PD" 60 curl -fsS "http://127.0.0.1:$pd/pd/api/v1/health"
+  podman run -d --name "$prefix-$name-tikv" --network host --cpuset-cpus "$tikv_cores" --memory "$TIKV_MEM" \
+    --ulimit nofile=65536:65536 -v "$d:/data:Z" "$(image_ref tikv)" \
+    --pd-endpoints="127.0.0.1:$pd" --addr="127.0.0.1:$kv" --advertise-addr="127.0.0.1:$kv" \
+    --status-addr="127.0.0.1:$((kv + 20))" --data-dir=/data/tikv --config=/data/tikv.toml > /dev/null
+  wait_for "$name TiKV Up" 300 bash -c \
+    "curl -fsS http://127.0.0.1:$pd/pd/api/v1/stores | jq -e '[.stores[] | select(.store.state_name == \"Up\")] | length == 1'"
+}
+
+up_sql() {
+  pd_tikv sql "$PD_CORES" "$TIKV_CORES" 39479 40260
+  curl -fsS -X POST http://127.0.0.1:39479/pd/api/v2/keyspaces -H 'content-type: application/json' \
+    -d '{"name":"bq1all"}' > /dev/null || true
+  cat > "$DATA/sql/tidb.toml" <<'EOF'
 keyspace-name = "bq1all"
 split-table = true
 [performance]
@@ -100,27 +124,17 @@ lite-init-stats = true
 [log]
 level = "error"
 EOF
-  log "PD on $PD_CORES, TiKV on $TIKV_CORES, TiDB on $TIDB_CORES"
-  podman run -d --name "$prefix-pd" --network host --cpuset-cpus "$PD_CORES" --memory "$PD_MEM" \
-    -v "$d:/data:Z" "$(image_ref pd)" \
-    --name=pd --data-dir=/data/pd --config=/data/pd.toml \
-    --client-urls=http://127.0.0.1:39479 --advertise-client-urls=http://127.0.0.1:39479 \
-    --peer-urls=http://127.0.0.1:39480 --advertise-peer-urls=http://127.0.0.1:39480 \
-    --initial-cluster=pd=http://127.0.0.1:39480 > /dev/null
-  wait_for PD 60 curl -fsS http://127.0.0.1:39479/pd/api/v1/health
-  podman run -d --name "$prefix-tikv" --network host --cpuset-cpus "$TIKV_CORES" --memory "$TIKV_MEM" \
-    --ulimit nofile=65536:65536 -v "$d:/data:Z" "$(image_ref tikv)" \
-    --pd-endpoints=127.0.0.1:39479 --addr=127.0.0.1:40260 --advertise-addr=127.0.0.1:40260 \
-    --status-addr=127.0.0.1:40280 --data-dir=/data/tikv --config=/data/tikv.toml > /dev/null
-  wait_for "TiKV Up" 300 bash -c \
-    "curl -fsS http://127.0.0.1:39479/pd/api/v1/stores | jq -e '[.stores[] | select(.store.state_name == \"Up\")] | length == 1'"
-  curl -fsS -X POST http://127.0.0.1:39479/pd/api/v2/keyspaces -H 'content-type: application/json' \
-    -d '{"name":"bq1all"}' > /dev/null || true
+  log "TiDB on $TIDB_CORES"
   podman run -d --name "$prefix-tidb" --network host --cpuset-cpus "$TIDB_CORES" --memory "$TIDB_MEM" \
-    -v "$d/tidb.toml:/etc/tidb.toml:ro,Z" "$(image_ref tidb)" \
+    -v "$DATA/sql/tidb.toml:/etc/tidb.toml:ro,Z" "$(image_ref tidb)" \
     --store=tikv --path=127.0.0.1:39479 --host=127.0.0.1 -P 44100 --status=45100 \
     --config=/etc/tidb.toml > /dev/null
   wait_for TiDB 300 mysql --skip-ssl -h127.0.0.1 -P44100 -uroot -N -B -e 'SELECT 1'
+}
+
+# The kv engine's own TiKV cluster, so its store core is not sql's.
+up_kv() {
+  pd_tikv kv "$KV_PD_CORES" "$KV_TIKV_CORES" 39579 40360
 }
 
 up_pg() {
@@ -185,7 +199,7 @@ down() {
     kill -9 "$pid" 2> /dev/null || true
     rm -f "$f"
   done
-  rm -rf "$DATA/sql" "$DATA/iggy" "$DATA/resonate.db"* "$run"
+  rm -rf "$DATA/sql" "$DATA/kv" "$DATA/iggy" "$DATA/resonate.db"* "$run"
   log "down, data removed"
 }
 
@@ -201,7 +215,7 @@ status() {
 case "${1:-}" in
   up)
     trap 'log "up failed; stopping"; down' ERR
-    up_pg; up_durable; up_gateway; up_iggy; up_sql
+    up_pg; up_durable; up_gateway; up_iggy; up_sql; up_kv
     trap - ERR
     log "all servers up" ;;
   down) down ;;
