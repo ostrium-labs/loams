@@ -286,7 +286,9 @@ fn trailing_clauses(
             Token::RParen | Token::RBracket => depth -= 1,
             _ => {}
         }
-        if depth == 0 && matches!(kw(s), Some(Keyword::SETTINGS | Keyword::FORMAT)) {
+        // A name part (`system.settings`) is not a clause.
+        let after_dot = s > 0 && matches!(tokens[sig[s - 1]].token, Token::Period);
+        if depth == 0 && !after_dot && matches!(kw(s), Some(Keyword::SETTINGS | Keyword::FORMAT)) {
             clauses.push(s);
         }
     }
