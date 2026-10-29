@@ -211,6 +211,70 @@ pub fn gate_verdict(
     }
 }
 
+/// How many verdicts one shard of [`gate_verdict_cached`]'s cache keeps before it is cleared.
+const VERDICT_SHARD_CAP: usize = 1024;
+const VERDICT_SHARDS: usize = 16;
+
+/// What a GQL verdict depends on: the text and the three limits the gate reads.
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct VerdictKey {
+    statement: String,
+    max_statement_bytes: usize,
+    max_chain_tokens: usize,
+    max_path_hops: u32,
+}
+
+type VerdictShard = std::sync::RwLock<std::collections::HashMap<VerdictKey, Verdict>>;
+
+static VERDICTS: std::sync::LazyLock<Vec<VerdictShard>> = std::sync::LazyLock::new(|| {
+    (0..VERDICT_SHARDS)
+        .map(|_| std::sync::RwLock::new(std::collections::HashMap::new()))
+        .collect()
+});
+
+/// [`gate_verdict`] for GQL, remembering admitted statements.
+///
+/// The gate translates the statement and renders its whole plan to check it (security review
+/// C1), which cost about 90 µs of a 115 µs point lookup (BQ1, 2026-10-28): four times the engine's
+/// own time. A verdict is a function of the text and the limits only (parameters are bound by
+/// the engine and never reach the gate), so a statement admitted once is admitted again without
+/// translating it. Only admissions are kept; a refusal is decided afresh each time. The cache is
+/// sharded by the text's hash, and a shard is cleared when it fills.
+///
+/// # Errors
+///
+/// As [`gate_verdict`].
+pub fn gate_verdict_cached(
+    statement: &str,
+    limits: &StatementLimits,
+) -> Result<Verdict, GraphError> {
+    use std::hash::{Hash, Hasher};
+    let key = VerdictKey {
+        statement: statement.to_string(),
+        max_statement_bytes: limits.max_statement_bytes,
+        max_chain_tokens: limits.max_chain_tokens,
+        max_path_hops: limits.max_path_hops,
+    };
+    // `DefaultHasher::new()` has fixed keys, so one text always lands in one shard. The shard
+    // only spreads the lock; the map inside keys on the full text.
+    let mut h = std::hash::DefaultHasher::new();
+    key.hash(&mut h);
+    let shard = &VERDICTS[(h.finish() as usize) % VERDICT_SHARDS];
+    if let Ok(map) = shard.read()
+        && let Some(verdict) = map.get(&key)
+    {
+        return Ok(*verdict);
+    }
+    let verdict = gate_verdict(statement, QueryLanguage::Gql, limits)?;
+    if let Ok(mut map) = shard.write() {
+        if map.len() >= VERDICT_SHARD_CAP {
+            map.clear();
+        }
+        map.insert(key, verdict);
+    }
+    Ok(verdict)
+}
+
 /// Session commands: none is served. The transaction statements are the RPC's job; graph and
 /// projection management would switch away from the one graph a Loams graph is (R0.10 (b)); and
 /// the rest set state on a session that ends with the call, which Grafeo's parameterised path

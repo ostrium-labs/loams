@@ -1,0 +1,1 @@
+{"mode":"sink","threads":1,"cores":[4],"secs":10.0132083,"emitted":3558656,"emitted_per_sec":355396.1820608486,"produced":3558656,"produced_per_sec":355396.1820608486,"produced_bytes":1393091722,"batches":1329,"dropped_queue_full":0,"emit_latency":{"samples":55604,"p50_ns":2095,"p99_ns":10695,"p999_ns":17231,"max_ns":270079},"host":{"available_parallelism":2,"lane":"bq1-meter"}}

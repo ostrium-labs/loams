@@ -1,23 +1,12 @@
 <?xml version='1.0' encoding='utf-8'?>
 <testsuites>
-  <testsuite name="temporal-gateway" tests="15" failures="4" errors="0" skipped="9">
+  <testsuite name="temporal-gateway" tests="15" failures="0" errors="0" skipped="9">
     <testcase classname="temporal-gateway" name="gateway_profile_serving" />
     <testcase classname="temporal-gateway" name="gateway_profile_no_host_ports" />
-    <testcase classname="temporal-gateway" name="gateway_dx1_scenarios_ruby">
-      <failure message="    test/scenarios_test.rb:23:in 'ScenariosTest#test_every_scenario_has_a_workflow'&#10;&#10;4 runs, 6 assertions, 0 failures, 1 errors, 0 skips">    test/scenarios_test.rb:23:in 'ScenariosTest#test_every_scenario_has_a_workflow'
-
-4 runs, 6 assertions, 0 failures, 1 errors, 0 skips</failure>
-    </testcase>
-    <testcase classname="temporal-gateway" name="gateway_hello_ruby">
-      <failure message="no completed hello history">no completed hello history</failure>
-    </testcase>
-    <testcase classname="temporal-gateway" name="gateway_signal_ruby">
-      <failure message="no completed signal_then_complete history">no completed signal_then_complete history</failure>
-    </testcase>
-    <testcase classname="temporal-gateway" name="gateway_histories_replay_ruby">
-      <failure message="replay.rb:52:in 'Corpus::Replay.run': no histories in /out/histories/ruby (RuntimeError)&#10;&#09;from replay.rb:71:in '&lt;main&gt;'">replay.rb:52:in 'Corpus::Replay.run': no histories in /out/histories/ruby (RuntimeError)
-	from replay.rb:71:in '&lt;main&gt;'</failure>
-    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_scenarios_ruby" />
+    <testcase classname="temporal-gateway" name="gateway_hello_ruby" />
+    <testcase classname="temporal-gateway" name="gateway_signal_ruby" />
+    <testcase classname="temporal-gateway" name="gateway_histories_replay_ruby" />
     <testcase classname="temporal-gateway" name="gateway_dx1_differential_ruby_hello">
       <skipped message="the corpus has no ruby/hello history yet (generate.sh --langs ruby)">the corpus has no ruby/hello history yet (generate.sh --langs ruby)</skipped>
     </testcase>

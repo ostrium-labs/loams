@@ -1,0 +1,88 @@
+{
+ "label": "rowgroups-before",
+ "meta": {
+  "client_cores": "6-11",
+  "commit": "575d1ab1c",
+  "load": "load kv: 0.58 s; hits: 9.98 s kv\t1000000 hits\t5000000 ",
+  "server_cores": "0-5",
+  "workers": "default (cores/2)"
+ },
+ "results": {
+  "http_agg_c1": {
+   "errors": {
+    "aborted due to deadline": 1
+   },
+   "ok": 182,
+   "p50_ms": 48.516,
+   "p99_9_ms": 435.541,
+   "p99_ms": 193.867,
+   "qps": 18.3,
+   "total": 182
+  },
+  "http_agg_c8": {
+   "errors": {
+    "aborted due to deadline": 8
+   },
+   "ok": 387,
+   "p50_ms": 129.777,
+   "p99_9_ms": 1070.175,
+   "p99_ms": 847.763,
+   "qps": 39.5,
+   "total": 387
+  },
+  "http_point_c1": {
+   "errors": {
+    "aborted due to deadline": 1
+   },
+   "ok": 212,
+   "p50_ms": 37.411,
+   "p99_9_ms": 913.732,
+   "p99_ms": 166.329,
+   "qps": 21.3,
+   "total": 212
+  },
+  "http_point_c8": {
+   "errors": {
+    "aborted due to deadline": 8
+   },
+   "ok": 410,
+   "p50_ms": 122.652,
+   "p99_9_ms": 1143.503,
+   "p99_ms": 838.544,
+   "qps": 41.7,
+   "total": 410
+  },
+  "native_agg_c1": {
+   "hosts": 1,
+   "p50_ms": 28.0,
+   "p99_9_ms": 74.0,
+   "p99_ms": 70.0,
+   "qps": 20.1,
+   "queries": 202
+  },
+  "native_agg_c8": {
+   "hosts": 1,
+   "p50_ms": 35.0,
+   "p99_9_ms": 102.0,
+   "p99_ms": 88.0,
+   "qps": 47.2,
+   "queries": 481
+  },
+  "native_point_c1": {
+   "hosts": 1,
+   "p50_ms": 22.0,
+   "p99_9_ms": 83.0,
+   "p99_ms": 68.0,
+   "qps": 19.3,
+   "queries": 195
+  },
+  "native_point_c8": {
+   "hosts": 1,
+   "p50_ms": 25.0,
+   "p99_9_ms": 104.0,
+   "p99_ms": 81.0,
+   "qps": 49.3,
+   "queries": 501
+  }
+ }
+}

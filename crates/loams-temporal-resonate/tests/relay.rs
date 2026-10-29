@@ -100,13 +100,15 @@ async fn relay_crash_between_call_and_mark_is_idempotent() {
     assert_eq!(outbox.undispatched(), 2);
     // A Resonate answer lost after it applied the call is the same case.
     fake.fail_next_calls(1, true);
+    // The two rows are different promises, sent concurrently: the one whose
+    // answer was lost stays for the next pass, the other is marked.
     let pass = relay.run_once().await.unwrap();
     assert!(pass.unavailable);
-    assert_eq!(pass.marked, 0);
+    assert_eq!(pass.marked, 1);
 
-    // The restarted relay repeats every call: same promises, one dispatch.
+    // The next pass repeats the lost call: same promise, one dispatch.
     let pass = relay.run_once().await.unwrap();
-    assert_eq!((pass.claimed, pass.marked, pass.unavailable), (2, 2, false));
+    assert_eq!((pass.claimed, pass.marked, pass.unavailable), (1, 1, false));
     assert_eq!(outbox.undispatched(), 0);
     assert_eq!(fake.promise_count(), 2);
     assert!(matches!(
@@ -313,4 +315,41 @@ async fn relay_deferred_rows_do_not_starve_the_outbox() {
     let pass = relay.run_once().await.unwrap();
     assert_eq!((pass.deferred, pass.marked), (100, 1));
     assert!(fake.promise_get("wft:behind").await.is_ok());
+}
+
+#[tokio::test]
+async fn relay_sends_different_promises_concurrently_and_one_promise_in_order() {
+    let fake = FakeDurability::new();
+    let outbox = Arc::new(MemOutbox::default());
+    for i in 0..10 {
+        outbox.push(create_task(&format!("wft:p{i}"), b"x"));
+        outbox.push(OutboxRequest::Settle {
+            id: format!("wft:p{i}"),
+            state: SettleAs::Resolved,
+        });
+    }
+    let relay = relay(&outbox, &fake).with_config(loams_temporal_resonate::RelayConfig {
+        concurrency: 4,
+        ..Default::default()
+    });
+    let pass = relay.run_once().await.unwrap();
+    assert_eq!(
+        (pass.claimed, pass.marked, pass.unavailable),
+        (20, 20, false)
+    );
+    // Each promise saw its create before its settle.
+    let calls = fake.calls();
+    for i in 0..10 {
+        let c = calls
+            .iter()
+            .position(|x| *x == format!("promise.create wft:p{i}"));
+        let s = calls
+            .iter()
+            .position(|x| *x == format!("promise.settle wft:p{i}"));
+        assert!(c.is_some() && s.is_some() && c < s, "{calls:?}");
+        assert_eq!(
+            fake.promise_get(&format!("wft:p{i}")).await.unwrap().status,
+            PromiseStatus::Resolved
+        );
+    }
 }

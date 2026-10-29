@@ -1,0 +1,233 @@
+{
+ "label": "read-6c",
+ "meta": {
+  "client_cores": "6-11",
+  "commit": "575d1ab1c",
+  "load": "load kv: 0.77 s; hits: 10.20 s kv\t1000000 hits\t5000000 ",
+  "server_cores": "0-5",
+  "workers": "default (cores/2)"
+ },
+ "results": {
+  "http_agg_c1": {
+   "errors": {
+    "aborted due to deadline": 1,
+    "timeout": 1
+   },
+   "ok": 0,
+   "p50_ms": null,
+   "p99_9_ms": null,
+   "p99_ms": null,
+   "qps": 0.2,
+   "total": 0
+  },
+  "http_agg_c32": {
+   "errors": {
+    "aborted due to deadline": 32,
+    "timeout": 64
+   },
+   "ok": 0,
+   "p50_ms": null,
+   "p99_9_ms": null,
+   "p99_ms": null,
+   "qps": 9.6,
+   "total": 0
+  },
+  "http_agg_c64": {
+   "errors": {
+    "aborted due to deadline": 64,
+    "timeout": 128
+   },
+   "ok": 0,
+   "p50_ms": null,
+   "p99_9_ms": null,
+   "p99_ms": null,
+   "qps": 19.2,
+   "total": 0
+  },
+  "http_agg_c8": {
+   "errors": {
+    "aborted due to deadline": 8,
+    "timeout": 8
+   },
+   "ok": 0,
+   "p50_ms": null,
+   "p99_9_ms": null,
+   "p99_ms": null,
+   "qps": 1.6,
+   "total": 0
+  },
+  "http_point_c1": {
+   "errors": {
+    "aborted due to deadline": 1,
+    "timeout": 1
+   },
+   "ok": 0,
+   "p50_ms": null,
+   "p99_9_ms": null,
+   "p99_ms": null,
+   "qps": 0.2,
+   "total": 0
+  },
+  "http_point_c32": {
+   "errors": {
+    "aborted due to deadline": 32,
+    "timeout": 32
+   },
+   "ok": 0,
+   "p50_ms": null,
+   "p99_9_ms": null,
+   "p99_ms": null,
+   "qps": 6.4,
+   "total": 0
+  },
+  "http_point_c64": {
+   "errors": {
+    "aborted due to deadline": 64,
+    "timeout": 64
+   },
+   "ok": 0,
+   "p50_ms": null,
+   "p99_9_ms": null,
+   "p99_ms": null,
+   "qps": 12.8,
+   "total": 0
+  },
+  "http_point_c8": {
+   "errors": {
+    "aborted due to deadline": 8,
+    "timeout": 8
+   },
+   "ok": 0,
+   "p50_ms": null,
+   "p99_9_ms": null,
+   "p99_ms": null,
+   "qps": 1.6,
+   "total": 0
+  },
+  "native_agg_c1": {
+   "hosts": 1,
+   "p50_ms": 48.0,
+   "p99_9_ms": 111.0,
+   "p99_ms": 99.0,
+   "qps": 11.5,
+   "queries": 116
+  },
+  "native_agg_c32": {
+   "hosts": 1,
+   "p50_ms": 51.0,
+   "p99_9_ms": 146.0,
+   "p99_ms": 103.0,
+   "qps": 32.5,
+   "queries": 361
+  },
+  "native_agg_c64": {
+   "hosts": 1,
+   "p50_ms": 62.0,
+   "p99_9_ms": 129.0,
+   "p99_ms": 118.0,
+   "qps": 27.3,
+   "queries": 333
+  },
+  "native_agg_c8": {
+   "hosts": 1,
+   "p50_ms": 50.0,
+   "p99_9_ms": 116.0,
+   "p99_ms": 104.0,
+   "qps": 33.9,
+   "queries": 350
+  },
+  "native_cb_q0": {
+   "hosts": 1,
+   "p50_ms": 269.0,
+   "p99_9_ms": 772.0,
+   "p99_ms": 645.0,
+   "qps": 8.3,
+   "queries": 87
+  },
+  "native_cb_q1": {
+   "hosts": 1,
+   "p50_ms": 467.0,
+   "p99_9_ms": 607.0,
+   "p99_ms": 573.0,
+   "qps": 6.2,
+   "queries": 66
+  },
+  "native_cb_q10": {
+   "error": "Code: 241. DB::Exception: Received from 127.0.0.1:29000. DB::Exception: (total) memory limit exceeded: would use 3.47 GiB (attempt to allocate chunk of 4.76 MiB), current"
+  },
+  "native_cb_q11": {
+   "error": "Code: 241. DB::Exception: Received from 127.0.0.1:29000. DB::Exception: (total) memory limit exceeded: would use 2.11 GiB (attempt to allocate chunk of 8.00 MiB), current"
+  },
+  "native_cb_q2": {
+   "hosts": 1,
+   "p50_ms": 251.0,
+   "p99_9_ms": 477.0,
+   "p99_ms": 440.0,
+   "qps": 8.8,
+   "queries": 92
+  },
+  "native_cb_q3": {
+   "hosts": 1,
+   "p50_ms": 415.0,
+   "p99_9_ms": 611.0,
+   "p99_ms": 610.0,
+   "qps": 6.2,
+   "queries": 65
+  },
+  "native_cb_q4": {
+   "hosts": 1,
+   "p50_ms": 446.0,
+   "p99_9_ms": 683.0,
+   "p99_ms": 682.0,
+   "qps": 5.8,
+   "queries": 61
+  },
+  "native_cb_q5": {
+   "error": "Code: 241. DB::Exception: Received from 127.0.0.1:29000. DB::Exception: (total) memory limit exceeded: would use 3.55 GiB (attempt to allocate chunk of 0.00 B), current R"
+  },
+  "native_cb_q6": {
+   "error": "Code: 241. DB::Exception: Received from 127.0.0.1:29000. DB::Exception: (total) memory limit exceeded: would use 3.46 GiB (attempt to allocate chunk of 0.00 B), current R"
+  },
+  "native_cb_q7": {
+   "error": "Code: 241. DB::Exception: Received from 127.0.0.1:29000. DB::Exception: (total) memory limit exceeded: would use 3.46 GiB (attempt to allocate chunk of 5.00 MiB), current"
+  },
+  "native_cb_q8": {
+   "error": "Code: 241. DB::Exception: Received from 127.0.0.1:29000. DB::Exception: (total) memory limit exceeded: would use 2.11 GiB (attempt to allocate chunk of 4.19 MiB), current"
+  },
+  "native_cb_q9": {
+   "error": "Code: 241. DB::Exception: Received from 127.0.0.1:29000. DB::Exception: (total) memory limit exceeded: would use 2.11 GiB (attempt to allocate chunk of 5.00 MiB), current"
+  },
+  "native_point_c1": {
+   "hosts": 1,
+   "p50_ms": 34.0,
+   "p99_9_ms": 84.0,
+   "p99_ms": 83.0,
+   "qps": 13.0,
+   "queries": 131
+  },
+  "native_point_c32": {
+   "hosts": 1,
+   "p50_ms": 44.0,
+   "p99_9_ms": 117.0,
+   "p99_ms": 101.0,
+   "qps": 28.4,
+   "queries": 310
+  },
+  "native_point_c64": {
+   "hosts": 1,
+   "p50_ms": 46.0,
+   "p99_9_ms": 128.0,
+   "p99_ms": 112.0,
+   "qps": 25.4,
+   "queries": 307
+  },
+  "native_point_c8": {
+   "hosts": 1,
+   "p50_ms": 38.0,
+   "p99_9_ms": 111.0,
+   "p99_ms": 90.0,
+   "qps": 33.5,
+   "queries": 342
+  }
+ }
+}

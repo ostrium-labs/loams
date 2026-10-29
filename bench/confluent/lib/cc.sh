@@ -41,7 +41,7 @@ cc() {
     echo "cc.sh: refusing $m outside $CFB_ENV" >&2; return 1
   fi
   [[ "$p" == http* ]] && url="$p" || url="$CFB_API$p"
-  local args=(-sS -X "$m" -H 'Content-Type: application/json' --max-time 120 --retry 2 -o "$CFB_STATE/last.body" -w '%{http_code}')
+  local args=(-sS -X "$m" -H 'Content-Type: application/json' --max-time 120 --retry 2 -o "$CFB_STATE/last.$$.body" -w '%{http_code}')
   [[ $# -lt 3 ]] || args+=(--data "$3")
   (
     set +x
@@ -50,20 +50,20 @@ cc() {
     # ~/confluent.env: the owner's Cloud key is CONFLUENT_API_KEY/_SECRET (the
     # CONFLUENT_CLOUD_* entries there are placeholders, 2026-10-28).
     printf 'user = "%s:%s"\n' "${CFB_CLOUD_KEY_ID:-$CONFLUENT_API_KEY}" "${CFB_CLOUD_KEY_SECRET:-$CONFLUENT_API_SECRET}"
-  ) | curl -K - "${args[@]}" "$url" >"$CFB_STATE/last.status" 2>"$CFB_STATE/last.err" || echo 000 >"$CFB_STATE/last.status"
-  cat "$CFB_STATE/last.body"
+  ) | curl -K - "${args[@]}" "$url" >"$CFB_STATE/last.$$.status" 2>"$CFB_STATE/last.$$.err" || echo 000 >"$CFB_STATE/last.$$.status"
+  cat "$CFB_STATE/last.$$.body"
 }
-cc_status() { cat "$CFB_STATE/last.status"; }
+cc_status() { cat "$CFB_STATE/last.$$.status"; }
 
 # Basic auth with a Kafka/Flink key file (id=..., secret=...) for data-plane REST.
 cc_keyed() {  # keyfile METHOD URL [json]
   local kf="$1" m="$2" url="$3"
   cc_refuse "$url ${4:-}" || return 1
-  local args=(-sS -X "$m" -H 'Content-Type: application/json' --max-time 120 -o "$CFB_STATE/last.body" -w '%{http_code}')
+  local args=(-sS -X "$m" -H 'Content-Type: application/json' --max-time 120 -o "$CFB_STATE/last.$$.body" -w '%{http_code}')
   [[ $# -lt 4 ]] || args+=(--data "$4")
   printf 'user = "%s:%s"\n' "$(sed -n 's/^id=//p' "$kf")" "$(sed -n 's/^secret=//p' "$kf")" \
-    | curl -K - "${args[@]}" "$url" >"$CFB_STATE/last.status" 2>"$CFB_STATE/last.err" || echo 000 >"$CFB_STATE/last.status"
-  cat "$CFB_STATE/last.body"
+    | curl -K - "${args[@]}" "$url" >"$CFB_STATE/last.$$.status" 2>"$CFB_STATE/last.$$.err" || echo 000 >"$CFB_STATE/last.$$.status"
+  cat "$CFB_STATE/last.$$.body"
 }
 
 # Record a created/deleted resource in our state and in the shared CI ledgers.
