@@ -34,6 +34,7 @@ cargo_package(
         "//third-party/rust:hex",
         "//third-party/rust:serde",
         "//third-party/rust:serde_json",
+        "//third-party/rust:serde_yaml_ng",
         "//third-party/rust:sha2",
         "//third-party/rust:thiserror",
         "//third-party/rust:time",
