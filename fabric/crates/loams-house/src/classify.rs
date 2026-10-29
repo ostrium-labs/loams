@@ -68,6 +68,11 @@ pub enum Stmt {
     CreateMaterializedView { name: String },
     /// `CREATE [OR REPLACE] VIEW` (HE1 R9.13): a catalog view.
     CreateView { name: String },
+    /// `CREATE [OR REPLACE] FUNCTION` (HE1 R14.11): a SQL function of the
+    /// namespace.
+    CreateFunction { name: String },
+    /// `CREATE [OR REPLACE] DICTIONARY` (HE1 R14.12): a catalog dictionary.
+    CreateDictionary { name: String },
     /// `DROP …`.
     Drop(DropStmt),
     /// `TRUNCATE TABLE`.
@@ -83,6 +88,8 @@ pub enum Stmt {
     },
     /// `RENAME TABLE a TO b, …`.
     Rename { pairs: Vec<(String, String)> },
+    /// `EXCHANGE TABLES a AND b` (HE1 R14.9).
+    Exchange { first: String, second: String },
     /// `UNDROP TABLE`.
     Undrop { name: String },
     /// `SHOW …`: chDB answers until HS1 Task 11's system tables.
@@ -196,11 +203,14 @@ impl Stmt {
             Self::CreatePipe { .. } => "CreatePipe",
             Self::CreateMaterializedView { .. } => "CreateMaterializedView",
             Self::CreateView { .. } => "CreateView",
+            Self::CreateFunction { .. } => "CreateFunction",
+            Self::CreateDictionary { .. } => "CreateDictionary",
             Self::Drop(_) => "Drop",
             Self::Truncate { .. } => "Truncate",
             Self::Mutation { .. } => "Mutation",
             Self::Alter { .. } => "Alter",
             Self::Rename { .. } => "Rename",
+            Self::Exchange { .. } => "Exchange",
             Self::Undrop { .. } => "Undrop",
             Self::Show { .. } => "Show",
             Self::Describe { .. } => "Describe",
@@ -574,8 +584,8 @@ fn denied_create(text: &str) -> Option<&'static str> {
         next = words.next()?;
     }
     match next.as_str() {
-        "FUNCTION" => Some("CREATE FUNCTION"),
-        "DICTIONARY" => Some("CREATE DICTIONARY"),
+        // HE1 R14.11, R14.12: `CREATE FUNCTION` and `CREATE DICTIONARY` are
+        // the catalog's ([`classify`]).
         "NAMED" => Some("CREATE NAMED COLLECTION"),
         _ => None,
     }
@@ -769,6 +779,62 @@ pub fn classify(sql: &str) -> Result<Classified, HouseError> {
             let view = crate::ddl::parse_create_view(&text)?;
             return known(Stmt::CreateView { name: view.name }, None);
         }
+        // HE1 R14.11: a SQL function is the catalog's, read by the House's
+        // reader (sqlparser's `CREATE FUNCTION` is another dialect's).
+        "CREATE"
+            if second == "FUNCTION"
+                || (second == "OR"
+                    && toks
+                        .iter()
+                        .filter(|(_, t)| t.word)
+                        .nth(3)
+                        .is_some_and(|(w, _)| w == "FUNCTION")) =>
+        {
+            let function = crate::ddl::parse_create_function(&text)?;
+            return known(
+                Stmt::CreateFunction {
+                    name: function.name,
+                },
+                None,
+            );
+        }
+        // HE1 R14.12: a dictionary is the catalog's, read by the House's
+        // reader.
+        "CREATE"
+            if second == "DICTIONARY"
+                || (second == "OR"
+                    && toks
+                        .iter()
+                        .filter(|(_, t)| t.word)
+                        .nth(3)
+                        .is_some_and(|(w, _)| w == "DICTIONARY")) =>
+        {
+            let dictionary = crate::ddl::parse_create_dictionary(&text)?;
+            return known(
+                Stmt::CreateDictionary {
+                    name: dictionary.name,
+                },
+                None,
+            );
+        }
+        "DROP" if second == "FUNCTION" || second == "DICTIONARY" => {
+            let drop = crate::ddl::parse_drop(&text)?;
+            return known(
+                Stmt::Drop(DropStmt {
+                    kind: drop.kind,
+                    names: drop
+                        .names
+                        .into_iter()
+                        .map(|(db, name)| match db {
+                            Some(db) => format!("{db}.{name}"),
+                            None => name,
+                        })
+                        .collect(),
+                    temporary: false,
+                }),
+                None,
+            );
+        }
         "CREATE" if second == "MATERIALIZED" => {
             let view = crate::ddl::parse_create_mv(&text)?;
             return known(Stmt::CreateMaterializedView { name: view.name }, None);
@@ -791,6 +857,22 @@ pub fn classify(sql: &str) -> Result<Classified, HouseError> {
                     format,
                 );
             }
+        }
+        // HE1 R14.9: `EXCHANGE TABLES a AND b`, the House's own reader's
+        // (sqlparser has no `EXCHANGE`).
+        "EXCHANGE" => {
+            let (first, second) = crate::ddl::parse_exchange(&text)?;
+            let printed = |(db, name): crate::ddl::QualifiedName| match db {
+                Some(db) => format!("{db}.{name}"),
+                None => name,
+            };
+            return known(
+                Stmt::Exchange {
+                    first: printed(first),
+                    second: printed(second),
+                },
+                None,
+            );
         }
         // HE1 R9.12: every `ALTER TABLE` is the House's own reader's; sqlparser
         // 0.63 refuses most of ClickHouse's forms.

@@ -14,6 +14,8 @@ name: loams-neon
 # Multi-arch index digests, generated from deploy/pins/loams-postgres-images.toml by
 # scripts/nf1/pins.py (NF1 Task 2; `pins.py check` fails on a hand edit): images.storage and
 # images.compute-v<majors.default>. NEON_IMAGE and COMPUTE_IMAGE override them (PG2 R2.1).
+# compute1 and compute2 run the default major; the generated compute-v<N> services at the
+# end (profile `pg<N>`) run each major of the pin file.
 x-neon-image: &neon-image ${NEON_IMAGE:-ghcr.io/ostrium-labs/loams-postgres-storage@sha256:4dcec4cbef637b92b1088ea2c0bc857f3b5ef4318f02e8d2d4a0f9263ed4140e}
 x-compute-image: &compute-image ${COMPUTE_IMAGE:-ghcr.io/ostrium-labs/loams-postgres-compute-v17@sha256:210b71416c827b6cf7842853706e1dbdcc870fd4a7af8e235d6e7296b95edb0e}
 x-s3-env: &s3-env
@@ -186,6 +188,42 @@ services:
       - 127.0.0.1:55434:55433
     entrypoint: ["/bin/bash", "/shell/start.sh"]
     depends_on: [pageserver, safekeeper1]
+
+  # pins.py: begin computes (generated from deploy/pins/loams-postgres-images.toml)
+  # One compute per Postgres major in the pin file (design 62 §9.4), off unless its profile
+  # `pg<N>` is selected (a beta major's also by `beta`). Each attaches only to the timeline
+  # PG<N>_TENANT_ID and PG<N>_TIMELINE_ID name, which must be a timeline of that major (a
+  # compute of another major is refused by loams-wal), and never falls back to compute1's.
+  # COMPUTE_V<N>_IMAGE overrides the pinned image; PG<N>_PORT the loopback port.
+  compute-v16:
+    # Postgres 16: supported.
+    profiles: ["pg16"]
+    image: ${COMPUTE_V16_IMAGE:-ghcr.io/ostrium-labs/loams-postgres-compute-v16@sha256:29842a21499b282b97420b141d11fd3923b9102ce0f37c14491581c5f6591434}
+    environment:
+      TENANT_ID: ${PG16_TENANT_ID:-}
+      TIMELINE_ID: ${PG16_TIMELINE_ID:-}
+    volumes:
+      - ./compute/config.json:/var/db/postgres/configs/config.json:ro
+      - ./compute/start.sh:/shell/start.sh:ro
+    ports:
+      - 127.0.0.1:${PG16_PORT:-55416}:55433
+    entrypoint: ["/bin/bash", "/shell/start.sh"]
+    depends_on: [pageserver, safekeeper1]
+  compute-v17:
+    # Postgres 17: supported.
+    profiles: ["pg17"]
+    image: ${COMPUTE_V17_IMAGE:-ghcr.io/ostrium-labs/loams-postgres-compute-v17@sha256:210b71416c827b6cf7842853706e1dbdcc870fd4a7af8e235d6e7296b95edb0e}
+    environment:
+      TENANT_ID: ${PG17_TENANT_ID:-}
+      TIMELINE_ID: ${PG17_TIMELINE_ID:-}
+    volumes:
+      - ./compute/config.json:/var/db/postgres/configs/config.json:ro
+      - ./compute/start.sh:/shell/start.sh:ro
+    ports:
+      - 127.0.0.1:${PG17_PORT:-55417}:55433
+    entrypoint: ["/bin/bash", "/shell/start.sh"]
+    depends_on: [pageserver, safekeeper1]
+  # pins.py: end computes
 
 volumes:
   rustfs-data:

@@ -30,6 +30,7 @@ buffa-descriptor = { package = "buffa-descriptor", version = "=0.9.2", default-f
 buffa-types = { package = "buffa-types", version = "=0.9.2", default-features = true, features = ["json", "std"] }
 bytes = { package = "bytes", version = "=1.12.1", default-features = true, features = ["serde", "std"] }
 bytesize = { package = "bytesize", version = "=2.7.0", default-features = true, features = ["std"] }
+cassandra-protocol = { package = "cassandra-protocol", version = "=4.0.1", default-features = false }
 chrono = { package = "chrono", version = "=0.4.45", default-features = true, features = ["alloc", "clock", "iana-time-zone", "js-sys", "now", "oldtime", "serde", "std", "wasm-bindgen", "wasmbind", "winapi", "windows-link"] }
 chrono-tz = { package = "chrono-tz", version = "=0.10.4", default-features = true, features = ["std"] }
 clap = { package = "clap", version = "=4.6.7", default-features = true, features = ["color", "derive", "env", "error-context", "help", "std", "suggestions", "usage", "wrap_help"] }

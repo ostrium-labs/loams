@@ -16,6 +16,15 @@
 //!   (which features an event feeds, which period it falls in) and the lease
 //!   service (allowance, chunk, policy).
 //!
+//! The counter owner also emits the meter's own events (§15): after each
+//! read it checks the touched counters against their thresholds and access
+//! ([`ThresholdTracker`]) and appends what crossed to `_system/_meter`
+//! ([`MeterEventSink`]), keyed by subject, so the events land in the
+//! partition this instance owns. Reading that partition, it hands each
+//! `io.loams.dev.meter.*` event to the notifier ([`MeterEventHandler`]):
+//! that is the notifier's consumer. Failed deliveries are retried every
+//! [`RETRY_EVERY`].
+//!
 //! [`CounterValues`] answers balances from the counters of the partitions
 //! this instance owns. A subject whose partition another instance owns, or
 //! one still being rebuilt, answers `meter_unavailable`: never a balance
@@ -44,6 +53,8 @@ use crate::owner::{
     PartitionLeases, PartitionReader, Periods, READ_BATCH, partition_of,
 };
 use crate::reconcile::{Allowances, RECONCILE_EVERY, reconcile};
+use crate::notify::events::DEFAULT_THRESHOLDS;
+use crate::notify::{MeterEvent, Notifier, ThresholdTracker};
 use crate::store::{Customer, MeterStore, PaymentState, Records};
 
 /// How often owned partitions are read to their end.
@@ -51,6 +62,88 @@ pub const TICK: Duration = Duration::from_millis(250);
 
 /// How often the cached records are read again.
 pub const CATALOG_REFRESH: Duration = Duration::from_secs(10);
+
+/// How often failed webhook deliveries are retried.
+pub const RETRY_EVERY: Duration = Duration::from_secs(30);
+
+/// Meter events older than this, read again on a rebuild, are not handed
+/// to the notifier again (their deliveries are long recorded).
+pub const NOTIFY_WINDOW: Duration = Duration::from_secs(24 * 3600);
+
+/// The type prefix of the meter's own events.
+pub const METER_EVENT_PREFIX: &str = "io.loams.dev.meter.";
+
+/// Where the counter owner appends the meter's own events: `_system/_meter`,
+/// keyed by subject.
+#[async_trait]
+pub trait MeterEventSink: Send + Sync + fmt::Debug {
+    async fn append(&self, events: Vec<MeterEvent>) -> Result<()>;
+}
+
+/// What consumes the meter's own events: the notifier.
+#[async_trait]
+pub trait MeterEventHandler: Send + Sync + fmt::Debug {
+    async fn handle(&self, event: &MeterEvent) -> Result<()>;
+    /// Retries what is due; answers how many were tried.
+    async fn retry_due(&self) -> Result<usize>;
+}
+
+#[async_trait]
+impl MeterEventHandler for Notifier {
+    async fn handle(&self, event: &MeterEvent) -> Result<()> {
+        Notifier::handle(self, event).await.map(|_| ())
+    }
+
+    async fn retry_due(&self) -> Result<usize> {
+        Notifier::retry_due(self).await
+    }
+}
+
+/// One of the meter's own events (`io.loams.dev.meter.*`) read off the
+/// stream, as an [`loams_meter_core::Event`]. They are not usage events: no
+/// tenant, no dataschema, so the usage profile does not apply to them.
+/// `None` for any other type, or one that is malformed.
+pub fn own_event(ce: &loams_cloudevents::CloudEvent) -> Option<loams_meter_core::Event> {
+    if !ce.ty().starts_with(METER_EVENT_PREFIX) {
+        return None;
+    }
+    let subject = SubjectKey::new(ce.attr("subject")?).ok()?;
+    let time = UtcNanos::from_rfc3339(ce.attr("time")?).ok()?;
+    let data = match serde_json::from_slice::<serde_json::Value>(ce.data()?).ok()? {
+        serde_json::Value::Object(m) => m,
+        _ => return None,
+    };
+    Some(loams_meter_core::Event {
+        id: ce.id().to_string(),
+        source: ce.source().to_string(),
+        r#type: ce.ty().to_string(),
+        subject,
+        time,
+        tenant: None,
+        lease: None,
+        data,
+    })
+}
+
+/// A meter event as the CloudEvent appended to `_system/_meter`.
+pub fn to_cloudevent(e: &MeterEvent) -> Result<loams_cloudevents::CloudEvent> {
+    let body = serde_json::to_vec(&e.to_cloudevent_json())
+        .map_err(|err| MeterError::Unavailable(format!("a meter event: {err}")))?;
+    loams_cloudevents::json::parse_event(&body)
+        .map_err(|err| MeterError::Unavailable(format!("a meter event: {err}")))
+}
+
+/// A stream event of the meter's own types, as the notifier takes it.
+pub fn meter_event(e: &loams_meter_core::Event) -> Option<MeterEvent> {
+    e.r#type.starts_with(METER_EVENT_PREFIX).then(|| MeterEvent {
+        id: e.id.clone(),
+        r#type: e.r#type.clone(),
+        source: e.source.clone(),
+        subject: e.subject.to_string(),
+        time: e.time,
+        data: e.data.clone(),
+    })
+}
 
 /// The service identity a gate on another node has on the cluster
 /// listener. Like every route of that listener in M1 (overview §6.9), it is
@@ -360,6 +453,11 @@ pub struct RuntimeParts<L> {
     pub counters: Arc<Counters>,
     pub lease_server: Arc<LeaseServer>,
     pub clock: Clock,
+    /// Where threshold and access events are appended (`None`: not
+    /// emitted).
+    pub events: Option<Arc<dyn MeterEventSink>>,
+    /// The notifier (`None`: meter events are read and not delivered).
+    pub notifier: Option<Arc<dyn MeterEventHandler>>,
 }
 
 impl<L> fmt::Debug for RuntimeParts<L> {
@@ -406,6 +504,10 @@ pub struct CounterRuntime<L> {
     counters: Arc<Counters>,
     leases: Arc<LeaseServer>,
     clock: Clock,
+    events: Option<Arc<dyn MeterEventSink>>,
+    notifier: Option<Arc<dyn MeterEventHandler>>,
+    tracker: ThresholdTracker,
+    next_retry: Option<UtcNanos>,
     /// Gained partitions whose rebuild has not succeeded yet, by epoch.
     rebuilding: std::collections::BTreeMap<u32, u64>,
     next_round: Option<UtcNanos>,
@@ -433,6 +535,10 @@ impl<L: PartitionLeases> CounterRuntime<L> {
     pub fn new(p: RuntimeParts<L>) -> Self {
         let partitions = p.counters.partitions;
         CounterRuntime {
+            tracker: ThresholdTracker::new(format!("loams://meter/{}", p.me), DEFAULT_THRESHOLDS),
+            events: p.events,
+            notifier: p.notifier,
+            next_retry: None,
             assigner: Assigner::new(p.leases, p.me, partitions),
             reader: p.reader,
             house: p.house,
@@ -476,6 +582,14 @@ impl<L: PartitionLeases> CounterRuntime<L> {
                 self.reconcile_all().await;
             }
             self.next_reconcile = Some(now.add_nanos(nanos(RECONCILE_EVERY)));
+        }
+        if due(self.next_retry, now) {
+            self.next_retry = Some(now.add_nanos(nanos(RETRY_EVERY)));
+            if let Some(n) = &self.notifier
+                && let Err(err) = n.retry_due().await
+            {
+                tracing::warn!(%err, "retrying meter webhook deliveries failed");
+            }
         }
         self.expire(now).await;
     }
@@ -551,36 +665,115 @@ impl<L: PartitionLeases> CounterRuntime<L> {
     }
 
     /// Reads `partition` to its end, counting each event and retiring the
-    /// leases the events carried. The stream is read without the counters'
-    /// lock held; an event already applied meanwhile is a replay.
-    async fn catch_up(&self, partition: u32) -> std::result::Result<(), crate::owner::OwnerError> {
+    /// leases the events carried; then hands the meter's own events to the
+    /// notifier and emits the thresholds the touched counters crossed. The
+    /// stream is read without the counters' lock held; an event already
+    /// applied meanwhile is a replay.
+    async fn catch_up(
+        &mut self,
+        partition: u32,
+    ) -> std::result::Result<(), crate::owner::OwnerError> {
+        let mut touched: BTreeSet<CounterKey> = BTreeSet::new();
+        let mut notes: Vec<MeterEvent> = Vec::new();
+        let now = (self.clock)();
+        let oldest = now.add_nanos(-nanos(NOTIFY_WINDOW));
         loop {
             let from = {
                 let owners = self.counters.owners.lock().await;
                 let Some(c) = owners.get(partition) else {
-                    return Ok(());
+                    break;
                 };
                 c.next_offset()
             };
             let batch = self.reader.read(partition, from, READ_BATCH).await?;
             if batch.is_empty() {
-                return Ok(());
+                break;
             }
             let catalog = self.counters.catalog();
             let mut owners = self.counters.owners.lock().await;
             let Some(c) = owners.get_mut(partition) else {
-                return Ok(());
+                break;
             };
             for (offset, event) in &batch {
-                if let Applied::Counted { amounts, lease } =
-                    c.apply(*offset, event, catalog.index(), &*catalog)
-                {
-                    for (key, amount) in amounts {
-                        self.leases
-                            .on_usage(partition, &key, lease.as_ref(), amount);
+                let applied = c.apply(*offset, event, catalog.index(), &*catalog);
+                match applied {
+                    Applied::Counted { amounts, lease } => {
+                        for (key, amount) in amounts {
+                            self.leases
+                                .on_usage(partition, &key, lease.as_ref(), amount);
+                            touched.insert(key);
+                        }
+                        if let Some(note) = meter_event(event)
+                            && note.time.0 >= oldest.0
+                        {
+                            notes.push(note);
+                        }
                     }
+                    Applied::Replayed | Applied::Duplicate => {}
                 }
             }
+        }
+        if let Some(n) = &self.notifier {
+            for note in &notes {
+                if let Err(err) = n.handle(note).await {
+                    tracing::warn!(id = note.id.as_str(), %err, "a meter event was not delivered");
+                }
+            }
+        }
+        if !touched.is_empty() {
+            self.emit(&touched, now).await;
+        }
+        Ok(())
+    }
+
+    /// Threshold and access events for the touched counters, appended to
+    /// the stream (the notifier gets them when they are read back).
+    async fn emit(&mut self, touched: &BTreeSet<CounterKey>, now: UtcNanos) {
+        let Some(sink) = self.events.clone() else {
+            return;
+        };
+        let catalog = self.counters.catalog();
+        let mut out = Vec::new();
+        for key in touched {
+            let Some(e) = catalog.entitlement(&key.subject, &key.feature) else {
+                continue;
+            };
+            let Some(usage_period) = e.usage_period() else {
+                continue;
+            };
+            let period = usage_period.period_at(key.period_start);
+            if period.start != key.period_start {
+                continue;
+            }
+            let counted = self
+                .counters
+                .counted(key)
+                .await
+                .map_or(Amount::ZERO, |(c, _)| c);
+            let usage = if counted.is_positive() {
+                vec![UsageSegment {
+                    start: period.start,
+                    end: UtcNanos(now.0.clamp(period.start.0, period.end.0)),
+                    amount: counted,
+                }]
+            } else {
+                Vec::new()
+            };
+            let b = match balance(e, catalog.grants(e), &usage, now, AsOf::Replay) {
+                Ok(b) => b,
+                Err(err) => {
+                    tracing::debug!(%err, "no threshold check for a counter");
+                    continue;
+                }
+            };
+            out.extend(self.tracker.observe(key, period, b.usage, b.total_available, now));
+            let reason = (!b.has_access).then_some("entitlement_exhausted");
+            out.extend(self.tracker.access(key, b.has_access, reason, now));
+        }
+        if !out.is_empty()
+            && let Err(err) = sink.append(out).await
+        {
+            tracing::warn!(%err, "appending meter events failed; they are emitted again later");
         }
     }
 
@@ -618,7 +811,10 @@ impl<L: PartitionLeases> CounterRuntime<L> {
 
     /// Forgets counters of periods that ended, and of entitlements that are
     /// gone.
-    async fn expire(&self, now: UtcNanos) {
+    async fn expire(&mut self, now: UtcNanos) {
+        // Threshold memory for periods that started over 40 days ago.
+        self.tracker
+            .expire(now.add_nanos(-40 * UtcNanos::DAY));
         let catalog = self.counters.catalog();
         let mut owners = self.counters.owners.lock().await;
         let owned: BTreeSet<u32> = owners.owned().map(|(p, _)| p).collect();

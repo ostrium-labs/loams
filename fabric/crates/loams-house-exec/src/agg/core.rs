@@ -638,7 +638,11 @@ impl PickAcc {
             return Ok(());
         };
         let slice = array.slice(i, 1);
-        let row = self.rows.convert_columns(&[slice.clone()])?.row(0).owned();
+        let row = self
+            .rows
+            .convert_columns(std::slice::from_ref(&slice))?
+            .row(0)
+            .owned();
         let replace = match (&self.best, self.which) {
             (None, _) => true,
             (Some(_), Which::First) => false,

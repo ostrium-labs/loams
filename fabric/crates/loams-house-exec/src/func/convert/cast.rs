@@ -275,7 +275,7 @@ pub fn convert(v: Value, from: &ChType, to: &ChType, accurate: bool) -> Result<V
     }
     match to {
         ChType::Nullable(inner) | ChType::LowCardinality(inner) => {
-            return convert(v, from, inner, accurate);
+            convert(v, from, inner, accurate)
         }
         ChType::UInt8
         | ChType::UInt16

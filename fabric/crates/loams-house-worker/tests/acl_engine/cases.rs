@@ -72,11 +72,6 @@ pub fn run(open: bool) {
     let control_cases = [
         "SYSTEM DROP DNS CACHE".to_string(),
         "SYSTEM DROP QUERY CACHE".to_string(),
-        "CREATE FUNCTION loams_acl_f AS (x) -> x + 1".to_string(),
-        format!(
-            "CREATE DICTIONARY default.loams_acl_d (k UInt64, v String) PRIMARY KEY k \
-             SOURCE(HTTP(url '{url}' format 'TSV')) LAYOUT(FLAT()) LIFETIME(0)"
-        ),
         "CREATE TABLE default.loams_acl_t (a UInt8) ENGINE = Memory".to_string(),
         format!("SELECT * FROM url('{url}', LineAsString){fast}"),
         format!("SELECT * FROM s3('{url}bkt/k', 'dummy', 'dummy', LineAsString){fast}"),
@@ -100,6 +95,49 @@ pub fn run(open: bool) {
         if !fine {
             failures.push(format!("control: {sql}: {result:?}"));
         }
+    }
+    // HE1 R14.12: the control connection makes dictionaries, but one over a
+    // source reads nothing on a sealed engine (no `URL` grant), whoever asks.
+    let http_dictionary = format!(
+        "CREATE DICTIONARY default.loams_acl_d (k UInt64, v String) PRIMARY KEY k \
+         SOURCE(HTTP(url '{url}' format 'TSV')) LAYOUT(FLAT()) LIFETIME(0)"
+    );
+    match control.query(&http_dictionary, "TSV", &[]) {
+        Err(err) if !open && is_access_control(&err) => {}
+        Err(err) => failures.push(format!("control: HTTP dictionary: {err:?}")),
+        Ok(_) => {
+            let read = user.query(
+                "SELECT dictGet('default.loams_acl_d', 'v', toUInt64(1))",
+                "TSV",
+                &[],
+            );
+            let fine = match &read {
+                Err(err) => is_access_control(err) != open,
+                Ok(_) => false,
+            };
+            if !fine {
+                failures.push(format!("user: dictGet over HTTP: {read:?}"));
+            }
+        }
+    }
+    // HE1 R14.11: the control connection makes SQL functions; the user
+    // connection may not (its `readonly`), on either engine.
+    let function = user.query("CREATE FUNCTION loams_acl_uf AS (x) -> x + 1", "TSV", &[]);
+    if !matches!(&function, Err(err) if is_access_control(err)) {
+        failures.push(format!("user: CREATE FUNCTION: {function:?}"));
+    }
+    let dropped = user.query("DROP FUNCTION IF EXISTS loams_acl_uf", "TSV", &[]);
+    if !matches!(&dropped, Err(err) if is_access_control(err)) {
+        failures.push(format!("user: DROP FUNCTION: {dropped:?}"));
+    }
+    if !open
+        && let Err(err) = control.query(
+            "CREATE OR REPLACE FUNCTION loams_acl_f AS (x) -> x + 1",
+            "TSV",
+            &[],
+        )
+    {
+        failures.push(format!("control: CREATE FUNCTION: {err:?}"));
     }
     // The user connection may not make a view that would lend it a source:
     // `readonly` strips `ALLOW SQL SECURITY NONE` on both engines, and only

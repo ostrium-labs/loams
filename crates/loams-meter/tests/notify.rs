@@ -297,3 +297,47 @@ async fn webhooks_need_a_billing_admin_and_https() {
         "agent_not_allowed"
     );
 }
+
+#[tokio::test]
+async fn webhook_secrets_are_sealed_at_rest_and_still_sign() {
+    let mut w = world().await;
+    let sealer = Arc::new(loams_meter::notify::sealing::AgeSealer::new(
+        age::x25519::Identity::generate(),
+    ));
+    w.notifier = w.notifier.clone().with_sealer(sealer);
+    let bea = Caller::Principal(Subject::user("bea"));
+    let (ep, secret) = w
+        .notifier
+        .create_webhook(&bea, &w.customer_id, "https://hooks.example.com/m", vec![])
+        .await
+        .expect("webhook");
+    // The record holds no plaintext.
+    let stored = w.notes.endpoint(&ep.id).await.expect("read").expect("stored");
+    assert!(stored.secret.starts_with("age:"), "{}", stored.secret);
+    assert!(!stored.secret.contains(&secret));
+
+    let mut tracker = ThresholdTracker::new("loams://meter/i1", DEFAULT_THRESHOLDS);
+    let events = tracker.observe(
+        &key(),
+        PERIOD,
+        Amount::from_units(85),
+        Amount::from_units(100),
+        UtcNanos(T0),
+    );
+    assert_eq!(w.notifier.handle(&events[0]).await.expect("handle").delivered, 1);
+    let (_, headers, body) = w.transport.sent.lock().expect("lock")[0].clone();
+    let get = |k: &str| {
+        headers
+            .iter()
+            .find(|(h, _)| h == k)
+            .map(|(_, v)| v.clone())
+            .expect(k)
+    };
+    let ts: i64 = get("webhook-timestamp").parse().expect("timestamp");
+    assert!(verify(&secret, &events[0].id, ts, &body, &get("webhook-signature"), ts));
+
+    // A rotation seals the new secret too, and keeps the old one sealed.
+    let (rotated, _) = w.notifier.rotate_secret(&bea, &ep.id).await.expect("rotate");
+    assert!(rotated.secret.starts_with("age:"));
+    assert!(rotated.previous.expect("previous").0.starts_with("age:"));
+}

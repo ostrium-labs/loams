@@ -95,6 +95,29 @@ pub(crate) fn corrupt(e: &layout::LayoutError) -> TxnError {
     TxnError::Fatal(format!("resp: {e}"))
 }
 
+/// The meta records of `ukeys` (expired or not), in order, from one
+/// `batch_get`: the read side of a pipelined batch (BQ1 pipelining).
+pub(crate) async fn read_metas<K: Kv, U: AsRef<[u8]>>(
+    txn: &mut K,
+    db: u8,
+    ukeys: &[U],
+) -> Result<Vec<Option<Meta>>, TxnError> {
+    let keys: Vec<Vec<u8>> = ukeys
+        .iter()
+        .map(|k| layout::meta_key(db, k.as_ref()))
+        .collect();
+    let found: std::collections::HashMap<Vec<u8>, Vec<u8>> =
+        txn.batch_get(keys.clone()).await?.into_iter().collect();
+    keys.iter()
+        .map(|k| {
+            found
+                .get(k)
+                .map(|b| Meta::decode(b).map_err(|e| corrupt(&e)))
+                .transpose()
+        })
+        .collect()
+}
+
 /// The meta record of `ukey`, expired or not.
 pub(crate) async fn read_meta<K: Kv>(
     txn: &mut K,

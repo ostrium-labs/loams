@@ -1,0 +1,59 @@
+# Loams Meter benchmarks (lane BQ1-meter, 2026-10-28). A workspace of its own,
+# like crates/loams-wal-decoder: criterion and the load generator's crates stay
+# out of the root lockfile, the Buck third-party graph and the gate's std-only
+# rule (D2183). The meter crates are linked by path exactly as products link
+# them. Seeded from the root Cargo.lock so shared dependencies keep the
+# versions that ship.
+[package]
+name = "meter-bench"
+description = "Benchmarks for Loams Meter: core event encode and aggregate, agent ingest to the sink, and gate decisions per second (BQ1)."
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.97"
+license = "Apache-2.0"
+authors = ["The Loams Authors"]
+publish = false
+
+[workspace]
+
+[[bin]]
+name = "meter-loadgen"
+path = "src/main.rs"
+
+[[bench]]
+name = "core"
+harness = false
+
+[[bench]]
+name = "gate"
+harness = false
+
+[[bench]]
+name = "agent"
+harness = false
+
+[dependencies]
+loams-cloudevents = { path = "../../crates/loams-cloudevents", default-features = false }
+loams-meter-agent = { path = "../../crates/loams-meter-agent" }
+loams-meter-core = { path = "../../crates/loams-meter-core" }
+loams-meter-gate = { path = "../../crates/loams-meter-gate" }
+# Per-thread core pinning inside the load generator (MIT OR Apache-2.0).
+core_affinity = "=0.8.3"
+# Latency percentiles (MIT OR Apache-2.0).
+hdrhistogram = { version = "=7.5.4", default-features = false }
+serde_json = "1"
+time = "0.3"
+tokio = { version = "1", features = ["rt", "macros", "time"] }
+
+[dev-dependencies]
+# 0.5.1 (2023-05) is the version already in the local registry cache
+# (Apache-2.0 OR MIT).
+criterion = { version = "=0.5.1", default-features = false, features = ["cargo_bench_support"] }
+
+# The shipped profile (the root workspace sets none: opt-level 3, 16 codegen
+# units, no LTO), plus line tables so a profiler can attribute samples.
+[profile.release]
+debug = "line-tables-only"
+
+[profile.bench]
+debug = "line-tables-only"

@@ -26,6 +26,7 @@ use crate::error::{MeterError, Result};
 use crate::house::{HouseSchedule, RoleHouse};
 use crate::queries::MeterQueries;
 use crate::notify::Notifier;
+use crate::notify::sealing::SecretSealer;
 use crate::notify::notifier::{Console, Mailer, NotificationStore};
 use crate::notify::webhook::Transport;
 use crate::plans::{MeterUsage, Plans};
@@ -79,6 +80,8 @@ pub struct RoleParts {
     /// The House meter queries and the close schedule run against
     /// ([`RoleHouse::Absent`]: none configured).
     pub house: Arc<RoleHouse>,
+    /// How webhook secrets are sealed at rest (D2205).
+    pub sealer: Arc<dyn SecretSealer>,
 }
 
 impl fmt::Debug for RoleParts {
@@ -142,7 +145,8 @@ impl MeterRole {
                 p.console,
                 p.random,
                 p.clock,
-            ),
+            )
+            .with_sealer(p.sealer),
             store,
         }
     }

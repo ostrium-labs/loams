@@ -17,8 +17,8 @@ impl std::fmt::Debug for DurableLeases {
 /// A fencing token bound to its named task or leader lease.
 #[derive(Clone, Debug)]
 pub struct TaskToken {
-    task: String,
-    token: LeaseToken,
+    pub(crate) task: String,
+    pub(crate) token: LeaseToken,
 }
 impl TaskToken {
     /// The monotonically increasing epoch of this acquisition.
@@ -26,12 +26,12 @@ impl TaskToken {
         self.token.epoch()
     }
 }
-fn key(task: &str, tag: u8) -> Vec<u8> {
+pub(crate) fn key(task: &str, tag: u8) -> Vec<u8> {
     let mut key = vec![tag];
     key.extend_from_slice(task.as_bytes());
     key
 }
-fn decode(bytes: Option<Vec<u8>>) -> Result<Lease, TxnError> {
+pub(crate) fn decode(bytes: Option<Vec<u8>>) -> Result<Lease, TxnError> {
     bytes
         .map(|v| {
             serde_json::from_slice(&v)
@@ -39,7 +39,7 @@ fn decode(bytes: Option<Vec<u8>>) -> Result<Lease, TxnError> {
         })
         .unwrap_or_else(|| Ok(Lease::new()))
 }
-fn encode(lease: &Lease) -> Result<Vec<u8>, TxnError> {
+pub(crate) fn encode(lease: &Lease) -> Result<Vec<u8>, TxnError> {
     serde_json::to_vec(lease).map_err(|_| TxnError::Fatal("lease encoding failed".into()))
 }
 impl DurableLeases {

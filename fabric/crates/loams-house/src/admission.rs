@@ -54,6 +54,10 @@ use crate::watchdog::{Deadline, ExitReason, KillHandle, Launcher, WorkerShared};
 /// The most bytes [`WorkerLease::run`] collects (R2.11, M6).
 pub const RUN_MAX_BYTES: usize = 64 * 1024 * 1024;
 
+/// How long a statement that saw a worker fail to boot waits before booting
+/// again (BQ1-house), serving from the workers the pool already has meanwhile.
+pub const BOOT_RETRY_PAUSE: Duration = Duration::from_millis(250);
+
 /// The pool's knobs, with §49 §10.1's defaults.
 #[derive(Clone, Debug)]
 pub struct PoolConfig {
@@ -603,10 +607,22 @@ impl WorkerPool {
     pub async fn acquire(&self, namespace: &str) -> Result<WorkerLease, HouseError> {
         let inner = &self.inner;
         let deadline = Instant::now() + inner.config.acquire_timeout;
+        // BQ1-house (2026-10-28): chDB's connect fails now and then while the
+        // machine is under memory pressure (measured: fresh paths, one process,
+        // no error text from chDB, gone seconds later). A statement that finds
+        // a boot failing waits for a worker the pool already has, instead of
+        // failing, and boots again only after a pause.
+        let mut boot_failure: Option<(Instant, HouseError)> = None;
         loop {
             if Instant::now() >= deadline {
-                return Err(too_many(namespace, inner.config.acquire_timeout));
+                return Err(match boot_failure {
+                    Some((_, err)) => err,
+                    None => too_many(namespace, inner.config.acquire_timeout),
+                });
             }
+            let booting_paused = boot_failure
+                .as_ref()
+                .is_some_and(|(at, _)| at.elapsed() < BOOT_RETRY_PAUSE);
             let notified = inner.changed.notified();
             tokio::pin!(notified);
             notified.as_mut().enable();
@@ -633,7 +649,9 @@ impl WorkerPool {
                 {
                     state.in_hand += 1;
                     Step::Bind(state.idle.swap_remove(at))
-                } else if state.total() < inner.config.max_workers {
+                } else if state.total() < inner.config.max_workers
+                    && !(booting_paused && state.total() > 0)
+                {
                     state.in_hand += 1;
                     Step::Spawn
                 } else if let Some(at) = state.idle.iter().position(|w| {
@@ -673,7 +691,15 @@ impl WorkerPool {
                     }
                     let worker = match tokio::time::timeout_at(deadline, inner.boot()).await {
                         Ok(Ok(worker)) => worker,
-                        Ok(Err(err)) => return Err(err),
+                        Ok(Err(err)) => {
+                            // Give the slot back, then wait for a worker the
+                            // pool has, or retry the boot after the pause.
+                            drop(reservation);
+                            boot_failure = Some((Instant::now(), err));
+                            let pause = (Instant::now() + BOOT_RETRY_PAUSE).min(deadline);
+                            let _ = tokio::time::timeout_at(pause, notified).await;
+                            continue;
+                        }
                         Err(_) => return Err(too_many(namespace, inner.config.acquire_timeout)),
                     };
                     match tokio::time::timeout_at(deadline, self.bind(worker, namespace)).await {

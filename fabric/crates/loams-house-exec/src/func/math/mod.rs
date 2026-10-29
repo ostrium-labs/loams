@@ -233,21 +233,19 @@ fn unary(
 /// counter (R33.8: ClickHouse's own generator is not reproduced; the oracle
 /// compares `rand` by type and range).
 fn next_random() -> u64 {
+    const GAMMA: u64 = 0x9E37_79B9_7F4A_7C15;
     static STATE: AtomicU64 = AtomicU64::new(0);
-    let mut z = STATE.fetch_add(0x9E37_79B9_7F4A_7C15, Ordering::Relaxed);
-    if z == 0 {
+    if STATE.load(Ordering::Relaxed) == 0 {
         let seed = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_nanos() as u64)
             .unwrap_or(0x5EED);
-        let _ = STATE.compare_exchange(
-            0x9E37_79B9_7F4A_7C15,
-            seed | 1,
-            Ordering::Relaxed,
-            Ordering::Relaxed,
-        );
-        z = seed;
+        // Only the first caller seeds; every call then takes its own step.
+        let _ = STATE.compare_exchange(0, seed | 1, Ordering::Relaxed, Ordering::Relaxed);
     }
+    let mut z = STATE
+        .fetch_add(GAMMA, Ordering::Relaxed)
+        .wrapping_add(GAMMA);
     z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
     z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
     z ^ (z >> 31)

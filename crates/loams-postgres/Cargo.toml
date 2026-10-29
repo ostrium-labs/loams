@@ -23,6 +23,8 @@ url.workspace = true
 [dev-dependencies]
 axum.workspace = true
 tokio.workspace = true
+# tests/majors.rs reads the pin file majors.rs is generated from.
+toml.workspace = true
 
 [lints]
 workspace = true
