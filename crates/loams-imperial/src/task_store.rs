@@ -8,7 +8,7 @@ use std::sync::Arc;
 use loams_kv::{Store, TxnError, TxnOptions};
 
 use crate::{
-    Task, TaskState,
+    Task, TaskBudget, TaskState,
     durable::{TaskToken, decode, encode, key},
 };
 
@@ -159,6 +159,71 @@ impl DurableTasks {
     ) -> Result<(), TxnError> {
         self.apply(task, token, Action::Consume(tokens, steps))
             .await
+    }
+
+    /// Reserves a child budget and creates the child in the same transaction.
+    ///
+    /// Children hold independent leases. A child reservation is currently
+    /// retained even if the child finishes; reclaiming unused budget requires
+    /// a separate, crash-safe join protocol.
+    pub async fn fork(
+        &self,
+        task: &str,
+        token: &TaskToken,
+        child_id: &str,
+        budget: TaskBudget,
+    ) -> Result<Task, TxnError> {
+        if task != token.task {
+            return Err(TxnError::Fatal("token belongs to another task".into()));
+        }
+        if child_id == task {
+            return Err(TxnError::Fatal("child and parent ids must differ".into()));
+        }
+        let (lk, pk, ck, child_id, token, clock) = (
+            key(task, b'L'),
+            key(task, b'S'),
+            key(child_id, b'S'),
+            child_id.to_owned(),
+            token.token.clone(),
+            self.clock.clone(),
+        );
+        self.store
+            .run(TxnOptions::pessimistic("imperial.task.fork"), move |txn| {
+                let (lk, pk, ck, child_id, token, clock) = (
+                    lk.clone(),
+                    pk.clone(),
+                    ck.clone(),
+                    child_id.clone(),
+                    token.clone(),
+                    clock.clone(),
+                );
+                Box::pin(async move {
+                    let lease = decode(txn.get_for_update(&lk).await?)?;
+                    // All state keys are locked in a stable order, even when two
+                    // parents concurrently attempt to use each other's ids.
+                    let (parent, existing) = if pk < ck {
+                        let parent = txn.get_for_update(&pk).await?;
+                        let child = txn.get_for_update(&ck).await?;
+                        (parent, child)
+                    } else {
+                        let child = txn.get_for_update(&ck).await?;
+                        let parent = txn.get_for_update(&pk).await?;
+                        (parent, child)
+                    };
+                    if existing.is_some() {
+                        return Err(TxnError::Fatal("child task already exists".into()));
+                    }
+                    let mut parent = decode_task(parent)?;
+                    let child = parent
+                        .fork(&lease, &token, clock(), &child_id, budget)
+                        .map_err(|e| TxnError::Fatal(format!("fork refused: {e:?}")))?;
+                    txn.put(&pk, encode_task(&parent)?).await?;
+                    txn.put(&ck, encode_task(&child)?).await?;
+                    Ok(child)
+                })
+            })
+            .await
+            .map(|result| result.value)
     }
 
     /// Atomically marks a running task completed under the current lease.
