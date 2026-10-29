@@ -2824,6 +2824,9 @@ jobs:
         name: the cold-start statistics self-test (PG2 Task 17)
         run: python3 scripts/pg2/coldstart_stats.py --self-test
       - if: ${{ !cancelled() }} # report every check, not only the first failure
+        name: the Postgres header extraction self-test (NF2 Task 4)
+        run: scripts/pg2/pg-headers.sh --self-test
+      - if: ${{ !cancelled() }} # report every check, not only the first failure
         name: PgDog's licence boundary (PG2 Task 19, design §46 §8.3)
         run: |
           scripts/ci/pgdog-licence.sh --self-test
