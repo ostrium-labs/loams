@@ -548,3 +548,107 @@ async fn connect_logs_scrub_resolved_secrets() {
     assert!(!log.contains("hunter2-very-secret"), "{log}");
     role.run(async {}).await;
 }
+
+/// A pipeline that failed with a transient error (its retries ran out, as
+/// when the brokers stay down past the retry policy) is restarted with backoff
+/// from its checkpoint and finishes, instead of staying `failed` until an
+/// operator restarts it; one that failed for good (`Fatal`) stays failed.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn transient_failure_is_restarted_with_backoff() {
+    use loams_connector_sdk::ErrorClass;
+    let dir = TempDir::new().unwrap();
+    let engine = FakeEngine::start(dir.path()).await;
+    let store = Store::in_memory();
+    let rc = ReferenceConnector::new();
+    let (cat, fac) = (catalog(), factories(&rc));
+    let retry =
+        "  pipeline: {max_batch_rows: 5, retry: {max_attempts: 2, initial_ms: 10, max_ms: 20}}\n";
+    // Two failures exhaust the two attempts; the third is retried after the
+    // restart and the split then reads to its end.
+    let down = || {
+        (
+            ErrorClass::Retryable { after: None },
+            "AllBrokersDown (Local: All broker connections are down)".to_owned(),
+        )
+    };
+    rc.fail_next("a", [down(), down(), down()]);
+    let role = common::start(
+        &engine,
+        &store,
+        dir.path(),
+        Scrubber::new(),
+        vec![instance(
+            &source_yaml("orders-in", &format!("  events_per_split: 20\n{retry}")),
+            &cat,
+            &fac,
+        )],
+    )
+    .await;
+    role.supervisor
+        .set_restart_backoff(Duration::from_millis(50), Duration::from_millis(200));
+    let sup = role.supervisor.clone();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while sup.pipeline_state("orders-in").await != Some(PipelineState::Failed) {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the instance never failed"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    // The role's tick, by hand: the first call schedules, a later one restarts.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    while engine.ids("w", "orders").len() < 40 {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "not restarted: {:?}",
+            sup.status("orders-in").await
+        );
+        sup.retry_failed_starts().await;
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let status = sup.status("orders-in").await.unwrap();
+    assert_eq!(status["state"], "running", "{status}");
+    assert_eq!(status["auto_restarts"], 1, "{status}");
+    let ids = engine.ids("w", "orders");
+    let unique: std::collections::BTreeSet<_> = ids.iter().collect();
+    assert_eq!(unique.len(), 40, "no loss");
+    role.run(async {}).await;
+
+    // A Fatal failure is not restarted.
+    let dir = TempDir::new().unwrap();
+    let engine = FakeEngine::start(dir.path()).await;
+    let rc = ReferenceConnector::new();
+    let (cat, fac) = (catalog(), factories(&rc));
+    rc.fail_next("a", [(ErrorClass::Fatal, "the table is gone".to_owned())]);
+    let role = common::start(
+        &engine,
+        &Store::in_memory(),
+        dir.path(),
+        Scrubber::new(),
+        vec![instance(
+            &source_yaml("orders-in", &format!("  events_per_split: 20\n{retry}")),
+            &cat,
+            &fac,
+        )],
+    )
+    .await;
+    role.supervisor
+        .set_restart_backoff(Duration::from_millis(10), Duration::from_millis(20));
+    let sup = role.supervisor.clone();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while sup.pipeline_state("orders-in").await != Some(PipelineState::Failed) {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the instance never failed"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    for _ in 0..10 {
+        sup.retry_failed_starts().await;
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let status = sup.status("orders-in").await.unwrap();
+    assert_eq!(status["state"], "failed", "{status}");
+    assert_eq!(status["auto_restarts"], 0, "{status}");
+    role.run(async {}).await;
+}
