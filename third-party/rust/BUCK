@@ -20757,6 +20757,114 @@ cargo.rust_library(
     ],
 )
 
+cargo_alias(
+    name = "h3",
+    actual = ":h3-0.0.8",
+    platforms = [
+        "linux-arm64",
+        "linux-x86_64",
+        "macos-arm64",
+        "macos-x86_64",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+http_archive(
+    name = "h3-0.0.8.crate",
+    sha256 = "10872b55cfb02a821b69dc7cf8dc6a71d6af25eb9a79662bec4a9d016056b3be",
+    strip_prefix = "h3-0.0.8",
+    urls = ["https://static.crates.io/crates/h3/0.0.8/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "h3-0.0.8",
+    srcs = [":h3-0.0.8.crate"],
+    crate = "h3",
+    crate_root = "h3-0.0.8.crate/src/lib.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "h3",
+        "CARGO_CRATE_NAME": "h3",
+        "CARGO_MANIFEST_DIR": "h3-0.0.8.crate",
+        "CARGO_PKG_AUTHORS": "Sean McArthur <sean@seanmonstar.com>:Jean-Christophe BEGUE <jc.begue@pm.me>",
+        "CARGO_PKG_DESCRIPTION": "An async HTTP/3 implementation.",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "h3",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/hyperium/h3",
+        "CARGO_PKG_RUST_VERSION": "1.70",
+        "CARGO_PKG_VERSION": "0.0.8",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "0",
+        "CARGO_PKG_VERSION_PATCH": "8",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
+    deps = [
+        ":bytes-1",
+        ":fastrand-2",
+        ":futures-util-0.3",
+        ":http-1",
+        ":pin-project-lite-0.2",
+        ":tokio-1",
+    ],
+)
+
+cargo_alias(
+    name = "h3-quinn",
+    actual = ":h3-quinn-0.0.10",
+    platforms = [
+        "linux-arm64",
+        "linux-x86_64",
+        "macos-arm64",
+        "macos-x86_64",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+http_archive(
+    name = "h3-quinn-0.0.10.crate",
+    sha256 = "8b2e732c8d91a74731663ac8479ab505042fbf547b9a207213ab7fbcbfc4f8b4",
+    strip_prefix = "h3-quinn-0.0.10",
+    urls = ["https://static.crates.io/crates/h3-quinn/0.0.10/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "h3-quinn-0.0.10",
+    srcs = [":h3-quinn-0.0.10.crate"],
+    crate = "h3_quinn",
+    crate_root = "h3-quinn-0.0.10.crate/src/lib.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "h3_quinn",
+        "CARGO_CRATE_NAME": "h3_quinn",
+        "CARGO_MANIFEST_DIR": "h3-quinn-0.0.10.crate",
+        "CARGO_PKG_AUTHORS": "Jean-Christophe BEGUE <jc.begue@pm.me>",
+        "CARGO_PKG_DESCRIPTION": "QUIC transport implementation based on Quinn.",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "h3-quinn",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/hyperium/h3",
+        "CARGO_PKG_RUST_VERSION": "1.70",
+        "CARGO_PKG_VERSION": "0.0.10",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "0",
+        "CARGO_PKG_VERSION_PATCH": "10",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
+    deps = [
+        ":bytes-1",
+        ":futures-0.3",
+        ":h3-0.0.8",
+        ":quinn-0.11",
+        ":tokio-1",
+        ":tokio-util-0.7",
+    ],
+)
+
 http_archive(
     name = "half-1.8.3.crate",
     sha256 = "1b43ede17f21864e81be2fa654110bf1e793774238d86ef8555c37e6519c0403",
@@ -39534,6 +39642,18 @@ cargo.rust_library(
     ],
 )
 
+cargo_alias(
+    name = "quinn",
+    actual = ":quinn-0.11",
+    platforms = [
+        "linux-arm64",
+        "linux-x86_64",
+        "macos-arm64",
+        "macos-x86_64",
+    ],
+    visibility = ["PUBLIC"],
+)
+
 http_archive(
     name = "quinn-0.11.12.crate",
     sha256 = "4051e23e9185c255a7e33ef59cdbca87a22d359052eecd22fc6b901fb37d9d11",
@@ -39570,10 +39690,12 @@ cargo.rust_library(
         "aws-lc-rs",
         "bloom",
         "default",
+        "futures-io",
         "log",
         "platform-verifier",
         "ring",
         "runtime-tokio",
+        "rustls",
         "rustls-aws-lc-rs",
         "rustls-ring",
     ],
@@ -39585,6 +39707,7 @@ cargo.rust_library(
     visibility = [],
     deps = [
         ":bytes-1",
+        ":futures-io-0.3",
         ":pin-project-lite-0.2",
         ":rustc-hash-2",
         ":rustls-0.23",
@@ -39622,10 +39745,12 @@ cargo.rust_binary(
         "aws-lc-rs",
         "bloom",
         "default",
+        "futures-io",
         "log",
         "platform-verifier",
         "ring",
         "runtime-tokio",
+        "rustls",
         "rustls-aws-lc-rs",
         "rustls-ring",
     ],
@@ -39653,10 +39778,12 @@ buildscript_run(
         "aws-lc-rs",
         "bloom",
         "default",
+        "futures-io",
         "log",
         "platform-verifier",
         "ring",
         "runtime-tokio",
+        "rustls",
         "rustls-aws-lc-rs",
         "rustls-ring",
     ],
@@ -44070,6 +44197,18 @@ buildscript_run(
     rustc_link_lib = True,
     rustc_link_search = True,
     version = "0.23.46",
+)
+
+cargo_alias(
+    name = "rustls-native-certs",
+    actual = ":rustls-native-certs-0.8",
+    platforms = [
+        "linux-arm64",
+        "linux-x86_64",
+        "macos-arm64",
+        "macos-x86_64",
+    ],
+    visibility = ["PUBLIC"],
 )
 
 http_archive(
@@ -50844,7 +50983,7 @@ cargo.rust_library(
     visibility = [],
     deps = [
         ":fastrand-2",
-        ":getrandom-0.3",
+        ":getrandom-0.4",
         ":once_cell-1",
         ":rustix-1",
     ],
