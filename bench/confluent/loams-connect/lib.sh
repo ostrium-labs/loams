@@ -48,6 +48,14 @@ KAFKA_BOOTSTRAP="${KAFKA_BOOTSTRAP#*://}"
 # SASL_SSL PLAIN (the confluent-cloud profile) when a key file is given.
 if [[ -n ${KAFKA_KEY_FILE:-} ]]; then KAFKA_SASL=1; else KAFKA_SASL=0; fi
 
+# Cross-cluster mirror (CFB): SINK_KAFKA_BOOTSTRAP + SINK_KAFKA_KEY_FILE put the
+# exactly-once sink (and its output and checkpoint topics) on a second cluster,
+# e.g. another cloud. Unset: the sink uses KAFKA_BOOTSTRAP.
+SINK_KAFKA_BOOTSTRAP="${SINK_KAFKA_BOOTSTRAP:-$KAFKA_BOOTSTRAP}"
+SINK_KAFKA_BOOTSTRAP="${SINK_KAFKA_BOOTSTRAP#*://}"
+SINK_KAFKA_KEY_FILE="${SINK_KAFKA_KEY_FILE:-${KAFKA_KEY_FILE:-}}"
+if [[ "$SINK_KAFKA_BOOTSTRAP" != "$KAFKA_BOOTSTRAP" ]]; then SINK_SEPARATE=1; else SINK_SEPARATE=0; fi
+
 ENGINE_URL="http://127.0.0.1:$LOAMS_PORT"
 SOCK="$CFB_RUN/engine.sock"
 SECRETS="$CFB_RUN/secrets"
@@ -57,7 +65,7 @@ log() { printf '[%(%H:%M:%S)T] %s\n' -1 "$*" >&2; }
 die() { log "error: $*"; exit 1; }
 
 # key=value from the key file, without echoing it.
-keyfile_get() { sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" "$KAFKA_KEY_FILE" | head -n1 | tr -d '\r'; }
+keyfile_get() { sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" "${2:-$KAFKA_KEY_FILE}" | head -n1 | tr -d '\r'; }
 
 # The Kafka CLI tools from the same image, on the host network.
 kafka_tool() {
@@ -65,6 +73,14 @@ kafka_tool() {
   podman run --rm -i --network host --user 0:0 --security-opt label=disable \
     -v "$KCFG:/cfg:ro" "$KAFKA_IMAGE" "/opt/kafka/bin/$tool" \
     --bootstrap-server "$KAFKA_BOOTSTRAP" --command-config /cfg/client.properties "$@"
+}
+
+# The same tools against the sink's cluster (client-sink.properties).
+kafka_tool_sink() {
+  local tool=$1; shift
+  podman run --rm -i --network host --user 0:0 --security-opt label=disable \
+    -v "$KCFG:/cfg:ro" "$KAFKA_IMAGE" "/opt/kafka/bin/$tool" \
+    --bootstrap-server "$SINK_KAFKA_BOOTSTRAP" --command-config /cfg/client-sink.properties "$@"
 }
 
 write_client_config() {
@@ -86,6 +102,20 @@ EOF
   fi
   # The tools run as the container's root, which rootless podman maps to our
   # uid, so the 0600 file stays readable to them and to nobody else.
+  if [[ $SINK_SEPARATE == 1 && -n $SINK_KAFKA_KEY_FILE ]]; then
+    local sid ssec
+    sid=$(keyfile_get id "$SINK_KAFKA_KEY_FILE"); ssec=$(keyfile_get secret "$SINK_KAFKA_KEY_FILE")
+    (umask 077; cat >"$KCFG/client-sink.properties" <<EOF
+security.protocol=SASL_SSL
+sasl.mechanism=PLAIN
+sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username="$sid" password="$ssec";
+ssl.endpoint.identification.algorithm=https
+isolation.level=read_committed
+EOF
+    )
+  else
+    (umask 077; cp "$KCFG/client.properties" "$KCFG/client-sink.properties")
+  fi
 }
 
 engine_key() { cat "$SECRETS/engine-key"; }

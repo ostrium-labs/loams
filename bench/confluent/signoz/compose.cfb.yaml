@@ -1,0 +1,15 @@
+# CFB overlay on the repo's SigNoz compose (conformance/clickhouse/apps/signoz/compose.yaml):
+# the community image only (signoz/signoz-community, MIT), its web UI on, and the
+# collector's OTLP gRPC (4317) and HTTP (4318) receivers on loopback for the
+# benchmark driver, the Loams engine and the connect role. Started by up.sh.
+name: cfb-signoz
+services:
+  signoz:
+    environment:
+      SIGNOZ_WEB_ENABLED: "true"
+  otel-collector:
+    volumes: !override
+      - ${CFB_SIGNOZ_DIR}/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports: !override
+      - 127.0.0.1:${CFB_OTLP_GRPC_PORT:-4317}:4317
+      - 127.0.0.1:${CFB_OTLP_HTTP_PORT:-4318}:4318
