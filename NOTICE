@@ -39,6 +39,13 @@ arrayEnumerateExtended.h, arraySort, arrayAggregation, FunctionArrayMapped.h),
 src/Functions/map.cpp, src/Functions/tuple.cpp, src/Functions/tupleElement.cpp,
 src/Functions/IFunction.cpp's default implementations and
 src/Analyzer/Resolve/QueryAnalyzer.cpp's untuple expansion.
+The output format writers in
+fabric/crates/loams-house-formats/ (plan HE1 Task 36) follow the layouts of
+ClickHouse's src/Processors/Formats/Impl/ (JSON, JSONCompact, JSONEachRow,
+JSONCompactEachRow, TabSeparated, CSV, Values, RowBinary, Native, Pretty and
+PrettyCompact output formats), src/Formats/JSONUtils.cpp and the binary
+serializations of src/DataTypes/Serializations/; each file names the sources
+it follows. No ClickHouse code is copied.
 
 Quickwit (https://github.com/quickwit-oss/quickwit), Apache License 2.0.
 Files under crates/loams-quickwit/ are derived from Quickwit revision
@@ -430,6 +437,22 @@ command semantics where it is better than Tidis's, at revision
 Files whose logic follows Titan name it in their headers. Titan has no
 NOTICE file.
 
+ClickHouse (https://github.com/ClickHouse/ClickHouse), Apache License 2.0,
+Copyright 2016-2026 ClickHouse, Inc. The date and time functions of the
+Loams House Rust engine (fabric/crates/loams-house-exec/src/func/datetime/)
+port rules of src/Common/DateLUTImpl.h, src/Functions/DateTimeTransforms.h,
+src/Functions/toStartOfInterval.cpp, src/Functions/dateDiff.cpp,
+src/Functions/FunctionDateOrDateTimeAddInterval.h,
+src/Functions/formatDateTime.cpp and src/IO/parseDateTimeBestEffort.cpp at
+tag v26.9.2.8-stable (plan HE1 Task 30). Files that port it name the source
+in their headers.
+The column lists in
+fabric/crates/loams-house-engine/src/system/shapes.rs are taken from
+tests/queries/0_stateless/02117_show_create_table_system.reference at
+v26.9.2.8, and the semantics of numbers()/zeros() and of the SHOW rewrites
+follow TableFunctionNumbers, StorageSystemNumbers and
+InterpreterShowTablesQuery (plan HE1 Task 38).
+
 TiKV migration (https://github.com/tikv/migration), Apache License 2.0,
 Copyright TiKV Project Authors. loams-tikv's CDC consumer (KV1) ports the
 ChangeData/EventFeed consumer of TiKV-CDC (its cdc/cdc/kv package) at the
@@ -442,3 +465,32 @@ CC0-1.0. deploy/loams-cloud/policy/disposable_email_blocklist.conf is that
 project's list at the revision recorded in deploy/loams-cloud/policy/PINS.md,
 unmodified; the dedication is in
 deploy/loams-cloud/policy/LICENSE-disposable-email-domains.txt.
+
+
+ClickHouse (https://github.com/ClickHouse/ClickHouse), Apache License 2.0,
+Copyright 2016-2026 ClickHouse, Inc. The Loams House engine's conversion,
+conditional, maths and JSON functions (fabric/crates/loams-house-exec/src/func/
+convert, cond, math and json, plan HE1 Task 33) follow ClickHouse's
+src/Functions (FunctionsConversion.h, if.cpp, multiIf.cpp, FunctionsRound.h,
+FunctionsJSON.h, FunctionsVisitParam.h), src/DataTypes/getLeastSupertype.cpp
+and src/IO/ReadHelpers.h; each file names its source.
+
+ClickHouse (https://github.com/ClickHouse/ClickHouse), Apache License 2.0,
+Copyright 2016-2026 ClickHouse, Inc. The Loams House engine's string and hash
+functions (fabric/crates/loams-house-exec/src/func/strings and func/hash, plan
+HE1 Task 31) follow ClickHouse's src/Functions (FunctionsHashing.h,
+PositionImpl.h, ReplaceRegexpImpl.h, substring.cpp, MatchImpl.h); each file
+names its source.
+
+CityHash v1.0.2 (https://github.com/google/cityhash), MIT License, Copyright
+(c) 2011 Google, Inc., as vendored by ClickHouse in contrib/cityhash102.
+fabric/crates/loams-house-exec/src/func/hash/city.rs ports its 64-bit
+CityHash64 and Hash128to64. Permission is hereby granted, free of charge, to
+any person obtaining a copy of this software and associated documentation
+files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to permit
+persons to whom the Software is furnished to do so, subject to the following
+conditions: The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software. THE SOFTWARE
+IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED.

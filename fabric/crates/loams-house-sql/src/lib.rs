@@ -12,19 +12,26 @@
 //!    ClickHouse names them ([`guard`], [`functions`], [`names`]);
 //! 5. `SqlToRel` plans over the House's catalog, functions and ClickHouse
 //!    types ([`context`]).
+//!
+//! [`command`] reads the metadata statements too (`SHOW`, `DESCRIBE`,
+//! `EXISTS`; [`meta`], plan HE1 Task 38).
 
+pub mod aggregates;
 pub mod coerce;
 pub mod context;
 pub mod functions;
 pub mod guard;
 pub mod lex;
+pub mod meta;
 pub mod names;
 pub mod params;
 pub mod plan;
 pub mod rewrite;
 pub mod scope;
+pub mod session;
+pub mod temporal;
 pub mod untuple;
 
-pub use context::{Catalog, HouseContext, Registry};
+pub use context::{AggregateFactory, Catalog, HouseContext, Registry};
 pub use guard::{Resolution, TableRead};
-pub use plan::{Guarded, Prepared, guard, prepare};
+pub use plan::{Command, Guarded, Prepared, command, guard, guard_in, prepare};

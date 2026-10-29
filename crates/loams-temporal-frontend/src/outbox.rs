@@ -6,7 +6,21 @@ use std::time::Duration;
 use async_trait::async_trait;
 use loams_temporal_resonate::{OutboxRequest, OutboxSource};
 use loams_temporal_store::Store;
-use tokio::sync::{Mutex, watch};
+use tokio::sync::{Mutex, mpsc, watch};
+
+use crate::effects::{FOLLOW_UP_KIND, FollowUpRow};
+
+/// A claimed follow-up row for the executor; it marks the row dispatched
+/// when it has carried it out (D2089).
+#[derive(Debug, Clone)]
+pub struct ClaimedFollowUp {
+    /// The outbox row's ID.
+    pub id: i64,
+    /// Claims so far, this one included.
+    pub attempts: i32,
+    /// What it asks for.
+    pub row: FollowUpRow,
+}
 
 /// Claims outbox rows of every shard for one relay.
 pub struct StoreOutbox {
@@ -15,6 +29,7 @@ pub struct StoreOutbox {
     owner: String,
     lease: Duration,
     wake: Mutex<watch::Receiver<u64>>,
+    follow_ups: Option<mpsc::UnboundedSender<ClaimedFollowUp>>,
 }
 
 impl std::fmt::Debug for StoreOutbox {
@@ -40,7 +55,15 @@ impl StoreOutbox {
             owner: owner.into(),
             lease,
             wake: Mutex::new(wake),
+            follow_ups: None,
         }
+    }
+
+    /// Hands follow-up rows to `tx` instead of the relay. Without it they
+    /// are claimed and left alone (their lease runs out and they wait).
+    pub fn with_follow_ups(mut self, tx: mpsc::UnboundedSender<ClaimedFollowUp>) -> Self {
+        self.follow_ups = Some(tx);
+        self
     }
 }
 
@@ -55,6 +78,24 @@ impl OutboxSource for StoreOutbox {
         let mut out = Vec::with_capacity(rows.len());
         let mut bad = Vec::new();
         for r in rows {
+            if r.kind == FOLLOW_UP_KIND {
+                match serde_json::from_value::<FollowUpRow>(r.request) {
+                    Ok(row) => {
+                        if let Some(tx) = &self.follow_ups {
+                            let _ = tx.send(ClaimedFollowUp {
+                                id: r.id,
+                                attempts: r.attempts,
+                                row,
+                            });
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!(id = r.id, error = %e, "unreadable follow-up row; dropping it");
+                        bad.push(r.id);
+                    }
+                }
+                continue;
+            }
             match serde_json::from_value::<OutboxRequest>(r.request) {
                 Ok(req) => out.push((r.id, req)),
                 Err(e) => {

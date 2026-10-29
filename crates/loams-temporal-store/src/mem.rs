@@ -215,6 +215,8 @@ impl Store for MemStore {
     }
 
     async fn update_namespace(&self, ns: NamespaceRecord) -> Result<(), StoreError> {
+        // The same refusals as Postgres (NUL in text or jsonb).
+        text("namespace_id", &ns.namespace_id)?;
         json("config", &ns.config)?;
         let mut inner = self.lock();
         let cur = inner

@@ -4,6 +4,7 @@
 # then the Loams cases with dbos-common/crash/java. As dbos-py/run.sh; runner
 # dbos-java. Its build reads its version from git history, so the source
 # gets a throw-away repository with the pinned tag inside the runner (R0.12).
+# Endpoint mode: direct (endpoint-modes.md; checked by selftest.sh recipe_endpoint_mode_matches_suite)
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=conformance/compute/lib.sh
@@ -20,7 +21,9 @@ URL=postgresql://postgres:${DBOS_DB_PASSWORD:-dbos}@localhost:5432
 
 oc_up dbos
 in_runner "
-  command -v git >/dev/null || (apt-get update -qq && apt-get install -y -qq git >/dev/null)
+  # git for the Gradle build's version tag; apt mirrors fail now and then (local run, 2026-10-28).
+  for i in 1 2 3 4 5; do command -v git >/dev/null && break; apt-get update -qq && apt-get install -y -qq git >/dev/null && break; sleep 15; done
+  command -v git >/dev/null
   rm -rf /work/java /work/appjava && mkdir -p /work/java /work/appjava/src/main/java/loams
   curl -fsSL https://codeload.github.com/dbos-inc/dbos-transact-java/tar.gz/$DBOS_JAVA_COMMIT | tar xz --strip-components=1 -C /work/java
   cd /work/java && git init -q && git add -A && git -c user.email=ci@example.invalid -c user.name=ci commit -qm 'dbos-transact-java $DBOS_JAVA' && git tag $DBOS_JAVA
@@ -36,25 +39,13 @@ app() {
   dc exec -T "${env[@]}" dbos-java /work/appjava/build/install/app/bin/app "$@"
 }
 
+# The SDK's own suite is not run: at 1.2.0 every test gets its Postgres from
+# Testcontainers (utils/PgContainer.java: postgres:18 or a prebaked DBOS image
+# in Docker) and has no switch for an external database, so it cannot test
+# Loams Postgres without a patch (second nightly: 945 of 1,284 tests failed
+# finding Docker; DX1 ruling T5.R9). Recorded as a skipped case.
 if [[ $skip != *,suite,* ]]; then
-  set +e
-  in_runner "
-    cd /work/java
-    timeout 3600 ./gradlew --no-daemon clean build --continue >/work/java.build.log 2>&1
-  "
-  # Gradle writes one JUnit file per test class; merge them into one.
-  dc exec -T dbos-java bash -c 'cd /work/java && find . -path "*/build/test-results/test/TEST-*.xml" -print0 | xargs -0 cat' \
-    >"$OC_OUT/$suite-suite.raw.xml" 2>/dev/null
-  set -e
-  python3 - "$OC_OUT/$suite-suite.raw.xml" "$OC_OUT/$suite-suite.junit.xml" <<'PY'
-import re, sys
-raw = open(sys.argv[1], encoding="utf-8", errors="replace").read()
-suites = re.findall(r"<testsuite\b.*?</testsuite>", raw, re.S)
-if suites:
-    open(sys.argv[2], "w").write("<?xml version='1.0' encoding='utf-8'?>\n<testsuites>\n" + "\n".join(suites) + "\n</testsuites>\n")
-PY
-  dc exec -T dbos-java tail -n 60 /work/java.build.log >"$OC_OUT/$suite-suite.tail.log" 2>/dev/null || true
-  if [ -s "$OC_OUT/$suite-suite.junit.xml" ]; then case_ dbos_java_suite_ran pass; else case_ dbos_java_suite_ran fail "gradle wrote no JUnit"; fi
+  case_ dbos_java_suite_ran skip "the suite runs only on Testcontainers' own Postgres (T5.R9)"
 fi
 
 if [[ $skip != *,cases,* ]]; then

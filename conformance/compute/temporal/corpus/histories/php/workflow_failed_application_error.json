@@ -1,0 +1,109 @@
+{
+  "events":  [
+    {
+      "eventId":  "1",
+      "eventTime":  "2026-10-28T12:35:17.335834147Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+      "taskId":  "1048956",
+      "workflowExecutionStartedEventAttributes":  {
+        "workflowType":  {
+          "name":  "workflow_failed_application_error"
+        },
+        "taskQueue":  {
+          "name":  "corpus-php",
+          "kind":  "TASK_QUEUE_KIND_NORMAL"
+        },
+        "workflowExecutionTimeout":  "0s",
+        "workflowRunTimeout":  "0s",
+        "workflowTaskTimeout":  "10s",
+        "originalExecutionRunId":  "01a18281-f4d7-7cb7-9295-9230a9c07bf5",
+        "identity":  "176@cddb73508697",
+        "firstExecutionRunId":  "01a18281-f4d7-7cb7-9295-9230a9c07bf5",
+        "attempt":  1,
+        "firstWorkflowTaskBackoff":  "0s",
+        "workflowId":  "corpus-php-workflow_failed_application_error",
+        "priority":  {}
+      }
+    },
+    {
+      "eventId":  "2",
+      "eventTime":  "2026-10-28T12:35:17.335896551Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId":  "1048957",
+      "workflowTaskScheduledEventAttributes":  {
+        "taskQueue":  {
+          "name":  "corpus-php",
+          "kind":  "TASK_QUEUE_KIND_NORMAL"
+        },
+        "startToCloseTimeout":  "10s",
+        "attempt":  1
+      }
+    },
+    {
+      "eventId":  "3",
+      "eventTime":  "2026-10-28T12:35:17.338375599Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "taskId":  "1048962",
+      "workflowTaskStartedEventAttributes":  {
+        "scheduledEventId":  "2",
+        "identity":  "roadrunner:corpus-php:effd30ac-0f82-45c6-b261-092d50718175",
+        "requestId":  "5038265f-2b10-4103-8e28-1025c5073649",
+        "historySizeBytes":  "288",
+        "workerVersion":  {
+          "buildId":  "04ae426167056a41c1c8243affd06944"
+        }
+      }
+    },
+    {
+      "eventId":  "4",
+      "eventTime":  "2026-10-28T12:35:17.343514579Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "taskId":  "1048966",
+      "workflowTaskCompletedEventAttributes":  {
+        "scheduledEventId":  "2",
+        "startedEventId":  "3",
+        "identity":  "roadrunner:corpus-php:effd30ac-0f82-45c6-b261-092d50718175",
+        "workerVersion":  {
+          "buildId":  "04ae426167056a41c1c8243affd06944"
+        },
+        "sdkMetadata":  {
+          "langUsedFlags":  [
+            3
+          ],
+          "sdkName":  "temporal-go",
+          "sdkVersion":  "1.44.1"
+        },
+        "meteringMetadata":  {}
+      }
+    },
+    {
+      "eventId":  "5",
+      "eventTime":  "2026-10-28T12:35:17.343587038Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_EXECUTION_FAILED",
+      "taskId":  "1048967",
+      "workflowExecutionFailedEventAttributes":  {
+        "failure":  {
+          "message":  "CorpusBoom: boom\n\nnonRetryable=true",
+          "source":  "PHP_SDK",
+          "stackTrace":  "#0  [internal function]\n    Corpus\\Workflows\\WorkflowFailedApplicationError->run()\n#1  /tmp/c/workers/php/vendor/temporal/sdk/src/Internal/Declaration/Dispatcher/Dispatcher.php:93\n    ReflectionMethod->invokeArgs(Corpus\\Workflows\\WorkflowFailedApplicationError,array(0))\n[22 hidden internal calls]",
+          "applicationFailureInfo":  {
+            "type":  "CorpusBoom",
+            "nonRetryable":  true,
+            "details":  {
+              "payloads":  [
+                {
+                  "metadata":  {
+                    "encoding":  "anNvbi9wbGFpbg=="
+                  },
+                  "data":  "ImRldGFpbCI="
+                }
+              ]
+            }
+          }
+        },
+        "retryState":  "RETRY_STATE_RETRY_POLICY_NOT_SET",
+        "workflowTaskCompletedEventId":  "4"
+      }
+    }
+  ]
+}

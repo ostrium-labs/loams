@@ -41,6 +41,12 @@ pub fn open(dir: &Path) -> anyhow::Result<MarketplaceHost> {
         vault: Arc::new(loams_agentd_sessions::marketplace::KeyringVault),
         node,
         registry: NPM_REGISTRY.into(),
+        // Installed agents' tokens (IA4 Task 3, D1618, D1629-D1633).
+        identity: loams_agentd_marketplace::identity::AgentIdentity::from_env()
+            .map_err(anyhow::Error::msg)?,
+        machine_users: loams_agentd_marketplace::identity::ZitadelUsers::from_env()
+            .map_err(anyhow::Error::msg)?
+            .map(|u| Arc::new(u) as Arc<dyn loams_agentd_marketplace::identity::MachineUsers>),
     };
     MarketplaceHost::open(deps).map_err(anyhow::Error::new)
 }

@@ -27,6 +27,8 @@ grafeo-adapters.workspace = true
 # The generated `loams.graph.v1` types, from the root `proto/` tree like every other public
 # package (design §44, D741). `fabric/`'s `loams-graph-proto` is gone (GR1 Task 1).
 loams-proto.workspace = true
+# The `graph` type's checks through model v1 (`model_authz`, design 76 §9, D1610; IA1 IA2.R5).
+loams-authz.workspace = true
 
 # `google.protobuf.NullValue`, the type of `loams.graph.v1.Value.null`. Already in the tree through
 # `loams-proto`.

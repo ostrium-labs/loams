@@ -26,6 +26,13 @@
 # detection (a query longer than the suspend timeout keeps the compute
 # running; idle, it suspends).
 #
+# Per major (NF2 Task 7, design §62 §8, D1118): nf1-candidate.yml calls this
+# once per candidate major with `major`. The Kubernetes job runs that major's
+# compute-v<N> and pageserver-loams-wal creates that major's timeline (the
+# pin file's default major without `major`); with `major-only` the jobs that
+# have no major of their own (deploy, pg-control deploy, compose runtime) are
+# left to the default major's leg.
+#
 # The images are pinned by digest in the compose files; nothing here uses a tag.
 name: Postgres e2e
 
@@ -44,6 +51,14 @@ on:
         description: "The ostrium-labs/loams-postgres commit the candidate was built from"
         type: string
         default: ""
+      major:
+        description: "The Postgres major of this leg (default: the pin file's majors.default)"
+        type: string
+        default: ""
+      major-only:
+        description: "Run only the jobs that depend on the major (the default major's leg runs the rest)"
+        type: boolean
+        default: false
   # Full tier: pull requests into main (the release gate) and into a release branch; the
   # nightly dispatches it on dev.
   pull_request:
@@ -80,7 +95,8 @@ concurrency:
   # waits on the branch's own runs.
   # A newer push to a pull request supersedes the older run; a dispatch (the
   # nightly) runs to completion.
-  group: pg2-e2e-${{ inputs.candidate-pins && format('candidate-{0}', github.run_id) || format('{0}-{1}', github.event_name, github.ref) }}
+  # A candidate's legs (one per major) are groups of their own too.
+  group: pg2-e2e-${{ inputs.candidate-pins && format('candidate-{0}-{1}', github.run_id, inputs.major) || format('{0}-{1}', github.event_name, github.ref) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -97,7 +113,7 @@ env:
 
 jobs:
   neon-deploy:
-    if: github.event.pull_request.draft != true || contains(github.event.pull_request.labels.*.name, 'ci:full')
+    if: (github.event.pull_request.draft != true || contains(github.event.pull_request.labels.*.name, 'ci:full')) && !inputs.major-only
     name: Deploy
     runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 45
@@ -150,7 +166,7 @@ jobs:
 
   pageserver-loams-wal:
     if: github.event.pull_request.draft != true || contains(github.event.pull_request.labels.*.name, 'ci:full')
-    name: Pageserver ingest
+    name: Pageserver ingest${{ inputs.major && format(' (pg{0})', inputs.major) || '' }}
     runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 90
     steps:
@@ -201,9 +217,16 @@ jobs:
           target=$(cargo metadata --format-version 1 --no-deps --offline |
             python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')
           echo "LOAMS_WAL=$target/debug/loams-wal-interpreted" >> "$GITHUB_ENV"
-      - name: pull the pinned images
+      - name: pull the pinned images (the compute of this leg's major)
         working-directory: deploy/loams-pg-bench
+        env:
+          MAJOR: ${{ inputs.major }}
         run: |
+          if [ -n "$MAJOR" ]; then
+            COMPUTE_IMAGE=$(python3 -I "$GITHUB_WORKSPACE/scripts/nf1/candidate.py" --root "$GITHUB_WORKSPACE" image --major "$MAJOR")
+            export COMPUTE_IMAGE
+            echo "COMPUTE_IMAGE=$COMPUTE_IMAGE" >> "$GITHUB_ENV"
+          fi
           for i in 1 2 3; do
             docker compose pull rustfs create-bucket storage_broker pageserver compute && exit 0
             sleep $((i * 15))
@@ -211,6 +234,8 @@ jobs:
           exit 1
       - name: it_pageserver_discovers_loams_wal_via_broker
         env:
+          # This leg's major (empty: the pin file's default), checked against the pin file.
+          PG_MAJOR: ${{ inputs.major }}
           RUN_DIR: ${{ runner.temp }}/it-pg
           LOAMS_BENCH_LOCK: ${{ runner.temp }}/loams-pg-bench.lock
         run: |
@@ -222,7 +247,7 @@ jobs:
           tail -n 200 "${{ runner.temp }}/it-pg/"*.log || true
 
   pg-control-deploy-neon:
-    if: github.event.pull_request.draft != true || contains(github.event.pull_request.labels.*.name, 'ci:full')
+    if: (github.event.pull_request.draft != true || contains(github.event.pull_request.labels.*.name, 'ci:full')) && !inputs.major-only
     name: pg-control deploy
     runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 60
@@ -293,7 +318,7 @@ jobs:
   # PG2 Task 13: the Kubernetes runtime on kind (preinstalled on the runner).
   pg-control-kind:
     if: github.event.pull_request.draft != true || contains(github.event.pull_request.labels.*.name, 'ci:full')
-    name: Kubernetes runtime
+    name: Kubernetes runtime${{ inputs.major && format(' (pg{0})', inputs.major) || '' }}
     runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 60
     steps:
@@ -316,9 +341,17 @@ jobs:
           save-if: false
       - name: build the test
         run: cargo test -p loams-pg-control --locked --features kubernetes --test it_kind --no-run
-      - name: kind, and the pinned compute image
+      - name: kind, and the pinned compute image of this leg's major
+        env:
+          MAJOR: ${{ inputs.major }}
         run: |
-          image="$(python3 -c 'import tomllib; p = tomllib.load(open("deploy/pins/loams-postgres-images.toml", "rb")); c = p["images"]["compute-v17"]; print(c["repository"] + "@" + c["digest"])')"
+          set -euo pipefail
+          # compute-v<N> of this leg's major (default: majors.default), from the
+          # (candidate's) pin file; a major the pin file does not list is refused.
+          major=${MAJOR:-$(python3 -I -c 'import tomllib; print(tomllib.load(open("deploy/pins/loams-postgres-images.toml", "rb"))["majors"]["default"])')}
+          image=$(python3 -I scripts/nf1/candidate.py image --major "$major")
+          echo "IT_KIND_IMAGE=$image" >> "$GITHUB_ENV"
+          echo "Postgres $major: $image"
           kind create cluster --name loams-pg --wait 120s
           # Pull inside the node, so containerd records the image under its
           # digest reference. `kind load docker-image` of a digest-only image
@@ -344,7 +377,7 @@ jobs:
         run: kind delete cluster --name loams-pg || true
 
   pg-control-compose-runtime:
-    if: github.event.pull_request.draft != true || contains(github.event.pull_request.labels.*.name, 'ci:full')
+    if: (github.event.pull_request.draft != true || contains(github.event.pull_request.labels.*.name, 'ci:full')) && !inputs.major-only
     name: Compose runtime
     runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 60

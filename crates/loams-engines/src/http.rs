@@ -24,7 +24,7 @@ use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
 use crate::service::{CreateInstance, EngineService, UpdateInstance};
-use crate::{CreateSession, EngineError, EngineKind, SqlRequest, SubmitJob};
+use crate::{CreateSchedule, CreateSession, EngineError, EngineKind, SqlRequest, SubmitJob};
 
 type Svc = State<Arc<EngineService>>;
 
@@ -235,6 +235,80 @@ async fn cancel_job(
     respond(svc.cancel_job(&namespace, &id, &job).await.map(ok))
 }
 
+async fn get_job(
+    State(svc): Svc,
+    Path((namespace, id, job)): Path<(String, String, String)>,
+) -> Response {
+    respond(svc.get_job(&namespace, &id, &job).await.map(ok))
+}
+
+async fn job_logs(
+    State(svc): Svc,
+    Path((namespace, id, job)): Path<(String, String, String)>,
+    RawQuery(q): RawQuery,
+) -> Response {
+    respond(
+        async {
+            let mut attempt = None;
+            for (k, v) in query_pairs(q.as_deref())? {
+                if k == "attempt" {
+                    attempt = Some(v.parse::<u32>().map_err(|_| {
+                        EngineError::Invalid(format!("attempt must be a number, got {v:?}"))
+                    })?);
+                }
+            }
+            let text = svc.job_logs(&namespace, &id, &job, attempt).await?;
+            Ok::<_, EngineError>(
+                (
+                    [(
+                        axum::http::header::CONTENT_TYPE,
+                        "text/plain; charset=utf-8",
+                    )],
+                    text,
+                )
+                    .into_response(),
+            )
+        }
+        .await,
+    )
+}
+
+async fn list_schedules(
+    State(svc): Svc,
+    Path((namespace, id)): Path<(String, String)>,
+) -> Response {
+    respond(
+        svc.list_schedules(&namespace, &id)
+            .await
+            .map(|schedules| ok(json!({ "schedules": schedules }))),
+    )
+}
+
+async fn create_schedule(
+    State(svc): Svc,
+    Path((namespace, id)): Path<(String, String)>,
+    body: Bytes,
+) -> Response {
+    respond(
+        async {
+            let req: CreateSchedule = parse(&body)?;
+            Ok::<_, EngineError>(created(svc.create_schedule(&namespace, &id, req).await?))
+        }
+        .await,
+    )
+}
+
+async fn delete_schedule(
+    State(svc): Svc,
+    Path((namespace, id, schedule)): Path<(String, String, String)>,
+) -> Response {
+    respond(
+        svc.delete_schedule(&namespace, &id, &schedule)
+            .await
+            .map(|()| StatusCode::NO_CONTENT.into_response()),
+    )
+}
+
 /// The facade's routes, at their full `/v1/…` paths, with no authorization layer.
 pub fn router(svc: Arc<EngineService>) -> Router {
     const I: &str = "/v1/namespaces/{namespace}/engines/{instance}";
@@ -252,7 +326,17 @@ pub fn router(svc: Arc<EngineService>) -> Router {
         )
         .route(&format!("{I}/sessions/{{session}}"), delete(close_session))
         .route(&format!("{I}/jobs"), get(list_jobs).post(submit_job))
+        .route(&format!("{I}/jobs/{{job}}"), get(get_job))
+        .route(&format!("{I}/jobs/{{job}}/logs"), get(job_logs))
         .route(&format!("{I}/jobs/{{job}}/cancel"), post(cancel_job))
+        .route(
+            &format!("{I}/schedules"),
+            get(list_schedules).post(create_schedule),
+        )
+        .route(
+            &format!("{I}/schedules/{{schedule}}"),
+            delete(delete_schedule),
+        )
         .with_state(svc)
 }
 

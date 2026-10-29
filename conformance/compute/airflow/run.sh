@@ -14,6 +14,7 @@
 # machine); OC_SKIP=edge leaves out edge/run.sh. The stack stays up for a
 # look afterwards: `oc_compose --profile airflow --profile rustfs down -v`
 # with the same OC_PROJECT removes it. Writes $OC_OUT/airflow*.junit.xml.
+# Endpoint mode: direct (endpoint-modes.md; checked by selftest.sh recipe_endpoint_mode_matches_suite)
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=conformance/compute/lib.sh
@@ -120,9 +121,14 @@ af_case "$suite" airflow_xcom_object_storage airflow_xcom_object_storage
 # airflow_ha_no_double_run: two schedulers, 500 mapped task instances, each
 # with exactly one try and exactly one effect.
 airflow_ha_no_double_run() {
-  local run alive
-  alive=$(af_sql "SELECT count(*) FROM job WHERE job_type = 'SchedulerJob' AND state = 'running'
-    AND latest_heartbeat > now() - interval '60 seconds'")
+  local run alive i
+  # A scheduler recreated by an earlier case needs a moment to heartbeat.
+  for ((i = 0; i < 40; i++)); do
+    alive=$(af_sql "SELECT count(*) FROM job WHERE job_type = 'SchedulerJob' AND state = 'running'
+      AND latest_heartbeat > now() - interval '60 seconds'")
+    [ "$alive" -ge 2 ] && break
+    sleep 3
+  done
   echo "schedulers alive: $alive"
   [ "$alive" = 2 ]
   run=$(af trigger oc_ha_mapped '{"n": 500, "sleep": 0}')

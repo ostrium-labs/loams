@@ -142,6 +142,50 @@ notes.write_batch(rows)                     # 10 000 rows / 4 MiB a chunk, one k
 Durable workflows use the Resonate SDK pointed at `LOAMS_ENDPOINT/durable/`
 (SDKP-1).
 
+## Spark (preview)
+
+`loams.spark` opens Spark Connect sessions and runs Spark batch jobs (design 81,
+SP-b). It is **preview**: the job API and its JSON may change.
+
+```
+pip install 'loams[spark]'      # pyspark-client, for sessions; jobs need no extra
+```
+
+Every call is scoped to a namespace and a Spark engine instance:
+`namespace=` / `LOAMS_NAMESPACE` and `instance=` / `LOAMS_SPARK_INSTANCE` (the
+instance id `eng_...` or its name). The facade routes live under
+`{LOAMS_ENDPOINT}/v1/namespaces/{ns}/engines/{instance}/` (`jobs`,
+`jobs/{run}`, `jobs/{run}/logs`, `jobs/{run}/cancel`, `schedules`, `sessions`).
+
+```python
+from loams import spark as loams_spark
+
+# A session on the instance's Spark Connect endpoint: remote=, else LOAMS_SPARK_REMOTE,
+# else opened through LOAMS_ENDPOINT (POST .../sessions). Cloud endpoints look like
+# sc://<instance>.<ns>.<region>.spark.<base-domain>:443/;use_ssl=true, compose is
+# sc://127.0.0.1:15002. The token goes as gRPC metadata, never in the sc:// URI.
+spark = loams_spark.session(app_name="etl").getOrCreate()
+spark.sql(f"SELECT count(*) FROM {loams_spark.house_table(42, 'sales', 'orders')}").show()
+
+# A batch job: exactly one of pyspark=, jar= (with main_class=) or sql=.
+run = loams_spark.submit_job("etl", pyspark="s3://bucket/jobs/etl.py", args=["--day", "2026-10-27"],
+                             max_attempts=3)
+final = run.wait()                      # polls until succeeded, failed or canceled
+print(final.state, run.logs())
+for r in loams_spark.list_jobs():
+    print(r.run_id, r.state)
+
+loams_spark.schedule("nightly", "0 2 * * *", loams_spark.job_spec("etl", sql="s3://bucket/report.sql"))
+loams_spark.delete_schedule("nightly")
+```
+
+- The `loams` Iceberg catalog (Lakekeeper REST, vended credentials) is set from
+  `CatalogOptions` or `LOAMS_ICEBERG_URI` / `LOAMS_ICEBERG_WAREHOUSE`;
+  `catalog_conf()` returns the same conf for a JVM `spark-submit`. Tables in
+  `loams.ns_<id>.<db>` are the House's database `<db>` with no registration.
+- `python -m loams.spark.driver --app <file-or-uri> [--sql] -- args...` is the
+  entrypoint the Loams driver container runs for a Spark Connect job.
+
 ## What is not here yet
 
 - **Bulk ingest and bulk results over Arrow Flight SQL.** They go through ADBC,

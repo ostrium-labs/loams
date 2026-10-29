@@ -19,8 +19,11 @@
 //! * every function name is resolved to its ClickHouse name (case rules,
 //!   aliases, combinators, [`crate::functions`]) and quoted, so DataFusion
 //!   looks it up as written; an unknown name is `46`;
-//! * `CAST(x, 'T')` and `_CAST(x, 'T')` become `CAST(x AS T)` with the
-//!   ClickHouse type text, for the House's type planner;
+//! * every cast (`CAST(x AS T)`, `x::T`, `CAST(x, 'T')`, `_CAST(x, 'T')`)
+//!   becomes `_CAST(x, 'T')`, the engine's function with ClickHouse's cast
+//!   semantics, never DataFusion's cast (plan HE1 Task 33, R33.2);
+//! * `CASE x WHEN a THEN b … END` becomes `caseWithExpression(x, a, b, …,
+//!   else)`, as ClickHouse rewrites it (an absent `ELSE` is `NULL`);
 //! * a select item without an alias gets ClickHouse's column name as its
 //!   alias ([`crate::names`]);
 //! * a table aliased `FINAL` (sqlparser's misreading, R2.3) is marked final;
@@ -34,18 +37,26 @@
 //!   House's own functions rather than its array and struct planners;
 //! * lambda parameters are quoted, so DataFusion keeps their case as the body
 //!   uses it, and `mapFilter` with a one-parameter lambda (the entry as a
-//!   tuple) is planned as `__ch_mapFilter_tuple`.
+//!   tuple) is planned as `__ch_mapFilter_tuple`;
+//! * `INTERVAL n UNIT` and `EXTRACT(f FROM x)` become ClickHouse's calls
+//!   (`toIntervalUnit(n)`, `toYear(x)`, [`crate::temporal`]);
+//! * `POSITION(n IN h)`, `SUBSTRING(s FROM a FOR b)`, `TRIM(… FROM s)`,
+//!   `LIKE` and `ILIKE` become the functions ClickHouse reads them as
+//!   (`position(h, n)`, `substring(s, a, b)`, `trimBoth(s, c)`, `like(…)`,
+//!   `notILike(…)`, …), which carry ClickHouse's semantics (plan HE1
+//!   Task 31).
 
 use std::collections::BTreeSet;
 
 use datafusion::sql::sqlparser::ast::{
-    AccessExpr, Array, BinaryOperator, CaseWhen, CastKind, Cte, DataType, DictionaryField,
-    Distinct, Expr, Function, FunctionArg, FunctionArgExpr, FunctionArgumentList,
-    FunctionArguments, GroupByExpr, Ident, Join, JoinConstraint, JoinOperator, LambdaFunction,
-    LimitClause, Map, MapEntry, NamedWindowDefinition, NamedWindowExpr, ObjectName, ObjectNamePart,
-    Offset, OneOrManyWithParens, OrderBy, OrderByExpr, OrderByKind, OrderByOptions, Query, Select,
-    SelectFlavor, SelectItem, SetExpr, Setting, Subscript, TableAlias, TableFactor, TableWithJoins,
-    UnaryOperator, Value, ValueWithSpan, WindowFrame, WindowSpec, WindowType, With,
+    AccessExpr, Array, BinaryOperator, CaseWhen, CastKind, Cte, DictionaryField, Distinct, Expr,
+    Function, FunctionArg, FunctionArgExpr, FunctionArgumentList, FunctionArguments, GroupByExpr,
+    Ident, Join, JoinConstraint, JoinOperator, LambdaFunction, LimitClause, Map, MapEntry,
+    NamedWindowDefinition, NamedWindowExpr, ObjectName, ObjectNamePart, Offset,
+    OneOrManyWithParens, OrderBy, OrderByExpr, OrderByKind, OrderByOptions, Query, Select,
+    SelectFlavor, SelectItem, SetExpr, Setting, Subscript, TableAlias, TableFactor,
+    TableFunctionArgs, TableWithJoins, TrimWhereField, UnaryOperator, Value, ValueWithSpan,
+    WindowFrame, WindowSpec, WindowType, With,
 };
 use loams_house_types::ChError;
 
@@ -73,6 +84,8 @@ pub struct Resolution {
     pub tables: Vec<TableRead>,
     /// The ClickHouse functions called, by canonical name.
     pub functions: BTreeSet<String>,
+    /// The table functions called (plan HE1 Task 38: `numbers`, `zeros`).
+    pub table_functions: BTreeSet<String>,
 }
 
 /// The guard's state while it walks one statement.
@@ -133,6 +146,87 @@ fn later(what: &str, task: u32) -> ChError {
     ChError::not_implemented(format!(
         "{what} is not supported by the Loams House engine yet (plan HE1 Task {task})"
     ))
+}
+
+/// The function ClickHouse reads `TRIM(…)` as.
+pub fn trim_function(side: Option<&TrimWhereField>) -> &'static str {
+    match side {
+        Some(TrimWhereField::Leading) => "trimLeft",
+        Some(TrimWhereField::Trailing) => "trimRight",
+        Some(TrimWhereField::Both) | None => "trimBoth",
+    }
+}
+
+/// The function call a special form is in ClickHouse (plan HE1 Task 31), if
+/// `e` is one.
+fn special_form(e: &Expr) -> Result<Option<Expr>, ChError> {
+    fn b(x: &Expr) -> Expr {
+        x.clone()
+    }
+    Ok(Some(match e {
+        Expr::Like {
+            negated,
+            any,
+            expr,
+            pattern,
+            escape_char,
+        }
+        | Expr::ILike {
+            negated,
+            any,
+            expr,
+            pattern,
+            escape_char,
+        } => {
+            if *any || escape_char.is_some() {
+                return Err(refuse("LIKE ANY / ESCAPE"));
+            }
+            let name = match (matches!(e, Expr::ILike { .. }), *negated) {
+                (false, false) => "like",
+                (false, true) => "notLike",
+                (true, false) => "ilike",
+                (true, true) => "notILike",
+            };
+            call(name, vec![b(expr), b(pattern)])
+        }
+        Expr::Position { expr, r#in } => call("position", vec![b(r#in), b(expr)]),
+        Expr::Substring {
+            expr,
+            substring_from,
+            substring_for,
+            special: _,
+            shorthand: _,
+        } => {
+            let Some(from) = substring_from else {
+                return Err(ChError::syntax_error("SUBSTRING(… FOR …) needs FROM"));
+            };
+            let mut args = vec![b(expr), b(from)];
+            args.extend(substring_for.as_deref().map(b));
+            call("substring", args)
+        }
+        Expr::Trim {
+            trim_where,
+            trim_what,
+            expr,
+            trim_characters,
+        } => {
+            if trim_where.is_none() && trim_what.is_some() {
+                return Err(ChError::syntax_error(
+                    "TRIM(c FROM s) needs BOTH, LEADING or TRAILING",
+                ));
+            }
+            let mut args = vec![b(expr)];
+            args.extend(trim_what.as_deref().map(b));
+            args.extend(trim_characters.iter().flatten().cloned());
+            if args.len() > 2 {
+                return Err(ChError::number_of_arguments_doesnt_match(
+                    "TRIM takes one set of characters",
+                ));
+            }
+            call(trim_function(trim_where.as_ref()), args)
+        }
+        _ => return Ok(None),
+    }))
 }
 
 impl<'a> Guard<'a> {
@@ -620,8 +714,18 @@ impl<'a> Guard<'a> {
                 sample,
                 index_hints,
             } => {
-                if args.is_some() {
-                    return Err(later("Table functions", 38));
+                // A table function (plan HE1 Task 38): the safe ones run,
+                // `clusterAllReplicas(c, system.t)` reads `system.t`, and
+                // everything else is refused.
+                let mut function = None;
+                if let Some(a) = args {
+                    match self.table_function(name, a)? {
+                        TableFunction::Safe(f) => function = Some(f),
+                        TableFunction::Local(local) => {
+                            *name = local;
+                            *args = None;
+                        }
+                    }
                 }
                 if !with_hints.is_empty()
                     || version.is_some()
@@ -663,6 +767,10 @@ impl<'a> Guard<'a> {
                 if final_ {
                     return Err(later("FINAL", 27));
                 }
+                if let Some(f) = function {
+                    self.resolution.table_functions.insert(f);
+                    return Ok(());
+                }
                 self.resolution.tables.push(TableRead {
                     name: parts,
                     final_,
@@ -695,8 +803,15 @@ impl<'a> Guard<'a> {
                 }
                 self.table_with_joins(table_with_joins)
             }
-            TableFactor::TableFunction { .. } | TableFactor::Function { .. } => {
-                Err(later("Table functions", 38))
+            TableFactor::TableFunction { expr, .. } => {
+                Err(refuse(format!("The table function TABLE({expr})")))
+            }
+            TableFactor::Function { name, .. } => {
+                let written = name.to_string();
+                if disabled_table_function(&written) {
+                    return Err(disabled(&written));
+                }
+                Err(refuse(format!("The table function {written}")))
             }
             TableFactor::UNNEST { .. } => Err(refuse("UNNEST in FROM")),
             TableFactor::JsonTable { .. } | TableFactor::OpenJsonTable { .. } => {
@@ -709,6 +824,50 @@ impl<'a> Guard<'a> {
             TableFactor::XmlTable { .. } => Err(refuse("XMLTABLE")),
             TableFactor::SemanticView { .. } => Err(refuse("SEMANTIC_VIEW")),
         }
+    }
+
+    /// Classifies the table function `name(args)` (plan HE1 Task 38).
+    fn table_function(
+        &mut self,
+        name: &ObjectName,
+        args: &mut TableFunctionArgs,
+    ) -> Result<TableFunction, ChError> {
+        let written = match name.0.as_slice() {
+            [ObjectNamePart::Identifier(i)] => i.value.clone(),
+            _ => return Err(refuse(format!("The table function {name}"))),
+        };
+        if disabled_table_function(&written) {
+            return Err(disabled(&written));
+        }
+        let TableFunctionArgs { args, settings } = args;
+        if settings.is_some() {
+            return Err(refuse(format!("SETTINGS in the arguments of {written}")));
+        }
+        if written == "clusterAllReplicas" {
+            return cluster_read(&written, args).map(TableFunction::Local);
+        }
+        let Some((_, max_args)) = SAFE_TABLE_FUNCTIONS.iter().find(|(n, _)| *n == written) else {
+            return Err(refuse(format!("The table function {written}")));
+        };
+        if args.len() > *max_args {
+            return Err(ChError::number_of_arguments_doesnt_match(format!(
+                "Table function '{written}' requires at most {max_args} arguments, got {}",
+                args.len()
+            )));
+        }
+        for a in args.iter_mut() {
+            match a {
+                FunctionArg::Unnamed(FunctionArgExpr::Expr(e)) if constant_count(e) => {
+                    self.expr(e)?;
+                }
+                other => {
+                    return Err(refuse(format!(
+                        "The argument {other} of table function {written} (only numbers)"
+                    )));
+                }
+            }
+        }
+        Ok(TableFunction::Safe(written))
     }
 
     fn window_spec(&mut self, w: &mut WindowSpec) -> Result<(), ChError> {
@@ -787,12 +946,20 @@ impl<'a> Guard<'a> {
             }
             return Ok(None);
         }
-        if !matches!(parameters, FunctionArguments::None) {
-            return Err(later(
-                &format!("The parametric function {written}(…)(…)"),
-                28,
-            ));
-        }
+        // A parametric aggregate's parameters (`topK(10)(x)`) are literals,
+        // carried in the name it is planned under (plan HE1 Task 28).
+        let params = match parameters {
+            FunctionArguments::None => Vec::new(),
+            FunctionArguments::List(list) if list.duplicate_treatment.is_none() && list.clauses.is_empty() => {
+                list.args.iter().map(|a| match a {
+                    FunctionArg::Unnamed(FunctionArgExpr::Expr(e)) => param(e),
+                    _ => None,
+                }).collect::<Option<Vec<_>>>().ok_or_else(|| ChError::bad_arguments(format!(
+                    "Parameter for function '{written}' expected to have constant value. Actual: {parameters}"
+                )))?
+            }
+            _ => return Err(refuse(format!("The parameters of {written}"))),
+        };
         // `CAST(x, 'T')`, `_CAST(x, 'T')`: a cast to the ClickHouse type text.
         if (written.eq_ignore_ascii_case("cast") || written == "_CAST")
             && let FunctionArguments::List(list) = args
@@ -808,21 +975,52 @@ impl<'a> Guard<'a> {
         {
             let mut x = x.clone();
             self.expr(&mut x)?;
-            return Ok(Some(Expr::Cast {
-                kind: CastKind::Cast,
-                expr: Box::new(x),
-                data_type: DataType::Custom(ObjectName::from(vec![Ident::new(t.clone())]), vec![]),
-                array: false,
-                format: None,
-            }));
+            self.resolution.functions.insert(if written == "_CAST" {
+                "_CAST".to_string()
+            } else {
+                "CAST".to_string()
+            });
+            return Ok(Some(cast_call(x, t)));
         }
         let known = functions::resolve(&written).ok_or_else(|| {
             ChError::unknown_function(format!("Function with name `{written}` does not exist"))
         })?;
         self.resolution.functions.insert(known.canonical.clone());
+        if !params.is_empty() && !known.aggregate {
+            return Err(ChError {
+                code: 309,
+                name: "FUNCTION_CANNOT_HAVE_PARAMETERS",
+                message: format!("Function {written} cannot have parameters"),
+            });
+        }
+        let mut planned = known.canonical.clone();
+        // The outermost `-If` of an aggregate is DataFusion's `FILTER (WHERE
+        // cond)`, its last argument (plan HE1 Task 28); an inner one, or one
+        // over a window, is the `-If` wrapper of `loams-house-exec`.
+        if known.aggregate
+            && over.is_none()
+            && let Some((base, combinators)) = crate::aggregates::split(&known.canonical)
+            && combinators.first() == Some(&crate::aggregates::Combinator::If)
+            && let FunctionArguments::List(list) = args
+            && let Some(FunctionArg::Unnamed(FunctionArgExpr::Expr(_))) = list.args.last()
+            && let Some(FunctionArg::Unnamed(FunctionArgExpr::Expr(mut cond))) = list.args.pop()
+        {
+            self.expr(&mut cond)?;
+            *filter = Some(Box::new(cond));
+            planned = crate::aggregates::AggregateName {
+                base,
+                combinators: combinators[1..].to_vec(),
+                params: Vec::new(),
+            }
+            .function();
+        }
         // ClickHouse's `count()` and `count(*)` count rows: `count(1)` here
-        // (the column name was taken from the text before this rewrite).
-        if known.canonical == "count" {
+        // (the column name was taken from the text before this rewrite), also
+        // under combinators (`countOrNull()`).
+        if planned == "count"
+            || (known.aggregate
+                && crate::aggregates::split(&planned).is_some_and(|(b, _)| b == "count"))
+        {
             let one = || {
                 FunctionArg::Unnamed(FunctionArgExpr::Expr(Expr::Value(
                     Value::Number("1".into(), false).into(),
@@ -848,12 +1046,14 @@ impl<'a> Guard<'a> {
                 _ => {}
             }
         }
-        let internal = if known.canonical == "mapFilter" && one_parameter_lambda_first(args) {
+        let planned = if known.aggregate {
+            crate::aggregates::planned_name(&planned, &params)
+        } else if known.canonical == "mapFilter" && one_parameter_lambda_first(args) {
             MAP_FILTER_TUPLE.to_string()
         } else {
-            functions::internal_name(&known.canonical)
+            functions::internal_name(&planned)
         };
-        *name = ObjectName::from(vec![Ident::with_quote('"', internal)]);
+        *name = ObjectName::from(vec![Ident::with_quote('"', planned)]);
         match args {
             FunctionArguments::None => {}
             FunctionArguments::Subquery(q) => self.query(q)?,
@@ -881,6 +1081,7 @@ impl<'a> Guard<'a> {
                 }
             }
         }
+        crate::temporal::fold_constant_args(&known.canonical, args);
         match over {
             None | Some(WindowType::NamedWindow(_)) => {}
             Some(WindowType::WindowSpec(spec)) => self.window_spec(spec)?,
@@ -890,6 +1091,10 @@ impl<'a> Guard<'a> {
 
     /// Walks (and rewrites) an expression.
     pub fn expr(&mut self, e: &mut Expr) -> Result<(), ChError> {
+        if let Some(call) = special_form(e)? {
+            *e = call;
+            return self.expr(e);
+        }
         match e {
             Expr::Identifier(_) | Expr::CompoundIdentifier(_) => Ok(()),
             Expr::Value(v) => match &v.value {
@@ -937,30 +1142,18 @@ impl<'a> Guard<'a> {
                 self.expr(low)?;
                 self.expr(high)
             }
-            Expr::Like {
-                negated: _,
-                any,
-                expr,
-                pattern,
-                escape_char,
-            }
-            | Expr::ILike {
-                negated: _,
-                any,
-                expr,
-                pattern,
-                escape_char,
-            } => {
-                if *any || escape_char.is_some() {
-                    return Err(refuse("LIKE ANY / ESCAPE"));
-                }
-                self.expr(expr)?;
-                self.expr(pattern)
-            }
+            // Rewritten to function calls by `special_form` above.
+            Expr::Like { .. }
+            | Expr::ILike { .. }
+            | Expr::Position { .. }
+            | Expr::Substring { .. }
+            | Expr::Trim { .. } => Err(ChError::logical_error(format!(
+                "{e} reached the guard unrewritten"
+            ))),
             Expr::Cast {
                 kind,
                 expr,
-                data_type: _,
+                data_type,
                 array,
                 format,
             } => {
@@ -970,7 +1163,25 @@ impl<'a> Guard<'a> {
                 {
                     return Err(refuse("TRY_CAST / SAFE_CAST / CAST … FORMAT"));
                 }
-                self.expr(expr)
+                // `1::String` casts the literal's text (`CAST('1', 'String')`).
+                let x = match (&*kind, expr.as_ref()) {
+                    (
+                        CastKind::DoubleColon,
+                        Expr::Value(ValueWithSpan {
+                            value: Value::Number(n, _),
+                            ..
+                        }),
+                    ) => string_literal(n),
+                    _ => {
+                        let mut x = expr.as_ref().clone();
+                        self.expr(&mut x)?;
+                        x
+                    }
+                };
+                let target = crate::context::type_text(data_type);
+                self.resolution.functions.insert("CAST".to_string());
+                *e = cast_call(x, &target);
+                Ok(())
             }
             Expr::Case {
                 case_token: _,
@@ -979,8 +1190,27 @@ impl<'a> Guard<'a> {
                 conditions,
                 else_result,
             } => {
-                if operand.is_some() {
-                    return Err(later("CASE x WHEN …", 33));
+                if let Some(x) = operand {
+                    self.expr(x)?;
+                    let mut args = vec![x.as_ref().clone()];
+                    for CaseWhen { condition, result } in conditions.iter_mut() {
+                        self.expr(condition)?;
+                        self.expr(result)?;
+                        args.push(condition.clone());
+                        args.push(result.clone());
+                    }
+                    match else_result {
+                        Some(x) => {
+                            self.expr(x)?;
+                            args.push(x.as_ref().clone());
+                        }
+                        None => args.push(Expr::Value(Value::Null.into())),
+                    }
+                    self.resolution
+                        .functions
+                        .insert("caseWithExpression".to_string());
+                    *e = engine_call("caseWithExpression", args);
+                    return Ok(());
                 }
                 for CaseWhen { condition, result } in conditions {
                     self.expr(condition)?;
@@ -1027,8 +1257,20 @@ impl<'a> Guard<'a> {
                 }
                 self.expr(body)
             }
-            Expr::Interval(_) => Err(later("INTERVAL", 30)),
-            Expr::Extract { .. } => Err(later("EXTRACT", 30)),
+            // `INTERVAL n UNIT` and `EXTRACT(f FROM x)` are the calls ClickHouse
+            // makes of them (plan HE1 Task 30, [`crate::temporal`]).
+            Expr::Interval(iv) => {
+                *e = crate::temporal::interval_call(iv)?;
+                self.expr(e)
+            }
+            Expr::Extract {
+                field,
+                syntax: _,
+                expr,
+            } => {
+                *e = crate::temporal::extract_call(field, (**expr).clone())?;
+                self.expr(e)
+            }
             Expr::CompoundFieldAccess { root, access_chain } => {
                 let mut out = std::mem::replace(root.as_mut(), Expr::Value(Value::Null.into()));
                 for access in std::mem::take(access_chain) {
@@ -1076,9 +1318,6 @@ impl<'a> Guard<'a> {
             Expr::Convert { .. } => Err(refuse("CONVERT")),
             Expr::AtTimeZone { .. } => Err(refuse("AT TIME ZONE")),
             Expr::Ceil { .. } | Expr::Floor { .. } => Err(refuse("CEIL/FLOOR … TO")),
-            Expr::Position { .. } => Err(later("POSITION(… IN …)", 31)),
-            Expr::Substring { .. } => Err(later("SUBSTRING(… FROM …)", 31)),
-            Expr::Trim { .. } => Err(later("TRIM(… FROM …)", 31)),
             Expr::Overlay { .. } => Err(refuse("OVERLAY")),
             Expr::Collate { .. } => Err(refuse("COLLATE")),
             Expr::Prefixed { .. } => Err(refuse("Prefixed literals")),
@@ -1118,6 +1357,51 @@ impl<'a> Guard<'a> {
     }
 }
 
+/// A call of the engine's function `name` (registered under that name),
+/// already resolved: the guard does not walk its name again.
+fn engine_call(name: &str, args: Vec<Expr>) -> Expr {
+    Expr::Function(Function {
+        name: ObjectName::from(vec![Ident::with_quote('"', functions::internal_name(name))]),
+        uses_odbc_syntax: false,
+        parameters: FunctionArguments::None,
+        args: FunctionArguments::List(FunctionArgumentList {
+            duplicate_treatment: None,
+            args: args
+                .into_iter()
+                .map(|a| FunctionArg::Unnamed(FunctionArgExpr::Expr(a)))
+                .collect(),
+            clauses: vec![],
+        }),
+        filter: None,
+        null_treatment: None,
+        over: None,
+        within_group: vec![],
+    })
+}
+
+/// `_CAST(x, 't')`; a string literal cast to `String` stays the literal (a
+/// bound `{p:String}` parameter), which Task 24's literal rules read as a
+/// constant.
+fn cast_call(x: Expr, t: &str) -> Expr {
+    if t == "String"
+        && matches!(
+            &x,
+            Expr::Value(ValueWithSpan {
+                value: Value::SingleQuotedString(_),
+                ..
+            })
+        )
+    {
+        return x;
+    }
+    engine_call("_CAST", vec![x, string_literal(t)])
+}
+
+/// A string literal.
+fn string_literal(s: &str) -> Expr {
+    Expr::Value(Value::SingleQuotedString(s.to_string()).into())
+}
+
 /// Whether `e` holds a `COLUMNS(…)` matcher (outside subqueries).
 fn has_columns_matcher(e: &Expr) -> bool {
     struct Find(bool);
@@ -1140,6 +1424,142 @@ fn has_columns_matcher(e: &Expr) -> bool {
     f.0
 }
 
+/// The table functions the engine runs, with their most arguments (plan HE1
+/// Task 38): they read nothing outside the statement.
+pub const SAFE_TABLE_FUNCTIONS: &[(&str, usize)] = &[
+    ("numbers", 3),
+    ("numbers_mt", 3),
+    ("zeros", 1),
+    ("zeros_mt", 1),
+];
+
+/// The table functions that reach outside the namespace: `344`, never built
+/// (D1558; `conformance/clickhouse/matrix/classes.toml`'s `disabled` table
+/// functions, `disabled_table_functions_match_the_matrix`).
+pub const DISABLED_TABLE_FUNCTIONS: &[&str] = &[
+    "file",
+    "fileCluster",
+    "filesystem",
+    "url",
+    "urlCluster",
+    "remote",
+    "remoteSecure",
+    "cluster",
+    "clusterAllReplicas",
+    "mysql",
+    "postgresql",
+    "odbc",
+    "jdbc",
+    "sqlite",
+    "mongodb",
+    "redis",
+    "hdfs",
+    "hdfsCluster",
+    "hive",
+    "s3",
+    "s3Cluster",
+    "gcs",
+    "oss",
+    "cosn",
+    "azureBlobStorage",
+    "azureBlobStorageCluster",
+    "executable",
+    "dictionary",
+    "ytsaurus",
+    "arrowFlight",
+    "arrowflight",
+    "bigquery",
+    "arrowstream",
+    "loop",
+    "eval",
+    "fuzzJSON",
+    "fuzzQuery",
+    "viewIfPermitted",
+    "viewExplain",
+];
+
+/// The prefixes of disabled table functions (the matrix's `prefixes`).
+pub const DISABLED_TABLE_FUNCTION_PREFIXES: &[&str] = &[
+    "iceberg",
+    "deltaLake",
+    "hudi",
+    "paimon",
+    "prometheusQuery",
+    "timeSeries",
+    "mergeTree",
+];
+
+/// Whether `name` is a table function that reaches outside the namespace.
+/// Case is ignored, so no spelling slips past the refusal.
+/// `clusterAllReplicas(c, system.t)` is the one form read locally
+/// ([`Guard`]'s `cluster_read`, HE1 R9.62); it is checked before this.
+pub fn disabled_table_function(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    (lower != "clusterallreplicas"
+        && DISABLED_TABLE_FUNCTIONS
+            .iter()
+            .any(|d| d.eq_ignore_ascii_case(name)))
+        || DISABLED_TABLE_FUNCTION_PREFIXES
+            .iter()
+            .any(|p| lower.starts_with(&p.to_ascii_lowercase()))
+}
+
+fn disabled(name: &str) -> ChError {
+    ChError::support_is_disabled(format!(
+        "Table function {name} is disabled in the Loams House: it reaches outside the namespace"
+    ))
+}
+
+/// What a table function in `FROM` turned out to be.
+enum TableFunction {
+    /// One of [`SAFE_TABLE_FUNCTIONS`], by name.
+    Safe(String),
+    /// A local table to read in its place.
+    Local(ObjectName),
+}
+
+/// `clusterAllReplicas(<cluster>, system.<t>)` as `system.<t>` (HE1 R9.62):
+/// every cluster of a one-node House is that node. Any other form reaches
+/// another table's data or another host, and is `344`.
+fn cluster_read(written: &str, args: &[FunctionArg]) -> Result<ObjectName, ChError> {
+    let cluster_name = |e: &Expr| {
+        matches!(
+            e,
+            Expr::Identifier(_)
+                | Expr::Value(ValueWithSpan {
+                    value: Value::SingleQuotedString(_),
+                    ..
+                })
+        )
+    };
+    if let [
+        FunctionArg::Unnamed(FunctionArgExpr::Expr(c)),
+        FunctionArg::Unnamed(FunctionArgExpr::Expr(Expr::CompoundIdentifier(parts))),
+    ] = args
+        && cluster_name(c)
+        && let [db, table] = parts.as_slice()
+        && db.value == "system"
+    {
+        return Ok(ObjectName::from(vec![
+            Ident::new("system"),
+            Ident::new(table.value.clone()),
+        ]));
+    }
+    Err(disabled(written))
+}
+
+/// A table function's count argument: a number literal (`numbers(10)`,
+/// `numbers(18446744073709551615)`).
+fn constant_count(e: &Expr) -> bool {
+    matches!(
+        e,
+        Expr::Value(ValueWithSpan {
+            value: Value::Number(..),
+            ..
+        })
+    )
+}
+
 fn setting_text(v: &Expr) -> String {
     match v {
         Expr::Value(ValueWithSpan {
@@ -1147,5 +1567,52 @@ fn setting_text(v: &Expr) -> String {
             ..
         }) => s.clone(),
         other => other.to_string(),
+    }
+}
+
+/// A parametric aggregate's parameter: a literal number or string, possibly
+/// negated, or a bound query parameter (`_CAST(7, 'UInt8')`).
+fn param(e: &Expr) -> Option<crate::aggregates::Param> {
+    use crate::aggregates::Param;
+    match e {
+        Expr::Value(ValueWithSpan {
+            value: Value::Number(n, _),
+            ..
+        }) => crate::aggregates::number(n),
+        Expr::Value(ValueWithSpan {
+            value: Value::SingleQuotedString(s) | Value::DoubleQuotedString(s),
+            ..
+        }) => Some(Param::String(s.clone())),
+        Expr::UnaryOp {
+            op: UnaryOperator::Minus,
+            expr,
+        } => match param(expr)? {
+            Param::UInt(v) => i64::try_from(v)
+                .ok()
+                .and_then(i64::checked_neg)
+                .map(Param::Int),
+            Param::Float(v) => Some(Param::Float(-v)),
+            _ => None,
+        },
+        Expr::UnaryOp {
+            op: UnaryOperator::Plus,
+            expr,
+        } => param(expr),
+        Expr::Nested(inner) => param(inner),
+        Expr::Function(f) => {
+            let name = f.name.to_string();
+            if !(name == "_CAST" || name.eq_ignore_ascii_case("cast")) {
+                return None;
+            }
+            match &f.args {
+                FunctionArguments::List(list) => match list.args.first() {
+                    Some(FunctionArg::Unnamed(FunctionArgExpr::Expr(x))) => param(x),
+                    _ => None,
+                },
+                _ => None,
+            }
+        }
+        Expr::Cast { expr, .. } => param(expr),
+        _ => None,
     }
 }
