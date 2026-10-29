@@ -1,0 +1,11 @@
+{
+  "app": "notes",
+  "bundleSha256": "abababababababababababababababababababababababababababababababab",
+  "commit": "0123456789abcdef0123456789abcdef01234567",
+  "deploymentId": "01JD0000000000000000000001",
+  "health": "health:check failed: internal: boom",
+  "previousDeploymentId": "01JD0000000000000000000000",
+  "resumed": false,
+  "state": "rolled_back",
+  "target": "live"
+}

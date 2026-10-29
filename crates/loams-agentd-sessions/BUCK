@@ -84,6 +84,11 @@ cargo_package(
             "root": "tests/factory_checks.rs",
         },
         {
+            "name": "factory_deploy",
+            "crate": "factory_deploy",
+            "root": "tests/factory_deploy.rs",
+        },
+        {
             "name": "factory_loop",
             "crate": "factory_loop",
             "root": "tests/factory_loop.rs",

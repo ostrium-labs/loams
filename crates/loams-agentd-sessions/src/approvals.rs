@@ -177,6 +177,13 @@ pub fn merge_payload(repo: &str, pr: u64, head_sha: &str) -> serde_json::Value {
     serde_json::json!({ "repo": repo, "pr": pr, "head_sha": head_sha })
 }
 
+/// The payload a deploy approval must carry for `DeployLiveApp` (FT0 Task 8):
+/// the target, the app and the full commit, so the person approves exactly
+/// the bytes that commit holds.
+pub fn deploy_payload(app: &str, commit: &str) -> serde_json::Value {
+    serde_json::json!({ "target": "live", "app": app, "commit": commit })
+}
+
 fn typed_risk(kind: &str) -> ToolRisk {
     match kind {
         "merge" | "deploy" => ToolRisk::Destructive,
@@ -818,6 +825,33 @@ impl Approvals {
         kind: &str,
         payload: &serde_json::Value,
     ) -> Result<TypedApproval, TypedApprovalError> {
+        self.spend_typed(chat_id, id, kind, payload, false)
+            .map(|(approval, _)| approval)
+    }
+
+    /// [`Self::use_typed`] for an action that can find its own earlier run
+    /// (`DeployLiveApp`): an approval this very chat, kind and payload already
+    /// spent is answered too, with `true`, so the caller looks for what the
+    /// earlier call did instead of doing it again. Any other mismatch is
+    /// refused as `use_typed` refuses it.
+    pub fn use_typed_or_resume(
+        &self,
+        chat_id: &str,
+        id: &str,
+        kind: &str,
+        payload: &serde_json::Value,
+    ) -> Result<(TypedApproval, bool), TypedApprovalError> {
+        self.spend_typed(chat_id, id, kind, payload, true)
+    }
+
+    fn spend_typed(
+        &self,
+        chat_id: &str,
+        id: &str,
+        kind: &str,
+        payload: &serde_json::Value,
+        resume: bool,
+    ) -> Result<(TypedApproval, bool), TypedApprovalError> {
         let row = self
             .inner
             .store
@@ -840,6 +874,14 @@ impl Approvals {
         }
         match TypedApprovalState::parse(&row.state) {
             Some(TypedApprovalState::Approved) => {}
+            Some(TypedApprovalState::Used) if resume => {
+                if row.payload_hash != payload_hash(payload) {
+                    return Err(TypedApprovalError::Mismatch(format!(
+                        "approval {id} was given for another payload"
+                    )));
+                }
+                return Ok((typed_from_row(row), true));
+            }
             Some(TypedApprovalState::Used) => {
                 return Err(TypedApprovalError::Mismatch(format!(
                     "approval {id} was already used"
@@ -875,7 +917,7 @@ impl Approvals {
         }
         let mut used = typed_from_row(row);
         used.state = TypedApprovalState::Used;
-        Ok(used)
+        Ok((used, false))
     }
 }
 

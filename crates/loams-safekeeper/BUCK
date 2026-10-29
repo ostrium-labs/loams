@@ -34,6 +34,11 @@ cargo_package(
             "root": "tests/cli.rs",
         },
         {
+            "name": "import_lsn",
+            "crate": "import_lsn",
+            "root": "tests/import_lsn.rs",
+        },
+        {
             "name": "majors",
             "crate": "majors",
             "root": "tests/majors.rs",

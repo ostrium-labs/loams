@@ -301,3 +301,95 @@ pub struct CheckLogReply {
     /// The log had more than the tail.
     pub truncated: bool,
 }
+
+/// The approval kind `DeployLiveApp` requires.
+pub const DEPLOY_APPROVAL_KIND: &str = "deploy";
+
+/// `DeployLiveApp` (destructive; FT0 Task 8, D1434): deploy the Live bundle a
+/// repository's `.loams/factory.toml` names at `commit` to the Live app
+/// `app`, check its health, and roll back to the previous deployment when
+/// the check fails. Refused unless `approvalId` names a settled, approved
+/// `deploy` approval of this chat whose payload was
+/// `{target: "live", app, commit}`. The Live credential stays in agentd.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct DeployLiveAppParams {
+    /// The thread whose repository holds the commit (the run's own thread).
+    pub chat_id: String,
+    pub approval_id: String,
+    /// The Live app, as the person approved it.
+    pub app: String,
+    /// The full commit id (40 or 64 hex digits) of the merge to deploy.
+    pub commit: String,
+    /// A note for the deployment's record, such as the pull request's title.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+/// Where a factory deploy ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum LiveDeployState {
+    /// Active and healthy.
+    Active,
+    /// Its health check failed and the previous deployment is active again.
+    RolledBack,
+    /// Its health check failed and there was no previous deployment to go
+    /// back to (the app's first): it stays active, unhealthy.
+    Unhealthy,
+    /// Live refused it (`failureReason`); the previous deployment serves.
+    Failed,
+    /// Still validating or backfilling (a resumed call found it in flight).
+    Pending,
+    /// A later deployment replaced it before this call looked again.
+    Superseded,
+}
+
+/// `DeployLiveApp`'s answer: the deploy record's fields (D1167) until
+/// `loams.deploy.v1` exists.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct DeployLiveAppReply {
+    /// Always `live` in FT0.
+    pub target: String,
+    pub app: String,
+    pub commit: String,
+    /// The Live deployment (a ULID).
+    pub deployment_id: String,
+    /// The bundle's SHA-256: the artifact digest of the deploy record.
+    pub bundle_sha256: String,
+    /// The deployment that was active before; empty for the app's first.
+    #[serde(default)]
+    pub previous_deployment_id: String,
+    pub state: LiveDeployState,
+    /// What the health check saw, in plain words.
+    #[serde(default)]
+    pub health: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure_reason: Option<String>,
+    /// The approval had been spent by an earlier call (a crash or a retry):
+    /// this answer is that call's deployment, found again, not a new one.
+    pub resumed: bool,
+}
+
+/// `CloseChangeRequest` (FT0 Task 10, D1432): close a run's pull request
+/// when the run is killed. The branch is kept, on the remote and here, so the
+/// work can be picked up again.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CloseChangeRequestParams {
+    /// The thread whose checkout's remote holds the pull request.
+    pub chat_id: String,
+    pub provider: ChangeRequestProvider,
+    pub number: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CloseChangeRequestReply {
+    pub provider: ChangeRequestProvider,
+    pub number: u64,
+    pub repo: String,
+    /// It is closed now (it may have been closed already).
+    pub closed: bool,
+}

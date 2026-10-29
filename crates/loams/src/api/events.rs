@@ -132,6 +132,47 @@ pub struct IngestContext<'a> {
     pub node_id: u64,
 }
 
+/// [`ingest`] for a request handler: it runs on its own task, so it finishes
+/// whether or not the caller is still there.
+///
+/// A handler's future is dropped when its client disconnects. Dropped between
+/// the append and `complete_idempotency_keys`, an ingest leaves events in the
+/// log whose claims are never completed: a retry is answered `IN_FLIGHT` until
+/// the claims lapse ([`CLAIM_TTL_MS`]), and then appends the events again. A
+/// `loams-fabric connect` source killed mid-request did exactly that (the CFB
+/// benchmark's kill -9 run, 2026-10-28: one batch duplicated after a 120 s
+/// stall). On its own task the ingest completes (or releases) its claims, so
+/// the retry is answered `DUPLICATE`.
+#[derive(Clone, Debug)]
+pub struct DetachedIngest {
+    pub meta: Arc<dyn MetaStore>,
+    pub writer: LogWriter,
+    pub config: EventsConfig,
+    pub node_id: u64,
+}
+
+impl DetachedIngest {
+    pub async fn run(
+        self,
+        ns: String,
+        stream: String,
+        partition: Option<u32>,
+        events: Vec<CloudEvent>,
+    ) -> Result<IngestReport, ApiError> {
+        tokio::spawn(async move {
+            let ctx = IngestContext {
+                meta: &self.meta,
+                writer: &self.writer,
+                config: &self.config,
+                node_id: self.node_id,
+            };
+            ingest(&ctx, &ns, &stream, partition, &events).await
+        })
+        .await
+        .map_err(|err| super::errors::internal(format!("the ingest task failed: {err}")))?
+    }
+}
+
 /// A unique owner per request, so a retry of the same request is not
 /// mistaken for another one's claim.
 pub(super) fn new_owner(node_id: u64) -> String {
@@ -405,13 +446,14 @@ pub(super) async fn produce_events(
             ),
         ));
     };
-    let ctx = IngestContext {
-        meta: &state.meta,
-        writer: &state.writer,
-        config: &state.cloudevents,
+    let report = DetachedIngest {
+        meta: state.meta.clone(),
+        writer: state.writer.clone(),
+        config: state.cloudevents,
         node_id: state.node_id,
-    };
-    let report = ingest(&ctx, &ns, &stream, partition, &events).await?;
+    }
+    .run(ns.to_string(), stream.to_string(), partition, events)
+    .await?;
     let listed: Vec<_> = report
         .outcomes
         .iter()
@@ -557,17 +599,17 @@ impl loams_stream_grpc::EventProducer for NativeEventProducer {
         events: Vec<CloudEvent>,
     ) -> Result<Vec<loams_stream_grpc::proto::EventResult>, loams_query::ServiceError> {
         use loams_stream_grpc::proto::{EventResult, EventStatus as Status};
-        let ctx = IngestContext {
-            meta: &self.meta,
-            writer: &self.writer,
-            config: &self.config,
-            node_id: self.node_id,
-        };
         super::streams::refuse_system_stream(stream)
             .map_err(|err| super::streams::service_error(err, stream))?;
-        let report = ingest(&ctx, ns, stream, partition, &events)
-            .await
-            .map_err(|err| super::streams::service_error(err, stream))?;
+        let report = DetachedIngest {
+            meta: self.meta.clone(),
+            writer: self.writer.clone(),
+            config: self.config,
+            node_id: self.node_id,
+        }
+        .run(ns.to_owned(), stream.to_owned(), partition, events)
+        .await
+        .map_err(|err| super::streams::service_error(err, stream))?;
         Ok(report
             .outcomes
             .iter()
