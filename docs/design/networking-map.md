@@ -1,5 +1,7 @@
 # Networking map
 
+> **Amendment (approved 2026-10-29) by [§83](83-cluster-transport-http3-mtls.md)** (cluster transport; D2300–D2331). Every internal hop (§4) gets mTLS with the deployment's own CA and SPIFFE-style identities, per-route authorization on the peer identity, and HTTP/3 by default with an HTTP/2+TLS fallback; §5's short-lived internal certificates are issued by the deployment's CA service (D2309–D2313). TiKV and PD stay on gRPC over HTTP/2, with mTLS.
+
 > **Amendment (approved 2026-10-23) by [§78](78-loams-cloud-on-tidb-x.md)** (Loams Cloud on TiDB X; D1700–D1735). The public endpoints Ostrium runs become `loams.dev` (with `/cloud`), `auth.loams.dev` and the Loams Cloud control plane's API host; `console.loams.dev` is retired and `LOAMS_CORS_ORIGINS` loses it as a default in LC2 (D1705). Devices enrolled in Loams Cloud open no inbound port (D1714).
 
 This is an index, not a new design. It points each kind of network traffic in Loams at the design
