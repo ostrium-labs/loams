@@ -248,6 +248,7 @@ pub fn fail_open(policy: LeasePolicy, customer: Option<&Customer>, allowance: Am
 #[derive(Debug, Default)]
 pub struct Catalog {
     index: FeatureIndex,
+    meters: HashMap<loams_meter_core::Slug, loams_meter_core::Meter>,
     features: HashMap<FeatureKey, Feature>,
     entitlements: HashMap<(SubjectKey, FeatureKey), Entitlement>,
     grants: HashMap<String, Vec<Grant>>,
@@ -272,6 +273,11 @@ impl Catalog {
         }
         Catalog {
             index,
+            meters: records
+                .meters
+                .iter()
+                .map(|m| (m.slug.clone(), m.clone()))
+                .collect(),
             features: records
                 .features
                 .into_iter()
@@ -289,6 +295,19 @@ impl Catalog {
 
     pub fn index(&self) -> &FeatureIndex {
         &self.index
+    }
+
+    /// Every metered entitlement with its live feature and that feature's
+    /// meter.
+    pub fn metered(
+        &self,
+    ) -> impl Iterator<Item = (&Entitlement, &Feature, &loams_meter_core::Meter)> + '_ {
+        self.entitlements.values().filter_map(|e| {
+            e.usage_period()?;
+            let f = self.features.get(&e.feature).filter(|f| !f.archived)?;
+            let m = self.meters.get(f.meter.as_ref()?)?;
+            Some((e, f, m))
+        })
     }
 
     pub fn entitlement(&self, subject: &SubjectKey, feature: &FeatureKey) -> Option<&Entitlement> {
@@ -635,11 +654,10 @@ impl<L> fmt::Debug for RuntimeParts<L> {
     }
 }
 
-/// The House side when the House cannot say where its pipe stands: the
-/// House pipe keeps its cursor (the stream offsets it has committed) in its
-/// Iceberg table's properties, which no SQL reads (ME-house ruling T5-1,
-/// D2203). Without the cursor the counters are rebuilt from the stream alone
-/// (its 14 days of retention) and reconciliation has no split to rebase on.
+/// The House side when the role has no House: no split to rebuild or
+/// reconcile at (D2203), so the counters are rebuilt from the stream alone
+/// (its 14 days of retention) and reconciliation changes nothing. With a
+/// House the role uses [`crate::house::HousePipeTotals`] (D2401).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct StreamOnly;
 

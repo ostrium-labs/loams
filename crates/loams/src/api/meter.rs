@@ -1152,7 +1152,7 @@ mod served {
             clock: clock.clone(),
             values: Arc::new(values),
             usage,
-            house,
+            house: house.clone(),
             sealer: Arc::new(sealer),
         }));
         let runtime = CounterRuntime::new(RuntimeParts {
@@ -1168,9 +1168,19 @@ mod served {
                 id: tokio::sync::OnceCell::new(),
                 missing_logged: std::sync::atomic::AtomicBool::new(false),
             }),
-            // The House pipe's cursor is not readable over SQL (D2203): the
-            // counters rebuild from the stream alone.
-            house: Arc::new(StreamOnly),
+            // With a House: rebuilds and reconciliation split at the pipe's
+            // cursor (`system.loams_pipe_cursors`, D2401). Without one the
+            // counters rebuild from the stream alone (D2203).
+            house: if house.is_configured() {
+                Arc::new(loams_meter::house::HousePipeTotals {
+                    house: house.clone(),
+                    counters: counters.clone(),
+                    partitions: METER_PARTITIONS,
+                    clock: clock.clone(),
+                })
+            } else {
+                Arc::new(StreamOnly)
+            },
             store: Arc::new(DocStore::new(records.clone())) as Arc<dyn MeterStore>,
             counters: counters.clone(),
             lease_server: leases.clone(),
