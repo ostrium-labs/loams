@@ -49,10 +49,12 @@ from loams.live.v1.live_connect import LiveServiceClient, LiveServiceClientSync
 from loams.live.v1.admin_connect import LiveAdminServiceClient, LiveAdminServiceClientSync
 from loams.meter.v1.customer_pb2 import CreateCustomerRequest, CreateCustomerResponse, GetCustomerRequest, GetCustomerResponse, ListCustomersRequest, ListCustomersResponse, SetPaymentStateRequest, SetPaymentStateResponse, SetSpendControlsRequest, SetSpendControlsResponse, UpdateCustomerRequest, UpdateCustomerResponse
 from loams.meter.v1.entitlement_pb2 import CheckAccessRequest, CheckAccessResponse, CreateEntitlementRequest, CreateEntitlementResponse, CreateGrantRequest, CreateGrantResponse, GetBalanceHistoryRequest, GetBalanceHistoryResponse, GetEntitlementValueRequest, GetEntitlementValueResponse, ListEntitlementsRequest, ListEntitlementsResponse, ListGrantsRequest, ListGrantsResponse, ResetEntitlementRequest, ResetEntitlementResponse, VoidGrantRequest, VoidGrantResponse
+from loams.meter.v1.meter_pb2 import QueryMeterRequest, QueryMeterResponse
 from loams.meter.v1.notification_pb2 import CreateRuleRequest, CreateRuleResponse, CreateWebhookRequest, CreateWebhookResponse, ListDeliveriesRequest, ListDeliveriesResponse, ListRulesRequest, ListRulesResponse, RotateWebhookSecretRequest, RotateWebhookSecretResponse
 from loams.meter.v1.plan_pb2 import ApplyPlanRequest, ApplyPlanResponse, AssignPlanRequest, AssignPlanResponse, ListPlansRequest, ListPlansResponse, UnassignPlanRequest, UnassignPlanResponse
 from loams.meter.v1.customer_connect import CustomerServiceClient, CustomerServiceClientSync
 from loams.meter.v1.entitlement_connect import EntitlementServiceClient, EntitlementServiceClientSync
+from loams.meter.v1.meter_connect import MeterServiceClient, MeterServiceClientSync
 from loams.meter.v1.notification_connect import NotificationServiceClient, NotificationServiceClientSync
 from loams.meter.v1.plan_connect import PlanServiceClient, PlanServiceClientSync
 from loams.sql.v1.sql_pb2 import QueryArrowRequest, QueryArrowResponse, QueryRequest as SqlV1QueryRequest, QueryResponse as SqlV1QueryResponse
@@ -1992,6 +1994,29 @@ MODULES: Final[tuple[ModuleBinding, ...]] = (
         ),
     ),
     ModuleBinding(
+        name="meter.meters",
+        summary="Meter usage queries over the House windows.",
+        service="loams.meter.v1.MeterService",
+        package="loams.meter.v1",
+        unstable=False,
+        derived=False,
+        calls=(
+            CallBinding(
+                module="meter.meters",
+                name="query",
+                proto_name="query",
+                method="QueryMeter",
+                rpc="loams.meter.v1.MeterService/QueryMeter",
+                service="loams.meter.v1.MeterService",
+                package="loams.meter.v1",
+                idempotency="no_side_effects",
+                retry="safe",
+                streaming="unary",
+                pagination=None,
+            ),
+        ),
+    ),
+    ModuleBinding(
         name="meter.notifications",
         summary="Meter notifications: threshold rules, signed webhooks and their deliveries.",
         service="loams.meter.v1.NotificationService",
@@ -3087,6 +3112,13 @@ METHODS: Final[dict[str, MethodInfo[Message, Message]]] = {
         input=VoidGrantRequest,
         output=VoidGrantResponse,
         idempotency_level=IDEMPOTENCY_LEVELS["idempotent"],
+    ),
+    "loams.meter.v1.MeterService/QueryMeter": MethodInfo(
+        name="QueryMeter",
+        service_name="loams.meter.v1.MeterService",
+        input=QueryMeterRequest,
+        output=QueryMeterResponse,
+        idempotency_level=IDEMPOTENCY_LEVELS["no_side_effects"],
     ),
     "loams.meter.v1.NotificationService/CreateRule": MethodInfo(
         name="CreateRule",
@@ -5541,6 +5573,48 @@ class MeterEntitlementsModuleSync(Protocol):
         *,
         options: CallOptions | None = None,
     ) -> loams.meter.v1.entitlement_pb2.VoidGrantResponse:
+        ...
+
+
+
+class MeterMetersModule(Protocol):
+    """`loams.meter.meters` — Meter usage queries over the House windows.
+
+    Wraps `loams.meter.v1.MeterService`.
+    """
+
+    module: ClassVar[Literal["meter.meters"]]
+    service: ClassVar[Literal["loams.meter.v1.MeterService"]]
+    unstable: ClassVar[Literal[False]]
+    """`loams.meter.v1.MeterService/QueryMeter`, retried: safe.
+    """
+    async def query(
+        self,
+        request: loams.meter.v1.meter_pb2.QueryMeterRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.meter_pb2.QueryMeterResponse:
+        ...
+
+
+
+class MeterMetersModuleSync(Protocol):
+    """`loams.meter.meters` — Meter usage queries over the House windows.
+
+    Wraps `loams.meter.v1.MeterService`.
+    """
+
+    module: ClassVar[Literal["meter.meters"]]
+    service: ClassVar[Literal["loams.meter.v1.MeterService"]]
+    unstable: ClassVar[Literal[False]]
+    """`loams.meter.v1.MeterService/QueryMeter`, retried: safe.
+    """
+    def query(
+        self,
+        request: loams.meter.v1.meter_pb2.QueryMeterRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.meter_pb2.QueryMeterResponse:
         ...
 
 

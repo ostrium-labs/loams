@@ -3,7 +3,9 @@
 //!
 //! RisingWave's `iceberg` sink commits through the REST catalog. Lakekeeper
 //! vends short-lived storage credentials for the table's location when the
-//! client asks with `X-Iceberg-Access-Delegation: vended-credentials`, so
+//! client asks with `X-Iceberg-Access-Delegation: vended-credentials`
+//! (RisingWave's `vended_credentials = 'true'`, checked against v3.1.0's
+//! `with_options_sink.yaml`), so
 //! RisingWave holds no long-lived bucket keys.
 //!
 //! - Compose ([`RestCatalog::loams_compose`]): Lakekeeper on the internal
@@ -55,7 +57,9 @@ pub fn iceberg_namespace(namespace_id: &str, database: Option<&str>) -> String {
     }
 }
 
-/// The REST header that asks the catalog to vend storage credentials.
+/// The REST header that asks the catalog to vend storage credentials. RisingWave
+/// sends it itself when `vended_credentials = 'true'`; a custom header of this
+/// name is refused so the two cannot disagree.
 pub const VENDED_CREDENTIALS_HEADER: &str = "X-Iceberg-Access-Delegation=vended-credentials";
 
 /// How RisingWave authenticates to the catalog.
@@ -210,16 +214,21 @@ impl RestCatalog {
                 options.set_credential("catalog.token", token);
             }
         }
-        let mut headers = Vec::new();
         if self.vended_credentials {
-            headers.push(VENDED_CREDENTIALS_HEADER.to_owned());
+            options.set("vended_credentials", "true");
         }
+        let mut headers = Vec::new();
         for header in &self.headers {
             let Some((name, _)) = header.split_once('=') else {
                 return Err(DdlError::Invalid(format!(
                     "header {header:?} is not name=value"
                 )));
             };
+            if name.eq_ignore_ascii_case("X-Iceberg-Access-Delegation") {
+                return Err(DdlError::Invalid(
+                    "set vended_credentials instead of the access-delegation header".to_owned(),
+                ));
+            }
             if name.is_empty() || header.contains(';') {
                 return Err(DdlError::Invalid(format!(
                     "header {header:?} is not name=value"
@@ -410,7 +419,7 @@ WITH (
     catalog.credential = '${RW_LAKEKEEPER_CLIENT}',
     catalog.oauth2_server_uri = 'https://auth.loams.internal/oauth/v2/token',
     catalog.scope = 'lakekeeper',
-    catalog.header = 'X-Iceberg-Access-Delegation=vended-credentials',
+    vended_credentials = 'true',
     database.name = 'ns_01jbzq.web',
     table.name = 'clicks_per_minute',
     create_table_if_not_exists = 'true',
@@ -485,7 +494,7 @@ WITH (
     catalog.uri = 'http://lakekeeper:8181/catalog',
     catalog.name = 'loams',
     warehouse.path = 'loams',
-    catalog.header = 'X-Iceberg-Access-Delegation=vended-credentials',
+    vended_credentials = 'true',
     database.name = 'ns_default',
     table.name = 'clicks_per_minute',
     create_table_if_not_exists = 'true',
@@ -532,13 +541,22 @@ WITH (
         let mut bad_header = base();
         bad_header.catalog.headers.push("no-equals".to_owned());
         assert!(bad_header.render(&ctx()).is_err());
+        let mut delegation = base();
+        delegation
+            .catalog
+            .headers
+            .push("X-Iceberg-Access-Delegation=remote-signing".to_owned());
+        assert!(delegation.render(&ctx()).is_err());
         let mut headers = base();
         headers
             .catalog
             .headers
             .push("X-Project-Id=loams".to_owned());
-        assert!(headers.render(&ctx()).unwrap().contains(
-            "catalog.header = 'X-Iceberg-Access-Delegation=vended-credentials;X-Project-Id=loams'"
-        ));
+        assert!(
+            headers
+                .render(&ctx())
+                .unwrap()
+                .contains("catalog.header = 'X-Project-Id=loams'")
+        );
     }
 }

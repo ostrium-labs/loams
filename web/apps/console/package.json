@@ -35,6 +35,7 @@
     "@loams/plugin-desktop-servers": "workspace:*",
     "@loams/plugin-desktop-settings": "workspace:*",
     "@loams/plugin-durable": "workspace:*",
+    "@loams/plugin-engines": "workspace:*",
     "@loams/plugin-factory": "workspace:*",
     "@loams/plugin-git": "workspace:*",
     "@loams/plugin-graph": "workspace:*",
