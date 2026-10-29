@@ -43,6 +43,9 @@ pub struct AllocatorInputs {
     pub policy: LeasePolicy,
     /// Usage counted so far in the period (the partition's counter).
     pub counted: Amount,
+    /// What a gate may spend when this owner cannot be reached (§13's
+    /// "when unreachable" row; zero fails closed).
+    pub fail_open: Amount,
 }
 
 /// Where the allocator inputs come from.
@@ -78,6 +81,12 @@ struct State {
 pub struct Granted {
     pub partition: u32,
     pub grant: LeaseGrant,
+    /// The lease only counts: a soft limit, or overage under the cap.
+    pub counting: bool,
+    /// Usage under the lease is overage.
+    pub overage: bool,
+    /// [`AllocatorInputs::fail_open`].
+    pub fail_open: Amount,
 }
 
 /// The counter owner's lease server.
@@ -206,6 +215,9 @@ impl LeaseServer {
         let now = (self.clock)();
         let Some(inputs) = self.inputs.inputs(&subject, &feature, now).await? else {
             return Ok(Granted {
+                counting: false,
+                overage: false,
+                fail_open: Amount::ZERO,
                 partition,
                 grant: LeaseGrant {
                     id: None,
@@ -273,7 +285,19 @@ impl LeaseServer {
             held,
             now,
         });
-        Ok(Granted { partition, grant })
+        let over = inputs.counted >= inputs.allowance;
+        let (counting, overage) = match inputs.policy {
+            LeasePolicy::SoftLimit => (true, false),
+            LeasePolicy::Overage { .. } => (over, over),
+            LeasePolicy::HardLimit => (false, false),
+        };
+        Ok(Granted {
+            partition,
+            grant,
+            counting,
+            overage,
+            fail_open: inputs.fail_open,
+        })
     }
 
     /// `ReturnLease`: a return at another epoch than the current one is

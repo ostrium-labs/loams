@@ -31,6 +31,7 @@ pub mod error;
 ))]
 pub mod export;
 pub mod house;
+pub mod lease_client;
 pub mod lease_service;
 pub mod notify;
 pub mod openmeter;
