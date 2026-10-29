@@ -16,11 +16,13 @@
 //! | [`trace`] | Trace ids, input digests and explanations |
 //! | [`inputs`] | `costs.yaml`: assets, prices, FX, mapping, engine and class rules, options; immutable versions |
 //! | [`amortise`] | Straight-line amortisation and monthly costs per day, split over kinds; declared capacity |
+//! | [`import`] | Bill import: FOCUS 1.0–1.4, AWS CUR 2.0 and legacy CUR, generic CSV; mapping rules; day splitting; unmapped report |
 //! | [`prices`] | The price table: prices for pool-days with no asset or bill, and reference costs |
 
 pub mod allocate;
 pub mod amortise;
 pub mod basis;
+pub mod import;
 pub mod inputs;
 pub mod model;
 pub mod money;

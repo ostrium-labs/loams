@@ -28,9 +28,16 @@ cargo_package(
             "crate": "allocation_props",
             "root": "tests/allocation_props.rs",
         },
+        {
+            "name": "import",
+            "crate": "import",
+            "root": "tests/import.rs",
+        },
     ],
     deps = [
         "//crates/loams-meter-core:loams-meter-core",
+        "//third-party/rust:csv",
+        "//third-party/rust:flate2",
         "//third-party/rust:hex",
         "//third-party/rust:serde",
         "//third-party/rust:serde_json",
