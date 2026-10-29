@@ -14,7 +14,7 @@
 - **The oracle**: Apache Flink 2.2.1 with its SQL Gateway, in `dev/oracle/compose.yaml` in the fork (the image and connector jars §81 pins, D1931), reached only through the SQL Gateway REST API, exactly as Loams Stream is.
 
 **Tech stack:**
-- Rust 1.97.1 (Loams' toolchain), edition 2024 for new crates; DataFusion **54.1** and Arrow **58.4** (the root workspace's pins; StreamFusion is on 54.0.0 and 58.3.0); sqlparser at the version DataFusion 54.1 links (Task 0 records it).
+- Rust 1.97.1 (Loams' toolchain), edition 2024 for new crates; DataFusion **54.1** and Arrow **58.4** (the root workspace's pins; StreamFusion is on 54.0.0 and 58.3.0); sqlparser 0.62.0, the version DataFusion 54.1 links (Task 0).
 - Java 17 and Maven only for the fork's existing plugin, the TestProgram extractor (Task 6) and, later, the client jar.
 - Podman with compose for the oracle; images pinned by digest, at least 14 days old.
 - slatedb 0.17.0 for the spike only (Task 8).
@@ -175,4 +175,4 @@ Then Task 2 after Task 1, Task 4 after Task 3, Task 6 after Task 5, and Tasks 7�
 
 | Task | File | Summary |
 |---|---|---|
-| — | — | None yet |
+| 0 | [fc1-rulings/t0.md](fc1-rulings/t0.md) | Fork base commit; pins DataFusion 54.1.0, Arrow 58.4.0, sqlparser 0.62.0, Rust 1.97.1; the fork's CI loses its schedules; merges by the coordinator |
