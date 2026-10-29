@@ -1,0 +1,33 @@
+[package]
+name = "loams-transfer"
+description = "Resumable chunked transfers and job-run streams (design 85, plan DQ1): a fenced journal over the metastore and the bucket, the HTTP API, and the desktop sidecar."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+async-trait.workspace = true
+bytes.workspace = true
+futures.workspace = true
+hex.workspace = true
+loams-common.workspace = true
+loams-store.workspace = true
+object_store.workspace = true
+rand.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+ulid.workspace = true
+
+[dev-dependencies]
+loams-meta.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true
