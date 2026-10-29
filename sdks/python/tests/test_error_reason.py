@@ -145,7 +145,7 @@ def test_a_detail_type_other_than_errorinfo_does_not_set_the_reason() -> None:
 
 def test_the_registry_is_not_empty() -> None:
     """A generation failure that emptied the registry would pass everything above."""
-    assert len(REASONS) == 132, f"the registry has {len(REASONS)} reasons, want 132"
+    assert len(REASONS) == 136, f"the registry has {len(REASONS)} reasons, want 136"
     assert len(REASON_CODES) == len(REASONS), "a reason has no code, or a code has no reason"
 
 

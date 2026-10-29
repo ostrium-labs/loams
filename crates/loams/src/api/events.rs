@@ -446,6 +446,16 @@ pub(super) async fn produce_events(
             ),
         ));
     };
+    // The meter's gate (D2400): the events' data and attributes.
+    let bytes: u64 = events
+        .iter()
+        .map(|e| {
+            let data = e.data().map_or(0, |d| d.len());
+            let attrs: usize = e.attrs().iter().map(|a| a.name.len() + a.value.len()).sum();
+            (data + attrs) as u64
+        })
+        .sum();
+    super::gate_produce(&state, &ns, bytes)?;
     let report = DetachedIngest {
         meta: state.meta.clone(),
         writer: state.writer.clone(),
