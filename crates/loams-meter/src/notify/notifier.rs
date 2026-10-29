@@ -19,6 +19,7 @@ use async_trait::async_trait;
 use loams_meter_core::{FeatureKey, SubjectKey, UtcNanos};
 
 use super::events::{ACCESS_CHANGED, MeterEvent, THRESHOLD};
+use super::sealing::{SecretSealer, Unsealed};
 use super::webhook::{self, Outcome, RETRY_AFTER, Transport};
 use crate::audit::{AuditEvent, AuditSink};
 use crate::authz::{Caller, MeterAuthz};
@@ -38,7 +39,8 @@ pub struct Endpoint {
     pub id: String,
     pub customer_id: String,
     pub url: String,
-    /// The current secret first; a rotated-out one until `previous_until`.
+    /// The current secret, sealed ([`super::sealing`]); a rotated-out one
+    /// in `previous` until its time.
     pub secret: String,
     pub previous: Option<(String, UtcNanos)>,
     /// The event types it receives; empty: every `io.loams.dev.meter.*`.
@@ -51,14 +53,14 @@ impl Endpoint {
         self.types.is_empty() || self.types.iter().any(|t| t == ty)
     }
 
-    fn secrets(&self, now: UtcNanos) -> Vec<String> {
-        let mut s = vec![self.secret.clone()];
+    fn secrets(&self, now: UtcNanos, sealer: &dyn SecretSealer) -> Result<Vec<String>> {
+        let mut s = vec![sealer.open(&self.secret)?];
         if let Some((old, until)) = &self.previous
             && now < *until
         {
-            s.push(old.clone());
+            s.push(sealer.open(old)?);
         }
-        s
+        Ok(s)
     }
 }
 
@@ -415,6 +417,8 @@ pub struct Notifier {
     /// 32 random bytes per call, for new secrets.
     random: Arc<dyn Fn() -> [u8; 32] + Send + Sync>,
     clock: Clock,
+    /// How webhook secrets are kept at rest.
+    sealer: Arc<dyn SecretSealer>,
 }
 
 impl fmt::Debug for Notifier {
@@ -469,13 +473,21 @@ impl Notifier {
             console,
             random,
             clock,
+            sealer: Arc::new(Unsealed),
         }
+    }
+
+    /// Seals webhook secrets at rest with `sealer` (the role always does;
+    /// [`Unsealed`] is the default for tests).
+    pub fn with_sealer(mut self, sealer: Arc<dyn SecretSealer>) -> Self {
+        self.sealer = sealer;
+        self
     }
 
     async fn attempt(&self, ep: &Endpoint, mut d: Delivery) -> Result<Delivery> {
         let now = (self.clock)();
         let ts = now.0.div_euclid(1_000_000_000);
-        let headers = webhook::headers(&ep.secrets(now), &d.event_id, ts, &d.body)?;
+        let headers = webhook::headers(&ep.secrets(now, &*self.sealer)?, &d.event_id, ts, &d.body)?;
         let outcome = self.transport.post(&ep.url, &headers, &d.body).await;
         d.attempt += 1;
         d.at = now;
@@ -653,7 +665,7 @@ impl Notifier {
             id: new_id(),
             customer_id: c.id.clone(),
             url: url.to_string(),
-            secret: secret.clone(),
+            secret: self.sealer.seal(&secret)?,
             previous: None,
             types,
             created_at: (self.clock)(),
@@ -685,7 +697,7 @@ impl Notifier {
         let secret = webhook::new_secret((self.random)());
         let now = (self.clock)();
         ep.previous = Some((ep.secret.clone(), now.add_nanos(nanos(ROTATION_OVERLAP))));
-        ep.secret = secret.clone();
+        ep.secret = self.sealer.seal(&secret)?;
         self.notes.put_endpoint(ep.clone()).await?;
         self.audit(
             caller,

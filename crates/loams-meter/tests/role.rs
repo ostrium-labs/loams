@@ -39,6 +39,7 @@ fn role(records: Arc<MemDoc>) -> MeterRole {
         values: Arc::new(CountersNotRunning),
         usage: Arc::new(NoHouseYet),
         house: Arc::new(loams_meter::house::RoleHouse::Absent),
+        sealer: Arc::new(loams_meter::notify::sealing::Unsealed),
     })
 }
 

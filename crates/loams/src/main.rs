@@ -661,11 +661,12 @@ impl Native {
             .clone()
             .or_else(|| env_value("LOAMS_HOUSE_KEY_FILE").map(PathBuf::from));
         // Loams Meter's House (§63 §7.5): environment only for now.
-        config.meter_house = loams::api::meter::MeterHouseConfig {
-            url: env_value("LOAMS_METER_HOUSE_URL"),
-            user: env_value("LOAMS_METER_HOUSE_USER")
+        config.meter = loams::api::meter::MeterConfig {
+            house_url: env_value("LOAMS_METER_HOUSE_URL"),
+            house_user: env_value("LOAMS_METER_HOUSE_USER")
                 .unwrap_or_else(|| loams::api::meter::DEFAULT_HOUSE_USER.to_string()),
-            password_file: env_value("LOAMS_METER_HOUSE_PASSWORD_FILE").map(PathBuf::from),
+            house_password_file: env_value("LOAMS_METER_HOUSE_PASSWORD_FILE").map(PathBuf::from),
+            secrets_key_file: env_value("LOAMS_METER_SECRETS_KEY_FILE").map(PathBuf::from),
         };
         config.connect_socket = self
             .connect_socket
