@@ -210,7 +210,18 @@ impl HouseSql for PipeHouse {
         if sql.contains("system.loams_pipe_cursors") {
             return Ok(self.cursor.clone());
         }
-        if sql.contains("SETTINGS loams_snapshot_id = 9001") {
+        Ok(String::new())
+    }
+
+    async fn query_with(
+        &self,
+        sql: &str,
+        settings: &[(&str, String)],
+    ) -> Result<String, HouseError> {
+        self.seen.lock().expect("lock").push(sql.to_string());
+        // Pinned through the request, never through a SETTINGS clause.
+        assert!(!sql.contains("SETTINGS"), "{sql}");
+        if settings == [("loams_snapshot_id", "9001".to_string())] {
             return Ok("org_a\t120.500000000\n".into());
         }
         Ok(String::new())
