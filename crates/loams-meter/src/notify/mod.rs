@@ -4,11 +4,13 @@
 //! - [`events`]: the counter owner's `io.loams.dev.meter.*` events, with
 //!   deterministic ids, and the tracker that emits each threshold once.
 //! - [`webhook`]: Standard Webhooks signing, URL rules, the HTTP transport.
+//! - [`sealing`]: webhook secrets sealed at rest (age, as `pg-control`'s).
 //! - [`notifier`]: delivery to webhooks (signed, retried, once per endpoint
 //!   and event), email and the console; the `NotificationService` domain.
 
 pub mod events;
 pub mod notifier;
+pub mod sealing;
 pub mod webhook;
 
 pub use events::{MeterEvent, ThresholdTracker};

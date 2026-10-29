@@ -123,6 +123,8 @@ async fn world() -> World {
         counters: counters.clone(),
         lease_server: leases.clone(),
         clock,
+        events: None,
+        notifier: None,
     });
     World {
         runtime,
@@ -273,4 +275,88 @@ fn overage_needs_a_payer_who_turned_it_on() {
         },
         "the customer's lower cap wins"
     );
+}
+
+/// Captures what the runtime appends and what it hands the notifier.
+#[derive(Debug, Default)]
+struct Captured {
+    appended: Mutex<Vec<loams_meter::notify::MeterEvent>>,
+    handled: Mutex<Vec<String>>,
+}
+
+#[derive(Debug)]
+struct Sink(Arc<Captured>);
+
+#[async_trait::async_trait]
+impl loams_meter::run::MeterEventSink for Sink {
+    async fn append(
+        &self,
+        events: Vec<loams_meter::notify::MeterEvent>,
+    ) -> loams_meter::error::Result<()> {
+        self.0.appended.lock().expect("lock").extend(events);
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+struct Handler(Arc<Captured>);
+
+#[async_trait::async_trait]
+impl loams_meter::run::MeterEventHandler for Handler {
+    async fn handle(&self, e: &loams_meter::notify::MeterEvent) -> loams_meter::error::Result<()> {
+        self.0.handled.lock().expect("lock").push(e.id.clone());
+        Ok(())
+    }
+
+    async fn retry_due(&self) -> loams_meter::error::Result<usize> {
+        Ok(0)
+    }
+}
+
+#[tokio::test]
+async fn crossed_thresholds_are_appended_and_read_back_to_the_notifier() {
+    let store = store().await;
+    // 900 of 1,000 used: past 80%.
+    let stream = Arc::new(Stream(Mutex::new(vec![(0, event("e1", "org_a", 900))])));
+    let counters = Counters::new(1);
+    let clock: loams_meter::customers::Clock = Arc::new(|| NOW);
+    let leases = Arc::new(LeaseServer::new(
+        1,
+        AllocatorConfig::default(),
+        Arc::new(CatalogInputs(counters.clone())),
+        vec![CLUSTER_SERVICE.to_string()],
+        clock.clone(),
+    ));
+    let captured = Arc::new(Captured::default());
+    let mut runtime = CounterRuntime::new(RuntimeParts {
+        leases: MemLeases::new(),
+        me: "node-1".into(),
+        reader: stream.clone(),
+        house: Arc::new(StreamOnly),
+        store,
+        counters,
+        lease_server: leases,
+        clock,
+        events: Some(Arc::new(Sink(captured.clone()))),
+        notifier: Some(Arc::new(Handler(captured.clone()))),
+    });
+    runtime.step().await;
+    let appended = captured.appended.lock().expect("lock").clone();
+    assert_eq!(appended.len(), 1, "{appended:?}");
+    assert_eq!(appended[0].r#type, loams_meter::notify::events::THRESHOLD);
+    assert!(appended[0].id.ends_with("/80"), "{}", appended[0].id);
+
+    // The appended event comes back on the partition: the notifier gets it.
+    let back = loams_meter::run::own_event(
+        &loams_meter::run::to_cloudevent(&appended[0]).expect("a CloudEvent"),
+    )
+    .expect("one of the meter's own events");
+    stream.0.lock().expect("lock").push((1, back));
+    runtime.step().await;
+    assert_eq!(
+        *captured.handled.lock().expect("lock"),
+        vec![appended[0].id.clone()]
+    );
+    // Nothing new crossed: nothing more appended.
+    assert_eq!(captured.appended.lock().expect("lock").len(), 1);
 }
