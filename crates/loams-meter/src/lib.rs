@@ -32,4 +32,5 @@ pub mod plans;
 pub mod queries;
 pub mod reconcile;
 pub mod role;
+pub mod run;
 pub mod store;

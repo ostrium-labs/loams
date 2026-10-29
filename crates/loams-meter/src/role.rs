@@ -1,16 +1,15 @@
 //! The `meter` role put together (design §63 §5.2): what `loams` builds
 //! when its feature `meter` is on.
 //!
-//! This first part serves the public services (`CustomerService`,
+//! Part 1 serves the public services (`CustomerService`,
 //! `EntitlementService`, `PlanService`, `NotificationService`) on the main
-//! port, over records kept in a [`VersionedDoc`]. The counter owners, the
-//! lease service, reconciliation and the House schedule join it in the
-//! next part (ME1 role wiring, part 2); until then:
-//!
-//! - balances answer `UNAVAILABLE` with `meter_unavailable`
-//!   ([`CountersNotRunning`]) rather than a balance with no usage in it;
-//! - every meter that exists counts as used ([`NoHouseYet`]), so a plan
-//!   apply may never change a meter that might have events.
+//! port, over records kept in a [`VersionedDoc`]. Part 2 adds the counter
+//! owners ([`crate::run`]): balances come from their counters
+//! ([`crate::run::CounterValues`]), and the internal `LeaseService` grants
+//! from them. The House schedule and House-backed meter usage come next;
+//! until then every meter that exists counts as used ([`NoHouseYet`]), so a
+//! plan apply may never change a meter that might have events.
+//! [`CountersNotRunning`] is for hosts (and tests) that run no counters.
 
 use std::fmt;
 use std::sync::Arc;
