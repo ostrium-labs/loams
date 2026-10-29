@@ -1,0 +1,18 @@
+up shards=4 gateway=no
+native-load: iggy tcp 127.0.0.1:48090 ops=produce,consume depth=1 conns=6 cores=8-13
+down
+up shards=4 gateway=no
+native-load: iggy tcp 127.0.0.1:48090 ops=produce,consume depth=10 conns=6 cores=8-13
+down
+up shards=4 gateway=no
+native-load: iggy tcp 127.0.0.1:48090 ops=produce,consume depth=100 conns=6 cores=8-13
+down
+up shards=4 gateway=no
+native-load: iggy tcp 127.0.0.1:48090 ops=produce,consume depth=1000 conns=6 cores=8-13
+down
+up shards=4 gateway=no
+native-load: iggy tcp 127.0.0.1:48090 ops=produce,consume depth=10000 conns=6 cores=8-13
+down
+up shards=4 gateway=no
+native-load: iggy quic 127.0.0.1:48080 ops=produce,consume depth=1000 conns=6 cores=8-13
+down
