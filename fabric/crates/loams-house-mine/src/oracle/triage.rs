@@ -8,6 +8,7 @@
 //! status = "incompatibility" # bug | incompatibility | untriaged
 //! reason = "…"               # required for an incompatibility
 //! issue = "#1234"            # optional
+//! task = "24"                # optional: the plan HE1 task that owns a bug (D1804)
 //! detail = "row 3: …"        # written by the runner
 //! ```
 //!
@@ -49,6 +50,10 @@ pub struct Entry {
     pub reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub issue: Option<String>,
+    /// The plan HE1/HE2 task that owns a `bug` (D1804): `--task N` fails while
+    /// any bug names task N.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task: Option<String>,
     #[serde(default)]
     pub detail: String,
 }
@@ -122,6 +127,16 @@ impl Triage {
     }
 }
 
+impl Triage {
+    /// The bugs that name `task` (D1804): a task merges with none.
+    pub fn bugs_of_task(&self, task: &str) -> Vec<&Entry> {
+        self.entries
+            .iter()
+            .filter(|e| e.status == Status::Bug && e.task.as_deref() == Some(task))
+            .collect()
+    }
+}
+
 /// A mismatch one run found.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Found {
@@ -167,6 +182,7 @@ pub fn reconcile(previous: &Triage, found: Vec<Found>, scope: &Scope) -> Reconci
                 status: Status::Untriaged,
                 reason: None,
                 issue: None,
+                task: None,
                 detail: f.detail,
             },
         };
@@ -212,6 +228,7 @@ mod tests {
                     status: Status::Bug,
                     reason: Some("known".into()),
                     issue: None,
+                    task: None,
                     detail: "old".into(),
                 },
                 Entry {
@@ -221,6 +238,7 @@ mod tests {
                     status: Status::Bug,
                     reason: None,
                     issue: None,
+                    task: None,
                     detail: String::new(),
                 },
                 Entry {
@@ -230,6 +248,7 @@ mod tests {
                     status: Status::Bug,
                     reason: None,
                     issue: None,
+                    task: None,
                     detail: String::new(),
                 },
             ],
@@ -277,6 +296,7 @@ mod tests {
                 status: Status::Incompatibility,
                 reason: Some("24.3 lacks it".into()),
                 issue: None,
+                task: Some("24".into()),
                 detail: "1 rows vs 2 rows".into(),
             }],
         };
@@ -284,5 +304,30 @@ mod tests {
         assert!(text.contains("[[mismatch]]"), "{text}");
         assert!(text.contains("kind = \"row_count\""), "{text}");
         assert_eq!(toml::from_str::<Triage>(&text).expect("parse"), t);
+    }
+
+    #[test]
+    fn task_bugs_block_their_task() {
+        let entry = |status, task: Option<&str>| Entry {
+            case: "he1/a".into(),
+            target: "house-rust".into(),
+            kind: Kind::Types,
+            status,
+            reason: Some("r".into()),
+            issue: None,
+            task: task.map(String::from),
+            detail: String::new(),
+        };
+        let t = Triage {
+            entries: vec![
+                entry(Status::Bug, Some("24")),
+                entry(Status::Bug, Some("30")),
+                entry(Status::Incompatibility, Some("24")),
+                entry(Status::Bug, None),
+            ],
+        };
+        assert_eq!(t.bugs_of_task("24").len(), 1);
+        assert_eq!(t.bugs_of_task("30").len(), 1);
+        assert!(t.bugs_of_task("25").is_empty());
     }
 }

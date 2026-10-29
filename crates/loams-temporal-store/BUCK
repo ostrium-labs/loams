@@ -32,11 +32,18 @@ cargo_package(
             "root": "tests/store.rs",
         },
     ],
+    examples = [
+        {
+            "name": "store_load",
+            "crate": "store_load",
+            "root": "examples/store_load.rs",
+        },
+    ],
     deps = [
         "//third-party/rust:async-trait",
         "//third-party/rust:serde",
         "//third-party/rust:serde_json",
-        "//third-party/rust:sha2-0_11",
+        "//third-party/rust:sha2",
         "//third-party/rust:sqlx",
         "//third-party/rust:thiserror",
         "//third-party/rust:tokio",
@@ -44,6 +51,7 @@ cargo_package(
     ],
     extra_srcs = {
         "crates/loams-temporal-store/migrations/0001_init.sql": "migrations/0001_init.sql",
+        "crates/loams-temporal-store/migrations/0002_retention_listing.sql": "migrations/0002_retention_listing.sql",
     },
     rustc_flags = [
         "-Funsafe_code",

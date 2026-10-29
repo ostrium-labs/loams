@@ -16,6 +16,9 @@ cargo_package(
         "CARGO_PKG_REPOSITORY": "",
         "CARGO_PKG_RUST_VERSION": "1.97",
     },
+    features = [
+        "testkit",
+    ],
     lib = {
         "crate": "loams_agentd_marketplace",
         "root": "src/lib.rs",
@@ -23,6 +26,26 @@ cargo_package(
         "test": True,
     },
     tests = [
+        {
+            "name": "conformance",
+            "crate": "conformance",
+            "root": "tests/conformance.rs",
+        },
+        {
+            "name": "engine",
+            "crate": "engine",
+            "root": "tests/engine.rs",
+        },
+        {
+            "name": "fetch",
+            "crate": "fetch",
+            "root": "tests/fetch.rs",
+        },
+        {
+            "name": "host",
+            "crate": "host",
+            "root": "tests/host.rs",
+        },
         {
             "name": "install",
             "crate": "install",
@@ -53,24 +76,41 @@ cargo_package(
             "crate": "sigstore",
             "root": "tests/sigstore.rs",
         },
+        {
+            "name": "walrus",
+            "crate": "walrus",
+            "root": "tests/walrus.rs",
+        },
     ],
     deps = [
+        "//crates/loams-agentd-harness:loams-agentd-harness",
+        "//crates/loams-walrus:loams-walrus",
+        "//crates/loams-zitadel:loams-zitadel",
         "//third-party/rust:async-trait",
         "//third-party/rust:base64-0_23",
         "//third-party/rust:hex",
         "//third-party/rust:jsonschema",
+        "//third-party/rust:reqwest-0_12",
+        "//third-party/rust:rustix",
         "//third-party/rust:semver",
         "//third-party/rust:serde",
         "//third-party/rust:serde_json",
-        "//third-party/rust:sha2-0_11",
+        "//third-party/rust:sha2",
         "//third-party/rust:sigstore-verify",
         "//third-party/rust:thiserror",
+        "//third-party/rust:time",
+        "//third-party/rust:tokio",
+        "//third-party/rust:tracing",
     ],
     dev_deps = [
+        "//third-party/rust:axum",
+        "//third-party/rust:rcgen",
+        "//third-party/rust:rustls",
         "//third-party/rust:tempfile",
-        "//third-party/rust:tokio",
+        "//third-party/rust:tokio-rustls",
     ],
     extra_srcs = {
+        "schemas/marketplace/conformance-report.v1.json": "//:file=schemas+marketplace+conformance-report.v1.json",
         "schemas/marketplace/listing.v1.json": "//:file=schemas+marketplace+listing.v1.json",
     },
     rustc_flags = [

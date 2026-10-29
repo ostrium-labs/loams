@@ -1,0 +1,1 @@
+SELECT id FROM t24 WHERE b ORDER BY id

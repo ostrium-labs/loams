@@ -11,7 +11,7 @@ import {
 } from '@loams/console-host';
 import { SlotProvider, SlotRegistry } from '@loams/slots';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 import { Layout, navSections } from '../src/layout.js';
 import { syncModeWithRoute } from '../src/mode-switcher.js';
 import { writePinned } from '../src/pages.js';

@@ -17,6 +17,7 @@ import desktopAgentdPkg from '@loams/plugin-desktop-agentd/package.json';
 import desktopServersPkg from '@loams/plugin-desktop-servers/package.json';
 import desktopSettingsPkg from '@loams/plugin-desktop-settings/package.json';
 import durablePkg from '@loams/plugin-durable/package.json';
+import enginesPkg from '@loams/plugin-engines/package.json';
 import factoryPkg from '@loams/plugin-factory/package.json';
 import gitPkg from '@loams/plugin-git/package.json';
 import graphPkg from '@loams/plugin-graph/package.json';
@@ -55,6 +56,7 @@ export const desktopModules: typeof modules = {
   '@loams/plugin-desktop-agentd': () => import('@loams/plugin-desktop-agentd'),
   '@loams/plugin-canvas': () => import('@loams/plugin-canvas'),
   '@loams/plugin-metrics': () => import('@loams/plugin-metrics'),
+  '@loams/plugin-engines': () => import('@loams/plugin-engines'),
 };
 /** Their package.json manifests. */
 export const desktopManifests: unknown[] = [
@@ -78,6 +80,7 @@ export const desktopManifests: unknown[] = [
   desktopAgentdPkg,
   canvasPkg,
   metricsPkg,
+  enginesPkg,
 ];
 
 export async function startDesktop(

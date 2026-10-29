@@ -1,0 +1,1 @@
+SELECT u8 IN (1, 300, -1), i8 IN (-7, 200) FROM t24s ORDER BY id

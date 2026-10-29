@@ -7,10 +7,16 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+# A signed fake world for agentd's tests (`testkit`).
+testkit = []
+
 [dependencies]
 async-trait.workspace = true
 base64.workspace = true
 jsonschema.workspace = true
+# Walrus artifact locations (MS1 Task 5, D1812): verified, hedged reads.
+loams-walrus = { path = "../loams-walrus" }
 semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -18,10 +24,35 @@ sha2.workspace = true
 hex.workspace = true
 sigstore-verify.workspace = true
 thiserror.workspace = true
+# The daemon side (MK1 Task 4b): the HTTPS fetcher (reqwest 0.12 on rustls,
+# as the other agentd crates fetch), the refresh timer and the registration
+# watch, and logs.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "system-proxy"] }
+tracing.workspace = true
+# An installed agent's identity (IA4 Task 3, D1618, D1629): its Zitadel machine key's RFC 7523
+# assertion, and the assertion's clock.
+loams-zitadel.workspace = true
+time.workspace = true
+# The conformance runner (MK1 Task 8): agentd's ACP JSON-RPC client, and the
+# agent process, its loopback world and the signals that stop it. The
+# workspace tokio has "full", which covers both.
+loams-agentd-harness.workspace = true
+tokio = { workspace = true, features = ["sync", "time", "rt"] }
+
+[target.'cfg(unix)'.dependencies]
+rustix = { workspace = true, features = ["process"] }
 
 [dev-dependencies]
+# The mock Walrus aggregator and HTTPS registry of tests/walrus.rs.
+axum.workspace = true
+loams-agentd-marketplace = { path = ".", features = ["testkit"] }
 tempfile.workspace = true
-tokio = { workspace = true, features = ["macros", "rt"] }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "test-util"] }
+# The fetcher's tests: a TLS server with a self-signed certificate, as
+# loams-agentd-connect's remote tests make one.
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "pem", "ring"] }
+rustls = { workspace = true, features = ["ring", "std", "tls12"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
 
 [lints]
 workspace = true

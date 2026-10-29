@@ -1,7 +1,7 @@
 // Inline approval and question cards (SD1 Task 18; §53 §8.1).
 import type { UserInputQuestion } from '@loams/agentd-client';
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import {
   approvalDetail,
   buildPendingUserInputAnswers,

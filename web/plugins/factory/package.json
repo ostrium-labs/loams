@@ -24,8 +24,11 @@
       ],
       "inject": [
         "desktop",
+        "studio.factory",
+        "platform",
         "router",
-        "slots"
+        "slots",
+        "transport"
       ],
       "provides": [],
       "slots": [
@@ -38,18 +41,22 @@
         "console": "^0.1.0"
       },
       "editions": [
-        "desktop"
+        "oss",
+        "desktop",
+        "cloud"
       ]
     }
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vp test run"
   },
   "dependencies": {
-    "@loams/desktop-ui": "workspace:*",
+    "@connectrpc/connect": "2.2.0",
     "@loams/console-host": "workspace:*",
     "@loams/cordis": "workspace:*",
+    "@loams/desktop-ui": "workspace:*",
+    "@loams/proto": "workspace:*",
     "@loams/slots": "workspace:*",
     "@loams/ui": "workspace:*",
     "lucide-react": "catalog:"
@@ -65,8 +72,10 @@
     "react": "catalog:",
     "react-dom": "catalog:",
     "typescript": "5.9.3",
-    "vitest": "5.0.3",
+    "vite": "catalog:",
+    "vitest": "catalog:",
     "@loams/desktop": "workspace:*",
-    "@loams/platform-electron": "workspace:*"
+    "@loams/platform-electron": "workspace:*",
+    "vite-plus": "catalog:"
   }
 }

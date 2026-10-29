@@ -1,0 +1,87 @@
+{
+ "trace_id": "d49ee2bd5c5478f0aa35f2b0e1c0c63f",
+ "target": "apache-kafka-4.3.1-local",
+ "spans": [
+  {
+   "name": "kafka.message",
+   "span_id": "108f5bc3ca8b6c15",
+   "parent_span_id": "",
+   "start_ns": 1793154237580477434,
+   "duration_nano": 119039779,
+   "attrs": {
+    "cfb.target": "apache-kafka-4.3.1-local",
+    "cfb.acks": "all",
+    "cfb.mode": "latency",
+    "messaging.destination.name": "loams-cfb-075314-latency"
+   },
+   "res": {
+    "telemetry.sdk.name": "opentelemetry",
+    "service.name": "cfb-driver",
+    "cfb.run": "075314",
+    "cfb.target": "apache-kafka-4.3.1-local",
+    "cfb.kind": "apache-kafka-local",
+    "messaging.system": "kafka",
+    "telemetry.sdk.version": "1.45.1",
+    "service.instance.id": "7eca1382-d9ee-4bac-9735-b47e2fbb4bb9",
+    "service.namespace": "loams-bench",
+    "cloud.provider": "local",
+    "cloud.region": "laptop",
+    "telemetry.sdk.language": "python"
+   }
+  },
+  {
+   "name": "kafka.produce",
+   "span_id": "eb87481b163d5ffc",
+   "parent_span_id": "108f5bc3ca8b6c15",
+   "start_ns": 1793154237580477434,
+   "duration_nano": 6288735,
+   "attrs": {
+    "cfb.target": "apache-kafka-4.3.1-local",
+    "cfb.acks": "all",
+    "cfb.mode": "latency",
+    "messaging.destination.name": "loams-cfb-075314-latency"
+   },
+   "res": {
+    "cloud.region": "laptop",
+    "telemetry.sdk.version": "1.45.1",
+    "service.instance.id": "7eca1382-d9ee-4bac-9735-b47e2fbb4bb9",
+    "service.namespace": "loams-bench",
+    "messaging.system": "kafka",
+    "telemetry.sdk.language": "python",
+    "telemetry.sdk.name": "opentelemetry",
+    "service.name": "cfb-driver",
+    "cfb.run": "075314",
+    "cfb.target": "apache-kafka-4.3.1-local",
+    "cfb.kind": "apache-kafka-local",
+    "cloud.provider": "local"
+   }
+  },
+  {
+   "name": "kafka.deliver",
+   "span_id": "a372734abeb1ea60",
+   "parent_span_id": "108f5bc3ca8b6c15",
+   "start_ns": 1793154237586766169,
+   "duration_nano": 112751044,
+   "attrs": {
+    "messaging.destination.name": "loams-cfb-075314-latency",
+    "cfb.target": "apache-kafka-4.3.1-local",
+    "cfb.acks": "all",
+    "cfb.mode": "latency"
+   },
+   "res": {
+    "telemetry.sdk.name": "opentelemetry",
+    "service.instance.id": "7eca1382-d9ee-4bac-9735-b47e2fbb4bb9",
+    "service.name": "cfb-driver",
+    "service.namespace": "loams-bench",
+    "cfb.run": "075314",
+    "cfb.kind": "apache-kafka-local",
+    "cloud.provider": "local",
+    "telemetry.sdk.language": "python",
+    "telemetry.sdk.version": "1.45.1",
+    "cfb.target": "apache-kafka-4.3.1-local",
+    "cloud.region": "laptop",
+    "messaging.system": "kafka"
+   }
+  }
+ ]
+}

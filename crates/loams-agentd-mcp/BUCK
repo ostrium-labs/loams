@@ -22,10 +22,19 @@ cargo_package(
         "proc_macro": False,
         "test": True,
     },
+    tests = [
+        {
+            "name": "knowledge",
+            "crate": "knowledge",
+            "root": "tests/knowledge.rs",
+        },
+    ],
     deps = [
         "//crates/loams-agentd-doc:loams-agentd-doc",
         "//crates/loams-agentd-proto:loams-agentd-proto",
         "//crates/loams-agentd-rpc:loams-agentd-rpc",
+        "//crates/loams-knowledge:loams-knowledge",
+        "//crates/loams-web-bridge:loams-web-bridge",
         "//third-party/rust:anyhow",
         "//third-party/rust:async-trait",
         "//third-party/rust:chrono",
@@ -34,7 +43,13 @@ cargo_package(
         "//third-party/rust:serde_json",
         "//third-party/rust:tokio",
         "//third-party/rust:tracing",
+        "//third-party/rust:url",
         "//third-party/rust:uuid",
+    ],
+    dev_deps = [
+        "//crates/loams-store:loams-store",
+        "//crates/loams-walrus:loams-walrus",
+        "//third-party/rust:axum",
     ],
     rustc_flags = [
         "-Funsafe_code",

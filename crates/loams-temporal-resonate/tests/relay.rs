@@ -100,13 +100,13 @@ async fn relay_crash_between_call_and_mark_is_idempotent() {
     assert_eq!(outbox.undispatched(), 2);
     // A Resonate answer lost after it applied the call is the same case.
     fake.fail_next_calls(1, true);
+    // The two rows are different promises, sent concurrently: the one whose
+    // answer was lost stays for the next pass, the other is marked.
     let pass = relay.run_once().await.unwrap();
     assert!(pass.unavailable);
-    // Only the unanswered promise waits; the other one's row is marked.
     assert_eq!(pass.marked, 1);
-    assert_eq!(outbox.undispatched(), 1);
 
-    // The restarted relay repeats the call: same promise, one dispatch.
+    // The next pass repeats the lost call: same promise, one dispatch.
     let pass = relay.run_once().await.unwrap();
     assert_eq!((pass.claimed, pass.marked, pass.unavailable), (1, 1, false));
     assert_eq!(outbox.undispatched(), 0);
@@ -318,31 +318,38 @@ async fn relay_deferred_rows_do_not_starve_the_outbox() {
 }
 
 #[tokio::test]
-async fn relay_unavailable_holds_back_only_its_own_promise() {
+async fn relay_sends_different_promises_concurrently_and_one_promise_in_order() {
     let fake = FakeDurability::new();
     let outbox = Arc::new(MemOutbox::default());
-    outbox.push(create_task("wft:p", b"x"));
-    outbox.push(OutboxRequest::Settle {
-        id: "wft:p".into(),
-        state: SettleAs::Resolved,
-    });
     for i in 0..10 {
-        outbox.push(create_task(&format!("wft:q{i}"), b"x"));
+        outbox.push(create_task(&format!("wft:p{i}"), b"x"));
+        outbox.push(OutboxRequest::Settle {
+            id: format!("wft:p{i}"),
+            state: SettleAs::Resolved,
+        });
     }
-    let relay = relay(&outbox, &fake);
-    fake.fail_next_calls(1, false);
+    let relay = relay(&outbox, &fake).with_config(loams_temporal_resonate::RelayConfig {
+        concurrency: 4,
+        ..Default::default()
+    });
     let pass = relay.run_once().await.unwrap();
-    assert!(pass.unavailable);
-    // The first call failed: whichever promise it hit keeps its rows; every
-    // other promise went through.
-    assert!(outbox.undispatched() >= 1 && outbox.undispatched() <= 2);
-    assert_eq!(pass.marked, 12 - outbox.undispatched());
-    let pass = relay.run_once().await.unwrap();
-    assert!(!pass.unavailable);
-    assert_eq!(outbox.undispatched(), 0);
     assert_eq!(
-        fake.promise_get("wft:p").await.unwrap().status,
-        PromiseStatus::Resolved,
-        "the settle still followed its create"
+        (pass.claimed, pass.marked, pass.unavailable),
+        (20, 20, false)
     );
+    // Each promise saw its create before its settle.
+    let calls = fake.calls();
+    for i in 0..10 {
+        let c = calls
+            .iter()
+            .position(|x| *x == format!("promise.create wft:p{i}"));
+        let s = calls
+            .iter()
+            .position(|x| *x == format!("promise.settle wft:p{i}"));
+        assert!(c.is_some() && s.is_some() && c < s, "{calls:?}");
+        assert_eq!(
+            fake.promise_get(&format!("wft:p{i}")).await.unwrap().status,
+            PromiseStatus::Resolved
+        );
+    }
 }

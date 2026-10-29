@@ -16,11 +16,18 @@ export function ConfigurePage({
   desktop,
   app,
   navigate,
+  embeds = true,
 }: {
   desktop: LoamsDesktopApi;
   app: FactoryAppId;
   navigate: (to: string) => void;
+  /**
+   * False in a browser: credentials are stored by the agent daemon on its own
+   * machine and configured from Loams Desktop there (SF1 amendment F4).
+   */
+  embeds?: boolean;
 }) {
+  const readOnly = !embeds;
   const [info, setInfo] = useState<FactoryAppInfo | null>();
   const [url, setUrl] = useState('');
   const [values, setValues] = useState<Record<string, string>>({});
@@ -153,6 +160,7 @@ export function ConfigurePage({
                         : undefined
                     }
                     autoComplete={f.secret ? 'new-password' : 'off'}
+                    disabled={readOnly}
                     spellCheck={false}
                   />
                 )}
@@ -162,6 +170,12 @@ export function ConfigurePage({
               <Notice
                 tone="danger"
                 title="The stored credentials cannot be decrypted on this computer (the system keychain changed). Enter them again."
+              />
+            )}
+            {readOnly && (
+              <Notice
+                tone="info"
+                title="An app's credentials are stored by the agent daemon on its own machine: configure it in Loams Desktop there."
               />
             )}
             {error && <Notice tone="danger" title={error} />}
@@ -178,10 +192,10 @@ export function ConfigurePage({
               />
             )}
             <div className="flex flex-wrap gap-2">
-              <Button type="submit" variant="primary" disabled={busy || !url.trim()}>
+              <Button type="submit" variant="primary" disabled={readOnly || busy || !url.trim()}>
                 {busy ? 'Saving…' : 'Save and test'}
               </Button>
-              {configured && (
+              {configured && !readOnly && (
                 <Button
                   variant="quiet"
                   disabled={busy}

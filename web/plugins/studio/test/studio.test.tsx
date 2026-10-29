@@ -4,7 +4,7 @@
 
 import { validateManifest } from '@loams/console-host';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import pkg from '../package.json';
 import type { StudioAgentd } from '../src/agentd.js';
 import { StudioLayout } from '../src/layout/StudioLayout.js';

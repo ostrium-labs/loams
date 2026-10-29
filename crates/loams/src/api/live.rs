@@ -201,6 +201,7 @@ mod tests {
         let principal = Principal {
             subject: "apikey:01".to_owned(),
             kind: PrincipalKind::ApiKey,
+            issuer: None,
             display_name: "ci".to_owned(),
             email: None,
             grant: Grant {
@@ -219,6 +220,7 @@ mod tests {
         let open = live_caller(&Principal {
             grant: Grant::default(),
             kind: PrincipalKind::DevLoopback,
+            issuer: None,
             ..principal
         });
         assert!(open.has_scope("live:deploy") && open.environment.is_none());

@@ -499,6 +499,9 @@ message RunRequest {
   repeated string attachments = 10;
   WorktreeSpec worktree = 11;
   McpServer mcp = 12;
+  // MCP servers installed from the marketplace (MK1 Task 4b), injected by
+  // the daemon beside `mcp`.
+  repeated McpServer mcp_servers = 13;
 }
 
 // A worktree the turn creates and runs in.

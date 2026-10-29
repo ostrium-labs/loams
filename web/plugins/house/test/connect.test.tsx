@@ -8,7 +8,7 @@ import { Code, ConnectError, createRouterTransport } from '@connectrpc/connect';
 import { errors, house, instance } from '@loams/proto';
 import { setCodeEditorText } from '@loams/ui';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 import type { ExecuteQueryRequest, QueryFrame } from '../src/client.js';
 import { HouseError } from '../src/client.js';
 import { createHouseClient, decodeRows } from '../src/connect.js';

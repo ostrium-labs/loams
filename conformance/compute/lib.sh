@@ -16,10 +16,10 @@
 # Environment:
 #   OC_OUT        where JUnit files and logs go (default: $OC_ROOT/target/compute)
 #   OC_ENV_FILE   the stack's .env (default: deploy/release/.env, else .env.example)
-#   OC_NETWORK    the stack's network (default: loams_default)
+#   OC_NETWORK    the stack's network (default: <OC_PROJECT, else loams>_default)
 #   OC_COMPOSE    the compose command (default: docker compose, else docker-compose, else podman compose)
 #   OC_PROJECT    a compose project name other than the stack's (`loams`), for a
-#                 second stack beside a running one; set OC_NETWORK to <name>_default
+#                 second stack beside a running one (OC_NETWORK follows it)
 #   OC_COMPOSE_EXTRA  colon-separated extra compose files, last (local overrides)
 #   LOAMS_PG_DIRECT_URL  the direct endpoint as an admin URL (default: compute1's cloud_admin)
 # shellcheck shell=bash
@@ -29,7 +29,7 @@ OC_DIR="$OC_ROOT/conformance/compute"
 OC_PINS="$OC_DIR/pins.env"
 OC_RELEASE="$OC_ROOT/deploy/release"
 : "${OC_OUT:=$OC_ROOT/target/compute}"
-: "${OC_NETWORK:=loams_default}"
+: "${OC_NETWORK:=${OC_PROJECT:-loams}_default}"
 # The issue that tracks the missing session-pooled endpoint (DX1 R0.7).
 OC_SESSION_ISSUE='https://github.com/ostrium-labs/loams/issues/1129'
 
@@ -75,16 +75,21 @@ oc_env_file() {
   fi
 }
 
-# oc_compose [--txn] <compose args...>: compose with the stack, the compute
-# override and the pins; --txn adds the transaction-mode overlay (PgDog).
+# oc_compose [--txn] [--gateway] <compose args...>: compose with the stack,
+# the compute override and the pins; --txn adds the transaction-mode overlay
+# (PgDog), --gateway the Temporal gateway's (temporal-gateway.yaml, the
+# profile `temporal-gateway`). Both are test overlays, never distributed.
 oc_compose() {
   local -a cmd files
   mapfile -t cmd < <(oc_compose_cmd) || return 1
   files=(-f "$OC_RELEASE/compose.yaml" -f "$OC_RELEASE/compose.compute.yaml")
-  if [ "${1:-}" = --txn ]; then
-    shift
-    files+=(-f "$OC_DIR/pgdog-txn.yaml")
-  fi
+  while :; do
+    case ${1:-} in
+      --txn) shift; files+=(-f "$OC_DIR/pgdog-txn.yaml") ;;
+      --gateway) shift; files+=(-f "$OC_DIR/temporal-gateway.yaml") ;;
+      *) break ;;
+    esac
+  done
   local extra
   if [ -n "${OC_COMPOSE_EXTRA:-}" ]; then
     local -a extras
@@ -103,6 +108,7 @@ oc_compose() {
 oc_up() {
   local profile=${1:?oc_up <profile> [txn]} txn=()
   [ "${2:-}" = txn ] && txn=(--txn)
+  [ "$profile" = temporal-gateway ] && txn+=(--gateway)
   mkdir -p "$OC_OUT"
   local -a services
   mapfile -t services < <(oc_profile_services "$profile" "${txn[@]}")
@@ -114,13 +120,15 @@ oc_up() {
 oc_down() {
   local profile=${1:?oc_down <profile> [txn]} txn=()
   [ "${2:-}" = txn ] && txn=(--txn)
+  [ "$profile" = temporal-gateway ] && txn+=(--gateway)
   local -a services
   mapfile -t services < <(oc_profile_services "$profile" "${txn[@]}")
   [ "${#services[@]}" -gt 0 ] || return 0
   oc_compose "${txn[@]}" --profile "$profile" rm -s -f -v "${services[@]}"
 }
 
-# oc_profile_services <profile> [--txn]: the services only that profile adds.
+# oc_profile_services <profile> [--txn] [--gateway]: the services only that
+# profile adds.
 oc_profile_services() {
   local profile=$1
   shift

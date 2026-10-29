@@ -88,9 +88,9 @@ cache_max_bytes = 4294967296
 - **Not private.** Everything on Walrus is public and can't be made private
   later. Never store private repository content, private listings, secrets,
   tokens, user data or agent state.
-- **Not wired in yet.** This crate adds the client. Using it for listing
-  artifacts, project knowledge and the build cache is the work of MS1
-  Tasks 5, 7 and 8.
+- **Partly wired in.** Listing artifacts read their walrus locations
+  through it (`loams-agentd-marketplace`'s `artifact` module, MS1 Task 5).
+  Project knowledge and the build cache are MS1 Tasks 7 and 8.
 
 ## Endpoints (checked 2026-10-25)
 

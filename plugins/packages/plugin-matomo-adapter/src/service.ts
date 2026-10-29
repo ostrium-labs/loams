@@ -1113,6 +1113,14 @@ export class MatomoAdapterService extends Service {
     if (response.kind === "scalar" && isNonArrayScalar(response.value)) {
       return response.value;
     }
+    // format=JSON renders a scalar as {"value": …}.
+    if (response.kind === "flat") {
+      const keys = Object.keys(response.row);
+      const value = (response.row as Record<string, unknown>)["value"];
+      if (keys.length === 1 && isNonArrayScalar(value as MatomoScalarValue)) {
+        return value as string | number | boolean | null;
+      }
+    }
     throw new MatomoApiError(
       `matomo: API.getMatomoVersion returned a ${response.kind}, but the method is documented to ` +
         "return a bare scalar.",

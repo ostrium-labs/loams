@@ -88,6 +88,17 @@ ignore = [
     { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.7.5 constant-time branches, via russh 0.63 (SFTP in loams-connector-objects): the fixed 0.7.9 is from 2026-10-25 (0.7.6-0.7.8 yanked), under the 14-day rule; bump on or after 2026-11-08" },
     # The same crate is yanked (as 0.7.6-0.7.8 are); the same revisit date.
     { crate = "crypto-bigint@0.7.5", reason = "yanked for RUSTSEC-2026-0387; the one usable fix, 0.7.9, is from 2026-10-25, under the 14-day rule (revisit 2026-11-08)" },
+    # zstd-rs advisories of 2026-10-26: zstd 0.13.3 (loams-house and
+    # loams-house-native directly; apache-avro and iceberg 0.10 in
+    # loams-house-lake) and 0.14.0 (async-compression via datafusion 55 in
+    # loams-house-engine), on zstd-safe 7.3.0/8.0.0 and zstd-sys 2.1.0. Every fix (zstd >= 0.14.3,
+    # zstd-safe >= 8.2.0, zstd-sys >= 2.1.2) was published 2026-10-16, under
+    # the 14-day rule until 2026-10-30. No Fabric code uses the seekable
+    # format. Remove with the bump on or after 2026-11-10.
+    { id = "RUSTSEC-2026-0391", reason = "zstd stream context reuse leaks an abandoned stream's data, via apache-avro/iceberg 0.10 (loams-house-lake) and async-compression/datafusion 55 (loams-house-engine): the fixed zstd 0.14.3 is under the 14-day rule; revisit 2026-11-10" },
+    { id = "RUSTSEC-2026-0398", reason = "zstd-safe Seekable::decompress length past capacity, via zstd 0.13/0.14 (iceberg, apache-avro, datafusion 55); no Fabric code uses the seekable format; the fixed zstd-safe 8.2.0 is under the 14-day rule; revisit 2026-11-10" },
+    { id = "RUSTSEC-2026-0403", reason = "zstd-safe uninitialized memory when a legacy (v0.4-v0.7) frame fails to stream-decompress, via zstd 0.13/0.14 (iceberg, apache-avro, datafusion 55): the fixed zstd-safe 8.2.0 is under the 14-day rule; revisit 2026-11-10" },
+    { id = "RUSTSEC-2026-0410", reason = "zstd-sys wasm32 allocator shim, via zstd 0.13/0.14 (iceberg, apache-avro, datafusion 55): reachable only on wasm32, and Fabric builds zstd for native targets only; the fixed zstd-sys 2.1.2 is under the 14-day rule; revisit 2026-11-10" },
 ]
 
 [sources]

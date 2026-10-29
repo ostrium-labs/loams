@@ -124,6 +124,11 @@ cargo_package(
             "root": "tests/m5c_accounts_uploads_titles.rs",
         },
         {
+            "name": "marketplace",
+            "crate": "marketplace",
+            "root": "tests/marketplace.rs",
+        },
+        {
             "name": "message_queue",
             "crate": "message_queue",
             "root": "tests/message_queue.rs",
@@ -258,14 +263,16 @@ cargo_package(
     ],
     deps = [
         "//crates/loams-agentd-doc:loams-agentd-doc",
+        "//crates/loams-agentd-factory:loams-agentd-factory",
         "//crates/loams-agentd-harness:loams-agentd-harness",
+        "//crates/loams-agentd-marketplace:loams-agentd-marketplace",
         "//crates/loams-agentd-preview:loams-agentd-preview",
         "//crates/loams-agentd-proto:loams-agentd-proto",
         "//crates/loams-agentd-rpc:loams-agentd-rpc",
         "//crates/loams-agentd-store:loams-agentd-store",
         "//third-party/rust:anyhow",
         "//third-party/rust:async-trait",
-        "//third-party/rust:base64-0_22",
+        "//third-party/rust:base64-0_23",
         "//third-party/rust:chrono",
         "//third-party/rust:futures",
         "//third-party/rust:gethostname",
@@ -281,7 +288,7 @@ cargo_package(
         "//third-party/rust:rusqlite",
         "//third-party/rust:serde",
         "//third-party/rust:serde_json",
-        "//third-party/rust:sha2-0_10",
+        "//third-party/rust:sha2",
         "//third-party/rust:tempfile",
         "//third-party/rust:thiserror",
         "//third-party/rust:tokio",
@@ -292,7 +299,7 @@ cargo_package(
     ],
     dev_deps = [
         "//third-party/rust:axum",
-        "//third-party/rust:tokio-tungstenite-0_24",
+        "//third-party/rust:tokio-tungstenite",
         "//third-party/rust:zip",
     ],
     extra_srcs = {

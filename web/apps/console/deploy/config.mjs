@@ -53,6 +53,33 @@ export const DEFAULT_ISSUER = 'https://auth.loams.dev';
 export const REGISTER_URL = 'https://auth.loams.dev/register';
 
 /**
+ * LOAMS_AUTH_MODES: the sign-in modes this deploy offers, separated by spaces or
+ * commas. Unset, the console offers all of them (oidc only with a client). Set it to
+ * narrow the choice, for example `tailscale` for a console where the other ways in
+ * are not tested yet. It must be a subset of AUTH_MODES, and must include the default
+ * LOAMS_AUTH_MODE, and `oidc` needs LOAMS_AUTH_CLIENT_ID.
+ */
+export function authModes(env = process.env, mode = DEFAULT_MODE) {
+  const raw = get(env, 'LOAMS_AUTH_MODES');
+  if (!raw) return undefined;
+  const wanted = [];
+  for (const value of raw.split(/[\s,]+/).filter(Boolean)) {
+    const m = value.toLowerCase();
+    if (!AUTH_MODES.includes(m)) {
+      throw new Error(
+        `LOAMS_AUTH_MODES entry ${JSON.stringify(value)} must be one of ${AUTH_MODES.join(', ')}`,
+      );
+    }
+    if (!wanted.includes(m)) wanted.push(m);
+  }
+  if (!wanted.includes(mode)) {
+    throw new Error(`LOAMS_AUTH_MODES must include the default LOAMS_AUTH_MODE (${mode})`);
+  }
+  // The console's order, whatever order the value listed them in.
+  return AUTH_MODES.filter((m) => wanted.includes(m));
+}
+
+/**
  * The config.json object for a hosted deploy, validated. `requireAuth` (Ostrium's
  * console.loams.dev) requires the OIDC client, so the console offers a Loams account.
  */
@@ -66,6 +93,13 @@ export function hostedConfig(env = process.env, { requireAuth = false } = {}) {
   }
   config.authMode = mode;
   const clientId = get(env, 'LOAMS_AUTH_CLIENT_ID');
+  const modes = authModes(env, mode);
+  if (modes) {
+    if (modes.includes('oidc') && !clientId) {
+      throw new Error('LOAMS_AUTH_MODES offers oidc, which needs LOAMS_AUTH_CLIENT_ID');
+    }
+    config.authModes = modes;
+  }
   if (!clientId) {
     if (mode === 'oidc' || requireAuth) {
       throw new Error(

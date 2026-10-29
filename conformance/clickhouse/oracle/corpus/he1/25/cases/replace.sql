@@ -1,0 +1,1 @@
+SELECT * REPLACE (a * 10 AS a) FROM u25 ORDER BY a

@@ -1,0 +1,1 @@
+SELECT a FROM t22 WHERE a IN (1, 3) ORDER BY a

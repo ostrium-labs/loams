@@ -136,6 +136,7 @@ impl Studio {
                 CHAT,
                 SessionCommandPayload::Run {
                     request: RunRequest {
+                        mcp_servers: Vec::new(),
                         mcp: None,
                         prompt: "edit the notes".into(),
                         harness: None,

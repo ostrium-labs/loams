@@ -180,14 +180,15 @@ resource "google_compute_firewall" "iap_ssh" {
 
 # --- the VM -----------------------------------------------------------------------------
 module "cloud_init" {
-  source        = "../shared"
-  cloud         = "gcp"
-  release       = var.release
-  bucket        = local.bucket
-  project       = var.project
-  secret_prefix = local.prefix
-  profiles      = var.profiles
-  hostname      = var.hostname
+  source                 = "../shared"
+  cloud                  = "gcp"
+  release                = var.release
+  bucket                 = local.bucket
+  project                = var.project
+  secret_prefix          = local.prefix
+  profiles               = var.profiles
+  hostname               = var.hostname
+  confluent_integrations = var.confluent_integrations
 }
 
 resource "google_compute_instance" "this" {

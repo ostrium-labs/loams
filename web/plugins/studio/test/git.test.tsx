@@ -28,7 +28,7 @@ import {
 import { ErrorInfoSchema } from '@loams/proto/errors';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { StudioFactory } from '../src/factory.js';
 import { GitActionBus, withGitActions } from '../src/git/bus.js';
 import { ProjectGitTools, ThreadGitTools } from '../src/git/GitToolbar.js';
@@ -544,7 +544,7 @@ describe('the thread toolbar', () => {
         url: 'https://git.example.test/acme/site/pulls/12',
       },
     ]);
-    const factory: StudioFactory = { kind: 'desktop', list: async () => [], pulls };
+    const factory: StudioFactory = { kind: 'pages', list: async () => [], pulls };
     mount(d.transport, <ThreadGitTools threadId="c_1" factory={factory} />);
     const toolbar = await screen.findByRole('toolbar', { name: 'Branch and git' });
     await waitFor(() => expect(pulls).toHaveBeenCalledWith('acme', 'site'));

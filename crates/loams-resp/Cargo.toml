@@ -1,0 +1,30 @@
+[package]
+name = "loams-resp"
+description = "Loams' Redis gateway (design §77 §8; plan KV1, milestone KV2): RESP2/RESP3 on loams-kv, ported from Tidis (Apache-2.0) and mini-redis (MIT)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[features]
+# The TiKV store (the `tikv` profile).
+tikv = ["loams-kv/tikv"]
+
+[dependencies]
+bytes.workspace = true
+loams-kv.workspace = true
+serde.workspace = true
+tokio.workspace = true
+toml.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+# Handler tests run on every backend: TiKV where LOAMS_TEST_PD is set
+# (loams_kv::testing::stores).
+loams-kv = { workspace = true, features = ["tikv"] }
+proptest.workspace = true
+
+[lints]
+workspace = true

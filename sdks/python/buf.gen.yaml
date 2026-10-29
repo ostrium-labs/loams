@@ -59,4 +59,7 @@ plugins:
       - package=loams.graph.v1=loams.graph.v1.graph_pb2
       - package=loams.sql.v1=loams.sql.v1.sql_pb2
       - package=loams.stream.v1=loams.stream.v1.stream_pb2
+      # Four files, like admin: the facade imports each message from its own
+      # file's module.
+      - package=loams.meter.v1=loams.meter.v1.customer_pb2
 clean: true

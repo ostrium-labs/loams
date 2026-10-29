@@ -25,6 +25,14 @@ replaces this one.
 | `scenarios.json` | the scenarios in plan order, each with its phase (DX1–DX4) and whether it is Go only |
 | `workers/go/` | Go module (SDK `go.temporal.io/sdk` v1.49.0): `scenarios/` holds one workflow per scenario; `main.go` is the generator (`generate`) and the exporter (`export`) |
 | `workers/ts/` | npm package (`@temporalio/*` 1.24.0): `src/workflows.ts`, `src/activities.ts`, `src/generate.ts`, and the replay test `src/replay.test.ts` |
+| `workers/python/` | uv project (`temporalio` 1.34.0, D2136): `corpus_py/` holds the workflows, activities, the starter (`drive.py`), the generator and worker CLI (`python -m corpus_py`) and the replayer (`replay.py`); not yet run, and `histories/python/` is empty until its first generation (D2137) |
+| `workers/dotnet/` | .NET project (NuGet `Temporalio` 1.20.0, net8.0; TSDK-dotnet): `Workflows.cs` (one class per scenario), `Activities.cs`, `Scenarios.cs` (the list), `Program.cs` (`generate`: worker and starter; `replay`: `WorkflowReplayer` over a directory) |
+| `generate-dotnet.sh` | the .NET histories into `histories/dotnet/` against upstream Temporal (compat mode by default), exported by the Go exporter, and the manifest's `dotnet` entries |
+| `workers/java/` | Maven project (`io.temporal:temporal-sdk` 1.40.0, D2130): `Workflows.java` (one `@WorkflowInterface` per scenario, every scenario including the Go-only ones), `CorpusActivities*.java`, `Generate.java` (generator, drivers and its own exporter, D2131) and the replayer test `CorpusReplayTest` (`WorkflowReplayer`, D2134); not yet run, and `histories/java/` is absent until its first generation (`generate-java.sh`, or the `temporal-corpus-java.yml` dispatch job) |
+| `workers/ruby/` | Ruby (gem `temporalio` 1.9.0 on sdk-core, `Gemfile.lock`): `lib/workflows.rb`, `lib/activities.rb`, `lib/scenarios.rb`, the worker and starter `generate.rb`, the replay check `replay.rb` (`WorkflowReplayer`), and `test/` (minitest). Its histories (32, all non-Go-only scenarios) were generated against start-dev on 2026-10-28 (run 40690677386) and replay with the gem's replayer (D2153) |
+| `generate-ruby.sh` | the Ruby half against a server: generate, Go export, replay, `manifest.py build --languages ruby` |
+| `workers/rust/` | cargo project, its own workspace, not a member of the repository's (`temporalio-sdk` 1.1.0 on `temporalio-sdk-core` 0.10.0, prerelease; D2156): `src/workflows.rs`, `src/activities.rs`, the starter (`src/drive.rs`), the scenario list (`src/scenarios.rs`) and sdk-core's replayer over the `.binpb` histories (`src/replay.rs`), all in one binary `corpus-rust`; built only in `RUST_IMAGE`. `generate-rust.sh` writes `histories/rust/` (empty until its first committed generation, D2157) |
+| `workers/php/` | Composer project (`temporal/sdk` 2.19.0 under RoadRunner 2025.1.15, D2146): `src/Workflows.php` (one class per scenario), `src/Activities.php`, `worker.php` (RoadRunner's `.rr.yaml` runs it), the starter (`starter.php`, `src/Driver.php`), the replayer (`replay.php`, the SDK's `WorkflowReplayer` through RoadRunner) and `corpus-php.sh`, which starts RoadRunner around them; built into a local image (`Containerfile`); `generate-php.sh` writes `histories/php/` against upstream Temporal (D2148); `histories/php/` is the start-dev generation of `temporal-sdk-php.yml` run 40686083193 (2026-10-28; 32 histories, replayed 32/32 by the PHP replayer, child scenarios included) |
 | `replay/go/` | `replay_test.go`: every Go history replays with `worker.NewWorkflowReplayer` |
 | `histories/<lang>/<scenario>.{json,binpb}` | protojson (what `temporal workflow show -o json` writes and the replayers read) and the binary `History` message; a scenario with several runs has `<scenario>.run<k>.*`, oldest first |
 | `histories/generate-<lang>.json` | what each driver observed, expected errors included |
@@ -85,7 +93,11 @@ With the compat-mode stack up (`conformance/compute/temporal/run.sh`, or
 `oc_up temporal`):
 
 ```sh
-conformance/compute/temporal/corpus/generate.sh
+conformance/compute/temporal/corpus/generate.sh                       # go,ts (CORPUS_LANGS)
+conformance/compute/temporal/corpus/generate.sh --langs go,ts,python  # with the Python worker
+conformance/compute/temporal/corpus/generate.sh --langs go,ts,java    # with the Java worker
+conformance/compute/temporal/corpus/generate-java.sh                 # Java alone (manifest.py build --languages java)
+conformance/compute/temporal/corpus/generate-rust.sh                  # the Rust worker; manifest.py build --languages rust
 python3 conformance/compute/temporal/corpus/manifest.py check
 ```
 
@@ -102,8 +114,31 @@ CORPUS_SERVER=start-dev OC_NETWORK=dx0-corpus-net \
   conformance/compute/temporal/corpus/generate.sh
 ```
 
+The Ruby half has its own generator, which rebuilds only the Ruby entries of
+the manifest:
+
+```sh
+CORPUS_SERVER=start-dev OC_NETWORK=dx0-corpus-net \
+  conformance/compute/temporal/corpus/generate-ruby.sh
+```
+
+`.github/workflows/temporal-sdk-ruby.yml` runs the same against start-dev on
+every pull request that touches the Ruby worker, and uploads the result as the
+artifact `temporal-sdk-ruby-upstream-corpus`; the committed `histories/ruby/`
+came from that artifact (start-dev, like the Go and TypeScript halves), with
+`manifest.py build --languages ruby`.
+
 Any change to a workflow under `workers/` changes its histories: regenerate in
 the same pull request.
+
+## .NET
+
+`histories/dotnet/` is generated by CI, not by hand: the `dotnet-corpus` job of
+`.github/workflows/temporal-corpus-dotnet.yml` brings up compat mode (or
+start-dev, by hand), runs `generate-dotnet.sh`, replays the result with the
+.NET replayer and uploads `histories/dotnet/`, `generate-dotnet.json` and
+`manifest.json` as the artifact `temporal-corpus-dotnet`, which is committed
+here. Until then `manifest.py check` does not require .NET histories.
 
 ## Tests
 

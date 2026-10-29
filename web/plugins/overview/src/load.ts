@@ -36,7 +36,7 @@ export function useLoad<T>(
 ): Load<T> {
   const [v, setV] = useState<Load<T>>({ state: 'loading' });
   const scopeRef = useRef(scope);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `key` stands for everything `fn` closes over
+  // oxlint-disable-next-line react/exhaustive-deps -- `key` stands for everything `fn` closes over
   useEffect(() => {
     if (!enabled) return;
     let live = true;

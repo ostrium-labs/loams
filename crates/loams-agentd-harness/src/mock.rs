@@ -849,6 +849,7 @@ mod edit_tests {
 
     fn request(cwd: &std::path::Path) -> RunRequest {
         RunRequest {
+            mcp_servers: Vec::new(),
             mcp: None,
             prompt: "edit".into(),
             harness: None,

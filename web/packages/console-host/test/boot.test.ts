@@ -1,7 +1,7 @@
 import type { Transport } from '@connectrpc/connect';
 import { type Context, FiberStates } from '@loams/cordis';
 import type { SlotRegistry } from '@loams/slots';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import {
   boot,
   type ModuleTable,

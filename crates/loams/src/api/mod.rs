@@ -9,6 +9,7 @@
 //! and reflection. It does not replace any route here yet — API1 Tasks 2–8
 //! add one RPC per route and Task 9 deletes the route.
 
+mod admin_rpcs;
 mod collections;
 pub mod connect;
 mod connect_admin;
@@ -46,6 +47,7 @@ pub mod hot;
 pub mod house_proxy;
 pub mod internal;
 pub(crate) mod live;
+pub(crate) mod meter;
 mod namespace_reach;
 pub(crate) mod objects;
 #[cfg(feature = "postgres")]
@@ -174,6 +176,11 @@ pub struct AppState {
     /// LV1 Task 18), and then the package answers `feature_not_in_variant`.
     #[cfg(feature = "live")]
     pub live: Option<loams_live::LiveRoutes>,
+    /// Loams Meter's `meter` role (ME1 role wiring, feature `meter`): its
+    /// public services on this port; `None` where this node does not serve
+    /// them (not a gateway node), and then they answer `meter_not_served`.
+    #[cfg(feature = "meter")]
+    pub meter: Option<std::sync::Arc<loams_meter::role::MeterRole>>,
     /// The embedded durable server's protocol endpoint, served as
     /// `POST /durable/` (B12, [`durable`]); `None` when this port does not
     /// serve it, and then the route answers `404 durable_not_served`.
