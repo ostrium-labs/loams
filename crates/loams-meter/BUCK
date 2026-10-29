@@ -69,6 +69,11 @@ cargo_package(
             "root": "tests/role.rs",
         },
         {
+            "name": "runtime",
+            "crate": "runtime",
+            "root": "tests/runtime.rs",
+        },
+        {
             "name": "services",
             "crate": "services",
             "root": "tests/services.rs",
