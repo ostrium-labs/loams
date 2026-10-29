@@ -526,7 +526,7 @@ pub async fn run_on(
             Some(tokio::spawn(async move {
                 router
                     .serve_with_incoming_shutdown(
-                        tokio_stream::wrappers::TcpListenerStream::new(ui_listener),
+                        incoming(ui_listener),
                         async move {
                             let _ = rx.recv().await;
                         },
@@ -540,7 +540,7 @@ pub async fn run_on(
         .add_service(gateway.service())
         .add_service(gateway.operator_service())
         .serve_with_incoming_shutdown(
-            tokio_stream::wrappers::TcpListenerStream::new(listener),
+            incoming(listener),
             shutdown,
         )
         .await
@@ -559,6 +559,15 @@ pub async fn run_on(
         let _ = h.await;
     }
     served
+}
+
+/// The accepted connections of `listener`, with `TCP_NODELAY` set.
+///
+/// Without it every unary call waits for the peer's delayed ACK: tonic writes
+/// a response's headers, body and trailers separately, and Nagle holds the
+/// later writes back (about 40 ms per call on Linux; BQ1-durable measured it).
+fn incoming(listener: tokio::net::TcpListener) -> tonic::transport::server::TcpIncoming {
+    tonic::transport::server::TcpIncoming::from(listener).with_nodelay(Some(true))
 }
 
 /// A random byte for the development token key (from the OS through

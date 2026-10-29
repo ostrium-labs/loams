@@ -32,6 +32,13 @@ cargo_package(
             "root": "tests/store.rs",
         },
     ],
+    examples = [
+        {
+            "name": "store_load",
+            "crate": "store_load",
+            "root": "examples/store_load.rs",
+        },
+    ],
     deps = [
         "//third-party/rust:async-trait",
         "//third-party/rust:serde",

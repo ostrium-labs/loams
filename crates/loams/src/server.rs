@@ -294,6 +294,11 @@ pub struct ServerConfig {
     /// `/loams.house.v1.*` to (HS1 Task 7, design §49 §18.1). No endpoint (the
     /// default) answers `house_not_configured`.
     pub house: crate::api::house_proxy::HouseProxyConfig,
+    /// The House Loams Meter's `meter` role reads and closes windows in
+    /// (`LOAMS_METER_HOUSE_*`, design §63 §7.5): the ClickHouse HTTP
+    /// interface, as the meter's own House user. No URL (the default): the
+    /// meter runs without its House side.
+    pub meter_house: crate::api::meter::MeterHouseConfig,
     /// Who may call the engine (`LOAMS_AUTH_MODE`, [`crate::auth`]). Off
     /// (the default) refuses to start unless every listener is loopback.
     /// `dev` and `standalone` only: a cluster node refuses any other mode
@@ -501,6 +506,7 @@ impl ServerConfig {
             #[cfg(feature = "git")]
             git: GitConfig::default(),
             house: crate::api::house_proxy::HouseProxyConfig::default(),
+            meter_house: crate::api::meter::MeterHouseConfig::default(),
             auth: crate::auth::AuthConfig::off(),
             tls: crate::tls::TlsConfig::off(),
             console_dir: None,
@@ -3293,6 +3299,7 @@ impl Server {
                 reader.clone(),
                 node_id,
                 &principals,
+                &config.meter_house,
             ) {
                 Ok(node) => {
                     let (role, runtime, internal) = node.start();
