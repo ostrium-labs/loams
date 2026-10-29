@@ -5,7 +5,12 @@
 # shellcheck shell=bash
 
 AF_DIR=$OC_DIR/airflow
-export OC_COMPOSE_EXTRA="$AF_DIR/compose.test.yaml${OC_COMPOSE_EXTRA:+:$OC_COMPOSE_EXTRA}"
+# Once: edge/run.sh sources this again under run.sh, and an overlay given
+# twice makes compose refuse duplicated list items (second nightly, T6.R12).
+case ":${OC_COMPOSE_EXTRA:-}:" in
+  *":$AF_DIR/compose.test.yaml:"*) ;;
+  *) export OC_COMPOSE_EXTRA="$AF_DIR/compose.test.yaml${OC_COMPOSE_EXTRA:+:$OC_COMPOSE_EXTRA}" ;;
+esac
 if [ -n "${OC_PROJECT:-}" ] && [ "$OC_NETWORK" = loams_default ]; then
   OC_NETWORK=${OC_PROJECT}_default
 fi

@@ -55,4 +55,5 @@ plugins:
       - package=loams.graph.v1=loams_proto::loams::graph::v1
       - package=loams.sql.v1=loams_proto::loams::sql::v1
       - package=loams.stream.v1=loams_proto::loams::stream::v1
+      - package=loams.meter.v1=loams_proto::loams::meter::v1
 clean: false

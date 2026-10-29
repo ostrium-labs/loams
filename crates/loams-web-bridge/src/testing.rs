@@ -525,7 +525,7 @@ impl CdpConnection for FakeCdp {
         {
             return Err(BridgeError::cdp(message.clone()));
         }
-        if self.refuses.iter().any(|method| *method == request.method) {
+        if self.refuses.contains(&request.method) {
             return Err(BridgeError::cdp(format!(
                 "'{}' wasn't found",
                 request.method

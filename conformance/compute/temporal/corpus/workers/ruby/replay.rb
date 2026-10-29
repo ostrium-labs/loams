@@ -13,6 +13,9 @@
 # workflow ID the generator used, corpus-ruby-<scenario>: child workflow IDs
 # derive from it, and a gateway's started event may not carry it.
 require 'temporalio/api'
+# temporalio/worker first: the gem's WorkflowReplayer (1.9.0) uses
+# Worker.default_illegal_workflow_calls without requiring the worker.
+require 'temporalio/worker'
 require 'temporalio/worker/workflow_replayer'
 require 'temporalio/workflow_history'
 require_relative 'lib/scenarios'

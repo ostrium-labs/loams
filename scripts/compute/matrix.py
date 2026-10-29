@@ -29,6 +29,7 @@ xfail_check.py). One section per kind of run:
   matrix.py temporal-gateway --junit RUN.xml [--xfail xfail.toml]
             [--methods methods.toml] [--service service.proto]
             [--run "label"] [--out FILE | --splice FILE | --check FILE]
+            (a --run of several lines, as last_run.py writes, is listed as several runs)
   matrix.py durable [--junit-dir DIR] [--compute-dir DIR] [--date D]
             [--loams-version V] [--commit SHA] [--out FILE | --splice FILE | --check FILE]
 
@@ -120,10 +121,16 @@ def render_temporal_gateway(args: argparse.Namespace) -> str:
     ]
     passed = sum(1 for s, _ in states.values() if s == "pass")
     lines = ["### Temporal API (gateway)", ""]
-    if args.run:
-        lines += [f"Run: {args.run}.", ""]
+    runs = [r for r in (args.run or "").splitlines() if r.strip()]
+    if len(runs) == 1:
+        lines += [f"Run: {runs[0]}.", ""]
+    elif runs:
+        # A combined last run (scripts/compute/last_run.py): one line per run,
+        # each naming its SDKs, run ID and date.
+        lines += ["Runs (each SDK's cells come from its own run):", "", *(f"- {r}." for r in runs), ""]
     if spec.get("scope"):
-        lines += [f"Not covered by this run: {spec['scope'].strip()}", ""]
+        these = "these runs" if len(runs) > 1 else "this run"
+        lines += [f"Not covered by {these}: {spec['scope'].strip()}", ""]
     lines += [
         f"SDK legs: {passed} of {len(states)} cases passed. "
         f"{len(listed)} of the {len(all_methods)} `WorkflowService` methods are implemented (design 74 §5.8, DX1).",
@@ -161,7 +168,11 @@ def render_temporal_gateway(args: argparse.Namespace) -> str:
             "",
             "Not yet run: "
             + ", ".join(sdks[sdk] for sdk in unrun)
-            + ". The leg exists, but this run did not include it, so its cells say nothing yet.",
+            + (
+                ". The leg exists, but no run listed above reached it, so its cells say nothing yet."
+                if len(runs) > 1
+                else ". The leg exists, but this run did not include it, so its cells say nothing yet."
+            ),
         ]
     if known:
         lines += ["", "Known issues (not shown by the cases above):", "", *known]
@@ -404,9 +415,14 @@ def durable_cell(s: str) -> str:
     return s.replace("|", "\\|").replace("\n", " ")
 
 
-def render_durable_results(results: list[Result], *, date: str, loams_version: str, commit: str, corpus: str) -> str:
+def render_durable_results(
+    results: list[Result], *, date: str, loams_version: str, commit: str, corpus: str, label: str = ""
+) -> str:
     out: list[str] = []
-    out.append(f"Run: {date}; Loams {loams_version}" + (f" (commit `{commit}`)" if commit else "") + ".")
+    if label:
+        out.append(f"Run: {label}.")
+    else:
+        out.append(f"Run: {date}; Loams {loams_version}" + (f" (commit `{commit}`)" if commit else "") + ".")
     out.append("")
     out.append("| Product | Version | Endpoint mode | Verdict | Passed | Failed (expected) | Skipped | Expected failures |")
     out.append("|---|---|---|---|---|---|---|---|")
@@ -446,7 +462,12 @@ def render_durable(args: argparse.Namespace) -> str:
     pins = read_pins(compute_dir / "pins.env")
     results = [durable_evaluate(r, compute_dir, junit_dir, pins) for r in DURABLE_ROWS]
     return render_durable_results(
-        results, date=args.date, loams_version=args.loams_version, commit=args.commit, corpus=corpus_summary(compute_dir)
+        results,
+        date=args.date,
+        loams_version=args.loams_version,
+        commit=args.commit,
+        corpus=corpus_summary(compute_dir),
+        label=args.run_label,
     )
 
 
@@ -480,6 +501,7 @@ def main(argv: list[str]) -> int:
     du.add_argument("--date", default=dt.date.today().isoformat())
     du.add_argument("--loams-version", default="dev")
     du.add_argument("--commit", default="")
+    du.add_argument("--run-label", default="", help='the run line instead of date and version, e.g. "local run 2026-10-28 abc1234"')
     for p in (tg, du):
         out = p.add_mutually_exclusive_group()
         out.add_argument("--out")
