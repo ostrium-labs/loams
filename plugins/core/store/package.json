@@ -5,7 +5,7 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "dependencies": {
-    "cordis": "^4.0.0-rc.10",
+    "cordis": "^4.0.0-rc.11",
     "pg": "^8.23.1",
     "@loams-core/types": "workspace:*"
   },
