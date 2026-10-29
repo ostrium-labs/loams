@@ -186,6 +186,14 @@ flight = []
 # customer, entitlement, plan and notification services on the main port of
 # a gateway node. Off by default.
 meter = ["dep:loams-meter", "dep:loams-meter-core"]
+# The meter's exporters (design §63 §16, D2207), each off by default: the
+# CloudEvents webhook of closed hour windows, and Stripe's payment state
+# (webhook route and daily poll). Lago and OpenMeter build their ledger and
+# cursors but are not scheduled yet.
+meter-export-webhook = ["meter", "loams-meter/export-webhook"]
+meter-export-stripe = ["meter", "loams-meter/export-stripe"]
+meter-export-lago = ["meter", "loams-meter/export-lago"]
+meter-export-openmeter = ["meter", "loams-meter/export-openmeter"]
 # Serve the Qdrant REST and gRPC APIs (plan M1.4; `--qdrant-listen`).
 qdrant = ["dep:loams-qdrant"]
 # The qdrant-edge HNSW engine for hot artifacts (M1.3); without it the hot

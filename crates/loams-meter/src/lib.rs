@@ -23,6 +23,13 @@ pub mod connect;
 pub mod customers;
 pub mod entitlements;
 pub mod error;
+#[cfg(any(
+    feature = "export-stripe",
+    feature = "export-openmeter",
+    feature = "export-lago",
+    feature = "export-webhook"
+))]
+pub mod export;
 pub mod house;
 pub mod lease_service;
 pub mod notify;

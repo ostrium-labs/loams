@@ -9723,6 +9723,7 @@ dependencies = [
  "loams-cloudevents",
  "loams-common",
  "loams-meter-core",
+ "loams-meter-export",
  "loams-meter-house",
  "loams-proto",
  "proptest",

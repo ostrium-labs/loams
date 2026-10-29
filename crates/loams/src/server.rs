@@ -3291,7 +3291,7 @@ impl Server {
         // `_system/_meter` by fenced leases in the metastore), and a cluster
         // node serves the internal `LeaseService` on its cluster listener.
         #[cfg(feature = "meter")]
-        let (meter, meter_runtime, meter_internal, meter_main) = if roles.gateway {
+        let (meter, meter_runtime, meter_internal, meter_main, meter_public) = if roles.gateway {
             match api::meter::build(
                 meta_store.clone(),
                 store.clone(),
@@ -3303,16 +3303,22 @@ impl Server {
                 &config.data_dir,
             ) {
                 Ok(node) => {
-                    let (role, runtime, internal, main) = node.start();
-                    (Some(role), Some(runtime), Some(internal), Some(main))
+                    let started = node.start();
+                    (
+                        Some(started.role),
+                        Some(started.runtime),
+                        Some(started.internal),
+                        Some(started.main),
+                        Some(started.public),
+                    )
                 }
                 Err(err) => {
                     tracing::warn!(%err, "Loams Meter's services are off on this node");
-                    (None, None, None, None)
+                    (None, None, None, None, None)
                 }
             }
         } else {
-            (None, None, None, None)
+            (None, None, None, None, None)
         };
         let state = AppState {
             meta: meta_store.clone(),
@@ -3363,9 +3369,9 @@ impl Server {
                 // The meter's service ingest on a single node's main port, for
                 // the operator (its node agent's key).
                 #[cfg(feature = "meter")]
-                let main_router = match meter_main {
-                    Some(main) => main_router.merge(main),
-                    None => main_router,
+                let main_router = match (meter_main, meter_public) {
+                    (Some(main), Some(public)) => main_router.merge(main).merge(public),
+                    _ => main_router,
                 };
                 // The console ships with the deployment (crate::console):
                 // served next to the API on both listeners, outside the
@@ -3414,9 +3420,9 @@ impl Server {
                 // The meter's `LeaseService` is internal: only on the cluster
                 // listener, never on a port with end-user authentication.
                 #[cfg(feature = "meter")]
-                let router = match meter_internal {
-                    Some(internal) => router.merge(internal),
-                    None => router,
+                let router = match (meter_internal, meter_public) {
+                    (Some(internal), Some(public)) => router.merge(internal).merge(public),
+                    _ => router,
                 };
                 (router, None, None)
             }

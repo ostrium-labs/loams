@@ -22,6 +22,8 @@ loams-common.workspace = true
 loams-meter-core = { path = "../loams-meter-core", version = "0.1.2" }
 # QueryMeter runs the House query of `loams-meter-house` (ME1 Task 8).
 loams-meter-house = { path = "../loams-meter-house", version = "0.1.2" }
+# ME-export's exporters, each behind an `export-*` feature (D2210, D2207).
+loams-meter-export = { path = "../loams-meter-export", version = "0.1.2", optional = true }
 loams-proto.workspace = true
 # Webhook deliveries; the process installs rustls's crypto provider.
 reqwest = { workspace = true, features = ["rustls-no-provider"] }
@@ -33,6 +35,14 @@ thiserror.workspace = true
 tokio = { workspace = true, features = ["sync", "time", "rt", "macros"] }
 tracing.workspace = true
 ulid.workspace = true
+
+[features]
+# ME-export's exporters (design §63 §16): the ledger and cursors in the role's
+# control store, and the schedule that runs them.
+export-stripe = ["dep:loams-meter-export", "loams-meter-export/stripe"]
+export-openmeter = ["dep:loams-meter-export", "loams-meter-export/openmeter"]
+export-lago = ["dep:loams-meter-export", "loams-meter-export/lago"]
+export-webhook = ["dep:loams-meter-export", "loams-meter-export/webhook"]
 
 [dev-dependencies]
 jsonschema.workspace = true
