@@ -317,6 +317,22 @@ pub struct BranchRec {
     /// When the API or a reconciler last wrote the record.
     #[serde(default)]
     pub updated_at_ms: u64,
+    /// The branch's Postgres major (design 62 §9.2). 0 in records written
+    /// before it was kept, which means the project's major: every branch had
+    /// it until upgrades by branch (NF2 Task 13).
+    #[serde(default)]
+    pub pg_version: u32,
+}
+
+impl BranchRec {
+    /// The branch's major: its own, or the project's for an older record.
+    pub fn major(&self, project: &ProjectRec) -> u32 {
+        if self.pg_version != 0 {
+            self.pg_version
+        } else {
+            project.pg_version
+        }
+    }
 }
 
 /// `(project_id, branch_id)`.

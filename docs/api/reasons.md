@@ -61,6 +61,10 @@ The rules, in the order they bite:
 | `lsn_out_of_retention` | failed_precondition | CreateBranch, RestoreBranch | `oldest_lsn`, `history_retention` |
 | `endpoint_exists_for_branch` | already_exists | CreateEndpoint (a second read-write endpoint) | `endpoint` |
 | `compute_start_failed` | unavailable | StartEndpoint, RestartEndpoint (the Operation's error) | `compute` |
+| `unsupported_pg_version` | invalid_argument | CreateProject: a `pg_version` new projects may not use, either one Loams Postgres does not serve or a maintenance major (design 62 §9.2, D1114) | `field`, `offered` (the offered majors, a beta one marked `(beta)`) |
+| `beta_major_requires_opt_in` | failed_precondition | CreateProject: a beta major without `allow_beta_major` | `field`, `pg_version` |
+| `compute_major_mismatch_refused` | failed_precondition | StartEndpoint, RestartEndpoint (the Operation's error): a compute image of another major than the branch's timeline (§51 §9) | |
+| `import_checksums_enabled` | failed_precondition | UpgradeProject and imports: a data directory with data checksums on, which the pageserver refuses (D1111; Loams Postgres pages carry no checksums) | |
 | `quota_exceeded` | resource_exhausted | any `loams.postgres.v1` create or resize past a limit (§46 §14); any `loams.repos.v1` create past a limit (GT1 Task 75) | `quota`, `limit` |
 | `storage_unavailable` | unavailable | any `loams.postgres.v1` RPC that needs the pageserver, `loams-wal` or the storage controller while it is down | `component` |
 | `secret_already_issued` | failed_precondition | CreateRole, ResetRolePassword, IssueConnectCredential (`loams.postgres.v1`) and `loams.admin.v1` CreateKey (API2 Task 7) replayed with the same `idempotency_key`: the secret is answered once, and the idempotency ledger keeps only that it was issued, never the secret | `role` (postgres); `hint`: ResetRolePassword for a new password, IssueConnectCredential or CreateKey with a new key for a new credential |

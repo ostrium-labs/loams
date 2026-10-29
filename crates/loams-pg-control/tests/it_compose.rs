@@ -235,6 +235,7 @@ async fn it_compose_compute_answers_select_1() {
             created_at_ms: now,
             parent_time_ms: None,
             updated_at_ms: now,
+            pg_version: 17,
         },
         None,
     )
