@@ -74,6 +74,33 @@ pub struct TimelineCreate {
     pub pg_version: Option<u32>,
 }
 
+/// A data directory in object storage to import as a new timeline
+/// (`TimelineCreateRequestMode::ImportPgdata`; NF2 Task 13).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TimelineImport {
+    pub new_timeline_id: TimelineId,
+    pub import_pgdata: ImportPgdata,
+}
+
+/// `TimelineCreateRequestModeImportPgdata`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ImportPgdata {
+    /// Repeats of one import name the same key.
+    pub idempotency_key: String,
+    pub location: ImportLocation,
+}
+
+/// Where the data directory is: an S3-compatible bucket (RustFS on a
+/// self-host). `key` is the prefix of the `fast_import` upload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub enum ImportLocation {
+    AwsS3 {
+        region: String,
+        bucket: String,
+        key: String,
+    },
+}
+
 impl TimelineCreate {
     pub fn bootstrap(new_timeline_id: TimelineId, pg_version: u32) -> Self {
         Self {
@@ -236,6 +263,43 @@ impl NeonClient {
         let path = format!("/v1/tenant/{t}/timeline");
         self.http
             .json(Op::CreateTimeline, Method::POST, &path, create)
+            .await
+    }
+
+    /// Imports a data directory from object storage into a new root
+    /// timeline (NF2 Task 13, the first path of a major upgrade, design 62
+    /// §10): `POST /v1/tenant/{t}/timeline` with `import_pgdata`. The
+    /// pageserver answers at once and imports in the background, reporting
+    /// through its `timeline_import_status` upcall (served by `pg-control`);
+    /// the timeline is usable after [`Self::activate_post_import`]. The same
+    /// `idempotency_key` repeats the call safely.
+    pub async fn create_timeline_import(
+        &self,
+        t: TenantId,
+        import: &TimelineImport,
+    ) -> Result<serde_json::Value, NeonError> {
+        let path = format!("/v1/tenant/{t}/timeline");
+        self.http
+            .json(Op::ImportTimeline, Method::POST, &path, import)
+            .await
+    }
+
+    /// `PUT /v1/tenant/{t}/timeline/{tl}/activate_post_import`: makes an
+    /// imported timeline visible once its import is done. Idempotent; the
+    /// caller retries every error until it succeeds.
+    pub async fn activate_post_import(
+        &self,
+        t: TenantId,
+        tl: TimelineId,
+    ) -> Result<serde_json::Value, NeonError> {
+        let path = format!("/v1/tenant/{t}/timeline/{tl}/activate_post_import");
+        self.http
+            .json(
+                Op::ActivatePostImport,
+                Method::PUT,
+                &path,
+                &serde_json::json!({}),
+            )
             .await
     }
 
