@@ -9,6 +9,7 @@ authors.workspace = true
 publish = false
 
 [dependencies]
+async-trait.workspace = true
 loams-kv.workspace = true
 loams-tuple.workspace = true
 serde = { workspace = true, features = ["derive"] }

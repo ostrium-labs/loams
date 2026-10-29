@@ -9,3 +9,12 @@ pub use token::cassandra_token;
 
 /// Transactional CQL scalar-row storage.
 pub mod storage;
+
+/// Parsed single-partition CQL statement subset.
+pub mod parser;
+
+/// Query execution contract.
+pub mod query;
+
+/// Tenant-scoped CQL execution over KV.
+pub mod executor;
