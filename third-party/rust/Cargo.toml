@@ -40,6 +40,7 @@ connectrpc-health = { package = "connectrpc-health", version = "=0.9.0", default
 connectrpc-reflection = { package = "connectrpc-reflection", version = "=0.9.0", default-features = false, features = ["client"] }
 crc = { package = "crc", version = "=3.4.0", default-features = false }
 crc32c = { package = "crc32c", version = "=0.6.8", default-features = false }
+csv = { package = "csv", version = "=1.4.0", default-features = false }
 data-encoding = { package = "data-encoding", version = "=2.11.1", default-features = true, features = ["alloc", "std"] }
 datafusion = { package = "datafusion", version = "=54.1.0", default-features = false, features = ["crypto_expressions", "datafusion-functions-nested", "datafusion-sql", "datetime_expressions", "encoding_expressions", "nested_expressions", "regex_expressions", "sql", "sqlparser", "string_expressions", "unicode_expressions"] }
 des = { package = "des", version = "=0.9.0", default-features = false }

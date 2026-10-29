@@ -7477,6 +7477,7 @@ dependencies = [
  "connectrpc-reflection",
  "crc",
  "crc32c",
+ "csv",
  "data-encoding",
  "datafusion",
  "des",
