@@ -2,7 +2,7 @@
 
 Status: **new, tested without a cloud account** (cloud-init schema, the secrets fetcher against a local mock of IMDS and Secrets Manager, policy checks). A real-account run is still to be done; see "Status".
 
-Creates, in your account: one EC2 instance (Ubuntu 24.04) with an instance profile, and a security group with **no inbound rules**. The bucket, its KMS key and the three secrets are yours and are created by you first. Loams 0.1.2's light default stack runs on the instance: the engine on its embedded stores with the bucket, House, Loams Postgres on local folders, agentd and the Tailscale sidecar. It is single node: no replication, so back up the volume (snapshots) and keep bucket versioning on.
+Creates, in your account: one EC2 instance (Ubuntu 24.04) with an instance profile, and a security group with **no inbound rules**. The bucket, its KMS key and the three secrets are yours and are created by you first. Loams 0.1.3's light default stack runs on the instance: the engine on its embedded stores with the bucket, House, Loams Postgres on local folders, agentd and the Tailscale sidecar. It is single node: no replication, so back up the volume (snapshots) and keep bucket versioning on.
 
 The engine is reached over your tailnet only. The instance has no key: the engine reads the instance role through IMDSv2, and `loams-byoc-secrets` reads the secrets with the same role.
 

@@ -1,6 +1,6 @@
 {
   "name": "@loams/live",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Generated loams.live.v1 Connect stubs for the Loams SDK. Regenerate from proto/ with `pnpm --filter @loams/live generate`.",
   "license": "Apache-2.0",
   "repository": {

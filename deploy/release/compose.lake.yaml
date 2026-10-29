@@ -147,7 +147,7 @@ services:
   engine-gateway:
     <<: *hardening
     profiles: [risingwave, flink, spark]
-    image: ${ENGINE_GATEWAY_IMAGE:-${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-gateway:${LOAMS_VERSION:-0.1.2}}
+    image: ${ENGINE_GATEWAY_IMAGE:-${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-gateway:${LOAMS_VERSION:-0.1.3}}
     build:
       context: ../..
       dockerfile: deploy/release/Containerfile.loams-gateway

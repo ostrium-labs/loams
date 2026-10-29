@@ -2,7 +2,7 @@
 
 This example uses instance discovery, creates a namespace and a `notes` collection,
 upserts documents, then runs hybrid and direct vector search, parameterized SQL,
-and stream produce/subscribe. It targets Loams SDK 0.1.2; graph remains optional
+and stream produce/subscribe. It targets Loams SDK 0.1.3; graph remains optional
 because the example server may not carry the experimental module.
 
 ## Set up
@@ -12,7 +12,7 @@ use the released source instead. Clone the monorepo tag and add its Objective-C
 SDK package to your Xcode project:
 
 ```sh
-git clone --branch v0.1.2 --depth 1 https://github.com/ostrium-labs/loams.git
+git clone --branch v0.1.3 --depth 1 https://github.com/ostrium-labs/loams.git
 ```
 
 In Xcode, create a macOS Command Line Tool project named `Notes` with Objective-C
@@ -42,11 +42,11 @@ You can also run the executable produced by Xcode:
 LOAMS_ENDPOINT=http://127.0.0.1:8080 LOAMS_NAMESPACE=examples-objc /path/to/Notes
 ```
 
-| Module family | Example coverage in SDK 0.1.2 |
+| Module family | Example coverage in SDK 0.1.3 |
 |---|---|
 | `instance` | Covered by startup discovery. |
 | `namespaces`, `collections`, `documents`, `search`, `vector`, `sql`, `streams` | Covered by this app. |
 | `graph` | SDK module available; not invoked here because server support is experimental and optional. |
 | Live, approvals, devices, Live admin, tables | No typed service/module accessors on the Objective-C client; its generic descriptor-backed `call` is available but not used by this app. |
 | Authentication | Optional environment API key/token; no sign-in or provisioning is implied. |
-| System catalogue, House | No typed module in the Objective-C SDK 0.1.2. |
+| System catalogue, House | No typed module in the Objective-C SDK 0.1.3. |

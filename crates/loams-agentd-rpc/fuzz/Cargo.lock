@@ -415,7 +415,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-proto"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "chrono",
  "pulldown-cmark",
@@ -428,7 +428,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-rpc"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "async-trait",
  "base64",
