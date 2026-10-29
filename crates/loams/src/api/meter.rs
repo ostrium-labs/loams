@@ -602,26 +602,125 @@ mod served {
         }
     }
 
-    #[async_trait]
-    impl MeterEventSink for MeterAppender {
-        async fn append(&self, events: Vec<MeterEvent>) -> MeterResult<()> {
+    impl MeterAppender {
+        /// Appends `events`, each to its key's partition (the subject's).
+        async fn append_cloudevents(
+            &self,
+            events: &[loams_cloudevents::CloudEvent],
+        ) -> MeterResult<usize> {
             let (id, partitions) = self.stream().await?;
             let mut batches: std::collections::BTreeMap<u32, Vec<loams_log::Record>> =
                 std::collections::BTreeMap::new();
-            for e in &events {
-                let ce = to_cloudevent(e)?;
-                let p = loams_cloudevents::partition::partition_of(&ce, partitions);
+            for ce in events {
+                let p = loams_cloudevents::partition::partition_of(ce, partitions);
                 batches
                     .entry(p)
                     .or_default()
-                    .push(loams_cloudevents::record::to_record(&ce));
+                    .push(loams_cloudevents::record::to_record(ce));
             }
             self.writer
                 .append_many(id, batches.into_iter().collect())
                 .await
-                .map(|_| ())
+                .map(|_| events.len())
                 .map_err(|e| MeterError::Unavailable(format!("appending meter events: {e}")))
         }
+    }
+
+    #[async_trait]
+    impl MeterEventSink for MeterAppender {
+        async fn append(&self, events: Vec<MeterEvent>) -> MeterResult<()> {
+            let events = events
+                .iter()
+                .map(to_cloudevent)
+                .collect::<MeterResult<Vec<_>>>()?;
+            self.append_cloudevents(&events).await.map(|_| ())
+        }
+    }
+
+    /// The service ingest path into `_system/_meter` (ME1 part 3): outside
+    /// HTTP produces to the reserved `_system` namespace are refused, so the
+    /// node agent's forwarder (and any other Loams service) appends here.
+    ///
+    /// `POST /internal/v1/meter/partitions/{p}/records` takes the native
+    /// produce body (`{"records": [{key, value, headers, timestamp_ms}]}`,
+    /// base64, D270's binary-mode layout), so the forwarder only changes its
+    /// path. Every record must be a usage event (`Origin::Service`: Loams'
+    /// own types allowed); one that is not refuses the whole request (400,
+    /// with its index). The partition in the path is not trusted: each event
+    /// goes to its subject's partition, where its counter owner reads. No
+    /// idempotency ledger: a retried batch is appended again, and the
+    /// counter owners' recent keys and the House's `FINAL` drop the copies
+    /// (§63 §7.3).
+    ///
+    /// Callers: the cluster's service identity (the cluster listener), or
+    /// the operator (the main port of a single node).
+    pub const INGEST_PATH: &str = "/internal/v1/meter/partitions/{partition}/records";
+
+    async fn ingest(
+        axum::extract::State(appender): axum::extract::State<Arc<MeterAppender>>,
+        caller: Option<axum::Extension<Caller>>,
+        body: Bytes,
+    ) -> axum::response::Response {
+        use axum::response::IntoResponse;
+        let admitted = matches!(
+            caller.as_ref().map(|axum::Extension(c)| c),
+            Some(Caller::Operator)
+        ) || matches!(
+            caller.as_ref().map(|axum::Extension(c)| c),
+            Some(Caller::Service(id)) if id == CLUSTER_SERVICE
+        );
+        if !admitted {
+            return crate::api::errors::ApiError::new(
+                axum::http::StatusCode::FORBIDDEN,
+                "permission_denied",
+                "only Loams services and the operator append to _system/_meter",
+            )
+            .into_response();
+        }
+        let records = match crate::api::decode_records(&body) {
+            Ok(r) => r,
+            Err(e) => return e.into_response(),
+        };
+        let mut events = Vec::with_capacity(records.len());
+        for (i, record) in records.iter().enumerate() {
+            let ce = loams_cloudevents::record::from_record(
+                record,
+                loams_cloudevents::record::RecordContext {
+                    namespace: loams_common::meta::SYSTEM_NAMESPACE,
+                    stream: loams_common::meta::METER_STREAM,
+                    stream_id: 0,
+                    partition: 0,
+                    offset: 0,
+                },
+            );
+            if let Err(err) = Event::from_cloudevent(&ce, Origin::Service) {
+                return crate::api::errors::ApiError::invalid(format!(
+                    "record {i} is not a usage event: {err}"
+                ))
+                .with("index", i)
+                .into_response();
+            }
+            events.push(ce);
+        }
+        if events.is_empty() {
+            return crate::api::errors::ApiError::invalid("a request carries at least one record")
+                .into_response();
+        }
+        match appender.append_cloudevents(&events).await {
+            Ok(n) => axum::Json(serde_json::json!({ "appended": n })).into_response(),
+            Err(e) => crate::api::errors::ApiError::new(
+                axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                "unavailable",
+                e.to_string(),
+            )
+            .into_response(),
+        }
+    }
+
+    fn ingest_route(appender: Arc<MeterAppender>) -> axum::Router {
+        axum::Router::new()
+            .route(INGEST_PATH, axum::routing::post(ingest))
+            .with_state(appender)
     }
 
     /// This node's meter: the role's services, the lease server and the
@@ -631,6 +730,8 @@ mod served {
         pub leases: Arc<LeaseServer>,
         runtime: CounterRuntime<MetaLeases>,
         clock: loams_meter::customers::Clock,
+        appender: Arc<MeterAppender>,
+        principals: Principals,
     }
 
     impl std::fmt::Debug for MeterNode {
@@ -665,9 +766,11 @@ mod served {
     }
 
     impl MeterNode {
-        /// Starts the counter runtime; answers the role, the runtime's handle
-        /// and the internal routes (`LeaseService`) for the cluster listener.
-        pub fn start(self) -> (Arc<MeterRole>, MeterRuntime, axum::Router) {
+        /// Starts the counter runtime; answers the role, the runtime's handle,
+        /// the internal routes for the cluster listener (`LeaseService`, the
+        /// service ingest) and the main port's own (the ingest, for the
+        /// operator of a single node).
+        pub fn start(self) -> (Arc<MeterRole>, MeterRuntime, axum::Router, axum::Router) {
             let stop = Arc::new(tokio::sync::Notify::new());
             let task = tokio::spawn(self.runtime.run(stop.clone()));
             // The House schedule: schema at start, then the close job every
@@ -691,7 +794,11 @@ mod served {
                     house_stop,
                     house,
                 },
-                internal_routes(self.leases),
+                internal_routes(self.leases, self.appender.clone()),
+                ingest_route(self.appender).layer(axum::middleware::from_fn_with_state(
+                    self.principals,
+                    caller,
+                )),
             )
         }
     }
@@ -700,11 +807,11 @@ mod served {
     /// caller there is a product role on another node: the cluster's service
     /// identity ([`CLUSTER_SERVICE`]), admitted by the network as every route
     /// of that listener is in M1.
-    fn internal_routes(leases: Arc<LeaseServer>) -> axum::Router {
+    fn internal_routes(leases: Arc<LeaseServer>, appender: Arc<MeterAppender>) -> axum::Router {
         let rpc = loams_meter::connect::register_internal(connectrpc::Router::new(), leases);
         let paths: Vec<String> = rpc.methods().map(|path| format!("/{path}")).collect();
         let service = rpc.into_axum_service();
-        let mut router = axum::Router::new();
+        let mut router = ingest_route(appender);
         for path in paths {
             router = router.route_service(&path, service.clone());
         }
@@ -773,6 +880,11 @@ mod served {
             vec![CLUSTER_SERVICE.to_string()],
             clock.clone(),
         ));
+        let appender = Arc::new(MeterAppender {
+            meta: meta.clone(),
+            writer,
+            id: tokio::sync::OnceCell::new(),
+        });
         let meter_store: Arc<dyn MeterStore> = Arc::new(DocStore::new(records.clone()));
         let usage: Arc<dyn MeterUsage> = if house.is_configured() {
             Arc::new(HouseUsage {
@@ -820,11 +932,7 @@ mod served {
             counters: counters.clone(),
             lease_server: leases.clone(),
             clock: clock.clone(),
-            events: Some(Arc::new(MeterAppender {
-                meta,
-                writer,
-                id: tokio::sync::OnceCell::new(),
-            })),
+            events: Some(appender.clone() as Arc<dyn MeterEventSink>),
             notifier: Some(Arc::new(role.notifier.clone()) as Arc<dyn MeterEventHandler>),
         });
         Ok(MeterNode {
@@ -832,6 +940,8 @@ mod served {
             leases,
             runtime,
             clock,
+            appender,
+            principals: principals.clone(),
         })
     }
 
@@ -847,6 +957,7 @@ mod served {
     ) -> axum::response::Response {
         let path = request.uri().path();
         let meter_path = path.starts_with("/loams.meter.v1.")
+            || path.starts_with("/internal/v1/meter/")
             || path.starts_with("/api/v1/meters/")
             || path.starts_with("/api/v1/subjects/");
         if meter_path

@@ -3291,7 +3291,7 @@ impl Server {
         // `_system/_meter` by fenced leases in the metastore), and a cluster
         // node serves the internal `LeaseService` on its cluster listener.
         #[cfg(feature = "meter")]
-        let (meter, meter_runtime, meter_internal) = if roles.gateway {
+        let (meter, meter_runtime, meter_internal, meter_main) = if roles.gateway {
             match api::meter::build(
                 meta_store.clone(),
                 store.clone(),
@@ -3303,16 +3303,16 @@ impl Server {
                 &config.data_dir,
             ) {
                 Ok(node) => {
-                    let (role, runtime, internal) = node.start();
-                    (Some(role), Some(runtime), Some(internal))
+                    let (role, runtime, internal, main) = node.start();
+                    (Some(role), Some(runtime), Some(internal), Some(main))
                 }
                 Err(err) => {
                     tracing::warn!(%err, "Loams Meter's services are off on this node");
-                    (None, None, None)
+                    (None, None, None, None)
                 }
             }
         } else {
-            (None, None, None)
+            (None, None, None, None)
         };
         let state = AppState {
             meta: meta_store.clone(),
@@ -3360,6 +3360,13 @@ impl Server {
                 };
                 #[cfg(not(feature = "live"))]
                 let main_router = router.clone();
+                // The meter's service ingest on a single node's main port, for
+                // the operator (its node agent's key).
+                #[cfg(feature = "meter")]
+                let main_router = match meter_main {
+                    Some(main) => main_router.merge(main),
+                    None => main_router,
+                };
                 // The console ships with the deployment (crate::console):
                 // served next to the API on both listeners, outside the
                 // authentication layer (its files are public; its calls are
