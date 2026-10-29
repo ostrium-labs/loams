@@ -24,6 +24,22 @@ use super::AppState;
 /// The package (`connect.rs`'s catalogue row).
 pub const PACKAGE: &str = "loams.meter.v1";
 
+/// The meter's House user when `LOAMS_METER_HOUSE_USER` is not set.
+pub const DEFAULT_HOUSE_USER: &str = "meter";
+
+/// Where the meter's House is (design §63 §7.5): the ClickHouse HTTP
+/// interface, signed in to as the meter's own House user, which the
+/// operator maps to the system namespace.
+#[derive(Clone, Debug, Default)]
+pub struct MeterHouseConfig {
+    /// `LOAMS_METER_HOUSE_URL` (`http://house:8123`). `None`: no House side.
+    pub url: Option<String>,
+    /// `LOAMS_METER_HOUSE_USER` ([`DEFAULT_HOUSE_USER`]).
+    pub user: String,
+    /// `LOAMS_METER_HOUSE_PASSWORD_FILE`: the user's password, read at start.
+    pub password_file: Option<std::path::PathBuf>,
+}
+
 /// Whether this build serves the meter.
 pub const SERVED: bool = cfg!(feature = "meter");
 
@@ -38,6 +54,7 @@ pub(super) fn register(router: Router, state: &AppState) -> Router {
     let router = pb::CustomerServiceExt::register(std::sync::Arc::clone(&absent), router);
     let router = pb::EntitlementServiceExt::register(std::sync::Arc::clone(&absent), router);
     let router = pb::PlanServiceExt::register(std::sync::Arc::clone(&absent), router);
+    let router = pb::MeterServiceExt::register(std::sync::Arc::clone(&absent), router);
     pb::NotificationServiceExt::register(absent, router)
 }
 
@@ -217,6 +234,16 @@ impl pb::PlanService for MeterAbsent {
     }
 }
 
+impl pb::MeterService for MeterAbsent {
+    async fn query_meter(
+        &self,
+        _ctx: RequestContext,
+        _request: ServiceRequest<'_, pb::QueryMeterRequest>,
+    ) -> ServiceResult<pb::QueryMeterResponse> {
+        Err(absent("MeterService/QueryMeter"))
+    }
+}
+
 impl pb::NotificationService for MeterAbsent {
     async fn create_rule(
         &self,
@@ -278,6 +305,8 @@ mod served {
     use loams_meter::owner::{
         CONSUMER, METER_PARTITIONS, MetaLeases, OwnerError, PartitionReader,
     };
+    use loams_meter::house::{HouseUsage, RoleHouse};
+    use loams_meter::plans::MeterUsage;
     use loams_meter::role::{MeterRole, NoHouseYet, RoleParts};
     use loams_meter::run::{
         CLUSTER_SERVICE, CatalogInputs, CounterRuntime, CounterValues, Counters, RuntimeParts,
@@ -525,6 +554,7 @@ mod served {
         pub role: Arc<MeterRole>,
         pub leases: Arc<LeaseServer>,
         runtime: CounterRuntime<MetaLeases>,
+        clock: loams_meter::customers::Clock,
     }
 
     impl std::fmt::Debug for MeterNode {
@@ -539,10 +569,18 @@ mod served {
     pub struct MeterRuntime {
         stop: Arc<tokio::sync::Notify>,
         task: tokio::task::JoinHandle<()>,
+        house_stop: Arc<tokio::sync::Notify>,
+        house: Option<tokio::task::JoinHandle<()>>,
     }
 
     impl MeterRuntime {
         pub async fn stop(self) {
+            self.house_stop.notify_one();
+            if let Some(house) = self.house
+                && let Err(err) = house.await
+            {
+                tracing::warn!(%err, "the meter's House schedule ended badly");
+            }
             self.stop.notify_one();
             if let Err(err) = self.task.await {
                 tracing::warn!(%err, "the meter's counter runtime ended badly");
@@ -556,9 +594,27 @@ mod served {
         pub fn start(self) -> (Arc<MeterRole>, MeterRuntime, axum::Router) {
             let stop = Arc::new(tokio::sync::Notify::new());
             let task = tokio::spawn(self.runtime.run(stop.clone()));
+            // The House schedule: schema at start, then the close job every
+            // 60 s with the period close after it.
+            let house_stop = Arc::new(tokio::sync::Notify::new());
+            let house = self
+                .role
+                .house_schedule(self.clock.clone())
+                .map(|schedule| tokio::spawn(schedule.run(house_stop.clone())));
+            if house.is_none() {
+                tracing::info!(
+                    "Loams Meter runs without its House (no LOAMS_METER_HOUSE_URL): no close \
+                     job, meter queries answer unavailable, every meter counts as used"
+                );
+            }
             (
                 self.role,
-                MeterRuntime { stop, task },
+                MeterRuntime {
+                    stop,
+                    task,
+                    house_stop,
+                    house,
+                },
                 internal_routes(self.leases),
             )
         }
@@ -594,7 +650,24 @@ mod served {
         reader: loams_log::LogReader,
         node_id: u64,
         principals: &Principals,
+        house: &super::MeterHouseConfig,
     ) -> Result<MeterNode, String> {
+        let house = Arc::new(match &house.url {
+            None => RoleHouse::Absent,
+            Some(url) => {
+                let password = match &house.password_file {
+                    Some(path) => std::fs::read_to_string(path)
+                        .map_err(|e| format!("LOAMS_METER_HOUSE_PASSWORD_FILE {}: {e}", path.display()))?
+                        .trim_end_matches(['\r', '\n'])
+                        .to_string(),
+                    None => String::new(),
+                };
+                RoleHouse::Http(
+                    loams_meter::house::HttpHouse::new(url.clone(), house.user.clone(), password)
+                        .map_err(|e| e.to_string())?,
+                )
+            }
+        });
         let records: Arc<dyn VersionedDoc> = Arc::new(MeterDoc(MetaDirectoryStore::with_key(
             meta.clone(),
             store.clone(),
@@ -634,6 +707,15 @@ mod served {
             lease_server: leases.clone(),
             clock: clock.clone(),
         });
+        let meter_store: Arc<dyn MeterStore> = Arc::new(DocStore::new(records.clone()));
+        let usage: Arc<dyn MeterUsage> = if house.is_configured() {
+            Arc::new(HouseUsage {
+                house: house.clone(),
+                store: meter_store,
+            })
+        } else {
+            Arc::new(NoHouseYet)
+        };
         let role = Arc::new(MeterRole::new(RoleParts {
             records,
             notifications: Arc::new(DocNotifications::new(Arc::new(notes))),
@@ -650,18 +732,21 @@ mod served {
                     .unwrap_or_else(|e| panic!("OS randomness unavailable: {e}"));
                 b
             }),
-            clock,
+            clock: clock.clone(),
             values: Arc::new(CounterValues(counters)),
-            usage: Arc::new(NoHouseYet),
+            usage,
+            house,
         }));
         Ok(MeterNode {
             role,
             leases,
             runtime,
+            clock,
         })
     }
 
-    /// Gives a `/loams.meter.v1.*` call its [`Caller`]: the operator's own
+    /// Gives a `/loams.meter.v1.*` call, and an OpenMeter-compatible
+    /// `/api/v1/meters/*` or `/api/v1/subjects/*` one, its [`Caller`]: the operator's own
     /// credentials are [`Caller::Operator`]; anyone the org knows is the
     /// subject the authorizer answers for; anyone else has none and is
     /// refused as unauthenticated by the service.
@@ -670,7 +755,11 @@ mod served {
         mut request: axum::extract::Request,
         next: axum::middleware::Next,
     ) -> axum::response::Response {
-        if request.uri().path().starts_with("/loams.meter.v1.")
+        let path = request.uri().path();
+        let meter_path = path.starts_with("/loams.meter.v1.")
+            || path.starts_with("/api/v1/meters/")
+            || path.starts_with("/api/v1/subjects/");
+        if meter_path
             && let Some(principal) = request.extensions().get::<crate::auth::Principal>()
         {
             match standing(&principals, principal).await {
