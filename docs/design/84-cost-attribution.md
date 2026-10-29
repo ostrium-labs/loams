@@ -223,7 +223,8 @@ assets:
 prices:
   - kind: storage
     scope: prod-eu1/bucket
-    rate: "0.000000000008"      # USD per byte-second (about 0.0207 USD per GiB-month)
+    rate: "0.0207"              # USD per unit below
+    unit: gb_month              # 10⁹ bytes for a mean month; see §6.4
     source: contract            # contract | list | estimate
     effective: 2026-10-01
 fx: []                          # declared rates, if a bill is in another currency
@@ -286,7 +287,7 @@ The built-in rules come last and read the tags `loams-pool` and `loams-kind`. Th
 
 ### 6.4 Price table (D2356)
 
-A price is `{kind, scope, rate, currency, source, effective, until?}`. It prices a pool only when no asset and no billed line exists for that pool-day. Typical uses:
+A price is `{kind, scope, rate, unit, source, effective, until?}`, in the reporting currency. The `unit` is a human unit that fits the kind (`core_hour`, `gb_month`, `gib_month`, `gb_hour`, `gb`, `gib`, `million_operations`, or the driver unit itself). Rates per driver unit would need far more than nine decimals (one GB-month is 2.6 × 10¹⁵ byte-seconds), so the arithmetic divides by the unit's size in driver units, exactly. It prices a pool only when no asset and no billed line exists for that pool-day. Typical uses:
 - a contract rate for a colocation bucket;
 - an estimate for a laptop;
 - the list price of a managed service, for comparison.
