@@ -1,0 +1,292 @@
+syntax = "proto3";
+
+// Loams Meter's entitlements and grants (design §63 §9, §17.1; ME1 Task
+// 10). Amounts are decimal strings in the feature's unit, with up to nine
+// decimal places ("12", "0.5"), never floats.
+//
+// Authorization: writes need `can_manage_meters` on `platform:default`
+// (`meter_admin`, people only: an agent can never write a grant, test
+// `agent_cannot_write_grants`); reads also allow `can_view_billing` on the
+// org of the subject's customer. Every write is an audit event.
+package loams.meter.v1;
+
+import "google/protobuf/timestamp.proto";
+import "loams/meter/v1/customer.proto";
+import "loams/options/v1/options.proto";
+
+// Entitlements, grants and balances.
+service EntitlementService {
+  option (loams.options.v1.module) = {
+    name: "meter.entitlements"
+    summary: "Meter entitlements: what a subject may use, grants and balances."
+  };
+
+  rpc CreateEntitlement(CreateEntitlementRequest) returns (CreateEntitlementResponse) {
+    option (loams.options.v1.facade) = {name: "create"};
+  }
+  rpc ListEntitlements(ListEntitlementsRequest) returns (ListEntitlementsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+    option (loams.options.v1.facade) = {
+      name: "list"
+      pagination: "entitlements:next_page_token"
+    };
+  }
+  // The current period's balance of one subject's feature.
+  rpc GetEntitlementValue(GetEntitlementValueRequest) returns (GetEntitlementValueResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+    option (loams.options.v1.facade) = {name: "value"};
+  }
+  // Whether each (subject, feature) has access now.
+  rpc CheckAccess(CheckAccessRequest) returns (CheckAccessResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+    option (loams.options.v1.facade) = {name: "checkAccess"};
+  }
+  rpc CreateGrant(CreateGrantRequest) returns (CreateGrantResponse) {
+    option (loams.options.v1.facade) = {name: "createGrant"};
+  }
+  rpc VoidGrant(VoidGrantRequest) returns (VoidGrantResponse) {
+    option idempotency_level = IDEMPOTENT;
+    option (loams.options.v1.facade) = {name: "voidGrant"};
+  }
+  rpc ListGrants(ListGrantsRequest) returns (ListGrantsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+    option (loams.options.v1.facade) = {
+      name: "listGrants"
+      pagination: "grants:next_page_token"
+    };
+  }
+  // Starts a new usage period now (or at `effective_time`).
+  rpc ResetEntitlement(ResetEntitlementRequest) returns (ResetEntitlementResponse) {
+    option idempotency_level = IDEMPOTENT;
+    option (loams.options.v1.facade) = {name: "reset"};
+  }
+  // The balance over time, from the House's closed windows.
+  rpc GetBalanceHistory(GetBalanceHistoryRequest) returns (GetBalanceHistoryResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+    option (loams.options.v1.facade) = {name: "balanceHistory"};
+  }
+}
+
+enum EntitlementMode {
+  ENTITLEMENT_MODE_UNSPECIFIED = 0;
+  // Refuse at zero.
+  ENTITLEMENT_MODE_HARD_LIMIT = 1;
+  // Allow past zero and notify; overage is not billed.
+  ENTITLEMENT_MODE_SOFT_LIMIT = 2;
+  // Allow past zero; overage billed at `overage_price` up to `spend_cap`.
+  ENTITLEMENT_MODE_OVERAGE_ALLOWED = 3;
+}
+
+enum Interval {
+  INTERVAL_UNSPECIFIED = 0;
+  INTERVAL_HOUR = 1;
+  INTERVAL_DAY = 2;
+  INTERVAL_WEEK = 3;
+  INTERVAL_MONTH = 4;
+  INTERVAL_YEAR = 5;
+}
+
+// An interval repeating from an anchor.
+message UsagePeriod {
+  Interval interval = 1;
+  google.protobuf.Timestamp anchor = 2;
+}
+
+message MeteredEntitlement {
+  UsagePeriod usage_period = 1;
+  EntitlementMode mode = 2;
+  // The starting balance of each period (a decimal), or empty.
+  string issue_after_reset = 3;
+  bool preserve_overage_at_reset = 4;
+  // With `ENTITLEMENT_MODE_OVERAGE_ALLOWED`.
+  Money overage_price = 5;
+  Money spend_cap = 6;
+}
+
+message BooleanEntitlement {
+  bool enabled = 1;
+}
+
+message StaticEntitlement {
+  // A JSON value, such as `{"max": 10}`.
+  string config_json = 1;
+}
+
+message Entitlement {
+  string id = 1;
+  string subject = 2;
+  string feature = 3;
+  oneof kind {
+    MeteredEntitlement metered = 4;
+    BooleanEntitlement toggle = 5;
+    StaticEntitlement static_config = 6;
+  }
+  google.protobuf.Timestamp create_time = 7;
+  // Set when a plan created it.
+  string plan = 8;
+  uint32 plan_version = 9;
+  // Set when a person created it by hand.
+  string created_by = 10;
+}
+
+enum ExpiryUnit {
+  EXPIRY_UNIT_UNSPECIFIED = 0;
+  EXPIRY_UNIT_HOUR = 1;
+  EXPIRY_UNIT_DAY = 2;
+  EXPIRY_UNIT_WEEK = 3;
+  EXPIRY_UNIT_MONTH = 4;
+  EXPIRY_UNIT_YEAR = 5;
+}
+
+enum GrantKind {
+  GRANT_KIND_UNSPECIFIED = 0;
+  GRANT_KIND_PROMOTIONAL = 1;
+  GRANT_KIND_INCLUDED = 2;
+  // Bought credit: `paid` says for how much. Spent last, stops at zero.
+  GRANT_KIND_PREPAID = 3;
+}
+
+message Grant {
+  string id = 1;
+  string entitlement_id = 2;
+  // A decimal in the feature's unit.
+  string amount = 3;
+  // 1..=255; lower burns first.
+  uint32 priority = 4;
+  google.protobuf.Timestamp effective_time = 5;
+  // No expiry when `expiry_count` is 0.
+  ExpiryUnit expiry_unit = 6;
+  uint32 expiry_count = 7;
+  string rollover_max = 8;
+  string rollover_min = 9;
+  // Re-issued every period when set.
+  UsagePeriod recurrence = 10;
+  GrantKind kind = 11;
+  Money paid = 12;
+  google.protobuf.Timestamp void_time = 13;
+  google.protobuf.Timestamp create_time = 14;
+}
+
+// A balance (OpenMeter's `EntitlementValue`).
+message EntitlementValue {
+  bool has_access = 1;
+  string balance = 2;
+  string usage = 3;
+  string overage = 4;
+  string total_available = 5;
+  google.protobuf.Timestamp period_start = 6;
+  google.protobuf.Timestamp period_end = 7;
+  // "counter" (the owner's live count) or "house" (closed windows).
+  string as_of = 8;
+}
+
+message CreateEntitlementRequest {
+  Entitlement entitlement = 1;
+  string reason = 2;
+  string idempotency_key = 3;
+}
+
+message CreateEntitlementResponse {
+  Entitlement entitlement = 1;
+}
+
+message ListEntitlementsRequest {
+  // Empty: every subject the caller may read.
+  string subject = 1;
+  string feature = 2;
+  uint32 page_size = 3;
+  string page_token = 4;
+}
+
+message ListEntitlementsResponse {
+  repeated Entitlement entitlements = 1;
+  string next_page_token = 2;
+}
+
+message GetEntitlementValueRequest {
+  string subject = 1;
+  string feature = 2;
+}
+
+message GetEntitlementValueResponse {
+  EntitlementValue value = 1;
+}
+
+message AccessCheck {
+  string subject = 1;
+  string feature = 2;
+}
+
+message AccessResult {
+  string subject = 1;
+  string feature = 2;
+  bool has_access = 3;
+  // Why not, when `has_access` is false: `entitlement_exhausted`,
+  // `not_entitled`, `spend_cap_reached`, `payment_method_required`.
+  string reason = 4;
+}
+
+message CheckAccessRequest {
+  repeated AccessCheck checks = 1;
+}
+
+message CheckAccessResponse {
+  repeated AccessResult results = 1;
+}
+
+message CreateGrantRequest {
+  Grant grant = 1;
+  string reason = 2;
+  string idempotency_key = 3;
+}
+
+message CreateGrantResponse {
+  Grant grant = 1;
+}
+
+message VoidGrantRequest {
+  string id = 1;
+  string reason = 2;
+}
+
+message VoidGrantResponse {
+  Grant grant = 1;
+}
+
+message ListGrantsRequest {
+  string entitlement_id = 1;
+  bool include_voided = 2;
+  uint32 page_size = 3;
+  string page_token = 4;
+}
+
+message ListGrantsResponse {
+  repeated Grant grants = 1;
+  string next_page_token = 2;
+}
+
+message ResetEntitlementRequest {
+  string id = 1;
+  google.protobuf.Timestamp effective_time = 2;
+  string reason = 3;
+}
+
+message ResetEntitlementResponse {
+  Entitlement entitlement = 1;
+}
+
+message GetBalanceHistoryRequest {
+  string id = 1;
+  google.protobuf.Timestamp from = 2;
+  google.protobuf.Timestamp to = 3;
+}
+
+message BalancePoint {
+  google.protobuf.Timestamp time = 1;
+  string usage = 2;
+  string balance = 3;
+}
+
+message GetBalanceHistoryResponse {
+  repeated BalancePoint points = 1;
+}

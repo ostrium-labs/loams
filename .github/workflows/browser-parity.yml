@@ -1,0 +1,196 @@
+# The browser provider parity suite (D2120, D2124): the same scenarios against
+# `local` (the pinned Obscura binary, launched by the suite the way the Desktop
+# and agentd launch it) and `service` (the same engine as the compose/k8s
+# `browser` service, the pinned image). Fixture pages are served by the test
+# process on 127.0.0.1; nothing reaches the public internet except the two
+# pinned downloads below.
+#
+# Report-only: never a required check. Each job writes a JSON-lines report, and
+# the `matrix` job renders both into the job summary. That summary is the only
+# source for docs/browser-provider-parity.md's matrix.
+name: Browser parity
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/browser-parity.yml"
+      - "crates/loams-sidebar-browser/**"
+      - "crates/loams-web-bridge/**"
+      - "deploy/browser/**"
+      - "scripts/browser/**"
+  push:
+    branches: [dev]
+    paths:
+      - ".github/workflows/browser-parity.yml"
+      - "crates/loams-sidebar-browser/**"
+      - "crates/loams-web-bridge/**"
+      - "deploy/browser/**"
+      - "scripts/browser/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-parity-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_TERM_COLOR: always
+  # The engine pin: loams_sidebar_browser::engine::PINNED_ENGINE_VERSION and
+  # .he0-shared/browser-notes.md. Released 2026-09-20. The unsuffixed asset is
+  # the render-enabled one; never use -no-render (no screenshots or screencast).
+  OBSCURA_VERSION: "0.2.3"
+  OBSCURA_X86_64_SHA256: "1534d1e6ddaf3d080ec4091eb41d0a4d8cc042a48b607d3c410fc13b482a9eec"
+  OBSCURA_AARCH64_SHA256: "5ecf980bca3060236a7a86ec7ed83d943e6598ee87caa46d20325d90bc75f979"
+  OBSCURA_IMAGE: "docker.io/h4ckf0r0day/obscura:0.2.3@sha256:475def3ddf1ec513b3d1bc36e8ad15f0d192538cb15f814c77215aa70c418ca2"
+  # The service leg's port on the host network.
+  SERVICE_PORT: "9333"
+
+jobs:
+  parity:
+    name: "Browser parity: ${{ matrix.provider }}"
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [local, service]
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
+    timeout-minutes: 45
+    env:
+      LOAMS_BROWSER_PARITY_PROVIDERS: ${{ matrix.provider }}
+      LOAMS_BROWSER_PARITY_REQUIRE: "1"
+      LOAMS_BROWSER_PARITY_REPORT: ${{ github.workspace }}/parity-out/report-${{ matrix.provider }}.jsonl
+      # The credential-boundary scenario reads the canary from this variable's
+      # value; the canary itself is generated per run below.
+      LOAMS_BROWSER_PARITY_CANARY_ENV: LOAMS_TOKEN
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
+        with:
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
+          key: browser-parity
+      - name: ffmpeg (the recorder's encoder)
+        run: command -v ffmpeg || (sudo apt-get update && sudo apt-get install -y ffmpeg)
+      - name: a canary Loams token in the job environment
+        run: |
+          canary="loams_pat_canary_$(openssl rand -hex 24)"
+          echo "::add-mask::$canary"
+          echo "LOAMS_TOKEN=$canary" >> "$GITHUB_ENV"
+          mkdir -p parity-out
+
+      - name: "local: the pinned Obscura binary"
+        if: matrix.provider == 'local'
+        run: |
+          case "$(uname -m)" in
+            x86_64) asset=obscura-x86_64-linux.tar.gz; sum="$OBSCURA_X86_64_SHA256" ;;
+            aarch64|arm64) asset=obscura-aarch64-linux.tar.gz; sum="$OBSCURA_AARCH64_SHA256" ;;
+            *) echo "no Obscura asset for $(uname -m)"; exit 1 ;;
+          esac
+          dir="$RUNNER_TEMP/obscura-$OBSCURA_VERSION"
+          mkdir -p "$dir"
+          curl -fsSL --retry 3 -o "$dir/$asset" \
+            "https://github.com/h4ckf0r0day/obscura/releases/download/v$OBSCURA_VERSION/$asset"
+          echo "$sum  $dir/$asset" | sha256sum -c -
+          tar -xzf "$dir/$asset" -C "$dir"
+          bin="$(find "$dir" -type f -name obscura -perm -u+x | head -n1)"
+          test -n "$bin" || { echo "no obscura binary in $asset"; find "$dir"; exit 1; }
+          "$bin" --version
+          echo "LOAMS_OBSCURA_BIN=$bin" >> "$GITHUB_ENV"
+
+      - name: "service: the pinned Obscura image as the browser service"
+        if: matrix.provider == 'service'
+        run: |
+          runtime="$(command -v docker || command -v podman)"
+          token="$(openssl rand -hex 32)"
+          echo "::add-mask::$token"
+          "$runtime" rm -f loams-browser-parity >/dev/null 2>&1 || true
+          # Host networking so the engine reaches the fixture server on the
+          # runner's 127.0.0.1. --allow-private-network is for that loopback
+          # fixture only; the shipped service does not set it.
+          "$runtime" run -d --name loams-browser-parity --network host \
+            -e OBSCURA_CDP_TOKEN="$token" \
+            "$OBSCURA_IMAGE" \
+            serve --port "$SERVICE_PORT" --host 0.0.0.0 --allow-private-network
+          for _ in $(seq 1 60); do
+            if (exec 3<>"/dev/tcp/127.0.0.1/$SERVICE_PORT") 2>/dev/null; then break; fi
+            sleep 1
+          done
+          (exec 3<>"/dev/tcp/127.0.0.1/$SERVICE_PORT") 2>/dev/null || {
+            "$runtime" logs loams-browser-parity; exit 1; }
+          echo "LOAMS_BROWSER_SERVICE_URL=ws://127.0.0.1:$SERVICE_PORT/devtools/browser" >> "$GITHUB_ENV"
+          echo "LOAMS_BROWSER_SERVICE_TOKEN=$token" >> "$GITHUB_ENV"
+
+      - name: "service: no Loams token in the container's environment"
+        if: matrix.provider == 'service'
+        run: |
+          runtime="$(command -v docker || command -v podman)"
+          env_json="$("$runtime" inspect --format '{{json .Config.Env}}' loams-browser-parity)"
+          if printf '%s' "$env_json" | grep -qF "$LOAMS_TOKEN"; then
+            echo "the browser service container holds the Loams token"; exit 1
+          fi
+          if printf '%s' "$env_json" | grep -q '"LOAMS_'; then
+            echo "the browser service container has LOAMS_* variables"; exit 1
+          fi
+          echo "container environment: no Loams token, no LOAMS_* variables"
+
+      - name: build the suite
+        run: cargo test -p loams-sidebar-browser --test provider_parity --locked --no-run
+      # One scenario at a time: each local scenario starts its own engine, and
+      # the service is one shared engine.
+      - name: run the suite
+        run: cargo test -p loams-sidebar-browser --test provider_parity --locked -- --test-threads=1 --nocapture
+
+      # downloads_blocked on service: the suite cannot see the container's
+      # filesystem, so check that the run left no attachment in it (D2126).
+      - name: "service: no download written inside the container"
+        if: always() && matrix.provider == 'service'
+        run: |
+          runtime="$(command -v docker || command -v podman)"
+          changes="$("$runtime" diff loams-browser-parity 2>&1 || true)"
+          printf '%s\n' "$changes" > parity-out/service-container-diff.txt
+          if printf '%s' "$changes" | grep -q 'report\.bin\|loams-parity-downloads/.'; then
+            echo "the browser service wrote a download inside the container:"; printf '%s\n' "$changes"; exit 1
+          fi
+          echo "container filesystem: no download written"
+
+      - name: summary
+        if: always()
+        run: python3 scripts/browser/parity-matrix.py "$LOAMS_BROWSER_PARITY_REPORT" >> "$GITHUB_STEP_SUMMARY"
+      - name: "service: engine logs"
+        if: always() && matrix.provider == 'service'
+        run: |
+          runtime="$(command -v docker || command -v podman)"
+          "$runtime" logs loams-browser-parity > parity-out/service-engine.log 2>&1 || true
+          "$runtime" rm -f loams-browser-parity >/dev/null 2>&1 || true
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: browser-parity-${{ matrix.provider }}
+          path: parity-out/
+          if-no-files-found: ignore
+
+  matrix:
+    name: "Browser parity: matrix"
+    needs: parity
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/browser
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: browser-parity-*
+          path: parity-out
+          merge-multiple: true
+      - name: the parity matrix
+        run: |
+          python3 scripts/browser/parity-matrix.py \
+            parity-out/report-local.jsonl parity-out/report-service.jsonl \
+            | tee -a "$GITHUB_STEP_SUMMARY"

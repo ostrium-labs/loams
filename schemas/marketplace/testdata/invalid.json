@@ -874,6 +874,42 @@
           ]
         }
       ]
+    },
+    {
+      "name": "engine-unknown",
+      "rule": "runtime.engine is node or bun.",
+      "base": "valid/agent-mastra-bun.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/runtime/engine",
+          "value": "deno"
+        }
+      ]
+    },
+    {
+      "name": "engine-not-string",
+      "rule": "runtime.engine is a string.",
+      "base": "valid/agent-mastra-bun.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/runtime/engine",
+          "value": true
+        }
+      ]
+    },
+    {
+      "name": "engine-on-python",
+      "rule": "Only the node runtime has an engine (D1808).",
+      "base": "valid/agent-pydantic-ai-a2a.json",
+      "patch": [
+        {
+          "op": "set",
+          "path": "/runtime/engine",
+          "value": "node"
+        }
+      ]
     }
   ]
 }

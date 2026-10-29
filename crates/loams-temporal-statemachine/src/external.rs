@@ -3,13 +3,22 @@
 
 use loams_temporal_history::{Attributes, Batch, WorkflowExecutionStatus};
 use loams_temporal_proto::temporal::api::common::v1::{Header, Payloads};
+use loams_temporal_proto::temporal::api::enums::v1::WorkflowTaskFailedCause;
 use loams_temporal_proto::temporal::api::history::v1::{
     TimerFiredEventAttributes, WorkflowExecutionCancelRequestedEventAttributes,
     WorkflowExecutionSignaledEventAttributes, WorkflowExecutionTerminatedEventAttributes,
+    WorkflowTaskFailedEventAttributes,
 };
 
-use crate::write::{arrive, close, flush};
+use crate::write::{arrive, close, flush, wft_started};
 use crate::{Effect, Rejection, Reply};
+
+/// The identity Temporal's history service writes on the events it makes
+/// itself (`consts.IdentityHistoryService`).
+pub const HISTORY_SERVICE: &str = "history-service";
+
+/// How many signal request IDs a run remembers for deduplication.
+pub const SIGNAL_REQUEST_IDS_KEPT: usize = 100;
 
 pub(crate) fn signal(
     b: &mut Batch<'_>,
@@ -26,6 +35,17 @@ pub(crate) fn signal(
             "signal count limit exceeded for this workflow".into(),
         ));
     }
+    if !request_id.is_empty() {
+        if b.state_ref().signal_request_ids.contains(&request_id) {
+            // A retried signal (or a follow-up carried out again).
+            return Ok(Reply::Stale);
+        }
+        let ids = &mut b.state().signal_request_ids;
+        ids.push(request_id.clone());
+        if ids.len() > SIGNAL_REQUEST_IDS_KEPT {
+            ids.remove(0);
+        }
+    }
     b.state().signal_count += 1;
     let now = b.now_ms();
     arrive(
@@ -38,7 +58,8 @@ pub(crate) fn signal(
                     signal_name: name,
                     input,
                     identity,
-                    header: Some(header.unwrap_or_default()),
+                    // As sent (#1481).
+                    header,
                     request_id,
                     ..Default::default()
                 },
@@ -84,7 +105,26 @@ pub(crate) fn terminate(
     details: Option<Payloads>,
     identity: String,
 ) -> Result<Reply, Rejection> {
-    // Events waiting behind a started workflow task are written first.
+    // A started workflow task is failed first (Temporal's
+    // `FORCE_CLOSE_COMMAND`, by the history service; D2084), then the
+    // events that waited behind it are written.
+    if wft_started(b) {
+        let wt = b.state_ref().workflow_task.clone().expect("started");
+        b.push(Attributes::WorkflowTaskFailedEventAttributes(
+            WorkflowTaskFailedEventAttributes {
+                scheduled_event_id: wt.scheduled_event_id,
+                started_event_id: wt.started_event_id,
+                cause: WorkflowTaskFailedCause::ForceCloseCommand as i32,
+                identity: HISTORY_SERVICE.to_string(),
+                ..Default::default()
+            },
+        ));
+        fx.push(Effect::WorkflowTaskDone {
+            scheduled_event_id: wt.scheduled_event_id,
+            attempt: wt.attempt,
+        });
+        b.state().workflow_task = None;
+    }
     flush(b);
     let id = b.push(Attributes::WorkflowExecutionTerminatedEventAttributes(
         WorkflowExecutionTerminatedEventAttributes {
@@ -102,6 +142,15 @@ pub(crate) fn timer_fired(
     fx: &mut Vec<Effect>,
     started_event_id: i64,
 ) -> Result<Reply, Rejection> {
+    // The first workflow task's backoff (a timer on the started event).
+    if started_event_id == 1 {
+        if !b.state_ref().first_task_backoff {
+            return Ok(Reply::Stale);
+        }
+        b.state().first_task_backoff = false;
+        crate::write::ensure_workflow_task(b, fx);
+        return Ok(Reply::Done);
+    }
     let Some(t) = b
         .state_ref()
         .timers

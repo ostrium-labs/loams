@@ -163,7 +163,8 @@ impl PipelineConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PipelineState {
     Running,
-    /// `SchemaIncompatible`: reading stopped until [`PipelineHandle::resume`].
+    /// `SchemaIncompatible`, or an operator's [`PipelineHandle::pause`]:
+    /// reading stopped until [`PipelineHandle::resume`].
     Paused,
     /// Stopped on request.
     Stopped,
@@ -270,7 +271,11 @@ impl Shared {
             dlq: c.dlq,
             config: c.config,
             status: watch::Sender::new(PipelineStatus {
-                state: PipelineState::Running,
+                state: if c.start_paused {
+                    PipelineState::Paused
+                } else {
+                    PipelineState::Running
+                },
                 last_error: None,
                 splits: Vec::new(),
             }),
@@ -379,6 +384,16 @@ impl Shared {
             if s.state == PipelineState::Running {
                 s.state = PipelineState::Paused;
                 s.last_error = Some(le);
+            }
+        });
+    }
+
+    /// An operator's pause: no `next` or `poll` call starts until resumed;
+    /// what is in flight finishes, and its acks are checkpointed on resume.
+    fn pause_by_request(&self) {
+        self.status.send_modify(|s| {
+            if s.state == PipelineState::Running {
+                s.state = PipelineState::Paused;
             }
         });
     }
@@ -563,6 +578,7 @@ struct Common {
     scrubber: Option<Arc<Scrubber>>,
     dlq: Option<Arc<dyn DeadLetterQueue>>,
     rate_limit: RateLimit,
+    start_paused: bool,
 }
 
 impl Common {
@@ -575,6 +591,7 @@ impl Common {
             scrubber: None,
             dlq: None,
             rate_limit: RateLimit::default(),
+            start_paused: false,
         }
     }
 }
@@ -608,6 +625,14 @@ macro_rules! common_builders {
 
         pub fn rate_limit(mut self, r: RateLimit) -> Self {
             self.common.rate_limit = r;
+            self
+        }
+
+        /// Start paused (an instance an operator paused before a restart):
+        /// nothing is read until [`PipelineHandle::resume`]. A transactional
+        /// sink still recovers first.
+        pub fn start_paused(mut self, paused: bool) -> Self {
+            self.common.start_paused = paused;
             self
         }
     };
@@ -807,9 +832,27 @@ impl PipelineHandle {
         }
     }
 
-    /// Resume a pipeline paused by `SchemaIncompatible`.
+    /// Resume a pipeline paused by `SchemaIncompatible` or by
+    /// [`PipelineHandle::pause`].
     pub fn resume(&self) {
         self.shared.resume();
+    }
+
+    /// Pause reading (CC1 Task 1, the connect role's admin API): a source
+    /// starts no `next`, a sink no Fabric `poll`, until [`Self::resume`].
+    /// Calls in flight finish. A failed or stopped pipeline is unchanged.
+    pub fn pause(&self) {
+        self.shared.pause_by_request();
+    }
+
+    /// Change the instance's rate limits while it runs (CC1 Task 1).
+    pub fn set_rate_limit(&self, limit: RateLimit) {
+        self.shared.limiter.set_limit(limit);
+    }
+
+    /// The instance's current rate limits.
+    pub fn rate_limit(&self) -> RateLimit {
+        self.shared.limiter.limit()
     }
 
     /// The budget pool's use so far.
@@ -1183,6 +1226,17 @@ async fn run_split(
                     break;
                 }
                 lease.shrink_to(bytes);
+                // The batch's bytes against the instance's byte rate: read
+                // before they could be counted, so charged now, and the next
+                // read waits out any debt (CC1 Task 1).
+                tokio::select! {
+                    _ = split_halted(&shared, &mut stop) => {
+                        // Stopping: the batch is not handed on; the source
+                        // re-reads it after a restart.
+                        break;
+                    }
+                    _ = shared.limiter.acquire_bytes(bytes as u64) => {}
+                }
                 if batch_tx.send((batch, lease)).await.is_err() {
                     break;
                 }

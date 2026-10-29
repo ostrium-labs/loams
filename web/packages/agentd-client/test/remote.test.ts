@@ -3,7 +3,7 @@
 
 import { createClient } from '@connectrpc/connect';
 import { ProjectService } from '@loams/proto/agentd';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import {
   type AgentdHost,
   createHostRegistry,

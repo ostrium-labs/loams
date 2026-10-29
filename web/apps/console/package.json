@@ -6,11 +6,11 @@
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -p tsconfig.json && vite build",
-    "preview": "vite preview",
+    "dev": "vp dev",
+    "build": "tsc -p tsconfig.json && vp build",
+    "preview": "vp preview",
     "typecheck": "tsc -p tsconfig.json && tsc -p test/e2e/tsconfig.json",
-    "test": "vitest run && node --test deploy/*.test.mjs",
+    "test": "vp test run && node --test deploy/*.test.mjs",
     "test:browser": "node --test browser/*.test.mjs",
     "test:e2e": "playwright test"
   },
@@ -26,6 +26,7 @@
     "@loams/plugin-agents": "workspace:*",
     "@loams/plugin-approvals": "workspace:*",
     "@loams/plugin-audit": "workspace:*",
+    "@loams/plugin-billing": "workspace:*",
     "@loams/plugin-canvas": "workspace:*",
     "@loams/plugin-connectors": "workspace:*",
     "@loams/plugin-data-studio": "workspace:*",
@@ -34,6 +35,7 @@
     "@loams/plugin-desktop-servers": "workspace:*",
     "@loams/plugin-desktop-settings": "workspace:*",
     "@loams/plugin-durable": "workspace:*",
+    "@loams/plugin-engines": "workspace:*",
     "@loams/plugin-factory": "workspace:*",
     "@loams/plugin-git": "workspace:*",
     "@loams/plugin-graph": "workspace:*",
@@ -78,8 +80,9 @@
     "jsdom": "30.1.2",
     "tailwindcss": "catalog:",
     "typescript": "5.9.3",
-    "vite": "8.3.1",
-    "vitest": "5.0.3"
+    "vite": "catalog:",
+    "vite-plus": "catalog:",
+    "vitest": "catalog:"
   },
   "exports": {
     "./cordis": "./src/cordis/start.ts",

@@ -294,6 +294,11 @@ pub struct ServerConfig {
     /// `/loams.house.v1.*` to (HS1 Task 7, design §49 §18.1). No endpoint (the
     /// default) answers `house_not_configured`.
     pub house: crate::api::house_proxy::HouseProxyConfig,
+    /// The House Loams Meter's `meter` role reads and closes windows in
+    /// (`LOAMS_METER_HOUSE_*`, design §63 §7.5): the ClickHouse HTTP
+    /// interface, as the meter's own House user. No URL (the default): the
+    /// meter runs without its House side.
+    pub meter_house: crate::api::meter::MeterHouseConfig,
     /// Who may call the engine (`LOAMS_AUTH_MODE`, [`crate::auth`]). Off
     /// (the default) refuses to start unless every listener is loopback.
     /// `dev` and `standalone` only: a cluster node refuses any other mode
@@ -501,6 +506,7 @@ impl ServerConfig {
             #[cfg(feature = "git")]
             git: GitConfig::default(),
             house: crate::api::house_proxy::HouseProxyConfig::default(),
+            meter_house: crate::api::meter::MeterHouseConfig::default(),
             auth: crate::auth::AuthConfig::off(),
             tls: crate::tls::TlsConfig::off(),
             console_dir: None,
@@ -1083,6 +1089,9 @@ pub struct Server {
     /// Loams Git, when served (GT1 Task 13).
     #[cfg(feature = "git")]
     git: Option<GitRuntimeHandle>,
+    /// Loams Meter's counter owners, when served (ME1 role wiring, part 2).
+    #[cfg(feature = "meter")]
+    meter: Option<api::meter::MeterRuntime>,
     /// The metastore as the trait object every component holds.
     meta_store: Arc<dyn MetaStore>,
     writer: LogWriter,
@@ -1133,11 +1142,18 @@ struct ConnectSocket {
 /// container runs as the same uid), nobody else.
 pub const CONNECT_SOCKET_MODE: u32 = 0o660;
 
+/// The connect socket's listener: a Unix socket. Elsewhere there is none
+/// (`bind` refuses), so the type is uninhabited.
+#[cfg(unix)]
+type ConnectListener = tokio::net::UnixListener;
+#[cfg(not(unix))]
+type ConnectListener = std::convert::Infallible;
+
 impl ConnectSocket {
     /// Bind `path` (a stale socket there from an earlier run is replaced;
     /// anything else there is refused) and set its mode.
     #[cfg(unix)]
-    fn bind(path: &Path) -> Result<tokio::net::UnixListener, ServerError> {
+    fn bind(path: &Path) -> Result<ConnectListener, ServerError> {
         use std::os::unix::fs::{FileTypeExt as _, PermissionsExt as _};
         let fail = |what: &str, err: std::io::Error| {
             ServerError::Config(format!(
@@ -1168,14 +1184,20 @@ impl ConnectSocket {
     }
 
     #[cfg(not(unix))]
-    fn bind(path: &Path) -> Result<tokio::net::UnixListener, ServerError> {
+    fn bind(path: &Path) -> Result<ConnectListener, ServerError> {
         Err(ServerError::Config(format!(
             "--connect-socket {}: Unix sockets need a Unix host",
             path.display()
         )))
     }
 
-    fn start(listener: tokio::net::UnixListener, path: PathBuf, app: axum::Router) -> Self {
+    #[cfg(not(unix))]
+    fn start(listener: ConnectListener, _path: PathBuf, _app: axum::Router) -> Self {
+        match listener {}
+    }
+
+    #[cfg(unix)]
+    fn start(listener: ConnectListener, path: PathBuf, app: axum::Router) -> Self {
         let stop = CancellationToken::new();
         let stopped = stop.clone();
         let task = tokio::spawn(async move {
@@ -1526,6 +1548,8 @@ struct Assembled {
     graph: Option<GraphRuntime>,
     #[cfg(feature = "git")]
     git: Option<GitRuntimeHandle>,
+    #[cfg(feature = "meter")]
+    meter_runtime: Option<api::meter::MeterRuntime>,
 }
 
 /// Loams Graph as the server runs it (GR1 Task 5): the admin service (catalog and engine) and
@@ -2352,6 +2376,8 @@ impl Server {
             graph: parts.graph,
             #[cfg(feature = "git")]
             git: parts.git,
+            #[cfg(feature = "meter")]
+            meter: parts.meter_runtime,
             cluster: None,
         };
         // The runtime after the collection service, before the listener
@@ -2458,6 +2484,8 @@ impl Server {
                     graph: parts.graph,
                     #[cfg(feature = "git")]
                     git: parts.git,
+                    #[cfg(feature = "meter")]
+                    meter: parts.meter_runtime,
                     cluster: Some(ClusterRuntime {
                         node_id,
                         roles,
@@ -2692,6 +2720,34 @@ impl Server {
                 .map_err(ServerError::Config)?;
             principals.with_authz(authz)
         };
+        // The identity sync (design 76 §8.1, plan IA1 IA3): off unless LOAMS_IDENTITY_SYNC=on,
+        // with LOAMS_AUTHZ=openfga. Its state is a document of its own in the metastore.
+        if config.cluster.is_none()
+            && let Some(sync) = crate::auth::identity_sync::SyncSettings::from_vars(
+                |k| std::env::var(k).ok(),
+                &config.auth.authz,
+                config
+                    .auth
+                    .oidc
+                    .as_ref()
+                    .and_then(|o| o.issuers.first())
+                    .map(|i| i.issuer.as_str()),
+            )
+            .map_err(ServerError::Config)?
+        {
+            let state = Arc::new(crate::auth::identity_sync::MetaSyncState::new(
+                meta_store.clone(),
+                store.clone(),
+            ));
+            crate::auth::identity_sync::start(
+                &sync,
+                &config.auth.authz,
+                principals.directory.clone(),
+                state,
+            )
+            .await
+            .map_err(ServerError::Config)?;
+        }
         // LV1 plan Task 17: a revoked key or a removed member closes its
         // Live sessions.
         #[cfg(feature = "live")]
@@ -3227,6 +3283,36 @@ impl Server {
                 git_listener,
             )
         });
+        // Loams Meter's public services, on gateway nodes (ME1 role wiring,
+        // part 1): records in the metastore and the bucket, beside the
+        // principal directory. A node that cannot build it serves without it
+        // (its RPCs answer `meter_not_served`) rather than not starting.
+        //
+        // Part 2: the counter owners run beside them (partitions of
+        // `_system/_meter` by fenced leases in the metastore), and a cluster
+        // node serves the internal `LeaseService` on its cluster listener.
+        #[cfg(feature = "meter")]
+        let (meter, meter_runtime, meter_internal) = if roles.gateway {
+            match api::meter::build(
+                meta_store.clone(),
+                store.clone(),
+                reader.clone(),
+                node_id,
+                &principals,
+                &config.meter_house,
+            ) {
+                Ok(node) => {
+                    let (role, runtime, internal) = node.start();
+                    (Some(role), Some(runtime), Some(internal))
+                }
+                Err(err) => {
+                    tracing::warn!(%err, "Loams Meter's services are off on this node");
+                    (None, None, None)
+                }
+            }
+        } else {
+            (None, None, None)
+        };
         let state = AppState {
             meta: meta_store.clone(),
             writer: writer.clone(),
@@ -3258,6 +3344,8 @@ impl Server {
             #[cfg(feature = "live")]
             live,
             durable: durable.filter(|_| main_port_serves_durable(config)),
+            #[cfg(feature = "meter")]
+            meter,
         };
         let (app, tailscale, connect_socket) = match (roles.gateway, config.cluster.is_some()) {
             (true, false) => {
@@ -3313,7 +3401,17 @@ impl Server {
                     connect_socket,
                 )
             }
-            (true, true) => (api::router(state), None, None),
+            (true, true) => {
+                let router = api::router(state);
+                // The meter's `LeaseService` is internal: only on the cluster
+                // listener, never on a port with end-user authentication.
+                #[cfg(feature = "meter")]
+                let router = match meter_internal {
+                    Some(internal) => router.merge(internal),
+                    None => router,
+                };
+                (router, None, None)
+            }
             (false, _) => (api::internal_router(state), None, None),
         };
         let flight = flight_listener.map(|(listener, addr)| {
@@ -3380,6 +3478,8 @@ impl Server {
             graph,
             #[cfg(feature = "git")]
             git,
+            #[cfg(feature = "meter")]
+            meter_runtime,
         })
     }
 
@@ -3664,6 +3764,12 @@ impl Server {
         if let Some(git) = self.git {
             shutdown_phase("git");
             git.stop().await;
+        }
+        // Loams Meter's counter owners give their partitions back.
+        #[cfg(feature = "meter")]
+        if let Some(meter) = self.meter {
+            shutdown_phase("meter");
+            meter.stop().await;
         }
         shutdown_phase("collections");
         self.collections.shutdown().await;

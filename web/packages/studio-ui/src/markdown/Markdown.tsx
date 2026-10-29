@@ -92,7 +92,7 @@ export function workspacePathHref(href: string | null | undefined): string | und
   }
   path = path.replace(/^\.\//, "");
   if (path === "" || path.startsWith("/") || path.split("/").includes("..")) return undefined;
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: refusing control characters is the point
+  // oxlint-disable-next-line no-control-regex -- refusing control characters is the point
   if (/[\u0000-\u001f\u007f]/.test(path)) return undefined;
   return path;
 }

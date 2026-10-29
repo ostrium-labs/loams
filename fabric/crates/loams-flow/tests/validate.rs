@@ -6,7 +6,8 @@
 //! a byte-for-byte copy of the fenced block in `docs/design/33-connectors.md` lines
 //! 59–106. It is a fixture rather than an inline literal so the copy can be diffed
 //! against the design document, and so the file keeps the inline comments that make
-//! the example readable.
+//! the example readable. [`kafka_example`] sets one field, `secrets`, to what the
+//! real config schema's `writeOnly` fields are now (CC1 Task 2).
 //!
 //! The rest build their manifests on the same YAML and change exactly one field per
 //! case, so a failure names the rule that broke rather than a large diff.
@@ -33,6 +34,16 @@ use loams_flow::manifest::{Category, Delivery, Ordering, Priority};
 /// Design §33 §4's canonical Kafka manifest, verbatim.
 const KAFKA_SECTION_4: &str = include_str!("fixtures/kafka-section4.yaml");
 
+/// The secret fields of the real `connectors/schemas/kafka.config.json` (its
+/// `writeOnly` properties), as `connectors/registry/kafka.yaml` lists them.
+const KAFKA_SECRETS: [&str; 5] = [
+    "sasl.password",
+    "sasl.username_secret",
+    "tls.key_pem",
+    "schema_registry.basic_auth.password",
+    "schema_registry.basic_auth.username_secret",
+];
+
 /// This repository's root, from the crate's own manifest directory: the tests read
 /// `connectors/` from the repository, never from the current directory.
 fn repo_root() -> PathBuf {
@@ -46,9 +57,16 @@ fn connectors_root() -> PathBuf {
 
 /// §33 §4's example as a JSON value, ready to be checked and then broken in one
 /// place at a time.
+///
+/// One field differs from §4: `secrets`. §4 names two; CC1 Task 2 (D1822) added
+/// three secret-name fields to the real kafka.config.json (the username and Schema
+/// Registry credentials), and rule 6 wants every `writeOnly` field named, so the
+/// example names them too ([`KAFKA_SECRETS`]).
 fn kafka_example() -> Value {
-    serde_norway::from_str(KAFKA_SECTION_4)
-        .unwrap_or_else(|error| panic!("the fixture is not valid YAML: {error}"))
+    let mut value: Value = serde_norway::from_str(KAFKA_SECTION_4)
+        .unwrap_or_else(|error| panic!("the fixture is not valid YAML: {error}"));
+    value["secrets"] = serde_json::json!(KAFKA_SECRETS);
+    value
 }
 
 /// §33 §4's example validated and parsed: the JSON Schema first, then CN1's rules
@@ -138,7 +156,7 @@ fn schema_validates_kafka_example() {
         ]
     );
     assert_eq!(spec.config_ref.reference, "schemas/kafka.config.json");
-    assert_eq!(spec.secrets, ["sasl.password", "tls.key_pem"]);
+    assert_eq!(spec.secrets, KAFKA_SECRETS);
     assert_eq!(spec.envelope.emits, "io.loams.dev.flow.kafka.record.v1");
     assert_eq!(spec.envelope.consumes, "*");
     assert!(

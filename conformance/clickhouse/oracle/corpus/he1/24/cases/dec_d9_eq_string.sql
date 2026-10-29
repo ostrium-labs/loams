@@ -1,0 +1,1 @@
+SELECT d9 = '7.5' FROM t24d ORDER BY id

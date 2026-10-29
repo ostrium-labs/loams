@@ -14,6 +14,7 @@
       "metadata": {
         "module": "core",
         "relations": {
+          "can_manage_meters": {},
           "cloud_admin": {
             "directly_related_user_types": [
               {
@@ -51,6 +52,11 @@
         }
       },
       "relations": {
+        "can_manage_meters": {
+          "computedUserset": {
+            "relation": "meter_admin"
+          }
+        },
         "cloud_admin": {
           "this": {}
         },
@@ -99,6 +105,11 @@
               }
             ]
           },
+          "can_admin": {},
+          "can_manage_billing": {},
+          "can_run_durable": {},
+          "can_view": {},
+          "can_view_billing": {},
           "member": {
             "directly_related_user_types": [
               {
@@ -174,6 +185,47 @@
               {
                 "computedUserset": {
                   "relation": "billing_admin"
+                }
+              }
+            ]
+          }
+        },
+        "can_admin": {
+          "computedUserset": {
+            "relation": "admin"
+          }
+        },
+        "can_manage_billing": {
+          "computedUserset": {
+            "relation": "billing_admin"
+          }
+        },
+        "can_run_durable": {
+          "computedUserset": {
+            "relation": "namespace_editor"
+          }
+        },
+        "can_view": {
+          "computedUserset": {
+            "relation": "namespace_editor"
+          }
+        },
+        "can_view_billing": {
+          "union": {
+            "child": [
+              {
+                "computedUserset": {
+                  "relation": "billing_viewer"
+                }
+              },
+              {
+                "tupleToUserset": {
+                  "computedUserset": {
+                    "relation": "meter_admin"
+                  },
+                  "tupleset": {
+                    "relation": "platform"
+                  }
                 }
               }
             ]
@@ -721,7 +773,7 @@
         "can_connect": {
           "tupleToUserset": {
             "computedUserset": {
-              "relation": "viewer"
+              "relation": "editor"
             },
             "tupleset": {
               "relation": "environment"
@@ -753,6 +805,73 @@
         }
       },
       "type": "database"
+    },
+    {
+      "metadata": {
+        "module": "core",
+        "relations": {
+          "can_admin": {},
+          "can_connect": {},
+          "can_operate": {},
+          "can_view": {},
+          "environment": {
+            "directly_related_user_types": [
+              {
+                "type": "environment"
+              }
+            ]
+          }
+        },
+        "source_info": {
+          "file": "core.fga"
+        }
+      },
+      "relations": {
+        "can_admin": {
+          "tupleToUserset": {
+            "computedUserset": {
+              "relation": "deployer"
+            },
+            "tupleset": {
+              "relation": "environment"
+            }
+          }
+        },
+        "can_connect": {
+          "tupleToUserset": {
+            "computedUserset": {
+              "relation": "editor"
+            },
+            "tupleset": {
+              "relation": "environment"
+            }
+          }
+        },
+        "can_operate": {
+          "tupleToUserset": {
+            "computedUserset": {
+              "relation": "editor"
+            },
+            "tupleset": {
+              "relation": "environment"
+            }
+          }
+        },
+        "can_view": {
+          "tupleToUserset": {
+            "computedUserset": {
+              "relation": "viewer"
+            },
+            "tupleset": {
+              "relation": "environment"
+            }
+          }
+        },
+        "environment": {
+          "this": {}
+        }
+      },
+      "type": "engine"
     },
     {
       "metadata": {

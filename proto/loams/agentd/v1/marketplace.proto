@@ -219,6 +219,9 @@ message InstallPlan {
   int32 version_age_days = 14;
   // What the agent is not allowed, in plain words.
   repeated string cannot = 15;
+  // The node runtime's engine (D1808): node or bun. Unset for other runtimes.
+  // agentd refuses the install while the engine is not installed.
+  loams.marketplace.v1.Engine engine = 16;
 }
 
 message PlanInstallResponse {

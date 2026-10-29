@@ -115,6 +115,49 @@ impl CdpClient {
         })
     }
 
+    /// Connect to an engine that requires a bearer token (D2121).
+    ///
+    /// The shared `browser` service (the pinned Obscura image in compose and
+    /// k8s) binds a non-loopback address. The engine refuses that bind
+    /// unless `OBSCURA_CDP_TOKEN` is set, and clients present the token as
+    /// `Authorization: Bearer <token>` on the WebSocket upgrade. The token never
+    /// appears in an error message: only the URL does.
+    pub async fn connect_with_bearer(
+        ws_url: &str,
+        token: &str,
+        call_timeout: Duration,
+    ) -> Result<Self> {
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
+        use tokio_tungstenite::tungstenite::http::HeaderValue;
+        use tokio_tungstenite::tungstenite::http::header::AUTHORIZATION;
+
+        if token.is_empty() {
+            return Err(SidebarBrowserError::Rejected(
+                "an empty bearer token; connect without one instead".to_string(),
+            ));
+        }
+        let mut request = ws_url
+            .into_client_request()
+            .map_err(|error| SidebarBrowserError::Transport(format!("{ws_url}: {error}")))?;
+        let mut value = HeaderValue::from_str(&format!("Bearer {token}")).map_err(|_| {
+            SidebarBrowserError::Rejected(
+                "the bearer token is not a valid header value".to_string(),
+            )
+        })?;
+        value.set_sensitive(true);
+        request.headers_mut().insert(AUTHORIZATION, value);
+        let (socket, _response) = connect_async(request)
+            .await
+            .map_err(|error| SidebarBrowserError::Transport(format!("{ws_url}: {error}")))?;
+        Ok(Self {
+            socket,
+            next_id: 1,
+            buffered: VecDeque::new(),
+            call_timeout,
+            in_flight: Vec::new(),
+        })
+    }
+
     /// Send a command and wait for its response, buffering any events that
     /// arrive first.
     ///
@@ -221,7 +264,7 @@ impl CdpClient {
         }
         let text = serde_json::Value::Object(message).to_string();
         self.socket
-            .send(Message::Text(text))
+            .send(Message::Text(text.into()))
             .await
             .map_err(|error| SidebarBrowserError::Transport(format!("sending {method}: {error}")))
     }

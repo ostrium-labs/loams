@@ -39,6 +39,7 @@
     "./live-admin": "./src/gen/loams/live/v1/admin_pb.ts",
     "./live-value": "./src/gen/loams/live/v1/value_pb.ts",
     "./marketplace": "./src/gen/loams/marketplace/v1/listing_pb.ts",
+    "./meter": "./src/meter.ts",
     "./notifications": "./src/gen/loams/notifications/v1/notifications_pb.ts",
     "./options": "./src/gen/loams/options/v1/options_pb.ts",
     "./sql": "./src/gen/loams/sql/v1/sql_pb.ts",
@@ -48,7 +49,7 @@
   "scripts": {
     "generate": "cd ../../.. && buf generate --template buf.gen.apps.yaml",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vp test run"
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.16.0"
@@ -58,7 +59,9 @@
     "@bufbuild/protoc-gen-es": "2.16.0",
     "@connectrpc/connect": "2.2.0",
     "typescript": "5.9.3",
-    "vitest": "5.0.3"
+    "vite": "catalog:",
+    "vitest": "catalog:",
+    "vite-plus": "catalog:"
   },
   "nx": {
     "targets": {

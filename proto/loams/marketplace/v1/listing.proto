@@ -176,8 +176,18 @@ enum ProvenanceType {
 
 message Runtime {
   RuntimeKind kind = 1;
-  // A version range, such as `>=22.13`.
+  // A version range of the engine, such as `>=22.13` for node or `>=1.4.4`
+  // for bun.
   string version = 2;
+  // The program that runs a node runtime's entrypoint (D1808); unset means
+  // node. Only the node runtime has an engine.
+  Engine engine = 3;
+}
+
+enum Engine {
+  ENGINE_UNSPECIFIED = 0;
+  ENGINE_NODE = 1;
+  ENGINE_BUN = 2;
 }
 
 enum RuntimeKind {

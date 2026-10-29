@@ -703,6 +703,75 @@ async fn removing_a_member_revokes_their_keys() {
     engine.stop().await;
 }
 
+/// IA2 Task 5 with ruling T5.R2: once an admin is removed from the org, the key they made can
+/// neither change nor read anything. `RemoveMember` revokes it (T5.R2); behind that, the admin
+/// RPCs check the person's live membership in the model (`can_admin`/`can_view` on the org).
+#[tokio::test]
+async fn a_removed_admins_key_loses_admin_rpcs() {
+    let engine = Engine::guarded(vec![Arc::new(TestAuthenticator)]).await;
+    let mut owner = engine.client();
+    owner.setup(SETUP_TOKEN).await;
+    owner
+        .call(PROJECTS, "CreateProject", json!({"name": "Web"}))
+        .await
+        .ok();
+    owner
+        .call(
+            PROJECTS,
+            "CreateEnvironment",
+            json!({"project": "web", "name": "Prod"}),
+        )
+        .await
+        .ok();
+    owner
+        .call(
+            ORG,
+            "CreateInvitation",
+            json!({"email": "adm@example.test", "role": "ORG_ROLE_ADMIN"}),
+        )
+        .await
+        .ok();
+    let admin = engine
+        .client()
+        .with_bearer(&TestAuthenticator::token("adm"));
+    admin.call(ORG, "GetOrg", json!({})).await.ok();
+    let created = admin
+        .call(
+            KEYS,
+            "CreateKey",
+            json!({"project": "web", "environment": "prod", "name": "adm-key",
+                   "idempotencyKey": "adm-1"}),
+        )
+        .await;
+    let secret = created.ok()["secret"].as_str().unwrap().to_owned();
+    let key = engine.client().with_bearer(&secret);
+    key.call(PROJECTS, "CreateProject", json!({"name": "Before"}))
+        .await
+        .ok();
+    let members = owner.call(ORG, "ListMembers", json!({})).await;
+    let user = members.ok()["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["user"]["email"] == "adm@example.test")
+        .map(|m| m["user"]["id"].as_str().unwrap().to_owned())
+        .unwrap();
+    owner
+        .call(ORG, "RemoveMember", json!({"user": user}))
+        .await
+        .ok();
+    let refused = key
+        .call(PROJECTS, "CreateProject", json!({"name": "After"}))
+        .await;
+    assert_eq!(
+        refused.failure(),
+        ("unauthenticated".into(), "token_revoked".into())
+    );
+    let refused = key.call(ORG, "GetOrg", json!({})).await;
+    assert_eq!(refused.failure().1, "token_revoked", "nor read");
+    engine.stop().await;
+}
+
 /// Before setup every admin RPC is `setup_required`; the last owner cannot
 /// be removed; removing a member ends their sessions.
 #[tokio::test]

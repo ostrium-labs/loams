@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { quitSequence } from "../src/main/shell/quit";
 
 function deps(over: Partial<Parameters<typeof quitSequence>[0]> = {}) {

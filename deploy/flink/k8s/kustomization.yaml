@@ -1,0 +1,36 @@
+# Managed Flink SQL (design 81, D1972-D1979; preview, not yet run end to end):
+# one tenant's session cluster, the objects loams_flink::k8s renders, for
+# tenant `example`. The engine controller renders the same set per tenant; use
+# this base only to run a cluster without it (copy it, rename the namespace,
+# re-render config.yaml for your tenant).
+#
+#   kubectl create namespace loams-flink-example
+#   kubectl -n loams-flink-example create secret generic flink-s3 \
+#     --from-literal=FLINK_PROPERTIES=$'s3.access-key: <key>\ns3.secret-key: <secret>\n'
+#   kubectl apply -k deploy/flink/k8s
+#
+# config.yaml is a golden of crates/loams-flink (tests/config_render.rs):
+# the renderer's output for tenant `example`, Kubernetes, size dev.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: loams-flink-example
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: loams
+      loams.dev/tenant: example
+resources:
+  - namespace.yaml
+  - rbac.yaml
+  - networkpolicy.yaml
+  - services.yaml
+  - jobmanager.yaml
+  - taskmanager.yaml
+  - sql-gateway.yaml
+configMapGenerator:
+  - name: flink-config
+    files:
+      - config.yaml
+generatorOptions:
+  # The pods mount `flink-config` by name; the controller rolls them with
+  # its own config hash annotation.
+  disableNameSuffixHash: true

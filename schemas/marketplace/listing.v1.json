@@ -329,8 +329,11 @@
       "required": ["kind"],
       "properties": {
         "kind": { "type": "string", "x-proto-enum": "RuntimeKind", "enum": ["node", "python", "oci", "binary"] },
-        "version": { "description": "A version range, such as >=22.13.", "type": "string", "minLength": 1 }
-      }
+        "engine": { "description": "The program that runs a node runtime's entrypoint: node (the default when absent) or bun, at the Bun version agentd pins (D1808). Only the node runtime has an engine.", "type": "string", "x-proto-enum": "Engine", "enum": ["node", "bun"] },
+        "version": { "description": "A version range of the engine, such as >=22.13 for node or >=1.4.4 for bun.", "type": "string", "minLength": 1 }
+      },
+      "if": { "required": ["engine"] },
+      "then": { "properties": { "kind": { "const": "node" } } }
     },
     "target": {
       "type": "string",

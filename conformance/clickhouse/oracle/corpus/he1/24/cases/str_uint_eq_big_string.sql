@@ -1,0 +1,1 @@
+SELECT u8 = '300', u8 < '300' FROM t24s ORDER BY id

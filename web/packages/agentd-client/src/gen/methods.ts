@@ -50,6 +50,12 @@ import type { DriveListing } from "./DriveListing";
 import type { Empty } from "./Empty";
 import type { EngineInfo } from "./EngineInfo";
 import type { EngineReadyReply } from "./EngineReadyReply";
+import type { FactoryAppList } from "./FactoryAppList";
+import type { FactoryAppParams } from "./FactoryAppParams";
+import type { FactoryAppReply } from "./FactoryAppReply";
+import type { FactoryConfigureParams } from "./FactoryConfigureParams";
+import type { FactoryQueryParams } from "./FactoryQueryParams";
+import type { FactoryQueryReply } from "./FactoryQueryReply";
 import type { FetchToolBlobParams } from "./FetchToolBlobParams";
 import type { FileSearchMatchList } from "./FileSearchMatchList";
 import type { FinishQueueEditOutcome } from "./FinishQueueEditOutcome";
@@ -378,6 +384,11 @@ export const METHODS = [
   { name: "ApplyHarnessUpdate", kind: "unary", params: "HarnessParams", result: "ApplyHarnessUpdateReply", role: "owner", renderer: true },
   { name: "CancelHarnessUpdate", kind: "unary", params: "HarnessParams", result: "CancelledReply", role: "owner", renderer: true },
   { name: "DismissHarnessUpdate", kind: "unary", params: "DismissHarnessUpdateParams", result: "HarnessUpdateStatus", role: "owner", renderer: true },
+  { name: "FactoryList", kind: "unary", params: "Empty", result: "FactoryAppList", role: "owner", renderer: true },
+  { name: "FactoryTest", kind: "unary", params: "FactoryAppParams", result: "FactoryAppReply", role: "owner", renderer: true },
+  { name: "FactoryQuery", kind: "unary", params: "FactoryQueryParams", result: "FactoryQueryReply", role: "owner", renderer: true },
+  { name: "FactoryConfigure", kind: "unary", params: "FactoryConfigureParams", result: "FactoryAppReply", role: "owner", renderer: false },
+  { name: "FactoryRemove", kind: "unary", params: "FactoryAppParams", result: "Empty", role: "owner", renderer: false },
   { name: "CreateRunWorktree", kind: "unary", params: "CreateRunWorktreeParams", result: "Worktree", role: "mcp", renderer: false },
   { name: "GetThreadDiff", kind: "unary", params: "GetThreadDiffParams", result: "CheckoutDiff", role: "mcp", renderer: false },
   { name: "PostReviewComment", kind: "unary", params: "PostReviewCommentParams", result: "IdReply", role: "mcp", renderer: false },
@@ -517,6 +528,11 @@ export type Methods = {
   ApplyHarnessUpdate: { params: HarnessParams; result: ApplyHarnessUpdateReply; kind: "unary"; role: "owner"; renderer: true };
   CancelHarnessUpdate: { params: HarnessParams; result: CancelledReply; kind: "unary"; role: "owner"; renderer: true };
   DismissHarnessUpdate: { params: DismissHarnessUpdateParams; result: HarnessUpdateStatus; kind: "unary"; role: "owner"; renderer: true };
+  FactoryList: { params: Empty; result: FactoryAppList; kind: "unary"; role: "owner"; renderer: true };
+  FactoryTest: { params: FactoryAppParams; result: FactoryAppReply; kind: "unary"; role: "owner"; renderer: true };
+  FactoryQuery: { params: FactoryQueryParams; result: FactoryQueryReply; kind: "unary"; role: "owner"; renderer: true };
+  FactoryConfigure: { params: FactoryConfigureParams; result: FactoryAppReply; kind: "unary"; role: "owner"; renderer: false };
+  FactoryRemove: { params: FactoryAppParams; result: Empty; kind: "unary"; role: "owner"; renderer: false };
   CreateRunWorktree: { params: CreateRunWorktreeParams; result: Worktree; kind: "unary"; role: "mcp"; renderer: false };
   GetThreadDiff: { params: GetThreadDiffParams; result: CheckoutDiff; kind: "unary"; role: "mcp"; renderer: false };
   PostReviewComment: { params: PostReviewCommentParams; result: IdReply; kind: "unary"; role: "mcp"; renderer: false };

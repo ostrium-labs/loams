@@ -1,0 +1,426 @@
+# Example values for a local `helm template` / `helm lint`: an xs instance as
+# crates/loams-risingwave renders it (runtime::helm::helm_values). The
+# credentials are placeholders. JSON is YAML.
+{
+  "instance": "abcdefghijklmnopqrstuvwxyz",
+  "secretName": "rw-abcdefghijklmnopqrstuvwxyz-credentials",
+  "credentials": {
+    "meta-db-password": "examplePassword0123456789",
+    "s3-access-key-id": "example-key",
+    "s3-secret-access-key": "example-secret"
+  },
+  "configName": "rw-abcdefghijklmnopqrstuvwxyz-config",
+  "config": "# Rendered by loams-risingwave. Do not edit: the controller rewrites it.\n\n[server]\ntelemetry_enabled = false\n\n[frontend]\nunsafe_enable_local_fs_connector = false\n\n[[frontend.hba_config.entries]]\nconnection_type = \"Host\"\ndatabases = [\"all\"]\nusers = [\"all\"]\naddresses = [\"0.0.0.0/0\", \"::/0\"]\nauth_method = \"password\"\n\n[udf]\nenable_embedded_python_udf = false\nenable_embedded_javascript_udf = false\nenable_embedded_wasm_udf = false\n",
+  "roles": {
+    "meta": {
+      "name": "rw-abcdefghijklmnopqrstuvwxyz-meta",
+      "image": "docker.io/risingwavelabs/risingwave:v3.1.0@sha256:ee2e8e7a10b728d01b0e149d2a4f35864f0f52a0c889fa6cf9bc32c8ff46c602",
+      "replicas": 1,
+      "stateful": true,
+      "args": [
+        "meta-node"
+      ],
+      "env": [
+        {
+          "name": "AWS_ACCESS_KEY_ID",
+          "secretKey": "s3-access-key-id"
+        },
+        {
+          "name": "AWS_REGION",
+          "value": "us-east-1"
+        },
+        {
+          "name": "AWS_SECRET_ACCESS_KEY",
+          "secretKey": "s3-secret-access-key"
+        },
+        {
+          "name": "ENABLE_TELEMETRY",
+          "value": "false"
+        },
+        {
+          "name": "RW_ADVERTISE_ADDR",
+          "value": "$(POD_IP):5690"
+        },
+        {
+          "name": "RW_BACKEND",
+          "value": "postgres"
+        },
+        {
+          "name": "RW_BACKUP_STORAGE_DIRECTORY",
+          "value": "engines/dev/eng_abcdefghijklmnopqrstuvwxyz/backup"
+        },
+        {
+          "name": "RW_BACKUP_STORAGE_URL",
+          "value": "s3://loams-engines"
+        },
+        {
+          "name": "RW_CONFIG_PATH",
+          "value": "/risingwave/config/risingwave.toml"
+        },
+        {
+          "name": "RW_DASHBOARD_HOST",
+          "value": "0.0.0.0:5691"
+        },
+        {
+          "name": "RW_DATA_DIRECTORY",
+          "value": "engines/dev/eng_abcdefghijklmnopqrstuvwxyz/hummock"
+        },
+        {
+          "name": "RW_DO_NOT_CONFIG_BUCKET_LIFECYCLE",
+          "value": "true"
+        },
+        {
+          "name": "RW_IS_FORCE_PATH_STYLE",
+          "value": "true"
+        },
+        {
+          "name": "RW_LISTEN_ADDR",
+          "value": "0.0.0.0:5690"
+        },
+        {
+          "name": "RW_PROMETHEUS_HOST",
+          "value": "0.0.0.0:1250"
+        },
+        {
+          "name": "RW_S3_ENDPOINT",
+          "value": "http://rustfs.loams-system.svc.cluster.local:9000"
+        },
+        {
+          "name": "RW_SQL_DATABASE",
+          "value": "rw_abcdefghijklmnopqrstuvwxyz"
+        },
+        {
+          "name": "RW_SQL_ENDPOINT",
+          "value": "postgres.loams-system.svc.cluster.local:5432"
+        },
+        {
+          "name": "RW_SQL_PASSWORD",
+          "secretKey": "meta-db-password"
+        },
+        {
+          "name": "RW_SQL_USERNAME",
+          "value": "rw_abcdefghijklmnopqrstuvwxyz"
+        },
+        {
+          "name": "RW_STATE_STORE",
+          "value": "hummock+s3://loams-engines"
+        }
+      ],
+      "ports": [
+        {
+          "name": "rpc",
+          "containerPort": 5690
+        },
+        {
+          "name": "metrics",
+          "containerPort": 1250
+        },
+        {
+          "name": "dashboard",
+          "containerPort": 5691
+        }
+      ],
+      "labels": {
+        "app.kubernetes.io/component": "meta",
+        "app.kubernetes.io/managed-by": "loams",
+        "app.kubernetes.io/name": "risingwave",
+        "app.kubernetes.io/version": "v3.1.0",
+        "loams.dev/engine": "risingwave",
+        "loams.dev/engine-instance": "abcdefghijklmnopqrstuvwxyz"
+      },
+      "resources": {
+        "requests": {
+          "cpu": "500m",
+          "memory": "1073741824"
+        },
+        "limits": {
+          "memory": "1073741824"
+        }
+      }
+    },
+    "compactor": {
+      "name": "rw-abcdefghijklmnopqrstuvwxyz-compactor",
+      "image": "docker.io/risingwavelabs/risingwave:v3.1.0@sha256:ee2e8e7a10b728d01b0e149d2a4f35864f0f52a0c889fa6cf9bc32c8ff46c602",
+      "replicas": 1,
+      "stateful": false,
+      "args": [
+        "compactor-node"
+      ],
+      "env": [
+        {
+          "name": "AWS_ACCESS_KEY_ID",
+          "secretKey": "s3-access-key-id"
+        },
+        {
+          "name": "AWS_REGION",
+          "value": "us-east-1"
+        },
+        {
+          "name": "AWS_SECRET_ACCESS_KEY",
+          "secretKey": "s3-secret-access-key"
+        },
+        {
+          "name": "ENABLE_TELEMETRY",
+          "value": "false"
+        },
+        {
+          "name": "RW_ADVERTISE_ADDR",
+          "value": "$(POD_IP):6660"
+        },
+        {
+          "name": "RW_COMPACTOR_TOTAL_MEMORY_BYTES",
+          "value": "1073741824"
+        },
+        {
+          "name": "RW_CONFIG_PATH",
+          "value": "/risingwave/config/risingwave.toml"
+        },
+        {
+          "name": "RW_IS_FORCE_PATH_STYLE",
+          "value": "true"
+        },
+        {
+          "name": "RW_LISTEN_ADDR",
+          "value": "0.0.0.0:6660"
+        },
+        {
+          "name": "RW_META_ADDR",
+          "value": "http://rw-abcdefghijklmnopqrstuvwxyz-meta-0.rw-abcdefghijklmnopqrstuvwxyz-meta-headless.eng-abcdefghijklmnopqrstuvwxyz.svc.cluster.local:5690"
+        },
+        {
+          "name": "RW_PROMETHEUS_LISTENER_ADDR",
+          "value": "0.0.0.0:1250"
+        },
+        {
+          "name": "RW_S3_ENDPOINT",
+          "value": "http://rustfs.loams-system.svc.cluster.local:9000"
+        }
+      ],
+      "ports": [
+        {
+          "name": "rpc",
+          "containerPort": 6660
+        },
+        {
+          "name": "metrics",
+          "containerPort": 1250
+        }
+      ],
+      "labels": {
+        "app.kubernetes.io/component": "compactor",
+        "app.kubernetes.io/managed-by": "loams",
+        "app.kubernetes.io/name": "risingwave",
+        "app.kubernetes.io/version": "v3.1.0",
+        "loams.dev/engine": "risingwave",
+        "loams.dev/engine-instance": "abcdefghijklmnopqrstuvwxyz"
+      },
+      "resources": {
+        "requests": {
+          "cpu": "500m",
+          "memory": "1073741824"
+        },
+        "limits": {
+          "memory": "1073741824"
+        }
+      }
+    },
+    "compute": {
+      "name": "rw-abcdefghijklmnopqrstuvwxyz-compute",
+      "image": "docker.io/risingwavelabs/risingwave:v3.1.0@sha256:ee2e8e7a10b728d01b0e149d2a4f35864f0f52a0c889fa6cf9bc32c8ff46c602",
+      "replicas": 1,
+      "stateful": true,
+      "args": [
+        "compute-node"
+      ],
+      "env": [
+        {
+          "name": "AWS_ACCESS_KEY_ID",
+          "secretKey": "s3-access-key-id"
+        },
+        {
+          "name": "AWS_REGION",
+          "value": "us-east-1"
+        },
+        {
+          "name": "AWS_SECRET_ACCESS_KEY",
+          "secretKey": "s3-secret-access-key"
+        },
+        {
+          "name": "ENABLE_TELEMETRY",
+          "value": "false"
+        },
+        {
+          "name": "RW_ADVERTISE_ADDR",
+          "value": "$(POD_IP):5688"
+        },
+        {
+          "name": "RW_COMPUTE_NODE_ROLE",
+          "value": "both"
+        },
+        {
+          "name": "RW_CONFIG_PATH",
+          "value": "/risingwave/config/risingwave.toml"
+        },
+        {
+          "name": "RW_IS_FORCE_PATH_STYLE",
+          "value": "true"
+        },
+        {
+          "name": "RW_LISTEN_ADDR",
+          "value": "0.0.0.0:5688"
+        },
+        {
+          "name": "RW_META_ADDR",
+          "value": "http://rw-abcdefghijklmnopqrstuvwxyz-meta-0.rw-abcdefghijklmnopqrstuvwxyz-meta-headless.eng-abcdefghijklmnopqrstuvwxyz.svc.cluster.local:5690"
+        },
+        {
+          "name": "RW_PARALLELISM",
+          "value": "1"
+        },
+        {
+          "name": "RW_PROMETHEUS_LISTENER_ADDR",
+          "value": "0.0.0.0:1250"
+        },
+        {
+          "name": "RW_S3_ENDPOINT",
+          "value": "http://rustfs.loams-system.svc.cluster.local:9000"
+        },
+        {
+          "name": "RW_TOTAL_MEMORY_BYTES",
+          "value": "1073741824"
+        }
+      ],
+      "ports": [
+        {
+          "name": "rpc",
+          "containerPort": 5688
+        },
+        {
+          "name": "metrics",
+          "containerPort": 1250
+        }
+      ],
+      "labels": {
+        "app.kubernetes.io/component": "compute",
+        "app.kubernetes.io/managed-by": "loams",
+        "app.kubernetes.io/name": "risingwave",
+        "app.kubernetes.io/version": "v3.1.0",
+        "loams.dev/engine": "risingwave",
+        "loams.dev/engine-instance": "abcdefghijklmnopqrstuvwxyz"
+      },
+      "resources": {
+        "requests": {
+          "cpu": "500m",
+          "memory": "1073741824"
+        },
+        "limits": {
+          "memory": "1073741824"
+        }
+      }
+    },
+    "frontend": {
+      "name": "rw-abcdefghijklmnopqrstuvwxyz-frontend",
+      "image": "docker.io/risingwavelabs/risingwave:v3.1.0@sha256:ee2e8e7a10b728d01b0e149d2a4f35864f0f52a0c889fa6cf9bc32c8ff46c602",
+      "replicas": 1,
+      "stateful": false,
+      "args": [
+        "frontend-node"
+      ],
+      "env": [
+        {
+          "name": "AWS_ACCESS_KEY_ID",
+          "secretKey": "s3-access-key-id"
+        },
+        {
+          "name": "AWS_REGION",
+          "value": "us-east-1"
+        },
+        {
+          "name": "AWS_SECRET_ACCESS_KEY",
+          "secretKey": "s3-secret-access-key"
+        },
+        {
+          "name": "ENABLE_TELEMETRY",
+          "value": "false"
+        },
+        {
+          "name": "RW_ADVERTISE_ADDR",
+          "value": "$(POD_IP):4566"
+        },
+        {
+          "name": "RW_CONFIG_PATH",
+          "value": "/risingwave/config/risingwave.toml"
+        },
+        {
+          "name": "RW_FRONTEND_TOTAL_MEMORY_BYTES",
+          "value": "1073741824"
+        },
+        {
+          "name": "RW_HEALTH_CHECK_LISTENER_ADDR",
+          "value": "0.0.0.0:6786"
+        },
+        {
+          "name": "RW_IS_FORCE_PATH_STYLE",
+          "value": "true"
+        },
+        {
+          "name": "RW_LISTEN_ADDR",
+          "value": "0.0.0.0:4566"
+        },
+        {
+          "name": "RW_META_ADDR",
+          "value": "http://rw-abcdefghijklmnopqrstuvwxyz-meta-0.rw-abcdefghijklmnopqrstuvwxyz-meta-headless.eng-abcdefghijklmnopqrstuvwxyz.svc.cluster.local:5690"
+        },
+        {
+          "name": "RW_PROMETHEUS_LISTENER_ADDR",
+          "value": "0.0.0.0:1250"
+        },
+        {
+          "name": "RW_S3_ENDPOINT",
+          "value": "http://rustfs.loams-system.svc.cluster.local:9000"
+        },
+        {
+          "name": "RW_WEBHOOK_LISTEN_ADDR",
+          "value": "0.0.0.0:4560"
+        }
+      ],
+      "ports": [
+        {
+          "name": "pgwire",
+          "containerPort": 4566
+        },
+        {
+          "name": "metrics",
+          "containerPort": 1250
+        }
+      ],
+      "labels": {
+        "app.kubernetes.io/component": "frontend",
+        "app.kubernetes.io/managed-by": "loams",
+        "app.kubernetes.io/name": "risingwave",
+        "app.kubernetes.io/version": "v3.1.0",
+        "loams.dev/engine": "risingwave",
+        "loams.dev/engine-instance": "abcdefghijklmnopqrstuvwxyz"
+      },
+      "resources": {
+        "requests": {
+          "cpu": "500m",
+          "memory": "1073741824"
+        },
+        "limits": {
+          "memory": "1073741824"
+        }
+      }
+    }
+  },
+  "networkPolicy": {
+    "enabled": true,
+    "controlNamespace": "loams-system",
+    "gatewayPodLabels": {
+      "app.kubernetes.io/name": "loams-gateway"
+    },
+    "controllerPodLabels": {
+      "app.kubernetes.io/name": "loams"
+    }
+  }
+}

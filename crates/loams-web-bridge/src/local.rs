@@ -188,8 +188,8 @@ impl LocalProvider {
     fn allow_fill(&self, url: &str) -> Result<(), BridgeError> {
         if !self.credentials.allow_secret_fills {
             return Err(BridgeError::policy(
-                "secret fills are off; set credentials.allow-secret-fills, and remember that \
-                 they are always off on the remote provider",
+                "secret fills are off; set credentials.allow-secret-fills and list the host in \
+                 credentials.allowed-fill-hosts",
             ));
         }
         let host = Url::parse(url)
@@ -223,11 +223,10 @@ impl BrowserProvider for LocalProvider {
             // The browser is on the person's machine and keeps its profile, so
             // a signed-in session survives (D506).
             authenticated_sessions: true,
-            // No server-side enforcement: the allowlist is enforced at the
-            // driver's navigation hook and at the tool, not by a third party.
-            guardrails: false,
             tabs: true,
             credentials_stay_local: true,
+            // A host driver may download; this seam does not model it yet.
+            downloads: false,
         }
     }
 

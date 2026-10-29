@@ -217,6 +217,23 @@ const CATALOGUE: &[Package] = &[
         available: super::repos::SERVED,
         unstable: true,
     },
+    Package {
+        // Loams Meter (design §63 §17.1, D1131; ME1 role wiring): customers,
+        // entitlements and grants, plans, notifications. Served with the
+        // `loams` feature `meter` on a gateway node; `LeaseService` is internal
+        // (service identities, the cluster listener) and is not listed.
+        // Unstable until ME1's exit.
+        package: "loams.meter.v1",
+        services: &[
+            "loams.meter.v1.CustomerService",
+            "loams.meter.v1.EntitlementService",
+            "loams.meter.v1.PlanService",
+            "loams.meter.v1.NotificationService",
+            "loams.meter.v1.MeterService",
+        ],
+        available: super::meter::SERVED,
+        unstable: true,
+    },
 ];
 
 /// What this running server serves beyond the build's catalogue: the graph
@@ -270,6 +287,10 @@ const PRODUCT_FEATURES: &[(&str, bool)] = &[
     ("sqldb", cfg!(feature = "sqldb")),
     ("registry", cfg!(feature = "registry")),
     ("buildcache", cfg!(feature = "buildcache")),
+    ("meter", cfg!(feature = "meter")),
+    // The managed engines' CLIs (design 81; preview).
+    ("flink", cfg!(feature = "flink")),
+    ("spark", cfg!(feature = "spark")),
 ];
 
 /// `GetInstance.features`: every product feature of the build
@@ -576,6 +597,7 @@ pub(crate) fn routes(state: &AppState, hot_default: bool) -> AxumRouter {
     rpc = super::connect_streams::register(rpc, state);
     rpc = super::connect_auth::register(rpc, &state.principals);
     rpc = super::connect_admin::register(rpc, &state.principals);
+    rpc = super::meter::register(rpc, state);
     let (rpc, _health) =
         connectrpc_health::install_static(rpc, served_services(graph_served, live_served));
     let rpc = if state.reflection {
@@ -597,11 +619,26 @@ pub(crate) fn routes(state: &AppState, hot_default: bool) -> AxumRouter {
     for path in paths {
         axum = axum.route_service(&path, service.clone());
     }
+    // Loams Meter's OpenMeter-compatible HTTP routes (`/api/v1/meters/…`,
+    // `/api/v1/subjects/…`), inside the meter's caller layer below.
+    #[cfg(feature = "meter")]
+    if let Some(meter) = &state.meter {
+        axum = axum.merge(meter.http_routes());
+    }
     // Live's admin service records who deployed: the principal the port's
     // authentication layer (outside these routes) admitted.
     #[cfg(feature = "live")]
     if live_served {
         axum = axum.layer(axum::middleware::from_fn(super::live::caller));
+    }
+    // The meter's own view of the caller (operator or authorizer subject),
+    // from the principal the port's authentication layer admitted.
+    #[cfg(feature = "meter")]
+    if state.meter.is_some() {
+        axum = axum.layer(axum::middleware::from_fn_with_state(
+            state.principals.clone(),
+            super::meter::caller,
+        ));
     }
     // Inside `HotLayer`, and with this router's own Connect-shaped refusal of an
     // unusable `Loams-Hot` in front of it (`super::connect_hot`). Applied here

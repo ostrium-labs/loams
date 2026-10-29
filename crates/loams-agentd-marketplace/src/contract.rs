@@ -28,7 +28,8 @@ pub struct Provisioned {
     /// `<agentd data>/agents/<id>/data`: HOME, TMPDIR and LOAMS_DATA_DIR live here.
     pub data_dir: PathBuf,
     pub token_file: PathBuf,
-    /// The directory holding the runtime's own binaries (`node`), the only PATH entry.
+    /// The directory holding the runtime's own binaries (`node`, or `bun` for
+    /// the bun engine: `ResolvedEngine::bin_dir`), the only PATH entry.
     pub runtime_bin: Option<PathBuf>,
     pub pg_url: Option<String>,
     pub qdrant: Option<(String, String)>,
@@ -160,6 +161,13 @@ pub trait TokenIssuer {
     fn issue(&self, namespace: &str, lifetime: Duration) -> Result<String, String>;
 }
 
+/// [`TokenIssuer`] for an issuer that calls a token endpoint: agentd's
+/// [`crate::identity::ZitadelIssuer`] (D1618, D1629).
+#[async_trait::async_trait]
+pub trait AsyncTokenIssuer: Send + Sync {
+    async fn issue(&self, namespace: &str, lifetime: Duration) -> Result<String, String>;
+}
+
 /// Keeps `LOAMS_TOKEN_FILE` fresh: a new 15-minute token every 10 minutes,
 /// written atomically with mode 0600.
 pub struct TokenFile<I> {
@@ -203,6 +211,38 @@ impl<I: TokenIssuer> TokenFile<I> {
         write_private(&self.path, token.as_bytes()).map_err(|e| e.to_string())?;
         self.next = Some(now + TOKEN_ROTATION);
         Ok(true)
+    }
+}
+
+impl<I: AsyncTokenIssuer> TokenFile<I> {
+    /// A token file over an [`AsyncTokenIssuer`].
+    pub fn new_async(path: PathBuf, namespace: String, issuer: I) -> Self {
+        Self {
+            path,
+            namespace,
+            issuer,
+            next: None,
+        }
+    }
+
+    /// [`TokenFile::tick`] for an [`AsyncTokenIssuer`].
+    ///
+    /// # Errors
+    ///
+    /// The issuer's refusal, or the write's.
+    pub async fn tick_async(&mut self, now: SystemTime) -> Result<bool, String> {
+        if self.next.is_some_and(|next| now < next) {
+            return Ok(false);
+        }
+        let token = self.issuer.issue(&self.namespace, TOKEN_LIFETIME).await?;
+        write_private(&self.path, token.as_bytes()).map_err(|e| e.to_string())?;
+        self.next = Some(now + TOKEN_ROTATION);
+        Ok(true)
+    }
+
+    /// When the next rotation is due ([`TokenFile::next_rotation`]).
+    pub fn next_async_rotation(&self) -> Option<SystemTime> {
+        self.next
     }
 }
 
