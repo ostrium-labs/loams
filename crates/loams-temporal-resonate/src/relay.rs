@@ -215,10 +215,12 @@ impl Relay {
         let defer = self.durability.delay_support() == DelaySupport::Defer;
         let now = self.durability.now_ms();
         let mut held: HashSet<&str> = HashSet::new();
-        // The rows to send now, grouped by promise in claim order.
-        let mut groups: Vec<Vec<(i64, &OutboxRequest)>> = Vec::new();
+        // The rows to send now (indices into `rows`), grouped by promise in
+        // claim order. Indices, not references: the stream's closure then takes
+        // an owned argument, which keeps the future `Send` for `tokio::spawn`.
+        let mut groups: Vec<Vec<usize>> = Vec::new();
         let mut group_of: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
-        for (row, req) in &rows {
+        for (at, (_, req)) in rows.iter().enumerate() {
             let due = match req {
                 OutboxRequest::CreatePromise(c) if defer => c.delay_until_ms.filter(|at| *at > now),
                 _ => None,
@@ -236,10 +238,10 @@ impl Relay {
                 groups.push(Vec::new());
                 groups.len() - 1
             });
-            groups[g].push((*row, req));
+            groups[g].push(at);
         }
         let outcomes: Vec<(Vec<i64>, bool)> = futures::stream::iter(groups)
-            .map(|g| self.send_group(g))
+            .map(|g| self.send_group(&rows, g))
             .buffer_unordered(self.config.concurrency.max(1))
             .collect()
             .await;
@@ -259,9 +261,14 @@ impl Relay {
     /// Sends one promise's rows in order. Answers the rows to mark and
     /// whether Resonate was unavailable (the rest of the group then waits
     /// for the next pass).
-    async fn send_group(&self, group: Vec<(i64, &OutboxRequest)>) -> (Vec<i64>, bool) {
+    async fn send_group(
+        &self,
+        rows: &[(i64, OutboxRequest)],
+        group: Vec<usize>,
+    ) -> (Vec<i64>, bool) {
         let mut done = Vec::with_capacity(group.len());
-        for (row, req) in group {
+        for at in group {
+            let (row, req) = (rows[at].0, &rows[at].1);
             let result = match req {
                 OutboxRequest::CreatePromise(c) => {
                     self.durability.promise_create(c).await.map(|_| ())
