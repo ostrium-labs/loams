@@ -26,6 +26,8 @@ import type { CheckoutFileDiffText } from "./CheckoutFileDiffText";
 import type { CheckpointList } from "./CheckpointList";
 import type { ChecksReply } from "./ChecksReply";
 import type { CloneRepoParams } from "./CloneRepoParams";
+import type { CloseChangeRequestParams } from "./CloseChangeRequestParams";
+import type { CloseChangeRequestReply } from "./CloseChangeRequestReply";
 import type { CommitWorktreeParams } from "./CommitWorktreeParams";
 import type { CommitWorktreeReply } from "./CommitWorktreeReply";
 import type { CompleteAgentLoginParams } from "./CompleteAgentLoginParams";
@@ -401,6 +403,7 @@ export const METHODS = [
   { name: "GetChecks", kind: "unary", params: "GetChecksParams", result: "ChecksReply", role: "mcp", renderer: false },
   { name: "GetCheckLog", kind: "unary", params: "GetCheckLogParams", result: "CheckLogReply", role: "mcp", renderer: false },
   { name: "DeployLiveApp", kind: "unary", params: "DeployLiveAppParams", result: "DeployLiveAppReply", role: "mcp", renderer: false },
+  { name: "CloseChangeRequest", kind: "unary", params: "CloseChangeRequestParams", result: "CloseChangeRequestReply", role: "mcp", renderer: false },
 ] as const satisfies readonly MethodSpec[];
 
 /** Each method's params, result (or stream item), kind, role and renderer flag. */
@@ -546,6 +549,7 @@ export type Methods = {
   GetChecks: { params: GetChecksParams; result: ChecksReply; kind: "unary"; role: "mcp"; renderer: false };
   GetCheckLog: { params: GetCheckLogParams; result: CheckLogReply; kind: "unary"; role: "mcp"; renderer: false };
   DeployLiveApp: { params: DeployLiveAppParams; result: DeployLiveAppReply; kind: "unary"; role: "mcp"; renderer: false };
+  CloseChangeRequest: { params: CloseChangeRequestParams; result: CloseChangeRequestReply; kind: "unary"; role: "mcp"; renderer: false };
 };
 
 export type MethodName = keyof Methods;

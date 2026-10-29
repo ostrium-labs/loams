@@ -27,6 +27,8 @@ import type { CheckoutFileDiffText } from "./gen/CheckoutFileDiffText";
 import type { CheckpointList } from "./gen/CheckpointList";
 import type { ChecksReply } from "./gen/ChecksReply";
 import type { CloneRepoParams } from "./gen/CloneRepoParams";
+import type { CloseChangeRequestParams } from "./gen/CloseChangeRequestParams";
+import type { CloseChangeRequestReply } from "./gen/CloseChangeRequestReply";
 import type { CommitWorktreeParams } from "./gen/CommitWorktreeParams";
 import type { CommitWorktreeReply } from "./gen/CommitWorktreeReply";
 import type { CompleteAgentLoginParams } from "./gen/CompleteAgentLoginParams";
@@ -2896,6 +2898,19 @@ export const fixture_CheckLogReply = {
   "truncated": false
 } satisfies CheckLogReply;
 
+export const fixture_CloseChangeRequestParams = {
+  "chatId": "chat_01",
+  "number": 7,
+  "provider": "forgejo"
+} satisfies CloseChangeRequestParams;
+
+export const fixture_CloseChangeRequestReply = {
+  "closed": true,
+  "number": 7,
+  "provider": "forgejo",
+  "repo": "dev/comet"
+} satisfies CloseChangeRequestReply;
+
 export const fixture_DeployLiveAppParams = {
   "app": "notes",
   "approvalId": "fa-1",
@@ -3381,6 +3396,8 @@ export const FIXTURES = [
   { name: "ChecksReply", type: "ChecksReply", value: fixture_ChecksReply },
   { name: "GetCheckLogParams", type: "GetCheckLogParams", value: fixture_GetCheckLogParams },
   { name: "CheckLogReply", type: "CheckLogReply", value: fixture_CheckLogReply },
+  { name: "CloseChangeRequestParams", type: "CloseChangeRequestParams", value: fixture_CloseChangeRequestParams },
+  { name: "CloseChangeRequestReply", type: "CloseChangeRequestReply", value: fixture_CloseChangeRequestReply },
   { name: "DeployLiveAppParams", type: "DeployLiveAppParams", value: fixture_DeployLiveAppParams },
   { name: "DeployLiveAppReply", type: "DeployLiveAppReply", value: fixture_DeployLiveAppReply },
   { name: "ToolCall.exec", type: "ToolCall", value: fixture_ToolCall_exec },
