@@ -29,6 +29,11 @@ cargo_package(
             "root": "tests/docstore.rs",
         },
         {
+            "name": "house",
+            "crate": "house",
+            "root": "tests/house.rs",
+        },
+        {
             "name": "leases",
             "crate": "leases",
             "root": "tests/leases.rs",
@@ -67,6 +72,11 @@ cargo_package(
             "name": "role",
             "crate": "role",
             "root": "tests/role.rs",
+        },
+        {
+            "name": "runtime",
+            "crate": "runtime",
+            "root": "tests/runtime.rs",
         },
         {
             "name": "services",

@@ -29,9 +29,29 @@ cargo_package(
             "root": "tests/durable.rs",
         },
         {
+            "name": "fork",
+            "crate": "fork",
+            "root": "tests/fork.rs",
+        },
+        {
             "name": "lease",
             "crate": "lease",
             "root": "tests/lease.rs",
+        },
+        {
+            "name": "supervision",
+            "crate": "supervision",
+            "root": "tests/supervision.rs",
+        },
+        {
+            "name": "task",
+            "crate": "task",
+            "root": "tests/task.rs",
+        },
+        {
+            "name": "task_store",
+            "crate": "task_store",
+            "root": "tests/task_store.rs",
         },
     ],
     deps = [
