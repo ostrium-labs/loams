@@ -1,0 +1,4 @@
+{"meta":{"scenario":"tls","label":"before","commit":"a25d60a7ea2dd685e56fef578efc06876b4c1fac","server_cpus":"0-5","load_cpus":"6-11","upstream_cpus":"12-13","kernel":"7.2.4-3-cachyos","cpu":"Intel(R) Core(TM) Ultra 5 225H"}}
+{"bench": "tls-handshake", "concurrency": 128, "result": {"ops": 47660, "errors": 0, "seconds": 10.05176067, "ops_per_sec": 4741.457896251324, "p50_us": 26498, "p99_us": 42977, "p999_us": 54059, "max_us": 72682}, "server_cpus": "0"}
+{"bench": "tls-handshake", "concurrency": 128, "result": {"ops": 61103, "errors": 0, "seconds": 10.020689137, "ops_per_sec": 6097.684417171038, "p50_us": 20202, "p99_us": 45471, "p999_us": 66758, "max_us": 101527}, "server_cpus": "0-3"}
+{"bench": "tls-handshake", "concurrency": 128, "result": {"ops": 68043, "errors": 0, "seconds": 10.024267557, "ops_per_sec": 6787.827600679434, "p50_us": 18204, "p99_us": 37487, "p999_us": 61523, "max_us": 133439}, "server_cpus": "0-5"}

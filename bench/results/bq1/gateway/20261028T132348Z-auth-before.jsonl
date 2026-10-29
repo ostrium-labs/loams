@@ -1,0 +1,4 @@
+{"meta":{"scenario":"auth","label":"before","commit":"a25d60a7ea2dd685e56fef578efc06876b4c1fac","server_cpus":"0-5","load_cpus":"6-11","upstream_cpus":"12-13","kernel":"7.2.4-3-cachyos","cpu":"Intel(R) Core(TM) Ultra 5 225H"}}
+{"bench":"auth","tokens":10,"iterations":100000,"hits":200000,"read_parse_digest_lookup_ns":1986.11621,"digest_lookup_ns":158.69432}
+{"bench":"auth","tokens":100,"iterations":100000,"hits":200000,"read_parse_digest_lookup_ns":11553.23268,"digest_lookup_ns":164.94347}
+{"bench":"auth","tokens":1000,"iterations":100000,"hits":200000,"read_parse_digest_lookup_ns":121561.24358,"digest_lookup_ns":174.79326}

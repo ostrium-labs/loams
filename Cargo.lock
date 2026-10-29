@@ -5075,6 +5075,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "gateway-bench"
+version = "0.1.2"
+dependencies = [
+ "clap",
+ "loams-gateway",
+ "rcgen",
+ "rustls",
+ "serde_json",
+ "tokio",
+ "tokio-rustls",
+]
+
+[[package]]
 name = "generator"
 version = "0.8.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
