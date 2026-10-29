@@ -48,8 +48,8 @@ class PgdogMajors(unittest.TestCase):
         self.assertEqual(failures, [])
         for n in notices:
             print("notice:", n)
-        # Both inventories of this task are committed.
-        for major in (17, 18):
+        # Every major's inventory is committed (16 since it became supported).
+        for major in (16, 17, 18):
             self.assertTrue((REPO / f"conformance/router/pgdog-pg{major}.tsv").is_file())
 
     def test_supported_major_with_differs_row_fails(self):

@@ -21,6 +21,12 @@
         "loams-upgrade"
       ],
       "extra": {
+        "kv-loadgen": [
+          "bench/kv/hist.rs"
+        ],
+        "kv-native": [
+          "bench/kv/hist.rs"
+        ],
         "loams-agentd-marketplace": [
           "proto/loams/marketplace/**",
           "schemas/marketplace/**"
@@ -41,7 +47,8 @@
         ],
         "loams-console-mock": [
           "api/console/openapi.json",
-          "docs/api/route-map.md"
+          "docs/api/route-map.md",
+          "api/engines/openapi.json"
         ],
         "loams-flink": [
           "deploy/flink/compose/config.yaml",
@@ -57,6 +64,9 @@
         ],
         "loams-migrate": [
           "release/upgrade-path.toml"
+        ],
+        "loams-postgres": [
+          "deploy/pins/loams-postgres-images.toml"
         ],
         "loams-sqlrouter": [
           "scripts/spec/check.sh",
