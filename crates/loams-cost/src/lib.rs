@@ -16,6 +16,7 @@
 //! | [`trace`] | Trace ids, input digests and explanations |
 //! | [`inputs`] | `costs.yaml`: assets, prices, FX, mapping, engine and class rules, options; immutable versions |
 //! | [`amortise`] | Straight-line amortisation and monthly costs per day, split over kinds; declared capacity |
+//! | [`drivers`] | The driver catalogue; House rows → level-one usage (one source per engine and kind), level-two splits and ops |
 //! | [`import`] | Bill import: FOCUS 1.0–1.4, AWS CUR 2.0 and legacy CUR, generic CSV; mapping rules; day splitting; unmapped report |
 //! | [`report`] | Reports by dimension and period, unit costs ($ per 1M ops, GB-month, job, core-hour), sample rules, fully loaded columns, unit economics, trend markers |
 //! | [`pipeline`] | Inputs → asset, bill and price sources → allocation, with the input digest |
@@ -24,6 +25,7 @@
 pub mod allocate;
 pub mod amortise;
 pub mod basis;
+pub mod drivers;
 pub mod import;
 pub mod inputs;
 pub mod model;
