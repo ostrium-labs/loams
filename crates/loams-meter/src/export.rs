@@ -114,11 +114,7 @@ impl Exports {
         }
         Ok(Exports {
             ledger,
-            cursors: s
-                .cursors
-                .into_iter()
-                .map(|(e, p, o)| ((e, p), o))
-                .collect(),
+            cursors: s.cursors.into_iter().map(|(e, p, o)| ((e, p), o)).collect(),
         })
     }
 
@@ -522,17 +518,32 @@ mod tests {
             seq: 0,
             sent: false,
         };
-        ExportLedger::put(&exports, &key, &entry).await.expect("put");
-        ExportCursors::put(&exports, "openmeter", 3, 42).await.expect("cursor");
+        ExportLedger::put(&exports, &key, &entry)
+            .await
+            .expect("put");
+        ExportCursors::put(&exports, "openmeter", 3, 42)
+            .await
+            .expect("cursor");
         let again = DocExports::new(doc, clock);
-        assert_eq!(ExportLedger::get(&again, &key).await.expect("get"), Some(entry));
-        assert_eq!(ExportCursors::get(&again, "openmeter", 3).await.expect("get"), Some(42));
+        assert_eq!(
+            ExportLedger::get(&again, &key).await.expect("get"),
+            Some(entry)
+        );
+        assert_eq!(
+            ExportCursors::get(&again, "openmeter", 3)
+                .await
+                .expect("get"),
+            Some(42)
+        );
         // A window older than the retention is dropped on the next write.
         let old = LedgerKey {
             window_start: 0,
             ..key.clone()
         };
-        let e = ExportLedger::get(&again, &key).await.expect("get").expect("there");
+        let e = ExportLedger::get(&again, &key)
+            .await
+            .expect("get")
+            .expect("there");
         ExportLedger::put(&again, &old, &e).await.expect("put");
         assert_eq!(ExportLedger::get(&again, &old).await.expect("get"), None);
     }

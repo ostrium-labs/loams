@@ -56,7 +56,12 @@ pub struct WireLease {
 impl From<&Granted> for WireLease {
     fn from(g: &Granted) -> Self {
         WireLease {
-            lease_id: g.grant.id.as_ref().map(ToString::to_string).unwrap_or_default(),
+            lease_id: g
+                .grant
+                .id
+                .as_ref()
+                .map(ToString::to_string)
+                .unwrap_or_default(),
             amount: g.grant.amount,
             has_access: g.grant.has_access,
             expires_at: g.grant.expires_at,
@@ -258,7 +263,6 @@ impl OwnedRequest {
 }
 
 /// Routes and sends lease requests (the async half of [`LeaseClient`]).
-#[derive(Debug)]
 pub struct LeaseRouter {
     pub partitions: u32,
     /// This process's lease server, when it runs one.
@@ -268,6 +272,14 @@ pub struct LeaseRouter {
     pub transport: Arc<dyn LeaseTransport>,
     pub fence: Arc<EpochFence>,
     pub clock: Clock,
+}
+
+impl fmt::Debug for LeaseRouter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LeaseRouter")
+            .field("partitions", &self.partitions)
+            .finish_non_exhaustive()
+    }
 }
 
 impl LeaseRouter {
@@ -388,9 +400,9 @@ impl LeaseSource for LeaseClient {
         match rx.recv_timeout(deadline) {
             Ok(answer) => answer,
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => Err(SourceError::Timeout),
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => Err(SourceError::Unavailable(
-                "the lease client stopped".into(),
-            )),
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                Err(SourceError::Unavailable("the lease client stopped".into()))
+            }
         }
     }
 }

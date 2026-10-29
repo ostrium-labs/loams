@@ -25,10 +25,10 @@ use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{Extension, Router};
 use loams_meter_core::{EntitlementKind, Interval, Slug, UtcNanos};
+pub use loams_meter_house::HttpHouse;
 use loams_meter_house::period::{feature_def, periods_for};
 use loams_meter_house::query::{meter_def, openmeter_json, parse_query};
 use loams_meter_house::sql::{self, MeterDef};
-pub use loams_meter_house::HttpHouse;
 use loams_meter_house::{CloseJob, HouseError, HouseSql, PeriodCloser, PeriodSpec, ensure_schema};
 use tokio::sync::Notify;
 
@@ -112,6 +112,79 @@ impl<H: HouseSql + 'static> MeterUsage for HouseUsage<H> {
                 ))
             })?;
         Ok(!answer.trim().is_empty())
+    }
+}
+
+/// The SQL for `feature`'s usage by `subject` in `[start, end)` (Unix
+/// seconds) from `_meter.events FINAL`: what a balance falls back to when
+/// no counter answers.
+pub fn usage_sql(subject: &str, feature: &sql::FeatureDef, start: i64, end: i64) -> String {
+    format!(
+        "SELECT {} FROM {}.events FINAL WHERE subject = {} AND {} AND time >= {} AND time < {}{} \
+         FORMAT TabSeparated",
+        sql::raw_agg_expr(&feature.meter),
+        sql::DATABASE,
+        sql::quote(subject),
+        sql::events_filter(&feature.meter),
+        sql::at64(start),
+        sql::at64(end),
+        sql::event_filter(feature),
+    )
+}
+
+/// Period-to-date usage from the House ([`crate::run::UsageSoFar`]).
+#[derive(Clone)]
+pub struct HouseUsageSoFar<H> {
+    pub house: Arc<H>,
+    pub store: Arc<dyn MeterStore>,
+}
+
+impl<H> fmt::Debug for HouseUsageSoFar<H> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("HouseUsageSoFar").finish_non_exhaustive()
+    }
+}
+
+#[async_trait]
+impl<H: HouseSql + 'static> crate::run::UsageSoFar for HouseUsageSoFar<H> {
+    async fn usage(
+        &self,
+        e: &loams_meter_core::Entitlement,
+        start: UtcNanos,
+        at: UtcNanos,
+    ) -> Result<loams_meter_core::Amount> {
+        let unavailable = |what: String| MeterError::Unavailable(what);
+        let feature = self
+            .store
+            .feature(&e.feature)
+            .await?
+            .ok_or_else(|| unavailable(format!("feature {} is gone", e.feature.as_str())))?;
+        let slug = feature
+            .meter
+            .clone()
+            .ok_or_else(|| unavailable(format!("feature {} has no meter", e.feature.as_str())))?;
+        let meter = self
+            .store
+            .meter(&slug)
+            .await?
+            .ok_or_else(|| unavailable(format!("meter {} is gone", slug.as_str())))?;
+        let secs = |t: UtcNanos| t.0.div_euclid(UtcNanos::SECOND);
+        let answer = self
+            .house
+            .query(&usage_sql(
+                e.subject.as_str(),
+                &feature_def(&feature, &meter),
+                secs(start),
+                secs(at) + 1,
+            ))
+            .await
+            .map_err(|err| unavailable(format!("House: {err}")))?;
+        let text = answer.trim();
+        if text.is_empty() || text == "\\N" {
+            return Ok(loams_meter_core::Amount::ZERO);
+        }
+        loams_meter_core::Amount::parse(text)
+            .map_err(|err| unavailable(format!("House answered {text:?}: {err}")))
     }
 }
 
