@@ -97,7 +97,26 @@ struct Slot {
     run: Option<Running>,
     /// Why the last start failed (scrubbed), until a start succeeds.
     start_error: Option<String>,
+    /// Automatic restarts of a pipeline that failed with a transient error.
+    restarts: Restarts,
 }
+
+/// The backoff of a slot's automatic restarts (see
+/// [`Supervisor::retry_failed_starts`]).
+#[derive(Debug, Default)]
+struct Restarts {
+    /// Restarts since the instance last ran healthily for a while.
+    attempts: u32,
+    /// When a failed pipeline is restarted next.
+    due: Option<tokio::time::Instant>,
+    /// When it was last restarted.
+    last: Option<tokio::time::Instant>,
+}
+
+/// The first automatic restart's delay; it doubles up to [`RESTART_MAX`].
+pub const RESTART_INITIAL: Duration = Duration::from_secs(10);
+/// The longest delay between automatic restarts.
+pub const RESTART_MAX: Duration = Duration::from_secs(300);
 
 /// An admin operation's failure.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -111,6 +130,8 @@ pub enum AdminError {
 pub struct Supervisor {
     deps: Deps,
     slots: Mutex<BTreeMap<String, Slot>>,
+    /// The automatic restarts' first and longest delay.
+    restart_backoff: std::sync::Mutex<(Duration, Duration)>,
 }
 
 impl std::fmt::Debug for Supervisor {
@@ -133,6 +154,7 @@ impl Supervisor {
                         control: Control::default(),
                         run: None,
                         start_error: None,
+                        restarts: Restarts::default(),
                     },
                 )
             })
@@ -140,7 +162,16 @@ impl Supervisor {
         Arc::new(Self {
             deps,
             slots: Mutex::new(slots),
+            restart_backoff: std::sync::Mutex::new((RESTART_INITIAL, RESTART_MAX)),
         })
+    }
+
+    /// The automatic restarts' first and longest delay (tests shorten them).
+    pub fn set_restart_backoff(&self, initial: Duration, max: Duration) {
+        *self
+            .restart_backoff
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = (initial, max);
     }
 
     pub fn scrubber(&self) -> &Arc<Scrubber> {
@@ -173,12 +204,69 @@ impl Supervisor {
     }
 
     /// Start every instance whose last start failed.
+    ///
+    /// A pipeline that failed with a transient error (`Retryable` or
+    /// `Throttled`: its retries ran out, as when the brokers were down for
+    /// longer than the retry policy waits) is restarted too, from its last
+    /// checkpoint, after a delay that doubles from [`RESTART_INITIAL`] to
+    /// [`RESTART_MAX`]. Before, such an instance stayed `failed` until an
+    /// operator restarted it. A failure that is not transient (`Auth`,
+    /// `Fatal`, `Poison` without a DLQ, `PositionLost`) still waits for an
+    /// operator: restarting cannot fix it. The backoff resets once the
+    /// instance has run for [`RESTART_MAX`] since its last restart.
     pub async fn retry_failed_starts(&self) {
+        let (initial, max) = *self
+            .restart_backoff
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        let now = tokio::time::Instant::now();
         let mut slots = self.slots.lock().await;
         for slot in slots.values_mut() {
             if slot.run.is_none() && slot.start_error.is_some() {
                 self.start_slot(slot).await;
+                continue;
             }
+            let Some(run) = &slot.run else { continue };
+            let status = run.handle.status();
+            if status.state != PipelineState::Failed {
+                if slot.restarts.last.is_some_and(|t| now >= t + max) {
+                    slot.restarts = Restarts::default();
+                }
+                continue;
+            }
+            let transient = status
+                .last_error
+                .as_ref()
+                .is_some_and(|e| e.class.is_transient());
+            if !transient {
+                continue;
+            }
+            let due = *slot.restarts.due.get_or_insert_with(|| {
+                let factor = 2u32.saturating_pow(slot.restarts.attempts.min(16));
+                now + initial.saturating_mul(factor).min(max)
+            });
+            if now < due {
+                continue;
+            }
+            slot.restarts.attempts += 1;
+            slot.restarts.due = None;
+            slot.restarts.last = Some(now);
+            let why = self.deps.scrubber.scrub(
+                status
+                    .last_error
+                    .as_ref()
+                    .map(|e| e.message.as_str())
+                    .unwrap_or_default(),
+            );
+            tracing::warn!(
+                instance = %slot.instance.name,
+                attempt = slot.restarts.attempts,
+                "restarting after a transient failure: {why}"
+            );
+            if let Some(r) = slot.run.take() {
+                Self::stop_running(r).await;
+            }
+            self.start_slot(slot).await;
         }
     }
 
@@ -376,6 +464,7 @@ impl Supervisor {
         if let Some(r) = slot.run.take() {
             Self::stop_running(r).await;
         }
+        slot.restarts = Restarts::default();
         self.start_slot(slot).await;
         tracing::info!(instance = %name, "restarted");
         Ok(self.status_of(slot))
@@ -514,6 +603,7 @@ impl Supervisor {
             "last_error": last_error,
             "splits": splits,
             "epoch": self.deps.epoch,
+            "auto_restarts": s.restarts.attempts,
         })
     }
 }
