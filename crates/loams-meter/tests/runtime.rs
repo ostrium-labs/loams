@@ -577,3 +577,62 @@ async fn the_lease_client_asks_the_local_owner_then_a_remote_one() {
             .is_err()
     );
 }
+
+#[tokio::test]
+async fn usage_right_after_an_entitlement_is_made_is_counted() {
+    use std::sync::atomic::{AtomicI64, Ordering};
+    // The store has the meter and feature, but not the entitlement yet.
+    let store = Arc::new(MemStore::new());
+    let full = self::store().await;
+    for m in full.list_meters().await.expect("meters") {
+        store.put_meter(m).await.expect("meter");
+    }
+    for f in full.list_features().await.expect("features") {
+        store.put_feature(f).await.expect("feature");
+    }
+    let stream = Arc::new(Stream(Mutex::new(Vec::new())));
+    let counters = Counters::new(1);
+    let now = Arc::new(AtomicI64::new(NOW.0));
+    let n = now.clone();
+    let clock: loams_meter::customers::Clock = Arc::new(move || UtcNanos(n.load(Ordering::SeqCst)));
+    let leases = Arc::new(LeaseServer::new(
+        1,
+        AllocatorConfig::default(),
+        Arc::new(CatalogInputs(counters.clone())),
+        vec![CLUSTER_SERVICE.to_string()],
+        clock.clone(),
+    ));
+    let mut runtime = CounterRuntime::new(RuntimeParts {
+        leases: MemLeases::new(),
+        me: "node-1".into(),
+        reader: stream.clone(),
+        house: Arc::new(StreamOnly),
+        store: store.clone(),
+        counters: counters.clone(),
+        lease_server: leases,
+        clock,
+        events: None,
+        notifier: None,
+    });
+    runtime.step().await;
+
+    // An entitlement, and usage two seconds later: well inside the regular
+    // 10 s refresh of the cached records.
+    store
+        .create_entitlement(entitlement(Mode::HardLimit), None)
+        .await
+        .expect("entitlement");
+    store.create_grant(grant(1_000), None).await.expect("grant");
+    now.fetch_add(2 * UtcNanos::SECOND, Ordering::SeqCst);
+    stream
+        .0
+        .lock()
+        .expect("lock")
+        .push((0, event("e1", "org_a", 70)));
+    runtime.step().await;
+    let b = CounterValues::new(counters)
+        .value(&entitlement(Mode::HardLimit), &[grant(1_000)], NOW)
+        .await
+        .expect("a balance");
+    assert_eq!(b.usage, Amount::from_units(70));
+}

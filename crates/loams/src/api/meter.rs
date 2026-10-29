@@ -773,6 +773,7 @@ mod served {
         clock: loams_meter::customers::Clock,
         appender: Arc<MeterAppender>,
         principals: Principals,
+        meta: Arc<dyn MetaStore>,
         counters: Arc<Counters>,
         /// The exporters' schedule, when one is configured, not started.
         exports: Option<std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>>,
@@ -840,6 +841,20 @@ mod served {
         /// service ingest) and the main port's own (the ingest, for the
         /// operator of a single node).
         pub fn start(self) -> MeterStarted {
+            // `_system/_meter` exists on a stack `migrate` ran on; a process
+            // without it (`loams dev`, the desktop) makes it here (§63 §7.1).
+            let meta = self.meta.clone();
+            tokio::spawn(async move {
+                loop {
+                    match loams_migrate::system::ensure_meter_stream(&*meta).await {
+                        Ok(_) => return,
+                        Err(err) => {
+                            tracing::warn!(%err, "the meter stream could not be made; retrying");
+                            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                        }
+                    }
+                }
+            });
             let stop = Arc::new(tokio::sync::Notify::new());
             let task = tokio::spawn(self.runtime.run(stop.clone()));
             // The House schedule: schema at start, then the close job every
@@ -1268,6 +1283,7 @@ mod served {
             clock,
             appender,
             principals: principals.clone(),
+            meta: meta.clone(),
             counters,
             exports,
             exports_stop,
