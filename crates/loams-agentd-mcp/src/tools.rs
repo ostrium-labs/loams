@@ -1786,6 +1786,14 @@ mod tests {
             )
             .await
             .unwrap();
+        let commit = "a".repeat(40);
+        tools
+            .call(
+                "deploy_live_app",
+                json!({ "approval_id": "fa-2", "app": " notes ", "commit": commit }),
+            )
+            .await
+            .unwrap();
         let writes = world.writes.lock().unwrap();
         assert_eq!(writes[0].0, methods::REQUEST_APPROVAL);
         assert_eq!(writes[0].1["chatId"], "chat-alpha-1");
@@ -1798,16 +1806,6 @@ mod tests {
             writes[2].1,
             json!({ "chatId": "chat-alpha-1", "baseRef": "main" })
         );
-        drop(writes);
-        let commit = "a".repeat(40);
-        tools
-            .call(
-                "deploy_live_app",
-                json!({ "approval_id": "fa-2", "app": " notes ", "commit": commit }),
-            )
-            .await
-            .unwrap();
-        let writes = world.writes.lock().unwrap();
         assert_eq!(writes[3].0, methods::DEPLOY_LIVE_APP);
         assert_eq!(
             writes[3].1,
