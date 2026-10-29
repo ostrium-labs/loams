@@ -233,10 +233,16 @@ pub struct SparkJob {
     pub finished_at: Option<OffsetDateTime>,
     #[serde(default)]
     pub message: Option<String>,
+    /// The adapter's full run status (attempts, driver, timings), for `GET …/jobs/{job}`;
+    /// lists leave it out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<serde_json::Value>,
 }
 
+/// A job to submit. The facade checks the fields named here; anything else in the body is the
+/// engine's own job spec (SP-b's `SparkJobSpec` is a superset) and reaches the adapter in
+/// `extra`, untouched.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct SubmitJob {
     pub name: String,
     pub kind: SparkJobKind,
@@ -246,6 +252,8 @@ pub struct SubmitJob {
     pub args: Vec<String>,
     #[serde(default)]
     pub conf: BTreeMap<String, String>,
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 impl SubmitJob {
@@ -276,6 +284,57 @@ impl SubmitJob {
     }
 }
 
+/// The most bytes `GET …/jobs/{job}/logs` returns; adapters return the tail.
+pub const MAX_LOG_BYTES: usize = 1 << 20;
+
+/// `POST …/schedules`: run `job` on `cron` (UTC, five fields, or six with seconds).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreateSchedule {
+    /// Chosen by the caller, so a retry is idempotent: 1-63 of `a-z`, `0-9`, `-`.
+    pub id: String,
+    pub cron: String,
+    pub job: SubmitJob,
+}
+
+impl CreateSchedule {
+    pub fn validate(&self) -> Result<(), EngineError> {
+        let id_ok = !self.id.is_empty()
+            && self.id.len() <= 63
+            && self
+                .id
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+            && !self.id.starts_with('-')
+            && !self.id.ends_with('-');
+        if !id_ok {
+            return Err(EngineError::Invalid(format!(
+                "schedule id {:?} must be 1-63 of a-z, 0-9 and '-', not starting or ending with '-'",
+                self.id
+            )));
+        }
+        let fields = self.cron.split_whitespace().count();
+        if !(5..=6).contains(&fields) {
+            return Err(EngineError::Invalid(format!(
+                "cron {:?} must have five fields (or six with seconds)",
+                self.cron
+            )));
+        }
+        self.job.validate()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SparkSchedule {
+    pub id: String,
+    pub cron: String,
+    pub job: SubmitJob,
+    #[serde(with = "time::serde::rfc3339")]
+    pub created_at: OffsetDateTime,
+    #[serde(default, with = "time::serde::rfc3339::option")]
+    pub next_run_at: Option<OffsetDateTime>,
+}
+
 #[async_trait]
 pub trait SparkEngine: Send + Sync {
     async fn list_sessions(&self, inst: &Instance) -> Result<Vec<SparkSession>, EngineError>;
@@ -288,6 +347,50 @@ pub trait SparkEngine: Send + Sync {
     async fn list_jobs(&self, inst: &Instance) -> Result<Vec<SparkJob>, EngineError>;
     async fn submit_job(&self, inst: &Instance, req: SubmitJob) -> Result<SparkJob, EngineError>;
     async fn cancel_job(&self, inst: &Instance, job: &str) -> Result<SparkJob, EngineError>;
+
+    /// One job with its full status in [`SparkJob::detail`]. The default finds it in
+    /// [`SparkEngine::list_jobs`].
+    async fn get_job(&self, inst: &Instance, job: &str) -> Result<SparkJob, EngineError> {
+        self.list_jobs(inst)
+            .await?
+            .into_iter()
+            .find(|j| j.id == job)
+            .ok_or_else(|| EngineError::NotFound(format!("no job {job}")))
+    }
+
+    /// A job's driver log as text, the last [`MAX_LOG_BYTES`] at most; `attempt` picks a
+    /// retry (the latest when `None`).
+    async fn job_logs(
+        &self,
+        _inst: &Instance,
+        _job: &str,
+        _attempt: Option<u32>,
+    ) -> Result<String, EngineError> {
+        Err(EngineError::Unsupported(
+            "this engine keeps no job logs".into(),
+        ))
+    }
+
+    async fn list_schedules(&self, _inst: &Instance) -> Result<Vec<SparkSchedule>, EngineError> {
+        Ok(Vec::new())
+    }
+
+    /// Creates the schedule, or answers the existing one when `req` is the same (a retry).
+    async fn create_schedule(
+        &self,
+        _inst: &Instance,
+        _req: CreateSchedule,
+    ) -> Result<SparkSchedule, EngineError> {
+        Err(EngineError::Unsupported(
+            "this engine has no schedules".into(),
+        ))
+    }
+
+    async fn delete_schedule(&self, _inst: &Instance, _id: &str) -> Result<(), EngineError> {
+        Err(EngineError::Unsupported(
+            "this engine has no schedules".into(),
+        ))
+    }
 }
 
 #[cfg(test)]
@@ -315,6 +418,7 @@ mod tests {
             entrypoint: entrypoint.into(),
             args: Vec::new(),
             conf: BTreeMap::new(),
+            extra: serde_json::Map::new(),
         };
         assert!(job(SparkJobKind::Sql, "select 1").validate().is_ok());
         assert!(
@@ -338,5 +442,42 @@ mod tests {
             serde_json::to_value(&c).unwrap(),
             serde_json::json!({"name": "n", "type": "bigint"})
         );
+    }
+
+    #[test]
+    fn submit_job_keeps_the_engines_own_fields() {
+        let j: SubmitJob = serde_json::from_value(serde_json::json!({
+            "name": "etl", "kind": "python", "entrypoint": "s3://b/etl.py",
+            "retries": 3, "resources": { "executors": 4 }
+        }))
+        .unwrap();
+        assert!(j.validate().is_ok());
+        assert_eq!(j.extra["retries"], 3);
+        let back = serde_json::to_value(&j).unwrap();
+        assert_eq!(back["resources"]["executors"], 4);
+        assert_eq!(back["name"], "etl");
+    }
+
+    #[test]
+    fn schedules_validate() {
+        let job = SubmitJob {
+            name: "j".into(),
+            kind: SparkJobKind::Sql,
+            entrypoint: "select 1".into(),
+            args: Vec::new(),
+            conf: BTreeMap::new(),
+            extra: serde_json::Map::new(),
+        };
+        let s = |id: &str, cron: &str| CreateSchedule {
+            id: id.into(),
+            cron: cron.into(),
+            job: job.clone(),
+        };
+        assert!(s("nightly", "0 3 * * *").validate().is_ok());
+        assert!(s("every-second", "* * * * * *").validate().is_ok());
+        assert!(s("Nightly", "0 3 * * *").validate().is_err());
+        assert!(s("-x", "0 3 * * *").validate().is_err());
+        assert!(s("x", "0 3 * *").validate().is_err());
+        assert!(s("x", "").validate().is_err());
     }
 }

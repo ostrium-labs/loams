@@ -221,11 +221,7 @@ sql = "SET STREAMING_PARALLELISM = 2;"
                 .sql
                 .starts_with("CREATE MATERIALIZED VIEW \"clicks_per_minute\" AS\nSELECT")
         );
-        assert!(
-            rendered[2]
-                .sql
-                .contains("catalog.header = 'X-Iceberg-Access-Delegation=vended-credentials'")
-        );
+        assert!(rendered[2].sql.contains("vended_credentials = 'true'"));
         assert!(
             rendered[2]
                 .sql
