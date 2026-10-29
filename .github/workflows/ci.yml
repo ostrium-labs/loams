@@ -2761,6 +2761,13 @@ jobs:
       # IA1 Task 1 (design §76 §13, D1600): the former IdP is removed; only
       # the historical records in scripts/docs/no-authentik-allowlist.txt
       # name it.
+      # NF2 Task 12 (§51 §12.4, §62 §7.2 condition 5): the committed PgDog
+      # inventories per Postgres major; a supported major has no error or
+      # differs row in a component Loams uses. scripts/nf1/pgdog-majors.sh
+      # writes them locally (podman); this reads only the files.
+      - if: ${{ !cancelled() }} # report every check, not only the first failure
+        name: PgDog per major (pgdog_major_has_no_error_rows_in_used_components)
+        run: python3 -I scripts/nf1/tests/test_pgdog_majors.py
       - if: ${{ !cancelled() }} # report every check, not only the first failure
         name: Former-IdP checker self-test
         run: scripts/docs/check-no-authentik.sh --self-test
