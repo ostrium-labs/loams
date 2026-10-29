@@ -11,10 +11,12 @@
 use std::path::{Path, PathBuf};
 
 use loams_agentd_proto::factory_loop::{
-    CheckLogReply, ChecksReply, CreateRunWorktreeParams, GetApprovalParams, GetCheckLogParams,
-    GetChecksParams, GetThreadDiffParams, MERGE_APPROVAL_KIND, MergeChangeRequestParams,
-    MergeChangeRequestReply, OpenChangeRequestParams, OpenChangeRequestReply,
-    PostReviewCommentParams, RequestApprovalParams, TypedApproval,
+    CheckLogReply, ChecksReply, CloseChangeRequestParams, CloseChangeRequestReply,
+    CreateRunWorktreeParams, DEPLOY_APPROVAL_KIND, DeployLiveAppParams, DeployLiveAppReply,
+    GetApprovalParams, GetCheckLogParams, GetChecksParams, GetThreadDiffParams,
+    MERGE_APPROVAL_KIND, MergeChangeRequestParams, MergeChangeRequestReply,
+    OpenChangeRequestParams, OpenChangeRequestReply, PostReviewCommentParams,
+    RequestApprovalParams, TypedApproval,
 };
 use loams_agentd_proto::git_write::{CreateChangeRequestParams, MergeStrategy, PushBranchParams};
 use loams_agentd_proto::review::{DiffSide, ReviewComment};
@@ -23,7 +25,7 @@ use loams_agentd_proto::{CheckoutDiff, GetCheckoutDiffParams, Worktree};
 use loams_agentd_rpc::{RpcError, RpcReply, RpcService};
 
 use super::{EngineRpc, git_write_error};
-use crate::approvals::{TypedApprovalError, merge_payload};
+use crate::approvals::{TypedApprovalError, deploy_payload, merge_payload};
 use crate::factory_loop::{create_branch_worktree, repo_slug};
 
 fn failed(error: impl std::fmt::Display) -> RpcError {
@@ -344,5 +346,75 @@ impl EngineRpc {
             .check_log_tail(&root, &remote, p.provider, p.log_id.trim(), p.lines)
             .await
             .map_err(git_write_error)
+    }
+
+    /// `DeployLiveApp` (FT0 Task 8): the release is read from the commit,
+    /// then the approval is spent (or found spent by an earlier call of the
+    /// same chat, app and commit), then Live deploys, checks health and
+    /// rolls back on failure. One deploy at a time per daemon.
+    pub(super) async fn deploy_live_app(
+        &self,
+        p: DeployLiveAppParams,
+    ) -> Result<DeployLiveAppReply, RpcError> {
+        let app = p.app.trim();
+        let commit = p.commit.trim().to_ascii_lowercase();
+        if !crate::live_deploy::valid_app(app) {
+            return Err(RpcError::BadParams(format!("not a Live app name: {app:?}")));
+        }
+        if !crate::live_deploy::valid_commit(&commit) {
+            return Err(RpcError::BadParams(format!(
+                "a deploy names a full commit id, not {commit:?}"
+            )));
+        }
+        let checkout = self.chat_checkout(&p.chat_id).await?;
+        let release = crate::live_deploy::read_release(checkout.root(), &commit)
+            .await
+            .map_err(git_write_error)?;
+        if let Some(named) = release.config.app.as_deref()
+            && named != app
+        {
+            return Err(RpcError::BadParams(format!(
+                "the commit's {} deploys app {named:?}, not {app:?}",
+                crate::live_deploy::FACTORY_TOML
+            )));
+        }
+        let _one = self.live_deployer.serialize().await;
+        let payload = deploy_payload(app, &commit);
+        let (_, resumed) = self
+            .approvals()?
+            .use_typed_or_resume(&p.chat_id, &p.approval_id, DEPLOY_APPROVAL_KIND, &payload)
+            .map_err(typed_error)?;
+        self.live_deployer
+            .deploy(
+                app,
+                &commit,
+                &p.approval_id,
+                p.message.as_deref().unwrap_or_default(),
+                &release,
+                resumed,
+            )
+            .await
+            .map_err(git_write_error)
+    }
+
+    /// `CloseChangeRequest` (FT0 Task 10): close the pull request on the
+    /// chat's remote; the branch stays.
+    pub(super) async fn close_change_request(
+        &self,
+        p: CloseChangeRequestParams,
+    ) -> Result<CloseChangeRequestReply, RpcError> {
+        let checkout = self.chat_checkout(&p.chat_id).await?;
+        let root = checkout.root().to_path_buf();
+        let remote = self.chat_remote(&root).await?;
+        self.change_request_creator
+            .close_change_request(&root, &remote, p.provider, p.number)
+            .await
+            .map_err(git_write_error)?;
+        Ok(CloseChangeRequestReply {
+            provider: p.provider,
+            number: p.number,
+            repo: repo_slug(&remote),
+            closed: true,
+        })
     }
 }

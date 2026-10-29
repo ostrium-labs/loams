@@ -26,6 +26,7 @@ pub mod factory_loop;
 pub mod fuzz;
 pub mod git_write;
 pub mod groups;
+pub mod live_deploy;
 pub mod harness_updates;
 pub mod instance_lock;
 pub mod marketplace;
