@@ -29,6 +29,11 @@ cargo_package(
             "root": "tests/docstore.rs",
         },
         {
+            "name": "house",
+            "crate": "house",
+            "root": "tests/house.rs",
+        },
+        {
             "name": "leases",
             "crate": "leases",
             "root": "tests/leases.rs",
