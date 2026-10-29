@@ -47,7 +47,7 @@ pub mod hot;
 pub mod house_proxy;
 pub mod internal;
 pub(crate) mod live;
-pub(crate) mod meter;
+pub mod meter;
 mod namespace_reach;
 pub(crate) mod objects;
 #[cfg(feature = "postgres")]

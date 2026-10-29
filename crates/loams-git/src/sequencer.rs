@@ -210,6 +210,12 @@ struct Shared {
     state: watch::Receiver<Arc<RepoState>>,
     queue: mpsc::Sender<Msg>,
     events: broadcast::Sender<GitEvent>,
+    /// The last snapshot handed out, by seq. A snapshot copies every ref, so
+    /// building one per read made a read O(refs): 8.4 k reads/s at 10 000
+    /// refs against 1.3 M at 100 (BQ1, 2026-10-28). Two states at one seq
+    /// are equal (the WAL is applied deterministically), so readers at the
+    /// same seq share one.
+    snapshots: std::sync::RwLock<Option<Arc<RefSnapshot>>>,
 }
 
 /// The ref log of one repository over its bucket WAL (§36 §5.2): a handle
@@ -276,6 +282,7 @@ impl BucketRefLog {
                 state: state_rx,
                 queue,
                 events,
+                snapshots: std::sync::RwLock::new(None),
             }),
         })
     }
@@ -310,6 +317,24 @@ impl BucketRefLog {
     /// The sequencer's in-process events, from now on.
     pub fn events(&self) -> broadcast::Receiver<GitEvent> {
         self.shared.events.subscribe()
+    }
+
+    /// `state`'s snapshot: the cached one when it is at the same seq, else a
+    /// new one, cached when it is newer than the cached one.
+    fn shared_snapshot(&self, state: &RepoState) -> Arc<RefSnapshot> {
+        if let Ok(cached) = self.shared.snapshots.read()
+            && let Some(snap) = cached.as_ref()
+            && snap.seq == state.seq
+        {
+            return Arc::clone(snap);
+        }
+        let snap = Arc::new(state.snapshot());
+        if let Ok(mut cached) = self.shared.snapshots.write()
+            && cached.as_ref().is_none_or(|c| c.seq < snap.seq)
+        {
+            *cached = Some(Arc::clone(&snap));
+        }
+        snap
     }
 
     fn current(&self) -> Arc<RepoState> {
@@ -499,7 +524,7 @@ impl RefLog for BucketRefLog {
                 Arc::new(checkpointer::state_at(self.shared.wal.as_ref(), seq).await?)
             }
         };
-        Ok(Arc::new(state.snapshot()))
+        Ok(self.shared_snapshot(&state))
     }
 
     fn watch(&self, from: Seq) -> BoxStream<'static, Result<CommittedTxn, RefError>> {
