@@ -571,7 +571,7 @@ async fn transient_failure_is_restarted_with_backoff() {
             "AllBrokersDown (Local: All broker connections are down)".to_owned(),
         )
     };
-    rc.fail_next("a", [down(), down(), down()]);
+    rc.source.fail_next("a", [down(), down(), down()]);
     let role = common::start(
         &engine,
         &store,
@@ -619,7 +619,7 @@ async fn transient_failure_is_restarted_with_backoff() {
     let engine = FakeEngine::start(dir.path()).await;
     let rc = ReferenceConnector::new();
     let (cat, fac) = (catalog(), factories(&rc));
-    rc.fail_next("a", [(ErrorClass::Fatal, "the table is gone".to_owned())]);
+    rc.source.fail_next("a", [(ErrorClass::Fatal, "the table is gone".to_owned())]);
     let role = common::start(
         &engine,
         &Store::in_memory(),
