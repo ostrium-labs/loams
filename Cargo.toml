@@ -88,17 +88,17 @@ futures = "0.3"
 # NEVER enable `jemalloc` or `mimalloc-allocator`: each installs a
 # `#[global_allocator]` in grafeo's lib.rs and would replace the allocator of
 # the whole `loams` binary (R0.2).
-grafeo = { version = "=0.5.43", git = "https://github.com/ostrium-labs/grafeo", rev = "09a495dd64ee621fe0bae5c479465f6c065cf781", default-features = false, features = ["gql", "wal", "grafeo-file", "spill", "cdc", "algos", "metrics", "tracing", "parallel", "regex"] }
+grafeo = { version = "=0.5.43", git = "https://github.com/ostrium-labs/grafeo", rev = "bc6091e35953935f8221c3f0631d5aae77858e8f", default-features = false, features = ["gql", "wal", "grafeo-file", "spill", "cdc", "algos", "metrics", "tracing", "parallel", "regex"] }
 # Named directly for its `lpg` feature: grafeo's own `lpg` also turns on
 # `cypher`, `gremlin` and `sql-pgq` (R0.2). Task 33's `graph-cypher` feature
 # adds `cypher` here; it costs code size and no package.
-grafeo-engine = { version = "=0.5.43", git = "https://github.com/ostrium-labs/grafeo", rev = "09a495dd64ee621fe0bae5c479465f6c065cf781", default-features = false, features = ["lpg"] }
+grafeo-engine = { version = "=0.5.43", git = "https://github.com/ostrium-labs/grafeo", rev = "bc6091e35953935f8221c3f0631d5aae77858e8f", default-features = false, features = ["lpg"] }
 # `PropertyKey` and the value types the facade does not re-export.
-grafeo-common = { version = "=0.5.43", git = "https://github.com/ostrium-labs/grafeo", rev = "09a495dd64ee621fe0bae5c479465f6c065cf781", default-features = false }
+grafeo-common = { version = "=0.5.43", git = "https://github.com/ostrium-labs/grafeo", rev = "bc6091e35953935f8221c3f0631d5aae77858e8f", default-features = false }
 # Named for the GQL AST's `SessionCommand`, which `translate_full` returns and
 # statement classification matches on (GR1 Task 3, R0.10). Already in the tree
 # under grafeo-engine with the features above; this adds none.
-grafeo-adapters = { version = "=0.5.43", git = "https://github.com/ostrium-labs/grafeo", rev = "09a495dd64ee621fe0bae5c479465f6c065cf781", default-features = false }
+grafeo-adapters = { version = "=0.5.43", git = "https://github.com/ostrium-labs/grafeo", rev = "bc6091e35953935f8221c3f0631d5aae77858e8f", default-features = false }
 # Leiden for Loams Graph's `leiden` (GR1 Task 22, R22.3): `network_partitions`, the MIT-licensed Rust
 # core of Microsoft's graspologic-native, which GraphRAG's hierarchical Leiden runs. Not on crates.io,
 # so pinned by the rev of tag `v1.3.1` (2026-06-14), with an `allow-git` entry in `deny.toml` and
