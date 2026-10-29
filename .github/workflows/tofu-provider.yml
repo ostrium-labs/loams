@@ -1,0 +1,52 @@
+# The OpenTofu provider for Loams Meter's definitions, terraform-provider-loams
+# (integrations/tofu; plan ME1 Task 33, D2216): gofmt, vet, unit tests against a
+# fake meter API, and the provider binary. Runs when the provider or this file
+# changes.
+name: OpenTofu provider
+
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - "integrations/tofu/**"
+      - ".github/workflows/tofu-provider.yml"
+  pull_request:
+    paths:
+      - "integrations/tofu/**"
+      - ".github/workflows/tofu-provider.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tofu-provider-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  tofu-provider:
+    name: "OpenTofu provider: fmt, vet, tests"
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: integrations/tofu
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          # Must be >= integrations/tofu/go.mod's `go 1.25.0` (GOTOOLCHAIN=local).
+          go-version: '1.25.0'
+          cache-dependency-path: integrations/tofu/go.sum
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - name: go mod tidy is clean
+        run: go mod tidy -diff
+      - name: vet
+        run: go vet ./...
+      - name: tests
+        run: go test -count=1 ./...
+      - name: build
+        run: go build -trimpath -o "$RUNNER_TEMP/terraform-provider-loams" .

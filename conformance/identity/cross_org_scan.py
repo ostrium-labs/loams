@@ -23,11 +23,18 @@ def obj(ref):
     return ref.split("#", 1)[0]
 
 
-def roots(tuples):
-    parent = {}
+def parents(tuples):
+    out = {}
     for t in tuples:
         if t["relation"] in PARENT_RELATIONS and not t["user"].startswith("user:"):
-            parent[t["object"]] = obj(t["user"])
+            out.setdefault(t["object"], []).append(obj(t["user"]))
+    return out
+
+
+def roots(tuples):
+    # An object with two parents (an environment with both `project` and `org`) is reported by
+    # scan(); for rooting, the first one counts.
+    parent = {o: ps[0] for o, ps in parents(tuples).items()}
 
     def root(o, seen=()):
         if o.startswith("org:"):
@@ -42,6 +49,9 @@ def roots(tuples):
 def scan(tuples):
     root = roots(tuples)
     bad = []
+    for o, ps in parents(tuples).items():
+        if len(set(ps)) > 1:
+            bad.append(f"{o} has {len(set(ps))} parents: {sorted(set(ps))}")
     for t in tuples:
         u = obj(t["user"])
         if u.startswith(("user:", "platform:")) or t["object"].startswith("platform:"):
@@ -80,6 +90,8 @@ def self_test():
     assert len(scan(leak)) == 1, scan(leak)
     leak = clean + [{"user": "environment:acme-dev", "relation": "environment", "object": "database:globex-db"}]
     assert scan(leak), "a database re-parented across orgs is reported"
+    leak = clean + [{"user": "org:globex", "relation": "org", "object": "environment:acme-dev"}]
+    assert scan(leak), "an environment with a project and an org of its own is reported"
     print("cross_org_scan: self-test ok")
 
 

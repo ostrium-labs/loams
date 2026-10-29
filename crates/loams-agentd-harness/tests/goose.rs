@@ -46,6 +46,7 @@ fn harness(dir: &Path, instructions: Option<&str>) -> AcpHarness {
 
 fn request(prompt: &str, cwd: &Path) -> RunRequest {
     RunRequest {
+        mcp_servers: Vec::new(),
         mcp: None,
         prompt: prompt.into(),
         harness: Some(HarnessId::Goose),

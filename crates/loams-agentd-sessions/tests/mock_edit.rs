@@ -40,6 +40,7 @@ async fn git(cwd: &Path, args: &[&str]) {
 
 fn run_request(cwd: &Path) -> RunRequest {
     RunRequest {
+        mcp_servers: Vec::new(),
         mcp: None,
         prompt: "edit the notes".into(),
         harness: None,

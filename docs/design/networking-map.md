@@ -58,6 +58,7 @@ How people sign in, and how operators reach machines.
 | SQL router across shards | [§31](31-loams-router-and-verification.md) §4–§7 | In progress (RT) |
 | Engine surfaces (native, Flight SQL, Qdrant, Elasticsearch, Connect) and their credentials | [§10](10-operations.md) §4 (the surface table); [§44](44-unified-api-and-sdks.md) | Preview |
 | House (ClickHouse HTTP) on its own tailnet node | HS1; `deploy/release/compose.yaml` (profile `house-tailnet`; the House itself runs by default) | Preview; TLS between engine and House is HS1 Task 20 |
+| Kafka to Confluent Cloud: outbound only from the BYOC VM to the cluster's public endpoint (TLS with full verification, SASL/PLAIN, ports 9092 and 443); nothing in Confluent connects in, so Confluent's managed connectors that pull from Loams are not supported | [§80](80-confluent-byoc.md) §6.2 (D1825); plan [CC1](../plans/2026-10-25-cc1-confluent-byoc.md) | Module and secrets built; the connect role is CC1 Task 1 |
 | Per-tenant caps, rate limits and backpressure | [§10](10-operations.md) §3–§4; CP1 Task 6 (limits) | Partly built |
 
 ## 4. Internal: node to node

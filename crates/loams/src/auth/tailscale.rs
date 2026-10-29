@@ -79,6 +79,7 @@ impl TailscaleAuth {
         Ok(Principal {
             subject: format!("tailscale:{login}"),
             kind: PrincipalKind::Tailscale,
+            issuer: None,
             display_name: name
                 .map(str::trim)
                 .filter(|n| !n.is_empty())

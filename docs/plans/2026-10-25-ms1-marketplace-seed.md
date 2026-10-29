@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Work task by task, test first. Where this plan gives exact names, paths, fields or tests, use them verbatim. Record any deviation in "Rulings made during execution" at the end of this file.
 >
-> **Status: Approved stub** (owner, 2026-10-25). Track MS, the first part ("seed") of the Loams Marketplace, under design [§73](../design/73-agent-marketplace.md) and its [§18 addendum](../design/73-agent-marketplace.md#18-ms1-addendum-2026-10-25) (D1806–D1814, Q1330–Q1332). The owner's word "start" (2026-10-25) lifts the 2026-10-24 pause of track MK **for MS1's scope only** (D1806); MK0's remaining tasks stay paused, except Task 4b (the daemon wiring), which Task 2 needs and which therefore falls inside MS1's scope. This plan specifies **Tasks 0, 1, 3 and 4** in full and Tasks 2 and 5–10 at task level; each of those is specified when the task before it merges. On 2026-10-25 the owner confirmed Task 4b and accepted the remaining proposals ("finish asap with your recommendations"), so D1812–D1814 are approved.
+> **Status: Approved stub** (owner, 2026-10-25). Track MS, the first part ("seed") of the Loams Marketplace, under design [§73](../design/73-agent-marketplace.md) and its [§18 addendum](../design/73-agent-marketplace.md#18-ms1-addendum-2026-10-25) (D1806–D1814, Q1330–Q1332). The owner's word "start" (2026-10-25) lifts the 2026-10-24 pause of track MK **for MS1's scope only** (D1806); MK0's remaining tasks stay paused, except Task 4b (the daemon wiring), which Task 2 needs and which therefore falls inside MS1's scope. This plan specifies **Tasks 0, 1, 3, 4 and 5** in full and Tasks 2 and 6–10 at task level (Tasks 6, 7 and 9 are now specified in full); each of those is specified when the task before it merges. On 2026-10-25 the owner confirmed Task 4b and accepted the remaining proposals ("finish asap with your recommendations"), so D1812–D1814 are approved.
 
 **Goal:** a self-hosted Loams node runs marketplace agents on **QuickJS** by default, **Mastra** agents on Node or Bun, and **Goose** as a first-party ACP harness, all under agentd's environment contract; public agent artifacts, a read-only verifiable project knowledge cache and a build cache tier are served from **Walrus** over plain HTTP, every byte checked by SHA-256 against a signed record, with the bucket still the source of truth. A person sees all of it working in Studio, in the browser and on the desktop (Task 10).
 
@@ -324,30 +324,85 @@ A manual Testnet run (store, read back, quilt store, patch read) is recorded in 
 
 Commit: `walrus: loams-walrus, the HTTP fast path with hedged verified reads and a local cache (MS1 Task 4, D1811)`.
 
-### Task 5 — Public agent artifacts on Walrus (task level)
+### Task 5 — Public agent artifacts on Walrus
 
-- `artifact` gains the source kind `{ "kind": "walrus", "blobId": "<base64url>", "sha256": "<hex>" }` in `schemas/marketplace/listing.v1.json` and `proto/loams/marketplace/v1/listing.proto`. It is an **additional location** beside the artifact's existing npm or archive reference. It never replaces it, and `proto_and_schema_agree` covers it.
-- The index stays metadata-only (D1460, D1812): it carries the blob id and SHA-256, never bytes.
-- The installer (`crates/loams-agentd-marketplace/src/install/`) runs, for an artifact with a `walrus` location while Walrus is enabled:
-  1. fetch through `loams-walrus`;
-  2. check the SHA-256 against the signed index;
-  3. check the artifact's integrity and Sigstore provenance exactly as today (D1459);
-  4. install.
+Design: D1812 (§73 §5, §18). A `walrus` location is an **additional, public mirror** of an artifact's bytes. It sits beside the artifact's own npm or archive reference and never replaces it. The index stays metadata-only (D1460): a listing carries a blob id and a SHA-256, never bytes.
 
-  On any Walrus failure it falls back to the HTTPS location. With Walrus disabled it uses HTTPS only. Provenance is never skipped because bytes came from Walrus.
+**Schema and proto** (`schemas/marketplace/listing.v1.json`, `proto/loams/marketplace/v1/listing.proto`):
+- A new `$defs/artifact_location` (`x-proto-message: ArtifactLocation`), all fields required, no others:
+  ```json
+  { "kind": "walrus", "blob_id": "<43 chars, URL-safe base64 without padding>", "sha256": "<64 lowercase hex>" }
+  ```
+  `kind` is the enum `LocationKind` (`["walrus"]`; proto `LOCATION_KIND_UNSPECIFIED`, `LOCATION_KIND_WALRUS`). The field is `blob_id`, not `blobId`, because every listing field is snake_case and the proto shares the schema's names (ruling 1).
+- `artifact.locations` (array, `minItems: 1`, `maxItems: 4`) for npm, pypi and oci artifacts: mirrors of the one package file (the npm tarball). An archive artifact has none at the top; each of its `files[]` may carry its own `locations`, mirrors of that platform's file.
+- `proto_and_schema_agree` covers both new fields, the new message and the new enum unchanged.
 
-Tests: `walrus_source_validates`, `walrus_install_verifies_sha256_then_sigstore`, `walrus_failure_falls_back_to_https`, `walrus_disabled_uses_https`.
+**Listing CLI** (`agents/loams-listing`):
+- `types.ts` gains `ArtifactLocation` and the two `locations` fields.
+- `lint` gains the rule **`walrus-sha256-matches`**: a walrus location on an archive file carries that file's own `sha256` (the same bytes; a different digest is a publishing mistake).
+- Fixtures: `valid/agent-mastra-acp.json` gains an `artifact.locations` walrus entry and `valid/harness-acp-binary.json` one on its first file. `invalid.json` gains `walrus-blob-id-not-base64url`, `walrus-blob-id-wrong-length`, `walrus-sha256-not-hex`, `walrus-unknown-kind`, `walrus-missing-sha256`, `walrus-locations-empty` and `walrus-locations-on-archive-artifact`. Both the Rust schema test and the vitest lint tests apply them.
+
+**Installer** (`crates/loams-agentd-marketplace`):
+- New `src/artifact.rs`:
+  - `ArtifactSources { walrus: Vec<WalrusLocation>, https: Option<String> }`, built by `ArtifactSources::package(listing, npm_registry)` (HTTPS: `<registry>/<name>/-/<unscoped name>-<version>.tgz`, the registry's tarball URL; `None` for a node that has no registry) and `ArtifactSources::archive_file(listing, platform)` (HTTPS: the file's `url`).
+  - `ArtifactFetch { walrus: &Walrus, https: &dyn Fetcher, npm_registry: Option<&str> }` and `fetch(&ArtifactSources) -> Result<(Vec<u8>, Origin), FetchError>`, where `Origin` is `Walrus { blob_id }` or `Https { url }`.
+  - Order: with Walrus enabled, each walrus location through `Walrus::read(blob_id, sha256)` (hedged, SHA-256-verified, cached by `loams-walrus`); on any Walrus failure, the HTTPS location. With Walrus disabled, the HTTPS location only, and no Walrus call.
+  - Typed `FetchError`: `NoLocation`; `WalrusDisabled { blob_id }` (only a walrus location, Walrus off); `WalrusIntegrity { blob_id, error }` (every aggregator sent bytes with the wrong SHA-256, no HTTPS fallback); `Walrus { blob_id, error }` (any other Walrus failure, no fallback); `Https { url, error, walrus }` (the HTTPS fetch failed, with the Walrus failure that led to it, if any).
+- `src/install.rs`: `install_node_fetched(layout, listing, &ArtifactFetch, provenance_bundles, verifier, npm, context) -> Result<(Installed, Origin), InstallError>` fetches, then calls `install_node` **unchanged**: npm integrity and Sigstore provenance (D1459) run on Walrus bytes exactly as on HTTPS bytes. `InstallError` gains `Fetch(FetchError)`.
+- `Cargo.toml`: `loams-walrus` (path); dev: `axum`, `url`, and tokio's `net` and `rt-multi-thread` for the mock aggregator. `BUCK` regenerated.
+
+Tests (`crates/loams-agentd-marketplace/tests/walrus.rs`, a mock aggregator on loopback in the pattern of `crates/loams-walrus/tests/support`, and the real `sigstore@3.1.0` tarball and bundle from `testdata/npm`):
+- `walrus_source_validates` (the schema accepts walrus locations and refuses each malformed one);
+- `walrus_install_verifies_sha256_then_sigstore` (bytes served by Walrus install, with no HTTPS request; a tarball whose Walrus SHA-256 matches but whose npm integrity does not is refused by the provenance step);
+- `walrus_digest_mismatch_refused` (an aggregator sends other bytes and there is no HTTPS location: `WalrusIntegrity`, nothing installed);
+- `walrus_failure_falls_back_to_https` (mismatch, 404 and 500 each fall back to the registry tarball, which installs);
+- `walrus_disabled_uses_https` (no aggregator request);
+- `walrus_disabled_without_https_refused` (`WalrusDisabled`);
+- `https_failure_reports_walrus_cause`;
+- `npm_tarball_url_handles_scopes`, `archive_file_sources_are_its_locations_then_its_url`;
+- `proto_and_schema_agree`, `listing_schema_accepts_fixtures`, `listing_schema_rejects_each_invalid_fixture` (existing, over the new fixtures);
+- vitest: `lint_reports_each_rule` with `walrus-sha256-matches`.
 
 Commit: `marketplace: walrus artifact locations (MS1 Task 5, D1812)`.
 
-### Task 6 — Bun engine for Mastra agents (task level)
+### Task 6 — Bun engine for Mastra agents
 
-- The `node` runtime accepts `runtime.engine: "node" | "bun"` (default `node`) in schema and proto.
-- agentd resolves the engine as it resolves Node (MK1 Task 0 ruling 9), at the Bun version D1791 pins, and launches `bun <entrypoint>`.
-- Installs stay script-free (`bun install --ignore-scripts --frozen-lockfile`, or the npm tarball path unchanged).
-- The Mastra profile (`@loams/agent-host`) runs on both engines. Its LAPC Core run is required on each engine a listing declares.
+Design: D1808 (§73 §3.2, §3.5, §18). The `node` runtime gains an **engine**: `node` (the default, as today) or `bun`, at the Bun version D1791 pins (Bun **1.4.4**, VV1's pin, measured in VV0 and the MS1 spike). Only the program that runs the entrypoint changes. The artifact, its provenance, the install path and the environment contract (D1453) are the same for both engines.
 
-Tests: `engine_defaults_to_node`, `bun_engine_launches_bun`, `bun_install_runs_no_scripts`, and LAPC Core on the Mastra starter under Bun.
+**Schema and proto** (`schemas/marketplace/listing.v1.json`, `proto/loams/marketplace/v1/listing.proto`):
+- `$defs/runtime` gains `engine` (`x-proto-enum: Engine`, `["node", "bun"]`). Absent means `node`, so every listing written before this task keeps its meaning. Proto: `Runtime.engine = 3` and `enum Engine { ENGINE_UNSPECIFIED, ENGINE_NODE, ENGINE_BUN }`.
+- A cross-field rule: `engine` is allowed only when `runtime.kind` is `node`.
+- `runtime.version` is a range of the declared engine: Node's (default `>=22.13`, MK1 Task 0 ruling 9) or Bun's (default `>=1.4.4`).
+- `proto_and_schema_agree` covers the new field and enum unchanged. `web/packages/proto/src/gen/loams/marketplace/v1/listing_pb.ts` is regenerated (`pnpm --filter @loams/proto generate`).
+- Fixtures: a new `valid/agent-mastra-bun.json` (the Mastra starter with `engine: "bun"`, `version: ">=1.4.4"`). `invalid.json` gains `engine-unknown` (`"deno"`), `engine-on-python` (`engine` on a `python` runtime) and `engine-not-string`.
+
+**Listing CLI** (`agents/loams-listing`):
+- `types.ts`: `runtime.engine?: 'node' | 'bun'`.
+- `lint` gains **`engine-version`**: a Bun listing's `runtime.version` admits Bun 1.4.4, the version agentd runs; a Node range on a Bun listing (`>=22.13`) is the mistake it catches. `semver.ts` gains `satisfies(range, version)` with Cargo's `VersionReq` semantics.
+- `from-package`: the `loams.agent` block may set **`engine`** (`"node"` or `"bun"`), the one runtime choice `package.json` cannot express; `runtime` itself stays derived. With `engine: "bun"`, `runtime.version` comes from `engines.bun` (default `>=1.4.4`); with `node`, from `engines.node` as before. `engines.bun` alone does not select Bun: many packages declare both engines (ruling 1). `toPackageJson` inverts it.
+
+**Engine resolution and launch** (`crates/loams-agentd-marketplace/src/engine.rs`, new):
+- `Engine { Node, Bun }`, `Engine::of(listing)` (absent → `Node`), `BUN_PINNED = "1.4.4"`, `NODE_MINIMUM = "22.13.0"`, and `required(listing) -> VersionReq` (the listing's range, else the engine's default).
+- `EngineProbe` (`find(program) -> Option<PathBuf>`, `version(path) -> Option<Version>`), with `PathProbe`, which searches a list of directories (agentd passes `PATH` and the node-version-manager directories it already scans for harness adapters) and parses `node --version` (`v24.21.0`) and `bun --version` (`1.4.4`).
+- `resolve(listing, &dyn EngineProbe) -> Result<ResolvedEngine { engine, program, version }, EngineError>`. `EngineError::NotInstalled { engine, required }` is the **"Bun not installed"** state ("this agent runs on Bun >=1.4.4, and Bun is not installed"); `EngineError::TooOld { engine, found, required }`. agentd resolves before install, so a Bun listing is refused with nothing written when Bun is missing; installing a pinned Bun archive into agentd's data directory follows Q1122's answer later, as it does for Node.
+- `launch(listing, &Installed, &ResolvedEngine) -> Launch { program, args }`: `node <entry>`, or `bun --no-install --no-env-file <entry>` (ruling 3). `ResolvedEngine::bin_dir()` is the contract's `runtime_bin`, the only `PATH` entry: the contract's variables do not change.
+- `harness_registration` takes the resolved engine's program for a `node` ACP harness, so an ACP harness may also declare `bun`.
+
+**Installer** (`src/install.rs`): unchanged path for both engines (ruling 2): npm with `--ignore-scripts` into the staging directory, the install-script, `binding.gyp`/`gypfile` and `hasInstallScript` refusals, and the `npm-shrinkwrap.json` rule. `install_node_with_engine(…, &dyn EngineProbe, …)` resolves the engine first and returns `InstallError::Engine(EngineError)` before any file is written; `Installed` records `engine` (absent in old records means `node`).
+
+**Install plan** (`src/plan.rs`): `InstallPlan.engine` (`"node"` or `"bun"`, only for the `node` runtime), shown on the consent screen and bound by the plan digest; a changed engine is reported by `widens` ("runs on bun instead of node"), so an update that switches engine asks again.
+
+Tests (`crates/loams-agentd-marketplace/tests/engine.rs` and the existing suites):
+- `engine_defaults_to_node` (no `engine`, and records without one);
+- `bun_engine_launches_bun` (program, `--no-install --no-env-file`, the entry; `node <entry>` for node; `bin_dir` is the contract's only PATH);
+- `bun_missing_is_refused` (`NotInstalled`, the message names Bun and the range, and an install writes nothing);
+- `bun_too_old_is_refused`, `node_range_applies_to_node_only`;
+- `bun_install_runs_no_scripts` (a Bun listing installs through the same scripts-off path: a dependency with `postinstall` is refused, and the npm command line carries `--ignore-scripts`);
+- `plan_shows_engine`, `engine_change_widens`;
+- `proto_and_schema_agree`, `listing_schema_accepts_fixtures`, `listing_schema_rejects_each_invalid_fixture` over the new fixtures;
+- vitest: `lint_reports_each_rule` with `engine-version`; `from-package` reads `engine` and `engines.bun`, and refuses an unknown engine.
+
+LAPC Core on the Mastra starter under Bun needs `@loams/agent-host` on npm and the conformance runner (MK0 Task 8); it runs in Task 10.
 
 Commit: `marketplace: the node runtime runs Mastra on node or bun (MS1 Task 6, D1808)`.
 
@@ -408,14 +463,40 @@ Tests: `untrusted_class_never_publishes`, `walrus_hit_needs_signed_manifest`, `p
 
 Commit: `buildcache: a read-through Walrus tier for public repositories (MS1 Task 8, D1814)`.
 
-### Task 9 — Publish tooling (task level)
+### Task 9 — Publish tooling
 
-- `loams-listing publish --walrus` stores a release artifact on Walrus (Testnet unless the configured publisher is a Mainnet one) and writes the `walrus` location into the listing.
-- `loams knowledge publish` is Task 7's command, made scriptable for CI.
-- `loams-listing verify` checks each `walrus` location (it reads the blob and compares the SHA-256). It **warns** when the blob's `endEpoch` is within 4 epochs of the current one, and fails when it has passed.
-- A GitHub Actions example renews epochs before expiry, once Q1332 is answered.
+Design: D1812 (artifact locations), D1813 (knowledge), Q1332 (epochs; default taken: warn 4 epochs ahead). Task 5's rulings 1 and 3 and Task 7's rulings 1, 4 and 6 apply. Two tools: `loams-listing publish --walrus` and `verify` for listing artifacts (TypeScript), and `loams knowledge publish` and `verify` for the knowledge cache (Rust, in the `loams` binary). Neither has a default publisher (Q1330); both refuse what Task 4 refuses (over 10 MiB, unverified read-back).
 
-Tests: `publish_walrus_writes_location`, `verify_warns_near_epoch_expiry`, `verify_fails_after_expiry`.
+**`loams-listing publish --walrus <listing.json>`** (`agents/loams-listing/src/publish.ts`, new):
+- Inputs: `--tarball <file>` (an npm, pypi or oci artifact: the one package file) or `--file <platform>=<file>` (repeatable; an archive artifact's files). `--publisher <url>` (or `LOAMS_WALRUS_PUBLISHER`) and `--aggregator <url>` (or `LOAMS_WALRUS_AGGREGATOR`) are required: there is **no default publisher**, Testnet's or any other, so a Mainnet listing is never written to Testnet by accident. `--publisher-token-file <file>` (or `LOAMS_WALRUS_PUBLISHER_TOKEN_FILE`) sends `Authorization: Bearer <token>` (as `loams-walrus`'s `publisher_auth`). `--network testnet|mainnet` is required (it sets the epoch length, below). `--epochs <n>` (1–53, default 5), `--permanent`, `--max-bytes <n>` (default 10 MiB, the public endpoints' limit), `--read-after-write-ms <n>` (default 180000, as `loams-walrus`). URLs must be `https://`, except loopback `http://` (the tests' fakes).
+- Before any request: each file's bytes must be the bytes the listing pins (npm `integrity` for `--tarball`; the file's `sha256` for `--file`), and at most `--max-bytes`. Either failure is refused with nothing sent (`PublishError`).
+- Store: `PUT <publisher>/v1/blobs?epochs=<n>[&permanent=true]`, body the bytes. The answer is `newlyCreated.blobObject { blobId, storage.endEpoch, registeredEpoch }` or `alreadyCertified { blobId, endEpoch }`; anything else (`markedInvalid`, `error`, non-2xx) is refused.
+- Read back: `GET <aggregator>/v1/blobs/<blob id>`; a `404` is retried with backoff (doubling from 500 ms, capped at 10 s) until `--read-after-write-ms` has passed. The SHA-256 of the bytes read must equal the file's: a mismatch is refused and the listing is not written.
+- Write: the location `{ "kind": "walrus", "blob_id", "sha256" }` (D1812, Task 5 ruling 1: exactly these three fields) is added to `artifact.locations` or the file's `locations`, replacing a walrus location with the same `sha256`; more than 4 is refused. The listing is linted and written back (`--out`, default in place). The epochs go to the **walrus record** beside it (ruling 2), `<listing>.walrus.json`:
+  ```json
+  { "schema": "loams.listing.walrus.v1", "network": "testnet",
+    "blobs": [{ "blob_id": "…", "sha256": "…", "end_epoch": 42, "stored_at": "<RFC 3339>", "epoch_at_store": 37 }] }
+  ```
+  `epoch_at_store` is `registeredEpoch` of a `newlyCreated` answer, else `end_epoch − epochs` of it, and absent for `alreadyCertified` (the publisher does not say the current epoch then).
+- Output: one line per stored file, `stored <platform|package> <blob id> end_epoch <n> (newly created|already certified)`.
+
+**`loams-listing verify`** gains the walrus checks (`src/verify.ts`):
+- `walrus_read`: with `--aggregator`, each walrus location is read and its SHA-256 compared; a mismatch or a failed read fails. Without `--aggregator`, a **warning** (`not read`).
+- `walrus_epoch` (Q1332): the location's `end_epoch` comes from the walrus record (no Walrus API reports it at read time, ruling 2). The current epoch is `--current-epoch <n>`, else estimated from the record's newest `epoch_at_store` and `stored_at` plus whole epochs since (1 day on Testnet, 14 days on Mainnet). The **support window** is `--support-epochs <n>` (default 4): `end_epoch` before `current + window` is a **warning**; `end_epoch <= current` (expired) **fails**; no record or no estimate is a warning.
+- A `Check` gains `warning?: true`; the CLI prints `WARNING` for it, and warnings do not change the exit code. `--walrus-record <file>` overrides the record's path.
+
+**`loams knowledge`** (`crates/loams-knowledge/src/cli.rs`, ruling 3): `KnowledgeArgs` (clap) and `run(&KnowledgeArgs) -> ExitCode`. The `loams` binary dispatches `Command::Knowledge` before it starts a runtime, as it does `loams upgrade` and `loams cloud`, behind its own `knowledge` feature (in the default set).
+- `loams knowledge publish --repo-path <dir> --repo <owner/name> [--commit <sha>] --visibility public|private|unknown --config <file.toml> [--bucket <url>] [--publisher <url>] [--epochs <n>] [--permanent] [--cosign <path>] [--output text|json]`: `--commit` defaults to the checkout's `HEAD`; `--visibility` (`public`, `private`, `internal`, `unknown`) has no default (CI passes what the forge says, e.g. `${{ github.event.repository.visibility }}`). The config file is the reader's (`[walrus]`, `[knowledge]`, Task 7), and `--bucket` overrides `knowledge.bucket`. The publisher is `--publisher` or `walrus.publisher`, never `loams-walrus`'s Testnet fallback (ruling 1). It runs `Publisher::publish` over a `GitCheckout` with `CosignSigner` and prints `quilt_id`, `manifest` (`<bucket>/<key>`), `bundle`, `entries` and `end_epoch` (or one JSON object).
+- `loams knowledge verify --repo <owner/name> [--commit <sha>] --config <file.toml> [--bucket <url>] [--output text|json]`: verifies the manifest against the config's pinned signer (Sigstore, offline root), then reads every entry through `KnowledgeReader::get`, which checks each patch's SHA-256. It reports every failing entry and exits 1 if any.
+- Exit codes: 0 ok, 1 refused or failed, 2 usage (clap).
+
+Files: `agents/loams-listing/src/{publish,walrus,cli,verify,index}.ts`, `agents/loams-listing/test/{publish.test,walrus-mock}.ts`; `crates/loams-knowledge/{Cargo.toml,BUCK,README.md,src/{lib,cli}.rs,tests/cli.rs}`; `crates/loams/{Cargo.toml,BUCK,src/main.rs}`; `.github/workflows/ci.yml` (the engine filter gains the three crates); `Cargo.lock`.
+
+Tests:
+- vitest, against a mock publisher and aggregator on loopback (`node:http`): `publish_walrus_writes_location` (npm tarball and an archive file; the location and the walrus record are written, the listing still lints), `publish_already_certified`, `publish_readback_mismatch_refused` (listing unchanged), `publish_readback_retries_404`, `publish_too_large_refused` and `publish_bytes_not_the_listings_refused` (no request reaches the publisher), `publish_needs_publisher` (no default), `publish_sends_bearer_token`, `verify_reads_walrus_and_checks_sha256`, `verify_warns_near_epoch_expiry`, `verify_fails_after_expiry`, `verify_estimates_current_epoch`, `verify_warns_without_record`; all through the CLI's `main`, so they cover its parsing and output.
+- Rust (`crates/loams-knowledge/tests/cli.rs`, the Task 7 mock Walrus, a `file://` bucket): `cli_parses_publish_and_verify`, `cli_visibility_is_required`, `cli_publish_prints_manifest_and_quilt`, `cli_publish_refuses_private`, `cli_publish_needs_a_publisher`, `cli_verify_ok`, `cli_verify_reports_bad_patch`, `cli_verify_refuses_tampered_manifest`, `cli_bucket_flag_overrides_config`; in `crates/loams`: `knowledge_subcommand_parses`.
+
+Not in this task: the GitHub Actions example that renews epochs. Q1332 is still open, and the publisher API exposes no "extend" call (the Sui `extend_blob` call is out of scope: no Sui dependency), so renewal is re-running `publish` before the warning window, which the record then shows. The example comes when Q1332 is answered.
 
 Commit: `marketplace: walrus publish tooling and epoch checks (MS1 Task 9)`.
 
@@ -445,6 +526,23 @@ Commit: `docs: MS1 exit report (MS1 Task 10)`.
 
 ## Rulings made during execution
 
+**Task 5.**
+1. The walrus location's field is `blob_id`, not D1812's `blobId`: every listing field is snake_case, and `proto_and_schema_agree` requires the proto to share the schema's names. The JSON shape is otherwise D1812's: `{ "kind": "walrus", "blob_id", "sha256" }`.
+2. The installer does not check the walrus SHA-256 against bytes fetched over HTTPS: the fallback's bytes are checked by the artifact's own integrity (npm `sha512`, an archive file's `sha256`) and its provenance, as before Task 5, so a stale or wrong mirror digest cannot block the HTTPS install.
+3. `loams-listing from-package` never writes a walrus location: the blob id exists only once the tarball is stored, which is Task 9's publish step. Its round-trip test drops the fixture's `locations`.
+4. The schema pins a blob id to 43 URL-safe base64 characters whose last one carries no bits past 32 bytes (`[AEIMQUYcgkosw048]`), the ids `loams-walrus`'s `BlobId::parse` accepts.
+5. `web/packages/proto/src/gen/loams/marketplace/v1/listing_pb.ts` is regenerated (`pnpm --filter @loams/proto generate`).
+
+**Task 6.**
+1. **The block's `engine`, not `engines.bun`, chooses Bun.** §3.6 has authors write in `loams.agent` only what npm metadata cannot say, and which program runs the package is such a choice: many packages declare `engines.node` and `engines.bun` together, so `engines.bun` alone cannot mean "run on Bun". `runtime` stays derived; the block may set only `engine`, and `engines.<engine>` gives the range (default `>=22.13` or `>=1.4.4`). `toPackageJson` writes it back, so the round trip holds.
+2. **One install path for both engines: npm with scripts off, not `bun install`.** Bun 1.4.4's `bun install --frozen-lockfile --ignore-scripts` exists (checked in Bun's install docs, 2026-10-26: `--ignore-scripts` "skip lifecycle scripts for all packages, including the project's package.json and trusted dependencies"), but Bun reads its own `bun.lock` or migrates a root `package-lock.json`. It does not honour a dependency's `npm-shrinkwrap.json`, which is the lockfile MK1's rule requires the package to ship, so a Bun install would not be the reproducible install the listing pins. The npm path keeps every check unchanged: integrity and Sigstore provenance before any file (D1459), `--ignore-scripts`, the `preinstall`/`install`/`postinstall`, `binding.gyp`/`gypfile` and `hasInstallScript` refusals, and the shrinkwrap rule. The cost: installing a Bun listing needs npm on the machine (at install, not at run). This is revisited when Q1122's pinned runtime archives land.
+3. **Bun runs with `--no-install --no-env-file`.** Bun loads `.env`, `.env.<NODE_ENV>` and `.env.local` from the working directory by default, which would add variables the contract (D1453) does not list; `--no-env-file` turns that off. `--no-install` turns off Bun's run-time package auto-install, so the code that runs is exactly what was installed and verified. Both were checked on Bun 1.4.4 (`@oven/bun-linux-x64@1.4.4`): a `.env` beside the script leaked `SECRET` into `process.env` without the flag and not with it, and a missing import failed instead of installing. Bun also reads `$cwd/bunfig.toml`, so Task 4b must start agents in their data directory, never in the package directory, and no shipped `bunfig.toml` is then read.
+4. **The Bun version.** D1791 pins Bun 1.4.4 (VV1), the version VV0 and the MS1 spike measured; `BUN_PINNED = "1.4.4"`. A Bun listing's `runtime.version` is a Bun range, default `>=1.4.4`, and the lint rule `engine-version` refuses a range that does not admit 1.4.4 (most often a Node range such as `>=22.13` copied onto a Bun listing). `loams-listing` gained `satisfies` with Cargo's `VersionReq` semantics for it.
+5. **One engine per listing version.** `engine` is a single value, so "LAPC Core on each engine a listing declares" is one run per version. A publisher who supports both publishes the default (`node`) listing; a second engine is a later schema change if anyone asks.
+6. **Where resolution lives.** `engine::resolve` is in `loams-agentd-marketplace` behind `EngineProbe`, so the crate stays free of agentd's harness crate. Task 4b's daemon wiring passes a probe over `PATH` and the node-version-manager directories `adapter_install.rs` already scans (MK1 Task 0 ruling 9). `install_node_with_engine` resolves first and refuses with `InstallError::Engine(EngineError::NotInstalled)` before any file is written or npm runs. Task 5's `install_node_fetched` keeps its signature; agentd resolves before calling it.
+7. **The engine is part of consent.** `InstallPlan.engine` (and `loams.agentd.v1.InstallPlan.engine = 16`) shows it on the consent screen, the plan digest covers it, and `widens` reports a changed engine, so an update that moves an agent to another engine asks again. `installed.json` records `engine`; old records without it mean `node`.
+8. **LAPC Core under Bun is deferred to Task 10.** It needs `@loams/agent-host` on npm and MK0 Task 8's conformance runner, neither of which exists yet. This task's tests cover the schema, lint, resolution, launch line, environment and install path.
+
 ### Task 7 (2026-10-26)
 
 1. **Signing reuses the marketplace's Sigstore path, not a new key scheme.** D1813 says Sigstore-signed. The repository already signs with `cosign sign-blob --bundle` (keyless, cosign v3.0.6) and verifies with `sigstore-verify` `=0.14.0` behind `loams-agentd-marketplace`'s `SignatureVerifier` (MK1 Task 0 rulings 3–4). `loams-knowledge` depends on that crate for verification and shells out to `cosign` to sign. No ed25519 keys are added.
@@ -453,3 +551,11 @@ Commit: `docs: MS1 exit report (MS1 Task 10)`.
 4. **"Public" needs two signals:** the caller's `Visibility::Public` (what the forge reports) and `public = true` in `.loams/knowledge.toml` at the published commit. Either missing is `KnowledgeError::NotPublic`, raised before any request. Walrus blobs cannot be made private later, so publishing needs the explicit marker in the repository as well as the forge's word.
 5. **The shim reads the bucket and Walrus itself**, in its own process, through `KnowledgeReader`, instead of through a new daemon RPC. This keeps the change out of `loams-agentd` and `loams-agentd-sessions` while MK0 Task 4b changes them. The daemon will pass `LOAMS_AGENTD_KNOWLEDGE_CONFIG` to harness runs in Task 10.
 6. **Buck files were generated without reindeer.** The pinned reindeer would not build locally (no OpenSSL development headers), so only the member `BUCK` files were regenerated: `gen.py` ran with its third-party step skipped. No new crates.io package is a direct dependency, so `third-party/rust` should not change. CI's `gen.py --check` confirms this.
+
+### Task 9 (2026-10-26)
+
+1. **No default publisher, in either tool.** `loams-listing publish --walrus` needs `--publisher` (or `LOAMS_WALRUS_PUBLISHER`), and `loams knowledge publish` uses the config file's `[walrus]` (where `loams-walrus` has no Mainnet publisher). A Testnet default would let a Mainnet listing name a Testnet blob.
+2. **End epochs live in a walrus record beside the listing, not in it.** The aggregator's and publisher's OpenAPI (`crates/walrus-service/{aggregator,publisher}_openapi.yaml`, read 2026-10-26) have no route that reports a blob's end epoch or the current epoch: only the publisher's store answer carries `endEpoch` (and `registeredEpoch` for a new blob). So publish records them in `<listing>.walrus.json`, and `verify` estimates the current epoch from the record's newest store (or takes `--current-epoch`). The listing keeps D1812's three fields: a listing version is immutable once indexed, while a blob's end epoch moves when it is stored again.
+3. **`loams knowledge` is a client in `loams-knowledge`, dispatched by the `loams` binary**, as `loams upgrade` (`loams-upgrade`) and `loams cloud` (`loams-cloud-admin`) are. Its tests build `loams-knowledge` only. The `loams` crate's `knowledge` feature (default on) adds `loams-knowledge` and through it `loams-agentd-marketplace`'s Sigstore verifier; every crate it adds is already in `Cargo.lock` and `third-party/rust` (agentd links them).
+4. **The support window is in epochs.** The listing has no support-window field (`support` is a URL), so the window is `--support-epochs`, default 4 (Q1332's default). An expired blob fails `verify` (the plan's stub); the HTTPS fallback (Task 5) still installs it.
+

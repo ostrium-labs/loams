@@ -179,6 +179,7 @@ impl GroupRecord {
     /// worktree, with its variant's harness and model.
     fn run_request(&self, member: &MemberRecord) -> RunRequest {
         RunRequest {
+            mcp_servers: Vec::new(),
             mcp: None,
             prompt: self.prompt.clone(),
             harness: Some(member.variant.harness),

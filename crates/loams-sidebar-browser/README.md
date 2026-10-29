@@ -106,6 +106,19 @@ this set. If Loams later embeds something like that, the honest fallback is
 `AppOpener` into the system browser, which is what D627 leaves in place — the
 engine path is additive, and nothing removes the system-browser route.
 
+## Stopping the engine without losing the session
+
+Obscura 0.2.3 has two persistence behaviours that decide how the panel stops:
+
+- **Default-context cookies are merged into `--storage-dir/cookies.json` only when their CDP connection closes.** SIGTERM saves only what was already merged, so a connection that is still open at shutdown loses its session.
+  - Stop with `ObscuraEngine::stop_after(client)`. It closes the connection first, then sends SIGTERM, and kills the process only after `STOP_GRACE`.
+  - `ObscuraEngine::stop` alone sends SIGTERM before any kill, but it cannot save a connection that is still open.
+- **A context made with `Target.createBrowserContext` is never persisted.** The panel therefore uses the default context, which is the only one that survives a restart. The Loams cookie ledger re-injects the session on the next launch either way.
+
+The agents' provider (`loams-web-bridge`) makes the opposite choice on purpose. It uses a throwaway context per page and persists nothing, and `ObscuraProvider::shutdown` closes every page's connection before it stops a local engine.
+
+Obscura 0.2.3 also cannot download. `Browser.setDownloadBehavior` is acknowledged and does nothing, so the agents' provider denies downloads on every connection and reports `Capabilities::downloads = false`.
+
 ## Recording a product demo
 
 `record::VideoRecorder` turns the frames the panel already receives into one

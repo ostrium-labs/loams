@@ -121,13 +121,13 @@ Listings show the level, the `framework` and the `language` as badges and filter
 
 | Runtime | Install | Start | Phase |
 |---|---|---|---|
-| `node` | npm package by integrity hash, lockfile included, install scripts off, into `<agentd data>/agents/<id>/<version>` | `node <entrypoint>` (ACP on stdio, or A2A on a loopback port agentd assigns) | MK0 |
+| `node` | npm package by integrity hash, lockfile included, install scripts off, into `<agentd data>/agents/<id>/<version>`; the same for both engines | `node <entrypoint>` (ACP on stdio, or A2A on a loopback port agentd assigns); with `engine: bun` (D1808), `bun --no-install --no-env-file <entrypoint>` | MK0; `bun` MS1 |
 | `python` | Wheels only (no sdist builds, so no build-time code) with hashes, locked, into a per-agent virtual environment created by a pinned `uv` | `python -m <module>` or a console script | MK1 |
 | `oci` | Image by digest, signature verified | Through the sandbox's container path or the host's runtime | MK2 |
 | `binary` | Archive by SHA-256, per OS and architecture | The binary | MK1 (harnesses such as fx) |
 | `wasm` | — | — | Deferred: no agent framework ships WASM agents yet; fx's WASM SDK is for embedding (Q1144 notes it) |
 
-Runtime versions (`node >= 22.13`, `python >= 3.11`) are declared; agentd supplies them (Q1122).
+Runtime versions (`node >= 22.13`, `python >= 3.11`, `bun >= 1.4.4`) are declared; agentd supplies them (Q1122). A `node` listing's `engine` is `node` (the default) or `bun`, at the Bun version D1791 pins; agentd refuses to install a Bun listing while Bun is not installed (plan MS1 Task 6).
 
 ### 3.3 The agent environment contract (D1453)
 
@@ -164,7 +164,7 @@ Authors write it where their ecosystem keeps metadata (Q1125): a `loams.agent` b
 | Identity | `id` (`<namespace>/<name>`), `kind` (`agent`, `harness`, `mcp-server`), `version`, `title`, `summary`, `description`, `icon`, `licence` (SPDX), `source` (repository and commit), `publisher`, `support`, `security_contact` |
 | Framework | `framework { name, version }` (`mastra`, `pydantic-ai`, `langgraph`, `crewai`, `openai-agents`, `google-adk`, `microsoft-agent-framework`, `eve`, `other`), `language` |
 | Artifact | `artifact { type: npm \| pypi \| oci \| archive, name, version, integrity }`; `provenance { type, ref }` (§6) |
-| Runtime | `runtime { kind: node \| python \| oci \| binary, version }`, `entrypoint` (a module, command or image entrypoint), `targets` (`agentd`, `byoc-server`, `app-byoc`) |
+| Runtime | `runtime { kind: node \| python \| oci \| binary, engine: node \| bun (node only, D1808), version }`, `entrypoint` (a module, command or image entrypoint), `targets` (`agentd`, `byoc-server`, `app-byoc`) |
 | Surfaces | `surfaces` (`acp`; `a2a` with the Agent Card embedded; `mcp`; `responses`); at least one of `acp` and `a2a` |
 | Capabilities | `loams { postgres, collections, qdrant, elasticsearch, streams, live, durable, memory, house }` used; `connectors` (registry ids); `mcp_servers` (listing ids with version ranges) |
 | Tools | Each tool: `name`, `description`, `risk` (`read`, `write`, `egress`, `destructive`), and the MCP server it comes from if any. **Undeclared tools are refused at run time** (§7.4) |
@@ -452,4 +452,4 @@ The owner set the direction for the marketplace's first part, the **seed**, on 2
 
 Open questions: **Q1330** (Mainnet writes: an own publisher or the Upload Relay), **Q1331** (the knowledge cache's content set), **Q1332** (who pays for and renews storage epochs). The full rows are in the [decision log](13-decision-log.md).
 
-What this does not do: no Walrus `Store` backend, no private data on Walrus, no Sui wallets or payments, no embedded `goose-sdk`, no goose recipes as listings. §3.2's runtime table gains `quickjs` (self-hosted default, MS1) and `node`'s `engine` choice when MS1 Tasks 2 and 6 merge.
+What this does not do: no Walrus `Store` backend, no private data on Walrus, no Sui wallets or payments, no embedded `goose-sdk`, no goose recipes as listings. §3.2's runtime table gains `quickjs` (self-hosted default, MS1) when MS1 Task 2 merges; `node`'s `engine` choice is in it (MS1 Task 6).

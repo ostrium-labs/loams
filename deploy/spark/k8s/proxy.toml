@@ -1,0 +1,19 @@
+# The proxy in Kubernetes: keys from the mounted Secret, OpenFGA for access,
+# hostnames <instance>.<ns>.<region>.spark.<base-domain>. Replace the routes
+# table with the facade's InstanceRouter when the engines facade hosts the
+# proxy; this file form routes to fixed instances.
+listen = "0.0.0.0:15002"
+host_suffix = "spark.loams.dev"
+keys_file = "/etc/loams-spark-proxy/keys/keys.json"
+
+[authz]
+kind = "openfga"
+endpoint = "http://openfga.loams-system.svc:8081"
+store_id = "REPLACE_STORE_ID"
+model_id = "REPLACE_MODEL_ID"
+preshared_key_env = "OPENFGA_PRESHARED_KEY"
+
+[[routes]]
+namespace = "REPLACE_NAMESPACE"
+instance = "etl"
+uri = "http://eng-replace.loams-replace.svc:50051"

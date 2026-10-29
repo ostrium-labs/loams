@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 # Generate the history corpus (DX0 Task 4) against a running Temporal server
-# on the stack's network, into histories/{go,ts}/, and rebuild manifest.json.
+# on the stack's network, into histories/<lang>/, and rebuild manifest.json.
 #
-#   generate.sh [--out DIR]   # default: this directory's histories/ (the committed corpus)
+#   generate.sh [--out DIR] [--langs go,ts,python,java]
+#     --out    default: this directory's histories/ (the committed corpus)
+#     --langs  default: $CORPUS_LANGS, else go,ts. Go always runs first: it
+#              registers the namespace and the search attribute, and its
+#              exporter writes every language's files. Only the languages
+#              named are regenerated; the others' files are kept.
 #
 # Environment: TEMPORAL_ADDRESS (temporal-frontend:7233), CORPUS_SERVER
 # (compat-mode: the stock server on Loams Postgres, the default; start-dev:
@@ -15,12 +20,23 @@ here=$(cd "$(dirname "$0")" && pwd)
 . "$here/../../lib.sh"
 
 out=$here/histories
-[ "${1:-}" = --out ] && out=${2:?--out DIR}
+langs=${CORPUS_LANGS:-go,ts}
+while [ $# -gt 0 ]; do
+  case $1 in
+    --out) out=${2:?--out DIR}; shift 2 ;;
+    --langs) langs=${2:?--langs a,b}; shift 2 ;;
+    *) echo "usage: generate.sh [--out DIR] [--langs go,ts,python,java]" >&2; exit 2 ;;
+  esac
+done
+want() { [[ ",go,$langs," == *",$1,"* ]]; }
 : "${TEMPORAL_ADDRESS:=temporal-frontend:7233}" "${CORPUS_SERVER:=compat-mode}" "${COMPUTE_PG_MAJOR:=16}"
 rt=$(oc_container_cmd)
 ns=corpus-$(date +%s)
-mkdir -p "$out/go" "$out/ts"
-rm -f "$out"/go/*.json "$out"/go/*.binpb "$out"/ts/*.json "$out"/ts/*.binpb
+for l in go ts python java; do
+  want "$l" || continue
+  mkdir -p "$out/$l"
+  rm -f "$out/$l"/*.json "$out/$l"/*.binpb
+done
 "$rt" volume create dx0-gocache >/dev/null 2>&1 || true
 "$rt" volume create dx0-npmcache >/dev/null 2>&1 || true
 
@@ -33,11 +49,31 @@ go_run() {
 # Go: generate and export.
 go_run generate -address "$TEMPORAL_ADDRESS" -namespace "$ns" -out /out/go
 # TypeScript: run its worker and drivers, then export with the Go exporter.
+if want ts; then
 "$rt" run --rm --network "$OC_NETWORK" -v "$here:/c" -v "$out:/out" -v dx0-npmcache:/root/.npm \
   -w /c/workers/ts "$NODE_IMAGE" \
   sh -ec "npm ci --no-audit --no-fund >/dev/null && npx tsc -p . && node dist/generate.js $TEMPORAL_ADDRESS $ns /out/generate-ts.json"
 list=$(python3 -c "import json,sys; print(','.join(s['scenario'] for s in json.load(open(sys.argv[1]))['scenarios']))" "$out/generate-ts.json")
 go_run export -address "$TEMPORAL_ADDRESS" -namespace "$ns" -prefix corpus-ts- -scenarios "$list" -out /out/ts
+fi
+# Python (lane TSDK-python, D2137): its worker and starters under uv, then
+# the Go exporter, as for TypeScript.
+if want python; then
+"$rt" volume create dx0-uvcache >/dev/null 2>&1 || true
+"$rt" run --rm --network "$OC_NETWORK" -v "$here:/c:ro" -v "$out:/out" -v dx0-uvcache:/root/.cache \
+  -e UV_PYTHON_DOWNLOADS=never -e UV_LINK_MODE=copy -e PYTHONUNBUFFERED=1 "$PYTHON_IMAGE" \
+  sh -ec "pip install --quiet --disable-pip-version-check --root-user-action=ignore uv==$UV_VERSION && cp -r /c /tmp/c && cd /tmp/c/workers/python && uv sync --frozen --quiet && uv run --frozen python -m corpus_py generate $TEMPORAL_ADDRESS $ns /out/generate-python.json"
+list=$(python3 -c "import json,sys; print(','.join(s['scenario'] for s in json.load(open(sys.argv[1]))['scenarios']))" "$out/generate-python.json")
+go_run export -address "$TEMPORAL_ADDRESS" -namespace "$ns" -prefix corpus-python- -scenarios "$list" -out /out/python
+fi
+# Java (lane TSDK-java, D2131): its worker and drivers with Maven, and its
+# own exporter (Java has every scenario; schedule_triggered's ID is the
+# driver's). generate-java.sh runs this alone, without restamping the others.
+if want java; then
+"$rt" volume create dx1-m2cache >/dev/null 2>&1 || true
+"$rt" run --rm --network "$OC_NETWORK" -v "$here:/c:ro" -v "$out:/out" -v dx1-m2cache:/root/.m2 "$MAVEN_IMAGE" \
+  sh -ec "cp -r /c /tmp/c && cd /tmp/c/workers/java && mvn -B -q -DskipTests package dependency:build-classpath -Dmdep.outputFile=target/cp.txt && java -cp target/classes:\$(cat target/cp.txt) dev.loams.conformance.temporal.corpus.Generate generate --address $TEMPORAL_ADDRESS --namespace $ns --out /out/java"
+fi
 
 if [ "$out" = "$here/histories" ]; then
   case $CORPUS_SERVER in
@@ -48,4 +84,6 @@ if [ "$out" = "$here/histories" ]; then
   esac
   python3 "$here/manifest.py" build --server-version "$version" --server-image "$image" --pg-major "$pg"
 fi
-echo "generate.sh: namespace $ns, $(find "$out/go" -name "*.json" | wc -l) Go and $(find "$out/ts" -name "*.json" | wc -l) TypeScript histories in $out"
+for l in go ts python java; do
+  want "$l" && echo "generate.sh: namespace $ns, $(find "$out/$l" -name "*.json" | wc -l) $l histories in $out/$l"
+done

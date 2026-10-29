@@ -68,9 +68,14 @@ Nx discovers the JS, mobile and native projects, including existing package scri
 - Signing, installation, services, generation/drift, releases, and most native tasks are noncacheable.
 - `nx.json` names the Nx Cloud workspace (`nxCloudId`) for the remote cache; CI connects only where [the Nx Cloud guide](guides/nx-cloud.md) says, and never for a release. Set `NX_NO_CLOUD=true` locally to run without it.
 
-Vite+ 1.0.0/Vitest 5.0.1 stay scoped to plugins, while the console retains ordinary Vite 8.3.1/Vitest 5.0.3. pnpm reports Vite peer-version warnings because the plugins' compatibility fork identifies as version 1.0.0; actual builds and tests pass. MSW's nonessential postinstall is explicitly disabled. Do not apply a global Vite override.
+**Vite+ is the JavaScript toolchain** (design 79 D1772, plan VV1, owner direction 2026-10-23 D1770). Nx stays the orchestrator; inside each target, `vp` does the work:
+- One exact `vite-plus` pin lives in the root `pnpm-workspace.yaml` catalog, with `vite` aliased to the matching `@voidzero-dev/vite-plus-core` and `vitest` at the version `vite-plus` depends on. Packages name all three as `"catalog:"`; never pin them per package.
+- `peerDependencyRules.allowedVersions.vite` names the same version as the pin, because `vite-plus-core` identifies as its own version and Vite plugins' `vite: ^8` peer ranges would otherwise fail. A bump changes both lines in one PR, and only to a release at least 14 days old.
+- Test files import from `vite-plus/test`, and configs (`vite.config.ts`) from `vite-plus`. Scripts call `vp dev`, `vp build`, `vp preview` and `vp test run`: with `vite` aliased there is no `vite` binary.
+- Lint and format are `vp check` (Oxlint and Oxfmt; design 79 D1773), configured in the `lint` and `fmt` sections of `web/vite.config.ts` and `agents/factory/vite.config.ts`. The rules are VV0 Task 1's Biome parity table ([vv0-report.md](plans/vv0-report.md)); suppressions are `// oxlint-disable-next-line <rule> -- <reason>`. `pnpm format` (`vp fmt`) rewrites. Formatting-only commits go in `.git-blame-ignore-revs`. Biome and ESLint are gone.
+- A global `vite` override (and `vitest`) in `pnpm-workspace.yaml` points every other `vite` in the tree, peers included, at the same `vite-plus-core`. The desktop builds on it through electron-vite 6.0.0 (VV0 Task 6: electron-vite 5 on Vite 8 inlined Electron's launcher, #811, #935).
 
-> **Direction (owner, 2026-10-23, D1770):** Vite+ becomes the JavaScript toolchain workspace-wide. [Design 79](design/79-void-and-vite-plus.md) sets the mapping, approved by the owner on 2026-10-23 (D1772: one `vite-plus` catalog pin with `vite` aliased to `vite-plus-core`, `vp` in each package's targets, Nx kept as the orchestrator). Until VV1 lands, the rule above stands.
+MSW's nonessential postinstall is explicitly disabled.
 
 ## Desktop fork cleanup and policy
 

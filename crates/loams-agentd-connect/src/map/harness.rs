@@ -19,6 +19,7 @@ wire_struct!(rs::HarnessDescriptor => pb::HarnessDescriptor {
     installed => installed,
     can_install => can_install,
     enabled => enabled,
+    marketplace_listing => marketplace_listing,
 });
 
 wire_struct!(rs::Model => pb::Model {

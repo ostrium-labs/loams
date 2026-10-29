@@ -29,6 +29,8 @@ import { InstanceService } from '@loams/proto/instance';
 import type { GetInstanceRequestSchema, GetInstanceResponse, WhoAmIRequestSchema, WhoAmIResponse } from '@loams/proto/instance';
 import { LiveAdminService, LiveService } from '@loams/live/live';
 import type { ActivateDeploymentRequestSchema, ActivateDeploymentResponse, AuthenticateRequestSchema, AuthenticateResponse, CreateAppRequestSchema, CreateAppResponse, DeleteAppRequestSchema, DeleteAppResponse, DeployRequestSchema, DeployResponse, GetAppRequestSchema, GetAppResponse, GetDeploymentRequestSchema, GetDeploymentResponse, GetIndexStatusRequestSchema, GetIndexStatusResponse, ListAppsRequestSchema, ListAppsResponse, ListDeploymentsRequestSchema, ListDeploymentsResponse, ModifyQuerySetRequestSchema, ModifyQuerySetResponse, MutateRequestSchema, MutateResponse, QueryRequestSchema, QueryResponse, TailLogsRequestSchema, TailLogsResponse, Transition, UpdateAppRequestSchema, UpdateAppResponse, WatchRequestSchema } from '@loams/live/live';
+import { CustomerService, EntitlementService, MeterService, NotificationService, PlanService } from '@loams/proto/meter';
+import type { ApplyPlanRequestSchema, ApplyPlanResponse, AssignPlanRequestSchema, AssignPlanResponse, CheckAccessRequestSchema, CheckAccessResponse, CreateCustomerRequestSchema, CreateCustomerResponse, CreateEntitlementRequestSchema, CreateEntitlementResponse, CreateGrantRequestSchema, CreateGrantResponse, CreateRuleRequestSchema, CreateRuleResponse, CreateWebhookRequestSchema, CreateWebhookResponse, GetBalanceHistoryRequestSchema, GetBalanceHistoryResponse, GetCustomerRequestSchema, GetCustomerResponse, GetEntitlementValueRequestSchema, GetEntitlementValueResponse, ListCustomersRequestSchema, ListCustomersResponse, ListDeliveriesRequestSchema, ListDeliveriesResponse, ListEntitlementsRequestSchema, ListEntitlementsResponse, ListGrantsRequestSchema, ListGrantsResponse, ListPlansRequestSchema, ListPlansResponse, ListRulesRequestSchema, ListRulesResponse, QueryMeterRequestSchema, QueryMeterResponse, ResetEntitlementRequestSchema, ResetEntitlementResponse, RotateWebhookSecretRequestSchema, RotateWebhookSecretResponse, SetPaymentStateRequestSchema, SetPaymentStateResponse, SetSpendControlsRequestSchema, SetSpendControlsResponse, UnassignPlanRequestSchema, UnassignPlanResponse, UpdateCustomerRequestSchema, UpdateCustomerResponse, VoidGrantRequestSchema, VoidGrantResponse } from '@loams/proto/meter';
 import { SqlService } from '@loams/proto/sql';
 import type { QueryArrowRequestSchema, QueryArrowResponse, QueryRequestSchema as SqlV1QueryRequestSchema, QueryResponse as SqlV1QueryResponse } from '@loams/proto/sql';
 import { StreamService } from '@loams/proto/stream';
@@ -791,6 +793,251 @@ export interface LiveAdminModule {
 }
 
 /**
+ *  `loams.meter.customers` — Meter customers: subjects, payment state and spend controls.
+ *
+ *  Wraps `loams.meter.v1.CustomerService`.
+ */
+export interface MeterCustomersModule {
+  /** The SDK module, as it appears on `loams.meter.customers`. */
+  readonly module: 'meter.customers';
+  /** The service behind the module. */
+  readonly service: 'loams.meter.v1.CustomerService';
+  /** Whether the package's wire contract may still change. */
+  readonly unstable: false;
+  /**
+   *  `loams.meter.v1.CustomerService/CreateCustomer`, retried: manual.
+   */
+  create(
+    request: MessageInitShape<typeof CreateCustomerRequestSchema>,
+    options?: CallOptions,
+  ): Promise<CreateCustomerResponse>;
+  /**
+   *  `loams.meter.v1.CustomerService/GetCustomer`, retried: safe.
+   */
+  get(
+    request: MessageInitShape<typeof GetCustomerRequestSchema>,
+    options?: CallOptions,
+  ): Promise<GetCustomerResponse>;
+  /**
+   *  `loams.meter.v1.CustomerService/ListCustomers`, retried: safe. AIP-158: page with `customers` and follow `next_page_token` through `loams.paginate`.
+   */
+  list(
+    request: MessageInitShape<typeof ListCustomersRequestSchema>,
+    options?: CallOptions,
+  ): Promise<ListCustomersResponse>;
+  /**
+   *  `loams.meter.v1.CustomerService/SetPaymentState`, retried: safe.
+   */
+  setPaymentState(
+    request: MessageInitShape<typeof SetPaymentStateRequestSchema>,
+    options?: CallOptions,
+  ): Promise<SetPaymentStateResponse>;
+  /**
+   *  `loams.meter.v1.CustomerService/SetSpendControls`, retried: safe.
+   */
+  setSpendControls(
+    request: MessageInitShape<typeof SetSpendControlsRequestSchema>,
+    options?: CallOptions,
+  ): Promise<SetSpendControlsResponse>;
+  /**
+   *  `loams.meter.v1.CustomerService/UpdateCustomer`, retried: safe.
+   */
+  update(
+    request: MessageInitShape<typeof UpdateCustomerRequestSchema>,
+    options?: CallOptions,
+  ): Promise<UpdateCustomerResponse>;
+}
+
+/**
+ *  `loams.meter.entitlements` — Meter entitlements: what a subject may use, grants and balances.
+ *
+ *  Wraps `loams.meter.v1.EntitlementService`.
+ */
+export interface MeterEntitlementsModule {
+  /** The SDK module, as it appears on `loams.meter.entitlements`. */
+  readonly module: 'meter.entitlements';
+  /** The service behind the module. */
+  readonly service: 'loams.meter.v1.EntitlementService';
+  /** Whether the package's wire contract may still change. */
+  readonly unstable: false;
+  /**
+   *  `loams.meter.v1.EntitlementService/GetBalanceHistory`, retried: safe.
+   */
+  balanceHistory(
+    request: MessageInitShape<typeof GetBalanceHistoryRequestSchema>,
+    options?: CallOptions,
+  ): Promise<GetBalanceHistoryResponse>;
+  /**
+   *  `loams.meter.v1.EntitlementService/CheckAccess`, retried: safe.
+   */
+  checkAccess(
+    request: MessageInitShape<typeof CheckAccessRequestSchema>,
+    options?: CallOptions,
+  ): Promise<CheckAccessResponse>;
+  /**
+   *  `loams.meter.v1.EntitlementService/CreateEntitlement`, retried: manual.
+   */
+  create(
+    request: MessageInitShape<typeof CreateEntitlementRequestSchema>,
+    options?: CallOptions,
+  ): Promise<CreateEntitlementResponse>;
+  /**
+   *  `loams.meter.v1.EntitlementService/CreateGrant`, retried: manual.
+   */
+  createGrant(
+    request: MessageInitShape<typeof CreateGrantRequestSchema>,
+    options?: CallOptions,
+  ): Promise<CreateGrantResponse>;
+  /**
+   *  `loams.meter.v1.EntitlementService/ListEntitlements`, retried: safe. AIP-158: page with `entitlements` and follow `next_page_token` through `loams.paginate`.
+   */
+  list(
+    request: MessageInitShape<typeof ListEntitlementsRequestSchema>,
+    options?: CallOptions,
+  ): Promise<ListEntitlementsResponse>;
+  /**
+   *  `loams.meter.v1.EntitlementService/ListGrants`, retried: safe. AIP-158: page with `grants` and follow `next_page_token` through `loams.paginate`.
+   */
+  listGrants(
+    request: MessageInitShape<typeof ListGrantsRequestSchema>,
+    options?: CallOptions,
+  ): Promise<ListGrantsResponse>;
+  /**
+   *  `loams.meter.v1.EntitlementService/ResetEntitlement`, retried: safe.
+   */
+  reset(
+    request: MessageInitShape<typeof ResetEntitlementRequestSchema>,
+    options?: CallOptions,
+  ): Promise<ResetEntitlementResponse>;
+  /**
+   *  `loams.meter.v1.EntitlementService/GetEntitlementValue`, retried: safe.
+   */
+  value(
+    request: MessageInitShape<typeof GetEntitlementValueRequestSchema>,
+    options?: CallOptions,
+  ): Promise<GetEntitlementValueResponse>;
+  /**
+   *  `loams.meter.v1.EntitlementService/VoidGrant`, retried: safe.
+   */
+  voidGrant(
+    request: MessageInitShape<typeof VoidGrantRequestSchema>,
+    options?: CallOptions,
+  ): Promise<VoidGrantResponse>;
+}
+
+/**
+ *  `loams.meter.meters` — Meter usage queries over the House windows.
+ *
+ *  Wraps `loams.meter.v1.MeterService`.
+ */
+export interface MeterMetersModule {
+  /** The SDK module, as it appears on `loams.meter.meters`. */
+  readonly module: 'meter.meters';
+  /** The service behind the module. */
+  readonly service: 'loams.meter.v1.MeterService';
+  /** Whether the package's wire contract may still change. */
+  readonly unstable: false;
+  /**
+   *  `loams.meter.v1.MeterService/QueryMeter`, retried: safe.
+   */
+  query(
+    request: MessageInitShape<typeof QueryMeterRequestSchema>,
+    options?: CallOptions,
+  ): Promise<QueryMeterResponse>;
+}
+
+/**
+ *  `loams.meter.notifications` — Meter notifications: threshold rules, signed webhooks and their deliveries.
+ *
+ *  Wraps `loams.meter.v1.NotificationService`.
+ */
+export interface MeterNotificationsModule {
+  /** The SDK module, as it appears on `loams.meter.notifications`. */
+  readonly module: 'meter.notifications';
+  /** The service behind the module. */
+  readonly service: 'loams.meter.v1.NotificationService';
+  /** Whether the package's wire contract may still change. */
+  readonly unstable: false;
+  /**
+   *  `loams.meter.v1.NotificationService/CreateRule`, retried: manual.
+   */
+  createRule(
+    request: MessageInitShape<typeof CreateRuleRequestSchema>,
+    options?: CallOptions,
+  ): Promise<CreateRuleResponse>;
+  /**
+   *  `loams.meter.v1.NotificationService/CreateWebhook`, retried: manual.
+   */
+  createWebhook(
+    request: MessageInitShape<typeof CreateWebhookRequestSchema>,
+    options?: CallOptions,
+  ): Promise<CreateWebhookResponse>;
+  /**
+   *  `loams.meter.v1.NotificationService/ListDeliveries`, retried: safe.
+   */
+  listDeliveries(
+    request: MessageInitShape<typeof ListDeliveriesRequestSchema>,
+    options?: CallOptions,
+  ): Promise<ListDeliveriesResponse>;
+  /**
+   *  `loams.meter.v1.NotificationService/ListRules`, retried: safe.
+   */
+  listRules(
+    request: MessageInitShape<typeof ListRulesRequestSchema>,
+    options?: CallOptions,
+  ): Promise<ListRulesResponse>;
+  /**
+   *  `loams.meter.v1.NotificationService/RotateWebhookSecret`, retried: manual.
+   */
+  rotateWebhookSecret(
+    request: MessageInitShape<typeof RotateWebhookSecretRequestSchema>,
+    options?: CallOptions,
+  ): Promise<RotateWebhookSecretResponse>;
+}
+
+/**
+ *  `loams.meter.plans` — Meter plans: entitlement templates, applied from YAML and assigned to customers.
+ *
+ *  Wraps `loams.meter.v1.PlanService`.
+ */
+export interface MeterPlansModule {
+  /** The SDK module, as it appears on `loams.meter.plans`. */
+  readonly module: 'meter.plans';
+  /** The service behind the module. */
+  readonly service: 'loams.meter.v1.PlanService';
+  /** Whether the package's wire contract may still change. */
+  readonly unstable: false;
+  /**
+   *  `loams.meter.v1.PlanService/ApplyPlan`, retried: safe.
+   */
+  apply(
+    request: MessageInitShape<typeof ApplyPlanRequestSchema>,
+    options?: CallOptions,
+  ): Promise<ApplyPlanResponse>;
+  /**
+   *  `loams.meter.v1.PlanService/AssignPlan`, retried: safe.
+   */
+  assign(
+    request: MessageInitShape<typeof AssignPlanRequestSchema>,
+    options?: CallOptions,
+  ): Promise<AssignPlanResponse>;
+  /**
+   *  `loams.meter.v1.PlanService/ListPlans`, retried: safe.
+   */
+  list(
+    request: MessageInitShape<typeof ListPlansRequestSchema>,
+    options?: CallOptions,
+  ): Promise<ListPlansResponse>;
+  /**
+   *  `loams.meter.v1.PlanService/UnassignPlan`, retried: safe.
+   */
+  unassign(
+    request: MessageInitShape<typeof UnassignPlanRequestSchema>,
+    options?: CallOptions,
+  ): Promise<UnassignPlanResponse>;
+}
+
+/**
  *  `loams.namespaces` — Namespaces: the container every collection and stream lives in.
  *
  *  Wraps `loams.collection.v1.NamespaceService`.
@@ -1218,6 +1465,81 @@ export const MODULES: readonly ModuleBinding[] = [
     ],
   },
   {
+    name: 'meter.customers',
+    summary: 'Meter customers: subjects, payment state and spend controls.',
+    service: 'loams.meter.v1.CustomerService',
+    package: 'loams.meter.v1',
+    unstable: false,
+    derived: false,
+    calls: [
+      { module: 'meter.customers', name: 'create', protoName: 'create', method: 'CreateCustomer', rpc: 'loams.meter.v1.CustomerService/CreateCustomer', service: 'loams.meter.v1.CustomerService', package: 'loams.meter.v1', idempotency: 'none', retry: 'manual', streaming: 'unary', pagination: null },
+      { module: 'meter.customers', name: 'get', protoName: 'get', method: 'GetCustomer', rpc: 'loams.meter.v1.CustomerService/GetCustomer', service: 'loams.meter.v1.CustomerService', package: 'loams.meter.v1', idempotency: 'no_side_effects', retry: 'safe', streaming: 'unary', pagination: null },
+      { module: 'meter.customers', name: 'list', protoName: 'list', method: 'ListCustomers', rpc: 'loams.meter.v1.CustomerService/ListCustomers', service: 'loams.meter.v1.CustomerService', package: 'loams.meter.v1', idempotency: 'no_side_effects', retry: 'safe', streaming: 'unary', pagination: { items: 'customers', nextPageToken: 'nextPageToken' } },
+      { module: 'meter.customers', name: 'setPaymentState', protoName: 'setPaymentState', method: 'SetPaymentState', rpc: 'loams.meter.v1.CustomerService/SetPaymentState', service: 'loams.meter.v1.CustomerService', package: 'loams.meter.v1', idempotency: 'idempotent', retry: 'safe', streaming: 'unary', pagination: null },
+      { module: 'meter.customers', name: 'setSpendControls', protoName: 'setSpendControls', method: 'SetSpendControls', rpc: 'loams.meter.v1.CustomerService/SetSpendControls', service: 'loams.meter.v1.CustomerService', package: 'loams.meter.v1', idempotency: 'idempotent', retry: 'safe', streaming: 'unary', pagination: null },
+      { module: 'meter.customers', name: 'update', protoName: 'update', method: 'UpdateCustomer', rpc: 'loams.meter.v1.CustomerService/UpdateCustomer', service: 'loams.meter.v1.CustomerService', package: 'loams.meter.v1', idempotency: 'idempotent', retry: 'safe', streaming: 'unary', pagination: null },
+    ],
+  },
+  {
+    name: 'meter.entitlements',
+    summary: 'Meter entitlements: what a subject may use, grants and balances.',
+    service: 'loams.meter.v1.EntitlementService',
+    package: 'loams.meter.v1',
+    unstable: false,
+    derived: false,
+    calls: [
+      { module: 'meter.entitlements', name: 'balanceHistory', protoName: 'balanceHistory', method: 'GetBalanceHistory', rpc: 'loams.meter.v1.EntitlementService/GetBalanceHistory', service: 'loams.meter.v1.EntitlementService', package: 'loams.meter.v1', idempotency: 'no_side_effects', retry: 'safe', streaming: 'unary', pagination: null },
+      { module: 'meter.entitlements', name: 'checkAccess', protoName: 'checkAccess', method: 'CheckAccess', rpc: 'loams.meter.v1.EntitlementService/CheckAccess', service: 'loams.meter.v1.EntitlementService', package: 'loams.meter.v1', idempotency: 'no_side_effects', retry: 'safe', streaming: 'unary', pagination: null },
+      { module: 'meter.entitlements', name: 'create', protoName: 'create', method: 'CreateEntitlement', rpc: 'loams.meter.v1.EntitlementService/CreateEntitlement', service: 'loams.meter.v1.EntitlementService', package: 'loams.meter.v1', idempotency: 'none', retry: 'manual', streaming: 'unary', pagination: null },
+      { module: 'meter.entitlements', name: 'createGrant', protoName: 'createGrant', method: 'CreateGrant', rpc: 'loams.meter.v1.EntitlementService/CreateGrant', service: 'loams.meter.v1.EntitlementService', package: 'loams.meter.v1', idempotency: 'none', retry: 'manual', streaming: 'unary', pagination: null },
+      { module: 'meter.entitlements', name: 'list', protoName: 'list', method: 'ListEntitlements', rpc: 'loams.meter.v1.EntitlementService/ListEntitlements', service: 'loams.meter.v1.EntitlementService', package: 'loams.meter.v1', idempotency: 'no_side_effects', retry: 'safe', streaming: 'unary', pagination: { items: 'entitlements', nextPageToken: 'nextPageToken' } },
+      { module: 'meter.entitlements', name: 'listGrants', protoName: 'listGrants', method: 'ListGrants', rpc: 'loams.meter.v1.EntitlementService/ListGrants', service: 'loams.meter.v1.EntitlementService', package: 'loams.meter.v1', idempotency: 'no_side_effects', retry: 'safe', streaming: 'unary', pagination: { items: 'grants', nextPageToken: 'nextPageToken' } },
+      { module: 'meter.entitlements', name: 'reset', protoName: 'reset', method: 'ResetEntitlement', rpc: 'loams.meter.v1.EntitlementService/ResetEntitlement', service: 'loams.meter.v1.EntitlementService', package: 'loams.meter.v1', idempotency: 'idempotent', retry: 'safe', streaming: 'unary', pagination: null },
+      { module: 'meter.entitlements', name: 'value', protoName: 'value', method: 'GetEntitlementValue', rpc: 'loams.meter.v1.EntitlementService/GetEntitlementValue', service: 'loams.meter.v1.EntitlementService', package: 'loams.meter.v1', idempotency: 'no_side_effects', retry: 'safe', streaming: 'unary', pagination: null },
+      { module: 'meter.entitlements', name: 'voidGrant', protoName: 'voidGrant', method: 'VoidGrant', rpc: 'loams.meter.v1.EntitlementService/VoidGrant', service: 'loams.meter.v1.EntitlementService', package: 'loams.meter.v1', idempotency: 'idempotent', retry: 'safe', streaming: 'unary', pagination: null },
+    ],
+  },
+  {
+    name: 'meter.meters',
+    summary: 'Meter usage queries over the House windows.',
+    service: 'loams.meter.v1.MeterService',
+    package: 'loams.meter.v1',
+    unstable: false,
+    derived: false,
+    calls: [
+      { module: 'meter.meters', name: 'query', protoName: 'query', method: 'QueryMeter', rpc: 'loams.meter.v1.MeterService/QueryMeter', service: 'loams.meter.v1.MeterService', package: 'loams.meter.v1', idempotency: 'no_side_effects', retry: 'safe', streaming: 'unary', pagination: null },
+    ],
+  },
+  {
+    name: 'meter.notifications',
+    summary: 'Meter notifications: threshold rules, signed webhooks and their deliveries.',
+    service: 'loams.meter.v1.NotificationService',
+    package: 'loams.meter.v1',
+    unstable: false,
+    derived: false,
+    calls: [
+      { module: 'meter.notifications', name: 'createRule', protoName: 'createRule', method: 'CreateRule', rpc: 'loams.meter.v1.NotificationService/CreateRule', service: 'loams.meter.v1.NotificationService', package: 'loams.meter.v1', idempotency: 'none', retry: 'manual', streaming: 'unary', pagination: null },
+      { module: 'meter.notifications', name: 'createWebhook', protoName: 'createWebhook', method: 'CreateWebhook', rpc: 'loams.meter.v1.NotificationService/CreateWebhook', service: 'loams.meter.v1.NotificationService', package: 'loams.meter.v1', idempotency: 'none', retry: 'manual', streaming: 'unary', pagination: null },
+      { module: 'meter.notifications', name: 'listDeliveries', protoName: 'listDeliveries', method: 'ListDeliveries', rpc: 'loams.meter.v1.NotificationService/ListDeliveries', service: 'loams.meter.v1.NotificationService', package: 'loams.meter.v1', idempotency: 'no_side_effects', retry: 'safe', streaming: 'unary', pagination: null },
+      { module: 'meter.notifications', name: 'listRules', protoName: 'listRules', method: 'ListRules', rpc: 'loams.meter.v1.NotificationService/ListRules', service: 'loams.meter.v1.NotificationService', package: 'loams.meter.v1', idempotency: 'no_side_effects', retry: 'safe', streaming: 'unary', pagination: null },
+      { module: 'meter.notifications', name: 'rotateWebhookSecret', protoName: 'rotateWebhookSecret', method: 'RotateWebhookSecret', rpc: 'loams.meter.v1.NotificationService/RotateWebhookSecret', service: 'loams.meter.v1.NotificationService', package: 'loams.meter.v1', idempotency: 'none', retry: 'manual', streaming: 'unary', pagination: null },
+    ],
+  },
+  {
+    name: 'meter.plans',
+    summary: 'Meter plans: entitlement templates, applied from YAML and assigned to customers.',
+    service: 'loams.meter.v1.PlanService',
+    package: 'loams.meter.v1',
+    unstable: false,
+    derived: false,
+    calls: [
+      { module: 'meter.plans', name: 'apply', protoName: 'apply', method: 'ApplyPlan', rpc: 'loams.meter.v1.PlanService/ApplyPlan', service: 'loams.meter.v1.PlanService', package: 'loams.meter.v1', idempotency: 'idempotent', retry: 'safe', streaming: 'unary', pagination: null },
+      { module: 'meter.plans', name: 'assign', protoName: 'assign', method: 'AssignPlan', rpc: 'loams.meter.v1.PlanService/AssignPlan', service: 'loams.meter.v1.PlanService', package: 'loams.meter.v1', idempotency: 'idempotent', retry: 'safe', streaming: 'unary', pagination: null },
+      { module: 'meter.plans', name: 'list', protoName: 'list', method: 'ListPlans', rpc: 'loams.meter.v1.PlanService/ListPlans', service: 'loams.meter.v1.PlanService', package: 'loams.meter.v1', idempotency: 'no_side_effects', retry: 'safe', streaming: 'unary', pagination: null },
+      { module: 'meter.plans', name: 'unassign', protoName: 'unassign', method: 'UnassignPlan', rpc: 'loams.meter.v1.PlanService/UnassignPlan', service: 'loams.meter.v1.PlanService', package: 'loams.meter.v1', idempotency: 'idempotent', retry: 'safe', streaming: 'unary', pagination: null },
+    ],
+  },
+  {
     name: 'namespaces',
     summary: 'Namespaces: the container every collection and stream lives in.',
     service: 'loams.collection.v1.NamespaceService',
@@ -1316,6 +1638,11 @@ export const SERVICE_DESCRIPTORS: Readonly<Record<string, DescService>> = {
   'loams.instance.v1.InstanceService': InstanceService,
   'loams.live.v1.LiveAdminService': LiveAdminService,
   'loams.live.v1.LiveService': LiveService,
+  'loams.meter.v1.CustomerService': CustomerService,
+  'loams.meter.v1.EntitlementService': EntitlementService,
+  'loams.meter.v1.MeterService': MeterService,
+  'loams.meter.v1.NotificationService': NotificationService,
+  'loams.meter.v1.PlanService': PlanService,
   'loams.sql.v1.SqlService': SqlService,
   'loams.stream.v1.StreamService': StreamService,
 };
@@ -1335,6 +1662,7 @@ export const PROTO_PACKAGES = [
   'loams.live.v1',
   'loams.live.worker.v1',
   'loams.memory.v1',
+  'loams.meter.v1',
   'loams.notifications.v1',
   'loams.operations.v1',
   'loams.options.v1',

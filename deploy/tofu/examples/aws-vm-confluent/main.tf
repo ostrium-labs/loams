@@ -96,11 +96,12 @@ variable "topics" {
 }
 
 variable "connector_bytes_per_sec" {
+  description = "Loams' connector rate limits on this cluster (set the same rate_limit in the connector instances). 64 KiB/s each way bounds Loams' throughput charges at about $16 a month."
   type = object({
     in  = number
     out = number
   })
-  default = { in = 1048576, out = 1048576 }
+  default = { in = 65536, out = 65536 }
 }
 
 variable "confluent_budget_monthly_usd" {
@@ -118,6 +119,12 @@ module "vm" {
   source        = "../../modules/aws-vm"
   name          = var.name
   secret_prefix = "loams/${var.name}"
+  # The VM fetches confluent-confluent-api-key and -api-secret into the connect
+  # role's secret files at boot (deploy/byoc/lib/loams-byoc-secrets).
+  confluent_integrations = ["confluent"]
+  # The connect role runs in the `connectors` profile; with it the engine's
+  # LOAMS_AUTH_MODE becomes tailscale,apikey (loams-byoc-bootstrap).
+  profiles = "connectors"
 }
 
 module "confluent" {

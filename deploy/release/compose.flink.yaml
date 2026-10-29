@@ -1,0 +1,123 @@
+# Managed Flink SQL, the `flink` profile (design 81, D1970-D1979; preview,
+# not yet run end to end). An override of compose.yaml, the
+# compose.compute.yaml pattern:
+#
+#   docker compose -f compose.yaml -f compose.flink.yaml --profile rustfs --profile flink up -d
+#
+# - Apache Flink 2.2.1 (Apache-2.0), the official image pinned by digest
+#   (FLINK_IMAGE overrides it, e.g. with the connector-bundled
+#   ghcr.io/ostrium-labs/loams-flink image once it is built).
+# - One session cluster for the stack's one tenant, `local`: a JobManager, a
+#   TaskManager (`--scale flink-taskmanager=N` for more) and the SQL Gateway.
+# - State on Loams object storage: the `rustfs` profile's RustFS, bucket
+#   `flink`, prefix flink/local/ (checkpoints/, savepoints/, recovery/),
+#   RocksDB with incremental checkpoints. Compose has no Flink HA (Flink's
+#   HA is ZooKeeper or Kubernetes only): one JobManager, retained
+#   checkpoints, and the controller's recovery record on S3 (D1974).
+# - Nothing publishes a host port. The SQL Gateway (8083) is only on the
+#   internal network `flink`, reached through loams-gateway's Flink module
+#   (D1977), which joins that network once it is wired into the stack
+#   (follow-up). The JobManager and TaskManagers are also on the default
+#   network because they write checkpoints to RustFS there, so the
+#   JobManager's REST API (8081; jar submission off) is reachable from the
+#   stack's other services, not from the host.
+# - config.yaml is ../flink/compose/config.yaml, a golden the renderer is
+#   tested against (crates/loams-flink/tests/config_render.rs). The S3 keys
+#   reach Flink through FLINK_PROPERTIES only.
+
+x-flink: &flink
+  profiles: [flink]
+  image: ${FLINK_IMAGE:-docker.io/library/flink:2.2.1-scala_2.12-java21@sha256:521951efbfbb0cec74c2826446ce1d20a051bff18e6d3716a6affe97ddec692a}
+  restart: unless-stopped
+  user: "9999:9999"
+  entrypoint: ["/bin/sh", "-c"]
+  environment: &flink-env
+    ENABLE_BUILT_IN_PLUGINS: flink-s3-fs-presto-2.2.1.jar
+    FLINK_PROPERTIES: |
+      s3.access-key: ${FLINK_S3_ACCESS_KEY:-${RUSTFS_ACCESS_KEY:-rustfsadmin}}
+      s3.secret-key: ${FLINK_S3_SECRET_KEY:-${RUSTFS_SECRET_KEY:-rustfsadmin}}
+  volumes:
+    - ../flink/compose/config.yaml:/etc/loams-flink/config.yaml:ro
+  networks: [flink]
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  # One-shot: the `flink` bucket on RustFS (the create-bucket pattern of the
+  # Postgres stack: a SigV4-signed PUT; an existing bucket answers the HEAD).
+  flink-init:
+    profiles: [flink]
+    image: docker.io/curlimages/curl:8.16.0
+    restart: "no"
+    networks: [default]
+    environment:
+      AWS_ACCESS_KEY_ID: ${FLINK_S3_ACCESS_KEY:-${RUSTFS_ACCESS_KEY:-rustfsadmin}}
+      AWS_SECRET_ACCESS_KEY: ${FLINK_S3_SECRET_KEY:-${RUSTFS_SECRET_KEY:-rustfsadmin}}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        until curl -sf -o /dev/null -H "x-amz-content-sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        --aws-sigv4 aws:amz:us-east-1:s3 --user "$${AWS_ACCESS_KEY_ID}:$${AWS_SECRET_ACCESS_KEY}"
+        -X PUT http://rustfs:9000/flink
+        || curl -sf -o /dev/null -H "x-amz-content-sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        --aws-sigv4 aws:amz:us-east-1:s3 --user "$${AWS_ACCESS_KEY_ID}:$${AWS_SECRET_ACCESS_KEY}"
+        -I http://rustfs:9000/flink;
+        do echo waiting for rustfs; sleep 1; done; echo bucket ready
+
+  flink-jobmanager:
+    <<: *flink
+    # The rendered config over the image's, then the image's entrypoint
+    # (which appends FLINK_PROPERTIES and enables the S3 plugin).
+    command:
+      - set -eu; cp /etc/loams-flink/config.yaml "$$FLINK_HOME/conf/config.yaml"; exec /docker-entrypoint.sh jobmanager
+    # The JobManager reaches RustFS on the default network.
+    networks: [flink, default]
+    depends_on:
+      flink-init:
+        condition: service_completed_successfully
+    healthcheck:
+      # bash's /dev/tcp: the image has no curl.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8081"]
+      interval: 10s
+      timeout: 3s
+      start_period: 30s
+      retries: 10
+
+  flink-taskmanager:
+    <<: *flink
+    command:
+      - set -eu; cp /etc/loams-flink/config.yaml "$$FLINK_HOME/conf/config.yaml"; exec /docker-entrypoint.sh taskmanager
+    networks: [flink, default]
+    depends_on:
+      flink-jobmanager:
+        condition: service_healthy
+
+  # The entrypoint has no SQL Gateway command, so this does what it does for
+  # the other roles: append FLINK_PROPERTIES and enable the S3 plugin.
+  flink-sql-gateway:
+    <<: *flink
+    command:
+      - >-
+        set -eu; cp /etc/loams-flink/config.yaml "$$FLINK_HOME/conf/config.yaml";
+        if [ -n "$${FLINK_PROPERTIES:-}" ]; then printf '%s\n' "$$FLINK_PROPERTIES" >> "$$FLINK_HOME/conf/config.yaml"; fi;
+        mkdir -p "$$FLINK_HOME/plugins/s3-fs-presto";
+        cp "$$FLINK_HOME/opt/flink-s3-fs-presto-2.2.1.jar" "$$FLINK_HOME/plugins/s3-fs-presto/";
+        exec "$$FLINK_HOME/bin/sql-gateway.sh" start-foreground
+    # The `flink` network only: nothing on the stack's default network
+    # reaches the SQL Gateway.
+    networks: [flink]
+    depends_on:
+      flink-jobmanager:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8083"]
+      interval: 10s
+      timeout: 3s
+      start_period: 30s
+      retries: 10
+
+networks:
+  # The Flink cluster, its gateway route and nothing else; no route out.
+  flink:
+    internal: true

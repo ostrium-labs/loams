@@ -46,4 +46,11 @@ worktree?: WorktreeSpec | null,
  * serde-defaulted — an old host leaves it unset and the agent simply has
  * no Loams Desktop tools; title runs never carry it.
  */
-mcp?: McpServer | null, };
+mcp?: McpServer | null, 
+/**
+ * MCP servers installed from the marketplace (MK1 Task 4b, D1463),
+ * injected by the host beside [`Self::mcp`]. Additive and
+ * serde-defaulted; a driver that cannot pass more than one server
+ * ignores them.
+ */
+mcpServers?: Array<McpServer>, };

@@ -1,0 +1,150 @@
+syntax = "proto3";
+
+// The software factory's app connections (SF1 amendment F1-F6; design §50 §13,
+// D795): the daemon holds the apps' credentials and runs the read-only op
+// allowlist (D660) for the desktop and the browser console's Studio. See
+// studio.proto for the package's rules.
+//
+// Storing an app's credentials and forgetting them are Electron main's alone
+// (F4): neither is on the renderer's allowlist, and the remote listener's
+// Studio role may not call them, so a browser never sends a credential to a
+// daemon. Main reaches them on the loopback listener with the daemon's token.
+package loams.agentd.v1;
+
+import "loams/options/v1/options.proto";
+
+service FactoryService {
+  option (loams.options.v1.module) = {
+    name: "agentd.factory"
+    summary: "The software factory's apps: their state and the read-only op allowlist."
+    unstable: true
+  };
+
+  // Every app with its state and its non-secret fields (ndjson: `FactoryList`).
+  // A configured app whose state is not known yet is checked first.
+  rpc ListFactoryApps(ListFactoryAppsRequest) returns (ListFactoryAppsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // Check an app's stored connection (ndjson: `FactoryTest`).
+  rpc TestFactoryApp(TestFactoryAppRequest) returns (TestFactoryAppResponse);
+
+  // One read from the op allowlist (ndjson: `FactoryQuery`).
+  rpc QueryFactory(QueryFactoryRequest) returns (QueryFactoryResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // Store an app's URL and credentials, then check them (ndjson:
+  // `FactoryConfigure`). Write-only for secrets: no reply carries one. A secret
+  // left out keeps its stored value while the URL's origin is unchanged.
+  // Electron main's alone (F4).
+  rpc ConfigureFactoryApp(ConfigureFactoryAppRequest) returns (ConfigureFactoryAppResponse);
+
+  // Forget an app and its credentials (ndjson: `FactoryRemove`). Electron
+  // main's alone (F4).
+  rpc RemoveFactoryApp(RemoveFactoryAppRequest) returns (RemoveFactoryAppResponse);
+}
+
+enum FactoryHealth {
+  FACTORY_HEALTH_UNSPECIFIED = 0;
+  // Its last check answered.
+  FACTORY_HEALTH_OK = 1;
+  // It rejected the stored credentials.
+  FACTORY_HEALTH_AUTH_FAILED = 2;
+  // It did not answer.
+  FACTORY_HEALTH_UNREACHABLE = 3;
+  // Nothing is stored for it.
+  FACTORY_HEALTH_UNCONFIGURED = 4;
+  // Its credentials are stored but cannot be read (the keyring changed).
+  FACTORY_HEALTH_LOCKED = 5;
+}
+
+// One field of an app's configure form.
+message FactoryCredentialField {
+  string key = 1;
+  string label = 2;
+  // Kept in the daemon's keyring and never returned.
+  bool secret = 3;
+}
+
+// One factory app.
+message FactoryApp {
+  // `forgejo`, `zulip`, `plane`, `glitchtip`, `openpanel`, `matomo`,
+  // `langfuse` or `signoz`.
+  string id = 1;
+  string label = 2;
+  // The configured URL (for Plane, its API's). Absent when unconfigured.
+  optional string url = 3;
+  FactoryHealth health = 4;
+  // Whether the factory has native panels for it (else its own UI only).
+  bool has_panels = 5;
+  repeated FactoryCredentialField credential_fields = 6;
+  // The non-secret fields' stored values (project key, App URL, SSO origin).
+  map<string, string> fields = 7;
+  // False when the daemon has no keyring: secrets last until it stops.
+  bool persistent = 8;
+  // The honest status label while the app is a preview, shown in the UI
+  // (SigNoz on Loams House, D1666). Absent for an app that is not one.
+  optional string preview = 9;
+}
+
+// Why a factory call failed. `code` is one of `unknown_app`, `unknown_op`,
+// `bad_params`, `unconfigured`, `unsupported`, `auth_failed`, `unreachable`
+// or `upstream_error`; `message` is scrubbed of every stored secret.
+message FactoryError {
+  string code = 1;
+  string message = 2;
+}
+
+message ListFactoryAppsRequest {}
+
+message ListFactoryAppsResponse {
+  repeated FactoryApp apps = 1;
+}
+
+message TestFactoryAppRequest {
+  string app = 1;
+}
+
+message TestFactoryAppResponse {
+  oneof result {
+    FactoryApp app = 1;
+    FactoryError error = 2;
+  }
+}
+
+message QueryFactoryRequest {
+  string app = 1;
+  string op = 2;
+  // The op's parameters as a JSON object, checked by its schema in the
+  // daemon (SF1 amendment F2).
+  string params_json = 3;
+}
+
+message QueryFactoryResponse {
+  oneof result {
+    // The op's value as JSON.
+    string value_json = 1;
+    FactoryError error = 2;
+  }
+}
+
+message ConfigureFactoryAppRequest {
+  string app = 1;
+  string url = 2;
+  // By credential field key.
+  map<string, string> fields = 3;
+}
+
+message ConfigureFactoryAppResponse {
+  oneof result {
+    FactoryApp app = 1;
+    FactoryError error = 2;
+  }
+}
+
+message RemoveFactoryAppRequest {
+  string app = 1;
+}
+
+message RemoveFactoryAppResponse {}

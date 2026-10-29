@@ -263,6 +263,10 @@ mod tests {
                 "loams.graph.v1.GraphService/Execute",
                 "loams.graph.v1.GraphService/ExecuteBatch",
                 "loams.graph.v1.GraphAdminService/UpdateGraph",
+                // Loams Meter's creates (D2202).
+                "loams.meter.v1.CustomerService/CreateCustomer",
+                "loams.meter.v1.EntitlementService/CreateEntitlement",
+                "loams.meter.v1.EntitlementService/CreateGrant",
                 "loams.live.v1.LiveService/Mutate",
             ]
         );
@@ -316,6 +320,10 @@ mod tests {
                 "loams.graph.v1.GraphAdminService/ListGraphs",
                 "loams.live.v1.LiveAdminService/ListApps",
                 "loams.live.v1.LiveAdminService/ListDeployments",
+                // Loams Meter's lists (D2202).
+                "loams.meter.v1.CustomerService/ListCustomers",
+                "loams.meter.v1.EntitlementService/ListEntitlements",
+                "loams.meter.v1.EntitlementService/ListGrants",
                 "loams.stream.v1.StreamService/ListStreams",
             ]
         );
@@ -412,6 +420,34 @@ mod tests {
         use loams_proto::loams::instance::v1::{
             INSTANCE_SERVICE_GET_INSTANCE_SPEC, INSTANCE_SERVICE_WHO_AM_I_SPEC,
         };
+        // Loams Meter's public services (D2202).
+        use loams_proto::loams::meter::v1::{
+            CUSTOMER_SERVICE_CREATE_CUSTOMER_SPEC,
+            CUSTOMER_SERVICE_GET_CUSTOMER_SPEC,
+            CUSTOMER_SERVICE_LIST_CUSTOMERS_SPEC,
+            CUSTOMER_SERVICE_SET_PAYMENT_STATE_SPEC,
+            CUSTOMER_SERVICE_SET_SPEND_CONTROLS_SPEC,
+            CUSTOMER_SERVICE_UPDATE_CUSTOMER_SPEC,
+            ENTITLEMENT_SERVICE_CHECK_ACCESS_SPEC,
+            ENTITLEMENT_SERVICE_CREATE_ENTITLEMENT_SPEC,
+            ENTITLEMENT_SERVICE_CREATE_GRANT_SPEC,
+            ENTITLEMENT_SERVICE_GET_BALANCE_HISTORY_SPEC,
+            ENTITLEMENT_SERVICE_GET_ENTITLEMENT_VALUE_SPEC,
+            ENTITLEMENT_SERVICE_LIST_ENTITLEMENTS_SPEC,
+            ENTITLEMENT_SERVICE_LIST_GRANTS_SPEC,
+            ENTITLEMENT_SERVICE_RESET_ENTITLEMENT_SPEC,
+            ENTITLEMENT_SERVICE_VOID_GRANT_SPEC,
+            METER_SERVICE_QUERY_METER_SPEC,
+            NOTIFICATION_SERVICE_CREATE_RULE_SPEC,
+            NOTIFICATION_SERVICE_CREATE_WEBHOOK_SPEC,
+            NOTIFICATION_SERVICE_LIST_DELIVERIES_SPEC,
+            NOTIFICATION_SERVICE_LIST_RULES_SPEC,
+            NOTIFICATION_SERVICE_ROTATE_WEBHOOK_SECRET_SPEC,
+            PLAN_SERVICE_APPLY_PLAN_SPEC,
+            PLAN_SERVICE_ASSIGN_PLAN_SPEC,
+            PLAN_SERVICE_LIST_PLANS_SPEC,
+            PLAN_SERVICE_UNASSIGN_PLAN_SPEC,
+        };
         use loams_proto::loams::sql::v1::{SQL_SERVICE_QUERY_ARROW_SPEC, SQL_SERVICE_QUERY_SPEC};
         use loams_proto::loams::stream::v1::{
             STREAM_SERVICE_CREATE_STREAM_SPEC, STREAM_SERVICE_DESCRIBE_STREAM_SPEC,
@@ -454,6 +490,33 @@ mod tests {
             GRAPH_SERVICE_EXECUTE_BATCH_SPEC,
             GRAPH_SERVICE_EXECUTE_STREAM_SPEC,
             GRAPH_SERVICE_EXPLAIN_SPEC,
+            // Loams Meter (D2202): customers, entitlements, plans, notifications
+            // and meters.
+            CUSTOMER_SERVICE_CREATE_CUSTOMER_SPEC,
+            CUSTOMER_SERVICE_GET_CUSTOMER_SPEC,
+            CUSTOMER_SERVICE_LIST_CUSTOMERS_SPEC,
+            CUSTOMER_SERVICE_SET_PAYMENT_STATE_SPEC,
+            CUSTOMER_SERVICE_SET_SPEND_CONTROLS_SPEC,
+            CUSTOMER_SERVICE_UPDATE_CUSTOMER_SPEC,
+            ENTITLEMENT_SERVICE_CHECK_ACCESS_SPEC,
+            ENTITLEMENT_SERVICE_CREATE_ENTITLEMENT_SPEC,
+            ENTITLEMENT_SERVICE_CREATE_GRANT_SPEC,
+            ENTITLEMENT_SERVICE_GET_BALANCE_HISTORY_SPEC,
+            ENTITLEMENT_SERVICE_GET_ENTITLEMENT_VALUE_SPEC,
+            ENTITLEMENT_SERVICE_LIST_ENTITLEMENTS_SPEC,
+            ENTITLEMENT_SERVICE_LIST_GRANTS_SPEC,
+            ENTITLEMENT_SERVICE_RESET_ENTITLEMENT_SPEC,
+            ENTITLEMENT_SERVICE_VOID_GRANT_SPEC,
+            METER_SERVICE_QUERY_METER_SPEC,
+            NOTIFICATION_SERVICE_CREATE_RULE_SPEC,
+            NOTIFICATION_SERVICE_CREATE_WEBHOOK_SPEC,
+            NOTIFICATION_SERVICE_LIST_DELIVERIES_SPEC,
+            NOTIFICATION_SERVICE_LIST_RULES_SPEC,
+            NOTIFICATION_SERVICE_ROTATE_WEBHOOK_SECRET_SPEC,
+            PLAN_SERVICE_APPLY_PLAN_SPEC,
+            PLAN_SERVICE_ASSIGN_PLAN_SPEC,
+            PLAN_SERVICE_LIST_PLANS_SPEC,
+            PLAN_SERVICE_UNASSIGN_PLAN_SPEC,
             // SDKP Part C: `sql`.
             SQL_SERVICE_QUERY_SPEC,
             SQL_SERVICE_QUERY_ARROW_SPEC,

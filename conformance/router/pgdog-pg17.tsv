@@ -1,0 +1,31 @@
+component	check	result	notes
+protocol	libpq 18 connects with max_protocol_version=3.0	ok	psql 18: app
+protocol	StartupMessage 3.0: negotiated version and cancel-key length	ok	both negotiate 3.0 (NegotiateProtocolVersion: False), key 4 bytes
+protocol	libpq 18 connects with max_protocol_version=3.2	ok	psql 18: app
+protocol	StartupMessage 3.2: negotiated version and cancel-key length	ok	PgDog speaks its own version to the client: 3.2 (NegotiateProtocolVersion: False), its own key of 32 bytes | the server directly: 3.0 (NegotiateProtocolVersion: True), key 4 bytes
+cancel	CancelRequest (tls) with the protocol 3.0 key (4 bytes through PgDog) stops pg_sleep	ok	both: 57014
+cancel	CancelRequest (plain) with the protocol 3.0 key (4 bytes through PgDog) stops pg_sleep	ok	both: 57014
+cancel	psql 18 Ctrl-C (libpq cancel) at max_protocol_version=3.0	ok	both: Cancel request sent\nERROR:  57014
+cancel	CancelRequest (tls) with the protocol 3.2 key (32 bytes through PgDog) stops pg_sleep	ok	both: 57014
+cancel	CancelRequest (plain) with the protocol 3.2 key (32 bytes through PgDog) stops pg_sleep	ok	both: 57014
+cancel	psql 18 Ctrl-C (libpq cancel) at max_protocol_version=3.2	ok	both: Cancel request sent\nERROR:  57014
+auth	SCRAM-SHA-256 login against a password_hash verifier	ok	current_user = app
+auth	a wrong password is refused	ok	refused; through PgDog: psql: error: connection to server at "pgdog" (10.89.17.3), port 6432 failed: FATAL:  password for user "app" and database "app" is wrong, or the database does not exist | directly: psql: error: connection to server at "pg" (10.89.17.2), port 5432 failed: FATAL:  password authentication failed for user "app"
+auth	SCRAM-SHA-256-PLUS (channel_binding=require)	ok	both: app
+auth	backend login as server_user with server_password (SCRAM)	ok	current_user = migrator
+tls	a plaintext client is refused (tls_client_required)	ok	refused: psql: error: connection to server at "pgdog" (10.89.17.3), port 6432 failed: FATAL:  only TLS connections are allowed
+tls	the server hop is TLS (tls_verify = verify_ca)	ok	pg_stat_ssl.ssl = t
+query	simple query	ok	same result as the server directly: 2|x
+query	extended protocol with parameters (\\bind)	ok	same result as the server directly: 42
+query	named prepared statement (\\parse, \\bind_named)	ok	same result as the server directly: hi!
+query	transaction with SET LOCAL	ok	same result as the server directly: 5s
+query	CREATE TABLE, INSERT … RETURNING, UPDATE in a CTE	ok	same result as the server directly: 1|10\n2|20\n11
+query	stored generated column	ok	same result as the server directly: 3|6
+query	MERGE … RETURNING merge_action() (17)	ok	same result as the server directly: UPDATE|2|5\nINSERT|3|7
+query	JSON_TABLE (17)	ok	same result as the server directly: 1\n2
+query	COPY FROM STDIN and COPY TO STDOUT	ok	same result as the server directly: 1\tone\n2\ttwo
+query	SELECT … FOR UPDATE in a transaction	ok	same result as the server directly: 11
+query	a unique violation returns its SQLSTATE	ok	same result as the server directly: ERROR:  23505
+session	session pooling keeps SET and temporary tables	ok	same result as the server directly: nf2\n1
+read-only	a read on the __ro name	ok	same result as the server directly: 1|11\n2|5\n3|7
+read-only	a write on the __ro name is refused	ok	same result as the server directly: ERROR:  25006

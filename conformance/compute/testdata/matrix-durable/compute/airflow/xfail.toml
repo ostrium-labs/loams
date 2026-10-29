@@ -1,0 +1,8 @@
+product = "airflow"
+
+[[xfail]]
+id = "txn-mode"
+tests = ["airflow-edge::airflow_txn_mode_leg"]
+reason = "fixture: listed, but it passes in this run"
+issue = "#1"
+since = 2026-10-27

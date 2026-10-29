@@ -30,6 +30,14 @@
 //! the identity is ambient (like a cookie), so CORS never allows any origin:
 //! only `LOAMS_CORS_ORIGINS` (none by default) and the target's own host,
 //! and a request from any other origin is refused outright.
+//!
+//! The connect socket (`--connect-socket`, CC1 ruling R1.1,
+//! [`AuthLayerState::connect_socket`]) is a Unix socket the engine shares
+//! with `loams-fabric connect` only. Whoever reaches it proves nothing by
+//! reaching it, so it takes an API key and nothing else, whatever
+//! `LOAMS_AUTH_MODE` says: Tailscale identity headers are stripped and never
+//! read, sessions and JWTs are refused, it answers no CORS, and only
+//! `/health` is public.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -66,6 +74,9 @@ pub const MAIN_PUBLIC_PATHS: &[&str] = &[
     "/loams.auth.v1.AuthService/CreateSession",
     "/loams.auth.v1.AuthService/DeleteSession",
 ];
+
+/// The connect socket's unauthenticated path: its health probe.
+pub const CONNECT_SOCKET_PUBLIC_PATHS: &[&str] = &["/health"];
 
 /// The path prefixes whose callers may be an app's own end users rather
 /// than this engine's principals (LV1 plan Task 16, design §45 §5.3):
@@ -159,6 +170,8 @@ pub struct AuthLayerState {
     app_end_user_paths: &'static [&'static str],
     /// The origins Live's apps list, for [`APP_END_USER_PATHS`] (Task 18).
     app_origins: Option<AppOriginSet>,
+    /// The connect socket: an API key is the only credential, in every mode.
+    api_key_only: bool,
 }
 
 impl AuthLayerState {
@@ -169,6 +182,7 @@ impl AuthLayerState {
             trust_tailscale: false,
             app_end_user_paths: &[],
             app_origins: None,
+            api_key_only: false,
         }
     }
 
@@ -181,6 +195,21 @@ impl AuthLayerState {
             trust_tailscale: true,
             app_end_user_paths: &[],
             app_origins: None,
+            api_key_only: false,
+        }
+    }
+
+    /// The layer of the connect socket (`--connect-socket`): an API key and
+    /// nothing else, also when authentication is off; Tailscale headers are
+    /// stripped unread; `/health` is the one public path; no CORS.
+    pub fn connect_socket(auth: Arc<Auth>) -> Self {
+        Self {
+            auth,
+            public_paths: CONNECT_SOCKET_PUBLIC_PATHS,
+            trust_tailscale: false,
+            app_end_user_paths: &[],
+            app_origins: None,
+            api_key_only: true,
         }
     }
 
@@ -230,6 +259,9 @@ async fn guard(State(state): State<AuthLayerState>, mut request: Request, next: 
         .then(|| tailscale::identity(request.headers()))
         .flatten();
     tailscale::strip(request.headers_mut());
+    if state.api_key_only {
+        return api_key_only(&state, request, next).await;
+    }
     let cors = match state.trust_tailscale {
         true => state.auth.tailscale_cors(),
         false => state.auth.cors(),
@@ -346,6 +378,43 @@ async fn guard(State(state): State<AuthLayerState>, mut request: Request, next: 
                 "request refused"
             );
             with_cors(refuse(request.headers(), &err))
+        }
+    }
+}
+
+/// The connect socket's guard: an API key, or the refusal. Runs after the
+/// Tailscale headers are stripped, never reads them, and adds no CORS.
+async fn api_key_only(state: &AuthLayerState, mut request: Request, next: Next) -> Response {
+    if state.public_paths.contains(&request.uri().path()) {
+        return next.run(request).await;
+    }
+    if credential_in_query(request.uri().query()) {
+        let err = AuthError::unauthenticated(
+            reason::CREDENTIAL_IN_QUERY_STRING,
+            "credentials in the URL are refused; send Authorization: Bearer",
+        );
+        return refuse(request.headers(), &err);
+    }
+    let result = match request_credential(&request) {
+        Ok(credential @ Credential::ApiKey(_)) => state.auth.authenticate(&credential).await,
+        Ok(_) => Err(AuthError::unauthenticated(
+            reason::CREDENTIAL_NOT_ACCEPTED,
+            "the connect socket takes an API key only",
+        )),
+        Err(err) => Err(err),
+    };
+    match result {
+        Ok(principal) => {
+            request.extensions_mut().insert(principal);
+            next.run(request).await
+        }
+        Err(err) => {
+            tracing::debug!(
+                reason = err.reason,
+                path = request.uri().path(),
+                "connect socket request refused"
+            );
+            refuse(request.headers(), &err)
         }
     }
 }

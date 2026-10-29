@@ -1,0 +1,12 @@
+{
+  "config": {
+    "org": "ostrium-labs"
+  },
+  "id": "ostrium/github-mcp-server",
+  "planDigest": "5f2b1c8e0d3a4b6c7d8e9f00112233445566778899aabbccddeeff0011223344",
+  "secrets": {
+    "token": "ghp_example"
+  },
+  "source": "official",
+  "version": "2.0.3"
+}

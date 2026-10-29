@@ -1,0 +1,12 @@
+# Design 81 R4: Loams runs RisingWave without a licence key, so a paid-tier
+# feature check must fail on every managed instance. v3.1.0's own test of this
+# is e2e_test/error_ui/simple/license.slt (rw_test_feature('TestDummy')).
+#
+# First run (2026-10-28, v3.1.0 playground): `license_key` reads `<default>`,
+# a built-in key, and the check failed only because the host had 14 CPU cores
+# and that key allows 4. On a cluster of 4 cores or fewer the built-in key
+# would enable paid features, so the managed profile must clear it (RW-a;
+# reported to ENG81). The regex accepts both refusals ("not available based
+# on your license", "not available due to license error").
+statement error not available
+SELECT rw_test_feature('TestDummy');

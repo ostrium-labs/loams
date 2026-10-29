@@ -170,7 +170,7 @@ function NewCollection({
         <fieldset className="ds-fields">
           <legend>Fields</legend>
           {fields.map((f, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: a positional draft list
+            // oxlint-disable-next-line react/no-array-index-key -- a positional draft list
             <div className="ds-field-row" key={i}>
               <Input
                 aria-label={`Field ${i + 1} name`}

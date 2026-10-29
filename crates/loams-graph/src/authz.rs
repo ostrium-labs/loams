@@ -20,9 +20,10 @@
 //!    whatever its roles. The same rule as Live's app fence (LV1 T15-1).
 //! 2. **The relation** a [`GraphAuthorizer`] answers ([`Standing`]): the caller's strongest
 //!    relation on the graph, whether the namespace is a protected environment, and whether the
-//!    caller holds the project `admin` role there. The server's authorizer expands the org and
-//!    project roles of its principal store (the built-in RBAC, until MT1's OpenFGA); [`StaticRbac`]
-//!    is a fixed table for tests and embedders.
+//!    caller holds the project `admin` role there. The server's authorizer is
+//!    [`ModelGraphAuthorizer`](crate::model_authz::ModelGraphAuthorizer), which asks model v1
+//!    through `loams-authz` (built in or OpenFGA); [`StaticRbac`] is a fixed table for tests and
+//!    embedders.
 //! 3. **The credential's scopes** (§48 §11.2 item 3): `graph:read`, `graph:write`, `graph:admin`
 //!    cap the relation; a credential that names no scopes is not capped, and one that names
 //!    scopes but none of these reaches no graph.
@@ -193,6 +194,9 @@ pub struct Caller {
     pub id: String,
     /// How it authenticated.
     pub kind: CallerKind,
+    /// The issuer of its OIDC token (the exact `iss`), which with `id` names its principal
+    /// link (design 76 §5, D1628); `None` for any other credential.
+    pub issuer: Option<String>,
     /// A name to show.
     pub name: String,
     /// A verified email, for people.
@@ -213,6 +217,7 @@ impl Caller {
             name: id.clone(),
             id,
             kind,
+            issuer: None,
             email: None,
             environment: None,
             scopes: None,
@@ -266,8 +271,8 @@ impl Standing {
 }
 
 /// Answers a caller's standing on a graph (§48 §11.1; the D66 `Authorizer` shape for Loams
-/// Graph). The server's implementation expands the principal store's org and project roles;
-/// MT1's OpenFGA implementation answers the `graph` type's relations.
+/// Graph). The server's implementation is
+/// [`ModelGraphAuthorizer`](crate::model_authz::ModelGraphAuthorizer), over `loams-authz`.
 #[async_trait]
 pub trait GraphAuthorizer: Send + Sync + fmt::Debug {
     /// `caller`'s standing on graph `graph` of `namespace`, or on the namespace itself when

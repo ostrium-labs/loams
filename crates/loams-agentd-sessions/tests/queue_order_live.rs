@@ -117,6 +117,7 @@ impl Rig {
 
     fn request(&self, prompt: String) -> RunRequest {
         RunRequest {
+            mcp_servers: Vec::new(),
             mcp: None,
             prompt,
             harness: Some(self.id),

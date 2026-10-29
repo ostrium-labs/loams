@@ -82,6 +82,7 @@ use crate::workspace_host::WorkspaceHost;
 
 mod factory_loop_rpc;
 mod groups_rpc;
+mod marketplace_rpc;
 
 const FILE_SEARCH_RPC_TIMEOUT: Duration = Duration::from_secs(6);
 const FILE_SEARCH_FEATURED_PATHS: usize = 32;
@@ -171,6 +172,8 @@ pub struct EngineRpc {
     usage: Option<crate::usage::ThreadUsageLog>,
     /// Supervised approvals (SD1 Task 13, G17, G18, G22).
     approvals: Option<crate::approvals::Approvals>,
+    /// The daemon's marketplace (MK1 Task 4b; `rpc/marketplace_rpc.rs`).
+    marketplace: crate::marketplace::MarketplaceSlot,
     engine_info: EngineInfo,
     /// Opens pull requests (G4) with the daemon's forge credentials.
     change_request_creator: ChangeRequestCreator,
@@ -179,6 +182,8 @@ pub struct EngineRpc {
     git_writes: std::sync::Arc<tokio::sync::Mutex<()>>,
     /// Studio's review comments (SD1 Task 11, G8-G11), in the engine's store.
     review: crate::review::ReviewComments,
+    /// The software factory's app connections (SF1 amendment F1; §50 §13).
+    factory: Option<std::sync::Arc<loams_agentd_factory::FactoryHost>>,
 }
 
 /// A git write's failure as the RPC's.
@@ -257,11 +262,28 @@ impl EngineRpc {
             notifications: None,
             usage: None,
             approvals: None,
+            marketplace: Default::default(),
             engine_info,
             change_request_creator: ChangeRequestCreator::from_keyring(),
             git_writes: std::sync::Arc::new(tokio::sync::Mutex::new(())),
             review,
+            factory: None,
         }
+    }
+
+    pub fn with_factory(
+        mut self,
+        factory: std::sync::Arc<loams_agentd_factory::FactoryHost>,
+    ) -> Self {
+        self.factory = Some(factory);
+        self
+    }
+
+    /// The factory, or a failure when the engine has none.
+    fn factory(&self) -> Result<&loams_agentd_factory::FactoryHost, RpcError> {
+        self.factory
+            .as_deref()
+            .ok_or_else(|| RpcError::Failed("factory unavailable".into()))
     }
 
     pub fn with_notifications(mut self, notifications: crate::notify::Notifications) -> Self {
@@ -271,6 +293,11 @@ impl EngineRpc {
 
     pub fn with_approvals(mut self, approvals: crate::approvals::Approvals) -> Self {
         self.approvals = Some(approvals);
+        self
+    }
+
+    pub fn with_marketplace(mut self, marketplace: crate::marketplace::MarketplaceSlot) -> Self {
+        self.marketplace = marketplace;
         self
     }
 
@@ -1304,6 +1331,26 @@ impl RpcService for EngineRpc {
                 self.registry.installs.cancel(p.harness);
                 reply::<calls::CancelInstall, _>(&Empty {})
             }
+            methods::FACTORY_LIST => reply::<calls::FactoryList, _>(&self.factory()?.list().await),
+            methods::FACTORY_TEST => {
+                let p = params_of::<calls::FactoryTest>(params)?;
+                reply::<calls::FactoryTest, _>(&self.factory()?.test(&p.app).await)
+            }
+            methods::FACTORY_QUERY => {
+                let p = params_of::<calls::FactoryQuery>(params)?;
+                reply::<calls::FactoryQuery, _>(&self.factory()?.query(&p).await)
+            }
+            methods::FACTORY_CONFIGURE => {
+                let p = params_of::<calls::FactoryConfigure>(params)?;
+                reply::<calls::FactoryConfigure, _>(&self.factory()?.configure(&p).await)
+            }
+            methods::FACTORY_REMOVE => {
+                let p = params_of::<calls::FactoryRemove>(params)?;
+                self.factory()?
+                    .remove(&p.app)
+                    .map_err(|e| RpcError::BadParams(e.message))?;
+                reply::<calls::FactoryRemove, _>(&Empty {})
+            }
             methods::GET_TITLE_SETTINGS => {
                 reply::<calls::GetTitleSettings, _>(&self.registry.title_settings())
             }
@@ -2306,6 +2353,18 @@ impl RpcService for EngineRpc {
                 })
                 .await
             }
+            // MK1 Task 4b: `MarketplaceService`, in `rpc/marketplace_rpc.rs`.
+            methods::LIST_MARKETPLACE_SOURCES
+            | methods::ADD_MARKETPLACE_SOURCE
+            | methods::REMOVE_MARKETPLACE_SOURCE
+            | methods::SEARCH_LISTINGS
+            | methods::GET_LISTING
+            | methods::PLAN_INSTALL
+            | methods::INSTALL_LISTING
+            | methods::UNINSTALL_LISTING
+            | methods::LIST_INSTALLED_LISTINGS
+            | methods::CHECK_LISTING_UPDATES
+            | methods::UPDATE_LISTING => Box::pin(self.handle_marketplace(method, params)).await,
             methods::GET_CHECKOUT_FILE_DIFF_TEXT => {
                 // This branch contains several large nested async futures. Keep it
                 // behind an allocation so every unrelated RPC does not carry that
@@ -3228,7 +3287,7 @@ mod tests {
             .unwrap();
         zip.write_all(b"#!/bin/sh\nexit 0\n").unwrap();
         let bytes = zip.finish().unwrap().into_inner();
-        let digest = Box::leak(format!("{:x}", Sha512::digest(&bytes)).into_boxed_str());
+        let digest = Box::leak(crate::repos::hex(&Sha512::digest(&bytes)).into_boxed_str());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = Box::leak(
             format!("http://{}/archive.zip", listener.local_addr().unwrap()).into_boxed_str(),

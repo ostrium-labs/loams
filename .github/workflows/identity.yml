@@ -4,8 +4,6 @@ name: Identity
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "17 3 * * *"
   pull_request:
     paths:
       - "conformance/identity/**"
@@ -14,6 +12,7 @@ on:
       - "spikes/ia0-authz/**"
       - "crates/loams-authz/**"
       - "crates/loams-zitadel/**"
+      - "crates/loams-identity-sync/**"
       - ".github/workflows/identity.yml"
 
 # Superseded runs of a pull request are cancelled; a push to main, a tag,
@@ -100,7 +99,7 @@ jobs:
         run: cargo clippy -p loams-authz --all-targets --locked -- -D warnings
 
   loams-zitadel:
-    name: "Identity: loams-zitadel agents against Zitadel and OpenFGA"
+    name: "Identity: loams-zitadel and the identity sync against Zitadel and OpenFGA"
     runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 30
     steps:
@@ -113,7 +112,7 @@ jobs:
           shared-key: loams-zitadel
           save-if: ${{ github.ref == 'refs/heads/dev' }}
       - name: build the tests while the stack starts
-        run: cargo test -p loams-zitadel --locked --no-run
+        run: cargo test -p loams-zitadel -p loams-identity-sync --locked --no-run
       - name: start Zitadel and OpenFGA (the IA0 stack) and bootstrap them
         run: conformance/identity/up.sh
       - name: test (fake and live)
@@ -128,9 +127,9 @@ jobs:
           export LOAMS_AUTHZ_OPENFGA_GRPC="${IA0_FGA_GRPC:-http://127.0.0.1:18082}"
           export LOAMS_AUTHZ_OPENFGA_STORE="$IA0_STORE"
           export LOAMS_AUTHZ_OPENFGA_MODEL="$IA0_MODEL"
-          cd ../.. && cargo test -p loams-zitadel --locked -- --test-threads 1
+          cd ../.. && cargo test -p loams-zitadel -p loams-identity-sync --locked -- --test-threads 1
       - name: clippy
-        run: cargo clippy -p loams-zitadel --all-targets --locked -- -D warnings
+        run: cargo clippy -p loams-zitadel -p loams-identity-sync --all-targets --locked -- -D warnings
       - name: stop the stack
         if: always()
         working-directory: conformance/identity

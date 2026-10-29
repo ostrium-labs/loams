@@ -6,12 +6,15 @@
 //! * `GET /ping`: `Ok.`
 //! * `POST /?database=…&param_<name>=…&<setting>=…`: the body (after the
 //!   `query` parameter, if any) is one statement; the answer is in its
-//!   `FORMAT` (only `JSONCompactEachRowWithNamesAndTypes` until Task 36), and
+//!   `FORMAT`, else `default_format`, else `TabSeparated`, written by
+//!   `loams-house-formats` (Task 36) with the request's format settings;
 //!   an error is ClickHouse's: a non-200 status, `X-ClickHouse-Exception-Code`
 //!   and `Code: N. DB::Exception: … (NAME)`.
 //! * `POST /loams/seed?database=…&table=…&engine=…&sorting_key=…`: a table's
 //!   rows as `Parquet`, its columns as JSON in `X-Loams-Columns`
-//!   (`loams-house-mine`'s seeded targets, D1804).
+//!   (`loams-house-mine`'s seeded targets, D1804), and optionally what
+//!   `system.tables` and `DESCRIBE` print about it as JSON in `X-Loams-Table`
+//!   ([`table_info`], plan HE1 Task 38).
 
 use std::collections::HashMap;
 use std::io::{self, BufRead, BufReader, Read, Write};
@@ -19,10 +22,10 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
 
 use datafusion::datasource::MemTable;
+use loams_house_formats::{Format, FormatSettings, Stats};
 use loams_house_types::ChError;
-use loams_house_types::text::TextSettings;
 
-use crate::catalog::Table;
+use crate::catalog::{ColumnInfo, Table, TableInfo};
 use crate::engine::Engine;
 
 /// The format the oracle reads (HE0 R6.2).
@@ -187,33 +190,49 @@ fn handle(engine: &Engine, runtime: &tokio::runtime::Runtime, req: Request) -> R
                 .filter(|(k, _)| !k.starts_with("param_") && !NOT_SETTINGS.contains(&k.as_str()))
                 .cloned()
                 .collect();
+            // The writer-only settings are taken here (Task 36); the rest go
+            // to the engine (Task 37), which resolves the value-text ones and
+            // refuses what it does not honour.
+            let (mut format_settings, settings) = match FormatSettings::split(&settings) {
+                Ok(split) => split,
+                Err(e) => return error(&e),
+            };
             let default_format =
                 param("default_format").unwrap_or_else(|| "TabSeparated".to_string());
+            let started = std::time::Instant::now();
             let result = runtime.block_on(engine.query(&sql, &params, &settings, &database));
             match result {
                 Ok(answer) => {
-                    let format = answer.format.clone().unwrap_or(default_format);
-                    if format != ORACLE_FORMAT {
-                        return error(&ChError::not_implemented(format!(
-                            "The format {format} is not supported by the Loams House engine yet (plan HE1 Task 36)"
-                        )));
-                    }
+                    format_settings.text = answer.settings.text();
+                    let name = answer.format.clone().unwrap_or(default_format);
+                    let format = match Format::parse(&name) {
+                        Ok(format) => format,
+                        Err(e) => return error(&e),
+                    };
+                    let stats = Stats {
+                        elapsed: started.elapsed(),
+                        ..Stats::default()
+                    };
                     let mut out = Vec::new();
                     let written = loams_house_formats::columns(&answer.schema).and_then(|cols| {
-                        loams_house_formats::json_compact::write(
+                        let mut w = loams_house_formats::writer_for(
+                            format,
                             &cols,
-                            &answer.batches,
-                            &TextSettings::default(),
+                            &format_settings,
                             &mut out,
-                        )
+                        )?;
+                        for batch in &answer.batches {
+                            w.write_batch(batch)?;
+                        }
+                        w.finish(&stats)
                     });
                     match written {
                         Ok(()) => Response {
                             status: 200,
-                            headers: vec![(
-                                "Content-Type".into(),
-                                "application/json; charset=UTF-8".into(),
-                            )],
+                            headers: vec![
+                                ("Content-Type".into(), format.content_type().into()),
+                                ("X-ClickHouse-Format".into(), name),
+                            ],
                             body: out,
                         },
                         Err(e) => error(&e),
@@ -260,7 +279,67 @@ fn seed(
             sorting_key: param("sorting_key").unwrap_or_default(),
         },
     );
+    if let Some(info) = req.headers.get("x-loams-table") {
+        engine
+            .catalog
+            .set_info(&database, &table, table_info(info).map_err(|e| bad(&e))?);
+    }
     Ok(())
+}
+
+/// `X-Loams-Table` (plan HE1 Task 38): what `system.tables`, `system.columns`,
+/// `DESCRIBE` and `SHOW CREATE` print about a seeded table, as JSON:
+/// `{"engine_full": …, "partition_key": …, "primary_key": …, "sampling_key":
+/// …, "create_table_query": …, "show_create": …, "as_select": …, "comment":
+/// …, "columns": [{"name", "type", "default_kind", "default_expression",
+/// "comment", "codec", "ttl", "is_in_partition_key", "is_in_sorting_key",
+/// "is_in_primary_key", "is_in_sampling_key"}, …]}`. Missing keys are empty.
+pub fn table_info(json: &str) -> Result<TableInfo, String> {
+    let v: serde_json::Value = serde_json::from_str(json).map_err(|e| e.to_string())?;
+    let text = |v: &serde_json::Value, key: &str| {
+        v.get(key)
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_string()
+    };
+    let flag = |v: &serde_json::Value, key: &str| match v.get(key) {
+        Some(serde_json::Value::Bool(b)) => *b,
+        Some(serde_json::Value::Number(n)) => n.as_u64().is_some_and(|n| n != 0),
+        _ => false,
+    };
+    let columns = v
+        .get("columns")
+        .and_then(serde_json::Value::as_array)
+        .map(|cols| {
+            cols.iter()
+                .map(|c| ColumnInfo {
+                    name: text(c, "name"),
+                    ty: text(c, "type"),
+                    default_kind: text(c, "default_kind"),
+                    default_expression: text(c, "default_expression"),
+                    comment: text(c, "comment"),
+                    codec: text(c, "codec"),
+                    ttl: text(c, "ttl"),
+                    is_in_partition_key: flag(c, "is_in_partition_key"),
+                    is_in_sorting_key: flag(c, "is_in_sorting_key"),
+                    is_in_primary_key: flag(c, "is_in_primary_key"),
+                    is_in_sampling_key: flag(c, "is_in_sampling_key"),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(TableInfo {
+        uuid: text(&v, "uuid"),
+        engine_full: text(&v, "engine_full"),
+        partition_key: text(&v, "partition_key"),
+        primary_key: text(&v, "primary_key"),
+        sampling_key: text(&v, "sampling_key"),
+        create_table_query: text(&v, "create_table_query"),
+        show_create: text(&v, "show_create"),
+        as_select: text(&v, "as_select"),
+        comment: text(&v, "comment"),
+        columns,
+    })
 }
 
 fn connection(

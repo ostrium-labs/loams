@@ -51,6 +51,11 @@ pub enum Command {
     InstallRuntime(InstallRuntimeArgs),
     /// Print the daemon's version.
     Version,
+    /// Agent packages from the Loams Marketplace (design §73).
+    Agent {
+        #[command(subcommand)]
+        command: AgentCommand,
+    },
     /// Loams integration used by the Loams Bot harness (`loams bot-acp`).
     #[command(hide = true)]
     Loams {
@@ -66,6 +71,52 @@ pub enum Command {
 pub enum LoamsCommand {
     /// Speak ACP on stdin/stdout as the Loams Bot agent.
     BotAcp,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum AgentCommand {
+    /// Run the agent package conformance suite, LAPC Core (design §73 §9),
+    /// against a package directory holding `listing.json`, or a listing
+    /// whose package is `--package` or comes from the npm registry. Writes
+    /// the JSON report to `--out` (else stdout) and a summary to stderr.
+    /// Exits 0 when the package reaches Core, 1 when it does not, 2 when
+    /// the run could not happen.
+    Conformance(ConformanceArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct ConformanceArgs {
+    /// A package directory with `listing.json`, or a `listing.json`.
+    #[arg(value_name = "PACKAGE_DIR|LISTING_JSON")]
+    pub target: PathBuf,
+    /// The package for a listing file: a directory or an npm tarball
+    /// (checked against the listing's integrity).
+    #[arg(long, value_name = "DIR|TGZ")]
+    pub package: Option<PathBuf>,
+    /// Write the report here instead of stdout.
+    #[arg(long, value_name = "PATH")]
+    pub out: Option<PathBuf>,
+    /// Sign the report with Sigstore keyless signing (`cosign sign-blob
+    /// --bundle`), as the index CI's identity; writes `<out>.sigstore.json`.
+    /// Needs `--out` and `cosign` on PATH.
+    #[arg(long, requires = "out")]
+    pub sign: bool,
+    /// The `node` to run the agent with (default: from PATH).
+    #[arg(long, value_name = "PATH")]
+    pub node: Option<PathBuf>,
+    /// The `npm` to install with (default: from PATH).
+    #[arg(long, value_name = "PATH")]
+    pub npm: Option<PathBuf>,
+    /// Install and run here and keep the files (default: a temporary
+    /// directory, removed afterwards).
+    #[arg(long, value_name = "DIR")]
+    pub work_dir: Option<PathBuf>,
+    /// LOAMS_PG_URL for a listing that declares `postgres`, from a local Loams.
+    #[arg(long, value_name = "URL")]
+    pub pg_url: Option<String>,
+    /// LOAMS_DURABLE_URL for a listing that declares `durable`.
+    #[arg(long, value_name = "URL")]
+    pub durable_url: Option<String>,
 }
 
 #[derive(Debug, Subcommand)]

@@ -1,0 +1,1 @@
+SELECT COLUMNS('^(a|k)$') APPLY(max) FROM u25

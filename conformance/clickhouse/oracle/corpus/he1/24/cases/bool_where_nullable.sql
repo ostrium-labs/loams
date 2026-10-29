@@ -1,0 +1,1 @@
+SELECT id FROM t24n WHERE n8 ORDER BY id

@@ -110,6 +110,9 @@ message Artifact {
   string integrity = 4;
   // An archive's files, one per platform.
   repeated ArchiveFile files = 5;
+  // Public mirrors of the package file (npm, pypi, oci), beside its registry
+  // reference and never instead of it (D1812). An archive's are on its files.
+  repeated ArtifactLocation locations = 6;
 }
 
 enum ArtifactType {
@@ -125,6 +128,25 @@ message ArchiveFile {
   string url = 2;
   string sha256 = 3;
   string path = 4;
+  // Public mirrors of this file, beside its url (D1812).
+  repeated ArtifactLocation locations = 5;
+}
+
+// A public mirror of an artifact's bytes (D1812): read first when its tier is
+// enabled, checked by SHA-256, then by integrity and provenance as any
+// artifact (D1459); the HTTPS location is the fallback. The index carries the
+// reference, never the bytes (D1460).
+message ArtifactLocation {
+  LocationKind kind = 1;
+  // The Walrus blob id: 32 bytes, URL-safe base64 without padding.
+  string blob_id = 2;
+  // The SHA-256 of the blob's bytes, lowercase hex.
+  string sha256 = 3;
+}
+
+enum LocationKind {
+  LOCATION_KIND_UNSPECIFIED = 0;
+  LOCATION_KIND_WALRUS = 1;
 }
 
 enum Platform {
@@ -154,8 +176,18 @@ enum ProvenanceType {
 
 message Runtime {
   RuntimeKind kind = 1;
-  // A version range, such as `>=22.13`.
+  // A version range of the engine, such as `>=22.13` for node or `>=1.4.4`
+  // for bun.
   string version = 2;
+  // The program that runs a node runtime's entrypoint (D1808); unset means
+  // node. Only the node runtime has an engine.
+  Engine engine = 3;
+}
+
+enum Engine {
+  ENGINE_UNSPECIFIED = 0;
+  ENGINE_NODE = 1;
+  ENGINE_BUN = 2;
 }
 
 enum RuntimeKind {

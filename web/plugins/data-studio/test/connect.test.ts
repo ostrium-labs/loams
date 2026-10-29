@@ -6,7 +6,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 
 const WEB = fileURLToPath(new URL('../../..', import.meta.url));
 const SKIP = new Set(['node_modules', 'dist', 'gen', 'test', 'tests', '.vite']);
@@ -19,6 +19,10 @@ const PENDING: Record<string, string> = {
   // Streams and links: until loams.stream.v1 (API2 Task 2).
   'plugins/streams/src/client.ts': 'loams.stream.v1, API2 Task 2',
   'plugins/overview/src/load.ts': 'loams.stream.v1, API2 Task 2',
+  // Managed engines: the design 81 REST facade (api/engines/openapi.json) has no Connect
+  // service yet (ENG-UI D2015).
+  'plugins/engines/src/client.ts': 'design 81 engines facade, D2015',
+  'plugins/engines/src/index.tsx': 'design 81 engines facade, D2015',
 };
 
 function* files(dir: string): Generator<string> {
@@ -40,7 +44,7 @@ describe('API2 Task 10', () => {
     // Data Studio's one REST call is SQL; collections, documents and search are Connect.
     const client = readFileSync(join(WEB, 'plugins/data-studio/src/client.ts'), 'utf8');
     expect(client.match(/\/v1\/namespaces[^`'"]*/g)).toEqual([
-      // biome-ignore lint/suspicious/noTemplateCurlyInString: the source text of the template
+      // oxlint-disable-next-line no-template-curly-in-string -- the source text of the template
       '/v1/namespaces/${encodeURIComponent(ns)}/sql',
     ]);
     for (const service of [

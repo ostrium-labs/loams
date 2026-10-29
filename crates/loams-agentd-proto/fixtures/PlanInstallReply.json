@@ -1,0 +1,77 @@
+{
+  "plan": {
+    "cannot": [
+      "Reach any host but api.github.com."
+    ],
+    "cost": null,
+    "dependencies": [
+      {
+        "id": "ostrium/plane-mcp-server",
+        "installed": true,
+        "version": ">=0.3.0"
+      }
+    ],
+    "digest": "5f2b1c8e0d3a4b6c7d8e9f00112233445566778899aabbccddeeff0011223344",
+    "egress": [
+      "api.github.com"
+    ],
+    "licence": "MIT",
+    "models": null,
+    "place": {
+      "always_ask": [
+        "merge_pull_request"
+      ],
+      "egress": [
+        "api.github.com"
+      ]
+    },
+    "provenance": {
+      "ref": "https://api.github.com/repos/github/github-mcp-server/attestations",
+      "type": "github-attestation"
+    },
+    "secrets": [
+      {
+        "description": "A GitHub personal access token.",
+        "name": "token",
+        "required": true
+      }
+    ],
+    "sourceRepository": "https://github.com/github/github-mcp-server",
+    "summary": {
+      "framework": null,
+      "id": "ostrium/github-mcp-server",
+      "kind": "mcp-server",
+      "language": "go",
+      "latest": "2.0.3",
+      "level": "core",
+      "revocation": {
+        "advisory": "https://github.com/advisories/GHSA-0000-0000-0000",
+        "reason": "An upstream advisory affects some tools.",
+        "severity": "warn",
+        "versions": ">=2.0.0, <2.1.0"
+      },
+      "source": "official",
+      "summary": "GitHub's official MCP server.",
+      "tier": "firstParty",
+      "title": "GitHub"
+    },
+    "tools": [
+      {
+        "alwaysAsks": true,
+        "description": "Merges a pull request.",
+        "mcpServer": null,
+        "name": "merge_pull_request",
+        "risk": "destructive"
+      },
+      {
+        "alwaysAsks": false,
+        "description": "Reads an issue.",
+        "mcpServer": "io.github.github/github-mcp-server",
+        "name": "get_issue",
+        "risk": "read"
+      }
+    ],
+    "version": "2.0.3",
+    "versionAgeDays": 4
+  }
+}
