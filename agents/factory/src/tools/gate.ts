@@ -9,7 +9,7 @@ import type { ToolAction } from '@mastra/core/tools';
 
 import { type Decision, decide, type FactoryPolicy, type Risk } from '../policy.js';
 
-// biome-ignore lint/suspicious/noExplicitAny: Mastra's tool type is generic over its schemas.
+// oxlint-disable-next-line typescript/no-explicit-any -- Mastra's tool type is generic over its schemas.
 type AnyTool = ToolAction<any, any, any, any, any, any>;
 
 /** agentd's tool risks (`loams-agentd-mcp` `risk_of`); unknown tools ask. */
@@ -36,7 +36,9 @@ const AGENTD_RISK: Record<string, Risk> = {
   post_review_comment: 'write',
   open_change_request: 'write',
   request_approval: 'write',
+  close_change_request: 'write',
   merge_change_request: 'destructive',
+  deploy_live_app: 'destructive',
 };
 
 /** A tool's risk: the agentd table, else destructive (so it always asks). */

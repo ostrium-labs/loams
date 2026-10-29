@@ -52,7 +52,7 @@ export function PipelinesPage({ client, initial, sample }: PipelinesPageProps) {
   // never put in the graph or the spec.
   const secrets = useRef(new Map<string, string>());
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: tick retries on purpose
+  // oxlint-disable-next-line react/exhaustive-deps -- tick retries on purpose
   useEffect(() => {
     const abort = new AbortController();
     setLoad({ state: 'loading' });

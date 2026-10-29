@@ -215,6 +215,7 @@ impl Daemon {
                     "command": {
                         "kind": "run",
                         "request": RunRequest {
+                            mcp_servers: Vec::new(),
                             mcp: None,
                             prompt: prompt.into(),
                             harness: None,

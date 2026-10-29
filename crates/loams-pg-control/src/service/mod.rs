@@ -114,9 +114,11 @@ impl fmt::Debug for Clock {
 /// The service's defaults and limits.
 #[derive(Clone)]
 pub struct ServiceConfig {
-    /// The Postgres major a create without one gets (Task 0 ruling 7: 17).
+    /// The Postgres major a create without one gets: the pin file's
+    /// `[majors] default` (`loams_postgres::majors::DEFAULT`, D1114).
     pub default_pg_version: u32,
-    /// The majors a project may have.
+    /// The majors a new project may have: the pin file's `[majors]
+    /// supported` (`loams_postgres::majors::SUPPORTED`, D1114).
     pub pg_versions: Vec<u32>,
     pub default_region: String,
     /// The `loams-wal` pool a create without one gets.
@@ -156,8 +158,8 @@ impl fmt::Debug for ServiceConfig {
 impl Default for ServiceConfig {
     fn default() -> Self {
         ServiceConfig {
-            default_pg_version: 17,
-            pg_versions: vec![17],
+            default_pg_version: loams_postgres::majors::DEFAULT,
+            pg_versions: loams_postgres::majors::SUPPORTED.to_vec(),
             default_region: "local".into(),
             default_wal_pool: "default".into(),
             default_history_retention: Duration::from_secs(7 * 24 * 3600),
@@ -266,6 +268,29 @@ impl Reason {
         .find(|r| r.as_str() == name)
         .unwrap_or(Reason::Internal)
     }
+}
+
+/// A refusal by the meter's gate as a service error (design §63 §17.4):
+/// exhausted allowance and spend cap are `resource_exhausted`, a missing
+/// payment method or entitlement `failed_precondition`, an unreachable
+/// meter `unavailable`. Metadata carries `entitlement` and `reason`.
+pub fn entitlement_error(r: &loams_meter_gate::gate::Refusal) -> ServiceError {
+    use loams_meter_gate::gate::RefusalReason as R;
+    let reason = match r.reason {
+        R::EntitlementExhausted | R::SpendCapReached => Reason::ResourceExhausted,
+        R::PaymentMethodRequired | R::NotEntitled => Reason::FailedPrecondition,
+        R::MeterUnavailable => Reason::Unavailable,
+    };
+    let mut e = ServiceError::new(
+        reason,
+        format!("entitlement {} is refused: {}", r.feature, r.reason),
+    )
+    .with("entitlement", r.feature.clone())
+    .with("reason", r.reason.reason());
+    if let Some(after) = r.retry_after {
+        e = e.with("retry_after_s", after.as_secs().max(1).to_string());
+    }
+    e
 }
 
 /// A refused or failed call: a reason, a message for the caller and the
@@ -431,6 +456,9 @@ pub struct PgService<N> {
     /// Kicks the reconciler after a role or database change, so running
     /// computes take the new spec now (Task 24); `None`: the resync does.
     kicker: Option<crate::reconcile::Kicker>,
+    /// The meter's gate, asked before a compute is woken (design §63
+    /// §10.2, ME1 Task 21); `NoGate` by default.
+    entitlements: loams_meter_gate::entitle::Entitlements,
 }
 
 impl<N: fmt::Debug> fmt::Debug for PgService<N> {
@@ -458,6 +486,7 @@ impl<N: NeonRead> PgService<N> {
             secrets,
             config,
             kicker: None,
+            entitlements: loams_meter_gate::entitle::Entitlements::default(),
         }
     }
 
@@ -466,6 +495,32 @@ impl<N: NeonRead> PgService<N> {
     pub fn with_kicker(mut self, kicker: crate::reconcile::Kicker) -> Self {
         self.kicker = Some(kicker);
         self
+    }
+
+    /// Asks the meter's gate before each compute wake (`StartEndpoint`,
+    /// `RestartEndpoint`).
+    #[must_use]
+    pub fn with_entitlements(
+        mut self,
+        entitlements: loams_meter_gate::entitle::Entitlements,
+    ) -> Self {
+        self.entitlements = entitlements;
+        self
+    }
+
+    /// Whether `namespace`'s org may run a Postgres compute now (§63 §10.2:
+    /// `check(pg_compute, 0)`, access at all). The compute's time is then
+    /// counted by its `postgres.compute` ticks.
+    pub(crate) fn may_wake(&self, namespace: &str) -> Result<(), ServiceError> {
+        self.entitlements
+            .check(
+                None,
+                namespace,
+                loams_meter_gate::entitle::features::PG_COMPUTE,
+                0,
+            )
+            .map(|_| ())
+            .map_err(|r| entitlement_error(&r))
     }
 
     /// Marks `project_id` for a reconciler pass, when there is a kicker.
@@ -645,4 +700,19 @@ fn check_namespace(namespace: &str) -> Result<(), ServiceError> {
 /// A duration in the proto's JSON form, for error metadata: `604800s`.
 fn seconds(s: u64) -> String {
     format!("{s}s")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// D1114: the offered majors come from the pin file through
+    /// `loams_postgres::majors`, not from a hard-coded list.
+    #[test]
+    fn default_config_majors_come_from_majors_rs() {
+        let c = ServiceConfig::default();
+        assert_eq!(c.default_pg_version, loams_postgres::majors::DEFAULT);
+        assert_eq!(c.pg_versions, loams_postgres::majors::SUPPORTED);
+        assert!(c.pg_versions.contains(&c.default_pg_version));
+    }
 }

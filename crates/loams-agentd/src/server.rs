@@ -101,6 +101,8 @@ pub async fn serve(options: ServeOptions) -> anyhow::Result<()> {
     let runtime = Engine::assemble_runtime(&engine_config, EngineProfile::local(&store)?).await?;
     // `[groups]` (SD1 Task 12): how many run-group members run at once.
     runtime.core().run_groups.set_limits(config.groups.limits());
+    // The marketplace (MK1 Task 4b), under the daemon directory.
+    crate::marketplace::start(paths.dir(), runtime.core());
 
     let info = DaemonInfo {
         mode,

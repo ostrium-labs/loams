@@ -1,0 +1,21 @@
+[package]
+name = "loams-cql"
+description = "Cassandra-compatible gateway components for Loams KV (design 77, KV3)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+async-trait.workspace = true
+cassandra-protocol = "=4.0.1"
+loams-kv.workspace = true
+loams-tuple.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

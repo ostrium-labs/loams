@@ -1,0 +1,25 @@
+# Written by byoc/install.sh --kafka confluent (CC1 Task 8, D1820): a Confluent
+# Cloud topic read into a Loams stream. Edit it freely: install.sh does not
+# replace an instance file that exists, except with --reconfigure. The format
+# is docs/guides/connectors/connect-role.md; the profile's defaults (SASL_SSL,
+# PLAIN, verified TLS) are docs/guides/connectors/confluent-cloud.md.
+name: @NAME@
+connector: kafka
+profile: confluent-cloud
+direction: source
+namespace: default
+namespace_id: 0
+stream: "@STREAM@"
+config:
+  brokers: "@BOOTSTRAP@"
+  topics: ["@TOPIC@"]
+  # Under the confluent module's consumer_group_prefix, which its ACLs allow.
+  group_id_prefix: "@PREFIX@"
+  group_id: "@PREFIX@@NAME@"
+  sasl:
+    # Files the VM's secret fetcher writes under secrets/connect/0/.
+    username_secret: confluent-@INTEGRATION@/username
+    password: confluent-@INTEGRATION@/password
+  # Loams' share of the cluster's throughput (bytes a second): it bounds what
+  # this instance adds to the Confluent bill.
+  rate_limit: { bytes_per_sec: @RATE@ }

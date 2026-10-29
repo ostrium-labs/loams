@@ -1,0 +1,25 @@
+{
+  "label": "temporal-mem n=1 i=0",
+  "mode": "signal",
+  "target": "temporal:127.0.0.1:27233",
+  "duration_s": 20,
+  "concurrency": 64,
+  "ops": 43719,
+  "ops_per_s": 2185.95,
+  "errors": 0,
+  "p50_ms": 40.982923,
+  "p99_ms": 42.31494,
+  "p999_ms": 43.078872,
+  "params": {
+    "act_pollers": 32,
+    "conns": 8,
+    "k": 4,
+    "namespace": "default",
+    "task_queue": "bq1",
+    "timer_ms": 100,
+    "warmup_s": 5,
+    "wf_pollers": 32,
+    "workflows": 2000
+  },
+  "started_at_utc": "2026-10-28T12:59:55Z"
+}

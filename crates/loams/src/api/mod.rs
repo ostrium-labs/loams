@@ -9,6 +9,7 @@
 //! and reflection. It does not replace any route here yet — API1 Tasks 2–8
 //! add one RPC per route and Task 9 deletes the route.
 
+mod admin_rpcs;
 mod collections;
 pub mod connect;
 mod connect_admin;
@@ -46,6 +47,7 @@ pub mod hot;
 pub mod house_proxy;
 pub mod internal;
 pub(crate) mod live;
+pub mod meter;
 mod namespace_reach;
 pub(crate) mod objects;
 #[cfg(feature = "postgres")]
@@ -174,6 +176,11 @@ pub struct AppState {
     /// LV1 Task 18), and then the package answers `feature_not_in_variant`.
     #[cfg(feature = "live")]
     pub live: Option<loams_live::LiveRoutes>,
+    /// Loams Meter's `meter` role (ME1 role wiring, feature `meter`): its
+    /// public services on this port; `None` where this node does not serve
+    /// them (not a gateway node), and then they answer `meter_not_served`.
+    #[cfg(feature = "meter")]
+    pub meter: Option<std::sync::Arc<loams_meter::role::MeterRole>>,
     /// The embedded durable server's protocol endpoint, served as
     /// `POST /durable/` (B12, [`durable`]); `None` when this port does not
     /// serve it, and then the route answers `404 durable_not_served`.
@@ -638,14 +645,11 @@ struct Produce {
     records: Vec<RecordBody>,
 }
 
-async fn produce(
-    State(state): State<AppState>,
-    path: Result<Path<(String, String, String)>, PathRejection>,
-    body: Result<Bytes, BytesRejection>,
-) -> ApiResult {
-    let (Path((ns, stream, partition)), body) = (path?, body?);
-    let partition = parse_partition(&partition)?;
-    let request: Produce = parse_json(&body)?;
+/// The records of a produce body (`{"records": [{key, value, headers,
+/// timestamp_ms}]}`, base64), as the native produce route and the meter's
+/// service ingest read them.
+pub(crate) fn decode_records(body: &Bytes) -> Result<Vec<Record>, ApiError> {
+    let request: Produce = parse_json(body)?;
     let mut records = Vec::with_capacity(request.records.len());
     for record in request.records {
         let mut headers = Vec::with_capacity(record.headers.len());
@@ -660,6 +664,17 @@ async fn produce(
             timestamp_ms: record.timestamp_ms.unwrap_or(-1),
         });
     }
+    Ok(records)
+}
+
+async fn produce(
+    State(state): State<AppState>,
+    path: Result<Path<(String, String, String)>, PathRejection>,
+    body: Result<Bytes, BytesRejection>,
+) -> ApiResult {
+    let (Path((ns, stream, partition)), body) = (path?, body?);
+    let partition = parse_partition(&partition)?;
+    let records = decode_records(&body)?;
     let acks = produce_records(
         &state.meta,
         &state.writer,

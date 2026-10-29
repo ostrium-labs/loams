@@ -6,7 +6,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { METHODS } from '../src/gen/methods';
 import { type Request, request } from '../src/requests';
 
@@ -30,6 +30,15 @@ const REQUESTS: Request[] = [
   request('ListHarnesses', {}),
   request('CancelInstall', { harness: 'codex' }),
   request('InstallHarness', { harness: 'codex' }),
+  request('FactoryList', {}),
+  request('FactoryTest', { app: 'forgejo' }),
+  request('FactoryQuery', { app: 'forgejo', op: 'repos', params: { limit: 20 } }),
+  request('FactoryConfigure', {
+    app: 'forgejo',
+    url: 'https://git.example.com',
+    fields: { token: 'pat-1' },
+  }),
+  request('FactoryRemove', { app: 'forgejo' }),
   request('GetTitleSettings', {}),
   request('SetTitleSettings', { harness: 'claude-code', model: null }),
   request('SetHarnessEnabled', { harness: 'pi', enabled: false }),
@@ -389,6 +398,63 @@ const REQUESTS: Request[] = [
   }),
   request('GetChecks', { chatId: 'chat-1', provider: 'github', sha: 'abcdef0' }),
   request('GetCheckLog', { chatId: 'chat-1', provider: 'github', logId: '901', lines: 200 }),
+  request('DeployLiveApp', {
+    chatId: 'chat-1',
+    approvalId: 'fa-2',
+    app: 'notes',
+    commit: '0123456789abcdef0123456789abcdef01234567',
+  }),
+  request('CloseChangeRequest', { chatId: 'chat-1', provider: 'forgejo', number: 7 }),
+  // MK1 Task 4b: MarketplaceService.
+  request('ListMarketplaceSources', {}),
+  request('AddMarketplaceSource', {
+    name: 'example',
+    url: 'https://example.org/market/index.json',
+    identity: 'https://github.com/example/market/.github/workflows/publish.yml@refs/heads/main',
+    issuer: null,
+  }),
+  request('RemoveMarketplaceSource', {
+    name: 'example',
+  }),
+  request('SearchListings', {
+    query: 'github',
+    kinds: ['mcp-server'],
+    frameworks: [],
+    languages: [],
+    minLevel: 'core',
+    tiers: ['firstParty'],
+    source: null,
+  }),
+  request('GetListing', {
+    id: 'ostrium/github-mcp-server',
+    version: null,
+    source: null,
+  }),
+  request('PlanInstall', {
+    id: 'ostrium/github-mcp-server',
+    version: '2.0.3',
+    source: 'official',
+  }),
+  request('InstallListing', {
+    id: 'ostrium/github-mcp-server',
+    version: '2.0.3',
+    source: 'official',
+    planDigest: '5f2b1c8e',
+    config: {},
+    secrets: {
+      token: 'ghp_example',
+    },
+  }),
+  request('UninstallListing', {
+    id: 'ostrium/github-mcp-server',
+  }),
+  request('ListInstalledListings', {}),
+  request('CheckListingUpdates', {}),
+  request('UpdateListing', {
+    id: 'ostrium/github-mcp-server',
+    version: null,
+    planDigest: '5f2b1c8e',
+  }),
 ];
 
 const file = join(import.meta.dirname, 'requests.json');

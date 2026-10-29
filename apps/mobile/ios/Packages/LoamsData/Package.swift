@@ -26,6 +26,15 @@ let package = Package(
             // are not Sendable-annotated; LoamsCore already builds in Swift 6 mode.
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
-        .testTarget(name: "LoamsDataTests", dependencies: ["LoamsData"]),
+        .testTarget(
+            name: "LoamsDataTests",
+            dependencies: [
+                "LoamsData",
+                "LoamsCore",
+                "LoamsProto",
+                .product(name: "Connect", package: "connect-swift"),
+                .product(name: "SwiftProtobuf", package: "swift-protobuf"),
+            ]
+        ),
     ]
 )

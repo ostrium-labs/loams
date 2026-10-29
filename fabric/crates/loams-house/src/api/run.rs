@@ -580,15 +580,37 @@ impl HouseApi {
                 return Err(to_connect(&deny::as_setting_refusal(err)));
             }
         };
-        let admitted = gate::admit(&analysis, &parsed_text, expect, false, unparsed.as_deref())
-            .map_err(|err| to_connect(&err))
-            .and_then(|()| {
-                if read_only && analysis.classification.class != QueryClass::ReadOnly {
-                    Err(refuse_write())
-                } else {
-                    Ok(())
-                }
-            });
+        // HE1 R14.5: calls of the namespace's own views are allowed.
+        let views = match gate::view_calls(
+            self.lake.as_deref(),
+            user.namespace,
+            &database,
+            &analysis,
+        )
+        .await
+        {
+            Ok(views) => views,
+            Err(err) => {
+                self.pool.release(lease, Outcome::Completed);
+                return Err(to_connect(&err));
+            }
+        };
+        let admitted = gate::admit_views(
+            &analysis,
+            &parsed_text,
+            expect,
+            false,
+            unparsed.as_deref(),
+            &views,
+        )
+        .map_err(|err| to_connect(&err))
+        .and_then(|()| {
+            if read_only && analysis.classification.class != QueryClass::ReadOnly {
+                Err(refuse_write())
+            } else {
+                Ok(())
+            }
+        });
         if let Err(err) = admitted {
             self.pool.release(lease, Outcome::Completed);
             return Err(err);

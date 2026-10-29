@@ -472,6 +472,36 @@ mod tests {
         }
     }
 
+    /// MK1 Task 4b: an agent can never search, plan, install, update or
+    /// uninstall marketplace listings, or change the sources, through the
+    /// MCP shim: installing is the person's consent (D1466).
+    #[tokio::test]
+    async fn marketplace_not_in_mcp_role() {
+        let run = mcp("main");
+        for method in [
+            methods::LIST_MARKETPLACE_SOURCES,
+            methods::ADD_MARKETPLACE_SOURCE,
+            methods::REMOVE_MARKETPLACE_SOURCE,
+            methods::SEARCH_LISTINGS,
+            methods::GET_LISTING,
+            methods::PLAN_INSTALL,
+            methods::INSTALL_LISTING,
+            methods::UNINSTALL_LISTING,
+            methods::LIST_INSTALLED_LISTINGS,
+            methods::CHECK_LISTING_UPDATES,
+            methods::UPDATE_LISTING,
+        ] {
+            assert!(
+                !allowed(&run, method, json!({"chatId": "main", "id": "a/b"})).await,
+                "{method}"
+            );
+            assert!(
+                allowed(&Identity::owner(), method, json!({})).await,
+                "{method}"
+            );
+        }
+    }
+
     /// SD1 Task 12: an agent can never create, check or resolve a run group
     /// through the MCP shim; a resolve merges or pushes (§53 §8.1).
     #[tokio::test]
@@ -787,6 +817,8 @@ mod tests {
             methods::MERGE_CHANGE_REQUEST,
             methods::GET_CHECKS,
             methods::GET_CHECK_LOG,
+            methods::DEPLOY_LIVE_APP,
+            methods::CLOSE_CHANGE_REQUEST,
         ] {
             assert!(
                 allowed(&run, method, json!({ "chatId": "side" })).await,

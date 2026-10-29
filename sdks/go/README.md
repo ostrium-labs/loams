@@ -20,12 +20,12 @@ Requires **Go 1.24 or newer** — the SDK uses range-over-func iterators
 ## Installing
 
 ```console
-go get loams.dev/go@v0.1.2
+go get loams.dev/go@v0.1.3
 ```
 
 Go 1.25 or newer: the module lives in `sdks/go` of the main repository, and the
 `go-import` tag that says so carries a subdirectory, which only Go 1.25 reads
-(see [Publishing](#publishing)). `v0.1.2` tracks Loams 0.1.2; in 0.x the API
+(see [Publishing](#publishing)). `v0.1.3` tracks Loams 0.1.3; in 0.x the API
 may change between minor versions.
 
 From a checkout of this repository, with a `replace`:

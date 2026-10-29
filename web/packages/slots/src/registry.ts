@@ -22,6 +22,7 @@ export const SLOT_KINDS: Record<string, SlotKind> = {
   'shell.topbar.center': 'list',
   'shell.topbar.right': 'list',
   'shell.home': 'single',
+  'studio.agentd.scope': 'single',
   'shell.inspector.tab': 'list',
   'shell.drawer.tab': 'list',
   'palette.command': 'list',

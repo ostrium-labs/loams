@@ -1,0 +1,137 @@
+name: Temporal corpus (Java)
+
+# Lane TSDK-java (D2131, D2132). Two jobs for the corpus's Java worker
+# (conformance/compute/temporal/corpus/workers/java, io.temporal:temporal-sdk
+# at pins.env TEMPORAL_SDK_JAVA, Maven in the pinned MAVEN_IMAGE):
+#
+#  - `worker` (pull requests that touch it, and by hand): compiles it and runs
+#    its unit tests (the scenario list against scenarios.json, every scenario
+#    has a workflow, the generator's flags) and corpus_replays_java, which
+#    replays the committed histories/java with the SDK's WorkflowReplayer
+#    (skipped, not passed, while no Java corpus is committed).
+#  - `corpus` (by hand only): generates the Java histories against the
+#    upstream Temporal server with generate-java.sh and uploads them with
+#    the rebuilt manifest, to be committed in a pull request. `server` picks
+#    the oracle: start-dev (the pinned admin-tools image's dev server, the
+#    committed Go/TypeScript corpus's server while compat mode is not go) or
+#    compat-mode (the stock server on Loams Postgres, conformance/compute/
+#    temporal/run.sh's stack).
+#
+# The gateway leg itself is the `sdk-leg (java)` job of temporal-gateway.yml.
+# Do not event-filter paths: the filter job decides, as in ci.yml.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      corpus:
+        description: generate the Java corpus and upload it
+        type: boolean
+        default: false
+      server:
+        description: the upstream server to generate against
+        type: choice
+        options: [start-dev, compat-mode]
+        default: start-dev
+
+permissions:
+  contents: read
+
+concurrency:
+  group: temporal-corpus-java-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  changes:
+    name: Changed paths
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      java: ${{ steps.filter.outputs.java }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # dorny/paths-filter is MIT-licensed; pinned to v4.0.3, as in ci.yml.
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        if: github.event_name == 'pull_request'
+        with:
+          token: ''
+          base: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          filters: |
+            java:
+              - 'conformance/compute/temporal/corpus/workers/java/**'
+              - 'conformance/compute/temporal/corpus/histories/java/**'
+              - 'conformance/compute/temporal/corpus/scenarios.json'
+              - 'conformance/compute/temporal/corpus/generate-java.sh'
+              - 'conformance/compute/pins.env'
+              - '.github/workflows/temporal-corpus-java.yml'
+
+  worker:
+    name: "Temporal corpus: the Java worker builds, its tests and corpus_replays_java"
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.java == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: mvn test in the pinned Maven image
+        run: |
+          . conformance/compute/lib.sh
+          docker run --rm -v "$PWD/conformance/compute/temporal/corpus:/c:ro" "$MAVEN_IMAGE" \
+            sh -ec 'cp -r /c /tmp/c && cd /tmp/c/workers/java && mvn -B test'
+
+  corpus:
+    name: "Temporal corpus: generate the Java histories (${{ inputs.server }})"
+    if: github.event_name == 'workflow_dispatch' && inputs.corpus
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      OC_OUT: ${{ github.workspace }}/target/compute
+      CORPUS_SERVER: ${{ inputs.server }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: the upstream server
+        run: |
+          . conformance/compute/lib.sh
+          if [ "$CORPUS_SERVER" = start-dev ]; then
+            docker network create dx1-corpus-java-net
+            docker run -d --name dx1-corpus-java-temporal --network dx1-corpus-java-net \
+              --network-alias temporal-frontend "$TEMPORAL_ADMIN_TOOLS_IMAGE" \
+              temporal server start-dev --ip 0.0.0.0 --headless
+            echo "OC_NETWORK=dx1-corpus-java-net" >> "$GITHUB_ENV"
+            for _ in $(seq 60); do
+              docker run --rm --network dx1-corpus-java-net "$TEMPORAL_ADMIN_TOOLS_IMAGE" \
+                temporal operator cluster health --address temporal-frontend:7233 >/dev/null 2>&1 && exit 0
+              sleep 2
+            done
+            exit 1
+          else
+            oc_up temporal
+          fi
+      - name: generate-java.sh
+        run: conformance/compute/temporal/corpus/generate-java.sh
+      - name: the manifest is complete
+        run: python3 conformance/compute/temporal/corpus/manifest.py check
+      - name: the histories replay (corpus_replays_java)
+        run: |
+          . conformance/compute/lib.sh
+          docker run --rm -v "$PWD/conformance/compute/temporal/corpus:/c:ro" "$MAVEN_IMAGE" \
+            sh -ec 'cp -r /c /tmp/c && cd /tmp/c/workers/java && CORPUS_HISTORIES=../../histories/java mvn -B test -Dtest=CorpusReplayTest'
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: temporal-corpus-java-${{ inputs.server }}
+          path: |
+            conformance/compute/temporal/corpus/histories/java
+            conformance/compute/temporal/corpus/histories/generate-java.json
+            conformance/compute/temporal/corpus/manifest.json
+          if-no-files-found: ignore
+          retention-days: 30

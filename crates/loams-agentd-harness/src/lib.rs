@@ -226,7 +226,7 @@ pub mod claude;
 pub mod codex;
 pub(crate) mod executable;
 pub mod install;
-pub(crate) mod jsonrpc;
+pub mod jsonrpc;
 pub mod mock;
 mod model_context;
 pub mod opencode;
@@ -433,6 +433,17 @@ pub(crate) fn crash_message(
 }
 
 pub use acp::AcpHarness;
+
+/// `node` and `npm` as agentd finds them for its npm adapters (PATH, the
+/// login shell's PATH, the version managers' directories), for the
+/// marketplace's `node` runtime (MK1 Task 0 ruling 9, Task 4b). On Windows
+/// `npm` is the `npm-cli.js` beside `node`.
+pub fn find_node_and_npm() -> (Option<std::path::PathBuf>, Option<std::path::PathBuf>) {
+    (
+        executable::find_on_paths("node", Vec::new()),
+        adapter_install::find_npm(),
+    )
+}
 pub use adapter_install::set_adapters_root;
 pub use claude::ClaudeHarness;
 pub use codex::CodexHarness;

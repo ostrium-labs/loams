@@ -1,0 +1,42 @@
+# The runs the guide's matrix is rendered from (scripts/compute/last_run.py;
+# coordinator ruling 2026-10-28). Each SDK leg's JUnit is committed as it came
+# out of its own run under last-run/, with that run's ID, date and mode; the
+# combiner keeps only each run's own SDKs' cases (names ending in `_<sdk>` or
+# containing `_<sdk>_`) and writes last-run.junit.xml and last-run.txt, which
+# matrix.py renders. An SDK of methods.toml with no run here reads "not yet run".
+#
+# To add or replace an SDK's result: copy its leg's temporal-gateway.junit.xml
+# (the CI artifact) to last-run/<name>.junit.xml, edit its [[run]], then
+#   python3 scripts/compute/last_run.py
+#   python3 scripts/compute/matrix.py temporal-gateway --junit conformance/compute/temporal/gateway/last-run.junit.xml \
+#     --run "$(cat conformance/compute/temporal/gateway/last-run.txt)" --splice docs/guides/durable/temporal-gateway.md
+
+[[run]]
+sdks = ["go", "ts"]
+junit = "last-run/go-ts.junit.xml"
+run = "2026-10-27, dev 0e9c0e8fb, run.sh on loopback: loams-temporal in development mode (memory store, in-process Resonate), the corpus's Go and TypeScript generators"
+
+[[run]]
+sdks = ["python"]
+junit = "last-run/python.junit.xml"
+run = "2026-10-28, dev 7968882ff, temporal-gateway.yml run 40620469286 (sdk-leg python): the temporal-gateway profile (Postgres store, the engine's Resonate)"
+
+[[run]]
+sdks = ["dotnet"]
+junit = "last-run/dotnet.junit.xml"
+run = "2026-10-28, dev 7968882ff, temporal-gateway.yml run 40620469286 (sdk-leg dotnet): the temporal-gateway profile (Postgres store, the engine's Resonate); the differential against histories/dotnet (compat mode) was added after this run, by #1484"
+
+[[run]]
+sdks = ["java"]
+junit = "last-run/java.junit.xml"
+run = "2026-10-28, dev 4f2f64fb1, temporal-gateway.yml run 40686319317 (sdk-leg java, dispatched): the temporal-gateway profile (Postgres store, the engine's Resonate). The scenarios, hello and signal passed; the Java replayer accepted 8 of 9 histories (terminated raised a query failure in the leg's replay test, CorpusReplayTest:69); the differentials were skipped (no Java corpus committed then)"
+
+[[run]]
+sdks = ["ruby"]
+junit = "last-run/ruby.junit.xml"
+run = "2026-10-28, dev 402e0f4a4, temporal-sdk-ruby.yml run 40690677386 (dispatched): the temporal-gateway profile. Scenarios, hello, signal and the replayer passed; the differentials were skipped (histories/ruby was committed after this run, by #1504)"
+
+[[run]]
+sdks = ["php"]
+junit = "last-run/php.junit.xml"
+run = "2026-10-28, dev 87b81fd20, temporal-sdk-php.yml run 40686083193 (dispatched): the temporal-gateway profile. Scenarios, hello, signal and the replayer (9/9) passed; the differentials against the committed corpus were skipped (histories/php comes with #1505), and the same run's diff against its own start-dev generation passed 9/9"

@@ -14,6 +14,10 @@
 //! * A query's trailing `SETTINGS …` and `FORMAT …` (at bracket depth 0) —
 //!   taken out and recorded: they are the statement's, for the front.
 //!
+//! * ClickHouse's name-resolution syntax (the ternary, scalar `WITH`, aliases
+//!   inside expressions, `APPLY` and other matcher transformers) is rewritten
+//!   first, by [`crate::rewrite`] (plan HE1 Task 25).
+//!
 //! The text is edited by byte ranges from sqlparser's own token spans, so
 //! everything else (literals, comments, quoting) reaches the parser exactly as
 //! the client wrote it.
@@ -82,6 +86,8 @@ struct Edit {
 
 /// Runs the pre-pass over `sql`.
 pub fn pre_pass(sql: &str) -> Result<PrePass, ChError> {
+    let rewritten = crate::rewrite::rewrite(sql)?;
+    let sql = rewritten.as_str();
     let dialect = ClickHouseDialect {};
     let tokens = Tokenizer::new(&dialect, sql)
         .tokenize_with_location()
@@ -259,7 +265,15 @@ fn trailing_clauses(
     };
     if !matches!(
         sig.first().map(|_| kw(0)),
-        Some(Some(Keyword::SELECT | Keyword::WITH))
+        Some(Some(
+            Keyword::SELECT
+                | Keyword::WITH
+                // Metadata statements carry them too (plan HE1 Task 38).
+                | Keyword::SHOW
+                | Keyword::DESCRIBE
+                | Keyword::DESC
+                | Keyword::EXISTS
+        ))
     ) && !matches!(sig.first().map(|&i| &tokens[i].token), Some(Token::LParen))
     {
         return Ok(());
@@ -272,7 +286,9 @@ fn trailing_clauses(
             Token::RParen | Token::RBracket => depth -= 1,
             _ => {}
         }
-        if depth == 0 && matches!(kw(s), Some(Keyword::SETTINGS | Keyword::FORMAT)) {
+        // A name part (`system.settings`) is not a clause.
+        let after_dot = s > 0 && matches!(tokens[sig[s - 1]].token, Token::Period);
+        if depth == 0 && !after_dot && matches!(kw(s), Some(Keyword::SETTINGS | Keyword::FORMAT)) {
             clauses.push(s);
         }
     }
@@ -459,13 +475,13 @@ fn join_name(tokens: &[TokenWithSpan], sig: &[usize], start: usize, end: usize) 
 
 /// Byte offsets of sqlparser's (line, column) locations: columns count
 /// characters from 1.
-struct Offsets {
+pub(crate) struct Offsets {
     /// For each line, the byte offset of each character, plus the end.
     lines: Vec<Vec<usize>>,
 }
 
 impl Offsets {
-    fn new(sql: &str) -> Self {
+    pub(crate) fn new(sql: &str) -> Self {
         let mut lines = vec![Vec::new()];
         for (i, c) in sql.char_indices() {
             lines.last_mut().expect("a line").push(i);
@@ -483,7 +499,7 @@ impl Offsets {
         Self { lines }
     }
 
-    fn at(&self, line: u64, column: u64) -> usize {
+    pub(crate) fn at(&self, line: u64, column: u64) -> usize {
         let line = &self.lines[(line.max(1) - 1) as usize];
         line[((column.max(1) - 1) as usize).min(line.len() - 1)]
     }

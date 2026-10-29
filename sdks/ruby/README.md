@@ -14,7 +14,7 @@ gem install loams
 or, in a `Gemfile`, pin the version exactly:
 
 ```ruby
-gem "loams", "0.1.2"
+gem "loams", "0.1.3"
 ```
 
 A prerelease tag such as `v0.1.0-preview.2` is spelled `0.1.0.pre.2` on RubyGems and needs `--pre`. The gem needs

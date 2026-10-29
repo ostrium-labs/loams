@@ -34,7 +34,7 @@ grep-regex.workspace = true
 grep-searcher.workspace = true
 gix-validate.workspace = true
 # The protobuf format only: `record` would pull in loams-log (R0.4, T0-7).
-loams-cloudevents = { path = "../loams-cloudevents", version = "0.1.2", default-features = false, features = ["protobuf"] }
+loams-cloudevents = { path = "../loams-cloudevents", version = "0.1.3", default-features = false, features = ["protobuf"] }
 # The H1 range cache that `RangeOdb`'s reads go through (Task 17, T0-15).
 loams-cache.workspace = true
 loams-common.workspace = true

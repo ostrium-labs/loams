@@ -1616,6 +1616,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7354288c522e7e980fafd2075d63d1285794c3a6a16cdd492f189ea406e5f18b"
 
 [[package]]
+name = "cassandra-protocol"
+version = "4.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f2b9432628147943eb265642273714eb5a5451bb61f652c1f06001c0ef3e099b"
+dependencies = [
+ "arc-swap",
+ "bitflags 2.13.2",
+ "bytes",
+ "chrono",
+ "crc32fast",
+ "derivative",
+ "derive_more",
+ "float_eq",
+ "integer-encoding 4.1.0",
+ "itertools 0.14.0",
+ "lz4_flex 0.13.1",
+ "num-bigint",
+ "snap",
+ "thiserror 2.0.21",
+ "time",
+ "uuid",
+]
+
+[[package]]
 name = "cbc"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3181,6 +3205,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "46c4cf71a36b46dcfc00e5014c0c20ccad2b1b6a008304d7d57d2749b2d41b3d"
 
 [[package]]
+name = "deadpool"
+version = "0.12.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0be2b1d1d6ec8d846f05e137292d0b89133caf95ef33695424c09568bdd39b1b"
+dependencies = [
+ "deadpool-runtime",
+ "lazy_static",
+ "num_cpus",
+ "tokio",
+]
+
+[[package]]
+name = "deadpool-runtime"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "092966b41edc516079bdf31ec78a2e0588d1d0c08f78b91d8307215928642b2b"
+
+[[package]]
 name = "defmt"
 version = "0.3.100"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3265,6 +3307,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7cd812cc2bc1d69d4764bd80df88b4317eaef9e773c75226407d9bc0876b211c"
 dependencies = [
  "serde_core",
+]
+
+[[package]]
+name = "derivative"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fcc3dd5e9e9c0b295d6e1e4d811fb6f157d5ffd784b8d202fc62eac8035a770b"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -3965,6 +4018,12 @@ dependencies = [
  "miniz_oxide 0.9.1",
  "zlib-rs",
 ]
+
+[[package]]
+name = "float_eq"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "28a80e3145d8ad11ba0995949bbcf48b9df2be62772b3d351ef017dff6ecb853"
 
 [[package]]
 name = "float_next_after"
@@ -5596,6 +5655,7 @@ dependencies = [
  "http",
  "hyper",
  "hyper-util",
+ "log",
  "rustls",
  "rustls-native-certs",
  "tokio",
@@ -5975,7 +6035,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tokio-rustls",
- "tokio-tungstenite 0.30.0",
+ "tokio-tungstenite",
  "tracing",
  "trait-variant",
  "webpki-roots 1.0.10",
@@ -6028,7 +6088,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
- "tungstenite 0.30.0",
+ "tungstenite",
  "twox-hash",
  "ulid 3.0.0",
  "url",
@@ -6457,6 +6517,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "jsonpath-rust"
+version = "1.0.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d23892d4caa103325a558250e9f4e406d81cf64f7c01679ae7a64e0413321e51"
+dependencies = [
+ "pest",
+ "pest_derive",
+ "regex",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "jsonschema"
 version = "0.58.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6528,6 +6601,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "k8s-openapi"
+version = "0.27.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "51b326f5219dd55872a72c1b6ddd1b830b8334996c667449c29391d657d78d5e"
+dependencies = [
+ "base64 0.22.1",
+ "jiff",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "kafka-protocol"
 version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6589,6 +6674,69 @@ checksum = "07293a4e297ac234359b510362495713f75ea345d5307140414f20c69ffeb087"
 dependencies = [
  "bitflags 2.13.2",
  "libc",
+]
+
+[[package]]
+name = "kube"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "acc5a6a69da2975ed9925d56b5dcfc9cc739b66f37add06785b7c9f6d1e88741"
+dependencies = [
+ "k8s-openapi",
+ "kube-client",
+ "kube-core",
+]
+
+[[package]]
+name = "kube-client"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0fcaf2d1f1a91e1805d4cd82e8333c022767ae8ffd65909bbef6802733a7dd40"
+dependencies = [
+ "base64 0.22.1",
+ "bytes",
+ "either",
+ "futures",
+ "http",
+ "http-body",
+ "http-body-util",
+ "hyper",
+ "hyper-rustls",
+ "hyper-timeout",
+ "hyper-util",
+ "jiff",
+ "jsonpath-rust",
+ "k8s-openapi",
+ "kube-core",
+ "pem 3.0.6",
+ "rustls",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "tower 0.5.3",
+ "tower-http 0.6.11",
+ "tracing",
+]
+
+[[package]]
+name = "kube-core"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f126d2db7a8b532ec1d839ece2a71e2485dc3bbca6cc3c3f929becaa810e719e"
+dependencies = [
+ "derive_more",
+ "form_urlencoded",
+ "http",
+ "jiff",
+ "k8s-openapi",
+ "serde",
+ "serde-value",
+ "serde_json",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -7319,7 +7467,9 @@ dependencies = [
  "buffa-types",
  "bytes",
  "bytesize",
+ "cassandra-protocol",
  "chrono",
+ "chrono-tz 0.10.4",
  "clap",
  "connectrpc",
  "connectrpc-build",
@@ -7337,7 +7487,7 @@ dependencies = [
  "foyer",
  "futures",
  "gethostname",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "gix-attributes",
  "gix-blame",
  "gix-commitgraph",
@@ -7372,8 +7522,10 @@ dependencies = [
  "itertools 0.15.0",
  "jsonschema",
  "jsonwebtoken",
+ "k8s-openapi",
  "kafka-protocol",
  "keyring",
+ "kube",
  "lance",
  "lance-file",
  "lance-index",
@@ -7383,6 +7535,7 @@ dependencies = [
  "landlock",
  "libc",
  "loro",
+ "md-5 0.11.0",
  "memmap2",
  "mimalloc",
  "moka",
@@ -7402,7 +7555,7 @@ dependencies = [
  "prost-build",
  "prost-reflect",
  "prost-types",
- "pulldown-cmark 0.12.2",
+ "pulldown-cmark",
  "qdrant-edge",
  "rand 0.10.3",
  "rand 0.9.5",
@@ -7415,6 +7568,7 @@ dependencies = [
  "reqwest 0.12.28",
  "reqwest 0.13.5",
  "resonate-base",
+ "resonate-client",
  "resonate-gateway-http",
  "resonate-plugin",
  "resonate-sdk",
@@ -7423,6 +7577,7 @@ dependencies = [
  "resonate-transport-http-push",
  "ring",
  "roaring",
+ "rpassword",
  "rquickjs",
  "rusqlite",
  "rustc-hash 2.1.3",
@@ -7437,7 +7592,6 @@ dependencies = [
  "serde_path_to_error",
  "serde_with",
  "serde_yaml_ng",
- "sha2 0.10.9",
  "sha2 0.11.0",
  "sigstore-verify",
  "similar",
@@ -7458,8 +7612,7 @@ dependencies = [
  "tokio-postgres",
  "tokio-rustls",
  "tokio-stream",
- "tokio-tungstenite 0.24.0",
- "tokio-tungstenite 0.30.0",
+ "tokio-tungstenite",
  "tokio-util",
  "toml 0.8.23",
  "tonic 0.14.6",
@@ -7475,6 +7628,8 @@ dependencies = [
  "url",
  "uuid",
  "webbrowser",
+ "webpki-roots 1.0.10",
+ "wiremock",
  "x509-parser",
  "xxhash-rust",
  "zeroize",
@@ -9643,7 +9798,7 @@ dependencies = [
  "prettyplease 0.2.37",
  "prost 0.14.4",
  "prost-types",
- "pulldown-cmark 0.13.4",
+ "pulldown-cmark",
  "pulldown-cmark-to-cmark",
  "regex",
  "syn 2.0.119",
@@ -9796,25 +9951,14 @@ dependencies = [
 
 [[package]]
 name = "pulldown-cmark"
-version = "0.12.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f86ba2052aebccc42cbbb3ed234b8b13ce76f75c3551a303cb2bcffcff12bb14"
-dependencies = [
- "bitflags 2.13.2",
- "getopts",
- "memchr",
- "pulldown-cmark-escape",
- "unicase",
-]
-
-[[package]]
-name = "pulldown-cmark"
 version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e9f068eba8e7071c5f9511831b44f32c740d5adf574e990f946ddb53db2f314e"
 dependencies = [
  "bitflags 2.13.2",
+ "getopts",
  "memchr",
+ "pulldown-cmark-escape",
  "unicase",
 ]
 
@@ -9830,7 +9974,7 @@ version = "22.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab1ad36992cead65f02aa399a373a42730922f1525d988172634fdefdecb8a60"
 dependencies = [
- "pulldown-cmark 0.13.4",
+ "pulldown-cmark",
 ]
 
 [[package]]
@@ -10541,7 +10685,7 @@ dependencies = [
 [[package]]
 name = "resonate-auth"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "jsonwebtoken",
  "reqwest 0.12.28",
@@ -10554,7 +10698,7 @@ dependencies = [
 [[package]]
 name = "resonate-base"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "lazy_static",
@@ -10568,9 +10712,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "resonate-client"
+version = "0.10.1"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
+dependencies = [
+ "async-trait",
+ "reqwest 0.12.28",
+ "resonate-core",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "resonate-core"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -10586,7 +10743,7 @@ dependencies = [
 [[package]]
 name = "resonate-gateway-http"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "lazy_static",
@@ -10604,7 +10761,7 @@ dependencies = [
 [[package]]
 name = "resonate-plugin"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "axum 0.7.9",
  "figment",
@@ -10617,7 +10774,7 @@ dependencies = [
 [[package]]
 name = "resonate-sdk"
 version = "0.6.0"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -10637,7 +10794,7 @@ dependencies = [
 [[package]]
 name = "resonate-sdk-macros"
 version = "0.1.0"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -10648,7 +10805,7 @@ dependencies = [
 [[package]]
 name = "resonate-server-sqlite"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "resonate-core",
@@ -10666,7 +10823,7 @@ dependencies = [
 [[package]]
 name = "resonate-sql"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "lazy_static",
@@ -10686,7 +10843,7 @@ dependencies = [
 [[package]]
 name = "resonate-timer-wheel"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "tokio",
  "verus_builtin",
@@ -10697,7 +10854,7 @@ dependencies = [
 [[package]]
 name = "resonate-trace"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "lazy_static",
  "opentelemetry",
@@ -10715,7 +10872,7 @@ dependencies = [
 [[package]]
 name = "resonate-transport-http-poll"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -10733,7 +10890,7 @@ dependencies = [
 [[package]]
 name = "resonate-transport-http-push"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=37b177cd019798f288a1dd5549f8a69de1613b90#37b177cd019798f288a1dd5549f8a69de1613b90"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "reqwest 0.12.28",
@@ -10810,6 +10967,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e27ee8bb91ca0adcf0ecb116293afa12d393f9c2b9b9cd54d33e8078fe19839"
 
 [[package]]
+name = "rpassword"
+version = "7.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2da316a15f47e3d053de9cb2c439650bd8fa4aaeb9365f2e5f27f492ff73c196"
+dependencies = [
+ "libc",
+ "rtoolbox",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "rquickjs"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10867,6 +11035,16 @@ dependencies = [
  "heapless 0.8.0",
  "num-traits",
  "smallvec",
+]
+
+[[package]]
+name = "rtoolbox"
+version = "0.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a1efe12a1469752d0e6ff5ebec0b6ef4924cc5c4c71046b0ec730040535819d"
+dependencies = [
+ "libc",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -13191,22 +13369,6 @@ dependencies = [
 
 [[package]]
 name = "tokio-tungstenite"
-version = "0.24.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "edc5f74e248dc973e0dbb7b74c7e0d6fcc301c694ff50049504004ef4d0cdcd9"
-dependencies = [
- "futures-util",
- "log",
- "rustls",
- "rustls-pki-types",
- "tokio",
- "tokio-rustls",
- "tungstenite 0.24.0",
- "webpki-roots 0.26.11",
-]
-
-[[package]]
-name = "tokio-tungstenite"
 version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "17a073bfed563fa236697a068031408a93cd9522e08abf9933ead3e73411bd71"
@@ -13217,7 +13379,7 @@ dependencies = [
  "rustls-pki-types",
  "tokio",
  "tokio-rustls",
- "tungstenite 0.30.0",
+ "tungstenite",
  "webpki-roots 0.26.11",
 ]
 
@@ -13467,6 +13629,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4cfcf7e2740e6fc6d4d688b4ef00650406bb94adf4731e43c096c3a19fe40840"
 dependencies = [
  "async-compression",
+ "base64 0.22.1",
  "bitflags 2.13.2",
  "bytes",
  "futures-core",
@@ -13474,6 +13637,7 @@ dependencies = [
  "http",
  "http-body",
  "http-body-util",
+ "mime",
  "pin-project-lite",
  "tokio",
  "tokio-util",
@@ -13637,26 +13801,6 @@ dependencies = [
  "quote",
  "syn 2.0.119",
  "termcolor",
-]
-
-[[package]]
-name = "tungstenite"
-version = "0.24.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18e5b8366ee7a95b16d32197d0b2604b43a0be89dc5fac9f8e96ccafbaedda8a"
-dependencies = [
- "byteorder",
- "bytes",
- "data-encoding",
- "http",
- "httparse",
- "log",
- "rand 0.8.8",
- "rustls",
- "rustls-pki-types",
- "sha1 0.10.7",
- "thiserror 1.0.69",
- "utf-8",
 ]
 
 [[package]]
@@ -13934,12 +14078,6 @@ dependencies = [
  "serde",
  "serde_derive",
 ]
-
-[[package]]
-name = "utf-8"
-version = "0.7.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09cc8ee72d2a9becf2f2febe0205bbed8fc6615b7cb429ad062dc7b7ddd036a9"
 
 [[package]]
 name = "utf8-ranges"
@@ -14916,6 +15054,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "80d0f4e272c85def139476380b12f9ac60926689dd2e01d4923222f40580869d"
 dependencies = [
  "winapi",
+]
+
+[[package]]
+name = "wiremock"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08db1edfb05d9b3c1542e521aea074442088292f00b5f28e435c714a98f85031"
+dependencies = [
+ "assert-json-diff",
+ "base64 0.22.1",
+ "deadpool",
+ "futures",
+ "http",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "log",
+ "once_cell",
+ "regex",
+ "serde",
+ "serde_json",
+ "tokio",
+ "url",
 ]
 
 [[package]]

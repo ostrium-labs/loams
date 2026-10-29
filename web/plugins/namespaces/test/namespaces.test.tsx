@@ -3,7 +3,7 @@ import { Code, ConnectError, createRouterTransport } from '@connectrpc/connect';
 import type { SessionService } from '@loams/console-host';
 import { collection, instance } from '@loams/proto';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 import { listNamespaces, NamespacesPage } from '../src/index.js';
 
 afterEach(cleanup);

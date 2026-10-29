@@ -3,7 +3,7 @@ load("//buck:rust.bzl", "cargo_package")
 
 cargo_package(
     name = "loams-walrus",
-    version = "0.1.2",
+    version = "0.1.3",
     edition = "2024",
     manifest_dir = "crates/loams-walrus",
     env = {
@@ -58,7 +58,7 @@ cargo_package(
         "//third-party/rust:rustls",
         "//third-party/rust:serde",
         "//third-party/rust:serde_json",
-        "//third-party/rust:sha2-0_11",
+        "//third-party/rust:sha2",
         "//third-party/rust:tempfile",
         "//third-party/rust:thiserror",
         "//third-party/rust:tokio",

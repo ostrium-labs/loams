@@ -7,15 +7,10 @@
 
 ## Install
 
-CocoaPods, pinned exactly:
-
-```ruby
-pod 'Loams', '0.1.2'
-```
-
-The pod's module is `LoamsObjC` (`@import LoamsObjC;`, or `#import "LoamsObjC-Swift.h"`),
-so it can sit next to the Swift SDK's `Loams` module.
-iOS 15 and macOS 12 or newer. The podspec is `Loams.podspec` at the repository root.
+The CocoaPods package is not published yet. Use the released monorepo source:
+check out the `v0.1.3` tag, then add the local Swift package at `sdks/objc` to
+your Xcode project and select the `LoamsObjC` product. Its module can sit next
+to the Swift SDK's `Loams` module. It supports iOS 15 and macOS 12 or newer.
 
 ## Build an app
 
@@ -24,7 +19,8 @@ The app-building modules are `namespaces`, `collections`, `documents`,
 `LoamsSchema`, `LoamsFilter` and `LoamsSearch` builders and
 `[client collection:@"notes" namespace:nil]`, a handle that fills the collection
 in. Every Swift `throws` call is an Objective-C method with a trailing `error:`.
-[`Examples/Notes/main.m`](Examples/Notes/main.m) is the flow from Objective-C;
+[`Examples/Notes/main.m`](Examples/Notes/main.m) is the flow from Objective-C
+(see its [setup guide](Examples/Notes/README.md));
 from Swift:
 
 ```swift

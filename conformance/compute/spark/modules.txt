@@ -1,0 +1,15 @@
+# The subset of PySpark's Spark Connect parity suites run against a Loams
+# Spark Connect endpoint (design 81 SP-b, D2009). One module per line, as
+# `pytest --pyargs` names them; `#` starts a comment. Chosen to cover what
+# batch jobs use: DataFrames, functions, SQL, reading and writing, Python UDFs
+# and the catalog. MLlib, pandas-on-Spark and Structured Streaming are out of
+# scope (design 26 §9.1: Sail does not serve them).
+pyspark.sql.tests.connect.test_parity_dataframe
+pyspark.sql.tests.connect.test_parity_column
+pyspark.sql.tests.connect.test_parity_functions
+pyspark.sql.tests.connect.test_parity_group
+pyspark.sql.tests.connect.test_parity_readwriter
+pyspark.sql.tests.connect.test_parity_types
+pyspark.sql.tests.connect.test_parity_serde
+pyspark.sql.tests.connect.test_parity_udf
+pyspark.sql.tests.connect.test_parity_catalog

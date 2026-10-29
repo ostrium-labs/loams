@@ -1,6 +1,6 @@
 // Studio's markdown renders untrusted text as text (SD1 Task 18; §53 D919; Review Focus 4).
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 
 // The highlighter: tokens whose text is markup, to prove tokens are text nodes too.
 vi.mock('../src/markdown/highlight', () => ({

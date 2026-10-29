@@ -1,0 +1,148 @@
+# Managed Spark through Spark Connect, opt in (design 81 R7/R15, plan SP1;
+# lane SP-a D1998). PREVIEW: not yet run end to end.
+#
+#   docker compose -f compose.yaml -f compose.lake.yaml -f compose.spark.yaml \
+#     --profile rustfs --profile spark up -d          # Sail (default)
+#   ... --profile rustfs --profile spark-jvm up -d    # Apache Spark 4.1.3
+#
+# Clients connect with the compose stack's ENGINE_GATEWAY_KEY (.env; the
+# same key opens RisingWave on 4566):
+#
+#   Sail:          SparkSession.builder.remote("sc://127.0.0.1:15002/;x-loams-api-key=<key>")
+#   Apache Spark:  SparkSession.builder.remote("sc://127.0.0.1:15003/;x-loams-api-key=<key>")
+#
+# (PySpark sends `token=` only with use_ssl=true; on these loopback ports the
+# key goes as the `x-loams-api-key` parameter, which PySpark sends as gRPC
+# metadata. Through TLS, `;use_ssl=true;token=<key>` works the same.)
+#
+# - Sail sits behind `engine-gateway` (compose.lake.yaml), whose `[spark]`
+#   section (engines/gateway.toml) is the Spark Connect proxy: auth, routing,
+#   session limits. This file publishes its 127.0.0.1:15002 and puts it on
+#   the `spark` network.
+# - Apache Spark has its own proxy, `spark-proxy-jvm` on 127.0.0.1:15003,
+#   because only that profile sets SPARK_CONNECT_TOKEN, the server's
+#   pre-shared token.
+# - Single tenant by construction (R3): namespace `default`, instance
+#   `eng_compose`, state under s3://loams-engines/engines/default/eng_compose/
+#   (event logs `eventlog/`, scratch `scratch/`; R6).
+# - Sail and the Spark Connect server publish no host port and are reachable
+#   only from the proxies on the `spark` network; Sail has no auth of its own.
+# - S3 keys are the compose RustFS keys (RUSTFS_ACCESS_KEY/SECRET_KEY in
+#   .env), passed as AWS_* env, never written to a file.
+
+x-s3-env: &s3-env
+  AWS_ACCESS_KEY_ID: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
+  AWS_SECRET_ACCESS_KEY: ${RUSTFS_SECRET_KEY:-rustfsadmin}
+  AWS_REGION: us-east-1
+
+x-hardening: &hardening
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  # One-shot: renders spark-defaults.conf and sail.env for the compose
+  # instance (loams_spark::conf::compose_conf) into the spark-conf volume.
+  spark-render:
+    profiles: [spark, spark-jvm]
+    image: ${SPARK_PROXY_IMAGE:-${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-spark-proxy:${LOAMS_VERSION:-0.1.3}}
+    build:
+      context: ../..
+      dockerfile: deploy/release/Containerfile.loams-spark-proxy
+    restart: "no"
+    command: ["render", "--namespace", "default", "--instance", "eng_compose", "--out", "/conf"]
+    environment:
+      LOAMS_LAKEKEEPER_URI: ${LOAMS_LAKEKEEPER_URI:-http://lakekeeper:8181/catalog}
+      LOAMS_S3_ENDPOINT: ${LOAMS_S3_ENDPOINT:-http://rustfs:9000}
+    volumes:
+      - spark-conf:/conf
+    network_mode: none
+    <<: *hardening
+
+  # Sail, the default backend (D1262).
+  sail:
+    profiles: [spark]
+    image: ${SAIL_IMAGE:-${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-sail:0.7.2}
+    build:
+      context: .
+      dockerfile: Containerfile.loams-sail
+    restart: unless-stopped
+    labels: { io.loams.licence: "Apache-2.0" }
+    entrypoint: ["/bin/sh", "-c", ". /conf/sail.env && exec sail spark server --ip 0.0.0.0 --port 50051"]
+    environment:
+      <<: *s3-env
+    volumes:
+      - spark-conf:/conf:ro
+    depends_on:
+      spark-render:
+        condition: service_completed_successfully
+    networks: [spark, lake]
+    <<: *hardening
+
+  # Apache Spark 4.1.3's Spark Connect server, local[*] (opt in).
+  spark-connect:
+    profiles: [spark-jvm]
+    image: ${SPARK_IMAGE:-${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-spark:4.1.3}
+    build:
+      context: .
+      dockerfile: Containerfile.loams-spark
+    restart: unless-stopped
+    labels: { io.loams.licence: "Apache-2.0" }
+    environment:
+      <<: *s3-env
+      SPARK_CONF_DIR: /conf
+      SPARK_NO_DAEMONIZE: "1"
+      SPARK_CONNECT_AUTHENTICATE_TOKEN: ${SPARK_CONNECT_TOKEN:?set SPARK_CONNECT_TOKEN in .env (any long random string)}
+    volumes:
+      - spark-conf:/conf:ro
+    depends_on:
+      spark-render:
+        condition: service_completed_successfully
+    networks: [spark, lake]
+    <<: *hardening
+
+  # engine-gateway (compose.lake.yaml) serves Sail's Spark Connect on
+  # 15002 through its [spark] section; here it gets the port and the
+  # `spark` network (listed with `default`, which it keeps).
+  engine-gateway:
+    ports:
+      - ${LOAMS_SPARK_BIND:-127.0.0.1}:${SPARK_GATEWAY_PORT:-15002}:15002
+    networks: [default, spark]
+
+  # The proxy for Apache Spark (profile spark-jvm), on 127.0.0.1:15003, with
+  # the same ENGINE_GATEWAY_KEY.
+  spark-proxy-jvm:
+    profiles: [spark-jvm]
+    image: ${SPARK_PROXY_IMAGE:-${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-spark-proxy:${LOAMS_VERSION:-0.1.3}}
+    build:
+      context: ../..
+      dockerfile: deploy/release/Containerfile.loams-spark-proxy
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        umask 077
+        key_hash=$$(printf %s "$$ENGINE_GATEWAY_KEY" | sha256sum | cut -d' ' -f1)
+        printf 'default %s\n' "$$key_hash" > /run/spark-proxy/keys
+        exec /usr/bin/tini -- /usr/local/bin/loams-spark-proxy serve --config /etc/loams-spark-proxy/proxy-spark.toml
+    environment:
+      ENGINE_GATEWAY_KEY: ${ENGINE_GATEWAY_KEY:-loams-dev-engine-key}
+      SPARK_CONNECT_AUTHENTICATE_TOKEN: ${SPARK_CONNECT_TOKEN:?set SPARK_CONNECT_TOKEN in .env (any long random string)}
+      RUST_LOG: ${SPARK_PROXY_LOG:-info}
+    volumes:
+      - ./spark:/etc/loams-spark-proxy:ro
+    tmpfs:
+      - /run/spark-proxy:mode=0700,uid=10001,gid=10001
+    ports:
+      - ${LOAMS_SPARK_BIND:-127.0.0.1}:${SPARK_JVM_PORT:-15003}:15002
+    networks: [spark]
+    depends_on: [spark-connect]
+    <<: *hardening
+
+networks:
+  spark: {}
+  lake: {}
+
+volumes:
+  spark-conf: {}

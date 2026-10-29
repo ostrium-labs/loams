@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.3
+
+- Released with Loams 0.1.3; no API changes.
+
 ## 0.1.2
 
 - Released with Loams 0.1.2; no API changes.

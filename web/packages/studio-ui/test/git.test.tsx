@@ -4,7 +4,7 @@
 // worktree setup card, the workspace choice and the confirmation dialogs.
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import {
   buildGitPaletteActions,
   buildMenuItems,

@@ -27,7 +27,7 @@ use std::time::Duration;
 use grafeo::{Error as GrafeoError, GrafeoDB, QueryResult, Value};
 use loams_proto::loams::graph::v1::QueryLanguage;
 
-use crate::classify::{Access, Verdict, gate_verdict, gate_within};
+use crate::classify::{Access, Verdict, gate_within};
 use crate::limits::StatementLimits;
 use grafeo_common::types::PropertyKey;
 
@@ -1061,7 +1061,7 @@ impl Graph {
     ) -> Result<Verdict, GraphError> {
         #[cfg(feature = "failpoints")]
         fail::fail_point!("loams_graph::gate");
-        let verdict = gate_verdict(statement, QueryLanguage::Gql, limits)?;
+        let verdict = crate::classify::gate_verdict_cached(statement, limits)?;
         if let Some(engine) = verdict.engine
             && engine != verdict.guard
         {

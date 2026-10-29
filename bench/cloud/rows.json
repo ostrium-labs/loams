@@ -1,0 +1,38 @@
+{
+  "_comment": "CB1 rows (plan §5.1). estimate_usd is the figure logged in the ledger before a run (plan §6: the per-run estimate rounded up). vars are the root module's inputs for the row; run.sh adds run_id, commit, package/image and the budget emails.",
+  "caps_usd": { "aws": 60, "gcp": 100, "azure": 25 },
+  "rows": {
+    "aws-free": {
+      "cloud": "aws",
+      "root": "aws",
+      "region": "us-east-1",
+      "kind": "app",
+      "estimate_usd": 0.5,
+      "vars": { "items_capacity_mode": "provisioned", "allow_paid": false }
+    },
+    "aws-ondemand": {
+      "cloud": "aws",
+      "root": "aws",
+      "region": "us-east-1",
+      "kind": "app",
+      "estimate_usd": 0.5,
+      "vars": { "items_capacity_mode": "on_demand", "allow_paid": true }
+    },
+    "gcp-free": {
+      "cloud": "gcp",
+      "root": "gcp",
+      "region": "us-central1",
+      "kind": "app",
+      "estimate_usd": 0.5,
+      "vars": {}
+    },
+    "azure-free": {
+      "cloud": "azure",
+      "root": "azure",
+      "region": "eastus",
+      "kind": "app",
+      "estimate_usd": 1.5,
+      "vars": {}
+    }
+  }
+}

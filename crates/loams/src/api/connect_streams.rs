@@ -53,7 +53,7 @@ use sha2::{Digest, Sha256};
 use super::connect::refuse;
 use super::connect_errors::{invalid, refused, refused_meta};
 use super::errors::ApiError;
-use super::events::{CLAIM_TTL_MS, EventStatus, IngestContext, ingest, new_owner};
+use super::events::{CLAIM_TTL_MS, DetachedIngest, EventStatus, new_owner};
 use super::streams::{produce_records, refuse_system_stream};
 use super::{AppState, DEFAULT_MAX_BYTES, MAX_FETCH_BYTES, namespace_id, stream_id};
 
@@ -505,15 +505,17 @@ impl StreamService for Streams {
                 .map_err(|err| invalid("json_batch", format!("invalid CloudEvent batch: {err}")))?,
             None => return Err(invalid("events", "send a batch or a json_batch")),
         };
-        let ctx = IngestContext {
-            meta: &self.state.meta,
-            writer: &self.state.writer,
-            config: &self.state.cloudevents,
+        // On its own task: a client that goes away mid-request must not leave
+        // appended events with open claims (see `DetachedIngest`).
+        let report = DetachedIngest {
+            meta: self.state.meta.clone(),
+            writer: self.state.writer.clone(),
+            config: self.state.cloudevents,
             node_id: self.state.node_id,
-        };
-        let report = ingest(&ctx, ns, name, request.partition, &events)
-            .await
-            .map_err(refused)?;
+        }
+        .run(ns.to_owned(), name.to_owned(), request.partition, events)
+        .await
+        .map_err(refused)?;
         Response::ok(ProduceCloudEventsResponse {
             results: report
                 .outcomes

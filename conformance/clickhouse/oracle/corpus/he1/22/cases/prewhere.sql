@@ -1,0 +1,1 @@
+SELECT a FROM t22 PREWHERE a > 1 WHERE b = 'x' ORDER BY a

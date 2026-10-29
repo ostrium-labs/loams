@@ -1232,10 +1232,11 @@ mod tests {
         assert_eq!(loams.inner.runtime.max_retries, DEFAULT_MAX_RETRIES);
         assert_eq!(
             loams.bindings().len(),
-            18,
+            23,
             "admin.agents, admin.audit, admin.keys, admin.org, admin.projects, auth, \
-             collections, documents, graph, instance, live, live.admin, namespaces, search, \
-             sql, streams, tables and vector"
+             collections, documents, graph, instance, live, live.admin, meter.customers, \
+             meter.entitlements, meter.meters, meter.notifications, meter.plans, namespaces, \
+             search, sql, streams, tables and vector"
         );
     }
 

@@ -50,7 +50,7 @@ function useStream<T>(
   const openRef = useRef(open);
   openRef.current = open;
   const enabled = open !== null;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `key` names the stream.
+  // oxlint-disable-next-line react/exhaustive-deps -- `key` names the stream.
   useEffect(() => {
     setLatest(undefined);
     const start = openRef.current;

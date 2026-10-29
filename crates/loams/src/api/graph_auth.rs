@@ -1,9 +1,10 @@
 //! Who may do what with Loams Graph on the main port (GR1 Task 24, design §48 §11, D750): the
-//! caller of a graph RPC, and the built-in RBAC that expands the principal store's roles into
-//! the `graph` type's relations until MT1's OpenFGA replaces it behind
-//! [`GraphAuthorizer`].
+//! caller of a graph RPC, and its standing on a graph, asked through `loams-authz` as the
+//! `graph` type's `can_read`, `can_write` and `can_admin` (design 76 §9, IA2 Task 4;
+//! [`crate::auth::authz`] says who the caller is and where the tuples come from).
 //!
-//! A caller's relation on a namespace's graphs (every graph of a namespace alike):
+//! In built-in single-org mode, a caller's relation on a namespace's graphs (every graph of a
+//! namespace alike) is:
 //!
 //! - **The operator** (the developer on loopback with `LOAMS_AUTH_MODE=off`, a key from
 //!   `LOAMS_API_KEYS_FILE`, any API key before first-run setup): `admin`, and project admin.
@@ -12,9 +13,9 @@
 //! - **A `member`**, in a namespace that is a project's environment: the project role their
 //!   grants give them, directly or through a team (`viewer` → `reader`, `developer` → `writer`,
 //!   `admin` → `admin` and project admin); none without a grant. A service account's key reaches
-//!   its own project's environments as a `writer`.
-//! - **A `member`**, in a namespace that is no project's environment: `writer` (as `member`
-//!   writes Loams Git repositories, GT1 Task 16).
+//!   its own project's environments as a `writer`. An agent reaches its granted projects'.
+//! - **A `member`** (or a service account's key), in a namespace that is no project's
+//!   environment: `writer` (as `member` writes Loams Git repositories, GT1 Task 16).
 //! - **Anyone else** (not in the org, no principal): nothing.
 //!
 //! A credential bound to an environment (`<project>/<environment>`) reaches only that
@@ -25,11 +26,13 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use connectrpc::{ConnectError, ErrorCode};
-use loams_graph::authz::{Caller, CallerKind, GraphAuthorizer, PrincipalReads, Relation, Standing};
+use loams_graph::authz::{Caller, CallerKind, GraphAuthorizer, PrincipalReads};
+use loams_graph::model_authz::{GraphDirectory, ModelGraphAuthorizer, Place, Who as Model};
 use loams_proto::loams::admin::v1 as admin_pb;
 
-use crate::auth::authorizer::{Actor, Denied};
-use crate::auth::directory::{Doc, Role};
+use crate::auth::authorizer::Denied;
+use crate::auth::authz::{self, Standing as Who};
+use crate::auth::directory::Doc;
 use crate::auth::{Grant, Principal, PrincipalKind, Principals};
 
 /// The graph caller of an admitted principal (or of none: [`Caller::anonymous`]).
@@ -47,6 +50,7 @@ pub(crate) fn caller_of(principal: Option<&Principal>) -> Caller {
     Caller {
         id: principal.subject.clone(),
         kind,
+        issuer: principal.issuer.clone(),
         name: principal.display_name.clone(),
         email: principal.email.clone(),
         environment: principal.grant.environment.clone(),
@@ -67,6 +71,7 @@ fn principal_of(caller: &Caller) -> Option<Principal> {
     Some(Principal {
         subject: caller.id.clone(),
         kind,
+        issuer: caller.issuer.clone(),
         display_name: caller.name.clone(),
         email: caller.email.clone(),
         grant: Grant {
@@ -95,42 +100,19 @@ impl DirectoryGraphAuthz {
         Self { principals }
     }
 
-    /// The caller as the org sees them: `Ok(None)` for someone outside it, and the operator as
-    /// an `owner`.
-    async fn actor(&self, caller: &Caller) -> Result<Option<Actor>, ConnectError> {
+    /// Who the caller is (`Who::Outside` with no principal).
+    async fn resolve(&self, caller: &Caller) -> Result<Who, ConnectError> {
         let Some(principal) = principal_of(caller) else {
-            return Ok(None);
+            return Ok(Who::Outside);
         };
-        if principal.kind == PrincipalKind::DevLoopback {
-            return Ok(Some(operator(&principal)));
-        }
-        match self
-            .principals
-            .authorizer
-            .authorize(&principal, Role::Member)
-            .await
-        {
-            Ok(actor) => Ok(Some(actor)),
-            // Before first-run setup the only keys are the operator's own (as Loams Git rules).
-            Err(Denied::SetupRequired) if principal.kind == PrincipalKind::ApiKey => {
-                Ok(Some(operator(&principal)))
-            }
-            Err(Denied::SetupRequired | Denied::RoleRequired { .. }) => Ok(None),
+        match authz::standing(&self.principals, &principal).await {
+            Ok(who) => Ok(who),
+            Err(Denied::SetupRequired | Denied::RoleRequired { .. }) => Ok(Who::Outside),
             Err(Denied::Unavailable(err)) => {
                 tracing::warn!(error = %err, "reading the principal store for a graph check failed");
                 Err(unavailable())
             }
         }
-    }
-}
-
-fn operator(principal: &Principal) -> Actor {
-    Actor {
-        kind: admin_pb::SubjectKind::SUBJECT_KIND_USER,
-        id: principal.subject.clone(),
-        name: principal.display_name.clone(),
-        role: Role::Owner,
-        user: None,
     }
 }
 
@@ -172,118 +154,40 @@ fn reaches(doc: &Doc, environment: &str, namespace: &str) -> bool {
         .is_some_and(|e| e.namespace == namespace)
 }
 
-/// A member's strongest project role in `project`: their own grants and their teams'.
-fn project_role(
-    doc: &Doc,
-    project: &crate::auth::directory::ProjectRec,
-    user: &str,
-) -> Option<admin_pb::ProjectRole> {
-    project
-        .grants
-        .iter()
-        .filter(|grant| {
-            let Some(subject) = grant.subject.as_option() else {
-                return false;
-            };
-            match subject.kind.as_known() {
-                Some(admin_pb::SubjectKind::SUBJECT_KIND_USER) => subject.id == user,
-                Some(admin_pb::SubjectKind::SUBJECT_KIND_TEAM) => doc
-                    .team(&subject.id)
-                    .is_some_and(|team| team.members.iter().any(|m| m == user)),
-                _ => false,
-            }
-        })
-        .filter_map(|grant| grant.role.as_known())
-        .min_by_key(|role| match role {
-            admin_pb::ProjectRole::PROJECT_ROLE_ADMIN => 0,
-            admin_pb::ProjectRole::PROJECT_ROLE_DEVELOPER => 1,
-            admin_pb::ProjectRole::PROJECT_ROLE_VIEWER => 2,
-            _ => 3,
-        })
-}
-
-/// The standing of `actor` (`principal` is its caller) on `namespace` in `doc` (module docs).
-fn standing_in(doc: &Doc, caller: &Caller, actor: Option<&Actor>, namespace: &str) -> Standing {
-    let place = environment_of(doc, namespace);
-    let protected = place.is_some_and(|(_, env)| env.protected);
-    let in_environment = caller
-        .environment
-        .as_deref()
-        .is_none_or(|env| reaches(doc, env, namespace));
-    let (relation, project_admin) = match actor {
-        None => (None, false),
-        Some(actor) if actor.role >= Role::Admin => (Some(Relation::Admin), true),
-        Some(actor) => match place {
-            None => (Some(Relation::Writer), false),
-            Some((project, _)) => match &actor.user {
-                Some(user) => match project_role(doc, project, user) {
-                    Some(admin_pb::ProjectRole::PROJECT_ROLE_ADMIN) => {
-                        (Some(Relation::Admin), true)
-                    }
-                    Some(admin_pb::ProjectRole::PROJECT_ROLE_DEVELOPER) => {
-                        (Some(Relation::Writer), false)
-                    }
-                    Some(admin_pb::ProjectRole::PROJECT_ROLE_VIEWER) => {
-                        (Some(Relation::Reader), false)
-                    }
-                    _ => (None, false),
-                },
-                // A service account's key: its own project's environments.
-                None => {
-                    let id = caller.id.strip_prefix("apikey:").unwrap_or(&caller.id);
-                    let own = doc
-                        .key(id)
-                        .is_some_and(|key| key.project == project.project.slug);
-                    (own.then_some(Relation::Writer), false)
-                }
-            },
-        },
-    };
-    Standing {
-        relation,
-        protected,
-        project_admin,
-        in_environment,
-    }
-}
-
 #[async_trait]
-impl GraphAuthorizer for DirectoryGraphAuthz {
-    async fn standing(
-        &self,
-        caller: &Caller,
-        namespace: &str,
-        _graph: Option<&str>,
-    ) -> Result<Standing, ConnectError> {
-        let actor = self.actor(caller).await?;
+impl GraphDirectory for DirectoryGraphAuthz {
+    async fn who(&self, caller: &Caller) -> Result<Model, ConnectError> {
+        Ok(match self.resolve(caller).await? {
+            Who::Outside => Model::Outside,
+            Who::Operator => Model::Operator,
+            Who::Subject(subject) => Model::Subject(subject),
+        })
+    }
+
+    async fn place(&self, caller: &Caller, namespace: &str) -> Result<Place, ConnectError> {
         let doc = self.principals.directory.read().await.map_err(|err| {
             tracing::warn!(error = %err.0, "reading the principal store for a graph check failed");
             unavailable()
         })?;
-        Ok(standing_in(&doc, caller, actor.as_ref(), namespace))
-    }
-
-    /// Relations are namespace-wide here: one read answers every graph.
-    async fn visible(
-        &self,
-        caller: &Caller,
-        namespace: &str,
-        graphs: &[String],
-    ) -> Result<Vec<bool>, ConnectError> {
-        let standing = self.standing(caller, namespace, None).await?;
-        let visible = loams_graph::authz::decide(
-            caller,
-            &standing,
-            loams_graph::authz::Need::At(Relation::Reader),
-        )
-        .is_ok();
-        Ok(vec![visible; graphs.len()])
+        let place = environment_of(&doc, namespace);
+        Ok(Place {
+            protected: place.is_some_and(|(_, env)| env.protected),
+            in_environment: caller
+                .environment
+                .as_deref()
+                .is_none_or(|env| reaches(&doc, env, namespace)),
+            project: place.map(|(project, _)| authz::project_id(project).to_owned()),
+            roots: authz::namespace_roots(&doc, namespace),
+        })
     }
 }
 
 /// The authorizer the server's graph services use.
 pub(crate) fn authorizer(principals: &Principals) -> Arc<dyn GraphAuthorizer> {
-    Arc::new(DirectoryGraphAuthz::new(principals.clone()))
+    Arc::new(ModelGraphAuthorizer::new(
+        DirectoryGraphAuthz::new(principals.clone()),
+        principals.authz.clone(),
+    ))
 }
 
 /// The graph caller of a request's reads through `loams-query` (GR1 R24.12): `principal`'s,
@@ -299,8 +203,8 @@ pub(crate) fn graph_caller(
 mod tests {
     use super::*;
     use crate::auth::SetupGate;
-    use crate::auth::directory::{Directory, KeyRec, MemberRec, ProjectRec, TeamRec};
-    use loams_graph::authz::{Need, decide};
+    use crate::auth::directory::{Directory, KeyRec, MemberRec, ProjectRec, Role, TeamRec};
+    use loams_graph::authz::{Need, Relation, decide};
 
     fn user(id: &str) -> admin_pb::User {
         admin_pb::User {
@@ -422,7 +326,11 @@ mod tests {
         Caller::new(id, CallerKind::Session)
     }
 
-    async fn relation(authz: &DirectoryGraphAuthz, caller: &Caller, ns: &str) -> Option<Relation> {
+    async fn relation(
+        authz: &Arc<dyn GraphAuthorizer>,
+        caller: &Caller,
+        ns: &str,
+    ) -> Option<Relation> {
         let standing = authz
             .standing(caller, ns, Some("g"))
             .await
@@ -435,7 +343,7 @@ mod tests {
 
     #[tokio::test]
     async fn org_and_project_roles_expand_to_graph_relations() {
-        let authz = DirectoryGraphAuthz::new(principals().await);
+        let authz = authorizer(&principals().await);
         let cases = [
             ("own", "shop-prod", Some(Relation::Admin)),
             ("own", "elsewhere", Some(Relation::Admin)),
@@ -475,7 +383,7 @@ mod tests {
 
     #[tokio::test]
     async fn protected_environments_and_project_admins() {
-        let authz = DirectoryGraphAuthz::new(principals().await);
+        let authz = authorizer(&principals().await);
         let prod = authz
             .standing(&session("padmin"), "shop-prod", Some("g"))
             .await
@@ -496,7 +404,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_environment_bound_credential_reaches_only_its_namespace() {
-        let authz = DirectoryGraphAuthz::new(principals().await);
+        let authz = authorizer(&principals().await);
         let bound = Caller {
             environment: Some("shop/dev".into()),
             ..session("own")
@@ -538,6 +446,7 @@ mod tests {
         let person = |subject: &str, environment: Option<&str>| Principal {
             subject: subject.into(),
             kind: PrincipalKind::Session,
+            issuer: None,
             display_name: subject.into(),
             email: None,
             grant: Grant {
@@ -587,6 +496,7 @@ mod tests {
         let principal = Principal {
             subject: "apikey:k1".into(),
             kind: PrincipalKind::ApiKey,
+            issuer: None,
             display_name: "ci".into(),
             email: None,
             grant: Grant {

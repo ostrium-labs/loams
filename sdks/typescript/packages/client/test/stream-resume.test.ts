@@ -13,7 +13,7 @@
 // cover is reported rather than swallowed.
 
 import { Code, ConnectError } from '@connectrpc/connect';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import type { CallBinding } from '../src/gen/facade.js';
 import { LoamsError } from '../src/runtime/errors.js';
 import { watch } from '../src/runtime/streams.js';

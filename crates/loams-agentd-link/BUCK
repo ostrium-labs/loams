@@ -3,7 +3,7 @@ load("//buck:rust.bzl", "cargo_package")
 
 cargo_package(
     name = "loams-agentd-link",
-    version = "0.1.2",
+    version = "0.1.3",
     edition = "2024",
     manifest_dir = "crates/loams-agentd-link",
     env = {
@@ -26,7 +26,7 @@ cargo_package(
         "//crates/loams-agentd-proto:loams-agentd-proto",
         "//third-party/rust:anyhow",
         "//third-party/rust:async-trait",
-        "//third-party/rust:base64-0_22",
+        "//third-party/rust:base64-0_23",
         "//third-party/rust:buffa",
         "//third-party/rust:buffa-types",
         "//third-party/rust:connectrpc",
@@ -37,7 +37,7 @@ cargo_package(
         "//third-party/rust:reqwest-0_12",
         "//third-party/rust:serde",
         "//third-party/rust:serde_json",
-        "//third-party/rust:sha2-0_10",
+        "//third-party/rust:sha2",
         "//third-party/rust:thiserror",
         "//third-party/rust:tokio",
         "//third-party/rust:tracing",

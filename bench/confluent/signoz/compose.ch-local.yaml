@@ -1,0 +1,11 @@
+# CFB: used only when HE0_CLICKHOUSE_IMAGE points at an older ClickHouse already
+# on the host (24.x), to avoid a 950 MB pull over a slow link. 24.x does not know
+# allow_dimensions_outside_sorting_key (26.7+) and does not need it, so the
+# merge-tree override is left out.
+services:
+  clickhouse:
+    volumes: !override
+      - ${CFB_REPO}/conformance/clickhouse/apps/clickhouse/he0-logs.xml:/etc/clickhouse-server/config.d/he0-logs.xml:ro
+      - ${CFB_REPO}/conformance/clickhouse/apps/clickhouse/he0-users.xml:/etc/clickhouse-server/users.d/he0-users.xml:ro
+      - ${CFB_REPO}/conformance/clickhouse/apps/signoz/signoz-cluster.xml:/etc/clickhouse-server/config.d/signoz-cluster.xml:ro
+      - signoz-ch-data:/var/lib/clickhouse

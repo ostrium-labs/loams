@@ -4,6 +4,300 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-10-29
+
+Everything new in 0.1.3 is **preview**: it runs and has tests, but its interfaces can still
+change. Nothing new is on by default. The default stack is 0.1.2's light stack plus one system
+stream. 283 pull requests have merged since 0.1.2.
+
+Highlights:
+
+- **Managed stream and batch engines (design 81, preview).** RisingWave, Flink SQL and Spark come
+  as opt-in compose profiles. Each sits behind `loams-gateway`, is never exposed publicly, keeps
+  its state in Loams object storage and its metadata in Loams Postgres.
+  - **RisingWave**: the `risingwave` profile and a Helm chart, with `loams risingwave`.
+    Loams-authenticated PG wire runs through the gateway's RisingWave module. Option names are
+    checked against v3.1.0, and remote hosts use verified TLS.
+  - **Flink SQL**: the `flink` profile, with a session-cluster controller, Iceberg and JDBC
+    catalogs, Kafka, upsert-kafka and Postgres-CDC connectors, `loams flink`, and saved jobs in
+    Loams Postgres.
+  - **Spark**: the `spark` profile, with Spark Connect through the gateway's `[spark]` section on
+    Sail or Spark 4, batch jobs with schedules and logs, `loams spark`, and Python helpers.
+  - **Shared pieces**: the `loams-engines` facade and the console's Engines pages.
+- **The Temporal gateway grows up (preview).**
+  - It is now a release image, `ghcr.io/ostrium-labs/loams-temporal`, run as the
+    `temporal-gateway` profile.
+  - It covers workflow updates, signal-with-start, ID policies, consistent queries, terminate,
+    reset, batch operations, namespace updates, worker-versioning reads, schedules, and
+    visibility with search attributes.
+  - Follow-ups are crash-safe through the transactional outbox.
+  - It runs on a Postgres history store with paging and retention.
+  - SDK legs run against it for Go, TypeScript, Python, Java, .NET, Ruby, PHP and Rust
+    (prerelease). The guide's compatibility matrix shows each SDK's latest run, and lists the
+    gaps.
+- **Airflow and DBOS on Loams (preview).**
+  - `airflow-provider-loams` with the `LoamsResonateExecutor`.
+  - Airflow 3.3 with the Edge executor on Loams Postgres.
+  - DBOS Transact on Loams Postgres.
+- **Loams Meter (design 63, preview).** Usage metering, entitlements and billing export, all open
+  source.
+  - The node agent.
+  - Lease-based gates at House admission, at the Postgres gateway and compute wake, and on the
+    streams produce path.
+  - The House `_meter` tables and period close.
+  - Customer, Entitlement and Plan services.
+  - OpenMeter-compatible routes.
+  - Stripe, OpenMeter, Lago and CloudEvents exporters, and threshold notifications.
+  - The Billing settings and operator views.
+  - An OpenTofu provider.
+
+  The meter role is wired into `loams`. Webhook secrets are sealed at rest with
+  `LOAMS_METER_SECRETS_KEY_FILE`; on a cluster, every gateway node must mount the same file
+  (#1551).
+- **The gateway serves HTTP/2 and pipelined HTTP/1.1** on its HTTP listeners (h2c beside
+  HTTP/1.1, #1521). It also gains the RisingWave, Spark, browser and RESP modules, and has its
+  own image, `loams-gateway`.
+- **Redis protocol on Loams KV (preview).** `loams-gateway --module resp` serves RESP2 and RESP3
+  over `loams-resp`:
+  - strings, hashes, lists and sorted sets;
+  - `KEYS`, `SCAN` and `RENAME`, and the keyspace commands;
+  - expiry and GC workers.
+
+  Commands a client pipelines are run as one batch per read. A first CQL gateway slice is in
+  too: framing, the v4 handshake, a statement subset and a row store. It does not claim driver
+  compatibility.
+- **Connectors and Confluent Cloud for BYOC (design 80, preview).**
+  - `loams-fabric connect` runs native connectors on a BYOC VM (the `connectors` profile):
+    Kafka/Confluent sources and sinks, and Debezium change events.
+  - `loams byoc confluent key create|rotate|check|costs`. Keys are fetched at boot and rotated
+    without a restart.
+  - The `confluent` OpenTofu module and `install.sh --kafka`.
+  - **Exactly once through a connector crash.** Batches over the engine's 1,000-event limit are
+    chunked (#1496). A produce request cut off mid-append no longer leaves claims that later
+    re-append the batch (#1554): the 2026-10-28 kill -9 run duplicated 323 events. A pipeline
+    that failed on a transient error restarts with backoff (#1543).
+- **Loams House.**
+  - The chDB House:
+    - bounds Parquet row groups;
+    - prunes `UInt64` key lookups (1 row group of 16 instead of all);
+    - rides out chDB boot failures under memory pressure (#1534);
+    - closes the Laminar gaps: parameterised views, SQL functions, dictionaries, `EXCHANGE
+      TABLES`, `BFloat16`, `CoalescingMergeTree`, compressed HTTP framing (#1544).
+  - The Rust House engine gains type rules, name resolution, lake reads, most function families,
+    output formats, settings and system tables, all checked against a ClickHouse 26.x oracle.
+    **Its crates are in the tree but not wired; chDB remains the House engine.**
+- **Authorization through `loams-authz`.** The engine, pg-control, Git, Durable and Graph check
+  `can_*` through one authorizer. It is built in by default; `LOAMS_AUTHZ=openfga` with the
+  `authz` profile is preview, fed by the Zitadel identity sync.
+- **A headless browser for agents (preview).** Obscura runs either inside the agentd image or as
+  the `browser` profile's service behind the gateway. Agents get `browser_*` MCP tools.
+- **Postgres 18: the beta has started (NF2).** This release adds the per-major gates, the 18
+  headers, PgDog checked on 17 and 18, and a majors registry generated from the pin file.
+  **New projects still get 16 or 17**, and 18 is not offered yet.
+- **Design 82, Loams Stream:** a Rust engine compatible with the Apache Flink APIs, with Flink
+  2.2.1 as the oracle. This is the design and plan (FC1) only; nothing ships in 0.1.3.
+- **Vite+ for the TypeScript workspace.** It moves to vite-plus 1.3.0, and Oxlint and Oxfmt
+  replace Biome and ESLint.
+
+### Upgrading
+
+**No migrations and no third-party pin changes.** PD, TiKV and TiDB stay on v8.5.8. Loams
+Postgres, chDB and Grafeo stay on 0.1.2's pins.
+
+- **A stack with the `tikv` profile:** run `loams upgrade --to 0.1.3`. It takes a snapshot first,
+  and `loams upgrade rollback` restores it.
+- **The light default stack:** upgrade by hand, as for 0.1.2.
+  1. Back up the volumes.
+  2. Run `docker compose stop`.
+  3. Set `LOAMS_VERSION=0.1.3` in `.env`.
+  4. Run `docker compose up -d`.
+- **One system stream:** `migrate` creates the reserved `_system/_meter` stream (14 days'
+  retention) on its first run. This is idempotent, and nothing else in your data changes.
+- **New `.env` keys, all optional, each defaulting to off:**
+  - `LOAMS_CONNECT_STORE`;
+  - `LOAMS_AUTHZ` (`builtin`) and `LOAMS_AUTHZ_OPENFGA_KEY`;
+  - `LOAMS_BROWSER_PROVIDER` (`local`), `LOAMS_BROWSER_TOKEN` and `LOAMS_BROWSER_CLIENT_TOKEN`.
+- **Using the new profiles:** take `compose*.yaml`, `config/`, `engines/`, `spark/` and
+  `risingwave/` from the 0.1.3 bundle, and keep the directory name, because it names the
+  volumes. The preview profiles have not been through the upgrade gate, so try them on a stack
+  you can rebuild.
+- **A metered cluster:** give every gateway node the same `LOAMS_METER_SECRETS_KEY_FILE`.
+
+### Added
+- **Managed engines (design 81):**
+  - the `loams-engines` crate, API contract and authz (#1338); `engine.can_connect` needs editor
+    (#1369); the console's Engines pages (#1334) and Spark job detail, logs and schedules
+    (#1456);
+  - RisingWave: #1350, #1353, #1366, #1384, #1393 and #1516;
+  - Flink: #1363, #1373, #1497 and #1541;
+  - Spark: #1356, #1364, #1417, #1424 and #1437;
+  - the `loams-gateway` image and the `engine-gateway` service (#1418);
+  - the flink and spark features are announced (#1508).
+- **Temporal gateway:**
+  - the API, in groups A, B, E and F (#1318, #1337, #1400, #1435), visibility (#1378), schedules
+    (#1451), the outbox follow-ups (#1433) and paged reads (#1476);
+  - the Postgres store (#1323, #1409, #1442, #1473);
+  - resonate-client instead of the interim adapter (#1292, #1431);
+  - the release image and profile (#1293);
+  - SDK legs and corpora for Python (#1352), Ruby (#1376, #1495, #1503, #1504), Java (#1379),
+    .NET (#1362, #1463, #1484), PHP (#1450, #1505) and Rust (#1422);
+  - the combined last-run matrix (#1289, #1490, #1540);
+  - a per-run in-process lock in the engine, so inputs to one run queue instead of racing the
+    store (#1547).
+- **Airflow and DBOS:** `airflow-provider-loams` (#1348), the `LoamsResonateExecutor` (#1342,
+  #1413), Airflow 3.3 on Loams Postgres (#1294), DBOS Transact (#1392), and the compute nightly
+  with its fixes (#1321, #1445, #1485, #1494).
+- **Loams Meter (ME1):**
+  - core types (#1365);
+  - the agent (#1355, #1383, #1410);
+  - the gate and policy table (#1401);
+  - observers (#1375);
+  - the House tables, close job and period totals (#1382, #1387, #1403);
+  - the balance engine (#1377);
+  - the lease allocator and `LeaseService` (#1391, #1440);
+  - the services (#1426, #1434, #1501);
+  - the exporters (#1361, #1371, #1399);
+  - OpenMeter routes (#1461);
+  - the notifier (#1454);
+  - the entitlement gates (#1420, #1425, #1429, #1465);
+  - Billing and the operator view (#1386, #1405);
+  - the OpenTofu provider (#1428);
+  - the `_system/_meter` stream (#1360);
+  - the meter role, parts 1–3 (#1479, #1533, #1539, #1551, #1553);
+  - hot-path work on the gate, sink and spool (#1538);
+  - SDK stubs (#1498, #1512, #1528).
+- **KV (KV2, KV3):**
+  - `loams-resp` frames, server and commands (#1286, #1314, #1340, #1370, #1415, #1432, #1438),
+    and expiry and GC workers (#1460);
+  - pipelined batching (#1535);
+  - the KV0 report (#1264);
+  - CQL partition tokens (#1469) and the first CQL gateway slice (#1549).
+- **Confluent BYOC (CC1):**
+  - the connect socket (#1278) and `loams-fabric connect` (#1299);
+  - the Confluent target profile (#1301) and Debezium (#1303);
+  - keys (#1267, #1306, #1315, #1419);
+  - region and price tables (#1261);
+  - OpenTofu (#1266) and `install.sh --kafka` (#1330);
+  - the Metrics and Costs APIs and costs (#1327, #1427);
+  - the guide (#1287);
+  - the nightly round trip and its reaper (#1281, #1317, #1404);
+  - `tailscale,apikey` auth when connectors run (#1358);
+  - automatic restart after transient failures (#1543).
+- **House (HE1):**
+  - Rust engine Tasks 23–38: #1236, #1300, #1302, #1304, #1305, #1308, #1328, #1345, #1347,
+    #1368, #1374 and #1381, with follow-ups in #1385, #1444, #1457 and #1550;
+  - chDB House fixes: #1534 and #1544.
+- **Browser:**
+  - Obscura as the one engine (#1372) and as a service (#1396, #1423);
+  - the gateway's browser module (#1439, #1448);
+  - `browser_*` MCP tools (#1408);
+  - stop without losing state, and downloads denied (#1458);
+  - the parity suite (#1380).
+- **Identity and authorization:**
+  - the authz profile (#1263);
+  - enforcement through `loams-authz` in the engine (#1154), admin RPCs (#1169), pg-control
+    (#1309), Git (#1310), Durable (#1311) and Graph (#1455);
+  - the identity sync (#1282, #1313);
+  - agents' Zitadel tokens vended by agentd (#1462).
+- **Marketplace and knowledge:**
+  - the marketplace in agentd, the console and the CLI (#1268, #1269, #1277, #1297);
+  - the Seed Exchange docs (#1272);
+  - the conformance runner (#1284);
+  - Walrus listings, the knowledge cache and `loams knowledge` (#1252, #1253, #1296);
+  - Bun as a node runtime engine (#1254);
+  - a QuickJS spike (#1239).
+- **Software Factory:** the run record and Runs page (#1273); deploy to a Live app with rollback,
+  and killing a running loop (#1552, preview).
+- **Imperial:** a fenced lease state machine, atomic lease and checkpoint storage, the budgeted
+  task lifecycle and supervision (#1467, #1468, #1545).
+- **Postgres (NF2):** the rulings (#1510, #1520), G3 per major (#1513), the 18 headers (#1514),
+  PgDog on 17 and 18 (#1519), the majors registry (#1546) and the import-LSN test (#1548).
+- **Loams for iOS against the mock (AP3, early preview)** (#1073); `loams-llm` (#843); factory
+  app connections in agentd (#844); the console offers only the sign-in modes a deploy lists
+  (#856).
+- **Desktop:** product releases can feed `desktop-latest` with signed update manifests (#1262).
+  This is not active until the update key is set.
+- **The Temporal gateway ships as an image (preview).** `ghcr.io/ostrium-labs/loams-temporal` is
+  built and attested with the other release images, and `compose.compute.yaml` runs it as the
+  profile `temporal-gateway`:
+  - in the engine's network namespace;
+  - on its own `loams_temporal` database and the engine's Resonate;
+  - with API keys and no host port (deploy/release/README.md, "The Temporal gateway").
+
+  The Go and TypeScript SDK legs run through that profile on pull requests that touch the
+  gateway. The gateway now refuses task-token keys shorter than 32 bytes.
+- **Loams Desktop can update itself from product releases.**
+  - A `vX.Y.Z` release now keeps its signed update manifests (`latest*.yml` + `.sig`), and the
+    desktop release run promotes them onto the `desktop-latest` feed. Windows and Linux AppImage
+    installs update from that feed; deb, rpm, pacman and macOS get "Download vX". Pre-releases
+    are never offered.
+  - The update public key is pinned in `apps/desktop-electron/update-pubkey.txt`; the repository
+    variable `LOAMS_UPDATE_PUBKEY` is no longer read. The release checks that the signing secret
+    matches it.
+  - `desktop-promote.yml` verifies every signature and payload before it uploads (`dry_run`
+    stages without uploading).
+  - **Not active yet:** until the owner sets the key (docs/release/desktop.md, "The update key"),
+    releases attach no manifests, the feed step is skipped, and the in-app updater stays off.
+- **Design and plans:**
+  - design 81 (#1307);
+  - design 82 and FC1 (#1522, #1523, #1524);
+  - CB1 (#1283), with its harness and modules (#1288, #1312, #1542);
+  - CC0 rulings (#1243);
+  - ME1 rulings (#1359);
+  - laminar rulings (in #1544).
+- **Benchmarks (BQ1):**
+  - harnesses and first numbers for all, House, Iggy, durable, graph and git, PG, SQL, stream,
+    meter, KV and gateway (#1521, #1525–#1532, #1535–#1538);
+  - the Confluent Cloud benchmark on AWS, GCP and Azure (#1499, #1507, #1536).
+
+  These are not quiet-window results, and **nothing measures 1B QPS**.
+
+### Changed
+- **The gateway's HTTP listeners speak HTTP/2 (h2c) and pipelined HTTP/1.1** (#1521). The
+  Temporal gateway's gRPC listener sets `TCP_NODELAY` (#1529). Its outbox relay sends different
+  promises concurrently, while one promise's rows stay in order.
+- **Vite+ (VV1):**
+  - `@loams/ui` on `vp pack` (#1326);
+  - electron-vite 6 (#1331);
+  - Oxlint and Oxfmt (#1341, #1407);
+  - vite-plus 1.3.0 (#1332);
+  - Studio e2e on `vp dev` (#1464);
+  - a weekly plain-Vite fallback lane (#1357).
+- **CI and release:**
+  - nightlies run locally, not on GitHub (#1488, #1493, #1515);
+  - Linux packages build on ubuntu-24.04 and refuse a binary that needs glibc newer than 2.39
+    (#1274);
+  - checksums can be regenerated over assets rebuilt on purpose (#1279);
+  - npm's dry run is skipped for a published version (#1276);
+  - the PHP split pushes atomically (#1258);
+  - the release GPG key is rotated, and the previous key keeps verifying 0.1.0–0.1.2 (#1260).
+- The upgrade gate starts from the previous release on TiKV (#1489), and `migrate` restores in
+  place, so rollback works on volume mounts (#1506).
+- The CloudEvents ingest runs on its own task (#1554).
+
+### Fixed
+- **Duplicate events through a connector crash:**
+  - `ProduceCloudEvents` batches are chunked to the engine's 1,000-event limit (#1496);
+  - a dropped produce request no longer strands claims that re-append its batch after
+    `CLAIM_TTL_MS` (#1554).
+- The engine image's console copy no longer uses a symbolic `--chmod` (#1255), which had broken
+  the v0.1.2 image build.
+- `RemoveMember` revokes the removed person's API keys, and a key whose person has left is
+  refused (#1270).
+- A restarted compute container starts again (#1475).
+- The Windows build no longer fails on the connect socket (#1471).
+- dev-green fixes:
+  - #1265, #1336, #1390, #1395, #1398, #1402, #1430, #1443, #1446, #1447, #1449, #1452, #1453,
+    #1459;
+  - #1470, #1474, #1478, #1480, #1482, #1483, #1486, #1487, #1491, #1517, #1518.
+
+### Security
+- Webhook signing secrets in Loams Meter are sealed at rest with age (#1551, D2205).
+- npm security fixes and minor bumps (#1325, #1335).
+- Ignored until their fixes are 14 days old, or because they are not reachable: the zstd-rs
+  advisories (#1285), and RUSTSEC-2026-0414 (pulldown-cmark wikilinks, #1502).
+- The RUSTSEC-2026-0385 (ctutils) ignore carried from 0.1.2 expires on 2026-11-06.
+
 ## [0.1.2] - 2026-10-26
 
 Highlights:

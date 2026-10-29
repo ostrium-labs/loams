@@ -22,6 +22,16 @@
 # - `kafka` (preview): Kafka clients (kcat, Kafka Connect, Flink, librdkafka)
 #   on 127.0.0.1:9093, through the Kafka gateway of Ostrium's Iggy fork in
 #   front of its own Iggy server. Never part of the default stack.
+# - `connectors` (preview): `loams-fabric connect`, native connector instances
+#   (Kafka and Confluent Cloud, Postgres and MySQL CDC) between Loams streams
+#   and outside systems (design §80, D1821). Instance files in
+#   ./connect/instances, secrets in ./secrets/connect. Never part of the
+#   default stack.
+# - `browser` (preview): Obscura, the agents' headless browser (D2114,
+#   deploy/browser), behind loams-gateway's browser module (D2118); agentd
+#   reaches the gateway, only the gateway reaches the engine; no published
+#   port; set LOAMS_BROWSER_TOKEN, LOAMS_BROWSER_CLIENT_TOKEN and
+#   LOAMS_BROWSER_PROVIDER=service.
 # - `house-tailnet`: the House's own tailnet node (https://loams-house.<tailnet>/).
 # - `postgres-control`: Loams Postgres's control plane.
 # - `console`, `headscale` (coming soon): as below.
@@ -145,7 +155,7 @@ services:
   # snapshot first. No listener, no published port, no tailnet door, no
   # container socket.
   migrate:
-    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams:${LOAMS_VERSION:-0.1.2}
+    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams:${LOAMS_VERSION:-0.1.3}
     # config/stores.sh adds the store flags the profiles select (--meta and
     # --live-store on TiKV with `tikv`; none, the embedded stores, without).
     entrypoint: ["/usr/bin/tini", "--", "/bin/sh", "/etc/loams/stores.sh"]
@@ -194,7 +204,7 @@ services:
 
   loams:
     <<: *restart
-    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams:${LOAMS_VERSION:-0.1.2}
+    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams:${LOAMS_VERSION:-0.1.3}
     # The stores come from the profiles (config/stores.sh): embedded by
     # default, the metastore and Live on TiKV with `tikv`, Durable on SQLite
     # unless LOAMS_DURABLE_STORE says otherwise.
@@ -247,6 +257,12 @@ services:
       # console's Content-Security-Policy header's connect-src. None by default.
       LOAMS_AGENTD_ORIGINS: ${LOAMS_AGENTD_ORIGINS:-}
       LOAMS_TAILSCALE_LISTEN: ${LOAMS_TAILSCALE_LISTEN:-127.0.0.1:7781}
+      # The connect socket (CC1 ruling R1.1): the main API on a Unix socket in
+      # the connect-run volume, which only the engine and `connect`
+      # (`--profile connectors`) mount. API keys only, whatever
+      # LOAMS_AUTH_MODE says; Tailscale headers are never read there. Set it
+      # empty to serve no socket.
+      LOAMS_CONNECT_SOCKET: ${LOAMS_CONNECT_SOCKET-/run/loams-connect/engine.sock}
       LOAMS_OIDC_ISSUER: ${LOAMS_OIDC_ISSUER:-https://auth.loams.dev}
       LOAMS_OIDC_AUDIENCE: ${LOAMS_OIDC_AUDIENCE:-loams-console}
       LOAMS_OIDC_ALLOWED_EMAILS: ${LOAMS_OIDC_ALLOWED_EMAILS:-}
@@ -254,6 +270,14 @@ services:
       LOAMS_OIDC_ALLOWED_GROUPS: ${LOAMS_OIDC_ALLOWED_GROUPS:-}
       LOAMS_TAILSCALE_ALLOWED_USERS: ${LOAMS_TAILSCALE_ALLOWED_USERS:-}
       LOAMS_API_KEYS_FILE: /etc/loams/secrets/api-keys
+      # The authorizer (design 76): builtin (the default: model v1 over the engine's own
+      # principal store) or openfga (the `authz` profile, below). The store and model ids
+      # come from openfga-init (config/stores.sh) unless set here.
+      LOAMS_AUTHZ: ${LOAMS_AUTHZ:-builtin}
+      LOAMS_AUTHZ_OPENFGA_GRPC: ${LOAMS_AUTHZ_OPENFGA_GRPC:-http://openfga:8081}
+      LOAMS_AUTHZ_OPENFGA_STORE: ${LOAMS_AUTHZ_OPENFGA_STORE:-}
+      LOAMS_AUTHZ_OPENFGA_MODEL: ${LOAMS_AUTHZ_OPENFGA_MODEL:-}
+      LOAMS_AUTHZ_OPENFGA_KEY: ${LOAMS_AUTHZ_OPENFGA_KEY:-}
     # LOAMS_SETUP_TOKEN, for first-run setup with auth on (the console's
     # setup page asks for it once, to create the org and its owner), comes
     # through config/setup-token.env: it reads the value from .env, and
@@ -266,12 +290,15 @@ services:
         required: false
       - path: ./secrets/engine.env
         required: false
-    networks: [default, house-link]
+    networks: [default, house-link, authz]
     volumes:
       - loams-data:/var/lib/loams
       - ./secrets:/etc/loams/secrets:ro
       - house-link:/var/lib/loams-house-link:ro
       - ./config/stores.sh:/etc/loams/stores.sh:ro
+      # The OpenFGA store and model ids (`authz` profile), read when LOAMS_AUTHZ=openfga.
+      - authz:/var/lib/loams-authz:ro
+      - connect-run:/run/loams-connect
     depends_on:
       pd:
         condition: service_healthy
@@ -287,6 +314,10 @@ services:
       # still starts once the House has written it.
       house:
         condition: service_healthy
+        required: false
+      # With the `authz` profile, OpenFGA's store and model exist before the engine starts.
+      openfga-init:
+        condition: service_completed_successfully
         required: false
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
@@ -332,7 +363,7 @@ services:
   # certificate there (Podman hands it to the container's user itself). No
   # network, every capability dropped but CHOWN and FOWNER.
   house-init:
-    image: ${HOUSE_IMAGE:-${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-fabric:${LOAMS_VERSION:-0.1.2}}
+    image: ${HOUSE_IMAGE:-${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-fabric:${LOAMS_VERSION:-0.1.3}}
     restart: "no"
     user: "0:0"
     network_mode: none
@@ -350,7 +381,7 @@ services:
 
   house:
     <<: *restart
-    image: ${HOUSE_IMAGE:-${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-fabric:${LOAMS_VERSION:-0.1.2}}
+    image: ${HOUSE_IMAGE:-${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-fabric:${LOAMS_VERSION:-0.1.3}}
     command:
       - house
       - --single-node
@@ -383,6 +414,55 @@ services:
         condition: service_completed_successfully
       house-init:
         condition: service_completed_successfully
+
+  # `loams-fabric connect` (`--profile connectors`, preview; design §80 §4.4,
+  # D1821): native connector instances, one YAML file each in
+  # ./connect/instances, reading outside systems into Loams streams and Loams
+  # streams out to them. It reaches the engine only through the connect
+  # socket (connect-run, a volume no other service mounts) with the API key
+  # in ./secrets/connect/engine-key, and joins no other service's network
+  # namespace (CC1 ruling R1.1). Its connectors reach out (Confluent Cloud,
+  # your databases); nothing reaches in: no published port, and its admin
+  # API (status, pause, resume, rate) is on its own loopback, 127.0.0.1:7790.
+  # Secrets are files under ./secrets/connect/<namespace_id>/<secret>/<key>,
+  # owner-only (the BYOC fetcher writes them); instance files name them.
+  # Its lock, checkpoints and controls are in its own volume unless
+  # LOAMS_CONNECT_STORE names the bucket (s3://…, with AWS_* in
+  # secrets/connect.env).
+  connect:
+    <<: *restart
+    profiles: [connectors]
+    image: ${HOUSE_IMAGE:-${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-fabric:${LOAMS_VERSION:-0.1.3}}
+    command:
+      - connect
+      - --instances=/etc/loams/connect
+      - --engine=unix:///run/loams-connect/engine.sock
+      - --secrets-root=/var/lib/loams-connect/secrets
+      - --store=${LOAMS_CONNECT_STORE:-file:///var/lib/loams-connect/state}
+      - --admin-listen=127.0.0.1:7790
+    environment:
+      RUST_LOG: ${RUST_LOG:-info}
+    env_file:
+      - path: ./secrets/connect.env
+        required: false
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - connect-run:/run/loams-connect
+      - connect-state:/var/lib/loams-connect/state
+      - ./connect/instances:/etc/loams/connect:ro
+      - ./secrets/connect:/var/lib/loams-connect/secrets:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:7790/health"]
+      interval: 10s
+      timeout: 3s
+      start_period: 20s
+      retries: 3
+    depends_on:
+      loams:
+        condition: service_healthy
 
   # The House's tailnet node (`--profile house-tailnet`), in the House's
   # network namespace (its only neighbour there). A second node on the
@@ -481,7 +561,7 @@ services:
   pg-control:
     <<: *restart
     profiles: [postgres-control]
-    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-pg-control:${LOAMS_VERSION:-0.1.2}
+    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-pg-control:${LOAMS_VERSION:-0.1.3}
     command:
       - pg-control
       - --store=local
@@ -576,7 +656,7 @@ services:
   pg-runner:
     <<: *restart
     profiles: [postgres-control]
-    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-pg-control:${LOAMS_VERSION:-0.1.2}
+    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-pg-control:${LOAMS_VERSION:-0.1.3}
     command:
       - pg-runner
       - --listen=0.0.0.0:7691
@@ -613,7 +693,7 @@ services:
   # the compose network.
   agentd:
     <<: *restart
-    image: ${AGENTD_IMAGE:-${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-agentd:${LOAMS_VERSION:-0.1.2}}
+    image: ${AGENTD_IMAGE:-${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-agentd:${LOAMS_VERSION:-0.1.3}}
     # The daemon writes its token, lock and store beside its config.toml, in
     # a directory it makes owner-only (0700): that is /home/loams/agentd, in
     # the data volume. Only config.toml comes from ./agentd, read-only, and
@@ -624,6 +704,86 @@ services:
       - agentd-data:/home/loams
       - ./agentd/config.toml:/home/loams/agentd/config.toml:ro
       - ./agentd:/etc/loams-agentd:ro
+    # The agents' headless browser (D2111, D2116, D2118): `local` launches
+    # the Obscura the image carries (LOAMS_OBSCURA_BIN) inside this container,
+    # per agent run; `service` goes through `browser-gateway` with a client
+    # token of its own, so agentd never holds the engine's token. The
+    # provider names the client token by reference (env:browser-token),
+    # which the bridge's env resolver reads from
+    # LOAMS_WEB_BRIDGE_SECRET_BROWSER_TOKEN.
+    environment:
+      LOAMS_BROWSER_PROVIDER: ${LOAMS_BROWSER_PROVIDER:-local}
+      LOAMS_BROWSER_SERVICE_URL: ws://browser-gateway:9223/devtools/browser
+      LOAMS_BROWSER_SERVICE_TOKEN_REF: env:browser-token
+      LOAMS_WEB_BRIDGE_SECRET_BROWSER_TOKEN: ${LOAMS_BROWSER_CLIENT_TOKEN:-}
+    networks:
+      - default
+      - browser
+
+  # The `browser` profile (D2110-D2114, D2118, preview): Obscura 0.2.3, the
+  # same engine agentd launches on a laptop, pinned by digest
+  # (deploy/browser). No published port. On `browser-engine` (internal:
+  # browser-gateway only) and on `browser-egress` (its own route out, shared
+  # with nobody). The engine
+  # refuses a non-loopback bind unless OBSCURA_CDP_TOKEN is at least 32 bytes,
+  # so an unset LOAMS_BROWSER_TOKEN stops it rather than exposing it. Each
+  # agent page is a throwaway browser context; nothing is stored.
+  browser:
+    <<: *restart
+    profiles: [browser]
+    image: ${BROWSER_IMAGE:-docker.io/h4ckf0r0day/obscura:0.2.3@sha256:475def3ddf1ec513b3d1bc36e8ad15f0d192538cb15f814c77215aa70c418ca2}
+    command: ["serve", "--port", "9222", "--host", "0.0.0.0", "--workers", "${BROWSER_WORKERS:-2}"]
+    environment:
+      OBSCURA_CDP_TOKEN: ${LOAMS_BROWSER_TOKEN:-}
+      OBSCURA_CDP_COMMAND_TIMEOUT_MS: "60000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks:
+      - browser-engine
+      - browser-egress
+
+  # loams-gateway's browser module (D2118): the only way to the engine.
+  # agentd connects with LOAMS_BROWSER_CLIENT_TOKEN, whose SHA-256 is the
+  # gateway's client list; the gateway opens the engine with
+  # LOAMS_BROWSER_TOKEN, which nothing else on agentd's side holds. Both are
+  # written to a private tmpfs at start. No published port; an empty token
+  # stops it.
+  browser-gateway:
+    <<: *restart
+    profiles: [browser]
+    image: ${BROWSER_GATEWAY_IMAGE:-${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-gateway:${LOAMS_VERSION:-0.1.3}}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        umask 077
+        [ "$${#ENGINE_TOKEN}" -ge 32 ] || { echo "browser-gateway: set LOAMS_BROWSER_TOKEN (32+ bytes)" >&2; exit 1; }
+        [ "$${#CLIENT_TOKEN}" -ge 32 ] || { echo "browser-gateway: set LOAMS_BROWSER_CLIENT_TOKEN (32+ bytes)" >&2; exit 1; }
+        printf %s "$$ENGINE_TOKEN" > /run/browser-gateway/engine-token
+        printf %s "$$CLIENT_TOKEN" | sha256sum | cut -d' ' -f1 > /run/browser-gateway/clients
+        unset ENGINE_TOKEN CLIENT_TOKEN
+        printf '%s\n' \
+          'listen = "0.0.0.0:9223"' \
+          'upstream = "browser:9222"' \
+          'upstream_token_file = "/run/browser-gateway/engine-token"' \
+          'client_tokens_file = "/run/browser-gateway/clients"' \
+          > /run/browser-gateway/browser.toml
+        exec /usr/bin/tini -- /usr/local/bin/loams-gateway --module browser --config /run/browser-gateway/browser.toml
+    environment:
+      ENGINE_TOKEN: ${LOAMS_BROWSER_TOKEN:-}
+      CLIENT_TOKEN: ${LOAMS_BROWSER_CLIENT_TOKEN:-}
+      RUST_LOG: ${BROWSER_GATEWAY_LOG:-info}
+    tmpfs:
+      - /run/browser-gateway:mode=0700,uid=10001,gid=10001
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks:
+      - browser
+      - browser-engine
 
   # The Kafka profile (D1796-D1798, preview): one image of Ostrium's fork of
   # Apache Iggy (ostrium-labs/iggy) holds both `iggy-server` and
@@ -713,6 +873,99 @@ services:
       start_period: 15s
       retries: 5
 
+  # The `authz` profile (design 76, D1610, D1613): OpenFGA, for LOAMS_AUTHZ=openfga. Off by
+  # default; the engine's default authorizer is built in (model v1 over its own principal
+  # store) and needs nothing here. OpenFGA v1.22.0 (Apache-2.0), its official image pinned by
+  # digest, unmodified.
+  #
+  # - SQLite in the openfga-data volume: one user's install only (D1626). A multi-user
+  #   install runs OpenFGA on Postgres (deploy/openfga/helm).
+  # - OpenFGA's own check caches stay off: the engine keeps the one decision cache, allows
+  #   only, 5 s (D1625).
+  # - On the `authz` network only (internal, no route out, no published port): the engine,
+  #   OpenFGA and its init job. Every call needs LOAMS_AUTHZ_OPENFGA_KEY (OpenFGA's preshared
+  #   key; it refuses to start without one).
+  # - openfga-init creates the `loams` store, writes model v1
+  #   (config/openfga-model.json, generated from deploy/openfga) when it changed, and records
+  #   their ids in the authz volume, where the engine reads them (config/stores.sh).
+  #
+  # The engine stays on the built-in authorizer until .env sets LOAMS_AUTHZ=openfga. OpenFGA's
+  # tuples come from the sync bridge (plan IA1, IA3); before it runs, an engine on OpenFGA
+  # denies every principal but the operator.
+  openfga-migrate:
+    profiles: [authz]
+    image: &openfga-image docker.io/openfga/openfga:v1.22.0@sha256:9cf9a20af32a40434cd3a788c429879439ee9ea9abf65c9c200ee17cd43f769e
+    command: migrate --datastore-engine sqlite --datastore-uri file:/home/nonroot/openfga.db
+    restart: "no"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [authz]
+    volumes:
+      # The image's /home/nonroot belongs to its user (65532), and a new volume takes that
+      # owner, so OpenFGA never runs as root.
+      - openfga-data:/home/nonroot
+
+  openfga:
+    <<: *restart
+    profiles: [authz]
+    image: *openfga-image
+    command:
+      - run
+      - --datastore-engine=sqlite
+      - --datastore-uri=file:/home/nonroot/openfga.db
+      - --playground-enabled=false
+      - --http-addr=0.0.0.0:8080
+      - --grpc-addr=0.0.0.0:8081
+      - --log-format=json
+      - --log-level=warn
+      - --check-query-cache-enabled=false
+      - --check-iterator-cache-enabled=false
+    environment:
+      OPENFGA_AUTHN_METHOD: preshared
+      OPENFGA_AUTHN_PRESHARED_KEYS: ${LOAMS_AUTHZ_OPENFGA_KEY:-}
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [authz]
+    volumes:
+      - openfga-data:/home/nonroot
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/grpc_health_probe", "-addr=127.0.0.1:8081"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    depends_on:
+      openfga-migrate:
+        condition: service_completed_successfully
+
+  openfga-init:
+    profiles: [authz]
+    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams:${LOAMS_VERSION:-0.1.3}
+    entrypoint: ["/bin/sh", "/etc/loams/openfga-init.sh"]
+    command: []
+    restart: "no"
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      LOAMS_AUTHZ_OPENFGA_KEY: ${LOAMS_AUTHZ_OPENFGA_KEY:-}
+      LOAMS_AUTHZ_DIR: /var/lib/loams-house
+    networks: [authz]
+    volumes:
+      # Mounted on a directory the image gives its user (10001), so a new volume takes that
+      # owner and the job runs as that user; the engine reads it at /var/lib/loams-authz.
+      - authz:/var/lib/loams-house
+      - ./config/openfga-init.sh:/etc/loams/openfga-init.sh:ro
+      - ./config/openfga-model.json:/etc/loams/openfga-model.json:ro
+    healthcheck:
+      disable: true
+    depends_on:
+      openfga:
+        condition: service_healthy
+
 networks:
   # The House's own network (see `house`): no other service joins it.
   house: {}
@@ -723,6 +976,18 @@ networks:
   # `pg-control` and `pg-runner` only, with no route out (see `pg-runner`).
   pg-runner:
     internal: true
+  # The engine, OpenFGA and openfga-init only, with no route out (`authz` profile).
+  authz:
+    internal: true
+  # agentd and browser-gateway only, with no route out.
+  browser:
+    internal: true
+  # browser-gateway and the engine only, with no route out: agentd cannot
+  # reach the engine directly.
+  browser-engine:
+    internal: true
+  # The browser engine's own way out to the web; no other service joins it.
+  browser-egress: {}
 
 volumes:
   pd-data:
@@ -738,6 +1003,11 @@ volumes:
   agentd-data:
   # The `kafka` profile's Iggy data.
   iggy-data:
+  # The engine's connect socket (CC1 ruling R1.1): the engine and `connect`
+  # only.
+  connect-run:
+  # `connect`'s lock, checkpoints and controls (unless LOAMS_CONNECT_STORE).
+  connect-state:
   pg-control-data:
   pg-runner-data:
   pg-runner-token:
@@ -745,3 +1015,7 @@ volumes:
   # Endpoint storage's local folder (without the `rustfs` profile).
   pg-endpoint-storage:
   upgrade-snapshots:
+  # The `authz` profile: OpenFGA's SQLite store, and the store and model ids openfga-init
+  # records for the engine.
+  openfga-data:
+  authz:

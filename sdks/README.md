@@ -4,14 +4,19 @@
 
 This directory contains Loams language implementations, code generation templates, and conformance fixtures. Packages are pre-release and not a stable published SDK family. Check each language’s README and the conformance runner before relying on a runtime or transport.
 
+Runnable app examples for all **13 SDKs** and their distribution locations are listed
+in [`EXAMPLES.md`](EXAMPLES.md). The index follows the released **0.1.3** source tag;
+registry packages are available for most SDKs, with Dart and Objective-C distributed
+from the tagged source for now.
+
 ## Language implementations
 
 | Language | Path | Key Packages / Modules |
 | --- | --- | --- |
 | **TypeScript** | [`typescript/`](typescript/) | `@loams/client`, `@loams/live` |
 | **Python** | [`python/`](python/) | `loams` |
-| **Rust** | [`rust/`](rust/) | `loams-sdk` |
-| **Go** | [`go/`](go/) | `github.com/ostrium-labs/loams/sdks/go` |
+| **Rust** | [`rust/`](rust/) | `loams` |
+| **Go** | [`go/`](go/) | `loams.dev/go` |
 | **C# (.NET)** | [`csharp/`](csharp/) | `Loams` (app modules: namespaces, collections, documents, search, vector, graph) |
 | **Java** | [`java/`](java/) | `dev.loams` (app modules: namespaces, collections, documents, search, vector, graph) |
 | **Kotlin** | [`kotlin/`](kotlin/) | `dev.loams.kotlin` (app modules: namespaces, collections, documents, search, vector, graph) |
@@ -37,28 +42,29 @@ A row is added by that language's SDKP task; the app suite is
 
 ## Installing
 
-The SDKs are published as `0.1.2` from the Loams release tag by
+Examples target the released `0.1.3` SDK. Releases are published by
 [`.github/workflows/sdk-release.yml`](../.github/workflows/sdk-release.yml), to
 npm, PyPI, crates.io, NuGet, the Go proxy, RubyGems and Maven Central; Swift
 resolves from this repository's tag and C++ ships as a release tarball. PHP
-(Packagist), Dart (pub.dev) and Objective-C (CocoaPods) are not on their
-registries yet. In 0.x an API may change between minor versions.
+0.1.3 is available on Packagist. Dart 0.1.3 is not yet on pub.dev, and the
+Objective-C CocoaPods package is not published; both can be used from the
+`v0.1.3` source checkout. In 0.x an API may change between minor versions.
 
 | Language | Install |
 | --- | --- |
 | TypeScript | `npm install @loams/client` |
 | Python | `pip install loams` |
 | Rust | `cargo add loams` |
-| Go (1.25+) | `go get loams.dev/go@v0.1.2` |
+| Go (1.25+) | `go get loams.dev/go@v0.1.3` |
 | C# | `dotnet add package Loams` |
-| Swift | `.package(url: "https://github.com/ostrium-labs/loams.git", from: "0.1.2")` |
-| C++ | `loams-cpp-0.1.2.tar.gz` on the GitHub release; `find_package(loams CONFIG)` |
+| Swift | `.package(url: "https://github.com/ostrium-labs/loams.git", from: "0.1.3")` |
+| C++ | `loams-cpp-0.1.3.tar.gz` on the GitHub release; `find_package(loams CONFIG)` |
 | Ruby | `gem install loams` |
 | PHP | `composer require loams/loams` (from the split repository; see [`php/`](php/)) |
-| Dart | `dart pub add loams` |
-| Java | `dev.loams:loams:0.1.2` (Maven Central) |
-| Kotlin | `dev.loams:loams-kotlin:0.1.2` (Maven Central) |
-| Objective-C | `pod 'Loams', '0.1.2'` (module `LoamsObjC`) |
+| Dart | Git dependency at `https://github.com/ostrium-labs/loams.git`, `ref: v0.1.3`, `path: sdks/dart` (pub.dev package pending) |
+| Java | `dev.loams:loams:0.1.3` (Maven Central) |
+| Kotlin | `dev.loams:loams-kotlin:0.1.3` (Maven Central) |
+| Objective-C | Add the local Swift package at `sdks/objc` from the `v0.1.3` checkout (CocoaPods package pending; module `LoamsObjC`) |
 
 Each registry goes live once the owner has set it up; which ones are live is in
 [`docs/release/publishing.md`](../docs/release/publishing.md).

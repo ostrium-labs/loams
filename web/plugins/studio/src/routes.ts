@@ -4,6 +4,12 @@
 
 import { httpUrl } from './factory.js';
 
+/**
+ * The Seed Exchange's harnesses (@loams/plugin-marketplace's route, MK1 Task 9): the
+ * harness picker's "Add a harness…".
+ */
+export const MARKETPLACE_HARNESSES = '/studio/marketplace?kind=harness';
+
 export type Panel = 'diff' | 'files' | 'terminal' | 'preview' | 'plan';
 export const PANELS: readonly Panel[] = ['diff', 'files', 'terminal', 'preview', 'plan'];
 
@@ -67,7 +73,7 @@ export function fileLinkOf(params: Record<string, string>): FileLink | undefined
   const path = params.path;
   if (!path || path.length > MAX_PATH || path.startsWith('/') || path.includes('\\'))
     return undefined;
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what is refused
+  // oxlint-disable-next-line no-control-regex -- control characters are what is refused
   if (/[\u0000-\u001f\u007f]/.test(path)) return undefined;
   const parts = path.split('/');
   if (parts.some((part) => part === '' || part === '.' || part === '..')) return undefined;

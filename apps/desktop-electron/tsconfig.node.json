@@ -3,10 +3,7 @@
 	"compilerOptions": {
 		"lib": ["ES2023"],
 		"types": ["node"],
-		"jsx": "preserve",
-		"paths": {
-			"@loams-plugins/*": ["./src/main/factory/adapter-shim.d.ts"]
-		}
+		"jsx": "preserve"
 	},
-	"include": ["src", "test", "electron.vite.config.ts", "vitest.config.ts"]
+	"include": ["src", "test", "electron.vite.config.ts", "vite.config.ts"]
 }

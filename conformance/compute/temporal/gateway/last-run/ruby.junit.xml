@@ -1,0 +1,38 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites>
+  <testsuite name="temporal-gateway" tests="15" failures="0" errors="0" skipped="9">
+    <testcase classname="temporal-gateway" name="gateway_profile_serving" />
+    <testcase classname="temporal-gateway" name="gateway_profile_no_host_ports" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_scenarios_ruby" />
+    <testcase classname="temporal-gateway" name="gateway_hello_ruby" />
+    <testcase classname="temporal-gateway" name="gateway_signal_ruby" />
+    <testcase classname="temporal-gateway" name="gateway_histories_replay_ruby" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ruby_hello">
+      <skipped message="the corpus has no ruby/hello history yet (generate.sh --langs ruby)">the corpus has no ruby/hello history yet (generate.sh --langs ruby)</skipped>
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ruby_two_activities_sequential">
+      <skipped message="the corpus has no ruby/two_activities_sequential history yet (generate.sh --langs ruby)">the corpus has no ruby/two_activities_sequential history yet (generate.sh --langs ruby)</skipped>
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ruby_activity_parallel_fanout_10">
+      <skipped message="the corpus has no ruby/activity_parallel_fanout_10 history yet (generate.sh --langs ruby)">the corpus has no ruby/activity_parallel_fanout_10 history yet (generate.sh --langs ruby)</skipped>
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ruby_signal_then_complete">
+      <skipped message="the corpus has no ruby/signal_then_complete history yet (generate.sh --langs ruby)">the corpus has no ruby/signal_then_complete history yet (generate.sh --langs ruby)</skipped>
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ruby_query_while_running">
+      <skipped message="the corpus has no ruby/query_while_running history yet (generate.sh --langs ruby)">the corpus has no ruby/query_while_running history yet (generate.sh --langs ruby)</skipped>
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ruby_cancel_requested">
+      <skipped message="the corpus has no ruby/cancel_requested history yet (generate.sh --langs ruby)">the corpus has no ruby/cancel_requested history yet (generate.sh --langs ruby)</skipped>
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ruby_terminated">
+      <skipped message="the corpus has no ruby/terminated history yet (generate.sh --langs ruby)">the corpus has no ruby/terminated history yet (generate.sh --langs ruby)</skipped>
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ruby_workflow_failed_application_error">
+      <skipped message="the corpus has no ruby/workflow_failed_application_error history yet (generate.sh --langs ruby)">the corpus has no ruby/workflow_failed_application_error history yet (generate.sh --langs ruby)</skipped>
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ruby_activity_heartbeat_details">
+      <skipped message="the corpus has no ruby/activity_heartbeat_details history yet (generate.sh --langs ruby)">the corpus has no ruby/activity_heartbeat_details history yet (generate.sh --langs ruby)</skipped>
+    </testcase>
+  </testsuite>
+</testsuites>

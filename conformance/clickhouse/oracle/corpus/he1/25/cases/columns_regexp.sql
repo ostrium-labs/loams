@@ -1,0 +1,1 @@
+SELECT COLUMNS('^[ab]$') FROM t25 ORDER BY a

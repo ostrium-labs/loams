@@ -241,6 +241,13 @@
           "type": "array",
           "minItems": 1,
           "items": { "$ref": "#/$defs/archive_file" }
+        },
+        "locations": {
+          "description": "Public mirrors of the package file (npm, pypi, oci), beside its registry reference and never instead of it (D1812). An archive's mirrors are on its files.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": { "$ref": "#/$defs/artifact_location" }
         }
       },
       "allOf": [
@@ -262,7 +269,7 @@
         },
         {
           "if": { "properties": { "type": { "const": "archive" } } },
-          "then": { "required": ["files"], "not": { "required": ["integrity"] } }
+          "then": { "required": ["files"], "not": { "anyOf": [{ "required": ["integrity"] }, { "required": ["locations"] }] } }
         }
       ]
     },
@@ -279,7 +286,26 @@
         },
         "url": { "$ref": "#/$defs/https_url" },
         "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-        "path": { "description": "The executable's path inside the archive.", "type": "string" }
+        "path": { "description": "The executable's path inside the archive.", "type": "string" },
+        "locations": {
+          "description": "Public mirrors of this file, beside its url and never instead of it (D1812).",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": { "$ref": "#/$defs/artifact_location" }
+        }
+      }
+    },
+    "artifact_location": {
+      "description": "A public mirror of an artifact's bytes (D1812). The installer reads it first when the location's tier is enabled, checks the SHA-256, then checks integrity and provenance as for any artifact (D1459); on any failure it falls back to the artifact's own HTTPS location. The index carries the reference, never the bytes (D1460).",
+      "type": "object",
+      "x-proto-message": "ArtifactLocation",
+      "additionalProperties": false,
+      "required": ["kind", "blob_id", "sha256"],
+      "properties": {
+        "kind": { "type": "string", "x-proto-enum": "LocationKind", "enum": ["walrus"] },
+        "blob_id": { "description": "The Walrus blob id: 32 bytes in URL-safe base64 without padding.", "type": "string", "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$" },
+        "sha256": { "description": "The SHA-256 of the blob's bytes, checked on every read.", "type": "string", "pattern": "^[0-9a-f]{64}$" }
       }
     },
     "provenance": {
@@ -303,8 +329,11 @@
       "required": ["kind"],
       "properties": {
         "kind": { "type": "string", "x-proto-enum": "RuntimeKind", "enum": ["node", "python", "oci", "binary"] },
-        "version": { "description": "A version range, such as >=22.13.", "type": "string", "minLength": 1 }
-      }
+        "engine": { "description": "The program that runs a node runtime's entrypoint: node (the default when absent) or bun, at the Bun version agentd pins (D1808). Only the node runtime has an engine.", "type": "string", "x-proto-enum": "Engine", "enum": ["node", "bun"] },
+        "version": { "description": "A version range of the engine, such as >=22.13 for node or >=1.4.4 for bun.", "type": "string", "minLength": 1 }
+      },
+      "if": { "required": ["engine"] },
+      "then": { "properties": { "kind": { "const": "node" } } }
     },
     "target": {
       "type": "string",

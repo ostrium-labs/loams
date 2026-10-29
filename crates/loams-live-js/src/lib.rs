@@ -43,28 +43,57 @@
 //! Task 6): it loads a deployment's bundle in either mode, and a bundle on
 //! isolated workers reports when they degrade.
 
+//! **The agent profile** (SPIKE, MS1 Task 1, D1807; feature `agent`, off
+//! by default): one long-lived isolated worker per running agent, sealed
+//! by the same sandbox, with ACP and every capability of the agent
+//! environment contract (D1453) as frames to agentd. See the `agent` module.
+//!
+//! Features: `live` (default) is everything above; `agent` adds the agent
+//! profile and compiles without `live`.
+
+// The crate docs above link Live's items, which an agent-only build lacks.
+#![cfg_attr(not(feature = "live"), allow(rustdoc::broken_intra_doc_links))]
+
+#[cfg(feature = "agent")]
+pub mod agent;
+#[cfg(feature = "live")]
 mod child;
+#[cfg(feature = "live")]
 mod host;
+#[cfg(any(feature = "live", feature = "agent"))]
 mod ipc;
+#[cfg(feature = "live")]
 mod limits;
+#[cfg(feature = "live")]
 mod loader;
+#[cfg(feature = "live")]
 mod runtime;
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", any(feature = "live", feature = "agent")))]
 mod sandbox_linux;
+#[cfg(feature = "live")]
 mod validators;
+#[cfg(feature = "live")]
 mod worker;
 
+#[cfg(feature = "live")]
 pub use child::worker_main;
+#[cfg(feature = "live")]
 pub use loader::JsLoader;
 /// Who may call a function (D699).
+#[cfg(feature = "live")]
 pub use loams_live::Visibility;
 /// A function's argument validator (`loams:server`'s `v`), shared with
 /// schema validators.
+#[cfg(feature = "live")]
 pub use loams_live::validate::Validator;
 /// Where a bundle's functions run, and whose code a node serves (design
 /// §45 §3.1, D681).
+#[cfg(feature = "live")]
 pub use loams_live::{Isolation, Tenancy};
+#[cfg(feature = "live")]
 pub use runtime::{Bundle, FunctionMeta, GLOBALS, JsConfig, MAX_BUNDLE_BYTES, MAX_EXPORTS};
+#[cfg(feature = "live")]
 #[doc(hidden)]
 pub use worker::Probe;
+#[cfg(feature = "live")]
 pub use worker::{KILL_GRACE, WorkerCommand, WorkerHandle, WorkerPool};

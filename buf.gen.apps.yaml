@@ -29,6 +29,10 @@ inputs:
       - proto/loams/stream/v1
       # Loams House (HS1 Task 8): the Analytics page's client (§49 §18.3).
       - proto/loams/house/v1
+      # Loams Meter (§63 §17.1, D2202): the public meter services, which the
+      # SDK facades bind (`@loams/proto/meter`); `loams.meter.internal.v1` is
+      # not generated.
+      - proto/loams/meter/v1
       # The console API on Connect (API2 Tasks 6 and 7): sessions, setup and
       # consent, and the org, projects, agents, keys and audit that replace
       # api/console/openapi.json.

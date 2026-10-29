@@ -1,0 +1,67 @@
+[package]
+name = "loams-spark"
+description = "Managed Spark through Spark Connect (design 81, plan SP1): the Spark Connect proxy (auth, tenant routing, session limits), the Sail and Apache Spark 4 backends, cluster config rendering and the ManagedEngine adapter (SP-a); Spark batch jobs, the Iceberg catalog wiring and the `loams spark` CLI (SP-b). Spark Connect protos vendored from apache/spark v4.1.3."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+# The generated code is built from Apache-2.0 protos (LICENSE-apache-spark);
+# the crate's own code is Apache-2.0 too.
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[[bin]]
+name = "loams-spark-proxy"
+path = "src/bin/loams-spark-proxy.rs"
+
+[features]
+default = []
+# SP-b: submit batch jobs to Kubernetes with the kube client (Spark on k8s,
+# D2001). Off by default: rendering the pod spec needs no client, and
+# `loams spark render` prints it for `kubectl apply`.
+kubernetes = ["dep:kube", "dep:k8s-openapi"]
+
+[dependencies]
+async-trait.workspace = true
+base64.workspace = true
+bytes.workspace = true
+clap = { workspace = true, features = ["env"] }
+futures.workspace = true
+hex.workspace = true
+http.workspace = true
+k8s-openapi = { workspace = true, optional = true }
+kube = { workspace = true, optional = true }
+loams-authz = { path = "../loams-authz" }
+prost.workspace = true
+prost-types.workspace = true
+# SP-b's facade and Lakekeeper clients. `rustls-no-provider`: TLS with the ring
+# provider, installed by `cli::run`, as the loams binary does.
+reqwest = { workspace = true, features = ["rustls-no-provider", "query"] }
+rustls = { workspace = true, features = ["ring", "std", "tls12", "logging"] }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+subtle = "2"
+thiserror.workspace = true
+time.workspace = true
+tokio = { workspace = true, features = ["rt", "macros", "time", "process", "fs", "io-util", "sync", "signal"] }
+tokio-stream.workspace = true
+toml.workspace = true
+tonic.workspace = true
+tonic-prost.workspace = true
+tower.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+ulid.workspace = true
+url.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true, features = ["test-util", "rt-multi-thread", "macros", "time", "process", "fs"] }
+
+[build-dependencies]
+tonic-prost-build.workspace = true
+
+[lints]
+workspace = true

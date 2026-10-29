@@ -15,6 +15,11 @@ updates:
     schedule:
       interval: monthly
     rebase-strategy: disabled
+    # The 14-day rule: only releases at least 14 days old (the cargo-major run
+    # of 2026-10-26 proposed gix, httpmock, jsonschema, sigstore, similar and
+    # zip releases from 2026-10-19 to 2026-10-25).
+    cooldown:
+      default-days: 14
     open-pull-requests-limit: 5
     labels: ["area/ci", "status/needs-triage"]
     commit-message:
@@ -52,18 +57,42 @@ updates:
       - dependency-name: "openraft"
       # Major bumps that break compilation; do them by hand, together where noted.
       # arrow*/datafusion*: Lance 12 re-exports Arrow 58, so they move with Lance.
-      - dependency-name: "arrow-array"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "arrow-schema"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "arrow-flight"
+      # Every arrow crate (arrow, arrow-array, arrow-ipc, arrow-schema,
+      # arrow-flight, ...): #1351 proposed arrow-ipc 60 alone, beside arrow 58.
+      - dependency-name: "arrow*"
         update-types: ["version-update:semver-major"]
       - dependency-name: "datafusion*"
+        update-types: ["version-update:semver-major"]
+      # parquet 60 alone pulls arrow 60 beside arrow 58: loams-graph's
+      # snapshot writer hands arrow 58 batches to parquet's ArrowWriter, which
+      # then wants arrow 60 types (#1245, 2026-10-27). It moves with arrow,
+      # DataFusion and Lance.
+      - dependency-name: "parquet"
         update-types: ["version-update:semver-major"]
       # rand and rand_chacha 0.10 change the Rng traits and move together.
       - dependency-name: "rand"
         update-types: ["version-update:semver-major"]
       - dependency-name: "rand_chacha"
+        update-types: ["version-update:semver-major"]
+      # Split out of the cargo-major group (#1250) on 2026-10-27: each changes
+      # a public API across several crates and needs a hand migration with its
+      # tests, not a log-driven fix. Bump each in a PR of its own.
+      # age 0.12: recipient/identity API changes (loams-pg-control backups).
+      - dependency-name: "age"
+        update-types: ["version-update:semver-major"]
+      # jsonwebtoken 11: key and validation API changes in five crates.
+      - dependency-name: "jsonwebtoken"
+        update-types: ["version-update:semver-major"]
+      # kube 4 and k8s-openapi 0.28 move together (kube pins k8s-openapi).
+      - dependency-name: "kube"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "k8s-openapi"
+        update-types: ["version-update:semver-major"]
+      # schemars 1: the JsonSchema trait and Schema type were redesigned.
+      - dependency-name: "schemars"
+        update-types: ["version-update:semver-major"]
+      # toml 1: used by 18 crates; the de/ser API moved in 0.9 and 1.0.
+      - dependency-name: "toml"
         update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
@@ -72,6 +101,8 @@ updates:
     schedule:
       interval: monthly
     rebase-strategy: disabled
+    cooldown:
+      default-days: 14
     open-pull-requests-limit: 5
     labels: ["area/ci", "status/needs-triage"]
     commit-message:
@@ -102,6 +133,8 @@ updates:
       # group does; minors and patches stay in the weekly group below.
       vite:
         patterns:
+          - "vite-plus"
+          - "@voidzero-dev/*"
           - "vite"
           - "electron-vite"
           - "vitest"
@@ -117,6 +150,28 @@ updates:
       # @types/node tracks the Node version the repo targets (Node 22 in CI and
       # `engines`). Skip majors above 22; revisit when the Node target moves.
       - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      # Split out of the npm-major group (#1249, #1320) on 2026-10-27.
+      # vite-plus is pinned by hand (owner ruling 2026-10-24: 1.3.0 from
+      # 2026-10-30, lane VV1), so Dependabot does not bump it at all.
+      - dependency-name: "vite-plus"
+      # TypeScript stays on 5.9.x through the Vite+ migration (lane VV1).
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      # ESLint is being replaced by Oxlint/Oxfmt (lane VV1); no ESLint majors.
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
+      # motion 14: the UI-upgrade pin stays on 13.5.1, the last 13.x, until
+      # someone moves @loams/ui's motion wrapper by hand and checks it.
+      - dependency-name: "motion"
+        update-types: ["version-update:semver-major"]
+      # cookie 2: plugins/core/host's session code (parse/serialize) needs a
+      # hand migration with its tests.
+      - dependency-name: "cookie"
+        update-types: ["version-update:semver-major"]
+      # js-yaml 5: the desktop's update pin parser; moves with the desktop's
+      # Vite+ PR (lane VV1), not on its own.
+      - dependency-name: "js-yaml"
         update-types: ["version-update:semver-major"]
 
   # Dev-only client drivers for the sqlgate codec fixtures (SQ1 Task 3).

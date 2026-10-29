@@ -1,0 +1,87 @@
+# Confluent Cloud list prices for the estimates Loams prints (design 80 §8, D1828).
+# Edited by hand: re-read the pages below and update every `read` date; the weekly
+# job (scripts/byoc/confluent-tables.sh check) fails when a date is older than 90 days.
+#
+# What these numbers are: list prices in USD, before tax, credits and discounts.
+# "Prices vary by cloud region" (the pricing page's FAQ) and the page shows no
+# regional figures, so one row per cluster type is used for every region. Where
+# the page gives a range, the upper end is used, so an estimate errs high.
+# GB here is binary (2^30 bytes), as the pricing page bills it.
+
+schema = 1
+source = "https://www.confluent.io/confluent-cloud/pricing/"
+read = "2026-10-26"
+currency = "USD"
+
+# Storage: the pricing page says "Prices shown are pre-replication", while the
+# billing docs bill storage on post-replication volume (about 3x). Until a bill
+# shows otherwise, ceilings multiply retained bytes by this factor (CC0 ruling
+# R0.8; CC1 Task 10 compares the Costs API's storage line with retained_bytes).
+storage_replication_factor = 3
+storage_replication_sources = [
+  "https://www.confluent.io/confluent-cloud/pricing/",
+  "https://docs.confluent.io/cloud/current/billing/overview.html",
+]
+
+# Limits come from the cluster types page (last published 2026-10-20).
+limits_source = "https://docs.confluent.io/cloud/current/clusters/cluster-types.html"
+
+[types.basic]
+ecku_hour_usd = 0.14        # "First eCKU free, then $0.14"
+free_ecku = 1
+in_gb_usd = 0.05
+out_gb_usd = 0.05
+storage_gb_month_usd = 0.08
+partitions_per_ecku = 30    # pre-replication; also the compacted limit (R0.13)
+partitions_max = 1500
+max_ecku = 50
+ingress_mbps_per_ecku = 5
+egress_mbps_per_ecku = 15
+source = "https://www.confluent.io/confluent-cloud/pricing/"
+read = "2026-10-26"
+
+[types.standard]
+ecku_hour_usd = 0.75
+free_ecku = 0
+in_gb_usd = 0.05            # the page gives $0.035-$0.050
+out_gb_usd = 0.05
+storage_gb_month_usd = 0.08
+partitions_per_ecku = 250
+partitions_max = 2500
+max_ecku = 10
+ingress_mbps_per_ecku = 25
+egress_mbps_per_ecku = 75
+source = "https://www.confluent.io/confluent-cloud/pricing/"
+read = "2026-10-26"
+
+# Premium types: the module refuses them unless allow_premium_cluster_types = true.
+[types.enterprise]
+ecku_hour_usd = 2.25        # the page gives $1.75-$2.25
+free_ecku = 0
+in_gb_usd = 0.05            # the page gives $0.020-$0.050
+out_gb_usd = 0.05
+storage_gb_month_usd = 0.08
+partitions_per_ecku = 3000
+partitions_max = 96000
+max_ecku = 32
+ingress_mbps_per_ecku = 60
+egress_mbps_per_ecku = 180
+source = "https://www.confluent.io/confluent-cloud/pricing/"
+read = "2026-10-26"
+
+[types.freight]
+ecku_hour_usd = 2.25        # minimum 2 eCKUs
+min_ecku = 2
+free_ecku = 0
+in_gb_usd = 0.03            # the page gives $0.014-$0.030
+out_gb_usd = 0.03
+storage_gb_month_usd = 0.03 # "effective pre-replication price" (Freight writes to object storage)
+partitions_per_ecku = 3000
+partitions_max = 50000
+max_ecku = 152
+ingress_mbps_per_ecku = 60
+egress_mbps_per_ecku = 180
+source = "https://www.confluent.io/confluent-cloud/pricing/"
+read = "2026-10-26"
+
+# Dedicated has no list price ("contact us"): estimates and ceilings report it as unbounded.

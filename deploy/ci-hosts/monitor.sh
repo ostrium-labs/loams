@@ -4,7 +4,7 @@
 # status.sh's report to the journal: `journalctl -u loams-ci-monitor`.
 # A failed check makes the unit fail, which `systemctl --failed` shows.
 set -uo pipefail
-DATA_ROOT=${1:-$(sed -n 's/^DATA_ROOT=//p' /etc/loams-ci/status.env 2>/dev/null)}
+DATA_ROOT=${1:-$(sed -n 's/^DATA_ROOT=//p' /opt/loams-ci/status.env 2>/dev/null)}
 DATA_ROOT=${DATA_ROOT:-/mnt/Projects/ci}
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 install -d -m 755 /run/loams-ci

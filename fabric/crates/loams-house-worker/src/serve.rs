@@ -138,12 +138,51 @@ pub fn engine_config(args: &WorkerArgs) -> EngineConfig {
         tmp_dir: args.data_dir(),
         cache_dir: args.tmp_dir.join("no-cache"),
         cache_bytes: 0,
-        max_server_memory: args.memory_limit,
+        max_server_memory: boot_memory_limit(args.memory_limit, available_memory()),
         // HS1 R1.4: no `filesystem_caches_path`, so nothing is cached on disk.
         filesystem_cache: false,
         server_args: vec![format!("--config-file={}", args.config_file().display())],
         // §49 §4.1: the worker is chDB's process, so chDB keeps its own handlers.
         install_signal_handlers: true,
+    }
+}
+
+/// The smallest ceiling a worker boots with when memory is short.
+pub const MIN_BOOT_MEMORY: u64 = 256 * 1024 * 1024;
+
+/// `MemAvailable` from `/proc/meminfo`, in bytes; `None` where there is none.
+pub fn available_memory() -> Option<u64> {
+    let text = std::fs::read_to_string("/proc/meminfo").ok()?;
+    let line = text.lines().find(|l| l.starts_with("MemAvailable:"))?;
+    let kib: u64 = line.split_whitespace().nth(1)?.parse().ok()?;
+    kib.checked_mul(1024)
+}
+
+/// The `--max_server_memory_usage` a worker boots with: its limit, or 90% of
+/// the memory available now when that is less (never under
+/// [`MIN_BOOT_MEMORY`]).
+///
+/// BQ1-house (2026-10-28), measured with chDB 26.9: `chdb_connect` returns
+/// null, with no error text, when `max_server_memory_usage` is above the
+/// machine's available memory at boot (9 GiB held by another process, 1.6 GiB
+/// available: 4.5 GiB and 2 GB failed, 1 GB booted). Under memory pressure
+/// every worker the pool started failed this way, and statements failed with
+/// `210`. A worker booted with the smaller ceiling answers what fits and
+/// `241` past it, as it would with that much memory.
+pub fn boot_memory_limit(limit: u64, available: Option<u64>) -> u64 {
+    match available {
+        Some(available) if available < limit => {
+            let clamped = (available / 10 * 9).max(MIN_BOOT_MEMORY).min(limit);
+            eprintln!(
+                "loams-house-worker: {} MiB available, below the worker's {} MiB memory \
+                 limit; booting with {} MiB",
+                available >> 20,
+                limit >> 20,
+                clamped >> 20
+            );
+            clamped
+        }
+        _ => limit,
     }
 }
 
@@ -445,8 +484,9 @@ impl Worker {
             code: 497,
             name: "ACCESS_DENIED".to_string(),
             message: "the worker's control connection runs only the House's view DDL \
-                      (one CREATE DATABASE … ENGINE = Memory, CREATE OR REPLACE VIEW or \
-                      DROP TABLE IF EXISTS)"
+                      (one CREATE DATABASE … ENGINE = Memory, CREATE OR REPLACE VIEW, \
+                      DROP TABLE IF EXISTS, CREATE OR REPLACE FUNCTION or CREATE \
+                      DICTIONARY over a view)"
                 .to_string(),
         })
     }
@@ -849,7 +889,8 @@ fn after_qualified(text: &str) -> Option<&str> {
 /// The shapes of the front's view DDL (`loams_house::views`, `system`): `CREATE
 /// DATABASE IF NOT EXISTS d ENGINE = Memory`, `CREATE OR REPLACE VIEW d.v AS\n…`,
 /// a read view of the bucket `CREATE OR REPLACE VIEW d.v (<name> <type>, …) SQL
-/// SECURITY NONE AS\n…` (HS1 R-ACL.1), and `DROP TABLE IF EXISTS d.t`, exactly.
+/// SECURITY NONE AS\n…` (HS1 R-ACL.1), `DROP TABLE IF EXISTS d.t`, and a SQL
+/// function `CREATE OR REPLACE FUNCTION f AS …` (HE1 R14.11), exactly.
 pub fn control_ddl_shape(sql: &str) -> bool {
     if let Some(rest) = sql.strip_prefix("CREATE DATABASE IF NOT EXISTS ") {
         return after_name(rest) == Some(" ENGINE = Memory");
@@ -869,7 +910,79 @@ pub fn control_ddl_shape(sql: &str) -> bool {
     if let Some(rest) = sql.strip_prefix("DROP TABLE IF EXISTS ") {
         return after_qualified(rest) == Some("");
     }
+    // HE1 R14.12: a dictionary over one of the statement's read views.
+    if let Some(rest) = sql.strip_prefix("CREATE DICTIONARY ") {
+        return dictionary_shape(rest);
+    }
+    // HE1 R14.11: one of the namespace's SQL functions, whose lambda the
+    // front held to the deny list.
+    if let Some(rest) = sql.strip_prefix("CREATE OR REPLACE FUNCTION ") {
+        return after_name(rest)
+            .and_then(|after| after.strip_prefix(" AS "))
+            .is_some_and(|lambda| !lambda.trim().is_empty());
+    }
     false
+}
+
+/// After `CREATE DICTIONARY `: `d.n (<name> <type>, …) PRIMARY KEY
+/// <name>[, <name>…] SOURCE(CLICKHOUSE(DB '<name>' TABLE '<name>'))
+/// LAYOUT(DIRECT())` or `LAYOUT(COMPLEX_KEY_DIRECT())` (HE1 R14.12): the
+/// source is the local server (no `HOST`), read by names alone.
+fn dictionary_shape(text: &str) -> bool {
+    let Some(rest) = after_qualified(text).and_then(|r| r.strip_prefix(" (")) else {
+        return false;
+    };
+    let mut rest = rest;
+    loop {
+        let Some(after) = after_name(rest)
+            .and_then(|r| r.strip_prefix(' '))
+            .and_then(after_type)
+        else {
+            return false;
+        };
+        rest = after;
+        if let Some(next) = rest.strip_prefix(", ") {
+            rest = next;
+        } else if let Some(next) = rest.strip_prefix(") PRIMARY KEY ") {
+            rest = next;
+            break;
+        } else {
+            return false;
+        }
+    }
+    loop {
+        let Some(after) = after_name(rest) else {
+            return false;
+        };
+        rest = after;
+        match rest.strip_prefix(", ") {
+            Some(next) => rest = next,
+            None => break,
+        }
+    }
+    let Some(rest) = rest.strip_prefix(" SOURCE(CLICKHOUSE(DB ") else {
+        return false;
+    };
+    let plain_literal = |text: &str| -> Option<usize> {
+        let inner = text.strip_prefix('\'')?;
+        let end = inner.find('\'')?;
+        let name = &inner[..end];
+        (!name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'))
+            .then_some(end + 2)
+    };
+    let Some(db) = plain_literal(rest) else {
+        return false;
+    };
+    let Some(rest) = rest[db..].strip_prefix(" TABLE ") else {
+        return false;
+    };
+    let Some(table) = plain_literal(rest) else {
+        return false;
+    };
+    matches!(
+        &rest[table..],
+        ")) LAYOUT(DIRECT())" | ")) LAYOUT(COMPLEX_KEY_DIRECT())"
+    )
 }
 
 /// Drops every read view an earlier statement made (HS1 Task 11): the views in
@@ -889,6 +1002,18 @@ pub fn drop_views(control: &Session) -> Result<(), ChdbError> {
         .map(|d| format!("'{d}'"))
         .collect::<Vec<_>>()
         .join(", ");
+    // HE1 R14.12: dictionaries first, since a view they read cannot be
+    // dropped under them (`630`, measured).
+    for row in names("SELECT database, name FROM system.dictionaries")? {
+        let Some((database, name)) = row.split_once('\t') else {
+            continue;
+        };
+        control.execute_simple(&format!(
+            "DROP DICTIONARY IF EXISTS {}.{}",
+            quoted_name(database),
+            quoted_name(name)
+        ))?;
+    }
     for database in names(&format!(
         "SELECT name FROM system.databases WHERE engine = 'Memory' AND name NOT IN ({kept})"
     ))? {
@@ -903,6 +1028,13 @@ pub fn drop_views(control: &Session) -> Result<(), ChdbError> {
         control.execute_simple(&format!(
             "DROP TABLE IF EXISTS default.{}",
             quoted_name(&table)
+        ))?;
+    }
+    // HE1 R14.11: the SQL functions an earlier statement's plan made.
+    for function in names("SELECT name FROM system.functions WHERE origin = 'SQLUserDefined'")? {
+        control.execute_simple(&format!(
+            "DROP FUNCTION IF EXISTS {}",
+            quoted_name(&function)
         ))?;
     }
     Ok(())
@@ -1148,6 +1280,22 @@ fn fill_memory(progress: &mut Progress) {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn boot_memory_follows_what_is_available() {
+        use super::{MIN_BOOT_MEMORY, boot_memory_limit};
+        const GIB: u64 = 1024 * 1024 * 1024;
+        assert_eq!(boot_memory_limit(4 * GIB, Some(8 * GIB)), 4 * GIB);
+        assert_eq!(boot_memory_limit(4 * GIB, None), 4 * GIB);
+        assert_eq!(boot_memory_limit(4 * GIB, Some(2 * GIB)), 2 * GIB / 10 * 9);
+        assert_eq!(boot_memory_limit(4 * GIB, Some(1)), MIN_BOOT_MEMORY);
+        assert_eq!(
+            boot_memory_limit(100, Some(1)),
+            100,
+            "never above the limit"
+        );
+    }
+
     use super::{control_ddl_shape, is_setting_name};
 
     #[test]
@@ -1162,6 +1310,12 @@ mod tests {
             "CREATE OR REPLACE VIEW d.v (a UInt8) SQL SECURITY NONE AS\nSELECT 1",
             "CREATE OR REPLACE VIEW d.`t` (k UInt64, `s t` Nullable(String), \
              e Enum8('a b' = 1, 'c' = -2), d DateTime64(3, 'UTC')) SQL SECURITY NONE AS\nSELECT 1",
+            "CREATE OR REPLACE FUNCTION f AS (a, b) -> a + b",
+            "CREATE DICTIONARY d.n (k UInt64, v String) PRIMARY KEY k \
+             SOURCE(CLICKHOUSE(DB 'd' TABLE '__loams_dictionary_n')) LAYOUT(DIRECT())",
+            "CREATE DICTIONARY `default`.n (project_id UUID, h String, c Array(Tuple(UInt32, String))) \
+             PRIMARY KEY project_id, h SOURCE(CLICKHOUSE(DB 'default' TABLE 'v')) \
+             LAYOUT(COMPLEX_KEY_DIRECT())",
         ] {
             assert!(control_ddl_shape(ok), "{ok}");
         }
@@ -1184,6 +1338,25 @@ mod tests {
             "DROP TABLE IF EXISTS d.t; DROP DATABASE d",
             "DROP DATABASE d",
             "INSERT INTO d.v VALUES (1)",
+            "CREATE FUNCTION f AS (a) -> a",
+            "CREATE OR REPLACE FUNCTION d.f AS (a) -> a",
+            "CREATE OR REPLACE FUNCTION f AS ",
+            "CREATE DICTIONARY d.n (k UInt64) PRIMARY KEY k SOURCE(CLICKHOUSE(HOST 'x' DB 'd' \
+             TABLE 't')) LAYOUT(DIRECT())",
+            "CREATE DICTIONARY d.n (k UInt64) PRIMARY KEY k SOURCE(CLICKHOUSE(DB 'd' TABLE 't' \
+             USER 'u')) LAYOUT(DIRECT())",
+            "CREATE DICTIONARY d.n (k UInt64) PRIMARY KEY k SOURCE(CLICKHOUSE(DB 'd' \
+             QUERY 'SELECT 1')) LAYOUT(DIRECT())",
+            "CREATE DICTIONARY d.n (k UInt64) PRIMARY KEY k SOURCE(HTTP(url 'http://x' \
+             format 'TSV')) LAYOUT(DIRECT())",
+            "CREATE DICTIONARY d.n (k UInt64) PRIMARY KEY k SOURCE(CLICKHOUSE(DB 'd' \
+             TABLE 't')) LAYOUT(HASHED())",
+            "CREATE DICTIONARY d.n (k UInt64 DEFAULT file('x')) PRIMARY KEY k \
+             SOURCE(CLICKHOUSE(DB 'd' TABLE 't')) LAYOUT(DIRECT())",
+            "CREATE DICTIONARY d.n (k UInt64) PRIMARY KEY k SOURCE(CLICKHOUSE(DB 'd' \
+             TABLE 't')) LAYOUT(DIRECT()) LIFETIME(0)",
+            "CREATE DICTIONARY d.n (k UInt64 INJECTIVE) PRIMARY KEY k SOURCE(CLICKHOUSE(DB 'd' \
+             TABLE 't')) LAYOUT(DIRECT())",
         ] {
             assert!(!control_ddl_shape(bad), "{bad}");
         }

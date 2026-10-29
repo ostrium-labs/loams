@@ -32,15 +32,68 @@ const DX1: &[&str] = &[
     "ResetStickyTaskQueue",
 ];
 
+/// Temporal Schedules (D2070-D2073).
+const SCHEDULES: &[&str] = &[
+    "CreateSchedule",
+    "DescribeSchedule",
+    "UpdateSchedule",
+    "PatchSchedule",
+    "DeleteSchedule",
+    "ListSchedules",
+    "ListScheduleMatchingTimes",
+];
+
+/// The methods lane TMP-api added on top of DX1 (2026-10-27).
+const TMP_API: &[&str] = &[
+    "UpdateWorkflowExecution",
+    "PollWorkflowExecutionUpdate",
+    "SignalWithStartWorkflowExecution",
+    "ResetWorkflowExecution",
+    "RespondActivityTaskCompletedById",
+    "RespondActivityTaskFailedById",
+    "RespondActivityTaskCanceledById",
+    "RecordActivityTaskHeartbeatById",
+    "GetWorkflowExecutionHistoryReverse",
+    "DescribeTaskQueue",
+    "GetClusterInfo",
+    "ListTaskQueuePartitions",
+    "ShutdownWorker",
+    "UpdateNamespace",
+    "DeprecateNamespace",
+    "GetWorkerBuildIdCompatibility",
+    "GetWorkerVersioningRules",
+    "GetWorkerTaskReachability",
+    "StartBatchOperation",
+    "StopBatchOperation",
+    "DescribeBatchOperation",
+    "ListBatchOperations",
+];
+
+/// Visibility (D2074-D2076).
+const VISIBILITY: &[&str] = &[
+    "ListOpenWorkflowExecutions",
+    "ListClosedWorkflowExecutions",
+    "ListWorkflowExecutions",
+    "ScanWorkflowExecutions",
+    "CountWorkflowExecutions",
+    "GetSearchAttributes",
+];
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn capabilities_match_impl() {
     let mut sorted_impl: Vec<_> = IMPLEMENTED.to_vec();
     sorted_impl.sort_unstable();
-    let mut sorted_dx1: Vec<_> = DX1.to_vec();
+    let mut sorted_dx1: Vec<_> = DX1
+        .iter()
+        .chain(TMP_API)
+        .chain(SCHEDULES)
+        .chain(VISIBILITY)
+        .copied()
+        .collect();
     sorted_dx1.sort_unstable();
     assert_eq!(
         sorted_impl, sorted_dx1,
-        "IMPLEMENTED is design 74's DX1 set"
+        "IMPLEMENTED is design 74's DX1 set plus TMP-api's and the schedule methods"
     );
 
     let gw = common::start().await;
@@ -87,5 +140,5 @@ async fn capabilities_match_impl() {
         .into_inner();
     let caps = info.capabilities.expect("capabilities");
     assert_eq!(caps, capabilities());
-    assert!(caps.sdk_metadata && !caps.eager_workflow_start && !caps.supports_schedules);
+    assert!(caps.sdk_metadata && !caps.eager_workflow_start && caps.supports_schedules);
 }
