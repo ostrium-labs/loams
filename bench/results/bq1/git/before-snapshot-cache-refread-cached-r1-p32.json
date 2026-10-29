@@ -1,0 +1,1 @@
+{"mode":"ref-read-cached","store":"file:///mnt/Projects/bench-data/bq1-graph-git/git","repos":1,"readers":32,"duration_s":15,"refs":1000,"pack_bytes":0,"get_delay_ms":0,"ops":1786433,"failed":0,"ops_per_s":119015.43991738463,"p50_ms":0.04945,"p99_ms":0.060923,"p999_ms":0.223382,"bytes_per_s":0.0,"gets_per_op":0.0}

@@ -29,6 +29,7 @@ cargo_package(
         "//third-party/rust:async-trait",
         "//third-party/rust:bytes",
         "//third-party/rust:clap",
+        "//third-party/rust:futures",
         "//third-party/rust:rand-0_9",
         "//third-party/rust:serde_json",
         "//third-party/rust:tokio",

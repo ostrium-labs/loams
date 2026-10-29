@@ -121,6 +121,31 @@ async fn commit_then_snapshot_sees_it() {
     ));
 }
 
+/// Readers at one seq share one snapshot instead of copying every ref per
+/// read (BQ1); a newer seq gets a new one, and an old exact read is not
+/// served the newer one.
+#[tokio::test]
+async fn readers_at_one_seq_share_a_snapshot() {
+    let (_, store) = faulty_store();
+    let log = mem_reflog(store).await;
+    log.commit(create("k1", "main", 1)).await.expect("commit");
+    let a = log.snapshot(ReadAt::AtLeast(Seq(1))).await.expect("a");
+    let b = log.snapshot(ReadAt::Latest).await.expect("b");
+    assert!(Arc::ptr_eq(&a, &b), "one seq, one snapshot");
+    log.commit(create("k2", "dev", 2)).await.expect("commit");
+    let c = log.snapshot(ReadAt::Latest).await.expect("c");
+    assert_eq!(c.seq, Seq(2));
+    assert!(c.refs.contains_key(&name("dev")));
+    let old = log.snapshot(ReadAt::Exactly(Seq(1))).await.expect("old");
+    assert_eq!(old.seq, Seq(1));
+    assert!(!old.refs.contains_key(&name("dev")));
+    let d = log.snapshot(ReadAt::AtLeast(Seq(2))).await.expect("d");
+    assert!(
+        Arc::ptr_eq(&c, &d),
+        "the old read did not replace the cache"
+    );
+}
+
 #[tokio::test(start_paused = true)]
 async fn group_commit_batches_concurrent_txns() {
     let (faulty, store) = faulty_store();
