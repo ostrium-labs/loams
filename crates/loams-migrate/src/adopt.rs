@@ -26,7 +26,7 @@
 use std::path::Path;
 
 use loams_common::meta::{
-    COLLECTION_POINTER_PREFIX, Consistency, GRAPH_STREAM_PREFIX, SYSTEM_NAMESPACE,
+    COLLECTION_POINTER_PREFIX, Consistency, GRAPH_STREAM_PREFIX, SYSTEM_NAMESPACE, SYSTEM_STREAMS,
 };
 
 use crate::formats::{self, STAMP_FILE};
@@ -139,8 +139,11 @@ async fn check_meta(cx: &Cx, found: &mut Preview2) -> Result<(), Mismatch> {
             .await
             .map_err(|e| failed("pointers", &e))?;
         if ns.name == SYSTEM_NAMESPACE {
-            let owns_objects = streams.iter().any(|s| s.namespace == ns.id)
-                || links.iter().any(|k| k.namespace == ns.id)
+            // The reserved system streams (`_system/_meter`, made by every
+            // `migrate run` since 0.1.3) are Loams' own, not foreign data.
+            let owns_objects = streams.iter().any(|s| {
+                s.namespace == ns.id && !SYSTEM_STREAMS.iter().any(|(name, _)| *name == s.name)
+            }) || links.iter().any(|k| k.namespace == ns.id)
                 || collections.iter().any(|c| c.namespace == ns.id);
             let foreign = pointers
                 .iter()
