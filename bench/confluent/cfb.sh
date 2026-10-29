@@ -70,7 +70,7 @@ mint_key() {  # resource_id name keyfile [environment]
   local out; out="$(cc POST /iam/v2/api-keys "$body")"
   [[ "$(cc_status)" == 20* ]] || die "minting key for $1 answered HTTP $(cc_status): $(jq -c '.errors' <<<"$out")"
   (umask 077; jq -r '"id=" + .id + "\nsecret=" + .spec.secret' <<<"$out" >"$3")
-  : >"$CFB_STATE/last.body"
+  : >"$CFB_STATE/last.$$.body"
   sed -n 's/^id=//p' "$3"
 }
 

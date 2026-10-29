@@ -41,14 +41,14 @@ EOF
       --arg jaas "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"$(sed -n 's/^id=//p' "$S/key")\" password=\"$(sed -n 's/^secret=//p' "$S/key")\";" \
       '{source_cluster_id:$sid, configs:[{name:"bootstrap.servers",value:$bs},{name:"security.protocol",value:"SASL_SSL"},
         {name:"sasl.mechanism",value:"PLAIN"},{name:"sasl.jaas.config",value:$jaas}]}' >"$req")
-    cc_keyed "$D/key" POST "$base/links?link_name=$link" "@$req" >/dev/null; echo "link $link: HTTP $(cc_status) $(head -c 300 "$CFB_STATE/last.body")"
+    cc_keyed "$D/key" POST "$base/links?link_name=$link" "@$req" >/dev/null; echo "link $link: HTTP $(cc_status) $(head -c 300 "$CFB_STATE/last.$$.body")"
     rm -f "$req"
     echo "$(date -u +%FT%TZ) link-up $link" >>"$CFB_STATE/events.log"
     for i in $(seq 1 10); do
       cc_keyed "$D/key" POST "$base/links/$link/mirrors" "$(jq -cn --arg t "$topic" '{source_topic_name:$t}')" >/dev/null
       st="$(cc_status)"; [[ "$st" == 20* ]] && break; sleep 15
     done
-    echo "mirror $topic: HTTP $st $(head -c 300 "$CFB_STATE/last.body")"
+    echo "mirror $topic: HTTP $st $(head -c 300 "$CFB_STATE/last.$$.body")"
     ;;
   run)
     out="$here/results/$day/link/$link.json"; mkdir -p "$(dirname "$out")"
