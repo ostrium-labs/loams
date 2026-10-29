@@ -645,14 +645,11 @@ struct Produce {
     records: Vec<RecordBody>,
 }
 
-async fn produce(
-    State(state): State<AppState>,
-    path: Result<Path<(String, String, String)>, PathRejection>,
-    body: Result<Bytes, BytesRejection>,
-) -> ApiResult {
-    let (Path((ns, stream, partition)), body) = (path?, body?);
-    let partition = parse_partition(&partition)?;
-    let request: Produce = parse_json(&body)?;
+/// The records of a produce body (`{"records": [{key, value, headers,
+/// timestamp_ms}]}`, base64), as the native produce route and the meter's
+/// service ingest read them.
+pub(crate) fn decode_records(body: &Bytes) -> Result<Vec<Record>, ApiError> {
+    let request: Produce = parse_json(body)?;
     let mut records = Vec::with_capacity(request.records.len());
     for record in request.records {
         let mut headers = Vec::with_capacity(record.headers.len());
@@ -667,6 +664,17 @@ async fn produce(
             timestamp_ms: record.timestamp_ms.unwrap_or(-1),
         });
     }
+    Ok(records)
+}
+
+async fn produce(
+    State(state): State<AppState>,
+    path: Result<Path<(String, String, String)>, PathRejection>,
+    body: Result<Bytes, BytesRejection>,
+) -> ApiResult {
+    let (Path((ns, stream, partition)), body) = (path?, body?);
+    let partition = parse_partition(&partition)?;
+    let records = decode_records(&body)?;
     let acks = produce_records(
         &state.meta,
         &state.writer,
