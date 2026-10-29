@@ -271,8 +271,6 @@ pub fn dev_config() -> Config {
         task_token_keys: Vec::new(),
         keys: Vec::new(),
         dev_loams_namespace: Some("local".into()),
-        history_wait_ms: None,
-        relay_concurrency: None,
         bootstrap_namespaces: vec![BootstrapNamespace {
             loams_namespace_id: "local".into(),
             name: "default".into(),
