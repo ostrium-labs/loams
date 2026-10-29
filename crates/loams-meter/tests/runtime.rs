@@ -511,6 +511,7 @@ async fn the_lease_client_asks_the_local_owner_then_a_remote_one() {
         transport: Arc::new(Remote(serde_json::Value::Null)),
         fence: fence.clone(),
         clock: Arc::new(|| NOW),
+        policies: None,
     })
     .expect("client");
     let g = local
@@ -546,6 +547,7 @@ async fn the_lease_client_asks_the_local_owner_then_a_remote_one() {
         transport: Arc::new(Remote(answer)),
         fence: fence.clone(),
         clock: Arc::new(|| NOW),
+        policies: None,
     })
     .expect("client");
     let g = remote
@@ -569,6 +571,7 @@ async fn the_lease_client_asks_the_local_owner_then_a_remote_one() {
         transport: Arc::new(Remote(stale)),
         fence,
         clock: Arc::new(|| NOW),
+        policies: None,
     })
     .expect("client");
     assert!(
@@ -576,4 +579,44 @@ async fn the_lease_client_asks_the_local_owner_then_a_remote_one() {
             .acquire(&request, std::time::Duration::from_secs(2))
             .is_err()
     );
+}
+
+#[tokio::test]
+async fn a_pair_without_a_policy_gets_an_unmetered_grant_without_asking() {
+    use loams_meter::lease_client::{LeaseClient, LeaseRouter};
+    use loams_meter::lease_service::EpochFence;
+    use loams_meter_gate::gate::{LeaseRequest as GateRequest, LeaseSource};
+    use loams_meter_gate::scope::{Policies, PolicySet};
+
+    let policies = Policies::new();
+    policies.set(PolicySet::new([(
+        "org_b".to_string(),
+        "house_cpu".to_string(),
+    )]));
+    // No owner and a transport that must not be called.
+    let client = LeaseClient::start(LeaseRouter {
+        partitions: 1,
+        local: None,
+        owners: Arc::new(MemLeases::new()),
+        transport: Arc::new(Remote(serde_json::Value::Null)),
+        fence: Arc::new(EpochFence::new()),
+        clock: Arc::new(|| NOW),
+        policies: Some(policies),
+    })
+    .expect("client");
+    let g = client
+        .acquire(
+            &GateRequest {
+                subject: "org_a",
+                feature: "house_cpu",
+                node: "n",
+                want: 5,
+                held: None,
+            },
+            std::time::Duration::from_secs(2),
+        )
+        .expect("an unmetered grant");
+    assert!(g.has_access && g.counting);
+    assert!(g.amount > 1 << 40);
+    assert_eq!(g, loams_meter::lease_client::unmetered_grant());
 }

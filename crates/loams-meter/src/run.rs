@@ -285,6 +285,17 @@ impl Catalog {
         &self.index
     }
 
+    /// Every (subject, feature) with a metered entitlement to a live
+    /// feature.
+    pub fn metered_pairs(&self) -> Vec<(String, String)> {
+        self.entitlements
+            .iter()
+            .filter(|(_, e)| matches!(e.kind, EntitlementKind::Metered { .. }))
+            .filter(|((_, f), _)| self.features.get(f).is_some_and(|f| !f.archived))
+            .map(|((s, f), _)| (s.to_string(), f.to_string()))
+            .collect()
+    }
+
     pub fn entitlement(&self, subject: &SubjectKey, feature: &FeatureKey) -> Option<&Entitlement> {
         self.entitlements.get(&(subject.clone(), feature.clone()))
     }
@@ -345,6 +356,9 @@ pub struct Counters {
     partitions: u32,
     owners: Mutex<CounterOwners>,
     catalog: RwLock<Arc<Catalog>>,
+    /// The (subject, feature) pairs with a metered entitlement: where the
+    /// products' gate applies (D2400).
+    policies: Arc<loams_meter_gate::scope::Policies>,
 }
 
 impl Counters {
@@ -353,6 +367,7 @@ impl Counters {
             partitions,
             owners: Mutex::new(CounterOwners::new()),
             catalog: RwLock::new(Arc::new(Catalog::default())),
+            policies: loams_meter_gate::scope::Policies::new(),
         })
     }
 
@@ -364,7 +379,15 @@ impl Counters {
     }
 
     pub fn set_catalog(&self, catalog: Catalog) {
+        self.policies.set(loams_meter_gate::scope::PolicySet::new(
+            catalog.metered_pairs(),
+        ));
         *self.catalog.write().unwrap_or_else(PoisonError::into_inner) = Arc::new(catalog);
+    }
+
+    /// Where the products' gate applies, kept current with the records.
+    pub fn policies(&self) -> Arc<loams_meter_gate::scope::Policies> {
+        Arc::clone(&self.policies)
     }
 
     /// The partitions this instance counts, with their owner epochs.

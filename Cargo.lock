@@ -8526,6 +8526,7 @@ dependencies = [
  "loams-meta-tikv",
  "loams-meter",
  "loams-meter-core",
+ "loams-meter-gate",
  "loams-migrate",
  "loams-pg-control",
  "loams-postgres",
