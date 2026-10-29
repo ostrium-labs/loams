@@ -660,6 +660,13 @@ impl Native {
             .house_key_file
             .clone()
             .or_else(|| env_value("LOAMS_HOUSE_KEY_FILE").map(PathBuf::from));
+        // Loams Meter's House (§63 §7.5): environment only for now.
+        config.meter_house = loams::api::meter::MeterHouseConfig {
+            url: env_value("LOAMS_METER_HOUSE_URL"),
+            user: env_value("LOAMS_METER_HOUSE_USER")
+                .unwrap_or_else(|| loams::api::meter::DEFAULT_HOUSE_USER.to_string()),
+            password_file: env_value("LOAMS_METER_HOUSE_PASSWORD_FILE").map(PathBuf::from),
+        };
         config.connect_socket = self
             .connect_socket
             .clone()
@@ -1276,6 +1283,11 @@ enum Command {
     /// Loams Cloud, the hosted try-out (design §78 §25): `cloud admin …` for
     /// allow-listed Ostrium admins (waitlist, invites, audit, the TOTP step-up).
     Cloud(loams_cloud_admin::CloudArgs),
+    /// The read-only project knowledge cache on Walrus (MS1, D1813):
+    /// `knowledge publish` stores a public repository's knowledge set and
+    /// its signed manifest; `knowledge verify` checks them.
+    #[cfg(feature = "knowledge")]
+    Knowledge(loams_knowledge::cli::KnowledgeArgs),
     /// The agent marketplace through the local agent daemon (design §73
     /// §7.1–§7.2): `search`, `info`, `install`, `uninstall`, `list`,
     /// `update`, `source`. Install shows the plan and asks first.
@@ -1458,6 +1470,8 @@ fn config(command: Command) -> ServerConfig {
         Command::Migrate { .. } => unreachable!("loams migrate starts no server"),
         Command::Upgrade(_) => unreachable!("loams upgrade starts no server"),
         Command::Cloud(_) => unreachable!("loams cloud starts no server"),
+        #[cfg(feature = "knowledge")]
+        Command::Knowledge(_) => unreachable!("loams knowledge starts no server"),
         Command::Marketplace(_) => unreachable!("loams marketplace starts no server"),
         Command::Byoc(_) => unreachable!("loams byoc starts no server"),
         Command::Risingwave(_) => unreachable!("loams risingwave starts no server"),
@@ -1676,6 +1690,11 @@ fn main() -> ExitCode {
     // A client too (LC2a Tasks 4 and 5): its own runtime, no stores.
     if let Command::Cloud(args) = &cli.command {
         return loams_cloud_admin::run(args);
+    }
+    // A client too (MS1 Task 9): its own runtime; the bucket and Walrus only.
+    #[cfg(feature = "knowledge")]
+    if let Command::Knowledge(args) = &cli.command {
+        return loams_knowledge::cli::run(args);
     }
     // A client of the local agentd (MK1 Task 10): its own runtime, no stores.
     if let Command::Marketplace(args) = &cli.command {
@@ -3057,6 +3076,53 @@ mod tests {
             let cli = Cli::try_parse_from(args).unwrap_or_else(|e| panic!("{args:?}: {e}"));
             assert!(matches!(cli.command, Command::Upgrade(_)), "{args:?}");
         }
+    }
+
+    /// `loams knowledge publish|verify` (MS1 Task 9) parse into the
+    /// knowledge client.
+    #[cfg(feature = "knowledge")]
+    #[test]
+    fn knowledge_subcommand_parses() {
+        for args in [
+            &[
+                "loams",
+                "knowledge",
+                "publish",
+                "--repo",
+                "ostrium-labs/loams",
+                "--visibility",
+                "public",
+                "--config",
+                "k.toml",
+            ][..],
+            &[
+                "loams",
+                "knowledge",
+                "verify",
+                "--repo",
+                "ostrium-labs/loams",
+                "--config",
+                "k.toml",
+                "--output",
+                "json",
+            ],
+        ] {
+            let cli = Cli::try_parse_from(args).unwrap_or_else(|e| panic!("{args:?}: {e}"));
+            assert!(matches!(cli.command, Command::Knowledge(_)), "{args:?}");
+        }
+        // No default visibility.
+        assert!(
+            Cli::try_parse_from([
+                "loams",
+                "knowledge",
+                "publish",
+                "--repo",
+                "o/r",
+                "--config",
+                "k"
+            ])
+            .is_err()
+        );
     }
 
     /// `loams marketplace …` (MK1 Task 10): a script's install names the

@@ -29,8 +29,8 @@ import { InstanceService } from '@loams/proto/instance';
 import type { GetInstanceRequestSchema, GetInstanceResponse, WhoAmIRequestSchema, WhoAmIResponse } from '@loams/proto/instance';
 import { LiveAdminService, LiveService } from '@loams/live/live';
 import type { ActivateDeploymentRequestSchema, ActivateDeploymentResponse, AuthenticateRequestSchema, AuthenticateResponse, CreateAppRequestSchema, CreateAppResponse, DeleteAppRequestSchema, DeleteAppResponse, DeployRequestSchema, DeployResponse, GetAppRequestSchema, GetAppResponse, GetDeploymentRequestSchema, GetDeploymentResponse, GetIndexStatusRequestSchema, GetIndexStatusResponse, ListAppsRequestSchema, ListAppsResponse, ListDeploymentsRequestSchema, ListDeploymentsResponse, ModifyQuerySetRequestSchema, ModifyQuerySetResponse, MutateRequestSchema, MutateResponse, QueryRequestSchema, QueryResponse, TailLogsRequestSchema, TailLogsResponse, Transition, UpdateAppRequestSchema, UpdateAppResponse, WatchRequestSchema } from '@loams/live/live';
-import { CustomerService, EntitlementService, NotificationService, PlanService } from '@loams/proto/meter';
-import type { ApplyPlanRequestSchema, ApplyPlanResponse, AssignPlanRequestSchema, AssignPlanResponse, CheckAccessRequestSchema, CheckAccessResponse, CreateCustomerRequestSchema, CreateCustomerResponse, CreateEntitlementRequestSchema, CreateEntitlementResponse, CreateGrantRequestSchema, CreateGrantResponse, CreateRuleRequestSchema, CreateRuleResponse, CreateWebhookRequestSchema, CreateWebhookResponse, GetBalanceHistoryRequestSchema, GetBalanceHistoryResponse, GetCustomerRequestSchema, GetCustomerResponse, GetEntitlementValueRequestSchema, GetEntitlementValueResponse, ListCustomersRequestSchema, ListCustomersResponse, ListDeliveriesRequestSchema, ListDeliveriesResponse, ListEntitlementsRequestSchema, ListEntitlementsResponse, ListGrantsRequestSchema, ListGrantsResponse, ListPlansRequestSchema, ListPlansResponse, ListRulesRequestSchema, ListRulesResponse, ResetEntitlementRequestSchema, ResetEntitlementResponse, RotateWebhookSecretRequestSchema, RotateWebhookSecretResponse, SetPaymentStateRequestSchema, SetPaymentStateResponse, SetSpendControlsRequestSchema, SetSpendControlsResponse, UnassignPlanRequestSchema, UnassignPlanResponse, UpdateCustomerRequestSchema, UpdateCustomerResponse, VoidGrantRequestSchema, VoidGrantResponse } from '@loams/proto/meter';
+import { CustomerService, EntitlementService, MeterService, NotificationService, PlanService } from '@loams/proto/meter';
+import type { ApplyPlanRequestSchema, ApplyPlanResponse, AssignPlanRequestSchema, AssignPlanResponse, CheckAccessRequestSchema, CheckAccessResponse, CreateCustomerRequestSchema, CreateCustomerResponse, CreateEntitlementRequestSchema, CreateEntitlementResponse, CreateGrantRequestSchema, CreateGrantResponse, CreateRuleRequestSchema, CreateRuleResponse, CreateWebhookRequestSchema, CreateWebhookResponse, GetBalanceHistoryRequestSchema, GetBalanceHistoryResponse, GetCustomerRequestSchema, GetCustomerResponse, GetEntitlementValueRequestSchema, GetEntitlementValueResponse, ListCustomersRequestSchema, ListCustomersResponse, ListDeliveriesRequestSchema, ListDeliveriesResponse, ListEntitlementsRequestSchema, ListEntitlementsResponse, ListGrantsRequestSchema, ListGrantsResponse, ListPlansRequestSchema, ListPlansResponse, ListRulesRequestSchema, ListRulesResponse, QueryMeterRequestSchema, QueryMeterResponse, ResetEntitlementRequestSchema, ResetEntitlementResponse, RotateWebhookSecretRequestSchema, RotateWebhookSecretResponse, SetPaymentStateRequestSchema, SetPaymentStateResponse, SetSpendControlsRequestSchema, SetSpendControlsResponse, UnassignPlanRequestSchema, UnassignPlanResponse, UpdateCustomerRequestSchema, UpdateCustomerResponse, VoidGrantRequestSchema, VoidGrantResponse } from '@loams/proto/meter';
 import { SqlService } from '@loams/proto/sql';
 import type { QueryArrowRequestSchema, QueryArrowResponse, QueryRequestSchema as SqlV1QueryRequestSchema, QueryResponse as SqlV1QueryResponse } from '@loams/proto/sql';
 import { StreamService } from '@loams/proto/stream';
@@ -926,6 +926,27 @@ export interface MeterEntitlementsModule {
 }
 
 /**
+ *  `loams.meter.meters` — Meter usage queries over the House windows.
+ *
+ *  Wraps `loams.meter.v1.MeterService`.
+ */
+export interface MeterMetersModule {
+  /** The SDK module, as it appears on `loams.meter.meters`. */
+  readonly module: 'meter.meters';
+  /** The service behind the module. */
+  readonly service: 'loams.meter.v1.MeterService';
+  /** Whether the package's wire contract may still change. */
+  readonly unstable: false;
+  /**
+   *  `loams.meter.v1.MeterService/QueryMeter`, retried: safe.
+   */
+  query(
+    request: MessageInitShape<typeof QueryMeterRequestSchema>,
+    options?: CallOptions,
+  ): Promise<QueryMeterResponse>;
+}
+
+/**
  *  `loams.meter.notifications` — Meter notifications: threshold rules, signed webhooks and their deliveries.
  *
  *  Wraps `loams.meter.v1.NotificationService`.
@@ -1479,6 +1500,17 @@ export const MODULES: readonly ModuleBinding[] = [
     ],
   },
   {
+    name: 'meter.meters',
+    summary: 'Meter usage queries over the House windows.',
+    service: 'loams.meter.v1.MeterService',
+    package: 'loams.meter.v1',
+    unstable: false,
+    derived: false,
+    calls: [
+      { module: 'meter.meters', name: 'query', protoName: 'query', method: 'QueryMeter', rpc: 'loams.meter.v1.MeterService/QueryMeter', service: 'loams.meter.v1.MeterService', package: 'loams.meter.v1', idempotency: 'no_side_effects', retry: 'safe', streaming: 'unary', pagination: null },
+    ],
+  },
+  {
     name: 'meter.notifications',
     summary: 'Meter notifications: threshold rules, signed webhooks and their deliveries.',
     service: 'loams.meter.v1.NotificationService',
@@ -1608,6 +1640,7 @@ export const SERVICE_DESCRIPTORS: Readonly<Record<string, DescService>> = {
   'loams.live.v1.LiveService': LiveService,
   'loams.meter.v1.CustomerService': CustomerService,
   'loams.meter.v1.EntitlementService': EntitlementService,
+  'loams.meter.v1.MeterService': MeterService,
   'loams.meter.v1.NotificationService': NotificationService,
   'loams.meter.v1.PlanService': PlanService,
   'loams.sql.v1.SqlService': SqlService,
