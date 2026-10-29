@@ -514,8 +514,15 @@ jobs:
         working-directory: sdks/rust
         run: |
           cargo test -j 4 --locked
-          cargo fmt -- --check
           cargo clippy -j 4 --locked --all-targets -- -D warnings
+      # Formatting is a pull request's gate, not a publish's: v0.1.3's tagged
+      # tree had an unformatted binding.rs, and `cargo fmt --check` stopped the
+      # crates.io upload of code that was otherwise tested. A publishing run
+      # (a tag, or a dispatch with dry_run false) only reports it.
+      - name: the SDK's formatting
+        working-directory: sdks/rust
+        continue-on-error: ${{ needs.plan.outputs.publish == 'true' }}
+        run: cargo fmt -- --check
       - name: cargo publish --dry-run, loams-proto and loams-live-proto
         run: cargo publish --dry-run --locked -j 4 -p loams-proto -p loams-live-proto
       # The SDK is its own workspace, so cargo cannot stage the two proto crates
