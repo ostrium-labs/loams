@@ -176,3 +176,8 @@ Then Task 2 after Task 1, Task 4 after Task 3, Task 6 after Task 5, and Tasks 7â
 | Task | File | Summary |
 |---|---|---|
 | 0 | [fc1-rulings/t0.md](fc1-rulings/t0.md) | Fork base commit; pins DataFusion 54.1.0, Arrow 58.4.0, sqlparser 0.62.0, Rust 1.97.1; the fork's CI loses its schedules; merges by the coordinator |
+| 1 | [fc1-rulings/t1.md](fc1-rulings/t1.md) | Pins applied; the `jni` feature and uninhabited JVM objects; crate skeletons; CI trimmed to Rust tests and the Flink 2.2 Java build |
+| 3 | [fc1-rulings/t3.md](fc1-rulings/t3.md) | sqlparser 0.62.0; named refusals (`ADD JAR`, `WITHIN`, SQL/JSON clauses, materialized tables, models, Hive) |
+| 4 | [fc1-rulings/t4.md](fc1-rulings/t4.md) | CAST follows the SQL validator plus runtime rules; Arrow mapping follows the engine's transport; inherited lints allowed per crate; permissive binder |
+| 5 | [fc1-rulings/t5.md](fc1-rulings/t5.md) | Deterministic sources only; debezium changelog folding; the wire's `isQueryResult` |
+| 6 | [fc1-rulings/t6.md](fc1-rulings/t6.md) | 345 programs, 330 cases; Beam-style Nexmark seeding; the restore flow; the self-check; executable `.q` cases deferred to Task 22 |
