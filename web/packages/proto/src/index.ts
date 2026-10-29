@@ -23,6 +23,8 @@ export * as instance from './gen/loams/instance/v1/instance_pb.js';
 export * as liveAdmin from './gen/loams/live/v1/admin_pb.js';
 export * as live from './gen/loams/live/v1/live_pb.js';
 export * as liveValue from './gen/loams/live/v1/value_pb.js';
+// Loams Meter's public services (design §63 §17.1, D2202).
+export * as meter from './meter.js';
 export * as notifications from './gen/loams/notifications/v1/notifications_pb.js';
 export * as operations from './gen/loams/operations/v1/operations_pb.js';
 // loams.options.v1 is not a wire surface: it declares no message a client

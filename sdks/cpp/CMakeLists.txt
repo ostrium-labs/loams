@@ -17,13 +17,13 @@
 # `buf.gen.yaml` with pinned remote plugins and checked for drift in CI.
 
 cmake_minimum_required(VERSION 3.20)
-project(loams-cpp VERSION 0.1.1 LANGUAGES CXX)
+project(loams-cpp VERSION 0.1.2 LANGUAGES CXX)
 
 # The SDK's release version. CMake's `project(VERSION)` is numeric only, so the
 # SemVer prerelease lives here; `scripts/sdk/sdk-version.py` sets both lines and
 # the release workflow checks them against the tag. It is compiled into
 # `loams::SdkVersion()` and the user agent.
-set(LOAMS_SDK_VERSION "0.1.1")
+set(LOAMS_SDK_VERSION "0.1.2")
 
 # Tests and the quickstart are on for a checkout of this repository and off for a
 # consumer: the release's source archive carries no `sdks/fixtures` corpus, and a

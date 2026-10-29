@@ -1,0 +1,4 @@
+{
+  "model": "fake-rerank",
+  "scores": [{"query": "where does ada live", "doc": "Ada lives in London", "score": 0.97}]
+}

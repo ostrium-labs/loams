@@ -20,7 +20,7 @@ variable "release" {
   type        = string
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+([-.][0-9A-Za-z.]+)?$", var.release))
-    error_message = "release must be a version such as 0.1.1."
+    error_message = "release must be a version such as 0.1.2."
   }
 }
 
@@ -133,6 +133,16 @@ variable "data_device" {
   }
 }
 
+variable "confluent_integrations" {
+  description = "Confluent integrations whose keys the VM fetches from the secret store (names only, design 80 §7.2)."
+  type        = list(string)
+  default     = []
+  validation {
+    condition     = alltrue([for i in var.confluent_integrations : can(regex("^[a-z0-9][a-z0-9-]{0,30}$", i))])
+    error_message = "an integration name is lowercase letters, digits and - (up to 31)."
+  }
+}
+
 locals {
   raw = file("${path.module}/../../../byoc/${var.cloud}/cloud-init.yaml")
   r1  = replace(local.raw, "@@VERSION@@", var.release)
@@ -147,8 +157,9 @@ locals {
   r10 = replace(local.r9, "@@PROFILES@@", var.profiles)
   r11 = replace(local.r10, "@@HOSTNAME@@", var.hostname)
   r12 = replace(local.r11, "@@DATA_DEVICE@@", var.data_device)
+  r13 = replace(local.r12, "@@CONFLUENT_INTEGRATIONS@@", join(",", var.confluent_integrations))
 
-  user_data = local.r12
+  user_data = local.r13
 }
 
 # A placeholder that is left over means the template and this module disagree.

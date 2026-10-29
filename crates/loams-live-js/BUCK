@@ -3,7 +3,7 @@ load("//buck:rust.bzl", "cargo_package")
 
 cargo_package(
     name = "loams-live-js",
-    version = "0.1.1",
+    version = "0.1.2",
     edition = "2024",
     manifest_dir = "crates/loams-live-js",
     env = {
@@ -16,6 +16,10 @@ cargo_package(
         "CARGO_PKG_REPOSITORY": "",
         "CARGO_PKG_RUST_VERSION": "1.97",
     },
+    features = [
+        "default",
+        "live",
+    ],
     lib = {
         "crate": "loams_live_js",
         "root": "src/lib.rs",
@@ -31,6 +35,11 @@ cargo_package(
         },
     ],
     tests = [
+        {
+            "name": "agent_profile",
+            "crate": "agent_profile",
+            "root": "tests/agent_profile.rs",
+        },
         {
             "name": "determinism",
             "crate": "determinism",
@@ -78,7 +87,7 @@ cargo_package(
             "//third-party/rust:rquickjs",
             "//third-party/rust:rustix",
             "//third-party/rust:seccompiler",
-            "//third-party/rust:sha2-0_11",
+            "//third-party/rust:sha2",
             "//third-party/rust:tokio",
             "//third-party/rust:tracing",
         ],
@@ -93,7 +102,7 @@ cargo_package(
             "//third-party/rust:rand_chacha",
             "//third-party/rust:relative-path",
             "//third-party/rust:rquickjs",
-            "//third-party/rust:sha2-0_11",
+            "//third-party/rust:sha2",
             "//third-party/rust:tokio",
             "//third-party/rust:tracing",
         ],

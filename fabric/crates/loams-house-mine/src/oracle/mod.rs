@@ -10,6 +10,7 @@
 
 pub mod corpus;
 pub mod normalise;
+pub mod seed;
 pub mod target;
 pub mod triage;
 pub mod types;
@@ -19,7 +20,7 @@ use std::path::PathBuf;
 use anyhow::{Context as _, bail};
 
 use self::corpus::Corpus;
-use self::normalise::{Kind, compare};
+use self::normalise::{Kind, compare, compare_bytes};
 use self::target::{Client, Target, Targets};
 use self::triage::{Found, Reconciled, Scope, Triage};
 
@@ -38,6 +39,8 @@ pub struct Run {
     /// Leave the triage file as it is (CI): still fail on what it would say.
     pub check: bool,
     pub skip_setup: bool,
+    /// Fails while any `bug` entry names this plan task (D1804).
+    pub task: Option<String>,
 }
 
 /// What a run found.
@@ -99,7 +102,18 @@ pub fn run(run: &Run) -> anyhow::Result<Summary> {
     if !run.check {
         summary.reconciled.triage.write(&run.triage)?;
     }
-    let failures = summary.reconciled.triage.failures();
+    let mut failures = summary.reconciled.triage.failures();
+    if let Some(task) = &run.task {
+        for e in summary.reconciled.triage.bugs_of_task(task) {
+            failures.push(format!(
+                "a bug of task {task}: {} on {} ({}): {}",
+                e.case,
+                e.target,
+                e.kind.as_str(),
+                e.detail
+            ));
+        }
+    }
     if !failures.is_empty() {
         for failure in &failures {
             eprintln!("  {failure}");
@@ -132,7 +146,16 @@ pub fn execute(run: &Run) -> anyhow::Result<Summary> {
             bail!("--only names no target {name}");
         }
     }
-    targets.retain(|t| t.baseline || run.only.is_empty() || run.only.contains(&t.name));
+    // A seeded target (the Rust engine's dev server) runs only when `--only`
+    // names it, so a plain run needs only the servers it always needed.
+    targets.retain(|t| {
+        t.baseline
+            || if run.only.is_empty() {
+                !t.seed
+            } else {
+                run.only.contains(&t.name)
+            }
+    });
     let baseline_at = targets
         .iter()
         .position(|t| t.baseline)
@@ -174,6 +197,21 @@ pub fn execute(run: &Run) -> anyhow::Result<Summary> {
         for case in &corpus.cases {
             cases += 1;
             scope.cases.insert(case.id.clone());
+            if let Some(format) = &case.format {
+                let expected = client.query_bytes(&baseline, &case.sql, format)?;
+                for target in &targets {
+                    let got = client.query_bytes(target, &case.sql, format)?;
+                    for m in compare_bytes(&expected, &got) {
+                        found.push(Found {
+                            case: case.id.clone(),
+                            target: target.name.clone(),
+                            kind: m.kind,
+                            detail: m.detail,
+                        });
+                    }
+                }
+                continue;
+            }
             let expected = client.query(&baseline, &case.sql)?;
             for target in &targets {
                 let got = client.query(target, &case.sql)?;
@@ -224,6 +262,19 @@ fn setup(
         }
     }
     for target in targets {
+        if target.seed {
+            // A seeded target (the Rust engine's dev server) gets the
+            // baseline's tables, not the statements (D1804, plan HE1 Task 23).
+            if let Err(e) = seed::copy_tables(client, baseline, target) {
+                found.push(Found {
+                    case: case.clone(),
+                    target: target.name.clone(),
+                    kind: Kind::Error,
+                    detail: format!("seeding: {e:#}"),
+                });
+            }
+            continue;
+        }
         for (i, statement) in corpus.setup.iter().enumerate() {
             if let Some(err) = client.execute(target, statement)? {
                 let normalise::Outcome::Error { code, message } = err else {

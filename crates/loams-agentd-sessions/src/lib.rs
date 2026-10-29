@@ -28,6 +28,7 @@ pub mod git_write;
 pub mod groups;
 pub mod harness_updates;
 pub mod instance_lock;
+pub mod marketplace;
 mod model_catalogs;
 pub mod notify;
 pub mod profile;
@@ -160,10 +161,14 @@ pub struct EngineCore {
     pub usage: ThreadUsageLog,
     /// Supervised approvals (SD1 Task 13, G17, G18, G22).
     pub approvals: Approvals,
+    /// The daemon's marketplace, once attached (MK1 Task 4b).
+    pub marketplace: marketplace::MarketplaceSlot,
     pub spaces_sync: SpacesSync,
     pub uploads: Uploads,
     pub agent_accounts: AgentAccounts,
     pub harness_updates: harness_updates::HarnessUpdateCoordinator,
+    /// The software factory's app connections (SF1 amendment F1; §50 §13, D795).
+    pub factory: Arc<loams_agentd_factory::FactoryHost>,
     pub device_id: String,
     workspace_scope: WorkspaceScope,
     /// Exclusive data-dir lock — held for the engine's lifetime (single-instance).
@@ -346,6 +351,10 @@ impl EngineCore {
             agent_accounts_config.codex_home.join("generated_images"),
         );
         let agent_accounts = AgentAccounts::new(agent_accounts_config);
+        let factory = Arc::new(
+            loams_agentd_factory::open(data_dir)
+                .map_err(|e| EngineError::Other(format!("factory: {e}")))?,
+        );
         let harness_updates =
             harness_updates::HarnessUpdateCoordinator::new(data_dir, registry.clone());
         sessions.set_titles(TitleGenerator::new(
@@ -388,6 +397,8 @@ impl EngineCore {
         // Run groups post `group_ready` and `check_failed` (SD1 Tasks 12, 14).
         run_groups.set_notifications(notifications.clone());
         let spaces_sync = SpacesSync::start(repos.clone(), workspace.clone(), &device_id);
+        let marketplace = marketplace::MarketplaceSlot::default();
+        sessions.set_marketplace(marketplace.clone());
         Ok(Self {
             sessions,
             doc_host,
@@ -405,14 +416,23 @@ impl EngineCore {
             notifications,
             usage,
             approvals,
+            marketplace,
             spaces_sync,
             uploads,
             agent_accounts,
             harness_updates,
+            factory,
             device_id,
             workspace_scope: profile.scope(),
             _instance_lock: lock,
         })
+    }
+
+    /// Attaches the daemon's marketplace (MK1 Task 4b): `MarketplaceService`
+    /// answers from it, its harnesses join the registry and its MCP servers
+    /// every run. Must run inside a Tokio runtime.
+    pub fn attach_marketplace(&self, host: loams_agentd_marketplace::MarketplaceHost) {
+        marketplace::attach(&self.marketplace, self.registry.clone(), host);
     }
 
     pub fn workspace_scope(&self) -> WorkspaceScope {
@@ -441,7 +461,9 @@ impl EngineCore {
         .with_notifications(self.notifications.clone())
         .with_usage(self.usage.clone())
         .with_approvals(self.approvals.clone())
-        .with_harness_updates(self.harness_updates.clone());
+        .with_marketplace(self.marketplace.clone())
+        .with_harness_updates(self.harness_updates.clone())
+        .with_factory(self.factory.clone());
         Arc::new(rpc)
     }
 

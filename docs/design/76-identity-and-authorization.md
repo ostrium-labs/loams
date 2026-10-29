@@ -52,7 +52,7 @@ Markers, as in §64–§75:
 - **(estimate)**: judged or computed, not measured.
 - **(checked 2026-10-21)**: read in a primary source on that date. §19 gives the source.
 
-**Numbering.** This document reserves **D1600–D1639** and **Q1200–Q1219**. D1600–D1628 and Q1200–Q1214 are used. D1583–D1599 are left free for work in flight. D1570–D1579 and Q1188–Q1189 are held by §75.
+**Numbering.** This document reserves **D1600–D1639** and **Q1200–Q1219**. D1600–D1633 and Q1200–Q1214 are used (D1629–D1633: agent token vending, 2026-10-28). D1583–D1599 are left free for work in flight. D1570–D1579 and Q1188–Q1189 are held by §75.
 
 Plan stub: [IA1](../plans/2026-10-21-ia1-identity-authz.md) (track IA). Phase IA0 is specified task by task; IA1–IA6 are outlined.
 

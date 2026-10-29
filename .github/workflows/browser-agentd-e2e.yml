@@ -1,0 +1,200 @@
+# Agents' browser, end to end through agentd (D2115, D2117, D2118): the MCP
+# shim `loams-agentd mcp` with LOAMS_BROWSER_PROVIDER=local (the pinned
+# Obscura binary, launched by the shim), =service straight to the pinned image,
+# and =service through loams-gateway's browser module (the compose and k8s
+# default), the same tool calls against the same fixture pages, and a final
+# job that requires the three answers to be identical.
+#
+# The engine pins and the download and service steps are BR-b's browser-parity
+# workflow's (lane BR-b); once that workflow is on dev these jobs can move
+# into it. Report-only until the coordinator makes it required.
+name: Browser e2e (agentd)
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/browser-agentd-e2e.yml"
+      - "crates/loams-web-bridge/**"
+      - "crates/loams-agentd-mcp/**"
+      - "crates/loams-agentd/**"
+      - "crates/loams-gateway/src/browser.rs"
+      - "deploy/browser/**"
+      - "scripts/browser/agentd-mcp-e2e.py"
+  push:
+    branches: [dev]
+    paths:
+      - ".github/workflows/browser-agentd-e2e.yml"
+      - "crates/loams-web-bridge/**"
+      - "crates/loams-agentd-mcp/**"
+      - "crates/loams-agentd/**"
+      - "crates/loams-gateway/src/browser.rs"
+      - "deploy/browser/**"
+      - "scripts/browser/agentd-mcp-e2e.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-agentd-e2e-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_TERM_COLOR: always
+  # D2113: the same pin as deploy/browser, the agentd image and BR-b's parity job.
+  OBSCURA_VERSION: "0.2.3"
+  OBSCURA_X86_64_SHA256: "1534d1e6ddaf3d080ec4091eb41d0a4d8cc042a48b607d3c410fc13b482a9eec"
+  OBSCURA_AARCH64_SHA256: "5ecf980bca3060236a7a86ec7ed83d943e6598ee87caa46d20325d90bc75f979"
+  OBSCURA_IMAGE: "docker.io/h4ckf0r0day/obscura:0.2.3@sha256:475def3ddf1ec513b3d1bc36e8ad15f0d192538cb15f814c77215aa70c418ca2"
+  SERVICE_PORT: "9334"
+  GATEWAY_PORT: "9335"
+
+jobs:
+  e2e:
+    name: "Browser e2e (agentd): ${{ matrix.provider }}"
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [local, service, gateway]
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
+    timeout-minutes: 60
+    env:
+      # Distinct ports and container names: the legs may share a self-hosted
+      # runner, and the engine runs on the host network.
+      SERVICE_PORT: ${{ matrix.provider == 'gateway' && '9336' || '9334' }}
+      ENGINE_CONTAINER: loams-browser-e2e-${{ matrix.provider }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # loams-agentd-connect's build.rs generates its protos with protoc.
+      - name: protoc
+        run: command -v protoc || (sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev)
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
+        with:
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
+          key: browser-agentd-e2e
+      - name: build loams-agentd
+        run: cargo build -p loams-agentd --bin loams-agentd --locked
+      - name: "gateway: build loams-gateway"
+        if: matrix.provider == 'gateway'
+        run: cargo build -p loams-gateway --bin loams-gateway --locked
+
+      - name: "local: the pinned Obscura binary"
+        if: matrix.provider == 'local'
+        run: |
+          case "$(uname -m)" in
+            x86_64) asset=obscura-x86_64-linux.tar.gz; sum="$OBSCURA_X86_64_SHA256" ;;
+            aarch64|arm64) asset=obscura-aarch64-linux.tar.gz; sum="$OBSCURA_AARCH64_SHA256" ;;
+            *) echo "no Obscura asset for $(uname -m)"; exit 1 ;;
+          esac
+          dir="$RUNNER_TEMP/obscura-$OBSCURA_VERSION"
+          mkdir -p "$dir"
+          curl -fsSL --retry 3 -o "$dir/$asset" \
+            "https://github.com/h4ckf0r0day/obscura/releases/download/v$OBSCURA_VERSION/$asset"
+          echo "$sum  $dir/$asset" | sha256sum -c -
+          tar -xzf "$dir/$asset" -C "$dir"
+          bin="$(find "$dir" -type f -name obscura -perm -u+x | head -n1)"
+          test -n "$bin" || { echo "no obscura binary in $asset"; find "$dir"; exit 1; }
+          "$bin" --version
+          echo "LOAMS_OBSCURA_BIN=$bin" >> "$GITHUB_ENV"
+
+      - name: "service, gateway: the pinned Obscura image as the browser service"
+        if: matrix.provider != 'local'
+        run: |
+          runtime="$(command -v docker || command -v podman)"
+          token="$(openssl rand -hex 32)"
+          echo "::add-mask::$token"
+          "$runtime" rm -f "$ENGINE_CONTAINER" >/dev/null 2>&1 || true
+          # Host networking so the engine reaches the fixture on the runner's
+          # 127.0.0.1; --allow-private-network is for that fixture only (the
+          # shipped service does not set it).
+          "$runtime" run -d --name "$ENGINE_CONTAINER" --network host \
+            -e OBSCURA_CDP_TOKEN="$token" \
+            "$OBSCURA_IMAGE" \
+            serve --port "$SERVICE_PORT" --host 0.0.0.0 --allow-private-network
+          for _ in $(seq 1 60); do
+            if (exec 3<>"/dev/tcp/127.0.0.1/$SERVICE_PORT") 2>/dev/null; then break; fi
+            sleep 1
+          done
+          (exec 3<>"/dev/tcp/127.0.0.1/$SERVICE_PORT") 2>/dev/null || {
+            "$runtime" logs "$ENGINE_CONTAINER"; exit 1; }
+          if [ "${{ matrix.provider }}" = service ]; then
+            echo "LOAMS_BROWSER_SERVICE_URL=ws://127.0.0.1:$SERVICE_PORT/devtools/browser" >> "$GITHUB_ENV"
+            echo "LOAMS_BROWSER_SERVICE_TOKEN_REF=env:browser-token" >> "$GITHUB_ENV"
+            echo "LOAMS_WEB_BRIDGE_SECRET_BROWSER_TOKEN=$token" >> "$GITHUB_ENV"
+          else
+            # The gateway leg: only the gateway gets the engine's token.
+            printf %s "$token" > "$RUNNER_TEMP/engine-token"
+            chmod 600 "$RUNNER_TEMP/engine-token"
+          fi
+
+      - name: "gateway: loams-gateway's browser module in front of the service"
+        if: matrix.provider == 'gateway'
+        run: |
+          client="$(openssl rand -hex 32)"
+          echo "::add-mask::$client"
+          printf %s "$client" | sha256sum | cut -d' ' -f1 > "$RUNNER_TEMP/browser-clients"
+          cat > "$RUNNER_TEMP/browser.toml" <<TOML
+          listen = "127.0.0.1:$GATEWAY_PORT"
+          upstream = "127.0.0.1:$SERVICE_PORT"
+          upstream_token_file = "$RUNNER_TEMP/engine-token"
+          client_tokens_file = "$RUNNER_TEMP/browser-clients"
+          TOML
+          mkdir -p e2e-out
+          nohup target/debug/loams-gateway --module browser --config "$RUNNER_TEMP/browser.toml" \
+            > e2e-out/gateway.log 2>&1 &
+          echo "GATEWAY_PID=$!" >> "$GITHUB_ENV"
+          for _ in $(seq 1 30); do
+            if (exec 3<>"/dev/tcp/127.0.0.1/$GATEWAY_PORT") 2>/dev/null; then break; fi
+            sleep 1
+          done
+          (exec 3<>"/dev/tcp/127.0.0.1/$GATEWAY_PORT") 2>/dev/null || { cat e2e-out/gateway.log; exit 1; }
+          # A request without the client token is refused before the engine.
+          code="$(curl -s -o /dev/null -w '%{http_code}' -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
+            "http://127.0.0.1:$GATEWAY_PORT/devtools/browser" || true)"
+          [ "$code" = 401 ] || { echo "expected 401 without a token, got $code"; exit 1; }
+          echo "LOAMS_BROWSER_SERVICE_URL=ws://127.0.0.1:$GATEWAY_PORT/devtools/browser" >> "$GITHUB_ENV"
+          echo "LOAMS_BROWSER_SERVICE_TOKEN_REF=env:browser-token" >> "$GITHUB_ENV"
+          echo "LOAMS_WEB_BRIDGE_SECRET_BROWSER_TOKEN=$client" >> "$GITHUB_ENV"
+
+      - name: the agent's browser through the MCP shim
+        run: |
+          mkdir -p e2e-out
+          python3 -I scripts/browser/agentd-mcp-e2e.py \
+            --agentd target/debug/loams-agentd \
+            --provider "${{ matrix.provider == 'gateway' && 'service' || matrix.provider }}" \
+            --out "e2e-out/${{ matrix.provider }}.json" 2> "e2e-out/${{ matrix.provider }}.stderr"
+      - name: "service, gateway: engine logs"
+        if: always() && matrix.provider != 'local'
+        run: |
+          if [ -n "${GATEWAY_PID:-}" ]; then kill "$GATEWAY_PID" 2>/dev/null || true; fi
+          runtime="$(command -v docker || command -v podman)"
+          "$runtime" logs "$ENGINE_CONTAINER" > "e2e-out/engine-${{ matrix.provider }}.log" 2>&1 || true
+          "$runtime" rm -f "$ENGINE_CONTAINER" >/dev/null 2>&1 || true
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: browser-agentd-e2e-${{ matrix.provider }}
+          path: e2e-out/
+          if-no-files-found: ignore
+
+  same:
+    name: "Browser e2e (agentd): local and service agree"
+    needs: e2e
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/browser
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: browser-agentd-e2e-*
+          path: e2e-out
+          merge-multiple: true
+      - name: identical answers
+        run: python3 -I scripts/browser/agentd-mcp-e2e.py --compare e2e-out/local.json e2e-out/service.json e2e-out/gateway.json | tee -a "$GITHUB_STEP_SUMMARY"

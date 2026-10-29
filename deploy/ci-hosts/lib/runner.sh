@@ -1,8 +1,11 @@
 # shellcheck shell=bash
 # GitHub self-hosted runners (labels self-hosted, loams-local, linux, x64), one
-# per repository, each a rootless podman container (the Ubuntu 24.04 image in
-# runner/Containerfile) run by a user unit of the ci user:
-#   ~ci/.config/systemd/user/loams-runner-<repo>.service
+# or more per repository, each a rootless podman container (the Ubuntu 24.04
+# image in runner/Containerfile) run by a user unit of the ci user:
+#   REPO      -> runner <host>-<repo>,    unit loams-runner-<repo>.service
+#   REPO:N    -> runners <host>-<repo>-1..N, units loams-runner-<repo>-1..N.service
+# Each container has a memory cap and CARGO_BUILD_JOBS sized so that all the
+# host's runners together cannot exhaust its RAM (runner_sizing).
 # Work directories, the runner itself and the shared tool, cargo and rustup
 # caches live on DATA_ROOT. Registration tokens are minted from the GitHub API
 # (or passed in a file) and handed to the runner through an env file, never argv.
@@ -66,7 +69,7 @@ runner_podman_args() {
   local args=(
     --label "loams-ci-runner=$name"
     --network host
-    --memory "$RUNNER_MEMORY"
+    --memory "$RUNNER_MEMORY" --memory-swap "$RUNNER_MEMORY_SWAP"
     --ulimit memlock=-1:-1 --ulimit nofile=65536:65536
     --security-opt "seccomp=$SECCOMP_PROFILE"
     -v "$root:$root" -v "$cache:$cache"
@@ -155,8 +158,116 @@ WantedBy=default.target
 EOF
 }
 
+# Prints one line per runner instance: NAME REPO UNIT.
+runner_instances() {
+  local spec repo count short i host
+  host=$(host_tag)
+  for spec in "${RUNNER_REPOS[@]}"; do
+    repo=${spec%%:*}
+    short=${repo##*/}
+    if [[ $spec == *:* ]]; then
+      count=${spec##*:}
+      for ((i = 1; i <= count; i++)); do
+        echo "$host-$short-$i $repo loams-runner-$short-$i.service"
+      done
+    else
+      echo "$host-$short $repo loams-runner-$short.service"
+    fi
+  done
+}
+
+# Sizes the runners from the host's RAM unless --runner-memory/--runner-jobs say
+# otherwise: what is left after RUNNER_RESERVE_GB (desktop, NativeLink, page
+# cache) is split evenly over the main repository's runners, rounded down to 0.5 GiB,
+# and each runner gets one cargo job per RUNNER_GB_PER_JOB of it. The disk
+# floor a job needs is RUNNER_DISK_GB per runner of the main repository.
+runner_sizing() {
+  local n split mem_kib
+  n=$(runner_instances | wc -l)
+  ((n > 0)) || return 0
+  # RAM is split over the first repository's runners (ostrium-labs/loams, the
+  # ones busy with a PR's ~30 jobs); a single runner of another repository
+  # (iggy) gets the same cap and is rarely busy at the same time.
+  split=$(runner_instances | awk -v r="${RUNNER_REPOS[0]%%:*}" '$2 == r' | wc -l)
+  mem_kib=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)
+  if [[ -z $RUNNER_MEMORY ]]; then
+    RUNNER_MEMORY=$(awk -v k="$mem_kib" -v r="$RUNNER_RESERVE_GB" -v n="$split" \
+      'BEGIN { g = (k / 1048576 - r) / n; g = int(g * 2) / 2; if (g < 2) g = 0; printf "%dm", g * 1024 }')
+    [[ $RUNNER_MEMORY != 0m ]] ||
+      die "not enough RAM for $split runners ($((mem_kib / 1048576)) GiB, $RUNNER_RESERVE_GB GiB reserved): use fewer runners"
+  fi
+  local mib=${RUNNER_MEMORY%[mM]}
+  [[ $RUNNER_MEMORY == *[gG] ]] && mib=$((${RUNNER_MEMORY%[gG]} * 1024))
+  if [[ -z $RUNNER_JOBS ]]; then
+    RUNNER_JOBS=$(awk -v m="$mib" -v g="$RUNNER_GB_PER_JOB" 'BEGIN { j = int(m / 1024 / g); if (j < 1) j = 1; print j }')
+  fi
+  # Swap, when the host has it, absorbs a link spike instead of an OOM kill.
+  if (($(awk '/^SwapTotal:/ {print $2}' /proc/meminfo) > 0)); then
+    RUNNER_MEMORY_SWAP="$((mib * 3 / 2))m"
+  else
+    RUNNER_MEMORY_SWAP=$RUNNER_MEMORY
+  fi
+  : "${RUNNER_MIN_FREE_GB:=$((RUNNER_DISK_GB * split))}"
+  log "runners: $n on this host; each ${RUNNER_MEMORY} memory (swap up to ${RUNNER_MEMORY_SWAP}), $RUNNER_JOBS cargo jobs; jobs need ${RUNNER_MIN_FREE_GB} GiB free"
+}
+
+# --dry-run: what setup_runners would do, without doing it.
+runner_plan() {
+  runner_sizing
+  echo "runner plan for $(host_tag) (role $ROLE, data root $DATA_ROOT):"
+  local name repo unit d
+  while read -r name repo unit; do
+    printf '  %-32s %-22s %s\n' "$name" "$repo" "$unit"
+  done < <(runner_instances)
+  echo "  each: --memory $RUNNER_MEMORY --memory-swap $RUNNER_MEMORY_SWAP, CARGO_BUILD_JOBS=$RUNNER_JOBS"
+  echo "  a job needs ${RUNNER_MIN_FREE_GB} GiB free on $DATA_ROOT"
+  for d in "$DATA_ROOT"/runners/*/; do
+    [[ -d $d ]] || continue
+    runner_instances | awk '{print $1}' | grep -qx "$(basename "$d")" || echo "  retire: $(basename "$d")"
+  done
+}
+
+# Removes runners of this host that are no longer configured (for example the
+# unnumbered <host>-loams after a switch to --runners N): stops and deletes the
+# unit, deletes the registration on GitHub (with --gh-token-file) and the files.
+retire_stale_runners() {
+  local unit_dir=$1 keep d name unit repo id
+  keep=" $(runner_instances | awk '{print $1}' | tr '\n' ' ') "
+  for d in "$DATA_ROOT"/runners/*/; do
+    [[ -d $d ]] || continue
+    name=$(basename "$d")
+    [[ $keep == *" $name "* ]] && continue
+    log "retiring runner $name (no longer configured)"
+    for unit in "$unit_dir"/loams-runner-*.service; do
+      if [[ ! -f $unit ]] || ! grep -q -- "--name loams-runner-$name " "$unit"; then continue; fi
+      as_ci systemctl --user disable --now "$(basename "$unit")" >/dev/null 2>&1 || true
+      rm -f "$unit"
+    done
+    as_ci systemctl --user daemon-reload
+    repo=$(sed 's/^\xEF\xBB\xBF//' "$d/runner/.runner" 2>/dev/null | jq -r '.gitHubUrl // empty' | sed 's|^https://github.com/||')
+    if [[ -n $repo && -n $GH_TOKEN_FILE && -r $GH_TOKEN_FILE ]]; then
+      id=$(github_api GET "repos/$repo/actions/runners?per_page=100" | jq -r --arg n "$name" '.runners[] | select(.name == $n) | .id')
+      [[ -n $id ]] && github_api DELETE "repos/$repo/actions/runners/$id" >/dev/null &&
+        log "deleted the registration of $name on $repo"
+    elif [[ -n $repo ]]; then
+      warn "$name stays registered on $repo (offline) without --gh-token-file; GitHub removes it after 14 days, or delete it in the repository settings"
+    fi
+    # Files a job container created under another uid need the ci user's namespace.
+    as_ci podman unshare rm -rf "$d" 2>/dev/null || rm -rf "$d"
+  done
+}
+
+github_api() {
+  local method=$1 path=$2
+  curl -fsS -X "$method" \
+    -H @<(printf 'Authorization: Bearer %s\nAccept: application/vnd.github+json\n' "$(tr -d '[:space:]' <"$GH_TOKEN_FILE")") \
+    "https://api.github.com/$path"
+}
+
 setup_runners() {
   [[ ${#RUNNER_REPOS[@]} -gt 0 ]] || return 0
+  runner_sizing
+  write_status_env
   local home unit_dir
   home=/home/$CI_USER
   unit_dir=$home/.config/systemd/user
@@ -164,25 +275,25 @@ setup_runners() {
   install -d -o "$CI_USER" -g "$CI_USER" -m 750 "$DATA_ROOT/runners" "$DATA_ROOT/cache" \
     "$DATA_ROOT/cache/cargo" "$DATA_ROOT/cache/rustup" "$DATA_ROOT/cache/toolcache"
   build_runner_image
-  local repo name new changed
-  for repo in "${RUNNER_REPOS[@]}"; do
-    name="$(host_tag)-${repo##*/}"
+  retire_stale_runners "$unit_dir"
+  local repo name unit new changed
+  while read -r name repo unit; do
     install_runner_dist "$DATA_ROOT/runners/$name/runner"
     install -d -o "$CI_USER" -g "$CI_USER" -m 750 "$DATA_ROOT/runners/$name/work"
     register_runner "$name" "$repo"
     new=$(runner_unit "$name" "$repo")
     changed=0
-    if [[ ! -f $unit_dir/loams-runner-${repo##*/}.service ]] || [[ $(cat "$unit_dir/loams-runner-${repo##*/}.service") != "$new" ]]; then
-      printf '%s\n' "$new" | write_file "$unit_dir/loams-runner-${repo##*/}.service" 644 "$CI_USER:$CI_USER"
+    if [[ ! -f $unit_dir/$unit ]] || [[ $(cat "$unit_dir/$unit") != "$new" ]]; then
+      printf '%s\n' "$new" | write_file "$unit_dir/$unit" 644 "$CI_USER:$CI_USER"
       changed=1
     fi
     as_ci systemctl --user daemon-reload
-    as_ci systemctl --user enable -q "loams-runner-${repo##*/}.service"
-    if ((changed)) || ! as_ci systemctl --user is-active -q "loams-runner-${repo##*/}.service"; then
-      as_ci systemctl --user restart "loams-runner-${repo##*/}.service"
+    as_ci systemctl --user enable -q "$unit"
+    if ((changed)) || ! as_ci systemctl --user is-active -q "$unit"; then
+      as_ci systemctl --user restart "$unit"
     fi
     log "runner $name up for $repo (memory cap $RUNNER_MEMORY, $RUNNER_JOBS cargo jobs)"
-  done
+  done < <(runner_instances)
   setup_runner_heal
 }
 
@@ -195,12 +306,14 @@ save_setup() {
   {
     echo "# Generated by deploy/ci-hosts/setup-host.sh: the settings of the last full run."
     for v in ROLE DATA_ROOT PRIMARY NL_GB NL_JOBS SCCACHE_GB GH_TOKEN_FILE RUNNER_MEMORY \
-      RUNNER_JOBS RUNNER_MIN_FREE_GB OWNER_USER TS_HOSTNAME; do
+      RUNNER_JOBS RUNNER_MIN_FREE_GB RUNNER_RESERVE_GB RUNNER_DISK_GB RUNNER_GB_PER_JOB \
+      OWNER_USER TS_HOSTNAME; do
       printf '%s=%q\n' "$v" "${!v:-}"
     done
     printf 'SAVED_RUNNER_REPOS=%q\n' "${RUNNER_REPOS[*]}"
+    echo "SETUP_ENV_VERSION=2"
   } | write_file "$SETUP_ENV" 600 root:root
-  printf 'DATA_ROOT=%s\nMIN_FREE_GB=%s\n' "$DATA_ROOT" "$RUNNER_MIN_FREE_GB" | write_file /etc/loams-ci/status.env 644 root:root
+  write_status_env
   local root
   root=$(cd "$HERE/../.." && pwd)
   if [[ $root != /opt/loams-ci/setup ]]; then
@@ -215,6 +328,15 @@ save_setup() {
     rm -rf /opt/loams-ci/setup
     mv /opt/loams-ci/setup.new /opt/loams-ci/setup
   fi
+}
+
+# What status.sh (no sudo) needs: the data root and the jobs' disk floor.
+# /opt/loams-ci, not /etc/loams-ci: that directory is root:ci 0750, so status.sh
+# run by the owner could not read it (and fell back to the defaults).
+write_status_env() {
+  printf 'DATA_ROOT=%s\nMIN_FREE_GB=%s\nRUNNER_MEMORY=%s\nRUNNER_JOBS=%s\n' \
+    "$DATA_ROOT" "$RUNNER_MIN_FREE_GB" "$RUNNER_MEMORY" "$RUNNER_JOBS" | write_file /opt/loams-ci/status.env 644 root:root
+  rm -f /etc/loams-ci/status.env
 }
 
 # Installs loams-ci-runner-heal.timer: every 5 minutes, --heal re-registers a
@@ -251,10 +373,9 @@ EOF2
 
 heal_runners() {
   local repo name root unit
-  for repo in "${RUNNER_REPOS[@]}"; do
-    name="$(host_tag)-${repo##*/}"
+  runner_sizing >/dev/null 2>&1
+  while read -r name repo unit; do
     root=$DATA_ROOT/runners/$name
-    unit="loams-runner-${repo##*/}.service"
     if [[ ! -s $root/runner/.runner ]]; then
       log "runner $name is not registered (GitHub dropped it?): registering again"
       [[ -n $GH_TOKEN_FILE ]] || die "runner $name needs registering and no --gh-token-file was given at setup"
@@ -268,5 +389,5 @@ heal_runners() {
       as_ci systemctl --user reset-failed "$unit" >/dev/null 2>&1 || true
       as_ci systemctl --user restart "$unit"
     fi
-  done
+  done < <(runner_instances)
 }

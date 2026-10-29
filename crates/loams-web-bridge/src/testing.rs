@@ -2,8 +2,7 @@
 //! scripted CDP connection.
 //!
 //! Both record what they were asked, so a test can assert the exact CDP
-//! conversation a provider has (module `browser_run`) without a Cloudflare
-//! account, and both refuse nothing, so the provider's own policy is what the
+//! conversation a provider has without a browser, and both refuse nothing, so the provider's own policy is what the
 //! test is really measuring.
 
 use std::collections::HashMap;
@@ -13,12 +12,14 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use serde_json::Value;
 
-use crate::browser_run::cdp::{CdpConnection, CdpRequest, CdpTransport};
-use crate::browser_run::endpoint::RequestHeaders;
+use crate::cdp::{CdpConnection, CdpEvent, CdpRequest, CdpTransport, RequestHeaders};
+use crate::config::{ProviderKind, WebBridgeConfig};
 use crate::error::BridgeError;
 use crate::local::{DriverAction, DriverPage, PageDriver};
+use crate::obscura::{EngineEndpoint, ObscuraProvider};
 use crate::page::PageState;
 use crate::provider::OpenRequest;
+use crate::secret::SecretResolver;
 use crate::tool::{AxNode, WaitRequest};
 use crate::webmcp::{
     WebmcpRequest, envelope_absent, envelope_call_error, envelope_call_ok, envelope_call_timeout,
@@ -453,6 +454,11 @@ pub struct FakeCdp {
     pub expressions: Mutex<Vec<String>>,
     /// When set, `Target.createTarget` fails with this message.
     pub fail_create_target: Option<String>,
+    /// Methods the scripted engine refuses with a protocol error.
+    pub refuses: Vec<String>,
+    /// Whether the connection hands out an event stream.
+    pub delivers_events: bool,
+    events: Mutex<Option<tokio::sync::mpsc::UnboundedSender<CdpEvent>>>,
 }
 
 impl FakeCdp {
@@ -462,6 +468,21 @@ impl FakeCdp {
             answers,
             ..Self::default()
         }
+    }
+
+    /// Hand out an event stream, so a provider turns request interception on.
+    pub fn with_events(mut self) -> Self {
+        self.delivers_events = true;
+        self
+    }
+
+    /// Send an event to whoever took the stream. Answers whether anyone had.
+    pub fn emit(&self, event: CdpEvent) -> bool {
+        self.events
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+            .is_some_and(|sender| sender.send(event).is_ok())
     }
 
     /// Answer an expression containing `needle` with `answer`.
@@ -504,6 +525,12 @@ impl CdpConnection for FakeCdp {
         {
             return Err(BridgeError::cdp(message.clone()));
         }
+        if self.refuses.contains(&request.method) {
+            return Err(BridgeError::cdp(format!(
+                "'{}' wasn't found",
+                request.method
+            )));
+        }
         if request.method == "Runtime.evaluate" {
             let expression = request
                 .params
@@ -521,11 +548,29 @@ impl CdpConnection for FakeCdp {
                 }
             }
         }
-        Ok(self
-            .answers
-            .get(&request.method)
-            .cloned()
-            .unwrap_or_else(|| Value::Object(Default::default())))
+        if let Some(answer) = self.answers.get(&request.method) {
+            return Ok(answer.clone());
+        }
+        // The calls every page opens with answer the way Obscura does, so a
+        // test scripts only what it is about.
+        Ok(match request.method.as_str() {
+            "Target.createBrowserContext" => serde_json::json!({ "browserContextId": "ctx-1" }),
+            "Target.createTarget" => serde_json::json!({ "targetId": "t1" }),
+            "Target.attachToTarget" => serde_json::json!({ "sessionId": "s1" }),
+            _ => Value::Object(Default::default()),
+        })
+    }
+
+    fn take_events(&self) -> Option<tokio::sync::mpsc::UnboundedReceiver<CdpEvent>> {
+        if !self.delivers_events {
+            return None;
+        }
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+        *self
+            .events
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(sender);
+        Some(receiver)
     }
 
     async fn close(&self) -> Result<(), BridgeError> {
@@ -608,4 +653,119 @@ pub fn read_page(url: &str, title: &str, text: &str) -> Value {
             "value": serde_json::json!({ "u": url, "t": title, "x": text }).to_string()
         }
     })
+}
+
+/// An engine endpoint that names a fixed URL and a fixed bearer token, for a
+/// provider over a [`FakeTransport`].
+#[derive(Debug)]
+pub struct FakeEndpoint {
+    /// The kind it reports.
+    pub kind: ProviderKind,
+    /// The token it sends.
+    pub token: crate::secret::SecretValue,
+    /// Where `shutdown` is recorded, as the call `endpoint.shutdown`, so a
+    /// test can check it came after the pages' CDP calls.
+    pub record_into: Option<Arc<FakeCdp>>,
+}
+
+impl FakeEndpoint {
+    /// An endpoint of `kind` sending `token`.
+    pub fn new(kind: ProviderKind, token: &str) -> Self {
+        Self {
+            kind,
+            token: crate::secret::SecretValue::new(token),
+            record_into: None,
+        }
+    }
+
+    /// Record `shutdown` into `cdp`'s call log.
+    pub fn recording_into(mut self, cdp: Arc<FakeCdp>) -> Self {
+        self.record_into = Some(cdp);
+        self
+    }
+}
+
+#[async_trait]
+impl EngineEndpoint for FakeEndpoint {
+    fn kind(&self) -> ProviderKind {
+        self.kind
+    }
+
+    async fn handshake(&self) -> Result<(String, RequestHeaders), BridgeError> {
+        Ok((
+            "ws://127.0.0.1:9222/devtools/browser".to_string(),
+            crate::obscura::bearer(&self.token),
+        ))
+    }
+
+    async fn shutdown(&self) {
+        if let Some(cdp) = &self.record_into {
+            cdp.calls
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push("endpoint.shutdown".to_string());
+        }
+    }
+}
+
+/// An [`ObscuraProvider`] of `kind` over `cdp`, with `config`'s policies: what
+/// the conformance suite runs both kinds through.
+pub fn obscura_over(
+    kind: ProviderKind,
+    config: &WebBridgeConfig,
+    cdp: Arc<FakeCdp>,
+    secrets: Arc<dyn SecretResolver>,
+) -> ObscuraProvider {
+    let policies = crate::policies(config).unwrap_or_else(|error| panic!("{error}"));
+    ObscuraProvider::new(
+        Arc::new(FakeEndpoint::new(
+            kind,
+            "fake-engine-token-0123456789abcdef",
+        )),
+        policies,
+        secrets,
+        Arc::new(FakeTransport::new(cdp)),
+    )
+}
+
+/// An [`ObscuraProvider`] over a given endpoint.
+pub fn obscura_over_endpoint(
+    endpoint: Arc<dyn EngineEndpoint>,
+    config: &WebBridgeConfig,
+    cdp: Arc<FakeCdp>,
+    secrets: Arc<dyn SecretResolver>,
+) -> ObscuraProvider {
+    let policies = crate::policies(config).unwrap_or_else(|error| panic!("{error}"));
+    ObscuraProvider::new(
+        endpoint,
+        policies,
+        secrets,
+        Arc::new(FakeTransport::new(cdp)),
+    )
+}
+
+/// The answers an Obscura page gives for a sign-in form at `url`.
+pub fn obscura_answers(url: &str) -> HashMap<String, Value> {
+    let mut answers: HashMap<String, Value> = HashMap::new();
+    answers.insert(
+        "Accessibility.getFullAXTree".to_string(),
+        ax_tree_with_button("Sign in", 42),
+    );
+    answers.insert(
+        "Runtime.evaluate".to_string(),
+        read_page(url, "Sign in", "Sign in to continue"),
+    );
+    answers.insert(
+        "DOM.resolveNode".to_string(),
+        serde_json::json!({ "object": { "objectId": "o1" } }),
+    );
+    answers.insert(
+        "Page.navigate".to_string(),
+        serde_json::json!({ "frameId": "f1" }),
+    );
+    answers.insert(
+        "Page.captureScreenshot".to_string(),
+        serde_json::json!({ "data": "iVBORw0KGgo=" }),
+    );
+    answers
 }

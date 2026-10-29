@@ -29,6 +29,7 @@ write_files:
       LOAMS_PROFILES=@@PROFILES@@
       TS_HOSTNAME=@@HOSTNAME@@
       DATA_DEVICE=@@DATA_DEVICE@@
+      CONFLUENT_INTEGRATIONS=@@CONFLUENT_INTEGRATIONS@@
   - path: /etc/loams-byoc/loams-release-key.asc
     permissions: "0644"
     owner: root:root
@@ -39,16 +40,20 @@ write_files:
       tcx2Wrq0NExvYW1zIFJlbGVhc2UgU2lnbmluZyBLZXkgPHNlY3VyaXR5QG9zdHJp
       dW1sYWJzLmNvbT6IeAQwFgoAIBYhBDM6yUWZ1aHrKkFtHoPcE02Mr4ldBQJq1Pf+
       Ah0gAAoJEIPcE02Mr4ldBOQBAOhQ8EXKpzRuDiYHR47J8Hs5j/WB+jNvyPKMOBx7
-      Png5AP9cFmspafzAOv8PMaYy6qdRNQz6GEjVFEPR6yTRN3n5CoiWBBMWCgA+FiEE
-      MzrJRZnVoesqQW0eg9wTTYyviV0FAmrSRjICGwMFCQPCZwAFCwkIBwIGFQoJCAsC
-      BBYCAwECHgECF4AACgkQg9wTTYyviV0M+QEA8Hi73XZUQ5UJs2lvmqGxXaXyZQRf
-      c10WN5/TZBL+k6QA/1qmELjEX3RzIGZoYeq4t46DEbcQ5pkFZBOzmlsX0zwEtDRM
-      b2FtcyBSZWxlYXNlIFNpZ25pbmcgS2V5IDxzZWN1cml0eUBvc3RyaXVtbGFicy5v
-      cmc+iJkEExYKAEECGwMFCQPCZwAFCwkIBwIGFQoJCAsCBBYCAwECHgECF4AWIQQz
-      OslFmdWh6ypBbR6D3BNNjK+JXQUCatT3/gIZAQAKCRCD3BNNjK+JXYzdAQCGgWMh
-      +Qeza87G/C4K/x3DzdFUWQyD9Jy40MTt9AiuZgEAzXjhvYtLV4zA2LTvmFf7uKac
-      CA/2Du2XULdmzZHujAw=
-      =9+vE
+      Png5AP9cFmspafzAOv8PMaYy6qdRNQz6GEjVFEPR6yTRN3n5CrQ0TG9hbXMgUmVs
+      ZWFzZSBTaWduaW5nIEtleSA8c2VjdXJpdHlAb3N0cml1bWxhYnMub3JnPoiZBBMW
+      CgBBAhsDBQkDwmcABQsJCAcCBhUKCQgLAgQWAgMBAh4BAheAFiEEMzrJRZnVoesq
+      QW0eg9wTTYyviV0FAmrU9/4CGQEACgkQg9wTTYyviV2M3QEAhoFjIfkHs2vOxvwu
+      Cv8dw83RVFkMg/ScuNDE7fQIrmYBAM144b2LS1eMwNi075hX+7imnAgP9g7tl1C3
+      Zs2R7owMmDMEat8LhhYJKwYBBAHaRw8BAQdAnId2FGOpeF5JIn5UrU+rI22VKMsH
+      YuYKskEKQzQmmjq0NExvYW1zIFJlbGVhc2UgU2lnbmluZyBLZXkgPHNlY3VyaXR5
+      QG9zdHJpdW1sYWJzLm9yZz6IlgQTFgoAPhYhBCnFzD8P1moq0y7LMJ6Ow+Cqtbpo
+      BQJq3wuGAhsDBQkDwmcABQsJCAcCBhUKCQgLAgQWAgMBAh4BAheAAAoJEJ6Ow+Cq
+      tbpovRcA/2zwvBGUvXQi8CCqJIdMAYw5NUoIEkfCyRvBh01bKB8dAQDFld3dCT+1
+      VqqeAgDYPlh9Aqk6LCGm8BlWOtXIvrtLDIh1BBAWCgAdFiEEMzrJRZnVoesqQW0e
+      g9wTTYyviV0FAmrfC40ACgkQg9wTTYyviV1d8gD9G+bpzXOZchcCRdW8sELiDvKy
+      qp3IoNQffmzI84OC9g0A/iq6FfzgTlYnpfWt5Hp4kr8hEzuSXr8RB0ZIs4ZZg3sB
+      =V0O2
       -----END PGP PUBLIC KEY BLOCK-----
   - path: /usr/local/bin/loams-byoc-bootstrap
     permissions: "0755"
@@ -82,9 +87,14 @@ write_files:
       root="${LOAMS_BYOC_ROOT:-/opt/loams}"
       stack="$root/release"
       repo="${LOAMS_BYOC_RELEASE_URL:-https://github.com/ostrium-labs/loams/releases/download}"
-      # The release signing key (docs/release/loams-release-key.asc); the bundle's
-      # SHA256SUMS.asc must verify against this fingerprint.
-      fpr="333AC94599D5A1EB2A416D1E83DC134D8CAF895D"
+      # The release signing keys (docs/release/loams-release-key.asc holds both); the
+      # bundle's SHA256SUMS.asc must verify against one of these fingerprints. The
+      # current key comes first and is preferred; the previous key (rotated 2026-10,
+      # not revoked) still verifies 0.1.0 to 0.1.2. See docs/release/signing.md.
+      fprs=(
+        "29C5CC3F0FD66A2AD32ECB309E8EC3E0AAB5BA68"  # current, from 2026-10-26
+        "333AC94599D5A1EB2A416D1E83DC134D8CAF895D"  # previous: 0.1.0 to 0.1.2
+      )
       proto='=https'
       keyfile="${LOAMS_BYOC_KEY:-/etc/loams-byoc/loams-release-key.asc}"
       docker_fpr="9DC858229FC7DD38854AE2D88D81803C0EBFCD88"
@@ -115,10 +125,23 @@ write_files:
         esac
       }
 
+      # The connect role (profile `connectors`, plan CC1 Task 1) reaches the engine's
+      # connect socket with an API key, which the engine accepts only when apikey is
+      # among its auth modes; people keep coming in over the tailnet.
+      auth_mode() {
+        local p=",${LOAMS_PROFILES:-}," ints="${CONFLUENT_INTEGRATIONS:-}"
+        if [[ "$p" == *,connectors,* || -n "${ints//[ ,]/}" ]]; then
+          echo "tailscale,apikey"
+        else
+          echo "tailscale"
+        fi
+      }
+
       env_values() {
         printf 'LOAMS_VERSION=%s\n' "$LOAMS_VERSION"
         printf 'LOAMS_BUCKET=%s\n' "$LOAMS_BUCKET_URL"
         printf 'COMPOSE_PROFILES=%s\n' "${LOAMS_PROFILES:-}"
+        printf 'LOAMS_AUTH_MODE=%s\n' "$(auth_mode)"
         printf 'TS_HOSTNAME=%s\n' "${TS_HOSTNAME:-loams}"
         printf 'TS_AUTHKEY=%s\n' '<from secret store>'
         printf 'LOAMS_SETUP_TOKEN=%s\n' '<from secret store>'
@@ -135,7 +158,8 @@ write_files:
       if [[ "$skip_system" == 1 ]]; then
         # Test hooks, only without the system steps: a local release, signed by a test key.
         proto='=http,https'
-        fpr="${LOAMS_BYOC_TEST_KEY_FPR:-$fpr}"
+        # A space-separated list, current key first.
+        if [[ -n "${LOAMS_BYOC_TEST_KEY_FPR:-}" ]]; then read -r -a fprs <<<"$LOAMS_BYOC_TEST_KEY_FPR"; fi
       fi
 
       # --- kernel (House's workers need Linux 6.7 or newer) ------------------------
@@ -191,9 +215,15 @@ write_files:
         done
         gnupghome="$dl/gnupg"; mkdir -m 700 "$gnupghome"
         GNUPGHOME="$gnupghome" gpg --batch --quiet --import "$keyfile"
-        GNUPGHOME="$gnupghome" gpg --batch --status-fd 1 --verify "$dl/SHA256SUMS.asc" "$dl/SHA256SUMS" 2>/dev/null \
-          | grep -q "^\[GNUPG:\] VALIDSIG $fpr " \
-          || die "SHA256SUMS is not signed by the Loams release key $fpr"
+        status="$(GNUPGHOME="$gnupghome" gpg --batch --status-fd 1 --verify "$dl/SHA256SUMS.asc" "$dl/SHA256SUMS" 2>/dev/null || true)"
+        signer=""
+        for f in "${fprs[@]}"; do
+          if grep -q "^\[GNUPG:\] VALIDSIG $f " <<<"$status"; then signer="$f"; break; fi
+        done
+        [[ -n "$signer" ]] || die "SHA256SUMS is not signed by a Loams release key (${fprs[*]})"
+        if [[ "$signer" != "${fprs[0]}" ]]; then
+          say "SHA256SUMS is signed by the previous Loams release key $signer (releases up to 0.1.2)"
+        fi
         (cd "$dl" && grep -F " $bundle" SHA256SUMS | sha256sum -c --quiet -) \
           || die "$bundle does not match SHA256SUMS"
         mkdir -p "$root"
@@ -235,6 +265,9 @@ write_files:
       systemctl daemon-reload
       systemctl enable loams-byoc.service
       systemctl restart loams-byoc.service
+      # Rotated Confluent keys reach the connect role within 5 minutes (a no-op
+      # without CONFLUENT_INTEGRATIONS; design 80 §7.2).
+      systemctl enable --now loams-byoc-confluent.timer
       say "done: the engine joins your tailnet as ${TS_HOSTNAME:-loams}; check with: journalctl -u loams-byoc"
   - path: /usr/local/bin/loams-byoc-secrets
     permissions: "0755"
@@ -252,14 +285,29 @@ write_files:
       #   <prefix>/tailnet-authkey   required   -> TS_AUTHKEY in .env
       #   <prefix>/setup-token       required   -> LOAMS_SETUP_TOKEN in .env
       #   <prefix>/api-keys          optional   -> secrets/api-keys
+      #   <prefix>/confluent-<i>-{api-key,api-secret,sr-key,sr-secret,metrics-key,metrics-secret}
+      #                              optional, for each integration <i> in CONFLUENT_INTEGRATIONS
+      #                              -> secrets/connect/<ns>/confluent-<i>/{username,password,
+      #                                 sr-username,sr-password,metrics-key,metrics-secret}
+      #                              (the connect role's file secret store, design 80 §7.2;
+      #                              <ns> is CONNECT_NAMESPACE, default 0). Never in .env.
       # On AWS the separator is "/"; Google Cloud and Azure names cannot hold "/",
       # so they use "-" (the prefix "loams-<install>" gives loams-<install>-setup-token).
       #
       # Never prints a secret value. A failure names the secret and the HTTP status.
       #
-      #   loams-byoc-secrets [aws|gcp|azure]     (default: LOAMS_BYOC_CLOUD from the config)
+      #   loams-byoc-secrets [--confluent-only] [aws|gcp|azure]
+      #                                        (default cloud: LOAMS_BYOC_CLOUD from the config)
+      #
+      # --confluent-only refreshes the Confluent files and nothing else (no .env
+      # change, no restart): loams-byoc-confluent.timer runs it every 5 minutes and
+      # `systemctl reload loams-byoc` runs it at once, so a key rotated with
+      # `loams byoc confluent key rotate` reaches the connect role without a reboot.
       set -euo pipefail
       umask 077
+
+      confluent_only=0
+      if [[ "${1:-}" == "--confluent-only" ]]; then confluent_only=1; shift; fi
 
       config="${LOAMS_BYOC_CONFIG:-/etc/loams-byoc/config.env}"
       # shellcheck disable=SC1090
@@ -268,6 +316,11 @@ write_files:
       stack="${LOAMS_BYOC_STACK:-/opt/loams/release}"
       prefix="${SECRET_PREFIX:-}"
       [[ -n "$prefix" ]] || { echo "loams-byoc-secrets: SECRET_PREFIX is not set" >&2; exit 2; }
+      only_ints="${CONFLUENT_INTEGRATIONS:-}"
+      if ((confluent_only)) && [[ -z "${only_ints//[ ,]/}" ]]; then
+        # The timer runs on every install; with no integration it reads nothing.
+        exit 0
+      fi
 
       work="$(mktemp -d)"
       trap 'rm -rf "$work"' EXIT
@@ -411,16 +464,72 @@ write_files:
         [[ -z "${LOAMS_BYOC_OWNER:-}" || "$(id -u)" -ne 0 ]] || chown "$LOAMS_BYOC_OWNER" "$envfile"
       }
 
-      fetch tailnet-authkey || die "missing secret $(secret_name tailnet-authkey) (the Tailscale auth key)"
-      set_env TS_AUTHKEY
-      fetch setup-token || die "missing secret $(secret_name setup-token) (the first-run setup token)"
-      set_env LOAMS_SETUP_TOKEN
-      mkdir -p "$stack/secrets"
-      if fetch api-keys; then
-        install -m 600 "$work/value" "$stack/secrets/api-keys"
-        # The engine reads it as uid 10001 (release/README.md).
-        [[ "$(id -u)" -ne 0 ]] || chown 10001 "$stack/secrets/api-keys"
-        echo "loams-byoc-secrets: wrote secrets/api-keys"
+      if ((!confluent_only)); then
+        fetch tailnet-authkey || die "missing secret $(secret_name tailnet-authkey) (the Tailscale auth key)"
+        set_env TS_AUTHKEY
+        fetch setup-token || die "missing secret $(secret_name setup-token) (the first-run setup token)"
+        set_env LOAMS_SETUP_TOKEN
+        mkdir -p "$stack/secrets"
+        if fetch api-keys; then
+          install -m 600 "$work/value" "$stack/secrets/api-keys"
+          # The engine reads it as uid 10001 (release/README.md).
+          [[ "$(id -u)" -ne 0 ]] || chown 10001 "$stack/secrets/api-keys"
+          echo "loams-byoc-secrets: wrote secrets/api-keys"
+        fi
+      fi
+
+      # Confluent integrations (D1827): one directory per integration, owner-only files.
+      # A missing api-key or api-secret is reported, not fatal: the stack starts and the
+      # integration's connector instances fail until the key is in the secret store.
+      ints="${CONFLUENT_INTEGRATIONS:-}"
+      ints="${ints//,/ }"
+      ns="${CONNECT_NAMESPACE:-0}"
+      [[ "$ns" =~ ^[0-9]{1,19}$ ]] || die "CONNECT_NAMESPACE must be a number"
+      changed=0
+      for i in $ints; do
+        [[ "$i" =~ ^[a-z0-9][a-z0-9-]{0,30}$ ]] || die "CONFLUENT_INTEGRATIONS: '$i' is not an integration name (lowercase letters, digits, -)"
+        dir="$stack/secrets/connect/$ns/confluent-$i"
+        [[ -d "$stack/secrets" ]] || die "$stack/secrets does not exist; run loams-byoc-bootstrap first"
+        install -d -m 700 "$stack/secrets/connect" "$stack/secrets/connect/$ns" "$dir"
+        for pair in api-key:username api-secret:password sr-key:sr-username sr-secret:sr-password \
+                    metrics-key:metrics-key metrics-secret:metrics-secret; do
+          short="${pair%%:*}"; file="${pair#*:}"
+          if fetch "confluent-$i-$short"; then
+            tmpf="$(mktemp "$dir/.$file.XXXXXX")"
+            # No trailing newline; the value never passes through argv.
+            printf '%s' "$(cat "$work/value")" >"$tmpf"
+            chmod 600 "$tmpf"
+            cmp -s "$tmpf" "$dir/$file" 2>/dev/null || changed=1
+            mv "$tmpf" "$dir/$file"
+          else
+            [[ ! -e "$dir/$file" ]] || changed=1
+            rm -f "$dir/$file"
+            case "$short" in
+              api-key|api-secret) echo "loams-byoc-secrets: confluent-$i: $(secret_name "confluent-$i-$short") is not in the secret store yet (run loams byoc confluent key create)" >&2 ;;
+            esac
+          fi
+        done
+        # The connect role reads them as uid 10001, as the engine does.
+        [[ "$(id -u)" -ne 0 ]] || chown -R 10001 "$stack/secrets/connect"
+        echo "loams-byoc-secrets: wrote secrets/connect/$ns/confluent-$i"
+      done
+      # A rotated key (loams byoc confluent key rotate) reaches running connectors only
+      # when the connect role restarts its instances; its admin API is on its own
+      # loopback, so the refresh restarts the service (a graceful stop: drain and
+      # checkpoint, then start with the new files). At boot the stack starts after this.
+      if ((confluent_only && changed)); then
+        compose="${LOAMS_BYOC_COMPOSE:-docker compose}"
+        # shellcheck disable=SC2086 # the command and its subcommand
+        if (cd "$stack" && $compose ps --status running --services 2>/dev/null | grep -qx connect); then
+          # shellcheck disable=SC2086
+          if (cd "$stack" && $compose restart connect >/dev/null 2>&1); then
+            echo "loams-byoc-secrets: a Confluent key changed: restarted the connect service"
+          else
+            echo "loams-byoc-secrets: a Confluent key changed, but restarting the connect service failed; run: docker compose restart connect" >&2
+          fi
+        else
+          echo "loams-byoc-secrets: a Confluent key changed; the connect service is not running"
+        fi
       fi
       echo "loams-byoc-secrets: ok ($cloud, prefix $prefix)"
   - path: /etc/systemd/system/loams-byoc.service
@@ -440,6 +549,8 @@ write_files:
       # The tailnet key and the setup token come from the secret store on every start.
       ExecStartPre=/usr/local/bin/loams-byoc-secrets
       ExecStart=/usr/bin/docker compose up -d
+      # `systemctl reload loams-byoc`: copy rotated Confluent keys now (no restart).
+      ExecReload=/usr/local/bin/loams-byoc-secrets --confluent-only
       ExecStop=/usr/bin/docker compose stop
       # The secrets may not exist yet on a first boot (the tailnet key is put in the
       # secret store by the person installing): try again until they do.
@@ -450,5 +561,35 @@ write_files:
 
       [Install]
       WantedBy=multi-user.target
+  - path: /etc/systemd/system/loams-byoc-confluent.service
+    permissions: "0644"
+    owner: root:root
+    content: |
+      [Unit]
+      Description=Loams: copy Confluent keys from the cloud's secret store into the connect role's files
+      # Only once the stack has been set up (loams-byoc.service fetched everything once).
+      After=loams-byoc.service network-online.target
+      Wants=network-online.target
+      ConditionPathExists=/etc/loams-byoc/config.env
+
+      [Service]
+      Type=oneshot
+      # --confluent-only: no .env change, no restart; a no-op without CONFLUENT_INTEGRATIONS.
+      ExecStart=/usr/local/bin/loams-byoc-secrets --confluent-only
+      TimeoutStartSec=120
+  - path: /etc/systemd/system/loams-byoc-confluent.timer
+    permissions: "0644"
+    owner: root:root
+    content: |
+      [Unit]
+      Description=Loams: refresh Confluent keys every 5 minutes (loams byoc confluent key rotate)
+
+      [Timer]
+      OnBootSec=5min
+      OnUnitActiveSec=5min
+      RandomizedDelaySec=30s
+
+      [Install]
+      WantedBy=timers.target
 runcmd:
   - [ /usr/local/bin/loams-byoc-bootstrap ]

@@ -12,7 +12,7 @@
 set -uo pipefail
 
 # setup-host.sh records the host's data root and the jobs' disk floor here.
-DATA_ROOT=${DATA_ROOT:-$(sed -n 's/^DATA_ROOT=//p' /etc/loams-ci/status.env 2>/dev/null)}
+DATA_ROOT=${DATA_ROOT:-$(sed -n 's/^DATA_ROOT=//p' /opt/loams-ci/status.env 2>/dev/null)}
 DATA_ROOT=${DATA_ROOT:-/mnt/Projects/ci}
 CI_USER=${CI_USER:-ci}
 SIZES=/run/loams-ci/sizes
@@ -71,7 +71,7 @@ cache() {
 }
 
 # Disk: the data root's filesystem and / (once each), against the jobs' floor.
-floor=$(sed -n 's/^MIN_FREE_GB=//p' /etc/loams-ci/status.env 2>/dev/null)
+floor=$(sed -n 's/^MIN_FREE_GB=//p' /opt/loams-ci/status.env 2>/dev/null)
 floor=${floor:-10}
 seen=
 for fs in "$DATA_ROOT" /; do
@@ -151,6 +151,11 @@ for name in "${runners[@]}"; do
     add "runner $name" fail "not running (sudo systemctl --user -M $CI_USER@ status 'loams-runner-*')"
   fi
 done
+if ((${#runners[@]})); then
+  mem=$(sed -n 's/^RUNNER_MEMORY=//p' /opt/loams-ci/status.env 2>/dev/null)
+  jobs=$(sed -n 's/^RUNNER_JOBS=//p' /opt/loams-ci/status.env 2>/dev/null)
+  add "runner sizing" ok "${#runners[@]} runners, each ${mem:-?} memory and ${jobs:-?} cargo jobs; jobs need ${floor} GiB free"
+fi
 if [[ -f /etc/systemd/system/loams-ci-runner-heal.timer ]]; then
   st=$(systemctl is-active loams-ci-runner-heal.timer 2>/dev/null)
   last=$(systemctl show -p Result --value loams-ci-runner-heal.service 2>/dev/null)

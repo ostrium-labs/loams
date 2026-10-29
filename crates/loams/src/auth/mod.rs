@@ -42,7 +42,9 @@
 
 pub mod api_key;
 pub mod authorizer;
+pub mod authz;
 pub mod directory;
+pub mod identity_sync;
 pub mod layer;
 pub mod oidc;
 pub mod tailscale;
@@ -84,6 +86,9 @@ pub struct Principal {
     /// The OIDC `sub`, the API key's id, or `dev-loopback`.
     pub subject: String,
     pub kind: PrincipalKind,
+    /// The issuer that signed it, for an OIDC JWT (its exact `iss`): with `subject`, the key of
+    /// its principal link (design 76 §5, D1628). `None` for every other credential.
+    pub issuer: Option<String>,
     /// A name to show: the token's `name` or `preferred_username`, or the
     /// API key's label.
     pub display_name: String,
@@ -406,6 +411,8 @@ pub struct AuthConfig {
     /// (API2 Task 6, `authenticator_is_swappable`). Any of them turns
     /// authentication on.
     pub extra_authenticators: Authenticators,
+    /// `LOAMS_AUTHZ`: which authorizer answers the `can_*` checks (design 76 §9, D1610).
+    pub authz: authz::AuthzConfig,
 }
 
 /// A list of [`Authenticator`]s that a config can carry (cloned by
@@ -445,6 +452,7 @@ impl AuthConfig {
             cors_origins: Vec::new(),
             setup_token: None,
             extra_authenticators: Authenticators::default(),
+            authz: authz::AuthzConfig::Builtin,
         }
     }
 
@@ -496,6 +504,7 @@ impl AuthConfig {
                 .map(|v| v.trim().to_owned())
                 .filter(|v| !v.is_empty()),
             extra_authenticators: Authenticators::default(),
+            authz: authz::AuthzConfig::from_vars(&var, mode == AuthMode::Off)?,
         };
         if let AuthMode::On {
             api_keys,
@@ -637,7 +646,11 @@ pub enum SetupGate {
 #[derive(Clone)]
 pub struct Principals {
     pub directory: Arc<directory::Directory>,
+    /// The org roles, for the admin RPCs (until IA2 Task 5 declares a `can_*` per RPC).
     pub authorizer: Arc<dyn authorizer::Authorizer>,
+    /// The `can_*` checks (design 76 §9, D1610): [`authz::DirectoryAuthorizer`] by default,
+    /// OpenFGA with `LOAMS_AUTHZ=openfga`.
+    pub authz: Arc<dyn loams_authz::Authorizer>,
     pub setup: SetupGate,
 }
 
@@ -651,13 +664,22 @@ impl fmt::Debug for Principals {
 }
 
 impl Principals {
-    /// `directory` with [`authorizer::OrgRoleAuthorizer`] over it.
+    /// `directory` with [`authorizer::OrgRoleAuthorizer`] and the built-in
+    /// [`authz::DirectoryAuthorizer`] over it.
     pub fn new(directory: Arc<directory::Directory>, setup: SetupGate) -> Self {
         Self {
             authorizer: Arc::new(authorizer::OrgRoleAuthorizer::new(directory.clone())),
+            authz: Arc::new(authz::DirectoryAuthorizer::new(directory.clone())),
             directory,
             setup,
         }
+    }
+
+    /// The same, with `authz` answering the `can_*` checks.
+    #[must_use]
+    pub fn with_authz(mut self, authz: Arc<dyn loams_authz::Authorizer>) -> Self {
+        self.authz = authz;
+        self
     }
 
     /// The principal store over `meta` and `store`, attached to `auth` so
@@ -856,7 +878,10 @@ impl Auth {
         }
         for authenticator in &self.authenticators {
             if let Some(result) = authenticator.authenticate(credential).await {
-                return result;
+                return match result {
+                    Ok(principal) => self.refuse_disabled(principal).await,
+                    Err(err) => Err(err),
+                };
             }
         }
         let what = match credential {
@@ -876,11 +901,44 @@ impl Auth {
         ))
     }
 
+    /// Refuses a principal whose link is disabled, or whose agent is suspended, on every
+    /// request (design 76 §10, D1624): an identity provider's JWT stays valid until `exp`
+    /// after the principal is deactivated, so its signature alone does not admit it.
+    async fn refuse_disabled(&self, principal: Principal) -> Result<Principal, AuthError> {
+        let (Some(issuer), Some(directory)) = (principal.issuer.as_deref(), self.directory.get())
+        else {
+            return Ok(principal);
+        };
+        let doc = directory.read().await.map_err(|err| {
+            tracing::warn!(error = %err.0, "reading the principal store to admit a token failed");
+            AuthError::unavailable(
+                reason::AUTH_UNAVAILABLE,
+                "the principal store could not be read; retry",
+            )
+        })?;
+        let Some(link) = doc.link(issuer, &principal.subject) else {
+            return Ok(principal);
+        };
+        let suspended = link.kind == directory::LinkKind::Agent
+            && doc.agent(&link.principal).is_none_or(|a| {
+                a.agent.status.as_known()
+                    == Some(loams_proto::loams::admin::v1::AgentStatus::AGENT_STATUS_SUSPENDED)
+            });
+        if link.disabled || suspended {
+            return Err(AuthError::unauthenticated(
+                reason::TOKEN_REVOKED,
+                "this principal is disabled; its tokens are refused",
+            ));
+        }
+        Ok(principal)
+    }
+
     /// The principal of an unauthenticated engine.
     pub(crate) fn dev_loopback() -> Principal {
         Principal {
             subject: "dev-loopback".to_owned(),
             kind: PrincipalKind::DevLoopback,
+            issuer: None,
             display_name: "Local developer".to_owned(),
             email: None,
             grant: Grant::default(),

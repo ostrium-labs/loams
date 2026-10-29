@@ -3728,6 +3728,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "46c4cf71a36b46dcfc00e5014c0c20ccad2b1b6a008304d7d57d2749b2d41b3d"
 
 [[package]]
+name = "deadpool"
+version = "0.12.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0be2b1d1d6ec8d846f05e137292d0b89133caf95ef33695424c09568bdd39b1b"
+dependencies = [
+ "deadpool-runtime",
+ "lazy_static",
+ "num_cpus",
+ "tokio",
+]
+
+[[package]]
+name = "deadpool-runtime"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "092966b41edc516079bdf31ec78a2e0588d1d0c08f78b91d8307215928642b2b"
+
+[[package]]
 name = "defmt"
 version = "0.3.100"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5057,6 +5075,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "gateway-bench"
+version = "0.1.2"
+dependencies = [
+ "clap",
+ "loams-gateway",
+ "rcgen",
+ "rustls",
+ "serde_json",
+ "tokio",
+ "tokio-rustls",
+]
+
+[[package]]
 name = "generator"
 version = "0.8.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5250,7 +5281,7 @@ checksum = "e629b9b98ef3dd8afe6ca2bd0f89306cec16d43d907889945bc5d6687f2f13c7"
 
 [[package]]
 name = "git-wal-bench"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "bytes",
@@ -6714,7 +6745,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tokio-rustls",
- "tokio-tungstenite 0.30.0",
+ "tokio-tungstenite",
  "tracing",
  "trait-variant",
  "webpki-roots 1.0.10",
@@ -6767,7 +6798,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
- "tungstenite 0.30.0",
+ "tungstenite",
  "twox-hash",
  "ulid 3.0.0",
  "url",
@@ -8347,7 +8378,7 @@ checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
 
 [[package]]
 name = "loams"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "argon2",
  "arrow-array",
@@ -8367,24 +8398,29 @@ dependencies = [
  "datafusion-postgres",
  "fail",
  "futures",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "hex",
  "http",
  "http-body",
  "hyper-util",
  "jsonwebtoken",
+ "loams-agentd-cli",
  "loams-apps-mock",
+ "loams-authz",
  "loams-cache",
  "loams-cloud-admin",
  "loams-cloudevents",
  "loams-collection",
  "loams-common",
+ "loams-confluent",
  "loams-durable",
  "loams-es",
+ "loams-flink",
  "loams-git",
  "loams-graph",
  "loams-hnsw",
  "loams-hot",
+ "loams-identity-sync",
  "loams-kv",
  "loams-link",
  "loams-live",
@@ -8393,18 +8429,23 @@ dependencies = [
  "loams-log",
  "loams-meta",
  "loams-meta-tikv",
+ "loams-meter",
+ "loams-meter-core",
  "loams-migrate",
  "loams-pg-control",
  "loams-postgres",
  "loams-proto",
  "loams-qdrant",
  "loams-query",
+ "loams-risingwave",
+ "loams-spark",
  "loams-sqlgate",
  "loams-store",
  "loams-stream-grpc",
  "loams-tikv",
  "loams-upgrade",
  "loams-worker",
+ "loams-zitadel",
  "mysql_async",
  "object_store 0.14.2",
  "opensrv-mysql",
@@ -8440,7 +8481,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8452,6 +8493,7 @@ dependencies = [
  "loams-agentd-doc",
  "loams-agentd-harness",
  "loams-agentd-link",
+ "loams-agentd-marketplace",
  "loams-agentd-mcp",
  "loams-agentd-proto",
  "loams-agentd-rpc",
@@ -8472,8 +8514,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-agentd-cli"
+version = "0.1.2"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "clap",
+ "loams-agentd-marketplace",
+ "loams-agentd-proto",
+ "loams-agentd-rpc",
+ "loams-agentd-sessions",
+ "rpassword",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "loams-agentd-connect"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "axum 0.8.9",
@@ -8490,6 +8550,7 @@ dependencies = [
  "hyper-util",
  "jsonwebtoken",
  "loams-agentd-doc",
+ "loams-agentd-marketplace",
  "loams-agentd-proto",
  "loams-agentd-rpc",
  "loams-agentd-sessions",
@@ -8511,7 +8572,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-doc"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "loams-agentd-proto",
@@ -8524,14 +8585,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-agentd-factory"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "futures",
+ "keyring",
+ "loams-agentd-proto",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "loams-agentd-harness"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.22.1",
+ "base64 0.23.1",
  "deser-hjson",
+ "flate2",
  "futures",
+ "hex",
  "libc",
  "loams-agentd-proto",
  "reqwest 0.12.28",
@@ -8539,7 +8621,8 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml_ng",
- "sha2 0.10.9",
+ "sha2 0.11.0",
+ "tar",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -8552,23 +8635,23 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-link"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.22.1",
+ "base64 0.23.1",
  "buffa",
  "buffa-types",
  "connectrpc",
  "futures",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "http",
  "keyring",
  "loams-agentd-proto",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2 0.11.0",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -8579,12 +8662,21 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-marketplace"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
+ "axum 0.8.9",
  "base64 0.23.1",
  "hex",
  "jsonschema",
+ "loams-agentd-harness",
+ "loams-agentd-marketplace",
+ "loams-walrus",
+ "loams-zitadel",
+ "rcgen",
+ "reqwest 0.12.28",
+ "rustix 1.1.5",
+ "rustls",
  "semver",
  "serde",
  "serde_json",
@@ -8592,36 +8684,46 @@ dependencies = [
  "sigstore-verify",
  "tempfile",
  "thiserror 2.0.21",
+ "time",
  "tokio",
+ "tokio-rustls",
+ "tracing",
 ]
 
 [[package]]
 name = "loams-agentd-mcp"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "async-trait",
+ "axum 0.8.9",
  "chrono",
  "futures",
  "loams-agentd-doc",
  "loams-agentd-proto",
  "loams-agentd-rpc",
+ "loams-knowledge",
+ "loams-store",
+ "loams-walrus",
+ "loams-web-bridge",
  "serde",
  "serde_json",
  "tokio",
  "tracing",
+ "url",
  "uuid",
 ]
 
 [[package]]
 name = "loams-agentd-preview"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "async-trait",
  "bytes",
  "chrono",
  "futures",
+ "hex",
  "http-body-util",
  "hyper",
  "hyper-util",
@@ -8630,10 +8732,10 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2 0.11.0",
  "tempfile",
  "tokio",
- "tokio-tungstenite 0.24.0",
+ "tokio-tungstenite",
  "tokio-util",
  "tracing",
  "tracing-subscriber",
@@ -8642,10 +8744,10 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-proto"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
- "pulldown-cmark 0.12.2",
+ "pulldown-cmark",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -8655,12 +8757,12 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-rpc"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
  "futures",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "httparse",
  "loams-agentd-proto",
  "serde",
@@ -8668,19 +8770,19 @@ dependencies = [
  "subtle",
  "thiserror 2.0.21",
  "tokio",
- "tokio-tungstenite 0.24.0",
+ "tokio-tungstenite",
  "tracing",
  "tracing-subscriber",
 ]
 
 [[package]]
 name = "loams-agentd-sessions"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "async-trait",
  "axum 0.8.9",
- "base64 0.22.1",
+ "base64 0.23.1",
  "chrono",
  "futures",
  "gethostname",
@@ -8688,7 +8790,9 @@ dependencies = [
  "keyring",
  "libc",
  "loams-agentd-doc",
+ "loams-agentd-factory",
  "loams-agentd-harness",
+ "loams-agentd-marketplace",
  "loams-agentd-preview",
  "loams-agentd-proto",
  "loams-agentd-rpc",
@@ -8702,11 +8806,11 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2 0.11.0",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
- "tokio-tungstenite 0.24.0",
+ "tokio-tungstenite",
  "tokio-util",
  "toml 0.8.23",
  "tracing",
@@ -8717,7 +8821,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-store"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "loams-agentd-doc",
@@ -8732,7 +8836,7 @@ dependencies = [
 
 [[package]]
 name = "loams-apps-mock"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "axum 0.8.9",
@@ -8760,7 +8864,7 @@ dependencies = [
 
 [[package]]
 name = "loams-authz"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "axum 0.8.9",
@@ -8780,7 +8884,7 @@ dependencies = [
 
 [[package]]
 name = "loams-cache"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "bytes",
@@ -8797,7 +8901,7 @@ dependencies = [
 
 [[package]]
 name = "loams-cloud-admin"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "axum 0.8.9",
  "base64 0.23.1",
@@ -8814,7 +8918,7 @@ dependencies = [
 
 [[package]]
 name = "loams-cloudevents"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "base64 0.23.1",
  "bytes",
@@ -8833,7 +8937,7 @@ dependencies = [
 
 [[package]]
 name = "loams-collection"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "arrow-array",
  "arrow-schema",
@@ -8881,7 +8985,7 @@ dependencies = [
 
 [[package]]
 name = "loams-common"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "postcard",
@@ -8892,7 +8996,7 @@ dependencies = [
 
 [[package]]
 name = "loams-compat"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8910,8 +9014,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-confluent"
+version = "0.1.2"
+dependencies = [
+ "axum 0.8.9",
+ "base64 0.23.1",
+ "clap",
+ "humantime",
+ "reqwest 0.13.5",
+ "rustls",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "zeroize",
+]
+
+[[package]]
 name = "loams-console-mock"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "httpmock",
@@ -8922,13 +9043,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-cql"
+version = "0.1.2"
+
+[[package]]
 name = "loams-durable"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "loams-tikv",
  "resonate-base",
- "resonate-core",
  "resonate-gateway-http",
  "resonate-plugin",
  "resonate-sdk",
@@ -8946,12 +9070,29 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
- "uuid",
+]
+
+[[package]]
+name = "loams-engines"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "axum 0.8.9",
+ "loams-authz",
+ "percent-encoding",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "time",
+ "tokio",
+ "tower 0.5.3",
+ "tracing",
+ "ulid 3.0.0",
 ]
 
 [[package]]
 name = "loams-es"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "axum 0.8.9",
  "base64 0.23.1",
@@ -8972,14 +9113,46 @@ dependencies = [
 
 [[package]]
 name = "loams-facade-gen"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "thiserror 2.0.21",
 ]
 
 [[package]]
+name = "loams-flink"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "axum 0.8.9",
+ "bytes",
+ "clap",
+ "futures",
+ "hex",
+ "http",
+ "http-body-util",
+ "httpmock",
+ "k8s-openapi",
+ "kube",
+ "loams-store",
+ "reqwest 0.13.5",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.21",
+ "time",
+ "tokio",
+ "tokio-stream",
+ "toml 0.8.23",
+ "tower 0.5.3",
+ "tracing",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "loams-fs"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "bytes",
@@ -8993,14 +9166,21 @@ dependencies = [
 
 [[package]]
 name = "loams-gateway"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
+ "async-trait",
  "clap",
  "hex",
  "http-body-util",
  "hyper",
  "hyper-util",
+ "loams-meter-gate",
+ "loams-resp",
+ "loams-spark",
+ "loams-temporal-frontend",
+ "md-5 0.11.0",
  "rcgen",
+ "reqwest 0.13.5",
  "rustls",
  "serde",
  "serde_json",
@@ -9017,7 +9197,7 @@ dependencies = [
 
 [[package]]
 name = "loams-git"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "bytes",
@@ -9063,7 +9243,7 @@ dependencies = [
 
 [[package]]
 name = "loams-git-remote"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bytes",
  "futures",
@@ -9080,7 +9260,7 @@ dependencies = [
 
 [[package]]
 name = "loams-graph"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "arrow-array",
  "arrow-schema",
@@ -9099,6 +9279,7 @@ dependencies = [
  "grafeo-engine",
  "hex",
  "loams-apps-mock",
+ "loams-authz",
  "loams-cache",
  "loams-collection",
  "loams-common",
@@ -9133,7 +9314,7 @@ dependencies = [
 
 [[package]]
 name = "loams-gw-test"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "futures",
  "loams-kv",
@@ -9142,7 +9323,7 @@ dependencies = [
 
 [[package]]
 name = "loams-hnsw"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "crc32c",
  "loams-common",
@@ -9159,7 +9340,7 @@ dependencies = [
 
 [[package]]
 name = "loams-hot"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "arrow-array",
  "async-trait",
@@ -9203,8 +9384,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-identity-sync"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "axum 0.8.9",
+ "hex",
+ "hmac 0.13.0",
+ "loams-authz",
+ "loams-zitadel",
+ "reqwest 0.13.5",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.21",
+ "time",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "loams-iggy-sink"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -9220,8 +9421,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-imperial"
+version = "0.1.2"
+dependencies = [
+ "loams-kv",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "loams-knowledge"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "axum 0.8.9",
+ "bytes",
+ "futures",
+ "hex",
+ "loams-agentd-marketplace",
+ "loams-store",
+ "loams-walrus",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "thiserror 2.0.21",
+ "time",
+ "tokio",
+ "toml 0.8.23",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "loams-kv"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "futures",
  "loams-kv",
@@ -9238,7 +9473,7 @@ dependencies = [
 
 [[package]]
 name = "loams-link"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "bytes",
@@ -9264,7 +9499,7 @@ dependencies = [
 
 [[package]]
 name = "loams-live"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "axum 0.8.9",
  "buffa",
@@ -9303,7 +9538,7 @@ dependencies = [
 
 [[package]]
 name = "loams-live-js"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "buffa",
  "futures",
@@ -9321,6 +9556,7 @@ dependencies = [
  "rquickjs",
  "rustix 1.1.5",
  "seccompiler",
+ "serde_json",
  "sha2 0.11.0",
  "tokio",
  "tracing",
@@ -9328,14 +9564,14 @@ dependencies = [
 
 [[package]]
 name = "loams-live-js-alloc"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "rquickjs",
 ]
 
 [[package]]
 name = "loams-live-proto"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "buffa",
  "connectrpc",
@@ -9345,8 +9581,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-llm"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "axum 0.8.9",
+ "jsonschema",
+ "rand 0.9.5",
+ "reqwest 0.13.5",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "zeroize",
+]
+
+[[package]]
 name = "loams-log"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "bytes",
@@ -9374,7 +9631,7 @@ dependencies = [
 
 [[package]]
 name = "loams-meta"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "axum 0.8.9",
@@ -9403,7 +9660,7 @@ dependencies = [
 
 [[package]]
 name = "loams-meta-conformance"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "loams-common",
@@ -9414,7 +9671,7 @@ dependencies = [
 
 [[package]]
 name = "loams-meta-tikv"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "fail",
@@ -9429,8 +9686,122 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-meter"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "axum 0.8.9",
+ "base64 0.23.1",
+ "buffa",
+ "connectrpc",
+ "hmac 0.13.0",
+ "jsonschema",
+ "loams-authz",
+ "loams-cloudevents",
+ "loams-common",
+ "loams-meter-core",
+ "loams-meter-house",
+ "loams-proto",
+ "proptest",
+ "reqwest 0.13.5",
+ "serde",
+ "serde_json",
+ "serde_yaml_ng",
+ "sha2 0.11.0",
+ "thiserror 2.0.21",
+ "tokio",
+ "tower 0.5.3",
+ "tracing",
+ "ulid 3.0.0",
+]
+
+[[package]]
+name = "loams-meter-agent"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "base64 0.23.1",
+ "bytes",
+ "clap",
+ "futures",
+ "hmac 0.13.0",
+ "httpmock",
+ "k8s-openapi",
+ "kube",
+ "loams-cloudevents",
+ "loams-log",
+ "notify",
+ "prost 0.14.4",
+ "rand 0.9.5",
+ "reqwest 0.13.5",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "thiserror 2.0.21",
+ "time",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "loams-meter-core"
+version = "0.1.2"
+dependencies = [
+ "bytes",
+ "loams-cloudevents",
+ "proptest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.21",
+ "time",
+]
+
+[[package]]
+name = "loams-meter-export"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "base64 0.23.1",
+ "hex",
+ "hmac 0.13.0",
+ "reqwest 0.13.5",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.21",
+ "time",
+ "tokio",
+ "tracing",
+ "url",
+ "wiremock",
+]
+
+[[package]]
+name = "loams-meter-gate"
+version = "0.1.2"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
+name = "loams-meter-house"
+version = "0.1.2"
+dependencies = [
+ "axum 0.8.9",
+ "loams-meter-core",
+ "reqwest 0.13.5",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "loams-migrate"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "axum 0.8.9",
@@ -9462,7 +9833,7 @@ dependencies = [
 
 [[package]]
 name = "loams-pg-control"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "age",
  "async-trait",
@@ -9478,8 +9849,10 @@ dependencies = [
  "k8s-openapi",
  "keyring",
  "kube",
+ "loams-authz",
  "loams-common",
  "loams-kv",
+ "loams-meter-gate",
  "loams-pg-control",
  "loams-pgdog-sync",
  "loams-postgres",
@@ -9512,7 +9885,7 @@ dependencies = [
 
 [[package]]
 name = "loams-pgdog-sync"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bytes",
  "clap",
@@ -9533,7 +9906,7 @@ dependencies = [
 
 [[package]]
 name = "loams-pk"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "bytes",
@@ -9547,7 +9920,7 @@ dependencies = [
 
 [[package]]
 name = "loams-postgres"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "axum 0.8.9",
  "hex",
@@ -9564,7 +9937,7 @@ dependencies = [
 
 [[package]]
 name = "loams-proto"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "buffa",
  "buffa-types",
@@ -9577,7 +9950,7 @@ dependencies = [
 
 [[package]]
 name = "loams-qdrant"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "axum 0.8.9",
  "bytes",
@@ -9607,7 +9980,7 @@ dependencies = [
 
 [[package]]
 name = "loams-query"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "arrow-flight",
@@ -9628,6 +10001,7 @@ dependencies = [
  "loams-link",
  "loams-log",
  "loams-meta",
+ "loams-meter-gate",
  "loams-proto",
  "loams-query",
  "loams-quickwit",
@@ -9660,7 +10034,7 @@ dependencies = [
 
 [[package]]
 name = "loams-quickwit"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -9697,8 +10071,45 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-resp"
+version = "0.1.2"
+dependencies = [
+ "bytes",
+ "loams-kv",
+ "proptest",
+ "serde",
+ "tokio",
+ "toml 0.8.23",
+ "tracing",
+]
+
+[[package]]
+name = "loams-risingwave"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "clap",
+ "futures",
+ "loams-engines",
+ "object_store 0.14.2",
+ "rand 0.9.5",
+ "reqwest 0.13.5",
+ "rustls",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "time",
+ "tokio",
+ "tokio-postgres",
+ "tokio-rustls",
+ "toml 0.8.23",
+ "tracing",
+ "webpki-roots 1.0.10",
+]
+
+[[package]]
 name = "loams-safekeeper"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "axum 0.8.9",
@@ -9729,23 +10140,24 @@ dependencies = [
 
 [[package]]
 name = "loams-sidebar-browser"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "base64 0.23.1",
+ "flate2",
  "futures",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
- "tokio-tungstenite 0.24.0",
+ "tokio-tungstenite",
  "tracing",
  "url",
 ]
 
 [[package]]
 name = "loams-sim"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bytes",
  "loams-cache",
@@ -9768,8 +10180,47 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-spark"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "base64 0.23.1",
+ "bytes",
+ "clap",
+ "futures",
+ "hex",
+ "http",
+ "k8s-openapi",
+ "kube",
+ "loams-authz",
+ "prost 0.14.4",
+ "prost-types",
+ "reqwest 0.13.5",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "subtle",
+ "tempfile",
+ "thiserror 2.0.21",
+ "time",
+ "tokio",
+ "tokio-stream",
+ "toml 0.8.23",
+ "tonic 0.14.6",
+ "tonic-prost",
+ "tonic-prost-build",
+ "tower 0.5.3",
+ "tracing",
+ "tracing-subscriber",
+ "ulid 3.0.0",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "loams-specview"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "axum 0.8.9",
@@ -9790,7 +10241,7 @@ dependencies = [
 
 [[package]]
 name = "loams-sqldb"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "loams-sqlrouter",
@@ -9807,11 +10258,11 @@ dependencies = [
 
 [[package]]
 name = "loams-sqlgate"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "argon2",
  "async-trait",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "hex",
  "loams-sqldb",
  "loams-sqlrouter",
@@ -9830,7 +10281,7 @@ dependencies = [
 
 [[package]]
 name = "loams-sqlrouter"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "des",
  "hex",
@@ -9847,7 +10298,7 @@ dependencies = [
 
 [[package]]
 name = "loams-store"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "bytes",
@@ -9864,7 +10315,7 @@ dependencies = [
 
 [[package]]
 name = "loams-stream-grpc"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "bytes",
@@ -9884,10 +10335,11 @@ dependencies = [
 
 [[package]]
 name = "loams-temporal-frontend"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "bytes",
+ "clap",
  "hex",
  "hmac 0.13.0",
  "http",
@@ -9895,9 +10347,11 @@ dependencies = [
  "loams-temporal-matching",
  "loams-temporal-proto",
  "loams-temporal-resonate",
+ "loams-temporal-schedule",
  "loams-temporal-statemachine",
  "loams-temporal-store",
  "loams-temporal-testkit",
+ "loams-temporal-visibility",
  "prost 0.14.4",
  "prost-types",
  "serde",
@@ -9905,6 +10359,7 @@ dependencies = [
  "sha2 0.11.0",
  "tokio",
  "tokio-stream",
+ "toml 0.8.23",
  "tonic 0.14.6",
  "tonic-prost",
  "tower 0.5.3",
@@ -9915,7 +10370,7 @@ dependencies = [
 
 [[package]]
 name = "loams-temporal-history"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "loams-temporal-proto",
  "prost 0.14.4",
@@ -9926,7 +10381,7 @@ dependencies = [
 
 [[package]]
 name = "loams-temporal-matching"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "hex",
  "loams-temporal-resonate",
@@ -9938,7 +10393,7 @@ dependencies = [
 
 [[package]]
 name = "loams-temporal-proto"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bytes",
  "hex",
@@ -9952,7 +10407,7 @@ dependencies = [
 
 [[package]]
 name = "loams-temporal-resonate"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -9960,8 +10415,7 @@ dependencies = [
  "hex",
  "percent-encoding",
  "proptest",
- "reqwest 0.13.5",
- "rustls",
+ "resonate-client",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -9971,13 +10425,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-temporal-schedule"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "chrono-tz 0.10.4",
+ "loams-temporal-proto",
+ "prost 0.14.4",
+ "prost-types",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "sqlx 0.9.0",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "loams-temporal-statemachine"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "loams-temporal-history",
  "loams-temporal-proto",
  "loams-temporal-testkit",
  "proptest",
+ "prost 0.14.4",
  "prost-types",
  "serde_json",
  "thiserror 2.0.21",
@@ -9985,7 +10459,7 @@ dependencies = [
 
 [[package]]
 name = "loams-temporal-store"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "loams-temporal-store",
@@ -10000,7 +10474,7 @@ dependencies = [
 
 [[package]]
 name = "loams-temporal-testkit"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "base64 0.23.1",
  "hex",
@@ -10014,8 +10488,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-temporal-visibility"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "serde",
+ "serde_json",
+ "sqlx 0.9.0",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "loams-text"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -10038,7 +10526,7 @@ dependencies = [
 
 [[package]]
 name = "loams-tikv"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "axum 0.8.9",
  "fail",
@@ -10059,7 +10547,7 @@ dependencies = [
 
 [[package]]
 name = "loams-tuple"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "proptest",
  "thiserror 2.0.21",
@@ -10067,7 +10555,7 @@ dependencies = [
 
 [[package]]
 name = "loams-upgrade"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "clap",
  "schemars 0.8.22",
@@ -10082,7 +10570,7 @@ dependencies = [
 
 [[package]]
 name = "loams-walrus"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "axum 0.8.9",
  "base64 0.23.1",
@@ -10104,12 +10592,13 @@ dependencies = [
 
 [[package]]
 name = "loams-web-bridge"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
  "futures",
  "loams-web-bridge",
+ "rand 0.9.5",
  "regex",
  "serde",
  "serde_json",
@@ -10117,7 +10606,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
- "tokio-tungstenite 0.30.0",
+ "tokio-tungstenite",
  "toml 0.8.23",
  "tracing",
  "url",
@@ -10125,7 +10614,7 @@ dependencies = [
 
 [[package]]
 name = "loams-worker"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "loams-common",
@@ -10141,7 +10630,7 @@ dependencies = [
 
 [[package]]
 name = "loams-zitadel"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "axum 0.8.9",
@@ -11475,6 +11964,78 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c87def4c32ab89d880effc9e097653c8da5d6ef28e6b539d313baaacfbafcbe"
 
 [[package]]
+name = "opentelemetry"
+version = "0.31.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b84bcd6ae87133e903af7ef497404dda70c60d0ea14895fc8a5e6722754fc2a0"
+dependencies = [
+ "futures-core",
+ "futures-sink",
+ "js-sys",
+ "pin-project-lite",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "opentelemetry-http"
+version = "0.31.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7a6d09a73194e6b66df7c8f1b680f156d916a1a942abf2de06823dd02b7855d"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "http",
+ "opentelemetry",
+ "reqwest 0.12.28",
+]
+
+[[package]]
+name = "opentelemetry-otlp"
+version = "0.31.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1f69cd6acbb9af919df949cd1ec9e5e7fdc2ef15d234b6b795aaa525cc02f71f"
+dependencies = [
+ "http",
+ "opentelemetry",
+ "opentelemetry-http",
+ "opentelemetry-proto",
+ "opentelemetry_sdk",
+ "prost 0.14.4",
+ "reqwest 0.12.28",
+ "thiserror 2.0.21",
+ "tokio",
+ "tonic 0.14.6",
+]
+
+[[package]]
+name = "opentelemetry-proto"
+version = "0.31.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7175df06de5eaee9909d4805a3d07e28bb752c34cab57fa9cff549da596b30f"
+dependencies = [
+ "opentelemetry",
+ "opentelemetry_sdk",
+ "prost 0.14.4",
+ "tonic 0.14.6",
+ "tonic-prost",
+]
+
+[[package]]
+name = "opentelemetry_sdk"
+version = "0.31.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e14ae4f5991976fd48df6d843de219ca6d31b01daaab2dad5af2badeded372bd"
+dependencies = [
+ "futures-channel",
+ "futures-executor",
+ "futures-util",
+ "opentelemetry",
+ "percent-encoding",
+ "rand 0.9.5",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "option-ext"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -12472,7 +13033,7 @@ dependencies = [
  "prettyplease 0.2.37",
  "prost 0.14.4",
  "prost-types",
- "pulldown-cmark 0.13.4",
+ "pulldown-cmark",
  "pulldown-cmark-to-cmark",
  "regex",
  "syn 2.0.119",
@@ -12635,25 +13196,14 @@ dependencies = [
 
 [[package]]
 name = "pulldown-cmark"
-version = "0.12.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f86ba2052aebccc42cbbb3ed234b8b13ce76f75c3551a303cb2bcffcff12bb14"
-dependencies = [
- "bitflags 2.13.2",
- "getopts",
- "memchr",
- "pulldown-cmark-escape",
- "unicase",
-]
-
-[[package]]
-name = "pulldown-cmark"
 version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e9f068eba8e7071c5f9511831b44f32c740d5adf574e990f946ddb53db2f314e"
 dependencies = [
  "bitflags 2.13.2",
+ "getopts",
  "memchr",
+ "pulldown-cmark-escape",
  "unicase",
 ]
 
@@ -12669,7 +13219,7 @@ version = "22.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab1ad36992cead65f02aa399a373a42730922f1525d988172634fdefdecb8a60"
 dependencies = [
- "pulldown-cmark 0.13.4",
+ "pulldown-cmark",
 ]
 
 [[package]]
@@ -13346,6 +13896,7 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "encoding_rs",
+ "futures-channel",
  "futures-core",
  "futures-util",
  "h2",
@@ -13480,7 +14031,7 @@ dependencies = [
 [[package]]
 name = "resonate-auth"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=31ffb2011b324c187f1d324b83feec2e16787e74#31ffb2011b324c187f1d324b83feec2e16787e74"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "jsonwebtoken",
  "reqwest 0.12.28",
@@ -13493,12 +14044,13 @@ dependencies = [
 [[package]]
 name = "resonate-base"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=31ffb2011b324c187f1d324b83feec2e16787e74#31ffb2011b324c187f1d324b83feec2e16787e74"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "lazy_static",
  "resonate-core",
  "resonate-plugin",
+ "resonate-trace",
  "serde",
  "tokio",
  "tracing",
@@ -13506,9 +14058,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "resonate-client"
+version = "0.10.1"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
+dependencies = [
+ "async-trait",
+ "reqwest 0.12.28",
+ "resonate-core",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "resonate-core"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=31ffb2011b324c187f1d324b83feec2e16787e74#31ffb2011b324c187f1d324b83feec2e16787e74"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -13524,13 +14089,14 @@ dependencies = [
 [[package]]
 name = "resonate-gateway-http"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=31ffb2011b324c187f1d324b83feec2e16787e74#31ffb2011b324c187f1d324b83feec2e16787e74"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "lazy_static",
  "resonate-auth",
  "resonate-core",
  "resonate-plugin",
+ "resonate-trace",
  "serde",
  "serde_json",
  "tokio",
@@ -13541,7 +14107,7 @@ dependencies = [
 [[package]]
 name = "resonate-plugin"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=31ffb2011b324c187f1d324b83feec2e16787e74#31ffb2011b324c187f1d324b83feec2e16787e74"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "axum 0.7.9",
  "figment",
@@ -13554,7 +14120,7 @@ dependencies = [
 [[package]]
 name = "resonate-sdk"
 version = "0.6.0"
-source = "git+https://github.com/ostrium-labs/resonate?rev=31ffb2011b324c187f1d324b83feec2e16787e74#31ffb2011b324c187f1d324b83feec2e16787e74"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -13574,7 +14140,7 @@ dependencies = [
 [[package]]
 name = "resonate-sdk-macros"
 version = "0.1.0"
-source = "git+https://github.com/ostrium-labs/resonate?rev=31ffb2011b324c187f1d324b83feec2e16787e74#31ffb2011b324c187f1d324b83feec2e16787e74"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -13585,7 +14151,7 @@ dependencies = [
 [[package]]
 name = "resonate-server-blob"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=31ffb2011b324c187f1d324b83feec2e16787e74#31ffb2011b324c187f1d324b83feec2e16787e74"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "chrono",
@@ -13594,19 +14160,23 @@ dependencies = [
  "futures",
  "lazy_static",
  "object_store 0.14.2",
+ "reqwest 0.12.28",
  "resonate-core",
  "resonate-plugin",
+ "resonate-trace",
  "serde",
  "serde_json",
+ "tikv-client",
  "tokio",
  "tracing",
+ "uuid",
  "validator",
 ]
 
 [[package]]
 name = "resonate-server-mysql"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=31ffb2011b324c187f1d324b83feec2e16787e74#31ffb2011b324c187f1d324b83feec2e16787e74"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "resonate-core",
@@ -13623,7 +14193,7 @@ dependencies = [
 [[package]]
 name = "resonate-server-sqlite"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=31ffb2011b324c187f1d324b83feec2e16787e74#31ffb2011b324c187f1d324b83feec2e16787e74"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "resonate-core",
@@ -13641,13 +14211,14 @@ dependencies = [
 [[package]]
 name = "resonate-sql"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=31ffb2011b324c187f1d324b83feec2e16787e74#31ffb2011b324c187f1d324b83feec2e16787e74"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "lazy_static",
  "resonate-core",
  "resonate-plugin",
  "resonate-timer-wheel",
+ "resonate-trace",
  "rusqlite",
  "serde",
  "serde_json",
@@ -13660,7 +14231,7 @@ dependencies = [
 [[package]]
 name = "resonate-timer-wheel"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=31ffb2011b324c187f1d324b83feec2e16787e74#31ffb2011b324c187f1d324b83feec2e16787e74"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "tokio",
  "verus_builtin",
@@ -13669,15 +14240,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "resonate-trace"
+version = "0.10.1"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
+dependencies = [
+ "lazy_static",
+ "opentelemetry",
+ "opentelemetry-otlp",
+ "opentelemetry_sdk",
+ "resonate-core",
+ "resonate-plugin",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "resonate-transport-http-poll"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=31ffb2011b324c187f1d324b83feec2e16787e74#31ffb2011b324c187f1d324b83feec2e16787e74"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-stream",
  "async-trait",
  "fastrand",
  "resonate-auth",
  "resonate-plugin",
+ "resonate-trace",
  "serde",
  "serde_json",
  "tokio",
@@ -13688,11 +14278,12 @@ dependencies = [
 [[package]]
 name = "resonate-transport-http-push"
 version = "0.10.1"
-source = "git+https://github.com/ostrium-labs/resonate?rev=31ffb2011b324c187f1d324b83feec2e16787e74#31ffb2011b324c187f1d324b83feec2e16787e74"
+source = "git+https://github.com/ostrium-labs/resonate?rev=53d38ab33631258d52a74497414e37c3270c4fe7#53d38ab33631258d52a74497414e37c3270c4fe7"
 dependencies = [
  "async-trait",
  "reqwest 0.12.28",
  "resonate-plugin",
+ "resonate-trace",
  "serde",
  "serde_json",
  "tokio",
@@ -13762,6 +14353,17 @@ name = "robust"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e27ee8bb91ca0adcf0ecb116293afa12d393f9c2b9b9cd54d33e8078fe19839"
+
+[[package]]
+name = "rpassword"
+version = "7.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2da316a15f47e3d053de9cb2c439650bd8fa4aaeb9365f2e5f27f492ff73c196"
+dependencies = [
+ "libc",
+ "rtoolbox",
+ "windows-sys 0.61.2",
+]
 
 [[package]]
 name = "rquickjs"
@@ -13835,6 +14437,16 @@ dependencies = [
  "quote",
  "syn 3.0.6",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "rtoolbox"
+version = "0.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a1efe12a1469752d0e6ff5ebec0b6ef4924cc5c4c71046b0ec730040535819d"
+dependencies = [
+ "libc",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -16354,22 +16966,6 @@ dependencies = [
 
 [[package]]
 name = "tokio-tungstenite"
-version = "0.24.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "edc5f74e248dc973e0dbb7b74c7e0d6fcc301c694ff50049504004ef4d0cdcd9"
-dependencies = [
- "futures-util",
- "log",
- "rustls",
- "rustls-pki-types",
- "tokio",
- "tokio-rustls",
- "tungstenite 0.24.0",
- "webpki-roots 0.26.11",
-]
-
-[[package]]
-name = "tokio-tungstenite"
 version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "17a073bfed563fa236697a068031408a93cd9522e08abf9933ead3e73411bd71"
@@ -16380,7 +16976,7 @@ dependencies = [
  "rustls-pki-types",
  "tokio",
  "tokio-rustls",
- "tungstenite 0.30.0",
+ "tungstenite",
  "webpki-roots 0.26.11",
 ]
 
@@ -16554,6 +17150,7 @@ dependencies = [
  "hyper-util",
  "percent-encoding",
  "pin-project",
+ "rustls-native-certs",
  "socket2 0.6.5",
  "sync_wrapper",
  "tokio",
@@ -16751,6 +17348,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "tracing-opentelemetry"
+version = "0.32.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ac28f2d093c6c477eaa76b23525478f38de514fa9aeb1285738d4b97a9552fc"
+dependencies = [
+ "js-sys",
+ "opentelemetry",
+ "tracing",
+ "tracing-core",
+ "tracing-subscriber",
+ "web-time",
+]
+
+[[package]]
 name = "tracing-subscriber"
 version = "0.3.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -16808,26 +17419,6 @@ dependencies = [
  "quote",
  "syn 2.0.119",
  "termcolor",
-]
-
-[[package]]
-name = "tungstenite"
-version = "0.24.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18e5b8366ee7a95b16d32197d0b2604b43a0be89dc5fac9f8e96ccafbaedda8a"
-dependencies = [
- "byteorder",
- "bytes",
- "data-encoding",
- "http",
- "httparse",
- "log",
- "rand 0.8.8",
- "rustls",
- "rustls-pki-types",
- "sha1 0.10.7",
- "thiserror 1.0.69",
- "utf-8",
 ]
 
 [[package]]
@@ -17125,12 +17716,6 @@ dependencies = [
  "serde",
  "serde_derive",
 ]
-
-[[package]]
-name = "utf-8"
-version = "0.7.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09cc8ee72d2a9becf2f2febe0205bbed8fc6615b7cb429ad062dc7b7ddd036a9"
 
 [[package]]
 name = "utf8-ranges"
@@ -18136,6 +18721,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "80d0f4e272c85def139476380b12f9ac60926689dd2e01d4923222f40580869d"
 dependencies = [
  "winapi",
+]
+
+[[package]]
+name = "wiremock"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08db1edfb05d9b3c1542e521aea074442088292f00b5f28e435c714a98f85031"
+dependencies = [
+ "assert-json-diff",
+ "base64 0.22.1",
+ "deadpool",
+ "futures",
+ "http",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "log",
+ "once_cell",
+ "regex",
+ "serde",
+ "serde_json",
+ "tokio",
+ "url",
 ]
 
 [[package]]

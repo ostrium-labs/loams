@@ -1,6 +1,7 @@
-//! managed installs for acp agents distributed as prebuilt zip archives
-//! (the ACP registry's `binary` distribution), such as Google's Antigravity
-//! server.
+//! managed installs for acp agents distributed as prebuilt archives (the ACP
+//! registry's `binary` distribution): zip, such as Google's Antigravity
+//! server, or gzipped tar, such as Goose's release builds. The format follows
+//! the url's suffix (`.tar.gz`/`.tgz`, else zip).
 //!
 //! same contract as the npm installs in [`crate::adapter_install`]: the pinned
 //! archive lands ONCE in `<adapters>/<name>/<version>`, extraction runs
@@ -218,9 +219,13 @@ async fn download_and_extract(
     dir: &Path,
     display_name: &str,
 ) -> Result<(), HarnessError> {
-    let archive = dir.join("download.zip");
+    let kind = ArchiveKind::of(source.url);
+    let archive = dir.join(kind.download_name());
     download(source, &archive, display_name).await?;
-    extract_zip(&archive, dir).await?;
+    match kind {
+        ArchiveKind::Zip => extract_zip(&archive, dir).await?,
+        ArchiveKind::TarGz => extract_tar_gz(&archive, dir).await?,
+    }
     let _ = std::fs::remove_file(&archive);
     let entry = dir.join(source.entry);
     if !entry.is_file() {
@@ -293,13 +298,137 @@ async fn download(
         }
     }
     file.flush().await?;
-    let actual = format!("{:x}", digest.finalize());
+    let actual = hex::encode(digest.finalize());
     if let Some(expected) = source.sha512
         && actual != expected
     {
         return Err(failed(format!(
             "SHA-512 mismatch (expected {expected}, got {actual})"
         )));
+    }
+    Ok(())
+}
+
+/// the container format of a pinned archive, from its url.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ArchiveKind {
+    Zip,
+    TarGz,
+}
+
+impl ArchiveKind {
+    fn of(url: &str) -> Self {
+        let path = url.split(['?', '#']).next().unwrap_or(url);
+        if path.ends_with(".tar.gz") || path.ends_with(".tgz") {
+            Self::TarGz
+        } else {
+            Self::Zip
+        }
+    }
+
+    fn download_name(self) -> &'static str {
+        match self {
+            Self::Zip => "download.zip",
+            Self::TarGz => "download.tar.gz",
+        }
+    }
+}
+
+pub(crate) async fn extract_tar_gz(archive: &Path, dest: &Path) -> Result<(), HarnessError> {
+    let archive = archive.to_owned();
+    let dest = dest.to_owned();
+    tokio::task::spawn_blocking(move || extract_tar_gz_blocking(&archive, &dest))
+        .await
+        .map_err(|error| {
+            HarnessError::Install(format!("archive extraction task failed: {error}"))
+        })?
+}
+
+/// a tar entry's path, `None` when it is absolute or climbs out of `dest`
+/// (the zip crate's `enclosed_name` rule).
+fn enclosed_tar_path(path: &Path) -> Option<PathBuf> {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Normal(part) => out.push(part),
+            Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => return None,
+        }
+    }
+    Some(out)
+}
+
+fn extract_tar_gz_blocking(archive_path: &Path, dest: &Path) -> Result<(), HarnessError> {
+    let invalid =
+        |error: std::io::Error| HarnessError::Install(format!("invalid tar.gz archive: {error}"));
+    let file = std::fs::File::open(archive_path)?;
+    let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(file));
+    let mut extracted = 0_u64;
+    let mut count = 0_usize;
+    for entry in archive.entries().map_err(invalid)? {
+        let mut entry = entry.map_err(invalid)?;
+        count += 1;
+        if count > MAX_ARCHIVE_ENTRIES {
+            return Err(HarnessError::Install(format!(
+                "archive has more than {MAX_ARCHIVE_ENTRIES} entries"
+            )));
+        }
+        let kind = entry.header().entry_type();
+        // pax/gnu metadata records describe the next entry; the tar crate
+        // already applied them.
+        if kind.is_pax_global_extensions()
+            || kind.is_pax_local_extensions()
+            || kind.is_gnu_longname()
+            || kind.is_gnu_longlink()
+        {
+            continue;
+        }
+        let path = entry.path().map_err(invalid)?.into_owned();
+        let enclosed = enclosed_tar_path(&path);
+        let mode = if kind.is_dir() {
+            0o040000
+        } else if kind.is_file() {
+            0o100000
+        } else {
+            // symlinks, hard links, devices, fifos: refused like zip's.
+            0o120000
+        };
+        let output = archive_entry_path(dest, enclosed.as_deref(), Some(mode))?;
+        if output == dest {
+            continue;
+        }
+        if output == archive_path {
+            return Err(HarnessError::Install(
+                "archive attempts to overwrite its download file".into(),
+            ));
+        }
+        if kind.is_dir() {
+            std::fs::create_dir_all(&output)?;
+            continue;
+        }
+        let size = entry.size();
+        extracted = extracted.checked_add(size).ok_or_else(|| {
+            HarnessError::Install("archive's extracted size overflows its limit".into())
+        })?;
+        if extracted > MAX_EXTRACTED_BYTES {
+            return Err(HarnessError::Install(format!(
+                "archive expands beyond the {} MiB limit",
+                MAX_EXTRACTED_BYTES / (1024 * 1024)
+            )));
+        }
+        if let Some(parent) = output.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let mut output_file = std::fs::File::create(&output)?;
+        let copied = std::io::copy(&mut entry, &mut output_file)?;
+        if copied != size {
+            return Err(HarnessError::Install(format!(
+                "archive entry {} extracted {copied} bytes but declared {size}",
+                output.display()
+            )));
+        }
+        output_file.flush()?;
     }
     Ok(())
 }
@@ -450,6 +579,84 @@ mod tests {
             matches!(error, HarnessError::Install(ref m) if m.contains("invalid zip archive")),
             "{error}"
         );
+    }
+
+    #[test]
+    fn archive_kind_follows_the_url_suffix() {
+        assert_eq!(ArchiveKind::of("https://x/a.zip"), ArchiveKind::Zip);
+        assert_eq!(ArchiveKind::of("https://x/a.tar.gz"), ArchiveKind::TarGz);
+        assert_eq!(ArchiveKind::of("https://x/a.tgz?sig=1"), ArchiveKind::TarGz);
+    }
+
+    fn tar_gz(entries: &[(&str, tar::EntryType, &[u8])]) -> Vec<u8> {
+        let mut builder = tar::Builder::new(flate2::write::GzEncoder::new(
+            Vec::new(),
+            flate2::Compression::fast(),
+        ));
+        for (path, kind, body) in entries {
+            let mut header = tar::Header::new_gnu();
+            header.set_entry_type(*kind);
+            header.set_size(body.len() as u64);
+            header.set_mode(0o644);
+            if matches!(*kind, tar::EntryType::Symlink | tar::EntryType::Link) {
+                header.set_link_name("/etc/passwd").unwrap();
+            }
+            // `set_path` refuses `..`; write the raw name to model a hostile archive.
+            let name = &mut header.as_old_mut().name;
+            name[..path.len()].copy_from_slice(path.as_bytes());
+            header.set_cksum();
+            builder.append(&header, *body).unwrap();
+        }
+        builder.into_inner().unwrap().finish().unwrap()
+    }
+
+    #[tokio::test]
+    async fn archive_install_extracts_tar_gz() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive = dir.path().join("ok.tar.gz");
+        std::fs::write(
+            &archive,
+            tar_gz(&[
+                ("./", tar::EntryType::Directory, b""),
+                ("goose", tar::EntryType::Regular, b"#!/bin/sh\n"),
+                ("lib/", tar::EntryType::Directory, b""),
+                ("lib/helper", tar::EntryType::Regular, b"x"),
+            ]),
+        )
+        .unwrap();
+        let dest = dir.path().join("out");
+        std::fs::create_dir(&dest).unwrap();
+        extract_tar_gz(&archive, &dest).await.unwrap();
+        assert_eq!(std::fs::read(dest.join("goose")).unwrap(), b"#!/bin/sh\n");
+        assert!(dest.join("lib/helper").is_file());
+
+        let corrupt = dir.path().join("corrupt.tar.gz");
+        std::fs::write(&corrupt, "not gzip").unwrap();
+        assert!(matches!(
+            extract_tar_gz(&corrupt, &dest).await,
+            Err(HarnessError::Install(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn archive_install_tar_gz_refuses_escape() {
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("out");
+        std::fs::create_dir(&dest).unwrap();
+        for (name, kind) in [
+            ("../escape", tar::EntryType::Regular),
+            ("/abs", tar::EntryType::Regular),
+            ("link", tar::EntryType::Symlink),
+            ("hard", tar::EntryType::Link),
+            ("fifo", tar::EntryType::Fifo),
+        ] {
+            let bad = dir.path().join("bad.tar.gz");
+            std::fs::write(&bad, tar_gz(&[(name, kind, b"")])).unwrap();
+            let error = extract_tar_gz(&bad, &dest).await.unwrap_err();
+            assert!(matches!(error, HarnessError::Install(_)), "{name}: {error}");
+        }
+        assert!(!dir.path().join("escape").exists());
+        assert!(std::fs::read_dir(&dest).unwrap().next().is_none());
     }
 
     #[test]

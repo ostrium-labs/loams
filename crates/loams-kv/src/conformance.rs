@@ -1164,6 +1164,8 @@ fn barrier_refusal(e: &KvError) -> Option<u64> {
 
 /// One GC round of the backend: the store's own GC on embedded, the
 /// cluster GC loop on TiKV.
+// Without `tikv` the early return is the last statement (clippy's needless_return).
+#[cfg_attr(not(feature = "tikv"), allow(clippy::needless_return))]
 async fn gc_round(store: &Store) {
     if let Some(h) = store.as_embedded() {
         h.gc_once().await.expect("a GC round");

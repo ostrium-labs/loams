@@ -9,7 +9,7 @@
 #   render.sh azure --container C --storage-account A --vault V [--client-id ID] > user-data.yaml
 #
 # Common options:
-#   --version V         Loams release [default: 0.1.1]
+#   --version V         Loams release [default: 0.1.2]
 #   --install NAME      names the secrets [default: loams]; secrets are
 #                       loams/<NAME>/... on AWS and loams-<NAME>-... elsewhere
 #   --secret-prefix P   override the whole prefix
@@ -17,6 +17,8 @@
 #                       light default; choose before the first start]
 #   --hostname H        the engine's tailnet name [default: loams]
 #   --data-device DEV   a disk to format ext4 and mount at /var/lib/docker
+#   --confluent-integrations A,B   Confluent integrations whose keys the VM fetches
+#                       (names only; the keys stay in the secret store) [default: none]
 #   --gzip              gzip the output (AWS user-data is limited to 16 KB)
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,7 +26,7 @@ die() { echo "render.sh: $*" >&2; exit 1; }
 
 cloud="${1:-}"; [[ "$cloud" =~ ^(aws|gcp|azure)$ ]] || die "usage: render.sh aws|gcp|azure [options] (see the header)"
 shift
-declare -A v=([VERSION]=0.1.1 [INSTALL]=loams [PROFILES]="" [HOSTNAME]=loams [DATA_DEVICE]="" [CLIENT_ID]="")
+declare -A v=([VERSION]=0.1.2 [INSTALL]=loams [PROFILES]="" [HOSTNAME]=loams [DATA_DEVICE]="" [CLIENT_ID]="" [CONFLUENT_INTEGRATIONS]="")
 gzip_out=0
 while (($#)); do
   case "$1" in
@@ -34,6 +36,7 @@ while (($#)); do
     --profiles) v[PROFILES]="${2-}"; shift 2 ;;
     --hostname) v[HOSTNAME]="${2:?}"; shift 2 ;;
     --data-device) v[DATA_DEVICE]="${2-}"; shift 2 ;;
+    --confluent-integrations) v[CONFLUENT_INTEGRATIONS]="${2-}"; shift 2 ;;
     --bucket) v[BUCKET]="${2:?}"; shift 2 ;;
     --region) v[REGION]="${2:?}"; shift 2 ;;
     --project) v[PROJECT]="${2:?}"; shift 2 ;;
@@ -42,7 +45,7 @@ while (($#)); do
     --vault) v[VAULT]="${2:?}"; shift 2 ;;
     --client-id) v[CLIENT_ID]="${2-}"; shift 2 ;;
     --gzip) gzip_out=1; shift ;;
-    -h|--help) sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "unknown option: $1" ;;
   esac
 done
@@ -61,6 +64,7 @@ check SECRET_PREFIX '^[A-Za-z0-9][A-Za-z0-9/_-]{0,100}$' "--secret-prefix"
 check PROFILES '^[a-z0-9,-]*$' "--profiles"
 check HOSTNAME '^[a-z0-9][a-z0-9-]{0,62}$' "--hostname"
 check DATA_DEVICE '^(/dev/[A-Za-z0-9/_.:-]+)?$' "--data-device"
+check CONFLUENT_INTEGRATIONS '^([a-z0-9][a-z0-9-]{0,30}(,[a-z0-9][a-z0-9-]{0,30})*)?$' "--confluent-integrations"
 case "$cloud" in
   aws)
     need BUCKET REGION

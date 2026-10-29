@@ -8,9 +8,11 @@ use std::sync::Arc;
 
 use datafusion::arrow::datatypes::{DataType, FieldRef};
 use datafusion::common::config::ConfigOptions;
-use datafusion::common::{DataFusionError, Result, TableReference};
-use datafusion::logical_expr::planner::TypePlanner;
-use datafusion::logical_expr::{AggregateUDF, HigherOrderUDF, ScalarUDF, TableSource, WindowUDF};
+use datafusion::common::{DataFusionError, Result, ScalarValue, TableReference};
+use datafusion::logical_expr::planner::{ExprPlanner, TypePlanner};
+use datafusion::logical_expr::{
+    AggregateUDF, Expr, HigherOrderUDF, ScalarUDF, TableSource, WindowUDF,
+};
 use datafusion::sql::planner::ContextProvider;
 use datafusion::sql::sqlparser::ast;
 use loams_house_types::ChError;
@@ -19,6 +21,26 @@ use loams_house_types::ChError;
 pub trait Catalog: fmt::Debug + Send + Sync {
     /// The table `database.name`, if it exists.
     fn table(&self, database: &str, name: &str) -> Option<Arc<dyn TableSource>>;
+
+    /// Whether `database` exists (`SHOW TABLES FROM db` is `81` when it does
+    /// not, plan HE1 Task 38). A catalog that does not list its databases
+    /// answers `true`.
+    fn has_database(&self, _database: &str) -> bool {
+        true
+    }
+
+    /// The table function `name` over constant `args` (plan HE1 Task 38:
+    /// `numbers`, `numbers_mt`, `zeros`, `zeros_mt`); `None` when the catalog
+    /// has no such function. The guard has already refused every other table
+    /// function (`344` for those reaching outside the namespace, `48` for the
+    /// rest).
+    fn table_function(
+        &self,
+        _name: &str,
+        _args: &[ScalarValue],
+    ) -> Option<Result<Arc<dyn TableSource>, ChError>> {
+        None
+    }
 }
 
 /// The functions the engine has, by the names DataFusion looks them up with
@@ -33,6 +55,21 @@ pub struct Registry {
     pub windows: HashMap<String, Arc<WindowUDF>>,
     /// Higher-order functions (lambdas).
     pub higher_order: HashMap<String, Arc<HigherOrderUDF>>,
+    /// Planners `SqlToRel` asks first for operators and special syntax, with
+    /// the operands' types in hand: date arithmetic with intervals (plan HE1
+    /// Task 30, R30.3).
+    pub expr_planners: Vec<Arc<dyn ExprPlanner>>,
+    /// Aggregates made on demand for names `aggregates` does not hold:
+    /// combinator compositions and parametric calls (plan HE1 Task 28).
+    pub aggregate_factory: Option<Arc<dyn AggregateFactory>>,
+}
+
+/// Makes the aggregate function planned under a name
+/// ([`crate::aggregates::planned_name`]): `sumIf`, `topK(10)`,
+/// `groupUniqArrayArrayIf`.
+pub trait AggregateFactory: fmt::Debug + Send + Sync {
+    /// The aggregate planned as `name`, if `name` is an aggregate's.
+    fn aggregate(&self, name: &str) -> Option<Arc<AggregateUDF>>;
 }
 
 /// ClickHouse type text in casts (`CAST(x AS LowCardinality(String))`,
@@ -99,11 +136,14 @@ pub fn type_text(sql_type: &ast::DataType) -> String {
 }
 
 impl TypePlanner for ClickHouseTypes {
-    fn plan_type(&self, sql_type: &ast::DataType) -> Result<Option<DataType>> {
+    fn plan_type_field(&self, sql_type: &ast::DataType) -> Result<Option<FieldRef>> {
+        // The cast's field carries the ClickHouse type, so `CAST(x AS Date)`
+        // is a `Date`, not the `Date32` its Arrow layout would read as
+        // (plan HE1 Task 24, R24.1).
         let text = type_text(sql_type);
         let t = loams_house_types::parse(&text).map_err(external)?;
-        let (dt, _) = loams_house_types::arrow::data_type(&t).map_err(external)?;
-        Ok(Some(dt))
+        let field = loams_house_types::arrow::to_arrow("", &t).map_err(external)?;
+        Ok(Some(Arc::new(field.with_nullable(true))))
     }
 }
 
@@ -120,6 +160,7 @@ pub struct HouseContext<'a> {
     database: String,
     options: ConfigOptions,
     types: Arc<dyn TypePlanner>,
+    planners: Vec<Arc<dyn ExprPlanner>>,
 }
 
 impl<'a> HouseContext<'a> {
@@ -132,6 +173,16 @@ impl<'a> HouseContext<'a> {
             database: database.to_string(),
             options: ConfigOptions::default(),
             types: Arc::new(ClickHouseTypes),
+            // The registry's planners first (date arithmetic, plan HE1 Task
+            // 30), then the operators' type rules (Task 24).
+            planners: registry
+                .expr_planners
+                .iter()
+                .cloned()
+                .chain(std::iter::once(
+                    Arc::new(crate::coerce::ClickHouseOperators) as Arc<dyn ExprPlanner>,
+                ))
+                .collect(),
         }
     }
 }
@@ -156,11 +207,45 @@ impl ContextProvider for HouseContext<'_> {
         })
     }
 
+    fn get_table_function_source(
+        &self,
+        name: &str,
+        args: Vec<Expr>,
+    ) -> Result<Arc<dyn TableSource>> {
+        let mut values = Vec::with_capacity(args.len());
+        for arg in args {
+            match arg {
+                Expr::Literal(v, _) => values.push(v),
+                other => {
+                    return Err(external(ChError::bad_arguments(format!(
+                        "The arguments of table function {name} must be constants, not {other}"
+                    ))));
+                }
+            }
+        }
+        match self.catalog.table_function(name, &values) {
+            Some(found) => found.map_err(external),
+            None => Err(external(ChError::unknown_function(format!(
+                "Unknown table function {name}"
+            )))),
+        }
+    }
+
     fn get_type_planner(&self) -> Option<Arc<dyn TypePlanner>> {
         Some(self.types.clone())
     }
 
+    fn get_expr_planners(&self) -> &[Arc<dyn ExprPlanner>] {
+        &self.planners
+    }
+
     fn get_function_meta(&self, name: &str) -> Option<Arc<ScalarUDF>> {
+        if name == "currentDatabase" {
+            return Some(crate::session::CurrentDatabase::udf(&self.database));
+        }
+        if name == crate::coerce::COND {
+            return Some(crate::coerce::plan_time::cond_udf());
+        }
         self.registry.scalars.get(name).cloned()
     }
 
@@ -169,7 +254,12 @@ impl ContextProvider for HouseContext<'_> {
     }
 
     fn get_aggregate_meta(&self, name: &str) -> Option<Arc<AggregateUDF>> {
-        self.registry.aggregates.get(name).cloned()
+        self.registry.aggregates.get(name).cloned().or_else(|| {
+            self.registry
+                .aggregate_factory
+                .as_ref()
+                .and_then(|f| f.aggregate(name))
+        })
     }
 
     fn get_window_meta(&self, name: &str) -> Option<Arc<WindowUDF>> {

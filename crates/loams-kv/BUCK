@@ -3,7 +3,7 @@ load("//buck:rust.bzl", "cargo_package")
 
 cargo_package(
     name = "loams-kv",
-    version = "0.1.1",
+    version = "0.1.2",
     edition = "2024",
     manifest_dir = "crates/loams-kv",
     env = {
@@ -42,6 +42,21 @@ cargo_package(
             "crate": "embedded",
             "root": "tests/embedded.rs",
         },
+        {
+            "name": "linearizable",
+            "crate": "linearizable",
+            "root": "tests/linearizable.rs",
+        },
+        {
+            "name": "metrics",
+            "crate": "metrics",
+            "root": "tests/metrics.rs",
+        },
+        {
+            "name": "tenant",
+            "crate": "tenant",
+            "root": "tests/tenant.rs",
+        },
     ],
     deps = [
         "//crates/loams-tikv:loams-tikv",
@@ -54,6 +69,7 @@ cargo_package(
         "//third-party/rust:tracing",
     ],
     dev_deps = [
+        "//crates/loams-meta-conformance:loams-meta-conformance",
         "//third-party/rust:proptest",
     ],
     rustc_flags = [

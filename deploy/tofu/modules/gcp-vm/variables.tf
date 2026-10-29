@@ -28,10 +28,10 @@ variable "name" {
 variable "release" {
   description = "The Loams release to install. The bundle's signature is checked on the VM."
   type        = string
-  default     = "0.1.1"
+  default     = "0.1.2"
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+([-.][0-9A-Za-z.]+)?$", var.release))
-    error_message = "release is a version such as 0.1.1, never latest."
+    error_message = "release is a version such as 0.1.2, never latest."
   }
 }
 
@@ -119,4 +119,10 @@ variable "labels" {
   description = "Extra labels."
   type        = map(string)
   default     = {}
+}
+
+variable "confluent_integrations" {
+  description = "Confluent integrations whose keys the VM fetches from the secret store into the connect role's secret files (names only; design 80 §7.2). Create the keys with `loams byoc confluent key create`."
+  type        = list(string)
+  default     = []
 }

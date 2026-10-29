@@ -3,7 +3,7 @@ load("//buck:rust.bzl", "cargo_package")
 
 cargo_package(
     name = "loams-durable",
-    version = "0.1.1",
+    version = "0.1.2",
     edition = "2024",
     manifest_dir = "crates/loams-durable",
     env = {
@@ -63,6 +63,7 @@ cargo_package(
         "//third-party/rust:url",
     ],
     dev_deps = [
+        "//crates/loams-tikv:loams-tikv",
         "//third-party/rust:sqlx",
         "//third-party/rust:tempfile",
         "//third-party/rust:tracing-subscriber",

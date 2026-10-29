@@ -3,7 +3,7 @@ load("//buck:rust.bzl", "cargo_package")
 
 cargo_package(
     name = "loams-agentd-rpc",
-    version = "0.1.1",
+    version = "0.1.2",
     edition = "2024",
     manifest_dir = "crates/loams-agentd-rpc",
     env = {
@@ -53,7 +53,7 @@ cargo_package(
         "//third-party/rust:subtle",
         "//third-party/rust:thiserror",
         "//third-party/rust:tokio",
-        "//third-party/rust:tokio-tungstenite-0_24",
+        "//third-party/rust:tokio-tungstenite",
         "//third-party/rust:tracing",
     ],
     dev_deps = [

@@ -6,13 +6,13 @@ Bring your own cloud: Loams runs in your AWS account, Google Cloud project or Az
 
 ## What you get
 
-One VM (Ubuntu 24.04, Linux 6.8) running Loams 0.1.1's **light default stack**: the engine on its embedded stores with your bucket, the House, Loams Postgres on local folders, agentd and the Tailscale sidecar. It is **single node and single disk**: no replication, so back up the disk (guides, "Backups") and keep the bucket's versioning on. The `tikv` and `rustfs` profiles add several GB of images and RAM; pick them before the first start.
+One VM (Ubuntu 24.04, Linux 6.8) running Loams 0.1.2's **light default stack**: the engine on its embedded stores with your bucket, the House, Loams Postgres on local folders, agentd and the Tailscale sidecar. It is **single node and single disk**: no replication, so back up the disk (guides, "Backups") and keep the bucket's versioning on. The `tikv` and `rustfs` profiles add several GB of images and RAM; pick them before the first start.
 
 ## The rules
 
 - **Never public.** Nothing opens an inbound port: the security group, firewall network or NSG has no inbound rule. The VM has a public address only for outbound traffic (the tailnet, GitHub, Docker's registry). You reach the engine over your own Tailscale tailnet, and a shell through Session Manager, IAP or `az vm run-command`.
 - **No static cloud keys.** The engine and the secrets fetch use the VM's identity: the instance role (IMDSv2, hop limit 2 for the containers), the service account's metadata token, or the managed identity.
-- **Pinned and verified.** The cloud-init file downloads `loams-compose-<version>.tar.gz`, checks `SHA256SUMS.asc` against the Loams release key (fingerprint `333A C945 99D5 A1EB 2A41 6D1E 83DC 134D 8CAF 895D`) and the bundle against `SHA256SUMS`. `latest` is refused.
+- **Pinned and verified.** The cloud-init file downloads `loams-compose-<version>.tar.gz`, checks `SHA256SUMS.asc` against the Loams release key (fingerprint `29C5 CC3F 0FD6 6A2A D32E CB30 9E8E C3E0 AAB5 BA68`; the previous key `333A C945 99D5 A1EB 2A41 6D1E 83DC 134D 8CAF 895D` is still accepted for 0.1.0 to 0.1.2) and the bundle against `SHA256SUMS`. `latest` is refused.
 - **The persistence rule.** The embedded stores (the metastore on redb, Live on redb, Durable on SQLite) need a **local block disk**: an EBS volume, a Persistent Disk or an Azure managed disk. Never EFS, Azure Files, Filestore or a FUSE mount of a bucket (design 70 §5.2). The engine does not yet refuse such a mount (BY0 Task 1 is not built), so this is on you.
 
 ## Which guide
@@ -22,6 +22,8 @@ One VM (Ubuntu 24.04, Linux 6.8) running Loams 0.1.1's **light default stack**: 
 | AWS | [aws.md](aws.md) | `deploy/byoc/aws/`, `deploy/tofu/modules/aws-vm/` |
 | Google Cloud | [gcp.md](gcp.md) | `deploy/byoc/gcp/`, `deploy/tofu/modules/gcp-vm/` |
 | Azure | [azure.md](azure.md) | `deploy/byoc/azure/`, `deploy/tofu/modules/azure-vm/` |
+
+**With Confluent Cloud:** [confluent.md](confluent.md) puts a Confluent Cloud cluster next to the VM (or connects your existing one): the `confluent` OpenTofu module, the keys in your secret store, and what a budget can and cannot cap.
 
 Each guide gives two ways: **the CLI commands** (create the pieces, then one cloud-init file starts the VM) and **OpenTofu** (the same pieces as a module; see `deploy/tofu/README.md`). If you already have a VM with an identity, `deploy/release/byoc/install.sh --cloud ...` installs onto it over SSH (`deploy/release/README.md`, "On a cloud VM").
 

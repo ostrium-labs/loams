@@ -3,7 +3,7 @@ load("//buck:rust.bzl", "cargo_package")
 
 cargo_package(
     name = "loams-agentd-harness",
-    version = "0.1.1",
+    version = "0.1.2",
     edition = "2024",
     manifest_dir = "crates/loams-agentd-harness",
     env = {
@@ -65,6 +65,11 @@ cargo_package(
             "name": "codex_availability",
             "crate": "codex_availability",
             "root": "tests/codex_availability.rs",
+        },
+        {
+            "name": "goose",
+            "crate": "goose",
+            "root": "tests/goose.rs",
         },
         {
             "name": "managed_install",
@@ -173,16 +178,19 @@ cargo_package(
         "//crates/loams-agentd-proto:loams-agentd-proto",
         "//third-party/rust:anyhow",
         "//third-party/rust:async-trait",
-        "//third-party/rust:base64-0_22",
+        "//third-party/rust:base64-0_23",
         "//third-party/rust:deser-hjson",
+        "//third-party/rust:flate2",
         "//third-party/rust:futures",
+        "//third-party/rust:hex",
         "//third-party/rust:libc",
         "//third-party/rust:reqwest-0_12",
         "//third-party/rust:semver",
         "//third-party/rust:serde",
         "//third-party/rust:serde_json",
         "//third-party/rust:serde_yaml_ng",
-        "//third-party/rust:sha2-0_10",
+        "//third-party/rust:sha2",
+        "//third-party/rust:tar",
         "//third-party/rust:thiserror",
         "//third-party/rust:tokio",
         "//third-party/rust:tokio-util",
@@ -193,6 +201,9 @@ cargo_package(
     dev_deps = [
         "//third-party/rust:tempfile",
     ],
+    extra_srcs = {
+        "crates/loams-agentd-harness/tests/fixtures/goose-1.54.0-digests.txt": "tests/fixtures/goose-1.54.0-digests.txt",
+    },
     rustc_flags = [
         "-Dunsafe_code",
         "-Wmissing_debug_implementations",

@@ -45,6 +45,7 @@ fn fixture_path() -> PathBuf {
 
 fn request(prompt: &str) -> RunRequest {
     RunRequest {
+        mcp_servers: Vec::new(),
         mcp: None,
         prompt: prompt.into(),
         harness: None,

@@ -4,6 +4,10 @@
 //	corpus-go generate -address temporal-frontend:7233 -namespace corpus-1 -out histories/go
 //	corpus-go export   -address ... -namespace corpus-1 -out histories/ts -scenarios hello,memo -prefix corpus-ts-
 //
+// TEMPORAL_API_KEY, when set, is sent as `authorization: Bearer <key>` on
+// every call, in plain text (the Loams gateway's API keys, X1.R5; its
+// compose profile has no TLS on the compose network). Unset, nothing changes.
+//
 // generate runs a worker for the scenarios package and drives each scenario
 // (signals, queries, cancels, updates, resets) with the fixed workflow ID
 // corpus-go-<scenario>, then exports every run of that ID as
@@ -59,13 +63,16 @@ func main() {
 	out := fs.String("out", "histories/go", "")
 	only := fs.String("scenarios", "", "comma-separated; default all (generate) or required (export)")
 	prefix := fs.String("prefix", "corpus-go-", "workflow ID prefix (export)")
+	// The Loams gateway serves no OperatorService before DX4 (design 74
+	// §5.8); its DX1 scenarios need no custom search attribute.
+	noSearchAttribute := fs.Bool("no-search-attribute", false, "skip registering the corpus's search attribute")
 	_ = fs.Parse(os.Args[2:])
 
 	ctx := context.Background()
-	if err := ensureNamespace(ctx, *address, *namespace); err != nil {
+	if err := ensureNamespace(ctx, *address, *namespace, !*noSearchAttribute); err != nil {
 		log.Fatalf("corpus: namespace %s: %v", *namespace, err)
 	}
-	c, err := client.Dial(client.Options{HostPort: *address, Namespace: *namespace})
+	c, err := client.Dial(withAPIKey(client.Options{HostPort: *address, Namespace: *namespace}))
 	if err != nil {
 		log.Fatalf("corpus: dial: %v", err)
 	}
@@ -93,6 +100,24 @@ func main() {
 	}
 }
 
+// bearer sends TEMPORAL_API_KEY as a bearer token (not
+// client.NewAPIKeyStaticCredentials, which also turns TLS on).
+type bearer string
+
+func (b bearer) GetHeaders(context.Context) (map[string]string, error) {
+	return map[string]string{"authorization": "Bearer " + string(b)}, nil
+}
+
+// withAPIKey sets the bearer header provider when TEMPORAL_API_KEY is set.
+// The SDK does not export the provider's interface type at v1.49.0, so the
+// field is assigned here rather than returned.
+func withAPIKey(o client.Options) client.Options {
+	if k := os.Getenv("TEMPORAL_API_KEY"); k != "" {
+		o.HeadersProvider = bearer(k)
+	}
+	return o
+}
+
 func pick(only string) []scenarios.Scenario {
 	if only == "" {
 		return scenarios.All
@@ -112,8 +137,8 @@ func pick(only string) []scenarios.Scenario {
 
 // ensureNamespace registers the namespace (72 h retention, DX1 R0.9) and the
 // corpus's custom search attribute, both idempotently.
-func ensureNamespace(ctx context.Context, address, ns string) error {
-	c, err := client.Dial(client.Options{HostPort: address})
+func ensureNamespace(ctx context.Context, address, ns string, searchAttribute bool) error {
+	c, err := client.Dial(withAPIKey(client.Options{HostPort: address}))
 	if err != nil {
 		return err
 	}
@@ -125,6 +150,9 @@ func ensureNamespace(ctx context.Context, address, ns string) error {
 	var exists *serviceerror.NamespaceAlreadyExists
 	if err != nil && !errors.As(err, &exists) {
 		return err
+	}
+	if !searchAttribute {
+		return nil
 	}
 	// A new namespace takes a moment to reach every service's cache.
 	deadline := time.Now().Add(time.Minute)
@@ -492,6 +520,29 @@ func runsOf(ctx context.Context, c client.Client, id string) ([]string, error) {
 		start time.Time
 	}
 	deadline := time.Now().Add(30 * time.Second)
+	if _, err := c.ListWorkflow(ctx, &workflowservice.ListWorkflowExecutionsRequest{
+		Query: fmt.Sprintf("WorkflowId = '%s'", id), PageSize: 1,
+	}); err != nil {
+		var unimplemented *serviceerror.Unimplemented
+		if !errors.As(err, &unimplemented) {
+			return nil, err
+		}
+		// A server without visibility (the Loams Temporal gateway before
+		// DX3): the current run only, once it has closed.
+		for {
+			d, err := c.DescribeWorkflowExecution(ctx, id, "")
+			if err != nil {
+				return nil, err
+			}
+			if d.WorkflowExecutionInfo.Status != enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING {
+				return []string{d.WorkflowExecutionInfo.Execution.RunId}, nil
+			}
+			if time.Now().After(deadline) {
+				return nil, fmt.Errorf("%s: still running", id)
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+	}
 	for {
 		var runs []run
 		var token []byte

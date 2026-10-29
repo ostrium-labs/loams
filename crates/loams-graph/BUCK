@@ -3,7 +3,7 @@ load("//buck:rust.bzl", "cargo_package")
 
 cargo_package(
     name = "loams-graph",
-    version = "0.1.1",
+    version = "0.1.2",
     edition = "2024",
     manifest_dir = "crates/loams-graph",
     env = {
@@ -128,6 +128,7 @@ cargo_package(
         },
     ],
     deps = [
+        "//crates/loams-authz:loams-authz",
         "//crates/loams-collection:loams-collection",
         "//crates/loams-common:loams-common",
         "//crates/loams-link:loams-link",
@@ -155,7 +156,7 @@ cargo_package(
         "//third-party/rust:parquet",
         "//third-party/rust:serde",
         "//third-party/rust:serde_json",
-        "//third-party/rust:sha2-0_11",
+        "//third-party/rust:sha2",
         "//third-party/rust:thiserror",
         "//third-party/rust:tokio",
         "//third-party/rust:tokio-util",

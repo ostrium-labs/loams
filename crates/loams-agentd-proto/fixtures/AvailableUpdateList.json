@@ -1,0 +1,10 @@
+{
+  "updates": [
+    {
+      "from": "2.0.3",
+      "id": "ostrium/github-mcp-server",
+      "to": "2.1.0",
+      "widens": true
+    }
+  ]
+}

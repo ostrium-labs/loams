@@ -59,10 +59,11 @@ env:
   NX_NO_CLOUD: 'true'
   NX_SKIP_NX_CACHE: 'true'
   CARGO_TERM_COLOR: always
-  # Build-time constants of the updater (src/main/update/pubkey.ts). Public values, hence variables.
-  LOAMS_UPDATE_PUBKEY: ${{ vars.LOAMS_UPDATE_PUBKEY }}
+  # Build-time constants of the updater (src/main/update/pubkey.ts). The public key is not a variable:
+  # it is pinned in apps/desktop-electron/update-pubkey.txt and read by electron.vite.config.ts.
   # The generic provider appends latest*.yml. Clients read the rolling `desktop-latest` release, which
-  # desktop-promote.yml updates only after a version release is PUBLISHED, never a draft.
+  # desktop-promote.yml updates only from a PUBLISHED, non-prerelease release, never a draft: after a
+  # desktop-vX.Y.Z release is published, or at the end of this run for a product vX.Y.Z release.
   LOAMS_UPDATE_FEED: ${{ vars.LOAMS_UPDATE_FEED || format('https://github.com/{0}/releases/download/desktop-latest', github.repository) }}
 
 jobs:
@@ -114,7 +115,6 @@ jobs:
           SP_WIN_POLICY: ${{ vars.SIGNPATH_WINDOWS_SIGNING_POLICY_SLUG }}
           SP_WIN_CONFIG: ${{ vars.SIGNPATH_DESKTOP_WINDOWS_ARTIFACT_CONFIGURATION_SLUG }}
           SP_WIN_INSTALLER_CONFIG: ${{ vars.SIGNPATH_DESKTOP_WINDOWS_INSTALLER_ARTIFACT_CONFIGURATION_SLUG }}
-          UPDATE_PUBKEY: ${{ vars.LOAMS_UPDATE_PUBKEY }}
         run: |
           set -euo pipefail
           if [[ "$TAG" =~ ^desktop-v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?)$ ]]; then
@@ -151,14 +151,19 @@ jobs:
           sign_rpm=false; [[ $sp_common = true && -n "$SP_RPM_POLICY" && -n "$SP_RPM_CONFIG" ]] && sign_rpm=true
           sign_win=false; [[ $sp_common = true && -n "$SP_WIN_POLICY" && -n "$SP_WIN_CONFIG" && -n "$SP_WIN_INSTALLER_CONFIG" ]] && sign_win=true
           gpg=false; [[ "$HAS_GPG" = true ]] && gpg=true
+          # The public half is pinned in the repository; the signing step checks the secret matches it.
+          UPDATE_PUBKEY=$(node apps/desktop-electron/scripts/update-feed.mjs pinned)
           update_key=false; [[ "$HAS_UPDATE_KEY" = true && -n "$UPDATE_PUBKEY" ]] && update_key=true
+          if [[ "$HAS_UPDATE_KEY" = true && -z "$UPDATE_PUBKEY" ]]; then
+            echo "::warning::LOAMS_UPDATE_SIGNING_KEY is set but apps/desktop-electron/update-pubkey.txt is empty; commit the public key (docs/release/desktop.md)"
+          fi
 
           if [ "$REQUIRE" = true ]; then
             missing=()
             [ $sign_rpm = true ] || missing+=("SignPath rpm (SIGNPATH_API_TOKEN, SIGNPATH_ORGANIZATION_ID, SIGNPATH_PROJECT_SLUG, SIGNPATH_SIGNING_POLICY_SLUG, SIGNPATH_ARTIFACT_CONFIGURATION_SLUG)")
             [ $sign_win = true ] || missing+=("SignPath Windows (the same three plus SIGNPATH_WINDOWS_SIGNING_POLICY_SLUG, SIGNPATH_DESKTOP_WINDOWS_ARTIFACT_CONFIGURATION_SLUG, SIGNPATH_DESKTOP_WINDOWS_INSTALLER_ARTIFACT_CONFIGURATION_SLUG)")
             [ $gpg = true ] || missing+=("LOAMS_GPG_PRIVATE_KEY")
-            [ $update_key = true ] || missing+=("LOAMS_UPDATE_SIGNING_KEY and variable LOAMS_UPDATE_PUBKEY")
+            [ $update_key = true ] || missing+=("LOAMS_UPDATE_SIGNING_KEY and the pinned apps/desktop-electron/update-pubkey.txt")
             if [ ${#missing[@]} -gt 0 ]; then
               echo "::error::DESKTOP_REQUIRE_SIGNING is true and this release would ship unsigned. Missing: ${missing[*]}"
               exit 1
@@ -167,7 +172,7 @@ jobs:
           [ $sign_rpm = true ] || echo "::warning::rpm will NOT be signed (SignPath not configured); it is named -unsigned"
           [ $sign_win = true ] || echo "::warning::Windows installer will NOT be signed (SignPath not configured); it is named -unsigned"
           [ $gpg = true ] || echo "::warning::no GPG signatures (LOAMS_GPG_PRIVATE_KEY unset); AppImage, deb, pacman are named -unsigned"
-          [ $update_key = true ] || echo "::warning::update manifests are not signed (LOAMS_UPDATE_SIGNING_KEY or LOAMS_UPDATE_PUBKEY unset); the in-app updater stays disabled"
+          [ $update_key = true ] || echo "::warning::update manifests are not signed (LOAMS_UPDATE_SIGNING_KEY unset or apps/desktop-electron/update-pubkey.txt empty); no update manifests are published and the in-app updater stays off"
 
           unsigned() { [ "$1" = true ] && echo "" || echo "-unsigned"; }
           {
@@ -761,6 +766,9 @@ jobs:
             node apps/desktop-electron/scripts/refresh-manifest.mjs "$rel/latest.yml" "$rel"
           fi
 
+      # The secret must be the private half of the pinned public key (what the app checks against);
+      # a mismatch fails the run rather than publish manifests no client would accept. Each signature
+      # is then checked the way the app checks it, along with the payloads the manifests name.
       - name: sign the update manifests (Ed25519)
         if: env.PLAN_UPDATE_KEY == 'true'
         env:
@@ -768,14 +776,18 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
+          node apps/desktop-electron/scripts/update-feed.mjs check-key
           for y in "$RUNNER_TEMP"/release/latest*.yml; do
             node apps/desktop-electron/scripts/sign-manifest.mjs "$y"
           done
+          node apps/desktop-electron/scripts/update-feed.mjs stage "$RUNNER_TEMP/release" "$RUNNER_TEMP/feed-check"
+          rm -rf "$RUNNER_TEMP/feed-check"
 
-      # A product release carries no update manifests (they are only served from desktop-v releases),
-      # so drop them before the checksums: DESKTOP-SHA256SUMS must list only files that are attached.
-      - name: no update manifests on a product release
-        if: env.MODE == 'product'
+      # Without the update key there is nothing a client would accept, so no manifests are attached
+      # (DESKTOP-SHA256SUMS / SHA256SUMS list only attached files, hence before the checksums). With
+      # it, the signed manifests stay on the release, and desktop-promote.yml copies them to the feed.
+      - name: no unsigned update manifests
+        if: env.PLAN_UPDATE_KEY != 'true'
         run: rm -f "$RUNNER_TEMP"/release/latest*.yml "$RUNNER_TEMP"/release/latest*.yml.sig
 
       - name: checksums
@@ -822,12 +834,12 @@ jobs:
             echo
             echo "### Updates"
             echo
-            echo "Windows and the Linux AppImage update in place from the \`desktop-latest\` feed release once this release is published and promoted (see docs/release/desktop.md), and only when the update manifest is signed$(yn "$PLAN_UPDATE_KEY" ' (it is, for this release)' ' (it is NOT for this release, so the in-app updater stays off)'). deb, rpm and pacman installs, and macOS, show \"Download v...\" instead."
+            echo "Windows and the Linux AppImage update in place from the \`desktop-latest\` feed release once this release is published and promoted (see docs/release/desktop.md), and only when the update manifest is signed$(yn "$PLAN_UPDATE_KEY" ' (it is, for this release)' ' (it is NOT for this release, so the in-app updater stays off)'). Pre-releases (\`-preview.N\`, \`-rc.N\`) are never offered. deb, rpm and pacman installs, and macOS, show \"Download v...\" instead."
           } > "$RUNNER_TEMP/notes.md"
           cat "$RUNNER_TEMP/notes.md"
 
-      # A product release (vX.Y.Z) already has its own SHA256SUMS (release-github.yml) and update
-      # manifests are only served from desktop-v releases, so rename the one and drop the others.
+      # A product release (vX.Y.Z) already has its own SHA256SUMS (release-github.yml), so the desktop
+      # one is renamed.
       - name: product release layout
         if: env.MODE == 'product'
         run: |
@@ -854,7 +866,7 @@ jobs:
           case "$body" in
             *"$marker"*) echo "the release notes already have the desktop section" ;;
             *)
-              { printf '%s\n\n%s\n\n' "$body" "$marker"; sed -e '/^### Updates/,$d' -e 's/^Verify downloads with `SHA256SUMS`/Verify the desktop downloads with `DESKTOP-SHA256SUMS`/' -e 's/SHA256SUMS\.asc/DESKTOP-SHA256SUMS.asc/' -e 's/^### /#### /' "$RUNNER_TEMP/notes.md"; } > "$RUNNER_TEMP/body.md"
+              { printf '%s\n\n%s\n\n' "$body" "$marker"; sed -e 's/^Verify downloads with `SHA256SUMS`/Verify the desktop downloads with `DESKTOP-SHA256SUMS`/' -e 's/SHA256SUMS\.asc/DESKTOP-SHA256SUMS.asc/' -e 's/^### /#### /' "$RUNNER_TEMP/notes.md"; } > "$RUNNER_TEMP/body.md"
               gh release edit "$TAG" --notes-file "$RUNNER_TEMP/body.md" --repo "$GITHUB_REPOSITORY"
               ;;
           esac
@@ -881,3 +893,20 @@ jobs:
             gh release create "$TAG" ./* "${flags[@]}" --repo "$GITHUB_REPOSITORY"
           fi
           echo "Draft ready. Publish it, then desktop-promote.yml moves it onto the update feed." >> "$GITHUB_STEP_SUMMARY"
+
+  # A product release (vX.Y.Z) is already published when this run attaches the desktop files, so its
+  # `release: published` event came too early to promote anything; promote it here instead. Skipped
+  # without the update key (no manifests were attached) and for a pre-release (-preview.N, -rc.N),
+  # which the feed never serves. desktop-promote.yml re-checks both and verifies every signature.
+  feed:
+    name: Update feed (desktop-latest)
+    needs: [plan, release]
+    if: >-
+      ${{ !cancelled() && needs.release.result == 'success' &&
+          needs.plan.outputs.mode == 'product' && needs.plan.outputs.update_key == 'true' &&
+          needs.plan.outputs.prerelease != 'true' && needs.plan.outputs.dry_run != 'true' }}
+    permissions:
+      contents: write
+    uses: ./.github/workflows/desktop-promote.yml
+    with:
+      tag: ${{ inputs.tag || github.ref_name }}

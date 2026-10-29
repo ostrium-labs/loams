@@ -1,0 +1,1 @@
+SELECT CAST('1.2.3.4' AS IPv4), CAST('::ffff:1.2.3.4' AS IPv6)

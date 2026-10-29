@@ -28,7 +28,7 @@ RUN apt-get update -qq \
       build-essential pkg-config cmake ninja-build clang lld libclang-dev \
       libssl-dev zlib1g-dev libsqlite3-dev libcurl4-openssl-dev \
       protobuf-compiler libprotobuf-dev \
-      python3 python3-pip python3-venv \
+      python3 python3-pip python3-venv python3-yaml \
       libicu74 libkrb5-3 liblttng-ust1t64 \
  && rm -rf /var/lib/apt/lists/*
 

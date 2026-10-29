@@ -213,6 +213,7 @@ fn fixture(dir: &Path) -> PathBuf {
 }
 fn request(cwd: &Path, prompt: &str, resume: Option<&str>) -> RunRequest {
     RunRequest {
+        mcp_servers: Vec::new(),
         mcp: None,
         prompt: prompt.into(),
         harness: None,

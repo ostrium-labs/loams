@@ -3,7 +3,7 @@ load("//buck:rust.bzl", "cargo_package")
 
 cargo_package(
     name = "loams-agentd-sessions",
-    version = "0.1.1",
+    version = "0.1.2",
     edition = "2024",
     manifest_dir = "crates/loams-agentd-sessions",
     env = {
@@ -79,6 +79,16 @@ cargo_package(
             "root": "tests/e2e.rs",
         },
         {
+            "name": "factory_checks",
+            "crate": "factory_checks",
+            "root": "tests/factory_checks.rs",
+        },
+        {
+            "name": "factory_loop",
+            "crate": "factory_loop",
+            "root": "tests/factory_loop.rs",
+        },
+        {
             "name": "git_write",
             "crate": "git_write",
             "root": "tests/git_write.rs",
@@ -112,6 +122,11 @@ cargo_package(
             "name": "m5c_accounts_uploads_titles",
             "crate": "m5c_accounts_uploads_titles",
             "root": "tests/m5c_accounts_uploads_titles.rs",
+        },
+        {
+            "name": "marketplace",
+            "crate": "marketplace",
+            "root": "tests/marketplace.rs",
         },
         {
             "name": "message_queue",
@@ -248,14 +263,16 @@ cargo_package(
     ],
     deps = [
         "//crates/loams-agentd-doc:loams-agentd-doc",
+        "//crates/loams-agentd-factory:loams-agentd-factory",
         "//crates/loams-agentd-harness:loams-agentd-harness",
+        "//crates/loams-agentd-marketplace:loams-agentd-marketplace",
         "//crates/loams-agentd-preview:loams-agentd-preview",
         "//crates/loams-agentd-proto:loams-agentd-proto",
         "//crates/loams-agentd-rpc:loams-agentd-rpc",
         "//crates/loams-agentd-store:loams-agentd-store",
         "//third-party/rust:anyhow",
         "//third-party/rust:async-trait",
-        "//third-party/rust:base64-0_22",
+        "//third-party/rust:base64-0_23",
         "//third-party/rust:chrono",
         "//third-party/rust:futures",
         "//third-party/rust:gethostname",
@@ -271,7 +288,7 @@ cargo_package(
         "//third-party/rust:rusqlite",
         "//third-party/rust:serde",
         "//third-party/rust:serde_json",
-        "//third-party/rust:sha2-0_10",
+        "//third-party/rust:sha2",
         "//third-party/rust:tempfile",
         "//third-party/rust:thiserror",
         "//third-party/rust:tokio",
@@ -282,7 +299,7 @@ cargo_package(
     ],
     dev_deps = [
         "//third-party/rust:axum",
-        "//third-party/rust:tokio-tungstenite-0_24",
+        "//third-party/rust:tokio-tungstenite",
         "//third-party/rust:zip",
     ],
     extra_srcs = {

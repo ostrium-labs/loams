@@ -15,6 +15,7 @@
       name: '@loams/plugin-data-studio'
     - id: factory
       name: '@loams/plugin-factory'
+      inject: [desktop, platform, router, slots, transport]
     - id: durable
       name: '@loams/plugin-durable'
     - id: connectors
@@ -49,3 +50,6 @@
       name: '@loams/plugin-canvas'
     - id: metrics
       name: '@loams/plugin-metrics'
+    # Managed engines (design 81, preview): sample data until the server serves them.
+    - id: engines
+      name: '@loams/plugin-engines'

@@ -29,7 +29,8 @@ What `setup-host.sh --role primary` sets up today:
   `~/.config/loams-ci/sccache.env` (the owner, opt-in); `~/.cargo/config.toml` is not touched;
 - rootless podman for `ci` (storage on `/mnt/Projects/ci/containers`, its API socket, unlimited
   locked memory and a seccomp profile that allows io_uring, for Iggy's real-server tests);
-- GitHub self-hosted runners for `ostrium-labs/loams` and `ostrium-labs/iggy` (labels
+- GitHub self-hosted runners, several for `ostrium-labs/loams` (`--runners N`, names
+  `<host>-loams-1..N`, sized from RAM) and one for `ostrium-labs/iggy` (labels
   `self-hosted, loams-local, linux, x64`), each a rootless container of the Ubuntu 24.04 image in
   `runner/`, run by a user unit of `ci` (`loams-runner-<repo>.service`). Jobs get `sudo`, `docker`
   (the `ci` user's podman), sccache via `RUSTC_WRAPPER`, a shared tool/cargo/rustup cache, and a

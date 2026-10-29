@@ -34,7 +34,7 @@ import {
 } from '@loams/studio-ui/chat';
 import { Button, Empty, Notice, Spinner } from '@loams/ui';
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import { studioHref } from '../routes.js';
+import { MARKETPLACE_HARNESSES, studioHref } from '../routes.js';
 import { readSettings } from '../settings/Settings.js';
 import { ThreadComposer } from './Composer.js';
 import { useThreadApprovals, useThreadRecord, useTranscriptStore } from './streams.js';
@@ -268,7 +268,7 @@ function ThreadView({
     );
 
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: Mod+F opens find while focus is in the thread
+    // oxlint-disable-next-line jsx-a11y/no-static-element-interactions -- Mod+F opens find while focus is in the thread
     <div
       className="relative flex h-full min-h-0 flex-col"
       onKeyDown={onKeyDown}
@@ -361,6 +361,7 @@ function ThreadView({
           threadId={threadId}
           openFile={(path) => navigate(threadHref(threadId, { panel: 'files', path }))}
           onGroupStarted={(groupId) => navigate(studioHref({ kind: 'group', groupId }))}
+          onAddHarness={() => navigate(MARKETPLACE_HARNESSES)}
         />
       </div>
     </div>

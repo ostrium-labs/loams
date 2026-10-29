@@ -1,5 +1,7 @@
 # Publish your project to the Loams Cloud Marketplace
 
+> **Read [the Seed Exchange](README.md) first** for what is built today (2026-10-26: experimental, first-party only).
+>
 > **Updated 2026-10-21.** The marketplace's design is now [§73](../design/73-agent-marketplace.md): open source, a signed static index, and three listing kinds first (agents in any framework with Mastra first, harnesses and MCP servers), with first-party listings only until MK1. This guide is rewritten for that in MK1; until then, where it differs, §73 wins.
 
 Status: **draft developer guide**. The marketplace is being built; the listing and install flow are not live yet, and this guide describes the process partners should plan for. Where a detail is not decided, it says so. Nothing here is an announcement of a partnership or listing.

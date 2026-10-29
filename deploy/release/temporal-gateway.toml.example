@@ -1,0 +1,77 @@
+# The Loams Temporal gateway (design 74, plan DX1 Task 9): `loams-temporal
+# --config temporal-gateway.toml`, or the `temporal` section of
+# `loams-gateway`. Secrets come from the environment, never this file.
+
+# The gRPC listener the Temporal SDKs connect to (h2c on the compose network;
+# TLS terminates in front of it elsewhere).
+listen = "0.0.0.0:7233"
+# Development settings (memory store, in-process Resonate, no keys) are
+# refused unless this is true and the listener is loopback.
+insecure_dev = false
+# Fixed when the database is created (X1.R6).
+shards = 64
+# This process's Resonate process ID.
+pid = "loams-temporal-1"
+
+# History, mutable state and the outbox: a Loams Postgres database on a
+# session or direct endpoint, never PgDog transaction mode (§74 §5.5 rule 5).
+[store]
+kind = "postgres"
+url_env = "LOAMS_TEMPORAL_DATABASE_URL"
+
+# The connection pool (docs/guides/durable/temporal-store.md). Every field is
+# optional; these are the defaults. One connection is held for the outbox
+# LISTEN, so max_connections must be at least 2. A 0 timeout turns it off.
+# [store.pool]
+# max_connections = 16
+# min_connections = 0
+# acquire_timeout_secs = 10
+# idle_timeout_secs = 600
+# max_lifetime_secs = 1800
+# statement_timeout_ms = 30000
+# idle_in_transaction_timeout_ms = 60000
+# application_name = "loams-temporal"
+
+# Closed runs are deleted once their namespace's retention has passed;
+# dispatched outbox rows after dispatched_outbox_ttl_hours. Safe on every
+# replica at once. These are the defaults.
+# [retention]
+# enabled = true
+# interval_secs = 60
+# max_runs_per_call = 100
+# max_outbox_rows_per_call = 1000
+# dispatched_outbox_ttl_hours = 24
+
+# Resonate: the engine's durable listener in the engine's network namespace
+# (compose profile `temporal-gateway`), or any Resonate server.
+[durability]
+kind = "resonate"
+url = "http://127.0.0.1:8001"
+# token_env = "LOAMS_TEMPORAL_RESONATE_TOKEN"
+
+# Task tokens are signed with the first key; every key verifies (X1.R4).
+# Each secret is at least 32 bytes; an empty or shorter one is refused (D2032).
+[[task_token_keys]]
+id = "k1"
+secret_env = "LOAMS_TEMPORAL_TOKEN_KEY_1"
+
+# API keys: the SHA-256 (hex) of each `lk_` key, its Loams namespace and role
+# (X1.R5). `admin` may register namespaces.
+[[keys]]
+sha256 = "<sha256 of the lk_ key>"
+loams_namespace_id = "<loams namespace id>"
+role = "admin"
+
+[[bootstrap_namespaces]]
+loams_namespace_id = "<loams namespace id>"
+name = "default"
+retention_hours = 72
+
+# Optional: a loopback-only listener for the stock Temporal Web UI, whose
+# server cannot send an API key (docs/guides/durable/temporal-ui-cli.md).
+# Every call on it is that Loams namespace's, never admin; read_only (the
+# default) lets only reads pass.
+# [ui]
+# listen = "127.0.0.1:7234"
+# loams_namespace_id = "<loams namespace id>"
+# read_only = true

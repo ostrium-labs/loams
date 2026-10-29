@@ -26,9 +26,14 @@ render_only=0
 root="${LOAMS_BYOC_ROOT:-/opt/loams}"
 stack="$root/release"
 repo="${LOAMS_BYOC_RELEASE_URL:-https://github.com/ostrium-labs/loams/releases/download}"
-# The release signing key (docs/release/loams-release-key.asc); the bundle's
-# SHA256SUMS.asc must verify against this fingerprint.
-fpr="333AC94599D5A1EB2A416D1E83DC134D8CAF895D"
+# The release signing keys (docs/release/loams-release-key.asc holds both); the
+# bundle's SHA256SUMS.asc must verify against one of these fingerprints. The
+# current key comes first and is preferred; the previous key (rotated 2026-10,
+# not revoked) still verifies 0.1.0 to 0.1.2. See docs/release/signing.md.
+fprs=(
+  "29C5CC3F0FD66A2AD32ECB309E8EC3E0AAB5BA68"  # current, from 2026-10-26
+  "333AC94599D5A1EB2A416D1E83DC134D8CAF895D"  # previous: 0.1.0 to 0.1.2
+)
 proto='=https'
 keyfile="${LOAMS_BYOC_KEY:-/etc/loams-byoc/loams-release-key.asc}"
 docker_fpr="9DC858229FC7DD38854AE2D88D81803C0EBFCD88"
@@ -59,10 +64,23 @@ engine_env() {
   esac
 }
 
+# The connect role (profile `connectors`, plan CC1 Task 1) reaches the engine's
+# connect socket with an API key, which the engine accepts only when apikey is
+# among its auth modes; people keep coming in over the tailnet.
+auth_mode() {
+  local p=",${LOAMS_PROFILES:-}," ints="${CONFLUENT_INTEGRATIONS:-}"
+  if [[ "$p" == *,connectors,* || -n "${ints//[ ,]/}" ]]; then
+    echo "tailscale,apikey"
+  else
+    echo "tailscale"
+  fi
+}
+
 env_values() {
   printf 'LOAMS_VERSION=%s\n' "$LOAMS_VERSION"
   printf 'LOAMS_BUCKET=%s\n' "$LOAMS_BUCKET_URL"
   printf 'COMPOSE_PROFILES=%s\n' "${LOAMS_PROFILES:-}"
+  printf 'LOAMS_AUTH_MODE=%s\n' "$(auth_mode)"
   printf 'TS_HOSTNAME=%s\n' "${TS_HOSTNAME:-loams}"
   printf 'TS_AUTHKEY=%s\n' '<from secret store>'
   printf 'LOAMS_SETUP_TOKEN=%s\n' '<from secret store>'
@@ -79,7 +97,8 @@ skip_system="${LOAMS_BYOC_SKIP_SYSTEM:-0}"
 if [[ "$skip_system" == 1 ]]; then
   # Test hooks, only without the system steps: a local release, signed by a test key.
   proto='=http,https'
-  fpr="${LOAMS_BYOC_TEST_KEY_FPR:-$fpr}"
+  # A space-separated list, current key first.
+  if [[ -n "${LOAMS_BYOC_TEST_KEY_FPR:-}" ]]; then read -r -a fprs <<<"$LOAMS_BYOC_TEST_KEY_FPR"; fi
 fi
 
 # --- kernel (House's workers need Linux 6.7 or newer) ------------------------
@@ -135,9 +154,15 @@ if [[ "$(cat "$marker" 2>/dev/null || true)" != "$LOAMS_VERSION" ]]; then
   done
   gnupghome="$dl/gnupg"; mkdir -m 700 "$gnupghome"
   GNUPGHOME="$gnupghome" gpg --batch --quiet --import "$keyfile"
-  GNUPGHOME="$gnupghome" gpg --batch --status-fd 1 --verify "$dl/SHA256SUMS.asc" "$dl/SHA256SUMS" 2>/dev/null \
-    | grep -q "^\[GNUPG:\] VALIDSIG $fpr " \
-    || die "SHA256SUMS is not signed by the Loams release key $fpr"
+  status="$(GNUPGHOME="$gnupghome" gpg --batch --status-fd 1 --verify "$dl/SHA256SUMS.asc" "$dl/SHA256SUMS" 2>/dev/null || true)"
+  signer=""
+  for f in "${fprs[@]}"; do
+    if grep -q "^\[GNUPG:\] VALIDSIG $f " <<<"$status"; then signer="$f"; break; fi
+  done
+  [[ -n "$signer" ]] || die "SHA256SUMS is not signed by a Loams release key (${fprs[*]})"
+  if [[ "$signer" != "${fprs[0]}" ]]; then
+    say "SHA256SUMS is signed by the previous Loams release key $signer (releases up to 0.1.2)"
+  fi
   (cd "$dl" && grep -F " $bundle" SHA256SUMS | sha256sum -c --quiet -) \
     || die "$bundle does not match SHA256SUMS"
   mkdir -p "$root"
@@ -179,4 +204,7 @@ fi
 systemctl daemon-reload
 systemctl enable loams-byoc.service
 systemctl restart loams-byoc.service
+# Rotated Confluent keys reach the connect role within 5 minutes (a no-op
+# without CONFLUENT_INTEGRATIONS; design 80 §7.2).
+systemctl enable --now loams-byoc-confluent.timer
 say "done: the engine joins your tailnet as ${TS_HOSTNAME:-loams}; check with: journalctl -u loams-byoc"

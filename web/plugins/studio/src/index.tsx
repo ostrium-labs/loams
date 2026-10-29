@@ -8,11 +8,13 @@
 // both cases with connect-query over the host's transport (agentd.ts).
 
 import { type PluginModule, service } from '@loams/console-host';
+import { AgentdScope } from '@loams/console-host/query';
 import type { Context } from '@loams/cordis';
 // Brings in the `desktop` service type (a module augmentation of `Services`).
 import type {} from '@loams/platform-electron';
 import { type StudioAgentd, studioAgentd } from './agentd.js';
 import { desktopFactory } from './factory.js';
+import { agentdFactoryBridge } from './factory-bridge.js';
 import { GitActionBus, withGitActions } from './git/bus.js';
 import { hostedAgentd } from './hosts/agentd.js';
 import { webNotifier } from './notifications/data.js';
@@ -43,11 +45,7 @@ export { GitActionBus, type GitToolbarEntry, withGitActions } from './git/bus.js
 export { gitErrorOf } from './git/errors.js';
 export { ProjectGitTools, StudioGitTools, ThreadGitTools } from './git/GitToolbar.js';
 export { ProjectActionsEditor } from './git/ProjectActions.js';
-export {
-  type HostedAgentdOptions,
-  hostedAgentd,
-  type StudioHosts,
-} from './hosts/agentd.js';
+export { type HostedAgentdOptions, hostedAgentd, type StudioHosts } from './hosts/agentd.js';
 export { StudioLayout } from './layout/StudioLayout.js';
 export { BranchesSource } from './palette/BranchesSource.js';
 export {
@@ -86,13 +84,7 @@ export {
   studioRouteAt,
   THREAD_ROUTES,
 } from './regions.js';
-export {
-  routeOf,
-  STUDIO_PAGES,
-  type StudioRoute,
-  studioHref,
-  type ThreadDraft,
-} from './routes.js';
+export { routeOf, STUDIO_PAGES, type StudioRoute, studioHref, type ThreadDraft } from './routes.js';
 export { KeybindingsCard } from './settings/Keybindings.js';
 export { FactoryGroup } from './sidebar/Factory.js';
 export { agentdPaletteSource } from './sidebar/paletteSource.js';
@@ -141,7 +133,20 @@ const plugin: PluginModule = {
       : hostedAgentd();
     // The Factory group (SD1 Task 27): the desktop's factory bridge; on the web nothing
     // until SF1 (D922).
-    const factory = desktop?.factory ? desktopFactory(desktop) : undefined;
+    // In a browser, the factory's reads come from the selected agentd host (SF1
+    // amendment F1): Studio provides them as `studio.factory` for the factory's pages.
+    const bridge = desktop
+      ? undefined
+      : agentdFactoryBridge(
+          () => agentd.transport(),
+          (url) => void platform.openExternal(url),
+        );
+    if (bridge) ctx.provide('studio.factory', bridge);
+    const factory = desktop?.factory
+      ? desktopFactory(desktop)
+      : bridge
+        ? desktopFactory({ factory: bridge }, { needsAgentd: true })
+        : undefined;
     const navigate = (to: string) => router.navigate(to);
     const setTrail = (trail: { label: string; href?: string }[] | undefined) =>
       router.setTrail?.(trail);
@@ -174,6 +179,13 @@ const plugin: PluginModule = {
         ),
       );
     }
+    // Studio's agentd for other plugins' pages (MK1 Task 9: the Seed Exchange), so on
+    // the web they reach the host picked here rather than the console's (none yet).
+    ctx.effect(() =>
+      slots.register({ name: 'studio.agentd.scope', plugin: 'studio' }, ({ children }) => (
+        <AgentdScope agentd={agentd}>{children}</AgentdScope>
+      )),
+    );
     ctx.effect(() =>
       slots.register(
         {

@@ -428,7 +428,7 @@ async fn connect(url: &str, token: Option<&str>) -> Result<RpcClient, RpcError> 
             tokio::select! {
                 frame = out_rx.recv() => match frame {
                     Some(text) => {
-                        if sink.send(WsMessage::Text(text)).await.is_err() {
+                        if sink.send(WsMessage::Text(text.into())).await.is_err() {
                             break;
                         }
                     }
@@ -439,7 +439,7 @@ async fn connect(url: &str, token: Option<&str>) -> Result<RpcClient, RpcError> 
                 },
                 message = stream.next() => match message {
                     Some(Ok(WsMessage::Text(text))) => {
-                        if in_tx.send(text).await.is_err() {
+                        if in_tx.send(text.to_string()).await.is_err() {
                             break;
                         }
                     }

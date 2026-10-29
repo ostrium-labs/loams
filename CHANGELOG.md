@@ -5,6 +5,78 @@ All notable changes to this project are documented here. The format follows [Kee
 ## [Unreleased]
 
 ### Added
+- **The Temporal gateway ships as an image (preview).** `ghcr.io/ostrium-labs/loams-temporal` is
+  built and attested with the other release images, and `compose.compute.yaml` runs it as the
+  profile `temporal-gateway`: in the engine's network namespace, on its own `loams_temporal`
+  database and the engine's Resonate, with API keys and no host port (deploy/release/README.md,
+  "The Temporal gateway"). The Go and TypeScript SDK legs run through that profile on pull
+  requests that touch the gateway. The gateway now refuses task-token keys shorter than 32 bytes.
+- **Loams Desktop can update itself from product releases.** A `vX.Y.Z` release now keeps its
+  signed update manifests (`latest*.yml` + `.sig`), and the desktop release run promotes them onto
+  the `desktop-latest` feed, which Windows and Linux AppImage installs update from (deb, rpm,
+  pacman and macOS get "Download vX"). Pre-releases are never offered. The update public key is
+  pinned in `apps/desktop-electron/update-pubkey.txt` (the repository variable `LOAMS_UPDATE_PUBKEY`
+  is no longer read); the release checks the signing secret matches it, and `desktop-promote.yml`
+  verifies every signature and payload before it uploads (`dry_run` stages without uploading).
+  **Not active yet:** until the owner sets the key (docs/release/desktop.md, "The update key"),
+  releases attach no manifests, the feed step is skipped, and the in-app updater stays off.
+
+## [0.1.2] - 2026-10-26
+
+Highlights:
+
+- **The console ships with your stack.** The engine serves the console built into its image at
+  `https://loams.<tailnet>.ts.net/ui/`, same-origin with its API and reachable only on your
+  tailnet; Loams Desktop carries the same console. The hosted console at `console.loams.dev` is
+  retired, CORS allows no other origin by default, and Studio in the browser reaches remote
+  agentd hosts listed in `LOAMS_AGENTD_ORIGINS` (calls and previews).
+- **CLI packages install on Fedora and Arch.** The `.rpm` and pacman packages declared Debian
+  package names (`libc6`, `libgcc-s1`) and no zlib, so dnf and pacman could not install 0.1.1's.
+  Each format now names its own packages, zlib included (#1110).
+- **`loams-agentd` for Linux as release tarballs** (x86_64 and aarch64), in the layout
+  `loams-agentd install-runtime --from` reads, for remote agentd hosts without Loams Desktop.
+- **The `kafka` compose profile (preview).** Ostrium's fork of Apache Iggy behind the Kafka wire on
+  `127.0.0.1:9093`, off by default, not wired to the engine yet.
+- **Durable on TiKV runs the Resonate fork's TiKV store** (FW1), for stacks that set
+  `LOAMS_DURABLE_STORE=tikv://…` (Durable stays on SQLite by default, D1342). The keyspace layout
+  is unchanged from 0.1.1, so `loams_durable` data carries over.
+- **Loams House** (the chDB-based House in `loams-fabric`) takes more of the gate applications'
+  DDL and queries on lake tables: Langfuse's and SigNoz's schemas, mutations, views,
+  `Distributed` tables, `VersionedCollapsingMergeTree` and readable `AggregatingMergeTree`. chDB
+  remains the House engine; the Rust House engine's crates are in the tree but not wired.
+- **Software Factory apps (preview):** SigNoz replaces OpenObserve.
+- **Security fixes:** the CodeQL alerts open at 0.1.1 (ReDoS in Studio, credentials in a
+  connector script's output), RUSTSEC-2026-0381/0382/0383 (rustls-webpki) and RUSTSEC-2026-0386
+  (tokio).
+
+### Upgrading
+
+**No migrations and no third-party pin changes.** PD, TiKV and TiDB stay on v8.5.8, Loams
+Postgres, chDB and Grafeo on 0.1.1's pins.
+
+- **A stack with the `tikv` profile** (a 0.1.0 stack kept on its stores, or one started with
+  `tikv`): `loams upgrade --to 0.1.2`. It takes a snapshot first, and `loams upgrade rollback`
+  restores it. With `LOAMS_DURABLE_STORE=tikv://…`, Durable's `loams_durable` keyspace is read
+  as it is: the new store keeps 0.1.1's layout byte for byte, and the fork's test loads a
+  keyspace dumped from a 0.1.1 engine. Durable on SQLite (the default) is unchanged.
+- **The light default stack** (embedded stores, no `tikv` profile, 0.1.1's default):
+  `loams upgrade` does not upgrade it yet (`stack_unrecognised`). Upgrade it by hand: back up
+  the volumes, `docker compose stop`, set `LOAMS_VERSION=0.1.2` in `.env`, then
+  `docker compose up -d` (docs/release/upgrades.md). Take `compose.yaml` and `config/` from the
+  0.1.2 bundle to get `LOAMS_AGENTD_ORIGINS` and the `kafka` profile; keep the directory name,
+  which names the volumes.
+- **CORS:** remove `LOAMS_CORS_ORIGINS=https://console.loams.dev` from `.env` (an upgrade keeps the
+  old value). List only the origins of consoles you serve elsewhere.
+- **Studio with a remote agentd:** set `LOAMS_AGENTD_ORIGINS` to the agentd host's origin, and
+  the host's `--allow-origin` to `https://loams.<tailnet>.ts.net`
+  (docs/guides/studio/remote-agentd.md).
+- **CLI packages:** on Fedora or Arch, install the 0.1.2 package; it replaces 0.1.1's, which may
+  not have installed. No data changes.
+- **Loams Desktop does not update itself yet:** the update feed (`desktop-latest`) is not
+  published and its manifests are unsigned, so download each new version from the release.
+- Expected downtime is about 5 minutes, excluding image pulls.
+
+### Added
 - **The engine-served console frames your agentd hosts.** `LOAMS_AGENTD_ORIGINS` origins now join
   the console's `frame-src` as well as `connect-src` (same validation; `*` is still refused), so
   Studio previews render in the console at `/ui/`.
@@ -24,27 +96,40 @@ All notable changes to this project are documented here. The format follows [Kee
 - **The TypeScript SDK runs in Cloudflare Workers**: the default transport sends `redirect: "manual"` in workerd
   (connect-web's `"error"` is rejected there), and `transportOptions.fetch` accepts a custom `fetch`. README
   has a Cloudflare Workers section.
-
-### Removed
-- **The `console.loams.dev` custom-domain route** is gone from `web/apps/console/wrangler.jsonc`
-  (Ostrium runs no hosted console; a deploy in your own account stays on workers.dev).
-- **The console deploy workflow** (`.github/workflows/console-deploy.yml`; 0.1.2, owner,
-  2026-10-23, D1705). It deployed `web/apps/console` to `console.loams.dev`, which is retired:
-  the console ships with each deployment (the engine serves it at `/ui/`) and with Loams
-  Desktop. `wrangler.jsonc` and `deploy/stage.mjs` stay for a console on your own Cloudflare or
-  Vercel account (coming soon). The GitHub `production` environment, its variables and the
-  Cloudflare Worker and DNS record are left for the owner to remove.
-- **Authentik** (IA1 Task 1, D1600). Loams cuts over to Zitadel for identity and OpenFGA for
-  authorization (design 76), with no migration, no compatibility period and no dual running.
-  The Authentik deploy kit (`deploy/authentik/`), the Authentik bundle in `deploy/release/auth/`,
-  its tailnet node and every code and doc reference are gone. Until the Zitadel bundle for
-  `auth.loams.dev` lands, an install signs people in with built-in single-org mode (`tailscale`,
-  console sessions with first-run setup, `lk_` keys) or `oidc` mode against any issuer.
-  `SIGN_IN_KIND_AUTHENTIK` and `SIGN_IN_KIND_AUTHENTIK_DEVICE_CODE` are deprecated in favour of
-  the new `SIGN_IN_KIND_OIDC` and `SIGN_IN_KIND_OIDC_DEVICE_CODE`; `OIDC_PROVIDER_KIND_ZITADEL`
-  is added. The tailnet tag `tag:authentik` is now `tag:zitadel`.
-- **OpenObserve, from the Software Factory** (D1666). SigNoz replaces it as the factory's
-  observability app (see Changed). A stored OpenObserve connection is no longer listed.
+- **Durable on TiKV through the Resonate fork's store** (design 74 FW1, #1226). The engine's
+  `durable-tikv` feature uses `resonate-server-tikv` from `ostrium-labs/resonate` (`loams/main`),
+  and `crates/loams-durable/src/tikv.rs` is gone. Same keyspace layout as 0.1.x, so existing
+  `loams_durable` keyspaces and `--durable-store tikv://…` carry over; the fork tests a keyspace
+  dumped from a 0.1.1 engine. The fork also brings OpenTelemetry spans and `traceparent`.
+- **Loams House on lake tables** (HE0 Task 9; in `loams-fabric`, the chDB House): Langfuse's and
+  SigNoz's DDL, copy-on-write mutations, plain views and `Distributed` tables on the catalog,
+  `VersionedCollapsingMergeTree` (D1570), readable `AggregatingMergeTree`, `Null` and inner-table
+  materialized views, `SAMPLE` (reads every row), nanosecond times as longs in v2 tables (D1572),
+  JSON columns as their text, `system.clusters`, `macros`, `mutations` and
+  `distributed_ddl_queue` for one node, compressed native-protocol blocks, ClickHouse's insert
+  ordering, comments in a column list, and the gate applications' client settings. The statement
+  time cap is 900 s and configurable end to end (D1573).
+- **BYOC on AWS, Google Cloud and Azure (preview)** (BY0, BY1): cloud-init for one VM running the
+  light stack over Tailscale only (no inbound rule, no static cloud key), `byoc/install.sh
+  --cloud`, `--bucket` and `--render-env-only`, OpenTofu modules in `deploy/tofu/`, and guides in
+  `docs/guides/byoc/`. The engine's bucket builds with the VM's identity (S3, GCS, Azure managed
+  identity). Tested without a cloud account; not yet run on a real one.
+- **SDKs: MachineKey token sources** for agents in Rust, Go, TypeScript and Python (IA4 Task 2):
+  a Zitadel machine user's key signs a JWT profile grant, refreshed before expiry. Zitadel is
+  planned (design 76), so this is ahead of the server side.
+- **agentd (experimental):** worktree chats with diff, review, change-request, approval and merge
+  tools for the factory loop (FT0), CI check status and log tails for Forgejo and GitHub, and
+  the marketplace groundwork: `MarketplaceService` with signed-index verification, install plans
+  and installers for node agents, harnesses and MCP servers (MK0). API only; no console UI yet.
+- **`loams cloud admin`** (LC2a): the invite-only Loams Cloud operator commands (WorkOS device
+  login, TOTP step-up, waitlist, invites, audit). For Ostrium's operators; Loams Cloud is not
+  deployed.
+- **In the repository, not in the release images:** `loams-iggy-sink` (the Iggy to Loams hop,
+  not wired to the engine yet), the Temporal gateway crates and `loams-temporal` binary (DX1,
+  experimental), the KV gateway groundwork
+  (KV0), the Rust House engine's crates (HE1: not wired, chDB remains the House engine; an
+  opt-in read-only preview is planned for 0.1.3), `loams-authz` and `loams-zitadel` (IA2, IA4),
+  the Loams Cloud Worker (LC2a, not deployed) and the `loams-listing` CLI (MK0).
 
 ### Changed
 - **The engine sends the console's Content-Security-Policy as a header, and Studio there can
@@ -90,6 +175,29 @@ All notable changes to this project are documented here. The format follows [Kee
   `deploy/factory/images.lock`. `deploy/factory/signoz/compose.yaml` is an opt-in overlay on the
   Loams stack that points SigNoz at the install's House (native and HTTP endpoints, user,
   password); no ClickHouse server is bundled. Idle, SigNoz and its collector use about 85 MiB.
+- **Toolchain and dependencies:** Node 24 for the JavaScript workspace (#1172), zod 4,
+  portable-pty 0.9 and notify 8.2, and the grouped npm, Cargo and Go updates.
+
+### Removed
+- **The `console.loams.dev` custom-domain route** is gone from `web/apps/console/wrangler.jsonc`
+  (Ostrium runs no hosted console; a deploy in your own account stays on workers.dev).
+- **The console deploy workflow** (`.github/workflows/console-deploy.yml`; 0.1.2, owner,
+  2026-10-23, D1705). It deployed `web/apps/console` to `console.loams.dev`, which is retired:
+  the console ships with each deployment (the engine serves it at `/ui/`) and with Loams
+  Desktop. `wrangler.jsonc` and `deploy/stage.mjs` stay for a console on your own Cloudflare or
+  Vercel account (coming soon). The GitHub `production` environment, its variables and the
+  Cloudflare Worker and DNS record are left for the owner to remove.
+- **Authentik** (IA1 Task 1, D1600). Loams cuts over to Zitadel for identity and OpenFGA for
+  authorization (design 76), with no migration, no compatibility period and no dual running.
+  The Authentik deploy kit (`deploy/authentik/`), the Authentik bundle in `deploy/release/auth/`,
+  its tailnet node and every code and doc reference are gone. Until the Zitadel bundle for
+  `auth.loams.dev` lands, an install signs people in with built-in single-org mode (`tailscale`,
+  console sessions with first-run setup, `lk_` keys) or `oidc` mode against any issuer.
+  `SIGN_IN_KIND_AUTHENTIK` and `SIGN_IN_KIND_AUTHENTIK_DEVICE_CODE` are deprecated in favour of
+  the new `SIGN_IN_KIND_OIDC` and `SIGN_IN_KIND_OIDC_DEVICE_CODE`; `OIDC_PROVIDER_KIND_ZITADEL`
+  is added. The tailnet tag `tag:authentik` is now `tag:zitadel`.
+- **OpenObserve, from the Software Factory** (D1666). SigNoz replaces it as the factory's
+  observability app (see Changed). A stored OpenObserve connection is no longer listed.
 
 ### Fixed
 - **`secrets/api-keys` readable by the engine** (#881, #1068). `loams auth new-key --append` creates the key
@@ -98,6 +206,29 @@ All notable changes to this project are documented here. The format follows [Kee
   with mode 0640 (`sudo chgrp 10001` under rootful Docker, `podman unshare chgrp 10001` under rootless
   Podman), `byoc/install.sh` does the same for the empty file it creates, and an engine that cannot read
   the file now names the uid and gid it runs as and the file's owner and mode.
+- **The `.rpm` and pacman packages install** (#1110, #1105). nFPM does not translate `depends`,
+  so 0.1.1's `.rpm` and `.pkg.tar.zst` required Debian names (`libc6`, `libgcc-s1`) that dnf and
+  pacman cannot resolve, and no package declared zlib, which the binary links through
+  `mysql-wire`. Each format now declares its own names, zlib included, and the release job
+  fails when the binary links a library the packages do not declare.
+- **agentd:** a run group's member whose run was taken settles after a restart instead of
+  showing `running` for good (#1065); worktree names are reserved atomically, so concurrent
+  worktrees under one repository name never collide (#962); the Connect/ndjson parity race and
+  stack overflow (#1059).
+- **TiKV:** metastore garbage collection claims the orphans it returns, so a held-up swap can no
+  longer reference a deleted segment (#968); the client-rust pin moves so a crashed writer's
+  locks never stall a restarted server (#981).
+- The proto comment for `CompleteSetupRequest.setup_token`: it is the operator's
+  `LOAMS_SETUP_TOKEN`, needed whenever authentication is on (#1048).
+
+### Security
+- **CodeQL alerts open at 0.1.1** (#1105): linear-time replacements for six ReDoS patterns in
+  Studio (#1106); `scripts/connectors/profiles.py` no longer prints a credential from an invalid
+  file or a refused value (#1107). The alerts on the default branch close when 0.1.2 reaches
+  `main`.
+- rustls-webpki 0.103.16 and webpki-roots 1.0.10 (RUSTSEC-2026-0381, -0382, -0383, #967); tokio
+  1.54.1 in the root and `fabric/` (RUSTSEC-2026-0386, #1021, #1158). RUSTSEC-2026-0385
+  (ctutils) is ignored until its fix is 14 days old (#1134).
 
 ## [0.1.1] - 2026-10-21
 

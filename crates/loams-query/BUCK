@@ -3,7 +3,7 @@ load("//buck:rust.bzl", "cargo_package")
 
 cargo_package(
     name = "loams-query",
-    version = "0.1.1",
+    version = "0.1.2",
     edition = "2024",
     manifest_dir = "crates/loams-query",
     env = {
@@ -36,6 +36,7 @@ cargo_package(
         "//crates/loams-collection:loams-collection",
         "//crates/loams-common:loams-common",
         "//crates/loams-log:loams-log",
+        "//crates/loams-meter-gate:loams-meter-gate",
         "//crates/loams-proto:loams-proto",
         "//crates/loams-quickwit:loams-quickwit",
         "//crates/loams-store:loams-store",

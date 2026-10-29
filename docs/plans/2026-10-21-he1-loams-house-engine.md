@@ -285,13 +285,13 @@ Tests: `bi_grafana_on_house_smoke` (both protocols) and `bi_metabase_on_house_sm
 
 ## HE1 — The read-only Rust engine (Tasks 20–47)
 
-> **Progress (2026-10-24; work stopped by the owner).**
-> - **Task 20** is merged (#1124): the six crates, DataFusion 55.2 and the iceberg-rust fork pin (R20.1–R20.3).
-> - **Task 21** is in PR #1156: `loams-house-types`, with 11 oracle-checked tests (R21.1–R21.5).
-> - **Task 22** is in its own PR, stacked on #1156: the front end's core, with 22 tests (R22.1–R22.4).
-> - **Tasks 23–47 are not started.** Task 23's design is in R22.5.
->
-> HE0's loose ends listed in R20.3 are also not started. Once Task 23 merges, Tasks 24, 25, 26, 28, 30–33 and 36–38 can run in parallel.
+> **Progress (2026-10-25; resumed for an opt-in, read-only Rust-engine preview in 0.1.3).**
+> - **Task 20** is merged (#1124).
+> - **Task 21** is merged (#1156): `loams-house-types`.
+> - **Task 22** (#1183) is the front end's core.
+> - **Task 23** is the engine oracle: the dev server, seeded targets, the per-PR job "House engine: the oracle", and `scripts/house/engine-oracle.sh` (R23.1–R23.5).
+> - **Next, in parallel, one implementer each:** Tasks 24, 25, 26, 28, 30, 31, 32, 33, 36, 37 and 38. Their briefs are in `~/Documents/Ostriumlabs/loams-wt/.he0-shared/he1-briefs/tNN.md`.
+> - HE0's loose ends (R20.3) are still open.
 
 **Exit (§75 §16.1, D1579):** the Tier 0 query set passes against the oracle; at least 50 % of the filtered stateless tests pass on `house-rust`; OpenPanel's, Langfuse v4's and v3's and SigNoz's replays (R9.3) give identical answers on `engine = rust` with no fallback; OpenPanel runs end to end on a House with `engine = rust`; the performance budget of D1803 holds.
 

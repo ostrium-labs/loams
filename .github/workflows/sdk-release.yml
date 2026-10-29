@@ -354,7 +354,17 @@ jobs:
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/npm"
           for pkg in live client; do
-            (cd "sdks/typescript/packages/$pkg/build/npm" && npm publish --dry-run --tag "$NPM_TAG" && npm pack --pack-destination "$RUNNER_TEMP/npm")
+            dir="sdks/typescript/packages/$pkg/build/npm"
+            name=$(node -p "require('./$dir/package.json').name")
+            version=$(node -p "require('./$dir/package.json').version")
+            # npm 11's dry run asks the registry and refuses a version it already has
+            # (v0.1.2's re-run): the publish job skips that version anyway, so only pack.
+            if npm view "$name@$version" version >/dev/null 2>&1; then
+              echo "$name@$version is already on npm; packing without the publish dry run"
+            else
+              (cd "$dir" && npm publish --dry-run --tag "$NPM_TAG")
+            fi
+            (cd "$dir" && npm pack --pack-destination "$RUNNER_TEMP/npm")
           done
           ls -l "$RUNNER_TEMP/npm"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

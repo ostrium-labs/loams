@@ -7,6 +7,7 @@
 //! | System | Gate | Address (default) |
 //! |---|---|---|
 //! | Apache Kafka 4.x (`deploy/fabric/compose.yaml` service `kafka`, profile `connectors-p2`) | `LOAMS_CONNECTORS_STACK` | `LOAMS_KAFKA_BOOTSTRAP` (`127.0.0.1:9092`) |
+//! | Apache Kafka 4.x with SASL_SSL, PLAIN and a test CA (service `kafka-sasl`, profile `connectors-p2`), through the `confluent-cloud` profile | `LOAMS_CONNECTORS_STACK` | `LOAMS_KAFKA_SASL_BOOTSTRAP` (`SASL_SSL://localhost:9094`), CA `LOAMS_KAFKA_SASL_CA` (`deploy/fabric/kafka-sasl/ca.pem`) |
 //! | Redpanda (service `redpanda`, profile `connectors-ci-only`) | `LOAMS_CONNECTORS_CI_ONLY_STACK` | `LOAMS_REDPANDA_BOOTSTRAP` (`127.0.0.1:19092`) |
 //! | Event Hubs emulator (service `eventhubs`, profile `connectors-ci-only`) | `LOAMS_CONNECTORS_CI_ONLY_STACK` | `LOAMS_EVENTHUBS_BOOTSTRAP` (`127.0.0.1:9092`) |
 //! | a real Event Hubs namespace (nightly) | `LOAMS_EVENTHUBS_NAMESPACE` | `<namespace>.servicebus.windows.net:9093` |
@@ -18,8 +19,14 @@
 #![allow(dead_code)]
 
 use std::collections::BTreeSet;
-use std::sync::Arc;
+use std::convert::Infallible;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+use bytes::Bytes;
+use http_body_util::{BodyExt, Full};
+use hyper::{Request, Response, StatusCode};
+use hyper_util::rt::TokioIo;
 
 use loams_connector_kafka::Kafka;
 use loams_connector_kafka::config::Connection;
@@ -66,6 +73,9 @@ pub struct Target {
     pub fixed_topic: Option<(String, i32)>,
     /// The consumer group a source must use (an Event Hubs consumer group).
     pub group: Option<String>,
+    /// The replication factor of the topics the suite creates (`-1`: the
+    /// broker's default; Confluent Cloud refuses anything but 3 or the default).
+    pub replication: i32,
     mock: Option<MockCluster<'static, DefaultProducerContext>>,
 }
 
@@ -109,6 +119,7 @@ impl Target {
             can_admin: true,
             fixed_topic: None,
             group: None,
+            replication: 1,
             mock: Some(mock),
         }
     }
@@ -127,6 +138,7 @@ impl Target {
             can_admin: true,
             fixed_topic: None,
             group: None,
+            replication: 1,
             mock: None,
         })
     }
@@ -145,6 +157,7 @@ impl Target {
             can_admin: true,
             fixed_topic: None,
             group: None,
+            replication: 1,
             mock: None,
         })
     }
@@ -178,6 +191,7 @@ impl Target {
                 can_admin: false,
                 fixed_topic: Some((hub, partitions)),
                 group: Some(group),
+                replication: 1,
                 mock: None,
             });
         }
@@ -202,6 +216,92 @@ impl Target {
             can_admin: false,
             fixed_topic: Some((hub, partitions)),
             group: Some(group),
+            replication: 1,
+            mock: None,
+        })
+    }
+
+    /// A Confluent Cloud cluster (CC0 Task 0 of plan CC1), when
+    /// `LOAMS_CONFLUENT_BOOTSTRAP` is set: `sasl_ssl`, PLAIN with a Kafka API
+    /// key (`LOAMS_CONFLUENT_API_KEY`, `LOAMS_CONFLUENT_API_SECRET`), full
+    /// verification against the probed system roots. Never runs in CI. The
+    /// key needs CREATE on the `loams-cc0-` topic prefix and the checkpoint
+    /// topic (`LOAMS_CONFLUENT_CHECKPOINT_TOPIC`, default
+    /// `loams-cc0-checkpoints`), READ on the `grp-` and `suite-reader-` group
+    /// prefixes, WRITE on the `loams-` transactional-id prefix and
+    /// IDEMPOTENT_WRITE.
+    pub fn confluent() -> Option<Self> {
+        let bootstrap = std::env::var("LOAMS_CONFLUENT_BOOTSTRAP")
+            .ok()
+            .filter(|v| !v.is_empty());
+        let Some(bootstrap) = bootstrap else {
+            eprintln!("skipped: the Confluent Cloud suite needs LOAMS_CONFLUENT_BOOTSTRAP");
+            return None;
+        };
+        let key = std::env::var("LOAMS_CONFLUENT_API_KEY").expect("LOAMS_CONFLUENT_API_KEY");
+        let secret =
+            std::env::var("LOAMS_CONFLUENT_API_SECRET").expect("LOAMS_CONFLUENT_API_SECRET");
+        Some(Self {
+            name: "loams-cc0",
+            bootstrap,
+            base: json!({
+                "security_protocol": "sasl_ssl",
+                "sasl": { "mechanism": "plain", "username": key, "password": "confluent-api-secret" },
+                "tls": { "enabled": true, "verify_full": true },
+                "checkpoint_topic": env_or("LOAMS_CONFLUENT_CHECKPOINT_TOPIC", "loams-cc0-checkpoints"),
+            }),
+            secrets: Arc::new(StaticSecrets::new().with("confluent-api-secret", secret)),
+            profile: None,
+            can_admin: true,
+            fixed_topic: None,
+            group: None,
+            replication: -1,
+            mock: None,
+        })
+    }
+
+    /// Apache Kafka behind SASL_SSL (service `kafka-sasl`), when the
+    /// `connectors` stack is up, through the `confluent-cloud` target profile
+    /// (CC1 Task 2, D1822): the profile's `sasl_ssl`, PLAIN and `verify_full`
+    /// defaults, the username and password as secret names (as
+    /// `loams-byoc-secrets` writes them for Confluent, D1827), a bootstrap
+    /// string with Confluent's `SASL_SSL://` scheme, and the service's test
+    /// CA in place of the system roots. The user and password are the
+    /// service's fixed test values.
+    pub fn kafka_sasl() -> Option<Self> {
+        if !gate("LOAMS_CONNECTORS_STACK", "the Apache Kafka SASL_SSL suite") {
+            return None;
+        }
+        let ca_path = std::env::var("LOAMS_KAFKA_SASL_CA")
+            .ok()
+            .filter(|v| !v.is_empty())
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| repo_root().join("deploy/fabric/kafka-sasl/ca.pem"));
+        let ca = std::fs::read_to_string(&ca_path).unwrap_or_else(|e| {
+            panic!(
+                "{}: {e}; the kafka-sasl service writes its test CA there when it starts",
+                ca_path.display()
+            )
+        });
+        Some(Self {
+            name: "kafka-sasl",
+            bootstrap: env_or("LOAMS_KAFKA_SASL_BOOTSTRAP", "SASL_SSL://localhost:9094"),
+            base: json!({
+                "sasl": {
+                    "username_secret": "kafka-sasl/username",
+                    "password": "kafka-sasl/password",
+                },
+                "tls": { "ca_pem": ca },
+            }),
+            secrets: Arc::new(
+                StaticSecrets::new()
+                    .with("kafka-sasl/username", "loams-test")
+                    .with("kafka-sasl/password", "loams-test-password"),
+            ),
+            profile: Some(load_profile("confluent-cloud")),
+            can_admin: true,
+            fixed_topic: None,
+            group: None,
             mock: None,
         })
     }
@@ -273,7 +373,7 @@ impl Target {
         }
         let admin: AdminClient<DefaultClientContext> =
             self.raw().await.create().expect("admin client");
-        let mut t = NewTopic::new(name, partitions, TopicReplication::Fixed(1));
+        let mut t = NewTopic::new(name, partitions, TopicReplication::Fixed(self.replication));
         if compacted {
             t = t.set("cleanup.policy", "compact");
         }
@@ -790,4 +890,76 @@ pub fn header(m: &OwnedMessage, name: &str) -> Option<String> {
             .and_then(|x| x.value)
             .map(|v| String::from_utf8_lossy(v).into_owned())
     })
+}
+
+/// A request the fake registry saw.
+#[derive(Debug, Clone)]
+pub struct Seen {
+    pub method: String,
+    pub path: String,
+    pub auth: Option<String>,
+    pub body: Value,
+}
+
+/// A fake Confluent Schema Registry on loopback that answers `routes`
+/// (method, path, status, JSON body) and 404 (`40403`) otherwise, as
+/// Confluent's REST API documents; it records every request.
+pub async fn fake_registry_with(
+    routes: Vec<(&'static str, &'static str, u16, Value)>,
+) -> (String, Arc<Mutex<Vec<Seen>>>) {
+    let routes = Arc::new(routes);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let base = format!("http://{}", listener.local_addr().expect("addr"));
+    let seen: Arc<Mutex<Vec<Seen>>> = Arc::default();
+    let log = seen.clone();
+    tokio::spawn(async move {
+        while let Ok((stream, _)) = listener.accept().await {
+            let log = log.clone();
+            let routes = routes.clone();
+            tokio::spawn(async move {
+                let svc = hyper::service::service_fn(move |req: Request<hyper::body::Incoming>| {
+                    let log = log.clone();
+                    let routes = routes.clone();
+                    async move {
+                        let (parts, body) = req.into_parts();
+                        let body = body.collect().await.expect("body").to_bytes();
+                        let s = Seen {
+                            method: parts.method.to_string(),
+                            path: parts.uri.path().to_owned(),
+                            auth: parts
+                                .headers
+                                .get("authorization")
+                                .and_then(|v| v.to_str().ok())
+                                .map(str::to_owned),
+                            body: serde_json::from_slice(&body).unwrap_or(Value::Null),
+                        };
+                        log.lock().expect("log").push(s.clone());
+                        let (status, body) = routes
+                            .iter()
+                            .find(|(m, p, _, _)| *m == s.method && *p == s.path)
+                            .map(|(_, _, status, body)| (*status, body.clone()))
+                            .unwrap_or_else(|| {
+                                (
+                                    404,
+                                    json!({ "error_code": 40403, "message": "Schema not found" }),
+                                )
+                            });
+                        Ok::<_, Infallible>(
+                            Response::builder()
+                                .status(StatusCode::from_u16(status).expect("status"))
+                                .header("content-type", "application/vnd.schemaregistry.v1+json")
+                                .body(Full::new(Bytes::from(body.to_string())))
+                                .expect("response"),
+                        )
+                    }
+                });
+                let _ = hyper::server::conn::http1::Builder::new()
+                    .serve_connection(TokioIo::new(stream), svc)
+                    .await;
+            });
+        }
+    });
+    (base, seen)
 }

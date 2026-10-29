@@ -129,6 +129,7 @@ async fn steer_now_interrupts_a_streaming_answer() {
             SessionCommandPayload::Run {
                 message_id: "story".into(),
                 request: RunRequest {
+                    mcp_servers: Vec::new(),
                     mcp: None,
                     prompt: "Write a long, detailed story (about 1500 words) about a lighthouse keeper. Do not use any tools."
                         .into(),

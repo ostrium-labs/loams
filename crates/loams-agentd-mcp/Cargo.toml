@@ -19,6 +19,20 @@ uuid = { workspace = true, features = ["serde"] }
 chrono.workspace = true
 async-trait.workspace = true
 futures.workspace = true
+# The read-only project knowledge cache (MS1 Task 7, D1813).
+loams-knowledge.workspace = true
+# The agents' headless browser (D2115): Obscura, local or as the browser
+# service, through one provider.
+loams-web-bridge.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+loams-web-bridge = { workspace = true, features = ["test-util"] }
+# A mock Walrus aggregator and an in-memory bucket for the knowledge tools.
+axum.workspace = true
+loams-store.workspace = true
+loams-walrus.workspace = true
+tokio = { workspace = true, features = ["full"] }
 
 [lints]
 workspace = true

@@ -8,7 +8,7 @@
 //! placement is not here (KV2); callers pass placements.
 //!
 //! A shared tenant's prefix is appended to the base root **escaped and
-//! terminated** ([`key::put_bytes`](crate::key::put_bytes)), so no
+//! terminated** ([`key::put_bytes`]), so no
 //! tenant's root is a prefix of another's: tenants `t` and `t1` of one
 //! shared keyspace get the roots `t 00 00` and `t 1 00 00`, and a scan of
 //! one never reaches the other.
