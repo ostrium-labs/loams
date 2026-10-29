@@ -361,7 +361,7 @@ int main() {
   // matched, which is how a caller stops branching on it.
   const std::vector<Reason>& all = AllReasons();
   LOAMS_REQUIRE(!all.empty(), "the reason registry is empty");
-  LOAMS_CHECK_EQ(all.size(), std::size_t{132}, "the registry should carry all one hundred and thirty-two reasons");
+  LOAMS_CHECK_EQ(all.size(), std::size_t{136}, "the registry should carry all one hundred and thirty-six reasons");
   LOAMS_CHECK_EQ(Registry().size(), all.size(), "this test's registry table and the enum disagree in size");
   for (const Reason reason : all) {
     LOAMS_CHECK(!ToString(reason).empty(), "a reason with no registry spelling");

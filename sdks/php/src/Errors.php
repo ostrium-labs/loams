@@ -66,6 +66,10 @@ class BranchProtectedException extends LoamsException {}
 class LsnOutOfRetentionException extends LoamsException {}
 class EndpointExistsForBranchException extends LoamsException {}
 class ComputeStartFailedException extends LoamsException {}
+class UnsupportedPgVersionException extends LoamsException {}
+class BetaMajorRequiresOptInException extends LoamsException {}
+class ComputeMajorMismatchRefusedException extends LoamsException {}
+class ImportChecksumsEnabledException extends LoamsException {}
 class QuotaExceededException extends LoamsException {}
 class StorageUnavailableException extends LoamsException {}
 class SecretAlreadyIssuedException extends LoamsException {}
@@ -222,6 +226,10 @@ class ErrorParser
         'lsn_out_of_retention' => LsnOutOfRetentionException::class,
         'endpoint_exists_for_branch' => EndpointExistsForBranchException::class,
         'compute_start_failed' => ComputeStartFailedException::class,
+        'unsupported_pg_version' => UnsupportedPgVersionException::class,
+        'beta_major_requires_opt_in' => BetaMajorRequiresOptInException::class,
+        'compute_major_mismatch_refused' => ComputeMajorMismatchRefusedException::class,
+        'import_checksums_enabled' => ImportChecksumsEnabledException::class,
         'quota_exceeded' => QuotaExceededException::class,
         'storage_unavailable' => StorageUnavailableException::class,
         'secret_already_issued' => SecretAlreadyIssuedException::class,
