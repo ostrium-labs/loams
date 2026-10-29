@@ -1,0 +1,167 @@
+{
+  "namespace": "corpus-dotnet-1793156748",
+  "language": "dotnet",
+  "scenarios": [
+    {
+      "scenario": "hello",
+      "workflow_id": "corpus-dotnet-hello",
+      "result": "\u0022hello corpus\u0022"
+    },
+    {
+      "scenario": "two_activities_sequential",
+      "workflow_id": "corpus-dotnet-two_activities_sequential",
+      "result": "\u0022hello one, hello two\u0022"
+    },
+    {
+      "scenario": "activity_parallel_fanout_10",
+      "workflow_id": "corpus-dotnet-activity_parallel_fanout_10",
+      "result": "[\u0022hello n0\u0022,\u0022hello n1\u0022,\u0022hello n2\u0022,\u0022hello n3\u0022,\u0022hello n4\u0022,\u0022hello n5\u0022,\u0022hello n6\u0022,\u0022hello n7\u0022,\u0022hello n8\u0022,\u0022hello n9\u0022]"
+    },
+    {
+      "scenario": "signal_then_complete",
+      "workflow_id": "corpus-dotnet-signal_then_complete",
+      "result": "\u0022got s\u0022"
+    },
+    {
+      "scenario": "query_while_running",
+      "workflow_id": "corpus-dotnet-query_while_running",
+      "result": "\u0022done\u0022",
+      "expected": [
+        "query state=waiting"
+      ]
+    },
+    {
+      "scenario": "cancel_requested",
+      "workflow_id": "corpus-dotnet-cancel_requested",
+      "expected": [
+        "CanceledFailureException: Workflow canceled"
+      ]
+    },
+    {
+      "scenario": "terminated",
+      "workflow_id": "corpus-dotnet-terminated",
+      "expected": [
+        "TerminatedFailureException: corpus terminates it"
+      ]
+    },
+    {
+      "scenario": "workflow_failed_application_error",
+      "workflow_id": "corpus-dotnet-workflow_failed_application_error",
+      "expected": [
+        "CorpusBoom: boom"
+      ]
+    },
+    {
+      "scenario": "activity_heartbeat_details",
+      "workflow_id": "corpus-dotnet-activity_heartbeat_details",
+      "result": "3"
+    },
+    {
+      "scenario": "timer_short",
+      "workflow_id": "corpus-dotnet-timer_short",
+      "result": "{}"
+    },
+    {
+      "scenario": "timer_cancelled",
+      "workflow_id": "corpus-dotnet-timer_cancelled",
+      "result": "\u0022cancelled\u0022"
+    },
+    {
+      "scenario": "activity_retry_backoff_3_attempts",
+      "workflow_id": "corpus-dotnet-activity_retry_backoff_3_attempts",
+      "result": "3"
+    },
+    {
+      "scenario": "activity_start_to_close_timeout",
+      "workflow_id": "corpus-dotnet-activity_start_to_close_timeout",
+      "result": "\u0022TIMEOUT_TYPE_StartToClose\u0022"
+    },
+    {
+      "scenario": "activity_schedule_to_start_timeout",
+      "workflow_id": "corpus-dotnet-activity_schedule_to_start_timeout",
+      "result": "\u0022TIMEOUT_TYPE_ScheduleToStart\u0022"
+    },
+    {
+      "scenario": "activity_heartbeat_timeout",
+      "workflow_id": "corpus-dotnet-activity_heartbeat_timeout",
+      "result": "\u0022TIMEOUT_TYPE_Heartbeat\u0022"
+    },
+    {
+      "scenario": "signal_with_start",
+      "workflow_id": "corpus-dotnet-signal_with_start",
+      "result": "\u0022started with s\u0022"
+    },
+    {
+      "scenario": "child_workflow",
+      "workflow_id": "corpus-dotnet-child_workflow",
+      "result": "\u0022hello child\u0022"
+    },
+    {
+      "scenario": "child_workflow_cancelled",
+      "workflow_id": "corpus-dotnet-child_workflow_cancelled",
+      "result": "\u0022child cancelled\u0022"
+    },
+    {
+      "scenario": "continue_as_new_3",
+      "workflow_id": "corpus-dotnet-continue_as_new_3",
+      "result": "3"
+    },
+    {
+      "scenario": "id_reuse_allow_duplicate_failed_only",
+      "workflow_id": "corpus-dotnet-id_reuse_allow_duplicate_failed_only",
+      "result": "\u0022second run\u0022",
+      "expected": [
+        "the first run failed; the second started with the same ID"
+      ]
+    },
+    {
+      "scenario": "id_conflict_fail",
+      "workflow_id": "corpus-dotnet-id_conflict_fail",
+      "result": "{}",
+      "expected": [
+        "the second start was refused: WorkflowExecutionAlreadyStarted"
+      ]
+    },
+    {
+      "scenario": "local_activity",
+      "workflow_id": "corpus-dotnet-local_activity",
+      "result": "\u0022hello local\u0022"
+    },
+    {
+      "scenario": "side_effect_and_version_marker",
+      "workflow_id": "corpus-dotnet-side_effect_and_version_marker",
+      "result": "\u0022version 1\u0022"
+    },
+    {
+      "scenario": "search_attributes_upsert",
+      "workflow_id": "corpus-dotnet-search_attributes_upsert",
+      "result": "{}"
+    },
+    {
+      "scenario": "memo",
+      "workflow_id": "corpus-dotnet-memo",
+      "result": "{}"
+    },
+    {
+      "scenario": "large_payload_1mb",
+      "workflow_id": "corpus-dotnet-large_payload_1mb",
+      "result": "1048576"
+    },
+    {
+      "scenario": "update_accepted_completed",
+      "workflow_id": "corpus-dotnet-update_accepted_completed",
+      "result": "\u0022total 2\u0022",
+      "expected": [
+        "update returned 2"
+      ]
+    },
+    {
+      "scenario": "update_rejected",
+      "workflow_id": "corpus-dotnet-update_rejected",
+      "result": "\u0022total 0\u0022",
+      "expected": [
+        "update rejected: increment must not be negative"
+      ]
+    }
+  ]
+}

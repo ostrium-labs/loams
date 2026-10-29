@@ -1,0 +1,141 @@
+{
+  "events":  [
+    {
+      "eventId":  "1",
+      "eventTime":  "2026-10-28T12:48:31.619286999Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+      "taskId":  "1049534",
+      "workflowExecutionStartedEventAttributes":  {
+        "workflowType":  {
+          "name":  "side_effect_and_version_marker"
+        },
+        "taskQueue":  {
+          "name":  "corpus-ruby",
+          "kind":  "TASK_QUEUE_KIND_NORMAL"
+        },
+        "input":  {},
+        "workflowTaskTimeout":  "10s",
+        "originalExecutionRunId":  "01a1828e-1383-745e-a135-6e06508d2c31",
+        "identity":  "304@1566fbb5e9e4",
+        "firstExecutionRunId":  "01a1828e-1383-745e-a135-6e06508d2c31",
+        "attempt":  1,
+        "firstWorkflowTaskBackoff":  "0s",
+        "workflowId":  "corpus-ruby-side_effect_and_version_marker"
+      }
+    },
+    {
+      "eventId":  "2",
+      "eventTime":  "2026-10-28T12:48:31.619327759Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId":  "1049535",
+      "workflowTaskScheduledEventAttributes":  {
+        "taskQueue":  {
+          "name":  "corpus-ruby",
+          "kind":  "TASK_QUEUE_KIND_NORMAL"
+        },
+        "startToCloseTimeout":  "10s",
+        "attempt":  1
+      }
+    },
+    {
+      "eventId":  "3",
+      "eventTime":  "2026-10-28T12:48:31.621232657Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "taskId":  "1049540",
+      "workflowTaskStartedEventAttributes":  {
+        "scheduledEventId":  "2",
+        "identity":  "304@1566fbb5e9e4",
+        "requestId":  "75d265fb-024e-4890-8c9d-dd8345abb76f",
+        "historySizeBytes":  "280",
+        "workerVersion":  {
+          "buildId":  "8c08acf3cbd117cfd4073b0011aee61c"
+        }
+      }
+    },
+    {
+      "eventId":  "4",
+      "eventTime":  "2026-10-28T12:48:31.624796690Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "taskId":  "1049544",
+      "workflowTaskCompletedEventAttributes":  {
+        "scheduledEventId":  "2",
+        "startedEventId":  "3",
+        "identity":  "304@1566fbb5e9e4",
+        "workerVersion":  {
+          "buildId":  "8c08acf3cbd117cfd4073b0011aee61c"
+        },
+        "sdkMetadata":  {
+          "coreUsedFlags":  [
+            3,
+            1,
+            2
+          ],
+          "sdkName":  "temporal-ruby",
+          "sdkVersion":  "1.9.0"
+        },
+        "meteringMetadata":  {}
+      }
+    },
+    {
+      "eventId":  "5",
+      "eventTime":  "2026-10-28T12:48:31.624830671Z",
+      "eventType":  "EVENT_TYPE_MARKER_RECORDED",
+      "taskId":  "1049545",
+      "markerRecordedEventAttributes":  {
+        "markerName":  "core_patch",
+        "details":  {
+          "patch-data":  {
+            "payloads":  [
+              {
+                "metadata":  {
+                  "encoding":  "anNvbi9wbGFpbg=="
+                },
+                "data":  "eyJpZCI6ImNvcnB1cy1jaGFuZ2UiLCJkZXByZWNhdGVkIjpmYWxzZX0="
+              }
+            ]
+          }
+        },
+        "workflowTaskCompletedEventId":  "4"
+      }
+    },
+    {
+      "eventId":  "6",
+      "eventTime":  "2026-10-28T12:48:31.625190984Z",
+      "eventType":  "EVENT_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES",
+      "taskId":  "1049546",
+      "upsertWorkflowSearchAttributesEventAttributes":  {
+        "workflowTaskCompletedEventId":  "4",
+        "searchAttributes":  {
+          "indexedFields":  {
+            "TemporalChangeVersion":  {
+              "metadata":  {
+                "encoding":  "anNvbi9wbGFpbg==",
+                "type":  "S2V5d29yZExpc3Q="
+              },
+              "data":  "WyJjb3JwdXMtY2hhbmdlIl0="
+            }
+          }
+        }
+      }
+    },
+    {
+      "eventId":  "7",
+      "eventTime":  "2026-10-28T12:48:31.625225685Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED",
+      "taskId":  "1049547",
+      "workflowExecutionCompletedEventAttributes":  {
+        "result":  {
+          "payloads":  [
+            {
+              "metadata":  {
+                "encoding":  "anNvbi9wbGFpbg=="
+              },
+              "data":  "InZlcnNpb24gMSI="
+            }
+          ]
+        },
+        "workflowTaskCompletedEventId":  "4"
+      }
+    }
+  ]
+}

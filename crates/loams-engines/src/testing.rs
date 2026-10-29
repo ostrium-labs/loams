@@ -9,10 +9,11 @@ use serde_json::json;
 use time::OffsetDateTime;
 
 use crate::{
-    Capabilities, CreateSession, Endpoint, EndpointProtocol, EngineError, EngineKind, EngineSize,
-    HealthCheck, HealthState, Instance, InstanceSpec, ManagedEngine, Observed, Phase, SparkEngine,
-    SparkJob, SparkJobState, SparkSession, SparkSessionState, SqlColumn, SqlDialect, SqlEngine,
-    SqlRequest, SqlResult, Stability, SubmitJob, UsageSample,
+    Capabilities, CreateSchedule, CreateSession, Endpoint, EndpointProtocol, EngineError,
+    EngineKind, EngineSize, HealthCheck, HealthState, Instance, InstanceSpec, ManagedEngine,
+    Observed, Phase, SparkEngine, SparkJob, SparkJobState, SparkSchedule, SparkSession,
+    SparkSessionState, SqlColumn, SqlDialect, SqlEngine, SqlRequest, SqlResult, Stability,
+    SubmitJob, UsageSample,
 };
 
 /// State bytes the fake reports for every instance: 1 GiB.
@@ -24,6 +25,7 @@ struct FakeState {
     fail_next: Option<EngineError>,
     sessions: BTreeMap<String, Vec<SparkSession>>,
     jobs: BTreeMap<String, Vec<SparkJob>>,
+    schedules: BTreeMap<String, Vec<SparkSchedule>>,
     seq: u64,
 }
 
@@ -363,6 +365,7 @@ impl SparkEngine for FakeEngine {
             submitted_at: OffsetDateTime::now_utc(),
             finished_at: None,
             message: None,
+            detail: None,
         };
         if let Ok(mut s) = self.state.lock() {
             s.jobs
@@ -394,5 +397,106 @@ impl SparkEngine for FakeEngine {
         j.state = SparkJobState::Cancelled;
         j.finished_at = Some(OffsetDateTime::now_utc());
         Ok(j.clone())
+    }
+
+    async fn get_job(&self, inst: &Instance, job: &str) -> Result<SparkJob, EngineError> {
+        self.record("get_job", inst)?;
+        let s = self
+            .state
+            .lock()
+            .map_err(|_| EngineError::Internal("fake lock poisoned".into()))?;
+        let mut j = s
+            .jobs
+            .get(inst.id.as_str())
+            .and_then(|jobs| jobs.iter().find(|j| j.id == job))
+            .cloned()
+            .ok_or_else(|| EngineError::NotFound(format!("no job {job}")))?;
+        j.detail = Some(json!({ "attempts": [{ "attempt": 1, "state": j.state }] }));
+        Ok(j)
+    }
+
+    /// Two lines per attempt; a job that does not exist is not found.
+    async fn job_logs(
+        &self,
+        inst: &Instance,
+        job: &str,
+        attempt: Option<u32>,
+    ) -> Result<String, EngineError> {
+        self.record("job_logs", inst)?;
+        let known = self
+            .state
+            .lock()
+            .map(|s| {
+                s.jobs
+                    .get(inst.id.as_str())
+                    .is_some_and(|jobs| jobs.iter().any(|j| j.id == job))
+            })
+            .unwrap_or(false);
+        if !known {
+            return Err(EngineError::NotFound(format!("no job {job}")));
+        }
+        let n = attempt.unwrap_or(1);
+        Ok(format!("attempt {n}: driver started\nattempt {n}: done\n"))
+    }
+
+    async fn list_schedules(&self, inst: &Instance) -> Result<Vec<SparkSchedule>, EngineError> {
+        self.record("list_schedules", inst)?;
+        Ok(self
+            .state
+            .lock()
+            .map(|s| {
+                s.schedules
+                    .get(inst.id.as_str())
+                    .cloned()
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default())
+    }
+
+    async fn create_schedule(
+        &self,
+        inst: &Instance,
+        req: CreateSchedule,
+    ) -> Result<SparkSchedule, EngineError> {
+        self.record("create_schedule", inst)?;
+        let mut s = self
+            .state
+            .lock()
+            .map_err(|_| EngineError::Internal("fake lock poisoned".into()))?;
+        let list = s.schedules.entry(inst.id.0.clone()).or_default();
+        if let Some(existing) = list.iter().find(|x| x.id == req.id) {
+            return if existing.cron == req.cron && existing.job == req.job {
+                Ok(existing.clone())
+            } else {
+                Err(EngineError::Conflict(format!(
+                    "schedule {} exists with another cron or job",
+                    req.id
+                )))
+            };
+        }
+        let schedule = SparkSchedule {
+            id: req.id,
+            cron: req.cron,
+            job: req.job,
+            created_at: OffsetDateTime::now_utc(),
+            next_run_at: None,
+        };
+        list.push(schedule.clone());
+        Ok(schedule)
+    }
+
+    async fn delete_schedule(&self, inst: &Instance, id: &str) -> Result<(), EngineError> {
+        self.record("delete_schedule", inst)?;
+        let mut s = self
+            .state
+            .lock()
+            .map_err(|_| EngineError::Internal("fake lock poisoned".into()))?;
+        let list = s.schedules.entry(inst.id.0.clone()).or_default();
+        let before = list.len();
+        list.retain(|x| x.id != id);
+        if list.len() == before {
+            return Err(EngineError::NotFound(format!("no schedule {id}")));
+        }
+        Ok(())
     }
 }

@@ -1,7 +1,8 @@
 [workspace]
 resolver = "3"
 # bench/git-wal: the bucket WAL benchmark (GT1 Task 11).
-members = ["crates/*", "bench/git-wal", "bench/graph/qps"]
+# bench/all/loadgen, bench/graph/qps: BQ1 benchmark tools.
+members = ["crates/*", "bench/git-wal", "bench/gateway", "bench/all/loadgen", "bench/graph/qps"]
 # loams-wal-decoder is a workspace of its own: it links the Neon fork's
 # crates, whose dependency tree stays out of this lockfile and licence check
 # (PG2 ruling R31.3, owner ruling 2026-10-08).
@@ -336,6 +337,8 @@ loams-hot = { path = "crates/loams-hot", version = "0.1.2" }
 loams-identity-sync = { path = "crates/loams-identity-sync", version = "0.1.2" }
 loams-link = { path = "crates/loams-link", version = "0.1.2" }
 # What products link to meter and enforce usage (design §63, ME1 Tasks 2, 3, 18, 19).
+loams-meter = { path = "crates/loams-meter", version = "0.1.2" }
+loams-meter-core = { path = "crates/loams-meter-core", version = "0.1.2" }
 loams-meter-gate = { path = "crates/loams-meter-gate", version = "0.1.2" }
 # Model providers for Loams Memory and the desktop daemon (MM1 Task 2).
 loams-llm = { path = "crates/loams-llm", version = "0.1.2" }

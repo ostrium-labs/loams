@@ -1,0 +1,120 @@
+{
+  "events":  [
+    {
+      "eventId":  "1",
+      "eventTime":  "2026-10-28T12:35:28.494546543Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+      "taskId":  "1049213",
+      "workflowExecutionStartedEventAttributes":  {
+        "workflowType":  {
+          "name":  "signal_with_start"
+        },
+        "taskQueue":  {
+          "name":  "corpus-php",
+          "kind":  "TASK_QUEUE_KIND_NORMAL"
+        },
+        "workflowExecutionTimeout":  "0s",
+        "workflowRunTimeout":  "0s",
+        "workflowTaskTimeout":  "10s",
+        "originalExecutionRunId":  "871e7b71-f54c-43cf-a425-2090837d9ad3",
+        "identity":  "176@cddb73508697",
+        "firstExecutionRunId":  "871e7b71-f54c-43cf-a425-2090837d9ad3",
+        "attempt":  1,
+        "firstWorkflowTaskBackoff":  "0s",
+        "workflowId":  "corpus-php-signal_with_start",
+        "priority":  {}
+      }
+    },
+    {
+      "eventId":  "2",
+      "eventTime":  "2026-10-28T12:35:28.494601996Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED",
+      "taskId":  "1049214",
+      "workflowExecutionSignaledEventAttributes":  {
+        "signalName":  "go",
+        "input":  {
+          "payloads":  [
+            {
+              "metadata":  {
+                "encoding":  "anNvbi9wbGFpbg=="
+              },
+              "data":  "InMi"
+            }
+          ]
+        },
+        "identity":  "176@cddb73508697",
+        "requestId":  "ae71ba9f-fff8-49e0-a03b-5e8042748541"
+      }
+    },
+    {
+      "eventId":  "3",
+      "eventTime":  "2026-10-28T12:35:28.494607685Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId":  "1049215",
+      "workflowTaskScheduledEventAttributes":  {
+        "taskQueue":  {
+          "name":  "corpus-php",
+          "kind":  "TASK_QUEUE_KIND_NORMAL"
+        },
+        "startToCloseTimeout":  "10s",
+        "attempt":  1
+      }
+    },
+    {
+      "eventId":  "4",
+      "eventTime":  "2026-10-28T12:35:28.497016648Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "taskId":  "1049219",
+      "workflowTaskStartedEventAttributes":  {
+        "scheduledEventId":  "3",
+        "identity":  "roadrunner:corpus-php:effd30ac-0f82-45c6-b261-092d50718175",
+        "requestId":  "0db2c8a0-49a7-4e4e-9218-05f369133cb6",
+        "historySizeBytes":  "376",
+        "workerVersion":  {
+          "buildId":  "04ae426167056a41c1c8243affd06944"
+        }
+      }
+    },
+    {
+      "eventId":  "5",
+      "eventTime":  "2026-10-28T12:35:28.503729825Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "taskId":  "1049223",
+      "workflowTaskCompletedEventAttributes":  {
+        "scheduledEventId":  "3",
+        "startedEventId":  "4",
+        "identity":  "roadrunner:corpus-php:effd30ac-0f82-45c6-b261-092d50718175",
+        "workerVersion":  {
+          "buildId":  "04ae426167056a41c1c8243affd06944"
+        },
+        "sdkMetadata":  {
+          "langUsedFlags":  [
+            3
+          ],
+          "sdkName":  "temporal-go",
+          "sdkVersion":  "1.44.1"
+        },
+        "meteringMetadata":  {}
+      }
+    },
+    {
+      "eventId":  "6",
+      "eventTime":  "2026-10-28T12:35:28.503774242Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED",
+      "taskId":  "1049224",
+      "workflowExecutionCompletedEventAttributes":  {
+        "result":  {
+          "payloads":  [
+            {
+              "metadata":  {
+                "encoding":  "anNvbi9wbGFpbg=="
+              },
+              "data":  "InN0YXJ0ZWQgd2l0aCBzIg=="
+            }
+          ]
+        },
+        "workflowTaskCompletedEventId":  "5"
+      }
+    }
+  ]
+}

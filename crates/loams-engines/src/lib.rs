@@ -28,9 +28,10 @@ mod store;
 pub mod testing;
 
 pub use engine::{
-    CreateSession, DEFAULT_SQL_ROWS, DEFAULT_SQL_TIMEOUT_MS, MAX_SQL_ROWS, MAX_SQL_TIMEOUT_MS,
-    ManagedEngine, SparkEngine, SparkJob, SparkJobKind, SparkJobState, SparkSession,
-    SparkSessionKind, SparkSessionState, SqlColumn, SqlEngine, SqlRequest, SqlResult, SubmitJob,
+    CreateSchedule, CreateSession, DEFAULT_SQL_ROWS, DEFAULT_SQL_TIMEOUT_MS, MAX_LOG_BYTES,
+    MAX_SQL_ROWS, MAX_SQL_TIMEOUT_MS, ManagedEngine, SparkEngine, SparkJob, SparkJobKind,
+    SparkJobState, SparkSchedule, SparkSession, SparkSessionKind, SparkSessionState, SqlColumn,
+    SqlEngine, SqlRequest, SqlResult, SubmitJob,
 };
 pub use error::{EngineError, Result};
 pub use model::{

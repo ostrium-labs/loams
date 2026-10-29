@@ -5,8 +5,6 @@ name: Vite+ fallback lane
 # Vite+-only feature has crept into web/, so leaving Vite+ stays a one-day job.
 # A vite-plus bump PR runs it by hand (workflow_dispatch on the PR's branch).
 on:
-  schedule:
-    - cron: '17 4 * * 1'
   workflow_dispatch:
 
 permissions:
