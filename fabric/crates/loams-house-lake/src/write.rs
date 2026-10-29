@@ -118,6 +118,29 @@ fn data(err: impl std::fmt::Display) -> LakeError {
     LakeError::Data(err.to_string())
 }
 
+/// Rows per Parquet row group. A row group is the unit a reader skips with
+/// min/max statistics, and the House's rows arrive sorted by the table's
+/// sorting key, so bounded row groups let a key lookup read one group instead
+/// of the whole file. parquet-rs's default (1 048 576 rows) put a whole
+/// insert in one group, and a point lookup on a 1M-row table fetched and
+/// decompressed every column chunk, about 19 MB, for one row (BQ1-house,
+/// 2026-10-28). ClickHouse's MergeTree reads in granules of 8 192 rows; 65 536
+/// keeps the footer small while a lookup reads 1/16 of a 1M-row file.
+pub const ROW_GROUP_ROWS: usize = 65_536;
+
+/// Rows per data page, so the page index (written by default) narrows a
+/// lookup inside a row group to about one MergeTree granule.
+pub const PAGE_ROWS: usize = 8_192;
+
+/// How the House writes Parquet: ZSTD, bounded row groups and pages.
+pub fn writer_properties() -> WriterProperties {
+    WriterProperties::builder()
+        .set_compression(Compression::ZSTD(ZstdLevel::default()))
+        .set_max_row_group_row_count(Some(ROW_GROUP_ROWS))
+        .set_data_page_row_count_limit(PAGE_ROWS)
+        .build()
+}
+
 impl DataWriter {
     /// A writer of the table's current schema and default partition spec, whose
     /// files roll at `target_file_bytes` and whose input is refused past
@@ -141,9 +164,7 @@ impl DataWriter {
             schema_to_arrow_schema(&schema).map_err(|e| invalid("the table's schema", e))?,
         );
         let io = FileIO::new_with_memory();
-        let properties = WriterProperties::builder()
-            .set_compression(Compression::ZSTD(ZstdLevel::default()))
-            .build();
+        let properties = writer_properties();
         let parquet = ParquetWriterBuilder::new(properties, schema.clone());
         let locations = DefaultLocationGenerator::new(metadata)
             .map_err(|e| invalid("the table's data location", e))?;
@@ -473,6 +494,13 @@ mod tests {
             .map(|i| schema.column(i).self_type().get_basic_info().id())
             .collect();
         assert_eq!(ids, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn row_groups_are_bounded() {
+        let p = writer_properties();
+        assert_eq!(p.max_row_group_row_count(), Some(ROW_GROUP_ROWS));
+        assert_eq!(p.data_page_row_count_limit(), PAGE_ROWS);
     }
 
     #[tokio::test]

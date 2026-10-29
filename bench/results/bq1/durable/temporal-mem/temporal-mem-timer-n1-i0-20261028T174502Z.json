@@ -1,0 +1,38 @@
+{
+  "label": "temporal-mem n=1 i=0",
+  "mode": "timer",
+  "target": "temporal:127.0.0.1:27233",
+  "duration_s": 20,
+  "concurrency": 64,
+  "ops": 8206,
+  "ops_per_s": 410.3,
+  "errors": 0,
+  "p50_ms": 7811.240926,
+  "p99_ms": 11862.242005,
+  "p999_ms": 11932.229897,
+  "counters": {
+    "activities_completed": 0,
+    "starts": 19806,
+    "timers_fired": 15820,
+    "workflow_tasks": 33691,
+    "workflows_completed": 15820
+  },
+  "rates_per_s": {
+    "activities_completed": 0,
+    "timers_fired": 410.3,
+    "workflow_tasks": 860,
+    "workflows_completed": 410.3
+  },
+  "params": {
+    "act_pollers": 32,
+    "conns": 8,
+    "k": 4,
+    "namespace": "default",
+    "task_queue": "bq1",
+    "timer_ms": 200,
+    "warmup_s": 5,
+    "wf_pollers": 64,
+    "workflows": 4000
+  },
+  "started_at_utc": "2026-10-28T17:45:02Z"
+}

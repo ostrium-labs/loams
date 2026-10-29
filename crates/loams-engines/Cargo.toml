@@ -9,7 +9,8 @@ authors.workspace = true
 
 [dependencies]
 async-trait.workspace = true
-axum.workspace = true
+# HTTP/2 (h2c) beside HTTP/1.1: many concurrent streams per connection (BQ1 pipelining).
+axum = { workspace = true, features = ["http2"] }
 loams-authz.workspace = true
 percent-encoding.workspace = true
 serde.workspace = true

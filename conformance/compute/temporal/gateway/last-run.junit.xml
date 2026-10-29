@@ -105,23 +105,54 @@
       <skipped message="the corpus has no dotnet/activity_heartbeat_details history yet (generate.sh --langs dotnet)" />
     </testcase>
   </testsuite>
-  <testsuite name="temporal-gateway" tests="13" failures="4" errors="0" skipped="9">
+  <testsuite name="temporal-gateway" tests="13" failures="1" errors="0" skipped="9">
     <properties>
-      <property name="run" value="2026-10-28, tsdk-ruby 21989fcd6 (the head #1376 merged), temporal-sdk-ruby.yml run 40649935772: the temporal-gateway profile. The leg stopped in the Ruby worker's own self-test (ScenariosTest, test_every_scenario_has_a_workflow) before any scenario reached the gateway, so its failed cells are the Ruby leg's, not the gateway's" />
+      <property name="run" value="2026-10-28, dev 4f2f64fb1, temporal-gateway.yml run 40686319317 (sdk-leg java, dispatched): the temporal-gateway profile (Postgres store, the engine's Resonate). The scenarios, hello and signal passed; the Java replayer accepted 8 of 9 histories (terminated raised a query failure in the leg's replay test, CorpusReplayTest:69); the differentials were skipped (no Java corpus committed then)" />
+      <property name="source" value="last-run/java.junit.xml" />
+    </properties>
+    <testcase classname="temporal-gateway" name="gateway_dx1_scenarios_java" />
+    <testcase classname="temporal-gateway" name="gateway_hello_java" />
+    <testcase classname="temporal-gateway" name="gateway_signal_java" />
+    <testcase classname="temporal-gateway" name="gateway_histories_replay_java">
+      <failure message="[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.&#10;[ERROR] Re-run Maven using the -X switch to enable full debug logging.&#10;[ERROR] &#10;[ERROR] For more information about the errors and possible solutions, please read the following articles:&#10;[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_java_hello">
+      <skipped message="the corpus has no java/hello history yet (generate.sh --langs java)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_java_two_activities_sequential">
+      <skipped message="the corpus has no java/two_activities_sequential history yet (generate.sh --langs java)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_java_activity_parallel_fanout_10">
+      <skipped message="the corpus has no java/activity_parallel_fanout_10 history yet (generate.sh --langs java)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_java_signal_then_complete">
+      <skipped message="the corpus has no java/signal_then_complete history yet (generate.sh --langs java)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_java_query_while_running">
+      <skipped message="the corpus has no java/query_while_running history yet (generate.sh --langs java)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_java_cancel_requested">
+      <skipped message="the corpus has no java/cancel_requested history yet (generate.sh --langs java)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_java_terminated">
+      <skipped message="the corpus has no java/terminated history yet (generate.sh --langs java)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_java_workflow_failed_application_error">
+      <skipped message="the corpus has no java/workflow_failed_application_error history yet (generate.sh --langs java)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_java_activity_heartbeat_details">
+      <skipped message="the corpus has no java/activity_heartbeat_details history yet (generate.sh --langs java)" />
+    </testcase>
+  </testsuite>
+  <testsuite name="temporal-gateway" tests="13" failures="0" errors="0" skipped="9">
+    <properties>
+      <property name="run" value="2026-10-28, dev 402e0f4a4, temporal-sdk-ruby.yml run 40690677386 (dispatched): the temporal-gateway profile. Scenarios, hello, signal and the replayer passed; the differentials were skipped (histories/ruby was committed after this run, by #1504)" />
       <property name="source" value="last-run/ruby.junit.xml" />
     </properties>
-    <testcase classname="temporal-gateway" name="gateway_dx1_scenarios_ruby">
-      <failure message="    test/scenarios_test.rb:23:in 'ScenariosTest#test_every_scenario_has_a_workflow'&#10;&#10;4 runs, 6 assertions, 0 failures, 1 errors, 0 skips" />
-    </testcase>
-    <testcase classname="temporal-gateway" name="gateway_hello_ruby">
-      <failure message="no completed hello history" />
-    </testcase>
-    <testcase classname="temporal-gateway" name="gateway_signal_ruby">
-      <failure message="no completed signal_then_complete history" />
-    </testcase>
-    <testcase classname="temporal-gateway" name="gateway_histories_replay_ruby">
-      <failure message="replay.rb:52:in 'Corpus::Replay.run': no histories in /out/histories/ruby (RuntimeError)&#10;&#09;from replay.rb:71:in '&lt;main&gt;'" />
-    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_scenarios_ruby" />
+    <testcase classname="temporal-gateway" name="gateway_hello_ruby" />
+    <testcase classname="temporal-gateway" name="gateway_signal_ruby" />
+    <testcase classname="temporal-gateway" name="gateway_histories_replay_ruby" />
     <testcase classname="temporal-gateway" name="gateway_dx1_differential_ruby_hello">
       <skipped message="the corpus has no ruby/hello history yet (generate.sh --langs ruby)" />
     </testcase>
@@ -148,6 +179,43 @@
     </testcase>
     <testcase classname="temporal-gateway" name="gateway_dx1_differential_ruby_activity_heartbeat_details">
       <skipped message="the corpus has no ruby/activity_heartbeat_details history yet (generate.sh --langs ruby)" />
+    </testcase>
+  </testsuite>
+  <testsuite name="temporal-gateway" tests="13" failures="0" errors="0" skipped="9">
+    <properties>
+      <property name="run" value="2026-10-28, dev 87b81fd20, temporal-sdk-php.yml run 40686083193 (dispatched): the temporal-gateway profile. Scenarios, hello, signal and the replayer (9/9) passed; the differentials against the committed corpus were skipped (histories/php comes with #1505), and the same run's diff against its own start-dev generation passed 9/9" />
+      <property name="source" value="last-run/php.junit.xml" />
+    </properties>
+    <testcase classname="temporal-gateway" name="gateway_dx1_scenarios_php" />
+    <testcase classname="temporal-gateway" name="gateway_hello_php" />
+    <testcase classname="temporal-gateway" name="gateway_signal_php" />
+    <testcase classname="temporal-gateway" name="gateway_histories_replay_php" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_php_hello">
+      <skipped message="the corpus has no php/hello history yet (generate.sh --langs php)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_php_two_activities_sequential">
+      <skipped message="the corpus has no php/two_activities_sequential history yet (generate.sh --langs php)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_php_activity_parallel_fanout_10">
+      <skipped message="the corpus has no php/activity_parallel_fanout_10 history yet (generate.sh --langs php)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_php_signal_then_complete">
+      <skipped message="the corpus has no php/signal_then_complete history yet (generate.sh --langs php)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_php_query_while_running">
+      <skipped message="the corpus has no php/query_while_running history yet (generate.sh --langs php)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_php_cancel_requested">
+      <skipped message="the corpus has no php/cancel_requested history yet (generate.sh --langs php)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_php_terminated">
+      <skipped message="the corpus has no php/terminated history yet (generate.sh --langs php)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_php_workflow_failed_application_error">
+      <skipped message="the corpus has no php/workflow_failed_application_error history yet (generate.sh --langs php)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_php_activity_heartbeat_details">
+      <skipped message="the corpus has no php/activity_heartbeat_details history yet (generate.sh --langs php)" />
     </testcase>
   </testsuite>
 </testsuites>
