@@ -1,0 +1,29 @@
+# The PHP corpus worker's toolchain image (DX1 TSDK-php), built locally by
+# gateway/legs/php.sh, corpus/generate-php.sh and temporal-sdk-php.yml, never
+# pushed: PHP 8.4 CLI with the grpc extension (the SDK's client) and
+# sockets (Goridge), Composer, and the RoadRunner binary with its temporal
+# plugin. Every base by digest (conformance/compute/pins.env): PHP_IMAGE,
+# COMPOSER_IMAGE, ROADRUNNER_IMAGE; PECL grpc PHP_GRPC_VERSION.
+#
+# The corpus itself is not baked in: the legs mount it and run
+# `composer install` from composer.lock against the image's cache.
+ARG PHP_IMAGE
+ARG COMPOSER_IMAGE
+ARG ROADRUNNER_IMAGE
+FROM ${COMPOSER_IMAGE} AS composer
+FROM ${ROADRUNNER_IMAGE} AS roadrunner
+
+FROM ${PHP_IMAGE}
+ARG PHP_GRPC_VERSION
+# grpc compiles from PECL (several minutes); zlib for it, unzip for Composer.
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends zlib1g-dev unzip git; \
+    MAKEFLAGS="-j$(nproc)" pecl install "grpc-${PHP_GRPC_VERSION}"; \
+    docker-php-ext-enable grpc; \
+    docker-php-ext-install -j"$(nproc)" sockets; \
+    rm -rf /var/lib/apt/lists/* /tmp/pear
+COPY --from=composer /usr/bin/composer /usr/local/bin/composer
+COPY --from=roadrunner /usr/bin/rr /usr/local/bin/rr
+ENV COMPOSER_ALLOW_SUPERUSER=1 COMPOSER_HOME=/composer
+RUN php -m | grep -qx grpc && php -m | grep -qx sockets && rr --version && composer --version

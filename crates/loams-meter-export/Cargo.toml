@@ -1,0 +1,67 @@
+[package]
+name = "loams-meter-export"
+description = "Loams Meter's exporters (design §63 §16, plan ME1 Tasks 24-26): Stripe meter events and payment state, OpenMeter, Lago and a CloudEvents webhook, each behind a feature. One-way: they read closed windows and raw events and write to a provider; nothing in Loams depends on them."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[features]
+default = []
+# Stripe meter events for each closed hour's overage, and payment state from
+# Stripe's webhooks and a daily poll (ME1 Task 24, D2211, D2212).
+stripe = ["reqwest/form", "dep:hmac", "dep:sha2", "dep:hex"]
+# Raw usage events to OpenMeter, `loamslease` stripped (ME1 Task 25, D2213).
+openmeter = []
+# Closed windows to Lago over HTTP only: Lago is AGPL-3.0 and is never linked
+# or shipped (D11) (ME1 Task 26, D2214).
+lago = ["dep:sha2", "dep:hex"]
+# Closed windows as CloudEvents to a signed webhook (ME1 Task 26, D2215).
+webhook = ["dep:hmac", "dep:sha2", "dep:hex", "dep:base64", "dep:time"]
+
+[dependencies]
+async-trait.workspace = true
+# `rustls-no-provider`: TLS with the provider the host process installs (the
+# loams binary installs ring), as loams-cloud-admin does.
+reqwest = { workspace = true, features = ["rustls-no-provider"] }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["time", "sync"] }
+tracing.workspace = true
+base64 = { workspace = true, optional = true }
+hex = { workspace = true, optional = true }
+hmac = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
+time = { workspace = true, optional = true }
+
+[dev-dependencies]
+base64.workspace = true
+hmac.workspace = true
+hex.workspace = true
+sha2.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "sync"] }
+url.workspace = true
+# Fake providers over HTTP (MIT OR Apache-2.0).
+wiremock = "0.6.5"
+
+[[test]]
+name = "stripe"
+required-features = ["stripe"]
+
+[[test]]
+name = "openmeter"
+required-features = ["openmeter"]
+
+[[test]]
+name = "lago"
+required-features = ["lago"]
+
+[[test]]
+name = "webhook"
+required-features = ["webhook"]
+
+[lints]
+workspace = true

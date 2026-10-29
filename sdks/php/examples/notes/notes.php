@@ -18,6 +18,8 @@ use Loams\Client;
 use Loams\FeatureNotInVariantException;
 use Loams\LoamsException;
 use Loams\Modules\Graph;
+use Loams\Modules\Sql;
+use Loams\Modules\Streams;
 use Loams\Values;
 
 $client = Client::fromEnv(sessionConsistency: true);
@@ -57,6 +59,7 @@ foreach ($notes->search($search)['hits'] ?? [] as $hit) {
 }
 
 printf("%s notes\n", $notes->count()['count'] ?? 0);
+printf("direct vector hits: %d\n", count($client->vector()->search('notes', [1, 0, 0, 0], 'embedding', 3)['hits'] ?? []));
 
 // Graph is experimental and not in every build.
 try {
@@ -73,4 +76,23 @@ try {
         throw $e;
     }
     echo "this server has no graph\n";
+}
+
+// SQL runs through its app module, and sees this client's collection writes.
+$rows = $client->sql()->query('SELECT n, title FROM notes WHERE n >= $1 ORDER BY n', [2]);
+foreach (Sql::records($rows) as $row) {
+    printf("sql row %s: %s\n", $row['n'], $row['title']);
+}
+
+// Idempotent producer identity/sequence means rerunning this example won't duplicate this batch.
+$client->streams()->create('notes_events', 1);
+$produced = $client->streams()->produce('notes_events', [
+    ['kind' => 'created', 'note' => 1],
+    ['kind' => 'patched', 'note' => 2],
+], producerId: 'php-notes', producerSeq: 1);
+$subscription = $client->streams()->subscribe('notes_events', fromOffset: (int) ($produced['baseOffset'] ?? 0), maxWaitMs: 100);
+foreach ($subscription as $event) {
+    printf("stream event at offset %d: %s\n", $event['offset'], $event['value']);
+    $subscription->cancel();
+    break;
 }

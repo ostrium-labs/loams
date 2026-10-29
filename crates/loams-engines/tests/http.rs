@@ -210,6 +210,88 @@ async fn spark_sessions_and_jobs_over_http() {
     let (_, jobs) = call(&app, Method::GET, &format!("{one}/jobs"), None).await;
     assert_eq!(jobs["jobs"][0]["state"], "cancelled");
 
+    // One job with its full status, and its log as text.
+    let (s, one_job) = call(&app, Method::GET, &format!("{one}/jobs/{jid}"), None).await;
+    assert_eq!(s, StatusCode::OK, "{one_job}");
+    assert_eq!(one_job["id"], jid.as_str());
+    assert!(one_job["detail"]["attempts"].is_array());
+    let (s, _) = call(&app, Method::GET, &format!("{one}/jobs/nope"), None).await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
+    let req = Request::builder()
+        .uri(format!("{one}/jobs/{jid}/logs?attempt=2"))
+        .body(Body::empty())
+        .unwrap();
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    assert!(
+        res.headers()["content-type"]
+            .to_str()
+            .unwrap()
+            .starts_with("text/plain")
+    );
+    let text = to_bytes(res.into_body(), 1 << 20).await.unwrap();
+    assert!(String::from_utf8_lossy(&text).contains("attempt 2"));
+    let (s, e) = call(
+        &app,
+        Method::GET,
+        &format!("{one}/jobs/{jid}/logs?attempt=x"),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    assert_eq!(e["error"], "invalid_argument");
+
+    // Schedules: create (a retry answers the same), list, refuse a different body, delete.
+    let schedule = json!({
+        "id": "nightly",
+        "cron": "0 3 * * *",
+        "job": { "name": "etl", "kind": "python", "entrypoint": "s3://b/etl.py", "retries": 2 }
+    });
+    for _ in 0..2 {
+        let (s, created) = call(
+            &app,
+            Method::POST,
+            &format!("{one}/schedules"),
+            Some(schedule.clone()),
+        )
+        .await;
+        assert_eq!(s, StatusCode::CREATED, "{created}");
+        assert_eq!(
+            created["job"]["retries"], 2,
+            "the engine's own fields pass through"
+        );
+    }
+    let mut other = schedule.clone();
+    other["cron"] = json!("0 4 * * *");
+    let (s, _) = call(&app, Method::POST, &format!("{one}/schedules"), Some(other)).await;
+    assert_eq!(s, StatusCode::CONFLICT);
+    let (s, bad) = call(
+        &app,
+        Method::POST,
+        &format!("{one}/schedules"),
+        Some(json!({ "id": "x", "cron": "daily", "job": schedule["job"] })),
+    )
+    .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST, "{bad}");
+    let (_, list) = call(&app, Method::GET, &format!("{one}/schedules"), None).await;
+    assert_eq!(list["schedules"].as_array().unwrap().len(), 1);
+    let (s, _) = call(
+        &app,
+        Method::DELETE,
+        &format!("{one}/schedules/nightly"),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::NO_CONTENT);
+    let (s, _) = call(
+        &app,
+        Method::DELETE,
+        &format!("{one}/schedules/nightly"),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
+
     let (s, e) = call(
         &app,
         Method::POST,

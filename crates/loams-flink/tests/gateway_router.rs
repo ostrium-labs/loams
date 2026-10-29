@@ -27,11 +27,17 @@ fn state(upstream: &str) -> GatewayState {
         digest_hex(KEY_T2)
     );
     let upstreams = StaticUpstreams(HashMap::from([
-        (TenantId::new("t1").unwrap(), upstream.to_owned()),
-        (TenantId::new("t2").unwrap(), upstream.to_owned()),
+        (
+            TenantId::new("t1").expect("test setup"),
+            upstream.to_owned(),
+        ),
+        (
+            TenantId::new("t2").expect("test setup"),
+            upstream.to_owned(),
+        ),
     ]));
     GatewayState::new(
-        Arc::new(KeyDigestAuthenticator::parse(&keys).unwrap()),
+        Arc::new(KeyDigestAuthenticator::parse(&keys).expect("test setup")),
         Arc::new(GrantsAuthorizer),
         Arc::new(upstreams),
         ObjectStore::default(),
@@ -51,11 +57,16 @@ async fn call(
     }
     let body = body.map_or_else(Body::empty, |b| Body::from(b.to_string()));
     let resp = router(state.clone())
-        .oneshot(req.body(body).unwrap())
+        .oneshot(req.body(body).expect("test setup"))
         .await
-        .unwrap();
+        .expect("test setup");
     let status = resp.status();
-    let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    let bytes = resp
+        .into_body()
+        .collect()
+        .await
+        .expect("test setup")
+        .to_bytes();
     let value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
     (status, value)
 }

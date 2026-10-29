@@ -216,7 +216,7 @@ EOF2
 
 DOCS=("$ROOT/docs/guides/durable" "$ROOT/docs/guides/compute")
 
-# The durable section of the matrix renders the fixture's run as committed:
+# The durable section of the matrix renders the fixture's run as committed (a leg that exited early is red):
 # green with an expected failure, red (an unlisted failure, an unexpected
 # pass), not run and not merged.
 matrix_durable_from_fixture() {
@@ -311,14 +311,18 @@ sys.exit(1 if bad else 0)
 EOF2
 }
 
-# The nightly runs every product suite on this branch.
+# The local nightly (scripts/nightly/run-local.sh; owner, 2026-10-28: no
+# nightly in CI) runs every product suite on this branch, and the matrix has
+# a row for each of its compute legs.
 compute_compat_workflow_runs_every_suite() {
-  local wf="$ROOT/.github/workflows/compute-compat.yml" f hits=0
-  grep -q 'compute-compat.yml' "$ROOT/.github/workflows/nightly.yml" || { echo "nightly.yml does not dispatch compute-compat.yml"; hits=1; }
-  for f in "$HERE"/durable/run.sh "$HERE"/temporal/run.sh "$HERE"/temporal/corpus/replay.sh "$HERE"/airflow/run.sh; do
-    grep -qF "conformance/compute/${f#"$HERE"/}" "$wf" || { echo "compute-compat.yml does not run ${f#"$ROOT"/}"; hits=1; }
+  local runner="$ROOT/scripts/nightly/run-local.sh" f hits=0
+  for f in durable/run.sh temporal/run.sh temporal/corpus/replay.sh airflow/run.sh \
+    dbos-py/run.sh dbos-ts/run.sh dbos-go/run.sh dbos-java/run.sh; do
+    grep -qF "conformance/compute/$f" "$runner" || { echo "run-local.sh does not run $f"; hits=1; }
   done
-  grep -qF 'conformance/compute/dbos-$l/run.sh' "$wf" || { echo "compute-compat.yml does not run the DBOS suites"; hits=1; }
+  "$runner" --list | awk '$2 == "compute" { print $1 }' | while read -r leg; do
+    grep -qF "leg=\"$leg\"" "$ROOT/scripts/compute/matrix.py" || { echo "matrix.py has no row for leg $leg"; exit 1; }
+  done || hits=1
   return $hits
 }
 
@@ -344,6 +348,8 @@ matrix_from_fixture() {
 # and methods.toml lists exactly the frontend's DX1 set.
 matrix_guide_current() {
   local g=$HERE/temporal/gateway
+  # last-run.junit.xml and last-run.txt are the combine of last-run.toml's runs.
+  python3 "$ROOT/scripts/compute/last_run.py" --check
   "${MATRIX[@]}" temporal-gateway --junit "$g/last-run.junit.xml" --run "$(cat "$g/last-run.txt")" \
     --check "$ROOT/docs/guides/durable/temporal-gateway.md"
   python3 - "$g/methods.toml" "$ROOT/crates/loams-temporal-frontend/src/capabilities.rs" <<'PY'

@@ -77,6 +77,10 @@ impl fmt::Debug for EngineUrl {
     }
 }
 
+/// The most events one `ProduceCloudEvents` takes (the engine's
+/// `api::events::MAX_EVENTS`, 1000).
+pub const MAX_PRODUCE_EVENTS: usize = 1000;
+
 /// How long one engine call may take beyond its long poll.
 const CALL_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -496,7 +500,21 @@ impl FabricWriter for EngineWriter {
     async fn append(&self, b: &SourceBatch) -> Result<FabricAck, FabricError> {
         match &b.events {
             EventBatch::Events(events) if events.is_empty() => Ok(FabricAck::default()),
-            EventBatch::Events(events) => self.produce(events).await,
+            // The engine takes at most MAX_PRODUCE_EVENTS events a request
+            // and refuses a bigger one as invalid_argument, which the SDK
+            // treats as poison: every event of the batch went to the DLQ
+            // (a source catching up after a restart reads more than that).
+            // Each chunk is idempotent (`source` + `id`), so a retry after a
+            // partial success answers the sent chunks as duplicates.
+            EventBatch::Events(events) => {
+                let mut ack = FabricAck::default();
+                for chunk in events.chunks(MAX_PRODUCE_EVENTS) {
+                    let a = self.produce(chunk).await?;
+                    ack.accepted += a.accepted;
+                    ack.duplicates += a.duplicates;
+                }
+                Ok(ack)
+            }
             EventBatch::Arrow { .. } => Err(FabricError::new(
                 ErrorClass::Fatal,
                 "connect writes CloudEvents; this source sent an Arrow batch, which the engine's \
@@ -802,5 +820,82 @@ mod tests {
             Some(Secret::new("lk_secret_value")),
         );
         assert!(!format!("{c:?}").contains("lk_secret_value"));
+    }
+
+    /// A batch over the engine's 1000-event limit goes in chunks. Sent whole,
+    /// the engine refused it as invalid_argument and the SDK dead-lettered
+    /// every event: a source catching up after a restart lost its backlog to
+    /// the DLQ (found by the CFB benchmark's kill -9 run, 2026-10-28).
+    #[tokio::test]
+    async fn append_chunks_to_the_engines_limit() {
+        use std::sync::Mutex;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let sizes = Arc::new(Mutex::new(Vec::<usize>::new()));
+        let seen = sizes.clone();
+        tokio::spawn(async move {
+            while let Ok((io, _)) = listener.accept().await {
+                let seen = seen.clone();
+                tokio::spawn(async move {
+                    let svc = hyper::service::service_fn(
+                        move |req: http::Request<hyper::body::Incoming>| {
+                            let seen = seen.clone();
+                            async move {
+                                let body = req
+                                    .into_body()
+                                    .collect()
+                                    .await
+                                    .map(|b| b.to_bytes())
+                                    .unwrap_or_default();
+                                let v: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
+                                let batch = STANDARD
+                                    .decode(v["jsonBatch"].as_str().unwrap_or_default())
+                                    .unwrap_or_default();
+                                let n = serde_json::from_slice::<Vec<Value>>(&batch)
+                                    .map_or(0, |a| a.len());
+                                seen.lock().expect("lock").push(n);
+                                let (status, out) = if n > MAX_PRODUCE_EVENTS {
+                                    (
+                                        400,
+                                        json!({"code": "invalid_argument",
+                                               "message": "a request carries at most 1000 events"}),
+                                    )
+                                } else {
+                                    (
+                                        200,
+                                        json!({"results":
+                                            vec![json!({"status": "EVENT_STATUS_APPENDED"}); n]}),
+                                    )
+                                };
+                                http::Response::builder()
+                                    .status(status)
+                                    .header(http::header::CONTENT_TYPE, "application/json")
+                                    .body(Full::new(Bytes::from(out.to_string())))
+                            }
+                        },
+                    );
+                    let _ = hyper::server::conn::http1::Builder::new()
+                        .serve_connection(TokioIo::new(io), svc)
+                        .await;
+                });
+            }
+        });
+        let url = EngineUrl::parse(&format!("http://{addr}")).expect("url");
+        let writer = EngineWriter::new(EngineClient::new(url, None), "default".into(), "s".into());
+        let events: Vec<CloudEvent> = (0..2500)
+            .map(|i| CloudEvent::new(format!("t/0/{i}"), "/s", "t"))
+            .collect();
+        let ack = writer
+            .append(&SourceBatch {
+                events: EventBatch::Events(events),
+                position: Position::from_u64(2500),
+            })
+            .await
+            .expect("appended");
+        assert_eq!(ack.accepted, 2500);
+        assert_eq!(ack.duplicates, 0);
+        assert_eq!(*sizes.lock().expect("lock"), vec![1000, 1000, 500]);
     }
 }

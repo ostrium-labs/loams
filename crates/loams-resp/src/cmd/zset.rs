@@ -37,13 +37,12 @@ pub(super) async fn run(
         "zrem" => {
             let members: Vec<Vec<u8>> = args[2..].iter().map(|a| a.to_vec()).collect();
             let key = args[1].clone();
-            read(
-                txn(shared, "resp.zrem", move |t| {
-                    let (key, members) = (key.clone(), members.clone());
-                    Box::pin(async move { zset::rem(t, db, &key, &members, now_ms()).await })
-                })
-                .await?,
-            )
+            txn(shared, "resp.zrem", move |t| {
+                let (key, members) = (key.clone(), members.clone());
+                Box::pin(async move { zset::rem(t, db, &key, &members, now_ms()).await })
+            })
+            .await
+            .and_then(read)
             .map(Value::Integer)
         }
         "zcard" => {
