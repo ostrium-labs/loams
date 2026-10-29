@@ -13,7 +13,15 @@
 #       one gateway on the Postgres store with a real Resonate server on
 #       Postgres (the production shape), Postgres in podman.
 #   resonate <sqlite|postgres> <servers> [loadgen flags...]
-#       Resonate server(s), promise.create + promise.settle.
+#       Resonate server(s), promise.create + promise.settle (its native API).
+#   store <memory|postgres> <start|commit> [store_load flags...]
+#       the gateway's store API (loams-temporal-store) in process, through the
+#       store_load example, on the server cores.
+#
+# Group commit: PG_COMMIT_DELAY (microseconds) and PG_COMMIT_SIBLINGS set
+# Postgres' commit_delay/commit_siblings, so concurrent commits share one
+# WAL flush. synchronous_commit stays on: every commit is still durable
+# before it is acknowledged.
 #
 # Modes (loadgen): start, signal, activity, timer, rcreate.
 #
@@ -60,7 +68,8 @@ pg_up() {
     podman rm -f "$PG_NAME" >/dev/null 2>&1 || true
     podman run -d --name "$PG_NAME" --cpuset-cpus "$SERVER_CORES" -p 127.0.0.1:$PG_PORT:5432 \
       -e POSTGRES_PASSWORD=bq1 -e POSTGRES_USER=bq1 "$PG_IMAGE" \
-      -c max_connections=400 -c shared_buffers=1GB -c synchronous_commit=on >/dev/null
+      -c max_connections=400 -c shared_buffers=1GB -c synchronous_commit=on \
+      -c commit_delay="${PG_COMMIT_DELAY:-0}" -c commit_siblings="${PG_COMMIT_SIBLINGS:-5}" >/dev/null
     for _ in $(seq 60); do podman exec "$PG_NAME" pg_isready -U bq1 >/dev/null 2>&1 && break; sleep 1; done
     sleep 2
   fi
@@ -166,6 +175,18 @@ url = "http://127.0.0.1:28001"' "$SERVER_CORES"
     for p in "${lg[@]}"; do wait "$p"; done
     if [ "$backend" = postgres ]; then pg_down; fi
     rm -f "$DATA/run/"rs*.db*
+    ;;
+  store)
+    backend=${1:?backend}; op=${2:?op}; shift 2
+    SL=${STORE_LOAD:-$DATA/bin/store_load}
+    extra=() on=$SERVER_CORES
+    # On Postgres the database has the server cores and the caller (the
+    # store library, as the gateway runs it) the load-generator cores.
+    if [ "$backend" = postgres ]; then pg_up; extra=(--url "postgres://bq1:bq1@127.0.0.1:$PG_PORT/gw"); on=$LOADGEN_CORES; fi
+    taskset -c "$on" "$SL" "$op" --backend "$backend" "${extra[@]}" --cores "$on" "$@" \
+      > "$OUT/store-$backend-$op-$ts.json"
+    cat "$OUT/store-$backend-$op-$ts.json"
+    if [ "$backend" = postgres ]; then pg_down; fi
     ;;
   *) echo "unknown leg $leg" >&2; exit 2 ;;
 esac
