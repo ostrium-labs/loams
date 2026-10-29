@@ -1,0 +1,35 @@
+{
+  "results": [
+    {
+      "framework": null,
+      "id": "ostrium/github-mcp-server",
+      "kind": "mcp-server",
+      "language": "go",
+      "latest": "2.0.3",
+      "level": "core",
+      "revocation": {
+        "advisory": "https://github.com/advisories/GHSA-0000-0000-0000",
+        "reason": "An upstream advisory affects some tools.",
+        "severity": "warn",
+        "versions": ">=2.0.0, <2.1.0"
+      },
+      "source": "official",
+      "summary": "GitHub's official MCP server.",
+      "tier": "firstParty",
+      "title": "GitHub"
+    },
+    {
+      "framework": "mastra",
+      "id": "ostrium/loams-starter",
+      "kind": "agent",
+      "language": "typescript",
+      "latest": "2.0.3",
+      "level": null,
+      "revocation": null,
+      "source": "official",
+      "summary": "A first Mastra agent.",
+      "tier": "firstParty",
+      "title": "Loams starter"
+    }
+  ]
+}

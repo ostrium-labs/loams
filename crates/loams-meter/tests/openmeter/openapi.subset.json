@@ -1,0 +1,1490 @@
+{
+ "components": {
+  "schemas": {
+   "Annotations": {
+    "additionalProperties": {},
+    "type": "object"
+   },
+   "BadRequestProblemResponse": {
+    "allOf": [
+     {
+      "$ref": "#/components/schemas/UnexpectedProblemResponse"
+     }
+    ],
+    "type": "object"
+   },
+   "ConflictProblemResponse": {
+    "allOf": [
+     {
+      "$ref": "#/components/schemas/UnexpectedProblemResponse"
+     }
+    ],
+    "type": "object"
+   },
+   "EntitlementGrant": {
+    "deprecated": true,
+    "properties": {
+     "amount": {
+      "format": "double",
+      "minimum": 0,
+      "type": "number"
+     },
+     "annotations": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/Annotations"
+       }
+      ]
+     },
+     "createdAt": {
+      "format": "date-time",
+      "readOnly": true,
+      "type": "string"
+     },
+     "deletedAt": {
+      "format": "date-time",
+      "readOnly": true,
+      "type": "string"
+     },
+     "effectiveAt": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "entitlementId": {
+      "readOnly": true,
+      "type": "string"
+     },
+     "expiration": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/ExpirationPeriod"
+       }
+      ]
+     },
+     "expiresAt": {
+      "format": "date-time",
+      "readOnly": true,
+      "type": "string"
+     },
+     "id": {
+      "pattern": "^[0-7][0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{25}$",
+      "readOnly": true,
+      "type": "string"
+     },
+     "maxRolloverAmount": {
+      "default": 0,
+      "format": "double",
+      "type": "number"
+     },
+     "metadata": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/Metadata"
+       }
+      ]
+     },
+     "minRolloverAmount": {
+      "default": 0,
+      "format": "double",
+      "type": "number"
+     },
+     "nextRecurrence": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "priority": {
+      "format": "uint8",
+      "maximum": 255,
+      "minimum": 1,
+      "type": "integer"
+     },
+     "recurrence": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/RecurringPeriod"
+       }
+      ]
+     },
+     "updatedAt": {
+      "format": "date-time",
+      "readOnly": true,
+      "type": "string"
+     },
+     "voidedAt": {
+      "format": "date-time",
+      "type": "string"
+     }
+    },
+    "required": [
+     "createdAt",
+     "updatedAt",
+     "amount",
+     "effectiveAt",
+     "expiration",
+     "id",
+     "entitlementId"
+    ],
+    "type": "object"
+   },
+   "EntitlementGrantCreateInput": {
+    "deprecated": true,
+    "properties": {
+     "amount": {
+      "format": "double",
+      "minimum": 0,
+      "type": "number"
+     },
+     "effectiveAt": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "expiration": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/ExpirationPeriod"
+       }
+      ]
+     },
+     "maxRolloverAmount": {
+      "default": 0,
+      "format": "double",
+      "type": "number"
+     },
+     "metadata": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/Metadata"
+       }
+      ]
+     },
+     "minRolloverAmount": {
+      "default": 0,
+      "format": "double",
+      "type": "number"
+     },
+     "priority": {
+      "format": "uint8",
+      "maximum": 255,
+      "minimum": 1,
+      "type": "integer"
+     },
+     "recurrence": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/RecurringPeriodCreateInput"
+       }
+      ]
+     }
+    },
+    "required": [
+     "amount",
+     "effectiveAt",
+     "expiration"
+    ],
+    "type": "object"
+   },
+   "EntitlementValue": {
+    "properties": {
+     "balance": {
+      "format": "double",
+      "readOnly": true,
+      "type": "number"
+     },
+     "config": {
+      "readOnly": true,
+      "type": "string"
+     },
+     "hasAccess": {
+      "readOnly": true,
+      "type": "boolean"
+     },
+     "overage": {
+      "format": "double",
+      "readOnly": true,
+      "type": "number"
+     },
+     "totalAvailableGrantAmount": {
+      "format": "double",
+      "readOnly": true,
+      "type": "number"
+     },
+     "usage": {
+      "format": "double",
+      "readOnly": true,
+      "type": "number"
+     }
+    },
+    "required": [
+     "hasAccess"
+    ],
+    "type": "object"
+   },
+   "Event": {
+    "properties": {
+     "data": {
+      "additionalProperties": {},
+      "nullable": true,
+      "type": "object"
+     },
+     "datacontenttype": {
+      "enum": [
+       "application/json"
+      ],
+      "nullable": true,
+      "type": "string"
+     },
+     "dataschema": {
+      "format": "uri",
+      "minLength": 1,
+      "nullable": true,
+      "type": "string"
+     },
+     "id": {
+      "minLength": 1,
+      "type": "string"
+     },
+     "source": {
+      "format": "uri-reference",
+      "minLength": 1,
+      "type": "string"
+     },
+     "specversion": {
+      "default": "1.0",
+      "minLength": 1,
+      "type": "string"
+     },
+     "subject": {
+      "minLength": 1,
+      "type": "string"
+     },
+     "time": {
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+     },
+     "type": {
+      "minLength": 1,
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "source",
+     "specversion",
+     "type",
+     "subject"
+    ],
+    "type": "object",
+    "x-go-type": "event.Event",
+    "x-go-type-import": {
+     "path": "github.com/cloudevents/sdk-go/v2/event"
+    }
+   },
+   "ExpirationDuration": {
+    "enum": [
+     "HOUR",
+     "DAY",
+     "WEEK",
+     "MONTH",
+     "YEAR"
+    ],
+    "type": "string"
+   },
+   "ExpirationPeriod": {
+    "properties": {
+     "count": {
+      "format": "uint32",
+      "maximum": 1000,
+      "minimum": 1,
+      "type": "integer"
+     },
+     "duration": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/ExpirationDuration"
+       }
+      ]
+     }
+    },
+    "required": [
+     "duration",
+     "count"
+    ],
+    "type": "object"
+   },
+   "ForbiddenProblemResponse": {
+    "allOf": [
+     {
+      "$ref": "#/components/schemas/UnexpectedProblemResponse"
+     }
+    ],
+    "type": "object"
+   },
+   "GrantOrderBy": {
+    "enum": [
+     "id",
+     "createdAt",
+     "updatedAt"
+    ],
+    "type": "string"
+   },
+   "IngestEventsBody": {
+    "anyOf": [
+     {
+      "$ref": "#/components/schemas/Event"
+     },
+     {
+      "items": {
+       "$ref": "#/components/schemas/Event"
+      },
+      "type": "array"
+     }
+    ]
+   },
+   "InternalServerErrorProblemResponse": {
+    "allOf": [
+     {
+      "$ref": "#/components/schemas/UnexpectedProblemResponse"
+     }
+    ],
+    "type": "object"
+   },
+   "Metadata": {
+    "additionalProperties": {
+     "type": "string"
+    },
+    "type": "object",
+    "x-go-type": "map[string]string"
+   },
+   "Meter": {
+    "properties": {
+     "aggregation": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/MeterAggregation"
+       }
+      ]
+     },
+     "annotations": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/Annotations"
+       }
+      ],
+      "nullable": true,
+      "readOnly": true,
+      "type": "object"
+     },
+     "createdAt": {
+      "format": "date-time",
+      "readOnly": true,
+      "type": "string"
+     },
+     "deletedAt": {
+      "format": "date-time",
+      "readOnly": true,
+      "type": "string"
+     },
+     "description": {
+      "maxLength": 1024,
+      "type": "string"
+     },
+     "eventFrom": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "eventType": {
+      "minLength": 1,
+      "type": "string"
+     },
+     "groupBy": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "type": "object"
+     },
+     "id": {
+      "pattern": "^[0-7][0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{25}$",
+      "readOnly": true,
+      "type": "string"
+     },
+     "metadata": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/Metadata"
+       }
+      ],
+      "nullable": true,
+      "type": "object"
+     },
+     "name": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+     },
+     "slug": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^[a-z0-9]+(?:_[a-z0-9]+)*$",
+      "type": "string"
+     },
+     "updatedAt": {
+      "format": "date-time",
+      "readOnly": true,
+      "type": "string"
+     },
+     "valueProperty": {
+      "minLength": 1,
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "createdAt",
+     "updatedAt",
+     "slug",
+     "aggregation",
+     "eventType"
+    ],
+    "type": "object"
+   },
+   "MeterAggregation": {
+    "enum": [
+     "SUM",
+     "COUNT",
+     "UNIQUE_COUNT",
+     "AVG",
+     "MIN",
+     "MAX",
+     "LATEST"
+    ],
+    "type": "string",
+    "x-enum-varnames": [
+     "Sum",
+     "Count",
+     "UniqueCount",
+     "Avg",
+     "Min",
+     "Max",
+     "Latest"
+    ]
+   },
+   "MeterQueryResult": {
+    "properties": {
+     "data": {
+      "items": {
+       "$ref": "#/components/schemas/MeterQueryRow"
+      },
+      "type": "array"
+     },
+     "from": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "to": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "windowSize": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/WindowSize"
+       }
+      ]
+     }
+    },
+    "required": [
+     "data"
+    ],
+    "type": "object"
+   },
+   "MeterQueryRow": {
+    "properties": {
+     "customerId": {
+      "type": "string"
+     },
+     "groupBy": {
+      "additionalProperties": {
+       "nullable": true,
+       "type": "string"
+      },
+      "type": "object"
+     },
+     "subject": {
+      "nullable": true,
+      "type": "string"
+     },
+     "value": {
+      "format": "double",
+      "type": "number"
+     },
+     "windowEnd": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "windowStart": {
+      "format": "date-time",
+      "type": "string"
+     }
+    },
+    "required": [
+     "value",
+     "windowStart",
+     "windowEnd",
+     "subject",
+     "groupBy"
+    ],
+    "type": "object"
+   },
+   "NotFoundProblemResponse": {
+    "allOf": [
+     {
+      "$ref": "#/components/schemas/UnexpectedProblemResponse"
+     }
+    ],
+    "type": "object"
+   },
+   "PreconditionFailedProblemResponse": {
+    "allOf": [
+     {
+      "$ref": "#/components/schemas/UnexpectedProblemResponse"
+     }
+    ],
+    "type": "object"
+   },
+   "RecurringPeriod": {
+    "deprecated": true,
+    "properties": {
+     "anchor": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "interval": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/RecurringPeriodInterval"
+       }
+      ]
+     },
+     "intervalISO": {
+      "format": "duration",
+      "type": "string"
+     }
+    },
+    "required": [
+     "interval",
+     "anchor",
+     "intervalISO"
+    ],
+    "type": "object"
+   },
+   "RecurringPeriodCreateInput": {
+    "properties": {
+     "anchor": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "interval": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/RecurringPeriodInterval"
+       }
+      ]
+     }
+    },
+    "required": [
+     "interval"
+    ],
+    "type": "object"
+   },
+   "RecurringPeriodInterval": {
+    "anyOf": [
+     {
+      "pattern": "^P(?:\\d+(?:\\.\\d+)?Y)?(?:\\d+(?:\\.\\d+)?M)?(?:\\d+(?:\\.\\d+)?W)?(?:\\d+(?:\\.\\d+)?D)?(?:T(?:\\d+(?:\\.\\d+)?H)?(?:\\d+(?:\\.\\d+)?M)?(?:\\d+(?:\\.\\d+)?S)?)?$",
+      "type": "string"
+     },
+     {
+      "$ref": "#/components/schemas/RecurringPeriodIntervalEnum"
+     }
+    ]
+   },
+   "RecurringPeriodIntervalEnum": {
+    "enum": [
+     "DAY",
+     "WEEK",
+     "MONTH",
+     "YEAR"
+    ],
+    "type": "string"
+   },
+   "ServiceUnavailableProblemResponse": {
+    "allOf": [
+     {
+      "$ref": "#/components/schemas/UnexpectedProblemResponse"
+     }
+    ],
+    "type": "object"
+   },
+   "UnauthorizedProblemResponse": {
+    "allOf": [
+     {
+      "$ref": "#/components/schemas/UnexpectedProblemResponse"
+     }
+    ],
+    "type": "object"
+   },
+   "UnexpectedProblemResponse": {
+    "additionalProperties": {},
+    "properties": {
+     "detail": {
+      "type": "string"
+     },
+     "extensions": {
+      "additionalProperties": {},
+      "type": "object"
+     },
+     "instance": {
+      "format": "uri",
+      "type": "string"
+     },
+     "status": {
+      "format": "int16",
+      "maximum": 599,
+      "minimum": 400,
+      "type": "integer"
+     },
+     "title": {
+      "type": "string"
+     },
+     "type": {
+      "default": "about:blank",
+      "format": "uri",
+      "type": "string"
+     }
+    },
+    "required": [
+     "type",
+     "title",
+     "detail",
+     "instance"
+    ],
+    "type": "object",
+    "x-go-type": "models.StatusProblem",
+    "x-go-type-import": {
+     "path": "github.com/openmeterio/openmeter/pkg/models"
+    }
+   },
+   "WindowSize": {
+    "enum": [
+     "MINUTE",
+     "HOUR",
+     "DAY",
+     "MONTH"
+    ],
+    "type": "string",
+    "x-enum-varnames": [
+     "Minute",
+     "Hour",
+     "Day",
+     "Month"
+    ]
+   }
+  }
+ },
+ "openapi": "3.0.0",
+ "paths": {
+  "/api/v1/events": {
+   "post": {
+    "operationId": "ingestEvents",
+    "requestBody": {
+     "content": {
+      "application/cloudevents+json": {
+       "schema": {
+        "$ref": "#/components/schemas/Event"
+       }
+      },
+      "application/cloudevents-batch+json": {
+       "schema": {
+        "items": {
+         "$ref": "#/components/schemas/Event"
+        },
+        "type": "array"
+       }
+      },
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/IngestEventsBody"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "204": {},
+     "400": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/BadRequestProblemResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/UnauthorizedProblemResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/ForbiddenProblemResponse"
+        }
+       }
+      }
+     },
+     "412": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/PreconditionFailedProblemResponse"
+        }
+       }
+      }
+     },
+     "500": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/InternalServerErrorProblemResponse"
+        }
+       }
+      }
+     },
+     "503": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/ServiceUnavailableProblemResponse"
+        }
+       }
+      }
+     },
+     "default": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/UnexpectedProblemResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/meters": {
+   "get": {
+    "operationId": "listMeters",
+    "parameters": [
+     {
+      "$ref": "#/components/parameters/Pagination.page"
+     },
+     {
+      "$ref": "#/components/parameters/Pagination.pageSize"
+     },
+     {
+      "$ref": "#/components/parameters/MeterOrderByOrdering.order"
+     },
+     {
+      "$ref": "#/components/parameters/MeterOrderByOrdering.orderBy"
+     },
+     {
+      "$ref": "#/components/parameters/queryMeterList.includeDeleted"
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/Meter"
+         },
+         "type": "array"
+        }
+       }
+      }
+     },
+     "400": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/BadRequestProblemResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/UnauthorizedProblemResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/ForbiddenProblemResponse"
+        }
+       }
+      }
+     },
+     "412": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/PreconditionFailedProblemResponse"
+        }
+       }
+      }
+     },
+     "500": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/InternalServerErrorProblemResponse"
+        }
+       }
+      }
+     },
+     "503": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/ServiceUnavailableProblemResponse"
+        }
+       }
+      }
+     },
+     "default": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/UnexpectedProblemResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/meters/{meterIdOrSlug}": {
+   "get": {
+    "operationId": "getMeter",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "meterIdOrSlug",
+      "required": true,
+      "schema": {
+       "maxLength": 64,
+       "minLength": 1,
+       "pattern": "^[a-z0-9]+(?:_[a-z0-9]+)*$|^[0-7][0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{25}$",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Meter"
+        }
+       }
+      }
+     },
+     "400": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/BadRequestProblemResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/UnauthorizedProblemResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/ForbiddenProblemResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/NotFoundProblemResponse"
+        }
+       }
+      }
+     },
+     "412": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/PreconditionFailedProblemResponse"
+        }
+       }
+      }
+     },
+     "500": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/InternalServerErrorProblemResponse"
+        }
+       }
+      }
+     },
+     "503": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/ServiceUnavailableProblemResponse"
+        }
+       }
+      }
+     },
+     "default": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/UnexpectedProblemResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/meters/{meterIdOrSlug}/query": {
+   "get": {
+    "operationId": "queryMeter",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "meterIdOrSlug",
+      "required": true,
+      "schema": {
+       "maxLength": 64,
+       "minLength": 1,
+       "pattern": "^[a-z0-9]+(?:_[a-z0-9]+)*$|^[0-7][0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{25}$",
+       "type": "string"
+      }
+     },
+     {
+      "$ref": "#/components/parameters/MeterQuery.clientId"
+     },
+     {
+      "$ref": "#/components/parameters/MeterQuery.from"
+     },
+     {
+      "$ref": "#/components/parameters/MeterQuery.to"
+     },
+     {
+      "$ref": "#/components/parameters/MeterQuery.windowSize"
+     },
+     {
+      "$ref": "#/components/parameters/MeterQuery.windowTimeZone"
+     },
+     {
+      "$ref": "#/components/parameters/MeterQuery.subject"
+     },
+     {
+      "$ref": "#/components/parameters/MeterQuery.filterCustomerId"
+     },
+     {
+      "$ref": "#/components/parameters/MeterQuery.filterGroupBy"
+     },
+     {
+      "$ref": "#/components/parameters/MeterQuery.advancedMeterGroupByFilters"
+     },
+     {
+      "$ref": "#/components/parameters/MeterQuery.groupBy"
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/MeterQueryResult"
+        }
+       },
+       "text/csv": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "400": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/BadRequestProblemResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/UnauthorizedProblemResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/ForbiddenProblemResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/NotFoundProblemResponse"
+        }
+       }
+      }
+     },
+     "412": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/PreconditionFailedProblemResponse"
+        }
+       }
+      }
+     },
+     "500": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/InternalServerErrorProblemResponse"
+        }
+       }
+      }
+     },
+     "503": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/ServiceUnavailableProblemResponse"
+        }
+       }
+      }
+     },
+     "default": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/UnexpectedProblemResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/subjects/{subjectIdOrKey}/entitlements/{entitlementIdOrFeatureKey}/grants": {
+   "get": {
+    "operationId": "listEntitlementGrants",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "subjectIdOrKey",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "entitlementIdOrFeatureKey",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "explode": false,
+      "in": "query",
+      "name": "includeDeleted",
+      "required": false,
+      "schema": {
+       "default": false,
+       "type": "boolean"
+      },
+      "style": "form"
+     },
+     {
+      "explode": false,
+      "in": "query",
+      "name": "orderBy",
+      "required": false,
+      "schema": {
+       "allOf": [
+        {
+         "$ref": "#/components/schemas/GrantOrderBy"
+        }
+       ],
+       "default": "updatedAt"
+      },
+      "style": "form"
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/EntitlementGrant"
+         },
+         "type": "array"
+        }
+       }
+      }
+     },
+     "400": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/BadRequestProblemResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/UnauthorizedProblemResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/ForbiddenProblemResponse"
+        }
+       }
+      }
+     },
+     "412": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/PreconditionFailedProblemResponse"
+        }
+       }
+      }
+     },
+     "500": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/InternalServerErrorProblemResponse"
+        }
+       }
+      }
+     },
+     "503": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/ServiceUnavailableProblemResponse"
+        }
+       }
+      }
+     },
+     "default": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/UnexpectedProblemResponse"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "operationId": "createGrant",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "subjectIdOrKey",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "entitlementIdOrFeatureKey",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/EntitlementGrantCreateInput"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/EntitlementGrant"
+        }
+       }
+      }
+     },
+     "400": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/BadRequestProblemResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/UnauthorizedProblemResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/ForbiddenProblemResponse"
+        }
+       }
+      }
+     },
+     "409": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConflictProblemResponse"
+        }
+       }
+      }
+     },
+     "412": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/PreconditionFailedProblemResponse"
+        }
+       }
+      }
+     },
+     "500": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/InternalServerErrorProblemResponse"
+        }
+       }
+      }
+     },
+     "503": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/ServiceUnavailableProblemResponse"
+        }
+       }
+      }
+     },
+     "default": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/UnexpectedProblemResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/subjects/{subjectIdOrKey}/entitlements/{entitlementIdOrFeatureKey}/value": {
+   "get": {
+    "operationId": "getEntitlementValue",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "subjectIdOrKey",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "entitlementIdOrFeatureKey",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "time",
+      "required": false,
+      "schema": {
+       "format": "date-time",
+       "type": "string"
+      },
+      "style": "form"
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/EntitlementValue"
+        }
+       }
+      }
+     },
+     "400": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/BadRequestProblemResponse"
+        }
+       }
+      }
+     },
+     "401": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/UnauthorizedProblemResponse"
+        }
+       }
+      }
+     },
+     "403": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/ForbiddenProblemResponse"
+        }
+       }
+      }
+     },
+     "404": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/NotFoundProblemResponse"
+        }
+       }
+      }
+     },
+     "412": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/PreconditionFailedProblemResponse"
+        }
+       }
+      }
+     },
+     "500": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/InternalServerErrorProblemResponse"
+        }
+       }
+      }
+     },
+     "503": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/ServiceUnavailableProblemResponse"
+        }
+       }
+      }
+     },
+     "default": {
+      "content": {
+       "application/problem+json": {
+        "schema": {
+         "$ref": "#/components/schemas/UnexpectedProblemResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ "x-loams-source": {
+  "commit": "5a0e27e6f50b301e9bdb93772a6a970fd4a1f58f",
+  "file": "api/openapi.yaml",
+  "license": "Apache-2.0",
+  "repository": "openmeterio/openmeter",
+  "sha256": "40a6b5a1041ca39f7fd16c3a0efb05b469e9cd6c3dcf08ff606bb1da9a9efec2"
+ }
+}

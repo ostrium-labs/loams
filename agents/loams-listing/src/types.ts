@@ -22,11 +22,20 @@ export interface ConfigInput {
   env?: string;
 }
 
+/** A public mirror of an artifact's bytes, beside its own location (D1812). */
+export interface ArtifactLocation {
+  kind: 'walrus';
+  /** 32 bytes, URL-safe base64 without padding. */
+  blob_id: string;
+  sha256: string;
+}
+
 export interface ArchiveFile {
   platform: string;
   url: string;
   sha256: string;
   path?: string;
+  locations?: ArtifactLocation[];
 }
 
 export interface Artifact {
@@ -35,6 +44,7 @@ export interface Artifact {
   version: string;
   integrity?: string;
   files?: ArchiveFile[];
+  locations?: ArtifactLocation[];
 }
 
 export interface DataScope {
@@ -68,7 +78,8 @@ export interface Listing {
   language?: string;
   artifact?: Artifact;
   provenance?: { type: string; ref: string };
-  runtime?: { kind: 'node' | 'python' | 'oci' | 'binary'; version?: string };
+  /** `engine` only on the node runtime: node (the default when absent) or bun (D1808). */
+  runtime?: { kind: 'node' | 'python' | 'oci' | 'binary'; engine?: 'node' | 'bun'; version?: string };
   entrypoint?: string;
   targets?: string[];
   surfaces?: Record<string, unknown>;

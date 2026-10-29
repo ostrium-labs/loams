@@ -1,7 +1,7 @@
 import { type SessionService, SHELL_COMMAND_EVENT, ThemeController } from '@loams/console-host';
 import { SlotProvider, SlotRegistry } from '@loams/slots';
 import { act, cleanup, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { Layout } from '../src/layout.js';
 import { DRAWER, INSPECTOR, PanelController } from '../src/panel.js';
 import { HashRouter, type HashSource } from '../src/router.js';

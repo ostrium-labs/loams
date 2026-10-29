@@ -1,0 +1,8 @@
+product = "durable"
+
+[[xfail]]
+id = "no-session-endpoint"
+tests = ["durable::pg_modes_reachable_session"]
+reason = "no session-pooled endpoint in the fixture"
+issue = "#1129"
+since = 2026-10-24

@@ -298,6 +298,7 @@ fn discovery_has_connect_port() {
         "SD1 Task 11"
     );
     assert!(features.contains(&"run-groups".to_owned()), "SD1 Task 12");
+    assert!(features.contains(&"marketplace".to_owned()), "MK1 Task 4b");
     assert!(
         body["host"]["features"]
             .as_array()

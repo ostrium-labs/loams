@@ -55,6 +55,10 @@ pub struct Target {
     /// Settings sent with every statement, as URL parameters.
     #[serde(default)]
     pub settings: BTreeMap<String, String>,
+    /// Seeded from the baseline instead of running setup statements: after a
+    /// corpus's setup, the baseline's tables are copied to it (`seed.rs`).
+    #[serde(default)]
+    pub seed: bool,
 }
 
 impl Targets {
@@ -124,6 +128,21 @@ impl Client {
         Ok(parse_response(status, code.as_deref(), &text))
     }
 
+    /// Runs a case's query in `format` and returns the answer's bytes, or the
+    /// error outcome.
+    pub fn query_bytes(
+        &self,
+        target: &Target,
+        sql: &str,
+        format: &str,
+    ) -> Result<Result<Vec<u8>, Outcome>, Unreachable> {
+        let body = format!("{}\nFORMAT {format}", sql.trim_end().trim_end_matches(';'));
+        Ok(match self.fetch(target, &body)? {
+            Ok(bytes) => Ok(bytes),
+            Err(text) => Err(error_outcome(None, &text)),
+        })
+    }
+
     /// Runs a setup statement; `Ok(None)` when it succeeded, else the error.
     pub fn execute(&self, target: &Target, sql: &str) -> Result<Option<Outcome>, Unreachable> {
         let (status, code, text) = self.post(target, sql)?;
@@ -132,6 +151,93 @@ impl Client {
         } else {
             Ok(Some(error_outcome(code.as_deref(), &text)))
         }
+    }
+
+    /// Runs `sql` and returns the raw answer bytes (`FORMAT Parquet`), or the
+    /// error text.
+    pub fn fetch(
+        &self,
+        target: &Target,
+        sql: &str,
+    ) -> Result<Result<Vec<u8>, String>, Unreachable> {
+        let mut request = self.request(target, &[]);
+        request = request.header("Content-Type", "text/plain");
+        let mut response = request
+            .send(sql)
+            .map_err(|e| Unreachable(format!("{}: {e}", target.name)))?;
+        let ok = response.status().as_u16() == 200
+            && response
+                .headers()
+                .get("X-ClickHouse-Exception-Code")
+                .is_none();
+        let bytes = response
+            .body_mut()
+            .with_config()
+            .limit(1024 * 1024 * 1024)
+            .read_to_vec()
+            .map_err(|e| Unreachable(format!("{}: reading the answer: {e}", target.name)))?;
+        Ok(if ok {
+            Ok(bytes)
+        } else {
+            Err(String::from_utf8_lossy(&bytes).into_owned())
+        })
+    }
+
+    /// Posts `body` to `path` on the target with extra query parameters and
+    /// headers; the error text when the target refused it.
+    pub fn post_to(
+        &self,
+        target: &Target,
+        path: &str,
+        params: &[(String, String)],
+        headers: &[(&str, String)],
+        body: &[u8],
+    ) -> Result<Result<(), String>, Unreachable> {
+        let url = format!(
+            "{}/{}",
+            target.url.trim_end_matches('/'),
+            path.trim_start_matches('/')
+        );
+        let mut request = self
+            .agent
+            .post(&url)
+            .query_pairs(params.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+        for (k, v) in headers {
+            request = request.header(*k, v);
+        }
+        let mut response = request
+            .send(body)
+            .map_err(|e| Unreachable(format!("{}: {e}", target.name)))?;
+        if response.status().as_u16() == 200 {
+            Ok(Ok(()))
+        } else {
+            Ok(Err(response
+                .body_mut()
+                .read_to_string()
+                .unwrap_or_default()))
+        }
+    }
+
+    fn request(
+        &self,
+        target: &Target,
+        extra: &[(String, String)],
+    ) -> ureq::RequestBuilder<ureq::typestate::WithBody> {
+        let mut params: Vec<(String, String)> = Vec::new();
+        if let Some(db) = &target.database {
+            params.push(("database".into(), db.clone()));
+        }
+        params.extend(target.settings.iter().map(|(k, v)| (k.clone(), v.clone())));
+        params.extend(extra.iter().cloned());
+        let mut request = self.agent.post(&target.url).query_pairs(params);
+        if let Some(user) = &target.user {
+            request = request.header("X-ClickHouse-User", user);
+        }
+        if let Some(var) = &target.password_env {
+            let password = std::env::var(var).unwrap_or_default();
+            request = request.header("X-ClickHouse-Key", password);
+        }
+        request
     }
 
     fn post(

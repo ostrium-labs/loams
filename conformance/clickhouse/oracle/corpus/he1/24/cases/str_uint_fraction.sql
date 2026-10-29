@@ -1,0 +1,1 @@
+SELECT u8 = '1.5' FROM t24s

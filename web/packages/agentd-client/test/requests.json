@@ -34,6 +34,42 @@
     }
   },
   {
+    "method": "FactoryList",
+    "params": {}
+  },
+  {
+    "method": "FactoryTest",
+    "params": {
+      "app": "forgejo"
+    }
+  },
+  {
+    "method": "FactoryQuery",
+    "params": {
+      "app": "forgejo",
+      "op": "repos",
+      "params": {
+        "limit": 20
+      }
+    }
+  },
+  {
+    "method": "FactoryConfigure",
+    "params": {
+      "app": "forgejo",
+      "url": "https://git.example.com",
+      "fields": {
+        "token": "pat-1"
+      }
+    }
+  },
+  {
+    "method": "FactoryRemove",
+    "params": {
+      "app": "forgejo"
+    }
+  },
+  {
     "method": "GetTitleSettings",
     "params": {}
   },
@@ -1071,12 +1107,89 @@
     }
   },
   {
-    "method": "DeployLiveApp",
+    "method": "ListMarketplaceSources",
+    "params": {}
+  },
+  {
+    "method": "AddMarketplaceSource",
     "params": {
-      "chatId": "chat-1",
-      "approvalId": "fa-2",
-      "app": "notes",
-      "commit": "0123456789abcdef0123456789abcdef01234567"
+      "name": "example",
+      "url": "https://example.org/market/index.json",
+      "identity": "https://github.com/example/market/.github/workflows/publish.yml@refs/heads/main",
+      "issuer": null
+    }
+  },
+  {
+    "method": "RemoveMarketplaceSource",
+    "params": {
+      "name": "example"
+    }
+  },
+  {
+    "method": "SearchListings",
+    "params": {
+      "query": "github",
+      "kinds": [
+        "mcp-server"
+      ],
+      "frameworks": [],
+      "languages": [],
+      "minLevel": "core",
+      "tiers": [
+        "firstParty"
+      ],
+      "source": null
+    }
+  },
+  {
+    "method": "GetListing",
+    "params": {
+      "id": "ostrium/github-mcp-server",
+      "version": null,
+      "source": null
+    }
+  },
+  {
+    "method": "PlanInstall",
+    "params": {
+      "id": "ostrium/github-mcp-server",
+      "version": "2.0.3",
+      "source": "official"
+    }
+  },
+  {
+    "method": "InstallListing",
+    "params": {
+      "id": "ostrium/github-mcp-server",
+      "version": "2.0.3",
+      "source": "official",
+      "planDigest": "5f2b1c8e",
+      "config": {},
+      "secrets": {
+        "token": "ghp_example"
+      }
+    }
+  },
+  {
+    "method": "UninstallListing",
+    "params": {
+      "id": "ostrium/github-mcp-server"
+    }
+  },
+  {
+    "method": "ListInstalledListings",
+    "params": {}
+  },
+  {
+    "method": "CheckListingUpdates",
+    "params": {}
+  },
+  {
+    "method": "UpdateListing",
+    "params": {
+      "id": "ostrium/github-mcp-server",
+      "version": null,
+      "planDigest": "5f2b1c8e"
     }
   }
 ]

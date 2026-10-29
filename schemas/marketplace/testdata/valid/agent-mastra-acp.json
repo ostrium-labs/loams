@@ -27,7 +27,14 @@
     "type": "npm",
     "name": "@loams/starter-agent",
     "version": "0.1.0",
-    "integrity": "sha512-niWWczjYYd93p3UQ+Pe5Wg8Y6nSgIetB3Rish0G1gppNCllAyin2r4AaVx8hMv32p30Kl7n7GhrIkBzZ/qCdig=="
+    "integrity": "sha512-niWWczjYYd93p3UQ+Pe5Wg8Y6nSgIetB3Rish0G1gppNCllAyin2r4AaVx8hMv32p30Kl7n7GhrIkBzZ/qCdig==",
+    "locations": [
+      {
+        "kind": "walrus",
+        "blob_id": "T_mWEmm_djDTLhUnZWnJRHAXSl2nn6VnwPYiUaqaNrk",
+        "sha256": "9e2596733cd861df77a7751051e85a9a1a5ab0d1d40bd7e1e95a5e1e3b48e0a1"
+      }
+    ]
   },
   "provenance": {
     "type": "npm-slsa",

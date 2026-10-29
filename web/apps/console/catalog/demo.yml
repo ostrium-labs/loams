@@ -14,3 +14,13 @@
       name: '@loams/plugin-pipelines'
     - id: git
       name: '@loams/plugin-git'
+    # Managed engines (design 81, preview). The page asks the server for GET /v1/engines
+    # and runs on built-in sample data, saying so, until the engines API is served.
+    - id: engines
+      name: '@loams/plugin-engines'
+    # Loams Meter (design 63 §18, ME1 Task 27): Settings › Billing on fixtures until the
+    # meter serves loams.meter.v1 (D2220).
+    - id: billing
+      name: '@loams/plugin-billing'
+      config:
+        sample: true

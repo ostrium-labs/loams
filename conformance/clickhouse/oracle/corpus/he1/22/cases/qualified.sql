@@ -1,0 +1,1 @@
+SELECT t.a FROM t22 AS t ORDER BY t.a

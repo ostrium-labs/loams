@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
 # Usage: LOAMS_GPG_PRIVATE_KEY=<armored secret key> LOAMS_GPG_KEY_ID=<fingerprint> \
-#        [LOAMS_GPG_PASSPHRASE=<pw>] sign-checksums.sh <dir> <public key file>
+#        [LOAMS_GPG_PASSPHRASE=<pw>] [LOAMS_CHECKSUMS_REGENERATE=1] \
+#        sign-checksums.sh <dir> <public key file>
 #
 # Rewrites <dir>/SHA256SUMS over every file in <dir> (except SHA256SUMS and
 # SHA256SUMS.asc), after checking that every entry of the SHA256SUMS already in
 # <dir> still matches its file, then writes the detached, ASCII-armored signature
 # <dir>/SHA256SUMS.asc and verifies it against <public key file> in a fresh keyring.
+#
+# LOAMS_CHECKSUMS_REGENERATE=1 is for a release whose assets were rebuilt on
+# purpose (v0.1.2's Linux packages, rebuilt on Ubuntu 24.04): the entries that no
+# longer match are listed, then the list is rewritten over the files as attached.
 #
 # Unlike apps/desktop-electron/scripts/gpg-sign.sh this fails without a key: a
 # release's SHA256SUMS.asc is either produced and verified, or the run is red.
@@ -24,8 +29,17 @@ cd "$dir"
 rm -f SHA256SUMS.asc
 if [[ -f SHA256SUMS ]]; then
 	# The release's existing checksums (release-github.yml's) must still hold: a
-	# changed asset is a problem to stop on, not something to re-hash over.
-	sha256sum -c --ignore-missing --quiet SHA256SUMS
+	# changed asset is a problem to stop on, not something to re-hash over,
+	# unless the run says the assets were rebuilt.
+	if ! changed=$(sha256sum -c --ignore-missing --quiet SHA256SUMS 2>/dev/null); then
+		if [[ "${LOAMS_CHECKSUMS_REGENERATE:-}" != 1 ]]; then
+			printf '%s\n' "$changed" >&2
+			echo "::error::attached files no longer match SHA256SUMS; if they were rebuilt on purpose, run with regenerate" >&2
+			exit 1
+		fi
+		echo "::warning::regenerating SHA256SUMS over rebuilt assets; these entries changed:"
+		printf '%s\n' "$changed"
+	fi
 	rm -f SHA256SUMS
 fi
 shopt -s nullglob

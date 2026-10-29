@@ -1,0 +1,1 @@
+SELECT id FROM t24 WHERE i8 + 7 ORDER BY id

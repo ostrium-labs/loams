@@ -1,0 +1,27 @@
+[package]
+name = "loams-meter-core"
+description = "Loams Meter's sans-I/O core: usage events, meters, entitlements, grants, the balance engine and the lease allocator (design §63)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+# No async, no I/O, no Arrow: the `fabric/` workspace links this crate by path
+# (design §63 §5.2, D343), so every dependency here must also resolve there.
+[dependencies]
+# A path, not `workspace = true`: the workspace entry keeps default features
+# (`record`, which pulls `loams-log`), and this crate needs only the codec.
+loams-cloudevents = { path = "../loams-cloudevents", version = "0.1.2", default-features = false }
+bytes.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+time.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

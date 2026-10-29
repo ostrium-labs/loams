@@ -1,0 +1,61 @@
+{
+  "listing": {
+    "harness": {
+      "auth": [
+        "cli-login",
+        "api-key"
+      ],
+      "launch": {
+        "command": "claude",
+        "protocol": "native"
+      },
+      "native_adapter": "claude-code"
+    },
+    "id": "ostrium/claude-code",
+    "kind": "harness",
+    "licence": "Apache-2.0",
+    "pricing": "free",
+    "publisher": {
+      "name": "Ostrium Labs",
+      "url": "https://ostriumlabs.org"
+    },
+    "source": {
+      "commit": "0123456789abcdef0123456789abcdef01234567",
+      "path": "crates/loams-agentd-harness",
+      "repository": "https://github.com/ostrium-labs/loams"
+    },
+    "summary": "Anthropic's coding agent.",
+    "title": "Claude Code",
+    "version": "1.0.0"
+  },
+  "summary": {
+    "framework": null,
+    "id": "ostrium/claude-code",
+    "kind": "harness",
+    "language": null,
+    "latest": "1.0.0",
+    "level": null,
+    "revocation": null,
+    "source": "official",
+    "summary": "Anthropic's coding agent.",
+    "tier": "firstParty",
+    "title": "Claude Code"
+  },
+  "versions": [
+    {
+      "revocation": {
+        "advisory": "https://github.com/advisories/GHSA-0000-0000-0000",
+        "reason": "An upstream advisory affects some tools.",
+        "severity": "disable",
+        "versions": ">=2.0.0, <2.1.0"
+      },
+      "version": "0.9.0",
+      "yanked": "Broken launch line."
+    },
+    {
+      "revocation": null,
+      "version": "1.0.0",
+      "yanked": null
+    }
+  ]
+}

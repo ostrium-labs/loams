@@ -56,7 +56,7 @@ def main() -> int:
     if missing:
         errors.append("Missing projects: " + ", ".join(sorted(missing)))
     package = json.loads((ROOT / "package.json").read_text())
-    if package.get("packageManager") != "pnpm@11.27.1" or package.get("devDependencies", {}).get("nx") != "23.2.1":
+    if package.get("packageManager") != "pnpm@11.27.1" or package.get("devDependencies", {}).get("nx") != "23.3.0":
         errors.append("Root package manager or Nx pin changed unexpectedly")
     for obsolete in ["web/pnpm-lock.yaml", "web/pnpm-workspace.yaml", "plugins/package-lock.json"]:
         if (ROOT / obsolete).exists():

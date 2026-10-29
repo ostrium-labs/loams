@@ -62,7 +62,7 @@ export function PreviewChromeRow({
   const [draft, setDraft] = useState(url);
   const [inputFocused, setInputFocused] = useState(false);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: inputRef reads the group's ref.
+  // oxlint-disable-next-line react/exhaustive-deps -- inputRef reads the group's ref.
   useEffect(() => {
     if (focusUrlNonce == null) return;
     inputRef.current?.focus();

@@ -25,8 +25,9 @@ fn fixture(name: &str) -> String {
     .unwrap()
 }
 
-/// Forms the pre-pass does not read yet, with the task that brings them.
-const NAME_GAPS: &[(&str, u32)] = &[("number > 1 ? 1 : 0", 25)];
+/// Forms the pre-pass does not read yet, with the task that brings them
+/// (the ternary came with Task 25).
+const NAME_GAPS: &[(&str, u32)] = &[];
 
 #[test]
 fn names_match_the_oracle() {
@@ -79,8 +80,6 @@ fn no_ignored_field_reaches_sqltorel() {
         "SELECT x FROM t GROUP BY x WITH TOTALS",
         "SELECT x FROM t GROUP BY x WITH ROLLUP",
         "SELECT x FROM t GROUP BY x WITH CUBE",
-        "SELECT quantile(0.9)(x) FROM t",
-        "SELECT windowFunnel(3600)(ts, a, b) FROM t",
         "SELECT x FROM t SAMPLE 0.1",
         "SELECT x FROM t FINAL",
         "SELECT x FROM db.t AS a FINAL WHERE x = 1",
@@ -90,7 +89,6 @@ fn no_ignored_field_reaches_sqltorel() {
         "SELECT x FROM t LEFT ARRAY JOIN a AS y",
         "SELECT * FROM t ANY LEFT JOIN u USING (k)",
         "SELECT * FROM t SEMI LEFT JOIN u USING (k)",
-        "SELECT * EXCEPT (x) FROM t",
         "SELECT x FROM t ORDER BY x INTERPOLATE",
         "SELECT x FROM (SELECT x FROM t SETTINGS max_threads = 1)",
     ];
@@ -301,21 +299,147 @@ fn unknown_tables_are_60() {
 }
 
 #[test]
-fn casts_to_clickhouse_types_plan() {
-    let (cat, _) = catalog();
-    let p = prepare(
-        "SELECT CAST(a, 'Int8') AS x, _CAST(b, 'LowCardinality(String)') AS y FROM t",
+fn casts_become_the_engines_cast_function() {
+    // Every form of cast is `_CAST(x, 'T')`, ClickHouse's cast semantics in
+    // the engine (plan HE1 Task 33, R33.2), never DataFusion's cast.
+    for (sql, expected) in [
+        ("SELECT CAST(a, 'Int8') AS x FROM t", "\"_CAST\"(a, 'Int8')"),
+        (
+            "SELECT CAST(a AS UInt8) AS x FROM t",
+            "\"_CAST\"(a, 'UInt8')",
+        ),
+        (
+            "SELECT _CAST(b, 'LowCardinality(String)') AS y FROM t",
+            "\"_CAST\"(b, 'LowCardinality(String)')",
+        ),
+        ("SELECT a::String AS x FROM t", "\"_CAST\"(a, 'String')"),
+        ("SELECT 1::String AS x", "'1' AS"),
+        (
+            "SELECT CAST(a AS Nullable(Int64)) AS x FROM t",
+            "\"_CAST\"(a, 'Nullable(Int64)')",
+        ),
+    ] {
+        let g = guard(sql, &[]).unwrap();
+        let text = g.statement.to_string();
+        assert!(text.contains(expected), "{sql}: {text}");
+        assert!(!text.contains("CAST(a AS"), "{sql}: {text}");
+    }
+    let g = guard("SELECT CAST(a AS UInt8) FROM t", &[]).unwrap();
+    assert!(g.resolution.functions.contains("CAST"));
+    assert_eq!(
+        guard("SELECT TRY_CAST(a AS UInt8) FROM t", &[])
+            .unwrap_err()
+            .code,
+        48
+    );
+}
+
+#[test]
+fn case_with_an_operand_is_case_with_expression() {
+    let g = guard(
+        "SELECT CASE a WHEN 1 THEN 'one' WHEN 2 THEN 'two' END AS c FROM t",
         &[],
-        &cat,
-        &Registry::default(),
-        "db",
     )
     .unwrap();
-    let schema = p.plan.schema();
-    assert_eq!(schema.field(0).data_type(), &DataType::Int8);
+    let text = g.statement.to_string();
     assert!(
-        matches!(schema.field(1).data_type(), DataType::Dictionary(..)),
-        "{:?}",
-        schema.field(1)
+        text.contains("\"caseWithExpression\"(a, 1, 'one', 2, 'two', NULL)"),
+        "{text}"
     );
+    let g = guard(
+        "SELECT CASE a WHEN 1 THEN 'one' ELSE 'other' END FROM t",
+        &[],
+    )
+    .unwrap();
+    let text = g.statement.to_string();
+    assert!(
+        text.contains("\"caseWithExpression\"(a, 1, 'one', 'other')"),
+        "{text}"
+    );
+    // The column keeps ClickHouse's name.
+    assert!(
+        text.contains("AS \"caseWithExpression(a, 1, 'one', 'other')\""),
+        "{text}"
+    );
+}
+
+#[test]
+fn show_lists_are_guarded_as_their_selects() {
+    let g =
+        loams_house_sql::guard_in("SHOW TABLES LIKE 'a%' FORMAT JSONEachRow", &[], "db").unwrap();
+    assert_eq!(
+        g.resolution.tables[0].name,
+        vec!["system".to_string(), "tables".to_string()]
+    );
+    assert_eq!(g.format.as_deref(), Some("JSONEachRow"));
+    assert_eq!(guard("DESCRIBE TABLE t", &[]).unwrap_err().code, 48);
+}
+
+#[test]
+fn table_functions_are_safe_or_refused() {
+    let g = guard("SELECT number FROM numbers(10)", &[]).unwrap();
+    assert!(g.resolution.table_functions.contains("numbers"));
+    assert!(g.resolution.tables.is_empty());
+    for sql in [
+        "SELECT * FROM url('http://x/', CSV, 'a String')",
+        "SELECT * FROM remote('h', system.one)",
+        "SELECT * FROM deltaLake('s3://x')",
+        "SELECT * FROM clusterAllReplicas('c', db.t)",
+    ] {
+        assert_eq!(guard(sql, &[]).unwrap_err().code, 344, "{sql}");
+    }
+    let g = guard("SELECT * FROM clusterAllReplicas('c', system.tables)", &[]).unwrap();
+    assert_eq!(
+        g.resolution.tables[0].name,
+        vec!["system".to_string(), "tables".to_string()]
+    );
+    assert_eq!(guard("SELECT * FROM numbers(x)", &[]).unwrap_err().code, 48);
+    assert_eq!(
+        guard("SELECT * FROM numbers(1, 2, 3, 4)", &[])
+            .unwrap_err()
+            .code,
+        42
+    );
+    assert_eq!(
+        guard("SELECT * FROM generateRandom('a Int8')", &[])
+            .unwrap_err()
+            .code,
+        48
+    );
+}
+
+/// Array, tuple and map literals and subscripts become the House's own
+/// functions (plan HE1 Task 32), and lambda parameters keep their case.
+#[test]
+fn composite_literals_and_subscripts_become_functions() {
+    let g = guard(
+        "SELECT [1, 2][1], {'a': 1}['a'], (1, 'x'), arrayMap(X -> X + 1, a), mapFilter(kv -> kv.1 = 'a', m), mapFilter((k, v) -> v > 0, m) FROM t",
+        &[],
+    )
+    .unwrap();
+    let text = g.statement.to_string();
+    for want in [
+        r#""arrayElement"("array"(1, 2), 1)"#,
+        r#""arrayElement"("__ch_map"('a', 1), 'a')"#,
+        r#""tuple"(1, 'x')"#,
+        r#""X" -> X + 1"#,
+        r#""__ch_mapFilter_tuple"("kv" -> "tupleElement"(kv, 1) = 'a', m)"#,
+        r#""mapFilter"(("k", "v") -> v > 0, m)"#,
+        r#"AS "arrayElement([1, 2], 1)""#,
+        r#"AS "arrayElement(map('a', 1), 'a')""#,
+    ] {
+        assert!(text.contains(want), "{want} not in {text}");
+    }
+    let f: Vec<&str> = g.resolution.functions.iter().map(String::as_str).collect();
+    for name in [
+        "array",
+        "arrayElement",
+        "map",
+        "tuple",
+        "mapFilter",
+        "tupleElement",
+    ] {
+        assert!(f.contains(&name), "{name} not in {f:?}");
+    }
+    assert!(guard("SELECT untuple(t) FROM x", &[]).is_ok());
 }

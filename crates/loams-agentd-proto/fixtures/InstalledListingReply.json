@@ -1,0 +1,16 @@
+{
+  "installed": {
+    "id": "ostrium/github-mcp-server",
+    "installedMs": 1791797400000,
+    "kind": "mcp-server",
+    "revocation": {
+      "advisory": "https://github.com/advisories/GHSA-0000-0000-0000",
+      "reason": "An upstream advisory affects some tools.",
+      "severity": "warn",
+      "versions": ">=2.0.0, <2.1.0"
+    },
+    "source": "official",
+    "update": "2.1.0",
+    "version": "2.0.3"
+  }
+}

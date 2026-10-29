@@ -44,6 +44,10 @@ pub struct ToolDef {
 #[derive(Debug)]
 pub struct Tools {
     loams_desktop: Arc<LoamsDesktop>,
+    /// The read-only knowledge cache, when configured (MS1 Task 7).
+    knowledge: Option<Arc<loams_knowledge::KnowledgeReader>>,
+    /// The headless browser, when `LOAMS_BROWSER_PROVIDER` is set (D2115).
+    browser: Option<Arc<crate::browser::Browser>>,
 }
 
 fn chat_key_schema(extra: Value) -> Value {
@@ -364,23 +368,27 @@ fn catalog() -> Vec<ToolDef> {
 /// A tool's risk (design §72 §7.2, D1431): `read`, `write`, `egress` or
 /// `destructive`.
 pub fn risk_of(name: &str) -> &'static str {
+    if let Some(risk) = crate::browser::risk(name) {
+        return risk;
+    }
     match name {
         "whoami" | "list_projects" | "list_harnesses" | "list_models" | "list_chats"
         | "get_chat" | "read_chat" | "wait_for_turn" | "get_thread_diff" | "get_approval"
-        | "get_checks" | "get_check_log" => "read",
+        | "get_checks" | "get_check_log" | "knowledge_get" | "knowledge_search" => "read",
         "merge_change_request" | "deploy_live_app" => "destructive",
         _ => "write",
     }
 }
 
-fn annotations_for(name: &str) -> Value {
+pub(crate) fn annotations_for(name: &str) -> Value {
     let risk = risk_of(name);
     json!({
         "risk": risk,
         "readOnlyHint": risk == "read",
         "destructiveHint": risk == "destructive",
         "idempotentHint": matches!(name, "open_change_request" | "get_thread_diff" | "get_approval" | "deploy_live_app"),
-        "openWorldHint": matches!(name, "open_change_request" | "merge_change_request" | "deploy_live_app" | "close_change_request"),
+        "openWorldHint": matches!(name, "open_change_request" | "merge_change_request" | "deploy_live_app" | "close_change_request")
+            || risk == "egress",
     })
 }
 
@@ -656,20 +664,58 @@ fn last_pending_input(messages: &[RenderedMessage]) -> Option<Value> {
 
 impl Tools {
     pub fn new(loams_desktop: Arc<LoamsDesktop>) -> Self {
-        Self { loams_desktop }
+        Self {
+            loams_desktop,
+            knowledge: None,
+            browser: None,
+        }
+    }
+
+    /// Adds the browser tools over `browser` (D2115).
+    pub fn with_browser(mut self, browser: Arc<crate::browser::Browser>) -> Self {
+        self.browser = Some(browser);
+        self
+    }
+
+    /// Adds the read-only knowledge tools over `reader`.
+    pub fn with_knowledge(mut self, reader: Arc<loams_knowledge::KnowledgeReader>) -> Self {
+        self.knowledge = Some(reader);
+        self
     }
 
     pub fn list(&self) -> Vec<ToolDef> {
-        catalog()
+        let mut tools = catalog();
+        if self.knowledge.is_some() {
+            tools.extend(crate::knowledge::defs());
+        }
+        if self.browser.is_some() {
+            tools.extend(crate::browser::defs());
+        }
+        tools
     }
 
     pub fn has(&self, name: &str) -> bool {
-        catalog().iter().any(|t| t.name == name)
+        self.list().iter().any(|t| t.name == name)
     }
 
     /// `Ok` is the tool's structured result; `Err` is a message the model
     /// should read (surfaced as `isError`, never as a protocol error).
     pub async fn call(&self, name: &str, args: Value) -> Result<Value, String> {
+        if crate::knowledge::is_tool(name) {
+            return match &self.knowledge {
+                Some(reader) => crate::knowledge::call(reader, name, args).await,
+                None => Err(format!("unknown tool: {name}")),
+            };
+        }
+        if crate::browser::is_tool(name) {
+            return match &self.browser {
+                Some(browser) => browser.call(name, args).await,
+                None => Err(format!(
+                    "unknown tool: {name} (set {} to local or service to give agents a browser)",
+                    crate::browser::ENV_BROWSER_PROVIDER
+                )),
+            };
+        }
         let result = match name {
             "whoami" => self.whoami().await,
             "list_projects" => self.list_projects().await,
@@ -1408,6 +1454,7 @@ impl Tools {
                     .or_else(|| space.map(|s| s.path.clone()))
                     .unwrap_or_else(|| "~".into());
                 let request = RunRequest {
+                    mcp_servers: Vec::new(),
                     mcp: None,
                     prompt: text,
                     harness: Some(harness),

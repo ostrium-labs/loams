@@ -63,7 +63,7 @@ export function Connection({ client, namespace, databaseId, branchId, copy }: Co
     }
   };
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reload when the branch changes
+  // oxlint-disable-next-line react/exhaustive-deps -- reload when the branch changes
   useEffect(() => {
     let live = true;
     active.current = `${databaseId}/${branchId}`;

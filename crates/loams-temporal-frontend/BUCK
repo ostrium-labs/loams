@@ -31,9 +31,19 @@ cargo_package(
     ],
     tests = [
         {
+            "name": "batch",
+            "crate": "batch",
+            "root": "tests/batch.rs",
+        },
+        {
             "name": "capabilities",
             "crate": "capabilities",
             "root": "tests/capabilities.rs",
+        },
+        {
+            "name": "followups",
+            "crate": "followups",
+            "root": "tests/followups.rs",
         },
         {
             "name": "methods",
@@ -41,14 +51,34 @@ cargo_package(
             "root": "tests/methods.rs",
         },
         {
+            "name": "paging",
+            "crate": "paging",
+            "root": "tests/paging.rs",
+        },
+        {
             "name": "scenarios",
             "crate": "scenarios",
             "root": "tests/scenarios.rs",
         },
         {
+            "name": "schedules",
+            "crate": "schedules",
+            "root": "tests/schedules.rs",
+        },
+        {
             "name": "standalone",
             "crate": "standalone",
             "root": "tests/standalone.rs",
+        },
+        {
+            "name": "ui",
+            "crate": "ui",
+            "root": "tests/ui.rs",
+        },
+        {
+            "name": "visibility",
+            "crate": "visibility",
+            "root": "tests/visibility.rs",
         },
     ],
     deps = [
@@ -56,8 +86,10 @@ cargo_package(
         "//crates/loams-temporal-matching:loams-temporal-matching",
         "//crates/loams-temporal-proto:loams-temporal-proto",
         "//crates/loams-temporal-resonate:loams-temporal-resonate",
+        "//crates/loams-temporal-schedule:loams-temporal-schedule",
         "//crates/loams-temporal-statemachine:loams-temporal-statemachine",
         "//crates/loams-temporal-store:loams-temporal-store",
+        "//crates/loams-temporal-visibility:loams-temporal-visibility",
         "//third-party/rust:async-trait",
         "//third-party/rust:bytes",
         "//third-party/rust:clap",
@@ -68,7 +100,7 @@ cargo_package(
         "//third-party/rust:prost-types",
         "//third-party/rust:serde",
         "//third-party/rust:serde_json",
-        "//third-party/rust:sha2-0_11",
+        "//third-party/rust:sha2",
         "//third-party/rust:tokio",
         "//third-party/rust:tokio-stream",
         "//third-party/rust:toml",

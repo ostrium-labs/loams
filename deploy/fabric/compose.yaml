@@ -329,6 +329,69 @@ services:
       timeout: 10s
       retries: 30
 
+  # The same Apache Kafka 4.3.1 with a SASL_SSL listener (PLAIN users, a test
+  # CA): the Kafka family's SASL_SSL leg, the shape a Confluent Cloud cluster
+  # has (CC1 Task 2, D1822; `tests/kafka_sasl.rs`). At each start the
+  # container makes a throwaway CA and a server certificate for localhost and
+  # 127.0.0.1; the server key never leaves it, and the CA certificate (public)
+  # is written to deploy/fabric/kafka-sasl/ca.pem (git-ignored) for the
+  # suite, owned by that directory's owner. The users and passwords are fixed
+  # test values, not secrets. SASL_SSL on 9094; a plaintext listener on 9095
+  # serves only the inter-broker traffic and the health check.
+  kafka-sasl:
+    image: apache/kafka:4.3.1@sha256:ccd1314e47ec76909e01f86308b4dcf2064f19f7c89759234322314b0e319e26
+    profiles: [connectors-p2]
+    labels: { io.loams.licence: "Apache-2.0", io.loams.ci-service: "false" }
+    # Root, to write ca.pem into a bind mount whatever its owner (it is then
+    # chowned to the directory's owner).
+    user: "0:0"
+    ports: ["9094:9094"]
+    volumes: ["./kafka-sasl:/tls"]
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        w=/var/lib/kafka-sasl
+        rm -rf "$$w" && mkdir -p "$$w/data" && cd "$$w"
+        openssl req -x509 -nodes -newkey rsa:2048 -days 30 -subj "/CN=loams-test-ca" \
+          -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign" \
+          -keyout ca.key -out ca.pem 2>/dev/null
+        openssl req -nodes -newkey rsa:2048 -subj "/CN=localhost" -keyout server.key -out server.csr 2>/dev/null
+        printf 'subjectAltName=DNS:localhost,IP:127.0.0.1\nextendedKeyUsage=serverAuth\nkeyUsage=critical,digitalSignature,keyEncipherment\n' > ext
+        openssl x509 -req -in server.csr -CA ca.pem -CAkey ca.key -CAcreateserial -days 30 \
+          -extfile ext -out server.pem 2>/dev/null
+        cat server.key server.pem > keystore.pem
+        rm -f ca.key server.csr
+        cp ca.pem /tls/ca.pem.tmp && mv /tls/ca.pem.tmp /tls/ca.pem
+        chown "$$(stat -c %u:%g /tls)" /tls/ca.pem && chmod 0644 /tls/ca.pem
+        cat > server.properties <<'PROPS'
+        node.id=1
+        process.roles=broker,controller
+        controller.quorum.voters=1@localhost:9093
+        controller.listener.names=CONTROLLER
+        listeners=SASL_SSL://:9094,INTERNAL://:9095,CONTROLLER://:9093
+        advertised.listeners=SASL_SSL://localhost:9094,INTERNAL://localhost:9095
+        listener.security.protocol.map=CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,SASL_SSL:SASL_SSL
+        inter.broker.listener.name=INTERNAL
+        sasl.enabled.mechanisms=PLAIN
+        listener.name.sasl_ssl.plain.sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required user_loams-test="loams-test-password";
+        ssl.keystore.type=PEM
+        ssl.keystore.location=/var/lib/kafka-sasl/keystore.pem
+        log.dirs=/var/lib/kafka-sasl/data
+        offsets.topic.replication.factor=1
+        transaction.state.log.replication.factor=1
+        transaction.state.log.min.isr=1
+        group.initial.rebalance.delay.ms=0
+        PROPS
+        /opt/kafka/bin/kafka-storage.sh format -t "$$(/opt/kafka/bin/kafka-storage.sh random-uuid)" -c server.properties >/dev/null
+        exec /opt/kafka/bin/kafka-server-start.sh server.properties
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9095 >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+
   # ------------------------------------------- connectors-ci-only (OR-3) --
 
   redpanda:

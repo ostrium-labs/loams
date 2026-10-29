@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The corpus's Java worker, generator, exporter and replayer (plan DX1, lane
+  TSDK-java, D2130-D2134), on the official Temporal Java SDK.
+
+  The SDK pin is conformance/compute/pins.env's TEMPORAL_SDK_JAVA (Apache-2.0;
+  1.40.0, released 2026-09-29): keep the two equal (manifest.py reads this
+  file's temporal.sdk.version). Plugins and test libraries are pinned to
+  releases at least 14 days old (D1274). Never published: it is a test tool.
+
+    mvn -B -q package -DskipTests            # compile
+    mvn -B -q dependency:build-classpath -Dmdep.outputFile=target/cp.txt
+    java -cp target/classes:$(cat target/cp.txt) dev.loams.conformance.temporal.corpus.Generate ...
+    CORPUS_HISTORIES=../../histories/java mvn -B test   # corpus_replays_java
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>dev.loams.conformance</groupId>
+  <artifactId>temporal-corpus-java</artifactId>
+  <version>0.0.0</version>
+  <packaging>jar</packaging>
+  <name>Loams Temporal corpus (Java)</name>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.release>21</maven.compiler.release>
+    <temporal.sdk.version>1.40.0</temporal.sdk.version>
+    <!-- The JUnit line temporal-testing 1.40.0 is built against. -->
+    <junit.version>5.9.2</junit.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>io.temporal</groupId>
+      <artifactId>temporal-sdk</artifactId>
+      <version>${temporal.sdk.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-simple</artifactId>
+      <version>2.0.17</version>
+      <scope>runtime</scope>
+    </dependency>
+    <!-- WorkflowReplayer (corpus_replays_java, gateway_histories_replay_java). -->
+    <dependency>
+      <groupId>io.temporal</groupId>
+      <artifactId>temporal-testing</artifactId>
+      <version>${temporal.sdk.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.16.0</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.6.0</version>
+        <configuration>
+          <!-- CORPUS_HISTORIES and CORPUS_WORKFLOW_ID_PREFIX come from the environment. -->
+          <trimStackTrace>false</trimStackTrace>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <version>3.10.0</version>
+      </plugin>
+    </plugins>
+  </build>
+</project>

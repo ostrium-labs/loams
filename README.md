@@ -84,7 +84,7 @@ Examples for the native API, Qdrant clients, Flight SQL and reading the bucket d
 
 ## Repository
 
-The engine crates, the web console, Loams Desktop, the mobile apps, SDKs, protos, connectors and deploy files all live here; see the [project layout](docs/project-layout.md) and the [monorepo guide](docs/monorepo.md). Design documents are in [`docs/design`](docs/design/README.md) and task-by-task plans in [`docs/plans`](docs/plans/README.md). The metering agent and the hosted-cloud platform docs (metering, billing, identity and tailnet deploys), merged from the former private platform repository, are in [`platform/`](platform/README.md) and [`docs/platform`](docs/platform/README.md).
+The engine crates, the web console, Loams Desktop, the mobile apps, SDKs, protos, connectors and deploy files all live here; see the [project layout](docs/project-layout.md) and the [monorepo guide](docs/monorepo.md). Design documents are in [`docs/design`](docs/design/README.md) and task-by-task plans in [`docs/plans`](docs/plans/README.md). The metering agent and the hosted-cloud platform docs (metering, billing, identity and tailnet deploys), merged from the former private platform repository, are in [`crates/loams-meter-agent`](crates/loams-meter-agent) and [`docs/platform`](docs/platform/README.md).
 
 ## Contributing and community
 
@@ -96,9 +96,9 @@ Questions and chat are welcome on [Discord](https://discord.gg/eK6NanHQq); bugs 
 
 ## Code signing policy
 
-- **Linux and checksums:** the release workflows sign `.deb`, `.pacman`, AppImage and `SHA256SUMS` with the [project GPG key](docs/release/loams-release-key.asc), set up on 2026-10-16; `.rpm` packages are planned for SignPath. The previews so far shipped without it: a file built without its signing credentials is named `-unsigned`, as every v0.1.0-preview.2 desktop file is, and the release notes say so.
+- **Linux and checksums:** the release workflows sign `.deb`, `.pacman`, AppImage and `SHA256SUMS` with the [project GPG key](docs/release/loams-release-key.asc), set up on 2026-10-16 and rotated on 2026-10-26 ([transition statement](docs/release/key-transition-2026-10.md)); `.rpm` packages are planned for SignPath. The previews so far shipped without it: a file built without its signing credentials is named `-unsigned`, as every v0.1.0-preview.2 desktop file is, and the release notes say so.
 - **Windows and macOS:** unsigned today. The Windows (Authenticode) and `.rpm` signing steps through [SignPath Foundation](https://signpath.org) are built into the release workflows, but the application is not made yet, so nothing is signed that way; it will be made once the project has traction. macOS stays unsigned and not notarized.
-- **Verify a download:** `sha256sum -c SHA256SUMS --ignore-missing`, then `gpg --import docs/release/loams-release-key.asc` (fingerprint `333A C945 99D5 A1EB 2A41 6D1E 83DC 134D 8CAF 895D`) and `gpg --verify SHA256SUMS.asc SHA256SUMS`.
+- **Verify a download:** `sha256sum -c SHA256SUMS --ignore-missing`, then `gpg --import docs/release/loams-release-key.asc` (it holds both keys: the current one, fingerprint `29C5 CC3F 0FD6 6A2A D32E CB30 9E8E C3E0 AAB5 BA68`, signs releases after 0.1.2; the previous one, `333A C945 99D5 A1EB 2A41 6D1E 83DC 134D 8CAF 895D`, signed 0.1.0 to 0.1.2 and is not revoked) and `gpg --verify SHA256SUMS.asc SHA256SUMS`.
 - **Roles:** the three SignPath roles (authors, reviewers, approvers) are the repository's maintainers and owners; the named people will be listed here once the application is approved. Details: [signing policy](docs/release/signing.md), [desktop releases](docs/release/desktop.md).
 
 ## License

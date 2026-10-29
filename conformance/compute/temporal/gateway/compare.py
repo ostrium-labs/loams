@@ -14,8 +14,11 @@ equivalences (plan rulings X1.R12, X1.R20):
     task is timing (#1225).
 
 One JUnit case per language and scenario: gateway_dx1_differential_<lang>_<scenario>.
+A language whose corpus has no history of the scenario yet (a new SDK leg
+before its first compat-mode generation, D2137) reports `skip` with the
+reason, never `pass`.
 
-  compare.py --corpus DIR --gateway DIR --scenarios a,b --junit FILE
+  compare.py --corpus DIR --gateway DIR --scenarios a,b [--langs go,ts] --junit FILE
 Stdlib only.
 """
 
@@ -74,8 +77,20 @@ def compare(corpus: Path, gateway: Path, scenario: str) -> list[str]:
     a = normalize.normalize(gateway_equivalent(json.loads(corpus.read_text())))
     b = normalize.normalize(gateway_equivalent(json.loads(gateway.read_text())))
     if scenario in normalize.ORDER_FREE:
-        a, b = without_workflow_tasks(a), without_workflow_tasks(b)
+        return multiset_diff(without_workflow_tasks(a)["events"], without_workflow_tasks(b)["events"])
     return normalize.compare(a, b)
+
+
+def multiset_diff(corpus: list[str], gateway: list[str]) -> list[str]:
+    """The events (serialised JSON) one side has more often than the other.
+    normalize.compare walks event dicts, so a parallel scenario's sorted strings
+    are compared here instead (it raised AttributeError on any difference)."""
+    from collections import Counter  # noqa: PLC0415
+
+    ca, cb = Counter(corpus), Counter(gateway)
+    out = [f"only in the corpus: {e[:200]}" for e in sorted((ca - cb).elements())]
+    out += [f"only in the gateway: {e[:200]}" for e in sorted((cb - ca).elements())]
+    return out
 
 
 def main() -> int:
@@ -83,15 +98,18 @@ def main() -> int:
     p.add_argument("--corpus", type=Path, required=True)
     p.add_argument("--gateway", type=Path, required=True)
     p.add_argument("--scenarios", required=True)
+    p.add_argument("--langs", default="go,ts")
     p.add_argument("--junit", type=Path, required=True)
     a = p.parse_args()
     junit = HERE.parent.parent.parent.parent / "scripts" / "compute" / "junit.py"
     bad = 0
-    for lang in ("go", "ts"):
+    for lang in a.langs.split(","):
         for s in a.scenarios.split(","):
             name = f"gateway_dx1_differential_{lang}_{s}"
             mine, theirs = a.gateway / lang / f"{s}.json", a.corpus / lang / f"{s}.json"
-            if not mine.is_file():
+            if not theirs.is_file():
+                status, msg = "skip", f"the corpus has no {lang}/{s} history yet (generate.sh --langs {lang})"
+            elif not mine.is_file():
                 status, msg = "fail", f"the gateway wrote no {lang}/{s} history"
             else:
                 diff = compare(theirs, mine, s)

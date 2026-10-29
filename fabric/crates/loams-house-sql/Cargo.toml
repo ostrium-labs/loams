@@ -13,6 +13,9 @@ loams-house-types = { path = "../loams-house-types" }
 # The planner (`SqlToRel`, analyzer and optimizer rules) and its sqlparser 0.62
 # (D1576, R10.3). Apache-2.0.
 datafusion.workspace = true
+# `COLUMNS('regexp')` and `EXCEPT ('regexp')` (plan HE1 Task 25); already in
+# the lock through DataFusion. MIT OR Apache-2.0.
+regex = "1.13"
 
 [dev-dependencies]
 # Planning tests run the plans over in-memory tables.

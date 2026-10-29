@@ -6,8 +6,11 @@ import {
   Circle,
   Cloud,
   Code,
+  Cpu,
+  CreditCard,
   Database,
   Factory,
+  Gauge,
   GitBranch,
   LayoutDashboard,
   LayoutGrid,
@@ -46,6 +49,8 @@ const ICONS: Record<string, LucideIcon> = {
   live: Radio,
   durable: Workflow,
   streams: Waypoints,
+  // Managed RisingWave, Flink SQL and Spark (design 81).
+  engines: Cpu,
   connectors: Plug,
   graph: Network,
   jobs: ListChecks,
@@ -70,6 +75,9 @@ const ICONS: Record<string, LucideIcon> = {
   agents: Bot,
   access: Shield,
   studio: SquareTerminal,
+  // Loams Meter (design 63 §18): Settings › Billing.
+  billing: CreditCard,
+  meter: Gauge,
 };
 
 export const ICON_NAMES = Object.keys(ICONS);

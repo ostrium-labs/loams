@@ -133,7 +133,7 @@ export function CanvasPage({
   const [failure, setFailure] = useState<string>();
   const [attempt, setAttempt] = useState(0);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `attempt` retries on purpose
+  // oxlint-disable-next-line react/exhaustive-deps -- `attempt` retries on purpose
   useEffect(() => {
     const abort = new AbortController();
     setProject(undefined);

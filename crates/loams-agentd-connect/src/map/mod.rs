@@ -305,6 +305,9 @@ macro_rules! field_to {
     (map; $value:expr) => {
         $crate::map::map_to($value)
     };
+    (opt_string; $value:expr) => {
+        $value.clone().unwrap_or_default()
+    };
 }
 
 macro_rules! field_from {
@@ -322,6 +325,10 @@ macro_rules! field_from {
     };
     (map; $value:expr, $name:expr) => {
         $crate::map::map_from($value)
+    };
+    // An optional Rust string as a plain proto `string`: empty is `None`.
+    (opt_string; $value:expr, $name:expr) => {
+        Ok::<_, $crate::map::MapError>(Some($value).filter(|v: &String| !v.is_empty()))
     };
 }
 
@@ -357,6 +364,7 @@ mod files;
 mod git;
 mod groups;
 mod harness;
+pub mod marketplace;
 mod notify;
 mod projects;
 mod queue;

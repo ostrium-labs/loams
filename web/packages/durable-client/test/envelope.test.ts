@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { ENVELOPE_VERSION, EnvelopeError, envelope } from '../src/index.js';
 
 const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });

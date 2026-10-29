@@ -120,3 +120,9 @@ variable "labels" {
   type        = map(string)
   default     = {}
 }
+
+variable "confluent_integrations" {
+  description = "Confluent integrations whose keys the VM fetches from the secret store into the connect role's secret files (names only; design 80 §7.2). Create the keys with `loams byoc confluent key create`."
+  type        = list(string)
+  default     = []
+}

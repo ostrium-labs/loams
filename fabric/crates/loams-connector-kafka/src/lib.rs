@@ -18,8 +18,11 @@
 //! * [`record`] — CloudEvents in Kafka records (D270's binary mode, with
 //!   structured-mode and plain records read too).
 //! * [`registry`] — a Confluent Schema Registry client (R5.4).
+//! * [`debezium`] — Debezium change events (JSON or Avro) as Loams `change`
+//!   events, with `format: debezium-json | debezium-avro` (CC1 Task 3).
 
 pub mod config;
+pub mod debezium;
 pub mod error;
 pub mod kafka;
 pub mod record;
@@ -28,7 +31,8 @@ pub mod sink;
 pub mod source;
 pub mod txn;
 
-pub use config::{CHECKPOINT_TOPIC, KafkaConfig, SinkDelivery};
+pub use config::{CHECKPOINT_TOPIC, KafkaConfig, RecordFormat, SinkDelivery};
+pub use debezium::{DebeziumDecoder, RawRecord};
 pub use kafka::Kafka;
 pub use registry::ConfluentRegistry;
 pub use sink::{KafkaSink, KafkaSinkFactory};

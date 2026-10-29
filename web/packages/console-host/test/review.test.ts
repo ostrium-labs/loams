@@ -1,7 +1,7 @@
 // Regressions for the review of #244.
 
 import { type Context, Context as Root } from '@loams/cordis';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import {
   boot,
   GuardError,
