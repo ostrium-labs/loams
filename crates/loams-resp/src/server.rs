@@ -30,7 +30,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::{Semaphore, watch};
 
-use crate::cmd::{self, Flow};
+use crate::cmd::{self, Flow, batch};
 use crate::config::RespConfig;
 use crate::frame::{Decoder, Proto, Value};
 
@@ -248,10 +248,66 @@ pub async fn serve_stream<S>(
     let mut rbuf = BytesMut::with_capacity(16 * 1024);
     let mut wbuf = BytesMut::with_capacity(16 * 1024);
     let idle = shared.config.idle_timeout();
+    // A request decoded while collecting a batch that did not join it.
+    let mut held: Option<Vec<Bytes>> = None;
     'conn: loop {
         // Run every whole request in the buffer.
         loop {
-            match decoder.decode(&mut rbuf) {
+            let mut next = match held.take() {
+                Some(args) => Ok(Some(args)),
+                None => decoder.decode(&mut rbuf),
+            };
+            // A run of plain GETs or SETs runs as one transaction
+            // (`cmd::batch`); everything else one command at a time.
+            if let Ok(Some(args)) = &mut next
+                && let Some(kind) = batch::kind(&conn, args)
+            {
+                let mut run = vec![std::mem::take(args)];
+                let mut failed = None;
+                while run.len() < batch::MAX_BATCH {
+                    match decoder.decode(&mut rbuf) {
+                        Ok(Some(a)) if batch::kind(&conn, &a) == Some(kind) => run.push(a),
+                        Ok(Some(a)) => {
+                            held = Some(a);
+                            break;
+                        }
+                        Ok(None) => break,
+                        Err(e) => {
+                            failed = Some(e);
+                            break;
+                        }
+                    }
+                }
+                let replies = match kind {
+                    _ if run.len() == 1 => {
+                        let args = std::mem::take(&mut run[0]);
+                        vec![cmd::dispatch(&shared, &mut conn, args).await.0]
+                    }
+                    batch::Batch::Get => batch::gets(&shared, &conn, &run).await,
+                    batch::Batch::Set if batch::sets_batchable(&run) => {
+                        batch::sets(&shared, &conn, &run).await
+                    }
+                    batch::Batch::Set => {
+                        let mut out = Vec::with_capacity(run.len());
+                        for args in run {
+                            out.push(cmd::dispatch(&shared, &mut conn, args).await.0);
+                        }
+                        out
+                    }
+                };
+                for reply in replies {
+                    reply.encode(conn.proto, &mut wbuf);
+                }
+                if let Some(e) = failed {
+                    wbuf.extend_from_slice(b"-ERR ");
+                    wbuf.extend_from_slice(e.0.as_bytes());
+                    wbuf.extend_from_slice(b"\r\n");
+                    let _ = stream.write_all(&wbuf).await;
+                    break 'conn;
+                }
+                continue;
+            }
+            match next {
                 Ok(Some(args)) => {
                     let before = conn.reply;
                     let (reply, flow) = cmd::dispatch(&shared, &mut conn, args).await;
