@@ -2,23 +2,23 @@
 # Pinned images, the same digests as deploy/release. One engine runs at a
 # time (profiles `risingwave`, `flink`). Every service is pinned with cpuset:
 #
-#   0-5    the engine under test (all roles share these 6 cores)
+#   0-5    the engine under test (all roles share these 6 cores; ENGINE_CPUSET)
 #   6-7    Iggy server and its Kafka gateway
 #   8-11   the load generator (run.sh starts it with --cpuset-cpus)
-#   12-13  infrastructure (Postgres for metadata, RustFS, Lakekeeper)
+#   12-13  infrastructure (Postgres for metadata, RustFS, Lakekeeper; INFRA_CPUSET)
 #
 # Bench only: credentials are fixed test values, and nothing is published
 # beyond 127.0.0.1. Run it only through run.sh, which holds benchslot.sh.
 name: bq1-stream
 
 x-infra: &infra
-  cpuset: "12-13"
+  cpuset: ${INFRA_CPUSET:-12-13}
   restart: "no"
 
 x-rw: &rw
   profiles: [risingwave]
   image: docker.io/risingwavelabs/risingwave:v3.1.0@sha256:ee2e8e7a10b728d01b0e149d2a4f35864f0f52a0c889fa6cf9bc32c8ff46c602
-  cpuset: "0-5"
+  cpuset: ${ENGINE_CPUSET:-0-5}
   restart: "no"
   volumes:
     - ../../deploy/release/risingwave/risingwave.toml:/risingwave/config/risingwave.toml:ro
@@ -170,7 +170,7 @@ services:
       RW_LISTEN_ADDR: 0.0.0.0:5688
       RW_ADVERTISE_ADDR: rw-compute:5688
       RW_TOTAL_MEMORY_BYTES: "4294967296"
-      RW_PARALLELISM: "6"
+      RW_PARALLELISM: ${ENGINE_CORES:-6}
       RW_COMPUTE_NODE_ROLE: both
     mem_limit: 4g
     depends_on: [rw-meta]

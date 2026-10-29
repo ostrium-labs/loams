@@ -99,11 +99,11 @@ fresh_topic() { # name partitions
   loadgen topic -brokers kafka-gateway:9093 -topic "$1" -partitions "$2" >/dev/null
 }
 
-produce_only() { # partitions events
-  local p=$1 n=$2 topic="t_produce_p$1_$RANDOM"
+produce_only() { # partitions events [extra loadgen flags...]
+  local p=$1 n=$2 topic="t_produce_p$1_$RANDOM"; shift 2
   fresh_topic "$topic" "$p"
   local res
-  res=$(loadgen produce -brokers kafka-gateway:9093 -topic "$topic" -events "$n")
+  res=$(loadgen produce -brokers kafka-gateway:9093 -topic "$topic" -events "$n" "$@")
   loadgen topic -brokers kafka-gateway:9093 -topic "$topic" -delete >/dev/null 2>&1 || true
   record kafka-gateway "$(python3 -c 'import json,sys; r=json.loads(sys.argv[1]); r.update(engine="iggy-kafka-gateway", partitions=int(sys.argv[2]), cores="6-7", rev=sys.argv[3]); print(json.dumps(r))' "$res" "$p" "$(rev)")"
 }
@@ -172,8 +172,8 @@ PY
 )"
 }
 
-rw_iceberg() { # parallelism events
-  local p=$1 n=$2 topic="t_rw_i_p$1_$RANDOM" table="events_p$1_$RANDOM"
+rw_iceberg() { # parallelism events [commit_checkpoint_interval]
+  local p=$1 n=$2 ci=${3:-1} topic="t_rw_i_p$1_$RANDOM" table="events_p$1_$RANDOM"
   rw_reset
   fresh_topic "$topic" "$p"
   local prod
@@ -187,25 +187,26 @@ rw_iceberg() { # parallelism events
   { echo "SET streaming_parallelism = $p;"; echo "SET background_ddl = true;";
     rw_source_sql events "$topic";
     echo "CREATE SINK ice_sink AS SELECT user_id, amount, ts FROM events WITH (connector = 'iceberg',
-      type = 'append-only', create_table_if_not_exists = 'true', commit_checkpoint_interval = '1', $ice);"
+      type = 'append-only', create_table_if_not_exists = 'true', commit_checkpoint_interval = '$ci', $ice);"
   } | psql_rw >/dev/null
   # The read-back source can only be created once the sink made the table.
   wait_for "the Iceberg table" 120 psql_rw -c "CREATE SOURCE ice_read WITH (connector = 'iceberg', $ice)"
   read -r first done rest < <(poll_rw "$t0" "$n" 'SELECT count(*) FROM ice_read' 600)
   rw_reset
   loadgen topic -brokers kafka-gateway:9093 -topic "$topic" -delete >/dev/null 2>&1 || true
-  record risingwave "$(python3 - "$prod" "$p" "$n" "$first" "$done" "$(rev)" <<'PY'
+  record risingwave "$(python3 - "$prod" "$p" "$n" "$first" "$done" "$(rev)" "$ci" <<'PY'
 import json, sys
-prod, p, n, first, done, rev = sys.argv[1:]
+prod, p, n, first, done, rev, ci = sys.argv[1:]
 p, n, first, done = int(p), int(n), float(first), float(done)
 ok = done > 0
 print(json.dumps({
     "engine": "risingwave", "version": "v3.1.0", "scenario": "kafka->iceberg sink (lakekeeper, rustfs)",
+    "commit_checkpoint_interval": int(ci),
     "parallelism": p, "partitions": p, "events": n, "engine_cores": "0-5",
     "complete": ok, "seconds_to_all": done if ok else None, "seconds_to_first": first,
     "events_per_s": n / done if ok else None,
     "events_per_s_after_first": n / (done - first) if ok and done > first else None,
-    "commit_checkpoint_interval": 1, "produce": json.loads(prod), "rev": rev}))
+    "produce": json.loads(prod), "rev": rev}))
 PY
 )"
 }
@@ -285,7 +286,7 @@ PY
 )"
 }
 
-target=${CARGO_TARGET:-/mnt/Projects/rust-cache/target}/release
+bin=${BQ1_STREAM_BIN:-$data/bin}
 lg_host() { taskset -c 8-11 "$data/loadgen" "$@"; }
 
 gw_pg() { # seconds
@@ -320,7 +321,7 @@ upstream_user = "loams_gateway"
 upstream_password_file = "$gw/password"
 port = 14600
 TOML
-  RUST_LOG=warn taskset -c 6-7 "$target/loams-gateway" --config "$gw/gateway.toml" >"$gw/gateway.log" 2>&1 &
+  RUST_LOG=warn taskset -c 6-7 "$bin/loams-gateway" --config "$gw/gateway.toml" >"$gw/gateway.log" 2>&1 &
   local gpid=$!
   wait_for "loams-gateway" 30 bash -c "exec 3<>/dev/tcp/127.0.0.1/14600"
   local direct="host=127.0.0.1 port=14566 user=root dbname=dev sslmode=disable"
@@ -340,28 +341,35 @@ TOML
 }
 
 facade() { # seconds
-  local secs=${1:-20} bin="$target/examples/engines_facade_bench"
-  BENCH_THREADS=6 taskset -c 0-5 "$bin" serve 127.0.0.1:18090 1000 2>"$data/facade.log" &
+  local secs=${1:-20} fb="$bin/engines_facade_bench"
+  BENCH_THREADS=6 taskset -c 0-5 "$fb" serve 127.0.0.1:18090 1000 2>"$data/facade.log" &
   local fpid=$!
   wait_for "the facade" 60 curl -sf http://127.0.0.1:18090/v1/engines
   local id
   id=$(sed -n 's/.*one id: //p' "$data/facade.log")
   for route in "/v1/engines" "/v1/namespaces/bench/engines/$id" "/v1/namespaces/bench/engines"; do
-    local r
-    r=$(taskset -c 8-11 oha --no-tui --output-format json -z "${secs}s" -c 64 "http://127.0.0.1:18090$route")
-    record facade "$(python3 -c '
+    # depth 1: HTTP/1.1, 64 connections, one request in flight each.
+    # depth 16: HTTP/2 (h2c), 8 connections x 16 concurrent streams.
+    for variant in "1 --http-version=1.1 -c 64" "16 --http2 -c 8 -p 16"; do
+      local depth=${variant%% *} flags=${variant#* } r
+      r=$(taskset -c 8-11 oha --no-tui --output-format json -z "${secs}s" $flags "http://127.0.0.1:18090$route")
+      record facade "$(python3 -c '
 import json, sys
 r = json.loads(sys.argv[1]); s = r["summary"]; p = r["latencyPercentiles"]
-print(json.dumps({"engine": "loams-engines facade + RisingWave adapter", "route": sys.argv[2].split("/eng_")[0] + ("/{id}" if "/eng_" in sys.argv[2] else ""),
-  "instances": 1000, "concurrency": 64, "server_cores": "0-5", "loadgen_cores": "8-11",
+route = sys.argv[2].split("/eng_")[0] + ("/{id}" if "/eng_" in sys.argv[2] else "")
+print(json.dumps({"engine": "loams-engines facade + RisingWave adapter", "op": "GET " + route,
+  "route": route, "instances": 1000, "depth": int(sys.argv[3]), "client": sys.argv[4],
+  "cores": "0-5", "loadgen_cores": "8-11",
   "qps": s["requestsPerSec"], "success_rate": s["successRate"],
-  "latency": {"p50_ms": p["p50"] * 1000, "p99_ms": p["p99"] * 1000, "p999_ms": p["p99.9"] * 1000},
-  "rev": sys.argv[3]}))' "$r" "$route" "$(rev)")"
+  "p50_ms": p["p50"] * 1000, "p99_ms": p["p99"] * 1000, "p999_ms": p["p99.9"] * 1000,
+  "errors": sum(r.get("errorDistribution", {}).values()),
+  "rev": sys.argv[5]}))' "$r" "$route" "$depth" "oha $flags" "$(rev)")"
+    done
   done
   kill "$fpid"; wait "$fpid" 2>/dev/null || true
   for c in 1 8; do
     local r
-    r=$(BENCH_THREADS=6 taskset -c 0-5 "$bin" creates 20000 "$c")
+    r=$(BENCH_THREADS=6 taskset -c 0-5 "$fb" creates 20000 "$c")
     record facade "$(python3 -c 'import json,sys; r=json.loads(sys.argv[1]); r.update(engine="loams-engines facade + RisingWave adapter", route="POST /v1/namespaces/{ns}/engines (in-process)", server_cores="0-5", rev=sys.argv[2]); print(json.dumps(r))' "$r" "$(rev)")"
   done
 }
@@ -376,5 +384,14 @@ case $cmd in
   flink-window) flink_window "$@" ;;
   gw-pg) gw_pg "$@" ;;
   facade) facade "$@" ;;
+  # One bench-lock hold each (<= 15 min): bring the stack up, measure, tear it down.
+  session-rw-a) up risingwave; for p in 1 2 4; do produce_only "$p" 1000000; done
+    produce_only 4 1000000 -inflight 1 -linger-ms 0
+    for p in 1 2 4; do rw_window "$p" "${N:-2000000}"; done; down ;;
+  session-rw-b) up risingwave; for p in 1 2 4; do rw_iceberg "$p" "${N:-1000000}" 1; done
+    rw_iceberg 4 "${N:-1000000}" 10; gw_pg 15; down ;;
+  session-native) shift 0; for d in 1 16; do "$here/native-load.sh" --duration 20 --cores 0-5 \
+      --loadgen-cores 8-11 --depth "$d" | tee -a "$out/risingwave-native.jsonl"; done ;;
+  session-flink) up flink; for p in 1 2 4; do flink_window "$p" "${N:-2000000}"; done; down ;;
   *) sed -n '2,20p' "$0"; exit 2 ;;
 esac

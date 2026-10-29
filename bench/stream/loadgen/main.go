@@ -3,6 +3,15 @@
 //	loadgen produce  -brokers 127.0.0.1:9093 -topic events -partitions 4 -events 2000000
 //	loadgen pg       -dsn "host=127.0.0.1 port=4566 ..." -conns 8 -duration 30s [-reconnect]
 //	loadgen topic    -brokers 127.0.0.1:9093 -topic events -partitions 4 [-delete]
+//	loadgen native   -dsn ... -op insert|select -depth 16 -rows 100 -conns 8 -duration 30s
+//
+// `native` is the engine's own SQL endpoint (PG wire for RisingWave): `insert`
+// writes multi-row INSERTs (-rows per statement) into events_native, `select`
+// reads agg_native by key. -depth statements are pipelined per round trip
+// (extended protocol, one Sync per batch); depth 1 is one round trip per
+// statement. It prints the common BQ1 JSON line
+// {engine,op,qps,p50_ms,p99_ms,p999_ms,depth,cores,errors} (qps = statements/s,
+// rows_per_s for inserts; latencies are per round trip).
 //
 // `produce` writes JSON events {"user_id","amount","ts"} (ts RFC 3339, UTC) through the Kafka
 // protocol (the Iggy fork's Kafka gateway) as fast as acks allow and reports
@@ -43,6 +52,8 @@ func main() {
 		err = pgLoad(os.Args[2:])
 	case "topic":
 		err = topic(os.Args[2:])
+	case "native":
+		err = native(os.Args[2:])
 	default:
 		err = fmt.Errorf("unknown command %q", os.Args[1])
 	}
@@ -280,6 +291,123 @@ func pgLoad(args []string) error {
 		"seconds":   elapsed.Seconds(),
 		"qps":       float64(ok.Load()) / elapsed.Seconds(),
 		"latency":   percentiles(lat),
+	}
+	if e := first.Load(); e != nil {
+		out["first_error"] = e
+	}
+	return emit(out)
+}
+
+func native(args []string) error {
+	fs := flag.NewFlagSet("native", flag.ExitOnError)
+	dsn := fs.String("dsn", "host=127.0.0.1 port=14566 user=root dbname=dev sslmode=disable", "libpq DSN")
+	op := fs.String("op", "insert", "insert | select")
+	depth := fs.Int("depth", 1, "statements pipelined per round trip")
+	rows := fs.Int("rows", 1, "rows per INSERT statement")
+	conns := fs.Int("conns", 4, "connections")
+	duration := fs.Duration("duration", 20*time.Second, "how long")
+	engine := fs.String("engine", "risingwave", "engine label")
+	cores := fs.String("cores", "", "engine cores label")
+	keys := fs.Int("keys", 100, "select: key range")
+	_ = fs.Parse(args)
+	if *depth < 1 || *rows < 1 {
+		return fmt.Errorf("depth and rows must be >= 1")
+	}
+	cfg, err := pgx.ParseConfig(*dsn)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), *duration+60*time.Second)
+	defer cancel()
+	deadline := time.Now().Add(*duration)
+	var (
+		mu    sync.Mutex
+		lat   []time.Duration
+		stmts atomic.Int64
+		fails atomic.Int64
+		first atomic.Value
+		wg    sync.WaitGroup
+	)
+	worker := func(id int) {
+		defer wg.Done()
+		conn, err := pgx.ConnectConfig(ctx, cfg)
+		if err != nil {
+			fails.Add(1)
+			first.CompareAndSwap(nil, err.Error())
+			return
+		}
+		defer conn.Close(ctx)
+		rng := rand.New(rand.NewPCG(uint64(id), 7))
+		local := make([]time.Duration, 0, 1<<15)
+		var sb []byte
+		for time.Now().Before(deadline) {
+			b := &pgx.Batch{}
+			for d := 0; d < *depth; d++ {
+				switch *op {
+				case "insert":
+					sb = append(sb[:0], "INSERT INTO events_native (user_id, amount, ts) VALUES "...)
+					now := time.Now().UTC()
+					for r := 0; r < *rows; r++ {
+						if r > 0 {
+							sb = append(sb, ',')
+						}
+						sb = append(sb, '(')
+						sb = strconv.AppendInt(sb, int64(rng.IntN(10_000)), 10)
+						sb = append(sb, ',')
+						sb = strconv.AppendInt(sb, int64(rng.IntN(10_000)), 10)
+						sb = append(sb, ",'"...)
+						sb = now.AppendFormat(sb, "2006-01-02 15:04:05.000+00")
+						sb = append(sb, "')"...)
+					}
+					b.Queue(string(sb))
+				case "select":
+					b.Queue("SELECT coalesce(sum(cnt), 0) FROM agg_native WHERE bucket = $1", int64(rng.IntN(*keys)))
+				default:
+					fails.Add(1)
+					first.CompareAndSwap(nil, "unknown op "+*op)
+					return
+				}
+			}
+			t := time.Now()
+			br := conn.SendBatch(ctx, b)
+			var berr error
+			for d := 0; d < *depth; d++ {
+				if _, err := br.Exec(); err != nil && berr == nil {
+					berr = err
+				}
+			}
+			if err := br.Close(); err != nil && berr == nil {
+				berr = err
+			}
+			if berr != nil {
+				fails.Add(1)
+				first.CompareAndSwap(nil, berr.Error())
+				continue
+			}
+			local = append(local, time.Since(t))
+			stmts.Add(int64(*depth))
+		}
+		mu.Lock()
+		lat = append(lat, local...)
+		mu.Unlock()
+	}
+	t0 := time.Now()
+	for i := 0; i < *conns; i++ {
+		wg.Add(1)
+		go worker(i)
+	}
+	wg.Wait()
+	secs := time.Since(t0).Seconds()
+	p := percentiles(lat)
+	out := map[string]any{
+		"engine": *engine, "op": *op, "qps": float64(stmts.Load()) / secs,
+		"p50_ms": p["p50_ms"], "p99_ms": p["p99_ms"], "p999_ms": p["p999_ms"],
+		"depth": *depth, "cores": *cores, "errors": fails.Load(),
+		"conns": *conns, "seconds": secs, "latency_unit": "round trip of one pipelined batch",
+	}
+	if *op == "insert" {
+		out["rows_per_statement"] = *rows
+		out["rows_per_s"] = float64(stmts.Load()) * float64(*rows) / secs
 	}
 	if e := first.Load(); e != nil {
 		out["first_error"] = e

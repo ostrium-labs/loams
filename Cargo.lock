@@ -10074,6 +10074,7 @@ name = "loams-risingwave"
 version = "0.1.2"
 dependencies = [
  "async-trait",
+ "axum 0.8.9",
  "clap",
  "futures",
  "loams-engines",
@@ -10089,6 +10090,7 @@ dependencies = [
  "tokio-postgres",
  "tokio-rustls",
  "toml 0.8.23",
+ "tower 0.5.3",
  "tracing",
  "webpki-roots 1.0.10",
 ]
