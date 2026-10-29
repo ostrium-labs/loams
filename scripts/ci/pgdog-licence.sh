@@ -6,8 +6,10 @@
 #     vendored directory holds one;
 #   - a file references the `ghcr.io/pgdogdev/pgdog` image outside the bundles
 #     that may (deploy/pgdog, deploy/helm/loams-postgres,
-#     deploy/loams-postgres-single) and the router conformance harness
-#     (scripts/router/inventory, never distributed); prose (*.md) may name it;
+#     deploy/loams-postgres-single) and the test harnesses that are never
+#     distributed (the router's scripts/router/inventory, and the compute
+#     conformance harness conformance/compute, whose transaction-mode
+#     overlay runs PgDog unmodified; DX1 ruling R0.8); prose (*.md) may name it;
 #   - a reference lacks an @sha256 digest;
 #   - a bundle that references the image lacks LICENSE-NOTICE.md.
 # Then it runs scripts/spec/provenance.sh (no PgDog text in the router specs).
@@ -18,7 +20,7 @@ set -euo pipefail
 
 IMAGE='ghcr.io/pgdogdev/pgdog'
 BUNDLES=(deploy/pgdog deploy/helm/loams-postgres deploy/loams-postgres-single)
-HARNESS=(scripts/router/inventory)
+HARNESS=(scripts/router/inventory conformance/compute)
 
 # The check itself, over the git repository at $1.
 check() {
@@ -60,7 +62,7 @@ check() {
       case $f in "$b"/*) allowed=$b ;; esac
     done
     if [ -z "$allowed" ]; then
-      echo "pgdog-licence: $f references $IMAGE outside ${BUNDLES[*]} (and the router harness)"; fail=1
+      echo "pgdog-licence: $f references $IMAGE outside ${BUNDLES[*]} (and the test harnesses ${HARNESS[*]})"; fail=1
     fi
     # A digest on the line, or `@$var` / `@${var}` in a file that pins a
     # full digest (the harness's `digest="${PGDOG_DIGEST:-sha256:…}"`).

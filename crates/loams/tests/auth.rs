@@ -20,7 +20,8 @@ use serde_json::{Value, json};
 use tempfile::TempDir;
 
 const AUDIENCE: &str = "loams-console";
-const CONSOLE: &str = "https://console.loams.dev";
+/// A console on an origin of its own, listed in `LOAMS_CORS_ORIGINS`.
+const CONSOLE: &str = "https://console.example.com";
 const LOOPBACK0: SocketAddr =
     SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST), 0);
 
@@ -563,6 +564,134 @@ async fn oidc_tokens_are_verified_against_the_issuer() {
     own.task.abort();
 }
 
+/// CORS is deny by default (owner, 2026-10-23: the console ships with the
+/// deployment): an authenticated engine with no `LOAMS_CORS_ORIGINS` answers
+/// no other origin, not even the retired hosted console's; its own origin is
+/// same-origin and still gets an answer.
+#[tokio::test]
+async fn cors_allows_only_the_engines_own_origin_by_default() {
+    let keys = TempDir::new().unwrap();
+    let (key, path) = keys_file(&keys);
+    let running = Running::start(AuthConfig::api_keys(&path), |_| {}).await;
+    let url = format!("{}/loams.instance.v1.InstanceService/WhoAmI", running.base);
+    let preflight = |origin: String| {
+        reqwest::Client::new()
+            .request(reqwest::Method::OPTIONS, &url)
+            .header("origin", origin)
+            .header("access-control-request-method", "POST")
+            .header(
+                "access-control-request-headers",
+                "authorization, content-type",
+            )
+            .send()
+    };
+    for foreign in [
+        "https://console.loams.dev",
+        "https://evil.example",
+        "loams-app://console",
+    ] {
+        let refused = preflight(foreign.into()).await.unwrap();
+        assert_eq!(refused.status(), 403, "{foreign}");
+        assert!(
+            !refused
+                .headers()
+                .contains_key("access-control-allow-origin"),
+            "{foreign}"
+        );
+        let call = reqwest::Client::new()
+            .post(&url)
+            .header("origin", foreign)
+            .header("authorization", format!("Bearer {key}"))
+            .header("content-type", "application/json")
+            .header("connect-protocol-version", "1")
+            .body("{}")
+            .send()
+            .await
+            .unwrap();
+        assert!(
+            !call.headers().contains_key("access-control-allow-origin"),
+            "{foreign}"
+        );
+    }
+    let own = running.base.clone();
+    let ok = preflight(own.clone()).await.unwrap();
+    assert_eq!(ok.status(), 204);
+    assert_eq!(ok.headers()["access-control-allow-origin"], own.as_str());
+    running.server.shutdown().await.unwrap();
+}
+
+/// The console ships with the deployment: the engine serves it at `/ui/`
+/// on the main port, with no credential (its files are public), while its
+/// API calls stay behind authentication.
+#[tokio::test]
+async fn the_engine_serves_its_console_beside_the_guarded_api() {
+    let keys = TempDir::new().unwrap();
+    let (_, path) = keys_file(&keys);
+    let console = TempDir::new().unwrap();
+    std::fs::create_dir_all(console.path().join("assets")).unwrap();
+    std::fs::write(
+        console.path().join("index.html"),
+        "<!doctype html><meta charset=\"utf-8\" /><meta http-equiv=\"Content-Security-Policy\" \
+         content=\"default-src 'self'; connect-src 'self'\" /><title>Loams console</title>",
+    )
+    .unwrap();
+    std::fs::write(console.path().join("config.json"), "{}").unwrap();
+    std::fs::write(console.path().join("assets/app.js"), "1").unwrap();
+    let dir = console.path().to_path_buf();
+    let running = Running::start(AuthConfig::api_keys(&path), move |config| {
+        config.console_dir = Some(dir);
+        config.console = loams::console::ConsoleOptions {
+            agentd_origins: vec!["https://agentd.example.ts.net".into()],
+        };
+    })
+    .await;
+    let get = |path: &'static str| {
+        let url = format!("{}{path}", running.base);
+        async move {
+            reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .unwrap()
+                .get(url)
+                .send()
+                .await
+                .unwrap()
+        }
+    };
+    let index = get("/ui/").await;
+    assert_eq!(index.status(), 200);
+    // The CSP is a header, with the agentd host in connect-src and frame-src
+    // (#1201: Studio previews frame it); the page carries no meta CSP that
+    // would keep it out.
+    assert_eq!(
+        index.headers()["content-security-policy"],
+        "default-src 'self'; connect-src 'self' https://agentd.example.ts.net; \
+         frame-src 'self' https://agentd.example.ts.net; frame-ancestors 'self'"
+    );
+    let html = index.text().await.unwrap();
+    assert!(html.contains("Loams console"), "{html}");
+    assert!(!html.contains("Content-Security-Policy"), "{html}");
+    assert_eq!(get("/ui/config.json").await.text().await.unwrap(), "{}");
+    assert_eq!(get("/ui/assets/app.js").await.status(), 200);
+    assert_eq!(get("/ui/projects/p").await.status(), 200);
+    let root = get("/").await;
+    assert_eq!(root.status(), 307);
+    assert_eq!(root.headers()["location"], "/ui/");
+    // The API is still guarded.
+    let (status, reason, _) = running.who_am_i(None).await;
+    assert_eq!((status, reason.as_deref()), (401, Some("token_missing")));
+    running.server.shutdown().await.unwrap();
+
+    // Without a build there is no /ui/: the API's own 404 (behind auth).
+    let running = Running::start(AuthConfig::api_keys(&path), |_| {}).await;
+    let status = reqwest::get(format!("{}/ui/", running.base))
+        .await
+        .unwrap()
+        .status();
+    assert_eq!(status, 401);
+    running.server.shutdown().await.unwrap();
+}
+
 /// An OIDC allowlist is required: a shared issuer signs tokens for everyone.
 #[tokio::test]
 async fn oidc_without_an_allowlist_refuses_to_start() {
@@ -589,10 +718,11 @@ async fn oidc_without_an_allowlist_refuses_to_start() {
     assert!(err.contains("allowlist"), "{err}");
 }
 
-/// The hosted console's tailnet identity check (API2 ruling 10.4): a
-/// credential-less Connect GET of `AuthService/GetSession` from the console's
-/// origin, on the `tailscale serve` target, names the tailnet user; the main
-/// port, which strips the identity headers, answers 401.
+/// The console's tailnet identity check (API2 ruling 10.4): a
+/// credential-less Connect GET of `AuthService/GetSession` from the console
+/// the engine serves (its own origin), on the `tailscale serve` target, names
+/// the tailnet user; the main port, which strips the identity headers,
+/// answers 401.
 #[tokio::test]
 async fn tailscale_get_session_names_the_tailnet_user() {
     let auth = AuthConfig {
@@ -616,7 +746,7 @@ async fn tailscale_get_session_names_the_tailnet_user() {
                  ?connect=v1&encoding=json&message=%7B%7D"
             ))
             .header("accept", "application/json")
-            .header("origin", "https://console.loams.dev")
+            .header("origin", format!("http://{addr}"))
             .header("tailscale-user-login", "me@example.com")
             .header("tailscale-user-name", "Me")
             .send()
@@ -627,7 +757,7 @@ async fn tailscale_get_session_names_the_tailnet_user() {
     assert_eq!(response.status().as_u16(), 200);
     assert_eq!(
         response.headers()["access-control-allow-origin"],
-        "https://console.loams.dev"
+        format!("http://{target}").as_str()
     );
     let body: Value = response.json().await.unwrap();
     assert_eq!(body["session"]["user"]["email"], "me@example.com", "{body}");
@@ -701,8 +831,10 @@ async fn tailscale_identities_count_only_on_the_serve_target() {
     let (status, reason, _) = who_am_i(target, None).await;
     assert_eq!((status, reason.as_str()), (401, "token_missing"));
     // The identity there is ambient: a foreign page gets no CORS and is
-    // refused; the hosted console (the default origin) gets both.
-    let from = |origin: &'static str| async move {
+    // refused, the retired hosted console included (no origin is allowed by
+    // default); the console the engine serves itself (its own origin) gets
+    // both.
+    let from = |origin: String| async move {
         reqwest::Client::new()
             .post(format!(
                 "http://{target}/loams.instance.v1.InstanceService/WhoAmI"
@@ -716,7 +848,7 @@ async fn tailscale_identities_count_only_on_the_serve_target() {
             .await
             .expect("call")
     };
-    let foreign = from("https://evil.example").await;
+    let foreign = from("https://evil.example".into()).await;
     assert_eq!(foreign.status().as_u16(), 403);
     assert!(
         foreign
@@ -740,11 +872,20 @@ async fn tailscale_identities_count_only_on_the_serve_target() {
             .get("access-control-allow-origin")
             .is_none()
     );
-    let console = from("https://console.loams.dev").await;
+    let hosted = from("https://console.loams.dev".into()).await;
+    assert_eq!(hosted.status().as_u16(), 403);
+    assert!(
+        hosted
+            .headers()
+            .get("access-control-allow-origin")
+            .is_none()
+    );
+    let own = format!("http://{target}");
+    let console = from(own.clone()).await;
     assert_eq!(console.status().as_u16(), 200);
     assert_eq!(
         console.headers()["access-control-allow-origin"],
-        "https://console.loams.dev"
+        own.as_str()
     );
     running.server.shutdown().await.unwrap();
 

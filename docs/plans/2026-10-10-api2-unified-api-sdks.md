@@ -669,7 +669,7 @@ Commit `ci(sdks): a conformance job for every language`.
 - Python: sync and async clients, `mypy --strict`, and extras `flight`, `arrow` and `polars`. It replaces M1.6's `loams-client`.
 - Go: context-first, with `*Stream` helpers.
 - Rust: an async `Stream`, and no `tonic`.
-- TypeScript: Node ≥ 22, browsers, Deno and Bun. `@loams/live` re-exports.
+- TypeScript: Node ≥ 22, browsers, Deno and Bun (Deno no longer claimed or tested since D1790, 2026-10-23). `@loams/live` re-exports.
 - Every `TokenSource` of D608 exists. `OidcExchange` and `WorkloadIdentity` are tested against MT1's token endpoint when it exists, and against the fault server's `token_expired` script otherwise.
 
 Tests (per language, named `<lang>_…`):

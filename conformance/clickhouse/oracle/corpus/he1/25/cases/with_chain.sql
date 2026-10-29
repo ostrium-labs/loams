@@ -1,0 +1,1 @@
+WITH 2 AS n, a * n AS k SELECT k FROM t25 ORDER BY k

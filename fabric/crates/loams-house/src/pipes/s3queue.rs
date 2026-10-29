@@ -722,7 +722,10 @@ impl QueueRunner {
         if !listed.keys.is_empty() {
             let root = lake.root().clone();
             let make = |endpoint: &str| batch(pipe, source, &listed.keys, endpoint, &root);
-            let written = self.writer.write(namespace, view, &target, &make).await?;
+            let written = self
+                .writer
+                .write(namespace, view, &target, Some(&make))
+                .await?;
             files = written.data_files;
             rows = written.rows;
             bytes = written.input_bytes;

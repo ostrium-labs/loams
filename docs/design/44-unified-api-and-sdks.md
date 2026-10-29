@@ -25,7 +25,7 @@ This document turns that into decisions **D600–D619** and open questions **Q60
 - No new compatibility surface and no removal of one (D603).
 - No client- or bidi-streaming in the application API (D420's rule stands: browsers and URLSession cannot do it; half-duplex works through every proxy). Bulk upload that needs it goes through Flight `DoPut` (gRPC only) or chunked unary writes (§7.5).
 - No hand-written REST SDKs. M1.6's Python and TypeScript REST SDKs are retired by this work (D604, pre-release, no users to migrate).
-- No billing/metering RPCs here: the meter protocol belongs to the private `loams-platform` (D220, D552) and is **not** in the open protos or SDKs.
+- ~~No billing/metering RPCs here: the meter protocol belongs to the private `loams-platform` (D220, D552).~~ Superseded by D1119 (no open core) and §63: Loams Meter's public services are the package `loams.meter.v1` (§7.2); its `LeaseService` is internal, in the package `loams.meter.internal.v1` (D2202).
 
 ## 3. What exists today (checked 2026-10-02 on `dev`)
 
@@ -191,8 +191,10 @@ Language idiom rules (D606): module and method names are the proto names in the 
 | `loams.postgres` | `loams.postgres.v1` `PostgresService`: projects, branches, endpoints, roles, databases, connect (§46 §4) | PG2 (protos in Task 1; served by `pg-control` behind the `loams` feature `postgres` from Task 9) |
 | `loams.memory` | `loams.memory.v1` `MemoryAdminService`, `MemoryService`: stores, spaces, add, search, facts, forget, blocks, consolidation, watch (§52 §9.1, D884); `CodeMemoryService` joins it (MM1 Task 27) | MM1: protos in Task 1; served with the `loams` feature `memory` from Task 11, `memory_not_yet_available` per RPC until its task lands; no facade calls until Task 44; unstable until MM1 Task 56 |
 | none: no SDK module (Q816) | `loams.agentd.v1` `StudioService`, `ProjectService`, `ThreadService`, `QueueService`, `HarnessService`, `GitService`, `DiffService`, `FileService`, `TerminalService`, `PreviewService`, `ReviewService`, `RunGroupService`, `ApprovalService`, `NotificationService`, `AttachmentService`: Loams Studio's daemon surface (§53 §6.1, D907). Served by `loams-agentd` (`loams-agentd-connect`), never by the Loams server, so it is in no `CATALOGUE` and no SDK; no method carries a `FacadeOptions` and the facade generator leaves the package out of `PROTO_PACKAGES` | SD1: protos in Task 4, the loopback listener in Task 5, the remote listener in Task 7; unstable until SD1 Task 32 |
+| `loams.meter` (`.customers`, `.entitlements`, `.plans`, `.notifications`) | `loams.meter.v1` `CustomerService`, `EntitlementService`, `PlanService`, `NotificationService` (§63 §17.1, D1131); `LeaseService` is internal, in its own package `loams.meter.internal.v1` (product roles' service identities on the cluster listener), in no `CATALOGUE`, no facade and no SDK (D2202) | ME1: protos in Tasks 10, 11, 14 and 17; served with the `loams` feature `meter` on gateway nodes from the role wiring; `feature_not_in_variant` otherwise; unstable until ME1's exit |
+| none: no SDK module | `loams.marketplace.v1` `Listing`: the marketplace listing's data model (§73 §3.6, D1455), messages only, equal to `schemas/marketplace/listing.v1.json`. Read by `loams-agentd` and the index tooling, never served by the Loams server, so it is in no `CATALOGUE`; the facade generator leaves it out of `PROTO_PACKAGES` (`NOT_SDK_PACKAGES`) | MK1 Task 1 |
 
-Not in the public protos or SDKs: `loams.internal.v1`, the meter protocol (private), connector-specific admin.
+Not in the public protos or SDKs: `loams.internal.v1`, the meter's internal `LeaseService`, connector-specific admin.
 
 ### 7.3 Annotations drive the facade (D606)
 
@@ -242,7 +244,7 @@ Verified 2026-10-02: gRPC's [languages page](https://grpc.io/docs/languages/) li
 
 | # | Language | Client protocol | Library | `buf` plugins (remote) | Package | Registry | v1 status |
 |---|---|---|---|---|---|---|---|
-| 1 | TypeScript / JavaScript (Node, browsers, Deno, Bun) | **Connect** | `@connectrpc/connect` 2.x (`connect-es`), protobuf-es | `buf.build/bufbuild/es` | `@loams/client` (facade), `@loams/proto` (generated), `@loams/live` (kept, re-exports) | npm | **First** |
+| 1 | TypeScript / JavaScript (Node, browsers, Bun; Deno dropped by D1790, [§79](79-void-and-vite-plus.md)) | **Connect** | `@connectrpc/connect` 2.x (`connect-es`), protobuf-es | `buf.build/bufbuild/es` | `@loams/client` (facade), `@loams/proto` (generated), `@loams/live` (kept, re-exports) | npm | **First** |
 | 2 | Python | **Connect** | `connect-python` (beta), protobuf | `buf.build/protocolbuffers/python`, `buf.build/connectrpc/python` | `loams` | PyPI | **First** |
 | 3 | Go | **Connect** | `connect-go` | `buf.build/protocolbuffers/go`, `buf.build/connectrpc/go` | module `loams.dev/go` (mirror repo `ostrium-labs/loams-go`) | Go module proxy | **First** |
 | 4 | Rust | **Connect** | `connectrpc` crate (`connect-rust`) with buffa, the server's stack (D128) | `connectrpc-build` in `build.rs` (no buf remote) | `loams` | crates.io | **First** |

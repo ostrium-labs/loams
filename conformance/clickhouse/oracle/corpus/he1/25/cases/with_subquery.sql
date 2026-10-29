@@ -1,0 +1,1 @@
+WITH (SELECT max(a) FROM t25) AS m SELECT a FROM t25 WHERE a = m

@@ -1,6 +1,6 @@
 # Loams Nx monorepo
 
-Loams engine, console, SDKs, desktop, native mobile applications, and plugin services now live in one repository. Nx **23.2.1** orchestrates existing build tools; pnpm **11.27.1** owns the JavaScript workspace and root lockfile.
+Loams engine, console, SDKs, desktop, native mobile applications, and plugin services now live in one repository. Nx **23.3.0** orchestrates existing build tools; pnpm **11.27.1** owns the JavaScript workspace and root lockfile.
 
 ## Layout and installation
 
@@ -17,7 +17,7 @@ plugins/                      Plugin runtime, adapters, dashboard, BI contracts
 tools/monorepo/                Migration provenance and structural checks
 ```
 
-Use Node 22 or newer and the pinned pnpm version:
+Use Node 24 (`.nvmrc`; the toolchain needs 24.11 or newer, design 79 D1775) and the pinned pnpm version. Published packages such as `@loams/client` keep Node 22 as their runtime floor, which CI tests in one cell:
 
 ```sh
 pnpm install --frozen-lockfile
@@ -58,7 +58,7 @@ Linux's normal desktop build includes the native browser and needs WebKitGTK 4.1
 
 ## Dependency graph and caching
 
-Nx discovers 49 projects, including existing package script targets. Use `pnpm nx graph` locally to inspect them. `pnpm affected --base=<base-revision> --head=HEAD` runs affected checks; CI supplies explicit refs and platform scheduling.
+Nx discovers the JS, mobile and native projects, including existing package script targets, and one project per crate of the root and `fabric/` Cargo workspaces (tag `cargo-crate`, from `tools/nx-cargo`; see [the Nx Cloud guide](guides/nx-cloud.md#rust)). Use `pnpm nx graph` locally to inspect them. `pnpm affected --base=<base-revision> --head=HEAD` runs affected checks; CI supplies explicit refs and platform scheduling.
 
 - TypeScript project/package dependencies retain their existing boundaries.
 - Plugins' composite compiler runs once through a shared aggregate target, avoiding concurrent writes from recursive `tsc -b` tasks.
@@ -66,9 +66,16 @@ Nx discovers 49 projects, including existing package script targets. Use `pnpm n
 - JS lock/config files and runtime versions participate in cache keys.
 - SDK conformance tests remain noncacheable because they produce required coverage reports outside their package directory.
 - Signing, installation, services, generation/drift, releases, and most native tasks are noncacheable.
-- No Nx Cloud account, paid cache service, or remote data upload is configured.
+- `nx.json` names the Nx Cloud workspace (`nxCloudId`) for the remote cache; CI connects only where [the Nx Cloud guide](guides/nx-cloud.md) says, and never for a release. Set `NX_NO_CLOUD=true` locally to run without it.
 
-Vite+ 1.0.0/Vitest 5.0.1 stay scoped to plugins, while the console retains ordinary Vite 8.3.1/Vitest 5.0.3. pnpm reports Vite peer-version warnings because the plugins' compatibility fork identifies as version 1.0.0; actual builds and tests pass. MSW's nonessential postinstall is explicitly disabled. Do not apply a global Vite override.
+**Vite+ is the JavaScript toolchain** (design 79 D1772, plan VV1, owner direction 2026-10-23 D1770). Nx stays the orchestrator; inside each target, `vp` does the work:
+- One exact `vite-plus` pin lives in the root `pnpm-workspace.yaml` catalog, with `vite` aliased to the matching `@voidzero-dev/vite-plus-core` and `vitest` at the version `vite-plus` depends on. Packages name all three as `"catalog:"`; never pin them per package.
+- `peerDependencyRules.allowedVersions.vite` names the same version as the pin, because `vite-plus-core` identifies as its own version and Vite plugins' `vite: ^8` peer ranges would otherwise fail. A bump changes both lines in one PR, and only to a release at least 14 days old.
+- Test files import from `vite-plus/test`, and configs (`vite.config.ts`) from `vite-plus`. Scripts call `vp dev`, `vp build`, `vp preview` and `vp test run`: with `vite` aliased there is no `vite` binary.
+- Lint and format are `vp check` (Oxlint and Oxfmt; design 79 D1773), configured in the `lint` and `fmt` sections of `web/vite.config.ts` and `agents/factory/vite.config.ts`. The rules are VV0 Task 1's Biome parity table ([vv0-report.md](plans/vv0-report.md)); suppressions are `// oxlint-disable-next-line <rule> -- <reason>`. `pnpm format` (`vp fmt`) rewrites. Formatting-only commits go in `.git-blame-ignore-revs`. Biome and ESLint are gone.
+- A global `vite` override (and `vitest`) in `pnpm-workspace.yaml` points every other `vite` in the tree, peers included, at the same `vite-plus-core`. The desktop builds on it through electron-vite 6.0.0 (VV0 Task 6: electron-vite 5 on Vite 8 inlined Electron's launcher, #811, #935).
+
+MSW's nonessential postinstall is explicitly disabled.
 
 ## Desktop fork cleanup and policy
 

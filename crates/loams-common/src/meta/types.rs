@@ -387,10 +387,41 @@ pub const GRAPH_STREAM_PREFIX: &str = "_graph.";
 /// [`ensure_system_stream`](super::MetaStore::ensure_system_stream), keyed by repository id.
 pub const GIT_STREAM: &str = "_git";
 
-/// The reserved system streams a namespace may hold, with their partition counts: each is
-/// created (class `Standard`, no retention) only by
+/// The usage stream of Loams Meter (ME1 Task 4, design §63 §7.1): every usage event, from every
+/// product and every external producer, keyed by the event's `subject` so that one subject's
+/// events are in one partition, in order. It lives in the `_system` namespace
+/// ([`SYSTEM_NAMESPACE`]), where `loams migrate run` creates it
+/// (`loams_migrate::system::ensure_meter_stream`); reserved, created only by
 /// [`ensure_system_stream`](super::MetaStore::ensure_system_stream).
-pub const SYSTEM_STREAMS: &[(&str, u32)] = &[(GIT_STREAM, 8)];
+pub const METER_STREAM: &str = "_meter";
+
+/// [`METER_STREAM`]'s partitions: at least 4 × the expected number of meter instances, so
+/// counter ownership spreads (§63 §7.1).
+pub const METER_STREAM_PARTITIONS: u32 = 32;
+
+/// [`METER_STREAM`]'s retention: 14 days, at least twice the longest House pipe outage an
+/// operator tolerates, so the reconciler can replay the tail after the House's committed
+/// offsets (§63 §7.1, §12).
+pub const METER_STREAM_RETENTION_MS: u64 = 14 * 24 * 60 * 60 * 1000;
+
+/// The reserved system streams a namespace may hold, with their partition counts: each is
+/// created (class `Standard`, with [`system_stream_retention`]) only by
+/// [`ensure_system_stream`](super::MetaStore::ensure_system_stream).
+pub const SYSTEM_STREAMS: &[(&str, u32)] =
+    &[(GIT_STREAM, 8), (METER_STREAM, METER_STREAM_PARTITIONS)];
+
+/// The retention a reserved system stream is created with: [`METER_STREAM_RETENTION_MS`] for
+/// [`METER_STREAM`], none for the others (and for a name that is not a system stream).
+pub fn system_stream_retention(name: &str) -> Retention {
+    if name == METER_STREAM {
+        Retention {
+            max_age_ms: Some(METER_STREAM_RETENTION_MS),
+            max_bytes: None,
+        }
+    } else {
+        Retention::default()
+    }
+}
 
 /// The partitions of system stream `name`, or `None` when `name` is not one.
 pub fn system_stream_partitions(name: &str) -> Option<u32> {

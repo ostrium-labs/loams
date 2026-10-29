@@ -1,0 +1,36 @@
+# Loams Cloud's own email-domain overrides (design 78 §25.4, D1753).
+#
+# `block`: never valid for a work-email code (Magic Auth), whatever the pinned
+# lists say. It always holds the owner's named families. A trailing `.*` matches
+# any public suffix (yahoo.com, yahoo.co.uk, yahoo.de).
+#
+# `allow`: work domains a pinned list wrongly includes. `allow` beats the pinned
+# lists; `block` beats absence from them. A domain in
+# both is a mistake, and the policy tests refuse it.
+#
+# Only the email-code path reads `block`. The waitlist refuses only disposable
+# domains (and `allow` overrides that too). Changes go through a reviewed PR.
+
+block = [
+  "gmail.com",
+  "googlemail.com",
+  "outlook.com",
+  "hotmail.com",
+  "live.com",
+  "yahoo.*",
+  "icloud.com",
+  "me.com",
+  "proton.me",
+  "protonmail.com",
+  "aol.com",
+  "gmx.*",
+  "mail.ru",
+  "yandex.*",
+  "qq.com",
+  "163.com",
+  # Apple's relay addresses are never valid for an email code (D1758).
+  "privaterelay.appleid.com",
+]
+
+allow = [
+]

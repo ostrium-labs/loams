@@ -15,6 +15,32 @@
 # (`scripts/release/check-upgrade-path.sh`) and the signed manifest's copy.
 
 [[release]]
+version     = "0.1.2"
+from        = "0.1"
+free_factor = 1.5
+# Expected downtime of the upgrade, excluding image pulls (Q833's target).
+downtime_seconds = 300
+
+# No migrations and no third-party pin changes. Durable on TiKV now runs the
+# Resonate fork's TiKV store (FW1, #1226), which keeps 0.1.x's keyspace layout
+# byte for byte, so `loams_durable` carries over. `LOAMS_CORS_ORIGINS` no
+# longer defaults to https://console.loams.dev (D1705): an upgraded `.env`
+# keeps its old value, and the CHANGELOG's Upgrading says to remove it.
+
+[release.components]
+pd             = "v8.5.8"
+tikv           = "v8.5.8"
+tidb           = "v8.5.8-loams.1"
+loams_postgres = "sha256:4dcec4cbef637b92b1088ea2c0bc857f3b5ef4318f02e8d2d4a0f9263ed4140e"
+chdb           = "26.9.0"
+grafeo         = "0.5.43"
+
+# The agentd hosts Studio in the engine-served console may call and frame (#1111, #1201).
+[[release.env]]
+add     = "LOAMS_AGENTD_ORIGINS"
+default = ""
+
+[[release]]
 version     = "0.1.1"
 from        = "0.1"
 free_factor = 1.5

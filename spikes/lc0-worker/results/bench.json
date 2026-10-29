@@ -1,0 +1,102 @@
+{
+  "worker/noop": {
+    "colo": "MAA",
+    "n": 120,
+    "errors": 0,
+    "p50": 286,
+    "p95": 300,
+    "max": 1560,
+    "min": 259,
+    "first": 1560
+  },
+  "worker/insert": {
+    "colo": "MAA",
+    "n": 120,
+    "errors": 0,
+    "p50": 284,
+    "p95": 292,
+    "max": 332,
+    "min": 263,
+    "first": 296
+  },
+  "worker/upsert": {
+    "colo": "MAA",
+    "n": 120,
+    "errors": 0,
+    "p50": 274,
+    "p95": 288,
+    "max": 1036,
+    "min": 264,
+    "first": 284
+  },
+  "worker/update": {
+    "colo": "MAA",
+    "n": 120,
+    "errors": 0,
+    "p50": 274,
+    "p95": 286,
+    "max": 601,
+    "min": 263,
+    "first": 275
+  },
+  "worker/select": {
+    "colo": "MAA",
+    "n": 120,
+    "errors": 0,
+    "p50": 269,
+    "p95": 281,
+    "max": 288,
+    "min": 260,
+    "first": 288
+  },
+  "do-enam/noop": {
+    "colo": "MAA",
+    "n": 120,
+    "errors": 0,
+    "p50": 19,
+    "p95": 24,
+    "max": 111,
+    "min": 18,
+    "first": 111
+  },
+  "do-enam/insert": {
+    "colo": "MAA",
+    "n": 120,
+    "errors": 0,
+    "p50": 24,
+    "p95": 27,
+    "max": 29,
+    "min": 23,
+    "first": 24
+  },
+  "do-enam/upsert": {
+    "colo": "MAA",
+    "n": 120,
+    "errors": 0,
+    "p50": 25,
+    "p95": 27,
+    "max": 35,
+    "min": 23,
+    "first": 26
+  },
+  "do-enam/update": {
+    "colo": "MAA",
+    "n": 120,
+    "errors": 0,
+    "p50": 25,
+    "p95": 29,
+    "max": 32,
+    "min": 23,
+    "first": 28
+  },
+  "do-enam/select": {
+    "colo": "MAA",
+    "n": 120,
+    "errors": 0,
+    "p50": 21,
+    "p95": 25,
+    "max": 45,
+    "min": 20,
+    "first": 21
+  }
+}

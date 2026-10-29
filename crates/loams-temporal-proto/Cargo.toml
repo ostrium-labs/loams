@@ -1,0 +1,28 @@
+[package]
+name = "loams-temporal-proto"
+description = "The Temporal API's protos (temporalio/api v1.63.5, MIT) and the Temporal gateway's own messages, generated with prost and tonic (design 74 §5.7, plan DX1 Task 1)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+# The generated code is built from MIT-licensed protos (LICENSE-temporalio-api);
+# the crate's own code and `loams/temporal/internal` are Apache-2.0.
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+bytes.workspace = true
+prost.workspace = true
+prost-types.workspace = true
+tonic.workspace = true
+tonic-prost.workspace = true
+
+[dev-dependencies]
+sha2.workspace = true
+hex.workspace = true
+
+[build-dependencies]
+tonic-prost-build.workspace = true
+
+[lints]
+workspace = true

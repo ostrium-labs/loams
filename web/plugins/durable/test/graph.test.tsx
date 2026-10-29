@@ -9,7 +9,7 @@ import {
   waitFor,
   within,
 } from '@testing-library/react';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import type { PromiseRecord } from '../src/envelope.js';
 import { toBase64 } from '../src/envelope.js';
 import { describeStep, StepList } from '../src/graph/ExecutionGraph.js';

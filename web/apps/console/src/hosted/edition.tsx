@@ -1,6 +1,7 @@
 // The browser edition's plugin set (hosted console and BYOC deploys): the base
 // catalog, web.yml (pages the engine serves), demo.yml under "Demo data", and a
 // small header plugin that shows the connected engine, the toggle and sign-out.
+// Demo mode (`?demo`) instead mounts DemoHeader: there is no engine to show.
 
 import {
   type CatalogPatch,
@@ -10,8 +11,11 @@ import {
   service,
 } from '@loams/console-host';
 import type { Context } from '@loams/cordis';
+import billingPkg from '@loams/plugin-billing/package.json';
 import dataStudioPkg from '@loams/plugin-data-studio/package.json';
 import durablePkg from '@loams/plugin-durable/package.json';
+import enginesPkg from '@loams/plugin-engines/package.json';
+import factoryPkg from '@loams/plugin-factory/package.json';
 import gitPkg from '@loams/plugin-git/package.json';
 import graphPkg from '@loams/plugin-graph/package.json';
 import housePkg from '@loams/plugin-house/package.json';
@@ -25,7 +29,7 @@ import { useEffect, useState } from 'react';
 import demoYml from '../../catalog/demo.yml?raw';
 import webYml from '../../catalog/web.yml?raw';
 import type { AuthMode } from '../runtime-config.js';
-import { DEMO_PAGES } from './demo.js';
+import { DEMO_PAGES, demoHref } from './demo.js';
 import { type EngineStatus, watchHealth } from './engine.js';
 
 export const webModules: ModuleTable = {
@@ -39,6 +43,9 @@ export const webModules: ModuleTable = {
   '@loams/plugin-data-studio': () => import('@loams/plugin-data-studio'),
   '@loams/plugin-streams': () => import('@loams/plugin-streams'),
   '@loams/plugin-durable': () => import('@loams/plugin-durable'),
+  '@loams/plugin-engines': () => import('@loams/plugin-engines'),
+  '@loams/plugin-factory': () => import('@loams/plugin-factory'),
+  '@loams/plugin-billing': () => import('@loams/plugin-billing'),
 };
 
 export const webManifests: unknown[] = [
@@ -52,6 +59,9 @@ export const webManifests: unknown[] = [
   dataStudioPkg,
   streamsPkg,
   durablePkg,
+  enginesPkg,
+  factoryPkg,
+  billingPkg,
 ];
 
 /** The patches over base.yml, in order. */
@@ -249,3 +259,64 @@ export function hostedPlugin(session: HostedSession): PluginModule {
 export const hostedPatch: CatalogPatch = [
   { insert: [{ id: 'console-hosted', name: HOSTED_PACKAGE }] },
 ];
+
+export const DEMO_PACKAGE = '@loams/console-demo';
+
+export const demoManifest = {
+  name: DEMO_PACKAGE,
+  version: '0.1.0',
+  loams: {
+    plugin: {
+      kind: 'console',
+      entry: '.',
+      tier: 'first-party',
+      inject: ['slots'],
+      provides: [],
+      slots: ['shell.sidebar.server'],
+      permissions: [],
+      requires: { console: '^0.1.0' },
+      editions: ['oss', 'cloud'],
+    },
+  },
+};
+
+export const demoPatch: CatalogPatch = [{ insert: [{ id: 'console-demo', name: DEMO_PACKAGE }] }];
+
+/**
+ * Demo mode's header, in place of HostedHeader: there is no engine to watch and no
+ * one to sign in as, and the visitor has to be able to tell sample data from theirs.
+ */
+export function DemoHeader() {
+  return (
+    <div className="lc-hosted">
+      <span className="lc-hosted-demo-on" role="status">
+        Demo data
+      </span>
+      <span
+        className="lc-hosted-user"
+        title="The console's built-in sample data (catalog/samples.yml), served by an in-browser mock of the Loams APIs. Nothing is sent anywhere and nothing is stored."
+      >
+        Sample data, in this browser
+      </span>
+      <a className="lc-hosted-user lc-demo-leave" href={demoHref(false)}>
+        Connect your own engine
+      </a>
+    </div>
+  );
+}
+
+/** The demo header plugin; no session, because there is no engine. */
+export function demoPlugin(): PluginModule {
+  return {
+    name: 'console-demo',
+    inject: ['slots'],
+    apply(ctx: Context) {
+      const slots = service(ctx, 'slots');
+      ctx.effect(() =>
+        slots.register({ name: 'shell.sidebar.server', plugin: 'console-demo' }, () => (
+          <DemoHeader />
+        )),
+      );
+    },
+  };
+}

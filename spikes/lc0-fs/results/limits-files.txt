@@ -1,0 +1,23 @@
+file_count=52 limit=2000; writing 1958 files
+wrote in 2.749s; local write errors=0 first=none
+go_version: go1.25.1
+mount: drive9 mount drain: pending work remains after drain: dirty_handles=0 commit_queue_pending=0 commit_queue_in_flight=0 commit_queue_delayed=0 commit_queue_conflicts=0 uploader_queued=0 uploader_in_flight=0 uploader_cached=1
+drain 21.041s
+usage: {'storage_bytes': 21121104, 'reserved_bytes': 0, 'file_count': 361, 'media_file_count': 0, 'video_file_count': 0}
+remote /fill entries: 1958 of 1958 written locally
+-- writes after the limit (API):
+}
+-- overwrite of an existing file at the limit (API):
+}
+-- a new file through the mount (close status, then after drain):
+close rc=0
+mount: drive9 mount drain: pending work remains after drain: dirty_handles=0 commit_queue_pending=0 commit_queue_in_flight=0 commit_queue_delayed=0 commit_queue_conflicts=0 uploader_queued=0 uploader_in_flight=0 uploader_cached=1
+-rw-r--r-- 1 dinakaran dinakaran 5 Oct 23 09:50 /home/dinakaran/lc0-fs/a/mnt/fill/over-mount.txt
+-- reads at the limit:
+changed
+f2
+seed-a
+2026/10/23 09:50:01 commit queue: successfully uploaded /fill/f403.txt (5 bytes, rev=1)
+2026/10/23 09:50:02 commit queue: successfully uploaded /fill/f413.txt (5 bytes, rev=1)
+2026/10/23 09:50:10 commit queue: successfully uploaded /fill/f1403.txt (6 bytes, rev=1)
+2026/10/23 09:50:10 commit queue: successfully uploaded /fill/f1413.txt (6 bytes, rev=1)

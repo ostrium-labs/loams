@@ -1,0 +1,82 @@
+# BY0 Task 9 (design 70 §12, D1380): the nightly AWS row. It launches one t3.large from
+# deploy/byoc/aws/cloud-init.yaml in the owner's CI account, scans its public address
+# for open ports, and tears everything down. It needs the owner's setup (the plan's
+# owner checklist: an OIDC provider, the role loams-ci-byoc, the environment byoc-aws
+# with AWS_ROLE_ARN, AWS_REGION and the Tailscale OAuth secrets). Until then every
+# run is a no-op that says so. No credential is stored in the repository.
+#
+# Not wired yet: the engine smoke over the tailnet (tests/byoc/smoke.sh, restart.sh):
+# the exposure scan is the only check that runs.
+name: BYOC AWS nightly
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: byoc-aws
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  aws:
+    name: "BYOC: AWS row"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    environment: byoc-aws
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      LOAMS_CI_VERSION: "0.1.1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: is the account set up
+        id: guard
+        env:
+          ROLE: ${{ vars.AWS_ROLE_ARN }}
+        run: |
+          if [ -z "$ROLE" ]; then
+            echo "AWS_ROLE_ARN is not set in the byoc-aws environment: the owner has not set up the CI account yet; nothing to do."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.guard.outputs.ready == 'true'
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          role-duration-seconds: 3600
+          aws-region: ${{ env.AWS_REGION }}
+      - if: steps.guard.outputs.ready == 'true'
+        name: up
+        env:
+          TS_OAUTH_CLIENT_ID: ${{ vars.TS_OAUTH_CLIENT_ID }}
+          TS_OAUTH_CLIENT_SECRET: ${{ secrets.TS_OAUTH_CLIENT_SECRET }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # An ephemeral, preauthorised key tagged tag:byoc-ci only, from the OAuth client.
+          token=$(curl -fsS -d "client_id=$TS_OAUTH_CLIENT_ID" -d "client_secret=$TS_OAUTH_CLIENT_SECRET" -d grant_type=client_credentials https://api.tailscale.com/api/v2/oauth/token | jq -r .access_token)
+          echo "::add-mask::$token"
+          key=$(curl -fsS -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+            -d '{"capabilities":{"devices":{"create":{"reusable":false,"ephemeral":true,"preauthorized":true,"tags":["tag:byoc-ci"]}}},"expirySeconds":7200}' \
+            https://api.tailscale.com/api/v2/tailnet/-/keys | jq -r .key)
+          echo "::add-mask::$key"
+          TS_AUTHKEY="$key" scripts/byoc/aws-matrix.sh up
+      - if: steps.guard.outputs.ready == 'true'
+        name: wait for the first boot, then the exposure scan
+        env:
+          GITHUB_RUN_ID: ${{ github.run_id }}
+        run: |
+          sleep 240
+          scripts/byoc/aws-matrix.sh smoke
+      - if: always() && steps.guard.outputs.ready == 'true'
+        name: down
+        env:
+          GITHUB_RUN_ID: ${{ github.run_id }}
+        run: scripts/byoc/aws-matrix.sh down

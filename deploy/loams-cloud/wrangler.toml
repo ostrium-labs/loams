@@ -1,0 +1,47 @@
+# The Loams Cloud control plane (design 78 §25, plan LC1 LC2a). NOT DEPLOYED.
+# Deploying waits for the owner's setup steps in the plan ("Owner steps and
+# credentials"): the sending-only Resend key, the WorkOS staging settings, the
+# webhook and actions secrets, the Turnstile key and the control DB.
+#
+# Secrets, set with `wrangler secret put` from stdin, never here:
+#   DATABASE_URL, LOAMS_CLOUD_HMAC_KEY, LOAMS_CLOUD_AES_KEY (32 bytes, base64 each),
+#   TURNSTILE_SECRET, WORKOS_API_KEY
+name = "loams-cloud"
+main = "src/worker.ts"
+compatibility_date = "2026-10-01"
+# No route and no workers.dev URL until the owner chooses one (api.loams.dev/cloud/v1, Q1262).
+workers_dev = false
+preview_urls = false
+
+[vars]
+WORKOS_CLIENT_ID = ""          # the environment's public client id
+LOAMS_CLOUD_OSTRIUM_ORG = ""   # org_... of the Ostrium WorkOS organisation
+SITE_URL = "https://loams.dev"
+TURNSTILE_HOSTNAME = "loams.dev"
+CONTROL_DB_LOCATION = "enam"   # near the Starter instance in aws-us-east-1 (lc0-report §4)
+
+[[durable_objects.bindings]]
+name = "CONTROL_DB"
+class_name = "ControlDb"
+
+[[durable_objects.bindings]]
+name = "LIMITER"
+class_name = "RateLimiter"
+
+# SQLite-backed Durable Objects: the only kind on Workers Free (R-LC2a-9).
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ControlDb", "RateLimiter"]
+
+# Two of the account's five Cron Triggers on Free (R-LC2a-9), matching src/entry.ts CRONS.
+[triggers]
+crons = ["7 * * * *", "17 3 * * *"]
+
+# The schema, the policy lists and the allow-list are bundled as text.
+[[rules]]
+type = "Text"
+globs = ["**/*.sql", "**/*.toml", "**/*.conf"]
+fallthrough = false
+
+[observability]
+enabled = true

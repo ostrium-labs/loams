@@ -1,0 +1,16 @@
+# Append-mostly files that nearly every pull request edits at the same place
+# (the end of a table, the top of [Unreleased]). A local merge or rebase keeps
+# both sides' lines instead of stopping on a conflict. GitHub's own merge does
+# not use this driver; it helps the `git rebase origin/dev` that resolves the
+# conflict GitHub reports.
+#
+# Safe only where a duplicated line is caught or harmless:
+# - the decision log: a row edited on both sides comes out twice, and
+#   scripts/docs/check-decision-ids.sh (in `Repo: checks`) fails on the
+#   duplicate ID;
+# - the changelog: entries are appended; a bullet edited on both sides comes
+#   out twice, which review sees in the diff.
+# Not for generated files (docs/house/*, SDK facades, lockfiles): regenerate
+# those after a rebase instead.
+docs/design/13-decision-log.md merge=union
+CHANGELOG.md merge=union

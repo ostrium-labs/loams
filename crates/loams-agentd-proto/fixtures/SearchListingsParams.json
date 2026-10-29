@@ -1,0 +1,19 @@
+{
+  "frameworks": [
+    "mastra"
+  ],
+  "kinds": [
+    "mcp-server",
+    "agent"
+  ],
+  "languages": [
+    "typescript"
+  ],
+  "minLevel": "core",
+  "query": "github issues",
+  "source": "official",
+  "tiers": [
+    "firstParty",
+    "verified"
+  ]
+}

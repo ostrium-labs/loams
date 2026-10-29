@@ -21,7 +21,7 @@ import { create } from '@bufbuild/protobuf';
 import { toBinary } from '@bufbuild/protobuf';
 import { ErrorInfoSchema } from '@loams/proto/errors';
 import { createServer, type Server } from 'node:http';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { InstanceService } from '@loams/proto/instance';
 import { MODULES } from '../src/gen/facade.js';
 import { CallInvoker, callWithRetry } from '../src/runtime/call.js';

@@ -40,16 +40,16 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vp test run"
   },
   "dependencies": {
     "@loams/console-host": "workspace:*",
     "@loams/cordis": "workspace:*",
     "@loams/slots": "workspace:*",
     "@loams/ui": "workspace:*",
-    "dompurify": "3.4.16",
+    "dompurify": "3.4.17",
     "lucide-react": "catalog:",
-    "marked": "18.1.0"
+    "marked": "18.1.1"
   },
   "peerDependencies": {
     "react": ">=19"
@@ -62,8 +62,10 @@
     "react": "catalog:",
     "react-dom": "catalog:",
     "typescript": "5.9.3",
-    "vitest": "5.0.3",
+    "vite": "catalog:",
+    "vitest": "catalog:",
     "@loams/desktop": "workspace:*",
-    "@loams/platform-electron": "workspace:*"
+    "@loams/platform-electron": "workspace:*",
+    "vite-plus": "catalog:"
   }
 }

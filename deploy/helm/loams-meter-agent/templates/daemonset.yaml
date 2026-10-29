@@ -1,0 +1,114 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "loams-meter-agent.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "loams-meter-agent.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "loams-meter-agent.selector" . | nindent 6 }}
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        {{- include "loams-meter-agent.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "loams-meter-agent.serviceAccount" . }}
+      automountServiceAccountToken: {{ .Values.kube }}
+      # The host-report socket identifies peers by SO_PEERCRED and reads
+      # /proc/<pid>/cgroup, which needs the host's PID namespace.
+      hostPID: {{ .Values.hostReport.enabled }}
+      priorityClassName: {{ .Values.priorityClassName }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # A rejected batch stops the agent for an operator; the spool keeps the
+      # usage and restarts are the alert (CrashLoopBackOff).
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: agent
+          image: {{ include "loams-meter-agent.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --cgroup-root=/host/cgroup
+            - --spool-dir=/var/lib/loams-meter/spool
+            - --spool-max-bytes={{ .Values.spool.maxBytes | int64 }}
+            - --interval-ms={{ .Values.intervalMs | int64 }}
+            - --partitions={{ .Values.stream.partitions | int64 }}
+            - --stream-namespace={{ .Values.stream.namespace }}
+            - --stream={{ .Values.stream.name }}
+            - --final-reads={{ .Values.finalReads }}
+            {{- if .Values.streamUrl }}
+            - --stream-url={{ .Values.streamUrl }}
+            {{- end }}
+            {{- if .Values.kube }}
+            - --kube
+            {{- end }}
+            {{- if .Values.tenants }}
+            - --tenants=/etc/loams-meter/tenants.json
+            {{- end }}
+            {{- if .Values.hostReport.enabled }}
+            - --host-socket={{ .Values.hostReport.socketDir }}/meter.sock
+            {{- range .Values.hostReport.cgroups }}
+            - --host-cgroup={{ . }}
+            {{- end }}
+            {{- end }}
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: LOAMS_CLUSTER
+              value: {{ .Values.cluster | quote }}
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: cgroup
+              mountPath: /host/cgroup
+              readOnly: true
+            - name: spool
+              mountPath: /var/lib/loams-meter
+            {{- if .Values.hostReport.enabled }}
+            - name: host-report
+              mountPath: {{ .Values.hostReport.socketDir }}
+            {{- end }}
+            {{- if .Values.tenants }}
+            - name: tenants
+              mountPath: /etc/loams-meter
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: cgroup
+          hostPath:
+            path: {{ .Values.cgroupRoot }}
+            type: Directory
+        - name: spool
+          hostPath:
+            path: {{ .Values.spool.hostPath }}
+            type: DirectoryOrCreate
+        {{- if .Values.hostReport.enabled }}
+        - name: host-report
+          hostPath:
+            path: {{ .Values.hostReport.socketDir }}
+            type: DirectoryOrCreate
+        {{- end }}
+        {{- if .Values.tenants }}
+        - name: tenants
+          configMap:
+            name: {{ include "loams-meter-agent.fullname" . }}
+        {{- end }}

@@ -1,17 +1,24 @@
 {
   "$schema": "./node_modules/nx/schemas/nx-schema.json",
   "defaultBase": "dev",
-  "neverConnectToCloud": true,
+  "nxCloudId": "6ada11220d72175d478305c0",
   "parallel": 2,
+  "plugins": [{"plugin": "./tools/nx-cargo/index.cjs", "options": {"workspaces": ["Cargo.toml", "fabric/Cargo.toml"]}}],
   "namedInputs": {
-    "default": ["{projectRoot}/**/*", "!{projectRoot}/node_modules/**/*", "!{projectRoot}/dist/**/*", "!{projectRoot}/lib/**/*", "!{projectRoot}/target/**/*", "!{projectRoot}/**/*.tsbuildinfo", "sharedGlobals"],
-    "sharedGlobals": ["{workspaceRoot}/package.json", "{workspaceRoot}/pnpm-lock.yaml", "{workspaceRoot}/pnpm-workspace.yaml", "{workspaceRoot}/nx.json", "{workspaceRoot}/web/tsconfig.base.json", "{workspaceRoot}/web/biome.json", {"runtime": "node --version"}, {"runtime": "pnpm --version"}],
-    "production": ["default", "!{projectRoot}/**/*.test.*", "!{projectRoot}/**/*.spec.*", "!{projectRoot}/tests/**/*"]
+    "default": ["{projectRoot}/**/*", "!{projectRoot}/node_modules/**/*", "!{projectRoot}/dist/**/*", "!{projectRoot}/lib/**/*", "!{projectRoot}/out/**/*", "!{projectRoot}/target/**/*", "!{projectRoot}/coverage/**/*", "!{projectRoot}/test-results/**/*", "!{projectRoot}/playwright-report/**/*", "!{projectRoot}/**/*.tsbuildinfo", "sharedGlobals"],
+    "sharedGlobals": ["{workspaceRoot}/package.json", "{workspaceRoot}/pnpm-lock.yaml", "{workspaceRoot}/pnpm-workspace.yaml", "{workspaceRoot}/nx.json", "{workspaceRoot}/web/tsconfig.base.json", {"runtime": "pnpm --version"}],
+    "production": ["default", "!{projectRoot}/**/*.md", "!{projectRoot}/**/*.test.*", "!{projectRoot}/**/*.spec.*", "!{projectRoot}/**/*.stories.*", "!{projectRoot}/tests/**/*", "!{projectRoot}/test/**/*", "!{projectRoot}/e2e/**/*", "!{projectRoot}/vitest.config.*", "!{projectRoot}/playwright.config.*"],
+    "code": ["default", "!{projectRoot}/**/*.md"],
+    "testRuntime": [{"runtime": "node -p \"process.versions.node.split('.')[0]\""}, {"runtime": "node -p \"process.platform + '-' + process.arch\""}],
+    "webTree": ["{workspaceRoot}/web/**/*"],
+    "graphConformance": ["{workspaceRoot}/conformance/graph/desktop/**/*"],
+    "connectorCatalog": ["{workspaceRoot}/connectors/registry/**/*", "{workspaceRoot}/connectors/schemas/**/*"],
+    "notice": ["{workspaceRoot}/NOTICE"]
   },
   "targetDefaults": {
     "build": {"cache": true, "dependsOn": ["^build"], "inputs": ["production", "^production"], "outputs": ["{projectRoot}/dist", "{projectRoot}/lib"]},
-    "test": {"cache": true, "inputs": ["default", "^default"], "outputs": []},
-    "typecheck": {"cache": true, "dependsOn": ["^build"], "inputs": ["default", "^default"], "outputs": []},
+    "test": [{"filter": {"projects": ["*", "!tag:cargo-crate"]}, "cache": true, "inputs": ["default", "^default", "testRuntime"], "outputs": []}],
+    "typecheck": {"cache": true, "dependsOn": ["^build"], "inputs": ["code", "^code"], "outputs": []},
     "lint": {"cache": true, "inputs": ["default", "^default"], "outputs": []},
     "dev": {"cache": false},
     "serve": {"cache": false},

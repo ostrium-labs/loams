@@ -272,6 +272,17 @@ fn provider(id: HarnessId) -> ProviderSpec {
             update_args: None,
             manual_command: "Update the configured Antigravity ACP server",
         },
+        // Goose: agentd installs a pinned release archive (D1809); a newer
+        // release ships with a newer pin. A user's own `goose` updates itself.
+        HarnessId::Goose => ProviderSpec {
+            version_args: &["--version"],
+            latest: LatestSource::Github {
+                repository: "aaif-goose/goose",
+                tag_prefix: "v",
+            },
+            update_args: None,
+            manual_command: "goose update",
+        },
         // loams: ships inside the app; `loams-desktop --version` is the app version and
         // the app updater (not a provider updater) is what changes it.
         HarnessId::LoamsBot => ProviderSpec {
@@ -280,7 +291,8 @@ fn provider(id: HarnessId) -> ProviderSpec {
             update_args: None,
             manual_command: "Update Loams Desktop",
         },
-        HarnessId::Mock | HarnessId::Unsupported => ProviderSpec {
+        // A marketplace harness updates through the marketplace (MK1 Task 4b).
+        HarnessId::Mock | HarnessId::Unsupported | HarnessId::Marketplace => ProviderSpec {
             version_args: &["--version"],
             latest: LatestSource::Manual,
             update_args: None,
@@ -425,7 +437,9 @@ impl HarnessUpdateCoordinator {
         let order: Vec<_> = registry
             .descriptors()
             .into_iter()
-            .filter(|descriptor| descriptor.id != HarnessId::Mock)
+            .filter(|descriptor| {
+                descriptor.id != HarnessId::Mock && descriptor.id != HarnessId::Marketplace
+            })
             .map(|descriptor| descriptor.id)
             .collect();
         let statuses: HashMap<_, _> = order

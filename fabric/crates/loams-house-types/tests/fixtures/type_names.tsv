@@ -1,0 +1,113 @@
+UInt8	UInt8
+UInt16	UInt16
+UInt32	UInt32
+UInt64	UInt64
+Int8	Int8
+Int16	Int16
+Int32	Int32
+Int64	Int64
+Float32	Float32
+Float64	Float64
+Bool	Bool
+bool	Bool
+BOOLEAN	Bool
+String	String
+FixedString(16)	FixedString(16)
+Date	Date
+Date32	Date32
+DateTime	DateTime
+DateTime('UTC')	DateTime('UTC')
+DateTime(  'Asia/Kolkata' )	DateTime('Asia/Kolkata')
+DateTime32	DateTime
+DateTime64(3)	DateTime64(3)
+DateTime64(9, 'UTC')	DateTime64(9, 'UTC')
+DateTime(3)	DateTime64(3)
+TIMESTAMP	DateTime
+TIMESTAMP(6)	DateTime64(6)
+UUID	UUID
+IPv4	IPv4
+IPv6	IPv6
+INET4	IPv4
+Decimal	Decimal(10, 0)
+Decimal(10, 2)	Decimal(10, 2)
+DECIMAL(5)	Decimal(5, 0)
+Decimal32(2)	Decimal(9, 2)
+Decimal64(4)	Decimal(18, 4)
+Decimal128(3)	Decimal(38, 3)
+Decimal256(10)	Decimal(76, 10)
+Decimal(40, 2)	Decimal(40, 2)
+DEC(3,1)	Decimal(3, 1)
+NUMERIC(12, 3)	Decimal(12, 3)
+Enum8('a' = 1, 'b' = 2)	Enum8('a' = 1, 'b' = 2)
+Enum16('a' = 1000)	Enum16('a' = 1000)
+Enum('a', 'b')	Enum8('a' = 1, 'b' = 2)
+Enum('a' = 1000)	Enum16('a' = 1000)
+Enum8('a\'b' = -1)	Enum8('a\'b' = -1)
+Nullable(String)	Nullable(String)
+Nullable(Nothing)	Nullable(Nothing)
+LowCardinality(String)	LowCardinality(String)
+LowCardinality(Nullable(String))	LowCardinality(Nullable(String))
+LowCardinality(FixedString(2))	LowCardinality(FixedString(2))
+Array(String)	Array(String)
+Array(Nullable(UInt8))	Array(Nullable(UInt8))
+Array(Array(LowCardinality(String)))	Array(Array(LowCardinality(String)))
+Map(String, UInt64)	Map(String, UInt64)
+Map(LowCardinality(String), Map(String, UInt8))	Map(LowCardinality(String), Map(String, UInt8))
+Map(String, Array(Tuple(UInt8, String)))	Map(String, Array(Tuple(UInt8, String)))
+Tuple(UInt8, String)	Tuple(UInt8, String)
+Tuple(a String, b UInt8)	Tuple(\n    a String,\n    b UInt8)
+Tuple(a Tuple(b UInt8, c String), d Array(Tuple(e UInt8)))	Tuple(\n    a Tuple(\n        b UInt8,\n        c String),\n    d Array(Tuple(\n        e UInt8)))
+Tuple(UInt8, Tuple(x String))	Tuple(UInt8, Tuple(\n    x String))
+Tuple(`a b` UInt8)	Tuple(\n    `a b` UInt8)
+Tuple(a DOUBLE PRECISION)	Tuple(\n    a Float64)
+Nested(a UInt8, b String)	Nested(a UInt8, b String)
+JSON	JSON
+JSON()	JSON
+JSON(max_dynamic_paths=100)	JSON(max_dynamic_paths=100)
+JSON(max_dynamic_paths=0, message String)	JSON(max_dynamic_paths=0, message String)
+JSON(b.c UInt32, a String, max_dynamic_types=3, max_dynamic_paths=10, SKIP REGEXP 'x.*', SKIP z)	JSON(max_dynamic_types=3, max_dynamic_paths=10, a String, `b.c` UInt32, SKIP z, SKIP REGEXP 'x.*')
+AggregateFunction(uniq, String)	AggregateFunction(uniq, String)
+AggregateFunction(quantiles(0.5, 0.9), Float64)	AggregateFunction(quantiles(0.5, 0.9), Float64)
+AggregateFunction(argMax, String, DateTime64(3))	AggregateFunction(argMax, String, DateTime64(3))
+AggregateFunction(1, sumMap, Array(UInt8), Array(UInt64))	AggregateFunction(1, sumMap, Array(UInt8), Array(UInt64))
+AggregateFunction(topK(10), String)	AggregateFunction(topK(10), String)
+AggregateFunction(uniqIf, String, UInt8)	AggregateFunction(uniqIf, String, UInt8)
+AggregateFunction(quantilesIf(0.5), Float64, UInt8)	AggregateFunction(quantilesIf(0.5), Float64, UInt8)
+SimpleAggregateFunction(max, DateTime64(9))	SimpleAggregateFunction(max, DateTime64(9))
+SimpleAggregateFunction(anyLast, Nullable(String))	SimpleAggregateFunction(anyLast, Nullable(String))
+Nothing	ERROR 48
+IntervalDay	IntervalDay
+IntervalSecond	IntervalSecond
+Int128	Int128
+UInt256	UInt256
+BFloat16	BFloat16
+Dynamic	Dynamic
+Dynamic(max_types=3)	Dynamic(max_types=3)
+Variant(String, UInt8)	Variant(String, UInt8)
+Time	Time
+Time64(3)	Time64(3)
+INT	Int32
+INTEGER	Int32
+INT UNSIGNED	UInt32
+BIGINT UNSIGNED	UInt64
+TINYINT	Int8
+SMALLINT SIGNED	Int16
+double precision	Float64
+DOUBLE	Float64
+FLOAT	Float32
+FLOAT(10)	Float32
+REAL	Float32
+VARCHAR	String
+VARCHAR(255)	String
+String(10)	String
+TEXT	String
+CHAR VARYING	String
+NATIONAL CHARACTER LARGE OBJECT	String
+BINARY(4)	FixedString(4)
+BYTEA	String
+SIGNED	Int64
+UNSIGNED	UInt64
+YEAR	UInt16
+BIT	UInt64
+SET	UInt64
+Point	Point

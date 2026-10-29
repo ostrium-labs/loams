@@ -2,7 +2,7 @@
 
 > **Status: planned (IA1).** Nothing on this page is deployed yet, and there is no deploy bundle to run. The design is [§76](../../design/76-identity-and-authorization.md) (D1600–D1621) and the work is plan [IA1](../../plans/2026-10-21-ia1-identity-authz.md). This page says what will run and what to use until it does. Commands arrive with the bundle.
 
-Owner runbook, to be. On 2026-10-21 the owner ruled a full cutover to Zitadel from the previous identity provider (D1600): no migration, no compatibility period and no dual running, because there are no users. Zitadel will be the identity provider for `console.loams.dev` and for any install that chooses `auth.loams.dev` as its issuer (D1615). OpenFGA answers authorization (D1603); Zitadel only says who someone is (D1601).
+Owner runbook, to be. On 2026-10-21 the owner ruled a full cutover to Zitadel from the previous identity provider (D1600): no migration, no compatibility period and no dual running, because there are no users. Zitadel will be the identity provider for any install that chooses `auth.loams.dev` as its issuer (D1615; `console.loams.dev`, which D1615 also named, is retired by D1705). OpenFGA answers authorization (D1603); Zitadel only says who someone is (D1601).
 
 ## 1. What auth.loams.dev will run
 
@@ -52,6 +52,10 @@ LOAMS_OIDC_AUDIENCE=<the Zitadel project id>
 ```
 
 The audience is the Zitadel project id; IA0 verifies that value (§76 §12.3). The install still decides membership and authorization itself, so Ostrium never sees its tuples.
+
+**Token lifetime (D1630).** Set the instance's access-token lifetime to 900 s (Default settings → OIDC token lifetimes, or `PUT /admin/v1/settings/oidc` with `{"accessTokenLifetime":"900s"}`). agentd writes each installed agent's Zitadel access token to its `LOAMS_TOKEN_FILE` (D1629), so this is the life of an agent's token; agentd warns when tokens live longer.
+
+**agentd** reads `LOAMS_AGENT_ISSUER` (this issuer) and `LOAMS_AGENT_PROJECT` (the project id) to vend agent tokens, and, optionally, `LOAMS_AGENT_ZITADEL_TOKEN_FILE` (a token that may deactivate the org's machine users and remove their keys) so that uninstalling an agent deactivates its machine user (D1632).
 
 ## 5. What to use today
 

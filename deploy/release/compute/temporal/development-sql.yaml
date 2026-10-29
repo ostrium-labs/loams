@@ -1,0 +1,10 @@
+# The Temporal server's dynamic config for compat mode on Loams Postgres
+# (design 74 D1509; DX1 DX0 Task 1). The server's own defaults apply to
+# everything not listed (DX1 ruling R0.9 records them with file and line).
+# The shard count is not dynamic: it is NUM_HISTORY_SHARDS (16) in
+# compose.compute.yaml, fixed when the database is created.
+
+# As upstream's config/dynamicconfig/development-sql.yaml at v1.32.1.
+limit.maxIDLength:
+  - value: 255
+    constraints: {}

@@ -1,0 +1,130 @@
+# The KV gateways' oracle feasibility runs (design 77 §12.3; KV1 plan KV0
+# Task 10). Manual only: each job answers "does this oracle run?", and the
+# counts it records are the control the gateways must later match. The
+# suites are fetched at pinned revisions at run time (scripts/kv/oracles/
+# pins.sh), never copied into the repository; Tidis is not built or run.
+# It also runs on a pull request that changes it or its scripts (a manual
+# dispatch needs the workflow on the default branch); it is never required.
+name: KV oracles
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/kv-oracles.yml"
+      - "scripts/kv/oracles/**"
+  workflow_dispatch:
+    inputs:
+      oracle:
+        description: "Which oracle run"
+        type: choice
+        options: ["all", "valkey-suite", "tidis-suite", "titan-mocktikv", "titan-autotest"]
+        default: "all"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kv-oracles-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  valkey-suite:
+    name: "Valkey 9.1.2 suite against Valkey 9.1.2"
+    if: (inputs.oracle || 'all') == 'all' || inputs.oracle == 'valkey-suite'
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: tcl
+        run: sudo apt-get update && sudo apt-get install -y tcl
+      - name: valkey
+        run: scripts/kv/oracles/valkey.sh start 6379
+      - name: the suite (report §1.4 subset)
+        run: scripts/kv/oracles/valkey-suite.sh 127.0.0.1 6379 out
+      - name: summary
+        if: always()
+        run: cat out/*.summary >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: kv-oracle-valkey-suite
+          path: out/
+          if-no-files-found: ignore
+
+  tidis-suite:
+    name: "Tidis's Python suite against Valkey 9.1.2"
+    if: (inputs.oracle || 'all') == 'all' || inputs.oracle == 'tidis-suite'
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      # redis==3.5.3 (Tidis's requirements.txt) imports distutils, which
+      # Python 3.12 removed.
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0 (v7 floats to 7.1.0, under 14 days old on 2026-10-27)
+        with:
+          python-version: "3.11"
+      - name: valkey
+        run: scripts/kv/oracles/valkey.sh start 6379
+      - name: the suite (Lua excluded)
+        run: scripts/kv/oracles/tidis-suite.sh 127.0.0.1 6379 out
+      - name: summary
+        if: always()
+        run: cat out/*.summary >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: kv-oracle-tidis-suite
+          path: out/
+          if-no-files-found: ignore
+
+  titan-mocktikv:
+    name: "Titan (distributedio/titan) on mocktikv"
+    if: (inputs.oracle || 'all') == 'all' || inputs.oracle == 'titan-mocktikv'
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      # Its go.mod says go 1.13 and pins TiDB from 2020-12: the last Go of
+      # that era that its dependencies build with.
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.15.15"
+          cache: false
+      - name: build and serve
+        run: scripts/kv/oracles/titan-mocktikv.sh 7369 out
+      - name: summary
+        if: always()
+        run: cat out/*.summary >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: kv-oracle-titan-mocktikv
+          path: out/
+          if-no-files-found: ignore
+
+  titan-autotest:
+    name: "Titan's autotest against Valkey 9.1.2"
+    if: (inputs.oracle || 'all') == 'all' || inputs.oracle == 'titan-autotest'
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.15.15"
+          cache: false
+      - name: valkey (with Titan's autotest token as its password)
+        run: |
+          . scripts/kv/oracles/pins.sh
+          VALKEY_AUTH="$TITAN_AUTOTEST_TOKEN" scripts/kv/oracles/valkey.sh start 6379 --requirepass "$TITAN_AUTOTEST_TOKEN"
+      - name: the autotest
+        run: scripts/kv/oracles/titan-autotest.sh 127.0.0.1 6379 out
+      - name: summary
+        if: always()
+        run: cat out/*.summary >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: kv-oracle-titan-autotest
+          path: out/
+          if-no-files-found: ignore

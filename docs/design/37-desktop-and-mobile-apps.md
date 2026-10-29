@@ -1009,6 +1009,8 @@ CI added: the Loams crates on Linux, Windows and macOS; a build of the real bina
 
 ### 18.14 The Tauri web bridge (D500–D512)
 
+> **2026-10-27 (D2110–D2114):** the agent-facing browser now has one engine, Obscura, in both of its providers: `local` (agentd or Desktop launches it on loopback) and `service` (the deployment's `browser` service, packaged in `deploy/browser`). The Cloudflare Browser Run provider was removed. See [docs/headless-browser.md](../headless-browser.md).
+
 Status: **Proposed** · 2026-10-02. The direction is the owner's, given the same day, after the native ruling: **"do not drop Tauri; add it as a bridge to control websites, efficiently, like the Chrome MCP toolbox."** This subsection adds decisions **D500–D512** and questions **Q500–Q511**. The D480–D499 block is full, so the numbers continue at D500 (renumber at merge if another branch took them). They are recorded in the [decision log](13-decision-log.md). The plan is [AP1b](../plans/2026-10-02-ap1b-tauri-web-bridge.md). Markers are as in §18: **(verified 2026-10-02)** means read in the named source that day, **(verify)** means the plan task that builds it checks it first, **(estimate)** means computed, not measured.
 
 **What changes and what does not.** D480 stands: the desktop is the native zeron fork, and Tauri does not come back as the desktop shell, so D429–D432 and D439 stay superseded. Tauri 2 returns in a **different role**: a separate **web bridge** process, a managed webview host that opens and keeps sessions for websites and that agents drive as MCP tools. It also answers the two gaps §18.5 found in zeron's sidebar browser: none on Windows, and no persistent store on Linux.

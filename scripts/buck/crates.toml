@@ -1,0 +1,7 @@
+# What scripts/buck/gen.py cannot read from Cargo.toml, per crate:
+#
+#   [crate.<package>]
+#   build_script_srcs = ["proto/**/*.proto"]  # files outside the crate that
+#                                             # build.rs reads (repo globs)
+#   test_labels = ["podman"]                  # labels on every test target
+#   test_env = { KEY = "value" }              # env of every test run

@@ -1,4 +1,4 @@
-// `@loams/client/node`: the Node, Deno and Bun entry point.
+// `@loams/client/node`: the Node and Bun entry point.
 //
 //   import { Loams, createNodeTransport } from '@loams/client/node';
 //

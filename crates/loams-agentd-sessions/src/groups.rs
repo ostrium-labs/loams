@@ -106,6 +106,9 @@ pub(crate) struct MemberRecord {
     pub checkout_id: Option<String>,
     /// The id of the run's user message.
     pub message_id: String,
+    /// The id of the run command sent to the member's chat, from `Sent` on.
+    #[serde(default)]
+    pub command_id: Option<String>,
     pub phase: Phase,
     #[serde(default)]
     pub started_at_ms: Option<i64>,
@@ -176,6 +179,7 @@ impl GroupRecord {
     /// worktree, with its variant's harness and model.
     fn run_request(&self, member: &MemberRecord) -> RunRequest {
         RunRequest {
+            mcp_servers: Vec::new(),
             mcp: None,
             prompt: self.prompt.clone(),
             harness: Some(member.variant.harness),
@@ -217,8 +221,8 @@ struct Inner {
     /// The chats of every group's members, for the turn hook.
     members: Mutex<HashSet<String>>,
     notes: Mutex<Vec<TurnNote>>,
-    /// Members whose turn was running when the daemon last stopped: done
-    /// unless their run was resumed.
+    /// Members whose run the daemon had started when it last stopped (see
+    /// [`started_before_boot`]): done unless their run was resumed.
     resumed: Mutex<HashSet<String>>,
     view: watch::Sender<Vec<RunGroup>>,
     kick: Notify,
@@ -275,7 +279,7 @@ impl RunGroups {
                             group
                                 .members
                                 .iter()
-                                .filter(|member| member.phase == Phase::Running)
+                                .filter(|member| started_before_boot(&store, member))
                                 .map(|member| member.chat_id.clone()),
                         );
                     }
@@ -600,11 +604,9 @@ impl RunGroups {
                     let failed = status
                         .as_ref()
                         .is_some_and(|s| s.status == SessionStatus::Errored);
-                    // A turn the last daemon was running and this one did
-                    // not resume.
-                    let abandoned = member.phase == Phase::Running
-                        && !active
-                        && resumed.contains(&member.chat_id);
+                    // A run the last daemon started and this one did not
+                    // resume.
+                    let abandoned = !active && resumed.contains(&member.chat_id);
                     if (failed && !active) || abandoned {
                         resumed.remove(&member.chat_id);
                         member.phase = if failed { Phase::Errored } else { Phase::Done };
@@ -638,7 +640,8 @@ impl RunGroups {
                         },
                     );
                     match sent {
-                        Ok(_) => {
+                        Ok(command_id) => {
+                            member.command_id = Some(command_id);
                             member.phase = Phase::Sent;
                             running += 1;
                             in_group += 1;
@@ -785,6 +788,24 @@ fn member_view(
         branch: member.branch.clone(),
         detached: member.detached,
         archived: member.archived,
+    }
+}
+
+/// Whether the last daemon had started this member's run when it stopped:
+/// its turn was recorded as running, or its run command had been taken. A
+/// command enters the processed-command ledger before it executes and never
+/// runs again, so a `Sent` member whose command is there gets no turn from it
+/// in this daemon. Its turn's start can be missing from the record: the turn
+/// hook leaves that to the scheduler, which stops before the runs do
+/// (`EngineCore::shutdown`).
+fn started_before_boot(store: &DocsStore, member: &MemberRecord) -> bool {
+    match member.phase {
+        Phase::Running => true,
+        Phase::Sent => member
+            .command_id
+            .as_deref()
+            .is_some_and(|id| store.is_processed(id).unwrap_or(false)),
+        _ => false,
     }
 }
 

@@ -23,6 +23,7 @@ use loams_house::config::{HouseConfig, UserMap};
 use loams_house::http::{HouseHandle, serve_with_lake};
 use loams_house::mv::ViewRunner;
 use loams_house::pipes::ViewWriter;
+use loams_house::refresh::{RefreshRunner, Refreshed};
 use loams_house::{ProcessLauncher, WorkerPool};
 use loams_house_cache::{HouseCache, OneStore, StoreOptions, Upstream};
 use loams_store::Store;
@@ -37,6 +38,15 @@ struct Lakehouse {
 }
 
 impl Lakehouse {
+    fn refreshes(&self) -> RefreshRunner {
+        RefreshRunner::new(ViewWriter {
+            lake: Arc::clone(&self.lake),
+            pool: self.pool.clone(),
+            limits: self.config.session_limits,
+            max_insert_bytes: self.config.lake_insert_max_bytes,
+        })
+    }
+
     fn views(&self) -> ViewRunner {
         ViewRunner::new(ViewWriter {
             lake: Arc::clone(&self.lake),
@@ -416,5 +426,166 @@ async fn mv_corpus_matches_reference() {
                 file.display()
             ),
         }
+    }
+}
+
+fn now_s() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("time")
+        .as_secs() as i64
+}
+
+const REDUCED: &str =
+    "CREATE TABLE reduced (k UInt64, s UInt64, computed_at DateTime) ENGINE = MergeTree ORDER BY k";
+/// SigNoz's form (HE1 R9.64): `REFRESH EVERY … RANDOMIZE FOR … APPEND TO t
+/// (cols) EMPTY AS SELECT …, now() AS computed_at`.
+const REFRESHABLE: &str = "CREATE MATERIALIZED VIEW IF NOT EXISTS r ON CLUSTER cluster REFRESH \
+     EVERY 1 MINUTE RANDOMIZE FOR 10 SECOND APPEND TO reduced (k UInt64, s UInt64, computed_at \
+     DateTime) EMPTY AS SELECT k, sum(v) AS s, now() AS computed_at FROM src GROUP BY k";
+
+/// A refreshable view appends its `SELECT` once per period, whichever fronts
+/// run it, with `now()` the period's time; inserts never fire it; `EMPTY`
+/// waits for the schedule; it is listed, shown, changed and dropped as a view.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn refreshable_views_append_once_per_period() {
+    let house = lakehouse("mv-refresh", Duration::ZERO).await;
+    let addr = house.handle.local_addr();
+    ok(addr, SOURCE).await;
+    ok(addr, REDUCED).await;
+    ok(addr, BLOCKS[0]).await;
+    let created = now_s();
+    ok(addr, REFRESHABLE).await;
+    ok(addr, REFRESHABLE).await; // IF NOT EXISTS
+    ok(addr, BLOCKS[1]).await;
+    assert_eq!(ok(addr, "SELECT count() FROM reduced").await, "0\n");
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT engine, create_table_query FROM system.tables WHERE name = 'r'"
+        )
+        .await,
+        "MaterializedView\tCREATE MATERIALIZED VIEW default.r REFRESH EVERY 1 MINUTE RANDOMIZE \
+         FOR 10 SECOND APPEND TO default.reduced AS SELECT k, sum(v) AS s, now() AS computed_at \
+         FROM src GROUP BY k\n"
+    );
+    // The period after CREATE's, past any shift (at most 5 s): two fronts at
+    // once, one appends.
+    let period = (created.div_euclid(60) + 1) * 60;
+    let at = period + 6;
+    let (first, second) = (house.refreshes(), house.refreshes());
+    let (a, b) = tokio::join!(
+        first.run_due(NS, "default", "reduced", at),
+        second.run_due(NS, "default", "reduced", at),
+    );
+    let mut runs = [a.expect("a"), b.expect("b")].concat();
+    runs.sort_by_key(|r| format!("{r:?}"));
+    assert_eq!(
+        runs,
+        vec![Refreshed::Abandoned, Refreshed::Appended(period)]
+    );
+    // `now()` is the run's scheduled time: the period's plus its shift, one
+    // value for the whole run.
+    let read = |p: i64| {
+        format!(
+            "SELECT k, s FROM reduced WHERE abs(toUnixTimestamp(computed_at) - {p}) <= 5 ORDER BY \
+             all"
+        )
+    };
+    assert_eq!(ok(addr, &read(period)).await, "1\t33\n2\t20\n3\t30\n");
+    assert_eq!(
+        ok(addr, "SELECT uniqExact(computed_at), count() FROM reduced").await,
+        "1\t3\n"
+    );
+    // The same period again, on any front: nothing.
+    assert_eq!(
+        house
+            .refreshes()
+            .run_due(NS, "default", "reduced", at + 30)
+            .await
+            .expect("again"),
+        vec![Refreshed::NotDue]
+    );
+    // The next period appends again, with the query as changed.
+    ok(
+        addr,
+        "ALTER TABLE r ON CLUSTER cluster MODIFY QUERY SELECT k, sum(v) * 10 AS s, now() AS \
+         computed_at FROM src WHERE k = 1 GROUP BY k",
+    )
+    .await;
+    let next = period + 60;
+    assert_eq!(
+        house
+            .refreshes()
+            .run_due(NS, "default", "reduced", next + 6)
+            .await
+            .expect("next"),
+        vec![Refreshed::Appended(next)]
+    );
+    assert_eq!(ok(addr, &read(next)).await, "1\t330\n");
+    assert_eq!(
+        ok(addr, "SELECT uniqExact(computed_at), count() FROM reduced").await,
+        "2\t4\n"
+    );
+    // Dropped: listed no more, and runs no more.
+    ok(addr, "DROP VIEW r ON CLUSTER cluster SYNC").await;
+    assert_eq!(ok(addr, "SHOW TABLES").await, "reduced\nsrc\n");
+    assert!(
+        house
+            .refreshes()
+            .run_due(NS, "default", "reduced", next + 600)
+            .await
+            .expect("dropped")
+            .is_empty()
+    );
+}
+
+/// Without `EMPTY` a refreshable view runs at `CREATE`; the forms the House
+/// does not schedule are `48`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn refreshable_views_without_empty_run_at_once() {
+    let house = lakehouse("mv-refresh-now", Duration::ZERO).await;
+    let addr = house.handle.local_addr();
+    ok(addr, SOURCE).await;
+    ok(addr, REDUCED).await;
+    ok(addr, BLOCKS[0]).await;
+    ok(
+        addr,
+        "CREATE MATERIALIZED VIEW r REFRESH EVERY 5 MINUTE APPEND TO reduced AS SELECT k, \
+         sum(v) AS s, now() AS computed_at FROM src GROUP BY k",
+    )
+    .await;
+    let now = now_s();
+    let runs = house
+        .refreshes()
+        .run_due(NS, "default", "reduced", now)
+        .await
+        .expect("runs");
+    assert_eq!(runs, vec![Refreshed::Appended(now.div_euclid(300) * 300)]);
+    assert_eq!(ok(addr, "SELECT count() FROM reduced").await, "2\n");
+    for (sql, needle) in [
+        ("REFRESH AFTER 1 MINUTE APPEND", "REFRESH AFTER"),
+        ("REFRESH EVERY 1 MINUTE", "APPEND"),
+        ("REFRESH EVERY 1 MONTH APPEND", "MONTH"),
+    ] {
+        let response = post_with(
+            addr,
+            &[],
+            &format!(
+                "CREATE MATERIALIZED VIEW x {sql} TO reduced AS SELECT k, sum(v) AS s, now() AS \
+                 computed_at FROM src GROUP BY k"
+            ),
+        )
+        .await;
+        assert_eq!(
+            response.header("X-ClickHouse-Exception-Code"),
+            Some("48"),
+            "{sql}"
+        );
+        assert!(
+            response.text().contains(needle),
+            "{sql}: {}",
+            response.text()
+        );
     }
 }

@@ -25,11 +25,11 @@ on:
       - "deploy/pgdog/compose.yaml"
       - ".github/workflows/gateway.yml"
 
+# A newer push to a pull request supersedes the older run. dev and main run to
+# completion: every dev commit keeps its result and its cache save.
 concurrency:
-  group: gateway-${{ github.event.pull_request.number || github.ref }}
-  # dev and main run to completion: every dev commit keeps its result and
-  # its cache save.
-  cancel-in-progress: ${{ github.ref != 'refs/heads/dev' && github.ref != 'refs/heads/main' }}
+  group: gateway-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -37,13 +37,14 @@ permissions:
 jobs:
   gateway:
     name: "Gateway: psql through loams-gateway to PgDog"
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
           shared-key: gw1-loams-gateway
           save-if: ${{ github.ref == 'refs/heads/dev' }}

@@ -29,6 +29,11 @@ on:
         description: "Workloads (scripts/loams-pg-bench/workload.sh)"
         default: "commit-1 commit-16 tpcb-16 tpcb-64 bulk bulk-burst"
 
+# A benchmark runs to completion; a second dispatch of the same suite waits.
+concurrency:
+  group: pg-bench-${{ inputs.suite }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
 

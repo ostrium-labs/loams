@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Execute task by task, test first. Each task lists the interfaces it must produce and the tests that must exist and pass before it is done. Where this plan gives exact values (names, paths, ports, headers, constants), use them verbatim. The code is not pre-written in this plan (M0.3 Ruling 1).
 
-> **Status: Planned** (2026-10-01). Track FL (§32 D351), beside M, R, D and J, interleaved on the one-build machine (D127). Branches `fl1-t<N>`, stacked; PRs target `main`. FL1 adds a new Cargo workspace `fabric/`, a dev stack under `deploy/fabric/`, two Iggy connector plugins (developed as upstream PRs) and one small change in the engine workspace (Task 2: a feature split in `loams-cloudevents`). It changes no engine code path.
+> **Status: Planned** (2026-10-01). **Task 10 in progress (2026-10-24):** `crates/loams-iggy-sink` (the Iggy reader, the mapping of the fork's Kafka records, at-least-once with offset dedup, backpressure, restart from committed offsets, metrics) is built and tested against the fork's image (`deploy/release/ci/iggy-sink-it.sh`); not yet done: the engine-side target over the CloudEvents ingest and its flags, enabling it in the `kafka` profile, the kcat-to-Loams smoke and the docs (ruling E1). Track FL (§32 D351), beside M, R, D and J, interleaved on the one-build machine (D127). Branches `fl1-t<N>`, stacked; PRs target `main`. FL1 adds a new Cargo workspace `fabric/`, a dev stack under `deploy/fabric/`, two Iggy connector plugins (developed as upstream PRs) and one small change in the engine workspace (Task 2: a feature split in `loams-cloudevents`). It changes no engine code path.
 
 **Goal:** Stand up the Event Fabric of [§32](../design/32-loams-flow-fabric-house.md) §5 end to end on one machine:
 - the `fabric/` workspace and the `loams-fabric` binary with the `ingest` role;
@@ -366,3 +366,11 @@ One PR per group, stacked; each builds and passes CI on its own.
 | # | Ruling | Why | Cost if wrong |
 |---|---|---|---|
 | — | (Task 0 fills this table) | | |
+| E1 | **`loams_sink` is a Loams crate, `crates/loams-iggy-sink`, not a plugin on an Iggy fork branch** (2026-10-24; Task 10 started ahead of Tasks 0–9 to wire the `kafka` profile of D1798). It uses the Iggy Rust SDK at the version of ostrium-labs/iggy's `loams` branch (`iggy` 0.11.1-edge.2, crates.io, Apache-2.0), a named consumer whose offsets Iggy stores (committed after the target's acknowledgement), and maps each message to a CloudEvent whose `source` is `/iggy/<stream>/<topic>/<partition>` and `id` the offset, so D270's ledger dedupes a replay. The fork is not changed (other work owns it). The target is planned to run inside the engine (it calls the CloudEvents ingest in process), because the engine's listeners are loopback-only in its own network namespace and no other container may join it, so a separate sink container could not reach it without a new door | A connectors-runtime plugin needs a fork branch and a runtime the release stack does not run; in-process needs no new listener, credential or image | Multi-engine clusters need consumer groups instead of one named consumer (later); the dedup window (1 h default) bounds how stale an uncommitted batch may be |
+
+### Owner approvals (2026-10-24)
+
+The owner approved the pending decisions below on 2026-10-24 ("approve all with your recommendations").
+
+- **Ruling E1: the Iggy sink runs inside the engine.** Confirmed. **Approved (owner, 2026-10-24).**
+- **The kcat to Loams smoke builds the engine image in CI** rather than waiting for a release. **Approved (owner, 2026-10-24).**

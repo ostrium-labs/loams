@@ -28,9 +28,10 @@ export const DEFAULT_AUTH_MODE: AuthMode = 'tailscale';
  */
 export const CLIENT_REGISTRATION_URL = 'https://auth.loams.dev/register';
 
-/** The modes this console offers: oidc only with a client. */
+/** The modes this console offers: the deploy's own list when it set one, oidc only with a client. */
 export function offeredModes(config: RuntimeConfig): AuthMode[] {
-  return AUTH_MODES.filter((m) => m !== 'oidc' || Boolean(config.auth));
+  const modes = config.authModes ?? AUTH_MODES;
+  return AUTH_MODES.filter((m) => modes.includes(m) && (m !== 'oidc' || Boolean(config.auth)));
 }
 
 export type RuntimeConfig = {
@@ -41,7 +42,8 @@ export type RuntimeConfig = {
    */
   server?: string;
   /**
-   * Set on a console that is not served by the engine (Ostrium's at console.loams.dev):
+   * Set on a console that is not served by the engine (the Compose console, a Cloudflare or
+   * Vercel deploy; the hosted console.loams.dev is retired):
    * it asks which engine to talk to and how to sign in, and sends a bearer token (or,
    * on a tailnet, nothing) instead of the engine's session cookie.
    */
@@ -54,6 +56,13 @@ export type RuntimeConfig = {
    * id, is a `configError`.
    */
   authMode?: AuthMode;
+  /**
+   * The sign-in modes this deploy offers (`authModes`, LOAMS_AUTH_MODES), in the console's
+   * order; unset means all of them, `oidc` only with a client. A deploy that narrows the
+   * list to what it tests (for example `['tailscale']`) leaves the connect screen with no
+   * mode to pick.
+   */
+  authModes?: AuthMode[];
   /** Why the hosted config cannot be used; the console shows it instead of starting. */
   configError?: string;
 };
@@ -101,7 +110,10 @@ export function parseRuntimeConfig(raw: unknown): RuntimeConfig {
     config.auth = { issuer, clientId, scope: scope || DEFAULT_SCOPE };
   }
   const rawMode = r.authMode;
-  if (r.hosted === true || config.auth || rawMode !== undefined) config.hosted = true;
+  // Any of these keys is a hosted deploy's signature; the engine serves an empty object.
+  if (r.hosted === true || config.auth || rawMode !== undefined || Array.isArray(r.authModes)) {
+    config.hosted = true;
+  }
   // Only the origin: API paths are absolute (`/api/v1/...`, `/v1/...`). The engine-served
   // console has always allowed plain http here (a LAN engine); keep that. A hosted console
   // sends a bearer, so its engine is https, or http on loopback (as deploy/config.mjs).
@@ -122,13 +134,30 @@ export function parseRuntimeConfig(raw: unknown): RuntimeConfig {
     delete config.auth;
     return config;
   }
-  config.authMode = mode as AuthMode;
   // The client stays in every mode: it is what lets the person pick oidc.
   if (mode === 'oidc' && !config.auth) {
     config.configError =
       'This console signs in with OIDC (authMode oidc) but config.json has no usable ' +
       'authIssuer and authClientId (the issuer must be https, or http on loopback).';
+    return config;
   }
+  const rawModes = r.authModes;
+  if (Array.isArray(rawModes)) {
+    const listed = AUTH_MODES.filter((m) =>
+      rawModes.some((v) => typeof v === 'string' && v.trim().toLowerCase() === m),
+    );
+    if (listed.length > 0) config.authModes = listed;
+  }
+  const offered = offeredModes(config);
+  if (offered.length === 0) {
+    config.configError =
+      'config.json offers no sign-in mode this console can use (authModes needs tailscale ' +
+      'or apikey, or oidc with an authClientId).';
+    return config;
+  }
+  // The default is one of the offered modes: a deploy that lists only others still lands
+  // on a mode it meant to offer, never silently on one it left out.
+  config.authMode = offered.includes(mode as AuthMode) ? (mode as AuthMode) : offered[0];
   return config;
 }
 

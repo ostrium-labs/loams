@@ -1,0 +1,18 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites>
+  <testsuite name="temporal-gateway" tests="7" failures="2" errors="0" skipped="1">
+    <testcase classname="temporal-gateway" name="gateway_dx1_scenarios_go" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_scenarios_ts" />
+    <testcase classname="temporal-gateway" name="gateway_hello_go" />
+    <testcase classname="temporal-gateway" name="gateway_hello_ts">
+      <failure message="boom">boom</failure>
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_signal_go" />
+    <testcase classname="temporal-gateway" name="gateway_signal_ts">
+      <failure message="late">late</failure>
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_query_go">
+      <skipped />
+    </testcase>
+  </testsuite>
+</testsuites>

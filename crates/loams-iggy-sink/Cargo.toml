@@ -1,0 +1,31 @@
+[package]
+name = "loams-iggy-sink"
+description = "loams_sink (FL1 Task 10, design §32 §5.10): the Iggy to Loams hop. Consumes Iggy topics (the `kafka` compose profile's Kafka gateway writes there) and appends each message to a Loams stream as a CloudEvent, at least once and deduplicated by its Iggy offset."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+async-trait.workspace = true
+base64.workspace = true
+bytes.workspace = true
+# The Iggy Rust SDK (Apache-2.0) at the version of ostrium-labs/iggy's `loams`
+# branch, whose image the `kafka` profile pins (core/sdk 0.11.1-edge.2).
+iggy = "=0.11.1-edge.2"
+# The password type the SDK signs in with (already in the graph through iggy).
+secrecy = "0.10"
+loams-cloudevents = { path = "../loams-cloudevents", default-features = false }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["rt", "macros", "sync", "time"] }
+tracing.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "test-util"] }
+
+[lints]
+workspace = true

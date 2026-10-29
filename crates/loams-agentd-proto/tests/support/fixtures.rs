@@ -345,6 +345,15 @@ fn run_request() -> RunRequest {
             args: vec![s("mcp")],
             env: BTreeMap::from([(s("LOAMS_AGENTD_PORT"), s("50217"))]),
         }),
+        // MK1 Task 4b: an installed marketplace MCP server.
+        mcp_servers: vec![McpServer {
+            name: s("marketplace-ostrium-github-mcp-server"),
+            command: s(
+                "/home/dev/.loams-agentd/agents/ostrium/github-mcp-server/2.0.3/github-mcp-server",
+            ),
+            args: vec![s("stdio")],
+            env: BTreeMap::from([(s("GITHUB_PERSONAL_ACCESS_TOKEN"), s("ghp_example"))]),
+        }],
     }
 }
 
@@ -892,21 +901,104 @@ pub fn all() -> Vec<Fixture> {
     // Harnesses.
     add(Fixture::new(
         "HarnessCatalog",
-        HarnessCatalog(vec![HarnessDescriptor {
-            id: HarnessId::Codex,
-            name: s("Codex"),
-            supports_steering: true,
-            steering_mode: SteeringMode::StepBoundary,
-            reasoning_levels: vec![ReasoningLevel::Low, ReasoningLevel::High],
-            installed: true,
-            can_install: false,
-            enabled: Some(true),
-        }]),
+        HarnessCatalog(vec![
+            HarnessDescriptor {
+                id: HarnessId::Codex,
+                name: s("Codex"),
+                supports_steering: true,
+                steering_mode: SteeringMode::StepBoundary,
+                reasoning_levels: vec![ReasoningLevel::Low, ReasoningLevel::High],
+                installed: true,
+                can_install: false,
+                marketplace_listing: None,
+                enabled: Some(true),
+            },
+            // MK1 Task 4b: an installed marketplace ACP harness.
+            HarnessDescriptor {
+                id: HarnessId::Marketplace,
+                name: s("fx"),
+                supports_steering: true,
+                steering_mode: SteeringMode::TurnBoundary,
+                reasoning_levels: vec![],
+                installed: true,
+                can_install: false,
+                marketplace_listing: some("vercel-labs/fx"),
+                enabled: Some(true),
+            },
+        ]),
     ));
     add(Fixture::new(
         "HarnessParams",
         HarnessParams {
             harness: HarnessId::Unsupported,
+        },
+    ));
+    let forgejo = || loams_agentd_proto::factory::FactoryAppInfo {
+        id: s("forgejo"),
+        label: s("Forgejo"),
+        url: some("https://git.example.com"),
+        health: loams_agentd_proto::factory::FactoryHealth::Ok,
+        has_panels: true,
+        credential_fields: vec![
+            loams_agentd_proto::factory::FactoryCredentialField {
+                key: s("token"),
+                label: s("Access token"),
+                secret: true,
+            },
+            loams_agentd_proto::factory::FactoryCredentialField {
+                key: s("ssoOrigin"),
+                label: s("SSO origin (optional)"),
+                secret: false,
+            },
+        ],
+        fields: Some(BTreeMap::from([(
+            s("ssoOrigin"),
+            s("https://sso.example.com"),
+        )])),
+        persistent: true,
+        preview: None,
+    };
+    add(Fixture::new(
+        "FactoryAppList",
+        loams_agentd_proto::factory::FactoryAppList {
+            apps: vec![forgejo()],
+        },
+    ));
+    add(Fixture::new(
+        "FactoryAppParams",
+        loams_agentd_proto::factory::FactoryAppParams { app: s("forgejo") },
+    ));
+    add(Fixture::new(
+        "FactoryAppReply",
+        loams_agentd_proto::factory::FactoryAppReply {
+            app: Some(forgejo()),
+            error: None,
+        },
+    ));
+    add(Fixture::new(
+        "FactoryConfigureParams",
+        loams_agentd_proto::factory::FactoryConfigureParams {
+            app: s("forgejo"),
+            url: s("https://git.example.com"),
+            fields: BTreeMap::from([(s("token"), s("pat-1"))]),
+        },
+    ));
+    add(Fixture::new(
+        "FactoryQueryParams",
+        loams_agentd_proto::factory::FactoryQueryParams {
+            app: s("forgejo"),
+            op: s("repos"),
+            params: serde_json::json!({ "limit": 20 }),
+        },
+    ));
+    add(Fixture::new(
+        "FactoryQueryReply",
+        loams_agentd_proto::factory::FactoryQueryReply {
+            value: None,
+            error: Some(loams_agentd_proto::factory::FactoryError {
+                code: s("auth_failed"),
+                message: s("GET /api/v1/repos/search failed with 401"),
+            }),
         },
     ));
     add(Fixture::new(
@@ -1802,6 +1894,7 @@ pub fn all() -> Vec<Fixture> {
         },
     ));
     run_group_fixtures(&mut add);
+    marketplace_fixtures(&mut add);
     add(Fixture::new(
         "GetCheckoutFileDiffTextRequest",
         GetCheckoutFileDiffTextRequest {
@@ -2183,6 +2276,168 @@ pub fn all() -> Vec<Fixture> {
         },
     ));
 
+    // The factory loop's `mcp` methods (FT0 Task 4).
+    add(Fixture::new(
+        "CreateRunWorktreeParams",
+        factory_loop::CreateRunWorktreeParams {
+            chat_id: s("chat_01"),
+            branch: s("factory/fix-linker"),
+            base: some("main"),
+        },
+    ));
+    add(Fixture::new(
+        "Worktree",
+        Worktree {
+            repo_path: s("/home/dev/project"),
+            path: s("/home/dev/.loams/worktrees/project/factory-fix-linker"),
+            branch: s("factory/fix-linker"),
+            name: s("factory-fix-linker"),
+            checkout_id: some("ck_01"),
+        },
+    ));
+    add(Fixture::new(
+        "GetThreadDiffParams",
+        factory_loop::GetThreadDiffParams {
+            chat_id: s("chat_01"),
+            base_ref: some("main"),
+        },
+    ));
+    add(Fixture::new(
+        "PostReviewCommentParams",
+        factory_loop::PostReviewCommentParams {
+            chat_id: s("chat_01"),
+            path: s("src/linker.rs"),
+            side: Some(DiffSide::New),
+            line: 12,
+            end_line: Some(14),
+            body: s("This drops the error."),
+            diff_checksum: s("sha256:0f1e"),
+        },
+    ));
+    add(Fixture::new(
+        "OpenChangeRequestParams",
+        factory_loop::OpenChangeRequestParams {
+            chat_id: s("chat_01"),
+            provider: ChangeRequestProvider::Forgejo,
+            base: s("main"),
+            title: s("Fix the linker"),
+            body: s("Links again."),
+            draft: false,
+        },
+    ));
+    add(Fixture::new(
+        "OpenChangeRequestReply",
+        factory_loop::OpenChangeRequestReply {
+            provider: ChangeRequestProvider::Forgejo,
+            number: 7,
+            url: s("https://forgejo.example.com/dev/project/pulls/7"),
+            state: ChangeRequestState::Open,
+            repo: s("dev/project"),
+            head: s("factory/fix-linker"),
+            head_sha: s("0123456789abcdef0123456789abcdef01234567"),
+            existed: false,
+        },
+    ));
+    add(Fixture::new(
+        "RequestApprovalParams",
+        factory_loop::RequestApprovalParams {
+            chat_id: s("chat_01"),
+            kind: s("merge"),
+            summary: s("Merge #7 into main"),
+            payload: serde_json::json!({ "number": 7, "base": "main" }),
+        },
+    ));
+    add(Fixture::new(
+        "GetApprovalParams",
+        factory_loop::GetApprovalParams {
+            chat_id: s("chat_01"),
+            approval_id: s("appr_01"),
+        },
+    ));
+    add(Fixture::new(
+        "TypedApproval",
+        factory_loop::TypedApproval {
+            id: s("appr_01"),
+            chat_id: s("chat_01"),
+            kind: s("merge"),
+            summary: s("Merge #7 into main"),
+            payload_hash: s("sha256:9a8b"),
+            state: factory_loop::TypedApprovalState::Approved,
+            created_at_ms: MS,
+            decided_at_ms: Some(MS + 1_000),
+        },
+    ));
+    add(Fixture::new(
+        "MergeChangeRequestParams",
+        factory_loop::MergeChangeRequestParams {
+            chat_id: s("chat_01"),
+            approval_id: s("appr_01"),
+            provider: ChangeRequestProvider::Forgejo,
+            number: 7,
+            head_sha: s("0123456789abcdef0123456789abcdef01234567"),
+            strategy: Some(MergeStrategy::Squash),
+        },
+    ));
+    add(Fixture::new(
+        "MergeChangeRequestReply",
+        factory_loop::MergeChangeRequestReply {
+            provider: ChangeRequestProvider::Forgejo,
+            number: 7,
+            repo: s("dev/project"),
+            merged: true,
+        },
+    ));
+
+    // CI checks for the factory loop (FT0 Task 5).
+    add(Fixture::new(
+        "GetChecksParams",
+        factory_loop::GetChecksParams {
+            chat_id: s("chat_01"),
+            provider: ChangeRequestProvider::Forgejo,
+            sha: some("0123456789abcdef0123456789abcdef01234567"),
+        },
+    ));
+    add(Fixture::new(
+        "ChecksReply",
+        factory_loop::ChecksReply {
+            provider: ChangeRequestProvider::Forgejo,
+            repo: s("dev/project"),
+            sha: s("0123456789abcdef0123456789abcdef01234567"),
+            state: factory_loop::CiState::Failure,
+            checks: vec![
+                factory_loop::CiCheck {
+                    name: s("build"),
+                    state: factory_loop::CiState::Success,
+                    url: some("https://forgejo.example.com/dev/project/actions/runs/3/jobs/0"),
+                    log_id: some("3/0"),
+                },
+                factory_loop::CiCheck {
+                    name: s("test"),
+                    state: factory_loop::CiState::Failure,
+                    url: some("https://forgejo.example.com/dev/project/actions/runs/3/jobs/1"),
+                    log_id: some("3/1"),
+                },
+            ],
+        },
+    ));
+    add(Fixture::new(
+        "GetCheckLogParams",
+        factory_loop::GetCheckLogParams {
+            chat_id: s("chat_01"),
+            provider: ChangeRequestProvider::Forgejo,
+            log_id: s("3/1"),
+            lines: Some(200),
+        },
+    ));
+    add(Fixture::new(
+        "CheckLogReply",
+        factory_loop::CheckLogReply {
+            text: s("test linker ... FAILED\n"),
+            lines: 1,
+            truncated: false,
+        },
+    ));
+
     // Every variant of the unions a client switches on.
     for (name, call) in tool_calls() {
         add(Fixture::new(&format!("ToolCall.{name}"), call));
@@ -2191,6 +2446,272 @@ pub fn all() -> Vec<Fixture> {
         add(Fixture::new(&format!("AgentEvent.{name}"), event));
     }
     out
+}
+
+/// MK1 Task 4b's `MarketplaceService`.
+fn marketplace_fixtures(add: &mut impl FnMut(Fixture)) {
+    use loams_agentd_proto::marketplace::*;
+    let official = MarketplaceSource {
+        name: s("official"),
+        url: s("https://ostrium-labs.github.io/loams-marketplace/index.json"),
+        identity: s(
+            "https://github.com/ostrium-labs/loams-marketplace/.github/workflows/publish.yml@refs/heads/main",
+        ),
+        issuer: s("https://token.actions.githubusercontent.com"),
+        official: true,
+        refreshed_ms: MS,
+        error: None,
+        listings: 6,
+    };
+    add(Fixture::new(
+        "MarketplaceSourceList",
+        MarketplaceSourceList {
+            sources: vec![official.clone()],
+        },
+    ));
+    add(Fixture::new(
+        "MarketplaceSource",
+        MarketplaceSource {
+            name: s("example"),
+            official: false,
+            error: some("HTTP 404 for https://example.org/market/index.json"),
+            ..official
+        },
+    ));
+    add(Fixture::new(
+        "AddMarketplaceSourceParams",
+        AddMarketplaceSourceParams {
+            name: s("example"),
+            url: s("https://example.org/market/index.json"),
+            identity: s(
+                "https://github.com/example/market/.github/workflows/publish.yml@refs/heads/main",
+            ),
+            issuer: None,
+        },
+    ));
+    add(Fixture::new(
+        "RemoveMarketplaceSourceParams",
+        RemoveMarketplaceSourceParams { name: s("example") },
+    ));
+    add(Fixture::new(
+        "SearchListingsParams",
+        SearchListingsParams {
+            query: s("github issues"),
+            kinds: vec![s("mcp-server"), s("agent")],
+            frameworks: vec![s("mastra")],
+            languages: vec![s("typescript")],
+            min_level: some("core"),
+            tiers: vec![ListingTier::FirstParty, ListingTier::Verified],
+            source: some("official"),
+        },
+    ));
+    let revocation = ListingRevocation {
+        severity: RevocationSeverity::Warn,
+        reason: s("An upstream advisory affects some tools."),
+        versions: s(">=2.0.0, <2.1.0"),
+        advisory: some("https://github.com/advisories/GHSA-0000-0000-0000"),
+    };
+    let summary = ListingSummary {
+        id: s("ostrium/github-mcp-server"),
+        source: s("official"),
+        kind: s("mcp-server"),
+        title: s("GitHub"),
+        summary: s("GitHub's official MCP server."),
+        tier: ListingTier::FirstParty,
+        latest: some("2.0.3"),
+        framework: None,
+        language: some("go"),
+        level: some("core"),
+        revocation: Some(revocation.clone()),
+    };
+    add(Fixture::new(
+        "ListingSearchResults",
+        ListingSearchResults {
+            results: vec![
+                summary.clone(),
+                ListingSummary {
+                    id: s("ostrium/loams-starter"),
+                    kind: s("agent"),
+                    title: s("Loams starter"),
+                    summary: s("A first Mastra agent."),
+                    framework: some("mastra"),
+                    language: some("typescript"),
+                    level: None,
+                    revocation: None,
+                    ..summary.clone()
+                },
+            ],
+        },
+    ));
+    add(Fixture::new(
+        "ListingRef",
+        ListingRef {
+            id: s("ostrium/github-mcp-server"),
+            version: some("2.0.3"),
+            source: some("official"),
+        },
+    ));
+    add(Fixture::new(
+        "ListingDetail",
+        ListingDetail {
+            summary: ListingSummary {
+                id: s("ostrium/claude-code"),
+                kind: s("harness"),
+                title: s("Claude Code"),
+                summary: s("Anthropic's coding agent."),
+                latest: some("1.0.0"),
+                language: None,
+                level: None,
+                revocation: None,
+                ..summary.clone()
+            },
+            listing: serde_json::json!({
+                "id": "ostrium/claude-code",
+                "kind": "harness",
+                "version": "1.0.0",
+                "title": "Claude Code",
+                "summary": "Anthropic's coding agent.",
+                "licence": "Apache-2.0",
+                "pricing": "free",
+                "publisher": { "name": "Ostrium Labs", "url": "https://ostriumlabs.org" },
+                "source": {
+                    "repository": "https://github.com/ostrium-labs/loams",
+                    "commit": "0123456789abcdef0123456789abcdef01234567",
+                    "path": "crates/loams-agentd-harness"
+                },
+                "harness": {
+                    "auth": ["cli-login", "api-key"],
+                    "launch": { "command": "claude", "protocol": "native" },
+                    "native_adapter": "claude-code"
+                }
+            }),
+            versions: vec![
+                ListingVersion {
+                    version: s("0.9.0"),
+                    yanked: some("Broken launch line."),
+                    revocation: Some(RevocationSeverity::Disable).map(|severity| {
+                        ListingRevocation {
+                            severity,
+                            ..revocation.clone()
+                        }
+                    }),
+                },
+                ListingVersion {
+                    version: s("1.0.0"),
+                    yanked: None,
+                    revocation: None,
+                },
+            ],
+        },
+    ));
+    add(Fixture::new(
+        "PlanInstallReply",
+        PlanInstallReply {
+            plan: InstallPlan {
+                digest: s("5f2b1c8e0d3a4b6c7d8e9f00112233445566778899aabbccddeeff0011223344"),
+                summary: summary.clone(),
+                version: s("2.0.3"),
+                place: serde_json::json!({
+                    "always_ask": ["merge_pull_request"],
+                    "egress": ["api.github.com"]
+                }),
+                tools: vec![
+                    PlanTool {
+                        name: s("merge_pull_request"),
+                        description: s("Merges a pull request."),
+                        risk: s("destructive"),
+                        always_asks: true,
+                        mcp_server: None,
+                    },
+                    PlanTool {
+                        name: s("get_issue"),
+                        description: s("Reads an issue."),
+                        risk: s("read"),
+                        always_asks: false,
+                        mcp_server: some("io.github.github/github-mcp-server"),
+                    },
+                ],
+                egress: vec![s("api.github.com")],
+                dependencies: vec![PlanDependency {
+                    id: s("ostrium/plane-mcp-server"),
+                    version: s(">=0.3.0"),
+                    installed: true,
+                }],
+                secrets: vec![PlanSecret {
+                    name: s("token"),
+                    description: s("A GitHub personal access token."),
+                    required: true,
+                }],
+                models: serde_json::Value::Null,
+                cost: serde_json::Value::Null,
+                licence: s("MIT"),
+                provenance: serde_json::json!({
+                    "type": "github-attestation",
+                    "ref": "https://api.github.com/repos/github/github-mcp-server/attestations"
+                }),
+                source_repository: s("https://github.com/github/github-mcp-server"),
+                version_age_days: Some(4),
+                cannot: vec![s("Reach any host but api.github.com.")],
+            },
+        },
+    ));
+    add(Fixture::new(
+        "InstallListingParams",
+        InstallListingParams {
+            id: s("ostrium/github-mcp-server"),
+            version: some("2.0.3"),
+            source: some("official"),
+            plan_digest: s("5f2b1c8e0d3a4b6c7d8e9f00112233445566778899aabbccddeeff0011223344"),
+            config: [(s("org"), s("ostrium-labs"))].into_iter().collect(),
+            secrets: [(s("token"), s("ghp_example"))].into_iter().collect(),
+        },
+    ));
+    let installed = InstalledListing {
+        id: s("ostrium/github-mcp-server"),
+        version: s("2.0.3"),
+        source: s("official"),
+        kind: s("mcp-server"),
+        installed_ms: MS,
+        revocation: Some(revocation),
+        update: some("2.1.0"),
+    };
+    add(Fixture::new(
+        "InstalledListingReply",
+        InstalledListingReply {
+            installed: installed.clone(),
+        },
+    ));
+    add(Fixture::new(
+        "UninstallListingParams",
+        UninstallListingParams {
+            id: s("ostrium/github-mcp-server"),
+        },
+    ));
+    add(Fixture::new(
+        "InstalledListingList",
+        InstalledListingList {
+            installed: vec![installed],
+        },
+    ));
+    add(Fixture::new(
+        "AvailableUpdateList",
+        AvailableUpdateList {
+            updates: vec![AvailableUpdate {
+                id: s("ostrium/github-mcp-server"),
+                from: s("2.0.3"),
+                to: s("2.1.0"),
+                widens: true,
+            }],
+        },
+    ));
+    add(Fixture::new(
+        "UpdateListingParams",
+        UpdateListingParams {
+            id: s("ostrium/github-mcp-server"),
+            version: some("2.1.0"),
+            plan_digest: some("5f2b1c8e0d3a4b6c7d8e9f00112233445566778899aabbccddeeff0011223344"),
+        },
+    ));
 }
 
 /// SD1 Task 12's run groups (G12–G16).

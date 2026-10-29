@@ -11,7 +11,9 @@ reviews:
   collapse_walkthrough: true
   sequence_diagrams: false
   auto_review:
-    enabled: true
+    # Greptile is this repository's PR reviewer (.greptile/). CodeRabbit reviews
+    # only on request (`@coderabbitai review`), so a PR never gets both.
+    enabled: false
     drafts: false
     # Covers dev, main and stacked PRs based on another branch.
     base_branches:

@@ -28,13 +28,13 @@ extensions:
     endpoint: 0.0.0.0:13133
 exporters:
   clickhousetraces:
-    datasource: tcp://clickhouse:9000/signoz_traces
+    datasource: ${env:SIGNOZ_CH_BASE}/signoz_traces${env:SIGNOZ_CH_OPTIONS}
     low_cardinal_exception_grouping: ${env:LOW_CARDINAL_EXCEPTION_GROUPING}
     use_new_schema: true
   signozclickhousemetrics:
-    dsn: tcp://clickhouse:9000/signoz_metrics
+    dsn: ${env:SIGNOZ_CH_BASE}/signoz_metrics${env:SIGNOZ_CH_OPTIONS}
   clickhouselogsexporter:
-    dsn: tcp://clickhouse:9000/signoz_logs
+    dsn: ${env:SIGNOZ_CH_BASE}/signoz_logs${env:SIGNOZ_CH_OPTIONS}
     timeout: 10s
     use_new_schema: true
 service:

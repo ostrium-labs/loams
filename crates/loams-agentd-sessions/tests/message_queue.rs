@@ -519,6 +519,7 @@ async fn cancelling_a_turn_freezes_the_queue_until_an_explicit_send() {
 
     core.doc_host
         .update_queued_message(CHAT, &second_id, "second edited")
+        .await
         .expect("edit frozen row");
     tokio::time::sleep(Duration::from_millis(150)).await;
     assert_eq!(queue_texts(&core), vec!["second edited", "third"]);
@@ -1151,6 +1152,75 @@ async fn send_now_interrupts_the_running_turn() {
     core.shutdown().await;
 }
 
+/// An edit is serialized with the drain, like a removal. A send takes its row
+/// out of the queue and puts it back when the send fails; an edit that landed
+/// in between found no row, answered `false`, and the row came back with its
+/// old text (seen as a Connect/ndjson parity flake on an idle side chat whose
+/// queued message could not be sent).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_edit_waits_for_a_failed_send_to_put_its_row_back() {
+    let (core, harness, prompts) = setup(SteeringMode::TurnBoundary).await;
+    core.doc_host
+        .queue_message(CHAT, "opening", Vec::new())
+        .expect("queue opening");
+    wait_for(
+        || prompts.lock().unwrap().iter().any(|p| p == "opening"),
+        "the first turn to start",
+    )
+    .await;
+    let id = core
+        .doc_host
+        .queue_message(CHAT, "second", Vec::new())
+        .expect("queue second");
+    // Supervised, the next send is refused (the harness cannot ask for
+    // approvals), so the send below puts its row back.
+    loams_agentd_rpc::memory_client(core.rpc_service())
+        .call(
+            loams_agentd_rpc::methods::SET_THREAD_APPROVAL_MODE,
+            serde_json::json!({ "chatId": CHAT, "mode": "supervised" }),
+        )
+        .await
+        .expect("supervised");
+
+    // Send it now: the row leaves the queue, and the send waits for the held
+    // turn to take its interrupt, which this harness does only on `finish`.
+    let core = Arc::new(core);
+    let send = tokio::spawn({
+        let core = core.clone();
+        let id = id.clone();
+        async move { core.doc_host.send_queued_now(CHAT, &id).await }
+    });
+    wait_for(|| queue_texts(&core).is_empty(), "the send to take the row").await;
+    let edit = tokio::spawn({
+        let core = core.clone();
+        let id = id.clone();
+        async move {
+            core.doc_host
+                .update_queued_message(CHAT, &id, "second edited")
+                .await
+        }
+    });
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(
+        !edit.is_finished(),
+        "the edit answered while the send held the row"
+    );
+
+    let _ = harness.finish.send(());
+    let sent = send.await.unwrap();
+    assert!(sent.is_err(), "the supervised send is refused: {sent:?}");
+    assert!(edit.await.unwrap().expect("edit"), "the edit applies");
+    // The held turn ends with `finish`, and the turn-end drain may take the
+    // restored row, have its send refused (still supervised), put it back and
+    // pause; the queue is empty for that moment, so wait for it to settle.
+    wait_for(
+        || queue_texts(&core) == ["second edited"],
+        "the edited row back in the queue",
+    )
+    .await;
+    core.shutdown().await;
+}
+
 /// Editing a queued message to nothing is the delete gesture.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn editing_a_queued_message_to_empty_removes_it() {
@@ -1172,6 +1242,7 @@ async fn editing_a_queued_message_to_empty_removes_it() {
     assert!(
         core.doc_host
             .update_queued_message(CHAT, &id, "fixed")
+            .await
             .expect("edit")
     );
     assert_eq!(queue_texts(&core), vec!["fixed"]);
@@ -1179,6 +1250,7 @@ async fn editing_a_queued_message_to_empty_removes_it() {
     assert!(
         core.doc_host
             .update_queued_message(CHAT, &id, "   ")
+            .await
             .expect("empty edit")
     );
     assert!(

@@ -5,6 +5,7 @@
 import { Button, Field, Input, Logo, Notice } from '@loams/ui';
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 import type { AuthMode } from '../runtime-config.js';
+import { demoHref } from './demo.js';
 import { checkHealth, type Health, isTailnetHost, parseEngineUrl } from './engine.js';
 
 function Frame({ title, children }: { title: string; children: ReactNode }) {
@@ -16,6 +17,10 @@ function Frame({ title, children }: { title: string; children: ReactNode }) {
         </div>
         <h1>{title}</h1>
         {children}
+        <p className="lc-gate-demo">
+          Just looking? <a href={demoHref(true)}>Open the console on sample data</a>: the pages run
+          in this browser, with no engine and nothing to sign in to.
+        </p>
       </div>
     </main>
   );

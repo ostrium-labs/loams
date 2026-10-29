@@ -410,7 +410,7 @@ where
 
 /// `application/x-www-form-urlencoded`, which is what the OAuth token endpoint
 /// takes. Written out rather than pulled in as a dependency for four pairs.
-fn form_encode(pairs: &[(&str, &str)]) -> String {
+pub(crate) fn form_encode(pairs: &[(&str, &str)]) -> String {
     let mut out = String::new();
     for (key, value) in pairs {
         if !out.is_empty() {

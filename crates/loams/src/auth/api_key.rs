@@ -186,6 +186,58 @@ fn stamp(path: &Path) -> Option<(SystemTime, u64)> {
     Some((meta.modified().ok()?, meta.len()))
 }
 
+/// Why the key file at `path` could not be read. Permission denied also says
+/// whom the engine runs as and whom the file belongs to, as the engine sees
+/// them: `loams auth new-key --append` creates the file as its writer, mode
+/// 0600, which an engine running as another user (the release image's uid
+/// 10001) cannot read (#881).
+pub(crate) fn read_error(path: &Path, err: &std::io::Error) -> String {
+    let mut message = format!("LOAMS_API_KEYS_FILE {}: {err}", path.display());
+    if err.kind() != std::io::ErrorKind::PermissionDenied {
+        return message;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt as _;
+        if let Some((uid, gid)) = process_ids() {
+            message.push_str(&format!("; the engine runs as uid {uid} gid {gid}"));
+        }
+        // The file, or else the directory the engine cannot search.
+        let owner = |p: &Path| {
+            let meta = std::fs::metadata(p).ok()?;
+            Some(format!(
+                "{} is uid {} gid {} mode {:04o}",
+                p.display(),
+                meta.uid(),
+                meta.gid(),
+                meta.mode() & 0o7777
+            ))
+        };
+        if let Some(seen) = owner(path).or_else(|| path.parent().and_then(owner)) {
+            message.push_str(&format!("; {seen}"));
+        }
+    }
+    message.push_str(
+        ". Let the engine's uid or gid read the file (and search its directory) without making \
+         it world-readable, for example group-readable (0640) by the engine's gid: see \
+         \"API keys\" in deploy/release/README.md",
+    );
+    message
+}
+
+/// The effective uid and gid, from `/proc/self/status` (Linux; `None`
+/// elsewhere).
+#[cfg(unix)]
+fn process_ids() -> Option<(u32, u32)> {
+    let status = std::fs::read_to_string("/proc/self/status").ok()?;
+    // `Uid:` and `Gid:` list the real, effective, saved and filesystem ids.
+    let effective = |name: &str| -> Option<u32> {
+        let ids = status.lines().find_map(|line| line.strip_prefix(name))?;
+        ids.split_whitespace().nth(1)?.parse().ok()
+    };
+    Some((effective("Uid:")?, effective("Gid:")?))
+}
+
 #[derive(Debug)]
 struct Loaded {
     keys: HashMap<String, Entry>,
@@ -206,8 +258,7 @@ impl ApiKeyAuthenticator {
     /// Reads `path`; a missing or malformed file is an error (the server
     /// refuses to start).
     pub fn from_file(path: &Path) -> Result<Self, String> {
-        let text = std::fs::read_to_string(path)
-            .map_err(|e| format!("LOAMS_API_KEYS_FILE {}: {e}", path.display()))?;
+        let text = std::fs::read_to_string(path).map_err(|e| read_error(path, &e))?;
         let keys = parse_file(path, &text)?;
         if keys.is_empty() {
             tracing::warn!(
@@ -237,7 +288,7 @@ impl ApiKeyAuthenticator {
             return;
         }
         match std::fs::read_to_string(&self.path)
-            .map_err(|e| e.to_string())
+            .map_err(|e| read_error(&self.path, &e))
             .and_then(|text| parse_file(&self.path, &text))
         {
             Ok(keys) => {
@@ -292,6 +343,7 @@ fn principal(id: &str, entry: &Entry) -> Principal {
     Principal {
         subject: format!("apikey:{id}"),
         kind: PrincipalKind::ApiKey,
+        issuer: None,
         display_name: entry.label.clone(),
         email: None,
         // A key file names no org, environment or scope (the self-hosted
@@ -365,6 +417,28 @@ mod tests {
         assert!(err.contains("argon2id"), "{err}");
         let err = ApiKeyAuthenticator::from_file(Path::new("/nonexistent/keys")).unwrap_err();
         assert!(err.contains("LOAMS_API_KEYS_FILE"), "{err}");
+    }
+
+    #[test]
+    fn an_unreadable_file_says_who_may_read_it() {
+        let file = file_with(&[]);
+        let path = file.path().display().to_string();
+        let denied = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
+        let err = read_error(file.path(), &denied);
+        assert!(
+            err.starts_with(&format!("LOAMS_API_KEYS_FILE {path}: ")),
+            "{err}"
+        );
+        assert!(err.contains("0640"), "{err}");
+        assert!(err.contains("deploy/release/README.md"), "{err}");
+        #[cfg(target_os = "linux")]
+        assert!(err.contains("; the engine runs as uid "), "{err}");
+        #[cfg(unix)]
+        assert!(err.contains(&format!("; {path} is uid ")), "{err}");
+        // Any other error is only named.
+        let missing = std::io::Error::from(std::io::ErrorKind::NotFound);
+        let err = read_error(file.path(), &missing);
+        assert!(!err.contains("0640"), "{err}");
     }
 
     #[tokio::test]

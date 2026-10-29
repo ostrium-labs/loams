@@ -1,0 +1,55 @@
+#cloud-config
+# Loams on one VM in your own @@CLOUD_NAME@@ account (design 70, BY0).
+# GENERATED from deploy/byoc/cloud-init.tmpl.yaml, lib/ and @@CLOUD@@/config.env
+# by deploy/byoc/gen-cloud-init.sh; edit those, not this file. Fill the @@NAME@@
+# placeholders with deploy/byoc/render.sh before you use it.
+#
+# What it does: mounts the data disk (if any), installs Docker, downloads the
+# pinned Loams compose bundle and verifies its signature, writes the stack's
+# settings (no cloud key), reads the tailnet key and setup token from the
+# secret store with the VM's own identity, and starts the stack. The engine is
+# reached over your tailnet only: no port is opened, and the VM needs none.
+package_update: true
+packages:
+  - ca-certificates
+  - curl
+  - gnupg
+  - jq
+write_files:
+  - path: /etc/loams-byoc/config.env
+    permissions: "0644"
+    owner: root:root
+    content: |
+@@CONFIG@@
+  - path: /etc/loams-byoc/loams-release-key.asc
+    permissions: "0644"
+    owner: root:root
+    content: |
+@@KEY@@
+  - path: /usr/local/bin/loams-byoc-bootstrap
+    permissions: "0755"
+    owner: root:root
+    content: |
+@@BOOTSTRAP@@
+  - path: /usr/local/bin/loams-byoc-secrets
+    permissions: "0755"
+    owner: root:root
+    content: |
+@@SECRETS@@
+  - path: /etc/systemd/system/loams-byoc.service
+    permissions: "0644"
+    owner: root:root
+    content: |
+@@UNIT@@
+  - path: /etc/systemd/system/loams-byoc-confluent.service
+    permissions: "0644"
+    owner: root:root
+    content: |
+@@CONFLUENT_UNIT@@
+  - path: /etc/systemd/system/loams-byoc-confluent.timer
+    permissions: "0644"
+    owner: root:root
+    content: |
+@@CONFLUENT_TIMER@@
+runcmd:
+  - [ /usr/local/bin/loams-byoc-bootstrap ]

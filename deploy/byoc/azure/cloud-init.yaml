@@ -1,0 +1,597 @@
+#cloud-config
+# Loams on one VM in your own Azure account (design 70, BY0).
+# GENERATED from deploy/byoc/cloud-init.tmpl.yaml, lib/ and azure/config.env
+# by deploy/byoc/gen-cloud-init.sh; edit those, not this file. Fill the @@NAME@@
+# placeholders with deploy/byoc/render.sh before you use it.
+#
+# What it does: mounts the data disk (if any), installs Docker, downloads the
+# pinned Loams compose bundle and verifies its signature, writes the stack's
+# settings (no cloud key), reads the tailnet key and setup token from the
+# secret store with the VM's own identity, and starts the stack. The engine is
+# reached over your tailnet only: no port is opened, and the VM needs none.
+package_update: true
+packages:
+  - ca-certificates
+  - curl
+  - gnupg
+  - jq
+write_files:
+  - path: /etc/loams-byoc/config.env
+    permissions: "0644"
+    owner: root:root
+    content: |
+      # Settings for the Azure VM (rendered into /etc/loams-byoc/config.env). No keys.
+      LOAMS_BYOC_CLOUD=azure
+      LOAMS_VERSION=@@VERSION@@
+      LOAMS_BUCKET_URL=az://@@CONTAINER@@/loams
+      AZURE_ACCOUNT=@@STORAGE_ACCOUNT@@
+      AZURE_VAULT=@@VAULT@@
+      AZURE_CLIENT_ID=@@CLIENT_ID@@
+      SECRET_PREFIX=@@SECRET_PREFIX@@
+      LOAMS_PROFILES=@@PROFILES@@
+      TS_HOSTNAME=@@HOSTNAME@@
+      DATA_DEVICE=@@DATA_DEVICE@@
+      CONFLUENT_INTEGRATIONS=@@CONFLUENT_INTEGRATIONS@@
+  - path: /etc/loams-byoc/loams-release-key.asc
+    permissions: "0644"
+    owner: root:root
+    content: |
+      -----BEGIN PGP PUBLIC KEY BLOCK-----
+
+      mDMEatJGMhYJKwYBBAHaRw8BAQdAdkD6qgQhDjs8F74Gxt1APYZop8jVwWNBWRo4
+      tcx2Wrq0NExvYW1zIFJlbGVhc2UgU2lnbmluZyBLZXkgPHNlY3VyaXR5QG9zdHJp
+      dW1sYWJzLmNvbT6IeAQwFgoAIBYhBDM6yUWZ1aHrKkFtHoPcE02Mr4ldBQJq1Pf+
+      Ah0gAAoJEIPcE02Mr4ldBOQBAOhQ8EXKpzRuDiYHR47J8Hs5j/WB+jNvyPKMOBx7
+      Png5AP9cFmspafzAOv8PMaYy6qdRNQz6GEjVFEPR6yTRN3n5CrQ0TG9hbXMgUmVs
+      ZWFzZSBTaWduaW5nIEtleSA8c2VjdXJpdHlAb3N0cml1bWxhYnMub3JnPoiZBBMW
+      CgBBAhsDBQkDwmcABQsJCAcCBhUKCQgLAgQWAgMBAh4BAheAFiEEMzrJRZnVoesq
+      QW0eg9wTTYyviV0FAmrU9/4CGQEACgkQg9wTTYyviV2M3QEAhoFjIfkHs2vOxvwu
+      Cv8dw83RVFkMg/ScuNDE7fQIrmYBAM144b2LS1eMwNi075hX+7imnAgP9g7tl1C3
+      Zs2R7owMmDMEat8LhhYJKwYBBAHaRw8BAQdAnId2FGOpeF5JIn5UrU+rI22VKMsH
+      YuYKskEKQzQmmjq0NExvYW1zIFJlbGVhc2UgU2lnbmluZyBLZXkgPHNlY3VyaXR5
+      QG9zdHJpdW1sYWJzLm9yZz6IlgQTFgoAPhYhBCnFzD8P1moq0y7LMJ6Ow+Cqtbpo
+      BQJq3wuGAhsDBQkDwmcABQsJCAcCBhUKCQgLAgQWAgMBAh4BAheAAAoJEJ6Ow+Cq
+      tbpovRcA/2zwvBGUvXQi8CCqJIdMAYw5NUoIEkfCyRvBh01bKB8dAQDFld3dCT+1
+      VqqeAgDYPlh9Aqk6LCGm8BlWOtXIvrtLDIh1BBAWCgAdFiEEMzrJRZnVoesqQW0e
+      g9wTTYyviV0FAmrfC40ACgkQg9wTTYyviV1d8gD9G+bpzXOZchcCRdW8sELiDvKy
+      qp3IoNQffmzI84OC9g0A/iq6FfzgTlYnpfWt5Hp4kr8hEzuSXr8RB0ZIs4ZZg3sB
+      =V0O2
+      -----END PGP PUBLIC KEY BLOCK-----
+  - path: /usr/local/bin/loams-byoc-bootstrap
+    permissions: "0755"
+    owner: root:root
+    content: |
+      #!/usr/bin/env bash
+      # First boot of a Loams BYOC VM (Ubuntu 24.04): mounts the data disk, installs
+      # Docker, downloads the pinned compose bundle for LOAMS_VERSION, checks its
+      # signature and checksum, writes .env and secrets/engine.env (settings only,
+      # never a cloud key), and enables loams-byoc.service, which fetches the
+      # secrets and starts the stack. Safe to run again.
+      #
+      #   loams-byoc-bootstrap                    install and enable
+      #   loams-byoc-bootstrap --render-env-only  print the .env and engine.env it
+      #                                           would write (secrets as placeholders)
+      #                                           and touch nothing (for tests)
+      #   LOAMS_BYOC_SKIP_SYSTEM=1                download, verify and unpack the bundle and
+      #                                           write .env and secrets/engine.env under
+      #                                           LOAMS_BYOC_ROOT, but skip the root check,
+      #                                           kernel, disk, Docker and systemd steps
+      #                                           (for tests, not for a VM)
+      set -euo pipefail
+      umask 022
+
+      config="${LOAMS_BYOC_CONFIG:-/etc/loams-byoc/config.env}"
+      # shellcheck disable=SC1090
+      . "$config"
+      render_only=0
+      [[ "${1:-}" == "--render-env-only" ]] && render_only=1
+
+      root="${LOAMS_BYOC_ROOT:-/opt/loams}"
+      stack="$root/release"
+      repo="${LOAMS_BYOC_RELEASE_URL:-https://github.com/ostrium-labs/loams/releases/download}"
+      # The release signing keys (docs/release/loams-release-key.asc holds both); the
+      # bundle's SHA256SUMS.asc must verify against one of these fingerprints. The
+      # current key comes first and is preferred; the previous key (rotated 2026-10,
+      # not revoked) still verifies 0.1.0 to 0.1.2. See docs/release/signing.md.
+      fprs=(
+        "29C5CC3F0FD66A2AD32ECB309E8EC3E0AAB5BA68"  # current, from 2026-10-26
+        "333AC94599D5A1EB2A416D1E83DC134D8CAF895D"  # previous: 0.1.0 to 0.1.2
+      )
+      proto='=https'
+      keyfile="${LOAMS_BYOC_KEY:-/etc/loams-byoc/loams-release-key.asc}"
+      docker_fpr="9DC858229FC7DD38854AE2D88D81803C0EBFCD88"
+
+      say() { echo "loams-byoc-bootstrap: $*"; }
+      die() { echo "loams-byoc-bootstrap: $*" >&2; exit 1; }
+
+      : "${LOAMS_BYOC_CLOUD:?}" "${LOAMS_VERSION:?}" "${LOAMS_BUCKET_URL:?}" "${SECRET_PREFIX:?}"
+      [[ "$LOAMS_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$ ]] \
+        || die "LOAMS_VERSION must be a release version, not '$LOAMS_VERSION'"
+      case "$LOAMS_BYOC_CLOUD:$LOAMS_BUCKET_URL" in
+        aws:s3://*|gcp:gs://*|azure:az://*) ;;
+        *) die "LOAMS_BUCKET_URL $LOAMS_BUCKET_URL does not match cloud $LOAMS_BYOC_CLOUD" ;;
+      esac
+
+      # The settings the stack reads, cloud by cloud. None is a credential: the
+      # engine's object_store reads the instance role (AWS), the metadata server's
+      # service account (GCP) or the managed identity (Azure).
+      engine_env() {
+        case "$LOAMS_BYOC_CLOUD" in
+          aws) echo "AWS_REGION=${REGION:?REGION is not set}" ;;
+          gcp) ;;
+          azure)
+            echo "AZURE_STORAGE_ACCOUNT_NAME=${AZURE_ACCOUNT:?AZURE_ACCOUNT is not set}"
+            echo "AZURE_CREDENTIAL_TYPE=managed_identity"
+            [[ -z "${AZURE_CLIENT_ID:-}" ]] || echo "AZURE_STORAGE_CLIENT_ID=$AZURE_CLIENT_ID"
+            ;;
+        esac
+      }
+
+      # The connect role (profile `connectors`, plan CC1 Task 1) reaches the engine's
+      # connect socket with an API key, which the engine accepts only when apikey is
+      # among its auth modes; people keep coming in over the tailnet.
+      auth_mode() {
+        local p=",${LOAMS_PROFILES:-}," ints="${CONFLUENT_INTEGRATIONS:-}"
+        if [[ "$p" == *,connectors,* || -n "${ints//[ ,]/}" ]]; then
+          echo "tailscale,apikey"
+        else
+          echo "tailscale"
+        fi
+      }
+
+      env_values() {
+        printf 'LOAMS_VERSION=%s\n' "$LOAMS_VERSION"
+        printf 'LOAMS_BUCKET=%s\n' "$LOAMS_BUCKET_URL"
+        printf 'COMPOSE_PROFILES=%s\n' "${LOAMS_PROFILES:-}"
+        printf 'LOAMS_AUTH_MODE=%s\n' "$(auth_mode)"
+        printf 'TS_HOSTNAME=%s\n' "${TS_HOSTNAME:-loams}"
+        printf 'TS_AUTHKEY=%s\n' '<from secret store>'
+        printf 'LOAMS_SETUP_TOKEN=%s\n' '<from secret store>'
+      }
+
+      if ((render_only)); then
+        echo "# .env"; env_values
+        echo "# secrets/engine.env"; engine_env
+        exit 0
+      fi
+
+      skip_system="${LOAMS_BYOC_SKIP_SYSTEM:-0}"
+      [[ "$skip_system" == 1 || "$(id -u)" -eq 0 ]] || die "run as root"
+      if [[ "$skip_system" == 1 ]]; then
+        # Test hooks, only without the system steps: a local release, signed by a test key.
+        proto='=http,https'
+        # A space-separated list, current key first.
+        if [[ -n "${LOAMS_BYOC_TEST_KEY_FPR:-}" ]]; then read -r -a fprs <<<"$LOAMS_BYOC_TEST_KEY_FPR"; fi
+      fi
+
+      # --- kernel (House's workers need Linux 6.7 or newer) ------------------------
+      kv="$(uname -r)"; maj="${kv%%.*}"; rest="${kv#*.}"; min="${rest%%[!0-9]*}"
+      if [[ "$skip_system" != 1 ]] && ((maj < 6 || (maj == 6 && min < 7))); then
+        die "Linux $kv is too old: the House needs 6.7 or newer (Ubuntu 24.04's 6.8 or later)"
+      fi
+
+      # --- the data disk, if one is attached ----------------------------------------
+      if [[ "$skip_system" != 1 && -n "${DATA_DEVICE:-}" ]]; then
+        for _ in $(seq 30); do [[ -b "$DATA_DEVICE" ]] && break; sleep 2; done
+        [[ -b "$DATA_DEVICE" ]] || die "data disk $DATA_DEVICE did not appear"
+        if ! blkid "$DATA_DEVICE" >/dev/null 2>&1; then
+          say "formatting $DATA_DEVICE as ext4 (the embedded stores need a local block disk)"
+          mkfs.ext4 -q -L loams-data "$DATA_DEVICE"
+        fi
+        mkdir -p /var/lib/docker
+        grep -q ' /var/lib/docker ' /etc/fstab \
+          || echo "LABEL=loams-data /var/lib/docker ext4 defaults,nofail 0 2" >>/etc/fstab
+        mountpoint -q /var/lib/docker || mount /var/lib/docker
+      fi
+
+      # --- Docker (the vendor's apt repository, key checked by fingerprint) ----------
+      if [[ "$skip_system" != 1 ]] && { ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; }; then
+        say "installing Docker"
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update -qq
+        apt-get install -y -qq ca-certificates curl gnupg jq
+        install -m 0755 -d /etc/apt/keyrings
+        curl --proto '=https' --tlsv1.2 -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+        got="$(gpg --show-keys --with-colons /etc/apt/keyrings/docker.asc | awk -F: '$1=="fpr"{print $10; exit}')"
+        [[ "$got" == "$docker_fpr" ]] || die "Docker's apt key has fingerprint $got, expected $docker_fpr"
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+          >/etc/apt/sources.list.d/docker.list
+        apt-get update -qq
+        apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-compose-plugin
+        systemctl enable --now docker
+      fi
+      if [[ "$skip_system" != 1 ]]; then
+        command -v jq >/dev/null 2>&1 || { apt-get update -qq; apt-get install -y -qq jq gnupg curl; }
+      fi
+
+      # --- the bundle: signature, checksum, unpack -----------------------------------
+      marker="$root/.bundle-version"
+      if [[ "$(cat "$marker" 2>/dev/null || true)" != "$LOAMS_VERSION" ]]; then
+        say "downloading Loams $LOAMS_VERSION"
+        dl="$(mktemp -d)"
+        trap 'rm -rf "$dl"' EXIT
+        base="$repo/v$LOAMS_VERSION"
+        bundle="loams-compose-$LOAMS_VERSION.tar.gz"
+        for f in "$bundle" SHA256SUMS SHA256SUMS.asc; do
+          curl --proto "$proto" --tlsv1.2 -fsSL --retry 3 "$base/$f" -o "$dl/$f"
+        done
+        gnupghome="$dl/gnupg"; mkdir -m 700 "$gnupghome"
+        GNUPGHOME="$gnupghome" gpg --batch --quiet --import "$keyfile"
+        status="$(GNUPGHOME="$gnupghome" gpg --batch --status-fd 1 --verify "$dl/SHA256SUMS.asc" "$dl/SHA256SUMS" 2>/dev/null || true)"
+        signer=""
+        for f in "${fprs[@]}"; do
+          if grep -q "^\[GNUPG:\] VALIDSIG $f " <<<"$status"; then signer="$f"; break; fi
+        done
+        [[ -n "$signer" ]] || die "SHA256SUMS is not signed by a Loams release key (${fprs[*]})"
+        if [[ "$signer" != "${fprs[0]}" ]]; then
+          say "SHA256SUMS is signed by the previous Loams release key $signer (releases up to 0.1.2)"
+        fi
+        (cd "$dl" && grep -F " $bundle" SHA256SUMS | sha256sum -c --quiet -) \
+          || die "$bundle does not match SHA256SUMS"
+        mkdir -p "$root"
+        # Keep the host's own .env and secrets across a re-run.
+        if [[ -f "$stack/.env" ]]; then cp -p "$stack/.env" "$dl/.env.keep"; fi
+        tar -xzf "$dl/$bundle" -C "$root" --strip-components=1
+        [[ -f "$dl/.env.keep" ]] && cp -p "$dl/.env.keep" "$stack/.env"
+        echo "$LOAMS_VERSION" >"$marker"
+      fi
+
+      # --- .env and secrets/engine.env: settings only --------------------------------
+      mkdir -p "$stack/secrets"
+      if [[ ! -f "$stack/.env" ]]; then
+        install -m 600 "$stack/.env.example" "$stack/.env"
+      fi
+      chmod 600 "$stack/.env"
+      setkv() {
+        local tmp; tmp="$(mktemp "$stack/.env.XXXXXX")"
+        K="$1" V="$2" awk 'BEGIN{FS="="; k=ENVIRON["K"]; v=ENVIRON["V"]}
+          $1==k{print k "=" v; f=1; next} {print} END{if(!f) print k "=" v}' "$stack/.env" >"$tmp"
+        chmod 600 "$tmp"; mv "$tmp" "$stack/.env"
+      }
+      while IFS='=' read -r k v; do
+        case "$k" in TS_AUTHKEY|LOAMS_SETUP_TOKEN) continue ;; esac
+        setkv "$k" "$v"
+      done < <(env_values)
+      install -m 600 /dev/null "$stack/secrets/engine.env"
+      engine_env >"$stack/secrets/engine.env"
+      touch "$stack/secrets/api-keys"; chmod 600 "$stack/secrets/api-keys"
+      # The engine reads secrets/api-keys as uid 10001 (release/README.md).
+      chown 10001 "$stack/secrets/api-keys" 2>/dev/null || true
+
+      if [[ "$skip_system" == 1 ]]; then
+        say "done (no system steps): $stack"
+        exit 0
+      fi
+
+      # --- the service -------------------------------------------------------------------
+      systemctl daemon-reload
+      systemctl enable loams-byoc.service
+      systemctl restart loams-byoc.service
+      # Rotated Confluent keys reach the connect role within 5 minutes (a no-op
+      # without CONFLUENT_INTEGRATIONS; design 80 §7.2).
+      systemctl enable --now loams-byoc-confluent.timer
+      say "done: the engine joins your tailnet as ${TS_HOSTNAME:-loams}; check with: journalctl -u loams-byoc"
+  - path: /usr/local/bin/loams-byoc-secrets
+    permissions: "0755"
+    owner: root:root
+    content: |
+      #!/usr/bin/env bash
+      # Reads the install's secrets from the cloud's secret store with the VM's own
+      # identity and writes them where the stack reads them. No cloud CLI, no key:
+      #
+      #   aws    IMDSv2 role credentials, then Secrets Manager with SigV4 (curl)
+      #   gcp    the metadata server's service-account token, then Secret Manager
+      #   azure  IMDS managed-identity token for Key Vault, then the vault's REST API
+      #
+      # Secret names (the prefix is SECRET_PREFIX in /etc/loams-byoc/config.env):
+      #   <prefix>/tailnet-authkey   required   -> TS_AUTHKEY in .env
+      #   <prefix>/setup-token       required   -> LOAMS_SETUP_TOKEN in .env
+      #   <prefix>/api-keys          optional   -> secrets/api-keys
+      #   <prefix>/confluent-<i>-{api-key,api-secret,sr-key,sr-secret,metrics-key,metrics-secret}
+      #                              optional, for each integration <i> in CONFLUENT_INTEGRATIONS
+      #                              -> secrets/connect/<ns>/confluent-<i>/{username,password,
+      #                                 sr-username,sr-password,metrics-key,metrics-secret}
+      #                              (the connect role's file secret store, design 80 §7.2;
+      #                              <ns> is CONNECT_NAMESPACE, default 0). Never in .env.
+      # On AWS the separator is "/"; Google Cloud and Azure names cannot hold "/",
+      # so they use "-" (the prefix "loams-<install>" gives loams-<install>-setup-token).
+      #
+      # Never prints a secret value. A failure names the secret and the HTTP status.
+      #
+      #   loams-byoc-secrets [--confluent-only] [aws|gcp|azure]
+      #                                        (default cloud: LOAMS_BYOC_CLOUD from the config)
+      #
+      # --confluent-only refreshes the Confluent files and nothing else (no .env
+      # change, no restart): loams-byoc-confluent.timer runs it every 5 minutes and
+      # `systemctl reload loams-byoc` runs it at once, so a key rotated with
+      # `loams byoc confluent key rotate` reaches the connect role without a reboot.
+      set -euo pipefail
+      umask 077
+
+      confluent_only=0
+      if [[ "${1:-}" == "--confluent-only" ]]; then confluent_only=1; shift; fi
+
+      config="${LOAMS_BYOC_CONFIG:-/etc/loams-byoc/config.env}"
+      # shellcheck disable=SC1090
+      [[ -r "$config" ]] && . "$config"
+      cloud="${1:-${LOAMS_BYOC_CLOUD:-}}"
+      stack="${LOAMS_BYOC_STACK:-/opt/loams/release}"
+      prefix="${SECRET_PREFIX:-}"
+      [[ -n "$prefix" ]] || { echo "loams-byoc-secrets: SECRET_PREFIX is not set" >&2; exit 2; }
+      only_ints="${CONFLUENT_INTEGRATIONS:-}"
+      if ((confluent_only)) && [[ -z "${only_ints//[ ,]/}" ]]; then
+        # The timer runs on every install; with no integration it reads nothing.
+        exit 0
+      fi
+
+      work="$(mktemp -d)"
+      trap 'rm -rf "$work"' EXIT
+
+      die() { echo "loams-byoc-secrets: $*" >&2; exit 1; }
+
+      # curl wrapper: body to $work/body, prints the HTTP status. A transport error
+      # prints 000. Headers (which carry tokens) are passed in a file, not argv.
+      http() {
+        local out
+        out="$(curl --silent --show-error --proto '=http,https' --max-time 20 \
+          --retry 3 --retry-connrefused --retry-delay 2 \
+          --output "$work/body" --write-out '%{http_code}' "$@" 2>"$work/curl.err")" || out=000
+        printf '%s' "$out"
+      }
+
+      secret_name() {  # $1 = short name
+        case "$cloud" in
+          aws) printf '%s/%s' "$prefix" "$1" ;;
+          *) printf '%s-%s' "${prefix//\//-}" "$1" ;;
+        esac
+      }
+
+      # --- aws ------------------------------------------------------------------
+      aws_creds_ready=0
+      aws_prepare() {
+        ((aws_creds_ready)) && return 0
+        local imds="${LOAMS_BYOC_IMDS_URL:-http://169.254.169.254}" code token role
+        : "${REGION:?REGION is not set}"
+        code="$(http -X PUT -H 'X-aws-ec2-metadata-token-ttl-seconds: 300' "$imds/latest/api/token")"
+        [[ "$code" == 200 ]] || die "IMDSv2 did not answer ($code); is the instance metadata service on, with hop limit 2 for containers?"
+        token="$(cat "$work/body")"
+        code="$(http -H "X-aws-ec2-metadata-token: $token" "$imds/latest/meta-data/iam/security-credentials/")"
+        [[ "$code" == 200 ]] || die "the instance has no IAM role ($code)"
+        role="$(head -n1 "$work/body")"
+        code="$(http -H "X-aws-ec2-metadata-token: $token" "$imds/latest/meta-data/iam/security-credentials/$role")"
+        [[ "$code" == 200 ]] || die "could not read the role's credentials ($code)"
+        aws_ak="$(jq -er .AccessKeyId "$work/body")"
+        aws_sk="$(jq -er .SecretAccessKey "$work/body")"
+        aws_st="$(jq -er .Token "$work/body")"
+        aws_creds_ready=1
+      }
+
+      aws_get() {  # $1 = full secret id; body -> $work/value; prints status
+        aws_prepare
+        local endpoint="${LOAMS_BYOC_SECRETS_URL:-https://secretsmanager.$REGION.amazonaws.com}" code
+        printf 'x-amz-security-token: %s\n' "$aws_st" >"$work/hdr"
+        printf 'user = "%s:%s"\n' "$aws_ak" "$aws_sk" >"$work/cfg"
+        code="$(http -K "$work/cfg" -H "@$work/hdr" \
+          --aws-sigv4 "aws:amz:$REGION:secretsmanager" \
+          -H 'Content-Type: application/x-amz-json-1.1' -H 'X-Amz-Target: secretsmanager.GetSecretValue' \
+          --data "$(jq -cn --arg id "$1" '{SecretId:$id}')" "$endpoint/")"
+        if [[ "$code" == 200 ]]; then
+          jq -er '.SecretString // empty' "$work/body" >"$work/value" || { echo 000; return; }
+        elif jq -e '.__type | test("ResourceNotFoundException")' "$work/body" >/dev/null 2>&1; then
+          code=404
+        fi
+        printf '%s' "$code"
+      }
+
+      # --- gcp ------------------------------------------------------------------
+      gcp_ready=0
+      gcp_prepare() {
+        ((gcp_ready)) && return 0
+        local md="${LOAMS_BYOC_METADATA_URL:-http://metadata.google.internal}" code
+        code="$(http -H 'Metadata-Flavor: Google' "$md/computeMetadata/v1/instance/service-accounts/default/token")"
+        [[ "$code" == 200 ]] || die "the metadata server gave no service-account token ($code)"
+        printf 'Authorization: Bearer %s\n' "$(jq -er .access_token "$work/body")" >"$work/hdr"
+        if [[ -z "${GCP_PROJECT:-}" ]]; then
+          code="$(http -H 'Metadata-Flavor: Google' "$md/computeMetadata/v1/project/project-id")"
+          [[ "$code" == 200 ]] || die "could not read the project id ($code)"
+          GCP_PROJECT="$(cat "$work/body")"
+        fi
+        gcp_ready=1
+      }
+
+      gcp_get() {
+        gcp_prepare
+        local endpoint="${LOAMS_BYOC_SECRETS_URL:-https://secretmanager.googleapis.com}" code
+        code="$(http -H "@$work/hdr" "$endpoint/v1/projects/$GCP_PROJECT/secrets/$1/versions/latest:access")"
+        if [[ "$code" == 200 ]]; then
+          jq -er '.payload.data // empty' "$work/body" | base64 -d >"$work/value" || { echo 000; return; }
+        fi
+        printf '%s' "$code"
+      }
+
+      # --- azure ----------------------------------------------------------------
+      azure_ready=0
+      azure_prepare() {
+        ((azure_ready)) && return 0
+        local imds="${LOAMS_BYOC_IMDS_URL:-http://169.254.169.254}" code url
+        : "${AZURE_VAULT:?AZURE_VAULT is not set}"
+        url="$imds/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https%3A%2F%2Fvault.azure.net"
+        [[ -z "${AZURE_CLIENT_ID:-}" ]] || url="$url&client_id=$AZURE_CLIENT_ID"
+        code="$(http -H 'Metadata: true' "$url")"
+        [[ "$code" == 200 ]] || die "IMDS gave no managed-identity token ($code); is an identity assigned to the VM?"
+        printf 'Authorization: Bearer %s\n' "$(jq -er .access_token "$work/body")" >"$work/hdr"
+        azure_ready=1
+      }
+
+      azure_get() {
+        azure_prepare
+        local base="${LOAMS_BYOC_SECRETS_URL:-https://$AZURE_VAULT.vault.azure.net}" code
+        code="$(http -H "@$work/hdr" "$base/secrets/$1?api-version=7.4")"
+        if [[ "$code" == 200 ]]; then
+          jq -er '.value // empty' "$work/body" >"$work/value" || { echo 000; return; }
+        fi
+        printf '%s' "$code"
+      }
+
+      # --- shared -----------------------------------------------------------------
+      case "$cloud" in aws|gcp|azure) ;; *) die "usage: loams-byoc-secrets aws|gcp|azure" ;; esac
+
+      # fetch SHORT -> 0 found (value in $work/value), 1 not found; dies on other errors
+      fetch() {
+        local name code
+        name="$(secret_name "$1")"
+        rm -f "$work/value"
+        "${cloud}_prepare"   # in this shell, so a failure ends the script and the token is kept
+        code="$("${cloud}_get" "$name")"
+        case "$code" in
+          200) [[ -s "$work/value" ]] || die "secret $name is empty"; return 0 ;;
+          404) return 1 ;;
+          *) die "reading secret $name failed (HTTP $code)" ;;
+        esac
+      }
+
+      # set_env KEY from $work/value into .env, without putting the value in argv
+      set_env() {
+        local envfile="$stack/.env" tmp
+        [[ -f "$envfile" ]] || die "$envfile does not exist; run loams-byoc-bootstrap first"
+        tmp="$(mktemp "$stack/.env.XXXXXX")"
+        K="$1" V="$(tr -d '\r\n' <"$work/value")" awk '
+          BEGIN { FS = "="; k = ENVIRON["K"]; v = ENVIRON["V"] }
+          $1 == k { print k "=" v; found = 1; next }
+          { print }
+          END { if (!found) print k "=" v }' "$envfile" >"$tmp"
+        chmod 600 "$tmp"
+        mv "$tmp" "$envfile"
+        # install.sh --cloud runs this as root for the ssh user, who runs compose.
+        [[ -z "${LOAMS_BYOC_OWNER:-}" || "$(id -u)" -ne 0 ]] || chown "$LOAMS_BYOC_OWNER" "$envfile"
+      }
+
+      if ((!confluent_only)); then
+        fetch tailnet-authkey || die "missing secret $(secret_name tailnet-authkey) (the Tailscale auth key)"
+        set_env TS_AUTHKEY
+        fetch setup-token || die "missing secret $(secret_name setup-token) (the first-run setup token)"
+        set_env LOAMS_SETUP_TOKEN
+        mkdir -p "$stack/secrets"
+        if fetch api-keys; then
+          install -m 600 "$work/value" "$stack/secrets/api-keys"
+          # The engine reads it as uid 10001 (release/README.md).
+          [[ "$(id -u)" -ne 0 ]] || chown 10001 "$stack/secrets/api-keys"
+          echo "loams-byoc-secrets: wrote secrets/api-keys"
+        fi
+      fi
+
+      # Confluent integrations (D1827): one directory per integration, owner-only files.
+      # A missing api-key or api-secret is reported, not fatal: the stack starts and the
+      # integration's connector instances fail until the key is in the secret store.
+      ints="${CONFLUENT_INTEGRATIONS:-}"
+      ints="${ints//,/ }"
+      ns="${CONNECT_NAMESPACE:-0}"
+      [[ "$ns" =~ ^[0-9]{1,19}$ ]] || die "CONNECT_NAMESPACE must be a number"
+      changed=0
+      for i in $ints; do
+        [[ "$i" =~ ^[a-z0-9][a-z0-9-]{0,30}$ ]] || die "CONFLUENT_INTEGRATIONS: '$i' is not an integration name (lowercase letters, digits, -)"
+        dir="$stack/secrets/connect/$ns/confluent-$i"
+        [[ -d "$stack/secrets" ]] || die "$stack/secrets does not exist; run loams-byoc-bootstrap first"
+        install -d -m 700 "$stack/secrets/connect" "$stack/secrets/connect/$ns" "$dir"
+        for pair in api-key:username api-secret:password sr-key:sr-username sr-secret:sr-password \
+                    metrics-key:metrics-key metrics-secret:metrics-secret; do
+          short="${pair%%:*}"; file="${pair#*:}"
+          if fetch "confluent-$i-$short"; then
+            tmpf="$(mktemp "$dir/.$file.XXXXXX")"
+            # No trailing newline; the value never passes through argv.
+            printf '%s' "$(cat "$work/value")" >"$tmpf"
+            chmod 600 "$tmpf"
+            cmp -s "$tmpf" "$dir/$file" 2>/dev/null || changed=1
+            mv "$tmpf" "$dir/$file"
+          else
+            [[ ! -e "$dir/$file" ]] || changed=1
+            rm -f "$dir/$file"
+            case "$short" in
+              api-key|api-secret) echo "loams-byoc-secrets: confluent-$i: $(secret_name "confluent-$i-$short") is not in the secret store yet (run loams byoc confluent key create)" >&2 ;;
+            esac
+          fi
+        done
+        # The connect role reads them as uid 10001, as the engine does.
+        [[ "$(id -u)" -ne 0 ]] || chown -R 10001 "$stack/secrets/connect"
+        echo "loams-byoc-secrets: wrote secrets/connect/$ns/confluent-$i"
+      done
+      # A rotated key (loams byoc confluent key rotate) reaches running connectors only
+      # when the connect role restarts its instances; its admin API is on its own
+      # loopback, so the refresh restarts the service (a graceful stop: drain and
+      # checkpoint, then start with the new files). At boot the stack starts after this.
+      if ((confluent_only && changed)); then
+        compose="${LOAMS_BYOC_COMPOSE:-docker compose}"
+        # shellcheck disable=SC2086 # the command and its subcommand
+        if (cd "$stack" && $compose ps --status running --services 2>/dev/null | grep -qx connect); then
+          # shellcheck disable=SC2086
+          if (cd "$stack" && $compose restart connect >/dev/null 2>&1); then
+            echo "loams-byoc-secrets: a Confluent key changed: restarted the connect service"
+          else
+            echo "loams-byoc-secrets: a Confluent key changed, but restarting the connect service failed; run: docker compose restart connect" >&2
+          fi
+        else
+          echo "loams-byoc-secrets: a Confluent key changed; the connect service is not running"
+        fi
+      fi
+      echo "loams-byoc-secrets: ok ($cloud, prefix $prefix)"
+  - path: /etc/systemd/system/loams-byoc.service
+    permissions: "0644"
+    owner: root:root
+    content: |
+      [Unit]
+      Description=Loams stack (compose) with secrets from the cloud's secret store
+      Requires=docker.service
+      After=docker.service network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      WorkingDirectory=/opt/loams/release
+      # The tailnet key and the setup token come from the secret store on every start.
+      ExecStartPre=/usr/local/bin/loams-byoc-secrets
+      ExecStart=/usr/bin/docker compose up -d
+      # `systemctl reload loams-byoc`: copy rotated Confluent keys now (no restart).
+      ExecReload=/usr/local/bin/loams-byoc-secrets --confluent-only
+      ExecStop=/usr/bin/docker compose stop
+      # The secrets may not exist yet on a first boot (the tailnet key is put in the
+      # secret store by the person installing): try again until they do.
+      Restart=on-failure
+      RestartSec=30
+      TimeoutStartSec=900
+      TimeoutStopSec=300
+
+      [Install]
+      WantedBy=multi-user.target
+  - path: /etc/systemd/system/loams-byoc-confluent.service
+    permissions: "0644"
+    owner: root:root
+    content: |
+      [Unit]
+      Description=Loams: copy Confluent keys from the cloud's secret store into the connect role's files
+      # Only once the stack has been set up (loams-byoc.service fetched everything once).
+      After=loams-byoc.service network-online.target
+      Wants=network-online.target
+      ConditionPathExists=/etc/loams-byoc/config.env
+
+      [Service]
+      Type=oneshot
+      # --confluent-only: no .env change, no restart; a no-op without CONFLUENT_INTEGRATIONS.
+      ExecStart=/usr/local/bin/loams-byoc-secrets --confluent-only
+      TimeoutStartSec=120
+  - path: /etc/systemd/system/loams-byoc-confluent.timer
+    permissions: "0644"
+    owner: root:root
+    content: |
+      [Unit]
+      Description=Loams: refresh Confluent keys every 5 minutes (loams byoc confluent key rotate)
+
+      [Timer]
+      OnBootSec=5min
+      OnUnitActiveSec=5min
+      RandomizedDelaySec=30s
+
+      [Install]
+      WantedBy=timers.target
+runcmd:
+  - [ /usr/local/bin/loams-byoc-bootstrap ]

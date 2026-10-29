@@ -11,14 +11,18 @@ on:
 permissions:
   contents: read
 
+# Superseded runs of a pull request and of dev are cancelled; a push to main, a tag,
+# a dispatch (the nightly) and a schedule run to completion. The event is in
+# the group, so a push never cancels a dispatch on the same branch.
 concurrency:
-  group: monorepo-${{ github.event.pull_request.number || github.ref }}
-  # A newer dev head supersedes an older one; main runs to completion.
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: monorepo-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/dev') }}
 
 env:
   CI: 'true'
   NX_DAEMON: 'false'
+  # Off Nx Cloud by default. The web and plugins jobs turn it on for a push to dev only
+  # (docs/guides/nx-cloud.md).
   NX_NO_CLOUD: 'true'
   NX_TASKS_RUNNER_DYNAMIC_OUTPUT: 'false'
   CARGO_TERM_COLOR: always
@@ -26,11 +30,12 @@ env:
 jobs:
   changes:
     name: Changed paths
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 5
     outputs:
-      # 'true' on a pull request into main or a push to main: the full tier.
-      full: ${{ github.base_ref == 'main' || github.ref == 'refs/heads/main' }}
+      # 'true' on a pull request into main or a release branch, one labelled
+      # `ci:full` (then a push), or a push to main: the full tier.
+      full: ${{ github.base_ref == 'main' || startsWith(github.base_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'ci:full') || github.ref == 'refs/heads/main' }}
       web: ${{ steps.filter.outputs.web }}
       plugins: ${{ steps.filter.outputs.plugins }}
       npm-licences: ${{ steps.filter.outputs.npm-licences }}
@@ -80,6 +85,9 @@ jobs:
               - 'proto/**'
               - 'buf*.yaml'
               - 'scripts/studio/**'
+              # @loams/listing (MK1 Task 2) and its schemas.
+              - 'agents/**'
+              - 'schemas/marketplace/**'
             npm-licences:
               - '**/package.json'
               - 'pnpm-lock.yaml'
@@ -133,32 +141,58 @@ jobs:
     name: "Web: build, typecheck and tests"
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.web == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 20
+    # Nx Cloud (docs/guides/nx-cloud.md), by the repository variable NX_CLOUD_CI:
+    # - 'on': a push to dev only, with the read-write token of the nx-cloud-write environment
+    #   (deployable from dev and main only; an environment secret wins over the repository's);
+    # - 'all': also a pull request from this repository, with the repository's read-only token;
+    # - unset or anything else: off. Fork pull requests get no secrets and stay off.
+    environment: ${{ (vars.NX_CLOUD_CI == 'on' || vars.NX_CLOUD_CI == 'all') && github.event_name == 'push' && github.ref == 'refs/heads/dev' && 'nx-cloud-write' || '' }}
+    env:
+      # The token is in the job's environment only when the job connects: the environment's
+      # "protected branch pipeline" token on a dev push, the repository's "unprotected branch
+      # pipeline" token on a pull request with 'all'.
+      NX_CLOUD_ACCESS_TOKEN: ${{ (secrets.NX_CLOUD_ACCESS_TOKEN != '' && (((vars.NX_CLOUD_CI == 'on' || vars.NX_CLOUD_CI == 'all') && github.event_name == 'push' && github.ref == 'refs/heads/dev') || (vars.NX_CLOUD_CI == 'all' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository))) && secrets.NX_CLOUD_ACCESS_TOKEN || '' }}
+      NX_NO_CLOUD: ${{ !(secrets.NX_CLOUD_ACCESS_TOKEN != '' && (((vars.NX_CLOUD_CI == 'on' || vars.NX_CLOUD_CI == 'all') && github.event_name == 'push' && github.ref == 'refs/heads/dev') || (vars.NX_CLOUD_CI == 'all' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository))) }}
+      NX_CI_EXECUTION_ENV: web
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # nx affected compares with the base commit.
+          fetch-depth: 0
+          filter: blob:none
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.0
         with:
           version: 11.27.1
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+      - name: Nx scope (affected on the fast tier)
+        env:
+          FULL: ${{ needs.changes.outputs.full }}
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          BEFORE: ${{ github.event.before }}
+        run: scripts/ci/nx-scope.sh
+      - name: Nx Cloud fallback self-test
+        run: bash scripts/ci/nx-cloud-run.test.sh
       - name: Check monorepo boundaries
         run: |
           pnpm check:monorepo
           python3 -m unittest discover -s tools/monorepo -v
       # Inferred Nx package names must retain the web package.json names.
+      # scripts/ci/nx-cloud-run.sh reruns a command without the cloud if Nx Cloud itself fails.
       - name: Build and typecheck web packages
-        run: pnpm nx run-many --projects='@loams/*' --targets=build,typecheck --parallel=2 --outputStyle=static
+        run: scripts/ci/nx-cloud-run.sh "$NX_CMD" --exclude='*,!@loams/*' --targets=build,typecheck --parallel=2 --outputStyle=static
       - name: Console UI and deployment-unit tests (no deployment)
-        run: pnpm nx run @loams/console:test --outputStyle=static
+        run: scripts/ci/nx-cloud-run.sh "$NX_CMD" --exclude='*,!@loams/console' --targets=test --outputStyle=static
       - name: Other web tests, including UI where a test target exists
-        run: pnpm nx run-many --projects='@loams/*' --exclude='@loams/console' --targets=test --parallel=2 --outputStyle=static
+        run: scripts/ci/nx-cloud-run.sh "$NX_CMD" --exclude='*,!@loams/*,@loams/console' --targets=test --parallel=2 --outputStyle=static
       # Design §53 §9 (D912, D913): the T3 Code vendoring tool and every vendored file's
       # header and provenance row. The tool never downloads anything in CI.
       - name: Studio vendoring tool tests and provenance check
@@ -171,7 +205,7 @@ jobs:
     name: monorepo npm licence gate
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.npm-licences == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -182,7 +216,7 @@ jobs:
           version: 11.27.1
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
@@ -197,8 +231,21 @@ jobs:
     name: "Plugins: build and tests"
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.plugins == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 20
+    # Nx Cloud (docs/guides/nx-cloud.md), by the repository variable NX_CLOUD_CI:
+    # - 'on': a push to dev only, with the read-write token of the nx-cloud-write environment
+    #   (deployable from dev and main only; an environment secret wins over the repository's);
+    # - 'all': also a pull request from this repository, with the repository's read-only token;
+    # - unset or anything else: off. Fork pull requests get no secrets and stay off.
+    environment: ${{ (vars.NX_CLOUD_CI == 'on' || vars.NX_CLOUD_CI == 'all') && github.event_name == 'push' && github.ref == 'refs/heads/dev' && 'nx-cloud-write' || '' }}
+    env:
+      # The token is in the job's environment only when the job connects: the environment's
+      # "protected branch pipeline" token on a dev push, the repository's "unprotected branch
+      # pipeline" token on a pull request with 'all'.
+      NX_CLOUD_ACCESS_TOKEN: ${{ (secrets.NX_CLOUD_ACCESS_TOKEN != '' && (((vars.NX_CLOUD_CI == 'on' || vars.NX_CLOUD_CI == 'all') && github.event_name == 'push' && github.ref == 'refs/heads/dev') || (vars.NX_CLOUD_CI == 'all' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository))) && secrets.NX_CLOUD_ACCESS_TOKEN || '' }}
+      NX_NO_CLOUD: ${{ !(secrets.NX_CLOUD_ACCESS_TOKEN != '' && (((vars.NX_CLOUD_CI == 'on' || vars.NX_CLOUD_CI == 'all') && github.event_name == 'push' && github.ref == 'refs/heads/dev') || (vars.NX_CLOUD_CI == 'all' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository))) }}
+      NX_CI_EXECUTION_ENV: plugins
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -208,20 +255,20 @@ jobs:
           version: 11.27.1
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
-      - run: pnpm nx run plugins:build --outputStyle=static
-      - run: pnpm nx run plugins:test --outputStyle=static
-      - run: pnpm nx run plugins-dashboard-ui:typecheck --outputStyle=static
-      - run: pnpm nx run plugins-dashboard-ui:build --outputStyle=static
+      - run: scripts/ci/nx-cloud-run.sh run plugins:build --outputStyle=static
+      - run: scripts/ci/nx-cloud-run.sh run plugins:test --outputStyle=static
+      - run: scripts/ci/nx-cloud-run.sh run plugins-dashboard-ui:typecheck --outputStyle=static
+      - run: scripts/ci/nx-cloud-run.sh run plugins-dashboard-ui:build --outputStyle=static
 
   mobile-mock:
     name: "Mobile: mock"
     needs: changes
     if: github.event_name == 'workflow_dispatch' || (needs.changes.outputs.full == 'true' && needs.changes.outputs.mock == 'true')
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -232,7 +279,7 @@ jobs:
           version: 11.27.1
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
@@ -248,7 +295,7 @@ jobs:
     name: "Mobile: Android"
     needs: changes
     if: github.event_name == 'workflow_dispatch' || (needs.changes.outputs.full == 'true' && needs.changes.outputs.android == 'true')
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -259,7 +306,7 @@ jobs:
           version: 11.27.1
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
@@ -287,7 +334,7 @@ jobs:
     name: "Mobile: conformance"
     needs: changes
     if: github.event_name == 'workflow_dispatch' || (needs.changes.outputs.full == 'true' && needs.changes.outputs.conformance == 'true')
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -298,7 +345,7 @@ jobs:
           version: 11.27.1
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
@@ -351,7 +398,7 @@ jobs:
           version: 11.27.1
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
@@ -382,7 +429,7 @@ jobs:
     name: "Mobile: proto contracts"
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.contracts == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -393,7 +440,7 @@ jobs:
           version: 11.27.1
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
@@ -409,7 +456,7 @@ jobs:
     name: Web and mobile required
     if: always()
     needs: [changes, web, plugins, npm-licences, mobile-mock, mobile-android, mobile-conformance, mobile-ios, mobile-ios-core, mobile-contracts]
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 5
     steps:
       - name: Require selected jobs to pass

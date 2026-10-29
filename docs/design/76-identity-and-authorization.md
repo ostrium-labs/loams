@@ -1,5 +1,9 @@
 # 76 — Identity and Authorization: Zitadel and OpenFGA
 
+> **Amendment (approved 2026-10-23) by [§78](78-loams-cloud-on-tidb-x.md) §25, D1750: the hosted Loams Cloud try-out uses WorkOS AuthKit, not Zitadel.** This amends Q1201's default ("self-hosted Zitadel at `auth.loams.dev`, not Clerk or WorkOS") and D1615 **for the hosted try-out only**: sign-up, sign-in (Google, GitHub, Microsoft, work-email codes; D1751), email verification and invitations run on WorkOS's free tier, and `auth.loams.dev` is not used for the try-out. Self-hosted and company installs keep everything in this document (Zitadel and OpenFGA, or the built-in single-org mode). The try-out's admin role is a WorkOS organisation role plus Loams' allow-list and a TOTP step-up, still checked in `loams-authz` as `platform:loams-cloud#cloud_admin` (D1746, approved 2026-10-23).
+
+> **Amendment (approved 2026-10-23) by [§78](78-loams-cloud-on-tidb-x.md)** (Loams Cloud on TiDB X; D1700–D1735). D1615's list of what Ostrium hosts loses `console.loams.dev` (retired, D1705) and gains the Loams Cloud control plane (D1701). Devices are machine users of kind `device` under the user's personal org (D1714, D1725); prod installs keep their own issuer.
+
 Status: **Approved** · 2026-10-21 (written and approved the same day). D1600, the owner's ruling of 2026-10-21 that Loams cuts over from Authentik to Zitadel completely, with no migration path, no compatibility period and no dual running because there are no users, came first. The owner then approved the whole design with every default: D1601–D1621 are approved and Q1200–Q1214 are answered with their defaults.
 
 Source: the owner's draft "Loam Identity & Authorization Plan: Zitadel + OpenFGA" (draft v1, pasted 2026-10-21, kept at `~/Documents/Ostriumlabs/pitch/research/identity-zitadel-openfga-owner-plan.md`), with the instruction "add this". This document carries the draft into the repository's design format and renames "Loam" to "Loams". It also does three more things:
@@ -48,7 +52,7 @@ Markers, as in §64–§75:
 - **(estimate)**: judged or computed, not measured.
 - **(checked 2026-10-21)**: read in a primary source on that date. §19 gives the source.
 
-**Numbering.** This document reserves **D1600–D1639** and **Q1200–Q1219**. D1600–D1628 and Q1200–Q1214 are used. D1583–D1599 are left free for work in flight. D1570–D1579 and Q1188–Q1189 are held by §75.
+**Numbering.** This document reserves **D1600–D1639** and **Q1200–Q1219**. D1600–D1633 and Q1200–Q1214 are used (D1629–D1633: agent token vending, 2026-10-28). D1583–D1599 are left free for work in flight. D1570–D1579 and Q1188–Q1189 are held by §75.
 
 Plan stub: [IA1](../plans/2026-10-21-ia1-identity-authz.md) (track IA). Phase IA0 is specified task by task; IA1–IA6 are outlined.
 
@@ -231,7 +235,7 @@ type project
     define org: [org]
     define admin: [user, team#member] or admin from org
     define editor: [user, team#member, agent] or admin
-    define viewer: [user, team#member, agent] or editor or member from org
+    define viewer: [user, team#member, agent] or editor
 
 type environment
   relations

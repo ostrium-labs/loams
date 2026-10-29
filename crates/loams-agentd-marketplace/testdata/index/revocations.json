@@ -1,0 +1,19 @@
+{
+  "$schema": "https://loams.dev/schemas/revocations/v1.json",
+  "revocations": [
+    {
+      "date": "2026-10-21",
+      "id": "ostrium/github-mcp-server",
+      "reason": "An upstream advisory affects some tools.",
+      "severity": "warn",
+      "versions": ">=2.0.0, <2.1.0"
+    },
+    {
+      "date": "2026-10-22",
+      "id": "ostrium/loams-starter",
+      "reason": "Sent notes to the wrong database.",
+      "severity": "disable",
+      "versions": "=0.1.0"
+    }
+  ]
+}

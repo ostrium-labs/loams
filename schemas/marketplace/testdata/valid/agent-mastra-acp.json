@@ -1,0 +1,155 @@
+{
+  "$schema": "https://loams.dev/schemas/listing/v1.json",
+  "id": "ostrium/loams-starter",
+  "kind": "agent",
+  "version": "0.1.0",
+  "title": "Loams starter agent",
+  "summary": "A Mastra agent that answers questions about the data in its Place.",
+  "description": "The starter from loams-mastra-template: a Mastra agent on Loams Postgres and the engine's Qdrant API, served over ACP.",
+  "licence": "Apache-2.0",
+  "source": {
+    "repository": "https://github.com/ostrium-labs/loams-mastra",
+    "commit": "0123456789abcdef0123456789abcdef01234567",
+    "path": "templates/loams-starter"
+  },
+  "publisher": {
+    "name": "Ostrium Labs",
+    "url": "https://ostriumlabs.org"
+  },
+  "support": "https://github.com/ostrium-labs/loams-mastra/issues",
+  "security_contact": "security@ostriumlabs.org",
+  "framework": {
+    "name": "mastra",
+    "version": "1.4.0"
+  },
+  "language": "typescript",
+  "artifact": {
+    "type": "npm",
+    "name": "@loams/starter-agent",
+    "version": "0.1.0",
+    "integrity": "sha512-niWWczjYYd93p3UQ+Pe5Wg8Y6nSgIetB3Rish0G1gppNCllAyin2r4AaVx8hMv32p30Kl7n7GhrIkBzZ/qCdig==",
+    "locations": [
+      {
+        "kind": "walrus",
+        "blob_id": "T_mWEmm_djDTLhUnZWnJRHAXSl2nn6VnwPYiUaqaNrk",
+        "sha256": "9e2596733cd861df77a7751051e85a9a1a5ab0d1d40bd7e1e95a5e1e3b48e0a1"
+      }
+    ]
+  },
+  "provenance": {
+    "type": "npm-slsa",
+    "ref": "https://registry.npmjs.org/-/npm/v1/attestations/@loams/starter-agent@0.1.0"
+  },
+  "runtime": {
+    "kind": "node",
+    "version": ">=22.13"
+  },
+  "entrypoint": "dist/agent.js",
+  "targets": [
+    "agentd"
+  ],
+  "surfaces": {
+    "acp": {
+      "protocol_version": 1
+    }
+  },
+  "loams": {
+    "postgres": true,
+    "qdrant": true,
+    "durable": true
+  },
+  "mcp_servers": [
+    {
+      "id": "ostrium/github-mcp-server",
+      "version": "^2.0.0"
+    }
+  ],
+  "tools": [
+    {
+      "name": "query_notes",
+      "description": "Reads rows from the notes database.",
+      "risk": "read"
+    },
+    {
+      "name": "save_note",
+      "description": "Writes one row to the notes database.",
+      "risk": "write"
+    },
+    {
+      "name": "create_issue",
+      "description": "Opens a GitHub issue.",
+      "risk": "egress",
+      "mcp_server": "ostrium/github-mcp-server"
+    }
+  ],
+  "place": {
+    "data": [
+      {
+        "kind": "database",
+        "name": "notes",
+        "access": "write"
+      },
+      {
+        "kind": "collection",
+        "name": "notes_vectors",
+        "access": "read"
+      }
+    ],
+    "egress": [
+      "api.github.com"
+    ],
+    "always_ask": [
+      "create_issue"
+    ],
+    "roles": [
+      "reader"
+    ]
+  },
+  "models": {
+    "requires": {
+      "tools": true,
+      "context_min": 32000
+    },
+    "suggested": {
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-5"
+    },
+    "api": [
+      "anthropic-messages",
+      "chat-completions"
+    ]
+  },
+  "cost": {
+    "typical_tokens_per_run": 6000,
+    "max_tokens_per_run": 40000,
+    "typical_runs_per_day": 20,
+    "budget_usd_per_run": 0.25,
+    "budget_usd_per_day": 5
+  },
+  "config": [
+    {
+      "name": "tone",
+      "type": "enum",
+      "values": [
+        "plain",
+        "friendly"
+      ],
+      "default": "plain",
+      "description": "How the agent writes."
+    },
+    {
+      "name": "github_token",
+      "type": "string",
+      "secret": true,
+      "required": true,
+      "env": "GITHUB_TOKEN",
+      "description": "A GitHub token for the MCP server."
+    }
+  ],
+  "conformance": {
+    "level": "core",
+    "report": "https://loams.dev/marketplace/reports/ostrium/loams-starter/0.1.0.json",
+    "report_sha256": "845e91831319e89c4d656bdb80c278ac09a7230d61e5dfd2e1b1fbb436ac8917"
+  },
+  "pricing": "free"
+}

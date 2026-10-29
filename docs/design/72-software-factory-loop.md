@@ -1,5 +1,7 @@
 # 72 — The Software Factory Loop: Mastra Agents, Studio Worktrees and Durable Runs
 
+> **Amendment (approved 2026-10-23) by [§79](79-void-and-vite-plus.md)** (Void and Vite+; D1770–D1791 approved by the owner). Scaffolded JavaScript projects are Vite+ projects, and stage 5 waits on their `vp check`, `vp test` and `vp build` checks (D1777). Web apps are portable Void apps by default (D1778, Q1300). Stage 6 deploys Void apps on Cloudflare through `void deploy` and records them in `loams.deploy.v1` (D1779).
+
 Status: **Approved** · 2026-10-21. The owner approved the design with every default on 2026-10-21 (and confirmed that "fx.sh" means Vercel Labs' fx, Q1142).
 
 > "write the factory loop design and the agent marketplace will be based on our mastra integration, user can create agents publish to our marketplace etc, mastra uses loams postgres, live, engine, make mastra as our agent integration layer etc" (owner, 2026-10-21)

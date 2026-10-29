@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { schemaFields } from '../src/search/kql.js';
 import { applySuggestion, type SuggestInput, suggest } from '../src/search/suggest.js';
 
@@ -22,7 +22,8 @@ const VALUES: Record<string, string[]> = {
 /** `|` marks the cursor. */
 function at(q: string, extra: Partial<SuggestInput> = {}) {
   const cursor = q.indexOf('|');
-  const text = q.replace('|', '');
+  // Exactly one marker: dropping it by index keeps any other `|` in the query.
+  const text = cursor < 0 ? q : q.slice(0, cursor) + q.slice(cursor + 1);
   return suggest({
     text,
     cursor,

@@ -23,10 +23,12 @@ use std::time::Duration;
 
 use connectrpc::ConnectError;
 use connectrpc::client::{ClientConfig, HttpClient};
+use futures::future::BoxFuture;
 use loams_agentd_connect::map::{MapError, Wire, from_msg, from_opt_msg};
 use loams_agentd_connect::proto::loams::agentd::v1 as pb;
 use loams_agentd_connect::twins::{CONNECT_METHODS, Twin};
 use loams_agentd_connect::{Agentd, ConnectListener, HostInfo, LoopbackOptions, error};
+use loams_agentd_doc::SessionCommandStatus;
 use loams_agentd_proto as rs;
 use loams_agentd_proto::daemon::DaemonMode;
 use loams_agentd_proto::rpc::{Method, calls};
@@ -78,6 +80,8 @@ struct Clients {
     review: pb::ReviewServiceClient<HttpClient>,
     groups: pb::RunGroupServiceClient<HttpClient>,
     approvals: pb::ApprovalServiceClient<HttpClient>,
+    market: pb::MarketplaceServiceClient<HttpClient>,
+    factory: pb::FactoryServiceClient<HttpClient>,
 }
 
 struct Daemon {
@@ -115,7 +119,13 @@ fn git(cwd: &Path, args: &[&str]) {
 }
 
 impl Daemon {
-    async fn start() -> Self {
+    /// Boxed by a plain function: the future is built in this short-lived
+    /// frame, not in a slot of the scenario's poll frame.
+    fn start() -> BoxFuture<'static, Self> {
+        Box::pin(Self::boot())
+    }
+
+    async fn boot() -> Self {
         let dir = tempfile::tempdir().unwrap();
         // Canonical, so a path the daemon resolves reads the same as ours.
         let root = dir.path().canonicalize().unwrap();
@@ -144,6 +154,11 @@ impl Daemon {
         let runtime = Engine::assemble_runtime(&config, EngineProfile::local(&data).unwrap())
             .await
             .unwrap();
+        // The marketplace over the testkit's signed fake index (MK1 Task 4b).
+        let world = loams_agentd_marketplace::testkit::World::new(&root.join("agentd"));
+        let market = loams_agentd_marketplace::MarketplaceHost::open(world.deps()).unwrap();
+        assert!(market.refresh().await.is_empty());
+        runtime.core().attach_marketplace(market);
         let engine: Arc<dyn RpcService> = runtime.core().rpc_service();
         let agentd = Agentd::new(
             engine.clone(),
@@ -188,7 +203,9 @@ impl Daemon {
             notifications: pb::NotificationServiceClient::new(http(), config.clone()),
             review: pb::ReviewServiceClient::new(http(), config.clone()),
             groups: pb::RunGroupServiceClient::new(http(), config.clone()),
-            approvals: pb::ApprovalServiceClient::new(http(), config),
+            approvals: pb::ApprovalServiceClient::new(http(), config.clone()),
+            market: pb::MarketplaceServiceClient::new(http(), config.clone()),
+            factory: pb::FactoryServiceClient::new(http(), config),
         };
         let ndjson = memory_client(engine);
         let info: rs::EngineInfo = ndjson
@@ -210,9 +227,11 @@ impl Daemon {
         }
     }
 
-    async fn stop(self) {
-        self.listener.stop().await;
-        self.runtime.shutdown().await;
+    fn stop(self) -> BoxFuture<'static, ()> {
+        Box::pin(async move {
+            self.listener.stop().await;
+            self.runtime.shutdown().await;
+        })
     }
 }
 
@@ -524,6 +543,43 @@ async fn settled_transcripts(s: &mut Suite, chat: &str) {
     );
 }
 
+/// Waits until neither daemon has work left on `chat`: every command queued
+/// to it is resolved and no turn is in flight.
+///
+/// `QueueCommand` (Send, Steer, Interrupt, AnswerQuestion) only appends the
+/// command to the chat's doc and answers its id; the daemon applies it
+/// moments later. A step that reads what the commands did (a turn's
+/// checkpoint, whether the thread is running) compares a moment that differs
+/// between the two daemons unless both have finished.
+async fn settle_thread(s: &Suite, chat: &str) {
+    for daemon in [&s.a, &s.b] {
+        let core = daemon.runtime.core();
+        let handle = core.doc_host.open(chat).unwrap();
+        let deadline = tokio::time::Instant::now() + WAIT;
+        loop {
+            let pending = handle
+                .doc()
+                .read_commands()
+                .unwrap()
+                .iter()
+                .any(|c| c.status == SessionCommandStatus::Pending);
+            if !pending && !core.sessions.turn_in_flight(chat) {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "{chat}'s commands and turn settle"
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }
+}
+
+/// The stack the scenario runs on: half a default thread's 2 MiB. Split
+/// into sections it needs a little over 0.5 MiB unoptimized; as one
+/// `async fn` it needed over 1.5 MiB.
+const SCENARIO_STACK: usize = 1 << 20;
+
 /// Set in the child process that runs the scenario.
 const CHILD: &str = "LOAMS_AGENTD_PARITY_CHILD";
 
@@ -534,13 +590,24 @@ const CHILD: &str = "LOAMS_AGENTD_PARITY_CHILD";
 #[test]
 fn connect_and_ndjson_agree() {
     if std::env::var_os(CHILD).is_some() {
-        tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(4)
-            .enable_all()
-            .build()
-            .unwrap()
-            // On the heap: one case per method makes a large future.
-            .block_on(Box::pin(scenario()));
+        // The scenario's own thread, with half the default stack: a scenario
+        // whose frames grow back towards 2 MiB (see `section`) fails here on
+        // every run instead of overflowing a default stack now and then.
+        let scenario = std::thread::Builder::new()
+            .name("parity-scenario".into())
+            .stack_size(SCENARIO_STACK)
+            .spawn(|| {
+                tokio::runtime::Builder::new_multi_thread()
+                    .worker_threads(4)
+                    .enable_all()
+                    .build()
+                    .unwrap()
+                    .block_on(scenario());
+            })
+            .unwrap();
+        if let Err(panic) = scenario.join() {
+            std::panic::resume_unwind(panic);
+        }
         return;
     }
     let scratch = tempfile::tempdir().unwrap();
@@ -566,6 +633,33 @@ fn connect_and_ndjson_agree() {
     );
 }
 
+/// Section `n` of the scenario, boxed; `None` past the last.
+///
+/// Unoptimized, one `async fn` holding every case keeps all their locals in
+/// a single poll frame: 1.5 MB with 124 cases, which left too little of a
+/// 2 MiB thread stack for the calls it polls, and the scenario overflowed it
+/// now and then (0.1.1 CI). Each section has its own frame, only one is on
+/// the stack at a time, and this plain function builds its future, so the
+/// scenario's own frame holds one box rather than a slot per section.
+fn section(n: usize, s: &mut Suite) -> Option<BoxFuture<'_, ()>> {
+    Some(match n {
+        0 => Box::pin(studio_and_harness(s)),
+        1 => Box::pin(projects(s)),
+        2 => Box::pin(threads(s)),
+        3 => Box::pin(queue(s)),
+        4 => Box::pin(git_and_diff(s)),
+        5 => Box::pin(files_previews_attachments(s)),
+        6 => Box::pin(terminals(s)),
+        7 => Box::pin(review_and_search(s)),
+        8 => Box::pin(run_groups(s)),
+        9 => Box::pin(approvals_and_teardown(s)),
+        10 => Box::pin(marketplace(s)),
+        // The software factory (SF1 amendment F2).
+        11 => Box::pin(factory_steps(s)),
+        _ => return None,
+    })
+}
+
 async fn scenario() {
     let mut s = Suite {
         a: Daemon::start().await,
@@ -575,6 +669,44 @@ async fn scenario() {
         also: &[],
     };
 
+    let mut n = 0;
+    while let Some(section) = section(n, &mut s) {
+        section.await;
+        n += 1;
+    }
+
+    // Every method with an ndjson twin has a case.
+    let twinned: BTreeSet<String> = CONNECT_METHODS
+        .iter()
+        .filter(|row| !matches!(row.twin, Twin::Gap { .. }))
+        .map(|row| row.path())
+        .collect();
+    let missing: Vec<String> = twinned.difference(&s.covered).cloned().collect();
+    let unknown: Vec<String> = s.covered.difference(&twinned).cloned().collect();
+    let Suite {
+        a, b, mismatches, ..
+    } = s;
+    a.stop().await;
+    b.stop().await;
+    assert!(
+        missing.is_empty(),
+        "methods without a parity case: {missing:?}"
+    );
+    assert!(
+        unknown.is_empty(),
+        "cases for no twinned method: {unknown:?}"
+    );
+    assert!(
+        mismatches.is_empty(),
+        "{} of {} methods answer differently:\n{}",
+        mismatches.len(),
+        twinned.len(),
+        mismatches.join("\n")
+    );
+}
+
+/// The scenario's StudioService and HarnessService.
+async fn studio_and_harness(s: &mut Suite) {
     // ---- StudioService ----
     unary!(
         s,
@@ -777,7 +909,10 @@ async fn scenario() {
         harness.cancel_agent_login(json!({ "loginId": "parity" })),
         |r| ok(r.ok)
     );
+}
 
+/// The scenario's ProjectService.
+async fn projects(s: &mut Suite) {
     // ---- ProjectService ----
     unary!(
         s,
@@ -875,7 +1010,10 @@ async fn scenario() {
         projects.delete_project_action(json!({ "spaceId": "space-1", "actionId": "action-1" })),
         |r| from_msg(r.snapshot, "snapshot")?
     );
+}
 
+/// The scenario's ThreadService, through chat-1's turns and checkpoints.
+async fn threads(s: &mut Suite) {
     // ---- ThreadService ----
     first!(
         s,
@@ -991,7 +1129,7 @@ async fn scenario() {
         a["commandId"].is_string() && b["commandId"].is_string(),
         "{a} {b}"
     );
-    settled_transcripts(&mut s, "chat-1").await;
+    settled_transcripts(s, "chat-1").await;
     // Usage and notifications (G19, G20; SD1 Task 14): chat-1's turn, once
     // each daemon has recorded its end.
     for daemon in [&s.a, &s.b] {
@@ -1034,6 +1172,11 @@ async fn scenario() {
         threads.steer(json!({ "chatId": "chat-1", "prompt": "Also this", "messageId": "msg-2" })),
         |r| command(r.command_id)
     );
+    // chat-1 was idle, so Steer started a second turn. Both daemons finish it
+    // before the Interrupt: an Interrupt that reaches a turn before its run
+    // starts ends it with no checkpoint, so one daemon would list turn 2's
+    // and the other not.
+    settle_thread(s, "chat-1").await;
     unary!(
         s,
         "/loams.agentd.v1.ThreadService/Interrupt",
@@ -1053,8 +1196,12 @@ async fn scenario() {
         |r| command(r.command_id)
     );
 
-    // Checkpoints (G6, G7; SD1 Task 10): the list after chat-1's turn, and a
-    // restore refused by its checksum, so nothing is restored.
+    // Checkpoints (G6, G7; SD1 Task 10): the list after chat-1's two turns,
+    // and a restore of a turn it never had, so nothing is restored. Both
+    // daemons have applied the Interrupt and AnswerQuestion first, or one can
+    // refuse the restore as "running" while the other answers
+    // `checkpoint_missing`.
+    settle_thread(s, "chat-1").await;
     unary!(
         s,
         "/loams.agentd.v1.ThreadService/ListCheckpoints",
@@ -1073,7 +1220,10 @@ async fn scenario() {
                     "expectedChecksum": "stale", "scope": "CHECKPOINT_SCOPE_WORKTREE" })),
         |r| Wire::from_pb(r)?
     );
+}
 
+/// The scenario's QueueService.
+async fn queue(s: &mut Suite) {
     // ---- QueueService ----
     first!(
         s,
@@ -1177,7 +1327,10 @@ async fn scenario() {
         queue.retry_delivery(json!({ "chatId": "chat-2" })),
         |r| rs::Empty {}
     );
+}
 
+/// The scenario's GitService and DiffService.
+async fn git_and_diff(s: &mut Suite) {
     // ---- GitService ----
     unary!(
         s,
@@ -1375,7 +1528,10 @@ async fn scenario() {
         ),
         |r| rs::Empty {}
     );
+}
 
+/// The scenario's FileService, PreviewService and AttachmentService.
+async fn files_previews_attachments(s: &mut Suite) {
     // ---- FileService ----
     unary!(
         s,
@@ -1529,7 +1685,10 @@ async fn scenario() {
         attachments.fetch_tool_blob(json!({ "blobRef": "chat-1/no-such-call" })),
         |r| from_msg(r.chunk, "chunk")?
     );
+}
 
+/// The scenario's TerminalService.
+async fn terminals(s: &mut Suite) {
     // ---- TerminalService ----
     let (a, b) = unary!(
         s,
@@ -1573,7 +1732,10 @@ async fn scenario() {
         terminals.close_terminal(json!({ "terminalId": d.get("terminal") })),
         |r| ok(r.ok)
     );
+}
 
+/// The scenario's ReviewService and FileService.SearchContent.
+async fn review_and_search(s: &mut Suite) {
     // ---- ReviewService (G8–G11; SD1 Task 11) ----
     // A comment on chat-1's checkout, on the README line WriteFile added.
     let (a, b) = unary!(
@@ -1656,7 +1818,10 @@ async fn scenario() {
         files.search_content(json!({ "spaceId": "space-1", "query": "parity, WRITTEN" })),
         |r| Wire::from_pb(r)?
     );
+}
 
+/// The scenario's RunGroupService.
+async fn run_groups(s: &mut Suite) {
     // ---- RunGroupService (G12–G16; SD1 Task 12) ----
     // Two Mock members in their own worktrees (under the scratch worktree
     // root); the Mock edits nothing here, so the comparison is empty. The
@@ -1728,7 +1893,10 @@ async fn scenario() {
                     "force": true })),
         |r| Wire::from_pb(r)?
     );
+}
 
+/// The scenario's ApprovalService, then tearing down what the scenario made.
+async fn approvals_and_teardown(s: &mut Suite) {
     // ---- ApprovalService (G17, G18, G22; SD1 Task 13) ----
     // chat-2 becomes supervised (it runs nothing more); its watch says so,
     // with nothing pending, and answering an approval that does not wait is
@@ -1779,33 +1947,265 @@ async fn scenario() {
         projects.delete_project(json!({ "spaceId": "space-1" })),
         |r| mutated(r.ok)
     );
+}
 
-    // Every method with an ndjson twin has a case.
-    let twinned: BTreeSet<String> = CONNECT_METHODS
-        .iter()
-        .filter(|row| !matches!(row.twin, Twin::Gap { .. }))
-        .map(|row| row.path())
-        .collect();
-    let missing: Vec<String> = twinned.difference(&s.covered).cloned().collect();
-    let unknown: Vec<String> = s.covered.difference(&twinned).cloned().collect();
-    let Suite {
-        a, b, mismatches, ..
-    } = s;
-    a.stop().await;
-    b.stop().await;
-    assert!(
-        missing.is_empty(),
-        "methods without a parity case: {missing:?}"
+/// The scenario's MarketplaceService (MK1 Task 4b), over each daemon's own
+/// testkit world.
+async fn marketplace(s: &mut Suite) {
+    use loams_agentd_marketplace::testkit::HARNESS_ID;
+    use loams_agentd_proto::marketplace as rs_market;
+    unary!(
+        s,
+        "/loams.agentd.v1.MarketplaceService/ListSources",
+        ListMarketplaceSources,
+        |d| json!({}),
+        market.list_sources(json!({})),
+        |r| Wire::from_pb(r)?
     );
-    assert!(
-        unknown.is_empty(),
-        "cases for no twinned method: {unknown:?}"
+    // A plain-http index is refused alike.
+    unary!(
+        s,
+        "/loams.agentd.v1.MarketplaceService/AddSource",
+        AddMarketplaceSource,
+        |d| json!({ "name": "plain", "url": "http://example.org/index.json", "identity": "x" }),
+        market.add_source(
+            json!({ "name": "plain", "url": "http://example.org/index.json", "identity": "x" })
+        ),
+        |r| from_msg(r.source, "source")?
     );
-    assert!(
-        mismatches.is_empty(),
-        "{} of {} methods answer differently:\n{}",
-        mismatches.len(),
-        twinned.len(),
-        mismatches.join("\n")
+    unary!(
+        s,
+        "/loams.agentd.v1.MarketplaceService/RemoveSource",
+        RemoveMarketplaceSource,
+        |d| json!({ "name": "nowhere" }),
+        market.remove_source(json!({ "name": "nowhere" })),
+        |r| ok(true)
     );
+    unary!(
+        s,
+        "/loams.agentd.v1.MarketplaceService/SearchListings",
+        SearchListings,
+        |d| json!({ "kinds": ["harness"], "tiers": ["community"] }),
+        market.search_listings(
+            json!({ "kinds": ["KIND_HARNESS"], "tiers": ["LISTING_TIER_COMMUNITY"] })
+        ),
+        |r| Wire::from_pb(r)?
+    );
+    unary!(
+        s,
+        "/loams.agentd.v1.MarketplaceService/GetListing",
+        GetListing,
+        |d| json!({ "id": "ostrium/github-mcp-server" }),
+        market.get_listing(json!({ "id": "ostrium/github-mcp-server" })),
+        |r| Wire::from_pb(r)?
+    );
+    let (a, b) = unary!(
+        s,
+        "/loams.agentd.v1.MarketplaceService/PlanInstall",
+        PlanInstall,
+        |d| json!({ "id": HARNESS_ID, "version": "1.0.0" }),
+        market.plan_install(json!({ "id": HARNESS_ID, "version": "1.0.0" })),
+        |r| Wire::from_pb(r)?
+    );
+    s.learn("digest", &a["plan"]["digest"], &b["plan"]["digest"]);
+    unary!(
+        s,
+        "/loams.agentd.v1.MarketplaceService/Install",
+        InstallListing,
+        |d| json!({ "id": HARNESS_ID, "version": "1.0.0", "planDigest": d.get("digest") }),
+        market.install(
+            json!({ "id": HARNESS_ID, "version": "1.0.0", "planDigest": d.get("digest") })
+        ),
+        |r| Wire::from_pb(r)?
+    );
+    unary!(
+        s,
+        "/loams.agentd.v1.MarketplaceService/ListInstalled",
+        ListInstalledListings,
+        |d| json!({}),
+        market.list_installed(json!({})),
+        |r| Wire::from_pb(r)?
+    );
+    unary!(
+        s,
+        "/loams.agentd.v1.MarketplaceService/CheckUpdates",
+        CheckListingUpdates,
+        |d| json!({}),
+        market.check_updates(json!({})),
+        |r| Wire::from_pb(r)?
+    );
+    // 1.1.0 reaches a new host: without its plan's digest, refused alike.
+    unary!(
+        s,
+        "/loams.agentd.v1.MarketplaceService/Update",
+        UpdateListing,
+        |d| json!({ "id": HARNESS_ID }),
+        market.update(json!({ "id": HARNESS_ID })),
+        |r| rs_market::InstalledListingReply {
+            installed: from_msg(r.installed, "installed")?
+        }
+    );
+    unary!(
+        s,
+        "/loams.agentd.v1.MarketplaceService/Uninstall",
+        UninstallListing,
+        |d| json!({ "id": HARNESS_ID }),
+        market.uninstall(json!({ "id": HARNESS_ID })),
+        |r| ok(true)
+    );
+}
+
+fn factory_health(
+    h: buffa::EnumValue<pb::FactoryHealth>,
+) -> Result<rs::factory::FactoryHealth, MapError> {
+    use rs::factory::FactoryHealth as H;
+    match h {
+        buffa::EnumValue::Known(pb::FactoryHealth::FACTORY_HEALTH_OK) => Ok(H::Ok),
+        buffa::EnumValue::Known(pb::FactoryHealth::FACTORY_HEALTH_AUTH_FAILED) => Ok(H::AuthFailed),
+        buffa::EnumValue::Known(pb::FactoryHealth::FACTORY_HEALTH_UNREACHABLE) => {
+            Ok(H::Unreachable)
+        }
+        buffa::EnumValue::Known(pb::FactoryHealth::FACTORY_HEALTH_UNCONFIGURED) => {
+            Ok(H::Unconfigured)
+        }
+        buffa::EnumValue::Known(pb::FactoryHealth::FACTORY_HEALTH_LOCKED) => Ok(H::Locked),
+        other => Err(MapError::enum_value("FactoryHealth", other.to_i32())),
+    }
+}
+
+/// A `FactoryApp` back to the ndjson type: an unconfigured app has no `fields`.
+fn factory_app(a: pb::FactoryApp) -> Result<rs::factory::FactoryAppInfo, MapError> {
+    let configured = a.url.is_some();
+    Ok(rs::factory::FactoryAppInfo {
+        id: a.id,
+        label: a.label,
+        url: a.url,
+        health: factory_health(a.health)?,
+        has_panels: a.has_panels,
+        credential_fields: a
+            .credential_fields
+            .into_iter()
+            .map(|f| rs::factory::FactoryCredentialField {
+                key: f.key,
+                label: f.label,
+                secret: f.secret,
+            })
+            .collect(),
+        fields: configured.then(|| a.fields.into_iter().collect()),
+        persistent: a.persistent,
+        preview: a.preview,
+    })
+}
+
+fn factory_error(e: pb::FactoryError) -> rs::factory::FactoryError {
+    rs::factory::FactoryError {
+        code: e.code,
+        message: e.message,
+    }
+}
+
+fn factory_app_reply(
+    r: Option<pb::__buffa::oneof::test_factory_app_response::Result>,
+) -> Result<rs::factory::FactoryAppReply, MapError> {
+    use pb::__buffa::oneof::test_factory_app_response::Result as R;
+    match r {
+        Some(R::App(a)) => Ok(rs::factory::FactoryAppReply {
+            app: Some(factory_app(*a)?),
+            error: None,
+        }),
+        Some(R::Error(e)) => Ok(rs::factory::FactoryAppReply {
+            app: None,
+            error: Some(factory_error(*e)),
+        }),
+        None => Err(MapError::empty_oneof("TestFactoryAppResponse.result")),
+    }
+}
+
+fn factory_query_reply(
+    r: Option<pb::__buffa::oneof::query_factory_response::Result>,
+) -> Result<rs::factory::FactoryQueryReply, MapError> {
+    use pb::__buffa::oneof::query_factory_response::Result as R;
+    match r {
+        Some(R::ValueJson(v)) => Ok(rs::factory::FactoryQueryReply {
+            value: Some(serde_json::from_str(&v).map_err(|e| MapError(e.to_string()))?),
+            error: None,
+        }),
+        Some(R::Error(e)) => Ok(rs::factory::FactoryQueryReply {
+            value: None,
+            error: Some(factory_error(*e)),
+        }),
+        None => Err(MapError::empty_oneof("QueryFactoryResponse.result")),
+    }
+}
+
+/// The factory (SF1 amendment F2): both daemons start with nothing configured.
+async fn factory_steps(s: &mut Suite) {
+    unary!(
+        s,
+        "/loams.agentd.v1.FactoryService/ListFactoryApps",
+        FactoryList,
+        |d| json!({}),
+        factory.list_factory_apps(json!({})),
+        |r| rs::factory::FactoryAppList {
+            apps: r
+                .apps
+                .into_iter()
+                .map(factory_app)
+                .collect::<Result<_, _>>()?,
+        }
+    );
+    unary!(
+        s,
+        "/loams.agentd.v1.FactoryService/TestFactoryApp",
+        FactoryTest,
+        |d| json!({ "app": "forgejo" }),
+        factory.test_factory_app(json!({ "app": "forgejo" })),
+        |r| factory_app_reply(r.result)?
+    );
+    unary!(
+        s,
+        "/loams.agentd.v1.FactoryService/QueryFactory",
+        FactoryQuery,
+        |d| json!({ "app": "forgejo", "op": "repos", "params": { "limit": 20 } }),
+        factory.query_factory(
+            json!({ "app": "forgejo", "op": "repos", "paramsJson": "{\"limit\":20}" })
+        ),
+        |r| factory_query_reply(r.result)?
+    );
+    // An unreachable SigNoz: configured, then checked, then forgotten.
+    unary!(
+        s,
+        "/loams.agentd.v1.FactoryService/ConfigureFactoryApp",
+        FactoryConfigure,
+        |d| json!({ "app": "signoz", "url": "http://127.0.0.1:9/web/", "fields": {} }),
+        factory.configure_factory_app(
+            json!({ "app": "signoz", "url": "http://127.0.0.1:9/web/", "fields": {} })
+        ),
+        |r| factory_configure_reply(r.result)?
+    );
+    unary!(
+        s,
+        "/loams.agentd.v1.FactoryService/RemoveFactoryApp",
+        FactoryRemove,
+        |d| json!({ "app": "signoz" }),
+        factory.remove_factory_app(json!({ "app": "signoz" })),
+        |r| rs::Empty {}
+    );
+}
+
+fn factory_configure_reply(
+    r: Option<pb::__buffa::oneof::configure_factory_app_response::Result>,
+) -> Result<rs::factory::FactoryAppReply, MapError> {
+    use pb::__buffa::oneof::configure_factory_app_response::Result as R;
+    match r {
+        Some(R::App(a)) => Ok(rs::factory::FactoryAppReply {
+            app: Some(factory_app(*a)?),
+            error: None,
+        }),
+        Some(R::Error(e)) => Ok(rs::factory::FactoryAppReply {
+            app: None,
+            error: Some(factory_error(*e)),
+        }),
+        None => Err(MapError::empty_oneof("ConfigureFactoryAppResponse.result")),
+    }
 }

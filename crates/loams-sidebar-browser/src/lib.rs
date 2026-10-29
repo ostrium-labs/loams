@@ -67,8 +67,9 @@ pub mod session;
 pub use boundary::{assert_cookies_exclude, audit_profile};
 pub use cdp::{CdpClient, CdpEvent, DEFAULT_CALL_TIMEOUT};
 pub use engine::{
-    BIND_HOST, DEFAULT_CDP_PORT, DEFAULT_STARTUP_TIMEOUT, EngineLaunchSpec, OBSCURA_BIN_ENV,
-    ObscuraEngine, PINNED_ENGINE_VERSION, check_version, resolve_program,
+    BIND_HOST, DEFAULT_CDP_PORT, DEFAULT_STARTUP_TIMEOUT, ENGINE_ENV_PASSTHROUGH, EngineLaunchSpec,
+    OBSCURA_BIN_ENV, ObscuraEngine, PINNED_ENGINE_VERSION, STOP_GRACE, check_version,
+    engine_environment, resolve_program,
 };
 pub use error::{Result, SidebarBrowserError};
 pub use frame::{

@@ -1,0 +1,46 @@
+# BY0 Task 9: hourly, delete what a crashed BYOC AWS run left behind (resources whose
+# loams:ttl tag is in the past), and report untagged instances. Same environment and
+# the same no-op until the owner has set it up.
+name: BYOC reaper
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: byoc-reaper
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  reap:
+    name: "BYOC: reap expired AWS resources"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: byoc-aws
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: is the account set up
+        id: guard
+        env:
+          ROLE: ${{ vars.AWS_ROLE_ARN }}
+        run: |
+          if [ -z "$ROLE" ]; then echo "AWS_ROLE_ARN is not set: nothing to reap."; echo "ready=false" >> "$GITHUB_OUTPUT"; else echo "ready=true" >> "$GITHUB_OUTPUT"; fi
+      - if: steps.guard.outputs.ready == 'true'
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          role-duration-seconds: 900
+          aws-region: ${{ env.AWS_REGION }}
+      - if: steps.guard.outputs.ready == 'true'
+        run: scripts/byoc/aws-matrix.sh reap

@@ -23,12 +23,45 @@ are retained under apps/mobile/ and plugins/ respectively.
 
 Third-party attributions
 ------------------------
+ClickHouse (https://github.com/ClickHouse/ClickHouse), Apache License 2.0,
+Copyright 2016-2026 ClickHouse, Inc. The Loams House engine's type rules
+(fabric/crates/loams-house-sql/src/coerce/rules.rs and
+fabric/crates/loams-house-exec/src/ops/int_div.rs) port the logic of
+src/DataTypes/getLeastSupertype.cpp, src/DataTypes/NumberTraits.h,
+src/Functions/FunctionsArithmetic.h, src/Functions/intDiv.cpp,
+src/Functions/FunctionsComparison.h and src/Functions/FunctionsLogical.cpp,
+as measured on clickhouse-server 26.9.2.8.
+The array, map, tuple and higher-order functions
+(fabric/crates/loams-house-exec/src/func/{arrays,maps,tuples,lambda,nested},
+plan HE1 Task 32) follow the semantics of src/Functions/array/ (arrayElement,
+has, arrayIndex.h, arraySlice and GatherUtils/Algorithms.h, arrayDistinct,
+arrayEnumerateExtended.h, arraySort, arrayAggregation, FunctionArrayMapped.h),
+src/Functions/map.cpp, src/Functions/tuple.cpp, src/Functions/tupleElement.cpp,
+src/Functions/IFunction.cpp's default implementations and
+src/Analyzer/Resolve/QueryAnalyzer.cpp's untuple expansion.
+The output format writers in
+fabric/crates/loams-house-formats/ (plan HE1 Task 36) follow the layouts of
+ClickHouse's src/Processors/Formats/Impl/ (JSON, JSONCompact, JSONEachRow,
+JSONCompactEachRow, TabSeparated, CSV, Values, RowBinary, Native, Pretty and
+PrettyCompact output formats), src/Formats/JSONUtils.cpp and the binary
+serializations of src/DataTypes/Serializations/; each file names the sources
+it follows. No ClickHouse code is copied.
+
 Quickwit (https://github.com/quickwit-oss/quickwit), Apache License 2.0.
 Files under crates/loams-quickwit/ are derived from Quickwit revision
 af0591a36e16831af9a2ad9484e12465f511ef84. Quickwit's NOTICE:
   Datadog Quickwit
   Copyright 2021-Present Datadog, Inc.
   This product includes software developed at Datadog (<https://www.datadoghq.com/).>
+
+The Temporal API (https://github.com/temporalio/api), MIT License,
+Copyright (c) 2025 Temporal Technologies Inc. The protocol buffer files under
+crates/loams-temporal-proto/proto/temporal/, proto/google/api/ and
+proto/nexusannotations/ are copied unchanged from tag v1.63.5 (commit
+3ebdff42a9f07ac484b415fe8ff0b483b4ce3340); the licence text is
+crates/loams-temporal-proto/LICENSE-temporalio-api, and
+crates/loams-temporal-proto/VENDORED.md lists every file. No Temporal server
+code is included (design 74, D1536).
 
 The Porter stemming algorithm (https://tartarus.org/martin/PorterStemmer/),
 by Martin Porter. crates/loams-text/src/porter.rs is a port of his ANSI C
@@ -65,7 +98,8 @@ loams-durable links the Resonate server plugins and the Resonate Rust SDK
 from the fork https://github.com/ostrium-labs/resonate, branch loam/0.10.1
 (upstream revision 28dfd016aa970332dc283e2431c406845e2ccc8f plus the
 patches listed in docs/plans/d1-dependency-spike.md), pinned by revision in
-Cargo.toml. Copyright 2026 Resonate HQ, Inc.
+Cargo.toml. loams-temporal-resonate links resonate-client from the same
+fork and revision. Copyright 2026 Resonate HQ, Inc.
 
 TiKV Rust client (https://github.com/tikv/client-rust), Apache License 2.0.
 loams-tikv, loams-meta-tikv and loams-live link tikv-client from the fork
@@ -192,3 +226,271 @@ marked in their headers are derived from T3 Code at the commit recorded in
 each package's provenance.json; the MIT licence text is in each package's
 LICENSE.t3code and must accompany distributions of those files.
 
+
+The KV gateways (design 77, plan KV1) port code from the four projects
+below. Each ported file carries the header of docs/licences/ported-code.md
+(its origin repository, revision, path and licence, and "Modified by
+Ostrium Labs for Loams"), and docs/licences/ported-code.md lists every
+ported file with its origin files; scripts/licences/check-ported-headers.sh
+holds both to that in CI. Until KV2 (loams-resp) and KV1 (the CDC consumer)
+land, no file of theirs is in this repository.
+
+Tidis (https://github.com/tidb-incubator/tidis), Apache License 2.0,
+Copyright the Tidis authors. loams-resp (crates/loams-resp) ports and
+adapts Tidis's RESP frames, parser, connection handling, command handlers,
+TiKV encoding and GC at revision 555856206f248737b12d3f148b10f08a604bc821
+(design 77 section 8.1, D1641). Tidis's NOTICE, reproduced verbatim
+(indented):
+  // ------------------------------------------------------------------
+  // NOTICE file corresponding to the section 4d of The Apache License,
+  // Version 2.0, in this case for
+  // ------------------------------------------------------------------
+
+  async-stream
+  Address: https://github.com/tokio-rs/async-stream
+  Revision: d346ad2d77b11855969b82c9d16bd78ec84e4863
+  License: https://github.com/tokio-rs/async-stream/blob/master/LICENSE
+  --------------------------------------
+
+  atoi
+  Address: https://github.com/pacman82/atoi-rs
+  Revision: 7392d60370880c638200905ecc8270ecc0a80422
+  License: https://github.com/pacman82/atoi-rs/blob/main/LICENSE
+  --------------------------------------
+
+  bytes
+  Address: https://github.com/tokio-rs/bytes
+  Revision: a36f661354a99f8dd14b15acfe69bc16d5505fbe
+  License: https://github.com/tokio-rs/bytes/blob/master/LICENSE
+  --------------------------------------
+
+  chrono
+  Address: https://github.com/chronotope/chrono
+  Revision: 53050237fcd8815955cf048c827e6fabe349949f
+  License: https://github.com/chronotope/chrono/blob/main/LICENSE.txt
+  --------------------------------------
+
+  crc
+  Address: https://github.com/mrhooray/crc-rs
+  Revision: 8a8d9622a9de96e87be63f62dc7853eef85fcbb9
+  License: https://github.com/mrhooray/crc-rs/blob/master/LICENSE-APACHE and https://github.com/mrhooray/crc-rs/blob/master/LICENSE-MIT
+  --------------------------------------
+
+  structopt
+  Address: https://github.com/TeXitoi/structopt
+  Revision: 203c6bc19e561da1734873794bbd420e0bfc79b9
+  License: https://github.com/TeXitoi/structopt/blob/master/LICENSE-APACHE and https://github.com/TeXitoi/structopt/blob/master/LICENSE-MIT
+  --------------------------------------
+
+  slog
+  Address: https://github.com/slog-rs/slog
+  Revision: 14807364944610ced8f59bd0e8dba1e50e3d76de
+  License: https://github.com/slog-rs/slog/blob/master/LICENSE-APACHE and https://github.com/slog-rs/slog/blob/master/LICENSE-MIT and https://github.com/slog-rs/slog/blob/master/LICENSE-MPL2
+  --------------------------------------
+
+  slog-term
+  Address: https://github.com/slog-rs/term
+  Revision: 3dda0a1409bd6b58564e642108f8ccc92f9a55de
+  License: https://github.com/slog-rs/term/blob/master/LICENSE-APACHE and https://github.com/slog-rs/term/blob/master/LICENSE-MIT and https://github.com/slog-rs/term/blob/master/LICENSE-MPL2
+  --------------------------------------
+
+  tokio
+  Address: https://github.com/tokio-rs/tokio
+  Revision: d7b3b33c9c95935c4eba70293d75a870a5d5ba24
+  License: https://github.com/tokio-rs/tokio/blob/master/LICENSE
+  --------------------------------------
+
+  client-rust
+  Address: https://github.com/yongman/client-rust
+  Revision: f779528d48881823ac4886d48341f20977b26fca
+  License: https://github.com/yongman/client-rust/blob/master/LICENSE
+  --------------------------------------
+
+  lazy-static
+  Address: https://github.com/rust-lang-nursery/lazy-static.rs
+  Revision: 421669662b35fcb455f2902daed2e20bbbba79b6
+  License: https://github.com/rust-lang-nursery/lazy-static.rs/blob/master/LICENSE-APACHE and https://github.com/rust-lang-nursery/lazy-static.rs/blob/master/LICENSE-MIT
+  --------------------------------------
+
+  thiserror
+  Address: https://github.com/dtolnay/thiserror
+  Revision: c6b8fcf0c432c216f07c4282acaa2d56f5798148
+  License: https://github.com/dtolnay/thiserror/blob/master/LICENSE-APACHE and https://github.com/dtolnay/thiserror/blob/master/LICENSE-MIT
+  --------------------------------------
+
+  prometheus
+  Address: https://github.com/tikv/rust-prometheus
+  Revision: fe0a284cbf71ec886c36f7d418d990bbc201dc06
+  License: https://github.com/tikv/rust-prometheus/blob/master/LICENSE
+  --------------------------------------
+
+  pprof
+  Address: https://github.com/tikv/pprof-rs
+  Revision: fb65ca7ae728373724b39bf8b7a1dddabd75a518
+  License: https://github.com/tikv/pprof-rs/blob/master/LICENSE
+  --------------------------------------
+
+  hyper
+  Address: https://github.com/hyperium/hyper
+  Revision: c734b7904d615b8eaa5a5c1a8aa55d4e9ae56a6c
+  License: https://github.com/hyperium/hyper/blob/master/LICENSE
+  --------------------------------------
+
+  async-std
+  Address: https://github.com/async-rs/async-std
+  Revision: 2c6304662b96aab64feb20f7d727bfc8e070453e
+  License: https://github.com/async-rs/async-std/blob/main/LICENSE-APACHE and https://github.com/async-rs/async-std/blob/main/LICENSE-MIT
+  --------------------------------------
+
+  async-tls
+  Address: https://github.com/async-rs/async-tls
+  Revision: a8ca3ca5691e7c50f9aae34ccc5fefa331e06f3f
+  License: https://github.com/async-rs/async-tls/blob/master/LICENSE-APACHE and https://github.com/async-rs/async-tls/blob/master/LICENSE-MIT
+  --------------------------------------
+
+  rand
+  Address: https://github.com/rust-random/rand
+  Revision: 937320cbfeebd4352a23086d9c6e68f067f74644
+  License: https://github.com/rust-random/rand/blob/master/LICENSE-APACHE and https://github.com/rust-random/rand/blob/master/LICENSE-MIT
+  --------------------------------------
+
+  regex
+  Address: https://github.com/rust-lang/regex
+  Revision: 159a63c85eb77ec321301bc4c4ebfb90343edc2b
+  License: https://github.com/rust-lang/regex/blob/master/LICENSE-APACHE and https://github.com/rust-lang/regex/blob/master/LICENSE-MIT
+  --------------------------------------
+
+  toml
+  Address: https://github.com/alexcrichton/toml-rs
+  Revision: 94b319f5eeb80dbc7420246416a69d5bd0a9557d
+  License: https://github.com/alexcrichton/toml-rs/blob/master/LICENSE-APACHE and https://github.com/alexcrichton/toml-rs/blob/master/LICENSE-MIT
+  --------------------------------------
+
+  serde
+  Address: https://github.com/serde-rs/serde
+  Revision: d208762c81883a181e8c6a9ca3f303e040105c7d
+  License: https://github.com/serde-rs/serde/blob/master/LICENSE-APACHE and https://github.com/serde-rs/serde/blob/master/LICENSE-MIT
+  --------------------------------------
+
+  futures
+  Address: https://github.com/rust-lang/futures-rs
+  Revision: 67462f754fbbe978992bc1ec7fdfda2b45976e9f
+  License: https://github.com/rust-lang/futures-rs/blob/master/LICENSE-APACHE and https://github.com/rust-lang/futures-rs/blob/master/LICENSE-MIT
+  --------------------------------------
+
+  mlua
+  Address: https://github.com/khvzak/mlua
+  Revision: c85616137a367a72367a7d3f6019a5816ee5aa7b
+  License: https://github.com/khvzak/mlua/blob/master/LICENSE
+  --------------------------------------
+
+  hashes
+  Address: https://github.com/RustCrypto/hashes
+  Revision: 75298d36b9400654ad3bbee072b59c5ffed27aa4
+  License: https://github.com/RustCrypto/hashes/blob/master/README.md
+  --------------------------------------
+
+  hex
+  Address: https://github.com/KokaKiwi/rust-hex
+  Revision: b2b4370b5bf021b98ee7adc92233e8de3f2de792
+  License: https://github.com/KokaKiwi/rust-hex/blob/main/LICENSE-APACHE and https://github.com/KokaKiwi/rust-hex/blob/main/LICENSE-MIT
+  --------------------------------------
+
+mini-redis (https://github.com/tokio-rs/mini-redis), MIT License,
+Copyright (c) 2020 Tokio Contributors. Parts of Tidis are derived from
+mini-redis without attribution there (design 77 section 8.1): its
+src/frame.rs, src/parse.rs, src/connection.rs, src/server.rs,
+src/shutdown.rs, src/db.rs and src/cmd/{get,set,publish,subscribe,ping,
+unknown}.rs. Files of loams-resp ported from those carry mini-redis's
+notice as well as Tidis's. mini-redis's licence:
+  Copyright (c) 2020 Tokio Contributors
+
+  Permission is hereby granted, free of charge, to any
+  person obtaining a copy of this software and associated
+  documentation files (the "Software"), to deal in the
+  Software without restriction, including without
+  limitation the rights to use, copy, modify, merge,
+  publish, distribute, sublicense, and/or sell copies of
+  the Software, and to permit persons to whom the Software
+  is furnished to do so, subject to the following
+  conditions:
+
+  The above copyright notice and this permission notice
+  shall be included in all copies or substantial portions
+  of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+  ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+  TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+  PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+  SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+  CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+  OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+  IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+  DEALINGS IN THE SOFTWARE.
+
+Titan (https://github.com/distributedio/titan), Apache License 2.0,
+Copyright the Titan authors (distributedio). loams-resp follows Titan's
+design for its expiry index, its batched GC deletes and WATCH, and for
+command semantics where it is better than Tidis's, at revision
+97868f5d24e0c13621658fbcb712064fec59e8be (design 77 sections 8.1 and 8.3).
+Files whose logic follows Titan name it in their headers. Titan has no
+NOTICE file.
+
+ClickHouse (https://github.com/ClickHouse/ClickHouse), Apache License 2.0,
+Copyright 2016-2026 ClickHouse, Inc. The date and time functions of the
+Loams House Rust engine (fabric/crates/loams-house-exec/src/func/datetime/)
+port rules of src/Common/DateLUTImpl.h, src/Functions/DateTimeTransforms.h,
+src/Functions/toStartOfInterval.cpp, src/Functions/dateDiff.cpp,
+src/Functions/FunctionDateOrDateTimeAddInterval.h,
+src/Functions/formatDateTime.cpp and src/IO/parseDateTimeBestEffort.cpp at
+tag v26.9.2.8-stable (plan HE1 Task 30). Files that port it name the source
+in their headers.
+The column lists in
+fabric/crates/loams-house-engine/src/system/shapes.rs are taken from
+tests/queries/0_stateless/02117_show_create_table_system.reference at
+v26.9.2.8, and the semantics of numbers()/zeros() and of the SHOW rewrites
+follow TableFunctionNumbers, StorageSystemNumbers and
+InterpreterShowTablesQuery (plan HE1 Task 38).
+
+TiKV migration (https://github.com/tikv/migration), Apache License 2.0,
+Copyright TiKV Project Authors. loams-tikv's CDC consumer (KV1) ports the
+ChangeData/EventFeed consumer of TiKV-CDC (its cdc/cdc/kv package) at the
+revision its file headers record (design 77 section 11.2, D1652).
+
+
+disposable-email-domains
+(https://github.com/disposable-email-domains/disposable-email-domains),
+CC0-1.0. deploy/loams-cloud/policy/disposable_email_blocklist.conf is that
+project's list at the revision recorded in deploy/loams-cloud/policy/PINS.md,
+unmodified; the dedication is in
+deploy/loams-cloud/policy/LICENSE-disposable-email-domains.txt.
+
+
+ClickHouse (https://github.com/ClickHouse/ClickHouse), Apache License 2.0,
+Copyright 2016-2026 ClickHouse, Inc. The Loams House engine's conversion,
+conditional, maths and JSON functions (fabric/crates/loams-house-exec/src/func/
+convert, cond, math and json, plan HE1 Task 33) follow ClickHouse's
+src/Functions (FunctionsConversion.h, if.cpp, multiIf.cpp, FunctionsRound.h,
+FunctionsJSON.h, FunctionsVisitParam.h), src/DataTypes/getLeastSupertype.cpp
+and src/IO/ReadHelpers.h; each file names its source.
+
+ClickHouse (https://github.com/ClickHouse/ClickHouse), Apache License 2.0,
+Copyright 2016-2026 ClickHouse, Inc. The Loams House engine's string and hash
+functions (fabric/crates/loams-house-exec/src/func/strings and func/hash, plan
+HE1 Task 31) follow ClickHouse's src/Functions (FunctionsHashing.h,
+PositionImpl.h, ReplaceRegexpImpl.h, substring.cpp, MatchImpl.h); each file
+names its source.
+
+CityHash v1.0.2 (https://github.com/google/cityhash), MIT License, Copyright
+(c) 2011 Google, Inc., as vendored by ClickHouse in contrib/cityhash102.
+fabric/crates/loams-house-exec/src/func/hash/city.rs ports its 64-bit
+CityHash64 and Hash128to64. Permission is hereby granted, free of charge, to
+any person obtaining a copy of this software and associated documentation
+files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to permit
+persons to whom the Software is furnished to do so, subject to the following
+conditions: The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software. THE SOFTWARE
+IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED.

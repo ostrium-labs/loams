@@ -23,6 +23,7 @@
 //! | `Array(T)` | `list<T>` | — |
 //! | `Map(K, V)` | `map<K, V>` | — |
 //! | `Tuple(a T, …)` | `struct<a: T, …>` (unnamed elements are `1`, `2`, …) | yes when unnamed |
+//! | `JSON[(…)]` (a column's own type) | `string`, the value's JSON text (interim, HE1 R9.63; Variant in HE4) | yes |
 //!
 //! A column that is not `Nullable` is a **required** Iceberg field. Every other
 //! ClickHouse type (`JSON`, `Object`, `Variant`, `Dynamic`, `AggregateFunction`,
@@ -378,6 +379,12 @@ impl ChType {
         }
     }
 
+    /// Whether this is ClickHouse's `JSON` type, with or without parameters
+    /// (`JSON(max_dynamic_paths = 100, message String)`).
+    pub fn is_json(&self) -> bool {
+        matches!(self, Self::Simple(name) | Self::Other(name) if name == "JSON")
+    }
+
     /// For a column whose values are `DateTime64` with more than 6 digits (its
     /// own type, under `Nullable` or `SimpleAggregateFunction`), the time zone
     /// it was declared with: such a column is stored as nanoseconds in an
@@ -451,6 +458,14 @@ pub fn to_iceberg_field(
     // (HE2, D1553).
     let ty = if ch.nanos_zone().is_some() {
         primitive(PrimitiveType::Long)
+    } else if ch.base().is_json() {
+        // HE1 R9.63 (interim; Iceberg v3's Variant in HE4): a `JSON` column is
+        // an Iceberg `string` of the value's JSON text, which the write path
+        // gives with `CAST(… AS String)`; `loams.ch.types` keeps its type, and
+        // the read views cast the text back to it, so its subcolumns
+        // (`resource.service.name`) and typed paths read as ClickHouse reads
+        // them.
+        primitive(PrimitiveType::String)
     } else {
         to_iceberg(&ch, ch_text, ids, needs)?
     };
@@ -808,8 +823,15 @@ mod tests {
 
     #[test]
     fn unsupported_types_are_48() {
+        // HE1 R9.63: `JSON` is stored as its text only as a column's own type.
+        for text in ["JSON", "JSON(max_dynamic_paths=0, message String)"] {
+            let (ty, required, needs) = iceberg(text);
+            assert_eq!(ty, Type::Primitive(PrimitiveType::String), "{text}");
+            assert!(required, "{text}");
+            assert_eq!(needs, Needs::V2, "{text}");
+        }
         for text in [
-            "JSON",
+            "Array(JSON)",
             "Dynamic",
             "Variant(UInt8, String)",
             "Nested(a UInt8)",

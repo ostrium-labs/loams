@@ -1,5 +1,7 @@
 # 47 — Loams SQL in Production: Neon-like MySQL on TiDB Compute and the Loams TiKV
 
+> **Amendment (approved 2026-10-23) by [§78](78-loams-cloud-on-tidb-x.md)** (Loams Cloud on TiDB X; D1700–D1735). A `tidbcloud` backend for `loams.sqldb.v1` runs Loams SQL databases as plain MySQL on TiDB Cloud Starter (a Starter instance per database, TiDB branches, in the user's own org; or a database in a shared cell on Loams Cloud). TiDB Cloud exposes no TiKV or keyspace API, so this document's keyspace design is unchanged and stays the production path (D1709).
+
 > **Note from [§75](75-loams-house-engine.md) (approved 2026-10-21).** §75 rejects TiFlash as the base for Loams House and names it only as an optional, separate HTAP companion for Loams SQL (D1541). Whether to start that project is Q1172 (default: not now). Nothing in this document changes.
 
 Status: **Proposed; owner answers recorded** · 2026-10-08. The owner answered Q658, Q661, Q662 and Q667 the same day (§22). The source questions are answered from read-only clones of the upstream repositories (§23). The implementation plan is [SQ1 (TiDB)](../plans/2026-10-08-sq1-loams-sql-tidb.md). Rewritten the same day for the owner's third directive, which replaces both earlier drafts (stock MySQL 8.4 with mywal and Vitess, then the PolarDB-X study):

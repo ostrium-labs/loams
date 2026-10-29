@@ -141,6 +141,19 @@ const TABLES: &[&str] = &[
         created_at INTEGER NOT NULL,
         PRIMARY KEY (chat_id, call_id)
      ) STRICT;",
+    // FT1 FT0 Task 4 (design §72 §5.2): the factory loop's typed approvals
+    // (plan, merge, deploy). Only the payload's hash is kept; `state` is
+    // `pending`, `approved`, `denied` or `used`.
+    "CREATE TABLE IF NOT EXISTS typed_approvals (
+        id           TEXT PRIMARY KEY NOT NULL,
+        chat_id      TEXT NOT NULL,
+        kind         TEXT NOT NULL,
+        summary      TEXT NOT NULL,
+        payload_hash TEXT NOT NULL,
+        state        TEXT NOT NULL,
+        created_at   INTEGER NOT NULL,
+        decided_at   INTEGER
+     ) STRICT;",
 ];
 
 /// One pending approval's row (SD1 Task 13, `pending_approvals`). `args` is

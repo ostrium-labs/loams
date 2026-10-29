@@ -1,0 +1,15 @@
+▶ lease_is_exclusive_under_races
+  ✔ 20 devices race through the user's Durable Object (16772.55038ms)
+  ✔ 20 concurrent HTTP claims on TiDB's conditional single statements (17610.070931ms)
+  ✔ after expiry, exactly one of 20 racers takes the lease and the epoch moves on (6037.28753ms)
+✔ lease_is_exclusive_under_races (40421.044806ms)
+✔ device_reconnects_after_sleep (94206.026944ms)
+﹣ teardown_leaves_nothing (0.121811ms) # SKIP
+ℹ tests 6
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 1
+ℹ todo 0
+ℹ duration_ms 142865.094185

@@ -1,0 +1,114 @@
+# OpenFGA for Loams on Kubernetes (design 76 §12; D1610, D1625, D1626). Values for the
+# upstream chart openfga/openfga 0.3.16 (Apache-2.0, https://openfga.github.io/helm-charts),
+# which is referenced, not vendored. See README.md beside this file.
+#
+#   helm install openfga openfga --repo https://openfga.github.io/helm-charts --version 0.3.16 \
+#     --namespace loams-authz -f deploy/openfga/helm/values.yaml
+#
+# Before installing, create two Secrets in that namespace (never commit either):
+#   loams-openfga-datastore       key `uri`:  postgres://openfga:<password>@<host>:5432/openfga?sslmode=verify-full
+#   loams-openfga-preshared-keys  key `keys`: one or more keys, comma-separated (openssl rand -hex 32)
+
+# Two replicas behind an internal Service (design 76 §12).
+replicaCount: 2
+
+# OpenFGA v1.22.0, the official image pinned by digest and run unmodified, as in the compose
+# `authz` profile (deploy/release/compose.yaml) and the IA0 stack.
+image:
+  repository: docker.io/openfga/openfga
+  tag: "v1.22.0@sha256:9cf9a20af32a40434cd3a788c429879439ee9ea9abf65c9c200ee17cd43f769e"
+  pullPolicy: IfNotPresent
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+# Postgres for every install with more than one user (D1626); SQLite is for the compose
+# profile's single-user install only. Design 76 §12 runs it on CloudNativePG.
+datastore:
+  engine: postgres
+  existingSecret: loams-openfga-datastore
+  secretKeys:
+    uriKey: uri
+  applyMigrations: true
+  waitForMigrations: true
+  migrationType: job
+
+# Every call needs a preshared key; the engine sends it as LOAMS_AUTHZ_OPENFGA_KEY.
+authn:
+  method: preshared
+  preshared:
+    keysSecret: loams-openfga-preshared-keys
+
+# The engine talks gRPC (8081). HTTP (8080) stays for the store and model setup, inside the
+# cluster only, with no browser origin allowed.
+http:
+  enabled: true
+  corsAllowedOrigins: []
+  corsAllowedHeaders: []
+
+playground:
+  enabled: false
+
+# One decision cache, in the engine (CachedAuthorizer: allows only, 5 s, D1625): OpenFGA's
+# own check-query and iterator caches stay off, so a revoked tuple is not answered from a
+# second, stale cache.
+checkQueryCache:
+  enabled: false
+extraEnvVars:
+  - name: OPENFGA_CHECK_ITERATOR_CACHE_ENABLED
+    value: "false"
+  - name: OPENFGA_CHECK_QUERY_CACHE_ENABLED
+    value: "false"
+
+log:
+  level: warn
+  format: json
+
+service:
+  type: ClusterIP
+
+ingress:
+  enabled: false
+
+# Only pods labelled `loams.dev/authz-client: "true"` in this namespace (the engine, the
+# identity sync, the store setup job) reach OpenFGA, and metrics only from the monitoring
+# namespace's Prometheus. Needs a CNI that enforces NetworkPolicy.
+extraObjects:
+  - |
+    apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: {{ include "openfga.fullname" . }}-clients
+      labels:
+        {{- include "openfga.labels" . | nindent 8 }}
+    spec:
+      podSelector:
+        matchLabels:
+          {{- include "openfga.selectorLabels" . | nindent 10 }}
+      policyTypes: [Ingress]
+      ingress:
+        - from:
+            - podSelector:
+                matchLabels:
+                  loams.dev/authz-client: "true"
+          ports:
+            - port: 8080
+              protocol: TCP
+            - port: 8081
+              protocol: TCP
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: monitoring
+          ports:
+            - port: 2112
+              protocol: TCP

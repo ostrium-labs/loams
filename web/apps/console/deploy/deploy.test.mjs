@@ -66,10 +66,12 @@ describe('wrangler.jsonc', () => {
   const text = readFileSync(join(console_, 'wrangler.jsonc'), 'utf8');
   const config = JSON.parse(text.replace(/^\s*\/\/.*$/gm, ''));
 
-  test('is the assets-only loams-console Worker on console.loams.dev', () => {
+  test('is the assets-only loams-console Worker with no console.loams.dev route', () => {
     assert.equal(config.name, 'loams-console');
     assert.equal(config.main, undefined, 'no Worker code: free tier, no CPU budget used');
-    assert.deepEqual(config.routes, [{ pattern: 'console.loams.dev', custom_domain: true }]);
+    assert.equal(config.routes, undefined, 'no custom-domain route (owner, 2026-10-24)');
+    assert.equal(config.workers_dev, true);
+    assert.ok(!text.includes('"console.loams.dev"'), 'no console.loams.dev pattern');
   });
 
   test('serves the staged directory with an SPA fallback', () => {
@@ -78,7 +80,7 @@ describe('wrangler.jsonc', () => {
     assert.equal(config.assets.html_handling, 'none', 'preserve exact sandbox paths and headers');
   });
 
-  test('a BYOC deploy (--env byoc) drops the console.loams.dev route for workers.dev', () => {
+  test('a BYOC deploy (--env byoc) stays on workers.dev with no routes', () => {
     assert.deepEqual(config.env.byoc.routes, []);
     assert.equal(config.env.byoc.workers_dev, true);
     assert.equal(config.env.byoc.main, undefined);
@@ -182,6 +184,28 @@ describe('hosted config', () => {
       hostedConfig({ ...AUTH, LOAMS_AUTH_ISSUER: 'https://id.example/realms/loams/' }).authIssuer,
       'https://id.example/realms/loams',
     );
+  });
+
+  test('narrows the offered modes with LOAMS_AUTH_MODES', () => {
+    // A deploy that has tested only Tailscale, even though it has a client.
+    assert.deepEqual(hostedConfig({ ...AUTH, LOAMS_AUTH_MODES: 'tailscale' }), {
+      hosted: true,
+      authMode: 'tailscale',
+      authModes: ['tailscale'],
+      authIssuer: 'https://auth.loams.dev',
+      authClientId: 'loams-console',
+    });
+    // Separators and order do not matter: the console's order comes back.
+    assert.deepEqual(
+      hostedConfig({ LOAMS_AUTH_MODES: 'apikey, tailscale', LOAMS_AUTH_MODE: 'apikey' }).authModes,
+      ['tailscale', 'apikey'],
+    );
+    assert.throws(() => hostedConfig({ LOAMS_AUTH_MODES: 'basic' }), /LOAMS_AUTH_MODES/);
+    assert.throws(
+      () => hostedConfig({ LOAMS_AUTH_MODE: 'apikey', LOAMS_AUTH_MODES: 'tailscale' }),
+      /must include the default LOAMS_AUTH_MODE/,
+    );
+    assert.throws(() => hostedConfig({ LOAMS_AUTH_MODES: 'tailscale,oidc' }), /oidc/);
   });
 
   test('refuses plain http off loopback, oidc without a client id, and an unknown mode', () => {
@@ -483,6 +507,24 @@ describe('runtime config', () => {
       'tailscale',
       'apikey',
     ]);
+    // authModes narrows the offer; with one mode the connect screen has no picker.
+    const onlyTailscale = parseRuntimeConfig({
+      authMode: 'tailscale',
+      authModes: ['tailscale', 'nonsense'],
+    });
+    assert.deepEqual(onlyTailscale.authModes, ['tailscale']);
+    assert.deepEqual(offeredModes(onlyTailscale), ['tailscale']);
+    // A default the deploy left out lands on a mode it did offer, never on that one.
+    const narrowed = parseRuntimeConfig({ authMode: 'apikey', authModes: ['tailscale'] });
+    assert.equal(narrowed.authMode, 'tailscale');
+    assert.deepEqual(offeredModes(narrowed), ['tailscale']);
+    // ... but the deploy's own mistake stays loud: oidc asked for without a client.
+    assert.match(
+      parseRuntimeConfig({ hosted: true, authMode: 'oidc', authModes: ['oidc'] }).configError,
+      /authClientId/,
+    );
+    // A list that leaves nothing usable says so, rather than showing no way in.
+    assert.match(parseRuntimeConfig({ authModes: ['oidc'] }).configError, /no sign-in mode/);
     // oidc as the default without a client is a config error, never a quiet fall back.
     assert.match(
       parseRuntimeConfig({ hosted: true, authMode: 'oidc' }).configError,

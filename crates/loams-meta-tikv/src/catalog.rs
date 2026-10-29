@@ -16,7 +16,7 @@ use loams_common::meta::{
     MAX_COLLECTION_NAME_LEN, MAX_KEY_LEN, MAX_NAME_LEN, MAX_PARTITIONS, MetaError, MetaResult,
     NameTarget, Namespace, Pointer, Retention, Stream, TargetRef, WalClass, collection_pk_prefix,
     collection_pointer_key, collection_prefix, graph_stream_name, implicit_name, is_graph_id,
-    legacy_graph_stream_name, link_pointer_key, system_stream_partitions,
+    legacy_graph_stream_name, link_pointer_key, system_stream_partitions, system_stream_retention,
 };
 use loams_common::schema::{CollectionSchema, SchemaError};
 use loams_common::{CollectionId, NamespaceId, StreamId};
@@ -418,6 +418,7 @@ impl TikvMeta {
                 if let Some(existing) = load_id(txn, "stream name", &name_key).await? {
                     return Ok(Ok(StreamId(existing)));
                 }
+                let retention = system_stream_retention(&name);
                 put_stream(
                     txn,
                     &Stream {
@@ -426,7 +427,7 @@ impl TikvMeta {
                         name,
                         partitions,
                         class: WalClass::Standard,
-                        retention: Retention::default(),
+                        retention,
                     },
                 )
                 .await?;

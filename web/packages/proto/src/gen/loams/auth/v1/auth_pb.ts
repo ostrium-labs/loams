@@ -172,7 +172,8 @@ export const ListProvidersResponseSchema: GenMessage<ListProvidersResponse> = /*
  */
 export type CompleteSetupRequest = Message<"loams.auth.v1.CompleteSetupRequest"> & {
   /**
-   * The token `loams` printed at first start; not needed from loopback.
+   * This engine's LOAMS_SETUP_TOKEN. Required when authentication is on;
+   * ignored with LOAMS_AUTH_MODE=off.
    *
    * @generated from field: string setup_token = 1;
    */

@@ -350,7 +350,11 @@ impl ViewRunner {
                         &root,
                     )
                 };
-                match self.writer.write(namespace, view, &target, &make).await {
+                match self
+                    .writer
+                    .write(namespace, view, &target, Some(&make))
+                    .await
+                {
                     Ok(written) => {
                         written_counts = (written.rows, written.input_bytes);
                         crate::pipes::commit_cursor(
@@ -432,16 +436,30 @@ impl ViewRunner {
     }
 }
 
-/// The background catch-up of views over lake tables (see the module docs).
+/// Every this many background rounds, the targets of refreshable views are
+/// listed again (HE1 R9.64), so a view a front created is found within
+/// about this many rounds.
+pub const REFRESH_SCAN_EVERY: u64 = 3;
+
+/// The background catch-up of views over lake tables (see the module docs),
+/// and the runs of refreshable views ([`crate::refresh`]).
 #[derive(Debug)]
 pub struct Scheduler {
     runner: ViewRunner,
+    refresh: crate::refresh::RefreshRunner,
+    /// The targets of refreshable views at the last listing.
+    targets: tokio::sync::Mutex<Vec<(u64, String, String)>>,
 }
 
 impl Scheduler {
     /// A catch-up with `runner`.
     pub fn new(runner: ViewRunner) -> Self {
-        Self { runner }
+        let refresh = crate::refresh::RefreshRunner::new(runner.writer.clone());
+        Self {
+            runner,
+            refresh,
+            targets: tokio::sync::Mutex::new(Vec::new()),
+        }
     }
 
     /// Runs every `every` until the returned task is aborted.
@@ -453,6 +471,11 @@ impl Scheduler {
             loop {
                 tick.tick().await;
                 self.round(round.is_multiple_of(FULL_SCAN_EVERY)).await;
+                self.refresh_round(
+                    round.is_multiple_of(REFRESH_SCAN_EVERY),
+                    crate::retention::now_ms().div_euclid(1000),
+                )
+                .await;
                 round += 1;
             }
         })
@@ -498,6 +521,66 @@ impl Scheduler {
                      {namespace}) failed: {}",
                     err.message()
                 );
+            }
+        }
+    }
+}
+
+impl Scheduler {
+    /// One round of refreshable views: each that is due at `now_s` runs, and
+    /// the views of its target after it. With `scan`, their targets are listed
+    /// again first.
+    pub async fn refresh_round(&self, scan: bool, now_s: i64) {
+        let lake = self.runner.lake();
+        let mut targets = self.targets.lock().await;
+        if scan {
+            let mut found = Vec::new();
+            match lake.namespaces().await {
+                Ok(namespaces) => {
+                    for namespace in namespaces {
+                        match crate::refresh::targets(lake, namespace).await {
+                            Ok(t) => {
+                                found.extend(t.into_iter().map(|(db, name)| (namespace, db, name)))
+                            }
+                            Err(err) => eprintln!(
+                                "loams-house: refreshable views of namespace {namespace} cannot \
+                                 be listed: {}",
+                                err.message()
+                            ),
+                        }
+                    }
+                    *targets = found;
+                }
+                Err(err) => eprintln!(
+                    "loams-house: refreshable views cannot list namespaces: {}",
+                    err.message()
+                ),
+            }
+        }
+        for (namespace, database, name) in targets.iter() {
+            match self
+                .refresh
+                .run_due(*namespace, database, name, now_s)
+                .await
+            {
+                Ok(runs) => {
+                    if runs
+                        .iter()
+                        .any(|r| matches!(r, crate::refresh::Refreshed::Appended(_)))
+                        && let Err(err) = self.runner.after_commit(*namespace, database, name).await
+                    {
+                        eprintln!(
+                            "loams-house: a materialized view of {database}.{name} (namespace \
+                             {namespace}) failed: {}",
+                            err.message()
+                        );
+                    }
+                }
+                Err(err) => eprintln!(
+                    "loams-house: a refreshable view into {database}.{name} (namespace \
+                     {namespace}) failed: {}",
+                    err.message()
+                ),
             }
         }
     }

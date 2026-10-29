@@ -218,7 +218,7 @@ export function ResolveDialog({
   const actionName = useId();
 
   // Tell the caller which checkout to read, now and on each change.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the callback is the caller's; follow the winner only.
+  // oxlint-disable-next-line react/exhaustive-deps -- the callback is the caller's; follow the winner only.
   useEffect(() => {
     if (open && winnerChatId) onWinnerChange(winnerChatId);
   }, [open, winnerChatId]);

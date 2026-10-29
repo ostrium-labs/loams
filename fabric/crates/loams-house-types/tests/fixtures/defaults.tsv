@@ -1,0 +1,112 @@
+UInt8	0
+UInt16	0
+UInt32	0
+UInt64	0
+Int8	0
+Int16	0
+Int32	0
+Int64	0
+Float32	0
+Float64	0
+Bool	false
+bool	false
+BOOLEAN	false
+String	
+FixedString(16)	\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0
+Date	1970-01-01
+Date32	1900-01-01
+DateTime	1970-01-01 00:00:00
+DateTime('UTC')	1970-01-01 00:00:00
+DateTime(  'Asia/Kolkata' )	1970-01-01 05:30:00
+DateTime32	1970-01-01 00:00:00
+DateTime64(3)	1970-01-01 00:00:00.000
+DateTime64(9, 'UTC')	1970-01-01 00:00:00.000000000
+DateTime(3)	1970-01-01 00:00:00.000
+TIMESTAMP	1970-01-01 00:00:00
+TIMESTAMP(6)	1970-01-01 00:00:00.000000
+UUID	00000000-0000-0000-0000-000000000000
+IPv4	0.0.0.0
+IPv6	::
+INET4	0.0.0.0
+Decimal	0
+Decimal(10, 2)	0
+DECIMAL(5)	0
+Decimal32(2)	0
+Decimal64(4)	0
+Decimal128(3)	0
+Decimal256(10)	0
+Decimal(40, 2)	0
+DEC(3,1)	0
+NUMERIC(12, 3)	0
+Enum8('a' = 1, 'b' = 2)	a
+Enum16('a' = 1000)	a
+Enum('a', 'b')	a
+Enum('a' = 1000)	a
+Enum8('a\'b' = -1)	a\'b
+Nullable(String)	\N
+Nullable(Nothing)	\N
+LowCardinality(String)	
+LowCardinality(Nullable(String))	\N
+LowCardinality(FixedString(2))	\0\0
+Array(String)	[]
+Array(Nullable(UInt8))	[]
+Array(Array(LowCardinality(String)))	[]
+Map(String, UInt64)	{}
+Map(LowCardinality(String), Map(String, UInt8))	{}
+Map(String, Array(Tuple(UInt8, String)))	{}
+Tuple(UInt8, String)	(0,'')
+Tuple(a String, b UInt8)	('',0)
+Tuple(a Tuple(b UInt8, c String), d Array(Tuple(e UInt8)))	((0,''),[])
+Tuple(UInt8, Tuple(x String))	(0,(''))
+Tuple(`a b` UInt8)	(0)
+Tuple(a DOUBLE PRECISION)	(0)
+Nested(a UInt8, b String)	[]
+JSON	{}
+JSON()	{}
+JSON(max_dynamic_paths=100)	{}
+JSON(max_dynamic_paths=0, message String)	{"message":""}
+JSON(b.c UInt32, a String, max_dynamic_types=3, max_dynamic_paths=10, SKIP REGEXP 'x.*', SKIP z)	{"a":"","b":{"c":0}}
+AggregateFunction(uniq, String)	\0\0
+AggregateFunction(quantiles(0.5, 0.9), Float64)	\0 \0\0\0\0\0\0\0\0\0\0\0\0\0\06364136223846793005 0 123459
+AggregateFunction(argMax, String, DateTime64(3))	ÿÿÿÿ\0
+AggregateFunction(1, sumMap, Array(UInt8), Array(UInt64))	\0
+AggregateFunction(topK(10), String)	\0\0
+AggregateFunction(uniqIf, String, UInt8)	\0\0
+AggregateFunction(quantilesIf(0.5), Float64, UInt8)	\0 \0\0\0\0\0\0\0\0\0\0\0\0\0\06364136223846793005 0 123459
+SimpleAggregateFunction(max, DateTime64(9))	1970-01-01 00:00:00.000000000
+SimpleAggregateFunction(anyLast, Nullable(String))	\N
+IntervalDay	0
+IntervalSecond	0
+Int128	0
+UInt256	0
+BFloat16	0
+Dynamic	\N
+Dynamic(max_types=3)	\N
+Variant(String, UInt8)	\N
+Time	00:00:00
+Time64(3)	00:00:00.000
+INT	0
+INTEGER	0
+INT UNSIGNED	0
+BIGINT UNSIGNED	0
+TINYINT	0
+SMALLINT SIGNED	0
+double precision	0
+DOUBLE	0
+FLOAT	0
+FLOAT(10)	0
+REAL	0
+VARCHAR	
+VARCHAR(255)	
+String(10)	
+TEXT	
+CHAR VARYING	
+NATIONAL CHARACTER LARGE OBJECT	
+BINARY(4)	\0\0\0\0
+BYTEA	
+SIGNED	0
+UNSIGNED	0
+YEAR	0
+BIT	0
+SET	0
+Point	(0,0)

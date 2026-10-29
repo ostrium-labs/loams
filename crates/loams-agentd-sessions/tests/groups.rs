@@ -999,3 +999,33 @@ async fn group_survives_restart() {
     );
     assert!(member(&group, &chats[0]).status != RunMemberStatus::Queued);
 }
+
+/// A member whose run command the last daemon took, but whose turn start it
+/// never recorded, is settled by the next daemon instead of staying running
+/// (#970). Here an accepted harness update holds the run before its turn
+/// starts until the daemon stops; in #970 the daemon stopped before its
+/// scheduler had noted the turn's start.
+#[tokio::test(flavor = "multi_thread")]
+async fn taken_member_settles_after_restart() {
+    let mut studio = Studio::start(true).await;
+    studio.core().registry.begin_update(HarnessId::Mock);
+    let (group_id, chats) = studio.create(&["a"], None).await;
+    // The member's run is dispatched (its command taken), its turn held.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+    while !studio.core().sessions.turn_in_flight(&chats[0]) {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "timed out waiting for the member's run to be dispatched"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let before = studio.group(&group_id);
+    assert_eq!(member(&before, &chats[0]).status, RunMemberStatus::Running);
+    assert_eq!(studio.running.load(Ordering::SeqCst), 0);
+
+    studio.restart().await;
+    let group = studio.wait_ready(&group_id).await;
+    assert_eq!(member(&group, &chats[0]).status, RunMemberStatus::Done);
+    // Settled as the run the last daemon started, not run again.
+    assert_eq!(studio.peak.load(Ordering::SeqCst), 0);
+}

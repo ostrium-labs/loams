@@ -48,7 +48,7 @@ not from hiding it.
 | Go 1.24 (optional) | Only for the durable-execution conformance checker in `scripts/durable` | [go.dev](https://go.dev/dl/) |
 | [uv](https://docs.astral.sh/uv/) (optional) | Only for the Python client suites (`qdrant-client`, `elasticsearch-py`) | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
 | [tiup](https://docs.pingcap.com/tidb/stable/tiup-overview) (optional) | Only for the TiKV suites: a local PD + TiKV playground | see [`scripts/tikv/playground.sh`](scripts/tikv/playground.sh) |
-| Node 22 and pnpm (optional) | Only for the web console in [`web`](web/README.md) and the SDKs in [`sdks`](sdks) | [pnpm.io](https://pnpm.io/installation) |
+| Node 24 (`.nvmrc`) and pnpm 11 (optional) | The JavaScript workspace: the console and `@loams/ui` in [`web`](web/README.md), the plugins in [`plugins`](plugins/README.md), Loams Desktop in [`apps/desktop-electron`](apps/desktop-electron/README.md) and the SDKs in [`sdks`](sdks). [`.nvmrc`](.nvmrc) names the Node line CI uses; `corepack enable` selects the pinned pnpm | [pnpm.io](https://pnpm.io/installation) |
 
 ### Build without running out of memory
 
@@ -117,6 +117,32 @@ cargo deny check
 
 The client conformance suites live in [`crates/loams-qdrant/tests/python`](crates/loams-qdrant/tests/python) and [`conformance/es-client`](conformance/es-client). The web console has its own checks (`pnpm lint`, `pnpm typecheck`, `pnpm build`); see [`web/README.md`](web/README.md).
 
+### The JavaScript workspace
+
+The console, `@loams/ui`, the plugins, Loams Desktop and the TypeScript SDK are one pnpm workspace at the repository root, orchestrated by Nx ([`docs/monorepo.md`](docs/monorepo.md)). None of these checks needs Rust or `protoc`:
+
+```sh
+corepack enable                               # selects the pnpm pinned in package.json
+pnpm install --frozen-lockfile
+pnpm build && pnpm typecheck && pnpm test     # every JavaScript project, through Nx
+pnpm affected --base=origin/dev               # only the projects your branch touches
+(cd web && pnpm lint)                         # vp check (Oxlint + Oxfmt), for web/
+
+# Loams Desktop: unit tests, then the Playwright smoke against a fake engine
+pnpm --filter @loams/desktop test
+pnpm --filter @loams/desktop typecheck
+pnpm --filter @loams/desktop exec install-electron   # once: downloads the Electron binary
+pnpm nx run @loams/console:build                     # the renderer the smoke loads
+pnpm --filter @loams/desktop build
+LOAMS_E2E_ENGINE=fake pnpm --filter @loams/desktop test:e2e
+
+# Generated code: CI regenerates it and fails on a diff, so never hand-edit it
+pnpm --filter @loams/proto generate   # the console's Connect stubs, from proto/
+scripts/sdk/gen.sh descriptors        # the Ruby and Kotlin descriptor sets
+```
+
+CI runs the workspace checks as "Web and mobile" ([`monorepo.yml`](.github/workflows/monorepo.yml)) and the desktop ones as "Desktop" ([`desktop-electron.yml`](.github/workflows/desktop-electron.yml)), which also builds the real engine for its smoke.
+
 ### What CI runs when
 
 - **Always:** fmt, clippy and the workspace tests; the crash gate; the cluster tests; the Qdrant and Elasticsearch client suites; the simulation seed sweep; `cargo-deny`; the web console; and the Loams Live protos.
@@ -128,7 +154,15 @@ The client conformance suites live in [`crates/loams-qdrant/tests/python`](crate
 1. **Fork and branch** from `dev`. Open your PR against `dev`; `main` is the release branch. Name the branch after the change, for example `log-retention-doc`.
 2. **Keep it small.** A PR should do one thing. Split refactors from behavior changes, and stack PRs when a change is large.
 3. **Fill in the template.** Say what changed, why, and how you tested it.
-4. **Review.** [CodeRabbit](https://coderabbit.ai) reviews every PR automatically, and a maintainer reviews after it. Address or answer each comment; it is fine to disagree with a bot comment and say why. Small follow-ups can go in a follow-up PR if the reviewer agrees.
+4. **Review.** A maintainer reviews every PR. [Greptile](https://www.greptile.com) is an opt-in AI reviewer: it reviews a PR into `dev` or `main` only when the PR carries the `review:greptile` label (configured in [`.greptile/`](.greptile/config.json)). Add the label for:
+   - security or auth changes;
+   - storage formats and data migrations;
+   - release-path, packaging or CI-permission changes;
+   - new crates or public APIs;
+   - design docs being approved;
+   - anything a maintainer asks for.
+
+   Routine fixes, docs, dependency bumps and generated files go without AI review. The label triggers one review when it is added; comment `@greptileai` to re-run it after new pushes. Each PR gets one AI reviewer, never two: CodeRabbit's automatic review is off in this repository (`.coderabbit.yaml`), and runs only if someone comments `@coderabbitai review`. Address or answer each comment; it is fine to disagree with a bot comment and say why. Small follow-ups can go in a follow-up PR if the reviewer agrees.
 5. **CI must be green** before merge. If a failure looks unrelated to your change, say so in the PR.
 6. **Merge.** Committers and maintainers merge into `dev` with a merge commit once the review is done and CI is green. Maintainers merge `dev` into `main` for releases. The contributor roles are described in [GOVERNANCE.md](GOVERNANCE.md), and the current maintainers are listed in [MAINTAINERS.md](MAINTAINERS.md).
 

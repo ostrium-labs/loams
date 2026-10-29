@@ -104,18 +104,25 @@ on:
       - "docs/design/46-loams-postgres-production.md"
       - ".github/workflows/pg2.yml"
 
-# A newer push to the same pull request or branch supersedes the older run
-# (the runner pool is shared by every workflow); main runs to completion.
+# A newer push to the same pull request supersedes the older run (the runner
+# pool is shared by every workflow). dev runs to completion, so its cache save
+# lands; main, a dispatch (the nightly) and a candidate run do too.
 concurrency:
   # A candidate run (workflow_call) is its own group, so it never cancels or
   # waits on the branch's own runs.
-  group: pg2-${{ inputs.candidate-pins && format('candidate-{0}', github.run_id) || github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: pg2-${{ inputs.candidate-pins && format('candidate-{0}', github.run_id) || format('{0}-{1}', github.event_name, github.event.pull_request.number || github.ref) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
 
 env:
+  # CI builds are never debugged: no debug info in dev and test builds (smaller
+  # caches, faster links; a panic still names its file and line) and no
+  # incremental artifacts. rust-cache sets CARGO_INCREMENTAL=0 too; this covers
+  # the jobs without it.
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_DEV_DEBUG: 0
   # The headers' source: images.storage in deploy/pins/loams-postgres-images.toml, written
   # by scripts/nf1/pins.py (NF1 Task 2). Since NF1 Task 14 a Loams Postgres release; the
   # golden fixtures' safekeeper came from Neon 77e22e4b (16.9, 17.5, R31.6). Since
@@ -129,7 +136,7 @@ jobs:
   postgres-protos:
     if: ${{ !inputs.candidate-pins }}
     name: Protos
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -141,7 +148,7 @@ jobs:
           package_json_file: package.json
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - name: install
@@ -150,28 +157,41 @@ jobs:
         run: web/packages/proto/node_modules/.bin/buf lint
       # Against the pull request's base: a release pull request into main is
       # cut from dev and lacks what dev gained since, which is not a break.
+      # A push is checked against the commit it replaced (`before`), not the
+      # branch's current head: dev moves while a run waits, and a newer head's
+      # additions read as deletions from an older commit.
       - name: buf breaking (FILE, against the base branch)
         env:
           BASE: ${{ github.base_ref || 'dev' }}
+          BEFORE: ${{ github.event_name == 'push' && github.event.before || '' }}
         run: |
-          git fetch --no-tags origin "$BASE"
-          web/packages/proto/node_modules/.bin/buf breaking --against ".git#branch=origin/$BASE"
+          if [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ]; then
+            git fetch --no-tags origin "$BEFORE"
+            web/packages/proto/node_modules/.bin/buf breaking --against ".git#ref=$BEFORE"
+          else
+            git fetch --no-tags origin "$BASE"
+            web/packages/proto/node_modules/.bin/buf breaking --against ".git#branch=origin/$BASE"
+          fi
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
+        with:
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
       - name: the descriptor, reasons and route-map tests
         run: cargo test -p loams-proto --test postgres --locked
 
   neon-client:
     if: ${{ !inputs.candidate-pins }}
     name: Client fixtures
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v7
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       # Shared with pg2-e2e.yml's neon-deploy, which only reads it.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
           shared-key: pg2-loams-postgres
           save-if: ${{ github.ref == 'refs/heads/dev' }}
@@ -182,9 +202,9 @@ jobs:
 
   wal-decoder:
     # Full tier: a pull request into main, a dispatch (the nightly), not dev.
-    if: github.event_name == 'workflow_dispatch' || github.base_ref == 'main'
+    if: github.event_name == 'workflow_dispatch' || github.base_ref == 'main' || startsWith(github.base_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'ci:full')
     name: WAL decoder
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -213,6 +233,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev libclang-dev
       # Shared with pg2-e2e.yml's pageserver-loams-wal, which only reads it.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
           workspaces: crates/loams-wal-decoder
           cache-directories: ~/.cargo/git/db
@@ -247,14 +268,15 @@ jobs:
 
   pg-control:
     # Full tier: a pull request into main, a dispatch (the nightly), not dev.
-    if: ${{ !inputs.candidate-pins && (github.event_name == 'workflow_dispatch' || github.base_ref == 'main') }}
+    if: ${{ !inputs.candidate-pins && (github.event_name == 'workflow_dispatch' || github.base_ref == 'main' || startsWith(github.base_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'ci:full')) }}
     name: pg-control
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v7
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
           shared-key: pg2-loams-pg-control
           save-if: ${{ github.ref == 'refs/heads/dev' }}
@@ -274,14 +296,15 @@ jobs:
 
   pg-control-role:
     # Full tier: a pull request into main, a dispatch (the nightly), not dev.
-    if: ${{ !inputs.candidate-pins && (github.event_name == 'workflow_dispatch' || github.base_ref == 'main') }}
+    if: ${{ !inputs.candidate-pins && (github.event_name == 'workflow_dispatch' || github.base_ref == 'main' || startsWith(github.base_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'ci:full')) }}
     name: Engine with pg-control
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v7
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
           shared-key: pg2-loams-pg-control-role
           save-if: ${{ github.ref == 'refs/heads/dev' }}

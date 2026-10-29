@@ -19,11 +19,25 @@ import {
 } from '@loams/proto/agentd';
 import { ErrorInfoSchema } from '@loams/proto/errors';
 import { useDiffPanelStore } from '@loams/studio-ui/diff';
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import {
+  act,
+  cleanup,
+  configure,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test';
 import { DiffTab } from '../src/thread/DiffTab.js';
 import { diffRequest, isStaleDiff } from '../src/thread/diff-source.js';
 import { wrap } from './fakes.js';
+
+// The first mounts highlight the diff with a cold syntax highlighter, which takes over the
+// default 1 s on a loaded CI runner (the first two tests failed there, never locally). 4 s
+// stays under Vitest's 5 s test timeout.
+configure({ asyncUtilTimeout: 4000 });
 
 beforeAll(() => {
   globalThis.ResizeObserver ??= class {

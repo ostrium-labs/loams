@@ -3,8 +3,8 @@
 //
 //   npm-licences.mjs [--project <nx project>…] [--input <pnpm licenses json>…] [--exceptions <file>]
 //
-// Runs `pnpm --filter <project>... licenses list --prod --json` for the console, the desktop and
-// @loams/studio-ui (and the workspace packages they depend on), and checks every production
+// Runs `pnpm --filter <project>... licenses list --prod --json` for the console, the desktop,
+// @loams/studio-ui and @loams/listing (and the workspace packages they depend on), and checks every production
 // dependency against CONTRIBUTING rule 3: the allow list in deny.toml, and nothing else. It
 // parses SPDX expressions, accepts an `OR` expression when one branch is allowed (and records
 // the branch taken), and fails on anything
@@ -18,7 +18,13 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = resolve(HERE, '..', '..');
-export const DEFAULT_PROJECTS = ['@loams/console', '@loams/desktop', '@loams/studio-ui'];
+export const DEFAULT_PROJECTS = [
+  '@loams/console',
+  '@loams/desktop',
+  '@loams/studio-ui',
+  '@loams/factory',
+  '@loams/listing',
+];
 const DEFAULT_EXCEPTIONS = join(HERE, 'npm-licences.exceptions.json');
 
 // Never allowed, not even by an exception (CONTRIBUTING rule 3: no AGPL, GPL, LGPL, BSL (Business

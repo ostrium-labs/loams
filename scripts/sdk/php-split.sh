@@ -25,9 +25,25 @@ git rev-parse --verify -q "$sha:sdks/php/composer.json" >/dev/null || { echo "ph
 
 parent_args=()
 if [ "$push" = --push ]; then
-  if existing=$(git ls-remote --tags "$remote" "refs/tags/$tag^{}" | cut -f1) && [ -n "$existing" ]; then
+  # The tag this script pushes is lightweight, so look for the ref itself
+  # (`refs/tags/$tag^{}` only lists annotated tags, and never matched).
+  if existing=$(git ls-remote --tags "$remote" "refs/tags/$tag" | cut -f1) && [ -n "$existing" ]; then
     git fetch -q "$remote" "refs/tags/$tag"
     if [ "$(git rev-parse FETCH_HEAD^{tree})" = "$tree" ]; then
+      tagged=$(git rev-parse FETCH_HEAD^{commit})
+      # v0.1.2: an earlier, non-atomic push landed the tag but not main (a
+      # ruleset refused main). Catch main up when it is behind the tag.
+      main_head=$(git ls-remote "$remote" refs/heads/main | cut -f1)
+      if [ "$main_head" != "$tagged" ]; then
+        if [ -n "$main_head" ]; then
+          git fetch -q "$remote" main
+          git merge-base --is-ancestor FETCH_HEAD "$tagged" \
+            || { echo "php-split: main is not an ancestor of $tag; not moving it" >&2; exit 1; }
+        fi
+        git push "$remote" "$tagged:refs/heads/main"
+        echo "php-split: $tag was already there; main caught up to it"
+        exit 0
+      fi
       echo "php-split: $tag is already on the split repository with this tree; nothing to do"
       exit 0
     fi
@@ -57,6 +73,7 @@ test -f "$check_dir/composer.json" && test -d "$check_dir/src" && test ! -e "$ch
 echo "php-split: the archive has $(find "$check_dir" -type f | wc -l) files"
 
 if [ "$push" = --push ]; then
-  git push "$remote" "$commit:refs/heads/main" "$commit:refs/tags/$tag"
+  # Atomic: both refs or neither, so a refused main never leaves the tag behind alone.
+  git push --atomic "$remote" "$commit:refs/heads/main" "$commit:refs/tags/$tag"
   echo "php-split: pushed main and $tag"
 fi

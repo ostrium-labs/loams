@@ -1,5 +1,7 @@
 # Networking map
 
+> **Amendment (approved 2026-10-23) by [§78](78-loams-cloud-on-tidb-x.md)** (Loams Cloud on TiDB X; D1700–D1735). The public endpoints Ostrium runs become `loams.dev` (with `/cloud`), `auth.loams.dev` and the Loams Cloud control plane's API host; `console.loams.dev` is retired and `LOAMS_CORS_ORIGINS` loses it as a default in LC2 (D1705). Devices enrolled in Loams Cloud open no inbound port (D1714).
+
 This is an index, not a new design. It points each kind of network traffic in Loams at the design
 and plan that already own it, so a networking question starts in the right place. It was written on
 2026-10-15, after the owner brought an external "networking planes" proposal. The proposal's access,
@@ -33,7 +35,7 @@ How people sign in, and how operators reach machines.
 | Tailnet policy as code, tags, key expiry and approval | [§43](43-private-networking.md) §8 (D585, D589) | Proposed |
 | Hosted console sign-in: the engine identifies the caller from the tailnet (Tailscale WhoIs through the sidecar's `tailscale serve`), with no password | [§44](44-unified-api-and-sdks.md); plan [API2](../plans/2026-10-10-api2-unified-api-sdks.md) ruling S6/7.13; `deploy/release/compose.yaml` (`LOAMS_AUTH_MODE=tailscale`, `LOAMS_TAILSCALE_LISTEN`) | Ships in v0.1.0-preview.2 (owner: "option A", 2026-10-14) |
 | Other sign-in modes: OIDC (any issuer, `auth.loams.dev` by default) and API keys | [§19](19-console-identity-and-agents.md); [§10](10-operations.md) §4 | Ships in the preview |
-| Browser origins allowed to call an engine | `LOAMS_CORS_ORIGINS`, by default `https://console.loams.dev` only | Ships in v0.1.0-preview.2 |
+| Browser origins allowed to call an engine | The engine's own origin (the console it serves at `/ui/`), plus the exact origins in `LOAMS_CORS_ORIGINS`, none by default. Loams Desktop sends the engine's own origin. *Until 0.1.2 the default was `https://console.loams.dev` only (D1705, amended)* | Ships in v0.1.2 (default changed); variable since v0.1.0-preview.2 |
 
 ## 2. Control: hosted control plane to customer deployments
 
@@ -56,6 +58,7 @@ How people sign in, and how operators reach machines.
 | SQL router across shards | [§31](31-loams-router-and-verification.md) §4–§7 | In progress (RT) |
 | Engine surfaces (native, Flight SQL, Qdrant, Elasticsearch, Connect) and their credentials | [§10](10-operations.md) §4 (the surface table); [§44](44-unified-api-and-sdks.md) | Preview |
 | House (ClickHouse HTTP) on its own tailnet node | HS1; `deploy/release/compose.yaml` (profile `house-tailnet`; the House itself runs by default) | Preview; TLS between engine and House is HS1 Task 20 |
+| Kafka to Confluent Cloud: outbound only from the BYOC VM to the cluster's public endpoint (TLS with full verification, SASL/PLAIN, ports 9092 and 443); nothing in Confluent connects in, so Confluent's managed connectors that pull from Loams are not supported | [§80](80-confluent-byoc.md) §6.2 (D1825); plan [CC1](../plans/2026-10-25-cc1-confluent-byoc.md) | Module and secrets built; the connect role is CC1 Task 1 |
 | Per-tenant caps, rate limits and backpressure | [§10](10-operations.md) §3–§4; CP1 Task 6 (limits) | Partly built |
 
 ## 4. Internal: node to node

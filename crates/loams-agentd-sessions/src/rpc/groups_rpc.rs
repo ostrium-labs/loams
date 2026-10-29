@@ -186,6 +186,7 @@ impl EngineRpc {
             branch: worktree.branch.clone(),
             checkout_id: worktree.checkout_id.clone(),
             message_id: crate::new_id(),
+            command_id: None,
             phase: Phase::Queued,
             started_at_ms: None,
             finished_at_ms: None,

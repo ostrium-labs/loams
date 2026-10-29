@@ -54,31 +54,57 @@ description: |
   /usr/share/loams/console, and the systemd units loams.service and
   loams@.service.
 
-# The shared library set of a x86_64-unknown-linux-gnu Rust binary. Verified
-# 2026-10-04 with `readelf -d` on a `cargo build --release -p loams --bin loams`
-# of this tree (rust-toolchain.toml, 1.97.1), whose DT_NEEDED entries are exactly:
+# The shared library set of the packaged x86_64-unknown-linux-gnu build
+# (`cargo build --release -p loams --bin loams --features $LOAMS_PACKAGE_FEATURES`,
+# the image's feature set). Its DT_NEEDED entries are exactly:
 #
-#   libgcc_s.so.1  libc.so.6  libm.so.6  ld-linux-x86-64.so.2
+#   libz.so.1  libgcc_s.so.1  libc.so.6  libm.so.6  ld-linux-x86-64.so.2
 #
-# The server's reqwest is `default-features = false` (Cargo.toml), so it links no
-# TLS or proxy library -- that is the reason the list this short.
+# (read with `readelf -d` off the published 0.1.1 package, 2026-10-23; the
+# release workflow's "the binaries' dynamic dependencies" step fails the build
+# when the set grows). The server's reqwest is `default-features = false`
+# (Cargo.toml), so it links no TLS or proxy library.
 #
-# libm.so.6 is NOT declared separately, because every target's glibc package
-# already ships it: `libc6` on Debian and Ubuntu (glibc has carried libm since
-# 2.34), `glibc` on Fedora/RHEL/openSUSE, and `glibc` on Arch and CachyOS.
-# Verified on Arch-family by `pacman -Qo /usr/lib/libm.so.6` -> "owned by glibc".
-# There is no `libm` package on Debian to name, so declaring it would produce a
-# dependency that does not exist.
+# libz.so.1 arrived with the `mysql-wire` feature: opensrv-mysql's mysql_common
+# turns on `flate2/zlib`, which links the system zlib through libz-sys (#1105).
+# It is linked dynamically on purpose, and declared below, rather than bundled
+# with libz-sys's `static`: zlib is a base package on every distribution these
+# packages target, so the dependency costs nothing to install, and a zlib fix
+# then reaches the server through the distribution's own update instead of
+# waiting for a Loams release. docs/release/packaging.md#dependencies has the
+# comparison.
+#
+# libm.so.6 and ld-linux-x86-64.so.2 are NOT declared separately: every
+# target's glibc package ships them (`libc6` on Debian and Ubuntu, glibc having
+# carried libm since 2.34; `glibc` on Fedora, RHEL, openSUSE, Arch and CachyOS).
+# There is no `libm` package on Debian to name.
+#
+# nFPM does not translate package names between formats: `depends` is written
+# into every package as is. So the list below is in Debian's vocabulary, and
+# `overrides` gives the .rpm and the Arch package their own. (0.1.0 and 0.1.1
+# shipped Debian's names in all three, which dnf and pacman cannot resolve.)
+# scripts/release/build-artifacts.py --self-test reads each built package's
+# dependency list back and compares it with these.
 depends:
   - libgcc-s1
   - libc6
+  - zlib1g
 
-# nFPM maps the same list onto each packager's own vocabulary:
-#   deb        libgcc-s1, libc6                (already in that vocabulary)
-#   rpm        gcc, glibc
-#   archlinux  gcc-libs, glibc
-# build-artifacts.py checks the mapping against the JSON schema nFPM ships, so a
-# dependency renamed upstream fails the build rather than the install.
+overrides:
+  # By the libraries' sonames, which every RPM distribution's packages
+  # provide whatever the package is called (Fedora's libgcc and zlib-ng-compat,
+  # openSUSE's libgcc_s1 and libz1, RHEL's libgcc and zlib). These are the
+  # requirements rpmbuild itself would generate from DT_NEEDED.
+  rpm:
+    depends:
+      - libgcc_s.so.1()(64bit)
+      - libc.so.6()(64bit)
+      - libz.so.1()(64bit)
+  archlinux:
+    depends:
+      - gcc-libs
+      - glibc
+      - zlib
 
 deb:
   # The archive inside the .deb. xz needs no extra package on any supported
@@ -103,18 +129,16 @@ contents:
 
   # git's remote helper for `loams::<store-url>/ns/<ns>/repos/<repo>` URLs
   # (crates/loams-git-remote). git finds a helper by name on PATH, so it goes
-  # next to `loams` in /usr/bin. Its DT_NEEDED set is the same four libraries
-  # as the server's, so the `depends` list above covers it.
+  # next to `loams` in /usr/bin. Its DT_NEEDED set is a subset of the server's
+  # (it needs no zlib), so the `depends` list above covers it.
   - src: staging/usr/bin/git-remote-loams
     dst: /usr/bin/git-remote-loams
     file_info:
       mode: 0755
 
-  # The built web console (web/apps/console/dist, the `pnpm build` output). The
-  # server binary does not serve it: no static-file route exists in the engine
-  # today, and the console is deployed to Cloudflare by console-deploy.yml. It
-  # is packaged so an operator running their own front end has the exact assets
-  # the release built, byte for byte, next to the binary they installed.
+  # The built web console (web/apps/console/dist, the `pnpm build` output),
+  # which the engine serves at /ui/ from here (from 0.1.2), same-origin with
+  # its API: the assets the release built, byte for byte.
   - src: staging/usr/share/loams/console
     dst: /usr/share/loams/console
     file_info:

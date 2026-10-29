@@ -1,6 +1,12 @@
 # 73 — The Loams Agent Marketplace: Any Framework, Mastra First
 
+> **Amendment (approved 2026-10-23) by [§78](78-loams-cloud-on-tidb-x.md)** (Loams Cloud on TiDB X; D1700–D1735). D1461's rationale ("Ostrium hosts only the console and auth") reads "plus the Loams Cloud try-out (D1701)"; the index decision itself is unchanged.
+
 > **Amendment (approved 2026-10-21) by [§76](76-identity-and-authorization.md)** (identity and authorization: Zitadel and OpenFGA; owner, all defaults). An installed marketplace agent becomes one Zitadel machine user (`agent:<id>`) in the installing org with no grants until someone grants them; inside a sandbox it still holds only agentd's 15-minute Loams token (D1453), whose `sub` is that machine-user id (D1607, D1618).
+
+> **Amendment (approved 2026-10-23) by [§79](79-void-and-vite-plus.md)** (Void and Vite+; D1770–D1791 approved by the owner). JavaScript agent templates (D1458) are Vite+ projects (D1777). A listing that uses Void's Cloudflare-only APIs shows "Cloudflare only" (D1786).
+
+> **Addendum (2026-10-25), [§18](#18-ms1-addendum-2026-10-25)** (the marketplace seed, plan [MS1](../plans/2026-10-25-ms1-marketplace-seed.md); D1806–D1814, Q1330–Q1332). `quickjs` becomes the default self-hosted agent runtime and Mastra runs on Node or Bun (both amend D1452); Goose is a first-party ACP harness; Walrus is a public read-only tier.
 
 Status: **Approved** · 2026-10-21. The owner approved the design with every default on 2026-10-21 (and confirmed that "fx.sh" means Vercel Labs' fx, Q1142).
 
@@ -115,13 +121,13 @@ Listings show the level, the `framework` and the `language` as badges and filter
 
 | Runtime | Install | Start | Phase |
 |---|---|---|---|
-| `node` | npm package by integrity hash, lockfile included, install scripts off, into `<agentd data>/agents/<id>/<version>` | `node <entrypoint>` (ACP on stdio, or A2A on a loopback port agentd assigns) | MK0 |
+| `node` | npm package by integrity hash, lockfile included, install scripts off, into `<agentd data>/agents/<id>/<version>`; the same for both engines | `node <entrypoint>` (ACP on stdio, or A2A on a loopback port agentd assigns); with `engine: bun` (D1808), `bun --no-install --no-env-file <entrypoint>` | MK0; `bun` MS1 |
 | `python` | Wheels only (no sdist builds, so no build-time code) with hashes, locked, into a per-agent virtual environment created by a pinned `uv` | `python -m <module>` or a console script | MK1 |
 | `oci` | Image by digest, signature verified | Through the sandbox's container path or the host's runtime | MK2 |
 | `binary` | Archive by SHA-256, per OS and architecture | The binary | MK1 (harnesses such as fx) |
 | `wasm` | — | — | Deferred: no agent framework ships WASM agents yet; fx's WASM SDK is for embedding (Q1144 notes it) |
 
-Runtime versions (`node >= 22.13`, `python >= 3.11`) are declared; agentd supplies them (Q1122).
+Runtime versions (`node >= 22.13`, `python >= 3.11`, `bun >= 1.4.4`) are declared; agentd supplies them (Q1122). A `node` listing's `engine` is `node` (the default) or `bun`, at the Bun version D1791 pins; agentd refuses to install a Bun listing while Bun is not installed (plan MS1 Task 6).
 
 ### 3.3 The agent environment contract (D1453)
 
@@ -158,7 +164,7 @@ Authors write it where their ecosystem keeps metadata (Q1125): a `loams.agent` b
 | Identity | `id` (`<namespace>/<name>`), `kind` (`agent`, `harness`, `mcp-server`), `version`, `title`, `summary`, `description`, `icon`, `licence` (SPDX), `source` (repository and commit), `publisher`, `support`, `security_contact` |
 | Framework | `framework { name, version }` (`mastra`, `pydantic-ai`, `langgraph`, `crewai`, `openai-agents`, `google-adk`, `microsoft-agent-framework`, `eve`, `other`), `language` |
 | Artifact | `artifact { type: npm \| pypi \| oci \| archive, name, version, integrity }`; `provenance { type, ref }` (§6) |
-| Runtime | `runtime { kind: node \| python \| oci \| binary, version }`, `entrypoint` (a module, command or image entrypoint), `targets` (`agentd`, `byoc-server`, `app-byoc`) |
+| Runtime | `runtime { kind: node \| python \| oci \| binary, engine: node \| bun (node only, D1808), version }`, `entrypoint` (a module, command or image entrypoint), `targets` (`agentd`, `byoc-server`, `app-byoc`) |
 | Surfaces | `surfaces` (`acp`; `a2a` with the Agent Card embedded; `mcp`; `responses`); at least one of `acp` and `a2a` |
 | Capabilities | `loams { postgres, collections, qdrant, elasticsearch, streams, live, durable, memory, house }` used; `connectors` (registry ids); `mcp_servers` (listing ids with version ranges) |
 | Tools | Each tool: `name`, `description`, `risk` (`read`, `write`, `egress`, `destructive`), and the MCP server it comes from if any. **Undeclared tools are refused at run time** (§7.4) |
@@ -333,6 +339,8 @@ Exact versions and the lockfile the index tested; integrity hashes; no install s
 | **Mastra templates and platform** | `create-mastra --template`; 26 templates; no marketplace; hosted platform with a free tier and a $250/month Team plan ([pricing](https://mastra.ai/blog/mastra-platform-pricing), 2026-07-17) | Templates as "create"; a partner listing | Competing with Mastra's hosting |
 | **Google Cloud Agent Registry** | Registers A2A 0.3 and 1.0 agents in Google Cloud ([docs](https://docs.cloud.google.com/agent-registry/register-agents)) | A2A cards as listing metadata | A cloud-bound registry |
 | **Claude Code plugin marketplaces** | A `marketplace.json` in any Git repository, pinned by ref or SHA ([docs](https://code.claude.com/docs/en/plugin-marketplaces)) | Git-hosted indexes and many sources | — |
+| **Goose** | An open-source Rust agent, Apache-2.0, with MCP extensions and recipes; serves ACP over stdio (`goose acp`) and over HTTP or WebSocket (`goose serve`) ([repository](https://github.com/aaif-goose/goose), [ACP guide](https://goose-docs.ai/docs/gdk/acp), read 2026-10-25) | A first-party ACP harness, launched as a process under the environment contract (D1809) | Embedding its SDK; recipes as listings |
+| **Walrus** (Mysten Labs) | Decentralised blob storage, Apache-2.0; public content-addressed blobs bought per epoch; HTTP aggregators read, publishers write; no public Mainnet publisher ([web API](https://docs.wal.app/usage/web-api.html), [network reference](https://docs.wal.app/docs/network-reference), read 2026-10-25) | A public read-only tier for artifacts, project knowledge and the build cache, every read checked against a signed SHA-256 (D1810–D1814) | Private data; a `Store` backend; wallets and payments |
 
 None combines listings in any framework that **install into the user's own environment**, show their data access as a Place before consent, are proved by a conformance run, and execute under approvals, budgets and a sandbox.
 
@@ -425,3 +433,23 @@ All read 2026-10-21 unless a date is given.
 - Registries and stores: MCP Registry ([about](https://modelcontextprotocol.io/registry/about), [moderation](https://modelcontextprotocol.io/registry/moderation-policy), [charter](https://modelcontextprotocol.io/community/registry/charter), [repository](https://github.com/modelcontextprotocol/registry), [`server.json` schema](https://raw.githubusercontent.com/modelcontextprotocol/registry/main/docs/reference/server-json/draft/server.schema.json)); OpenAI ([FAQ](https://help.openai.com/en/articles/20001519-custom-gpt-retirement-and-migration-faq), [Apps SDK](https://developers.openai.com/apps-sdk/deploy/submission)); [Smithery](https://smithery.ai/future) and [SC World](https://scworld.com/news/smithery-ai-fixes-path-traversal-flaw-that-exposed-3000-mcp-servers); [Glama](https://glama.ai/mcp/servers); [Docker MCP Catalog](https://docs.docker.com/ai/mcp-catalog-and-toolkit/catalog.md); [Vercel Marketplace](https://vercel.com/blog/ai-agents-and-services-on-the-vercel-marketplace); [Cloudflare](https://developers.cloudflare.com/agents/getting-started/quick-start); Mastra [templates](https://mastra.ai/templates), [create-mastra](https://mastra.ai/reference/cli/create-mastra), [pricing](https://mastra.ai/blog/mastra-platform-pricing) (2026-07-17); [Google Cloud Agent Registry](https://docs.cloud.google.com/agent-registry/register-agents); [Claude Code plugin marketplaces](https://code.claude.com/docs/en/plugin-marketplaces).
 - Supply chain: [npm trusted publishers](https://docs.npmjs.com/trusted-publishers), [classic tokens revoked](https://github.blog/changelog/2025-12-09-npm-classic-tokens-revoked-session-based-auth-and-cli-token-management-now-available/) (2025-12-09), [CVE-2026-22703](https://nvd.nist.gov/vuln/detail/CVE-2026-22703), [CISA on Shai-Hulud](https://www.cisa.gov/news-events/alerts/2025/09/23/widespread-supply-chain-compromise-impacting-npm-ecosystem) (2025-09-23), the `@mastra/*` compromise ([The Hacker News](https://thehackernews.com/2026/06/144-mastra-npm-packages-compromised-via.html), [Snyk](https://snyk.io/blog/a-forgotten-contributor-account-compromised-the-entire-mastra-npm-package-scope/)).
 - This repository at `origin/dev` `b281c2dde`; `ostrium-labs/loams-mastra` `main` `c1097d8`.
+
+## 18. MS1 addendum (2026-10-25)
+
+The owner set the direction for the marketplace's first part, the **seed**, on 2026-10-25, and said "start". Plan [MS1](../plans/2026-10-25-ms1-marketplace-seed.md) carries it out (track MS; D1806). Nothing above changes except where a decision below amends it.
+
+| # | Decision | Amends | Status |
+|---|---|---|---|
+| D1806 | Track MS and plan MS1; the 2026-10-24 MK pause is lifted for MS1's scope only (with MK0 Task 4b) | — | Approved (owner, 2026-10-25) |
+| D1807 | **`quickjs`** is the default agent runtime for self-hosted Loams: an `agent` profile on `loams-live-js`'s isolated QuickJS worker, every capability a host call through agentd, ACP over the worker's stdio; a spike decides go or no-go first | D1452 (§3.2) | Approved (owner, 2026-10-25) |
+| D1808 | Mastra agents run on the `node` runtime with `engine: node \| bun` | D1452 (§3.2) | Approved (owner, 2026-10-25) |
+| D1809 | **Goose** is a first-party ACP harness (`goose acp`), a process and not a library, under the environment contract | — (§3.7, D1464) | Approved (owner, 2026-10-25) |
+| D1810 | **Walrus** is a public, read-only tier, off by default, for public data only: artifacts, project knowledge, the build cache. The bucket stays the truth (D1); never a `Store` backend | — | Approved (owner, 2026-10-25) |
+| D1811 | The Walrus **fast path**: HTTP only, hedged reads, SHA-256 on every read, a local verified cache, no Sui; Testnet first | — | Approved (owner, 2026-10-25) |
+| D1812 | A `walrus` artifact location beside the npm or archive one; Sigstore provenance still verified; the index stays metadata-only | D1455 (§3.6), within D1460 (§5) | Approved (owner, 2026-10-25) |
+| D1813 | A read-only verifiable project knowledge cache: a quilt per commit, a signed manifest in the bucket, `knowledge.get` and `knowledge.search` in agentd's MCP shim | — | Approved (owner, 2026-10-25) |
+| D1814 | A Walrus build cache tier after the bucket, with D398's trust classes and a signed key manifest in the bucket | D398 (§36 §8), additive | Approved (owner, 2026-10-25) |
+
+Open questions: **Q1330** (Mainnet writes: an own publisher or the Upload Relay), **Q1331** (the knowledge cache's content set), **Q1332** (who pays for and renews storage epochs). The full rows are in the [decision log](13-decision-log.md).
+
+What this does not do: no Walrus `Store` backend, no private data on Walrus, no Sui wallets or payments, no embedded `goose-sdk`, no goose recipes as listings. §3.2's runtime table gains `quickjs` (self-hosted default, MS1) when MS1 Task 2 merges; `node`'s `engine` choice is in it (MS1 Task 6).

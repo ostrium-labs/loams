@@ -1,0 +1,153 @@
+<testsuites name="temporal-gateway">
+  <testsuite name="temporal-gateway" tests="26" failures="0" errors="0" skipped="0">
+    <properties>
+      <property name="run" value="2026-10-27, dev 0e9c0e8fb, run.sh on loopback: loams-temporal in development mode (memory store, in-process Resonate), the corpus's Go and TypeScript generators" />
+      <property name="source" value="last-run/go-ts.junit.xml" />
+    </properties>
+    <testcase classname="temporal-gateway" name="gateway_dx1_scenarios_go" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_scenarios_ts" />
+    <testcase classname="temporal-gateway" name="gateway_hello_go" />
+    <testcase classname="temporal-gateway" name="gateway_hello_ts" />
+    <testcase classname="temporal-gateway" name="gateway_signal_go" />
+    <testcase classname="temporal-gateway" name="gateway_signal_ts" />
+    <testcase classname="temporal-gateway" name="gateway_histories_replay_go" />
+    <testcase classname="temporal-gateway" name="gateway_histories_replay_ts" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_go_hello" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_go_two_activities_sequential" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_go_activity_parallel_fanout_10" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_go_signal_then_complete" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_go_query_while_running" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_go_cancel_requested" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_go_terminated" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_go_workflow_failed_application_error" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_go_activity_heartbeat_details" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ts_hello" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ts_two_activities_sequential" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ts_activity_parallel_fanout_10" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ts_signal_then_complete" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ts_query_while_running" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ts_cancel_requested" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ts_terminated" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ts_workflow_failed_application_error" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ts_activity_heartbeat_details" />
+  </testsuite>
+  <testsuite name="temporal-gateway" tests="13" failures="0" errors="0" skipped="9">
+    <properties>
+      <property name="run" value="2026-10-28, dev 7968882ff, temporal-gateway.yml run 40620469286 (sdk-leg python): the temporal-gateway profile (Postgres store, the engine's Resonate)" />
+      <property name="source" value="last-run/python.junit.xml" />
+    </properties>
+    <testcase classname="temporal-gateway" name="gateway_dx1_scenarios_python" />
+    <testcase classname="temporal-gateway" name="gateway_hello_python" />
+    <testcase classname="temporal-gateway" name="gateway_signal_python" />
+    <testcase classname="temporal-gateway" name="gateway_histories_replay_python" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_python_hello">
+      <skipped message="the corpus has no python/hello history yet (generate.sh --langs python)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_python_two_activities_sequential">
+      <skipped message="the corpus has no python/two_activities_sequential history yet (generate.sh --langs python)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_python_activity_parallel_fanout_10">
+      <skipped message="the corpus has no python/activity_parallel_fanout_10 history yet (generate.sh --langs python)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_python_signal_then_complete">
+      <skipped message="the corpus has no python/signal_then_complete history yet (generate.sh --langs python)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_python_query_while_running">
+      <skipped message="the corpus has no python/query_while_running history yet (generate.sh --langs python)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_python_cancel_requested">
+      <skipped message="the corpus has no python/cancel_requested history yet (generate.sh --langs python)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_python_terminated">
+      <skipped message="the corpus has no python/terminated history yet (generate.sh --langs python)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_python_workflow_failed_application_error">
+      <skipped message="the corpus has no python/workflow_failed_application_error history yet (generate.sh --langs python)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_python_activity_heartbeat_details">
+      <skipped message="the corpus has no python/activity_heartbeat_details history yet (generate.sh --langs python)" />
+    </testcase>
+  </testsuite>
+  <testsuite name="temporal-gateway" tests="13" failures="0" errors="0" skipped="9">
+    <properties>
+      <property name="run" value="2026-10-28, dev 7968882ff, temporal-gateway.yml run 40620469286 (sdk-leg dotnet): the temporal-gateway profile (Postgres store, the engine's Resonate); the differential against histories/dotnet (compat mode) was added after this run, by #1484" />
+      <property name="source" value="last-run/dotnet.junit.xml" />
+    </properties>
+    <testcase classname="temporal-gateway" name="gateway_dx1_scenarios_dotnet" />
+    <testcase classname="temporal-gateway" name="gateway_hello_dotnet" />
+    <testcase classname="temporal-gateway" name="gateway_signal_dotnet" />
+    <testcase classname="temporal-gateway" name="gateway_histories_replay_dotnet" />
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_dotnet_hello">
+      <skipped message="the corpus has no dotnet/hello history yet (generate.sh --langs dotnet)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_dotnet_two_activities_sequential">
+      <skipped message="the corpus has no dotnet/two_activities_sequential history yet (generate.sh --langs dotnet)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_dotnet_activity_parallel_fanout_10">
+      <skipped message="the corpus has no dotnet/activity_parallel_fanout_10 history yet (generate.sh --langs dotnet)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_dotnet_signal_then_complete">
+      <skipped message="the corpus has no dotnet/signal_then_complete history yet (generate.sh --langs dotnet)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_dotnet_query_while_running">
+      <skipped message="the corpus has no dotnet/query_while_running history yet (generate.sh --langs dotnet)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_dotnet_cancel_requested">
+      <skipped message="the corpus has no dotnet/cancel_requested history yet (generate.sh --langs dotnet)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_dotnet_terminated">
+      <skipped message="the corpus has no dotnet/terminated history yet (generate.sh --langs dotnet)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_dotnet_workflow_failed_application_error">
+      <skipped message="the corpus has no dotnet/workflow_failed_application_error history yet (generate.sh --langs dotnet)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_dotnet_activity_heartbeat_details">
+      <skipped message="the corpus has no dotnet/activity_heartbeat_details history yet (generate.sh --langs dotnet)" />
+    </testcase>
+  </testsuite>
+  <testsuite name="temporal-gateway" tests="13" failures="4" errors="0" skipped="9">
+    <properties>
+      <property name="run" value="2026-10-28, tsdk-ruby 21989fcd6 (the head #1376 merged), temporal-sdk-ruby.yml run 40649935772: the temporal-gateway profile. The leg stopped in the Ruby worker's own self-test (ScenariosTest, test_every_scenario_has_a_workflow) before any scenario reached the gateway, so its failed cells are the Ruby leg's, not the gateway's" />
+      <property name="source" value="last-run/ruby.junit.xml" />
+    </properties>
+    <testcase classname="temporal-gateway" name="gateway_dx1_scenarios_ruby">
+      <failure message="    test/scenarios_test.rb:23:in 'ScenariosTest#test_every_scenario_has_a_workflow'&#10;&#10;4 runs, 6 assertions, 0 failures, 1 errors, 0 skips" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_hello_ruby">
+      <failure message="no completed hello history" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_signal_ruby">
+      <failure message="no completed signal_then_complete history" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_histories_replay_ruby">
+      <failure message="replay.rb:52:in 'Corpus::Replay.run': no histories in /out/histories/ruby (RuntimeError)&#10;&#09;from replay.rb:71:in '&lt;main&gt;'" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ruby_hello">
+      <skipped message="the corpus has no ruby/hello history yet (generate.sh --langs ruby)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ruby_two_activities_sequential">
+      <skipped message="the corpus has no ruby/two_activities_sequential history yet (generate.sh --langs ruby)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ruby_activity_parallel_fanout_10">
+      <skipped message="the corpus has no ruby/activity_parallel_fanout_10 history yet (generate.sh --langs ruby)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ruby_signal_then_complete">
+      <skipped message="the corpus has no ruby/signal_then_complete history yet (generate.sh --langs ruby)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ruby_query_while_running">
+      <skipped message="the corpus has no ruby/query_while_running history yet (generate.sh --langs ruby)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ruby_cancel_requested">
+      <skipped message="the corpus has no ruby/cancel_requested history yet (generate.sh --langs ruby)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ruby_terminated">
+      <skipped message="the corpus has no ruby/terminated history yet (generate.sh --langs ruby)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ruby_workflow_failed_application_error">
+      <skipped message="the corpus has no ruby/workflow_failed_application_error history yet (generate.sh --langs ruby)" />
+    </testcase>
+    <testcase classname="temporal-gateway" name="gateway_dx1_differential_ruby_activity_heartbeat_details">
+      <skipped message="the corpus has no ruby/activity_heartbeat_details history yet (generate.sh --langs ruby)" />
+    </testcase>
+  </testsuite>
+</testsuites>

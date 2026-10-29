@@ -7,6 +7,8 @@
 //                                                 (LOAMS_API, default loams-apps-mock
 //                                                 on 127.0.0.1:8084), cookie session
 //   pnpm dev, then open /?demo                  → demo mode (an in-browser mock)
+//   console.loams.dev/?demo                     → demo mode on a hosted deploy,
+//                                                 which is the only way in without a tailnet
 //   VITE_LOAMS_APPS_URL=http://127.0.0.1:8084 \
 //   VITE_LOAMS_DEV_BEARER=mock-access-usr_omar pnpm dev
 //                                               → straight at the mock, with a bearer
@@ -21,7 +23,16 @@ import { parsePatch, THIRD_PARTY_FLAG } from '@loams/console-host';
 import { createMockTransport } from '@loams/console-host/testing';
 import { createWebPlatform } from '@loams/platform-web';
 import samplesYml from '../../catalog/samples.yml?raw';
-import { servedPagesPatch, webManifests, webModules } from '../hosted/edition.js';
+import { demoRequested } from '../hosted/demo.js';
+import {
+  DEMO_PACKAGE,
+  demoManifest,
+  demoPatch,
+  demoPlugin,
+  servedPagesPatch,
+  webManifests,
+  webModules,
+} from '../hosted/edition.js';
 import { startHosted } from '../hosted/start.js';
 import { loadRuntimeConfig } from '../runtime-config.js';
 import { startDesktop } from './desktop.js';
@@ -36,7 +47,7 @@ if (moved) globalThis.history.replaceState(null, '', moved);
 const appsUrl = import.meta.env.DEV
   ? (import.meta.env.VITE_LOAMS_APPS_URL as string | undefined)
   : undefined;
-const demo = new URLSearchParams(globalThis.location.search).has('demo');
+const demo = demoRequested(globalThis.location.search);
 
 const root = document.getElementById('root');
 if (root) {
@@ -51,8 +62,9 @@ if (root) {
       // The Electron shell exposes `loamsDesktop` (preload); everything else is the web path.
       if (globalThis.loamsDesktop) return startDesktop(globalThis.loamsDesktop, root);
 
-      // A console that is not served by the engine (console.loams.dev, a Vercel or
-      // Cloudflare deploy, the Compose console): sign in, connect an engine, then boot.
+      // A console that is not served by the engine (a Vercel or Cloudflare deploy, the
+      // Compose console; the hosted console.loams.dev is retired): sign in, connect an
+      // engine, then boot.
       if (config.hosted && !demo && !appsUrl) return startHosted(config, root, startConsole);
 
       const platform = createWebPlatform(
@@ -80,11 +92,17 @@ if (root) {
       return startConsole({
         platform,
         root,
-        // Demo: the sample third-party plugin (catalog/samples.yml). Otherwise the pages
-        // the engine serves (Data explorer, Streams & Links, Live, Graph, Analytics), as
-        // in the hosted edition.
-        patches: demo ? [parsePatch(samplesYml)] : [servedPagesPatch()],
-        ...(demo ? {} : { extraModules: webModules, extraManifests: webManifests }),
+        // Demo: the sample third-party plugin (catalog/samples.yml), the mock's own
+        // sample data, and the header that says so. Otherwise the pages the engine
+        // serves (Data explorer, Streams & Links, Live, Graph, Analytics), as in the
+        // hosted edition.
+        patches: demo ? [parsePatch(samplesYml), demoPatch] : [servedPagesPatch()],
+        ...(demo
+          ? {
+              extraModules: { [DEMO_PACKAGE]: async () => demoPlugin() },
+              extraManifests: [demoManifest],
+            }
+          : { extraModules: webModules, extraManifests: webManifests }),
         // Demo only: grant a sandboxed plugin what it declares (start.ts).
         grant: demo ? (manifest) => manifest.permissions : undefined,
       });

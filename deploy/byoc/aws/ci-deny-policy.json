@@ -1,0 +1,16 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "BudgetActionStopsNewSpend",
+      "Effect": "Deny",
+      "Action": [
+        "ec2:RunInstances",
+        "ecs:RunTask",
+        "ecs:CreateService",
+        "lambda:CreateFunction"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

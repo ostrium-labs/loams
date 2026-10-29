@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from "vite-plus/test";
+import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 import { LoamsLiveService } from "../src/service.js";
 import { Context } from "cordis";
 import { DataService } from "@loams-core/data";

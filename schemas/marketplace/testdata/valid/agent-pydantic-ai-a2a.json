@@ -1,0 +1,67 @@
+{
+  "id": "example-org/research-assistant",
+  "kind": "agent",
+  "version": "1.2.0-rc.1",
+  "title": "Research assistant",
+  "summary": "A Pydantic AI agent served over A2A.",
+  "licence": "MIT",
+  "source": {
+    "repository": "https://github.com/example-org/research-assistant",
+    "commit": "0123456789abcdef0123456789abcdef01234567"
+  },
+  "publisher": {
+    "name": "Example Org"
+  },
+  "framework": {
+    "name": "pydantic-ai",
+    "version": "2.59.0"
+  },
+  "language": "python",
+  "artifact": {
+    "type": "pypi",
+    "name": "research-assistant",
+    "version": "1.2.0rc1",
+    "integrity": "sha256:ba59926159d2aa256eb8739b8da7e2b574b960e1202c6d624cbe981cef996c91"
+  },
+  "provenance": {
+    "type": "pypi-pep740",
+    "ref": "https://pypi.org/integrity/research-assistant/1.2.0rc1/research_assistant-1.2.0rc1-py3-none-any.whl/provenance"
+  },
+  "runtime": {
+    "kind": "python",
+    "version": ">=3.11"
+  },
+  "entrypoint": "research_assistant.serve",
+  "targets": [
+    "agentd",
+    "byoc-server"
+  ],
+  "surfaces": {
+    "a2a": {
+      "agent_card": {
+        "name": "Research assistant",
+        "protocolVersion": "1.0",
+        "skills": [
+          {
+            "id": "research",
+            "name": "Research"
+          }
+        ]
+      }
+    },
+    "mcp": {
+      "transport": "streamable-http"
+    },
+    "responses": {}
+  },
+  "loams": {
+    "postgres": true
+  },
+  "tools": [],
+  "models": {
+    "api": [
+      "responses"
+    ]
+  },
+  "pricing": "free"
+}

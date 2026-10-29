@@ -522,7 +522,11 @@ async fn partition_by_other_is_36() {
         )
         .await;
         let t = table(&house, "default", &format!("w{i}")).await;
-        assert_eq!(t.metadata.default_partition_spec().fields().len(), 0, "{by}");
+        assert_eq!(
+            t.metadata.default_partition_spec().fields().len(),
+            0,
+            "{by}"
+        );
     }
     refused(
         addr,
@@ -541,7 +545,9 @@ async fn unsupported_type_is_48() {
         "UInt256",
         "Decimal(50, 2)",
         "Nested(a UInt8, b String)",
-        "JSON",
+        // `JSON` is stored as its text (HE1 R9.63); inside a container it is not.
+        "Array(JSON)",
+        "Dynamic",
         "IntervalDay",
     ] {
         refused(

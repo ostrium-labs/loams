@@ -19,6 +19,12 @@
 //!   after the daemon restarts. Its run is gone by then: answering it clears
 //!   it (and an "always" is still remembered), and when the revived turn asks
 //!   the same thing again, the new ask takes the old one's place.
+//! - **Typed approvals** (design §72 §5.2, plan FT1 FT0 Task 4): the factory
+//!   loop's plan, merge and deploy gates. `RequestApproval` lists one in the
+//!   same queue (tool `factory.<kind>`) with no run waiting on it, so it
+//!   outlives turns and has no timeout; the person's answer is kept in the
+//!   store (`typed_approvals`), and the tool it gates spends it once
+//!   ([`Approvals::use_typed`]).
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -32,8 +38,11 @@ use loams_agentd_proto::AgentEvent;
 use loams_agentd_proto::approvals::{
     APPROVAL_NOT_PENDING, Approval, ApprovalDecision, ApprovalList, ApprovalMode, ToolRisk,
 };
+use loams_agentd_proto::factory_loop::{
+    APPROVAL_MISMATCH, APPROVAL_REQUIRED, MAX_APPROVAL_SUMMARY, TypedApproval, TypedApprovalState,
+};
 use loams_agentd_proto::notify::NotificationKind;
-use loams_agentd_store::{DocsStore, PendingApprovalRow};
+use loams_agentd_store::{DocsStore, PendingApprovalRow, TypedApprovalRow};
 use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::EngineError;
@@ -92,6 +101,123 @@ pub enum ResolveError {
     Engine(#[from] EngineError),
 }
 
+/// Why a typed approval was refused or could not be spent.
+#[derive(Debug, thiserror::Error)]
+pub enum TypedApprovalError {
+    #[error("bad_params: {0}")]
+    BadParams(String),
+    #[error("not_found: no approval {0}")]
+    NotFound(String),
+    /// Not (yet) approved by a person.
+    #[error("{APPROVAL_REQUIRED}: approval {id} is {state}")]
+    Required { id: String, state: &'static str },
+    /// Another chat's, another kind, another payload, or already used.
+    #[error("{APPROVAL_MISMATCH}: {0}")]
+    Mismatch(String),
+    #[error(transparent)]
+    Engine(#[from] EngineError),
+}
+
+/// The tool name a typed approval is listed under.
+pub fn typed_tool(kind: &str) -> String {
+    format!("factory.{kind}")
+}
+
+/// A kind is one lowercase word: `plan`, `merge`, `deploy`, ….
+pub fn valid_kind(kind: &str) -> bool {
+    (1..=32).contains(&kind.len())
+        && kind.starts_with(|c: char| c.is_ascii_lowercase())
+        && kind
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
+}
+
+/// SHA-256 (hex) of `payload`'s canonical JSON: object keys sorted, no
+/// whitespace. The daemon computes every payload hash, so the factory host
+/// never has to agree with it on a serialisation.
+pub fn payload_hash(payload: &serde_json::Value) -> String {
+    use sha2::{Digest, Sha256};
+    fn canonical(value: &serde_json::Value, out: &mut String) {
+        match value {
+            serde_json::Value::Object(map) => {
+                let mut keys: Vec<&String> = map.keys().collect();
+                keys.sort();
+                out.push('{');
+                for (i, key) in keys.into_iter().enumerate() {
+                    if i > 0 {
+                        out.push(',');
+                    }
+                    out.push_str(&serde_json::Value::String(key.clone()).to_string());
+                    out.push(':');
+                    canonical(&map[key], out);
+                }
+                out.push('}');
+            }
+            serde_json::Value::Array(items) => {
+                out.push('[');
+                for (i, item) in items.iter().enumerate() {
+                    if i > 0 {
+                        out.push(',');
+                    }
+                    canonical(item, out);
+                }
+                out.push(']');
+            }
+            other => out.push_str(&other.to_string()),
+        }
+    }
+    let mut text = String::new();
+    canonical(payload, &mut text);
+    let digest = Sha256::digest(text.as_bytes());
+    digest.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// The payload a merge approval must carry for `MergeChangeRequest`.
+pub fn merge_payload(repo: &str, pr: u64, head_sha: &str) -> serde_json::Value {
+    serde_json::json!({ "repo": repo, "pr": pr, "head_sha": head_sha })
+}
+
+fn typed_risk(kind: &str) -> ToolRisk {
+    match kind {
+        "merge" | "deploy" => ToolRisk::Destructive,
+        _ => ToolRisk::Write,
+    }
+}
+
+fn typed_entry(row: &TypedApprovalRow, token: u64) -> Entry {
+    Entry {
+        approval: Approval {
+            id: row.id.clone(),
+            chat_id: row.chat_id.clone(),
+            turn_id: None,
+            tool: typed_tool(&row.kind),
+            args: serde_json::json!({
+                "kind": row.kind,
+                "summary": row.summary,
+                "payloadHash": row.payload_hash,
+            }),
+            risk: typed_risk(&row.kind),
+            created_at_ms: row.created_at,
+        },
+        waiter: None,
+        token,
+        typed: true,
+    }
+}
+
+fn typed_from_row(row: TypedApprovalRow) -> TypedApproval {
+    TypedApproval {
+        state: TypedApprovalState::parse(&row.state).unwrap_or(TypedApprovalState::Denied),
+        id: row.id,
+        chat_id: row.chat_id,
+        kind: row.kind,
+        summary: row.summary,
+        payload_hash: row.payload_hash,
+        created_at_ms: row.created_at,
+        decided_at_ms: row.decided_at,
+    }
+}
+
 /// The engine's approvals: modes, the pending list and "always".
 #[derive(Clone)]
 pub struct Approvals {
@@ -134,6 +260,9 @@ struct Entry {
     waiter: Option<Waiter>,
     /// Matches the entry's timer to the entry.
     token: u64,
+    /// A typed approval (`RequestApproval`): no run waits, no turn ends it,
+    /// and its decision is kept.
+    typed: bool,
 }
 
 struct Waiter {
@@ -202,7 +331,12 @@ impl Approvals {
                 },
                 waiter: None,
                 token,
+                typed: false,
             });
+        }
+        for row in me.inner.store.pending_typed_approvals()? {
+            let token = me.inner.tokens.fetch_add(1, Ordering::Relaxed);
+            state.pending.push(typed_entry(&row, token));
         }
         *lock(&me.inner.state) = state;
         let timeout = settings.timeout;
@@ -312,6 +446,7 @@ impl Approvals {
         // A revived turn asking what its predecessor asked takes its place.
         let adopted = state.pending.iter_mut().find(|e| {
             e.waiter.is_none()
+                && !e.typed
                 && e.approval.chat_id == chat_id
                 && e.approval.tool == ask.tool
                 && e.approval.args == args
@@ -356,6 +491,7 @@ impl Approvals {
                 approval: approval.clone(),
                 waiter: Some(waiter),
                 token,
+                typed: false,
             });
             approval
         };
@@ -443,7 +579,7 @@ impl Approvals {
                 _ => return Err(ResolveError::Ambiguous(call_id.to_owned())),
             };
             let entry = state.pending.remove(at);
-            if decision == ApprovalDecision::Always {
+            if decision == ApprovalDecision::Always && !entry.typed {
                 state
                     .always
                     .insert((entry.approval.chat_id.clone(), entry.approval.tool.clone()));
@@ -451,6 +587,19 @@ impl Approvals {
             entry
         };
         let chat = &entry.approval.chat_id;
+        if entry.typed {
+            let state = if decision.allows() {
+                TypedApprovalState::Approved
+            } else {
+                TypedApprovalState::Denied
+            };
+            self.inner
+                .store
+                .decide_typed_approval(call_id, state.as_str(), crate::now_ms())
+                .map_err(EngineError::from)?;
+            self.bump();
+            return Ok(());
+        }
         if let Err(error) = self.inner.store.delete_pending_approval(chat, call_id) {
             tracing::warn!(%chat, %error, "the answered approval was not removed");
         }
@@ -490,7 +639,7 @@ impl Approvals {
             let mut state = lock(&self.inner.state);
             let mut kept = Vec::with_capacity(state.pending.len());
             for mut entry in std::mem::take(&mut state.pending) {
-                if entry.approval.chat_id != chat_id {
+                if entry.approval.chat_id != chat_id || entry.typed {
                     kept.push(entry);
                     continue;
                 }
@@ -543,6 +692,9 @@ impl Approvals {
         if let Err(error) = self.inner.store.delete_chat_approvals(chat_id) {
             tracing::warn!(chat = %chat_id, %error, "a deleted thread's approvals were not removed");
         }
+        if let Err(error) = self.inner.store.delete_chat_typed_approvals(chat_id) {
+            tracing::warn!(chat = %chat_id, %error, "a deleted thread's typed approvals were not removed");
+        }
         self.bump();
     }
 
@@ -588,6 +740,142 @@ impl Approvals {
 
     fn bump(&self) {
         self.inner.changed.send_modify(|version| *version += 1);
+    }
+
+    /// List a typed approval for a person (`RequestApproval`). Only its
+    /// payload's hash is kept.
+    pub fn request_typed(
+        &self,
+        chat_id: &str,
+        kind: &str,
+        summary: &str,
+        payload: &serde_json::Value,
+    ) -> Result<TypedApproval, TypedApprovalError> {
+        if !valid_kind(kind) {
+            return Err(TypedApprovalError::BadParams(format!(
+                "an approval kind is one lowercase word, not {kind:?}"
+            )));
+        }
+        let summary = summary.trim();
+        if summary.is_empty() || summary.chars().count() > MAX_APPROVAL_SUMMARY {
+            return Err(TypedApprovalError::BadParams(format!(
+                "an approval needs a summary of at most {MAX_APPROVAL_SUMMARY} characters"
+            )));
+        }
+        let row = TypedApprovalRow {
+            id: format!("fa-{}", uuid::Uuid::new_v4()),
+            chat_id: chat_id.to_owned(),
+            kind: kind.to_owned(),
+            summary: summary.to_owned(),
+            payload_hash: payload_hash(payload),
+            state: TypedApprovalState::Pending.as_str().to_owned(),
+            created_at: crate::now_ms(),
+            decided_at: None,
+        };
+        self.inner
+            .store
+            .put_typed_approval(&row)
+            .map_err(EngineError::from)?;
+        let token = self.inner.tokens.fetch_add(1, Ordering::Relaxed);
+        lock(&self.inner.state)
+            .pending
+            .push(typed_entry(&row, token));
+        if let Some((notifications, titles)) = self.inner.notifications.get() {
+            let title = titles(chat_id)
+                .map(|t| t.trim().to_owned())
+                .filter(|t| !t.is_empty())
+                .unwrap_or_else(|| "Software Factory".to_owned());
+            notifications.push(
+                NotificationKind::Approval,
+                Some(chat_id.to_owned()),
+                None,
+                title,
+            );
+        }
+        self.bump();
+        Ok(typed_from_row(row))
+    }
+
+    /// A typed approval of `chat_id` (`GetApproval`).
+    pub fn typed(&self, chat_id: &str, id: &str) -> Result<TypedApproval, TypedApprovalError> {
+        let row = self
+            .inner
+            .store
+            .typed_approval(id)
+            .map_err(EngineError::from)?
+            .filter(|row| row.chat_id == chat_id)
+            .ok_or_else(|| TypedApprovalError::NotFound(id.to_owned()))?;
+        Ok(typed_from_row(row))
+    }
+
+    /// Spend the approval `id` for an action of `kind` with `payload` on
+    /// behalf of `chat_id`: it must be that chat's, of that kind, approved by
+    /// a person, for exactly that payload, and not used before.
+    pub fn use_typed(
+        &self,
+        chat_id: &str,
+        id: &str,
+        kind: &str,
+        payload: &serde_json::Value,
+    ) -> Result<TypedApproval, TypedApprovalError> {
+        let row = self
+            .inner
+            .store
+            .typed_approval(id)
+            .map_err(EngineError::from)?
+            .ok_or_else(|| TypedApprovalError::Required {
+                id: id.to_owned(),
+                state: "unknown",
+            })?;
+        if row.chat_id != chat_id {
+            return Err(TypedApprovalError::Mismatch(format!(
+                "approval {id} belongs to another thread"
+            )));
+        }
+        if row.kind != kind {
+            return Err(TypedApprovalError::Mismatch(format!(
+                "approval {id} is a {} approval, not {kind}",
+                row.kind
+            )));
+        }
+        match TypedApprovalState::parse(&row.state) {
+            Some(TypedApprovalState::Approved) => {}
+            Some(TypedApprovalState::Used) => {
+                return Err(TypedApprovalError::Mismatch(format!(
+                    "approval {id} was already used"
+                )));
+            }
+            Some(state) => {
+                return Err(TypedApprovalError::Required {
+                    id: id.to_owned(),
+                    state: state.as_str(),
+                });
+            }
+            None => {
+                return Err(TypedApprovalError::Required {
+                    id: id.to_owned(),
+                    state: "unknown",
+                });
+            }
+        }
+        if row.payload_hash != payload_hash(payload) {
+            return Err(TypedApprovalError::Mismatch(format!(
+                "approval {id} was given for another payload"
+            )));
+        }
+        if !self
+            .inner
+            .store
+            .use_typed_approval(id)
+            .map_err(EngineError::from)?
+        {
+            return Err(TypedApprovalError::Mismatch(format!(
+                "approval {id} was already used"
+            )));
+        }
+        let mut used = typed_from_row(row);
+        used.state = TypedApprovalState::Used;
+        Ok(used)
     }
 }
 

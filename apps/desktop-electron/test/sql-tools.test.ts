@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { ToolRegistry } from "../src/main/agent/tools";
 import { sqlAgentTools } from "../src/main/sql/tools";
 

@@ -1,0 +1,5 @@
+# Compat mode on Loams Postgres 17, the expected-failure leg: Temporal 1.32.1
+# lists PostgreSQL 13-16 only (DX1 R0.6), so failures here are recorded, not
+# blockers. Each needs an entry with a reason and an issue. Not run yet
+# (SPIKE.md); entries are added from its first nightly.
+product = "temporal/pg17"

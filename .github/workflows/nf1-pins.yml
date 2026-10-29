@@ -26,18 +26,25 @@
 # fixture `.dep-v0` payloads, and the README runbook order.
 name: Postgres pins
 
+# A pull request runs it (the checks above run on what the pull request
+# changes); the nightly dispatches it on dev for the remote state (signatures,
+# fork revisions), so a push to dev does not run it again. docs/ is skipped:
+# check-names.sh ignores it and nothing here reads it.
 on:
   workflow_dispatch:
-  push:
-    branches: [dev]
   pull_request:
+    paths-ignore:
+      - "docs/**"
 
 permissions:
   contents: read
 
+# Superseded runs of a pull request are cancelled; a push to main, a tag,
+# a dispatch (the nightly) and a schedule run to completion. The event is in
+# the group, so a push never cancels a dispatch on the same branch.
 concurrency:
-  group: nf1-pins-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: nf1-pins-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # names, pins and revs in one job: one runner slot instead of three (the
@@ -45,7 +52,7 @@ jobs:
   # so one failure does not hide another.
   checks:
     name: Names, pins and revisions
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 10
     env:
       GH_TOKEN: ${{ github.token }}
@@ -84,11 +91,11 @@ jobs:
         run: scripts/nf1/tests/test_verify_pins.sh
 
   # The slow job (it compiles rust-audit-info): only when the mirror scripts,
-  # the pin file or this workflow change, and always on dev and on dispatch.
+  # the pin file or this workflow change, and always on dispatch (the nightly).
   mirror-changes:
     name: Changed paths
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -109,7 +116,7 @@ jobs:
     name: Mirror and audit scripts
     needs: mirror-changes
     if: ${{ !cancelled() && (needs.mirror-changes.result == 'skipped' || needs.mirror-changes.outputs.mirror == 'true') }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 15
     services:
       registry:

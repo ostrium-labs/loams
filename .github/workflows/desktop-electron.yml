@@ -6,20 +6,33 @@ name: Desktop
 # the macOS builds here carry only an ad-hoc signature, which Apple Silicon needs to run the app.
 #
 # What runs (two tiers, owner, 2026-10-13; the org has about 20 concurrent jobs, about 5 macOS):
-# - pull request into dev (fast tier): Linux x64 only, with the Playwright smoke test.
-# - pull request into main (the dev -> main release gate), push to main, a dispatch, and the
-#   nightly run on dev (nightly.yml dispatches this workflow): all five platforms.
+# - pull request into dev (fast tier, issue #1050) that touches the desktop app, the stacks it
+#   packages or the release scripts: Linux x64 only. The unit tests and typecheck, the console and
+#   desktop builds, then the Playwright smoke test on the fake engine
+#   (test/fixtures/fake-engine.mjs): no engine, no agent daemon, no package. A pull request into
+#   dev that touches the packaging inputs (the `packaging` filter in the platforms job) runs the
+#   full job instead, still on Linux x64 only. A web-only change does not run this workflow (the
+#   Web job builds and tests the console; the nightly and the release gate package it into the
+#   desktop).
+# - pull request into main (the dev -> main release gate) or a release branch, one labelled
+#   `ci:full`, push to main, a dispatch, and the nightly run on dev (nightly.yml dispatches this
+#   workflow): the full job on all five platforms, which builds the engine and the agent daemon,
+#   packages, checks the daemon is bundled and (on Linux) runs the smoke test on the real engine.
 # - a release: desktop-electron-release.yml builds all five itself.
 on:
   pull_request:
     paths:
       - 'apps/desktop-electron/**'
-      - 'web/**'
       - 'plugins/core/**'
       - 'plugins/packages/**'
-      # The stacks (neon, wesql, tikv) are packaged from deploy/.
-      - 'deploy/**'
+      # The stacks the desktop packages (electron-builder.config.cjs `extraResources`).
+      - 'deploy/loams-postgres-dev/**'
+      - 'deploy/wesql/**'
+      - 'deploy/tikv/**'
       - 'scripts/release/**'
+      # The root workspace it installs from (electron and electron-builder among them).
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
       - '.github/workflows/desktop-*.yml'
   push:
     branches: [main]
@@ -28,10 +41,12 @@ on:
 permissions:
   contents: read
 
+# Superseded runs of a pull request are cancelled; a push to main, a tag,
+# a dispatch (the nightly) and a schedule run to completion. The event is in
+# the group, so a push never cancels a dispatch on the same branch.
 concurrency:
-  group: desktop-${{ github.event.pull_request.number || github.ref }}
-  # A newer push supersedes an older one; main runs to completion.
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: desktop-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CI: 'true'
@@ -40,18 +55,55 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # Which platforms this run builds: Linux x64 alone on a pull request into dev, all five otherwise.
+  # Which platforms this run builds: Linux x64 alone on an ordinary pull request, all five on the
+  # full tier and on every other event. And which tier: `full` is 'false' (the fast tier) only on
+  # a pull request into dev that leaves the packaging inputs alone and lacks the `ci:full` label.
+  # dorny/paths-filter is MIT-licensed; pinned to v4.0.3, as in ci.yml (on a pull request it
+  # lists the files through the API).
   platforms:
     name: Platforms
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       matrix: ${{ steps.platforms.outputs.matrix }}
+      full: ${{ steps.tier.outputs.full }}
     steps:
+      # The packaging inputs: a pull request that changes one of them gets the engine, the agent
+      # daemon, the package and the daemon-bundled check before it merges.
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: changes
+        if: github.event_name == 'pull_request'
+        with:
+          filters: |
+            packaging:
+              - "apps/desktop-electron/package.json"
+              - "apps/desktop-electron/project.json"
+              - "apps/desktop-electron/scripts/**"
+              - "apps/desktop-electron/electron-builder.config.cjs"
+              - "apps/desktop-electron/build/**"
+              - "apps/desktop-electron/resources/**"
+              - "deploy/**"
+              - "scripts/release/**"
+              - ".github/workflows/desktop-*.yml"
+      - name: tier
+        id: tier
+        env:
+          FULL: ${{ github.event_name != 'pull_request' || github.base_ref == 'main' || startsWith(github.base_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'ci:full') || steps.changes.outputs.packaging == 'true' }}
+        run: |
+          set -euo pipefail
+          echo "full=$FULL" >> "$GITHUB_OUTPUT"
+          if [ "$FULL" = true ]; then
+            echo "full tier: engine, agent daemon, package and the smoke test on the real engine"
+          else
+            echo "::notice::fast tier: the smoke test runs on the fake engine, with no engine build or package. Add the ci:full label, then push, for the full job."
+          fi
       - name: platforms
         id: platforms
         env:
-          ALL: ${{ github.event_name != 'pull_request' || github.base_ref == 'main' }}
+          ALL: ${{ github.event_name != 'pull_request' || github.base_ref == 'main' || startsWith(github.base_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'ci:full') }}
           # The runners are repository variables so either pool can be swapped when GitHub's macOS
           # capacity runs short (on 2026-10-13 the arm64 pool queued jobs for hours). A build whose
           # runner is the other architecture is cross-compiled: MACOS_X64_RUNNER=macos-15 builds x64
@@ -98,7 +150,7 @@ jobs:
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
@@ -109,26 +161,42 @@ jobs:
         if: matrix.name != 'macos-x64'
         run: pnpm nx run-many -t test typecheck -p loams-desktop-electron @loams/console plugins --outputStyle=static
 
+      # The fast tier builds what the smoke test launches (on the full tier the package step's nx
+      # target builds both) and fetches Electron, whose binary downloads on first use (README).
+      - name: console build (fast tier)
+        if: needs.platforms.outputs.full != 'true'
+        run: pnpm nx run @loams/console:build --outputStyle=static
+      - name: desktop build (fast tier)
+        if: needs.platforms.outputs.full != 'true'
+        run: pnpm --filter @loams/desktop build
+      - name: Electron (fast tier)
+        if: needs.platforms.outputs.full != 'true'
+        run: pnpm --filter @loams/desktop exec install-electron
+
+      # From here to the smoke test, and the upload after it, the full tier only.
       # The engine build.rs scripts need protoc (see release-package.yml).
       - name: protoc (linux)
-        if: runner.os == 'Linux'
+        if: needs.platforms.outputs.full == 'true' && runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev rpm libarchive-tools fakeroot
       - name: protoc (macos)
-        if: runner.os == 'macOS'
+        if: needs.platforms.outputs.full == 'true' && runner.os == 'macOS'
         run: brew install protobuf
       # protoc from its GitHub release (not Chocolatey, whose outages exit 0) and NASM.
       - name: protoc and NASM (windows)
-        if: runner.os == 'Windows'
+        if: needs.platforms.outputs.full == 'true' && runner.os == 'Windows'
         uses: ./.github/actions/windows-build-tools
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: needs.platforms.outputs.full == 'true' && runner.environment == 'github-hosted'
         with:
           key: desktop-${{ matrix.name }}
+          save-if: ${{ (github.ref == 'refs/heads/dev' && matrix.name == 'linux-x64') || github.base_ref == 'main' || startsWith(github.base_ref, 'release/') }}
 
       # The desktop engine needs durable, live-tikv (Live on the TiKV stack, ruling T23-7) and
       # graph (the Graph page, GR1 Task 8); the default build has live (the embedded store) only.
       # A cross build goes to target/<triple>/release; LOAMS_BIN points fetch-engine.mjs at it.
       - name: engine
+        if: needs.platforms.outputs.full == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -149,6 +217,7 @@ jobs:
           fi
 
       - name: engine smoke test
+        if: needs.platforms.outputs.full == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -170,6 +239,7 @@ jobs:
       # The agent daemon behind Studio (release fix B9), for the engine's target. A cross build sets
       # LOAMS_AGENTD_BIN for fetch-engine.mjs, which then requires it (LOAMS_REQUIRE_AGENTD below).
       - name: agent daemon
+        if: needs.platforms.outputs.full == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -191,11 +261,13 @@ jobs:
           fi
 
       - name: package
+        if: needs.platforms.outputs.full == 'true'
         env:
           LOAMS_REQUIRE_AGENTD: "1"
         run: pnpm nx run loams-desktop-electron:${{ matrix.target }} --outputStyle=static
 
       - name: the daemon is bundled
+        if: needs.platforms.outputs.full == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -213,7 +285,7 @@ jobs:
           else (cd "$bin" && shasum -a 256 -c SHA256SUMS); fi
 
       - name: macOS signature
-        if: runner.os == 'macOS'
+        if: needs.platforms.outputs.full == 'true' && runner.os == 'macOS'
         run: |
           set -euo pipefail
           apps=(apps/desktop-electron/dist/mac*/*.app); app="${apps[0]}"
@@ -227,13 +299,15 @@ jobs:
       - name: smoke test (Playwright, Task 16)
         if: runner.os == 'Linux' && hashFiles('apps/desktop-electron/playwright.config.ts') != ''
         env:
-          # The engine step above built target/release/loams; a missing binary must fail, not fall back to the fake.
-          LOAMS_E2E_ENGINE: real
+          # Full tier: the engine step above built target/release/loams; a missing binary must fail,
+          # not fall back to the fake. Fast tier: test/fixtures/fake-engine.mjs stands in for `loams dev`.
+          LOAMS_E2E_ENGINE: ${{ needs.platforms.outputs.full == 'true' && 'real' || 'fake' }}
           # Ubuntu 24.04 restricts unprivileged user namespaces, so Chromium's sandbox cannot start.
           LOAMS_E2E_ELECTRON_ARGS: --no-sandbox
         run: xvfb-run -a pnpm --filter @loams/desktop test:e2e
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: needs.platforms.outputs.full == 'true'
         with:
           name: loams-desktop-unsigned-${{ matrix.name }}
           path: |

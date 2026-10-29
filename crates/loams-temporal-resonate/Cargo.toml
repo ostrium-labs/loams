@@ -1,0 +1,32 @@
+[package]
+name = "loams-temporal-resonate"
+description = "The Temporal gateway's Durability port onto Resonate: deterministic promise IDs, an in-process fake, the adapter on resonate-client and the outbox relay (DX1 Task 6)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+# No Loams-internal dependencies (D1539) and no Temporal protos. The one
+# Resonate crate is FW3's `resonate-client`, at the workspace's fork pin, for
+# requests and the poll subscription alike (D2040, D2043).
+[dependencies]
+async-trait.workspace = true
+base64.workspace = true
+futures.workspace = true
+hex.workspace = true
+percent-encoding.workspace = true
+resonate-client.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

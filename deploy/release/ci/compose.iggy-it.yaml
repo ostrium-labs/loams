@@ -1,0 +1,8 @@
+# Test-only overlay for deploy/release/ci/iggy-sink-it.sh: publishes the
+# `kafka` profile's Iggy TCP port on loopback so the loams_sink integration
+# tests (crates/loams-iggy-sink/tests/iggy.rs) reach it from the host. Never
+# part of a deployment: the bundle's own compose.yaml publishes no Iggy port.
+services:
+  iggy:
+    ports:
+      - 127.0.0.1:${IGGY_IT_PORT:-28090}:8090

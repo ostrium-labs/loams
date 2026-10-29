@@ -248,6 +248,36 @@ pub struct SessionRec {
     pub expires_ms: i64,
 }
 
+/// What kind of Loams principal an identity provider's subject is (design 76 §5, D1628).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LinkKind {
+    /// A person: `principal` is their member's user id.
+    User,
+    /// An AI agent (a Zitadel machine user): `principal` is the agent's id.
+    Agent,
+    /// Any other machine: `principal` is the service account's id.
+    ServiceAccount,
+}
+
+/// A principal link (design 76 §5, D1605, D1624, D1628): the identity provider's `(issuer,
+/// subject)` and the Loams principal it is. A JWT does not say whether its subject is a person
+/// or a machine, so the link is the source of the kind; a subject with no link is a person.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PrincipalLink {
+    /// The token's `iss`, byte for byte.
+    pub issuer: String,
+    /// The token's `sub`.
+    pub subject: String,
+    pub kind: LinkKind,
+    /// The Loams principal's id.
+    pub principal: String,
+    /// A disabled principal is refused on every request, whatever its token's signature and
+    /// expiry say (D1624).
+    #[serde(default)]
+    pub disabled: bool,
+}
+
 /// One audit event, numbered.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AuditRec {
@@ -273,6 +303,15 @@ pub fn key_grant(record: &KeyRec, org: Option<String>) -> Grant {
     }
 }
 
+/// The person a key acts as, when it acts as one (a `KeyService` key made for oneself).
+pub fn key_person(key: &KeyRec) -> Option<&str> {
+    key.key
+        .principal
+        .as_option()
+        .filter(|p| p.kind.as_known() == Some(pb::SubjectKind::SUBJECT_KIND_USER))
+        .map(|p| p.id.as_str())
+}
+
 /// The whole directory.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -286,6 +325,8 @@ pub struct Doc {
     pub agents: Vec<AgentRec>,
     pub service_accounts: Vec<pb::ServiceAccount>,
     pub keys: Vec<KeyRec>,
+    /// The principal links, `(issuer, subject)` → principal (D1628).
+    pub links: Vec<PrincipalLink>,
     /// Revoked agent token ids (`jti`), oldest first.
     pub revoked_tokens: Vec<String>,
     pub sessions: Vec<SessionRec>,
@@ -299,6 +340,20 @@ impl Doc {
     /// The member with user id `id`.
     pub fn member(&self, id: &str) -> Option<&MemberRec> {
         self.members.iter().find(|m| m.user.id == id)
+    }
+
+    /// The keys that act as the person `user` (made by them for themselves, not a service
+    /// account's).
+    pub fn keys_of_person<'d>(&'d self, user: &'d str) -> impl Iterator<Item = &'d KeyRec> + 'd {
+        self.keys
+            .iter()
+            .filter(move |k| key_person(k) == Some(user))
+    }
+
+    /// Whether `key` acts as a person who is no longer a member: a key `RemoveMember` did not
+    /// revoke, made before it did (plan IA1, ruling T5.R1). Such a key is refused.
+    pub fn key_person_left(&self, key: &KeyRec) -> bool {
+        key_person(key).is_some_and(|user| self.member(user).is_none())
     }
 
     /// The member with `email` (compared without case).
@@ -334,6 +389,13 @@ impl Doc {
     }
 
     /// The key with id `id`.
+    /// The link of the identity provider's `(issuer, subject)`; the issuer must match exactly.
+    pub fn link(&self, issuer: &str, subject: &str) -> Option<&PrincipalLink> {
+        self.links
+            .iter()
+            .find(|l| l.issuer == issuer && l.subject == subject)
+    }
+
     pub fn key(&self, id: &str) -> Option<&KeyRec> {
         self.keys.iter().find(|k| k.key.id == id)
     }
@@ -435,6 +497,9 @@ pub struct MetaDirectoryStore {
     meta: Arc<dyn MetaStore>,
     store: Store,
     namespace: tokio::sync::OnceCell<NamespaceId>,
+    /// The pointer key in the system namespace, and the bucket prefix of the documents.
+    pointer_key: &'static str,
+    object_prefix: &'static str,
 }
 
 impl fmt::Debug for MetaDirectoryStore {
@@ -449,10 +514,23 @@ fn unavailable(err: impl fmt::Display) -> Unavailable {
 
 impl MetaDirectoryStore {
     pub fn new(meta: Arc<dyn MetaStore>, store: Store) -> Self {
+        Self::with_key(meta, store, POINTER_KEY, OBJECT_PREFIX)
+    }
+
+    /// Another document kept the same way, under its own pointer key and bucket prefix (the
+    /// identity sync's state, plan IA1 IA3).
+    pub fn with_key(
+        meta: Arc<dyn MetaStore>,
+        store: Store,
+        pointer_key: &'static str,
+        object_prefix: &'static str,
+    ) -> Self {
         Self {
             meta,
             store,
             namespace: tokio::sync::OnceCell::new(),
+            pointer_key,
+            object_prefix,
         }
     }
 
@@ -461,7 +539,7 @@ impl MetaDirectoryStore {
     /// stays, so a rollback finds the directory it restores.
     async fn pinned_by_snapshot(&self, path: &str) -> bool {
         let written_ms = path
-            .strip_prefix(OBJECT_PREFIX)
+            .strip_prefix(self.object_prefix)
             .and_then(|name| name.strip_suffix(".json"))
             .and_then(|id| id.parse::<ulid::Ulid>().ok())
             .map(|id| id.timestamp_ms());
@@ -509,7 +587,7 @@ impl DirectoryStore for MetaDirectoryStore {
         };
         let pointer = self
             .meta
-            .pointer(Consistency::Local, ns, POINTER_KEY)
+            .pointer(Consistency::Local, ns, self.pointer_key)
             .await
             .map_err(unavailable)?;
         Ok(pointer.map(|p| p.version))
@@ -525,7 +603,7 @@ impl DirectoryStore for MetaDirectoryStore {
         for _ in 0..4 {
             let Some(pointer) = self
                 .meta
-                .pointer(Consistency::Linearizable, ns, POINTER_KEY)
+                .pointer(Consistency::Linearizable, ns, self.pointer_key)
                 .await
                 .map_err(unavailable)?
             else {
@@ -547,20 +625,20 @@ impl DirectoryStore for MetaDirectoryStore {
         let previous = match expected {
             Some(_) => self
                 .meta
-                .pointer(Consistency::Linearizable, ns, POINTER_KEY)
+                .pointer(Consistency::Linearizable, ns, self.pointer_key)
                 .await
                 .map_err(unavailable)?
                 .map(|p| p.value),
             None => None,
         };
-        let object = format!("{OBJECT_PREFIX}{}.json", ulid::Ulid::generate());
+        let object = format!("{}{}.json", self.object_prefix, ulid::Ulid::generate());
         self.store.put(&object, doc).await.map_err(unavailable)?;
         for _ in 0..4 {
             let cas = self
                 .meta
                 .cas_pointer(PointerCas {
                     namespace: ns,
-                    key: POINTER_KEY.to_owned(),
+                    key: self.pointer_key.to_owned(),
                     expected,
                     value: object.clone(),
                     fence: None,
@@ -780,6 +858,7 @@ impl Directory {
         Ok(Principal {
             subject: member.user.id.clone(),
             kind: PrincipalKind::Session,
+            issuer: None,
             display_name: member.user.name.clone(),
             email: Some(member.user.email.clone()),
             // A person in the org: every environment of it (LV1 plan Task
@@ -805,7 +884,8 @@ impl Directory {
         };
         let record = doc.key(id)?;
         let org = doc.org.as_ref().map(|o| o.slug.clone());
-        Some(self.check_key(key, id, record, org).await)
+        let person_left = doc.key_person_left(record);
+        Some(self.check_key(key, id, record, org, person_left).await)
     }
 
     async fn check_key(
@@ -814,6 +894,7 @@ impl Directory {
         id: &str,
         record: &KeyRec,
         org: Option<String>,
+        person_left: bool,
     ) -> Result<Principal, AuthError> {
         if record.revoked {
             return Err(AuthError::unauthenticated(
@@ -848,9 +929,17 @@ impl Directory {
                 .unwrap_or_else(|e| e.into_inner())
                 .insert(id.to_owned(), digest);
         }
+        // After the secret is verified, so this answer says nothing to a caller without it.
+        if person_left {
+            return Err(AuthError::unauthenticated(
+                reason::TOKEN_REVOKED,
+                "this API key acts as a person who is no longer a member of the org",
+            ));
+        }
         Ok(Principal {
             subject: format!("apikey:{id}"),
             kind: PrincipalKind::ApiKey,
+            issuer: None,
             display_name: record.key.name.clone(),
             email: None,
             grant: key_grant(record, org),
@@ -1115,6 +1204,77 @@ mod tests {
             .unwrap()
             .unwrap_err();
         assert_eq!(err.reason, reason::TOKEN_REVOKED);
+    }
+
+    /// A key acting as a person who has left the org, made before `RemoveMember` revoked such
+    /// keys, is refused once its secret checks out (ruling T5.R1).
+    #[tokio::test]
+    async fn a_key_of_a_person_who_left_is_refused() {
+        let directory = Directory::in_memory();
+        let (key, id) = api_key::generate();
+        let hash = api_key::hash_key(&key);
+        let person = |id: &str| pb::SubjectRef {
+            kind: pb::SubjectKind::SUBJECT_KIND_USER.into(),
+            id: id.to_owned(),
+            ..Default::default()
+        };
+        directory
+            .update(|doc| {
+                doc.members.push(MemberRec {
+                    user: pb::User {
+                        id: "usr_1".to_owned(),
+                        ..Default::default()
+                    },
+                    role: Role::Admin,
+                    joined_at_ms: 0,
+                    password: String::new(),
+                });
+                doc.keys.push(KeyRec {
+                    key: pb::ApiKey {
+                        id: id.clone(),
+                        name: "mine".to_owned(),
+                        principal: person("usr_1").into(),
+                        ..Default::default()
+                    },
+                    project: "web".to_owned(),
+                    hash: hash.clone(),
+                    role: Role::Admin,
+                    idempotency_key: "k1".to_owned(),
+                    created_by: "usr_1".to_owned(),
+                    revoked: false,
+                });
+                Ok::<_, Unavailable>(())
+            })
+            .await
+            .unwrap();
+        let p = directory
+            .authenticate(&Credential::ApiKey(key.clone()))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(p.subject, format!("apikey:{id}"));
+        directory
+            .update(|doc| {
+                doc.members.clear();
+                Ok::<_, Unavailable>(())
+            })
+            .await
+            .unwrap();
+        let err = directory
+            .authenticate(&Credential::ApiKey(key))
+            .await
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(err.reason, reason::TOKEN_REVOKED);
+        // A wrong secret for that key id says only that it is not valid.
+        let (forged, _) = api_key::generate();
+        let forged = forged.replacen(api_key::key_id(&forged).unwrap(), &id, 1);
+        let err = directory
+            .authenticate(&Credential::ApiKey(forged))
+            .await
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(err.reason, reason::API_KEY_INVALID);
     }
 
     #[tokio::test]

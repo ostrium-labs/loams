@@ -11,8 +11,9 @@ name: Release GitHub
 #      by release-images.yml itself, in the tag's run, so it names the tag's
 #      commit; a workflow_run's token would name the default branch's,
 #   3. creates the GitHub release as a pre-release (never "Latest") and attaches
-#      the compose bundle (deploy/release plus the Postgres stack it includes),
-#      the SBOMs and SHA256SUMS,
+#      the compose bundle (deploy/release plus the Postgres stack it includes,
+#      with the console built from the tag in release/console/dist), the SBOMs
+#      and SHA256SUMS,
 #   4. dispatches the binary builds that attach to that release:
 #      release-package.yml (the `loams` CLI for Linux, Windows and macOS) and
 #      desktop-electron-release.yml (Loams Desktop for all three). A release
@@ -118,7 +119,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [loams, loams-fabric, loams-agentd, loams-pg-control]
+        image: [loams, loams-fabric, loams-agentd, loams-pg-control, loams-gateway, loams-temporal]
     steps:
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -164,12 +165,68 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # The console the compose bundle's `--profile console` service serves (#868).
+  # In the repository deploy/release/console/dist is a placeholder page, and
+  # release-package.yml's console build is dispatched only after the release
+  # exists, so the bundle cannot take it. Built here from the tag's commit, in
+  # a job that can only read; the release job below takes it as an artifact
+  # (static files, copied as data, never run).
+  console:
+    name: The web console (compose bundle)
+    needs: guard
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.guard.outputs.sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.0
+      # No dependency cache: this build ships in the release, and a cache
+      # another run wrote could change it (cache poisoning).
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      # release-package.yml's build, for the root path: the compose service's
+      # nginx serves the build at / and its runtime configuration at
+      # /config.json (deploy/release/console/default.conf.template). The
+      # default build is the engine's, for /ui/ (web/README.md); behind that
+      # nginx its pages would not find their scripts.
+      - name: build the console
+        env:
+          LOAMS_UI_BASE: /
+        run: |
+          set -euo pipefail
+          cd web
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: the build is the console, for the root path
+        run: |
+          set -euo pipefail
+          index=web/apps/console/dist/index.html
+          test -f "$index" || { echo "::error::$index is missing after pnpm build"; exit 1; }
+          if grep -q 'Put the built console here' "$index"; then
+            echo "::error::$index is the placeholder page, not a built console"; exit 1
+          fi
+          if grep -q '"/ui/' "$index"; then
+            echo "::error::$index was built for /ui/; the compose console service serves it at /"; exit 1
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: console-dist
+          path: web/apps/console/dist
+          if-no-files-found: error
+          retention-days: 7
+
   # The compose bundle: deploy/release and the Postgres stack its compose file
   # includes (deploy/loams-postgres-dev), in the layout byoc/install.sh copies
-  # to a VM, with .env.example pinned to this release's image tag.
+  # to a VM, with .env.example pinned to this release's image tag and
+  # release/console/dist holding the console job's build.
   release:
     name: GitHub release and assets
-    needs: [guard, attest]
+    needs: [guard, attest, console]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -183,17 +240,24 @@ jobs:
       # No checkout: this job holds contents: write, so it never puts the
       # tag's tree where a later step could run it. The bundle is the commit's
       # tarball from the API, unpacked as data (two directories, no scripts run).
+      # The built console comes the same way, as the console job's artifact.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: sbom-*
           path: ${{ runner.temp }}/assets
           merge-multiple: true
+      # Outside assets/: everything there is attached to the release.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: console-dist
+          path: ${{ runner.temp }}/console
       - name: the compose bundle
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ needs.guard.outputs.sha }}
           VERSION: ${{ needs.guard.outputs.version }}
           OUT: ${{ runner.temp }}/assets
+          CONSOLE: ${{ runner.temp }}/console
         run: |
           set -euo pipefail
           name="loams-compose-$VERSION"
@@ -223,6 +287,18 @@ jobs:
           if [ -f "$stage/release/.env.example" ]; then
             sed -i "s/^LOAMS_VERSION=.*/LOAMS_VERSION=$VERSION/" "$stage/release/.env.example"
           fi
+          # The built console replaces the placeholder page (#868). With no
+          # build the bundle is refused, not shipped with a warning: it is the
+          # documented install path, its name does not say which console it
+          # holds, and a warning in this run reaches no one who downloads it.
+          test -f "$CONSOLE/index.html" \
+            || { echo "::error::the console-dist artifact has no index.html; refusing to ship the placeholder console"; exit 1; }
+          rm -rf "$stage/release/console/dist"
+          mkdir -p "$stage/release/console"
+          cp -R "$CONSOLE" "$stage/release/console/dist"
+          if grep -q 'Put the built console here' "$stage/release/console/dist/index.html"; then
+            echo "::error::release/console/dist/index.html in the bundle is still the placeholder page"; exit 1
+          fi
           # First-run checks on the staged bundle (#870, #871), so a bundle that
           # cannot finish first-run setup does not ship. `compose config` only
           # resolves the files (it runs nothing); the checks name no version.
@@ -238,8 +314,10 @@ jobs:
             || { echo "release/config/setup-token.env is missing from the bundle"; exit 1; }
           grep -q '^LOAMS_SETUP_TOKEN=' "$stage/release/config/setup-token.env" \
             || { echo "release/config/setup-token.env does not set LOAMS_SETUP_TOKEN"; exit 1; }
-          jq -e --arg f "$stage/release/config/setup-token.env" \
-            '[.services.loams.env_file // [] | .[] | (.path? // .)] | index($f) != null' <<<"$cfg" >/dev/null \
+          # From the source file: Docker Compose 2.38 inlines env_file into
+          # `environment` and drops the key from `compose config`'s output.
+          yq -e '.services.loams.env_file[] | select((.path // .) == "./config/setup-token.env")' \
+            "$stage/release/compose.yaml" >/dev/null \
             || { echo "compose.yaml does not list config/setup-token.env in the loams service's env_file"; exit 1; }
           (cd "$stage/release" && LOAMS_SETUP_TOKEN=bundle-check docker compose --env-file .env.example \
             config --format json loams) \
@@ -288,7 +366,7 @@ jobs:
               echo "$intro Run it yourself with Docker Compose: see deploy/release/README.md in the attached bundle."
               echo
               echo "Images (linux/amd64, linux/arm64; provenance and SBOM attested, verify with \`gh attestation verify oci://<image> -R $GITHUB_REPOSITORY\`):"
-              for image in loams loams-fabric loams-agentd loams-pg-control; do
+              for image in loams loams-fabric loams-agentd loams-pg-control loams-gateway loams-temporal; do
                 echo "- \`$REGISTRY/$image:$VERSION\` ($ALIAS_NOTE)"
               done
               # The generated "Upgrading" section (design §54 §11.3, D942).

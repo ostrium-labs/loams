@@ -1,0 +1,223 @@
+{
+  "language": "go",
+  "namespace": "corpus-1792845424",
+  "scenarios": [
+    {
+      "scenario": "hello",
+      "workflow_id": "corpus-go-hello",
+      "runs": 1,
+      "result": "\"hello corpus\""
+    },
+    {
+      "scenario": "two_activities_sequential",
+      "workflow_id": "corpus-go-two_activities_sequential",
+      "runs": 1,
+      "result": "\"hello one, hello two\""
+    },
+    {
+      "scenario": "activity_parallel_fanout_10",
+      "workflow_id": "corpus-go-activity_parallel_fanout_10",
+      "runs": 1,
+      "result": "[\"hello n0\",\"hello n1\",\"hello n2\",\"hello n3\",\"hello n4\",\"hello n5\",\"hello n6\",\"hello n7\",\"hello n8\",\"hello n9\"]"
+    },
+    {
+      "scenario": "signal_then_complete",
+      "workflow_id": "corpus-go-signal_then_complete",
+      "runs": 1,
+      "result": "\"got s\""
+    },
+    {
+      "scenario": "query_while_running",
+      "workflow_id": "corpus-go-query_while_running",
+      "runs": 1,
+      "result": "\"done\"",
+      "expected": [
+        "query state=waiting"
+      ]
+    },
+    {
+      "scenario": "cancel_requested",
+      "workflow_id": "corpus-go-cancel_requested",
+      "runs": 1,
+      "expected": [
+        "workflow execution error (type: cancel_requested, workflowID: corpus-go-cancel_requested, runID: 01a16deb-db24-74c6-b6ff-060b19af2a8a): canceled"
+      ]
+    },
+    {
+      "scenario": "terminated",
+      "workflow_id": "corpus-go-terminated",
+      "runs": 1,
+      "expected": [
+        "workflow execution error (type: terminated, workflowID: corpus-go-terminated, runID: 01a16deb-dc10-78b3-b3ae-87575e84a440): terminated"
+      ]
+    },
+    {
+      "scenario": "workflow_failed_application_error",
+      "workflow_id": "corpus-go-workflow_failed_application_error",
+      "runs": 1,
+      "expected": [
+        "workflow execution error (type: workflow_failed_application_error, workflowID: corpus-go-workflow_failed_application_error, runID: 01a16deb-dcf4-737f-a762-ced51c425142): boom (type: CorpusBoom, retryable: false)"
+      ]
+    },
+    {
+      "scenario": "activity_heartbeat_details",
+      "workflow_id": "corpus-go-activity_heartbeat_details",
+      "runs": 1,
+      "result": "3"
+    },
+    {
+      "scenario": "timer_short",
+      "workflow_id": "corpus-go-timer_short",
+      "runs": 1,
+      "result": "null"
+    },
+    {
+      "scenario": "timer_cancelled",
+      "workflow_id": "corpus-go-timer_cancelled",
+      "runs": 1,
+      "result": "\"cancelled\""
+    },
+    {
+      "scenario": "activity_retry_backoff_3_attempts",
+      "workflow_id": "corpus-go-activity_retry_backoff_3_attempts",
+      "runs": 1,
+      "result": "3"
+    },
+    {
+      "scenario": "activity_start_to_close_timeout",
+      "workflow_id": "corpus-go-activity_start_to_close_timeout",
+      "runs": 1,
+      "result": "\"StartToClose\""
+    },
+    {
+      "scenario": "activity_schedule_to_start_timeout",
+      "workflow_id": "corpus-go-activity_schedule_to_start_timeout",
+      "runs": 1,
+      "result": "\"ScheduleToStart\""
+    },
+    {
+      "scenario": "activity_heartbeat_timeout",
+      "workflow_id": "corpus-go-activity_heartbeat_timeout",
+      "runs": 1,
+      "result": "\"Heartbeat\""
+    },
+    {
+      "scenario": "workflow_task_failure_then_fix",
+      "workflow_id": "corpus-go-workflow_task_failure_then_fix",
+      "runs": 1,
+      "result": "\"hello after the fix\"",
+      "expected": [
+        "one failed workflow task before the fix"
+      ]
+    },
+    {
+      "scenario": "signal_with_start",
+      "workflow_id": "corpus-go-signal_with_start",
+      "runs": 1,
+      "result": "\"started with s\""
+    },
+    {
+      "scenario": "child_workflow",
+      "workflow_id": "corpus-go-child_workflow",
+      "runs": 1,
+      "result": "\"hello child\""
+    },
+    {
+      "scenario": "child_workflow_cancelled",
+      "workflow_id": "corpus-go-child_workflow_cancelled",
+      "runs": 1,
+      "result": "\"child cancelled\""
+    },
+    {
+      "scenario": "continue_as_new_3",
+      "workflow_id": "corpus-go-continue_as_new_3",
+      "runs": 4,
+      "result": "3"
+    },
+    {
+      "scenario": "id_reuse_allow_duplicate_failed_only",
+      "workflow_id": "corpus-go-id_reuse_allow_duplicate_failed_only",
+      "runs": 2,
+      "result": "\"second run\"",
+      "expected": [
+        "the first run failed; the second started with the same ID"
+      ]
+    },
+    {
+      "scenario": "id_conflict_fail",
+      "workflow_id": "corpus-go-id_conflict_fail",
+      "runs": 1,
+      "result": "null",
+      "expected": [
+        "the second start was refused: WorkflowExecutionAlreadyStarted"
+      ]
+    },
+    {
+      "scenario": "local_activity",
+      "workflow_id": "corpus-go-local_activity",
+      "runs": 1,
+      "result": "\"hello local\""
+    },
+    {
+      "scenario": "side_effect_and_version_marker",
+      "workflow_id": "corpus-go-side_effect_and_version_marker",
+      "runs": 1,
+      "result": "\"version 1 side effect 42\""
+    },
+    {
+      "scenario": "search_attributes_upsert",
+      "workflow_id": "corpus-go-search_attributes_upsert",
+      "runs": 1,
+      "result": "null"
+    },
+    {
+      "scenario": "memo",
+      "workflow_id": "corpus-go-memo",
+      "runs": 1,
+      "result": "null"
+    },
+    {
+      "scenario": "large_payload_1mb",
+      "workflow_id": "corpus-go-large_payload_1mb",
+      "runs": 1,
+      "result": "1048576"
+    },
+    {
+      "scenario": "update_accepted_completed",
+      "workflow_id": "corpus-go-update_accepted_completed",
+      "runs": 1,
+      "result": "\"total 2\"",
+      "expected": [
+        "update returned 2"
+      ]
+    },
+    {
+      "scenario": "update_rejected",
+      "workflow_id": "corpus-go-update_rejected",
+      "runs": 1,
+      "result": "\"total 0\"",
+      "expected": [
+        "update returned 0",
+        "update rejected: increment must not be negative"
+      ]
+    },
+    {
+      "scenario": "schedule_triggered",
+      "workflow_id": "corpus-go-schedule_triggered-wf-2026-10-24T12:39:13Z",
+      "runs": 1,
+      "result": "\"hello schedule\"",
+      "expected": [
+        "started by schedule corpus-go-schedule_triggered (the server appends the action time to the ID)"
+      ]
+    },
+    {
+      "scenario": "reset_to_first_workflow_task",
+      "workflow_id": "corpus-go-reset_to_first_workflow_task",
+      "runs": 2,
+      "result": "\"hello before reset, hello after\"",
+      "expected": [
+        "reset to event 4"
+      ]
+    }
+  ]
+}

@@ -5,8 +5,6 @@
 name: Nightly
 
 on:
-  schedule:
-    - cron: "17 2 * * *"
   workflow_dispatch:
     inputs:
       ref:
@@ -15,7 +13,8 @@ on:
 
 concurrency:
   group: nightly-${{ github.ref }}
-  cancel-in-progress: true
+  # The nightly runs to completion.
+  cancel-in-progress: false
 
 permissions:
   actions: write
@@ -34,6 +33,6 @@ jobs:
         run: |
           set -euo pipefail
           gh workflow run ci.yml -R "$GITHUB_REPOSITORY" --ref "$REF" -f nightly=true
-          for wf in fabric.yml monorepo.yml pg2.yml pg2-e2e.yml gt1.yml gt1-nightly.yml desktop-electron.yml studio-e2e.yml mastra-gate.yml; do
+          for wf in fabric.yml monorepo.yml nf1-pins.yml pg2.yml pg2-e2e.yml gt1.yml gt1-nightly.yml desktop-electron.yml studio-e2e.yml mastra-gate.yml; do
             gh workflow run "$wf" -R "$GITHUB_REPOSITORY" --ref "$REF"
           done

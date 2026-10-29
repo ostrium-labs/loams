@@ -1,5 +1,7 @@
 # 43 — Private Networking: a Pluggable Tailnet (Tailscale BYOK or Headscale)
 
+> **Amendment (approved 2026-10-23) by [§78](78-loams-cloud-on-tidb-x.md)** (Loams Cloud on TiDB X; D1700–D1735). A device may join the user's own tailnet through `tsnet` inside `loams-agentd`, a userspace node that needs no root and leaves a corporate tailnet untouched (D1722, D1723). A hosted Headscale stays out (Q1269); D583 is why.
+
 > **Amendment (approved 2026-10-21) by [§76](76-identity-and-authorization.md): superseded in part by D1600** (owner: full cutover from Authentik to Zitadel, with no migration path, no compatibility period and no dual running, because there are no users). Headscale signs in through Zitadel OIDC (D584), Zitadel's admin console is tailnet-only on the hosted service (D596's rule, carried over), and `tag:authentik` becomes `tag:zitadel` (IA1 Task 1).
 
 > **Updated 2026-10-19 ([D1119](13-decision-log.md)): Loams has no open core.** Where this document places metering, billing, the hosted control plane, commercial APIs or other components in the private `loams-platform` repository, or calls something private for open-core reasons, read that as superseded: everything is Apache-2.0, and the metering, billing and control-plane code is moving into the open repo now (design §63, Loams Meter). Ostrium Labs offers services (infrastructure efficiency, SLAs, support), not a paid edition. The rest of the design is unchanged.

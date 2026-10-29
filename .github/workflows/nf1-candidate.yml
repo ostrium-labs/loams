@@ -2,23 +2,32 @@
 # Loams' integration on a release candidate.
 #
 # The fork's loams-gate.yml (scripts/loams/gate-g3.sh) dispatches this on dev
-# with the LOAMS_BOT_TOKEN secret and three inputs:
+# with the LOAMS_BOT_TOKEN secret and these inputs:
 #   pins         the candidate's pin document, release-notes.py pin-doc's output
 #                for images built and not yet tagged;
 #   fork_commit  the fork commit the gate runs on (the commit status goes there);
 #   key          the gate run's id, carried in this run's name so the fork can
-#                find and wait for it.
+#                find and wait for it;
+#   own_majors   (optional) majors whose own images the candidate releases:
+#                their beta legs are required (NF2 Task 7, D1118).
 # scripts/nf1/candidate.py checks the document (pins.py's checks, and every
 # image built from that commit or exactly what Loams pins today) and writes it
 # over each job's checkout. Then, on those images:
-#   - pg2-e2e.yml's jobs (loams-postgres against deploy/loams-postgres-dev,
-#     it-pageserver-loams-wal.sh, pg-control's deploy, compose and Kubernetes
-#     runtimes);
+#   - pg2-e2e.yml once per candidate major (NF2 Task 7, design §62 §8, D1118):
+#     its Kubernetes job runs that major's compute-v<N> and
+#     it-pageserver-loams-wal.sh creates that major's timeline; the jobs with
+#     no major of their own (loams-postgres against deploy/loams-postgres-dev,
+#     pg-control's deploy and compose runtime) run in the default major's leg
+#     only (input major-only);
 #   - pg2.yml's WAL decoder job (the golden tests, with the server headers from
 #     the candidate's storage image);
 #   - scripts/nf1/candidate-smoke.sh per pinned major (version, extensions, a
 #     branch).
-# The result is the commit status `loams-gate / g3` on fork_commit.
+# A beta major's legs (e2e-beta, and its smoke leg) are advisory: they may fail
+# without failing the status, so a broken beta never blocks another major's
+# release; own_majors makes them required for a release of that major's own
+# images. The result is the commit status `loams-gate / g3` on fork_commit; the
+# fork's gate-g3.sh reads that status, not this run's conclusion.
 #
 # A pull request touching these files runs the checks only, on today's pins
 # (and registers the workflow, which a dispatch needs).
@@ -40,6 +49,10 @@ on:
         description: "The fork's gate run, to find this run by"
         type: string
         required: true
+      own_majors:
+        description: "Majors whose own images this candidate releases, comma-separated (their beta legs are required)"
+        type: string
+        default: ""
   pull_request:
     paths:
       - ".github/workflows/nf1-candidate.yml"
@@ -62,10 +75,13 @@ env:
 jobs:
   prepare:
     name: Candidate pins
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 10
     outputs:
       majors: ${{ steps.apply.outputs.majors }}
+      required: ${{ steps.apply.outputs.required }}
+      advisory: ${{ steps.apply.outputs.advisory }}
+      default: ${{ steps.apply.outputs.default }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -77,6 +93,7 @@ jobs:
         env:
           PINS: ${{ inputs.pins }}
           FORK_COMMIT: ${{ inputs.fork_commit }}
+          OWN_MAJORS: ${{ inputs.own_majors }}
         run: |
           set -euo pipefail
           if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
@@ -87,8 +104,8 @@ jobs:
             printf '%s\n' "$PINS" > "$RUNNER_TEMP/candidate.toml"
           fi
           python3 -I scripts/nf1/candidate.py apply --doc "$RUNNER_TEMP/candidate.toml" --fork-commit "$FORK_COMMIT" \
-            | tee "$RUNNER_TEMP/apply.out"
-          grep '^majors=' "$RUNNER_TEMP/apply.out" >> "$GITHUB_OUTPUT"
+            --own-majors "${OWN_MAJORS:-}" | tee "$RUNNER_TEMP/apply.out"
+          grep -E '^(majors|required|advisory|default)=' "$RUNNER_TEMP/apply.out" >> "$GITHUB_OUTPUT"
           python3 -I scripts/nf1/pins.py check
           { echo "Candidate for \`$FORK@$FORK_COMMIT\`:"; echo; echo '```toml'; cat "$RUNNER_TEMP/candidate.toml"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - name: Status pending on the fork commit
@@ -101,13 +118,40 @@ jobs:
             -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             -f description="Loams' integration is running" > /dev/null
 
+  # pg2-e2e.yml once per required major (supported, maintenance, and an own
+  # beta major); the default major's leg also runs the jobs with no major.
   e2e:
     needs: prepare
     if: github.event_name == 'workflow_dispatch'
+    name: e2e (pg${{ matrix.major }})
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        major: ${{ fromJSON(needs.prepare.outputs.required) }}
     uses: ./.github/workflows/pg2-e2e.yml
     with:
       candidate-pins: ${{ inputs.pins }}
       candidate-fork-commit: ${{ inputs.fork_commit }}
+      major: ${{ format('{0}', matrix.major) }}
+      major-only: ${{ matrix.major != fromJSON(needs.prepare.outputs.default) }}
+
+  # A beta major's legs: advisory (the report does not fail on them).
+  e2e-beta:
+    needs: prepare
+    if: github.event_name == 'workflow_dispatch' && needs.prepare.outputs.advisory != '[]'
+    name: e2e (pg${{ matrix.major }}, beta, advisory)
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        major: ${{ fromJSON(needs.prepare.outputs.advisory) }}
+    uses: ./.github/workflows/pg2-e2e.yml
+    with:
+      candidate-pins: ${{ inputs.pins }}
+      candidate-fork-commit: ${{ inputs.fork_commit }}
+      major: ${{ format('{0}', matrix.major) }}
+      major-only: true
 
   decoder:
     needs: prepare
@@ -121,8 +165,10 @@ jobs:
     needs: prepare
     if: github.event_name == 'workflow_dispatch'
     name: Extension smoke (pg${{ matrix.major }})
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 45
+    # A beta major's smoke is advisory too (D1118).
+    continue-on-error: ${{ contains(fromJSON(needs.prepare.outputs.advisory), matrix.major) }}
     strategy:
       fail-fast: false
       max-parallel: 2
@@ -145,24 +191,33 @@ jobs:
         run: scripts/nf1/candidate-smoke.sh "$MAJOR"
 
   report:
-    needs: [prepare, e2e, decoder, smoke]
+    needs: [prepare, e2e, e2e-beta, decoder, smoke]
     if: always() && github.event_name == 'workflow_dispatch'
     name: Status on the fork commit
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 5
     steps:
       - name: loams-gate / g3
         env:
           GH_TOKEN: ${{ secrets.LOAMS_BOT_TOKEN }}
           FORK_COMMIT: ${{ inputs.fork_commit }}
-          RESULTS: ${{ toJSON(needs.*.result) }}
+          NEEDS: ${{ toJSON(needs) }}
+          ADVISORY: ${{ needs.prepare.outputs.advisory }}
         run: |
           set -euo pipefail
-          if jq -e 'all(. == "success")' <<<"$RESULTS" > /dev/null; then
+          # Every required job must pass; e2e-beta is advisory (skipped when
+          # there is no beta major, or failed: noted, not failing).
+          required=$(jq -c 'del(."e2e-beta") | map_values(.result)' <<<"$NEEDS")
+          beta=$(jq -r '."e2e-beta".result' <<<"$NEEDS")
+          if jq -e 'all(.[]; . == "success")' <<<"$required" > /dev/null; then
             state=success description="Loams' integration passed on the candidate's images"
+            if [ "$beta" != success ] && [ "$beta" != skipped ]; then
+              description="$description (beta $ADVISORY advisory: $beta)"
+            fi
           else
-            state=failure description="Loams' integration failed: $(jq -r 'join(", ")' <<<"$RESULTS")"
+            state=failure description="Loams' integration failed: $(jq -r 'to_entries | map("\(.key) \(.value)") | join(", ")' <<<"$required")"
           fi
+          echo "required: $required; e2e-beta: $beta" >> "$GITHUB_STEP_SUMMARY"
           gh api -X POST "repos/$FORK/statuses/$FORK_COMMIT" -f state="$state" -f context="$CONTEXT" \
             -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             -f description="${description:0:140}" > /dev/null

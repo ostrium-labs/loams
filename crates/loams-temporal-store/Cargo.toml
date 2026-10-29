@@ -1,0 +1,32 @@
+[package]
+name = "loams-temporal-store"
+description = "The Temporal gateway's store: workflow runs, history, the transactional outbox and visibility, with compare-and-set commits on Postgres (design §74 §5.5)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[features]
+# MemStore::fail_next_commit and PgStore::fail_next_commit: a fault injected
+# between a commit's statements, for the atomicity tests.
+faults = []
+
+[dependencies]
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+# Runtime queries only (no compile-time macros), so a build needs no
+# DATABASE_URL. `json` binds serde_json::Value as jsonb.
+sqlx = { workspace = true, features = ["postgres", "runtime-tokio", "json"] }
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+loams-temporal-store = { path = ".", features = ["faults"] }
+
+[lints]
+workspace = true

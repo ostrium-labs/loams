@@ -1,0 +1,134 @@
+{
+  "events": [
+    {
+      "eventId": "1",
+      "eventTime": "2026-10-24T12:39:09.007922301Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+      "taskId": "1049449",
+      "workflowExecutionStartedEventAttributes": {
+        "workflowType": {
+          "name": "continue_as_new_3"
+        },
+        "taskQueue": {
+          "name": "corpus-go",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "MQ=="
+            }
+          ]
+        },
+        "workflowExecutionTimeout": "0s",
+        "workflowRunTimeout": "0s",
+        "workflowTaskTimeout": "10s",
+        "continuedExecutionRunId": "01a16dec-0dc1-74b3-9247-a8f5b68d00f9",
+        "initiator": "CONTINUE_AS_NEW_INITIATOR_WORKFLOW",
+        "originalExecutionRunId": "3a57bcb8-9105-4c0b-be4e-7fcfdc3ce7da",
+        "firstExecutionRunId": "01a16dec-0dc1-74b3-9247-a8f5b68d00f9",
+        "attempt": 1,
+        "firstWorkflowTaskBackoff": "0.985272650s",
+        "prevAutoResetPoints": {
+          "points": [
+            {
+              "buildId": "d4db2319b754feae05457e5f98bacbae",
+              "runId": "01a16dec-0dc1-74b3-9247-a8f5b68d00f9",
+              "firstWorkflowTaskCompletedId": "4",
+              "createTime": "2026-10-24T12:39:09.007504439Z",
+              "expireTime": "2026-10-27T12:39:09.007922301Z",
+              "resettable": true
+            }
+          ]
+        },
+        "header": {},
+        "workflowId": "corpus-go-continue_as_new_3"
+      }
+    },
+    {
+      "eventId": "2",
+      "eventTime": "2026-10-24T12:39:09.996201494Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId": "1049456",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "corpus-go",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "3",
+      "eventTime": "2026-10-24T12:39:09.998918868Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "taskId": "1049459",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "2",
+        "identity": "2766@a008d768aa0b@",
+        "requestId": "91953ba0-d54f-4bb2-9320-3528c74679d9",
+        "historySizeBytes": "418",
+        "workerVersion": {
+          "buildId": "d4db2319b754feae05457e5f98bacbae"
+        }
+      }
+    },
+    {
+      "eventId": "4",
+      "eventTime": "2026-10-24T12:39:10.005687957Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "taskId": "1049463",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "2",
+        "startedEventId": "3",
+        "identity": "2766@a008d768aa0b@",
+        "workerVersion": {
+          "buildId": "d4db2319b754feae05457e5f98bacbae"
+        },
+        "sdkMetadata": {
+          "langUsedFlags": [
+            3
+          ],
+          "sdkName": "temporal-go",
+          "sdkVersion": "1.49.0"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "5",
+      "eventTime": "2026-10-24T12:39:10.006217155Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW",
+      "taskId": "1049464",
+      "workflowExecutionContinuedAsNewEventAttributes": {
+        "newExecutionRunId": "6ea99e07-0283-4923-a91d-be4013139084",
+        "workflowType": {
+          "name": "continue_as_new_3"
+        },
+        "taskQueue": {
+          "name": "corpus-go",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "Mg=="
+            }
+          ]
+        },
+        "workflowRunTimeout": "0s",
+        "workflowTaskTimeout": "10s",
+        "workflowTaskCompletedEventId": "4",
+        "header": {},
+        "inheritBuildId": true
+      }
+    }
+  ]
+}

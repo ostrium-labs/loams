@@ -34,6 +34,42 @@
     }
   },
   {
+    "method": "FactoryList",
+    "params": {}
+  },
+  {
+    "method": "FactoryTest",
+    "params": {
+      "app": "forgejo"
+    }
+  },
+  {
+    "method": "FactoryQuery",
+    "params": {
+      "app": "forgejo",
+      "op": "repos",
+      "params": {
+        "limit": 20
+      }
+    }
+  },
+  {
+    "method": "FactoryConfigure",
+    "params": {
+      "app": "forgejo",
+      "url": "https://git.example.com",
+      "fields": {
+        "token": "pat-1"
+      }
+    }
+  },
+  {
+    "method": "FactoryRemove",
+    "params": {
+      "app": "forgejo"
+    }
+  },
+  {
     "method": "GetTitleSettings",
     "params": {}
   },
@@ -984,6 +1020,176 @@
     "params": {
       "harness": "codex",
       "version": "0.41.0"
+    }
+  },
+  {
+    "method": "CreateRunWorktree",
+    "params": {
+      "chatId": "chat-1",
+      "branch": "factory/run-1/1",
+      "base": "main"
+    }
+  },
+  {
+    "method": "GetThreadDiff",
+    "params": {
+      "chatId": "chat-1",
+      "baseRef": "main"
+    }
+  },
+  {
+    "method": "PostReviewComment",
+    "params": {
+      "chatId": "chat-1",
+      "path": "src/app.ts",
+      "side": "new",
+      "line": 3,
+      "body": "Check the limit.",
+      "diffChecksum": "sum-1"
+    }
+  },
+  {
+    "method": "OpenChangeRequest",
+    "params": {
+      "chatId": "chat-1",
+      "provider": "forgejo",
+      "base": "main",
+      "title": "Rate limit signup",
+      "body": "",
+      "draft": false
+    }
+  },
+  {
+    "method": "RequestApproval",
+    "params": {
+      "chatId": "chat-1",
+      "kind": "merge",
+      "summary": "Merge #7",
+      "payload": {
+        "repo": "dev/app",
+        "pr": 7,
+        "head_sha": "abcdef0"
+      }
+    }
+  },
+  {
+    "method": "GetApproval",
+    "params": {
+      "chatId": "chat-1",
+      "approvalId": "fa-1"
+    }
+  },
+  {
+    "method": "MergeChangeRequest",
+    "params": {
+      "chatId": "chat-1",
+      "approvalId": "fa-1",
+      "provider": "forgejo",
+      "number": 7,
+      "headSha": "abcdef0"
+    }
+  },
+  {
+    "method": "GetChecks",
+    "params": {
+      "chatId": "chat-1",
+      "provider": "github",
+      "sha": "abcdef0"
+    }
+  },
+  {
+    "method": "GetCheckLog",
+    "params": {
+      "chatId": "chat-1",
+      "provider": "github",
+      "logId": "901",
+      "lines": 200
+    }
+  },
+  {
+    "method": "ListMarketplaceSources",
+    "params": {}
+  },
+  {
+    "method": "AddMarketplaceSource",
+    "params": {
+      "name": "example",
+      "url": "https://example.org/market/index.json",
+      "identity": "https://github.com/example/market/.github/workflows/publish.yml@refs/heads/main",
+      "issuer": null
+    }
+  },
+  {
+    "method": "RemoveMarketplaceSource",
+    "params": {
+      "name": "example"
+    }
+  },
+  {
+    "method": "SearchListings",
+    "params": {
+      "query": "github",
+      "kinds": [
+        "mcp-server"
+      ],
+      "frameworks": [],
+      "languages": [],
+      "minLevel": "core",
+      "tiers": [
+        "firstParty"
+      ],
+      "source": null
+    }
+  },
+  {
+    "method": "GetListing",
+    "params": {
+      "id": "ostrium/github-mcp-server",
+      "version": null,
+      "source": null
+    }
+  },
+  {
+    "method": "PlanInstall",
+    "params": {
+      "id": "ostrium/github-mcp-server",
+      "version": "2.0.3",
+      "source": "official"
+    }
+  },
+  {
+    "method": "InstallListing",
+    "params": {
+      "id": "ostrium/github-mcp-server",
+      "version": "2.0.3",
+      "source": "official",
+      "planDigest": "5f2b1c8e",
+      "config": {},
+      "secrets": {
+        "token": "ghp_example"
+      }
+    }
+  },
+  {
+    "method": "UninstallListing",
+    "params": {
+      "id": "ostrium/github-mcp-server"
+    }
+  },
+  {
+    "method": "ListInstalledListings",
+    "params": {}
+  },
+  {
+    "method": "CheckListingUpdates",
+    "params": {}
+  },
+  {
+    "method": "UpdateListing",
+    "params": {
+      "id": "ostrium/github-mcp-server",
+      "version": null,
+      "planDigest": "5f2b1c8e"
     }
   }
 ]

@@ -17,3 +17,36 @@ agentd-preview-port = { max-threads = 1 }
 [[profile.default.overrides]]
 filter = 'package(loams-agentd-preview) & binary(discovery)'
 test-group = 'agentd-preview-port'
+
+# Known-flaky tests: retry once, by name only (never a blanket retry). Each
+# entry names its tracking issue; the PR that fixes the test removes its entry.
+# The list and the failure counts are in docs/ci/flaky-tests.md.
+[[profile.default.overrides]]
+# #1084
+filter = 'binary_id(loams-graph::limits) & (test(=namespace_concurrency_limit_resource_exhausted) | test(=idle_namespaces_leave_no_slot_entry))'
+retries = 1
+
+[[profile.default.overrides]]
+# #1086
+filter = 'binary_id(loams-git::owner) & test(=idle_sequencer_is_evicted_and_reloads)'
+retries = 1
+
+[[profile.default.overrides]]
+# #1087
+filter = 'binary_id(loams-worker::worker) & test(=an_expired_lease_nobody_took_is_retaken_and_the_task_continues)'
+retries = 1
+
+[[profile.default.overrides]]
+# #1088
+filter = 'binary_id(loams-agentd-sessions::m5_repos_diffs_terminals) & test(=git_history_search_is_fuzzy_complete_and_accepts_sha_prefixes)'
+retries = 1
+
+[[profile.default.overrides]]
+# #1089
+filter = 'binary_id(loams-agentd::security) & test(=failed_upgrades_are_slowed)'
+retries = 1
+
+[[profile.default.overrides]]
+# #1090
+filter = 'binary_id(loams-query::it) & test(=filter_write::a_refused_batch_waits_for_retry_after)'
+retries = 1

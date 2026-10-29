@@ -1,0 +1,10 @@
+# Shared targets of the Rust build (buck/rust.bzl).
+
+# CARGO_TARGET_TMPDIR of integration tests: an empty directory that tests
+# create their temporary directories in, as Cargo's target/tmp.
+genrule(
+    name = "cargo-target-tmpdir",
+    out = "tmp",
+    cmd = "mkdir -p $OUT",
+    visibility = ["PUBLIC"],
+)

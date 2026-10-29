@@ -16,7 +16,9 @@
 on:
   pull_request:
     branches: [dev, main]
-    types: [opened, synchronize, reopened, ready_for_review, labeled]
+    # Not `labeled`: every label restarted the run. A draft labelled ci:full
+    # runs on its next push, as CI does.
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'crates/loams-agentd*/**'
       - 'proto/loams/agentd/**'
@@ -27,6 +29,8 @@ on:
       - 'web/packages/ui/**'
       - 'web/plugins/studio/**'
       - 'web/plugins/factory/**'
+      - 'web/plugins/marketplace/**'
+      - 'web/packages/slots/**'
       - 'web/plugins/shell/**'
       - 'web/plugins/rpc/**'
       - 'web/plugins/approvals/**'
@@ -46,11 +50,20 @@ on:
 permissions:
   contents: read
 
+# Superseded runs of a pull request are cancelled; a push to main, a tag,
+# a dispatch (the nightly) and a schedule run to completion. The event is in
+# the group, so a push never cancels a dispatch on the same branch.
 concurrency:
-  group: studio-e2e-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: studio-e2e-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
+  # CI builds are never debugged: no debug info in dev and test builds (smaller
+  # caches, faster links; a panic still names its file and line) and no
+  # incremental artifacts. rust-cache sets CARGO_INCREMENTAL=0 too; this covers
+  # the jobs without it.
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_DEV_DEBUG: 0
   CI: 'true'
   CARGO_TERM_COLOR: always
   NX_DAEMON: 'false'
@@ -60,7 +73,7 @@ jobs:
   web:
     name: "Studio e2e: web"
     if: github.event_name != 'pull_request' || github.event.pull_request.draft != true || contains(github.event.pull_request.labels.*.name, 'ci:full')
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
@@ -70,18 +83,20 @@ jobs:
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
           key: studio-e2e
-          save-if: ${{ github.event_name != 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
       # A debug build: only a debug daemon honours LOAMS_AGENTD_TEST_ISSUER (ruling T7-7).
+      # `e2e-marketplace`: the Seed Exchange spec's testkit marketplace (MK0 Task 9).
       - name: loams-agentd (debug)
-        run: cargo build -p loams-agentd --locked
+        run: cargo build -p loams-agentd --locked --features e2e-marketplace
       - uses: pnpm/action-setup@v6
         with:
           package_json_file: package.json
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
@@ -98,8 +113,8 @@ jobs:
 
   electron:
     name: "Studio e2e: Electron"
-    if: github.event_name != 'pull_request' || github.base_ref == 'main'
-    runs-on: ubuntu-24.04
+    if: github.event_name != 'pull_request' || github.base_ref == 'main' || startsWith(github.base_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'ci:full')
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 75
     steps:
       - uses: actions/checkout@v7
@@ -108,9 +123,10 @@ jobs:
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
           key: studio-e2e
-          save-if: ${{ github.event_name != 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
       - name: loams-agentd (debug)
         run: cargo build -p loams-agentd --locked
       - uses: pnpm/action-setup@v6
@@ -118,7 +134,7 @@ jobs:
           package_json_file: package.json
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile

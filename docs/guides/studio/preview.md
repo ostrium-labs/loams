@@ -27,7 +27,7 @@ The preview is the remote agentd's `/preview/…` path in a sandboxed frame:
 
 The details, and the headers that keep other sites from framing a preview, are in [Remote agentd](remote-agentd.md#previews).
 
-**Pending:** the console's Content-Security-Policy must allow framing your agentd host. The hosted console, `console.loams.dev`, allows `frame-src 'self'` only, so its previews don't render for any agentd host; a console you deploy with your host in `LOAMS_AGENTD_ORIGINS`, and the dev server, do frame them ([details](remote-agentd.md#the-consoles-content-security-policy)).
+**Note:** the console's Content-Security-Policy must allow framing your agentd host. The console your engine serves at `/ui/` adds the hosts in `LOAMS_AGENTD_ORIGINS` to `frame-src` as well as `connect-src`, so its previews render once your host is listed; so do a console you deploy with your host in `LOAMS_AGENTD_ORIGINS`, and the dev server ([details](remote-agentd.md#the-consoles-content-security-policy)).
 
 **When the daemon can't serve previews** (an older daemon, or previews off), the tab shows how to forward the preview proxy's port instead, then open the preview locally:
 

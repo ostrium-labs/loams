@@ -97,12 +97,18 @@ permissions:
   contents: read
 
 concurrency:
-  group: sdk-release-${{ github.event.inputs.tag || github.ref }}
-  # A publish must never be cancelled half way through.
-  cancel-in-progress: false
+  group: sdk-release-${{ github.event_name }}-${{ github.event.inputs.tag || github.ref }}
+  # A publish (a tag push or a dispatch) must never be cancelled half way
+  # through. A pull request's dry run publishes nothing, so a newer push to it
+  # supersedes the older run.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
+  # Shipped artefacts never come from a task cache (docs/guides/nx-cloud.md): no Nx Cloud,
+  # and no cached Nx results, local or remote.
+  NX_NO_CLOUD: 'true'
+  NX_SKIP_NX_CACHE: 'true'
   DOTNET_CLI_TELEMETRY_OPTOUT: '1'
   DOTNET_NOLOGO: '1'
 
@@ -123,6 +129,21 @@ jobs:
       go_tag: ${{ steps.spell.outputs.go_tag }}
       gem: ${{ steps.spell.outputs.gem }}
       composer_tag: ${{ steps.spell.outputs.composer_tag }}
+      # On a pull request, which SDKs' packaging its paths touch: each build job
+      # below runs only for those (this workflow and sdk-version.py select all).
+      # A tag push and a dispatch build every SDK.
+      typescript: ${{ steps.sdks.outputs.typescript }}
+      python: ${{ steps.sdks.outputs.python }}
+      rust: ${{ steps.sdks.outputs.rust }}
+      csharp: ${{ steps.sdks.outputs.csharp }}
+      go: ${{ steps.sdks.outputs.go }}
+      swift: ${{ steps.sdks.outputs.swift }}
+      cpp: ${{ steps.sdks.outputs.cpp }}
+      ruby: ${{ steps.sdks.outputs.ruby }}
+      php: ${{ steps.sdks.outputs.php }}
+      dart: ${{ steps.sdks.outputs.dart }}
+      jvm: ${{ steps.sdks.outputs.jvm }}
+      objc: ${{ steps.sdks.outputs.objc }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -130,6 +151,66 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
           persist-credentials: false
+      # Empty token: a local git comparison, so no pull-requests permission.
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: sdks
+        if: github.event_name == 'pull_request'
+        with:
+          token: ''
+          base: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          filters: |
+            all: &all
+              - '.github/workflows/sdk-release.yml'
+              - 'scripts/sdk/sdk-version.py'
+            typescript:
+              - *all
+              - 'sdks/typescript/tools/**'
+              - 'sdks/typescript/packages/*/package.json'
+            python:
+              - *all
+              - 'sdks/python/pyproject.toml'
+            rust:
+              - *all
+              - 'sdks/rust/Cargo.toml'
+              - 'crates/loams-proto/**'
+              - 'crates/loams-live-proto/**'
+            csharp:
+              - *all
+              - 'sdks/csharp/src/Loams/Loams.csproj'
+            go:
+              - *all
+              - 'sdks/go/go.mod'
+            swift:
+              - *all
+              - 'Package.swift'
+              - 'sdks/swift/Package.swift'
+            cpp:
+              - *all
+              - 'sdks/cpp/CMakeLists.txt'
+              - 'sdks/cpp/cmake/**'
+              - 'sdks/cpp/packaging/**'
+            ruby:
+              - *all
+              - 'sdks/ruby/loams.gemspec'
+              - 'sdks/ruby/lib/loams/version.rb'
+            php:
+              - *all
+              - 'sdks/php/composer.json'
+              - 'scripts/sdk/php-split.sh'
+            dart:
+              - *all
+              - 'sdks/dart/pubspec.yaml'
+            jvm:
+              - *all
+              - 'sdks/java/pom.xml'
+              - 'sdks/java/build.sh'
+              - 'sdks/kotlin/pom.xml'
+              - 'sdks/kotlin/build.sh'
+              - 'scripts/sdk/maven-bundle.sh'
+            objc:
+              - *all
+              - 'Loams.podspec'
       - name: the ref, the tag and the gate
         id: plan
         env:
@@ -238,6 +319,7 @@ jobs:
   typescript:
     name: "TypeScript: build and pack"
     needs: plan
+    if: github.event_name != 'pull_request' || needs.plan.outputs.typescript == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -250,7 +332,7 @@ jobs:
           version: 11.27.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           # No dependency cache outside pull requests: a tag or dispatch run
           # builds what the publish jobs upload (CodeQL cache poisoning).
           cache: ${{ github.event_name == 'pull_request' && 'pnpm' || '' }}
@@ -272,7 +354,17 @@ jobs:
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/npm"
           for pkg in live client; do
-            (cd "sdks/typescript/packages/$pkg/build/npm" && npm publish --dry-run --tag "$NPM_TAG" && npm pack --pack-destination "$RUNNER_TEMP/npm")
+            dir="sdks/typescript/packages/$pkg/build/npm"
+            name=$(node -p "require('./$dir/package.json').name")
+            version=$(node -p "require('./$dir/package.json').version")
+            # npm 11's dry run asks the registry and refuses a version it already has
+            # (v0.1.2's re-run): the publish job skips that version anyway, so only pack.
+            if npm view "$name@$version" version >/dev/null 2>&1; then
+              echo "$name@$version is already on npm; packing without the publish dry run"
+            else
+              (cd "$dir" && npm publish --dry-run --tag "$NPM_TAG")
+            fi
+            (cd "$dir" && npm pack --pack-destination "$RUNNER_TEMP/npm")
           done
           ls -l "$RUNNER_TEMP/npm"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -295,7 +387,7 @@ jobs:
     steps:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 24 # no checkout in this job; keep in step with .nvmrc
       # Trusted publishing needs npm >= 11.5.1; Node 22 ships 10.x.
       - name: npm with trusted publishing
         run: npm install -g npm@11.6.2 && npm --version
@@ -330,6 +422,7 @@ jobs:
   python:
     name: "Python: build and check"
     needs: plan
+    if: github.event_name != 'pull_request' || needs.plan.outputs.python == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -395,6 +488,7 @@ jobs:
   rust:
     name: "Rust: build and package"
     needs: plan
+    if: github.event_name != 'pull_request' || needs.plan.outputs.rust == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -406,6 +500,9 @@ jobs:
         # Pull requests only: no cache in a run that builds what is published.
         if: github.event_name == 'pull_request'
         with:
+          # Restore only: a pull request's cache is visible to that pull request
+          # alone, and each one (about 870 MB) evicted dev's caches.
+          save-if: false
           workspaces: |
             . -> target
             sdks/rust -> target
@@ -457,6 +554,9 @@ jobs:
         # Pull requests only: no cache in a run that builds what is published.
         if: github.event_name == 'pull_request'
         with:
+          # Restore only: a pull request's cache is visible to that pull request
+          # alone, and each one (about 870 MB) evicted dev's caches.
+          save-if: false
           workspaces: |
             . -> target
             sdks/rust -> target
@@ -499,6 +599,7 @@ jobs:
   csharp:
     name: "C#: build and pack"
     needs: plan
+    if: github.event_name != 'pull_request' || needs.plan.outputs.csharp == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -576,6 +677,7 @@ jobs:
   go:
     name: "Go: test"
     needs: plan
+    if: github.event_name != 'pull_request' || needs.plan.outputs.go == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -658,6 +760,7 @@ jobs:
   swift:
     name: "Swift: build and test"
     needs: plan
+    if: github.event_name != 'pull_request' || needs.plan.outputs.swift == 'true'
     # Foundation's async URLSession, as ci.yml's sdk-swift job.
     runs-on: macos-latest
     timeout-minutes: 30
@@ -688,6 +791,7 @@ jobs:
   cpp:
     name: "C++: build the archive"
     needs: plan
+    if: github.event_name != 'pull_request' || needs.plan.outputs.cpp == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -781,6 +885,7 @@ jobs:
   ruby:
     name: "Ruby: build the gem"
     needs: plan
+    if: github.event_name != 'pull_request' || needs.plan.outputs.ruby == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -855,6 +960,7 @@ jobs:
   php:
     name: "PHP: test and split"
     needs: plan
+    if: github.event_name != 'pull_request' || needs.plan.outputs.php == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -921,6 +1027,7 @@ jobs:
   dart:
     name: "Dart: test and pub publish --dry-run"
     needs: plan
+    if: github.event_name != 'pull_request' || needs.plan.outputs.dart == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -981,6 +1088,7 @@ jobs:
   jvm:
     name: "Java and Kotlin: build the Maven Central bundles"
     needs: plan
+    if: github.event_name != 'pull_request' || needs.plan.outputs.jvm == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
@@ -1099,6 +1207,7 @@ jobs:
   objc:
     name: "Objective-C: pod lib lint"
     needs: plan
+    if: github.event_name != 'pull_request' || needs.plan.outputs.objc == 'true'
     runs-on: macos-latest
     timeout-minutes: 30
     steps:

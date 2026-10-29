@@ -1,0 +1,20 @@
+{
+  "checks": [
+    {
+      "logId": "3/0",
+      "name": "build",
+      "state": "success",
+      "url": "https://forgejo.example.com/dev/project/actions/runs/3/jobs/0"
+    },
+    {
+      "logId": "3/1",
+      "name": "test",
+      "state": "failure",
+      "url": "https://forgejo.example.com/dev/project/actions/runs/3/jobs/1"
+    }
+  ],
+  "provider": "forgejo",
+  "repo": "dev/project",
+  "sha": "0123456789abcdef0123456789abcdef01234567",
+  "state": "failure"
+}

@@ -1,0 +1,9 @@
+{
+  "object": "list",
+  "data": [
+    {"object": "embedding", "index": 1, "embedding": [0.0, 1.0, 0.0, 0.0]},
+    {"object": "embedding", "index": 0, "embedding": [1.0, 0.0, 0.0, 0.0]}
+  ],
+  "model": "embed-fixture",
+  "usage": {"prompt_tokens": 9, "total_tokens": 9}
+}

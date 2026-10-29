@@ -24,6 +24,7 @@ pub async fn fake_forgejo(respond: Respond) -> (String, Arc<Mutex<Vec<Recorded>>
     use axum::body::Bytes;
     use axum::extract::State;
     use axum::http::{HeaderMap, Method, StatusCode, Uri};
+    use axum::response::IntoResponse;
 
     type Seen = Arc<Mutex<Vec<Recorded>>>;
     let seen: Seen = Arc::default();
@@ -47,10 +48,13 @@ pub async fn fake_forgejo(respond: Respond) -> (String, Arc<Mutex<Vec<Recorded>>
                     body: serde_json::from_slice(&body).unwrap_or_default(),
                 });
                 let (status, reply) = respond(method.as_str(), uri.path());
-                (
-                    StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
-                    Json(reply),
-                )
+                let status =
+                    StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+                // A JSON string is served as plain text (a CI log, FT0 Task 5).
+                match reply {
+                    serde_json::Value::String(text) => (status, text).into_response(),
+                    reply => (status, Json(reply)).into_response(),
+                }
             },
         )
         .with_state(seen.clone());

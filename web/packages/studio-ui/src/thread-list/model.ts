@@ -4,6 +4,7 @@
 // T3 environments (sidebarProjectGrouping.ts, not taken), while a Studio host is one
 // daemon whose projects are repositories, so a thread is placed by its checkout.
 
+import { trimEndWhere } from "../lib/trimWhere";
 import {
   resolveProjectStatusIndicator,
   resolveThreadStatusPill,
@@ -31,7 +32,9 @@ export interface ProjectWorktree {
   readonly main: boolean;
 }
 
-const normalize = (path: string) => path.replace(/\\/g, "/").replace(/\/+$/, "");
+// Trailing slashes are trimmed in a loop: `/\/+$/` is quadratic on a long run of `/`
+// that does not end the path (CodeQL js/polynomial-redos, issue #1105).
+const normalize = (path: string) => trimEndWhere(path.replace(/\\/g, "/"), (c) => c === "/");
 
 /** Whether `path` is `root` or inside it. */
 export function isPathWithin(path: string, root: string): boolean {

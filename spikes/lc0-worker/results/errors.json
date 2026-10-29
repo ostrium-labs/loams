@@ -1,0 +1,242 @@
+{
+  "user": "t-idem-2p0t6h",
+  "idempotency": {
+    "keys": 60,
+    "rows_in_tidb": 60,
+    "distinct_runs": 60,
+    "duplicate_suppression_correct": true,
+    "by_mode": {
+      "clean": {
+        "n": 15,
+        "attempts": 15,
+        "first_reply_said_created": 15,
+        "samples": [
+          {
+            "mode": "clean",
+            "status": 201,
+            "created": true,
+            "attempts": 1
+          },
+          {
+            "mode": "clean",
+            "status": 201,
+            "created": true,
+            "attempts": 1
+          },
+          {
+            "mode": "clean",
+            "status": 201,
+            "created": true,
+            "attempts": 1
+          }
+        ]
+      },
+      "lost-response": {
+        "n": 15,
+        "attempts": 30,
+        "first_reply_said_created": 0,
+        "samples": [
+          {
+            "mode": "lost-response",
+            "status": 200,
+            "created": false,
+            "attempts": 2
+          },
+          {
+            "mode": "lost-response",
+            "status": 200,
+            "created": false,
+            "attempts": 2
+          },
+          {
+            "mode": "lost-response",
+            "status": 200,
+            "created": false,
+            "attempts": 2
+          }
+        ]
+      },
+      "abort-mid-request": {
+        "n": 15,
+        "attempts": 30,
+        "first_reply_said_created": 0,
+        "samples": [
+          {
+            "mode": "abort-mid-request",
+            "status": 200,
+            "created": false,
+            "attempts": 2,
+            "abortMs": 75
+          },
+          {
+            "mode": "abort-mid-request",
+            "status": 200,
+            "created": false,
+            "attempts": 2,
+            "abortMs": 341
+          },
+          {
+            "mode": "abort-mid-request",
+            "status": 200,
+            "created": false,
+            "attempts": 2,
+            "abortMs": 188
+          }
+        ]
+      },
+      "concurrent-dup": {
+        "n": 15,
+        "attempts": 30,
+        "first_reply_said_created": 15,
+        "samples": [
+          {
+            "mode": "concurrent-dup",
+            "statuses": [
+              200,
+              201
+            ],
+            "created": [
+              false,
+              true
+            ],
+            "attempts": 2
+          },
+          {
+            "mode": "concurrent-dup",
+            "statuses": [
+              201,
+              200
+            ],
+            "created": [
+              true,
+              false
+            ],
+            "attempts": 2
+          },
+          {
+            "mode": "concurrent-dup",
+            "statuses": [
+              200,
+              201
+            ],
+            "created": [
+              false,
+              true
+            ],
+            "attempts": 2
+          }
+        ]
+      }
+    },
+    "same_key_different_payload": 409
+  },
+  "device_side": {
+    "bad_bearer": 401,
+    "no_bearer": 401,
+    "timeout_100ms": "TimeoutError",
+    "unreachable_host": "TypeError: ENOTFOUND"
+  },
+  "worker_side": {
+    "badcreds": {
+      "kind": "badcreds",
+      "ok": false,
+      "error": {
+        "kind": "DatabaseError",
+        "status": 401,
+        "code": 49900002,
+        "message": "Error 1045 (28000): Access denied for user '<user>'@'<ip>' (using password=*** YES)"
+      },
+      "ms": 280
+    },
+    "badhost": {
+      "kind": "badhost",
+      "ok": false,
+      "error": {
+        "kind": "DatabaseError",
+        "status": 530,
+        "code": null,
+        "message": "<none>"
+      },
+      "ms": 199
+    },
+    "timeout": {
+      "kind": "timeout",
+      "ok": false,
+      "error": {
+        "kind": "TimeoutError",
+        "message": "The operation was aborted due to timeout"
+      },
+      "ms": 500
+    },
+    "slow": {
+      "kind": "slow",
+      "ok": true,
+      "ms": 3272
+    },
+    "syntax": {
+      "kind": "syntax",
+      "ok": false,
+      "error": {
+        "kind": "DatabaseError",
+        "status": 400,
+        "code": 400,
+        "message": "You have an error in your SQL syntax: line 1 column 5 near \"SELEC 1\" "
+      },
+      "ms": 269
+    },
+    "abort-write": {
+      "kind": "abort-write",
+      "results": [
+        {
+          "abort_after_ms": 5,
+          "client_error": "TimeoutError",
+          "committed": true
+        },
+        {
+          "abort_after_ms": 20,
+          "client_error": "TimeoutError",
+          "committed": true
+        },
+        {
+          "abort_after_ms": 40,
+          "client_error": "TimeoutError",
+          "committed": true
+        },
+        {
+          "abort_after_ms": 60,
+          "client_error": "TimeoutError",
+          "committed": true
+        },
+        {
+          "abort_after_ms": 80,
+          "client_error": "TimeoutError",
+          "committed": true
+        },
+        {
+          "abort_after_ms": 100,
+          "client_error": "TimeoutError",
+          "committed": true
+        },
+        {
+          "abort_after_ms": 150,
+          "client_error": "TimeoutError",
+          "committed": true
+        },
+        {
+          "abort_after_ms": 250,
+          "client_error": "TimeoutError",
+          "committed": true
+        }
+      ],
+      "ok": true,
+      "ms": 15636
+    }
+  },
+  "counters": {
+    "http": 115,
+    "ws_upgrades": 0,
+    "ws_sent": 0,
+    "ws_received": 0,
+    "retries": 30
+  }
+}

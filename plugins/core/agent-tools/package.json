@@ -12,11 +12,11 @@
     "@loams-core/store": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "cordis": "^4.0.0-rc.10",
-    "uuid": "^14.0.2",
+    "uuid": "^14.0.3",
     "@loams-core/types": "workspace:*"
   },
   "devDependencies": {
-    "@types/uuid": "^10.0.0"
+    "@types/uuid": "11.0.0"
   },
   "scripts": {
     "build": "pnpm --filter @loams-plugins/root build"

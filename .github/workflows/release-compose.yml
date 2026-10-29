@@ -8,20 +8,24 @@ on:
     paths:
       - "deploy/release/**"
       - "deploy/loams-postgres-dev/**"
+      - "deploy/openfga/**"
       - ".github/workflows/release-compose.yml"
+  # Not on dev: the pull request already ran it on the same files.
   push:
-    branches: [main, dev]
+    branches: [main]
     paths:
       - "deploy/release/**"
       - "deploy/loams-postgres-dev/**"
+      - "deploy/openfga/**"
       - ".github/workflows/release-compose.yml"
 
 permissions:
   contents: read
 
+# A newer push to a pull request supersedes the older run; main runs to completion.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev' }}
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   compose:
@@ -35,7 +39,7 @@ jobs:
         working-directory: deploy/release
         run: |
           docker compose --env-file .env.example config -q
-          for profiles in tikv rustfs tikv,rustfs tikv,rustfs,house-tailnet,postgres-control,console,headscale; do
+          for profiles in tikv rustfs kafka authz connectors browser tikv,rustfs tikv,rustfs,kafka,authz,connectors,browser,house-tailnet,postgres-control,console,headscale; do
             COMPOSE_PROFILES="$profiles" docker compose --env-file .env.example config -q
             COMPOSE_PROFILES="$profiles" LOAMS_POSTGRES_COMPOSE=./postgres-off.yaml \
               docker compose --env-file .env.example config -q
@@ -68,6 +72,104 @@ jobs:
           done
           # The engine reads the House's link certificate at start.
           jq -e '.services.loams.depends_on.house.condition == "service_healthy"' <<<"$cfg"
+      # The `connectors` profile (CC1 Task 1, D1821, ruling R1.1): connect is
+      # off in the default stack, publishes no port, joins no other service's
+      # network namespace, and is with the engine the only mounter of the
+      # connect socket's volume; its secrets and instances are read-only.
+      - name: the connectors profile is optional and reaches the engine only by its socket
+        working-directory: deploy/release
+        run: |
+          cfg="$(COMPOSE_PROFILES=connectors docker compose --env-file .env.example config --format json)"
+          jq -e '.services.connect.profiles == ["connectors"]' <<<"$cfg"
+          jq -e '.services.connect | (has("ports") | not) and (has("network_mode") | not) and .read_only == true' <<<"$cfg"
+          jq -e '[.services | to_entries[] | select(.value.network_mode != null and (.value.network_mode | test("loams"))) | .key] == ["tailscale"]' <<<"$cfg"
+          jq -e '[.services | to_entries[] | select([.value.volumes[]? | select(.source == "connect-run")] | length > 0) | .key] | sort == ["connect", "loams"]' <<<"$cfg"
+          jq -e '.services.loams.environment.LOAMS_CONNECT_SOCKET == "/run/loams-connect/engine.sock"' <<<"$cfg"
+          jq -e '[.services.connect.volumes[] | select(.target == "/var/lib/loams-connect/secrets" or .target == "/etc/loams/connect") | .read_only] == [true, true]' <<<"$cfg"
+          jq -e '.services.connect.command | index("--engine=unix:///run/loams-connect/engine.sock") != null' <<<"$cfg"
+      # The `browser` profile (D2114): Obscura, off in the default stack, pinned
+      # by digest, no published port, unprivileged, and reachable only on an
+      # internal network that agentd alone shares.
+      - name: the browser profile is optional, pinned and internal
+        working-directory: deploy/release
+        run: |
+          services() { docker compose --env-file .env.example config --services | sort | tr '\n' ' '; }
+          [ "$(COMPOSE_PROFILES=browser services)" = "agentd browser browser-gateway compute1 house house-init loams migrate pageserver pg-bootstrap safekeeper1 storage_broker tailscale " ] \
+            || { echo "browser services: $(COMPOSE_PROFILES=browser services)"; exit 1; }
+          cfg="$(COMPOSE_PROFILES=browser docker compose --env-file .env.example config --format json)"
+          jq -e '.services.browser
+                 | .profiles == ["browser"]
+                   and (.image | test("^docker\\.io/h4ckf0r0day/obscura:[0-9.]+@sha256:[0-9a-f]{64}$"))
+                   and ((.ports // []) == []) and (.network_mode == null) and (.privileged != true)
+                   and (.read_only == true) and ((.cap_drop // []) == ["ALL"])
+                   and ((.networks | keys | sort) == ["browser-egress", "browser-engine"])' <<<"$cfg"
+          # agentd reaches only the gateway (D2118); only the gateway reaches the engine.
+          jq -e '.services["browser-gateway"]
+                 | .profiles == ["browser"] and ((.ports // []) == []) and (.read_only == true)
+                   and ((.cap_drop // []) == ["ALL"])
+                   and ((.networks | keys | sort) == ["browser", "browser-engine"])' <<<"$cfg"
+          jq -e '(.networks.browser.internal == true) and (.networks["browser-engine"].internal == true)' <<<"$cfg"
+          jq -e '[.services | to_entries[] | select((.value.networks // {}) | has("browser")) | .key]
+                 | sort == ["agentd", "browser-gateway"]' <<<"$cfg"
+          jq -e '[.services | to_entries[] | select((.value.networks // {}) | has("browser-engine")) | .key]
+                 | sort == ["browser", "browser-gateway"]' <<<"$cfg"
+          jq -e '[.services | to_entries[] | select((.value.networks // {}) | has("browser-egress")) | .key]
+                 == ["browser"]' <<<"$cfg"
+          jq -e '.services.agentd.environment.LOAMS_BROWSER_SERVICE_URL == "ws://browser-gateway:9223/devtools/browser"' <<<"$cfg"
+      # The `kafka` profile (KW-L2, D1798): Iggy and its Kafka gateway, off in
+      # the default stack (the exact service list above), pinned by digest, on
+      # loopback, and not part of the engine's network namespace.
+      - name: the kafka profile is optional, pinned and on loopback
+        working-directory: deploy/release
+        run: |
+          services() { docker compose --env-file .env.example config --services | sort | tr '\n' ' '; }
+          [ "$(COMPOSE_PROFILES=kafka services)" = "agentd compute1 house house-init iggy kafka-gateway loams migrate pageserver pg-bootstrap safekeeper1 storage_broker tailscale " ] \
+            || { echo "kafka services: $(COMPOSE_PROFILES=kafka services)"; exit 1; }
+          cfg="$(COMPOSE_PROFILES=kafka docker compose --env-file .env.example config --format json)"
+          jq -e '[.services.iggy, .services["kafka-gateway"]]
+                 | all(.profiles == ["kafka"]
+                       and (.image | test("^ghcr\\.io/ostrium-labs/iggy@sha256:[0-9a-f]{64}$"))
+                       and (.healthcheck != null) and (.privileged != true)
+                       and (.network_mode == null))' <<<"$cfg"
+          # Iggy publishes nothing; the gateway publishes 9093 on loopback only.
+          jq -e '((.services.iggy.ports // []) == [])
+                 and ([.services["kafka-gateway"].ports[] | .host_ip] == ["127.0.0.1"])' <<<"$cfg"
+          # No other service depends on them, and the engine does not share a namespace with them.
+          jq -e '[.services | to_entries[] | select(.key != "kafka-gateway") | select((.value.depends_on // {}) | has("iggy") or has("kafka-gateway"))] | length == 0' <<<"$cfg"
+          jq -e '[.services[] | select((.network_mode // "") | test("iggy|kafka"))] | length == 0' <<<"$cfg"
+      # Design 76 (plan IA1, IA2): OpenFGA for LOAMS_AUTHZ=openfga, off by default, pinned,
+      # unprivileged, authenticated, and on an internal network that only the engine shares.
+      - name: the authz profile is optional, pinned, keyed and internal
+        working-directory: deploy/release
+        run: |
+          services() { docker compose --env-file .env.example config --services | sort | tr '\n' ' '; }
+          [ "$(COMPOSE_PROFILES=authz services)" = "agentd compute1 house house-init loams migrate openfga openfga-init openfga-migrate pageserver pg-bootstrap safekeeper1 storage_broker tailscale " ] \
+            || { echo "authz services: $(COMPOSE_PROFILES=authz services)"; exit 1; }
+          cfg="$(COMPOSE_PROFILES=authz docker compose --env-file .env.example config --format json)"
+          jq -e '[.services.openfga, .services["openfga-migrate"]]
+                 | all(.image | test("^docker\\.io/openfga/openfga:v[0-9.]+@sha256:[0-9a-f]{64}$"))' <<<"$cfg"
+          jq -e '[.services.openfga, .services["openfga-migrate"], .services["openfga-init"]]
+                 | all(.profiles == ["authz"] and ((.ports // []) == []) and ((.networks | keys) == ["authz"])
+                       and (.privileged != true) and (.network_mode == null) and (.user == null)
+                       and (.read_only == true) and ((.cap_drop // []) == ["ALL"]))' <<<"$cfg"
+          jq -e '.networks.authz.internal == true' <<<"$cfg"
+          jq -e '[.services | to_entries[] | select((.value.networks // {}) | has("authz")) | .key]
+                 | sort == ["loams", "openfga", "openfga-init", "openfga-migrate"]' <<<"$cfg"
+          # Preshared key on, playground and both of OpenFGA's caches off (D1625), SQLite (D1626).
+          jq -e '.services.openfga
+                 | (.environment.OPENFGA_AUTHN_METHOD == "preshared")
+                   and (.command | index("--playground-enabled=false") != null)
+                   and (.command | index("--check-query-cache-enabled=false") != null)
+                   and (.command | index("--check-iterator-cache-enabled=false") != null)
+                   and (.command | index("--datastore-engine=sqlite") != null)' <<<"$cfg"
+          # The engine stays on the built-in authorizer unless .env says otherwise.
+          jq -e '.services.loams.environment.LOAMS_AUTHZ == "builtin"' <<<"$cfg"
+      - name: config/openfga-model.json matches deploy/openfga
+        run: deploy/openfga/model-json.sh --check
+      # The profile refuses to start on .env.example's placeholder password
+      # (config/kafka-guard.sh), and both its services go through the guard.
+      - name: the kafka profile refuses the placeholder password
+        run: deploy/release/ci/kafka-guard-test.sh
       # 0.1.0 blocker: an apostrophe in endpoint-storage's `sh -c` script
       # ("pg-control's key") opened a quote that never closed, and the
       # service restart-looped. Every inline shell script must parse.
@@ -140,7 +242,21 @@ jobs:
                  | (index("--pageserver=http://pageserver:9898") != null)
                    and (index("--safekeeper=http://safekeeper1:7676") != null)' <<<"$cfg"
       - name: shellcheck
-        run: shellcheck deploy/release/build.sh deploy/release/config/stores.sh deploy/release/byoc/install.sh deploy/release/byoc/uninstall.sh deploy/release/byoc/upgrade.sh deploy/release/byoc/upgrade-test.sh deploy/loams-postgres-dev/bootstrap/pg-bootstrap.sh deploy/loams-postgres-dev/compute/start.sh
+        run: shellcheck deploy/release/ci/kafka-smoke.sh deploy/release/ci/kafka-guard-test.sh deploy/release/config/kafka-guard.sh deploy/release/ci/iggy-sink-it.sh deploy/release/build.sh deploy/release/config/stores.sh deploy/release/config/openfga-init.sh deploy/openfga/model-json.sh deploy/release/byoc/install.sh deploy/release/byoc/uninstall.sh deploy/release/byoc/upgrade.sh deploy/release/byoc/upgrade-test.sh deploy/loams-postgres-dev/bootstrap/pg-bootstrap.sh deploy/loams-postgres-dev/compute/start.sh
       # UP1 Task 22: upgrade_sh_dry_run_prints_remote_commands.
       - name: byoc upgrade.sh
         run: deploy/release/byoc/upgrade-test.sh
+
+  # The `kafka` profile starts cleanly and kcat produces and consumes through
+  # it (KW-L2). Pulls the fork's image by the digest in .env.example and a
+  # pinned kcat image; starts neither the engine nor the Postgres stack.
+  kafka:
+    name: Kafka profile smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: kcat produce and consume through the gateway
+        run: deploy/release/ci/kafka-smoke.sh

@@ -2,7 +2,7 @@
 
 Status: **Proposed** · 2026-10-13. Appendix A of [§53 Loams Studio](53-studio-ade.md). Plan: [SD1](../plans/2026-10-13-sd1-studio-ade.md).
 
-**As built (2026-10-15).** This inventory is the plan; what was actually taken is recorded per file in `web/packages/studio-ui/provenance.json` (104 files: 26 as-is, 77 adapted, 1 rewritten) and `web/packages/ui/provenance.json` (12 primitives), each row with its verdict, group and note. Where a task took, left or rewrote something differently from this list, its ruling in SD1's "Rulings made during execution" says why (for example T17-1, T18-13, T19-2, T21-1, T22-2, T26-6). The re-sync procedure is in [`web/packages/studio-ui/README.md`](../../web/packages/studio-ui/README.md).
+**As built (2026-10-15).** This inventory is the plan; what was actually taken is recorded per file in `web/packages/studio-ui/provenance.json` (104 files: 24 as-is, 79 adapted, 1 rewritten) and `web/packages/ui/provenance.json` (12 primitives), each row with its verdict, group and note. Where a task took, left or rewrote something differently from this list, its ruling in SD1's "Rulings made during execution" says why (for example T17-1, T18-13, T19-2, T21-1, T22-2, T26-6). The re-sync procedure is in [`web/packages/studio-ui/README.md`](../../web/packages/studio-ui/README.md).
 
 This is the list of T3 Code files and modules that Studio takes, adapts, rewrites or skips. It was read from the source tree only: nothing in it was run, installed or built.
 

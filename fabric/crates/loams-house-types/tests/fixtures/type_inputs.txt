@@ -1,0 +1,113 @@
+UInt8
+UInt16
+UInt32
+UInt64
+Int8
+Int16
+Int32
+Int64
+Float32
+Float64
+Bool
+bool
+BOOLEAN
+String
+FixedString(16)
+Date
+Date32
+DateTime
+DateTime('UTC')
+DateTime(  'Asia/Kolkata' )
+DateTime32
+DateTime64(3)
+DateTime64(9, 'UTC')
+DateTime(3)
+TIMESTAMP
+TIMESTAMP(6)
+UUID
+IPv4
+IPv6
+INET4
+Decimal
+Decimal(10, 2)
+DECIMAL(5)
+Decimal32(2)
+Decimal64(4)
+Decimal128(3)
+Decimal256(10)
+Decimal(40, 2)
+DEC(3,1)
+NUMERIC(12, 3)
+Enum8('a' = 1, 'b' = 2)
+Enum16('a' = 1000)
+Enum('a', 'b')
+Enum('a' = 1000)
+Enum8('a\'b' = -1)
+Nullable(String)
+Nullable(Nothing)
+LowCardinality(String)
+LowCardinality(Nullable(String))
+LowCardinality(FixedString(2))
+Array(String)
+Array(Nullable(UInt8))
+Array(Array(LowCardinality(String)))
+Map(String, UInt64)
+Map(LowCardinality(String), Map(String, UInt8))
+Map(String, Array(Tuple(UInt8, String)))
+Tuple(UInt8, String)
+Tuple(a String, b UInt8)
+Tuple(a Tuple(b UInt8, c String), d Array(Tuple(e UInt8)))
+Tuple(UInt8, Tuple(x String))
+Tuple(`a b` UInt8)
+Tuple(a DOUBLE PRECISION)
+Nested(a UInt8, b String)
+JSON
+JSON()
+JSON(max_dynamic_paths=100)
+JSON(max_dynamic_paths=0, message String)
+JSON(b.c UInt32, a String, max_dynamic_types=3, max_dynamic_paths=10, SKIP REGEXP 'x.*', SKIP z)
+AggregateFunction(uniq, String)
+AggregateFunction(quantiles(0.5, 0.9), Float64)
+AggregateFunction(argMax, String, DateTime64(3))
+AggregateFunction(1, sumMap, Array(UInt8), Array(UInt64))
+AggregateFunction(topK(10), String)
+AggregateFunction(uniqIf, String, UInt8)
+AggregateFunction(quantilesIf(0.5), Float64, UInt8)
+SimpleAggregateFunction(max, DateTime64(9))
+SimpleAggregateFunction(anyLast, Nullable(String))
+Nothing
+IntervalDay
+IntervalSecond
+Int128
+UInt256
+BFloat16
+Dynamic
+Dynamic(max_types=3)
+Variant(String, UInt8)
+Time
+Time64(3)
+INT
+INTEGER
+INT UNSIGNED
+BIGINT UNSIGNED
+TINYINT
+SMALLINT SIGNED
+double precision
+DOUBLE
+FLOAT
+FLOAT(10)
+REAL
+VARCHAR
+VARCHAR(255)
+String(10)
+TEXT
+CHAR VARYING
+NATIONAL CHARACTER LARGE OBJECT
+BINARY(4)
+BYTEA
+SIGNED
+UNSIGNED
+YEAR
+BIT
+SET
+Point

@@ -1,6 +1,6 @@
 import { validateManifest } from '@loams/console-host';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import pkg from '../package.json';
 import {
   createDurableApi,

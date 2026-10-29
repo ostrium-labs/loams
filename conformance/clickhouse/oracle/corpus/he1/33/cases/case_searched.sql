@@ -1,0 +1,1 @@
+SELECT id, CASE WHEN u > 100 THEN 'big' ELSE 'small' END FROM t33 ORDER BY id

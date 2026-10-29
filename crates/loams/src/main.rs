@@ -277,6 +277,12 @@ struct Native {
     /// in place of the caller's credentials (or LOAMS_HOUSE_KEY_FILE).
     #[arg(long)]
     house_key_file: Option<PathBuf>,
+    /// The connect socket (CC1 ruling R1.1): the main API on a Unix socket,
+    /// mode 0660, for `loams-fabric connect`, taking API keys only. Also
+    /// LOAMS_CONNECT_SOCKET. Put it in a volume only the engine and the
+    /// connect role mount.
+    #[arg(long)]
+    connect_socket: Option<PathBuf>,
     /// MySQL wire listener for collection queries (loopback only).
     #[cfg(feature = "mysql-wire")]
     #[arg(long)]
@@ -341,6 +347,14 @@ struct Native {
     /// Serve no Elasticsearch API.
     #[arg(long)]
     no_es: bool,
+    /// The built console to serve at /ui/ on the HTTP listeners, same-origin
+    /// with the API [default: /usr/share/loams/console, where the images and
+    /// the packages install it, when it holds a build].
+    #[arg(long, conflicts_with = "no_console")]
+    console_dir: Option<PathBuf>,
+    /// Serve no console at /ui/.
+    #[arg(long)]
+    no_console: bool,
     /// How long a CloudEvent's `source` + `id` is remembered, so a retry does
     /// not append it again, in seconds [default: 3600, at most 86400].
     #[arg(long)]
@@ -646,6 +660,17 @@ impl Native {
             .house_key_file
             .clone()
             .or_else(|| env_value("LOAMS_HOUSE_KEY_FILE").map(PathBuf::from));
+        config.connect_socket = self
+            .connect_socket
+            .clone()
+            .or_else(|| env_value("LOAMS_CONNECT_SOCKET").map(PathBuf::from));
+        config.console_dir = match (self.no_console, &self.console_dir) {
+            (true, _) => None,
+            // An explicit directory is kept even without a build, so the
+            // server says why /ui/ is not served.
+            (false, Some(dir)) => Some(dir.clone()),
+            (false, None) => loams::console::resolve(None),
+        };
         config.flight_sql = if self.no_flight_sql {
             None
         } else {
@@ -1248,6 +1273,31 @@ enum Command {
     /// Upgrade a self-hosted compose stack one release at a time, with a
     /// snapshot first (design §54 §10): `check`, `status`, `snapshots`.
     Upgrade(loams_upgrade::UpgradeArgs),
+    /// Loams Cloud, the hosted try-out (design §78 §25): `cloud admin …` for
+    /// allow-listed Ostrium admins (waitlist, invites, audit, the TOTP step-up).
+    Cloud(loams_cloud_admin::CloudArgs),
+    /// The agent marketplace through the local agent daemon (design §73
+    /// §7.1–§7.2): `search`, `info`, `install`, `uninstall`, `list`,
+    /// `update`, `source`. Install shows the plan and asks first.
+    Marketplace(loams_agentd_cli::marketplace::MarketplaceArgs),
+    /// BYOC helpers (design 80, plan CC1 Task 6): `byoc confluent key
+    /// create|rotate` writes Confluent keys straight into the install's cloud
+    /// secret store; `byoc confluent check` checks region and reachability.
+    Byoc(loams_confluent::cli::ByocArgs),
+    /// The managed RisingWave (design 81, preview): run SQL, list
+    /// materialized views, sources and sinks, follow job progress, and
+    /// render or apply pipeline specs. Reaches the frontend through
+    /// loams-gateway.
+    Risingwave(loams_risingwave::cli::RisingWaveArgs),
+    /// Managed Spark (design 81, preview): the namespace's Spark Connect URL,
+    /// batch jobs (submit, status, logs, cancel, schedules), local runs, and
+    /// the driver pod a job renders to.
+    #[cfg(feature = "spark")]
+    Spark(loams_spark::cli::SparkArgs),
+    /// Managed Flink SQL (design 81, preview): `flink sql` is a REPL, `flink
+    /// jobs …` manages saved INSERT pipelines, `flink jars` lists the bundle.
+    #[cfg(feature = "flink")]
+    Flink(loams_flink::cli::FlinkArgs),
     /// Engine authentication (LOAMS_AUTH_MODE): API keys.
     Auth {
         #[command(subcommand)]
@@ -1407,6 +1457,14 @@ fn config(command: Command) -> ServerConfig {
         Command::Auth { .. } => unreachable!("loams auth starts no server"),
         Command::Migrate { .. } => unreachable!("loams migrate starts no server"),
         Command::Upgrade(_) => unreachable!("loams upgrade starts no server"),
+        Command::Cloud(_) => unreachable!("loams cloud starts no server"),
+        Command::Marketplace(_) => unreachable!("loams marketplace starts no server"),
+        Command::Byoc(_) => unreachable!("loams byoc starts no server"),
+        Command::Risingwave(_) => unreachable!("loams risingwave starts no server"),
+        #[cfg(feature = "spark")]
+        Command::Spark(_) => unreachable!("loams spark starts no server"),
+        #[cfg(feature = "flink")]
+        Command::Flink(_) => unreachable!("loams flink starts no server"),
         #[cfg(feature = "live")]
         Command::LiveWorker => unreachable!("loams live-worker starts no server"),
         #[cfg(feature = "postgres")]
@@ -1615,6 +1673,32 @@ fn main() -> ExitCode {
     if let Command::Upgrade(args) = &cli.command {
         return loams_upgrade::run(args);
     }
+    // A client too (LC2a Tasks 4 and 5): its own runtime, no stores.
+    if let Command::Cloud(args) = &cli.command {
+        return loams_cloud_admin::run(args);
+    }
+    // A client of the local agentd (MK1 Task 10): its own runtime, no stores.
+    if let Command::Marketplace(args) = &cli.command {
+        return loams_agentd_cli::marketplace::run(args);
+    }
+    // A client too (CC1 Task 6): the Confluent Cloud API and the cloud's CLI.
+    if let Command::Byoc(args) = &cli.command {
+        return loams_confluent::cli::run(args);
+    }
+    // A client (RW1, lane RW-b): its own runtime, no stores.
+    if let Command::Risingwave(args) = &cli.command {
+        return loams_risingwave::cli::run(args);
+    }
+    // A client too (design 81 SP-b): the engines facade, or local runs.
+    #[cfg(feature = "spark")]
+    if let Command::Spark(args) = &cli.command {
+        return loams_spark::cli::run(args);
+    }
+    // A client of the Loams API (design 81, D1989): its own runtime.
+    #[cfg(feature = "flink")]
+    if let Command::Flink(args) = &cli.command {
+        return loams_flink::cli::run(args);
+    }
     serve(cli)
 }
 
@@ -1665,6 +1749,13 @@ async fn serve(cli: Cli) -> ExitCode {
     let mut config = config(cli.command);
     config.auth = match loams::auth::AuthConfig::from_env() {
         Ok(auth) => auth,
+        Err(err) => {
+            eprintln!("loams: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    config.console = match loams::console::ConsoleOptions::from_env() {
+        Ok(console) => console,
         Err(err) => {
             eprintln!("loams: {err}");
             return ExitCode::FAILURE;
@@ -1749,6 +1840,29 @@ mod tests {
     fn dev_config(args: &[&str]) -> ServerConfig {
         let cli = Cli::try_parse_from(["loams", "dev"].iter().chain(args)).expect("parse");
         config(cli.command)
+    }
+
+    #[test]
+    fn byoc_confluent_parses() {
+        let cli = Cli::try_parse_from([
+            "loams",
+            "byoc",
+            "confluent",
+            "key",
+            "create",
+            "--service-account",
+            "sa-test01",
+            "--cluster",
+            "lkc-test01",
+            "--environment",
+            "env-test01",
+            "--cloud",
+            "aws",
+            "--secret-prefix",
+            "loams/prod",
+        ])
+        .unwrap_or_else(|e| panic!("{e}"));
+        assert!(matches!(cli.command, Command::Byoc(_)));
     }
 
     /// GR1 Task 5: `loams dev` keeps graphs under `<data-dir>/graph`; `standalone` has no graph
@@ -2943,6 +3057,62 @@ mod tests {
             let cli = Cli::try_parse_from(args).unwrap_or_else(|e| panic!("{args:?}: {e}"));
             assert!(matches!(cli.command, Command::Upgrade(_)), "{args:?}");
         }
+    }
+
+    /// `loams marketplace …` (MK1 Task 10): a script's install names the
+    /// plan digest it reviewed; `--yes` alone is refused.
+    #[test]
+    fn marketplace_parses() {
+        for args in [
+            &[
+                "loams",
+                "marketplace",
+                "search",
+                "github",
+                "--kind",
+                "mcp-server",
+            ][..],
+            &[
+                "loams",
+                "marketplace",
+                "install",
+                "ostrium/x",
+                "--dry-run",
+                "--json",
+            ],
+            &[
+                "loams",
+                "marketplace",
+                "install",
+                "ostrium/x",
+                "--yes",
+                "--plan-digest",
+                "ab",
+            ],
+            &[
+                "loams",
+                "marketplace",
+                "update",
+                "ostrium/x",
+                "--yes",
+                "--plan-digest",
+                "ab",
+            ],
+            &[
+                "loams",
+                "marketplace",
+                "source",
+                "list",
+                "--agentd-dir",
+                "/d",
+            ],
+        ] {
+            let cli = Cli::try_parse_from(args).unwrap_or_else(|e| panic!("{args:?}: {e}"));
+            assert!(matches!(cli.command, Command::Marketplace(_)), "{args:?}");
+        }
+        assert!(
+            Cli::try_parse_from(["loams", "marketplace", "install", "ostrium/x", "--yes"]).is_err()
+        );
     }
 
     /// `loams durable migrate --durable-store …` (D1 Task 4): a store is

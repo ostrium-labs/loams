@@ -1,5 +1,5 @@
 import { Context } from "cordis";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { AgentToolsService } from "../src/service.js";
 
 function harness() {

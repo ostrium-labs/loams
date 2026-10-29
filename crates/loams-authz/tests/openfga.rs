@@ -204,10 +204,14 @@ async fn openfga_agent_session_condition() {
     ])
     .await
     .unwrap();
+    // The session comes from the authenticated subject (T3.R1), never from the caller.
     let at = |session: &str, now: &str| {
-        can(&agent, "can_view", &format!("deployment:{r}-d0"))
-            .context("session_id", session)
-            .context("now", now)
+        can(
+            &Subject::agent(format!("{r}-a")).with_session(session),
+            "can_view",
+            &format!("deployment:{r}-d0"),
+        )
+        .context("now", now)
     };
     assert!(
         fga.check(at("s-1", "2026-10-21T12:00:00Z"))
@@ -221,6 +225,13 @@ async fn openfga_agent_session_condition() {
             .unwrap()
             .allowed,
         "another session"
+    );
+    assert!(
+        !fga.check(at("s-2", "2026-10-21T12:00:00Z").context("session_id", "s-1"))
+            .await
+            .unwrap()
+            .allowed,
+        "a caller cannot claim the granted session for another one"
     );
     assert!(
         !fga.check(at("s-1", "2099-01-01T00:00:01Z"))

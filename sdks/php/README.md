@@ -8,7 +8,7 @@
 ## Install
 
 ```sh
-composer require loams/loams:0.1.1
+composer require loams/loams:0.1.2
 ```
 
 The package is `loams/loams` on Packagist. Composer has no `preview` stability,

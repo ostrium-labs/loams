@@ -29,8 +29,6 @@ mod listen;
 mod mysql;
 mod registry;
 mod runtime;
-#[cfg(feature = "tikv")]
-pub mod tikv;
 
 pub use config::{
     DEFAULT_DATABASE, DEFAULT_LISTEN, DEFAULT_RETRY_TIMEOUT, DEFAULT_SHUTDOWN_TIMEOUT,

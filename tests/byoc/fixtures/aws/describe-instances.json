@@ -1,0 +1,5 @@
+{"Reservations": [{"Instances": [
+  {"InstanceId": "i-expired0000000001", "LaunchTime": "2027-01-15T07:00:00+00:00", "Tags": [{"Key": "loams:ci-run", "Value": "111"}, {"Key": "loams:ttl", "Value": "1799990000"}]},
+  {"InstanceId": "i-fresh00000000002", "LaunchTime": "2027-01-15T07:59:00+00:00", "Tags": [{"Key": "loams:ci-run", "Value": "222"}, {"Key": "loams:ttl", "Value": "1800005000"}]},
+  {"InstanceId": "i-persist000000003", "LaunchTime": "2026-10-01T00:00:00+00:00", "Tags": [{"Key": "loams:persistent", "Value": "true"}, {"Key": "loams:ttl", "Value": "1"}]}
+]}]}

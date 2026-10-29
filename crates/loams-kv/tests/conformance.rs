@@ -6,7 +6,7 @@
 use std::borrow::Cow;
 
 use loams_kv::testing::{self, TEST_LIVE};
-use loams_kv::{Backend, Store, StoreConfig, Ts, TxnError, TxnOptions, tuple};
+use loams_kv::{Backend, EmbeddedConfig, Store, StoreConfig, Ts, TxnError, TxnOptions, tuple};
 use loams_tikv::TimestampExt;
 use proptest::prelude::*;
 
@@ -27,7 +27,89 @@ loams_kv::kv_conformance!(
     embedded,
     loams_kv::testing::embedded_factory(env!("CARGO_TARGET_TMPDIR"))
 );
+loams_kv::kv_conformance!(memory, loams_kv::testing::memory_factory());
 loams_kv::kv_conformance!(tikv, loams_kv::testing::tikv_factory());
+
+/// Two in-memory stores of different names share nothing; two handles of
+/// one name share the database (KV0 Task 4).
+#[tokio::test]
+async fn in_memory_stores_are_separate_by_name() {
+    let open = |name: &'static str| async move {
+        Store::open(StoreConfig::Embedded(EmbeddedConfig::in_memory(name, "ks")))
+            .await
+            .expect("an in-memory store")
+    };
+    let one = open("separate-one").await;
+    let two = open("separate-two").await;
+    let one_again = open("separate-one").await;
+    assert_eq!(one.backend(), Backend::Embedded);
+    one.run(TxnOptions::new("kv.test.mem"), |txn| {
+        Box::pin(async move { txn.put(b"k", b"one".to_vec()).await })
+    })
+    .await
+    .expect("a put");
+    let read = |store: Store| async move {
+        let mut snap = store
+            .snapshot(store.now().await.expect("now"))
+            .await
+            .expect("a snapshot");
+        snap.get(b"k").await.expect("a read")
+    };
+    assert_eq!(read(two).await, None, "another name is another store");
+    assert_eq!(
+        read(one_again).await,
+        Some(b"one".to_vec()),
+        "one name, one store"
+    );
+    // Another keyspace of the same name is separate too.
+    let other_ks = Store::open(StoreConfig::Embedded(EmbeddedConfig::in_memory(
+        "separate-one",
+        "other",
+    )))
+    .await
+    .expect("an in-memory store");
+    assert_eq!(read(other_ks).await, None);
+    // No file was created for either.
+    assert!(!std::path::Path::new("mem:separate-one").exists());
+}
+
+/// An in-memory store's data is gone once its last handle is dropped: the
+/// next open of the name starts empty (KV0 Task 4).
+#[tokio::test]
+async fn in_memory_store_drops_with_last_handle() {
+    let config = EmbeddedConfig::in_memory("drops-with-last-handle", "ks");
+    let store = Store::open(StoreConfig::Embedded(config.clone()))
+        .await
+        .expect("an in-memory store");
+    let clone = store.clone();
+    store
+        .run(TxnOptions::new("kv.test.mem"), |txn| {
+            Box::pin(async move { txn.put(b"k", b"v".to_vec()).await })
+        })
+        .await
+        .expect("a put");
+    drop(store);
+    // A clone is a handle: the data is still there.
+    let mut snap = clone
+        .snapshot(clone.now().await.expect("now"))
+        .await
+        .expect("a snapshot");
+    assert_eq!(snap.get(b"k").await.expect("a read"), Some(b"v".to_vec()));
+    drop(snap);
+    drop(clone);
+    let fresh = Store::open(StoreConfig::Embedded(config))
+        .await
+        .expect("an in-memory store");
+    let mut snap = fresh
+        .snapshot(fresh.now().await.expect("now"))
+        .await
+        .expect("a snapshot");
+    assert_eq!(
+        snap.get(b"k").await.expect("a read"),
+        None,
+        "a new, empty store"
+    );
+}
 
 fn kv(k: &str, v: &str) -> (Vec<u8>, Vec<u8>) {
     (k.as_bytes().to_vec(), v.as_bytes().to_vec())
@@ -146,6 +228,56 @@ async fn tikv_store_roundtrip() {
     // now() is a TSO timestamp after every commit so far.
     let now = store.now().await.expect("now");
     assert!(now > committed.commit_ts);
+}
+
+/// A scanner over 100,000 keys holds at most one page at a time (KV0 Task
+/// 3; embedded only, the page buffer rather than RSS).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn scanner_memory_is_bounded() {
+    const KEYS: usize = 100_000;
+    const BATCH: usize = 5_000;
+    const PAGE: usize = 256;
+    let factory = testing::embedded_factory(env!("CARGO_TARGET_TMPDIR"));
+    let store = factory
+        .store(testing::Spec::fresh())
+        .await
+        .expect("an embedded store");
+    for batch in 0..KEYS / BATCH {
+        store
+            .run(TxnOptions::new("kv.test.fill"), move |txn| {
+                Box::pin(async move {
+                    for i in batch * BATCH..(batch + 1) * BATCH {
+                        txn.put(format!("k{i:06}").as_bytes(), b"v".to_vec())
+                            .await?;
+                    }
+                    Ok(())
+                })
+            })
+            .await
+            .expect("a batch");
+    }
+    let mut snap = store
+        .snapshot(store.now().await.expect("now"))
+        .await
+        .expect("a snapshot");
+    for reverse in [false, true] {
+        let mut scanner = if reverse {
+            snap.scanner_reverse(b"", None, PAGE)
+        } else {
+            snap.scanner(b"", None, PAGE)
+        };
+        let (mut seen, mut most, mut previous): (usize, usize, Option<Vec<u8>>) = (0, 0, None);
+        while let Some((key, _)) = scanner.next().await.expect("a pair") {
+            most = most.max(scanner.buffered() + 1);
+            if let Some(p) = &previous {
+                assert_eq!(key > *p, !reverse, "the scan's order");
+            }
+            previous = Some(key);
+            seen += 1;
+        }
+        assert_eq!(seen, KEYS, "reverse: {reverse}");
+        assert!(most <= PAGE, "{most} pairs buffered with a page of {PAGE}");
+    }
 }
 
 #[test]

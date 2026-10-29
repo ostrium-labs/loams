@@ -1,0 +1,256 @@
+{
+ "phases": [
+  {
+   "n": 3,
+   "provision_s": 4.0,
+   "ddl": {
+    "create_database": {
+     "n": 3,
+     "p50_ms": 297.3,
+     "p95_ms": 307.1,
+     "max_ms": 307.1
+    },
+    "create_user": {
+     "n": 3,
+     "p50_ms": 310.6,
+     "p95_ms": 311.8,
+     "max_ms": 311.8
+    },
+    "grant": {
+     "n": 3,
+     "p50_ms": 307.2,
+     "p95_ms": 307.2,
+     "max_ms": 307.2
+    }
+   },
+   "workload": {
+    "tenants": 3,
+    "errors": [],
+    "error_count": 0,
+    "connect_p50_ms": 1330.1,
+    "connect_p95_ms": 2340.2,
+    "session_p50_ms": 2974.4,
+    "session_p95_ms": 4081.6,
+    "last_query_info_ru_seen": 3,
+    "last_stmt_ru_sample": [
+     5.805452400234375,
+     5.801647066901042,
+     5.804739400234375
+    ]
+   },
+   "isolation": {
+    "pairs": 9,
+    "passed": true,
+    "leaks": [],
+    "observations": {
+     "select_other": "denied (1142: SELECT command denied to user 'Erch17MivvBSfyT.lc0t0001'@'%' for table 'notes')",
+     "insert_other": "denied (1142: INSERT command denied to user 'Erch17MivvBSfyT.lc0t0001'@'%' for table 'notes')",
+     "use_other": "denied (1044: Access denied for user 'Erch17MivvBSfyT.lc0t0001'@'%' to database 'lc0t_0003')",
+     "create_database": "denied (1044: Access denied for user 'Erch17MivvBSfyT.lc0t0001'@'%' to database 'lc0x_evil')",
+     "mysql_user": "denied (1142: SELECT command denied to user 'Erch17MivvBSfyT.lc0t0001'@'%' for table 'user')",
+     "mysql_stats_meta": "denied (1142: SELECT command denied to user 'Erch17MivvBSfyT.lc0t0001'@'%' for table 'stats_meta')",
+     "show_grants_other": "denied (1044: Access denied for user 'Erch17MivvBSfyT.lc0t0001'@'%' to database 'mysql')",
+     "show_table_status_other": "denied (1044: Access denied for user 'Erch17MivvBSfyT.lc0t0001'@'%' to database 'lc0t_0003')",
+     "grant_self_other": "denied (8121: privilege check for 'Select' fail)",
+     "show_databases": "ok: filtered (own only)",
+     "is_schemata": "ok: filtered (own only)",
+     "is_tables": "ok: filtered (own only)",
+     "is_columns_other": "ok: filtered (no rows)",
+     "is_statistics_other": "ok: filtered (no rows)",
+     "is_table_storage_stats_other": "ok: filtered (no rows)",
+     "is_tikv_region_status_other": "denied (1142: SELECT command denied to user 'Erch17MivvBSfyT.lc0t0001'@'%' for table 'tikv_region_status', see https://docs.pingcap.co)",
+     "is_ddl_jobs_other": "ok: filtered (no rows)",
+     "admin_show_ddl_jobs": "denied (8121: privilege check for 'Super' fail)",
+     "show_stats_meta": "denied (1142: SHOW command denied to user 'Erch17MivvBSfyT.lc0t0001'@'%' for table 'stats_meta')",
+     "processlist": "ok: filtered (1 rows, own user only)",
+     "cluster_processlist": "ok: filtered (1 rows, own user only)",
+     "slow_query": "denied (1142: SELECT command denied to user 'Erch17MivvBSfyT.lc0t0001'@'%' for table 'slow_query', see https://docs.pingcap.com/tidbcl)",
+     "statements_summary": "denied (1142: SELECT command denied to user 'Erch17MivvBSfyT.lc0t0001'@'%' for table 'statements_summary', see https://docs.pingcap.co)",
+     "tidb_trx": "ok: filtered (0 rows, own user only)",
+     "user_privileges": "ok: filtered (1 rows, own user only)"
+    }
+   },
+   "storage": {
+    "schemas_listed": 3,
+    "nonzero_before_analyze": 0,
+    "nonzero_after_analyze": 0,
+    "analyze_p50_ms": 407.1,
+    "sample_after_analyze": {
+     "lc0t_0001": [
+      0,
+      0,
+      0
+     ],
+     "lc0t_0002": [
+      0,
+      0,
+      0
+     ],
+     "lc0t_0003": [
+      0,
+      0,
+      0
+     ]
+    },
+    "sum_data_plus_index_bytes": 0,
+    "table_storage_stats": "error",
+    "table_storage_stats_sample": "1105: Please add where clause to filter the column TABLE_SCHEMA. For example, where TABLE_SCHEMA = 'xxx' or where TABLE_SCHEMA",
+    "passed": false
+   }
+  }
+ ],
+ "checks": {
+  "activity_and_ru": {
+   "PROCESSLIST": {
+    "rows": 4,
+    "sample": [
+     [
+      "Erch17MivvBSfyT.lc0t0002",
+      "1"
+     ],
+     [
+      "Erch17MivvBSfyT.ti_admin",
+      "1"
+     ],
+     [
+      "Erch17MivvBSfyT.lc0t0003",
+      "1"
+     ]
+    ]
+   },
+   "CLUSTER_PROCESSLIST": {
+    "rows": 4,
+    "sample": [
+     [
+      "Erch17MivvBSfyT.lc0t0003",
+      "1"
+     ],
+     [
+      "Erch17MivvBSfyT.lc0t0001",
+      "1"
+     ],
+     [
+      "Erch17MivvBSfyT.ti_admin",
+      "1"
+     ]
+    ]
+   },
+   "SLOW_QUERY": "1142: SELECT command denied to user 'Erch17MivvBSfyT.ti_admin'@'%' for table 'slow_query', see https://docs.pingcap.com/tidbcl",
+   "CLUSTER_SLOW_QUERY": "1142: SELECT command denied to user 'Erch17MivvBSfyT.ti_admin'@'%' for table 'cluster_slow_query', see https://docs.pingcap.co",
+   "SLOW_QUERY_RU": "1142: SELECT command denied to user 'Erch17MivvBSfyT.ti_admin'@'%' for table 'slow_query', see https://docs.pingcap.com/tidbcl",
+   "STATEMENTS_SUMMARY": "1142: SELECT command denied to user 'Erch17MivvBSfyT.ti_admin'@'%' for table 'statements_summary', see https://docs.pingcap.co",
+   "CLUSTER_STATEMENTS_SUMMARY": "1142: SELECT command denied to user 'Erch17MivvBSfyT.ti_admin'@'%' for table 'cluster_statements_summary', see https://docs.pi",
+   "STATEMENTS_SUMMARY_HISTORY": {
+    "rows": 1,
+    "sample": [
+     [
+      "115"
+     ]
+    ]
+   },
+   "STATEMENTS_SUMMARY_RU": "1142: SELECT command denied to user 'Erch17MivvBSfyT.ti_admin'@'%' for table 'statements_summary', see https://docs.pingcap.co",
+   "CLIENT_ERRORS_SUMMARY_BY_USER": {
+    "rows": 4,
+    "sample": [
+     [
+      "Erch17MivvBSfyT.lc0t0002",
+      "14"
+     ],
+     [
+      "Erch17MivvBSfyT.ti_admin",
+      "7"
+     ],
+     [
+      "Erch17MivvBSfyT.lc0t0001",
+      "70"
+     ]
+    ]
+   },
+   "RESOURCE_GROUPS": "1142: SELECT command denied to user 'Erch17MivvBSfyT.ti_admin'@'%' for table 'resource_groups', see https://docs.pingcap.com/t",
+   "CREATE_RESOURCE_GROUP": "20001: 'CREATE RESOURCE GROUP' is not supported on TiDB Serverless, see https://docs.pingcap.com/tidbcloud/limited-sql-features",
+   "tidb_enable_resource_control": "1227: Access denied; you need (at least one of) the RESTRICTED_VARIABLES_ADMIN privilege(s) for this operation",
+   "USER_ATTRIBUTES": {
+    "rows": 3,
+    "sample": [
+     [
+      "Erch17MivvBSfyT.root",
+      "None"
+     ],
+     [
+      "role_admin",
+      "None"
+     ],
+     [
+      "Erch17MivvBSfyT.cloud_admin",
+      "None"
+     ]
+    ]
+   },
+   "TIDB_TRX": {
+    "rows": 1,
+    "sample": [
+     [
+      "0"
+     ]
+    ]
+   },
+   "performance_schema_events": {
+    "rows": 1,
+    "sample": [
+     [
+      "0"
+     ]
+    ]
+   },
+   "tidb_last_query_info": {
+    "txn_scope": "global",
+    "start_ts": 469952621640155206,
+    "for_update_ts": 469952621640155206,
+    "ru_consumption": 0.4999878271484375
+   },
+   "explain_analyze_has_ru": true,
+   "explain_analyze_sample": [
+    "TableReader_7",
+    "3333.33",
+    "16",
+    "root",
+    "",
+    "time:796.4\u00b5s, loops:2, RU:0.53, cop_task: {num: 1, max: 723.5\u00b5s, proc_keys: 19, tot_proc: 32.4\u00b5s, tot_wait: 20.2\u00b5s, copr_cache_hit_ratio: 0.00, build_task_duration: 6\u00b5s, max_distsql_concurrency: 1}, r",
+    "data:Selection_6",
+    "2.67 KB",
+    "N/A"
+   ]
+  },
+  "connection_cap": {
+   "limit": 2,
+   "third_connection": "connected; first query ok",
+   "enforced": false
+  },
+  "credential_rotation": {
+   "rotate_old_password_denied_after_ms": 1128,
+   "rotate_new_password_works": true,
+   "password_expire_stmt": "ok",
+   "after_expire_login": "refused: 1862 Your password has expired. To log in you must change it using a client that supports expired passwords.",
+   "password_expire_interval_stmt": "ok",
+   "account_lock_new_connection": "refused: 3118",
+   "account_lock_existing_session": "still works",
+   "account_lock_stmt_ms": 301,
+   "kill_existing_sessions": "1/1 killed via PROCESSLIST ids",
+   "held_session_after_kill": "closed"
+  }
+ },
+ "rtt": {
+  "select1_p50_ms": 205.7,
+  "version": "8.0.11-TiDB-v8.5.3-serverless",
+  "max_connections": [
+   [
+    "max_connections",
+    "0"
+   ]
+  ]
+ },
+ "teardown_sql": {
+  "databases_left": 0,
+  "users_left": 0
+ }
+}

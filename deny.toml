@@ -23,6 +23,11 @@ allow = [
     # BSD Zero Clause (tslib, via echarts in the console). Owner, 2026-10-13
     # (SD1 ruling T2-6): allowed everywhere, for crates and npm alike.
     "0BSD",
+    # BlueOak Model License 1.0.0, a permissive OSI-approved licence (lru-cache and
+    # @isaacs/ttlcache, which @mastra/core needs for @loams/factory). Owner, 2026-10-24
+    # (FT1 ruling FT0-1-1 superseded; SD1 ruling T2-2 overridden for this licence only):
+    # allowed everywhere, for crates and npm alike.
+    "BlueOak-1.0.0",
 ]
 confidence-threshold = 0.9
 unused-allowed-license = "allow"
@@ -40,6 +45,15 @@ unused-allowed-license = "allow"
 crate = "stringmetrics"
 expression = "Apache-2.0"
 license-files = [{ path = "LICENSE", hash = 0x0fb72a18 }]
+
+# borrow-or-share (via fluent-uri -> referencing -> jsonschema 0.58, which
+# loams-agentd-marketplace's listing validator pulls in, MK1 Task 1) is MIT-0:
+# OSI-approved MIT without the attribution clause. fabric/deny.toml allows
+# MIT-0 for the same crate (CN1 Task 1); here it is admitted for this one crate
+# only, not added to the allow list.
+[[licenses.exceptions]]
+crate = "borrow-or-share"
+allow = ["MIT-0"]
 
 [bans]
 multiple-versions = "allow"
@@ -83,7 +97,30 @@ ignore = [
     # webpki-roots 0.26.11 is a shim with no roots of its own: it re-exports
     # webpki-roots 1.x, which is at 1.0.10 (emSign removed) in this lock. Reached
     # through sqlx-core 0.8 and tokio-tungstenite 0.24; remove when they move to 1.x.
+    # pulldown-cmark < 0.13.5: wikilinks with empty display text make the event
+    # stream grow exponentially, only with Options::ENABLE_WIKILINKS. Loams
+    # parses with Parser::new (default options, wikilinks off) in
+    # loams-agentd-proto. The fix, 0.13.5, was published 2026-10-21, under the
+    # 14-day rule. Remove with the bump on or after 2026-11-04.
+    { id = "RUSTSEC-2026-0414", reason = "pulldown-cmark wikilink event growth: not reachable; loams-agentd-proto parses with Parser::new, so ENABLE_WIKILINKS is off; remove with the bump to 0.13.5 on or after 2026-11-04" },
     { id = "RUSTSEC-2026-0381", reason = "webpki-roots 0.26.11 re-exports webpki-roots 1.0.10, which drops the distrusted emSign roots; the 0.26 shim carries no certificates" },
+    # ctutils < 0.4.4: Choice's const-fn mask generation may compile to a branch,
+    # and u128 comparisons branch on 32-bit targets. Reached through digest 0.11
+    # and phc. The fix, 0.4.4, and 0.4.5 were both published 2026-10-23, under the
+    # 14-day rule. Loams ships only 64-bit targets. Remove with the bump to
+    # ctutils >= 0.4.4 on or after 2026-11-06.
+    { id = "RUSTSEC-2026-0385", reason = "ctutils constant-time mask and u128 comparison branches: the fixed 0.4.4 is from 2026-10-23, under the 14-day rule; Loams ships only 64-bit targets; bump on or after 2026-11-06" },
+    # zstd-rs advisories of 2026-10-26: zstd 0.13.3 (arrow-ipc 58, via
+    # datafusion and lance in loams-collection) and 0.14.0 (loams-hot), on
+    # zstd-safe 7.3.0/8.0.0 and zstd-sys 2.1.0. Every fix (zstd >= 0.14.3,
+    # zstd-safe >= 8.2.0, zstd-sys >= 2.1.2) was published 2026-10-16, under
+    # the 14-day rule until 2026-10-30, and arrow-ipc 58 pins zstd 0.13. No
+    # Loams code uses the seekable format. Remove with the bump on or after
+    # 2026-11-10.
+    { id = "RUSTSEC-2026-0391", reason = "zstd stream context reuse leaks an abandoned stream's data, via arrow-ipc 58 (datafusion, lance in loams-collection) and loams-hot: the fixed zstd 0.14.3 is under the 14-day rule and arrow-ipc 58 pins zstd 0.13; revisit 2026-11-10" },
+    { id = "RUSTSEC-2026-0398", reason = "zstd-safe Seekable::decompress length past capacity, via zstd 0.13/0.14 (arrow-ipc 58, loams-hot); no Loams code uses the seekable format; the fixed zstd-safe 8.2.0 is under the 14-day rule; revisit 2026-11-10" },
+    { id = "RUSTSEC-2026-0403", reason = "zstd-safe uninitialized memory when a legacy (v0.4-v0.7) frame fails to stream-decompress, via zstd 0.13/0.14 (arrow-ipc 58, loams-hot): the fixed zstd-safe 8.2.0 is under the 14-day rule; revisit 2026-11-10" },
+    { id = "RUSTSEC-2026-0410", reason = "zstd-sys wasm32 allocator shim, via zstd 0.13/0.14 (arrow-ipc 58, loams-hot): reachable only on wasm32, and Loams builds zstd for native targets only; the fixed zstd-sys 2.1.2 is under the 14-day rule; revisit 2026-11-10" },
 ]
 
 [sources]

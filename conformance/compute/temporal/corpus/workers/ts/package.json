@@ -1,0 +1,24 @@
+{
+  "name": "loams-temporal-corpus-ts",
+  "private": true,
+  "description": "DX0 Task 4: the TypeScript half of the Temporal history corpus (generator and replayer).",
+  "license": "Apache-2.0",
+  "scripts": {
+    "build": "tsc -p .",
+    "generate": "node dist/generate.js",
+    "replay": "node --test dist/replay.test.js"
+  },
+  "dependencies": {
+    "@temporalio/activity": "1.24.0",
+    "@temporalio/client": "1.24.0",
+    "@temporalio/common": "1.24.0",
+    "@temporalio/worker": "1.24.0",
+    "@temporalio/workflow": "1.24.0",
+    "protobufjs": "8.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.2",
+    "typescript": "5.7.2"
+  },
+  "//": "protobufjs 8.8.1 is a direct dependency so that npm hoists the one copy the Temporal packages share; with @grpc/proto-loader's 7.x hoisted instead, each Temporal package gets its own 8.x and protojson decoding fails across them (\"type must be a Type\")."
+}

@@ -3,7 +3,7 @@
 //! error classes and fault hooks map one to one, and the runner is
 //! `loams_tikv::Tikv::run_as` with the body working on [`Txn`].
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use futures::future::BoxFuture;
 use loams_tikv::{RunTxn, Tikv, Timestamp, TimestampExt};
@@ -96,15 +96,44 @@ pub(crate) async fn run<T: Send, F>(
 where
     F: for<'t> FnMut(&'t mut Txn) -> BoxFuture<'t, Result<T, TxnError>>,
 {
-    let committed = tikv
-        .run_as::<Txn, T, TxnError, F>(opts.into(), body)
-        .await?;
+    let pessimistic = opts.mode == Mode::Pessimistic;
+    let until = crate::embedded::locks::lock_wait_until(Instant::now(), opts.deadline);
+    let run = tikv.run_as::<Txn, T, TxnError, F>(opts.into(), body);
+    // In a pessimistic run, lock waits give up with `Conflict` before the
+    // run's deadline (KV0 Task 5), as on the embedded backend. The body
+    // runs on this task, inside `run_as`, so it sees the task-local.
+    let committed = if pessimistic {
+        LOCK_UNTIL.scope(until.into(), run).await?
+    } else {
+        run.await?
+    };
     Ok(Committed {
         value: committed.value,
         commit_ts: committed.commit_ts.into(),
         attempts: committed.attempts,
         earlier_unknown: committed.earlier_unknown,
     })
+}
+
+tokio::task_local! {
+    /// The lock-wait limit of the pessimistic run whose body this is.
+    static LOCK_UNTIL: tokio::time::Instant;
+}
+
+/// Runs a TiKV call that may wait for a pessimistic lock: in a pessimistic
+/// run's body, a wait past the run's lock-wait limit is `Conflict` (the
+/// runner rolls the transaction back, which releases whatever the call
+/// locked); elsewhere the call as is.
+pub(crate) async fn lock_wait<T>(
+    call: impl Future<Output = Result<T, loams_tikv::TxnError>>,
+) -> Result<T, TxnError> {
+    match LOCK_UNTIL.try_with(|until| *until) {
+        Ok(until) => match tokio::time::timeout_at(until, call).await {
+            Ok(result) => result.map_err(TxnError::from),
+            Err(_) => Err(TxnError::Conflict),
+        },
+        Err(_) => call.await.map_err(TxnError::from),
+    }
 }
 
 /// [`Store::barrier`](crate::Store::barrier) on TiKV: a PD service safe

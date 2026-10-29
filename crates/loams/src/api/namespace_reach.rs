@@ -1,9 +1,10 @@
 //! Which namespaces a caller can reach, for `NamespaceService/ListNamespaces`
 //! (the 0.1.0 console's Namespaces page, B7).
 //!
-//! The rules are the built-in RBAC's for a namespace's data (the ones
-//! `graph_auth` expands into graph relations), at the weakest relation, so a
-//! namespace is listed exactly when its data can be read:
+//! A namespace is listed exactly when its data can be read: `can_read` on
+//! `environment:<namespace>`, asked through `loams-authz` (design 76 §9, IA2
+//! Task 4; [`crate::auth::authz`] says who the caller is and where the tuples
+//! come from). In built-in single-org mode that gives:
 //!
 //! - **The operator** (the developer on loopback with `LOAMS_AUTH_MODE=off`,
 //!   a key from `LOAMS_API_KEYS_FILE`, any API key before first-run setup) and
@@ -12,6 +13,8 @@
 //!   the environments of the projects their grants (direct or through a team)
 //!   give them any role in. A service account's key: its own project's
 //!   environments, and the namespaces that are no project's.
+//! - **An agent** (a JWT linked to one): the environments of the projects it
+//!   is granted, and nothing else.
 //! - **Anyone else** (outside the org, or no principal): none.
 //!
 //! A credential bound to an environment (`<project>/<environment>`, or a
@@ -22,23 +25,11 @@
 //! of every variant, and `graph_auth` stays the graph's own.
 
 use connectrpc::{ConnectError, ErrorCode};
-use loams_proto::loams::admin::v1 as admin_pb;
 
 use crate::auth::authorizer::Denied;
-use crate::auth::directory::{Doc, ProjectRec, Role};
-use crate::auth::{Principal, PrincipalKind, Principals};
-
-/// Who is asking, as far as reaching a namespace goes.
-enum Standing {
-    /// Every namespace (the operator, an org owner or admin).
-    All,
-    /// A person in the org with this user id.
-    Member(String),
-    /// A service account's API key (its id, without `apikey:`).
-    ServiceKey(String),
-    /// No namespace.
-    Nothing,
-}
+use crate::auth::authz::{self, Standing};
+use crate::auth::directory::Doc;
+use crate::auth::{Principal, Principals};
 
 /// The namespaces of `names` that `principal` reaches, in their order
 /// (module docs).
@@ -50,80 +41,51 @@ pub(crate) async fn reachable(
     let Some(principal) = principal else {
         return Ok(Vec::new());
     };
-    let standing = standing(principals, principal).await?;
-    if matches!(standing, Standing::Nothing) {
+    let standing = match authz::standing(principals, principal).await {
+        Ok(standing) => standing,
+        Err(Denied::Unavailable(err)) => {
+            tracing::warn!(error = %err, "reading the principal store to list namespaces failed");
+            return Err(unavailable());
+        }
+        Err(Denied::SetupRequired | Denied::RoleRequired { .. }) => Standing::Outside,
+    };
+    if matches!(standing, Standing::Outside) {
         return Ok(Vec::new());
     }
-    if matches!(standing, Standing::All) && principal.grant.environment.is_none() {
+    if matches!(standing, Standing::Operator) && principal.grant.environment.is_none() {
         return Ok(names);
     }
     let doc = principals.directory.read().await.map_err(|err| {
         tracing::warn!(error = %err.0, "reading the principal store to list namespaces failed");
         unavailable()
     })?;
-    Ok(names
+    let fenced: Vec<String> = names
         .into_iter()
-        .filter(|ns| reaches_namespace(&doc, principal, &standing, ns))
-        .collect())
-}
-
-/// The caller's standing in the org.
-async fn standing(
-    principals: &Principals,
-    principal: &Principal,
-) -> Result<Standing, ConnectError> {
-    if principal.kind == PrincipalKind::DevLoopback {
-        return Ok(Standing::All);
-    }
-    match principals
-        .authorizer
-        .authorize(principal, Role::Member)
-        .await
-    {
-        Ok(actor) if actor.role >= Role::Admin => Ok(Standing::All),
-        Ok(actor) => Ok(match actor.user {
-            Some(user) => Standing::Member(user),
-            None if principal.kind == PrincipalKind::ApiKey => {
-                let id = principal
-                    .subject
-                    .strip_prefix("apikey:")
-                    .unwrap_or(&principal.subject);
-                Standing::ServiceKey(id.to_owned())
-            }
-            None => Standing::Nothing,
-        }),
-        // Before first-run setup the only keys are the operator's own.
-        Err(Denied::SetupRequired) if principal.kind == PrincipalKind::ApiKey => Ok(Standing::All),
-        Err(Denied::SetupRequired | Denied::RoleRequired { .. }) => Ok(Standing::Nothing),
-        Err(Denied::Unavailable(err)) => {
-            tracing::warn!(error = %err, "reading the principal store to list namespaces failed");
-            Err(unavailable())
-        }
-    }
-}
-
-fn reaches_namespace(doc: &Doc, principal: &Principal, standing: &Standing, ns: &str) -> bool {
-    if let Some(bound) = principal.grant.environment.as_deref()
-        && !bound_reaches(doc, bound, ns)
-    {
-        return false;
-    }
-    let project = environment_project(doc, ns);
-    match (standing, project) {
-        (Standing::Nothing, _) => false,
-        (Standing::All, _) | (_, None) => true,
-        (Standing::Member(user), Some(project)) => has_project_role(doc, project, user),
-        (Standing::ServiceKey(id), Some(project)) => doc
-            .key(id)
-            .is_some_and(|key| key.project == project.project.slug),
-    }
-}
-
-/// The project whose environment `ns` is, if any.
-fn environment_project<'d>(doc: &'d Doc, ns: &str) -> Option<&'d ProjectRec> {
-    doc.projects
+        .filter(|ns| {
+            principal
+                .grant
+                .environment
+                .as_deref()
+                .is_none_or(|bound| bound_reaches(&doc, bound, ns))
+        })
+        .collect();
+    let Standing::Subject(subject) = standing else {
+        return Ok(fenced);
+    };
+    let checks = fenced
         .iter()
-        .find(|project| project.environments.iter().any(|env| env.namespace == ns))
+        .map(|ns| authz::environment_check(&doc, &subject, "can_read", ns))
+        .collect();
+    let decisions = principals.authz.batch_check(checks).await.map_err(|err| {
+        tracing::warn!(error = %err, "the authorizer could not answer a namespace listing");
+        unavailable()
+    })?;
+    Ok(fenced
+        .into_iter()
+        .zip(decisions)
+        .filter(|(_, d)| d.allowed)
+        .map(|(ns, _)| ns)
+        .collect())
 }
 
 /// Whether a credential bound to `environment` (`<project>/<environment>`,
@@ -140,28 +102,6 @@ fn bound_reaches(doc: &Doc, environment: &str, ns: &str) -> bool {
         .is_some_and(|e| e.namespace == ns)
 }
 
-/// Whether `user` holds any project role in `project`, directly or through a
-/// team.
-fn has_project_role(doc: &Doc, project: &ProjectRec, user: &str) -> bool {
-    use admin_pb::ProjectRole as R;
-    project.grants.iter().any(|grant| {
-        let held = matches!(
-            grant.role.as_known(),
-            Some(R::PROJECT_ROLE_ADMIN | R::PROJECT_ROLE_DEVELOPER | R::PROJECT_ROLE_VIEWER)
-        );
-        let Some(subject) = grant.subject.as_option() else {
-            return false;
-        };
-        held && match subject.kind.as_known() {
-            Some(admin_pb::SubjectKind::SUBJECT_KIND_USER) => subject.id == user,
-            Some(admin_pb::SubjectKind::SUBJECT_KIND_TEAM) => doc
-                .team(&subject.id)
-                .is_some_and(|team| team.members.iter().any(|m| m == user)),
-            _ => false,
-        }
-    })
-}
-
 fn unavailable() -> ConnectError {
     ConnectError::new(
         ErrorCode::Unavailable,
@@ -172,8 +112,9 @@ fn unavailable() -> ConnectError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::auth::directory::{Directory, KeyRec, MemberRec, TeamRec};
-    use crate::auth::{Grant, SetupGate};
+    use crate::auth::directory::{Directory, KeyRec, MemberRec, ProjectRec, Role, TeamRec};
+    use crate::auth::{Grant, PrincipalKind, SetupGate};
+    use loams_proto::loams::admin::v1 as admin_pb;
 
     fn member(id: &str, role: Role) -> MemberRec {
         MemberRec {
@@ -306,6 +247,7 @@ mod tests {
         Principal {
             subject: subject.into(),
             kind,
+            issuer: None,
             display_name: subject.into(),
             email: None,
             grant: Grant {

@@ -1,0 +1,141 @@
+AggregateFunction	0	
+Array	0	
+BFloat16	0	
+BIGINT	1	Int64
+BIGINT SIGNED	1	Int64
+BIGINT UNSIGNED	1	UInt64
+BINARY	1	FixedString
+BINARY LARGE OBJECT	1	String
+BINARY VARYING	1	String
+BIT	1	UInt64
+BLOB	1	String
+BYTE	1	Int8
+BYTEA	1	String
+Bool	1	
+CHAR	1	String
+CHAR LARGE OBJECT	1	String
+CHAR VARYING	1	String
+CHARACTER	1	String
+CHARACTER LARGE OBJECT	1	String
+CHARACTER VARYING	1	String
+CLOB	1	String
+DEC	1	Decimal
+DOUBLE	1	Float64
+DOUBLE PRECISION	1	Float64
+Date	1	
+Date32	1	
+DateTime	1	
+DateTime32	1	
+DateTime64	1	
+Decimal	1	
+Decimal128	1	
+Decimal256	1	
+Decimal32	1	
+Decimal64	1	
+Dynamic	0	
+ENUM	1	Enum
+Enum	1	
+Enum16	0	
+Enum8	0	
+FIXED	1	Decimal
+FLOAT	1	Float32
+FixedString	0	
+Float32	0	
+Float64	0	
+GEOMETRY	0	Geometry
+Geometry	0	
+INET4	1	IPv4
+INET6	1	IPv6
+INT	1	Int32
+INT SIGNED	1	Int32
+INT UNSIGNED	1	UInt32
+INT1	1	Int8
+INT1 SIGNED	1	Int8
+INT1 UNSIGNED	1	UInt8
+INTEGER	1	Int32
+INTEGER SIGNED	1	Int32
+INTEGER UNSIGNED	1	UInt32
+IPv4	0	
+IPv6	0	
+Int128	0	
+Int16	0	
+Int256	0	
+Int32	0	
+Int64	0	
+Int8	0	
+IntervalDay	0	
+IntervalHour	0	
+IntervalMicrosecond	0	
+IntervalMillisecond	0	
+IntervalMinute	0	
+IntervalMonth	0	
+IntervalNanosecond	0	
+IntervalQuarter	0	
+IntervalSecond	0	
+IntervalWeek	0	
+IntervalYear	0	
+JSON	1	
+LONGBLOB	1	String
+LONGTEXT	1	String
+LineString	0	
+LowCardinality	0	
+MEDIUMBLOB	1	String
+MEDIUMINT	1	Int32
+MEDIUMINT SIGNED	1	Int32
+MEDIUMINT UNSIGNED	1	UInt32
+MEDIUMTEXT	1	String
+Map	0	
+MultiLineString	0	
+MultiPoint	0	
+MultiPolygon	0	
+NATIONAL CHAR	1	String
+NATIONAL CHAR VARYING	1	String
+NATIONAL CHARACTER	1	String
+NATIONAL CHARACTER LARGE OBJECT	1	String
+NATIONAL CHARACTER VARYING	1	String
+NCHAR	1	String
+NCHAR LARGE OBJECT	1	String
+NCHAR VARYING	1	String
+NUMERIC	1	Decimal
+NVARCHAR	1	String
+Nested	0	
+Nothing	0	
+Nullable	0	
+Point	0	
+Polygon	0	
+QBit	0	
+REAL	1	Float32
+Ring	0	
+SET	1	UInt64
+SIGNED	1	Int64
+SINGLE	1	Float32
+SMALLINT	1	Int16
+SMALLINT SIGNED	1	Int16
+SMALLINT UNSIGNED	1	UInt16
+SimpleAggregateFunction	0	
+String	0	
+TEXT	1	String
+TIMESTAMP	1	DateTime
+TINYBLOB	1	String
+TINYINT	1	Int8
+TINYINT SIGNED	1	Int8
+TINYINT UNSIGNED	1	UInt8
+TINYTEXT	1	String
+Time	1	
+Time64	1	
+Tuple	0	
+UInt128	0	
+UInt16	0	
+UInt256	0	
+UInt32	0	
+UInt64	0	
+UInt8	0	
+UNSIGNED	1	UInt64
+UUID	0	
+VARBINARY	1	String
+VARCHAR	1	String
+VARCHAR2	1	String
+Variant	0	
+YEAR	1	UInt16
+bool	1	Bool
+boolean	1	Bool

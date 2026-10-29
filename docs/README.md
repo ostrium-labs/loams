@@ -1,8 +1,8 @@
-![Loams — Your data. Your bucket.](assets/loams-banner.svg)
+![Loams: Don't rent a cloud. Loam it.](assets/loams-banner.svg)
 
 # Loams documentation
 
-Build, understand, and contribute to Loams: hybrid retrieval on object storage, with reactive data and durable execution alongside it.
+Don't rent a cloud. Loam it. Build, understand, and contribute to Loams: open-source tooling for building software with agents, on ground you own, with hybrid retrieval on object storage, reactive data and durable execution underneath. Free and open source; runs on ground you own.
 
 ## Start with your task
 
@@ -15,8 +15,8 @@ Build, understand, and contribute to Loams: hybrid retrieval on object storage, 
 | Work across engine, apps, and plugins | [Monorepo guide](monorepo.md) |
 | Integrate an API or SDK | [Route map](api/route-map.md), [error reasons](api/reasons.md), and [SDK runtime contract](sdk/runtime-contract.md) |
 | Contribute a change | [Contributing](../CONTRIBUTING.md), [implementation plans](plans/README.md), and [wiki](wiki/Home.md) |
-| Run Loams | [Running Loams](release/preview.md): Docker Compose, a tailnet, the hosted or self-deployed console |
-| Use Loams Studio, the agentic development environment | [Studio guides](guides/studio/index.md), including [a remote agentd](guides/studio/remote-agentd.md) for the browser |
+| Run Loams | [Running Loams](release/preview.md): Docker Compose, a tailnet, a console you deploy yourself |
+| Use Loams Studio (The Field), the agentic development environment | [Studio guides](guides/studio/index.md), including [a remote agentd](guides/studio/remote-agentd.md) for the browser |
 | Package or release Loams | [Packaging](release/packaging.md), [publishing](release/publishing.md), and [signing](release/signing.md) |
 | Build a plugin | [Plugin documentation](../plugins/docs/README.md) and [marketplace publishing](marketplace/publishing.md) |
 
@@ -34,7 +34,7 @@ Build, understand, and contribute to Loams: hybrid retrieval on object storage, 
 | [ecosystem/](ecosystem/) | Deploy buttons and ecosystem integrations |
 | [wiki/](wiki/README.md) | Contributor and maintainer guides |
 
-Additional references: [remote browser provider](remote-browser-provider.md), [architecture review](architecture-review-and-recommendations.md), and [backlog analysis](open-issues-analysis.md).
+Additional references: [the headless browser](headless-browser.md) (the [remote browser provider](remote-browser-provider.md) it replaced), [architecture review](architecture-review-and-recommendations.md), and [backlog analysis](open-issues-analysis.md).
 
 ## Read status in context
 

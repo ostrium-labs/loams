@@ -1,0 +1,22 @@
+[09:20:32] rtt {'select1_p50_ms': 206.2, 'version': '8.0.11-TiDB-v8.5.3-serverless', 'max_connections': (('max_connections', '0'),)}
+[09:20:32] phase N=50: creating tenants 1..50
+[09:21:16]   ddl {'create_database': {'n': 50, 'p50_ms': 304.5, 'p95_ms': 380.7, 'max_ms': 412.0}, 'create_user': {'n': 50, 'p50_ms': 251.8, 'p95_ms': 316.5, 'max_ms': 320.2}, 'grant': {'n': 50, 'p50_ms': 280.6, 'p95_ms': 330.5, 'max_ms': 378.8}}
+[09:21:33]   workload {'tenants': 50, 'errors': [], 'error_count': 0, 'connect_p50_ms': 1432.5, 'connect_p95_ms': 8379.2, 'session_p50_ms': 3181.4, 'session_p95_ms': 10215.8, 'last_query_info_ru_seen': 50, 'last_stmt_ru_sample': [5.810790400234375, 5.807660733567709, 5.806883066901042]}
+[09:22:45]   isolation passed=True leaks=[]
+[09:23:01]   storage 50 schemas, passed=True
+[09:23:01] phase N=200: creating tenants 51..200
+[09:25:14]   ddl {'create_database': {'n': 150, 'p50_ms': 306.5, 'p95_ms': 354.1, 'max_ms': 522.3}, 'create_user': {'n': 150, 'p50_ms': 301.9, 'p95_ms': 321.1, 'max_ms': 502.0}, 'grant': {'n': 150, 'p50_ms': 288.4, 'p95_ms': 325.1, 'max_ms': 507.9}}
+[09:26:00]   workload {'tenants': 200, 'errors': [], 'error_count': 0, 'connect_p50_ms': 1352.6, 'connect_p95_ms': 3133.0, 'session_p50_ms': 3097.7, 'session_p95_ms': 5085.4, 'last_query_info_ru_seen': 200, 'last_stmt_ru_sample': [5.81286223421875, 5.8191742342187505, 5.81023723421875]}
+[09:27:08]   isolation passed=True leaks=[]
+[09:27:54]   storage 200 schemas, passed=True
+[09:27:54] phase N=500: creating tenants 201..500
+[09:32:18]   ddl {'create_database': {'n': 300, 'p50_ms': 306.4, 'p95_ms': 334.5, 'max_ms': 406.5}, 'create_user': {'n': 300, 'p50_ms': 303.1, 'p95_ms': 312.5, 'max_ms': 409.5}, 'grant': {'n': 300, 'p50_ms': 301.3, 'p95_ms': 312.3, 'max_ms': 1527.5}}
+[09:33:58]   workload {'tenants': 500, 'errors': [], 'error_count': 0, 'connect_p50_ms': 1329.0, 'connect_p95_ms': 2254.2, 'session_p50_ms': 2950.1, 'session_p95_ms': 3907.8, 'last_query_info_ru_seen': 500, 'last_stmt_ru_sample': [5.806848809414063, 5.803914068203126, 5.806678734869792]}
+[09:35:09]   isolation passed=True leaks=[]
+[09:36:50]   storage 500 schemas, passed=True
+[09:37:00]   activity/ru done
+[09:37:07]   conn cap {'limit': 2, 'third_connection': 'connected; first query ok', 'enforced': False}
+[09:37:17]   rotation {'rotate_old_password_denied_after_ms': 1125, 'rotate_new_password_works': True, 'password_expire_stmt': 'ok', 'after_expire_login': 'refused: 1862 Your password has expired. To log in you must change it using a client that supports expired passwords.', 'password_expire_interval_stmt': 'ok', 'account_lock_new_connection': 'refused: 3118', 'account_lock_existing_session': 'still works', 'account_lock_stmt_ms': 305, 'kill_existing_sessions': '1/1 killed via PROCESSLIST ids', 'held_session_after_kill': 'closed'}
+[09:43:15] teardown {'databases_left': 0, 'users_left': 0}
+{"cell_grants_isolate_tenants": true, "cell_storage_is_visible_per_tenant": true, "teardown_leaves_nothing (SQL)": true}
+exit 0

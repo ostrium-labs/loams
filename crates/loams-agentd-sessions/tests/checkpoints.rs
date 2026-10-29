@@ -66,6 +66,56 @@ impl Harness for EditingMock {
     }
 }
 
+/// A Mock whose every turn stays running until it is interrupted, so a test
+/// can look at the thread while its turn is in flight.
+#[derive(Debug)]
+struct HeldMock(MockHarness);
+
+#[async_trait]
+impl Harness for HeldMock {
+    fn id(&self) -> HarnessId {
+        HarnessId::Mock
+    }
+    fn display_name(&self) -> &str {
+        "Mock"
+    }
+    fn supports_steering(&self) -> bool {
+        false
+    }
+    fn steering_mode(&self) -> SteeringMode {
+        self.0.steering_mode()
+    }
+    fn reasoning_levels(&self) -> &[ReasoningLevel] {
+        self.0.reasoning_levels()
+    }
+    async fn models(&self) -> Result<Vec<Model>, HarnessError> {
+        self.0.models().await
+    }
+    async fn run(
+        &self,
+        _request: RunRequest,
+        controls: RunControls,
+    ) -> Result<BoxStream<'static, Result<AgentEvent, HarnessError>>, HarnessError> {
+        use futures::StreamExt;
+        let interrupt = controls.interrupt.clone();
+        let started = futures::stream::iter([Ok(AgentEvent::TextDelta {
+            text: "Working.".into(),
+        })]);
+        let interrupted = futures::stream::once(async move {
+            // Hold the run's controls until the end, as a real driver does.
+            let _controls = controls;
+            interrupt.cancelled().await;
+            Ok(AgentEvent::Done {
+                status: DoneStatus::Interrupted,
+                result: None,
+                error: None,
+                session_id: None,
+            })
+        });
+        Ok(started.chain(interrupted).boxed())
+    }
+}
+
 async fn git_output(cwd: &Path, args: &[&str]) -> std::process::Output {
     tokio::process::Command::new("git")
         .args(args)
@@ -103,6 +153,7 @@ async fn repo(dir: &Path) -> PathBuf {
 
 fn run_request(cwd: &Path) -> RunRequest {
     RunRequest {
+        mcp_servers: Vec::new(),
         mcp: None,
         prompt: "edit the notes".into(),
         harness: None,
@@ -127,10 +178,7 @@ struct Daemon {
 
 impl Daemon {
     async fn start() -> Self {
-        let tmp = tempfile::tempdir().unwrap();
-        let repo = repo(tmp.path()).await;
-        let registry = HarnessRegistry::new();
-        registry.register(Arc::new(EditingMock(MockHarness {
+        Self::start_with(Arc::new(EditingMock(MockHarness {
             script: vec![
                 AgentEvent::TextDelta {
                     text: "Editing the notes.".into(),
@@ -142,7 +190,15 @@ impl Daemon {
                     session_id: None,
                 },
             ],
-        })));
+        })))
+        .await
+    }
+
+    async fn start_with(harness: Arc<dyn Harness>) -> Self {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = repo(tmp.path()).await;
+        let registry = HarnessRegistry::new();
+        registry.register(harness);
         let core = EngineCore::assemble_with_approvals(
             &tmp.path().join("data"),
             Arc::new(registry),
@@ -210,6 +266,70 @@ impl Daemon {
             assert!(
                 tokio::time::Instant::now() < deadline,
                 "timed out waiting for turn {turn}'s post checkpoint"
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }
+
+    /// Queue `command` to the thread; its id.
+    async fn queue(&self, command: Value) -> String {
+        let reply = self
+            .client
+            .call(
+                methods::QUEUE_COMMAND,
+                json!({ "chatId": CHAT, "command": command }),
+            )
+            .await
+            .unwrap();
+        reply["commandId"].as_str().unwrap().to_owned()
+    }
+
+    /// Whether every command queued to the thread is resolved, and whether
+    /// its turn is in flight.
+    fn settled_and_running(&self) -> (bool, bool) {
+        let resolved = self
+            .core
+            .doc_host
+            .open(CHAT)
+            .unwrap()
+            .doc()
+            .read_commands()
+            .unwrap()
+            .iter()
+            .all(|c| c.status != loams_agentd_doc::SessionCommandStatus::Pending);
+        (resolved, self.core.sessions.turn_in_flight(CHAT))
+    }
+
+    /// Wait until the commands are resolved and turn `turn` runs, past its
+    /// `pre` checkpoint (written once the run starts, after it shows as
+    /// running).
+    async fn wait_running(&self, turn: u32) {
+        let pre = format!("refs/loams/checkpoints/{CHAT}/turn/{turn}/pre");
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+        loop {
+            let (resolved, running) = self.settled_and_running();
+            let written = git_output(&self.repo, &["rev-parse", "--verify", "--quiet", &pre])
+                .await
+                .status
+                .success();
+            if resolved && running && written {
+                return;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "timed out waiting for turn {turn} to run"
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }
+
+    /// Wait until the commands are resolved and no turn is in flight.
+    async fn wait_idle(&self) {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+        while self.settled_and_running() != (true, false) {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "timed out waiting for the thread to settle"
             );
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
@@ -557,6 +677,55 @@ async fn restore_refuses_stale_checksum() {
         .unwrap_err();
     assert!(error.contains("checkpoint_missing"), "{error}");
     assert_eq!(daemon.read("notes.txt").unwrap(), "edited by hand\n");
+}
+
+/// What the Connect/ndjson parity suite compares after Steer and Interrupt
+/// (its 0.1.1 CI flake): a queued command answers before the daemon applies
+/// it, so a restore sent right after it can meet the turn it starts. While a
+/// turn is in flight the restore is refused as running; once the commands
+/// are resolved and the turn is over, the same restore reaches the
+/// checkpoints, and a Steer to an idle thread has started a turn of its own.
+#[tokio::test]
+async fn restore_waits_for_the_queued_turn_to_end() {
+    let daemon = Daemon::start_with(Arc::new(HeldMock(MockHarness { script: Vec::new() }))).await;
+    let restore_missing = || async {
+        daemon
+            .restore("no-such-turn", "stale", "worktree")
+            .await
+            .unwrap_err()
+    };
+
+    daemon
+        .queue(json!({ "kind": "run", "request": run_request(&daemon.repo), "messageId": "msg-1" }))
+        .await;
+    daemon.wait_running(1).await;
+    let error = restore_missing().await;
+    assert!(error.contains("The thread is running"), "{error}");
+
+    daemon.queue(json!({ "kind": "interrupt" })).await;
+    daemon.wait_idle().await;
+    let error = restore_missing().await;
+    assert!(error.contains("checkpoint_missing"), "{error}");
+
+    // A steer to the idle thread is a new turn, with its own checkpoint.
+    daemon
+        .queue(json!({ "kind": "steer", "prompt": "Also this", "messageId": "msg-2" }))
+        .await;
+    daemon.wait_running(2).await;
+    let error = restore_missing().await;
+    assert!(error.contains("The thread is running"), "{error}");
+    daemon.queue(json!({ "kind": "interrupt" })).await;
+    daemon.wait_idle().await;
+    let error = restore_missing().await;
+    assert!(error.contains("checkpoint_missing"), "{error}");
+    let list = daemon.list().await;
+    let turns: Vec<&str> = list["checkpoints"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["turnId"].as_str().unwrap())
+        .collect();
+    assert_eq!(turns, ["msg-1", "msg-2"]);
 }
 
 #[tokio::test]

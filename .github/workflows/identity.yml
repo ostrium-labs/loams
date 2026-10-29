@@ -4,19 +4,23 @@ name: Identity
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "17 3 * * *"
   pull_request:
     paths:
       - "conformance/identity/**"
       - "deploy/openfga/**"
+      - "deploy/release/config/openfga-model.json"
       - "spikes/ia0-authz/**"
       - "crates/loams-authz/**"
+      - "crates/loams-zitadel/**"
+      - "crates/loams-identity-sync/**"
       - ".github/workflows/identity.yml"
 
+# Superseded runs of a pull request are cancelled; a push to main, a tag,
+# a dispatch (the nightly) and a schedule run to completion. The event is in
+# the group, so a push never cancels a dispatch on the same branch.
 concurrency:
-  group: identity-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: identity-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -24,7 +28,7 @@ permissions:
 jobs:
   openfga-model:
     name: "Identity: OpenFGA model v1 tests"
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -35,18 +39,21 @@ jobs:
         run: |
           ./fga.sh model validate --file /model/fga.mod | tee /dev/stderr | jq -e '.is_valid'
           ./fga.sh model test --tests /model/core.fga.yaml
+      - name: the release bundle's model JSON matches model v1
+        run: deploy/openfga/model-json.sh --check
       - name: no_cross_org_tuples self-test
         run: python3 -I conformance/identity/cross_org_scan.py --self-test
 
   identity-smoke:
     name: "Identity: Zitadel + OpenFGA compose smoke"
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
           workspaces: spikes/ia0-authz
           shared-key: ia0-authz
@@ -62,13 +69,14 @@ jobs:
 
   loams-authz:
     name: "Identity: loams-authz against OpenFGA"
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
         with:
           shared-key: loams-authz
           save-if: ${{ github.ref == 'refs/heads/dev' }}
@@ -89,3 +97,40 @@ jobs:
         run: cargo test -p loams-authz --locked
       - name: clippy
         run: cargo clippy -p loams-authz --all-targets --locked -- -D warnings
+
+  loams-zitadel:
+    name: "Identity: loams-zitadel and the identity sync against Zitadel and OpenFGA"
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
+        with:
+          shared-key: loams-zitadel
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
+      - name: build the tests while the stack starts
+        run: cargo test -p loams-zitadel -p loams-identity-sync --locked --no-run
+      - name: start Zitadel and OpenFGA (the IA0 stack) and bootstrap them
+        run: conformance/identity/up.sh
+      - name: test (fake and live)
+        working-directory: conformance/identity
+        run: |
+          set -euo pipefail
+          set -a; source .env.ia0; set +a
+          export LOAMS_IDENTITY_ZITADEL_URL="$IA0_ISSUER"
+          export LOAMS_IDENTITY_ZITADEL_TOKEN_FILE="$PWD/.secrets/admin.pat"
+          export LOAMS_IDENTITY_ZITADEL_ORG="$IA0_ORG"
+          export LOAMS_IDENTITY_ZITADEL_PROJECT="$IA0_AUDIENCE"
+          export LOAMS_AUTHZ_OPENFGA_GRPC="${IA0_FGA_GRPC:-http://127.0.0.1:18082}"
+          export LOAMS_AUTHZ_OPENFGA_STORE="$IA0_STORE"
+          export LOAMS_AUTHZ_OPENFGA_MODEL="$IA0_MODEL"
+          cd ../.. && cargo test -p loams-zitadel -p loams-identity-sync --locked -- --test-threads 1
+      - name: clippy
+        run: cargo clippy -p loams-zitadel -p loams-identity-sync --all-targets --locked -- -D warnings
+      - name: stop the stack
+        if: always()
+        working-directory: conformance/identity
+        run: docker compose --profile identity --profile authz down -v || true

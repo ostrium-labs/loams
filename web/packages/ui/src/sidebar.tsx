@@ -116,7 +116,7 @@ export function ResizeHandle({
   };
 
   return (
-    // biome-ignore lint/a11y/useSemanticElements: a focusable window splitter has no native element
+    // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a focusable window splitter has no native element
     <div
       role="separator"
       aria-orientation={orientation}

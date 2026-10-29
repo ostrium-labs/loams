@@ -1,14 +1,16 @@
-// The hosted console on Cloudflare Workers static assets (issue #269): Ostrium's
-// at console.loams.dev, or yours with `--env byoc` (a workers.dev URL, no custom
-// domain; add your own route). Assets only, no Worker code, so it stays on the
-// free plan. Build and stage first (web/README.md "Deploy the console"); the
+// The console on Cloudflare Workers static assets (issue #269), in your own account
+// (a workers.dev URL; add your own custom-domain route if you want one). Ostrium runs no
+// hosted console and has no console.loams.dev route (owner, 2026-10-24). Assets only,
+// no Worker code, so it stays on the free plan. Build and stage first (web/README.md "Deploy the console"); the
 // stage step writes config.json from LOAMS_ENGINE_URL, LOAMS_AUTH_MODE (the
 // default sign-in mode: tailscale | oidc | apikey, default tailscale),
+// LOAMS_AUTH_MODES (the modes the connect screen offers, for example
+// `tailscale` while a deploy has tested only that; unset offers all of them),
 // LOAMS_AUTH_CLIENT_ID (loams-console, which offers oidc) and LOAMS_AUTH_ISSUER
 // (default https://auth.loams.dev):
 //   pnpm build && LOAMS_AUTH_CLIENT_ID=loams-console node apps/console/deploy/stage.mjs
-//   cd apps/console && wrangler deploy            # console.loams.dev
-//   cd apps/console && wrangler deploy --env byoc # your account (coming soon)
+//   cd apps/console && wrangler deploy            # your account, on workers.dev
+//   cd apps/console && wrangler deploy --env byoc # same, under the byoc environment
 {
   "name": "loams-console",
   "compatibility_date": "2026-10-01",
@@ -19,7 +21,7 @@
     // Unknown paths get /index.html, the console (it routes by hash).
     "not_found_handling": "single-page-application"
   },
-  "routes": [{ "pattern": "console.loams.dev", "custom_domain": true }],
+  "workers_dev": true,
   "observability": { "enabled": true },
   "env": {
     "byoc": {

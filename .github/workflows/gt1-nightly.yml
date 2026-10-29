@@ -9,12 +9,19 @@ on:
 
 concurrency:
   group: git-nightly-${{ github.ref }}
-  cancel-in-progress: true
+  # The nightly runs to completion.
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
 env:
+  # CI builds are never debugged: no debug info in dev and test builds (smaller
+  # caches, faster links; a panic still names its file and line) and no
+  # incremental artifacts. rust-cache sets CARGO_INCREMENTAL=0 too; this covers
+  # the jobs without it.
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_DEV_DEBUG: 0
   CARGO_TERM_COLOR: always
 
 jobs:

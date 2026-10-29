@@ -287,6 +287,7 @@ fn run_in(dir: &Path) -> Run {
         cases: Vec::new(),
         check: false,
         skip_setup: false,
+        task: None,
     }
 }
 

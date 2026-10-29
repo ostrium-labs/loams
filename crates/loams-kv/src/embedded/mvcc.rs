@@ -27,6 +27,7 @@ use redb::{ReadableDatabase, ReadableTable, StorageError};
 
 use super::commit::{Mutation, Op};
 use super::gc::OpenGuard;
+use super::locks::Owner;
 use super::{Handle, VERSIONS};
 use crate::{MAX_VALUE_BYTES, Pair, Ts, TxnError};
 
@@ -380,24 +381,145 @@ pub struct Txn {
     attempt: u32,
     buffer: BTreeMap<Vec<u8>, Entry>,
     refuse_reads_after: Instant,
+    /// Pessimistic mode's locks; `None` in an optimistic transaction.
+    pessimistic: Option<Pessimistic>,
     _open: OpenGuard,
 }
 
+/// A pessimistic transaction's locks (D851): the keys it holds, each with
+/// the timestamp it read the key's latest value at. Dropping it (when the
+/// transaction commits or rolls back) releases them.
+#[derive(Debug)]
+struct Pessimistic {
+    owner: Owner,
+    /// When a lock wait gives up with `Conflict`.
+    until: Instant,
+    /// Relative key → the `for_update` timestamp: the commit's conflict
+    /// check for the key starts there, not at the start timestamp.
+    locked: BTreeMap<Vec<u8>, Ts>,
+    handle: Handle,
+}
+
+impl Drop for Pessimistic {
+    fn drop(&mut self) {
+        let prefixes: Vec<Vec<u8>> = self.locked.keys().map(|k| self.handle.prefix(k)).collect();
+        self.handle
+            .shared
+            .core
+            .locks
+            .release(self.owner, prefixes.iter().map(Vec::as_slice));
+    }
+}
+
 impl Txn {
+    /// `pessimistic`: the lock-wait limit of a pessimistic transaction.
     pub(crate) fn new(
         handle: Handle,
         start: Ts,
         attempt: u32,
         refuse_reads_after: Instant,
         open: OpenGuard,
+        pessimistic: Option<Instant>,
     ) -> Self {
+        let pessimistic = pessimistic.map(|until| Pessimistic {
+            owner: handle.shared.core.locks.owner(),
+            until,
+            locked: BTreeMap::new(),
+            handle: handle.clone(),
+        });
         Txn {
             reader: Reader { handle, at: start },
             attempt,
             buffer: BTreeMap::new(),
             refuse_reads_after,
+            pessimistic,
             _open: open,
         }
+    }
+
+    /// Whether this is a pessimistic transaction.
+    pub fn is_pessimistic(&self) -> bool {
+        self.pessimistic.is_some()
+    }
+
+    /// In a pessimistic transaction, takes `key`'s lock (waiting while
+    /// another transaction holds it) and returns the timestamp of the
+    /// latest committed state it then sees; `None` in an optimistic one.
+    async fn lock_for_update(&mut self, key: &[u8]) -> Result<Option<Ts>, TxnError> {
+        let Some(p) = &self.pessimistic else {
+            return Ok(None);
+        };
+        if let Some(ts) = p.locked.get(key) {
+            return Ok(Some(*ts));
+        }
+        let (owner, until) = (p.owner, p.until);
+        let handle = self.reader.handle.clone();
+        let core = handle.shared.core.clone();
+        core.locks
+            .acquire(owner, &handle.prefix(key), until)
+            .await?;
+        // Held from here: released with the transaction, even when the
+        // timestamp below fails.
+        let p = self.pessimistic.as_mut().expect("pessimistic");
+        p.locked.insert(key.to_vec(), self.reader.at);
+        let now = handle
+            .now()
+            .await
+            .map_err(|e| TxnError::NotApplied(e.to_string()))?;
+        // Every commit below `now` is applied, so a read at `now` sees the
+        // latest committed value; none after it can write the key while the
+        // lock is held (the committer refuses them).
+        core.oracle.wait_visible(now).await;
+        p.locked.insert(key.to_vec(), now);
+        Ok(Some(now))
+    }
+
+    /// Reads `key` and locks it. Pessimistic: takes the lock at once
+    /// (waiting while another transaction holds it; a wait past the run's
+    /// lock-wait limit or a deadlock is `Conflict`) and returns the latest
+    /// committed value, or the transaction's own write. Optimistic: reads
+    /// at the start timestamp and locks the key at commit, as
+    /// [`get`](Self::get) and [`lock_keys`](Self::lock_keys).
+    pub async fn get_for_update(&mut self, key: &[u8]) -> Result<Option<Vec<u8>>, TxnError> {
+        self.check_window()?;
+        let Some(at) = self.lock_for_update(key).await? else {
+            let value = self.get(key).await?;
+            self.lock_keys([key]).await?;
+            return Ok(value);
+        };
+        match self.buffer.get(key) {
+            Some(e @ (Entry::Put(_) | Entry::Insert(_) | Entry::Del | Entry::CheckNotExist)) => {
+                return Ok(e.value().unwrap_or_default());
+            }
+            Some(Entry::Locked(Some(v))) => return Ok(v.clone()),
+            _ => {}
+        }
+        let latest = Reader {
+            handle: self.reader.handle.clone(),
+            at,
+        };
+        let value = latest.get_many(&[key.to_vec()])?.pop().unwrap_or_default();
+        self.buffer
+            .insert(key.to_vec(), Entry::Locked(Some(value.clone())));
+        Ok(value)
+    }
+
+    /// [`get_for_update`](Self::get_for_update) of each of `keys`, locked
+    /// in key order (so two batches over the same keys cannot deadlock);
+    /// absent keys are left out. The result is sorted by key.
+    pub async fn batch_get_for_update<K: AsRef<[u8]>>(
+        &mut self,
+        keys: impl IntoIterator<Item = K>,
+    ) -> Result<Vec<Pair>, TxnError> {
+        let keys: std::collections::BTreeSet<Vec<u8>> =
+            keys.into_iter().map(|k| k.as_ref().to_vec()).collect();
+        let mut out = Vec::with_capacity(keys.len());
+        for key in keys {
+            if let Some(v) = self.get_for_update(&key).await? {
+                out.push((key, v));
+            }
+        }
+        Ok(out)
     }
 
     /// The start timestamp: every read sees the data committed before it.
@@ -545,6 +667,7 @@ impl Txn {
         if value.len() > MAX_VALUE_BYTES {
             return Err(TxnError::Fatal("value over 2 MiB".to_string()));
         }
+        self.lock_for_update(key).await?;
         let entry = match self.buffer.get(key) {
             Some(Entry::Insert(_) | Entry::CheckNotExist) => Entry::Insert(value),
             _ => Entry::Put(value),
@@ -569,6 +692,7 @@ impl Txn {
         {
             return Err(TxnError::AlreadyExists(already_exists(key)));
         }
+        self.lock_for_update(key).await?;
         let entry = match self.buffer.get(key) {
             Some(Entry::Del) => Entry::Put(value),
             _ => Entry::Insert(value),
@@ -579,6 +703,7 @@ impl Txn {
 
     /// Deletes `key`.
     pub async fn delete(&mut self, key: &[u8]) -> Result<(), TxnError> {
+        self.lock_for_update(key).await?;
         let entry = match self.buffer.get(key) {
             Some(Entry::Insert(_) | Entry::CheckNotExist) => Entry::CheckNotExist,
             _ => Entry::Del,
@@ -598,6 +723,7 @@ impl Txn {
     ) -> Result<(), TxnError> {
         let keys: Vec<Vec<u8>> = keys.into_iter().map(|k| k.as_ref().to_vec()).collect();
         for key in keys {
+            self.lock_for_update(&key).await?;
             match self.buffer.get_mut(&key) {
                 None => {
                     self.buffer.insert(key, Entry::Locked(None));
@@ -628,11 +754,19 @@ impl Txn {
                     Entry::Del => Op::Del,
                     Entry::CheckNotExist => Op::CheckNotExist,
                 };
+                let (check_ts, owner) = match &self.pessimistic {
+                    Some(p) => (
+                        p.locked.get(key).copied().unwrap_or(self.reader.at),
+                        Some(p.owner),
+                    ),
+                    None => (self.reader.at, None),
+                };
                 Some(Mutation {
                     prefix: h.prefix(key),
                     key: key.clone(),
                     op,
-                    check_ts: self.reader.at,
+                    check_ts,
+                    owner,
                 })
             })
             .collect()

@@ -1,0 +1,8 @@
+{
+  "approvalId": "appr_01",
+  "chatId": "chat_01",
+  "headSha": "0123456789abcdef0123456789abcdef01234567",
+  "number": 7,
+  "provider": "forgejo",
+  "strategy": "squash"
+}

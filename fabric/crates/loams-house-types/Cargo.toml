@@ -1,0 +1,28 @@
+[package]
+name = "loams-house-types"
+description = "ClickHouse types for the Loams House Rust engine: the type grammar, the mapping to Arrow and to the House's Iceberg encodings, default values, canonical names and value text (design §75 §6.3, plan HE1 Task 21)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+# The engine's Arrow layout of ClickHouse types (HE1 Task 21): the workspace's
+# Arrow 59, the major DataFusion 55.2 uses (D1576). Apache-2.0.
+arrow-array.workspace = true
+arrow-buffer.workspace = true
+arrow-schema.workspace = true
+# `DateTime` text in a column's or the session's zone (HE1 Task 21). Both are
+# already in the lock through arrow-array (chrono 0.4.45, chrono-tz 0.10.4).
+# MIT OR Apache-2.0.
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+chrono-tz = "0.10"
+
+[dev-dependencies]
+# `engine_crates_stay_apart` reads the workspace's `cargo metadata`.
+serde_json.workspace = true
+
+[lints]
+workspace = true

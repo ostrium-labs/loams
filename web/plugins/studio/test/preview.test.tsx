@@ -13,7 +13,7 @@ import {
   ProjectService,
 } from '@loams/proto/agentd';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import {
   type DesktopPreviewApi,
   type DesktopPreviewState,
@@ -21,6 +21,7 @@ import {
   PreviewUnsupported,
   remotePreview,
   remotePreviewOpener,
+  trimTrailingSlashes,
 } from '../src/preview/access.js';
 import { PreviewTab } from '../src/preview/PreviewTab.js';
 import { frameSandbox } from '../src/preview/RemoteFrame.js';
@@ -252,6 +253,17 @@ describe('Preview tab', () => {
 });
 
 describe('remote preview tickets', () => {
+  // Issue #1105 (CodeQL js/polynomial-redos): the base URL's trailing slashes are
+  // trimmed in one pass; `/\/+$/` took quadratic time on a long run of `/`.
+  it('trims the base URL in linear time', () => {
+    expect(trimTrailingSlashes('https://a.example///')).toBe('https://a.example');
+    expect(trimTrailingSlashes('https://a.example/x')).toBe('https://a.example/x');
+    expect(trimTrailingSlashes('///')).toBe('');
+    const start = performance.now();
+    trimTrailingSlashes(`https://a.example${'/'.repeat(200_000)}x`);
+    expect(performance.now() - start).toBeLessThan(1_000);
+  });
+
   it('asks with the bearer token and no cookies, and accepts a ticket path only', async () => {
     const fetch = vi.fn(
       async () => new Response(JSON.stringify({ base: TICKET, expiresAtMs: 9 }), { status: 200 }),

@@ -1,0 +1,8 @@
+# .env (keys that --cloud sets)
+LOAMS_VERSION=0.1.2
+LOAMS_BUCKET=gs://my-bkt/loams
+COMPOSE_PROFILES=
+TS_AUTHKEY=<from secret store>
+LOAMS_SETUP_TOKEN=<from secret store>
+# secrets/engine.env
+# secrets: loams-loams (tailnet-authkey, setup-token, api-keys optional) in the gcp secret store

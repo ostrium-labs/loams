@@ -1,0 +1,11 @@
+# The Loams Cloud admin allow-list (design 78 §25.8, D1746; plan LC2a Task 4).
+#
+# An admin needs all three: membership of the "Ostrium" WorkOS organisation with
+# the role cloud_admin, an entry here, and a TOTP step-up within 15 minutes.
+# This file changes only through a reviewed pull request. Ids are WorkOS user
+# ids (user_...), never addresses. The first admin is the owner's go-live step
+# (LC2a Task 12).
+#
+# [[admin]]
+# workos_user_id = "user_01..."
+# name = "Owner"

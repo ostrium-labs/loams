@@ -1,0 +1,6 @@
+{
+  "name": "lc0-fs-spike",
+  "private": true,
+  "type": "module",
+  "description": "LC0 Task 2 spike: TiDB Cloud Filesystem workspaces, handoff and token scoping. Not product code."
+}

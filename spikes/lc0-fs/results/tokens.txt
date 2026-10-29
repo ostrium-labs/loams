@@ -1,0 +1,59 @@
+== setup (owner token on A)
+scoped token id=05e39a2a-d3ab-4931-95cb-1a1d63a45146; metadata:
+{
+  "file_system_id": "3094f87f-6e25-4cb5-b776-6b7f23d2d3a9",
+  "token_id":"<redacted>",
+  "subject": "lc0-scoped-b",
+  "scope_kind": "fs_scoped",
+  "expires_at": "2026-10-23T05:17:09Z",
+  "scopes": [
+    {
+      "prefix": "/t/a",
+      "ops": [
+        "read",
+        "list",
+        "write"
+      ]
+    }
+  ],
+  "credentials_stored": false
+}
+== scoped_token_cannot_escape_prefix (on B)
+PASS read /t/a/seed.txt (allowed)
+PASS list /t/a (allowed)
+PASS write /t/a/new.txt (allowed)
+PASS read /t/b/secret.txt (denied: ti [ERROR]: fs cat: read :/t/b/secret.txt: fs access denied)
+PASS list /t/b (denied: ti [ERROR]: fs ls: list :/t/b: fs access denied)
+PASS write /t/b/x.txt (denied: ti [ERROR]: fs stat: fs access denied)
+PASS read /t/ab/secret.txt (prefix confusion) (denied: ti [ERROR]: fs cat: read :/t/ab/secret.txt: fs access denied)
+PASS write /t/ab/x.txt (prefix confusion) (denied: ti [ERROR]: fs stat: fs access denied)
+PASS read /t/a/../b/secret.txt (traversal) (denied: ti [ERROR]: fs cat: read :/t/b/secret.txt: fs access denied)
+PASS list / (denied: ti [ERROR]: fs ls: list :/: fs access denied)
+PASS list /t (denied: ti [ERROR]: fs ls: list :/t: fs access denied)
+PASS delete /t/a/seed.txt (delete not granted) (denied: fs rm: fs access denied)
+PASS move /t/a/seed.txt -> /t/b/ (escape by move) (denied: fs mv: fs access denied)
+PASS copy /t/b/secret.txt -> /t/a/ (escape by copy) (denied: fs cp: fs access denied)
+PASS mount / (denied: ti [ERROR]: component: drive9 mount)
+PASS list tokens (denied: ti [ERROR]: permission denied: this token management operation requires an owner FS token; TI_FS_TOKEN or --fs-token currently contains a sc)
+PASS mint a scoped token from a scoped token (denied: ti [ERROR]: permission denied: generating a scoped file system token requires an owner FS token; TI_FS_TOKEN or --fs-token currently contain)
+PASS fork a layer (owner's layer layer_01m5kf8s07rq3128yecqkcva93) (denied: ti [ERROR]: fs layer: fs access denied)
+PASS hydrate the Git workspace (denied: git hydrate: lookup git workspace :/ws/loams-typescript/: scoped token cannot access endpoint)
+PASS create a layer on /t/b (denied: ti [ERROR]: fs layer: fs access denied)
+PASS mount /t/a (own prefix) (allowed)
+owner view of /t/b after the attempts: ['secret.txt']
+PASS /t/b unchanged
+PASS no copy of /t/b into /t/a
+== disable-file-system-token and propagation
+disabled
+disable call took 0.752s; API denial seen 0.411s after it returned (1.163s after it started)
+PASS read /t/a after disable (denied: ti [ERROR]: fs cat: read :/t/a/seed.txt: invalid API key)
+PASS write /t/a after disable (denied: ti [ERROR]: fs stat: invalid API key)
+bash: line 1: /home/b/sc-a/after-mount.txt: Permission denied
+live mount after disable: cat: /home/b/sc-a/seed.txt: Permission denied rc=1 } 
+PASS a live mount cannot write after disable
+== re-enable propagation
+enable: allowed again 1.153s after the call returned
+== revoke (delete) the scoped token
+deleted 05e39a2a-d3ab-4931-95cb-1a1d63a45146
+PASS read /t/a after delete (denied: ti [ERROR]: fs cat: read :/t/a/seed.txt: invalid API key)
+result: pass=27 fail=0

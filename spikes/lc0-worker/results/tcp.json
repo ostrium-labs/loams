@@ -1,0 +1,75 @@
+{
+  "http_noop_from_worker": {
+    "colo": "CDG",
+    "p50": 92,
+    "p95": 394
+  },
+  "tcp_runs": [
+    {
+      "ok": true,
+      "serverVersion": "8.0.11-TiDB-v8.5.3-serverless",
+      "plugin": "mysql_native_password",
+      "steps": {
+        "greeting_ms": 183,
+        "tcp_and_ssl_request_ms": 183,
+        "tls_and_auth_ms": 588
+      },
+      "select1_ms": [
+        85,
+        85,
+        84,
+        85,
+        85,
+        84,
+        85,
+        85,
+        84,
+        85
+      ]
+    },
+    {
+      "ok": true,
+      "serverVersion": "8.0.11-TiDB-v8.5.3-serverless",
+      "plugin": "mysql_native_password",
+      "steps": {
+        "greeting_ms": 183,
+        "tcp_and_ssl_request_ms": 183,
+        "tls_and_auth_ms": 457
+      },
+      "select1_ms": [
+        86,
+        85,
+        86,
+        85,
+        85,
+        86,
+        85,
+        87,
+        85,
+        86
+      ]
+    },
+    {
+      "ok": true,
+      "serverVersion": "8.0.11-TiDB-v8.5.3-serverless",
+      "plugin": "mysql_native_password",
+      "steps": {
+        "greeting_ms": 184,
+        "tcp_and_ssl_request_ms": 184,
+        "tls_and_auth_ms": 460
+      },
+      "select1_ms": [
+        84,
+        88,
+        85,
+        85,
+        85,
+        85,
+        85,
+        85,
+        85,
+        85
+      ]
+    }
+  ]
+}

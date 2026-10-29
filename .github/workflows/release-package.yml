@@ -30,6 +30,11 @@ name: Release packages
 #            There is no Developer ID signature or notarization (no Apple
 #            certificate in this project yet), so a downloaded copy is quarantined
 #            and the notes carry the `xattr -d com.apple.quarantine` step.
+#   agentd   loams-agentd-<v>-linux-x86_64.tar.gz, loams-agentd-<v>-linux-aarch64.tar.gz:
+#            the agent daemon for a headless Linux host (#874), each built on its
+#            architecture's own runner. The top-level directory holds loams-agentd,
+#            loams, SHA256SUMS and VERSION, the layout `loams-agentd install-runtime
+#            --from` reads (install-runtime copies both binaries, so `loams` is in it).
 #
 # Signing, and the shape of the gate:
 #
@@ -42,6 +47,8 @@ name: Release packages
 #   * Windows is unsigned, by decision (D620). There is no code-signing
 #     certificate in this project. The zip says so on its face.
 #   * macOS is ad-hoc signed only (see above), which is not an identity.
+#   * The loams-agentd tarballs are unsigned, like the Windows zip; the release's
+#     SHA256SUMS (release-checksums.yml) lists them.
 #
 # Dispatch with dry_run: true to build every artifact from the dispatched ref and
 # keep them as workflow artifacts only: no release is read or written, so the
@@ -75,6 +82,14 @@ on:
         type: boolean
         required: false
         default: false
+      regenerate_checksums:
+        description: >-
+          This dispatch rebuilds a release's assets on purpose (they replace the
+          attached ones): rewrite SHA256SUMS over them instead of failing on the
+          entries that no longer match.
+        type: boolean
+        required: false
+        default: false
       dry_run:
         description: >-
           Build everything from the dispatched ref and keep the files as workflow
@@ -97,6 +112,10 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # Shipped artefacts never come from a task cache (docs/guides/nx-cloud.md): no Nx Cloud,
+  # and no cached Nx results, local or remote.
+  NX_NO_CLOUD: 'true'
+  NX_SKIP_NX_CACHE: 'true'
   # The server's features: the release image's (deploy/release/Containerfile.loams
   # FEATURES), so `loams dev` from a package serves what the image serves,
   # Durable on 127.0.0.1:8001 included (#925, D262). The Linux job checks the
@@ -197,6 +216,13 @@ jobs:
           [[ -n "${LOAMS_GPG_PRIVATE_KEY:-}" ]] || missing+=("secret LOAMS_GPG_PRIVATE_KEY")
           [[ -n "${LOAMS_GPG_KEY_ID:-}" ]] || missing+=("variable LOAMS_GPG_KEY_ID")
           if [ ${#missing[@]} -eq 0 ]; then
+            # The current release key (docs/release/signing.md); the previous key
+            # still verifies 0.1.0 to 0.1.2 but should no longer sign.
+            current="$(gpg --batch --show-keys --with-colons docs/release/loams-release-key-2026-10.asc | awk -F: '$1=="fpr"{print $10; exit}')"
+            key_id="${LOAMS_GPG_KEY_ID// /}"
+            if [[ "${current^^}" != *"${key_id^^}" ]]; then
+              echo "::warning title=Previous GPG key::LOAMS_GPG_KEY_ID ($key_id) is not the current release key $current; this release would be signed with another key. See docs/release/signing.md."
+            fi
             echo "mode=sign" >> "$GITHUB_OUTPUT"
             echo "A GPG key is configured; the .deb and the .pkg.tar.zst will be signed."
             echo "The .rpm will still be unsigned here and is signed by .github/workflows/release-sign.yml (SignPath <rpm-sign>)."
@@ -216,7 +242,11 @@ jobs:
   linux:
     name: "Linux: packages (deb, rpm, pkg.tar.zst)"
     needs: [guard, preflight]
-    runs-on: ubuntu-latest
+    # Pinned, never ubuntu-latest: the binary needs the build machine's glibc or
+    # older. ubuntu-latest moved to Ubuntu 26.04 (glibc 2.43) in October 2026 and
+    # the v0.1.2 packages came out needing GLIBC_2.43, so they ran on Arch only.
+    # Ubuntu 24.04 (glibc 2.39) is what the packages and the notes promise.
+    runs-on: ubuntu-24.04
     timeout-minutes: 180
     outputs:
       assets: ${{ steps.collect.outputs.assets }}
@@ -251,11 +281,11 @@ jobs:
           python3 scripts/release/build-artifacts.py --self-test
           python3 scripts/release/make-repo.py --self-test
 
-      # The console is a separate pnpm workspace. Its build is deliberately
-      # non-fatal: the server binary does not serve it, and a TypeScript error in
-      # the console must not stop the .deb, the .rpm and the pacman package from
-      # being produced. The packaging script then ships the packages without the
-      # console and says so on stderr.
+      # The console is a separate pnpm workspace. The engine serves it at /ui/
+      # from /usr/share/loams/console. Its build is deliberately non-fatal: a
+      # TypeScript error in the console must not stop the .deb, the .rpm and
+      # the pacman package from being produced. The packaging script then
+      # ships the packages without the console and says so on stderr.
       - name: the web console (non-fatal)
         id: console
         continue-on-error: true
@@ -298,11 +328,31 @@ jobs:
         run: |
           set -euo pipefail
           readelf -d target/release/loams | grep NEEDED | tee "$RUNNER_TEMP/needed.txt"
+          # The newest glibc symbol version either binary needs: the oldest glibc it
+          # runs on. 2.39 is Ubuntu 24.04's, which Debian 13 and Fedora 40 exceed.
+          for bin in target/release/loams target/release/git-remote-loams; do
+            need=$(objdump -T "$bin" | grep -o 'GLIBC_[0-9.]*' | sed 's/GLIBC_//' | sort -uV | tail -1)
+            echo "$bin needs glibc $need"
+            if [ "$(printf '%s\n%s\n' "$need" 2.39 | sort -V | tail -1)" != 2.39 ]; then
+              echo "::error::$bin needs glibc $need, newer than 2.39 (Ubuntu 24.04); build it on ubuntu-24.04"
+              exit 1
+            fi
+          done
           readelf -d target/release/git-remote-loams | grep NEEDED | tee "$RUNNER_TEMP/needed-git-remote.txt"
           extra=$(comm -13 <(grep -o '\[.*\]' "$RUNNER_TEMP/needed.txt" | sort -u) \
                            <(grep -o '\[.*\]' "$RUNNER_TEMP/needed-git-remote.txt" | sort -u))
           if [ -n "$extra" ]; then
             echo "::error::git-remote-loams needs libraries the server does not, so release/nfpm.yaml's depends list does not cover it: $extra"
+            exit 1
+          fi
+          # The libraries release/nfpm.yaml's depends lists cover (#1105: libz.so.1
+          # shipped undeclared in 0.1.1). A new one fails here, not on install:
+          # add its package to every format in nfpm.yaml, then to this list.
+          covered="ld-linux-x86-64.so.2 libc.so.6 libgcc_s.so.1 libm.so.6 libz.so.1"
+          undeclared=$(comm -23 <(grep -o '\[.*\]' "$RUNNER_TEMP/needed.txt" | tr -d '[]' | sort -u) \
+                                <(tr ' ' '\n' <<<"$covered" | sort -u))
+          if [ -n "$undeclared" ]; then
+            echo "::error::the server links libraries release/nfpm.yaml does not declare: $undeclared"
             exit 1
           fi
 
@@ -673,17 +723,137 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  # loams-agentd for a headless Linux host, without Loams Desktop (#874): one
+  # tarball per architecture, each built on that architecture's runner (the
+  # release images use the same two), so nothing is cross-built and both are
+  # smoke-tested. The tarball is what `loams-agentd install-runtime --from` reads
+  # (scripts/release/build-artifacts.py agentd-tar), and the job runs that on it.
+  # Ubuntu 24.04 has glibc 2.39, so the binaries need at most that, like the image's.
+  agentd:
+    name: "Linux: loams-agentd tarball (${{ matrix.arch }})"
+    needs: [guard]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86_64, runner: ubuntu-24.04 }
+          - { arch: aarch64, runner: ubuntu-24.04-arm }
+    steps:
+      # Two release builds of the workspace's largest binaries in one job.
+      - name: Free disk space (GitHub-hosted runners have about 14 GB free)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
+          df -h /
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.guard.outputs.ref }}
+          persist-credentials: false
+      # protoc, and the rest of the release images' build dependencies
+      # (deploy/release/Containerfile.loams), named rather than assumed from
+      # either runner image.
+      - name: protoc and the build dependencies
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev pkg-config libssl-dev clang cmake
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        # Dry runs only: a run that publishes builds without a cache another
+        # run could have written (cache poisoning).
+        if: inputs.dry_run == true
+        with:
+          key: release-agentd-${{ matrix.arch }}
+
+      # `loams` with the packages' features, so the runtime's copy serves what
+      # the .deb's does. Separate cargo calls, so neither binary's dependencies
+      # can change the other's feature set (features unify across one build).
+      - name: build loams-agentd and loams
+        run: |
+          set -euo pipefail
+          cargo build --release -j 4 -p loams-agentd --bin loams-agentd --locked
+          cargo build --release -j 4 -p loams --bin loams --locked --features "$LOAMS_PACKAGE_FEATURES"
+
+      - name: smoke test, architecture and libraries
+        env:
+          ARCH: ${{ matrix.arch }}
+          VERSION: ${{ needs.guard.outputs.version }}
+        run: |
+          set -euo pipefail
+          [ "$(uname -m)" = "$ARCH" ] || { echo "::error::this runner is $(uname -m), not $ARCH"; exit 1; }
+          for name in loams-agentd loams; do
+            bin="target/release/$name"
+            readelf -h "$bin" | grep -E 'Class|Machine'
+            ls -l "$bin"
+            readelf -d "$bin" | grep NEEDED
+            # The newest glibc symbol version it needs: the oldest glibc it runs on.
+            echo "$name needs glibc $(objdump -T "$bin" | grep -o 'GLIBC_[0-9.]*' | sed 's/^GLIBC_//' | sort -uV | tail -1)"
+          done
+          # VERSION in the tarball is the workspace version; the daemon must report the same.
+          reported=$(target/release/loams-agentd version)
+          [ "$reported" = "loams-agentd $VERSION" ] || { echo "::error::loams-agentd reports '$reported', not $VERSION"; exit 1; }
+          target/release/loams --version
+
+      - name: smoke test (Durable on 127.0.0.1:8001)
+        run: scripts/release/smoke-durable.sh target/release/loams
+
+      - name: build the loams-agentd tarball
+        env:
+          VERSION: ${{ needs.guard.outputs.version }}
+          MTIME: ${{ needs.guard.outputs.mtime }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/agentd"
+          python3 scripts/release/build-artifacts.py agentd-tar --version "$VERSION" \
+            --agentd target/release/loams-agentd --binary target/release/loams --arch "$ARCH" \
+            --out "$out" --mtime "$MTIME"
+          ls -l "$out"
+
+      # What docs/guides/studio/remote-agentd.md tells a user to do: unpack the
+      # tarball and run install-runtime from the unpacked directory.
+      - name: install-runtime accepts the tarball
+        env:
+          VERSION: ${{ needs.guard.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          top="loams-agentd-$VERSION-linux-$ARCH"
+          work="$RUNNER_TEMP/agentd-check"
+          mkdir -p "$work"
+          tar -xzf "$RUNNER_TEMP/agentd/$top.tar.gz" -C "$work"
+          (cd "$work/$top" && sha256sum -c SHA256SUMS)
+          "$work/$top/loams-agentd" install-runtime --from "$work/$top" --to "$work/runtime"
+          [ "$(readlink "$work/runtime/current")" = "$VERSION" ] \
+            || { echo "::error::runtime/current does not name $VERSION"; exit 1; }
+          "$work/runtime/current/loams-agentd" version
+          "$work/runtime/current/loams" --version
+
+      - name: attach the tarball to the release
+        if: needs.guard.outputs.dry_run != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.guard.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG" "$RUNNER_TEMP"/agentd/*.tar.gz --clobber --repo "$GITHUB_REPOSITORY"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: loams-agentd-linux-${{ matrix.arch }}-${{ needs.guard.outputs.tag }}
+          path: ${{ runner.temp }}/agentd
+          if-no-files-found: error
+          retention-days: 30
+
   # SHA256SUMS over everything attached so far, signed (SHA256SUMS.asc). Also after
   # a failed build, so what was attached is covered; a re-run rewrites the pair.
   checksums:
     name: Checksums
-    needs: [guard, linux, windows, macos]
+    needs: [guard, linux, windows, macos, agentd]
     if: ${{ always() && needs.guard.result == 'success' && needs.guard.outputs.dry_run != 'true' }}
     permissions:
       contents: write
     uses: ./.github/workflows/release-checksums.yml
     with:
       tag: ${{ needs.guard.outputs.tag }}
+      regenerate: ${{ inputs.regenerate_checksums == true }}
     secrets: inherit
 
   # One job edits the release notes, so the Linux, Windows and macOS notes cannot
@@ -691,7 +861,7 @@ jobs:
   # from this release must not have to guess whether it is signed.
   notes:
     name: Release notes
-    needs: [guard, linux, windows, macos]
+    needs: [guard, linux, windows, macos, agentd]
     # Also after a failed build: whatever was attached still needs its signature status.
     if: ${{ always() && needs.guard.result == 'success' && needs.guard.outputs.dry_run != 'true' }}
     runs-on: ubuntu-latest
@@ -711,6 +881,7 @@ jobs:
           set -euo pipefail
           # The macOS rows come from what is actually attached, not from the matrix.
           mac_assets=$(gh release view "$TAG" --json assets -q '.assets[].name' | grep -E '^loams-.*-macos-.*\.tar\.gz$' || true)
+          agentd_assets=$(gh release view "$TAG" --json assets -q '.assets[].name' | grep -E '^loams-agentd-.*-linux-.*\.tar\.gz$' || true)
           {
             echo
             echo "## Linux packages, the Windows zip and the macOS tarballs"
@@ -774,6 +945,23 @@ jobs:
             echo "top level of the zip and the tarballs). With that directory on PATH, git handles"
             echo "\`loams::<store-url>/ns/<ns>/repos/<repo>\` URLs itself: \`git clone\`, \`fetch\` and \`push\`"
             echo "go straight to the repository in the bucket, with no Loams server in between."
+            echo
+            echo "### loams-agentd for Linux"
+            echo
+            echo "| File | Signature |"
+            echo "|---|---|"
+            if [ -z "$agentd_assets" ]; then
+              echo "| (none: the loams-agentd build failed) | |"
+            fi
+            printf '%s\n' "$agentd_assets" | while read -r name; do
+              [ -n "$name" ] || continue
+              echo "| \`$name\` | **UNSIGNED** |"
+            done
+            echo
+            echo "> The agent daemon behind Studio, for a headless host without Loams Desktop. Each tarball holds"
+            echo "> \`loams-agentd\`, \`loams\`, \`SHA256SUMS\` and \`VERSION\`, the layout \`loams-agentd install-runtime --from\`"
+            echo "> reads. Built on Ubuntu 24.04 (glibc 2.39). Check it against this release's \`SHA256SUMS\`; setup is in"
+            echo "> [\`docs/guides/studio/remote-agentd.md\`](../../docs/guides/studio/remote-agentd.md)."
             echo
             echo "### Not in this release"
             echo

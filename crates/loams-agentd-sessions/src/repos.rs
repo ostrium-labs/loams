@@ -136,7 +136,7 @@ fn session_home_dir_with(
 /// Where new worktrees live. Deliberately NOT under the backend data dir —
 /// worktrees are user-facing working checkouts. `LOAMS_DESKTOP_WORKTREES_DIR` overrides
 /// (test isolation); empty reads as unset.
-fn default_worktrees_root() -> PathBuf {
+pub fn default_worktrees_root() -> PathBuf {
     std::env::var_os("LOAMS_DESKTOP_WORKTREES_DIR")
         .filter(|s| !s.is_empty())
         .map(PathBuf::from)
@@ -240,6 +240,12 @@ impl std::fmt::Debug for Repos {
 impl Repos {
     pub(crate) fn data_dir(&self) -> &Path {
         &self.inner.data_dir
+    }
+
+    /// Where worktrees are created (`$LOAMS_DESKTOP_WORKTREES_DIR`, or
+    /// `~/.loams-desktop/worktrees`).
+    pub fn worktrees_root(&self) -> &Path {
+        &self.inner.worktrees_root
     }
 
     /// `data_dir` holds `repos.json` + cloned/created repos; the worktree root

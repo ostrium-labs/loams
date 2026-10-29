@@ -48,7 +48,7 @@
 
 Every language task has the same sub-steps: (a) Task 0 check of library and plugin versions; (b) generated stubs and facade; (c) runtime (R1–R9 of the contract); (d) builder where required; (e) conformance suite green; (f) README, example, snippets; (g) release dry run, then the real publish after the owner action.
 
-- [x] **Task 0: TypeScript / JavaScript SDK (wave 1).** Node >= 22, browsers, Deno, Bun; ESM with types; fold `sdks/live-typescript` in; typed hybrid-query builder; no Flight (chunked writes, optional `QueryArrow`); `loams.live.watch` as `AsyncIterable`; the console (AP1a) consumes `@loams/proto`. *Tests:* `typescript_conformance_all_required_fixtures`, `typescript_retry_reuses_idempotency_key`, `typescript_error_reason_mapping`, `typescript_stream_resume_with_cursor`, `typescript_token_source_refresh`, `typescript_pagination_iterator`.
+- [x] **Task 0: TypeScript / JavaScript SDK (wave 1).** Node >= 22, browsers, Deno, Bun (Deno no longer claimed or tested since D1790, 2026-10-23); ESM with types; fold `sdks/live-typescript` in; typed hybrid-query builder; no Flight (chunked writes, optional `QueryArrow`); `loams.live.watch` as `AsyncIterable`; the console (AP1a) consumes `@loams/proto`. *Tests:* `typescript_conformance_all_required_fixtures`, `typescript_retry_reuses_idempotency_key`, `typescript_error_reason_mapping`, `typescript_stream_resume_with_cursor`, `typescript_token_source_refresh`, `typescript_pagination_iterator`.
 
   **Delivered** (#284, branch `sdk2-ts`, 2026-10-03). `@loams/client` in `sdks/typescript/packages/client`, `@loams/live` folded in from `sdks/live-typescript`. All six tests exist and pass, against both the recorded corpus and a live `loams dev`.
 

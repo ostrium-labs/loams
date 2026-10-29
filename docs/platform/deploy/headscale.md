@@ -72,7 +72,7 @@ Everything is in [`deploy/tailnet/headscale/`](../../../deploy/tailnet/headscale
 
 | Traffic | Network |
 |---|---|
-| `loams.dev`, `auth.loams.dev`, `console.loams.dev` (people, browsers, OIDC) | Cloudflare (Workers, Tunnel). Public |
+| `loams.dev` (with `/cloud`), `auth.loams.dev` (people, browsers, OIDC; `console.loams.dev` is retired, D1705) | Cloudflare (Workers, Tunnel). Public |
 | SSH, `kubectl`, Zitadel's admin console, k3s, TiKV, WeSQL, S3 backups, bench runner, BYOC agents to the control plane | The Headscale tailnet. Private |
 | Tailnet sign-in and coordination, DERP relay | `headscale.loams.dev`, DNS-only, public by necessity |
 

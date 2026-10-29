@@ -3,7 +3,7 @@
   "private": true,
   "license": "Apache-2.0",
   "packageManager": "pnpm@11.27.1",
-  "engines": { "node": ">=22" },
+  "engines": { "node": ">=24.11" },
   "scripts": {
     "nx": "nx",
     "projects": "nx show projects",
@@ -16,11 +16,11 @@
     "build:android": "nx run mobile-android:build",
     "build:ios": "nx run mobile-ios:build",
     "check:monorepo": "python3 tools/monorepo/check.py",
-    "affected": "nx affected --targets=build,test,typecheck --parallel=2"
+    "affected": "nx affected --targets=build,test,typecheck --exclude=tag:cargo-crate --parallel=2",
+    "affected:rust": "nx affected --targets=fmt,clippy,test --exclude='*,!tag:cargo-crate' --parallel=2"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.15",
-    "nx": "23.2.1",
+    "nx": "23.3.0",
     "typescript": "5.9.3"
   }
 }

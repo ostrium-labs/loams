@@ -759,12 +759,31 @@ pub async fn execute(
     }
     // A Distributed table reads its local table's columns (R9.13): a column or
     // metadata ALTER of it, which ClickHouse makes on every node beside the
-    // local table's, has nothing more to change (SigNoz; HE1 R9.16).
+    // local table's, changes no rows (SigNoz; HE1 R9.16). Its column list (what
+    // `DESCRIBE`, `system.columns` and a native `INSERT`'s header show) becomes
+    // the local table's as it now is (HE1 R9.71): SigNoz alters the local
+    // table, then the Distributed one, and its collector inserts through the
+    // Distributed table's columns.
     if let Some(loaded) = lake.load(namespace, &database, &name).await?
         && ddl::class_of(&loaded.metadata) == ddl::TableClass::View
-        && ddl::distributed_target(&loaded).is_some()
+        && let Some((local_db, local)) = ddl::distributed_target(&loaded)
         && !alter.ops.iter().any(AlterOp::is_mutation)
     {
+        if let Some(local_table) = lake.load(namespace, &local_db, &local).await? {
+            let shown = ddl::ChTable::from_lake(&local_db, &local, &local_table);
+            let types = ddl::json(&shown.columns)?;
+            if loaded.metadata.properties().get(ddl::PROP_TYPES) != Some(&types) {
+                lake.catalog()
+                    .commit(
+                        &loaded.ident,
+                        Vec::new(),
+                        vec![TableUpdate::SetProperties {
+                            updates: HashMap::from([(ddl::PROP_TYPES.to_string(), types)]),
+                        }],
+                    )
+                    .await?;
+            }
+        }
         return Ok(());
     }
     let table = lake

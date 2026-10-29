@@ -2,8 +2,8 @@
 
 This policy covers the Loams software in this repository: the `loams` engine and CLI, the Docker
 Compose stack, Loams Desktop, the SDKs and the console. It also covers the two services Ostrium Labs
-runs for the preview: the hosted console at `console.loams.dev` and the sign-in service at
-`auth.loams.dev`.
+runs for the preview: the sign-in service at `auth.loams.dev`, and, until it was retired, the
+hosted console at `console.loams.dev`.
 
 **Short version:** Loams collects no telemetry or analytics. The software you run sends your data
 only where you tell it to. The services we run see only what they need to serve a page or sign
@@ -43,9 +43,13 @@ no policy file for this yet. Builds you compile yourself (unpackaged) never chec
 
 ## Services we run
 
-### Hosted console (`console.loams.dev`)
+### Hosted console (`console.loams.dev`, retired)
 
-- **What it is:** a static web app served from Cloudflare. Your browser downloads the app and then
+`console.loams.dev` is retired: it redirects to `loams.dev/cloud`. From 0.1.2 the console ships
+with your deployment (your engine serves it) and with Loams Desktop, so no Ostrium service is
+involved in loading it. This section describes the hosted console while it ran.
+
+- **What it was:** a static web app served from Cloudflare. Your browser downloads the app and then
   talks **directly to your own engine**, over your tailnet or at the address you enter. Your queries,
   results and data never pass through Ostrium Labs.
 - **What is stored:** the engine address you enter is kept in your browser's local storage. We

@@ -1,0 +1,157 @@
+{
+  "workspaces": {
+    "Cargo.toml": {
+      "comment": "repoWide: crates whose code walks the repository, so every file is an input. extra: files outside the crate and its path dependencies that its code reads. tools: commands whose output (a version) is an input, for tests that run them. noCache: crates whose tests depend on what the machine has (containers, psql, network), so a result must never be reused. scanIgnore: files whose \"..\" literals are not reads. tools/nx-cargo/check.cjs fails on a read this file does not cover.",
+      "repoWide": [
+        "loams",
+        "loams-agentd",
+        "loams-agentd-connect",
+        "loams-agentd-proto",
+        "loams-agentd-rpc",
+        "loams-facade-gen",
+        "loams-graph",
+        "loams-pg-control",
+        "loams-proto",
+        "loams-spark",
+        "loams-specview",
+        "loams-sqldb",
+        "loams-sqlgate",
+        "loams-temporal-frontend",
+        "loams-temporal-statemachine",
+        "loams-upgrade"
+      ],
+      "extra": {
+        "loams-agentd-marketplace": [
+          "proto/loams/marketplace/**",
+          "schemas/marketplace/**"
+        ],
+        "loams-agentd-sessions": [
+          "crates/README.md"
+        ],
+        "loams-apps-mock": [
+          "conformance/graph/desktop/**"
+        ],
+        "loams-authz": [
+          "deploy/openfga/core.fga.yaml",
+          "deploy/openfga/core.fga",
+          "deploy/openfga/graph.fga"
+        ],
+        "loams-collection": [
+          "sdks/fixtures/tokens.json"
+        ],
+        "loams-console-mock": [
+          "api/console/openapi.json",
+          "docs/api/route-map.md"
+        ],
+        "loams-flink": [
+          "deploy/flink/compose/config.yaml",
+          "deploy/flink/connector-jars.toml",
+          "deploy/flink/k8s/config.yaml"
+        ],
+        "loams-gateway": [
+          "deploy/pgdog/compose.yaml",
+          "deploy/release/engines/**"
+        ],
+        "loams-live": [
+          "docs/api/reasons.md"
+        ],
+        "loams-migrate": [
+          "release/upgrade-path.toml"
+        ],
+        "loams-sqlrouter": [
+          "scripts/spec/check.sh",
+          "spec/tla/router/**"
+        ],
+        "loams-temporal-history": [
+          "conformance/compute/temporal/corpus/**"
+        ],
+        "loams-temporal-proto": [
+          "NOTICE",
+          "conformance/compute/temporal/corpus/histories/**"
+        ],
+        "loams-temporal-testkit": [
+          "conformance/compute/temporal/corpus/**"
+        ]
+      },
+      "tools": {
+        "loams-agentd-harness": [
+          "node --version",
+          "python3 --version"
+        ],
+        "loams-agentd-preview": [
+          "python3 --version"
+        ],
+        "loams-agentd-sessions": [
+          "git --version"
+        ],
+        "loams-agentd-connect": [
+          "git --version"
+        ],
+        "loams-git": [
+          "git --version"
+        ],
+        "loams-git-remote": [
+          "git --version"
+        ],
+        "loams": [
+          "git --version"
+        ]
+      },
+      "noCache": {
+        "loams-compat": "runs psql when the machine has it",
+        "loams-sqldb": "local tests talk to services over curl",
+        "loams-sqlgate": "real-gate tests drive podman and curl",
+        "loams-upgrade": "the bundle code downloads releases with curl"
+      },
+      "scanIgnore": [
+        "crates/loams-safekeeper/src/journal/segments.rs"
+      ]
+    },
+    "fabric/Cargo.toml": {
+      "comment": "The fabric/ workspace. Its CI runs cargo test, not nextest, so test runs `cargo test -p <crate>`.",
+      "test": "cargo-test",
+      "repoWide": [
+        "loams-connector-http",
+        "loams-connector-kafka",
+        "loams-connector-protocols",
+        "loams-flow",
+        "loams-house",
+        "loams-house-mine",
+        "loams-house-types"
+      ],
+      "extra": {
+        "loams-connector-analytics": [
+          "conformance/connectors/fixtures/**"
+        ],
+        "loams-connector-objects": [
+          "conformance/connectors/fixtures/cloudflare-r2/**"
+        ],
+        "loams-house-engine": [
+          "conformance/clickhouse/profile/profile.toml",
+          "conformance/clickhouse/oracle/corpus/he1/26/**",
+          "conformance/clickhouse/matrix/classes.toml",
+          "fabric/crates/loams-house/src/settings.rs",
+          "fabric/crates/loams-house/src/system.rs"
+        ],
+        "loams-house-worker": [
+          "conformance/clickhouse/corpus/**",
+          "crates/loams-meter-house/src/sql.rs",
+          "deploy/house/kind/worker-pods.yaml"
+        ]
+      },
+      "tools": {
+        "loams-fabric": [
+          "readelf --version"
+        ],
+        "loams-flow-conformance": [
+          "python3 --version"
+        ]
+      },
+      "noCache": {
+        "loams-flow": "kube, helm and promtool tests depend on the tools the machine has",
+        "loams-house-worker": "sandbox tests call kubectl when the machine has it"
+      },
+      "scanIgnore": []
+    }
+  }
+}

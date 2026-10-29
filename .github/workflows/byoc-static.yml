@@ -1,0 +1,96 @@
+# BY0 Tasks 3-6 and the OpenTofu modules (docs/plans/2026-10-21-by1-byoc-clouds.md, design 70): the static
+# checks of deploy/byoc. No cloud account and no key: the cloud-init schema, the
+# generated files, the policies, the "no inbound rule" and "no static key" checks,
+# and the secrets fetcher against a local mock of IMDS, Secrets Manager, the GCE
+# metadata server and Key Vault. Not part of CI required (a separate workflow, as
+# identity.yml).
+name: BYOC static
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "deploy/byoc/**"
+      - "deploy/release/byoc/**"
+      - "deploy/tofu/**"
+      - "deploy/release/compose.yaml"
+      - "deploy/release/connect/templates/**"
+      - "docs/release/loams-release-key.asc"
+      - "docs/guides/byoc/**"
+      - "tests/byoc/**"
+      - "scripts/byoc/**"
+      - ".github/workflows/byoc-aws-nightly.yml"
+      - ".github/workflows/byoc-reaper.yml"
+      - ".github/workflows/byoc-confluent-*.yml"
+      - ".github/workflows/byoc-static.yml"
+
+concurrency:
+  group: byoc-static-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  # cloud-init 26.2, from its release tag (it is not on PyPI); the archive is checked by hash.
+  CLOUD_INIT_VERSION: "26.2"
+  CLOUD_INIT_SHA256: "16274a4102426871cad84ad07db41f82aa8f4d43d95e5947a62e199c2df775c6"
+
+jobs:
+  static:
+    name: "BYOC: static checks"
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: cloud-init (source tree, checked by hash) and PyYAML
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/cloud-init"
+          mkdir -p "$dir"
+          curl --proto '=https' --tlsv1.2 -fsSL --retry 3 \
+            "https://github.com/canonical/cloud-init/archive/refs/tags/$CLOUD_INIT_VERSION.tar.gz" -o "$RUNNER_TEMP/cloud-init.tar.gz"
+          echo "$CLOUD_INIT_SHA256  $RUNNER_TEMP/cloud-init.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/cloud-init.tar.gz" -C "$dir" --strip-components=1
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet pyyaml jinja2 jsonschema requests configobj oauthlib jsonpatch
+          echo "CLOUD_INIT_SRC=$dir" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+      - name: static tests
+        run: tests/byoc/static/run.sh
+
+  tofu:
+    name: "BYOC: OpenTofu modules"
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
+    timeout-minutes: 30
+    env:
+      TOFU_VERSION: "1.13.2"
+      TOFU_SHA256: "ac05d9952662c7db28dd57e93f0a68018837bfdf9342384ec0987977c16a9645"
+      TFLINT_VERSION: "0.65.0"
+      TFLINT_SHA256: "d4c545ed2e29d6338604b586f34f544f380f70f243aa72f7b484713835eaec61"
+      TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.tf-plugin-cache
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: OpenTofu and tflint (pinned, checked by hash)
+        run: |
+          set -euo pipefail
+          bin="$RUNNER_TEMP/bin"; mkdir -p "$bin" "$TF_PLUGIN_CACHE_DIR"
+          curl --proto '=https' --tlsv1.2 -fsSL --retry 3 \
+            "https://github.com/opentofu/opentofu/releases/download/v$TOFU_VERSION/tofu_${TOFU_VERSION}_linux_amd64.tar.gz" -o "$RUNNER_TEMP/tofu.tgz"
+          echo "$TOFU_SHA256  $RUNNER_TEMP/tofu.tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/tofu.tgz" -C "$bin" tofu
+          curl --proto '=https' --tlsv1.2 -fsSL --retry 3 \
+            "https://github.com/terraform-linters/tflint/releases/download/v$TFLINT_VERSION/tflint_linux_amd64.zip" -o "$RUNNER_TEMP/tflint.zip"
+          echo "$TFLINT_SHA256  $RUNNER_TEMP/tflint.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/tflint.zip" -d "$bin"
+          echo "$bin" >> "$GITHUB_PATH"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ github.workspace }}/.tf-plugin-cache
+          key: tofu-providers-${{ hashFiles('deploy/tofu/**/versions.tf', 'deploy/tofu/examples/*/main.tf') }}
+      - name: fmt, validate, tofu test, tflint
+        run: tests/byoc/tofu/run.sh

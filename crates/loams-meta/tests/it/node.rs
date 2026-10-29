@@ -376,10 +376,29 @@ async fn a_node_keeps_serving_through_failed_snapshot_uploads() {
     node.create_namespace("globex").await.unwrap();
     snapshot.await.unwrap().unwrap();
     assert!(faulty.calls(Op::Put) >= 4);
-    assert_eq!(store.list("meta/snapshots/1/").await.unwrap().len(), 1);
+    // The retried upload got through. How many objects the store holds at
+    // this point depends on timing (#969): `snapshot` keeps re-triggering
+    // builds while it waits, and a trigger that lands just as the retried
+    // build ends starts another one, covering `globex`, which writes its own
+    // object before it deletes the one it replaces.
+    assert!(!store.list("meta/snapshots/1/").await.unwrap().is_empty());
 
     node.create_namespace("initech").await.unwrap();
     node.snapshot().await.unwrap();
+    // Nothing is applied after `initech`, so a build still running now can
+    // only rewrite the latest object. The store holds exactly that one: the
+    // snapshots it replaced, the retried one included, were deleted.
+    let status = node.status();
+    assert!(
+        status.snapshot.is_some() && status.snapshot == status.last_applied,
+        "{status:?}"
+    );
+    let snapshots = store.list("meta/snapshots/1/").await.unwrap();
+    let latest = format!("-{:020}.snap", status.snapshot.unwrap());
+    assert!(
+        snapshots.len() == 1 && snapshots[0].path.ends_with(&latest),
+        "{status:?}: {snapshots:?}"
+    );
     let names = node
         .read(Consistency::Linearizable, namespace_names)
         .await

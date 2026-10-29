@@ -1,5 +1,7 @@
 # 69 — Edge Reach: Serverless Runtimes to a Private Loams
 
+> **Amendment (approved 2026-10-23) by [§78](78-loams-cloud-on-tidb-x.md)** (Loams Cloud on TiDB X; D1700–D1735). D1317 (no hosted relay) stands; its rationale's hosting list gains the Loams Cloud control plane (D1701). Devices enrolled in Loams Cloud only dial out; device-to-device traffic uses the user's tailnet, `tsnet` or their own Tunnel (D1722).
+
 Status: **Approved** · 2026-10-21. The owner approved the direction on 2026-10-20 and the design with every default on 2026-10-21.
 
 Source: on 2026-10-20 the owner approved designing an "edge reach" path. It lets serverless runtimes call a self-hosted Loams without exposing the engine on the public internet.
@@ -582,7 +584,7 @@ They are the languages used on Lambda, Cloud Run and Fly. The other SDKs need on
 | **AWS Lambda** | Loams on AWS: **Lambda in a VPC** → internal NLB (or a PrivateLink endpoint service) → the gateway. Elsewhere: **Access hostname** | Tailscale recipe: container image, userspace `tailscaled`, HTTP proxy, tagged ephemeral node joined by workload identity federation | `lk_` environment key from Secrets Manager | **`GetWebIdentityToken`** → Loams token | Over the VPC to the gateway's SNI or dedicated port |
 | **Google Cloud Run** | Loams on GCP: **Direct VPC egress** → internal load balancer → the gateway. Elsewhere: **Access hostname** | Tailscale recipe (Tailscale's own guide) | `lk_` environment key from Secret Manager | **Metadata ID token** → Loams token | Over the VPC |
 | **Fly.io** | **Tailscale in the Machine** (Tailscale's Fly guide), joined to the user's tailnet as a tagged node, reaching the gateway's `network` listener | Access hostname | `lk_` environment key as a Fly secret | **Fly OIDC** → Loams token; the node joins by workload identity federation where Fly's issuer works as a custom issuer (unverified) | Over the tailnet |
-| Others with only `fetch` (Deno Deploy, Netlify, Supabase Edge Functions) | **Access hostname** | — | `lk_` environment key | Their OIDC, where they issue one | Not in ER0 |
+| Others with only `fetch` (Netlify, Supabase Edge Functions; Deno Deploy removed by D1790, as it shuts down) | **Access hostname** | — | `lk_` environment key | Their OIDC, where they issue one | Not in ER0 |
 
 **One stack can offer several paths at once.** A compose install that already joins a tailnet adds the `edge` profile once and gets Workers VPC, Access and tailnet nodes, all into the same two edge listeners.
 

@@ -7,7 +7,7 @@
 //   over `fetch`, which is what `@connectrpc/connect-web` implements. Because
 //   the API serves gRPC-Web on the same port as everything else, the same
 //   client code runs in a browser with no proxy and no sidecar.
-// - **Node, Deno and Bun** can do HTTP/2 gRPC. `@connectrpc/connect-node`
+// - **Node and Bun** can do HTTP/2 gRPC. `@connectrpc/connect-node`
 //   implements it over `node:http2`, and the server's plaintext listener means
 //   no ALPN to negotiate — the client asks for HTTP/2 with prior knowledge.
 //
@@ -92,7 +92,7 @@ export function transportFetch(options: TransportOptions): typeof globalThis.fet
 /**
  * The default transport: Connect over `fetch`.
  *
- * Works in a browser, in Node 18+ (which has `fetch`), in Deno and in Bun, and
+ * Works in a browser, in Node 18+ (which has `fetch`) and in Bun, and
  * speaks both the Connect unary protocol and gRPC-Web, which is what the server
  * serves on the same port (D600). This is the browser path as a first-class
  * case, not a fallback: it is the default in every runtime.

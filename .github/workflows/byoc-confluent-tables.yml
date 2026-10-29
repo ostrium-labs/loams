@@ -1,0 +1,104 @@
+# CC1 Task 5 (design 80 §6.1, D1824): the weekly check of the Confluent Cloud tables.
+#
+# - prices: offline; fails when deploy/byoc/confluent/prices.toml was read more than
+#   90 days ago (someone re-reads the pricing page and updates the dates).
+# - regions: reads Confluent's region listing with the CI provisioner's Cloud key from
+#   the byoc-confluent environment. When the list changed it opens a pull request into
+#   dev with the regenerated regions.toml; when the listing's shape changed (it is an
+#   undocumented endpoint, CC0 ruling R0.4) it opens an issue. Until the owner has put
+#   CONFLUENT_CLOUD_API_KEY/_SECRET in that environment this job is a no-op that says so.
+# Read-only on Confluent: it creates nothing there.
+name: BYOC Confluent tables
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: byoc-confluent-tables
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  prices:
+    name: "Confluent: tables are fresh"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: check (offline)
+        run: scripts/byoc/confluent-tables.sh check
+
+  regions:
+    name: "Confluent: region list"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: byoc-confluent
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: dev
+          persist-credentials: false
+      - name: is the key set
+        id: guard
+        env:
+          KEY: ${{ secrets.CONFLUENT_CLOUD_API_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "CONFLUENT_CLOUD_API_KEY is not set in the byoc-confluent environment: the owner has not set it up yet; nothing to do."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.guard.outputs.ready == 'true'
+        name: compare with the live listing
+        id: diff
+        env:
+          CONFLUENT_CLOUD_API_KEY: ${{ secrets.CONFLUENT_CLOUD_API_KEY }}
+          CONFLUENT_CLOUD_API_SECRET: ${{ secrets.CONFLUENT_CLOUD_API_SECRET }}
+        run: |
+          set +e
+          scripts/byoc/confluent-tables.sh diff
+          rc=$?
+          set -e
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          case "$rc" in 0|3|4) exit 0 ;; *) exit "$rc" ;; esac
+      - if: steps.diff.outputs.rc == '3'
+        name: open a pull request with the new region list
+        env:
+          CONFLUENT_CLOUD_API_KEY: ${{ secrets.CONFLUENT_CLOUD_API_KEY }}
+          CONFLUENT_CLOUD_API_SECRET: ${{ secrets.CONFLUENT_CLOUD_API_SECRET }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          scripts/byoc/confluent-tables.sh refresh
+          unset CONFLUENT_CLOUD_API_KEY CONFLUENT_CLOUD_API_SECRET
+          branch="bot/confluent-regions-$(date -u +%Y%m%d)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add deploy/byoc/confluent/regions.toml deploy/tofu/modules/confluent/confluent-tables.json
+          git commit -s -m "deploy/byoc/confluent: refresh the region table"
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "$branch"
+          gh pr create --repo "$REPO" --base dev --head "$branch" \
+            --title "deploy/byoc/confluent: refresh the region table" \
+            --body "The weekly job (byoc-confluent-tables.yml) found that Confluent's region listing changed. Review the diff: a region that lost Basic or Standard affects the confluent module's region check (D1824). CI does not run on pull requests opened by GITHUB_TOKEN: close and reopen this one to start it." \
+          || gh issue create --repo "$REPO" --title "Confluent region list changed" \
+            --body "The weekly job pushed $branch with a regenerated regions.toml but could not open a pull request. Open one from that branch into dev."
+      - if: steps.diff.outputs.rc == '4'
+        name: open an issue (the listing's shape changed)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh issue create --repo "$REPO" --title "Confluent region listing changed shape" \
+            --body "scripts/byoc/confluent-tables.sh could not read https://confluent.cloud/api/env_metadata (undocumented, CC0 ruling R0.4): $RUN_URL. Refresh regions.toml by hand from https://docs.confluent.io/cloud/current/clusters/regions.html and fix the script."

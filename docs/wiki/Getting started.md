@@ -4,4 +4,4 @@
 2. Clone the repo and run a dev server; the steps and the first hybrid search are in the [README quick start](https://github.com/ostrium-labs/loams/blob/dev/README.md#quick-start).
 3. Try an existing Qdrant client or Flight SQL against it (same README).
 
-Developer setup, tests and the PR flow: [CONTRIBUTING.md](https://github.com/ostrium-labs/loams/blob/dev/CONTRIBUTING.md). Keep Rust builds light: use the repo's cargo config and don't run a full-parallel build on a small machine.
+Developer setup, tests and the PR flow: [CONTRIBUTING.md](https://github.com/ostrium-labs/loams/blob/dev/CONTRIBUTING.md). Working on the console, the plugins or the desktop app needs only Node 24 and pnpm, not Rust: see [the JavaScript workspace](https://github.com/ostrium-labs/loams/blob/dev/CONTRIBUTING.md#the-javascript-workspace) there. Keep Rust builds light: use the repo's cargo config and don't run a full-parallel build on a small machine.

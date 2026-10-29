@@ -1,5 +1,9 @@
 # 71 — App BYOC: Apps and Agents on Each Cloud's Free Tier
 
+> **Amendment (approved 2026-10-23) by [§78](78-loams-cloud-on-tidb-x.md)** (Loams Cloud on TiDB X; D1700–D1735). Target manifests (`deploy/targets/<id>.toml`, D1707, D1735) reference this document's free-tier table for app ports instead of copying it, and `loams app deploy --target` reads the same target ids as `loams byoc deploy` and `loams promote` (D1706, D1724).
+
+> **Amendment (approved 2026-10-23) by [§79](79-void-and-vite-plus.md)** (Void and Vite+; D1770–D1791 approved by the owner). Void becomes the recommended authoring framework, portable by default (D1392, D1778). For Void apps on Cloudflare, `void deploy` replaces `wrangler` (D1406, D1779). Bundling moves from esbuild to Vite+ (Rolldown). On AWS, Google Cloud, Azure and Vercel, §7's shims wrap Void's `node` build (D1780), because Void has no deploy adapter for them. New targets: `void-platform` (D1782) and a self-hosted image (D1781). Self-hosted and container targets (Cloud Run) run a Bun binary compiled ahead of time, while Lambda, Azure Functions and Vercel keep Node (D1791). Deno is not a target (D1790). The portable contract (D1391) and the ports (D1393) stand.
+
 Status: **Approved** · 2026-10-21. The requirement is the owner's; the owner approved the design with every default on 2026-10-21.
 
 Source: the owner's requirement of 2026-10-21, **"app BYOC must map onto each cloud's free tiers"** (the owner's example: AWS Lambda plus DynamoDB), given while [§70](70-byoc-clouds.md) was being written. §70 designs **data-plane BYOC**, Loams itself in a customer's account. This document designs **app BYOC**: the apps and agents that the Software Factory, Studio and the agents marketplace build, deployed into a customer's own account on serverless free tiers, with no always-on VM. It was split from §70 because together they were too long for one document; they share §70's principles (§70 §4) and the `loams` CLI.

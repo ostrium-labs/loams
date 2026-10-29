@@ -1,0 +1,293 @@
+syntax = "proto3";
+
+// The Loams Marketplace, the Seed Exchange, in agentd (design §73 §5–§7,
+// D1462, D1465, D1466; plan MK1 Tasks 4–6): index sources pinned to a signing
+// identity, search over the signed indexes, consent plans, installs, updates
+// and revocations. See studio.proto for the package's rules. Listings are
+// `loams.marketplace.v1.Listing` (schemas/marketplace/listing.v1.json).
+package loams.agentd.v1;
+
+import "loams/marketplace/v1/listing.proto";
+import "loams/options/v1/options.proto";
+
+service MarketplaceService {
+  option (loams.options.v1.module) = {
+    name: "agentd.marketplace"
+    summary: "The Seed Exchange: marketplace sources, search, consent plans and installs."
+    unstable: true
+  };
+
+  // The configured sources, in the order they are searched.
+  rpc ListSources(ListSourcesRequest) returns (ListSourcesResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Adds a source pinned to its signing identity; the index is fetched and
+  // its signature checked before the source is kept.
+  rpc AddSource(AddSourceRequest) returns (AddSourceResponse);
+  // Removes a source; installed listings from it stay installed.
+  rpc RemoveSource(RemoveSourceRequest) returns (RemoveSourceResponse);
+  // Searches every source's verified index.
+  rpc SearchListings(SearchListingsRequest) returns (SearchListingsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // One listing, with its versions and any revocation.
+  rpc GetListing(GetListingRequest) returns (GetListingResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // The consent plan for an install; creates nothing (D1466).
+  rpc PlanInstall(PlanInstallRequest) returns (PlanInstallResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Installs exactly the plan the person confirmed, by its digest.
+  rpc Install(InstallRequest) returns (InstallResponse);
+  // Removes the package and its registration; the agent's data stays.
+  rpc Uninstall(UninstallRequest) returns (UninstallResponse);
+  rpc ListInstalled(ListInstalledRequest) returns (ListInstalledResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Newer versions of installed listings, and whether each widens a permission.
+  rpc CheckUpdates(CheckUpdatesRequest) returns (CheckUpdatesResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Updates to a version; one that widens a permission needs its new plan's digest.
+  rpc Update(UpdateRequest) returns (UpdateResponse);
+}
+
+message MarketplaceSource {
+  // A short local name (`official` for the Seed Exchange).
+  string name = 1;
+  // The index URL (`…/index.json`); the signature is `index.json.sigstore.json` beside it.
+  string url = 2;
+  // The certificate identity the index must be signed by.
+  string identity = 3;
+  // The OIDC issuer of that identity.
+  string issuer = 4;
+  // Whether this is the built-in official source.
+  bool official = 5;
+  // When the index was last fetched and verified, or 0.
+  int64 refreshed_ms = 6;
+  // Why the last refresh failed, or empty.
+  string error = 7;
+  // How many listings its verified index holds.
+  int32 listings = 8;
+}
+
+message ListSourcesRequest {}
+
+message ListSourcesResponse {
+  repeated MarketplaceSource sources = 1;
+}
+
+message AddSourceRequest {
+  string name = 1;
+  string url = 2;
+  string identity = 3;
+  // Default `https://token.actions.githubusercontent.com`.
+  string issuer = 4;
+}
+
+message AddSourceResponse {
+  MarketplaceSource source = 1;
+}
+
+message RemoveSourceRequest {
+  string name = 1;
+}
+
+message RemoveSourceResponse {}
+
+enum ListingTier {
+  LISTING_TIER_UNSPECIFIED = 0;
+  LISTING_TIER_FIRST_PARTY = 1;
+  LISTING_TIER_VERIFIED = 2;
+  LISTING_TIER_COMMUNITY = 3;
+}
+
+enum RevocationSeverity {
+  REVOCATION_SEVERITY_UNSPECIFIED = 0;
+  REVOCATION_SEVERITY_WARN = 1;
+  REVOCATION_SEVERITY_DISABLE = 2;
+}
+
+message Revocation {
+  RevocationSeverity severity = 1;
+  string reason = 2;
+  // The revoked range, in Cargo's VersionReq syntax.
+  string versions = 3;
+  string advisory = 4;
+}
+
+message SearchListingsRequest {
+  // Words matched against id, title, summary and tool names; empty matches all.
+  string query = 1;
+  repeated loams.marketplace.v1.Kind kinds = 2;
+  repeated loams.marketplace.v1.FrameworkName frameworks = 3;
+  repeated loams.marketplace.v1.Language languages = 4;
+  // The lowest conformance level a listing must have passed.
+  loams.marketplace.v1.ConformanceLevel min_level = 5;
+  repeated ListingTier tiers = 6;
+  // Only this source, or every source.
+  string source = 7;
+}
+
+message ListingSummary {
+  string id = 1;
+  string source = 2;
+  loams.marketplace.v1.Kind kind = 3;
+  string title = 4;
+  string summary = 5;
+  ListingTier tier = 6;
+  // The version a new install gets.
+  string latest = 7;
+  loams.marketplace.v1.FrameworkName framework = 8;
+  loams.marketplace.v1.Language language = 9;
+  loams.marketplace.v1.ConformanceLevel level = 10;
+  // The latest version's revocation, when it has one.
+  Revocation revocation = 11;
+}
+
+message SearchListingsResponse {
+  repeated ListingSummary results = 1;
+}
+
+message GetListingRequest {
+  string id = 1;
+  // Empty for the latest.
+  string version = 2;
+  // Empty for the first source that has the listing.
+  string source = 3;
+}
+
+message ListingVersion {
+  string version = 1;
+  // Why it was yanked, or empty.
+  string yanked = 2;
+  Revocation revocation = 3;
+}
+
+message GetListingResponse {
+  ListingSummary summary = 1;
+  loams.marketplace.v1.Listing listing = 2;
+  repeated ListingVersion versions = 3;
+}
+
+message PlanInstallRequest {
+  string id = 1;
+  string version = 2;
+  string source = 3;
+}
+
+// One permission in the consent screen's "can / can't" list.
+message PlanTool {
+  string name = 1;
+  string description = 2;
+  loams.marketplace.v1.Risk risk = 3;
+  // Asks the person every time, whatever the thread's mode.
+  bool always_asks = 4;
+  string mcp_server = 5;
+}
+
+message PlanSecret {
+  string name = 1;
+  string description = 2;
+  bool required = 3;
+}
+
+message PlanDependency {
+  string id = 1;
+  string version = 2;
+  // Already installed at a matching version, so it is reused.
+  bool installed = 3;
+}
+
+message InstallPlan {
+  // Binds Install to exactly this plan.
+  string digest = 1;
+  ListingSummary summary = 2;
+  string version = 3;
+  loams.marketplace.v1.PlaceTemplate place = 4;
+  repeated PlanTool tools = 5;
+  repeated string egress = 6;
+  repeated PlanDependency dependencies = 7;
+  repeated PlanSecret secrets = 8;
+  loams.marketplace.v1.Models models = 9;
+  loams.marketplace.v1.CostProfile cost = 10;
+  string licence = 11;
+  loams.marketplace.v1.Provenance provenance = 12;
+  string source_repository = 13;
+  // Days since the version was published, when the index says.
+  int32 version_age_days = 14;
+  // What the agent is not allowed, in plain words.
+  repeated string cannot = 15;
+  // The node runtime's engine (D1808): node or bun. Unset for other runtimes.
+  // agentd refuses the install while the engine is not installed.
+  loams.marketplace.v1.Engine engine = 16;
+}
+
+message PlanInstallResponse {
+  InstallPlan plan = 1;
+}
+
+message InstallRequest {
+  string id = 1;
+  string version = 2;
+  string source = 3;
+  // The digest of the plan the person confirmed.
+  string plan_digest = 4;
+  // Non-secret configuration, by input name.
+  map<string, string> config = 5;
+  // Secret configuration, stored in agentd's vault only.
+  map<string, string> secrets = 6;
+}
+
+message InstalledListing {
+  string id = 1;
+  string version = 2;
+  string source = 3;
+  loams.marketplace.v1.Kind kind = 4;
+  int64 installed_ms = 5;
+  Revocation revocation = 6;
+  // A newer version, or empty.
+  string update = 7;
+}
+
+message InstallResponse {
+  InstalledListing installed = 1;
+}
+
+message UninstallRequest {
+  string id = 1;
+}
+
+message UninstallResponse {}
+
+message ListInstalledRequest {}
+
+message ListInstalledResponse {
+  repeated InstalledListing installed = 1;
+}
+
+message CheckUpdatesRequest {}
+
+message AvailableUpdate {
+  string id = 1;
+  string from = 2;
+  string to = 3;
+  // The new version asks for more than the installed one, so it needs consent again.
+  bool widens = 4;
+}
+
+message CheckUpdatesResponse {
+  repeated AvailableUpdate updates = 1;
+}
+
+message UpdateRequest {
+  string id = 1;
+  string version = 2;
+  // Required when the update widens a permission.
+  string plan_digest = 3;
+}
+
+message UpdateResponse {
+  InstalledListing installed = 1;
+}

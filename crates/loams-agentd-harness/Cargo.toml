@@ -24,8 +24,7 @@ required-features = ["native-fixture"]
 
 [dependencies]
 loams-agentd-proto.workspace = true
-# The fork is on base64 0.22; the workspace key is 0.23.
-base64 = "0.22"
+base64.workspace = true
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream", "system-proxy"] }
 tokio.workspace = true
 tokio-util = { workspace = true, features = ["io-util"] }
@@ -39,9 +38,13 @@ serde_yaml_ng = "0.10"
 anyhow.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
-sha2 = "0.10"
+sha2 = "0.11"
+hex.workspace = true
 semver = "1"
 zip.workspace = true
+# Goose ships its unix builds as .tar.gz (archive_install).
+flate2 = "1"
+tar = { version = "0.4", default-features = false }
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true

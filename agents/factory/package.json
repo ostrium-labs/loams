@@ -1,0 +1,36 @@
+{
+  "name": "@loams/factory",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The Software Factory host (The Greenhouse): a Mastra app with Loams Bot, the planner, reviewer and code-host agents and the factory.run workflow (design \u00a772, D1428; plan FT1, FT0). Experimental.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "lint": "vp check",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vp test run"
+  },
+  "dependencies": {
+    "@mastra/core": "1.78.0",
+    "@mastra/mcp": "2.4.1",
+    "@mastra/pg": "1.31.2",
+    "smol-toml": "1.9.1",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.6",
+    "typescript": "5.9.3",
+    "vite-plus": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
+  }
+}

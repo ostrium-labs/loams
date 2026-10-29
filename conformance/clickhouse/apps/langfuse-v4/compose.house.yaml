@@ -1,0 +1,42 @@
+# HE0 Task 9 (plan HE1): Langfuse v4 against the chDB House instead of
+# clickhouse-server. Used by `HE0_TARGET=house scripts/house/apps.sh langfuse-v4 …`
+# on top of compose.yaml; scripts/house/app-on-house.sh starts the House on the
+# host. Langfuse's containers stay unmodified, only their environment changes:
+#
+# * Its own ClickHouse migrations (golang-migrate on clickhouse-go v1, run by
+#   langfuse-web at start) go over the House's native TLS listener
+#   (HE0_HOUSE_NATIVE_TLS_PORT): native gate 2 (D1575).
+# * Its reads and writes (the JS client) go over the House's HTTPS listener
+#   (HE0_HOUSE_TLS_PORT). The self-signed certificate names `house`, which
+#   resolves to the host; Node trusts it through NODE_EXTRA_CA_CERTS, and
+#   golang-migrate's `secure=true&skip_verify=true` (CLICKHOUSE_MIGRATION_SSL).
+x-house-env: &house-env
+  CLICKHOUSE_URL: https://house:${HE0_HOUSE_TLS_PORT:-28443}
+  CLICKHOUSE_MIGRATION_URL: clickhouse://house:${HE0_HOUSE_NATIVE_TLS_PORT:-29440}
+  CLICKHOUSE_MIGRATION_SSL: "true"
+  CLICKHOUSE_USER: ${HE0_HOUSE_USER:-langfuse}
+  CLICKHOUSE_PASSWORD: ${HE0_HOUSE_PASSWORD:?the House password}
+  NODE_EXTRA_CA_CERTS: /house-tls/house.crt
+
+x-house-service: &house-service
+  extra_hosts: ["house:host-gateway"]
+  volumes: ["${HE0_HOUSE_TLS_DIR:?the House tls directory}:/house-tls:ro"]
+
+services:
+  langfuse-web:
+    <<: *house-service
+    environment: *house-env
+    depends_on: !override
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      s3-bucket: { condition: service_completed_successfully }
+  langfuse-worker:
+    <<: *house-service
+    environment: *house-env
+    depends_on: !override
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      s3-bucket: { condition: service_completed_successfully }
+  # The oracle does not start in a House run.
+  clickhouse:
+    profiles: ["oracle"]

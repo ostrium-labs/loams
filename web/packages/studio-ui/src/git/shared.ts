@@ -1,9 +1,11 @@
 // Portions of this file are from T3 Code (https://github.com/pingdotgg/t3code),
 // packages/shared/src/git.ts at commit 6524a8d4, Copyright (c) 2026 T3 Tools Inc., MIT licence
 // (see web/packages/studio-ui/LICENSE.t3code). Modified by The Loams Authors:
-// the ref-name helpers the branch toolbar and git actions use, in plain TypeScript (no effect/Array or Result); the temporary worktree branch is loams-agentd's `loams-desktop/<name>`; remote-URL and status-stream helpers dropped (loams-agentd answers them); a forge repository parser for pull request URLs added. Loams' changes are Apache-2.0.
+// the ref-name helpers the branch toolbar and git actions use, in plain TypeScript (no effect/Array or Result); the temporary worktree branch is loams-agentd's `loams-desktop/<name>`; remote-URL and status-stream helpers dropped (loams-agentd answers them); a forge repository parser for pull request URLs added; the fragment's edge trims made linear-time (CodeQL js/polynomial-redos). Loams' changes are Apache-2.0.
 
 // Git ref-name helpers for Studio's branch toolbar and git actions (SD1 Task 23).
+
+import { trimEndWhere, trimWhere } from "../lib/trimWhere";
 
 /** loams-agentd's `CreateWorktree` puts a new worktree on `loams-desktop/<adjective>-<noun>`. */
 export const WORKTREE_BRANCH_PREFIX = "loams-desktop";
@@ -14,21 +16,31 @@ const TEMP_WORKTREE_BRANCH_PATTERN = new RegExp(`^${WORKTREE_BRANCH_PREFIX}/[a-z
  * Strips quotes, collapses separators, limits to 64 chars.
  */
 export function sanitizeBranchFragment(raw: string): string {
-  const normalized = raw
-    .trim()
-    .toLowerCase()
-    .replace(/['"`]/g, "")
-    .replace(/^[./\s_-]+|[./\s_-]+$/g, "");
+  // The edge runs are trimmed in a loop: `/^[…]+|[…]+$/g` is quadratic on a long run
+  // of those characters that does not reach the end (CodeQL js/polynomial-redos).
+  const normalized = trimWhere(raw.trim().toLowerCase().replace(/['"`]/g, ""), isEdgeOrSpace);
 
-  const branchFragment = normalized
-    .replace(/[^a-z0-9/_-]+/g, "-")
-    .replace(/\/+/g, "/")
-    .replace(/-+/g, "-")
-    .replace(/^[./_-]+|[./_-]+$/g, "")
-    .slice(0, 64)
-    .replace(/[./_-]+$/g, "");
+  const branchFragment = trimEndWhere(
+    trimWhere(
+      normalized
+        .replace(/[^a-z0-9/_-]+/g, "-")
+        .replace(/\/+/g, "/")
+        .replace(/-+/g, "-"),
+      isEdge,
+    ).slice(0, 64),
+    isEdge,
+  );
 
   return branchFragment.length > 0 ? branchFragment : "update";
+}
+
+/** The characters a ref-name fragment may not start or end with. */
+function isEdge(char: string): boolean {
+  return char === "." || char === "/" || char === "_" || char === "-";
+}
+
+function isEdgeOrSpace(char: string): boolean {
+  return isEdge(char) || /\s/.test(char);
 }
 
 /**

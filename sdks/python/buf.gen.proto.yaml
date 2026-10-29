@@ -48,6 +48,7 @@ inputs:
       # SDKP Part C: the `sql` and `streams` modules.
       - proto/loams/sql/v1
       - proto/loams/stream/v1
+      - proto/loams/meter/v1
 plugins:
   # `protoc --python_out`: the messages and service descriptors. It writes
   # `loams/<package path>/<file>_pb2.py`.

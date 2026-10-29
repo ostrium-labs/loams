@@ -1,0 +1,21 @@
+{
+  "name": "lc0-worker-spike",
+  "private": true,
+  "type": "module",
+  "description": "LC0 Task 3 spike: the Loams Cloud control plane on a Worker (Durable Object per user, hibernating WebSockets, @tidbcloud/serverless). Not product code.",
+  "license": "Apache-2.0",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p .",
+    "deploy": "wrangler deploy",
+    "drive": "node driver/drive.ts",
+    "test": "node --test test/"
+  },
+  "dependencies": {
+    "@tidbcloud/serverless": "0.3.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261008.1",
+    "typescript": "5.9.3",
+    "wrangler": "4.149.0"
+  }
+}

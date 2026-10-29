@@ -12,9 +12,18 @@ use crate::ApprovalAsk;
 /// tool call as the agent described it (title, kind, raw input, locations).
 pub(crate) fn ask(id: &Value, params: &Value) -> ApprovalAsk {
     let call = params.get("toolCall").cloned().unwrap_or(Value::Null);
-    let tool = ["kind", "title"]
-        .iter()
-        .find_map(|key| call.get(*key).and_then(Value::as_str))
+    // ACP's catch-all kind `other` names no tool (goose sends it for every
+    // call), so the title stands in; goose titles read `<tool> · <summary>`,
+    // and only the tool part names what "always" remembers.
+    let tool = call
+        .get("kind")
+        .and_then(Value::as_str)
+        .filter(|kind| !kind.is_empty() && *kind != "other")
+        .or_else(|| {
+            call.get("title")
+                .and_then(Value::as_str)
+                .map(|title| title.split(" · ").next().unwrap_or(title).trim())
+        })
         .filter(|tool| !tool.is_empty())
         .unwrap_or("permission")
         .to_owned();
@@ -69,6 +78,21 @@ pub(crate) fn outcome(options: &[Value], allowed: bool) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn other_kind_falls_back_to_the_tool_in_the_title() {
+        let params = json!({"toolCall": {
+            "toolCallId": "call_x",
+            "kind": "other",
+            "title": "shell · echo hi",
+            "rawInput": {"command": "echo hi"},
+        }});
+        let ask = ask(&json!("625d36a4"), &params);
+        assert_eq!(ask.tool, "shell");
+        assert_eq!(ask.call_id, "call_x");
+        let params = json!({"toolCall": {"kind": "delete", "title": "Delete build"}});
+        assert_eq!(super::ask(&json!(1), &params).tool, "delete");
+    }
 
     #[test]
     fn decisions_map_to_offered_options() {

@@ -42,6 +42,16 @@ export function desktopPreview(view: DesktopPreviewApi | undefined): StudioPrevi
 const TICKET_BASE = /^\/preview\/pt_[0-9a-f]{64}\/$/;
 
 /**
+ * `url` without its trailing slashes, in one pass from the end. `/\/+$/` is quadratic
+ * on a long run of `/` that does not end the string (CodeQL js/polynomial-redos).
+ */
+export function trimTrailingSlashes(url: string): string {
+  let end = url.length;
+  while (end > 0 && url.charCodeAt(end - 1) === 0x2f) end -= 1;
+  return url.slice(0, end);
+}
+
+/**
  * Asks the remote agentd at `baseUrl` for a preview ticket for `previewName`
  * (`<name>.<project>`). The request carries the bearer token, never cookies, a
  * referrer or a redirect; the answer must be a ticket path, nothing else.
@@ -52,7 +62,7 @@ export function remotePreviewOpener(o: {
   fetch?: typeof fetch;
 }): (previewName: string) => Promise<RemotePreview> {
   const doFetch = o.fetch ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
-  const root = o.baseUrl.replace(/\/+$/, '');
+  const root = trimTrailingSlashes(o.baseUrl);
   return async (previewName) => {
     const token = await o.getToken();
     if (!token) throw new Error('Add a token for this agentd host in Settings first.');

@@ -49,7 +49,20 @@ const IDEMPOTENCY_LEVEL: u32 = 34;
 /// `loams-agentd`, never served by the Loams server (design §53 §6.1, Q816).
 /// Its methods carry no `FacadeOptions` either, so no module is generated for
 /// it; `tests/agentd_catalogue.rs` checks both.
-pub const NOT_SDK_PACKAGES: &[&str] = &["loams.agentd.v1"];
+///
+/// `loams.marketplace.v1` is the marketplace listing's data model (design §73
+/// §3.6, D1455): messages only, read by agentd's `MarketplaceService` and the
+/// index tooling, never served by the Loams server.
+///
+/// `loams.meter.internal.v1` is Loams Meter's `LeaseService` (design §63
+/// §11.2, D2202): between the gates in product roles and the meter's counter
+/// owners, on the cluster listener only, with service identities. Its methods
+/// carry no `FacadeOptions`.
+pub const NOT_SDK_PACKAGES: &[&str] = &[
+    "loams.agentd.v1",
+    "loams.marketplace.v1",
+    "loams.meter.internal.v1",
+];
 
 /// `google.protobuf.MethodOptions.IdempotencyLevel`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

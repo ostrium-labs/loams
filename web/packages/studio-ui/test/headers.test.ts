@@ -1,5 +1,5 @@
 // vendored_headers_present (SD1 Task 1; design §53 §9.2, D913).
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { listFiles, loadProvenance, PACKAGE_DIR, readPackageFile } from './provenance-data';
 
 const MARK = '// Portions of this file are from T3 Code (https://github.com/pingdotgg/t3code),';

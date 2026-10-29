@@ -25,7 +25,7 @@
 // this repository has. It is stated in the PR rather than claimed.
 
 import { createGrpcWebTransport } from '@connectrpc/connect-web';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 import { Loams } from '../src/loams.js';
 import { FeatureNotInVariantError } from '../src/runtime/errors.js';
 import { createLoamsTransport } from '../src/runtime/transports.js';
@@ -104,7 +104,7 @@ describe('typescript_grpc_web_transport_in_a_browser', () => {
 
   it('defaults to the fetch transport, which is the one that works everywhere', () => {
     // The default is Connect over `fetch`: HTTP/1.1, no `node:http2`, and the
-    // same code in a browser, in Node, in Deno and in Bun.
+    // same code in a browser, in Node and in Bun.
     expect(typeof createLoamsTransport).toBe('function');
     const transport = createLoamsTransport({ baseUrl: 'http://127.0.0.1:1' });
     expect(typeof transport.unary).toBe('function');

@@ -1,0 +1,160 @@
+{
+  "//": "The corpus's scenarios in plan order (DX1 plan, DX0 Task 4): the phase whose gateway must replay each, and whether it is Go only. workers/go/scenarios/scenarios.go and workers/ts/src/generate.ts must list the same (manifest.py check).",
+  "scenarios": [
+    {
+      "name": "hello",
+      "phase": "DX1",
+      "go_only": false
+    },
+    {
+      "name": "two_activities_sequential",
+      "phase": "DX1",
+      "go_only": false
+    },
+    {
+      "name": "activity_parallel_fanout_10",
+      "phase": "DX1",
+      "go_only": false
+    },
+    {
+      "name": "signal_then_complete",
+      "phase": "DX1",
+      "go_only": false
+    },
+    {
+      "name": "query_while_running",
+      "phase": "DX1",
+      "go_only": false
+    },
+    {
+      "name": "cancel_requested",
+      "phase": "DX1",
+      "go_only": false
+    },
+    {
+      "name": "terminated",
+      "phase": "DX1",
+      "go_only": false
+    },
+    {
+      "name": "workflow_failed_application_error",
+      "phase": "DX1",
+      "go_only": false
+    },
+    {
+      "name": "activity_heartbeat_details",
+      "phase": "DX1",
+      "go_only": false
+    },
+    {
+      "name": "timer_short",
+      "phase": "DX2",
+      "go_only": false
+    },
+    {
+      "name": "timer_cancelled",
+      "phase": "DX2",
+      "go_only": false
+    },
+    {
+      "name": "activity_retry_backoff_3_attempts",
+      "phase": "DX2",
+      "go_only": false
+    },
+    {
+      "name": "activity_start_to_close_timeout",
+      "phase": "DX2",
+      "go_only": false
+    },
+    {
+      "name": "activity_schedule_to_start_timeout",
+      "phase": "DX2",
+      "go_only": false
+    },
+    {
+      "name": "activity_heartbeat_timeout",
+      "phase": "DX2",
+      "go_only": false
+    },
+    {
+      "name": "workflow_task_failure_then_fix",
+      "phase": "DX2",
+      "go_only": true
+    },
+    {
+      "name": "signal_with_start",
+      "phase": "DX2",
+      "go_only": false
+    },
+    {
+      "name": "child_workflow",
+      "phase": "DX2",
+      "go_only": false
+    },
+    {
+      "name": "child_workflow_cancelled",
+      "phase": "DX2",
+      "go_only": false
+    },
+    {
+      "name": "continue_as_new_3",
+      "phase": "DX2",
+      "go_only": false
+    },
+    {
+      "name": "id_reuse_allow_duplicate_failed_only",
+      "phase": "DX2",
+      "go_only": false
+    },
+    {
+      "name": "id_conflict_fail",
+      "phase": "DX2",
+      "go_only": false
+    },
+    {
+      "name": "local_activity",
+      "phase": "DX2",
+      "go_only": false
+    },
+    {
+      "name": "side_effect_and_version_marker",
+      "phase": "DX2",
+      "go_only": false
+    },
+    {
+      "name": "search_attributes_upsert",
+      "phase": "DX3",
+      "go_only": false
+    },
+    {
+      "name": "memo",
+      "phase": "DX3",
+      "go_only": false
+    },
+    {
+      "name": "large_payload_1mb",
+      "phase": "DX3",
+      "go_only": false
+    },
+    {
+      "name": "update_accepted_completed",
+      "phase": "DX4",
+      "go_only": false
+    },
+    {
+      "name": "update_rejected",
+      "phase": "DX4",
+      "go_only": false
+    },
+    {
+      "name": "schedule_triggered",
+      "phase": "DX4",
+      "go_only": true
+    },
+    {
+      "name": "reset_to_first_workflow_task",
+      "phase": "DX4",
+      "go_only": true
+    }
+  ]
+}

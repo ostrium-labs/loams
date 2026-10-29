@@ -11,8 +11,15 @@
 //! (PR #434 review): a queued run carries no MCP server, no auto-approval, no
 //! attachments, worktree or resume, and a sandbox no wider than the session's;
 //! a new side chat's sandbox is no wider either, and its working directory
-//! lies under the session's or a project's; a run cannot answer its own
-//! session's questions.
+//! lies under the session's, a project's or the worktrees root (where
+//! `CreateRunWorktree` puts a factory build thread's checkout, plan FT1 FT0
+//! Task 4); a run cannot answer its own session's questions.
+//!
+//! The factory loop's methods (`CreateRunWorktree`, `GetThreadDiff`,
+//! `PostReviewComment`, `OpenChangeRequest`, `RequestApproval`, `GetApproval`,
+//! `MergeChangeRequest`) are role `mcp` and name a `chatId`, so they reach only
+//! the run's own session tree. `MergeChangeRequest` is refused by the engine
+//! without a person's approval; `ResolveApproval` stays role `owner`.
 //!
 //! Which methods role `mcp` may call is the `role` column of the method
 //! table (`loams_agentd_proto::rpc::METHODS`, plan DD1 Task 9).
@@ -63,6 +70,10 @@ pub trait ChatTree: Send + Sync + 'static {
     fn chat(&self, chat_id: &str) -> Option<ChatFacts>;
     /// The folders of the user's projects (spaces).
     fn project_folders(&self) -> Vec<String>;
+    /// Where the engine creates worktrees.
+    fn worktree_roots(&self) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 impl ChatTree for WorkspaceHost {
@@ -91,6 +102,14 @@ impl ChatTree for WorkspaceHost {
             .into_iter()
             .map(|space| space.path)
             .collect()
+    }
+
+    fn worktree_roots(&self) -> Vec<String> {
+        vec![
+            loams_agentd_sessions::repos::default_worktrees_root()
+                .to_string_lossy()
+                .into_owned(),
+        ]
     }
 }
 
@@ -156,6 +175,7 @@ impl DaemonPolicy {
                 .chats
                 .project_folders()
                 .iter()
+                .chain(self.chats.worktree_roots().iter())
                 .any(|root| within(cwd, root))
     }
 
@@ -341,6 +361,10 @@ mod tests {
         fn project_folders(&self) -> Vec<String> {
             vec!["/projects/app".into()]
         }
+
+        fn worktree_roots(&self) -> Vec<String> {
+            vec!["/worktrees".into()]
+        }
     }
 
     fn facts(parent: Option<&str>, sandbox: Option<SandboxLevel>, cwd: Option<&str>) -> ChatFacts {
@@ -439,6 +463,36 @@ mod tests {
         ] {
             assert!(
                 !allowed(&run, method, json!({"chatId": "main", "checkoutId": "c"})).await,
+                "{method}"
+            );
+            assert!(
+                allowed(&Identity::owner(), method, json!({})).await,
+                "{method}"
+            );
+        }
+    }
+
+    /// MK1 Task 4b: an agent can never search, plan, install, update or
+    /// uninstall marketplace listings, or change the sources, through the
+    /// MCP shim: installing is the person's consent (D1466).
+    #[tokio::test]
+    async fn marketplace_not_in_mcp_role() {
+        let run = mcp("main");
+        for method in [
+            methods::LIST_MARKETPLACE_SOURCES,
+            methods::ADD_MARKETPLACE_SOURCE,
+            methods::REMOVE_MARKETPLACE_SOURCE,
+            methods::SEARCH_LISTINGS,
+            methods::GET_LISTING,
+            methods::PLAN_INSTALL,
+            methods::INSTALL_LISTING,
+            methods::UNINSTALL_LISTING,
+            methods::LIST_INSTALLED_LISTINGS,
+            methods::CHECK_LISTING_UPDATES,
+            methods::UPDATE_LISTING,
+        ] {
+            assert!(
+                !allowed(&run, method, json!({"chatId": "main", "id": "a/b"})).await,
                 "{method}"
             );
             assert!(
@@ -724,5 +778,68 @@ mod tests {
                 "{cwd}"
             );
         }
+    }
+
+    /// Plan FT1, FT0 Task 4: the factory loop's tools reach the run's own
+    /// session tree only, and no run can settle an approval it asked for.
+    #[tokio::test]
+    async fn request_approval_cannot_be_settled_by_agent() {
+        let run = mcp("main");
+        let ask = |chat: &str| json!({ "chatId": chat, "kind": "merge", "summary": "Merge #7", "payload": {} });
+        assert!(allowed(&run, methods::REQUEST_APPROVAL, ask("main")).await);
+        assert!(allowed(&run, methods::REQUEST_APPROVAL, ask("side")).await);
+        assert!(!allowed(&run, methods::REQUEST_APPROVAL, ask("other")).await);
+        for settle in [
+            json!({ "callId": "fa-1", "decision": "once" }),
+            json!({ "callId": "fa-1", "decision": "once", "chatId": "main" }),
+        ] {
+            assert!(!allowed(&run, methods::RESOLVE_APPROVAL, settle).await);
+        }
+        assert!(
+            !allowed(
+                &run,
+                methods::SET_THREAD_APPROVAL_MODE,
+                json!({ "chatId": "main", "mode": "full-access" })
+            )
+            .await
+        );
+    }
+
+    #[tokio::test]
+    async fn factory_tools_stay_in_the_session_tree() {
+        let run = mcp("main");
+        for method in [
+            methods::CREATE_RUN_WORKTREE,
+            methods::GET_THREAD_DIFF,
+            methods::POST_REVIEW_COMMENT,
+            methods::OPEN_CHANGE_REQUEST,
+            methods::GET_APPROVAL,
+            methods::MERGE_CHANGE_REQUEST,
+            methods::GET_CHECKS,
+            methods::GET_CHECK_LOG,
+        ] {
+            assert!(
+                allowed(&run, method, json!({ "chatId": "side" })).await,
+                "{method}"
+            );
+            assert!(
+                !allowed(&run, method, json!({ "chatId": "other" })).await,
+                "{method}"
+            );
+            assert!(
+                !allowed(&run, method, json!({ "chatId": "other-side" })).await,
+                "{method}"
+            );
+        }
+    }
+
+    /// A build thread's chat may live in a worktree the engine created.
+    #[tokio::test]
+    async fn new_chat_may_run_in_a_worktree() {
+        let run = mcp("main");
+        let create = |cwd: &str| json!({ "op": "createChat", "chatId": "build", "parentChatId": "main", "cwd": cwd });
+        assert!(allowed(&run, methods::MUTATE, create("/worktrees/app/factory-r1-1")).await);
+        assert!(!allowed(&run, methods::MUTATE, create("/worktrees/../etc")).await);
+        assert!(!allowed(&run, methods::MUTATE, create("/worktreesx/app")).await);
     }
 }

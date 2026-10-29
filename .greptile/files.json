@@ -1,0 +1,13 @@
+{
+  "files": [
+    {
+      "path": "CONTRIBUTING.md",
+      "description": "Contribution rules: licences, DCO, commit style, tests"
+    },
+    {
+      "path": "deny.toml",
+      "description": "Allowed dependency licences and sources",
+      "scope": ["**/Cargo.toml"]
+    }
+  ]
+}

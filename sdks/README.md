@@ -37,7 +37,7 @@ A row is added by that language's SDKP task; the app suite is
 
 ## Installing
 
-The SDKs are published as `0.1.1` from the Loams release tag by
+The SDKs are published as `0.1.2` from the Loams release tag by
 [`.github/workflows/sdk-release.yml`](../.github/workflows/sdk-release.yml), to
 npm, PyPI, crates.io, NuGet, the Go proxy, RubyGems and Maven Central; Swift
 resolves from this repository's tag and C++ ships as a release tarball. PHP
@@ -49,16 +49,16 @@ registries yet. In 0.x an API may change between minor versions.
 | TypeScript | `npm install @loams/client` |
 | Python | `pip install loams` |
 | Rust | `cargo add loams` |
-| Go (1.25+) | `go get loams.dev/go@v0.1.1` |
+| Go (1.25+) | `go get loams.dev/go@v0.1.2` |
 | C# | `dotnet add package Loams` |
-| Swift | `.package(url: "https://github.com/ostrium-labs/loams.git", from: "0.1.1")` |
-| C++ | `loams-cpp-0.1.1.tar.gz` on the GitHub release; `find_package(loams CONFIG)` |
+| Swift | `.package(url: "https://github.com/ostrium-labs/loams.git", from: "0.1.2")` |
+| C++ | `loams-cpp-0.1.2.tar.gz` on the GitHub release; `find_package(loams CONFIG)` |
 | Ruby | `gem install loams` |
 | PHP | `composer require loams/loams` (from the split repository; see [`php/`](php/)) |
 | Dart | `dart pub add loams` |
-| Java | `dev.loams:loams:0.1.1` (Maven Central) |
-| Kotlin | `dev.loams:loams-kotlin:0.1.1` (Maven Central) |
-| Objective-C | `pod 'Loams', '0.1.1'` (module `LoamsObjC`) |
+| Java | `dev.loams:loams:0.1.2` (Maven Central) |
+| Kotlin | `dev.loams:loams-kotlin:0.1.2` (Maven Central) |
+| Objective-C | `pod 'Loams', '0.1.2'` (module `LoamsObjC`) |
 
 Each registry goes live once the owner has set it up; which ones are live is in
 [`docs/release/publishing.md`](../docs/release/publishing.md).

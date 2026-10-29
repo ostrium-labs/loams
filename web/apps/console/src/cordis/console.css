@@ -1379,6 +1379,19 @@ button.lc-hosted-engine {
   color: var(--op-muted);
   line-height: 1.5;
 }
+/* Demo mode: the way in from every gate screen, and the way back out from the header. */
+.lc-gate-demo {
+  margin: 4px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--op-rule);
+  color: var(--op-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.lc-demo-leave {
+  text-decoration: underline;
+  white-space: nowrap;
+}
 .lc-gate-form {
   display: grid;
   gap: 14px;

@@ -1,0 +1,25 @@
+[Unit]
+Description=Loams stack (compose) with secrets from the cloud's secret store
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/loams/release
+# The tailnet key and the setup token come from the secret store on every start.
+ExecStartPre=/usr/local/bin/loams-byoc-secrets
+ExecStart=/usr/bin/docker compose up -d
+# `systemctl reload loams-byoc`: copy rotated Confluent keys now (no restart).
+ExecReload=/usr/local/bin/loams-byoc-secrets --confluent-only
+ExecStop=/usr/bin/docker compose stop
+# The secrets may not exist yet on a first boot (the tailnet key is put in the
+# secret store by the person installing): try again until they do.
+Restart=on-failure
+RestartSec=30
+TimeoutStartSec=900
+TimeoutStopSec=300
+
+[Install]
+WantedBy=multi-user.target

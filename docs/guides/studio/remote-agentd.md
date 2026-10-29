@@ -2,24 +2,40 @@
 
 Loams Studio in the browser console works against a `loams-agentd` you run on a machine you control: a dev box, a VM, a container or a workspace sandbox (design [§53](../../design/53-studio-ade.md) §6.3, D909). One remote agentd serves one person (D921). The browser reaches it over TLS on your tailnet with your own short-lived access token, and the daemon's own token never leaves the machine. **Never expose it on the public internet.**
 
-> **Status.** The remote listener, its checks, previews through it and the console's Content-Security-Policy setting ([below](#the-consoles-content-security-policy)) ship in 0.1.0 (SD1 Tasks 7, 26 and 30). The hosted console, `https://console.loams.dev`, reaches a 0.1.0 agentd through **Settings › Agentd hosts**: threads, runs, approvals and diffs work. What is **pending**:
+> **Status.** The remote listener, its checks, previews through it and the console's Content-Security-Policy setting ([below](#the-consoles-content-security-policy)) ship in 0.1.0 (SD1 Tasks 7, 26 and 30). The hosted console at `console.loams.dev` is retired (design 78). From 0.1.2 the console is the one your engine serves at `https://loams.<tailnet>.ts.net/ui/`: it reaches an agentd host through **Settings › Agentd hosts** once the engine lists the host in `LOAMS_AGENTD_ORIGINS`, which also lets the host's previews render there. Up to 0.1.1 the browser console was the hosted one, where threads, runs, approvals and diffs worked against a 0.1.0 agentd and previews did not. The 0.1.2 path (the engine-served console with `LOAMS_AGENTD_ORIGINS`) is covered by the engine's tests but has **not been run end to end** against a remote agentd yet. What is **pending**:
 > - a sign-in that issues the agentd token, so for now you paste one (IA1);
-> - **previews in the hosted console.** Its `frame-src` is `'self'`, so the browser refuses to frame any agentd host's preview ([Previews](#previews));
-> - a standalone package for the daemon ([#874](https://github.com/ostrium-labs/loams/issues/874)); for now you take the binary out of the image ([below](#get-the-binary)).
+> - a `.deb`, `.rpm` or pacman package for the daemon, or `cargo install` ([#874](https://github.com/ostrium-labs/loams/issues/874)); from 0.1.2, use the release tarball ([below](#get-the-binary)).
 
 ## The short version
 
-For the hosted console, the host must be a `*.ts.net` name on **port 443**: its policy allows `connect-src https://*.ts.net`, and a CSP source with no port matches only the scheme's default port, so `https://devbox.<tailnet>.ts.net:8443` is blocked in the browser before it reaches the daemon.
+The console your engine serves at `/ui/` reaches only the agentd hosts the engine lists in `LOAMS_AGENTD_ORIGINS`, by exact origin. Port 443 keeps the origin short (`https://devbox.<tailnet>.ts.net`); another port works too, as long as the entry names it (`https://devbox.<tailnet>.ts.net:8443`), because a CSP source with no port matches only the scheme's default port.
 
 1. [Get the binary](#get-the-binary) and an empty `config.toml`.
 2. Get a certificate for the node with `tailscale cert`, and let the binary bind port 443 ([Port 443 on the tailnet](#port-443-on-the-tailnet)).
 3. Set up an [issuer](#an-issuer) and find your `sub`.
-4. Run `serve --remote` on the tailnet address, port 443, with `--allow-origin https://console.loams.dev`, or [run it as a service](#run-it-as-a-service).
-5. In the console, open Studio › **Settings** › **Agentd hosts**, add `https://devbox.<tailnet>.ts.net` and paste a token ([In Studio](#in-studio)).
+4. Run `serve --remote` on the tailnet address, port 443, with `--allow-origin https://loams.<tailnet>.ts.net` (the origin of the console your engine serves), or [run it as a service](#run-it-as-a-service).
+5. On the engine, set `LOAMS_AGENTD_ORIGINS=https://devbox.<tailnet>.ts.net` (in the compose stack's `.env`) and restart it ([the console's Content-Security-Policy](#the-consoles-content-security-policy)).
+6. In the console at `https://loams.<tailnet>.ts.net/ui/`, open Studio › **Settings** › **Agentd hosts**, add `https://devbox.<tailnet>.ts.net` and paste a token ([In Studio](#in-studio)).
 
 ## Get the binary
 
-`loams-agentd` is not in the `loams` CLI packages (`.deb`, `.rpm`, pacman), and the release's `loams-agentd-<version>.spdx.json` asset is its SBOM, not the binary. Take it out of the published image, `ghcr.io/ostrium-labs/loams-agentd` (amd64 and arm64), where it is `/usr/local/bin/loams-agentd`:
+From 0.1.2, each release attaches `loams-agentd` for Linux as one tarball per architecture, `loams-agentd-<version>-linux-x86_64.tar.gz` and `loams-agentd-<version>-linux-aarch64.tar.gz`. It is not in the `loams` CLI packages (`.deb`, `.rpm`, pacman), and the `loams-agentd-<version>.spdx.json` asset is its SBOM, not the binary. Download the tarball for your machine (`uname -m`) with the release's `SHA256SUMS` and `SHA256SUMS.asc`, check them with the release key ([`signing.md`](../../release/signing.md)), and unpack it:
+
+```sh
+v=X.Y.Z                                # the release, without the leading v
+t=loams-agentd-$v-linux-$(uname -m)    # x86_64 or aarch64
+base=https://github.com/ostrium-labs/loams/releases/download/v$v
+curl -fL -O "$base/$t.tar.gz" -O "$base/SHA256SUMS" -O "$base/SHA256SUMS.asc"
+gpg --verify SHA256SUMS.asc SHA256SUMS # with the release key imported (signing.md)
+sha256sum -c --ignore-missing SHA256SUMS
+tar -xzf "$t.tar.gz"
+install -D -m 0755 "$t/loams-agentd" ~/.local/bin/loams-agentd
+loams-agentd version                   # loams-agentd X.Y.Z
+```
+
+The unpacked directory holds `loams-agentd`, `loams`, `SHA256SUMS`, `VERSION` and the licence files. That is the layout `loams-agentd install-runtime --from` reads, the same as Loams Desktop's `resources/bin/`, so the directory can also install the runtime of the [per-user service](#run-it-as-a-service); `loams` is in it because `install-runtime` copies it too. Both binaries are built on Ubuntu 24.04 (glibc 2.39), so they run on Debian 13, Ubuntu 24.04, Fedora 40 and newer.
+
+A release without the tarballs (0.1.0 and 0.1.1 have none) leaves the published image, `ghcr.io/ostrium-labs/loams-agentd` (amd64 and arm64), where the binary is `/usr/local/bin/loams-agentd`:
 
 ```sh
 podman create --name loams-agentd-copy ghcr.io/ostrium-labs/loams-agentd:0.1.1
@@ -28,7 +44,7 @@ podman rm loams-agentd-copy
 loams-agentd version        # loams-agentd 0.1.1
 ```
 
-(`docker create` and `docker cp` work the same way.) The binary is linked against glibc 2.39 and nothing else of note, so it runs on Debian 13, Ubuntu 24.04, Fedora 40 and newer.
+(`docker create` and `docker cp` work the same way.) The image's binary is linked against glibc 2.39 and nothing else of note, so it runs on the same distributions.
 
 Loams Desktop also bundles it (Linux, and macOS and Windows since 0.1.0), in the app's `resources/bin/`, for example `/opt/Loams Desktop/resources/bin/loams-agentd` on Linux and `/Applications/Loams Desktop.app/Contents/Resources/bin/loams-agentd` on macOS. You can also build it from source: `cargo build --release -p loams-agentd`.
 
@@ -41,7 +57,7 @@ loams-agentd serve --remote \
   --issuer http://127.0.0.1:8080/realms/loams \
   --audience loams-agentd \
   --subject <your sub> \
-  --allow-origin https://console.loams.dev \
+  --allow-origin https://loams.<tailnet>.ts.net \
   --config ~/.config/loams-agentd/config.toml
 ```
 
@@ -72,14 +88,14 @@ A quick check from another machine on the tailnet:
 ```sh
 # A preflight from your console's origin: 204 and the CORS headers.
 curl -s -D - -o /dev/null -X OPTIONS \
-  -H 'Origin: https://console.loams.dev' -H 'Access-Control-Request-Method: POST' \
+  -H 'Origin: https://loams.<tailnet>.ts.net' -H 'Access-Control-Request-Method: POST' \
   https://devbox.<tailnet>.ts.net/loams.agentd.v1.StudioService/GetHost
 # Another origin: 403, no CORS headers. No token: 401 unauthenticated.
 curl -s -X POST -H 'Content-Type: application/json' -d '{}' \
   https://devbox.<tailnet>.ts.net/loams.agentd.v1.StudioService/GetHost
 ```
 
-These answers, a valid-token call through Keycloak and the hosted console's whole handshake were checked against the 0.1.0 image's binary on 2026-10-19 and 20 ([#872](https://github.com/ostrium-labs/loams/issues/872)).
+These answers, a valid-token call through Keycloak and the then-hosted console's whole handshake were checked against the 0.1.0 image's binary on 2026-10-19 and 20 ([#872](https://github.com/ostrium-labs/loams/issues/872)).
 
 ## Port 443 on the tailnet
 
@@ -104,7 +120,7 @@ getcap ~/.local/bin/loams-agentd      # …/loams-agentd cap_net_bind_service=ep
 
 Do it again whenever you replace the binary; a file system mounted `nosuid` ignores it. Instead of `setcap`, a system service can grant it: a system unit with `User=<you>` and `AmbientCapabilities=CAP_NET_BIND_SERVICE`. Without either, the daemon exits when it can't bind the remote listener.
 
-**Another console.** A console you deploy yourself can reach other ports and names, through `LOAMS_AGENTD_ORIGINS` ([below](#the-consoles-content-security-policy)), and a self-signed certificate works there once the browser trusts it (open the host's URL once and accept it, or install your own CA). Note its SHA-256 fingerprint when you register the host, to compare with what the browser shows: `openssl x509 -in cert.pem -noout -fingerprint -sha256`.
+**Other names and ports.** Any console that takes `LOAMS_AGENTD_ORIGINS` ([below](#the-consoles-content-security-policy)) can reach other ports and names, and a self-signed certificate works there once the browser trusts it (open the host's URL once and accept it, or install your own CA). Note its SHA-256 fingerprint when you register the host, to compare with what the browser shows: `openssl x509 -in cert.pem -noout -fingerprint -sha256`.
 
 ## Run it as a service
 
@@ -120,7 +136,7 @@ tls_key = "/home/you/.config/loams-agentd/tls/key.pem"
 issuer = "http://127.0.0.1:8080/realms/loams"
 audience = "loams-agentd"
 subject = "<your sub>"
-allow_origins = ["https://console.loams.dev"]
+allow_origins = ["https://loams.<tailnet>.ts.net"]
 ```
 
 ```ini
@@ -151,7 +167,7 @@ loams-agentd status --config ~/.config/loams-agentd/config.toml
 
 The unit is named `loams-agentd-remote` so it doesn't collide with the one Loams Desktop installs. If tailscaled isn't up yet at boot, the bind fails and systemd retries.
 
-**`loams-agentd service`** (`install`, `uninstall`, `start`, `stop`, `status`, `enable-linger`, `disable-linger`) is how Loams Desktop installs its per-user service: on Linux it writes `~/.config/systemd/user/loams-agentd.service`, which runs `<daemon dir>/runtime/current/loams-agentd run --service --config <config>`, so `[remote]` in that `config.toml` applies to it too. It needs that runtime first: `loams-agentd install-runtime --from <dir> --to <daemon dir>/runtime` copies `loams-agentd` and `loams` from `<dir>` and checks them against the `SHA256SUMS` and `VERSION` beside them, which is the layout of Loams Desktop's `resources/bin/`. On a headless host without Desktop, the unit above is simpler. If you do use `service install`, run `setcap` on `runtime/current/loams-agentd`, and again after each `install-runtime`.
+**`loams-agentd service`** (`install`, `uninstall`, `start`, `stop`, `status`, `enable-linger`, `disable-linger`) is how Loams Desktop installs its per-user service: on Linux it writes `~/.config/systemd/user/loams-agentd.service`, which runs `<daemon dir>/runtime/current/loams-agentd run --service --config <config>`, so `[remote]` in that `config.toml` applies to it too. It needs that runtime first: `loams-agentd install-runtime --from <dir> --to <daemon dir>/runtime` copies `loams-agentd` and `loams` from `<dir>` and checks them against the `SHA256SUMS` and `VERSION` beside them, which is the layout of Loams Desktop's `resources/bin/` and of the [release tarball](#get-the-binary): `"$t/loams-agentd" install-runtime --from "$t" --to ~/.config/loams-agentd/runtime`. On a headless host without Desktop, the unit above is simpler. If you do use `service install`, run `setcap` on `runtime/current/loams-agentd`, and again after each `install-runtime`.
 
 ## An issuer
 
@@ -203,7 +219,7 @@ podman run -d --name loams-agentd \
     --tls-cert /etc/loams-agentd-tls/cert.pem --tls-key /etc/loams-agentd-tls/key.pem \
     --issuer https://auth.example.com/application/o/loams-agentd/ \
     --audience loams-agentd --subject <your sub> \
-    --allow-origin https://console.loams.dev
+    --allow-origin https://loams.<tailnet>.ts.net
 ```
 
 Inside the container the daemon listens on 8443; the host publishes it on 443. Rootless Podman can publish a port below 1024 only when `net.ipv4.ip_unprivileged_port_start` allows it. The issuer must be reachable from inside the container, so a loopback issuer on the host doesn't work here.
@@ -220,26 +236,36 @@ Without a host, or without a token for the selected host, Studio's home shows **
 
 ## The console's Content-Security-Policy
 
-The browser console only fetches from and frames the origins its Content-Security-Policy names. A deployment lists its agentd hosts in **`LOAMS_AGENTD_ORIGINS`** (SD1 Task 30, ruling T30-3): origins separated by spaces or commas, each an exact `https://host[:port]` (`http://` only on `localhost`), with no wildcard, path or credentials. `deploy/stage.mjs` adds them to both `connect-src` (the Connect calls) and `frame-src` (the previews), and the console deploy workflow reads the repository variable of the same name. Each host must also name the console in its `--allow-origin`.
+The browser console only fetches from and frames the origins its Content-Security-Policy names. A deployment lists its agentd hosts in **`LOAMS_AGENTD_ORIGINS`** (SD1 Task 30, ruling T30-3): origins separated by spaces or commas, each an exact `https://host[:port]` (`http://` only on `localhost`), with no wildcard, path or credentials. The engine-served console (`/ui/`, from 0.1.2) and `deploy/stage.mjs` add them to both `connect-src` (the Connect calls) and `frame-src` (the previews). Each host must also name the console's origin in its `--allow-origin`.
+
+For the console your engine serves, set the variable on the engine. In the compose stack, put it in `.env`, then `docker compose up -d loams`:
+
+```sh
+# .env
+LOAMS_AGENTD_ORIGINS=https://devbox.<tailnet>.ts.net,https://vm.<tailnet>.ts.net:8443
+```
+
+The engine refuses to start on an entry that is not an exact origin (`*`, `null`, a path or credentials), and names the variable. For a console you stage yourself:
 
 ```sh
 LOAMS_AGENTD_ORIGINS="https://devbox.example.com:8443 https://vm.example.com" \
-  node apps/console/deploy/stage.mjs
+  node web/apps/console/deploy/stage.mjs
 ```
 
 | Console | Reaches an agentd host when |
 |---|---|
-| The hosted console, `console.loams.dev` | the host is a `*.ts.net` name on port 443: its policy is `connect-src 'self' https://*.ts.net https://auth.loams.dev` and `frame-src 'self'`, so Connect calls work and previews don't |
+| The console your engine serves at `/ui/` (0.1.2 and later) | the host's origin is in the engine's `LOAMS_AGENTD_ORIGINS`: the engine sends the build's policy as a header with those origins in `connect-src` and `frame-src`, so Connect calls and previews work |
 | A console you deploy (`deploy/stage.mjs`, Cloudflare) | its origin is in `LOAMS_AGENTD_ORIGINS`, which also lets its previews frame; a `*.ts.net` name on port 443 is in `connect-src` already |
 | Vercel (`vercel.json`) | its origin is in `vercel.json`'s `connect-src` and `frame-src` (Vercel headers are static; the stage step fails when `LOAMS_AGENTD_ORIGINS` names one they lack) |
-| The production build as the engine serves it | never: its policy is the build's `'self'` |
+| The production build served as static files, without `stage.mjs` or the engine | never: its meta policy is the build's `'self'` |
 | The dev server (`pnpm dev`) | always (no policy) |
+| The hosted console, `console.loams.dev` (retired) | up to 0.1.1, a `*.ts.net` name on port 443, without previews |
 
 The desktop is not affected: it reaches its local daemon through Electron main, and its preview is a native view.
 
 ## Previews
 
-**With the hosted console, previews don't render today.** Its `frame-src` is `'self'` and a deployment can only add the hosts it names in `LOAMS_AGENTD_ORIGINS`, so the browser refuses to frame your host's preview; the daemon side below works. Use a console you deploy with your host in `LOAMS_AGENTD_ORIGINS`, or forward the preview proxy's port (`ssh -N -L 7331:localhost:7331 <host>`) and open the preview's `http://<name>.<project>.localhost:7331` URL in a tab. See [Preview](preview.md).
+**Previews render in a console whose `frame-src` lists your host:** the console your engine serves at `/ui/` from 0.1.2, or one you deploy, with the host in `LOAMS_AGENTD_ORIGINS`. Without that, the browser refuses to frame the host's preview; the daemon side below still works. Then forward the preview proxy's port instead (`ssh -N -L 7331:localhost:7331 <host>`) and open the preview's `http://<name>.<project>.localhost:7331` URL in a tab. See [Preview](preview.md).
 
 Dev-server previews work through the remote listener (Q806, SD1 Task 26). The daemon's own preview proxy listens on loopback only (`http://<name>.<project>.localhost:7331`), so the remote listener forwards `/preview/…` to it:
 

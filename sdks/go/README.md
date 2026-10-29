@@ -20,12 +20,12 @@ Requires **Go 1.24 or newer** — the SDK uses range-over-func iterators
 ## Installing
 
 ```console
-go get loams.dev/go@v0.1.1
+go get loams.dev/go@v0.1.2
 ```
 
 Go 1.25 or newer: the module lives in `sdks/go` of the main repository, and the
 `go-import` tag that says so carries a subdirectory, which only Go 1.25 reads
-(see [Publishing](#publishing)). `v0.1.1` tracks Loams 0.1.1; in 0.x the API
+(see [Publishing](#publishing)). `v0.1.2` tracks Loams 0.1.2; in 0.x the API
 may change between minor versions.
 
 From a checkout of this repository, with a `replace`:
@@ -220,6 +220,20 @@ is used only for collection and SQL reads: a graph's token names one graph
 (SDKP-17). The binding table is checked against
 `sdks/fixtures/facade-index.json` by `go_facade_matches_index`. Durable
 workflows use the Resonate SDK pointed at `LOAMS_ENDPOINT/durable/` (SDKP-1).
+
+## Agents: a machine key
+
+An agent registered at the identity provider (a Zitadel machine user, design 76 §10) signs in
+with its private-key JWT key. `MachineKeyFromEnv` reads `LOAMS_AGENT_KEY_FILE`,
+`LOAMS_AGENT_ISSUER` and `LOAMS_AGENT_PROJECT`. It trades a 5-minute RFC 7523 assertion for an
+access token whose audience is the Loams project, caches the token, and trades again a minute
+before it expires. It uses only the standard library:
+
+```go
+source, err := loams.MachineKeyFromEnv(nil) // nil: http.DefaultClient
+```
+
+A sandboxed agent holds no key: agentd vends it a 15-minute token file instead.
 
 ## Not here, and why
 

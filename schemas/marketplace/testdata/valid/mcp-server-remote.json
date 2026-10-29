@@ -1,0 +1,59 @@
+{
+  "id": "ostrium/plane-mcp-server",
+  "kind": "mcp-server",
+  "version": "0.3.5",
+  "title": "Plane",
+  "summary": "Plane's official MCP server, reached at its hosted endpoint.",
+  "licence": "MIT",
+  "source": {
+    "repository": "https://github.com/makeplane/plane-mcp-server",
+    "commit": "0123456789abcdef0123456789abcdef01234567"
+  },
+  "publisher": {
+    "name": "Plane",
+    "url": "https://plane.so"
+  },
+  "tools": [
+    {
+      "name": "list_work_items",
+      "description": "Lists work items in a project.",
+      "risk": "read"
+    },
+    {
+      "name": "create_work_item",
+      "description": "Creates a work item.",
+      "risk": "egress"
+    }
+  ],
+  "place": {
+    "egress": [
+      "mcp.plane.so"
+    ]
+  },
+  "config": [
+    {
+      "name": "api_key",
+      "type": "string",
+      "secret": true,
+      "required": true,
+      "description": "A Plane personal access token."
+    }
+  ],
+  "mcp_server": {
+    "server": {
+      "name": "so.plane/plane-mcp-server",
+      "description": "Plane's MCP server.",
+      "version": "0.3.5",
+      "remotes": [
+        {
+          "type": "streamable-http",
+          "url": "https://mcp.plane.so/http/api-key/mcp"
+        }
+      ]
+    },
+    "mode": "remote",
+    "remote_url": "https://mcp.plane.so/http/api-key/mcp",
+    "transport": "streamable-http"
+  },
+  "pricing": "free"
+}

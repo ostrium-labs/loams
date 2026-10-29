@@ -1,10 +1,31 @@
 # syntax=docker/dockerfile:1.7
 # The Loams engine image (ghcr.io/ostrium-labs/loams), built by build.sh from
-# the repository root. Multi-stage: the build stage compiles `loams` with the
-# release feature set (FEATURES below), the runtime stage is debian-slim with the binary, curl
-# for the healthcheck and tini as PID 1, run as an unprivileged user.
+# the repository root. Multi-stage: the console stage builds the web console
+# (web/apps/console, base /ui/), the build stage compiles `loams` with the
+# release feature set (FEATURES below), the runtime stage is debian-slim with
+# the binary, the console under /usr/share/loams/console (which the engine
+# serves at /ui/, same-origin with its API), curl for the healthcheck and tini
+# as PID 1, run as an unprivileged user.
 ARG RUST_IMAGE=docker.io/library/rust:1.97.1-slim-trixie
 ARG RUNTIME_IMAGE=docker.io/library/debian:trixie-slim
+ARG NODE_IMAGE=docker.io/library/node:22.23.2-trixie-slim
+
+# The console ships with every deployment (owner, 2026-10-23): built here from
+# the same commit, so an image never carries a console from another release.
+# Only the console and the workspace packages it depends on are installed.
+FROM ${NODE_IMAGE} AS console
+ENV CI=1 \
+    ELECTRON_SKIP_BINARY_DOWNLOAD=1 \
+    COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+WORKDIR /src
+COPY . .
+RUN corepack enable \
+ && pnpm install --frozen-lockfile --filter "@loams/console..." \
+ && cd web \
+ && LOAMS_UI_BASE=/ui/ pnpm build \
+ && test -f apps/console/dist/index.html \
+ && grep -q '/ui/assets/' apps/console/dist/index.html \
+ && cp -a apps/console/dist /out
 
 FROM ${RUST_IMAGE} AS build
 RUN apt-get update \
@@ -39,8 +60,14 @@ RUN apt-get update \
  && useradd --system --uid 10001 --gid loams --home-dir /var/lib/loams --shell /usr/sbin/nologin loams \
  && install -d -o loams -g loams -m 0750 /var/lib/loams /var/lib/loams/bucket /var/lib/loams/graph \
  && install -d -o loams -g loams -m 0750 /var/lib/loams-house \
- && install -d -o loams -g loams -m 0700 /var/lib/loams-pg-control /var/lib/loams-upgrade-snapshots
+ && install -d -o loams -g loams -m 0700 /var/lib/loams-pg-control /var/lib/loams-upgrade-snapshots \
+ && install -d -o loams -g loams -m 0770 /run/loams-connect
 COPY --from=build /out/loams /usr/local/bin/loams
+# Read-only for everyone (directories searchable). Not `COPY --chmod=a=rX`: buildah
+# (podman, which build.sh prefers and the release runners have) takes only an
+# octal --chmod and refused the symbolic one, failing the v0.1.2 image build.
+COPY --from=console /out /usr/share/loams/console
+RUN chmod -R a=rX /usr/share/loams/console
 LABEL org.opencontainers.image.title="loams" \
       org.opencontainers.image.description="Loams engine" \
       org.opencontainers.image.source="https://github.com/ostrium-labs/loams" \

@@ -1,0 +1,232 @@
+// The Temporal gateway's own messages (design 74 §5.7, plan DX1). They are
+// not part of the Temporal API: no SDK sees them except as opaque bytes.
+// Apache-2.0, The Loams Authors.
+syntax = "proto3";
+
+package loams.temporal.internal.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "temporal/api/common/v1/message.proto";
+import "temporal/api/failure/v1/message.proto";
+import "temporal/api/history/v1/message.proto";
+import "temporal/api/update/v1/message.proto";
+
+// What a task token carries (plan DX1 ruling X1.R4). The token an SDK
+// receives is this message, encoded, followed by an HMAC-SHA256 over the
+// encoded bytes with the key named by `key_id`. The SDKs only echo it.
+message TaskToken {
+  // The token format; 1 for this message.
+  uint32 version = 1;
+  // The gateway's namespace ID (a UUID string), not the namespace's name.
+  string namespace_id = 2;
+  string workflow_id = 3;
+  string run_id = 4;
+  // The event ID of the task's `…Scheduled` event.
+  int64 scheduled_event_id = 5;
+  // The task's attempt, starting at 1.
+  int32 attempt = 6;
+  TaskKind kind = 7;
+  // Which key of the gateway's key ring signed the token.
+  string key_id = 8;
+  // The `…Started` event ID the poll answer recorded, for a workflow task.
+  int64 started_event_id = 9;
+}
+
+enum TaskKind {
+  TASK_KIND_UNSPECIFIED = 0;
+  TASK_KIND_WORKFLOW = 1;
+  TASK_KIND_ACTIVITY = 2;
+  TASK_KIND_QUERY = 3;
+}
+
+// A run's mutable state (design 74 §5.5, plan DX1 Task 3): everything the
+// gateway needs to apply the next input without reading the history. It is
+// stored as `executions.state_blob` and can always be rebuilt from the
+// history (`loams_temporal_history::fold`).
+message MutableState {
+  // The state format; 1 for this message.
+  uint32 version = 1;
+  string namespace_id = 2;
+  string workflow_id = 3;
+  string run_id = 4;
+  string workflow_type = 5;
+  string task_queue = 6;
+  google.protobuf.Duration workflow_task_timeout = 7;
+  google.protobuf.Duration workflow_run_timeout = 8;
+  google.protobuf.Duration workflow_execution_timeout = 9;
+  google.protobuf.Timestamp start_time = 10;
+  google.protobuf.Timestamp close_time = 11;
+  // temporal.api.enums.v1.WorkflowExecutionStatus.
+  int32 status = 12;
+  // The ID the next event gets.
+  int64 next_event_id = 13;
+  // The started event ID of the last completed workflow task (the poll
+  // answer's `previous_started_event_id`); 0 before the first.
+  int64 last_completed_wft_started_event_id = 14;
+  // The outstanding workflow task; absent when there is none.
+  WorkflowTaskInfo workflow_task = 15;
+  repeated ActivityInfo activities = 16;
+  repeated TimerInfo timers = 17;
+  // Events that arrived while a workflow task was started; written after
+  // its `WorkflowTaskCompleted` (or failure), in arrival order. Their
+  // event IDs are not assigned yet (0).
+  repeated .temporal.api.history.v1.HistoryEvent buffered = 18;
+  // A cancel request has been recorded.
+  bool cancel_requested = 19;
+  string start_request_id = 20;
+  // The event ID of the closing event; 0 while open.
+  int64 completion_event_id = 21;
+  string first_execution_run_id = 22;
+  // The encoded size of the history so far.
+  int64 history_size_bytes = 23;
+  // The last event's `task_id`; event task IDs increase per run.
+  int64 last_task_id = 24;
+  // Signals recorded so far (Temporal's limits count them, X1.R7).
+  int64 signal_count = 25;
+  // Workflow updates the run knows (TMP-api, D2080): admitted ones wait for
+  // a workflow task, accepted ones for the worker's response; completed,
+  // rejected and aborted ones stay so a retried update ID or a
+  // `PollWorkflowExecutionUpdate` gets the same outcome.
+  repeated UpdateInfo updates = 26;
+  // Child workflows initiated and not yet closed (TMP-api D2087).
+  repeated ChildInfo children = 27;
+  // The parent, when this run is a child workflow.
+  ParentInfo parent = 28;
+  // Signals to, and cancel requests of, other workflows that are initiated
+  // and not yet answered: initiated event ID -> its target.
+  repeated ExternalInfo external_signals = 29;
+  repeated ExternalInfo external_cancels = 30;
+  // Waiting for the first workflow task's backoff (a continued run's
+  // `backoff_start_interval`): no workflow task until it passes.
+  bool first_task_backoff = 31;
+  // The parent close policy of each child is in ChildInfo; this run's own
+  // memo and search attributes, as upserted.
+  .temporal.api.common.v1.Memo memo = 32;
+  .temporal.api.common.v1.SearchAttributes search_attributes = 33;
+  // The Temporal namespace's name (children started in "the same
+  // namespace" record it); empty for runs folded from history.
+  string namespace_name = 34;
+  // The request IDs of the last signals (at most 100): a signal repeated
+  // with one of them is a retry and is not written again (D2089).
+  repeated string signal_request_ids = 35;
+}
+
+message ChildInfo {
+  int64 initiated_event_id = 1;
+  // 0 until the child has started.
+  int64 started_event_id = 2;
+  string namespace = 3;
+  string namespace_id = 4;
+  string workflow_id = 5;
+  string run_id = 6;
+  string workflow_type = 7;
+  // temporal.api.enums.v1.ParentClosePolicy.
+  int32 parent_close_policy = 8;
+}
+
+message ParentInfo {
+  string namespace = 1;
+  string namespace_id = 2;
+  string workflow_id = 3;
+  string run_id = 4;
+  int64 initiated_event_id = 5;
+}
+
+message ExternalInfo {
+  int64 initiated_event_id = 1;
+  string namespace = 2;
+  string namespace_id = 3;
+  string workflow_id = 4;
+  string run_id = 5;
+}
+
+// Where a workflow update is in its lifecycle (Temporal's update protocol:
+// admitted -> sent with a workflow task -> accepted or rejected by the
+// worker -> completed).
+enum UpdateState {
+  UPDATE_STATE_UNSPECIFIED = 0;
+  // Admitted by the gateway; not yet handed to a worker.
+  UPDATE_STATE_ADMITTED = 1;
+  // Its request message went out with the workflow task `sent_in_wft`.
+  UPDATE_STATE_SENT = 2;
+  // The worker accepted it (`WorkflowExecutionUpdateAccepted` written).
+  UPDATE_STATE_ACCEPTED = 3;
+  // The worker responded (`WorkflowExecutionUpdateCompleted` written).
+  UPDATE_STATE_COMPLETED = 4;
+  // The worker's validator rejected it; nothing was written to history.
+  UPDATE_STATE_REJECTED = 5;
+  // The run closed first. Without an outcome the caller gets "workflow
+  // execution already completed"; with one (it had been accepted) the
+  // outcome is the failure Temporal reports.
+  UPDATE_STATE_ABORTED = 6;
+}
+
+message UpdateInfo {
+  string update_id = 1;
+  UpdateState state = 2;
+  // The request as admitted (the SDK echoes it back in its acceptance, or
+  // the gateway fills it in).
+  .temporal.api.update.v1.Request request = 3;
+  // The scheduled event ID of the workflow task the request went out with.
+  int64 sent_in_wft = 4;
+  int64 accepted_event_id = 5;
+  int64 completed_event_id = 6;
+  // The outcome of a rejected or aborted update (a completed one's outcome
+  // is in its completed event).
+  .temporal.api.update.v1.Outcome outcome = 7;
+  google.protobuf.Timestamp admitted_time = 8;
+}
+
+message WorkflowTaskInfo {
+  int64 scheduled_event_id = 1;
+  // 0 until a poll starts it.
+  int64 started_event_id = 2;
+  int32 attempt = 3;
+  // The request ID of the poll that started it (a retried poll with the
+  // same request ID gets the same task).
+  string request_id = 4;
+  string identity = 5;
+  google.protobuf.Timestamp scheduled_time = 6;
+  google.protobuf.Timestamp started_time = 7;
+  google.protobuf.Duration start_to_close_timeout = 8;
+  string task_queue = 9;
+}
+
+message ActivityInfo {
+  int64 scheduled_event_id = 1;
+  string activity_id = 2;
+  string activity_type = 3;
+  string task_queue = 4;
+  // The started event's ID once it is written; while the activity runs it
+  // is 0 and `started` is set: the started event is written together with
+  // the activity's outcome (as the corpus shows).
+  int64 started_event_id = 5;
+  bool started = 6;
+  int32 attempt = 7;
+  string started_identity = 8;
+  string started_request_id = 9;
+  bool cancel_requested = 10;
+  int64 cancel_requested_event_id = 11;
+  google.protobuf.Duration schedule_to_close_timeout = 12;
+  google.protobuf.Duration schedule_to_start_timeout = 13;
+  google.protobuf.Duration start_to_close_timeout = 14;
+  google.protobuf.Duration heartbeat_timeout = 15;
+  google.protobuf.Timestamp scheduled_time = 16;
+  google.protobuf.Timestamp started_time = 17;
+  .temporal.api.common.v1.Payloads heartbeat_details = 18;
+  google.protobuf.Timestamp last_heartbeat_time = 19;
+  .temporal.api.common.v1.RetryPolicy retry_policy = 20;
+  // When the current attempt was scheduled (the first attempt: the
+  // scheduled event's time).
+  google.protobuf.Timestamp attempt_scheduled_time = 21;
+  .temporal.api.failure.v1.Failure last_failure = 22;
+  // The build ID stamp of the poll that started the current attempt.
+  .temporal.api.common.v1.WorkerVersionStamp started_worker_version = 23;
+}
+
+message TimerInfo {
+  string timer_id = 1;
+  int64 started_event_id = 2;
+  google.protobuf.Timestamp fire_time = 3;
+}

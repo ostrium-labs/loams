@@ -9,6 +9,7 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
   checkPackages,
+  DEFAULT_PROJECTS,
   evaluateLicence,
   loadAllowList,
   parseSpdx,
@@ -186,19 +187,30 @@ test('npm_licences_allow_list_matches_deny_toml', () => {
   ]) {
     assert.ok(allow.has(id), id);
   }
-  // Owner rulings: no npm-only additions to deny.toml's list (SD1 T2-2), so BlueOak-1.0.0
-  // and Python-2.0 stay refused.
+  // Owner rulings: no npm-only additions to deny.toml's list (SD1 T2-2), so Python-2.0 stays
+  // refused. BlueOak-1.0.0 is allowed (owner, 2026-10-24; FT1 FT0-1-1 superseded).
   for (const id of [
     'GPL-3.0',
     'LGPL-3.0',
     'AGPL-3.0',
     'SSPL-1.0',
     'BUSL-1.1',
-    'BlueOak-1.0.0',
     'Python-2.0',
   ]) {
     assert.ok(!allow.has(id), id);
   }
+});
+
+test('npm_licences_allows_blueoak', () => {
+  // Owner, 2026-10-24 (FT1 FT0-1-1 superseded): BlueOak-1.0.0 is in deny.toml's allow list.
+  assert.ok(allow.has('BlueOak-1.0.0'));
+  assert.equal(evaluateLicence('BlueOak-1.0.0', allow).ok, true);
+  const res = runGate([['lru-cache', '11.5.3', 'BlueOak-1.0.0']]);
+  assert.equal(res.status, 0, res.stdout + res.stderr);
+});
+
+test('npm_licences_default_projects_include_factory', () => {
+  assert.ok(DEFAULT_PROJECTS.includes('@loams/factory'));
 });
 
 test('npm_licences_allows_0bsd', () => {

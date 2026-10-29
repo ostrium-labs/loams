@@ -1,0 +1,33 @@
+{
+  "name": "@loams/listing",
+  "version": "0.1.0",
+  "private": true,
+  "description": "loams-listing: lint Loams Marketplace listings, turn a package's loams.agent block into listing.json, and build the static index (design 73, plan MK1 Task 2).",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": { "node": "^22.22.2 || ^24.15.0 || >=26.0.0" },
+  "bin": { "loams-listing": "./bin/loams-listing.mjs" },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "files": ["bin", "dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vp test run"
+  },
+  "dependencies": {
+    "ajv": "8.20.0",
+    "sigstore": "5.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.6",
+    "typescript": "5.9.3",
+    "vite-plus": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
+  }
+}

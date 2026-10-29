@@ -6,7 +6,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { METHODS } from '../src/gen/methods';
 import { type Request, request } from '../src/requests';
 
@@ -30,6 +30,15 @@ const REQUESTS: Request[] = [
   request('ListHarnesses', {}),
   request('CancelInstall', { harness: 'codex' }),
   request('InstallHarness', { harness: 'codex' }),
+  request('FactoryList', {}),
+  request('FactoryTest', { app: 'forgejo' }),
+  request('FactoryQuery', { app: 'forgejo', op: 'repos', params: { limit: 20 } }),
+  request('FactoryConfigure', {
+    app: 'forgejo',
+    url: 'https://git.example.com',
+    fields: { token: 'pat-1' },
+  }),
+  request('FactoryRemove', { app: 'forgejo' }),
   request('GetTitleSettings', {}),
   request('SetTitleSettings', { harness: 'claude-code', model: null }),
   request('SetHarnessEnabled', { harness: 'pi', enabled: false }),
@@ -354,6 +363,91 @@ const REQUESTS: Request[] = [
   request('ApplyHarnessUpdate', { harness: 'codex' }),
   request('CancelHarnessUpdate', { harness: 'codex' }),
   request('DismissHarnessUpdate', { harness: 'codex', version: '0.41.0' }),
+  // The factory loop's tools (plan FT1, FT0 Task 4).
+  request('CreateRunWorktree', { chatId: 'chat-1', branch: 'factory/run-1/1', base: 'main' }),
+  request('GetThreadDiff', { chatId: 'chat-1', baseRef: 'main' }),
+  request('PostReviewComment', {
+    chatId: 'chat-1',
+    path: 'src/app.ts',
+    side: 'new',
+    line: 3,
+    body: 'Check the limit.',
+    diffChecksum: 'sum-1',
+  }),
+  request('OpenChangeRequest', {
+    chatId: 'chat-1',
+    provider: 'forgejo',
+    base: 'main',
+    title: 'Rate limit signup',
+    body: '',
+    draft: false,
+  }),
+  request('RequestApproval', {
+    chatId: 'chat-1',
+    kind: 'merge',
+    summary: 'Merge #7',
+    payload: { repo: 'dev/app', pr: 7, head_sha: 'abcdef0' },
+  }),
+  request('GetApproval', { chatId: 'chat-1', approvalId: 'fa-1' }),
+  request('MergeChangeRequest', {
+    chatId: 'chat-1',
+    approvalId: 'fa-1',
+    provider: 'forgejo',
+    number: 7,
+    headSha: 'abcdef0',
+  }),
+  request('GetChecks', { chatId: 'chat-1', provider: 'github', sha: 'abcdef0' }),
+  request('GetCheckLog', { chatId: 'chat-1', provider: 'github', logId: '901', lines: 200 }),
+  // MK1 Task 4b: MarketplaceService.
+  request('ListMarketplaceSources', {}),
+  request('AddMarketplaceSource', {
+    name: 'example',
+    url: 'https://example.org/market/index.json',
+    identity: 'https://github.com/example/market/.github/workflows/publish.yml@refs/heads/main',
+    issuer: null,
+  }),
+  request('RemoveMarketplaceSource', {
+    name: 'example',
+  }),
+  request('SearchListings', {
+    query: 'github',
+    kinds: ['mcp-server'],
+    frameworks: [],
+    languages: [],
+    minLevel: 'core',
+    tiers: ['firstParty'],
+    source: null,
+  }),
+  request('GetListing', {
+    id: 'ostrium/github-mcp-server',
+    version: null,
+    source: null,
+  }),
+  request('PlanInstall', {
+    id: 'ostrium/github-mcp-server',
+    version: '2.0.3',
+    source: 'official',
+  }),
+  request('InstallListing', {
+    id: 'ostrium/github-mcp-server',
+    version: '2.0.3',
+    source: 'official',
+    planDigest: '5f2b1c8e',
+    config: {},
+    secrets: {
+      token: 'ghp_example',
+    },
+  }),
+  request('UninstallListing', {
+    id: 'ostrium/github-mcp-server',
+  }),
+  request('ListInstalledListings', {}),
+  request('CheckListingUpdates', {}),
+  request('UpdateListing', {
+    id: 'ostrium/github-mcp-server',
+    version: null,
+    planDigest: '5f2b1c8e',
+  }),
 ];
 
 const file = join(import.meta.dirname, 'requests.json');

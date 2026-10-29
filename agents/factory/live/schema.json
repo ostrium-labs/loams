@@ -1,0 +1,11 @@
+{
+  "tables": [
+    {
+      "name": "factory_runs",
+      "indexes": [
+        { "name": "by_run", "fields": ["run"] },
+        { "name": "by_updated", "fields": ["updatedAt"] }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+SELECT toDecimal32(10000000000, 2)

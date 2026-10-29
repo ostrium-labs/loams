@@ -1,0 +1,327 @@
+{
+  "from": "2026-10-23T04:05:00Z",
+  "to": "2026-10-23T05:07:00Z",
+  "doPeriodic": [
+    {
+      "dimensions": {
+        "namespaceId": "a821b2792cf449aebb5dd7ce372da7f6",
+        "objectId": "1fbcaa7e4a21019e34ae1eb2021ff4bd8c020b32d2117284de24c406778efe16"
+      },
+      "sum": {
+        "activeTime": 16439,
+        "cpuTime": 5865,
+        "duration": 0.002104192,
+        "exceededCpuErrors": 0,
+        "inboundWebsocketMsgCount": 0,
+        "outboundWebsocketMsgCount": 0,
+        "rowsRead": 12,
+        "rowsWritten": 32,
+        "subrequests": 0
+      }
+    },
+    {
+      "dimensions": {
+        "namespaceId": "414c03523a3b4dbcb285fcd13d8b8013",
+        "objectId": "928777cdb069403b850455e7dad0bbb5c99569a3a79aca84632c4a53ed52eaa3"
+      },
+      "sum": {
+        "activeTime": 14350612,
+        "cpuTime": 607170,
+        "duration": 1.8368783359999998,
+        "exceededCpuErrors": 0,
+        "inboundWebsocketMsgCount": 0,
+        "outboundWebsocketMsgCount": 2392,
+        "rowsRead": 234,
+        "rowsWritten": 86,
+        "subrequests": 2
+      }
+    },
+    {
+      "dimensions": {
+        "namespaceId": "a821b2792cf449aebb5dd7ce372da7f6",
+        "objectId": "fb026e16ca9582ea0c5dfafba63f992ad91b852081d489bceca9a3593508ec0c"
+      },
+      "sum": {
+        "activeTime": 12663250,
+        "cpuTime": 61095,
+        "duration": 1.6208960000000001,
+        "exceededCpuErrors": 0,
+        "inboundWebsocketMsgCount": 0,
+        "outboundWebsocketMsgCount": 10,
+        "rowsRead": 256,
+        "rowsWritten": 105,
+        "subrequests": 2
+      }
+    },
+    {
+      "dimensions": {
+        "namespaceId": "e55674fa1ac349f58964790b40a80ae3",
+        "objectId": "47ad4a41d93861cc302da634fa206a9d86c2ab9f00241e34172c4f886c59cc22"
+      },
+      "sum": {
+        "activeTime": 307363267,
+        "cpuTime": 1435,
+        "duration": 39.342498176,
+        "exceededCpuErrors": 0,
+        "inboundWebsocketMsgCount": 0,
+        "outboundWebsocketMsgCount": 0,
+        "rowsRead": 0,
+        "rowsWritten": 4,
+        "subrequests": 0
+      }
+    },
+    {
+      "dimensions": {
+        "namespaceId": "414c03523a3b4dbcb285fcd13d8b8013",
+        "objectId": "fe51e0cf1a35b799cefbe3b0006a8ed033d9d4e3f9e1b478da7b996854a820ff"
+      },
+      "sum": {
+        "activeTime": 21860,
+        "cpuTime": 7263,
+        "duration": 0.0027980800000000005,
+        "exceededCpuErrors": 0,
+        "inboundWebsocketMsgCount": 0,
+        "outboundWebsocketMsgCount": 0,
+        "rowsRead": 20,
+        "rowsWritten": 40,
+        "subrequests": 0
+      }
+    },
+    {
+      "dimensions": {
+        "namespaceId": "414c03523a3b4dbcb285fcd13d8b8013",
+        "objectId": "982a6947746038247dbe06068dae7f5985f8d23ec382e684a41b51add913fdb4"
+      },
+      "sum": {
+        "activeTime": 12884,
+        "cpuTime": 5102,
+        "duration": 0.0016491519999999999,
+        "exceededCpuErrors": 0,
+        "inboundWebsocketMsgCount": 0,
+        "outboundWebsocketMsgCount": 0,
+        "rowsRead": 10,
+        "rowsWritten": 29,
+        "subrequests": 0
+      }
+    },
+    {
+      "dimensions": {
+        "namespaceId": "414c03523a3b4dbcb285fcd13d8b8013",
+        "objectId": "95c97050347603391dfc45ae022ed4392be17dfde119684529d09c43136a98c8"
+      },
+      "sum": {
+        "activeTime": 15187823,
+        "cpuTime": 498144,
+        "duration": 1.944041344,
+        "exceededCpuErrors": 0,
+        "inboundWebsocketMsgCount": 0,
+        "outboundWebsocketMsgCount": 2400,
+        "rowsRead": 466,
+        "rowsWritten": 211,
+        "subrequests": 2
+      }
+    },
+    {
+      "dimensions": {
+        "namespaceId": "e55674fa1ac349f58964790b40a80ae3",
+        "objectId": "8c81362019d52ca61e4008ff9e59ece6454e3263ea04e635dfd24e62068c3f8d"
+      },
+      "sum": {
+        "activeTime": 3720004505,
+        "cpuTime": 449268,
+        "duration": 476.16057664000004,
+        "exceededCpuErrors": 0,
+        "inboundWebsocketMsgCount": 2403,
+        "outboundWebsocketMsgCount": 2396,
+        "rowsRead": 257,
+        "rowsWritten": 91,
+        "subrequests": 2
+      }
+    }
+  ],
+  "doInvocations": [
+    {
+      "dimensions": {
+        "namespaceId": "414c03523a3b4dbcb285fcd13d8b8013",
+        "objectId": "95c97050347603391dfc45ae022ed4392be17dfde119684529d09c43136a98c8",
+        "scriptName": "loams-cloud-lc0",
+        "type": "hibernation"
+      },
+      "sum": {
+        "errors": 0,
+        "requests": 2446,
+        "wallTime": 3441590
+      }
+    },
+    {
+      "dimensions": {
+        "namespaceId": "414c03523a3b4dbcb285fcd13d8b8013",
+        "objectId": "982a6947746038247dbe06068dae7f5985f8d23ec382e684a41b51add913fdb4",
+        "scriptName": "loams-cloud-lc0",
+        "type": "hibernation"
+      },
+      "sum": {
+        "errors": 0,
+        "requests": 12,
+        "wallTime": 17969
+      }
+    },
+    {
+      "dimensions": {
+        "namespaceId": "a821b2792cf449aebb5dd7ce372da7f6",
+        "objectId": "fb026e16ca9582ea0c5dfafba63f992ad91b852081d489bceca9a3593508ec0c",
+        "scriptName": "loams-cloud-lc0",
+        "type": "hibernation"
+      },
+      "sum": {
+        "errors": 0,
+        "requests": 41,
+        "wallTime": 669330
+      }
+    },
+    {
+      "dimensions": {
+        "namespaceId": "414c03523a3b4dbcb285fcd13d8b8013",
+        "objectId": "928777cdb069403b850455e7dad0bbb5c99569a3a79aca84632c4a53ed52eaa3",
+        "scriptName": "loams-cloud-lc0",
+        "type": "http"
+      },
+      "sum": {
+        "errors": 45,
+        "requests": 53,
+        "wallTime": 84095129557
+      }
+    },
+    {
+      "dimensions": {
+        "namespaceId": "414c03523a3b4dbcb285fcd13d8b8013",
+        "objectId": "95c97050347603391dfc45ae022ed4392be17dfde119684529d09c43136a98c8",
+        "scriptName": "loams-cloud-lc0",
+        "type": "http"
+      },
+      "sum": {
+        "errors": 45,
+        "requests": 53,
+        "wallTime": 81717445829
+      }
+    },
+    {
+      "dimensions": {
+        "namespaceId": "a821b2792cf449aebb5dd7ce372da7f6",
+        "objectId": "fb026e16ca9582ea0c5dfafba63f992ad91b852081d489bceca9a3593508ec0c",
+        "scriptName": "loams-cloud-lc0",
+        "type": "http"
+      },
+      "sum": {
+        "errors": 44,
+        "requests": 52,
+        "wallTime": 80703242808
+      }
+    },
+    {
+      "dimensions": {
+        "namespaceId": "414c03523a3b4dbcb285fcd13d8b8013",
+        "objectId": "928777cdb069403b850455e7dad0bbb5c99569a3a79aca84632c4a53ed52eaa3",
+        "scriptName": "loams-cloud-lc0",
+        "type": "hibernation"
+      },
+      "sum": {
+        "errors": 0,
+        "requests": 2414,
+        "wallTime": 6034821
+      }
+    },
+    {
+      "dimensions": {
+        "namespaceId": "414c03523a3b4dbcb285fcd13d8b8013",
+        "objectId": "fe51e0cf1a35b799cefbe3b0006a8ed033d9d4e3f9e1b478da7b996854a820ff",
+        "scriptName": "loams-cloud-lc0",
+        "type": "hibernation"
+      },
+      "sum": {
+        "errors": 0,
+        "requests": 15,
+        "wallTime": 26538
+      }
+    },
+    {
+      "dimensions": {
+        "namespaceId": "a821b2792cf449aebb5dd7ce372da7f6",
+        "objectId": "1fbcaa7e4a21019e34ae1eb2021ff4bd8c020b32d2117284de24c406778efe16",
+        "scriptName": "loams-cloud-lc0",
+        "type": "hibernation"
+      },
+      "sum": {
+        "errors": 0,
+        "requests": 13,
+        "wallTime": 29935
+      }
+    },
+    {
+      "dimensions": {
+        "namespaceId": "e55674fa1ac349f58964790b40a80ae3",
+        "objectId": "8c81362019d52ca61e4008ff9e59ece6454e3263ea04e635dfd24e62068c3f8d",
+        "scriptName": "loams-cloud-lc0",
+        "type": "http"
+      },
+      "sum": {
+        "errors": 49,
+        "requests": 57,
+        "wallTime": 87227014603
+      }
+    }
+  ],
+  "workers": [
+    {
+      "dimensions": {
+        "scriptName": "loams-cloud-lc0",
+        "status": "responseStreamDisconnected"
+      },
+      "quantiles": {
+        "cpuTimeP50": 1462,
+        "cpuTimeP99": 1713
+      },
+      "sum": {
+        "cpuTimeUs": 6445,
+        "errors": 0,
+        "requests": 5,
+        "subrequests": 5,
+        "wallTime": 8924101258
+      }
+    },
+    {
+      "dimensions": {
+        "scriptName": "loams-cloud-lc0",
+        "status": "clientDisconnected"
+      },
+      "quantiles": {
+        "cpuTimeP50": 1142,
+        "cpuTimeP99": 2446
+      },
+      "sum": {
+        "cpuTimeUs": 177946,
+        "errors": 0,
+        "requests": 152,
+        "subrequests": 152,
+        "wallTime": 259424559314
+      }
+    },
+    {
+      "dimensions": {
+        "scriptName": "loams-cloud-lc0",
+        "status": "success"
+      },
+      "quantiles": {
+        "cpuTimeP50": 1203,
+        "cpuTimeP99": 3418
+      },
+      "sum": {
+        "cpuTimeUs": 34961,
+        "errors": 0,
+        "requests": 27,
+        "subrequests": 26,
+        "wallTime": 7871959
+      }
+    }
+  ]
+}

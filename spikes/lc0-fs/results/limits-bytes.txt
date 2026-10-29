@@ -1,0 +1,22 @@
+usage: {'storage_bytes': 21119662, 'reserved_bytes': 0, 'file_count': 52, 'media_file_count': 0, 'video_file_count': 0}; storage limit 2048 MiB; file size 500 MiB
+upload b1 rc=0 in 122.142s:   "status": "copied" 
+  usage: {'storage_bytes': 545407662, 'reserved_bytes': 0, 'file_count': 53, 'media_file_count': 0, 'video_file_count': 0}
+upload b2 rc=0 in 131.968s:   "status": "copied" 
+  usage: {'storage_bytes': 1069695662, 'reserved_bytes': 0, 'file_count': 54, 'media_file_count': 0, 'video_file_count': 0}
+upload b3 rc=0 in 124.225s:   "status": "copied" 
+  usage: {'storage_bytes': 1593983662, 'reserved_bytes': 0, 'file_count': 55, 'media_file_count': 0, 'video_file_count': 0}
+upload b4 rc=0 in 121.749s:   "status": "copied" 
+  usage: {'storage_bytes': 2118271662, 'reserved_bytes': 0, 'file_count': 56, 'media_file_count': 0, 'video_file_count': 0}
+upload b5 rc=1 in 2.246s: ti [ERROR]: fs cp: tenant storage quota exceeded: server limit=2147483648 used=2118271662 reserved=0 pending=0 delta=524288000 
+  usage: {'storage_bytes': 2118271662, 'reserved_bytes': 0, 'file_count': 56, 'media_file_count': 0, 'video_file_count': 0}
+-- small write at the storage limit:
+}
+-- read at the storage limit:
+
+ti [ERROR]: --offset and --length must be provided together
+seed-a
+-- one file over 500 MiB (501 MiB), after freeing space:
+  usage after delete: {'storage_bytes': 21119662, 'reserved_bytes': 0, 'file_count': 52, 'media_file_count': 0, 'video_file_count': 0}
+ti [ERROR]: fs cp: tenant file size quota exceeded: server limit=524288000 requested=525336576
+  usage: {'storage_bytes': 21119662, 'reserved_bytes': 0, 'file_count': 52, 'media_file_count': 0, 'video_file_count': 0}
+  usage after cleanup: {'storage_bytes': 21119662, 'reserved_bytes': 0, 'file_count': 52, 'media_file_count': 0, 'video_file_count': 0}

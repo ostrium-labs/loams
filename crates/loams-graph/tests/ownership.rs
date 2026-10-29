@@ -30,7 +30,7 @@ use loams_common::meta::{
 use loams_graph::catalog::NewGraph;
 use loams_graph::consistency::Consistency as ReadConsistency;
 use loams_graph::durable::{ConsistencyToken, GroupCommit};
-use loams_graph::owner::{ForwardMethod, OwnerConfig, owner_lease_key};
+use loams_graph::owner::{ForwardMethod, OwnerConfig, Placement, owner_lease_key};
 use loams_graph::service::admin::GraphAdmin;
 use loams_proto::loams::graph::v1 as pb;
 use loams_store::{Fault, FaultyStore, Op, Store};
@@ -382,6 +382,68 @@ async fn an_unreachable_owner_is_unavailable_until_its_lease_moves() {
         .await
         .expect("served by the new owner");
     assert_eq!(values(&cluster.node(new).admin, "kg").await.len(), 2);
+}
+
+/// #1085: a renewal the owner sent just before its renewals paused can land after, and move the
+/// lease's deadline on. Waiting out the lease waits that out too, so the next node finds the lease
+/// free. Before the fix the wait read the deadline once, returned at the old deadline, and the
+/// survivor of `link_apply_exactly_once_under_kill` was answered "served by node N now; retry".
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn waiting_out_a_lease_outlasts_a_renewal_that_lands_late() {
+    let cluster = Cluster::start(2, SHORT).await;
+    create(&cluster.node(1).admin, "kg").await;
+    let graph = cluster.graph_id("kg").await;
+    let old = cluster.preferred(graph);
+    let new = 3 - old;
+    run(&cluster.node(old).admin, "kg", "INSERT (:N {k: 1, v: 'a'})").await;
+
+    cluster.node(old).ownership.pause_renewals(true);
+    cluster.forwarder.cut_off(old);
+    cluster
+        .node(new)
+        .membership
+        .set(vec![cluster.node(new).me.clone()]);
+    // The renewal in flight lands half a second before the deadline the lease had when the
+    // renewals paused: it holds the lease about a second past that deadline.
+    let key = owner_lease_key(graph);
+    let paused = cluster
+        .meta
+        .lease(Consistency::Linearizable, &key)
+        .await
+        .expect("read")
+        .expect("a lease");
+    let late = {
+        let (meta, key, paused) = (cluster.meta.clone(), key.clone(), paused.clone());
+        tokio::spawn(async move {
+            let lands = paused.deadline_ms.saturating_sub(500);
+            while meta.now_ms() < lands {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            meta.renew_lease(
+                &key,
+                paused.owner.as_deref().expect("an owner"),
+                paused.epoch,
+                SHORT.ttl,
+            )
+            .await
+        })
+    };
+
+    wait_out_the_lease(&cluster, graph).await;
+    let renewed = late
+        .await
+        .expect("join")
+        .expect("the late renewal lands while the lease is held");
+    assert!(renewed.deadline_ms > paused.deadline_ms);
+    assert!(
+        cluster.meta.now_ms() >= renewed.deadline_ms,
+        "the wait ended at the old deadline, before the late renewal's"
+    );
+    // The next node takes the graph at once, as the links' survivor does.
+    assert!(matches!(
+        cluster.node(new).ownership.place(graph, false).await,
+        Ok(Placement::Here(_))
+    ));
 }
 
 /// A forwarded call reaching a node that is not the owner is refused, never sent on: two nodes
