@@ -98,7 +98,7 @@ WITH (
     catalog.uri = 'http://lakekeeper:8181/catalog',
     catalog.name = 'loams',
     warehouse.path = 'loams',
-    catalog.header = 'X-Iceberg-Access-Delegation=vended-credentials',
+    vended_credentials = 'true',
     database.name = 'ns_default',
     table.name = 'clicks_per_minute',
     create_table_if_not_exists = 'true',

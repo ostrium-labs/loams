@@ -1,11 +1,11 @@
-//! `loams.meter.v1.LeaseService` (internal) over [`LeaseServer`].
+//! `loams.meter.internal.v1.LeaseService` over [`LeaseServer`].
 
 use std::sync::Arc;
 
 use connectrpc::{RequestContext, Response, ServiceRequest, ServiceResult};
 use loams_meter_core::{Amount, FeatureKey, LeaseId, LeaseReport, SubjectKey};
-use loams_proto::loams::meter::v1 as pb;
-use loams_proto::loams::meter::v1::{LeaseService, LeaseServiceExt};
+use loams_proto::loams::meter::internal::v1 as pb;
+use loams_proto::loams::meter::internal::v1::{LeaseService, LeaseServiceExt};
 
 use super::{IntoConnect, amount_in, caller, timestamp};
 use crate::error::MeterError;

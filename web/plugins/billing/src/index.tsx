@@ -41,15 +41,8 @@ export { BillingBanner, BillingBannerView } from './banner-view.js';
 export { burnOrder, EntitlementsPage } from './entitlements.js';
 export * from './format.js';
 export { BillingLayout, SECTIONS } from './layout.js';
-export {
-  BillingError,
-  createMockBillingClient,
-  type MockBillingOptions,
-} from './mock.js';
-export {
-  createMockOperatorClient,
-  type MockOperatorOptions,
-} from './operator/mock.js';
+export { BillingError, createMockBillingClient, type MockBillingOptions } from './mock.js';
+export { createMockOperatorClient, type MockOperatorOptions } from './operator/mock.js';
 export {
   CustomerPage,
   CustomersPage,

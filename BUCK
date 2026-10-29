@@ -126,15 +126,6 @@ export_file(
 )
 
 export_file(
-    name = "file=deploy+flink+connector-jars.toml",
-    src = "deploy/flink/connector-jars.toml",
-    mode = "reference",
-    visibility = [
-        "PUBLIC",
-    ],
-)
-
-export_file(
     name = "file=deploy+flink+k8s+config.yaml",
     src = "deploy/flink/k8s/config.yaml",
     mode = "reference",

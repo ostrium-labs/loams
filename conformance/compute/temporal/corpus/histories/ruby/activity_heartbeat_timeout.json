@@ -1,0 +1,214 @@
+{
+  "events":  [
+    {
+      "eventId":  "1",
+      "eventTime":  "2026-10-28T12:48:20.531275020Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+      "taskId":  "1049179",
+      "workflowExecutionStartedEventAttributes":  {
+        "workflowType":  {
+          "name":  "activity_heartbeat_timeout"
+        },
+        "taskQueue":  {
+          "name":  "corpus-ruby",
+          "kind":  "TASK_QUEUE_KIND_NORMAL"
+        },
+        "input":  {},
+        "workflowTaskTimeout":  "10s",
+        "originalExecutionRunId":  "01a1828d-e833-7430-af0c-f44a09dc6879",
+        "identity":  "304@1566fbb5e9e4",
+        "firstExecutionRunId":  "01a1828d-e833-7430-af0c-f44a09dc6879",
+        "attempt":  1,
+        "firstWorkflowTaskBackoff":  "0s",
+        "workflowId":  "corpus-ruby-activity_heartbeat_timeout"
+      }
+    },
+    {
+      "eventId":  "2",
+      "eventTime":  "2026-10-28T12:48:20.531314899Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId":  "1049180",
+      "workflowTaskScheduledEventAttributes":  {
+        "taskQueue":  {
+          "name":  "corpus-ruby",
+          "kind":  "TASK_QUEUE_KIND_NORMAL"
+        },
+        "startToCloseTimeout":  "10s",
+        "attempt":  1
+      }
+    },
+    {
+      "eventId":  "3",
+      "eventTime":  "2026-10-28T12:48:20.533096750Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "taskId":  "1049185",
+      "workflowTaskStartedEventAttributes":  {
+        "scheduledEventId":  "2",
+        "identity":  "304@1566fbb5e9e4",
+        "requestId":  "9e004f1d-b530-4902-9caa-f8458b097fb3",
+        "historySizeBytes":  "272",
+        "workerVersion":  {
+          "buildId":  "8c08acf3cbd117cfd4073b0011aee61c"
+        }
+      }
+    },
+    {
+      "eventId":  "4",
+      "eventTime":  "2026-10-28T12:48:20.536820334Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "taskId":  "1049189",
+      "workflowTaskCompletedEventAttributes":  {
+        "scheduledEventId":  "2",
+        "startedEventId":  "3",
+        "identity":  "304@1566fbb5e9e4",
+        "workerVersion":  {
+          "buildId":  "8c08acf3cbd117cfd4073b0011aee61c"
+        },
+        "sdkMetadata":  {
+          "coreUsedFlags":  [
+            3,
+            1,
+            2
+          ],
+          "sdkName":  "temporal-ruby",
+          "sdkVersion":  "1.9.0"
+        },
+        "meteringMetadata":  {}
+      }
+    },
+    {
+      "eventId":  "5",
+      "eventTime":  "2026-10-28T12:48:20.536887033Z",
+      "eventType":  "EVENT_TYPE_ACTIVITY_TASK_SCHEDULED",
+      "taskId":  "1049190",
+      "activityTaskScheduledEventAttributes":  {
+        "activityId":  "1",
+        "activityType":  {
+          "name":  "sleep_for"
+        },
+        "taskQueue":  {
+          "name":  "corpus-ruby",
+          "kind":  "TASK_QUEUE_KIND_NORMAL"
+        },
+        "header":  {},
+        "input":  {
+          "payloads":  [
+            {
+              "metadata":  {
+                "encoding":  "anNvbi9wbGFpbg=="
+              },
+              "data":  "NTAwMA=="
+            }
+          ]
+        },
+        "scheduleToCloseTimeout":  "0s",
+        "scheduleToStartTimeout":  "0s",
+        "startToCloseTimeout":  "30s",
+        "heartbeatTimeout":  "1s",
+        "workflowTaskCompletedEventId":  "4",
+        "retryPolicy":  {
+          "initialInterval":  "1s",
+          "backoffCoefficient":  2,
+          "maximumInterval":  "100s",
+          "maximumAttempts":  1
+        },
+        "useWorkflowBuildId":  true
+      }
+    },
+    {
+      "eventId":  "6",
+      "eventTime":  "2026-10-28T12:48:23.508895496Z",
+      "eventType":  "EVENT_TYPE_ACTIVITY_TASK_STARTED",
+      "taskId":  "1049197",
+      "activityTaskStartedEventAttributes":  {
+        "scheduledEventId":  "5",
+        "identity":  "304@1566fbb5e9e4",
+        "requestId":  "497cd36b-f22f-4b8d-875a-fb0c2db4081a",
+        "attempt":  1
+      }
+    },
+    {
+      "eventId":  "7",
+      "eventTime":  "2026-10-28T12:48:24.510799678Z",
+      "eventType":  "EVENT_TYPE_ACTIVITY_TASK_TIMED_OUT",
+      "taskId":  "1049198",
+      "activityTaskTimedOutEventAttributes":  {
+        "failure":  {
+          "message":  "activity Heartbeat timeout",
+          "source":  "Server",
+          "timeoutFailureInfo":  {
+            "timeoutType":  "TIMEOUT_TYPE_HEARTBEAT"
+          }
+        },
+        "scheduledEventId":  "5",
+        "startedEventId":  "6",
+        "retryState":  "RETRY_STATE_MAXIMUM_ATTEMPTS_REACHED"
+      }
+    },
+    {
+      "eventId":  "8",
+      "eventTime":  "2026-10-28T12:48:24.510829262Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId":  "1049199",
+      "workflowTaskScheduledEventAttributes":  {
+        "taskQueue":  {
+          "name":  "304@1566fbb5e9e4-ad1f3803f5f14c98ab52d71d5a226d77",
+          "kind":  "TASK_QUEUE_KIND_STICKY",
+          "normalName":  "corpus-ruby"
+        },
+        "startToCloseTimeout":  "10s",
+        "attempt":  1
+      }
+    },
+    {
+      "eventId":  "9",
+      "eventTime":  "2026-10-28T12:48:24.513374528Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "taskId":  "1049203",
+      "workflowTaskStartedEventAttributes":  {
+        "scheduledEventId":  "8",
+        "identity":  "304@1566fbb5e9e4",
+        "requestId":  "1a58c693-132e-4f87-9ab3-ca2447fd89f0",
+        "historySizeBytes":  "905",
+        "workerVersion":  {
+          "buildId":  "8c08acf3cbd117cfd4073b0011aee61c"
+        }
+      }
+    },
+    {
+      "eventId":  "10",
+      "eventTime":  "2026-10-28T12:48:24.520745362Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "taskId":  "1049207",
+      "workflowTaskCompletedEventAttributes":  {
+        "scheduledEventId":  "8",
+        "startedEventId":  "9",
+        "identity":  "304@1566fbb5e9e4",
+        "workerVersion":  {
+          "buildId":  "8c08acf3cbd117cfd4073b0011aee61c"
+        },
+        "sdkMetadata":  {},
+        "meteringMetadata":  {}
+      }
+    },
+    {
+      "eventId":  "11",
+      "eventTime":  "2026-10-28T12:48:24.520786914Z",
+      "eventType":  "EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED",
+      "taskId":  "1049208",
+      "workflowExecutionCompletedEventAttributes":  {
+        "result":  {
+          "payloads":  [
+            {
+              "metadata":  {
+                "encoding":  "anNvbi9wbGFpbg=="
+              },
+              "data":  "IlRJTUVPVVRfVFlQRV9IRUFSVEJFQVQi"
+            }
+          ]
+        },
+        "workflowTaskCompletedEventId":  "10"
+      }
+    }
+  ]
+}

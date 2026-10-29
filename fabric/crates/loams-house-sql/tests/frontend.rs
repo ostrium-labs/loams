@@ -299,22 +299,67 @@ fn unknown_tables_are_60() {
 }
 
 #[test]
-fn casts_to_clickhouse_types_plan() {
-    let (cat, _) = catalog();
-    let p = prepare(
-        "SELECT CAST(a, 'Int8') AS x, _CAST(b, 'LowCardinality(String)') AS y FROM t",
+fn casts_become_the_engines_cast_function() {
+    // Every form of cast is `_CAST(x, 'T')`, ClickHouse's cast semantics in
+    // the engine (plan HE1 Task 33, R33.2), never DataFusion's cast.
+    for (sql, expected) in [
+        ("SELECT CAST(a, 'Int8') AS x FROM t", "\"_CAST\"(a, 'Int8')"),
+        (
+            "SELECT CAST(a AS UInt8) AS x FROM t",
+            "\"_CAST\"(a, 'UInt8')",
+        ),
+        (
+            "SELECT _CAST(b, 'LowCardinality(String)') AS y FROM t",
+            "\"_CAST\"(b, 'LowCardinality(String)')",
+        ),
+        ("SELECT a::String AS x FROM t", "\"_CAST\"(a, 'String')"),
+        ("SELECT 1::String AS x", "'1' AS"),
+        (
+            "SELECT CAST(a AS Nullable(Int64)) AS x FROM t",
+            "\"_CAST\"(a, 'Nullable(Int64)')",
+        ),
+    ] {
+        let g = guard(sql, &[]).unwrap();
+        let text = g.statement.to_string();
+        assert!(text.contains(expected), "{sql}: {text}");
+        assert!(!text.contains("CAST(a AS"), "{sql}: {text}");
+    }
+    let g = guard("SELECT CAST(a AS UInt8) FROM t", &[]).unwrap();
+    assert!(g.resolution.functions.contains("CAST"));
+    assert_eq!(
+        guard("SELECT TRY_CAST(a AS UInt8) FROM t", &[])
+            .unwrap_err()
+            .code,
+        48
+    );
+}
+
+#[test]
+fn case_with_an_operand_is_case_with_expression() {
+    let g = guard(
+        "SELECT CASE a WHEN 1 THEN 'one' WHEN 2 THEN 'two' END AS c FROM t",
         &[],
-        &cat,
-        &Registry::default(),
-        "db",
     )
     .unwrap();
-    let schema = p.plan.schema();
-    assert_eq!(schema.field(0).data_type(), &DataType::Int8);
+    let text = g.statement.to_string();
     assert!(
-        matches!(schema.field(1).data_type(), DataType::Dictionary(..)),
-        "{:?}",
-        schema.field(1)
+        text.contains("\"caseWithExpression\"(a, 1, 'one', 2, 'two', NULL)"),
+        "{text}"
+    );
+    let g = guard(
+        "SELECT CASE a WHEN 1 THEN 'one' ELSE 'other' END FROM t",
+        &[],
+    )
+    .unwrap();
+    let text = g.statement.to_string();
+    assert!(
+        text.contains("\"caseWithExpression\"(a, 1, 'one', 'other')"),
+        "{text}"
+    );
+    // The column keeps ClickHouse's name.
+    assert!(
+        text.contains("AS \"caseWithExpression(a, 1, 'one', 'other')\""),
+        "{text}"
     );
 }
 

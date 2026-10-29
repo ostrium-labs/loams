@@ -43,5 +43,7 @@ pub fn registry() -> Registry {
     loams_house_exec::func::strings::register(&mut r);
     loams_house_exec::func::hash::register(&mut r);
     crate::system::functions::register(&mut r);
+    // Conversions, conditionals, maths and JSON (plan HE1 Task 33).
+    loams_house_exec::func::register_t33(&mut r);
     r
 }

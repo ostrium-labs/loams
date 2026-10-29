@@ -8429,6 +8429,8 @@ dependencies = [
  "loams-log",
  "loams-meta",
  "loams-meta-tikv",
+ "loams-meter",
+ "loams-meter-core",
  "loams-migrate",
  "loams-pg-control",
  "loams-postgres",
@@ -9422,8 +9424,10 @@ dependencies = [
 name = "loams-imperial"
 version = "0.1.2"
 dependencies = [
+ "loams-kv",
  "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -9696,6 +9700,7 @@ dependencies = [
  "loams-cloudevents",
  "loams-common",
  "loams-meter-core",
+ "loams-meter-house",
  "loams-proto",
  "proptest",
  "reqwest 0.13.5",
@@ -9759,6 +9764,7 @@ name = "loams-meter-export"
 version = "0.1.2"
 dependencies = [
  "async-trait",
+ "base64 0.23.1",
  "hex",
  "hmac 0.13.0",
  "reqwest 0.13.5",
@@ -9766,6 +9772,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "thiserror 2.0.21",
+ "time",
  "tokio",
  "tracing",
  "url",
@@ -10136,6 +10143,7 @@ name = "loams-sidebar-browser"
 version = "0.1.2"
 dependencies = [
  "base64 0.23.1",
+ "flate2",
  "futures",
  "serde",
  "serde_json",

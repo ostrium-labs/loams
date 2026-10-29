@@ -1,0 +1,27 @@
+{
+ "rule": "upper bound: cap x started hours at list (Dedicated assumed $4.00/CKU-h) + Metrics API data at $0.05/GB",
+ "tests": [
+  {
+   "test": "Basic x4: WAN matrix + in-region push to 25/50 eCKU (AWS, GCP, Azure Mumbai/Pune; AWS us-east-1)",
+   "resources": "aws-1 25 eCKU, 02:19-07:20 (left at 25 by a dead push script): $3.36/h x 6 h; gcp-1 50 eCKU, 02:19-07:20 (left at 50 after a state-file race): $6.86/h x 6 h; azure-1 50 eCKU, 02:39-02:45: $6.86/h x 1 h; Flink pools x3, 20 CFU, ~4 h: $12.60/h x 5 h; data 1,381 GB x $0.05",
+   "usd": 200.24
+  },
+  {
+   "test": "Standard x3: WAN latency/txn/throughput matrix, azure-2 throttle push",
+   "resources": "aws-2, gcp-2, azure-2 at 4 eCKU: $9.00/h x 6 h; the same at 1 eCKU: $2.25/h x 2 h; Flink pool azure2, 20 CFU: $4.20/h x 2 h; data 163 GB x $0.05",
+   "usd": 75.03
+  },
+  {
+   "test": "Dedicated x4 (1, 4, 2, 2 CKU): per-CKU produce/consume/request rate (incl. ~4.5 h idle in a session pause)",
+   "resources": "aws-d1 1 CKU: $4.00/h x 10 h; aws-d4 4 CKU: $16.00/h x 10 h; gcp-d2 2 CKU: $8.00/h x 10 h; azure-d2 2 CKU: $8.00/h x 10 h; aws-d2 2 CKU, deleted while provisioning: $8.00/h x 1 h; Flink pools 50+20+30+30 CFU (to the guard's 15:13Z pool deadline): $27.30/h x 4 h; data 1,303 GB x $0.05",
+   "usd": 542.36
+  },
+  {
+   "test": "Cluster Linking GCP->AWS and Azure->AWS (2 links, both sides)",
+   "resources": "4 link-sides x $0.25: $1.00/h x 5 h",
+   "usd": 5.0
+  }
+ ],
+ "total_usd": 822.64,
+ "guard_estimate_usd": 814.54
+}
