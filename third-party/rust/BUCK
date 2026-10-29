@@ -3700,6 +3700,18 @@ cargo.rust_library(
     visibility = [],
 )
 
+cargo_alias(
+    name = "aws-lc-rs",
+    actual = ":aws-lc-rs-1",
+    platforms = [
+        "linux-arm64",
+        "linux-x86_64",
+        "macos-arm64",
+        "macos-x86_64",
+    ],
+    visibility = ["PUBLIC"],
+)
+
 http_archive(
     name = "aws-lc-rs-1.18.1.crate",
     sha256 = "b281d307588d634de920874890732659e2e7672f72b5e10e81badc1a8a83621e",
@@ -40983,6 +40995,7 @@ cargo.rust_library(
         "crypto",
         "pem",
         "ring",
+        "x509-parser",
     ],
     named_deps = {
         "pki_types": ":rustls-pki-types-1",
@@ -40993,6 +41006,7 @@ cargo.rust_library(
         ":pem-4",
         ":ring-0.17",
         ":time-0.3",
+        ":x509-parser-0.18",
         ":yasna-0.6",
     ],
 )
