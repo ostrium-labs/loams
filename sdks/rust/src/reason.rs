@@ -93,6 +93,14 @@ pub enum Reason {
     EndpointExistsForBranch,
     /// The compute could not be started.
     ComputeStartFailed,
+    /// A Postgres major new projects may not use.
+    UnsupportedPgVersion,
+    /// A beta Postgres major without the opt-in.
+    BetaMajorRequiresOptIn,
+    /// A compute image of another major than its timeline.
+    ComputeMajorMismatchRefused,
+    /// An import of a data directory with data checksums on.
+    ImportChecksumsEnabled,
     /// A create or resize would go past a quota.
     QuotaExceeded,
     /// The storage layer the call needs is down.
@@ -328,6 +336,10 @@ impl Reason {
         Reason::LsnOutOfRetention,
         Reason::EndpointExistsForBranch,
         Reason::ComputeStartFailed,
+        Reason::UnsupportedPgVersion,
+        Reason::BetaMajorRequiresOptIn,
+        Reason::ComputeMajorMismatchRefused,
+        Reason::ImportChecksumsEnabled,
         Reason::QuotaExceeded,
         Reason::StorageUnavailable,
         Reason::SecretAlreadyIssued,
@@ -466,6 +478,10 @@ impl Reason {
             Reason::LsnOutOfRetention => "lsn_out_of_retention",
             Reason::EndpointExistsForBranch => "endpoint_exists_for_branch",
             Reason::ComputeStartFailed => "compute_start_failed",
+            Reason::UnsupportedPgVersion => "unsupported_pg_version",
+            Reason::BetaMajorRequiresOptIn => "beta_major_requires_opt_in",
+            Reason::ComputeMajorMismatchRefused => "compute_major_mismatch_refused",
+            Reason::ImportChecksumsEnabled => "import_checksums_enabled",
             Reason::QuotaExceeded => "quota_exceeded",
             Reason::StorageUnavailable => "storage_unavailable",
             Reason::SecretAlreadyIssued => "secret_already_issued",
@@ -591,6 +607,9 @@ impl Reason {
             | Reason::HouseReadOnly
             | Reason::BranchHasChildren
             | Reason::BranchProtected
+            | Reason::BetaMajorRequiresOptIn
+            | Reason::ComputeMajorMismatchRefused
+            | Reason::ImportChecksumsEnabled
             | Reason::LsnOutOfRetention
             | Reason::SecretAlreadyIssued
             | Reason::LiveDeployConflict
@@ -654,6 +673,7 @@ impl Reason {
             | Reason::InvalidConsistencyToken
             | Reason::NamespaceRequired
             | Reason::SqlParamCount
+            | Reason::UnsupportedPgVersion
             | Reason::EnvUnsealed
             | Reason::MemoryBlockTooLarge
             | Reason::MemoryContentTooLarge

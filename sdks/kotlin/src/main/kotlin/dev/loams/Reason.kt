@@ -152,6 +152,18 @@ enum class Reason {
     /** `compute_start_failed` (docs/api/reasons.md). */
     COMPUTE_START_FAILED,
 
+    /** `unsupported_pg_version` (docs/api/reasons.md). */
+    UNSUPPORTED_PG_VERSION,
+
+    /** `beta_major_requires_opt_in` (docs/api/reasons.md). */
+    BETA_MAJOR_REQUIRES_OPT_IN,
+
+    /** `compute_major_mismatch_refused` (docs/api/reasons.md). */
+    COMPUTE_MAJOR_MISMATCH_REFUSED,
+
+    /** `import_checksums_enabled` (docs/api/reasons.md). */
+    IMPORT_CHECKSUMS_ENABLED,
+
     /** `quota_exceeded` (docs/api/reasons.md). */
     QUOTA_EXCEEDED,
 
@@ -496,6 +508,10 @@ object ReasonRegistry {
         Reason.LSN_OUT_OF_RETENTION,
         Reason.ENDPOINT_EXISTS_FOR_BRANCH,
         Reason.COMPUTE_START_FAILED,
+        Reason.UNSUPPORTED_PG_VERSION,
+        Reason.BETA_MAJOR_REQUIRES_OPT_IN,
+        Reason.COMPUTE_MAJOR_MISMATCH_REFUSED,
+        Reason.IMPORT_CHECKSUMS_ENABLED,
         Reason.QUOTA_EXCEEDED,
         Reason.STORAGE_UNAVAILABLE,
         Reason.SECRET_ALREADY_ISSUED,
@@ -631,6 +647,10 @@ object ReasonRegistry {
         Reason.LSN_OUT_OF_RETENTION to "lsn_out_of_retention",
         Reason.ENDPOINT_EXISTS_FOR_BRANCH to "endpoint_exists_for_branch",
         Reason.COMPUTE_START_FAILED to "compute_start_failed",
+        Reason.UNSUPPORTED_PG_VERSION to "unsupported_pg_version",
+        Reason.BETA_MAJOR_REQUIRES_OPT_IN to "beta_major_requires_opt_in",
+        Reason.COMPUTE_MAJOR_MISMATCH_REFUSED to "compute_major_mismatch_refused",
+        Reason.IMPORT_CHECKSUMS_ENABLED to "import_checksums_enabled",
         Reason.QUOTA_EXCEEDED to "quota_exceeded",
         Reason.STORAGE_UNAVAILABLE to "storage_unavailable",
         Reason.SECRET_ALREADY_ISSUED to "secret_already_issued",
@@ -770,6 +790,9 @@ object ReasonRegistry {
         Reason.PROJECT_NOT_FOUND to Code.NOT_FOUND,
         Reason.BRANCH_HAS_CHILDREN to Code.FAILED_PRECONDITION,
         Reason.BRANCH_PROTECTED to Code.FAILED_PRECONDITION,
+        Reason.BETA_MAJOR_REQUIRES_OPT_IN to Code.FAILED_PRECONDITION,
+        Reason.COMPUTE_MAJOR_MISMATCH_REFUSED to Code.FAILED_PRECONDITION,
+        Reason.IMPORT_CHECKSUMS_ENABLED to Code.FAILED_PRECONDITION,
         Reason.LSN_OUT_OF_RETENTION to Code.FAILED_PRECONDITION,
         Reason.ENDPOINT_EXISTS_FOR_BRANCH to Code.ALREADY_EXISTS,
         Reason.COMPUTE_START_FAILED to Code.UNAVAILABLE,
@@ -827,6 +850,7 @@ object ReasonRegistry {
         Reason.INVALID_CONSISTENCY_TOKEN to Code.INVALID_ARGUMENT,
         Reason.NAMESPACE_REQUIRED to Code.INVALID_ARGUMENT,
         Reason.SQL_PARAM_COUNT to Code.INVALID_ARGUMENT,
+        Reason.UNSUPPORTED_PG_VERSION to Code.INVALID_ARGUMENT,
         Reason.LIVE_INDEX_NOT_READY to Code.FAILED_PRECONDITION,
         Reason.LIVE_APP_DISABLED to Code.FAILED_PRECONDITION,
         Reason.LIVE_APP_EXISTS to Code.FAILED_PRECONDITION,
