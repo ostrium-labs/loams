@@ -149,6 +149,7 @@ jobs:
               - "crates/loams-knowledge/**"
               - "crates/loams-walrus/**"
               - "crates/loams-agentd-marketplace/**"
+              - "crates/loams-confluent/**"
               - "crates/loams-cache/**"
               - "crates/loams-collection/**"
               - "crates/loams-common/**"
@@ -233,10 +234,12 @@ jobs:
               # The bundle store of deployments (LV1 plan Task 6).
               - "crates/loams-store/**"
               - "proto/loams/live/**"
-            # The Temporal gateway's store on Postgres (DX1 Task 5).
+            # The Temporal gateway's store on Postgres (DX1 Task 5). The
+            # frontend is the store's caller (D2065).
             temporal-store:
               - *toolchain
               - "crates/loams-temporal-store/**"
+              - "crates/loams-temporal-frontend/**"
             durable:
               - *toolchain
               - "crates/loams-durable/**"
@@ -494,12 +497,24 @@ jobs:
       # build free of the git-pinned tikv-client.
       # The product features (git, buildcache, registry, sqldb, postgres) are linted here too:
       # dev once stopped building with `--features git` and no fast-tier job noticed (GT1 T18.4).
-      - name: clippy (loams with the tikv, graph, product and optional listener features)
-        run: cargo clippy -p loams --all-targets --features tikv,live-tikv,durable-tikv,stream-grpc,pgwire,mysql-wire,graph,git,buildcache,registry,sqldb,postgres --locked -- -D warnings
+      - name: clippy (loams with the tikv, graph, product, spark and optional listener features)
+        run: cargo clippy -p loams --all-targets --features tikv,live-tikv,durable-tikv,stream-grpc,pgwire,mysql-wire,graph,git,buildcache,registry,sqldb,postgres,spark --locked -- -D warnings
+      # loams-spark's Kubernetes runner (design 81 SP-b) is behind its own feature.
+      - name: clippy (loams-spark kubernetes runner)
+        run: cargo clippy -p loams-spark --features kubernetes --all-targets --locked -- -D warnings
       # loams-gateway's Temporal API module (design 74, plan DX1 Task 9) is
       # behind its own feature.
       - name: clippy (loams-gateway temporal module)
         run: cargo clippy -p loams-gateway --features temporal --all-targets --locked -- -D warnings
+      # Loams Meter's exporters are each behind a feature (ME1 Tasks 24-26).
+      - name: clippy (loams-meter-export, every exporter)
+        run: cargo clippy -p loams-meter-export --all-targets --all-features --locked -- -D warnings
+      # The loams-gateway image's feature set (deploy/release/Containerfile.loams-gateway).
+      - name: clippy (loams-gateway with the image's features)
+        run: cargo clippy -p loams-gateway --features spark,temporal --all-targets --locked -- -D warnings
+      # Its Redis module (design 77, plan KV2 Task 2), with the TiKV store.
+      - name: clippy (loams-gateway resp module)
+        run: cargo clippy -p loams-gateway -p loams-resp --features loams-gateway/resp-tikv --all-targets --locked -- -D warnings
       # The release images build `loams` with these feature sets (deploy/release/Containerfile.*);
       # `postgres,tikv` turns on loams-kv's TiKV store without loams-live's `tikv`, a combination
       # nothing else here builds (v0.1.0-preview.2's loams-pg-control image broke on it).
@@ -632,6 +647,10 @@ jobs:
           node-version-file: .nvmrc
       - name: workspace tests
         run: cargo nextest run --workspace --locked
+      # The exporters' tests against fake providers need their features
+      # (ME1 Tasks 24-26); the workspace run builds default features only.
+      - name: Loams Meter exporters against fake providers (every exporter feature)
+        run: cargo nextest run -p loams-meter-export --all-features --locked
 
   # The desktop agent daemon (design §50, DD1 Task 4). The headless guard
   # (D782) fails if a GUI, webview or audio crate enters loams-agentd's tree on
@@ -1370,10 +1389,12 @@ jobs:
   # DX1 Task 5: loams-temporal-store's contract tests on stock Postgres 17
   # (the PgStore leg; the MemStore leg runs in Rust: tests). Each test makes
   # and drops its own database. Same image as conformance/compute's psql pin.
+  # Fast tier: it runs on every pull request into dev that changes the store
+  # or the frontend (coordinator, 2026-10-28, under the owner's defaults rule).
   temporal-store:
     name: "Temporal store: Postgres 17"
     needs: changes
-    if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && (needs.changes.outputs.temporal-store == 'true'))) }}
+    if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.temporal-store == 'true') }}
     runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 30
     services:
@@ -2744,6 +2765,13 @@ jobs:
       # IA1 Task 1 (design §76 §13, D1600): the former IdP is removed; only
       # the historical records in scripts/docs/no-authentik-allowlist.txt
       # name it.
+      # NF2 Task 12 (§51 §12.4, §62 §7.2 condition 5): the committed PgDog
+      # inventories per Postgres major; a supported major has no error or
+      # differs row in a component Loams uses. scripts/nf1/pgdog-majors.sh
+      # writes them locally (podman); this reads only the files.
+      - if: ${{ !cancelled() }} # report every check, not only the first failure
+        name: PgDog per major (pgdog_major_has_no_error_rows_in_used_components)
+        run: python3 -I scripts/nf1/tests/test_pgdog_majors.py
       - if: ${{ !cancelled() }} # report every check, not only the first failure
         name: Former-IdP checker self-test
         run: scripts/docs/check-no-authentik.sh --self-test
@@ -2806,6 +2834,9 @@ jobs:
       - if: ${{ !cancelled() }} # report every check, not only the first failure
         name: the cold-start statistics self-test (PG2 Task 17)
         run: python3 scripts/pg2/coldstart_stats.py --self-test
+      - if: ${{ !cancelled() }} # report every check, not only the first failure
+        name: the Postgres header extraction self-test (NF2 Task 4)
+        run: scripts/pg2/pg-headers.sh --self-test
       - if: ${{ !cancelled() }} # report every check, not only the first failure
         name: PgDog's licence boundary (PG2 Task 19, design §46 §8.3)
         run: |

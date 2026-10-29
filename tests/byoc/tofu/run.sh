@@ -21,14 +21,19 @@ bad() { echo "FAIL $*"; fail=1; }
 run() { local name="$1"; shift; if out="$("$@" 2>&1)"; then ok "$name"; else bad "$name"; echo "$out" | sed 's/^/     /' | head -40; fi; }
 
 run "tofu fmt -check" "$tofu" fmt -check -recursive "$tofu_dir"
-for ex in aws-vm gcp-vm azure-vm; do
+for ex in aws-vm gcp-vm azure-vm confluent aws-vm-confluent aws-free gcp-free azure-free; do
   run "init $ex" "$tofu" -chdir="$tofu_dir/examples/$ex" init "${init_args[@]}"
   run "validate $ex" "$tofu" -chdir="$tofu_dir/examples/$ex" validate
 done
-for mod in aws-vm gcp-vm azure-vm; do
+for mod in aws-vm gcp-vm azure-vm confluent aws-free gcp-free azure-free; do
   run "init $mod" "$tofu" -chdir="$tofu_dir/modules/$mod" init "${init_args[@]}"
   run "test $mod" "$tofu" -chdir="$tofu_dir/modules/$mod" test
 done
+
+# the confluent module's tables are current (scripts/byoc/confluent-tables.sh gen)
+run "confluent module tables are current" "$here/../../../scripts/byoc/confluent-tables.sh" check
+# a root that can put a Confluent key in state enforces state and plan encryption (D1827)
+run "example_with_keys_enforces_encryption" python3 -I "$here/check_encryption.py" "$tofu_dir/examples"
 
 # no provider source and no state in the tree
 run "no state or lock noise committed" bash -c "! git -C '$tofu_dir' ls-files | grep -E '\\.tfstate|\\.terraform/|crash\\.log'"

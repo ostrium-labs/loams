@@ -34,6 +34,9 @@ pub struct Args {
     /// Skips the corpora's setup statements (the tables exist already).
     #[arg(long)]
     pub skip_setup: bool,
+    /// Also fails while any `bug` entry names this plan task (D1804).
+    #[arg(long)]
+    pub task: Option<String>,
 }
 
 /// Runs `oracle`.
@@ -60,6 +63,7 @@ pub fn run(args: &Args) -> anyhow::Result<()> {
         cases: args.cases.clone(),
         check: args.check,
         skip_setup: args.skip_setup,
+        task: args.task.clone(),
     })
     .map(|_| ())
 }

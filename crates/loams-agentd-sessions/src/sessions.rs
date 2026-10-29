@@ -178,6 +178,9 @@ struct Inner {
     /// Where the injected `loams-agentd mcp` shim dials back in, and who
     /// issues its scoped run tokens; `None` until the daemon serves.
     mcp_endpoint: Mutex<Option<McpEndpoint>>,
+    /// The daemon's marketplace: its installed MCP servers ride every run
+    /// (MK1 Task 4b).
+    marketplace: Mutex<crate::marketplace::MarketplaceSlot>,
     journal: Arc<RunJournal>,
     registry: Arc<HarnessRegistry>,
     /// Set-once (first wins), cleared on runtime retirement: sessions and
@@ -273,6 +276,7 @@ impl SessionsEngine {
             inner: Arc::new(Inner {
                 device_id,
                 mcp_endpoint: Mutex::new(None),
+                marketplace: Mutex::new(Default::default()),
                 journal,
                 registry,
                 doc_host: Mutex::new(None),
@@ -298,6 +302,11 @@ impl SessionsEngine {
     /// port 0, agents get no Loams Desktop tools rather than a dead server.
     pub fn set_mcp_endpoint(&self, port: u16, tokens: Arc<ScopedTokens>) {
         *lock(&self.inner.mcp_endpoint) = (port != 0).then_some(McpEndpoint { port, tokens });
+    }
+
+    /// Where the installed marketplace MCP servers come from (MK1 Task 4b).
+    pub fn set_marketplace(&self, slot: crate::marketplace::MarketplaceSlot) {
+        *lock(&self.inner.marketplace) = slot;
     }
 
     /// Wire the doc host (called once at engine assembly; the two services are mutually
@@ -1054,6 +1063,7 @@ impl SessionsEngine {
                     .or_else(|| {
                         let (_, cwd) = sessions.inner.journal_harness_session(&chat_id)?;
                         Some(RunRequest {
+                            mcp_servers: Vec::new(),
                             mcp: None,
                             prompt: String::new(),
                             harness: None,
@@ -1384,7 +1394,8 @@ impl Inner {
     /// Loams Desktop's own MCP server for one run of `chat_id`: this binary's
     /// `loams-agentd mcp` subcommand, dialing the daemon's port with a scoped
     /// run token bound to `chat_id` (design §50 §7). Its environment holds the
-    /// three scoped keys and nothing else, never the main token. The token
+    /// three scoped keys, plus the daemon's own browser settings when the
+    /// operator set them ([`browser_env`], D2115), and never the main token. The token
     /// lives as long as the returned lease. None when the daemon serves no
     /// port, its executable is unknown, or no token could be issued.
     fn loams_agentd_mcp(
@@ -1411,6 +1422,7 @@ impl Inner {
                 (ENV_SESSION_ID.to_owned(), chat_id.to_owned()),
             ]
             .into_iter()
+            .chain(browser_env(std::env::vars()))
             .collect(),
         };
         let lease = RunTokenLease {
@@ -1964,6 +1976,14 @@ async fn drive_run(
     {
         request.mcp = Some(server);
         _run_token = Some(lease);
+    }
+    // ... and the MCP servers installed from the marketplace, with their
+    // secrets read from the vault now (MK1 Task 4b, D1463).
+    let installed_mcp = lock(&inner.marketplace).clone().mcp_servers();
+    for server in installed_mcp {
+        if !request.mcp_servers.iter().any(|s| s.name == server.name) {
+            request.mcp_servers.push(server);
+        }
     }
     // Kept whole for the startup-crash retry (same user entry; dispatch
     // re-injects the stored resume id). Option so the retry branch (inside
@@ -3194,6 +3214,7 @@ mod tests {
 
     fn request() -> RunRequest {
         RunRequest {
+            mcp_servers: Vec::new(),
             mcp: None,
             prompt: "first".into(),
             harness: None,
@@ -3406,5 +3427,60 @@ mod tests {
         })
         .unwrap();
         core.sessions.shutdown().await;
+    }
+}
+
+/// The browser settings a run's MCP server inherits from the daemon (D2115):
+/// `LOAMS_BROWSER_*`, `LOAMS_OBSCURA_BIN`, and the browser service's token
+/// under the name the bridge's env resolver reads. Only these, and only when
+/// the operator set them, so a daemon without a browser hands its runs
+/// exactly the three scoped keys.
+///
+/// The token reaches the run's MCP process, which the agent's own process
+/// tree can read: the service's network policy (deploy/browser), not the
+/// token's secrecy from the agent, is what bounds a browser an agent could
+/// drive directly.
+pub(crate) fn browser_env(
+    vars: impl IntoIterator<Item = (String, String)>,
+) -> impl Iterator<Item = (String, String)> {
+    vars.into_iter().filter(|(name, value)| {
+        !value.is_empty()
+            && (name.starts_with("LOAMS_BROWSER_")
+                || name == "LOAMS_OBSCURA_BIN"
+                || name == "LOAMS_WEB_BRIDGE_SECRET_BROWSER_TOKEN")
+    })
+}
+
+#[cfg(test)]
+mod browser_env_tests {
+    use super::browser_env;
+
+    #[test]
+    fn only_the_browser_settings_pass_and_only_when_set() {
+        let vars = [
+            ("LOAMS_BROWSER_PROVIDER", "service"),
+            (
+                "LOAMS_BROWSER_SERVICE_URL",
+                "ws://browser:9222/devtools/browser",
+            ),
+            ("LOAMS_OBSCURA_BIN", "/opt/obscura"),
+            ("LOAMS_WEB_BRIDGE_SECRET_BROWSER_TOKEN", "t"),
+            ("LOAMS_BROWSER_RECORD", ""),
+            ("LOAMS_AGENTD_TOKEN", "main-token"),
+            ("LOAMS_WEB_BRIDGE_SECRET_OTHER", "x"),
+            ("AWS_SECRET_ACCESS_KEY", "y"),
+        ]
+        .map(|(name, value)| (name.to_string(), value.to_string()));
+        let mut passed: Vec<String> = browser_env(vars).map(|(name, _)| name).collect();
+        passed.sort_unstable();
+        assert_eq!(
+            passed,
+            [
+                "LOAMS_BROWSER_PROVIDER",
+                "LOAMS_BROWSER_SERVICE_URL",
+                "LOAMS_OBSCURA_BIN",
+                "LOAMS_WEB_BRIDGE_SECRET_BROWSER_TOKEN"
+            ]
+        );
     }
 }

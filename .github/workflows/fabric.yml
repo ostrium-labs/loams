@@ -95,6 +95,7 @@ jobs:
       kube: ${{ steps.filter.outputs.kube }}
       house-apps: ${{ steps.filter.outputs.house-apps }}
       house-on-house: ${{ steps.filter.outputs.house-on-house }}
+      house-engine: ${{ steps.filter.outputs.house-engine }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: github.event_name == 'push'
@@ -126,6 +127,9 @@ jobs:
               - "proto/loams/options/**"
               - "proto/loams/errors/**"
               - "docs/api/reasons.md"
+              # `loams-house-worker`'s meter test (ME1) compiles Loams Meter's
+              # House SQL from the root workspace with `#[path]`.
+              - "crates/loams-meter-house/src/sql.rs"
               # `loams-house-mine`'s checks (HE0): the function and engine
               # matrix (`the_committed_matrix_is_up_to_date`) reads chDB's
               # dumps, the classes and the mined profile, and writes
@@ -148,6 +152,19 @@ jobs:
               - "fabric/crates/loams-house*/**"
               - "fabric/crates/loams-fabric/**"
               - "fabric/crates/loams-chdb-sys/**"
+            # The Rust engine's per-task oracle (plan HE1 Task 23, D1804): its
+            # crates, the runner and the corpora.
+            house-engine:
+              - ".github/workflows/fabric.yml"
+              - "fabric/Cargo.lock"
+              - "fabric/crates/loams-house-types/**"
+              - "fabric/crates/loams-house-sql/**"
+              - "fabric/crates/loams-house-exec/**"
+              - "fabric/crates/loams-house-iceberg/**"
+              - "fabric/crates/loams-house-formats/**"
+              - "fabric/crates/loams-house-engine/**"
+              - "fabric/crates/loams-house-mine/**"
+              - "conformance/clickhouse/oracle/**"
             # The generated appendix and the two scripts that check the Camel
             # and Kestra columns against their catalogs (design §33 CN-R1).
             drift:
@@ -471,6 +488,82 @@ jobs:
         if: failure()
         run: tail -n 200 conformance/clickhouse/apps/.out/signoz-on-house/house.log || true
 
+  # HE1 owns this job (plan 2026-10-21-he1-loams-house-engine, Task 23,
+  # D1804): every HE1 task's oracle corpus (`conformance/clickhouse/oracle/
+  # corpus/he1/*`) on the pinned clickhouse-server 26.9.2.8 and on the Rust
+  # engine's dev server, seeded from the baseline's tables. It needs no
+  # libchdb. A mismatch nobody triaged fails it; a task's known gaps are
+  # `bug` entries naming the task that closes them.
+  house-engine-oracle:
+    name: "House engine: the oracle"
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.house-engine == 'true') }}
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
+        with:
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
+          workspaces: fabric -> target
+          key: house-engine-oracle
+      - name: build the dev server and the runner
+        working-directory: fabric
+        run: cargo build --locked -p loams-house-engine -p loams-house-mine --bin loams-house-engine-dev --bin loams-house-mine
+      # The oracle as a container started here rather than a job service, so
+      # the job runs on the self-hosted runners (Podman) as on GitHub's
+      # (Docker). Its ports are the run's own, so concurrent runs and local
+      # oracles on a shared machine never collide.
+      - name: the oracle (clickhouse-server 26.9.2.8)
+        run: |
+          oracle_port=$((30000 + RANDOM % 10000)); engine_port=$((oracle_port + 10000))
+          echo "ORACLE_PORT=$oracle_port" >> "$GITHUB_ENV"; echo "ENGINE_PORT=$engine_port" >> "$GITHUB_ENV"
+          runtime="$(command -v docker || command -v podman)"
+          "$runtime" rm -f "he1-oracle-${{ github.run_id }}" >/dev/null 2>&1 || true
+          "$runtime" run -d --name "he1-oracle-${{ github.run_id }}" -p "127.0.0.1:$oracle_port:8123" \
+            -e CLICKHOUSE_USER=oracle -e CLICKHOUSE_PASSWORD=oracle -e CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=0 \
+            --ulimit nofile=262144:262144 \
+            docker.io/clickhouse/clickhouse-server:26.9.2.8@sha256:7b9a0b6e9ab7ef79db5c4f8a9808f880258704eb7b4af9309f9029c16e727a80
+          for _ in $(seq 1 90); do curl -fsS "http://127.0.0.1:$oracle_port/ping" >/dev/null 2>&1 && exit 0; sleep 1; done
+          "$runtime" logs "he1-oracle-${{ github.run_id }}" | tail -n 50
+          exit 1
+      # Task 26's lake fixtures (R26.8): House-written tables of corpus he1-26's
+      # rows, written from this oracle unless they are committed, then read
+      # back through the engine. The dev server reads them with `--lake`.
+      - name: the lake fixtures (HE1 Task 26)
+        working-directory: fabric
+        run: |
+          export LOAMS_ORACLE_URL="http://127.0.0.1:$ORACLE_PORT/"
+          if [ ! -d ../conformance/clickhouse/oracle/corpus/he1/26/lake ]; then
+            cargo test --locked -p loams-house-engine --test lake -- --ignored --exact regenerate_corpus_26_lake
+          fi
+          cargo test --locked -p loams-house-engine --test lake -- --ignored --exact the_corpus_lake_loads_and_reads
+      - name: the oracle on the Rust engine
+        env:
+          LOAMS_ORACLE_PASSWORD: oracle
+        run: |
+          target="$(cd fabric && cargo metadata --format-version 1 --no-deps | jq -r .target_directory)/debug"
+          lakes=()
+          for dir in conformance/clickhouse/oracle/corpus/he1/*/lake; do
+            [ -d "$dir" ] && lakes+=(--lake "$dir")
+          done
+          "$target/loams-house-engine-dev" --listen "127.0.0.1:$ENGINE_PORT" "${lakes[@]}" >engine-dev.log 2>&1 &
+          echo $! > engine-dev.pid
+          for _ in $(seq 1 30); do curl -fsS "http://127.0.0.1:$ENGINE_PORT/ping" >/dev/null && break; sleep 1; done
+          "$target/loams-house-mine" oracle --only house-rust --case he1- --check \
+            --target-url "clickhouse-server@26.9=http://127.0.0.1:$ORACLE_PORT/" \
+            --target-url "house-rust=http://127.0.0.1:$ENGINE_PORT/"
+      - name: the dev server's log on failure
+        if: failure()
+        run: tail -n 100 engine-dev.log || true
+      - name: stop the oracle and the dev server
+        if: always()
+        run: |
+          [ -f engine-dev.pid ] && kill "$(cat engine-dev.pid)" 2>/dev/null || true
+          runtime="$(command -v docker || command -v podman)"
+          "$runtime" rm -f "he1-oracle-${{ github.run_id }}" >/dev/null 2>&1 || true
+
   # CN2 owns this job (plan 2026-10-10-cn2-connectors, Task 4): the connector
   # SDK alone, the crate every native connector family builds on. It needs no
   # protoc and no services (the in-memory Fabric and the reference connector
@@ -562,8 +655,9 @@ jobs:
           services=$(python3 scripts/connectors/compose_services.py \
             --profile "$PROFILE" --family "$FAMILY" --compose-json "$RUNNER_TEMP/compose.json")
           # The ★ Apache Kafka suite (CN2 Task 9; CN1's manifest has no
-          # systems.toml entry until Task 8 ports it onto the SDK).
-          if [ "$FAMILY" = kafka ]; then services="${services:+$services }kafka"; fi
+          # systems.toml entry until Task 8 ports it onto the SDK), and its
+          # SASL_SSL leg through the confluent-cloud profile (CC1 Task 2).
+          if [ "$FAMILY" = kafka ]; then services="${services:+$services }kafka kafka-sasl"; fi
           echo "services=$services" >> "$GITHUB_OUTPUT"
           if [ -d "fabric/crates/loams-connector-$FAMILY" ] && [ -n "$services" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
@@ -1217,6 +1311,7 @@ jobs:
       - house-apps-smoke
       - openpanel-on-house
       - langfuse-on-house
+      - house-engine-oracle
     runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
     timeout-minutes: 5
     steps:

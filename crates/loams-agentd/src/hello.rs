@@ -39,7 +39,8 @@ pub const BUILD_SHA: &str = match option_env!("LOAMS_BUILD_SHA") {
 /// `run-groups` the parallel run groups (SD1 Task 12);
 /// `notifications` and `usage` the notification feed and per-thread usage
 /// (SD1 Task 14);
-/// `approvals.supervised` the supervised approvals (SD1 Task 13).
+/// `approvals.supervised` the supervised approvals (SD1 Task 13);
+/// `marketplace` the Seed Exchange's `MarketplaceService` (MK1 Task 4b).
 pub const FEATURES: &[&str] = &[
     loams_agentd_connect::FEATURE,
     loams_agentd_connect::GIT_WRITE_FEATURE,
@@ -47,6 +48,7 @@ pub const FEATURES: &[&str] = &[
     loams_agentd_connect::REVIEW_FEATURE,
     loams_agentd_connect::CONTENT_SEARCH_FEATURE,
     loams_agentd_proto::groups::FEATURE,
+    loams_agentd_proto::marketplace::FEATURE,
     loams_agentd_proto::notify::FEATURE,
     loams_agentd_proto::usage::FEATURE,
     loams_agentd_proto::approvals::FEATURE,

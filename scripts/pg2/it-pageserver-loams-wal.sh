@@ -7,7 +7,13 @@
 # last_record_lsn reaches the commit, and a compute started afresh (from the
 # pageserver's basebackup) reads the data back.
 #
-#   LOAMS_WAL=<path to loams-wal-interpreted> scripts/pg2/it-pageserver-loams-wal.sh
+#   LOAMS_WAL=<path to loams-wal-interpreted> scripts/pg2/it-pageserver-loams-wal.sh [MAJOR]
+#
+# MAJOR (or PG_MAJOR; default: the pin file's majors.default) is any Postgres
+# major in deploy/pins/loams-postgres-images.toml (supported, maintenance or
+# beta; NF2 Task 7, D1118). The timeline is created at that major and the
+# compute is that major's pinned image (COMPUTE_IMAGE overrides it, and must
+# be a compute image of the same major).
 #
 # Host networking, as the benchmark: RustFS :9000, broker :50051, pageserver
 # :6400/:9898, compute :55433/:3080, loams-wal :5460/:7680. It takes the
@@ -16,6 +22,22 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 DEPLOY=$ROOT/deploy/loams-pg-bench
+
+# The major, checked against the pin file before anything starts: the
+# timeline's version must match the compute image's (PG2 Task 0 ruling 7, R2.2).
+PG_MAJOR=${1:-${PG_MAJOR:-${PG_VERSION:-}}}
+if [ -z "$PG_MAJOR" ]; then
+  PG_MAJOR=$(python3 -I -c 'import sys, tomllib; print(tomllib.load(open(sys.argv[1], "rb"))["majors"]["default"])' \
+    "$ROOT/deploy/pins/loams-postgres-images.toml")
+fi
+[[ $PG_MAJOR =~ ^[0-9]+$ ]] || { echo "it: the major must be a number, not $PG_MAJOR" >&2; exit 2; }
+pinned=$(python3 -I "$ROOT/scripts/nf1/candidate.py" --root "$ROOT" image --major "$PG_MAJOR") || exit 1
+case ${COMPUTE_IMAGE:-$pinned} in
+  *compute-v"$PG_MAJOR"[@:]* | *compute-node-v"$PG_MAJOR"[@:]*) ;;
+  *) echo "COMPUTE_IMAGE=$COMPUTE_IMAGE: not a Postgres $PG_MAJOR compute image" >&2; exit 1 ;;
+esac
+export COMPUTE_IMAGE=${COMPUTE_IMAGE:-$pinned}
+
 : "${LOAMS_WAL:?set LOAMS_WAL to the loams-wal-interpreted binary}"
 [ -x "$LOAMS_WAL" ] || { echo "it: no binary at $LOAMS_WAL" >&2; exit 1; }
 RUN_DIR=${RUN_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/loams-it-pg.XXXXXX")}
@@ -35,17 +57,6 @@ command -v docker-compose >/dev/null || COMPOSE=(docker compose)
 ENGINE=docker
 case ${DOCKER_HOST:-} in *podman*) ENGINE=podman ;; esac
 command -v "$ENGINE" >/dev/null || ENGINE=podman
-# Postgres 17 only (PG2 Task 0 ruling 7, R2.2): the timeline's version must
-# match the compute image, and the pinned compute is compute-node-v17.
-PG_MAJOR=17
-if [ -n "${PG_VERSION:-}" ] && [ "$PG_VERSION" != "$PG_MAJOR" ]; then
-  echo "PG_VERSION=$PG_VERSION: only Postgres $PG_MAJOR is supported" >&2
-  exit 1
-fi
-case ${COMPUTE_IMAGE:-compute-node-v$PG_MAJOR@} in
-  *compute-node-v$PG_MAJOR[@:]*) ;;
-  *) echo "COMPUTE_IMAGE=$COMPUTE_IMAGE: only a compute-node-v$PG_MAJOR image is supported" >&2; exit 1 ;;
-esac
 
 for port in 9000 50051 6400 9898 55433 3080 5460 7680; do
   if ss -ltn | awk '{print $4}' | grep -qE "[:.]$port\$"; then
@@ -106,7 +117,7 @@ psql() {
   "$ENGINE" exec -i "$container" psql -X -q -At -v ON_ERROR_STOP=1 \
     "postgresql://cloud_admin@127.0.0.1:55433/postgres" "$@"
 }
-log "tenant=$TENANT_ID timeline=$TIMELINE_ID wal=$SAFEKEEPERS"
+log "Postgres $PG_MAJOR ($COMPUTE_IMAGE) tenant=$TENANT_ID timeline=$TIMELINE_ID wal=$SAFEKEEPERS"
 start_compute
 
 # 4. Writes: several times shared_buffers, so pages are evicted and read

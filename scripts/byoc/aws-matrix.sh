@@ -12,7 +12,8 @@
 #
 # Environment: AWS_REGION (default us-east-1), GITHUB_RUN_ID (the run's tag),
 # TS_AUTHKEY (an ephemeral, preauthorised Tailscale key, only for `up`),
-# LOAMS_CI_VERSION (the release, default 0.1.1), AWS_MATRIX_FIXTURES (a directory
+# LOAMS_CI_VERSION (the release, default 0.1.1), AWS_MATRIX_CONFLUENT_INTEGRATIONS
+# (integrations whose Confluent keys the VM fetches, CC1 Task 10), AWS_MATRIX_FIXTURES (a directory
 # of recorded `describe-*` JSON for tests: no AWS call is made).
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -101,7 +102,8 @@ up() {
   secret="loams/ci-$run"
   userdata="$(mktemp "$repo/.aws-matrix-ud.XXXXXX")"
   trap 'rm -f "$userdata"' RETURN
-  "$repo/deploy/byoc/render.sh" aws --bucket "$bucket" --region "$region" --version "$version" --install "ci-$run" --secret-prefix "$secret" --gzip >"$userdata"
+  "$repo/deploy/byoc/render.sh" aws --bucket "$bucket" --region "$region" --version "$version" --install "ci-$run" --secret-prefix "$secret" \
+    --confluent-integrations "${AWS_MATRIX_CONFLUENT_INTEGRATIONS:-}" --gzip >"$userdata"
   if ((dry)); then echo "WOULD: create secrets $secret/tailnet-authkey and setup-token, a security group with no inbound rule, and run a t3.large with the profile loams-ci-instance"; return; fi
   aws --region "$region" secretsmanager create-secret --name "$secret/tailnet-authkey" --secret-string "$TS_AUTHKEY" --tags "${ci_tags[@]}" >/dev/null
   aws --region "$region" secretsmanager create-secret --name "$secret/setup-token" --secret-string "$(openssl rand -hex 32)" --tags "${ci_tags[@]}" >/dev/null

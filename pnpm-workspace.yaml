@@ -22,13 +22,13 @@ catalog:
   react-dom: 19.3.0
   '@types/react': 19.3.0
   '@types/react-dom': 19.3.0
-  lucide-react: 1.55.0
+  lucide-react: 1.56.0
   '@base-ui/react': 1.9.0
-  '@tanstack/react-query': 5.104.1
-  '@tanstack/react-table': 9.2.8
-  '@tanstack/react-virtual': 3.14.14
+  '@tanstack/react-query': 5.104.2
+  '@tanstack/react-table': 9.3.1
+  '@tanstack/react-virtual': 3.14.18
   '@connectrpc/connect-query': 2.3.1
-  zod: 4.6.5
+  zod: 4.6.7
   echarts: 6.1.0
   '@xyflow/react': 12.12.0
   tailwindcss: 4.3.3
@@ -83,22 +83,41 @@ catalog:
   # MIT, published 2026-10-02 (motion, framer-motion and motion-dom 13.5.1, motion-utils 13.5.0;
   # tslib 0BSD), the last 13.x; 14.0.0 is the same day's new major.
   motion: 13.5.1
+  # Vite+ (design 79 D1772, plan VV1): one exact vite-plus pin for the workspace, with
+  # `vite` aliased to the matching vite-plus-core and `vitest` at the version vite-plus
+  # depends on. Test files import from `vite-plus/test`, configs from `vite-plus`.
+  # 1.0.0 bundles Vite 8.3.1, the console's previous Vite. The owner's VV1 ruling
+  # (2026-10-24) moves this to 1.3.0 once it is 14 days old (2026-10-30), skipping 1.1/1.2.
+  # The desktop builds on it through electron-vite 6.0.0 (#1049, VV0 Task 6).
+  vite-plus: 1.0.0
+  vite: npm:@voidzero-dev/vite-plus-core@1.0.0
+  vitest: 5.0.1
 
-# Keep Vite+ isolated from the console's ordinary Vite/Vitest toolchain.
+# vite-plus-core identifies as its own version (1.0.0), so Vite plugins' `vite: ^8`
+# peer ranges fail without this rule (VV0 Task 6). It moves with the catalog pin.
+peerDependencyRules:
+  allowedVersions:
+    vite: 1.0.0
+
 overrides:
-  'vite-plus@1.0.0>vite': npm:@voidzero-dev/vite-plus-core@1.0.0
-  'vite-plus@1.0.0>vitest': '5.0.1'
-  'vitest@5.0.1>vite': npm:@voidzero-dev/vite-plus-core@1.0.0
-  '@vitest/mocker@5.0.1>vite': npm:@voidzero-dev/vite-plus-core@1.0.0
+  # One Vite for the whole workspace (design 79 D1772): every `vite`, including
+  # Vitest's, electron-vite's and the Vite plugins' peers, is the catalog's
+  # vite-plus-core. Moves with the catalog pin.
+  vite: npm:@voidzero-dev/vite-plus-core@1.0.0
+  vitest: 5.0.1
   # Security: nx 23.2.1 pins vulnerable exact versions of these. Scoped to that
   # nx version so they lapse on the next nx bump.
   'nx@23.2.1>axios': 1.20.0
   'nx@23.2.1>smol-toml': 1.9.0
   'nx@23.2.1>brace-expansion': 5.0.12
-  # Security (GHSA-g7r4-m6w7-qqqr, esbuild >=0.27.3 <0.28.1): tsup 8.5.1 asks for
-  # esbuild ^0.27; 0.28.2 (2026-08-08) is the release the rest of the tree uses.
-  # tsup 9 moves to ^0.28.2 but is under 14 days old; drop this with that bump.
-  'tsup@8.5.1>esbuild': 0.28.2
+  # Security (GHSA-cg2g-xh64-v4q7 critical, GHSA-mrv2-3pqr-j5jr, GHSA-c6gr-qvv4-5v3f):
+  # dompurify 3.4.17 (2026-10-12) for every copy, direct or transitive.
+  'dompurify@<3.4.17': 3.4.17
+  # Security (GHSA-rxp7-6hxx-x8q5): ip-address 10.7.4 (2026-10-11).
+  'ip-address@<10.7.4': 10.7.4
+  # The 14-day rule: msw 3.0.3 asks for @mswjs/interceptors ^0.45.6, whose newer
+  # releases (0.45.9 on) were under 14 days old on 2026-10-27; keep 0.45.8 (2026-10-13).
+  'msw@3.0.3>@mswjs/interceptors': 0.45.8
   # Security (GHSA-hp3w-g68c-fv3c): sprintf-js has no fixed release. It comes only
   # through global-agent > roarr, the optional proxy module of @electron/get, which
   # loads it in a try/catch only when ELECTRON_GET_USE_PROXY is set. Without it,

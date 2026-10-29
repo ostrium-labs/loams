@@ -9,6 +9,7 @@ What a router asks of the engine behind it, recorded as data (design
 |---|---|---|---|
 | `pgdog-loampg-statements.tsv`, `pgdog-loampg-suites.tsv` | PgDog v0.1.60 | Postgres 17.11 | a Loams Postgres compute (P2b): **`pending-target`** |
 | `vitess-wesql-statements.tsv`, `vitess-wesql-suites.tsv` | Vitess v24.0.4, unmanaged vttablets | MySQL 8.0.46 | WeSQL `8.0.35-0.1.0_beta5.40` (the published image) |
+| `pgdog-pg17.tsv`, `pgdog-pg18.tsv` | PgDog v0.1.60 | the same Postgres directly | Postgres 17.11 and 18.6 (vanilla) through PgDog: [PgDog per Postgres major](#pgdog-per-postgres-major) |
 
 The capture scripts, the pins and the method of each step are in
 [`scripts/router/inventory/`](../../scripts/router/inventory/README.md); `compat-replay`
@@ -150,3 +151,77 @@ Complete), Reshard `0 -> -80,80-` with VDiff, and an Online DDL `ALTER` all pass
 **What was adapted:** `vtgate` could not start while three overlapping shards all claimed to serve, so the `-80` and `80-` tablets start just before the Reshard; every
 primary of a keyspace has its own backend because the sidecar database is per backend; table names `shopper` and `corder` replace `customer`, which the
 planbuilder test schema already defines. MariaDB's flavor file is not scanned. `PlannedReparentShard` is `skip` (unmanaged tablets refuse it).
+
+## PgDog per Postgres major
+
+PgDog stays unmodified (D708). Before a Postgres major is supported, the pinned PgDog is run in front of a server of
+that major and the results are kept here as `pgdog-pg<N>.tsv` (design [§51](../../docs/design/51-loams-postgres-fork.md)
+§12.4, [§62](../../docs/design/62-postgres-major-versions.md) §4.4–§4.5; NF2 Task 12, which was NF1 Task 36). 19's file
+comes with NF2 Task 23.
+
+**How it runs.** [`scripts/nf1/pgdog-majors.sh`](../../scripts/nf1/pgdog-majors.sh) `[17] [18]` (local, podman; it removes
+the containers and the network it starts). It takes PgDog from `PGDOG_IMAGE` in
+[`conformance/compute/pins.env`](../compute/pins.env) and configures it the way pg-control renders it
+(`crates/loams-pg-control/src/pgdog/render.rs`): transaction pooling; SCRAM against a `password_hash` verifier with a
+separate backend password; TLS on both hops (`tls_client_required`, `tls_verify = "verify_ca"`); a `__ro` name with
+`role = "replica"` and `read_only = true`; and a role in session mode, like pg-control's migrator. The clients are
+`psql` and libpq 18 from the 18.6 image, plus [`scripts/nf1/pgdog_wire.py`](../../scripts/nf1/pgdog_wire.py), a
+standard-library wire probe that reports the protocol version negotiated and the length of the cancel key, which libpq
+does not show. Each check runs twice, through PgDog into database `app` and straight to the server into database
+`ref`, with the same statements in the same order.
+
+**Pins.** PgDog v0.1.60 (`ghcr.io/pgdogdev/pgdog@sha256:25d19088…2f266`). Postgres images are the tags as published on
+2026-10-07: `postgres:17.11@sha256:2d2b8998…df9e3` and `postgres:18.6@sha256:74935e72…c4336`. The 2026-10-21 and
+2026-10-28 rebuilds were not 14 days old.
+
+**18 is run against vanilla 18.6.** `loams-postgres-compute-v18` does not exist yet. The 18 rows are re-run against it
+when NF2 Task 8 publishes it, and on every PgDog pin change.
+
+**Columns:** `component`, `check`, `result`, `notes`. Fields escape tab, newline and backslash as `\t`, `\n`, `\\`.
+
+| `result` | Meaning |
+|---|---|
+| `ok` | Through PgDog, the outcome is the same as straight to the server (result rows, or the same SQLSTATE). For a refusal check (a wrong password, a plaintext client, a write on `__ro`), it means the refusal happened. |
+| `differs` | Both succeed, but the outcomes differ. |
+| `error` | PgDog fails where the server does not. |
+
+| Component | What it covers |
+|---|---|
+| `protocol` | libpq 18 connects with `max_protocol_version=3.0` and `3.2`; the version the wire negotiates and the cancel-key length |
+| `cancel` | A `CancelRequest` with the connection's key, both over TLS and in plaintext, at 3.0 (4-byte key) and 3.2 (long key); `psql` Ctrl-C at both versions |
+| `auth` | SCRAM-SHA-256 against a verifier, a wrong password, SCRAM-SHA-256-PLUS (`channel_binding=require`), the backend login |
+| `tls` | A plaintext client is refused; the server hop is TLS |
+| `query` | Through transaction pooling: the 17 baseline (simple and extended protocol, named prepared statements, `SET LOCAL`, CTE writes, stored generated columns, `MERGE … RETURNING`, `JSON_TABLE`, `COPY`, `FOR UPDATE`, SQLSTATEs). At 18 it adds virtual generated columns (explicit and default kind), `RETURNING OLD/NEW` (`UPDATE`, `WITH (OLD AS …, NEW AS …)`, `ON CONFLICT`, `DELETE`, `MERGE`, extended protocol), `WITHOUT OVERLAPS` (`PRIMARY KEY`, `UNIQUE`), `FOREIGN KEY … PERIOD`, and `uuidv7()` |
+| `session` | The session-mode role keeps `SET` and temporary tables; at 18 it also runs 18 syntax |
+| `read-only` | Reads on `__ro`, and writes there refused. The reference is a direct session with `default_transaction_read_only=on` |
+
+Loams uses every one of these components. Sharded routing is not inventoried: pg-control leaves sharded projects out
+until storage HA (PG2 Task 49).
+
+**The gate** (§62 §7.2 condition 5): [`scripts/nf1/check_pgdog_majors.py`](../../scripts/nf1/check_pgdog_majors.py) runs
+in CI ("Repo: checks", `test_pgdog_major_has_no_error_rows_in_used_components`) on the committed files. It reads
+`[majors]` from `deploy/pins/loams-postgres-images.toml`. A supported major (or the default) must have a file with no
+`error` or `differs` row. A beta major's blocking rows are printed as notices: they block its promotion (NF2 Task 14),
+not the beta. A gap found later is documented here with its workaround (session mode, or
+`max_protocol_version=3.0`), and is reported upstream only with the owner's approval (§46 §8.3).
+
+### Results, 2026-10-29
+
+| Major | Rows | `ok` | `differs` | `error` |
+|---|---|---|---|---|
+| 17 (17.11) | 30 | 30 | 0 | 0 |
+| 18 (18.6, vanilla) | 44 | 44 | 0 | 0 |
+
+- **Protocol 3.2.** PgDog v0.1.60 accepts a 3.2 startup and does not send `NegotiateProtocolVersion`. It issues **its
+  own 32-byte cancel key** in `BackendKeyData` even when the server behind it is 17, which speaks only 3.0 and gives a
+  4-byte key. A cancel with that long key reaches the server: `pg_sleep` stops with 57014 at both majors, over TLS and in
+  plaintext. Because PgDog terminates the protocol, the `protocol` row counts as `ok` when PgDog's version is no higher
+  than the one the client asked for and its key fits that version (4 bytes at 3.0, 4 to 256 at 3.2). The note records
+  how this differs from the server. This bears on §58 §3.3, which has the gateway speak 3.0 to PgDog until PgDog's 3.2
+  support is verified: at v0.1.60 it is verified here.
+- **18 syntax.** Every statement routed the same as it does straight to the server, through transaction pooling, session
+  mode and `__ro`. This covers virtual generated columns, every `RETURNING OLD/NEW` form, `WITHOUT OVERLAPS`, and
+  `PERIOD` foreign keys (with 23P01 and 23503 where expected). On `__ro`, an `UPDATE … RETURNING OLD/NEW` is refused
+  with 25006, as a direct read-only session refuses it.
+- **Plaintext cancel.** PgDog accepts a plaintext `CancelRequest` even with `tls_client_required` (§57 §7.7 covers the
+  shared port).

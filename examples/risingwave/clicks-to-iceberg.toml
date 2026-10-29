@@ -1,0 +1,56 @@
+# Loams stream -> RisingWave materialized view -> Iceberg (preview; not yet run end to end).
+# docs/guides/risingwave.md walks through it:
+#
+#   loams risingwave render examples/risingwave/clicks-to-iceberg.toml
+#   RW_KAFKA_PASSWORD=... loams risingwave apply examples/risingwave/clicks-to-iceberg.toml --wait
+#
+# Credentials are never written here: `{ env = "..." }` names the environment variable that
+# holds the instance's own scoped credential (design 81 R5), read by `apply`.
+
+# The Loams stream web.clicks, read through the Iggy Kafka gateway as the instance's Iggy user.
+[[statements]]
+statement = "kafka"
+kind = "source"
+name = "clicks"
+if_not_exists = true
+topic = "web.clicks"
+startup = "earliest"
+format = { format = "plain", encode = "json" }
+
+[statements.endpoint]
+bootstrap_servers = "kafka-gateway:9093"
+auth = { mode = "sasl", mechanism = "PLAIN", username = "eng_01jbzq7m3k8x2v5n9c4t6w0r1y", password = { env = "RW_KAFKA_PASSWORD" } }
+
+[statements.schema]
+columns = [
+  { name = "user_id", type = "BIGINT" },
+  { name = "url", type = "VARCHAR" },
+  { name = "ts", type = "TIMESTAMPTZ" },
+]
+watermark = { column = "ts", delay = "5 seconds" }
+
+# Clicks per URL per minute, emitted when the window closes.
+[[statements]]
+statement = "materialized_view"
+name = "clicks_per_minute"
+if_not_exists = true
+query = """
+SELECT window_start, url, count(*) AS clicks
+FROM TUMBLE(clicks, ts, INTERVAL '1 minute')
+GROUP BY window_start, url
+EMIT ON WINDOW CLOSE
+"""
+
+# Into the lake: Lakekeeper (compose: auth off on the internal lake network), warehouse `loams`,
+# the Loams namespace's Iceberg namespace `ns_<id>`, credentials vended per table.
+[[statements]]
+statement = "iceberg_sink"
+name = "clicks_per_minute_lake"
+if_not_exists = true
+from = { relation = "clicks_per_minute" }
+database = "ns_default"
+table = "clicks_per_minute"
+mode = { type = "append_only" }
+commit_checkpoint_interval = 10
+partition_by = "day(window_start)"
+catalog = { uri = "http://lakekeeper:8181/catalog", warehouse = "loams", name = "loams", auth = { mode = "none" }, vended_credentials = true }

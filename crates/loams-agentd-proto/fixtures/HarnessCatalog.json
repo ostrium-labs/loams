@@ -11,5 +11,16 @@
     ],
     "steeringMode": "step-boundary",
     "supportsSteering": true
+  },
+  {
+    "canInstall": false,
+    "enabled": true,
+    "id": "marketplace",
+    "installed": true,
+    "marketplaceListing": "vercel-labs/fx",
+    "name": "fx",
+    "reasoningLevels": [],
+    "steeringMode": "turn-boundary",
+    "supportsSteering": true
   }
 ]

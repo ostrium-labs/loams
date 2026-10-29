@@ -31,3 +31,12 @@ name = "house-chdb"
 url = "http://127.0.0.1:28125/"
 user = "default"
 password_env = "LOAMS_ORACLE_HOUSE_KEY"
+
+# The Rust engine (plan HE1 Task 23, D1804): `loams-house-engine-dev` on
+# loopback, read-only, so it is seeded from the baseline's tables instead of
+# running setup statements. It runs only when `--only house-rust` names it
+# (with `--case he1-`), so a plain run needs no dev server.
+[[target]]
+name = "house-rust"
+url = "http://127.0.0.1:28126/"
+seed = true

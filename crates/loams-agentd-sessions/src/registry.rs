@@ -58,7 +58,14 @@ fn describe(harness: &dyn Harness) -> HarnessDescriptor {
         installed: harness.installed(),
         can_install: false,
         enabled: None,
+        marketplace_listing: None,
     }
+}
+
+/// One installed marketplace ACP harness (MK1 Task 4b).
+struct MarketplaceSlot {
+    launch: loams_agentd_harness::acp::AcpLaunch,
+    harness: Arc<dyn Harness>,
 }
 
 /// The persisted shape of `harness-prefs.json`.
@@ -105,6 +112,10 @@ pub struct HarnessRegistry {
     gates: Mutex<HashMap<HarnessId, Arc<tokio::sync::RwLock<()>>>>,
     pending_updates: Mutex<std::collections::HashSet<HarnessId>>,
     update_generation: tokio::sync::watch::Sender<u64>,
+    /// Installed marketplace harnesses, by listing id, in install order
+    /// (MK1 Task 4b). They share [`HarnessId::Marketplace`], so they live
+    /// beside `slots`, which is keyed by id.
+    marketplace: Mutex<Vec<MarketplaceSlot>>,
 }
 
 impl std::fmt::Debug for HarnessRegistry {
@@ -193,6 +204,7 @@ impl HarnessRegistry {
             gates: Mutex::new(HashMap::new()),
             pending_updates: Mutex::new(std::collections::HashSet::new()),
             update_generation,
+            marketplace: Mutex::new(Vec::new()),
         }
     }
 
@@ -467,8 +479,58 @@ impl HarnessRegistry {
         }
     }
 
+    /// Registers exactly `launches` as the installed marketplace harnesses
+    /// (MK1 Task 4b): a harness whose launch is unchanged keeps its instance,
+    /// so its model and command caches survive a sync.
+    pub fn sync_marketplace(&self, launches: Vec<loams_agentd_harness::acp::AcpLaunch>) {
+        let mut slots = self
+            .marketplace
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let mut previous = std::mem::take(&mut *slots);
+        for launch in launches {
+            let kept = previous
+                .iter()
+                .position(|slot| slot.launch == launch)
+                .map(|at| previous.remove(at));
+            slots.push(kept.unwrap_or_else(|| MarketplaceSlot {
+                harness: Arc::new(loams_agentd_harness::AcpHarness::marketplace(
+                    launch.clone(),
+                )),
+                launch,
+            }));
+        }
+    }
+
+    /// The installed marketplace harness for `listing_id`.
+    pub fn resolve_marketplace(&self, listing_id: &str) -> Result<Arc<dyn Harness>, HarnessError> {
+        self.marketplace
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .find(|slot| slot.launch.listing_id == listing_id)
+            .map(|slot| slot.harness.clone())
+            .ok_or_else(|| HarnessError::NotInstalled(format!("marketplace harness {listing_id}")))
+    }
+
+    /// The installed marketplace harnesses' descriptors: enabled, since the
+    /// person installed each by consent, and keyed by listing id.
+    fn marketplace_descriptors(&self) -> Vec<HarnessDescriptor> {
+        self.marketplace
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .map(|slot| HarnessDescriptor {
+                enabled: Some(true),
+                marketplace_listing: Some(slot.launch.listing_id.clone()),
+                ..describe(slot.harness.as_ref())
+            })
+            .collect()
+    }
+
     /// Catalog for `ListHarnesses` — never forces a lazy resolve.
     pub fn descriptors(&self) -> Vec<HarnessDescriptor> {
+        let marketplace = self.marketplace_descriptors();
         let enabled = self.enabled_set();
         let mock_listed_enabled = mock_is_default();
         let slots = self.slots();
@@ -492,6 +554,7 @@ impl HarnessRegistry {
                 descriptor.can_install = loams_agentd_harness::install::can_install(*id);
                 Some(descriptor)
             })
+            .chain(marketplace)
             .collect()
     }
 }
@@ -565,6 +628,7 @@ pub fn default_registry() -> HarnessRegistry {
             ],
             installed: true,
             can_install: false,
+            marketplace_listing: None,
             enabled: None,
         },
         Box::new(|| loams_agentd_harness::ClaudeHarness::new().installed()),
@@ -593,6 +657,7 @@ pub fn default_registry() -> HarnessRegistry {
             ],
             installed: true,
             can_install: false,
+            marketplace_listing: None,
             enabled: None,
         },
         Box::new(|| loams_agentd_harness::CodexHarness::new().installed()),
@@ -611,6 +676,7 @@ pub fn default_registry() -> HarnessRegistry {
             reasoning_levels: Vec::new(),
             installed: true,
             can_install: false,
+            marketplace_listing: None,
             enabled: None,
         },
         Box::new(|| loams_agentd_harness::AcpHarness::devin().installed()),
@@ -633,6 +699,7 @@ pub fn default_registry() -> HarnessRegistry {
             ],
             installed: true,
             can_install: false,
+            marketplace_listing: None,
             enabled: None,
         },
         Box::new(|| loams_agentd_harness::AcpHarness::grok().installed()),
@@ -651,6 +718,7 @@ pub fn default_registry() -> HarnessRegistry {
             reasoning_levels: Vec::new(),
             installed: true,
             can_install: false,
+            marketplace_listing: None,
             enabled: None,
         },
         Box::new(|| loams_agentd_harness::AcpHarness::hermes().installed()),
@@ -666,6 +734,7 @@ pub fn default_registry() -> HarnessRegistry {
             reasoning_levels: Vec::new(),
             installed: true,
             can_install: false,
+            marketplace_listing: None,
             enabled: None,
         },
         Box::new(|| loams_agentd_harness::PiHarness::new().installed()),
@@ -691,6 +760,7 @@ pub fn default_registry() -> HarnessRegistry {
             ],
             installed: true,
             can_install: false,
+            marketplace_listing: None,
             enabled: None,
         },
         Box::new(|| loams_agentd_harness::OpencodeHarness::new().installed()),
@@ -709,6 +779,7 @@ pub fn default_registry() -> HarnessRegistry {
             reasoning_levels: Vec::new(),
             installed: true,
             can_install: false,
+            marketplace_listing: None,
             enabled: None,
         },
         Box::new(|| loams_agentd_harness::AcpHarness::antigravity().installed()),
@@ -729,6 +800,7 @@ pub fn default_registry() -> HarnessRegistry {
             reasoning_levels: Vec::new(),
             installed: true,
             can_install: false,
+            marketplace_listing: None,
             enabled: None,
         },
         Box::new(|| loams_agentd_harness::AcpHarness::goose().installed()),
@@ -746,6 +818,7 @@ pub fn default_registry() -> HarnessRegistry {
             reasoning_levels: Vec::new(),
             installed: true,
             can_install: false,
+            marketplace_listing: None,
             enabled: None,
         },
         Box::new(|| loams_agentd_harness::AcpHarness::loams_bot().installed()),
@@ -770,6 +843,7 @@ mod tests {
             reasoning_levels: Vec::new(),
             installed: true,
             can_install: false,
+            marketplace_listing: None,
             enabled: Some(true),
         };
         assert!(descriptor.steers_mid_turn());
@@ -797,6 +871,7 @@ mod tests {
                 reasoning_levels: vec![],
                 installed: true,
                 can_install: false,
+                marketplace_listing: None,
                 enabled: None,
             },
             Box::new(|| false),
@@ -954,6 +1029,7 @@ mod tests {
                 reasoning_levels: vec![],
                 installed: true,
                 can_install: false,
+                marketplace_listing: None,
                 enabled: None,
             },
             Box::new(move || installed),
@@ -1037,6 +1113,7 @@ mod tests {
                 reasoning_levels: vec![],
                 installed: true,
                 can_install: false,
+                marketplace_listing: None,
                 enabled: None,
             },
             Box::new(move || probe.load(Ordering::SeqCst)),

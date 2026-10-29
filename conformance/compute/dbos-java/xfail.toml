@@ -1,0 +1,5 @@
+# DBOS Transact Java on Loams Postgres (conformance/compute/dbos-java/run.sh).
+# No expected failures: dbos_java_txn_mode_xfail passed through PgDog
+# transaction pooling in the second nightly (2026-10-28, run 40650169067), so
+# its entry is removed and the case must keep passing (DX1 ruling T5.R9).
+product = "dbos-java"

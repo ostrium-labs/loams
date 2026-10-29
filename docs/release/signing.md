@@ -42,12 +42,21 @@ the `.sig` files.
 
 ### The key
 
-- **User ID:** `Loams Release Signing Key <security@ostriumlabs.org>`, Ed25519, signing only, no passphrase.
-- **User ID corrected** on 2026-10-18: the key was created with the user ID `<security@ostriumlabs.com>`, which is not our domain. That user ID is now revoked and `<security@ostriumlabs.org>` is the primary one. The fingerprint is unchanged, so signatures made before the fix still verify; re-import the public key to pick up the change.
-- **Fingerprint:** `333AC94599D5A1EB2A416D1E83DC134D8CAF895D` (`333A C945 99D5 A1EB 2A41 6D1E 83DC 134D 8CAF 895D`). This is the value of `LOAMS_GPG_KEY_ID`.
-- **Created** 2026-10-16, **expires** 2028-10-15. Extend the expiry before then, and re-publish the public key.
-- **Public key:** [`loams-release-key.asc`](loams-release-key.asc), in this directory. Also publish it at `https://loams.dev/gpg.asc` and on keys.openpgp.org.
-- **The release's `SHA256SUMS`** lists every file attached to a product release, and `SHA256SUMS.asc` is its detached signature with this key. [`release-checksums.yml`](../../.github/workflows/release-checksums.yml) writes both at the end of `release-package.yml`, verifies the signature against `loams-release-key.asc` before uploading, and can be dispatched for a published release (`gh workflow run release-checksums.yml --ref main -f tag=vX.Y.Z`). Verify a download with:
+The key was rotated on 2026-10-26, after 0.1.2 (a routine rotation; the previous key is **not revoked** and was never exposed). The previous key certified the new one, and both signed the [transition statement](key-transition-2026-10.md).
+
+| | Current key | Previous key |
+|---|---|---|
+| **User ID** | `Loams Release Signing Key <security@ostriumlabs.org>` | same |
+| **Type** | Ed25519, signing only, no passphrase | same |
+| **Fingerprint** | `29C5CC3F0FD66A2AD32ECB309E8EC3E0AAB5BA68` (`29C5 CC3F 0FD6 6A2A D32E CB30 9E8E C3E0 AAB5 BA68`) | `333AC94599D5A1EB2A416D1E83DC134D8CAF895D` (`333A C945 99D5 A1EB 2A41 6D1E 83DC 134D 8CAF 895D`) |
+| **Created / expires** | 2026-10-26 / 2028-10-25 | 2026-10-16 / 2028-10-15 |
+| **Signs** | releases after 0.1.2 | 0.1.0, 0.1.1 and 0.1.2 (still verifies them) |
+
+- **`LOAMS_GPG_KEY_ID`** is the current key's fingerprint, and `LOAMS_GPG_PRIVATE_KEY` holds the current key. Extend the expiry before it passes, or rotate again, and re-publish the public key.
+- **User ID corrected** on 2026-10-18 (previous key): it was created with the user ID `<security@ostriumlabs.com>`, which is not our domain. That user ID is revoked and `<security@ostriumlabs.org>` is the primary one. The fingerprint is unchanged, so signatures made before the fix still verify.
+- **Verifiers accept both keys.** [`loams-release-key.asc`](loams-release-key.asc) holds both public keys, so `gpg --import loams-release-key.asc` verifies any release. The BYOC bootstrap ([`loams-byoc-bootstrap`](../../deploy/byoc/lib/loams-byoc-bootstrap)) accepts a `VALIDSIG` from either fingerprint, checks the current key first, and logs when a release was signed by the previous one. [`loams-release-key-2026-10.asc`](loams-release-key-2026-10.asc) is the current key alone.
+- **Public keys:** [`loams-release-key.asc`](loams-release-key.asc), in this directory (both keys). Also published at `https://loams.dev/gpg.asc` and on keys.openpgp.org and keyserver.ubuntu.com.
+- **The release's `SHA256SUMS`** lists every file attached to a product release, and `SHA256SUMS.asc` is its detached signature with the current key. [`release-checksums.yml`](../../.github/workflows/release-checksums.yml) writes both at the end of `release-package.yml`, verifies the signature against `loams-release-key.asc` before uploading, and can be dispatched for a published release (`gh workflow run release-checksums.yml --ref main -f tag=vX.Y.Z`). Verify a download with:
 
   ```sh
   gpg --import loams-release-key.asc
@@ -56,7 +65,7 @@ the `.sig` files.
   ```
 
   The desktop files also have their own `DESKTOP-SHA256SUMS` and `DESKTOP-SHA256SUMS.asc`.
-- **Set up** on 2026-10-16: the secret `LOAMS_GPG_PRIVATE_KEY` and the variable `LOAMS_GPG_KEY_ID` are repository-scoped. The maintainers hold an offline backup of the private key and its revocation certificate. If the key is ever exposed, revoke it, publish the revocation, and replace both settings.
+- **Set up** on 2026-10-16, **rotated** on 2026-10-26: the secret `LOAMS_GPG_PRIVATE_KEY` and the variable `LOAMS_GPG_KEY_ID` are repository-scoped. The maintainers hold an offline backup of both private keys and their revocation certificates. If the key is ever exposed, revoke it, publish the revocation, and replace both settings.
 
 ## What SignPath's free programme can and cannot sign
 

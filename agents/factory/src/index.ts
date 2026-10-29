@@ -27,5 +27,33 @@ export type { AcpStdioServer, ShimDefinition } from './mcp.js';
 export { agentdServerFromEnv, createAgentdMcp, SHIM_ENV, shimFromAcp } from './mcp.js';
 export type { Decision, FactoryPolicy, Risk } from './policy.js';
 export { DEFAULT_POLICY, decide, PolicyError, parsePolicy } from './policy.js';
+export type {
+  ProduceEvent,
+  RunApproval,
+  RunEvent,
+  RunPatch,
+  RunRecord,
+  RunRecorder,
+  RunStage,
+  RunState,
+  RunStore,
+  RunTransition,
+  Transition,
+} from './runs/record.js';
+export {
+  createRunRecorder,
+  EVENTS_STREAM,
+  fromLiveValue,
+  LIVE_APP,
+  liveRunStore,
+  RUN_STAGES,
+  RUN_STATES,
+  RUN_TRANSITIONS,
+  RunRecordError,
+  runEvent,
+  runEventType,
+  streamProducer,
+  toLiveValue,
+} from './runs/record.js';
 export { bareName, gate, gateTools, riskOf } from './tools/gate.js';
 export { UNTRUSTED_RULE, untrusted } from './untrusted.js';

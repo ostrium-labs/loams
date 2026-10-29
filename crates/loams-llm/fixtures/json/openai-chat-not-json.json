@@ -1,0 +1,14 @@
+{
+  "id": "chatcmpl-fixture-3",
+  "object": "chat.completion",
+  "created": 1760000000,
+  "model": "gpt-fixture-2026-01-01",
+  "choices": [
+    {
+      "index": 0,
+      "message": {"role": "assistant", "content": "Sure! The person is Ada Lovelace, aged 36."},
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {"prompt_tokens": 61, "completion_tokens": 14, "total_tokens": 75}
+}

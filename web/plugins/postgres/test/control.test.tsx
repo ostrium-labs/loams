@@ -1,7 +1,7 @@
 // The control plane view (PG2 Tasks 5-7) against the fixture-backed mock client.
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import {
   BranchTree,
   branchTree,

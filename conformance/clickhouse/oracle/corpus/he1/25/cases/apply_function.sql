@@ -1,0 +1,1 @@
+SELECT * EXCEPT (d) APPLY(sum) FROM u25

@@ -1,0 +1,10 @@
+{
+  "name": "@loams/lapc-fixture",
+  "version": "0.1.0",
+  "description": "A small ACP agent for the LAPC conformance runner's tests.",
+  "license": "Apache-2.0",
+  "main": "good.js",
+  "engines": {
+    "node": ">=22.13"
+  }
+}

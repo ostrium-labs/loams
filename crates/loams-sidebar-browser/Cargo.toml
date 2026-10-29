@@ -37,12 +37,16 @@ tokio.workspace = true
 # only: the endpoint is loopback plaintext by design (`--host` defaults to
 # 127.0.0.1), so no TLS stack is pulled in. Declared per-crate, not via the
 # workspace, so this stays true alongside loams-web-bridge's TLS client.
-tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "handshake"] }
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "handshake"] }
 tracing.workspace = true
 url.workspace = true
 
 [dev-dependencies]
 base64.workspace = true
+# The parity suite's screenshot check inflates PNG pixel data
+# (tests/provider_parity/png.rs). Already in the lockfile via
+# loams-agentd-harness; MIT OR Apache-2.0.
+flate2 = "1"
 futures.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true

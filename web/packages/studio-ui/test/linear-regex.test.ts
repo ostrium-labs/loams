@@ -1,7 +1,7 @@
 // Inputs CodeQL's js/polynomial-redos query flagged: each helper keeps its
 // output on ordinary text and stays linear on long adversarial strings (the
 // previous patterns took seconds on these sizes).
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { shouldCollapseUserMessage } from '../src/chat/timeline.logic';
 import { commandDisplayText } from '../src/chat/tools/commandLabel';
 import { liveThoughtLine } from '../src/chat/tools/presentation';

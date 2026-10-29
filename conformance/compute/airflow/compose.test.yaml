@@ -1,0 +1,85 @@
+# The Airflow conformance run's overlay (DX1 DX0 Task 6): test settings on top
+# of compose.compute.yaml's `airflow` profile. Never distributed; run.sh adds
+# it through OC_COMPOSE_EXTRA. Paths are relative to deploy/release (the
+# project directory lib.sh passes).
+#
+# - `git-server`: a plain `git daemon` (from the pinned Airflow image, which
+#   carries git) that serves the DAG repository the GitDagBundle reads. Loams
+#   Git is not in the release stack's light profile yet (DX1 ruling T6.R3).
+# - Two bundles: `oc-git` (GitDagBundle, conformance/compute/airflow/dags/
+#   pushed by run.sh) and `oc-edge` (LocalDagBundle, airflow/edge/dags/).
+# - Shorter timeouts, so a killed scheduler's or worker's tasks are found in
+#   about a minute rather than five.
+# - No host ports for the stack's own services: the run reaches everything
+#   from containers on the project's network, and a second stack can run
+#   beside a developer's.
+x-airflow-test-env: &env
+  AIRFLOW__DAG_PROCESSOR__DAG_BUNDLE_CONFIG_LIST: '[{"name": "oc-git", "classpath": "airflow.providers.git.bundles.git.GitDagBundle", "kwargs": {"git_conn_id": "loams_git", "tracking_ref": "main", "refresh_interval": 5}}, {"name": "oc-edge", "classpath": "airflow.dag_processing.bundles.local.LocalDagBundle", "kwargs": {"path": "/opt/airflow/edge-dags", "refresh_interval": 5}}]'
+  AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL: "5"
+  AIRFLOW_CONN_LOAMS_GIT: '{"conn_type": "git", "host": "git://git-server/dags.git"}'
+  AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: admin:admin
+  # The Simple auth manager opens its passwords file for appending ("a+"),
+  # so it cannot be a read-only mount: the API server copies the test
+  # password from a read-only seed into a writable place at start (DX1
+  # ruling T6.R10; first nightly, 2026-10-28).
+  AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: /tmp/simple_auth_manager_passwords.json
+  AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG: "64"
+  AIRFLOW__CORE__PARALLELISM: "64"
+  AIRFLOW__SCHEDULER__TASK_INSTANCE_HEARTBEAT_TIMEOUT: "60"
+  AIRFLOW__SCHEDULER__TASK_INSTANCE_HEARTBEAT_TIMEOUT_DETECTION_INTERVAL: "10"
+  AIRFLOW__SCHEDULER__SCHEDULER_HEALTH_CHECK_THRESHOLD: "30"
+  AIRFLOW__SCHEDULER__ORPHANED_TASKS_CHECK_INTERVAL: "20"
+  AIRFLOW__EDGE__HEARTBEAT_INTERVAL: "10"
+  AIRFLOW__EDGE__JOB_POLL_INTERVAL: "2"
+  AIRFLOW__EDGE__WORKER_CONCURRENCY: ${AIRFLOW_EDGE_CONCURRENCY:-6}
+  # Keep finished Edge jobs (which worker ran what) for the checks: a day.
+  AIRFLOW__EDGE__JOB_SUCCESS_PURGE: "1440"
+  AIRFLOW__EDGE__JOB_FAIL_PURGE: "1440"
+  AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+  AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
+
+x-airflow-test: &test
+  environment: *env
+  volumes:
+    - ../../conformance/compute/airflow/edge/dags:/opt/airflow/edge-dags:ro
+    - ../../conformance/compute/airflow/auth/passwords.json:/opt/airflow/auth-seed/passwords.json:ro
+
+services:
+  git-server:
+    profiles: [airflow]
+    image: ${AIRFLOW_IMAGE:?pass conformance/compute/pins.env with --env-file}
+    restart: unless-stopped
+    entrypoint: ["git", "daemon", "--reuseaddr", "--export-all", "--enable=receive-pack", "--base-path=/srv/git", "--verbose", "/srv/git"]
+    volumes:
+      - airflow-git:/srv/git
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+  airflow-init:
+    <<: *test
+    depends_on:
+      git-server:
+        condition: service_started
+  airflow-api-server:
+    <<: *test
+    # The image entrypoint runs `bash -c` after its own start-up (the edge3
+    # install, the database check), then the API server as before.
+    command: ["bash", "-c", "cp /opt/airflow/auth-seed/passwords.json /tmp/simple_auth_manager_passwords.json && exec airflow api-server"]
+  airflow-scheduler-1: *test
+  airflow-scheduler-2: *test
+  airflow-dag-processor: *test
+  airflow-triggerer: *test
+  airflow-edge-worker-1: *test
+  airflow-edge-worker-2: *test
+
+  compute1:
+    ports: !reset []
+  pageserver:
+    ports: !reset []
+  safekeeper1:
+    ports: !reset []
+  rustfs:
+    ports: !reset []
+
+volumes:
+  airflow-git:

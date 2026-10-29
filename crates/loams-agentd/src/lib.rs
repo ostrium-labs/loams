@@ -10,6 +10,7 @@ pub mod config;
 pub mod discovery;
 pub mod hello;
 pub mod lock;
+pub mod marketplace;
 pub mod owner_only;
 pub mod paths;
 pub mod remote;

@@ -11,6 +11,7 @@ import approvalsPkg from '@loams/plugin-approvals/package.json';
 import auditPkg from '@loams/plugin-audit/package.json';
 import deploymentsPkg from '@loams/plugin-deployments/package.json';
 import identityPkg from '@loams/plugin-identity/package.json';
+import marketplacePkg from '@loams/plugin-marketplace/package.json';
 import namespacesPkg from '@loams/plugin-namespaces/package.json';
 import orgPkg from '@loams/plugin-org/package.json';
 import projectsPkg from '@loams/plugin-projects/package.json';
@@ -34,6 +35,8 @@ export const modules: ModuleTable = {
   '@loams/plugin-agents': () => import('@loams/plugin-agents'),
   '@loams/plugin-audit': () => import('@loams/plugin-audit'),
   '@loams/plugin-studio': () => import('@loams/plugin-studio'),
+  // The Seed Exchange (MK1 Task 9).
+  '@loams/plugin-marketplace': () => import('@loams/plugin-marketplace'),
 };
 
 export const manifests: unknown[] = [
@@ -50,6 +53,7 @@ export const manifests: unknown[] = [
   agentsPkg,
   auditPkg,
   studioPkg,
+  marketplacePkg,
   helloPkg,
 ];
 

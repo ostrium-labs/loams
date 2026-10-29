@@ -1,7 +1,7 @@
 // Behaviour of the generic hooks and utilities vendored as-is in SD1 Task 1 (inventory group k).
 import { act, render, renderHook } from '@testing-library/react';
 import { createElement } from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { AnimatedHeight, LRUCache, observeResize, useIsMobile, useMediaQuery } from '../src';
 
 describe('LRUCache', () => {
