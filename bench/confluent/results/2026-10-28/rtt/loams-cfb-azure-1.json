@@ -1,0 +1,67 @@
+{
+ "run": "074337",
+ "target": "loams-cfb-azure-1",
+ "kind": "confluent-cloud-basic",
+ "cloud": "azure",
+ "region": "centralindia",
+ "scenario": "rtt",
+ "started_utc": "2026-10-28T02:13:37Z",
+ "client": "librdkafka 2.16.0",
+ "driver_host": "owner laptop, India (carrier uplink; WAN-bound)",
+ "params": {
+  "target": "loams-cfb-azure-1",
+  "kind": "confluent-cloud-basic",
+  "bootstrap": "pkc-7prvp.centralindia.azure.confluent.cloud:9092",
+  "cloud": "azure",
+  "region": "centralindia",
+  "run": "074337",
+  "no_otel": false,
+  "trace_sample": 0.01,
+  "topic": null,
+  "keep_topic": false,
+  "partitions": 6,
+  "retention_ms": 3600000,
+  "fetch_wait_ms": 50,
+  "settle": 3.0,
+  "drain_s": 60,
+  "no_consume": false,
+  "scenario": "rtt",
+  "samples": 30,
+  "interval": 0.5
+ },
+ "ok": true,
+ "seconds": 79.6,
+ "result": {
+  "tcp_connect_ms": {
+   "n": 30,
+   "min": 44.646,
+   "p50": 260.552,
+   "p90": 445.24,
+   "p99": 615.14,
+   "p999": 615.14,
+   "max": 615.14,
+   "mean": 262.666
+  },
+  "tcp_failures": 0,
+  "tls_handshake_ms": {
+   "n": 30,
+   "min": 68.301,
+   "p50": 366.633,
+   "p90": 4007.606,
+   "p99": 5225.734,
+   "p999": 5225.734,
+   "max": 5225.734,
+   "mean": 1006.797
+  },
+  "metadata_rtt_ms": {
+   "n": 30,
+   "min": 46.89,
+   "p50": 274.735,
+   "p90": 658.388,
+   "p99": 2236.122,
+   "p999": 2236.122,
+   "max": 2236.122,
+   "mean": 328.649
+  }
+ }
+}

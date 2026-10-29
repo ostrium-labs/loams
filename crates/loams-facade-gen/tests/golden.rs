@@ -32,6 +32,7 @@ const PACKAGE_PARAMETERS: &[&str] = &[
     "loams.graph.v1=@loams/proto/graph",
     "loams.sql.v1=@loams/proto/sql",
     "loams.stream.v1=@loams/proto/stream",
+    "loams.meter.v1=@loams/proto/meter",
 ];
 
 const PROTO_REV: &str = "v1";

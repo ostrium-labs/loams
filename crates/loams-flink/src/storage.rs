@@ -283,14 +283,20 @@ mod tests {
 
     #[test]
     fn object_store_settings_are_checked() {
-        let mut s = ObjectStore::default();
-        s.bucket = "A".into();
+        let s = ObjectStore {
+            bucket: "A".into(),
+            ..ObjectStore::default()
+        };
         assert!(s.check().is_err());
-        let mut s = ObjectStore::default();
-        s.root = "a/../b".into();
+        let s = ObjectStore {
+            root: "a/../b".into(),
+            ..ObjectStore::default()
+        };
         assert!(s.check().is_err());
-        let mut s = ObjectStore::default();
-        s.endpoint = Some("rustfs:9000".into());
+        let s = ObjectStore {
+            endpoint: Some("rustfs:9000".into()),
+            ..ObjectStore::default()
+        };
         assert!(s.check().is_err());
     }
 }

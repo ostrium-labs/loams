@@ -7,6 +7,8 @@ scope = "load, and the Postgres store."
 [sdks]
 go = "Go SDK"
 ts = "TypeScript SDK"
+# An SDK with no case in the run: every cell reads "not yet run".
+java = "Java SDK"
 
 [[method]]
 name = "GetSystemInfo"

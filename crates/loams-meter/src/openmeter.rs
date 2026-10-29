@@ -58,7 +58,7 @@ pub fn router(entitlements: Entitlements) -> Router {
 }
 
 /// An RFC 7807 problem in OpenMeter's shape (`UnexpectedProblemResponse`).
-fn problem(e: &MeterError, instance: &str) -> Response {
+pub(crate) fn problem(e: &MeterError, instance: &str) -> Response {
     let status = match e {
         MeterError::Unauthenticated => StatusCode::UNAUTHORIZED,
         MeterError::PermissionDenied { .. } => StatusCode::FORBIDDEN,

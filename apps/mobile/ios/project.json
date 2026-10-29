@@ -21,6 +21,11 @@
       "executor": "nx:run-commands",
       "cache": false,
       "options": {"cwd": "apps/mobile/ios", "command": "python3 ../scripts/ios.py test"}
+    },
+    "test-core": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {"cwd": "apps/mobile/ios", "command": "python3 ../scripts/ios.py core"}
     }
   }
 }

@@ -167,17 +167,26 @@ pub(crate) fn copy_component(
     describe(store, "copy", dir, &name)
 }
 
-/// Replaces directory `target` with a copy of `source`: the copy is built
-/// beside it, the current directory is moved aside, the copy takes its
-/// place, and only then is the old one removed.
+/// Staging directories `replace_dir` keeps inside the target while it works.
+const RESTORE_NEW: &str = ".restore-new";
+const RESTORE_OLD: &str = ".restore-old";
+
+/// Replaces the contents of directory `target` with a copy of `source`.
+///
+/// Everything happens inside `target`: the copy is built in
+/// `target/.restore-new`, the current entries are moved into
+/// `target/.restore-old`, the copy's entries take their place, and only then is
+/// the old content removed. `target` itself is never renamed, so it may be a
+/// volume mount point, and nothing is written beside it: `loams upgrade` runs
+/// restores in a container with a read-only root file system, where a sibling
+/// such as `/var/lib/loams.restore-new` cannot be created (upgrade gate,
+/// snapshot run 40686997353). Every rename stays on the target's file system.
 pub(crate) fn replace_dir(source: &Path, target: &Path) -> Result<(), SnapshotError> {
-    let name = target
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_default();
-    let staged = target.with_file_name(format!("{name}.restore-new"));
-    let old = target.with_file_name(format!("{name}.restore-old"));
+    fs::create_dir_all(target).map_err(|e| io(target.display(), e))?;
+    let staged = target.join(RESTORE_NEW);
+    let old = target.join(RESTORE_OLD);
     let _ = fs::remove_dir_all(&staged);
+    let _ = fs::remove_dir_all(&old);
     fs::create_dir_all(&staged).map_err(|e| io(staged.display(), e))?;
     for (relative, path) in walk(source)? {
         let to = staged.join(&relative);
@@ -186,11 +195,96 @@ pub(crate) fn replace_dir(source: &Path, target: &Path) -> Result<(), SnapshotEr
         }
         fs::copy(&path, &to).map_err(|e| io(path.display(), e))?;
     }
-    let _ = fs::remove_dir_all(&old);
-    if target.exists() {
-        fs::rename(target, &old).map_err(|e| io(target.display(), e))?;
+    fs::create_dir_all(&old).map_err(|e| io(old.display(), e))?;
+    for name in entries_except_staging(target)? {
+        fs::rename(target.join(&name), old.join(&name))
+            .map_err(|e| io(target.join(&name).display(), e))?;
     }
-    fs::rename(&staged, target).map_err(|e| io(target.display(), e))?;
+    for name in entries_except_staging(&staged)? {
+        fs::rename(staged.join(&name), target.join(&name))
+            .map_err(|e| io(staged.join(&name).display(), e))?;
+    }
+    let _ = fs::remove_dir_all(&staged);
     let _ = fs::remove_dir_all(&old);
     Ok(())
+}
+
+/// The names in `dir`, without the two staging directories.
+fn entries_except_staging(dir: &Path) -> Result<Vec<std::ffi::OsString>, SnapshotError> {
+    let mut names = Vec::new();
+    for entry in fs::read_dir(dir).map_err(|e| io(dir.display(), e))? {
+        let name = entry.map_err(|e| io(dir.display(), e))?.file_name();
+        if name != RESTORE_NEW && name != RESTORE_OLD {
+            names.push(name);
+        }
+    }
+    Ok(names)
+}
+
+#[cfg(test)]
+mod replace_dir_tests {
+    #![allow(clippy::unwrap_used)]
+
+    use std::fs;
+
+    use super::replace_dir;
+
+    #[test]
+    fn the_target_holds_exactly_the_source_and_no_staging_is_left() {
+        let tmp = tempfile::tempdir().unwrap();
+        let source = tmp.path().join("snap");
+        let target = tmp.path().join("data");
+        fs::create_dir_all(source.join("a/b")).unwrap();
+        fs::write(source.join("a/b/new.txt"), "new").unwrap();
+        fs::write(source.join("top.txt"), "top").unwrap();
+        fs::create_dir_all(target.join("gone")).unwrap();
+        fs::write(target.join("gone/old.txt"), "old").unwrap();
+        fs::write(target.join("top.txt"), "stale").unwrap();
+
+        replace_dir(&source, &target).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(target.join("a/b/new.txt")).unwrap(),
+            "new"
+        );
+        assert_eq!(fs::read_to_string(target.join("top.txt")).unwrap(), "top");
+        assert!(!target.join("gone").exists());
+        assert!(!target.join(super::RESTORE_NEW).exists());
+        assert!(!target.join(super::RESTORE_OLD).exists());
+    }
+
+    #[test]
+    fn nothing_is_written_beside_the_target() {
+        let tmp = tempfile::tempdir().unwrap();
+        let source = tmp.path().join("snap");
+        let parent = tmp.path().join("parent");
+        let target = parent.join("data");
+        fs::create_dir_all(&source).unwrap();
+        fs::write(source.join("f"), "x").unwrap();
+        fs::create_dir_all(&target).unwrap();
+
+        replace_dir(&source, &target).unwrap();
+
+        let siblings: Vec<_> = fs::read_dir(&parent)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(siblings, vec![std::ffi::OsString::from("data")]);
+    }
+
+    #[test]
+    fn a_leftover_from_an_interrupted_restore_is_cleared() {
+        let tmp = tempfile::tempdir().unwrap();
+        let source = tmp.path().join("snap");
+        let target = tmp.path().join("data");
+        fs::create_dir_all(&source).unwrap();
+        fs::write(source.join("f"), "x").unwrap();
+        fs::create_dir_all(target.join(super::RESTORE_OLD)).unwrap();
+        fs::write(target.join(super::RESTORE_OLD).join("junk"), "j").unwrap();
+
+        replace_dir(&source, &target).unwrap();
+
+        assert_eq!(fs::read_to_string(target.join("f")).unwrap(), "x");
+        assert!(!target.join(super::RESTORE_OLD).exists());
+    }
 }

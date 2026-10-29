@@ -23,3 +23,6 @@ client_tokens_file = "/etc/loams-gateway/browser-clients"
 # max_connections = 64
 # handshake_timeout_ms = 10000
 # connect_timeout_ms = 5000
+# The splice buffer per direction; 4096 holds about twice the sessions per GB
+# of 8192 (bench/results/bq1/gateway).
+# copy_buffer_bytes = 4096

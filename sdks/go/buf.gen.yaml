@@ -57,4 +57,5 @@ plugins:
       - package=loams.graph.v1=loams.dev/go/gen/loams/graph/v1
       - package=loams.sql.v1=loams.dev/go/gen/loams/sql/v1
       - package=loams.stream.v1=loams.dev/go/gen/loams/stream/v1
+      - package=loams.meter.v1=loams.dev/go/gen/loams/meter/v1
 clean: true

@@ -17,7 +17,7 @@ const S: &str = "2b0b1c7e-5d3c-4a1e-9f53-6f2b4c8a9d10";
 const O: &str = "8c2f0a43-1d7e-4b6a-a3f4-0e9d5c7b2a61";
 
 fn client(server: &MockServer, v: ApiVersion) -> SqlGatewayClient {
-    SqlGatewayClient::new(&server.base_url(), v).unwrap()
+    SqlGatewayClient::new(&server.base_url(), v).expect("a client for the mock server")
 }
 
 #[tokio::test]

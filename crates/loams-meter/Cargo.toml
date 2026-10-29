@@ -18,6 +18,8 @@ loams-cloudevents = { path = "../loams-cloudevents", version = "0.1.2", default-
 loams-authz.workspace = true
 loams-common.workspace = true
 loams-meter-core = { path = "../loams-meter-core", version = "0.1.2" }
+# QueryMeter runs the House query of `loams-meter-house` (ME1 Task 8).
+loams-meter-house = { path = "../loams-meter-house", version = "0.1.2" }
 loams-proto.workspace = true
 # Webhook deliveries; the process installs rustls's crypto provider.
 reqwest = { workspace = true, features = ["rustls-no-provider"] }

@@ -33,9 +33,11 @@ need_success() { # <dag> <run> [timeout]
   echo "$1 $2: $s"
   [ "$s" = success ]
 }
+# A restarted worker installs edge3 again before it registers; on a busy
+# machine that took over 5 minutes (local run, 2026-10-28; T6.R13).
 both_workers_up() {
-  af wait-worker edge-worker-1 idle,running 300 >/dev/null
-  af wait-worker edge-worker-2 idle,running 300 >/dev/null
+  af wait-worker edge-worker-1 idle,running 900 >/dev/null
+  af wait-worker edge-worker-2 idle,running 900 >/dev/null
 }
 
 # airflow_edge_workers_register: both workers online through the Edge API.
