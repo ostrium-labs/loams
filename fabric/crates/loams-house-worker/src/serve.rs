@@ -484,8 +484,9 @@ impl Worker {
             code: 497,
             name: "ACCESS_DENIED".to_string(),
             message: "the worker's control connection runs only the House's view DDL \
-                      (one CREATE DATABASE … ENGINE = Memory, CREATE OR REPLACE VIEW or \
-                      DROP TABLE IF EXISTS)"
+                      (one CREATE DATABASE … ENGINE = Memory, CREATE OR REPLACE VIEW, \
+                      DROP TABLE IF EXISTS, CREATE OR REPLACE FUNCTION or CREATE \
+                      DICTIONARY over a view)"
                 .to_string(),
         })
     }
@@ -888,7 +889,8 @@ fn after_qualified(text: &str) -> Option<&str> {
 /// The shapes of the front's view DDL (`loams_house::views`, `system`): `CREATE
 /// DATABASE IF NOT EXISTS d ENGINE = Memory`, `CREATE OR REPLACE VIEW d.v AS\n…`,
 /// a read view of the bucket `CREATE OR REPLACE VIEW d.v (<name> <type>, …) SQL
-/// SECURITY NONE AS\n…` (HS1 R-ACL.1), and `DROP TABLE IF EXISTS d.t`, exactly.
+/// SECURITY NONE AS\n…` (HS1 R-ACL.1), `DROP TABLE IF EXISTS d.t`, and a SQL
+/// function `CREATE OR REPLACE FUNCTION f AS …` (HE1 R14.11), exactly.
 pub fn control_ddl_shape(sql: &str) -> bool {
     if let Some(rest) = sql.strip_prefix("CREATE DATABASE IF NOT EXISTS ") {
         return after_name(rest) == Some(" ENGINE = Memory");
@@ -908,7 +910,79 @@ pub fn control_ddl_shape(sql: &str) -> bool {
     if let Some(rest) = sql.strip_prefix("DROP TABLE IF EXISTS ") {
         return after_qualified(rest) == Some("");
     }
+    // HE1 R14.12: a dictionary over one of the statement's read views.
+    if let Some(rest) = sql.strip_prefix("CREATE DICTIONARY ") {
+        return dictionary_shape(rest);
+    }
+    // HE1 R14.11: one of the namespace's SQL functions, whose lambda the
+    // front held to the deny list.
+    if let Some(rest) = sql.strip_prefix("CREATE OR REPLACE FUNCTION ") {
+        return after_name(rest)
+            .and_then(|after| after.strip_prefix(" AS "))
+            .is_some_and(|lambda| !lambda.trim().is_empty());
+    }
     false
+}
+
+/// After `CREATE DICTIONARY `: `d.n (<name> <type>, …) PRIMARY KEY
+/// <name>[, <name>…] SOURCE(CLICKHOUSE(DB '<name>' TABLE '<name>'))
+/// LAYOUT(DIRECT())` or `LAYOUT(COMPLEX_KEY_DIRECT())` (HE1 R14.12): the
+/// source is the local server (no `HOST`), read by names alone.
+fn dictionary_shape(text: &str) -> bool {
+    let Some(rest) = after_qualified(text).and_then(|r| r.strip_prefix(" (")) else {
+        return false;
+    };
+    let mut rest = rest;
+    loop {
+        let Some(after) = after_name(rest)
+            .and_then(|r| r.strip_prefix(' '))
+            .and_then(after_type)
+        else {
+            return false;
+        };
+        rest = after;
+        if let Some(next) = rest.strip_prefix(", ") {
+            rest = next;
+        } else if let Some(next) = rest.strip_prefix(") PRIMARY KEY ") {
+            rest = next;
+            break;
+        } else {
+            return false;
+        }
+    }
+    loop {
+        let Some(after) = after_name(rest) else {
+            return false;
+        };
+        rest = after;
+        match rest.strip_prefix(", ") {
+            Some(next) => rest = next,
+            None => break,
+        }
+    }
+    let Some(rest) = rest.strip_prefix(" SOURCE(CLICKHOUSE(DB ") else {
+        return false;
+    };
+    let plain_literal = |text: &str| -> Option<usize> {
+        let inner = text.strip_prefix('\'')?;
+        let end = inner.find('\'')?;
+        let name = &inner[..end];
+        (!name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'))
+            .then_some(end + 2)
+    };
+    let Some(db) = plain_literal(rest) else {
+        return false;
+    };
+    let Some(rest) = rest[db..].strip_prefix(" TABLE ") else {
+        return false;
+    };
+    let Some(table) = plain_literal(rest) else {
+        return false;
+    };
+    matches!(
+        &rest[table..],
+        ")) LAYOUT(DIRECT())" | ")) LAYOUT(COMPLEX_KEY_DIRECT())"
+    )
 }
 
 /// Drops every read view an earlier statement made (HS1 Task 11): the views in
@@ -928,6 +1002,18 @@ pub fn drop_views(control: &Session) -> Result<(), ChdbError> {
         .map(|d| format!("'{d}'"))
         .collect::<Vec<_>>()
         .join(", ");
+    // HE1 R14.12: dictionaries first, since a view they read cannot be
+    // dropped under them (`630`, measured).
+    for row in names("SELECT database, name FROM system.dictionaries")? {
+        let Some((database, name)) = row.split_once('\t') else {
+            continue;
+        };
+        control.execute_simple(&format!(
+            "DROP DICTIONARY IF EXISTS {}.{}",
+            quoted_name(database),
+            quoted_name(name)
+        ))?;
+    }
     for database in names(&format!(
         "SELECT name FROM system.databases WHERE engine = 'Memory' AND name NOT IN ({kept})"
     ))? {
@@ -942,6 +1028,13 @@ pub fn drop_views(control: &Session) -> Result<(), ChdbError> {
         control.execute_simple(&format!(
             "DROP TABLE IF EXISTS default.{}",
             quoted_name(&table)
+        ))?;
+    }
+    // HE1 R14.11: the SQL functions an earlier statement's plan made.
+    for function in names("SELECT name FROM system.functions WHERE origin = 'SQLUserDefined'")? {
+        control.execute_simple(&format!(
+            "DROP FUNCTION IF EXISTS {}",
+            quoted_name(&function)
         ))?;
     }
     Ok(())
@@ -1217,6 +1310,12 @@ mod tests {
             "CREATE OR REPLACE VIEW d.v (a UInt8) SQL SECURITY NONE AS\nSELECT 1",
             "CREATE OR REPLACE VIEW d.`t` (k UInt64, `s t` Nullable(String), \
              e Enum8('a b' = 1, 'c' = -2), d DateTime64(3, 'UTC')) SQL SECURITY NONE AS\nSELECT 1",
+            "CREATE OR REPLACE FUNCTION f AS (a, b) -> a + b",
+            "CREATE DICTIONARY d.n (k UInt64, v String) PRIMARY KEY k \
+             SOURCE(CLICKHOUSE(DB 'd' TABLE '__loams_dictionary_n')) LAYOUT(DIRECT())",
+            "CREATE DICTIONARY `default`.n (project_id UUID, h String, c Array(Tuple(UInt32, String))) \
+             PRIMARY KEY project_id, h SOURCE(CLICKHOUSE(DB 'default' TABLE 'v')) \
+             LAYOUT(COMPLEX_KEY_DIRECT())",
         ] {
             assert!(control_ddl_shape(ok), "{ok}");
         }
@@ -1239,6 +1338,25 @@ mod tests {
             "DROP TABLE IF EXISTS d.t; DROP DATABASE d",
             "DROP DATABASE d",
             "INSERT INTO d.v VALUES (1)",
+            "CREATE FUNCTION f AS (a) -> a",
+            "CREATE OR REPLACE FUNCTION d.f AS (a) -> a",
+            "CREATE OR REPLACE FUNCTION f AS ",
+            "CREATE DICTIONARY d.n (k UInt64) PRIMARY KEY k SOURCE(CLICKHOUSE(HOST 'x' DB 'd' \
+             TABLE 't')) LAYOUT(DIRECT())",
+            "CREATE DICTIONARY d.n (k UInt64) PRIMARY KEY k SOURCE(CLICKHOUSE(DB 'd' TABLE 't' \
+             USER 'u')) LAYOUT(DIRECT())",
+            "CREATE DICTIONARY d.n (k UInt64) PRIMARY KEY k SOURCE(CLICKHOUSE(DB 'd' \
+             QUERY 'SELECT 1')) LAYOUT(DIRECT())",
+            "CREATE DICTIONARY d.n (k UInt64) PRIMARY KEY k SOURCE(HTTP(url 'http://x' \
+             format 'TSV')) LAYOUT(DIRECT())",
+            "CREATE DICTIONARY d.n (k UInt64) PRIMARY KEY k SOURCE(CLICKHOUSE(DB 'd' \
+             TABLE 't')) LAYOUT(HASHED())",
+            "CREATE DICTIONARY d.n (k UInt64 DEFAULT file('x')) PRIMARY KEY k \
+             SOURCE(CLICKHOUSE(DB 'd' TABLE 't')) LAYOUT(DIRECT())",
+            "CREATE DICTIONARY d.n (k UInt64) PRIMARY KEY k SOURCE(CLICKHOUSE(DB 'd' \
+             TABLE 't')) LAYOUT(DIRECT()) LIFETIME(0)",
+            "CREATE DICTIONARY d.n (k UInt64 INJECTIVE) PRIMARY KEY k SOURCE(CLICKHOUSE(DB 'd' \
+             TABLE 't')) LAYOUT(DIRECT())",
         ] {
             assert!(!control_ddl_shape(bad), "{bad}");
         }

@@ -30,6 +30,8 @@ use crate::errors::{ChError, HouseError};
 pub const DROPPED: &str = "__loams_dropped";
 /// Names starting with this are the House's own.
 pub const RESERVED_PREFIX: &str = "__loams";
+/// The House's own database of a namespace's SQL functions (HE1 R14.11).
+pub const FUNCTIONS_DATABASE: &str = "__loams_functions";
 /// Property: the database a dropped table was in.
 pub const DROPPED_DATABASE: &str = "loams.dropped.database";
 /// Property: its name there.
@@ -837,6 +839,214 @@ impl Lake {
             )
             .await?;
         Ok(())
+    }
+
+    /// The names of the namespace's SQL functions (HE1 R14.11).
+    pub async fn function_names(&self, namespace: u64) -> Result<Vec<String>, HouseError> {
+        match self
+            .catalog
+            .list_tables(&Self::namespace(namespace, FUNCTIONS_DATABASE))
+            .await
+        {
+            Ok(tables) => Ok(tables.into_iter().map(|t| t.name().to_string()).collect()),
+            Err(CatalogError::NoSuchNamespace(_)) => Ok(Vec::new()),
+            Err(err) => Err(err.into()),
+        }
+    }
+
+    /// A SQL function's lambda (`(a, b) -> …`), as `CREATE FUNCTION` wrote it.
+    pub async fn function(&self, namespace: u64, name: &str) -> Result<Option<String>, HouseError> {
+        match self
+            .catalog
+            .load_table(&Self::table_ident(namespace, FUNCTIONS_DATABASE, name))
+            .await
+        {
+            Ok(loaded) => Ok(loaded
+                .metadata
+                .properties()
+                .get(ddl::PROP_FUNCTION_LAMBDA)
+                .cloned()),
+            Err(CatalogError::NoSuchTable(_) | CatalogError::NoSuchNamespace(_)) => Ok(None),
+            Err(err) => Err(err.into()),
+        }
+    }
+
+    /// `CREATE [OR REPLACE] FUNCTION [IF NOT EXISTS] name AS lambda` (HE1
+    /// R14.11): a SQL function of the namespace, a catalog entry with no files
+    /// in the House's own database `__loams_functions`, which no statement
+    /// names. `609` when it exists and neither `OR REPLACE` nor `IF NOT
+    /// EXISTS` is given.
+    pub async fn create_function(
+        &self,
+        namespace: u64,
+        function: &ddl::CreateFunction,
+    ) -> Result<(), HouseError> {
+        self.ensure_root(namespace).await?;
+        match self
+            .catalog
+            .create_database(
+                &Self::namespace(namespace, FUNCTIONS_DATABASE),
+                HashMap::from([(
+                    "comment".to_string(),
+                    "The House's own: the namespace's SQL functions".to_string(),
+                )]),
+            )
+            .await
+        {
+            Ok(()) | Err(CatalogError::NamespaceExists(_)) => {}
+            Err(err) => return Err(err.into()),
+        }
+        let properties = HashMap::from([
+            (ddl::PROP_DDL.to_string(), function.render()),
+            (ddl::PROP_ENGINE.to_string(), "Function".to_string()),
+            (ddl::PROP_CLASS.to_string(), "view".to_string()),
+            (
+                ddl::PROP_FUNCTION_LAMBDA.to_string(),
+                function.lambda.clone(),
+            ),
+        ]);
+        let ident = Self::table_ident(namespace, FUNCTIONS_DATABASE, &function.name);
+        match self.catalog.load_table(&ident).await {
+            Ok(existing) => {
+                if function.if_not_exists {
+                    return Ok(());
+                }
+                if !function.or_replace {
+                    return Err(ddl::clickhouse_error(
+                        609,
+                        "FUNCTION_ALREADY_EXISTS",
+                        format!(
+                            "User-defined object '{}' already exists: while adding user \
+                             defined function `{}`",
+                            function.name, function.name
+                        ),
+                    ));
+                }
+                self.catalog
+                    .commit(
+                        &existing.ident,
+                        Vec::new(),
+                        vec![TableUpdate::SetProperties {
+                            updates: properties,
+                        }],
+                    )
+                    .await?;
+                Ok(())
+            }
+            Err(CatalogError::NoSuchTable(_) | CatalogError::NoSuchNamespace(_)) => {
+                let location =
+                    self.root()
+                        .table_location(namespace, FUNCTIONS_DATABASE, &function.name);
+                let creation = ddl::view_creation(&function.name, location, properties)?;
+                match self
+                    .catalog
+                    .create_table(&Self::namespace(namespace, FUNCTIONS_DATABASE), creation)
+                    .await
+                {
+                    Ok(_) => Ok(()),
+                    // Another front made it first: as ClickHouse answers a race.
+                    Err(CatalogError::TableExists(_)) if function.if_not_exists => Ok(()),
+                    Err(err) => Err(err.into()),
+                }
+            }
+            Err(err) => Err(err.into()),
+        }
+    }
+
+    /// `DROP FUNCTION [IF EXISTS] name` (HE1 R14.11): `46` for a function the
+    /// namespace does not have.
+    pub async fn drop_function(
+        &self,
+        namespace: u64,
+        name: &str,
+        if_exists: bool,
+    ) -> Result<(), HouseError> {
+        let ident = Self::table_ident(namespace, FUNCTIONS_DATABASE, name);
+        match self.catalog.drop_table(&ident).await {
+            Ok(()) => Ok(()),
+            Err(CatalogError::NoSuchTable(_) | CatalogError::NoSuchNamespace(_)) if if_exists => {
+                Ok(())
+            }
+            Err(CatalogError::NoSuchTable(_) | CatalogError::NoSuchNamespace(_)) => {
+                Err(ddl::clickhouse_error(
+                    46,
+                    "UNKNOWN_FUNCTION",
+                    format!(
+                        "User-defined object '{name}' doesn't exist: while removing user \
+                         defined function `{name}`"
+                    ),
+                ))
+            }
+            Err(err) => Err(err.into()),
+        }
+    }
+
+    /// `EXCHANGE TABLES a AND b` within the namespace (HE1 R14.9): each name
+    /// then holds the other's table. Answers the tables now under `a` and `b`.
+    ///
+    /// The catalogs rename one table at a time (Iceberg REST has no swap), so
+    /// the exchange is three renames through a name of the House's own (`a` →
+    /// `__loams_exchange_…`, `b` → `a`, that → `b`), undone in reverse when a
+    /// step fails. It is not atomic as ClickHouse's is: a statement that
+    /// resolves `a` or `b` between the steps can find no table (`60`), and a
+    /// front that dies between them leaves the moved table under the House's
+    /// name, which `SHOW TABLES` does not list.
+    pub async fn exchange_tables(
+        &self,
+        namespace: u64,
+        a: (&str, &str),
+        b: (&str, &str),
+    ) -> Result<(LakeTable, LakeTable), HouseError> {
+        let first = self.exchanged(namespace, a).await?;
+        let second = self.exchanged(namespace, b).await?;
+        // A table exchanged with itself stays (the 26.9.2.8 oracle answers it).
+        if first.ident == second.ident {
+            return Ok((first, second));
+        }
+        let parked = Self::table_ident(
+            namespace,
+            a.0,
+            &format!(
+                "{RESERVED_PREFIX}_exchange_{}",
+                uuid::Uuid::new_v4().simple()
+            ),
+        );
+        let a_ident = Self::table_ident(namespace, a.0, a.1);
+        let b_ident = Self::table_ident(namespace, b.0, b.1);
+        self.catalog.rename_table(&first.ident, &parked).await?;
+        if let Err(err) = self.catalog.rename_table(&second.ident, &a_ident).await {
+            let _ = self.catalog.rename_table(&parked, &first.ident).await;
+            return Err(err.into());
+        }
+        if let Err(err) = self.catalog.rename_table(&parked, &b_ident).await {
+            let _ = self.catalog.rename_table(&a_ident, &second.ident).await;
+            let _ = self.catalog.rename_table(&parked, &first.ident).await;
+            return Err(err.into());
+        }
+        Ok((
+            self.catalog.load_table(&a_ident).await?,
+            self.catalog.load_table(&b_ident).await?,
+        ))
+    }
+
+    /// A table `EXCHANGE TABLES` names: `60` when missing, `497` when it is
+    /// another writer's.
+    async fn exchanged(
+        &self,
+        namespace: u64,
+        (database, table): (&str, &str),
+    ) -> Result<LakeTable, HouseError> {
+        self.require_database(namespace, database).await?;
+        let loaded = self
+            .load(namespace, database, table)
+            .await?
+            .ok_or_else(|| unknown_table(database, table))?;
+        if ddl::class_of(&loaded.metadata) == TableClass::External {
+            return Err(access_denied(&format!(
+                "EXCHANGE TABLES {database}.{table}"
+            )));
+        }
+        Ok(loaded)
     }
 
     /// `RENAME TABLE a TO b` within the namespace.

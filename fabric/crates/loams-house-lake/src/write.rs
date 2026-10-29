@@ -47,7 +47,8 @@ use iceberg::writer::partitioning::PartitioningWriter;
 use iceberg::writer::partitioning::fanout_writer::FanoutWriter;
 use iceberg::writer::{IcebergWriter, IcebergWriterBuilder};
 use parquet_58::basic::{Compression, ZstdLevel};
-use parquet_58::file::properties::WriterProperties;
+use parquet_58::file::properties::{EnabledStatistics, WriterProperties};
+use parquet_58::schema::types::ColumnPath;
 
 use crate::metadata::LakeError;
 
@@ -110,6 +111,27 @@ impl std::fmt::Debug for DataWriter {
     }
 }
 
+/// The Parquet column paths of a schema's `uuid` fields, at the top level and
+/// inside structs (HE1 R14.10). Lists and maps are left as they are: no reader
+/// prunes on their elements' bounds.
+fn uuid_columns(schema: &iceberg::spec::Schema) -> Vec<Vec<String>> {
+    use iceberg::spec::{NestedFieldRef, PrimitiveType, Type};
+    fn walk(fields: &[NestedFieldRef], prefix: &[String], out: &mut Vec<Vec<String>>) {
+        for field in fields {
+            let mut path = prefix.to_vec();
+            path.push(field.name.clone());
+            match field.field_type.as_ref() {
+                Type::Primitive(PrimitiveType::Uuid) => out.push(path),
+                Type::Struct(inner) => walk(inner.fields(), &path, out),
+                _ => {}
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(schema.as_struct().fields(), &[], &mut out);
+    out
+}
+
 fn invalid(what: &str, err: impl std::fmt::Display) -> LakeError {
     LakeError::Invalid(format!("{what}: {err}"))
 }
@@ -134,11 +156,14 @@ pub const PAGE_ROWS: usize = 8_192;
 
 /// How the House writes Parquet: ZSTD, bounded row groups and pages.
 pub fn writer_properties() -> WriterProperties {
+    writer_properties_builder().build()
+}
+
+fn writer_properties_builder() -> parquet_58::file::properties::WriterPropertiesBuilder {
     WriterProperties::builder()
         .set_compression(Compression::ZSTD(ZstdLevel::default()))
         .set_max_row_group_row_count(Some(ROW_GROUP_ROWS))
         .set_data_page_row_count_limit(PAGE_ROWS)
-        .build()
 }
 
 impl DataWriter {
@@ -164,7 +189,19 @@ impl DataWriter {
             schema_to_arrow_schema(&schema).map_err(|e| invalid("the table's schema", e))?,
         );
         let io = FileIO::new_with_memory();
-        let properties = writer_properties();
+        let mut properties = writer_properties_builder();
+        // HE1 R14.10: no statistics, so no Iceberg bounds, for `uuid` columns.
+        // ClickHouse 26.9's Iceberg reader misreads a `uuid` bound (Iceberg's
+        // 16 big-endian bytes) and prunes every file an equality on the column
+        // should keep (measured on clickhouse-server 26.9.2.8 with
+        // `icebergLocal`: `WHERE id = toUUID(…)` answers 0 rows, 3 with
+        // `use_iceberg_partition_pruning = 0`), so a file whose bounds name a
+        // `uuid` is never read for `WHERE id = …`.
+        for path in uuid_columns(&schema) {
+            properties = properties
+                .set_column_statistics_enabled(ColumnPath::from(path), EnabledStatistics::None);
+        }
+        let properties = properties.build();
         let parquet = ParquetWriterBuilder::new(properties, schema.clone());
         let locations = DefaultLocationGenerator::new(metadata)
             .map_err(|e| invalid("the table's data location", e))?;
@@ -494,6 +531,35 @@ mod tests {
             .map(|i| schema.column(i).self_type().get_basic_info().id())
             .collect();
         assert_eq!(ids, vec![1, 2, 3]);
+    }
+
+    /// HE1 R14.10: the `uuid` columns whose statistics (and so Iceberg
+    /// bounds) are not written.
+    #[test]
+    fn uuid_columns_are_found_through_structs() {
+        let uuid = || Type::Primitive(PrimitiveType::Uuid);
+        let schema = Schema::builder()
+            .with_fields(vec![
+                NestedField::required(1, "id", uuid()).into(),
+                NestedField::required(2, "k", Type::Primitive(PrimitiveType::Long)).into(),
+                NestedField::optional(
+                    3,
+                    "s",
+                    Type::Struct(iceberg::spec::StructType::new(vec![
+                        NestedField::optional(4, "inner", uuid()).into(),
+                    ])),
+                )
+                .into(),
+            ])
+            .build()
+            .expect("schema");
+        assert_eq!(
+            uuid_columns(&schema),
+            vec![
+                vec!["id".to_string()],
+                vec!["s".to_string(), "inner".to_string()]
+            ]
+        );
     }
 
     #[test]
