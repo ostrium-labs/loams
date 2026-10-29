@@ -83,7 +83,7 @@ t "render_rejects_injection" bash -c "
   ! '$byoc/render.sh' aws --bucket b >/dev/null 2>&1 &&
   ! '$byoc/render.sh' gcp --bucket b --project 'x' >/dev/null 2>&1 &&
   ! '$byoc/render.sh' azure --container c --storage-account 'Bad_Name' --vault v >/dev/null 2>&1"
-t "render_pins_a_version_and_never_latest" bash -c "! grep -q 'latest' <(grep -v '^#' '$tmp/aws.yaml' | grep -E 'LOAMS_VERSION') && grep -q 'LOAMS_VERSION=0.1.2' '$tmp/aws.yaml'"
+t "render_pins_a_version_and_never_latest" bash -c "! grep -q 'latest' <(grep -v '^#' '$tmp/aws.yaml' | grep -E 'LOAMS_VERSION') && grep -q 'LOAMS_VERSION=0.1.3' '$tmp/aws.yaml'"
 # Confluent (CC1 Task 6, D1827): user data names the integrations, never a key
 t "rendered_user_data_has_no_confluent_value" bash -c "
   out=\$('$byoc/render.sh' aws --bucket my-bkt --region us-east-1 --confluent-integrations confluent,events) &&
