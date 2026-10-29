@@ -805,10 +805,7 @@ async fn pipe_cursor_and_pinned_totals_split_exactly() {
             .await,
         )
     };
-    assert_eq!(
-        totals(sum.clone(), first).await,
-        "org_42\t2000\norg_7\t5\n"
-    );
+    assert_eq!(totals(sum.clone(), first).await, "org_42\t2000\norg_7\t5\n");
 
     // A second batch: a new event and a re-emission of q-1/1.
     house.push(
@@ -825,23 +822,14 @@ async fn pipe_cursor_and_pinned_totals_split_exactly() {
     assert_ne!(second, first, "the second batch is a new snapshot");
 
     // Pinned to the first snapshot: the first batch only.
-    assert_eq!(
-        totals(sum.clone(), first).await,
-        "org_42\t2000\norg_7\t5\n"
-    );
-    assert_eq!(
-        totals(count.clone(), first).await,
-        "org_42\t2\norg_7\t1\n"
-    );
+    assert_eq!(totals(sum.clone(), first).await, "org_42\t2000\norg_7\t5\n");
+    assert_eq!(totals(count.clone(), first).await, "org_42\t2\norg_7\t1\n");
     // Pinned to the second: both batches, the duplicate once.
     assert_eq!(
         totals(sum.clone(), second).await,
         "org_42\t2100\norg_7\t5\n"
     );
-    assert_eq!(
-        totals(count.clone(), second).await,
-        "org_42\t3\norg_7\t1\n"
-    );
+    assert_eq!(totals(count.clone(), second).await, "org_42\t3\norg_7\t1\n");
 }
 
 /// The lines of a TSV answer, sorted (`GROUP BY` has no order).
