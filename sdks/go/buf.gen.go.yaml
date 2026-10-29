@@ -56,6 +56,7 @@ inputs:
       - proto/loams/graph/v1
       - proto/loams/sql/v1
       - proto/loams/stream/v1
+      - proto/loams/meter/v1
 plugins:
   # Remote plugins, pinned by version as D615 requires, so a regeneration does not
   # silently change the output because an upstream release did.
@@ -83,6 +84,11 @@ plugins:
       - Mloams/collection/v1/document.proto=loams.dev/go/gen/loams/collection/v1;collectionv1
       - Mloams/collection/v1/query.proto=loams.dev/go/gen/loams/collection/v1;collectionv1
       - Mloams/house/v1/house.proto=loams.dev/go/gen/loams/house/v1;housev1
+      - Mloams/meter/v1/customer.proto=loams.dev/go/gen/loams/meter/v1;meterv1
+      - Mloams/meter/v1/entitlement.proto=loams.dev/go/gen/loams/meter/v1;meterv1
+      - Mloams/meter/v1/notification.proto=loams.dev/go/gen/loams/meter/v1;meterv1
+      - Mloams/meter/v1/plan.proto=loams.dev/go/gen/loams/meter/v1;meterv1
+      - Mloams/meter/v1/meter.proto=loams.dev/go/gen/loams/meter/v1;meterv1
   - remote: buf.build/connectrpc/go:v1.21.0
     out: sdks/go
     opt:
@@ -107,6 +113,11 @@ plugins:
       - Mloams/collection/v1/document.proto=loams.dev/go/gen/loams/collection/v1;collectionv1
       - Mloams/collection/v1/query.proto=loams.dev/go/gen/loams/collection/v1;collectionv1
       - Mloams/house/v1/house.proto=loams.dev/go/gen/loams/house/v1;housev1
+      - Mloams/meter/v1/customer.proto=loams.dev/go/gen/loams/meter/v1;meterv1
+      - Mloams/meter/v1/entitlement.proto=loams.dev/go/gen/loams/meter/v1;meterv1
+      - Mloams/meter/v1/notification.proto=loams.dev/go/gen/loams/meter/v1;meterv1
+      - Mloams/meter/v1/plan.proto=loams.dev/go/gen/loams/meter/v1;meterv1
+      - Mloams/meter/v1/meter.proto=loams.dev/go/gen/loams/meter/v1;meterv1
 # Not `clean: true`: `out` is the module root, and `gen/facade/` (the Q604
 # hand-written facade) and the runtime's own files live under it.
 clean: false

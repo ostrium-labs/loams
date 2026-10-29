@@ -24,6 +24,9 @@ public struct WatchState<Item: Sendable>: Sendable {
     public static var heartbeat: TimeInterval { 15 }
     public static var deadAfter: TimeInterval { 45 }
 
+    /// How many times the server answered a resume with a fresh snapshot (`snapshot_reset`).
+    public private(set) var resets = 0
+
     public init(id: @escaping @Sendable (Item) -> String) {
         idOf = id
     }
@@ -34,7 +37,10 @@ public struct WatchState<Item: Sendable>: Sendable {
         lastMessageAt = now
         cursor = event.cursor
         switch event {
-        case .snapshot(let all, _, _):
+        case .snapshot(let all, _, let reset):
+            // A snapshot always replaces the list; with `snapshot_reset` the cursor we sent was
+            // too old, so whatever we held may include objects that are gone (AP0 Ruling 3).
+            if reset { resets += 1 }
             items = all
         case .upsert(let item, _):
             let id = idOf(item)
@@ -56,6 +62,13 @@ public struct WatchState<Item: Sendable>: Sendable {
         items = []
         cursor = nil
         lastMessageAt = nil
+    }
+}
+
+public extension WatchState where Item: Identifiable, Item.ID == String {
+    /// Items that carry their own string id need no id function.
+    init() {
+        self.init(id: { $0.id })
     }
 }
 

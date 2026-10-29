@@ -14,6 +14,7 @@ import type { Context } from '@loams/cordis';
 import billingPkg from '@loams/plugin-billing/package.json';
 import dataStudioPkg from '@loams/plugin-data-studio/package.json';
 import durablePkg from '@loams/plugin-durable/package.json';
+import enginesPkg from '@loams/plugin-engines/package.json';
 import factoryPkg from '@loams/plugin-factory/package.json';
 import gitPkg from '@loams/plugin-git/package.json';
 import graphPkg from '@loams/plugin-graph/package.json';
@@ -42,6 +43,7 @@ export const webModules: ModuleTable = {
   '@loams/plugin-data-studio': () => import('@loams/plugin-data-studio'),
   '@loams/plugin-streams': () => import('@loams/plugin-streams'),
   '@loams/plugin-durable': () => import('@loams/plugin-durable'),
+  '@loams/plugin-engines': () => import('@loams/plugin-engines'),
   '@loams/plugin-factory': () => import('@loams/plugin-factory'),
   '@loams/plugin-billing': () => import('@loams/plugin-billing'),
 };
@@ -57,6 +59,7 @@ export const webManifests: unknown[] = [
   dataStudioPkg,
   streamsPkg,
   durablePkg,
+  enginesPkg,
   factoryPkg,
   billingPkg,
 ];

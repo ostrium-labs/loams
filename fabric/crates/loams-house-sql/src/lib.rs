@@ -28,6 +28,7 @@ pub mod params;
 pub mod plan;
 pub mod rewrite;
 pub mod scope;
+pub mod session;
 pub mod temporal;
 pub mod untuple;
 

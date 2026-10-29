@@ -22,7 +22,7 @@ int main(void) {
 
     [client.namespaces create:config.namespace options:nil error:&error];  // already_exists on a rerun
     error = nil;
-    LoamsSchema *schema = [[[[[[LoamsSchema alloc] init] keyword:@"title"] text:@"body"] keyword:@"tags"]
+    LoamsSchema *schema = [[[[[[[LoamsSchema alloc] init] keyword:@"title"] text:@"body"] keyword:@"tags"] i64:@"n"]
         vector:@"embedding" dim:4 distance:@"cosine"];
     [client.collections create:@"notes" schema:schema options:nil error:&error];
     error = nil;
@@ -30,10 +30,10 @@ int main(void) {
     LoamsCollectionHandle *notes = [client collection:@"notes" namespace:nil];
     NSArray<LoamsDocument *> *docs = @[
       [[LoamsDocument alloc] initWithId:@1
-                                 source:@{@"title" : @"Refunds", @"body" : @"refund policy for orders", @"tags" : @[ @"policy" ]}
+                                 source:@{@"title" : @"Refunds", @"body" : @"refund policy for orders", @"tags" : @[ @"policy" ], @"n" : @1}
                                 vectors:@{@"embedding" : @[ @1, @0, @0, @0 ]}],
       [[LoamsDocument alloc] initWithId:@2
-                                 source:@{@"title" : @"Shipping", @"body" : @"shipping times", @"tags" : @[ @"ops" ]}
+                                 source:@{@"title" : @"Shipping", @"body" : @"shipping times", @"tags" : @[ @"ops" ], @"n" : @2}
                                 vectors:@{@"embedding" : @[ @0, @1, @0, @0 ]}],
     ];
     if (![notes upsert:docs options:nil error:&error]) {
@@ -49,6 +49,41 @@ int main(void) {
     NSDictionary *page = [notes search:[search limit:5] options:nil error:&error];
     for (NSDictionary *hit in page[@"hits"]) {
       NSLog(@"%@: %@", hit[@"pk"], hit[@"source"][@"title"]);
+    }
+
+    NSDictionary *nearest = [client.vector search:@"notes" vector:@[@1, @0, @0, @0]
+        field:@"embedding" limit:3 filter:nil options:nil error:&error];
+    if (error != nil) {
+      NSLog(@"vector search failed: %@", error);
+      return 1;
+    }
+    NSLog(@"vector hits: %lu", (unsigned long)[nearest[@"hits"] count]);
+
+    NSDictionary *sql = [client.sql query:@"SELECT title FROM notes WHERE n >= $1 ORDER BY n"
+        params:@[@2] maxRows:nil consistency:nil options:nil error:&error];
+    if (error != nil) {
+      NSLog(@"SQL failed: %@", error);
+      return 1;
+    }
+    NSLog(@"SQL rows: %@", sql[@"rows"]);
+
+    [client.streams create:@"notes_events" partitions:1 options:nil error:&error];
+    NSDictionary *produced = [client.streams produce:@"notes_events"
+        records:@[@{@"kind" : @"created", @"note" : @1}]
+        partition:0 producerId:@"objc-notes" producerSeq:@1 options:nil error:&error];
+    if (error != nil) {
+      NSLog(@"stream produce failed: %@", error);
+      return 1;
+    }
+    uint64_t start = [produced[@"baseOffset"] respondsToSelector:@selector(unsignedLongLongValue)]
+        ? [produced[@"baseOffset"] unsignedLongLongValue] : 0;
+    LoamsSubscription *events = [client.streams subscribe:@"notes_events" partition:0
+        fromOffset:start maxRecords:@1 maxWaitMs:@100 options:nil];
+    NSDictionary *event = [events next];
+    NSData *eventBytes = event[@"value"];
+    if (eventBytes != nil) {
+      NSLog(@"stream event at offset %@: %@", event[@"offset"],
+            [[NSString alloc] initWithData:eventBytes encoding:NSUTF8StringEncoding]);
     }
   }
   return 0;

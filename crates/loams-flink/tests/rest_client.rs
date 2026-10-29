@@ -15,7 +15,7 @@ use serde_json::json;
 const J: &str = "fbf9ad9e7fb4c3c3a8bb3b4e3a1f2d10";
 
 fn job() -> JobId {
-    JobId::new(J).unwrap()
+    JobId::new(J).expect("a valid job id")
 }
 
 #[tokio::test]

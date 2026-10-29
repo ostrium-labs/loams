@@ -47,6 +47,14 @@ from loams.live.v1.live_pb2 import AuthenticateRequest, AuthenticateResponse, Mo
 from loams.live.v1.admin_pb2 import ActivateDeploymentRequest, ActivateDeploymentResponse, CreateAppRequest, CreateAppResponse, DeleteAppRequest, DeleteAppResponse, DeployRequest, DeployResponse, GetAppRequest, GetAppResponse, GetDeploymentRequest, GetDeploymentResponse, GetIndexStatusRequest, GetIndexStatusResponse, ListAppsRequest, ListAppsResponse, ListDeploymentsRequest, ListDeploymentsResponse, TailLogsRequest, TailLogsResponse, UpdateAppRequest, UpdateAppResponse
 from loams.live.v1.live_connect import LiveServiceClient, LiveServiceClientSync
 from loams.live.v1.admin_connect import LiveAdminServiceClient, LiveAdminServiceClientSync
+from loams.meter.v1.customer_pb2 import CreateCustomerRequest, CreateCustomerResponse, GetCustomerRequest, GetCustomerResponse, ListCustomersRequest, ListCustomersResponse, SetPaymentStateRequest, SetPaymentStateResponse, SetSpendControlsRequest, SetSpendControlsResponse, UpdateCustomerRequest, UpdateCustomerResponse
+from loams.meter.v1.entitlement_pb2 import CheckAccessRequest, CheckAccessResponse, CreateEntitlementRequest, CreateEntitlementResponse, CreateGrantRequest, CreateGrantResponse, GetBalanceHistoryRequest, GetBalanceHistoryResponse, GetEntitlementValueRequest, GetEntitlementValueResponse, ListEntitlementsRequest, ListEntitlementsResponse, ListGrantsRequest, ListGrantsResponse, ResetEntitlementRequest, ResetEntitlementResponse, VoidGrantRequest, VoidGrantResponse
+from loams.meter.v1.notification_pb2 import CreateRuleRequest, CreateRuleResponse, CreateWebhookRequest, CreateWebhookResponse, ListDeliveriesRequest, ListDeliveriesResponse, ListRulesRequest, ListRulesResponse, RotateWebhookSecretRequest, RotateWebhookSecretResponse
+from loams.meter.v1.plan_pb2 import ApplyPlanRequest, ApplyPlanResponse, AssignPlanRequest, AssignPlanResponse, ListPlansRequest, ListPlansResponse, UnassignPlanRequest, UnassignPlanResponse
+from loams.meter.v1.customer_connect import CustomerServiceClient, CustomerServiceClientSync
+from loams.meter.v1.entitlement_connect import EntitlementServiceClient, EntitlementServiceClientSync
+from loams.meter.v1.notification_connect import NotificationServiceClient, NotificationServiceClientSync
+from loams.meter.v1.plan_connect import PlanServiceClient, PlanServiceClientSync
 from loams.sql.v1.sql_pb2 import QueryArrowRequest, QueryArrowResponse, QueryRequest as SqlV1QueryRequest, QueryResponse as SqlV1QueryResponse
 from loams.sql.v1.sql_connect import SqlServiceClient, SqlServiceClientSync
 from loams.stream.v1.stream_pb2 import CreateStreamRequest, CreateStreamResponse, DescribeStreamRequest, DescribeStreamResponse, FetchCloudEventsRequest, FetchCloudEventsResponse, FetchRequest, FetchResponse, ListStreamsRequest, ListStreamsResponse, ProduceCloudEventsRequest, ProduceCloudEventsResponse, ProduceRequest, ProduceResponse
@@ -500,6 +508,7 @@ PROTO_PACKAGES: Final[tuple[str, ...]] = (
     "loams.live.v1",
     "loams.live.worker.v1",
     "loams.memory.v1",
+    "loams.meter.v1",
     "loams.notifications.v1",
     "loams.operations.v1",
     "loams.options.v1",
@@ -1768,6 +1777,358 @@ MODULES: Final[tuple[ModuleBinding, ...]] = (
         ),
     ),
     ModuleBinding(
+        name="meter.customers",
+        summary="Meter customers: subjects, payment state and spend controls.",
+        service="loams.meter.v1.CustomerService",
+        package="loams.meter.v1",
+        unstable=False,
+        derived=False,
+        calls=(
+            CallBinding(
+                module="meter.customers",
+                name="create",
+                proto_name="create",
+                method="CreateCustomer",
+                rpc="loams.meter.v1.CustomerService/CreateCustomer",
+                service="loams.meter.v1.CustomerService",
+                package="loams.meter.v1",
+                idempotency="none",
+                retry="manual",
+                streaming="unary",
+                pagination=None,
+            ),
+            CallBinding(
+                module="meter.customers",
+                name="get",
+                proto_name="get",
+                method="GetCustomer",
+                rpc="loams.meter.v1.CustomerService/GetCustomer",
+                service="loams.meter.v1.CustomerService",
+                package="loams.meter.v1",
+                idempotency="no_side_effects",
+                retry="safe",
+                streaming="unary",
+                pagination=None,
+            ),
+            CallBinding(
+                module="meter.customers",
+                name="list",
+                proto_name="list",
+                method="ListCustomers",
+                rpc="loams.meter.v1.CustomerService/ListCustomers",
+                service="loams.meter.v1.CustomerService",
+                package="loams.meter.v1",
+                idempotency="no_side_effects",
+                retry="safe",
+                streaming="unary",
+                pagination=Pagination(items="customers", next_page_token="next_page_token"),
+            ),
+            CallBinding(
+                module="meter.customers",
+                name="set_payment_state",
+                proto_name="setPaymentState",
+                method="SetPaymentState",
+                rpc="loams.meter.v1.CustomerService/SetPaymentState",
+                service="loams.meter.v1.CustomerService",
+                package="loams.meter.v1",
+                idempotency="idempotent",
+                retry="safe",
+                streaming="unary",
+                pagination=None,
+            ),
+            CallBinding(
+                module="meter.customers",
+                name="set_spend_controls",
+                proto_name="setSpendControls",
+                method="SetSpendControls",
+                rpc="loams.meter.v1.CustomerService/SetSpendControls",
+                service="loams.meter.v1.CustomerService",
+                package="loams.meter.v1",
+                idempotency="idempotent",
+                retry="safe",
+                streaming="unary",
+                pagination=None,
+            ),
+            CallBinding(
+                module="meter.customers",
+                name="update",
+                proto_name="update",
+                method="UpdateCustomer",
+                rpc="loams.meter.v1.CustomerService/UpdateCustomer",
+                service="loams.meter.v1.CustomerService",
+                package="loams.meter.v1",
+                idempotency="idempotent",
+                retry="safe",
+                streaming="unary",
+                pagination=None,
+            ),
+        ),
+    ),
+    ModuleBinding(
+        name="meter.entitlements",
+        summary="Meter entitlements: what a subject may use, grants and balances.",
+        service="loams.meter.v1.EntitlementService",
+        package="loams.meter.v1",
+        unstable=False,
+        derived=False,
+        calls=(
+            CallBinding(
+                module="meter.entitlements",
+                name="balance_history",
+                proto_name="balanceHistory",
+                method="GetBalanceHistory",
+                rpc="loams.meter.v1.EntitlementService/GetBalanceHistory",
+                service="loams.meter.v1.EntitlementService",
+                package="loams.meter.v1",
+                idempotency="no_side_effects",
+                retry="safe",
+                streaming="unary",
+                pagination=None,
+            ),
+            CallBinding(
+                module="meter.entitlements",
+                name="check_access",
+                proto_name="checkAccess",
+                method="CheckAccess",
+                rpc="loams.meter.v1.EntitlementService/CheckAccess",
+                service="loams.meter.v1.EntitlementService",
+                package="loams.meter.v1",
+                idempotency="no_side_effects",
+                retry="safe",
+                streaming="unary",
+                pagination=None,
+            ),
+            CallBinding(
+                module="meter.entitlements",
+                name="create",
+                proto_name="create",
+                method="CreateEntitlement",
+                rpc="loams.meter.v1.EntitlementService/CreateEntitlement",
+                service="loams.meter.v1.EntitlementService",
+                package="loams.meter.v1",
+                idempotency="none",
+                retry="manual",
+                streaming="unary",
+                pagination=None,
+            ),
+            CallBinding(
+                module="meter.entitlements",
+                name="create_grant",
+                proto_name="createGrant",
+                method="CreateGrant",
+                rpc="loams.meter.v1.EntitlementService/CreateGrant",
+                service="loams.meter.v1.EntitlementService",
+                package="loams.meter.v1",
+                idempotency="none",
+                retry="manual",
+                streaming="unary",
+                pagination=None,
+            ),
+            CallBinding(
+                module="meter.entitlements",
+                name="list",
+                proto_name="list",
+                method="ListEntitlements",
+                rpc="loams.meter.v1.EntitlementService/ListEntitlements",
+                service="loams.meter.v1.EntitlementService",
+                package="loams.meter.v1",
+                idempotency="no_side_effects",
+                retry="safe",
+                streaming="unary",
+                pagination=Pagination(items="entitlements", next_page_token="next_page_token"),
+            ),
+            CallBinding(
+                module="meter.entitlements",
+                name="list_grants",
+                proto_name="listGrants",
+                method="ListGrants",
+                rpc="loams.meter.v1.EntitlementService/ListGrants",
+                service="loams.meter.v1.EntitlementService",
+                package="loams.meter.v1",
+                idempotency="no_side_effects",
+                retry="safe",
+                streaming="unary",
+                pagination=Pagination(items="grants", next_page_token="next_page_token"),
+            ),
+            CallBinding(
+                module="meter.entitlements",
+                name="reset",
+                proto_name="reset",
+                method="ResetEntitlement",
+                rpc="loams.meter.v1.EntitlementService/ResetEntitlement",
+                service="loams.meter.v1.EntitlementService",
+                package="loams.meter.v1",
+                idempotency="idempotent",
+                retry="safe",
+                streaming="unary",
+                pagination=None,
+            ),
+            CallBinding(
+                module="meter.entitlements",
+                name="value",
+                proto_name="value",
+                method="GetEntitlementValue",
+                rpc="loams.meter.v1.EntitlementService/GetEntitlementValue",
+                service="loams.meter.v1.EntitlementService",
+                package="loams.meter.v1",
+                idempotency="no_side_effects",
+                retry="safe",
+                streaming="unary",
+                pagination=None,
+            ),
+            CallBinding(
+                module="meter.entitlements",
+                name="void_grant",
+                proto_name="voidGrant",
+                method="VoidGrant",
+                rpc="loams.meter.v1.EntitlementService/VoidGrant",
+                service="loams.meter.v1.EntitlementService",
+                package="loams.meter.v1",
+                idempotency="idempotent",
+                retry="safe",
+                streaming="unary",
+                pagination=None,
+            ),
+        ),
+    ),
+    ModuleBinding(
+        name="meter.notifications",
+        summary="Meter notifications: threshold rules, signed webhooks and their deliveries.",
+        service="loams.meter.v1.NotificationService",
+        package="loams.meter.v1",
+        unstable=False,
+        derived=False,
+        calls=(
+            CallBinding(
+                module="meter.notifications",
+                name="create_rule",
+                proto_name="createRule",
+                method="CreateRule",
+                rpc="loams.meter.v1.NotificationService/CreateRule",
+                service="loams.meter.v1.NotificationService",
+                package="loams.meter.v1",
+                idempotency="none",
+                retry="manual",
+                streaming="unary",
+                pagination=None,
+            ),
+            CallBinding(
+                module="meter.notifications",
+                name="create_webhook",
+                proto_name="createWebhook",
+                method="CreateWebhook",
+                rpc="loams.meter.v1.NotificationService/CreateWebhook",
+                service="loams.meter.v1.NotificationService",
+                package="loams.meter.v1",
+                idempotency="none",
+                retry="manual",
+                streaming="unary",
+                pagination=None,
+            ),
+            CallBinding(
+                module="meter.notifications",
+                name="list_deliveries",
+                proto_name="listDeliveries",
+                method="ListDeliveries",
+                rpc="loams.meter.v1.NotificationService/ListDeliveries",
+                service="loams.meter.v1.NotificationService",
+                package="loams.meter.v1",
+                idempotency="no_side_effects",
+                retry="safe",
+                streaming="unary",
+                pagination=None,
+            ),
+            CallBinding(
+                module="meter.notifications",
+                name="list_rules",
+                proto_name="listRules",
+                method="ListRules",
+                rpc="loams.meter.v1.NotificationService/ListRules",
+                service="loams.meter.v1.NotificationService",
+                package="loams.meter.v1",
+                idempotency="no_side_effects",
+                retry="safe",
+                streaming="unary",
+                pagination=None,
+            ),
+            CallBinding(
+                module="meter.notifications",
+                name="rotate_webhook_secret",
+                proto_name="rotateWebhookSecret",
+                method="RotateWebhookSecret",
+                rpc="loams.meter.v1.NotificationService/RotateWebhookSecret",
+                service="loams.meter.v1.NotificationService",
+                package="loams.meter.v1",
+                idempotency="none",
+                retry="manual",
+                streaming="unary",
+                pagination=None,
+            ),
+        ),
+    ),
+    ModuleBinding(
+        name="meter.plans",
+        summary="Meter plans: entitlement templates, applied from YAML and assigned to customers.",
+        service="loams.meter.v1.PlanService",
+        package="loams.meter.v1",
+        unstable=False,
+        derived=False,
+        calls=(
+            CallBinding(
+                module="meter.plans",
+                name="apply",
+                proto_name="apply",
+                method="ApplyPlan",
+                rpc="loams.meter.v1.PlanService/ApplyPlan",
+                service="loams.meter.v1.PlanService",
+                package="loams.meter.v1",
+                idempotency="idempotent",
+                retry="safe",
+                streaming="unary",
+                pagination=None,
+            ),
+            CallBinding(
+                module="meter.plans",
+                name="assign",
+                proto_name="assign",
+                method="AssignPlan",
+                rpc="loams.meter.v1.PlanService/AssignPlan",
+                service="loams.meter.v1.PlanService",
+                package="loams.meter.v1",
+                idempotency="idempotent",
+                retry="safe",
+                streaming="unary",
+                pagination=None,
+            ),
+            CallBinding(
+                module="meter.plans",
+                name="list",
+                proto_name="list",
+                method="ListPlans",
+                rpc="loams.meter.v1.PlanService/ListPlans",
+                service="loams.meter.v1.PlanService",
+                package="loams.meter.v1",
+                idempotency="no_side_effects",
+                retry="safe",
+                streaming="unary",
+                pagination=None,
+            ),
+            CallBinding(
+                module="meter.plans",
+                name="unassign",
+                proto_name="unassign",
+                method="UnassignPlan",
+                rpc="loams.meter.v1.PlanService/UnassignPlan",
+                service="loams.meter.v1.PlanService",
+                package="loams.meter.v1",
+                idempotency="idempotent",
+                retry="safe",
+                streaming="unary",
+                pagination=None,
+            ),
+        ),
+    ),
+    ModuleBinding(
         name="namespaces",
         summary="Namespaces: the container every collection and stream lives in.",
         service="loams.collection.v1.NamespaceService",
@@ -2621,6 +2982,174 @@ METHODS: Final[dict[str, MethodInfo[Message, Message]]] = {
         input=UpdateAppRequest,
         output=UpdateAppResponse,
         idempotency_level=IDEMPOTENCY_LEVELS["none"],
+    ),
+    "loams.meter.v1.CustomerService/CreateCustomer": MethodInfo(
+        name="CreateCustomer",
+        service_name="loams.meter.v1.CustomerService",
+        input=CreateCustomerRequest,
+        output=CreateCustomerResponse,
+        idempotency_level=IDEMPOTENCY_LEVELS["none"],
+    ),
+    "loams.meter.v1.CustomerService/GetCustomer": MethodInfo(
+        name="GetCustomer",
+        service_name="loams.meter.v1.CustomerService",
+        input=GetCustomerRequest,
+        output=GetCustomerResponse,
+        idempotency_level=IDEMPOTENCY_LEVELS["no_side_effects"],
+    ),
+    "loams.meter.v1.CustomerService/ListCustomers": MethodInfo(
+        name="ListCustomers",
+        service_name="loams.meter.v1.CustomerService",
+        input=ListCustomersRequest,
+        output=ListCustomersResponse,
+        idempotency_level=IDEMPOTENCY_LEVELS["no_side_effects"],
+    ),
+    "loams.meter.v1.CustomerService/SetPaymentState": MethodInfo(
+        name="SetPaymentState",
+        service_name="loams.meter.v1.CustomerService",
+        input=SetPaymentStateRequest,
+        output=SetPaymentStateResponse,
+        idempotency_level=IDEMPOTENCY_LEVELS["idempotent"],
+    ),
+    "loams.meter.v1.CustomerService/SetSpendControls": MethodInfo(
+        name="SetSpendControls",
+        service_name="loams.meter.v1.CustomerService",
+        input=SetSpendControlsRequest,
+        output=SetSpendControlsResponse,
+        idempotency_level=IDEMPOTENCY_LEVELS["idempotent"],
+    ),
+    "loams.meter.v1.CustomerService/UpdateCustomer": MethodInfo(
+        name="UpdateCustomer",
+        service_name="loams.meter.v1.CustomerService",
+        input=UpdateCustomerRequest,
+        output=UpdateCustomerResponse,
+        idempotency_level=IDEMPOTENCY_LEVELS["idempotent"],
+    ),
+    "loams.meter.v1.EntitlementService/GetBalanceHistory": MethodInfo(
+        name="GetBalanceHistory",
+        service_name="loams.meter.v1.EntitlementService",
+        input=GetBalanceHistoryRequest,
+        output=GetBalanceHistoryResponse,
+        idempotency_level=IDEMPOTENCY_LEVELS["no_side_effects"],
+    ),
+    "loams.meter.v1.EntitlementService/CheckAccess": MethodInfo(
+        name="CheckAccess",
+        service_name="loams.meter.v1.EntitlementService",
+        input=CheckAccessRequest,
+        output=CheckAccessResponse,
+        idempotency_level=IDEMPOTENCY_LEVELS["no_side_effects"],
+    ),
+    "loams.meter.v1.EntitlementService/CreateEntitlement": MethodInfo(
+        name="CreateEntitlement",
+        service_name="loams.meter.v1.EntitlementService",
+        input=CreateEntitlementRequest,
+        output=CreateEntitlementResponse,
+        idempotency_level=IDEMPOTENCY_LEVELS["none"],
+    ),
+    "loams.meter.v1.EntitlementService/CreateGrant": MethodInfo(
+        name="CreateGrant",
+        service_name="loams.meter.v1.EntitlementService",
+        input=CreateGrantRequest,
+        output=CreateGrantResponse,
+        idempotency_level=IDEMPOTENCY_LEVELS["none"],
+    ),
+    "loams.meter.v1.EntitlementService/ListEntitlements": MethodInfo(
+        name="ListEntitlements",
+        service_name="loams.meter.v1.EntitlementService",
+        input=ListEntitlementsRequest,
+        output=ListEntitlementsResponse,
+        idempotency_level=IDEMPOTENCY_LEVELS["no_side_effects"],
+    ),
+    "loams.meter.v1.EntitlementService/ListGrants": MethodInfo(
+        name="ListGrants",
+        service_name="loams.meter.v1.EntitlementService",
+        input=ListGrantsRequest,
+        output=ListGrantsResponse,
+        idempotency_level=IDEMPOTENCY_LEVELS["no_side_effects"],
+    ),
+    "loams.meter.v1.EntitlementService/ResetEntitlement": MethodInfo(
+        name="ResetEntitlement",
+        service_name="loams.meter.v1.EntitlementService",
+        input=ResetEntitlementRequest,
+        output=ResetEntitlementResponse,
+        idempotency_level=IDEMPOTENCY_LEVELS["idempotent"],
+    ),
+    "loams.meter.v1.EntitlementService/GetEntitlementValue": MethodInfo(
+        name="GetEntitlementValue",
+        service_name="loams.meter.v1.EntitlementService",
+        input=GetEntitlementValueRequest,
+        output=GetEntitlementValueResponse,
+        idempotency_level=IDEMPOTENCY_LEVELS["no_side_effects"],
+    ),
+    "loams.meter.v1.EntitlementService/VoidGrant": MethodInfo(
+        name="VoidGrant",
+        service_name="loams.meter.v1.EntitlementService",
+        input=VoidGrantRequest,
+        output=VoidGrantResponse,
+        idempotency_level=IDEMPOTENCY_LEVELS["idempotent"],
+    ),
+    "loams.meter.v1.NotificationService/CreateRule": MethodInfo(
+        name="CreateRule",
+        service_name="loams.meter.v1.NotificationService",
+        input=CreateRuleRequest,
+        output=CreateRuleResponse,
+        idempotency_level=IDEMPOTENCY_LEVELS["none"],
+    ),
+    "loams.meter.v1.NotificationService/CreateWebhook": MethodInfo(
+        name="CreateWebhook",
+        service_name="loams.meter.v1.NotificationService",
+        input=CreateWebhookRequest,
+        output=CreateWebhookResponse,
+        idempotency_level=IDEMPOTENCY_LEVELS["none"],
+    ),
+    "loams.meter.v1.NotificationService/ListDeliveries": MethodInfo(
+        name="ListDeliveries",
+        service_name="loams.meter.v1.NotificationService",
+        input=ListDeliveriesRequest,
+        output=ListDeliveriesResponse,
+        idempotency_level=IDEMPOTENCY_LEVELS["no_side_effects"],
+    ),
+    "loams.meter.v1.NotificationService/ListRules": MethodInfo(
+        name="ListRules",
+        service_name="loams.meter.v1.NotificationService",
+        input=ListRulesRequest,
+        output=ListRulesResponse,
+        idempotency_level=IDEMPOTENCY_LEVELS["no_side_effects"],
+    ),
+    "loams.meter.v1.NotificationService/RotateWebhookSecret": MethodInfo(
+        name="RotateWebhookSecret",
+        service_name="loams.meter.v1.NotificationService",
+        input=RotateWebhookSecretRequest,
+        output=RotateWebhookSecretResponse,
+        idempotency_level=IDEMPOTENCY_LEVELS["none"],
+    ),
+    "loams.meter.v1.PlanService/ApplyPlan": MethodInfo(
+        name="ApplyPlan",
+        service_name="loams.meter.v1.PlanService",
+        input=ApplyPlanRequest,
+        output=ApplyPlanResponse,
+        idempotency_level=IDEMPOTENCY_LEVELS["idempotent"],
+    ),
+    "loams.meter.v1.PlanService/AssignPlan": MethodInfo(
+        name="AssignPlan",
+        service_name="loams.meter.v1.PlanService",
+        input=AssignPlanRequest,
+        output=AssignPlanResponse,
+        idempotency_level=IDEMPOTENCY_LEVELS["idempotent"],
+    ),
+    "loams.meter.v1.PlanService/ListPlans": MethodInfo(
+        name="ListPlans",
+        service_name="loams.meter.v1.PlanService",
+        input=ListPlansRequest,
+        output=ListPlansResponse,
+        idempotency_level=IDEMPOTENCY_LEVELS["no_side_effects"],
+    ),
+    "loams.meter.v1.PlanService/UnassignPlan": MethodInfo(
+        name="UnassignPlan",
+        service_name="loams.meter.v1.PlanService",
+        input=UnassignPlanRequest,
+        output=UnassignPlanResponse,
+        idempotency_level=IDEMPOTENCY_LEVELS["idempotent"],
     ),
     "loams.collection.v1.NamespaceService/CreateNamespace": MethodInfo(
         name="CreateNamespace",
@@ -4668,6 +5197,574 @@ class LiveAdminModuleSync(Protocol):
         *,
         options: CallOptions | None = None,
     ) -> loams.live.v1.admin_pb2.UpdateAppResponse:
+        ...
+
+
+
+class MeterCustomersModule(Protocol):
+    """`loams.meter.customers` — Meter customers: subjects, payment state and spend controls.
+
+    Wraps `loams.meter.v1.CustomerService`.
+    """
+
+    module: ClassVar[Literal["meter.customers"]]
+    service: ClassVar[Literal["loams.meter.v1.CustomerService"]]
+    unstable: ClassVar[Literal[False]]
+    """`loams.meter.v1.CustomerService/CreateCustomer`, retried: manual.
+    """
+    async def create(
+        self,
+        request: loams.meter.v1.customer_pb2.CreateCustomerRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.customer_pb2.CreateCustomerResponse:
+        ...
+
+    """`loams.meter.v1.CustomerService/GetCustomer`, retried: safe.
+    """
+    async def get(
+        self,
+        request: loams.meter.v1.customer_pb2.GetCustomerRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.customer_pb2.GetCustomerResponse:
+        ...
+
+    """`loams.meter.v1.CustomerService/ListCustomers`, retried: safe. AIP-158: page with `customers` and follow `next_page_token` through `loams.paginate`.
+    """
+    async def list(
+        self,
+        request: loams.meter.v1.customer_pb2.ListCustomersRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.customer_pb2.ListCustomersResponse:
+        ...
+
+    """`loams.meter.v1.CustomerService/SetPaymentState`, retried: safe.
+    """
+    async def set_payment_state(
+        self,
+        request: loams.meter.v1.customer_pb2.SetPaymentStateRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.customer_pb2.SetPaymentStateResponse:
+        ...
+
+    """`loams.meter.v1.CustomerService/SetSpendControls`, retried: safe.
+    """
+    async def set_spend_controls(
+        self,
+        request: loams.meter.v1.customer_pb2.SetSpendControlsRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.customer_pb2.SetSpendControlsResponse:
+        ...
+
+    """`loams.meter.v1.CustomerService/UpdateCustomer`, retried: safe.
+    """
+    async def update(
+        self,
+        request: loams.meter.v1.customer_pb2.UpdateCustomerRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.customer_pb2.UpdateCustomerResponse:
+        ...
+
+
+
+class MeterCustomersModuleSync(Protocol):
+    """`loams.meter.customers` — Meter customers: subjects, payment state and spend controls.
+
+    Wraps `loams.meter.v1.CustomerService`.
+    """
+
+    module: ClassVar[Literal["meter.customers"]]
+    service: ClassVar[Literal["loams.meter.v1.CustomerService"]]
+    unstable: ClassVar[Literal[False]]
+    """`loams.meter.v1.CustomerService/CreateCustomer`, retried: manual.
+    """
+    def create(
+        self,
+        request: loams.meter.v1.customer_pb2.CreateCustomerRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.customer_pb2.CreateCustomerResponse:
+        ...
+
+    """`loams.meter.v1.CustomerService/GetCustomer`, retried: safe.
+    """
+    def get(
+        self,
+        request: loams.meter.v1.customer_pb2.GetCustomerRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.customer_pb2.GetCustomerResponse:
+        ...
+
+    """`loams.meter.v1.CustomerService/ListCustomers`, retried: safe. AIP-158: page with `customers` and follow `next_page_token` through `loams.paginate`.
+    """
+    def list(
+        self,
+        request: loams.meter.v1.customer_pb2.ListCustomersRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.customer_pb2.ListCustomersResponse:
+        ...
+
+    """`loams.meter.v1.CustomerService/SetPaymentState`, retried: safe.
+    """
+    def set_payment_state(
+        self,
+        request: loams.meter.v1.customer_pb2.SetPaymentStateRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.customer_pb2.SetPaymentStateResponse:
+        ...
+
+    """`loams.meter.v1.CustomerService/SetSpendControls`, retried: safe.
+    """
+    def set_spend_controls(
+        self,
+        request: loams.meter.v1.customer_pb2.SetSpendControlsRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.customer_pb2.SetSpendControlsResponse:
+        ...
+
+    """`loams.meter.v1.CustomerService/UpdateCustomer`, retried: safe.
+    """
+    def update(
+        self,
+        request: loams.meter.v1.customer_pb2.UpdateCustomerRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.customer_pb2.UpdateCustomerResponse:
+        ...
+
+
+
+class MeterEntitlementsModule(Protocol):
+    """`loams.meter.entitlements` — Meter entitlements: what a subject may use, grants and balances.
+
+    Wraps `loams.meter.v1.EntitlementService`.
+    """
+
+    module: ClassVar[Literal["meter.entitlements"]]
+    service: ClassVar[Literal["loams.meter.v1.EntitlementService"]]
+    unstable: ClassVar[Literal[False]]
+    """`loams.meter.v1.EntitlementService/GetBalanceHistory`, retried: safe.
+    """
+    async def balance_history(
+        self,
+        request: loams.meter.v1.entitlement_pb2.GetBalanceHistoryRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.entitlement_pb2.GetBalanceHistoryResponse:
+        ...
+
+    """`loams.meter.v1.EntitlementService/CheckAccess`, retried: safe.
+    """
+    async def check_access(
+        self,
+        request: loams.meter.v1.entitlement_pb2.CheckAccessRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.entitlement_pb2.CheckAccessResponse:
+        ...
+
+    """`loams.meter.v1.EntitlementService/CreateEntitlement`, retried: manual.
+    """
+    async def create(
+        self,
+        request: loams.meter.v1.entitlement_pb2.CreateEntitlementRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.entitlement_pb2.CreateEntitlementResponse:
+        ...
+
+    """`loams.meter.v1.EntitlementService/CreateGrant`, retried: manual.
+    """
+    async def create_grant(
+        self,
+        request: loams.meter.v1.entitlement_pb2.CreateGrantRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.entitlement_pb2.CreateGrantResponse:
+        ...
+
+    """`loams.meter.v1.EntitlementService/ListEntitlements`, retried: safe. AIP-158: page with `entitlements` and follow `next_page_token` through `loams.paginate`.
+    """
+    async def list(
+        self,
+        request: loams.meter.v1.entitlement_pb2.ListEntitlementsRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.entitlement_pb2.ListEntitlementsResponse:
+        ...
+
+    """`loams.meter.v1.EntitlementService/ListGrants`, retried: safe. AIP-158: page with `grants` and follow `next_page_token` through `loams.paginate`.
+    """
+    async def list_grants(
+        self,
+        request: loams.meter.v1.entitlement_pb2.ListGrantsRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.entitlement_pb2.ListGrantsResponse:
+        ...
+
+    """`loams.meter.v1.EntitlementService/ResetEntitlement`, retried: safe.
+    """
+    async def reset(
+        self,
+        request: loams.meter.v1.entitlement_pb2.ResetEntitlementRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.entitlement_pb2.ResetEntitlementResponse:
+        ...
+
+    """`loams.meter.v1.EntitlementService/GetEntitlementValue`, retried: safe.
+    """
+    async def value(
+        self,
+        request: loams.meter.v1.entitlement_pb2.GetEntitlementValueRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.entitlement_pb2.GetEntitlementValueResponse:
+        ...
+
+    """`loams.meter.v1.EntitlementService/VoidGrant`, retried: safe.
+    """
+    async def void_grant(
+        self,
+        request: loams.meter.v1.entitlement_pb2.VoidGrantRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.entitlement_pb2.VoidGrantResponse:
+        ...
+
+
+
+class MeterEntitlementsModuleSync(Protocol):
+    """`loams.meter.entitlements` — Meter entitlements: what a subject may use, grants and balances.
+
+    Wraps `loams.meter.v1.EntitlementService`.
+    """
+
+    module: ClassVar[Literal["meter.entitlements"]]
+    service: ClassVar[Literal["loams.meter.v1.EntitlementService"]]
+    unstable: ClassVar[Literal[False]]
+    """`loams.meter.v1.EntitlementService/GetBalanceHistory`, retried: safe.
+    """
+    def balance_history(
+        self,
+        request: loams.meter.v1.entitlement_pb2.GetBalanceHistoryRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.entitlement_pb2.GetBalanceHistoryResponse:
+        ...
+
+    """`loams.meter.v1.EntitlementService/CheckAccess`, retried: safe.
+    """
+    def check_access(
+        self,
+        request: loams.meter.v1.entitlement_pb2.CheckAccessRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.entitlement_pb2.CheckAccessResponse:
+        ...
+
+    """`loams.meter.v1.EntitlementService/CreateEntitlement`, retried: manual.
+    """
+    def create(
+        self,
+        request: loams.meter.v1.entitlement_pb2.CreateEntitlementRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.entitlement_pb2.CreateEntitlementResponse:
+        ...
+
+    """`loams.meter.v1.EntitlementService/CreateGrant`, retried: manual.
+    """
+    def create_grant(
+        self,
+        request: loams.meter.v1.entitlement_pb2.CreateGrantRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.entitlement_pb2.CreateGrantResponse:
+        ...
+
+    """`loams.meter.v1.EntitlementService/ListEntitlements`, retried: safe. AIP-158: page with `entitlements` and follow `next_page_token` through `loams.paginate`.
+    """
+    def list(
+        self,
+        request: loams.meter.v1.entitlement_pb2.ListEntitlementsRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.entitlement_pb2.ListEntitlementsResponse:
+        ...
+
+    """`loams.meter.v1.EntitlementService/ListGrants`, retried: safe. AIP-158: page with `grants` and follow `next_page_token` through `loams.paginate`.
+    """
+    def list_grants(
+        self,
+        request: loams.meter.v1.entitlement_pb2.ListGrantsRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.entitlement_pb2.ListGrantsResponse:
+        ...
+
+    """`loams.meter.v1.EntitlementService/ResetEntitlement`, retried: safe.
+    """
+    def reset(
+        self,
+        request: loams.meter.v1.entitlement_pb2.ResetEntitlementRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.entitlement_pb2.ResetEntitlementResponse:
+        ...
+
+    """`loams.meter.v1.EntitlementService/GetEntitlementValue`, retried: safe.
+    """
+    def value(
+        self,
+        request: loams.meter.v1.entitlement_pb2.GetEntitlementValueRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.entitlement_pb2.GetEntitlementValueResponse:
+        ...
+
+    """`loams.meter.v1.EntitlementService/VoidGrant`, retried: safe.
+    """
+    def void_grant(
+        self,
+        request: loams.meter.v1.entitlement_pb2.VoidGrantRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.entitlement_pb2.VoidGrantResponse:
+        ...
+
+
+
+class MeterNotificationsModule(Protocol):
+    """`loams.meter.notifications` — Meter notifications: threshold rules, signed webhooks and their deliveries.
+
+    Wraps `loams.meter.v1.NotificationService`.
+    """
+
+    module: ClassVar[Literal["meter.notifications"]]
+    service: ClassVar[Literal["loams.meter.v1.NotificationService"]]
+    unstable: ClassVar[Literal[False]]
+    """`loams.meter.v1.NotificationService/CreateRule`, retried: manual.
+    """
+    async def create_rule(
+        self,
+        request: loams.meter.v1.notification_pb2.CreateRuleRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.notification_pb2.CreateRuleResponse:
+        ...
+
+    """`loams.meter.v1.NotificationService/CreateWebhook`, retried: manual.
+    """
+    async def create_webhook(
+        self,
+        request: loams.meter.v1.notification_pb2.CreateWebhookRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.notification_pb2.CreateWebhookResponse:
+        ...
+
+    """`loams.meter.v1.NotificationService/ListDeliveries`, retried: safe.
+    """
+    async def list_deliveries(
+        self,
+        request: loams.meter.v1.notification_pb2.ListDeliveriesRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.notification_pb2.ListDeliveriesResponse:
+        ...
+
+    """`loams.meter.v1.NotificationService/ListRules`, retried: safe.
+    """
+    async def list_rules(
+        self,
+        request: loams.meter.v1.notification_pb2.ListRulesRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.notification_pb2.ListRulesResponse:
+        ...
+
+    """`loams.meter.v1.NotificationService/RotateWebhookSecret`, retried: manual.
+    """
+    async def rotate_webhook_secret(
+        self,
+        request: loams.meter.v1.notification_pb2.RotateWebhookSecretRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.notification_pb2.RotateWebhookSecretResponse:
+        ...
+
+
+
+class MeterNotificationsModuleSync(Protocol):
+    """`loams.meter.notifications` — Meter notifications: threshold rules, signed webhooks and their deliveries.
+
+    Wraps `loams.meter.v1.NotificationService`.
+    """
+
+    module: ClassVar[Literal["meter.notifications"]]
+    service: ClassVar[Literal["loams.meter.v1.NotificationService"]]
+    unstable: ClassVar[Literal[False]]
+    """`loams.meter.v1.NotificationService/CreateRule`, retried: manual.
+    """
+    def create_rule(
+        self,
+        request: loams.meter.v1.notification_pb2.CreateRuleRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.notification_pb2.CreateRuleResponse:
+        ...
+
+    """`loams.meter.v1.NotificationService/CreateWebhook`, retried: manual.
+    """
+    def create_webhook(
+        self,
+        request: loams.meter.v1.notification_pb2.CreateWebhookRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.notification_pb2.CreateWebhookResponse:
+        ...
+
+    """`loams.meter.v1.NotificationService/ListDeliveries`, retried: safe.
+    """
+    def list_deliveries(
+        self,
+        request: loams.meter.v1.notification_pb2.ListDeliveriesRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.notification_pb2.ListDeliveriesResponse:
+        ...
+
+    """`loams.meter.v1.NotificationService/ListRules`, retried: safe.
+    """
+    def list_rules(
+        self,
+        request: loams.meter.v1.notification_pb2.ListRulesRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.notification_pb2.ListRulesResponse:
+        ...
+
+    """`loams.meter.v1.NotificationService/RotateWebhookSecret`, retried: manual.
+    """
+    def rotate_webhook_secret(
+        self,
+        request: loams.meter.v1.notification_pb2.RotateWebhookSecretRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.notification_pb2.RotateWebhookSecretResponse:
+        ...
+
+
+
+class MeterPlansModule(Protocol):
+    """`loams.meter.plans` — Meter plans: entitlement templates, applied from YAML and assigned to customers.
+
+    Wraps `loams.meter.v1.PlanService`.
+    """
+
+    module: ClassVar[Literal["meter.plans"]]
+    service: ClassVar[Literal["loams.meter.v1.PlanService"]]
+    unstable: ClassVar[Literal[False]]
+    """`loams.meter.v1.PlanService/ApplyPlan`, retried: safe.
+    """
+    async def apply(
+        self,
+        request: loams.meter.v1.plan_pb2.ApplyPlanRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.plan_pb2.ApplyPlanResponse:
+        ...
+
+    """`loams.meter.v1.PlanService/AssignPlan`, retried: safe.
+    """
+    async def assign(
+        self,
+        request: loams.meter.v1.plan_pb2.AssignPlanRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.plan_pb2.AssignPlanResponse:
+        ...
+
+    """`loams.meter.v1.PlanService/ListPlans`, retried: safe.
+    """
+    async def list(
+        self,
+        request: loams.meter.v1.plan_pb2.ListPlansRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.plan_pb2.ListPlansResponse:
+        ...
+
+    """`loams.meter.v1.PlanService/UnassignPlan`, retried: safe.
+    """
+    async def unassign(
+        self,
+        request: loams.meter.v1.plan_pb2.UnassignPlanRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.plan_pb2.UnassignPlanResponse:
+        ...
+
+
+
+class MeterPlansModuleSync(Protocol):
+    """`loams.meter.plans` — Meter plans: entitlement templates, applied from YAML and assigned to customers.
+
+    Wraps `loams.meter.v1.PlanService`.
+    """
+
+    module: ClassVar[Literal["meter.plans"]]
+    service: ClassVar[Literal["loams.meter.v1.PlanService"]]
+    unstable: ClassVar[Literal[False]]
+    """`loams.meter.v1.PlanService/ApplyPlan`, retried: safe.
+    """
+    def apply(
+        self,
+        request: loams.meter.v1.plan_pb2.ApplyPlanRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.plan_pb2.ApplyPlanResponse:
+        ...
+
+    """`loams.meter.v1.PlanService/AssignPlan`, retried: safe.
+    """
+    def assign(
+        self,
+        request: loams.meter.v1.plan_pb2.AssignPlanRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.plan_pb2.AssignPlanResponse:
+        ...
+
+    """`loams.meter.v1.PlanService/ListPlans`, retried: safe.
+    """
+    def list(
+        self,
+        request: loams.meter.v1.plan_pb2.ListPlansRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.plan_pb2.ListPlansResponse:
+        ...
+
+    """`loams.meter.v1.PlanService/UnassignPlan`, retried: safe.
+    """
+    def unassign(
+        self,
+        request: loams.meter.v1.plan_pb2.UnassignPlanRequest,
+        *,
+        options: CallOptions | None = None,
+    ) -> loams.meter.v1.plan_pb2.UnassignPlanResponse:
         ...
 
 

@@ -124,12 +124,19 @@ dbos_cases() {
   if [ -n "$polling" ]; then
     dbos_crash_case "dbos_${L}_polling_mode" "dbos_${L}_poll_$(date +%s)" DBOS_LISTEN=0
   fi
-  # Through PgDog transaction pooling: the forwarder pointed at pgdog-txn.
-  oc_compose --txn --profile dbos up -d pgdog-txn >/dev/null 2>&1
-  DBOS_PG_TARGET=pgdog-txn:6432 oc_compose --txn --profile dbos up -d --no-deps --force-recreate dbos-pg >/dev/null 2>&1
-  oc_compose --txn --profile dbos up -d --no-deps --force-recreate "$runner" >/dev/null 2>&1
-  sleep 3
-  dbos_crash_case "dbos_${L}_txn_mode_xfail" "dbos_$L"
-  oc_compose --txn --profile dbos rm -s -f pgdog-txn >/dev/null 2>&1 || true
-  oc_compose --profile dbos up -d --no-deps --force-recreate dbos-pg "$runner" >/dev/null 2>&1
+  # Through PgDog transaction pooling: the forwarder pointed at pgdog-txn. A
+  # failure to bring that up fails this case, not the run (the first local
+  # run stopped here; DX1 ruling T5.R10).
+  local txn="dbos_${L}_txn_mode_xfail" tlog
+  tlog=$(caselog "$txn.setup")
+  if oc_compose --txn --profile dbos up -d pgdog-txn >"$tlog" 2>&1 &&
+    DBOS_PG_TARGET=pgdog-txn:6432 oc_compose --txn --profile dbos up -d --no-deps --force-recreate dbos-pg >>"$tlog" 2>&1 &&
+    oc_compose --txn --profile dbos up -d --no-deps --force-recreate "$runner" >>"$tlog" 2>&1; then
+    sleep 3
+    dbos_crash_case "$txn" "dbos_$L"
+  else
+    case_ "$txn" fail "could not start PgDog for the transaction-mode leg: $(tail -n 8 "$tlog" | cut -c1-300)"
+  fi
+  oc_compose --txn --profile dbos rm -s -f pgdog-txn >>"$tlog" 2>&1 || true
+  oc_compose --profile dbos up -d --no-deps --force-recreate dbos-pg "$runner" >>"$tlog" 2>&1 || true
 }
