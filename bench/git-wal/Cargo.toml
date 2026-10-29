@@ -16,6 +16,7 @@ path = "src/main.rs"
 async-trait.workspace = true
 bytes.workspace = true
 clap.workspace = true
+futures.workspace = true
 loams-git = { path = "../../crates/loams-git" }
 loams-store.workspace = true
 rand.workspace = true

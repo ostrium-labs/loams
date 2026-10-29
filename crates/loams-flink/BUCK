@@ -68,7 +68,7 @@ cargo_package(
         "//third-party/rust:rustls",
         "//third-party/rust:serde",
         "//third-party/rust:serde_json",
-        "//third-party/rust:sha2-0_11",
+        "//third-party/rust:sha2",
         "//third-party/rust:thiserror",
         "//third-party/rust:time",
         "//third-party/rust:tokio",
@@ -85,7 +85,6 @@ cargo_package(
     ],
     extra_srcs = {
         "deploy/flink/compose/config.yaml": "//:file=deploy+flink+compose+config.yaml",
-        "deploy/flink/connector-jars.toml": "//:file=deploy+flink+connector-jars.toml",
         "deploy/flink/k8s/config.yaml": "//:file=deploy+flink+k8s+config.yaml",
     },
     rustc_flags = [

@@ -5255,6 +5255,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "clap",
+ "futures",
  "loams-git",
  "loams-store",
  "rand 0.9.5",
@@ -5895,6 +5896,17 @@ dependencies = [
  "serde",
  "thiserror 2.0.21",
  "tokio",
+]
+
+[[package]]
+name = "graph-qps-bench"
+version = "0.1.2"
+dependencies = [
+ "clap",
+ "grafeo",
+ "loams-graph",
+ "loams-proto",
+ "serde_json",
 ]
 
 [[package]]
@@ -9008,6 +9020,10 @@ dependencies = [
  "serde_json",
  "tokio",
 ]
+
+[[package]]
+name = "loams-cql"
+version = "0.1.2"
 
 [[package]]
 name = "loams-durable"
@@ -19097,21 +19113,4 @@ dependencies = [
  "serde",
  "syn 3.0.6",
  "winnow 1.0.4",
-]
-
-[[package]]
-name = "loams-cql"
-version = "0.1.2"
-
-[[package]]
-name = "loams-meter-house"
-version = "0.1.2"
-dependencies = [
- "axum 0.8.9",
- "loams-meter-core",
- "reqwest 0.13.5",
- "serde_json",
- "thiserror 2.0.21",
- "tokio",
- "url",
 ]
