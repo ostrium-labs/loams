@@ -3,7 +3,7 @@ load("//buck:rust.bzl", "cargo_package")
 
 cargo_package(
     name = "loams-imperial",
-    version = "0.1.2",
+    version = "0.1.3",
     edition = "2024",
     manifest_dir = "crates/loams-imperial",
     env = {
@@ -29,9 +29,29 @@ cargo_package(
             "root": "tests/durable.rs",
         },
         {
+            "name": "fork",
+            "crate": "fork",
+            "root": "tests/fork.rs",
+        },
+        {
             "name": "lease",
             "crate": "lease",
             "root": "tests/lease.rs",
+        },
+        {
+            "name": "supervision",
+            "crate": "supervision",
+            "root": "tests/supervision.rs",
+        },
+        {
+            "name": "task",
+            "crate": "task",
+            "root": "tests/task.rs",
+        },
+        {
+            "name": "task_store",
+            "crate": "task_store",
+            "root": "tests/task_store.rs",
         },
     ],
     deps = [

@@ -132,6 +132,8 @@ describe('the method table', () => {
       'MergeChangeRequest',
       'GetChecks',
       'GetCheckLog',
+      'DeployLiveApp',
+      'CloseChangeRequest',
     ]);
   });
 });

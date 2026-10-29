@@ -135,6 +135,63 @@ async fn select_bounds() {
     );
 }
 
+fn resp(parts: &[&str]) -> Vec<u8> {
+    let mut out = format!("*{}\r\n", parts.len()).into_bytes();
+    for p in parts {
+        out.extend_from_slice(format!("${}\r\n{p}\r\n", p.len()).as_bytes());
+    }
+    out
+}
+
+/// Runs of plain GETs and SETs in one read run as one transaction each
+/// (`cmd::batch`); the replies are those of running them one by one.
+#[tokio::test]
+async fn pipelined_get_and_set_runs_batch() {
+    let s = server("").await;
+    let mut c = Client::connect(s.addr).await;
+    assert_eq!(c.call(&["HSET", "h", "f", "v"]).await, Value::Integer(1));
+    let mut raw = Vec::new();
+    for (k, v) in [("a", "1"), ("b", "2"), ("c", "3")] {
+        raw.extend(resp(&["SET", k, v]));
+    }
+    for k in ["a", "b", "nope", "h", "c"] {
+        raw.extend(resp(&["GET", k]));
+    }
+    // A repeated key: the SET run falls back to one command at a time.
+    for (k, v) in [("a", "x"), ("a", "y"), ("b", "z")] {
+        raw.extend(resp(&["set", k, v]));
+    }
+    raw.extend(resp(&["get", "a"]));
+    raw.extend(resp(&["get", "b"]));
+    // A SET over a hash replaces it, as Valkey's does.
+    raw.extend(resp(&["SET", "h", "s"]));
+    raw.extend(resp(&["SET", "d", "4"]));
+    raw.extend(resp(&["GET", "h"]));
+    c.send_raw(&raw).await;
+    for _ in 0..3 {
+        assert_eq!(c.read().await, Some(Value::ok()));
+    }
+    assert_eq!(c.read().await, Some(bulk("1")));
+    assert_eq!(c.read().await, Some(bulk("2")));
+    assert_eq!(c.read().await, Some(Value::Null));
+    assert_eq!(
+        c.read().await,
+        Some(err(
+            "WRONGTYPE Operation against a key holding the wrong kind of value"
+        ))
+    );
+    assert_eq!(c.read().await, Some(bulk("3")));
+    for _ in 0..3 {
+        assert_eq!(c.read().await, Some(Value::ok()));
+    }
+    assert_eq!(c.read().await, Some(bulk("y")));
+    assert_eq!(c.read().await, Some(bulk("z")));
+    assert_eq!(c.read().await, Some(Value::ok()));
+    assert_eq!(c.read().await, Some(Value::ok()));
+    assert_eq!(c.read().await, Some(bulk("s")));
+    assert_eq!(c.call(&["TYPE", "h"]).await, Value::Simple("string".into()));
+}
+
 #[tokio::test]
 async fn pipelined_replies_in_order() {
     let s = server("").await;

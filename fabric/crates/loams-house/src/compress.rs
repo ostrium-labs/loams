@@ -6,8 +6,11 @@
 //! decoded and encoded a piece at a time as it streams and is never held whole.
 //! `deflate` is HTTP's: zlib-wrapped, as ClickHouse reads and writes it.
 //!
-//! ClickHouse's *own* compressed framing (`compress=1`, `decompress=1`, LZ4 blocks
-//! with CityHash128 checksums) is a different thing and is not served yet.
+//! ClickHouse's *own* compressed framing (`compress=1`, `decompress=1`: LZ4, ZSTD
+//! or uncompressed blocks with CityHash128 checksums, the native protocol's
+//! codec) is [`Encoding::ClickHouse`] (HE1 R14.14): the `clickhouse` Rust
+//! crate's inserts and reads use it by default (Laminar's app-server). It is
+//! no HTTP content coding, so no `Content-Encoding` names it.
 
 use std::io::{self, Write};
 
@@ -22,6 +25,9 @@ pub enum Encoding {
     Deflate,
     /// `zstd`.
     Zstd,
+    /// ClickHouse's own compressed framing (`decompress=1` for a request
+    /// body, `compress=1` for a response; HE1 R14.14).
+    ClickHouse,
 }
 
 impl Encoding {
@@ -31,7 +37,13 @@ impl Encoding {
             Self::Gzip => "gzip",
             Self::Deflate => "deflate",
             Self::Zstd => "zstd",
+            Self::ClickHouse => "clickhouse",
         }
+    }
+
+    /// Whether it is an HTTP content coding, which `Content-Encoding` names.
+    pub fn is_http(self) -> bool {
+        self != Self::ClickHouse
     }
 
     fn parse(token: &str) -> Option<Self> {
@@ -140,7 +152,23 @@ enum Codec {
         /// zstd's hint after the last call: 0 once a frame is complete.
         remaining: usize,
     },
+    /// ClickHouse's framing (HE1 R14.14): whole frames are decoded as they
+    /// arrive, and handed out in pieces of at most [`CHUNK_BYTES`].
+    Framed {
+        /// A decoded frame not yet handed out: `held[at..]`.
+        held: Vec<u8>,
+        at: usize,
+    },
 }
+
+/// The most one ClickHouse frame may decode to here (its own bound is 1 GiB):
+/// a request body is decoded a frame at a time, so this bounds what one frame
+/// holds in memory. ClickHouse's clients write frames of 1 MiB.
+const MAX_FRAME_RAW: usize = 64 * 1024 * 1024;
+
+/// A ClickHouse frame's checksum, method and two sizes: what is read before
+/// its size is known.
+const FRAME_HEAD: usize = 16 + 9;
 
 fn bad(message: impl Into<String>) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::InvalidData, message.into())
@@ -162,6 +190,10 @@ impl Decoder {
                 state: Box::new(zstd::stream::raw::Decoder::new()?),
                 out: Vec::new(),
                 remaining: 0,
+            },
+            Some(Encoding::ClickHouse) => Codec::Framed {
+                held: Vec::new(),
+                at: 0,
             },
         };
         Ok(Self {
@@ -286,6 +318,47 @@ impl Decoder {
                         return Ok(None);
                     }
                 }
+                Codec::Framed { held, at } => {
+                    if *at < held.len() {
+                        let take = CHUNK_BYTES.min(held.len() - *at);
+                        let piece = held[*at..*at + take].to_vec();
+                        *at += take;
+                        return Ok(Some(piece));
+                    }
+                    if input.is_empty() {
+                        return Ok(None);
+                    }
+                    let whole = (input.len() >= FRAME_HEAD)
+                        .then(|| {
+                            u32::from_le_bytes([input[17], input[18], input[19], input[20]])
+                                as usize
+                        })
+                        .map(|size| 16 + size);
+                    let raw = (input.len() >= FRAME_HEAD).then(|| {
+                        u32::from_le_bytes([input[21], input[22], input[23], input[24]]) as usize
+                    });
+                    if raw.is_some_and(|raw| raw > MAX_FRAME_RAW) {
+                        return Err(bad(format!(
+                            "a compressed frame (decompress=1) of more than {MAX_FRAME_RAW} \
+                             bytes decompressed"
+                        )));
+                    }
+                    let Some(whole) = whole.filter(|whole| input.len() >= *whole) else {
+                        if self.ended {
+                            return Err(bad(
+                                "the compressed request body (decompress=1) is truncated",
+                            ));
+                        }
+                        return Ok(None);
+                    };
+                    let mut reader = loams_house_native::wire::Reader::new(&input[..whole]);
+                    held.clear();
+                    *at = 0;
+                    loams_house_native::compress::read_frame(&mut reader, held).map_err(|err| {
+                        bad(format!("the compressed request body (decompress=1): {err}"))
+                    })?;
+                    self.consumed += whole;
+                }
                 Codec::Zstd {
                     state,
                     out,
@@ -326,6 +399,7 @@ impl std::fmt::Debug for Decoder {
             Codec::Gzip(_) => "gzip",
             Codec::Deflate { .. } => "deflate",
             Codec::Zstd { .. } => "zstd",
+            Codec::Framed { .. } => "clickhouse",
         };
         f.debug_struct("Decoder")
             .field("codec", &codec)
@@ -343,7 +417,13 @@ pub enum Encoder {
     Deflate(flate2::write::ZlibEncoder<Vec<u8>>),
     /// zstd.
     Zstd(Box<zstd::stream::write::Encoder<'static, Vec<u8>>>),
+    /// ClickHouse's framing (HE1 R14.14): bytes held until a frame's worth.
+    Framed(Vec<u8>),
 }
+
+/// How much a response frame holds, as ClickHouse's `CompressedWriteBuffer`
+/// writes (1 MiB).
+const FRAME_BYTES: usize = 1 << 20;
 
 impl Encoder {
     /// An encoder for `encoding`.
@@ -355,6 +435,7 @@ impl Encoder {
             Encoding::Zstd => {
                 Self::Zstd(Box::new(zstd::stream::write::Encoder::new(Vec::new(), 3)?))
             }
+            Encoding::ClickHouse => Self::Framed(Vec::new()),
         })
     }
 
@@ -374,6 +455,16 @@ impl Encoder {
                 e.write_all(bytes)?;
                 Ok(std::mem::take(e.get_mut()))
             }
+            Self::Framed(held) => {
+                held.extend_from_slice(bytes);
+                let whole = held.len() / FRAME_BYTES * FRAME_BYTES;
+                let mut out = Vec::new();
+                if whole > 0 {
+                    loams_house_native::compress::write_frames(&mut out, &held[..whole]);
+                    held.drain(..whole);
+                }
+                Ok(out)
+            }
         }
     }
 
@@ -383,6 +474,13 @@ impl Encoder {
             Self::Gzip(e) => e.finish(),
             Self::Deflate(e) => e.finish(),
             Self::Zstd(e) => e.finish(),
+            Self::Framed(held) => {
+                let mut out = Vec::new();
+                if !held.is_empty() {
+                    loams_house_native::compress::write_frames(&mut out, &held);
+                }
+                Ok(out)
+            }
         }
     }
 }
@@ -393,6 +491,7 @@ impl std::fmt::Debug for Encoder {
             Self::Gzip(_) => "Encoder::Gzip",
             Self::Deflate(_) => "Encoder::Deflate",
             Self::Zstd(_) => "Encoder::Zstd",
+            Self::Framed(_) => "Encoder::Framed",
         })
     }
 }
@@ -439,7 +538,12 @@ mod tests {
     #[test]
     fn every_coding_round_trips_in_pieces() {
         let plain: Vec<u8> = (0..50_000u32).flat_map(|n| n.to_le_bytes()).collect();
-        for coding in [Encoding::Gzip, Encoding::Deflate, Encoding::Zstd] {
+        for coding in [
+            Encoding::Gzip,
+            Encoding::Deflate,
+            Encoding::Zstd,
+            Encoding::ClickHouse,
+        ] {
             let wire = compress(coding, &plain);
             for step in [1, 333, 1 << 20] {
                 let (back, _) =
@@ -451,10 +555,45 @@ mod tests {
         assert_eq!(back, plain);
     }
 
+    /// HE1 R14.14: frames as ClickHouse's clients write them (the native
+    /// protocol's codec, whose test decodes clickhouse-client's own) decode,
+    /// a frame whose checksum does not match is refused, and a frame larger
+    /// than the House decodes at once is refused before it is read.
+    #[test]
+    fn clickhouse_frames_decode_and_are_checked() {
+        let plain = b"RowBinary bytes".repeat(1000);
+        let mut wire = Vec::new();
+        loams_house_native::compress::write_frames(&mut wire, &plain);
+        let (back, _) =
+            decode(Some(Encoding::ClickHouse), &wire, 10, BodyLimits::default()).expect("decodes");
+        assert_eq!(back, plain);
+        let mut bad_sum = wire.clone();
+        bad_sum[0] ^= 1;
+        assert!(
+            decode(
+                Some(Encoding::ClickHouse),
+                &bad_sum,
+                64,
+                BodyLimits::default()
+            )
+            .is_err()
+        );
+        let mut huge = wire.clone();
+        huge[21..25].copy_from_slice(&u32::MAX.to_le_bytes());
+        let err = decode(Some(Encoding::ClickHouse), &huge, 64, BodyLimits::default())
+            .expect_err("too large");
+        assert!(err.to_string().contains("decompressed"), "{err}");
+    }
+
     #[test]
     fn truncated_bodies_are_errors() {
         let plain: Vec<u8> = (0..20_000u32).flat_map(|n| n.to_le_bytes()).collect();
-        for coding in [Encoding::Gzip, Encoding::Deflate, Encoding::Zstd] {
+        for coding in [
+            Encoding::Gzip,
+            Encoding::Deflate,
+            Encoding::Zstd,
+            Encoding::ClickHouse,
+        ] {
             let wire = compress(coding, &plain);
             for cut in [wire.len() - 1, wire.len() - 5, wire.len() / 2] {
                 let result = decode(Some(coding), &wire[..cut], 1000, BodyLimits::default());
@@ -470,7 +609,12 @@ mod tests {
     #[test]
     fn bombs_are_refused_in_bounded_pieces() {
         let zeros = vec![0u8; 16 * 1024 * 1024];
-        for coding in [Encoding::Gzip, Encoding::Deflate, Encoding::Zstd] {
+        for coding in [
+            Encoding::Gzip,
+            Encoding::Deflate,
+            Encoding::Zstd,
+            Encoding::ClickHouse,
+        ] {
             let wire = compress(coding, &zeros);
             let err = decode(Some(coding), &wire, 1 << 20, BodyLimits::default())
                 .expect_err("over the ratio");

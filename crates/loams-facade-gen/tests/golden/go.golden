@@ -666,6 +666,17 @@ var Modules = []ModuleBinding{
 		},
 	},
 	{
+		Name:     "meter.meters",
+		Summary:  "Meter usage queries over the House windows.",
+		Service:  "loams.meter.v1.MeterService",
+		Package:  "loams.meter.v1",
+		Unstable: false,
+		Derived:  false,
+		Calls: []CallBinding{
+			{Module: "meter.meters", Name: "Query", ProtoName: "query", Method: "QueryMeter", RPC: "loams.meter.v1.MeterService/QueryMeter", Service: "loams.meter.v1.MeterService", Package: "loams.meter.v1", Idempotency: IdempotencyNoSideEffects, Retry: RetrySafe, Streaming: StreamingUnary, Pagination: nil},
+		},
+	},
+	{
 		Name:     "meter.notifications",
 		Summary:  "Meter notifications: threshold rules, signed webhooks and their deliveries.",
 		Service:  "loams.meter.v1.NotificationService",
@@ -1151,6 +1162,21 @@ type MeterEntitlementsModule interface {
 	VoidGrant(ctx context.Context, req *connect.Request[meterv1.VoidGrantRequest], opts *CallOptions) (*connect.Response[meterv1.VoidGrantResponse], error)
 }
 
+// MeterMetersModule is loams.meter.meters — Meter usage queries over the House windows.
+//
+// It wraps loams.meter.v1.MeterService.
+type MeterMetersModule interface {
+	// Module is the SDK module, as it appears on loams.meter.meters.
+	Module() string
+	// Service is the service behind the module.
+	Service() string
+	// Unstable reports that the package's wire contract may still change.
+	Unstable() bool
+
+	// Query calls loams.meter.v1.MeterService/QueryMeter, retried: safe.
+	Query(ctx context.Context, req *connect.Request[meterv1.QueryMeterRequest], opts *CallOptions) (*connect.Response[meterv1.QueryMeterResponse], error)
+}
+
 // MeterNotificationsModule is loams.meter.notifications — Meter notifications: threshold rules, signed webhooks and their deliveries.
 //
 // It wraps loams.meter.v1.NotificationService.
@@ -1355,6 +1381,9 @@ func NewServiceClient(name string, httpClient connect.HTTPClient, baseURL string
 
 	case "loams.meter.v1.EntitlementService":
 		return meterv1connect.NewEntitlementServiceClient(httpClient, baseURL, opts...)
+
+	case "loams.meter.v1.MeterService":
+		return meterv1connect.NewMeterServiceClient(httpClient, baseURL, opts...)
 
 	case "loams.meter.v1.NotificationService":
 		return meterv1connect.NewNotificationServiceClient(httpClient, baseURL, opts...)

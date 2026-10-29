@@ -3,7 +3,7 @@ load("//buck:rust.bzl", "cargo_package")
 
 cargo_package(
     name = "loams-flink",
-    version = "0.1.2",
+    version = "0.1.3",
     edition = "2024",
     manifest_dir = "crates/loams-flink",
     env = {
@@ -38,6 +38,11 @@ cargo_package(
             "root": "tests/gateway_router.rs",
         },
         {
+            "name": "pg_store",
+            "crate": "pg_store",
+            "root": "tests/pg_store.rs",
+        },
+        {
             "name": "rest_client",
             "crate": "rest_client",
             "root": "tests/rest_client.rs",
@@ -69,6 +74,7 @@ cargo_package(
         "//third-party/rust:serde",
         "//third-party/rust:serde_json",
         "//third-party/rust:sha2",
+        "//third-party/rust:sqlx",
         "//third-party/rust:thiserror",
         "//third-party/rust:time",
         "//third-party/rust:tokio",
@@ -84,6 +90,7 @@ cargo_package(
         "//third-party/rust:tower",
     ],
     extra_srcs = {
+        "crates/loams-flink/migrations/0001_saved_jobs.sql": "migrations/0001_saved_jobs.sql",
         "deploy/flink/compose/config.yaml": "//:file=deploy+flink+compose+config.yaml",
         "deploy/flink/k8s/config.yaml": "//:file=deploy+flink+k8s+config.yaml",
     },

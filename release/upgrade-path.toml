@@ -15,6 +15,55 @@
 # (`scripts/release/check-upgrade-path.sh`) and the signed manifest's copy.
 
 [[release]]
+version     = "0.1.3"
+from        = "0.1"
+free_factor = 1.5
+# Expected downtime of the upgrade, excluding image pulls (Q833's target).
+downtime_seconds = 300
+
+# No migrations and no third-party pin changes. `migrate` makes the reserved
+# `_system/_meter` stream on every run (ME1 Task 4, #1360): a system object,
+# not a migration, idempotent, on new and upgraded stacks alike. Postgres 16
+# moves from maintenance to supported in the majors table (NF2); the compute
+# image digest is unchanged. Everything new (managed engines, meter, RESP,
+# browser, authz, connectors) is behind profiles that are off by default.
+
+[release.components]
+pd             = "v8.5.8"
+tikv           = "v8.5.8"
+tidb           = "v8.5.8-loams.1"
+loams_postgres = "sha256:4dcec4cbef637b92b1088ea2c0bc857f3b5ef4318f02e8d2d4a0f9263ed4140e"
+chdb           = "26.9.0"
+grafeo         = "0.5.43"
+
+# Connectors (`connectors` profile, CC1): where loams-fabric connect keeps its state.
+[[release.env]]
+add     = "LOAMS_CONNECT_STORE"
+default = ""
+
+# Authorization (design 76): builtin by default; openfga with the `authz` profile.
+[[release.env]]
+add     = "LOAMS_AUTHZ"
+default = "builtin"
+
+[[release.env]]
+add     = "LOAMS_AUTHZ_OPENFGA_KEY"
+default = ""
+
+# The agents' headless browser (D2114, D2118): local in agentd by default.
+[[release.env]]
+add     = "LOAMS_BROWSER_PROVIDER"
+default = "local"
+
+[[release.env]]
+add     = "LOAMS_BROWSER_TOKEN"
+default = ""
+
+[[release.env]]
+add     = "LOAMS_BROWSER_CLIENT_TOKEN"
+default = ""
+
+[[release]]
 version     = "0.1.2"
 from        = "0.1"
 free_factor = 1.5

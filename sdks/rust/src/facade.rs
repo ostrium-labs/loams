@@ -722,6 +722,17 @@ pub static MODULES: &[ModuleBinding] = &[
         ],
     },
     ModuleBinding {
+        name: "meter.meters",
+        summary: "Meter usage queries over the House windows.",
+        service: "loams.meter.v1.MeterService",
+        package: "loams.meter.v1",
+        unstable: false,
+        derived: false,
+        calls: &[
+            CallBinding { module: "meter.meters", name: "query", proto_name: "query", method: "QueryMeter", rpc: "loams.meter.v1.MeterService/QueryMeter", service: "loams.meter.v1.MeterService", package: "loams.meter.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+        ],
+    },
+    ModuleBinding {
         name: "meter.notifications",
         summary: "Meter notifications: threshold rules, signed webhooks and their deliveries.",
         service: "loams.meter.v1.NotificationService",
@@ -1700,6 +1711,26 @@ pub trait MeterEntitlementsModule {
         request: loams_proto::loams::meter::v1::VoidGrantRequest,
         options: Option<&CallOptions>,
     ) -> impl std::future::Future<Output = Result<loams_proto::loams::meter::v1::VoidGrantResponse, LoamsError>> + Send;
+}
+
+/// `MeterMetersModule` is `loams.meter.meters` — Meter usage queries over the House windows.
+///
+/// Wraps `loams.meter.v1.MeterService`.
+#[rustfmt::skip]
+pub trait MeterMetersModule {
+    /// The SDK module, as it appears on `loams.meter.meters`.
+    const MODULE: &'static str = "meter.meters";
+    /// The service behind the module.
+    const SERVICE: &'static str = "loams.meter.v1.MeterService";
+    /// Whether the package's wire contract may still change.
+    const UNSTABLE: bool = false;
+
+    /// `loams.meter.v1.MeterService/QueryMeter`, retried: safe.
+    fn query(
+        &self,
+        request: loams_proto::loams::meter::v1::QueryMeterRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::meter::v1::QueryMeterResponse, LoamsError>> + Send;
 }
 
 /// `MeterNotificationsModule` is `loams.meter.notifications` — Meter notifications: threshold rules, signed webhooks and their deliveries.

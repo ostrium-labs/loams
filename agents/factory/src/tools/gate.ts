@@ -36,7 +36,9 @@ const AGENTD_RISK: Record<string, Risk> = {
   post_review_comment: 'write',
   open_change_request: 'write',
   request_approval: 'write',
+  close_change_request: 'write',
   merge_change_request: 'destructive',
+  deploy_live_app: 'destructive',
 };
 
 /** A tool's risk: the agentd table, else destructive (so it always asks). */

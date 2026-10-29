@@ -3,7 +3,7 @@ load("//buck:rust.bzl", "cargo_package")
 
 cargo_package(
     name = "loams-cql",
-    version = "0.1.2",
+    version = "0.1.3",
     edition = "2024",
     manifest_dir = "crates/loams-cql",
     env = {
@@ -24,10 +24,54 @@ cargo_package(
     },
     tests = [
         {
+            "name": "executor",
+            "crate": "executor",
+            "root": "tests/executor.rs",
+        },
+        {
+            "name": "framing",
+            "crate": "framing",
+            "root": "tests/framing.rs",
+        },
+        {
+            "name": "handshake",
+            "crate": "handshake",
+            "root": "tests/handshake.rs",
+        },
+        {
+            "name": "parser",
+            "crate": "parser",
+            "root": "tests/parser.rs",
+        },
+        {
+            "name": "query_protocol",
+            "crate": "query_protocol",
+            "root": "tests/query_protocol.rs",
+        },
+        {
+            "name": "server",
+            "crate": "server",
+            "root": "tests/server.rs",
+        },
+        {
+            "name": "storage",
+            "crate": "storage",
+            "root": "tests/storage.rs",
+        },
+        {
             "name": "token",
             "crate": "token",
             "root": "tests/token.rs",
         },
+    ],
+    deps = [
+        "//crates/loams-kv:loams-kv",
+        "//crates/loams-tuple:loams-tuple",
+        "//third-party/rust:async-trait",
+        "//third-party/rust:cassandra-protocol",
+        "//third-party/rust:serde",
+        "//third-party/rust:serde_json",
+        "//third-party/rust:tokio",
     ],
     rustc_flags = [
         "-Funsafe_code",

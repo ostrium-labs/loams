@@ -1107,6 +1107,23 @@
     }
   },
   {
+    "method": "DeployLiveApp",
+    "params": {
+      "chatId": "chat-1",
+      "approvalId": "fa-2",
+      "app": "notes",
+      "commit": "0123456789abcdef0123456789abcdef01234567"
+    }
+  },
+  {
+    "method": "CloseChangeRequest",
+    "params": {
+      "chatId": "chat-1",
+      "provider": "forgejo",
+      "number": 7
+    }
+  },
+  {
     "method": "ListMarketplaceSources",
     "params": {}
   },

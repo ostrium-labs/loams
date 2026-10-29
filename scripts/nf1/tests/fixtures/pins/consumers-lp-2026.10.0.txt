@@ -2,6 +2,22 @@ deploy/loams-postgres-dev/compose.yaml: -x-neon-image: &neon-image ${NEON_IMAGE:
 deploy/loams-postgres-dev/compose.yaml: -x-compute-image: &compute-image ${COMPUTE_IMAGE:-ghcr.io/neondatabase/compute-node-v17@sha256:13ab146d3e7bbabb25a8532f315ac443e7512351d1ede0bab586def5c70e26c3}
 deploy/loams-postgres-dev/compose.yaml: +x-neon-image: &neon-image ${NEON_IMAGE:-ghcr.io/ostrium-labs/loams-postgres-storage@sha256:1111111111111111111111111111111111111111111111111111111111111111}
 deploy/loams-postgres-dev/compose.yaml: +x-compute-image: &compute-image ${COMPUTE_IMAGE:-ghcr.io/ostrium-labs/loams-postgres-compute-v17@sha256:2222222222222222222222222222222222222222222222222222222222222222}
+deploy/loams-postgres-dev/compose.yaml: -  compute-v16:
+deploy/loams-postgres-dev/compose.yaml: -    # Postgres 16: maintenance.
+deploy/loams-postgres-dev/compose.yaml: -    profiles: ["pg16"]
+deploy/loams-postgres-dev/compose.yaml: -    image: ${COMPUTE_V16_IMAGE:-ghcr.io/neondatabase/compute-node-v16@sha256:b3e151661bd2ee11eb2843c8926001966cb23969227e9673c5f42fc3fbe14249}
+deploy/loams-postgres-dev/compose.yaml: -    environment:
+deploy/loams-postgres-dev/compose.yaml: -      TENANT_ID: ${PG16_TENANT_ID:-}
+deploy/loams-postgres-dev/compose.yaml: -      TIMELINE_ID: ${PG16_TIMELINE_ID:-}
+deploy/loams-postgres-dev/compose.yaml: -    volumes:
+deploy/loams-postgres-dev/compose.yaml: -      - ./compute/config.json:/var/db/postgres/configs/config.json:ro
+deploy/loams-postgres-dev/compose.yaml: -      - ./compute/start.sh:/shell/start.sh:ro
+deploy/loams-postgres-dev/compose.yaml: -    ports:
+deploy/loams-postgres-dev/compose.yaml: -      - 127.0.0.1:${PG16_PORT:-55416}:55433
+deploy/loams-postgres-dev/compose.yaml: -    entrypoint: ["/bin/bash", "/shell/start.sh"]
+deploy/loams-postgres-dev/compose.yaml: -    depends_on: [pageserver, safekeeper1]
+deploy/loams-postgres-dev/compose.yaml: -    image: ${COMPUTE_V17_IMAGE:-ghcr.io/neondatabase/compute-node-v17@sha256:13ab146d3e7bbabb25a8532f315ac443e7512351d1ede0bab586def5c70e26c3}
+deploy/loams-postgres-dev/compose.yaml: +    image: ${COMPUTE_V17_IMAGE:-ghcr.io/ostrium-labs/loams-postgres-compute-v17@sha256:2222222222222222222222222222222222222222222222222222222222222222}
 deploy/loams-pg-bench/compose.yaml: -x-neon-image: &neon-image ${NEON_IMAGE:-ghcr.io/neondatabase/neon@sha256:7a4f124917bb929964b2d696d710f19584f80bb9bd51b2af4a6e2425434c761f}
 deploy/loams-pg-bench/compose.yaml: -x-compute-image: &compute-image ${COMPUTE_IMAGE:-ghcr.io/neondatabase/compute-node-v17@sha256:13ab146d3e7bbabb25a8532f315ac443e7512351d1ede0bab586def5c70e26c3}
 deploy/loams-pg-bench/compose.yaml: +x-neon-image: &neon-image ${NEON_IMAGE:-ghcr.io/ostrium-labs/loams-postgres-storage@sha256:1111111111111111111111111111111111111111111111111111111111111111}

@@ -32,7 +32,16 @@ fn fixture(name: &str) -> String {
 }
 
 /// Forms the engine answers differently, with the task that closes them.
-const TYPE_GAPS: &[(&str, &str, &str)] = &[];
+///
+/// ClickHouse 26.9 lets a `Tuple` be inside `Nullable` (`maxOrNull` of a
+/// tuple is `Nullable(Tuple(…))`); `loams-house-types` still refuses that
+/// type (its `canBeInsideNullable` is the older one), so these are open
+/// until the types crate takes it.
+const TYPE_GAPS: &[(&str, &str, &str)] = &[
+    ("maxOrNull", "Tuple(UInt8, String)", "21"),
+    ("argMax", "Tuple(UInt8, String)|Nullable(UInt8)", "21"),
+    ("maxOrNullIf", "Tuple(UInt8, String)|UInt8", "21"),
+];
 
 #[test]
 fn aggregate_result_types_match_the_oracle() {

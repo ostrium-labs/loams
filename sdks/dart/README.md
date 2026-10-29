@@ -7,7 +7,7 @@
 
 ## Install
 
-The `v0.1.2` source tag is published. The 0.1.2 package is not currently
+The `v0.1.3` source tag is published. The 0.1.3 package is not currently
 available from pub.dev, so install the SDK from the tagged monorepo source:
 
 ```yaml
@@ -15,7 +15,7 @@ dependencies:
   loams:
     git:
       url: https://github.com/ostrium-labs/loams.git
-      ref: v0.1.2
+      ref: v0.1.3
       path: sdks/dart
 ```
 

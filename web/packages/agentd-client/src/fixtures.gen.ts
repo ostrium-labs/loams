@@ -27,6 +27,8 @@ import type { CheckoutFileDiffText } from "./gen/CheckoutFileDiffText";
 import type { CheckpointList } from "./gen/CheckpointList";
 import type { ChecksReply } from "./gen/ChecksReply";
 import type { CloneRepoParams } from "./gen/CloneRepoParams";
+import type { CloseChangeRequestParams } from "./gen/CloseChangeRequestParams";
+import type { CloseChangeRequestReply } from "./gen/CloseChangeRequestReply";
 import type { CommitWorktreeParams } from "./gen/CommitWorktreeParams";
 import type { CommitWorktreeReply } from "./gen/CommitWorktreeReply";
 import type { CompleteAgentLoginParams } from "./gen/CompleteAgentLoginParams";
@@ -43,6 +45,8 @@ import type { DeleteProjectActionParams } from "./gen/DeleteProjectActionParams"
 import type { DeleteReviewCommentParams } from "./gen/DeleteReviewCommentParams";
 import type { DeleteWorkspaceEntryRequest } from "./gen/DeleteWorkspaceEntryRequest";
 import type { DeleteWorktreeParams } from "./gen/DeleteWorktreeParams";
+import type { DeployLiveAppParams } from "./gen/DeployLiveAppParams";
+import type { DeployLiveAppReply } from "./gen/DeployLiveAppReply";
 import type { DiscardPathsParams } from "./gen/DiscardPathsParams";
 import type { DiscardWorkingTreeParams } from "./gen/DiscardWorkingTreeParams";
 import type { DiscardWorkingTreeReply } from "./gen/DiscardWorkingTreeReply";
@@ -2894,6 +2898,39 @@ export const fixture_CheckLogReply = {
   "truncated": false
 } satisfies CheckLogReply;
 
+export const fixture_CloseChangeRequestParams = {
+  "chatId": "chat_01",
+  "number": 7,
+  "provider": "forgejo"
+} satisfies CloseChangeRequestParams;
+
+export const fixture_CloseChangeRequestReply = {
+  "closed": true,
+  "number": 7,
+  "provider": "forgejo",
+  "repo": "dev/comet"
+} satisfies CloseChangeRequestReply;
+
+export const fixture_DeployLiveAppParams = {
+  "app": "notes",
+  "approvalId": "fa-1",
+  "chatId": "chat_01",
+  "commit": "0123456789abcdef0123456789abcdef01234567",
+  "message": "Rate limit signup (#7)"
+} satisfies DeployLiveAppParams;
+
+export const fixture_DeployLiveAppReply = {
+  "app": "notes",
+  "bundleSha256": "abababababababababababababababababababababababababababababababab",
+  "commit": "0123456789abcdef0123456789abcdef01234567",
+  "deploymentId": "01JD0000000000000000000001",
+  "health": "health:check failed: internal: boom",
+  "previousDeploymentId": "01JD0000000000000000000000",
+  "resumed": false,
+  "state": "rolled_back",
+  "target": "live"
+} satisfies DeployLiveAppReply;
+
 export const fixture_ToolCall_exec = {
   "command": "cargo test",
   "kind": "exec"
@@ -3359,6 +3396,10 @@ export const FIXTURES = [
   { name: "ChecksReply", type: "ChecksReply", value: fixture_ChecksReply },
   { name: "GetCheckLogParams", type: "GetCheckLogParams", value: fixture_GetCheckLogParams },
   { name: "CheckLogReply", type: "CheckLogReply", value: fixture_CheckLogReply },
+  { name: "CloseChangeRequestParams", type: "CloseChangeRequestParams", value: fixture_CloseChangeRequestParams },
+  { name: "CloseChangeRequestReply", type: "CloseChangeRequestReply", value: fixture_CloseChangeRequestReply },
+  { name: "DeployLiveAppParams", type: "DeployLiveAppParams", value: fixture_DeployLiveAppParams },
+  { name: "DeployLiveAppReply", type: "DeployLiveAppReply", value: fixture_DeployLiveAppReply },
   { name: "ToolCall.exec", type: "ToolCall", value: fixture_ToolCall_exec },
   { name: "ToolCall.readFile", type: "ToolCall", value: fixture_ToolCall_readFile },
   { name: "ToolCall.writeFile", type: "ToolCall", value: fixture_ToolCall_writeFile },

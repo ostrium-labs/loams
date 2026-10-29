@@ -4,9 +4,9 @@ fork_release = "lp-2026.11.0"
 fork_commit = "a213ec44ac29c31812712ffdd6de7c1f4d4a599c"
 
 [majors]
-supported = [17]
+supported = [16, 17]
 beta = []
-maintenance = [16]
+maintenance = []
 default = 17
 
 [images.storage]

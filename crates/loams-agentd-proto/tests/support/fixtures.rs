@@ -2437,6 +2437,48 @@ pub fn all() -> Vec<Fixture> {
             truncated: false,
         },
     ));
+    add(Fixture::new(
+        "CloseChangeRequestParams",
+        factory_loop::CloseChangeRequestParams {
+            chat_id: s("chat_01"),
+            provider: ChangeRequestProvider::Forgejo,
+            number: 7,
+        },
+    ));
+    add(Fixture::new(
+        "CloseChangeRequestReply",
+        factory_loop::CloseChangeRequestReply {
+            provider: ChangeRequestProvider::Forgejo,
+            number: 7,
+            repo: s("dev/comet"),
+            closed: true,
+        },
+    ));
+    add(Fixture::new(
+        "DeployLiveAppParams",
+        factory_loop::DeployLiveAppParams {
+            chat_id: s("chat_01"),
+            approval_id: s("fa-1"),
+            app: s("notes"),
+            commit: s("0123456789abcdef0123456789abcdef01234567"),
+            message: Some(s("Rate limit signup (#7)")),
+        },
+    ));
+    add(Fixture::new(
+        "DeployLiveAppReply",
+        factory_loop::DeployLiveAppReply {
+            target: s("live"),
+            app: s("notes"),
+            commit: s("0123456789abcdef0123456789abcdef01234567"),
+            deployment_id: s("01JD0000000000000000000001"),
+            bundle_sha256: s("ab".repeat(32).as_str()),
+            previous_deployment_id: s("01JD0000000000000000000000"),
+            state: factory_loop::LiveDeployState::RolledBack,
+            health: s("health:check failed: internal: boom"),
+            failure_reason: None,
+            resumed: false,
+        },
+    ));
 
     // Every variant of the unions a client switches on.
     for (name, call) in tool_calls() {

@@ -71,6 +71,21 @@ the script started its own server), `api` (the native API used, such as
   Kafka gateway, Temporal gRPC, the PG SNI proxy) can be an extra `op`, with
   `"note":"compat"`, but `bench/all` leaves it out of the aggregate.
 
+## Scripts written before this contract
+
+Several lane scripts were written to the first, shorter brief
+(`--duration --cores --depth`). They read `--cores` as the engine's **whole**
+budget (server and load), and they start their own server. Some read a bare
+number as a core *count*. `run.sh` adapts to each of them in `slot_args`:
+
+- It passes a single core as `N-N`, never as `N`.
+- It gives the House `--cores` (server) and `--client-cores` (load).
+- It launches every script that lacks `--start-at` early, by its measured
+  setup time.
+
+New scripts should follow the contract above. The adapter for a lane can be
+deleted once its script does.
+
 ## Where `bench/all` looks for a script
 
 1. `$NATIVE_<ENGINE>` (for example `NATIVE_HOUSE=~/…/bq1-house/bench/house/native-load.sh`),

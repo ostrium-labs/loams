@@ -960,6 +960,8 @@ impl<'a> Guard<'a> {
             }
             _ => return Err(refuse(format!("The parameters of {written}"))),
         };
+        // They are planned as part of the name (below), not as a call.
+        *parameters = FunctionArguments::None;
         // `CAST(x, 'T')`, `_CAST(x, 'T')`: a cast to the ClickHouse type text.
         if (written.eq_ignore_ascii_case("cast") || written == "_CAST")
             && let FunctionArguments::List(list) = args

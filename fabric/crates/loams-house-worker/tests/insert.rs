@@ -499,6 +499,54 @@ async fn defaults_and_column_lists_apply_as_in_clickhouse() {
     assert_eq!(ok(addr, "SELECT count() FROM d").await, "4\n");
 }
 
+/// HE1 R14.10: an equality on a `UUID` column finds its rows (Laminar filters
+/// every read by `project_id`): the House writes no Iceberg bounds for `uuid`
+/// columns, which ClickHouse 26.9's Iceberg reader misreads and prunes on.
+/// Every answer is the 26.9.2.8 oracle's.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn uuid_equalities_find_their_rows() {
+    let house = lakehouse("uuid-filters").await;
+    let addr = house.addr();
+    ok(
+        addr,
+        "CREATE TABLE u (project_id UUID, trace_id Nullable(UUID), n Int64) \
+         ENGINE = MergeTree ORDER BY (project_id, n)",
+    )
+    .await;
+    ok(
+        addr,
+        "INSERT INTO u VALUES ('00000000-0000-0000-0000-000000000001', \
+         '00000000-0000-0000-0000-00000000000a', 1), ('00000000-0000-0000-0000-000000000001', \
+         NULL, 2), ('ffffffff-0000-0000-0000-000000000002', '00000000-0000-0000-0000-00000000000b', 3)",
+    )
+    .await;
+    for (sql, want) in [
+        (
+            "SELECT count() FROM u WHERE project_id = toUUID('00000000-0000-0000-0000-000000000001')",
+            "2\n",
+        ),
+        (
+            "SELECT n FROM u WHERE project_id = 'ffffffff-0000-0000-0000-000000000002'",
+            "3\n",
+        ),
+        (
+            "SELECT n FROM u WHERE trace_id = '00000000-0000-0000-0000-00000000000a'",
+            "1\n",
+        ),
+        (
+            "SELECT count() FROM u WHERE project_id IN ('00000000-0000-0000-0000-000000000001', \
+             'ffffffff-0000-0000-0000-000000000002')",
+            "3\n",
+        ),
+        (
+            "SELECT count() FROM u WHERE project_id > '00000000-0000-0000-0000-000000000001'",
+            "1\n",
+        ),
+    ] {
+        assert_eq!(ok(addr, &format!("{sql} FORMAT TSV")).await, want, "{sql}");
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn insert_select_reads_lake_tables_and_table_functions() {
     let house = lakehouse("select").await;
@@ -977,6 +1025,66 @@ async fn wait_for_async_insert_0_acks_early() {
 
 /// One statement writes at most `lake_insert_max_bytes` (R12.2): past it the
 /// INSERT is refused and nothing lands.
+/// HE1 R14.14: ClickHouse's own compressed framing over HTTP, as the
+/// `clickhouse` Rust crate sends it by default (Laminar's app-server): an
+/// `INSERT … FORMAT RowBinary` whose body is LZ4 frames (`decompress=1`), and
+/// a read whose answer comes back in frames (`compress=1`).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn clickhouse_compressed_framing_both_ways() {
+    let house = lakehouse("framing").await;
+    let addr = house.addr();
+    ok(
+        addr,
+        "CREATE TABLE fr (id UInt64, name String) ENGINE = MergeTree ORDER BY id",
+    )
+    .await;
+    // RowBinary: UInt64 little-endian, String as a varint length and bytes.
+    let mut rows = Vec::new();
+    for (id, name) in [(1u64, "one"), (2, "two"), (3, "three")] {
+        rows.extend_from_slice(&id.to_le_bytes());
+        rows.push(name.len() as u8);
+        rows.extend_from_slice(name.as_bytes());
+    }
+    let mut body = Vec::new();
+    loams_house_native::compress::write_frames(&mut body, &rows);
+    inserted(
+        addr,
+        "INSERT INTO fr (id, name) FORMAT RowBinary",
+        &body,
+        &[("decompress", "1")],
+    )
+    .await;
+    let response = post(
+        addr,
+        ALICE,
+        Some("SELECT id, name FROM fr ORDER BY id FORMAT TSV"),
+        b"",
+        &[("compress", "1")],
+    )
+    .await;
+    assert_eq!(response.status, 200, "{}", response.text());
+    assert!(response.header("Content-Encoding").is_none());
+    let mut reader = loams_house_native::wire::Reader::new(&response.body);
+    let mut plain = Vec::new();
+    while reader.position() < response.body.len() {
+        loams_house_native::compress::read_frame(&mut reader, &mut plain).expect("a frame");
+    }
+    assert_eq!(
+        String::from_utf8(plain).expect("utf8"),
+        "1\tone\n2\ttwo\n3\tthree\n"
+    );
+    // A body that is not in frames is refused, and nothing is written.
+    let refused = insert(
+        addr,
+        "INSERT INTO fr (id, name) FORMAT RowBinary",
+        &rows,
+        &[("decompress", "1")],
+    )
+    .await;
+    assert_ne!(refused.status, 200, "{}", refused.text());
+    assert_eq!(ok(addr, "SELECT count() FROM fr FORMAT TSV").await, "3\n");
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn insert_over_the_cap_is_refused() {
     let house = lakehouse_with("cap", |config| config.lake_insert_max_bytes = 64 * 1024).await;
@@ -996,6 +1104,46 @@ async fn insert_over_the_cap_is_refused() {
     )
     .await;
     assert_eq!(ok(addr, "SELECT count() FROM t").await, "100\n");
+}
+
+/// HE1 R14.13: `CoalescingMergeTree` (Laminar's `traces_static`): per
+/// sorting key, each column's last value that is not `NULL`, merged within an
+/// insert and read so with `FINAL`. Every answer is the 26.9.2.8 oracle's.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn coalescing_merge_tree_keeps_the_last_non_null() {
+    let house = lakehouse("coalescing").await;
+    let addr = house.addr();
+    ok(
+        addr,
+        "CREATE TABLE co (k UInt64, a Nullable(String), b Nullable(UInt8), c String) \
+         ENGINE = CoalescingMergeTree() ORDER BY k",
+    )
+    .await;
+    ok(
+        addr,
+        "INSERT INTO co VALUES (1, 'x', NULL, 'c1'), (1, NULL, 5, 'c2'), (2, 'y', NULL, 'd')",
+    )
+    .await;
+    assert_eq!(
+        ok(addr, "SELECT * FROM co ORDER BY k FORMAT TSV").await,
+        "1\tx\t5\tc2\n2\ty\t\\N\td\n"
+    );
+    ok(
+        addr,
+        "INSERT INTO co VALUES (1, 'z', NULL, 'c3'), (2, NULL, 7, 'd2')",
+    )
+    .await;
+    assert_eq!(
+        ok(addr, "SELECT * FROM co FINAL ORDER BY k FORMAT TSV").await,
+        "1\tz\t5\tc3\n2\ty\t7\td2\n"
+    );
+    assert_eq!(ok(addr, "SELECT count() FROM co FORMAT TSV").await, "4\n");
+    refused(
+        addr,
+        "CREATE TABLE co2 (k UInt64, a Nullable(String)) ENGINE = CoalescingMergeTree(a) ORDER BY k",
+        "48",
+    )
+    .await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -1046,6 +1194,56 @@ async fn partition_split_files() {
         .count();
     assert!(rolled > 1, "{rolled} files");
     assert_eq!(ok(addr, "SELECT count() FROM t").await, "100000\n");
+}
+
+/// HE1 R14.8: `BFloat16` columns (Laminar's `Array(BFloat16)` cluster
+/// centroids, with their `vector_similarity` index) are stored as Iceberg
+/// `float` and read back as `BFloat16`, exactly. Every answer is the 26.9.2.8
+/// oracle's.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn bfloat16_columns_round_trip() {
+    let house = lakehouse("bfloat16").await;
+    let addr = house.addr();
+    ok(
+        addr,
+        "CREATE TABLE clusters (id UInt64, centroid Array(BFloat16), one BFloat16, \
+         maybe Nullable(BFloat16), INDEX centroid_idx centroid TYPE \
+         vector_similarity('hnsw', 'cosineDistance', 3)) ENGINE = ReplacingMergeTree ORDER BY id",
+    )
+    .await;
+    ok(
+        addr,
+        "INSERT INTO clusters VALUES (1, [0.1, 0.2, 0.3], 1.5, NULL), \
+         (2, [1, 0, 3.14159], -2.25, 0.333)",
+    )
+    .await;
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT id, centroid, one, maybe, toTypeName(centroid), toTypeName(maybe) \
+             FROM clusters ORDER BY id FORMAT TSV"
+        )
+        .await,
+        "1\t[0.099609375,0.19921875,0.29882812]\t1.5\t\\N\tArray(BFloat16)\tNullable(BFloat16)\n\
+         2\t[1,0,3.140625]\t-2.25\t0.33203125\tArray(BFloat16)\tNullable(BFloat16)\n"
+    );
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT id, round(cosineDistance(centroid, [0.1, 0.2, 0.3]::Array(BFloat16)), 4) AS d \
+             FROM clusters ORDER BY d LIMIT 1 FORMAT TSV"
+        )
+        .await,
+        "1\t0\n"
+    );
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT id, centroid FROM clusters FINAL WHERE has(centroid, toBFloat16(0.1)) FORMAT TSV"
+        )
+        .await,
+        "1\t[0.099609375,0.19921875,0.29882812]\n"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -1150,6 +1348,54 @@ async fn create_table_as_select_and_truncate() {
     assert_eq!(code_ro.as_deref(), Some("164"), "{text}");
 }
 
+/// HE1 R14.7: columns named like a column list's keywords (`index`,
+/// `projection`; Laminar's `evaluation_datapoints.index`) are backquoted in
+/// every column list the House writes, so `INSERT … SELECT` stages them
+/// (Laminar's migrations 19 and 32). Every answer is the 26.9.2.8 oracle's.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn keyword_named_columns_insert_select() {
+    let house = lakehouse("keyword-columns").await;
+    let addr = house.addr();
+    ok(
+        addr,
+        "CREATE TABLE ed (id UInt64, `index` UInt64, `projection` String, \
+         data String CODEC(ZSTD(3)), INDEX idx (id, `index`) TYPE bloom_filter) \
+         ENGINE = ReplacingMergeTree ORDER BY (id, `index`)",
+    )
+    .await;
+    ok(
+        addr,
+        "INSERT INTO ed VALUES (1, 0, 'p', 'a'), (1, 1, 'q', 'b')",
+    )
+    .await;
+    ok(
+        addr,
+        "CREATE TABLE ed2 (id UInt64, `index` UInt64, `projection` String, data String) \
+         ENGINE = MergeTree ORDER BY id",
+    )
+    .await;
+    ok(addr, "INSERT INTO ed2 SELECT * FROM ed").await;
+    ok(
+        addr,
+        "INSERT INTO ed2 (id, index, projection, data) WITH x AS (SELECT id + 10 AS id, index, \
+         projection, data FROM ed) SELECT id, index, projection, data FROM x",
+    )
+    .await;
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT id, index, projection, data FROM ed2 ORDER BY id, index FORMAT TSV"
+        )
+        .await,
+        "1\t0\tp\ta\n1\t1\tq\tb\n11\t0\tp\ta\n11\t1\tq\tb\n"
+    );
+    let shown = ok(addr, "SHOW CREATE TABLE ed2 FORMAT TSVRaw").await;
+    assert!(
+        shown.contains("`index` UInt64") && shown.contains("`projection` String"),
+        "{shown}"
+    );
+}
+
 /// `loams.house.v1.ExecuteQuery` writes lake tables as HTTP does (§49 §18.2):
 /// the summary carries `written_rows` and the snapshot.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -1217,6 +1463,75 @@ async fn api_insert_answers_written_rows_and_snapshot() {
     };
     assert!(failed, "read_only refuses the write");
     assert_eq!(ok(addr, "SELECT count() FROM t").await, "5\n");
+}
+
+/// HE1 R14.9: `EXCHANGE TABLES a AND b` (Laminar's migrations 35 and 48)
+/// swaps what the two names hold, `SHOW CREATE` included. Every answer is the
+/// 26.9.2.8 oracle's.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn exchange_tables_swaps_the_names() {
+    let house = lakehouse("exchange").await;
+    let addr = house.addr();
+    ok(
+        addr,
+        "CREATE TABLE m1 (id UInt64, body String) ENGINE = MergeTree ORDER BY id",
+    )
+    .await;
+    ok(
+        addr,
+        "CREATE TABLE m2 (id UInt64, body String, ttl_at DateTime DEFAULT now()) \
+         ENGINE = MergeTree ORDER BY id TTL ttl_at + INTERVAL 1 DAY",
+    )
+    .await;
+    ok(addr, "INSERT INTO m1 VALUES (1, 'old')").await;
+    ok(
+        addr,
+        "INSERT INTO m2 (id, body) VALUES (2, 'new'), (3, 'newer')",
+    )
+    .await;
+    ok(addr, "EXCHANGE TABLES m1 AND m2").await;
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT 'm1', count(), groupArray(body) FROM m1 FORMAT TSV"
+        )
+        .await,
+        "m1\t2\t['new','newer']\n"
+    );
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT 'm2', count(), groupArray(body) FROM m2 FORMAT TSV"
+        )
+        .await,
+        "m2\t1\t['old']\n"
+    );
+    let shown = ok(addr, "SHOW CREATE TABLE m1 FORMAT TSVRaw").await;
+    assert!(
+        shown.starts_with("CREATE TABLE default.m1") && shown.contains("ttl_at"),
+        "{shown}"
+    );
+    // Writes land in the table the name now holds.
+    ok(addr, "INSERT INTO m2 VALUES (4, 'later')").await;
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT groupArray(body) FROM (SELECT body FROM m2 ORDER BY id) FORMAT TSV"
+        )
+        .await,
+        "['old','later']\n"
+    );
+    ok(addr, "EXCHANGE TABLES m1 AND m1").await;
+    refused(addr, "EXCHANGE TABLES m1 AND nope", "60").await;
+    refused(addr, "EXCHANGE DICTIONARIES m1 AND m2", "48").await;
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT name FROM system.tables WHERE database = 'default' ORDER BY name FORMAT TSV"
+        )
+        .await,
+        "m1\nm2\n"
+    );
 }
 
 /// HE1 R9.12: the DDL Langfuse v4's migrations send, on lake tables: skip
@@ -1391,6 +1706,89 @@ async fn lake_tables_take_langfuse_ddl() {
     .await;
 }
 
+/// HE1 R14.6: a column list whose types run over several lines (Laminar's
+/// `traces_agg` and `spans_v2`: `SimpleAggregateFunction(f,\n Array(…))`,
+/// `Array(Tuple(\n …))`, with a `PROJECTION`) and a default holding a
+/// backslash reach ClickHouse's reading of the list as written. Every answer is
+/// the 26.9.2.8 oracle's.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn column_lists_over_several_lines() {
+    let house = lakehouse("multiline-columns").await;
+    let addr = house.addr();
+    ok(
+        addr,
+        "CREATE TABLE agg (id UInt64, project_id UInt64, \
+         start_time SimpleAggregateFunction(min, DateTime64(9, 'UTC')), \
+         tokens SimpleAggregateFunction(sum, Int64), \
+         tags SimpleAggregateFunction(groupUniqArrayArray,\n    Array(String)), \
+         statuses SimpleAggregateFunction(groupUniqArrayArray, Array(Enum8('success' = 1,\n    'error' = 2))), \
+         metadata SimpleAggregateFunction(maxMap, Map(String, String)), \
+         PROJECTION p_start (SELECT * ORDER BY project_id, start_time, id)) \
+         ENGINE = AggregatingMergeTree ORDER BY (project_id, id) \
+         SETTINGS index_granularity = 8192, deduplicate_merge_projection_mode = 'rebuild'",
+    )
+    .await;
+    ok(
+        addr,
+        "INSERT INTO agg VALUES (1, 1, '2026-01-01 00:00:02', 3, ['x'], ['success'], {'k':'a'}), \
+         (1, 1, '2026-01-01 00:00:01', 4, ['y','x'], ['error'], {'k':'b'}), \
+         (2, 1, '2026-01-03 00:00:00', 5, [], [], {})",
+    )
+    .await;
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT id, min(start_time), sum(tokens), arraySort(groupUniqArrayArray(tags)), \
+             arraySort(groupUniqArrayArray(statuses)) FROM agg GROUP BY id ORDER BY id FORMAT TSV"
+        )
+        .await,
+        "1\t2026-01-01 00:00:01.000000000\t7\t['x','y']\t['success','error']\n\
+         2\t2026-01-03 00:00:00.000000000\t5\t[]\t[]\n"
+    );
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT id, start_time, tokens, arraySort(tags), arraySort(statuses), metadata \
+             FROM agg FINAL ORDER BY id FORMAT TSV"
+        )
+        .await,
+        "1\t2026-01-01 00:00:01.000000000\t7\t['x','y']\t['success','error']\t{'k':'b'}\n\
+         2\t2026-01-03 00:00:00.000000000\t5\t[]\t[]\t{}\n"
+    );
+    assert_eq!(
+        ok(addr, "DESCRIBE agg FORMAT TSV")
+            .await
+            .lines()
+            .map(|l| l.split('\t').take(2).collect::<Vec<_>>().join("\t"))
+            .collect::<Vec<_>>(),
+        [
+            "id\tUInt64",
+            "project_id\tUInt64",
+            "start_time\tSimpleAggregateFunction(min, DateTime64(9, \\'UTC\\'))",
+            "tokens\tSimpleAggregateFunction(sum, Int64)",
+            "tags\tSimpleAggregateFunction(groupUniqArrayArray, Array(String))",
+            "statuses\tSimpleAggregateFunction(groupUniqArrayArray, Array(Enum8(\\'success\\' = 1, \\'error\\' = 2)))",
+            "metadata\tSimpleAggregateFunction(maxMap, Map(String, String))",
+        ]
+    );
+    ok(
+        addr,
+        "CREATE TABLE plain (id UInt64, note String DEFAULT 'a\\\\b', events Array(Tuple(\n        \
+         timestamp Int64,\n        name String)), PROJECTION p (SELECT id, events ORDER BY id)) \
+         ENGINE = MergeTree ORDER BY id",
+    )
+    .await;
+    ok(
+        addr,
+        "INSERT INTO plain (id, events) VALUES (1, [(5, 'e')])",
+    )
+    .await;
+    assert_eq!(
+        ok(addr, "SELECT id, note, events FROM plain FORMAT TSV").await,
+        "1\ta\\\\b\t[(5,'e')]\n"
+    );
+}
+
 /// HE1 R9.13: plain views (Langfuse's `analytics_*`) and `Distributed` tables.
 /// A view is a catalog entry the read path expands over the read views of what
 /// it names, nesting included; a `Distributed` table reads and writes its local
@@ -1499,6 +1897,369 @@ async fn catalog_views_and_distributed_tables() {
     refused(addr, "DROP VIEW nested", "60").await;
     ok(addr, "DROP VIEW IF EXISTS nested").await;
     ok(addr, "DROP TABLE s_dist").await;
+}
+
+/// HE1 R14.5: a parameterised view is called as a table function (Laminar's
+/// `traces_v0(project_id = …, …)` over `raw_traces_v0(…)`), with literal
+/// arguments and with the request's query parameters, through a view of a
+/// view; views two others read are made first. Every answer is the 26.9.2.8
+/// oracle's.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn parameterised_views_are_called_as_table_functions() {
+    let house = lakehouse("param-views").await;
+    let addr = house.addr();
+    ok(
+        addr,
+        "CREATE TABLE spans (project_id UInt64, trace_id UUID, start_time DateTime64(9, 'UTC'), \
+         tokens Int64) ENGINE = MergeTree ORDER BY (project_id, trace_id)",
+    )
+    .await;
+    ok(
+        addr,
+        "INSERT INTO spans VALUES \
+         (1, '00000000-0000-0000-0000-00000000000a', '2026-01-01 00:00:01', 3), \
+         (1, '00000000-0000-0000-0000-00000000000a', '2026-01-01 00:00:02', 4), \
+         (1, '00000000-0000-0000-0000-00000000000b', '2026-01-02 00:00:00', 5), \
+         (2, '00000000-0000-0000-0000-00000000000c', '2026-01-01 00:00:00', 7)",
+    )
+    .await;
+    ok(
+        addr,
+        "CREATE VIEW raw_v SQL SECURITY INVOKER AS SELECT trace_id, sum(tokens) AS tokens, \
+         min(start_time) AS first_start FROM spans WHERE project_id = {project_id:UInt64} \
+         AND start_time >= {start:DateTime64(9)} GROUP BY trace_id",
+    )
+    .await;
+    ok(
+        addr,
+        "CREATE VIEW traces_v SQL SECURITY INVOKER AS SELECT t.trace_id AS id, t.tokens AS tokens \
+         FROM raw_v(project_id = {project_id:UInt64}, start = {start:DateTime64(9)}) AS t",
+    )
+    .await;
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT id, tokens FROM traces_v(project_id = 1, \
+             start = '2026-01-01 00:00:02') ORDER BY id FORMAT TSV"
+        )
+        .await,
+        "00000000-0000-0000-0000-00000000000a\t4\n00000000-0000-0000-0000-00000000000b\t5\n"
+    );
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT count(), sum(tokens) FROM default.raw_v(project_id = \
+             2, start = '2025-01-01 00:00:00') FORMAT TSV"
+        )
+        .await,
+        "1\t7\n"
+    );
+    // The application's form: the arguments are the request's parameters.
+    let response = post(
+        addr,
+        ALICE,
+        None,
+        b"SELECT id, tokens FROM traces_v(project_id = {p:UInt64}, start = {s:DateTime64(9)}) \
+          ORDER BY id FORMAT TSV",
+        &[("param_p", "1"), ("param_s", "2026-01-01 00:00:00")],
+    )
+    .await;
+    assert_eq!(response.status, 200, "{}", response.text());
+    assert_eq!(
+        response.text(),
+        "00000000-0000-0000-0000-00000000000a\t7\n00000000-0000-0000-0000-00000000000b\t5\n"
+    );
+    // A view two others read (directly and through a view) is made first.
+    ok(
+        addr,
+        "CREATE VIEW a_v AS SELECT trace_id, tokens FROM spans",
+    )
+    .await;
+    ok(
+        addr,
+        "CREATE VIEW b_v AS SELECT trace_id, sum(tokens) AS total FROM a_v GROUP BY trace_id",
+    )
+    .await;
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT b.trace_id, b.total, count() FROM b_v AS b INNER JOIN a_v AS a \
+             USING (trace_id) GROUP BY b.trace_id, b.total ORDER BY b.trace_id FORMAT TSV"
+        )
+        .await,
+        "00000000-0000-0000-0000-00000000000a\t7\t2\n\
+         00000000-0000-0000-0000-00000000000b\t5\t1\n\
+         00000000-0000-0000-0000-00000000000c\t7\t1\n"
+    );
+    // A call of a name that is no view of the namespace is still refused,
+    // and so is a view whose body reads outside it.
+    refused(addr, "SELECT * FROM nope(x = 1)", "344").await;
+    refused(addr, "SELECT * FROM spans(project_id = 1)", "344").await;
+    refused(
+        addr,
+        "CREATE VIEW bad_v AS SELECT * FROM traces_v(project_id = {project_id:UInt64}, \
+         start = {start:DateTime64(9)}) WHERE id IN (SELECT toUUID(c1) FROM url('http://127.0.0.1:1/x', CSV))",
+        "344",
+    )
+    .await;
+}
+
+/// HE1 R14.11: SQL functions (Laminar's `apply_pii_masks`, `trace_visible`
+/// and the two it calls, as migration 66 writes them) are the namespace's:
+/// called in queries and in views, replaced, dropped, and held to the deny
+/// list. Every answer is the 26.9.2.8 oracle's.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn sql_functions_are_the_namespaces() {
+    let house = lakehouse("sql-functions").await;
+    let addr = house.addr();
+    for function in [
+        r#"CREATE FUNCTION IF NOT EXISTS apply_pii_masks AS (text, masks) -> if(
+    empty(masks),
+    text,
+    arrayStringConcat(
+        arrayMap(
+            (pii_m, pii_prev_end) -> substring(text, pii_prev_end + 1, tupleElement(pii_m, 1) - pii_prev_end)
+                || '[REDACTED_' || upper(tupleElement(pii_m, 3)) || ']',
+            masks,
+            arrayPopBack(arrayPushFront(arrayMap(pii_x -> tupleElement(pii_x, 2), masks), toUInt32(0)))
+        ),
+        ''
+    ) || substring(text, tupleElement(masks[-1], 2) + 1)
+)"#,
+        r#"CREATE FUNCTION IF NOT EXISTS pii_json_scalar AS (doc, key) -> if(
+    JSONType(doc, key) = 'String',
+    JSONExtractString(doc, key),
+    JSONExtractRaw(doc, key)
+)"#,
+        r#"CREATE FUNCTION IF NOT EXISTS pii_str_op AS (actual, op, expected) -> multiIf(
+    op = 'eq', actual = expected,
+    op = 'ne', actual != expected,
+    false
+)"#,
+        r#"CREATE FUNCTION IF NOT EXISTS trace_visible AS (user_id, metadata, policy) -> if(
+    NOT JSONHas(policy, 'traceFilters'),
+    isValidJSON(policy),
+    if(
+        JSONType(policy, 'traceFilters') = 'Array',
+        arrayAll(
+            pii_f -> multiIf(
+                tupleElement(pii_f, 'column') = 'user_id',
+                    pii_str_op(user_id, tupleElement(pii_f, 'operator'), tupleElement(pii_f, 'value')),
+                tupleElement(pii_f, 'column') = 'metadata',
+                    pii_str_op(pii_json_scalar(metadata, tupleElement(pii_f, 'key')), tupleElement(pii_f, 'operator'), tupleElement(pii_f, 'value')),
+                false
+            ),
+            JSONExtract(policy, 'traceFilters', 'Array(Tuple(column String, key String, operator String, value String))')
+        ),
+        false
+    )
+)"#,
+    ] {
+        ok(addr, function).await;
+    }
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT apply_pii_masks('my name is bob and mail b@x.io', \
+             [(11, 14, 'name'), (24, 30, 'email')]) FORMAT TSV"
+        )
+        .await,
+        "my name is [REDACTED_NAME] and mail [REDACTED_EMAIL]\n"
+    );
+    assert_eq!(
+        ok(
+            addr,
+            r#"SELECT trace_visible('u1', '{"team":"a"}', '{"traceFilters":[{"column":"metadata","key":"team","operator":"eq","value":"a"}]}'), trace_visible('u2', '{}', '{"traceFilters":[{"column":"user_id","key":"","operator":"eq","value":"u1"}]}'), trace_visible('u', '', '{}') FORMAT TSV"#
+        )
+        .await,
+        "1\t0\t1\n"
+    );
+    // In a view over a lake table, and over another function.
+    ok(
+        addr,
+        "CREATE TABLE notes (id UInt64, body String) ENGINE = MergeTree ORDER BY id",
+    )
+    .await;
+    ok(
+        addr,
+        "INSERT INTO notes VALUES (1, 'call bob'), (2, 'plain')",
+    )
+    .await;
+    ok(
+        addr,
+        "CREATE VIEW masked AS SELECT id, apply_pii_masks(body, \
+         if(id = 1, [(toUInt32(5), toUInt32(8), 'name')], [])) AS body FROM notes",
+    )
+    .await;
+    assert_eq!(
+        ok(addr, "SELECT id, body FROM masked ORDER BY id FORMAT TSV").await,
+        "1\tcall [REDACTED_NAME]\n2\tplain\n"
+    );
+    ok(addr, "CREATE FUNCTION twice AS (x) -> x * 2").await;
+    ok(addr, "CREATE FUNCTION plus_twice AS (x, y) -> twice(x) + y").await;
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT plus_twice(id, 1) FROM notes ORDER BY id FORMAT TSV"
+        )
+        .await,
+        "3\n5\n"
+    );
+    refused(addr, "CREATE FUNCTION twice AS (x) -> x", "609").await;
+    ok(addr, "CREATE FUNCTION IF NOT EXISTS twice AS (x) -> x").await;
+    ok(addr, "CREATE OR REPLACE FUNCTION twice AS (x) -> x * 3").await;
+    assert_eq!(ok(addr, "SELECT plus_twice(2, 1) FORMAT TSV").await, "7\n");
+    refused(addr, "CREATE FUNCTION plus AS (a) -> a", "609").await;
+    refused(addr, "DROP FUNCTION plus", "610").await;
+    refused(addr, "DROP FUNCTION nope", "46").await;
+    ok(addr, "DROP FUNCTION IF EXISTS nope").await;
+    ok(addr, "DROP FUNCTION twice").await;
+    refused(addr, "SELECT plus_twice(2, 1)", "46").await;
+    // A lambda reading outside the namespace is refused when it is made.
+    refused(
+        addr,
+        "CREATE FUNCTION leak AS (x) -> (SELECT count() FROM url('http://127.0.0.1:1/x', CSV))",
+        "344",
+    )
+    .await;
+    // The read-only user may not make one.
+    let (code, text) = code(addr, READER, "CREATE FUNCTION ro AS (x) -> x").await;
+    assert!(matches!(code.as_deref(), Some("164" | "497")), "{text}");
+}
+
+/// HE1 R14.12: dictionaries over the namespace's own tables (Laminar's
+/// `deduped_content_dict`, a `COMPLEX_KEY_CACHE` with `USER`/`PASSWORD`/`DB`
+/// and a `QUERY … FINAL`, read by `dictGetOrNull` in a view; a `HASHED`
+/// dictionary over a `TABLE` with `WHERE`). Every answer is the 26.9.2.8
+/// oracle's.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn dictionaries_read_the_namespaces_tables() {
+    let house = lakehouse("dictionaries").await;
+    let addr = house.addr();
+    ok(
+        addr,
+        "CREATE TABLE dc (project_id UInt64, content_hash FixedString(32), content String, \
+         last_seen_at DateTime64(9, 'UTC') DEFAULT now()) \
+         ENGINE = ReplacingMergeTree(last_seen_at) ORDER BY (project_id, content_hash)",
+    )
+    .await;
+    ok(
+        addr,
+        "INSERT INTO dc (project_id, content_hash, content, last_seen_at) VALUES \
+         (1, toFixedString('aa', 32), 'old', '2026-01-01 00:00:00'), \
+         (1, toFixedString('aa', 32), 'new', '2026-01-02 00:00:00'), \
+         (1, toFixedString('bb', 32), 'bee', '2026-01-01 00:00:00')",
+    )
+    .await;
+    ok(
+        addr,
+        "CREATE OR REPLACE DICTIONARY dc_dict (project_id UInt64, content_hash String, \
+         content String) PRIMARY KEY project_id, content_hash SOURCE(CLICKHOUSE(USER 'alice' \
+         PASSWORD 'a' DB 'default' QUERY 'SELECT project_id, toString(content_hash) AS \
+         content_hash, content FROM dc FINAL')) LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 1024)) \
+         LIFETIME(MIN 1800 MAX 3600)",
+    )
+    .await;
+    ok(
+        addr,
+        "CREATE TABLE sp (project_id UInt64, id UInt64, hashes Array(FixedString(32))) \
+         ENGINE = MergeTree ORDER BY id",
+    )
+    .await;
+    ok(
+        addr,
+        "INSERT INTO sp VALUES (1, 1, [toFixedString('aa', 32), toFixedString('bb', 32), \
+         toFixedString('cc', 32)])",
+    )
+    .await;
+    ok(
+        addr,
+        "CREATE VIEW sp_v AS SELECT id, arrayMap(h -> coalesce(dictGetOrNull('dc_dict', \
+         'content', tuple(project_id, toString(h))), 'null'), hashes) AS contents FROM sp",
+    )
+    .await;
+    assert_eq!(
+        ok(addr, "SELECT * FROM sp_v FORMAT TSV").await,
+        "1\t['new','bee','null']\n"
+    );
+    ok(
+        addr,
+        "CREATE TABLE kv (k UInt64, v String) ENGINE = MergeTree ORDER BY k",
+    )
+    .await;
+    ok(addr, "INSERT INTO kv VALUES (1, 'one'), (2, 'two')").await;
+    ok(
+        addr,
+        "CREATE DICTIONARY kv_dict (k UInt64, v String) PRIMARY KEY k SOURCE(CLICKHOUSE(\
+         TABLE 'kv' WHERE 'k > 1' USER 'alice' PASSWORD 'a')) LAYOUT(HASHED()) LIFETIME(0)",
+    )
+    .await;
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT dictGet('kv_dict', 'v', toUInt64(2)), dictHas('kv_dict', toUInt64(1)), \
+             dictGetOrDefault('default.kv_dict', 'v', toUInt64(3), 'none') FORMAT TSV"
+        )
+        .await,
+        "two\t0\tnone\n"
+    );
+    // A dictionary reads the statement's snapshot: a row written later is
+    // found by the next statement.
+    ok(addr, "INSERT INTO kv VALUES (3, 'three')").await;
+    assert_eq!(
+        ok(
+            addr,
+            "SELECT dictGet('kv_dict', 'v', toUInt64(3)) FORMAT TSV"
+        )
+        .await,
+        "three\n"
+    );
+    // Credentials are not kept.
+    let shown = ok(addr, "SHOW CREATE TABLE dc_dict FORMAT TSVRaw").await;
+    assert!(
+        shown.starts_with("CREATE DICTIONARY default.dc_dict") && !shown.contains("PASSWORD"),
+        "{shown}"
+    );
+    refused(
+        addr,
+        "CREATE DICTIONARY kv_dict (k UInt64, v String) PRIMARY KEY k \
+         SOURCE(CLICKHOUSE(TABLE 'kv')) LAYOUT(HASHED())",
+        "57",
+    )
+    .await;
+    refused(
+        addr,
+        "CREATE DICTIONARY far (k UInt64, v String) PRIMARY KEY k \
+         SOURCE(CLICKHOUSE(HOST 'example.com' TABLE 'kv')) LAYOUT(HASHED())",
+        "344",
+    )
+    .await;
+    refused(
+        addr,
+        "CREATE DICTIONARY far (k UInt64, v String) PRIMARY KEY k \
+         SOURCE(MYSQL(host 'example.com' table 'kv')) LAYOUT(HASHED())",
+        "344",
+    )
+    .await;
+    refused(
+        addr,
+        "CREATE DICTIONARY far (k UInt64, v String) PRIMARY KEY k \
+         SOURCE(CLICKHOUSE(QUERY 'SELECT * FROM url(''http://127.0.0.1:1/x'', CSV)')) \
+         LAYOUT(HASHED())",
+        "344",
+    )
+    .await;
+    refused(
+        addr,
+        "CREATE DICTIONARY far (k UInt64, v String) PRIMARY KEY k \
+         SOURCE(CLICKHOUSE(TABLE 'kv')) LAYOUT(RANGE_HASHED())",
+        "48",
+    )
+    .await;
+    ok(addr, "DROP DICTIONARY kv_dict").await;
+    refused(addr, "DROP DICTIONARY kv_dict", "60").await;
+    ok(addr, "DROP DICTIONARY IF EXISTS kv_dict").await;
+    refused(addr, "SELECT dictGet('kv_dict', 'v', toUInt64(2))", "36").await;
 }
 
 /// HE1 R9.14: readable `AggregatingMergeTree` and `Null`, against the oracle.

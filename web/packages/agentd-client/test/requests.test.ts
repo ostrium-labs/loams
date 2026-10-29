@@ -398,6 +398,13 @@ const REQUESTS: Request[] = [
   }),
   request('GetChecks', { chatId: 'chat-1', provider: 'github', sha: 'abcdef0' }),
   request('GetCheckLog', { chatId: 'chat-1', provider: 'github', logId: '901', lines: 200 }),
+  request('DeployLiveApp', {
+    chatId: 'chat-1',
+    approvalId: 'fa-2',
+    app: 'notes',
+    commit: '0123456789abcdef0123456789abcdef01234567',
+  }),
+  request('CloseChangeRequest', { chatId: 'chat-1', provider: 'forgejo', number: 7 }),
   // MK1 Task 4b: MarketplaceService.
   request('ListMarketplaceSources', {}),
   request('AddMarketplaceSource', {

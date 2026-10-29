@@ -120,6 +120,9 @@ listen = "127.0.0.1:$GW_PORT"
 insecure_dev = true
 pid = "dx1-conformance"
 dev_loams_namespace = "local"
+# Short close waits, so every SDK long poll for a result also goes through
+# the timed-out-page path (the bench's "could not get last history event").
+history_wait_ms = 1000
 [store]
 kind = "memory"
 [durability]
@@ -226,6 +229,20 @@ for s in hello signal_then_complete; do
       case_ "$name" fail "no completed $s history"
     fi
   done
+done
+
+# Bursts: many workflows started at once, every result awaited with
+# run.Get (a long poll for the close event that outlives history_wait_ms);
+# timer_short also fires a durable timer through Resonate.
+for wf in hello timer_short; do
+  n=${BURST_N:-100}
+  [ "$wf" = timer_short ] && n=$((n / 2))
+  if go_run "workers/go && go build -o /tmp/corpus . && /tmp/corpus burst -address $addr -namespace default -no-search-attribute -workflow $wf -n $n" >"$out/burst-$wf.log" 2>&1; then
+    case_ "gateway_burst_${wf}_go" pass
+  else
+    case_ "gateway_burst_${wf}_go" fail "$(tail -2 "$out/burst-$wf.log")"
+  fi
+  grep -h workflows_per_second "$out/burst-$wf.log" || true
 done
 
 # The SDKs' own replayers on the gateway's histories.

@@ -33,6 +33,12 @@
 //!   user connection and the control connection alike;
 //! * `SELECT`, `SHOW` and `CREATE TEMPORARY TABLE` (temporary tables and the
 //!   generator table functions);
+//! * for the control connection's SQL functions (HE1 R14.11): `CREATE`/`DROP
+//!   FUNCTION`, which the user connection's `readonly` takes away from it;
+//! * for the control connection's dictionaries (HE1 R14.12): `CREATE`/`DROP
+//!   DICTIONARY` (outside `system` and `information_schema`), and `dictGet` for
+//!   both. A dictionary the House makes reads a read view of the statement
+//!   (`SOURCE(CLICKHOUSE(DB … TABLE …))`, the local server), never a source;
 //! * for the control connection's read views (§49 §7): `CREATE`/`DROP VIEW`,
 //!   `CREATE`/`DROP DATABASE` (outside `system` and `information_schema`) and
 //!   `ALLOW SQL SECURITY NONE`. A read view names its columns and is `SQL SECURITY
@@ -42,9 +48,8 @@
 //!   any other: `readonly` strips `ALLOW SQL SECURITY NONE` (`164`), and
 //!   `default` holds no `SET DEFINER`.
 //!
-//! No `SYSTEM`, `INTROSPECTION`, `dictGet`, `CREATE TABLE`, `CREATE FUNCTION`,
-//! `CREATE DICTIONARY`, `INSERT`, `KILL QUERY` or access management. `system`
-//! tables stay readable whatever the grants say (chDB never sets
+//! No `SYSTEM`, `INTROSPECTION`, `CREATE TABLE`, `INSERT`, `KILL QUERY` or
+//! access management. `system` tables stay readable whatever the grants say (chDB never sets
 //! `select_from_system_db_requires_grant`, measured), so which `system` tables a
 //! statement reads is the deny list's (R5.2) and the front's (R11.6).
 
@@ -61,14 +66,18 @@ pub const DEFAULT_MEMORY_LIMIT: u64 = 4 * 1024 * 1024 * 1024 + 512 * 1024 * 1024
 /// R-ACL.1): nothing on any source.
 pub const GRANTS: &[&str] = &[
     "GRANT SELECT, SHOW, CREATE TEMPORARY TABLE, CREATE VIEW, DROP VIEW, CREATE DATABASE, \
-     DROP DATABASE, ALLOW SQL SECURITY NONE ON *.*",
+     DROP DATABASE, ALLOW SQL SECURITY NONE, CREATE FUNCTION, DROP FUNCTION, \
+     CREATE DICTIONARY, DROP DICTIONARY, dictGet ON *.*",
     // Without these the control connection could make views in `system` and drop
     // `information_schema` (measured).
-    "REVOKE CREATE VIEW, DROP VIEW, CREATE DATABASE, DROP DATABASE ON system.*",
-    "REVOKE CREATE VIEW, DROP VIEW, CREATE DATABASE, DROP DATABASE ON information_schema.*",
-    "REVOKE CREATE VIEW, DROP VIEW, CREATE DATABASE, DROP DATABASE ON INFORMATION_SCHEMA.*",
-    "REVOKE CREATE VIEW, DROP VIEW, CREATE DATABASE, DROP DATABASE ON \
-     _temporary_and_external_tables.*",
+    "REVOKE CREATE VIEW, DROP VIEW, CREATE DATABASE, DROP DATABASE, CREATE DICTIONARY, \
+     DROP DICTIONARY ON system.*",
+    "REVOKE CREATE VIEW, DROP VIEW, CREATE DATABASE, DROP DATABASE, CREATE DICTIONARY, \
+     DROP DICTIONARY ON information_schema.*",
+    "REVOKE CREATE VIEW, DROP VIEW, CREATE DATABASE, DROP DATABASE, CREATE DICTIONARY, \
+     DROP DICTIONARY ON INFORMATION_SCHEMA.*",
+    "REVOKE CREATE VIEW, DROP VIEW, CREATE DATABASE, DROP DATABASE, CREATE DICTIONARY, \
+     DROP DICTIONARY ON _temporary_and_external_tables.*",
 ];
 
 /// What a worker started with `--test-open-acl` grants instead: chDB's own

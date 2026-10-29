@@ -265,7 +265,15 @@ fn trailing_clauses(
     };
     if !matches!(
         sig.first().map(|_| kw(0)),
-        Some(Some(Keyword::SELECT | Keyword::WITH))
+        Some(Some(
+            Keyword::SELECT
+                | Keyword::WITH
+                // Metadata statements carry them too (plan HE1 Task 38).
+                | Keyword::SHOW
+                | Keyword::DESCRIBE
+                | Keyword::DESC
+                | Keyword::EXISTS
+        ))
     ) && !matches!(sig.first().map(|&i| &tokens[i].token), Some(Token::LParen))
     {
         return Ok(());
@@ -278,7 +286,9 @@ fn trailing_clauses(
             Token::RParen | Token::RBracket => depth -= 1,
             _ => {}
         }
-        if depth == 0 && matches!(kw(s), Some(Keyword::SETTINGS | Keyword::FORMAT)) {
+        // A name part (`system.settings`) is not a clause.
+        let after_dot = s > 0 && matches!(tokens[sig[s - 1]].token, Token::Period);
+        if depth == 0 && !after_dot && matches!(kw(s), Some(Keyword::SETTINGS | Keyword::FORMAT)) {
             clauses.push(s);
         }
     }
