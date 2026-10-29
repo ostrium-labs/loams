@@ -273,7 +273,7 @@ Windowed joins with watermarks and checkpointed state are what these do not do. 
 
 Not committed. If built, it would sit on DataFusion over Loams streams and Fluss, keep operator state in the bucket with Loams' manifest-pointer CAS (D47) for checkpoints, emit changelog streams (D21), and start from Arroyo's MIT/Apache-2.0 code rather than from scratch. **Gate (Q1036):** RisingWave per namespace proves too heavy for small namespaces (its memory floor times the namespace count), **and** at least three users need windowed joins over Loams streams with consistency tokens that a companion cannot honour. Building it would amend §00 §7 and D341; this document amends neither.
 
-> **Superseded (approved 2026-10-29): D2240, D2243** ([§82](82-loams-stream-flink-compatible-engine.md)). On the owner's request the L4 engine is built now as **Loams Stream**, a Rust engine that speaks Apache Flink's SQL and REST APIs, starting from Arroyo's code as this section anticipated; Q1036's gate no longer applies.
+> **Superseded (approved 2026-10-29): D2240, D2243** ([§82](82-loams-stream-flink-compatible-engine.md)). On the owner's request the L4 engine is built now as **Loams Stream**, a Rust engine that speaks Apache Flink's SQL and REST APIs, on a hard fork of StreamFusion with runtime pieces ported from Arroyo, as this section anticipated for Arroyo; Q1036's gate no longer applies.
 
 ## 7. Spark-compatible batch ("Rust Spark")
 

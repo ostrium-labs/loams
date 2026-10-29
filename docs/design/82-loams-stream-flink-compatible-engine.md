@@ -1,6 +1,6 @@
 # 82 — The Loams Stream Engine: Rust, Apache Flink-Compatible
 
-Status: **Approved** (owner, 2026-10-29: "approve all defaults, start building asap"). Decisions **D2240–D2279** and questions **Q1430–Q1449** are in the [decision log](13-decision-log.md) with status **Approved**; every question is answered with its default (§20). D2280–D2299 and Q1450–Q1469 are kept free for track FC's plan rulings. Plan: [FC1](../plans/2026-10-29-fc1-flink-compat-engine.md). **No engine code is written by this document.**
+Status: **Approved** (owner, 2026-10-29: "approve all defaults, start building asap"). Decisions **D2240–D2279** and questions **Q1430–Q1450** are in the [decision log](13-decision-log.md) with status **Approved**; every question is answered with its default (§20). D2280–D2299 and Q1451–Q1469 are kept free for track FC's plan rulings. Plan: [FC1](../plans/2026-10-29-fc1-flink-compat-engine.md). **No engine code is written by this document.**
 
 Source: the owner, 2026-10-29: "like iggy for kafka, event fabric for trino, i want one for flink, full api compat but in rust", and earlier the same day: "fork rising wave latest apache 2.0 and strip components we do not need, or find alternatives like arroyo, fluss etc".
 
@@ -8,8 +8,8 @@ Source: the owner, 2026-10-29: "like iggy for kafka, event fabric for trino, i w
 
 **What it changes.** Design 81 runs real Apache Flink 2.2.1 per namespace through `loams-flink` (D1900, D1909). This document adds a second backend under the same managed-Flink product: a Rust engine that accepts Flink SQL, the Flink SQL Gateway REST API and the Flink REST API, and later the Table API, PyFlink and DataStream programs. Real Flink 2.2.1 stays as the **oracle** for every test and as the **fallback backend** for anything the Rust engine does not yet run. §17 lists what this supersedes; the main ones are:
 
-- **D1261** and **Q1036's answer** ("no native continuous-query engine now"; L4 only behind a gate) are **superseded** by the owner's request: the L4 engine is built now, and it starts from Arroyo's code, as §68 §6.5 already anticipated (D2240, D2243).
-- **D1272**'s "no stream processor before Q1036" and **D1930**'s "no Loams fork of any engine" are **amended**: Arroyo is hard-forked as a code donor (D2244).
+- **D1261** and **Q1036's answer** ("no native continuous-query engine now"; L4 only behind a gate) are **superseded** by the owner's request: the L4 engine is built now, on a hard fork of StreamFusion, with runtime pieces ported from Arroyo (as §68 §6.5 anticipated) (D2240, D2243).
+- **D1272**'s "no stream processor before Q1036" and **D1930**'s "no Loams fork of any engine" are **amended**: StreamFusion is hard-forked as the base, and Arroyo is a donor ported file by file (D2244).
 - **§00 §7** ("Loams is not a stream processor") is **amended**: Loams ships a Flink-compatible engine; it still does not invent its own stream-processing dialect.
 - **D212**'s operator path for DataStream jobs is **amended at FC3** (D2261).
 
@@ -24,7 +24,7 @@ Pins follow D1274: releases at least 14 days old when the PR opens.
 
 ## 1. Summary
 
-**Loams Stream is a Rust stream processor that speaks Apache Flink's APIs.** Flink SQL scripts, the Flink SQL Client in gateway mode, the Flink JDBC driver, and tools that drive the Flink REST API run against it unchanged. State and checkpoints live in the customer's bucket, metadata in Loams Postgres. It sits behind `loams-gateway` as a backend of design 81's managed Flink. Real Flink 2.2.1 defines "correct" for every test. Loams does not fork Flink or rewrite its JVM runtime piece by piece. It takes Arroyo's Rust streaming runtime on DataFusion as the starting code (hard fork), writes its own Flink SQL front end and Flink REST surface, and puts keyed state on slatedb.
+**Loams Stream is a Rust stream processor that speaks Apache Flink's APIs.** Flink SQL scripts, the Flink SQL Client in gateway mode, the Flink JDBC driver, and tools that drive the Flink REST API run against it unchanged. State and checkpoints live in the customer's bucket, metadata in Loams Postgres. It sits behind `loams-gateway` as a backend of design 81's managed Flink. Real Flink 2.2.1 defines "correct" for every test. Loams does not fork Flink. Its base is a **hard fork of StreamFusion** (`ostrium-labs/streamfusion`, Apache-2.0): Rust operators on DataFusion 54 and Arrow 58, the same line as Loams' root workspace, that already reproduce Flink SQL's results exactly. StreamFusion runs inside Flink today. Loams adds the parts that make it a standalone engine: a Flink SQL front end, a scheduler, a network layer and a checkpoint coordinator (ported from Arroyo where they fit), both Flink REST surfaces, and the control plane.
 
 ### 1.1 Decisions
 
@@ -33,18 +33,18 @@ Pins follow D1274: releases at least 14 days old when the PR opens.
 | D2240 | **What Loams Stream is**: a Rust engine with Flink's SQL, REST and (in phases) Table API, PyFlink and DataStream surfaces, state in the bucket, behind `loams-gateway` as a backend of §81's managed Flink. Supersedes D1261 and Q1036's answer; amends §00 §7 | 1, 6 | Approved (owner, 2026-10-29) |
 | D2241 | **"Full Flink API compatibility" is six layers** (SQL, REST, Table API, DataStream, connectors, checkpoints), each with a measurable bar against the oracle; the claim names a layer, a phase and a Flink version, never "100 % Flink" | 3 | Approved (owner, 2026-10-29) |
 | D2242 | **The oracle is Apache Flink 2.2.1**, the same pin as D1931, run through `loams-flink`; it moves only when D1931's pin moves | 3, 15 | Approved (owner, 2026-10-29) |
-| D2243 | **Base: a hybrid.** Our own Flink SQL front end, type and function layer, REST surfaces and control plane; the streaming runtime starts from a hard fork of **Arroyo**'s operator, state, checkpoint and network code; RisingWave is a donor of specific algorithms, not the base; Fluss is not an engine and is not used | 5 | Approved (owner, 2026-10-29) |
-| D2244 | **Hard-fork rules**: `ostrium-labs/arroyo` on GitHub, frozen at the import commit for provenance; the code is imported into Loams' `stream/` workspace and owned there; no upstream sync, PRs or posts; NOTICE carries Arroyo's and RisingWave's attributions. Amends D1930 and D1272 | 5.5 | Approved (owner, 2026-10-29) |
-| D2245 | **Where the code lives**: a new `stream/` Cargo workspace on DataFusion 55.2 and Arrow 59 (the `fabric/` majors), with `ostrium-labs/datafusion` carrying the listed streaming patches ported from Arroyo; sqlparser from crates.io with Loams' own `FlinkDialect` | 7.6 | Approved (owner, 2026-10-29) |
-| D2246 | **Crates** `loams-stream-{types,sql,plan,exec,state,runtime,coord,rest,connectors,client,udf,conformance}` and the binary `loams-stream` | 7.6 | Approved (owner, 2026-10-29) |
+| D2243 | **Base: a hard fork of StreamFusion** (`ostrium-labs/streamfusion`). Its Rust operators, Flink expression semantics, state backends and formats, on DataFusion 54 and Arrow 58, are the core. Loams adds the standalone runtime, the Flink SQL front end, the REST surfaces and the control plane. Runtime machinery (network, barriers, checkpoint coordination, Kafka two-phase commit) is ported from **Arroyo** where it fits. RisingWave donates specific algorithms only. Fluss is not an engine and is not used | 5 | Approved (owner, 2026-10-29) |
+| D2244 | **Hard-fork rules**: `ostrium-labs/streamfusion` (forked 2026-10-29) is Loams-owned with no upstream sync, PRs or posts (as the Neon and Iggy forks); Arroyo and RisingWave code is ported file by file with attribution and listed in `PORTS.md`; NOTICE carries every attribution. Amends D1930 and D1272 | 5.5 | Approved (owner, 2026-10-29) |
+| D2245 | **Where the code lives**: the engine in the fork's `native/` Cargo workspace (bumped from DataFusion 54.0 and Arrow 58.3 to the root workspace's 54.1 and 58.4, and to Loams' toolchain), released from the fork as the `loams-stream` image; the product integration (`loams-flink` backend, compose, gateway, product conformance) in the Loams repository; no DataFusion fork; sqlparser from crates.io with Loams' own `FlinkDialect` | 7.6 | Approved (owner, 2026-10-29) |
+| D2246 | **Crates**: StreamFusion's own crates (renamed only where Loams needs to), plus new `loams-stream-{sql,plan,runtime,coord,rest,connectors,udf,conformance}` and the binary `loams-stream`, all in the fork | 7.6 | Approved (owner, 2026-10-29) |
 | D2247 | **The SQL layer (L1)**: Flink 2.2's DDL, DML, queries, `SET`, statement sets, catalogs, functions and `EXPLAIN`, with the window TVFs, joins, `MATCH_RECOGNIZE` and changelog semantics of §4.1, phased by §16 | 4.1 | Approved (owner, 2026-10-29) |
-| D2248 | **The planner**: Flink SQL → a Flink-typed, validated tree (Flink's type and coercion rules, not DataFusion's) → a DataFusion logical plan with streaming extension nodes → a physical operator graph; Flink's built-in functions as DataFusion UDFs with Flink semantics, from a generated matrix | 7.1 | Approved (owner, 2026-10-29) |
+| D2248 | **The planner**: Flink SQL → a Flink-typed, validated tree (Flink's type and coercion rules, not DataFusion's) → a streaming logical plan with Flink's changelog and time-attribute inference → StreamFusion's operator descriptions (the physical IR) with expressions in Flink semantics; built-in functions from a generated matrix | 7.1 | Approved (owner, 2026-10-29) |
 | D2249 | **Changelog model**: Flink's `RowKind` (`+I`, `-U`, `+U`, `-D`) as an Arrow column on every batch; Flink's changelog-mode inference (insert-only, upsert, retract), `ChangelogNormalize` and the upsert materializer at sinks | 7.2 | Approved (owner, 2026-10-29) |
 | D2250 | **Time model**: event time with per-split watermarks, idleness and alignment; processing time; `TIMESTAMP_LTZ` and `table.local-time-zone`; late rows handled as Flink handles them | 7.2 | Approved (owner, 2026-10-29) |
-| D2251 | **Runtime**: Arrow record batches between operators, chaining, task slots, credit-based back pressure, a data plane over Arrow IPC streams (Arroyo's network manager, extended), mini-batch | 7.3 | Approved (owner, 2026-10-29) |
-| D2252 | **State**: keyed state on **slatedb** (one database per subtask, keys prefixed by key group) with a foyer cache through `loams-cache`; small operator and window state in memory with snapshots to Parquet (Arroyo's tables); `table.exec.state.ttl` honoured | 7.4 | Approved (owner, 2026-10-29) |
+| D2251 | **Runtime**: Arrow record batches with a row-kind column between operators, chaining, task slots, credit-based back pressure, a data plane over Arrow IPC streams (ported from Arroyo's network manager), mini-batch | 7.3 | Approved (owner, 2026-10-29) |
+| D2252 | **State**: StreamFusion's state-backend model with three backends: memory and RocksDB (StreamFusion's own, with incremental SSTs uploaded to S3) in FC1, and **slatedb** (an LSM on object storage), which becomes the default if FC0's spike meets the bar; key groups as Flink defines them; a foyer cache through `loams-cache`; `table.exec.state.ttl` honoured | 7.4 | Approved (owner, 2026-10-29) |
 | D2253 | **Checkpoints**: aligned barriers, exactly-once, incremental, every 60 s by default (as D1910), retained on cancel; checkpoint metadata in Loams Postgres and a `_metadata` object on S3 | 7.5 | Approved (owner, 2026-10-29) |
-| D2254 | **Savepoints**: a canonical, version- and parallelism-portable format (Parquet per operator and key group plus metadata); native savepoints are slatedb checkpoints; Flink's own savepoints are not read (state migration is Q1438) | 7.5 | Approved (owner, 2026-10-29) |
+| D2254 | **Savepoints**: a canonical, version- and parallelism-portable format (each operator's logical state as Arrow IPC sections per key group, StreamFusion's representation, plus metadata); native savepoints are the backend's own checkpoint; Flink's own savepoints are not read (state migration is Q1438) | 7.5 | Approved (owner, 2026-10-29) |
 | D2255 | **Rescaling** by key groups (Flink's max-parallelism rule): stop with a savepoint and restore at a new parallelism in FC1; in-place rescaling in FC2 | 7.5 | Approved (owner, 2026-10-29) |
 | D2256 | **Exactly-once sinks** use a two-phase commit (pre-commit at the barrier, commit when the checkpoint completes, re-commit pending transactions on recovery); the guarantee per connector is §4.5's table, stated as such | 4.5, 7.5 | Approved (owner, 2026-10-29) |
 | D2257 | **Connectors** keep Flink's connector names, option keys and formats: Kafka (Iggy's gateway and external Kafka), Iggy native, Iceberg on Lakekeeper, Postgres CDC, JDBC, filesystem, plus `datagen`, `print`, `blackhole` | 4.5 | Approved (owner, 2026-10-29) |
@@ -61,7 +61,7 @@ Pins follow D1274: releases at least 14 days old when the PR opens.
 | D2268 | **Unsupported features fail loudly**: a REST error shaped like Flink's (exception class and message) that names the feature, the phase that adds it and the profile page; only options listed as accepted no-ops are ignored | 3.3 | Approved (owner, 2026-10-29) |
 | D2269 | **Conformance**: eight suites (§15): Flink's own test programs, the SQL Client and Gateway `.q` files, differential runs against Flink 2.2.1, golden queries, REST contract and tooling, exactly-once and recovery, connector interop, performance | 15 | Approved (owner, 2026-10-29) |
 | D2270 | **Performance**: Nexmark q0–q22 throughput per core, p99 latency, recovery time and state size against Flink 2.2.1 on the same machine in a quiet window; targets are estimates until measured; TPC-DS text fetched at test time | 15.3 | Approved (owner, 2026-10-29) |
-| D2271 | **Phases FC0–FC4** (track FC): FC0 harness, oracle and import; FC1 preview (SQL core, REST, Kafka/Iggy/Iceberg/filesystem, checkpoints); FC2 beta (temporal, lookup, `MATCH_RECOGNIZE`, CDC, JDBC, catalogs, Table API, UDFs, HA, rescaling); FC3 GA (DataStream, JARs, state migration, default flip); FC4 on demand | 16 | Approved (owner, 2026-10-29) |
+| D2271 | **Phases FC0–FC4** (track FC): FC0 harness, oracle, fork bump and skeletons; FC1 preview (SQL core, REST, Kafka/Iggy/Iceberg/filesystem, checkpoints); FC2 beta (temporal, lookup, `MATCH_RECOGNIZE`, CDC, JDBC, catalogs, Table API, UDFs, HA, rescaling); FC3 GA (DataStream, JARs, state migration, default flip); FC4 on demand | 16 | Approved (owner, 2026-10-29) |
 | D2272 | **Honest labels**: preview, then beta, then GA, per layer; a compatibility page generated from tests names the Flink version and pass counts per layer | 16.3 | Approved (owner, 2026-10-29) |
 | D2273 | **Licences and trademarks**: Flink's test programs, `.q` files and OpenAPI files (Apache-2.0) vendored with NOTICE; Arroyo (Apache-2.0 and MIT) and RisingWave (Apache-2.0) code ported with attribution; no Feldera enterprise code; TPC-DS fetched at test time; the product is "Flink-compatible", never named Flink | 18 | Approved (owner, 2026-10-29) |
 | D2274 | **Not built**: Hive dialect and catalog, the HiveServer2 endpoint, the Scala API, Flink ML, Gelly, the Flink Kubernetes Operator's CRDs, Arroyo's own SQL dialect, API and web UI | 16.4 | Approved (owner, 2026-10-29) |
@@ -197,51 +197,69 @@ See §7.5. The user-visible contract is Flink's: `execution.checkpointing.interv
 
 ## 5. The base engine (D2243, D2244)
 
-### 5.1 Candidates (checked 2026-10-29 on GitHub; §21)
+### 5.1 Candidates (checked 2026-10-29 on GitHub; §21; the research lane's report, §5.4)
 
-| | Arroyo | RisingWave | Apache Fluss | Feldera | DataFusion alone (House-style) |
-|---|---|---|---|---|---|
-| Licence | Apache-2.0 and MIT (`LICENSE-APACHE`, `LICENSE-MIT`) | Apache-2.0 (Premium features gated by a licence key in the same code) | Apache-2.0 | MIT, with Feldera Enterprise code under commercial terms (GitHub reports `NOASSERTION`) | Apache-2.0 |
-| Language and size | Rust, about 3.1 MB of Rust source, plus a TypeScript UI | Rust, about 32 MB of Rust source (about ten times Arroyo), plus Java connectors | Java (about 27 MB) with a Rust client (about 4.6 MB) | Rust (about 20 MB) plus a Java (Calcite) SQL compiler (about 9 MB) | — |
-| Activity | Last release v0.15.0 (2025-12-01); 72 commits since 2026-07-29; Cloudflare-owned since 2025-04 (§68) | v3.1.0 (2026-09-21), v3.0.5 (2026-10-12); very active | v1.0.0 (2026-09-22) | Very frequent releases | DataFusion 55.2.0 (the `fabric/` pin) |
-| Query layer | DataFusion 54.1 (forked: 15 commits over 54.1.0 across 103 files, including "streaming SQL AST", accumulator checkpoint APIs and sliding `DISTINCT` checkpoints), sqlparser 0.62 fork, arrow-rs 58.4 fork | Its own binder, optimiser and plan IR; Postgres dialect | Not a query engine: a streaming storage (log plus primary-key tables) that Flink reads | DBSP incremental circuits; SQL compiled by Calcite in Java | Batch only: no durable operator state, checkpoints or event-time windows in core (§68 §6.1) |
-| Streaming semantics | Event-time watermarks, tumbling, sliding and session windows, updating (changelog) queries, joins, Chandy-Lamport checkpoints to object storage, Kafka exactly-once, Rust and Python UDFs (verify depth in FC0) | Close to Flink's: barriers and epochs, retractable changelog, watermarks, temporal and interval joins, `EMIT ON WINDOW CLOSE`; no `MATCH_RECOGNIZE` (verify) | — | Incremental view maintenance, not Flink's event-time and changelog model | None |
-| State | In-memory tables with Parquet snapshots on object storage | Hummock, a shared LSM on S3 run by compactor and meta services | — | In-memory or local storage | — |
-| Control plane | Its own API, controller, compiler service, web UI (not wanted) | Meta service on Postgres, frontend, compute, compactor (four roles, D1950) | — | Its own pipeline manager | — |
-| Distance to Flink | Medium: the runtime concepts match (operators, barriers, watermarks, Kafka 2PC); the dialect and REST do not | Medium on semantics, far on dialect, plan IR and deployment shape | Not applicable | Far | Far: everything streaming is to be written |
+| | StreamFusion | Arroyo | RisingWave | Apache Fluss | Feldera | DataFusion alone (House-style) |
+|---|---|---|---|---|---|---|
+| Licence | Apache-2.0 (`datafusion-contrib`; "not part of Apache Flink or Apache DataFusion") | Apache-2.0 and MIT (`LICENSE-APACHE`, `LICENSE-MIT`) | Apache-2.0 (Premium features gated by a licence key in the same code) | Apache-2.0 | MIT, with Feldera Enterprise code under commercial terms (GitHub reports `NOASSERTION`) | Apache-2.0 |
+| Language and size | Rust, about 6.8 MB in `native/` (engine, bridge, formats, Kafka, Iceberg, Paimon, Fluss), plus about 11 MB of Java (the Flink plugin) | Rust, about 3.1 MB of Rust source, plus a TypeScript UI | Rust, about 32 MB of Rust source (about ten times Arroyo), plus Java connectors | Java (about 27 MB) with a Rust client (about 4.6 MB) | Rust (about 20 MB) plus a Java (Calcite) SQL compiler (about 9 MB) | — |
+| Activity | v0.1.0-rc4 (2026-10-06), release candidates only; at least 100 commits since 2026-07-29; one main maintainer (about 1,875 commits) and one regular second (about 280) | Last release v0.15.0 (2025-12-01); 72 commits since 2026-07-29; Cloudflare-owned since 2025-04 (§68) | v3.1.0 (2026-09-21), v3.0.5 (2026-10-12); very active | v1.0.0 (2026-09-22) | Very frequent releases | DataFusion 55.2.0 (the `fabric/` pin) |
+| Query layer | None of its own: **Flink plans the query**; supported ExecNodes are swapped for native Rust operators over DataFusion 54.0 and Arrow 58, with no DataFusion patch | DataFusion 54.1 (forked: 15 commits over 54.1.0 across 103 files, including "streaming SQL AST", accumulator checkpoint APIs and sliding `DISTINCT` checkpoints), sqlparser 0.62 fork, arrow-rs 58.4 fork | Its own binder, optimiser and plan IR; Postgres dialect | Not a query engine: a streaming storage (log plus primary-key tables) that Flink reads | DBSP incremental circuits; SQL compiled by Calcite in Java | Batch only: no durable operator state, checkpoints or event-time windows in core (§68 §6.1) |
+| Streaming semantics | **Flink SQL's, reproduced exactly** ("anything else falls back to Flink with identical results"): Calc, unions, grouping sets, `TUMBLE`/`HOP`/`SESSION`/`CUMULATE` window aggregates, `OVER`, regular, interval, window, event-time temporal and lookup joins, group aggregates, Top-N, deduplication, changelog normalise, the sink upsert materializer; JVM scalar UDFs by upcall; Java-exact float and decimal text (`jdk_double`, `jdk_decimal`). Falls back for `MATCH_RECOGNIZE`, lateral table functions, PyFlink UDFs | Event-time watermarks, tumbling, sliding and session windows, updating (changelog) queries, joins, Chandy-Lamport checkpoints to object storage, Kafka exactly-once, Rust and Python UDFs (verify depth in FC0) | Close to Flink's: barriers and epochs, retractable changelog, watermarks, temporal and interval joins, `EMIT ON WINDOW CLOSE`; no `MATCH_RECOGNIZE` (verify) | — | Incremental view maintenance, not Flink's event-time and changelog model | None |
+| State | Memory and RocksDB backends; a canonical savepoint payload of Arrow IPC sections per key group inside Flink's savepoint container | In-memory tables with Parquet snapshots on object storage | Hummock, a shared LSM on S3 run by compactor and meta services | — | In-memory or local storage | — |
+| Control plane | Flink's (it is a plugin): no scheduler, network, checkpoint coordinator or REST of its own | Its own API, controller, compiler service, web UI (not wanted) | Meta service on Postgres, frontend, compute, compactor (four roles, D1950) | — | Its own pipeline manager | — |
+| Distance to Flink | Closest of all on operator semantics; nothing of the runtime around them | Medium: the runtime concepts match (operators, barriers, watermarks, Kafka 2PC); the dialect and REST do not | Medium on semantics, far on dialect, plan IR and deployment shape | Not applicable | Far | Far: everything streaming is to be written |
 
 ### 5.2 Weighing the options
 
-| | (a) Fork Arroyo whole | (b) Slim-fork RisingWave | (c) DataFusion plus our own runtime | (d) **Hybrid (chosen)** |
+| | (a) Fork Arroyo whole | (b) Slim-fork RisingWave | (c) StreamFusion as a plugin inside Apache Flink | (d) **Hard fork of StreamFusion, made standalone (chosen)** |
 |---|---|---|---|---|
-| What we write | Flink front end, REST, catalogs, state backend; remove Arroyo's API, UI and dialect | Flink parser and binder over RisingWave's plan IR; strip batch serving, Postgres wire and meta roles; replace the deployment model with Flink's | Everything: operators, watermarks, state, checkpoints, network, connectors | Flink front end, types and functions, REST, catalogs, control plane, keyed state on slatedb; the runtime, operators, checkpoints, network and Kafka connector start from Arroyo's code imported into Loams crates |
-| Code we own | About 3 MB, most of it kept | About 32 MB, much of it coupled (the frontend, meta and Hummock assume each other) | Least imported, most written | About 1.5–2 MB imported (estimate: the runtime crates, not the API, controller, compiler service or UI) |
-| Rebase burden (hard fork, no sync) | Low: a frozen tree we own | High: we own a 32 MB tree whose parts assume RisingWave's meta service and dialect | None | Low: imported crates, frozen provenance |
-| Shares DataFusion with House, Sail and the engine | Yes (after a port from 54 to 55) | No (its own planner) | Yes | Yes |
-| Time to a Flink SQL preview (estimate) | Medium | Long: the dialect, plan IR and deployment are RisingWave's to the core | Longest | Shortest of the four |
+| What runs | Arroyo's runtime with a Flink front end added | RisingWave with a Flink parser and binder over its plan IR, stripped of batch serving, Postgres wire and meta roles | Apache Flink, with supported operators in Rust | StreamFusion's operators in Loams' own runtime, no JVM |
+| What we write | Flink front end, REST, catalogs; replace Arroyo's non-Flink operator semantics, API, UI and dialect | Flink parser, binder and deployment shape, against RisingWave's IR and meta service | Nothing | Flink SQL front end, scheduler, network and checkpoint coordinator (ported from Arroyo where they fit), REST, control plane; the operators that StreamFusion leaves to Flink (`MATCH_RECOGNIZE`, lateral table functions, three-phase distinct) |
+| Code we own | About 3 MB, much of it then rewritten for Flink semantics | About 32 MB, coupled (frontend, meta and Hummock assume each other) | None, but the JVM stays | About 6.8 MB of StreamFusion Rust plus what we add |
+| DataFusion and Arrow | 54.1 with a 15-commit fork | Not DataFusion | 54.0 and 58.3 | 54.0 and 58.3, bumped to the root workspace's 54.1 and 58.4: a patch-level and a minor-level bump |
+| Flink semantics | Must be rebuilt operator by operator | Close on changelog and barriers, far on dialect and types | Exact (it is Flink) | Exact where StreamFusion's operators are native, checked by its own divergence suite and by Loams' oracle |
+| A Rust engine without a JVM | Yes | Yes | **No** | Yes |
 
-**Why not RisingWave as the base**, although the owner named it first and `ostrium-labs/risingwave` was forked today: its streaming semantics are the closest to Flink's, but everything around them — the Postgres dialect and binder, its own plan IR, the meta service, Hummock and its compactor, four roles at every size (D1950) — would have to be either kept (so the product is RisingWave with a Flink parser in front) or rewritten (so the fork buys little). Stripping it to a Flink-shaped engine means owning ten times Arroyo's code with no upstream sync. RisingWave stays the Postgres-wire streaming database of §81, and its fork is a **donor**: specific algorithms (for example its temporal join, over-window and degree-table join state) are read and, where useful, ported file by file with attribution (Q1447).
+**Why StreamFusion.** It is the only Rust code base whose operators were written to reproduce Flink SQL's results exactly ("anything else falls back to Flink with identical results"). That includes changelog handling, Java-exact number formatting, Flink's key hashing and Flink's window calendars. It builds on crates.io DataFusion 54.0 and Arrow 58.3 with no DataFusion patch, which is Loams' line (root workspace: 54.1 and 58.4). Its weaknesses are release-candidate maturity and essentially one maintainer. They matter little once Loams owns the fork, and the oracle, not the donor's claims, decides correctness. What it lacks is everything Flink does around the operators, and that is §7's work.
 
-**Why not Fluss**: it is storage, not a processor. Loams already has its own logs (Loams streams, Iggy) and the House no longer needs Fluss (D1555). A Fluss connector is on demand (Q1445).
+**Why not RisingWave as the base**, although the owner named it first and `ostrium-labs/risingwave` was forked today: its streaming semantics are close to Flink's, but everything around them (the Postgres dialect and binder, its own plan IR, the meta service, Hummock and its compactor, four roles at every size, D1950) would have to be either kept, so the product is RisingWave with a Flink parser in front, or rewritten, so the fork buys little. The research report rates its Flink compatibility low. RisingWave stays the Postgres-wire streaming database of §81, and its fork is a **donor** of specific algorithms, ported file by file with attribution (Q1447).
+
+**Why not fork Arroyo whole**: it has its own DataFusion SQL dialect and no DataStream or Table API, its operators implement Arroyo's semantics rather than Flink's, it carries a 15-commit DataFusion fork, and it has had no release since 2025-12-01. Its runtime pieces (the network manager, barrier alignment, the checkpoint coordinator, Kafka two-phase commit) are what StreamFusion lacks, so those are ported where they fit.
+
+**Why not Fluss**: it is storage, not a processor. Loams already has its own logs (Loams streams, Iggy) and the House no longer needs Fluss (D1555). A Fluss connector is on demand (Q1445). StreamFusion's own Fluss path comes with the fork.
 
 **Why not Feldera**: its SQL compiler is Java (Calcite), its model is incremental view maintenance rather than Flink's event-time and changelog semantics, and its enterprise boundary would need a file-by-file audit before any reuse (as Databend in §75).
 
-**Why not only DataFusion (House-style)**: the House could start from DataFusion because a batch engine was most of what it needed. A stream processor's hard parts (operator state, barriers, watermarks, exactly-once sinks, the network layer) are exactly what DataFusion lacks, and Arroyo has written them on DataFusion under a permissive licence.
-
 ### 5.3 The ruling (D2243)
 
-The hybrid: Loams writes the **Flink-facing layers** (parser, Flink types and coercion, the function library, the planner's Flink semantics, both REST APIs, catalogs, the client jar, the JVM and Python hosts, the control plane and the slatedb state backend) and **imports Arroyo's runtime** (operators, the watermark and time machinery, checkpoint barriers and coordination, the network manager, Parquet state tables, Kafka with two-phase commit, the filesystem sink) as the starting point for its own crates.
+The base is the hard fork **`ostrium-labs/streamfusion`**. Loams keeps the following from it, adds to it, and ports into it:
+
+| | What |
+|---|---|
+| **Kept from StreamFusion** | The operators (`calc`, `window_agg`, `session_agg`, `over_agg`, `group_agg`, `updating_join`, `interval_join`, `window_join`, `temporal_join`, lookup join, `topn`, `dedup`, `normalizer`, `sink_materializer`, `mini_batch`, `rowtime`, `window_calendar`, `exchange`). The Flink expression and function semantics (`flink_functions`, `flink_float`, `flink_key`, `jdk_decimal`, `jdk_double`). The memory and RocksDB state backends and the canonical state sections. The Kafka, JSON, CSV, Avro, protobuf, Parquet, ORC, Iceberg, Paimon and Fluss format code. Its divergence suite against Flink. Its Java plugin also stays in the fork: it builds the operator descriptions from Flink's ExecNodes, so it is the reference for the ExecNode-JSON reader (§7.1) |
+| **Written by Loams** | The Flink SQL front end and planner, the standalone scheduler (job manager and task managers), the REST surfaces, catalogs, the client jar, the JVM and Python UDF hosts, the control plane and Postgres metadata, and the operators StreamFusion leaves to Flink |
+| **Ported from Arroyo** (file by file) | The network manager (Arrow IPC between workers, flow control), barrier alignment and the checkpoint coordinator, the Kafka transactional sink, the filesystem two-phase sink, and the program-graph shape for the Rust DataStream API (FC3) |
+| **Ported from RisingWave** | Specific algorithms on demand (for example degree-table join state), per file |
+
+StreamFusion's native plan is a description of Flink ExecNodes that the Java plugin sends over JNI. That description becomes the engine's **physical plan IR**. The Rust planner emits it, the ExecNode-JSON reader produces it, and the operators consume it unchanged.
 
 ### 5.4 The research report
 
-The research lane's report (`loams-wt/.he0-shared/stream-engine-options.md`, with a Flink-compatibility matrix for Arroyo, RisingWave, Fluss and others) was not complete when this design was written. The owner's instruction of 2026-10-29 was not to wait. The call above rests on §5.1's own checks. FC0 Task 1 reads the report when it lands and records any finding that changes §5's weighing as a ruling; the base choice is revisited only if the report shows a blocker in Arroyo's runtime (for example a checkpoint design that cannot give exactly-once with keyed state on slatedb).
+The research lane's report (`loams-wt/.he0-shared/stream-engine-options.md`, 2026-10-29) arrived after the first draft of this design. Its findings, adopted here:
+- only Apache Flink runs Flink jobs unchanged;
+- Arroyo has its own SQL dialect and no DataStream or Table API;
+- RisingWave's Flink compatibility is low;
+- StreamFusion (Apache-2.0) runs Flink SQL natively in Rust inside Flink 2.2.x and matches the oracle's pin, but it is RC-only with essentially one maintainer.
+
+The first draft's "hard fork of Arroyo's runtime as the base" is withdrawn. The owner then asked (2026-10-29, via the coordinator): "is streamfusion using datafusion, just fork it if it matches our loams engines". It does: DataFusion 54.0.0 and Arrow 58.3.0 in its lockfile, against Loams' 54.1 and 58.4, and Apache-2.0 (checked 2026-10-29). So `ostrium-labs/streamfusion` was forked on 2026-10-29 and is the base (D2243). Real Flink 2.2.1 stays the oracle and the fallback.
 
 ### 5.5 Hard-fork rules (D2244)
 
-- **Provenance.** `ostrium-labs/arroyo` is created as a GitHub fork and frozen at the import commit (recorded in `stream/NOTICE` and in FC0's ruling). A blobless clone at `~/Documents/Ostriumlabs/arroyo` is the source implementers copy from.
-- **Ownership.** The imported code lives in Loams' `stream/` crates, renamed, under Loams' licence headers plus the original copyright notices. There is no upstream sync, no upstream PR and no upstream post (as with the Neon fork, `ostrium-labs/loams-postgres`).
-- **Patches to dependencies.** Arroyo's DataFusion, arrow-rs and sqlparser patches are reviewed one by one in FC0: each is either dropped (fixed upstream by 55.2 or not needed), reimplemented through DataFusion's extension APIs, or carried in `ostrium-labs/datafusion` on a `55.2.0/loams-stream` branch. The target is the smallest carried patch set, listed in `stream/PATCHES.md`.
-- **RisingWave.** Code from `ostrium-labs/risingwave` is ported only per file, with its Apache-2.0 header and a NOTICE entry, and never from a module gated by RisingWave's licence key.
+- **The fork.** `ostrium-labs/streamfusion` (forked from `datafusion-contrib/StreamFusion` on 2026-10-29) is Loams-owned. There is no upstream sync, no upstream PR and no upstream post, as with the Neon fork (`ostrium-labs/loams-postgres`) and the Iggy fork. A blobless clone lives at `~/Documents/Ostriumlabs/streamfusion`, with worktrees in `~/Documents/Ostriumlabs/streamfusion-wt/`. PRs go to the fork's `main`.
+- **Versions.** FC0 moves the fork's `native/` workspace to the root workspace's DataFusion 54.1 and Arrow 58.4 and to Loams' Rust toolchain. Later DataFusion moves happen together with the House where they can.
+- **Ports.** Code from Arroyo (`ostrium-labs/arroyo`, frozen for provenance) and from `ostrium-labs/risingwave` is ported per file, keeping its original copyright lines, and listed in `PORTS.md` in the fork with its source path and commit. Nothing is ported from a RisingWave module gated by its licence key.
+- **No dependency forks.** No DataFusion or Arrow fork; Arroyo's DataFusion patches are not taken.
 
 ## 6. Coexistence with design 81 (D2264)
 
@@ -272,8 +290,8 @@ Design 81's managed Flink stays the product: one instance per namespace, the fac
           │  (task deployment, barriers, acks: gRPC)
  loams-stream taskmanager × N (task slots)
    ├── loams-stream-runtime: operator chains, network (Arrow IPC streams, credit-based), timers, watermarks
-   ├── loams-stream-exec: operators (windows, joins, aggregates, Top-N, dedup, MATCH_RECOGNIZE, changelog)
-   ├── loams-stream-state: slatedb per subtask + foyer (loams-cache); Parquet tables for small state
+   ├── StreamFusion's operators (windows, joins, aggregates, Top-N, dedup, changelog) + Loams' (MATCH_RECOGNIZE, lateral)
+   ├── state backends (StreamFusion's): memory, RocksDB with incremental SSTs to S3; slatedb after the spike; foyer cache (loams-cache)
    ├── loams-stream-connectors: Kafka, Iggy, Iceberg (Lakekeeper), Postgres CDC, JDBC, filesystem
    └── UDF hosts (optional sidecars): JVM (Java UDFs; DataStream operators in FC3), Python
           │
@@ -285,7 +303,7 @@ Design 81's managed Flink stays the product: one instance per namespace, the fac
 1. **Parse.** `loams-stream-sql` implements a `FlinkDialect` on sqlparser-rs 0.63 (crates.io) with statement-level hooks for what sqlparser lacks: Flink's `CREATE TABLE` column forms and `WATERMARK`, `TABLE(...)`/`DESCRIPTOR(...)` in TVF calls, `FOR SYSTEM_TIME AS OF`, `EXECUTE STATEMENT SET`, `COMPILE`/`EXECUTE PLAN`, Flink's `SET 'k' = 'v'`, hints, `SHOW` and `DESCRIBE` forms. sqlparser already parses `MATCH_RECOGNIZE` (added for Snowflake; verify coverage against Flink's subset). The reference grammar is Flink's Calcite parser templates at the pinned tag (`flink-sql-parser`, Apache-2.0), and every `.q` and test-program statement is a parser test.
 2. **Validate and type.** A binder resolves names against Flink's catalog model (catalog, database, object; temporary and permanent; `USE CATALOG`/`USE`) and types expressions with **Flink's** rules: Flink's logical types, implicit coercion, cast and `TRY_CAST` semantics, decimal precision and scale derivation, `STRING` versus `VARCHAR(n)`, `TIMESTAMP_LTZ` and the session time zone, nullability. These differ from DataFusion's defaults, so the binder emits explicit casts and Flink-semantics functions rather than leaning on DataFusion's coercion (Arroyo's patch "Reject implicit string-numeric coercion" is the same instinct).
 3. **Streaming semantics.** The planner infers each node's changelog mode (insert-only, upsert with key, retract) and time attributes (rowtime, proctime) as Flink does, inserts `ChangelogNormalize`, upsert materialisation, watermark assigners and mini-batch, and rejects what Flink rejects (for example a non-windowed aggregate feeding an append-only sink).
-4. **Lower.** Into a DataFusion logical plan whose streaming nodes are extension nodes (windows, joins with state, Top-N, deduplication, watermarks, `MATCH_RECOGNIZE`, sources and sinks), optimised with DataFusion's rules plus streaming-safe ones, then into a physical operator graph with parallelism, key-group partitioning and chaining.
+4. **Lower.** Into StreamFusion's operator descriptions (the same physical IR its Java plugin builds from Flink's ExecNodes), with parallelism, key-group partitioning and chaining. DataFusion evaluates expressions in Flink semantics (StreamFusion's `flink_functions`) and runs batch mode (D2275).
 5. **ExecNode JSON.** A second front end reads Flink's compiled plan JSON into the same physical graph: the path for the client jar (D2259) and for differential tests. Flink's planner (Java) runs only in the client and in tests, never in the engine (D2276, Q1435).
 
 ### 7.2 Changelog and time (D2249, D2250)
@@ -296,41 +314,38 @@ Design 81's managed Flink stays the product: one instance per namespace, the fac
 
 ### 7.3 Runtime (D2251)
 
-Arroyo's runtime is the starting point: operators process Arrow record batches; chains fuse stateless operators in one task; tasks run on Tokio in task slots; the network layer sends Arrow IPC between task managers with credit-based flow control so back pressure reaches sources. Loams adds Flink's knobs where they change results (`table.exec.mini-batch.*`, `parallelism.default`, `pipeline.max-parallelism`, per-operator parallelism through hints) and the metrics the Flink REST and dashboard expect (records in and out, back pressure, watermarks, checkpoint durations).
+Ported pieces (§5.3) fill a Loams-owned runtime: operators process Arrow record batches; chains fuse stateless operators in one task; tasks run on Tokio in task slots; the network layer sends Arrow IPC between task managers with credit-based flow control so back pressure reaches sources. Loams adds Flink's knobs where they change results (`table.exec.mini-batch.*`, `parallelism.default`, `pipeline.max-parallelism`, per-operator parallelism through hints) and the metrics the Flink REST and dashboard expect (records in and out, back pressure, watermarks, checkpoint durations).
 
 ### 7.4 State (D2252, Q1440)
 
-- **Keyed state** (regular joins, unbounded aggregates, deduplication, Top-N, `MATCH_RECOGNIZE` partial matches) goes into **slatedb** (Apache-2.0, an LSM on object storage, v0.17.0 released 2026-09-29): one database per operator subtask, keys prefixed by key group and namespace (state name), values in a compact row encoding. Reads go through a foyer RAM and NVMe cache (`loams-cache`, D1557).
-- **Small and window state** (window panes waiting for the watermark, source offsets, sink transactions) stays in Arroyo's in-memory tables with Parquet snapshots at each checkpoint, which suits state that is dropped when the watermark passes.
+- **One state-backend trait** with key groups (Flink's `pipeline.max-parallelism` rule), typed per-operator tables, timers and TTL. Operators are written against the trait, as StreamFusion's are.
+- **FC1 backends**: memory (small state, tests) and **RocksDB** through `rust-rocksdb`, both ported from StreamFusion, with checkpoints uploading incremental SST files to `engines/<ns>/<id>/state/` (Flink's incremental RocksDB model).
+- **slatedb** (Apache-2.0, an LSM on object storage, v0.17.0 released 2026-09-29) is spiked in FC0: one database per subtask, keys prefixed by key group, reads through a foyer RAM and NVMe cache (`loams-cache`, D1557). Object storage as the primary store fits "state in the bucket", and checkpoints become manifest pointers rather than uploads. If the spike shows its single-writer model, checkpoint and clone features fit per-subtask databases and rescaling at acceptable cost (verify), slatedb becomes the default in FC2.
 - **TTL.** `table.exec.state.ttl` and the `STATE_TTL` hint expire keyed state by compaction filters and lazy checks, as Flink's RocksDB TTL does.
-- **Why slatedb over RocksDB or an own LSM**: object storage as the primary store fits "state in the bucket", checkpoints become manifest pointers rather than uploads, and it is Rust. Whether its single-writer model and checkpoint and clone features fit per-subtask databases and rescaling is verified in FC0's spike (verify); the fallback is RocksDB through `rust-rocksdb` with incremental uploads, as Flink does.
 
 ### 7.5 Checkpoints, savepoints, two-phase commit, rescaling (D2253–D2256)
 
 - **Barriers.** The checkpoint coordinator injects numbered barriers at the sources; operators align barriers across inputs, snapshot, and forward them (Arroyo's Chandy-Lamport implementation). Sources snapshot offsets (Kafka and Iggy offsets, CDC LSNs, file positions). Unaligned checkpoints are FC4 on demand (Q1449).
-- **Snapshots.** slatedb state is checkpointed in place (a durable manifest per subtask), small state as Parquet; the coordinator writes the checkpoint's `_metadata` to `engines/<ns>/<id>/checkpoints/<job>/chk-<n>/` and records it in Postgres, then signals completion.
+- **Snapshots.** RocksDB state is checkpointed as incremental SSTs (slatedb, if adopted, in place as a durable manifest per subtask), memory state as Arrow IPC sections; the coordinator writes the checkpoint's `_metadata` to `engines/<ns>/<id>/checkpoints/<job>/chk-<n>/` and records it in Postgres, then signals completion.
 - **Two-phase commit.** A sink pre-commits at the barrier (Kafka transaction flushed, Iceberg data files written and recorded in state, file parts uploaded, JDBC staging rows written) and commits only when the coordinator reports the checkpoint complete; on recovery, pending commits recorded in the checkpoint are committed again idempotently (Iceberg checks the checkpoint id in the snapshot summary; Kafka resumes the transaction by its transactional id).
-- **Savepoints.** Canonical savepoints write each operator's state as Parquet per key group plus metadata naming operator ids (stable `uid`s derived from the plan, as Flink derives them for SQL) and the engine version. They restore at any parallelism and across engine versions. Native savepoints (slatedb checkpoints) are fast but restore only at the same version.
-- **Rescaling.** State is partitioned into key groups (`pipeline.max-parallelism`, Flink's default rule); a subtask owns a contiguous key-group range. FC1 rescales by stop-with-savepoint and restore. FC2 rescales in place: new subtasks read their key-group ranges from the last checkpoint's databases.
+- **Savepoints.** Canonical savepoints write each operator's logical state as Arrow IPC sections per key group (StreamFusion's representation) plus metadata naming operator ids (stable `uid`s derived from the plan, as Flink derives them for SQL) and the engine version. They restore at any parallelism and across engine versions. Native savepoints (the backend's own checkpoint) are fast but restore only at the same version.
+- **Rescaling.** State is partitioned into key groups (`pipeline.max-parallelism`, Flink's default rule); a subtask owns a contiguous key-group range. FC1 rescales by stop-with-savepoint and restore. FC2 rescales in place: new subtasks read their key-group ranges from the last checkpoint.
 - **Verification.** The barrier and two-phase-commit protocol is modelled in TLA+ under `spec/tla/` and run in deterministic simulation with injected failures (the practice of §31, §55 and §75 suite 8).
 
 ### 7.6 Code layout (D2245, D2246)
 
-A new **`stream/`** Cargo workspace, beside `fabric/`, because the engine carries a DataFusion patch set that must not reach the House's workspace, and because a stream processor does not belong in the engine binary's default build (the same reason as D343). It uses DataFusion 55.2 and Arrow 59, the `fabric/` majors, so Iceberg code can be shared (`iceberg` 0.10.1 and `ostrium-labs/iceberg-rust` as `fabric/` pins them).
+The engine lives in the fork's **`native/`** Cargo workspace, as the Kafka-compatible broker lives in the Iggy fork. It is on **DataFusion 54.1 and Arrow 58.4**, the root workspace's pins, after FC0's bump from 54.0 and 58.3. The fork builds and releases the `loams-stream` binary and image (`ghcr.io/ostrium-labs/loams-stream`). The Loams repository holds the integration: the `backend: loams` support in `loams-flink`, the compose profile, the gateway routes and the product conformance under `conformance/stream/` (Q1432). StreamFusion's existing crates keep their names; the new crates are:
 
 | Crate | Holds |
 |---|---|
-| `loams-stream-types` | Flink's logical types, their Arrow mapping, casts and coercion |
-| `loams-stream-sql` | `FlinkDialect`, the statement AST extensions, the binder |
-| `loams-stream-plan` | Changelog and time-attribute inference, lowering to DataFusion, streaming optimiser rules, physical graph, ExecNode-JSON reader, the function library |
-| `loams-stream-exec` | Streaming operators (imported from Arroyo and extended) |
-| `loams-stream-state` | slatedb keyed state, Parquet tables, key groups, TTL, savepoint formats |
+| `loams-stream-sql` | `FlinkDialect`, the statement AST extensions, the binder with Flink's types and coercion |
+| `loams-stream-plan` | Changelog and time-attribute inference, streaming optimiser rules, lowering to StreamFusion's operator descriptions, the ExecNode-JSON reader |
 | `loams-stream-runtime` | Task manager: tasks, chains, network, timers, watermarks, barriers |
 | `loams-stream-coord` | Job manager: scheduler, checkpoint and commit coordinators, rescaling, metadata in Postgres, leader lease |
 | `loams-stream-rest` | SQL Gateway REST v1–v4 and the Flink REST API |
 | `loams-stream-connectors` | Kafka, Iggy, Iceberg, Postgres CDC, JDBC, filesystem, test connectors, formats |
-| `loams-stream-udf` | The JVM and Python UDF host protocols (Rust side); the hosts' own code under `stream/hosts/` |
-| `loams-stream-client` | The Java client jar (`stream/client-java/`, Gradle or Maven, Apache-2.0); listed here for naming |
+| `loams-stream-udf` | The JVM and Python UDF host protocols (Rust side; the JVM host builds on StreamFusion's JVM scalar-UDF upcall) |
+| `loams-stream-client` | The Java client jar (Maven, beside the fork's existing Java modules) |
 | `loams-stream-conformance` | The corpus runner, the differential harness, the REST contract tests |
 | `loams-stream` (bin) | One binary with roles `jobmanager`, `taskmanager`, `all` |
 
@@ -384,8 +399,8 @@ Measured in the owner's quiet window (the 1B QPS push's rule), per commit nightl
 | # | Risk | Mitigation |
 |---|---|---|
 | R1 | Flink's SQL semantics are wide (type rules, functions, changelog inference) | The oracle on every case; the generated function matrix; the planner's Flink binder rather than DataFusion's coercion |
-| R2 | Arroyo's runtime gaps (keyed state at scale, rescaling) | slatedb and key groups designed in from FC0; the spike verifies before FC1 |
-| R3 | The DataFusion patch set grows | `stream/PATCHES.md` with an owner per patch; prefer extension APIs; one port per DataFusion major |
+| R2 | StreamFusion's operators assume Flink drives them (Flink's timers, key context, checkpoint calls, JNI bridge) | FC0's first task drives them from a Rust harness without Flink; the runtime implements the same contract; the operators' own tests and the divergence suite stay green on every PR |
+| R3 | The base is RC quality with essentially one maintainer | Loams owns the fork; the oracle, not the upstream's claims, decides correctness |
 | R4 | DataStream through a JVM is slow at the boundary | Batch calls where the API allows; per-record calls only for process functions; measured in FC3 before the default flips |
 | R5 | Exactly-once into Iggy depends on Iggy's deduplication and the gateway's missing transactions | Stated per connector (§4.5); Iceberg for end-to-end exactly-once; transactions in the Iggy fork |
 | R6 | Two Flink backends double the test matrix | One conformance harness, both backends nightly; the `apache` backend is also the oracle |
@@ -411,7 +426,7 @@ Rules as in §81 §14: strict `xfail.toml` (an unexpected pass fails), effects c
 
 ### 15.2 The scope manifest
 
-Every suite reads one manifest (`stream/conformance/profile.toml`) that marks each feature supported, planned with its phase, or won't-do. The manifest generates the compatibility page and the D2268 error messages, and a test fails when the manifest and the suites disagree (§75's surface-file rule, D347).
+Every suite reads one manifest (`conformance/profile.toml` in the fork) that marks each feature supported, planned with its phase, or won't-do. The manifest generates the compatibility page and the D2268 error messages, and a test fails when the manifest and the suites disagree (§75's surface-file rule, D347).
 
 ## 16. Phases (D2271): track FC
 
@@ -419,7 +434,7 @@ Every suite reads one manifest (`stream/conformance/profile.toml`) that marks ea
 
 | Phase | Scope | Exit gate |
 |---|---|---|
-| **FC0** (harness) | Rulings and versions; `ostrium-labs/arroyo` fork and import into `stream/` on DataFusion 55.2 with Arroyo's own tests green; the DataFusion patch review; the oracle harness against Flink 2.2.1 via `loams-flink`; the corpus extractors (test programs, `.q` files, Nexmark); the function and type matrix; the slatedb state spike; the scope manifest | The corpus runs on the oracle with 100 % of its own expectations; the imported runtime runs Nexmark q0 end to end with a checkpoint and a restore |
+| **FC0** (harness and skeleton) | Rulings and versions; the fork's version bump and the new crate skeletons; the operators driven without Flink; `PORTS.md`; the Flink SQL parser; the oracle harness against Flink 2.2.1 via `loams-flink`; the corpus extractors (test programs, `.q` files, Nexmark); the function and type matrix; the slatedb state spike; the scope manifest | The corpus runs on the oracle with 100 % of its own expectations; the parser accepts every statement in the corpus; a ported stateless pipeline (Nexmark q0) runs end to end |
 | **FC1** (preview) | L1 core (§4.1 FC1 column), L2 SQL Gateway v1–v4 and the FC1 REST paths, L5 Kafka (gateway and external), Iggy native, Iceberg append, filesystem, test connectors; L6 aligned checkpoints, savepoints, stop-and-restore rescaling; compose profile `stream`; `backend: loams` in `loams-flink` | Nexmark q0–q22 match the oracle; at least 80 % of the in-scope test programs and `.q` files pass (estimate, re-set in FC0); the SQL Client, JDBC driver and `loams-flink` tests pass unchanged; kill -9 recovery is exactly-once for Iceberg and filesystem; preview label |
 | **FC2** (beta) | L1 rest (temporal and lookup joins, `MATCH_RECOGNIZE`, `OVER`, `SESSION`, legacy group windows, batch mode, catalogs and the catalog store); L3 Table API and PyFlink via the client jar, Java and Python UDF hosts; L5 Postgres CDC, JDBC, Iceberg upsert; in-place rescaling; JobManager HA; FC2 REST paths and the web dashboard; Kubernetes | At least 95 % of the in-scope test programs and `.q` files; 14 nightly differential runs without an unexplained mismatch; the Table API and PyFlink corpus pass; chaos suite green; beta label |
 | **FC3** (GA) | L4 DataStream via the JVM operator host; JAR upload and run; job-graph submission through the client jar; the Rust DataStream API; state migration from Flink savepoints for SQL operators (Q1438); performance gates; security review | All six bars of §3.1; Nexmark targets met; then the owner decides the default flip (Q1437); GA label per layer |
@@ -446,7 +461,7 @@ The Hive dialect, Hive catalog and HiveServer2 endpoint; the Scala API; Flink ML
 | **§00 §7** | Loams is not a stream processor | **Amended**: Loams ships a Flink-compatible stream processor; it still invents no dialect of its own |
 | **D1261**, **Q1036** (§68 §6.5) | No native continuous-query engine now; an L4 engine only behind a gate, starting from Arroyo's code | **Superseded** by D2240 and D2243 on the owner's request; the "start from Arroyo" direction is kept |
 | **D1272** | No stream processor before Q1036 | **Amended** by D2240 |
-| **D1930** (§81 §16.2) | No Loams fork of any engine | **Amended** by D2244: Arroyo is hard-forked as a code donor |
+| **D1930** (§81 §16.2) | No Loams fork of any engine | **Amended** by D2244: StreamFusion is hard-forked as the base; Arroyo is a donor ported file by file |
 | **D212** (§26) | DataStream on the Flink Kubernetes Operator | **Amended at FC3** by D2261; until then unchanged (Apache Flink through §81) |
 | **D1900, D1909** (§81) | Managed Flink SQL on Apache Flink | **Extended** by D2264: a `backend` field; `apache` stays the default until FC3 |
 | **D1974** | Compose recovery record for Flink | Kept for `backend: apache`; `backend: loams` recovers from Postgres (D2265) |
@@ -458,7 +473,7 @@ Amendment notes pointing here are added to §68 and §81 and to the amended deci
 ## 18. Licences and trademarks (D2273)
 
 - **Apache Flink** (Apache-2.0): the `TestProgram` sources, `.q` files, OpenAPI files and the web dashboard may be vendored or built with their headers and a NOTICE entry; no Flink Java code runs in the engine.
-- **Arroyo** (Apache-2.0 and MIT): imported code keeps its copyright lines; NOTICE names Arroyo Systems and the import commit.
+- **StreamFusion** (Apache-2.0): the fork keeps its LICENSE and copyright lines. **Arroyo** (Apache-2.0 and MIT): ported code keeps its copyright lines; NOTICE names each project and commit, and `PORTS.md` lists every ported file.
 - **RisingWave** (Apache-2.0): per-file ports only, never from licence-key-gated modules.
 - **slatedb, DataFusion, Arrow, sqlparser-rs, iceberg-rust, foyer** (Apache-2.0).
 - **Feldera**: no code reused (enterprise boundary unaudited).
@@ -470,15 +485,15 @@ Amendment notes pointing here are added to §68 and §81 and to the amended deci
 
 The FC2 and FC3 task plans; prices (none in preview, as Q1403); Loams Cloud hosting (as Q1408).
 
-## 20. Open questions (Q1430–Q1449), answered 2026-10-29
+## 20. Open questions (Q1430–Q1450), answered 2026-10-29
 
 Recorded in the decision log. The owner answered all of them on 2026-10-29 with the default ("approve all defaults").
 
 | # | Question | Default (answered by the owner, 2026-10-29) |
 |---|---|---|
 | Q1430 | The product and binary name? | **Loams Stream**, binary `loams-stream`, crates `loams-stream-*`; described as "compatible with Apache Flink's APIs" |
-| Q1431 | The base: hybrid on Arroyo, or a slim RisingWave fork? | **Hybrid on Arroyo's runtime** (§5); RisingWave as a donor |
-| Q1432 | Where does the code live? | **A new `stream/` workspace** with a minimal DataFusion patch set in `ostrium-labs/datafusion` |
+| Q1431 | The base? | **A hard fork of StreamFusion** (owner, 2026-10-29: "just fork it if it matches"), made standalone with runtime pieces ported from Arroyo (§5); RisingWave as a donor |
+| Q1432 | Where does the code live, on which DataFusion? | **In the fork's `native/` workspace on DataFusion 54.1 and Arrow 58.4**, no DataFusion fork; the product integration in the Loams repository |
 | Q1433 | The oracle version: 2.2.1 or 2.3.0? | **2.2.1**, moving with D1931's pin |
 | Q1434 | DataStream: embedded JVM, Rust API, or out? | **Out until FC3; then both** the embedded JVM operator host and a Rust DataStream API |
 | Q1435 | A JVM planner sidecar as a fidelity fallback in production? | **No**: Flink's planner only in tests and in the client jar |
@@ -486,8 +501,8 @@ Recorded in the decision log. The owner answered all of them on 2026-10-29 with 
 | Q1437 | Flip §81's default backend to `loams` at FC3's gate? | **Yes, after the gate passes and the owner reviews it** |
 | Q1438 | Migrating state from Flink savepoints? | **Source offsets in FC2; SQL-operator state through a State Processor API exporter in FC3** |
 | Q1439 | Exactly-once into Iggy and the Kafka gateway? | **Iggy native by deterministic ids and deduplication in FC1 (verify); Kafka-gateway sinks at-least-once until the Iggy fork has transactions** |
-| Q1440 | The keyed state store? | **slatedb 0.17.0** (spike in FC0); fallback RocksDB through `rust-rocksdb` |
-| Q1441 | Upstream PRs or posts (Arroyo, DataFusion, sqlparser)? | **None**: hard fork; patches stay in Loams' forks unless the owner approves a post |
+| Q1440 | The keyed state store? | **RocksDB (ported from StreamFusion) in FC1**, with slatedb 0.17.0 spiked in FC0 and made the default in FC2 if it meets the bar |
+| Q1441 | Upstream PRs or posts (StreamFusion, Arroyo, DataFusion, sqlparser)? | **None**: hard fork; patches stay in Loams' forks unless the owner approves a post |
 | Q1442 | Publish the compatibility page? | **Yes, from beta**: per-layer pass counts against Flink 2.2, never "100 % Flink" |
 | Q1443 | When does FC0 start? | **Now** (owner, 2026-10-29) |
 | Q1444 | What is "the TPC-DS stream subset"? | **The TPC-DS queries Flink 2.2.1 runs in streaming mode over bounded sources**, text fetched at test time, results internal |
@@ -496,11 +511,14 @@ Recorded in the decision log. The owner answered all of them on 2026-10-29 with 
 | Q1447 | What is `ostrium-labs/risingwave` for? | **A frozen donor** for per-file ports; §81's managed RisingWave keeps upstream images |
 | Q1448 | Serve the Flink web dashboard? | **Yes in FC2**, built from the pinned tag, read-only behind the gateway |
 | Q1449 | Unaligned checkpoints and the changelog state backend? | **FC4, on demand** |
+| Q1450 | Run the fork's Flink plugin as an accelerator inside §81's `apache` backend? | **Not now**: revisit once the fork's operators pass FC1's gate standalone |
 
 ## 21. Sources (checked 2026-10-29)
 
 - **Owner**: requests of 2026-10-29 quoted above; "approve all defaults, start building asap" (via the coordinator).
 - **Loams**: §00, §26 (D212), §68 §6 (D1260, D1261, D1272, Q1036), §75, §81 and `loams-wt/.he0-shared/engines-81.md` (rulings R13, R21–R26), `crates/loams-flink`, `fabric/Cargo.toml` (DataFusion 55.2.0, Arrow 59, iceberg 0.10.1), the root `Cargo.toml` (DataFusion 54.1, Arrow 58.4), on `dev` at `2a0f4c914`.
+- **Research report**: `loams-wt/.he0-shared/stream-engine-options.md` (2026-10-29).
+- **StreamFusion**: github.com/datafusion-contrib/StreamFusion (GitHub API: licence, languages, releases, contributors, commits since 2026-07-29; `readme.md`, `native/Cargo.toml`, `native/engine/src`, `docs/backends/canonical-state.md`).
 - **Arroyo**: github.com/ArroyoSystems/arroyo (GitHub API: licence, languages, releases, commits since 2026-07-29; `Cargo.toml` and its `[patch.crates-io]`; `crates/`); the compare of `ArroyoSystems/arrow-datafusion` rev `0b17b6de…` against `apache/datafusion` 54.1.0.
 - **RisingWave**: github.com/risingwavelabs/risingwave and github.com/ostrium-labs/risingwave (GitHub API: licence, languages, releases).
 - **Fluss**: github.com/apache/fluss (licence, languages, v1.0.0).
