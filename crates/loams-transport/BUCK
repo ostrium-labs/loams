@@ -24,19 +24,24 @@ cargo_package(
     },
     tests = [
         {
+            "name": "ca",
+            "crate": "ca",
+            "root": "tests/ca.rs",
+        },
+        {
             "name": "mtls",
             "crate": "mtls",
             "root": "tests/mtls.rs",
         },
     ],
     deps = [
+        "//third-party/rust:aws-lc-rs",
+        "//third-party/rust:base64-0_23",
+        "//third-party/rust:rcgen",
         "//third-party/rust:rustls",
         "//third-party/rust:rustls-pki-types",
         "//third-party/rust:thiserror",
         "//third-party/rust:x509-parser",
-    ],
-    dev_deps = [
-        "//third-party/rust:rcgen",
     ],
     rustc_flags = [
         "-Funsafe_code",

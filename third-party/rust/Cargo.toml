@@ -21,6 +21,7 @@ arrow-flight = { package = "arrow-flight", version = "=58.4.0", default-features
 arrow-ipc = { package = "arrow-ipc", version = "=58.4.0", default-features = true, features = ["lz4", "lz4_flex", "zstd"] }
 arrow-schema = { package = "arrow-schema", version = "=58.4.0", default-features = false, features = ["bitflags", "canonical_extension_types", "ffi"] }
 async-trait = { package = "async-trait", version = "=0.1.92", default-features = false }
+aws-lc-rs = { package = "aws-lc-rs", version = "=1.18.1", default-features = true, features = ["alloc", "aws-lc-sys", "prebuilt-nasm", "ring-io", "ring-sig-verify"] }
 axum = { package = "axum", version = "=0.8.9", default-features = true, features = ["form", "http1", "http2", "json", "matched-path", "original-uri", "query", "tokio", "tower-log", "tracing"] }
 base64-0_22 = { package = "base64", version = "=0.22.1", default-features = true, features = ["alloc", "std"] }
 base64-0_23 = { package = "base64", version = "=0.23.1", default-features = true, features = ["alloc", "simd-unsafe", "std"] }
@@ -122,7 +123,7 @@ rand-0_10 = { package = "rand", version = "=0.10.3", default-features = true, fe
 rand-0_9 = { package = "rand", version = "=0.9.5", default-features = true, features = ["alloc", "os_rng", "small_rng", "std", "std_rng", "thread_rng"] }
 rand_chacha = { package = "rand_chacha", version = "=0.9.0", default-features = true, features = ["std"] }
 rand_core = { package = "rand_core", version = "=0.10.1", default-features = false }
-rcgen = { package = "rcgen", version = "=0.14.10", default-features = false, features = ["aws_lc_rs", "crypto", "pem", "ring"] }
+rcgen = { package = "rcgen", version = "=0.14.10", default-features = false, features = ["aws_lc_rs", "crypto", "pem", "ring", "x509-parser"] }
 redb = { package = "redb", version = "=4.4.0", default-features = true, features = ["std"] }
 regex = { package = "regex", version = "=1.13.1", default-features = true, features = ["perf", "perf-backtrack", "perf-cache", "perf-dfa", "perf-inline", "perf-literal", "perf-onepass", "std", "unicode", "unicode-age", "unicode-bool", "unicode-case", "unicode-gencat", "unicode-perl", "unicode-script", "unicode-segment"] }
 relative-path = { package = "relative-path", version = "=2.0.2", default-features = true, features = ["alloc", "std"] }
