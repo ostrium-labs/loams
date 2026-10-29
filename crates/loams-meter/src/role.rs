@@ -1,16 +1,15 @@
 //! The `meter` role put together (design §63 §5.2): what `loams` builds
 //! when its feature `meter` is on.
 //!
-//! This first part serves the public services (`CustomerService`,
+//! Part 1 serves the public services (`CustomerService`,
 //! `EntitlementService`, `PlanService`, `NotificationService`) on the main
-//! port, over records kept in a [`VersionedDoc`]. The counter owners, the
-//! lease service, reconciliation and the House schedule join it in the
-//! next part (ME1 role wiring, part 2); until then:
-//!
-//! - balances answer `UNAVAILABLE` with `meter_unavailable`
-//!   ([`CountersNotRunning`]) rather than a balance with no usage in it;
-//! - every meter that exists counts as used ([`NoHouseYet`]), so a plan
-//!   apply may never change a meter that might have events.
+//! port, over records kept in a [`VersionedDoc`]. Part 2 adds the counter
+//! owners ([`crate::run`]): balances come from their counters
+//! ([`crate::run::CounterValues`]), and the internal `LeaseService` grants
+//! from them. The House schedule and House-backed meter usage come next;
+//! until then every meter that exists counts as used ([`NoHouseYet`]), so a
+//! plan apply may never change a meter that might have events.
+//! [`CountersNotRunning`] is for hosts (and tests) that run no counters.
 
 use std::fmt;
 use std::sync::Arc;
@@ -24,6 +23,8 @@ use crate::authz::MeterAuthz;
 use crate::customers::{Clock, Customers};
 use crate::entitlements::{Entitlements, ValueSource};
 use crate::error::{MeterError, Result};
+use crate::house::{HouseSchedule, RoleHouse};
+use crate::queries::MeterQueries;
 use crate::notify::Notifier;
 use crate::notify::notifier::{Console, Mailer, NotificationStore};
 use crate::notify::webhook::Transport;
@@ -75,6 +76,9 @@ pub struct RoleParts {
     pub clock: Clock,
     pub values: Arc<dyn ValueSource>,
     pub usage: Arc<dyn MeterUsage>,
+    /// The House meter queries and the close schedule run against
+    /// ([`RoleHouse::Absent`]: none configured).
+    pub house: Arc<RoleHouse>,
 }
 
 impl fmt::Debug for RoleParts {
@@ -87,6 +91,8 @@ impl fmt::Debug for RoleParts {
 #[derive(Clone)]
 pub struct MeterRole {
     pub store: Arc<dyn MeterStore>,
+    pub house: Arc<RoleHouse>,
+    pub queries: MeterQueries<RoleHouse>,
     pub customers: Customers,
     pub entitlements: Entitlements,
     pub plans: Plans,
@@ -104,6 +110,8 @@ impl MeterRole {
         let store: Arc<dyn MeterStore> = Arc::new(DocStore::new(p.records));
         let authz = MeterAuthz::new(p.authorizer, BILLING_SERVICE);
         MeterRole {
+            queries: MeterQueries::new(store.clone(), authz.clone(), p.house.clone()),
+            house: p.house,
             customers: Customers::new(
                 store.clone(),
                 authz.clone(),
@@ -148,7 +156,25 @@ impl MeterRole {
             self.entitlements.clone(),
             self.plans.clone(),
         );
+        let router = crate::connect::meters::register(router, self.queries.clone());
         crate::connect::notifications::register(router, self.notifier.clone())
+    }
+
+    /// The OpenMeter-compatible HTTP routes (entitlement values and grants,
+    /// meter queries), for the role's host to mount behind its
+    /// authentication, which puts the [`crate::authz::Caller`] in each
+    /// request.
+    pub fn http_routes(&self) -> axum::Router {
+        crate::openmeter::router(self.entitlements.clone())
+            .merge(crate::house::query_router(self.queries.clone()))
+    }
+
+    /// The House schedule (schema, close job, period close), when a House
+    /// is configured.
+    pub fn house_schedule(&self, clock: Clock) -> Option<HouseSchedule<RoleHouse>> {
+        self.house
+            .is_configured()
+            .then(|| HouseSchedule::new(self.house.clone(), self.store.clone(), clock))
     }
 }
 
@@ -159,4 +185,5 @@ pub const PUBLIC_SERVICES: &[&str] = &[
     "loams.meter.v1.EntitlementService",
     "loams.meter.v1.PlanService",
     "loams.meter.v1.NotificationService",
+    "loams.meter.v1.MeterService",
 ];

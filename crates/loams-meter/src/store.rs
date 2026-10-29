@@ -140,6 +140,22 @@ pub trait MeterStore: Send + Sync + fmt::Debug {
     async fn feature(&self, key: &FeatureKey) -> Result<Option<Feature>>;
     async fn put_feature(&self, f: Feature) -> Result<()>;
     async fn list_features(&self) -> Result<Vec<Feature>>;
+
+    /// Every customer, entitlement, live grant, meter and feature in one
+    /// read: what the counter owners and the lease service cache (one load
+    /// of the document rather than one per entitlement).
+    async fn records(&self) -> Result<Records>;
+}
+
+/// The records the meter's runtime caches ([`MeterStore::records`]).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Records {
+    pub customers: Vec<Customer>,
+    pub entitlements: Vec<Entitlement>,
+    /// Grants that are not voided.
+    pub grants: Vec<Grant>,
+    pub meters: Vec<Meter>,
+    pub features: Vec<Feature>,
 }
 
 /// [`MeterStore`] in memory.
@@ -661,6 +677,21 @@ impl Inner {
     fn list_features(&mut self) -> Result<Vec<Feature>> {
         Ok(self.features.values().cloned().collect())
     }
+
+    fn records(&mut self) -> Result<Records> {
+        Ok(Records {
+            customers: self.customers.values().cloned().collect(),
+            entitlements: self.entitlements.values().cloned().collect(),
+            grants: self
+                .grants
+                .values()
+                .filter(|g| g.voided_at.is_none())
+                .cloned()
+                .collect(),
+            meters: self.meters.values().cloned().collect(),
+            features: self.features.values().cloned().collect(),
+        })
+    }
 }
 
 #[async_trait]
@@ -770,6 +801,9 @@ impl MeterStore for MemStore {
     }
     async fn list_features(&self) -> Result<Vec<Feature>> {
         self.lock().list_features()
+    }
+    async fn records(&self) -> Result<Records> {
+        self.lock().records()
     }
 }
 
@@ -884,5 +918,8 @@ impl MeterStore for DocStore {
     }
     async fn list_features(&self) -> Result<Vec<Feature>> {
         self.read(|s| s.list_features()).await
+    }
+    async fn records(&self) -> Result<Records> {
+        self.read(|s| s.records()).await
     }
 }

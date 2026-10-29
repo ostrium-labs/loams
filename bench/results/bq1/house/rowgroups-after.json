@@ -1,0 +1,78 @@
+{
+ "label": "rowgroups-after",
+ "meta": {
+  "client_cores": "6-11",
+  "commit": "575d1ab1c",
+  "load": "load kv: 1.41 s; hits: 12.38 s kv\t1000000 hits\t5000000 ",
+  "server_cores": "0-5",
+  "workers": "default (cores/2)"
+ },
+ "results": {
+  "http_agg_c1": {
+   "errors": {
+    "aborted due to deadline": 1
+   },
+   "ok": 211,
+   "p50_ms": 42.459,
+   "p99_9_ms": 149.312,
+   "p99_ms": 122.608,
+   "qps": 21.2,
+   "total": 211
+  },
+  "http_agg_c8": {
+   "errors": {
+    "aborted due to deadline": 8
+   },
+   "ok": 173,
+   "p50_ms": 80.939,
+   "p99_9_ms": 2209.906,
+   "p99_ms": 1946.548,
+   "qps": 53.8,
+   "total": 548
+  },
+  "http_point_c1": {
+   "errors": {
+    "aborted due to deadline": 1
+   },
+   "ok": 231,
+   "p50_ms": 39.541,
+   "p99_9_ms": 90.645,
+   "p99_ms": 89.268,
+   "qps": 23.2,
+   "total": 231
+  },
+  "http_point_c8": {
+   "errors": {
+    "aborted due to deadline": 8
+   },
+   "ok": 378,
+   "p50_ms": 133.66,
+   "p99_9_ms": 3207.08,
+   "p99_ms": 1433.596,
+   "qps": 38.4,
+   "total": 378
+  },
+  "native_agg_c1": {
+   "hosts": 1,
+   "p50_ms": 23.0,
+   "p99_9_ms": 68.0,
+   "p99_ms": 65.0,
+   "qps": 19.9,
+   "queries": 212
+  },
+  "native_agg_c8": {
+   "error": "Code: 210. DB::Exception: Received from 127.0.0.1:29000. DB::Exception: a House worker did not start: it failed to boot: Code: 0. DB::Exception: chdb_connect refused the "
+  },
+  "native_point_c1": {
+   "hosts": 1,
+   "p50_ms": 20.0,
+   "p99_9_ms": 79.0,
+   "p99_ms": 64.0,
+   "qps": 23.4,
+   "queries": 235
+  },
+  "native_point_c8": {
+   "error": "Code: 210. DB::Exception: Received from 127.0.0.1:29000. DB::Exception: a House worker did not start: it failed to boot: Code: 0. DB::Exception: chdb_connect refused the "
+  }
+ }
+}
