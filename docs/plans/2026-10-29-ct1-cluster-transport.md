@@ -250,4 +250,5 @@ Effort: 2 days.
 
 | Task | File | Summary |
 |---|---|---|
-| — | — | None yet |
+| 0 | [ct1-rulings/t0.md](ct1-rulings/t0.md) | Pins (quinn 0.11.12 with aws-lc-rs, h3 0.0.8, h3-quinn 0.0.10); h3 has had no release since 2025-05, so watch for #360 and #365; connectrpc serves through `tower::Service`; TiKV and PD authorize by CN |
+| 1 | [ct1-rulings/t1.md](ct1-rulings/t1.md) | Inventory audit: every listener and client is classed; new hops H22–H27 (sqlgate to TiDB, the pgdog-sync sidecar, house-cache, the meter host socket, Live workers, Cloud admin) |
