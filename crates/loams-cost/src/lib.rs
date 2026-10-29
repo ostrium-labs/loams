@@ -17,6 +17,8 @@
 //! | [`inputs`] | `costs.yaml`: assets, prices, FX, mapping, engine and class rules, options; immutable versions |
 //! | [`amortise`] | Straight-line amortisation and monthly costs per day, split over kinds; declared capacity |
 //! | [`import`] | Bill import: FOCUS 1.0–1.4, AWS CUR 2.0 and legacy CUR, generic CSV; mapping rules; day splitting; unmapped report |
+//! | [`report`] | Reports by dimension and period, unit costs ($ per 1M ops, GB-month, job, core-hour), sample rules, fully loaded columns, unit economics, trend markers |
+//! | [`pipeline`] | Inputs → asset, bill and price sources → allocation, with the input digest |
 //! | [`prices`] | The price table: prices for pool-days with no asset or bill, and reference costs |
 
 pub mod allocate;
@@ -26,7 +28,9 @@ pub mod import;
 pub mod inputs;
 pub mod model;
 pub mod money;
+pub mod pipeline;
 pub mod prices;
+pub mod report;
 pub mod trace;
 
 pub use allocate::{
