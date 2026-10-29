@@ -260,7 +260,7 @@ impl pb::NotificationService for MeterAbsent {
 }
 
 #[cfg(feature = "meter")]
-pub use served::{build, caller};
+pub use served::{MeterRuntime, build, caller};
 
 #[cfg(feature = "meter")]
 mod served {
@@ -274,9 +274,17 @@ mod served {
     use loams_meter::error::{MeterError, Result as MeterResult};
     use loams_meter::notify::notifier::DocNotifications;
     use loams_meter::notify::webhook::HttpTransport;
-    use loams_meter::role::{CountersNotRunning, MeterRole, NoHouseYet, RoleParts};
-    use loams_meter::store::VersionedDoc;
-    use loams_meter_core::UtcNanos;
+    use loams_meter::lease_service::LeaseServer;
+    use loams_meter::owner::{
+        CONSUMER, METER_PARTITIONS, MetaLeases, OwnerError, PartitionReader,
+    };
+    use loams_meter::role::{MeterRole, NoHouseYet, RoleParts};
+    use loams_meter::run::{
+        CLUSTER_SERVICE, CatalogInputs, CounterRuntime, CounterValues, Counters, RuntimeParts,
+        StreamOnly,
+    };
+    use loams_meter::store::{DocStore, MeterStore, VersionedDoc};
+    use loams_meter_core::{AllocatorConfig, Event, Origin, UtcNanos};
     use loams_proto::loams::admin::v1 as admin;
     use loams_store::Store;
 
@@ -377,27 +385,257 @@ mod served {
         UtcNanos(i64::try_from(ns).unwrap_or(i64::MAX))
     }
 
-    /// The meter role of this node, over the metastore and the bucket.
+    /// `_system/_meter` read in-process by the counter owners (§63 §11.3).
+    /// Records that fail the usage profile are skipped (and logged); a read
+    /// below the stream's retention starts at its log start, since what
+    /// retention dropped is gone.
+    struct MeterStream {
+        meta: Arc<dyn MetaStore>,
+        reader: loams_log::LogReader,
+        id: tokio::sync::OnceCell<loams_common::StreamId>,
+        missing_logged: std::sync::atomic::AtomicBool,
+    }
+
+    impl std::fmt::Debug for MeterStream {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("MeterStream").finish_non_exhaustive()
+        }
+    }
+
+    /// Bytes one read asks for.
+    const READ_BYTES: usize = 1024 * 1024;
+
+    impl MeterStream {
+        async fn id(&self) -> Result<Option<loams_common::StreamId>, OwnerError> {
+            if let Some(id) = self.id.get() {
+                return Ok(Some(*id));
+            }
+            use loams_common::meta::{Consistency, METER_STREAM, SYSTEM_NAMESPACE};
+            let stream_err = |e: loams_common::meta::MetaError| OwnerError::Stream(e.to_string());
+            let Some(ns) = self
+                .meta
+                .namespace_by_name(Consistency::Local, SYSTEM_NAMESPACE)
+                .await
+                .map_err(stream_err)?
+            else {
+                return Ok(None);
+            };
+            let Some(stream) = self
+                .meta
+                .stream_by_name(Consistency::Local, ns.id, METER_STREAM)
+                .await
+                .map_err(stream_err)?
+            else {
+                return Ok(None);
+            };
+            let _ = self.id.set(stream.id);
+            Ok(Some(stream.id))
+        }
+    }
+
+    #[async_trait]
+    impl PartitionReader for MeterStream {
+        async fn read(
+            &self,
+            partition: u32,
+            from: u64,
+            max: usize,
+        ) -> Result<Vec<(u64, Event)>, OwnerError> {
+            use loams_cloudevents::record::{RecordContext, from_record};
+            use loams_common::meta::{METER_STREAM, SYSTEM_NAMESPACE};
+            let Some(id) = self.id().await? else {
+                if !self
+                    .missing_logged
+                    .swap(true, std::sync::atomic::Ordering::Relaxed)
+                {
+                    tracing::warn!(
+                        "the meter stream _system/_meter does not exist yet \
+                         (`loams migrate run` creates it); nothing is counted"
+                    );
+                }
+                return Ok(Vec::new());
+            };
+            let mut offset = from;
+            loop {
+                let request = loams_log::FetchRequest {
+                    stream: id,
+                    partition,
+                    offset,
+                    max_bytes: READ_BYTES,
+                    max_wait: std::time::Duration::ZERO,
+                };
+                let response = match self.reader.fetch(request).await {
+                    Ok(r) => r,
+                    Err(loams_log::LogError::OffsetOutOfRange {
+                        log_start_offset, ..
+                    }) if offset < log_start_offset => {
+                        tracing::warn!(
+                            partition,
+                            from = offset,
+                            log_start_offset,
+                            "meter stream records past retention were never counted"
+                        );
+                        offset = log_start_offset;
+                        continue;
+                    }
+                    Err(e) => return Err(OwnerError::Stream(e.to_string())),
+                };
+                if response.records.is_empty() {
+                    return Ok(Vec::new());
+                }
+                let mut out = Vec::new();
+                for r in &response.records {
+                    let ce = from_record(
+                        &r.record,
+                        RecordContext {
+                            namespace: SYSTEM_NAMESPACE,
+                            stream: METER_STREAM,
+                            stream_id: id.0,
+                            partition,
+                            offset: r.offset,
+                        },
+                    );
+                    match Event::from_cloudevent(&ce, Origin::Service) {
+                        Ok(e) => out.push((r.offset, e)),
+                        Err(err) => tracing::warn!(
+                            partition,
+                            offset = r.offset,
+                            %err,
+                            "a meter stream record is not a usage event; skipped"
+                        ),
+                    }
+                    if out.len() >= max {
+                        break;
+                    }
+                }
+                // A batch of records none of which counts: read on, or the
+                // owner would read the same batch again forever.
+                if out.is_empty() {
+                    offset = response.next_offset;
+                    continue;
+                }
+                return Ok(out);
+            }
+        }
+    }
+
+    /// This node's meter: the role's services, the lease server and the
+    /// counter runtime not yet started.
+    pub struct MeterNode {
+        pub role: Arc<MeterRole>,
+        pub leases: Arc<LeaseServer>,
+        runtime: CounterRuntime<MetaLeases>,
+    }
+
+    impl std::fmt::Debug for MeterNode {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("MeterNode").finish_non_exhaustive()
+        }
+    }
+
+    /// The running counter owners; [`MeterRuntime::stop`] gives the
+    /// partitions back.
+    #[derive(Debug)]
+    pub struct MeterRuntime {
+        stop: Arc<tokio::sync::Notify>,
+        task: tokio::task::JoinHandle<()>,
+    }
+
+    impl MeterRuntime {
+        pub async fn stop(self) {
+            self.stop.notify_one();
+            if let Err(err) = self.task.await {
+                tracing::warn!(%err, "the meter's counter runtime ended badly");
+            }
+        }
+    }
+
+    impl MeterNode {
+        /// Starts the counter runtime; answers the role, the runtime's handle
+        /// and the internal routes (`LeaseService`) for the cluster listener.
+        pub fn start(self) -> (Arc<MeterRole>, MeterRuntime, axum::Router) {
+            let stop = Arc::new(tokio::sync::Notify::new());
+            let task = tokio::spawn(self.runtime.run(stop.clone()));
+            (
+                self.role,
+                MeterRuntime { stop, task },
+                internal_routes(self.leases),
+            )
+        }
+    }
+
+    /// `loams.meter.internal.v1.LeaseService` for the cluster listener. A
+    /// caller there is a product role on another node: the cluster's service
+    /// identity ([`CLUSTER_SERVICE`]), admitted by the network as every route
+    /// of that listener is in M1.
+    fn internal_routes(leases: Arc<LeaseServer>) -> axum::Router {
+        let rpc = loams_meter::connect::register_internal(connectrpc::Router::new(), leases);
+        let paths: Vec<String> = rpc.methods().map(|path| format!("/{path}")).collect();
+        let service = rpc.into_axum_service();
+        let mut router = axum::Router::new();
+        for path in paths {
+            router = router.route_service(&path, service.clone());
+        }
+        router.layer(axum::middleware::from_fn(
+            |mut request: axum::extract::Request, next: axum::middleware::Next| async move {
+                request
+                    .extensions_mut()
+                    .insert(Caller::Service(CLUSTER_SERVICE.to_string()));
+                next.run(request).await
+            },
+        ))
+    }
+
+    /// The meter of this node, over the metastore and the bucket: the
+    /// role's services, and the counter owners over `_system/_meter`.
     pub fn build(
         meta: Arc<dyn MetaStore>,
         store: Store,
+        reader: loams_log::LogReader,
+        node_id: u64,
         principals: &Principals,
-    ) -> Result<Arc<MeterRole>, String> {
-        let records = MeterDoc(MetaDirectoryStore::with_key(
+    ) -> Result<MeterNode, String> {
+        let records: Arc<dyn VersionedDoc> = Arc::new(MeterDoc(MetaDirectoryStore::with_key(
             meta.clone(),
             store.clone(),
             RECORDS_POINTER,
             RECORDS_PREFIX,
-        ));
+        )));
         let notes = MeterDoc(MetaDirectoryStore::with_key(
-            meta,
+            meta.clone(),
             store,
             NOTIFY_POINTER,
             NOTIFY_PREFIX,
         ));
         let transport = HttpTransport::new().map_err(|e| e.to_string())?;
-        Ok(Arc::new(MeterRole::new(RoleParts {
-            records: Arc::new(records),
+        let clock: loams_meter::customers::Clock = Arc::new(now);
+        let counters = Counters::new(METER_PARTITIONS);
+        let leases = Arc::new(LeaseServer::new(
+            METER_PARTITIONS,
+            AllocatorConfig::default(),
+            Arc::new(CatalogInputs(counters.clone())),
+            vec![CLUSTER_SERVICE.to_string()],
+            clock.clone(),
+        ));
+        let runtime = CounterRuntime::new(RuntimeParts {
+            leases: MetaLeases(meta.clone()),
+            me: format!("{CONSUMER}-{node_id}-{}", ulid::Ulid::generate()),
+            reader: Arc::new(MeterStream {
+                meta,
+                reader,
+                id: tokio::sync::OnceCell::new(),
+                missing_logged: std::sync::atomic::AtomicBool::new(false),
+            }),
+            // The House pipe's cursor is not readable over SQL (D2203): the
+            // counters rebuild from the stream alone.
+            house: Arc::new(StreamOnly),
+            store: Arc::new(DocStore::new(records.clone())) as Arc<dyn MeterStore>,
+            counters: counters.clone(),
+            lease_server: leases.clone(),
+            clock: clock.clone(),
+        });
+        let role = Arc::new(MeterRole::new(RoleParts {
+            records,
             notifications: Arc::new(DocNotifications::new(Arc::new(notes))),
             authorizer: principals.authz.clone(),
             audit: Arc::new(OrgAudit(principals.directory.clone())),
@@ -412,10 +650,15 @@ mod served {
                     .unwrap_or_else(|e| panic!("OS randomness unavailable: {e}"));
                 b
             }),
-            clock: Arc::new(now),
-            values: Arc::new(CountersNotRunning),
+            clock,
+            values: Arc::new(CounterValues(counters)),
             usage: Arc::new(NoHouseYet),
-        })))
+        }));
+        Ok(MeterNode {
+            role,
+            leases,
+            runtime,
+        })
     }
 
     /// Gives a `/loams.meter.v1.*` call its [`Caller`]: the operator's own

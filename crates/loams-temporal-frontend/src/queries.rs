@@ -16,10 +16,11 @@ use tokio::sync::oneshot;
 pub enum QueryAnswer {
     /// The query's result.
     Answered(Option<Payloads>),
-    /// The worker's error message and failure.
+    /// The worker's error message and failure (boxed: a `Failure` is large,
+    /// and most answers are `Answered`).
     Failed(
         String,
-        Option<loams_temporal_proto::temporal::api::failure::v1::Failure>,
+        Option<Box<loams_temporal_proto::temporal::api::failure::v1::Failure>>,
     ),
 }
 
