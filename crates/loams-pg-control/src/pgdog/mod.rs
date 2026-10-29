@@ -155,6 +155,7 @@ mod tests {
             created_at_ms: 0,
             parent_time_ms: None,
             updated_at_ms: 0,
+            pg_version: 17,
         }
     }
 

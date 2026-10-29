@@ -69,6 +69,8 @@ pub struct CreateBranch {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BranchView {
     pub branch: Versioned<BranchRec>,
+    /// The branch's Postgres major (`Branch.pg_version`).
+    pub pg_version: u32,
     /// Whether it is the project's default branch.
     pub is_default: bool,
     /// From `loams-wal`, on `GetBranch` of a `ready` branch, when it
@@ -157,6 +159,7 @@ pub(crate) fn live(state: BranchState) -> bool {
 pub(crate) fn view(branch: Versioned<BranchRec>, project: &ProjectRec) -> BranchView {
     BranchView {
         is_default: project.default_branch_id.as_deref() == Some(branch.record.id.as_str()),
+        pg_version: branch.record.major(project),
         branch,
         wal: None,
         logical_size_bytes: None,
@@ -409,6 +412,8 @@ impl<N: NeonRead> PgService<N> {
                     _ => None,
                 },
                 updated_at_ms: now,
+                // A branch has its parent's major (a timeline never changes major).
+                pg_version: parent.record.major(&project.record),
             };
             let operation = pending(
                 OperationKind::BranchCreate,
@@ -483,6 +488,7 @@ impl<N: NeonRead> PgService<N> {
             let mutation = Mutation::new(batch, move |out| BranchCreated {
                 operation: operation.clone(),
                 branch: BranchView {
+                    pg_version: branch.pg_version,
                     branch: Versioned {
                         record: branch.clone(),
                         version: out[branch_at].unwrap_or_default(),

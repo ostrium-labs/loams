@@ -85,6 +85,38 @@ describe('branch tree', () => {
 });
 
 describe('control plane', () => {
+  it('labels a beta Postgres major and creates with it only after the opt-in', async () => {
+    const { client } = mount();
+    fireEvent.click(await screen.findByRole('button', { name: /New project/ }));
+    fireEvent.change(await screen.findByLabelText('Project name'), { target: { value: 'next' } });
+    const select = (await screen.findByLabelText('Postgres version')) as HTMLSelectElement;
+    await waitFor(() =>
+      expect(within(select).getByRole('option', { name: '18 (beta)' })).toBeTruthy(),
+    );
+    // The maintenance major is not offered to a new project; the default is preselected.
+    expect(select.value).toBe('17');
+    fireEvent.change(select, { target: { value: '18' } });
+    const create = screen.getByRole('button', { name: 'Create project' }) as HTMLButtonElement;
+    expect(create.disabled).toBe(true);
+    fireEvent.click(screen.getByLabelText('Use Postgres 18, which is in beta'));
+    expect(create.disabled).toBe(false);
+    fireEvent.click(create);
+    await waitFor(async () =>
+      expect(
+        (await client.listProjects('default')).some((p) => p.name === 'next' && p.pgVersion === 18),
+      ).toBe(true),
+    );
+  });
+
+  it('refuses a beta major without the opt-in in the mock as the server does', async () => {
+    const client = createMockPgControl({ password: () => TEST_PASSWORD });
+    await expect(
+      client.createProject('default', { name: 'nope', pgVersion: 18 }),
+    ).rejects.toMatchObject({
+      reason: 'beta_major_requires_opt_in',
+    });
+  });
+
   it('lists the project, its branches and says it runs on sample data', async () => {
     mount();
     expect(await screen.findByText('Sample data')).toBeTruthy();
