@@ -69,6 +69,15 @@ message Lease {
   // Why not, when `has_access` is false: `entitlement_exhausted`,
   // `spend_cap_reached`, `not_entitled`, `payment_method_required`.
   string refusal_reason = 10;
+  // The lease only counts and never refuses locally: a soft limit, or
+  // overage under the spend cap (D2209).
+  bool counting = 11;
+  // Usage under this lease is overage.
+  bool overage = 12;
+  // What the gate may spend for the subject when the owner cannot be
+  // reached and this lease has expired (§63 §13's "when unreachable" row);
+  // "0" fails closed.
+  string fail_open = 13;
 }
 
 message AcquireLeaseResponse {

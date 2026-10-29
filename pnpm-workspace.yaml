@@ -18,15 +18,15 @@ packages:
 # Packages depend on these as `"name": "catalog:"`. Bump here, and only to a
 # release at least 14 days old.
 catalog:
-  react: 19.3.0
-  react-dom: 19.3.0
+  react: 19.3.1
+  react-dom: 19.3.1
   '@types/react': 19.3.0
   '@types/react-dom': 19.3.0
-  lucide-react: 1.56.0
+  lucide-react: 1.57.0
   '@base-ui/react': 1.9.0
-  '@tanstack/react-query': 5.104.2
+  '@tanstack/react-query': 5.104.3
   '@tanstack/react-table': 9.3.1
-  '@tanstack/react-virtual': 3.14.18
+  '@tanstack/react-virtual': 3.14.19
   '@connectrpc/connect-query': 2.3.1
   zod: 4.6.7
   echarts: 6.1.0
@@ -47,18 +47,18 @@ catalog:
   zustand: 5.0.15
   # Studio's composer (SD1 Task 19): Tiptap core and the free extensions, MIT,
   # 2026-09-04, the version T3 Code uses. Never @tiptap-pro/* or @tiptap-cloud/*.
-  '@tiptap/core': 3.31.4
-  '@tiptap/pm': 3.31.4
-  '@tiptap/react': 3.31.4
-  '@tiptap/starter-kit': 3.31.4
-  '@tiptap/extension-blockquote': 3.31.4
-  '@tiptap/extension-code': 3.31.4
-  '@tiptap/extension-code-block': 3.31.4
-  '@tiptap/extension-heading': 3.31.4
-  '@tiptap/extension-horizontal-rule': 3.31.4
-  '@tiptap/extension-list': 3.31.4
-  '@tiptap/extension-task-item': 3.31.4
-  '@tiptap/extension-task-list': 3.31.4
+  '@tiptap/core': 3.32.0
+  '@tiptap/pm': 3.32.0
+  '@tiptap/react': 3.32.0
+  '@tiptap/starter-kit': 3.32.0
+  '@tiptap/extension-blockquote': 3.32.0
+  '@tiptap/extension-code': 3.32.0
+  '@tiptap/extension-code-block': 3.32.0
+  '@tiptap/extension-heading': 3.32.0
+  '@tiptap/extension-horizontal-rule': 3.32.0
+  '@tiptap/extension-list': 3.32.0
+  '@tiptap/extension-task-item': 3.32.0
+  '@tiptap/extension-task-list': 3.32.0
   # SD1 Task 18: Studio's chat markdown and code highlighting (MIT; npm licence and
   # publish time checked 2026-10-14, each release at least 14 days old). No rehype-raw (D919).
   react-markdown: 10.1.0
@@ -69,7 +69,7 @@ catalog:
   shiki: 4.5.0
   # Playwright for the console's and the desktop's end-to-end tests (SD1 Task 29):
   # Apache-2.0, published 2026-09-04: the version the desktop smoke already pinned.
-  '@playwright/test': 1.64.0
+  '@playwright/test': 1.64.1
   # The shared SQL editor in @loams/ui (UX polish before 0.1.0): CodeMirror 6, MIT; npm
   # licence and publish time checked 2026-10-18, each release at least 14 days old.
   '@codemirror/autocomplete': 6.20.3

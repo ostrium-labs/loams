@@ -39,6 +39,7 @@ impl LeaseInputs for Inputs {
             min_chunk: Amount::from_units(1),
             policy: LeasePolicy::HardLimit,
             counted: Amount::ZERO,
+            fail_open: Amount::ZERO,
         }))
     }
 }

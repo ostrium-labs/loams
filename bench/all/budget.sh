@@ -10,7 +10,9 @@
 # and load, so they share the two low-power cores in pairs.
 
 # Servers that engines.sh starts.
-: "${TIKV_CORES:=0}"      # TiKV: the sql engine's store, and the kv engine's TiKV op
+: "${TIKV_CORES:=0}"      # TiKV: the sql engine's store
+: "${KV_TIKV_CORES:=9}"   # TiKV of the kv engine's own cluster
+: "${KV_PD_CORES:=9}"     # its PD shares the store's core
 : "${TIDB_CORES:=1}"      # TiDB (keyspace mode)
 : "${PD_CORES:=1}"        # PD shares TiDB's core: it only hands out timestamps here
 : "${PG_CORES:=2}"        # Postgres 17.10 (stock compute)
@@ -22,9 +24,9 @@
 # Load generators.
 : "${SQL_LOAD:=7}"        # MySQL wire to TiDB, and the kv engine's TiKV op
 : "${PG_LOAD:=8}"
-: "${HOUSE_LOAD:=9}"
+: "${HOUSE_LOAD:=11}"     # about 20 QPS of clickhouse benchmark: little CPU
 : "${IGGY_LOAD:=10}"
-: "${DURABLE_LOAD:=11}"   # Resonate and the gateway share this core
+: "${DURABLE_LOAD:=11}"   # Resonate, the gateway and the House share this core
 : "${GATEWAY_LOAD:=11}"
 # In-process engines (server and load in one process).
 : "${KV_CORES:=12}"

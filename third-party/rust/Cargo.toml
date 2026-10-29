@@ -63,10 +63,10 @@ gix-pack = { package = "gix-pack", version = "=0.75.0", default-features = false
 gix-validate = { package = "gix-validate", version = "=0.12.0", default-features = false }
 gix-worktree = { package = "gix-worktree", version = "=0.57.0", default-features = false, features = ["attributes"] }
 gix-zlib = { package = "gix-zlib", version = "=0.2.0", default-features = false }
-grafeo = { package = "grafeo", version = "=0.5.43", git = "https://github.com/ostrium-labs/grafeo", rev = "92bc59a28ed8b38dbb43659b4a90271770c58956", default-features = false, features = ["algos", "cdc", "gql", "grafeo-file", "metrics", "parallel", "regex", "spill", "tracing", "wal"] }
-grafeo-adapters = { package = "grafeo-adapters", version = "=0.5.43", git = "https://github.com/ostrium-labs/grafeo", rev = "92bc59a28ed8b38dbb43659b4a90271770c58956", default-features = false, features = ["algos", "gql", "parallel", "rayon", "tracing"] }
-grafeo-common = { package = "grafeo-common", version = "=0.5.43", git = "https://github.com/ostrium-labs/grafeo", rev = "92bc59a28ed8b38dbb43659b4a90271770c58956", default-features = true, features = ["tracing"] }
-grafeo-engine = { package = "grafeo-engine", version = "=0.5.43", git = "https://github.com/ostrium-labs/grafeo", rev = "92bc59a28ed8b38dbb43659b4a90271770c58956", default-features = false, features = ["algos", "cdc", "crossbeam", "gql", "grafeo-file", "lpg", "metrics", "parallel", "rayon", "regex", "spill", "tracing", "wal"] }
+grafeo = { package = "grafeo", version = "=0.5.43", git = "https://github.com/ostrium-labs/grafeo", rev = "09a495dd64ee621fe0bae5c479465f6c065cf781", default-features = false, features = ["algos", "cdc", "gql", "grafeo-file", "metrics", "parallel", "regex", "spill", "tracing", "wal"] }
+grafeo-adapters = { package = "grafeo-adapters", version = "=0.5.43", git = "https://github.com/ostrium-labs/grafeo", rev = "09a495dd64ee621fe0bae5c479465f6c065cf781", default-features = false, features = ["algos", "gql", "parallel", "rayon", "tracing"] }
+grafeo-common = { package = "grafeo-common", version = "=0.5.43", git = "https://github.com/ostrium-labs/grafeo", rev = "09a495dd64ee621fe0bae5c479465f6c065cf781", default-features = true, features = ["tracing"] }
+grafeo-engine = { package = "grafeo-engine", version = "=0.5.43", git = "https://github.com/ostrium-labs/grafeo", rev = "09a495dd64ee621fe0bae5c479465f6c065cf781", default-features = false, features = ["algos", "cdc", "crossbeam", "gql", "grafeo-file", "lpg", "metrics", "parallel", "rayon", "regex", "spill", "tracing", "wal"] }
 grep-matcher = { package = "grep-matcher", version = "=0.1.9", default-features = false }
 grep-regex = { package = "grep-regex", version = "=0.1.14", default-features = false }
 grep-searcher = { package = "grep-searcher", version = "=0.1.17", default-features = false }
