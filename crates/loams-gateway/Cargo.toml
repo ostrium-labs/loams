@@ -37,8 +37,10 @@ loams-spark = { path = "../loams-spark", optional = true }
 loams-resp = { path = "../loams-resp", optional = true }
 hex.workspace = true
 http-body-util = "0.1"
-hyper = { version = "1", features = ["server", "http1"] }
-hyper-util = { version = "0.1", features = ["tokio"] }
+# HTTP/1.1 with pipelining and HTTP/2 (h2c, many streams per connection) on
+# the HTTP listeners (BQ1-gw: "pipelining in every point").
+hyper = { version = "1", features = ["server", "http1", "http2"] }
+hyper-util = { version = "0.1", features = ["tokio", "server-auto"] }
 # The RisingWave module's MD5 login to RisingWave (same digest 0.11 as sha2).
 md-5 = "0.11"
 # The RisingWave module's self-signed certificate on local stacks.
