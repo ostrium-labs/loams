@@ -1358,9 +1358,14 @@ mod tests {
             RecordBatch::try_from_iter(vec![("a", Arc::new(Int64Array::from(vec![1, 2, 3])) as _)])
                 .unwrap();
         let s = Settings::resolve(&pairs(&[("max_result_rows", "2")])).unwrap();
-        assert_eq!(s.check_result(&[batch.clone()]).unwrap_err().code, 396);
+        assert_eq!(
+            s.check_result(std::slice::from_ref(&batch))
+                .unwrap_err()
+                .code,
+            396
+        );
         let s = Settings::resolve(&pairs(&[("max_result_rows", "3")])).unwrap();
-        assert!(s.check_result(&[batch.clone()]).is_ok());
+        assert!(s.check_result(std::slice::from_ref(&batch)).is_ok());
         let s = Settings::resolve(&pairs(&[("max_result_bytes", "1")])).unwrap();
         assert_eq!(s.check_result(&[batch]).unwrap_err().code, 396);
     }
