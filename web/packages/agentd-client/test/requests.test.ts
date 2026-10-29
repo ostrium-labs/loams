@@ -395,6 +395,7 @@ const REQUESTS: Request[] = [
     app: 'notes',
     commit: '0123456789abcdef0123456789abcdef01234567',
   }),
+  request('CloseChangeRequest', { chatId: 'chat-1', provider: 'forgejo', number: 7 }),
 ];
 
 const file = join(import.meta.dirname, 'requests.json');

@@ -2345,6 +2345,23 @@ pub fn all() -> Vec<Fixture> {
         },
     ));
     add(Fixture::new(
+        "CloseChangeRequestParams",
+        factory_loop::CloseChangeRequestParams {
+            chat_id: s("chat_01"),
+            provider: ChangeRequestProvider::Forgejo,
+            number: 7,
+        },
+    ));
+    add(Fixture::new(
+        "CloseChangeRequestReply",
+        factory_loop::CloseChangeRequestReply {
+            provider: ChangeRequestProvider::Forgejo,
+            number: 7,
+            repo: s("dev/comet"),
+            closed: true,
+        },
+    ));
+    add(Fixture::new(
         "DeployLiveAppParams",
         factory_loop::DeployLiveAppParams {
             chat_id: s("chat_01"),

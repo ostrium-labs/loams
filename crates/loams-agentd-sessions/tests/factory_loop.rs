@@ -316,6 +316,10 @@ fn forgejo(method: &str, path: &str) -> (u16, Value) {
             }
         }
         ("POST", "/api/v1/repos/dev/project/pulls/7/merge") => (200, json!({})),
+        // FT0 Task 10: the kill switch closes the run's pull request.
+        ("PATCH", "/api/v1/repos/dev/project/pulls/7") => {
+            (200, json!({"number": 7, "state": "closed"}))
+        }
         _ => (404, json!({"message": "not found"})),
     }
 }
@@ -564,4 +568,47 @@ async fn typed_approvals_survive_a_restart_and_need_a_word_kind() {
     );
     core.shutdown().await;
     drop(tmp);
+}
+
+/// FT0 Task 10 (D1432): a killed run's pull request is closed, and its
+/// branch stays, here and on the remote.
+#[tokio::test(flavor = "multi_thread")]
+async fn kill_keeps_branches() {
+    let (factory, seen) = forgejo_factory().await;
+    let path = factory.build_thread("build-9", "factory/run-9/1").await;
+    let head_sha = git(&path, &["rev-parse", "HEAD"]);
+    let bare = factory.tmp.path().join("remote.git");
+    git(
+        &path,
+        &["push", "-q", &bare.to_string_lossy(), "factory/run-9/1"],
+    );
+    let closed = factory
+        .call(
+            methods::CLOSE_CHANGE_REQUEST,
+            json!({"chatId": "build-9", "provider": "forgejo", "number": 7}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(closed["closed"], true);
+    assert_eq!(closed["repo"], "dev/project");
+    let calls: Vec<_> = seen
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|r| r.method == "PATCH")
+        .cloned()
+        .collect();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].path, "/api/v1/repos/dev/project/pulls/7");
+    assert_eq!(calls[0].body, json!({"state": "closed"}));
+    assert!(
+        !seen.lock().unwrap().iter().any(|r| r.method == "DELETE"),
+        "no branch is deleted"
+    );
+    assert_eq!(git(&bare, &["rev-parse", "factory/run-9/1"]), head_sha);
+    assert_eq!(
+        git(&factory.repo, &["rev-parse", "factory/run-9/1"]),
+        head_sha
+    );
+    factory.stop().await;
 }

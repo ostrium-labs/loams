@@ -11,8 +11,9 @@
 use std::path::{Path, PathBuf};
 
 use loams_agentd_proto::factory_loop::{
-    CheckLogReply, ChecksReply, CreateRunWorktreeParams, DEPLOY_APPROVAL_KIND, DeployLiveAppParams,
-    DeployLiveAppReply, GetApprovalParams, GetCheckLogParams, GetChecksParams, GetThreadDiffParams,
+    CheckLogReply, ChecksReply, CloseChangeRequestParams, CloseChangeRequestReply,
+    CreateRunWorktreeParams, DEPLOY_APPROVAL_KIND, DeployLiveAppParams, DeployLiveAppReply,
+    GetApprovalParams, GetCheckLogParams, GetChecksParams, GetThreadDiffParams,
     MERGE_APPROVAL_KIND, MergeChangeRequestParams, MergeChangeRequestReply,
     OpenChangeRequestParams, OpenChangeRequestReply, PostReviewCommentParams,
     RequestApprovalParams, TypedApproval,
@@ -394,5 +395,26 @@ impl EngineRpc {
             )
             .await
             .map_err(git_write_error)
+    }
+
+    /// `CloseChangeRequest` (FT0 Task 10): close the pull request on the
+    /// chat's remote; the branch stays.
+    pub(super) async fn close_change_request(
+        &self,
+        p: CloseChangeRequestParams,
+    ) -> Result<CloseChangeRequestReply, RpcError> {
+        let checkout = self.chat_checkout(&p.chat_id).await?;
+        let root = checkout.root().to_path_buf();
+        let remote = self.chat_remote(&root).await?;
+        self.change_request_creator
+            .close_change_request(&root, &remote, p.provider, p.number)
+            .await
+            .map_err(git_write_error)?;
+        Ok(CloseChangeRequestReply {
+            provider: p.provider,
+            number: p.number,
+            repo: repo_slug(&remote),
+            closed: true,
+        })
     }
 }

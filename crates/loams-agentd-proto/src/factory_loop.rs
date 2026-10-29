@@ -371,3 +371,25 @@ pub struct DeployLiveAppReply {
     /// this answer is that call's deployment, found again, not a new one.
     pub resumed: bool,
 }
+
+/// `CloseChangeRequest` (FT0 Task 10, D1432): close a run's pull request
+/// when the run is killed. The branch is kept, on the remote and here, so the
+/// work can be picked up again.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CloseChangeRequestParams {
+    /// The thread whose checkout's remote holds the pull request.
+    pub chat_id: String,
+    pub provider: ChangeRequestProvider,
+    pub number: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CloseChangeRequestReply {
+    pub provider: ChangeRequestProvider,
+    pub number: u64,
+    pub repo: String,
+    /// It is closed now (it may have been closed already).
+    pub closed: bool,
+}

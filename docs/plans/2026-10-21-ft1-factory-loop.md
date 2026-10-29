@@ -227,6 +227,13 @@ Phones (runs, approvals, kill); an opt-in A2A edge for Loams Bot; non-Mastra mar
 - **FT0-8-5, idempotent by approval.** Every factory deployment's message carries `factory deploy <approval id>`. A call whose approval this chat already spent for the same payload (`Approvals::use_typed_or_resume`) looks for that deployment in `ListDeployments` and answers it (settling it if it is still the active one) instead of deploying again; when Live has nothing of it (the earlier call died before reaching Live), the call deploys, once. Deploys are serialised per daemon, so a retry that arrives during the first call waits for it.
 - **FT0-8-6, the deploy record** (D1167's fields, until `loams.deploy.v1` exists) is `DeployRecord`: target, app, environment (`live`), commit, deployment and previous deployment, artifact digest (the bundle's SHA-256), state, health, approval id.
 
+### Task 10 (2026-10-27)
+
+- **FT0-10-1, the host half is built; the workflow half waits for Task 7.** `agents/factory/src/kill.ts` has `kill(scope)` for a run, an agent or a project. For each run it calls `cancelRun(run)`, `interrupt_chat` on each of the run's threads, and `close_change_request` on its open pull request, then records `killed`. Each step is tried even when another fails, and the failures are reported. `cancelRun` and the run index are injected: Task 7 wires them to `factory.run` on Resonate, because `@loams/mastra-resonate` is not on npm yet. `kill_interrupts_threads_and_cancels_workflow` runs against a fake engine until then.
+- **FT0-10-2, `CloseChangeRequest`** is a new `mcp`-role method and the tool `close_change_request` (risk write). Forgejo gets `PATCH …/pulls/{n}` with `state: closed`; GitHub gets `gh pr close`, never with `--delete-branch`. An already-closed pull request is not an error. `kill_keeps_branches` checks agentd's side against the fake Forgejo (no DELETE, the branch is still on the remote and here) and the host's side (it calls only `interrupt_chat` and `close_change_request`).
+- **FT0-10-3, confirmation.** Loams Bot gets the tool `factory_kill` with `requireApproval: true`, so the person confirms in Studio's approvals queue. `/kill [run|agent|project] <id>` (`parseKillCommand`; a bare `/kill` means the current run) goes through the same tool. Kill is gated by an approval, like merge and deploy, rather than by a separate dialog.
+- **FT0-10-4, blocked agents.** Killing an agent blocks it (`KillList`), and `assertAgentsUsable` refuses a new run that names it until a person lifts the block. FT0's list is in memory (`memoryKillList`); Task 7 keeps it with the workflow state in Postgres.
+
 ### Owner approvals (2026-10-24)
 
 The owner approved the pending decisions below on 2026-10-24 ("approve all with your recommendations").

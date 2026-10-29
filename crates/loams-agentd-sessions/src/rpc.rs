@@ -2269,6 +2269,14 @@ impl RpcService for EngineRpc {
                 })
                 .await
             }
+            methods::CLOSE_CHANGE_REQUEST => {
+                Box::pin(async move {
+                    let p = params_of::<calls::CloseChangeRequest>(params)?;
+                    let closed = self.close_change_request(p).await?;
+                    reply::<calls::CloseChangeRequest, _>(&closed)
+                })
+                .await
+            }
             methods::DEPLOY_LIVE_APP => {
                 Box::pin(async move {
                     let p = params_of::<calls::DeployLiveApp>(params)?;

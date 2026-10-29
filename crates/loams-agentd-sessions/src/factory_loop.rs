@@ -367,6 +367,77 @@ impl ChangeRequestCreator {
     }
 }
 
+impl ChangeRequestCreator {
+    /// Close pull request `number` on `remote`, keeping its branch: Forgejo's
+    /// `PATCH …/pulls/{n}` with `state: closed`, or `gh pr close` (never with
+    /// `--delete-branch`). Closing a closed pull request is not an error.
+    pub async fn close_change_request(
+        &self,
+        root: &Path,
+        remote: &GitRemote,
+        provider: ChangeRequestProvider,
+        number: u64,
+    ) -> Result<(), GitWriteError> {
+        match provider {
+            ChangeRequestProvider::Forgejo => {
+                let (base, token) = self.forgejo_credential_for(remote).await?;
+                let url = forgejo_api_url(&base, remote, &["pulls", &number.to_string()])?;
+                let response = self
+                    .http()
+                    .patch(url)
+                    .header("authorization", format!("token {token}"))
+                    .header("accept", "application/json")
+                    .json(&serde_json::json!({ "state": "closed" }))
+                    .send()
+                    .await
+                    .map_err(|error| {
+                        failed(format!(
+                            "forgejo: the request failed: {}",
+                            redact(&error.without_url().to_string())
+                        ))
+                    })?;
+                let status = response.status();
+                if status == reqwest::StatusCode::UNAUTHORIZED
+                    || status == reqwest::StatusCode::FORBIDDEN
+                {
+                    return Err(not_configured(format!(
+                        "Forgejo refused the credential (HTTP {})",
+                        status.as_u16()
+                    )));
+                }
+                if !status.is_success() {
+                    return Err(failed(format!(
+                        "forgejo: closing #{number} was refused (HTTP {})",
+                        status.as_u16()
+                    )));
+                }
+                Ok(())
+            }
+            ChangeRequestProvider::Github => {
+                let closed = self
+                    .run_gh_text(
+                        root,
+                        &[
+                            "pr".into(),
+                            "close".into(),
+                            number.to_string(),
+                            format!(
+                                "--repo={}/{}/{}",
+                                remote.host, remote.owner, remote.repository
+                            ),
+                        ],
+                    )
+                    .await;
+                match closed {
+                    Ok(_) => Ok(()),
+                    Err(GitWriteError::Failed(text)) if text.contains("already closed") => Ok(()),
+                    Err(error) => Err(error),
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

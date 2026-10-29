@@ -133,6 +133,7 @@ describe('the method table', () => {
       'GetChecks',
       'GetCheckLog',
       'DeployLiveApp',
+      'CloseChangeRequest',
     ]);
   });
 });

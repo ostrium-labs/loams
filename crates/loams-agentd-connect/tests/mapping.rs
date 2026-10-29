@@ -306,6 +306,14 @@ const NOT_MAPPED: &[(&str, &str)] = &[
         "an `mcp`-role method's type, ndjson only (FT0-4-1)",
     ),
     (
+        "CloseChangeRequestParams",
+        "an `mcp`-role method's type, ndjson only (FT0-4-1)",
+    ),
+    (
+        "CloseChangeRequestReply",
+        "an `mcp`-role method's type, ndjson only (FT0-4-1)",
+    ),
+    (
         "CreateRunWorktreeParams",
         "an `mcp`-role method's type, ndjson only (FT0-4-1)",
     ),

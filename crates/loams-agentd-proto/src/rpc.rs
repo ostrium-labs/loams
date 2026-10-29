@@ -26,10 +26,11 @@ use crate::checkpoints::{
 };
 use crate::daemon::DaemonMode;
 use crate::factory_loop::{
-    CheckLogReply, ChecksReply, CreateRunWorktreeParams, DeployLiveAppParams, DeployLiveAppReply,
-    GetApprovalParams, GetCheckLogParams, GetChecksParams, GetThreadDiffParams,
-    MergeChangeRequestParams, MergeChangeRequestReply, OpenChangeRequestParams,
-    OpenChangeRequestReply, PostReviewCommentParams, RequestApprovalParams, TypedApproval,
+    CheckLogReply, ChecksReply, CloseChangeRequestParams, CloseChangeRequestReply,
+    CreateRunWorktreeParams, DeployLiveAppParams, DeployLiveAppReply, GetApprovalParams,
+    GetCheckLogParams, GetChecksParams, GetThreadDiffParams, MergeChangeRequestParams,
+    MergeChangeRequestReply, OpenChangeRequestParams, OpenChangeRequestReply,
+    PostReviewCommentParams, RequestApprovalParams, TypedApproval,
 };
 use crate::git_write::{
     CommitWorktreeParams, CommitWorktreeReply, CreateChangeRequestParams, CreateChangeRequestReply,
@@ -531,6 +532,9 @@ method_table! {
     /// hash is this call's `{target: "live", app, commit}`; health check and
     /// rollback included. The Live credential stays in agentd.
     DEPLOY_LIVE_APP = DeployLiveApp: Unary(DeployLiveAppParams -> DeployLiveAppReply), Mcp, renderer: false;
+    /// FT0 Task 10 (D1432): close a killed run's pull request; the branch is
+    /// kept.
+    CLOSE_CHANGE_REQUEST = CloseChangeRequest: Unary(CloseChangeRequestParams -> CloseChangeRequestReply), Mcp, renderer: false;
 }
 
 #[cfg(test)]
@@ -597,6 +601,7 @@ mod tests {
                 "GetChecks",
                 "GetCheckLog",
                 "DeployLiveApp",
+                "CloseChangeRequest",
             ]
         );
     }

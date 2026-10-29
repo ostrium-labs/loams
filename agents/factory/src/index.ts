@@ -35,6 +35,24 @@ export {
   deploySummary,
   liveDeployStep,
 } from './deploy/live.js';
+export type {
+  KillDeps,
+  KillList,
+  KillRecorder,
+  KillReport,
+  KillScope,
+  LiveRun,
+  RunIndex,
+} from './kill.js';
+export {
+  assertAgentsUsable,
+  createKillTool,
+  KILL_TOOL,
+  KilledAgentError,
+  kill,
+  memoryKillList,
+  parseKillCommand,
+} from './kill.js';
 export type { FactoryEnv, FactoryOptions } from './mastra.js';
 export { createFactoryMastra, FactoryConfigError, readFactoryEnv } from './mastra.js';
 export type { AcpStdioServer, ShimDefinition } from './mcp.js';

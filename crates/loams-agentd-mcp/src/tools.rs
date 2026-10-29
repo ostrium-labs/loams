@@ -283,6 +283,15 @@ fn catalog() -> Vec<ToolDef> {
             annotations: Value::Null,
         },
         ToolDef {
+            name: "close_change_request",
+            description: "Close a pull request on a chat's remote (Forgejo or GitHub), keeping its branch. The kill switch uses it on a killed run's pull request. Risk: write.",
+            input_schema: chat_key_schema(json!({
+                "provider": { "type": "string", "enum": ["forgejo", "github"] },
+                "number": { "type": "integer", "minimum": 1 }
+            })),
+            annotations: Value::Null,
+        },
+        ToolDef {
             name: "deploy_live_app",
             description: "Deploy a merged commit to a Loams Live app: the bundle and schema the commit's .loams/factory.toml [deploy.live] names, then a health check, and a rollback to the previous deployment when the check fails. DESTRUCTIVE: agentd refuses it unless approval_id names an approved deploy approval of the chat whose payload was {target: \"live\", app, commit} of this very call. Calling it again with the same approval answers the first call's deployment instead of deploying twice. Risk: destructive.",
             input_schema: json!({
@@ -371,7 +380,7 @@ fn annotations_for(name: &str) -> Value {
         "readOnlyHint": risk == "read",
         "destructiveHint": risk == "destructive",
         "idempotentHint": matches!(name, "open_change_request" | "get_thread_diff" | "get_approval" | "deploy_live_app"),
-        "openWorldHint": matches!(name, "open_change_request" | "merge_change_request" | "deploy_live_app"),
+        "openWorldHint": matches!(name, "open_change_request" | "merge_change_request" | "deploy_live_app" | "close_change_request"),
     })
 }
 
@@ -464,6 +473,13 @@ struct CheckLogArgs {
     provider: String,
     log_id: String,
     lines: Option<u32>,
+}
+
+#[derive(Deserialize)]
+struct CloseArgs {
+    chat: String,
+    provider: String,
+    number: u64,
 }
 
 #[derive(Deserialize)]
@@ -677,6 +693,7 @@ impl Tools {
             "get_approval" => self.get_approval(parse(args)?).await,
             "merge_change_request" => self.merge_change_request(parse(args)?).await,
             "deploy_live_app" => self.deploy_live_app(parse(args)?).await,
+            "close_change_request" => self.close_change_request(parse(args)?).await,
             "get_checks" => self.get_checks(parse(args)?).await,
             "get_check_log" => self.get_check_log(parse(args)?).await,
             other => return Err(format!("unknown tool: {other}")),
@@ -810,6 +827,20 @@ impl Tools {
                 json!({
                     "chatId": chat.id, "provider": args.provider.trim().to_ascii_lowercase(),
                     "logId": args.log_id, "lines": args.lines,
+                }),
+            )
+            .await
+    }
+
+    async fn close_change_request(&self, args: CloseArgs) -> anyhow::Result<Value> {
+        let chat = self.loams_desktop.resolve_chat(&args.chat).await?;
+        self.loams_desktop
+            .call(
+                methods::CLOSE_CHANGE_REQUEST,
+                json!({
+                    "chatId": chat.id,
+                    "provider": args.provider.trim().to_ascii_lowercase(),
+                    "number": args.number,
                 }),
             )
             .await
@@ -1686,6 +1717,7 @@ mod tests {
         assert_eq!(risk("request_approval"), "write");
         assert_eq!(risk("merge_change_request"), "destructive");
         assert_eq!(risk("deploy_live_app"), "destructive");
+        assert_eq!(risk("close_change_request"), "write");
         assert_eq!(risk("create_chat"), "write");
         assert_eq!(risk("read_chat"), "read");
         assert_eq!(risk("get_checks"), "read");
@@ -1702,6 +1734,7 @@ mod tests {
                     | "get_approval"
                     | "merge_change_request"
                     | "deploy_live_app"
+                    | "close_change_request"
             ) {
                 let risk = tool.annotations["risk"].as_str().unwrap();
                 assert!(
