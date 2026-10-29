@@ -33,6 +33,11 @@ cargo_package(
             "crate": "import",
             "root": "tests/import.rs",
         },
+        {
+            "name": "month",
+            "crate": "month",
+            "root": "tests/month.rs",
+        },
     ],
     deps = [
         "//crates/loams-meter-core:loams-meter-core",
