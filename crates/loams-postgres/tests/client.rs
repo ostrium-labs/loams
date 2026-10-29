@@ -1066,3 +1066,53 @@ fn control_plane_config_response_matches_fixture() {
         canonical(&fixture("spec_main.json"))
     );
 }
+
+/// NF2 Task 13: an import is a create with `import_pgdata` (the pageserver's
+/// `TimelineCreateRequestMode::ImportPgdata`), and activation is a PUT.
+#[tokio::test]
+async fn import_timeline_and_activate() {
+    use loams_postgres::pageserver::{ImportLocation, ImportPgdata, TimelineImport};
+    let (fake, url) = serve().await;
+    fake.answer(201, "{}");
+    let client = pageserver(&url);
+    client
+        .create_timeline_import(
+            t(),
+            &TimelineImport {
+                new_timeline_id: br(),
+                import_pgdata: ImportPgdata {
+                    idempotency_key: "upgrade-1".into(),
+                    location: ImportLocation::AwsS3 {
+                        region: "local".into(),
+                        bucket: "loams-postgres".into(),
+                        key: "imports/upgrade-1".into(),
+                    },
+                },
+            },
+        )
+        .await
+        .unwrap();
+    let seen = fake.last();
+    assert_eq!(seen.method, "POST");
+    assert_eq!(seen.path_and_query, format!("/v1/tenant/{T}/timeline"));
+    let body: Value = serde_json::from_str(&seen.body).unwrap();
+    assert_eq!(
+        body,
+        serde_json::json!({
+            "new_timeline_id": BR,
+            "import_pgdata": {
+                "idempotency_key": "upgrade-1",
+                "location": {"AwsS3": {"region": "local", "bucket": "loams-postgres", "key": "imports/upgrade-1"}}
+            }
+        })
+    );
+
+    fake.answer(200, "{}");
+    client.activate_post_import(t(), br()).await.unwrap();
+    let seen = fake.last();
+    assert_eq!(seen.method, "PUT");
+    assert_eq!(
+        seen.path_and_query,
+        format!("/v1/tenant/{T}/timeline/{BR}/activate_post_import")
+    );
+}
