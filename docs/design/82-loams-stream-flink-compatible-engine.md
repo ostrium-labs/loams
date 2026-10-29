@@ -242,7 +242,7 @@ The base is the hard fork **`ostrium-labs/streamfusion`**. Loams keeps the follo
 | **Ported from Arroyo** (file by file) | The network manager (Arrow IPC between workers, flow control), barrier alignment and the checkpoint coordinator, the Kafka transactional sink, the filesystem two-phase sink, and the program-graph shape for the Rust DataStream API (FC3) |
 | **Ported from RisingWave** | Specific algorithms on demand (for example degree-table join state), per file |
 
-StreamFusion's native plan is a description of Flink ExecNodes that the Java plugin sends over JNI. That description becomes the engine's **physical plan IR**. The Rust planner emits it, the ExecNode-JSON reader produces it, and the operators consume it unchanged.
+StreamFusion's Java plugin matches Flink ExecNodes and constructs each native operator through JNI calls with its parameters. FC1 Task 2 turns those parameters into a serialisable operator spec (`OpSpec`), which becomes the engine's **physical plan IR**. The Rust planner emits it, the ExecNode-JSON reader produces it, and the operators consume it through the same constructors the JNI path uses.
 
 ### 5.4 The research report
 
