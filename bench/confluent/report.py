@@ -343,6 +343,69 @@ def link(day, charts, md):
     md.append("")
 
 
+# --- aggregate bursts ----------------------------------------------------------------------------
+def burst(day, charts, md):
+    d = os.path.join(HERE, "results", day, "burst")
+    tags = sorted({os.path.basename(f).split("-events.tsv")[0] for f in glob.glob(os.path.join(d, "*-events.tsv"))})
+    if not tags:
+        return
+    md.append("### Aggregate bursts: tiny records across 4-CKU Dedicated clusters (in-region Flink; Metrics API)\n")
+    md.append("| Burst | Clusters (CKU) | Statements | Record payload | Peak minute: records/s | Steady median: records/s | per CKU | Requests/s (steady) | Ingress MB/s (steady) | Flink CFU used / max (peak) |")
+    md.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+    figs = []
+    for tag in tags:
+        ev = [l.rstrip("\n").split("\t", 1) for l in open(os.path.join(d, f"{tag}-events.tsv"))]
+        t_start = next((_ts(t) for t, w in ev if w.startswith("submitted")), None)
+        t_stop = next((_ts(t) for t, w in ev if w.startswith("stopping")), None)
+        size = next((w.split("size=")[1].split()[0] for t, w in ev if "size=" in w), "?")
+        nst = next((w.split()[1] for t, w in ev if w.startswith("submitted")), "?")
+        series = sorted(glob.glob(os.path.join(d, f"{tag}-loams-cfb-*-series.json")))
+        if not series or not t_start or not t_stop:
+            continue
+        agg_rec, agg_req, agg_b = {}, {}, {}
+        ncl = 0
+        for f in series:
+            with open(f) as fh:
+                sj = json.load(fh)
+            ncl += 1
+            for key, acc in (("received_records", agg_rec), ("request_count", agg_req), ("received_bytes", agg_b)):
+                for pt in sj.get(key, []):
+                    t = _ts(pt["t"])
+                    acc[t] = acc.get(t, 0) + pt["v"] / 60
+        mins = sorted(t for t in agg_rec if t_start <= t < t_stop.replace(second=0))
+        steady = mins[2:] if len(mins) > 3 else mins
+        def med(acc):
+            v = sorted(acc.get(t, 0) for t in steady)
+            return v[len(v) // 2] if v else None
+        peak = max((agg_rec[t] for t in mins), default=None)
+        cfu_used, cfu_max = 0, 0
+        cf = os.path.join(d, f"{tag}-cfu.tsv")
+        if os.path.exists(cf):
+            per_t = {}
+            for line in open(cf):
+                t, pool, js = line.rstrip("\n").split("\t")
+                j = json.loads(js) if js.startswith("{") else {}
+                u, m = per_t.get(t[:16], (0, 0))
+                per_t[t[:16]] = (u + (j.get("cfu") or 0), m + (j.get("max") or 0))
+            if per_t:
+                cfu_used, cfu_max = max(per_t.values())
+        cku = 4 * ncl
+        mr = med(agg_rec)
+        md.append(f"| {tag} | {ncl} ({cku}) | {nst} | {size} B | {fmt(peak, 0)} | {fmt(mr, 0)} | {fmt(mr / cku if mr else None, 0)} | "
+                  f"{fmt(med(agg_req), 0)} | {fmt((med(agg_b) or 0) / 1e6)} | {cfu_used} / {cfu_max} |")
+        figs.append((tag, cku, mr))
+    md.append("")
+    pts = sorted((cku, mr) for _, cku, mr in figs if mr)
+    if pts:
+        fig, ax = plt.subplots(figsize=(7.5, 3.8))
+        ax.plot([p[0] for p in pts], [p[1] / 1e6 for p in pts], marker="o", markersize=8, linewidth=2, color=COLOR["aws"])
+        for x, y in pts:
+            ax.annotate(f"{y / 1e6:.1f}M", (x, y / 1e6), textcoords="offset points", xytext=(6, -2), fontsize=9, color=INK)
+        style(ax, "Aggregate records/s vs CKU (tiny records, in-region Flink)", "million records/s (steady median)")
+        ax.set_xlabel("CKU (sum over 4-CKU clusters)", color=INK2)
+        save(fig, os.path.join(charts, "burst-scaling.svg"))
+
+
 # --- cost -------------------------------------------------------------------------------------------
 def cost(day, charts, md):
     f = os.path.join(HERE, "results", day, "cost.json")
@@ -376,7 +439,7 @@ def main():
     charts = os.path.join(HERE, "results", a.day, "charts")
     os.makedirs(charts, exist_ok=True)
     md = []
-    for fn in (rtt, latency, txn, tput, push, dedicated, link, cost):
+    for fn in (rtt, latency, txn, tput, push, dedicated, burst, link, cost):
         fn(a.day, charts, md)
     with open(os.path.join(HERE, "results", a.day, "tables.md"), "w") as fh:
         fh.write("\n".join(md) + "\n")

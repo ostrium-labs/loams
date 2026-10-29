@@ -5306,6 +5306,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "clap",
+ "futures",
  "loams-git",
  "loams-store",
  "rand 0.9.5",
@@ -5946,6 +5947,17 @@ dependencies = [
  "serde",
  "thiserror 2.0.21",
  "tokio",
+]
+
+[[package]]
+name = "graph-qps-bench"
+version = "0.1.2"
+dependencies = [
+ "clap",
+ "grafeo",
+ "loams-graph",
+ "loams-proto",
+ "serde_json",
 ]
 
 [[package]]
@@ -9160,6 +9172,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "sqlx 0.9.0",
  "thiserror 2.0.21",
  "time",
  "tokio",
@@ -10111,6 +10124,7 @@ name = "loams-risingwave"
 version = "0.1.2"
 dependencies = [
  "async-trait",
+ "axum 0.8.9",
  "clap",
  "futures",
  "loams-engines",
@@ -10126,6 +10140,7 @@ dependencies = [
  "tokio-postgres",
  "tokio-rustls",
  "toml 0.8.23",
+ "tower 0.5.3",
  "tracing",
  "webpki-roots 1.0.10",
 ]

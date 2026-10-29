@@ -27,6 +27,16 @@ junit = "last-run/dotnet.junit.xml"
 run = "2026-10-28, dev 7968882ff, temporal-gateway.yml run 40620469286 (sdk-leg dotnet): the temporal-gateway profile (Postgres store, the engine's Resonate); the differential against histories/dotnet (compat mode) was added after this run, by #1484"
 
 [[run]]
+sdks = ["java"]
+junit = "last-run/java.junit.xml"
+run = "2026-10-28, dev 4f2f64fb1, temporal-gateway.yml run 40686319317 (sdk-leg java, dispatched): the temporal-gateway profile (Postgres store, the engine's Resonate). The scenarios, hello and signal passed; the Java replayer accepted 8 of 9 histories (terminated raised a query failure in the leg's replay test, CorpusReplayTest:69); the differentials were skipped (no Java corpus committed then)"
+
+[[run]]
 sdks = ["ruby"]
 junit = "last-run/ruby.junit.xml"
-run = "2026-10-28, tsdk-ruby 21989fcd6 (the head #1376 merged), temporal-sdk-ruby.yml run 40649935772: the temporal-gateway profile. The leg stopped in the Ruby worker's own self-test (ScenariosTest, test_every_scenario_has_a_workflow) before any scenario reached the gateway, so its failed cells are the Ruby leg's, not the gateway's"
+run = "2026-10-28, dev 402e0f4a4, temporal-sdk-ruby.yml run 40690677386 (dispatched): the temporal-gateway profile. Scenarios, hello, signal and the replayer passed; the differentials were skipped (histories/ruby was committed after this run, by #1504)"
+
+[[run]]
+sdks = ["php"]
+junit = "last-run/php.junit.xml"
+run = "2026-10-28, dev 87b81fd20, temporal-sdk-php.yml run 40686083193 (dispatched): the temporal-gateway profile. Scenarios, hello, signal and the replayer (9/9) passed; the differentials against the committed corpus were skipped (histories/php comes with #1505), and the same run's diff against its own start-dev generation passed 9/9"

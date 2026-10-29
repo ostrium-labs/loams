@@ -23,6 +23,8 @@ use crate::authz::MeterAuthz;
 use crate::customers::{Clock, Customers};
 use crate::entitlements::{Entitlements, ValueSource};
 use crate::error::{MeterError, Result};
+use crate::house::{HouseSchedule, RoleHouse};
+use crate::queries::MeterQueries;
 use crate::notify::Notifier;
 use crate::notify::notifier::{Console, Mailer, NotificationStore};
 use crate::notify::webhook::Transport;
@@ -74,6 +76,9 @@ pub struct RoleParts {
     pub clock: Clock,
     pub values: Arc<dyn ValueSource>,
     pub usage: Arc<dyn MeterUsage>,
+    /// The House meter queries and the close schedule run against
+    /// ([`RoleHouse::Absent`]: none configured).
+    pub house: Arc<RoleHouse>,
 }
 
 impl fmt::Debug for RoleParts {
@@ -86,6 +91,8 @@ impl fmt::Debug for RoleParts {
 #[derive(Clone)]
 pub struct MeterRole {
     pub store: Arc<dyn MeterStore>,
+    pub house: Arc<RoleHouse>,
+    pub queries: MeterQueries<RoleHouse>,
     pub customers: Customers,
     pub entitlements: Entitlements,
     pub plans: Plans,
@@ -103,6 +110,8 @@ impl MeterRole {
         let store: Arc<dyn MeterStore> = Arc::new(DocStore::new(p.records));
         let authz = MeterAuthz::new(p.authorizer, BILLING_SERVICE);
         MeterRole {
+            queries: MeterQueries::new(store.clone(), authz.clone(), p.house.clone()),
+            house: p.house,
             customers: Customers::new(
                 store.clone(),
                 authz.clone(),
@@ -147,7 +156,25 @@ impl MeterRole {
             self.entitlements.clone(),
             self.plans.clone(),
         );
+        let router = crate::connect::meters::register(router, self.queries.clone());
         crate::connect::notifications::register(router, self.notifier.clone())
+    }
+
+    /// The OpenMeter-compatible HTTP routes (entitlement values and grants,
+    /// meter queries), for the role's host to mount behind its
+    /// authentication, which puts the [`crate::authz::Caller`] in each
+    /// request.
+    pub fn http_routes(&self) -> axum::Router {
+        crate::openmeter::router(self.entitlements.clone())
+            .merge(crate::house::query_router(self.queries.clone()))
+    }
+
+    /// The House schedule (schema, close job, period close), when a House
+    /// is configured.
+    pub fn house_schedule(&self, clock: Clock) -> Option<HouseSchedule<RoleHouse>> {
+        self.house
+            .is_configured()
+            .then(|| HouseSchedule::new(self.house.clone(), self.store.clone(), clock))
     }
 }
 
@@ -158,4 +185,5 @@ pub const PUBLIC_SERVICES: &[&str] = &[
     "loams.meter.v1.EntitlementService",
     "loams.meter.v1.PlanService",
     "loams.meter.v1.NotificationService",
+    "loams.meter.v1.MeterService",
 ];

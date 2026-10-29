@@ -31,11 +31,23 @@ pub const DROPPED_METRIC: &str = "loams_events_dropped_total";
 /// Where a product sends usage events. Implementations never block the caller.
 pub trait MeterSink: Send + Sync + fmt::Debug {
     fn emit(&self, event: UsageEvent);
+
+    /// Emits many events at once (pipelining, BQ1); the default emits them
+    /// one by one. Never blocks the caller.
+    fn emit_batch(&self, events: Vec<UsageEvent>) {
+        for event in events {
+            self.emit(event);
+        }
+    }
 }
 
 impl<T: MeterSink + ?Sized> MeterSink for Arc<T> {
     fn emit(&self, event: UsageEvent) {
         (**self).emit(event);
+    }
+
+    fn emit_batch(&self, events: Vec<UsageEvent>) {
+        (**self).emit_batch(events);
     }
 }
 
@@ -259,6 +271,33 @@ impl BestEffortSink {
         }
     }
 
+    fn push_many(&self, events: Vec<EncodedEvent>) {
+        if events.is_empty() {
+            return;
+        }
+        let cfg = &self.shared.config;
+        let c = &self.shared.counters;
+        let n = events.len() as u64;
+        let mut q = lock(&self.shared.queue);
+        if q.closed {
+            drop(q);
+            Counters::add(&c.dropped_shutdown, n);
+            return;
+        }
+        for ev in events {
+            q.bytes += ev.size();
+            q.events.push_back(ev);
+        }
+        let dropped = q.enforce(cfg.max_events, cfg.max_bytes);
+        let full_batch = q.bytes >= cfg.flush_bytes;
+        drop(q);
+        Counters::add(&c.enqueued, n);
+        Counters::add(&c.dropped_queue_full, dropped);
+        if full_batch {
+            self.shared.wake.notify_one();
+        }
+    }
+
     fn push(&self, ev: EncodedEvent) {
         let cfg = &self.shared.config;
         let c = &self.shared.counters;
@@ -288,6 +327,23 @@ impl MeterSink for BestEffortSink {
             return;
         }
         self.push(event.encode());
+    }
+
+    /// Validates and encodes outside the lock, then takes the queue's lock
+    /// once for the whole batch, enforces the limits once and wakes the
+    /// flusher at most once (BQ1 pipelining).
+    fn emit_batch(&self, events: Vec<UsageEvent>) {
+        let total = events.len();
+        let encoded: Vec<EncodedEvent> = events
+            .iter()
+            .filter(|e| e.validate().is_ok())
+            .map(UsageEvent::encode)
+            .collect();
+        Counters::add(
+            &self.shared.counters.dropped_invalid,
+            (total - encoded.len()) as u64,
+        );
+        self.push_many(encoded);
     }
 }
 
@@ -665,6 +721,26 @@ mod tests {
         assert!(sink.queued() <= 1_000);
         producer.release();
         sink.close();
+    }
+
+    #[test]
+    fn emit_batch_enqueues_once_and_counts_invalid() {
+        let producer = Arc::new(Recording::default());
+        let sink = BestEffortSink::new(producer.clone(), BestEffortConfig::default()).unwrap();
+        let mut batch: Vec<UsageEvent> = (0..10).map(ev).collect();
+        batch.push(UsageEvent::new(
+            "io.loams.dev.usage.house.query.v1",
+            "no-subject",
+        ));
+        sink.emit_batch(batch);
+        sink.close();
+        let stats = sink.stats();
+        assert_eq!(stats.enqueued, 10);
+        assert_eq!(stats.dropped_invalid, 1);
+        assert_eq!(stats.produced, 10);
+        let sent: Vec<EncodedEvent> = lock(&producer.attempts).concat();
+        let expected: Vec<EncodedEvent> = (0..10).map(|i| ev(i).encode()).collect();
+        assert_eq!(sent, expected, "order kept");
     }
 
     #[test]

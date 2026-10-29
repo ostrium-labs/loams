@@ -107,6 +107,7 @@ pub mod mv;
 pub mod native;
 pub mod oplog;
 pub mod pipes;
+pub mod pushdown;
 pub mod querylog;
 pub mod quota;
 pub mod read;
