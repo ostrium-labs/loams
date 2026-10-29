@@ -16,7 +16,10 @@ use serde_json::{Value, json};
 
 use super::{Runtime, RuntimeError, run};
 use crate::model::InstanceKey;
-use crate::render::{CONFIG_PATH, EnvValue, HostStyle, RenderedCluster, RenderedRole};
+use crate::render::{
+    CONFIG_PATH, EnvValue, HostStyle, LICENSE_KEY_FILE, LICENSE_KEY_PATH, RenderedCluster,
+    RenderedRole,
+};
 
 /// Runs instances' clusters with `podman compose` (or `docker compose`).
 #[derive(Debug, Clone)]
@@ -103,7 +106,11 @@ fn service(role: &RenderedRole, host: &str) -> Value {
         "hostname": host,
         "environment": environment,
         "env_file": [format!("{}.secrets.env", role.role)],
-        "volumes": [format!("./risingwave.toml:{CONFIG_PATH}:ro")],
+        "volumes": [
+            format!("./risingwave.toml:{CONFIG_PATH}:ro"),
+            // Empty: RisingWave's free tier, locked (D1901).
+            format!("./license.key:{LICENSE_KEY_PATH}:ro"),
+        ],
         "networks": ["loams"],
         "restart": "unless-stopped",
         "cpus": cpus,
@@ -165,6 +172,7 @@ impl Runtime for ComposeRuntime {
         let text = serde_json::to_string_pretty(&project)
             .map_err(|e| RuntimeError::Render(e.to_string()))?;
         write_file(&dir.join("risingwave.toml"), &cluster.config_toml, false).await?;
+        write_file(&dir.join("license.key"), LICENSE_KEY_FILE, false).await?;
         for role in &cluster.roles {
             let env = secrets_env(cluster, role)?;
             write_file(&dir.join(format!("{}.secrets.env", role.role)), &env, true).await?;

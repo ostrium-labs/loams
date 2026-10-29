@@ -8,3 +8,7 @@ metadata:
 data:
   risingwave.toml: |
     {{- .Values.config | nindent 4 }}
+  # Read by meta nodes through RW_LICENSE_KEY_PATH. Always empty: RisingWave's
+  # free tier, with `ALTER SYSTEM SET license_key` refused (D1901). Not a
+  # value on purpose.
+  license.key: ""

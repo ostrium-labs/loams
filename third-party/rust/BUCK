@@ -46684,34 +46684,34 @@ cargo_alias(
 )
 
 http_archive(
-    name = "sha2-0.11.0.crate",
-    sha256 = "446ba717509524cb3f22f17ecc096f10f4822d76ab5c0b9822c5f9c284e825f4",
-    strip_prefix = "sha2-0.11.0",
-    urls = ["https://static.crates.io/crates/sha2/0.11.0/download"],
+    name = "sha2-0.11.1.crate",
+    sha256 = "47d7069beb7d6ac7b9acd1039986e73443f24234f41074da099d6f994ac9ad19",
+    strip_prefix = "sha2-0.11.1",
+    urls = ["https://static.crates.io/crates/sha2/0.11.1/download"],
     visibility = [],
 )
 
 cargo.rust_library(
     name = "sha2-0.11",
-    srcs = [":sha2-0.11.0.crate"],
+    srcs = [":sha2-0.11.1.crate"],
     crate = "sha2",
-    crate_root = "sha2-0.11.0.crate/src/lib.rs",
+    crate_root = "sha2-0.11.1.crate/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "sha2",
         "CARGO_CRATE_NAME": "sha2",
-        "CARGO_MANIFEST_DIR": "sha2-0.11.0.crate",
+        "CARGO_MANIFEST_DIR": "sha2-0.11.1.crate",
         "CARGO_PKG_AUTHORS": "RustCrypto Developers",
         "CARGO_PKG_DESCRIPTION": "Pure Rust implementation of the SHA-2 hash function family\nincluding SHA-224, SHA-256, SHA-384, and SHA-512.\n",
         "CARGO_PKG_HOMEPAGE": "",
         "CARGO_PKG_NAME": "sha2",
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/RustCrypto/hashes",
-        "CARGO_PKG_RUST_VERSION": "1.85",
-        "CARGO_PKG_VERSION": "0.11.0",
+        "CARGO_PKG_RUST_VERSION": "1.88",
+        "CARGO_PKG_VERSION": "0.11.1",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "11",
-        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PATCH": "1",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -50802,7 +50802,7 @@ cargo.rust_library(
     visibility = [],
     deps = [
         ":fastrand-2",
-        ":getrandom-0.4",
+        ":getrandom-0.3",
         ":once_cell-1",
         ":rustix-1",
     ],
@@ -58068,23 +58068,23 @@ cargo_alias(
 )
 
 http_archive(
-    name = "zstd-0.14.0.crate",
-    sha256 = "bf06bd8162af0734b344780deb55b42a2429ae430870d13fcc12f238e880fe6e",
-    strip_prefix = "zstd-0.14.0",
-    urls = ["https://static.crates.io/crates/zstd/0.14.0/download"],
+    name = "zstd-0.14.2.crate",
+    sha256 = "057cfd910cfac363a0ada849592624b4c9ff2e10bef504c3433810d78ed96f93",
+    strip_prefix = "zstd-0.14.2",
+    urls = ["https://static.crates.io/crates/zstd/0.14.2/download"],
     visibility = [],
 )
 
 cargo.rust_library(
     name = "zstd-0.14",
-    srcs = [":zstd-0.14.0.crate"],
+    srcs = [":zstd-0.14.2.crate"],
     crate = "zstd",
-    crate_root = "zstd-0.14.0.crate/src/lib.rs",
+    crate_root = "zstd-0.14.2.crate/src/lib.rs",
     edition = "2018",
     env = {
         "CARGO_BIN_NAME": "zstd",
         "CARGO_CRATE_NAME": "zstd",
-        "CARGO_MANIFEST_DIR": "zstd-0.14.0.crate",
+        "CARGO_MANIFEST_DIR": "zstd-0.14.2.crate",
         "CARGO_PKG_AUTHORS": "Alexandre Bury <alexandre.bury@gmail.com>",
         "CARGO_PKG_DESCRIPTION": "Binding for the zstd compression library.",
         "CARGO_PKG_HOMEPAGE": "",
@@ -58092,10 +58092,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "Readme.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/gyscos/zstd-rs",
         "CARGO_PKG_RUST_VERSION": "1.64",
-        "CARGO_PKG_VERSION": "0.14.0",
+        "CARGO_PKG_VERSION": "0.14.2",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "14",
-        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PATCH": "2",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -58214,23 +58214,23 @@ buildscript_run(
 )
 
 http_archive(
-    name = "zstd-safe-8.0.0.crate",
-    sha256 = "ae42c0555055784c70058d19ba8e275528e8a99a706684868ace5da4e716a4ab",
-    strip_prefix = "zstd-safe-8.0.0",
-    urls = ["https://static.crates.io/crates/zstd-safe/8.0.0/download"],
+    name = "zstd-safe-8.2.0.crate",
+    sha256 = "ded520f16b29e1a9b771c722221b2b0a0398c2316d9bb3c42b458a5414d7434b",
+    strip_prefix = "zstd-safe-8.2.0",
+    urls = ["https://static.crates.io/crates/zstd-safe/8.2.0/download"],
     visibility = [],
 )
 
 cargo.rust_library(
     name = "zstd-safe-8",
-    srcs = [":zstd-safe-8.0.0.crate"],
+    srcs = [":zstd-safe-8.2.0.crate"],
     crate = "zstd_safe",
-    crate_root = "zstd-safe-8.0.0.crate/src/lib.rs",
+    crate_root = "zstd-safe-8.2.0.crate/src/lib.rs",
     edition = "2018",
     env = {
         "CARGO_BIN_NAME": "zstd_safe",
         "CARGO_CRATE_NAME": "zstd_safe",
-        "CARGO_MANIFEST_DIR": "zstd-safe-8.0.0.crate",
+        "CARGO_MANIFEST_DIR": "zstd-safe-8.2.0.crate",
         "CARGO_PKG_AUTHORS": "Alexandre Bury <alexandre.bury@gmail.com>",
         "CARGO_PKG_DESCRIPTION": "Safe low-level bindings for the zstd compression library.",
         "CARGO_PKG_HOMEPAGE": "",
@@ -58238,9 +58238,9 @@ cargo.rust_library(
         "CARGO_PKG_README": "Readme.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/gyscos/zstd-rs",
         "CARGO_PKG_RUST_VERSION": "1.64",
-        "CARGO_PKG_VERSION": "8.0.0",
+        "CARGO_PKG_VERSION": "8.2.0",
         "CARGO_PKG_VERSION_MAJOR": "8",
-        "CARGO_PKG_VERSION_MINOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "2",
         "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
         "OUT_DIR": "$(location :zstd-safe-8-build-script-run[out_dir])",
@@ -58258,14 +58258,14 @@ cargo.rust_library(
 
 cargo.rust_binary(
     name = "zstd-safe-8-build-script-build",
-    srcs = [":zstd-safe-8.0.0.crate"],
+    srcs = [":zstd-safe-8.2.0.crate"],
     crate = "build_script_build",
-    crate_root = "zstd-safe-8.0.0.crate/build.rs",
+    crate_root = "zstd-safe-8.2.0.crate/build.rs",
     edition = "2018",
     env = {
         "CARGO_BIN_NAME": "build-script-build",
         "CARGO_CRATE_NAME": "build_script_build",
-        "CARGO_MANIFEST_DIR": "zstd-safe-8.0.0.crate",
+        "CARGO_MANIFEST_DIR": "zstd-safe-8.2.0.crate",
         "CARGO_PKG_AUTHORS": "Alexandre Bury <alexandre.bury@gmail.com>",
         "CARGO_PKG_DESCRIPTION": "Safe low-level bindings for the zstd compression library.",
         "CARGO_PKG_HOMEPAGE": "",
@@ -58273,9 +58273,9 @@ cargo.rust_binary(
         "CARGO_PKG_README": "Readme.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/gyscos/zstd-rs",
         "CARGO_PKG_RUST_VERSION": "1.64",
-        "CARGO_PKG_VERSION": "8.0.0",
+        "CARGO_PKG_VERSION": "8.2.0",
         "CARGO_PKG_VERSION_MAJOR": "8",
-        "CARGO_PKG_VERSION_MINOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "2",
         "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
     },
@@ -58300,7 +58300,7 @@ buildscript_run(
         "CARGO_PKG_REPOSITORY": "https://github.com/gyscos/zstd-rs",
         "CARGO_PKG_RUST_VERSION": "1.64",
         "CARGO_PKG_VERSION_MAJOR": "8",
-        "CARGO_PKG_VERSION_MINOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "2",
         "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
     },
@@ -58312,27 +58312,27 @@ buildscript_run(
     ],
     rustc_link_lib = True,
     rustc_link_search = True,
-    version = "8.0.0",
+    version = "8.2.0",
 )
 
 http_archive(
-    name = "zstd-sys-2.1.0+zstd.1.5.7.crate",
-    sha256 = "0ef0a8027ec3ee71300ab3bcbcd0393f434aa72b91ca6d635a39941deae8eea0",
-    strip_prefix = "zstd-sys-2.1.0+zstd.1.5.7",
-    urls = ["https://static.crates.io/crates/zstd-sys/2.1.0+zstd.1.5.7/download"],
+    name = "zstd-sys-2.1.2+zstd.1.5.7.crate",
+    sha256 = "481ada9c543b2323cbb7bbdbb5249177fbf0188ed959ed2c15e4b22421c84ed3",
+    strip_prefix = "zstd-sys-2.1.2+zstd.1.5.7",
+    urls = ["https://static.crates.io/crates/zstd-sys/2.1.2+zstd.1.5.7/download"],
     visibility = [],
 )
 
 cargo.rust_library(
     name = "zstd-sys-2",
-    srcs = [":zstd-sys-2.1.0+zstd.1.5.7.crate"],
+    srcs = [":zstd-sys-2.1.2+zstd.1.5.7.crate"],
     crate = "zstd_sys",
-    crate_root = "zstd-sys-2.1.0+zstd.1.5.7.crate/src/lib.rs",
+    crate_root = "zstd-sys-2.1.2+zstd.1.5.7.crate/src/lib.rs",
     edition = "2018",
     env = {
         "CARGO_BIN_NAME": "zstd_sys",
         "CARGO_CRATE_NAME": "zstd_sys",
-        "CARGO_MANIFEST_DIR": "zstd-sys-2.1.0+zstd.1.5.7.crate",
+        "CARGO_MANIFEST_DIR": "zstd-sys-2.1.2+zstd.1.5.7.crate",
         "CARGO_PKG_AUTHORS": "Alexandre Bury <alexandre.bury@gmail.com>",
         "CARGO_PKG_DESCRIPTION": "Low-level bindings for the zstd compression library.",
         "CARGO_PKG_HOMEPAGE": "",
@@ -58340,10 +58340,10 @@ cargo.rust_library(
         "CARGO_PKG_README": "Readme.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/gyscos/zstd-rs",
         "CARGO_PKG_RUST_VERSION": "1.64",
-        "CARGO_PKG_VERSION": "2.1.0+zstd.1.5.7",
+        "CARGO_PKG_VERSION": "2.1.2+zstd.1.5.7",
         "CARGO_PKG_VERSION_MAJOR": "2",
         "CARGO_PKG_VERSION_MINOR": "1",
-        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PATCH": "2",
         "CARGO_PKG_VERSION_PRE": "",
         "OUT_DIR": "$(location :zstd-sys-2-build-script-run[out_dir])",
     },
@@ -58359,14 +58359,14 @@ cargo.rust_library(
 
 cargo.rust_binary(
     name = "zstd-sys-2-build-script-build",
-    srcs = [":zstd-sys-2.1.0+zstd.1.5.7.crate"],
+    srcs = [":zstd-sys-2.1.2+zstd.1.5.7.crate"],
     crate = "build_script_build",
-    crate_root = "zstd-sys-2.1.0+zstd.1.5.7.crate/build.rs",
+    crate_root = "zstd-sys-2.1.2+zstd.1.5.7.crate/build.rs",
     edition = "2018",
     env = {
         "CARGO_BIN_NAME": "build-script-build",
         "CARGO_CRATE_NAME": "build_script_build",
-        "CARGO_MANIFEST_DIR": "zstd-sys-2.1.0+zstd.1.5.7.crate",
+        "CARGO_MANIFEST_DIR": "zstd-sys-2.1.2+zstd.1.5.7.crate",
         "CARGO_PKG_AUTHORS": "Alexandre Bury <alexandre.bury@gmail.com>",
         "CARGO_PKG_DESCRIPTION": "Low-level bindings for the zstd compression library.",
         "CARGO_PKG_HOMEPAGE": "",
@@ -58374,10 +58374,10 @@ cargo.rust_binary(
         "CARGO_PKG_README": "Readme.md",
         "CARGO_PKG_REPOSITORY": "https://github.com/gyscos/zstd-rs",
         "CARGO_PKG_RUST_VERSION": "1.64",
-        "CARGO_PKG_VERSION": "2.1.0+zstd.1.5.7",
+        "CARGO_PKG_VERSION": "2.1.2+zstd.1.5.7",
         "CARGO_PKG_VERSION_MAJOR": "2",
         "CARGO_PKG_VERSION_MINOR": "1",
-        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PATCH": "2",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -58407,7 +58407,7 @@ buildscript_run(
         "CARGO_PKG_RUST_VERSION": "1.64",
         "CARGO_PKG_VERSION_MAJOR": "2",
         "CARGO_PKG_VERSION_MINOR": "1",
-        "CARGO_PKG_VERSION_PATCH": "0",
+        "CARGO_PKG_VERSION_PATCH": "2",
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
@@ -58418,7 +58418,7 @@ buildscript_run(
     ],
     rustc_link_lib = True,
     rustc_link_search = True,
-    version = "2.1.0+zstd.1.5.7",
+    version = "2.1.2+zstd.1.5.7",
 )
 
 http_archive(
