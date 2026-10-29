@@ -181,6 +181,11 @@ pub struct AppState {
     /// them (not a gateway node), and then they answer `meter_not_served`.
     #[cfg(feature = "meter")]
     pub meter: Option<std::sync::Arc<loams_meter::role::MeterRole>>,
+    /// The meter's gate for this node's products (D2400): checked on the
+    /// HTTP produce and CloudEvents routes (Flight and gRPC wrap their
+    /// producers with it).
+    #[cfg(feature = "meter")]
+    pub meter_gate: Option<loams_meter_gate::Entitlements>,
     /// The embedded durable server's protocol endpoint, served as
     /// `POST /durable/` (B12, [`durable`]); `None` when this port does not
     /// serve it, and then the route answers `404 durable_not_served`.
@@ -645,6 +650,27 @@ struct Produce {
     records: Vec<RecordBody>,
 }
 
+/// The meter's gate on a produce of `bytes` logical bytes to `ns` (D2400):
+/// `stream_ingest_bytes`, as `MeteredProducer` checks Flight and gRPC.
+/// Namespaces starting with `_` are never gated.
+#[allow(clippy::unnecessary_wraps)]
+pub(crate) fn gate_produce(state: &AppState, ns: &str, bytes: u64) -> Result<(), ApiError> {
+    #[cfg(feature = "meter")]
+    if let Some(gate) = &state.meter_gate
+        && !ns.starts_with('_')
+    {
+        gate.check(
+            None,
+            ns,
+            loams_meter_gate::features::STREAM_INGEST_BYTES,
+            bytes,
+        )
+        .map_err(|r| ApiError::from(loams_query::metered::refusal_error(&r)))?;
+    }
+    let _ = (state, ns, bytes);
+    Ok(())
+}
+
 /// The records of a produce body (`{"records": [{key, value, headers,
 /// timestamp_ms}]}`, base64), as the native produce route and the meter's
 /// service ingest read them.
@@ -675,6 +701,19 @@ async fn produce(
     let (Path((ns, stream, partition)), body) = (path?, body?);
     let partition = parse_partition(&partition)?;
     let records = decode_records(&body)?;
+    let bytes: u64 = records
+        .iter()
+        .map(|r| {
+            let kv = r.key.as_ref().map_or(0, Bytes::len) + r.value.as_ref().map_or(0, Bytes::len);
+            let headers: usize = r
+                .headers
+                .iter()
+                .map(|(k, v)| k.len() + v.as_ref().map_or(0, Bytes::len))
+                .sum();
+            (kv + headers) as u64
+        })
+        .sum();
+    gate_produce(&state, &ns, bytes)?;
     let acks = produce_records(
         &state.meta,
         &state.writer,
