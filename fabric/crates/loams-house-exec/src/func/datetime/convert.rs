@@ -176,10 +176,13 @@ fn date_eval(call: &Call) -> Result<ArrayRef, ChError> {
             })
             .collect()
     };
+    // `toDate32` of text keeps the day it reads (26.9 measured:
+    // `toDate32('1899-01-01')` is 1899-01-01); everything else saturates.
+    let saturate = !(wide && is_text(t));
     write(
         &call.ret,
         days.into_iter()
-            .map(|d| d.map(|d| Out::Day(d.clamp(lo, hi))))
+            .map(|d| d.map(|d| Out::Day(if saturate { d.clamp(lo, hi) } else { d })))
             .collect(),
     )
 }

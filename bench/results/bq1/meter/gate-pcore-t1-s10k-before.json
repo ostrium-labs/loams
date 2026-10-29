@@ -1,0 +1,1 @@
+{"mode":"gate","threads":1,"cores":[0],"subjects":10000,"secs":10.004261527,"ops":22272000,"ops_per_sec":2226251.2770074247,"ops_per_sec_per_thread":2226251.2770074247,"latency":{"samples":348000,"p50_ns":430,"p99_ns":769,"p999_ns":1875,"max_ns":3805183},"cold_misses":0,"host":{"available_parallelism":1,"lane":"bq1-meter"}}

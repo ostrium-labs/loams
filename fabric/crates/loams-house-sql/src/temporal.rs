@@ -270,12 +270,14 @@ mod tests {
             interval_call(&iv).unwrap().to_string(),
             "\"toIntervalDay\"(1)"
         );
-        let Expr::Interval(iv) = expr("INTERVAL '2 hours'") else {
-            panic!()
-        };
-        assert_eq!(
-            interval_call(&iv).unwrap().to_string(),
-            "\"toIntervalHour\"(2)"
+        // sqlparser's ClickHouse dialect wants a unit after the value, so
+        // `INTERVAL '2 hours'` is a syntax error (62) before it gets here.
+        assert!(
+            Parser::new(&ClickHouseDialect {})
+                .try_with_sql("INTERVAL '2 hours'")
+                .unwrap()
+                .parse_expr()
+                .is_err()
         );
         let Expr::Interval(iv) = expr("INTERVAL x MINUTE") else {
             panic!()

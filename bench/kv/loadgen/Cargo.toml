@@ -1,0 +1,21 @@
+[package]
+name = "kv-loadgen"
+description = "A closed-loop RESP load generator for the BQ1 KV benchmark (GET/SET with pipelining over many connections and shards; latency histograms as JSON)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[[bin]]
+name = "kv-loadgen"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

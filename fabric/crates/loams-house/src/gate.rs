@@ -52,6 +52,19 @@ pub fn admit(
     readonly: bool,
     unparsed: Option<&str>,
 ) -> Result<(), HouseError> {
+    admit_views(analysis, sql, expect, readonly, unparsed, &[])
+}
+
+/// [`admit`], with the table functions that call the namespace's own views
+/// ([`view_calls`], HE1 R14.5) allowed.
+pub fn admit_views(
+    analysis: &loams_house_ipc::Analysis,
+    sql: &str,
+    expect: Expect,
+    readonly: bool,
+    unparsed: Option<&str>,
+    views: &[String],
+) -> Result<(), HouseError> {
     let classification = analysis.classification;
     if classification.statements == 1 && classification.class != QueryClass::Unknown {
         // A `CREATE` of a lake table or a view never runs in chDB (the front owns
@@ -59,10 +72,39 @@ pub fn admit(
         // engines, not to a temporary table's Memory or Null.
         let tree = deny::QueryTree::from_explain(&analysis.ast, analysis.query_tree.as_deref())
             .shared_create(crate::classify::creates_shared_object(sql))
+            .catalog_views(views)
             .statement(sql);
         deny::check(&tree).map_err(HouseError::from)?;
     }
     decide(classification, expect, readonly, unparsed)
+}
+
+/// The table functions an analysed statement calls that are the namespace's
+/// own views, as its trees print them (HE1 R14.5): ClickHouse reads
+/// `v(p = 1)`, a name that is no table function, as a call of the
+/// parameterised view `v` in the current database (or `db.v(…)`), and so does
+/// the House, resolving the name in the catalog. Names that are not views of
+/// the namespace are left out, so the deny list still refuses them.
+pub async fn view_calls(
+    lake: Option<&Lake>,
+    namespace: u64,
+    current: &str,
+    analysis: &loams_house_ipc::Analysis,
+) -> Result<Vec<String>, HouseError> {
+    let Some(lake) = lake else {
+        return Ok(Vec::new());
+    };
+    let tree = deny::QueryTree::from_explain(&analysis.ast, analysis.query_tree.as_deref());
+    let mut out = Vec::new();
+    for printed in tree.view_calls() {
+        if let Some((_, _, table)) =
+            crate::read::resolve(lake, namespace, current, &printed).await?
+            && ddl::class_of(&table.metadata) == ddl::TableClass::View
+        {
+            out.push(printed);
+        }
+    }
+    Ok(out)
 }
 
 /// The scopes a statement needs (HS1 Task 20, §49 §14).
@@ -90,7 +132,10 @@ pub fn required(stmt: &Stmt) -> &'static [crate::identity::Scope] {
         | Stmt::Truncate { .. }
         | Stmt::Alter { .. }
         | Stmt::CreateView { .. }
+        | Stmt::CreateFunction { .. }
+        | Stmt::CreateDictionary { .. }
         | Stmt::Rename { .. }
+        | Stmt::Exchange { .. }
         | Stmt::Undrop { .. } => &[Ddl],
     }
 }
@@ -234,8 +279,11 @@ pub fn catalog_kind(stmt: &Stmt) -> Option<Kind> {
         Stmt::Drop(drop) if !drop.temporary => Kind::Drop,
         Stmt::Undrop { .. } => Kind::Undrop,
         Stmt::Rename { .. } => Kind::Rename,
+        Stmt::Exchange { .. } => Kind::Exchange,
         Stmt::Alter { .. } => Kind::Alter,
         Stmt::CreateView { .. } => Kind::CreateView,
+        Stmt::CreateFunction { .. } => Kind::CreateFunction,
+        Stmt::CreateDictionary { .. } => Kind::CreateDictionary,
         Stmt::Describe { .. } => Kind::Describe,
         Stmt::Show { .. } => Kind::Show,
         Stmt::Exists { .. } => Kind::Exists,
@@ -437,7 +485,7 @@ pub async fn catalog_answer(
             }
         };
     }
-    let mut oracle = WorkerOracle::new(pool, namespace, query_id);
+    let mut oracle = WorkerOracle::new(pool, Some(lake), namespace, current, query_id);
     let answer = ddl::execute(lake, namespace, current, kind, text, &mut oracle).await;
     oracle.finish();
     Ok(match answer? {
@@ -450,6 +498,15 @@ pub async fn catalog_answer(
 /// The deny list over a catalog statement's syntax tree (HS1 Tasks 5 and 10):
 /// one statement that ClickHouse can parse, nothing denied anywhere in it.
 pub fn admit_ddl(analysis: &loams_house_ipc::Analysis, sql: &str) -> Result<(), HouseError> {
+    admit_ddl_views(analysis, sql, &[])
+}
+
+/// [`admit_ddl`], with calls of the namespace's own views allowed (HE1 R14.5).
+pub fn admit_ddl_views(
+    analysis: &loams_house_ipc::Analysis,
+    sql: &str,
+    views: &[String],
+) -> Result<(), HouseError> {
     let classification = analysis.classification;
     if classification.statements > 1 {
         return Err(HouseError::from(ChError::syntax_error(
@@ -464,6 +521,7 @@ pub fn admit_ddl(analysis: &loams_house_ipc::Analysis, sql: &str) -> Result<(), 
     }
     let tree = deny::QueryTree::from_explain(&analysis.ast, analysis.query_tree.as_deref())
         .shared_create(crate::classify::creates_shared_object(sql))
+        .catalog_views(views)
         .statement(sql);
     deny::check(&tree).map_err(HouseError::from)
 }
@@ -475,15 +533,29 @@ struct WorkerOracle<'a> {
     namespace: String,
     query_id: String,
     lease: Option<WorkerLease>,
+    /// The catalog, the namespace and the current database: where a call of a
+    /// view in a statement's text is resolved (HE1 R14.5).
+    lake: Option<&'a Lake>,
+    namespace_id: u64,
+    current: String,
 }
 
 impl<'a> WorkerOracle<'a> {
-    fn new(pool: &'a WorkerPool, namespace: u64, query_id: &str) -> Self {
+    fn new(
+        pool: &'a WorkerPool,
+        lake: Option<&'a Lake>,
+        namespace: u64,
+        current: &str,
+        query_id: &str,
+    ) -> Self {
         Self {
             pool,
             namespace: namespace.to_string(),
             query_id: query_id.to_string(),
             lease: None,
+            lake,
+            namespace_id: namespace,
+            current: current.to_string(),
         }
     }
 
@@ -579,16 +651,21 @@ impl Oracle for WorkerOracle<'_> {
             .analyze(sql, &[])
             .await
             .map_err(deny::as_setting_refusal)?;
-        admit_ddl(&analysis, sql)
+        let views = view_calls(self.lake, self.namespace_id, &self.current, &analysis).await?;
+        admit_ddl_views(&analysis, sql, &views)
     }
 
     async fn describe(&mut self, columns: &str) -> Result<Vec<Described>, HouseError> {
         // `flatten_nested = 0`: a `Nested` column stays one column, which the type
-        // table refuses, rather than arrays under dotted names.
+        // table refuses, rather than arrays under dotted names. The column list
+        // is a `String` parameter, read as `TabSeparated` text: escaped, so a
+        // type written over several lines (`Array(Tuple(\n …))`, Laminar's
+        // `spans`) or a default holding a backslash arrives as written (HE1
+        // R14.6).
         let rows = self
             .rows(
                 "DESCRIBE TABLE null({columns:String})",
-                vec![("columns".to_string(), columns.to_string())],
+                vec![("columns".to_string(), crate::http::tsv_escape(columns))],
                 vec![("flatten_nested".to_string(), "0".to_string())],
             )
             .await?;
@@ -613,6 +690,21 @@ impl Oracle for WorkerOracle<'_> {
                 })
             })
             .collect()
+    }
+
+    async fn builtin_function(&mut self, name: &str) -> Result<bool, HouseError> {
+        let rows = self
+            .rows(
+                "SELECT count() FROM system.functions WHERE origin != 'SQLUserDefined' \
+                 AND (name = {name:String} OR (case_insensitive AND lower(name) = lower({name:String})))",
+                vec![("name".to_string(), name.to_string())],
+                Vec::new(),
+            )
+            .await?;
+        Ok(rows
+            .first()
+            .and_then(|r| r.first())
+            .is_some_and(|count| count != "0"))
     }
 
     async fn merge_tree_settings(&mut self, names: &[String]) -> Result<Vec<String>, HouseError> {

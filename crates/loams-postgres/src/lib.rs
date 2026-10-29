@@ -5,7 +5,8 @@
 //! shape it copies is the fork's (`ostrium-labs/loams-postgres`, tag
 //! `loams-decoder-trim-1`), and the module docs name the source file.
 //! `tests/fixtures/` holds requests the pinned images accepted and the
-//! answers they gave.
+//! answers they gave. [`majors`] names the Postgres majors Loams serves,
+//! generated from the pin file (design §62 §9.1).
 //!
 //! Reached only through `loams`'s feature `postgres` (PG2 Task 9).
 
@@ -13,6 +14,7 @@ pub mod compute_ctl;
 pub mod error;
 mod http;
 pub mod ids;
+pub mod majors;
 pub mod pageserver;
 pub mod secret;
 pub mod spec;

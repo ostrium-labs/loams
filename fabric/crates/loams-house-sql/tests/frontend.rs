@@ -189,7 +189,9 @@ fn spike_queries_are_guarded_or_refused() {
     let text = fixture("spike_plan20.sql");
     let mut id = String::new();
     let mut seen = 0;
-    let refused_now = ["q03", "q04", "q05", "q06", "q07", "q08", "q11"];
+    // q03 (parametric quantiles) and q11 (`windowFunnel`) are guarded since
+    // Task 28; `quantile` is refused when planned (Task 29).
+    let refused_now = ["q04", "q05", "q06", "q07", "q08"];
     for line in text.lines() {
         if let Some(rest) = line.strip_prefix("-- @id ") {
             id = rest.trim().to_string();

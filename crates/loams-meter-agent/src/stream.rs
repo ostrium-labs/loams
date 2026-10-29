@@ -138,27 +138,39 @@ impl Sink for StreamSink {
                 None => batches.push((partition, vec![record])),
             }
         }
-        for (partition, records) in batches {
-            let response = self
+        // One produce per partition, sent concurrently over the client's
+        // connection pool: sequential POSTs made a batch's latency the sum of
+        // up to `partitions` round trips (BQ1-meter). A failure fails the
+        // whole send and the forwarder retries every event, as before; the
+        // consumer dedupes on `id`.
+        let sends = batches.into_iter().map(|(partition, records)| {
+            let request = self
                 .client
                 .post(self.url(partition))
-                .json(&json!({ "records": records }))
-                .send()
-                .await
-                .map_err(|e| MeterError::SinkUnavailable(e.to_string()))?;
-            let status = response.status();
-            if status.is_success() {
-                continue;
+                .json(&json!({ "records": records }));
+            async move {
+                let response = request
+                    .send()
+                    .await
+                    .map_err(|e| MeterError::SinkUnavailable(e.to_string()))?;
+                let status = response.status();
+                if status.is_success() {
+                    return Ok(());
+                }
+                let body = response.text().await.unwrap_or_default();
+                let message = format!("partition {partition}: HTTP {status}: {body}");
+                Err(
+                    if status.is_server_error() || status.as_u16() == 429 || status.as_u16() == 408
+                    {
+                        MeterError::SinkUnavailable(message)
+                    } else {
+                        MeterError::SinkRejected(message)
+                    },
+                )
             }
-            let body = response.text().await.unwrap_or_default();
-            let message = format!("partition {partition}: HTTP {status}: {body}");
-            return Err(
-                if status.is_server_error() || status.as_u16() == 429 || status.as_u16() == 408 {
-                    MeterError::SinkUnavailable(message)
-                } else {
-                    MeterError::SinkRejected(message)
-                },
-            );
+        });
+        for result in futures::future::join_all(sends).await {
+            result?;
         }
         Ok(())
     }

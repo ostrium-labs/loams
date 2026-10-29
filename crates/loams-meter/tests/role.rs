@@ -38,6 +38,8 @@ fn role(records: Arc<MemDoc>) -> MeterRole {
         clock: Arc::new(|| UtcNanos(1_700_000_000_000_000_000)),
         values: Arc::new(CountersNotRunning),
         usage: Arc::new(NoHouseYet),
+        house: Arc::new(loams_meter::house::RoleHouse::Absent),
+        sealer: Arc::new(loams_meter::notify::sealing::Unsealed),
     })
 }
 

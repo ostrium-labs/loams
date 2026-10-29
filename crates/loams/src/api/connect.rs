@@ -229,6 +229,7 @@ const CATALOGUE: &[Package] = &[
             "loams.meter.v1.EntitlementService",
             "loams.meter.v1.PlanService",
             "loams.meter.v1.NotificationService",
+            "loams.meter.v1.MeterService",
         ],
         available: super::meter::SERVED,
         unstable: true,
@@ -617,6 +618,12 @@ pub(crate) fn routes(state: &AppState, hot_default: bool) -> AxumRouter {
     let mut axum = AxumRouter::new();
     for path in paths {
         axum = axum.route_service(&path, service.clone());
+    }
+    // Loams Meter's OpenMeter-compatible HTTP routes (`/api/v1/meters/…`,
+    // `/api/v1/subjects/…`), inside the meter's caller layer below.
+    #[cfg(feature = "meter")]
+    if let Some(meter) = &state.meter {
+        axum = axum.merge(meter.http_routes());
     }
     // Live's admin service records who deployed: the principal the port's
     // authentication layer (outside these routes) admitted.

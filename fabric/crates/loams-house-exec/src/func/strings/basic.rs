@@ -116,10 +116,7 @@ fn substring(name: &'static str, utf8: bool) -> ChFunction {
             let mut out = StringBuilder::with_capacity(call.rows, 0);
             for row in 0..call.rows {
                 let len = match &length {
-                    Some(l) => match l.get(row) {
-                        Some(v) => Some(Some(v)),
-                        None => None,
-                    },
+                    Some(l) => l.get(row).map(Some),
                     None => Some(None),
                 };
                 match (s.get(row), offset.get(row), len) {
