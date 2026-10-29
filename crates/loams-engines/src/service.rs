@@ -292,12 +292,7 @@ impl EngineService {
         let _busy = self.claim(&inst.id)?;
         {
             let _creating = self.creating.lock().await;
-            let taken = self
-                .store
-                .list(namespace)
-                .await?
-                .iter()
-                .any(|i| i.spec.name == inst.spec.name && i.status.phase != Phase::Deleted);
+            let taken = self.store.name_taken(namespace, &inst.spec.name).await?;
             if taken {
                 return Err(EngineError::Conflict(format!(
                     "namespace {namespace} already has an engine instance named {:?}",

@@ -6,7 +6,7 @@ use std::sync::RwLock;
 
 use async_trait::async_trait;
 
-use crate::{EngineError, Instance, InstanceId};
+use crate::{EngineError, Instance, InstanceId, Phase};
 
 #[async_trait]
 pub trait InstanceStore: Send + Sync + 'static {
@@ -18,6 +18,18 @@ pub trait InstanceStore: Send + Sync + 'static {
     /// Inserts or replaces by id.
     async fn put(&self, inst: &Instance) -> Result<(), EngineError>;
     async fn remove(&self, id: &InstanceId) -> Result<(), EngineError>;
+
+    /// Whether a live (not deleted) instance of `namespace` is named `name`: the
+    /// uniqueness check of every create. The default lists the namespace; stores
+    /// override it with an indexed lookup (a list clones every record, which made
+    /// creates O(namespace size), BQ1-stream).
+    async fn name_taken(&self, namespace: &str, name: &str) -> Result<bool, EngineError> {
+        Ok(self
+            .list(namespace)
+            .await?
+            .iter()
+            .any(|i| i.spec.name == name && i.status.phase != Phase::Deleted))
+    }
 }
 
 /// An in-process store, for tests, the console mock and single-node development.
@@ -77,5 +89,12 @@ impl InstanceStore for MemoryStore {
     async fn remove(&self, id: &InstanceId) -> Result<(), EngineError> {
         self.rows.write().map_err(|_| poisoned())?.remove(id);
         Ok(())
+    }
+
+    async fn name_taken(&self, namespace: &str, name: &str) -> Result<bool, EngineError> {
+        let rows = self.rows.read().map_err(|_| poisoned())?;
+        Ok(rows.values().any(|i| {
+            i.namespace == namespace && i.spec.name == name && i.status.phase != Phase::Deleted
+        }))
     }
 }

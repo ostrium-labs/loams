@@ -519,3 +519,34 @@ fn deep_operator_chains_do_not_crash_the_process() {
     let parens = format!("RETURN {}1{} AS x", "(".repeat(500), ")".repeat(500));
     assert!(graph.execute(&parens, true).is_err());
 }
+
+/// BQ1: the verdict cache answers exactly what the gate answers, for every corpus statement,
+/// twice (the second time from the cache), and a refusal stays a refusal.
+#[test]
+fn cached_verdicts_match_the_gate() {
+    use loams_graph::StatementLimits;
+    use loams_graph::classify::{gate_verdict, gate_verdict_cached};
+    let limits = StatementLimits::DEFAULT;
+    let mut checked = 0;
+    for case in corpus() {
+        let fresh = gate_verdict(&case.statement, QueryLanguage::Gql, &limits);
+        for round in 0..2 {
+            let cached = gate_verdict_cached(&case.statement, &limits);
+            match (&fresh, &cached) {
+                (Ok(a), Ok(b)) => assert_eq!(a, b, "{case:?} round {round}"),
+                (Err(a), Err(b)) => assert_eq!(a.to_string(), b.to_string(), "{case:?}"),
+                _ => panic!("{case:?} round {round}: {fresh:?} vs {cached:?}"),
+            }
+        }
+        checked += 1;
+    }
+    assert!(checked >= 20, "only {checked} cases");
+    // Tighter limits are a different key: a statement admitted under the defaults is refused.
+    let long = "MATCH (n) RETURN n";
+    assert!(gate_verdict_cached(long, &limits).is_ok());
+    let tight = StatementLimits {
+        max_statement_bytes: 4,
+        ..limits
+    };
+    assert!(gate_verdict_cached(long, &tight).is_err());
+}
