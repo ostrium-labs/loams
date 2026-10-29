@@ -6,6 +6,8 @@
 pub mod frame;
 pub mod handshake;
 pub mod query;
+pub mod query_protocol;
+pub mod server;
 mod token;
 
 pub use token::cassandra_token;
