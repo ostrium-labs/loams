@@ -50,7 +50,8 @@ Everything new is **preview** and off by default; the default stack is 0.1.2's.
   `<data_dir>/meter/secrets.key`, made on first use); on a multi-node cluster every gateway node
   must mount the same file. Threshold and access notifications reach the console, and email when
   `LOAMS_METER_MAIL_FROM` and `LOAMS_METER_RESEND_API_KEY_FILE` (a sending-only Resend key) are
-  set.
+  set. The exporters run on a 5-minute schedule
+  ([guide](../guides/meter-exports.md)).
 - **The gateway** serves HTTP/2 (h2c) and pipelined HTTP/1.1 on its HTTP listeners, and speaks the
   Redis protocol on Loams KV (`--module resp`).
 - **Connectors and Confluent Cloud for BYOC** (the `connectors` profile), and a fix for duplicate

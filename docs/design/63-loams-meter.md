@@ -743,6 +743,8 @@ Every exporter is optional, off by default, and one-way: it reads Loams' tables 
 
 Each exporter's cursor (the last exported `close_run` per period) is in the `ControlStore`. An export is retried until the provider accepts it; the idempotency key makes retries safe.
 
+**Scheduling and names (D2403).** The role runs every configured exporter every 5 minutes. Stripe and OpenMeter work only on the stream partitions the node owns. The names a provider needs come from `LOAMS_METER_EXPORT_MAPPING_FILE`, and each has a default: the Stripe `event_name` and the Lago `code` are the meter's slug, and the Lago `external_subscription_id` is the Loams customer's id. The operator guide is [`docs/guides/meter-exports.md`](../guides/meter-exports.md).
+
 ---
 
 ## 17. APIs (D1131)

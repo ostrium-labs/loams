@@ -52,7 +52,7 @@ export-webhook = ["dep:loams-meter-export", "loams-meter-export/webhook"]
 [dev-dependencies]
 jsonschema.workspace = true
 proptest.workspace = true
-# The mailer's tests build reqwest clients: ring, as the loams binary installs.
+# The mailer's and exporters' tests build reqwest clients: ring, as the loams binary installs.
 rustls = { workspace = true, features = ["ring", "std"] }
 tokio = { workspace = true, features = ["sync", "time", "rt", "rt-multi-thread", "macros", "test-util"] }
 tower = { workspace = true, features = ["util"] }
