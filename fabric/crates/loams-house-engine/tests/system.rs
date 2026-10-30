@@ -221,10 +221,7 @@ async fn show_create_and_exists_answer() {
 async fn safe_table_functions_run() {
     let e = engine();
     let out = run(&e, "SELECT number FROM numbers(3)").await.unwrap();
-    assert_eq!(
-        out,
-        "[\"number\"]\n[\"UInt64\"]\n[0]\n[1]\n[2]\n"
-    );
+    assert_eq!(out, "[\"number\"]\n[\"UInt64\"]\n[0]\n[1]\n[2]\n");
     let out = run(&e, "SELECT number FROM numbers(10, 10, 4)")
         .await
         .unwrap();
@@ -354,7 +351,11 @@ fn shapes_match_the_front() {
             format!("{list},")
         };
         // Both sides without spaces (`Map(String, String)`).
-        assert_eq!(compact(&list).replace(",)", ")"), compact(&body), "{constant}");
+        assert_eq!(
+            compact(&list).replace(",)", ")"),
+            compact(&body),
+            "{constant}"
+        );
     }
 }
 

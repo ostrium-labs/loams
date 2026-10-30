@@ -70,7 +70,6 @@ impl Hist {
     }
 }
 
-
 impl Default for Hist {
     fn default() -> Self {
         Self::new()

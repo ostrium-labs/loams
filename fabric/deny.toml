@@ -99,6 +99,15 @@ ignore = [
     { id = "RUSTSEC-2026-0398", reason = "zstd-safe Seekable::decompress length past capacity, via zstd 0.13/0.14 (iceberg, apache-avro, datafusion 55); no Fabric code uses the seekable format; the fixed zstd-safe 8.2.0 is under the 14-day rule; revisit 2026-11-10" },
     { id = "RUSTSEC-2026-0403", reason = "zstd-safe uninitialized memory when a legacy (v0.4-v0.7) frame fails to stream-decompress, via zstd 0.13/0.14 (iceberg, apache-avro, datafusion 55): the fixed zstd-safe 8.2.0 is under the 14-day rule; revisit 2026-11-10" },
     { id = "RUSTSEC-2026-0410", reason = "zstd-sys wasm32 allocator shim, via zstd 0.13/0.14 (iceberg, apache-avro, datafusion 55): reachable only on wasm32, and Fabric builds zstd for native targets only; the fixed zstd-sys 2.1.2 is under the 14-day rule; revisit 2026-11-10" },
+    # libz-sys <= 1.1.30: its build script prints the whole build environment
+    # while probing for a system zlib, and cargo keeps that output under
+    # target/, so any secret in the environment of a cargo build lands on disk
+    # there. Build-time only; nothing in a built binary changes. The fix,
+    # 1.1.31, was published 2026-10-28, under the 14-day rule, and 1.1.30 is
+    # affected too. Until the bump, no secret goes in a cargo build's
+    # environment. Remove with the bump to libz-sys >= 1.1.31 on or after
+    # 2026-11-11.
+    { id = "RUSTSEC-2026-0418", reason = "libz-sys build script prints the build environment into target/ (Fabric): build-time only; the fixed 1.1.31 is from 2026-10-28, under the 14-day rule, and 1.1.30 is affected; keep secrets out of cargo build environments; bump on or after 2026-11-11" },
 ]
 
 [sources]
