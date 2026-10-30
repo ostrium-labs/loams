@@ -1591,6 +1591,32 @@ struct AdmissionState {
     memory: u64,
     /// Admitted statements.
     running: usize,
+    /// Queued statements, oldest first, with their namespace (BQ1-ALL). A
+    /// statement is admitted only when no older one that its namespace's cap
+    /// does not hold back is still waiting: memory goes to the queue in turn,
+    /// and a new arrival cannot take it ahead of a queued statement (which
+    /// then waited out `queue_timeout`: `202` in the combined run).
+    waiting: VecDeque<(u64, String)>,
+    next_ticket: u64,
+}
+
+impl AdmissionState {
+    /// Whether a statement waiting with `ticket` (none: a new arrival) has an
+    /// older waiter ahead of it that only memory holds back.
+    fn older_waiter_first(&self, ticket: Option<u64>, max_running: usize) -> bool {
+        self.waiting
+            .iter()
+            .take_while(|(t, _)| Some(*t) != ticket)
+            .any(|(_, ns)| {
+                self.namespaces
+                    .get(ns)
+                    .is_none_or(|load| load.running < max_running)
+            })
+    }
+
+    fn leave_queue(&mut self, ticket: u64) {
+        self.waiting.retain(|(t, _)| *t != ticket);
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -1659,6 +1685,8 @@ impl Drop for Ticket {
 struct QueuePlace<'a> {
     admission: &'a Admission,
     namespace: &'a str,
+    /// Its place in [`AdmissionState::waiting`].
+    ticket: u64,
     /// Still to give back (false once admission took it back under its lock).
     held: bool,
 }
@@ -1669,12 +1697,16 @@ impl Drop for QueuePlace<'_> {
             return;
         }
         let mut state = self.admission.lock();
+        state.leave_queue(self.ticket);
         if let Some(load) = state.namespaces.get_mut(self.namespace) {
             load.queued = load.queued.saturating_sub(1);
             if load.running == 0 && load.queued == 0 {
                 state.namespaces.remove(self.namespace);
             }
         }
+        drop(state);
+        // A waiter that leaves may have been the one the others were behind.
+        self.admission.changed.notify_waiters();
     }
 }
 
@@ -1775,17 +1807,28 @@ impl Admission {
                 let load = state.namespaces.get(namespace).copied().unwrap_or_default();
                 let fits = state.running == 0
                     || state.memory.saturating_add(memory) <= self.limits.node_memory_budget;
-                if load.running < self.limits.max_running_per_namespace && fits {
+                let in_turn = !state.older_waiter_first(
+                    place.as_ref().map(|p| p.ticket),
+                    self.limits.max_running_per_namespace,
+                );
+                if load.running < self.limits.max_running_per_namespace && fits && in_turn {
                     state.memory = state.memory.saturating_add(memory);
                     state.running += 1;
                     let entry = state.namespaces.entry(namespace.to_string()).or_default();
                     entry.running += 1;
+                    let mut others_wait = false;
                     if let Some(mut place) = place.take() {
                         // The place is given back here, under the same lock.
                         place.held = false;
                         entry.queued = entry.queued.saturating_sub(1);
+                        state.leave_queue(place.ticket);
+                        others_wait = !state.waiting.is_empty();
                     }
                     drop(state);
+                    if others_wait {
+                        // The next waiter may fit too.
+                        self.changed.notify_waiters();
+                    }
                     return Ok(Ticket {
                         admission: Arc::clone(self),
                         namespace: namespace.to_string(),
@@ -1811,9 +1854,13 @@ impl Admission {
                         .entry(namespace.to_string())
                         .or_default()
                         .queued += 1;
+                    state.next_ticket += 1;
+                    let ticket = state.next_ticket;
+                    state.waiting.push_back((ticket, namespace.to_string()));
                     place = Some(QueuePlace {
                         admission: self,
                         namespace,
+                        ticket,
                         held: true,
                     });
                 }
@@ -1912,6 +1959,45 @@ mod admission_tests {
         );
         drop(third);
         assert_eq!(admission.stats().running, 2);
+    }
+
+    /// BQ1-ALL: statements waiting for memory are admitted in turn. Room for
+    /// one statement at a time and sixteen callers, each admitted, holding its
+    /// ticket briefly and asking again, on one runtime thread: every caller
+    /// gets in well within the queue's wait. Before the queue was in order, a
+    /// caller that had just finished took the memory back ahead of the
+    /// waiters, and one waited out `queue_timeout` (the combined run's `202`
+    /// "the node's memory is admitted to other queries").
+    #[tokio::test(flavor = "current_thread")]
+    async fn memory_waiters_are_admitted_in_turn() {
+        let admission = with_limits(16, 64, 1000, 4);
+        let until = Instant::now() + Duration::from_secs(2);
+        let callers: Vec<_> = (0..16)
+            .map(|_| {
+                let admission = Arc::clone(&admission);
+                tokio::spawn(async move {
+                    let mut worst = Duration::ZERO;
+                    while Instant::now() < until {
+                        let asked = Instant::now();
+                        let ticket = admission.admit("ns", 4, crate::quota::Access::Read).await?;
+                        worst = worst.max(asked.elapsed());
+                        tokio::time::sleep(Duration::from_millis(1)).await;
+                        drop(ticket);
+                    }
+                    Ok::<_, HouseError>(worst)
+                })
+            })
+            .collect();
+        for caller in callers {
+            let worst = caller
+                .await
+                .expect("task")
+                .unwrap_or_else(|err| panic!("a caller was not admitted: {err}"));
+            assert!(
+                worst < Duration::from_millis(800),
+                "a caller waited {worst:?}"
+            );
+        }
     }
 
     /// Admitted statements' memory caps sum to at most the node's budget; one
