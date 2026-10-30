@@ -45,6 +45,10 @@ pub struct CostInputs {
     pub mappings: Vec<MappingRule>,
     #[serde(default)]
     pub engines: Vec<EngineRule>,
+    /// Which pool a node's (or an event type's) usage belongs to, beyond
+    /// the nodes the assets list (§84 §7, CA1 Task 5).
+    #[serde(default)]
+    pub usage_pools: Vec<UsagePoolRule>,
     #[serde(default)]
     pub classes: Vec<ClassRule>,
     #[serde(default)]
@@ -264,6 +268,29 @@ pub struct EngineMatch {
     pub resource: String,
 }
 
+/// Puts usage on a pool: the first rule whose given fields all match wins
+/// (after the assets' own `nodes`). Values are globs.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UsagePoolRule {
+    #[serde(rename = "match")]
+    pub matcher: UsageMatch,
+    pub pool: PoolId,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UsageMatch {
+    /// The node id (the event's `node`, or the last segment of its source).
+    #[serde(default)]
+    pub node: Option<String>,
+    /// The event type, such as `io.loams.dev.usage.house.storage.v1`.
+    #[serde(rename = "type", default)]
+    pub event_type: Option<String>,
+    #[serde(default)]
+    pub kind: Option<ResourceKind>,
+}
+
 /// An operator query class (§84 §7.4): `when` is `field op value` clauses
 /// joined by `and`; compiled to SQL in `loams-meter-house` (Task 5).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -446,6 +473,18 @@ impl CostInputs {
         for (i, e) in self.engines.iter().enumerate() {
             glob_ok(&format!("engines[{i}]"), &e.matcher.resource)?;
             crate::ConsumerKey::new(e.engine.clone(), "_", "_", "_")?;
+        }
+        for (i, r) in self.usage_pools.iter().enumerate() {
+            let m = &r.matcher;
+            if m.node.is_none() && m.event_type.is_none() && m.kind.is_none() {
+                return Err(CostError::invalid(
+                    format!("usage_pools[{i}]"),
+                    "a rule matches on node, type or kind",
+                ));
+            }
+            for g in [&m.node, &m.event_type].into_iter().flatten() {
+                glob_ok(&format!("usage_pools[{i}]"), g)?;
+            }
         }
         for (i, c) in self.classes.iter().enumerate() {
             crate::ConsumerKey::new(c.engine.clone(), "_", "_", c.class.clone())?;

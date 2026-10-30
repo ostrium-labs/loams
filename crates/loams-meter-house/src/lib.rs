@@ -9,6 +9,8 @@
 //!   60 s on every instance ([`close::CloseJob::run_once`]).
 //! - [`period`]: period totals and period close (Task 7), run after each
 //!   close-job lap ([`period::PeriodCloser::run_once`]).
+//! - [`cost_sql`]: the cost drivers' SQL (design §84 §7, CA1 Task 5): counter
+//!   and gauge queries per day and compiled query-class rules (std only).
 //! - [`query`]: `QueryMeter` and OpenMeter's `GET /api/v1/meters/{slug}/query`
 //!   (Task 8), with ME-core's types.
 //!
@@ -16,6 +18,7 @@
 //! this crate: it owns the House credentials and the schedule.
 
 pub mod close;
+pub mod cost_sql;
 pub mod house;
 pub mod period;
 pub mod query;
