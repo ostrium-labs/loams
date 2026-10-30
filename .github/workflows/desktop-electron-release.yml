@@ -232,9 +232,32 @@ jobs:
           [ -n "$DESKTOP_VERSION" ] && export LOAMS_AGENTD_VERSION="$DESKTOP_VERSION"
           cargo build --release -p loams-agentd
           target/release/loams-agentd version
+      # The transfer sidecar behind Transfers (design 85); fetch-engine.mjs requires it
+      # (LOAMS_REQUIRE_TRANSFER below).
+      - name: transfer sidecar
+        shell: bash
+        run: |
+          set -euo pipefail
+          exe=loams-transfer; [ "$RUNNER_OS" = Windows ] && exe=loams-transfer.exe
+          if [ -n "${RUST_TARGET:-}" ]; then
+            cargo build --release -p loams-transfer --target "$RUST_TARGET"
+            bin="$PWD/target/$RUST_TARGET/release/$exe"
+            echo "LOAMS_TRANSFER_BIN=$bin" >> "$GITHUB_ENV"
+          else
+            cargo build --release -p loams-transfer
+            bin="target/release/$exe"
+          fi
+          if [ "${RUST_TARGET:-}" = x86_64-apple-darwin ]; then
+            arch -x86_64 "$bin" --version
+          elif [ "${RUST_TARGET:-}" = aarch64-apple-darwin ]; then
+            [ "$(lipo -archs "$bin")" = arm64 ]
+          else
+            "$bin" --version
+          fi
       - name: package
         env:
           LOAMS_REQUIRE_AGENTD: "1"
+          LOAMS_REQUIRE_TRANSFER: "1"
         run: pnpm nx run loams-desktop-electron:package-linux --outputStyle=static
       - name: split the rpm (SignPath) from the rest
         run: |
@@ -340,9 +363,19 @@ jobs:
           exe=target/x86_64-pc-windows-msvc/release/loams-agentd.exe
           "$exe" version
           echo "LOAMS_AGENTD_BIN=$(cygpath -m "$PWD/$exe")" >> "$GITHUB_ENV"
+      # The transfer sidecar behind Transfers (design 85), required like the daemon.
+      - name: transfer sidecar
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --release -p loams-transfer --target x86_64-pc-windows-msvc
+          exe=target/x86_64-pc-windows-msvc/release/loams-transfer.exe
+          "$exe" --version
+          echo "LOAMS_TRANSFER_BIN=$(cygpath -m "$PWD/$exe")" >> "$GITHUB_ENV"
       - name: unpacked app (unsigned)
         env:
           LOAMS_REQUIRE_AGENTD: "1"
+          LOAMS_REQUIRE_TRANSFER: "1"
         run: pnpm nx run loams-desktop-electron:package-windows-unpacked --outputStyle=static
       - name: the daemon is bundled
         shell: bash
@@ -599,6 +632,28 @@ jobs:
             [ "$(lipo -archs "$bin")" = arm64 ]
           else
             "$bin" version
+          fi
+      # The transfer sidecar behind Transfers (design 85); fetch-engine.mjs requires it
+      # (LOAMS_REQUIRE_TRANSFER below).
+      - name: transfer sidecar
+        shell: bash
+        run: |
+          set -euo pipefail
+          exe=loams-transfer; [ "$RUNNER_OS" = Windows ] && exe=loams-transfer.exe
+          if [ -n "${RUST_TARGET:-}" ]; then
+            cargo build --release -p loams-transfer --target "$RUST_TARGET"
+            bin="$PWD/target/$RUST_TARGET/release/$exe"
+            echo "LOAMS_TRANSFER_BIN=$bin" >> "$GITHUB_ENV"
+          else
+            cargo build --release -p loams-transfer
+            bin="target/release/$exe"
+          fi
+          if [ "${RUST_TARGET:-}" = x86_64-apple-darwin ]; then
+            arch -x86_64 "$bin" --version
+          elif [ "${RUST_TARGET:-}" = aarch64-apple-darwin ]; then
+            [ "$(lipo -archs "$bin")" = arm64 ]
+          else
+            "$bin" --version
           fi
       # electron-builder.config.cjs: with CSC_LINK it signs with the Developer ID under the hardened
       # runtime and notarizes when the APPLE_API_* variables are set; without it, an ad-hoc signature.
