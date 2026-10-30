@@ -288,7 +288,7 @@ mod tests {
         let mut ledger = HostLedger::default();
         ledger.add(&[inv("org_a", u64::MAX), inv("org_b", u64::MAX)]);
         let split = ledger.reconcile(u64::MAX, DEFAULT_TOLERANCE_BP);
-        assert!(split.tenant_total() <= u64::MAX);
+        let _ = split.tenant_total(); // must not overflow
     }
 
     #[test]

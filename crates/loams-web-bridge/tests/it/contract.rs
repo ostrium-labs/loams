@@ -5,7 +5,6 @@
 //! deployment's `browser` service, or a host's own page driver — and none can
 //! drift from the others without a test failing (D2112).
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use loams_web_bridge::testing::{FakeCdp, FakeDriver, login_page, obscura_answers, obscura_over};

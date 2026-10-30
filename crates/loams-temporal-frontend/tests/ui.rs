@@ -241,7 +241,6 @@ async fn the_ui_listener_reads_without_a_key_and_refuses_writes() {
     ui.describe_workflow_execution(DescribeWorkflowExecutionRequest {
         namespace: "default".into(),
         execution: execution.clone(),
-        ..Default::default()
     })
     .await
     .expect("describe");

@@ -120,7 +120,7 @@ fn info(shared: &Shared, args: &[Bytes]) -> String {
     let mut out = String::new();
     let mut section = |name: &str, body: String| {
         let lower = name.to_ascii_lowercase();
-        if all || wanted.iter().any(|w| *w == lower) {
+        if all || wanted.contains(&lower) {
             if !out.is_empty() {
                 out.push_str("\r\n");
             }

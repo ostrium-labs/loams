@@ -1,6 +1,7 @@
 //! The Spark Connect proxy against a fake Spark Connect backend (SP-a plan
 //! task 5): auth, tenant routing, identity pinning, credential stripping,
 //! streaming in both directions, session limits and the idle sweeper.
+#![allow(clippy::unwrap_used)] // test code: a failed unwrap is the test failing
 
 use std::net::SocketAddr;
 use std::pin::Pin;

@@ -344,10 +344,10 @@ mod tests {
             txn.writes.clear();
             match step {
                 0 => {
-                    append(&mut txn, 0, b"k", b"x", 0).await.expect("append");
+                    let _ = append(&mut txn, 0, b"k", b"x", 0).await.expect("append");
                 }
                 1 => {
-                    setrange(&mut txn, 0, b"k", 2, b"yy", 0)
+                    let _ = setrange(&mut txn, 0, b"k", 2, b"yy", 0)
                         .await
                         .expect("setrange");
                 }

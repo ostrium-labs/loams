@@ -191,10 +191,10 @@ async fn run_conn(
         if measuring.load(Ordering::Relaxed) {
             let n_get = args.pipeline as u64 - n_set;
             if n_get > 0 {
-                res.get.as_mut().unwrap().record(ns, n_get);
+                res.get.as_mut().expect("get histogram").record(ns, n_get);
             }
             if n_set > 0 {
-                res.set.as_mut().unwrap().record(ns, n_set);
+                res.set.as_mut().expect("set histogram").record(ns, n_set);
             }
             res.gets += n_get;
             res.sets += n_set;
@@ -305,8 +305,8 @@ fn main() -> std::io::Result<()> {
         for t in tasks {
             match t.await.map_err(std::io::Error::other)? {
                 Ok(r) => {
-                    get.merge(r.get.as_ref().unwrap());
-                    set.merge(r.set.as_ref().unwrap());
+                    get.merge(r.get.as_ref().expect("get histogram"));
+                    set.merge(r.set.as_ref().expect("set histogram"));
                     gets += r.gets;
                     sets += r.sets;
                     errors += r.errors;

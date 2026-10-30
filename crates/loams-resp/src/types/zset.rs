@@ -1144,7 +1144,7 @@ mod tests {
                             .expect("a zset");
                         model.insert(member, f64::from(s));
                     } else {
-                        rem(&mut txn, 0, b"z", &[member.clone()], 0).await.expect("zrem").expect("a zset");
+                        rem(&mut txn, 0, b"z", std::slice::from_ref(&member), 0).await.expect("zrem").expect("a zset");
                         model.remove(&member);
                     }
                 }
