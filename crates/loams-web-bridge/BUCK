@@ -3,7 +3,7 @@ load("//buck:rust.bzl", "cargo_package")
 
 cargo_package(
     name = "loams-web-bridge",
-    version = "0.1.3",
+    version = "0.1.4",
     edition = "2024",
     manifest_dir = "crates/loams-web-bridge",
     env = {
