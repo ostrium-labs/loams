@@ -417,7 +417,7 @@ similar = "2"
 # silences notes on deserialize-only attributes (`alias`, `other`); the
 # fixture `satisfies` checks in TypeScript catch any real mismatch.
 ts-rs = { version = "12.0.1", features = ["serde-compat", "serde-json-impl", "uuid-impl", "chrono-impl", "no-serde-warnings"] }
-zip = { version = "7.2", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [profile.dev]
 debug = "line-tables-only"
