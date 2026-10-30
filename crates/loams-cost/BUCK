@@ -16,6 +16,10 @@ cargo_package(
         "CARGO_PKG_REPOSITORY": "",
         "CARGO_PKG_RUST_VERSION": "1.97",
     },
+    features = [
+        "cli",
+        "default",
+    ],
     lib = {
         "crate": "loams_cost",
         "root": "src/lib.rs",
@@ -41,6 +45,7 @@ cargo_package(
     ],
     deps = [
         "//crates/loams-meter-core:loams-meter-core",
+        "//third-party/rust:clap",
         "//third-party/rust:csv",
         "//third-party/rust:flate2",
         "//third-party/rust:hex",

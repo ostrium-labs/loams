@@ -273,6 +273,18 @@ pub enum Reason {
     CorsOriginNotAllowed,
     /// The credential cannot be checked now: the issuer's JWKS or the principal store is unreachable.
     AuthUnavailable,
+    /// No join token with that id, or its secret does not match.
+    JoinTokenUnknown,
+    /// The join token was already used; join tokens work once.
+    JoinTokenSpent,
+    /// The join token is past its hour.
+    JoinTokenExpired,
+    /// The CSR asks for an identity the join token or the current certificate does not hold.
+    IdentityNotGranted,
+    /// The certificate, or an identity asked for, is on the CA's deny list.
+    IdentityRevoked,
+    /// The deployment has no CA yet, or this node cannot open its intermediate key.
+    CaNotInitialized,
     /// An argument is missing, malformed or out of range.
     InvalidArgument,
     /// The thing the call names does not exist.
@@ -426,6 +438,12 @@ impl Reason {
         Reason::PrincipalNotAllowed,
         Reason::CorsOriginNotAllowed,
         Reason::AuthUnavailable,
+        Reason::JoinTokenUnknown,
+        Reason::JoinTokenSpent,
+        Reason::JoinTokenExpired,
+        Reason::IdentityNotGranted,
+        Reason::IdentityRevoked,
+        Reason::CaNotInitialized,
         Reason::InvalidArgument,
         Reason::NotFound,
         Reason::AlreadyExists,
@@ -568,6 +586,12 @@ impl Reason {
             Reason::PrincipalNotAllowed => "principal_not_allowed",
             Reason::CorsOriginNotAllowed => "cors_origin_not_allowed",
             Reason::AuthUnavailable => "auth_unavailable",
+            Reason::JoinTokenUnknown => "join_token_unknown",
+            Reason::JoinTokenSpent => "join_token_spent",
+            Reason::JoinTokenExpired => "join_token_expired",
+            Reason::IdentityNotGranted => "identity_not_granted",
+            Reason::IdentityRevoked => "identity_revoked",
+            Reason::CaNotInitialized => "ca_not_initialized",
             Reason::InvalidArgument => "invalid_argument",
             Reason::NotFound => "not_found",
             Reason::AlreadyExists => "already_exists",
@@ -632,6 +656,7 @@ impl Reason {
             | Reason::MemoryExtractionFailed
             | Reason::CodeRepoNotIndexed
             | Reason::CodeLanguageUnsupported
+            | Reason::CaNotInitialized
             | Reason::FailedPrecondition => Code::FailedPrecondition,
             Reason::RequesterCannotApprove
             | Reason::DecisionProofInvalid
@@ -646,6 +671,8 @@ impl Reason {
             | Reason::CorsOriginNotAllowed
             | Reason::LiveAppMismatch
             | Reason::LiveOriginNotAllowed
+            | Reason::IdentityNotGranted
+            | Reason::IdentityRevoked
             | Reason::PermissionDenied => Code::PermissionDenied,
             Reason::StepUpRequired
             | Reason::DeviceRevoked
@@ -662,6 +689,9 @@ impl Reason {
             | Reason::ApiKeyInvalid
             | Reason::CredentialNotAccepted
             | Reason::CredentialInQueryString
+            | Reason::JoinTokenUnknown
+            | Reason::JoinTokenSpent
+            | Reason::JoinTokenExpired
             | Reason::Unauthenticated => Code::Unauthenticated,
             Reason::ReasonRequired
             | Reason::InvalidDecision

@@ -9,6 +9,8 @@ use std::collections::BTreeMap;
 
 use clap::{Parser, Subcommand};
 
+#[cfg(feature = "transport")]
+mod ca_cli;
 mod migrate_cli;
 #[cfg(feature = "postgres")]
 mod pg_control_cli;
@@ -674,6 +676,25 @@ impl Native {
             stripe_api_key_file: env_value("LOAMS_METER_STRIPE_API_KEY_FILE").map(PathBuf::from),
             stripe_webhook_secret_file: env_value("LOAMS_METER_STRIPE_WEBHOOK_SECRET_FILE")
                 .map(PathBuf::from),
+            stripe_export_usage: env_value("LOAMS_METER_STRIPE_EXPORT_USAGE")
+                .is_none_or(|v| !matches!(v.trim(), "0" | "false" | "off" | "no")),
+            export_mapping_file: env_value("LOAMS_METER_EXPORT_MAPPING_FILE").map(PathBuf::from),
+            lago_url: env_value("LOAMS_METER_LAGO_URL"),
+            lago_api_key_file: env_value("LOAMS_METER_LAGO_API_KEY_FILE").map(PathBuf::from),
+            openmeter_url: env_value("LOAMS_METER_OPENMETER_URL"),
+            openmeter_token_file: env_value("LOAMS_METER_OPENMETER_TOKEN_FILE").map(PathBuf::from),
+            openmeter_types: env_value("LOAMS_METER_OPENMETER_TYPES")
+                .map(|v| {
+                    v.split(',')
+                        .map(str::trim)
+                        .filter(|t| !t.is_empty())
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default(),
+            mail_from: env_value("LOAMS_METER_MAIL_FROM"),
+            resend_api_key_file: env_value("LOAMS_METER_RESEND_API_KEY_FILE").map(PathBuf::from),
+            resend_api_base: env_value("LOAMS_METER_RESEND_API_BASE"),
         };
         config.connect_socket = self
             .connect_socket
@@ -1285,6 +1306,16 @@ enum Command {
         #[command(subcommand)]
         command: migrate_cli::MigrateCommand,
     },
+    /// The deployment's internal CA (design §83 §6, CT1 Task 3): `init`
+    /// makes the root and intermediate, `token` issues join tokens,
+    /// `revoke` adds to the deny list, `rotate intermediate` replaces the
+    /// intermediate, `status` shows it all. Works on the stores the way
+    /// `loams migrate` does.
+    #[cfg(feature = "transport")]
+    Ca {
+        #[command(subcommand)]
+        command: ca_cli::CaCommand,
+    },
     /// Upgrade a self-hosted compose stack one release at a time, with a
     /// snapshot first (design §54 §10): `check`, `status`, `snapshots`.
     Upgrade(loams_upgrade::UpgradeArgs),
@@ -1309,6 +1340,12 @@ enum Command {
     /// render or apply pipeline specs. Reaches the frontend through
     /// loams-gateway.
     Risingwave(loams_risingwave::cli::RisingWaveArgs),
+    /// Cost attribution (design 84, preview): what a unit of work cost on
+    /// the infrastructure you run. `cost report` (unit costs by engine,
+    /// tenant, project and query class; `--from-bench` for an example from
+    /// a benchmark result), `cost import` (what a bill maps where) and
+    /// `cost export` (FOCUS 1.3 or OpenMeter CloudEvents), from files.
+    Cost(loams_cost::cli::CostArgs),
     /// Managed Spark (design 81, preview): the namespace's Spark Connect URL,
     /// batch jobs (submit, status, logs, cancel, schedules), local runs, and
     /// the driver pod a job renders to.
@@ -1476,6 +1513,8 @@ fn config(command: Command) -> ServerConfig {
         Command::Durable { .. } => unreachable!("loams durable starts no server"),
         Command::Auth { .. } => unreachable!("loams auth starts no server"),
         Command::Migrate { .. } => unreachable!("loams migrate starts no server"),
+        #[cfg(feature = "transport")]
+        Command::Ca { .. } => unreachable!("loams ca starts no server"),
         Command::Upgrade(_) => unreachable!("loams upgrade starts no server"),
         Command::Cloud(_) => unreachable!("loams cloud starts no server"),
         #[cfg(feature = "knowledge")]
@@ -1483,6 +1522,7 @@ fn config(command: Command) -> ServerConfig {
         Command::Marketplace(_) => unreachable!("loams marketplace starts no server"),
         Command::Byoc(_) => unreachable!("loams byoc starts no server"),
         Command::Risingwave(_) => unreachable!("loams risingwave starts no server"),
+        Command::Cost(_) => unreachable!("loams cost starts no server"),
         #[cfg(feature = "spark")]
         Command::Spark(_) => unreachable!("loams spark starts no server"),
         #[cfg(feature = "flink")]
@@ -1712,6 +1752,10 @@ fn main() -> ExitCode {
     if let Command::Byoc(args) = &cli.command {
         return loams_confluent::cli::run(args);
     }
+    // Offline and local: no runtime, no stores (design 84 §15).
+    if let Command::Cost(args) = &cli.command {
+        return loams_cost::cli::run(args);
+    }
     // A client (RW1, lane RW-b): its own runtime, no stores.
     if let Command::Risingwave(args) = &cli.command {
         return loams_risingwave::cli::run(args);
@@ -1738,6 +1782,8 @@ async fn serve(cli: Cli) -> ExitCode {
         cli.command,
         Command::Migrate { .. } | Command::Warm { .. } | Command::Auth { .. }
     );
+    #[cfg(feature = "transport")]
+    let logs_to_stderr = logs_to_stderr || matches!(cli.command, Command::Ca { .. });
     let logs = tracing_subscriber::fmt().with_env_filter(
         tracing_subscriber::EnvFilter::try_from_default_env()
             .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,openraft=warn")),
@@ -1761,6 +1807,10 @@ async fn serve(cli: Cli) -> ExitCode {
             unreachable!("matched above")
         };
         return migrate_cli::run(command).await;
+    }
+    #[cfg(feature = "transport")]
+    if let Command::Ca { command } = &cli.command {
+        return ca_cli::run(command).await;
     }
     #[cfg(feature = "postgres")]
     let cli = match cli.command {

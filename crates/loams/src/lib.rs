@@ -4,6 +4,8 @@
 
 pub mod api;
 pub mod auth;
+#[cfg(feature = "transport")]
+pub mod ca;
 pub mod cluster;
 pub mod console;
 mod meta_backend;

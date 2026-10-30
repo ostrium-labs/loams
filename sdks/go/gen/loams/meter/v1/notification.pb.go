@@ -142,8 +142,11 @@ type Rule struct {
 	// Percentages of the period's allowance.
 	Thresholds []uint32 `protobuf:"varint,4,rep,packed,name=thresholds,proto3" json:"thresholds,omitempty"`
 	// Also the same percentages of the spend cap.
-	SpendCap      bool                  `protobuf:"varint,5,opt,name=spend_cap,json=spendCap,proto3" json:"spend_cap,omitempty"`
-	Channels      []NotificationChannel `protobuf:"varint,6,rep,packed,name=channels,proto3,enum=loams.meter.v1.NotificationChannel" json:"channels,omitempty"`
+	SpendCap bool                  `protobuf:"varint,5,opt,name=spend_cap,json=spendCap,proto3" json:"spend_cap,omitempty"`
+	Channels []NotificationChannel `protobuf:"varint,6,rep,packed,name=channels,proto3,enum=loams.meter.v1.NotificationChannel" json:"channels,omitempty"`
+	// Where email goes (at most 10, with the email channel); empty: the
+	// org's owners and admins.
+	Emails        []string `protobuf:"bytes,7,rep,name=emails,proto3" json:"emails,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -216,6 +219,13 @@ func (x *Rule) GetSpendCap() bool {
 func (x *Rule) GetChannels() []NotificationChannel {
 	if x != nil {
 		return x.Channels
+	}
+	return nil
+}
+
+func (x *Rule) GetEmails() []string {
+	if x != nil {
+		return x.Emails
 	}
 	return nil
 }
@@ -298,7 +308,9 @@ func (x *Webhook) GetCreateTime() *timestamppb.Timestamp {
 }
 
 type Delivery struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The webhook's id, or `channel:email` / `channel:console` for the email
+	// and console channels.
 	WebhookId string                 `protobuf:"bytes,1,opt,name=webhook_id,json=webhookId,proto3" json:"webhook_id,omitempty"`
 	EventId   string                 `protobuf:"bytes,2,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
 	EventType string                 `protobuf:"bytes,3,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"`
@@ -880,11 +892,212 @@ func (x *ListDeliveriesResponse) GetDeliveries() []*Delivery {
 	return nil
 }
 
+// One meter event as the console shows it.
+type ConsoleNotification struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The meter event's id.
+	Id         string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	CustomerId string `protobuf:"bytes,2,opt,name=customer_id,json=customerId,proto3" json:"customer_id,omitempty"`
+	// `io.loams.dev.meter.threshold.v1` or `io.loams.dev.meter.access.changed.v1`.
+	EventType string `protobuf:"bytes,3,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"`
+	Feature   string `protobuf:"bytes,4,opt,name=feature,proto3" json:"feature,omitempty"`
+	Title     string `protobuf:"bytes,5,opt,name=title,proto3" json:"title,omitempty"`
+	Body      string `protobuf:"bytes,6,opt,name=body,proto3" json:"body,omitempty"`
+	// For the shell's banner: access stopped, or 100 % or more used.
+	Banner        bool                   `protobuf:"varint,7,opt,name=banner,proto3" json:"banner,omitempty"`
+	CreateTime    *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=create_time,json=createTime,proto3" json:"create_time,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConsoleNotification) Reset() {
+	*x = ConsoleNotification{}
+	mi := &file_loams_meter_v1_notification_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConsoleNotification) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConsoleNotification) ProtoMessage() {}
+
+func (x *ConsoleNotification) ProtoReflect() protoreflect.Message {
+	mi := &file_loams_meter_v1_notification_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConsoleNotification.ProtoReflect.Descriptor instead.
+func (*ConsoleNotification) Descriptor() ([]byte, []int) {
+	return file_loams_meter_v1_notification_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ConsoleNotification) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ConsoleNotification) GetCustomerId() string {
+	if x != nil {
+		return x.CustomerId
+	}
+	return ""
+}
+
+func (x *ConsoleNotification) GetEventType() string {
+	if x != nil {
+		return x.EventType
+	}
+	return ""
+}
+
+func (x *ConsoleNotification) GetFeature() string {
+	if x != nil {
+		return x.Feature
+	}
+	return ""
+}
+
+func (x *ConsoleNotification) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *ConsoleNotification) GetBody() string {
+	if x != nil {
+		return x.Body
+	}
+	return ""
+}
+
+func (x *ConsoleNotification) GetBanner() bool {
+	if x != nil {
+		return x.Banner
+	}
+	return false
+}
+
+func (x *ConsoleNotification) GetCreateTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreateTime
+	}
+	return nil
+}
+
+type ListConsoleNotificationsRequest struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	CustomerId string                 `protobuf:"bytes,1,opt,name=customer_id,json=customerId,proto3" json:"customer_id,omitempty"`
+	// At most 500; 0 asks for 100.
+	PageSize      uint32 `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListConsoleNotificationsRequest) Reset() {
+	*x = ListConsoleNotificationsRequest{}
+	mi := &file_loams_meter_v1_notification_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListConsoleNotificationsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListConsoleNotificationsRequest) ProtoMessage() {}
+
+func (x *ListConsoleNotificationsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_loams_meter_v1_notification_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListConsoleNotificationsRequest.ProtoReflect.Descriptor instead.
+func (*ListConsoleNotificationsRequest) Descriptor() ([]byte, []int) {
+	return file_loams_meter_v1_notification_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *ListConsoleNotificationsRequest) GetCustomerId() string {
+	if x != nil {
+		return x.CustomerId
+	}
+	return ""
+}
+
+func (x *ListConsoleNotificationsRequest) GetPageSize() uint32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+type ListConsoleNotificationsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Notifications []*ConsoleNotification `protobuf:"bytes,1,rep,name=notifications,proto3" json:"notifications,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListConsoleNotificationsResponse) Reset() {
+	*x = ListConsoleNotificationsResponse{}
+	mi := &file_loams_meter_v1_notification_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListConsoleNotificationsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListConsoleNotificationsResponse) ProtoMessage() {}
+
+func (x *ListConsoleNotificationsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_loams_meter_v1_notification_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListConsoleNotificationsResponse.ProtoReflect.Descriptor instead.
+func (*ListConsoleNotificationsResponse) Descriptor() ([]byte, []int) {
+	return file_loams_meter_v1_notification_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ListConsoleNotificationsResponse) GetNotifications() []*ConsoleNotification {
+	if x != nil {
+		return x.Notifications
+	}
+	return nil
+}
+
 var File_loams_meter_v1_notification_proto protoreflect.FileDescriptor
 
 const file_loams_meter_v1_notification_proto_rawDesc = "" +
 	"\n" +
-	"!loams/meter/v1/notification.proto\x12\x0eloams.meter.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1eloams/options/v1/options.proto\"\xcf\x01\n" +
+	"!loams/meter/v1/notification.proto\x12\x0eloams.meter.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1eloams/options/v1/options.proto\"\xe7\x01\n" +
 	"\x04Rule\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vcustomer_id\x18\x02 \x01(\tR\n" +
@@ -894,7 +1107,8 @@ const file_loams_meter_v1_notification_proto_rawDesc = "" +
 	"thresholds\x18\x04 \x03(\rR\n" +
 	"thresholds\x12\x1b\n" +
 	"\tspend_cap\x18\x05 \x01(\bR\bspendCap\x12?\n" +
-	"\bchannels\x18\x06 \x03(\x0e2#.loams.meter.v1.NotificationChannelR\bchannels\"\x9f\x01\n" +
+	"\bchannels\x18\x06 \x03(\x0e2#.loams.meter.v1.NotificationChannelR\bchannels\x12\x16\n" +
+	"\x06emails\x18\a \x03(\tR\x06emails\"\x9f\x01\n" +
 	"\aWebhook\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vcustomer_id\x18\x02 \x01(\tR\n" +
@@ -943,7 +1157,25 @@ const file_loams_meter_v1_notification_proto_rawDesc = "" +
 	"\x16ListDeliveriesResponse\x128\n" +
 	"\n" +
 	"deliveries\x18\x01 \x03(\v2\x18.loams.meter.v1.DeliveryR\n" +
-	"deliveries*}\n" +
+	"deliveries\"\xfe\x01\n" +
+	"\x13ConsoleNotification\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
+	"\vcustomer_id\x18\x02 \x01(\tR\n" +
+	"customerId\x12\x1d\n" +
+	"\n" +
+	"event_type\x18\x03 \x01(\tR\teventType\x12\x18\n" +
+	"\afeature\x18\x04 \x01(\tR\afeature\x12\x14\n" +
+	"\x05title\x18\x05 \x01(\tR\x05title\x12\x12\n" +
+	"\x04body\x18\x06 \x01(\tR\x04body\x12\x16\n" +
+	"\x06banner\x18\a \x01(\bR\x06banner\x12;\n" +
+	"\vcreate_time\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"createTime\"_\n" +
+	"\x1fListConsoleNotificationsRequest\x12\x1f\n" +
+	"\vcustomer_id\x18\x01 \x01(\tR\n" +
+	"customerId\x12\x1b\n" +
+	"\tpage_size\x18\x02 \x01(\rR\bpageSize\"m\n" +
+	" ListConsoleNotificationsResponse\x12I\n" +
+	"\rnotifications\x18\x01 \x03(\v2#.loams.meter.v1.ConsoleNotificationR\rnotifications*}\n" +
 	"\x13NotificationChannel\x12$\n" +
 	" NOTIFICATION_CHANNEL_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aNOTIFICATION_CHANNEL_EMAIL\x10\x01\x12 \n" +
@@ -952,7 +1184,7 @@ const file_loams_meter_v1_notification_proto_rawDesc = "" +
 	"\x1bDELIVERY_STATUS_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19DELIVERY_STATUS_DELIVERED\x10\x01\x12\x1c\n" +
 	"\x18DELIVERY_STATUS_RETRYING\x10\x02\x12\x1a\n" +
-	"\x16DELIVERY_STATUS_FAILED\x10\x032\xc3\x05\n" +
+	"\x16DELIVERY_STATUS_FAILED\x10\x032\xe6\x06\n" +
 	"\x13NotificationService\x12e\n" +
 	"\n" +
 	"CreateRule\x12!.loams.meter.v1.CreateRuleRequest\x1a\".loams.meter.v1.CreateRuleResponse\"\x10\x92\xb5\x18\f\x12\n" +
@@ -960,7 +1192,8 @@ const file_loams_meter_v1_notification_proto_rawDesc = "" +
 	"\tListRules\x12 .loams.meter.v1.ListRulesRequest\x1a!.loams.meter.v1.ListRulesResponse\"\x12\x92\xb5\x18\v\x12\tlistRules\x90\x02\x01\x12q\n" +
 	"\rCreateWebhook\x12$.loams.meter.v1.CreateWebhookRequest\x1a%.loams.meter.v1.CreateWebhookResponse\"\x13\x92\xb5\x18\x0f\x12\rcreateWebhook\x12\x89\x01\n" +
 	"\x13RotateWebhookSecret\x12*.loams.meter.v1.RotateWebhookSecretRequest\x1a+.loams.meter.v1.RotateWebhookSecretResponse\"\x19\x92\xb5\x18\x15\x12\x13rotateWebhookSecret\x12x\n" +
-	"\x0eListDeliveries\x12%.loams.meter.v1.ListDeliveriesRequest\x1a&.loams.meter.v1.ListDeliveriesResponse\"\x17\x92\xb5\x18\x10\x12\x0elistDeliveries\x90\x02\x01\x1af\x8a\xb5\x18b\n" +
+	"\x0eListDeliveries\x12%.loams.meter.v1.ListDeliveriesRequest\x1a&.loams.meter.v1.ListDeliveriesResponse\"\x17\x92\xb5\x18\x10\x12\x0elistDeliveries\x90\x02\x01\x12\xa0\x01\n" +
+	"\x18ListConsoleNotifications\x12/.loams.meter.v1.ListConsoleNotificationsRequest\x1a0.loams.meter.v1.ListConsoleNotificationsResponse\"!\x92\xb5\x18\x1a\x12\x18listConsoleNotifications\x90\x02\x01\x1af\x8a\xb5\x18b\n" +
 	"\x13meter.notifications\x12KMeter notifications: threshold rules, signed webhooks and their deliveries.b\x06proto3"
 
 var (
@@ -976,52 +1209,59 @@ func file_loams_meter_v1_notification_proto_rawDescGZIP() []byte {
 }
 
 var file_loams_meter_v1_notification_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_loams_meter_v1_notification_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_loams_meter_v1_notification_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_loams_meter_v1_notification_proto_goTypes = []any{
-	(NotificationChannel)(0),            // 0: loams.meter.v1.NotificationChannel
-	(DeliveryStatus)(0),                 // 1: loams.meter.v1.DeliveryStatus
-	(*Rule)(nil),                        // 2: loams.meter.v1.Rule
-	(*Webhook)(nil),                     // 3: loams.meter.v1.Webhook
-	(*Delivery)(nil),                    // 4: loams.meter.v1.Delivery
-	(*CreateRuleRequest)(nil),           // 5: loams.meter.v1.CreateRuleRequest
-	(*CreateRuleResponse)(nil),          // 6: loams.meter.v1.CreateRuleResponse
-	(*ListRulesRequest)(nil),            // 7: loams.meter.v1.ListRulesRequest
-	(*ListRulesResponse)(nil),           // 8: loams.meter.v1.ListRulesResponse
-	(*CreateWebhookRequest)(nil),        // 9: loams.meter.v1.CreateWebhookRequest
-	(*CreateWebhookResponse)(nil),       // 10: loams.meter.v1.CreateWebhookResponse
-	(*RotateWebhookSecretRequest)(nil),  // 11: loams.meter.v1.RotateWebhookSecretRequest
-	(*RotateWebhookSecretResponse)(nil), // 12: loams.meter.v1.RotateWebhookSecretResponse
-	(*ListDeliveriesRequest)(nil),       // 13: loams.meter.v1.ListDeliveriesRequest
-	(*ListDeliveriesResponse)(nil),      // 14: loams.meter.v1.ListDeliveriesResponse
-	(*timestamppb.Timestamp)(nil),       // 15: google.protobuf.Timestamp
+	(NotificationChannel)(0),                 // 0: loams.meter.v1.NotificationChannel
+	(DeliveryStatus)(0),                      // 1: loams.meter.v1.DeliveryStatus
+	(*Rule)(nil),                             // 2: loams.meter.v1.Rule
+	(*Webhook)(nil),                          // 3: loams.meter.v1.Webhook
+	(*Delivery)(nil),                         // 4: loams.meter.v1.Delivery
+	(*CreateRuleRequest)(nil),                // 5: loams.meter.v1.CreateRuleRequest
+	(*CreateRuleResponse)(nil),               // 6: loams.meter.v1.CreateRuleResponse
+	(*ListRulesRequest)(nil),                 // 7: loams.meter.v1.ListRulesRequest
+	(*ListRulesResponse)(nil),                // 8: loams.meter.v1.ListRulesResponse
+	(*CreateWebhookRequest)(nil),             // 9: loams.meter.v1.CreateWebhookRequest
+	(*CreateWebhookResponse)(nil),            // 10: loams.meter.v1.CreateWebhookResponse
+	(*RotateWebhookSecretRequest)(nil),       // 11: loams.meter.v1.RotateWebhookSecretRequest
+	(*RotateWebhookSecretResponse)(nil),      // 12: loams.meter.v1.RotateWebhookSecretResponse
+	(*ListDeliveriesRequest)(nil),            // 13: loams.meter.v1.ListDeliveriesRequest
+	(*ListDeliveriesResponse)(nil),           // 14: loams.meter.v1.ListDeliveriesResponse
+	(*ConsoleNotification)(nil),              // 15: loams.meter.v1.ConsoleNotification
+	(*ListConsoleNotificationsRequest)(nil),  // 16: loams.meter.v1.ListConsoleNotificationsRequest
+	(*ListConsoleNotificationsResponse)(nil), // 17: loams.meter.v1.ListConsoleNotificationsResponse
+	(*timestamppb.Timestamp)(nil),            // 18: google.protobuf.Timestamp
 }
 var file_loams_meter_v1_notification_proto_depIdxs = []int32{
 	0,  // 0: loams.meter.v1.Rule.channels:type_name -> loams.meter.v1.NotificationChannel
-	15, // 1: loams.meter.v1.Webhook.create_time:type_name -> google.protobuf.Timestamp
-	15, // 2: loams.meter.v1.Delivery.time:type_name -> google.protobuf.Timestamp
+	18, // 1: loams.meter.v1.Webhook.create_time:type_name -> google.protobuf.Timestamp
+	18, // 2: loams.meter.v1.Delivery.time:type_name -> google.protobuf.Timestamp
 	1,  // 3: loams.meter.v1.Delivery.status:type_name -> loams.meter.v1.DeliveryStatus
-	15, // 4: loams.meter.v1.Delivery.next_attempt_time:type_name -> google.protobuf.Timestamp
+	18, // 4: loams.meter.v1.Delivery.next_attempt_time:type_name -> google.protobuf.Timestamp
 	2,  // 5: loams.meter.v1.CreateRuleRequest.rule:type_name -> loams.meter.v1.Rule
 	2,  // 6: loams.meter.v1.CreateRuleResponse.rule:type_name -> loams.meter.v1.Rule
 	2,  // 7: loams.meter.v1.ListRulesResponse.rules:type_name -> loams.meter.v1.Rule
 	3,  // 8: loams.meter.v1.CreateWebhookResponse.webhook:type_name -> loams.meter.v1.Webhook
 	3,  // 9: loams.meter.v1.RotateWebhookSecretResponse.webhook:type_name -> loams.meter.v1.Webhook
 	4,  // 10: loams.meter.v1.ListDeliveriesResponse.deliveries:type_name -> loams.meter.v1.Delivery
-	5,  // 11: loams.meter.v1.NotificationService.CreateRule:input_type -> loams.meter.v1.CreateRuleRequest
-	7,  // 12: loams.meter.v1.NotificationService.ListRules:input_type -> loams.meter.v1.ListRulesRequest
-	9,  // 13: loams.meter.v1.NotificationService.CreateWebhook:input_type -> loams.meter.v1.CreateWebhookRequest
-	11, // 14: loams.meter.v1.NotificationService.RotateWebhookSecret:input_type -> loams.meter.v1.RotateWebhookSecretRequest
-	13, // 15: loams.meter.v1.NotificationService.ListDeliveries:input_type -> loams.meter.v1.ListDeliveriesRequest
-	6,  // 16: loams.meter.v1.NotificationService.CreateRule:output_type -> loams.meter.v1.CreateRuleResponse
-	8,  // 17: loams.meter.v1.NotificationService.ListRules:output_type -> loams.meter.v1.ListRulesResponse
-	10, // 18: loams.meter.v1.NotificationService.CreateWebhook:output_type -> loams.meter.v1.CreateWebhookResponse
-	12, // 19: loams.meter.v1.NotificationService.RotateWebhookSecret:output_type -> loams.meter.v1.RotateWebhookSecretResponse
-	14, // 20: loams.meter.v1.NotificationService.ListDeliveries:output_type -> loams.meter.v1.ListDeliveriesResponse
-	16, // [16:21] is the sub-list for method output_type
-	11, // [11:16] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	18, // 11: loams.meter.v1.ConsoleNotification.create_time:type_name -> google.protobuf.Timestamp
+	15, // 12: loams.meter.v1.ListConsoleNotificationsResponse.notifications:type_name -> loams.meter.v1.ConsoleNotification
+	5,  // 13: loams.meter.v1.NotificationService.CreateRule:input_type -> loams.meter.v1.CreateRuleRequest
+	7,  // 14: loams.meter.v1.NotificationService.ListRules:input_type -> loams.meter.v1.ListRulesRequest
+	9,  // 15: loams.meter.v1.NotificationService.CreateWebhook:input_type -> loams.meter.v1.CreateWebhookRequest
+	11, // 16: loams.meter.v1.NotificationService.RotateWebhookSecret:input_type -> loams.meter.v1.RotateWebhookSecretRequest
+	13, // 17: loams.meter.v1.NotificationService.ListDeliveries:input_type -> loams.meter.v1.ListDeliveriesRequest
+	16, // 18: loams.meter.v1.NotificationService.ListConsoleNotifications:input_type -> loams.meter.v1.ListConsoleNotificationsRequest
+	6,  // 19: loams.meter.v1.NotificationService.CreateRule:output_type -> loams.meter.v1.CreateRuleResponse
+	8,  // 20: loams.meter.v1.NotificationService.ListRules:output_type -> loams.meter.v1.ListRulesResponse
+	10, // 21: loams.meter.v1.NotificationService.CreateWebhook:output_type -> loams.meter.v1.CreateWebhookResponse
+	12, // 22: loams.meter.v1.NotificationService.RotateWebhookSecret:output_type -> loams.meter.v1.RotateWebhookSecretResponse
+	14, // 23: loams.meter.v1.NotificationService.ListDeliveries:output_type -> loams.meter.v1.ListDeliveriesResponse
+	17, // 24: loams.meter.v1.NotificationService.ListConsoleNotifications:output_type -> loams.meter.v1.ListConsoleNotificationsResponse
+	19, // [19:25] is the sub-list for method output_type
+	13, // [13:19] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_loams_meter_v1_notification_proto_init() }
@@ -1035,7 +1275,7 @@ func file_loams_meter_v1_notification_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_loams_meter_v1_notification_proto_rawDesc), len(file_loams_meter_v1_notification_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   13,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

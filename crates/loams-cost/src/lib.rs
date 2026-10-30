@@ -18,6 +18,9 @@
 //! | [`amortise`] | Straight-line amortisation and monthly costs per day, split over kinds; declared capacity |
 //! | [`drivers`] | The driver catalogue; House rows → level-one usage (one source per engine and kind), level-two splits and ops |
 //! | [`export`] | FOCUS 1.3 with split cost allocation columns; OpenMeter-compatible cost CloudEvents and adjustments |
+//! | [`classes`] | Query-class rules parsed and evaluated in Rust (the House compiles the same language) |
+//! | [`offline`] | Usage CloudEvents aggregated like the House's driver queries, for `loams cost` offline |
+//! | `cli` | `loams cost` (feature `cli`) |
 //! | [`import`] | Bill import: FOCUS 1.0–1.4, AWS CUR 2.0 and legacy CUR, generic CSV; mapping rules; day splitting; unmapped report |
 //! | [`report`] | Reports by dimension and period, unit costs ($ per 1M ops, GB-month, job, core-hour), sample rules, fully loaded columns, unit economics, trend markers |
 //! | [`pipeline`] | Inputs → asset, bill and price sources → allocation, with the input digest |
@@ -26,12 +29,16 @@
 pub mod allocate;
 pub mod amortise;
 pub mod basis;
+pub mod classes;
+#[cfg(feature = "cli")]
+pub mod cli;
 pub mod drivers;
 pub mod export;
 pub mod import;
 pub mod inputs;
 pub mod model;
 pub mod money;
+pub mod offline;
 pub mod pipeline;
 pub mod prices;
 pub mod report;

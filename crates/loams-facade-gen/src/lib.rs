@@ -58,8 +58,14 @@ const IDEMPOTENCY_LEVEL: u32 = 34;
 /// §11.2, D2202): between the gates in product roles and the meter's counter
 /// owners, on the cluster listener only, with service identities. Its methods
 /// carry no `FacadeOptions`.
+///
+/// `loams.ca.internal.v1` is the deployment CA's `CertificateService`
+/// (design §83 §6.3, D2310): served by `meta` nodes to the cluster's own
+/// processes, which join with a token and renew over mTLS. Its methods carry
+/// no `FacadeOptions`.
 pub const NOT_SDK_PACKAGES: &[&str] = &[
     "loams.agentd.v1",
+    "loams.ca.internal.v1",
     "loams.marketplace.v1",
     "loams.meter.internal.v1",
 ];

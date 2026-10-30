@@ -723,6 +723,8 @@ These types are excluded from every meter. A **notifier** in the `meter` role co
 - email through the deployment's configured mailer (none on the desktop);
 - console notifications and the shell banner (§18).
 
+Email and the console are delivered the way webhooks are (D2402): one delivery per channel and event, retried on the webhook schedule, listed by `ListDeliveries` as `channel:email` and `channel:console`. The mailer is Resend's HTTP API (`LOAMS_METER_MAIL_FROM`, `LOAMS_METER_RESEND_API_KEY_FILE`); a rule's `emails` name the recipients, else the org's owners and admins get it. The console reads its notifications with `NotificationService.ListConsoleNotifications`.
+
 OpenMeter's equivalent is the `entitlements.balance.threshold` notification with `usage_percentage` values ([openapi.yaml](https://raw.githubusercontent.com/openmeterio/openmeter/main/api/openapi.yaml)); the OpenMeter exporter maps to it where the target uses OpenMeter's notifications.
 
 ---
@@ -740,6 +742,8 @@ Every exporter is optional, off by default, and one-way: it reads Loams' tables 
 | **Iceberg** | Nothing to send: `_meter.windows` and `_meter.period_totals` are Iceberg tables any engine can read (D762) | — | Spark, Trino, DuckDB |
 
 Each exporter's cursor (the last exported `close_run` per period) is in the `ControlStore`. An export is retried until the provider accepts it; the idempotency key makes retries safe.
+
+**Scheduling and names (D2403).** The role runs every configured exporter every 5 minutes. Stripe and OpenMeter work only on the stream partitions the node owns. The names a provider needs come from `LOAMS_METER_EXPORT_MAPPING_FILE`, and each has a default: the Stripe `event_name` and the Lago `code` are the meter's slug, and the Lago `external_subscription_id` is the Loams customer's id. The operator guide is [`docs/guides/meter-exports.md`](../guides/meter-exports.md).
 
 ---
 

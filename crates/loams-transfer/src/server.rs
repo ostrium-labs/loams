@@ -58,12 +58,15 @@ pub enum Denied {
     NoNamespace,
 }
 
-/// Resolves a namespace name and checks the caller's access to it.
+/// Resolves a namespace name and checks the caller's access to it. It sees
+/// the request's headers and extensions, so an embedding server can use a
+/// principal its own authentication layer put there (the engine does).
 #[async_trait]
 pub trait Authorizer: Send + Sync + 'static {
     async fn authorize(
         &self,
         headers: &HeaderMap,
+        extensions: &http::Extensions,
         ns: &str,
         need: Access,
     ) -> Result<NamespaceId, Denied>;
@@ -134,6 +137,7 @@ impl Authorizer for StaticTokens {
     async fn authorize(
         &self,
         headers: &HeaderMap,
+        _extensions: &http::Extensions,
         ns: &str,
         need: Access,
     ) -> Result<NamespaceId, Denied> {
@@ -278,9 +282,33 @@ fn epoch_header(h: &HeaderMap) -> ApiResult<u64> {
         .map_err(|_| bad("the lease epoch must be a number"))
 }
 
+/// The caller as the authorizer sees it: headers and extensions.
+#[derive(Debug)]
+pub struct Caller {
+    headers: HeaderMap,
+    extensions: http::Extensions,
+}
+
+impl<S: Send + Sync> axum::extract::FromRequestParts<S> for Caller {
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(
+        parts: &mut http::request::Parts,
+        _state: &S,
+    ) -> Result<Self, Self::Rejection> {
+        Ok(Caller {
+            headers: parts.headers.clone(),
+            extensions: parts.extensions.clone(),
+        })
+    }
+}
+
 impl Api {
-    async fn ns(&self, h: &HeaderMap, ns: &str, need: Access) -> ApiResult<NamespaceId> {
-        Ok(self.auth.authorize(h, ns, need).await?)
+    async fn ns(&self, c: &Caller, ns: &str, need: Access) -> ApiResult<NamespaceId> {
+        Ok(self
+            .auth
+            .authorize(&c.headers, &c.extensions, ns, need)
+            .await?)
     }
 }
 
@@ -318,19 +346,19 @@ pub fn router(api: Api) -> Router {
 async fn list_transfers(
     State(api): State<Api>,
     Path(ns): Path<String>,
-    h: HeaderMap,
+    c: Caller,
 ) -> ApiResult<Response> {
-    let id = api.ns(&h, &ns, Access::Read).await?;
+    let id = api.ns(&c, &ns, Access::Read).await?;
     Ok(Json(api.transfers.list(id).await?).into_response())
 }
 
 async fn create_transfer(
     State(api): State<Api>,
     Path((ns, tid)): Path<(String, String)>,
-    h: HeaderMap,
+    c: Caller,
     Json(req): Json<CreateTransfer>,
 ) -> ApiResult<Response> {
-    let id = api.ns(&h, &ns, Access::Write).await?;
+    let id = api.ns(&c, &ns, Access::Write).await?;
     Ok(Json(api.transfers.create(id, &tid, req).await?).into_response())
 }
 
@@ -344,9 +372,9 @@ async fn view_transfer(
     State(api): State<Api>,
     Path((ns, tid)): Path<(String, String)>,
     Query(q): Query<ViewQuery>,
-    h: HeaderMap,
+    c: Caller,
 ) -> ApiResult<Response> {
-    let id = api.ns(&h, &ns, Access::Read).await?;
+    let id = api.ns(&c, &ns, Access::Read).await?;
     if q.verify.as_deref() == Some("full") {
         api.transfers.verify_full(id, &tid).await?;
     }
@@ -367,10 +395,10 @@ pub struct LeaseReply {
 async fn lease_transfer(
     State(api): State<Api>,
     Path((ns, tid)): Path<(String, String)>,
-    h: HeaderMap,
+    c: Caller,
     Json(req): Json<LeaseRequest>,
 ) -> ApiResult<Response> {
-    let id = api.ns(&h, &ns, Access::Write).await?;
+    let id = api.ns(&c, &ns, Access::Write).await?;
     let g = api.transfers.lease(id, &tid, &req.holder).await?;
     Ok(Json(LeaseReply {
         epoch: g.epoch,
@@ -382,12 +410,12 @@ async fn lease_transfer(
 async fn put_chunk(
     State(api): State<Api>,
     Path((ns, tid, i)): Path<(String, String, u32)>,
-    h: HeaderMap,
+    c: Caller,
     body: Body,
 ) -> ApiResult<Response> {
-    let id = api.ns(&h, &ns, Access::Write).await?;
-    let sha = header(&h, H_CHUNK_SHA)?.to_string();
-    let epoch = epoch_header(&h)?;
+    let id = api.ns(&c, &ns, Access::Write).await?;
+    let sha = header(&c.headers, H_CHUNK_SHA)?.to_string();
+    let epoch = epoch_header(&c.headers)?;
     let stream = body
         .into_data_stream()
         .map(|r| r.map_err(io::Error::other))
@@ -402,9 +430,9 @@ async fn put_chunk(
 async fn get_chunk(
     State(api): State<Api>,
     Path((ns, tid, i)): Path<(String, String, u32)>,
-    h: HeaderMap,
+    c: Caller,
 ) -> ApiResult<Response> {
-    let id = api.ns(&h, &ns, Access::Read).await?;
+    let id = api.ns(&c, &ns, Access::Read).await?;
     let (sha, len, stream) = api.transfers.open_chunk(id, &tid, i).await?;
     let mut resp = Body::from_stream(stream.map(|r| r.map_err(io::Error::other))).into_response();
     let hs = resp.headers_mut();
@@ -428,10 +456,10 @@ pub struct CompleteRequest {
 async fn complete_transfer(
     State(api): State<Api>,
     Path((ns, tid)): Path<(String, String)>,
-    h: HeaderMap,
+    c: Caller,
     Json(req): Json<CompleteRequest>,
 ) -> ApiResult<Response> {
-    let id = api.ns(&h, &ns, Access::Write).await?;
+    let id = api.ns(&c, &ns, Access::Write).await?;
     let v = api
         .transfers
         .complete(id, &tid, req.epoch, &req.file_sha256)
@@ -442,9 +470,9 @@ async fn complete_transfer(
 async fn abandon_transfer(
     State(api): State<Api>,
     Path((ns, tid)): Path<(String, String)>,
-    h: HeaderMap,
+    c: Caller,
 ) -> ApiResult<Response> {
-    let id = api.ns(&h, &ns, Access::Write).await?;
+    let id = api.ns(&c, &ns, Access::Write).await?;
     Ok(Json(api.transfers.abandon(id, &tid).await?).into_response())
 }
 
@@ -460,9 +488,9 @@ pub struct RunSummary {
 async fn list_runs(
     State(api): State<Api>,
     Path(ns): Path<String>,
-    h: HeaderMap,
+    c: Caller,
 ) -> ApiResult<Response> {
-    let id = api.ns(&h, &ns, Access::Read).await?;
+    let id = api.ns(&c, &ns, Access::Read).await?;
     let out: Vec<RunSummary> = api
         .runs
         .list(id)
@@ -483,28 +511,28 @@ pub struct CreateRun {
 async fn create_run(
     State(api): State<Api>,
     Path((ns, rid)): Path<(String, String)>,
-    h: HeaderMap,
+    c: Caller,
     Json(req): Json<CreateRun>,
 ) -> ApiResult<Response> {
-    let id = api.ns(&h, &ns, Access::Write).await?;
+    let id = api.ns(&c, &ns, Access::Write).await?;
     Ok(Json(api.runs.create(id, &rid, &req.job, req.params).await?).into_response())
 }
 
 async fn view_run(
     State(api): State<Api>,
     Path((ns, rid)): Path<(String, String)>,
-    h: HeaderMap,
+    c: Caller,
 ) -> ApiResult<Response> {
-    let id = api.ns(&h, &ns, Access::Read).await?;
+    let id = api.ns(&c, &ns, Access::Read).await?;
     Ok(Json(api.runs.view(id, &rid).await?).into_response())
 }
 
 async fn cancel_run(
     State(api): State<Api>,
     Path((ns, rid)): Path<(String, String)>,
-    h: HeaderMap,
+    c: Caller,
 ) -> ApiResult<Response> {
-    let id = api.ns(&h, &ns, Access::Write).await?;
+    let id = api.ns(&c, &ns, Access::Write).await?;
     Ok(Json(api.runs.cancel(id, &rid).await?).into_response())
 }
 
@@ -517,10 +545,10 @@ pub struct ClaimRequest {
 async fn claim_run(
     State(api): State<Api>,
     Path(ns): Path<String>,
-    h: HeaderMap,
+    c: Caller,
     Json(req): Json<ClaimRequest>,
 ) -> ApiResult<Response> {
-    let id = api.ns(&h, &ns, Access::Runner).await?;
+    let id = api.ns(&c, &ns, Access::Runner).await?;
     Ok(Json(api.runs.claim(id, &req.runner, &req.jobs).await?).into_response())
 }
 
@@ -538,10 +566,10 @@ pub struct RenewReply {
 async fn renew_run(
     State(api): State<Api>,
     Path((ns, rid)): Path<(String, String)>,
-    h: HeaderMap,
+    c: Caller,
     Json(req): Json<RenewRequest>,
 ) -> ApiResult<Response> {
-    let id = api.ns(&h, &ns, Access::Runner).await?;
+    let id = api.ns(&c, &ns, Access::Runner).await?;
     let cancel = api.runs.renew(id, &rid, &req.runner, req.epoch).await?;
     Ok(Json(RenewReply {
         cancel_requested: cancel,
@@ -563,11 +591,11 @@ async fn append_log(
     State(api): State<Api>,
     Path((ns, rid)): Path<(String, String)>,
     Query(q): Query<AppendQuery>,
-    h: HeaderMap,
+    c: Caller,
     data: Bytes,
 ) -> ApiResult<Response> {
-    let id = api.ns(&h, &ns, Access::Runner).await?;
-    let epoch = epoch_header(&h)?;
+    let id = api.ns(&c, &ns, Access::Runner).await?;
+    let epoch = epoch_header(&c.headers)?;
     let committed = api.runs.append_log(id, &rid, epoch, q.offset, data).await?;
     Ok(Json(AppendReply { committed }).into_response())
 }
@@ -584,9 +612,9 @@ async fn read_log(
     State(api): State<Api>,
     Path((ns, rid)): Path<(String, String)>,
     Query(q): Query<ReadQuery>,
-    h: HeaderMap,
+    c: Caller,
 ) -> ApiResult<Response> {
-    let id = api.ns(&h, &ns, Access::Read).await?;
+    let id = api.ns(&c, &ns, Access::Read).await?;
     let first = api.runs.read_log(id, &rid, q.from).await?;
     let (committed, state) = (first.committed, first.state.clone());
     let (tx, rx) = mpsc::channel::<io::Result<Bytes>>(8);
@@ -652,10 +680,10 @@ pub struct ArtifactRequest {
 async fn add_artifact(
     State(api): State<Api>,
     Path((ns, rid)): Path<(String, String)>,
-    h: HeaderMap,
+    c: Caller,
     Json(req): Json<ArtifactRequest>,
 ) -> ApiResult<Response> {
-    let id = api.ns(&h, &ns, Access::Runner).await?;
+    let id = api.ns(&c, &ns, Access::Runner).await?;
     api.runs
         .add_artifact(id, &rid, req.epoch, &req.name, &req.tid, req.size)
         .await?;
@@ -675,10 +703,10 @@ pub struct FinishRequest {
 async fn finish_run(
     State(api): State<Api>,
     Path((ns, rid)): Path<(String, String)>,
-    h: HeaderMap,
+    c: Caller,
     Json(req): Json<FinishRequest>,
 ) -> ApiResult<Response> {
-    let id = api.ns(&h, &ns, Access::Runner).await?;
+    let id = api.ns(&c, &ns, Access::Runner).await?;
     let v = api
         .runs
         .finish(id, &rid, req.epoch, req.outcome, req.exit_code, req.message)

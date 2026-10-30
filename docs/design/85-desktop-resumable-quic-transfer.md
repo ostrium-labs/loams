@@ -107,7 +107,7 @@ Every route is under `/v1/namespaces/{ns}/transfers`. Request and response bodie
 
 | Route | What it does |
 |---|---|
-| `POST /` `{name, size, chunk_size, client_id, file_sha256?}` | Create a transfer. Returns `{tid}`. Idempotent per `(client_id, name, size, chunk_size)` within the open set: the client keeps `tid` in its local state anyway |
+| `PUT /{tid}` `{name, size, chunk_size, client_id}` | Create a transfer under a client-chosen ULID, which the client writes to its local state first. Creating again with the same spec answers the existing transfer, so a lost reply is harmless. Another spec gets 409 `transfer_exists` |
 | `GET /{tid}` | The checkpoint: state, `size`, `chunk_size`, `committed` (a run-length list of index ranges), `bytes`, the lease holder and its deadline |
 | `POST /{tid}/lease` `{holder}` | Acquire or renew the lease. Returns `{epoch, deadline_ms}`. 409 `lease_held` names the holder and its deadline |
 | `PUT /{tid}/chunks/{i}` + headers `Loams-Chunk-Sha256`, `Loams-Lease-Epoch` | Stream the chunk's bytes in. The server hashes while it writes, refuses a mismatch (422), then group-commits. Returns the new checkpoint summary. A committed index with the same hash returns 200 at once, with no write. One with another hash returns 409 `chunk_conflict` |
@@ -123,7 +123,7 @@ Limits (D2423): `chunk_size` is a power of two from 8 MiB to 64 MiB, and the def
 ### 7.1 Upload
 
 1. **Local state.** The sidecar keeps `<state>/transfers/<tid>.json` (`tid`, path, size, mtime, chunk size and server), and takes an exclusive file lock on `<state>/agent.lock`. That is the local half of the single-writer rule.
-2. **Create or resume.** Create the transfer, or read the checkpoint of the one in the local state. Size, chunk size or mtime that do not match the local file stop the transfer: the file changed, so it starts over as a new transfer (D2426).
+2. **Create or resume.** Pick a ULID, save the local state, then create the transfer, or read the checkpoint of the one in the local state. Size, chunk size or mtime that do not match the local file stop the transfer: the file changed, so it starts over as a new transfer (D2426).
 3. **Lease.** Acquire it, with the holder `<install-id>`, and renew it at a third of its 30 s TTL (D2428).
 4. **Pipeline.** Walk the uncommitted chunk indexes in order, with up to `window` chunks in flight (default 8, D2431). For each chunk:
    - **Pass 1:** read the range from disk in 1 MiB blocks and hash it.
@@ -168,7 +168,7 @@ On any error the chunk is retried with backoff (1, 2, 4 … 30 s). The checkpoin
 
 The same journal, with other entries:
 
-- **Runs.** `POST /v1/namespaces/{ns}/runs {job, params}` queues a run. Its pointer is `run/<rid>`, with the state `queued`.
+- **Runs.** `PUT /v1/namespaces/{ns}/runs/{rid} {job, params}` queues a run under a client-chosen ULID, idempotently. Its pointer is `run/<rid>`, with the state `queued`.
 - **Runners.** A runner is `loams-transfer runner --jobs jobs.toml` on a remote host, such as a CI machine or a self-hosted node. `jobs.toml` names the jobs, each with its argv, working directory, environment allowlist, timeout and artifact globs. A run can only name one of those jobs, and its `params` become environment variables from the allowlist only (D2440).
 - **Claiming.** A runner takes a run by acquiring lease `run/<rid>` and swapping the pointer from `queued` to `running` under that fence. Only one runner can win.
 - **Logs.** The runner spools the job's stdout and stderr to a local file. It appends segments of up to 1 MiB or 1 s: each segment is written as an object, then committed as a journal entry `{start, len, sha256, key}` under the fence. If the runner's view of the log length is wrong, the server answers 409 with the committed length, and the runner resends from there. So an append is idempotent by offset (D2441).
@@ -190,7 +190,7 @@ The same journal, with other entries:
 ## 13. Memory and throughput bounds (D2431, D2432)
 
 - **Client memory** is at most `window × 2 MiB` of I/O buffers, plus the HTTP/3 send buffers, whatever the file size. The default is under 64 MiB (target, measured in DQ1 Task 3). There is no large Node heap. Electron main sees only progress events.
-- **Server memory** per chunk in flight is one multipart part buffer (at least 5 MiB, `loams-store`'s minimum) plus the hasher. A per-server semaphore, `transfer.max_inflight_chunks` (default 64), bounds the total.
+- **Server memory** per chunk in flight is one multipart part buffer (at least 5 MiB, `loams-store`'s minimum) plus the hasher. A per-server semaphore, `transfer.max_inflight_chunks` (default 16), bounds the total.
 - **Throughput target:** a 10 GiB upload over loopback HTTP/3 at 300 MB/s or more on the dev laptop. Over a 1 Gbit/s tailnet link it should come within 15 % of `iperf3`'s figure (target, measured in DQ1 Task 7).
 
 ## 14. Security (D2443)

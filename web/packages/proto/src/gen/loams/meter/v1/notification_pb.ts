@@ -22,7 +22,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file loams/meter/v1/notification.proto.
  */
 export const file_loams_meter_v1_notification: GenFile = /*@__PURE__*/
-  fileDesc("CiFsb2Ftcy9tZXRlci92MS9ub3RpZmljYXRpb24ucHJvdG8SDmxvYW1zLm1ldGVyLnYxIpYBCgRSdWxlEgoKAmlkGAEgASgJEhMKC2N1c3RvbWVyX2lkGAIgASgJEg8KB2ZlYXR1cmUYAyABKAkSEgoKdGhyZXNob2xkcxgEIAMoDRIRCglzcGVuZF9jYXAYBSABKAgSNQoIY2hhbm5lbHMYBiADKA4yIy5sb2Ftcy5tZXRlci52MS5Ob3RpZmljYXRpb25DaGFubmVsIncKB1dlYmhvb2sSCgoCaWQYASABKAkSEwoLY3VzdG9tZXJfaWQYAiABKAkSCwoDdXJsGAMgASgJEg0KBXR5cGVzGAQgAygJEi8KC2NyZWF0ZV90aW1lGAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCL8AQoIRGVsaXZlcnkSEgoKd2ViaG9va19pZBgBIAEoCRIQCghldmVudF9pZBgCIAEoCRISCgpldmVudF90eXBlGAMgASgJEigKBHRpbWUYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KBnN0YXR1cxgFIAEoDjIeLmxvYW1zLm1ldGVyLnYxLkRlbGl2ZXJ5U3RhdHVzEg8KB2F0dGVtcHQYBiABKA0SFAoMbGFzdF9vdXRjb21lGAcgASgJEjUKEW5leHRfYXR0ZW1wdF90aW1lGAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCI3ChFDcmVhdGVSdWxlUmVxdWVzdBIiCgRydWxlGAEgASgLMhQubG9hbXMubWV0ZXIudjEuUnVsZSI4ChJDcmVhdGVSdWxlUmVzcG9uc2USIgoEcnVsZRgBIAEoCzIULmxvYW1zLm1ldGVyLnYxLlJ1bGUiJwoQTGlzdFJ1bGVzUmVxdWVzdBITCgtjdXN0b21lcl9pZBgBIAEoCSI4ChFMaXN0UnVsZXNSZXNwb25zZRIjCgVydWxlcxgBIAMoCzIULmxvYW1zLm1ldGVyLnYxLlJ1bGUiRwoUQ3JlYXRlV2ViaG9va1JlcXVlc3QSEwoLY3VzdG9tZXJfaWQYASABKAkSCwoDdXJsGAIgASgJEg0KBXR5cGVzGAMgAygJIlEKFUNyZWF0ZVdlYmhvb2tSZXNwb25zZRIoCgd3ZWJob29rGAEgASgLMhcubG9hbXMubWV0ZXIudjEuV2ViaG9vaxIOCgZzZWNyZXQYAiABKAkiKAoaUm90YXRlV2ViaG9va1NlY3JldFJlcXVlc3QSCgoCaWQYASABKAkiVwobUm90YXRlV2ViaG9va1NlY3JldFJlc3BvbnNlEigKB3dlYmhvb2sYASABKAsyFy5sb2Ftcy5tZXRlci52MS5XZWJob29rEg4KBnNlY3JldBgCIAEoCSI/ChVMaXN0RGVsaXZlcmllc1JlcXVlc3QSEwoLY3VzdG9tZXJfaWQYASABKAkSEQoJcGFnZV9zaXplGAIgASgNIkYKFkxpc3REZWxpdmVyaWVzUmVzcG9uc2USLAoKZGVsaXZlcmllcxgBIAMoCzIYLmxvYW1zLm1ldGVyLnYxLkRlbGl2ZXJ5Kn0KE05vdGlmaWNhdGlvbkNoYW5uZWwSJAogTk9USUZJQ0FUSU9OX0NIQU5ORUxfVU5TUEVDSUZJRUQQABIeChpOT1RJRklDQVRJT05fQ0hBTk5FTF9FTUFJTBABEiAKHE5PVElGSUNBVElPTl9DSEFOTkVMX0NPTlNPTEUQAiqKAQoORGVsaXZlcnlTdGF0dXMSHwobREVMSVZFUllfU1RBVFVTX1VOU1BFQ0lGSUVEEAASHQoZREVMSVZFUllfU1RBVFVTX0RFTElWRVJFRBABEhwKGERFTElWRVJZX1NUQVRVU19SRVRSWUlORxACEhoKFkRFTElWRVJZX1NUQVRVU19GQUlMRUQQAzLDBQoTTm90aWZpY2F0aW9uU2VydmljZRJlCgpDcmVhdGVSdWxlEiEubG9hbXMubWV0ZXIudjEuQ3JlYXRlUnVsZVJlcXVlc3QaIi5sb2Ftcy5tZXRlci52MS5DcmVhdGVSdWxlUmVzcG9uc2UiEJK1GAwSCmNyZWF0ZVJ1bGUSZAoJTGlzdFJ1bGVzEiAubG9hbXMubWV0ZXIudjEuTGlzdFJ1bGVzUmVxdWVzdBohLmxvYW1zLm1ldGVyLnYxLkxpc3RSdWxlc1Jlc3BvbnNlIhKQAgGStRgLEglsaXN0UnVsZXMScQoNQ3JlYXRlV2ViaG9vaxIkLmxvYW1zLm1ldGVyLnYxLkNyZWF0ZVdlYmhvb2tSZXF1ZXN0GiUubG9hbXMubWV0ZXIudjEuQ3JlYXRlV2ViaG9va1Jlc3BvbnNlIhOStRgPEg1jcmVhdGVXZWJob29rEokBChNSb3RhdGVXZWJob29rU2VjcmV0EioubG9hbXMubWV0ZXIudjEuUm90YXRlV2ViaG9va1NlY3JldFJlcXVlc3QaKy5sb2Ftcy5tZXRlci52MS5Sb3RhdGVXZWJob29rU2VjcmV0UmVzcG9uc2UiGZK1GBUSE3JvdGF0ZVdlYmhvb2tTZWNyZXQSeAoOTGlzdERlbGl2ZXJpZXMSJS5sb2Ftcy5tZXRlci52MS5MaXN0RGVsaXZlcmllc1JlcXVlc3QaJi5sb2Ftcy5tZXRlci52MS5MaXN0RGVsaXZlcmllc1Jlc3BvbnNlIheQAgGStRgQEg5saXN0RGVsaXZlcmllcxpmirUYYgoTbWV0ZXIubm90aWZpY2F0aW9ucxJLTWV0ZXIgbm90aWZpY2F0aW9uczogdGhyZXNob2xkIHJ1bGVzLCBzaWduZWQgd2ViaG9va3MgYW5kIHRoZWlyIGRlbGl2ZXJpZXMuYgZwcm90bzM", [file_google_protobuf_timestamp, file_loams_options_v1_options]);
+  fileDesc("CiFsb2Ftcy9tZXRlci92MS9ub3RpZmljYXRpb24ucHJvdG8SDmxvYW1zLm1ldGVyLnYxIqYBCgRSdWxlEgoKAmlkGAEgASgJEhMKC2N1c3RvbWVyX2lkGAIgASgJEg8KB2ZlYXR1cmUYAyABKAkSEgoKdGhyZXNob2xkcxgEIAMoDRIRCglzcGVuZF9jYXAYBSABKAgSNQoIY2hhbm5lbHMYBiADKA4yIy5sb2Ftcy5tZXRlci52MS5Ob3RpZmljYXRpb25DaGFubmVsEg4KBmVtYWlscxgHIAMoCSJ3CgdXZWJob29rEgoKAmlkGAEgASgJEhMKC2N1c3RvbWVyX2lkGAIgASgJEgsKA3VybBgDIAEoCRINCgV0eXBlcxgEIAMoCRIvCgtjcmVhdGVfdGltZRgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAi/AEKCERlbGl2ZXJ5EhIKCndlYmhvb2tfaWQYASABKAkSEAoIZXZlbnRfaWQYAiABKAkSEgoKZXZlbnRfdHlwZRgDIAEoCRIoCgR0aW1lGAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgZzdGF0dXMYBSABKA4yHi5sb2Ftcy5tZXRlci52MS5EZWxpdmVyeVN0YXR1cxIPCgdhdHRlbXB0GAYgASgNEhQKDGxhc3Rfb3V0Y29tZRgHIAEoCRI1ChFuZXh0X2F0dGVtcHRfdGltZRgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiNwoRQ3JlYXRlUnVsZVJlcXVlc3QSIgoEcnVsZRgBIAEoCzIULmxvYW1zLm1ldGVyLnYxLlJ1bGUiOAoSQ3JlYXRlUnVsZVJlc3BvbnNlEiIKBHJ1bGUYASABKAsyFC5sb2Ftcy5tZXRlci52MS5SdWxlIicKEExpc3RSdWxlc1JlcXVlc3QSEwoLY3VzdG9tZXJfaWQYASABKAkiOAoRTGlzdFJ1bGVzUmVzcG9uc2USIwoFcnVsZXMYASADKAsyFC5sb2Ftcy5tZXRlci52MS5SdWxlIkcKFENyZWF0ZVdlYmhvb2tSZXF1ZXN0EhMKC2N1c3RvbWVyX2lkGAEgASgJEgsKA3VybBgCIAEoCRINCgV0eXBlcxgDIAMoCSJRChVDcmVhdGVXZWJob29rUmVzcG9uc2USKAoHd2ViaG9vaxgBIAEoCzIXLmxvYW1zLm1ldGVyLnYxLldlYmhvb2sSDgoGc2VjcmV0GAIgASgJIigKGlJvdGF0ZVdlYmhvb2tTZWNyZXRSZXF1ZXN0EgoKAmlkGAEgASgJIlcKG1JvdGF0ZVdlYmhvb2tTZWNyZXRSZXNwb25zZRIoCgd3ZWJob29rGAEgASgLMhcubG9hbXMubWV0ZXIudjEuV2ViaG9vaxIOCgZzZWNyZXQYAiABKAkiPwoVTGlzdERlbGl2ZXJpZXNSZXF1ZXN0EhMKC2N1c3RvbWVyX2lkGAEgASgJEhEKCXBhZ2Vfc2l6ZRgCIAEoDSJGChZMaXN0RGVsaXZlcmllc1Jlc3BvbnNlEiwKCmRlbGl2ZXJpZXMYASADKAsyGC5sb2Ftcy5tZXRlci52MS5EZWxpdmVyeSK5AQoTQ29uc29sZU5vdGlmaWNhdGlvbhIKCgJpZBgBIAEoCRITCgtjdXN0b21lcl9pZBgCIAEoCRISCgpldmVudF90eXBlGAMgASgJEg8KB2ZlYXR1cmUYBCABKAkSDQoFdGl0bGUYBSABKAkSDAoEYm9keRgGIAEoCRIOCgZiYW5uZXIYByABKAgSLwoLY3JlYXRlX3RpbWUYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIkkKH0xpc3RDb25zb2xlTm90aWZpY2F0aW9uc1JlcXVlc3QSEwoLY3VzdG9tZXJfaWQYASABKAkSEQoJcGFnZV9zaXplGAIgASgNIl4KIExpc3RDb25zb2xlTm90aWZpY2F0aW9uc1Jlc3BvbnNlEjoKDW5vdGlmaWNhdGlvbnMYASADKAsyIy5sb2Ftcy5tZXRlci52MS5Db25zb2xlTm90aWZpY2F0aW9uKn0KE05vdGlmaWNhdGlvbkNoYW5uZWwSJAogTk9USUZJQ0FUSU9OX0NIQU5ORUxfVU5TUEVDSUZJRUQQABIeChpOT1RJRklDQVRJT05fQ0hBTk5FTF9FTUFJTBABEiAKHE5PVElGSUNBVElPTl9DSEFOTkVMX0NPTlNPTEUQAiqKAQoORGVsaXZlcnlTdGF0dXMSHwobREVMSVZFUllfU1RBVFVTX1VOU1BFQ0lGSUVEEAASHQoZREVMSVZFUllfU1RBVFVTX0RFTElWRVJFRBABEhwKGERFTElWRVJZX1NUQVRVU19SRVRSWUlORxACEhoKFkRFTElWRVJZX1NUQVRVU19GQUlMRUQQAzLmBgoTTm90aWZpY2F0aW9uU2VydmljZRJlCgpDcmVhdGVSdWxlEiEubG9hbXMubWV0ZXIudjEuQ3JlYXRlUnVsZVJlcXVlc3QaIi5sb2Ftcy5tZXRlci52MS5DcmVhdGVSdWxlUmVzcG9uc2UiEJK1GAwSCmNyZWF0ZVJ1bGUSZAoJTGlzdFJ1bGVzEiAubG9hbXMubWV0ZXIudjEuTGlzdFJ1bGVzUmVxdWVzdBohLmxvYW1zLm1ldGVyLnYxLkxpc3RSdWxlc1Jlc3BvbnNlIhKQAgGStRgLEglsaXN0UnVsZXMScQoNQ3JlYXRlV2ViaG9vaxIkLmxvYW1zLm1ldGVyLnYxLkNyZWF0ZVdlYmhvb2tSZXF1ZXN0GiUubG9hbXMubWV0ZXIudjEuQ3JlYXRlV2ViaG9va1Jlc3BvbnNlIhOStRgPEg1jcmVhdGVXZWJob29rEokBChNSb3RhdGVXZWJob29rU2VjcmV0EioubG9hbXMubWV0ZXIudjEuUm90YXRlV2ViaG9va1NlY3JldFJlcXVlc3QaKy5sb2Ftcy5tZXRlci52MS5Sb3RhdGVXZWJob29rU2VjcmV0UmVzcG9uc2UiGZK1GBUSE3JvdGF0ZVdlYmhvb2tTZWNyZXQSeAoOTGlzdERlbGl2ZXJpZXMSJS5sb2Ftcy5tZXRlci52MS5MaXN0RGVsaXZlcmllc1JlcXVlc3QaJi5sb2Ftcy5tZXRlci52MS5MaXN0RGVsaXZlcmllc1Jlc3BvbnNlIheQAgGStRgQEg5saXN0RGVsaXZlcmllcxKgAQoYTGlzdENvbnNvbGVOb3RpZmljYXRpb25zEi8ubG9hbXMubWV0ZXIudjEuTGlzdENvbnNvbGVOb3RpZmljYXRpb25zUmVxdWVzdBowLmxvYW1zLm1ldGVyLnYxLkxpc3RDb25zb2xlTm90aWZpY2F0aW9uc1Jlc3BvbnNlIiGQAgGStRgaEhhsaXN0Q29uc29sZU5vdGlmaWNhdGlvbnMaZoq1GGIKE21ldGVyLm5vdGlmaWNhdGlvbnMSS01ldGVyIG5vdGlmaWNhdGlvbnM6IHRocmVzaG9sZCBydWxlcywgc2lnbmVkIHdlYmhvb2tzIGFuZCB0aGVpciBkZWxpdmVyaWVzLmIGcHJvdG8z", [file_google_protobuf_timestamp, file_loams_options_v1_options]);
 
 /**
  * @generated from message loams.meter.v1.Rule
@@ -63,6 +63,14 @@ export type Rule = Message<"loams.meter.v1.Rule"> & {
    * @generated from field: repeated loams.meter.v1.NotificationChannel channels = 6;
    */
   channels: NotificationChannel[];
+
+  /**
+   * Where email goes (at most 10, with the email channel); empty: the
+   * org's owners and admins.
+   *
+   * @generated from field: repeated string emails = 7;
+   */
+  emails: string[];
 };
 
 /**
@@ -116,6 +124,9 @@ export const WebhookSchema: GenMessage<Webhook> = /*@__PURE__*/
  */
 export type Delivery = Message<"loams.meter.v1.Delivery"> & {
   /**
+   * The webhook's id, or `channel:email` / `channel:console` for the email
+   * and console channels.
+   *
    * @generated from field: string webhook_id = 1;
    */
   webhookId: string;
@@ -365,6 +376,107 @@ export const ListDeliveriesResponseSchema: GenMessage<ListDeliveriesResponse> = 
   messageDesc(file_loams_meter_v1_notification, 12);
 
 /**
+ * One meter event as the console shows it.
+ *
+ * @generated from message loams.meter.v1.ConsoleNotification
+ */
+export type ConsoleNotification = Message<"loams.meter.v1.ConsoleNotification"> & {
+  /**
+   * The meter event's id.
+   *
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string customer_id = 2;
+   */
+  customerId: string;
+
+  /**
+   * `io.loams.dev.meter.threshold.v1` or `io.loams.dev.meter.access.changed.v1`.
+   *
+   * @generated from field: string event_type = 3;
+   */
+  eventType: string;
+
+  /**
+   * @generated from field: string feature = 4;
+   */
+  feature: string;
+
+  /**
+   * @generated from field: string title = 5;
+   */
+  title: string;
+
+  /**
+   * @generated from field: string body = 6;
+   */
+  body: string;
+
+  /**
+   * For the shell's banner: access stopped, or 100 % or more used.
+   *
+   * @generated from field: bool banner = 7;
+   */
+  banner: boolean;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp create_time = 8;
+   */
+  createTime?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message loams.meter.v1.ConsoleNotification.
+ * Use `create(ConsoleNotificationSchema)` to create a new message.
+ */
+export const ConsoleNotificationSchema: GenMessage<ConsoleNotification> = /*@__PURE__*/
+  messageDesc(file_loams_meter_v1_notification, 13);
+
+/**
+ * @generated from message loams.meter.v1.ListConsoleNotificationsRequest
+ */
+export type ListConsoleNotificationsRequest = Message<"loams.meter.v1.ListConsoleNotificationsRequest"> & {
+  /**
+   * @generated from field: string customer_id = 1;
+   */
+  customerId: string;
+
+  /**
+   * At most 500; 0 asks for 100.
+   *
+   * @generated from field: uint32 page_size = 2;
+   */
+  pageSize: number;
+};
+
+/**
+ * Describes the message loams.meter.v1.ListConsoleNotificationsRequest.
+ * Use `create(ListConsoleNotificationsRequestSchema)` to create a new message.
+ */
+export const ListConsoleNotificationsRequestSchema: GenMessage<ListConsoleNotificationsRequest> = /*@__PURE__*/
+  messageDesc(file_loams_meter_v1_notification, 14);
+
+/**
+ * @generated from message loams.meter.v1.ListConsoleNotificationsResponse
+ */
+export type ListConsoleNotificationsResponse = Message<"loams.meter.v1.ListConsoleNotificationsResponse"> & {
+  /**
+   * @generated from field: repeated loams.meter.v1.ConsoleNotification notifications = 1;
+   */
+  notifications: ConsoleNotification[];
+};
+
+/**
+ * Describes the message loams.meter.v1.ListConsoleNotificationsResponse.
+ * Use `create(ListConsoleNotificationsResponseSchema)` to create a new message.
+ */
+export const ListConsoleNotificationsResponseSchema: GenMessage<ListConsoleNotificationsResponse> = /*@__PURE__*/
+  messageDesc(file_loams_meter_v1_notification, 15);
+
+/**
  * @generated from enum loams.meter.v1.NotificationChannel
  */
 export enum NotificationChannel {
@@ -472,6 +584,17 @@ export const NotificationService: GenService<{
     methodKind: "unary";
     input: typeof ListDeliveriesRequestSchema;
     output: typeof ListDeliveriesResponseSchema;
+  },
+  /**
+   * The console's meter notifications (thresholds and access changes), the
+   * newest first; empty when the deployment has no console channel.
+   *
+   * @generated from rpc loams.meter.v1.NotificationService.ListConsoleNotifications
+   */
+  listConsoleNotifications: {
+    methodKind: "unary";
+    input: typeof ListConsoleNotificationsRequestSchema;
+    output: typeof ListConsoleNotificationsResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_loams_meter_v1_notification, 0);

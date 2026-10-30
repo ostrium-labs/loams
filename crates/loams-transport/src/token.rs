@@ -154,20 +154,37 @@ impl TokenStore for MemoryTokens {
 
     fn redeem(&self, token: &JoinToken, now: SystemTime) -> Result<Grant, TokenError> {
         let mut records = self.records.lock().unwrap_or_else(PoisonError::into_inner);
-        let record = records.get_mut(&token.id).ok_or(TokenError::Unknown)?;
-        if aws_lc_rs::constant_time::verify_slices_are_equal(&record.secret_sha256, &token.digest())
+        records
+            .get_mut(&token.id)
+            .ok_or(TokenError::Unknown)?
+            .redeem(token, now)
+    }
+}
+
+impl TokenRecord {
+    /// Checks `token`'s secret against this record in constant time and, if
+    /// it matches and the record is unspent and unexpired, spends it and
+    /// returns its grant. A store that keeps records elsewhere (the CA
+    /// service's metastore document) calls this inside its own atomic
+    /// update, so the check and the spend stay one step.
+    pub fn redeem(&mut self, token: &JoinToken, now: SystemTime) -> Result<Grant, TokenError> {
+        if self.id != token.id
+            || aws_lc_rs::constant_time::verify_slices_are_equal(
+                &self.secret_sha256,
+                &token.digest(),
+            )
             .is_err()
         {
             return Err(TokenError::Unknown);
         }
-        if record.spent {
+        if self.spent {
             return Err(TokenError::Spent);
         }
-        if now >= record.expires_at {
+        if now >= self.expires_at {
             return Err(TokenError::Expired);
         }
-        record.spent = true;
-        Ok(record.grant.clone())
+        self.spent = true;
+        Ok(self.grant.clone())
     }
 }
 
@@ -191,6 +208,19 @@ impl DenyList {
             .write()
             .unwrap_or_else(PoisonError::into_inner)
             .insert(id);
+    }
+
+    /// Replaces every entry with `serials` and `ids`: what a node does when
+    /// the metastore's copy of the list changes (§83 §6.5).
+    pub fn replace(
+        &self,
+        serials: impl IntoIterator<Item = Vec<u8>>,
+        ids: impl IntoIterator<Item = SpiffeId>,
+    ) {
+        let serials: HashSet<Vec<u8>> = serials.into_iter().collect();
+        let ids: HashSet<SpiffeId> = ids.into_iter().collect();
+        *self.serials.write().unwrap_or_else(PoisonError::into_inner) = serials;
+        *self.ids.write().unwrap_or_else(PoisonError::into_inner) = ids;
     }
 
     /// Whether a peer with this leaf serial and these identities is refused.

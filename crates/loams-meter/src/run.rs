@@ -521,7 +521,7 @@ impl CounterValues {
     }
 
     /// The usage from the partition's owner, if it can be read.
-    async fn from_owner(&self, key: &CounterKey) -> Option<(Amount, AsOf)> {
+    async fn owner_usage(&self, key: &CounterKey) -> Option<(Amount, AsOf)> {
         let (leases, peer) = self.owners.as_ref()?;
         let p = partition_of(key.subject.as_str(), self.counters.partitions);
         let wanted = crate::owner::assign::partition_key(p);
@@ -555,7 +555,7 @@ impl CounterValues {
         if let Some(found) = self.counters.counted(key).await {
             return Ok(found);
         }
-        if let Some(found) = self.from_owner(key).await {
+        if let Some(found) = self.owner_usage(key).await {
             return Ok(found);
         }
         let p = partition_of(e.subject.as_str(), self.counters.partitions);

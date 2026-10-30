@@ -189,11 +189,23 @@ async fn run(cli: Cli) -> Result<()> {
                 KvBackend::Tikv => "loams-kv Store on TiKV (txn, batch_get)".into(),
             },
         ),
-        Cmd::Pg { .. } => (&["point-select"], "inflight", "PG wire (tokio-postgres, pipelined)".into()),
-        Cmd::Mysql { .. } => (&["point-select"], "batch", "MySQL wire (IN-list batches)".into()),
+        Cmd::Pg { .. } => (
+            &["point-select"],
+            "inflight",
+            "PG wire (tokio-postgres, pipelined)".into(),
+        ),
+        Cmd::Mysql { .. } => (
+            &["point-select"],
+            "batch",
+            "MySQL wire (IN-list batches)".into(),
+        ),
         Cmd::Http { kind, path, .. } => match kind {
             HttpKind::Get => (&["get"], "inflight", format!("HTTP/2 GET {path}")),
-            HttpKind::ResonateCreate => (&["promise.create"], "inflight", "Resonate HTTP/2 promise.create".into()),
+            HttpKind::ResonateCreate => (
+                &["promise.create"],
+                "inflight",
+                "Resonate HTTP/2 promise.create".into(),
+            ),
         },
     };
     let names: Vec<String> = if cli.ops.is_empty() {
@@ -314,8 +326,24 @@ async fn run(cli: Cli) -> Result<()> {
 
 async fn build_op(cmd: &Cmd, name: &str, conns: usize, depth: usize) -> Result<Op> {
     match cmd {
-        Cmd::Kv { backend, pd, keyspace, keys, value_size } => {
-            kv_op(*backend, pd.as_deref(), keyspace, *keys, *value_size, name, conns, depth).await
+        Cmd::Kv {
+            backend,
+            pd,
+            keyspace,
+            keys,
+            value_size,
+        } => {
+            kv_op(
+                *backend,
+                pd.as_deref(),
+                keyspace,
+                *keys,
+                *value_size,
+                name,
+                conns,
+                depth,
+            )
+            .await
         }
         Cmd::Pg { url, rows } => pg_op(url, *rows, name, conns, depth).await,
         Cmd::Mysql { url, rows } => mysql_op(url, *rows, name, conns, depth).await,
@@ -349,7 +377,10 @@ async fn kv_op(
             StoreConfig::Tikv(c)
         }
     };
-    config.ensure_keyspace().await.context("create the keyspace")?;
+    config
+        .ensure_keyspace()
+        .await
+        .context("create the keyspace")?;
     let store = Store::open(config).await.context("open the store")?;
     let value: Arc<Vec<u8>> = Arc::new(vec![b'v'; value_size]);
     // Prefill every key once (1000 per transaction), so gets hit.
@@ -357,7 +388,8 @@ async fn kv_op(
         let started = Instant::now();
         let mut i = 0;
         while i < keys {
-            let chunk: Arc<Vec<Vec<u8>>> = Arc::new((i..(i + 1000).min(keys)).map(kv_key).collect());
+            let chunk: Arc<Vec<Vec<u8>>> =
+                Arc::new((i..(i + 1000).min(keys)).map(kv_key).collect());
             let v = value.clone();
             store
                 .run(TxnOptions::new("bq1.prefill"), move |txn| {
@@ -373,7 +405,10 @@ async fn kv_op(
                 .context("prefill")?;
             i += 1000;
         }
-        eprintln!("bq1-native: prefilled {keys} keys in {:.1} s", started.elapsed().as_secs_f64());
+        eprintln!(
+            "bq1-native: prefilled {keys} keys in {:.1} s",
+            started.elapsed().as_secs_f64()
+        );
     }
     let call: OpFn = match name {
         "get" => Arc::new(move |_task, seed| {
@@ -383,8 +418,11 @@ async fn kv_op(
                     store.get(&kv_key(seed % keys)).await?;
                     return Ok(1);
                 }
-                let ks: Arc<Vec<Vec<u8>>> =
-                    Arc::new((0..depth as u64).map(|j| kv_key(mix(seed ^ j) % keys)).collect());
+                let ks: Arc<Vec<Vec<u8>>> = Arc::new(
+                    (0..depth as u64)
+                        .map(|j| kv_key(mix(seed ^ j) % keys))
+                        .collect(),
+                );
                 store
                     .run(TxnOptions::new("kv.batch_get"), move |txn| {
                         let ks = ks.clone();
@@ -401,8 +439,11 @@ async fn kv_op(
                     store.put(&kv_key(seed % keys), value.to_vec()).await?;
                     return Ok(1);
                 }
-                let ks: Arc<Vec<Vec<u8>>> =
-                    Arc::new((0..depth as u64).map(|j| kv_key(mix(seed ^ j) % keys)).collect());
+                let ks: Arc<Vec<Vec<u8>>> = Arc::new(
+                    (0..depth as u64)
+                        .map(|j| kv_key(mix(seed ^ j) % keys))
+                        .collect(),
+                );
                 store
                     .run(TxnOptions::new("kv.batch_put"), move |txn| {
                         let (ks, v) = (ks.clone(), value.clone());
@@ -419,7 +460,11 @@ async fn kv_op(
         }),
         other => bail!("kv has no op {other} (get, put)"),
     };
-    Ok(Op { name: name.into(), call, tasks: conns })
+    Ok(Op {
+        name: name.into(),
+        call,
+        tasks: conns,
+    })
 }
 
 // ---- PG wire ----
@@ -444,7 +489,10 @@ async fn pg_op(url: &str, rows: u64, name: &str, conns: usize, depth: usize) -> 
              (aid int PRIMARY KEY, abalance int NOT NULL, filler char(84) NOT NULL DEFAULT '')",
         )
         .await?;
-    let have: i64 = admin.query_one("SELECT count(*) FROM bq1_accounts", &[]).await?.get(0);
+    let have: i64 = admin
+        .query_one("SELECT count(*) FROM bq1_accounts", &[])
+        .await?
+        .get(0);
     if have as u64 != rows {
         admin.batch_execute("TRUNCATE bq1_accounts").await?;
         admin
@@ -480,7 +528,11 @@ async fn pg_op(url: &str, rows: u64, name: &str, conns: usize, depth: usize) -> 
             Ok(1)
         })
     });
-    Ok(Op { name: name.into(), call, tasks: conns * depth })
+    Ok(Op {
+        name: name.into(),
+        call,
+        tasks: conns * depth,
+    })
 }
 
 // ---- MySQL wire ----
@@ -490,25 +542,39 @@ async fn mysql_op(url: &str, rows: u64, name: &str, conns: usize, depth: usize) 
         bail!("mysql has no op {name} (point-select)");
     }
     let opts = mysql_async::Opts::from_url(url).context("--url")?;
-    let mut admin = mysql_async::Conn::new(opts.clone()).await.context("connect (MySQL wire)")?;
-    admin.query_drop("CREATE DATABASE IF NOT EXISTS bq1").await?;
+    let mut admin = mysql_async::Conn::new(opts.clone())
+        .await
+        .context("connect (MySQL wire)")?;
+    admin
+        .query_drop("CREATE DATABASE IF NOT EXISTS bq1")
+        .await?;
     admin
         .query_drop("CREATE TABLE IF NOT EXISTS bq1.sbtest1 (id INT PRIMARY KEY, k INT NOT NULL, c CHAR(120) NOT NULL)")
         .await?;
-    let have: Option<u64> = admin.query_first("SELECT count(*) FROM bq1.sbtest1").await?;
+    let have: Option<u64> = admin
+        .query_first("SELECT count(*) FROM bq1.sbtest1")
+        .await?;
     if have.unwrap_or(0) != rows {
         admin.query_drop("TRUNCATE TABLE bq1.sbtest1").await?;
         let started = Instant::now();
         let mut i = 1;
         while i <= rows {
             let hi = (i + 999).min(rows);
-            let values: Vec<String> = (i..=hi).map(|id| format!("({id},{},'c{id:0119}')", id % 1000)).collect();
+            let values: Vec<String> = (i..=hi)
+                .map(|id| format!("({id},{},'c{id:0119}')", id % 1000))
+                .collect();
             admin
-                .query_drop(format!("INSERT INTO bq1.sbtest1 (id, k, c) VALUES {}", values.join(",")))
+                .query_drop(format!(
+                    "INSERT INTO bq1.sbtest1 (id, k, c) VALUES {}",
+                    values.join(",")
+                ))
                 .await?;
             i = hi + 1;
         }
-        eprintln!("bq1-native: loaded {rows} rows in {:.1} s", started.elapsed().as_secs_f64());
+        eprintln!(
+            "bq1-native: loaded {rows} rows in {:.1} s",
+            started.elapsed().as_secs_f64()
+        );
     }
     drop(admin);
     let placeholders = vec!["?"; depth].join(",");
@@ -528,14 +594,20 @@ async fn mysql_op(url: &str, rows: u64, name: &str, conns: usize, depth: usize) 
                 .collect();
             let mut g = slot.lock().await;
             let (conn, stmt) = &mut *g;
-            let got: Vec<String> = conn.exec(&*stmt, mysql_async::Params::Positional(ids)).await?;
+            let got: Vec<String> = conn
+                .exec(&*stmt, mysql_async::Params::Positional(ids))
+                .await?;
             if got.is_empty() {
                 bail!("point select found nothing");
             }
             Ok(depth as u64)
         })
     });
-    Ok(Op { name: name.into(), call, tasks: conns })
+    Ok(Op {
+        name: name.into(),
+        call,
+        tasks: conns,
+    })
 }
 
 // ---- HTTP/2 ----
@@ -547,9 +619,10 @@ async fn h2_connect(addr: &str) -> Result<Sender> {
         .await
         .with_context(|| format!("connect {addr}"))?;
     tcp.set_nodelay(true)?;
-    let (sender, conn) = hyper::client::conn::http2::handshake(TokioExecutor::new(), TokioIo::new(tcp))
-        .await
-        .context("h2c handshake")?;
+    let (sender, conn) =
+        hyper::client::conn::http2::handshake(TokioExecutor::new(), TokioIo::new(tcp))
+            .await
+            .context("h2c handshake")?;
     tokio::spawn(async move {
         if let Err(e) = conn.await {
             eprintln!("bq1-native: h2 connection: {e}");
@@ -558,7 +631,14 @@ async fn h2_connect(addr: &str) -> Result<Sender> {
     Ok(sender)
 }
 
-async fn http_op(addr: &str, path: &str, kind: HttpKind, name: &str, conns: usize, depth: usize) -> Result<Op> {
+async fn http_op(
+    addr: &str,
+    path: &str,
+    kind: HttpKind,
+    name: &str,
+    conns: usize,
+    depth: usize,
+) -> Result<Op> {
     let mut senders = Vec::new();
     for _ in 0..conns {
         senders.push(h2_connect(addr).await?);
@@ -595,18 +675,28 @@ async fn http_op(addr: &str, path: &str, kind: HttpKind, name: &str, conns: usiz
             let status = resp.status();
             let body = resp.into_body().collect().await?.to_bytes();
             if !status.is_success() {
-                bail!("HTTP {status}: {}", String::from_utf8_lossy(&body[..body.len().min(200)]));
+                bail!(
+                    "HTTP {status}: {}",
+                    String::from_utf8_lossy(&body[..body.len().min(200)])
+                );
             }
             if kind == HttpKind::ResonateCreate {
                 let v: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
                 if let Some(s) = v.pointer("/head/status").and_then(|s| s.as_u64())
                     && s >= 300
                 {
-                    bail!("resonate status {s}: {}", String::from_utf8_lossy(&body[..body.len().min(200)]));
+                    bail!(
+                        "resonate status {s}: {}",
+                        String::from_utf8_lossy(&body[..body.len().min(200)])
+                    );
                 }
             }
             Ok(1)
         })
     });
-    Ok(Op { name: name.into(), call, tasks: conns * depth })
+    Ok(Op {
+        name: name.into(),
+        call,
+        tasks: conns * depth,
+    })
 }

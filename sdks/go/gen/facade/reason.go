@@ -140,6 +140,12 @@ const (
 	ReasonPrincipalNotAllowed         Reason = "principal_not_allowed"
 	ReasonCorsOriginNotAllowed        Reason = "cors_origin_not_allowed"
 	ReasonAuthUnavailable             Reason = "auth_unavailable"
+	ReasonJoinTokenUnknown            Reason = "join_token_unknown"
+	ReasonJoinTokenSpent              Reason = "join_token_spent"
+	ReasonJoinTokenExpired            Reason = "join_token_expired"
+	ReasonIdentityNotGranted          Reason = "identity_not_granted"
+	ReasonIdentityRevoked             Reason = "identity_revoked"
+	ReasonCaNotInitialized            Reason = "ca_not_initialized"
 	ReasonInvalidArgument             Reason = "invalid_argument"
 	ReasonNotFound                    Reason = "not_found"
 	ReasonAlreadyExists               Reason = "already_exists"
@@ -287,6 +293,12 @@ var Reasons = []Reason{
 	ReasonPrincipalNotAllowed,
 	ReasonCorsOriginNotAllowed,
 	ReasonAuthUnavailable,
+	ReasonJoinTokenUnknown,
+	ReasonJoinTokenSpent,
+	ReasonJoinTokenExpired,
+	ReasonIdentityNotGranted,
+	ReasonIdentityRevoked,
+	ReasonCaNotInitialized,
 	ReasonInvalidArgument,
 	ReasonNotFound,
 	ReasonAlreadyExists,
@@ -429,6 +441,12 @@ var ReasonCodes = map[Reason]string{
 	ReasonPrincipalNotAllowed:         "permission_denied",
 	ReasonCorsOriginNotAllowed:        "permission_denied",
 	ReasonAuthUnavailable:             "unavailable",
+	ReasonJoinTokenUnknown:            "unauthenticated",
+	ReasonJoinTokenSpent:              "unauthenticated",
+	ReasonJoinTokenExpired:            "unauthenticated",
+	ReasonIdentityNotGranted:          "permission_denied",
+	ReasonIdentityRevoked:             "permission_denied",
+	ReasonCaNotInitialized:            "failed_precondition",
 	ReasonInvalidArgument:             "invalid_argument",
 	ReasonNotFound:                    "not_found",
 	ReasonAlreadyExists:               "already_exists",
