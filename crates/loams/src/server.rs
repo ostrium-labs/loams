@@ -3307,6 +3307,18 @@ impl Server {
         // Part 2: the counter owners run beside them (partitions of
         // `_system/_meter` by fenced leases in the metastore), and a cluster
         // node serves the internal `LeaseService` on its cluster listener.
+        // The deployment CA (design §83 §6.3, CT1 Task 3): `meta` nodes of
+        // a cluster serve `loams.ca.internal.v1.CertificateService` on the
+        // cluster listener. It is internal, so never on a port with end-user
+        // authentication.
+        #[cfg(feature = "transport")]
+        let ca_routes = (roles.meta && config.cluster.is_some()).then(|| {
+            crate::ca::routes(Arc::new(crate::ca::authority(
+                meta_store.clone(),
+                store.clone(),
+                &config.data_dir,
+            )))
+        });
         #[cfg(feature = "meter")]
         let (meter, meter_runtime, meter_internal, meter_main, meter_public, meter_gate) =
             if roles.gateway {
@@ -3461,9 +3473,22 @@ impl Server {
                     (Some(internal), Some(public)) => router.merge(internal).merge(public),
                     _ => router,
                 };
+                #[cfg(feature = "transport")]
+                let router = match ca_routes {
+                    Some(ca) => router.merge(ca),
+                    None => router,
+                };
                 (router, None, None)
             }
-            (false, _) => (api::internal_router(state), None, None),
+            (false, _) => {
+                let router = api::internal_router(state);
+                #[cfg(feature = "transport")]
+                let router = match ca_routes {
+                    Some(ca) => router.merge(ca),
+                    None => router,
+                };
+                (router, None, None)
+            }
         };
         let flight = flight_listener.map(|(listener, addr)| {
             let streams: Arc<dyn StreamProducer> = Arc::new(NativeStreamProducer {

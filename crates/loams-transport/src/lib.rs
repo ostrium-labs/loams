@@ -41,7 +41,7 @@ pub mod token;
 
 pub use ca::{Ca, CaError, CaMaterial, Grant, Issued, new_key_and_csr};
 pub use identity::{Identity, IdentityError};
-pub use peer::{PeerIdentity, peer_identity};
+pub use peer::{PeerError, PeerIdentity, VerifiedPeer, peer_identity, verified_peer};
 pub use spiffe::{Kind, SpiffeId, SpiffeIdError};
 pub use tls::{Alpn, TlsError, client_config, server_config};
 pub use token::{DenyList, JoinToken, MemoryTokens, TokenError, TokenRecord, TokenStore};
