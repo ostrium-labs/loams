@@ -1,8 +1,9 @@
-# Running Loams 0.1.3: run the whole stack yourself
+# Running Loams 0.1.4: run the whole stack yourself
 
-Status: **0.1.3**, a patch release of the 0.1 line (0.1.0, the first release, shipped on
+Status: **0.1.4**, a patch release of the 0.1 line (0.1.0, the first release, shipped on
 2026-10-19, after v0.1.0-preview.1 on 2026-10-12 and v0.1.0-preview.2 on 2026-10-15; 0.1.1 on
-2026-10-22, 0.1.2 on 2026-10-26). What changed is in [What is new in 0.1.3](#what-is-new-in-013),
+2026-10-22, 0.1.2 on 2026-10-26, 0.1.3 on 2026-10-29). What changed is in [What is new in 0.1.4](#what-is-new-in-014),
+[What is new in 0.1.3](#what-is-new-in-013),
 [What is new in 0.1.2](#what-is-new-in-012), [What is new in 0.1.1](#what-is-new-in-011), [What is new in 0.1.0](#what-is-new-in-010) and
 the [changelog](../../CHANGELOG.md).
 Everything listed as **Available** or **Experimental** in the
@@ -35,6 +36,34 @@ through the Tailscale client on your own device.
 self-service OIDC clients (`auth.loams.dev/register`), Headscale networks, one-click OAuth
 deploy.
 
+## What is new in 0.1.4
+
+Everything new is **preview**; the default stack is 0.1.3's.
+
+- **Cost attribution (design 84):** what each engine, tenant, project and query class costs,
+  from amortised hardware, imported bills (FOCUS, AWS CUR, CSV) and a price table, allocated
+  exactly over Loams Meter usage. Every number carries its basis and a trace. `loams cost`
+  works offline from files: `report`, `import` (a dry run) and `export` (FOCUS 1.3, OpenMeter).
+- **Resumable transfers and job runs in Loams Desktop (design 85):** the Transfers page and the
+  bundled `loams-transfer` sidecar move files of 10 GiB and more in checksummed chunks over
+  HTTP/3 (QUIC), with an HTTP/2 fallback, and resume after a crash or a lost network. The engine
+  serves the routes on its main port behind its authentication, and HTTP/3 on UDP at that port
+  when it has a TLS certificate. `loams-transfer.exe` is not signed by SignPath yet (D2449).
+- **Loams Meter follow-ups:** the lease gate on the produce paths, reconciliation against the
+  House pipe's cursor, and balances on any node. Threshold and access notifications reach the
+  console, and email when `LOAMS_METER_MAIL_FROM` and `LOAMS_METER_RESEND_API_KEY_FILE` (a
+  sending-only Resend key) are set. The Stripe, Lago and OpenMeter exports run on a 5-minute
+  schedule ([guide](../guides/meter-exports.md)). The meter needs a source build with the
+  `loams` feature `meter`; the release images do not include it.
+- **The cluster CA (design 83)** and `loams ca`, behind the off-by-default `transport` feature.
+  No cluster traffic uses it yet.
+- **Postgres 18 is still beta, and still only gates.** New projects stay on 16 or 17. The
+  `postgres-control` profile carries the pageserver's upcalls to pg-control.
+- **RisingWave is locked to the free tier** with an empty licence key file (D1901).
+- **Security:** Dependabot alerts fixed across Rust, Go, npm and pip, and ten CodeQL findings.
+
+See the [changelog](../../CHANGELOG.md) for the full list.
+
 ## What is new in 0.1.3
 
 Everything new is **preview** and off by default; the default stack is 0.1.2's.
@@ -48,10 +77,7 @@ Everything new is **preview** and off by default; the default stack is 0.1.2's.
 - **Loams Meter:** usage metering, entitlement gates, the billing view and exporters (Stripe,
   OpenMeter, Lago). Webhook secrets are sealed with `LOAMS_METER_SECRETS_KEY_FILE` (default
   `<data_dir>/meter/secrets.key`, made on first use); on a multi-node cluster every gateway node
-  must mount the same file. Threshold and access notifications reach the console, and email when
-  `LOAMS_METER_MAIL_FROM` and `LOAMS_METER_RESEND_API_KEY_FILE` (a sending-only Resend key) are
-  set. The exporters run on a 5-minute schedule
-  ([guide](../guides/meter-exports.md)).
+  must mount the same file.
 - **The gateway** serves HTTP/2 (h2c) and pipelined HTTP/1.1 on its HTTP listeners, and speaks the
   Redis protocol on Loams KV (`--module resp`).
 - **Connectors and Confluent Cloud for BYOC** (the `connectors` profile), and a fix for duplicate
@@ -155,20 +181,20 @@ Desktop. The patched TiDB image is amd64-only and runs emulated on Apple silicon
 ## SDKs
 
 The seven supported SDKs are released from this tag by one workflow (`sdk-release.yml`).
-Each registry below serves 0.1.3 once the release workflows have run.
+Each registry below serves 0.1.4 once the release workflows have run.
 
 | SDK | Install | Version |
 |---|---|---|
-| TypeScript | `npm i @loams/client` (and `@loams/live`) | `0.1.3` |
-| Python | `pip install loams` | `0.1.3` |
-| Rust | `cargo add loams` | `0.1.3` |
-| C# | `dotnet add package Loams` | `0.1.3` |
-| Go | `go get loams.dev/go@v0.1.3` (Go 1.25+) | `0.1.3` |
-| Swift | SwiftPM: `https://github.com/ostrium-labs/loams`, from `0.1.3` | `0.1.3` |
-| C++ | `loams-cpp-0.1.3.tar.gz` from the GitHub release (CMake `find_package(loams)`) | `0.1.3` |
+| TypeScript | `npm i @loams/client` (and `@loams/live`) | `0.1.4` |
+| Python | `pip install loams` | `0.1.4` |
+| Rust | `cargo add loams` | `0.1.4` |
+| C# | `dotnet add package Loams` | `0.1.4` |
+| Go | `go get loams.dev/go@v0.1.4` (Go 1.25+) | `0.1.4` |
+| Swift | SwiftPM: `https://github.com/ostrium-labs/loams`, from `0.1.4` | `0.1.4` |
+| C++ | `loams-cpp-0.1.4.tar.gz` from the GitHub release (CMake `find_package(loams)`) | `0.1.4` |
 
 Java and Kotlin (`dev.loams:loams`, `dev.loams:loams-kotlin` on Maven Central) and Ruby
-(`gem install loams`) are published as `0.1.3` too, as experimental SDKs. PHP, Dart and
+(`gem install loams`) are published as `0.1.4` too, as experimental SDKs. PHP, Dart and
 Objective-C stay in the repository (coming soon).
 
 ## Architecture
@@ -229,7 +255,7 @@ flowchart LR
 
 ## Feature status
 
-**Available** means it ships in the 0.1.3 images and packages and is built and tested in CI; as with all of 0.x, APIs and formats may change between minor versions, with `loams upgrade` to move between them. **Experimental** ships too, but may change more before it settles. **In progress** and **Planned** do not ship in 0.1.0.
+**Available** means it ships in the 0.1.4 images and packages and is built and tested in CI; as with all of 0.x, APIs and formats may change between minor versions, with `loams upgrade` to move between them. **Experimental** ships too, but may change more before it settles. **In progress** and **Planned** do not ship in 0.1.0.
 
 | Feature | What you get | Status |
 |---|---|---|
@@ -263,7 +289,7 @@ flowchart LR
 | Kafka wire (`kafka` profile) | Kafka clients (kcat, librdkafka, the Java client, Kafka Connect, Flink) on `127.0.0.1:9093` through the Kafka gateway of Ostrium's fork of Apache Iggy, in front of its own Iggy server | Preview. Optional compose profile, never in the default stack; every Kafka API except transactions and exactly-once (planned, not built). Not wired to the engine yet ([guide](../guides/kafka.md)) |
 | OTLP | OpenTelemetry logs ingest into streams | Planned |
 | Authorization and tenancy | Roles, per-namespace authorization, tenant quotas and a namespace router | Planned |
-| Native SDKs | TypeScript, Python, Go, Rust, C#, Swift and C++ clients with generated API bindings and shared runtime conformance fixtures, published as `0.1.3` (see [SDKs](#sdks)) | Available. Java, Kotlin, Ruby, PHP, Dart and Objective-C are in progress |
+| Native SDKs | TypeScript, Python, Go, Rust, C#, Swift and C++ clients with generated API bindings and shared runtime conformance fixtures, published as `0.1.4` (see [SDKs](#sdks)) | Available. Java, Kotlin, Ruby, PHP, Dart and Objective-C are in progress |
 | MCP and analytics helpers | Agent tools and convenience integrations such as `to_arrow()` and `to_polars()` | Planned |
 | Loams Functions | A CPU-time serverless runtime on workerd, wasmtime and gVisor, with a Rust Dapr-style API | Planned |
 | Loams Jobs | Celery, BullMQ v6, PySpark (through Sail) and Flink SQL (through RisingWave) jobs run durably on Loams | Planned |
@@ -294,7 +320,7 @@ rest (see [the profiles](#profiles-tikv-rustfs-and-kafka)).
 | `tailscale` | `tailscale/tailscale` | The stack's only door: joins the tailnet as `loams` and serves the engine there |
 | `headscale` (profile `headscale`) | Headscale | Coming soon, unsupported in this release (see [the tailnet](#the-tailnet)) |
 
-Images are tagged `0.1.3`, `0.1` and `:latest`. The compose file pins `0.1.3` through
+Images are tagged `0.1.4`, `0.1` and `:latest`. The compose file pins `0.1.4` through
 `LOAMS_VERSION`. The patched TiDB image
 `ghcr.io/ostrium-labs/tidb:v8.5.8-loams.1` is public and amd64 only.
 
@@ -316,9 +342,9 @@ Use the files of the release you run, so `compose.yaml` matches the images that
 supported path, and the bundle carries the first-run fixes below:
 
 ```sh
-curl -fLO https://github.com/ostrium-labs/loams/releases/download/v0.1.3/loams-compose-0.1.3.tar.gz
-tar -xzf loams-compose-0.1.3.tar.gz
-cd loams-compose-0.1.3/release
+curl -fLO https://github.com/ostrium-labs/loams/releases/download/v0.1.4/loams-compose-0.1.4.tar.gz
+tar -xzf loams-compose-0.1.4.tar.gz
+cd loams-compose-0.1.4/release
 cp .env.example .env
 ```
 
@@ -327,7 +353,7 @@ first-run fixes as the bundle (the setup token's pass-through, [First-run setup]
 and the Postgres bootstrap, [Postgres: first run](#postgres-first-run)):
 
 ```sh
-git clone --branch v0.1.3 https://github.com/ostrium-labs/loams.git
+git clone --branch v0.1.4 https://github.com/ostrium-labs/loams.git
 cd loams/deploy/release
 cp .env.example .env
 ```
@@ -630,7 +656,7 @@ By default it starts the light default stack (the engine, the House, the Postgre
 agentd). `--tikv` adds PD, TiKV and TiDB, `--rustfs` RustFS, `--all` both, `--profiles` any
 other profiles, and `--no-postgres` leaves the Postgres stack out; they are written into the
 new `.env` as `COMPOSE_PROFILES`, so choose them on the first install. `--version` picks the
-image tag (default `0.1.3`).
+image tag (default `0.1.4`).
 `byoc/uninstall.sh` removes it. To do it by hand instead, copy `deploy/release` to the VM,
 `cp .env.example .env`, set `TS_AUTHKEY` and `LOAMS_SETUP_TOKEN`, and run `docker compose up -d`.
 
@@ -650,7 +676,7 @@ origin cannot call it: the browser blocks it as mixed content. Use Tailscale.
 
 ## The console on your own Vercel or Cloudflare: coming soon
 
-Hosting the console on your own Vercel or Cloudflare project is not part of 0.1.3.
+Hosting the console on your own Vercel or Cloudflare project is not part of 0.1.4.
 Use the console your engine serves at `/ui/`, or Loams Desktop. Likewise not in this release: self-service OIDC clients at
 `auth.loams.dev/register` and one-click OAuth deploy.
 
@@ -668,13 +694,13 @@ curl -u "default:$PASSWORD" https://loams-house.<tailnet>.ts.net/ --data-binary 
 ```
 
 Any ClickHouse HTTP client works the same way (port 443, TLS, user `default`). What it serves
-in 0.1.3: queries over the allowed table functions (`numbers`, `values`,
+in 0.1.4: queries over the allowed table functions (`numbers`, `values`,
 `generateRandom` and the like), lake-table DDL, reads, writes (`INSERT`, `INSERT … SELECT`,
 `CREATE TABLE … AS SELECT`, `TRUNCATE`) and compaction (`OPTIMIZE TABLE`), and the allowed
 `system` tables. To reach it from the engine (and so from `loams.house.v1` and the console's
 House page), set `LOAMS_HOUSE_ENDPOINT=https://house:8443` and `HOUSE_PRINCIPALS` (see
 [`deploy/release/README.md`](../../deploy/release/README.md#house)).
-The House's security layers in 0.1.3:
+The House's security layers in 0.1.4:
 
 - **chDB's access control first** (HS1 ruling R-ACL.1): the users workers run as have no
   `SOURCES` grants and a constrained settings profile, so table functions and engines that
@@ -696,7 +722,7 @@ The House's security layers in 0.1.3:
 
 ## Security model
 
-**What protects the engine in 0.1.3:**
+**What protects the engine in 0.1.4:**
 
 - **Tailnet only.** The engine has no public address. Only the `tailscale` sidecar (and the
   House's `house-tailscale`, with the `house-tailnet` profile) is reachable from outside the compose
@@ -754,7 +780,7 @@ credential.
   engine's network namespace, and Resonate stays inside the compose network, unless you
   publish them. The Postgres and MySQL wire listeners authenticate nobody (any user name and
   password is accepted) and serve the `default` namespace. The House's ClickHouse HTTP
-  interface is served only through its own sidecar, with the House's own user and password. Do not publish them in 0.1.3: the auth modes above are specified for the main
+  interface is served only through its own sidecar, with the House's own user and password. Do not publish them in 0.1.4: the auth modes above are specified for the main
   port, and the other listeners are not all reviewed against them.
 - **Traffic inside the compose network is plain text**, between `loams`, TiDB, TiKV, PD and
   the Postgres stack. The tailnet encrypts the hop from your device to the stack.
@@ -809,11 +835,11 @@ Report anything you find through [SECURITY.md](../../SECURITY.md), not in a publ
 - **Browsers on Chromium** may ask for permission the first time a page on a public origin
   calls an address on your tailnet (Local Network Access). Allow it for the console's origin.
 - **Upgrades go one release at a time, with `loams upgrade`.** From preview.2 on, a stack keeps
-  its data: from 0.1.0 or 0.1.1, `loams upgrade check --to 0.1.3`, then `loams upgrade --to 0.1.3`; from
+  its data: from any earlier 0.1.x, `loams upgrade check --to 0.1.4`, then `loams upgrade --to 0.1.4`; from
   preview.2, first `loams upgrade --to 0.1.0` (see [upgrades](upgrades.md)). Do not upgrade by
   editing `LOAMS_VERSION` and running `docker compose up`: 0.1.0 recreates the safekeeper,
   which must be drained first. preview.1 → preview.2 kept no data: from preview.1, start a
-  fresh stack (`docker compose down -v`, then `up -d` with `LOAMS_VERSION=0.1.3`).
+  fresh stack (`docker compose down -v`, then `up -d` with `LOAMS_VERSION=0.1.4`).
 - **Podman: recreating the engine after an `.env` change** fails with "has dependent containers"
   while the `tailscale` sidecar shares its network namespace. Run `docker compose rm -sf tailscale
   && docker compose up -d loams tailscale` (see [upgrades](upgrades.md#recreating-a-service-by-hand));

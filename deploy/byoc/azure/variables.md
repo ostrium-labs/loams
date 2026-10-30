@@ -8,7 +8,7 @@
 | `--storage-account` | required | The StorageV2 account that holds the container. |
 | `--vault` | required | The Key Vault holding the secrets. |
 | `--client-id` | none | The user-assigned identity's client ID (required when the VM has more than one identity). |
-| `--version` | `0.1.3` | The Loams release. The bundle's signature and checksum are verified. |
+| `--version` | `0.1.4` | The Loams release. The bundle's signature and checksum are verified. |
 | `--install` | `loams` | Names the secrets: `loams-<install>-tailnet-authkey`, `-setup-token`, `-api-keys` (optional). |
 | `--secret-prefix` | `loams-<install>` | Overrides the whole prefix. |
 | `--profiles` | none | `COMPOSE_PROFILES`: `tikv`, `rustfs`, ... Choose before the first start. |

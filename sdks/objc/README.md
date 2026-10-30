@@ -8,7 +8,7 @@
 ## Install
 
 The CocoaPods package is not published yet. Use the released monorepo source:
-check out the `v0.1.3` tag, then add the local Swift package at `sdks/objc` to
+check out the `v0.1.4` tag, then add the local Swift package at `sdks/objc` to
 your Xcode project and select the `LoamsObjC` product. Its module can sit next
 to the Swift SDK's `Loams` module. It supports iOS 15 and macOS 12 or newer.
 

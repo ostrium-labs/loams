@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.4
+
+- Released with Loams 0.1.4. Six new reason exceptions for the deployment CA's
+  internal service (`JoinTokenUnknownException`, `JoinTokenSpentException`,
+  `JoinTokenExpiredException`, `IdentityNotGrantedException`,
+  `IdentityRevokedException`, `CaNotInitializedException`); no other API changes.
+
 ## 0.1.3
 
 - Released with Loams 0.1.3; no API changes.
