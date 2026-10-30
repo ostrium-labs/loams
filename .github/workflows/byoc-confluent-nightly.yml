@@ -41,7 +41,7 @@ jobs:
       contents: read
     env:
       AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
-      LOAMS_CI_VERSION: "0.1.2"
+      LOAMS_CI_VERSION: "0.1.4"
       GITHUB_RUN_ID: ${{ github.run_id }}
       CONFLUENT_CI_ENVIRONMENT: ${{ vars.CONFLUENT_CI_ENVIRONMENT }}
       CONFLUENT_CI_DATA_SA: ${{ vars.CONFLUENT_CI_DATA_SA }}
