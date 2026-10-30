@@ -68,17 +68,17 @@ fn request(opcode: Opcode, body: Vec<u8>) -> Envelope {
 }
 async fn exchange(stream: &mut tokio::net::TcpStream, frame: Envelope) -> Envelope {
     stream
-        .write_all(&frame.encode_with(Compression::None).unwrap())
+        .write_all(&frame.encode_with(Compression::None).expect("encode"))
         .await
-        .unwrap();
+        .expect("write");
     let mut header = [0_u8; 9];
-    stream.read_exact(&mut header).await.unwrap();
-    let len = u32::from_be_bytes(header[5..9].try_into().unwrap()) as usize;
+    stream.read_exact(&mut header).await.expect("read header");
+    let len = u32::from_be_bytes(header[5..9].try_into().expect("frame length")) as usize;
     let mut bytes = header.to_vec();
     bytes.resize(9 + len, 0);
-    stream.read_exact(&mut bytes[9..]).await.unwrap();
+    stream.read_exact(&mut bytes[9..]).await.expect("read body");
     Envelope::from_buffer(&bytes, Compression::None)
-        .unwrap()
+        .expect("decode")
         .envelope
 }
 

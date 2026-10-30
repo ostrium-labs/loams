@@ -671,7 +671,7 @@ async fn http(
                 }
                 done += depth as u64;
                 batch += 1;
-                if batch % 64 == 0 {
+                if batch.is_multiple_of(64) {
                     samples.push(micros(t.elapsed()));
                 }
             }

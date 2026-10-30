@@ -671,13 +671,16 @@ pub trait InstanceDirectory: Send + Sync + 'static {
     async fn request_resume(&self, instance: &Instance) -> Result<(), String>;
 }
 
+/// Returns an instance's pre-shared token (from its `-connect` Secret).
+pub type InstanceTokens = Arc<dyn Fn(&Instance) -> Option<Arc<str>> + Send + Sync>;
+
 /// Resolves a call to an instance's in-cluster Service, resuming it first
 /// when suspended.
 pub struct InstanceRouter<C> {
     dir: Arc<dyn InstanceDirectory>,
     adapter: Arc<SparkAdapter<C>>,
     wake_timeout: Duration,
-    tokens: Arc<dyn Fn(&Instance) -> Option<Arc<str>> + Send + Sync>,
+    tokens: InstanceTokens,
 }
 
 impl<C> std::fmt::Debug for InstanceRouter<C> {
@@ -695,7 +698,7 @@ impl<C: ClusterApi> InstanceRouter<C> {
         dir: Arc<dyn InstanceDirectory>,
         adapter: Arc<SparkAdapter<C>>,
         wake_timeout: Duration,
-        tokens: Arc<dyn Fn(&Instance) -> Option<Arc<str>> + Send + Sync>,
+        tokens: InstanceTokens,
     ) -> Self {
         Self {
             dir,

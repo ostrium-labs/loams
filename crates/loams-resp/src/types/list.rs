@@ -834,15 +834,15 @@ mod tests {
                     let n = i64::try_from(model.len()).unwrap_or(0);
                     match op {
                         0 => {
-                            push(&mut txn, 0, b"l", &[value.clone()], true, false, 0).await.expect("lpush").expect("a list");
+                            push(&mut txn, 0, b"l", std::slice::from_ref(&value), true, false, 0).await.expect("lpush").expect("a list");
                             model.push_front(value);
                         }
                         1 => {
-                            push(&mut txn, 0, b"l", &[value.clone()], false, false, 0).await.expect("rpush").expect("a list");
+                            push(&mut txn, 0, b"l", std::slice::from_ref(&value), false, false, 0).await.expect("rpush").expect("a list");
                             model.push_back(value);
                         }
                         2 => {
-                            let k = u64::try_from(a.unsigned_abs() % 3 + 1).unwrap_or(1);
+                            let k = a.unsigned_abs() % 3 + 1;
                             let got = pop(&mut txn, 0, b"l", b >= 0, k, 0).await.expect("pop").expect("a list");
                             let mut want = Vec::new();
                             for _ in 0..k {
