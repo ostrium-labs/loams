@@ -156,6 +156,12 @@ class CsrfTokenInvalidException extends LoamsException {}
 class PrincipalNotAllowedException extends LoamsException {}
 class CorsOriginNotAllowedException extends LoamsException {}
 class AuthUnavailableException extends LoamsException {}
+class JoinTokenUnknownException extends LoamsException {}
+class JoinTokenSpentException extends LoamsException {}
+class JoinTokenExpiredException extends LoamsException {}
+class IdentityNotGrantedException extends LoamsException {}
+class IdentityRevokedException extends LoamsException {}
+class CaNotInitializedException extends LoamsException {}
 class TokenExpiredException extends LoamsException {}
 class UnauthenticatedException extends LoamsException {}
 class DecisionProofInvalidException extends LoamsException {}
@@ -316,6 +322,12 @@ class ErrorParser
         'principal_not_allowed' => PrincipalNotAllowedException::class,
         'cors_origin_not_allowed' => CorsOriginNotAllowedException::class,
         'auth_unavailable' => AuthUnavailableException::class,
+        'join_token_unknown' => JoinTokenUnknownException::class,
+        'join_token_spent' => JoinTokenSpentException::class,
+        'join_token_expired' => JoinTokenExpiredException::class,
+        'identity_not_granted' => IdentityNotGrantedException::class,
+        'identity_revoked' => IdentityRevokedException::class,
+        'ca_not_initialized' => CaNotInitializedException::class,
         'invalid_argument' => InvalidArgumentException::class,
         'not_found' => NotFoundException::class,
         'already_exists' => AlreadyExistsException::class,

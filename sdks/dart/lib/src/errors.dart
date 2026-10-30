@@ -488,6 +488,30 @@ class AuthUnavailableException extends LoamsException {
   AuthUnavailableException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
 }
 
+class JoinTokenUnknownException extends LoamsException {
+  JoinTokenUnknownException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+
+class JoinTokenSpentException extends LoamsException {
+  JoinTokenSpentException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+
+class JoinTokenExpiredException extends LoamsException {
+  JoinTokenExpiredException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+
+class IdentityNotGrantedException extends LoamsException {
+  IdentityNotGrantedException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+
+class IdentityRevokedException extends LoamsException {
+  IdentityRevokedException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+
+class CaNotInitializedException extends LoamsException {
+  CaNotInitializedException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+
 class TokenExpiredException extends LoamsException {
   TokenExpiredException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
 }
@@ -827,6 +851,18 @@ class ErrorParser {
         CorsOriginNotAllowedException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
     'auth_unavailable': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
         AuthUnavailableException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'join_token_unknown': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        JoinTokenUnknownException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'join_token_spent': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        JoinTokenSpentException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'join_token_expired': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        JoinTokenExpiredException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'identity_not_granted': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        IdentityNotGrantedException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'identity_revoked': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        IdentityRevokedException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'ca_not_initialized': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        CaNotInitializedException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
     'invalid_argument': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
         InvalidArgumentException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
     'not_found': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
