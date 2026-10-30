@@ -38,7 +38,7 @@
 # date.
 
 # --- buf and the TypeScript plugins (SDK2 Task 0 delivered these) ---
-buf 1.73.0 sha512-W3whb4P1y3Hs9bqwCu9++W1v1ofHZ3dBUCe6JSZq0Ff5OK5UKKZuMN4iunPbgdyXY4+4ujEYf2ESrN/6MbcFSQ== the buf CLI, a devDependency of @loams/client
+buf 1.74.0 sha512-EMoeP7tlIWErM69Lp7QJI30pIDa675rPD1SoEEncCps3by8JlzA8qxwjb7IkJNu10Ma0ggynk5lt/qUmTbaHIw== the buf CLI, a devDependency of @loams/client
 npm @bufbuild/protoc-gen-es 2.16.0 sha512-LbPrEaGd7bOxKbJHllTR5439+PZjqd6fM7xyDZkDVtZ+Efzr7TMdMqShG9Qkf/nYVyiNS/SK5r9JhRaBTFkfZw== the TypeScript stubs
 npm @bufbuild/protobuf 2.16.0 sha512-FWa0sPlqYGJgpTs6OxBRcL/AW4JT0OIO+W1ajerluoTVh8CV0B7XM1qsNCRgnkSCkRCgOICKHRQlY17jrsm0+Q== the message runtime
 npm @connectrpc/connect 2.2.0 sha512-M63OQ1ZFcPUm85CuewJ9G9CMV8LjzGR9935xOnXNQGSazAbwMb3x2W7vXBYM1zqrP7XFD8uxp/dUAhirclgwnQ== the Connect runtime for TypeScript

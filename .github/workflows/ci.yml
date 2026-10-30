@@ -1671,7 +1671,7 @@ jobs:
       # reason, and this fails if one is ever loosened to a range.
       - name: the generation tools are pinned to exact versions
         run: |
-          for pin in '"@bufbuild/buf": "1.73.0"' '"@bufbuild/protoc-gen-es": "2.16.0"' '"@bufbuild/protobuf": "2.16.0"'; do
+          for pin in '"@bufbuild/buf": "1.74.0"' '"@bufbuild/protoc-gen-es": "2.16.0"' '"@bufbuild/protobuf": "2.16.0"'; do
             grep -qF "$pin" sdks/typescript/packages/client/package.json || {
               echo "sdks/typescript/packages/client/package.json is missing the exact pin $pin"; exit 1;
             }
