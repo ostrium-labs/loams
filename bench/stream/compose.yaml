@@ -22,6 +22,7 @@ x-rw: &rw
   restart: "no"
   volumes:
     - ../../deploy/release/risingwave/risingwave.toml:/risingwave/config/risingwave.toml:ro
+    - ../../deploy/release/risingwave/license.key:/risingwave/config/license.key:ro
 
 x-rw-env: &rw-env
   RW_CONFIG_PATH: /risingwave/config/risingwave.toml
@@ -139,6 +140,8 @@ services:
       RW_DASHBOARD_HOST: 0.0.0.0:5691
       RW_PROMETHEUS_HOST: 0.0.0.0:1250
       RW_BACKEND: postgres
+      # The free tier, as managed instances run (D1901).
+      RW_LICENSE_KEY_PATH: /risingwave/config/license.key
       RW_SQL_ENDPOINT: postgres:5432
       RW_SQL_USERNAME: postgres
       RW_SQL_PASSWORD: bench

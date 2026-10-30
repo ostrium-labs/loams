@@ -82,7 +82,7 @@ fi
 
 # 2. the fetcher then fills the secrets (a mock secret store)
 cat >"$tmp/secrets.json" <<JSON
-{"aws": {"loams/t/tailnet-authkey": "tskey-auth-PLANTED-1", "loams/t/setup-token": "setup-PLANTED-2"}, "gcp": {}, "azure": {}}
+{"aws": {"loams/t/tailnet-authkey": "authkey-PLANTED-1", "loams/t/setup-token": "setup-PLANTED-2"}, "gcp": {}, "azure": {}}
 JSON
 python3 -I "$here/mock_cloud.py" "$tmp/port" "$tmp/secrets.json" &
 pids+=("$!")
@@ -90,13 +90,13 @@ for _ in $(seq 50); do [[ -s "$tmp/port" ]] && break; sleep 0.1; done
 mp="$(cat "$tmp/port")"
 if env LOAMS_BYOC_CONFIG="$cfg" LOAMS_BYOC_STACK="$tmp/ok/release" LOAMS_BYOC_IMDS_URL="http://127.0.0.1:$mp/aws" \
      LOAMS_BYOC_SECRETS_URL="http://127.0.0.1:$mp/aws-sm" "$repo/deploy/byoc/lib/loams-byoc-secrets" aws >"$tmp/out2" 2>&1; then
-  grep -q '^TS_AUTHKEY=tskey-auth-PLANTED-1$' "$tmp/ok/release/.env" && grep -q '^LOAMS_BUCKET=s3://my-bkt/loams$' "$tmp/ok/release/.env" \
+  grep -q '^TS_AUTHKEY=authkey-PLANTED-1$' "$tmp/ok/release/.env" && grep -q '^LOAMS_BUCKET=s3://my-bkt/loams$' "$tmp/ok/release/.env" \
     && ok "bootstrap then fetch: .env has the bucket and the secrets" || bad "fetch after bootstrap"
 else bad "fetch after bootstrap failed: $(cat "$tmp/out2")"; fi
 
 # 3. a re-run keeps what the fetcher wrote
 if run "$tmp/ok" >"$tmp/out3" 2>&1; then
-  grep -q '^TS_AUTHKEY=tskey-auth-PLANTED-1$' "$tmp/ok/release/.env" && ok "a re-run keeps the fetched secrets" || bad "re-run lost TS_AUTHKEY"
+  grep -q '^TS_AUTHKEY=authkey-PLANTED-1$' "$tmp/ok/release/.env" && ok "a re-run keeps the fetched secrets" || bad "re-run lost TS_AUTHKEY"
 else bad "re-run failed: $(cat "$tmp/out3")"; fi
 
 # 4. a tampered bundle is refused (its checksum no longer matches)

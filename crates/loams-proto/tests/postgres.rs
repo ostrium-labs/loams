@@ -500,6 +500,10 @@ fn reasons_have_their_connect_codes() {
         ("quota_exceeded", "resource_exhausted"),
         ("storage_unavailable", "unavailable"),
         ("secret_already_issued", "failed_precondition"),
+        ("unsupported_pg_version", "invalid_argument"),
+        ("beta_major_requires_opt_in", "failed_precondition"),
+        ("compute_major_mismatch_refused", "failed_precondition"),
+        ("import_checksums_enabled", "failed_precondition"),
     ] {
         assert_eq!(
             registry.get(reason).map(String::as_str),

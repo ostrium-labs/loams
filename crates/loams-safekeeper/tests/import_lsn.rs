@@ -277,7 +277,10 @@ async fn elected_below_import_lsn_is_refused() {
                 || matches!(client::recv_copy_data(&mut p).await, Ok(None))
         }
     };
-    assert!(refused, "an election below the import's end must be refused");
+    assert!(
+        refused,
+        "an election below the import's end must be refused"
+    );
     let head = status(web).await;
     assert!(
         head.contains(&format!("\"commit_lsn\":\"{}\"", Lsn(IMPORT_END))),

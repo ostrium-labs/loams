@@ -374,6 +374,7 @@ impl PostgresService for Postgres {
                             region: r.region,
                             history_retention,
                             wal_pool: r.wal_pool,
+                            allow_beta_major: r.allow_beta_major,
                             idempotency_key: r.idempotency_key,
                         },
                     )
@@ -536,6 +537,28 @@ impl PostgresService for Postgres {
                 Err(Failure::NotBuilt("PG2 Task 51"))
             })
             .await
+    }
+
+    /// The majors the service serves (design 62 §9.2). It describes the
+    /// service, not a namespace's data: any authenticated caller may read it.
+    async fn list_pg_versions(
+        &self,
+        ctx: RequestContext,
+        _request: ServiceRequest<'_, pb::ListPgVersionsRequest>,
+    ) -> ServiceResult<pb::ListPgVersionsResponse> {
+        if let Err(e) = self.gate.authenticator.authenticate(ctx.headers()).await {
+            let e = ServiceError::from(e);
+            return Err(refused(&e));
+        }
+        Response::ok(pb::ListPgVersionsResponse {
+            versions: self
+                .service
+                .list_pg_versions()
+                .iter()
+                .map(msg::pg_version)
+                .collect(),
+            ..Default::default()
+        })
     }
 
     async fn create_branch(

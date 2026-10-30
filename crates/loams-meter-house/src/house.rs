@@ -23,6 +23,36 @@ pub enum HouseError {
 /// statement's output (`TabSeparated` unless the statement says `FORMAT`).
 pub trait HouseSql: Send + Sync {
     fn query(&self, sql: &str) -> impl Future<Output = Result<String, HouseError>> + Send;
+
+    /// `sql` with Loams settings, such as `loams_snapshot_id`, which the
+    /// House takes only from the request (URL parameters), never from a
+    /// statement's `SETTINGS` clause (that clause is chDB's). A House that
+    /// cannot pass them refuses rather than run the statement without them.
+    fn query_with(
+        &self,
+        sql: &str,
+        settings: &[(&str, String)],
+    ) -> impl Future<Output = Result<String, HouseError>> + Send {
+        let _ = (sql, settings);
+        async {
+            Err(HouseError::Transport(
+                "this House client cannot pass Loams settings".into(),
+            ))
+        }
+    }
+}
+
+/// `text` percent-encoded for a URL query (unreserved characters kept).
+fn url_encode(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for b in text.bytes() {
+        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~') {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
 }
 
 /// [`HouseSql`] over the House's HTTP listener.
@@ -65,9 +95,26 @@ impl HttpHouse {
 
 impl HouseSql for HttpHouse {
     async fn query(&self, sql: &str) -> Result<String, HouseError> {
+        self.query_with(sql, &[]).await
+    }
+
+    async fn query_with(
+        &self,
+        sql: &str,
+        settings: &[(&str, String)],
+    ) -> Result<String, HouseError> {
+        let params: Vec<String> = settings
+            .iter()
+            .map(|(k, v)| format!("{}={}", url_encode(k), url_encode(v)))
+            .collect();
+        let url = if params.is_empty() {
+            format!("{}/", self.url)
+        } else {
+            format!("{}/?{}", self.url, params.join("&"))
+        };
         let response = self
             .client
-            .post(format!("{}/", self.url))
+            .post(url)
             .basic_auth(&self.user, Some(&self.password))
             .body(sql.to_string())
             .send()

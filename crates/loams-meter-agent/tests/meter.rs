@@ -616,9 +616,7 @@ async fn stream_sink_produces_to_the_subject_partition() {
     let mock = server
         .mock_async(|when, then| {
             when.method("POST")
-                .path(format!(
-                    "/v1/namespaces/_system/streams/_meter/partitions/{partition}/records"
-                ))
+                .path(format!("/internal/v1/meter/partitions/{partition}/records"))
                 .json_body_includes(
                     serde_json::json!({
                         "records": [{

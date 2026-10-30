@@ -51,6 +51,7 @@ pub const REPLACED: &[&str] = &[
     "processes",
     "errors",
     "loams_pipes",
+    "loams_pipe_cursors",
     "query_log",
     // HE1 R9.62: what a clustered application's migrations read (SigNoz's
     // wait for each `ON CLUSTER` statement and each mutation), answered for a
@@ -225,6 +226,44 @@ pub const PIPES_COLUMNS: &[(&str, &str)] = &[
     ("last_commit_at", "Nullable(DateTime64(3, 'UTC'))"),
     ("last_error", "String"),
 ];
+
+/// `system.loams_pipe_cursors` (D2401): every pipe cursor of every lake
+/// table, with the snapshot it belongs to. A pipe commits its rows and its
+/// cursor (`loams.pipe.<view id>.<partition>` = the next offset) in one
+/// Iceberg commit, so the cursor read with a table's current snapshot is
+/// exactly what that snapshot holds: every record of the partition below
+/// `next_offset`, and none at or above it. A reader pins its query to the
+/// same snapshot with `SETTINGS loams_snapshot_id = <snapshot_id>` (Loams
+/// Meter's reconciliation, §63 §12).
+pub const PIPE_CURSORS_COLUMNS: &[(&str, &str)] = &[
+    ("database", "String"),
+    ("table", "String"),
+    ("view", "String"),
+    ("partition", "UInt32"),
+    ("next_offset", "UInt64"),
+    ("snapshot_id", "Int64"),
+];
+
+/// The cursor rows of one table: `(view, partition, next_offset)` from its
+/// properties, sorted. Keys that do not parse are skipped.
+pub fn pipe_cursors_of(
+    properties: &std::collections::HashMap<String, String>,
+) -> Vec<(String, u32, u64)> {
+    let mut out: Vec<(String, u32, u64)> = properties
+        .iter()
+        .filter_map(|(k, v)| {
+            let rest = k.strip_prefix(crate::pipes::CURSOR_PREFIX)?;
+            let (view, partition) = rest.rsplit_once('.')?;
+            Some((
+                view.to_string(),
+                partition.parse().ok()?,
+                v.trim().parse().ok()?,
+            ))
+        })
+        .collect();
+    out.sort();
+    out
+}
 
 /// The databases chDB itself has, whose `system` rows are shown as they are.
 const ENGINE_DATABASES: &[&str] = &["system", "information_schema", "INFORMATION_SCHEMA"];
@@ -678,6 +717,15 @@ pub async fn views(
             ));
             continue;
         }
+        if table == "loams_pipe_cursors" {
+            out.push(format!(
+                "CREATE OR REPLACE VIEW {}.{} AS\n{}",
+                quote_name(SYSTEM_VIEWS),
+                quote_name(table),
+                pipe_cursors_view(ctx).await?
+            ));
+            continue;
+        }
         if table == "loams_pipes" {
             out.push(format!(
                 "CREATE OR REPLACE VIEW {}.{} AS\n{}",
@@ -987,6 +1035,45 @@ async fn query_log_view(ctx: ReadContext<'_>) -> Result<String, HouseError> {
         select.join(", "),
         parts.join("\nUNION ALL\n")
     ))
+}
+
+async fn pipe_cursors_view(ctx: ReadContext<'_>) -> Result<String, HouseError> {
+    let shape: Vec<ShapeColumn> = PIPE_CURSORS_COLUMNS
+        .iter()
+        .map(|(name, ty)| ShapeColumn {
+            name: name.to_string(),
+            ty: ty.to_string(),
+        })
+        .collect();
+    let mut rows = Rows {
+        columns: PIPE_CURSORS_COLUMNS.iter().map(|(name, _)| *name).collect(),
+        rows: Vec::new(),
+    };
+    if let Some(lake) = ctx.lake {
+        for (database, name, table) in catalog_tables(lake, ctx.namespace).await? {
+            if ctx
+                .grants
+                .is_some_and(|grants| !grants.allows(&database, &name))
+            {
+                continue;
+            }
+            let Some(snapshot) = table.metadata.current_snapshot() else {
+                continue;
+            };
+            let snapshot_id = snapshot.snapshot_id();
+            for (view, partition, next_offset) in pipe_cursors_of(table.metadata.properties()) {
+                rows.rows.push(vec![
+                    Some(database.clone()),
+                    Some(name.clone()),
+                    Some(view),
+                    Some(partition.to_string()),
+                    Some(next_offset.to_string()),
+                    Some(snapshot_id.to_string()),
+                ]);
+            }
+        }
+    }
+    Ok(catalog_select(&shape, &rows))
 }
 
 async fn pipes_view(ctx: ReadContext<'_>) -> Result<String, HouseError> {
@@ -1320,6 +1407,20 @@ async fn parts_view(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn pipe_cursors_parse_from_the_properties() {
+        let mut p = std::collections::HashMap::new();
+        p.insert("loams.pipe.v-1.2".to_string(), "40".to_string());
+        p.insert("loams.pipe.v-1.10".to_string(), "7".to_string());
+        p.insert("loams.pipe.v.x".to_string(), "1".to_string());
+        p.insert("loams.mv.v-1".to_string(), "{}".to_string());
+        assert_eq!(
+            super::pipe_cursors_of(&p),
+            vec![("v-1".to_string(), 2, 40), ("v-1".to_string(), 10, 7)]
+        );
+        assert!(super::REPLACED.contains(&"loams_pipe_cursors"));
+    }
     use super::*;
 
     /// HE1 R9.62: only `clusterAllReplicas(<cluster>, system.<t>)` is read

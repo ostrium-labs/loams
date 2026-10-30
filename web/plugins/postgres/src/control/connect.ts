@@ -9,6 +9,7 @@ import {
   type BranchState,
   type CreateBranchInput,
   type CreateProjectInput,
+  type PgVersionInfo,
   type IssuedPassword,
   type OperationState,
   type PgBranch,
@@ -304,12 +305,31 @@ export function createConnectPgControl(options: ConnectPgControlOptions): PgCont
     async listProjects(namespace) {
       return (await all(POSTGRES, 'ListProjects', { namespace }, 'projects')).map(projectFromJson);
     },
+    async listPgVersions() {
+      const r = await pg('ListPgVersions', {});
+      return list(r.versions).map((v): PgVersionInfo => {
+        const j = obj(v);
+        const state = String(j.state ?? '');
+        return {
+          major: num(j.major),
+          state: state.endsWith('BETA')
+            ? 'beta'
+            : state.endsWith('MAINTENANCE')
+              ? 'maintenance'
+              : 'supported',
+          isDefault: j.isDefault === true,
+          minor: String(j.minor ?? ''),
+          eolDate: String(j.eolDate ?? ''),
+        };
+      });
+    },
     async createProject(namespace, input: CreateProjectInput) {
       const r = await pg('CreateProject', {
         namespace,
         name: input.name,
         pgVersion: input.pgVersion,
         ...(input.region ? { region: input.region } : {}),
+        ...(input.allowBetaMajor ? { allowBetaMajor: true } : {}),
         idempotencyKey: key(),
       });
       return {

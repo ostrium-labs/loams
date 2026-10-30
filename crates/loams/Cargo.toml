@@ -52,6 +52,7 @@ http-body.workspace = true
 loams-authz.workspace = true
 loams-meter = { workspace = true, optional = true }
 loams-meter-core = { workspace = true, optional = true }
+loams-meter-gate = { workspace = true, optional = true }
 # The identity sync (design 76 §8.1, plan IA1 IA3), off unless LOAMS_IDENTITY_SYNC=on.
 loams-identity-sync.workspace = true
 loams-zitadel.workspace = true
@@ -185,7 +186,7 @@ flight = []
 # Loams Meter's `meter` role (design §63 §5.2; ME1 role wiring): the
 # customer, entitlement, plan and notification services on the main port of
 # a gateway node. Off by default.
-meter = ["dep:loams-meter", "dep:loams-meter-core"]
+meter = ["dep:loams-meter", "dep:loams-meter-core", "dep:loams-meter-gate"]
 # The meter's exporters (design §63 §16, D2207), each off by default: the
 # CloudEvents webhook of closed hour windows, and Stripe's payment state
 # (webhook route and daily poll). Lago and OpenMeter build their ledger and

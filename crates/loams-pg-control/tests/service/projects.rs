@@ -236,7 +236,13 @@ async fn bad_names_and_settings_are_invalid_argument() {
             .create_project(&user(), req)
             .await
             .expect_err(field);
-        assert_eq!(e.reason, Reason::InvalidArgument, "{field}");
+        let want = if field == "pg_version" {
+            Reason::UnsupportedPgVersion
+        } else {
+            Reason::InvalidArgument
+        };
+        assert_eq!(e.reason, want, "{field}");
+        assert_eq!(e.reason.code(), "invalid_argument", "{field}");
         assert_eq!(e.metadata.get("field").map(String::as_str), Some(field));
     }
     assert!(all_projects(&h).await.is_empty());
@@ -919,4 +925,174 @@ async fn finished_operations_are_collected_after_their_retention() {
             .expect("get")
             .is_none()
     );
+}
+
+/// A service on `h`'s store with the majors of design 62 §7.1's "18 beta" row
+/// plus a maintenance 16: supported 17, beta 18, maintenance 16.
+fn with_majors(
+    h: &crate::common::Harness,
+) -> loams_pg_control::service::PgService<crate::common::FakeNeon> {
+    let mut config = h.service.config().clone();
+    config.pg_versions = vec![17];
+    config.beta_pg_versions = vec![18];
+    config.maintenance_pg_versions = vec![16];
+    config.default_pg_version = 17;
+    loams_pg_control::service::PgService::new(
+        h.store.clone(),
+        h.neon.clone(),
+        h.secrets.clone(),
+        config,
+    )
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn unsupported_pg_version_lists_offered_majors() {
+    let h = harness!();
+    let service = with_majors(&h);
+    let e = service
+        .create_project(
+            &user(),
+            CreateProject {
+                pg_version: 15,
+                ..create("shop", "k1")
+            },
+        )
+        .await
+        .expect_err("15 is not offered");
+    assert_eq!(e.reason, Reason::UnsupportedPgVersion);
+    assert_eq!(e.reason.code(), "invalid_argument");
+    assert_eq!(
+        e.metadata.get("field").map(String::as_str),
+        Some("pg_version")
+    );
+    assert_eq!(
+        e.metadata.get("offered").map(String::as_str),
+        Some("17,18 (beta)")
+    );
+    assert!(all_projects(&h).await.is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn beta_major_requires_opt_in() {
+    let h = harness!();
+    let service = with_majors(&h);
+    let e = service
+        .create_project(
+            &user(),
+            CreateProject {
+                pg_version: 18,
+                ..create("shop", "k1")
+            },
+        )
+        .await
+        .expect_err("18 is beta");
+    assert_eq!(e.reason, Reason::BetaMajorRequiresOptIn);
+    assert_eq!(e.reason.code(), "failed_precondition");
+    assert!(all_projects(&h).await.is_empty());
+
+    let out = service
+        .create_project(
+            &user(),
+            CreateProject {
+                pg_version: 18,
+                allow_beta_major: true,
+                ..create("shop", "k2")
+            },
+        )
+        .await
+        .expect("18 with the opt-in");
+    assert_eq!(out.project.record.pg_version, 18);
+    let main = h
+        .store
+        .get::<BranchRec>(&BranchKey {
+            project_id: out.project.record.id.clone(),
+            id: out.project.record.default_branch_id.clone().expect("main"),
+        })
+        .await
+        .expect("get")
+        .expect("main");
+    assert_eq!(main.record.pg_version, 18, "main has the project's major");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn maintenance_major_refused_for_new_projects() {
+    let h = harness!();
+    let service = with_majors(&h);
+    let e = service
+        .create_project(
+            &user(),
+            CreateProject {
+                pg_version: 16,
+                ..create("shop", "k1")
+            },
+        )
+        .await
+        .expect_err("16 is in maintenance");
+    assert_eq!(e.reason, Reason::UnsupportedPgVersion);
+    assert!(e.message.contains("maintenance"), "{}", e.message);
+    assert!(
+        e.message.contains("Postgres 17"),
+        "the hint names the newest supported major: {}",
+        e.message
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn list_pg_versions_from_pins() {
+    let h = harness!();
+    // The service's own config comes from the pin file (majors.rs).
+    let listed = h.service.list_pg_versions();
+    let mut majors: Vec<u32> = listed.iter().map(|v| v.major).collect();
+    let mut pinned: Vec<u32> = loams_postgres::majors::SUPPORTED
+        .iter()
+        .chain(loams_postgres::majors::BETA)
+        .chain(loams_postgres::majors::MAINTENANCE)
+        .copied()
+        .collect();
+    majors.sort_unstable();
+    pinned.sort_unstable();
+    assert_eq!(majors, pinned);
+    for v in &listed {
+        assert_eq!(v.is_default, v.major == loams_postgres::majors::DEFAULT);
+        assert!(!v.minor.is_empty(), "{}: a pinned minor", v.major);
+        assert!(!v.eol_date.is_empty(), "{}: an end of life", v.major);
+    }
+
+    // Newest first, each with its state.
+    use loams_pg_control::service::projects::PgVersionState;
+    let listed = with_majors(&h).list_pg_versions();
+    let got: Vec<(u32, PgVersionState, bool)> = listed
+        .iter()
+        .map(|v| (v.major, v.state, v.is_default))
+        .collect();
+    assert_eq!(
+        got,
+        vec![
+            (18, PgVersionState::Beta, false),
+            (17, PgVersionState::Supported, true),
+            (16, PgVersionState::Maintenance, false),
+        ]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn branch_reports_pg_version() {
+    let h = harness!();
+    let out = h
+        .service
+        .create_project(&user(), create("shop", "k1"))
+        .await
+        .expect("create");
+    let p = &out.project.record;
+    let main = h
+        .service
+        .get_branch("acme", &p.id, p.default_branch_id.as_deref().expect("main"))
+        .await
+        .expect("get main");
+    assert_eq!(main.pg_version, p.pg_version);
+
+    // A record written before branches kept their major reads as the project's.
+    let mut old = main.branch.clone();
+    old.record.pg_version = 0;
+    assert_eq!(old.record.major(p), p.pg_version);
 }

@@ -45,8 +45,6 @@ spec:
             - --spool-max-bytes={{ .Values.spool.maxBytes | int64 }}
             - --interval-ms={{ .Values.intervalMs | int64 }}
             - --partitions={{ .Values.stream.partitions | int64 }}
-            - --stream-namespace={{ .Values.stream.namespace }}
-            - --stream={{ .Values.stream.name }}
             - --final-reads={{ .Values.finalReads }}
             {{- if .Values.streamUrl }}
             - --stream-url={{ .Values.streamUrl }}

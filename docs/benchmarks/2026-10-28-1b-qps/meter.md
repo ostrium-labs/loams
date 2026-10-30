@@ -26,3 +26,22 @@ So only the gate scales with QPS. The sink scales with metered work, which at 1B
 - No `perf` or `cargo flamegraph` on this machine. The hot path was profiled by isolating it: the gate against `NoGate`, the sink against a counting producer, and the agent with and without the spool. The code was read alongside.
 
 <!-- RESULTS -->
+
+## The gate in the products (D2400, 2026-10-29)
+
+The `meter` role now gives the products in its own process a `LeaseGate` instead of `NoGate`. Those products are the HTTP produce route, the CloudEvents route, the Flight producer and the gRPC producer. The gate's leases come from the role's lease client. The products that run as other processes (the House front, the gateway and pg-control) still use `NoGate`.
+
+The gate is scoped to pairs the meter has a policy for, and the scoping is done at the lease source, not on the hot path. For a (subject, feature) pair with no metered entitlement, the lease client answers an **unmetered grant**: allowed, counting only, no amount limit, refreshed every 10 s. The gate caches that grant like any other lease. As a result, a request on an unmetered pair costs exactly a lease hit, and a product that has no plan is never refused.
+
+Our first attempt was a wrapper gate (`ScopedGate`) that looked the pair up in a policy set before the lease lookup. It cost 30–40 % of the gate's throughput: on one P-core with 10k subjects, decisions fell from 7.8 M/s to 5.4 M/s, because each check paid for a second hash lookup. We removed it in favour of the unmetered grant.
+
+Measured with `meter-loadgen gate` in the bench lock, with the release build pinned as in the setup above. Load average was about 4 during these runs, because other agents' builds were running. Raw results are in `bench/results/bq1/meter/gate-d2400-*`.
+
+| Run | Metered lease (limiting) | Unmetered grant (no policy) |
+|---|---|---|
+| 1 P-core, 10k subjects | 7.76 M/s, p99 261 ns | 7.83 M/s, p99 199 ns |
+| 1 P-core, 10k subjects, `check_many` depth 64 | 8.17 M/s | 8.71 M/s |
+| 4 E-cores, 10k subjects | 23.8 M/s, p99 291 ns | 21.5 M/s, p99 398 ns |
+| 8 E-cores, 1 hot subject | 5.1 M/s | 6.7 M/s |
+
+Compared with `NoGate`, which is effectively free, a gated request now costs a lease hit: about 130 ns on one P-core. That is the gate cost this document already measured; the scoping adds nothing to it.
