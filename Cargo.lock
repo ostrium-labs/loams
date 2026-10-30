@@ -8535,6 +8535,7 @@ dependencies = [
  "loams-collection",
  "loams-common",
  "loams-confluent",
+ "loams-cost",
  "loams-durable",
  "loams-es",
  "loams-flink",
@@ -9171,6 +9172,7 @@ dependencies = [
 name = "loams-cost"
 version = "0.1.3"
 dependencies = [
+ "clap",
  "csv",
  "flate2",
  "hex",

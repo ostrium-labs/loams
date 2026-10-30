@@ -1312,6 +1312,12 @@ enum Command {
     /// render or apply pipeline specs. Reaches the frontend through
     /// loams-gateway.
     Risingwave(loams_risingwave::cli::RisingWaveArgs),
+    /// Cost attribution (design 84, preview): what a unit of work cost on
+    /// the infrastructure you run. `cost report` (unit costs by engine,
+    /// tenant, project and query class; `--from-bench` for an example from
+    /// a benchmark result), `cost import` (what a bill maps where) and
+    /// `cost export` (FOCUS 1.3 or OpenMeter CloudEvents), from files.
+    Cost(loams_cost::cli::CostArgs),
     /// Managed Spark (design 81, preview): the namespace's Spark Connect URL,
     /// batch jobs (submit, status, logs, cancel, schedules), local runs, and
     /// the driver pod a job renders to.
@@ -1486,6 +1492,7 @@ fn config(command: Command) -> ServerConfig {
         Command::Marketplace(_) => unreachable!("loams marketplace starts no server"),
         Command::Byoc(_) => unreachable!("loams byoc starts no server"),
         Command::Risingwave(_) => unreachable!("loams risingwave starts no server"),
+        Command::Cost(_) => unreachable!("loams cost starts no server"),
         #[cfg(feature = "spark")]
         Command::Spark(_) => unreachable!("loams spark starts no server"),
         #[cfg(feature = "flink")]
@@ -1714,6 +1721,10 @@ fn main() -> ExitCode {
     // A client too (CC1 Task 6): the Confluent Cloud API and the cloud's CLI.
     if let Command::Byoc(args) = &cli.command {
         return loams_confluent::cli::run(args);
+    }
+    // Offline and local: no runtime, no stores (design 84 §15).
+    if let Command::Cost(args) = &cli.command {
+        return loams_cost::cli::run(args);
     }
     // A client (RW1, lane RW-b): its own runtime, no stores.
     if let Command::Risingwave(args) = &cli.command {

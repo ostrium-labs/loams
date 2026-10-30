@@ -205,6 +205,7 @@ cargo_package(
         "//crates/loams-collection:loams-collection",
         "//crates/loams-common:loams-common",
         "//crates/loams-confluent:loams-confluent",
+        "//crates/loams-cost:loams-cost",
         "//crates/loams-es:loams-es",
         "//crates/loams-hnsw:loams-hnsw",
         "//crates/loams-hot:loams-hot",

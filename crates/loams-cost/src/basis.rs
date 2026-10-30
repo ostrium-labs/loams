@@ -91,6 +91,9 @@ pub enum Flag {
     NoCostInput,
     /// A default input value was used (named in the trace).
     DefaultInput,
+    /// An illustration, not an operator's cost: `loams cost report
+    /// --from-bench` (a benchmark's resource use times an example price).
+    Example,
 }
 
 impl Flag {
@@ -104,6 +107,7 @@ impl Flag {
             Flag::Spread => "spread",
             Flag::NoCostInput => "no_cost_input",
             Flag::DefaultInput => "default_input",
+            Flag::Example => "example",
         }
     }
 }
