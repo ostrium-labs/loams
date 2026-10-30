@@ -16,7 +16,7 @@ git_fetch(
 git_fetch(
     name = "grafeo-9bdcc1c5e4b720e7.git",
     repo = "https://github.com/ostrium-labs/grafeo",
-    rev = "bc6091e35953935f8221c3f0631d5aae77858e8f",
+    rev = "c394815536e158911020289ae5b0754384369224",
     visibility = [],
 )
 
