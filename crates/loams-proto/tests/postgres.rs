@@ -100,8 +100,13 @@ const CONTRACT: &[(&str, bool, bool)] = &[
     ("GetConnectionInfo", true, false),
     ("IssueConnectCredential", false, false),
     ("UpgradeProject", false, false),
+    ("ListPgVersions", true, false),
     ("WatchProject", true, true),
 ];
+
+/// RPCs that describe the service, not a namespace's data (NF2 plan ruling
+/// 11): no namespace, no paging, no console route of their own.
+const SERVICE_WIDE: &[&str] = &["ListPgVersions"];
 
 /// The service is the contract's, RPC for RPC: names, read-only marks and
 /// streaming.
@@ -340,7 +345,11 @@ fn every_rpc_has_a_planned_console_route() {
             .unwrap_or_else(|| panic!("no {prefix}…` RPC in {line}"));
         routed.insert(rpc.to_string());
     }
-    let all: BTreeSet<String> = CONTRACT.iter().map(|(n, _, _)| n.to_string()).collect();
+    let all: BTreeSet<String> = CONTRACT
+        .iter()
+        .map(|(n, _, _)| n.to_string())
+        .filter(|n| !SERVICE_WIDE.contains(&n.as_str()))
+        .collect();
     let unknown: Vec<_> = routed.difference(&all).collect();
     let unrouted: Vec<_> = all.difference(&routed).collect();
     assert!(
@@ -379,7 +388,7 @@ fn list_rpcs_page_as_ap0_says() {
     let set = descriptor_set();
     let lists: Vec<String> = CONTRACT
         .iter()
-        .filter(|(n, _, _)| n.starts_with("List"))
+        .filter(|(n, _, _)| n.starts_with("List") && !SERVICE_WIDE.contains(n))
         .map(|(n, _, _)| n.to_string())
         .collect();
     assert_eq!(lists.len(), 5);
@@ -456,7 +465,10 @@ fn deletes_and_set_default_take_an_expected_version() {
 #[test]
 fn every_request_has_a_top_level_namespace() {
     let set = descriptor_set();
-    for (rpc, _, _) in CONTRACT {
+    for (rpc, _, _) in CONTRACT
+        .iter()
+        .filter(|(n, _, _)| !SERVICE_WIDE.contains(n))
+    {
         let req = request_of(&set, rpc);
         let ns = req
             .field

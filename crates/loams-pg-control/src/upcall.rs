@@ -829,7 +829,10 @@ async fn validate_generations(
         );
     };
     let Ok(req) = serde_json::from_slice::<ValidateRequest>(&bytes) else {
-        return error(StatusCode::BAD_REQUEST, "the body is not a validate request");
+        return error(
+            StatusCode::BAD_REQUEST,
+            "the body is not a validate request",
+        );
     };
     let tenants: Vec<serde_json::Value> = req
         .tenants
