@@ -41,9 +41,9 @@ Highlights:
     authentication. When it has a TLS certificate, it serves HTTP/3 on UDP at the same port.
   - **Loams Desktop** has a Transfers page, and bundles the `loams-transfer` sidecar on Linux,
     macOS and Windows.
-  - **`loams-transfer.exe` is not signed by SignPath yet.** The owner still has to add it to the
-    SignPath artifact configuration (D2449). The app's other binaries and the installer are
-    signed as in 0.1.3.
+  - **`loams-transfer.exe` is not signed.** SignPath signing is not configured for releases
+    yet, so the Windows app is unsigned, as in 0.1.3. When it is set up, `loams-transfer.exe` has
+    to be added to its artifact configuration (D2449).
 - **Loams Meter follow-ups (preview, all opt-in by configuration).**
   - The lease gate now checks the produce paths: HTTP produce, CloudEvents ingest, and the Flight
     and gRPC producers. Namespaces whose names start with `_` are never gated.
