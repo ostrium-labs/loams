@@ -18,7 +18,8 @@ use std::time::{Duration, SystemTime};
 
 use rcgen::{
     BasicConstraints, CertificateParams, CertificateSigningRequestParams, DistinguishedName,
-    DnType, ExtendedKeyUsagePurpose, IsCa, Issuer, KeyPair, KeyUsagePurpose, SanType, SerialNumber,
+    DnType, ExtendedKeyUsagePurpose, IsCa, Issuer, KeyPair, KeyUsagePurpose, PublicKeyData,
+    SanType, SerialNumber,
 };
 use rustls_pki_types::{CertificateDer, CertificateSigningRequestDer};
 
@@ -86,6 +87,8 @@ pub enum CaError {
     WrongCluster(String),
     #[error("the CSR's URI SAN {0:?} is not a Loams SPIFFE ID")]
     BadUri(String),
+    #[error("the key is not the root certificate's")]
+    KeyMismatch,
 }
 
 fn name(cluster: &str, what: &str) -> DistinguishedName {
@@ -113,6 +116,13 @@ fn ca_params(
     p.not_after = (now + life).into();
     p.use_authority_key_identifier_extension = true;
     Ok(p)
+}
+
+/// The DER of a PEM certificate.
+fn pem_der(pem: &str) -> Result<CertificateDer<'static>, CaError> {
+    use rustls_pki_types::pem::PemObject;
+    CertificateDer::from_pem_slice(pem.as_bytes())
+        .map_err(|e| CaError::Rcgen(rcgen::Error::PemError(e.to_string())))
 }
 
 /// An open CA: the root certificate, and the intermediate with its key.
@@ -152,19 +162,37 @@ impl Ca {
         })
     }
 
+    /// A new intermediate under the root `root_cert_pem`, whose key is
+    /// `root_key_pem` (a rotation, §83 §6.6): returns the intermediate's
+    /// certificate and key as PEM. The key must be the root certificate's.
+    pub fn new_intermediate(
+        cluster: &str,
+        root_cert_pem: &str,
+        root_key_pem: &str,
+        now: SystemTime,
+    ) -> Result<(String, String), CaError> {
+        let root_key = KeyPair::from_pem(root_key_pem)?;
+        let root_der = pem_der(root_cert_pem)?;
+        let (_, root) = x509_parser::parse_x509_certificate(root_der.as_ref())
+            .map_err(|_| CaError::Rcgen(rcgen::Error::CouldNotParseCertificate))?;
+        if root.public_key().raw != root_key.subject_public_key_info().as_slice() {
+            return Err(CaError::KeyMismatch);
+        }
+        let root_issuer = Issuer::from_ca_cert_der(&root_der, &root_key)?;
+        let int_key = KeyPair::generate()?;
+        let int_params = ca_params(cluster, "intermediate", now, INTERMEDIATE_LIFETIME, Some(0))?;
+        let intermediate = int_params.signed_by(&int_key, &root_issuer)?;
+        Ok((intermediate.pem(), int_key.serialize_pem()))
+    }
+
     /// Opens the CA that `material` describes. The root's key is not used.
     pub fn load(cluster: &str, material: &CaMaterial) -> Result<Ca, CaError> {
         let key = KeyPair::from_pem(&material.intermediate_key_pem)?;
         let issuer = Issuer::from_ca_cert_pem(&material.intermediate_cert_pem, key)?;
-        let der = |pem: &str| -> Result<CertificateDer<'static>, CaError> {
-            use rustls_pki_types::pem::PemObject;
-            CertificateDer::from_pem_slice(pem.as_bytes())
-                .map_err(|e| CaError::Rcgen(rcgen::Error::PemError(e.to_string())))
-        };
         Ok(Ca {
             cluster: cluster.to_string(),
-            root: der(&material.root_cert_pem)?,
-            intermediate: der(&material.intermediate_cert_pem)?,
+            root: pem_der(&material.root_cert_pem)?,
+            intermediate: pem_der(&material.intermediate_cert_pem)?,
             issuer,
         })
     }

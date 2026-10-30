@@ -1,0 +1,17 @@
+# Synthetic cost inputs for the CLI test (CA1 Task 8); not anyone's costs.
+version: 1
+currency: USD
+assets:
+  - id: rack-node1
+    pool: fra/compute
+    cost: "3650"
+    in_service: 2026-01-01
+    life_months: 36
+    capacity: { cores: 8 }
+    nodes: [node-1]
+mappings:
+  - match: { service: "Amazon Simple Storage Service" }
+    pool: eu/bucket
+    kind: storage
+classes:
+  - { engine: house, class: big, when: "rows_read > 5000000" }

@@ -151,6 +151,12 @@ The rules, in the order they bite:
 | `principal_not_allowed` | permission_denied | a valid OIDC or tailnet identity that is not on the engine's allowlist | |
 | `cors_origin_not_allowed` | permission_denied | a browser call from an origin outside `LOAMS_CORS_ORIGINS` | |
 | `auth_unavailable` | unavailable | a credential that cannot be checked now (the issuer's JWKS or the principal store is unreachable) | |
+| `join_token_unknown` | unauthenticated | `loams.ca.internal.v1` Issue: no join token with that id, or its secret does not match (the two are not told apart) | |
+| `join_token_spent` | unauthenticated | `loams.ca.internal.v1` Issue: the join token was already used (tokens work once, D2311) | |
+| `join_token_expired` | unauthenticated | `loams.ca.internal.v1` Issue: the join token is past its hour (D2311) | |
+| `identity_not_granted` | permission_denied | `loams.ca.internal.v1` Issue and Renew: the CSR asks for an identity the token's grant, or the caller's current certificate, does not hold, or one outside this CA's cluster | `identity` |
+| `identity_revoked` | permission_denied | `loams.ca.internal.v1` Issue and Renew: the caller's certificate, or an identity asked for, is on the deny list (`loams ca revoke`, D2312) | |
+| `ca_not_initialized` | failed_precondition | `loams.ca.internal.v1`: the deployment has no CA yet (`loams ca init`), or this node cannot open its intermediate key | |
 | `invalid_argument` | invalid_argument | any RPC: a malformed field, an unparseable value | `field` |
 | `not_found` | not_found | any RPC: the named resource does not exist | `kind`, `name` |
 | `already_exists` | already_exists | any RPC that creates a named resource | |
@@ -173,6 +179,8 @@ The `loams.repos.v1` rows (`repo_not_found` to `env_foreign_reference`) are Loam
 `live_bad_cursor` is LV1 Task 4's, `live_worker_crashed` LV1 Task 5's, `live_deploy_conflict` LV1 Task 6's, `live_schema_violation` LV1 Task 8's, `live_index_not_ready` LV1 Task 9's, `live_app_disabled` and `live_app_exists` LV1 Task 13's, the function and limit reasons LV1 Task 19's, `live_app_mismatch` LV1 Task 15's, `session_rotate` LV1 Task 17's, `session_gone` and `node_draining` LV1 Task 24's, and `live_origin_not_allowed` LV1 Task 18's: `loams_live::LiveError::wire_reason` names them, and every Live error carries one in its `ErrorInfo` on both the main port and Live's own listener (Task 19), an internal one with a `request_id` the server log carries.
 
 Seven rows are SDKP's (2026-10-19). `sql_param_count` and `result_too_large` are `loams.sql.v1`'s (P0b). The other five are **client-side**: an SDK raises `namespace_required` (R11), `invalid_consistency_token` (R4), `search_after_needs_tiebreak` (`search.query_all`), `client_deadline_exceeded` (R12) and `batch_partially_applied` (R13) itself, before or instead of a server answer, and no server returns them. They are registry rows so every SDK's typed error carries them the way it carries a server's, and `error.json` lists them as unproducible with that reason.
+
+The `loams.ca.internal.v1` rows (`join_token_unknown` to `ca_not_initialized`) are the deployment CA's (design §83 §6.3–§6.5, D2310–D2312), registered by CT1 Task 3 part 2b. The package is internal: only the cluster's own processes call it.
 
 The generic rows (`invalid_argument` and below) are the code-to-class mapping of D611's error hierarchy: they are what an SDK turns into its own `InvalidArgument`, `NotFound`, ... types. They carry no Loams-specific semantics, so they were already the native REST API's `error` values (`crates/loams/src/api/errors.rs`) and become the RPC `reason` unchanged. The rows above them are the specific causes AP0 registered; the specific causes API1 Tasks 2–8 add are appended as their services land, and `unavailable_service_reports_reason` covers the variant case.
 

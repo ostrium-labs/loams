@@ -712,12 +712,10 @@ pub fn import_state(status: &serde_json::Value) -> Option<ImportState> {
         serde_json::Value::Object(m) if m.len() == 1 => {
             if m.contains_key("InProgress") {
                 Some(ImportState::InProgress)
-            } else if let Some(e) = m.get("Error") {
-                Some(ImportState::Error(
-                    e.as_str().map_or_else(|| e.to_string(), str::to_string),
-                ))
             } else {
-                None
+                m.get("Error").map(|e| {
+                    ImportState::Error(e.as_str().map_or_else(|| e.to_string(), str::to_string))
+                })
             }
         }
         _ => None,
@@ -829,7 +827,10 @@ async fn validate_generations(
         );
     };
     let Ok(req) = serde_json::from_slice::<ValidateRequest>(&bytes) else {
-        return error(StatusCode::BAD_REQUEST, "the body is not a validate request");
+        return error(
+            StatusCode::BAD_REQUEST,
+            "the body is not a validate request",
+        );
     };
     let tenants: Vec<serde_json::Value> = req
         .tenants

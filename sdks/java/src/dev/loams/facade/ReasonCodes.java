@@ -148,6 +148,12 @@ public final class ReasonCodes {
         map.put(Reason.PRINCIPAL_NOT_ALLOWED, "permission_denied");
         map.put(Reason.CORS_ORIGIN_NOT_ALLOWED, "permission_denied");
         map.put(Reason.AUTH_UNAVAILABLE, "unavailable");
+        map.put(Reason.JOIN_TOKEN_UNKNOWN, "unauthenticated");
+        map.put(Reason.JOIN_TOKEN_SPENT, "unauthenticated");
+        map.put(Reason.JOIN_TOKEN_EXPIRED, "unauthenticated");
+        map.put(Reason.IDENTITY_NOT_GRANTED, "permission_denied");
+        map.put(Reason.IDENTITY_REVOKED, "permission_denied");
+        map.put(Reason.CA_NOT_INITIALIZED, "failed_precondition");
         map.put(Reason.INVALID_ARGUMENT, "invalid_argument");
         map.put(Reason.NOT_FOUND, "not_found");
         map.put(Reason.ALREADY_EXISTS, "already_exists");

@@ -412,6 +412,24 @@ enum class Reason {
     /** The credential cannot be checked now: the issuer's JWKS or the principal store is unreachable. */
     AUTH_UNAVAILABLE,
 
+    /** No join token with that id, or its secret does not match. */
+    JOIN_TOKEN_UNKNOWN,
+
+    /** The join token was already used; join tokens work once. */
+    JOIN_TOKEN_SPENT,
+
+    /** The join token is past its hour. */
+    JOIN_TOKEN_EXPIRED,
+
+    /** The CSR asks for an identity the join token or the current certificate does not hold. */
+    IDENTITY_NOT_GRANTED,
+
+    /** The certificate, or an identity asked for, is on the CA's deny list. */
+    IDENTITY_REVOKED,
+
+    /** The deployment has no CA yet, or this node cannot open its intermediate key. */
+    CA_NOT_INITIALIZED,
+
     /** A malformed field or an unparseable value. */
     INVALID_ARGUMENT,
 
@@ -598,6 +616,12 @@ object ReasonRegistry {
         Reason.PRINCIPAL_NOT_ALLOWED,
         Reason.CORS_ORIGIN_NOT_ALLOWED,
         Reason.AUTH_UNAVAILABLE,
+        Reason.JOIN_TOKEN_UNKNOWN,
+        Reason.JOIN_TOKEN_SPENT,
+        Reason.JOIN_TOKEN_EXPIRED,
+        Reason.IDENTITY_NOT_GRANTED,
+        Reason.IDENTITY_REVOKED,
+        Reason.CA_NOT_INITIALIZED,
         Reason.INVALID_ARGUMENT,
         Reason.NOT_FOUND,
         Reason.ALREADY_EXISTS,
@@ -737,6 +761,12 @@ object ReasonRegistry {
         Reason.PRINCIPAL_NOT_ALLOWED to "principal_not_allowed",
         Reason.CORS_ORIGIN_NOT_ALLOWED to "cors_origin_not_allowed",
         Reason.AUTH_UNAVAILABLE to "auth_unavailable",
+        Reason.JOIN_TOKEN_UNKNOWN to "join_token_unknown",
+        Reason.JOIN_TOKEN_SPENT to "join_token_spent",
+        Reason.JOIN_TOKEN_EXPIRED to "join_token_expired",
+        Reason.IDENTITY_NOT_GRANTED to "identity_not_granted",
+        Reason.IDENTITY_REVOKED to "identity_revoked",
+        Reason.CA_NOT_INITIALIZED to "ca_not_initialized",
         Reason.INVALID_ARGUMENT to "invalid_argument",
         Reason.NOT_FOUND to "not_found",
         Reason.ALREADY_EXISTS to "already_exists",
@@ -883,6 +913,12 @@ object ReasonRegistry {
         Reason.PRINCIPAL_NOT_ALLOWED to Code.PERMISSION_DENIED,
         Reason.CORS_ORIGIN_NOT_ALLOWED to Code.PERMISSION_DENIED,
         Reason.AUTH_UNAVAILABLE to Code.UNAVAILABLE,
+        Reason.JOIN_TOKEN_UNKNOWN to Code.UNAUTHENTICATED,
+        Reason.JOIN_TOKEN_SPENT to Code.UNAUTHENTICATED,
+        Reason.JOIN_TOKEN_EXPIRED to Code.UNAUTHENTICATED,
+        Reason.IDENTITY_NOT_GRANTED to Code.PERMISSION_DENIED,
+        Reason.IDENTITY_REVOKED to Code.PERMISSION_DENIED,
+        Reason.CA_NOT_INITIALIZED to Code.FAILED_PRECONDITION,
         Reason.INVALID_ARGUMENT to Code.INVALID_ARGUMENT,
         Reason.NOT_FOUND to Code.NOT_FOUND,
         Reason.ALREADY_EXISTS to Code.ALREADY_EXISTS,

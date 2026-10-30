@@ -198,6 +198,12 @@ var Reasons = []Reason{
 	"principal_not_allowed",
 	"cors_origin_not_allowed",
 	"auth_unavailable",
+	"join_token_unknown",
+	"join_token_spent",
+	"join_token_expired",
+	"identity_not_granted",
+	"identity_revoked",
+	"ca_not_initialized",
 	"invalid_argument",
 	"not_found",
 	"already_exists",
@@ -339,6 +345,12 @@ var ReasonCodes = map[Reason]string{
 	"principal_not_allowed":          "permission_denied",
 	"cors_origin_not_allowed":        "permission_denied",
 	"auth_unavailable":               "unavailable",
+	"join_token_unknown":             "unauthenticated",
+	"join_token_spent":               "unauthenticated",
+	"join_token_expired":             "unauthenticated",
+	"identity_not_granted":           "permission_denied",
+	"identity_revoked":               "permission_denied",
+	"ca_not_initialized":             "failed_precondition",
 	"invalid_argument":               "invalid_argument",
 	"not_found":                      "not_found",
 	"already_exists":                 "already_exists",
@@ -694,6 +706,7 @@ var Modules = []ModuleBinding{
 		Calls: []CallBinding{
 			{Module: "meter.notifications", Name: "CreateRule", ProtoName: "createRule", Method: "CreateRule", RPC: "loams.meter.v1.NotificationService/CreateRule", Service: "loams.meter.v1.NotificationService", Package: "loams.meter.v1", Idempotency: IdempotencyNone, Retry: RetryManual, Streaming: StreamingUnary, Pagination: nil},
 			{Module: "meter.notifications", Name: "CreateWebhook", ProtoName: "createWebhook", Method: "CreateWebhook", RPC: "loams.meter.v1.NotificationService/CreateWebhook", Service: "loams.meter.v1.NotificationService", Package: "loams.meter.v1", Idempotency: IdempotencyNone, Retry: RetryManual, Streaming: StreamingUnary, Pagination: nil},
+			{Module: "meter.notifications", Name: "ListConsoleNotifications", ProtoName: "listConsoleNotifications", Method: "ListConsoleNotifications", RPC: "loams.meter.v1.NotificationService/ListConsoleNotifications", Service: "loams.meter.v1.NotificationService", Package: "loams.meter.v1", Idempotency: IdempotencyNoSideEffects, Retry: RetrySafe, Streaming: StreamingUnary, Pagination: nil},
 			{Module: "meter.notifications", Name: "ListDeliveries", ProtoName: "listDeliveries", Method: "ListDeliveries", RPC: "loams.meter.v1.NotificationService/ListDeliveries", Service: "loams.meter.v1.NotificationService", Package: "loams.meter.v1", Idempotency: IdempotencyNoSideEffects, Retry: RetrySafe, Streaming: StreamingUnary, Pagination: nil},
 			{Module: "meter.notifications", Name: "ListRules", ProtoName: "listRules", Method: "ListRules", RPC: "loams.meter.v1.NotificationService/ListRules", Service: "loams.meter.v1.NotificationService", Package: "loams.meter.v1", Idempotency: IdempotencyNoSideEffects, Retry: RetrySafe, Streaming: StreamingUnary, Pagination: nil},
 			{Module: "meter.notifications", Name: "RotateWebhookSecret", ProtoName: "rotateWebhookSecret", Method: "RotateWebhookSecret", RPC: "loams.meter.v1.NotificationService/RotateWebhookSecret", Service: "loams.meter.v1.NotificationService", Package: "loams.meter.v1", Idempotency: IdempotencyNone, Retry: RetryManual, Streaming: StreamingUnary, Pagination: nil},
@@ -1200,6 +1213,8 @@ type MeterNotificationsModule interface {
 	CreateRule(ctx context.Context, req *connect.Request[meterv1.CreateRuleRequest], opts *CallOptions) (*connect.Response[meterv1.CreateRuleResponse], error)
 	// CreateWebhook calls loams.meter.v1.NotificationService/CreateWebhook, retried: manual.
 	CreateWebhook(ctx context.Context, req *connect.Request[meterv1.CreateWebhookRequest], opts *CallOptions) (*connect.Response[meterv1.CreateWebhookResponse], error)
+	// ListConsoleNotifications calls loams.meter.v1.NotificationService/ListConsoleNotifications, retried: safe.
+	ListConsoleNotifications(ctx context.Context, req *connect.Request[meterv1.ListConsoleNotificationsRequest], opts *CallOptions) (*connect.Response[meterv1.ListConsoleNotificationsResponse], error)
 	// ListDeliveries calls loams.meter.v1.NotificationService/ListDeliveries, retried: safe.
 	ListDeliveries(ctx context.Context, req *connect.Request[meterv1.ListDeliveriesRequest], opts *CallOptions) (*connect.Response[meterv1.ListDeliveriesResponse], error)
 	// ListRules calls loams.meter.v1.NotificationService/ListRules, retried: safe.

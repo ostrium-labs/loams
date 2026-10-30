@@ -18,7 +18,7 @@ from connectrpc.protocol import ProtocolType
 from connectrpc.server import ConnectASGIApplication, ConnectWSGIApplication, DEFAULT_READ_MAX_BYTES, Endpoint, EndpointSync
 from pyqwest import Client, SyncClient
 
-from .notification_pb2 import CreateRuleRequest, CreateRuleResponse, CreateWebhookRequest, CreateWebhookResponse, ListDeliveriesRequest, ListDeliveriesResponse, ListRulesRequest, ListRulesResponse, RotateWebhookSecretRequest, RotateWebhookSecretResponse
+from .notification_pb2 import CreateRuleRequest, CreateRuleResponse, CreateWebhookRequest, CreateWebhookResponse, ListConsoleNotificationsRequest, ListConsoleNotificationsResponse, ListDeliveriesRequest, ListDeliveriesResponse, ListRulesRequest, ListRulesResponse, RotateWebhookSecretRequest, RotateWebhookSecretResponse
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Iterable, Mapping
@@ -59,6 +59,13 @@ class NotificationService(Protocol):
     async def list_deliveries(self, request: ListDeliveriesRequest, ctx: RequestContext[ListDeliveriesRequest, ListDeliveriesResponse], /) -> ListDeliveriesResponse:
         """
         The newest deliveries first.
+        """
+        raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
+
+    async def list_console_notifications(self, request: ListConsoleNotificationsRequest, ctx: RequestContext[ListConsoleNotificationsRequest, ListConsoleNotificationsResponse], /) -> ListConsoleNotificationsResponse:
+        """
+        The console's meter notifications (thresholds and access changes), the
+        newest first; empty when the deployment has no console channel.
         """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
@@ -125,6 +132,16 @@ class NotificationServiceASGIApplication(ConnectASGIApplication[NotificationServ
                         idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
                     ),
                     function=svc.list_deliveries,
+                ),
+                "/loams.meter.v1.NotificationService/ListConsoleNotifications": Endpoint.unary(
+                    method=MethodInfo(
+                        name="ListConsoleNotifications",
+                        service_name="loams.meter.v1.NotificationService",
+                        input=ListConsoleNotificationsRequest,
+                        output=ListConsoleNotificationsResponse,
+                        idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
+                    ),
+                    function=svc.list_console_notifications,
                 ),
             },
             interceptors=interceptors,
@@ -280,6 +297,32 @@ class NotificationServiceClient(ConnectClient):
             use_get=use_get,
         )
 
+    async def list_console_notifications(
+        self,
+        request: ListConsoleNotificationsRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None, 
+        timeout_ms: int | None = None,
+        use_get: bool = False,
+    ) -> ListConsoleNotificationsResponse:
+        """
+        The console's meter notifications (thresholds and access changes), the
+        newest first; empty when the deployment has no console channel.
+        """
+        return await self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="ListConsoleNotifications",
+                service_name="loams.meter.v1.NotificationService",
+                input=ListConsoleNotificationsRequest,
+                output=ListConsoleNotificationsResponse,
+                idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+            use_get=use_get,
+        )
+
 class NotificationServiceSync(Protocol):
     """
     Webhooks, rules and deliveries.
@@ -305,6 +348,13 @@ class NotificationServiceSync(Protocol):
     def list_deliveries(self, request: ListDeliveriesRequest, ctx: RequestContext[ListDeliveriesRequest, ListDeliveriesResponse], /) -> ListDeliveriesResponse:
         """
         The newest deliveries first.
+        """
+        raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
+
+    def list_console_notifications(self, request: ListConsoleNotificationsRequest, ctx: RequestContext[ListConsoleNotificationsRequest, ListConsoleNotificationsResponse], /) -> ListConsoleNotificationsResponse:
+        """
+        The console's meter notifications (thresholds and access changes), the
+        newest first; empty when the deployment has no console channel.
         """
         raise ConnectError(Code.UNIMPLEMENTED, 'Not implemented')
 
@@ -369,6 +419,16 @@ class NotificationServiceWSGIApplication(ConnectWSGIApplication):
                         idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
                     ),
                     function=service.list_deliveries,
+                ),
+                "/loams.meter.v1.NotificationService/ListConsoleNotifications": EndpointSync.unary(
+                    method=MethodInfo(
+                        name="ListConsoleNotifications",
+                        service_name="loams.meter.v1.NotificationService",
+                        input=ListConsoleNotificationsRequest,
+                        output=ListConsoleNotificationsResponse,
+                        idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
+                    ),
+                    function=service.list_console_notifications,
                 ),
             },
             interceptors=interceptors,
@@ -513,6 +573,31 @@ class NotificationServiceClientSync(ConnectClientSync):
                 service_name="loams.meter.v1.NotificationService",
                 input=ListDeliveriesRequest,
                 output=ListDeliveriesResponse,
+                idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+            use_get=use_get,
+        )
+    def list_console_notifications(
+        self,
+        request: ListConsoleNotificationsRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None, 
+        timeout_ms: int | None = None,
+        use_get: bool = False,
+    ) -> ListConsoleNotificationsResponse:
+        """
+        The console's meter notifications (thresholds and access changes), the
+        newest first; empty when the deployment has no console channel.
+        """
+        return self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="ListConsoleNotifications",
+                service_name="loams.meter.v1.NotificationService",
+                input=ListConsoleNotificationsRequest,
+                output=ListConsoleNotificationsResponse,
                 idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
             ),
             headers=headers,

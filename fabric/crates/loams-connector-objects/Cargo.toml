@@ -48,11 +48,11 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-
 # (R0.21). 0.17.14 is already in fabric/Cargo.lock (rustls, object_store).
 # Apache-2.0 AND ISC.
 ring = "0.17.14"
-# SSH 2 and SFTP v3 for the SFTP source and sink (CN2 R0.5: russh 0.63.3,
+# SSH 2 and SFTP v3 for the SFTP source and sink (CN2 R0.5: russh 0.64.1,
 # russh-sftp 3.0.1). russh without its defaults: `ring` instead of aws-lc-rs,
 # and no `rsa`, whose `rsa` crate carries RUSTSEC-2023-0071 with no fix, so
 # Ed25519 and ECDSA keys only (R13.6). Apache-2.0.
-russh = { version = "=0.63.3", default-features = false, features = ["ring"] }
+russh = { version = "=0.64.1", default-features = false, features = ["ring"] }
 russh-sftp = "=3.0.1"
 serde.workspace = true
 serde_json.workspace = true

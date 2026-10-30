@@ -24,9 +24,19 @@ cargo_package(
     },
     tests = [
         {
+            "name": "channels",
+            "crate": "channels",
+            "root": "tests/channels.rs",
+        },
+        {
             "name": "docstore",
             "crate": "docstore",
             "root": "tests/docstore.rs",
+        },
+        {
+            "name": "export_schedule",
+            "crate": "export_schedule",
+            "root": "tests/export_schedule.rs",
         },
         {
             "name": "house",
@@ -113,6 +123,7 @@ cargo_package(
     dev_deps = [
         "//third-party/rust:jsonschema",
         "//third-party/rust:proptest",
+        "//third-party/rust:rustls",
         "//third-party/rust:tower",
     ],
     rustc_flags = [

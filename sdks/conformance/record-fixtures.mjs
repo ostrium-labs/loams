@@ -2532,6 +2532,42 @@ const UNPRODUCIBLE_REASONS = [
     standIn: null,
   },
   {
+    reason: 'join_token_unknown',
+    code: 'unauthenticated',
+    why: "`loams.ca.internal.v1` is the deployment CA's internal service (design §83 §6.3), served by meta nodes to the cluster's own processes; neither conformance server runs it.",
+    standIn: null,
+  },
+  {
+    reason: 'join_token_spent',
+    code: 'unauthenticated',
+    why: "`loams.ca.internal.v1` is the deployment CA's internal service (design §83 §6.3), served by meta nodes to the cluster's own processes; neither conformance server runs it.",
+    standIn: null,
+  },
+  {
+    reason: 'join_token_expired',
+    code: 'unauthenticated',
+    why: "`loams.ca.internal.v1` is the deployment CA's internal service (design §83 §6.3), served by meta nodes to the cluster's own processes; neither conformance server runs it.",
+    standIn: null,
+  },
+  {
+    reason: 'identity_not_granted',
+    code: 'permission_denied',
+    why: "`loams.ca.internal.v1` is the deployment CA's internal service (design §83 §6.3), served by meta nodes to the cluster's own processes; neither conformance server runs it.",
+    standIn: null,
+  },
+  {
+    reason: 'identity_revoked',
+    code: 'permission_denied',
+    why: "`loams.ca.internal.v1` is the deployment CA's internal service (design §83 §6.3), served by meta nodes to the cluster's own processes; neither conformance server runs it.",
+    standIn: null,
+  },
+  {
+    reason: 'ca_not_initialized',
+    code: 'failed_precondition',
+    why: "`loams.ca.internal.v1` is the deployment CA's internal service (design §83 §6.3), served by meta nodes to the cluster's own processes; neither conformance server runs it.",
+    standIn: null,
+  },
+  {
     reason: "live_app_disabled",
     code: "failed_precondition",
     why: "Needs a Live app that was disabled or deleted through LiveAdminService; the recorder creates no apps (LV1 Task 13).",
