@@ -3,7 +3,7 @@
 //! and `/runner/claim`, on the engine's metastore (leases and fenced
 //! pointers) and bucket, behind the engine's authentication layer.
 //!
-//! Authorization (D2443, ruling D2444): the request must carry the
+//! Authorization (D2443, ruling D2448): the request must carry the
 //! principal the authentication layer put there, as every other REST route
 //! does. Reading and writing need any authenticated principal; claiming and
 //! feeding runs (`runner`) needs an API key, the service credential a
