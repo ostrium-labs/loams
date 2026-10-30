@@ -58,6 +58,14 @@ pub struct MeterConfig {
     /// `LOAMS_METER_STRIPE_WEBHOOK_SECRET_FILE`: the endpoint's signing
     /// secrets, one per line (two during a rotation).
     pub stripe_webhook_secret_file: Option<std::path::PathBuf>,
+    /// `LOAMS_METER_MAIL_FROM`: the sender of the meter's notification
+    /// emails (`Loams <billing@example.com>`, on a domain verified in
+    /// Resend). Email is on when this and the key file are set (D2402).
+    pub mail_from: Option<String>,
+    /// `LOAMS_METER_RESEND_API_KEY_FILE`: a sending-only Resend API key.
+    pub resend_api_key_file: Option<std::path::PathBuf>,
+    /// `LOAMS_METER_RESEND_API_BASE` (`https://api.resend.com`).
+    pub resend_api_base: Option<String>,
 }
 
 /// A secret file's contents, trimmed.
@@ -312,6 +320,14 @@ impl pb::NotificationService for MeterAbsent {
     ) -> ServiceResult<pb::ListDeliveriesResponse> {
         Err(absent("NotificationService/ListDeliveries"))
     }
+
+    async fn list_console_notifications(
+        &self,
+        _ctx: RequestContext,
+        _request: ServiceRequest<'_, pb::ListConsoleNotificationsRequest>,
+    ) -> ServiceResult<pb::ListConsoleNotificationsResponse> {
+        Err(absent("NotificationService/ListConsoleNotifications"))
+    }
 }
 
 #[cfg(feature = "meter")]
@@ -330,7 +346,8 @@ mod served {
     use loams_meter::house::{HouseUsage, HouseUsageSoFar, RoleHouse};
     use loams_meter::lease_service::LeaseServer;
     use loams_meter::notify::MeterEvent;
-    use loams_meter::notify::notifier::DocNotifications;
+    use loams_meter::notify::channels::{DocConsole, MailRecipients, ResendConfig, ResendMailer};
+    use loams_meter::notify::notifier::{DocNotifications, Mailer};
     use loams_meter::notify::sealing::AgeSealer;
     use loams_meter::notify::webhook::HttpTransport;
     use loams_meter::owner::{METER_PARTITIONS, MetaLeases, OwnerError, PartitionReader};
@@ -342,14 +359,16 @@ mod served {
     };
     use loams_meter::run::{CounterPeer, holder_name};
     use loams_meter::run::{MeterEventHandler, MeterEventSink, own_event, to_cloudevent};
-    use loams_meter::store::{DocStore, MeterStore, VersionedDoc};
+    use loams_meter::store::{Customer, DocStore, MeterStore, VersionedDoc};
     use loams_meter_core::{AllocatorConfig, Event, Origin, UtcNanos};
     use loams_proto::loams::admin::v1 as admin;
     use loams_store::Store;
 
     use crate::auth::Principals;
     use crate::auth::authz::{Standing, standing};
-    use crate::auth::directory::{Directory, DirectoryStore, MetaDirectoryStore, Unavailable};
+    use crate::auth::directory::{
+        Directory, DirectoryStore, MetaDirectoryStore, Role, Unavailable,
+    };
 
     /// The metastore pointers and bucket prefixes of the meter's two
     /// documents (beside the principal directory's).
@@ -357,6 +376,9 @@ mod served {
     const RECORDS_PREFIX: &str = "system/meter/records/";
     const NOTIFY_POINTER: &str = "meter-notifications";
     const NOTIFY_PREFIX: &str = "system/meter/notifications/";
+    /// The console's meter notifications (D2402).
+    const CONSOLE_POINTER: &str = "meter-console";
+    const CONSOLE_PREFIX: &str = "system/meter/console/";
     /// The exporters' ledger and cursors (D2207).
     #[cfg_attr(
         not(any(
@@ -404,6 +426,66 @@ mod served {
                 .await
                 .map_err(unavailable)
         }
+    }
+
+    /// The default recipients of a customer's email: the owners and admins
+    /// of the deployment's org, when the customer is that org (its id or
+    /// slug); nobody otherwise, so only the rules' addresses get mail.
+    #[derive(Debug)]
+    struct OrgAdmins(Arc<Directory>);
+
+    #[async_trait]
+    impl MailRecipients for OrgAdmins {
+        async fn default_to(&self, customer: &Customer) -> MeterResult<Vec<String>> {
+            let doc = self.0.read().await.map_err(unavailable)?;
+            let ours = doc
+                .org
+                .as_ref()
+                .is_some_and(|o| o.id == customer.org || o.slug == customer.org);
+            if !ours {
+                return Ok(Vec::new());
+            }
+            Ok(doc
+                .members
+                .iter()
+                .filter(|m| matches!(m.role, Role::Owner | Role::Admin))
+                .map(|m| m.user.email.clone())
+                .filter(|e| !e.is_empty())
+                .collect())
+        }
+    }
+
+    /// The Resend mailer, when `LOAMS_METER_MAIL_FROM` and
+    /// `LOAMS_METER_RESEND_API_KEY_FILE` are both set.
+    fn mailer(
+        config: &super::MeterConfig,
+        directory: Arc<Directory>,
+    ) -> Result<Option<Arc<dyn Mailer>>, String> {
+        let (Some(from), Some(key_file)) = (&config.mail_from, &config.resend_api_key_file) else {
+            if config.mail_from.is_some() || config.resend_api_key_file.is_some() {
+                tracing::warn!(
+                    "meter email is off: set both LOAMS_METER_MAIL_FROM and \
+                     LOAMS_METER_RESEND_API_KEY_FILE"
+                );
+            }
+            return Ok(None);
+        };
+        let key = std::fs::read_to_string(key_file)
+            .map_err(|e| {
+                format!(
+                    "LOAMS_METER_RESEND_API_KEY_FILE {}: {e}",
+                    key_file.display()
+                )
+            })?
+            .trim()
+            .to_string();
+        let mut cfg = ResendConfig::new(key, from.clone());
+        if let Some(base) = &config.resend_api_base {
+            cfg.api_base = base.clone();
+        }
+        let mailer =
+            ResendMailer::new(cfg, Arc::new(OrgAdmins(directory))).map_err(|e| e.to_string())?;
+        Ok(Some(Arc::new(mailer)))
     }
 
     /// Meter audit events in the org's audit log (`AuditService`), so the
@@ -1104,6 +1186,7 @@ mod served {
 
     /// The meter of this node, over the metastore and the bucket: the
     /// role's services, and the counter owners over `_system/_meter`.
+    #[allow(clippy::too_many_arguments)]
     pub fn build(
         meta: Arc<dyn MetaStore>,
         store: Store,
@@ -1155,6 +1238,7 @@ mod served {
             NOTIFY_PREFIX,
         ));
         let transport = HttpTransport::new().map_err(|e| e.to_string())?;
+        let mailer = mailer(config, principals.directory.clone())?;
         let clock: loams_meter::customers::Clock = Arc::new(now);
         let counters = Counters::new(METER_PARTITIONS);
         let leases = Arc::new(LeaseServer::new(
@@ -1227,10 +1311,16 @@ mod served {
             authorizer: principals.authz.clone(),
             audit: Arc::new(OrgAudit(principals.directory.clone())),
             transport: Arc::new(transport),
-            // No deployment mailer or console channel is wired yet: webhooks
-            // only.
-            mailer: None,
-            console: None,
+            // Email when Resend is configured; the console always (D2402).
+            mailer,
+            console: Some(Arc::new(DocConsole::new(Arc::new(MeterDoc(
+                MetaDirectoryStore::with_key(
+                    meta.clone(),
+                    store.clone(),
+                    CONSOLE_POINTER,
+                    CONSOLE_PREFIX,
+                ),
+            ))))),
             random: Arc::new(|| {
                 let mut b = [0u8; 32];
                 getrandom::fill(&mut b)

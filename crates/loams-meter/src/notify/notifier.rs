@@ -8,8 +8,15 @@
 //!   schedule; one delivery per (endpoint, event id), so an event emitted
 //!   again is not delivered again;
 //! - email through the deployment's mailer, when it has one, for the
-//!   thresholds a rule asks for;
-//! - the console (notifications and the shell banner).
+//!   thresholds a rule asks for (D2402);
+//! - the console (notifications and the shell banner), for every threshold
+//!   and access change.
+//!
+//! Email and the console are delivered like webhooks (D2402): one
+//! [`Delivery`] per (channel, event id) under the pseudo-endpoints
+//! [`EMAIL_CHANNEL`] and [`CONSOLE_CHANNEL`], so an event emitted again is
+//! not sent again, a failed send is retried on [`RETRY_AFTER`]'s schedule
+//! by [`Notifier::retry_due`], and `ListDeliveries` shows them.
 
 use std::fmt;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -64,6 +71,14 @@ impl Endpoint {
     }
 }
 
+/// The delivery log's endpoint id for email (D2402).
+pub const EMAIL_CHANNEL: &str = "channel:email";
+/// The delivery log's endpoint id for the console (D2402).
+pub const CONSOLE_CHANNEL: &str = "channel:console";
+
+/// The most addresses one rule may name.
+pub const MAX_RULE_EMAILS: usize = 10;
+
 /// Where a rule sends.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Channel {
@@ -83,6 +98,10 @@ pub struct Rule {
     /// Also the spend-cap thresholds.
     pub spend_cap: bool,
     pub channels: Vec<Channel>,
+    /// Where email goes; empty: the org's owners and admins (the mailer
+    /// resolves them).
+    #[serde(default)]
+    pub emails: Vec<String>,
 }
 
 impl Rule {
@@ -154,16 +173,165 @@ pub trait NotificationStore: Send + Sync + fmt::Debug {
     async fn deliveries_of(&self, customer_id: &str, limit: usize) -> Result<Vec<Delivery>>;
 }
 
+/// One email of a meter event.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Mail {
+    /// The rules' addresses; empty: the mailer's default recipients for the
+    /// customer (the org's owners and admins).
+    pub to: Vec<String>,
+    pub subject: String,
+    pub text: String,
+    /// The same on every attempt of one event, so a provider that dedupes
+    /// by it sends the mail once (`<event id>/email`).
+    pub idempotency_key: String,
+}
+
+/// What one send through a channel did.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ChannelOutcome {
+    /// Sent; the provider's answer (an id or status) for the log.
+    Sent(String),
+    /// Not sent, worth retrying (a timeout, 429, 5xx).
+    Retry(String),
+    /// Not sent, and resending would fail the same way (no recipients, a
+    /// refused address, a bad key).
+    Failed(String),
+}
+
 /// Email through the deployment's mailer (none on the desktop).
 #[async_trait]
 pub trait Mailer: Send + Sync + fmt::Debug {
-    async fn send(&self, customer: &Customer, subject: &str, body: &str) -> Result<()>;
+    async fn send(&self, customer: &Customer, mail: &Mail) -> ChannelOutcome;
+}
+
+/// A meter event as the console shows it (D2402).
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ConsoleNotification {
+    /// The meter event's id: one notification per event.
+    pub id: String,
+    pub customer_id: String,
+    pub event_type: String,
+    /// Empty when the event names no feature.
+    pub feature: String,
+    pub title: String,
+    pub body: String,
+    /// Shown in the shell's banner: access lost, or 100 % or more of the
+    /// allowance or spend cap used.
+    pub banner: bool,
+    pub at: UtcNanos,
 }
 
 /// Console notifications and the shell banner.
 #[async_trait]
 pub trait Console: Send + Sync + fmt::Debug {
-    async fn notify(&self, customer: &Customer, event: &MeterEvent) -> Result<()>;
+    /// Keeps `n`; the same id again replaces nothing. An error is retried.
+    async fn notify(&self, n: ConsoleNotification) -> Result<()>;
+    /// The customer's newest first, at most `limit`.
+    async fn list(&self, customer_id: &str, limit: usize) -> Result<Vec<ConsoleNotification>>;
+}
+
+/// The feature an event names, or `""`.
+fn feature_of(event: &MeterEvent) -> &str {
+    event
+        .data
+        .get("feature")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+}
+
+/// The title, body and banner flag of a threshold or access event, for
+/// email and the console.
+pub fn render(event: &MeterEvent) -> (String, String, bool) {
+    let feature = match feature_of(event) {
+        "" => "usage",
+        f => f,
+    };
+    let text = |k: &str| {
+        event.data.get(k).map(|v| {
+            v.as_str()
+                .map(str::to_string)
+                .unwrap_or_else(|| v.to_string())
+        })
+    };
+    let period = match (text("period_start"), text("period_end")) {
+        (Some(s), Some(e)) => format!("\nPeriod: {s} to {e}"),
+        _ => String::new(),
+    };
+    match event.r#type.as_str() {
+        THRESHOLD => {
+            let t = event
+                .data
+                .get("threshold")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let spend = text("basis").as_deref() == Some("spend_cap");
+            let title = if spend {
+                format!("{feature} is at {t}% of its spend cap")
+            } else {
+                format!("{feature} is at {t}% of this period's allowance")
+            };
+            let detail = if spend {
+                format!(
+                    "Spent: {} of {} (micros)",
+                    text("spent_micros").unwrap_or_default(),
+                    text("spend_cap_micros").unwrap_or_default()
+                )
+            } else {
+                format!(
+                    "Used: {} of {}",
+                    text("usage").unwrap_or_default(),
+                    text("total_available").unwrap_or_default()
+                )
+            };
+            (
+                title.clone(),
+                format!("{title}.\n{detail}{period}\nSubject: {}", event.subject),
+                t >= 100,
+            )
+        }
+        ACCESS_CHANGED => {
+            let has = event
+                .data
+                .get("has_access")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            let title = if has {
+                format!("{feature}: access restored")
+            } else {
+                format!("{feature}: access stopped")
+            };
+            let reason = text("reason")
+                .map(|r| format!("\nReason: {r}"))
+                .unwrap_or_default();
+            (
+                title.clone(),
+                format!("{title}.{reason}\nSubject: {}", event.subject),
+                !has,
+            )
+        }
+        other => (
+            format!("{feature}: {other}"),
+            serde_json::to_string_pretty(&event.data).unwrap_or_default(),
+            false,
+        ),
+    }
+}
+
+/// A plausible email address: one `@`, something on each side, a dot in
+/// the domain, no spaces or control characters, at most 254 bytes.
+pub fn valid_email(a: &str) -> bool {
+    let Some((local, domain)) = a.split_once('@') else {
+        return false;
+    };
+    a.len() <= 254
+        && !local.is_empty()
+        && domain.contains('.')
+        && !domain.starts_with('.')
+        && !domain.ends_with('.')
+        && !domain.contains('@')
+        && !a
+            .chars()
+            .any(|c| c.is_whitespace() || c.is_control() || c == ',' || c == '<' || c == '>')
 }
 
 /// [`NotificationStore`] in memory.
@@ -542,49 +710,149 @@ impl Notifier {
                 DeliveryStatus::Failed => h.failed += 1,
             }
         }
-        let rules = self.notes.rules_of(&customer.id).await?;
-        let channels: Vec<Channel> = rules
-            .iter()
-            .filter(|r| r.matches(event))
-            .flat_map(|r| r.channels.iter().copied())
-            .collect();
         // The console always hears about thresholds and access changes (the
         // banner); email only where a rule asks for it.
-        if let Some(console) = &self.console
-            && (event.r#type == THRESHOLD || event.r#type == ACCESS_CHANGED)
-        {
-            console.notify(&customer, event).await?;
-            h.console += 1;
+        let notable = event.r#type == THRESHOLD || event.r#type == ACCESS_CHANGED;
+        if self.console.is_some() && notable {
+            match self
+                .channel(CONSOLE_CHANNEL, &customer, event, &body)
+                .await?
+            {
+                Some(DeliveryStatus::Delivered) => h.console += 1,
+                Some(DeliveryStatus::Retrying) => h.retrying += 1,
+                Some(DeliveryStatus::Failed) => h.failed += 1,
+                None => h.duplicates += 1,
+            }
         }
-        if let Some(mailer) = &self.mailer
-            && channels.contains(&Channel::Email)
-        {
-            let feature = event
-                .data
-                .get("feature")
-                .and_then(|v| v.as_str())
-                .unwrap_or("usage");
-            let subject = match event.r#type.as_str() {
-                THRESHOLD => format!(
-                    "{feature} is at {}% of this period's allowance",
-                    event
-                        .data
-                        .get("threshold")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(0)
-                ),
-                _ => format!("{feature}: access changed"),
-            };
-            mailer
-                .send(
-                    &customer,
-                    &subject,
-                    &serde_json::to_string_pretty(&event.data).unwrap_or_default(),
-                )
-                .await?;
-            h.emails += 1;
+        if self.mailer.is_some() && !self.email_rules(&customer, event).await?.is_empty() {
+            match self.channel(EMAIL_CHANNEL, &customer, event, &body).await? {
+                Some(DeliveryStatus::Delivered) => h.emails += 1,
+                Some(DeliveryStatus::Retrying) => h.retrying += 1,
+                Some(DeliveryStatus::Failed) => h.failed += 1,
+                None => h.duplicates += 1,
+            }
         }
         Ok(h)
+    }
+
+    /// The rules of `customer` that send `event` by email.
+    async fn email_rules(&self, customer: &Customer, event: &MeterEvent) -> Result<Vec<Rule>> {
+        Ok(self
+            .notes
+            .rules_of(&customer.id)
+            .await?
+            .into_iter()
+            .filter(|r| r.matches(event) && r.channels.contains(&Channel::Email))
+            .collect())
+    }
+
+    /// The first attempt of `event` through `channel` ([`EMAIL_CHANNEL`] or
+    /// [`CONSOLE_CHANNEL`]); `None` when it was delivered or tried before.
+    async fn channel(
+        &self,
+        channel: &str,
+        customer: &Customer,
+        event: &MeterEvent,
+        body: &[u8],
+    ) -> Result<Option<DeliveryStatus>> {
+        if self.notes.delivery(channel, &event.id).await?.is_some() {
+            return Ok(None);
+        }
+        let d = Delivery {
+            endpoint_id: channel.to_string(),
+            customer_id: customer.id.clone(),
+            event_id: event.id.clone(),
+            event_type: event.r#type.clone(),
+            body: body.to_vec(),
+            attempt: 0,
+            at: (self.clock)(),
+            status: DeliveryStatus::Retrying,
+            last_outcome: String::new(),
+            next_attempt: None,
+        };
+        Ok(Some(self.attempt_channel(customer, event, d).await?.status))
+    }
+
+    /// One attempt through a channel, recorded like a webhook attempt.
+    async fn attempt_channel(
+        &self,
+        customer: &Customer,
+        event: &MeterEvent,
+        mut d: Delivery,
+    ) -> Result<Delivery> {
+        let outcome = match d.endpoint_id.as_str() {
+            CONSOLE_CHANNEL => match &self.console {
+                None => ChannelOutcome::Failed("no console channel".into()),
+                Some(console) => {
+                    let (title, body, banner) = render(event);
+                    match console
+                        .notify(ConsoleNotification {
+                            id: event.id.clone(),
+                            customer_id: customer.id.clone(),
+                            event_type: event.r#type.clone(),
+                            feature: feature_of(event).to_string(),
+                            title,
+                            body,
+                            banner,
+                            at: event.time,
+                        })
+                        .await
+                    {
+                        Ok(()) => ChannelOutcome::Sent("shown".into()),
+                        Err(e) => ChannelOutcome::Retry(e.to_string()),
+                    }
+                }
+            },
+            EMAIL_CHANNEL => match &self.mailer {
+                None => ChannelOutcome::Failed("no mailer configured".into()),
+                Some(mailer) => {
+                    let rules = self.email_rules(customer, event).await?;
+                    if rules.is_empty() {
+                        ChannelOutcome::Failed("no rule sends this event by email now".into())
+                    } else {
+                        let mut to: Vec<String> =
+                            rules.iter().flat_map(|r| r.emails.clone()).collect();
+                        to.sort();
+                        to.dedup();
+                        let (subject, text, _) = render(event);
+                        mailer
+                            .send(
+                                customer,
+                                &Mail {
+                                    to,
+                                    subject,
+                                    text,
+                                    idempotency_key: format!("{}/email", event.id),
+                                },
+                            )
+                            .await
+                    }
+                }
+            },
+            other => ChannelOutcome::Failed(format!("unknown channel {other}")),
+        };
+        let now = (self.clock)();
+        d.attempt += 1;
+        d.at = now;
+        match outcome {
+            ChannelOutcome::Sent(m) => {
+                d.status = DeliveryStatus::Delivered;
+                d.next_attempt = None;
+                d.last_outcome = m;
+            }
+            ChannelOutcome::Retry(m) if (d.attempt as usize) <= RETRY_AFTER.len() => {
+                d.status = DeliveryStatus::Retrying;
+                d.next_attempt = Some(now.add_nanos(nanos(RETRY_AFTER[d.attempt as usize - 1])));
+                d.last_outcome = m;
+            }
+            ChannelOutcome::Retry(m) | ChannelOutcome::Failed(m) => {
+                d.status = DeliveryStatus::Failed;
+                d.next_attempt = None;
+                d.last_outcome = m;
+            }
+        }
+        self.notes.put_delivery(d.clone()).await?;
+        Ok(d)
     }
 
     /// Retries every delivery that is due. Answers how many were tried.
@@ -593,6 +861,23 @@ impl Notifier {
         let due = self.notes.due(now).await?;
         let mut n = 0;
         for d in due {
+            if d.endpoint_id == EMAIL_CHANNEL || d.endpoint_id == CONSOLE_CHANNEL {
+                let customer = self.store.customer(&d.customer_id).await?;
+                let event = serde_json::from_slice::<serde_json::Value>(&d.body)
+                    .ok()
+                    .and_then(|v| MeterEvent::from_cloudevent_json(&v));
+                let (Some(customer), Some(event)) = (customer, event) else {
+                    let mut gone = d;
+                    gone.status = DeliveryStatus::Failed;
+                    gone.next_attempt = None;
+                    gone.last_outcome = "customer or event gone".into();
+                    self.notes.put_delivery(gone).await?;
+                    continue;
+                };
+                self.attempt_channel(&customer, &event, d).await?;
+                n += 1;
+                continue;
+            }
             let Some(ep) = self.notes.endpoint(&d.endpoint_id).await? else {
                 let mut gone = d;
                 gone.status = DeliveryStatus::Failed;
@@ -710,6 +995,7 @@ impl Notifier {
     }
 
     /// `CreateRule` (`billing_admin`).
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_rule(
         &self,
         caller: &Caller,
@@ -718,8 +1004,27 @@ impl Notifier {
         thresholds: Vec<u32>,
         spend_cap: bool,
         channels: Vec<Channel>,
+        emails: Vec<String>,
     ) -> Result<Rule> {
         let c = self.customer_for_admin(caller, customer_id).await?;
+        if emails.len() > MAX_RULE_EMAILS {
+            return Err(MeterError::invalid(
+                "emails",
+                format!("at most {MAX_RULE_EMAILS} addresses"),
+            ));
+        }
+        if let Some(bad) = emails.iter().find(|a| !valid_email(a)) {
+            return Err(MeterError::invalid(
+                "emails",
+                format!("{bad:?} is not an email address"),
+            ));
+        }
+        if !emails.is_empty() && !channels.contains(&Channel::Email) {
+            return Err(MeterError::invalid(
+                "emails",
+                "addresses need the email channel",
+            ));
+        }
         if thresholds.is_empty() || thresholds.iter().any(|t| *t == 0 || *t > 1000) {
             return Err(MeterError::invalid(
                 "thresholds",
@@ -736,6 +1041,7 @@ impl Notifier {
             thresholds,
             spend_cap,
             channels,
+            emails,
         };
         self.notes.put_rule(rule.clone()).await?;
         self.audit(caller, "meter.rule.create", &c, format!("rule:{}", rule.id))
@@ -752,6 +1058,26 @@ impl Notifier {
             .ok_or_else(|| MeterError::not_found("customer", customer_id))?;
         self.authz.require_billing_view(caller, &c.org).await?;
         self.notes.rules_of(&c.id).await
+    }
+
+    /// `ListConsoleNotifications` (`billing_viewer`): the newest first;
+    /// none when the deployment has no console channel.
+    pub async fn list_console(
+        &self,
+        caller: &Caller,
+        customer_id: &str,
+        limit: usize,
+    ) -> Result<Vec<ConsoleNotification>> {
+        let c = self
+            .store
+            .customer(customer_id)
+            .await?
+            .ok_or_else(|| MeterError::not_found("customer", customer_id))?;
+        self.authz.require_billing_view(caller, &c.org).await?;
+        match &self.console {
+            None => Ok(Vec::new()),
+            Some(console) => console.list(&c.id, limit.clamp(1, 500)).await,
+        }
     }
 
     /// `ListDeliveries` (`billing_viewer`): the newest first.

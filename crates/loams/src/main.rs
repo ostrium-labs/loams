@@ -674,6 +674,9 @@ impl Native {
             stripe_api_key_file: env_value("LOAMS_METER_STRIPE_API_KEY_FILE").map(PathBuf::from),
             stripe_webhook_secret_file: env_value("LOAMS_METER_STRIPE_WEBHOOK_SECRET_FILE")
                 .map(PathBuf::from),
+            mail_from: env_value("LOAMS_METER_MAIL_FROM"),
+            resend_api_key_file: env_value("LOAMS_METER_RESEND_API_KEY_FILE").map(PathBuf::from),
+            resend_api_base: env_value("LOAMS_METER_RESEND_API_BASE"),
         };
         config.connect_socket = self
             .connect_socket
