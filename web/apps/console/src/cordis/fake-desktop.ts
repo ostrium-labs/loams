@@ -33,6 +33,8 @@ import type {
   SqlResult,
   StackId,
   StackState,
+  TransferJob,
+  TransferSnapshot,
   UpdateState,
 } from '@loams/desktop/contracts';
 import { DEFAULT_PG_CONTROL_URL, parsePgControlUrl } from '@loams/desktop/pg-control';
@@ -445,6 +447,8 @@ export function createFakeDesktop(): LoamsDesktopApi {
   return {
     version: '0.1.0',
     platform: 'linux',
+    // Transfers (design 85): one resumed upload and one followed run, no sidecar.
+    transfers: fakeTransfers(),
     // The preload passes the saved choice; the dev preview keeps it in local storage.
     theme: {
       initial: parseThemeChoice(localStorage.getItem('loams-theme')),
@@ -1116,5 +1120,86 @@ function previewUpdate(): LoamsDesktopApi['update'] {
     },
     download: async () => undefined,
     installAndRestart: async () => undefined,
+  };
+}
+
+/** The Transfers page's preview data: nothing moves, the buttons answer. */
+function fakeTransfers(): NonNullable<LoamsDesktopApi['transfers']> {
+  const upload: TransferJob = {
+    id: 'preview-upload',
+    kind: 'upload',
+    tid: '01JPREVIEW0000000000000000',
+    name: 'events-2026-10.parquet',
+    path: '/home/me/events-2026-10.parquet',
+    server: 'https://lab.example.ts.net:7790',
+    ns: 'default',
+    state: 'running',
+    resumed: true,
+    progress: {
+      tid: '01JPREVIEW0000000000000000',
+      direction: 'upload',
+      phase: 'transferring',
+      bytes_done: 6_442_450_944,
+      bytes_total: 10_737_418_240,
+      resumed_from: 4_311_744_512,
+      rate_bps: 212_000_000,
+      eta_s: 20,
+      transport: 'h3',
+      inflight: 8,
+      retries: 0,
+    },
+    error: null,
+    log: [],
+  };
+  const run: TransferJob = {
+    id: 'preview-run',
+    kind: 'run',
+    rid: '01JPREVIEWRUN0000000000000',
+    name: 'ci',
+    server: 'https://lab.example.ts.net:7790',
+    ns: 'default',
+    state: 'running',
+    resumed: false,
+    progress: null,
+    error: null,
+    log: [
+      '$ cargo test -p loams-transfer',
+      '   Compiling loams-transfer v0.1.3',
+      'test result: ok. 49 passed',
+    ],
+    logOffset: 112,
+  };
+  const snap: TransferSnapshot = {
+    agent: { phase: 'ready', version: '0.1.3' },
+    jobs: [upload, run],
+  };
+  const ok = { ok: true as const, value: undefined };
+  return {
+    snapshot: async () => snap,
+    onChange: () => () => {},
+    hasKey: async () => true,
+    saveKey: async () => ok,
+    upload: async () => ({ ok: true, value: null }),
+    download: async () => ({ ok: true, value: null }),
+    pause: async () => ok,
+    resume: async () => ({ ok: true, value: upload }),
+    cancel: async () => ok,
+    dismiss: async () => undefined,
+    remoteList: async () => ({
+      ok: true,
+      value: {
+        transfers: [
+          {
+            tid: '01JPREVIEWDONE000000000000',
+            state: 'complete',
+            committed_chunks: 640,
+            committed_bytes: 10_737_418_240,
+          },
+        ],
+        runs: [{ rid: '01JPREVIEWRUN0000000000000', state: 'running', job: 'ci' }],
+      },
+    }),
+    startRun: async () => ({ ok: true, value: run }),
+    followRun: async () => ({ ok: true, value: run }),
   };
 }

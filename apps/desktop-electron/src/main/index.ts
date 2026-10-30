@@ -44,6 +44,8 @@ import { FactoryViews } from "./factory/views.electron";
 import { registerPgControlIpc } from "./pgcontrol/ipc.electron";
 import { readPgControlTarget } from "./pgcontrol/target";
 import { registerPreviewIpc } from "./preview/ipc.electron";
+import { registerTransferIpc } from "./transfer/ipc.electron";
+import type { TransferSupervisor } from "./transfer/supervisor";
 import { StudioPreviewView } from "./preview/view.electron";
 import {
 	installAppProtocol,
@@ -114,6 +116,7 @@ let factory: FactoryHost | undefined;
 let factoryViews: FactoryViews | undefined;
 let factoryEmbed: FactoryEmbed | undefined;
 let studioPreview: StudioPreviewView | undefined;
+let transfers: TransferSupervisor | undefined;
 let chat: ChatService | undefined;
 let tray: TrayHandle | undefined;
 let chrome: ChromeSync | undefined;
@@ -303,6 +306,14 @@ const singleInstance = initSingleInstance({
 			studioPreview = new StudioPreviewView();
 			registerPreviewIpc(studioPreview);
 			const paths = await appPaths();
+			// Resumable transfers and job runs over QUIC (§85): the sidecar starts on first use.
+			transfers = registerTransferIpc({
+				userData: app.getPath("userData"),
+				binary: () => findEngineBinary(paths.transferBin, existsSync),
+				spawn,
+				vault,
+				registry,
+			}).supervisor;
 			const logFile = join(paths.logs, "engine.log");
 			engine = new EngineSupervisor({
 				spawn,
@@ -555,6 +566,8 @@ const singleInstance = initSingleInstance({
 			factoryEmbed?.closeAll();
 			factoryViews?.closeAll();
 			studioPreview?.destroy();
+			// Unfinished transfers keep their checkpoints and resume next time.
+			transfers?.stop();
 			// State first (agent turns stopped, chat files written), then the quit-time install of
 			// a hash-verified download (D661; it stops the engine itself) or a plain engine stop.
 			void quitSequence({

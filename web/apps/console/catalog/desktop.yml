@@ -53,3 +53,6 @@
     # Managed engines (design 81, preview): sample data until the server serves them.
     - id: engines
       name: '@loams/plugin-engines'
+    # Resumable transfers and remote job runs over QUIC (design 85, preview).
+    - id: desktop-transfers
+      name: '@loams/plugin-desktop-transfers'
