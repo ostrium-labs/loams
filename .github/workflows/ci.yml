@@ -1690,6 +1690,25 @@ jobs:
           node --version
           pnpm --filter @loams/client test
 
+  # rustfmt on the Rust SDK (its own workspace, so the `check` job's
+  # `cargo fmt --all` never sees it), as its own job: no build, done in a
+  # minute. In "SDK: Rust" the same check ran only after the tests, and
+  # v0.1.3's tagged tree carried an unformatted binding.rs from a pull request
+  # whose SDK job was cancelled before it got there (#1528).
+  sdk-rust-fmt:
+    name: "SDK: Rust fmt"
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.sdk-rust == 'true') }}
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: rustfmt (sdks/rust)
+        working-directory: sdks/rust
+        run: cargo fmt -- --check
+
   # SDK2 Task 3: the Rust SDK (design section 44 row 4). sdks/rust is its own
   # cargo workspace, so the server's Rust jobs never touch it -- PR #340 merged
   # with four failing tests because nothing ran them. This job is what makes a
@@ -1727,7 +1746,6 @@ jobs:
       - name: lint the Rust SDK
         working-directory: sdks/rust
         run: |
-          cargo fmt -- --check
           cargo clippy -j 4 --all-targets -- -D warnings
           cargo clippy -j 4 --all-targets --features machine-key -- -D warnings
       # `scripts/sdk/gen.sh` resolves buf from web's node_modules, so the
@@ -2744,15 +2762,26 @@ jobs:
   # Windows: the engine must keep compiling there (the Windows CLI zip and the
   # desktop app ship it), and no other pull request job builds for Windows.
   # Full tier: pull requests into main, a push to main, dispatch, the nightly.
+  # The crates that ship on Windows, checked (not built) on Windows on every
+  # pull request that touches Rust: the `loams` CLI with the release package's
+  # features (release-package.yml, LOAMS_PACKAGE_FEATURES), git-remote-loams
+  # (the Windows zip) and loams-agentd (Loams Desktop for Windows,
+  # desktop-electron-release.yml). v0.1.3's Windows jobs failed on code that
+  # only fails off Unix (#1471, #1589), which no dev check compiled. A check
+  # needs no NASM (prebuilt aws-lc objects) and no link, and the rust-cache
+  # that dev saves keeps a pull request's run to the changed crates. Skipped on
+  # a draft, like the other heavy jobs.
   windows-check:
     name: "Rust: Windows check"
     needs: changes
-    if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && needs.changes.outputs.engine == 'true')) }}
+    if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.rust == 'true') && needs.changes.outputs.heavy != 'false' }}
     runs-on: windows-2025
     timeout-minutes: 90
     env:
       # aws-lc-sys's prebuilt NASM objects: no NASM install needed for a check.
       AWS_LC_SYS_PREBUILT_NASM: "1"
+      # release-package.yml's LOAMS_PACKAGE_FEATURES; keep the two in step.
+      LOAMS_PACKAGE_FEATURES: live,live-tikv,durable,durable-tikv,graph,git,tikv,pgwire,mysql-wire,stream-grpc
     steps:
       - uses: actions/checkout@v7
         with:
@@ -2765,8 +2794,13 @@ jobs:
         if: runner.environment == 'github-hosted'
         with:
           save-if: ${{ github.ref == 'refs/heads/dev' }}
-      - name: cargo check (the loams binary)
-        run: cargo check -p loams --bin loams --locked
+      # One step per binary: pwsh fails a step only on its last command's exit code.
+      - name: cargo check (loams, the package features)
+        run: cargo check -j 4 --locked -p loams --bin loams --features "$env:LOAMS_PACKAGE_FEATURES"
+      - name: cargo check (git-remote-loams)
+        run: cargo check -j 4 --locked -p loams-git-remote --bin git-remote-loams
+      - name: cargo check (loams-agentd)
+        run: cargo check -j 4 --locked -p loams-agentd --bin loams-agentd
 
   # The unconditional light checks, one job (one runner slot instead of four:
   # the org's concurrent-job limit, not minutes, is what queues pull requests).
@@ -2997,6 +3031,7 @@ jobs:
       - app-protos
       - sdk-typescript
       - sdk-rust
+      - sdk-rust-fmt
       - sdk-python
       - sdk-go
       - sdk-cpp
