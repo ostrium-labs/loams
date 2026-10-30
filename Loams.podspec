@@ -9,7 +9,7 @@
 # sdk-release.yml lints and pushes this file.
 Pod::Spec.new do |s|
   s.name         = 'Loams'
-  s.version      = '0.1.3'
+  s.version      = '0.1.4'
   s.summary      = 'Official Objective-C client for Loams (preview).'
   s.description  = 'The Loams Objective-C SDK. Pre-release: the API may change between previews; pin the exact version.'
   s.homepage     = 'https://loams.dev'

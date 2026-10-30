@@ -16,7 +16,7 @@
 #   --headscale URL         (coming soon, unsupported in 0.1.1) also run Headscale on the host (`--profile
 #                           headscale`) at this public URL, mint the auth key
 #                           there, and serve the engine over http
-#   --version V             image tag [default: 0.1.3]
+#   --version V             image tag [default: 0.1.4]
 #   --tikv                  add the `tikv` profile: PD, TiKV and TiDB (Loams
 #                           SQL; the metastore and Live on TiKV). Several GB
 #                           more of disk and RAM
@@ -82,7 +82,7 @@ dir="loams"
 authkey="${TS_AUTHKEY:-}"
 login_server="${TS_LOGIN_SERVER-}"
 headscale=""
-version="0.1.3"
+version="0.1.4"
 profiles=""
 postgres=1
 services=""
