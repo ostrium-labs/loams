@@ -202,8 +202,8 @@ from this harness:
 | Finding | Fix | Before → after (isolated) |
 |---|---|---|
 | Resonate: one SQLite commit per promise, and hundreds of request threads parked on the connection lock (424 workers in `futex_wait`) | resonate#29 (merged): one writer thread owns the connection; group commit of up to 256 jobs per transaction, one savepoint each. Durability is unchanged. | depth 1: 826 → **3,598**/s, p99 45 → 21 ms; depth 16: 3,648 → 4,197/s |
-| Graph: an indexed point lookup built a set of every node with the label on every query | ostrium-labs/grafeo#2 (LG-0007) and loams#1578: the label is checked per candidate, on both the equality and `IN` paths | point lookup: 96 → **24,268**/s (p50 10.5 → 0.04 ms); 16 ids per statement: 2,802 → **57,731** ids/s |
-| House: `202` and 0 QPS at depth 16 | loams#1597: the worker pool and the memory admission queue now serve waiters in order. A statement that just finished took the worker, or the memory, back ahead of a queued one, which then waited 30 s. | depth 16 in the combined run: 0 QPS with 1 error → **14 QPS, no error**. Both 202s are reproduced by new tests that fail before the fix. |
+| Graph: an indexed point lookup built a set of every node with the label on every query | ostrium-labs/grafeo#2 and #3 (LG-0007), with loams#1578 and #1620: the label is checked per candidate, on both the equality and `IN` paths | point lookup: 96 → **24,268**/s (p50 10.5 → 0.04 ms); 16 ids per statement: 2,802 → **57,731** ids/s |
+| House: `202` and 0 QPS at depth 16 | loams#1597 (the worker pool) and #1621 (memory admission): both now serve waiters in order. A statement that just finished took the worker, or the memory, back ahead of a queued one, which then waited 30 s. | depth 16 in the combined run: 0 QPS with 1 error → **14 QPS, no error**. Both 202s are reproduced by new tests that fail before the fix. |
 | sql and kv-tikv shared one TiKV core | loams#1577: the kv slot gets its own PD and TiKV on core 9, and the House load moves to core 11 | depth 1: sql 5,136 → 6,433, tikv.get 3,667 → 5,889; depth 16: about even (42.8k → 42.4k together) |
 
 ### Combined re-run with every fix (mean of two runs)
