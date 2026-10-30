@@ -91,14 +91,17 @@ function pkcs1ToPkcs8(pkcs1: Bytes): Bytes {
 }
 
 function pemToPkcs8(pem: string): Bytes {
-  const match = /-----BEGIN (RSA )?PRIVATE KEY-----([\s\S]+?)-----END (RSA )?PRIVATE KEY-----/u.exec(
-    pem,
-  );
-  if (match === null) {
+  // Two anchored searches instead of one lazy `[\s\S]+?` span, which is
+  // quadratic on input with many BEGIN lines and no END.
+  const begin = /-----BEGIN (RSA )?PRIVATE KEY-----/u.exec(pem);
+  const rest = begin === null ? '' : pem.slice(begin.index + begin[0].length);
+  const end = /-----END (RSA )?PRIVATE KEY-----/u.exec(rest);
+  if (begin === null || end === null || end.index === 0) {
     throw new Error('machineKey: the key is not a PEM private key');
   }
-  const bytes = Uint8Array.from(atob((match[2] ?? '').replace(/\s+/gu, '')), (c) => c.charCodeAt(0));
-  return match[1] === undefined ? bytes : pkcs1ToPkcs8(bytes);
+  const body = rest.slice(0, end.index);
+  const bytes = Uint8Array.from(atob(body.replace(/\s+/gu, '')), (c) => c.charCodeAt(0));
+  return begin[1] === undefined ? bytes : pkcs1ToPkcs8(bytes);
 }
 
 function parseKeyFile(keyFile: string | MachineKeyFile): MachineKeyFile {
@@ -121,13 +124,20 @@ function parseKeyFile(keyFile: string | MachineKeyFile): MachineKeyFile {
   return file;
 }
 
+/** Drops trailing `/`s with a linear scan (a `/\/+$/` regex is quadratic on many inner slashes). */
+function trimTrailingSlashes(s: string): string {
+  let end = s.length;
+  while (end > 0 && s.charCodeAt(end - 1) === 47) end -= 1;
+  return s.slice(0, end);
+}
+
 /**
  * An agent's token source from its machine key (module header). The key is checked when the
  * source is built; it is imported into WebCrypto on first use.
  */
 export function machineKey(options: MachineKeyOptions): TokenSource & { readonly userId: string } {
   const file = parseKeyFile(options.keyFile);
-  const issuer = options.issuer.replace(/\/+$/u, '');
+  const issuer = trimTrailingSlashes(options.issuer);
   if (!/^https?:\/\/[^/]+/u.test(issuer)) {
     throw new Error(`machineKey: the issuer ${JSON.stringify(issuer)} is not a URL`);
   }

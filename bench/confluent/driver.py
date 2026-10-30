@@ -209,6 +209,7 @@ def scen_rtt(args, tel):
         tcp.append((t1 - t0) * 1000)
         if args.key_file:
             ctx = ssl.create_default_context()
+            ctx.minimum_version = ssl.TLSVersion.TLSv1_2
             try:
                 ss = ctx.wrap_socket(s, server_hostname=host)
                 tls.append((time.perf_counter() - t1) * 1000)
