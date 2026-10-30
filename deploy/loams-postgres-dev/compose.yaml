@@ -64,9 +64,32 @@ services:
     image: *neon-image
     command: ["storage_broker", "--listen-addr=0.0.0.0:50051"]
 
+  # The pageserver's upcall token (its control_plane_api_token), made once into its own
+  # volume: pg-control (`postgres-control` profile of deploy/release) reads it with
+  # --pageserver-upcall-token-file and serves the pageserver's upcalls with it (generation
+  # validation, a major upgrade's import status; NF2 Task 13).
+  pg-upcall-token:
+    image: *neon-image
+    restart: "no"
+    # Root (the image's user is `neon`), so that it can write the fresh named volume.
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        set -e; t=/run/pg-upcall/token;
+        if [ ! -s "$$t" ]; then
+        head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$$t.new"; chmod 0444 "$$t.new"; mv "$$t.new" "$$t";
+        echo "pg-upcall-token: made"; else echo "pg-upcall-token: kept"; fi
+    network_mode: none
+    volumes:
+      - pg-upcall-token:/run/pg-upcall
+
   # Its configuration is pageserver.toml plus the remote storage the profiles select, written
   # into the data volume at each start: the `neon` bucket on RustFS, or the folder
-  # /data/.neon/remote_storage in the same volume.
+  # /data/.neon/remote_storage in the same volume. Its upcalls (control_plane_api) go to
+  # pg-control's upcall listener with the `postgres-control` profile, which answers them
+  # (NF2 Task 13), and to an address nobody serves without it: the pageserver runs in
+  # emergency mode, with no storage controller, either way.
   pageserver:
     image: *neon-image
     environment: *s3-env
@@ -79,13 +102,21 @@ services:
         *,rustfs,*) remote="{ endpoint='http://rustfs:9000', bucket_name='neon', bucket_region='us-east-1', prefix_in_bucket='/pageserver' }" ;;
         *) mkdir -p /data/.neon/remote_storage; remote="{ local_path='/data/.neon/remote_storage' }" ;;
         esac;
-        { cat /etc/loams-pageserver/pageserver.toml; echo "remote_storage=$${remote}"; } > /data/.neon/pageserver.toml;
+        case ",$${LOAMS_PROFILES}," in
+        *,postgres-control,*) api="http://pg-control:7690/upcall/v1/" ;;
+        *) api="http://0.0.0.0:6666" ;;
+        esac;
+        { cat /etc/loams-pageserver/pageserver.toml; echo "remote_storage=$${remote}";
+        echo "control_plane_api='$${api}'"; echo "control_plane_api_token='$$(cat /run/pg-upcall/token)'"; } > /data/.neon/pageserver.toml;
         exec /usr/local/bin/pageserver -D /data/.neon
     volumes:
       - pageserver-data:/data/.neon
       - ./pageserver.toml:/etc/loams-pageserver/pageserver.toml:ro
       - ./identity.toml:/data/.neon/identity.toml:ro
+      - pg-upcall-token:/run/pg-upcall:ro
     depends_on:
+      pg-upcall-token:
+        condition: service_completed_successfully
       storage_broker:
         condition: service_started
       create-bucket:
@@ -228,6 +259,8 @@ services:
 volumes:
   rustfs-data:
   pageserver-data:
+  # pg-upcall-token's token for the pageserver's upcalls.
+  pg-upcall-token:
   safekeeper-data:
   # pg-bootstrap's ids.env: the tenant and timeline it created for compute1.
   pg-bootstrap:
