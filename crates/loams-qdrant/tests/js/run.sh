@@ -19,5 +19,7 @@ case "$1" in
 esac
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${here}"
-pnpm install --ignore-workspace --frozen-lockfile --ignore-scripts --silent
+# Its own pnpm-workspace.yaml (overrides) makes this directory a workspace root,
+# separate from the repository workspace.
+pnpm install --frozen-lockfile --ignore-scripts --silent
 exec node smoke.mjs --version "${alias}" --url "${LOAMS_QDRANT_URL:-http://127.0.0.1:6333}"
