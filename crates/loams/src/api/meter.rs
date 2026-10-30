@@ -1186,6 +1186,7 @@ mod served {
 
     /// The meter of this node, over the metastore and the bucket: the
     /// role's services, and the counter owners over `_system/_meter`.
+    #[allow(clippy::too_many_arguments)]
     pub fn build(
         meta: Arc<dyn MetaStore>,
         store: Store,
