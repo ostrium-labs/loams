@@ -56,6 +56,10 @@ pub enum Op {
     ListTenants,
     /// `GET /v1/tenant/{t}/config` (UP1 Task 9).
     GetTenantConfig,
+    /// `POST /v1/tenant/{t}/timeline` with `import_pgdata` (NF2 Task 13).
+    ImportTimeline,
+    /// `PUT /v1/tenant/{t}/timeline/{tl}/activate_post_import` (NF2 Task 13).
+    ActivatePostImport,
     WalCreateTimeline,
     WalTimelineStatus,
     ComputeStatus,

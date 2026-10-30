@@ -667,6 +667,7 @@ impl Native {
                 .unwrap_or_else(|| loams::api::meter::DEFAULT_HOUSE_USER.to_string()),
             house_password_file: env_value("LOAMS_METER_HOUSE_PASSWORD_FILE").map(PathBuf::from),
             secrets_key_file: env_value("LOAMS_METER_SECRETS_KEY_FILE").map(PathBuf::from),
+            org: env_value("LOAMS_METER_ORG"),
             export_webhook_url: env_value("LOAMS_METER_EXPORT_WEBHOOK_URL"),
             export_webhook_secret_file: env_value("LOAMS_METER_EXPORT_WEBHOOK_SECRET_FILE")
                 .map(PathBuf::from),

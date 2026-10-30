@@ -42,7 +42,9 @@ syntax = "proto3";
 //   `docs/api/reasons.md`: `project_not_found`, `branch_has_children`,
 //   `branch_protected`, `lsn_out_of_retention`, `endpoint_exists_for_branch`,
 //   `compute_start_failed`, `quota_exceeded`, `storage_unavailable`,
-//   `secret_already_issued` and the shared `already_exists`.
+//   `secret_already_issued`, the majors' `unsupported_pg_version`,
+//   `beta_major_requires_opt_in`, `compute_major_mismatch_refused` and
+//   `import_checksums_enabled` (design 62 §9.2), and the shared `already_exists`.
 package loams.postgres.v1;
 
 import "google/protobuf/duration.proto";

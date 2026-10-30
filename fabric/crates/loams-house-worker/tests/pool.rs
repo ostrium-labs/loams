@@ -690,6 +690,50 @@ async fn acquire_waits_then_answers_202() {
     );
 }
 
+/// BQ1-ALL: callers are served in turn. Sixteen callers share one worker,
+/// each taking it, holding it briefly and returning it in a loop, on one
+/// runtime thread (the House's supervisor ran on one core in the combined
+/// run). Every caller must get the worker within `acquire_timeout`, and the
+/// longest wait stays near sixteen holds; before the queue, a caller could
+/// lose the race for a returned worker until `acquire_timeout` (`202` after
+/// 30 s in the combined run).
+#[tokio::test(flavor = "current_thread")]
+async fn callers_sharing_one_worker_are_served_in_turn() {
+    let config = PoolConfig {
+        max_workers_per_namespace: 1,
+        acquire_timeout: Duration::from_secs(2),
+        ..small(1)
+    };
+    let pool = pool("fair", config).await;
+    let until = tokio::time::Instant::now() + Duration::from_secs(3);
+    let callers: Vec<_> = (0..16)
+        .map(|_| {
+            let pool = pool.clone();
+            tokio::spawn(async move {
+                let mut worst = Duration::ZERO;
+                while tokio::time::Instant::now() < until {
+                    let asked = tokio::time::Instant::now();
+                    let lease = pool.acquire("ns").await?;
+                    worst = worst.max(asked.elapsed());
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                    pool.release(lease, Outcome::Completed);
+                }
+                Ok::<_, loams_house::HouseError>(worst)
+            })
+        })
+        .collect();
+    for caller in callers {
+        let worst = caller
+            .await
+            .expect("caller")
+            .unwrap_or_else(|err| panic!("a caller was not served: {err}"));
+        assert!(
+            worst < Duration::from_millis(1500),
+            "a caller waited {worst:?}"
+        );
+    }
+}
+
 /// HS1 Task 2 review I3: a worker busy in a statement still exits as soon as its
 /// socket closes. The reader thread `_exit`s; the statement is not waited for.
 #[test]

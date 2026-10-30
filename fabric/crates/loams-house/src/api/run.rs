@@ -581,20 +581,15 @@ impl HouseApi {
             }
         };
         // HE1 R14.5: calls of the namespace's own views are allowed.
-        let views = match gate::view_calls(
-            self.lake.as_deref(),
-            user.namespace,
-            &database,
-            &analysis,
-        )
-        .await
-        {
-            Ok(views) => views,
-            Err(err) => {
-                self.pool.release(lease, Outcome::Completed);
-                return Err(to_connect(&err));
-            }
-        };
+        let views =
+            match gate::view_calls(self.lake.as_deref(), user.namespace, database, &analysis).await
+            {
+                Ok(views) => views,
+                Err(err) => {
+                    self.pool.release(lease, Outcome::Completed);
+                    return Err(to_connect(&err));
+                }
+            };
         let admitted = gate::admit_views(
             &analysis,
             &parsed_text,
