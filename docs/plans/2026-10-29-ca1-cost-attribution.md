@@ -62,4 +62,9 @@
 
 ## Rulings made during execution
 
-(none yet)
+- **R2.1 (Task 2, 2026-10-29): prices name a unit.** A rate per byte-second needs more than nine decimals, so a price is quoted per `core_hour`, `gb_month`, `gb`, `million_operations` (or the driver unit) and the arithmetic divides by the unit's size exactly (design §84 §6.4 updated, #1596).
+- **R4.1 (Task 4): `pipeline::compute`** is the one path from inputs to allocation lines; the `meter` role and `loams cost` offline both call it.
+- **R5.1 (Task 5): one source per (engine, kind) by construction.** The catalogue fixes the sources, and the node agent wins over product events for level one, so no apply-time `driver_overlap` check is needed. `costs.yaml` gains `usage_pools` rules (node, type, kind). Storage gauges are each object's mean sampled size × 86,400 per day. The real-House test (`cost_drivers_from_events`) is still to do.
+- **R6.1 (Task 6a): bills are stored aggregated** per (import, day, pool, kind) with line counts in the `meter-costs` document (`SourceRef::BillImport`), not as raw lines in `_meter.cost_lines`; the file digest names the file and `loams cost import` re-reads it line by line. Task 6 is split: 6a (the domain, #1616), 6b (`CostService` proto, `cost_viewer`, wiring, SDK regeneration), 6c (the cost job and `_meter.cost_allocations`). Until 6b, reading costs needs `meter_admin`.
+- **R7.1 (Task 7): FOCUS validator not yet run** (licence and pin to check, D1274); the export's tests check the column set and the ratio rule.
+- **R8.1 (Task 8): `loams cost` ships offline first** (`report`, `import`, `export`, `report --from-bench`), from files, through the same code as the role; online subcommands follow 6b. Query-class rules are parsed and evaluated in Rust (`classes`) with the same grammar the House compiles, and `costs.yaml` refuses a bad rule at apply. `--from-bench` lines are `estimated` and flagged `example`.

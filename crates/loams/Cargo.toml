@@ -104,6 +104,8 @@ loams-agentd-cli.workspace = true
 loams-confluent.workspace = true
 # `loams risingwave …`: the managed RisingWave's SQL client (design 81, RW1).
 loams-risingwave.workspace = true
+# `loams cost` (design 84, CA1 Task 8): offline cost reports, preview.
+loams-cost = { path = "../loams-cost", version = "0.1.3", features = ["cli"] }
 # `loams spark` (design 81 SP-b, preview).
 loams-spark = { workspace = true, optional = true }
 # `loams flink …` (design 81, D1989): the managed Flink SQL client. Feature

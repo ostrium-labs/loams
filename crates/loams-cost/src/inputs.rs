@@ -491,6 +491,8 @@ impl CostInputs {
             if c.when.trim().is_empty() {
                 return Err(CostError::invalid(format!("classes[{i}]"), "when is empty"));
             }
+            crate::classes::Condition::parse(&c.when)
+                .map_err(|e| CostError::invalid(format!("classes[{i}]"), e.to_string()))?;
         }
         Ok(())
     }
