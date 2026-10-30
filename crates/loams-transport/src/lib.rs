@@ -12,13 +12,36 @@
 //! - [`peer`]: the verified peer's identities, read from its leaf
 //!   certificate's URI SANs, which route authorization keys on (D2315).
 //!
-//! The CA service, join tokens, renewal and the route policy are later parts
-//! of Task 3 and Task 4. Nothing in the product uses this crate yet.
+//! Part 2 adds what issues and holds those certificates:
+//!
+//! - [`Identity`]: this process's chain, key and trust bundle, its validity
+//!   window and renewal time (two-thirds of the leaf's life, D2309), and the
+//!   TLS configurations built from it. Loaded from PEM files for an external
+//!   CA (D2314) or built from what the CA issued.
+//! - [`ca`]: the deployment's CA (D2309, D2310): a root and an intermediate,
+//!   and leaves signed for CSRs ([`ca::new_key_and_csr`]), so private keys
+//!   never leave the process that uses them.
+//! - [`token`]: single-use join tokens (D2311) and the deny list (D2312).
+//!
+//! # Stability
+//!
+//! The types re-exported at the crate root are the API other lanes build on
+//! (the cluster listener in CT1 Task 6, the desktop app's transport in design
+//! 85). Changes to them are additive; a breaking change needs a CT1 ruling.
+//! The CA service's RPC (`loams.ca.internal.v1`), the route policy and the
+//! HTTP/3 endpoint are later parts of CT1 Tasks 3–7. Nothing in the product
+//! uses this crate yet.
 
+pub mod ca;
+pub mod identity;
 pub mod peer;
 pub mod spiffe;
 pub mod tls;
+pub mod token;
 
+pub use ca::{Ca, CaError, CaMaterial, Grant, Issued, new_key_and_csr};
+pub use identity::{Identity, IdentityError};
 pub use peer::{PeerIdentity, peer_identity};
 pub use spiffe::{Kind, SpiffeId, SpiffeIdError};
 pub use tls::{Alpn, TlsError, client_config, server_config};
+pub use token::{DenyList, JoinToken, MemoryTokens, TokenError, TokenRecord, TokenStore};

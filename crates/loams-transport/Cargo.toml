@@ -9,14 +9,16 @@ authors.workspace = true
 publish = false
 
 [dependencies]
+# Join-token secrets and their digests (CT1 Task 3).
+aws-lc-rs = "1.18"
+base64.workspace = true
+# The CA: root, intermediate and leaves from CSRs (D2309; CT1 Task 3).
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "pem", "aws_lc_rs", "x509-parser"] }
 # TLS 1.3 only, on aws-lc-rs (D2306; CT1 R0.4).
 rustls = { workspace = true, features = ["aws_lc_rs", "std", "logging"] }
-rustls-pki-types = { version = "1.15", features = ["std"] }
+rustls-pki-types = { version = "1.15", features = ["std", "alloc"] }
 thiserror.workspace = true
 x509-parser = "0.18"
-
-[dev-dependencies]
-rcgen = { version = "0.14", default-features = false, features = ["crypto", "pem", "aws_lc_rs"] }
 
 [lints]
 workspace = true

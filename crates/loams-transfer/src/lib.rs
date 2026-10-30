@@ -6,7 +6,7 @@
 //! the data; one writer holds a lease; work moves in fixed-size pieces; and a
 //! resume never deletes what is committed.
 //!
-//! This first slice (DQ1 Task 1) is the server-side state:
+//! The server-side state (DQ1 Task 1):
 //!
 //! - [`checkpoint`]: the [`Checkpoints`] trait (leases and fenced pointer
 //!   compare-and-swap), with an adapter over the metastore and an in-memory
@@ -16,14 +16,24 @@
 //! - [`transfer`]: chunked transfers (D2422–D2433).
 //! - [`run`]: job runs, their logs and artifacts (D2439–D2442).
 //!
-//! The HTTP API, the network, the client pipelines and the sidecar are later
-//! tasks.
+//! The API and the network (DQ1 Task 2):
+//!
+//! - [`server`]: the axum router of §85 §6 and §11, with an [`Authorizer`](server::Authorizer).
+//! - [`net`]: HTTP/3 on quinn and h3, HTTP/2+TLS, and the race between them.
+//! - [`api`]: a typed client over either transport.
+//! - [`standalone`]: `loams-transfer serve`, the API without the engine.
+//!
+//! The client pipelines and the sidecar are later tasks.
 
+pub mod api;
 pub mod checkpoint;
 pub mod error;
 pub mod journal;
 pub mod keys;
+pub mod net;
 pub mod run;
+pub mod server;
+pub mod standalone;
 pub mod transfer;
 
 pub use checkpoint::{CheckpointError, Checkpoints, MemCheckpoints, MetaCheckpoints};

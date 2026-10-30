@@ -272,6 +272,31 @@ pub struct LeaseRouter {
     pub transport: Arc<dyn LeaseTransport>,
     pub fence: Arc<EpochFence>,
     pub clock: Clock,
+    /// Where the meter has a policy (D2400): a pair outside it gets
+    /// [`unmetered_grant`] without asking any owner. `None`: every pair asks.
+    pub policies: Option<Arc<loams_meter_gate::scope::Policies>>,
+}
+
+/// How long an unmetered grant is good for before the gate asks again (so
+/// a new entitlement takes effect within about this long).
+pub const UNMETERED_REFRESH: Duration = Duration::from_secs(10);
+
+/// The grant for a pair the meter has no policy for: allowed, counting
+/// only, no amount limit, never fails closed. The gate caches it like any
+/// lease, so such a request costs a lease hit.
+pub fn unmetered_grant() -> GateGrant {
+    GateGrant {
+        lease: g::LeaseId::NONE,
+        amount: u64::MAX / 4,
+        has_access: true,
+        refusal: None,
+        counting: true,
+        overage: false,
+        ttl: UNMETERED_REFRESH * 3,
+        refresh_after: UNMETERED_REFRESH,
+        owner_epoch: 0,
+        fail_open: u64::MAX / 4,
+    }
 }
 
 impl fmt::Debug for LeaseRouter {
@@ -306,6 +331,11 @@ impl LeaseRouter {
 
     /// One `AcquireLease`, routed, fenced and converted.
     pub async fn acquire(&self, r: &OwnedRequest) -> Result<GateGrant, SourceError> {
+        if let Some(p) = &self.policies
+            && !p.contains(&r.subject, &r.feature)
+        {
+            return Ok(unmetered_grant());
+        }
         let partition = partition_of(&r.subject, self.partitions);
         let known = self.fence.known(partition);
         let local = self

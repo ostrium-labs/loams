@@ -204,6 +204,12 @@ pub(crate) struct PgControlArgs {
     /// /notify-attach is not served.
     #[arg(long)]
     storage_controller_token_file: Option<PathBuf>,
+    /// A file holding the pageservers' upcall token (their
+    /// `control_plane_api_token`); without it the pageservers' import status
+    /// upcall (`/upcall/v1/timeline_import_status`, NF2 Task 13) is not
+    /// served.
+    #[arg(long)]
+    pageserver_upcall_token_file: Option<PathBuf>,
 }
 
 fn parse_pageserver(s: &str) -> Result<(u64, String), String> {
@@ -323,6 +329,11 @@ fn config(args: PgControlArgs) -> Result<PgControlConfig, String> {
     config.endpoint_storage_pem_out = args.endpoint_storage_pem_out;
     config.notify_token = args
         .storage_controller_token_file
+        .as_deref()
+        .map(read_token)
+        .transpose()?;
+    config.pageserver_token = args
+        .pageserver_upcall_token_file
         .as_deref()
         .map(read_token)
         .transpose()?;

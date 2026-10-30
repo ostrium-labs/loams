@@ -1028,3 +1028,162 @@ async fn spec_carries_scram_verifier_never_password() {
     let v: Value = serde_json::from_str(&third).unwrap();
     assert!(v["spec"]["cluster"]["roles"][0]["encrypted_password"].is_null());
 }
+
+// ---- the pageserver's timeline import status (NF2 Task 13) ----
+
+const PAGESERVER_TOKEN: &str = "pageserver-upcall-token-for-tests";
+
+impl Rig {
+    async fn import_status(
+        &self,
+        method: reqwest::Method,
+        bearer: Option<&str>,
+        body: &Value,
+    ) -> (u16, String) {
+        let mut req = self
+            .http
+            .request(
+                method,
+                format!("{}/upcall/v1/timeline_import_status", self.base),
+            )
+            .json(body);
+        if let Some(t) = bearer {
+            req = req.bearer_auth(t);
+        }
+        let resp = req.send().await.unwrap();
+        (resp.status().as_u16(), resp.text().await.unwrap())
+    }
+}
+
+async fn import_rig() -> Rig {
+    rig_with(|c| c.pageserver_token = Some(Secret::new(PAGESERVER_TOKEN.into()))).await
+}
+
+fn shard_body(status: Option<Value>) -> Value {
+    let mut b = serde_json::json!({
+        "tenant_shard_id": "0f3a3b1c2d4e5f60718293a4b5c6d7e8",
+        "timeline_id": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+        "generation": 1,
+    });
+    if let Some(s) = status {
+        b["status"] = s;
+    }
+    b
+}
+
+/// A pageserver's import reports are recorded and answered back: an import
+/// not reported yet is in progress, a reported one is what was put, and a
+/// repeated put (at-least-once delivery) is fine.
+#[tokio::test]
+async fn timeline_import_status_round_trip() {
+    let r = import_rig().await;
+    let get = reqwest::Method::GET;
+    let post = reqwest::Method::POST;
+    let (code, body) = r
+        .import_status(get.clone(), Some(PAGESERVER_TOKEN), &shard_body(None))
+        .await;
+    assert_eq!(code, 200, "{body}");
+    assert_eq!(
+        serde_json::from_str::<Value>(&body).unwrap(),
+        serde_json::json!({"InProgress": null})
+    );
+
+    let progress = serde_json::json!({"InProgress": {"V1": {"jobs": 4, "completed": 1, "import_source_hash": 7}}});
+    for status in [
+        progress.clone(),
+        progress.clone(),
+        Value::String("Done".into()),
+        Value::String("Done".into()),
+    ] {
+        let (code, body) = r
+            .import_status(
+                post.clone(),
+                Some(PAGESERVER_TOKEN),
+                &shard_body(Some(status.clone())),
+            )
+            .await;
+        assert_eq!(code, 200, "{body}");
+        let (_, got) = r
+            .import_status(get.clone(), Some(PAGESERVER_TOKEN), &shard_body(None))
+            .await;
+        assert_eq!(serde_json::from_str::<Value>(&got).unwrap(), status);
+    }
+    let rec = r
+        .store
+        .get::<loams_pg_control::model::ImportStatusRec>(
+            &loams_pg_control::model::ImportStatusKey {
+                tenant_shard_id: "0f3a3b1c2d4e5f60718293a4b5c6d7e8".into(),
+                timeline_id: "a1b2c3d4e5f60718293a4b5c6d7e8f90".into(),
+            },
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(rec.record.state, loams_pg_control::model::ImportState::Done);
+}
+
+/// The routes need the pageservers' token, and are not served without one.
+#[tokio::test]
+async fn timeline_import_status_needs_the_pageserver_token() {
+    let r = import_rig().await;
+    let body = shard_body(Some(Value::String("Done".into())));
+    let (code, _) = r
+        .import_status(reqwest::Method::POST, Some("wrong"), &body)
+        .await;
+    assert_eq!(code, 401);
+    let (code, _) = r.import_status(reqwest::Method::POST, None, &body).await;
+    assert_eq!(code, 401);
+    // The notify-attach token is not the pageservers'.
+    let (code, _) = r
+        .import_status(reqwest::Method::POST, Some(NOTIFY_TOKEN), &body)
+        .await;
+    assert_eq!(code, 401);
+
+    let r = rig().await;
+    let (code, _) = r
+        .import_status(reqwest::Method::POST, Some(PAGESERVER_TOKEN), &body)
+        .await;
+    assert_eq!(
+        code, 404,
+        "no pageserver token configured: the route is not served"
+    );
+}
+
+/// An error report is kept with its message; a status that is not a
+/// ShardImportStatus is refused.
+#[tokio::test]
+async fn timeline_import_status_error_and_garbage() {
+    let r = import_rig().await;
+    let err = serde_json::json!({"Error": "the bucket is unreadable"});
+    let (code, body) = r
+        .import_status(
+            reqwest::Method::POST,
+            Some(PAGESERVER_TOKEN),
+            &shard_body(Some(err)),
+        )
+        .await;
+    assert_eq!(code, 200, "{body}");
+    let rec = r
+        .store
+        .get::<loams_pg_control::model::ImportStatusRec>(
+            &loams_pg_control::model::ImportStatusKey {
+                tenant_shard_id: "0f3a3b1c2d4e5f60718293a4b5c6d7e8".into(),
+                timeline_id: "a1b2c3d4e5f60718293a4b5c6d7e8f90".into(),
+            },
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        rec.record.state,
+        loams_pg_control::model::ImportState::Error("the bucket is unreadable".into())
+    );
+    let (code, _) = r
+        .import_status(
+            reqwest::Method::POST,
+            Some(PAGESERVER_TOKEN),
+            &shard_body(Some(serde_json::json!({"Nope": 1}))),
+        )
+        .await;
+    assert_eq!(code, 400);
+}

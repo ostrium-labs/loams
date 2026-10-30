@@ -335,6 +335,68 @@ impl BranchRec {
     }
 }
 
+/// The pageserver's last report on one timeline import (NF2 Task 13, the
+/// first path of a major upgrade, design 62 §10): what its
+/// `timeline_import_status` upcall put. The pageserver imports a data
+/// directory into a new timeline, reports each shard's progress through
+/// the storage controller's upcall API (which `pg-control` serves, since
+/// Loams runs no storage controller), and asks for the status when it
+/// restarts. The timeline is usable once the import is `Done` and
+/// `activate_post_import` has been called.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImportStatusRec {
+    /// The tenant shard as the pageserver names it (`<tenant>` or `<tenant>-<shard>`).
+    pub tenant_shard_id: String,
+    pub timeline_id: String,
+    pub state: ImportState,
+    /// The pageserver's `ShardImportStatus`, as JSON text, answered back
+    /// unchanged to its `GET`.
+    pub status_json: String,
+    pub updated_at_ms: u64,
+}
+
+/// Where an import stands.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ImportState {
+    InProgress,
+    Done,
+    Error(String),
+}
+
+/// `(tenant_shard_id, timeline_id)`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ImportStatusKey {
+    pub tenant_shard_id: String,
+    pub timeline_id: String,
+}
+
+/// Every import report of one tenant shard.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ImportStatusPrefix {
+    pub tenant_shard_id: String,
+}
+
+impl Record for ImportStatusRec {
+    type Key = ImportStatusKey;
+    type Prefix = ImportStatusPrefix;
+    const KIND: &'static str = "import status";
+    fn project(&self) -> Option<&str> {
+        None
+    }
+    fn key(&self) -> ImportStatusKey {
+        ImportStatusKey {
+            tenant_shard_id: self.tenant_shard_id.clone(),
+            timeline_id: self.timeline_id.clone(),
+        }
+    }
+    fn encode_key(k: &ImportStatusKey) -> Result<Vec<u8>, StoreError> {
+        key(b'M', &[&k.tenant_shard_id, &k.timeline_id])
+    }
+    fn encode_prefix(p: &ImportStatusPrefix) -> Result<Vec<u8>, StoreError> {
+        prefix(b'M', &[&p.tenant_shard_id], "")
+    }
+}
+
 /// `(project_id, branch_id)`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct BranchKey {

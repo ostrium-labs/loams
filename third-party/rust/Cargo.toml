@@ -21,6 +21,7 @@ arrow-flight = { package = "arrow-flight", version = "=58.4.0", default-features
 arrow-ipc = { package = "arrow-ipc", version = "=58.4.0", default-features = true, features = ["lz4", "lz4_flex", "zstd"] }
 arrow-schema = { package = "arrow-schema", version = "=58.4.0", default-features = false, features = ["bitflags", "canonical_extension_types", "ffi"] }
 async-trait = { package = "async-trait", version = "=0.1.92", default-features = false }
+aws-lc-rs = { package = "aws-lc-rs", version = "=1.18.1", default-features = true, features = ["alloc", "aws-lc-sys", "prebuilt-nasm", "ring-io", "ring-sig-verify"] }
 axum = { package = "axum", version = "=0.8.9", default-features = true, features = ["form", "http1", "http2", "json", "matched-path", "original-uri", "query", "tokio", "tower-log", "tracing"] }
 base64-0_22 = { package = "base64", version = "=0.22.1", default-features = true, features = ["alloc", "std"] }
 base64-0_23 = { package = "base64", version = "=0.23.1", default-features = true, features = ["alloc", "simd-unsafe", "std"] }
@@ -40,6 +41,7 @@ connectrpc-health = { package = "connectrpc-health", version = "=0.9.0", default
 connectrpc-reflection = { package = "connectrpc-reflection", version = "=0.9.0", default-features = false, features = ["client"] }
 crc = { package = "crc", version = "=3.4.0", default-features = false }
 crc32c = { package = "crc32c", version = "=0.6.8", default-features = false }
+csv = { package = "csv", version = "=1.4.0", default-features = false }
 data-encoding = { package = "data-encoding", version = "=2.11.1", default-features = true, features = ["alloc", "std"] }
 datafusion = { package = "datafusion", version = "=54.1.0", default-features = false, features = ["crypto_expressions", "datafusion-functions-nested", "datafusion-sql", "datetime_expressions", "encoding_expressions", "nested_expressions", "regex_expressions", "sql", "sqlparser", "string_expressions", "unicode_expressions"] }
 des = { package = "des", version = "=0.9.0", default-features = false }
@@ -70,6 +72,8 @@ grafeo-engine = { package = "grafeo-engine", version = "=0.5.43", git = "https:/
 grep-matcher = { package = "grep-matcher", version = "=0.1.9", default-features = false }
 grep-regex = { package = "grep-regex", version = "=0.1.14", default-features = false }
 grep-searcher = { package = "grep-searcher", version = "=0.1.17", default-features = false }
+h3 = { package = "h3", version = "=0.0.8", default-features = false }
+h3-quinn = { package = "h3-quinn", version = "=0.0.10", default-features = false }
 hex = { package = "hex", version = "=0.4.3", default-features = true, features = ["alloc", "std"] }
 hmac = { package = "hmac", version = "=0.13.0", default-features = false }
 http = { package = "http", version = "=1.5.0", default-features = true, features = ["std"] }
@@ -118,11 +122,12 @@ prost-reflect = { package = "prost-reflect", version = "=0.16.5", default-featur
 prost-types = { package = "prost-types", version = "=0.14.4", default-features = true, features = ["std"] }
 pulldown-cmark = { package = "pulldown-cmark", version = "=0.13.4", default-features = true, features = ["getopts", "html", "pulldown-cmark-escape"] }
 qdrant-edge = { package = "qdrant-edge", version = "=0.8.0", default-features = false }
+quinn = { package = "quinn", version = "=0.11.12", default-features = true, features = ["aws-lc-rs", "bloom", "futures-io", "log", "platform-verifier", "ring", "runtime-tokio", "rustls", "rustls-aws-lc-rs", "rustls-ring"] }
 rand-0_10 = { package = "rand", version = "=0.10.3", default-features = true, features = ["alloc", "chacha", "std", "std_rng", "sys_rng", "thread_rng"] }
 rand-0_9 = { package = "rand", version = "=0.9.5", default-features = true, features = ["alloc", "os_rng", "small_rng", "std", "std_rng", "thread_rng"] }
 rand_chacha = { package = "rand_chacha", version = "=0.9.0", default-features = true, features = ["std"] }
 rand_core = { package = "rand_core", version = "=0.10.1", default-features = false }
-rcgen = { package = "rcgen", version = "=0.14.10", default-features = false, features = ["aws_lc_rs", "crypto", "pem", "ring"] }
+rcgen = { package = "rcgen", version = "=0.14.10", default-features = false, features = ["aws_lc_rs", "crypto", "pem", "ring", "x509-parser"] }
 redb = { package = "redb", version = "=4.4.0", default-features = true, features = ["std"] }
 regex = { package = "regex", version = "=1.13.1", default-features = true, features = ["perf", "perf-backtrack", "perf-cache", "perf-dfa", "perf-inline", "perf-literal", "perf-onepass", "std", "unicode", "unicode-age", "unicode-bool", "unicode-case", "unicode-gencat", "unicode-perl", "unicode-script", "unicode-segment"] }
 relative-path = { package = "relative-path", version = "=2.0.2", default-features = true, features = ["alloc", "std"] }
@@ -144,6 +149,7 @@ rusqlite = { package = "rusqlite", version = "=0.32.1", default-features = false
 rustc-hash = { package = "rustc-hash", version = "=2.1.3", default-features = true, features = ["std"] }
 rustix = { package = "rustix", version = "=1.1.5", default-features = true, features = ["alloc", "event", "fs", "net", "param", "pipe", "process", "std", "system", "termios", "thread", "time"] }
 rustls = { package = "rustls", version = "=0.23.46", default-features = true, features = ["aws-lc-rs", "aws_lc_rs", "log", "logging", "prefer-post-quantum", "ring", "std", "tls12"] }
+rustls-native-certs = { package = "rustls-native-certs", version = "=0.8.4", default-features = false }
 rustls-pki-types = { package = "rustls-pki-types", version = "=1.15.1", default-features = true, features = ["alloc", "std", "web", "web-time"] }
 schemars = { package = "schemars", version = "=0.8.22", default-features = true, features = ["chrono", "derive", "indexmap", "indexmap2", "preserve_order", "schemars_derive", "url", "uuid1"] }
 secrecy = { package = "secrecy", version = "=0.10.3", default-features = false, features = ["serde"] }

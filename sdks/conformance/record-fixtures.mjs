@@ -1958,6 +1958,38 @@ const UNPRODUCIBLE_REASONS = [
     standIn: null,
   },
   {
+    reason: 'unsupported_pg_version',
+    code: 'invalid_argument',
+    why:
+      '`loams.postgres.v1` is served by the Postgres control plane (design ' +
+      '§46), which neither conformance server runs.',
+    standIn: null,
+  },
+  {
+    reason: 'beta_major_requires_opt_in',
+    code: 'failed_precondition',
+    why:
+      '`loams.postgres.v1` is served by the Postgres control plane (design ' +
+      '§46), which neither conformance server runs.',
+    standIn: null,
+  },
+  {
+    reason: 'compute_major_mismatch_refused',
+    code: 'failed_precondition',
+    why:
+      '`loams.postgres.v1` is served by the Postgres control plane (design ' +
+      '§46), which neither conformance server runs.',
+    standIn: null,
+  },
+  {
+    reason: 'import_checksums_enabled',
+    code: 'failed_precondition',
+    why:
+      '`loams.postgres.v1` is served by the Postgres control plane (design ' +
+      '§46), which neither conformance server runs.',
+    standIn: null,
+  },
+  {
     reason: 'quota_exceeded',
     code: 'resource_exhausted',
     why:

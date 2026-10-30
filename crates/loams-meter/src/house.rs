@@ -63,6 +63,17 @@ impl HouseSql for RoleHouse {
             )),
         }
     }
+
+    async fn query_with(
+        &self,
+        sql: &str,
+        settings: &[(&str, String)],
+    ) -> std::result::Result<String, HouseError> {
+        match self {
+            RoleHouse::Http(h) => h.query_with(sql, settings).await,
+            RoleHouse::Absent => self.query(sql).await,
+        }
+    }
 }
 
 impl RoleHouse {
@@ -185,6 +196,113 @@ impl<H: HouseSql + 'static> crate::run::UsageSoFar for HouseUsageSoFar<H> {
         }
         loams_meter_core::Amount::parse(text)
             .map_err(|err| unavailable(format!("House answered {text:?}: {err}")))
+    }
+}
+
+/// [`crate::owner::HouseTotals`] over the House (D2401): the pipe's cursor
+/// for a partition from `system.loams_pipe_cursors`, and the totals of
+/// every metered entitlement of the partition's subjects from
+/// `_meter.events FINAL` pinned to the cursor's snapshot, so each event is
+/// on exactly one side of the split (§63 §12).
+pub struct HousePipeTotals<H> {
+    pub house: Arc<H>,
+    pub counters: Arc<crate::run::Counters>,
+    pub partitions: u32,
+    pub clock: Clock,
+}
+
+impl<H> fmt::Debug for HousePipeTotals<H> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("HousePipeTotals").finish_non_exhaustive()
+    }
+}
+
+fn owner_err(e: impl fmt::Display) -> crate::owner::OwnerError {
+    crate::owner::OwnerError::House(e.to_string())
+}
+
+#[async_trait]
+impl<H: HouseSql + 'static> crate::owner::HouseTotals for HousePipeTotals<H> {
+    async fn committed(
+        &self,
+        partition: u32,
+    ) -> std::result::Result<Option<(u64, i64)>, crate::owner::OwnerError> {
+        let answer = self
+            .house
+            .query(&sql::pipe_cursor_sql(partition))
+            .await
+            .map_err(owner_err)?;
+        let Some(line) = answer.lines().find(|l| !l.trim().is_empty()) else {
+            return Ok(None);
+        };
+        let (next, snapshot) = line
+            .split_once('\t')
+            .ok_or_else(|| owner_err(format!("a pipe cursor row: {line:?}")))?;
+        let next: u64 = next.trim().parse().map_err(owner_err)?;
+        let snapshot: i64 = snapshot.trim().parse().map_err(owner_err)?;
+        // The cursor is the next offset to read; nothing committed yet is 0.
+        Ok(next.checked_sub(1).map(|committed| (committed, snapshot)))
+    }
+
+    async fn totals(
+        &self,
+        partition: u32,
+        _committed: u64,
+        snapshot: i64,
+    ) -> std::result::Result<
+        Vec<(crate::owner::CounterKey, loams_meter_core::Amount)>,
+        crate::owner::OwnerError,
+    > {
+        use std::collections::BTreeMap;
+        let now = (self.clock)();
+        let catalog = self.counters.catalog();
+        // (feature, period) → subjects of this partition.
+        let mut groups: BTreeMap<(String, i64, i64), (sql::FeatureDef, Vec<String>, UtcNanos)> =
+            BTreeMap::new();
+        for (e, f, m) in catalog.metered() {
+            if crate::owner::partition_of(e.subject.as_str(), self.partitions) != partition {
+                continue;
+            }
+            let Some(usage_period) = e.usage_period() else {
+                continue;
+            };
+            let period = usage_period.period_at(now);
+            let secs = |t: UtcNanos| t.0.div_euclid(UtcNanos::SECOND);
+            let key = (f.key.to_string(), secs(period.start), secs(period.end));
+            groups
+                .entry(key)
+                .or_insert_with(|| (feature_def(f, m), Vec::new(), period.start))
+                .1
+                .push(e.subject.to_string());
+        }
+        let mut out = Vec::new();
+        for ((feature, start, end), (def, subjects, period_start)) in groups {
+            let refs: Vec<&str> = subjects.iter().map(String::as_str).collect();
+            let answer = self
+                .house
+                .query_with(
+                    &sql::pinned_totals_sql(&refs, &def, start, end),
+                    &[(sql::SNAPSHOT_SETTING, snapshot.to_string())],
+                )
+                .await
+                .map_err(owner_err)?;
+            for line in answer.lines().filter(|l| !l.trim().is_empty()) {
+                let (subject, value) = line
+                    .split_once('\t')
+                    .ok_or_else(|| owner_err(format!("a totals row: {line:?}")))?;
+                let amount = loams_meter_core::Amount::parse(value.trim()).map_err(owner_err)?;
+                out.push((
+                    crate::owner::CounterKey {
+                        subject: loams_meter_core::SubjectKey::new(subject).map_err(owner_err)?,
+                        feature: loams_meter_core::FeatureKey::new(feature.clone())
+                            .map_err(owner_err)?,
+                        period_start,
+                    },
+                    amount,
+                ));
+            }
+        }
+        Ok(out)
     }
 }
 
