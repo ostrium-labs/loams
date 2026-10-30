@@ -411,6 +411,40 @@ mod tests {
         assert_eq!(read_meta(&mut txn, 0, b"str").await.expect("a read"), None);
     }
 
+    /// Emptying a set deletes it and queues its version for GC; creating it
+    /// again in the same transaction (one start timestamp) must take a new
+    /// version, or the new set would share data keys and length shards with
+    /// the dead one and lose them to its GC (the model test's minimal case).
+    #[tokio::test]
+    async fn recreated_in_one_transaction_gets_a_new_version() {
+        let mut txn = Recording {
+            ts: 1,
+            ..Recording::default()
+        };
+        assert_eq!(
+            add(&mut txn, 0, b"k", &v(&["9"]), 0).await.expect("sadd"),
+            Ok(1)
+        );
+        assert_eq!(
+            rem(&mut txn, 0, b"k", &v(&["9"]), 0).await.expect("srem"),
+            Ok(1)
+        );
+        assert_eq!(
+            add(&mut txn, 0, b"k", &v(&["0"]), 0).await.expect("sadd"),
+            Ok(1)
+        );
+        assert_eq!(card(&mut txn, 0, b"k", 0).await.expect("scard"), Ok(1));
+        assert_eq!(
+            members(&mut txn, 0, b"k", 0).await.expect("smembers"),
+            Ok(v(&["0"]))
+        );
+        let meta = read_meta(&mut txn, 0, b"k")
+            .await
+            .expect("a read")
+            .expect("a set");
+        assert_eq!(meta.ver, 2, "version 1 waits for GC");
+    }
+
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(128))]
 

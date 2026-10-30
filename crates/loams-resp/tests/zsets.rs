@@ -56,8 +56,14 @@ async fn zadd_score_rank_and_ranges() {
             c.call(&["ZADD", "z", "x", "a"]).await,
             Value::err("ERR value is not a valid float")
         );
+        // ZADD's arity is -4 (Valkey checks it before the options): two
+        // arguments are an arity error, not a syntax error.
         assert_eq!(
             c.call(&["ZADD", "z", "1"]).await,
+            Value::err("ERR wrong number of arguments for 'zadd' command")
+        );
+        assert_eq!(
+            c.call(&["ZADD", "z", "NX", "1"]).await,
             Value::err("ERR syntax error")
         );
         assert_eq!(c.call(&["ZCARD", "z"]).await, int(4));
