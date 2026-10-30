@@ -159,7 +159,7 @@ pub(crate) struct StoreArgs {
     bucket: Option<String>,
     /// The engine's data directory (the embedded metastore, Durable's SQLite).
     #[arg(long)]
-    data_dir: PathBuf,
+    pub(crate) data_dir: PathBuf,
     /// Live's store, `tikv://<pd>[,<pd>]/<keyspace>` (Live migrations only).
     #[arg(long)]
     live_store: Option<String>,
@@ -195,13 +195,13 @@ fn this_release() -> &'static str {
 }
 
 /// A metastore handle and what keeps it alive.
-struct OpenStores {
-    cx: Cx,
+pub(crate) struct OpenStores {
+    pub(crate) cx: Cx,
     node: Option<MetaNode>,
 }
 
 impl OpenStores {
-    async fn close(self) {
+    pub(crate) async fn close(self) {
         if let Some(node) = self.node
             && let Err(err) = node.shutdown().await
         {
@@ -224,7 +224,7 @@ fn bucket_url(args: &StoreArgs) -> Result<String, String> {
         .map_err(|()| format!("{} is not an absolute path", dir.display()))
 }
 
-async fn open(args: &StoreArgs) -> Result<OpenStores, String> {
+pub(crate) async fn open(args: &StoreArgs) -> Result<OpenStores, String> {
     let store = Store::from_url(&bucket_url(args)?, Vec::<(String, String)>::new())
         .map_err(|e| format!("the bucket: {e}"))?;
     let (meta, node): (Arc<dyn MetaStore>, Option<MetaNode>) =

@@ -8529,6 +8529,7 @@ dependencies = [
  "loams-agentd-cli",
  "loams-apps-mock",
  "loams-authz",
+ "loams-ca",
  "loams-cache",
  "loams-cloud-admin",
  "loams-cloudevents",
@@ -8567,6 +8568,7 @@ dependencies = [
  "loams-store",
  "loams-stream-grpc",
  "loams-tikv",
+ "loams-transport",
  "loams-upgrade",
  "loams-worker",
  "loams-zitadel",
@@ -9001,6 +9003,28 @@ dependencies = [
  "serde_yaml_ng",
  "thiserror 2.0.21",
  "time",
+ "tokio",
+ "tower 0.5.3",
+ "tracing",
+]
+
+[[package]]
+name = "loams-ca"
+version = "0.1.3"
+dependencies = [
+ "age",
+ "async-trait",
+ "axum 0.8.9",
+ "base64 0.23.1",
+ "connectrpc",
+ "hex",
+ "loams-proto",
+ "loams-transport",
+ "rustls",
+ "rustls-pki-types",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
  "tokio",
  "tower 0.5.3",
  "tracing",

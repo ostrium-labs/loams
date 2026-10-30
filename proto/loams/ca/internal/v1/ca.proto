@@ -24,7 +24,9 @@ service CertificateService {
   // A fresh certificate for the identities the caller's current one holds
   // (never more). Refused for anything on the deny list.
   rpc Renew(RenewRequest) returns (RenewResponse);
-  // The roots peers verify against, current and (during a rotation) next.
+  // What peers verify against (§83 §6.2): the root, and the intermediates
+  // in service, which during a rotation are the new one and the old one for
+  // 30 days (§83 §6.6).
   rpc TrustBundle(TrustBundleRequest) returns (TrustBundleResponse) {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
@@ -53,8 +55,10 @@ message RenewResponse {
 message TrustBundleRequest {}
 
 message TrustBundleResponse {
-  // DER certificates.
+  // The root certificates, DER.
   repeated bytes roots = 1;
+  // The intermediates in service, the one that issues first; DER.
+  repeated bytes intermediates = 2;
 }
 
 message Certificate {

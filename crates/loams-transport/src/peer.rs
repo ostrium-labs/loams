@@ -78,3 +78,26 @@ pub fn peer_identity(chain: &[CertificateDer<'_>]) -> Result<PeerIdentity, PeerE
     }
     Ok(PeerIdentity { ids })
 }
+
+/// A verified peer as a listener hands it to the routes it serves: the
+/// leaf's identities and its serial, the two things the deny list and the CA
+/// service's `Renew` check (§83 §6.3, §6.5). The TLS layer inserts it into
+/// each request's extensions after the handshake verified the chain.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VerifiedPeer {
+    pub identity: PeerIdentity,
+    /// The leaf's serial as the certificate encodes it (R3.4).
+    pub serial: Vec<u8>,
+}
+
+/// The [`VerifiedPeer`] of a verified chain's leaf.
+pub fn verified_peer(chain: &[CertificateDer<'_>]) -> Result<VerifiedPeer, PeerError> {
+    let identity = peer_identity(chain)?;
+    let leaf = chain.first().ok_or(PeerError::NoCertificate)?;
+    let (_, cert) = x509_parser::parse_x509_certificate(leaf.as_ref())
+        .map_err(|e| PeerError::Parse(e.to_string()))?;
+    Ok(VerifiedPeer {
+        identity,
+        serial: cert.raw_serial().to_vec(),
+    })
+}

@@ -9,6 +9,8 @@ use std::collections::BTreeMap;
 
 use clap::{Parser, Subcommand};
 
+#[cfg(feature = "transport")]
+mod ca_cli;
 mod migrate_cli;
 #[cfg(feature = "postgres")]
 mod pg_control_cli;
@@ -1285,6 +1287,16 @@ enum Command {
         #[command(subcommand)]
         command: migrate_cli::MigrateCommand,
     },
+    /// The deployment's internal CA (design §83 §6, CT1 Task 3): `init`
+    /// makes the root and intermediate, `token` issues join tokens,
+    /// `revoke` adds to the deny list, `rotate intermediate` replaces the
+    /// intermediate, `status` shows it all. Works on the stores the way
+    /// `loams migrate` does.
+    #[cfg(feature = "transport")]
+    Ca {
+        #[command(subcommand)]
+        command: ca_cli::CaCommand,
+    },
     /// Upgrade a self-hosted compose stack one release at a time, with a
     /// snapshot first (design §54 §10): `check`, `status`, `snapshots`.
     Upgrade(loams_upgrade::UpgradeArgs),
@@ -1476,6 +1488,8 @@ fn config(command: Command) -> ServerConfig {
         Command::Durable { .. } => unreachable!("loams durable starts no server"),
         Command::Auth { .. } => unreachable!("loams auth starts no server"),
         Command::Migrate { .. } => unreachable!("loams migrate starts no server"),
+        #[cfg(feature = "transport")]
+        Command::Ca { .. } => unreachable!("loams ca starts no server"),
         Command::Upgrade(_) => unreachable!("loams upgrade starts no server"),
         Command::Cloud(_) => unreachable!("loams cloud starts no server"),
         #[cfg(feature = "knowledge")]
@@ -1738,6 +1752,8 @@ async fn serve(cli: Cli) -> ExitCode {
         cli.command,
         Command::Migrate { .. } | Command::Warm { .. } | Command::Auth { .. }
     );
+    #[cfg(feature = "transport")]
+    let logs_to_stderr = logs_to_stderr || matches!(cli.command, Command::Ca { .. });
     let logs = tracing_subscriber::fmt().with_env_filter(
         tracing_subscriber::EnvFilter::try_from_default_env()
             .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,openraft=warn")),
@@ -1761,6 +1777,10 @@ async fn serve(cli: Cli) -> ExitCode {
             unreachable!("matched above")
         };
         return migrate_cli::run(command).await;
+    }
+    #[cfg(feature = "transport")]
+    if let Command::Ca { command } = &cli.command {
+        return ca_cli::run(command).await;
     }
     #[cfg(feature = "postgres")]
     let cli = match cli.command {

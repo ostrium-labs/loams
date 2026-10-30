@@ -80,6 +80,9 @@ const FILES: &[&str] = &[
     // ME1 Task 17: internal (`loams.meter.internal.v1`, D2202), between gates
     // and counter owners; no SDK speaks it.
     "loams/meter/internal/v1/lease.proto",
+    // CT1 Task 3 (design §83 §6.3, D2310): the deployment CA's
+    // `CertificateService` on `meta` nodes; internal, no SDK speaks it.
+    "loams/ca/internal/v1/ca.proto",
 ];
 
 fn main() {
