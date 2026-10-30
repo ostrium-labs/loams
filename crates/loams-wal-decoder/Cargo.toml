@@ -49,10 +49,10 @@ tokio = { version = "=1.53.1", features = ["macros", "rt-multi-thread"] }
 # jsonwebtoken, opentelemetry_sdk and Neon's rust-postgres fork out of this
 # graph (their security advisories). pageserver_api and utils without their
 # default features.
-pageserver_api = { git = "https://github.com/ostrium-labs/loams-postgres", rev = "0bc9b0c5f70f7d94093fd1bd8ff647dfa8756815", default-features = false }
-postgres_ffi = { git = "https://github.com/ostrium-labs/loams-postgres", rev = "0bc9b0c5f70f7d94093fd1bd8ff647dfa8756815" }
-utils = { git = "https://github.com/ostrium-labs/loams-postgres", rev = "0bc9b0c5f70f7d94093fd1bd8ff647dfa8756815", default-features = false, features = ["rename_noreplace"] }
-wal_decoder = { git = "https://github.com/ostrium-labs/loams-postgres", rev = "0bc9b0c5f70f7d94093fd1bd8ff647dfa8756815" }
+pageserver_api = { git = "https://github.com/ostrium-labs/loams-postgres", rev = "f7e1e456038b114979012d7b77de143887828da4", default-features = false }
+postgres_ffi = { git = "https://github.com/ostrium-labs/loams-postgres", rev = "f7e1e456038b114979012d7b77de143887828da4" }
+utils = { git = "https://github.com/ostrium-labs/loams-postgres", rev = "f7e1e456038b114979012d7b77de143887828da4", default-features = false, features = ["rename_noreplace"] }
+wal_decoder = { git = "https://github.com/ostrium-labs/loams-postgres", rev = "f7e1e456038b114979012d7b77de143887828da4" }
 
 [dev-dependencies]
 serde_json = "=1.0.151"

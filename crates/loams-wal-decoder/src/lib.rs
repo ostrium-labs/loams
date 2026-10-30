@@ -59,6 +59,9 @@ pub fn major(pg_server_version: u32) -> Result<PgMajorVersion, DecodeError> {
         15 => Ok(PgMajorVersion::PG15),
         16 => Ok(PgMajorVersion::PG16),
         17 => Ok(PgMajorVersion::PG17),
+        // Beta in Loams Postgres until NF2 Task 14 (the fork decodes 18 from
+        // its Task 5: 16-byte stats items, unknown resource managers refused).
+        18 => Ok(PgMajorVersion::PG18),
         other => Err(DecodeError(format!(
             "unsupported Postgres major version {other}"
         ))),
@@ -222,7 +225,14 @@ mod tests {
         assert!(matches!(major(170_005), Ok(PgMajorVersion::PG17)));
         assert!(matches!(major(160_009), Ok(PgMajorVersion::PG16)));
         assert!(major(130_000).is_err());
-        assert!(major(180_000).is_err());
+        assert!(major(190_000).is_err());
+    }
+
+    /// NF2 Task 10: 18's server versions decode as 18.
+    #[test]
+    fn decoder_major_18() {
+        assert!(matches!(major(180_006), Ok(PgMajorVersion::PG18)));
+        assert!(matches!(major(180_000), Ok(PgMajorVersion::PG18)));
     }
 
     #[test]

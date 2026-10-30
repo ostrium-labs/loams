@@ -1957,7 +1957,7 @@ dependencies = [
 [[package]]
 name = "metrics"
 version = "0.1.0"
-source = "git+https://github.com/ostrium-labs/loams-postgres?rev=0bc9b0c5f70f7d94093fd1bd8ff647dfa8756815#0bc9b0c5f70f7d94093fd1bd8ff647dfa8756815"
+source = "git+https://github.com/ostrium-labs/loams-postgres?rev=f7e1e456038b114979012d7b77de143887828da4#f7e1e456038b114979012d7b77de143887828da4"
 dependencies = [
  "chrono",
  "libc",
@@ -2098,7 +2098,7 @@ dependencies = [
 [[package]]
 name = "pageserver_api"
 version = "0.1.0"
-source = "git+https://github.com/ostrium-labs/loams-postgres?rev=0bc9b0c5f70f7d94093fd1bd8ff647dfa8756815#0bc9b0c5f70f7d94093fd1bd8ff647dfa8756815"
+source = "git+https://github.com/ostrium-labs/loams-postgres?rev=f7e1e456038b114979012d7b77de143887828da4#f7e1e456038b114979012d7b77de143887828da4"
 dependencies = [
  "anyhow",
  "byteorder",
@@ -2251,7 +2251,7 @@ dependencies = [
 [[package]]
 name = "postgres_backend"
 version = "0.1.0"
-source = "git+https://github.com/ostrium-labs/loams-postgres?rev=0bc9b0c5f70f7d94093fd1bd8ff647dfa8756815#0bc9b0c5f70f7d94093fd1bd8ff647dfa8756815"
+source = "git+https://github.com/ostrium-labs/loams-postgres?rev=f7e1e456038b114979012d7b77de143887828da4#f7e1e456038b114979012d7b77de143887828da4"
 dependencies = [
  "anyhow",
  "bytes",
@@ -2268,7 +2268,7 @@ dependencies = [
 [[package]]
 name = "postgres_ffi"
 version = "0.1.0"
-source = "git+https://github.com/ostrium-labs/loams-postgres?rev=0bc9b0c5f70f7d94093fd1bd8ff647dfa8756815#0bc9b0c5f70f7d94093fd1bd8ff647dfa8756815"
+source = "git+https://github.com/ostrium-labs/loams-postgres?rev=f7e1e456038b114979012d7b77de143887828da4#f7e1e456038b114979012d7b77de143887828da4"
 dependencies = [
  "anyhow",
  "bindgen",
@@ -2287,7 +2287,7 @@ dependencies = [
 [[package]]
 name = "postgres_ffi_types"
 version = "0.1.0"
-source = "git+https://github.com/ostrium-labs/loams-postgres?rev=0bc9b0c5f70f7d94093fd1bd8ff647dfa8756815#0bc9b0c5f70f7d94093fd1bd8ff647dfa8756815"
+source = "git+https://github.com/ostrium-labs/loams-postgres?rev=f7e1e456038b114979012d7b77de143887828da4#f7e1e456038b114979012d7b77de143887828da4"
 dependencies = [
  "thiserror 1.0.69",
  "workspace_hack",
@@ -2296,7 +2296,7 @@ dependencies = [
 [[package]]
 name = "postgres_versioninfo"
 version = "0.1.0"
-source = "git+https://github.com/ostrium-labs/loams-postgres?rev=0bc9b0c5f70f7d94093fd1bd8ff647dfa8756815#0bc9b0c5f70f7d94093fd1bd8ff647dfa8756815"
+source = "git+https://github.com/ostrium-labs/loams-postgres?rev=f7e1e456038b114979012d7b77de143887828da4#f7e1e456038b114979012d7b77de143887828da4"
 dependencies = [
  "anyhow",
  "serde",
@@ -2308,7 +2308,7 @@ dependencies = [
 [[package]]
 name = "posthog_client_lite"
 version = "0.1.0"
-source = "git+https://github.com/ostrium-labs/loams-postgres?rev=0bc9b0c5f70f7d94093fd1bd8ff647dfa8756815#0bc9b0c5f70f7d94093fd1bd8ff647dfa8756815"
+source = "git+https://github.com/ostrium-labs/loams-postgres?rev=f7e1e456038b114979012d7b77de143887828da4#f7e1e456038b114979012d7b77de143887828da4"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -2338,7 +2338,7 @@ checksum = "5b40af805b3121feab8a3c29f04d8ad262fa8e0561883e7653e024ae4479e6de"
 [[package]]
 name = "pq_proto"
 version = "0.1.0"
-source = "git+https://github.com/ostrium-labs/loams-postgres?rev=0bc9b0c5f70f7d94093fd1bd8ff647dfa8756815#0bc9b0c5f70f7d94093fd1bd8ff647dfa8756815"
+source = "git+https://github.com/ostrium-labs/loams-postgres?rev=f7e1e456038b114979012d7b77de143887828da4#f7e1e456038b114979012d7b77de143887828da4"
 dependencies = [
  "byteorder",
  "bytes",
@@ -2549,7 +2549,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash 2.1.1",
  "rustls",
- "socket2 0.6.5",
+ "socket2 0.5.5",
  "thiserror 2.0.11",
  "tokio",
  "tracing",
@@ -2587,7 +2587,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.5",
+ "socket2 0.5.5",
  "tracing",
  "windows-sys 0.61.2",
 ]
@@ -4045,7 +4045,7 @@ checksum = "711b9620af191e0cdc7468a8d14e709c3dcdb115b36f838e601583af800a370a"
 [[package]]
 name = "utils"
 version = "0.1.0"
-source = "git+https://github.com/ostrium-labs/loams-postgres?rev=0bc9b0c5f70f7d94093fd1bd8ff647dfa8756815#0bc9b0c5f70f7d94093fd1bd8ff647dfa8756815"
+source = "git+https://github.com/ostrium-labs/loams-postgres?rev=f7e1e456038b114979012d7b77de143887828da4#f7e1e456038b114979012d7b77de143887828da4"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -4112,7 +4112,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 [[package]]
 name = "wal_decoder"
 version = "0.1.0"
-source = "git+https://github.com/ostrium-labs/loams-postgres?rev=0bc9b0c5f70f7d94093fd1bd8ff647dfa8756815#0bc9b0c5f70f7d94093fd1bd8ff647dfa8756815"
+source = "git+https://github.com/ostrium-labs/loams-postgres?rev=f7e1e456038b114979012d7b77de143887828da4#f7e1e456038b114979012d7b77de143887828da4"
 dependencies = [
  "anyhow",
  "async-compression",
