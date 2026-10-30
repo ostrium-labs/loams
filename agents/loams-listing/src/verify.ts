@@ -82,7 +82,7 @@ export function integrityHex(integrity: string): string | undefined {
 }
 
 export function npmDocumentUrl(name: string, version: string): string {
-  return `https://registry.npmjs.org/${name.replace('/', '%2f')}/${version}`;
+  return `https://registry.npmjs.org/${name.replaceAll('/', '%2f')}/${encodeURIComponent(version)}`;
 }
 
 export interface VerifyOptions {

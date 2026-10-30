@@ -196,12 +196,19 @@ export function fromLiveValue(v: unknown): unknown {
   return null;
 }
 
+/** Drops trailing `/`s with a linear scan (a `/\/+$/` regex is quadratic on many inner slashes). */
+function trimTrailingSlashes(s: string): string {
+  let end = s.length;
+  while (end > 0 && s.charCodeAt(end - 1) === 47) end -= 1;
+  return s.slice(0, end);
+}
+
 /**
  * The Live app `factory` over Connect JSON. FT0 talks to the local engine's Live,
  * which has no authentication in the light stack (ruling FT0-9-2); no token is sent.
  */
 export function liveRunStore(baseUrl: string, fetchFn: typeof fetch = fetch): RunStore {
-  const url = `${baseUrl.replace(/\/+$/, '')}/loams.live.v1.LiveService/Mutate`;
+  const url = `${trimTrailingSlashes(baseUrl)}/loams.live.v1.LiveService/Mutate`;
   return {
     async record(t) {
       const response = await fetchFn(url, {
@@ -235,7 +242,7 @@ export function streamProducer(
   ns: string,
   fetchFn: typeof fetch = fetch,
 ): ProduceEvent {
-  const url = `${baseUrl.replace(/\/+$/, '')}/v1/namespaces/${encodeURIComponent(ns)}/streams/${EVENTS_STREAM}/events?partition=0`;
+  const url = `${trimTrailingSlashes(baseUrl)}/v1/namespaces/${encodeURIComponent(ns)}/streams/${EVENTS_STREAM}/events?partition=0`;
   return async (event) => {
     const response = await fetchFn(url, {
       method: 'POST',
