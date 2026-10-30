@@ -88,6 +88,7 @@ cargo_package(
         "//crates/loams-authz:loams-authz",
         "//crates/loams-cloudevents:loams-cloudevents",
         "//crates/loams-common:loams-common",
+        "//crates/loams-cost:loams-cost",
         "//crates/loams-meter-core:loams-meter-core",
         "//crates/loams-meter-gate:loams-meter-gate",
         "//crates/loams-meter-house:loams-meter-house",

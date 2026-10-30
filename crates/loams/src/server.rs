@@ -3297,36 +3297,38 @@ impl Server {
         // `_system/_meter` by fenced leases in the metastore), and a cluster
         // node serves the internal `LeaseService` on its cluster listener.
         #[cfg(feature = "meter")]
-        let (meter, meter_runtime, meter_internal, meter_main, meter_public) = if roles.gateway {
-            match api::meter::build(
-                meta_store.clone(),
-                store.clone(),
-                reader.clone(),
-                node_id,
-                &principals,
-                writer.clone(),
-                &config.meter,
-                &config.data_dir,
-                meter_advertise,
-            ) {
-                Ok(node) => {
-                    let started = node.start();
-                    (
-                        Some(started.role),
-                        Some(started.runtime),
-                        Some(started.internal),
-                        Some(started.main),
-                        Some(started.public),
-                    )
+        let (meter, meter_runtime, meter_internal, meter_main, meter_public, meter_gate) =
+            if roles.gateway {
+                match api::meter::build(
+                    meta_store.clone(),
+                    store.clone(),
+                    reader.clone(),
+                    node_id,
+                    &principals,
+                    writer.clone(),
+                    &config.meter,
+                    &config.data_dir,
+                    meter_advertise,
+                ) {
+                    Ok(node) => {
+                        let started = node.start();
+                        (
+                            Some(started.role),
+                            Some(started.runtime),
+                            Some(started.internal),
+                            Some(started.main),
+                            Some(started.public),
+                            Some(started.entitlements),
+                        )
+                    }
+                    Err(err) => {
+                        tracing::warn!(%err, "Loams Meter's services are off on this node");
+                        (None, None, None, None, None, None)
+                    }
                 }
-                Err(err) => {
-                    tracing::warn!(%err, "Loams Meter's services are off on this node");
-                    (None, None, None, None, None)
-                }
-            }
-        } else {
-            (None, None, None, None, None)
-        };
+            } else {
+                (None, None, None, None, None, None)
+            };
         let state = AppState {
             meta: meta_store.clone(),
             writer: writer.clone(),
@@ -3360,6 +3362,8 @@ impl Server {
             durable: durable.filter(|_| main_port_serves_durable(config)),
             #[cfg(feature = "meter")]
             meter,
+            #[cfg(feature = "meter")]
+            meter_gate: meter_gate.clone(),
         };
         let (app, tailscale, connect_socket) = match (roles.gateway, config.cluster.is_some()) {
             (true, false) => {
@@ -3440,6 +3444,15 @@ impl Server {
                 meta: meta_store.clone(),
                 writer: writer.clone(),
             });
+            // The meter's gate on produce (D2400): stream_ingest_bytes.
+            #[cfg(feature = "meter")]
+            let streams: Arc<dyn StreamProducer> = match &meter_gate {
+                Some(e) => Arc::new(loams_query::metered::MeteredProducer::new(
+                    streams,
+                    e.clone(),
+                )),
+                None => streams,
+            };
             // Each statement's graph reads are its principal's (GR1 R24.12).
             let principals = principals.clone();
             let graph_callers: loams_query::flight::GraphCallers = Arc::new(move |extensions| {
@@ -3461,6 +3474,15 @@ impl Server {
                 meta: meta_store.clone(),
                 writer: writer.clone(),
             });
+            // The meter's gate on produce (D2400): stream_ingest_bytes.
+            #[cfg(feature = "meter")]
+            let streams: Arc<dyn StreamProducer> = match &meter_gate {
+                Some(e) => Arc::new(loams_query::metered::MeteredProducer::new(
+                    streams,
+                    e.clone(),
+                )),
+                None => streams,
+            };
             let events: Arc<dyn loams_stream_grpc::EventProducer> =
                 Arc::new(api::events::NativeEventProducer {
                     meta: meta_store.clone(),

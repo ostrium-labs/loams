@@ -95,6 +95,10 @@ const std::vector<RegistryRow>& Registry() {
       {Reason::kLsnOutOfRetention, Code::kFailedPrecondition, "oldest_lsn"},
       {Reason::kEndpointExistsForBranch, Code::kAlreadyExists, "endpoint"},
       {Reason::kComputeStartFailed, Code::kUnavailable, "compute"},
+      {Reason::kUnsupportedPgVersion, Code::kInvalidArgument, "field"},
+      {Reason::kBetaMajorRequiresOptIn, Code::kFailedPrecondition, "field"},
+      {Reason::kComputeMajorMismatchRefused, Code::kFailedPrecondition, ""},
+      {Reason::kImportChecksumsEnabled, Code::kFailedPrecondition, ""},
       {Reason::kQuotaExceeded, Code::kResourceExhausted, "quota"},
       {Reason::kStorageUnavailable, Code::kUnavailable, "component"},
       {Reason::kSecretAlreadyIssued, Code::kFailedPrecondition, "role"},
@@ -361,7 +365,7 @@ int main() {
   // matched, which is how a caller stops branching on it.
   const std::vector<Reason>& all = AllReasons();
   LOAMS_REQUIRE(!all.empty(), "the reason registry is empty");
-  LOAMS_CHECK_EQ(all.size(), std::size_t{132}, "the registry should carry all one hundred and thirty-two reasons");
+  LOAMS_CHECK_EQ(all.size(), std::size_t{136}, "the registry should carry all one hundred and thirty-six reasons");
   LOAMS_CHECK_EQ(Registry().size(), all.size(), "this test's registry table and the enum disagree in size");
   for (const Reason reason : all) {
     LOAMS_CHECK(!ToString(reason).empty(), "a reason with no registry spelling");

@@ -1683,3 +1683,86 @@ html[data-platform="win32"] .lc-shell,
 html[data-platform="linux"] .lc-shell {
   --lc-wco-end: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
 }
+
+/* Desktop: Transfers (plugin-desktop-transfers, design 85). */
+.lc-transfers .lc-transfer-target {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+.lc-transfer-list,
+.lc-transfer-remote {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lc-transfer {
+  display: grid;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--op-rule);
+}
+.lc-transfer:last-child {
+  border-bottom: 0;
+}
+.lc-transfer-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.lc-transfer-head .lc-muted {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-transfer progress {
+  width: 100%;
+  height: 6px;
+  accent-color: var(--op-accent);
+}
+.lc-transfer-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+.lc-transfer-stats dt {
+  color: var(--op-muted);
+  font-size: 12px;
+}
+.lc-transfer-stats dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.lc-transfer-log {
+  max-height: 320px;
+  overflow: auto;
+  margin: 0;
+  padding: 8px;
+  border: 1px solid var(--op-rule);
+  border-radius: var(--op-radius-md);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.lc-transfer-remote li {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) 1fr 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+.lc-transfer-remote code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lc-transfer-key,
+.lc-transfer-run {
+  display: grid;
+  gap: 8px;
+  max-width: 480px;
+}

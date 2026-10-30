@@ -275,6 +275,20 @@ async fn post(addr: SocketAddr, sql: &str) -> Response {
         .expect("client")
 }
 
+/// `sql` with Loams settings in the request, as `HouseSql::query_with`
+/// sends them.
+async fn ok_with(addr: SocketAddr, sql: &str, settings: &[(&str, &str)]) -> String {
+    let mut params = vec![("user", "meter"), ("password", "m")];
+    params.extend_from_slice(settings);
+    let target = target(&params);
+    let body = sql.as_bytes().to_vec();
+    let response = tokio::task::spawn_blocking(move || request(addr, "POST", &target, &[], &body))
+        .await
+        .expect("client");
+    assert_eq!(response.status, 200, "{sql}: {}", response.text());
+    response.text()
+}
+
 async fn ok(addr: SocketAddr, sql: &str) -> String {
     let response = post(addr, sql).await;
     assert_eq!(response.status, 200, "{sql}: {}", response.text());
@@ -718,4 +732,109 @@ async fn query_marks_provisional_open_window() {
         (whole.rows[0].window_start, whole.rows[0].window_end),
         (H09, H10)
     );
+}
+
+/// `system.loams_pipe_cursors`' answer for `_meter.events` and `partition`,
+/// as the meter reads it (D2401): `(next_offset, snapshot_id)`, or `None`.
+async fn cursor(house: &Lakehouse, partition: u32) -> Option<(u64, i64)> {
+    let answer = ok(house.addr(), &meter_sql::pipe_cursor_sql(partition)).await;
+    let line = answer.lines().find(|l| !l.trim().is_empty())?;
+    let (next, snapshot) = line.split_once('\t').expect("two columns");
+    Some((
+        next.parse().expect("next_offset"),
+        snapshot.parse().expect("snapshot_id"),
+    ))
+}
+
+/// `pipe_cursor_and_pinned_totals_split_exactly` (ME1, D2401; §63 §12): the
+/// two statements the meter's reconciliation runs, against a real House.
+/// `system.loams_pipe_cursors` answers each partition's next offset with
+/// the snapshot that holds exactly the records below it, and
+/// `_meter.events FINAL` pinned to that snapshot sums those records only,
+/// with a duplicate counted once.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn pipe_cursor_and_pinned_totals_split_exactly() {
+    const H09: i64 = 1_792_400_400;
+    const H10: i64 = 1_792_404_000;
+    let house = Lakehouse::start("meter-cursor").await;
+    house.schema().await;
+    // Nothing piped yet: no cursor.
+    assert_eq!(cursor(&house, 0).await, None);
+
+    house.push(
+        0,
+        &[
+            usage("q-1/1", "org_42", "2026-10-19T09:14:03Z", 1840),
+            usage("q-2/1", "org_42", "2026-10-19T09:40:00Z", 160),
+            usage("q-3/1", "org_7", "2026-10-19T09:41:00Z", 5),
+        ],
+    );
+    house.push(1, &[usage("q-4/1", "org_9", "2026-10-19T09:42:00Z", 7)]);
+    house.drain().await;
+    let (next0, first) = cursor(&house, 0).await.expect("partition 0's cursor");
+    assert_eq!(next0, 3);
+    let (next1, snapshot1) = cursor(&house, 1).await.expect("partition 1's cursor");
+    assert_eq!(next1, 1);
+    // One table, one current snapshot for all of its cursors.
+    assert_eq!(snapshot1, first);
+    // A partition the pipe never read has no row.
+    assert_eq!(cursor(&house, 5).await, None);
+
+    let sum = meter_sql::FeatureDef {
+        key: "house_cpu".to_string(),
+        meter: cpu_meter(),
+        filter: vec![("namespace".to_string(), "7".to_string())],
+        byte_hours: false,
+    };
+    let mut count = sum.clone();
+    count.key = "house_queries".to_string();
+    count.meter.slug = "house_queries".to_string();
+    count.meter.aggregation = meter_sql::Aggregation::Count;
+    count.meter.value_property = None;
+    let addr = house.addr();
+    let totals = |feature: meter_sql::FeatureDef, snapshot: i64| async move {
+        let sql = meter_sql::pinned_totals_sql(&["org_42", "org_7"], &feature, H09, H10);
+        // The snapshot goes with the request (`HouseSql::query_with`); a
+        // SETTINGS clause would be chDB's, which refuses it (115).
+        sorted(
+            &ok_with(
+                addr,
+                &sql,
+                &[(meter_sql::SNAPSHOT_SETTING, &snapshot.to_string())],
+            )
+            .await,
+        )
+    };
+    assert_eq!(totals(sum.clone(), first).await, "org_42\t2000\norg_7\t5\n");
+
+    // A second batch: a new event and a re-emission of q-1/1.
+    house.push(
+        0,
+        &[
+            usage("q-5/1", "org_42", "2026-10-19T09:50:00Z", 100),
+            usage("q-1/1", "org_42", "2026-10-19T09:14:03Z", 1840),
+        ],
+    );
+    tokio::time::sleep(Duration::from_millis(2_100)).await;
+    house.drain().await;
+    let (next0, second) = cursor(&house, 0).await.expect("partition 0's cursor");
+    assert_eq!(next0, 5);
+    assert_ne!(second, first, "the second batch is a new snapshot");
+
+    // Pinned to the first snapshot: the first batch only.
+    assert_eq!(totals(sum.clone(), first).await, "org_42\t2000\norg_7\t5\n");
+    assert_eq!(totals(count.clone(), first).await, "org_42\t2\norg_7\t1\n");
+    // Pinned to the second: both batches, the duplicate once.
+    assert_eq!(
+        totals(sum.clone(), second).await,
+        "org_42\t2100\norg_7\t5\n"
+    );
+    assert_eq!(totals(count.clone(), second).await, "org_42\t3\norg_7\t1\n");
+}
+
+/// The lines of a TSV answer, sorted (`GROUP BY` has no order).
+fn sorted(answer: &str) -> String {
+    let mut lines: Vec<&str> = answer.lines().collect();
+    lines.sort_unstable();
+    lines.iter().map(|l| format!("{l}\n")).collect()
 }

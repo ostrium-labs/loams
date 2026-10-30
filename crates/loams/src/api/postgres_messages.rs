@@ -15,6 +15,7 @@ use loams_pg_control::service::ServiceError;
 use loams_pg_control::service::branches::BranchView;
 use loams_pg_control::service::connect::ConnectionInfo;
 use loams_pg_control::service::endpoints::EndpointView;
+use loams_pg_control::service::projects::{PgVersionInfo, PgVersionState};
 use loams_pg_control::service::watch::{ProjectSnapshot, ResourceKind, WatchEvent, WatchItem};
 use loams_postgres::Lsn;
 use loams_proto::google::protobuf::{Duration as PbDuration, FieldMask, Timestamp};
@@ -154,6 +155,23 @@ pub(super) fn branch(v: &BranchView) -> pb::Branch {
         create_time: MessageField::some(timestamp(r.created_at_ms)),
         update_time: MessageField::some(timestamp(r.updated_at_ms.max(r.created_at_ms))),
         version: v.branch.version,
+        pg_version: v.pg_version,
+        ..Default::default()
+    }
+}
+
+/// One major of `ListPgVersions`.
+pub(super) fn pg_version(v: &PgVersionInfo) -> pb::PgVersion {
+    pb::PgVersion {
+        major: v.major,
+        state: EnumValue::Known(match v.state {
+            PgVersionState::Supported => pb::PgVersionState::PG_VERSION_STATE_SUPPORTED,
+            PgVersionState::Beta => pb::PgVersionState::PG_VERSION_STATE_BETA,
+            PgVersionState::Maintenance => pb::PgVersionState::PG_VERSION_STATE_MAINTENANCE,
+        }),
+        is_default: v.is_default,
+        minor: v.minor.clone(),
+        eol_date: v.eol_date.clone(),
         ..Default::default()
     }
 }

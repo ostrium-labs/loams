@@ -1059,14 +1059,19 @@ impl<S: PgControlStore, N: NeonWrite> One<'_, '_, S, N> {
         if project.state != ProjectState::Ready || branch.record.state != BranchState::Ready {
             return Ok(Step::Again(self.act.ctx.config.retry_initial));
         }
-        let Some(image) = self.c.images.get(&project.pg_version).cloned() else {
+        // The branch's major, which after an upgrade by branch can differ
+        // from the project's (design 62 §9.2).
+        let major = branch.record.major(project);
+        let Some(image) = self.c.images.get(&major).cloned() else {
             return self
                 .fail(format!(
-                    "no compute image is configured for Postgres {}",
-                    project.pg_version
+                    "no compute image is configured for Postgres {major}"
                 ))
                 .await;
         };
+        if let Err(why) = crate::runtime::images::check_compute_major(&image, major) {
+            return self.fail(why).await;
+        }
         if self.compute.is_none() && !self.take_warm(&image).await? {
             self.create_compute().await?;
         }

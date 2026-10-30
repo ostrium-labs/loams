@@ -3700,6 +3700,18 @@ cargo.rust_library(
     visibility = [],
 )
 
+cargo_alias(
+    name = "aws-lc-rs",
+    actual = ":aws-lc-rs-1",
+    platforms = [
+        "linux-arm64",
+        "linux-x86_64",
+        "macos-arm64",
+        "macos-x86_64",
+    ],
+    visibility = ["PUBLIC"],
+)
+
 http_archive(
     name = "aws-lc-rs-1.18.1.crate",
     sha256 = "b281d307588d634de920874890732659e2e7672f72b5e10e81badc1a8a83621e",
@@ -9858,6 +9870,18 @@ cargo.rust_library(
         ":hybrid-array-0.4",
         ":rand_core-0.10",
     ],
+)
+
+cargo_alias(
+    name = "csv",
+    actual = ":csv-1",
+    platforms = [
+        "linux-arm64",
+        "linux-x86_64",
+        "macos-arm64",
+        "macos-x86_64",
+    ],
+    visibility = ["PUBLIC"],
 )
 
 http_archive(
@@ -20104,6 +20128,18 @@ cargo.rust_library(
     ],
 )
 
+cargo_alias(
+    name = "glob",
+    actual = ":glob-0.3",
+    platforms = [
+        "linux-arm64",
+        "linux-x86_64",
+        "macos-arm64",
+        "macos-x86_64",
+    ],
+    visibility = ["PUBLIC"],
+)
+
 http_archive(
     name = "glob-0.3.4.crate",
     sha256 = "e4eba85ea1d0a966a983acd07deee566e67395d2d96b6fb39e62b5a833f1eb0b",
@@ -20730,6 +20766,114 @@ cargo.rust_library(
         ":tokio-1",
         ":tokio-util-0.7",
         ":tracing-0.1",
+    ],
+)
+
+cargo_alias(
+    name = "h3",
+    actual = ":h3-0.0.8",
+    platforms = [
+        "linux-arm64",
+        "linux-x86_64",
+        "macos-arm64",
+        "macos-x86_64",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+http_archive(
+    name = "h3-0.0.8.crate",
+    sha256 = "10872b55cfb02a821b69dc7cf8dc6a71d6af25eb9a79662bec4a9d016056b3be",
+    strip_prefix = "h3-0.0.8",
+    urls = ["https://static.crates.io/crates/h3/0.0.8/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "h3-0.0.8",
+    srcs = [":h3-0.0.8.crate"],
+    crate = "h3",
+    crate_root = "h3-0.0.8.crate/src/lib.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "h3",
+        "CARGO_CRATE_NAME": "h3",
+        "CARGO_MANIFEST_DIR": "h3-0.0.8.crate",
+        "CARGO_PKG_AUTHORS": "Sean McArthur <sean@seanmonstar.com>:Jean-Christophe BEGUE <jc.begue@pm.me>",
+        "CARGO_PKG_DESCRIPTION": "An async HTTP/3 implementation.",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "h3",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/hyperium/h3",
+        "CARGO_PKG_RUST_VERSION": "1.70",
+        "CARGO_PKG_VERSION": "0.0.8",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "0",
+        "CARGO_PKG_VERSION_PATCH": "8",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
+    deps = [
+        ":bytes-1",
+        ":fastrand-2",
+        ":futures-util-0.3",
+        ":http-1",
+        ":pin-project-lite-0.2",
+        ":tokio-1",
+    ],
+)
+
+cargo_alias(
+    name = "h3-quinn",
+    actual = ":h3-quinn-0.0.10",
+    platforms = [
+        "linux-arm64",
+        "linux-x86_64",
+        "macos-arm64",
+        "macos-x86_64",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+http_archive(
+    name = "h3-quinn-0.0.10.crate",
+    sha256 = "8b2e732c8d91a74731663ac8479ab505042fbf547b9a207213ab7fbcbfc4f8b4",
+    strip_prefix = "h3-quinn-0.0.10",
+    urls = ["https://static.crates.io/crates/h3-quinn/0.0.10/download"],
+    visibility = [],
+)
+
+cargo.rust_library(
+    name = "h3-quinn-0.0.10",
+    srcs = [":h3-quinn-0.0.10.crate"],
+    crate = "h3_quinn",
+    crate_root = "h3-quinn-0.0.10.crate/src/lib.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "h3_quinn",
+        "CARGO_CRATE_NAME": "h3_quinn",
+        "CARGO_MANIFEST_DIR": "h3-quinn-0.0.10.crate",
+        "CARGO_PKG_AUTHORS": "Jean-Christophe BEGUE <jc.begue@pm.me>",
+        "CARGO_PKG_DESCRIPTION": "QUIC transport implementation based on Quinn.",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "h3-quinn",
+        "CARGO_PKG_README": "README.md",
+        "CARGO_PKG_REPOSITORY": "https://github.com/hyperium/h3",
+        "CARGO_PKG_RUST_VERSION": "1.70",
+        "CARGO_PKG_VERSION": "0.0.10",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "0",
+        "CARGO_PKG_VERSION_PATCH": "10",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
+    deps = [
+        ":bytes-1",
+        ":futures-0.3",
+        ":h3-0.0.8",
+        ":quinn-0.11",
+        ":tokio-1",
+        ":tokio-util-0.7",
     ],
 )
 
@@ -39510,6 +39654,18 @@ cargo.rust_library(
     ],
 )
 
+cargo_alias(
+    name = "quinn",
+    actual = ":quinn-0.11",
+    platforms = [
+        "linux-arm64",
+        "linux-x86_64",
+        "macos-arm64",
+        "macos-x86_64",
+    ],
+    visibility = ["PUBLIC"],
+)
+
 http_archive(
     name = "quinn-0.11.12.crate",
     sha256 = "4051e23e9185c255a7e33ef59cdbca87a22d359052eecd22fc6b901fb37d9d11",
@@ -39546,10 +39702,12 @@ cargo.rust_library(
         "aws-lc-rs",
         "bloom",
         "default",
+        "futures-io",
         "log",
         "platform-verifier",
         "ring",
         "runtime-tokio",
+        "rustls",
         "rustls-aws-lc-rs",
         "rustls-ring",
     ],
@@ -39561,6 +39719,7 @@ cargo.rust_library(
     visibility = [],
     deps = [
         ":bytes-1",
+        ":futures-io-0.3",
         ":pin-project-lite-0.2",
         ":rustc-hash-2",
         ":rustls-0.23",
@@ -39598,10 +39757,12 @@ cargo.rust_binary(
         "aws-lc-rs",
         "bloom",
         "default",
+        "futures-io",
         "log",
         "platform-verifier",
         "ring",
         "runtime-tokio",
+        "rustls",
         "rustls-aws-lc-rs",
         "rustls-ring",
     ],
@@ -39629,10 +39790,12 @@ buildscript_run(
         "aws-lc-rs",
         "bloom",
         "default",
+        "futures-io",
         "log",
         "platform-verifier",
         "ring",
         "runtime-tokio",
+        "rustls",
         "rustls-aws-lc-rs",
         "rustls-ring",
     ],
@@ -40967,18 +41130,22 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
+        "aws_lc_rs",
         "crypto",
         "pem",
         "ring",
+        "x509-parser",
     ],
     named_deps = {
         "pki_types": ":rustls-pki-types-1",
     },
     visibility = [],
     deps = [
+        ":aws-lc-rs-1",
         ":pem-4",
         ":ring-0.17",
         ":time-0.3",
+        ":x509-parser-0.18",
         ":yasna-0.6",
     ],
 )
@@ -44044,6 +44211,18 @@ buildscript_run(
     version = "0.23.46",
 )
 
+cargo_alias(
+    name = "rustls-native-certs",
+    actual = ":rustls-native-certs-0.8",
+    platforms = [
+        "linux-arm64",
+        "linux-x86_64",
+        "macos-arm64",
+        "macos-x86_64",
+    ],
+    visibility = ["PUBLIC"],
+)
+
 http_archive(
     name = "rustls-native-certs-0.8.4.crate",
     sha256 = "dab5152771c58876a2146916e53e35057e1a4dfa2b9df0f0305b07f611fdea4d",
@@ -44136,6 +44315,18 @@ cargo.rust_library(
     visibility = [],
 )
 
+cargo_alias(
+    name = "rustls-pki-types",
+    actual = ":rustls-pki-types-1",
+    platforms = [
+        "linux-arm64",
+        "linux-x86_64",
+        "macos-arm64",
+        "macos-x86_64",
+    ],
+    visibility = ["PUBLIC"],
+)
+
 http_archive(
     name = "rustls-pki-types-1.15.1.crate",
     sha256 = "2f4925028c7eb5d1fcdaf196971378ed9d2c1c4efc7dc5d011256f76c99c0a96",
@@ -44171,6 +44362,8 @@ cargo.rust_library(
         "alloc",
         "default",
         "std",
+        "web",
+        "web-time",
     ],
     visibility = [],
     deps = [":zeroize-1"],
@@ -50802,7 +50995,7 @@ cargo.rust_library(
     visibility = [],
     deps = [
         ":fastrand-2",
-        ":getrandom-0.3",
+        ":getrandom-0.4",
         ":once_cell-1",
         ":rustix-1",
     ],
@@ -56881,13 +57074,16 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_PRE": "",
     },
     features = [
+        "aws-lc-rs",
         "default",
         "ring",
         "verify",
+        "verify-aws",
     ],
     visibility = [],
     deps = [
         ":asn1-rs-0.7",
+        ":aws-lc-rs-1",
         ":data-encoding-2",
         ":der-parser-10",
         ":lazy_static-1",

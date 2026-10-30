@@ -42,7 +42,9 @@ syntax = "proto3";
 //   `docs/api/reasons.md`: `project_not_found`, `branch_has_children`,
 //   `branch_protected`, `lsn_out_of_retention`, `endpoint_exists_for_branch`,
 //   `compute_start_failed`, `quota_exceeded`, `storage_unavailable`,
-//   `secret_already_issued` and the shared `already_exists`.
+//   `secret_already_issued`, the majors' `unsupported_pg_version`,
+//   `beta_major_requires_opt_in`, `compute_major_mismatch_refused` and
+//   `import_checksums_enabled` (design 62 §9.2), and the shared `already_exists`.
 package loams.postgres.v1;
 
 import "google/protobuf/duration.proto";
@@ -152,6 +154,13 @@ service PostgresService {
   // `postgres.project.upgrade`.
   rpc UpgradeProject(UpgradeProjectRequest) returns (UpgradeProjectResponse);
 
+  // The Postgres majors new projects may use, and their state (design 62 §9.2,
+  // D1114): supported, beta (only with `allow_beta_major`) or maintenance
+  // (existing projects only), from the pin file.
+  rpc ListPgVersions(ListPgVersionsRequest) returns (ListPgVersionsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
   // A snapshot of the project's branches, endpoints and computes, then their
   // changes, then a heartbeat every 15 s; resumes from a cursor. A read
   // (AP0: reads are `NO_SIDE_EFFECTS`), so it takes no `idempotency_key`.
@@ -219,6 +228,10 @@ message Branch {
   google.protobuf.Timestamp create_time = 13;
   google.protobuf.Timestamp update_time = 14;
   uint64 version = 15;
+  // Output only: the branch's Postgres major. After an upgrade, one project
+  // has branches of two majors; `Project.pg_version` is its default branch's
+  // (design 62 §9.2).
+  uint32 pg_version = 16;
 }
 
 enum BranchState {
@@ -334,7 +347,9 @@ message Database {
 message CreateProjectRequest {
   string namespace = 1;
   string name = 2;
-  // 0 takes the server's default (17).
+  // 0 takes the server's default. A major outside the offered ones is
+  // `unsupported_pg_version`; a beta major needs `allow_beta_major`
+  // (`ListPgVersions`; design 62 §9.2).
   uint32 pg_version = 3;
   // Empty takes the namespace's region.
   string region = 4;
@@ -342,6 +357,9 @@ message CreateProjectRequest {
   google.protobuf.Duration history_retention = 5;
   // Empty takes the namespace's default pool.
   string wal_pool = 6;
+  // Opts into a beta major; without it a beta `pg_version` is
+  // `beta_major_requires_opt_in`.
+  bool allow_beta_major = 7;
   string idempotency_key = 15;
 }
 
@@ -406,11 +424,59 @@ message UpgradeProjectRequest {
   string project_id = 2;
   // The target major version.
   uint32 pg_version = 3;
+  // The branch to upgrade; empty takes the project's default branch. The
+  // upgrade creates `<branch>-pg<N>`; swapping it in needs a second call
+  // (design 62 §9.2, D1115).
+  string branch_id = 4;
+  UpgradeMethod method = 5;
+  // Runs the pre-checks only (extensions at the target, blockers, size).
+  bool check_only = 6;
   string idempotency_key = 15;
+}
+
+// How UpgradeProject moves a branch to a new major (design 62 §10).
+enum UpgradeMethod {
+  // IMPORT.
+  UPGRADE_METHOD_UNSPECIFIED = 0;
+  // Dump into a new-major data directory and import it as a new timeline (Path 1).
+  UPGRADE_METHOD_IMPORT = 1;
+  // pg_dump and restore into the new branch.
+  UPGRADE_METHOD_DUMP_RESTORE = 2;
+  // pg_upgrade on a new timeline (Path 3); not offered yet.
+  UPGRADE_METHOD_PG_UPGRADE = 3;
 }
 
 message UpgradeProjectResponse {
   loams.operations.v1.Operation operation = 1;
+}
+
+message ListPgVersionsRequest {}
+
+message ListPgVersionsResponse {
+  // Newest major first.
+  repeated PgVersion versions = 1;
+}
+
+// One Postgres major Loams Postgres serves.
+message PgVersion {
+  uint32 major = 1;
+  PgVersionState state = 2;
+  // The major for new projects when `pg_version` is 0.
+  bool is_default = 3;
+  // The pinned minor, e.g. "17.11".
+  string minor = 4;
+  // Upstream's end of life, "YYYY-MM-DD".
+  string eol_date = 5;
+}
+
+enum PgVersionState {
+  PG_VERSION_STATE_UNSPECIFIED = 0;
+  // New projects may use it.
+  PG_VERSION_STATE_SUPPORTED = 1;
+  // New projects only with `allow_beta_major`.
+  PG_VERSION_STATE_BETA = 2;
+  // Existing projects only: minors, exports and upgrades.
+  PG_VERSION_STATE_MAINTENANCE = 3;
 }
 
 // ---------------------------------------------------------------------------

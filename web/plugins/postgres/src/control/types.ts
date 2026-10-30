@@ -103,6 +103,18 @@ export interface CreateProjectInput {
   name: string;
   pgVersion: number;
   region?: string;
+  /** Opts into a beta major (`allow_beta_major`; design 62 §9.2). */
+  allowBetaMajor?: boolean;
+}
+
+/** One major of `ListPgVersions` (design 62 §9.2). */
+export interface PgVersionInfo {
+  major: number;
+  /** `beta` needs `allowBetaMajor`; `maintenance` is for existing projects only. */
+  state: 'supported' | 'beta' | 'maintenance';
+  isDefault: boolean;
+  minor: string;
+  eolDate: string;
 }
 
 /** `CreateBranchRequest.point`: the parent's head when absent. */
@@ -151,6 +163,8 @@ export interface PgControlClient {
   readonly endpoint?: string;
 
   listProjects(namespace: string): Promise<PgProject[]>;
+  /** The Postgres majors the control plane serves, newest first. */
+  listPgVersions(): Promise<PgVersionInfo[]>;
   createProject(
     namespace: string,
     input: CreateProjectInput,

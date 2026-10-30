@@ -280,6 +280,9 @@ pub struct PgControlConfig {
     /// The storage controller's token for `notify-attach`; without it the
     /// route is not served.
     pub notify_token: Option<Secret<String>>,
+    /// The pageservers' upcall token for the import status upcall (NF2 Task
+    /// 13); without it the route is not served.
+    pub pageserver_token: Option<Secret<String>>,
     /// Where audit events go.
     pub audit: Arc<dyn AuditSink>,
     /// How often the upkeep runs.
@@ -302,6 +305,7 @@ impl fmt::Debug for PgControlConfig {
             .field("pageserver", &self.pageserver.as_str())
             .field("wal", &self.wal.as_str())
             .field("notify_token", &self.notify_token)
+            .field("pageserver_token", &self.pageserver_token)
             .finish_non_exhaustive()
     }
 }
@@ -334,6 +338,7 @@ impl PgControlConfig {
             endpoint_storage: None,
             endpoint_storage_pem_out: None,
             notify_token: None,
+            pageserver_token: None,
             audit: Arc::new(LogAuditSink),
             upkeep_every: Duration::from_secs(600),
             operation_retention: OPERATION_RETENTION,
@@ -710,6 +715,7 @@ impl PgControl {
             UpcallConfig {
                 api_listen: Some(api_addr),
                 notify_token: config.notify_token.clone(),
+                pageserver_token: config.pageserver_token.clone(),
                 pageservers: config.pageservers.clone(),
                 default_pageserver: config.default_pageserver,
                 wal_pools: config.wal_pools.clone(),

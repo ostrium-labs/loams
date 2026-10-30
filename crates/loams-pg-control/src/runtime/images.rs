@@ -42,6 +42,30 @@ pub fn check_image(image: &str) -> Result<(), ImageError> {
     Ok(())
 }
 
+/// The Postgres major a compute image's repository names (`...compute-v17`,
+/// `...compute-node-v17`), if it names one.
+pub fn image_major(image: &str) -> Option<u32> {
+    let repo = image.split('@').next().unwrap_or(image);
+    let name = repo.rsplit('/').next().unwrap_or(repo);
+    let name = name.split(':').next().unwrap_or(name);
+    let (_, digits) = name.rsplit_once("-v")?;
+    digits.parse().ok()
+}
+
+/// `compute_major_mismatch_refused` (design 62 §9.2, §51 §9): a compute never
+/// attaches to another major's timeline. An image whose repository names a
+/// major other than the timeline's is refused; one that names none (a test
+/// image) is taken at its configured major.
+pub fn check_compute_major(image: &str, timeline_major: u32) -> Result<(), String> {
+    match image_major(image) {
+        Some(m) if m != timeline_major => Err(format!(
+            "compute_major_mismatch_refused: image {image} is Postgres {m}, the timeline is \
+             Postgres {timeline_major}"
+        )),
+        _ => Ok(()),
+    }
+}
+
 /// The `[majors]` lists whose majors run computes (design §62 §9.1): a
 /// supported major's new projects, a beta major's opted-in ones, and a
 /// maintenance major's existing projects, exports and upgrades.
@@ -127,6 +151,20 @@ pub fn parse_override(s: &str) -> Result<(u32, String), ImageError> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn compute_major_mismatch_refused() {
+        let v17 = "ghcr.io/ostrium-labs/loams-postgres-compute-v17@sha256:00";
+        let v18 = "ghcr.io/ostrium-labs/loams-postgres-compute-v18@sha256:00";
+        assert_eq!(image_major(v17), Some(17));
+        assert_eq!(image_major("ghcr.io/x/compute-node-v16:tag"), Some(16));
+        assert_eq!(image_major("localhost/test-compute@sha256:00"), None);
+        assert!(check_compute_major(v17, 17).is_ok());
+        let err = check_compute_major(v17, 18).unwrap_err();
+        assert!(err.starts_with("compute_major_mismatch_refused"), "{err}");
+        assert!(check_compute_major(v18, 17).is_err());
+        assert!(check_compute_major("localhost/test-compute@sha256:00", 18).is_ok());
+    }
     use super::*;
 
     const DIGEST: &str = "sha256:13ab146d3e7bbabb25a8532f315ac443e7512351d1ede0bab586def5c70e26c3";

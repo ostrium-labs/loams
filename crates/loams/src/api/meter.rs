@@ -39,6 +39,9 @@ pub struct MeterConfig {
     pub house_user: String,
     /// `LOAMS_METER_HOUSE_PASSWORD_FILE`: the user's password, read at start.
     pub house_password_file: Option<std::path::PathBuf>,
+    /// `LOAMS_METER_ORG`: the org this install's namespaces are billed to
+    /// (`org_<org>` is the subject); default the principal directory's org.
+    pub org: Option<String>,
     /// `LOAMS_METER_SECRETS_KEY_FILE`: the age identity webhook secrets are
     /// sealed to (D2205), 0600, created on first use. Default
     /// `<data_dir>/meter/secrets.key`. Every gateway node of a cluster needs
@@ -764,6 +767,56 @@ mod served {
             .with_state(appender)
     }
 
+    /// The billing subject of this install's namespaces: `org_<org>` for
+    /// the install's one org (`LOAMS_METER_ORG`, else the principal
+    /// directory's org once first-run setup made it). A namespace is not
+    /// attributed (and not gated) until there is an org.
+    #[derive(Debug)]
+    struct InstallOrg(Arc<std::sync::RwLock<Option<String>>>);
+
+    impl InstallOrg {
+        fn start(configured: Option<String>, directory: Arc<Directory>) -> Self {
+            let org = Arc::new(std::sync::RwLock::new(configured.clone()));
+            if configured.is_none() {
+                let shared = Arc::clone(&org);
+                tokio::spawn(async move {
+                    loop {
+                        if let Ok(doc) = directory.read().await
+                            && let Some(o) = doc.org.as_ref()
+                        {
+                            *shared
+                                .write()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner) =
+                                Some(o.id.clone());
+                        }
+                        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                        if Arc::strong_count(&shared) == 1 {
+                            return;
+                        }
+                    }
+                });
+            }
+            InstallOrg(org)
+        }
+    }
+
+    impl loams_meter_gate::adapters::SubjectResolver for InstallOrg {
+        fn resolve(
+            &self,
+            org: Option<&str>,
+            namespace: &str,
+        ) -> Option<loams_meter_gate::adapters::Attribution> {
+            let install = self
+                .0
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let org = org.filter(|o| !o.is_empty()).or(install.as_deref())?;
+            Some(loams_meter_gate::adapters::Attribution::for_org(
+                org, namespace,
+            ))
+        }
+    }
+
     /// This node's meter: the role's services, the lease server and the
     /// counter runtime not yet started.
     pub struct MeterNode {
@@ -781,6 +834,7 @@ mod served {
         /// Unauthenticated routes that verify their callers themselves
         /// (Stripe's webhooks).
         public: axum::Router,
+        entitlements: loams_meter_gate::Entitlements,
     }
 
     /// A started meter: what the server mounts and stops.
@@ -794,6 +848,8 @@ mod served {
         pub main: axum::Router,
         /// For every main port: routes that are public by design.
         pub public: axum::Router,
+        /// What this node's products ask before they spend (D2400).
+        pub entitlements: loams_meter_gate::Entitlements,
     }
 
     impl std::fmt::Debug for MeterNode {
@@ -891,6 +947,7 @@ mod served {
                     caller,
                 )),
                 public: self.public,
+                entitlements: self.entitlements,
             }
         }
     }
@@ -1107,6 +1164,37 @@ mod served {
             vec![CLUSTER_SERVICE.to_string()],
             clock.clone(),
         ));
+        // The products' gate (D2400): a LeaseGate over the lease client. A
+        // (subject, feature) without a metered entitlement gets an
+        // unmetered grant from the client, so a product without a plan is
+        // never refused and pays only a lease hit.
+        let entitlements = {
+            use loams_meter::lease_client::{HttpTransport, LeaseClient, LeaseRouter};
+            use loams_meter_gate::gate::{GateConfig, LeaseGate};
+            let client = LeaseClient::start(LeaseRouter {
+                partitions: METER_PARTITIONS,
+                local: Some(leases.clone()),
+                owners: Arc::new(MetaLeases(meta.clone())),
+                transport: Arc::new(HttpTransport::new(std::time::Duration::from_millis(50))?),
+                fence: Arc::new(loams_meter::lease_service::EpochFence::new()),
+                clock: clock.clone(),
+                policies: Some(counters.policies()),
+            })
+            .map_err(|e| format!("the meter's lease client: {e}"))?;
+            let gate = LeaseGate::new(
+                Arc::new(client),
+                GateConfig {
+                    node: format!("node-{node_id}"),
+                    ..GateConfig::default()
+                },
+            )
+            .map_err(|e| format!("the meter's gate: {e}"))?;
+            let resolver = Arc::new(InstallOrg::start(
+                config.org.clone(),
+                principals.directory.clone(),
+            ));
+            loams_meter_gate::Entitlements::new(Arc::new(gate), resolver)
+        };
         let appender = Arc::new(MeterAppender {
             meta: meta.clone(),
             writer,
@@ -1152,7 +1240,7 @@ mod served {
             clock: clock.clone(),
             values: Arc::new(values),
             usage,
-            house,
+            house: house.clone(),
             sealer: Arc::new(sealer),
         }));
         let runtime = CounterRuntime::new(RuntimeParts {
@@ -1168,9 +1256,19 @@ mod served {
                 id: tokio::sync::OnceCell::new(),
                 missing_logged: std::sync::atomic::AtomicBool::new(false),
             }),
-            // The House pipe's cursor is not readable over SQL (D2203): the
-            // counters rebuild from the stream alone.
-            house: Arc::new(StreamOnly),
+            // With a House: rebuilds and reconciliation split at the pipe's
+            // cursor (`system.loams_pipe_cursors`, D2401). Without one the
+            // counters rebuild from the stream alone (D2203).
+            house: if house.is_configured() {
+                Arc::new(loams_meter::house::HousePipeTotals {
+                    house: house.clone(),
+                    counters: counters.clone(),
+                    partitions: METER_PARTITIONS,
+                    clock: clock.clone(),
+                })
+            } else {
+                Arc::new(StreamOnly)
+            },
             store: Arc::new(DocStore::new(records.clone())) as Arc<dyn MeterStore>,
             counters: counters.clone(),
             lease_server: leases.clone(),
@@ -1288,6 +1386,7 @@ mod served {
             exports,
             exports_stop,
             public,
+            entitlements,
         })
     }
 

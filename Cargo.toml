@@ -370,6 +370,8 @@ loams-quickwit = { path = "crates/loams-quickwit", version = "0.1.3" }
 loams-store = { path = "crates/loams-store", version = "0.1.3" }
 loams-text = { path = "crates/loams-text", version = "0.1.3" }
 loams-tikv = { path = "crates/loams-tikv", version = "0.1.3" }
+# Resumable transfers and job-run streams for the desktop (design 85, DQ1).
+loams-transfer = { path = "crates/loams-transfer", version = "0.1.3" }
 loams-tuple = { path = "crates/loams-tuple", version = "0.1.3" }
 loams-web-bridge = { path = "crates/loams-web-bridge", version = "0.1.3" }
 loams-worker = { path = "crates/loams-worker", version = "0.1.3" }

@@ -12,6 +12,7 @@
 //! | [`customers`], [`entitlements`], [`connect`] | ME1 Task 10 | `CustomerService` and `EntitlementService`, and their Connect face (`loams.meter.v1`) |
 //! | [`plan_yaml`], [`plans`] | ME1 Task 11 | Plans (with their meters and features) as YAML from the GitOps repository: versions and used meters immutable; `PlanService` applies and assigns them |
 //! | [`lease_service`] | ME1 Task 17 | `LeaseService` (internal Connect, service identities only) over ME-core's allocator, fenced by owner epochs; the gate's `EpochFence` |
+//! | [`costs`] | CA1 Task 6 | Cost attribution (§84): cost inputs and bill imports in `meter-costs`, reports and explanations from the House's drivers |
 //! | [`reconcile`] | ME1 Task 13 | Every 5 minutes and at period close: counters reset to the House's totals at the pipe's committed offset plus the tail; drift over 1% of an allowance alerts |
 //!
 //! The House tables and the close job (ME1 Tasks 5–8) and the exporters
@@ -20,6 +21,7 @@
 pub mod audit;
 pub mod authz;
 pub mod connect;
+pub mod costs;
 pub mod customers;
 pub mod entitlements;
 pub mod error;

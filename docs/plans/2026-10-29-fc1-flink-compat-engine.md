@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Work task by task, test first. Where this plan gives exact names, paths, flags or tests, use them verbatim. Record any deviation in the task's rulings file, `docs/plans/fc1-rulings/t<N>.md` in the Loams repository (indexed in "Rulings made during execution" at the end of this file).
 >
-> **Status: Approved** (owner, 2026-10-29: "approve all defaults, start building asap"). Track FC, design [§82](../design/82-loams-stream-flink-compatible-engine.md). FC0 (Tasks 0–9) and FC1 (Tasks 10–25) are specified task by task. FC2 and FC3 are planned at FC1's exit. Rulings made during execution take decision IDs from **D2280–D2299** and questions from **Q1451–Q1469**, the range §82 keeps free. **Nothing here is built yet.**
+> **Status: Approved** (owner, 2026-10-29: "approve all defaults, start building asap"). Track FC, design [§82](../design/82-loams-stream-flink-compatible-engine.md). FC0 (Tasks 0–9) and FC1 (Tasks 10–25) are specified task by task. **FC0 exited on 2026-10-29** ([report](fc0-exit-report.md)). FC2 and FC3 are planned at FC1's exit. Rulings made during execution take decision IDs from **D2280–D2299** and questions from **Q1451–Q1469**, the range §82 keeps free. **Nothing here is built yet.**
 
 **Goal (FC0):** a standalone engine skeleton on the hard fork `ostrium-labs/streamfusion`, with its Flink-exact operators driven from Rust without Flink or JNI, a Flink SQL parser, and a differential harness that runs any corpus on Apache Flink 2.2.1 and on Loams Stream through the same SQL Gateway REST API. Exit, from §82 §16.1: the corpus runs on the oracle with 100 % of its own expectations; the parser accepts every statement in the corpus; Nexmark q0 runs end to end on the standalone engine.
 
@@ -181,3 +181,6 @@ Then Task 2 after Task 1, Task 4 after Task 3, Task 6 after Task 5, and Tasks 7�
 | 4 | [fc1-rulings/t4.md](fc1-rulings/t4.md) | CAST follows the SQL validator plus runtime rules; Arrow mapping follows the engine's transport; inherited lints allowed per crate; permissive binder |
 | 5 | [fc1-rulings/t5.md](fc1-rulings/t5.md) | Deterministic sources only; debezium changelog folding; the wire's `isQueryResult` |
 | 6 | [fc1-rulings/t6.md](fc1-rulings/t6.md) | 345 programs, 330 cases; Beam-style Nexmark seeding; the restore flow; the self-check; executable `.q` cases deferred to Task 22 |
+| 8 | [fc1-rulings/t8.md](fc1-rulings/t8.md) | slatedb spike: zero-copy rescale and pointer checkpoints, slower naive writes; RocksDB stays FC1's backend, re-measure on S3 in FC2 |
+| 9 | [fc0-exit-report.md](fc0-exit-report.md) | FC0 gate met; the FC1 bar is at least 144 of the 180 in-scope recorded test programs, plus Nexmark |
+| 10 | [fc1-rulings/t10.md](fc1-rulings/t10.md) | No JVM fallback in the expression port; Loams engine kernels from op 900; UTC session zone; string and timestamp comparisons admitted; local executor until Task 11; the 180-case bar; legacy group windows in FC1's bar |
