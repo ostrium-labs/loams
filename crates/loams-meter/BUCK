@@ -24,9 +24,19 @@ cargo_package(
     },
     tests = [
         {
+            "name": "channels",
+            "crate": "channels",
+            "root": "tests/channels.rs",
+        },
+        {
             "name": "docstore",
             "crate": "docstore",
             "root": "tests/docstore.rs",
+        },
+        {
+            "name": "export_schedule",
+            "crate": "export_schedule",
+            "root": "tests/export_schedule.rs",
         },
         {
             "name": "house",

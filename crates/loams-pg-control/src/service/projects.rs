@@ -189,7 +189,7 @@ impl<N: NeonRead> PgService<N> {
                 eol_date: lookup(loams_postgres::majors::EOL, major),
             })
             .collect();
-        out.sort_by(|a, b| b.major.cmp(&a.major));
+        out.sort_by_key(|v| std::cmp::Reverse(v.major));
         out
     }
 
