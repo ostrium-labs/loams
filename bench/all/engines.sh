@@ -26,6 +26,15 @@
 # `down`. Binaries: $BQ1_ALL_BIN (default $BQ1_ALL_DATA/bin).
 set -euo pipefail
 
+# Close every descriptor above stderr that the caller handed down, before
+# anything is started: a long-lived server (or podman's conmon) that inherits
+# the caller's bench-lock descriptor would hold .he0-shared's bench lock after
+# the caller exits.
+for fd in "/proc/$$/fd"/*; do
+  fd=${fd##*/}
+  if [ "$fd" -gt 2 ] 2> /dev/null; then eval "exec $fd>&-" 2> /dev/null || true; fi
+done
+
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "$here/../.." && pwd)"
 # shellcheck source=budget.sh
