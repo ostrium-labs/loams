@@ -288,6 +288,21 @@ const PRODUCT_FEATURES: &[(&str, bool)] = &[
     ("registry", cfg!(feature = "registry")),
     ("buildcache", cfg!(feature = "buildcache")),
     ("meter", cfg!(feature = "meter")),
+    (
+        "meter-export-webhook",
+        cfg!(feature = "meter-export-webhook"),
+    ),
+    ("meter-export-stripe", cfg!(feature = "meter-export-stripe")),
+    ("meter-export-lago", cfg!(feature = "meter-export-lago")),
+    (
+        "meter-export-openmeter",
+        cfg!(feature = "meter-export-openmeter"),
+    ),
+    ("knowledge", cfg!(feature = "knowledge")),
+    // Resumable transfers and job runs (design 85; preview, on by default).
+    ("transfer", cfg!(feature = "transfer")),
+    // The cluster CA and `loams ca` (design 83; off by default).
+    ("transport", cfg!(feature = "transport")),
     // The managed engines' CLIs (design 81; preview).
     ("flink", cfg!(feature = "flink")),
     ("spark", cfg!(feature = "spark")),
