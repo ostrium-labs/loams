@@ -1,0 +1,129 @@
+{
+ "bench": "bq1-all combined run",
+ "label": "after-rs-graph",
+ "commit": "4d035faf2",
+ "depth": 16,
+ "duration_s": 30.0,
+ "t0": 1793272372.0,
+ "host": {
+  "seconds": 29.1,
+  "per_core_busy": {
+   "0": 0.104,
+   "1": 0.169,
+   "2": 0.989,
+   "3": 0.999,
+   "4": 0.098,
+   "5": 0.549,
+   "6": 0.073,
+   "7": 0.083,
+   "8": 0.075,
+   "9": 0.07,
+   "10": 0.07,
+   "11": 0.173,
+   "12": 0.761,
+   "13": 0.077
+  },
+  "busy_pct": 30.6,
+  "iowait_pct": 9.8,
+  "loadavg_1m_mean": 5.7,
+  "loadavg_1m_max": 6.02,
+  "cpu": "Intel Core Ultra 5 225H",
+  "kernel": "7.2.4-3-cachyos",
+  "cores": 14
+ },
+ "total": {
+  "qps": 6865,
+  "qps_per_core": 490,
+  "busy_cores": 1.48,
+  "qps_per_busy_core": 4639,
+  "engines_measured": 2
+ },
+ "engines": [
+  {
+   "slot": "durable",
+   "engine": "durable",
+   "script": "/home/dinakaran/Documents/Ostriumlabs/loams-wt/dev-green/bench/all/native/durable.sh",
+   "script_sha256_12": "1ec17ea6ab97",
+   "args": "--duration 30 --cores 11-11 --depth 16 --start-at 1793272372",
+   "own_cores": "5",
+   "load_cores": "11",
+   "budget_cores": 2.0,
+   "busy_cores": 0.72,
+   "busy_core_seconds": 21.0,
+   "qps": 4197,
+   "qps_per_budget_core": 2098,
+   "qps_per_busy_core": 5813,
+   "window": {
+    "start": 1793272372.0,
+    "end": 1793272402.0,
+    "source": "reported",
+    "overlap_with_t0_window": 1.0
+   },
+   "started": 1793272332.1532364,
+   "ended": 1793272402.0872052,
+   "rc": 0,
+   "ops": [
+    {
+     "engine": "durable",
+     "op": "promise.create",
+     "qps": 4197.0,
+     "rps": 4197.0,
+     "p50_ms": 16.122,
+     "p99_ms": 257.95,
+     "p999_ms": 964.69,
+     "depth": 16,
+     "depth_kind": "inflight",
+     "cores": 1,
+     "errors": 0,
+     "conns": 8,
+     "tasks": 128,
+     "window_s": 30.0,
+     "t_start": 1793272372.0,
+     "t_end": 1793272402.0,
+     "late_s": 0.0,
+     "api": "Resonate HTTP/2 promise.create"
+    }
+   ]
+  },
+  {
+   "slot": "graph",
+   "engine": "graph",
+   "script": "/home/dinakaran/Documents/Ostriumlabs/loams-wt/dev-green/bench/graph/native-load.sh",
+   "script_sha256_12": "796bc9582281",
+   "args": "--duration 30 --cores 12-12 --depth 16 --op point",
+   "own_cores": "12",
+   "load_cores": "12",
+   "budget_cores": 1.0,
+   "busy_cores": 0.76,
+   "busy_core_seconds": 22.1,
+   "qps": 2668,
+   "qps_per_budget_core": 2668,
+   "qps_per_busy_core": 3506,
+   "window": {
+    "start": 1793272364.2115257,
+    "end": 1793272394.2115257,
+    "source": "estimated from exit",
+    "overlap_with_t0_window": 0.59
+   },
+   "started": 1793272357.1660054,
+   "ended": 1793272394.2115257,
+   "rc": 0,
+   "ops": [
+    {
+     "engine": "graph",
+     "op": "point",
+     "qps": 2668.264576081371,
+     "requests_per_s": 166.7665360050857,
+     "p50_ms": 5.986,
+     "p99_ms": 7.14,
+     "p999_ms": 7.942,
+     "depth": 16,
+     "cores": "12-12",
+     "errors": 0
+    }
+   ]
+  }
+ ],
+ "missing": [],
+ "failed": []
+}

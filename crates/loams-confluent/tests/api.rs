@@ -216,16 +216,17 @@ async fn set_max_ecku_reads_the_kind_then_patches() {
     clusters::set_max_ecku(&c, "env-test01", "lkc-one01", 2)
         .await
         .unwrap();
-    let f = f.lock().unwrap();
-    assert_eq!(
-        f.calls,
-        ["GET cluster lkc-one01", "PATCH cluster lkc-one01"]
-    );
-    assert_eq!(
-        f.bodies[0],
-        json!({"spec": {"environment": {"id": "env-test01"}, "config": {"kind": "Basic", "max_ecku": 2}}})
-    );
-    drop(f);
+    {
+        let f = f.lock().unwrap();
+        assert_eq!(
+            f.calls,
+            ["GET cluster lkc-one01", "PATCH cluster lkc-one01"]
+        );
+        assert_eq!(
+            f.bodies[0],
+            json!({"spec": {"environment": {"id": "env-test01"}, "config": {"kind": "Basic", "max_ecku": 2}}})
+        );
+    }
     assert!(
         clusters::set_max_ecku(&c, "env-test01", "lkc-one01", 0)
             .await

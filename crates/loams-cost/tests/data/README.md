@@ -7,4 +7,5 @@ Hand-written for the import tests (CA1 Task 3, design §84 §6.2). They are **no
 | `focus.csv` | FOCUS (1.x core columns) | 6 | EffectiveCost 127.5 |
 | `cur2.csv` | AWS CUR 2.0 | 4 | net unblended (unblended where empty) 72.25 |
 | `cur-legacy.csv` | legacy CUR | 2 | unblended 30 |
+| `costs.yaml`, `usage.ndjson` | inputs and usage events for the CLI test | | |
 | `generic.csv` | generic CSV (`start=From,end=To,cost=Amount,currency=@EUR,service=Item,tags=Tags`) | 3 | 60 |

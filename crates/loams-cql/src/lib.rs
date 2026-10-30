@@ -20,6 +20,5 @@ pub mod storage;
 /// Parsed single-partition CQL statement subset.
 pub mod parser;
 
-
 /// Tenant-scoped CQL execution over KV.
 pub mod executor;

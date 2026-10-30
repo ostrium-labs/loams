@@ -39,6 +39,7 @@ export async function appPaths(): Promise<ResolvedPaths> {
 		appRoot: app.getAppPath(),
 		loamsBin: process.env.LOAMS_BIN,
 		agentdBin: process.env.LOAMS_AGENTD_BIN,
+		transferBin: process.env.LOAMS_TRANSFER_BIN,
 		cargoTargetDir: await cargoTargetDir(),
 	});
 }

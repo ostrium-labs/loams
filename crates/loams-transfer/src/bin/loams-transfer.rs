@@ -8,7 +8,8 @@
 //! - `put` and `get`: one upload or download, resuming what an earlier run
 //!   left, with progress as JSON lines.
 //!
-//! Task 4 adds `runner`.
+//! - `runner`: claims runs of the jobs in `jobs.toml`, runs them, and
+//!   streams their logs and artifacts back.
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -51,6 +52,44 @@ enum Cmd {
     Put(PutArgs),
     /// Download one transfer, resuming a part file left beside the destination.
     Get(GetArgs),
+    /// Run configured jobs for remote runs (CI and other jobs).
+    Runner(RunnerArgs),
+}
+
+#[derive(clap::Args, Debug)]
+struct RunnerArgs {
+    #[command(flatten)]
+    remote: Remote,
+    /// The jobs this runner may run (`[jobs.<name>]` tables).
+    #[arg(long)]
+    jobs: PathBuf,
+    /// This runner's name (default: a new id per process).
+    #[arg(long)]
+    runner_id: Option<String>,
+}
+
+async fn runner(args: RunnerArgs) -> Result<()> {
+    let state = StateDir::new(&args.remote.state)?;
+    let _lock = state.lock()?;
+    let client = args.remote.client(&state)?;
+    let jobs = loams_transfer::runner::JobsFile::load(&args.jobs)?;
+    let mut opts = loams_transfer::runner::RunnerOpts::default();
+    if let Some(id) = args.runner_id {
+        opts.runner_id = id;
+    }
+    let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let s2 = Arc::clone(&stop);
+    tokio::spawn(async move {
+        let _ = tokio::signal::ctrl_c().await;
+        s2.store(true, std::sync::atomic::Ordering::SeqCst);
+    });
+    eprintln!(
+        "runner {} serving jobs: {:?}",
+        opts.runner_id,
+        jobs.jobs.keys().collect::<Vec<_>>()
+    );
+    loams_transfer::runner::serve(&client, &state, &jobs, &opts, stop).await?;
+    Ok(())
 }
 
 #[derive(clap::Args, Debug)]
@@ -365,5 +404,6 @@ async fn main() -> Result<()> {
         Cmd::Agent { state } => loams_transfer::agent::run(state).await,
         Cmd::Put(a) => put(a).await,
         Cmd::Get(a) => get(a).await,
+        Cmd::Runner(a) => runner(a).await,
     }
 }

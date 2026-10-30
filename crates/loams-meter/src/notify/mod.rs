@@ -7,11 +7,17 @@
 //! - [`sealing`]: webhook secrets sealed at rest (age, as `pg-control`'s).
 //! - [`notifier`]: delivery to webhooks (signed, retried, once per endpoint
 //!   and event), email and the console; the `NotificationService` domain.
+//! - [`channels`]: the email channel over Resend and the console's store
+//!   (D2402).
 
+pub mod channels;
 pub mod events;
 pub mod notifier;
 pub mod sealing;
 pub mod webhook;
 
 pub use events::{MeterEvent, ThresholdTracker};
-pub use notifier::{Channel, Delivery, DeliveryStatus, Endpoint, Handled, Notifier, Rule};
+pub use notifier::{
+    Channel, ChannelOutcome, ConsoleNotification, Delivery, DeliveryStatus, Endpoint, Handled,
+    Mail, Notifier, Rule,
+};

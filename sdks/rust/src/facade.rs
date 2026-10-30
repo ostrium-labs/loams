@@ -750,6 +750,7 @@ pub static MODULES: &[ModuleBinding] = &[
         calls: &[
             CallBinding { module: "meter.notifications", name: "create_rule", proto_name: "createRule", method: "CreateRule", rpc: "loams.meter.v1.NotificationService/CreateRule", service: "loams.meter.v1.NotificationService", package: "loams.meter.v1", keyed: false, idempotency: Idempotency::None, retry: Retry::Manual, streaming: Streaming::Unary, pagination: None },
             CallBinding { module: "meter.notifications", name: "create_webhook", proto_name: "createWebhook", method: "CreateWebhook", rpc: "loams.meter.v1.NotificationService/CreateWebhook", service: "loams.meter.v1.NotificationService", package: "loams.meter.v1", keyed: false, idempotency: Idempotency::None, retry: Retry::Manual, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "meter.notifications", name: "list_console_notifications", proto_name: "listConsoleNotifications", method: "ListConsoleNotifications", rpc: "loams.meter.v1.NotificationService/ListConsoleNotifications", service: "loams.meter.v1.NotificationService", package: "loams.meter.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
             CallBinding { module: "meter.notifications", name: "list_deliveries", proto_name: "listDeliveries", method: "ListDeliveries", rpc: "loams.meter.v1.NotificationService/ListDeliveries", service: "loams.meter.v1.NotificationService", package: "loams.meter.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
             CallBinding { module: "meter.notifications", name: "list_rules", proto_name: "listRules", method: "ListRules", rpc: "loams.meter.v1.NotificationService/ListRules", service: "loams.meter.v1.NotificationService", package: "loams.meter.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
             CallBinding { module: "meter.notifications", name: "rotate_webhook_secret", proto_name: "rotateWebhookSecret", method: "RotateWebhookSecret", rpc: "loams.meter.v1.NotificationService/RotateWebhookSecret", service: "loams.meter.v1.NotificationService", package: "loams.meter.v1", keyed: false, idempotency: Idempotency::None, retry: Retry::Manual, streaming: Streaming::Unary, pagination: None },
@@ -1766,6 +1767,13 @@ pub trait MeterNotificationsModule {
         request: loams_proto::loams::meter::v1::CreateWebhookRequest,
         options: Option<&CallOptions>,
     ) -> impl std::future::Future<Output = Result<loams_proto::loams::meter::v1::CreateWebhookResponse, LoamsError>> + Send;
+
+    /// `loams.meter.v1.NotificationService/ListConsoleNotifications`, retried: safe.
+    fn list_console_notifications(
+        &self,
+        request: loams_proto::loams::meter::v1::ListConsoleNotificationsRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::meter::v1::ListConsoleNotificationsResponse, LoamsError>> + Send;
 
     /// `loams.meter.v1.NotificationService/ListDeliveries`, retried: safe.
     fn list_deliveries(

@@ -108,6 +108,8 @@ loams-agentd-cli.workspace = true
 loams-confluent.workspace = true
 # `loams risingwave …`: the managed RisingWave's SQL client (design 81, RW1).
 loams-risingwave.workspace = true
+# `loams cost` (design 84, CA1 Task 8): offline cost reports, preview.
+loams-cost = { path = "../loams-cost", version = "0.1.3", features = ["cli"] }
 # `loams spark` (design 81 SP-b, preview).
 loams-spark = { workspace = true, optional = true }
 # `loams flink …` (design 81, D1989): the managed Flink SQL client. Feature
@@ -126,6 +128,7 @@ opensrv-mysql = { workspace = true, optional = true }
 loams-qdrant = { workspace = true, optional = true }
 loams-query.workspace = true
 loams-store.workspace = true
+loams-transfer = { workspace = true, optional = true }
 loams-sqlgate = { path = "../loams-sqlgate", optional = true }
 loams-stream-grpc = { workspace = true, optional = true }
 loams-tikv = { workspace = true, optional = true }
@@ -156,7 +159,10 @@ ulid.workspace = true
 url.workspace = true
 
 [features]
-default = ["es", "flight", "hnsw", "knowledge", "live", "qdrant"]
+default = ["es", "flight", "hnsw", "knowledge", "live", "qdrant", "transfer"]
+# Resumable transfers and job runs for the desktop (design 85, DQ1 Task 5):
+# `/v1/namespaces/{ns}/transfers` and `/runs`, and HTTP/3 on the TLS main port.
+transfer = ["dep:loams-transfer"]
 # Serve the Elasticsearch REST API (plan M1.5; `--es-listen`).
 es = ["dep:loams-es"]
 # The TiKV metastore (R1 plan Task 6; `--meta tikv://…` on `dev` and

@@ -584,6 +584,11 @@ services:
       # there, and pg-control writes the key it checks their tokens with.
       - --endpoint-storage=endpoint-storage:51243
       - --endpoint-storage-pem-out=/run/endpoint-storage/key.pem
+      # The pageserver's upcalls (its control_plane_api is this listener's
+      # /upcall/v1/ with this profile): generation validation and a major
+      # upgrade's import status (NF2 Task 13), with the token pg-upcall-token
+      # made.
+      - --pageserver-upcall-token-file=/run/pg-upcall/token
     environment:
       RUST_LOG: ${RUST_LOG:-info}
     networks: [default, pg-runner]
@@ -593,6 +598,7 @@ services:
       - pg-control-data:/var/lib/loams-pg-control
       - pg-runner-token:/run/pg-runner:ro
       - pg-endpoint-storage-key:/run/endpoint-storage
+      - pg-upcall-token:/run/pg-upcall:ro
       - type: bind
         source: ./secrets/pg-api-keys.json
         target: /etc/loams-pg-control/api-keys.json
@@ -603,6 +609,8 @@ services:
       pg-runner:
         condition: service_healthy
       migrate:
+        condition: service_completed_successfully
+      pg-upcall-token:
         condition: service_completed_successfully
 
   # Endpoint storage (PG2 Task 16, the fork's endpoint_storage from the

@@ -94,7 +94,10 @@ export function issuerMismatchMessage(expected: string, discovered: string): str
  * itself is built the same way by openid-client.
  */
 export function discoveryUrl(issuer: string): string {
-  return `${issuer.replace(/\/+$/, "")}/.well-known/openid-configuration`;
+  let end = issuer.length;
+  // A linear scan: a `/\/+$/` regex is quadratic on many inner slashes.
+  while (end > 0 && issuer.charCodeAt(end - 1) === 47) end -= 1;
+  return `${issuer.slice(0, end)}/.well-known/openid-configuration`;
 }
 
 /** `offline_access` was silently intersected away, so there is nothing to refresh. */

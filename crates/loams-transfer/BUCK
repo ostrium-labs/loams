@@ -51,6 +51,11 @@ cargo_package(
             "root": "tests/resume.rs",
         },
         {
+            "name": "runner",
+            "crate": "runner",
+            "root": "tests/runner.rs",
+        },
+        {
             "name": "runs",
             "crate": "runs",
             "root": "tests/runs.rs",
@@ -71,6 +76,7 @@ cargo_package(
         "//third-party/rust:bytes",
         "//third-party/rust:clap",
         "//third-party/rust:futures",
+        "//third-party/rust:glob",
         "//third-party/rust:h3",
         "//third-party/rust:h3-quinn",
         "//third-party/rust:hex",
@@ -92,6 +98,7 @@ cargo_package(
         "//third-party/rust:tokio",
         "//third-party/rust:tokio-rustls",
         "//third-party/rust:tokio-stream",
+        "//third-party/rust:toml",
         "//third-party/rust:tower",
         "//third-party/rust:tracing",
         "//third-party/rust:tracing-subscriber",

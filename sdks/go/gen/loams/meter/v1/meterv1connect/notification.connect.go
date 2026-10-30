@@ -56,6 +56,9 @@ const (
 	// NotificationServiceListDeliveriesProcedure is the fully-qualified name of the
 	// NotificationService's ListDeliveries RPC.
 	NotificationServiceListDeliveriesProcedure = "/loams.meter.v1.NotificationService/ListDeliveries"
+	// NotificationServiceListConsoleNotificationsProcedure is the fully-qualified name of the
+	// NotificationService's ListConsoleNotifications RPC.
+	NotificationServiceListConsoleNotificationsProcedure = "/loams.meter.v1.NotificationService/ListConsoleNotifications"
 )
 
 // NotificationServiceClient is a client for the loams.meter.v1.NotificationService service.
@@ -68,6 +71,9 @@ type NotificationServiceClient interface {
 	RotateWebhookSecret(context.Context, *connect.Request[v1.RotateWebhookSecretRequest]) (*connect.Response[v1.RotateWebhookSecretResponse], error)
 	// The newest deliveries first.
 	ListDeliveries(context.Context, *connect.Request[v1.ListDeliveriesRequest]) (*connect.Response[v1.ListDeliveriesResponse], error)
+	// The console's meter notifications (thresholds and access changes), the
+	// newest first; empty when the deployment has no console channel.
+	ListConsoleNotifications(context.Context, *connect.Request[v1.ListConsoleNotificationsRequest]) (*connect.Response[v1.ListConsoleNotificationsResponse], error)
 }
 
 // NewNotificationServiceClient constructs a client for the loams.meter.v1.NotificationService
@@ -113,16 +119,24 @@ func NewNotificationServiceClient(httpClient connect.HTTPClient, baseURL string,
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
+		listConsoleNotifications: connect.NewClient[v1.ListConsoleNotificationsRequest, v1.ListConsoleNotificationsResponse](
+			httpClient,
+			baseURL+NotificationServiceListConsoleNotificationsProcedure,
+			connect.WithSchema(notificationServiceMethods.ByName("ListConsoleNotifications")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // notificationServiceClient implements NotificationServiceClient.
 type notificationServiceClient struct {
-	createRule          *connect.Client[v1.CreateRuleRequest, v1.CreateRuleResponse]
-	listRules           *connect.Client[v1.ListRulesRequest, v1.ListRulesResponse]
-	createWebhook       *connect.Client[v1.CreateWebhookRequest, v1.CreateWebhookResponse]
-	rotateWebhookSecret *connect.Client[v1.RotateWebhookSecretRequest, v1.RotateWebhookSecretResponse]
-	listDeliveries      *connect.Client[v1.ListDeliveriesRequest, v1.ListDeliveriesResponse]
+	createRule               *connect.Client[v1.CreateRuleRequest, v1.CreateRuleResponse]
+	listRules                *connect.Client[v1.ListRulesRequest, v1.ListRulesResponse]
+	createWebhook            *connect.Client[v1.CreateWebhookRequest, v1.CreateWebhookResponse]
+	rotateWebhookSecret      *connect.Client[v1.RotateWebhookSecretRequest, v1.RotateWebhookSecretResponse]
+	listDeliveries           *connect.Client[v1.ListDeliveriesRequest, v1.ListDeliveriesResponse]
+	listConsoleNotifications *connect.Client[v1.ListConsoleNotificationsRequest, v1.ListConsoleNotificationsResponse]
 }
 
 // CreateRule calls loams.meter.v1.NotificationService.CreateRule.
@@ -150,6 +164,11 @@ func (c *notificationServiceClient) ListDeliveries(ctx context.Context, req *con
 	return c.listDeliveries.CallUnary(ctx, req)
 }
 
+// ListConsoleNotifications calls loams.meter.v1.NotificationService.ListConsoleNotifications.
+func (c *notificationServiceClient) ListConsoleNotifications(ctx context.Context, req *connect.Request[v1.ListConsoleNotificationsRequest]) (*connect.Response[v1.ListConsoleNotificationsResponse], error) {
+	return c.listConsoleNotifications.CallUnary(ctx, req)
+}
+
 // NotificationServiceHandler is an implementation of the loams.meter.v1.NotificationService
 // service.
 type NotificationServiceHandler interface {
@@ -161,6 +180,9 @@ type NotificationServiceHandler interface {
 	RotateWebhookSecret(context.Context, *connect.Request[v1.RotateWebhookSecretRequest]) (*connect.Response[v1.RotateWebhookSecretResponse], error)
 	// The newest deliveries first.
 	ListDeliveries(context.Context, *connect.Request[v1.ListDeliveriesRequest]) (*connect.Response[v1.ListDeliveriesResponse], error)
+	// The console's meter notifications (thresholds and access changes), the
+	// newest first; empty when the deployment has no console channel.
+	ListConsoleNotifications(context.Context, *connect.Request[v1.ListConsoleNotificationsRequest]) (*connect.Response[v1.ListConsoleNotificationsResponse], error)
 }
 
 // NewNotificationServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -202,6 +224,13 @@ func NewNotificationServiceHandler(svc NotificationServiceHandler, opts ...conne
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
+	notificationServiceListConsoleNotificationsHandler := connect.NewUnaryHandler(
+		NotificationServiceListConsoleNotificationsProcedure,
+		svc.ListConsoleNotifications,
+		connect.WithSchema(notificationServiceMethods.ByName("ListConsoleNotifications")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/loams.meter.v1.NotificationService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case NotificationServiceCreateRuleProcedure:
@@ -214,6 +243,8 @@ func NewNotificationServiceHandler(svc NotificationServiceHandler, opts ...conne
 			notificationServiceRotateWebhookSecretHandler.ServeHTTP(w, r)
 		case NotificationServiceListDeliveriesProcedure:
 			notificationServiceListDeliveriesHandler.ServeHTTP(w, r)
+		case NotificationServiceListConsoleNotificationsProcedure:
+			notificationServiceListConsoleNotificationsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -241,4 +272,8 @@ func (UnimplementedNotificationServiceHandler) RotateWebhookSecret(context.Conte
 
 func (UnimplementedNotificationServiceHandler) ListDeliveries(context.Context, *connect.Request[v1.ListDeliveriesRequest]) (*connect.Response[v1.ListDeliveriesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("loams.meter.v1.NotificationService.ListDeliveries is not implemented"))
+}
+
+func (UnimplementedNotificationServiceHandler) ListConsoleNotifications(context.Context, *connect.Request[v1.ListConsoleNotificationsRequest]) (*connect.Response[v1.ListConsoleNotificationsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("loams.meter.v1.NotificationService.ListConsoleNotifications is not implemented"))
 }

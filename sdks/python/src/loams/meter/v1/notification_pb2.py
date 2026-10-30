@@ -26,7 +26,7 @@ from google.protobuf import timestamp_pb2 as google_dot_protobuf_dot_timestamp__
 from loams.options.v1 import options_pb2 as loams_dot_options_dot_v1_dot_options__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n!loams/meter/v1/notification.proto\x12\x0eloams.meter.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1eloams/options/v1/options.proto\"\xcf\x01\n\x04Rule\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n\x0b\x63ustomer_id\x18\x02 \x01(\tR\ncustomerId\x12\x18\n\x07\x66\x65\x61ture\x18\x03 \x01(\tR\x07\x66\x65\x61ture\x12\x1e\n\nthresholds\x18\x04 \x03(\rR\nthresholds\x12\x1b\n\tspend_cap\x18\x05 \x01(\x08R\x08spendCap\x12?\n\x08\x63hannels\x18\x06 \x03(\x0e\x32#.loams.meter.v1.NotificationChannelR\x08\x63hannels\"\x9f\x01\n\x07Webhook\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n\x0b\x63ustomer_id\x18\x02 \x01(\tR\ncustomerId\x12\x10\n\x03url\x18\x03 \x01(\tR\x03url\x12\x14\n\x05types\x18\x04 \x03(\tR\x05types\x12;\n\x0b\x63reate_time\x18\x05 \x01(\x0b\x32\x1a.google.protobuf.TimestampR\ncreateTime\"\xd0\x02\n\x08\x44\x65livery\x12\x1d\n\nwebhook_id\x18\x01 \x01(\tR\twebhookId\x12\x19\n\x08\x65vent_id\x18\x02 \x01(\tR\x07\x65ventId\x12\x1d\n\nevent_type\x18\x03 \x01(\tR\teventType\x12.\n\x04time\x18\x04 \x01(\x0b\x32\x1a.google.protobuf.TimestampR\x04time\x12\x36\n\x06status\x18\x05 \x01(\x0e\x32\x1e.loams.meter.v1.DeliveryStatusR\x06status\x12\x18\n\x07\x61ttempt\x18\x06 \x01(\rR\x07\x61ttempt\x12!\n\x0clast_outcome\x18\x07 \x01(\tR\x0blastOutcome\x12\x46\n\x11next_attempt_time\x18\x08 \x01(\x0b\x32\x1a.google.protobuf.TimestampR\x0fnextAttemptTime\"=\n\x11\x43reateRuleRequest\x12(\n\x04rule\x18\x01 \x01(\x0b\x32\x14.loams.meter.v1.RuleR\x04rule\">\n\x12\x43reateRuleResponse\x12(\n\x04rule\x18\x01 \x01(\x0b\x32\x14.loams.meter.v1.RuleR\x04rule\"3\n\x10ListRulesRequest\x12\x1f\n\x0b\x63ustomer_id\x18\x01 \x01(\tR\ncustomerId\"?\n\x11ListRulesResponse\x12*\n\x05rules\x18\x01 \x03(\x0b\x32\x14.loams.meter.v1.RuleR\x05rules\"_\n\x14\x43reateWebhookRequest\x12\x1f\n\x0b\x63ustomer_id\x18\x01 \x01(\tR\ncustomerId\x12\x10\n\x03url\x18\x02 \x01(\tR\x03url\x12\x14\n\x05types\x18\x03 \x03(\tR\x05types\"b\n\x15\x43reateWebhookResponse\x12\x31\n\x07webhook\x18\x01 \x01(\x0b\x32\x17.loams.meter.v1.WebhookR\x07webhook\x12\x16\n\x06secret\x18\x02 \x01(\tR\x06secret\",\n\x1aRotateWebhookSecretRequest\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\"h\n\x1bRotateWebhookSecretResponse\x12\x31\n\x07webhook\x18\x01 \x01(\x0b\x32\x17.loams.meter.v1.WebhookR\x07webhook\x12\x16\n\x06secret\x18\x02 \x01(\tR\x06secret\"U\n\x15ListDeliveriesRequest\x12\x1f\n\x0b\x63ustomer_id\x18\x01 \x01(\tR\ncustomerId\x12\x1b\n\tpage_size\x18\x02 \x01(\rR\x08pageSize\"R\n\x16ListDeliveriesResponse\x12\x38\n\ndeliveries\x18\x01 \x03(\x0b\x32\x18.loams.meter.v1.DeliveryR\ndeliveries*}\n\x13NotificationChannel\x12$\n NOTIFICATION_CHANNEL_UNSPECIFIED\x10\x00\x12\x1e\n\x1aNOTIFICATION_CHANNEL_EMAIL\x10\x01\x12 \n\x1cNOTIFICATION_CHANNEL_CONSOLE\x10\x02*\x8a\x01\n\x0e\x44\x65liveryStatus\x12\x1f\n\x1b\x44\x45LIVERY_STATUS_UNSPECIFIED\x10\x00\x12\x1d\n\x19\x44\x45LIVERY_STATUS_DELIVERED\x10\x01\x12\x1c\n\x18\x44\x45LIVERY_STATUS_RETRYING\x10\x02\x12\x1a\n\x16\x44\x45LIVERY_STATUS_FAILED\x10\x03\x32\xc3\x05\n\x13NotificationService\x12\x65\n\nCreateRule\x12!.loams.meter.v1.CreateRuleRequest\x1a\".loams.meter.v1.CreateRuleResponse\"\x10\x92\xb5\x18\x0c\x12\ncreateRule\x12\x64\n\tListRules\x12 .loams.meter.v1.ListRulesRequest\x1a!.loams.meter.v1.ListRulesResponse\"\x12\x90\x02\x01\x92\xb5\x18\x0b\x12\tlistRules\x12q\n\rCreateWebhook\x12$.loams.meter.v1.CreateWebhookRequest\x1a%.loams.meter.v1.CreateWebhookResponse\"\x13\x92\xb5\x18\x0f\x12\rcreateWebhook\x12\x89\x01\n\x13RotateWebhookSecret\x12*.loams.meter.v1.RotateWebhookSecretRequest\x1a+.loams.meter.v1.RotateWebhookSecretResponse\"\x19\x92\xb5\x18\x15\x12\x13rotateWebhookSecret\x12x\n\x0eListDeliveries\x12%.loams.meter.v1.ListDeliveriesRequest\x1a&.loams.meter.v1.ListDeliveriesResponse\"\x17\x90\x02\x01\x92\xb5\x18\x10\x12\x0elistDeliveries\x1a\x66\x8a\xb5\x18\x62\n\x13meter.notifications\x12KMeter notifications: threshold rules, signed webhooks and their deliveries.b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n!loams/meter/v1/notification.proto\x12\x0eloams.meter.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1eloams/options/v1/options.proto\"\xe7\x01\n\x04Rule\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n\x0b\x63ustomer_id\x18\x02 \x01(\tR\ncustomerId\x12\x18\n\x07\x66\x65\x61ture\x18\x03 \x01(\tR\x07\x66\x65\x61ture\x12\x1e\n\nthresholds\x18\x04 \x03(\rR\nthresholds\x12\x1b\n\tspend_cap\x18\x05 \x01(\x08R\x08spendCap\x12?\n\x08\x63hannels\x18\x06 \x03(\x0e\x32#.loams.meter.v1.NotificationChannelR\x08\x63hannels\x12\x16\n\x06\x65mails\x18\x07 \x03(\tR\x06\x65mails\"\x9f\x01\n\x07Webhook\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n\x0b\x63ustomer_id\x18\x02 \x01(\tR\ncustomerId\x12\x10\n\x03url\x18\x03 \x01(\tR\x03url\x12\x14\n\x05types\x18\x04 \x03(\tR\x05types\x12;\n\x0b\x63reate_time\x18\x05 \x01(\x0b\x32\x1a.google.protobuf.TimestampR\ncreateTime\"\xd0\x02\n\x08\x44\x65livery\x12\x1d\n\nwebhook_id\x18\x01 \x01(\tR\twebhookId\x12\x19\n\x08\x65vent_id\x18\x02 \x01(\tR\x07\x65ventId\x12\x1d\n\nevent_type\x18\x03 \x01(\tR\teventType\x12.\n\x04time\x18\x04 \x01(\x0b\x32\x1a.google.protobuf.TimestampR\x04time\x12\x36\n\x06status\x18\x05 \x01(\x0e\x32\x1e.loams.meter.v1.DeliveryStatusR\x06status\x12\x18\n\x07\x61ttempt\x18\x06 \x01(\rR\x07\x61ttempt\x12!\n\x0clast_outcome\x18\x07 \x01(\tR\x0blastOutcome\x12\x46\n\x11next_attempt_time\x18\x08 \x01(\x0b\x32\x1a.google.protobuf.TimestampR\x0fnextAttemptTime\"=\n\x11\x43reateRuleRequest\x12(\n\x04rule\x18\x01 \x01(\x0b\x32\x14.loams.meter.v1.RuleR\x04rule\">\n\x12\x43reateRuleResponse\x12(\n\x04rule\x18\x01 \x01(\x0b\x32\x14.loams.meter.v1.RuleR\x04rule\"3\n\x10ListRulesRequest\x12\x1f\n\x0b\x63ustomer_id\x18\x01 \x01(\tR\ncustomerId\"?\n\x11ListRulesResponse\x12*\n\x05rules\x18\x01 \x03(\x0b\x32\x14.loams.meter.v1.RuleR\x05rules\"_\n\x14\x43reateWebhookRequest\x12\x1f\n\x0b\x63ustomer_id\x18\x01 \x01(\tR\ncustomerId\x12\x10\n\x03url\x18\x02 \x01(\tR\x03url\x12\x14\n\x05types\x18\x03 \x03(\tR\x05types\"b\n\x15\x43reateWebhookResponse\x12\x31\n\x07webhook\x18\x01 \x01(\x0b\x32\x17.loams.meter.v1.WebhookR\x07webhook\x12\x16\n\x06secret\x18\x02 \x01(\tR\x06secret\",\n\x1aRotateWebhookSecretRequest\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\"h\n\x1bRotateWebhookSecretResponse\x12\x31\n\x07webhook\x18\x01 \x01(\x0b\x32\x17.loams.meter.v1.WebhookR\x07webhook\x12\x16\n\x06secret\x18\x02 \x01(\tR\x06secret\"U\n\x15ListDeliveriesRequest\x12\x1f\n\x0b\x63ustomer_id\x18\x01 \x01(\tR\ncustomerId\x12\x1b\n\tpage_size\x18\x02 \x01(\rR\x08pageSize\"R\n\x16ListDeliveriesResponse\x12\x38\n\ndeliveries\x18\x01 \x03(\x0b\x32\x18.loams.meter.v1.DeliveryR\ndeliveries\"\xfe\x01\n\x13\x43onsoleNotification\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n\x0b\x63ustomer_id\x18\x02 \x01(\tR\ncustomerId\x12\x1d\n\nevent_type\x18\x03 \x01(\tR\teventType\x12\x18\n\x07\x66\x65\x61ture\x18\x04 \x01(\tR\x07\x66\x65\x61ture\x12\x14\n\x05title\x18\x05 \x01(\tR\x05title\x12\x12\n\x04\x62ody\x18\x06 \x01(\tR\x04\x62ody\x12\x16\n\x06\x62\x61nner\x18\x07 \x01(\x08R\x06\x62\x61nner\x12;\n\x0b\x63reate_time\x18\x08 \x01(\x0b\x32\x1a.google.protobuf.TimestampR\ncreateTime\"_\n\x1fListConsoleNotificationsRequest\x12\x1f\n\x0b\x63ustomer_id\x18\x01 \x01(\tR\ncustomerId\x12\x1b\n\tpage_size\x18\x02 \x01(\rR\x08pageSize\"m\n ListConsoleNotificationsResponse\x12I\n\rnotifications\x18\x01 \x03(\x0b\x32#.loams.meter.v1.ConsoleNotificationR\rnotifications*}\n\x13NotificationChannel\x12$\n NOTIFICATION_CHANNEL_UNSPECIFIED\x10\x00\x12\x1e\n\x1aNOTIFICATION_CHANNEL_EMAIL\x10\x01\x12 \n\x1cNOTIFICATION_CHANNEL_CONSOLE\x10\x02*\x8a\x01\n\x0e\x44\x65liveryStatus\x12\x1f\n\x1b\x44\x45LIVERY_STATUS_UNSPECIFIED\x10\x00\x12\x1d\n\x19\x44\x45LIVERY_STATUS_DELIVERED\x10\x01\x12\x1c\n\x18\x44\x45LIVERY_STATUS_RETRYING\x10\x02\x12\x1a\n\x16\x44\x45LIVERY_STATUS_FAILED\x10\x03\x32\xe6\x06\n\x13NotificationService\x12\x65\n\nCreateRule\x12!.loams.meter.v1.CreateRuleRequest\x1a\".loams.meter.v1.CreateRuleResponse\"\x10\x92\xb5\x18\x0c\x12\ncreateRule\x12\x64\n\tListRules\x12 .loams.meter.v1.ListRulesRequest\x1a!.loams.meter.v1.ListRulesResponse\"\x12\x90\x02\x01\x92\xb5\x18\x0b\x12\tlistRules\x12q\n\rCreateWebhook\x12$.loams.meter.v1.CreateWebhookRequest\x1a%.loams.meter.v1.CreateWebhookResponse\"\x13\x92\xb5\x18\x0f\x12\rcreateWebhook\x12\x89\x01\n\x13RotateWebhookSecret\x12*.loams.meter.v1.RotateWebhookSecretRequest\x1a+.loams.meter.v1.RotateWebhookSecretResponse\"\x19\x92\xb5\x18\x15\x12\x13rotateWebhookSecret\x12x\n\x0eListDeliveries\x12%.loams.meter.v1.ListDeliveriesRequest\x1a&.loams.meter.v1.ListDeliveriesResponse\"\x17\x90\x02\x01\x92\xb5\x18\x10\x12\x0elistDeliveries\x12\xa0\x01\n\x18ListConsoleNotifications\x12/.loams.meter.v1.ListConsoleNotificationsRequest\x1a\x30.loams.meter.v1.ListConsoleNotificationsResponse\"!\x90\x02\x01\x92\xb5\x18\x1a\x12\x18listConsoleNotifications\x1a\x66\x8a\xb5\x18\x62\n\x13meter.notifications\x12KMeter notifications: threshold rules, signed webhooks and their deliveries.b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -45,36 +45,44 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_NOTIFICATIONSERVICE'].methods_by_name['RotateWebhookSecret']._serialized_options = b'\222\265\030\025\022\023rotateWebhookSecret'
   _globals['_NOTIFICATIONSERVICE'].methods_by_name['ListDeliveries']._loaded_options = None
   _globals['_NOTIFICATIONSERVICE'].methods_by_name['ListDeliveries']._serialized_options = b'\220\002\001\222\265\030\020\022\016listDeliveries'
-  _globals['_NOTIFICATIONCHANNEL']._serialized_start=1594
-  _globals['_NOTIFICATIONCHANNEL']._serialized_end=1719
-  _globals['_DELIVERYSTATUS']._serialized_start=1722
-  _globals['_DELIVERYSTATUS']._serialized_end=1860
+  _globals['_NOTIFICATIONSERVICE'].methods_by_name['ListConsoleNotifications']._loaded_options = None
+  _globals['_NOTIFICATIONSERVICE'].methods_by_name['ListConsoleNotifications']._serialized_options = b'\220\002\001\222\265\030\032\022\030listConsoleNotifications'
+  _globals['_NOTIFICATIONCHANNEL']._serialized_start=2083
+  _globals['_NOTIFICATIONCHANNEL']._serialized_end=2208
+  _globals['_DELIVERYSTATUS']._serialized_start=2211
+  _globals['_DELIVERYSTATUS']._serialized_end=2349
   _globals['_RULE']._serialized_start=119
-  _globals['_RULE']._serialized_end=326
-  _globals['_WEBHOOK']._serialized_start=329
-  _globals['_WEBHOOK']._serialized_end=488
-  _globals['_DELIVERY']._serialized_start=491
-  _globals['_DELIVERY']._serialized_end=827
-  _globals['_CREATERULEREQUEST']._serialized_start=829
-  _globals['_CREATERULEREQUEST']._serialized_end=890
-  _globals['_CREATERULERESPONSE']._serialized_start=892
-  _globals['_CREATERULERESPONSE']._serialized_end=954
-  _globals['_LISTRULESREQUEST']._serialized_start=956
-  _globals['_LISTRULESREQUEST']._serialized_end=1007
-  _globals['_LISTRULESRESPONSE']._serialized_start=1009
-  _globals['_LISTRULESRESPONSE']._serialized_end=1072
-  _globals['_CREATEWEBHOOKREQUEST']._serialized_start=1074
-  _globals['_CREATEWEBHOOKREQUEST']._serialized_end=1169
-  _globals['_CREATEWEBHOOKRESPONSE']._serialized_start=1171
-  _globals['_CREATEWEBHOOKRESPONSE']._serialized_end=1269
-  _globals['_ROTATEWEBHOOKSECRETREQUEST']._serialized_start=1271
-  _globals['_ROTATEWEBHOOKSECRETREQUEST']._serialized_end=1315
-  _globals['_ROTATEWEBHOOKSECRETRESPONSE']._serialized_start=1317
-  _globals['_ROTATEWEBHOOKSECRETRESPONSE']._serialized_end=1421
-  _globals['_LISTDELIVERIESREQUEST']._serialized_start=1423
-  _globals['_LISTDELIVERIESREQUEST']._serialized_end=1508
-  _globals['_LISTDELIVERIESRESPONSE']._serialized_start=1510
-  _globals['_LISTDELIVERIESRESPONSE']._serialized_end=1592
-  _globals['_NOTIFICATIONSERVICE']._serialized_start=1863
-  _globals['_NOTIFICATIONSERVICE']._serialized_end=2570
+  _globals['_RULE']._serialized_end=350
+  _globals['_WEBHOOK']._serialized_start=353
+  _globals['_WEBHOOK']._serialized_end=512
+  _globals['_DELIVERY']._serialized_start=515
+  _globals['_DELIVERY']._serialized_end=851
+  _globals['_CREATERULEREQUEST']._serialized_start=853
+  _globals['_CREATERULEREQUEST']._serialized_end=914
+  _globals['_CREATERULERESPONSE']._serialized_start=916
+  _globals['_CREATERULERESPONSE']._serialized_end=978
+  _globals['_LISTRULESREQUEST']._serialized_start=980
+  _globals['_LISTRULESREQUEST']._serialized_end=1031
+  _globals['_LISTRULESRESPONSE']._serialized_start=1033
+  _globals['_LISTRULESRESPONSE']._serialized_end=1096
+  _globals['_CREATEWEBHOOKREQUEST']._serialized_start=1098
+  _globals['_CREATEWEBHOOKREQUEST']._serialized_end=1193
+  _globals['_CREATEWEBHOOKRESPONSE']._serialized_start=1195
+  _globals['_CREATEWEBHOOKRESPONSE']._serialized_end=1293
+  _globals['_ROTATEWEBHOOKSECRETREQUEST']._serialized_start=1295
+  _globals['_ROTATEWEBHOOKSECRETREQUEST']._serialized_end=1339
+  _globals['_ROTATEWEBHOOKSECRETRESPONSE']._serialized_start=1341
+  _globals['_ROTATEWEBHOOKSECRETRESPONSE']._serialized_end=1445
+  _globals['_LISTDELIVERIESREQUEST']._serialized_start=1447
+  _globals['_LISTDELIVERIESREQUEST']._serialized_end=1532
+  _globals['_LISTDELIVERIESRESPONSE']._serialized_start=1534
+  _globals['_LISTDELIVERIESRESPONSE']._serialized_end=1616
+  _globals['_CONSOLENOTIFICATION']._serialized_start=1619
+  _globals['_CONSOLENOTIFICATION']._serialized_end=1873
+  _globals['_LISTCONSOLENOTIFICATIONSREQUEST']._serialized_start=1875
+  _globals['_LISTCONSOLENOTIFICATIONSREQUEST']._serialized_end=1970
+  _globals['_LISTCONSOLENOTIFICATIONSRESPONSE']._serialized_start=1972
+  _globals['_LISTCONSOLENOTIFICATIONSRESPONSE']._serialized_end=2081
+  _globals['_NOTIFICATIONSERVICE']._serialized_start=2352
+  _globals['_NOTIFICATIONSERVICE']._serialized_end=3222
 # @@protoc_insertion_point(module_scope)

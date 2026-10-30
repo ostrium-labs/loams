@@ -68,6 +68,15 @@
         "loams-postgres": [
           "deploy/pins/loams-postgres-images.toml"
         ],
+        "loams-risingwave": [
+          "bench/stream/compose.yaml",
+          "deploy/helm/loams-risingwave/templates/configmap.yaml",
+          "deploy/helm/loams-risingwave/templates/workloads.yaml",
+          "deploy/helm/loams-risingwave/values.yaml",
+          "deploy/release/compose.risingwave.yaml",
+          "deploy/release/risingwave/license.key",
+          "deploy/release/risingwave/risingwave.toml"
+        ],
         "loams-sqlrouter": [
           "scripts/spec/check.sh",
           "spec/tla/router/**"

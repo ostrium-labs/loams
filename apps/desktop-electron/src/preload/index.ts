@@ -4,6 +4,7 @@ import {
 	type LoamsDesktopApi,
 	PREVIEW_CH,
 	type StackId,
+	TRANSFER_CH,
 	type StackState,
 } from "../shared/contracts";
 import { themeFromArgv, versionFromArgv } from "../shared/version";
@@ -168,6 +169,25 @@ const api: LoamsDesktopApi = {
 		back: () => invoke(PREVIEW_CH.back),
 		forward: () => invoke(PREVIEW_CH.forward),
 		onState: (cb) => subscribe(PREVIEW_CH.state, cb),
+	},
+	transfers: {
+		snapshot: () => invoke(TRANSFER_CH.snapshot),
+		onChange: (cb) => subscribe(TRANSFER_CH.event, cb),
+		hasKey: (serverId) => invoke(TRANSFER_CH.hasToken, serverId),
+		saveKey: (serverId, key, settings) =>
+			invoke(TRANSFER_CH.setToken, serverId, key, settings),
+		upload: (target) => invoke(TRANSFER_CH.upload, target),
+		download: (target, tid, name) =>
+			invoke(TRANSFER_CH.download, target, tid, name),
+		pause: (id) => invoke(TRANSFER_CH.pause, id),
+		resume: (id) => invoke(TRANSFER_CH.resume, id),
+		cancel: (id) => invoke(TRANSFER_CH.cancel, id),
+		dismiss: (id) => invoke(TRANSFER_CH.dismiss, id),
+		remoteList: (target) => invoke(TRANSFER_CH.remoteList, target),
+		startRun: (target, job, params) =>
+			invoke(TRANSFER_CH.startRun, target, job, params),
+		followRun: (target, rid, job) =>
+			invoke(TRANSFER_CH.followRun, target, rid, job),
 	},
 };
 

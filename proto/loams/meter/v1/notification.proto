@@ -40,6 +40,12 @@ service NotificationService {
     option idempotency_level = NO_SIDE_EFFECTS;
     option (loams.options.v1.facade) = {name: "listDeliveries"};
   }
+  // The console's meter notifications (thresholds and access changes), the
+  // newest first; empty when the deployment has no console channel.
+  rpc ListConsoleNotifications(ListConsoleNotificationsRequest) returns (ListConsoleNotificationsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+    option (loams.options.v1.facade) = {name: "listConsoleNotifications"};
+  }
 }
 
 enum NotificationChannel {
@@ -58,6 +64,9 @@ message Rule {
   // Also the same percentages of the spend cap.
   bool spend_cap = 5;
   repeated NotificationChannel channels = 6;
+  // Where email goes (at most 10, with the email channel); empty: the
+  // org's owners and admins.
+  repeated string emails = 7;
 }
 
 message Webhook {
@@ -77,6 +86,8 @@ enum DeliveryStatus {
 }
 
 message Delivery {
+  // The webhook's id, or `channel:email` / `channel:console` for the email
+  // and console channels.
   string webhook_id = 1;
   string event_id = 2;
   string event_type = 3;
@@ -133,4 +144,29 @@ message ListDeliveriesRequest {
 
 message ListDeliveriesResponse {
   repeated Delivery deliveries = 1;
+}
+
+// One meter event as the console shows it.
+message ConsoleNotification {
+  // The meter event's id.
+  string id = 1;
+  string customer_id = 2;
+  // `io.loams.dev.meter.threshold.v1` or `io.loams.dev.meter.access.changed.v1`.
+  string event_type = 3;
+  string feature = 4;
+  string title = 5;
+  string body = 6;
+  // For the shell's banner: access stopped, or 100 % or more used.
+  bool banner = 7;
+  google.protobuf.Timestamp create_time = 8;
+}
+
+message ListConsoleNotificationsRequest {
+  string customer_id = 1;
+  // At most 500; 0 asks for 100.
+  uint32 page_size = 2;
+}
+
+message ListConsoleNotificationsResponse {
+  repeated ConsoleNotification notifications = 1;
 }

@@ -33,6 +33,7 @@
     "@loams/plugin-deployments": "workspace:*",
     "@loams/plugin-desktop-agentd": "workspace:*",
     "@loams/plugin-desktop-servers": "workspace:*",
+    "@loams/plugin-desktop-transfers": "workspace:*",
     "@loams/plugin-desktop-settings": "workspace:*",
     "@loams/plugin-durable": "workspace:*",
     "@loams/plugin-engines": "workspace:*",

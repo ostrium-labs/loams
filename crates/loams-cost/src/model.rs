@@ -325,6 +325,9 @@ pub enum SourceRef {
     },
     /// A bill line's share of the day.
     BillLine { import: String, line: u64 },
+    /// A bill import's lines for one (day, pool, kind), summed (the role
+    /// keeps bills aggregated; the file digest names the file).
+    BillImport { import: String, lines: u64 },
     /// A price-table rate times a declared quantity.
     Price { price: String, inputs_version: u64 },
     /// Anything else, named.
@@ -344,6 +347,7 @@ impl fmt::Display for SourceRef {
                 inputs_version,
             } => write!(f, "asset:{asset}/{item}@v{inputs_version}"),
             SourceRef::BillLine { import, line } => write!(f, "bill:{import}#{line}"),
+            SourceRef::BillImport { import, lines } => write!(f, "bill:{import} ({lines} lines)"),
             SourceRef::Price {
                 price,
                 inputs_version,
